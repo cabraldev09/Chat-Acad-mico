@@ -10,6 +10,18 @@ import Queue from "../models/Queue";
 import WhatsappQueue from "../models/WhatsappQueue";
 import UserQueue from "../models/UserQueue";
 import QuickAnswer from "../models/QuickAnswer";
+import Tag from "../models/Tag";
+import TicketTag from "../models/TicketTag";
+import ContactTag from "../models/ContactTag";
+import ApiToken from "../models/ApiToken";
+import Webhook from "../models/Webhook";
+import Schedule from "../models/Schedule";
+import ContactList from "../models/ContactList";
+import ContactListItem from "../models/ContactListItem";
+import Campaign from "../models/Campaign";
+import CampaignShipping from "../models/CampaignShipping";
+import ChatbotNode from "../models/ChatbotNode";
+import AiAgent from "../models/AiAgent";
 
 // eslint-disable-next-line
 const dbConfig = require("../config/database");
@@ -28,7 +40,19 @@ const models = [
   Queue,
   WhatsappQueue,
   UserQueue,
-  QuickAnswer
+  QuickAnswer,
+  Tag,
+  TicketTag,
+  ContactTag,
+  ApiToken,
+  Webhook,
+  Schedule,
+  ContactList,
+  ContactListItem,
+  Campaign,
+  CampaignShipping,
+  ChatbotNode,
+  AiAgent
 ];
 
 sequelize.addModels(models);

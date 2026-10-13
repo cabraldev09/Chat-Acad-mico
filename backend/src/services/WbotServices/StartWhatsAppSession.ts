@@ -2,6 +2,7 @@ import Whatsapp from "../../models/Whatsapp";
 import { whatsappProvider } from "../../providers/WhatsApp";
 import { getIO } from "../../libs/socket";
 import { logger } from "../../utils/logger";
+import { getAdapter } from "../../channels";
 
 export const StartWhatsAppSession = async (
   whatsapp: Whatsapp
@@ -15,8 +16,11 @@ export const StartWhatsAppSession = async (
   });
 
   try {
-    console.log("VAI!");
-    await whatsappProvider.init(whatsapp);
+    if (whatsapp.channel && whatsapp.channel !== "whatsapp") {
+      await getAdapter(whatsapp.channel).start(whatsapp);
+    } else {
+      await whatsappProvider.init(whatsapp);
+    }
   } catch (err) {
     logger.error(err);
   }

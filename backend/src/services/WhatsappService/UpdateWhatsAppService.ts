@@ -5,6 +5,7 @@ import AppError from "../../errors/AppError";
 import Whatsapp from "../../models/Whatsapp";
 import ShowWhatsAppService from "./ShowWhatsAppService";
 import AssociateWhatsappQueue from "./AssociateWhatsappQueue";
+import { mergeConfig } from "../../helpers/Secrets";
 
 interface WhatsappData {
   name?: string;
@@ -14,6 +15,9 @@ interface WhatsappData {
   greetingMessage?: string;
   farewellMessage?: string;
   queueIds?: number[];
+  config?: string;
+  businessHours?: string;
+  outOfHoursMessage?: string;
 }
 
 interface Request {
@@ -43,6 +47,9 @@ const UpdateWhatsAppService = async ({
     session,
     greetingMessage,
     farewellMessage,
+    config,
+    businessHours,
+    outOfHoursMessage,
     queueIds = []
   } = whatsappData;
 
@@ -69,13 +76,19 @@ const UpdateWhatsAppService = async ({
 
   const whatsapp = await ShowWhatsAppService(whatsappId);
 
+  const mergedConfig =
+    config !== undefined ? mergeConfig(whatsapp.getDataValue("config"), config) : undefined;
+
   await whatsapp.update({
     name,
     status,
     session,
     greetingMessage,
     farewellMessage,
-    isDefault
+    isDefault,
+    config: mergedConfig,
+    businessHours,
+    outOfHoursMessage
   });
 
   await AssociateWhatsappQueue(whatsapp, queueIds);

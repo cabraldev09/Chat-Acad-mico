@@ -5,7 +5,6 @@ import * as Sentry from "@sentry/node";
 
 import { getIO } from "../libs/socket";
 import { logger } from "../utils/logger";
-import { debounce } from "../helpers/Debounce";
 import formatBody from "../helpers/Mustache";
 
 import Contact from "../models/Contact";
@@ -16,10 +15,9 @@ import CreateMessageService from "../services/MessageServices/CreateMessageServi
 import CreateOrUpdateContactService from "../services/ContactServices/CreateOrUpdateContactService";
 import FindOrCreateTicketService from "../services/TicketServices/FindOrCreateTicketService";
 import ShowWhatsAppService from "../services/WhatsappService/ShowWhatsAppService";
-import UpdateTicketService from "../services/TicketServices/UpdateTicketService";
 import CreateContactService from "../services/ContactServices/CreateContactService";
 
-import { whatsappProvider } from "../providers/WhatsApp/whatsappProvider";
+import RunInboundAutomation from "../services/AutomationServices/RunInboundAutomation";
 import { MessageType, MessageAck } from "../providers/WhatsApp/types";
 
 const writeFileAsync = promisify(writeFile);
@@ -144,76 +142,6 @@ const processVcardMessage = async (
   }
 };
 
-const handleQueueLogic = async (
-  whatsappId: number,
-  messageBody: string,
-  ticket: Ticket,
-  contactPayload: ContactPayload
-): Promise<void> => {
-  const { queues, greetingMessage } = await ShowWhatsAppService(whatsappId);
-
-  if (queues.length === 1) {
-    await UpdateTicketService({
-      ticketData: { queueId: queues[0].id },
-      ticketId: ticket.id
-    });
-    return;
-  }
-
-  const selectedOption = messageBody;
-  const choosenQueue = queues[+selectedOption - 1];
-
-  if (choosenQueue) {
-    await UpdateTicketService({
-      ticketData: { queueId: choosenQueue.id },
-      ticketId: ticket.id
-    });
-
-    const body = formatBody(
-      `\u200e${choosenQueue.greetingMessage}`,
-      contactPayload as any
-    );
-
-    try {
-      await whatsappProvider.sendMessage(
-        whatsappId,
-        `${contactPayload.number}@c.us`,
-        body
-      );
-    } catch (error) {
-      logger.error("Error sending queue greeting message:", error);
-    }
-  } else {
-    let options = "";
-    queues.forEach((queue, index) => {
-      options += `*${index + 1}* - ${queue.name}\n`;
-    });
-
-    const body = formatBody(
-      `\u200e${greetingMessage}\n${options}`,
-      contactPayload as any
-    );
-
-    const debouncedSentMessage = debounce(
-      async () => {
-        try {
-          await whatsappProvider.sendMessage(
-            whatsappId,
-            `${contactPayload.number}@c.us`,
-            body
-          );
-        } catch (error) {
-          logger.error("Error sending queue options message:", error);
-        }
-      },
-      3000,
-      ticket.id
-    );
-
-    debouncedSentMessage();
-  }
-};
-
 export const handleMessage = async (
   messagePayload: MessagePayload,
   contactPayload: ContactPayload,
@@ -293,19 +221,11 @@ export const handleMessage = async (
 
     await processVcardMessage(processedMessage);
 
-    if (
-      !ticket.queue &&
-      !contextPayload.groupContact &&
-      !processedMessage.fromMe &&
-      !ticket.userId &&
-      whatsapp.queues.length >= 1
-    ) {
-      await handleQueueLogic(
-        contextPayload.whatsappId,
-        processedMessage.body,
-        ticket,
-        contactPayload
-      );
+    if (!contextPayload.groupContact && !processedMessage.fromMe && !ticket.userId) {
+      await RunInboundAutomation({
+        ticketId: ticket.id,
+        body: processedMessage.body
+      });
     }
   } catch (err) {
     Sentry.captureException(err);

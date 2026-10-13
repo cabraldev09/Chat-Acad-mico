@@ -3,96 +3,364 @@ import { alpha, createTheme } from "@material-ui/core/styles";
 import palette from "./palette";
 
 const borderRadius = {
-  small: "8px",
-  medium: "16px",
-  input: "10px",
+  small: "6px",
+  medium: "12px",
+  input: "8px",
   table: "12px",
   pill: "999px",
 };
 
+const FONT =
+  '"Geist", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+
 const createAppTheme = (type) => {
   const colors = palette[type];
   const isDark = type === "dark";
-  const { palette: basePalette } = createTheme({ palette: { type, ...colors } });
-  const shadowColor = (opacity) =>
-    alpha(basePalette.common.black, isDark ? opacity * 2 : opacity);
+  const base = createTheme({ palette: { type, ...colors } });
+  const ring = alpha(colors.accent.main, isDark ? 0.3 : 0.22);
+
+  // borders do the heavy lifting, shadows stay whisper-quiet
+  const shadows = [...base.shadows];
+  shadows[1] = isDark ? "0 0 0 1px #1c2b44" : "0 1px 2px 0 rgba(11,66,121,0.06)";
+  shadows[2] = isDark
+    ? "0 1px 3px 0 rgba(0,0,0,0.5)"
+    : "0 1px 3px 0 rgba(11,66,121,0.10), 0 1px 2px -1px rgba(11,66,121,0.06)";
+  shadows[3] = "0 4px 8px -2px rgba(11,66,121,0.12), 0 2px 4px -2px rgba(11,66,121,0.06)";
+  shadows[8] = isDark
+    ? "0 12px 32px -8px rgba(0,0,0,0.7)"
+    : "0 12px 32px -8px rgba(11,66,121,0.22)";
+  shadows[24] = isDark
+    ? "0 24px 64px -12px rgba(0,0,0,0.8)"
+    : "0 24px 64px -12px rgba(11,66,121,0.32)";
 
   return createTheme({
     palette: {
       type,
       ...colors,
-      tintedBackground: alpha(colors.primary.main, isDark ? 0.08 : 0.04),
+      tintedBackground: alpha(colors.primary.main, isDark ? 0.1 : 0.07),
     },
 
+    shape: { borderRadius: 8 },
+    shadows,
+
     typography: {
+      fontFamily: FONT,
+      fontSize: 14,
+      h4: { fontWeight: 600, letterSpacing: "-0.02em" },
+      h5: { fontWeight: 600, letterSpacing: "-0.015em" },
+      h6: { fontWeight: 600, letterSpacing: "-0.01em" },
+      subtitle1: { fontWeight: 500 },
+      subtitle2: { fontWeight: 600, letterSpacing: "-0.005em" },
+      button: { textTransform: "none", fontWeight: 500, letterSpacing: 0 },
       sectionLabel: {
         fontSize: "12px",
-        fontWeight: 700,
+        fontWeight: 500,
         lineHeight: 1.4,
-        letterSpacing: "0.08em",
-        textTransform: "uppercase",
-        color: basePalette.text.secondary,
+        letterSpacing: "0",
+        color: colors.text.secondary,
       },
     },
 
     borderRadius,
 
     sizing: {
-      appBar: 54,
+      appBar: 56,
     },
 
     border: {
-      divider: `1px solid ${basePalette.divider}`,
+      divider: `1px solid ${colors.divider}`,
       ring: `0 0 0 2px ${colors.background.paper}`,
     },
 
     elevation: {
-      light: `0 2px 6px -2px ${shadowColor(0.25)}`,
+      light: shadows[2],
     },
 
     scrollbarStyles: {
-      "&::-webkit-scrollbar": {
-        width: "8px",
-        height: "8px",
-      },
+      "&::-webkit-scrollbar": { width: "8px", height: "8px" },
+      "&::-webkit-scrollbar-track": { background: "transparent" },
       "&::-webkit-scrollbar-thumb": {
         backgroundColor: colors.scrollbar.thumb,
+        borderRadius: "8px",
       },
     },
 
+    props: {
+      MuiButtonBase: { disableRipple: true },
+      MuiPaper: { elevation: 0 },
+    },
+
     overrides: {
+      MuiCssBaseline: {
+        "@global": {
+          body: {
+            WebkitFontSmoothing: "antialiased",
+            MozOsxFontSmoothing: "grayscale",
+            fontFeatureSettings: '"cv11", "ss01"',
+            backgroundColor: colors.background.default,
+          },
+          "::selection": { background: alpha(colors.primary.main, 0.25) },
+          "*:focus-visible": {
+            outline: `2px solid ${colors.accent.main}`,
+            outlineOffset: 2,
+          },
+          "@keyframes shimmer": {
+            "0%": { backgroundPosition: "-200% 0" },
+            "100%": { backgroundPosition: "200% 0" },
+          },
+          "@media (prefers-reduced-motion: reduce)": {
+            "*": { animationDuration: "0.01ms !important", transitionDuration: "0.01ms !important" },
+          },
+        },
+      },
+
       MuiButton: {
         root: {
-          borderRadius: 32,
-          fontSize: "13px",
+          borderRadius: borderRadius.input,
+          fontSize: "13.5px",
+          fontWeight: 500,
           textTransform: "none",
+          padding: "6px 14px",
+          minHeight: 36,
+          transition: "background-color .15s, border-color .15s, box-shadow .15s, color .15s",
+        },
+        sizeSmall: { minHeight: 30, padding: "3px 10px", fontSize: "13px" },
+        contained: {
+          boxShadow: "none",
+          "&:hover": { boxShadow: "none" },
+          "&:active": { boxShadow: "none" },
+        },
+        containedPrimary: {
+          boxShadow: `inset 0 1px 0 rgba(255,255,255,0.16), 0 1px 2px rgba(11,66,121,0.25)`,
+          "&:hover": {
+            backgroundColor: colors.primary.dark,
+            boxShadow: `inset 0 1px 0 rgba(255,255,255,0.18), 0 1px 2px rgba(9,9,11,0.12)`,
+          },
         },
         outlined: {
           backgroundColor: colors.cards.background,
+          borderColor: colors.divider,
+          padding: "5px 13px",
+          "&:hover": { backgroundColor: colors.action.hover },
+        },
+        outlinedPrimary: {
+          borderColor: alpha(colors.primary.main, 0.4),
+          "&:hover": {
+            borderColor: colors.primary.main,
+            backgroundColor: alpha(colors.primary.main, 0.06),
+          },
+        },
+        outlinedSecondary: {
+          color: colors.text.primary,
+          borderColor: colors.divider,
+          "&:hover": { backgroundColor: colors.action.hover, borderColor: colors.divider },
+        },
+        text: { padding: "6px 10px" },
+      },
+
+      MuiIconButton: {
+        root: {
+          borderRadius: borderRadius.input,
+          transition: "background-color .15s",
         },
       },
+
       MuiOutlinedInput: {
         root: {
           borderRadius: borderRadius.input,
           backgroundColor: colors.cards.background,
+          transition: "box-shadow .15s, border-color .15s",
+          "& $notchedOutline": { borderColor: colors.divider },
+          "&:hover $notchedOutline": { borderColor: isDark ? "#2c4062" : "#cbd5e1" },
+          "&$focused $notchedOutline": { borderColor: colors.accent.main, borderWidth: 1 },
+          "&$focused": { boxShadow: `0 0 0 3px ${ring}` },
+        },
+        input: { padding: "10px 12px" },
+        inputMarginDense: { paddingTop: 8, paddingBottom: 8 },
+      },
+      MuiInputLabel: {
+        outlined: { fontSize: 14 },
+      },
+      MuiFormHelperText: {
+        root: { fontSize: 12, marginLeft: 2 },
+        contained: { marginLeft: 2, marginRight: 0 },
+      },
+
+      MuiPaper: {
+        rounded: { borderRadius: borderRadius.medium },
+        outlined: {
+          border: `1px solid ${colors.divider}`,
+          backgroundColor: colors.cards.background,
+          borderRadius: borderRadius.medium,
+          "&$rounded": { borderRadius: borderRadius.medium },
         },
       },
-      MuiMenu: {
+      MuiCard: {
+        root: { borderRadius: borderRadius.medium },
+      },
+
+      MuiDialog: {
         paper: {
-          borderRadius: borderRadius.input,
+          borderRadius: 16,
+          border: `1px solid ${colors.divider}`,
+          boxShadow: shadows[24],
+          backgroundImage: "none",
+        },
+      },
+      MuiBackdrop: {
+        root: {
+          backgroundColor: isDark ? "rgba(2,6,12,0.7)" : "rgba(8,32,60,0.45)",
+          backdropFilter: "blur(3px)",
         },
       },
       MuiDialogTitle: {
-        root: {
-          color: colors.primary.main,
+        root: { padding: "22px 24px 6px" },
+      },
+      MuiTypography: {
+        h6: { fontSize: "1.05rem" },
+      },
+      MuiDialogContent: {
+        root: { padding: "12px 24px 8px" },
+        dividers: {
+          padding: "12px 24px",
+          borderTop: "none",
+          borderBottom: "none",
         },
       },
-      MuiPaper: {
-        outlined: {
-          "&$rounded": {
-            borderRadius: borderRadius.medium,
+      MuiDialogActions: {
+        root: { padding: "16px 24px 20px", gap: 8 },
+        spacing: { "& > :not(:first-child)": { marginLeft: 0 } },
+      },
+
+      MuiMenu: {
+        paper: {
+          borderRadius: borderRadius.medium,
+          border: `1px solid ${colors.divider}`,
+          boxShadow: shadows[8],
+          marginTop: 4,
+        },
+        list: { padding: 4 },
+      },
+      MuiMenuItem: {
+        root: {
+          borderRadius: borderRadius.small,
+          fontSize: 14,
+          minHeight: 36,
+          margin: "1px 0",
+        },
+      },
+      MuiPopover: {
+        paper: { borderRadius: borderRadius.medium, border: `1px solid ${colors.divider}` },
+      },
+
+      MuiTableCell: {
+        root: {
+          borderBottom: `1px solid ${colors.divider}`,
+          padding: "12px 16px",
+        },
+        head: {
+          fontSize: 12.5,
+          fontWeight: 500,
+          color: colors.text.secondary,
+          backgroundColor: isDark ? "#0a1322" : "#f8fafc",
+          lineHeight: 1.4,
+        },
+        sizeSmall: { padding: "8px 12px" },
+      },
+      MuiTableRow: {
+        root: {
+          "&:last-child td": { borderBottom: 0 },
+        },
+        hover: { "&:hover": { backgroundColor: colors.action.hover } },
+      },
+
+      MuiChip: {
+        root: { fontWeight: 500, fontSize: 12.5 },
+        sizeSmall: { height: 22 },
+      },
+
+      MuiTabs: {
+        root: {
+          minHeight: 40,
+          padding: 4,
+          borderRadius: 10,
+          backgroundColor: isDark ? "#0a1322" : "#eef2f7",
+        },
+        indicator: { display: "none" },
+        flexContainer: { gap: 2 },
+      },
+      MuiTab: {
+        root: {
+          textTransform: "none",
+          fontWeight: 500,
+          fontSize: 13.5,
+          minHeight: 32,
+          minWidth: 0,
+          letterSpacing: 0,
+          borderRadius: 8,
+          padding: "4px 14px",
+          color: colors.text.secondary,
+          "&$selected": {
+            color: colors.text.primary,
+            backgroundColor: colors.cards.background,
+            boxShadow: shadows[2],
           },
         },
+      },
+
+      MuiTooltip: {
+        tooltip: {
+          backgroundColor: isDark ? "#f1f5f9" : "#0b1a2e",
+          color: isDark ? "#0b1a2e" : "#f1f5f9",
+          fontSize: 12,
+          fontWeight: 500,
+          borderRadius: 6,
+          padding: "5px 9px",
+        },
+        arrow: { color: isDark ? "#f1f5f9" : "#0b1a2e" },
+      },
+
+      MuiSwitch: {
+        root: { width: 40, height: 24, padding: 0, margin: 8 },
+        switchBase: {
+          padding: 2,
+          "&$checked": { transform: "translateX(16px)" },
+          "&$checked + $track": { opacity: 1 },
+        },
+        thumb: { width: 20, height: 20, boxShadow: "0 1px 2px rgba(0,0,0,.25)" },
+        track: {
+          borderRadius: 12,
+          opacity: 1,
+          backgroundColor: isDark ? "#2c4062" : "#cbd5e1",
+        },
+      },
+
+      MuiListItem: {
+        root: { "&$selected": { backgroundColor: colors.action.selected } },
+      },
+
+      MuiBadge: {
+        badge: { fontWeight: 600, fontSize: 11 },
+        colorPrimary: {
+          backgroundColor: colors.accent.highlight,
+          color: colors.accent.onHighlight,
+        },
+      },
+
+      MuiLinearProgress: {
+        root: { borderRadius: 4, height: 6 },
+      },
+
+      MuiAlert: {
+        root: { borderRadius: borderRadius.input },
+      },
+
+      MuiAvatar: {
+        root: { fontWeight: 500 },
+      },
+
+      MuiAppBar: {
+        colorPrimary: { backgroundColor: colors.appBar.background },
       },
     },
   });

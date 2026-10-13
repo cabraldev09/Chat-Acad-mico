@@ -16,6 +16,7 @@ import {
 import Queue from "./Queue";
 import Ticket from "./Ticket";
 import WhatsappQueue from "./WhatsappQueue";
+import { maskConfig } from "../helpers/Secrets";
 
 @Table
 class Whatsapp extends Model<Whatsapp> {
@@ -58,6 +59,19 @@ class Whatsapp extends Model<Whatsapp> {
   @Column
   isDefault: boolean;
 
+  @Default("whatsapp")
+  @Column
+  channel: string;
+
+  @Column(DataType.TEXT)
+  config: string;
+
+  @Column(DataType.TEXT)
+  businessHours: string;
+
+  @Column(DataType.TEXT)
+  outOfHoursMessage: string;
+
   @CreatedAt
   createdAt: Date;
 
@@ -72,6 +86,13 @@ class Whatsapp extends Model<Whatsapp> {
 
   @HasMany(() => WhatsappQueue)
   whatsappQueues: WhatsappQueue[];
+
+  // never leak channel credentials to the browser
+  toJSON(): any {
+    const data: any = super.toJSON();
+    data.config = maskConfig(data.config);
+    return data;
+  }
 }
 
 export default Whatsapp;

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useContext } from "react";
 
+import ChannelIcon from "../ChannelIcon";
 import { useHistory, useParams } from "react-router-dom";
 import { parseISO, format, isSameDay } from "date-fns";
 import clsx from "clsx";
@@ -89,11 +90,11 @@ const useStyles = makeStyles(theme => ({
 		marginLeft: theme.spacing(1),
 		padding: theme.spacing(0, 0.75),
 		borderRadius: theme.borderRadius.pill,
-		backgroundColor: green[500],
-		color: theme.palette.common.white,
+		backgroundColor: theme.palette.accent.highlight,
+		color: theme.palette.accent.onHighlight,
 		textAlign: "center",
 		...theme.typography.caption,
-		fontWeight: 500,
+		fontWeight: 600,
 	},
 
 	acceptButton: {
@@ -201,6 +202,7 @@ const TicketListItem = ({ ticket }) => {
 								variant="body2"
 								color="textPrimary"
 							>
+								<ChannelIcon channel={ticket.whatsapp?.channel} size={14} />{" "}
 								{ticket.contact.name}
 							</Typography>
 							{ticket.status === "closed" && (
@@ -242,6 +244,26 @@ const TicketListItem = ({ ticket }) => {
 								)}
 							</Typography>
 
+							{(ticket.tags || []).slice(0, 2).map((t) => (
+								<span
+									key={t.id}
+									title={t.name}
+									style={{
+										background: t.color,
+										color: "#fff",
+										borderRadius: 8,
+										padding: "0 6px",
+										fontSize: 10,
+										marginLeft: 4,
+										maxWidth: 70,
+										overflow: "hidden",
+										textOverflow: "ellipsis",
+										whiteSpace: "nowrap",
+									}}
+								>
+									{t.name}
+								</span>
+							))}
 							{ticket.whatsappId && (
 								<span className={classes.userTag} title={i18n.t("ticketsList.connectionTitle")}>{ticket.whatsapp?.name}</span>
 							)}

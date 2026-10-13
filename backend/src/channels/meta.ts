@@ -1,0 +1,328 @@
+import axios from "axios";
+import FormData from "form-data";
+import fs from "fs";
+
+import Whatsapp from "../models/Whatsapp";
+import Contact from "../models/Contact";
+import { logger } from "../utils/logger";
+import { getPublicUrl } from "../helpers/PublicUrl";
+import { setChannelStatus } from "../services/ChannelServices/ChannelStatus";
+import HandleChannelMessage from "../services/InboundServices/HandleChannelMessage";
+import { handleAckByExternalId } from "../services/InboundServices/HandleAck";
+import {
+  ChannelAdapter,
+  ChannelType,
+  OutboundMedia,
+  getConfig,
+  externalIdOf,
+  mediaKindOf
+} from "./types";
+
+const GRAPH = "https://graph.facebook.com/v21.0";
+
+// ---------------------------------------------------------------------------
+// Messenger + Instagram (same Send API shape, different ids)
+// ---------------------------------------------------------------------------
+
+const socialAdapter = (type: "messenger" | "instagram", prefix: string): ChannelAdapter => ({
+  type,
+  prefix,
+
+  async start(whatsapp) {
+    const { accessToken } = getConfig(whatsapp);
+    if (!accessToken) {
+      await setChannelStatus(whatsapp, "DISCONNECTED");
+      return;
+    }
+    try {
+      const { data } = await axios.get(`${GRAPH}/me`, {
+        params: { access_token: accessToken, fields: "id,name" }
+      });
+      await whatsapp.update({ session: data.name || data.id });
+      await setChannelStatus(whatsapp, "CONNECTED");
+    } catch (err) {
+      logger.error(`${type} start failed: ${err?.response?.data?.error?.message || err}`);
+      await setChannelStatus(whatsapp, "DISCONNECTED");
+    }
+  },
+
+  async stop() {
+    // webhook driven
+  },
+
+  async sendText(whatsapp, contact: Contact, body) {
+    const { accessToken } = getConfig(whatsapp);
+    const { data } = await axios.post(
+      `${GRAPH}/me/messages`,
+      {
+        recipient: { id: externalIdOf(contact, prefix) },
+        message: { text: body },
+        messaging_type: "RESPONSE"
+      },
+      { params: { access_token: accessToken } }
+    );
+    return { id: data.message_id };
+  },
+
+  async sendMedia(whatsapp, contact: Contact, media: OutboundMedia, caption) {
+    const { accessToken } = getConfig(whatsapp);
+    const kind = mediaKindOf(media.mimetype);
+    const attachmentType = kind === "file" ? "file" : kind;
+    const form = new FormData();
+    form.append("recipient", JSON.stringify({ id: externalIdOf(contact, prefix) }));
+    form.append(
+      "message",
+      JSON.stringify({
+        attachment: { type: attachmentType, payload: { is_reusable: true } }
+      })
+    );
+    form.append("messaging_type", "RESPONSE");
+    form.append("filedata", fs.createReadStream(media.path), {
+      filename: media.filename,
+      contentType: media.mimetype
+    });
+    const { data } = await axios.post(`${GRAPH}/me/messages`, form, {
+      params: { access_token: accessToken },
+      headers: form.getHeaders(),
+      maxBodyLength: Infinity
+    });
+    if (caption) {
+      await axios.post(
+        `${GRAPH}/me/messages`,
+        {
+          recipient: { id: externalIdOf(contact, prefix) },
+          message: { text: caption },
+          messaging_type: "RESPONSE"
+        },
+        { params: { access_token: accessToken } }
+      );
+    }
+    return { id: data.message_id };
+  }
+});
+
+export const messenger = socialAdapter("messenger", "fb_");
+export const instagram = socialAdapter("instagram", "ig_");
+
+// ---------------------------------------------------------------------------
+// WhatsApp Cloud API
+// ---------------------------------------------------------------------------
+
+export const whatsappCloud: ChannelAdapter = {
+  type: "whatsapp_cloud",
+  prefix: "",
+
+  async start(whatsapp) {
+    const { accessToken, phoneNumberId } = getConfig(whatsapp);
+    if (!accessToken || !phoneNumberId) {
+      await setChannelStatus(whatsapp, "DISCONNECTED");
+      return;
+    }
+    try {
+      const { data } = await axios.get(`${GRAPH}/${phoneNumberId}`, {
+        params: {
+          access_token: accessToken,
+          fields: "display_phone_number,verified_name"
+        }
+      });
+      await whatsapp.update({
+        session: data.display_phone_number || data.verified_name
+      });
+      await setChannelStatus(whatsapp, "CONNECTED");
+    } catch (err) {
+      logger.error(`WhatsApp Cloud start failed: ${err?.response?.data?.error?.message || err}`);
+      await setChannelStatus(whatsapp, "DISCONNECTED");
+    }
+  },
+
+  async stop() {
+    // webhook driven
+  },
+
+  async sendText(whatsapp, contact: Contact, body) {
+    const { accessToken, phoneNumberId } = getConfig(whatsapp);
+    const { data } = await axios.post(
+      `${GRAPH}/${phoneNumberId}/messages`,
+      {
+        messaging_product: "whatsapp",
+        to: contact.number,
+        type: "text",
+        text: { body, preview_url: false }
+      },
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+    return { id: data.messages[0].id };
+  },
+
+  async sendMedia(whatsapp, contact: Contact, media: OutboundMedia, caption) {
+    const { accessToken, phoneNumberId } = getConfig(whatsapp);
+    const headers = { Authorization: `Bearer ${accessToken}` };
+    const form = new FormData();
+    form.append("messaging_product", "whatsapp");
+    form.append("type", media.mimetype);
+    form.append("file", fs.createReadStream(media.path), {
+      filename: media.filename,
+      contentType: media.mimetype
+    });
+    const upload = await axios.post(`${GRAPH}/${phoneNumberId}/media`, form, {
+      headers: { ...headers, ...form.getHeaders() },
+      maxBodyLength: Infinity
+    });
+    const kind = mediaKindOf(media.mimetype);
+    const type = kind === "file" ? "document" : kind;
+    const payload: any = { id: upload.data.id };
+    if (caption && type !== "audio") payload.caption = caption;
+    if (type === "document") payload.filename = media.filename;
+    const { data } = await axios.post(
+      `${GRAPH}/${phoneNumberId}/messages`,
+      { messaging_product: "whatsapp", to: contact.number, type, [type]: payload },
+      { headers }
+    );
+    return { id: data.messages[0].id };
+  }
+};
+
+// ---------------------------------------------------------------------------
+// Webhook payload processing
+// ---------------------------------------------------------------------------
+
+const download = async (url: string, headers?: Record<string, string>) => {
+  const res = await axios.get(url, { responseType: "arraybuffer", headers });
+  return {
+    data: Buffer.from(res.data),
+    mimetype: (res.headers["content-type"] || "application/octet-stream") as string
+  };
+};
+
+const mimeFromType = (type: string): string =>
+  ({ image: "image/jpeg", video: "video/mp4", audio: "audio/mpeg" } as Record<string, string>)[
+    type
+  ] || "application/octet-stream";
+
+const processSocial = async (whatsapp: Whatsapp, entry: any, type: ChannelType) => {
+  const config = getConfig(whatsapp);
+  const prefix = type === "instagram" ? "ig_" : "fb_";
+  for (const event of entry.messaging || []) {
+    const msg = event.message;
+    if (!msg || msg.is_echo) continue;
+    const senderId: string = event.sender.id;
+
+    let name = senderId;
+    let pic: string | undefined;
+    try {
+      const { data } = await axios.get(`${GRAPH}/${senderId}`, {
+        params: {
+          access_token: config.accessToken,
+          fields: type === "instagram" ? "name,profile_pic" : "name,profile_pic"
+        }
+      });
+      name = data.name || senderId;
+      pic = data.profile_pic;
+    } catch (e) {
+      // profile lookup is best effort
+    }
+
+    const attachments: any[] = msg.attachments || [];
+    let media: { filename?: string; mimetype: string; data: Buffer } | undefined;
+    let body: string = msg.text || "";
+    const first = attachments.find(a => a.payload?.url);
+    if (first) {
+      try {
+        const file = await download(first.payload.url);
+        media = {
+          data: file.data,
+          mimetype:
+            file.mimetype === "application/octet-stream"
+              ? mimeFromType(first.type)
+              : file.mimetype
+        };
+      } catch (e) {
+        body = body || `[${first.type}] ${first.payload.url}`;
+      }
+    } else if (!body && attachments.length) {
+      body = `[${attachments[0].type}]`;
+    }
+    if (!body && !media) continue;
+
+    await HandleChannelMessage({
+      whatsapp,
+      contactNumber: `${prefix}${senderId}`,
+      contactName: name,
+      profilePicUrl: pic,
+      messageId: msg.mid,
+      body,
+      media
+    });
+  }
+};
+
+const processCloud = async (whatsapp: Whatsapp, entry: any) => {
+  const config = getConfig(whatsapp);
+  const headers = { Authorization: `Bearer ${config.accessToken}` };
+
+  for (const change of entry.changes || []) {
+    const value = change.value || {};
+    if (value.metadata?.phone_number_id !== config.phoneNumberId) continue;
+
+    for (const st of value.statuses || []) {
+      const ack = ({ sent: 1, delivered: 2, read: 3 } as Record<string, number>)[st.status];
+      if (ack) await handleAckByExternalId(st.id, ack);
+    }
+
+    for (const m of value.messages || []) {
+      const profileName = (value.contacts || []).find((c: any) => c.wa_id === m.from)?.profile
+        ?.name;
+      let body = "";
+      let media: { filename?: string; mimetype: string; data: Buffer } | undefined;
+
+      if (m.type === "text") body = m.text.body;
+      else if (["image", "video", "audio", "document", "sticker"].includes(m.type)) {
+        const info = m[m.type];
+        body = info.caption || "";
+        try {
+          const meta = await axios.get(`${GRAPH}/${info.id}`, { headers });
+          const file = await download(meta.data.url, headers);
+          media = {
+            data: file.data,
+            mimetype: info.mime_type || file.mimetype,
+            filename: info.filename
+          };
+        } catch (err) {
+          logger.warn(`Cloud API media download failed: ${err}`);
+          body = body || `[${m.type}]`;
+        }
+      } else if (m.type === "location") {
+        body = `Localização: https://maps.google.com/?q=${m.location.latitude},${m.location.longitude}`;
+      } else if (m.type === "button") body = m.button.text;
+      else if (m.type === "interactive") {
+        body =
+          m.interactive?.button_reply?.title ||
+          m.interactive?.list_reply?.title ||
+          "[interativo]";
+      } else body = `[${m.type}]`;
+
+      await HandleChannelMessage({
+        whatsapp,
+        contactNumber: m.from,
+        contactName: profileName || m.from,
+        messageId: m.id,
+        body,
+        media
+      });
+    }
+  }
+};
+
+export const processMetaWebhook = async (whatsapp: Whatsapp, body: any): Promise<void> => {
+  for (const entry of body.entry || []) {
+    try {
+      if (whatsapp.channel === "whatsapp_cloud") await processCloud(whatsapp, entry);
+      else await processSocial(whatsapp, entry, whatsapp.channel as ChannelType);
+    } catch (err) {
+      logger.error(`Meta webhook processing error: ${err}`);
+    }
+  }
+};
+
+export const metaWebhookUrl = (whatsappId: number): string =>
+  `${getPublicUrl()}/webhooks/meta/${whatsappId}`;

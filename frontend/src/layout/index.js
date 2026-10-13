@@ -9,6 +9,7 @@ import {
   IconButton,
   useMediaQuery,
 } from "@material-ui/core";
+import { useLocation } from "react-router-dom";
 import MenuIcon from "@material-ui/icons/Menu";
 import MenuOpenIcon from "@material-ui/icons/MenuOpen";
 import Brightness4Icon from "@material-ui/icons/Brightness4";
@@ -21,10 +22,11 @@ import { AuthContext } from "../context/Auth/AuthContext";
 import BackdropLoading from "../components/BackdropLoading";
 import { i18n } from "../translate/i18n";
 import { useThemeContext } from "../context/DarkMode";
-import logo from "../assets/whaticket-logo-white.png";
+import logoLight from "../assets/whaticket-logo-black.png";
+import logoDark from "../assets/whaticket-logo-white.png";
 
-const drawerWidth = 280;
-const drawerCollapsedWidth = 92;
+const drawerWidth = 264;
+const drawerCollapsedWidth = 72;
 
 const useStyles = makeStyles((theme) => ({
   root: {
@@ -41,19 +43,23 @@ const useStyles = makeStyles((theme) => ({
   appBar: {
     zIndex: theme.zIndex.drawer + 1,
     backgroundColor: theme.palette.appBar.background,
+    backdropFilter: "saturate(180%) blur(12px)",
+    borderBottom: theme.border.divider,
+    boxShadow: "none",
+    color: theme.palette.text.primary,
   },
   menuButton: {
-    marginRight: 36,
-    color: theme.palette.common.white,
+    marginRight: theme.spacing(2),
+    color: theme.palette.text.secondary,
   },
   logo: {
-    height: 30,
+    height: 24,
   },
   grow: {
     flexGrow: 1,
   },
   headerIcon: {
-    color: theme.palette.common.white,
+    color: theme.palette.text.secondary,
   },
   drawerPaper: {
     position: "relative",
@@ -73,24 +79,23 @@ const useStyles = makeStyles((theme) => ({
     width: drawerCollapsedWidth,
   },
   drawerSurface: {
-    padding: theme.spacing(2, 0, 2, 2),
-    backgroundColor: "transparent",
+    padding: 0,
+    backgroundColor: theme.palette.background.paper,
+    borderRight: theme.border.divider,
     [theme.breakpoints.down("xs")]: {
       pointerEvents: "none",
     },
   },
   drawerDocked: {
-    borderRight: 0,
+    borderRight: theme.border.divider,
   },
   sidebarCard: {
     flex: 1,
     minHeight: 0,
     display: "flex",
     flexDirection: "column",
-    padding: theme.spacing(1, 1.75),
-    backgroundColor: theme.palette.cards.background,
-    border: theme.border.divider,
-    borderRadius: theme.borderRadius.medium,
+    padding: theme.spacing(1.5, 1.25, 1),
+    backgroundColor: "transparent",
     overflow: "hidden",
     [theme.breakpoints.down("xs")]: {
       pointerEvents: "auto",
@@ -98,6 +103,7 @@ const useStyles = makeStyles((theme) => ({
   },
   navList: {
     flex: 1,
+    padding: 0,
     overflowX: "hidden",
     overflowY: "auto",
     ...theme.scrollbarStyles,
@@ -105,6 +111,7 @@ const useStyles = makeStyles((theme) => ({
   sidebarFooter: {
     borderTop: theme.border.divider,
     paddingTop: theme.spacing(1),
+    marginTop: theme.spacing(1),
   },
   appBarSpacer: {
     minHeight: theme.sizing.appBar,
@@ -124,6 +131,7 @@ const LoggedInLayout = ({ children }) => {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const { user } = useContext(AuthContext);
   const { darkMode, toggleTheme } = useThemeContext();
+  const location = useLocation();
 
   useEffect(() => {
     setDrawerOpen(!isMobile);
@@ -175,7 +183,11 @@ const LoggedInLayout = ({ children }) => {
           >
             {drawerOpen ? <MenuOpenIcon /> : <MenuIcon />}
           </IconButton>
-          <img src={logo} alt="Whaticket" className={classes.logo} />
+          <img
+            src={darkMode ? logoDark : logoLight}
+            alt="Whaticket"
+            className={classes.logo}
+          />
           <div className={classes.grow} />
 
           <IconButton
@@ -190,8 +202,10 @@ const LoggedInLayout = ({ children }) => {
         </Toolbar>
       </AppBar>
       <main className={classes.content}>
-        <div className={classes.appBarSpacer} />
-        {children ? children : null}
+        <div key={location.pathname.split("/")[1]} className="page-enter">
+          <div className={classes.appBarSpacer} />
+          {children ? children : null}
+        </div>
       </main>
     </div>
   );

@@ -11,7 +11,7 @@ import ListItem from "@material-ui/core/ListItem";
 import ListItemText from "@material-ui/core/ListItemText";
 import { makeStyles } from "@material-ui/core/styles";
 import Badge from "@material-ui/core/Badge";
-import ChatIcon from "@material-ui/icons/Chat";
+import { Bell } from "lucide-react";
 
 import TicketListItem from "../TicketListItem";
 import { i18n } from "../../translate/i18n";
@@ -38,7 +38,7 @@ const useStyles = makeStyles(theme => ({
 		boxShadow: "none !important",
 	},
 	iconButton: {
-		color: theme.palette.common.white,
+		color: theme.palette.text.secondary,
 	},
 }));
 
@@ -196,8 +196,8 @@ const NotificationsPopOver = () => {
 				aria-label="Open Notifications"
 				className={classes.iconButton}
 			>
-				<Badge badgeContent={notifications.length} color="error">
-					<ChatIcon />
+				<Badge badgeContent={notifications.length} color="primary" overlap="rectangular">
+					<Bell size={20} />
 				</Badge>
 			</IconButton>
 			<Popover

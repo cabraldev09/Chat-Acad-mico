@@ -1,8 +1,52 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import iconMap from "./src/icons/map.js";
+
+// Serve every `@material-ui/icons/<Name>` import (and the barrel) from Lucide.
+const lucideForMaterialIcons = () => {
+  const BARREL = "\0md-icons-barrel";
+  return {
+    name: "lucide-for-material-icons",
+    enforce: "pre",
+    resolveId(id) {
+      if (id === "@material-ui/icons") return BARREL;
+      const m = id.match(/^@material-ui\/icons\/([A-Za-z0-9]+)$/);
+      if (m && iconMap[m[1]]) return `\0md-icon:${m[1]}`;
+      return null;
+    },
+    load(id) {
+      if (id.startsWith("\0md-icon:")) {
+        const name = id.slice("\0md-icon:".length);
+        const target = iconMap[name];
+        if (target.startsWith("@brand/")) {
+          return `import { ${target.slice(7)} as I } from "/src/icons/brands.js";
+import wrap from "/src/icons/wrap.js";
+export default wrap(I);`;
+        }
+        return `import { ${target} as I } from "lucide-react";
+import wrap from "/src/icons/wrap.js";
+export default wrap(I);`;
+      }
+      if (id === BARREL) {
+        return [
+          `import * as L from "lucide-react";`,
+          `import * as B from "/src/icons/brands.js";`,
+          `import wrap from "/src/icons/wrap.js";`,
+          ...Object.entries(iconMap).map(([k, v]) =>
+            v.startsWith("@brand/")
+              ? `export const ${k} = wrap(B.${v.slice(7)});`
+              : `export const ${k} = wrap(L.${v});`
+          ),
+        ].join("\n");
+      }
+      return null;
+    },
+  };
+};
 
 export default defineConfig({
   plugins: [
+    lucideForMaterialIcons(),
     react({
       jsxRuntime: "classic",
     }),
@@ -19,7 +63,7 @@ export default defineConfig({
         manualChunks: {
           "material-ui": [
             "@material-ui/core",
-            "@material-ui/icons",
+            "lucide-react",
             "@material-ui/lab",
           ],
         },
@@ -44,7 +88,7 @@ export default defineConfig({
     include: [
       "mic-recorder-to-mp3",
       "@material-ui/core",
-      "@material-ui/icons",
+      "lucide-react",
       "@material-ui/lab",
     ],
     exclude: [],

@@ -126,6 +126,15 @@ const reducer = (state, action) => {
 		return [...state];
 	}
 
+	if (action.type === "UPDATE_TICKET_TAGS") {
+		const { ticketId, tags } = action.payload;
+		const ticketIndex = state.findIndex(t => t.id === ticketId);
+		if (ticketIndex !== -1) {
+			state[ticketIndex] = { ...state[ticketIndex], tags };
+		}
+		return [...state];
+	}
+
 	if (action.type === "UPDATE_TICKET_CONTACT") {
 		const contact = action.payload;
 		const ticketIndex = state.findIndex(t => t.contactId === contact.id);
@@ -218,6 +227,13 @@ const reducer = (state, action) => {
 
 			if (data.action === "delete") {
 				dispatch({ type: "DELETE_TICKET", payload: data.ticketId });
+			}
+
+			if (data.action === "tags") {
+				dispatch({
+					type: "UPDATE_TICKET_TAGS",
+					payload: { ticketId: data.ticketId, tags: data.tags },
+				});
 			}
 		});
 

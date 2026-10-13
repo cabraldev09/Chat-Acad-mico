@@ -1,0 +1,66 @@
+import fs from "fs";
+import path from "path";
+
+import Contact from "../../models/Contact";
+import Message from "../../models/Message";
+import Whatsapp from "../../models/Whatsapp";
+import AppError from "../../errors/AppError";
+import { mimeFromName } from "../../helpers/MimeFromName";
+import FindOrCreateTicketService from "../TicketServices/FindOrCreateTicketService";
+import ShowTicketService from "../TicketServices/ShowTicketService";
+import UpdateTicketService from "../TicketServices/UpdateTicketService";
+import SendWhatsAppMessage from "../WbotServices/SendWhatsAppMessage";
+import SendWhatsAppMedia from "../WbotServices/SendWhatsAppMedia";
+
+const PUBLIC_DIR = path.resolve(__dirname, "..", "..", "..", "public");
+
+interface Input {
+  contact: Contact;
+  whatsapp: Whatsapp;
+  body: string;
+  mediaUrl?: string | null;
+}
+
+// Sends an outbound (agent/system initiated) message to a contact through any
+// channel, opening a ticket for the conversation when none is open. Tickets
+// created only to deliver the message are closed again, so a campaign does not
+// fill the inbox; a reply from the contact reopens them as pending.
+const SendToContact = async ({
+  contact,
+  whatsapp,
+  body,
+  mediaUrl
+}: Input): Promise<void> => {
+  const found = await FindOrCreateTicketService(contact, whatsapp.id, 0);
+  const ticket = await ShowTicketService(found.id);
+  const hadMessages = (await Message.count({ where: { ticketId: ticket.id } })) > 0;
+
+  if (mediaUrl) {
+    const source = path.join(PUBLIC_DIR, mediaUrl);
+    if (!fs.existsSync(source)) throw new AppError("ERR_MEDIA_NOT_FOUND");
+    // SendWhatsAppMedia consumes (deletes) the file it sends, so hand it a copy
+    const copyName = `send-${Date.now()}-${Math.random().toString(36).slice(2, 6)}${path.extname(mediaUrl)}`;
+    fs.copyFileSync(source, path.join(PUBLIC_DIR, copyName));
+    await SendWhatsAppMedia({
+      media: {
+        filename: copyName,
+        originalname: mediaUrl,
+        mimetype: mimeFromName(mediaUrl),
+        path: path.join(PUBLIC_DIR, copyName)
+      } as Express.Multer.File,
+      ticket,
+      body
+    });
+  } else {
+    await SendWhatsAppMessage({ body, ticket });
+  }
+
+  if (!hadMessages && !ticket.userId) {
+    await UpdateTicketService({
+      ticketData: { status: "closed" },
+      ticketId: ticket.id
+    });
+  }
+};
+
+export default SendToContact;

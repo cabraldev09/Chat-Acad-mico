@@ -2,6 +2,7 @@ import { subHours } from "date-fns";
 import { Op } from "sequelize";
 import Contact from "../../models/Contact";
 import Ticket from "../../models/Ticket";
+import dispatchWebhook from "../WebhookServices/DispatchWebhook";
 import ShowTicketService from "./ShowTicketService";
 
 const FindOrCreateTicketService = async (
@@ -37,7 +38,10 @@ const FindOrCreateTicketService = async (
       await ticket.update({
         status: "pending",
         userId: null,
-        unreadMessages
+        unreadMessages,
+        chatbotNodeId: null,
+        aiActive: true,
+        closedAt: null
       });
     }
   }
@@ -58,7 +62,10 @@ const FindOrCreateTicketService = async (
       await ticket.update({
         status: "pending",
         userId: null,
-        unreadMessages
+        unreadMessages,
+        chatbotNodeId: null,
+        aiActive: true,
+        closedAt: null
       });
     }
   }
@@ -69,6 +76,11 @@ const FindOrCreateTicketService = async (
       status: "pending",
       isGroup: !!groupContact,
       unreadMessages,
+      whatsappId
+    });
+    dispatchWebhook("ticket.created", {
+      ticketId: ticket.id,
+      contactId: ticket.contactId,
       whatsappId
     });
   }

@@ -3,6 +3,8 @@ import app from "./app";
 import { initIO } from "./libs/socket";
 import { logger } from "./utils/logger";
 import { StartAllWhatsAppsSessions } from "./services/WbotServices/StartAllWhatsAppsSessions";
+import { startScheduler } from "./workers/Scheduler";
+import { startCampaignRunner } from "./workers/CampaignRunner";
 
 const server = app.listen(process.env.PORT, () => {
   logger.info(`Server started on port: ${process.env.PORT}`);
@@ -10,6 +12,8 @@ const server = app.listen(process.env.PORT, () => {
 
 initIO(server);
 StartAllWhatsAppsSessions();
+startScheduler();
+startCampaignRunner();
 gracefulShutdown(server);
 
 process.on("uncaughtException", err => {

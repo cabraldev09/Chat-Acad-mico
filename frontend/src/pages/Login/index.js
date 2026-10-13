@@ -1,78 +1,135 @@
-import React, { useState, useContext } from "react";
+import React, { useState, useContext, useRef } from "react";
 import { Link as RouterLink } from "react-router-dom";
-
-import {
-  Button,
-  CssBaseline,
-  TextField,
-  Grid,
-  Box,
-  Typography,
-  Container,
-  InputAdornment,
-  IconButton,
-  Link
-} from '@material-ui/core';
-
-import { Visibility, VisibilityOff } from '@material-ui/icons';
-
+import { Button, TextField, Typography, InputAdornment, IconButton, Link } from "@material-ui/core";
 import { makeStyles, useTheme } from "@material-ui/core/styles";
+import { Visibility, VisibilityOff } from "@material-ui/icons";
+import { Bot, Megaphone, BarChart3, MessageCircle, Check } from "lucide-react";
+import { TelegramBrand } from "../../icons/brands";
 
 import { i18n } from "../../translate/i18n";
-
 import { AuthContext } from "../../context/Auth/AuthContext";
 import logoBlack from "../../assets/whaticket-logo-black.png";
 import logoWhite from "../../assets/whaticket-logo-white.png";
 
-// const Copyright = () => {
-// 	return (
-// 		<Typography variant="body2" color="textSecondary" align="center">
-// 			{"Copyleft "}
-// 			<Link color="inherit" href="https://github.com/canove">
-// 				Canove
-// 			</Link>{" "}
-// 			{new Date().getFullYear()}
-// 			{"."}
-// 		</Typography>
-// 	);
-// };
-
 const useStyles = makeStyles((theme) => ({
-  paper: {
-    marginTop: theme.spacing(8),
+  root: {
+    display: "grid",
+    minHeight: "100vh",
+    gridTemplateColumns: "1.05fr 1fr",
+    backgroundColor: theme.palette.background.default,
+    [theme.breakpoints.down("sm")]: { gridTemplateColumns: "1fr" },
+  },
+  hero: {
+    position: "relative",
+    overflow: "hidden",
+    isolation: "isolate",
+    color: "#fff",
+    padding: theme.spacing(6),
     display: "flex",
     flexDirection: "column",
+    justifyContent: "space-between",
+    background: "linear-gradient(155deg, #0B4279 0%, #08305a 55%, #061f3b 100%)",
+    [theme.breakpoints.down("sm")]: { display: "none" },
+  },
+  grid: {
+    position: "absolute",
+    inset: 0,
+    zIndex: -2,
+    backgroundImage: "radial-gradient(rgba(255,255,255,0.18) 1px, transparent 1px)",
+    backgroundSize: "26px 26px",
+    maskImage: "radial-gradient(ellipse 80% 70% at 40% 40%, #000 30%, transparent 75%)",
+    WebkitMaskImage: "radial-gradient(ellipse 80% 70% at 40% 40%, #000 30%, transparent 75%)",
+  },
+  blob: { position: "absolute", borderRadius: "50%", filter: "blur(70px)", zIndex: -1, animation: "aurora 14s ease-in-out infinite" },
+  spot: {
+    position: "absolute",
+    inset: 0,
+    zIndex: -1,
+    pointerEvents: "none",
+    background: "radial-gradient(420px circle at var(--mx, 30%) var(--my, 30%), rgba(6,147,227,0.28), transparent 70%)",
+    transition: "background .1s",
+  },
+  logo: { height: 30, width: "auto", alignSelf: "flex-start" },
+  headline: { fontSize: 40, lineHeight: 1.1, fontWeight: 600, letterSpacing: "-0.03em", maxWidth: 460, margin: 0 },
+  sub: { marginTop: theme.spacing(2), color: "rgba(255,255,255,0.72)", maxWidth: 420, fontSize: 16, lineHeight: 1.55 },
+  features: { display: "grid", gap: theme.spacing(1.5), marginTop: theme.spacing(4), maxWidth: 440 },
+  feature: {
+    display: "flex",
     alignItems: "center",
+    gap: theme.spacing(1.5),
+    padding: theme.spacing(1.25, 1.5),
+    borderRadius: 12,
+    border: "1px solid rgba(255,255,255,0.12)",
+    background: "rgba(255,255,255,0.05)",
+    backdropFilter: "blur(6px)",
+    fontSize: 14.5,
+    transition: "transform .25s var(--ease-out), background .25s",
+    "&:hover": { transform: "translateX(4px)", background: "rgba(255,255,255,0.09)" },
+    "& svg": { color: "#fef84c", flex: "none" },
+    animation: "slide-in-left .6s var(--ease-out) both",
   },
-  logo: {
-    width: "75%",
-    marginBottom: theme.spacing(3),
-    [theme.breakpoints.down("sm")]: {
-      width: "95%",
-    },
+  bubbles: {
+    position: "absolute",
+    right: 28,
+    top: "7%",
+    width: 250,
+    display: "grid",
+    gap: 12,
+    transform: "rotate(-3deg)",
+    animation: "float-slow 7s ease-in-out infinite",
+    "@media (max-width: 1280px)": { display: "none" },
   },
-  form: {
-    width: "100%", // Fix IE 11 issue.
-    marginTop: theme.spacing(1),
+  bubble: {
+    padding: "10px 14px",
+    borderRadius: "16px 16px 16px 4px",
+    background: "rgba(255,255,255,0.95)",
+    color: "#0a2a4d",
+    fontSize: 13.5,
+    boxShadow: "0 12px 30px -10px rgba(0,0,0,.45)",
+    animation: "pop-in .5s var(--ease-spring) both",
   },
-  submit: {
-    margin: theme.spacing(3, 0, 2),
+  bubbleMine: { marginLeft: 36, borderRadius: "16px 16px 4px 16px", background: "#fef84c", color: "#0a2a4d" },
+  formSide: { display: "grid", placeItems: "center", padding: theme.spacing(3) },
+  card: {
+    width: "100%",
+    maxWidth: 400,
+    padding: theme.spacing(4),
+    borderRadius: 18,
+    background: theme.palette.cards.background,
+    border: theme.border.divider,
+    boxShadow: "0 24px 60px -24px rgba(11,66,121,.28)",
+    animation: "page-in .5s var(--ease-out) both",
   },
+  mobileLogo: { height: 28, marginBottom: theme.spacing(3), display: "none", [theme.breakpoints.down("sm")]: { display: "block" } },
+  title: { fontSize: 26, fontWeight: 600, letterSpacing: "-0.02em" },
+  subtitle: { color: theme.palette.text.secondary, marginTop: 4, marginBottom: theme.spacing(3) },
+  submit: { marginTop: theme.spacing(3), height: 44, fontSize: 15 },
+  foot: { marginTop: theme.spacing(2.5), textAlign: "center", fontSize: 14, color: theme.palette.text.secondary },
 }));
+
+const FEATURES = [
+  [MessageCircle, "WhatsApp, Telegram, Instagram e chat web numa só caixa"],
+  [Bot, "Chatbot e agentes de IA respondendo por você"],
+  [Megaphone, "Campanhas, agendamentos e etiquetas"],
+  [BarChart3, "Estatísticas e monitor em tempo real"],
+];
 
 const Login = () => {
   const classes = useStyles();
   const theme = useTheme();
+  const heroRef = useRef(null);
 
   const [user, setUser] = useState({ email: "", password: "" });
   const [showPassword, setShowPassword] = useState(false);
-
   const { handleLogin } = useContext(AuthContext);
 
-  const handleChangeInput = (e) => {
-    setUser({ ...user, [e.target.name]: e.target.value });
+  const onMove = (e) => {
+    const r = heroRef.current.getBoundingClientRect();
+    heroRef.current.style.setProperty("--mx", `${e.clientX - r.left}px`);
+    heroRef.current.style.setProperty("--my", `${e.clientY - r.top}px`);
   };
 
+  const handleChangeInput = (e) => setUser({ ...user, [e.target.name]: e.target.value });
   const handlSubmit = (e) => {
     e.preventDefault();
     handleLogin(user);
@@ -81,77 +138,95 @@ const Login = () => {
   const logo = theme.palette.type === "dark" ? logoWhite : logoBlack;
 
   return (
-    <Container component="main" maxWidth="xs">
-      <CssBaseline />
-      <div className={classes.paper}>
-        <img src={logo} alt="Whaticket" className={classes.logo} />
-        <Typography component="h1" variant="h5">
-          {i18n.t("login.title")}
-        </Typography>
-        <form className={classes.form} noValidate onSubmit={handlSubmit}>
-          <TextField
-            variant="outlined"
-            margin="normal"
-            required
-            fullWidth
-            id="email"
-            label={i18n.t("login.form.email")}
-            name="email"
-            value={user.email}
-            onChange={handleChangeInput}
-            autoComplete="email"
-            autoFocus
-          />
-          <TextField
-            variant="outlined"
-            margin="normal"
-            required
-            fullWidth
-            name="password"
-            label={i18n.t("login.form.password")}
-            id="password"
-            value={user.password}
-            onChange={handleChangeInput}
-            autoComplete="current-password"
-            type={showPassword ? 'text' : 'password'}
-            InputProps={{
-              endAdornment: (
-                <InputAdornment position="end">
-                  <IconButton
-                    aria-label="toggle password visibility"
-                    onClick={() => setShowPassword((e) => !e)}
-                  >
-                    {showPassword ? <VisibilityOff /> : <Visibility />}
-                  </IconButton>
-                </InputAdornment>
-              )
-            }}
-          />
-          <Button
-            type="submit"
-            fullWidth
-            variant="contained"
-            color="primary"
-            className={classes.submit}
-          >
-            {i18n.t("login.buttons.submit")}
-          </Button>
-          <Grid container>
-            <Grid item>
-              <Link
-                href="#"
-                variant="body2"
-                component={RouterLink}
-                to="/signup"
-              >
+    <div className={classes.root}>
+      <section className={classes.hero} ref={heroRef} onMouseMove={onMove}>
+        <div className={classes.grid} />
+        <div className={classes.blob} style={{ width: 420, height: 420, left: -120, top: -80, background: "#0693E3", opacity: 0.45 }} />
+        <div className={classes.blob} style={{ width: 300, height: 300, right: -60, bottom: -40, background: "#FEF84C", opacity: 0.16, animationDelay: "-6s" }} />
+        <div className={classes.spot} />
+
+        <img src={logoWhite} alt="Whaticket" className={classes.logo} />
+
+        <div className={classes.bubbles} aria-hidden>
+          <div className={classes.bubble} style={{ animationDelay: ".4s" }}>Oi! Preciso da segunda via do boleto 🙏</div>
+          <div className={`${classes.bubble} ${classes.bubbleMine}`} style={{ animationDelay: ".9s" }}>Claro! Já te envio por aqui mesmo.</div>
+          <div className={classes.bubble} style={{ animationDelay: "1.4s", display: "flex", alignItems: "center", gap: 6 }}>
+            <TelegramBrand size={14} /> Telegram · <Check size={14} /> resolvido
+          </div>
+        </div>
+
+        <div>
+          <h1 className={classes.headline}>Todos os atendimentos em um só lugar.</h1>
+          <p className={classes.sub}>Converse com seus clientes em vários canais, automatize o que se repete e acompanhe tudo em tempo real.</p>
+          <div className={classes.features}>
+            {FEATURES.map(([Icon, text], i) => (
+              <div key={text} className={classes.feature} style={{ animationDelay: `${0.15 + i * 0.09}s` }}>
+                <Icon size={18} />
+                {text}
+              </div>
+            ))}
+          </div>
+        </div>
+        <span />
+      </section>
+
+      <section className={classes.formSide}>
+        <div className="beam" style={{ width: "100%", maxWidth: 400 }}>
+          <form className={classes.card} noValidate onSubmit={handlSubmit}>
+            <img src={logo} alt="Whaticket" className={classes.mobileLogo} />
+            <Typography component="h1" className={classes.title}>{i18n.t("login.title")}</Typography>
+            <Typography className={classes.subtitle}>Acesse o painel de atendimento.</Typography>
+            <TextField
+              variant="outlined"
+              margin="dense"
+              required
+              fullWidth
+              id="email"
+              label={i18n.t("login.form.email")}
+              name="email"
+              value={user.email}
+              onChange={handleChangeInput}
+              autoComplete="email"
+              autoFocus
+            />
+            <TextField
+              variant="outlined"
+              margin="dense"
+              required
+              fullWidth
+              name="password"
+              label={i18n.t("login.form.password")}
+              id="password"
+              value={user.password}
+              onChange={handleChangeInput}
+              autoComplete="current-password"
+              type={showPassword ? "text" : "password"}
+              InputProps={{
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton
+                      size="small"
+                      aria-label="mostrar ou ocultar senha"
+                      onClick={() => setShowPassword((v) => !v)}
+                    >
+                      {showPassword ? <VisibilityOff /> : <Visibility />}
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              }}
+            />
+            <Button type="submit" fullWidth variant="contained" color="primary" className={`${classes.submit} shimmer-btn`}>
+              {i18n.t("login.buttons.submit")}
+            </Button>
+            <div className={classes.foot}>
+              <Link component={RouterLink} to="/signup" underline="always">
                 {i18n.t("login.buttons.register")}
               </Link>
-            </Grid>
-          </Grid>
-        </form>
-      </div>
-      <Box mt={8}>{/* <Copyright /> */}</Box>
-    </Container>
+            </div>
+          </form>
+        </div>
+      </section>
+    </div>
   );
 };
 

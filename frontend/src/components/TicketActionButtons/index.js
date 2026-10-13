@@ -4,6 +4,10 @@ import { useHistory } from "react-router-dom";
 import { makeStyles } from "@material-ui/core/styles";
 import { IconButton } from "@material-ui/core";
 import { MoreVert, Replay } from "@material-ui/icons";
+import LocalOfferOutlined from "@material-ui/icons/LocalOfferOutlined";
+import ScheduleIcon from "@material-ui/icons/Schedule";
+import TicketTagsDialog from "../TicketTagsDialog";
+import ScheduleMessageDialog from "../ScheduleMessageDialog";
 
 import { i18n } from "../../translate/i18n";
 import api from "../../services/api";
@@ -31,6 +35,8 @@ const TicketActionButtons = ({ ticket }) => {
 	const [loading, setLoading] = useState(false);
 	const ticketOptionsMenuOpen = Boolean(anchorEl);
 	const { user } = useContext(AuthContext);
+	const [tagsOpen, setTagsOpen] = useState(false);
+	const [scheduleOpen, setScheduleOpen] = useState(false);
 
 	const handleOpenTicketOptionsMenu = e => {
 		setAnchorEl(e.currentTarget);
@@ -62,6 +68,18 @@ const TicketActionButtons = ({ ticket }) => {
 
 	return (
 		<div className={classes.actionButtons}>
+			{ticket.id && (
+				<>
+					<IconButton size="small" title="Etiquetas" onClick={() => setTagsOpen(true)}>
+						<LocalOfferOutlined />
+					</IconButton>
+					<IconButton size="small" title="Agendar mensagem" onClick={() => setScheduleOpen(true)}>
+						<ScheduleIcon />
+					</IconButton>
+					<TicketTagsDialog open={tagsOpen} onClose={() => setTagsOpen(false)} ticket={ticket} />
+					<ScheduleMessageDialog open={scheduleOpen} onClose={() => setScheduleOpen(false)} ticket={ticket} />
+				</>
+			)}
 			{ticket.status === "closed" && (
 				<ButtonWithSpinner
 					loading={loading}

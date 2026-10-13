@@ -9,13 +9,21 @@ import ListItemText from "@material-ui/core/ListItemText";
 import ListSubheader from "@material-ui/core/ListSubheader";
 import Divider from "@material-ui/core/Divider";
 import DashboardOutlinedIcon from "@material-ui/icons/DashboardOutlined";
-import WhatsAppIcon from "@material-ui/icons/WhatsApp";
+import MessagesSquareIcon from "lucide-react/dist/esm/icons/messages-square";
 import SyncAltIcon from "@material-ui/icons/SyncAlt";
 import SettingsOutlinedIcon from "@material-ui/icons/SettingsOutlined";
 import PeopleAltOutlinedIcon from "@material-ui/icons/PeopleAltOutlined";
 import ContactPhoneOutlinedIcon from "@material-ui/icons/ContactPhoneOutlined";
 import AccountTreeOutlinedIcon from "@material-ui/icons/AccountTreeOutlined";
 import QuestionAnswerOutlinedIcon from "@material-ui/icons/QuestionAnswerOutlined";
+import LocalOfferOutlinedIcon from "@material-ui/icons/LocalOfferOutlined";
+import ScheduleIcon from "@material-ui/icons/Schedule";
+import MegaphoneIcon from "lucide-react/dist/esm/icons/megaphone";
+import AssessmentOutlinedIcon from "@material-ui/icons/AssessmentOutlined";
+import VisibilityOutlinedIcon from "@material-ui/icons/VisibilityOutlined";
+import AndroidIcon from "@material-ui/icons/Android";
+import AccountTreeIcon from "@material-ui/icons/AccountTree";
+import CodeIcon from "@material-ui/icons/Code";
 
 import { i18n } from "../translate/i18n";
 import { WhatsAppsContext } from "../context/WhatsApp/WhatsAppsContext";
@@ -25,29 +33,25 @@ import { Can } from "../components/Can";
 const useStyles = makeStyles((theme) => ({
   navItem: {
     position: "relative",
-    gap: theme.spacing(1.5),
-    margin: theme.spacing(0.25, 0),
-    padding: theme.spacing(1, 1.5),
+    gap: theme.spacing(1.25),
+    margin: theme.spacing(0.125, 0),
+    padding: theme.spacing(0.875, 1.25),
     borderRadius: theme.borderRadius.small,
-    color: theme.palette.text.primary,
+    color: theme.palette.text.secondary,
+    transition: "background-color .15s, color .15s",
+    "&:hover": {
+      backgroundColor: theme.palette.action.hover,
+      color: theme.palette.text.primary,
+    },
   },
   navItemCollapsed: {
     justifyContent: "center",
-    padding: theme.spacing(1, 1.25),
+    padding: theme.spacing(1, 1),
   },
   navItemActive: {
-    color: theme.palette.primary.main,
-    backgroundColor: theme.palette.tintedBackground,
-    "&::before": {
-      content: '""',
-      position: "absolute",
-      top: 6,
-      bottom: 6,
-      left: 0,
-      width: 3,
-      borderRadius: theme.borderRadius.pill,
-      backgroundColor: theme.palette.primary.main,
-    },
+    color: theme.palette.text.primary,
+    backgroundColor: theme.palette.action.selected,
+    "&:hover": { backgroundColor: theme.palette.action.selected },
     "& $navIcon": {
       color: theme.palette.primary.main,
     },
@@ -57,31 +61,33 @@ const useStyles = makeStyles((theme) => ({
   },
   navIcon: {
     minWidth: 0,
-    color: theme.palette.text.secondary,
+    color: "inherit",
+    "& svg": { fontSize: 20 },
   },
   navTextRoot: {
     flex: "0 1 auto",
   },
-  navText: {},
+  navText: { fontSize: 14 },
   connectionDot: {
     width: 8,
     height: 8,
     flexShrink: 0,
     borderRadius: theme.borderRadius.pill,
     backgroundColor: theme.palette.error.main,
-    boxShadow: theme.border.ring,
+    boxShadow: `0 0 0 3px ${theme.palette.error.main}33`,
   },
   connectionDotCollapsed: {
     position: "absolute",
     top: 8,
-    right: 8,
+    right: 12,
   },
   divider: {
-    margin: theme.spacing(0.75, 1),
+    margin: theme.spacing(1.25, 0.5),
   },
   sectionLabel: {
     ...theme.typography.sectionLabel,
-    padding: theme.spacing(1, 1.5),
+    padding: theme.spacing(0.5, 1.25, 0.75),
+    lineHeight: 1.4,
   },
 }));
 
@@ -116,7 +122,7 @@ function ListItemLink(props) {
         {!collapsed && (
           <ListItemText
             primary={primary}
-            primaryTypographyProps={{ variant: "body2", noWrap: true }}
+            primaryTypographyProps={{ variant: "body2", noWrap: true, className: classes.navText }}
             classes={{ root: classes.navTextRoot, primary: classes.navText }}
           />
         )}
@@ -182,7 +188,7 @@ const MainListItems = (props) => {
       <ListItemLink
         to="/tickets"
         primary={i18n.t("mainDrawer.listItems.tickets")}
-        icon={<WhatsAppIcon />}
+        icon={<MessagesSquareIcon className="ico" />}
         collapsed={collapsed}
       />
 
@@ -196,6 +202,24 @@ const MainListItems = (props) => {
         to="/quickAnswers"
         primary={i18n.t("mainDrawer.listItems.quickAnswers")}
         icon={<QuestionAnswerOutlinedIcon />}
+        collapsed={collapsed}
+      />
+      <ListItemLink
+        to="/schedules"
+        primary="Agendamentos"
+        icon={<ScheduleIcon />}
+        collapsed={collapsed}
+      />
+      <ListItemLink
+        to="/campaigns"
+        primary="Campanhas"
+        icon={<MegaphoneIcon className="ico" />}
+        collapsed={collapsed}
+      />
+      <ListItemLink
+        to="/reports"
+        primary="Estatísticas"
+        icon={<AssessmentOutlinedIcon />}
         collapsed={collapsed}
       />
       <Can
@@ -219,6 +243,36 @@ const MainListItems = (props) => {
               to="/queues"
               primary={i18n.t("mainDrawer.listItems.queues")}
               icon={<AccountTreeOutlinedIcon />}
+              collapsed={collapsed}
+            />
+            <ListItemLink
+              to="/monitor"
+              primary="Monitor ao vivo"
+              icon={<VisibilityOutlinedIcon />}
+              collapsed={collapsed}
+            />
+            <ListItemLink
+              to="/tags"
+              primary="Etiquetas"
+              icon={<LocalOfferOutlinedIcon />}
+              collapsed={collapsed}
+            />
+            <ListItemLink
+              to="/chatbot"
+              primary="Chatbot"
+              icon={<AccountTreeIcon />}
+              collapsed={collapsed}
+            />
+            <ListItemLink
+              to="/ai-agents"
+              primary="Agentes de IA"
+              icon={<AndroidIcon />}
+              collapsed={collapsed}
+            />
+            <ListItemLink
+              to="/integrations"
+              primary="API & Webhooks"
+              icon={<CodeIcon />}
               collapsed={collapsed}
             />
             <ListItemLink

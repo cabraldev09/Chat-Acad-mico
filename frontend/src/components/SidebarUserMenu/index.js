@@ -18,6 +18,7 @@ const useStyles = makeStyles((theme) => ({
     gap: theme.spacing(1.25),
     padding: theme.spacing(1, 1.25),
     borderRadius: theme.borderRadius.small,
+    "&:hover": { backgroundColor: theme.palette.action.hover },
   },
   userButtonCollapsed: {
     justifyContent: "center",

@@ -7,6 +7,7 @@ import Message from "../../models/Message";
 import Queue from "../../models/Queue";
 import ShowUserService from "../UserServices/ShowUserService";
 import Whatsapp from "../../models/Whatsapp";
+import Tag from "../../models/Tag";
 
 interface Request {
   searchParam?: string;
@@ -17,6 +18,7 @@ interface Request {
   userId: string;
   withUnreadMessages?: string;
   queueIds: number[];
+  tagId?: string;
 }
 
 interface Response {
@@ -33,7 +35,8 @@ const ListTicketsService = async ({
   date,
   showAll,
   userId,
-  withUnreadMessages
+  withUnreadMessages,
+  tagId
 }: Request): Promise<Response> => {
   let whereCondition: Filterable["where"] = {
     [Op.or]: [{ userId }, { status: "pending" }],
@@ -45,7 +48,7 @@ const ListTicketsService = async ({
     {
       model: Contact,
       as: "contact",
-      attributes: ["id", "name", "number", "profilePicUrl"]
+      attributes: ["id", "name", "number", "profilePicUrl", "channel"]
     },
     {
       model: Queue,
@@ -55,7 +58,17 @@ const ListTicketsService = async ({
     {
       model: Whatsapp,
       as: "whatsapp",
-      attributes: ["name"]
+      attributes: ["name", "channel"]
+    },
+    {
+      model: Tag,
+      as: "tags",
+      attributes: ["id", "name", "color"],
+      through: { attributes: [] },
+      required: !!tagId
+        ? true
+        : false,
+      ...(tagId ? { where: { id: tagId } } : {})
     }
   ];
 

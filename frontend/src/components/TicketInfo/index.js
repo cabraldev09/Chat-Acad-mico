@@ -4,6 +4,7 @@ import { Avatar, CardHeader } from "@material-ui/core";
 import { makeStyles } from "@material-ui/core/styles";
 
 import { i18n } from "../../translate/i18n";
+import ChannelIcon from "../ChannelIcon";
 
 const useStyles = makeStyles(theme => ({
 	queueStrip: {
@@ -35,10 +36,31 @@ const TicketInfo = ({ contact, ticket, onClick }) => {
 						{contact.name?.charAt(0)}
 					</Avatar>
 				}
-				title={`${contact.name} #${ticket.id}`}
+				title={
+					<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+						<ChannelIcon channel={ticket.whatsapp?.channel} />
+						{`${contact.name} #${ticket.id}`}
+					</span>
+				}
 				subheader={
-					ticket.user &&
-					`${i18n.t("messagesList.header.assignedTo")} ${ticket.user.name}`
+					<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+						{ticket.user &&
+							`${i18n.t("messagesList.header.assignedTo")} ${ticket.user.name}`}
+						{(ticket.tags || []).map((t) => (
+							<span
+								key={t.id}
+								style={{
+									background: t.color,
+									color: "#fff",
+									borderRadius: 8,
+									padding: "0 7px",
+									fontSize: 11,
+								}}
+							>
+								{t.name}
+							</span>
+						))}
+					</span>
 				}
 			/>
 		</>

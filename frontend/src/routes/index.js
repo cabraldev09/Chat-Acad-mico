@@ -13,6 +13,14 @@ import Users from "../pages/Users";
 import Contacts from "../pages/Contacts/";
 import QuickAnswers from "../pages/QuickAnswers/";
 import Queues from "../pages/Queues/";
+import Tags from "../pages/Tags/";
+import Schedules from "../pages/Schedules/";
+import Campaigns from "../pages/Campaigns/";
+import Chatbot from "../pages/Chatbot/";
+import AiAgents from "../pages/AiAgents/";
+import Webhooks from "../pages/Webhooks/";
+import Reports from "../pages/Reports/";
+import LiveMonitor from "../pages/LiveMonitor/";
 import { AuthProvider } from "../context/Auth/AuthContext";
 import { WhatsAppsProvider } from "../context/WhatsApp/WhatsAppsContext";
 import { ThemeProvider } from "../context/DarkMode";
@@ -36,6 +44,14 @@ const Routes = () => {
                 <Route exact path="/quickAnswers" component={QuickAnswers} isPrivate />
                 <Route exact path="/Settings" component={Settings} isPrivate />
                 <Route exact path="/Queues" component={Queues} isPrivate />
+                <Route exact path="/tags" component={Tags} isPrivate />
+                <Route exact path="/schedules" component={Schedules} isPrivate />
+                <Route exact path="/campaigns" component={Campaigns} isPrivate />
+                <Route exact path="/chatbot" component={Chatbot} isPrivate />
+                <Route exact path="/ai-agents" component={AiAgents} isPrivate />
+                <Route exact path="/integrations" component={Webhooks} isPrivate />
+                <Route exact path="/reports" component={Reports} isPrivate />
+                <Route exact path="/monitor" component={LiveMonitor} isPrivate />
               </LoggedInLayout>
             </WhatsAppsProvider>
           </Switch>

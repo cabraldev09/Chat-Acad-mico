@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useContext } from "react";
+import ChannelIcon from "../../components/ChannelIcon";
 import { toast } from "react-toastify";
 import { format, parseISO } from "date-fns";
 
@@ -64,7 +65,7 @@ const useStyles = makeStyles(theme => ({
 		textAlign: "center",
 	},
 	buttonProgress: {
-		color: green[500],
+		color: "#0693E3",
 	},
 }));
 
@@ -217,14 +218,16 @@ const Connections = () => {
 						>
 							{i18n.t("connections.buttons.tryAgain")}
 						</Button>{" "}
-						<Button
-							size="small"
-							variant="outlined"
-							color="secondary"
-							onClick={() => handleRequestNewQrCode(whatsApp.id)}
-						>
-							{i18n.t("connections.buttons.newQr")}
-						</Button>
+						{(!whatsApp.channel || whatsApp.channel === "whatsapp") && (
+							<Button
+								size="small"
+								variant="outlined"
+								color="secondary"
+								onClick={() => handleRequestNewQrCode(whatsApp.id)}
+							>
+								{i18n.t("connections.buttons.newQr")}
+							</Button>
+						)}
 					</>
 				)}
 				{(whatsApp.status === "CONNECTED" ||
@@ -353,7 +356,12 @@ const Connections = () => {
 								{whatsApps?.length > 0 &&
 									whatsApps.map(whatsApp => (
 										<TableRow key={whatsApp.id}>
-											<TableCell align="center">{whatsApp.name}</TableCell>
+											<TableCell align="center">
+												<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+													<ChannelIcon channel={whatsApp.channel} />
+													{whatsApp.name}
+												</span>
+											</TableCell>
 											<TableCell
 												align="center"
 												data-label={i18n.t("connections.table.status")}

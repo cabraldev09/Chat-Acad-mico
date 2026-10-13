@@ -2,6 +2,7 @@ import CheckContactOpenTickets from "../../helpers/CheckContactOpenTickets";
 import SetTicketMessagesAsRead from "../../helpers/SetTicketMessagesAsRead";
 import { getIO } from "../../libs/socket";
 import Ticket from "../../models/Ticket";
+import dispatchWebhook from "../WebhookServices/DispatchWebhook";
 import SendWhatsAppMessage from "../WbotServices/SendWhatsAppMessage";
 import ShowWhatsAppService from "../WhatsappService/ShowWhatsAppService";
 import ShowTicketService from "./ShowTicketService";
@@ -50,6 +51,12 @@ const UpdateTicketService = async ({
     userId
   });
 
+  if (status === "closed" && oldStatus !== "closed") {
+    await ticket.update({ closedAt: new Date() });
+  } else if (status && status !== "closed" && oldStatus === "closed") {
+    await ticket.update({ closedAt: null, chatbotNodeId: null, aiActive: true });
+  }
+
   if (whatsappId) {
     await ticket.update({
       whatsappId
@@ -74,6 +81,20 @@ const UpdateTicketService = async ({
       action: "update",
       ticket
     });
+
+  dispatchWebhook(
+    ticket.status === "closed" && oldStatus !== "closed"
+      ? "ticket.closed"
+      : "ticket.updated",
+    {
+      ticketId: ticket.id,
+      status: ticket.status,
+      oldStatus,
+      userId: ticket.userId,
+      queueId: ticket.queueId,
+      contactId: ticket.contactId
+    }
+  );
 
   return { ticket, oldStatus, oldUserId };
 };

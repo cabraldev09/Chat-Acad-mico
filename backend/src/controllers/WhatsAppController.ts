@@ -8,6 +8,7 @@ import ListWhatsAppsService from "../services/WhatsappService/ListWhatsAppsServi
 import ShowWhatsAppService from "../services/WhatsappService/ShowWhatsAppService";
 import UpdateWhatsAppService from "../services/WhatsappService/UpdateWhatsAppService";
 import { whatsappProvider } from "../providers/WhatsApp";
+import { getAdapter } from "../channels";
 
 interface WhatsappData {
   name: string;
@@ -16,6 +17,10 @@ interface WhatsappData {
   farewellMessage?: string;
   status?: string;
   isDefault?: boolean;
+  channel?: string;
+  config?: string;
+  businessHours?: string;
+  outOfHoursMessage?: string;
 }
 
 export const index = async (req: Request, res: Response): Promise<Response> => {
@@ -31,7 +36,11 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
     isDefault,
     greetingMessage,
     farewellMessage,
-    queueIds
+    queueIds,
+    channel,
+    config,
+    businessHours,
+    outOfHoursMessage
   }: WhatsappData = req.body;
 
   const { whatsapp, oldDefaultWhatsapp } = await CreateWhatsAppService({
@@ -40,7 +49,11 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
     isDefault,
     greetingMessage,
     farewellMessage,
-    queueIds
+    queueIds,
+    channel,
+    config,
+    businessHours,
+    outOfHoursMessage
   });
 
   StartWhatsAppSession(whatsapp);
@@ -81,6 +94,11 @@ export const update = async (
     whatsappId
   });
 
+  // API based channels pick up new credentials by restarting
+  if (whatsapp.channel !== "whatsapp" && whatsappData.config !== undefined) {
+    StartWhatsAppSession(whatsapp);
+  }
+
   const io = getIO();
   io.emit("whatsapp", {
     action: "update",
@@ -103,8 +121,13 @@ export const remove = async (
 ): Promise<Response> => {
   const { whatsappId } = req.params;
 
+  const existing = await ShowWhatsAppService(whatsappId);
   await DeleteWhatsAppService(whatsappId);
-  whatsappProvider.removeSession(+whatsappId);
+  if (existing.channel !== "whatsapp") {
+    await getAdapter(existing.channel).stop(existing);
+  } else {
+    whatsappProvider.removeSession(+whatsappId);
+  }
 
   const io = getIO();
   io.emit("whatsapp", {

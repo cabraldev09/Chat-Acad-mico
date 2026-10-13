@@ -26,8 +26,6 @@ import VcardPreview from "../VcardPreview";
 import LocationPreview from "../LocationPreview";
 import ModalImageCors from "../ModalImageCors";
 import MessageOptionsMenu from "../MessageOptionsMenu";
-import whatsBackground from "../../assets/wa-background.png";
-import whatsBackgroundDark from "../../assets/wa-background-dark.png";
 
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
@@ -44,13 +42,14 @@ const useStyles = makeStyles((theme) => ({
 
   messagesList: {
     backgroundColor: theme.palette.background.chat,
-    backgroundImage: `url(${
-      theme.palette.type === "dark" ? whatsBackgroundDark : whatsBackground
-    })`,
+    backgroundImage: `radial-gradient(${
+      theme.palette.type === "dark" ? "rgba(148,163,184,0.10)" : "rgba(11,66,121,0.07)"
+    } 1px, transparent 1px)`,
+    backgroundSize: "18px 18px",
     display: "flex",
     flexDirection: "column",
     flexGrow: 1,
-    padding: theme.spacing(1),
+    padding: theme.spacing(2),
     overflowY: "scroll",
     [theme.breakpoints.down("sm")]: {
       paddingBottom: "90px",
@@ -59,7 +58,7 @@ const useStyles = makeStyles((theme) => ({
   },
 
   circleLoading: {
-    color: green[500],
+    color: "#0693E3",
     position: "absolute",
     opacity: "70%",
     top: 0,
@@ -89,21 +88,22 @@ const useStyles = makeStyles((theme) => ({
     backgroundColor: theme.palette.contactMessage.main,
     color: theme.palette.text.primary,
     alignSelf: "flex-start",
-    borderTopLeftRadius: 0,
-    borderTopRightRadius: 8,
-    borderBottomLeftRadius: 8,
-    borderBottomRightRadius: 8,
-    paddingLeft: 5,
-    paddingRight: 5,
-    paddingTop: 5,
+    borderTopLeftRadius: 4,
+    borderTopRightRadius: 14,
+    borderBottomLeftRadius: 14,
+    borderBottomRightRadius: 14,
+    paddingLeft: 6,
+    paddingRight: 6,
+    paddingTop: 6,
     paddingBottom: 0,
-    boxShadow: theme.elevation.light,
+    border: theme.border.divider,
+    boxShadow: "none",
   },
 
   quotedContainerLeft: {
     margin: "-3px -80px 6px -6px",
     overflow: "hidden",
-    backgroundColor: "#f0f0f0",
+    backgroundColor: theme.palette.type === "dark" ? "#0b1830" : "#eef2f7",
     borderRadius: "7.5px",
     display: "flex",
     position: "relative",
@@ -121,7 +121,7 @@ const useStyles = makeStyles((theme) => ({
   quotedSideColorLeft: {
     flex: "none",
     width: "4px",
-    backgroundColor: "#6bcbef",
+    backgroundColor: "#0B4279",
   },
 
   messageRight: {
@@ -146,21 +146,22 @@ const useStyles = makeStyles((theme) => ({
     backgroundColor: theme.palette.userMessage.main,
     color: theme.palette.text.primary,
     alignSelf: "flex-end",
-    borderTopLeftRadius: 8,
-    borderTopRightRadius: 0,
-    borderBottomLeftRadius: 8,
-    borderBottomRightRadius: 8,
-    paddingLeft: 5,
-    paddingRight: 5,
-    paddingTop: 5,
+    borderTopLeftRadius: 14,
+    borderTopRightRadius: 4,
+    borderBottomLeftRadius: 14,
+    borderBottomRightRadius: 14,
+    paddingLeft: 6,
+    paddingRight: 6,
+    paddingTop: 6,
     paddingBottom: 0,
-    boxShadow: theme.elevation.light,
+    border: `1px solid ${theme.palette.type === "dark" ? "#12517f" : "#bfe0f7"}`,
+    boxShadow: "none",
   },
 
   quotedContainerRight: {
     margin: "-3px -80px 6px -6px",
     overflowY: "hidden",
-    backgroundColor: "#cfe9ba",
+    backgroundColor: theme.palette.type === "dark" ? "#0a2f50" : "#c7e4f8",
     borderRadius: "7.5px",
     display: "flex",
     position: "relative",
@@ -176,7 +177,7 @@ const useStyles = makeStyles((theme) => ({
   quotedSideColorRight: {
     flex: "none",
     width: "4px",
-    backgroundColor: "#35cd96",
+    backgroundColor: "#0693E3",
   },
 
   messageActionsButton: {
@@ -191,7 +192,7 @@ const useStyles = makeStyles((theme) => ({
 
   messageContactName: {
     display: "flex",
-    color: "#6bcbef",
+    color: "#0693E3",
     fontWeight: 500,
   },
 
@@ -229,11 +230,13 @@ const useStyles = makeStyles((theme) => ({
     alignItems: "center",
     textAlign: "center",
     alignSelf: "center",
-    width: "110px",
+    width: "auto",
+    padding: "0 6px",
     backgroundColor: theme.palette.timestamp.background,
     margin: "10px",
-    borderRadius: "10px",
-    boxShadow: theme.elevation.light,
+    borderRadius: "999px",
+    border: theme.border.divider,
+    boxShadow: "none",
   },
 
   dailyTimestampText: {
@@ -256,7 +259,7 @@ const useStyles = makeStyles((theme) => ({
   },
 
   ackDoneAllIcon: {
-    color: green[500],
+    color: "#0693E3",
     fontSize: 18,
     verticalAlign: "middle",
     marginLeft: 4,

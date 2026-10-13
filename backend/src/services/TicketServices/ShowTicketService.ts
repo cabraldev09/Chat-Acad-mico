@@ -4,6 +4,7 @@ import Contact from "../../models/Contact";
 import User from "../../models/User";
 import Queue from "../../models/Queue";
 import Whatsapp from "../../models/Whatsapp";
+import Tag from "../../models/Tag";
 
 const ShowTicketService = async (id: string | number): Promise<Ticket> => {
   const ticket = await Ticket.findByPk(id, {
@@ -11,7 +12,7 @@ const ShowTicketService = async (id: string | number): Promise<Ticket> => {
       {
         model: Contact,
         as: "contact",
-        attributes: ["id", "name", "number", "profilePicUrl"],
+        attributes: ["id", "name", "number", "profilePicUrl", "channel"],
         include: ["extraInfo"]
       },
       {
@@ -27,7 +28,13 @@ const ShowTicketService = async (id: string | number): Promise<Ticket> => {
       {
         model: Whatsapp,
         as: "whatsapp",
-        attributes: ["name"]
+        attributes: ["name", "channel"]
+      },
+      {
+        model: Tag,
+        as: "tags",
+        attributes: ["id", "name", "color"],
+        through: { attributes: [] }
       }
     ]
   });

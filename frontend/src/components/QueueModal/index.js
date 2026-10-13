@@ -18,8 +18,9 @@ import { i18n } from "../../translate/i18n";
 
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
+import ColorSwatchPicker from "../ColorSwatchPicker";
 import ColorPicker from "../ColorPicker";
-import { IconButton, InputAdornment } from "@material-ui/core";
+import { IconButton, InputAdornment, MenuItem } from "@material-ui/core";
 import { Colorize } from "@material-ui/icons";
 
 const useStyles = makeStyles(theme => ({
@@ -37,7 +38,7 @@ const useStyles = makeStyles(theme => ({
 	},
 
 	buttonProgress: {
-		color: green[500],
+		color: "#0693E3",
 		position: "absolute",
 		top: "50%",
 		left: "50%",
@@ -70,6 +71,7 @@ const QueueModal = ({ open, onClose, queueId }) => {
 		name: "",
 		color: "",
 		greetingMessage: "",
+		autoAssign: "none",
 	};
 
 	const [colorPickerModalOpen, setColorPickerModalOpen] = useState(false);
@@ -150,49 +152,17 @@ const QueueModal = ({ open, onClose, queueId }) => {
 									margin="dense"
 									className={classes.textField}
 								/>
-								<Field
-									as={TextField}
-									label={i18n.t("queueModal.form.color")}
-									name="color"
-									id="color"
-									onFocus={() => {
-										setColorPickerModalOpen(true);
-										greetingRef.current.focus();
-									}}
-									error={touched.color && Boolean(errors.color)}
-									helperText={touched.color && errors.color}
-									InputProps={{
-										startAdornment: (
-											<InputAdornment position="start">
-												<div
-													style={{ backgroundColor: values.color }}
-													className={classes.colorAdorment}
-												></div>
-											</InputAdornment>
-										),
-										endAdornment: (
-											<IconButton
-												size="small"
-												color="default"
-												onClick={() => setColorPickerModalOpen(true)}
-											>
-												<Colorize />
-											</IconButton>
-										),
-									}}
-									variant="outlined"
-									margin="dense"
-								/>
-								<ColorPicker
-									open={colorPickerModalOpen}
-									handleClose={() => setColorPickerModalOpen(false)}
-									onChange={color => {
-										values.color = color;
-										setQueue(() => {
-											return { ...values, color };
-										});
-									}}
-								/>
+								<div style={{ margin: "12px 0 8px" }}>
+									<ColorSwatchPicker
+										label={i18n.t("queueModal.form.color")}
+										value={values.color}
+										previewText={values.name}
+										onChange={color => setQueue({ ...values, color })}
+									/>
+									{touched.color && errors.color && (
+										<div style={{ color: "#dc2626", fontSize: 12, marginTop: 4 }}>{errors.color}</div>
+									)}
+								</div>
 								<div>
 									<Field
 										as={TextField}
@@ -213,6 +183,20 @@ const QueueModal = ({ open, onClose, queueId }) => {
 										margin="dense"
 									/>
 								</div>
+								<Field
+									as={TextField}
+									select
+									fullWidth
+									name="autoAssign"
+									label="Distribuição automática de atendimentos"
+									variant="outlined"
+									margin="dense"
+									helperText="Atribui automaticamente o atendimento a um atendente da fila."
+								>
+									<MenuItem value="none">Desativada (atendentes aceitam manualmente)</MenuItem>
+									<MenuItem value="roundrobin">Rodízio (um de cada vez)</MenuItem>
+									<MenuItem value="least">Menos ocupado (menos atendimentos abertos)</MenuItem>
+								</Field>
 							</DialogContent>
 							<DialogActions>
 								<Button

@@ -129,8 +129,9 @@ const useStyles = makeStyles((theme) => ({
   statusChipCount: {
     padding: theme.spacing(0, 0.75),
     borderRadius: theme.borderRadius.pill,
-    backgroundColor: theme.palette.success.main,
-    color: theme.palette.success.contrastText,
+    backgroundColor: theme.palette.accent.highlight,
+    color: theme.palette.accent.onHighlight,
+    fontWeight: 600,
     fontSize: "0.6875rem",
     fontWeight: 600,
     lineHeight: "16px",

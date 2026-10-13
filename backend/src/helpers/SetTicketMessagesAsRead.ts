@@ -18,7 +18,7 @@ const SetTicketMessagesAsRead = async (ticket: Ticket): Promise<void> => {
   await ticket.update({ unreadMessages: 0 });
 
   try {
-    if (ticket.whatsappId) {
+    if (ticket.whatsappId && (ticket.whatsapp?.channel || "whatsapp") === "whatsapp") {
       await whatsappProvider.sendSeen(
         ticket.whatsappId,
         `${ticket.contact.number}@${ticket.isGroup ? "g" : "c"}.us`

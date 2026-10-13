@@ -1,0 +1,140 @@
+/* ---------- icons (Lucide, served in place of Material icons) ---------- */
+:where(.ico) { width: 1em; height: 1em; font-size: 1.375rem; flex-shrink: 0; vertical-align: middle; }
+:where(.ico-small) { font-size: 1.125rem; }
+:where(.ico-large) { font-size: 2rem; }
+
+/* ---------- motion tokens ---------- */
+:root {
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --brand-catalina: #0b4279;
+  --brand-cerulean: #0693e3;
+  --brand-gorse: #fef84c;
+}
+
+@keyframes page-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes pop-in {
+  from { opacity: 0; transform: scale(0.94) translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes dialog-in {
+  from { opacity: 0; transform: translateY(12px) scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes slide-in-left {
+  from { opacity: 0; transform: translateX(-10px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes pulse-ring {
+  0% { box-shadow: 0 0 0 0 rgba(6, 147, 227, 0.55); }
+  70% { box-shadow: 0 0 0 8px rgba(6, 147, 227, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(6, 147, 227, 0); }
+}
+@keyframes pulse-ring-red {
+  0% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.5); }
+  70% { box-shadow: 0 0 0 7px rgba(220, 38, 38, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0); }
+}
+@keyframes float-slow {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-14px); }
+}
+@keyframes aurora {
+  0% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(4%, -3%, 0) scale(1.12); }
+  100% { transform: translate3d(0, 0, 0) scale(1); }
+}
+@keyframes beam-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes shine-sweep {
+  0% { background-position: -150% 0; }
+  100% { background-position: 250% 0; }
+}
+@keyframes shimmer-skeleton {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+@keyframes ticker-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+@keyframes typing-dot {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  30% { transform: translateY(-4px); opacity: 1; }
+}
+
+/* ---------- app-wide transitions ---------- */
+.page-enter { animation: page-in 0.32s var(--ease-out) both; height: 100%; }
+
+.MuiDialog-paper { animation: dialog-in 0.26s var(--ease-out) both; }
+.MuiPopover-paper, .MuiMenu-paper { transform-origin: top; }
+
+.MuiButton-root,
+.MuiIconButton-root,
+.MuiChip-clickable,
+.MuiListItem-button,
+.MuiTab-root { transition: background-color .18s ease, color .18s ease, border-color .18s ease, box-shadow .2s ease, transform .15s var(--ease-out) !important; }
+.MuiButton-root:active:not(.Mui-disabled),
+.MuiIconButton-root:active:not(.Mui-disabled) { transform: scale(0.96); }
+.MuiIconButton-root:hover:not(.Mui-disabled) .ico { transform: scale(1.08); }
+.MuiIconButton-root .ico { transition: transform .2s var(--ease-spring); }
+
+/* skeletons: moving sheen instead of the default fade */
+.MuiSkeleton-root {
+  background-image: linear-gradient(90deg, transparent 0%, rgba(148, 163, 184, 0.22) 50%, transparent 100%) !important;
+  background-size: 200% 100% !important;
+  animation: shimmer-skeleton 1.4s linear infinite !important;
+}
+.MuiSkeleton-wave::after { display: none !important; }
+
+/* table rows & list items ease in */
+.MuiTableBody-root .MuiTableRow-root { animation: page-in .3s var(--ease-out) both; }
+.MuiTableBody-root .MuiTableRow-root:nth-child(2) { animation-delay: .03s; }
+.MuiTableBody-root .MuiTableRow-root:nth-child(3) { animation-delay: .06s; }
+.MuiTableBody-root .MuiTableRow-root:nth-child(4) { animation-delay: .09s; }
+.MuiTableBody-root .MuiTableRow-root:nth-child(5) { animation-delay: .12s; }
+.MuiTableBody-root .MuiTableRow-root:nth-child(n+6) { animation-delay: .15s; }
+
+/* ---------- spotlight / glow card (Aceternity-style hover) ---------- */
+.glow-card { position: relative; overflow: hidden; isolation: isolate; transition: transform .25s var(--ease-out), border-color .25s ease, box-shadow .25s ease; }
+.glow-card::before {
+  content: ""; position: absolute; inset: 0; z-index: -1; opacity: 0; transition: opacity .3s ease;
+  background: radial-gradient(260px circle at var(--mx, 50%) var(--my, 50%), rgba(6, 147, 227, 0.16), transparent 70%);
+}
+.glow-card:hover { transform: translateY(-2px); border-color: rgba(6, 147, 227, 0.5) !important; box-shadow: 0 10px 30px -12px rgba(11, 66, 121, 0.35); }
+.glow-card:hover::before { opacity: 1; }
+
+/* ---------- shimmer button (Magic UI) ---------- */
+.shimmer-btn { position: relative; overflow: hidden; }
+.shimmer-btn::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(110deg, transparent 35%, rgba(255, 255, 255, 0.28) 50%, transparent 65%);
+  background-size: 250% 100%; animation: shine-sweep 3.2s ease-in-out infinite;
+}
+
+/* ---------- live indicators ---------- */
+.live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--brand-cerulean); animation: pulse-ring 1.8s ease-out infinite; }
+.live-dot.warn { background: #dc2626; animation-name: pulse-ring-red; }
+
+/* new chat bubbles pop in */
+.bubble-in { animation: pop-in .22s var(--ease-out) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+}
+
+/* ---------- animated border beam (Magic UI) ---------- */
+@property --beam-angle { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+@keyframes beam-rotate { to { --beam-angle: 360deg; } }
+.beam { position: relative; border-radius: 18px; }
+.beam::before {
+  content: ""; position: absolute; inset: -1px; border-radius: inherit; padding: 1.5px; pointer-events: none;
+  background: conic-gradient(from var(--beam-angle), transparent 0 62%, var(--brand-cerulean) 78%, var(--brand-gorse) 90%, transparent 100%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+  animation: beam-rotate 5s linear infinite;
+}

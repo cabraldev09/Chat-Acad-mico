@@ -2,6 +2,8 @@ import { getIO } from "../../libs/socket";
 import Message from "../../models/Message";
 import Ticket from "../../models/Ticket";
 import Whatsapp from "../../models/Whatsapp";
+import Tag from "../../models/Tag";
+import dispatchWebhook from "../WebhookServices/DispatchWebhook";
 
 interface MessageData {
   id: string;
@@ -34,9 +36,15 @@ const CreateMessageService = async ({
           "contact",
           "queue",
           {
+            model: Tag,
+            as: "tags",
+            attributes: ["id", "name", "color"],
+            through: { attributes: [] }
+          },
+          {
             model: Whatsapp,
             as: "whatsapp",
-            attributes: ["name"]
+            attributes: ["name", "channel"]
           }
         ]
       },
@@ -51,6 +59,29 @@ const CreateMessageService = async ({
   if (!message) {
     throw new Error("ERR_CREATING_MESSAGE");
   }
+
+  if (
+    message.fromMe &&
+    message.ticket.userId &&
+    !message.ticket.firstResponseAt
+  ) {
+    await message.ticket.update({ firstResponseAt: new Date() });
+  }
+
+  dispatchWebhook(message.fromMe ? "message.sent" : "message.received", {
+    messageId: message.id,
+    ticketId: message.ticketId,
+    body: message.body,
+    mediaType: message.mediaType,
+    mediaUrl: message.mediaUrl,
+    fromMe: message.fromMe,
+    contact: message.ticket.contact && {
+      id: message.ticket.contact.id,
+      name: message.ticket.contact.name,
+      number: message.ticket.contact.number
+    },
+    channel: message.ticket.whatsapp?.channel
+  });
 
   const io = getIO();
   io.to(message.ticketId.toString())

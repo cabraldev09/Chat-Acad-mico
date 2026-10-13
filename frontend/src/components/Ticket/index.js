@@ -108,6 +108,10 @@ const Ticket = () => {
         setTicket(data.ticket);
       }
 
+      if (data.action === "tags" && +data.ticketId === +ticketId) {
+        setTicket((prev) => ({ ...prev, tags: data.tags }));
+      }
+
       if (data.action === "delete") {
         toast.success("Ticket deleted sucessfully.");
         history.push("/tickets");

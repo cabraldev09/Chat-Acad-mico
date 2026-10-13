@@ -1,0 +1,55 @@
+import Whatsapp from "../models/Whatsapp";
+import Contact from "../models/Contact";
+
+export type ChannelType =
+  | "whatsapp"
+  | "telegram"
+  | "webchat"
+  | "messenger"
+  | "instagram"
+  | "whatsapp_cloud";
+
+export interface OutboundMedia {
+  path: string;
+  filename: string;
+  mimetype: string;
+}
+
+export interface ChannelAdapter {
+  type: ChannelType;
+  // Prefix used to build Contact.number from the channel's external id
+  prefix: string;
+  start(whatsapp: Whatsapp): Promise<void>;
+  stop(whatsapp: Whatsapp): Promise<void>;
+  sendText(
+    whatsapp: Whatsapp,
+    contact: Contact,
+    body: string
+  ): Promise<{ id: string }>;
+  sendMedia(
+    whatsapp: Whatsapp,
+    contact: Contact,
+    media: OutboundMedia,
+    caption?: string
+  ): Promise<{ id: string }>;
+}
+
+export const getConfig = (whatsapp: Whatsapp): Record<string, any> => {
+  try {
+    return whatsapp.config ? JSON.parse(whatsapp.config) : {};
+  } catch (e) {
+    return {};
+  }
+};
+
+export const externalIdOf = (contact: Contact, prefix: string): string =>
+  prefix && contact.number.startsWith(prefix)
+    ? contact.number.slice(prefix.length)
+    : contact.number;
+
+export const mediaKindOf = (mimetype: string): "image" | "video" | "audio" | "file" => {
+  if (mimetype.startsWith("image/")) return "image";
+  if (mimetype.startsWith("video/")) return "video";
+  if (mimetype.startsWith("audio/")) return "audio";
+  return "file";
+};
