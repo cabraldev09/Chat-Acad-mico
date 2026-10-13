@@ -21,6 +21,10 @@ import AiAgents from "../pages/AiAgents/";
 import Webhooks from "../pages/Webhooks/";
 import Reports from "../pages/Reports/";
 import LiveMonitor from "../pages/LiveMonitor/";
+import CrmBoard from "../pages/CRM/Board";
+import CrmPanel from "../pages/CRM/Panel";
+import CrmTasks from "../pages/CRM/Tasks";
+import CrmSettings from "../pages/CRM/Settings";
 import { AuthProvider } from "../context/Auth/AuthContext";
 import { WhatsAppsProvider } from "../context/WhatsApp/WhatsAppsContext";
 import { ThemeProvider } from "../context/DarkMode";
@@ -52,6 +56,10 @@ const Routes = () => {
                 <Route exact path="/integrations" component={Webhooks} isPrivate />
                 <Route exact path="/reports" component={Reports} isPrivate />
                 <Route exact path="/monitor" component={LiveMonitor} isPrivate />
+                <Route exact path="/crm" component={CrmBoard} isPrivate />
+                <Route exact path="/crm/painel" component={CrmPanel} isPrivate />
+                <Route exact path="/crm/tarefas" component={CrmTasks} isPrivate />
+                <Route exact path="/crm/config" component={CrmSettings} isPrivate />
               </LoggedInLayout>
             </WhatsAppsProvider>
           </Switch>

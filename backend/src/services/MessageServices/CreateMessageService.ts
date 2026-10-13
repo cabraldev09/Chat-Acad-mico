@@ -4,6 +4,7 @@ import Ticket from "../../models/Ticket";
 import Whatsapp from "../../models/Whatsapp";
 import Tag from "../../models/Tag";
 import dispatchWebhook from "../WebhookServices/DispatchWebhook";
+import { hookInbound, hookHumanReply } from "../CrmServices/LeadCore";
 
 interface MessageData {
   id: string;
@@ -66,6 +67,14 @@ const CreateMessageService = async ({
     !message.ticket.firstResponseAt
   ) {
     await message.ticket.update({ firstResponseAt: new Date() });
+  }
+
+  if (!message.ticket.isGroup) {
+    if (!message.fromMe) {
+      hookInbound(message.ticket.contactId, message.ticket.whatsapp?.channel);
+    } else if (message.ticket.userId) {
+      hookHumanReply(message.ticket.contactId, message.ticket.userId);
+    }
   }
 
   dispatchWebhook(message.fromMe ? "message.sent" : "message.received", {

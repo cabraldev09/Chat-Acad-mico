@@ -16,7 +16,7 @@ import {
 } from "./types";
 
 const PREFIX = "tg_";
-const API = "https://api.telegram.org";
+const API = process.env.TELEGRAM_API_URL || "https://api.telegram.org";
 const running = new Map<number, { stop: boolean }>();
 
 const call = async (token: string, method: string, data?: any, timeout = 30000) => {

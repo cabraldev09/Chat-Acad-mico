@@ -14,6 +14,7 @@ import Paper from "@material-ui/core/Paper";
 import { i18n } from "../../translate/i18n";
 
 import ContactModal from "../ContactModal";
+import LeadCard from "../LeadCard";
 import ContactDrawerSkeleton from "../ContactDrawerSkeleton";
 import MarkdownWrapper from "../MarkdownWrapper";
 
@@ -129,6 +130,9 @@ const ContactDrawer = ({ open, handleDrawerClose, contact, loading }) => {
 							{i18n.t("contactDrawer.buttons.edit")}
 						</Button>
 					</Paper>
+					<div style={{ padding: "8px 12px 0" }}>
+						<LeadCard contactId={contact.id} />
+					</div>
 					<Paper square variant="outlined" className={classes.contactDetails}>
 						<ContactModal
 							open={modalOpen}

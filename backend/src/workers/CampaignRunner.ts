@@ -68,7 +68,16 @@ const processCampaign = async (campaign: Campaign): Promise<void> => {
         contact,
         whatsapp,
         body: formatBody(body, contact),
-        mediaUrl: fresh.mediaUrl
+        mediaUrl: fresh.mediaUrl,
+        template:
+          whatsapp.channel === "whatsapp_cloud" && fresh.templateName
+            ? {
+                name: fresh.templateName,
+                language: fresh.templateLanguage || "pt_BR",
+                // {{1}} of the approved template receives the lead's first name
+                params: [(shipping.name || contact.name || "").split(" ")[0]]
+              }
+            : null
       });
       await shipping.update({ status: "sent", sentAt: new Date(), message: body, error: null });
     } catch (err) {

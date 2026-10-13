@@ -1,0 +1,42 @@
+export const CRM_OPTIONS = {
+  sources: [
+    "WhatsApp",
+    "Instagram",
+    "Facebook",
+    "Telegram",
+    "Site / formulário",
+    "Google",
+    "Indicação",
+    "Evento / feira",
+    "Visita presencial",
+    "Ligação",
+    "Importação",
+    "Outro"
+  ],
+  modalities: ["Presencial", "EAD", "Semipresencial"],
+  shifts: ["Manhã", "Tarde", "Noite", "Flexível (EAD)"],
+  financing: ["Bolsa da instituição", "FIES", "ProUni", "Financiamento próprio", "Pagamento particular", "Ainda não sabe"],
+  educationLevels: ["Ensino médio cursando", "Ensino médio completo", "Superior cursando", "Superior completo", "Técnico"],
+  lostReasons: [
+    "Preço / mensalidade",
+    "Escolheu outra instituição",
+    "Sem resposta",
+    "Horário incompatível",
+    "Curso indisponível",
+    "Desistiu de estudar",
+    "Sem documentação",
+    "Reprovou / não elegível",
+    "Outro"
+  ],
+  taskTypes: ["ligar", "whatsapp", "email", "visita", "proposta", "documentos", "outro"]
+};
+
+export const channelSource = (channel?: string): string =>
+  ({
+    whatsapp: "WhatsApp",
+    whatsapp_cloud: "WhatsApp",
+    telegram: "Telegram",
+    messenger: "Facebook",
+    instagram: "Instagram",
+    webchat: "Site / formulário"
+  } as Record<string, string>)[channel || ""] || "Outro";

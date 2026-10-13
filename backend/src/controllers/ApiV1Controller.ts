@@ -59,6 +59,28 @@ export const upsertContact = async (req: Request, res: Response): Promise<Respon
   return res.status(201).json(created);
 };
 
+export const leads = async (req: Request, res: Response): Promise<Response> => {
+  const { default: Lead } = await import("../models/Lead");
+  const { leadInclude } = await import("../services/CrmServices/LeadCore");
+  const rows = await Lead.findAll({
+    include: leadInclude as any,
+    order: [["id", "DESC"]],
+    limit: Math.min(Number(req.query.limit) || 50, 200)
+  });
+  return res.json(rows);
+};
+
+export const createLead = async (req: Request, res: Response): Promise<Response> => {
+  const { upsertLead } = await import("../services/CrmServices/LeadCore");
+  const { normalizePhone, normalizeEmail } = await import("../helpers/Phone");
+  const b = req.body || {};
+  if (!normalizePhone(b.phone) && !normalizeEmail(b.email)) {
+    throw new AppError("ERR_LEAD_NEEDS_PHONE_OR_EMAIL");
+  }
+  const { lead, created } = await upsertLead({ ...b, name: b.name, source: b.source || "API" });
+  return res.status(created ? 201 : 200).json({ created, lead });
+};
+
 export const connections = async (_req: Request, res: Response): Promise<Response> => {
   const rows = await ListWhatsAppsService();
   return res.json(

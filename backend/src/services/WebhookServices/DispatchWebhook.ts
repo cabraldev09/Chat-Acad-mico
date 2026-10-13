@@ -10,7 +10,12 @@ export const WEBHOOK_EVENTS = [
   "ticket.created",
   "ticket.updated",
   "ticket.closed",
-  "contact.created"
+  "contact.created",
+  "lead.created",
+  "lead.updated",
+  "lead.stage_changed",
+  "lead.won",
+  "lead.lost"
 ];
 
 const dispatchWebhook = (event: string, data: unknown): void => {

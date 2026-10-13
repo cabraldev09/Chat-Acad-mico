@@ -9,5 +9,7 @@ router.get("/tickets", isAuthApi, ApiV1.tickets);
 router.get("/contacts", isAuthApi, ApiV1.contacts);
 router.post("/contacts", isAuthApi, ApiV1.upsertContact);
 router.get("/connections", isAuthApi, ApiV1.connections);
+router.get("/leads", isAuthApi, ApiV1.leads);
+router.post("/leads", isAuthApi, ApiV1.createLead);
 
 export default router;

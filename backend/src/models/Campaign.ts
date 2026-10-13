@@ -50,6 +50,12 @@ class Campaign extends Model<Campaign> {
   @Column
   finishedAt: Date;
 
+  @Column
+  templateName: string;
+
+  @Column
+  templateLanguage: string;
+
   @Default(20)
   @Column
   intervalMin: number;

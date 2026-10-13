@@ -17,6 +17,27 @@ com recursos de plano pago construídos do zero: canais extras, chatbot, IA, cam
 | Estatísticas e monitor ao vivo | Estatísticas / Monitor ao vivo |
 | API com tokens e webhooks de saída assinados (HMAC) | API & Webhooks |
 
+## CRM de captação (ensino superior)
+
+Funil de matrícula pensado para acompanhar leads do ensino superior, integrado ao atendimento:
+
+* **Todo contato que escreve vira lead** automaticamente, em qualquer canal (grupos não entram). Contatos já existentes são
+  cadastrados na inicialização; sem duplicar (telefone, e-mail ou contato).
+* **Funil Kanban** com arrastar-e-soltar (Novo lead → Primeiro contato → Qualificado → Visita/aula experimental → Proposta →
+  Matrícula em andamento → Matriculado / Perdido). Etapas e cursos editáveis. Motivo obrigatório ao marcar como perdido.
+* **Ficha do lead**: curso, modalidade, turno, ingresso, forma de pagamento, ENEM, origem/UTM, linha do tempo, tarefas com
+  lembrete em tempo real, pontuação (0–100) explicável e botão que abre a conversa.
+* **Distribuição** em rodízio entre consultores; o primeiro atendimento move o lead de etapa e mede o tempo até o 1º contato.
+* **Captação**: formulário público com consentimento LGPD (embutível por `iframe`, grava UTMs), importação por CSV e
+  `POST /api/v1/leads` para RD Station, Zapier/Make, landing pages.
+* **Painel**: conversão, funil acumulado, origem, cursos, motivos de perda, desempenho por consultor, alertas (sem 1º contato,
+  tarefas atrasadas, leads esfriando). Webhooks: `lead.created`, `lead.stage_changed`, `lead.won`, `lead.lost`.
+
+## Testes
+
+`npm --prefix backend run test:channels` sobe o backend com um banco descartável e servidores falsos do Telegram e da Graph API
+da Meta, e verifica canais, assinatura de webhooks, mídia, chatbot, CRM e campanhas com modelo (46 verificações).
+
 ## Rodando localmente (macOS)
 
 Requisitos: Node 22, MariaDB/MySQL e Google Chrome (usado pelo `whatsapp-web.js`).

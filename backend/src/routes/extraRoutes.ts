@@ -14,6 +14,7 @@ import * as Schedule from "../controllers/ScheduleController";
 import * as Campaign from "../controllers/CampaignController";
 import * as Stats from "../controllers/StatsController";
 import * as Channel from "../controllers/ChannelController";
+import * as Lead from "../controllers/LeadController";
 
 const upload = multer({ ...uploadConfig, limits: { fileSize: 30 * 1024 * 1024 } });
 const r = express.Router();
@@ -93,5 +94,40 @@ r.get("/stats/live", isAuth, isAdmin, Stats.live);
 // channels
 r.get("/channels", isAuth, Channel.index);
 r.get("/channels/:whatsappId/info", isAuth, isAdmin, Channel.info);
+
+// ------------------------------------------------------------------- CRM
+r.get("/crm/options", isAuth, Lead.options);
+r.get("/crm/board", isAuth, Lead.board);
+r.get("/crm/metrics", isAuth, Lead.metrics);
+r.post("/crm/backfill", isAuth, isAdmin, Lead.backfill);
+r.get("/crm/settings", isAuth, isAdmin, Lead.getSettings);
+r.put("/crm/settings", isAuth, isAdmin, Lead.putSettings);
+r.get("/lead-stages", isAuth, Lead.stages.index);
+r.post("/lead-stages", isAuth, isAdmin, Lead.stages.store);
+r.put("/lead-stages/:id", isAuth, isAdmin, Lead.stages.update);
+r.delete("/lead-stages/:id", isAuth, isAdmin, Lead.stages.remove);
+r.get("/courses", isAuth, Lead.courses.index);
+r.post("/courses", isAuth, isAdmin, Lead.courses.store);
+r.put("/courses/:id", isAuth, isAdmin, Lead.courses.update);
+r.delete("/courses/:id", isAuth, isAdmin, Lead.courses.remove);
+
+r.get("/leads", isAuth, Lead.index);
+r.post("/leads", isAuth, Lead.store);
+r.post("/leads/import", isAuth, Lead.importLeads);
+r.get("/leads/by-contact/:contactId", isAuth, Lead.byContact);
+r.post("/leads/from-contact/:contactId", isAuth, Lead.fromContact);
+r.get("/leads/:id", isAuth, Lead.show);
+r.put("/leads/:id", isAuth, Lead.update);
+r.delete("/leads/:id", isAuth, isAdmin, Lead.remove);
+r.put("/leads/:id/stage", isAuth, Lead.setStage);
+r.get("/leads/:id/activities", isAuth, Lead.activities);
+r.post("/leads/:id/activities", isAuth, Lead.addNote);
+r.get("/leads/:id/tasks", isAuth, Lead.leadTasks);
+r.post("/leads/:id/tasks", isAuth, Lead.addTask);
+r.post("/leads/:id/open-ticket", isAuth, Lead.openTicket);
+r.get("/lead-tasks", isAuth, Lead.tasksIndex);
+r.put("/leads/:id/tasks/:taskId", isAuth, Lead.updateTask);
+r.post("/leads/:id/tasks/:taskId/toggle", isAuth, Lead.completeTask);
+r.delete("/leads/:id/tasks/:taskId", isAuth, Lead.removeTask);
 
 export default r;

@@ -32,6 +32,13 @@ export interface ChannelAdapter {
     media: OutboundMedia,
     caption?: string
   ): Promise<{ id: string }>;
+  // Approved message templates (WhatsApp Cloud API: required to start a
+  // conversation outside the 24h customer service window)
+  sendTemplate?(
+    whatsapp: Whatsapp,
+    contact: Contact,
+    template: { name: string; language: string; params: string[] }
+  ): Promise<{ id: string }>;
 }
 
 export const getConfig = (whatsapp: Whatsapp): Record<string, any> => {

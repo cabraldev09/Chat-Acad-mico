@@ -18,7 +18,13 @@ import {
   mediaKindOf
 } from "./types";
 
-const GRAPH = "https://graph.facebook.com/v21.0";
+// Unversioned by default so Meta serves the app's default API version (pinned
+// versions expire). Set META_GRAPH_VERSION=vNN.0 to pin, GRAPH_API_URL to override.
+const GRAPH =
+  process.env.GRAPH_API_URL ||
+  `https://graph.facebook.com${
+    process.env.META_GRAPH_VERSION ? `/${process.env.META_GRAPH_VERSION}` : ""
+  }`;
 
 // ---------------------------------------------------------------------------
 // Messenger + Instagram (same Send API shape, different ids)
@@ -148,6 +154,32 @@ export const whatsappCloud: ChannelAdapter = {
         to: contact.number,
         type: "text",
         text: { body, preview_url: false }
+      },
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+    return { id: data.messages[0].id };
+  },
+
+  async sendTemplate(whatsapp, contact: Contact, template) {
+    const { accessToken, phoneNumberId } = getConfig(whatsapp);
+    const { data } = await axios.post(
+      `${GRAPH}/${phoneNumberId}/messages`,
+      {
+        messaging_product: "whatsapp",
+        to: contact.number,
+        type: "template",
+        template: {
+          name: template.name,
+          language: { code: template.language || "pt_BR" },
+          components: template.params.length
+            ? [
+                {
+                  type: "body",
+                  parameters: template.params.map(text => ({ type: "text", text }))
+                }
+              ]
+            : []
+        }
       },
       { headers: { Authorization: `Bearer ${accessToken}` } }
     );

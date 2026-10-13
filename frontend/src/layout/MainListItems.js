@@ -24,6 +24,10 @@ import VisibilityOutlinedIcon from "@material-ui/icons/VisibilityOutlined";
 import AndroidIcon from "@material-ui/icons/Android";
 import AccountTreeIcon from "@material-ui/icons/AccountTree";
 import CodeIcon from "@material-ui/icons/Code";
+import KanbanSquareIcon from "lucide-react/dist/esm/icons/kanban-square";
+import TrendingUpIcon from "lucide-react/dist/esm/icons/trending-up";
+import ListTodoIcon from "lucide-react/dist/esm/icons/list-todo";
+import GraduationCapIcon from "lucide-react/dist/esm/icons/graduation-cap";
 
 import { i18n } from "../translate/i18n";
 import { WhatsAppsContext } from "../context/WhatsApp/WhatsAppsContext";
@@ -204,6 +208,13 @@ const MainListItems = (props) => {
         icon={<QuestionAnswerOutlinedIcon />}
         collapsed={collapsed}
       />
+      {!collapsed && (
+        <ListSubheader disableSticky className={classes.sectionLabel}>CRM</ListSubheader>
+      )}
+      <ListItemLink to="/crm" primary="Funil de captação" icon={<KanbanSquareIcon className="ico" />} collapsed={collapsed} />
+      <ListItemLink to="/crm/painel" primary="Painel do CRM" icon={<TrendingUpIcon className="ico" />} collapsed={collapsed} />
+      <ListItemLink to="/crm/tarefas" primary="Tarefas" icon={<ListTodoIcon className="ico" />} collapsed={collapsed} />
+      <Divider className={classes.divider} />
       <ListItemLink
         to="/schedules"
         primary="Agendamentos"
@@ -243,6 +254,12 @@ const MainListItems = (props) => {
               to="/queues"
               primary={i18n.t("mainDrawer.listItems.queues")}
               icon={<AccountTreeOutlinedIcon />}
+              collapsed={collapsed}
+            />
+            <ListItemLink
+              to="/crm/config"
+              primary="Configurar CRM"
+              icon={<GraduationCapIcon className="ico" />}
               collapsed={collapsed}
             />
             <ListItemLink

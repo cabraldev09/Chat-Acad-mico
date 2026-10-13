@@ -22,6 +22,12 @@ import Campaign from "../models/Campaign";
 import CampaignShipping from "../models/CampaignShipping";
 import ChatbotNode from "../models/ChatbotNode";
 import AiAgent from "../models/AiAgent";
+import LeadStage from "../models/LeadStage";
+import Course from "../models/Course";
+import Lead from "../models/Lead";
+import LeadActivity from "../models/LeadActivity";
+import LeadTask from "../models/LeadTask";
+import LeadTag from "../models/LeadTag";
 
 // eslint-disable-next-line
 const dbConfig = require("../config/database");
@@ -52,7 +58,13 @@ const models = [
   Campaign,
   CampaignShipping,
   ChatbotNode,
-  AiAgent
+  AiAgent,
+  LeadStage,
+  Course,
+  Lead,
+  LeadActivity,
+  LeadTask,
+  LeadTag
 ];
 
 sequelize.addModels(models);

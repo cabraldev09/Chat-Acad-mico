@@ -20,6 +20,7 @@ import NotificationsPopOver from "../components/NotificationsPopOver";
 import SidebarUserMenu from "../components/SidebarUserMenu";
 import { AuthContext } from "../context/Auth/AuthContext";
 import BackdropLoading from "../components/BackdropLoading";
+import CrmReminders from "../components/CrmReminders";
 import { i18n } from "../translate/i18n";
 import { useThemeContext } from "../context/DarkMode";
 import logoLight from "../assets/whaticket-logo-black.png";
@@ -203,6 +204,7 @@ const LoggedInLayout = ({ children }) => {
           {user.id && <NotificationsPopOver />}
         </Toolbar>
       </AppBar>
+      <CrmReminders />
       <main className={classes.content}>
         <div key={location.pathname.split("/")[1]} className="page-enter">
           <div className={classes.appBarSpacer} />

@@ -11,6 +11,8 @@ import ShowTicketService from "../TicketServices/ShowTicketService";
 import UpdateTicketService from "../TicketServices/UpdateTicketService";
 import SendWhatsAppMessage from "../WbotServices/SendWhatsAppMessage";
 import SendWhatsAppMedia from "../WbotServices/SendWhatsAppMedia";
+import CreateMessageService from "../MessageServices/CreateMessageService";
+import { getAdapter } from "../../channels";
 
 const PUBLIC_DIR = path.resolve(__dirname, "..", "..", "..", "public");
 
@@ -19,6 +21,7 @@ interface Input {
   whatsapp: Whatsapp;
   body: string;
   mediaUrl?: string | null;
+  template?: { name: string; language: string; params: string[] } | null;
 }
 
 // Sends an outbound (agent/system initiated) message to a contact through any
@@ -29,13 +32,30 @@ const SendToContact = async ({
   contact,
   whatsapp,
   body,
-  mediaUrl
+  mediaUrl,
+  template
 }: Input): Promise<void> => {
   const found = await FindOrCreateTicketService(contact, whatsapp.id, 0);
   const ticket = await ShowTicketService(found.id);
   const hadMessages = (await Message.count({ where: { ticketId: ticket.id } })) > 0;
 
-  if (mediaUrl) {
+  if (template && whatsapp.channel === "whatsapp_cloud") {
+    const adapter = getAdapter("whatsapp_cloud");
+    if (!adapter.sendTemplate) throw new AppError("ERR_TEMPLATES_UNSUPPORTED");
+    const sent = await adapter.sendTemplate(whatsapp, ticket.contact as any, template);
+    await CreateMessageService({
+      messageData: {
+        id: sent.id,
+        ticketId: ticket.id,
+        body: body || `[Modelo: ${template.name}]`,
+        fromMe: true,
+        read: true,
+        mediaType: "chat",
+        ack: 1
+      }
+    });
+    await ticket.update({ lastMessage: body || `[Modelo: ${template.name}]` });
+  } else if (mediaUrl) {
     const source = path.join(PUBLIC_DIR, mediaUrl);
     if (!fs.existsSync(source)) throw new AppError("ERR_MEDIA_NOT_FOUND");
     // SendWhatsAppMedia consumes (deletes) the file it sends, so hand it a copy

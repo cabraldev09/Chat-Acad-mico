@@ -3,6 +3,8 @@ import { Op } from "sequelize";
 import Contact from "../../models/Contact";
 import Ticket from "../../models/Ticket";
 import dispatchWebhook from "../WebhookServices/DispatchWebhook";
+import Whatsapp from "../../models/Whatsapp";
+import { hookTicketCreated } from "../CrmServices/LeadCore";
 import ShowTicketService from "./ShowTicketService";
 
 const FindOrCreateTicketService = async (
@@ -78,6 +80,7 @@ const FindOrCreateTicketService = async (
       unreadMessages,
       whatsappId
     });
+    hookTicketCreated(contact, (await Whatsapp.findByPk(whatsappId))?.channel || "whatsapp");
     dispatchWebhook("ticket.created", {
       ticketId: ticket.id,
       contactId: ticket.contactId,

@@ -22,7 +22,9 @@ const crud = makeCrud(Campaign, {
     "batchSize",
     "batchPause",
     "contactListId",
-    "whatsappId"
+    "whatsappId",
+    "templateName",
+    "templateLanguage"
   ],
   required: ["name", "message", "contactListId"],
   include: [

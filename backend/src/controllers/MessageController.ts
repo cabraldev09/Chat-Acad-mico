@@ -9,6 +9,7 @@ import ShowTicketService from "../services/TicketServices/ShowTicketService";
 import DeleteWhatsAppMessage from "../services/WbotServices/DeleteWhatsAppMessage";
 import SendWhatsAppMedia from "../services/WbotServices/SendWhatsAppMedia";
 import SendWhatsAppMessage from "../services/WbotServices/SendWhatsAppMessage";
+import { hookHumanReply } from "../services/CrmServices/LeadCore";
 
 type IndexQuery = {
   pageNumber: string;
@@ -53,6 +54,8 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
   } else {
     await SendWhatsAppMessage({ body, ticket, quotedMsg });
   }
+
+  hookHumanReply(ticket.contactId, Number(req.user.id));
 
   return res.send();
 };
