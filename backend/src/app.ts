@@ -59,6 +59,7 @@ app.use(
       req.rawBody = buf;
     }
   }),
+  express.urlencoded({ extended: false }),
   metaWebhookRoutes,
   efiWebhookRoutes
 );

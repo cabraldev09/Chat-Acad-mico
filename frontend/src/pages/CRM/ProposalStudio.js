@@ -314,8 +314,8 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
                 label="1ª mensalidade isenta"
               />
               <div className={classes.grid2}>
-                {field("firstDueDate", f.firstExempt ? "Vencimento da 1ª (isenta)" : "Vencimento da 1ª mensalidade", { type: "date", InputLabelProps: { shrink: true }, disabled: !!locked })}
-                {f.firstExempt && field("secondDueDate", "Vencimento da 2ª mensalidade", { type: "date", InputLabelProps: { shrink: true }, disabled: !!locked })}
+                {field("firstDueDate", f.firstExempt ? "1ª (isenta) vence em" : "1ª mensalidade vence em", { type: "date", InputLabelProps: { shrink: true }, disabled: !!locked })}
+                {f.firstExempt && field("secondDueDate", "2ª mensalidade vence em", { type: "date", InputLabelProps: { shrink: true }, disabled: !!locked })}
               </div>
               {field("installmentsFixed", "Total de parcelas do curso (vazio = até o fim do curso)", { disabled: !!locked, type: "number", inputProps: { min: 1, max: 120 } })}
               <FormControlLabel

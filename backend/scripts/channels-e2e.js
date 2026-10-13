@@ -54,6 +54,8 @@ const tg = { updates: [], sent: [], offset: 0, n: 100 };
 const graph = { sent: [], media: [], n: 0 };
 const efi = { charges: {}, calls: [], webhook: null, authOk: 0 };
 const EFI_PORT = 9103;
+const BILLET_PORT = 9104;
+const billet = { charges: {}, calls: [], notifications: {}, n: 500 };
 
 const startTelegramMock = () => {
   const app = express();
@@ -116,6 +118,37 @@ const startGraphMock = () => {
   return new Promise(r => { const s = app.listen(GRAPH_PORT, () => r(s)); });
 };
 
+// Efí Cobranças (boleto / Bolix) — OAuth with Basic auth, no mTLS
+const startBilletMock = () => {
+  const app = express();
+  app.use(express.json());
+  app.post("/v1/authorize", (req, res) => {
+    const basic = Buffer.from(String(req.headers.authorization || "").replace("Basic ", ""), "base64").toString();
+    if (basic !== "Client_Id_test:Client_Secret_test") return res.status(401).json({ error: "invalid_client" });
+    return res.json({ access_token: "bt-123", expires_in: 600 });
+  });
+  const guard = (req, res, next) => (req.headers.authorization === "Bearer bt-123" ? next() : res.status(401).json({ error: "sem token" }));
+  app.post("/v1/charge/one-step", guard, (req, res) => {
+    billet.n += 1;
+    const id = billet.n;
+    billet.calls.push({ method: "POST", path: req.path, body: req.body });
+    billet.charges[id] = { status: "waiting", body: req.body };
+    res.json({ code: 200, data: { charge_id: id, status: "waiting", total: req.body.items[0].value, custom_id: req.body.metadata.custom_id, barcode: `34191.79001 01043.510047 91020.150008 5 8${id}`, billet_link: `https://boleto.example/${id}`, pdf: { charge: `https://boleto.example/${id}.pdf` }, expire_at: req.body.payment.banking_billet.expire_at, pix: { qrcode: `00020126BOLIX${id}`, qrcode_image: `data:image/png;base64,${PNG.toString("base64")}` } } });
+  });
+  app.get("/v1/charge/:id", guard, (req, res) => {
+    const c = billet.charges[req.params.id];
+    if (!c) return res.status(404).json({ error: "not found" });
+    return res.json({ code: 200, data: { charge_id: Number(req.params.id), status: c.status, total: c.body.items[0].value } });
+  });
+  app.put("/v1/charge/:id/cancel", guard, (req, res) => {
+    billet.calls.push({ method: "PUT", path: req.path });
+    if (billet.charges[req.params.id]) billet.charges[req.params.id].status = "canceled";
+    res.json({ code: 200 });
+  });
+  app.get("/v1/notification/:token", guard, (req, res) => res.json({ code: 200, data: (billet.notifications[req.params.token] || []).map(id => ({ identifiers: { charge_id: id }, status: { current: "paid" } })) }));
+  return new Promise(r => { const s3 = app.listen(BILLET_PORT, () => r(s3)); });
+};
+
 const startEfiMock = () => {
   const app = express();
   app.use(express.json());
@@ -161,6 +194,7 @@ const assert = (c, m) => { if (!c) throw new Error(m || "assertion failed"); };
 let token;
 const http = axios.create({ baseURL: API, validateStatus: () => true });
 const auth = () => ({ headers: { Authorization: `Bearer ${token}` } });
+const asUser = t => ({ headers: { Authorization: `Bearer ${t}` } });
 
 const createConnection = async (name, channel, config) => {
   const r = await http.post("/whatsapp", { name, channel, config: JSON.stringify(config) }, auth());
@@ -194,17 +228,19 @@ const postMeta = (id, payload, secret, badSig) => {
       PORT: String(PORT), PROXY_PORT: String(PORT), BACKEND_URL: "http://localhost", PUBLIC_URL: API,
       FRONTEND_URL: "http://localhost:3000", JWT_SECRET: "e2e", JWT_REFRESH_SECRET: "e2e-r",
       TELEGRAM_API_URL: `http://localhost:${TG_PORT}`, GRAPH_API_URL: `http://localhost:${GRAPH_PORT}`,
-      SKIP_WHATSAPP_SESSIONS: "1", LOG_LEVEL: "warn", EFI_API_URL: `http://localhost:${EFI_PORT}`, EFI_POLL_MS: "1500"
+      SKIP_WHATSAPP_SESSIONS: "1", LOG_LEVEL: "warn", EFI_API_URL: `http://localhost:${EFI_PORT}`, EFI_BILLET_API_URL: `http://localhost:${BILLET_PORT}`, EFI_POLL_MS: "1500"
     };
     execFileSync("npx", ["sequelize", "db:migrate"], { cwd: ROOT, env, stdio: "ignore" });
     execFileSync("npx", ["sequelize", "db:seed:all"], { cwd: ROOT, env, stdio: "ignore" });
     await startTelegramMock();
     await startGraphMock();
     await startEfiMock();
+    await startBilletMock();
     backend = spawn("node", ["dist/server.js"], { cwd: ROOT, env, stdio: ["ignore", "pipe", "pipe"] });
     let log = "";
     backend.stdout.on("data", d => (log += d));
     backend.stderr.on("data", d => (log += d));
+    global.__backendLog = () => log;
     await waitFor(async () => (await axios.post(`${API}/auth/login`, { email: "admin@whaticket.com", password: "admin" }, { validateStatus: () => true })).status === 200, 30000, "backend up");
     token = (await axios.post(`${API}/auth/login`, { email: "admin@whaticket.com", password: "admin" })).data.token;
 
@@ -740,6 +776,87 @@ const postMeta = (id, payload, secret, badSig) => {
       await waitFor(() => sql(`SELECT status FROM Payments WHERE id=${p.id}`) === "paid", 12000, "poller detection");
       assert(/matr/i.test(stageName(l.id)), `stage ${stageName(l.id)}`);
     });
+    // --------------------------------------------------- Bolix + split to the consultant
+    // fresh, valid CPFs (a CPF identifies one lead, so tests must not reuse them)
+    const cpfFor = n => {
+      const d = String(n).padStart(9, "0").split("").map(Number);
+      const dv = (arr, w) => { const t = arr.reduce((a, x, i) => a + x * (w - i), 0) % 11; return t < 2 ? 0 : 11 - t; };
+      const d1 = dv(d, 10); const d2 = dv([...d, d1], 11);
+      return [...d, d1, d2].join("");
+    };
+    const ymdPlus = d => new Date(Date.now() + d * 86400000).toISOString().slice(0, 10);
+    let bolix, bolixLead, bolixConsultantToken, bolixConsultantId;
+    await test("Bolix routes the fee to the consultant's Efí account, or to the company when none is set", async () => {
+      const mkUser = async (name, email) => (await http.post("/users", { name, email, password: "senha123", role: "consultor" }, auth())).data;
+      const cons = await mkUser("Consultora Bolix", "bolix@polo.test");
+      bolixConsultantId = cons.id;
+      bolixConsultantToken = (await http.post("/auth/login", { email: "bolix@polo.test", password: "senha123" })).data.token;
+      // a consultant sees only "informed" + the last digits, never the code back
+      assert((await http.put("/me/efi", { payeeCode: "xx" }, asUser(bolixConsultantToken))).status === 400, "short code accepted");
+      const saved = (await http.put("/me/efi", { payeeCode: "A1b2C3d4E5f6" }, asUser(bolixConsultantToken))).data;
+      assert(saved.informed === true && saved.masked === "••••E5f6" || saved.masked.endsWith("f6"), `masked ${JSON.stringify(saved)}`);
+      assert(!JSON.stringify((await http.get("/me/efi", asUser(bolixConsultantToken))).data).includes("A1b2C3d4"), "payee code leaked back");
+
+      bolixLead = await mkLead("Aluno Bolix", "5511955551001", { ownerId: bolixConsultantId });
+      await http.put(`/leads/${bolixLead.id}`, { cpf: cpfFor(123456780) }, auth());
+      const due = ymdPlus(2); // inside the "N days before" window: created right away
+      const r = await http.post(`/leads/${bolixLead.id}/payments`, { method: "bolix", dueDate: due, amount: "99" }, auth());
+      assert(r.status === 201, `bolix ${r.status} ${JSON.stringify(r.data)}`);
+      bolix = r.data;
+      assert(bolix.method === "bolix" && bolix.status === "pending", `status ${bolix.status}`);
+      const call = billet.calls.filter(c => c.method === "POST").pop();
+      assert(call, "Efí Cobranças not called");
+      const item = call.body.items[0];
+      assert(item.value === 9900, `value ${item.value}`);
+      assert(item.marketplace && item.marketplace.repasses[0].payee_code === "A1b2C3d4E5f6" && item.marketplace.repasses[0].percentage === 10000, `split ${JSON.stringify(item.marketplace)}`);
+      assert(call.body.payment.banking_billet.expire_at === due && call.body.payment.banking_billet.customer.cpf === cpfFor(123456780), "billet payload");
+      const row = sql(`SELECT CONCAT(status,'|',method,'|',recipientCode,'|',splitPct) FROM Payments WHERE id=${bolix.id}`);
+      assert(row === "pending|bolix|A1b2C3d4E5f6|100", `row ${row}`);
+
+      // a lead whose consultant has no account falls back to the company account (no split)
+      const plain = await mkLead("Aluno Sem Conta", "5511955551002", { ownerId: 1 });
+      await http.put(`/leads/${plain.id}`, { cpf: cpfFor(123456781) }, auth());
+      await http.post(`/leads/${plain.id}/payments`, { method: "bolix", dueDate: due }, auth());
+      const call2 = billet.calls.filter(c => c.method === "POST").pop();
+      assert(!call2.body.items[0].marketplace, "split sent without a registered account");
+      assert((await http.post(`/leads/${plain.id}/payments`, { method: "bolix", dueDate: "2020-01-01", force: true }, auth())).status === 400, "past due date accepted");
+    });
+    await test("a far due date schedules the charge: created later, with a task for the consultant", async () => {
+      const l = await mkLead("Aluno Agendado", "5511955551003", { ownerId: bolixConsultantId });
+      await http.put(`/leads/${l.id}`, { cpf: cpfFor(123456782) }, auth());
+      const callsBefore = billet.calls.length;
+      const r = await http.post(`/leads/${l.id}/payments`, { method: "bolix", dueDate: ymdPlus(40) }, auth());
+      assert(r.status === 201 && r.data.status === "scheduled", `status ${r.data.status}`);
+      assert(billet.calls.length === callsBefore, "charge created too early");
+      sql(`UPDATE Payments SET generateAt=NOW() - INTERVAL '1 minute' WHERE id=${r.data.id}`);
+      await waitFor(() => sql(`SELECT status FROM Payments WHERE id=${r.data.id}`) === "pending", 12000, "scheduled charge issued");
+      assert(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${l.id} AND userId=${bolixConsultantId} AND title LIKE 'Enviar o boleto%'`) === "1", "no reminder task for the consultant");
+    });
+    await test("a Bolix payment is confirmed only after Efí itself says so", async () => {
+      const secret = (await http.get("/payments/efi/settings", auth())).data.webhookUrl.split("/").pop();
+      const chargeId = sql(`SELECT chargeId FROM Payments WHERE id=${bolix.id}`);
+      billet.notifications.forged = []; // a token that names no charge
+      await http.post(`/webhooks/efi/${secret}/billet`, "notification=forged", { headers: { "content-type": "application/x-www-form-urlencoded" } });
+      await sleep(900);
+      assert(sql(`SELECT status FROM Payments WHERE id=${bolix.id}`) === "pending", "forged notification changed the payment");
+      billet.notifications.real = [chargeId];
+      await http.post(`/webhooks/efi/${secret}/billet`, "notification=real", { headers: { "content-type": "application/x-www-form-urlencoded" } });
+      await sleep(900);
+      assert(sql(`SELECT status FROM Payments WHERE id=${bolix.id}`) === "pending", "notification alone must not mark it paid");
+      billet.charges[chargeId].status = "paid";
+      await http.post(`/webhooks/efi/${secret}/billet`, "notification=real", { headers: { "content-type": "application/x-www-form-urlencoded" } });
+      await waitFor(() => sql(`SELECT status FROM Payments WHERE id=${bolix.id}`) === "paid", 8000, "bolix paid");
+      assert(/matr/i.test(stageName(bolixLead.id)), `stage ${stageName(bolixLead.id)}`);
+    });
+    await test("an open Bolix can be cancelled at Efí", async () => {
+      const l = await mkLead("Aluno Bolix Cancela", "5511955551004");
+      await http.put(`/leads/${l.id}`, { cpf: cpfFor(123456783) }, auth());
+      const p = (await http.post(`/leads/${l.id}/payments`, { method: "bolix", dueDate: ymdPlus(3) }, auth())).data;
+      assert(p.status === "pending", `status ${p.status}`);
+      const r = await http.post(`/payments/${p.id}/cancel`, {}, auth());
+      assert(r.status === 200 && r.data.status === "cancelled", "cancel");
+      assert(billet.calls.some(c => c.method === "PUT" && c.path.endsWith("/cancel")), "Efí not told");
+    });
     await test("an open charge can be cancelled at Efí", async () => {
       const l = await mkLead("Aluno Cancela", "5511955550003");
       await http.put(`/leads/${l.id}`, { cpf: "935.411.347-80" }, auth());
@@ -763,7 +880,6 @@ const postMeta = (id, payload, secret, badSig) => {
 
     // ------------------------------------------------ hardening / transfer / safety
     console.log("\nSegurança, transferência de setor e proteção da API não oficial");
-    const asUser = t => ({ headers: { Authorization: `Bearer ${t}` } });
     let agentToken, agentId, qA, qB;
     await test("public signup is closed by default", async () => {
       const r = await http.post("/auth/signup", { name: "Intruso", email: "intruso@x.com", password: "123456", profile: "admin" });
@@ -913,5 +1029,6 @@ const postMeta = (id, payload, secret, badSig) => {
   const failed = results.filter(r => !r[0]);
   console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
   failed.forEach(f => console.log(" FAIL", f[1]));
+  if (failed.length && global.__backendLog) console.log("--- backend log tail ---\n" + global.__backendLog().slice(-2500));
   process.exit(failed.length ? 1 : 0);
 })();

@@ -48,6 +48,10 @@ class User extends Model<User> {
   @Column
   profile: string;
 
+  // Efí account identifier that receives this person's enrollment fees
+  @Column
+  efiPayeeCode: string;
+
   // admin | coordenacao | consultor | tutor | academico
   @Default("consultor")
   @Column

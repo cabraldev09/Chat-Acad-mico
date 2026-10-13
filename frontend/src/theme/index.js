@@ -374,6 +374,17 @@ const createAppTheme = (type) => {
         },
       },
 
+      // long labels were wrapping onto two lines and landing on top of the typed value
+      MuiInputLabel: {
+        outlined: {
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          maxWidth: "calc(100% - 28px)",
+          "&$shrink": { maxWidth: "calc(133% - 40px)" },
+        },
+      },
+
       MuiListItem: {
         root: { "&$selected": { backgroundColor: colors.action.selected } },
       },

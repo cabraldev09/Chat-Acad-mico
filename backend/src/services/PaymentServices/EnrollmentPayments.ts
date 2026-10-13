@@ -19,6 +19,11 @@ import dispatchWebhook from "../WebhookServices/DispatchWebhook";
 import SendToContact from "../ChannelServices/SendToContact";
 import { addActivity, changeStage, loadLead, resolveLeadTarget } from "../CrmServices/LeadCore";
 import * as Efi from "./EfiClient";
+import * as Billet from "./EfiBilletClient";
+import LeadTask from "../../models/LeadTask";
+import User from "../../models/User";
+import { getPublicUrl } from "../../helpers/PublicUrl";
+import { dayBounds, shiftDays } from "../../helpers/AppTime";
 
 
 const brl = (n: number) => Number(n).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -33,6 +38,26 @@ const requireConfig = async (): Promise<Efi.EfiConfig> => {
   const cfg = await Efi.loadConfig();
   if (!Efi.isConfigured(cfg)) throw new AppError("ERR_EFI_NOT_CONFIGURED");
   return cfg;
+};
+
+const requireBilletConfig = async (): Promise<Efi.EfiConfig> => {
+  const cfg = await Efi.loadConfig();
+  if (!cfg.clientId || !cfg.clientSecret) throw new AppError("ERR_EFI_NOT_CONFIGURED");
+  return cfg;
+};
+
+const ymd = (d: Date): string => d.toISOString().slice(0, 10);
+
+// Who receives the money: the lead's consultant when they registered their Efí account,
+// otherwise the company account (the one that owns the credentials)
+const resolveRecipient = async (lead: Lead, fallbackUserId: number) => {
+  const userId = lead.ownerId || fallbackUserId;
+  const user = userId ? await User.findByPk(userId, { attributes: ["id", "name", "efiPayeeCode"] }) : null;
+  const pct = Math.min(100, Math.max(1, Number(await getSetting("efi_consultant_pct", "100")) || 100));
+  if (user?.efiPayeeCode && /^[A-Za-z0-9]{6,64}$/.test(user.efiPayeeCode.trim())) {
+    return { userId: user.id, code: user.efiPayeeCode.trim(), pct };
+  }
+  return { userId: user?.id || null, code: null as string | null, pct: 0 };
 };
 
 // Enrollment fee that the proposal promised, else the default template's fee
@@ -51,14 +76,23 @@ const defaultAmount = async (leadId: number): Promise<{ amount: number; proposal
 export const createEnrollmentCharge = async (
   lead: Lead,
   userId: number,
-  opts: { amount?: number; force?: boolean } = {}
+  opts: { amount?: number; force?: boolean; method?: "pix" | "bolix"; dueDate?: string | null } = {}
 ): Promise<Payment> => {
   if (!lead.cpf || !isValidCpf(lead.cpf)) throw new AppError("ERR_LEAD_NEEDS_CPF");
-  const cfg = await requireConfig();
+  const method = opts.method === "bolix" ? "bolix" : "pix";
+  const cfg = method === "bolix" ? await requireBilletConfig() : await requireConfig();
 
   if (!opts.force) {
     const open = await Payment.findOne({
-      where: { leadId: lead.id, kind: "matricula", status: "pending", expiresAt: { [Op.gt]: new Date() } },
+      where: {
+        leadId: lead.id,
+        kind: "matricula",
+        method,
+        [Op.or]: [
+          { status: "pending", expiresAt: { [Op.gt]: new Date() } },
+          { status: "scheduled" }
+        ]
+      },
       order: [["id", "DESC"]]
     });
     if (open) return open;
@@ -67,6 +101,8 @@ export const createEnrollmentCharge = async (
   const def = await defaultAmount(lead.id);
   const amount = opts.amount && opts.amount > 0 ? Math.round(opts.amount * 100) / 100 : def.amount;
   if (!(amount > 0)) throw new AppError("ERR_PAYMENT_AMOUNT");
+
+  if (method === "bolix") return createBolixPayment(lead, userId, amount, def.proposalId, opts.dueDate || null);
 
   const minutes = Math.max(5, Number(await getSetting("efi_expiry_min", "1440")) || 1440);
   const txid = `MAT${randomBytes(14).toString("hex")}`;
@@ -110,6 +146,92 @@ export const createEnrollmentCharge = async (
   return payment;
 };
 
+// Boleto + Pix with a due date the consultant negotiated. When the due date is far away the
+// charge is only created N days before it ("scheduled"): the consultant gets a task then.
+const createBolixPayment = async (
+  lead: Lead,
+  userId: number,
+  amount: number,
+  proposalId: number | null,
+  dueDateRaw: string | null
+): Promise<Payment> => {
+  const today = dayBounds().start;
+  const due = dueDateRaw ? new Date(`${dueDateRaw}T12:00:00Z`) : shiftDays(today, 3);
+  if (Number.isNaN(due.getTime())) throw new AppError("ERR_INVALID_DATE");
+  const dueDate = ymd(due);
+  if (dueDate < ymd(shiftDays(today, 0))) throw new AppError("ERR_PAYMENT_DUE_IN_PAST");
+
+  const before = Math.max(0, Number(await getSetting("efi_charge_days_before", "3")) || 3);
+  const generateAt = shiftDays(new Date(`${dueDate}T11:00:00Z`), -before); // ~07:00 local (RO)
+  const recipient = await resolveRecipient(lead, userId);
+  const now = Date.now();
+  const payment = await Payment.create({
+    leadId: lead.id,
+    proposalId,
+    provider: "efi",
+    method: "bolix",
+    kind: "matricula",
+    txid: `MAT${randomBytes(14).toString("hex")}`,
+    amount,
+    status: generateAt.getTime() > now ? "scheduled" : "pending",
+    description: `Taxa de matrícula - ${lead.name}`,
+    dueDate,
+    generateAt,
+    expiresAt: new Date(`${dueDate}T23:59:59Z`),
+    recipientUserId: recipient.userId,
+    recipientCode: recipient.code,
+    splitPct: recipient.code ? recipient.pct : 0,
+    createdBy: userId
+  } as any);
+
+  if (payment.status === "scheduled") {
+    await addActivity(
+      lead.id,
+      userId,
+      "system",
+      `Cobrança da taxa de matrícula (${brl(amount)}) agendada: será gerada em ${generateAt.toLocaleDateString("pt-BR")} para vencer em ${due.toLocaleDateString("pt-BR", { timeZone: "UTC" })}`
+    );
+    getIO().emit("lead", { action: "update", lead: await loadLead(lead.id) });
+    return payment;
+  }
+  return issueBolix(payment, lead);
+};
+
+// Creates the charge at Efí for a bolix payment row (immediately or when its schedule is due)
+const issueBolix = async (payment: Payment, lead: Lead): Promise<Payment> => {
+  const cfg = await requireBilletConfig();
+  const secret = await getSetting("efi_webhook_secret", "");
+  const charge = await Billet.createBolix(cfg, {
+    customId: payment.txid,
+    name: lead.name,
+    cpf: normalizeCpf(lead.cpf) as string,
+    phone: lead.phone ? String(lead.phone).replace(/\D/g, "") : null,
+    amountCents: Math.round(Number(payment.amount) * 100),
+    dueDate: payment.dueDate,
+    description: payment.description || "Taxa de matrícula",
+    notificationUrl: secret && getPublicUrl().startsWith("https://") ? `${getPublicUrl()}/webhooks/efi/${secret}/billet` : undefined,
+    repass: payment.recipientCode ? { payeeCode: payment.recipientCode, percentage: Number(payment.splitPct || 100) * 100 } : null
+  });
+  await payment.update({
+    status: "pending",
+    chargeId: String(charge.charge_id),
+    barcode: charge.barcode || null,
+    billetLink: charge.billet_link || charge.link || null,
+    pdfLink: charge.pdf?.charge || null,
+    pixCopiaECola: charge.pix?.qrcode || null,
+    qrImage: charge.pix?.qrcode_image || null,
+    lastError: null
+  });
+  await addActivity(
+    lead.id,
+    payment.createdBy || null,
+    "system",
+    `Boleto com Pix da taxa de matrícula gerado (${brl(Number(payment.amount))}, vence em ${new Date(`${payment.dueDate}T12:00:00Z`).toLocaleDateString("pt-BR", { timeZone: "UTC" })})${payment.recipientCode ? " · repasse ao consultor" : " · recebe na conta da empresa"}`
+  );
+  getIO().emit("lead", { action: "update", lead: await loadLead(lead.id) });
+  return payment;
+};
+
 // Where the lead goes once the fee is in (configurable, default: first stage called "matrícula")
 const targetStage = async (): Promise<LeadStage | null> => {
   const configured = Number(await getSetting("efi_move_stage", "0"));
@@ -141,7 +263,13 @@ export const markPaid = async (
   });
   if (!lead) return true;
 
-  await addActivity(lead.id, null, "system", `Taxa de matrícula paga: ${brl(paidValue)} via PIX (Efí)`, { paymentId: payment.id });
+  await addActivity(
+    lead.id,
+    null,
+    "system",
+    `Taxa de matrícula paga: ${brl(paidValue)} via ${payment.method === "bolix" ? "boleto/Pix" : "PIX"} (Efí)`,
+    { paymentId: payment.id }
+  );
 
   const target = await targetStage();
   const current = await LeadStage.findByPk(lead.stageId);
@@ -160,6 +288,20 @@ export const markPaid = async (
 // Asks Efí for the truth about a charge and applies it
 export const refreshPayment = async (payment: Payment): Promise<Payment> => {
   if (payment.status !== "pending") return payment;
+
+  if (payment.method === "bolix") {
+    if (!payment.chargeId) return payment;
+    const bcfg = await requireBilletConfig();
+    const bc = await Billet.getBilletCharge(bcfg, payment.chargeId);
+    if (["paid", "settled"].includes(bc.status)) {
+      await markPaid(payment, { valor: bc.total ? Number(bc.total) / 100 : Number(payment.amount), horario: new Date().toISOString() });
+    } else if (["canceled", "expired", "unpaid"].includes(bc.status)) {
+      await payment.update({ status: bc.status === "canceled" ? "cancelled" : "expired" });
+      getIO().emit("lead", { action: "update", lead: await loadLead(payment.leadId) });
+    }
+    return payment.reload();
+  }
+
   const cfg = await requireConfig();
   const charge = await Efi.getCharge(cfg, payment.txid);
   if (charge.status === "CONCLUIDA") {
@@ -174,10 +316,13 @@ export const refreshPayment = async (payment: Payment): Promise<Payment> => {
 };
 
 export const cancelPayment = async (payment: Payment, userId: number): Promise<Payment> => {
-  if (payment.status !== "pending") throw new AppError("ERR_PAYMENT_NOT_PENDING");
-  const cfg = await requireConfig();
+  if (!["pending", "scheduled"].includes(payment.status)) throw new AppError("ERR_PAYMENT_NOT_PENDING");
   try {
-    await Efi.cancelCharge(cfg, payment.txid);
+    if (payment.method === "bolix") {
+      if (payment.chargeId) await Billet.cancelBilletCharge(await requireBilletConfig(), payment.chargeId);
+    } else {
+      await Efi.cancelCharge(await requireConfig(), payment.txid);
+    }
   } catch (err) {
     // already gone on Efí's side: just reflect it locally
     logger.warn(`Efí cancel failed (${err.message}), marking locally`);
@@ -203,8 +348,13 @@ export const sendPaymentToLead = async (payment: Payment, userId: number, whatsa
     ? ` Válido até ${fmtDateTime(payment.expiresAt)}.`
     : "";
   const body =
-    `Olá, ${lead.name.split(" ")[0]}! Segue o PIX da taxa de matrícula (${brl(Number(payment.amount))}).${until}\n\n` +
-    `PIX copia e cola:\n${payment.pixCopiaECola}\n\nAssim que o pagamento for confirmado avisamos você por aqui.`;
+    payment.method === "bolix"
+      ? `Olá, ${lead.name.split(" ")[0]}! Segue o boleto da taxa de matrícula (${brl(Number(payment.amount))}), com vencimento em ${new Date(`${payment.dueDate}T12:00:00Z`).toLocaleDateString("pt-BR", { timeZone: "UTC" })}.\n\n` +
+        `${payment.pixCopiaECola ? `Pix copia e cola:\n${payment.pixCopiaECola}\n\n` : ""}` +
+        `${payment.barcode ? `Linha digitável:\n${payment.barcode}\n\n` : ""}` +
+        `${payment.billetLink ? `Boleto: ${payment.billetLink}\n\n` : ""}Assim que o pagamento for confirmado avisamos você por aqui.`
+      : `Olá, ${lead.name.split(" ")[0]}! Segue o PIX da taxa de matrícula (${brl(Number(payment.amount))}).${until}\n\n` +
+        `PIX copia e cola:\n${payment.pixCopiaECola}\n\nAssim que o pagamento for confirmado avisamos você por aqui.`;
 
   await SendToContact({ contact, whatsapp, body, mediaUrl: file || null, keepOpen: { userId } });
   await addActivity(lead.id, userId, "whatsapp", `PIX da taxa de matrícula enviado ao candidato (${brl(Number(payment.amount))})`);
@@ -213,7 +363,8 @@ export const sendPaymentToLead = async (payment: Payment, userId: number, whatsa
 // Safety net for localhost / missed webhooks: poll open charges
 export const pollPendingPayments = async (): Promise<void> => {
   const cfg = await Efi.loadConfig();
-  if (!Efi.isConfigured(cfg)) return;
+  if (!cfg.clientId || !cfg.clientSecret) return;
+  await generateScheduledCharges();
   const open = await Payment.findAll({
     where: { status: "pending", createdAt: { [Op.gt]: new Date(Date.now() - 7 * 86400000) } },
     limit: 50
@@ -224,6 +375,38 @@ export const pollPendingPayments = async (): Promise<void> => {
       await refreshPayment(p);
     } catch (err) {
       logger.warn(`Payment ${p.id} refresh failed: ${err.message}`);
+    }
+  }
+};
+
+// Scheduled boletos are created at Efí N days before they are due; the consultant gets a task to send it
+export const generateScheduledCharges = async (): Promise<void> => {
+  const due = await Payment.findAll({
+    where: { status: "scheduled", generateAt: { [Op.lte]: new Date() } },
+    limit: 20
+  });
+  for (const payment of due) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const lead = await Lead.findByPk(payment.leadId);
+      if (!lead) continue;
+      // eslint-disable-next-line no-await-in-loop
+      await issueBolix(payment, lead);
+      const owner = payment.recipientUserId || lead.ownerId || payment.createdBy;
+      // eslint-disable-next-line no-await-in-loop
+      const task = await LeadTask.create({
+        leadId: lead.id,
+        userId: owner,
+        type: "whatsapp",
+        title: `Enviar o boleto da taxa de matrícula (${brl(Number(payment.amount))}, vence em ${new Date(`${payment.dueDate}T12:00:00Z`).toLocaleDateString("pt-BR", { timeZone: "UTC" })})`,
+        dueAt: new Date()
+      } as any);
+      // eslint-disable-next-line no-await-in-loop
+      await payment.update({ reminderTaskId: task.id });
+    } catch (err) {
+      logger.warn(`Scheduled charge ${payment.id} failed: ${err.message}`);
+      // eslint-disable-next-line no-await-in-loop
+      await payment.update({ lastError: String(err.message).slice(0, 400), generateAt: new Date(Date.now() + 30 * 60000) });
     }
   }
 };

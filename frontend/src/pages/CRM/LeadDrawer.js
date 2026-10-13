@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 
+import IconAction from "../../components/IconAction";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import openSocket from "../../services/socket-io";
@@ -327,14 +328,24 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab }) => {
                           {pr.author ? ` · ${pr.author.name}` : ""}
                         </div>
                       </div>
-                      <div style={{ display: "flex", gap: 2 }}>
-                        <IconButton size="small" title={pr.status === "draft" ? "Editar" : "Ver"} onClick={() => setStudio({ id: pr.id })}><FileText size={16} /></IconButton>
-                        <IconButton size="small" title="Baixar PDF" onClick={async () => {
+                      <div style={{ display: "flex", gap: 2, flexWrap: "wrap", justifyContent: "flex-end", maxWidth: 190 }}>
+                        <IconAction title={pr.status === "draft" ? "Editar proposta" : "Ver proposta"} onClick={() => setStudio({ id: pr.id })}><FileText size={16} /></IconAction>
+                        <IconAction title="Copiar mensagem do WhatsApp" onClick={async () => {
+                          try {
+                            const { data } = await api.get(`/proposals/${pr.id}`);
+                            await navigator.clipboard.writeText((data.messages || []).map((m) => m.text).join("\n\n"));
+                            toast.success("Mensagem copiada. Cole na conversa do WhatsApp.");
+                          } catch (e) { toastError(e); }
+                        }}><MessageSquare size={16} /></IconAction>
+                        <IconAction title="Baixar PDF" onClick={async () => {
                           try { const r = await api.get(`/proposals/${pr.id}/pdf`, { responseType: "blob" }); const u = URL.createObjectURL(r.data); const a = document.createElement("a"); a.href = u; a.download = `Proposta - ${lead.name}.pdf`; a.click(); URL.revokeObjectURL(u); } catch (e) { toastError(e); }
-                        }}><Download size={16} /></IconButton>
-                        {pr.status !== "draft" && <IconButton size="small" title="Copiar link" onClick={() => { navigator.clipboard.writeText(pr.link); toast.success("Link copiado"); }}><Link2 size={16} /></IconButton>}
-                        <IconButton size="small" title="Duplicar como novo rascunho" onClick={async () => { try { const { data } = await api.post(`/proposals/${pr.id}/duplicate`); changed(); setStudio({ id: data.id }); } catch (e) { toastError(e); } }}><CopyPlus size={16} /></IconButton>
-                        {pr.status === "draft" && <IconButton size="small" title="Excluir" onClick={async () => { await api.delete(`/proposals/${pr.id}`); changed(); }}><Trash2 size={16} /></IconButton>}
+                        }}><Download size={16} /></IconAction>
+                        {pr.status !== "draft" && <IconAction title="Copiar link da proposta" onClick={async () => { await navigator.clipboard.writeText(pr.link); toast.success("Link copiado."); }}><Link2 size={16} /></IconAction>}
+                        <IconAction title={pr.status === "draft" ? "Enviar ao candidato" : "Reenviar ao candidato"} onClick={async () => {
+                          try { await api.post(`/proposals/${pr.id}/send`, {}); toast.success("Proposta enviada ao candidato."); changed(); } catch (e) { toastError(e); }
+                        }}><SendHorizonal size={16} /></IconAction>
+                        <IconAction title="Duplicar como novo rascunho" onClick={async () => { try { const { data } = await api.post(`/proposals/${pr.id}/duplicate`); changed(); setStudio({ id: data.id }); } catch (e) { toastError(e); } }}><CopyPlus size={16} /></IconAction>
+                        {pr.status === "draft" && <IconAction title="Excluir rascunho" onClick={async () => { try { await api.delete(`/proposals/${pr.id}`); toast.success("Rascunho excluído."); changed(); } catch (e) { toastError(e); } }}><Trash2 size={16} /></IconAction>}
                       </div>
                     </div>
                   ))}

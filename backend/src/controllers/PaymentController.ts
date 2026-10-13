@@ -12,6 +12,8 @@ import { getSetting, setSetting } from "../helpers/AppSettings";
 import { isMasked, maskSecret } from "../helpers/Secrets";
 import { logger } from "../utils/logger";
 import * as Efi from "../services/PaymentServices/EfiClient";
+import * as Billet from "../services/PaymentServices/EfiBilletClient";
+import User from "../models/User";
 import {
   cancelPayment,
   createEnrollmentCharge,
@@ -44,6 +46,12 @@ const settingsView = async () => {
     moveStageId: Number(await getSetting("efi_move_stage", "0")) || null,
     certificate: fs.existsSync(Efi.CERT_PATH),
     configured: Efi.isConfigured(cfg),
+    // Bolix (boleto with Pix) only needs the credentials, no certificate or Pix key
+    bolixReady: !!(cfg.clientId && cfg.clientSecret),
+    companyPayeeCode: await getSetting("efi_company_payee_code", ""),
+    consultantPct: Number(await getSetting("efi_consultant_pct", "100")),
+    chargeDaysBefore: Number(await getSetting("efi_charge_days_before", "3")),
+    defaultMethod: (await getSetting("efi_default_method", "pix")) === "bolix" ? "bolix" : "pix",
     webhookUrl: `${getPublicUrl()}/webhooks/efi/${await webhookSecret()}`,
     publicUrlIsHttps: getPublicUrl().startsWith("https://")
   };
@@ -63,7 +71,12 @@ export const putSettings = async (req: Request, res: Response): Promise<Response
     const stage = b.moveStageId ? await LeadStage.findByPk(Number(b.moveStageId)) : null;
     await setSetting("efi_move_stage", stage ? String(stage.id) : "0");
   }
+  if (typeof b.companyPayeeCode === "string") await setSetting("efi_company_payee_code", b.companyPayeeCode.trim());
+  if (b.consultantPct !== undefined) await setSetting("efi_consultant_pct", String(Math.min(100, Math.max(1, Math.round(Number(b.consultantPct) || 100)))));
+  if (b.chargeDaysBefore !== undefined) await setSetting("efi_charge_days_before", String(Math.min(30, Math.max(0, Math.round(Number(b.chargeDaysBefore) || 0)))));
+  if (b.defaultMethod) await setSetting("efi_default_method", b.defaultMethod === "bolix" ? "bolix" : "pix");
   Efi.clearTokens();
+  Billet.clearBilletTokens();
   return res.json(await settingsView());
 };
 
@@ -79,9 +92,24 @@ export const uploadCertificate = async (req: Request, res: Response): Promise<Re
 
 export const testConnection = async (_req: Request, res: Response): Promise<Response> => {
   const cfg = await Efi.loadConfig();
-  if (!Efi.isConfigured(cfg)) throw new AppError("ERR_EFI_NOT_CONFIGURED");
-  await Efi.testConnection(cfg);
-  return res.json({ ok: true });
+  if (!cfg.clientId || !cfg.clientSecret) throw new AppError("ERR_EFI_NOT_CONFIGURED");
+  // Pix needs the certificate + key, Bolix only the credentials: report each one
+  const out: { pix: string | null; bolix: string | null } = { pix: null, bolix: null };
+  try {
+    if (!Efi.isConfigured(cfg)) throw new AppError("ERR_EFI_NOT_CONFIGURED");
+    await Efi.testConnection(cfg);
+    out.pix = "ok";
+  } catch (err) {
+    out.pix = String(err.message || err);
+  }
+  try {
+    await Billet.testBilletConnection(cfg);
+    out.bolix = "ok";
+  } catch (err) {
+    out.bolix = String(err.message || err);
+  }
+  if (out.pix !== "ok" && out.bolix !== "ok") throw new AppError(out.bolix || out.pix || "ERR_EFI_NOT_CONFIGURED");
+  return res.json({ ok: true, ...out });
 };
 
 export const registerWebhook = async (_req: Request, res: Response): Promise<Response> => {
@@ -107,7 +135,9 @@ export const createForLead = async (req: Request, res: Response): Promise<Respon
   if (!lead) throw new AppError("ERR_LEAD_NOT_FOUND", 404);
   const payment = await createEnrollmentCharge(lead, uid(req), {
     amount: req.body.amount ? Number(String(req.body.amount).replace(",", ".")) : undefined,
-    force: !!req.body.force
+    force: !!req.body.force,
+    method: req.body.method === "bolix" ? "bolix" : req.body.method === "pix" ? "pix" : ((await getSetting("efi_default_method", "pix")) === "bolix" ? "bolix" : "pix"),
+    dueDate: req.body.dueDate || null
   });
   return res.status(201).json(present(payment, true));
 };
@@ -151,4 +181,47 @@ export const efiWebhook = async (req: Request, res: Response): Promise<Response>
     }
   }
   return res;
+};
+
+// Efí Cobranças (boleto/Bolix) posts `notification=<token>`; the token only says "something changed":
+// the charges it names are re-read from Efí before anything is marked as paid
+export const efiBilletWebhook = async (req: Request, res: Response): Promise<Response> => {
+  if (req.params.secret !== (await getSetting("efi_webhook_secret", ""))) return res.sendStatus(404);
+  res.sendStatus(200);
+  try {
+    const token = String(req.body?.notification || "");
+    if (!token) return res;
+    const cfg = await Efi.loadConfig();
+    const ids = await Billet.notificationCharges(cfg, token);
+    for (const chargeId of ids) {
+      // eslint-disable-next-line no-await-in-loop
+      const payment = await Payment.findOne({ where: { chargeId } });
+      // eslint-disable-next-line no-await-in-loop
+      if (payment && payment.status === "pending") await refreshPayment(payment);
+    }
+  } catch (err) {
+    logger.warn(`Efí billet webhook failed: ${err.message}`);
+  }
+  return res;
+};
+
+// ------------------------------------------------- "my receiving account" (any user)
+const maskCode = (code: string) => `••••${code.slice(-4)}`;
+
+export const myEfi = async (req: Request, res: Response): Promise<Response> => {
+  const user = await User.findByPk(uid(req), { attributes: ["id", "efiPayeeCode"] });
+  const code = user?.efiPayeeCode || "";
+  return res.json({ informed: !!code, masked: code ? maskCode(code) : null });
+};
+
+export const saveMyEfi = async (req: Request, res: Response): Promise<Response> => {
+  const code = String(req.body.payeeCode || "").trim();
+  if (!/^[A-Za-z0-9]{6,64}$/.test(code)) throw new AppError("ERR_EFI_PAYEE_INVALID", 400);
+  await User.update({ efiPayeeCode: code } as any, { where: { id: uid(req) } });
+  return res.json({ informed: true, masked: maskCode(code) });
+};
+
+export const clearMyEfi = async (req: Request, res: Response): Promise<Response> => {
+  await User.update({ efiPayeeCode: null } as any, { where: { id: uid(req) } });
+  return res.json({ informed: false, masked: null });
 };

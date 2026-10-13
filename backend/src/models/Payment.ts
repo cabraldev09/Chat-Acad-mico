@@ -69,6 +69,42 @@ class Payment extends Model<Payment> {
   @Column(DataType.TEXT)
   lastError: string;
 
+  // pix (immediate QR) | bolix (boleto with Pix, due date)
+  @Default("pix")
+  @Column
+  method: string;
+
+  @Column
+  chargeId: string;
+
+  @Column(DataType.DATEONLY)
+  dueDate: string;
+
+  // scheduled charges are created at Efí only on this moment
+  @Column
+  generateAt: Date;
+
+  @Column(DataType.TEXT)
+  barcode: string;
+
+  @Column(DataType.TEXT)
+  billetLink: string;
+
+  @Column(DataType.TEXT)
+  pdfLink: string;
+
+  @Column
+  recipientUserId: number;
+
+  @Column
+  recipientCode: string;
+
+  @Column
+  splitPct: number;
+
+  @Column
+  reminderTaskId: number;
+
   @ForeignKey(() => Lead)
   @Column
   leadId: number;
