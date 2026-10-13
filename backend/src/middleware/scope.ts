@@ -40,6 +40,7 @@ export const leadScopeWhere = async (req: Request): Promise<any | null> => {
       ]
     };
   }
+  if (role === "tutor") return { onboardingTutorId: me };
   return { poloId: { [Op.in]: polos } };
 };
 

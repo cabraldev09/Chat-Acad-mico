@@ -46,7 +46,11 @@ export const assertTicketAccess = async (
       poloRead = !!queue?.poloId && (await poloIdsOf(me)).includes(queue.poloId);
     }
 
-    if (mode === "read" && (mine || inMyQueues || poloRead)) return;
+    // Agents read their own conversations and the ones still waiting in their queues, never a
+    // colleague's (the consultant and the tutor must not see each other's messages).
+    // Coordination reads its queues and its whole polo.
+    const sharedRead = !ticket.userId || role === "coordenacao";
+    if (mode === "read" && (mine || (inMyQueues && sharedRead) || poloRead)) return;
     if (mode === "write" && (mine || (!ticket.userId && inMyQueues))) return;
 
     throw new AppError("ERR_NO_PERMISSION", 403);

@@ -19,6 +19,15 @@ const withDetails = [
   { model: Queue, as: "queues", attributes: ["id", "name", "color", "role", "autoAssign"] }
 ];
 
+// tutors of a polo (names only): any signed-in user may need to pick one when confirming an enrollment
+export const tutors = async (req: Request, res: Response): Promise<Response> => {
+  const rows = await PoloMember.findAll({
+    where: { poloId: req.params.id, role: "tutoria" },
+    include: [{ model: User, as: "user", attributes: ["id", "name"] }]
+  });
+  return res.json(rows.map(r => ({ id: r.user.id, name: r.user.name })));
+};
+
 export const index = async (req: Request, res: Response): Promise<Response> => {
   const admin = req.user.role === "admin" || req.user.profile === "admin";
   const polos = await Polo.findAll({

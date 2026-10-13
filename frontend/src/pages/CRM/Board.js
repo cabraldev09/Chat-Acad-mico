@@ -5,7 +5,7 @@ import {
   Button, TextField, MenuItem, InputAdornment, Dialog, DialogTitle, DialogContent, DialogActions,
   Typography, makeStyles, ButtonGroup, Chip, Table, TableHead, TableRow, TableCell, TableBody, Paper,
 } from "@material-ui/core";
-import { Search, Plus, Upload, LayoutGrid, List, Calendar, BadgeCheck, Rocket } from "lucide-react";
+import { HeartHandshake, Search, Plus, Upload, LayoutGrid, List, Calendar, BadgeCheck, Rocket } from "lucide-react";
 import { format, parseISO } from "date-fns";
 
 import MainContainer from "../../components/MainContainer";
@@ -17,6 +17,7 @@ import toastError from "../../errors/toastError";
 import openSocket from "../../services/socket-io";
 import LeadDrawer, { LostDialog } from "./LeadDrawer";
 import LeadFields from "./LeadFields";
+import EnrollDialog from "./EnrollDialog";
 import ImportDialog from "./ImportDialog";
 import { useCrmOptions, SourceIcon, ScoreRing, OwnerAvatar, ago, short, isOverdue, burst } from "./shared";
 
@@ -81,6 +82,11 @@ const LeadCard = ({ lead, onOpen, onDragStart, onDragEnd, dragging }) => {
         {lead.payments && lead.payments.length > 0 && (
           <span className={`${classes.chip} ${classes.chipPaid}`} title="Taxa de matrícula paga"><BadgeCheck size={12} />Taxa paga</span>
         )}
+        {lead.onboardingStatus && lead.onboardingStatus !== "none" && (
+          <span className={`${classes.chip} ${lead.onboardingStatus === "done" ? classes.chipPaid : ""}`} title="Situação da ambientação com o tutor">
+            <HeartHandshake size={12} />{{ pending: "Aguarda tutor", started: "Em ambientação", done: "Ambientado" }[lead.onboardingStatus]}
+          </span>
+        )}
         {lead.nextFollowUpAt && (
           <span className={`${classes.chip} ${isOverdue(lead.nextFollowUpAt) ? classes.chipLate : ""}`} title="Próximo contato">
             <Calendar size={12} />{format(parseISO(lead.nextFollowUpAt), "dd/MM HH:mm")}
@@ -133,6 +139,7 @@ const Board = () => {
   const [newOpen, setNewOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [lostFor, setLostFor] = useState(null);
+  const [enrollFor, setEnrollFor] = useState(null);
   const timer = useRef(null);
 
   const params = useCallback(() => {
@@ -189,7 +196,11 @@ const Board = () => {
     const current = board.find((s) => s.leads.some((l) => l.id === id));
     if (current && current.id === stage.id) return;
     if (stage.type === "lost") setLostFor({ id, stage });
-    else moveLead(id, stage, e);
+    else if (stage.type === "won") {
+      // enrollment goes through the confirmation (polo, tutor, fee)
+      const lead = board.flatMap((s) => s.leads).find((l) => l.id === id);
+      if (lead) setEnrollFor(lead);
+    } else moveLead(id, stage, e);
   };
 
   const loadMore = async (stage) => {
@@ -201,6 +212,7 @@ const Board = () => {
 
   return (
     <MainContainer>
+      {enrollFor && <EnrollDialog open lead={enrollFor} onClose={() => setEnrollFor(null)} onDone={() => load()} />}
       <LostDialog open={!!lostFor} reasons={ctx.options.lostReasons} onClose={() => setLostFor(null)}
         onConfirm={(reason, note) => { const f = lostFor; setLostFor(null); moveLead(f.id, f.stage, null, { lostReason: reason, lostNote: note }); }} />
       <NewLeadDialog open={newOpen} onClose={() => setNewOpen(false)} ctx={ctx} onCreated={(id) => { setOpenId(id); load(); }} />

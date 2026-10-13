@@ -164,6 +164,29 @@ class Lead extends Model<Lead> {
   @BelongsTo(() => User)
   owner: User;
 
+  // none | pending | started | done (tutor onboarding after enrollment)
+  @Default("none")
+  @Column
+  onboardingStatus: string;
+
+  @Column
+  onboardingTutorId: number;
+
+  @Column
+  enrolledAt: Date;
+
+  @Column
+  onboardingStartedAt: Date;
+
+  @Column
+  onboardingDoneAt: Date;
+
+  @Column
+  onboardingAlertAt: Date;
+
+  @Column
+  indicatedBy: number;
+
   @ForeignKey(() => Polo)
   @Column
   poloId: number;

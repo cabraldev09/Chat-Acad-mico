@@ -592,6 +592,21 @@ const postMeta = (id, payload, secret, badSig) => {
         assert(html.includes(t), `missing: ${t}`);
       }
     });
+    await test("WhatsApp message never claims a fixed tuition or a scholarship regression unless the model says so", async () => {
+      const base = { gross: REF1.gross, firstMonthly: REF1.first, enrollmentFee: REF1.fee, installments: REF1.parcels, semesters: REF1.semesters, startYear: 2026, startSemester: 2, bolsaFirst: REF1.b1, bolsaNext: REF1.b2 };
+      const msgs = async extra => {
+        const r = await http.post("/proposals/preview", { leadId: plead.id, params: { ...base, ...extra } }, auth());
+        assert(r.status === 200, `preview ${r.status}`);
+        return (r.data.messages || []).map(m => m.text).join("\n");
+      };
+      const plain = await msgs({});
+      assert(plain.length > 0, "no messages returned by preview");
+      assert(!/Bolsa:\*/.test(plain) && !/25% no 1/.test(plain), "regression line leaked");
+      assert(!/fixa/i.test(plain), "claims fixed tuition by default");
+      assert(!/até o fim do curso/.test(plain), "generic 'until the end of the course' line leaked");
+      assert(/fixa/i.test(await msgs({ fixedUntilEnd: true })), "fixedUntilEnd should say the tuition is fixed");
+      assert(/36 mensalidades/.test(await msgs({ installmentsFixed: 36 })), "installmentsFixed=36 should say 36 mensalidades");
+    });
     await test("rejects impossible proposals", async () => {
       const bad = p => http.post("/proposals/preview", { leadId: plead.id, params: p }, auth());
       assert((await bad({ gross: 0, firstMonthly: 100 })).status === 400, "zero gross accepted");
@@ -1012,6 +1027,60 @@ const postMeta = (id, payload, secret, badSig) => {
       const list = (await http.get("/leads", asUser(consultorToken))).data.leads;
       assert(list.every(l => l.ownerId === consultorId || !l.ownerId), "list leaks other owners");
       assert((await http.get(`/leads/${mine.id}`, asUser(tutorToken))).status === 403, "tutor read a sales lead");
+    });
+    // ----------------------------------------------- enrollment -> tutor
+    await test("confirming the enrollment hands the student to the tutor and separates the conversations", async () => {
+      const mk = async (name, email, role) => (await http.post("/users", { name, email, password: "senha123", role }, auth())).data;
+      const tA = await mk("Tutora A", "tutora@matricula.test", "tutor");
+      const tB = await mk("Tutor B", "tutorb@matricula.test", "tutor");
+      const consult = await mk("Consultor M", "consultorm@matricula.test", "consultor");
+      const polo = (await http.post("/polos", { name: "Polo Matricula", code: "MAT1", state: "RO" }, auth())).data;
+      await http.put(`/polos/${polo.id}/members`, { members: [{ userId: tA.id, role: "tutoria" }, { userId: tB.id, role: "tutoria" }, { userId: consult.id, role: "comercial" }] }, auth());
+      const tokenOf = async email => (await http.post("/auth/login", { email, password: "senha123" })).data.token;
+      const [ctok, atok, btok] = [await tokenOf("consultorm@matricula.test"), await tokenOf("tutora@matricula.test"), await tokenOf("tutorb@matricula.test")];
+
+      const lead = await mkLead("Aluna Matricula", "5511955552001", { ownerId: consult.id });
+      const opened = await http.post(`/leads/${lead.id}/open-ticket`, { whatsappId: cid }, auth());
+      assert(opened.status === 200 || opened.status === 201, `open-ticket ${opened.status} ${JSON.stringify(opened.data)}`);
+      const salesTicket = opened.data.ticketId;
+
+      const before = graph.sent.length;
+      const r = await http.post(`/leads/${lead.id}/enroll`, { poloId: polo.id, tutorId: "auto", note: "Prefere à noite", fee: "paid", whatsappId: cid, introMessage: "Olá! Sou da tutoria e vou te ajudar no primeiro acesso." }, asUser(ctok));
+      assert(r.status === 200, `enroll ${r.status} ${JSON.stringify(r.data)}`);
+      const tutorId = r.data.tutor.id;
+      assert([tA.id, tB.id].includes(tutorId), "tutor not from the polo");
+      assert(stageName(lead.id) === "Matriculado", `stage ${stageName(lead.id)}`);
+      assert(sql(`SELECT onboardingStatus FROM Leads WHERE id=${lead.id}`) === "pending", "status");
+      assert(sql(`SELECT status FROM Tickets WHERE id=${salesTicket}`) === "closed", "sales conversation still open");
+      const ob = r.data.ticketId;
+      assert(sql(`SELECT CONCAT(segment,'|',status,'|',userId) FROM Tickets WHERE id=${ob}`) === `onboarding|open|${tutorId}`, "onboarding ticket");
+      assert(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${lead.id} AND userId=${tutorId} AND title LIKE 'Ambientar%'`) === "1", "tutor task");
+      assert(graph.sent.slice(before).some(x => x.body && x.body.text && x.body.text.body.includes("tutoria")), "intro not delivered");
+
+      // separation: the consultant cannot read the tutor's chat; the tutor can; the other tutor cannot
+      const mine = tutorId === tA.id ? atok : btok;
+      const other = tutorId === tA.id ? btok : atok;
+      assert((await http.get(`/messages/${ob}`, asUser(ctok))).status === 403, "consultant reads the tutor's conversation");
+      assert((await http.get(`/messages/${ob}`, asUser(mine))).status === 200, "tutor cannot read own conversation");
+      assert((await http.get(`/messages/${ob}`, asUser(other))).status === 403, "another tutor reads it");
+      assert((await http.get(`/leads/${lead.id}`, asUser(mine))).status === 200, "tutor cannot see own student");
+      assert((await http.get(`/leads/${lead.id}`, asUser(other))).status === 403, "another tutor sees the student");
+      assert((await http.get(`/leads/${lead.id}`, asUser(ctok))).status === 200, "consultant lost the lead");
+      assert((await http.get("/onboarding", asUser(mine))).data.some(l => l.id === lead.id), "not in the tutor's list");
+
+      // onboarding done: the consultant gets the follow-ups back
+      assert((await http.post(`/leads/${lead.id}/onboarding`, { action: "start" }, asUser(mine))).data.onboardingStatus === "started", "start");
+      assert((await http.post(`/leads/${lead.id}/onboarding`, { action: "done" }, asUser(mine))).data.onboardingStatus === "done", "done");
+      assert(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${lead.id} AND userId=${consult.id} AND (title LIKE 'Pedir indica%' OR title LIKE 'Oferecer nova%')`) === "2", "consultant follow-ups");
+
+      // negotiated fee: the Bolix is scheduled for the agreed date
+      const l2 = await mkLead("Aluna Taxa Depois", "5511955552002", { ownerId: consult.id });
+      await http.put(`/leads/${l2.id}`, { cpf: cpfFor(123456790) }, auth());
+      await http.post(`/leads/${l2.id}/open-ticket`, { whatsappId: cid }, auth());
+      const due = new Date(Date.now() + 40 * 86400000).toISOString().slice(0, 10);
+      const r2 = await http.post(`/leads/${l2.id}/enroll`, { poloId: polo.id, tutorId: "auto", fee: "later", feeDueDate: due, whatsappId: cid }, asUser(ctok));
+      assert(r2.status === 200 && r2.data.warnings.length === 0, `enroll later ${JSON.stringify(r2.data.warnings)}`);
+      assert(sql(`SELECT CONCAT(status,'|',dueDate) FROM Payments WHERE leadId=${l2.id} ORDER BY id DESC LIMIT 1`) === `scheduled|${due}`, "fee not scheduled for the negotiated date");
     });
     await test("login is rate limited", async () => {
       let limited = false;

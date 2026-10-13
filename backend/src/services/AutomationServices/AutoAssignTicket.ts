@@ -9,32 +9,36 @@ import { logger } from "../../utils/logger";
 import TicketEvent from "../../models/TicketEvent";
 
 // Queue.autoAssign: "none" | "roundrobin" | "least" (fewest open tickets)
+// Picks the next agent of a queue; `force` ignores "none" (used when someone must be chosen anyway)
+export const pickUserForQueue = async (queue: Queue, force = false): Promise<User | null> => {
+  const mode = !queue.autoAssign || queue.autoAssign === "none" ? (force ? "least" : "none") : queue.autoAssign;
+  if (mode === "none") return null;
+
+  const users = [...(queue.users || [])].sort((a, b) => a.id - b.id);
+  if (!users.length) return null;
+
+  if (mode === "least") {
+    const counts = await Promise.all(
+      users.map(u => Ticket.count({ where: { userId: u.id, status: { [Op.not]: "closed" } } }))
+    );
+    return users[counts.indexOf(Math.min(...counts))];
+  }
+  const key = `autoAssign_last_${queue.id}`;
+  const last = Number(await getSetting(key, "0"));
+  const chosen = users.find(u => u.id > last) || users[0];
+  await setSetting(key, String(chosen.id));
+  return chosen;
+};
+
 const AutoAssignTicket = async (ticket: Ticket): Promise<boolean> => {
   if (!ticket.queueId || ticket.userId || ticket.isGroup) return false;
 
   const queue = await Queue.findByPk(ticket.queueId, {
     include: [{ model: User, as: "users", attributes: ["id", "name"] }]
   });
-  if (!queue || !queue.autoAssign || queue.autoAssign === "none") return false;
-
-  const users = [...(queue.users || [])].sort((a, b) => a.id - b.id);
-  if (!users.length) return false;
-
-  let chosen: User;
-  if (queue.autoAssign === "least") {
-    const counts = await Promise.all(
-      users.map(u =>
-        Ticket.count({ where: { userId: u.id, status: { [Op.not]: "closed" } } })
-      )
-    );
-    const min = Math.min(...counts);
-    chosen = users[counts.indexOf(min)];
-  } else {
-    const key = `autoAssign_last_${queue.id}`;
-    const last = Number(await getSetting(key, "0"));
-    chosen = users.find(u => u.id > last) || users[0];
-    await setSetting(key, String(chosen.id));
-  }
+  if (!queue) return false;
+  const chosen = await pickUserForQueue(queue);
+  if (!chosen) return false;
 
   try {
     await UpdateTicketService({

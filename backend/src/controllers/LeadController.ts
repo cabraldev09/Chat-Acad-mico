@@ -12,6 +12,7 @@ import LeadTask from "../models/LeadTask";
 import Institution from "../models/Institution";
 import Course from "../models/Course";
 import User from "../models/User";
+import Ticket from "../models/Ticket";
 import Contact from "../models/Contact";
 import AppError from "../errors/AppError";
 import GetDefaultWhatsApp from "../helpers/GetDefaultWhatsApp";
@@ -631,4 +632,54 @@ export const metrics = async (req: Request, res: Response): Promise<Response> =>
       waitingFirstContact: Number(attention.waitingFirstContact) || 0
     }
   });
+};
+
+// ---------------------------------------------------------- enrollment -> tutor
+export const enroll = async (req: Request, res: Response): Promise<Response> => {
+  const lead = await Lead.findByPk(req.params.id);
+  if (!lead) throw new AppError("ERR_LEAD_NOT_FOUND", 404);
+  if (!req.body.poloId) throw new AppError("ERR_FIELD_REQUIRED_poloId");
+  const { default: enrollLead } = await import("../services/CrmServices/EnrollLead");
+  return res.json(
+    await enrollLead(lead, uid(req), {
+      poloId: Number(req.body.poloId),
+      tutorId: req.body.tutorId,
+      note: req.body.note,
+      fee: req.body.fee,
+      feeDueDate: req.body.feeDueDate,
+      introMessage: req.body.introMessage,
+      whatsappId: req.body.whatsappId ? Number(req.body.whatsappId) : null
+    })
+  );
+};
+
+export const onboarding = async (req: Request, res: Response): Promise<Response> => {
+  const lead = await Lead.findByPk(req.params.id);
+  if (!lead) throw new AppError("ERR_LEAD_NOT_FOUND", 404);
+  const action = req.body.action === "done" ? "done" : "start";
+  const { setOnboarding } = await import("../services/CrmServices/EnrollLead");
+  return res.json(await setOnboarding(lead, uid(req), action));
+};
+
+export const onboardingList = async (req: Request, res: Response): Promise<Response> => {
+  const rows = await Lead.findAll({
+    where: await withLeadScope(req, { onboardingStatus: { [Op.ne]: "none" } }),
+    include: leadInclude as any,
+    order: [["enrolledAt", "DESC"]],
+    limit: 300
+  });
+  // tutor names and the onboarding conversation, so the board needs no extra calls
+  const tutorIds = [...new Set(rows.map(r => r.onboardingTutorId).filter(Boolean))];
+  const tutors = tutorIds.length ? await User.findAll({ where: { id: tutorIds }, attributes: ["id", "name"] }) : [];
+  const contactIds = rows.map(r => r.contactId).filter(Boolean);
+  const tickets = contactIds.length
+    ? await Ticket.findAll({ where: { contactId: contactIds, segment: "onboarding" }, attributes: ["id", "contactId", "status"], order: [["id", "DESC"]] })
+    : [];
+  return res.json(
+    rows.map(r => ({
+      ...r.toJSON(),
+      tutorName: tutors.find(t => t.id === r.onboardingTutorId)?.name || null,
+      ticketId: tickets.find(t => t.contactId === r.contactId)?.id || null
+    }))
+  );
 };

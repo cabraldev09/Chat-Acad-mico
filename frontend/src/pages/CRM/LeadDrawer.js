@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 
+import EnrollDialog from "./EnrollDialog";
 import IconAction from "../../components/IconAction";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
@@ -89,6 +90,7 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab }) => {
   const [tasks, setTasks] = useState([]);
   const [note, setNote] = useState({ type: "note", body: "" });
   const [task, setTask] = useState({ title: "", type: "ligar", dueAt: "" });
+  const [enrollOpen, setEnrollOpen] = useState(false);
   const [lostOpen, setLostOpen] = useState(false);
   const [proposals, setProposals] = useState([]);
   const [studio, setStudio] = useState(null); // { id } | {}
@@ -143,6 +145,8 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab }) => {
   };
 
   const move = async (stage, e, extra = {}) => {
+    // confirming an enrollment hands the student to the tutor: dedicated dialog
+    if (stage.type === "won" && !extra.skipEnroll) { setEnrollOpen(true); return; }
     try {
       await api.put(`/leads/${lead.id}/stage`, { stageId: stage.id, ...extra });
       if (stage.type === "won" && e) burst(e.clientX, e.clientY);
@@ -191,6 +195,7 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab }) => {
         <div style={{ margin: "auto" }}><CircularProgress /></div>
       ) : (
         <>
+          <EnrollDialog open={enrollOpen} lead={lead} onClose={() => setEnrollOpen(false)} onDone={() => { changed(); }} />
           <LostDialog open={lostOpen} reasons={options.lostReasons} onClose={() => setLostOpen(false)}
             onConfirm={(reason, n) => { setLostOpen(false); move(lost, null, { lostReason: reason, lostNote: n }); }} />
           <div className={classes.head}>

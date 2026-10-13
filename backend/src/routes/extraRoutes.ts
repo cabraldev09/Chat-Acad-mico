@@ -105,6 +105,7 @@ r.get("/channels/:whatsappId/groups", isAuth, isAdmin, Channel.groups);
 
 // polos (branches) and the team of each one
 r.get("/polos", isAuth, PoloCtl.index);
+r.get("/polos/:id/tutors", isAuth, PoloCtl.tutors);
 r.post("/polos", isAuth, isAdmin, PoloCtl.store);
 r.post("/polos/import", isAuth, isAdmin, PoloCtl.importPolos);
 r.put("/polos/:id", isAuth, isAdmin, PoloCtl.update);
@@ -142,6 +143,9 @@ r.get("/leads/:id/tasks", isAuth, canAccessLead, Lead.leadTasks);
 r.post("/leads/:id/tasks", isAuth, canAccessLead, Lead.addTask);
 r.post("/leads/:id/open-ticket", isAuth, canAccessLead, Lead.openTicket);
 r.get("/lead-tasks", isAuth, Lead.tasksIndex);
+r.get("/onboarding", isAuth, Lead.onboardingList);
+r.post("/leads/:id/enroll", isAuth, canAccessLead, Lead.enroll);
+r.post("/leads/:id/onboarding", isAuth, canAccessLead, Lead.onboarding);
 r.put("/leads/:id/tasks/:taskId", isAuth, canAccessLead, Lead.updateTask);
 r.post("/leads/:id/tasks/:taskId/toggle", isAuth, canAccessLead, Lead.completeTask);
 r.delete("/leads/:id/tasks/:taskId", isAuth, canAccessLead, Lead.removeTask);
