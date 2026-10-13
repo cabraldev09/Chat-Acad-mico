@@ -74,6 +74,19 @@ class Lead extends Model<Lead> {
   @Column
   entrySemester: number;
 
+  // extra semesters beyond the curriculum (adaptations / dependencies)
+  @Default(0)
+  @Column
+  extraSemesters: number;
+
+  // how soon the candidate wants to enrol
+  @Column
+  decisionTimeline: string;
+
+  // why they want the course
+  @Column
+  motivation: string;
+
   @Column
   enemScore: number;
 

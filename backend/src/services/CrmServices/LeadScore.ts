@@ -32,7 +32,10 @@ export const computeScore = (
   if (lead.email) score += 8;
   if (lead.courseId) score += 10;
   if (lead.entryTerm) score += 4;
-  if (lead.financing) score += 4;
+  // how close to enrolling: the strongest buying signal a consultant can record
+  score += ({ "Quer matricular agora": 12, "Decide esta semana": 8, "Decide este mês": 4 } as Record<string, number>)[
+    lead.decisionTimeline || ""
+  ] || 0;
   if (lead.city) score += 2;
   if (lead.educationLevel) score += 2;
 

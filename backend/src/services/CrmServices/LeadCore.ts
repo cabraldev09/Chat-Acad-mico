@@ -92,6 +92,9 @@ export interface LeadInput {
   cpf?: string | null;
   admissionType?: string;
   entrySemester?: number;
+  extraSemesters?: number;
+  decisionTimeline?: string;
+  motivation?: string;
   enemScore?: number | null;
   financing?: string;
   source?: string;
@@ -110,7 +113,7 @@ export interface LeadInput {
 const FILL_FIELDS: Array<keyof LeadInput> = [
   "email", "phone", "city", "state", "courseId", "modality", "shift", "entryTerm",
   "educationLevel", "enemScore", "financing", "utmSource", "utmMedium", "utmCampaign",
-  "cpf", "admissionType", "entryTerm"
+  "cpf", "admissionType", "entryTerm", "decisionTimeline", "motivation"
 ];
 
 // Intake periods the administrator offers; the first one is the default
@@ -198,6 +201,9 @@ export const upsertLead = async (
     cpf,
     admissionType: input.admissionType,
     entrySemester: input.entrySemester && input.entrySemester > 0 ? input.entrySemester : 1,
+    extraSemesters: input.extraSemesters && input.extraSemesters > 0 ? Math.round(input.extraSemesters) : 0,
+    decisionTimeline: input.decisionTimeline,
+    motivation: input.motivation,
     enemScore: input.enemScore ?? null,
     financing: input.financing,
     source: input.source || "Outro",

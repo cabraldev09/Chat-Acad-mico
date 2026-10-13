@@ -2,13 +2,12 @@ import React, { useCallback, useEffect, useState } from "react";
 import { useHistory } from "react-router-dom";
 import { toast } from "react-toastify";
 import { Button, TextField, Typography, makeStyles, CircularProgress, InputAdornment } from "@material-ui/core";
-import { Copy, RefreshCw, Send, XCircle, BadgeCheck, Banknote, QrCode } from "lucide-react";
+import { Copy, RefreshCw, Send, XCircle, BadgeCheck, Banknote, QrCode, Fingerprint, History } from "lucide-react";
 import { format, parseISO, differenceInMinutes } from "date-fns";
 
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import openSocket from "../../services/socket-io";
-import { formatCpf, isValidCpf, onlyDigits } from "./cpf";
 
 const useStyles = makeStyles((theme) => ({
   card: { border: theme.border.divider, borderRadius: 14, padding: theme.spacing(2), background: theme.palette.cards.background, marginBottom: theme.spacing(1.5) },
@@ -29,6 +28,11 @@ const useStyles = makeStyles((theme) => ({
   hint: { color: theme.palette.text.secondary, fontSize: 13 },
   actions: { display: "flex", gap: 8, flexWrap: "wrap", marginTop: theme.spacing(1.25) },
   paidIcon: { width: 44, height: 44, borderRadius: 14, display: "grid", placeItems: "center", background: "rgba(22,163,74,.14)", color: "#16a34a", animation: "pop-in .4s var(--ease-spring)" },
+  banner: { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: theme.spacing(1.5) },
+  cpfRow: { display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, marginBottom: theme.spacing(1), flexWrap: "wrap" },
+  upd: { display: "flex", gap: 10, padding: "6px 0", animation: "page-in .3s var(--ease-out) both" },
+  updDot: { width: 9, height: 9, borderRadius: "50%", background: theme.palette.divider, marginTop: 6, flex: "none" },
+  updPaid: { background: "#16a34a", boxShadow: "0 0 0 4px rgba(22,163,74,.18)" },
   row: { display: "flex", alignItems: "center", gap: 8, padding: "8px 0", borderBottom: theme.border.divider, fontSize: 13.5 },
 }));
 
@@ -43,12 +47,11 @@ const left = (iso) => {
   return `${Math.floor(m / 1440)} d`;
 };
 
-const PaymentTab = ({ lead, onChanged }) => {
+const PaymentTab = ({ lead, acts = [], onChanged, onEditSummary }) => {
   const classes = useStyles();
   const history = useHistory();
   const [payments, setPayments] = useState(null);
   const [amount, setAmount] = useState("");
-  const [cpf, setCpf] = useState("");
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
 
@@ -82,11 +85,6 @@ const PaymentTab = ({ lead, onChanged }) => {
     } finally { setBusy(""); }
   };
 
-  const saveCpf = run("cpf", async () => {
-    await api.put(`/leads/${lead.id}`, { cpf: onlyDigits(cpf) });
-    toast.success("CPF salvo");
-    onChanged && onChanged();
-  });
   const create = (force) => run("create", async () => {
     await api.post(`/leads/${lead.id}/payments`, { amount: amount || undefined, force: force || undefined });
     setAmount(""); await load(); onChanged && onChanged();
@@ -100,8 +98,21 @@ const PaymentTab = ({ lead, onChanged }) => {
   const paid = payments.find((p) => p.status === "paid");
   const history_ = payments.filter((p) => p.id !== (open && open.id) && p.id !== (paid && paid.id));
 
+  const state = paid ? "paid" : open ? "pending" : "none";
+  const banner = {
+    paid: ["Taxa de matrícula paga", "paid"],
+    pending: ["Aguardando o pagamento do PIX", "pending"],
+    none: [payments.length ? "Nenhuma cobrança em aberto" : "Nenhuma cobrança gerada", "muted"],
+  }[state];
+  const updates = acts.filter((a) => /matr[ií]cula|PIX|cobran[cç]a/i.test(a.body || ""));
+
   return (
     <div>
+      <div className={classes.banner}>
+        <span className={`${classes.status} ${classes[banner[1]]}`}>{state === "pending" && <span className={classes.dot} />}{banner[0]}</span>
+        <span className={classes.hint}>{state === "pending" ? "Atualiza sozinho assim que a Efí confirmar" : state === "paid" ? "Confirmado pela Efí" : "Gere o PIX abaixo"}</span>
+      </div>
+
       {error && (
         <div className={classes.card} style={{ borderColor: "#d97706" }}>
           <Typography style={{ fontWeight: 600 }}>{error === "ERR_EFI_NO_CERT" ? "Certificado da Efí não enviado" : "Efí ainda não configurada"}</Typography>
@@ -129,15 +140,19 @@ const PaymentTab = ({ lead, onChanged }) => {
             <Banknote size={20} />
             <div className={classes.title}>Cobrar a taxa de matrícula</div>
           </div>
+          <div className={classes.cpfRow}>
+            <Fingerprint size={16} />
+            {lead.hasCpf ? (
+              <span>CPF do cadastro: <b>{lead.cpfMasked}</b></span>
+            ) : (
+              <span style={{ color: "#b45309" }}>CPF não cadastrado</span>
+            )}
+            <Button size="small" onClick={onEditSummary}>{lead.hasCpf ? "Alterar no cadastro" : "Cadastrar no resumo"}</Button>
+          </div>
           {!lead.hasCpf ? (
-            <>
-              <Typography className={classes.hint} gutterBottom>Informe o CPF do candidato: a Efí exige o documento do pagador para emitir o PIX.</Typography>
-              <div style={{ display: "flex", gap: 8 }}>
-                <TextField size="small" variant="outlined" label="CPF" value={formatCpf(cpf)} onChange={(e) => setCpf(e.target.value)}
-                  error={onlyDigits(cpf).length === 11 && !isValidCpf(cpf)} helperText={onlyDigits(cpf).length === 11 && !isValidCpf(cpf) ? "CPF inválido" : " "} style={{ flex: 1 }} />
-                <Button variant="contained" color="primary" disabled={!isValidCpf(cpf) || busy === "cpf"} onClick={saveCpf} style={{ height: 40 }}>Salvar CPF</Button>
-              </div>
-            </>
+            <Typography className={classes.hint}>
+              A cobrança usa o CPF informado no cadastro do candidato (aba Resumo): a Efí exige o documento do pagador para emitir o PIX.
+            </Typography>
           ) : (
             <>
               <Typography className={classes.hint} gutterBottom>
@@ -181,6 +196,21 @@ const PaymentTab = ({ lead, onChanged }) => {
 
       {!open && paid && (
         <Button size="small" variant="outlined" onClick={create(true)} disabled={busy === "create"}>Gerar nova cobrança</Button>
+      )}
+
+      {updates.length > 0 && (
+        <div style={{ marginTop: 16 }}>
+          <div className={classes.hint} style={{ fontWeight: 600, marginBottom: 6, display: "flex", alignItems: "center", gap: 6 }}><History size={14} /> Atualizações do pagamento</div>
+          {updates.map((a) => (
+            <div key={a.id} className={classes.upd}>
+              <span className={`${classes.updDot} ${/paga:/i.test(a.body) ? classes.updPaid : ""}`} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13.5 }}>{a.body}</div>
+                <div className={classes.hint} style={{ fontSize: 12 }}>{format(parseISO(a.createdAt), "dd/MM HH:mm")}{a.user ? ` · ${a.user.name}` : " · automático"}</div>
+              </div>
+            </div>
+          ))}
+        </div>
       )}
 
       {history_.length > 0 && (

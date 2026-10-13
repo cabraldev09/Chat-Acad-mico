@@ -49,11 +49,18 @@ Modelos de proposta**; instituições (nome, CNPJ, logo) e o catálogo de cursos
 Propostas já enviadas guardam uma cópia dos valores e textos: mudar o modelo não altera o que o candidato recebeu.
 Gerar PDF exige o Google Chrome (`CHROME_BIN`).
 
+## Qualificação do lead
+
+Além de curso, forma e período de ingresso, a ficha registra o **momento de decisão** (quer matricular agora, esta semana, este mês,
+só pesquisando) e o **objetivo com o curso**. O momento de decisão pesa na pontuação do lead e destaca no funil quem quer matricular agora.
+
 ## Ingresso por transferência e projeção
 
 A ficha do lead tem **forma de ingresso** (vestibular, ENEM, transferência, portador de diploma, aproveitamento) e, nas formas que
 permitem, o **semestre do curso em que o aluno ingressa**. A proposta projeta apenas os semestres que ele ainda vai cursar, com o
-calendário a partir do período de ingresso. O administrador define os períodos captados e o padrão em Configurar CRM → Automação.
+calendário a partir do período de ingresso. Quando a transferência exige **semestres de adaptação** (ou dependências), eles se somam ao que
+falta no currículo e a projeção pode passar da duração normal do curso; o consultor também pode ajustar o total direto na proposta. O
+administrador define os períodos captados e o padrão em Configurar CRM → Automação.
 
 ## Taxa de matrícula por PIX (Efí)
 
@@ -68,7 +75,7 @@ Configuração (admin): Configurar CRM → Pagamentos (Efí): ambiente, Client I
 ## Testes
 
 `npm --prefix backend run test:channels` sobe o backend com um banco descartável e servidores falsos do Telegram e da Graph API
-da Meta, e verifica canais, assinatura de webhooks, mídia, chatbot, CRM e campanhas com modelo (66 verificações, incluindo a conferência célula a célula das propostas de referência e o fluxo PIX contra uma Efí simulada).
+da Meta, e verifica canais, assinatura de webhooks, mídia, chatbot, CRM e campanhas com modelo (68 verificações, incluindo a conferência célula a célula das propostas de referência e o fluxo PIX contra uma Efí simulada).
 
 ## Rodando localmente (macOS)
 

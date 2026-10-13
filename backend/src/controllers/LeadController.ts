@@ -116,7 +116,8 @@ export const show = async (req: Request, res: Response): Promise<Response> => {
 const FIELDS = [
   "name", "phone", "email", "city", "state", "courseId", "modality", "entryTerm",
   "educationLevel", "enemScore", "financing", "source", "utmSource", "utmMedium", "utmCampaign",
-  "notes", "ownerId", "nextFollowUpAt", "cpf", "admissionType", "entrySemester"
+  "notes", "ownerId", "nextFollowUpAt", "cpf", "admissionType", "entrySemester", "extraSemesters",
+  "decisionTimeline", "motivation"
 ];
 
 export const store = async (req: Request, res: Response): Promise<Response> => {
@@ -149,6 +150,7 @@ export const update = async (req: Request, res: Response): Promise<Response> => 
     }
   }
   if (patch.entrySemester !== undefined) patch.entrySemester = Math.max(1, Number(patch.entrySemester) || 1);
+  if (patch.extraSemesters !== undefined) patch.extraSemesters = Math.min(10, Math.max(0, Math.round(Number(patch.extraSemesters) || 0)));
   if (patch.phone !== undefined) patch.phone = normalizePhone(patch.phone);
   if (patch.email !== undefined) patch.email = normalizeEmail(patch.email);
   if (patch.name === null) throw new AppError("ERR_FIELD_REQUIRED_name");

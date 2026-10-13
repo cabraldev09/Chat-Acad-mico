@@ -75,12 +75,20 @@ const LeadFields = ({ lead, onChange, options, courses, users, tags }) => {
           <Select label="Período de ingresso" value={lead.entryTerm || options.defaultEntryTerm} onChange={set("entryTerm")} allowEmpty={false}
             items={terms.map((t) => ({ value: t, label: termLabel(t) }))} />
           {needsSemester && (
-            <Select className={classes.full} label="Semestre do curso em que ingressa" allowEmpty={false}
-              value={lead.entrySemester || 1} onChange={(v) => set("entrySemester")(Number(v))}
-              items={Array.from({ length: maxSemester }, (_, i) => ({ value: i + 1, label: `${i + 1}º semestre${i === 0 ? " (início do curso)" : ""}` }))}
-              helperText="A proposta projeta só os semestres que o aluno ainda vai cursar." />
+            <>
+              <Select label="Ingressa no semestre" allowEmpty={false}
+                value={lead.entrySemester || 1} onChange={(v) => set("entrySemester")(Number(v))}
+                items={Array.from({ length: maxSemester }, (_, i) => ({ value: i + 1, label: `${i + 1}º semestre${i === 0 ? " (início do curso)" : ""}` }))} />
+              <Select label="Semestres de adaptação" allowEmpty={false}
+                value={lead.extraSemesters || 0} onChange={(v) => set("extraSemesters")(Number(v))}
+                items={Array.from({ length: 7 }, (_, i) => ({ value: i, label: i === 0 ? "Nenhum" : `+${i} semestre${i > 1 ? "s" : ""}` }))} />
+              <div className={classes.full} style={{ fontSize: 12.5, opacity: 0.75, marginTop: -4 }}>
+                A proposta projeta os semestres que ainda faltam no currículo mais os de adaptação, mesmo que passem da duração normal do curso.
+              </div>
+            </>
           )}
-          <Select label="Forma de pagamento" value={lead.financing} onChange={set("financing")} items={list(options.financing)} />
+          <Select label="Momento de decisão" value={lead.decisionTimeline} onChange={set("decisionTimeline")} items={list(options.decisionTimelines)} />
+          <Select label="Objetivo com o curso" value={lead.motivation} onChange={set("motivation")} items={list(options.motivations)} />
           <Select label="Escolaridade" value={lead.educationLevel} onChange={set("educationLevel")} items={list(options.educationLevels)} />
           {lead.admissionType === "ENEM" && text("enemScore", "Nota do ENEM", { type: "number" })}
         </div>

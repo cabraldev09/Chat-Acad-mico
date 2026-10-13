@@ -50,6 +50,7 @@ const toForm = (p) => ({
   gross: money(p.gross), first: money(p.firstMonthly), bolsa: p.gross ? money(r2((1 - p.firstMonthly / p.gross) * 100)) : "",
   enrollmentFee: money(p.enrollmentFee), dueDay: String(p.dueDay), installments: String(p.installments), firstDueDate: p.firstDueDate || "",
   entryTerm: `${p.startYear}/${p.startSemester}`, entrySemester: p.entrySemester || 1, courseSemesters: p.courseSemesters || p.semesters, admissionType: p.admissionType || "",
+  attend: String(p.semesters), attendAuto: true,
   bolsaFirst: money(p.bolsaFirst), bolsaNext: money(p.bolsaNext),
   punctualityPct: String(p.punctualityPct), lateFee1Pct: String(p.lateFee1Pct), lateFee2Pct: String(p.lateFee2Pct),
   annualMin: money(p.annualMin), annualMax: money(p.annualMax),
@@ -63,6 +64,7 @@ const toParams = (f) => {
     gross: toNum(f.gross), firstMonthly: toNum(f.first), enrollmentFee: toNum(f.enrollmentFee), dueDay: toNum(f.dueDay), installments: toNum(f.installments),
     firstDueDate: f.firstDueDate || null, startYear: y, startSemester: s === 1 ? 1 : 2,
     courseSemesters: Number(f.courseSemesters), entrySemester: Number(f.entrySemester) || 1, admissionType: f.admissionType || null,
+    attendSemesters: toNum(f.attend) || null,
     bolsaFirst: toNum(f.bolsaFirst), bolsaNext: toNum(f.bolsaNext), punctualityPct: toNum(f.punctualityPct), lateFee1Pct: toNum(f.lateFee1Pct), lateFee2Pct: toNum(f.lateFee2Pct),
     annualMin: toNum(f.annualMin), annualMax: toNum(f.annualMax), semestralSchedule: f.schedule.map((x) => ({ from: toNum(x.from), pct: toNum(x.pct) })),
   };
@@ -116,6 +118,7 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
         }
         next.entryTerm = prev.entryTerm; next.admissionType = prev.admissionType; next.firstDueDate = prev.firstDueDate;
         next.entrySemester = Math.min(prev.entrySemester, next.courseSemesters);
+        if (!prev.attendAuto) { next.attend = prev.attend; next.attendAuto = false; }
       }
       return next;
     });
@@ -210,7 +213,9 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
   const course = courses.find((c) => c.id === courseId);
   const institution = institutions.find((i) => i.id === (snapshot && snapshot.institutionId));
   const needsSemester = f && (options.admissionNeedsSemester || []).includes(f.admissionType);
-  const attend = f ? f.courseSemesters - f.entrySemester + 1 : 0;
+  const remaining = f ? f.courseSemesters - f.entrySemester + 1 : 0;
+  const attend = f ? toNum(f.attend) || remaining : 0;
+  const extra = Math.max(0, attend - remaining);
   const terms = f ? [...new Set([...(options.entryTerms || []), f.entryTerm])] : [];
 
   return (
@@ -250,7 +255,10 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
               )}
               <div className={classes.grid2}>
                 <TextField select fullWidth variant="outlined" margin="dense" label="Forma de ingresso" value={f.admissionType} disabled={!!locked}
-                  onChange={(e) => setF((p) => ({ ...p, admissionType: e.target.value, entrySemester: (options.admissionNeedsSemester || []).includes(e.target.value) ? p.entrySemester : 1 }))}>
+                  onChange={(e) => setF((p) => {
+                    const entry = (options.admissionNeedsSemester || []).includes(e.target.value) ? p.entrySemester : 1;
+                    return { ...p, admissionType: e.target.value, entrySemester: entry, ...(p.attendAuto ? { attend: String(p.courseSemesters - entry + 1) } : {}) };
+                  })}>
                   <MenuItem value="">—</MenuItem>
                   {(options.admissionTypes || []).map((t) => (<MenuItem key={t} value={t}>{t}</MenuItem>))}
                 </TextField>
@@ -260,13 +268,18 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
               </div>
               {needsSemester && (
                 <TextField select fullWidth variant="outlined" margin="dense" label="Semestre do curso em que ingressa" value={f.entrySemester} disabled={!!locked}
-                  onChange={(e) => setF((p) => ({ ...p, entrySemester: Number(e.target.value) }))}>
+                  onChange={(e) => setF((p) => ({ ...p, entrySemester: Number(e.target.value), ...(p.attendAuto ? { attend: String(p.courseSemesters - Number(e.target.value) + 1) } : {}) }))}>
                   {Array.from({ length: f.courseSemesters }, (_, i) => (<MenuItem key={i + 1} value={i + 1}>{i + 1}º semestre{i === 0 ? " (início do curso)" : ""}</MenuItem>))}
                 </TextField>
               )}
-              <div className={classes.note}>
-                {attend < f.courseSemesters ? `Ingressa no ${f.entrySemester}º semestre: a projeção mostra os ${attend} semestres que ainda vai cursar.` : `A projeção cobre os ${attend} semestres do curso.`}
-              </div>
+              <TextField fullWidth variant="outlined" margin="dense" label="Semestres a cursar" value={f.attend} disabled={!!locked} type="number"
+                inputProps={{ min: 1, max: 20 }} onChange={(e) => setF((p) => ({ ...p, attend: e.target.value, attendAuto: false }))}
+                helperText={extra > 0
+                  ? `Currículo restante: ${remaining}. Inclui ${extra} semestre${extra > 1 ? "s" : ""} de adaptação além do que falta no curso.`
+                  : attend < remaining ? `Menos que os ${remaining} restantes (aproveitamento de estudos).` : `Todos os ${remaining} semestres que faltam no currículo.`} />
+              {!f.attendAuto && (
+                <Button size="small" style={{ marginTop: 4 }} disabled={!!locked} onClick={() => setF((p) => ({ ...p, attend: String(p.courseSemesters - p.entrySemester + 1), attendAuto: true }))}>Voltar ao cálculo automático</Button>
+              )}
             </div>
 
             <div className={classes.card}>

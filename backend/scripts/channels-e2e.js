@@ -628,6 +628,32 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(f.data.result.rows.length === 10, "freshman should see all 10 semesters");
     });
 
+    await test("a transfer can need more semesters than the course length (adaptation)", async () => {
+      const direito = sql("SELECT id FROM Courses WHERE name='Direito'");
+      const l = await mkLead("Aluno Adaptacao", "11 94444-0006", { courseId: Number(direito), admissionType: "Transferência externa", entrySemester: 4, extraSemesters: 2, entryTerm: "2027/1" });
+      const r = await http.post("/proposals/preview", { leadId: l.id, params: { gross: 1300, firstMonthly: 260 } }, auth());
+      assert(r.data.result.rows.length === 9, `rows ${r.data.result.rows.length} (7 left + 2 adaptation = 9)`);
+      const last = r.data.result.rows[8];
+      assert(last.courseSemester === 12, `courseSemester ${last.courseSemester}`);
+      assert(r.data.html.includes("9 semestres a cursar") && r.data.html.includes("inclui 2 de adaptação") && r.data.html.includes("Adapt."), "document should flag the adaptation semesters");
+      // the consultant can also set the total directly, above the course length
+      const o = await http.post("/proposals/preview", { leadId: l.id, params: { gross: 1300, firstMonthly: 260, attendSemesters: 12 } }, auth());
+      assert(o.data.result.rows.length === 12 && o.data.html.includes("inclui 5 de adaptação"), "manual total");
+      // and below the remaining ones (credits validated)
+      const f = await http.post("/proposals/preview", { leadId: l.id, params: { gross: 1300, firstMonthly: 260, attendSemesters: 5 } }, auth());
+      assert(f.data.result.rows.length === 5 && !f.data.html.includes("de adaptação"), "fewer semesters");
+    });
+    await test("decision timeline and motivation replace the payment-form field and lift the score", async () => {
+      const base = { source: "Google", email: "x@x.com", city: "Cuiabá" };
+      const cold = await mkLead("Lead Frio", "11 94444-0007", { ...base, email: "frio@x.com", decisionTimeline: "Pesquisando, sem prazo" });
+      const hot = await mkLead("Lead Quente", "11 94444-0008", { ...base, email: "quente@x.com", decisionTimeline: "Quer matricular agora", motivation: "Mudança de carreira" });
+      const sc = id => Number(sql(`SELECT score FROM Leads WHERE id=${id}`));
+      assert(sc(hot.id) - sc(cold.id) === 12, `score gap ${sc(hot.id)} vs ${sc(cold.id)} (expected 12)`);
+      const o = (await http.get("/crm/options", auth())).data;
+      assert(o.decisionTimelines[0] === "Quer matricular agora" && o.motivations.includes("Mudança de carreira"), "options");
+      assert(sql(`SELECT motivation FROM Leads WHERE id=${hot.id}`) === "Mudança de carreira", "motivation stored");
+    });
+
     const paying = await mkLead("Aluno Pagante", "5511955550011");
     await test("charging the enrollment fee needs CPF, and Efí credentials", async () => {
       assert((await http.post(`/leads/${paying.id}/payments`, {}, auth())).data.error === "ERR_LEAD_NEEDS_CPF", "no CPF should be refused");
@@ -682,6 +708,8 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(sql(`SELECT endToEndId FROM Payments WHERE id=${pay.id}`) === "E2026ABC", "endToEndId");
       assert(stageName(paying.id) === "Matrícula em andamento", `stage ${stageName(paying.id)}`);
       assert(sql(`SELECT COUNT(*) FROM LeadActivities WHERE leadId=${paying.id} AND body LIKE 'Taxa de matrícula paga%'`) === "1", "activity");
+      const detail = (await http.get(`/leads/${paying.id}`, auth())).data;
+      assert(detail.payments && detail.payments.length === 1 && detail.hasCpf && detail.cpfMasked.endsWith("-09"), "paid fee/CPF flags on the lead");
       // the same notification again (webhook + poller) must not duplicate anything
       await http.post(`/webhooks/efi/${secret}/pix`, { pix: [{ txid: pay.txid }] });
       await sleep(1500);

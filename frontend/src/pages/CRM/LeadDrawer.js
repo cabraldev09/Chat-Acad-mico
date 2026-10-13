@@ -128,7 +128,8 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab }) => {
       await api.put(`/leads/${lead.id}`, {
         name: d.name, phone: d.phone, email: d.email, city: d.city, state: d.state, courseId: d.courseId,
         entryTerm: d.entryTerm, educationLevel: d.educationLevel, cpf: d.cpf || null, admissionType: d.admissionType,
-        entrySemester: d.entrySemester || 1, enemScore: d.admissionType === "ENEM" ? d.enemScore : null, financing: d.financing, source: d.source, notes: d.notes, ownerId: d.ownerId, tagIds: d.tagIds,
+        entrySemester: d.entrySemester || 1, extraSemesters: d.extraSemesters || 0, decisionTimeline: d.decisionTimeline, motivation: d.motivation,
+        enemScore: d.admissionType === "ENEM" ? d.enemScore : null, source: d.source, notes: d.notes, ownerId: d.ownerId, tagIds: d.tagIds,
       });
       toast.success("Lead atualizado");
       setDraft(null);
@@ -199,6 +200,7 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab }) => {
                 <div className={classes.meta}>
                   <SourceIcon source={lead.source} /> {lead.source}
                   {lead.course && <span>· {lead.course.name}</span>}
+                  {lead.payments && lead.payments.length > 0 && <span style={{ color: "#15803d", fontWeight: 600 }}>· taxa de matrícula paga</span>}
                   <span>· criado {ago(lead.createdAt)}</span>
                 </div>
               </div>
@@ -305,7 +307,7 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab }) => {
                 </div>
               </>
             )}
-            {tab === 4 && <PaymentTab lead={lead} onChanged={changed} />}
+            {tab === 4 && <PaymentTab lead={lead} acts={acts} onChanged={changed} onEditSummary={() => setTab(0)} />}
 
             {tab === 3 && (
               <>

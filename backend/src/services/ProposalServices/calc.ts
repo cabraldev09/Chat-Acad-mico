@@ -23,6 +23,8 @@ export interface ProposalParams {
   // semesters the candidate will actually attend (course semesters - entry + 1)
   semesters: number;
   courseSemesters?: number;
+  // semesters beyond the curriculum (adaptations / dependencies)
+  extraSemesters?: number;
   // semester of the course the candidate enters (transfer students start later)
   entrySemester?: number;
   admissionType?: string | null;

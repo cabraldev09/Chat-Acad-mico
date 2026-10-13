@@ -29,6 +29,16 @@ export const CRM_OPTIONS = {
     "Aproveitamento de estudos"
   ],
   shifts: ["Manhã", "Tarde", "Noite", "Flexível (EAD)"],
+  // first item = most ready to enrol (drives the lead score)
+  decisionTimelines: ["Quer matricular agora", "Decide esta semana", "Decide este mês", "Pesquisando, sem prazo"],
+  motivations: [
+    "Primeira graduação",
+    "Mudança de carreira",
+    "Promoção ou crescimento",
+    "Exigência do trabalho",
+    "Segunda graduação",
+    "Realização pessoal"
+  ],
   financing: ["Bolsa da instituição", "FIES", "ProUni", "Financiamento próprio", "Pagamento particular", "Ainda não sabe"],
   educationLevels: ["Ensino médio cursando", "Ensino médio completo", "Superior cursando", "Superior completo", "Técnico"],
   lostReasons: [

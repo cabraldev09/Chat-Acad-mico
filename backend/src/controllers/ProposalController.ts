@@ -74,7 +74,9 @@ const buildDefaults = async (lead: Lead, courseId?: number | null, templateId?: 
     courseSemesters: course?.semesters || 8,
     entrySemester: Math.min(lead.entrySemester || 1, course?.semesters || 8),
     admissionType: lead.admissionType || null,
-    semesters: (course?.semesters || 8) - Math.min(lead.entrySemester || 1, course?.semesters || 8) + 1,
+    extraSemesters: lead.extraSemesters || 0,
+    semesters:
+      (course?.semesters || 8) - Math.min(lead.entrySemester || 1, course?.semesters || 8) + 1 + (lead.extraSemesters || 0),
     ...defaultStart(lead.entryTerm),
     bolsaFirst: Number(tpl.bolsaFirst),
     bolsaNext: Number(tpl.bolsaNext),
@@ -107,6 +109,7 @@ const normalizeParams = (base: ProposalParams, raw: any = {}): ProposalParams =>
     installments: Math.max(1, Math.round(num(raw.installments, base.installments))),
     courseSemesters: Math.min(20, Math.max(1, Math.round(num(raw.courseSemesters, num(raw.semesters, base.courseSemesters || 8))))),
     entrySemester: 1,
+    extraSemesters: 0,
     admissionType: raw.admissionType !== undefined ? raw.admissionType || null : base.admissionType || null,
     semesters: 1,
     startYear: Math.round(num(raw.startYear, base.startYear)),
@@ -128,7 +131,16 @@ const normalizeParams = (base: ProposalParams, raw: any = {}): ProposalParams =>
     p.courseSemesters || 1,
     Math.max(1, Math.round(num(raw.entrySemester, base.entrySemester || 1)))
   );
-  p.semesters = (p.courseSemesters || 1) - p.entrySemester + 1;
+  // what the curriculum still requires, plus extra semesters the candidate may need
+  // (the total can go beyond the course's own length)
+  p.extraSemesters = Math.min(10, Math.max(0, Math.round(num(raw.extraSemesters, base.extraSemesters || 0))));
+  const remaining = (p.courseSemesters || 1) - p.entrySemester + 1;
+  p.semesters = Math.min(20, remaining + p.extraSemesters);
+  // the consultant can set the total directly (e.g. credits validated => fewer, dependencies => more)
+  if (raw.attendSemesters !== undefined && raw.attendSemesters !== null && Number(raw.attendSemesters) > 0) {
+    p.semesters = Math.min(20, Math.max(1, Math.round(Number(raw.attendSemesters))));
+    p.extraSemesters = Math.max(0, p.semesters - remaining);
+  }
   if (!(p.gross > 0)) throw new AppError("ERR_PROPOSAL_NO_GROSS");
   if (!(p.firstMonthly > 0) || p.firstMonthly > p.gross) throw new AppError("ERR_PROPOSAL_FIRST_MONTHLY");
   return p;
