@@ -207,6 +207,8 @@ const COURSE_EXAMPLES = [
 const ActiveToggle = ({ row: course, endpoint = "/courses", label = "curso" }) => {
   const [on, setOn] = useState(!!course.active);
   const [busy, setBusy] = useState(false);
+  // the list refreshes after the save: follow the server value without remounting
+  useEffect(() => { setOn(!!course.active); }, [course.active]);
   const change = async (e) => {
     const next = e.target.checked;
     setBusy(true);
@@ -220,9 +222,10 @@ const ActiveToggle = ({ row: course, endpoint = "/courses", label = "curso" }) =
     setBusy(false);
   };
   return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+    // fixed width so "Ativo" / "Inativo" never changes the column width (no layout shift)
+    <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "flex-start", gap: 2, width: 128 }}>
       <Switch size="small" color="primary" checked={on} disabled={busy} onChange={change} />
-      <b style={{ fontSize: 12, color: on ? "#15803d" : "#64748b" }}>{on ? "Ativo" : "Inativo"}</b>
+      <b style={{ fontSize: 12, width: 52, textAlign: "left", color: on ? "#15803d" : "#64748b" }}>{on ? "Ativo" : "Inativo"}</b>
     </span>
   );
 };
@@ -316,7 +319,7 @@ const CrmSettings = () => {
                 { header: "Curso", field: "name" }, { header: "Categoria", render: (r) => r.category || "—" }, { header: "Modalidade", render: (r) => r.modality || "—" },
                 { header: "Mensalidade", render: (r) => (r.monthlyFee ? Number(r.monthlyFee).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "—") },
                 { header: "Semestres", render: (r) => r.semesters },
-                { header: "Ativo", render: (r) => <ActiveToggle key={`${r.id}-${r.active}`} row={r} /> },
+                { header: "Ativo", render: (r) => <ActiveToggle key={r.id} row={r} /> },
               ]} />
           </>
         )}
@@ -332,20 +335,25 @@ const CrmSettings = () => {
             columns={[
               { header: "Logo", render: (r) => (r.logoFile ? <img alt="" src={`${getBackendUrl().replace(/\/$/, "")}/public/${r.logoFile}`} style={{ maxHeight: 32, maxWidth: 120 }} /> : "—") },
               { header: "Instituição", field: "name" }, { header: "CNPJ", render: (r) => r.cnpj || "—" },
-              { header: "Ativa", render: (r) => <ActiveToggle key={`${r.id}-${r.active}`} row={r} endpoint="/institutions" /> },
+              { header: "Ativa", render: (r) => <ActiveToggle key={r.id} row={r} endpoint="/institutions" /> },
             ]} />
         )}
         {tab === 3 && (
           <CrudPage embedded title="Modelos de proposta" endpoint="/proposal-templates" addLabel="Novo modelo" socketEvent="proposalTemplate" dialogWidth="md"
             emptyText="Nenhum modelo." reloadKey={reload}
-            mapIn={(r) => ({ ...r, semestralSchedule: JSON.parse(r.semestralSchedule || "[]").map((x) => `${x.from}=${x.pct}`).join("\n") })}
+            mapIn={(r) => ({ ...r, institutionIds: (r.institutions || []).map((i) => i.id), semestralSchedule: JSON.parse(r.semestralSchedule || "[]").map((x) => `${x.from}=${x.pct}`).join("\n") })}
             mapOut={(v) => ({ ...v, semestralSchedule: String(v.semestralSchedule || "").split(/\n/).map((l) => l.trim()).filter(Boolean).map((l) => { const [from, pct] = l.split("="); return { from: Number(from), pct: Number(String(pct).replace(",", ".")) }; }) })}
             fields={[
               { name: "name", label: "Nome do modelo", required: true },
-              { name: "institutionId", label: "Instituição", type: "select", options: institutions.map((i) => ({ value: i.id, label: i.name })) },
+              { name: "institutionIds", label: "Instituições que usam este modelo", type: "multiselect", options: institutions.map((i) => ({ value: i.id, label: i.name })), helper: "O modelo aparece na proposta dos cursos dessas instituições. Vazio = serve para todas." },
               { name: "enrollmentFee", label: "Taxa de matrícula (R$)", type: "number", default: 0 },
               { name: "dueDay", label: "Dia de vencimento", type: "number", default: 10 },
               { name: "installments", label: "Parcelas por semestre", type: "number", default: 6 },
+              { name: "installmentsFixed", label: "Total de parcelas do curso (fixo)", type: "number", helper: "Deixe vazio quando as mensalidades seguem até o fim do curso." },
+              { name: "firstExempt", label: "1ª mensalidade isenta (a 2ª leva a data de vencimento)", type: "switch", default: false },
+              { name: "hasRegression", label: "Tem regressão da bolsa (cai após o 1º semestre)", type: "switch", default: true },
+              { name: "hasAdjustment", label: "Tem reajuste semestral e anual", type: "switch", default: true },
+              { name: "fixedUntilEnd", label: "Mensalidade fixa até o fim do curso (sem regressão nem reajuste)", type: "switch", default: false },
               { name: "bolsaFirst", label: "Bolsa no 1º semestre (%)", type: "number", default: 25 },
               { name: "bolsaNext", label: "Bolsa do 2º semestre em diante (%)", type: "number", default: 20 },
               { name: "punctualityPct", label: "Desconto de pontualidade (%)", type: "number", default: 25 },
@@ -358,13 +366,16 @@ const CrmSettings = () => {
               { name: "observation", label: "Observação", type: "textarea", rows: 2 },
               { name: "disclaimer", label: "Aviso da projeção", type: "textarea", rows: 3 },
               { name: "finalMessage", label: "Mensagem final", type: "textarea", rows: 2 },
+              { name: "waIntro", label: "WhatsApp · abertura", type: "textarea", rows: 2, helper: "Variáveis: {{nome}} e {{curso}}. Vazio usa o texto padrão." },
+              { name: "waClosing", label: "WhatsApp · fechamento (validade)", type: "textarea", rows: 2, helper: "Variáveis: {{nome}}, {{curso}} e {{hoje}}." },
               { name: "isDefault", label: "Modelo padrão", type: "switch", default: false },
             ]}
             columns={[
               { header: "Modelo", render: (r) => (<>{r.name}{r.isDefault ? " (padrão)" : ""}</>) },
               { header: "Matrícula", render: (r) => Number(r.enrollmentFee).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) },
               { header: "Bolsa 1º / demais", render: (r) => `${Number(r.bolsaFirst)}% / ${Number(r.bolsaNext)}%` },
-              { header: "Reajuste anual", render: (r) => `${Number(r.annualMin)}% a ${Number(r.annualMax)}%` },
+              { header: "Regras", render: (r) => [r.fixedUntilEnd ? "Fixa até o fim" : null, !r.fixedUntilEnd && r.hasRegression === false ? "Sem regressão" : null, !r.fixedUntilEnd && r.hasAdjustment === false ? "Sem reajuste" : null, r.firstExempt ? "1ª isenta" : null, r.installmentsFixed ? `${r.installmentsFixed} parcelas` : null].filter(Boolean).join(" · ") || "Padrão" },
+              { header: "Instituições", render: (r) => ((r.institutions || []).map((i) => i.name).join(", ") || "Todas") },
             ]} />
         )}
         {tab === 4 && <Capture s={s} setS={setS} save={save} />}

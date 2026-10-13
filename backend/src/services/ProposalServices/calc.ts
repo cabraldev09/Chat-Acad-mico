@@ -41,6 +41,13 @@ export interface ProposalParams {
   projectionFrom?: number | null;
   projectionTo?: number | null;
   firstDueDate?: string | null;
+  // rules (all default to the classic behavior)
+  hasRegression?: boolean; // discount drops from bolsaFirst to bolsaNext after the 1st semester
+  hasAdjustment?: boolean; // semester and yearly adjustments
+  fixedUntilEnd?: boolean; // same monthly fee until the end of the course
+  installmentsFixed?: number | null; // total installments when fixed (null = until the end of the course)
+  firstExempt?: boolean; // 1st monthly fee waived
+  secondDueDate?: string | null; // due date of the 2nd monthly fee when the 1st is waived
 }
 
 export interface ProjectionRow {
@@ -100,10 +107,12 @@ export const calcProposal = (p: ProposalParams): ProposalResult => {
       sem = sem === 2 ? 1 : 2;
       if (sem === 1) year += 1;
     }
-    const bolsaAdjust = i === 2 ? Number(p.bolsaFirst) - Number(p.bolsaNext) : 0;
-    const semestral = i >= 2 ? semestralFor(p.semestralSchedule, i) : 0;
-    const a5 = i >= 2 && sem === 1 ? Number(p.annualMin) : 0;
-    const a11 = i >= 2 && sem === 1 ? Number(p.annualMax) : 0;
+    const regression = p.hasRegression !== false && !p.fixedUntilEnd;
+    const adjusting = p.hasAdjustment !== false && !p.fixedUntilEnd;
+    const bolsaAdjust = i === 2 && regression ? Number(p.bolsaFirst) - Number(p.bolsaNext) : 0;
+    const semestral = i >= 2 && adjusting ? semestralFor(p.semestralSchedule, i) : 0;
+    const a5 = i >= 2 && sem === 1 && adjusting ? Number(p.annualMin) : 0;
+    const a11 = i >= 2 && sem === 1 && adjusting ? Number(p.annualMax) : 0;
     const t5 = bolsaAdjust + semestral + a5;
     const t11 = bolsaAdjust + semestral + a11;
     if (i > 1) {
@@ -114,7 +123,7 @@ export const calcProposal = (p: ProposalParams): ProposalResult => {
       semester: i,
       courseSemester: (p.entrySemester || 1) - 1 + i,
       period: `${year}.${sem}`,
-      bolsa: i === 1 ? Number(p.bolsaFirst) : Number(p.bolsaNext),
+      bolsa: i === 1 || !regression ? Number(p.bolsaFirst) : Number(p.bolsaNext),
       bolsaAdjust,
       semestral,
       annualMin: a5,

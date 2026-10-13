@@ -346,9 +346,16 @@ const CrudPage = ({
         <TextField
           {...common}
           select
+          InputLabelProps={{ shrink: true }}
           helperText={empty ? f.emptyText || "Nada cadastrado ainda." : f.helper}
           disabled={empty && !!f.disableWhenEmpty}
-          SelectProps={{ multiple: multi, displayEmpty: true }}
+          SelectProps={{
+            multiple: multi,
+            displayEmpty: true,
+            renderValue: multi
+              ? (sel) => (sel.length ? sel.map((id) => ((f.options || []).find((o) => o.value === id) || {}).label || id).join(", ") : <span style={{ opacity: 0.6 }}>Todas</span>)
+              : undefined,
+          }}
           value={values[f.name] === null || values[f.name] === undefined ? "" : values[f.name]}
           onChange={(e) => set(f.name, e.target.value)}
         >

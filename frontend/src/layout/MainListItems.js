@@ -15,6 +15,7 @@ import SettingsOutlinedIcon from "@material-ui/icons/SettingsOutlined";
 import PeopleAltOutlinedIcon from "@material-ui/icons/PeopleAltOutlined";
 import ContactPhoneOutlinedIcon from "@material-ui/icons/ContactPhoneOutlined";
 import AccountTreeOutlinedIcon from "@material-ui/icons/AccountTreeOutlined";
+import LocationCityOutlinedIcon from "@material-ui/icons/LocationCityOutlined";
 import QuestionAnswerOutlinedIcon from "@material-ui/icons/QuestionAnswerOutlined";
 import LocalOfferOutlinedIcon from "@material-ui/icons/LocalOfferOutlined";
 import ScheduleIcon from "@material-ui/icons/Schedule";
@@ -253,7 +254,7 @@ const MainListItems = (props) => {
             <ListItemLink
               to="/polos"
               primary="Polos e equipes"
-              icon={<AccountTreeOutlinedIcon />}
+              icon={<LocationCityOutlinedIcon />}
               collapsed={collapsed}
             />
             <ListItemLink

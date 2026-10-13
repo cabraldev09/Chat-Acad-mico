@@ -353,7 +353,7 @@ const createAppTheme = (type) => {
         colorSecondary: {
           "&$checked": { color: "#fff", "& + $track": { backgroundColor: isDark ? colors.accent.main : colors.primary.main } },
         },
-        sizeSmall: { width: 36, height: 22, "& $switchBase": { padding: 2, "&$checked": { transform: "translateX(14px)" } }, "& $thumb": { width: 18, height: 18 } },
+        sizeSmall: { width: 36, height: 22, padding: 0, "& $switchBase": { padding: 2, "&$checked": { transform: "translateX(14px)" } }, "& $thumb": { width: 18, height: 18 } },
         thumb: { width: 20, height: 20, boxShadow: "0 1px 2px rgba(0,0,0,.3)", transition: "background-color .15s" },
         track: {
           borderRadius: 13,

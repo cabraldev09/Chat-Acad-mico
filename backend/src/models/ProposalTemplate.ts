@@ -10,10 +10,12 @@ import {
   Default,
   AllowNull,
   ForeignKey,
-  BelongsTo
+  BelongsTo,
+  BelongsToMany
 } from "sequelize-typescript";
 
 import Institution from "./Institution";
+import ProposalTemplateInstitution from "./ProposalTemplateInstitution";
 
 @Table
 class ProposalTemplate extends Model<ProposalTemplate> {
@@ -83,6 +85,39 @@ class ProposalTemplate extends Model<ProposalTemplate> {
   @Default(false)
   @Column
   isDefault: boolean;
+
+  // number of installments when fixed; null = until the end of the course
+  @Column
+  installmentsFixed: number;
+
+  // the discount drops after the first semester (bolsaFirst -> bolsaNext)
+  @Default(true)
+  @Column
+  hasRegression: boolean;
+
+  // semester and yearly adjustments apply
+  @Default(true)
+  @Column
+  hasAdjustment: boolean;
+
+  // same monthly fee until the end of the course
+  @Default(false)
+  @Column
+  fixedUntilEnd: boolean;
+
+  // first monthly fee is waived (the second one carries the first due date)
+  @Default(false)
+  @Column
+  firstExempt: boolean;
+
+  @Column(DataType.TEXT)
+  waIntro: string;
+
+  @Column(DataType.TEXT)
+  waClosing: string;
+
+  @BelongsToMany(() => Institution, () => ProposalTemplateInstitution)
+  institutions: Institution[];
 
   @CreatedAt
   createdAt: Date;

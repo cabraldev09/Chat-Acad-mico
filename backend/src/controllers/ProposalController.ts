@@ -21,6 +21,8 @@ import { addActivity, changeStage, loadLead, resolveLeadTarget } from "../servic
 import dispatchWebhook from "../services/WebhookServices/DispatchWebhook";
 import { calcProposal, ProposalParams, SemestralStep } from "../services/ProposalServices/calc";
 import { renderProposalHtml } from "../services/ProposalServices/render";
+import { buildProposalMessages } from "../services/ProposalServices/proposalMessage";
+import ProposalTemplateInstitution from "../models/ProposalTemplateInstitution";
 import { renderPdf } from "../services/ProposalServices/pdf";
 import makeCrud from "./crudFactory";
 
@@ -31,7 +33,7 @@ const num = (v: any, d = 0) => (v === undefined || v === null || v === "" || Num
 interface Snapshot {
   title: string;
   modalityLabel?: string;
-  texts: { bolsaNote?: string | null; observation?: string | null; disclaimer?: string | null; finalMessage?: string | null };
+  texts: { bolsaNote?: string | null; observation?: string | null; disclaimer?: string | null; finalMessage?: string | null; waIntro?: string | null; waClosing?: string | null };
   institutionId?: number | null;
 }
 
@@ -46,10 +48,28 @@ const parseSchedule = (v: any): SemestralStep[] => {
   }
 };
 
-const defaultTemplate = async (id?: number | null) =>
-  (id && (await ProposalTemplate.findByPk(id))) ||
-  (await ProposalTemplate.findOne({ where: { isDefault: true } })) ||
-  (await ProposalTemplate.findOne({ order: [["id", "ASC"]] }));
+// explicit choice, else a model made for the course's institution (default one first),
+// else the default model of the system
+const defaultTemplate = async (id?: number | null, institutionId?: number | null) => {
+  if (id) {
+    const chosen = await ProposalTemplate.findByPk(id);
+    if (chosen) return chosen;
+  }
+  if (institutionId) {
+    const links = await ProposalTemplateInstitution.findAll({ where: { institutionId } });
+    const ids = links.map(l => l.templateId);
+    const own =
+      (ids.length &&
+        ((await ProposalTemplate.findOne({ where: { id: ids, isDefault: true } })) ||
+          (await ProposalTemplate.findOne({ where: { id: ids }, order: [["name", "ASC"]] })))) ||
+      (await ProposalTemplate.findOne({ where: { institutionId }, order: [["name", "ASC"]] }));
+    if (own) return own;
+  }
+  return (
+    (await ProposalTemplate.findOne({ where: { isDefault: true } })) ||
+    (await ProposalTemplate.findOne({ order: [["id", "ASC"]] }))
+  );
+};
 
 const defaultStart = (entryTerm?: string | null) => {
   const m = String(entryTerm || "").match(/(20\d{2})\s*[./-]\s*([12])/);
@@ -64,7 +84,7 @@ const modalityLabel = (c?: Course | null) =>
 // Everything the studio needs to start: course price, template rules, calendar
 const buildDefaults = async (lead: Lead, courseId?: number | null, templateId?: number | null) => {
   const course = courseId ? await Course.findByPk(courseId) : lead.courseId ? await Course.findByPk(lead.courseId) : null;
-  const tpl = await defaultTemplate(templateId);
+  const tpl = await defaultTemplate(templateId, course?.institutionId);
   if (!tpl) throw new AppError("ERR_NO_PROPOSAL_TEMPLATE");
   const gross = course?.monthlyFee ? Number(course.monthlyFee) : 0;
   const params: ProposalParams = {
@@ -90,13 +110,19 @@ const buildDefaults = async (lead: Lead, courseId?: number | null, templateId?: 
     semestralSchedule: parseSchedule(tpl.semestralSchedule),
     projectionFrom: null,
     projectionTo: null,
-    firstDueDate: null
+    firstDueDate: null,
+    hasRegression: tpl.hasRegression !== false,
+    hasAdjustment: tpl.hasAdjustment !== false,
+    fixedUntilEnd: !!tpl.fixedUntilEnd,
+    installmentsFixed: tpl.installmentsFixed || null,
+    firstExempt: !!tpl.firstExempt,
+    secondDueDate: null
   };
   const institutionId = course?.institutionId || tpl.institutionId || null;
   const snapshot: Snapshot = {
     title: course?.name || lead.name,
     modalityLabel: modalityLabel(course),
-    texts: { bolsaNote: tpl.bolsaNote, observation: tpl.observation, disclaimer: tpl.disclaimer, finalMessage: tpl.finalMessage },
+    texts: { bolsaNote: tpl.bolsaNote, observation: tpl.observation, disclaimer: tpl.disclaimer, finalMessage: tpl.finalMessage, waIntro: tpl.waIntro, waClosing: tpl.waClosing },
     institutionId
   };
   return { course, tpl, params, snapshot };
@@ -126,7 +152,14 @@ const normalizeParams = (base: ProposalParams, raw: any = {}): ProposalParams =>
     semestralSchedule: raw.semestralSchedule ? parseSchedule(raw.semestralSchedule) : base.semestralSchedule,
     projectionFrom: null,
     projectionTo: null,
-    firstDueDate: raw.firstDueDate || null
+    firstDueDate: raw.firstDueDate || null,
+    hasRegression: raw.hasRegression === undefined ? base.hasRegression !== false : !!raw.hasRegression,
+    hasAdjustment: raw.hasAdjustment === undefined ? base.hasAdjustment !== false : !!raw.hasAdjustment,
+    fixedUntilEnd: raw.fixedUntilEnd === undefined ? !!base.fixedUntilEnd : !!raw.fixedUntilEnd,
+    installmentsFixed:
+      raw.installmentsFixed === undefined ? base.installmentsFixed || null : num(raw.installmentsFixed, 0) > 0 ? Math.round(num(raw.installmentsFixed, 0)) : null,
+    firstExempt: raw.firstExempt === undefined ? !!base.firstExempt : !!raw.firstExempt,
+    secondDueDate: raw.secondDueDate || null
   };
   // the projection covers only the semesters still to be attended
   p.entrySemester = Math.min(
@@ -151,6 +184,16 @@ const normalizeParams = (base: ProposalParams, raw: any = {}): ProposalParams =>
 const compose = async (lead: Lead, params: ProposalParams, snapshot: Snapshot, generatedAt = new Date()) => {
   const institution = snapshot.institutionId ? await Institution.findByPk(snapshot.institutionId) : null;
   const result = calcProposal(params);
+  const messages = buildProposalMessages({
+    leadName: lead.name,
+    courseName: snapshot.title,
+    modalityLabel: snapshot.modalityLabel,
+    params,
+    result,
+    generatedAt,
+    intro: snapshot.texts.waIntro,
+    closing: snapshot.texts.waClosing
+  });
   const html = renderProposalHtml({
     title: snapshot.title,
     modalityLabel: snapshot.modalityLabel,
@@ -161,7 +204,7 @@ const compose = async (lead: Lead, params: ProposalParams, snapshot: Snapshot, g
     texts: snapshot.texts,
     generatedAt
   });
-  return { result, html, institution };
+  return { result, html, institution, messages };
 };
 
 const link = (p: Proposal) => `${getPublicUrl()}/p/${p.token}`;
@@ -190,8 +233,8 @@ export const preview = async (req: Request, res: Response): Promise<Response> =>
     ...d.snapshot,
     ...(snapRaw && typeof snapRaw === "object" ? { texts: { ...d.snapshot.texts, ...(snapRaw.texts || {}) }, institutionId: snapRaw.institutionId ?? d.snapshot.institutionId } : {})
   };
-  const { result, html } = await compose(lead, params, snapshot);
-  return res.json({ result, html });
+  const { result, html, messages } = await compose(lead, params, snapshot);
+  return res.json({ result, html, messages });
 };
 
 const save = async (req: Request, existing?: Proposal) => {
@@ -262,8 +305,8 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
 export const show = async (req: Request, res: Response): Promise<Response> => {
   const p = await Proposal.findByPk(req.params.id);
   if (!p) throw new AppError("ERR_NOT_FOUND", 404);
-  const { html, result } = await rebuild(p);
-  return res.json({ ...present(p), html, result });
+  const { html, result, messages } = await rebuild(p);
+  return res.json({ ...present(p), html, result, messages });
 };
 
 export const duplicate = async (req: Request, res: Response): Promise<Response> => {
@@ -300,7 +343,7 @@ export const send = async (req: Request, res: Response): Promise<Response> => {
   const p = await Proposal.findByPk(req.params.id);
   if (!p) throw new AppError("ERR_NOT_FOUND", 404);
   const lead = (await Lead.findByPk(p.leadId)) as Lead;
-  const { html } = await rebuild(p);
+  const { html, messages } = await rebuild(p);
   const buf = await renderPdf(html);
 
   // the file lives in /public so every channel can upload it
@@ -308,12 +351,26 @@ export const send = async (req: Request, res: Response): Promise<Response> => {
   fs.writeFileSync(path.join(PUBLIC_DIR, file), buf);
 
   const { contact, whatsapp } = await resolveLeadTarget(lead, uid(req), req.body.whatsappId);
-  const first = lead.name.split(" ")[0];
-  const body =
-    (req.body.message && String(req.body.message).trim()) ||
-    `Olá, ${first}! Segue a proposta do curso ${p.courseName}. Qualquer dúvida, estou à disposição.`;
+  // the consultant may have edited the blocks; the legacy single "message" still works
+  const edited: string[] = Array.isArray(req.body.messages)
+    ? req.body.messages.map((m: any) => String(m || "").trim())
+    : [];
+  const blocks = (edited.length ? edited : messages.map(m => m.text)).filter(Boolean);
+  const legacy = req.body.message ? String(req.body.message).trim() : "";
+  const keepOpen = { userId: uid(req) };
   try {
-    await SendToContact({ contact, whatsapp, body, mediaUrl: file, keepOpen: { userId: uid(req) } });
+    if (legacy) {
+      await SendToContact({ contact, whatsapp, body: legacy, mediaUrl: file, keepOpen });
+    } else {
+      // opening line, then the PDF carrying the summary, then the follow-up lines
+      const [intro, summary, ...rest] = blocks;
+      if (intro) await SendToContact({ contact, whatsapp, body: intro, keepOpen });
+      await SendToContact({ contact, whatsapp, body: summary || "", mediaUrl: file, keepOpen });
+      for (const text of rest) {
+        // eslint-disable-next-line no-await-in-loop
+        await SendToContact({ contact, whatsapp, body: text, keepOpen });
+      }
+    }
   } catch (err) {
     fs.unlink(path.join(PUBLIC_DIR, file), () => undefined);
     throw new AppError("ERR_PROPOSAL_SEND_FAILED");
@@ -376,18 +433,29 @@ export const templates = makeCrud(ProposalTemplate, {
   fields: [
     "name", "institutionId", "enrollmentFee", "dueDay", "installments", "punctualityPct", "lateFee1Pct",
     "lateFee2Pct", "annualMin", "annualMax", "semestralSchedule", "bolsaFirst", "bolsaNext", "bolsaNote",
-    "observation", "disclaimer", "finalMessage", "isDefault"
+    "observation", "disclaimer", "finalMessage", "isDefault", "installmentsFixed", "hasRegression", "hasAdjustment",
+    "fixedUntilEnd", "firstExempt", "waIntro", "waClosing"
   ],
   required: ["name"],
+  include: [{ model: Institution, as: "institutions", attributes: ["id", "name"], through: { attributes: [] } }],
   order: [["name", "ASC"]],
   beforeSave: data => {
     if (data.semestralSchedule !== undefined) {
       data.semestralSchedule = JSON.stringify(parseSchedule(data.semestralSchedule));
     }
     if (data.institutionId === "" || data.institutionId === 0) data.institutionId = null;
+    if (data.installmentsFixed === "" || data.installmentsFixed === 0) data.installmentsFixed = null;
     return data;
   },
-  afterSave: async row => {
+  afterSave: async (row, req) => {
     if (row.isDefault) await ProposalTemplate.update({ isDefault: false } as any, { where: { id: { [Op.ne]: row.id } } });
+    // institutions that use this model
+    if (Array.isArray(req.body.institutionIds)) {
+      const ids = [...new Set(req.body.institutionIds.map(Number))].filter(Boolean) as number[];
+      await ProposalTemplateInstitution.destroy({ where: { templateId: row.id } });
+      if (ids.length) {
+        await ProposalTemplateInstitution.bulkCreate(ids.map(institutionId => ({ templateId: row.id, institutionId })) as any);
+      }
+    }
   }
 });

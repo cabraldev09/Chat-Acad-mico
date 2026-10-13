@@ -48,6 +48,15 @@ export const renderProposalHtml = (i: RenderInput): string => {
   const logo = logoDataUri(i.institution?.logoFile);
   const first = p.firstMonthly;
   const firstDue = p.firstDueDate ? new Date(`${p.firstDueDate}T12:00:00`).toLocaleDateString("pt-BR") : null;
+  const secondDue = p.secondDueDate ? new Date(`${p.secondDueDate}T12:00:00`).toLocaleDateString("pt-BR") : null;
+  // extra rules only appear when a model departs from the classic behavior
+  const rules: string[] = [];
+  if (p.fixedUntilEnd) rules.push("Mensalidade fixa até o fim do curso, sem reajuste.");
+  else {
+    if (p.hasRegression === false) rules.push("A bolsa é mantida durante todo o curso.");
+    if (p.hasAdjustment === false) rules.push("Sem reajuste semestral ou anual.");
+  }
+  if (p.installmentsFixed) rules.push(`Total de ${p.installmentsFixed} mensalidades.`);
 
   const rows = r.rows
     .map(
@@ -107,10 +116,11 @@ table{width:100%;border-collapse:collapse}
 
 <div class="kv"><b>Mensalidade bruta atual:</b> ${brl(p.gross)}</div>
 <div class="kv"><b>Bolsa aplicada:</b> ${pct2(r.bolsaApplied)}${i.texts.bolsaNote ? ` <span class="muted">(${esc(i.texts.bolsaNote)})</span>` : ""}</div>
-<div class="kv"><b>Primeira Mensalidade:</b> ${brl(first)}${firstDue ? ` <span class="muted">(vencimento ${firstDue})</span>` : ""}</div>
+<div class="kv"><b>Primeira Mensalidade:</b> ${p.firstExempt ? `isenta${secondDue ? ` <span class="muted">(a 2ª mensalidade vence em ${secondDue})</span>` : ""}` : `${brl(first)}${firstDue ? ` <span class="muted">(vencimento ${firstDue})</span>` : ""}`}</div>
 <div class="kv" style="margin-top:8px"><b>Taxa de matrícula:</b> ${brl(p.enrollmentFee)} <span class="muted">(no ato da inscrição)</span></div>
 <div class="kv"><b>Demais mensalidades:</b> todo dia ${p.dueDay}</div>
 <div class="kv"><b>Quantidade de parcelas desse semestre:</b> ${p.installments}</div>
+${rules.map(t => `<div class="kv muted">${esc(t)}</div>`).join("")}
 
 <h2>2ª mensalidade em diante. (Pontualidade já inclusa de ${p.punctualityPct}%).</h2>
 <ul>

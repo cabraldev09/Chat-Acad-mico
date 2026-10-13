@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "react-toastify";
 import {
-  Dialog, IconButton, Button, TextField, MenuItem, Typography, makeStyles, Collapse,
+  Dialog, IconButton, Button, TextField, MenuItem, Typography, makeStyles, Collapse, FormControlLabel, Switch,
   CircularProgress, DialogTitle, DialogContent, DialogActions,
 } from "@material-ui/core";
 import { Autocomplete } from "@material-ui/lab";
-import { X, Save, Download, Link2, SendHorizonal, ChevronDown, SlidersHorizontal, Type, Plus, Trash2, GraduationCap, Wallet } from "lucide-react";
+import { X, Save, Download, Link2, SendHorizonal, ChevronDown, SlidersHorizontal, Type, Plus, Trash2, GraduationCap, Wallet, Copy, MessageSquare } from "lucide-react";
 
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
@@ -55,6 +55,8 @@ const toForm = (p) => ({
   punctualityPct: String(p.punctualityPct), lateFee1Pct: String(p.lateFee1Pct), lateFee2Pct: String(p.lateFee2Pct),
   annualMin: money(p.annualMin), annualMax: money(p.annualMax),
   schedule: (p.semestralSchedule || []).map((s) => ({ from: String(s.from), pct: money(s.pct) })),
+  hasRegression: p.hasRegression !== false, hasAdjustment: p.hasAdjustment !== false, fixedUntilEnd: !!p.fixedUntilEnd,
+  installmentsFixed: p.installmentsFixed ? String(p.installmentsFixed) : "", firstExempt: !!p.firstExempt, secondDueDate: p.secondDueDate || "",
 });
 
 // text inputs -> backend params
@@ -67,6 +69,8 @@ const toParams = (f) => {
     attendSemesters: toNum(f.attend) || null,
     bolsaFirst: toNum(f.bolsaFirst), bolsaNext: toNum(f.bolsaNext), punctualityPct: toNum(f.punctualityPct), lateFee1Pct: toNum(f.lateFee1Pct), lateFee2Pct: toNum(f.lateFee2Pct),
     annualMin: toNum(f.annualMin), annualMax: toNum(f.annualMax), semestralSchedule: f.schedule.map((x) => ({ from: toNum(x.from), pct: toNum(x.pct) })),
+    hasRegression: !!f.hasRegression, hasAdjustment: !!f.hasAdjustment, fixedUntilEnd: !!f.fixedUntilEnd,
+    installmentsFixed: toNum(f.installmentsFixed) || null, firstExempt: !!f.firstExempt, secondDueDate: f.secondDueDate || null,
   };
 };
 
@@ -89,6 +93,8 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
   const [busy, setBusy] = useState("");
   const [sendOpen, setSendOpen] = useState(false);
   const [message, setMessage] = useState("");
+  const [blocks, setBlocks] = useState([]);
+  const [blockEdits, setBlockEdits] = useState({});
   const loadSeq = useRef(0);
   const boxRef = useRef(null);
   const [scale, setScale] = useState(1);
@@ -136,7 +142,6 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
         } else {
           await loadDefaults(lead.courseId, null, false);
         }
-        setMessage(`Olá, ${lead.name.split(" ")[0]}! Segue a proposta do curso. Qualquer dúvida, estou à disposição.`);
       } catch (err) { toastError(err); onClose(); }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -150,7 +155,7 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
       try {
         const { data } = await api.post("/proposals/preview", { leadId: lead.id, courseId, templateId, params: toParams(f), snapshot });
         if (seq !== loadSeq.current) return;
-        setHtml(data.html); setResult(data.result); setError("");
+        setHtml(data.html); setResult(data.result); setBlocks(data.messages || []); setError("");
       } catch (err) {
         if (seq !== loadSeq.current) return;
         const code = err.response && err.response.data && err.response.data.error;
@@ -202,13 +207,17 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
   });
   const send = run("send", async () => {
     const p = await persist();
-    await api.post(`/proposals/${p.id}/send`, { message });
+    await api.post(`/proposals/${p.id}/send`, { messages: blocks.map(textOf) });
     toast.success("Proposta enviada ao candidato");
     onSaved && onSaved();
     setSendOpen(false);
     onClose(true);
   });
 
+  const textOf = (b) => (blockEdits[b.id] !== undefined ? blockEdits[b.id] : b.text);
+  const copyText = async (text, what) => {
+    try { await navigator.clipboard.writeText(text); toast.success(`${what} copiado. Cole no WhatsApp.`); } catch (e) { toast.error("Não consegui copiar. Selecione o texto e copie manualmente."); }
+  };
   const locked = saved && saved.status !== "draft";
   const course = courses.find((c) => c.id === courseId);
   const institution = institutions.find((i) => i.id === (snapshot && snapshot.institutionId));
@@ -253,6 +262,13 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
                   {course.category && <span className={classes.fact}>{course.category}</span>}
                 </div>
               )}
+              <TextField select fullWidth variant="outlined" margin="dense" label="Modelo de proposta" value={templateId || ""} disabled={!!locked}
+                helperText="Cada instituição pode ter modelos com regras diferentes (parcelas, regressão, reajuste)."
+                onChange={(e) => loadDefaults(courseId, e.target.value, true)}>
+                {templates
+                  .filter((t) => !snapshot || !snapshot.institutionId || !(t.institutions || []).length || t.institutions.some((i) => i.id === snapshot.institutionId) || t.id === templateId)
+                  .map((t) => (<MenuItem key={t.id} value={t.id}>{t.name}</MenuItem>))}
+              </TextField>
               <div className={classes.grid2}>
                 <TextField select fullWidth variant="outlined" margin="dense" label="Forma de ingresso" value={f.admissionType} disabled={!!locked}
                   onChange={(e) => setF((p) => {
@@ -293,7 +309,47 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
                 {field("installments", "Parcelas deste semestre", { disabled: !!locked })}
               </div>
               <div className={classes.note}>Mude a primeira mensalidade ou a bolsa: o outro valor se ajusta.</div>
-              {field("firstDueDate", "Vencimento da 1ª mensalidade (opcional)", { type: "date", InputLabelProps: { shrink: true }, disabled: !!locked })}
+              <FormControlLabel
+                control={<Switch color="primary" checked={!!f.firstExempt} disabled={!!locked} onChange={(e) => setF((p) => ({ ...p, firstExempt: e.target.checked }))} />}
+                label="1ª mensalidade isenta"
+              />
+              <div className={classes.grid2}>
+                {field("firstDueDate", f.firstExempt ? "Vencimento da 1ª (isenta)" : "Vencimento da 1ª mensalidade", { type: "date", InputLabelProps: { shrink: true }, disabled: !!locked })}
+                {f.firstExempt && field("secondDueDate", "Vencimento da 2ª mensalidade", { type: "date", InputLabelProps: { shrink: true }, disabled: !!locked })}
+              </div>
+              {field("installmentsFixed", "Total de parcelas do curso (vazio = até o fim do curso)", { disabled: !!locked, type: "number", inputProps: { min: 1, max: 120 } })}
+              <FormControlLabel
+                control={<Switch color="primary" checked={!!f.fixedUntilEnd} disabled={!!locked} onChange={(e) => setF((p) => ({ ...p, fixedUntilEnd: e.target.checked }))} />}
+                label="Mensalidade fixa até o fim do curso"
+              />
+              {!f.fixedUntilEnd && (
+                <>
+                  <FormControlLabel
+                    control={<Switch color="primary" checked={!!f.hasRegression} disabled={!!locked} onChange={(e) => setF((p) => ({ ...p, hasRegression: e.target.checked }))} />}
+                    label="Tem regressão da bolsa (cai após o 1º semestre)"
+                  />
+                  <FormControlLabel
+                    control={<Switch color="primary" checked={!!f.hasAdjustment} disabled={!!locked} onChange={(e) => setF((p) => ({ ...p, hasAdjustment: e.target.checked }))} />}
+                    label="Tem reajuste semestral e anual"
+                  />
+                </>
+              )}
+            </div>
+
+            <div className={classes.card}>
+              <div className={classes.cardHead}><MessageSquare size={17} /> Mensagem para o WhatsApp</div>
+              <div className={classes.note} style={{ marginBottom: 8 }}>Copie e cole na conversa ou envie pelo sistema. Você pode editar cada bloco.</div>
+              {blocks.map((b) => (
+                <div key={b.id} style={{ marginBottom: 10 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
+                    <span style={{ fontSize: 12.5, fontWeight: 600, flex: 1 }}>{b.title}</span>
+                    <Button size="small" startIcon={<Copy size={14} />} onClick={() => copyText(textOf(b), b.title)}>Copiar</Button>
+                  </div>
+                  <TextField fullWidth multiline variant="outlined" margin="dense" value={textOf(b)} disabled={!!locked}
+                    onChange={(e) => setBlockEdits((m) => ({ ...m, [b.id]: e.target.value }))} />
+                </div>
+              ))}
+              <Button fullWidth variant="outlined" startIcon={<Copy size={15} />} disabled={!blocks.length} onClick={() => copyText(blocks.map(textOf).join("\n\n"), "Mensagem completa")}>Copiar tudo</Button>
             </div>
 
             <div className={classes.card}>
@@ -389,7 +445,7 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
           <Typography variant="body2" color="textSecondary" gutterBottom>
             O PDF segue anexo na conversa (mesmo canal do atendimento), o lead vai para “Proposta enviada” e o atendimento fica com você.
           </Typography>
-          <TextField fullWidth multiline rows={4} variant="outlined" label="Mensagem" value={message} onChange={(e) => setMessage(e.target.value)} />
+          <div style={{ fontSize: 13.5, lineHeight: 1.5 }}>{blocks.map((b) => (<div key={b.id} style={{ marginBottom: 8, padding: "6px 10px", borderRadius: 10, background: "rgba(128,128,128,.12)", whiteSpace: "pre-wrap" }}>{textOf(b)}</div>))}</div>
         </DialogContent>
         <DialogActions>
           <Button variant="outlined" color="secondary" onClick={() => setSendOpen(false)}>Cancelar</Button>

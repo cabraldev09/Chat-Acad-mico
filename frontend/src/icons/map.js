@@ -4,6 +4,7 @@ export default {
   AccessTime: "Clock",
   AccountTree: "Workflow",
   AccountTreeOutlined: "ListOrdered",
+  LocationCityOutlined: "Building2",
   Add: "Plus",
   AddCircleOutline: "PlusCircle",
   Android: "Bot",
