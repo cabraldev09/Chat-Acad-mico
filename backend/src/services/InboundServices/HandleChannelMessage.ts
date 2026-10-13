@@ -12,6 +12,7 @@ import { logger } from "../../utils/logger";
 import CreateMessageService from "../MessageServices/CreateMessageService";
 import FindOrCreateTicketService from "../TicketServices/FindOrCreateTicketService";
 import RunInboundAutomation from "../AutomationServices/RunInboundAutomation";
+import { PUBLIC_DIR } from "../../config/paths";
 import processOptOut from "../SafetyServices/OptOut";
 
 const writeFileAsync = promisify(writeFile);
@@ -52,7 +53,7 @@ export const saveMediaBuffer = async (media: InboundMedia): Promise<string> => {
     filename = `${randomSuffix()}.${extensionFor(media.mimetype)}`;
   }
   await writeFileAsync(
-    join(__dirname, "..", "..", "..", "public", filename),
+    join(PUBLIC_DIR, filename),
     media.data
   );
   return filename;

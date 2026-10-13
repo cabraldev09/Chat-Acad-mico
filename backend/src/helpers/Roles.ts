@@ -23,12 +23,12 @@ export const SEGMENTS_OF: Record<string, string[]> = {
 };
 
 // users created before roles existed carry only `profile`
+// the administrator profile always wins: it is what the permission checks and the
+// seeded admin user rely on
 export const roleOf = (u: { role?: string; profile?: string }): Role =>
-  ((u.role && (ROLES as readonly string[]).includes(u.role)
-    ? u.role
-    : u.profile === "admin"
+  u.profile === "admin"
     ? "admin"
-    : "consultor") as Role);
+    : ((u.role && (ROLES as readonly string[]).includes(u.role) ? u.role : "consultor") as Role);
 
 export const POLO_FUNCTION_LABEL: Record<PoloFunction, string> = {
   comercial: "Comercial",

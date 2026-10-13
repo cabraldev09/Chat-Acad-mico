@@ -85,3 +85,30 @@ O que *pode* derrubar ou prejudicar um chip e como o sistema evita:
 | Respostas instantâneas, rajadas, campanha fria, ignorar "SAIR" | SendGuard: digitando + atraso, ritmo máximo, modo seguro, aquecimento, opt-out, pausa automática |
 
 **Importante, sem promessa falsa:** o WhatsApp por QR Code usa uma API **não oficial**. Nenhum sistema consegue garantir que um chip nunca será bloqueado, e este projeto **não tenta esconder** o uso nem burlar a detecção do WhatsApp — só reduz comportamentos de robô. Para disparos em volume e contato frio, a única opção sem risco é a **WhatsApp Cloud API oficial** (número da empresa com templates aprovados). Use o QR Code só para atendimento receptivo, com um chip que você aceite arriscar.
+
+## Railway (API) — variáveis e volume
+
+No serviço do repositório no Railway (o `Dockerfile` e o `railway.toml` na raiz já configuram build, migrations e health check):
+
+1. **Volume**: *Settings → Volumes → New Volume*, montar em `/data`. Sem ele a sessão do WhatsApp e os arquivos se perdem a cada deploy (e o chip pede novo QR Code).
+2. **Variáveis** (aba *Variables*):
+
+| Variável | Valor |
+|---|---|
+| `DB_DIALECT` | `postgres` |
+| `DATABASE_URL` | string do **Session pooler** do Supabase (*Connect → Session pooler*, porta 5432, usuário `postgres.SEU_PROJETO`) — **não** a conexão direta `db.xxx.supabase.co`, que é só IPv6 e o Railway não alcança |
+| `DB_SSL` | `true` |
+| `JWT_SECRET`, `JWT_REFRESH_SECRET` | textos longos e aleatórios (obrigatórios em produção) |
+| `BACKEND_URL` | URL pública do serviço (`https://….up.railway.app` ou seu domínio da API) |
+| `FRONTEND_URL` | URL da Vercel / domínio do app |
+| `PUBLIC_URL` | igual a `BACKEND_URL` (webhooks Meta/Efí) |
+| `TRUST_PROXY` | `1` |
+| `APP_TIMEZONE` | `America/Porto_Velho` |
+| `UPLOAD_DIR` | `/data/public` |
+| `WWEBJS_AUTH_PATH` | `/data/wwebjs` |
+| `ZAPO_AUTH_PATH` | `/data/zapo/state.sqlite` |
+| `NODE_ENV` | `production` |
+
+3. **Uma única réplica** (`numReplicas = 1`). Durante o deploy o Railway pode manter a versão antiga ligada por alguns segundos: a trava de instância única impede que as duas abram o WhatsApp ao mesmo tempo.
+4. **Banco novo**: o próprio start roda `sequelize db:migrate`. Depois, uma vez, no terminal do Railway (`railway run`): `npx sequelize db:seed:all` (cria o admin) e troque a senha.
+5. **Vercel**: projeto com *Root Directory* `frontend`, `VITE_BACKEND_URL=https://sua-api/`.

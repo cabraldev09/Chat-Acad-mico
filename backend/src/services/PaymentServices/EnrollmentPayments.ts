@@ -1,4 +1,5 @@
 import fs from "fs";
+import { PUBLIC_DIR } from "../../config/paths";
 import { fmtDateTime } from "../../helpers/AppTime";
 import path from "path";
 import { randomBytes } from "crypto";
@@ -19,7 +20,7 @@ import SendToContact from "../ChannelServices/SendToContact";
 import { addActivity, changeStage, loadLead, resolveLeadTarget } from "../CrmServices/LeadCore";
 import * as Efi from "./EfiClient";
 
-const PUBLIC_DIR = path.resolve(__dirname, "..", "..", "..", "public");
+
 const brl = (n: number) => Number(n).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 export const present = (p: Payment, withQr = false) => {

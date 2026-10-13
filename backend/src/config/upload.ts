@@ -1,8 +1,9 @@
 import path from "path";
 import multer from "multer";
 import { randomBytes } from "crypto";
+import { PUBLIC_DIR } from "./paths";
 
-const publicFolder = path.resolve(__dirname, "..", "..", "public");
+const publicFolder = PUBLIC_DIR;
 export default {
   directory: publicFolder,
 

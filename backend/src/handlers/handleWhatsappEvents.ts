@@ -18,6 +18,7 @@ import ShowWhatsAppService from "../services/WhatsappService/ShowWhatsAppService
 import CreateContactService from "../services/ContactServices/CreateContactService";
 
 import RunInboundAutomation from "../services/AutomationServices/RunInboundAutomation";
+import { PUBLIC_DIR } from "../config/paths";
 import processOptOut from "../services/SafetyServices/OptOut";
 import { MessageType, MessageAck } from "../providers/WhatsApp/types";
 
@@ -96,7 +97,7 @@ const saveMediaFile = async (mediaPayload: MediaPayload): Promise<string> => {
 
   try {
     await writeFileAsync(
-      join(__dirname, "..", "..", "public", filename),
+      join(PUBLIC_DIR, filename),
       mediaPayload.data,
       "base64"
     );

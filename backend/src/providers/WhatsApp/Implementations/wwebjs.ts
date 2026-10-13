@@ -7,6 +7,7 @@ import {
   Contact as WbotContact,
   MessageSendOptions
 } from "whatsapp-web.js";
+import { WWEBJS_AUTH_DIR } from "../../../config/paths";
 import { onDisconnected } from "../../../services/SafetyServices/SendGuard";
 import { getIO } from "../../../libs/socket";
 import Whatsapp from "../../../models/Whatsapp";
@@ -464,7 +465,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
     const args: string = process.env.CHROME_ARGS || "";
 
     const wbot: Session = new Client({
-      authStrategy: new LocalAuth({ clientId: `bd_${whatsapp.id}` }),
+      authStrategy: new LocalAuth({ clientId: `bd_${whatsapp.id}`, dataPath: WWEBJS_AUTH_DIR }),
       puppeteer: {
         // headless: false, // TODO make sure chromium closes on session disconnection / delete
         executablePath: process.env.CHROME_BIN || undefined,

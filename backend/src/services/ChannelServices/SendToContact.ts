@@ -1,4 +1,5 @@
 import fs from "fs";
+import { PUBLIC_DIR } from "../../config/paths";
 import path from "path";
 
 import Contact from "../../models/Contact";
@@ -14,7 +15,7 @@ import SendWhatsAppMedia from "../WbotServices/SendWhatsAppMedia";
 import CreateMessageService from "../MessageServices/CreateMessageService";
 import { getAdapter } from "../../channels";
 
-const PUBLIC_DIR = path.resolve(__dirname, "..", "..", "..", "public");
+
 
 interface Input {
   contact: Contact;

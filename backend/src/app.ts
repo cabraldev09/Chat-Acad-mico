@@ -6,7 +6,7 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 import * as Sentry from "@sentry/node";
 
-import "./database";
+import sequelize from "./database";
 import uploadConfig from "./config/upload";
 import AppError from "./errors/AppError";
 import routes from "./routes";
@@ -27,6 +27,16 @@ app.disable("x-powered-by");
 // behind a reverse proxy/tunnel the real client IP comes in X-Forwarded-For
 if (process.env.TRUST_PROXY) app.set("trust proxy", process.env.TRUST_PROXY);
 app.use(securityHeaders);
+
+// Railway/Docker health check: answers only when the database does too
+app.get("/health", async (_req: Request, res: Response) => {
+  try {
+    await sequelize.query("SELECT 1");
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(503).json({ ok: false });
+  }
+});
 
 // brute-force / abuse protection on the unauthenticated entry points
 const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20 });

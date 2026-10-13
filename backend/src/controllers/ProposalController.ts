@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import { PUBLIC_DIR } from "../config/paths";
 import fs from "fs";
 import path from "path";
 import { Op } from "sequelize";
@@ -23,7 +24,7 @@ import { renderProposalHtml } from "../services/ProposalServices/render";
 import { renderPdf } from "../services/ProposalServices/pdf";
 import makeCrud from "./crudFactory";
 
-const PUBLIC_DIR = path.resolve(__dirname, "..", "..", "public");
+
 const uid = (req: Request) => Number(req.user.id);
 const num = (v: any, d = 0) => (v === undefined || v === null || v === "" || Number.isNaN(Number(v)) ? d : Number(v));
 

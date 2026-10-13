@@ -1,4 +1,5 @@
 import fs from "fs";
+import { PUBLIC_DIR } from "../../config/paths";
 import { fmtDateTime } from "../../helpers/AppTime";
 import path from "path";
 
@@ -26,7 +27,7 @@ const pct2 = (n: number) =>
   `${Number(n).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
 const dash = (n: number, f: (x: number) => string) => (n ? f(n) : "-");
 
-const PUBLIC_DIR = path.resolve(__dirname, "..", "..", "..", "public");
+
 
 const logoDataUri = (file?: string | null): string | null => {
   if (!file) return null;
