@@ -31,6 +31,8 @@ import ListTodoIcon from "lucide-react/dist/esm/icons/list-todo";
 import HeartHandshakeIcon from "lucide-react/dist/esm/icons/heart-handshake";
 import GraduationCapIcon from "lucide-react/dist/esm/icons/graduation-cap";
 
+import api from "../services/api";
+import openSocket from "../services/socket-io";
 import { i18n } from "../translate/i18n";
 import { WhatsAppsContext } from "../context/WhatsApp/WhatsAppsContext";
 import { AuthContext } from "../context/Auth/AuthContext";
@@ -81,6 +83,19 @@ const useStyles = makeStyles((theme) => ({
     borderRadius: theme.borderRadius.pill,
     backgroundColor: theme.palette.error.main,
     boxShadow: `0 0 0 3px ${theme.palette.error.main}33`,
+  },
+  countBadge: {
+    minWidth: 18,
+    height: 18,
+    padding: "0 5px",
+    borderRadius: 9,
+    fontSize: 11,
+    fontWeight: 700,
+    lineHeight: "18px",
+    textAlign: "center",
+    color: "#111",
+    backgroundColor: "#FEF84C",
+    flexShrink: 0,
   },
   connectionDotCollapsed: {
     position: "absolute",
@@ -144,6 +159,17 @@ const MainListItems = (props) => {
   const { whatsApps } = useContext(WhatsAppsContext);
   const { user } = useContext(AuthContext);
   const [connectionWarning, setConnectionWarning] = useState(false);
+  const [aiReview, setAiReview] = useState(0);
+
+  // answers the team gave that the owner has not reviewed yet
+  useEffect(() => {
+    if (user.profile !== "admin") return undefined;
+    const load = () => api.get("/ai-learnings/pending").then(({ data }) => setAiReview(data.count)).catch(() => {});
+    load();
+    const socket = openSocket();
+    socket.on("aiLearning", load);
+    return () => socket.disconnect();
+  }, [user.profile]);
 
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
@@ -294,6 +320,7 @@ const MainListItems = (props) => {
               primary="Agentes de IA"
               icon={<AndroidIcon />}
               collapsed={collapsed}
+              adornment={aiReview > 0 && <span className={classes.countBadge} title="Respostas da equipe para você revisar">{aiReview}</span>}
             />
             <ListItemLink
               to="/integrations"

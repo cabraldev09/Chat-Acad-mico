@@ -28,6 +28,15 @@ inventa preços.
   distribuição da fila (rodízio ou menos ocupado).
 * Quando o aluno pede uma pessoa, o assunto foge da base, o limite diário acaba ou algo falha: passa para a equipe, nunca fica mudo.
 
+### O agente aprende com você (aba Aprendizado)
+1. Se o agente não achar a resposta, ele diz ao aluno que vai confirmar, **guarda a pergunta** e passa a conversa para a equipe.
+2. Se você preencheu **WhatsApp para receber os avisos** (aba Persona e limites), recebe uma mensagem: "o agente não soube responder…".
+3. Quando alguém da equipe responde ao aluno, a resposta vira uma **sugestão** em *Aprendizado → Para revisar* (e você recebe outro aviso no WhatsApp, até 20 por hora).
+4. Você edita e clica em **Aprovar e ensinar**. A partir daí o agente usa a resposta: como conhecimento (padrão) ou sempre com o mesmo texto.
+5. Nada é aprendido sem a sua aprovação. Também dá para ensinar direto: na aba *Testar agente*, use **Corrigir esta resposta**.
+
+Na aba *Base de conhecimento*, **Testar uma pergunta** mostra quais trechos o agente leria, e cada resposta do teste informa em quais documentos ela se baseou.
+
 ### Limites honestos
 * Com provedor OpenAI o agente responde com base de conhecimento, mas **sem ferramentas** e sem cache.
 * A busca é por palavras (não por significado). Perguntas com sinônimos pouco comuns podem não achar o trecho; cadastre uma

@@ -1,6 +1,7 @@
 import React, { useRef, useState, useEffect } from "react";
 import { Button, TextField, Typography, makeStyles } from "@material-ui/core";
-import { Send, RotateCcw } from "lucide-react";
+import { Send, RotateCcw, GraduationCap } from "lucide-react";
+import { toast } from "react-toastify";
 
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
@@ -23,6 +24,15 @@ const TestTab = ({ agentId }) => {
   const [busy, setBusy] = useState(false);
   const [collected, setCollected] = useState({});
   const end = useRef();
+  const [teaching, setTeaching] = useState(null);
+  const [lesson, setLesson] = useState("");
+  const teach = async (t) => {
+    try {
+      await api.post(`/ai-agents/${agentId}/learnings`, { question: t.question, answer: lesson });
+      toast.success("Pronto: o agente vai usar essa resposta.");
+      setTeaching(null);
+    } catch (err) { toastError(err); }
+  };
   useEffect(() => { if (end.current) end.current.scrollTop = end.current.scrollHeight; }, [turns, busy]);
 
   const send = async () => {
@@ -35,7 +45,7 @@ const TestTab = ({ agentId }) => {
     try {
       const { data } = await api.post(`/ai-agents/${agentId}/test`, { messages: next.map(({ role, content: c }) => ({ role, content: c })), collected });
       setCollected(data.collected || {});
-      setTurns([...next, { role: "assistant", content: data.text || "(sem resposta)", meta: `${(data.tools || []).map((t) => TOOL[t] || t).join(", ")}${data.tools?.length ? " · " : ""}${data.tokens.input + data.tokens.output} tokens` }]);
+      setTurns([...next, { role: "assistant", content: data.text || "(sem resposta)", question: content, sources: data.sources || [], meta: `${(data.tools || []).map((t) => TOOL[t] || t).join(", ")}${data.tools?.length ? " · " : ""}${data.tokens.input + data.tokens.output} tokens` }]);
     } catch (err) {
       toastError(err);
       setTurns(turns);
@@ -54,7 +64,18 @@ const TestTab = ({ agentId }) => {
         {turns.map((t, i) => (
           <React.Fragment key={i}>
             <div className={t.role === "user" ? classes.me : classes.bot}>{t.content}</div>
-            {t.meta && <span className={classes.meta}>{t.meta}</span>}
+            {t.meta && <span className={classes.meta}>{t.meta}{t.sources && t.sources.length ? ` · baseado em: ${t.sources.join(", ")}` : ""}</span>}
+            {t.role === "assistant" && (
+              teaching === i ? (
+                <div style={{ alignSelf: "stretch", display: "flex", gap: 6 }}>
+                  <TextField fullWidth multiline rows={2} size="small" variant="outlined" placeholder="Escreva a resposta certa" value={lesson} onChange={(e) => setLesson(e.target.value)} style={{ background: "rgba(255,255,255,.6)", borderRadius: 4 }} />
+                  <Button variant="contained" color="primary" size="small" disabled={!lesson.trim()} onClick={() => teach(t)}>Ensinar</Button>
+                  <Button size="small" onClick={() => setTeaching(null)}>Cancelar</Button>
+                </div>
+              ) : (
+                <Button size="small" style={{ alignSelf: "flex-start", textTransform: "none" }} startIcon={<GraduationCap size={14} />} onClick={() => { setTeaching(i); setLesson(""); }}>Corrigir esta resposta</Button>
+              )
+            )}
           </React.Fragment>
         ))}
         {busy && <span className={classes.meta}>digitando…</span>}

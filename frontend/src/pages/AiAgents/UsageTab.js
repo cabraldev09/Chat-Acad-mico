@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { Typography, LinearProgress, makeStyles } from "@material-ui/core";
+import { Typography, LinearProgress, TextField, Button, makeStyles } from "@material-ui/core";
+import { toast } from "react-toastify";
 
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
@@ -16,10 +17,19 @@ const useStyles = makeStyles((theme) => ({
 
 const nf = (n) => Number(n || 0).toLocaleString("pt-BR");
 
-const UsageTab = ({ agentId }) => {
+const UsageTab = ({ agentId, model }) => {
   const classes = useStyles();
   const [u, setU] = useState(null);
-  useEffect(() => { api.get(`/ai-agents/${agentId}/usage`, { params: { days: 7 } }).then(({ data }) => setU(data)).catch(toastError); }, [agentId]);
+  const [price, setPrice] = useState({ in: "", out: "" });
+  const load = () => api.get(`/ai-agents/${agentId}/usage`, { params: { days: 7 } }).then(({ data }) => setU(data)).catch(toastError);
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [agentId]);
+  const savePrice = async () => {
+    try {
+      await api.put(`/settings/ai_price_${model}`, { value: `${String(price.in).replace(",", ".")},${String(price.out).replace(",", ".")}` });
+      toast.success("Preço salvo.");
+      load();
+    } catch (err) { toastError(err); }
+  };
   if (!u) return null;
   const max = Math.max(1, ...u.perDay.map((d) => d.input + d.output));
   const pct = u.cap > 0 ? Math.min(100, (u.today / u.cap) * 100) : 0;
@@ -53,11 +63,14 @@ const UsageTab = ({ agentId }) => {
         </div>
       )}
       <Typography variant="body2" color="textSecondary" style={{ marginTop: 16 }}>
-        {u.costUsd !== null
-          ? `Custo estimado no período: US$ ${u.costUsd.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}.`
-          : "Para ver o custo em dólares, informe o preço do modelo em Configurações (chave ai_price_<modelo> = entrada,saída por milhão de tokens)."}{" "}
+        {u.costUsd !== null ? `Custo estimado no período: US$ ${u.costUsd.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}. ` : "Informe o preço do modelo abaixo para ver o custo em dólares. "}
         O cache do prompt fixo reduz o custo das chamadas seguintes: {nf(u.total.cacheRead)} tokens foram lidos do cache.
       </Typography>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 12 }}>
+        <TextField size="small" variant="outlined" label="Preço de entrada (US$ por milhão de tokens)" value={price.in} onChange={(e) => setPrice({ ...price, in: e.target.value })} style={{ minWidth: 260 }} />
+        <TextField size="small" variant="outlined" label="Preço de saída (US$ por milhão de tokens)" value={price.out} onChange={(e) => setPrice({ ...price, out: e.target.value })} style={{ minWidth: 260 }} />
+        <Button variant="outlined" disabled={!price.in || !price.out} onClick={savePrice}>Salvar preço de {model}</Button>
+      </div>
     </div>
   );
 };

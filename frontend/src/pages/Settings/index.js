@@ -21,7 +21,7 @@ const useStyles = makeStyles((theme) => ({
   title: { fontWeight: 700, fontSize: 16, lineHeight: 1.2 },
   sub: { fontSize: 13, color: theme.palette.text.secondary },
   hint: { fontSize: 12.5, color: theme.palette.text.secondary },
-  tokenRow: { display: "flex", gap: theme.spacing(1), alignItems: "center" },
+  tokenRow: { display: "flex", gap: theme.spacing(1), alignItems: "center", flexWrap: "wrap" },
 }));
 
 const HOURS = [4, 8, 12, 24, 48, 72];
@@ -91,12 +91,13 @@ const Settings = () => {
           </Section>
 
           <Section icon={<BellRing size={18} />} title="Atendimento" sub="Prazos e lembretes automáticos.">
-            <TextField select fullWidth variant="outlined" margin="dense" label="Avisar quando o aluno matriculado ficar sem contato do tutor por"
+            <TextField select fullWidth variant="outlined" margin="dense" label="Alertar se o aluno ficar sem contato por"
               value={Number(values.onboarding_sla_hours || 24)} onChange={(e) => save("onboarding_sla_hours", e.target.value)}
               InputLabelProps={{ shrink: true }}>
               {HOURS.map((h) => (<MenuItem key={h} value={h}>{h} horas</MenuItem>))}
             </TextField>
-            <TextField select fullWidth variant="outlined" margin="dense" label="Lembrar quem largou o menu do chatbot depois de"
+            <Typography className={classes.hint}>Vale para o tutor que ainda não falou com o aluno depois da matrícula.</Typography>
+            <TextField select fullWidth variant="outlined" margin="dense" label="Lembrar quem largou o chatbot após"
               value={Number(values.chatbot_reminder_minutes ?? 30)} onChange={(e) => save("chatbot_reminder_minutes", e.target.value)}
               InputLabelProps={{ shrink: true }}>
               {MINUTES.map((m) => (<MenuItem key={m} value={m}>{m === 0 ? "Não lembrar" : `${m} minutos`}</MenuItem>))}
@@ -105,7 +106,7 @@ const Settings = () => {
 
           <Section icon={<KeyRound size={18} />} title="Integração" sub="Token usado pelas integrações externas (API).">
             <div className={classes.tokenRow}>
-              <TextField fullWidth variant="outlined" margin="dense" label="Token da API" value={token} type={showToken ? "text" : "password"} InputProps={{ readOnly: true }} />
+              <TextField style={{ flex: "1 1 100%" }} variant="outlined" margin="dense" label="Token da API" value={token} type={showToken ? "text" : "password"} InputProps={{ readOnly: true }} />
               <Button variant="outlined" onClick={() => setShowToken((v) => !v)} startIcon={showToken ? <EyeOff size={15} /> : <Eye size={15} />}>{showToken ? "Ocultar" : "Mostrar"}</Button>
               <Button variant="outlined" disabled={!token} startIcon={<Copy size={15} />} onClick={() => { navigator.clipboard.writeText(token); toast.success("Token copiado."); }}>Copiar</Button>
             </div>
