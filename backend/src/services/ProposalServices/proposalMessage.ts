@@ -64,21 +64,14 @@ export const buildProposalMessages = (i: Input): MessageBlock[] => {
   if (p.installments) lines.push(`*Neste semestre:* ${p.installments} parcela${p.installments > 1 ? "s" : ""}`);
   lines.push(`*Demais mensalidades:* vencimento todo dia ${p.dueDay}`);
 
+  // only state what is true for this proposal: nothing about regression, and "fixed"
+  // / "N installments" only when the model really says so
   if (p.fixedUntilEnd) {
     lines.push("*Mensalidade fixa* até o fim do curso, sem reajuste.");
-  } else {
-    if (p.hasRegression !== false && Number(p.bolsaFirst) !== Number(p.bolsaNext)) {
-      lines.push(`*Bolsa:* ${pct(p.bolsaFirst)} no 1º semestre e ${pct(p.bolsaNext)} a partir do 2º.`);
-    } else {
-      lines.push("*Bolsa:* mantida durante todo o curso.");
-    }
-    if (p.hasAdjustment !== false) lines.push("*Reajuste:* semestral e anual, conforme a projeção do documento.");
+  } else if (p.hasAdjustment !== false) {
+    lines.push("*Reajuste:* semestral e anual, conforme a projeção do documento.");
   }
-  lines.push(
-    p.installmentsFixed
-      ? `*Parcelas:* ${p.installmentsFixed} mensalidades.`
-      : "*Parcelas:* mensalidades até o fim do curso."
-  );
+  if (p.installmentsFixed) lines.push(`*Parcelas:* ${p.installmentsFixed} mensalidades.`);
 
   const punctuality =
     `O valor de *${brl(r.tiers.onTime)}* já considera o desconto de pontualidade. ` +
