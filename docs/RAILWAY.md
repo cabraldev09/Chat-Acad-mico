@@ -79,7 +79,7 @@ O risco de bloqueio é parecido nos dois motores: o que mais pesa é o comportam
 denúncias), e é isso que o SendGuard controla. Plano de Railway com pelo menos **1 GB de memória** para o Chromium.
 
 ## Primeiro acesso
-Na primeira subida o sistema cria o administrador. Defina em *Variables* `ADMIN_EMAIL` e `ADMIN_PASSWORD` para escolher os seus.
+A cada subida, `ADMIN_EMAIL` + `ADMIN_PASSWORD` (em *Variables*) criam esse administrador ou promovem o usuário com esse e-mail e definem a senha. Serve também para recuperar um acesso perdido (`ADMIN_NAME` é opcional).
 Sem `ADMIN_PASSWORD`, uma senha aleatória aparece **uma única vez** no log (`SENHA INICIAL`). Entre e troque.
 
 ## Vercel (telas)
