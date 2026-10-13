@@ -1,0 +1,28 @@
+name: Verificações
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Backend compila
+        working-directory: backend
+        run: |
+          npm ci --legacy-peer-deps
+          npx tsc --noEmit
+      - name: Tudo em português
+        working-directory: backend
+        run: node scripts/i18n-check.js
+      - name: Frontend compila
+        working-directory: frontend
+        run: |
+          npm ci --legacy-peer-deps
+          npx vite build

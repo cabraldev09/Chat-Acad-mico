@@ -111,8 +111,8 @@ const EfiSettings = ({ stages }) => {
       <TextField select size="small" variant="outlined" label="Ambiente" value={v.env} onChange={(e) => setV({ ...v, env: e.target.value })} style={{ maxWidth: 260 }}>
         <MenuItem value="sandbox">Homologação (testes)</MenuItem><MenuItem value="production">Produção</MenuItem>
       </TextField>
-      <TextField size="small" variant="outlined" label="Client ID" value={v.clientId} onChange={(e) => setV({ ...v, clientId: e.target.value })} />
-      <TextField size="small" variant="outlined" label="Client Secret" type="password" value={secret} onChange={(e) => setSecret(e.target.value)} autoComplete="off" />
+      <TextField size="small" variant="outlined" label="ID do cliente (Client_Id)" value={v.clientId} onChange={(e) => setV({ ...v, clientId: e.target.value })} />
+      <TextField size="small" variant="outlined" label="Segredo do cliente (Client_Secret)" type="password" value={secret} onChange={(e) => setSecret(e.target.value)} autoComplete="off" />
       <TextField size="small" variant="outlined" label="Chave PIX da conta Efí" value={v.pixKey} onChange={(e) => setV({ ...v, pixKey: e.target.value })} helperText="CPF/CNPJ, e-mail, telefone ou chave aleatória" />
       <div className={classes.row}>
         <Button component="label" variant="outlined" startIcon={<KeyRound size={16} />}>{v.certificate ? "Trocar certificado (.p12)" : "Enviar certificado (.p12)"}

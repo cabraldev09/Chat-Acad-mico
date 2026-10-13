@@ -21,6 +21,8 @@ const toastError = err => {
 	if (errorMsg) {
 		if (i18n.exists(`backendErrors.${errorMsg}`)) {
 			toast.error(i18n.t(`backendErrors.${errorMsg}`), { toastId: errorMsg });
+		} else if (/^ERR_FIELD_REQUIRED_/.test(String(errorMsg))) {
+			toast.error("Preencha todos os campos obrigatórios.", { toastId: errorMsg });
 		} else if (/^ERR_[A-Z0-9_]+$/.test(String(errorMsg))) {
 			toast.error(byStatus[err.response.status] || "Não foi possível concluir a ação.", { toastId: errorMsg });
 		} else if (/^[\x00-\x7F]*$/.test(String(errorMsg)) && /[a-z]{4,} [a-z]{3,}/i.test(String(errorMsg))) {

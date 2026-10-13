@@ -51,7 +51,7 @@ const Schedules = () => {
         { header: "Quando", render: (r) => format(parseISO(r.sendAt), "dd/MM/yyyy HH:mm") },
         { header: "Mensagem", render: (r) => (r.body.length > 60 ? `${r.body.slice(0, 60)}…` : r.body) },
         {
-          header: "Status",
+          header: "Situação",
           render: (r) => (
             <span title={r.error || ""}>{STATUS[r.status] || r.status}</span>
           ),

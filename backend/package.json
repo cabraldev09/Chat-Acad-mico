@@ -14,6 +14,7 @@
     "db:migrate": "npm run build && sequelize db:migrate",
     "db:seed": "sequelize db:seed:all",
     "test:channels": "npm run build && node scripts/channels-e2e.js",
+    "i18n:check": "node scripts/i18n-check.js",
     "format": "prettier --write \"src/**/*.ts\""
   },
   "author": "",

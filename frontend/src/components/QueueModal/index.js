@@ -112,7 +112,7 @@ const QueueModal = ({ open, onClose, queueId }) => {
 			} else {
 				await api.post("/queue", values);
 			}
-			toast.success("Queue saved successfully");
+			toast.success("Setor salvo com sucesso.");
 			handleClose();
 		} catch (err) {
 			toastError(err);

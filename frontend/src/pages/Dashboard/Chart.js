@@ -82,7 +82,7 @@ const Chart = () => {
 							position="left"
 							style={{ textAnchor: "middle", fill: theme.palette.text.primary }}
 						>
-							Tickets
+							Atendimentos
 						</Label>
 					</YAxis>
 					<Bar dataKey="amount" fill={theme.palette.type === "dark" ? "#0693E3" : "#0B4279"} radius={[6, 6, 0, 0]} animationDuration={900} />

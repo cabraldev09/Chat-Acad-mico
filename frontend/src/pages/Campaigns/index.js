@@ -159,7 +159,7 @@ const ListItemsDialog = ({ list, onClose }) => {
               <TableRow>
                 <TableCell>Nome</TableCell>
                 <TableCell>Número</TableCell>
-                <TableCell>Email</TableCell>
+                <TableCell>E-mail</TableCell>
                 <TableCell />
               </TableRow>
             </TableHead>
@@ -218,7 +218,7 @@ const ReportDialog = ({ campaignId, onClose }) => {
                   <TableRow>
                     <TableCell>Nome</TableCell>
                     <TableCell>Número</TableCell>
-                    <TableCell>Status</TableCell>
+                    <TableCell>Situação</TableCell>
                     <TableCell>Quando / erro</TableCell>
                   </TableRow>
                 </TableHead>
@@ -379,7 +379,7 @@ const Campaigns = () => {
               { header: "Campanha", field: "name" },
               { header: "Lista", render: (r) => r.contactList?.name },
               {
-                header: "Status",
+                header: "Situação",
                 render: (r) => {
                   const [label, color] = STATUS[r.status] || [r.status, "default"];
                   return (
