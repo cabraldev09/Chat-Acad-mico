@@ -12,14 +12,15 @@ import AutoAssignTicket from "../AutomationServices/AutoAssignTicket";
 import { logger } from "../../utils/logger";
 import { slotsOf, missingSlots } from "./Tools";
 
-export type HandoffReason = "pedido" | "limite_turnos" | "limite_tokens" | "qualificado" | "sem_resposta";
+export type HandoffReason = "pedido" | "limite_turnos" | "limite_tokens" | "qualificado" | "sem_resposta" | "desconhecido";
 
 const REASON: Record<HandoffReason, string> = {
   pedido: "o aluno pediu para falar com uma pessoa ou o assunto exige um humano",
   limite_turnos: "a conversa passou do limite de respostas automáticas",
   limite_tokens: "o limite diário de uso da IA foi atingido",
   qualificado: "todos os dados necessários foram coletados",
-  sem_resposta: "a IA não conseguiu responder"
+  sem_resposta: "a IA não conseguiu responder",
+  desconhecido: "a pergunta não está na base de conhecimento"
 };
 
 const summaryOf = (agent: AiAgent, ticket: Ticket): string => {
@@ -31,7 +32,7 @@ const summaryOf = (agent: AiAgent, ticket: Ticket): string => {
 };
 
 // Passes the conversation to the team with everything the AI learned, so nobody asks again.
-export const handoffToHuman = async (ticketId: number, agent: AiAgent, reason: HandoffReason): Promise<void> => {
+export const handoffToHuman = async (ticketId: number, agent: AiAgent, reason: HandoffReason, question?: string): Promise<void> => {
   const ticket = await Ticket.findByPk(ticketId);
   if (!ticket) return;
   await ticket.update({ aiActive: false });
@@ -44,7 +45,7 @@ export const handoffToHuman = async (ticketId: number, agent: AiAgent, reason: H
     ticketId,
     type: "handoff",
     actorId: null,
-    note: `Atendimento com IA encerrado (${REASON[reason]}).${summary ? `\n${summary}` : ""}`.slice(0, 1000)
+    note: `Atendimento com IA encerrado (${REASON[reason]}).${question ? `\nPergunta que ficou sem resposta: “${question}”` : ""}${summary ? `\n${summary}` : ""}`.slice(0, 1000)
   } as any).catch(err => logger.warn(`handoff note not saved: ${err}`));
 
   const lead = await Lead.findOne({ where: { contactId: ticket.contactId } });

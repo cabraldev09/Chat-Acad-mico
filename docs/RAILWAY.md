@@ -56,3 +56,18 @@ Depois do deploy ficar verde (`/health` responde `{"ok":true}`), no terminal do 
 | API sobe, mas "Another instance owns the WhatsApp sessions" | havia outra cópia no ar (deploy sobrepondo); a nova assume sozinha em até 15 s |
 | QR Code pede de novo a cada deploy | volume `/data` ausente ou variáveis de caminho não definidas |
 | Login funciona e a tela volta para o login | `FRONTEND_URL`/`BACKEND_URL` errados ou sem `https://` (cookie de sessão) |
+
+## Erros comuns nos logs
+**`ERROR:` vazio logo depois de `Loaded configuration file "dist/config/database.js"`** (e o serviço fica *Crashed* reiniciando):
+o Sequelize não conseguiu falar com o banco e não escreve o motivo. A partir da versão com `scripts/db-preflight.js`, o log
+mostra antes uma linha `[banco] FALHOU …` com o que fazer. As causas, em ordem de frequência:
+
+| Linha do log | Causa | Correção |
+|---|---|---|
+| `DATABASE_URL não está definida` / conexão em `localhost` | variável ausente ou no serviço errado | criar `DATABASE_URL` em *Variables* do serviço do app |
+| `ENOTFOUND` / `ENETUNREACH` | endereço direto do Supabase (só IPv6) | usar a string do **Session pooler** (host `aws-0-…pooler.supabase.com`) |
+| `Tenant or user not found` | usuário sem o código do projeto | usuário `postgres.SEU_PROJETO` |
+| `password authentication failed` | senha errada | redefinir a senha no Supabase e atualizar a variável |
+| erro de SSL / `pg_hba.conf` | falta SSL | `DB_SSL=true` |
+
+Depois de corrigir a variável, o Railway reinicia sozinho (ou use **Redeploy**).

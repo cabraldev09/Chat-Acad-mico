@@ -5,6 +5,7 @@ import Whatsapp from "../../models/Whatsapp";
 import Tag from "../../models/Tag";
 import dispatchWebhook from "../WebhookServices/DispatchWebhook";
 import { hookInbound, hookHumanReply } from "../CrmServices/LeadCore";
+import { captureTeamReply } from "../AiServices/Learning";
 
 interface MessageData {
   id: string;
@@ -67,6 +68,11 @@ const CreateMessageService = async ({
     !message.ticket.firstResponseAt
   ) {
     await message.ticket.update({ firstResponseAt: new Date() });
+  }
+
+  // what the team answers after the AI handed a question over becomes a lesson for the owner to review
+  if (message.fromMe && message.ticket.userId && !message.ticket.isGroup && message.mediaType === "chat") {
+    captureTeamReply(message.ticket, message.body).catch(() => undefined);
   }
 
   // a message from the contact brings an archived conversation back to the inbox

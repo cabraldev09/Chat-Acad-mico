@@ -11,7 +11,9 @@ import KbDocument from "../models/KbDocument";
 import KbChunk from "../models/KbChunk";
 import AiUsage from "../models/AiUsage";
 import Ticket from "../models/Ticket";
-import { addDocument, indexDocument, ensureLegacy } from "../services/AiServices/Kb";
+import { addDocument, indexDocument, ensureLegacy, searchChunks } from "../services/AiServices/Kb";
+import AiLearning from "../models/AiLearning";
+import { approve, discard } from "../services/AiServices/Learning";
 import { respond } from "../services/AiServices/RunAiAgent";
 import { priceOf, tokensToday } from "../services/AiServices/Usage";
 import { DEFAULT_SLOTS } from "../services/AiServices/Tools";
@@ -36,12 +38,20 @@ const crud = makeCrud(AiAgent, {
     "dailyTokenCap",
     "handoffAfterTurns",
     "waitSeconds",
-    "slots"
+    "slots",
+    "reviewNumber",
+    "reviewWhatsappId",
+    "learnFromTeam"
   ],
   required: ["name", "model"],
   beforeSave: data => {
     if (isMasked(data.apiKey)) delete data.apiKey;
-    ["queueId", "whatsappId"].forEach(k => {
+    if (data.reviewNumber !== undefined) {
+      const digits = String(data.reviewNumber || "").replace(/\D/g, "");
+      if (digits && (digits.length < 10 || digits.length > 15)) throw new AppError("ERR_REVIEW_NUMBER_INVALID");
+      data.reviewNumber = digits || null;
+    }
+    ["queueId", "whatsappId", "reviewWhatsappId"].forEach(k => {
       if (data[k] === "" || data[k] === 0) data[k] = null;
     });
     return data;
@@ -227,8 +237,14 @@ export const test = async (req: Request, res: Response): Promise<Response> => {
       sandbox: true
     });
     return res.json({
-      text: result.handoff ? "(o agente passaria a conversa para uma pessoa)" : result.text,
+      text: result.handoff
+        ? "(o agente passaria a conversa para uma pessoa)"
+        : result.unknown
+        ? "(o agente não sabe responder: avisaria a equipe e guardaria a pergunta para você ensinar)"
+        : result.text,
       handoff: result.handoff,
+      unknown: result.unknown,
+      sources: result.sources,
       tools: result.tools,
       collected: result.collected,
       tokens: result.tokens
@@ -272,3 +288,67 @@ export const usage = async (req: Request, res: Response): Promise<Response> => {
 };
 
 export const defaults = async (_req: Request, res: Response): Promise<Response> => res.json({ slots: DEFAULT_SLOTS, model: "claude-haiku-5-5" });
+
+// ------------------------------------------------------------------ learning (review what the agent should learn)
+
+// "Which passages would the agent read for this question?" Helps the owner see what is missing from the base.
+export const kbSearch = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await loadAgent(req.params.id);
+  const question = String(req.body?.question || "").trim();
+  if (!question) throw new AppError("ERR_KB_EMPTY");
+  await ensureLegacy(agent);
+  const hits = await searchChunks(agent.id, question, 4);
+  return res.json(hits.map(h => ({ title: h.title, content: h.content, score: Math.round(h.score * 1000) / 1000 })));
+};
+
+export const learningList = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await loadAgent(req.params.id);
+  const all = await AiLearning.findAll({ where: { agentId: agent.id }, order: [["id", "DESC"]], limit: 300 });
+  const counts: Record<string, number> = { aguardando_equipe: 0, para_revisar: 0, aprovada: 0, descartada: 0 };
+  all.forEach(r => { counts[r.status] = (counts[r.status] || 0) + 1; });
+  const status = String(req.query.status || "");
+  return res.json({ counts, rows: status ? all.filter(r => r.status === status) : all });
+};
+
+export const learningPending = async (_req: Request, res: Response): Promise<Response> =>
+  res.json({ count: await AiLearning.count({ where: { status: "para_revisar" } }) });
+
+const loadLearning = async (id: string) => {
+  const row = await AiLearning.findByPk(id);
+  if (!row) throw new AppError("ERR_NOT_FOUND", 404);
+  return row;
+};
+
+export const learningUpdate = async (req: Request, res: Response): Promise<Response> => {
+  const row = await loadLearning(req.params.id);
+  const { question, suggestedAnswer } = req.body || {};
+  await row.update({
+    ...(question !== undefined ? { question: String(question).slice(0, 1000) } : {}),
+    ...(suggestedAnswer !== undefined ? { suggestedAnswer: String(suggestedAnswer).slice(0, 4000), status: row.status === "aguardando_equipe" && String(suggestedAnswer).trim() ? "para_revisar" : row.status, answerSource: row.answerSource || "dono" } : {})
+  });
+  return res.json(row);
+};
+
+export const learningApprove = async (req: Request, res: Response): Promise<Response> => {
+  const row = await loadLearning(req.params.id);
+  if (row.status === "aprovada") throw new AppError("ERR_LEARNING_DONE");
+  try {
+    return res.json(await approve(row, req.body || {}));
+  } catch (err) {
+    if (err.message === "ERR_LEARNING_EMPTY") throw new AppError("ERR_LEARNING_EMPTY");
+    throw err;
+  }
+};
+
+export const learningDiscard = async (req: Request, res: Response): Promise<Response> =>
+  res.json(await discard(await loadLearning(req.params.id)));
+
+// The owner teaches directly (for example after seeing a wrong answer in the tester)
+export const learningTeach = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await loadAgent(req.params.id);
+  const question = String(req.body?.question || "").trim();
+  const answer = String(req.body?.answer || "").trim();
+  if (!question || !answer) throw new AppError("ERR_LEARNING_EMPTY");
+  const row = await AiLearning.create({ agentId: agent.id, question: question.slice(0, 1000), suggestedAnswer: answer, status: "para_revisar", answerSource: "dono" } as any);
+  return res.status(201).json(await approve(row, { asFaq: !!req.body?.asFaq, shared: !!req.body?.shared }));
+};

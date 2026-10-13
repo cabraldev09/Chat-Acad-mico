@@ -82,6 +82,18 @@ class AiAgent extends Model<AiAgent> {
   @Column(DataType.JSON)
   slots: any;
 
+  // WhatsApp of the person who reviews what the agent learns, and the connection used to tell them
+  @Column
+  reviewNumber: string;
+
+  @Column
+  reviewWhatsappId: number;
+
+  // learn from what the team answers after the agent hands a question over
+  @Default(true)
+  @Column
+  learnFromTeam: boolean;
+
   @Column
   queueId: number;
 

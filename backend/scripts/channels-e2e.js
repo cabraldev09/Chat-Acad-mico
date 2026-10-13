@@ -107,6 +107,8 @@ const startAnthropicMock = () => {
       return text("Anotado!");
     }
     const said = typeof last.content === "string" ? last.content : "";
+    const knowledge = (req.body.system[1] && req.body.system[1].text) || "";
+    if (/atletas/i.test(said)) return text(knowledge.includes("30% de bolsa") ? "Atletas federados têm 30% de bolsa, mediante comprovação." : "[DESCONHECIDO]");
     if (/valor do curso/i.test(said)) return tool("buscar_curso", { nome: "Direit" });
     if (/meu nome é/i.test(said)) return tool("salvar_lead", { nome: "Paulo Mendes", cidade: "Ji-Paraná", curso: "Direito" });
     if (/falar com (uma )?pessoa/i.test(said)) return text("[HANDOFF]");
@@ -1290,6 +1292,52 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(sql(`SELECT queueId FROM Tickets WHERE id=${t}`) === String(jiPolo.queues.find(q => q.role === "comercial").id), "ticket not routed to the polo's sales queue");
       await waitFor(() => graph.hooks.some(h => h.collected && h.collected.nome === "Maria Clara Souza"), 8000, "webhook call");
       sql("DELETE FROM ChatbotNodes");
+    });
+    await test("what the agent does not know is kept, the team's answer is captured, the owner reviews and the agent learns", async () => {
+      assert((await http.put(`/ai-agents/${aiId}`, { reviewNumber: "(11) 99999-0000", reviewWhatsappId: cid, learnFromTeam: true, dailyTokenCap: 0 }, auth())).status === 200, "agent update");
+      assert((await http.put(`/ai-agents/${aiId}`, { reviewNumber: "123" }, auth())).status === 400, "short review number accepted");
+      let before = graph.sent.length;
+      await inboundCloud("5511910000009", "wamid.learn-1", "Vocês têm bolsa para atletas?");
+      await waitFor(() => sentTexts(before).some(t => t.includes("Vou confirmar")), 15000, "unknown reply");
+      const t = ticketOf("5511910000009");
+      assert(sql(`SELECT aiActive FROM Tickets WHERE id=${t}`) === "0", "ticket should go to a person");
+      assert(sql(`SELECT status FROM AiLearnings WHERE ticketId=${t}`) === "aguardando_equipe", "question not kept");
+      const told = graph.sent.slice(before).find(x => x.body && x.body.to === "5511999990000" && x.body.text && x.body.text.body.includes("não soube responder"));
+      assert(told && told.body.text.body.includes("bolsa para atletas"), "owner was not told on WhatsApp");
+
+      // a person of the team answers
+      await http.put(`/tickets/${t}`, { status: "open", userId: 1 }, auth());
+      before = graph.sent.length;
+      const reply = await http.post(`/messages/${t}`, { body: "Sim! Atletas federados têm 30% de bolsa, mediante comprovação." }, auth());
+      assert(reply.status === 200, `team reply ${reply.status}`);
+      await waitFor(() => sql(`SELECT status FROM AiLearnings WHERE ticketId=${t}`) === "para_revisar", 8000, "reply captured");
+      assert(sql(`SELECT suggestedAnswer FROM AiLearnings WHERE ticketId=${t}`).includes("30% de bolsa"), "answer not stored");
+      await waitFor(() => graph.sent.slice(before).some(x => x.body && x.body.to === "5511999990000" && x.body.text && x.body.text.body.includes("A equipe respondeu")), 8000, "owner told about the answer");
+      assert((await http.get("/ai-learnings/pending", auth())).data.count >= 1, "pending count");
+
+      // review: edit and approve
+      const list = (await http.get(`/ai-agents/${aiId}/learnings`, auth())).data;
+      assert(list.counts.para_revisar >= 1, "list counts");
+      const row = list.rows.find(r => r.ticketId === Number(t));
+      assert((await http.post(`/ai-learnings/${row.id}/approve`, { answer: "" }, auth())).status === 400, "empty answer approved");
+      const ok = await http.post(`/ai-learnings/${row.id}/approve`, {}, auth());
+      assert(ok.status === 200 && ok.data.status === "aprovada" && ok.data.documentId, `approve ${ok.status} ${JSON.stringify(ok.data)}`);
+      assert(sql(`SELECT source FROM KbDocuments WHERE id=${ok.data.documentId}`) === "aprendido", "learned document source");
+      assert((await http.post(`/ai-learnings/${row.id}/approve`, {}, auth())).status === 400, "approved twice");
+      const found = (await http.post(`/ai-agents/${aiId}/kb-search`, { question: "bolsa para atletas" }, auth())).data;
+      assert(found.length >= 1 && found[0].content.includes("30% de bolsa"), "learned answer is not found by the search");
+
+      // the next student gets the answer
+      before = graph.sent.length;
+      await inboundCloud("5511910000010", "wamid.learn-2", "Tem bolsa para atletas?");
+      await waitFor(() => sentTexts(before).some(t2 => t2.includes("Atletas federados têm 30% de bolsa")), 15000, "learned answer used");
+
+      // teaching directly, and discarding
+      const taught = await http.post(`/ai-agents/${aiId}/learnings`, { question: "Qual o prazo da rematrícula?", answer: "Até o dia 20 de cada semestre.", asFaq: true }, auth());
+      assert(taught.status === 201 && taught.data.status === "aprovada", `teach ${taught.status}`);
+      assert(sql(`SELECT kind FROM KbDocuments WHERE id=${taught.data.documentId}`) === "faq", "FAQ kind");
+      const dis = await http.post("/ai-learnings/" + (await http.post(`/ai-agents/${aiId}/learnings`, { question: "x?", answer: "y!" }, auth())).data.id + "/discard", {}, auth());
+      assert(dis.status === 200 && dis.data.status === "descartada", "discard");
     });
     await http.put(`/ai-agents/${aiId}`, { active: false }, auth());
     let poloId, tutorId, consultorId, tutorToken, consultorToken;

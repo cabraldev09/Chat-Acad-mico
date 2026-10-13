@@ -59,7 +59,7 @@ interface NewDoc {
   title: string;
   content: string;
   kind?: "doc" | "faq";
-  source?: "texto" | "arquivo" | "url";
+  source?: "texto" | "arquivo" | "url" | "aprendido";
   keywords?: string | null;
   agentId?: number | null;
 }

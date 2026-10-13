@@ -37,6 +37,7 @@ import TicketPin from "../models/TicketPin";
 import KbDocument from "../models/KbDocument";
 import KbChunk from "../models/KbChunk";
 import AiUsage from "../models/AiUsage";
+import AiLearning from "../models/AiLearning";
 import Polo from "../models/Polo";
 import PoloMember from "../models/PoloMember";
 import ProposalTemplateInstitution from "../models/ProposalTemplateInstitution";
@@ -86,6 +87,7 @@ const models = [
   KbDocument,
   KbChunk,
   AiUsage,
+  AiLearning,
   Polo,
   PoloMember,
   ProposalTemplateInstitution

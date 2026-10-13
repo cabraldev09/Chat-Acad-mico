@@ -3,7 +3,9 @@ import Setting from "../../models/Setting";
 import { isValidTz, setAppTz } from "../../helpers/AppTime";
 
 // settings that may be created on first save
-const CREATABLE = ["appTimezone", "appName"];
+const CREATABLE = ["appTimezone", "appName", "onboarding_sla_hours", "chatbot_reminder_minutes"];
+// per-model token prices, typed by the administrator
+const CREATABLE_PREFIX = ["ai_price_"];
 
 interface Request {
   key: string;
@@ -22,7 +24,7 @@ const UpdateSettingService = async ({
     where: { key }
   });
 
-  if (!setting && CREATABLE.includes(key)) {
+  if (!setting && (CREATABLE.includes(key) || CREATABLE_PREFIX.some(p => key.startsWith(p)))) {
     setting = await Setting.create({ key, value });
   }
 

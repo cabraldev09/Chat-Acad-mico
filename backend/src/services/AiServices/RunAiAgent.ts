@@ -11,8 +11,11 @@ import { ensureLegacy, matchFaq, searchChunks } from "./Kb";
 import { logUsage, tokensToday } from "./Usage";
 import { missingSlots, runTool, slotsOf, toolDefs } from "./Tools";
 import { handoffToHuman, HandoffReason } from "./Handoff";
+import { captureUnknown } from "./Learning";
 
 export const HANDOFF_MARKER = "[HANDOFF]";
+// the agent found nothing about a fact of the institution: the question is kept for the owner to teach
+export const UNKNOWN_MARKER = "[DESCONHECIDO]";
 
 const ANTHROPIC_URL = () => process.env.ANTHROPIC_API_URL || "https://api.anthropic.com";
 const OPENAI_URL = () => process.env.OPENAI_API_URL || "https://api.openai.com";
@@ -50,7 +53,8 @@ const staticPrompt = (agent: AiAgent): string => {
       "- Nunca diga que a mensalidade é fixa até o fim do curso nem fale em regressão de bolsa: valores e bolsa dependem da proposta oficial feita por um consultor.",
       "- Quando o aluno informar um dado novo (nome, cidade, curso...), chame salvar_lead.",
       "- Quando salvar_lead devolver completo=true, agradeça e avise que um consultor da equipe continua o atendimento.",
-      `- Se não souber, se o aluno pedir uma pessoa ou o assunto exigir um humano, responda APENAS com ${HANDOFF_MARKER}.`
+      `- Se o aluno pedir para falar com uma pessoa ou o assunto exigir um humano, responda APENAS com ${HANDOFF_MARKER}.`,
+      `- Se a pergunta for sobre um fato da instituição e você não achar a resposta nos trechos nem nas ferramentas, responda APENAS com ${UNKNOWN_MARKER}. Nunca chute.`
     ].join("\n")
   ];
   return parts.filter(Boolean).join("\n\n");
@@ -66,7 +70,7 @@ const dynamicPrompt = (agent: AiAgent, summary: string | null, collected: Record
     missing.length ? `Ainda falta descobrir: ${missing.join(", ")}.` : null,
     passages.length
       ? `Trechos da base de conhecimento (use somente o que estiver aqui para fatos da instituição):\n${passages.map((t, i) => `[${i + 1}] ${t}`).join("\n\n")}`
-      : "Nenhum trecho da base de conhecimento corresponde a esta pergunta: se for um fato da instituição que você não conhece, passe para um atendente."
+      : `Nenhum trecho da base de conhecimento corresponde a esta pergunta: se for um fato da instituição que você não conhece, responda ${UNKNOWN_MARKER}.`
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -88,6 +92,9 @@ const callAnthropic = async (apiKey: string, body: any) => {
 export interface AiResult {
   text: string;
   handoff: boolean;
+  unknown: boolean;
+  // titles of the documents the answer was based on
+  sources: string[];
   tools: string[];
   collected: Record<string, string>;
   tokens: { input: number; output: number; cacheRead: number };
@@ -116,6 +123,7 @@ export const respond = async (agent: AiAgent, opts: RespondOptions): Promise<AiR
   const prevUser = [...opts.history].reverse().filter(t => t.role === "user")[1];
   const hits = await searchChunks(agent.id, `${lastUser.content} ${prevUser ? prevUser.content : ""}`, 4);
   const passages = hits.map(h => h.content);
+  const sources = [...new Set(hits.map(h => h.title))];
 
   const recent = opts.history.slice(-RECENT_TURNS);
   while (recent.length && recent[0].role !== "user") recent.shift();
@@ -142,7 +150,7 @@ export const respond = async (agent: AiAgent, opts: RespondOptions): Promise<AiR
     tokens.input += data.usage?.prompt_tokens || 0;
     tokens.output += data.usage?.completion_tokens || 0;
     await logUsage({ agentId: agent.id, ticketId: opts.ticket?.id, model: agent.model, kind, usage: data.usage });
-    return { text, handoff: text.includes(HANDOFF_MARKER), tools: [], collected, tokens };
+    return { text, handoff: text.includes(HANDOFF_MARKER), unknown: text.includes(UNKNOWN_MARKER), sources, tools: [], collected, tokens };
   }
 
   const messages: any[] = recent.map(t => ({ role: t.role, content: t.content }));
@@ -191,7 +199,7 @@ export const respond = async (agent: AiAgent, opts: RespondOptions): Promise<AiR
     messages.push({ role: "user", content: results });
   }
 
-  return { text, handoff: text.includes(HANDOFF_MARKER), tools: toolsUsed, collected, tokens };
+  return { text, handoff: text.includes(HANDOFF_MARKER), unknown: text.includes(UNKNOWN_MARKER), sources, tools: toolsUsed, collected, tokens };
 };
 
 // ---------------------------------------------------------------- live conversation
@@ -289,6 +297,14 @@ export const runAiForTicket = async (ticketId: number, say: Say): Promise<void> 
       collected: ticket.aiSlots
     });
 
+    if (result.unknown) {
+      // tell the student the team will confirm, keep the question for the owner and let a person take over
+      await say(ticket, (agent.persona && agent.persona.unknownMessage) || "Ótima pergunta! Vou confirmar essa informação com a nossa equipe e já te respondo. 🙂");
+      await ticket.update({ aiTurns: (ticket.aiTurns || 0) + 1 });
+      if (agent.learnFromTeam !== false) await captureUnknown(agent, ticket, last.content, ticket.contact?.name);
+      await handoffToHuman(ticket.id, agent, "desconhecido", last.content);
+      return;
+    }
     if (result.handoff) {
       await handoff(ticket, agent, "pedido", say);
       return;

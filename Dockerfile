@@ -24,4 +24,4 @@ RUN npm run build && mkdir -p /data
 #   UPLOAD_DIR=/data/public  WWEBJS_AUTH_PATH=/data/wwebjs  ZAPO_AUTH_PATH=/data/zapo/state.sqlite
 EXPOSE 8080
 ENTRYPOINT ["dumb-init", "--"]
-CMD ["sh", "-c", "mkdir -p \"${UPLOAD_DIR:-public}\" && npx sequelize db:migrate && node dist/server.js"]
+CMD ["sh", "-c", "mkdir -p \"${UPLOAD_DIR:-public}\" && node scripts/db-preflight.js && npx sequelize db:migrate && node dist/server.js"]

@@ -1,3 +1,4 @@
+import TimezoneSelect from "../TimezoneSelect";
 import React, { useState, useEffect } from "react";
 import { toast } from "react-toastify";
 
@@ -46,7 +47,7 @@ const DAYS = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sáb
 
 const defaultHours = () => ({
 	enabled: false,
-	timezone: "America/Sao_Paulo",
+	timezone: "America/Porto_Velho",
 	days: {
 		0: [],
 		1: [{ start: "08:00", end: "18:00" }],
@@ -433,14 +434,10 @@ const WhatsAppModal = ({ open, onClose, whatsAppId }) => {
 					/>
 					{hours.enabled && (
 						<>
-							<TextField
-								fullWidth
-								variant="outlined"
-								margin="dense"
-								label="Fuso horário"
-								value={hours.timezone || ""}
-								onChange={e => setHours({ ...hours, timezone: e.target.value })}
-								helperText="Ex.: America/Sao_Paulo"
+							<TimezoneSelect
+								value={hours.timezone || "America/Porto_Velho"}
+								onChange={tz => setHours({ ...hours, timezone: tz })}
+								helperText="Define em que horário o atendimento abre e fecha."
 							/>
 							{DAYS.map((label, d) => {
 								const interval = (hours.days[d] || [])[0];
