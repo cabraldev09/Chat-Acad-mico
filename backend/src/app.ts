@@ -3,6 +3,7 @@ import "reflect-metadata";
 import "express-async-errors";
 import express, { Request, Response, NextFunction } from "express";
 import cors from "cors";
+import { corsOrigin } from "./helpers/AllowedOrigins";
 import cookieParser from "cookie-parser";
 import * as Sentry from "@sentry/node";
 
@@ -67,7 +68,7 @@ app.use(
 app.use(
   cors({
     credentials: true,
-    origin: process.env.FRONTEND_URL
+    origin: corsOrigin()
   })
 );
 app.use(cookieParser());

@@ -1,3 +1,4 @@
+import { corsOrigin } from "../helpers/AllowedOrigins";
 import { Server as SocketIO } from "socket.io";
 import { Server } from "http";
 import { verify } from "jsonwebtoken";
@@ -10,7 +11,7 @@ let io: SocketIO;
 export const initIO = (httpServer: Server): SocketIO => {
   io = new SocketIO(httpServer, {
     cors: {
-      origin: process.env.FRONTEND_URL
+      origin: corsOrigin()
     }
   });
 
