@@ -49,7 +49,8 @@ const crud = makeCrud(AiAgent, {
     if (data.reviewNumber !== undefined) {
       const digits = String(data.reviewNumber || "").replace(/\D/g, "");
       if (digits && (digits.length < 10 || digits.length > 15)) throw new AppError("ERR_REVIEW_NUMBER_INVALID");
-      data.reviewNumber = digits || null;
+      // Brazilian numbers typed with area code only get the country code
+      data.reviewNumber = digits ? (digits.length <= 11 ? `55${digits}` : digits) : null;
     }
     ["queueId", "whatsappId", "reviewWhatsappId"].forEach(k => {
       if (data[k] === "" || data[k] === 0) data[k] = null;
