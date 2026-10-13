@@ -1,4 +1,4 @@
-import { Op, fn, where, col, Filterable, Includeable } from "sequelize";
+import { Op, fn, where, col, literal, Filterable, Includeable } from "sequelize";
 import { dayBounds } from "../../helpers/AppTime";
 
 import Ticket from "../../models/Ticket";
@@ -8,6 +8,7 @@ import Queue from "../../models/Queue";
 import ShowUserService from "../UserServices/ShowUserService";
 import Whatsapp from "../../models/Whatsapp";
 import Tag from "../../models/Tag";
+import { portable } from "../../helpers/sqlDialect";
 
 interface Request {
   searchParam?: string;
@@ -20,6 +21,7 @@ interface Request {
   groups?: string;
   queueIds: number[];
   tagId?: string;
+  archived?: string;
 }
 
 interface Response {
@@ -38,7 +40,8 @@ const ListTicketsService = async ({
   userId,
   withUnreadMessages,
   groups,
-  tagId
+  tagId,
+  archived
 }: Request): Promise<Response> => {
   let whereCondition: Filterable["where"] = {
     [Op.or]: [{ userId }, { status: "pending" }],
@@ -151,6 +154,16 @@ const ListTicketsService = async ({
     };
   }
 
+  // archived conversations only show in their own view
+  whereCondition = {
+    [Op.and]: [whereCondition, { archivedAt: archived === "true" ? { [Op.ne]: null } : { [Op.is]: null } }]
+  } as any;
+
+  // this person's pins come first (pins are personal)
+  const pinnedSql = literal(
+    portable(`EXISTS (SELECT 1 FROM TicketPins tp WHERE tp.ticketId = Ticket.id AND tp.userId = ${Number(userId) || 0})`)
+  );
+
   const limit = 40;
   const offset = limit * (+pageNumber - 1);
 
@@ -160,7 +173,8 @@ const ListTicketsService = async ({
     distinct: true,
     limit,
     offset,
-    order: [["updatedAt", "DESC"]]
+    attributes: { include: [[pinnedSql, "pinned"]] },
+    order: [[pinnedSql, "DESC"], ["updatedAt", "DESC"]]
   });
 
   const hasMore = count > offset + tickets.length;

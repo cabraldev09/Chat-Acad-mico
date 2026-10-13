@@ -80,7 +80,7 @@ const NewListDialog = ({ open, onClose, onCreated }) => {
   };
 
   const select = (key, label, items, getLabel, all = "Todos") => (
-    <TextField select fullWidth variant="outlined" margin="dense" label={label} value={f[key]} onChange={(e) => setF({ ...f, [key]: e.target.value })}>
+    <TextField select fullWidth variant="outlined" margin="dense" label={label} value={f[key]} InputLabelProps={{ shrink: true }} SelectProps={{ displayEmpty: true }} onChange={(e) => setF({ ...f, [key]: e.target.value })}>
       <MenuItem value="">{all}</MenuItem>
       {items.map((it) => (<MenuItem key={it.id || it} value={it.id || it}>{getLabel(it)}</MenuItem>))}
     </TextField>
@@ -104,7 +104,7 @@ const NewListDialog = ({ open, onClose, onCreated }) => {
               {select("poloId", "Polo", opts.polos, (p) => p.name)}
               {select("tagId", "Etiqueta", opts.tags, (t) => t.name)}
               {select("source", "Origem", opts.sources, (s) => s, "Todas")}
-              <TextField select fullWidth variant="outlined" margin="dense" label="Sem contato há" value={f.noReplyDays} onChange={(e) => setF({ ...f, noReplyDays: e.target.value })}>
+              <TextField select fullWidth variant="outlined" margin="dense" label="Sem contato há" value={f.noReplyDays} InputLabelProps={{ shrink: true }} SelectProps={{ displayEmpty: true }} onChange={(e) => setF({ ...f, noReplyDays: e.target.value })}>
                 <MenuItem value="">Qualquer prazo</MenuItem>
                 {[3, 7, 15, 30, 60].map((d) => (<MenuItem key={d} value={d}>{d} dias ou mais</MenuItem>))}
               </TextField>

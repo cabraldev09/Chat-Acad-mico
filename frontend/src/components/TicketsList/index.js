@@ -68,7 +68,23 @@ const useStyles = makeStyles(theme => ({
 	},
 }));
 
+// unread/new activity goes to the top, but below the conversations this person pinned
+const toTop = (state, ticket, index) => {
+	if (index !== -1) state.splice(index, 1);
+	state.splice(ticket.pinned ? 0 : state.filter(t => t.pinned).length, 0, ticket);
+};
+
 const reducer = (state, action) => {
+	if (action.type === "SET_PINNED") {
+		const { ticketId, pinned } = action.payload;
+		const idx = state.findIndex(t => t.id === ticketId);
+		if (idx === -1) return state;
+		const ticket = { ...state[idx], pinned };
+		state.splice(idx, 1);
+		state.splice(pinned ? 0 : state.filter(t => t.pinned).length, 0, ticket);
+		return [...state];
+	}
+
 	if (action.type === "LOAD_TICKETS") {
 		const newTickets = action.payload;
 
@@ -76,9 +92,7 @@ const reducer = (state, action) => {
 			const ticketIndex = state.findIndex(t => t.id === ticket.id);
 			if (ticketIndex !== -1) {
 				state[ticketIndex] = ticket;
-				if (ticket.unreadMessages > 0) {
-					state.unshift(state.splice(ticketIndex, 1)[0]);
-				}
+				if (ticket.unreadMessages > 0) toTop(state, ticket, ticketIndex);
 			} else {
 				state.push(ticket);
 			}
@@ -103,9 +117,10 @@ const reducer = (state, action) => {
 
 		const ticketIndex = state.findIndex(t => t.id === ticket.id);
 		if (ticketIndex !== -1) {
-			state[ticketIndex] = ticket;
+			// socket payloads do not carry this person's pin: keep what the list already knows
+			state[ticketIndex] = { ...ticket, pinned: state[ticketIndex].pinned };
 		} else {
-			state.unshift(ticket);
+			toTop(state, ticket, -1);
 		}
 
 		return [...state];
@@ -115,12 +130,8 @@ const reducer = (state, action) => {
 		const ticket = action.payload;
 
 		const ticketIndex = state.findIndex(t => t.id === ticket.id);
-		if (ticketIndex !== -1) {
-			state[ticketIndex] = ticket;
-			state.unshift(state.splice(ticketIndex, 1)[0]);
-		} else {
-			state.unshift(ticket);
-		}
+		const pinned = ticketIndex !== -1 ? state[ticketIndex].pinned : false;
+		toTop(state, { ...ticket, pinned }, ticketIndex);
 
 		return [...state];
 	}
@@ -159,7 +170,7 @@ const reducer = (state, action) => {
 };
 
 	const TicketsList = (props) => {
-		const { status, searchParam, showAll, selectedQueueIds, updateCount, style, withUnreadMessages, groups } =
+		const { status, searchParam, showAll, selectedQueueIds, updateCount, style, withUnreadMessages, groups, archived } =
 			props;
 	const classes = useStyles();
 	const [pageNumber, setPageNumber] = useState(1);
@@ -169,7 +180,7 @@ const reducer = (state, action) => {
 	useEffect(() => {
 		dispatch({ type: "RESET" });
 		setPageNumber(1);
-	}, [status, searchParam, dispatch, showAll, selectedQueueIds, withUnreadMessages, groups]);
+	}, [status, searchParam, dispatch, showAll, selectedQueueIds, withUnreadMessages, groups, archived]);
 
 	const { tickets, hasMore, loading } = useTickets({
 		pageNumber,
@@ -178,11 +189,12 @@ const reducer = (state, action) => {
 		showAll,
 		withUnreadMessages: withUnreadMessages ? "true" : undefined,
 		groups,
+		archived: archived ? "true" : undefined,
 		queueIds: JSON.stringify(selectedQueueIds),
 	});
 
 	useEffect(() => {
-		if (!status && !searchParam && !withUnreadMessages && !groups) return;
+		if (!status && !searchParam && !withUnreadMessages && !groups && !archived) return;
 		dispatch({
 			type: "LOAD_TICKETS",
 			payload: tickets,
@@ -196,7 +208,10 @@ const reducer = (state, action) => {
 		const groupOk = ticket =>
 			groups === "only" ? !!ticket.isGroup : groups === "exclude" ? !ticket.isGroup : true;
 
-		const shouldUpdateTicket = ticket => !searchParam && groupOk(ticket) &&
+		// archived conversations live only in their own view
+		const archiveOk = ticket => !!ticket.archivedAt === !!archived;
+
+		const shouldUpdateTicket = ticket => !searchParam && groupOk(ticket) && archiveOk(ticket) &&
 			(!ticket.userId || ticket.userId === user?.id || showAll) &&
 			(!ticket.queueId || selectedQueueIds.indexOf(ticket.queueId) > -1);
 
@@ -224,6 +239,10 @@ const reducer = (state, action) => {
 					type: "UPDATE_TICKET",
 					payload: data.ticket,
 				});
+			}
+
+			if (data.action === "update" && !archiveOk(data.ticket)) {
+				dispatch({ type: "DELETE_TICKET", payload: data.ticket.id });
 			}
 
 			if (data.action === "update" && notBelongsToUserQueues(data.ticket)) {
@@ -263,7 +282,14 @@ const reducer = (state, action) => {
 		return () => {
 			socket.disconnect();
 		};
-	}, [status, searchParam, showAll, user, selectedQueueIds, groups]);
+	}, [status, searchParam, showAll, user, selectedQueueIds, groups, archived]);
+
+	// pins are toggled from the list item or the chat header
+	useEffect(() => {
+		const onPin = e => dispatch({ type: "SET_PINNED", payload: e.detail });
+		window.addEventListener("ticketPinned", onPin);
+		return () => window.removeEventListener("ticketPinned", onPin);
+	}, []);
 
 	useEffect(() => {
     if (typeof updateCount === "function") {

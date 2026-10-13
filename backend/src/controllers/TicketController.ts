@@ -12,6 +12,10 @@ import formatBody from "../helpers/Mustache";
 import TicketEvent from "../models/TicketEvent";
 import User from "../models/User";
 import Queue from "../models/Queue";
+import TicketPin from "../models/TicketPin";
+import AppError from "../errors/AppError";
+import { getAdapter } from "../channels";
+import { whatsappProvider } from "../providers/WhatsApp";
 
 type IndexQuery = {
   searchParam: string;
@@ -23,6 +27,7 @@ type IndexQuery = {
   groups: string;
   queueIds: string;
   tagId: string;
+  archived: string;
 };
 
 interface TicketData {
@@ -44,7 +49,8 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
     queueIds: queueIdsStringified,
     withUnreadMessages,
     groups,
-    tagId
+    tagId,
+    archived
   } = req.query as IndexQuery;
 
   const userId = req.user.id;
@@ -65,7 +71,8 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
     queueIds,
     withUnreadMessages,
     groups,
-    tagId
+    tagId,
+    archived
   });
 
   return res.status(200).json({ tickets, count, hasMore });
@@ -88,9 +95,64 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
 export const show = async (req: Request, res: Response): Promise<Response> => {
   const { ticketId } = req.params;
 
-  const contact = await ShowTicketService(ticketId);
+  const ticket = await ShowTicketService(ticketId);
+  const pinned = (await TicketPin.count({ where: { ticketId, userId: Number(req.user.id) } })) > 0;
 
-  return res.status(200).json(contact);
+  return res.status(200).json({ ...ticket.toJSON(), pinned });
+};
+
+// Pin: personal (each person pins what matters to them)
+export const pin = async (req: Request, res: Response): Promise<Response> => {
+  const { ticketId } = req.params;
+  const userId = Number(req.user.id);
+  const wanted = req.body?.pinned !== false;
+  const count = await TicketPin.count({ where: { userId } });
+  if (wanted) {
+    if (count >= 5 && !(await TicketPin.findOne({ where: { userId, ticketId } }))) {
+      throw new AppError("ERR_PIN_LIMIT", 400);
+    }
+    await TicketPin.findOrCreate({ where: { userId, ticketId }, defaults: { userId, ticketId } as any });
+  } else {
+    await TicketPin.destroy({ where: { userId, ticketId } });
+  }
+  return res.json({ pinned: wanted });
+};
+
+// Archive: leaves the inbox for everyone; a new message from the contact brings it back
+export const archive = async (req: Request, res: Response): Promise<Response> => {
+  const ticket = await ShowTicketService(req.params.ticketId);
+  const archived = req.body?.archived !== false;
+  await ticket.update({ archivedAt: archived ? new Date() : null });
+  getIO()
+    .to(ticket.status)
+    .to(String(ticket.id))
+    .to("notification")
+    .emit("ticket", { action: "update", ticket });
+  return res.json({ archived });
+};
+
+// The agent started typing: tell the contact where the channel allows it
+const typingSent = new Map<number, number>();
+export const typing = async (req: Request, res: Response): Promise<Response> => {
+  const ticket = await ShowTicketService(req.params.ticketId);
+  const last = typingSent.get(ticket.id) || 0;
+  if (ticket.isGroup || ticket.status === "closed" || Date.now() - last < 3500) return res.json({ sent: false });
+  typingSent.set(ticket.id, Date.now());
+  if (typingSent.size > 5000) typingSent.clear();
+
+  const channel = ticket.whatsapp?.channel || "whatsapp";
+  try {
+    if (channel === "whatsapp") {
+      await whatsappProvider.sendTyping?.(ticket.whatsappId, `${ticket.contact.number}@c.us`);
+    } else {
+      const whatsapp = await ShowWhatsAppService(ticket.whatsappId);
+      await getAdapter(channel).sendTyping?.(whatsapp, ticket.contact as any);
+    }
+  } catch (err) {
+    // an indicator is never worth an error on the agent's screen
+    return res.json({ sent: false });
+  }
+  return res.json({ sent: true });
 };
 
 export const update = async (

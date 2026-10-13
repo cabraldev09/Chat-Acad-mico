@@ -82,14 +82,24 @@ const widgetSource = `(function () {
     row.appendChild(b); list.appendChild(row);
   }
   var unread = 0;
+  var typingRow = null;
+  function showTyping(on) {
+    if (on && !typingRow) {
+      typingRow = el('div', 'margin:4px 0;font-size:12px;color:#777;', 'digitando…');
+      list.appendChild(typingRow); list.scrollTop = list.scrollHeight;
+    } else if (!on && typingRow) { list.removeChild(typingRow); typingRow = null; }
+  }
   function poll() {
     http('GET', '/messages?visitorId=' + encodeURIComponent(visitor) + (after ? '&after=' + encodeURIComponent(after) : ''), null, function (ok, data) {
       if (ok && data && data.messages) {
+        showTyping(!!data.agentTyping);
         var added = 0;
         data.messages.forEach(function (m) {
           if (seen[m.id]) return;
           seen[m.id] = 1; added++;
+          if (typingRow) list.removeChild(typingRow);
           bubble(m);
+          if (typingRow) list.appendChild(typingRow);
           after = m.createdAt;
           if (m.fromMe && !open) unread++;
         });
@@ -122,6 +132,12 @@ const widgetSource = `(function () {
       list.scrollTop = list.scrollHeight;
     });
   }
+  var lastTyping = 0;
+  input.addEventListener('input', function () {
+    if (Date.now() - lastTyping < 3000) return;
+    lastTyping = Date.now();
+    http('POST', '/typing', { visitorId: visitor });
+  });
   form.onsubmit = function (e) {
     e.preventDefault();
     var text = input.value.trim();

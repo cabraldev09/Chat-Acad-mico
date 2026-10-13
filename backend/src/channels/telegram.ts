@@ -7,6 +7,7 @@ import Contact from "../models/Contact";
 import { logger } from "../utils/logger";
 import { setChannelStatus } from "../services/ChannelServices/ChannelStatus";
 import HandleChannelMessage from "../services/InboundServices/HandleChannelMessage";
+import { applyReaction } from "../services/MessageServices/MessageActions";
 import {
   ChannelAdapter,
   OutboundMedia,
@@ -51,7 +52,24 @@ const profilePic = async (token: string, userId: number): Promise<string | undef
   }
 };
 
+// the person reacted to (or removed a reaction from) one of the messages in the conversation
+const handleReaction = async (whatsapp: Whatsapp, update: any) => {
+  const r = update.message_reaction;
+  if (!r || r.chat?.type !== "private" || !r.user) return;
+  const emojis = (r.new_reaction || []).filter((x: any) => x.type === "emoji").map((x: any) => x.emoji);
+  await applyReaction(
+    `tg-${whatsapp.id}-${r.chat.id}-${r.message_id}`,
+    emojis[0] || "",
+    false,
+    `${PREFIX}${r.user.id}`
+  );
+};
+
 const handleUpdate = async (whatsapp: Whatsapp, token: string, update: any) => {
+  if (update.message_reaction) {
+    await handleReaction(whatsapp, update);
+    return;
+  }
   const msg = update.message || update.edited_message;
   if (!msg || msg.chat.type !== "private") return;
 
@@ -117,7 +135,7 @@ const poll = async (whatsapp: Whatsapp, token: string, control: { stop: boolean 
       const updates = await call(
         token,
         "getUpdates",
-        { offset, timeout: 25, allowed_updates: ["message", "edited_message"] },
+        { offset, timeout: 25, allowed_updates: ["message", "edited_message", "message_reaction"] },
         40000
       );
       for (const update of updates) {
@@ -180,6 +198,23 @@ const telegram: ChannelAdapter = {
       text: body
     });
     return { id: `tg-${whatsapp.id}-${result.chat.id}-${result.message_id}` };
+  },
+
+  async sendTyping(whatsapp, contact: Contact) {
+    const { botToken } = getConfig(whatsapp);
+    // the indicator lasts about 5 seconds on Telegram's side
+    await call(botToken, "sendChatAction", { chat_id: externalIdOf(contact, PREFIX), action: "typing" }, 8000);
+  },
+
+  async sendReaction(whatsapp, contact: Contact, messageId, emoji) {
+    const { botToken } = getConfig(whatsapp);
+    // ids are stored as tg-<connection>-<chat>-<message>; Telegram only needs the last part
+    const telegramMessageId = Number(String(messageId).split("-").pop());
+    await call(botToken, "setMessageReaction", {
+      chat_id: externalIdOf(contact, PREFIX),
+      message_id: telegramMessageId,
+      reaction: emoji ? [{ type: "emoji", emoji }] : []
+    });
   },
 
   async sendMedia(whatsapp, contact: Contact, media: OutboundMedia, caption) {

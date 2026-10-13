@@ -348,6 +348,31 @@ const postMeta = (id, payload, secret, badSig) => {
         await sleep(1500);
         assert(msgCount(ticket) === n, "echo/duplicate stored");
       });
+      await test("typing and reactions go out through the channel, and the contact's reaction comes in", async () => {
+        const before = graph.sent.length;
+        const t = await http.post(`/tickets/${ticket}/typing`, {}, auth());
+        assert(t.status === 200 && t.data.sent === true, `typing ${t.status} ${JSON.stringify(t.data)}`);
+        const typing = graph.sent.slice(before).find(x => x.body && x.body.sender_action === "typing_on");
+        assert(typing && typing.body.recipient.id === `${idp}1`, "typing_on not sent to the contact");
+        const again = await http.post(`/tickets/${ticket}/typing`, {}, auth());
+        assert(again.data.sent === false, "typing is not throttled");
+
+        const emoji = channel === "messenger" ? "👍" : "❤️";
+        const r = await http.post(`/messages/m_${channel}_1/react`, { emoji }, auth());
+        assert(r.status === 200, `react ${r.status} ${JSON.stringify(r.data)}`);
+        const sent = graph.sent.slice(before).find(x => x.body && x.body.sender_action === "react");
+        assert(sent && sent.body.payload.message_id === `m_${channel}_1` && sent.body.payload.reaction === (channel === "messenger" ? "like" : "love"), `react payload ${JSON.stringify(sent && sent.body)}`);
+        if (channel === "instagram") {
+          assert((await http.post(`/messages/m_${channel}_1/react`, { emoji: "👍" }, auth())).status === 400, "instagram accepts only the heart");
+        }
+        const un = await http.post(`/messages/m_${channel}_1/react`, { emoji: "" }, auth());
+        assert(un.status === 200, `unreact ${un.status}`);
+        assert(graph.sent.slice(before).some(x => x.body && x.body.sender_action === "unreact"), "unreact not sent");
+
+        const inbound = await postMeta(id, { object, entry: [{ id: "PAGE1", messaging: [{ sender: { id: `${idp}1` }, recipient: { id: "PAGE1" }, reaction: { mid: `m_${channel}_1`, action: "react", emoji: "😮" } }] }] }, cfg.appSecret);
+        assert(inbound.status === 200, `inbound reaction ${inbound.status}`);
+        await waitFor(() => sql(`SELECT reactions FROM Messages WHERE id='m_${channel}_1'`).includes("😮"), 8000, "inbound reaction stored");
+      });
       await test("agent reply goes to the Send API with the right recipient", async () => {
         const before = graph.sent.length;
         const r = await http.post(`/messages/${ticket}`, { body: "Olá Maria!" }, auth());
@@ -1022,7 +1047,12 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(m, "no outbound message to work with");
       assert((await http.put(`/messages/${m}/star`, { starred: true }, auth())).status === 200, "star");
       assert(sql(`SELECT starred FROM Messages WHERE id='${m}'`) === "1", "starred not saved");
-      assert((await http.post(`/messages/${m}/react`, { emoji: "👍" }, auth())).status === 400, "telegram has no reactions");
+      const tgBefore = tg.sent.length;
+      assert((await http.post(`/messages/${m}/react`, { emoji: "👍" }, auth())).status === 200, "telegram reaction refused");
+      const tgReact = tg.sent.slice(tgBefore).find(x => x.method === "setMessageReaction");
+      assert(tgReact && String(tgReact.body.chat_id) === "5551" && tgReact.body.reaction[0].emoji === "👍", `setMessageReaction ${JSON.stringify(tgReact && tgReact.body)}`);
+      tg.updates.push({ update_id: 40, message_reaction: { chat: { id: 5551, type: "private" }, message_id: 10, user: { id: 5551 }, new_reaction: [{ type: "emoji", emoji: "❤" }] } });
+      await waitFor(() => sql(`SELECT reactions FROM Messages WHERE id='tg-${tgId}-5551-10'`).includes("❤"), 8000, "telegram inbound reaction");
       // forward into the other open Telegram conversation (Beto)
       const other = ticketOf("tg_5552");
       assert(sql(`SELECT status FROM Tickets WHERE id=${other}`) !== "closed", "target ticket closed");
@@ -1032,6 +1062,32 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(tg.sent.slice(before).some(x => x.method === "sendMessage" && String(x.body.chat_id) === "5552"), "not delivered to the other chat");
       assert((await http.post(`/messages/${m}/forward`, { ticketIds: [] }, auth())).status === 400, "empty target accepted");
       assert((await http.post(`/messages/${m}/forward`, { ticketIds: [Number(other)] }, asUser(agentToken))).status === 403, "agent forwarded outside own permissions");
+    });
+    await test("conversations can be pinned (personally) and archived until the contact writes again", async () => {
+      const a = ticketOf("tg_5551"), b = ticketOf("tg_5552");
+      assert((await http.put(`/tickets/${b}/pin`, { pinned: true }, auth())).status === 200, "pin");
+      const queueIds = JSON.stringify((await http.get("/queue", auth())).data.map(q => q.id));
+      const list = async (params = {}) => (await http.get("/tickets", { params: { showAll: "true", queueIds, ...params }, ...auth() })).data.tickets;
+      let rows = await list();
+      assert(rows.length > 1 && String(rows[0].id) === String(b) && (rows[0].pinned === true || rows[0].pinned === 1 || rows[0].pinned === "1"), `pinned first: ${JSON.stringify(rows.slice(0, 2).map(r => [r.id, r.pinned]))}`);
+      assert((await http.get(`/tickets/${b}`, auth())).data.pinned === true, "show should say pinned");
+      assert((await http.put(`/tickets/${b}/pin`, { pinned: false }, auth())).status === 200, "unpin");
+      assert((await http.get(`/tickets/${b}`, auth())).data.pinned === false, "unpin did not stick");
+
+      assert((await http.put(`/tickets/${a}/archive`, { archived: true }, auth())).status === 200, "archive");
+      assert(!(await list()).some(r => String(r.id) === String(a)), "archived ticket still in the inbox");
+      assert((await list({ archived: "true" })).some(r => String(r.id) === String(a)), "archived ticket not in the archived view");
+      tg.updates.push({ update_id: 41, message: { message_id: 95, chat: { id: 5551, type: "private" }, from: { first_name: "Ana" }, text: "voltei" } });
+      await waitFor(async () => (await list()).some(r => String(r.id) === String(a)), 8000, "unarchived by a new message");
+      assert(sql(`SELECT archivedAt IS NULL FROM Tickets WHERE id=${a}`) === "1", "archivedAt not cleared");
+    });
+    await test("typing on Telegram goes out as a chat action", async () => {
+      const a = ticketOf("tg_5551");
+      const before = tg.sent.length;
+      const r = await http.post(`/tickets/${a}/typing`, {}, auth());
+      assert(r.status === 200 && r.data.sent === true, `typing ${r.status} ${JSON.stringify(r.data)}`);
+      const s = tg.sent.slice(before).find(x => x.method === "sendChatAction");
+      assert(s && s.body.action === "typing" && String(s.body.chat_id) === "5551", "sendChatAction payload");
     });
     let poloId, tutorId, consultorId, tutorToken, consultorToken;
     await test("polos create one queue per function, fill them from the team and import from a sheet", async () => {

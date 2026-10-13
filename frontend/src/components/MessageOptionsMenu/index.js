@@ -19,7 +19,15 @@ import { ReplyMessageContext } from "../../context/ReplyingMessage/ReplyingMessa
 import toastError from "../../errors/toastError";
 import { wa } from "../chat/chatTheme";
 
-const QUICK = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
+// each channel accepts a different set of reactions; webchat has none
+const REACTIONS = {
+  whatsapp: ["👍", "❤️", "😂", "😮", "😢", "🙏"],
+  whatsapp_cloud: ["👍", "❤️", "😂", "😮", "😢", "🙏"],
+  telegram: ["👍", "❤", "🔥", "😁", "🎉", "🙏"],
+  messenger: ["👍", "❤️", "😂", "😮", "😢", "😡"],
+  instagram: ["❤️"],
+  webchat: [],
+};
 
 const useStyles = makeStyles((theme) => {
   const c = wa(theme);
@@ -43,7 +51,8 @@ const useStyles = makeStyles((theme) => {
   };
 });
 
-const MessageOptionsMenu = ({ message, menuOpen, handleClose, anchorEl, ticketId }) => {
+const MessageOptionsMenu = ({ message, menuOpen, handleClose, anchorEl, ticketId, channel = "whatsapp" }) => {
+  const palette = REACTIONS[channel] || REACTIONS.whatsapp;
   const classes = useStyles();
   const { setReplyingMessage } = useContext(ReplyMessageContext);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -92,13 +101,15 @@ const MessageOptionsMenu = ({ message, menuOpen, handleClose, anchorEl, ticketId
         open={menuOpen}
         onClose={handleClose}
       >
-        <div className={classes.reactions}>
-          {QUICK.map((e) => (
-            <button key={e} type="button" className={`${classes.emoji} ${mine === e ? classes.emojiOn : ""}`} onClick={() => react(e)}>
-              {e}
-            </button>
-          ))}
-        </div>
+        {palette.length > 0 && (
+          <div className={classes.reactions}>
+            {palette.map((e) => (
+              <button key={e} type="button" className={`${classes.emoji} ${mine === e ? classes.emojiOn : ""}`} onClick={() => react(e)}>
+                {e}
+              </button>
+            ))}
+          </div>
+        )}
         <MenuItem onClick={() => { setReplyingMessage(message); handleClose(); }}>
           <ListItemIcon className={classes.icon}><Reply fontSize="small" /></ListItemIcon>
           <ListItemText primary="Responder" />

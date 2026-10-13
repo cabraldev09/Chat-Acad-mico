@@ -72,13 +72,17 @@ export const reactToMessage = async (id: string, emoji: string): Promise<Message
     if (!whatsappProvider.sendReaction) throw new AppError("ERR_REACTION_UNSUPPORTED", 400);
     const chatId = `${ticket.contact.number}@${ticket.isGroup ? "g" : "c"}.us`;
     await whatsappProvider.sendReaction(ticket.whatsappId, chatId, message.id, message.fromMe, emoji);
-  } else if (channel === "whatsapp_cloud") {
-    const adapter = getAdapter("whatsapp_cloud");
+  } else {
+    // Cloud API, Telegram, Messenger, Instagram: through the channel adapter
+    const adapter = getAdapter(channel);
     if (!adapter.sendReaction) throw new AppError("ERR_REACTION_UNSUPPORTED", 400);
     const whatsapp = await Whatsapp.findByPk(ticket.whatsappId);
-    await adapter.sendReaction(whatsapp as Whatsapp, ticket.contact as any, message.id, emoji);
-  } else {
-    throw new AppError("ERR_REACTION_UNSUPPORTED", 400);
+    try {
+      await adapter.sendReaction(whatsapp as Whatsapp, ticket.contact as any, message.id, emoji);
+    } catch (err) {
+      if (err instanceof AppError) throw err;
+      throw new AppError("ERR_REACTION_FAILED", 400);
+    }
   }
 
   await applyReaction(id, emoji, true, "me");

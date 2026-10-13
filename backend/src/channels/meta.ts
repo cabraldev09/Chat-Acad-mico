@@ -5,10 +5,12 @@ import fs from "fs";
 import Whatsapp from "../models/Whatsapp";
 import Contact from "../models/Contact";
 import { logger } from "../utils/logger";
+import AppError from "../errors/AppError";
 import { getPublicUrl } from "../helpers/PublicUrl";
 import { setChannelStatus } from "../services/ChannelServices/ChannelStatus";
 import HandleChannelMessage from "../services/InboundServices/HandleChannelMessage";
 import { handleAckByExternalId } from "../services/InboundServices/HandleAck";
+import { applyReaction } from "../services/MessageServices/MessageActions";
 import {
   ChannelAdapter,
   ChannelType,
@@ -29,6 +31,11 @@ const GRAPH =
 // ---------------------------------------------------------------------------
 // Messenger + Instagram (same Send API shape, different ids)
 // ---------------------------------------------------------------------------
+
+// Messenger accepts a fixed set of reactions; Instagram only the heart
+const MESSENGER_REACTIONS: Record<string, string> = {
+  "👍": "like", "👎": "dislike", "❤️": "love", "❤": "love", "😂": "smile", "😮": "wow", "😢": "sad", "😡": "angry"
+};
 
 const socialAdapter = (type: "messenger" | "instagram", prefix: string): ChannelAdapter => ({
   type,
@@ -54,6 +61,30 @@ const socialAdapter = (type: "messenger" | "instagram", prefix: string): Channel
 
   async stop() {
     // webhook driven
+  },
+
+  async sendTyping(whatsapp, contact: Contact) {
+    const { accessToken } = getConfig(whatsapp);
+    await axios.post(
+      `${GRAPH}/me/messages`,
+      { recipient: { id: externalIdOf(contact, prefix) }, sender_action: "typing_on" },
+      { params: { access_token: accessToken }, timeout: 8000 }
+    );
+  },
+
+  async sendReaction(whatsapp, contact: Contact, messageId, emoji) {
+    const { accessToken } = getConfig(whatsapp);
+    const reaction = type === "instagram" ? (emoji === "❤️" || emoji === "❤" ? "love" : "") : MESSENGER_REACTIONS[emoji] || "";
+    if (emoji && !reaction) throw new AppError("ERR_REACTION_EMOJI_UNSUPPORTED", 400);
+    await axios.post(
+      `${GRAPH}/me/messages`,
+      {
+        recipient: { id: externalIdOf(contact, prefix) },
+        sender_action: emoji ? "react" : "unreact",
+        payload: emoji ? { message_id: messageId, reaction } : { message_id: messageId }
+      },
+      { params: { access_token: accessToken } }
+    );
   },
 
   async sendText(whatsapp, contact: Contact, body) {
@@ -249,6 +280,11 @@ const processSocial = async (whatsapp: Whatsapp, entry: any, type: ChannelType) 
   const config = getConfig(whatsapp);
   const prefix = type === "instagram" ? "ig_" : "fb_";
   for (const event of entry.messaging || []) {
+    if (event.reaction?.mid) {
+      const r = event.reaction;
+      await applyReaction(r.mid, r.action === "unreact" ? "" : r.emoji || "", false, `${prefix}${event.sender.id}`);
+      continue;
+    }
     const msg = event.message;
     if (!msg || msg.is_echo) continue;
     const senderId: string = event.sender.id;
@@ -316,6 +352,10 @@ const processCloud = async (whatsapp: Whatsapp, entry: any) => {
     }
 
     for (const m of value.messages || []) {
+      if (m.type === "reaction" && m.reaction?.message_id) {
+        await applyReaction(m.reaction.message_id, m.reaction.emoji || "", false, m.from);
+        continue;
+      }
       const profileName = (value.contacts || []).find((c: any) => c.wa_id === m.from)?.profile
         ?.name;
       let body = "";

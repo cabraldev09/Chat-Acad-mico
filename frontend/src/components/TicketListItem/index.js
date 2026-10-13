@@ -6,6 +6,11 @@ import Avatar from "@material-ui/core/Avatar";
 import Tooltip from "@material-ui/core/Tooltip";
 import CircularProgress from "@material-ui/core/CircularProgress";
 import Group from "@material-ui/icons/Group";
+import Menu from "@material-ui/core/Menu";
+import MenuItem from "@material-ui/core/MenuItem";
+import ListItemIcon from "@material-ui/core/ListItemIcon";
+import ListItemText from "@material-ui/core/ListItemText";
+import { Pin, PinOff, Archive, ArchiveRestore, ChevronDown } from "lucide-react";
 
 import ChannelIcon from "../ChannelIcon";
 import api from "../../services/api";
@@ -111,6 +116,26 @@ const useStyles = makeStyles((theme) => {
       "&:disabled": { opacity: 0.7, cursor: "default" },
     },
     closed: { opacity: 0.8 },
+    pin: { flex: "none", color: c.textSecondary, display: "flex" },
+    more: {
+      flex: "none",
+      width: 24,
+      height: 24,
+      padding: 0,
+      border: "none",
+      borderRadius: "50%",
+      background: "transparent",
+      color: c.textSecondary,
+      cursor: "pointer",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      opacity: 0,
+      transition: "opacity .12s",
+      "$row:hover &, &:focus-visible": { opacity: 1 },
+      "@media (hover: none)": { opacity: 1 },
+      "&:hover": { backgroundColor: c.hover },
+    },
   };
 });
 
@@ -155,6 +180,25 @@ const TicketListItem = ({ ticket }) => {
     if (isMounted.current) setLoading(false);
   };
 
+  const [menuEl, setMenuEl] = useState(null);
+  const run = async (e, fn) => {
+    e.stopPropagation();
+    setMenuEl(null);
+    try {
+      await fn();
+    } catch (err) {
+      toastError(err);
+    }
+  };
+  const togglePin = (e) =>
+    run(e, async () => {
+      const pinned = !ticket.pinned;
+      await api.put(`/tickets/${ticket.id}/pin`, { pinned });
+      window.dispatchEvent(new CustomEvent("ticketPinned", { detail: { ticketId: ticket.id, pinned } }));
+    });
+  const toggleArchive = (e) =>
+    run(e, () => api.put(`/tickets/${ticket.id}/archive`, { archived: !ticket.archivedAt }));
+
   const unread = ticket.unreadMessages > 0;
   const selected = ticketId && +ticketId === ticket.id;
 
@@ -187,6 +231,11 @@ const TicketListItem = ({ ticket }) => {
           <span className={classes.preview} style={unread ? { color: undefined, fontWeight: 500 } : undefined}>
             {plain(ticket.lastMessage) || "Sem mensagens"}
           </span>
+          {ticket.pinned && (
+            <Tooltip arrow title="Fixada no topo">
+              <span className={classes.pin}><Pin size={14} /></span>
+            </Tooltip>
+          )}
           {ticket.status === "pending" ? (
             <button type="button" className={classes.accept} onClick={accept} disabled={loading}>
               {loading ? <CircularProgress size={14} color="inherit" /> : "Aceitar"}
@@ -194,6 +243,20 @@ const TicketListItem = ({ ticket }) => {
           ) : (
             unread && <span className={classes.badge}>{ticket.unreadMessages > 99 ? "99+" : ticket.unreadMessages}</span>
           )}
+          <button type="button" className={classes.more} aria-label="Mais opções da conversa" title="Mais opções" onClick={(e) => { e.stopPropagation(); setMenuEl(e.currentTarget); }}>
+            <ChevronDown size={16} />
+          </button>
+          <Menu anchorEl={menuEl} open={Boolean(menuEl)} onClose={() => setMenuEl(null)} onClick={(e) => e.stopPropagation()} getContentAnchorEl={null}
+            anchorOrigin={{ vertical: "bottom", horizontal: "right" }} transformOrigin={{ vertical: "top", horizontal: "right" }}>
+            <MenuItem onClick={togglePin}>
+              <ListItemIcon style={{ minWidth: 34 }}>{ticket.pinned ? <PinOff size={18} /> : <Pin size={18} />}</ListItemIcon>
+              <ListItemText primary={ticket.pinned ? "Desafixar" : "Fixar no topo"} />
+            </MenuItem>
+            <MenuItem onClick={toggleArchive}>
+              <ListItemIcon style={{ minWidth: 34 }}>{ticket.archivedAt ? <ArchiveRestore size={18} /> : <Archive size={18} />}</ListItemIcon>
+              <ListItemText primary={ticket.archivedAt ? "Desarquivar" : "Arquivar"} />
+            </MenuItem>
+          </Menu>
         </div>
         <div className={classes.meta}>
           <Tooltip arrow title={ticket.queue?.name || "Sem fila"}>

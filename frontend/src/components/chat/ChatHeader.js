@@ -1,4 +1,6 @@
-import React, { useContext, useState } from "react";
+import React, { useContext, useEffect, useState } from "react";
+import { Pin, PinOff, Archive, ArchiveRestore } from "lucide-react";
+import { toast } from "react-toastify";
 import { useHistory } from "react-router-dom";
 import { makeStyles } from "@material-ui/core/styles";
 import Avatar from "@material-ui/core/Avatar";
@@ -81,7 +83,7 @@ const useStyles = makeStyles((theme) => {
   };
 });
 
-const ChatHeader = ({ contact, ticket, onOpenInfo, onToggleSearch }) => {
+const ChatHeader = ({ contact, ticket, onOpenInfo, onToggleSearch, typing }) => {
   const classes = useStyles();
   const history = useHistory();
   const { user } = useContext(AuthContext);
@@ -89,6 +91,31 @@ const ChatHeader = ({ contact, ticket, onOpenInfo, onToggleSearch }) => {
   const [menuEl, setMenuEl] = useState(null);
   const [tagsOpen, setTagsOpen] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [pinned, setPinned] = useState(!!ticket.pinned);
+  const archived = !!ticket.archivedAt;
+  useEffect(() => setPinned(!!ticket.pinned), [ticket.id, ticket.pinned]);
+
+  const togglePin = async () => {
+    try {
+      const next = !pinned;
+      await api.put(`/tickets/${ticket.id}/pin`, { pinned: next });
+      setPinned(next);
+      window.dispatchEvent(new CustomEvent("ticketPinned", { detail: { ticketId: ticket.id, pinned: next } }));
+      toast.success(next ? "Conversa fixada no topo." : "Conversa desafixada.");
+    } catch (err) {
+      toastError(err);
+    }
+  };
+
+  const toggleArchive = async () => {
+    try {
+      await api.put(`/tickets/${ticket.id}/archive`, { archived: !archived });
+      toast.success(archived ? "Conversa desarquivada." : "Conversa arquivada. Ela volta sozinha se o contato escrever.");
+      if (!archived) history.push("/tickets");
+    } catch (err) {
+      toastError(err);
+    }
+  };
 
   const setStatus = async (status, userId) => {
     setLoading(true);
@@ -135,7 +162,9 @@ const ChatHeader = ({ contact, ticket, onOpenInfo, onToggleSearch }) => {
               </span>
             ))}
           </span>
-          <span className={classes.sub}>{subtitle}</span>
+          <span className={classes.sub}>
+            {typing ? <span style={{ color: "#00a884", fontWeight: 500 }}>digitando…</span> : subtitle}
+          </span>
         </div>
       </div>
       <div className={classes.actions}>
@@ -162,6 +191,16 @@ const ChatHeader = ({ contact, ticket, onOpenInfo, onToggleSearch }) => {
             <Tooltip title="Agendar mensagem">
               <IconButton className={classes.icon} onClick={() => setScheduleOpen(true)}>
                 <ScheduleIcon />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title={pinned ? "Desafixar conversa" : "Fixar conversa no topo"}>
+              <IconButton className={classes.icon} onClick={togglePin} aria-label={pinned ? "Desafixar conversa" : "Fixar conversa"}>
+                {pinned ? <PinOff size={20} /> : <Pin size={20} />}
+              </IconButton>
+            </Tooltip>
+            <Tooltip title={archived ? "Desarquivar conversa" : "Arquivar conversa"}>
+              <IconButton className={classes.icon} onClick={toggleArchive} aria-label={archived ? "Desarquivar conversa" : "Arquivar conversa"}>
+                {archived ? <ArchiveRestore size={20} /> : <Archive size={20} />}
               </IconButton>
             </Tooltip>
             <TicketTagsDialog open={tagsOpen} onClose={() => setTagsOpen(false)} ticket={ticket} />

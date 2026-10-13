@@ -233,7 +233,7 @@ const fileNameOf = (m) => {
 
 const isOnlyFileName = (m) => !m.body || m.body === (m.mediaUrl || "").split("/").pop() || /^\d{10,}\.\w{2,5}$/.test(m.body);
 
-const MessagesList = ({ ticketId, isGroup, searchTerm = "", matchIndex = 0, onMatches }) => {
+const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex = 0, onMatches }) => {
   const classes = useStyles();
   const [messagesList, dispatch] = useReducer(reducer, []);
   const [pageNumber, setPageNumber] = useState(1);
@@ -527,6 +527,7 @@ const MessagesList = ({ ticketId, isGroup, searchTerm = "", matchIndex = 0, onMa
         menuOpen={Boolean(anchorEl)}
         handleClose={() => setAnchorEl(null)}
         ticketId={ticketId}
+        channel={channel}
       />
       <div ref={listRef} id="messagesList" className={classes.list} onScroll={onScroll}>
         {messagesList.length > 0 ? items : !loading && <div className={classes.empty}>Nenhuma mensagem ainda. Diga olá!</div>}

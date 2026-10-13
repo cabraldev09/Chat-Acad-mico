@@ -40,6 +40,8 @@ export interface ChannelAdapter {
     messageId: string,
     emoji: string
   ): Promise<void>;
+  // shows "digitando…" to the contact while the agent writes (channels that support it)
+  sendTyping?(whatsapp: Whatsapp, contact: Contact): Promise<void>;
   sendTemplate?(
     whatsapp: Whatsapp,
     contact: Contact,

@@ -69,6 +69,11 @@ const CreateMessageService = async ({
     await message.ticket.update({ firstResponseAt: new Date() });
   }
 
+  // a message from the contact brings an archived conversation back to the inbox
+  if (!message.fromMe && message.ticket.archivedAt) {
+    await message.ticket.update({ archivedAt: null });
+  }
+
   if (!message.ticket.isGroup) {
     if (!message.fromMe) {
       hookInbound(message.ticket.contactId, message.ticket.whatsapp?.channel);

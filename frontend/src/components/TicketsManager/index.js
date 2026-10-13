@@ -61,17 +61,16 @@ const useStyles = makeStyles((theme) => {
       flex: "none",
       display: "flex",
       gap: theme.spacing(0.75),
+      flexWrap: "wrap",
       padding: theme.spacing(0, 1.5, 1),
-      overflowX: "auto",
-      "&::-webkit-scrollbar": { display: "none" },
     },
     chip: {
       flex: "none",
       display: "inline-flex",
       alignItems: "center",
       gap: 6,
-      height: 30,
-      padding: theme.spacing(0, 1.5),
+      height: 28,
+      padding: theme.spacing(0, 1.25),
       borderRadius: 999,
       border: "none",
       cursor: "pointer",
@@ -246,6 +245,7 @@ const TicketsManager = () => {
           {chip("unread", "Não lidas", 0)}
           {chip("groups", "Grupos", 0)}
           {chip("closed", "Resolvidas", 0)}
+          {chip("archived", "Arquivadas", 0)}
         </div>
       )}
 
@@ -269,6 +269,7 @@ const TicketsManager = () => {
               <TicketsList withUnreadMessages showAll={showAllTickets} selectedQueueIds={selectedQueueIds} />
             )}
             {filter === "closed" && <TicketsList status="closed" showAll={true} selectedQueueIds={selectedQueueIds} />}
+            {filter === "archived" && <TicketsList archived showAll={true} selectedQueueIds={selectedQueueIds} />}
           </>
         )}
         <Tooltip title="Nova conversa">

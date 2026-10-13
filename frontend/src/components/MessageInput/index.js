@@ -199,9 +199,15 @@ const MessageInput = ({ ticketStatus }) => {
     }
   };
 
+  // tells the contact "digitando…" where the channel supports it (the server also throttles)
+  const lastTyping = useRef(0);
   const handleChange = (e) => {
     setInputMessage(e.target.value);
     loadQuick(e.target.value);
+    if (ticketStatus === "open" && e.target.value && !e.target.value.startsWith("/") && Date.now() - lastTyping.current > 4000) {
+      lastTyping.current = Date.now();
+      api.post(`/tickets/${ticketId}/typing`).catch(() => {});
+    }
   };
 
   const handlePaste = (e) => {

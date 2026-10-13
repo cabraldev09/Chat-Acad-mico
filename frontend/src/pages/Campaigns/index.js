@@ -347,14 +347,14 @@ const Campaigns = () => {
               },
               {
                 name: "whatsappId",
-                label: "Enviar pela conexão (vazio = padrão)",
+                label: "Conexão de envio",
                 type: "select",
                 options: connections.map((c) => ({
                   value: c.id,
                   label: c.channel === "whatsapp" ? `${c.name} (WhatsApp não oficial · modo ${c.riskMode === "relaxed" ? "flexível" : "seguro"})` : c.name,
                 })),
                 helper:
-                  "Conexões por QR Code (não oficiais) só disparam para quem já conversou com você, respeitam um limite diário de aquecimento e pausam sozinhas se o WhatsApp encerrar a sessão. Para contatos novos use a API oficial (Cloud).",
+                  "Se você não escolher, usa a conexão padrão. Conexões por QR Code (não oficiais) só disparam para quem já conversou com você, respeitam um limite diário de aquecimento e pausam sozinhas se o WhatsApp encerrar a sessão. Para contatos novos use a API oficial (Cloud).",
               },
               {
                 name: "steps",

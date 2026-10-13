@@ -20,6 +20,10 @@ ticketRoutes.get(
 
 ticketRoutes.post("/tickets", isAuth, TicketController.store);
 
+ticketRoutes.put("/tickets/:ticketId/pin", isAuth, canReadTicket, TicketController.pin);
+ticketRoutes.put("/tickets/:ticketId/archive", isAuth, canWriteTicket, TicketController.archive);
+ticketRoutes.post("/tickets/:ticketId/typing", isAuth, canWriteTicket, TicketController.typing);
+
 ticketRoutes.put("/tickets/:ticketId", isAuth, canWriteTicket, TicketController.update);
 
 ticketRoutes.delete("/tickets/:ticketId", isAuth, isAdmin, TicketController.remove);

@@ -47,6 +47,10 @@ class Ticket extends Model<Ticket> {
   @Column
   firstResponseAt: Date;
 
+  // set while the conversation is archived; a new message from the contact clears it
+  @Column
+  archivedAt: Date;
+
   @Column
   chatbotNodeId: number;
 

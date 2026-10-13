@@ -58,6 +58,7 @@ const Ticket = () => {
   const [ticket, setTicket] = useState({});
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const [contactTyping, setContactTyping] = useState(false);
   const [matches, setMatches] = useState(0);
   const [matchIndex, setMatchIndex] = useState(0);
 
@@ -104,6 +105,15 @@ const Ticket = () => {
       }
     });
 
+    // only the web chat reports that the visitor is typing; other channels never send it
+    let typingTimer;
+    socket.on("typing", (data) => {
+      if (+data.ticketId !== +ticketId) return;
+      setContactTyping(true);
+      clearTimeout(typingTimer);
+      typingTimer = setTimeout(() => setContactTyping(false), 5000);
+    });
+
     socket.on("contact", (data) => {
       if (data.action === "update") {
         setContact((prev) => (prev.id === data.contact?.id ? { ...prev, ...data.contact } : prev));
@@ -111,6 +121,8 @@ const Ticket = () => {
     });
 
     return () => {
+      clearTimeout(typingTimer);
+      setContactTyping(false);
       socket.disconnect();
     };
   }, [ticketId, history]);
@@ -131,6 +143,7 @@ const Ticket = () => {
             ticket={ticket}
             onOpenInfo={() => setDrawerOpen(true)}
             onToggleSearch={() => setSearchOpen((v) => !v)}
+            typing={contactTyping}
           />
         )}
         {searchOpen && (
@@ -163,6 +176,7 @@ const Ticket = () => {
           <MessagesList
             ticketId={ticketId}
             isGroup={ticket.isGroup}
+            channel={ticket.whatsapp?.channel}
             searchTerm={searchOpen ? searchTerm : ""}
             matchIndex={matchIndex}
             onMatches={setMatches}

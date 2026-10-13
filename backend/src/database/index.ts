@@ -33,6 +33,7 @@ import ProposalTemplate from "../models/ProposalTemplate";
 import Proposal from "../models/Proposal";
 import Payment from "../models/Payment";
 import TicketEvent from "../models/TicketEvent";
+import TicketPin from "../models/TicketPin";
 import Polo from "../models/Polo";
 import PoloMember from "../models/PoloMember";
 import ProposalTemplateInstitution from "../models/ProposalTemplateInstitution";
@@ -78,6 +79,7 @@ const models = [
   Proposal,
   Payment,
   TicketEvent,
+  TicketPin,
   Polo,
   PoloMember,
   ProposalTemplateInstitution

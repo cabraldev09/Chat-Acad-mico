@@ -2,6 +2,7 @@ import { v4 as uuid } from "uuid";
 import { ChannelAdapter, getConfig } from "./types";
 import { setChannelStatus } from "../services/ChannelServices/ChannelStatus";
 import Whatsapp from "../models/Whatsapp";
+import { markAgentTyping } from "../services/ChannelServices/TypingState";
 
 export const WEBCHAT_PREFIX = "web_";
 
@@ -22,6 +23,10 @@ const webchat: ChannelAdapter = {
 
   async stop() {
     // nothing to tear down
+  },
+
+  async sendTyping(_whatsapp, contact) {
+    markAgentTyping(contact.number);
   },
 
   async sendText() {
