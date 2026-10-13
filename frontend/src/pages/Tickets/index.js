@@ -1,109 +1,114 @@
 import React from "react";
 import { useParams } from "react-router-dom";
-import Grid from "@material-ui/core/Grid";
-import Paper from "@material-ui/core/Paper";
+import clsx from "clsx";
 import { makeStyles } from "@material-ui/core/styles";
+import ChatBubbleOutline from "@material-ui/icons/ChatBubbleOutline";
+import LockOutlined from "@material-ui/icons/LockOutlined";
 
 import TicketsManager from "../../components/TicketsManager/";
 import Ticket from "../../components/Ticket/";
+import { wa } from "../../components/chat/chatTheme";
 
-import { i18n } from "../../translate/i18n";
-import Hidden from "@material-ui/core/Hidden";
-
-const useStyles = makeStyles((theme) => ({
-  chatContainer: {
-    flex: 1,
-    // // backgroundColor: "#eee",
-    // padding: theme.spacing(4),
-    height: `calc(100% - ${theme.sizing.appBar}px)`,
-    overflowY: "hidden",
-    backgroundColor: theme.palette.background.default,
-    [theme.breakpoints.up("sm")]: {
-      padding: theme.spacing(2),
+const useStyles = makeStyles((theme) => {
+  const c = wa(theme);
+  return {
+    root: {
+      display: "flex",
+      height: `calc(100% - ${theme.sizing.appBar}px)`,
+      overflow: "hidden",
+      backgroundColor: c.panelAlt,
+      [theme.breakpoints.up("md")]: {
+        margin: theme.spacing(1.5),
+        height: `calc(100% - ${theme.sizing.appBar}px - ${theme.spacing(3)}px)`,
+        borderRadius: 14,
+        border: `1px solid ${c.divider}`,
+        boxShadow: theme.palette.type === "dark" ? "none" : "0 1px 3px rgba(11,20,26,.08)",
+      },
     },
-  },
-
-  chatPapper: {
-    // backgroundColor: "red",
-    display: "flex",
-    height: "100%",
-  },
-
-  contactsWrapper: {
-    display: "flex",
-    height: "100%",
-    flexDirection: "column",
-    overflowY: "hidden",
-  },
-  contactsWrapperSmall: {
-    display: "flex",
-    height: "100%",
-    flexDirection: "column",
-    overflowY: "hidden",
-    [theme.breakpoints.down("sm")]: {
-      display: "none",
+    left: {
+      flex: "none",
+      width: "clamp(340px, 30%, 440px)",
+      display: "flex",
+      flexDirection: "column",
+      minWidth: 0,
+      borderRight: `1px solid ${c.divider}`,
+      backgroundColor: c.panel,
+      [theme.breakpoints.down("sm")]: { width: "100%", borderRight: "none" },
     },
-  },
-  messagessWrapper: {
-    display: "flex",
-    height: "100%",
-    flexDirection: "column",
-    [theme.breakpoints.up("md")]: {
-      paddingLeft: theme.spacing(2),
+    leftHidden: { [theme.breakpoints.down("sm")]: { display: "none" } },
+    right: {
+      flex: 1,
+      minWidth: 0,
+      display: "flex",
+      flexDirection: "column",
+      backgroundColor: c.wallpaper,
     },
-  },
-  welcomeMsg: {
-    backgroundColor: theme.palette.background.paper,
-    display: "flex",
-    justifyContent: "space-evenly",
-    alignItems: "center",
-    height: "100%",
-    textAlign: "center",
-  },
-  ticketsManager: {},
-  ticketsManagerClosed: {
-    [theme.breakpoints.down("sm")]: {
-      display: "none",
+    rightHidden: { [theme.breakpoints.down("sm")]: { display: "none" } },
+    empty: {
+      flex: 1,
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: theme.spacing(1.5),
+      textAlign: "center",
+      padding: theme.spacing(4),
+      backgroundColor: c.panelAlt,
+      borderBottom: `6px solid ${c.accent}`,
+      color: c.textSecondary,
     },
-  },
-}));
+    emptyIcon: {
+      width: 84,
+      height: 84,
+      borderRadius: "50%",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: theme.palette.type === "dark" ? "#182229" : "#e1f5ec",
+      color: c.accent,
+      "& svg": { fontSize: 44 },
+    },
+    emptyTitle: { color: c.text, fontSize: 30, fontWeight: 300, letterSpacing: "-0.01em" },
+    emptyText: { maxWidth: 420, fontSize: 14, lineHeight: 1.5 },
+    emptyNote: {
+      marginTop: theme.spacing(6),
+      display: "flex",
+      alignItems: "center",
+      gap: 6,
+      fontSize: 12,
+      "& svg": { fontSize: 14 },
+    },
+  };
+});
 
 const Chat = () => {
   const classes = useStyles();
   const { ticketId } = useParams();
 
   return (
-    <div className={classes.chatContainer}>
-      <div className={classes.chatPapper}>
-        <Grid container spacing={0}>
-          {/* <Grid item xs={4} className={classes.contactsWrapper}> */}
-          <Grid
-            item
-            xs={12}
-            md={4}
-            className={
-              ticketId ? classes.contactsWrapperSmall : classes.contactsWrapper
-            }
-          >
-            <TicketsManager />
-          </Grid>
-          <Grid item xs={12} md={8} className={classes.messagessWrapper}>
-            {/* <Grid item xs={8} className={classes.messagessWrapper}> */}
-            {ticketId ? (
-              <>
-                <Ticket />
-              </>
-            ) : (
-              <Hidden only={["sm", "xs"]}>
-                <Paper variant="outlined" className={classes.welcomeMsg}>
-                  {/* <Paper square variant="outlined" className={classes.welcomeMsg}> */}
-                  <span>{i18n.t("chat.noTicketMessage")}</span>
-                </Paper>
-              </Hidden>
-            )}
-          </Grid>
-        </Grid>
-      </div>
+    <div className={classes.root}>
+      <aside className={clsx(classes.left, ticketId && classes.leftHidden)}>
+        <TicketsManager />
+      </aside>
+      <section className={clsx(classes.right, !ticketId && classes.rightHidden)}>
+        {ticketId ? (
+          <Ticket />
+        ) : (
+          <div className={classes.empty}>
+            <div className={classes.emptyIcon}>
+              <ChatBubbleOutline />
+            </div>
+            <div className={classes.emptyTitle}>Chat Acadêmico</div>
+            <div className={classes.emptyText}>
+              Selecione uma conversa à esquerda para começar a atender. Novas mensagens dos candidatos aparecem aqui em tempo
+              real, de todos os canais.
+            </div>
+            <div className={classes.emptyNote}>
+              <LockOutlined /> Conversas protegidas e separadas por etapa: cada equipe vê só o que é seu.
+            </div>
+          </div>
+        )}
+      </section>
     </div>
   );
 };

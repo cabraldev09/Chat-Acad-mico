@@ -7,6 +7,7 @@ import {
   Contact as WbotContact,
   MessageSendOptions
 } from "whatsapp-web.js";
+import { applyReaction } from "../../../services/MessageServices/MessageActions";
 import { WWEBJS_AUTH_DIR } from "../../../config/paths";
 import { onDisconnected } from "../../../services/SafetyServices/SendGuard";
 import { getIO } from "../../../libs/socket";
@@ -409,6 +410,19 @@ const sendTyping = async (sessionId: number, chatId: string): Promise<void> => {
   }
 };
 
+const sendReaction = async (
+  sessionId: number,
+  chatId: string,
+  messageId: string,
+  fromMe: boolean,
+  emoji: string
+): Promise<void> => {
+  const wbot = getWbot(sessionId);
+  const message = await wbot.getMessageById(getSerializedMessageId(chatId, fromMe, messageId));
+  if (!message) throw new Error("message not found");
+  await message.react(emoji);
+};
+
 const fetchChatMessages = async (
   sessionId: number,
   chatId: string,
@@ -639,6 +653,16 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
       }
     });
 
+    wbot.on("message_reaction", async (reaction: any) => {
+      try {
+        const sender = String(reaction.senderId || "");
+        const mine = sender === (wbot as any).info?.wid?._serialized;
+        await applyReaction(reaction.msgId?.id, reaction.reaction || "", mine, mine ? "me" : sender);
+      } catch (err) {
+        logger.error(err, "Error on whatsapp reaction event");
+      }
+    });
+
     wbot.on("message_ack", async (msg, ack) => {
       handleMessageAck(msg.id.id, mapMessageAck(ack));
     });
@@ -661,5 +685,6 @@ export const WhatsappWebJsProvider: WhatsappProvider = {
   getContacts,
   sendSeen,
   sendTyping,
+  sendReaction,
   fetchChatMessages
 };

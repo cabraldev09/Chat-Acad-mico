@@ -1,72 +1,51 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useHistory } from "react-router-dom";
-
 import { toast } from "react-toastify";
+import { makeStyles } from "@material-ui/core";
+import Search from "@material-ui/icons/Search";
+import KeyboardArrowUp from "@material-ui/icons/KeyboardArrowUp";
+import KeyboardArrowDown from "@material-ui/icons/KeyboardArrowDown";
+import Close from "@material-ui/icons/Close";
+import IconButton from "@material-ui/core/IconButton";
+import InputBase from "@material-ui/core/InputBase";
+
 import openSocket from "../../services/socket-io";
-import clsx from "clsx";
-
-import { Paper, makeStyles } from "@material-ui/core";
-
 import ContactDrawer from "../ContactDrawer";
 import MessageInput from "../MessageInput/";
-import TicketHeader from "../TicketHeader";
-import TicketInfo from "../TicketInfo";
-import TicketActionButtons from "../TicketActionButtons";
 import MessagesList from "../MessagesList";
+import ChatHeader from "../chat/ChatHeader";
 import api from "../../services/api";
 import { ReplyMessageProvider } from "../../context/ReplyingMessage/ReplyingMessageContext";
 import toastError from "../../errors/toastError";
+import { wa } from "../chat/chatTheme";
 
-const drawerWidth = 320;
-
-const useStyles = makeStyles((theme) => ({
-  root: {
-    display: "flex",
-    height: "100%",
-    position: "relative",
-    overflow: "hidden",
-  },
-
-  ticketInfo: {
-    maxWidth: "50%",
-    flexBasis: "50%",
-    [theme.breakpoints.down("sm")]: {
-      maxWidth: "80%",
-      flexBasis: "80%",
+const useStyles = makeStyles((theme) => {
+  const c = wa(theme);
+  return {
+    root: { display: "flex", height: "100%", position: "relative", overflow: "hidden" },
+    main: { flex: 1, minWidth: 0, height: "100%", display: "flex", flexDirection: "column", overflow: "hidden" },
+    searchBar: {
+      flex: "none",
+      display: "flex",
+      alignItems: "center",
+      gap: theme.spacing(1),
+      padding: theme.spacing(0.75, 1.5),
+      backgroundColor: c.header,
+      borderBottom: `1px solid ${c.divider}`,
+      color: c.textSecondary,
     },
-  },
-  ticketActionButtons: {
-    maxWidth: "50%",
-    flexBasis: "50%",
-    display: "flex",
-    [theme.breakpoints.down("sm")]: {
-      maxWidth: "100%",
-      flexBasis: "100%",
-      marginBottom: "5px",
+    searchInput: {
+      flex: 1,
+      height: 36,
+      padding: theme.spacing(0, 1.5),
+      borderRadius: 10,
+      backgroundColor: c.panel,
+      color: c.text,
+      fontSize: 14,
     },
-  },
-
-  mainWrapper: {
-    flex: 1,
-    height: "100%",
-    display: "flex",
-    flexDirection: "column",
-    overflow: "hidden",
-    marginRight: -drawerWidth,
-    transition: theme.transitions.create("margin", {
-      easing: theme.transitions.easing.sharp,
-      duration: theme.transitions.duration.leavingScreen,
-    }),
-  },
-
-  mainWrapperShift: {
-    transition: theme.transitions.create("margin", {
-      easing: theme.transitions.easing.easeOut,
-      duration: theme.transitions.duration.enteringScreen,
-    }),
-    marginRight: theme.spacing(1),
-  },
-}));
+    count: { fontSize: 13, minWidth: 54, textAlign: "center" },
+  };
+});
 
 const Ticket = () => {
   const { ticketId } = useParams();
@@ -77,6 +56,16 @@ const Ticket = () => {
   const [loading, setLoading] = useState(true);
   const [contact, setContact] = useState({});
   const [ticket, setTicket] = useState({});
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [matches, setMatches] = useState(0);
+  const [matchIndex, setMatchIndex] = useState(0);
+
+  useEffect(() => {
+    setSearchOpen(false);
+    setSearchTerm("");
+    setDrawerOpen(false);
+  }, [ticketId]);
 
   useEffect(() => {
     setLoading(true);
@@ -84,7 +73,6 @@ const Ticket = () => {
       const fetchTicket = async () => {
         try {
           const { data } = await api.get("/tickets/" + ticketId);
-
           setContact(data.contact);
           setTicket(data);
           setLoading(false);
@@ -94,7 +82,7 @@ const Ticket = () => {
         }
       };
       fetchTicket();
-    }, 500);
+    }, 300);
     return () => clearTimeout(delayDebounceFn);
   }, [ticketId, history]);
 
@@ -104,28 +92,21 @@ const Ticket = () => {
     socket.on("connect", () => socket.emit("joinChatBox", ticketId));
 
     socket.on("ticket", (data) => {
-      if (data.action === "update") {
+      if (data.action === "update" && +data.ticket?.id === +ticketId) {
         setTicket(data.ticket);
       }
-
       if (data.action === "tags" && +data.ticketId === +ticketId) {
         setTicket((prev) => ({ ...prev, tags: data.tags }));
       }
-
-      if (data.action === "delete") {
-        toast.success("Ticket deleted sucessfully.");
+      if (data.action === "delete" && +data.ticketId === +ticketId) {
+        toast.success("Conversa excluída.");
         history.push("/tickets");
       }
     });
 
     socket.on("contact", (data) => {
       if (data.action === "update") {
-        setContact((prevState) => {
-          if (prevState.id === data.contact?.id) {
-            return { ...prevState, ...data.contact };
-          }
-          return prevState;
-        });
+        setContact((prev) => (prev.id === data.contact?.id ? { ...prev, ...data.contact } : prev));
       }
     });
 
@@ -134,49 +115,62 @@ const Ticket = () => {
     };
   }, [ticketId, history]);
 
-  const handleDrawerOpen = () => {
-    setDrawerOpen(true);
-  };
-
-  const handleDrawerClose = () => {
-    setDrawerOpen(false);
+  const step = (dir) => {
+    if (!matches) return;
+    setMatchIndex((i) => (i + dir + matches) % matches);
   };
 
   return (
     <div className={classes.root} id="drawer-container">
-      <Paper
-        variant="outlined"
-        elevation={0}
-        className={clsx(classes.mainWrapper, {
-          [classes.mainWrapperShift]: drawerOpen,
-        })}
-      >
-        <TicketHeader loading={loading}>
-          <div className={classes.ticketInfo}>
-            <TicketInfo
-              contact={contact}
-              ticket={ticket}
-              onClick={handleDrawerOpen}
+      <div className={classes.main}>
+        {loading ? (
+          <div style={{ height: 60, flex: "none" }} />
+        ) : (
+          <ChatHeader
+            contact={contact}
+            ticket={ticket}
+            onOpenInfo={() => setDrawerOpen(true)}
+            onToggleSearch={() => setSearchOpen((v) => !v)}
+          />
+        )}
+        {searchOpen && (
+          <div className={classes.searchBar}>
+            <Search />
+            <InputBase
+              autoFocus
+              className={classes.searchInput}
+              placeholder="Pesquisar nas mensagens carregadas"
+              value={searchTerm}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setMatchIndex(0);
+              }}
+              onKeyDown={(e) => e.key === "Enter" && step(e.shiftKey ? -1 : 1)}
             />
+            <span className={classes.count}>{searchTerm ? (matches ? `${matchIndex + 1} de ${matches}` : "Nenhuma") : ""}</span>
+            <IconButton size="small" onClick={() => step(-1)} disabled={!matches}>
+              <KeyboardArrowUp />
+            </IconButton>
+            <IconButton size="small" onClick={() => step(1)} disabled={!matches}>
+              <KeyboardArrowDown />
+            </IconButton>
+            <IconButton size="small" onClick={() => { setSearchOpen(false); setSearchTerm(""); }}>
+              <Close />
+            </IconButton>
           </div>
-          <div className={classes.ticketActionButtons}>
-            <TicketActionButtons ticket={ticket} />
-          </div>
-        </TicketHeader>
+        )}
         <ReplyMessageProvider>
           <MessagesList
             ticketId={ticketId}
             isGroup={ticket.isGroup}
-          ></MessagesList>
+            searchTerm={searchOpen ? searchTerm : ""}
+            matchIndex={matchIndex}
+            onMatches={setMatches}
+          />
           <MessageInput ticketStatus={ticket.status} />
         </ReplyMessageProvider>
-      </Paper>
-      <ContactDrawer
-        open={drawerOpen}
-        handleDrawerClose={handleDrawerClose}
-        contact={contact}
-        loading={loading}
-      />
+      </div>
+      <ContactDrawer open={drawerOpen} handleDrawerClose={() => setDrawerOpen(false)} contact={contact} loading={loading} />
     </div>
   );
 };

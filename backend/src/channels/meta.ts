@@ -160,6 +160,20 @@ export const whatsappCloud: ChannelAdapter = {
     return { id: data.messages[0].id };
   },
 
+  async sendReaction(whatsapp, contact: Contact, messageId, emoji) {
+    const { accessToken, phoneNumberId } = getConfig(whatsapp);
+    await axios.post(
+      `${GRAPH}/${phoneNumberId}/messages`,
+      {
+        messaging_product: "whatsapp",
+        to: contact.number,
+        type: "reaction",
+        reaction: { message_id: messageId, emoji }
+      },
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+  },
+
   async sendTemplate(whatsapp, contact: Contact, template) {
     const { accessToken, phoneNumberId } = getConfig(whatsapp);
     const { data } = await axios.post(

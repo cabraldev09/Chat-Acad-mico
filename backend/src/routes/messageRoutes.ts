@@ -1,7 +1,7 @@
 import { Router } from "express";
 import multer from "multer";
 import isAuth from "../middleware/isAuth";
-import { canReadTicket, canWriteTicket } from "../middleware/canAccessTicket";
+import { canReadTicket, canWriteTicket, canWriteMessage } from "../middleware/canAccessTicket";
 import uploadConfig from "../config/upload";
 
 import * as MessageController from "../controllers/MessageController";
@@ -20,6 +20,10 @@ messageRoutes.post(
   MessageController.store
 );
 
-messageRoutes.delete("/messages/:messageId", isAuth, MessageController.remove);
+messageRoutes.delete("/messages/:messageId", isAuth, canWriteMessage, MessageController.remove);
+
+messageRoutes.put("/messages/:messageId/star", isAuth, canWriteMessage, MessageController.star);
+messageRoutes.post("/messages/:messageId/react", isAuth, canWriteMessage, MessageController.react);
+messageRoutes.post("/messages/:messageId/forward", isAuth, canWriteMessage, MessageController.forward);
 
 export default messageRoutes;

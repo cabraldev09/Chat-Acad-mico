@@ -37,6 +37,14 @@ export interface WhatsappProvider {
   sendSeen(sessionId: number, chatId: string): Promise<void>;
   // shows "typing…" to the contact (optional, used to humanize bot replies)
   sendTyping?(sessionId: number, chatId: string): Promise<void>;
+  // reacts to a message with an emoji ("" removes the reaction)
+  sendReaction?(
+    sessionId: number,
+    chatId: string,
+    messageId: string,
+    fromMe: boolean,
+    emoji: string
+  ): Promise<void>;
   fetchChatMessages(
     sessionId: number,
     chatId: string,

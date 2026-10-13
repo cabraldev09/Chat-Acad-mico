@@ -322,17 +322,55 @@ const createAppTheme = (type) => {
       },
 
       MuiSwitch: {
-        root: { width: 40, height: 24, padding: 0, margin: 8 },
+        // off: grey track + white knob; on: brand track + white knob with a check
+        root: { width: 44, height: 26, padding: 0, margin: 8 },
         switchBase: {
-          padding: 2,
-          "&$checked": { transform: "translateX(16px)" },
-          "&$checked + $track": { opacity: 1 },
+          padding: 3,
+          color: "#fff",
+          "&$checked": {
+            transform: "translateX(18px)",
+            color: "#fff",
+            "& + $track": {
+              opacity: 1,
+              backgroundColor: isDark ? colors.accent.main : colors.primary.main,
+            },
+            "& $thumb": {
+              backgroundImage: `url("data:image/svg+xml,${encodeURIComponent(
+                `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='none' stroke='${
+                  isDark ? colors.accent.main : colors.primary.main
+                }' stroke-width='3.4' stroke-linecap='round' stroke-linejoin='round' d='M5 12.5l4.5 4.5L19 7.5'/></svg>`
+              )}")`,
+              backgroundSize: "70%",
+              backgroundRepeat: "no-repeat",
+              backgroundPosition: "center",
+            },
+          },
+          "&$disabled": { opacity: 0.55 },
         },
-        thumb: { width: 20, height: 20, boxShadow: "0 1px 2px rgba(0,0,0,.25)" },
+        colorPrimary: {
+          "&$checked": { color: "#fff", "& + $track": { backgroundColor: isDark ? colors.accent.main : colors.primary.main } },
+        },
+        colorSecondary: {
+          "&$checked": { color: "#fff", "& + $track": { backgroundColor: isDark ? colors.accent.main : colors.primary.main } },
+        },
+        sizeSmall: { width: 36, height: 22, "& $switchBase": { padding: 2, "&$checked": { transform: "translateX(14px)" } }, "& $thumb": { width: 18, height: 18 } },
+        thumb: { width: 20, height: 20, boxShadow: "0 1px 2px rgba(0,0,0,.3)", transition: "background-color .15s" },
         track: {
-          borderRadius: 12,
+          borderRadius: 13,
           opacity: 1,
-          backgroundColor: isDark ? "#2c4062" : "#cbd5e1",
+          backgroundColor: isDark ? "#3a5073" : "#aab6c4",
+          transition: "background-color .2s",
+        },
+      },
+
+      // the search boxes (new conversation, transfer) rendered as tall empty frames
+      MuiAutocomplete: {
+        inputRoot: {
+          '&[class*="MuiOutlinedInput-root"]': {
+            padding: "6px 10px",
+            "& $input": { padding: "6px 4px", minWidth: 80 },
+            '& $endAdornment': { right: 8 },
+          },
         },
       },
 

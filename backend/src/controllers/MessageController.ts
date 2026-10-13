@@ -10,6 +10,7 @@ import DeleteWhatsAppMessage from "../services/WbotServices/DeleteWhatsAppMessag
 import SendWhatsAppMedia from "../services/WbotServices/SendWhatsAppMedia";
 import SendWhatsAppMessage from "../services/WbotServices/SendWhatsAppMessage";
 import { hookHumanReply } from "../services/CrmServices/LeadCore";
+import { toggleStar, reactToMessage, forwardMessage } from "../services/MessageServices/MessageActions";
 
 type IndexQuery = {
   pageNumber: string;
@@ -46,11 +47,14 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
   SetTicketMessagesAsRead(ticket);
 
   if (medias) {
-    await Promise.all(
-      medias.map(async (media: Express.Multer.File) => {
-        await SendWhatsAppMedia({ media, ticket });
-      })
-    );
+    // one caption per file (the form sends "body" once per media, in order)
+    const captions: string[] = ([] as string[]).concat(req.body.body || []);
+    // sequential: keeps the order the agent chose and paces unofficial connections
+    for (const [i, media] of medias.entries()) {
+      const caption = (captions[i] || "").trim();
+      // eslint-disable-next-line no-await-in-loop
+      await SendWhatsAppMedia({ media, ticket, body: caption || undefined });
+    }
   } else {
     await SendWhatsAppMessage({ body, ticket, quotedMsg });
   }
@@ -75,4 +79,21 @@ export const remove = async (
   });
 
   return res.send();
+};
+
+export const star = async (req: Request, res: Response): Promise<Response> => {
+  const message = await toggleStar(req.params.messageId, Boolean(req.body.starred));
+  return res.json({ id: message.id, starred: message.starred });
+};
+
+export const react = async (req: Request, res: Response): Promise<Response> => {
+  const emoji = String(req.body.emoji || "").slice(0, 16);
+  const message = await reactToMessage(req.params.messageId, emoji);
+  return res.json({ id: message.id, reactions: message.reactions });
+};
+
+export const forward = async (req: Request, res: Response): Promise<Response> => {
+  const ids = Array.isArray(req.body.ticketIds) ? req.body.ticketIds : [];
+  const sent = await forwardMessage(req, req.params.messageId, ids);
+  return res.json({ sent });
 };

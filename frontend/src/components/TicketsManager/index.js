@@ -1,387 +1,279 @@
 import React, { useContext, useEffect, useRef, useState } from "react";
 import clsx from "clsx";
-import { alpha, makeStyles } from "@material-ui/core/styles";
-import Paper from "@material-ui/core/Paper";
+import { makeStyles } from "@material-ui/core/styles";
 import SearchIcon from "@material-ui/icons/Search";
 import InputBase from "@material-ui/core/InputBase";
-import Tabs from "@material-ui/core/Tabs";
-import Tab from "@material-ui/core/Tab";
-import Chip from "@material-ui/core/Chip";
-import Fab from "@material-ui/core/Fab";
+import IconButton from "@material-ui/core/IconButton";
 import Tooltip from "@material-ui/core/Tooltip";
-import AddIcon from "@material-ui/icons/Add";
-import MoveToInboxIcon from "@material-ui/icons/MoveToInbox";
-import CheckBoxIcon from "@material-ui/icons/CheckBox";
-import FormControlLabel from "@material-ui/core/FormControlLabel";
+import Menu from "@material-ui/core/Menu";
+import MenuItem from "@material-ui/core/MenuItem";
 import Switch from "@material-ui/core/Switch";
+import ListItemIcon from "@material-ui/core/ListItemIcon";
+import ListItemText from "@material-ui/core/ListItemText";
+import AddIcon from "@material-ui/icons/Add";
+import MoreVert from "@material-ui/icons/MoreVert";
+import ClearIcon from "@material-ui/icons/Clear";
+import ArrowBack from "@material-ui/icons/ArrowBack";
+import FilterList from "@material-ui/icons/FilterList";
+
 import NewTicketModal from "../NewTicketModal";
 import TicketsList from "../TicketsList";
-import TabPanel from "../TabPanel";
-import { i18n } from "../../translate/i18n";
 import { AuthContext } from "../../context/Auth/AuthContext";
-import { Can } from "../Can";
 import TicketsQueueSelect from "../TicketsQueueSelect";
+import { wa } from "../chat/chatTheme";
 
-const useStyles = makeStyles((theme) => ({
-  ticketsWrapper: {
-    position: "relative",
-    display: "flex",
-    height: "100%",
-    flexDirection: "column",
-    overflow: "hidden",
-    backgroundColor: theme.palette.background.paper,
-    color: theme.palette.text.primary,
-  },
-  tabsHeader: {
-    flex: "none",
-    padding: theme.spacing(1.5, 1.5, 0.5),
-    backgroundColor: theme.palette.background.paper,
-  },
-  settingsIcon: {
-    alignSelf: "center",
-    marginLeft: "auto",
-    padding: 8,
-  },
-  tabs: {
-    minHeight: 0,
-  },
-  tabsFlexContainer: {
-    gap: theme.spacing(0.5),
-  },
-  tabsIndicator: {
-    display: "none",
-  },
-  tab: {
-    ...theme.typography.subtitle2,
-    minWidth: 0,
-    minHeight: 0,
-    padding: theme.spacing(1.25),
-    borderRadius: theme.borderRadius.small,
-    textTransform: "none",
-    color: theme.palette.text.primary,
-    "&:hover": {
-      backgroundColor: alpha(theme.palette.text.primary, 0.04),
+const useStyles = makeStyles((theme) => {
+  const c = wa(theme);
+  return {
+    wrapper: {
+      display: "flex",
+      flexDirection: "column",
+      height: "100%",
+      overflow: "hidden",
+      backgroundColor: c.panel,
+      color: c.text,
     },
-  },
-  tabSelected: {
-    backgroundColor: alpha(theme.palette.primary.main, 0.08),
-    "&:hover": {
-      backgroundColor: alpha(theme.palette.primary.main, 0.12),
+    top: {
+      flex: "none",
+      display: "flex",
+      alignItems: "center",
+      gap: theme.spacing(0.5),
+      padding: theme.spacing(1.25, 1.5, 0.5, 2),
     },
-  },
-  tabWrapper: {
-    flexDirection: "row",
-    gap: theme.spacing(1),
-  },
-  tabLabelIcon: {
-    minHeight: 0,
-    paddingTop: theme.spacing(1.25),
-    "& $tabWrapper > *:first-child": {
-      marginBottom: 0,
+    title: { flex: 1, fontSize: 22, fontWeight: 700, letterSpacing: "-0.02em", color: c.text },
+    iconBtn: { color: c.textSecondary, "&:hover": { backgroundColor: c.hover } },
+    searchWrap: { flex: "none", padding: theme.spacing(0.5, 1.5, 1) },
+    search: {
+      display: "flex",
+      alignItems: "center",
+      gap: theme.spacing(1.5),
+      height: 38,
+      padding: theme.spacing(0, 1.5),
+      borderRadius: 10,
+      backgroundColor: c.panelAlt,
+      border: "1px solid transparent",
+      transition: "border-color .15s, background-color .15s",
+      "&:focus-within": { borderColor: c.accent, backgroundColor: c.panel },
+      "& svg": { fontSize: 20, color: c.textSecondary },
     },
-  },
-  ticketOptionsBox: {
-    display: "flex",
-    justifyContent: "flex-end",
-    alignItems: "center",
-    gap: theme.spacing(1),
-    background: theme.palette.background.paper,
-    padding: theme.spacing(0.5, 1.5),
-  },
-  serachInputWrapper: {
-    flex: 1,
-    display: "flex",
-    alignItems: "center",
-    padding: theme.spacing(0.5, 1.5),
-    borderRadius: theme.borderRadius.pill,
-    backgroundColor: theme.palette.action.selected,
-  },
-  searchIcon: {
-    marginRight: theme.spacing(1),
-    color: theme.palette.text.secondary,
-  },
-  searchInput: {
-    flex: 1,
-    color: theme.palette.text.primary,
-  },
-  statusChips: {
-    flex: "none",
-    display: "flex",
-    alignItems: "center",
-    gap: theme.spacing(0.5),
-    padding: theme.spacing(0.5, 1, 1),
-  },
-  statusChip: {
-    backgroundColor: theme.palette.action.selected,
-  },
-  statusChipSelected: {
-    backgroundColor: theme.palette.primary.main,
-    color: theme.palette.primary.contrastText,
-    "&:hover, &:focus": {
-      backgroundColor: theme.palette.primary.main,
+    searchInput: { flex: 1, fontSize: 14, color: c.text },
+    chips: {
+      flex: "none",
+      display: "flex",
+      gap: theme.spacing(0.75),
+      padding: theme.spacing(0, 1.5, 1),
+      overflowX: "auto",
+      "&::-webkit-scrollbar": { display: "none" },
     },
-  },
-  statusChipLabel: {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: theme.spacing(0.75),
-  },
-  statusChipCount: {
-    padding: theme.spacing(0, 0.75),
-    borderRadius: theme.borderRadius.pill,
-    backgroundColor: theme.palette.accent.highlight,
-    color: theme.palette.accent.onHighlight,
-    fontWeight: 600,
-    fontSize: "0.6875rem",
-    fontWeight: 600,
-    lineHeight: "16px",
-  },
-  newTicketButton: {
-    position: "absolute",
-    left: theme.spacing(2),
-    bottom: theme.spacing(2),
-  },
-  show: {
-    display: "block",
-  },
-  hide: {
-    display: "none !important",
-  },
-}));
+    chip: {
+      flex: "none",
+      display: "inline-flex",
+      alignItems: "center",
+      gap: 6,
+      height: 30,
+      padding: theme.spacing(0, 1.5),
+      borderRadius: 999,
+      border: "none",
+      cursor: "pointer",
+      fontSize: 13,
+      fontWeight: 500,
+      fontFamily: "inherit",
+      backgroundColor: c.chipBg,
+      color: c.chipText,
+      transition: "background-color .15s, color .15s",
+      "&:hover": { backgroundColor: c.selected },
+    },
+    chipOn: { backgroundColor: c.chipOn, color: c.chipOnText, "&:hover": { backgroundColor: c.chipOn } },
+    chipCount: {
+      minWidth: 18,
+      padding: "0 5px",
+      borderRadius: 999,
+      fontSize: 11,
+      lineHeight: "18px",
+      fontWeight: 700,
+      textAlign: "center",
+      backgroundColor: c.badge,
+      color: c.badgeText,
+    },
+    filters: {
+      flex: "none",
+      display: "flex",
+      alignItems: "center",
+      gap: theme.spacing(1),
+      padding: theme.spacing(0, 1.5, 1),
+    },
+    body: { flex: 1, minHeight: 0, display: "flex", flexDirection: "column", position: "relative" },
+    fab: {
+      position: "absolute",
+      right: theme.spacing(2),
+      bottom: theme.spacing(2),
+      width: 52,
+      height: 52,
+      borderRadius: 16,
+      backgroundColor: c.accent,
+      color: "#fff",
+      boxShadow: "0 4px 12px rgba(11,20,26,.25)",
+      "&:hover": { backgroundColor: c.accent, filter: "brightness(1.08)" },
+    },
+    menuSwitch: { marginLeft: theme.spacing(1) },
+  };
+});
 
 const TicketsManager = () => {
   const classes = useStyles();
   const [searchParam, setSearchParam] = useState("");
-  const [tab, setTab] = useState("open");
-  const [tabOpen, setTabOpen] = useState("open");
+  const [searchText, setSearchText] = useState("");
+  const [filter, setFilter] = useState("open"); // open | pending | closed | unread
   const [newTicketModalOpen, setNewTicketModalOpen] = useState(false);
   const [showAllTickets, setShowAllTickets] = useState(false);
-  const searchInputRef = useRef();
+  const [menuEl, setMenuEl] = useState(null);
+  const [showFilters, setShowFilters] = useState(false);
+  const searchTimeout = useRef();
   const { user } = useContext(AuthContext);
   const [openCount, setOpenCount] = useState(0);
   const [pendingCount, setPendingCount] = useState(0);
   const userQueueIds = user.queues.map((q) => q.id);
   const [selectedQueueIds, setSelectedQueueIds] = useState(userQueueIds || []);
+  const isAdmin = user.profile.toUpperCase() === "ADMIN";
 
   useEffect(() => {
-    if (user.profile.toUpperCase() === "ADMIN") {
-      setShowAllTickets(true);
-    }
+    if (isAdmin) setShowAllTickets(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    if (tab === "search") {
-      searchInputRef.current.focus();
-      setSearchParam("");
-    }
-  }, [tab]);
-
-  let searchTimeout;
+  useEffect(() => () => clearTimeout(searchTimeout.current), []);
 
   const handleSearch = (e) => {
-    const searchedTerm = e.target.value.toLowerCase();
-
-    clearTimeout(searchTimeout);
-
-    if (searchedTerm === "") {
-      setSearchParam(searchedTerm);
-      setTab("open");
-      return;
-    }
-
-    searchTimeout = setTimeout(() => {
-      setSearchParam(searchedTerm);
-    }, 500);
+    const value = e.target.value;
+    setSearchText(value);
+    clearTimeout(searchTimeout.current);
+    searchTimeout.current = setTimeout(() => setSearchParam(value.trim().toLowerCase()), 400);
   };
 
-  const handleChangeTab = (e, newValue) => {
-    setTab(newValue);
+  const clearSearch = () => {
+    setSearchText("");
+    setSearchParam("");
   };
 
-  const handleChangeTabOpen = (e, newValue) => {
-    setTabOpen(newValue);
-  };
-
-  const applyPanelStyle = (status) => {
-    if (tabOpen !== status) {
-      return { width: 0, height: 0 };
-    }
-  };
-
-  const tabClasses = {
-    root: classes.tab,
-    selected: classes.tabSelected,
-    wrapper: classes.tabWrapper,
-    labelIcon: classes.tabLabelIcon,
-  };
+  const searching = searchParam.length > 0;
+  const chip = (key, label, count) => (
+    <button
+      key={key}
+      type="button"
+      className={clsx(classes.chip, filter === key && !searching && classes.chipOn)}
+      onClick={() => {
+        clearSearch();
+        setFilter(key);
+      }}
+    >
+      {label}
+      {count > 0 && <span className={classes.chipCount}>{count > 99 ? "99+" : count}</span>}
+    </button>
+  );
 
   return (
-    <Paper elevation={0} variant="outlined" className={classes.ticketsWrapper}>
-      <NewTicketModal
-        modalOpen={newTicketModalOpen}
-        onClose={(e) => setNewTicketModalOpen(false)}
-      />
-      <Paper elevation={0} square className={classes.tabsHeader}>
-        <Tabs
-          value={tab}
-          onChange={handleChangeTab}
-          variant="scrollable"
-          scrollButtons="off"
-          indicatorColor="primary"
-          textColor="primary"
-          aria-label="icon label tabs example"
-          classes={{
-            root: classes.tabs,
-            flexContainer: classes.tabsFlexContainer,
-            indicator: classes.tabsIndicator,
-          }}
-        >
-          <Tab
-            value={"open"}
-            icon={<MoveToInboxIcon fontSize="small" />}
-            label={i18n.t("tickets.tabs.open.title")}
-            classes={tabClasses}
+    <div className={classes.wrapper}>
+      <NewTicketModal modalOpen={newTicketModalOpen} onClose={() => setNewTicketModalOpen(false)} />
+
+      <div className={classes.top}>
+        <div className={classes.title}>Conversas</div>
+        <Tooltip title="Nova conversa">
+          <IconButton className={classes.iconBtn} onClick={() => setNewTicketModalOpen(true)}>
+            <AddIcon />
+          </IconButton>
+        </Tooltip>
+        <Tooltip title="Filtrar por fila">
+          <IconButton className={classes.iconBtn} onClick={() => setShowFilters((v) => !v)}>
+            <FilterList />
+          </IconButton>
+        </Tooltip>
+        <IconButton className={classes.iconBtn} onClick={(e) => setMenuEl(e.currentTarget)}>
+          <MoreVert />
+        </IconButton>
+        <Menu anchorEl={menuEl} open={Boolean(menuEl)} onClose={() => setMenuEl(null)} getContentAnchorEl={null}
+          anchorOrigin={{ vertical: "bottom", horizontal: "right" }} transformOrigin={{ vertical: "top", horizontal: "right" }}>
+          {isAdmin && (
+            <MenuItem onClick={() => setShowAllTickets((v) => !v)}>
+              <ListItemText primary="Ver conversas de todos" />
+              <Switch size="small" color="primary" className={classes.menuSwitch} checked={showAllTickets} />
+            </MenuItem>
+          )}
+          <MenuItem onClick={() => { setShowFilters((v) => !v); setMenuEl(null); }}>
+            <ListItemIcon style={{ minWidth: 32 }}><FilterList fontSize="small" /></ListItemIcon>
+            <ListItemText primary="Filtrar por fila" />
+          </MenuItem>
+        </Menu>
+      </div>
+
+      <div className={classes.searchWrap}>
+        <div className={classes.search}>
+          {searching || searchText ? (
+            <IconButton size="small" onClick={clearSearch} style={{ padding: 2 }}>
+              <ArrowBack style={{ fontSize: 20 }} />
+            </IconButton>
+          ) : (
+            <SearchIcon />
+          )}
+          <InputBase
+            className={classes.searchInput}
+            placeholder="Pesquisar nome, número ou mensagem"
+            value={searchText}
+            onChange={handleSearch}
           />
-          <Tab
-            value={"closed"}
-            icon={<CheckBoxIcon fontSize="small" />}
-            label={i18n.t("tickets.tabs.closed.title")}
-            classes={tabClasses}
-          />
-          <Tab
-            value={"search"}
-            icon={<SearchIcon fontSize="small" />}
-            label={i18n.t("tickets.tabs.search.title")}
-            classes={tabClasses}
-          />
-        </Tabs>
-      </Paper>
-      <Paper square elevation={0} className={classes.ticketOptionsBox}>
-        {tab === "search" ? (
-          <div className={classes.serachInputWrapper}>
-            <SearchIcon className={classes.searchIcon} />
-            <InputBase
-              className={classes.searchInput}
-              inputRef={searchInputRef}
-              placeholder={i18n.t("tickets.search.placeholder")}
-              type="search"
-              onChange={handleSearch}
-            />
-          </div>
-        ) : (
-          <Can
-            role={user.profile}
-            perform="tickets-manager:showall"
-            yes={() => (
-              <FormControlLabel
-                label={i18n.t("tickets.buttons.showAll")}
-                labelPlacement="start"
-                control={
-                  <Switch
-                    size="small"
-                    checked={showAllTickets}
-                    onChange={() =>
-                      setShowAllTickets((prevState) => !prevState)
-                    }
-                    name="showAllTickets"
-                    color="primary"
-                  />
-                }
-              />
-            )}
-          />
-        )}
-        <TicketsQueueSelect
-          style={{ marginLeft: 6 }}
-          selectedQueueIds={selectedQueueIds}
-          userQueues={user?.queues}
-          onChange={(values) => setSelectedQueueIds(values)}
-        />
-      </Paper>
-      <TabPanel value={tab} name="open" className={classes.ticketsWrapper}>
-        <div className={classes.statusChips}>
-          <Chip
-            clickable
-            onClick={(e) => handleChangeTabOpen(e, "open")}
-            className={clsx(
-              classes.statusChip,
-              tabOpen === "open" && classes.statusChipSelected
-            )}
-            label={
-              <span className={classes.statusChipLabel}>
-                {i18n.t("ticketsList.assignedHeader")}
-                {openCount > 0 && (
-                  <span className={classes.statusChipCount}>
-                    {openCount > 99 ? "99+" : openCount}
-                  </span>
-                )}
-              </span>
-            }
-          />
-          <Chip
-            clickable
-            onClick={(e) => handleChangeTabOpen(e, "pending")}
-            className={clsx(
-              classes.statusChip,
-              tabOpen === "pending" && classes.statusChipSelected
-            )}
-            label={
-              <span className={classes.statusChipLabel}>
-                {i18n.t("ticketsList.pendingHeader")}
-                {pendingCount > 0 && (
-                  <span className={classes.statusChipCount}>
-                    {pendingCount > 99 ? "99+" : pendingCount}
-                  </span>
-                )}
-              </span>
-            }
+          {searchText && (
+            <IconButton size="small" onClick={clearSearch} style={{ padding: 2 }}>
+              <ClearIcon style={{ fontSize: 18 }} />
+            </IconButton>
+          )}
+        </div>
+      </div>
+
+      {showFilters && (
+        <div className={classes.filters}>
+          <TicketsQueueSelect
+            style={{ flex: 1 }}
+            selectedQueueIds={selectedQueueIds}
+            userQueues={user?.queues}
+            onChange={(values) => setSelectedQueueIds(values)}
           />
         </div>
-        <Paper elevation={0} square className={classes.ticketsWrapper}>
-          <TicketsList
-            status="open"
-            showAll={showAllTickets}
-            selectedQueueIds={selectedQueueIds}
-            updateCount={(val) => setOpenCount(val)}
-            style={applyPanelStyle("open")}
-          />
-          <TicketsList
-            status="pending"
-            selectedQueueIds={selectedQueueIds}
-            updateCount={(val) => setPendingCount(val)}
-            style={applyPanelStyle("pending")}
-          />
-        </Paper>
-      </TabPanel>
-      <TabPanel value={tab} name="closed" className={classes.ticketsWrapper}>
-        <TicketsList
-          status="closed"
-          showAll={true}
-          selectedQueueIds={selectedQueueIds}
-        />
-      </TabPanel>
-      <TabPanel value={tab} name="search" className={classes.ticketsWrapper}>
-        <TicketsList
-          searchParam={searchParam}
-          showAll={true}
-          selectedQueueIds={selectedQueueIds}
-        />
-      </TabPanel>
-      {tab !== "search" && (
-        <Tooltip title={i18n.t("ticketsManager.buttons.newTicket")}>
-          <Fab
-            color="primary"
-            size="medium"
-            aria-label={i18n.t("ticketsManager.buttons.newTicket")}
-            className={classes.newTicketButton}
-            onClick={() => setNewTicketModalOpen(true)}
-          >
-            <AddIcon />
-          </Fab>
-        </Tooltip>
       )}
-    </Paper>
+
+      {!searching && (
+        <div className={classes.chips}>
+          {chip("open", "Atendendo", openCount)}
+          {chip("pending", "Aguardando", pendingCount)}
+          {chip("unread", "Não lidas", 0)}
+          {chip("closed", "Resolvidas", 0)}
+        </div>
+      )}
+
+      <div className={classes.body}>
+        {searching ? (
+          <TicketsList searchParam={searchParam} showAll={true} selectedQueueIds={selectedQueueIds} />
+        ) : (
+          <>
+            {/* both live lists stay mounted so counters and sockets keep updating */}
+            <div style={{ display: filter === "open" ? "flex" : "none", flex: 1, minHeight: 0 }}>
+              <TicketsList status="open" showAll={showAllTickets} selectedQueueIds={selectedQueueIds}
+                updateCount={(v) => setOpenCount(v)} />
+            </div>
+            <div style={{ display: filter === "pending" ? "flex" : "none", flex: 1, minHeight: 0 }}>
+              <TicketsList status="pending" selectedQueueIds={selectedQueueIds} updateCount={(v) => setPendingCount(v)} />
+            </div>
+            {filter === "unread" && (
+              <TicketsList withUnreadMessages showAll={showAllTickets} selectedQueueIds={selectedQueueIds} />
+            )}
+            {filter === "closed" && <TicketsList status="closed" showAll={true} selectedQueueIds={selectedQueueIds} />}
+          </>
+        )}
+        <Tooltip title="Nova conversa">
+          <IconButton className={classes.fab} onClick={() => setNewTicketModalOpen(true)} aria-label="Nova conversa">
+            <AddIcon />
+          </IconButton>
+        </Tooltip>
+      </div>
+    </div>
   );
 };
 

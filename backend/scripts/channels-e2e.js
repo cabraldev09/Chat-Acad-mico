@@ -849,6 +849,22 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(safety.unofficial === true && safety.riskMode === "strict" && safety.dailyLimit === 20, `safety ${JSON.stringify(safety)}`);
       assert((await http.put(`/whatsapp/${wa.id}`, { name: "QR de teste", riskMode: "xyz" }, auth())).status === 400, "bad riskMode accepted");
     });
+    await test("messages can be starred, forwarded, and reactions respect the channel", async () => {
+      const m = sql(`SELECT id FROM Messages WHERE ticketId=${tgTicket} AND fromMe=1 ORDER BY createdAt LIMIT 1`).split("\n")[0];
+      assert(m, "no outbound message to work with");
+      assert((await http.put(`/messages/${m}/star`, { starred: true }, auth())).status === 200, "star");
+      assert(sql(`SELECT starred FROM Messages WHERE id='${m}'`) === "1", "starred not saved");
+      assert((await http.post(`/messages/${m}/react`, { emoji: "👍" }, auth())).status === 400, "telegram has no reactions");
+      // forward into the other open Telegram conversation (Beto)
+      const other = ticketOf("tg_5552");
+      assert(sql(`SELECT status FROM Tickets WHERE id=${other}`) !== "closed", "target ticket closed");
+      const before = tg.sent.length;
+      const f = await http.post(`/messages/${m}/forward`, { ticketIds: [Number(other)] }, auth());
+      assert(f.status === 200 && f.data.sent === 1, `forward ${f.status} ${JSON.stringify(f.data)}`);
+      assert(tg.sent.slice(before).some(x => x.method === "sendMessage" && String(x.body.chat_id) === "5552"), "not delivered to the other chat");
+      assert((await http.post(`/messages/${m}/forward`, { ticketIds: [] }, auth())).status === 400, "empty target accepted");
+      assert((await http.post(`/messages/${m}/forward`, { ticketIds: [Number(other)] }, asUser(agentToken))).status === 403, "agent forwarded outside own permissions");
+    });
     await test("login is rate limited", async () => {
       let limited = false;
       for (let i = 0; i < 40 && !limited; i += 1) {

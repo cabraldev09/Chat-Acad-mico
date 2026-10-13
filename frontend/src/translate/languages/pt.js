@@ -276,11 +276,11 @@ const messages = {
         },
       },
       newTicketModal: {
-        title: "Criar Ticket",
-        fieldLabel: "Digite para pesquisar o contato",
+        title: "Nova conversa",
+        fieldLabel: "Buscar contato",
         add: "Adicionar",
         buttons: {
-          ok: "Salvar",
+          ok: "Iniciar conversa",
           cancel: "Cancelar",
         },
       },
@@ -474,6 +474,9 @@ const messages = {
         ERR_SESSION_EXPIRED: "Sessão expirada. Por favor entre.",
         ERR_USER_CREATION_DISABLED:
           "A criação do usuário foi desabilitada pelo administrador.",
+        ERR_REACTION_UNSUPPORTED: "Este canal não permite reagir a mensagens.",
+        ERR_FORWARD_NO_TARGET: "Escolha ao menos uma conversa.",
+        ERR_FORWARD_CLOSED_TICKET: "Só é possível encaminhar para conversas abertas.",
         ERR_TOO_MANY_REQUESTS:
           "Muitas tentativas em pouco tempo. Aguarde um instante e tente de novo.",
         ERR_INVALID_TICKET_STATUS: "Status de atendimento inválido.",

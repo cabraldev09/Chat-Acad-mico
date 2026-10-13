@@ -144,14 +144,15 @@ const TransferTicketModal = ({ modalOpen, onClose, ticketid, ticketWhatsappId })
 	};
 
 	return (
-		<Dialog open={modalOpen} onClose={handleClose} maxWidth="lg" scroll="paper">
+		<Dialog open={modalOpen} onClose={handleClose} maxWidth="xs" fullWidth scroll="paper">
 			<form onSubmit={handleSaveTicket}>
 				<DialogTitle id="form-dialog-title">
 					{i18n.t("transferTicketModal.title")}
 				</DialogTitle>
 				<DialogContent dividers>
 					<Autocomplete
-						style={{ width: 300, marginBottom: 20 }}
+						fullWidth
+						style={{ minWidth: 320, marginBottom: 20 }}
 						getOptionLabel={option => `${option.name}`}
 						onChange={(e, newValue) => {
 							setSelectedUser(newValue);

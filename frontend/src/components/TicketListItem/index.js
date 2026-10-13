@@ -1,296 +1,214 @@
 import React, { useState, useEffect, useRef, useContext } from "react";
+import { useHistory, useParams } from "react-router-dom";
+import clsx from "clsx";
+import { makeStyles } from "@material-ui/core/styles";
+import Avatar from "@material-ui/core/Avatar";
+import Tooltip from "@material-ui/core/Tooltip";
+import CircularProgress from "@material-ui/core/CircularProgress";
 
 import ChannelIcon from "../ChannelIcon";
-import { useHistory, useParams } from "react-router-dom";
-import { parseISO, format, isSameDay } from "date-fns";
-import clsx from "clsx";
-
-import { alpha, makeStyles } from "@material-ui/core/styles";
-import { green } from "@material-ui/core/colors";
-import ListItem from "@material-ui/core/ListItem";
-import ListItemText from "@material-ui/core/ListItemText";
-import ListItemAvatar from "@material-ui/core/ListItemAvatar";
-import Typography from "@material-ui/core/Typography";
-import Avatar from "@material-ui/core/Avatar";
-import Divider from "@material-ui/core/Divider";
-import Badge from "@material-ui/core/Badge";
-
-import { i18n } from "../../translate/i18n";
-
 import api from "../../services/api";
-import ButtonWithSpinner from "../ButtonWithSpinner";
-import MarkdownWrapper from "../MarkdownWrapper";
-import { Tooltip } from "@material-ui/core";
-import { AuthContext } from "../../context/Auth/AuthContext";
 import toastError from "../../errors/toastError";
+import { AuthContext } from "../../context/Auth/AuthContext";
+import { wa, dayLabel, clock } from "../chat/chatTheme";
 
-const useStyles = makeStyles(theme => ({
-	ticket: {
-		position: "relative",
-	},
+const useStyles = makeStyles((theme) => {
+  const c = wa(theme);
+  return {
+    row: {
+      position: "relative",
+      display: "flex",
+      alignItems: "center",
+      gap: theme.spacing(1.5),
+      padding: theme.spacing(0, 1.5, 0, 1.5),
+      minHeight: 72,
+      cursor: "pointer",
+      backgroundColor: c.panel,
+      transition: "background-color .12s",
+      "&:hover": { backgroundColor: c.hover },
+    },
+    selected: { backgroundColor: `${c.selected} !important` },
+    avatarWrap: { position: "relative", flex: "none" },
+    avatar: { width: 49, height: 49, backgroundColor: theme.palette.type === "dark" ? "#6b7c85" : "#dfe5e7", color: "#fff" },
+    channel: {
+      position: "absolute",
+      right: -3,
+      bottom: -2,
+      width: 20,
+      height: 20,
+      borderRadius: "50%",
+      backgroundColor: c.panel,
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      boxShadow: `0 0 0 2px ${c.panel}`,
+    },
+    content: {
+      flex: 1,
+      minWidth: 0,
+      alignSelf: "stretch",
+      display: "flex",
+      flexDirection: "column",
+      justifyContent: "center",
+      gap: 3,
+      borderBottom: `1px solid ${c.divider}`,
+    },
+    line: { display: "flex", alignItems: "center", gap: theme.spacing(1), minWidth: 0 },
+    name: { flex: 1, minWidth: 0, fontSize: 16, color: c.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+    time: { flex: "none", fontSize: 12, color: c.textSecondary },
+    timeUnread: { color: c.badge, fontWeight: 600 },
+    preview: {
+      flex: 1,
+      minWidth: 0,
+      fontSize: 14,
+      color: c.textSecondary,
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap",
+    },
+    badge: {
+      flex: "none",
+      minWidth: 20,
+      height: 20,
+      padding: "0 6px",
+      borderRadius: 10,
+      fontSize: 12,
+      fontWeight: 600,
+      lineHeight: "20px",
+      textAlign: "center",
+      backgroundColor: c.badge,
+      color: c.badgeText,
+    },
+    meta: { display: "flex", alignItems: "center", gap: 6, minWidth: 0, flexWrap: "nowrap", overflow: "hidden" },
+    pill: {
+      flex: "none",
+      maxWidth: 110,
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap",
+      padding: "0 7px",
+      borderRadius: 999,
+      fontSize: 11,
+      lineHeight: "17px",
+      backgroundColor: c.panelAlt,
+      color: c.textSecondary,
+    },
+    dot: { flex: "none", width: 8, height: 8, borderRadius: "50%" },
+    accept: {
+      flex: "none",
+      height: 30,
+      padding: "0 14px",
+      borderRadius: 999,
+      border: "none",
+      cursor: "pointer",
+      fontFamily: "inherit",
+      fontSize: 13,
+      fontWeight: 600,
+      color: "#fff",
+      backgroundColor: c.accent,
+      "&:hover": { filter: "brightness(1.08)" },
+      "&:disabled": { opacity: 0.7, cursor: "default" },
+    },
+    closed: { opacity: 0.8 },
+  };
+});
 
-	pendingTicket: {
-		cursor: "unset",
-		paddingRight: theme.spacing(12),
-	},
+// markdown markers and the invisible bot mark would look odd in a one-line preview
+const plain = (text) =>
+  String(text || "")
+    .replace(/‎/g, "")
+    .replace(/[*_~`]/g, "")
+    .replace(/\s*\n\s*/g, " ")
+    .trim();
 
-	ticketSelected: {
-		"&.Mui-selected, &.Mui-selected:hover": {
-			backgroundColor: alpha(theme.palette.primary.main, 0.08),
-		},
-	},
-
-	noTicketsDiv: {
-		display: "flex",
-		height: "100px",
-		margin: 40,
-		flexDirection: "column",
-		alignItems: "center",
-		justifyContent: "center",
-	},
-
-	noTicketsText: {
-		textAlign: "center",
-		color: "rgb(104, 121, 146)",
-		fontSize: "14px",
-		lineHeight: "1.4",
-	},
-
-	noTicketsTitle: {
-		textAlign: "center",
-		fontSize: "16px",
-		fontWeight: "600",
-		margin: "0px",
-	},
-
-	contactNameWrapper: {
-		display: "flex",
-		justifyContent: "space-between",
-	},
-
-	lastMessageTime: {
-		justifySelf: "flex-end",
-	},
-
-	closedBadge: {
-		alignSelf: "center",
-		justifySelf: "flex-end",
-		marginRight: 32,
-		marginLeft: "auto",
-	},
-
-	contactLastMessage: {
-		flex: 1,
-		minWidth: 0,
-	},
-
-	unreadCount: {
-		alignSelf: "center",
-		minWidth: 20,
-		marginLeft: theme.spacing(1),
-		padding: theme.spacing(0, 0.75),
-		borderRadius: theme.borderRadius.pill,
-		backgroundColor: theme.palette.accent.highlight,
-		color: theme.palette.accent.onHighlight,
-		textAlign: "center",
-		...theme.typography.caption,
-		fontWeight: 600,
-	},
-
-	acceptButton: {
-		position: "absolute",
-		right: theme.spacing(1.5),
-		top: "50%",
-		transform: "translateY(-50%)",
-	},
-
-	ticketQueueColor: {
-		flex: "none",
-		width: "8px",
-		height: "100%",
-		position: "absolute",
-		top: "0%",
-		left: "0%",
-		borderRadius: "0 4px 4px 0",
-		backgroundColor: theme.palette.queue.fallback,
-	},
-
-	userTag: {
-		flex: "none",
-		alignSelf: "center",
-		marginLeft: theme.spacing(1),
-		padding: theme.spacing(0, 0.75),
-		borderRadius: theme.borderRadius.pill,
-		backgroundColor: theme.palette.action.selected,
-		color: theme.palette.text.secondary,
-		...theme.typography.caption,
-	},
-}));
+const stamp = (iso) => {
+  const d = new Date(iso);
+  const label = dayLabel(d);
+  return label === "Hoje" ? clock(d) : label === "Ontem" ? "Ontem" : d.toLocaleDateString("pt-BR");
+};
 
 const TicketListItem = ({ ticket }) => {
-	const classes = useStyles();
-	const history = useHistory();
-	const [loading, setLoading] = useState(false);
-	const { ticketId } = useParams();
-	const isMounted = useRef(true);
-	const { user } = useContext(AuthContext);
+  const classes = useStyles();
+  const history = useHistory();
+  const [loading, setLoading] = useState(false);
+  const { ticketId } = useParams();
+  const isMounted = useRef(true);
+  const { user } = useContext(AuthContext);
 
-	useEffect(() => {
-		return () => {
-			isMounted.current = false;
-		};
-	}, []);
+  useEffect(
+    () => () => {
+      isMounted.current = false;
+    },
+    []
+  );
 
-	const handleAcepptTicket = async id => {
-		setLoading(true);
-		try {
-			await api.put(`/tickets/${id}`, {
-				status: "open",
-				userId: user?.id,
-			});
-		} catch (err) {
-			setLoading(false);
-			toastError(err);
-		}
-		if (isMounted.current) {
-			setLoading(false);
-		}
-		history.push(`/tickets/${id}`);
-	};
+  const accept = async (e) => {
+    e.stopPropagation();
+    setLoading(true);
+    try {
+      await api.put(`/tickets/${ticket.id}`, { status: "open", userId: user?.id });
+      history.push(`/tickets/${ticket.id}`);
+    } catch (err) {
+      toastError(err);
+    }
+    if (isMounted.current) setLoading(false);
+  };
 
-	const handleSelectTicket = id => {
-		history.push(`/tickets/${id}`);
-	};
+  const unread = ticket.unreadMessages > 0;
+  const selected = ticketId && +ticketId === ticket.id;
 
-	return (
-		<React.Fragment key={ticket.id}>
-			<ListItem
-				dense
-				button
-				onClick={e => {
-					if (ticket.status === "pending") return;
-					handleSelectTicket(ticket.id);
-				}}
-				selected={ticketId && +ticketId === ticket.id}
-				classes={{ selected: classes.ticketSelected }}
-				className={clsx(classes.ticket, {
-					[classes.pendingTicket]: ticket.status === "pending",
-				})}
-			>
-				<Tooltip
-					arrow
-					placement="right"
-					title={ticket.queue?.name || "Sem fila"}
-				>
-					<span
-						style={{ backgroundColor: ticket.queue?.color }}
-						className={classes.ticketQueueColor}
-					></span>
-				</Tooltip>
-				<ListItemAvatar>
-					<Avatar src={ticket?.contact?.profilePicUrl}>
-						{ticket.contact.name.charAt(0)}
-					</Avatar>
-				</ListItemAvatar>
-				<ListItemText
-					disableTypography
-					primary={
-						<span className={classes.contactNameWrapper}>
-							<Typography
-								noWrap
-								component="span"
-								variant="body2"
-								color="textPrimary"
-							>
-								<ChannelIcon channel={ticket.whatsapp?.channel} size={14} />{" "}
-								{ticket.contact.name}
-							</Typography>
-							{ticket.status === "closed" && (
-								<Badge
-									className={classes.closedBadge}
-									badgeContent={"closed"}
-									color="primary"
-								/>
-							)}
-							{ticket.lastMessage && (
-								<Typography
-									className={classes.lastMessageTime}
-									component="span"
-									variant="body2"
-									color="textSecondary"
-								>
-									{isSameDay(parseISO(ticket.updatedAt), new Date()) ? (
-										<>{format(parseISO(ticket.updatedAt), "HH:mm")}</>
-									) : (
-										<>{format(parseISO(ticket.updatedAt), "dd/MM/yyyy")}</>
-									)}
-								</Typography>
-							)}
-						</span>
-					}
-					secondary={
-						<span className={classes.contactNameWrapper}>
-							<Typography
-								className={classes.contactLastMessage}
-								noWrap
-								component="span"
-								variant="body2"
-								color="textSecondary"
-							>
-								{ticket.lastMessage ? (
-									<MarkdownWrapper>{ticket.lastMessage}</MarkdownWrapper>
-								) : (
-									<br />
-								)}
-							</Typography>
-
-							{(ticket.tags || []).slice(0, 2).map((t) => (
-								<span
-									key={t.id}
-									title={t.name}
-									style={{
-										background: t.color,
-										color: "#fff",
-										borderRadius: 8,
-										padding: "0 6px",
-										fontSize: 10,
-										marginLeft: 4,
-										maxWidth: 70,
-										overflow: "hidden",
-										textOverflow: "ellipsis",
-										whiteSpace: "nowrap",
-									}}
-								>
-									{t.name}
-								</span>
-							))}
-							{ticket.whatsappId && (
-								<span className={classes.userTag} title={i18n.t("ticketsList.connectionTitle")}>{ticket.whatsapp?.name}</span>
-							)}
-							{ticket.unreadMessages > 0 && (
-								<span className={classes.unreadCount}>
-									{ticket.unreadMessages > 99 ? "99+" : ticket.unreadMessages}
-								</span>
-							)}
-						</span>
-					}
-				/>
-				{ticket.status === "pending" && (
-					<ButtonWithSpinner
-						color="primary"
-						variant="contained"
-						className={classes.acceptButton}
-						size="small"
-						loading={loading}
-						onClick={e => handleAcepptTicket(ticket.id)}
-					>
-						{i18n.t("ticketsList.buttons.accept")}
-					</ButtonWithSpinner>
-				)}
-			</ListItem>
-			<Divider variant="inset" component="li" />
-		</React.Fragment>
-	);
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      className={clsx(classes.row, selected && classes.selected, ticket.status === "closed" && classes.closed)}
+      onClick={() => ticket.status !== "pending" && history.push(`/tickets/${ticket.id}`)}
+      onKeyDown={(e) => e.key === "Enter" && ticket.status !== "pending" && history.push(`/tickets/${ticket.id}`)}
+    >
+      <div className={classes.avatarWrap}>
+        <Avatar className={classes.avatar} src={ticket?.contact?.profilePicUrl}>
+          {ticket.contact.name.charAt(0)}
+        </Avatar>
+        <span className={classes.channel}>
+          <ChannelIcon channel={ticket.whatsapp?.channel} size={13} />
+        </span>
+      </div>
+      <div className={classes.content}>
+        <div className={classes.line}>
+          <span className={classes.name} style={{ fontWeight: unread ? 600 : 400 }}>
+            {ticket.contact.name}
+          </span>
+          {ticket.lastMessage && (
+            <span className={clsx(classes.time, unread && classes.timeUnread)}>{stamp(ticket.updatedAt)}</span>
+          )}
+        </div>
+        <div className={classes.line}>
+          <span className={classes.preview} style={unread ? { color: undefined, fontWeight: 500 } : undefined}>
+            {plain(ticket.lastMessage) || "Sem mensagens"}
+          </span>
+          {ticket.status === "pending" ? (
+            <button type="button" className={classes.accept} onClick={accept} disabled={loading}>
+              {loading ? <CircularProgress size={14} color="inherit" /> : "Aceitar"}
+            </button>
+          ) : (
+            unread && <span className={classes.badge}>{ticket.unreadMessages > 99 ? "99+" : ticket.unreadMessages}</span>
+          )}
+        </div>
+        <div className={classes.meta}>
+          <Tooltip arrow title={ticket.queue?.name || "Sem fila"}>
+            <span className={classes.dot} style={{ backgroundColor: ticket.queue?.color || "#9aa4ab" }} />
+          </Tooltip>
+          {ticket.queue?.name && <span className={classes.pill}>{ticket.queue.name}</span>}
+          {ticket.user?.name && <span className={classes.pill}>{ticket.user.name.split(" ")[0]}</span>}
+          {(ticket.tags || []).slice(0, 2).map((t) => (
+            <span key={t.id} title={t.name} className={classes.pill} style={{ backgroundColor: t.color, color: "#fff" }}>
+              {t.name}
+            </span>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
 };
 
 export default TicketListItem;

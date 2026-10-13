@@ -53,6 +53,13 @@ class Message extends Model<Message> {
   @Column
   isDeleted: boolean;
 
+  @Default(false)
+  @Column
+  starred: boolean;
+
+  @Column(DataType.TEXT)
+  reactions: string;
+
   @CreatedAt
   @Column(DataType.DATE(6))
   createdAt: Date;

@@ -34,6 +34,12 @@ export interface ChannelAdapter {
   ): Promise<{ id: string }>;
   // Approved message templates (WhatsApp Cloud API: required to start a
   // conversation outside the 24h customer service window)
+  sendReaction?(
+    whatsapp: Whatsapp,
+    contact: Contact,
+    messageId: string,
+    emoji: string
+  ): Promise<void>;
   sendTemplate?(
     whatsapp: Whatsapp,
     contact: Contact,
