@@ -1,5 +1,5 @@
 import { Op, fn, where, col, Filterable, Includeable } from "sequelize";
-import { startOfDay, endOfDay, parseISO } from "date-fns";
+import { dayBounds } from "../../helpers/AppTime";
 
 import Ticket from "../../models/Ticket";
 import Contact from "../../models/Contact";
@@ -129,7 +129,7 @@ const ListTicketsService = async ({
   if (date) {
     whereCondition = {
       createdAt: {
-        [Op.between]: [+startOfDay(parseISO(date)), +endOfDay(parseISO(date))]
+        [Op.between]: [+dayBounds(date).start, +dayBounds(date).end]
       }
     };
   }

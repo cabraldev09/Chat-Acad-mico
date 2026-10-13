@@ -23,9 +23,7 @@ module.exports = {
     await queryInterface.addIndex("TicketEvents", ["ticketId"]);
 
     // public self-registration is opt-in from now on
-    await queryInterface.sequelize.query(
-      "UPDATE Settings SET value = 'disabled' WHERE `key` = 'userCreation'"
-    );
+    await queryInterface.bulkUpdate("Settings", { value: "disabled" }, { key: "userCreation" });
   },
   down: async (queryInterface: QueryInterface) => {
     await queryInterface.dropTable("TicketEvents");

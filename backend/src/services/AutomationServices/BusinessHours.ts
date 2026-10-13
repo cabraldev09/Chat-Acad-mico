@@ -1,4 +1,5 @@
 import Whatsapp from "../../models/Whatsapp";
+import { getAppTz } from "../../helpers/AppTime";
 
 interface Interval {
   start: string; // "08:00"
@@ -31,7 +32,7 @@ export const isWithinBusinessHours = (
   if (!config.enabled) return true;
 
   const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: config.timezone || "America/Sao_Paulo",
+    timeZone: config.timezone || getAppTz(),
     weekday: "short",
     hour: "2-digit",
     minute: "2-digit",

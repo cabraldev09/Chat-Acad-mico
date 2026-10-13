@@ -1,4 +1,5 @@
 import fs from "fs";
+import { fmtDateTime } from "../../helpers/AppTime";
 import path from "path";
 import { randomBytes } from "crypto";
 import { Op } from "sequelize";
@@ -198,7 +199,7 @@ export const sendPaymentToLead = async (payment: Payment, userId: number, whatsa
     fs.writeFileSync(path.join(PUBLIC_DIR, file), Buffer.from(m[2], "base64"));
   }
   const until = payment.expiresAt
-    ? ` Válido até ${payment.expiresAt.toLocaleDateString("pt-BR")} ${payment.expiresAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}.`
+    ? ` Válido até ${fmtDateTime(payment.expiresAt)}.`
     : "";
   const body =
     `Olá, ${lead.name.split(" ")[0]}! Segue o PIX da taxa de matrícula (${brl(Number(payment.amount))}).${until}\n\n` +

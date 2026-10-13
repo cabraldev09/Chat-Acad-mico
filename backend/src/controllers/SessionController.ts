@@ -3,6 +3,7 @@ import AppError from "../errors/AppError";
 
 import AuthUserService from "../services/UserServices/AuthUserService";
 import { SendRefreshToken } from "../helpers/SendRefreshToken";
+import { refreshCookieOptions } from "../helpers/SendRefreshToken";
 import { RefreshTokenService } from "../services/AuthServices/RefreshTokenService";
 
 export const store = async (req: Request, res: Response): Promise<Response> => {
@@ -45,7 +46,7 @@ export const remove = async (
   req: Request,
   res: Response
 ): Promise<Response> => {
-  res.clearCookie("jrt");
+  res.clearCookie("jrt", refreshCookieOptions());
 
   return res.send();
 };

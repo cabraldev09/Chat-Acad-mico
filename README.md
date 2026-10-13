@@ -72,6 +72,10 @@ confirmar, o lead avança de etapa (configurável), a equipe é avisada e o even
 Configuração (admin): Configurar CRM → Pagamentos (Efí): ambiente, Client ID/Secret, chave PIX e o certificado `.p12`
 (guardado em `backend/secrets/`, fora do Git). O CPF não aparece em listas e só a ficha detalhada o exibe.
 
+## Banco de dados e publicação
+
+O banco é **PostgreSQL** (local ou **Supabase**); tudo é gravado em UTC e exibido no fuso da empresa (padrão `America/Porto_Velho`). Guia completo — mapa das tabelas, Supabase + Vercel + domínio, e o que garante que a sessão do WhatsApp não seja afetada — em [`docs/BANCO-DE-DADOS.md`](docs/BANCO-DE-DADOS.md). Esquema pronto para o SQL Editor do Supabase em `supabase/schema.sql`.
+
 ## Segurança e proteção contra bloqueio
 
 **Acesso**
@@ -104,11 +108,11 @@ da Meta, e verifica canais, assinatura de webhooks, mídia, chatbot, CRM e campa
 
 ## Rodando localmente (macOS)
 
-Requisitos: Node 22, MariaDB/MySQL e Google Chrome (usado pelo `whatsapp-web.js`).
+Requisitos: Node 22, PostgreSQL 16 e Google Chrome (usado pelo `whatsapp-web.js`).
 
 ```bash
-brew install node@22 mariadb && brew services start mariadb
-mariadb -e "CREATE DATABASE whaticket CHARACTER SET utf8mb4 COLLATE utf8mb4_bin"
+brew install node@22 postgresql@16 && brew services start postgresql@16
+createdb whaticket
 
 cp backend/.env.example backend/.env   # ajuste DB_*, JWT_*, CHROME_BIN e PORT=8080
 cp frontend/.env.example frontend/.env

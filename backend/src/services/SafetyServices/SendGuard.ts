@@ -8,6 +8,7 @@ import Ticket from "../../models/Ticket";
 import Whatsapp from "../../models/Whatsapp";
 import { getIO } from "../../libs/socket";
 import { logger } from "../../utils/logger";
+import { startOfTodayApp } from "../../helpers/AppTime";
 
 // Protection for unofficial (QR code) WhatsApp connections. WhatsApp bans
 // numbers that behave like bots: instant replies, bursts, cold mass messages
@@ -85,11 +86,7 @@ export const dailyColdLimit = (whatsapp: Whatsapp): number => {
   return 150;
 };
 
-const startOfToday = (): Date => {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d;
-};
+const startOfToday = (): Date => startOfTodayApp();
 
 export const sentTodayByCampaigns = async (whatsappId: number): Promise<number> => {
   const campaigns = await Campaign.findAll({

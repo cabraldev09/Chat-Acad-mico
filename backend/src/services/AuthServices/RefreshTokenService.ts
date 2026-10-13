@@ -5,6 +5,7 @@ import User from "../../models/User";
 import AppError from "../../errors/AppError";
 import ShowUserService from "../UserServices/ShowUserService";
 import authConfig from "../../config/auth";
+import { refreshCookieOptions } from "../../helpers/SendRefreshToken";
 import {
   createAccessToken,
   createRefreshToken
@@ -32,7 +33,7 @@ export const RefreshTokenService = async (
     const user = await ShowUserService(id);
 
     if (user.tokenVersion !== tokenVersion) {
-      res.clearCookie("jrt");
+      res.clearCookie("jrt", refreshCookieOptions());
       throw new AppError("ERR_SESSION_EXPIRED", 401);
     }
 
@@ -41,7 +42,7 @@ export const RefreshTokenService = async (
 
     return { user, newToken, refreshToken };
   } catch (err) {
-    res.clearCookie("jrt");
+    res.clearCookie("jrt", refreshCookieOptions());
     throw new AppError("ERR_SESSION_EXPIRED", 401);
   }
 };

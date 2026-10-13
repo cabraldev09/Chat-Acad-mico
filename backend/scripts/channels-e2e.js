@@ -12,7 +12,10 @@ const axios = require("axios");
 const FormData = require("form-data");
 
 const ROOT = path.resolve(__dirname, "..");
-const MARIADB = process.env.MARIADB_BIN || "/opt/homebrew/opt/mariadb/bin/mariadb";
+// PostgreSQL (the same engine as Supabase) is the supported database.
+const PGBIN = process.env.PG_BIN || "/opt/homebrew/opt/postgresql@16/bin";
+const PGUSER = process.env.PGUSER || require("os").userInfo().username;
+const psql = (db, q) => execFileSync(`${PGBIN}/psql`, ["-X", "-U", PGUSER, "-d", db, "-At", "-c", q]).toString().trim();
 const DB = "whaticket_e2e";
 const PORT = 8091;
 const TG_PORT = 9101;
@@ -23,7 +26,18 @@ const PNG = Buffer.from(
   "base64"
 );
 
-const sql = q => execFileSync(MARIADB, ["-uroot", "--default-character-set=utf8mb4", "-N", "-B", DB, "-e", q]).toString().trim();
+// tests are written in plain camelCase SQL: quote mixed-case identifiers for Postgres,
+// map MySQL-isms and print booleans as 1/0
+const BOOLS = "fromMe|optOut|aiActive|isGroup|read|active|isDeleted|isDefault";
+const pgSql = q =>
+  q
+    .replace(/('(?:[^']|'')*')|\b([A-Za-z_]\w*)\b/g, (m, str, id) => (str ? m : /[a-z]/.test(id) && /[A-Z]/.test(id) ? `"${id}"` : m))
+    .replace(/\bIFNULL\(([^,()]+),/g, "COALESCE($1::text,")
+    .replace(new RegExp(`("?(?:${BOOLS})"?)\\s*=\\s*([01])\\b`, "g"), (m, c, v) => `${c}=${v === "1" ? "true" : "false"}`);
+const sql = q => {
+  const out = psql(DB, pgSql(q));
+  return out === "t" ? "1" : out === "f" ? "0" : out;
+};
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const waitFor = async (fn, ms = 12000, label = "condition") => {
   const end = Date.now() + ms;
@@ -170,12 +184,13 @@ const postMeta = (id, payload, secret, badSig) => {
   let backend;
   const cleanup = async () => {
     if (backend) backend.kill();
-    try { execFileSync(MARIADB, ["-uroot", "-e", `DROP DATABASE IF EXISTS ${DB}`]); } catch (e) {}
+    try { psql("postgres", `DROP DATABASE IF EXISTS ${DB}`); } catch (e) {}
   };
   try {
-    execFileSync(MARIADB, ["-uroot", "-e", `DROP DATABASE IF EXISTS ${DB}; CREATE DATABASE ${DB} CHARACTER SET utf8mb4 COLLATE utf8mb4_bin`]);
+    psql("postgres", `DROP DATABASE IF EXISTS ${DB}`);
+    psql("postgres", `CREATE DATABASE ${DB}`);
     const env = {
-      ...process.env, DB_NAME: DB, DB_HOST: "localhost", DB_USER: "root", DB_PASS: "", DB_DIALECT: "mysql",
+      ...process.env, DB_NAME: DB, DB_HOST: "localhost", DB_USER: PGUSER, DB_PASS: "", DB_PORT: "5432", DB_DIALECT: "postgres",
       PORT: String(PORT), PROXY_PORT: String(PORT), BACKEND_URL: "http://localhost", PUBLIC_URL: API,
       FRONTEND_URL: "http://localhost:3000", JWT_SECRET: "e2e", JWT_REFRESH_SECRET: "e2e-r",
       TELEGRAM_API_URL: `http://localhost:${TG_PORT}`, GRAPH_API_URL: `http://localhost:${GRAPH_PORT}`,
@@ -467,7 +482,7 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.post(`/leadform/${tokenForm}/submit`, { ...body, website: "spam" })).status === 200, "honeypot");
       assert(!sql(`SELECT id FROM Leads WHERE email='pedro@x.com'`), "bot created a lead");
       assert((await http.post(`/leadform/${tokenForm}/submit`, body)).status === 200, "valid submit");
-      assert(sql(`SELECT CONCAT(source,'|',utmSource,'|',utmCampaign,'|',consentAt IS NOT NULL) FROM Leads WHERE email='pedro@x.com'`) === "Site / formulário|instagram|vestibular|1", "form fields");
+      assert(sql(`SELECT CONCAT(source,'|',utmSource,'|',utmCampaign,'|',CAST(consentAt IS NOT NULL AS INTEGER)) FROM Leads WHERE email='pedro@x.com'`) === "Site / formulário|instagram|vestibular|1", "form fields");
     });
     await test("API v1 creates leads (deduplicated) and lists them", async () => {
       const t = (await http.post("/api-tokens", { name: "crm" }, auth())).data.token;
@@ -779,7 +794,7 @@ const postMeta = (id, payload, secret, badSig) => {
       sql(`UPDATE Tickets SET aiActive=1, chatbotNodeId=NULL WHERE id=${tgTicket}`);
       const r = await http.put(`/tickets/${tgTicket}`, { queueId: qB }, auth());
       assert(r.status === 200, `transfer ${r.status} ${JSON.stringify(r.data)}`);
-      assert(sql(`SELECT CONCAT(status,'|',IFNULL(userId,'null'),'|',queueId,'|',aiActive,'|',chatbotNodeId) FROM Tickets WHERE id=${tgTicket}`) === `pending|null|${qB}|0|-1`, `ticket state after transfer: ${sql(`SELECT CONCAT(status,'|',IFNULL(userId,'null'),'|',IFNULL(queueId,'null'),'|',aiActive,'|',IFNULL(chatbotNodeId,'null')) FROM Tickets WHERE id=${tgTicket}`)}`);
+      assert(sql(`SELECT CONCAT(status,'|',IFNULL(userId,'null'),'|',queueId,'|',CAST(aiActive AS INTEGER),'|',chatbotNodeId) FROM Tickets WHERE id=${tgTicket}`) === `pending|null|${qB}|0|-1`, `ticket state after transfer: ${sql(`SELECT CONCAT(status,'|',IFNULL(userId,'null'),'|',IFNULL(queueId,'null'),'|',CAST(aiActive AS INTEGER),'|',IFNULL(chatbotNodeId,'null')) FROM Tickets WHERE id=${tgTicket}`)}`);
       const ev = sql(`SELECT CONCAT(type,'|',toQueueId) FROM TicketEvents WHERE ticketId=${tgTicket} ORDER BY id DESC LIMIT 1`);
       assert(ev === `transfer|${qB}`, `event ${ev}`);
       const events = (await http.get(`/tickets/${tgTicket}/events`, auth())).data;

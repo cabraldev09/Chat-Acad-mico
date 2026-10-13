@@ -1,4 +1,6 @@
 import { Request, Response } from "express";
+import { dayBounds, shiftDays } from "../helpers/AppTime";
+import { portable, nowSql, nowMinus, diffMinutes, diffHours, dayOf, countIf } from "../helpers/sqlDialect";
 import { Op } from "sequelize";
 import { randomBytes } from "crypto";
 
@@ -54,8 +56,7 @@ const buildWhere = (q: any) => {
   }
   if (q.followUp === "overdue") where.nextFollowUpAt = { [Op.lt]: new Date() };
   if (q.followUp === "today") {
-    const start = new Date(); start.setHours(0, 0, 0, 0);
-    const end = new Date(); end.setHours(23, 59, 59, 999);
+    const { start, end } = dayBounds();
     where.nextFollowUpAt = { [Op.between]: [start, end] };
   }
   return where;
@@ -287,8 +288,7 @@ export const tasksIndex = async (req: Request, res: Response): Promise<Response>
   const where: any = {};
   if (scope === "mine") where.userId = uid(req);
   const now = new Date();
-  const start = new Date(); start.setHours(0, 0, 0, 0);
-  const end = new Date(); end.setHours(23, 59, 59, 999);
+  const { start, end } = dayBounds();
   if (status === "done") where.doneAt = { [Op.not]: null };
   else where.doneAt = { [Op.is]: null };
   if (status === "overdue") where.dueAt = { [Op.lt]: now };
@@ -490,22 +490,21 @@ export const putSettings = async (req: Request, res: Response): Promise<Response
 export const metrics = async (req: Request, res: Response): Promise<Response> => {
   const sequelize = (await import("../database")).default;
   const { QueryTypes } = await import("sequelize");
-  const { startOfDay, endOfDay, subDays, parseISO } = await import("date-fns");
-  const to = req.query.to ? endOfDay(parseISO(String(req.query.to))) : endOfDay(new Date());
-  const from = req.query.from ? startOfDay(parseISO(String(req.query.from))) : startOfDay(subDays(new Date(), 29));
+  const to = dayBounds(req.query.to ? String(req.query.to) : undefined).end;
+  const from = req.query.from ? dayBounds(String(req.query.from)).start : dayBounds(shiftDays(new Date(), -29)).start;
   const ownerId = req.query.ownerId ? Number(req.query.ownerId) : null;
   const courseId = req.query.courseId ? Number(req.query.courseId) : null;
   const rep = { from, to, ownerId, courseId };
   const f = `AND (:ownerId IS NULL OR l.ownerId = :ownerId) AND (:courseId IS NULL OR l.courseId = :courseId)`;
   const q = async (sql: string): Promise<any[]> =>
-    (await sequelize.query(sql, { replacements: rep, type: QueryTypes.SELECT })) as any[];
+    (await sequelize.query(portable(sql), { replacements: rep, type: QueryTypes.SELECT })) as any[];
 
   const [kpi] = await q(`
     SELECT COUNT(*) AS leads,
-      SUM(s.type='won') AS won, SUM(s.type='lost') AS lost, SUM(s.type='open') AS open,
-      AVG(CASE WHEN l.firstContactAt IS NOT NULL THEN TIMESTAMPDIFF(MINUTE, l.createdAt, l.firstContactAt) END) AS avgFirstContactMin,
-      AVG(CASE WHEN l.wonAt IS NOT NULL THEN TIMESTAMPDIFF(HOUR, l.createdAt, l.wonAt)/24 END) AS avgDaysToEnroll,
-      SUM(s.type='open' AND l.ownerId IS NULL) AS unassigned
+      ${countIf("s.type='won'")} AS won, ${countIf("s.type='lost'")} AS lost, ${countIf("s.type='open'")} AS open,
+      AVG(CASE WHEN l.firstContactAt IS NOT NULL THEN ${diffMinutes('l.createdAt', 'l.firstContactAt')} END) AS avgFirstContactMin,
+      AVG(CASE WHEN l.wonAt IS NOT NULL THEN ${diffHours('l.createdAt', 'l.wonAt')}/24 END) AS avgDaysToEnroll,
+      ${countIf("s.type='open' AND l.ownerId IS NULL")} AS unassigned
     FROM Leads l JOIN LeadStages s ON s.id = l.stageId
     WHERE l.createdAt BETWEEN :from AND :to ${f}`);
 
@@ -516,19 +515,19 @@ export const metrics = async (req: Request, res: Response): Promise<Response> =>
     GROUP BY s.id, s.name, s.color, s.type, s.position ORDER BY s.position`);
 
   const bySource = await q(`
-    SELECT COALESCE(l.source,'Outro') AS name, COUNT(*) AS leads, SUM(s.type='won') AS won
+    SELECT COALESCE(l.source,'Outro') AS name, COUNT(*) AS leads, ${countIf("s.type='won'")} AS won
     FROM Leads l JOIN LeadStages s ON s.id = l.stageId
     WHERE l.createdAt BETWEEN :from AND :to ${f} GROUP BY l.source ORDER BY leads DESC`);
 
   const byCourse = await q(`
-    SELECT COALESCE(c.name,'Sem curso') AS name, COUNT(*) AS leads, SUM(s.type='won') AS won
+    SELECT COALESCE(c.name,'Sem curso') AS name, COUNT(*) AS leads, ${countIf("s.type='won'")} AS won
     FROM Leads l JOIN LeadStages s ON s.id = l.stageId LEFT JOIN Courses c ON c.id = l.courseId
     WHERE l.createdAt BETWEEN :from AND :to ${f} GROUP BY c.id, c.name ORDER BY leads DESC LIMIT 12`);
 
   const byOwner = await q(`
-    SELECT COALESCE(u.name,'Sem responsável') AS name, COUNT(*) AS leads, SUM(s.type='won') AS won,
-      SUM(s.type='open') AS open,
-      AVG(CASE WHEN l.firstContactAt IS NOT NULL THEN TIMESTAMPDIFF(MINUTE, l.createdAt, l.firstContactAt) END) AS avgFirstContactMin
+    SELECT COALESCE(u.name,'Sem responsável') AS name, COUNT(*) AS leads, ${countIf("s.type='won'")} AS won,
+      ${countIf("s.type='open'")} AS open,
+      AVG(CASE WHEN l.firstContactAt IS NOT NULL THEN ${diffMinutes('l.createdAt', 'l.firstContactAt')} END) AS avgFirstContactMin
     FROM Leads l JOIN LeadStages s ON s.id = l.stageId LEFT JOIN Users u ON u.id = l.ownerId
     WHERE l.createdAt BETWEEN :from AND :to ${f} GROUP BY u.id, u.name ORDER BY won DESC, leads DESC`);
 
@@ -538,19 +537,19 @@ export const metrics = async (req: Request, res: Response): Promise<Response> =>
     WHERE s.type='lost' AND l.createdAt BETWEEN :from AND :to ${f} GROUP BY l.lostReason ORDER BY total DESC`);
 
   const created = await q(`
-    SELECT DATE(l.createdAt) AS day, COUNT(*) AS total FROM Leads l
-    WHERE l.createdAt BETWEEN :from AND :to ${f} GROUP BY DATE(l.createdAt) ORDER BY day`);
+    SELECT ${dayOf('l.createdAt')} AS day, COUNT(*) AS total FROM Leads l
+    WHERE l.createdAt BETWEEN :from AND :to ${f} GROUP BY ${dayOf('l.createdAt')} ORDER BY day`);
   const wonDaily = await q(`
-    SELECT DATE(l.wonAt) AS day, COUNT(*) AS total FROM Leads l
-    WHERE l.wonAt BETWEEN :from AND :to ${f} GROUP BY DATE(l.wonAt) ORDER BY day`);
+    SELECT ${dayOf('l.wonAt')} AS day, COUNT(*) AS total FROM Leads l
+    WHERE l.wonAt BETWEEN :from AND :to ${f} GROUP BY ${dayOf('l.wonAt')} ORDER BY day`);
 
   const [attention] = await q(`
     SELECT
-      (SELECT COUNT(*) FROM LeadTasks t JOIN Leads l ON l.id = t.leadId WHERE t.doneAt IS NULL AND t.dueAt < NOW() ${f}) AS overdueTasks,
+      (SELECT COUNT(*) FROM LeadTasks t JOIN Leads l ON l.id = t.leadId WHERE t.doneAt IS NULL AND t.dueAt < ${nowSql()} ${f}) AS overdueTasks,
       (SELECT COUNT(*) FROM Leads l JOIN LeadStages s ON s.id = l.stageId
-         WHERE s.type='open' AND COALESCE(l.lastContactAt, l.createdAt) < DATE_SUB(NOW(), INTERVAL 3 DAY) ${f}) AS stale,
+         WHERE s.type='open' AND COALESCE(l.lastContactAt, l.createdAt) < ${nowMinus(3, 'DAY')} ${f}) AS stale,
       (SELECT COUNT(*) FROM Leads l JOIN LeadStages s ON s.id = l.stageId
-         WHERE s.type='open' AND l.firstContactAt IS NULL AND l.createdAt < DATE_SUB(NOW(), INTERVAL 1 HOUR) ${f}) AS waitingFirstContact`);
+         WHERE s.type='open' AND l.firstContactAt IS NULL AND l.createdAt < ${nowMinus(1, 'HOUR')} ${f}) AS waitingFirstContact`);
 
   const num = (v: any) => (v === null || v === undefined ? null : Number(v));
   return res.json({

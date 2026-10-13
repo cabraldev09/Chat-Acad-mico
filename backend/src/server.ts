@@ -7,22 +7,30 @@ import { startScheduler } from "./workers/Scheduler";
 import { startCampaignRunner } from "./workers/CampaignRunner";
 import { startCrmReminders } from "./workers/CrmReminders";
 import { startPaymentPoller } from "./workers/PaymentPoller";
+import { loadAppTz } from "./helpers/AppTime";
+import { whenLeader } from "./helpers/SingleInstance";
+import { ensureRls } from "./helpers/EnsureRls";
 
 const server = app.listen(process.env.PORT, () => {
   logger.info(`Server started on port: ${process.env.PORT}`);
 });
 
 initIO(server);
-StartAllWhatsAppsSessions();
-startScheduler();
-startCampaignRunner();
-startCrmReminders();
-startPaymentPoller();
-// every contact already in the system becomes a lead too (idempotent)
-import("./services/CrmServices/LeadCore")
-  .then(({ backfillLeads }) => backfillLeads())
-  .then(r => logger.info(`CRM backfill: ${r.created} new leads`))
-  .catch(err => logger.warn(`CRM backfill failed: ${err}`));
+loadAppTz();
+ensureRls();
+// Only one instance may own the WhatsApp sessions and the background workers
+whenLeader(() => {
+  StartAllWhatsAppsSessions();
+  startScheduler();
+  startCampaignRunner();
+  startCrmReminders();
+  startPaymentPoller();
+  // every contact already in the system becomes a lead too (idempotent)
+  import("./services/CrmServices/LeadCore")
+    .then(({ backfillLeads }) => backfillLeads())
+    .then(r => logger.info(`CRM backfill: ${r.created} new leads`))
+    .catch(err => logger.warn(`CRM backfill failed: ${err}`));
+});
 gracefulShutdown(server);
 
 // A stray exception is logged and survived, but a burst means the process is

@@ -1,5 +1,9 @@
 import AppError from "../../errors/AppError";
 import Setting from "../../models/Setting";
+import { isValidTz, setAppTz } from "../../helpers/AppTime";
+
+// settings that may be created on first save
+const CREATABLE = ["appTimezone", "appName"];
 
 interface Request {
   key: string;
@@ -10,15 +14,24 @@ const UpdateSettingService = async ({
   key,
   value
 }: Request): Promise<Setting | undefined> => {
-  const setting = await Setting.findOne({
+  if (key === "appTimezone" && !isValidTz(value)) {
+    throw new AppError("ERR_INVALID_TIMEZONE", 400);
+  }
+
+  let setting = await Setting.findOne({
     where: { key }
   });
+
+  if (!setting && CREATABLE.includes(key)) {
+    setting = await Setting.create({ key, value });
+  }
 
   if (!setting) {
     throw new AppError("ERR_NO_SETTING_FOUND", 404);
   }
 
   await setting.update({ value });
+  if (key === "appTimezone") setAppTz(value);
 
   return setting;
 };

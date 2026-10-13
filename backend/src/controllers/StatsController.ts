@@ -1,19 +1,20 @@
 import { Request, Response } from "express";
 import { QueryTypes } from "sequelize";
-import { startOfDay, endOfDay, subDays, parseISO } from "date-fns";
 
 import sequelize from "../database";
+import { dayBounds, shiftDays } from "../helpers/AppTime";
+import { portable, nowSql, diffSeconds, dayOf, countIf } from "../helpers/sqlDialect";
 
 const range = (req: Request) => {
-  const to = req.query.to ? endOfDay(parseISO(String(req.query.to))) : endOfDay(new Date());
+  const to = dayBounds(req.query.to ? String(req.query.to) : undefined).end;
   const from = req.query.from
-    ? startOfDay(parseISO(String(req.query.from)))
-    : startOfDay(subDays(new Date(), 29));
+    ? dayBounds(String(req.query.from)).start
+    : dayBounds(shiftDays(new Date(), -29)).start;
   return { from, to };
 };
 
 const q = async (sql: string, replacements: Record<string, any>): Promise<any[]> =>
-  (await sequelize.query(sql, { replacements, type: QueryTypes.SELECT })) as any[];
+  (await sequelize.query(portable(sql), { replacements, type: QueryTypes.SELECT })) as any[];
 
 export const overview = async (req: Request, res: Response): Promise<Response> => {
   const { from, to } = range(req);
@@ -24,9 +25,9 @@ export const overview = async (req: Request, res: Response): Promise<Response> =
 
   const [totals] = await q(
     `SELECT
-       SUM(t.status = 'open') AS open,
-       SUM(t.status = 'pending') AS pending,
-       SUM(t.status = 'closed') AS closed,
+       ${countIf("t.status = 'open'")} AS open,
+       ${countIf("t.status = 'pending'")} AS pending,
+       ${countIf("t.status = 'closed'")} AS closed,
        COUNT(*) AS total
      FROM Tickets t WHERE 1=1 ${filter}`,
     rep
@@ -35,35 +36,35 @@ export const overview = async (req: Request, res: Response): Promise<Response> =
   const [period] = await q(
     `SELECT
        COUNT(*) AS created,
-       AVG(TIMESTAMPDIFF(SECOND, t.createdAt, t.firstResponseAt)) AS avgFirstResponse,
-       SUM(t.closedAt BETWEEN :from AND :to) AS closedInPeriod,
+       AVG(${diffSeconds('t.createdAt', 't.firstResponseAt')}) AS avgFirstResponse,
+       ${countIf('t.closedAt BETWEEN :from AND :to')} AS closedInPeriod,
        AVG(CASE WHEN t.closedAt BETWEEN :from AND :to
-                THEN TIMESTAMPDIFF(SECOND, t.createdAt, t.closedAt) END) AS avgResolution
+                THEN ${diffSeconds('t.createdAt', 't.closedAt')} END) AS avgResolution
      FROM Tickets t
      WHERE t.createdAt BETWEEN :from AND :to ${filter}`,
     rep
   );
 
   const perDay = await q(
-    `SELECT DATE(t.createdAt) AS day, COUNT(*) AS created
+    `SELECT ${dayOf('t.createdAt')} AS day, COUNT(*) AS created
      FROM Tickets t WHERE t.createdAt BETWEEN :from AND :to ${filter}
-     GROUP BY DATE(t.createdAt) ORDER BY day`,
+     GROUP BY ${dayOf('t.createdAt')} ORDER BY day`,
     rep
   );
   const closedPerDay = await q(
-    `SELECT DATE(t.closedAt) AS day, COUNT(*) AS closed
+    `SELECT ${dayOf('t.closedAt')} AS day, COUNT(*) AS closed
      FROM Tickets t WHERE t.closedAt BETWEEN :from AND :to ${filter}
-     GROUP BY DATE(t.closedAt) ORDER BY day`,
+     GROUP BY ${dayOf('t.closedAt')} ORDER BY day`,
     rep
   );
 
   const perUser = await q(
     `SELECT u.id, u.name,
-       SUM(t.status = 'open') AS open,
-       SUM(t.status = 'closed' AND t.closedAt BETWEEN :from AND :to) AS closed,
+       ${countIf("t.status = 'open'")} AS open,
+       ${countIf("t.status = 'closed' AND t.closedAt BETWEEN :from AND :to")} AS closed,
        COUNT(CASE WHEN t.createdAt BETWEEN :from AND :to THEN 1 END) AS handled,
        AVG(CASE WHEN t.createdAt BETWEEN :from AND :to
-                THEN TIMESTAMPDIFF(SECOND, t.createdAt, t.firstResponseAt) END) AS avgFirstResponse
+                THEN ${diffSeconds('t.createdAt', 't.firstResponseAt')} END) AS avgFirstResponse
      FROM Users u LEFT JOIN Tickets t ON t.userId = u.id
      WHERE (:userId IS NULL OR u.id = :userId) AND (:queueId IS NULL OR t.queueId = :queueId OR t.id IS NULL)
      GROUP BY u.id, u.name ORDER BY closed DESC`,
@@ -88,7 +89,7 @@ export const overview = async (req: Request, res: Response): Promise<Response> =
   );
 
   const [messages] = await q(
-    `SELECT SUM(m.fromMe = 0) AS received, SUM(m.fromMe = 1) AS sent
+    `SELECT ${countIf('m.fromMe = false')} AS received, ${countIf('m.fromMe = true')} AS sent
      FROM Messages m JOIN Tickets t ON t.id = m.ticketId
      WHERE m.createdAt BETWEEN :from AND :to ${filter}`,
     rep
@@ -124,8 +125,8 @@ export const live = async (_req: Request, res: Response): Promise<Response> => {
             u.id AS userId, u.name AS userName,
             qu.name AS queueName, qu.color AS queueColor,
             w.name AS connectionName, w.channel AS channel,
-            TIMESTAMPDIFF(SECOND, t.updatedAt, NOW()) AS idleSeconds,
-            TIMESTAMPDIFF(SECOND, t.createdAt, NOW()) AS ageSeconds
+            ${diffSeconds('t.updatedAt', nowSql())} AS idleSeconds,
+            ${diffSeconds('t.createdAt', nowSql())} AS ageSeconds
      FROM Tickets t
      JOIN Contacts c ON c.id = t.contactId
      LEFT JOIN Users u ON u.id = t.userId

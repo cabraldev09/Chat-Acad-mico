@@ -1,4 +1,5 @@
 import fs from "fs";
+import { fmtDateTime } from "../../helpers/AppTime";
 import path from "path";
 
 import { ProposalParams, ProposalResult } from "./calc";
@@ -39,8 +40,7 @@ const logoDataUri = (file?: string | null): string | null => {
   }
 };
 
-const fmtDate = (d: Date) =>
-  `${d.toLocaleDateString("pt-BR")} ${d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
+const fmtDate = (d: Date) => fmtDateTime(d);
 
 export const renderProposalHtml = (i: RenderInput): string => {
   const { params: p, result: r } = i;
