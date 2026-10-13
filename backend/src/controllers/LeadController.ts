@@ -25,6 +25,7 @@ import {
   leadInclude,
   loadLead,
   rescore,
+  resolveLeadTarget,
   upsertLead
 } from "../services/CrmServices/LeadCore";
 import dispatchWebhook from "../services/WebhookServices/DispatchWebhook";
@@ -320,26 +321,7 @@ export const fromContact = async (req: Request, res: Response): Promise<Response
 export const openTicket = async (req: Request, res: Response): Promise<Response> => {
   const lead = await Lead.findByPk(req.params.id);
   if (!lead) throw new AppError("ERR_LEAD_NOT_FOUND", 404);
-
-  let whatsapp: Whatsapp | null = null;
-  if (req.body.whatsappId) whatsapp = await Whatsapp.findByPk(req.body.whatsappId);
-  let contact: Contact | null = lead.contactId ? await Contact.findByPk(lead.contactId) : null;
-
-  if (contact && !whatsapp) {
-    // reuse the connection of the existing conversation when there is one
-    const t = await (await import("../models/Ticket")).default.findOne({
-      where: { contactId: contact.id },
-      order: [["updatedAt", "DESC"]]
-    });
-    if (t) whatsapp = await Whatsapp.findByPk(t.whatsappId);
-  }
-  if (!whatsapp) whatsapp = await GetDefaultWhatsApp(uid(req));
-
-  if (!contact) {
-    if (!lead.phone) throw new AppError("ERR_LEAD_NO_PHONE");
-    contact = await resolveOutboundContact(whatsapp, lead.phone, lead.name);
-    await lead.update({ contactId: contact.id });
-  }
+  const { contact, whatsapp } = await resolveLeadTarget(lead, uid(req), req.body.whatsappId);
 
   const ticket = await FindOrCreateTicketService(contact, whatsapp.id, 0);
   if (ticket.status === "pending" || ticket.status === "closed") {
@@ -414,11 +396,12 @@ export const stages = {
 
 export const courses = makeCrud(Course, {
   event: "course",
-  fields: ["name", "level", "modality", "monthlyFee", "active"],
+  fields: ["name", "level", "modality", "category", "semesters", "institutionId", "monthlyFee", "active"],
   required: ["name"],
   order: [["name", "ASC"]],
   beforeSave: data => {
     if (data.monthlyFee === "" || data.monthlyFee === undefined) data.monthlyFee = null;
+    if (data.institutionId === "" || data.institutionId === 0) data.institutionId = null;
     return data;
   }
 });
@@ -426,6 +409,27 @@ export const courses = makeCrud(Course, {
 export const backfill = async (_req: Request, res: Response): Promise<Response> => {
   const { backfillLeads } = await import("../services/CrmServices/LeadCore");
   return res.json(await backfillLeads());
+};
+
+export const importCourses = async (req: Request, res: Response): Promise<Response> => {
+  const items: any[] = Array.isArray(req.body.items) ? req.body.items.slice(0, 2000) : [];
+  let created = 0;
+  let updated = 0;
+  const errors: string[] = [];
+  for (const [i, it] of items.entries()) {
+    const name = String(it.name || "").trim();
+    if (!name) { errors.push(`Linha ${i + 1}: sem nome`); continue; }
+    const fee = it.monthlyFee === undefined || it.monthlyFee === "" ? null : Number(String(it.monthlyFee).replace(/\./g, "").replace(",", "."));
+    if (fee !== null && Number.isNaN(fee)) { errors.push(`Linha ${i + 1}: mensalidade inválida`); continue; }
+    const data: any = {
+      name, category: it.category || null, level: it.level || null, modality: it.modality || null,
+      monthlyFee: fee, semesters: Number(it.semesters) || 8, institutionId: req.body.institutionId || null, active: true
+    };
+    // eslint-disable-next-line no-await-in-loop
+    const existing = await Course.findOne({ where: { name, category: data.category } });
+    if (existing) { await existing.update(data); updated += 1; } else { await Course.create(data); created += 1; }
+  }
+  return res.json({ created, updated, errors: errors.slice(0, 20) });
 };
 
 export const options = async (_req: Request, res: Response): Promise<Response> =>

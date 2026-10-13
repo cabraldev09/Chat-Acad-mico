@@ -467,6 +467,82 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(s.body.template.components[0].parameters[0].text === "Rita", "first name parameter");
       assert(s.body.to === "5511966665555", "recipient");
     });
+
+    // -------------------------------------------------------------- proposals
+    console.log("\nproposals");
+    // reference documents: row = [sem, period, bolsa, ajuste, semestral, anual5, total5, mensal5, anual11, total11, mensal11, diff]
+    const REF1 = { gross: 1014.6, first: 164.93, fee: 99, parcels: 3, semesters: 6, b1: 25, b2: 20, applied: 83.74, mid: 189.67, late: 206.16, rows: [
+      [1, "2026.2", 25, 0, 0, 0, 0, 164.93, 0, 0, 164.93, 0], [2, "2027.1", 20, 5, 2, 5, 12, 184.72, 11, 18, 194.62, 9.9],
+      [3, "2027.2", 20, 0, 2, 0, 2, 188.42, 0, 2, 198.51, 10.09], [4, "2028.1", 20, 0, 2, 5, 7, 201.61, 11, 13, 224.32, 22.71],
+      [5, "2028.2", 20, 0, 2, 0, 2, 205.64, 0, 2, 228.8, 23.17], [6, "2029.1", 20, 0, 3, 5, 8, 222.09, 11, 14, 260.83, 38.75]] };
+    const REF2 = { gross: 1073.8, first: 134.93, fee: 99, parcels: 2, semesters: 8, b1: 30, b2: 25, applied: 87.43, mid: 155.17, late: 168.66, rows: [
+      [1, "2026.2", 30, 0, 0, 0, 0, 134.93, 0, 0, 134.93, 0], [2, "2027.1", 25, 5, 2, 5, 12, 151.12, 11, 18, 159.22, 8.1],
+      [3, "2027.2", 25, 0, 2, 0, 2, 154.14, 0, 2, 162.4, 8.26], [4, "2028.1", 25, 0, 2, 5, 7, 164.93, 11, 13, 183.51, 18.58],
+      [5, "2028.2", 25, 0, 2, 0, 2, 168.23, 0, 2, 187.18, 18.95], [6, "2029.1", 25, 0, 3, 5, 8, 181.69, 11, 14, 213.39, 31.7],
+      [7, "2029.2", 25, 0, 3, 0, 3, 187.14, 0, 3, 219.79, 32.65], [8, "2030.1", 25, 0, 3, 5, 8, 202.11, 11, 14, 250.56, 48.45]] };
+    const plead = (await http.post("/leads", { name: "Valdemarina Araújo dos Reis", phone: "11 95555-0001", source: "Indicação" }, auth())).data.lead;
+    const previewFor = async ref => {
+      const r = await http.post("/proposals/preview", { leadId: plead.id, params: { gross: ref.gross, firstMonthly: ref.first, enrollmentFee: ref.fee, installments: ref.parcels, semesters: ref.semesters, startYear: 2026, startSemester: 2, bolsaFirst: ref.b1, bolsaNext: ref.b2 } }, auth());
+      assert(r.status === 200, `preview ${r.status} ${JSON.stringify(r.data)}`);
+      return r.data;
+    };
+    for (const [label, ref] of [["PDF de referência (6 semestres)", REF1], ["tela de referência (8 semestres)", REF2]]) {
+      await test(`matches the ${label} cell by cell`, async () => {
+        const { result } = await previewFor(ref);
+        assert(result.bolsaApplied === ref.applied, `bolsa ${result.bolsaApplied} != ${ref.applied}`);
+        assert(result.tiers.mid === ref.mid && result.tiers.late === ref.late, `tiers ${JSON.stringify(result.tiers)}`);
+        assert(result.rows.length === ref.rows.length, "row count");
+        result.rows.forEach((row, i) => {
+          const got = [row.semester, row.period, row.bolsa, row.bolsaAdjust, row.semestral, row.annualMin, row.totalMin, row.monthlyMin, row.annualMax, row.totalMax, row.monthlyMax, row.diff];
+          assert(JSON.stringify(got) === JSON.stringify(ref.rows[i]), `row ${i + 1}: ${JSON.stringify(got)} != ${JSON.stringify(ref.rows[i])}`);
+        });
+      });
+    }
+    await test("document contains every section of the reference proposal", async () => {
+      const { html } = await previewFor(REF1);
+      for (const t of ["Proposta de Bolsa", "Valdemarina Araújo dos Reis", "Mensalidade bruta atual:", "R$ 1.014,60", "83,74%", "R$ 164,93", "R$ 99,00", "no ato da inscrição", "todo dia 10", "Quantidade de parcelas desse semestre:", "R$ 189,67", "R$ 206,16", "Projeção por semestre", "R$ 260,83", "Produtos ou serviços", "Valor total do pedido", "Mensagem final"]) {
+        assert(html.includes(t), `missing: ${t}`);
+      }
+    });
+    await test("rejects impossible proposals", async () => {
+      const bad = p => http.post("/proposals/preview", { leadId: plead.id, params: p }, auth());
+      assert((await bad({ gross: 0, firstMonthly: 100 })).status === 400, "zero gross accepted");
+      assert((await bad({ gross: 500, firstMonthly: 900 })).status === 400, "first monthly above gross accepted");
+    });
+    let prop;
+    await test("saves a draft, downloads a real PDF and shows it on the public link only after sending", async () => {
+      const r = await http.post("/proposals", { leadId: plead.id, params: { gross: REF1.gross, firstMonthly: REF1.first, semesters: 6, startYear: 2026, startSemester: 2 } }, auth());
+      assert(r.status === 201, `store ${r.status} ${JSON.stringify(r.data)}`);
+      prop = r.data;
+      const pdf = await http.get(`/proposals/${prop.id}/pdf`, { ...auth(), responseType: "arraybuffer" });
+      assert(pdf.status === 200 && Buffer.from(pdf.data).slice(0, 4).toString() === "%PDF", `pdf ${pdf.status}`);
+      assert((await http.get(`/p/${prop.token}`)).status === 404, "draft visible publicly");
+    });
+    await test("sending delivers the PDF in the conversation, moves the lead and notifies", async () => {
+      const lid = plead.id;
+      // route the proposal through the WhatsApp Cloud connection (mock Graph API)
+      await http.put(`/leads/${lid}`, { phone: "5511955550001" }, auth());
+      const before = graph.sent.length;
+      const r = await http.post(`/proposals/${prop.id}/send`, { whatsappId: cid, message: "Segue a proposta!" }, auth());
+      assert(r.status === 200, `send ${r.status} ${JSON.stringify(r.data)}`);
+      assert(graph.media.length >= 1, "pdf not uploaded to the channel");
+      const doc = graph.sent.slice(before).find(x => x.body && x.body.type === "document");
+      assert(doc && doc.body.document.filename && doc.body.document.filename.endsWith(".pdf"), "document message payload");
+      assert(sql(`SELECT status FROM Proposals WHERE id=${prop.id}`) === "sent", "status");
+      assert(/proposta/i.test(stageName(lid)), `stage ${stageName(lid)}`);
+      assert(sql(`SELECT COUNT(*) FROM LeadActivities WHERE leadId=${lid} AND body LIKE 'Proposta #${prop.id} enviada%'`) === "1", "activity");
+      const pub = await http.get(`/p/${prop.token}`);
+      assert(pub.status === 200 && String(pub.data).includes("Projeção por semestre"), "public link");
+      assert(sql(`SELECT viewedAt IS NOT NULL FROM Proposals WHERE id=${prop.id}`) === "1", "viewedAt");
+      assert((await http.put(`/proposals/${prop.id}`, { params: { gross: 999, firstMonthly: 100 } }, auth())).status === 400, "sent proposal editable");
+    });
+    await test("issued proposals keep their numbers when the template changes", async () => {
+      const tpl = (await http.get("/proposal-templates", auth())).data[0];
+      await http.put(`/proposal-templates/${tpl.id}`, { enrollmentFee: 500, observation: "texto novo" }, auth());
+      const shown = (await http.get(`/proposals/${prop.id}`, auth())).data;
+      assert(!shown.html.includes("texto novo") && shown.html.includes("R$ 99,00"), "template change leaked into an issued proposal");
+      await http.put(`/proposal-templates/${tpl.id}`, { enrollmentFee: 99, observation: tpl.observation }, auth());
+    });
   } catch (e) {
     results.push([false, `harness: ${e.stack || e.message}`]);
     console.log("harness error:", e.stack || e.message);

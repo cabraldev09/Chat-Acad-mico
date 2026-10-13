@@ -32,6 +32,16 @@ class Course extends Model<Course> {
   @Column
   modality: string;
 
+  @Column
+  category: string;
+
+  @Default(8)
+  @Column
+  semesters: number;
+
+  @Column
+  institutionId: number;
+
   @Column(DataType.DECIMAL(10, 2))
   monthlyFee: number;
 

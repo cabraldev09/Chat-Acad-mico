@@ -7,6 +7,7 @@ import Course from "../../models/Course";
 import User from "../../models/User";
 import Contact from "../../models/Contact";
 import Tag from "../../models/Tag";
+import Whatsapp from "../../models/Whatsapp";
 import { getIO } from "../../libs/socket";
 import { getSetting, setSetting } from "../../helpers/AppSettings";
 import { normalizeEmail, normalizePhone } from "../../helpers/Phone";
@@ -349,4 +350,33 @@ export const hookHumanReply = async (contactId: number, userId: number): Promise
   } catch (err) {
     logger.warn(`CRM reply hook failed: ${err}`);
   }
+};
+
+// Which contact + connection to use when we start talking to a lead
+export const resolveLeadTarget = async (
+  lead: Lead,
+  userId: number,
+  whatsappId?: number | null
+): Promise<{ contact: Contact; whatsapp: Whatsapp }> => {
+  const { default: Ticket } = await import("../../models/Ticket");
+  const { default: GetDefaultWhatsApp } = await import("../../helpers/GetDefaultWhatsApp");
+  const { resolveOutboundContact } = await import("../ChannelServices/ResolveOutboundContact");
+  const { default: AppError } = await import("../../errors/AppError");
+
+  let whatsapp: Whatsapp | null = whatsappId ? await Whatsapp.findByPk(whatsappId) : null;
+  let contact: Contact | null = lead.contactId ? await Contact.findByPk(lead.contactId) : null;
+
+  if (contact && !whatsapp) {
+    // reuse the connection of the existing conversation
+    const t = await Ticket.findOne({ where: { contactId: contact.id }, order: [["updatedAt", "DESC"]] });
+    if (t) whatsapp = await Whatsapp.findByPk(t.whatsappId);
+  }
+  if (!whatsapp) whatsapp = await GetDefaultWhatsApp(userId);
+
+  if (!contact) {
+    if (!lead.phone) throw new AppError("ERR_LEAD_NO_PHONE");
+    contact = await resolveOutboundContact(whatsapp, lead.phone, lead.name);
+    await lead.update({ contactId: contact.id });
+  }
+  return { contact, whatsapp };
 };

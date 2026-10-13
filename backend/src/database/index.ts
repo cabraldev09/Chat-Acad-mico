@@ -28,6 +28,9 @@ import Lead from "../models/Lead";
 import LeadActivity from "../models/LeadActivity";
 import LeadTask from "../models/LeadTask";
 import LeadTag from "../models/LeadTag";
+import Institution from "../models/Institution";
+import ProposalTemplate from "../models/ProposalTemplate";
+import Proposal from "../models/Proposal";
 
 // eslint-disable-next-line
 const dbConfig = require("../config/database");
@@ -64,7 +67,10 @@ const models = [
   Lead,
   LeadActivity,
   LeadTask,
-  LeadTag
+  LeadTag,
+  Institution,
+  ProposalTemplate,
+  Proposal
 ];
 
 sequelize.addModels(models);

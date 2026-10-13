@@ -14,6 +14,7 @@ import { logger } from "./utils/logger";
 import webchatRoutes from "./routes/webchatRoutes";
 import metaWebhookRoutes from "./routes/metaWebhookRoutes";
 import leadFormRoutes from "./routes/leadFormRoutes";
+import proposalPublicRoutes from "./routes/proposalPublicRoutes";
 
 Sentry.init({ dsn: process.env.SENTRY_DSN });
 
@@ -22,6 +23,7 @@ const app = express();
 // Public endpoints (embedded web chat, provider webhooks): no cookies, any origin
 app.use("/webchat", cors({ origin: true }), express.json(), webchatRoutes);
 app.use("/leadform", cors({ origin: true }), leadFormRoutes);
+app.use("/p", proposalPublicRoutes);
 app.use(
   "/webhooks",
   express.json({

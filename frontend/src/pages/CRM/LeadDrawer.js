@@ -7,7 +7,7 @@ import {
 } from "@material-ui/core";
 import {
   X, MessageSquare, Phone, Mail, StickyNote, PhoneCall, MapPin, ArrowRight, ListTodo,
-  Info, Trash2, Trophy, ThumbsDown, Check,
+  Info, Trash2, Trophy, ThumbsDown, Check, FileText, FilePlus2, Download, Link2, CopyPlus, SendHorizonal,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 
@@ -16,6 +16,7 @@ import toastError from "../../errors/toastError";
 import openSocket from "../../services/socket-io";
 import { WhatsAppBrand } from "../../icons/brands";
 import LeadFields from "./LeadFields";
+import ProposalStudio from "./ProposalStudio";
 import { ScoreRing, SourceIcon, ago, isOverdue, burst, initials } from "./shared";
 
 const useStyles = makeStyles((theme) => ({
@@ -73,7 +74,7 @@ export const LostDialog = ({ open, reasons = [], onClose, onConfirm }) => {
   );
 };
 
-const LeadDrawer = ({ leadId, onClose, ctx, onChanged }) => {
+const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab }) => {
   const classes = useStyles();
   const history = useHistory();
   const { options, courses, stages, users, tags } = ctx;
@@ -85,14 +86,18 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged }) => {
   const [note, setNote] = useState({ type: "note", body: "" });
   const [task, setTask] = useState({ title: "", type: "ligar", dueAt: "" });
   const [lostOpen, setLostOpen] = useState(false);
+  const [proposals, setProposals] = useState([]);
+  const [studio, setStudio] = useState(null); // { id } | {}
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
     if (!leadId) return;
     try {
-      const [l, a, t] = await Promise.all([
+      const [l, a, t, pr] = await Promise.all([
         api.get(`/leads/${leadId}`), api.get(`/leads/${leadId}/activities`), api.get(`/leads/${leadId}/tasks`),
+        api.get("/proposals", { params: { leadId } }),
       ]);
+      setProposals(pr.data);
       setLead(l.data);
       setDraft((prev) => (prev && prev.id === l.data.id && prev.__dirty ? prev : { ...l.data, tagIds: l.data.tags.map((x) => x.id) }));
       setActs(a.data);
@@ -102,7 +107,7 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged }) => {
     }
   }, [leadId]);
 
-  useEffect(() => { setLead(null); setDraft(null); setTab(0); load(); }, [leadId, load]);
+  useEffect(() => { setLead(null); setDraft(null); setTab(initialTab || 0); load(); }, [leadId, load, initialTab]);
 
   useEffect(() => {
     if (!leadId) return undefined;
@@ -216,6 +221,7 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged }) => {
               <Button size="small" variant="contained" color="primary" startIcon={<MessageSquare size={16} />} onClick={openChat}>Abrir conversa</Button>
               {lead.phone && <Button size="small" variant="outlined" startIcon={<Phone size={16} />} href={`tel:+${lead.phone}`}>Ligar</Button>}
               {lead.email && <Button size="small" variant="outlined" startIcon={<Mail size={16} />} href={`mailto:${lead.email}`}>E-mail</Button>}
+              <Button size="small" variant="contained" color="primary" startIcon={<FilePlus2 size={16} />} onClick={() => setStudio({})}>Gerar proposta</Button>
               {lead.stage.type === "open" && (
                 <>
                   <Button size="small" variant="outlined" startIcon={<Trophy size={16} />} onClick={(e) => won && move(won, e)} style={{ color: "#16a34a", borderColor: "rgba(22,163,74,.5)" }}>Matriculado</Button>
@@ -229,6 +235,7 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged }) => {
             <Tab label="Resumo" />
             <Tab label={`Atividade (${acts.length})`} />
             <Tab label={`Tarefas (${tasks.filter((t) => !t.doneAt).length})`} />
+            <Tab label={`Propostas (${proposals.length})`} />
           </Tabs>
 
           <div className={classes.body}>
@@ -294,7 +301,44 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged }) => {
                 </div>
               </>
             )}
+            {tab === 3 && (
+              <>
+                <Button variant="contained" color="primary" size="small" startIcon={<FilePlus2 size={16} />} onClick={() => setStudio({})}>Nova proposta</Button>
+                <div style={{ marginTop: 14 }}>
+                  {proposals.length === 0 && <Typography color="textSecondary" variant="body2">Nenhuma proposta ainda. Escolha o curso, ajuste a bolsa e envie o PDF ao candidato pela própria conversa.</Typography>}
+                  {proposals.map((pr) => (
+                    <div key={pr.id} className={classes.taskRow} style={{ alignItems: "flex-start", padding: "10px 0" }}>
+                      <FileText size={18} style={{ marginTop: 3, opacity: 0.7 }} />
+                      <div style={{ flex: 1, minWidth: 0, marginLeft: 8 }}>
+                        <div style={{ fontWeight: 600, fontSize: 14 }}>#{pr.id} · {pr.courseName}</div>
+                        <div className={classes.tlMeta}>
+                          1ª mensalidade {Number(pr.firstMonthly).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} · bolsa {Number(pr.bolsaPct).toFixed(2).replace(".", ",")}%
+                        </div>
+                        <div className={classes.tlMeta}>
+                          {pr.status === "draft" ? "Rascunho" : `Enviada ${ago(pr.sentAt)}${pr.viewedAt ? ` · visualizada ${ago(pr.viewedAt)}` : " · ainda não visualizada"}`}
+                          {pr.author ? ` · ${pr.author.name}` : ""}
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", gap: 2 }}>
+                        <IconButton size="small" title={pr.status === "draft" ? "Editar" : "Ver"} onClick={() => setStudio({ id: pr.id })}><FileText size={16} /></IconButton>
+                        <IconButton size="small" title="Baixar PDF" onClick={async () => {
+                          try { const r = await api.get(`/proposals/${pr.id}/pdf`, { responseType: "blob" }); const u = URL.createObjectURL(r.data); const a = document.createElement("a"); a.href = u; a.download = `Proposta - ${lead.name}.pdf`; a.click(); URL.revokeObjectURL(u); } catch (e) { toastError(e); }
+                        }}><Download size={16} /></IconButton>
+                        {pr.status !== "draft" && <IconButton size="small" title="Copiar link" onClick={() => { navigator.clipboard.writeText(pr.link); toast.success("Link copiado"); }}><Link2 size={16} /></IconButton>}
+                        <IconButton size="small" title="Duplicar como novo rascunho" onClick={async () => { try { const { data } = await api.post(`/proposals/${pr.id}/duplicate`); changed(); setStudio({ id: data.id }); } catch (e) { toastError(e); } }}><CopyPlus size={16} /></IconButton>
+                        {pr.status === "draft" && <IconButton size="small" title="Excluir" onClick={async () => { await api.delete(`/proposals/${pr.id}`); changed(); }}><Trash2 size={16} /></IconButton>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
+
+          {studio && (
+            <ProposalStudio lead={lead} proposalId={studio.id} ctx={ctx}
+              onSaved={changed} onClose={(sent) => { setStudio(null); if (sent) setTab(3); changed(); }} />
+          )}
 
           {tab === 0 && draft.__dirty && (
             <div className={classes.footer} style={{ animation: "page-in .25s var(--ease-out)" }}>

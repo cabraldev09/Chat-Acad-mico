@@ -22,6 +22,8 @@ interface Input {
   body: string;
   mediaUrl?: string | null;
   template?: { name: string; language: string; params: string[] } | null;
+  // keep the conversation open (assigned) instead of closing a ticket we created
+  keepOpen?: { userId: number } | null;
 }
 
 // Sends an outbound (agent/system initiated) message to a contact through any
@@ -33,7 +35,8 @@ const SendToContact = async ({
   whatsapp,
   body,
   mediaUrl,
-  template
+  template,
+  keepOpen
 }: Input): Promise<void> => {
   const found = await FindOrCreateTicketService(contact, whatsapp.id, 0);
   const ticket = await ShowTicketService(found.id);
@@ -75,7 +78,14 @@ const SendToContact = async ({
     await SendWhatsAppMessage({ body, ticket });
   }
 
-  if (!hadMessages && !ticket.userId) {
+  if (keepOpen) {
+    if (ticket.status !== "open" || !ticket.userId) {
+      await UpdateTicketService({
+        ticketData: { status: "open", userId: keepOpen.userId },
+        ticketId: ticket.id
+      });
+    }
+  } else if (!hadMessages && !ticket.userId) {
     await UpdateTicketService({
       ticketData: { status: "closed" },
       ticketId: ticket.id

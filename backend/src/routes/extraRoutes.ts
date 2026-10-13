@@ -15,6 +15,7 @@ import * as Campaign from "../controllers/CampaignController";
 import * as Stats from "../controllers/StatsController";
 import * as Channel from "../controllers/ChannelController";
 import * as Lead from "../controllers/LeadController";
+import * as Proposal from "../controllers/ProposalController";
 
 const upload = multer({ ...uploadConfig, limits: { fileSize: 30 * 1024 * 1024 } });
 const r = express.Router();
@@ -129,5 +130,26 @@ r.get("/lead-tasks", isAuth, Lead.tasksIndex);
 r.put("/leads/:id/tasks/:taskId", isAuth, Lead.updateTask);
 r.post("/leads/:id/tasks/:taskId/toggle", isAuth, Lead.completeTask);
 r.delete("/leads/:id/tasks/:taskId", isAuth, Lead.removeTask);
+
+// ---------------------------------------------------------------- proposals
+r.get("/proposals/defaults", isAuth, Proposal.defaults);
+r.post("/proposals/preview", isAuth, Proposal.preview);
+r.get("/proposals", isAuth, Proposal.index);
+r.post("/proposals", isAuth, Proposal.store);
+r.get("/proposals/:id", isAuth, Proposal.show);
+r.put("/proposals/:id", isAuth, Proposal.update);
+r.delete("/proposals/:id", isAuth, Proposal.remove);
+r.post("/proposals/:id/duplicate", isAuth, Proposal.duplicate);
+r.get("/proposals/:id/pdf", isAuth, Proposal.pdf);
+r.post("/proposals/:id/send", isAuth, Proposal.send);
+r.get("/institutions", isAuth, Proposal.institutions.index);
+r.post("/institutions", isAuth, isAdmin, Proposal.institutions.store);
+r.put("/institutions/:id", isAuth, isAdmin, Proposal.institutions.update);
+r.delete("/institutions/:id", isAuth, isAdmin, Proposal.institutions.remove);
+r.get("/proposal-templates", isAuth, Proposal.templates.index);
+r.post("/proposal-templates", isAuth, isAdmin, Proposal.templates.store);
+r.put("/proposal-templates/:id", isAuth, isAdmin, Proposal.templates.update);
+r.delete("/proposal-templates/:id", isAuth, isAdmin, Proposal.templates.remove);
+r.post("/courses/import", isAuth, isAdmin, Lead.importCourses);
 
 export default r;

@@ -3,7 +3,8 @@ import { toast } from "react-toastify";
 import {
   Paper, Tabs, Tab, Typography, Switch, FormControlLabel, TextField, MenuItem, Button, makeStyles,
 } from "@material-ui/core";
-import { Copy, RefreshCw, DatabaseBackup } from "lucide-react";
+import { Copy, RefreshCw, DatabaseBackup, Upload } from "lucide-react";
+import { Dialog, DialogTitle, DialogContent, DialogActions } from "@material-ui/core";
 
 import CrudPage from "../../components/CrudPage";
 import MainContainer from "../../components/MainContainer";
@@ -104,18 +105,69 @@ const Automation = ({ s, setS, save, users }) => {
   );
 };
 
+const parseCourses = (text) => {
+  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  if (!lines.length) return [];
+  const delim = [";", "\t", ","].find((d) => lines[0].includes(d)) || ";";
+  const split = (l) => l.split(delim).map((c) => c.trim().replace(/^"|"$/g, ""));
+  const H = { nome: "name", curso: "name", name: "name", categoria: "category", nivel: "level", "nível": "level", modalidade: "modality", mensalidade: "monthlyFee", valor: "monthlyFee", semestres: "semesters", duracao: "semesters", "duração": "semesters" };
+  const first = split(lines[0]).map((h) => H[h.toLowerCase()]);
+  const hasHeader = first.some(Boolean);
+  const cols = hasHeader ? first : ["name", "category", "modality", "monthlyFee", "semesters"];
+  return lines.slice(hasHeader ? 1 : 0).map((l) => { const row = {}; split(l).forEach((v, i) => { if (cols[i] && v) row[cols[i]] = v; }); return row; });
+};
+
+const CourseImport = ({ open, onClose, onDone, institutions }) => {
+  const [text, setText] = useState("");
+  const [inst, setInst] = useState("");
+  const [report, setReport] = useState(null);
+  const run = async () => {
+    try {
+      const { data } = await api.post("/courses/import", { items: parseCourses(text), institutionId: inst || undefined });
+      setReport(data); toast.success(`${data.created} cursos novos, ${data.updated} atualizados`); onDone();
+    } catch (err) { toastError(err); }
+  };
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+      <DialogTitle>Importar catálogo de cursos</DialogTitle>
+      <DialogContent>
+        <Typography variant="body2" color="textSecondary" gutterBottom>
+          Cole as linhas ou envie um .csv com: nome; categoria; modalidade; mensalidade; semestres. Ex.: <i>Administração;Graduação;EAD;1073,80;8</i>.
+          Cursos com o mesmo nome e categoria são atualizados.
+        </Typography>
+        <TextField select fullWidth size="small" variant="outlined" label="Instituição dos cursos" value={inst} onChange={(e) => setInst(e.target.value)} style={{ marginBottom: 8 }}>
+          <MenuItem value="">—</MenuItem>{institutions.map((i) => (<MenuItem key={i.id} value={i.id}>{i.name}</MenuItem>))}
+        </TextField>
+        <TextField fullWidth multiline rows={7} variant="outlined" value={text} onChange={(e) => setText(e.target.value)} placeholder={"Administração;Graduação;EAD;1073,80;8\nDireito;Graduação;Presencial;1290,00;10"} />
+        <Button component="label" size="small" variant="outlined" style={{ marginTop: 8 }}>Escolher arquivo CSV
+          <input hidden type="file" accept=".csv,.txt" onChange={async (e) => { const f = e.target.files[0]; if (f) setText(await f.text()); e.target.value = ""; }} /></Button>
+        {text && <Typography variant="caption" style={{ marginLeft: 8 }}>{parseCourses(text).length} linhas</Typography>}
+        {report && <Typography variant="body2" style={{ marginTop: 10 }}><b>{report.created}</b> novos · <b>{report.updated}</b> atualizados{report.errors.length ? ` · ${report.errors.length} com erro (${report.errors[0]})` : ""}</Typography>}
+      </DialogContent>
+      <DialogActions>
+        <Button variant="outlined" color="secondary" onClick={onClose}>Fechar</Button>
+        <Button variant="contained" color="primary" disabled={!text.trim()} onClick={run}>Importar</Button>
+      </DialogActions>
+    </Dialog>
+  );
+};
+
 const CrmSettings = () => {
   const [tab, setTab] = useState(0);
   const [s, setS] = useState({});
   const [users, setUsers] = useState([]);
   const [options, setOptions] = useState({});
+  const [institutions, setInstitutions] = useState([]);
+  const [importOpen, setImportOpen] = useState(false);
+  const [reload, setReload] = useState(0);
 
   const load = () => api.get("/crm/settings").then(({ data }) => setS(data)).catch(toastError);
   useEffect(() => {
     load();
     api.get("/users", { params: { pageNumber: 1 } }).then(({ data }) => setUsers(data.users || []));
     api.get("/crm/options").then(({ data }) => setOptions(data));
-  }, []);
+    api.get("/institutions").then(({ data }) => setInstitutions(data)).catch(() => {});
+  }, [tab, reload]);
   const save = async (patch) => {
     try { const { data } = await api.put("/crm/settings", patch); setS(data); toast.success("Salvo"); } catch (err) { toastError(err); }
   };
@@ -127,7 +179,7 @@ const CrmSettings = () => {
       <MainHeader><Title>Configurações do CRM</Title></MainHeader>
       <Paper variant="outlined" style={{ marginBottom: 8 }}>
         <Tabs value={tab} onChange={(e, v) => setTab(v)}>
-          <Tab label="Etapas do funil" /><Tab label="Cursos" /><Tab label="Captação" /><Tab label="Automação" />
+          <Tab label="Etapas do funil" /><Tab label="Cursos" /><Tab label="Instituições" /><Tab label="Modelos de proposta" /><Tab label="Captação" /><Tab label="Automação" />
         </Tabs>
       </Paper>
       <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
@@ -149,23 +201,78 @@ const CrmSettings = () => {
             ]} />
         )}
         {tab === 1 && (
-          <CrudPage embedded title="Cursos" endpoint="/courses" addLabel="Novo curso" socketEvent="course"
-            emptyText="Cadastre os cursos para classificar o interesse dos leads."
+          <>
+            <CourseImport open={importOpen} onClose={() => setImportOpen(false)} institutions={institutions} onDone={() => setReload((r) => r + 1)} />
+            <CrudPage embedded title="Cursos" endpoint="/courses" addLabel="Novo curso" socketEvent="course" reloadKey={reload}
+              emptyText="Cadastre os cursos (ou importe o catálogo) para gerar propostas com a mensalidade certa."
+              headerExtra={<Button variant="outlined" startIcon={<Upload size={16} />} onClick={() => setImportOpen(true)}>Importar catálogo</Button>}
+              fields={[
+                { name: "name", label: "Nome do curso", required: true },
+                { name: "category", label: "Categoria (ex.: Graduação)" },
+                { name: "level", label: "Nível", type: "select", options: opts(["Bacharelado", "Licenciatura", "Tecnólogo", "Pós-graduação", "MBA", "Técnico", "Extensão"]) },
+                { name: "modality", label: "Modalidade", type: "select", options: opts(options.modalities) },
+                { name: "monthlyFee", label: "Mensalidade bruta (R$)", type: "number" },
+                { name: "semesters", label: "Semestres", type: "number", default: 8 },
+                { name: "institutionId", label: "Instituição", type: "select", options: institutions.map((i) => ({ value: i.id, label: i.name })) },
+                { name: "active", label: "Ativo (aparece no formulário e nas propostas)", type: "switch", default: true },
+              ]}
+              columns={[
+                { header: "Curso", field: "name" }, { header: "Categoria", render: (r) => r.category || "—" }, { header: "Modalidade", render: (r) => r.modality || "—" },
+                { header: "Mensalidade", render: (r) => (r.monthlyFee ? Number(r.monthlyFee).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "—") },
+                { header: "Semestres", render: (r) => r.semesters },
+                { header: "Ativo", render: (r) => (r.active ? "Sim" : "Não") },
+              ]} />
+          </>
+        )}
+        {tab === 2 && (
+          <CrudPage embedded title="Instituições" endpoint="/institutions" addLabel="Nova instituição" socketEvent="institution"
+            emptyText="Cadastre a instituição (nome, CNPJ e logo) que aparece no cabeçalho da proposta."
             fields={[
-              { name: "name", label: "Nome do curso", required: true },
-              { name: "level", label: "Nível", type: "select", options: opts(["Bacharelado", "Licenciatura", "Tecnólogo", "Pós-graduação", "MBA", "Técnico", "Extensão"]) },
-              { name: "modality", label: "Modalidade", type: "select", options: opts(options.modalities) },
-              { name: "monthlyFee", label: "Mensalidade (R$)", type: "number" },
-              { name: "active", label: "Ativo (aparece no formulário)", type: "switch", default: true },
+              { name: "name", label: "Nome da instituição", required: true },
+              { name: "cnpj", label: "CNPJ" },
+              { name: "logoFile", label: "Logo (PNG, JPG ou SVG)", type: "file" },
+              { name: "active", label: "Ativa", type: "switch", default: true },
             ]}
             columns={[
-              { header: "Curso", field: "name" }, { header: "Nível", render: (r) => r.level || "—" }, { header: "Modalidade", render: (r) => r.modality || "—" },
-              { header: "Mensalidade", render: (r) => (r.monthlyFee ? Number(r.monthlyFee).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "—") },
-              { header: "Ativo", render: (r) => (r.active ? "Sim" : "Não") },
+              { header: "Logo", render: (r) => (r.logoFile ? <img alt="" src={`${getBackendUrl().replace(/\/$/, "")}/public/${r.logoFile}`} style={{ maxHeight: 32, maxWidth: 120 }} /> : "—") },
+              { header: "Instituição", field: "name" }, { header: "CNPJ", render: (r) => r.cnpj || "—" },
+              { header: "Ativa", render: (r) => (r.active ? "Sim" : "Não") },
             ]} />
         )}
-        {tab === 2 && <Capture s={s} setS={setS} save={save} />}
-        {tab === 3 && <Automation s={s} setS={setS} save={save} users={users} />}
+        {tab === 3 && (
+          <CrudPage embedded title="Modelos de proposta" endpoint="/proposal-templates" addLabel="Novo modelo" socketEvent="proposalTemplate" dialogWidth="md"
+            emptyText="Nenhum modelo." reloadKey={reload}
+            mapIn={(r) => ({ ...r, semestralSchedule: JSON.parse(r.semestralSchedule || "[]").map((x) => `${x.from}=${x.pct}`).join("\n") })}
+            mapOut={(v) => ({ ...v, semestralSchedule: String(v.semestralSchedule || "").split(/\n/).map((l) => l.trim()).filter(Boolean).map((l) => { const [from, pct] = l.split("="); return { from: Number(from), pct: Number(String(pct).replace(",", ".")) }; }) })}
+            fields={[
+              { name: "name", label: "Nome do modelo", required: true },
+              { name: "institutionId", label: "Instituição", type: "select", options: institutions.map((i) => ({ value: i.id, label: i.name })) },
+              { name: "enrollmentFee", label: "Taxa de matrícula (R$)", type: "number", default: 0 },
+              { name: "dueDay", label: "Dia de vencimento", type: "number", default: 10 },
+              { name: "installments", label: "Parcelas por semestre", type: "number", default: 6 },
+              { name: "bolsaFirst", label: "Bolsa no 1º semestre (%)", type: "number", default: 25 },
+              { name: "bolsaNext", label: "Bolsa do 2º semestre em diante (%)", type: "number", default: 20 },
+              { name: "punctualityPct", label: "Desconto de pontualidade (%)", type: "number", default: 25 },
+              { name: "lateFee1Pct", label: "Perde (dias 11–25) (%)", type: "number", default: 15 },
+              { name: "lateFee2Pct", label: "Perde (após o vencimento) (%)", type: "number", default: 25 },
+              { name: "annualMin", label: "Reajuste anual mínimo (%)", type: "number", default: 5 },
+              { name: "annualMax", label: "Reajuste anual teto (%)", type: "number", default: 11 },
+              { name: "semestralSchedule", label: "Reajuste semestral", type: "textarea", rows: 3, default: "2=2\n6=3", helper: "Uma linha por degrau: semestre=percentual. “2=2” e “6=3” = 2% do 2º ao 5º semestre e 3% do 6º em diante." },
+              { name: "bolsaNote", label: "Nota da bolsa aplicada", type: "textarea", rows: 2 },
+              { name: "observation", label: "Observação", type: "textarea", rows: 2 },
+              { name: "disclaimer", label: "Aviso da projeção", type: "textarea", rows: 3 },
+              { name: "finalMessage", label: "Mensagem final", type: "textarea", rows: 2 },
+              { name: "isDefault", label: "Modelo padrão", type: "switch", default: false },
+            ]}
+            columns={[
+              { header: "Modelo", render: (r) => (<>{r.name}{r.isDefault ? " (padrão)" : ""}</>) },
+              { header: "Matrícula", render: (r) => Number(r.enrollmentFee).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) },
+              { header: "Bolsa 1º / demais", render: (r) => `${Number(r.bolsaFirst)}% / ${Number(r.bolsaNext)}%` },
+              { header: "Reajuste anual", render: (r) => `${Number(r.annualMin)}% a ${Number(r.annualMax)}%` },
+            ]} />
+        )}
+        {tab === 4 && <Capture s={s} setS={setS} save={save} />}
+        {tab === 5 && <Automation s={s} setS={setS} save={save} users={users} />}
       </div>
     </MainContainer>
   );

@@ -33,10 +33,26 @@ Funil de matrícula pensado para acompanhar leads do ensino superior, integrado 
 * **Painel**: conversão, funil acumulado, origem, cursos, motivos de perda, desempenho por consultor, alertas (sem 1º contato,
   tarefas atrasadas, leads esfriando). Webhooks: `lead.created`, `lead.stage_changed`, `lead.won`, `lead.lost`.
 
+## Propostas de bolsa
+
+Depois de qualificar o lead, o consultor gera a **proposta de bolsa** direto da ficha (botão "Gerar proposta"):
+
+1. Escolhe o curso (traz mensalidade bruta e semestres do catálogo) e o modelo.
+2. Ajusta a **primeira mensalidade ou a bolsa %**: um recalcula o outro. A **prévia do documento é atualizada ao vivo**.
+3. Baixa o **PDF**, copia o link ou **envia ao candidato pelo mesmo canal da conversa** (WhatsApp, Telegram…). O lead vai para
+   "Proposta enviada" e o atendimento fica com o consultor. O sistema registra quando o candidato abre o link.
+
+O documento traz: mensalidade bruta, bolsa aplicada, primeira mensalidade, taxa de matrícula, vencimento e parcelas, faixas de
+pontualidade (até o dia 10 / dias 11–25 / após o vencimento), projeção por semestre nos cenários de reajuste anual mínimo e teto,
+produtos e total. As regras (matrícula, pontualidade, reajustes, bolsa 1º semestre × demais, textos) ficam em **Configurar CRM →
+Modelos de proposta**; instituições (nome, CNPJ, logo) e o catálogo de cursos (com importação por CSV) também ficam lá.
+Propostas já enviadas guardam uma cópia dos valores e textos: mudar o modelo não altera o que o candidato recebeu.
+Gerar PDF exige o Google Chrome (`CHROME_BIN`).
+
 ## Testes
 
 `npm --prefix backend run test:channels` sobe o backend com um banco descartável e servidores falsos do Telegram e da Graph API
-da Meta, e verifica canais, assinatura de webhooks, mídia, chatbot, CRM e campanhas com modelo (46 verificações).
+da Meta, e verifica canais, assinatura de webhooks, mídia, chatbot, CRM e campanhas com modelo (53 verificações, incluindo a conferência célula a célula das propostas de referência).
 
 ## Rodando localmente (macOS)
 
