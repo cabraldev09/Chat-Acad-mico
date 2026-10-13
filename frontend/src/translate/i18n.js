@@ -1,12 +1,13 @@
 import i18n from "i18next";
-import LanguageDetector from "i18next-browser-languagedetector";
 
 import { messages } from "./languages";
 
-i18n.use(LanguageDetector).init({
+// The whole product is in Brazilian Portuguese: no browser language detection.
+i18n.init({
 	debug: false,
+	lng: "pt",
 	defaultNS: ["translations"],
-	fallbackLng: "en",
+	fallbackLng: "pt",
 	ns: ["translations"],
 	resources: messages,
 });

@@ -1,207 +1,141 @@
 import React, { useState } from "react";
-
 import * as Yup from "yup";
-import { useHistory } from "react-router-dom";
-import { Link as RouterLink } from "react-router-dom";
+import { useHistory, Link as RouterLink } from "react-router-dom";
 import { toast } from "react-toastify";
 import { Formik, Form, Field } from "formik";
-
-import {
-	Button,
-	CssBaseline,
-	TextField,
-	Grid,
-	Box,
-	Typography,
-	Container,
-	InputAdornment,
-	IconButton,
-	Link
-} from '@material-ui/core';
-
-import { Visibility, VisibilityOff } from '@material-ui/icons';
-
+import { Button, TextField, Typography, InputAdornment, IconButton, Link, CircularProgress } from "@material-ui/core";
+import { Visibility, VisibilityOff } from "@material-ui/icons";
 import { makeStyles, useTheme } from "@material-ui/core/styles";
 
 import { i18n } from "../../translate/i18n";
-
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
-import logoBlack from "../../assets/whaticket-logo-black.png";
-import logoWhite from "../../assets/whaticket-logo-white.png";
+import BrandLogo from "../../components/BrandLogo";
 
-// const Copyright = () => {
-// 	return (
-// 		<Typography variant="body2" color="textSecondary" align="center">
-// 			{"Copyleft "}
-// 			<Link color="inherit" href="https://github.com/canove">
-// 				Canove
-// 			</Link>{" "}
-// 			{new Date().getFullYear()}
-// 			{"."}
-// 		</Typography>
-// 	);
-// };
-
-const useStyles = makeStyles(theme => ({
-	paper: {
-		marginTop: theme.spacing(8),
-		display: "flex",
-		flexDirection: "column",
-		alignItems: "center",
-	},
-	logo: {
-		width: "75%",
-		marginBottom: theme.spacing(3),
-		[theme.breakpoints.down("sm")]: {
-			width: "95%",
-		},
-	},
-	form: {
-		width: "100%",
-		marginTop: theme.spacing(3),
-	},
-	submit: {
-		margin: theme.spacing(3, 0, 2),
-	},
+const useStyles = makeStyles((theme) => ({
+  root: {
+    minHeight: "100vh",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: theme.spacing(3),
+    backgroundColor: theme.palette.background.default,
+    backgroundImage:
+      theme.palette.type === "dark"
+        ? "radial-gradient(900px 500px at 50% -10%, rgba(6,147,227,.16), transparent 70%)"
+        : "radial-gradient(900px 500px at 50% -10%, rgba(11,66,121,.10), transparent 70%)",
+  },
+  card: {
+    width: "100%",
+    maxWidth: 440,
+    padding: theme.spacing(5, 4.5, 4),
+    borderRadius: 20,
+    backgroundColor: theme.palette.background.paper,
+    border: `1px solid ${theme.palette.divider}`,
+    boxShadow: "0 24px 60px -24px rgba(11,66,121,.28)",
+    [theme.breakpoints.down("xs")]: { padding: theme.spacing(4, 2.5, 3) },
+  },
+  logo: { margin: "0 auto", marginBottom: theme.spacing(3), alignSelf: "center" },
+  title: { textAlign: "center", fontSize: 24, fontWeight: 700, letterSpacing: "-0.02em" },
+  subtitle: { textAlign: "center", color: theme.palette.text.secondary, marginTop: 4, marginBottom: theme.spacing(3), fontSize: 14.5 },
+  submit: { marginTop: theme.spacing(3), height: 46, fontSize: 15 },
+  foot: { marginTop: theme.spacing(2.5), textAlign: "center", fontSize: 14, color: theme.palette.text.secondary },
 }));
 
 const UserSchema = Yup.object().shape({
-	name: Yup.string()
-		.min(2, "Too Short!")
-		.max(50, "Too Long!")
-		.required("Required"),
-	password: Yup.string().min(5, "Too Short!").max(50, "Too Long!"),
-	email: Yup.string().email("Invalid email").required("Required"),
+  name: Yup.string().trim().min(2, "Informe o nome completo.").max(60, "Nome muito longo.").required("Informe seu nome."),
+  email: Yup.string().trim().email("Digite um e-mail válido.").required("Informe seu e-mail."),
+  password: Yup.string().min(5, "A senha precisa ter ao menos 5 caracteres.").max(60, "Senha muito longa.").required("Crie uma senha."),
 });
 
 const SignUp = () => {
-	const classes = useStyles();
-	const theme = useTheme();
-	const history = useHistory();
+  const classes = useStyles();
+  const theme = useTheme();
+  const history = useHistory();
+  const [showPassword, setShowPassword] = useState(false);
 
-	const initialState = { name: "", email: "", password: "" };
-	const [showPassword, setShowPassword] = useState(false);
-	const [user] = useState(initialState);
+  const handleSignUp = async (values, actions) => {
+    try {
+      await api.post("/auth/signup", values);
+      toast.success(i18n.t("signup.toasts.success"));
+      history.push("/login");
+    } catch (err) {
+      toastError(err);
+    }
+    actions.setSubmitting(false);
+  };
 
-	const handleSignUp = async values => {
-		try {
-			await api.post("/auth/signup", values);
-			toast.success(i18n.t("signup.toasts.success"));
-			history.push("/login");
-		} catch (err) {
-			toastError(err);
-		}
-	};
+  return (
+    <div className={classes.root}>
+      <div className={classes.card}>
+        <BrandLogo tone={theme.palette.type === "dark" ? "white" : "color"} height={76} className={classes.logo} />
+        <Typography component="h1" className={classes.title}>
+          {i18n.t("signup.title")}
+        </Typography>
+        <Typography className={classes.subtitle}>Preencha os dados para acessar o painel de atendimento.</Typography>
 
-	const logo = theme.palette.type === "dark" ? logoWhite : logoBlack;
-
-	return (
-		<Container component="main" maxWidth="xs">
-			<CssBaseline />
-			<div className={classes.paper}>
-				<img src={logo} alt="Whaticket" className={classes.logo} />
-				<Typography component="h1" variant="h5">
-					{i18n.t("signup.title")}
-				</Typography>
-				{/* <form className={classes.form} noValidate onSubmit={handleSignUp}> */}
-				<Formik
-					initialValues={user}
-					enableReinitialize={true}
-					validationSchema={UserSchema}
-					onSubmit={(values, actions) => {
-						setTimeout(() => {
-							handleSignUp(values);
-							actions.setSubmitting(false);
-						}, 400);
-					}}
-				>
-					{({ touched, errors, isSubmitting }) => (
-						<Form className={classes.form}>
-							<Grid container spacing={2}>
-								<Grid item xs={12}>
-									<Field
-										as={TextField}
-										autoComplete="name"
-										name="name"
-										error={touched.name && Boolean(errors.name)}
-										helperText={touched.name && errors.name}
-										variant="outlined"
-										fullWidth
-										id="name"
-										label={i18n.t("signup.form.name")}
-										autoFocus
-									/>
-								</Grid>
-
-								<Grid item xs={12}>
-									<Field
-										as={TextField}
-										variant="outlined"
-										fullWidth
-										id="email"
-										label={i18n.t("signup.form.email")}
-										name="email"
-										error={touched.email && Boolean(errors.email)}
-										helperText={touched.email && errors.email}
-										autoComplete="email"
-									/>
-								</Grid>
-								<Grid item xs={12}>
-									<Field
-										as={TextField}
-										variant="outlined"
-										fullWidth
-										name="password"
-										id="password"
-										autoComplete="current-password"
-										error={touched.password && Boolean(errors.password)}
-										helperText={touched.password && errors.password}
-										label={i18n.t("signup.form.password")}
-										type={showPassword ? 'text' : 'password'}
-										InputProps={{
-											endAdornment: (
-												<InputAdornment position="end">
-													<IconButton
-														aria-label="toggle password visibility"
-														onClick={() => setShowPassword((e) => !e)}
-													>
-														{showPassword ? <VisibilityOff /> : <Visibility />}
-													</IconButton>
-												</InputAdornment>
-											)
-										}}
-									/>
-								</Grid>
-							</Grid>
-							<Button
-								type="submit"
-								fullWidth
-								variant="contained"
-								color="primary"
-								className={classes.submit}
-							>
-								{i18n.t("signup.buttons.submit")}
-							</Button>
-							<Grid container justifyContent="flex-end">
-								<Grid item>
-									<Link
-										href="#"
-										variant="body2"
-										component={RouterLink}
-										to="/login"
-									>
-										{i18n.t("signup.buttons.login")}
-									</Link>
-								</Grid>
-							</Grid>
-						</Form>
-					)}
-				</Formik>
-			</div>
-			<Box mt={5}>{/* <Copyright /> */}</Box>
-		</Container>
-	);
+        <Formik initialValues={{ name: "", email: "", password: "" }} validationSchema={UserSchema} onSubmit={handleSignUp}>
+          {({ touched, errors, isSubmitting }) => (
+            <Form noValidate>
+              <Field
+                as={TextField}
+                name="name"
+                label={i18n.t("signup.form.name")}
+                variant="outlined"
+                margin="dense"
+                fullWidth
+                autoFocus
+                autoComplete="name"
+                error={touched.name && Boolean(errors.name)}
+                helperText={touched.name && errors.name}
+              />
+              <Field
+                as={TextField}
+                name="email"
+                type="email"
+                label={i18n.t("signup.form.email")}
+                variant="outlined"
+                margin="dense"
+                fullWidth
+                autoComplete="email"
+                error={touched.email && Boolean(errors.email)}
+                helperText={touched.email && errors.email}
+              />
+              <Field
+                as={TextField}
+                name="password"
+                label={i18n.t("signup.form.password")}
+                variant="outlined"
+                margin="dense"
+                fullWidth
+                autoComplete="new-password"
+                type={showPassword ? "text" : "password"}
+                error={touched.password && Boolean(errors.password)}
+                helperText={(touched.password && errors.password) || "Mínimo de 5 caracteres."}
+                InputProps={{
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <IconButton size="small" aria-label="mostrar ou ocultar senha" onClick={() => setShowPassword((v) => !v)}>
+                        {showPassword ? <VisibilityOff /> : <Visibility />}
+                      </IconButton>
+                    </InputAdornment>
+                  ),
+                }}
+              />
+              <Button type="submit" fullWidth variant="contained" color="primary" className={classes.submit} disabled={isSubmitting}>
+                {isSubmitting ? <CircularProgress size={20} color="inherit" /> : i18n.t("signup.buttons.submit")}
+              </Button>
+              <div className={classes.foot}>
+                <Link component={RouterLink} to="/login" underline="always">
+                  {i18n.t("signup.buttons.login")}
+                </Link>
+              </div>
+            </Form>
+          )}
+        </Formik>
+      </div>
+    </div>
+  );
 };
 
 export default SignUp;

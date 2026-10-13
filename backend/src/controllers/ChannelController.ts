@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import Whatsapp from "../models/Whatsapp";
 import AppError from "../errors/AppError";
 import { getConfig } from "../channels/types";
+import { whatsappProvider } from "../providers/WhatsApp";
 import { getPublicUrl } from "../helpers/PublicUrl";
 import { getSafetyStatus } from "../services/SafetyServices/SendGuard";
 
@@ -78,6 +79,16 @@ export const info = async (req: Request, res: Response): Promise<Response> => {
     out.snippet = `<script src="${publicUrl}/webchat/widget.js?token=${token}" async></script>`;
   }
   return res.json(out);
+};
+
+export const groups = async (req: Request, res: Response): Promise<Response> => {
+  const whatsapp = await Whatsapp.findByPk(req.params.whatsappId);
+  if (!whatsapp) throw new AppError("ERR_NO_WAPP_FOUND", 404);
+  if ((whatsapp.channel || "whatsapp") !== "whatsapp" || !whatsappProvider.listGroups) {
+    return res.json({ supported: false, groups: [] });
+  }
+  if (whatsapp.status !== "CONNECTED") throw new AppError("ERR_WAPP_NOT_INITIALIZED", 400);
+  return res.json({ supported: true, groups: await whatsappProvider.listGroups(whatsapp.id) });
 };
 
 export const safety = async (req: Request, res: Response): Promise<Response> => {

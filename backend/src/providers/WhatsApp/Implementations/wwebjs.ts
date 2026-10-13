@@ -410,6 +410,19 @@ const sendTyping = async (sessionId: number, chatId: string): Promise<void> => {
   }
 };
 
+const listGroups = async (sessionId: number) => {
+  const wbot = getWbot(sessionId);
+  const chats = await wbot.getChats();
+  return chats
+    .filter(chat => chat.isGroup)
+    .map((chat: any) => ({
+      id: String(chat.id.user),
+      name: chat.name || chat.id.user,
+      participants: (chat.participants || []).length
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+};
+
 const sendReaction = async (
   sessionId: number,
   chatId: string,
@@ -685,6 +698,7 @@ export const WhatsappWebJsProvider: WhatsappProvider = {
   getContacts,
   sendSeen,
   sendTyping,
+  listGroups,
   sendReaction,
   fetchChatMessages
 };

@@ -101,6 +101,9 @@ const WhatsAppModal = ({ open, onClose, whatsAppId }) => {
 	const [channels, setChannels] = useState([]);
 	const [info, setInfo] = useState(null);
 	const [safety, setSafety] = useState(null);
+	const [groupList, setGroupList] = useState(null);
+	const [allowed, setAllowed] = useState([]);
+	const [loadingGroups, setLoadingGroups] = useState(false);
 	const [saving, setSaving] = useState(false);
 
 	useEffect(() => {
@@ -117,6 +120,11 @@ const WhatsAppModal = ({ open, onClose, whatsAppId }) => {
 				setConfig(parse(data.config, {}));
 				setHours(parse(data.businessHours, defaultHours()));
 				setSelectedQueueIds(data.queues?.map(queue => queue.id) || []);
+				try {
+					setAllowed(data.allowedGroups ? JSON.parse(data.allowedGroups) : []);
+				} catch (e) {
+					setAllowed([]);
+				}
 				if (data.channel !== "whatsapp") {
 					api.get(`/channels/${whatsAppId}/info`).then(({ data: i }) => setInfo(i)).catch(() => {});
 				} else {
@@ -140,6 +148,20 @@ const WhatsAppModal = ({ open, onClose, whatsAppId }) => {
 		setSelectedQueueIds([]);
 		setInfo(null);
 		setSafety(null);
+		setGroupList(null);
+		setAllowed([]);
+	};
+
+	const loadGroups = async () => {
+		setLoadingGroups(true);
+		try {
+			const { data } = await api.get(`/channels/${whatsAppId}/groups`);
+			setGroupList(data.groups);
+			if (!data.supported) toast.info("Este canal não lista grupos.");
+		} catch (err) {
+			toastError(err);
+		}
+		setLoadingGroups(false);
 	};
 
 	const handleSave = async () => {
@@ -154,6 +176,8 @@ const WhatsAppModal = ({ open, onClose, whatsAppId }) => {
 			farewellMessage: whatsApp.farewellMessage,
 			outOfHoursMessage: whatsApp.outOfHoursMessage,
 			riskMode: whatsApp.riskMode,
+			groupsMode: whatsApp.groupsMode || "off",
+			allowedGroups: allowed,
 			businessHours: JSON.stringify(hours),
 			queueIds: selectedQueueIds,
 		};
@@ -264,6 +288,68 @@ const WhatsAppModal = ({ open, onClose, whatsAppId }) => {
 								Número conectado há {safety.ageDays} dia(s) · campanhas hoje: {safety.sentToday}/{safety.dailyLimit} ·
 								falhas seguidas: {safety.failuresInRow} · máximo {safety.perMinute} msgs/min
 							</Typography>
+						)}
+					</div>
+				)}
+
+				{(whatsApp.channel || "whatsapp") === "whatsapp" && (
+					<div className={classes.section}>
+						<Typography variant="subtitle2">Grupos do WhatsApp</Typography>
+						<TextField
+							select
+							fullWidth
+							variant="outlined"
+							margin="dense"
+							label="Receber mensagens de grupos"
+							value={whatsApp.groupsMode || "off"}
+							onChange={e => setWhatsApp({ ...whatsApp, groupsMode: e.target.value })}
+							helperText={
+								{
+									off: "Recomendado: grupos pessoais e de promoções não entram no atendimento.",
+									selected: "Só os grupos marcados abaixo viram conversas (ex.: grupos de alunos ou de tutores).",
+									all: "Todos os grupos do número viram conversas. Pode lotar a caixa de entrada.",
+								}[whatsApp.groupsMode || "off"]
+							}
+						>
+							<MenuItem value="off">Nenhum grupo</MenuItem>
+							<MenuItem value="selected">Somente grupos escolhidos</MenuItem>
+							<MenuItem value="all">Todos os grupos</MenuItem>
+						</TextField>
+						{(whatsApp.groupsMode || "off") === "selected" && (
+							<div style={{ marginTop: 6 }}>
+								{!whatsAppId ? (
+									<Typography variant="caption">Salve a conexão e conecte o número para escolher os grupos.</Typography>
+								) : (
+									<Button size="small" variant="outlined" onClick={loadGroups} disabled={loadingGroups}>
+										{loadingGroups ? <CircularProgress size={16} /> : groupList ? "Atualizar lista de grupos" : "Carregar meus grupos"}
+									</Button>
+								)}
+								{groupList && groupList.length === 0 && (
+									<Typography variant="caption" display="block" style={{ marginTop: 6 }}>Nenhum grupo encontrado neste número.</Typography>
+								)}
+								{groupList && groupList.length > 0 && (
+									<div style={{ maxHeight: 220, overflowY: "auto", marginTop: 8, border: "1px solid rgba(128,128,128,.25)", borderRadius: 10 }}>
+										{groupList.map(g => (
+											<FormControlLabel
+												key={g.id}
+												style={{ display: "flex", margin: 0, padding: "2px 10px" }}
+												control={
+													<Switch
+														size="small"
+														color="primary"
+														checked={allowed.includes(g.id)}
+														onChange={e => setAllowed(a => (e.target.checked ? [...a, g.id] : a.filter(x => x !== g.id)))}
+													/>
+												}
+												label={`${g.name} (${g.participants})`}
+											/>
+										))}
+									</div>
+								)}
+								{allowed.length > 0 && (
+									<Typography variant="caption" display="block" style={{ marginTop: 6 }}>{allowed.length} grupo(s) escolhido(s).</Typography>
+								)}
+							</div>
 						)}
 					</div>
 				)}

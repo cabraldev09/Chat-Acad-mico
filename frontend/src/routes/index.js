@@ -63,7 +63,7 @@ const Routes = () => {
               </LoggedInLayout>
             </WhatsAppsProvider>
           </Switch>
-          <ToastContainer autoClose={3000} />
+          <ToastContainer position="top-right" autoClose={4500} newestOnTop pauseOnHover draggable closeOnClick limit={4} />
         </ThemeProvider>
       </AuthProvider>
     </BrowserRouter>

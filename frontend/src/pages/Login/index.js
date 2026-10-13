@@ -4,12 +4,11 @@ import { Button, TextField, Typography, InputAdornment, IconButton, Link } from 
 import { makeStyles, useTheme } from "@material-ui/core/styles";
 import { Visibility, VisibilityOff } from "@material-ui/icons";
 import { Bot, Megaphone, BarChart3, MessageCircle, Check } from "lucide-react";
-import { TelegramBrand } from "../../icons/brands";
+import { WhatsAppBrand } from "../../icons/brands";
+import BrandLogo from "../../components/BrandLogo";
 
 import { i18n } from "../../translate/i18n";
 import { AuthContext } from "../../context/Auth/AuthContext";
-import logoBlack from "../../assets/whaticket-logo-black.png";
-import logoWhite from "../../assets/whaticket-logo-white.png";
 
 const useStyles = makeStyles((theme) => ({
   root: {
@@ -100,7 +99,7 @@ const useStyles = makeStyles((theme) => ({
     boxShadow: "0 24px 60px -24px rgba(11,66,121,.28)",
     animation: "page-in .5s var(--ease-out) both",
   },
-  mobileLogo: { height: 28, marginBottom: theme.spacing(3), display: "none", [theme.breakpoints.down("sm")]: { display: "block" } },
+  mobileLogo: { margin: "0 auto", marginBottom: theme.spacing(3), display: "none", [theme.breakpoints.down("sm")]: { display: "block" } },
   title: { fontSize: 26, fontWeight: 600, letterSpacing: "-0.02em" },
   subtitle: { color: theme.palette.text.secondary, marginTop: 4, marginBottom: theme.spacing(3) },
   submit: { marginTop: theme.spacing(3), height: 44, fontSize: 15 },
@@ -135,7 +134,6 @@ const Login = () => {
     handleLogin(user);
   };
 
-  const logo = theme.palette.type === "dark" ? logoWhite : logoBlack;
 
   return (
     <div className={classes.root}>
@@ -145,13 +143,13 @@ const Login = () => {
         <div className={classes.blob} style={{ width: 300, height: 300, right: -60, bottom: -40, background: "#FEF84C", opacity: 0.16, animationDelay: "-6s" }} />
         <div className={classes.spot} />
 
-        <img src={logoWhite} alt="Whaticket" className={classes.logo} />
+        <BrandLogo tone="white" height={52} />
 
         <div className={classes.bubbles} aria-hidden>
           <div className={classes.bubble} style={{ animationDelay: ".4s" }}>Oi! Preciso da segunda via do boleto 🙏</div>
           <div className={`${classes.bubble} ${classes.bubbleMine}`} style={{ animationDelay: ".9s" }}>Claro! Já te envio por aqui mesmo.</div>
           <div className={classes.bubble} style={{ animationDelay: "1.4s", display: "flex", alignItems: "center", gap: 6 }}>
-            <TelegramBrand size={14} /> Telegram · <Check size={14} /> resolvido
+            <WhatsAppBrand size={16} /> WhatsApp · <Check size={14} /> resolvido
           </div>
         </div>
 
@@ -173,7 +171,7 @@ const Login = () => {
       <section className={classes.formSide}>
         <div className="beam" style={{ width: "100%", maxWidth: 400 }}>
           <form className={classes.card} noValidate onSubmit={handlSubmit}>
-            <img src={logo} alt="Whaticket" className={classes.mobileLogo} />
+            <BrandLogo tone={theme.palette.type === "dark" ? "white" : "color"} height={64} className={classes.mobileLogo} />
             <Typography component="h1" className={classes.title}>{i18n.t("login.title")}</Typography>
             <Typography className={classes.subtitle}>Acesse o painel de atendimento.</Typography>
             <TextField

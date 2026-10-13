@@ -37,6 +37,8 @@ export interface WhatsappProvider {
   sendSeen(sessionId: number, chatId: string): Promise<void>;
   // shows "typing…" to the contact (optional, used to humanize bot replies)
   sendTyping?(sessionId: number, chatId: string): Promise<void>;
+  // groups this connection belongs to (used to pick which ones become conversations)
+  listGroups?(sessionId: number): Promise<{ id: string; name: string; participants: number }[]>;
   // reacts to a message with an emoji ("" removes the reaction)
   sendReaction?(
     sessionId: number,

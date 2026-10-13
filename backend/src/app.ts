@@ -44,7 +44,8 @@ const publicLimiter = rateLimit({ windowMs: 60 * 1000, max: 120 });
 const webhookLimiter = rateLimit({ windowMs: 60 * 1000, max: 600 });
 app.use("/auth/login", loginLimiter);
 app.use("/auth/signup", loginLimiter);
-app.use("/auth/refresh_token", loginLimiter);
+// every page load renews the session, so this one is far more generous
+app.use("/auth/refresh_token", rateLimit({ windowMs: 15 * 60 * 1000, max: 400 }));
 
 // Public endpoints (embedded web chat, provider webhooks): no cookies, any origin
 app.use("/webchat", publicLimiter, cors({ origin: true }), express.json(), webchatRoutes);

@@ -2,7 +2,7 @@ const messages = {
   pt: {
     translations: {
       signup: {
-        title: "Cadastre-se",
+        title: "Criar conta",
         toasts: {
           success: "Usuário criado com sucesso! Faça seu login!!!.",
           fail: "Erro ao criar usuário. Verifique os dados informados.",
@@ -25,7 +25,7 @@ const messages = {
         },
         buttons: {
           submit: "Entrar",
-          register: "Não tem um conta? Cadastre-se!",
+          register: "Ainda não tem conta? Cadastre-se",
         },
       },
       auth: {

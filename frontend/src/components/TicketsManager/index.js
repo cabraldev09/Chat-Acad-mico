@@ -132,7 +132,7 @@ const TicketsManager = () => {
   const { user } = useContext(AuthContext);
   const [openCount, setOpenCount] = useState(0);
   const [pendingCount, setPendingCount] = useState(0);
-  const userQueueIds = user.queues.map((q) => q.id);
+  const userQueueIds = (user.queues || []).map((q) => q.id);
   const [selectedQueueIds, setSelectedQueueIds] = useState(userQueueIds || []);
   const isAdmin = user.profile.toUpperCase() === "ADMIN";
 
@@ -244,6 +244,7 @@ const TicketsManager = () => {
           {chip("open", "Atendendo", openCount)}
           {chip("pending", "Aguardando", pendingCount)}
           {chip("unread", "Não lidas", 0)}
+          {chip("groups", "Grupos", 0)}
           {chip("closed", "Resolvidas", 0)}
         </div>
       )}
@@ -255,12 +256,15 @@ const TicketsManager = () => {
           <>
             {/* both live lists stay mounted so counters and sockets keep updating */}
             <div style={{ display: filter === "open" ? "flex" : "none", flex: 1, minHeight: 0 }}>
-              <TicketsList status="open" showAll={showAllTickets} selectedQueueIds={selectedQueueIds}
+              <TicketsList status="open" groups="exclude" showAll={showAllTickets} selectedQueueIds={selectedQueueIds}
                 updateCount={(v) => setOpenCount(v)} />
             </div>
             <div style={{ display: filter === "pending" ? "flex" : "none", flex: 1, minHeight: 0 }}>
-              <TicketsList status="pending" selectedQueueIds={selectedQueueIds} updateCount={(v) => setPendingCount(v)} />
+              <TicketsList status="pending" groups="exclude" selectedQueueIds={selectedQueueIds} updateCount={(v) => setPendingCount(v)} />
             </div>
+            {filter === "groups" && (
+              <TicketsList groups="only" showAll={true} selectedQueueIds={selectedQueueIds} />
+            )}
             {filter === "unread" && (
               <TicketsList withUnreadMessages showAll={showAllTickets} selectedQueueIds={selectedQueueIds} />
             )}

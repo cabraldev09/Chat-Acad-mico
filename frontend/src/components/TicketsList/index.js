@@ -159,7 +159,7 @@ const reducer = (state, action) => {
 };
 
 	const TicketsList = (props) => {
-		const { status, searchParam, showAll, selectedQueueIds, updateCount, style, withUnreadMessages } =
+		const { status, searchParam, showAll, selectedQueueIds, updateCount, style, withUnreadMessages, groups } =
 			props;
 	const classes = useStyles();
 	const [pageNumber, setPageNumber] = useState(1);
@@ -169,7 +169,7 @@ const reducer = (state, action) => {
 	useEffect(() => {
 		dispatch({ type: "RESET" });
 		setPageNumber(1);
-	}, [status, searchParam, dispatch, showAll, selectedQueueIds, withUnreadMessages]);
+	}, [status, searchParam, dispatch, showAll, selectedQueueIds, withUnreadMessages, groups]);
 
 	const { tickets, hasMore, loading } = useTickets({
 		pageNumber,
@@ -177,11 +177,12 @@ const reducer = (state, action) => {
 		status,
 		showAll,
 		withUnreadMessages: withUnreadMessages ? "true" : undefined,
+		groups,
 		queueIds: JSON.stringify(selectedQueueIds),
 	});
 
 	useEffect(() => {
-		if (!status && !searchParam && !withUnreadMessages) return;
+		if (!status && !searchParam && !withUnreadMessages && !groups) return;
 		dispatch({
 			type: "LOAD_TICKETS",
 			payload: tickets,
@@ -191,7 +192,11 @@ const reducer = (state, action) => {
 	useEffect(() => {
 		const socket = openSocket();
 
-		const shouldUpdateTicket = ticket => !searchParam &&
+		// "only": just groups; "exclude": private chats only
+		const groupOk = ticket =>
+			groups === "only" ? !!ticket.isGroup : groups === "exclude" ? !ticket.isGroup : true;
+
+		const shouldUpdateTicket = ticket => !searchParam && groupOk(ticket) &&
 			(!ticket.userId || ticket.userId === user?.id || showAll) &&
 			(!ticket.queueId || selectedQueueIds.indexOf(ticket.queueId) > -1);
 
@@ -258,7 +263,7 @@ const reducer = (state, action) => {
 		return () => {
 			socket.disconnect();
 		};
-	}, [status, searchParam, showAll, user, selectedQueueIds]);
+	}, [status, searchParam, showAll, user, selectedQueueIds, groups]);
 
 	useEffect(() => {
     if (typeof updateCount === "function") {

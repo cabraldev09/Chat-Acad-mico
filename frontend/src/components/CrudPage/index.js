@@ -250,7 +250,14 @@ const CrudPage = ({
                 onChange={(e) => set(f.name, e.target.checked)}
               />
             }
-            label={f.label}
+            label={
+              <span>
+                {f.label}{" "}
+                <b style={{ color: values[f.name] ? "#15803d" : "#64748b", fontSize: 12, marginLeft: 4 }}>
+                  {values[f.name] ? f.onLabel || "• ligado" : f.offLabel || "• desligado"}
+                </b>
+              </span>
+            }
           />
           {f.helper && <Typography variant="caption" display="block" className={classes.hint}>{f.helper}</Typography>}
         </div>
@@ -316,13 +323,32 @@ const CrudPage = ({
         />
       );
     }
+    if (f.type === "combo") {
+      // pick from the list or type a new value
+      return (
+        <Autocomplete
+          key={f.name}
+          freeSolo
+          options={f.options || []}
+          value={values[f.name] || ""}
+          onChange={(e, v) => set(f.name, v || "")}
+          onInputChange={(e, v, reason) => reason === "input" && set(f.name, v)}
+          renderInput={(params) => (
+            <TextField {...params} label={f.label} variant="outlined" margin="dense" fullWidth helperText={f.helper || "Escolha na lista ou digite uma nova"} required={f.required} />
+          )}
+        />
+      );
+    }
     if (f.type === "select" || f.type === "multiselect") {
       const multi = f.type === "multiselect";
+      const empty = !(f.options || []).length;
       return (
         <TextField
           {...common}
           select
-          SelectProps={{ multiple: multi }}
+          helperText={empty ? f.emptyText || "Nada cadastrado ainda." : f.helper}
+          disabled={empty && !!f.disableWhenEmpty}
+          SelectProps={{ multiple: multi, displayEmpty: true }}
           value={values[f.name] === null || values[f.name] === undefined ? "" : values[f.name]}
           onChange={(e) => set(f.name, e.target.value)}
         >

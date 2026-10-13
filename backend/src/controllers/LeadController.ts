@@ -9,6 +9,7 @@ import Lead from "../models/Lead";
 import LeadStage from "../models/LeadStage";
 import LeadActivity from "../models/LeadActivity";
 import LeadTask from "../models/LeadTask";
+import Institution from "../models/Institution";
 import Course from "../models/Course";
 import User from "../models/User";
 import Contact from "../models/Contact";
@@ -435,25 +436,68 @@ export const backfill = async (_req: Request, res: Response): Promise<Response> 
   return res.json(await backfillLeads());
 };
 
+const yes = (v: any, fallback = true): boolean => {
+  if (v === undefined || v === null || String(v).trim() === "") return fallback;
+  return !["0", "nao", "não", "n", "false", "inativo", "no"].includes(String(v).trim().toLowerCase());
+};
+
+const MODALITIES = ["Presencial", "EAD", "Semipresencial"];
+const normalizeModality = (v: any): string | null => {
+  const t = String(v || "").trim();
+  if (!t) return null;
+  const hit = MODALITIES.find(m => m.toLowerCase() === t.toLowerCase().replace("semi presencial", "semipresencial"));
+  if (hit) return hit;
+  if (/semi/i.test(t)) return "Semipresencial";
+  if (/dist|ead|online/i.test(t)) return "EAD";
+  if (/presen/i.test(t)) return "Presencial";
+  return t;
+};
+
+// body: { items: [{ name, category, level, modality, monthlyFee, semesters, active, institution }], institutionId, dryRun }
+// Returns one row per line (new | update | error) so the wizard can show a preview.
 export const importCourses = async (req: Request, res: Response): Promise<Response> => {
-  const items: any[] = Array.isArray(req.body.items) ? req.body.items.slice(0, 2000) : [];
+  const items: any[] = Array.isArray(req.body.items) ? req.body.items.slice(0, 3000) : [];
+  const dryRun = Boolean(req.body.dryRun);
+  const institutions = await Institution.findAll();
+  const rows: any[] = [];
   let created = 0;
   let updated = 0;
-  const errors: string[] = [];
   for (const [i, it] of items.entries()) {
+    const line = i + 1;
     const name = String(it.name || "").trim();
-    if (!name) { errors.push(`Linha ${i + 1}: sem nome`); continue; }
-    const fee = it.monthlyFee === undefined || it.monthlyFee === "" ? null : Number(String(it.monthlyFee).replace(/\./g, "").replace(",", "."));
-    if (fee !== null && Number.isNaN(fee)) { errors.push(`Linha ${i + 1}: mensalidade inválida`); continue; }
+    if (!name) { rows.push({ line, status: "error", error: "Falta o nome do curso", name: "" }); continue; }
+    const rawFee = it.monthlyFee === undefined || it.monthlyFee === "" || it.monthlyFee === null ? null : it.monthlyFee;
+    const fee =
+      rawFee === null
+        ? null
+        : typeof rawFee === "number"
+        ? rawFee
+        : Number(String(rawFee).replace(/[^\d.,-]/g, "").replace(/\.(?=\d{3}(\D|$))/g, "").replace(",", "."));
+    if (fee !== null && (Number.isNaN(fee) || fee < 0)) { rows.push({ line, status: "error", error: "Mensalidade inválida", name }); continue; }
+    const semesters = it.semesters === undefined || it.semesters === "" ? 8 : Number(it.semesters);
+    if (!Number.isInteger(semesters) || semesters < 1 || semesters > 20) { rows.push({ line, status: "error", error: "Semestres deve ser um número de 1 a 20", name }); continue; }
+    let institutionId = req.body.institutionId ? Number(req.body.institutionId) : null;
+    if (it.institution) {
+      const inst = institutions.find(x => x.name.toLowerCase() === String(it.institution).trim().toLowerCase());
+      if (!inst) { rows.push({ line, status: "error", error: `Instituição "${it.institution}" não cadastrada`, name }); continue; }
+      institutionId = inst.id;
+    }
     const data: any = {
-      name, category: it.category || null, level: it.level || null, modality: it.modality || null,
-      monthlyFee: fee, semesters: Number(it.semesters) || 8, institutionId: req.body.institutionId || null, active: true
+      name, category: String(it.category || "").trim() || null, level: String(it.level || "").trim() || null,
+      modality: normalizeModality(it.modality), monthlyFee: fee, semesters, institutionId, active: yes(it.active)
     };
     // eslint-disable-next-line no-await-in-loop
-    const existing = await Course.findOne({ where: { name, category: data.category } });
-    if (existing) { await existing.update(data); updated += 1; } else { await Course.create(data); created += 1; }
+    const existing = await Course.findOne({ where: { name, category: data.category, modality: data.modality } });
+    if (!dryRun) {
+      // eslint-disable-next-line no-await-in-loop
+      if (existing) await existing.update(data);
+      // eslint-disable-next-line no-await-in-loop
+      else await Course.create(data);
+    }
+    if (existing) updated += 1; else created += 1;
+    rows.push({ line, status: existing ? "update" : "new", ...data });
   }
-  return res.json({ created, updated, errors: errors.slice(0, 20) });
+  return res.json({ created, updated, errors: rows.filter(r => r.status === "error").length, rows, dryRun });
 };
 
 export const options = async (_req: Request, res: Response): Promise<Response> => {

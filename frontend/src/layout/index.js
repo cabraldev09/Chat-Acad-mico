@@ -23,8 +23,7 @@ import BackdropLoading from "../components/BackdropLoading";
 import CrmReminders from "../components/CrmReminders";
 import { i18n } from "../translate/i18n";
 import { useThemeContext } from "../context/DarkMode";
-import logoLight from "../assets/whaticket-logo-black.png";
-import logoDark from "../assets/whaticket-logo-white.png";
+import BrandLogo from "../components/BrandLogo";
 
 const drawerWidth = 264;
 const drawerCollapsedWidth = 72;
@@ -186,11 +185,7 @@ const LoggedInLayout = ({ children }) => {
           >
             {drawerOpen ? <MenuOpenIcon /> : <MenuIcon />}
           </IconButton>
-          <img
-            src={darkMode ? logoDark : logoLight}
-            alt="Whaticket"
-            className={classes.logo}
-          />
+          <BrandLogo tone={darkMode ? "white" : "color"} height={40} style={{ alignSelf: "center" }} />
           <div className={classes.grow} />
 
           <IconButton

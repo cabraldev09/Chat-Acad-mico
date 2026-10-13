@@ -19,6 +19,8 @@ interface WhatsappData {
   businessHours?: string;
   outOfHoursMessage?: string;
   riskMode?: string;
+  groupsMode?: string;
+  allowedGroups?: string[];
 }
 
 interface Request {
@@ -52,6 +54,8 @@ const UpdateWhatsAppService = async ({
     businessHours,
     outOfHoursMessage,
     riskMode,
+    groupsMode,
+    allowedGroups,
     queueIds = []
   } = whatsappData;
 
@@ -67,6 +71,10 @@ const UpdateWhatsAppService = async ({
 
   if (riskMode !== undefined && !["strict", "relaxed"].includes(riskMode)) {
     throw new AppError("ERR_INVALID_RISK_MODE", 400);
+  }
+
+  if (groupsMode !== undefined && !["off", "selected", "all"].includes(groupsMode)) {
+    throw new AppError("ERR_INVALID_GROUPS_MODE", 400);
   }
 
   let oldDefaultWhatsapp: Whatsapp | null = null;
@@ -95,7 +103,9 @@ const UpdateWhatsAppService = async ({
     config: mergedConfig,
     businessHours,
     outOfHoursMessage,
-    riskMode
+    riskMode,
+    groupsMode,
+    allowedGroups: allowedGroups === undefined ? undefined : JSON.stringify(allowedGroups.map(String))
   });
 
   await AssociateWhatsappQueue(whatsapp, queueIds);

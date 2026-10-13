@@ -19,6 +19,7 @@ import CreateContactService from "../services/ContactServices/CreateContactServi
 
 import RunInboundAutomation from "../services/AutomationServices/RunInboundAutomation";
 import { PUBLIC_DIR } from "../config/paths";
+import Whatsapp from "../models/Whatsapp";
 import processOptOut from "../services/SafetyServices/OptOut";
 import { MessageType, MessageAck } from "../providers/WhatsApp/types";
 
@@ -151,6 +152,20 @@ export const handleMessage = async (
   mediaPayload?: MediaPayload
 ): Promise<void> => {
   try {
+    // groups only become conversations when the connection allows them
+    if (contextPayload.groupContact) {
+      const wapp = await Whatsapp.findByPk(contextPayload.whatsappId, { attributes: ["groupsMode", "allowedGroups"] });
+      const mode = wapp?.groupsMode || "off";
+      let allowed: string[] = [];
+      try {
+        allowed = wapp?.allowedGroups ? JSON.parse(wapp.allowedGroups) : [];
+      } catch (e) {
+        allowed = [];
+      }
+      const id = String(contextPayload.groupContact.number);
+      if (mode === "off" || (mode === "selected" && !allowed.includes(id))) return;
+    }
+
     const processedMessage = processLocationMessage(messagePayload);
 
     const contact = await CreateOrUpdateContactService({

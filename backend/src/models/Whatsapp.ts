@@ -80,6 +80,14 @@ class Whatsapp extends Model<Whatsapp> {
   @Column
   connectedSince: Date;
 
+  // off | selected | all: which WhatsApp groups become conversations
+  @Default("off")
+  @Column
+  groupsMode: string;
+
+  @Column(DataType.TEXT)
+  allowedGroups: string;
+
   @CreatedAt
   createdAt: Date;
 

@@ -10,6 +10,7 @@ import CrudPage from "../../components/CrudPage";
 import MainContainer from "../../components/MainContainer";
 import MainHeader from "../../components/MainHeader";
 import Title from "../../components/Title";
+import ImportWizard from "../../components/ImportWizard";
 import ColorSwatchPicker from "../../components/ColorSwatchPicker";
 import api from "../../services/api";
 import { getBackendUrl } from "../../config";
@@ -186,50 +187,43 @@ const Automation = ({ s, setS, save, users }) => {
   );
 };
 
-const parseCourses = (text) => {
-  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-  if (!lines.length) return [];
-  const delim = [";", "\t", ","].find((d) => lines[0].includes(d)) || ";";
-  const split = (l) => l.split(delim).map((c) => c.trim().replace(/^"|"$/g, ""));
-  const H = { nome: "name", curso: "name", name: "name", categoria: "category", nivel: "level", "nível": "level", modalidade: "modality", mensalidade: "monthlyFee", valor: "monthlyFee", semestres: "semesters", duracao: "semesters", "duração": "semesters" };
-  const first = split(lines[0]).map((h) => H[h.toLowerCase()]);
-  const hasHeader = first.some(Boolean);
-  const cols = hasHeader ? first : ["name", "category", "modality", "monthlyFee", "semesters"];
-  return lines.slice(hasHeader ? 1 : 0).map((l) => { const row = {}; split(l).forEach((v, i) => { if (cols[i] && v) row[cols[i]] = v; }); return row; });
-};
+const COURSE_COLUMNS = [
+  { key: "name", label: "Nome do curso", required: true, aliases: ["curso", "nome"], hint: "Nome como aparece na proposta. Ex.: Administração" },
+  { key: "category", label: "Categoria", aliases: ["tipo"], hint: "Ex.: Graduação, Pós-graduação, Segunda graduação, Técnico" },
+  { key: "level", label: "Nível", hint: "Bacharelado, Licenciatura, Tecnólogo, Pós-graduação, MBA, Técnico ou Extensão" },
+  { key: "modality", label: "Modalidade", aliases: ["modalidade de ensino"], hint: "EAD, Semipresencial ou Presencial" },
+  { key: "monthlyFee", label: "Mensalidade bruta", aliases: ["mensalidade", "valor", "preco"], hint: "Valor cheio, sem bolsa. Ex.: 1073,80" },
+  { key: "semesters", label: "Semestres", aliases: ["duracao", "periodos"], hint: "Duração do curso em semestres (1 a 20). Vazio = 8" },
+  { key: "institution", label: "Instituição", aliases: ["faculdade", "universidade"], hint: "Nome exato de uma instituição já cadastrada (opcional)" },
+  { key: "active", label: "Ativo", hint: "Sim ou Não. Vazio = Sim" },
+];
 
-const CourseImport = ({ open, onClose, onDone, institutions }) => {
-  const [text, setText] = useState("");
-  const [inst, setInst] = useState("");
-  const [report, setReport] = useState(null);
-  const run = async () => {
+const COURSE_EXAMPLES = [
+  { name: "Administração (exemplo)", category: "Graduação", level: "Bacharelado", modality: "EAD", monthlyFee: "1073,80", semesters: 8, institution: "", active: "Sim" },
+  { name: "Direito (exemplo)", category: "Graduação", level: "Bacharelado", modality: "Presencial", monthlyFee: "1290,00", semesters: 10, institution: "", active: "Sim" },
+  { name: "Gestão Ambiental (exemplo)", category: "Graduação", level: "Tecnólogo", modality: "Semipresencial", monthlyFee: "756,30", semesters: 4, institution: "", active: "Não" },
+];
+
+const ActiveToggle = ({ row: course, endpoint = "/courses", label = "curso" }) => {
+  const [on, setOn] = useState(!!course.active);
+  const [busy, setBusy] = useState(false);
+  const change = async (e) => {
+    const next = e.target.checked;
+    setBusy(true);
     try {
-      const { data } = await api.post("/courses/import", { items: parseCourses(text), institutionId: inst || undefined });
-      setReport(data); toast.success(`${data.created} cursos novos, ${data.updated} atualizados`); onDone();
-    } catch (err) { toastError(err); }
+      await api.put(`${endpoint}/${course.id}`, { ...course, active: next });
+      setOn(next);
+      toast.success(next ? `Ativado: ${course.name}` : `Desativado: ${course.name}`);
+    } catch (err) {
+      toastError(err);
+    }
+    setBusy(false);
   };
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>Importar catálogo de cursos</DialogTitle>
-      <DialogContent>
-        <Typography variant="body2" color="textSecondary" gutterBottom>
-          Cole as linhas ou envie um .csv com: nome; categoria; modalidade; mensalidade; semestres. Ex.: <i>Administração;Graduação;EAD;1073,80;8</i>.
-          Cursos com o mesmo nome e categoria são atualizados.
-        </Typography>
-        <TextField select fullWidth size="small" variant="outlined" label="Instituição dos cursos" value={inst} onChange={(e) => setInst(e.target.value)} style={{ marginBottom: 8 }}>
-          <MenuItem value="">—</MenuItem>{institutions.map((i) => (<MenuItem key={i.id} value={i.id}>{i.name}</MenuItem>))}
-        </TextField>
-        <TextField fullWidth multiline rows={7} variant="outlined" value={text} onChange={(e) => setText(e.target.value)} placeholder={"Administração;Graduação;EAD;1073,80;8\nDireito;Graduação;Presencial;1290,00;10"} />
-        <Button component="label" size="small" variant="outlined" style={{ marginTop: 8 }}>Escolher arquivo CSV
-          <input hidden type="file" accept=".csv,.txt" onChange={async (e) => { const f = e.target.files[0]; if (f) setText(await f.text()); e.target.value = ""; }} /></Button>
-        {text && <Typography variant="caption" style={{ marginLeft: 8 }}>{parseCourses(text).length} linhas</Typography>}
-        {report && <Typography variant="body2" style={{ marginTop: 10 }}><b>{report.created}</b> novos · <b>{report.updated}</b> atualizados{report.errors.length ? ` · ${report.errors.length} com erro (${report.errors[0]})` : ""}</Typography>}
-      </DialogContent>
-      <DialogActions>
-        <Button variant="outlined" color="secondary" onClick={onClose}>Fechar</Button>
-        <Button variant="contained" color="primary" disabled={!text.trim()} onClick={run}>Importar</Button>
-      </DialogActions>
-    </Dialog>
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+      <Switch size="small" color="primary" checked={on} disabled={busy} onChange={change} />
+      <b style={{ fontSize: 12, color: on ? "#15803d" : "#64748b" }}>{on ? "Ativo" : "Inativo"}</b>
+    </span>
   );
 };
 
@@ -242,6 +236,7 @@ const CrmSettings = () => {
   const [stages, setStages] = useState([]);
   const [importOpen, setImportOpen] = useState(false);
   const [reload, setReload] = useState(0);
+  const [categories, setCategories] = useState(["Graduação", "Pós-graduação", "Segunda graduação", "Técnico", "Extensão", "Livre"]);
 
   const load = () => api.get("/crm/settings").then(({ data }) => setS(data)).catch(toastError);
   useEffect(() => {
@@ -250,6 +245,10 @@ const CrmSettings = () => {
     api.get("/crm/options").then(({ data }) => setOptions(data));
     api.get("/institutions").then(({ data }) => setInstitutions(data)).catch(() => {});
     api.get("/lead-stages").then(({ data }) => setStages(data)).catch(() => {});
+    api.get("/courses").then(({ data }) => {
+      const rows = Array.isArray(data) ? data : data.rows || data.courses || [];
+      setCategories((prev) => [...new Set([...prev, ...rows.map((c) => c.category).filter(Boolean)])].sort((a, b) => a.localeCompare(b, "pt-BR")));
+    }).catch(() => {});
   }, [tab, reload]);
   const save = async (patch) => {
     try { const { data } = await api.put("/crm/settings", patch); setS(data); toast.success("Salvo"); } catch (err) { toastError(err); }
@@ -285,13 +284,27 @@ const CrmSettings = () => {
         )}
         {tab === 1 && (
           <>
-            <CourseImport open={importOpen} onClose={() => setImportOpen(false)} institutions={institutions} onDone={() => setReload((r) => r + 1)} />
+            <ImportWizard
+              open={importOpen}
+              onClose={() => setImportOpen(false)}
+              onDone={() => setReload((r) => r + 1)}
+              title="Importar catálogo de cursos"
+              endpoint="/courses/import"
+              templateName="modelo-cursos"
+              columns={COURSE_COLUMNS}
+              examples={COURSE_EXAMPLES}
+              instructions={[
+                "Cursos com o mesmo nome, categoria e modalidade são atualizados em vez de duplicados.",
+                "Mensalidade aceita 1073,80 ou 1.073,80. Ativo aceita Sim/Não.",
+                "Você confere tudo (e os erros linha a linha) antes de importar.",
+              ]}
+            />
             <CrudPage embedded title="Cursos" endpoint="/courses" addLabel="Novo curso" socketEvent="course" reloadKey={reload}
               emptyText="Cadastre os cursos (ou importe o catálogo) para gerar propostas com a mensalidade certa."
               headerExtra={<Button variant="outlined" startIcon={<Upload size={16} />} onClick={() => setImportOpen(true)}>Importar catálogo</Button>}
               fields={[
                 { name: "name", label: "Nome do curso", required: true },
-                { name: "category", label: "Categoria (ex.: Graduação)" },
+                { name: "category", label: "Categoria", type: "combo", options: categories },
                 { name: "level", label: "Nível", type: "select", options: opts(["Bacharelado", "Licenciatura", "Tecnólogo", "Pós-graduação", "MBA", "Técnico", "Extensão"]) },
                 { name: "modality", label: "Modalidade", type: "select", options: opts(options.modalities) },
                 { name: "monthlyFee", label: "Mensalidade bruta (R$)", type: "number" },
@@ -303,7 +316,7 @@ const CrmSettings = () => {
                 { header: "Curso", field: "name" }, { header: "Categoria", render: (r) => r.category || "—" }, { header: "Modalidade", render: (r) => r.modality || "—" },
                 { header: "Mensalidade", render: (r) => (r.monthlyFee ? Number(r.monthlyFee).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "—") },
                 { header: "Semestres", render: (r) => r.semesters },
-                { header: "Ativo", render: (r) => (r.active ? "Sim" : "Não") },
+                { header: "Ativo", render: (r) => <ActiveToggle key={`${r.id}-${r.active}`} row={r} /> },
               ]} />
           </>
         )}
@@ -319,7 +332,7 @@ const CrmSettings = () => {
             columns={[
               { header: "Logo", render: (r) => (r.logoFile ? <img alt="" src={`${getBackendUrl().replace(/\/$/, "")}/public/${r.logoFile}`} style={{ maxHeight: 32, maxWidth: 120 }} /> : "—") },
               { header: "Instituição", field: "name" }, { header: "CNPJ", render: (r) => r.cnpj || "—" },
-              { header: "Ativa", render: (r) => (r.active ? "Sim" : "Não") },
+              { header: "Ativa", render: (r) => <ActiveToggle key={`${r.id}-${r.active}`} row={r} endpoint="/institutions" /> },
             ]} />
         )}
         {tab === 3 && (

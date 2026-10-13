@@ -5,6 +5,7 @@ import { makeStyles } from "@material-ui/core/styles";
 import Avatar from "@material-ui/core/Avatar";
 import Tooltip from "@material-ui/core/Tooltip";
 import CircularProgress from "@material-ui/core/CircularProgress";
+import Group from "@material-ui/icons/Group";
 
 import ChannelIcon from "../ChannelIcon";
 import api from "../../services/api";
@@ -167,7 +168,7 @@ const TicketListItem = ({ ticket }) => {
     >
       <div className={classes.avatarWrap}>
         <Avatar className={classes.avatar} src={ticket?.contact?.profilePicUrl}>
-          {ticket.contact.name.charAt(0)}
+          {ticket.isGroup ? <Group /> : ticket.contact.name.charAt(0)}
         </Avatar>
         <span className={classes.channel}>
           <ChannelIcon channel={ticket.whatsapp?.channel} size={13} />

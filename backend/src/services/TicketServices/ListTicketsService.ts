@@ -17,6 +17,7 @@ interface Request {
   showAll?: string;
   userId: string;
   withUnreadMessages?: string;
+  groups?: string;
   queueIds: number[];
   tagId?: string;
 }
@@ -36,6 +37,7 @@ const ListTicketsService = async ({
   showAll,
   userId,
   withUnreadMessages,
+  groups,
   tagId
 }: Request): Promise<Response> => {
   let whereCondition: Filterable["where"] = {
@@ -82,6 +84,10 @@ const ListTicketsService = async ({
       status
     };
   }
+
+  // groups live under their own filter so they never bury private chats
+  if (groups === "only") whereCondition = { ...whereCondition, isGroup: true };
+  if (groups === "exclude") whereCondition = { ...whereCondition, isGroup: false };
 
   if (searchParam) {
     const sanitizedSearchParam = searchParam.toLocaleLowerCase().trim();
