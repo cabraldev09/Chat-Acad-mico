@@ -1114,6 +1114,28 @@ const postMeta = (id, payload, secret, badSig) => {
       await waitFor(async () => (await list()).some(r => String(r.id) === String(a)), 8000, "unarchived by a new message");
       assert(sql(`SELECT archivedAt IS NULL FROM Tickets WHERE id=${a}`) === "1", "archivedAt not cleared");
     });
+    await test("the conversation list never shows a colleague's conversation or another segment", async () => {
+      const q = (await http.post("/queue", { name: "Fila lista", color: "#123456" }, auth())).data;
+      const mkUser = async (name, email) => (await http.post("/users", { name, email, password: "senha123", role: "consultor", queueIds: [q.id] }, auth())).data;
+      const a = await mkUser("Lista A", "lista-a@x.com");
+      const b = await mkUser("Lista B", "lista-b@x.com");
+      const ta = (await http.post("/auth/login", { email: "lista-a@x.com", password: "senha123" })).data.token;
+      const cA = sql(`SELECT id FROM Contacts WHERE number='tg_5551'`), cB = sql(`SELECT id FROM Contacts WHERE number='tg_5552'`);
+      const mkTicket = (contactId, userId, status, segment) => sql(`INSERT INTO Tickets (status, contactId, whatsappId, queueId, userId, unreadMessages, isGroup, segment, createdAt, updatedAt) VALUES ('${status}', ${contactId}, ${tgId}, ${q.id}, ${userId === null ? "NULL" : userId}, 0, false, '${segment}', NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const mine = mkTicket(cA, a.id, "open", "sales");
+      const colleagues = mkTicket(cB, b.id, "open", "sales");
+      const tutoring = mkTicket(cA, null, "pending", "onboarding");
+      const list = async (token, params = {}) => (await http.get("/tickets", { params: { showAll: "true", queueIds: JSON.stringify([q.id]), ...params }, ...asUser(token) })).data.tickets.map(t => String(t.id));
+      const got = await list(ta);
+      assert(got.includes(String(mine)), "own conversation missing from the list");
+      assert(!got.includes(String(colleagues)), "a colleague's conversation is listed");
+      assert(!got.includes(String(tutoring)), "a tutoring conversation is listed to a consultant");
+      // asking for sectors one does not belong to returns nothing from them
+      const other = await list(ta, { queueIds: JSON.stringify([q.id + 999]) });
+      assert(!other.includes(String(colleagues)), "queueIds outside the person's sectors were honored");
+      const admin = (await http.get("/tickets", { params: { showAll: "true", queueIds: JSON.stringify([q.id]) }, ...auth() })).data.tickets.map(t => String(t.id));
+      assert(admin.includes(String(colleagues)) && admin.includes(String(tutoring)), "admin should see everything");
+    });
     await test("typing on Telegram goes out as a chat action", async () => {
       const a = ticketOf("tg_5551");
       const before = tg.sent.length;

@@ -13,7 +13,9 @@ import TicketEvent from "../models/TicketEvent";
 import User from "../models/User";
 import Queue from "../models/Queue";
 import TicketPin from "../models/TicketPin";
+import UserQueue from "../models/UserQueue";
 import AppError from "../errors/AppError";
+import { roleOf } from "../helpers/Roles";
 import { getAdapter } from "../channels";
 import { whatsappProvider } from "../providers/WhatsApp";
 
@@ -61,6 +63,12 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
     queueIds = JSON.parse(queueIdsStringified);
   }
 
+  // the browser tells which sectors to list: never beyond the ones the person belongs to
+  if (roleOf(req.user) !== "admin") {
+    const mine = (await UserQueue.findAll({ where: { userId: Number(userId) } })).map(q => q.queueId);
+    queueIds = queueIds.filter(id => mine.includes(Number(id)));
+  }
+
   const { tickets, count, hasMore } = await ListTicketsService({
     searchParam,
     pageNumber,
@@ -72,7 +80,8 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
     withUnreadMessages,
     groups,
     tagId,
-    archived
+    archived,
+    role: roleOf(req.user)
   });
 
   return res.status(200).json({ tickets, count, hasMore });

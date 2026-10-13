@@ -5,7 +5,7 @@
 | Peça | Onde | Observação |
 |---|---|---|
 | Telas (React) | **Vercel** | só arquivos estáticos; aponta para a API por `VITE_BACKEND_URL` |
-| Banco de dados | **Supabase (PostgreSQL)** | é o único banco; 36 tabelas, ~1,5 MB hoje |
+| Banco de dados | **Supabase (PostgreSQL)** | é o único banco; 43 tabelas |
 | Arquivos enviados (mídia, PDFs, logos) | pasta `backend/public` no host da API (hoje) → Supabase Storage (próxima etapa) | |
 | **API Node (Express + socket.io + workers)** | **um host com processo ligado 24 h** (Railway, Fly.io, Render ou VPS) | **não roda dentro do Supabase** |
 | Sessões do WhatsApp (QR Code) | **disco do host da API** (`backend/.wwebjs_auth` ou `.zapo_auth`) | **não ficam no banco**; precisam de volume persistente |
@@ -38,11 +38,17 @@ Por que a API não pode ficar no Supabase: as Edge Functions do Supabase são fu
 - `Users` (equipe; `profile` admin/user), `Queues` (setores/filas), `UserQueues` (quem está em qual fila), `Whatsapps` (conexões/canais: WhatsApp QR, Cloud API, Telegram, Messenger, Instagram, chat web), `WhatsappQueues` (filas de cada conexão).
 - `Contacts`, `ContactCustomFields`, `Tickets` (cada conversa; guarda fila, atendente, status), `Messages`, `TicketEvents` (histórico de transferências/atribuições), `Tags`, `TicketTags`, `ContactTags`, `QuickAnswers`, `Schedules` (mensagens agendadas).
 - Automação: `ChatbotNodes` (fluxo de menus), `AiAgents` (agentes de IA), `Campaigns`, `CampaignShippings` (um registro por destinatário), `ContactLists`, `ContactListItems`.
+- Conversas: `TicketPins` (fixadas, uma por pessoa); `Tickets.archivedAt` (arquivadas).
 - Integração: `ApiTokens`, `Webhooks`, `Settings` (chave/valor: fuso, cadastro público, Efí, CRM…).
 
 **CRM de educação**
 - `Leads` (candidato: curso, forma de ingresso, período, CPF, responsável, etapa), `LeadStages` (funil), `LeadActivities` (linha do tempo), `LeadTasks` (tarefas e lembretes), `LeadTags`.
 - `Courses` (catálogo com mensalidade bruta, semestres, modalidade), `Institutions`, `ProposalTemplates` (regras de cada modelo de proposta), `Proposals` (proposta emitida, com os números congelados), `Payments` (taxa de matrícula/Efí).
+
+**IA**
+- `KbDocuments` (textos, perguntas frequentes, arquivos e páginas da base de conhecimento) e `KbChunks` (trechos de ~200 tokens com índice de busca em português); `AiUsage` (tokens de cada chamada ao modelo). `AiAgents` guarda persona, limites e campos a coletar; `Tickets.aiSummary/aiTurns/aiSlots` guardam o resumo, o número de respostas e os dados que a IA já coletou.
+
+**Polos e matrícula**: `Polos`, `PoloMembers` (quem atua em cada função do polo), `Queues.poloId/role`, `Leads.onboarding*` (ambientação com o tutor).
 
 **Sistema**: `SequelizeMeta` (migrations aplicadas), `WppKeys` (tabela legada de chaves; o provedor atual não grava nela).
 

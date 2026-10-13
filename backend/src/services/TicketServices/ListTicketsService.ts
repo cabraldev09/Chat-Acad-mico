@@ -9,6 +9,7 @@ import ShowUserService from "../UserServices/ShowUserService";
 import Whatsapp from "../../models/Whatsapp";
 import Tag from "../../models/Tag";
 import { portable } from "../../helpers/sqlDialect";
+import { Role, SEGMENTS_OF } from "../../helpers/Roles";
 
 interface Request {
   searchParam?: string;
@@ -22,6 +23,8 @@ interface Request {
   queueIds: number[];
   tagId?: string;
   archived?: string;
+  // who is asking: lists follow the same visibility rules as opening a conversation
+  role?: Role;
 }
 
 interface Response {
@@ -41,7 +44,8 @@ const ListTicketsService = async ({
   withUnreadMessages,
   groups,
   tagId,
-  archived
+  archived,
+  role
 }: Request): Promise<Response> => {
   let whereCondition: Filterable["where"] = {
     [Op.or]: [{ userId }, { status: "pending" }],
@@ -158,6 +162,18 @@ const ListTicketsService = async ({
   whereCondition = {
     [Op.and]: [whereCondition, { archivedAt: archived === "true" ? { [Op.ne]: null } : { [Op.is]: null } }]
   } as any;
+
+  // the consultant and the tutor must not see each other's conversations, not even in the list:
+  // own conversations plus the ones still waiting for someone (coordination also reads colleagues')
+  if (role && role !== "admin") {
+    const me = Number(userId);
+    const segments = SEGMENTS_OF[role] || [];
+    const bySegment: any[] = [{ userId: me }, { segment: { [Op.in]: segments } }];
+    if (segments.includes("sales")) bySegment.push({ segment: { [Op.is]: null } });
+    const scope: any[] = [{ [Op.or]: bySegment }];
+    if (role !== "coordenacao") scope.push({ [Op.or]: [{ userId: me }, { userId: { [Op.is]: null } }] });
+    whereCondition = { [Op.and]: [whereCondition, ...scope] } as any;
+  }
 
   // this person's pins come first (pins are personal)
   const pinnedSql = literal(

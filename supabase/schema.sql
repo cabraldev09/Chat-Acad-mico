@@ -11,8 +11,20 @@
 -- Dumped from database version 16.15 (Homebrew)
 -- Dumped by pg_dump version 16.15 (Homebrew)
 
+SET statement_timeout = 0;
+SET lock_timeout = 0;
+SET idle_in_transaction_session_timeout = 0;
+SET client_encoding = 'UTF8';
+SET standard_conforming_strings = on;
+SELECT pg_catalog.set_config('search_path', '', false);
+SET check_function_bodies = false;
+SET xmloption = content;
+SET client_min_messages = warning;
+SET row_security = off;
 
+SET default_tablespace = '';
 
+SET default_table_access_method = heap;
 
 --
 -- Name: AiAgents; Type: TABLE; Schema: public; Owner: -
@@ -32,7 +44,13 @@ CREATE TABLE public."AiAgents" (
     "queueId" integer,
     "whatsappId" integer,
     "createdAt" timestamp with time zone NOT NULL,
-    "updatedAt" timestamp with time zone NOT NULL
+    "updatedAt" timestamp with time zone NOT NULL,
+    persona json,
+    "maxTokens" integer DEFAULT 350 NOT NULL,
+    "dailyTokenCap" integer DEFAULT 300000 NOT NULL,
+    "handoffAfterTurns" integer DEFAULT 14 NOT NULL,
+    "waitSeconds" integer DEFAULT 4 NOT NULL,
+    slots json
 );
 
 
@@ -54,6 +72,45 @@ CREATE SEQUENCE public."AiAgents_id_seq"
 --
 
 ALTER SEQUENCE public."AiAgents_id_seq" OWNED BY public."AiAgents".id;
+
+
+--
+-- Name: AiUsage; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."AiUsage" (
+    id integer NOT NULL,
+    "agentId" integer,
+    "ticketId" integer,
+    model character varying(255) NOT NULL,
+    kind character varying(255) DEFAULT 'reply'::character varying NOT NULL,
+    "inputTokens" integer DEFAULT 0 NOT NULL,
+    "outputTokens" integer DEFAULT 0 NOT NULL,
+    "cacheReadTokens" integer DEFAULT 0 NOT NULL,
+    "cacheWriteTokens" integer DEFAULT 0 NOT NULL,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: AiUsage_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."AiUsage_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: AiUsage_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."AiUsage_id_seq" OWNED BY public."AiUsage".id;
 
 
 --
@@ -104,7 +161,8 @@ CREATE TABLE public."CampaignShippings" (
     "sentAt" timestamp with time zone,
     "campaignId" integer NOT NULL,
     "createdAt" timestamp with time zone NOT NULL,
-    "updatedAt" timestamp with time zone NOT NULL
+    "updatedAt" timestamp with time zone NOT NULL,
+    "stepsDone" integer DEFAULT 0 NOT NULL
 );
 
 
@@ -151,7 +209,10 @@ CREATE TABLE public."Campaigns" (
     "updatedAt" timestamp with time zone NOT NULL,
     "templateName" character varying(255),
     "templateLanguage" character varying(255),
-    "pauseReason" character varying(255)
+    "pauseReason" character varying(255),
+    steps json,
+    "nextRunAt" timestamp with time zone,
+    "sentInBatch" integer DEFAULT 0 NOT NULL
 );
 
 
@@ -190,7 +251,8 @@ CREATE TABLE public."ChatbotNodes" (
     action character varying(255) DEFAULT 'menu'::character varying NOT NULL,
     "targetId" integer,
     "createdAt" timestamp with time zone NOT NULL,
-    "updatedAt" timestamp with time zone NOT NULL
+    "updatedAt" timestamp with time zone NOT NULL,
+    field character varying(255)
 );
 
 
@@ -442,6 +504,79 @@ ALTER SEQUENCE public."Institutions_id_seq" OWNED BY public."Institutions".id;
 
 
 --
+-- Name: KbChunks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."KbChunks" (
+    id integer NOT NULL,
+    "documentId" integer NOT NULL,
+    "position" integer DEFAULT 0 NOT NULL,
+    content text NOT NULL,
+    "contentNorm" text NOT NULL,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL,
+    tsv tsvector GENERATED ALWAYS AS (to_tsvector('portuguese'::regconfig, "contentNorm")) STORED
+);
+
+
+--
+-- Name: KbChunks_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."KbChunks_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: KbChunks_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."KbChunks_id_seq" OWNED BY public."KbChunks".id;
+
+
+--
+-- Name: KbDocuments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."KbDocuments" (
+    id integer NOT NULL,
+    title character varying(255) NOT NULL,
+    kind character varying(255) DEFAULT 'doc'::character varying NOT NULL,
+    source character varying(255) DEFAULT 'texto'::character varying NOT NULL,
+    keywords text,
+    content text NOT NULL,
+    "agentId" integer,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: KbDocuments_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."KbDocuments_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: KbDocuments_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."KbDocuments_id_seq" OWNED BY public."KbDocuments".id;
+
+
+--
 -- Name: LeadActivities; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -606,7 +741,15 @@ CREATE TABLE public."Leads" (
     "entrySemester" integer DEFAULT 1 NOT NULL,
     "decisionTimeline" character varying(255),
     motivation character varying(255),
-    "extraSemesters" integer DEFAULT 0 NOT NULL
+    "extraSemesters" integer DEFAULT 0 NOT NULL,
+    "poloId" integer,
+    "onboardingStatus" character varying(255) DEFAULT 'none'::character varying NOT NULL,
+    "onboardingTutorId" integer,
+    "enrolledAt" timestamp with time zone,
+    "onboardingStartedAt" timestamp with time zone,
+    "onboardingDoneAt" timestamp with time zone,
+    "onboardingAlertAt" timestamp with time zone,
+    "indicatedBy" integer
 );
 
 
@@ -647,7 +790,9 @@ CREATE TABLE public."Messages" (
     "fromMe" boolean DEFAULT false NOT NULL,
     "isDeleted" boolean DEFAULT false NOT NULL,
     "contactId" integer,
-    "quotedMsgId" character varying(255)
+    "quotedMsgId" character varying(255),
+    starred boolean DEFAULT false NOT NULL,
+    reactions text
 );
 
 
@@ -675,7 +820,18 @@ CREATE TABLE public."Payments" (
     "proposalId" integer,
     "createdBy" integer,
     "createdAt" timestamp with time zone NOT NULL,
-    "updatedAt" timestamp with time zone NOT NULL
+    "updatedAt" timestamp with time zone NOT NULL,
+    method character varying(255) DEFAULT 'pix'::character varying NOT NULL,
+    "chargeId" character varying(255),
+    "dueDate" date,
+    "generateAt" timestamp with time zone,
+    barcode text,
+    "billetLink" text,
+    "pdfLink" text,
+    "recipientUserId" integer,
+    "recipientCode" character varying(255),
+    "splitPct" integer,
+    "reminderTaskId" integer
 );
 
 
@@ -697,6 +853,109 @@ CREATE SEQUENCE public."Payments_id_seq"
 --
 
 ALTER SEQUENCE public."Payments_id_seq" OWNED BY public."Payments".id;
+
+
+--
+-- Name: PoloMembers; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."PoloMembers" (
+    id integer NOT NULL,
+    "poloId" integer NOT NULL,
+    "userId" integer NOT NULL,
+    role character varying(255) NOT NULL,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: PoloMembers_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."PoloMembers_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: PoloMembers_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."PoloMembers_id_seq" OWNED BY public."PoloMembers".id;
+
+
+--
+-- Name: Polos; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."Polos" (
+    id integer NOT NULL,
+    code character varying(255),
+    name character varying(255) NOT NULL,
+    city character varying(255),
+    state character varying(2),
+    active boolean DEFAULT true NOT NULL,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: Polos_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."Polos_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: Polos_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."Polos_id_seq" OWNED BY public."Polos".id;
+
+
+--
+-- Name: ProposalTemplateInstitutions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."ProposalTemplateInstitutions" (
+    id integer NOT NULL,
+    "templateId" integer NOT NULL,
+    "institutionId" integer NOT NULL,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: ProposalTemplateInstitutions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."ProposalTemplateInstitutions_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: ProposalTemplateInstitutions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."ProposalTemplateInstitutions_id_seq" OWNED BY public."ProposalTemplateInstitutions".id;
 
 
 --
@@ -724,7 +983,14 @@ CREATE TABLE public."ProposalTemplates" (
     "finalMessage" text,
     "isDefault" boolean DEFAULT false NOT NULL,
     "createdAt" timestamp with time zone NOT NULL,
-    "updatedAt" timestamp with time zone NOT NULL
+    "updatedAt" timestamp with time zone NOT NULL,
+    "installmentsFixed" integer,
+    "hasRegression" boolean DEFAULT true NOT NULL,
+    "hasAdjustment" boolean DEFAULT true NOT NULL,
+    "fixedUntilEnd" boolean DEFAULT false NOT NULL,
+    "firstExempt" boolean DEFAULT false NOT NULL,
+    "waIntro" text,
+    "waClosing" text
 );
 
 
@@ -804,7 +1070,9 @@ CREATE TABLE public."Queues" (
     "greetingMessage" text,
     "createdAt" timestamp with time zone NOT NULL,
     "updatedAt" timestamp with time zone NOT NULL,
-    "autoAssign" character varying(255) DEFAULT 'none'::character varying NOT NULL
+    "autoAssign" character varying(255) DEFAULT 'none'::character varying NOT NULL,
+    "poloId" integer,
+    role character varying(255)
 );
 
 
@@ -996,6 +1264,18 @@ ALTER SEQUENCE public."TicketEvents_id_seq" OWNED BY public."TicketEvents".id;
 
 
 --
+-- Name: TicketPins; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."TicketPins" (
+    "userId" integer NOT NULL,
+    "ticketId" integer NOT NULL,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
 -- Name: TicketTags; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1027,7 +1307,14 @@ CREATE TABLE public."Tickets" (
     "firstResponseAt" timestamp with time zone,
     "chatbotNodeId" integer,
     "aiActive" boolean DEFAULT true NOT NULL,
-    "outOfHoursSentAt" timestamp with time zone
+    "outOfHoursSentAt" timestamp with time zone,
+    segment character varying(255) DEFAULT 'sales'::character varying NOT NULL,
+    "leadId" integer,
+    "archivedAt" timestamp with time zone,
+    "aiSummary" text,
+    "aiTurns" integer DEFAULT 0 NOT NULL,
+    "aiSlots" json,
+    "botReminderAt" timestamp with time zone
 );
 
 
@@ -1076,7 +1363,9 @@ CREATE TABLE public."Users" (
     "updatedAt" timestamp with time zone NOT NULL,
     profile character varying(255) DEFAULT 'admin'::character varying NOT NULL,
     "tokenVersion" integer DEFAULT 0 NOT NULL,
-    "whatsappId" integer
+    "whatsappId" integer,
+    role character varying(255) DEFAULT 'consultor'::character varying NOT NULL,
+    "efiPayeeCode" character varying(255)
 );
 
 
@@ -1174,7 +1463,9 @@ CREATE TABLE public."Whatsapps" (
     "businessHours" text,
     "outOfHoursMessage" text,
     "riskMode" character varying(255) DEFAULT 'strict'::character varying NOT NULL,
-    "connectedSince" timestamp with time zone
+    "connectedSince" timestamp with time zone,
+    "groupsMode" character varying(255) DEFAULT 'off'::character varying NOT NULL,
+    "allowedGroups" text
 );
 
 
@@ -1238,6 +1529,13 @@ ALTER SEQUENCE public."WppKeys_id_seq" OWNED BY public."WppKeys".id;
 --
 
 ALTER TABLE ONLY public."AiAgents" ALTER COLUMN id SET DEFAULT nextval('public."AiAgents_id_seq"'::regclass);
+
+
+--
+-- Name: AiUsage id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AiUsage" ALTER COLUMN id SET DEFAULT nextval('public."AiUsage_id_seq"'::regclass);
 
 
 --
@@ -1311,6 +1609,20 @@ ALTER TABLE ONLY public."Institutions" ALTER COLUMN id SET DEFAULT nextval('publ
 
 
 --
+-- Name: KbChunks id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."KbChunks" ALTER COLUMN id SET DEFAULT nextval('public."KbChunks_id_seq"'::regclass);
+
+
+--
+-- Name: KbDocuments id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."KbDocuments" ALTER COLUMN id SET DEFAULT nextval('public."KbDocuments_id_seq"'::regclass);
+
+
+--
 -- Name: LeadActivities id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -1343,6 +1655,27 @@ ALTER TABLE ONLY public."Leads" ALTER COLUMN id SET DEFAULT nextval('public."Lea
 --
 
 ALTER TABLE ONLY public."Payments" ALTER COLUMN id SET DEFAULT nextval('public."Payments_id_seq"'::regclass);
+
+
+--
+-- Name: PoloMembers id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."PoloMembers" ALTER COLUMN id SET DEFAULT nextval('public."PoloMembers_id_seq"'::regclass);
+
+
+--
+-- Name: Polos id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."Polos" ALTER COLUMN id SET DEFAULT nextval('public."Polos_id_seq"'::regclass);
+
+
+--
+-- Name: ProposalTemplateInstitutions id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."ProposalTemplateInstitutions" ALTER COLUMN id SET DEFAULT nextval('public."ProposalTemplateInstitutions_id_seq"'::regclass);
 
 
 --
@@ -1435,6 +1768,14 @@ ALTER TABLE ONLY public."WppKeys" ALTER COLUMN id SET DEFAULT nextval('public."W
 
 ALTER TABLE ONLY public."AiAgents"
     ADD CONSTRAINT "AiAgents_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: AiUsage AiUsage_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AiUsage"
+    ADD CONSTRAINT "AiUsage_pkey" PRIMARY KEY (id);
 
 
 --
@@ -1558,6 +1899,22 @@ ALTER TABLE ONLY public."Institutions"
 
 
 --
+-- Name: KbChunks KbChunks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."KbChunks"
+    ADD CONSTRAINT "KbChunks_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: KbDocuments KbDocuments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."KbDocuments"
+    ADD CONSTRAINT "KbDocuments_pkey" PRIMARY KEY (id);
+
+
+--
 -- Name: LeadActivities LeadActivities_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1619,6 +1976,38 @@ ALTER TABLE ONLY public."Payments"
 
 ALTER TABLE ONLY public."Payments"
     ADD CONSTRAINT "Payments_txid_key" UNIQUE (txid);
+
+
+--
+-- Name: PoloMembers PoloMembers_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."PoloMembers"
+    ADD CONSTRAINT "PoloMembers_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: Polos Polos_code_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."Polos"
+    ADD CONSTRAINT "Polos_code_key" UNIQUE (code);
+
+
+--
+-- Name: Polos Polos_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."Polos"
+    ADD CONSTRAINT "Polos_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: ProposalTemplateInstitutions ProposalTemplateInstitutions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."ProposalTemplateInstitutions"
+    ADD CONSTRAINT "ProposalTemplateInstitutions_pkey" PRIMARY KEY (id);
 
 
 --
@@ -1726,6 +2115,14 @@ ALTER TABLE ONLY public."TicketEvents"
 
 
 --
+-- Name: TicketPins TicketPins_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."TicketPins"
+    ADD CONSTRAINT "TicketPins_pkey" PRIMARY KEY ("userId", "ticketId");
+
+
+--
 -- Name: TicketTags TicketTags_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1806,6 +2203,27 @@ ALTER TABLE ONLY public."WppKeys"
 
 
 --
+-- Name: ai_usage_agent_id_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ai_usage_agent_id_created_at ON public."AiUsage" USING btree ("agentId", "createdAt");
+
+
+--
+-- Name: kb_chunks_document_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX kb_chunks_document_id ON public."KbChunks" USING btree ("documentId");
+
+
+--
+-- Name: kb_chunks_tsv_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX kb_chunks_tsv_idx ON public."KbChunks" USING gin (tsv);
+
+
+--
 -- Name: leads_cpf; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1817,6 +2235,13 @@ CREATE INDEX leads_cpf ON public."Leads" USING btree (cpf);
 --
 
 CREATE INDEX leads_email ON public."Leads" USING btree (email);
+
+
+--
+-- Name: leads_onboarding_tutor_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX leads_onboarding_tutor_id ON public."Leads" USING btree ("onboardingTutorId");
 
 
 --
@@ -1855,10 +2280,31 @@ CREATE INDEX payments_status ON public."Payments" USING btree (status);
 
 
 --
+-- Name: polo_members_polo_id_user_id_role; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX polo_members_polo_id_user_id_role ON public."PoloMembers" USING btree ("poloId", "userId", role);
+
+
+--
+-- Name: proposal_template_institutions_template_id_institution_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX proposal_template_institutions_template_id_institution_id ON public."ProposalTemplateInstitutions" USING btree ("templateId", "institutionId");
+
+
+--
 -- Name: ticket_events_ticket_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX ticket_events_ticket_id ON public."TicketEvents" USING btree ("ticketId");
+
+
+--
+-- Name: tickets_lead_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX tickets_lead_id ON public."Tickets" USING btree ("leadId");
 
 
 --
@@ -1957,6 +2403,22 @@ ALTER TABLE ONLY public."Courses"
 
 
 --
+-- Name: KbChunks KbChunks_documentId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."KbChunks"
+    ADD CONSTRAINT "KbChunks_documentId_fkey" FOREIGN KEY ("documentId") REFERENCES public."KbDocuments"(id) ON DELETE CASCADE;
+
+
+--
+-- Name: KbDocuments KbDocuments_agentId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."KbDocuments"
+    ADD CONSTRAINT "KbDocuments_agentId_fkey" FOREIGN KEY ("agentId") REFERENCES public."AiAgents"(id) ON DELETE CASCADE;
+
+
+--
 -- Name: LeadActivities LeadActivities_leadId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2029,6 +2491,14 @@ ALTER TABLE ONLY public."Leads"
 
 
 --
+-- Name: Leads Leads_poloId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."Leads"
+    ADD CONSTRAINT "Leads_poloId_fkey" FOREIGN KEY ("poloId") REFERENCES public."Polos"(id) ON DELETE SET NULL;
+
+
+--
 -- Name: Leads Leads_stageId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2085,6 +2555,38 @@ ALTER TABLE ONLY public."Payments"
 
 
 --
+-- Name: PoloMembers PoloMembers_poloId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."PoloMembers"
+    ADD CONSTRAINT "PoloMembers_poloId_fkey" FOREIGN KEY ("poloId") REFERENCES public."Polos"(id) ON DELETE CASCADE;
+
+
+--
+-- Name: PoloMembers PoloMembers_userId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."PoloMembers"
+    ADD CONSTRAINT "PoloMembers_userId_fkey" FOREIGN KEY ("userId") REFERENCES public."Users"(id) ON DELETE CASCADE;
+
+
+--
+-- Name: ProposalTemplateInstitutions ProposalTemplateInstitutions_institutionId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."ProposalTemplateInstitutions"
+    ADD CONSTRAINT "ProposalTemplateInstitutions_institutionId_fkey" FOREIGN KEY ("institutionId") REFERENCES public."Institutions"(id) ON DELETE CASCADE;
+
+
+--
+-- Name: ProposalTemplateInstitutions ProposalTemplateInstitutions_templateId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."ProposalTemplateInstitutions"
+    ADD CONSTRAINT "ProposalTemplateInstitutions_templateId_fkey" FOREIGN KEY ("templateId") REFERENCES public."ProposalTemplates"(id) ON DELETE CASCADE;
+
+
+--
 -- Name: ProposalTemplates ProposalTemplates_institutionId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2133,6 +2635,14 @@ ALTER TABLE ONLY public."Proposals"
 
 
 --
+-- Name: Queues Queues_poloId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."Queues"
+    ADD CONSTRAINT "Queues_poloId_fkey" FOREIGN KEY ("poloId") REFERENCES public."Polos"(id) ON DELETE SET NULL;
+
+
+--
 -- Name: Schedules Schedules_contactId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2170,6 +2680,22 @@ ALTER TABLE ONLY public."Schedules"
 
 ALTER TABLE ONLY public."TicketEvents"
     ADD CONSTRAINT "TicketEvents_ticketId_fkey" FOREIGN KEY ("ticketId") REFERENCES public."Tickets"(id) ON DELETE CASCADE;
+
+
+--
+-- Name: TicketPins TicketPins_ticketId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."TicketPins"
+    ADD CONSTRAINT "TicketPins_ticketId_fkey" FOREIGN KEY ("ticketId") REFERENCES public."Tickets"(id) ON DELETE CASCADE;
+
+
+--
+-- Name: TicketPins TicketPins_userId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."TicketPins"
+    ADD CONSTRAINT "TicketPins_userId_fkey" FOREIGN KEY ("userId") REFERENCES public."Users"(id) ON DELETE CASCADE;
 
 
 --
@@ -2458,7 +2984,8 @@ ALTER TABLE public."WppKeys" ENABLE ROW LEVEL SECURITY;
 
 
 
--- migrations já aplicadas (para o db:migrate futuro não repetir)
+-- Migrations já aplicadas (assim o `npm run db:migrate` não tenta criar de novo)
+SET search_path TO public;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20200717133438-create-users.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20200717144403-create-contacts.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20200717145643-create-tickets.js') ON CONFLICT DO NOTHING;
@@ -2509,6 +3036,15 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261018000001-ticket-events-and-har
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261018000002-send-safety.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261019000001-utc-and-app-settings.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261019000002-row-level-security.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261020000001-roles-and-polos.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261021000001-message-star-reactions.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261021000002-groups-mode.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261022000001-proposal-rules.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261023000001-efi-bolix-payee.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261024000001-enrollment-onboarding.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261025000001-campaign-steps.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261026000001-ticket-pin-archive.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261027000001-ai-v2.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.
