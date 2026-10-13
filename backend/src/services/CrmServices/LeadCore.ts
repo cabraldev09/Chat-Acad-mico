@@ -8,9 +8,11 @@ import User from "../../models/User";
 import Contact from "../../models/Contact";
 import Tag from "../../models/Tag";
 import Whatsapp from "../../models/Whatsapp";
+import Payment from "../../models/Payment";
 import { getIO } from "../../libs/socket";
 import { getSetting, setSetting } from "../../helpers/AppSettings";
 import { normalizeEmail, normalizePhone } from "../../helpers/Phone";
+import { normalizeCpf } from "../../helpers/Cpf";
 import dispatchWebhook from "../WebhookServices/DispatchWebhook";
 import { computeScore } from "./LeadScore";
 import { logger } from "../../utils/logger";
@@ -20,7 +22,9 @@ export const leadInclude = [
   { model: LeadStage, as: "stage" },
   { model: User, as: "owner", attributes: ["id", "name"] },
   { model: Contact, as: "contact", attributes: ["id", "name", "number", "profilePicUrl", "channel"] },
-  { model: Tag, as: "tags", attributes: ["id", "name", "color"], through: { attributes: [] } }
+  { model: Tag, as: "tags", attributes: ["id", "name", "color"], through: { attributes: [] } },
+  // only paid enrollment fees: lets cards show a "taxa paga" badge
+  { model: Payment, as: "payments", attributes: ["id", "paidAt"], required: false, where: { status: "paid" } }
 ];
 
 export const loadLead = (id: number | string) => Lead.findByPk(id, { include: leadInclude as any });
@@ -85,6 +89,9 @@ export interface LeadInput {
   shift?: string;
   entryTerm?: string;
   educationLevel?: string;
+  cpf?: string | null;
+  admissionType?: string;
+  entrySemester?: number;
   enemScore?: number | null;
   financing?: string;
   source?: string;
@@ -102,11 +109,31 @@ export interface LeadInput {
 
 const FILL_FIELDS: Array<keyof LeadInput> = [
   "email", "phone", "city", "state", "courseId", "modality", "shift", "entryTerm",
-  "educationLevel", "enemScore", "financing", "utmSource", "utmMedium", "utmCampaign"
+  "educationLevel", "enemScore", "financing", "utmSource", "utmMedium", "utmCampaign",
+  "cpf", "admissionType", "entryTerm"
 ];
 
-export const findDuplicate = async (phone: string | null, email: string | null, contactId?: number | null) => {
+// Intake periods the administrator offers; the first one is the default
+export const getEntryTerms = async (): Promise<{ terms: string[]; defaultTerm: string }> => {
+  const now = new Date();
+  const y = now.getFullYear();
+  const current = now.getMonth() < 6 ? `${y}/1` : `${y}/2`;
+  const next = current.endsWith("/1") ? `${y}/2` : `${y + 1}/1`;
+  const after = next.endsWith("/1") ? `${next.slice(0, 4)}/2` : `${Number(next.slice(0, 4)) + 1}/1`;
+  let terms: string[] = [];
+  try {
+    terms = JSON.parse(await getSetting("crm_entry_terms", "[]"));
+  } catch (e) {
+    terms = [];
+  }
+  if (!terms.length) terms = [current, next, after];
+  const stored = await getSetting("crm_default_entry", "");
+  return { terms, defaultTerm: terms.includes(stored) ? stored : terms[0] };
+};
+
+export const findDuplicate = async (phone: string | null, email: string | null, contactId?: number | null, cpf?: string | null) => {
   const or: any[] = [];
+  if (cpf) or.push({ cpf });
   if (phone) or.push({ phone });
   if (email) or.push({ email });
   if (contactId) or.push({ contactId });
@@ -129,11 +156,12 @@ export const upsertLead = async (
     if (contact) contactId = contact.id;
   }
 
-  const existing = await findDuplicate(phone, email, contactId);
+  const cpf = normalizeCpf(input.cpf);
+  const existing = await findDuplicate(phone, email, contactId, cpf);
   if (existing) {
     const patch: any = {};
     FILL_FIELDS.forEach(f => {
-      const incoming: any = f === "phone" ? phone : f === "email" ? email : (input as any)[f];
+      const incoming: any = f === "phone" ? phone : f === "email" ? email : f === "cpf" ? cpf : (input as any)[f];
       if ((existing as any)[f] == null && incoming != null && incoming !== "") patch[f] = incoming;
     });
     if (!existing.contactId && contactId) patch.contactId = contactId;
@@ -165,9 +193,11 @@ export const upsertLead = async (
     state: input.state,
     courseId: input.courseId || null,
     modality: input.modality,
-    shift: input.shift,
-    entryTerm: input.entryTerm,
+    entryTerm: input.entryTerm || (await getEntryTerms()).defaultTerm,
     educationLevel: input.educationLevel,
+    cpf,
+    admissionType: input.admissionType,
+    entrySemester: input.entrySemester && input.entrySemester > 0 ? input.entrySemester : 1,
     enemScore: input.enemScore ?? null,
     financing: input.financing,
     source: input.source || "Outro",

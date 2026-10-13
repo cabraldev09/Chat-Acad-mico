@@ -71,7 +71,10 @@ const buildDefaults = async (lead: Lead, courseId?: number | null, templateId?: 
     enrollmentFee: Number(tpl.enrollmentFee),
     dueDay: tpl.dueDay,
     installments: tpl.installments,
-    semesters: course?.semesters || 8,
+    courseSemesters: course?.semesters || 8,
+    entrySemester: Math.min(lead.entrySemester || 1, course?.semesters || 8),
+    admissionType: lead.admissionType || null,
+    semesters: (course?.semesters || 8) - Math.min(lead.entrySemester || 1, course?.semesters || 8) + 1,
     ...defaultStart(lead.entryTerm),
     bolsaFirst: Number(tpl.bolsaFirst),
     bolsaNext: Number(tpl.bolsaNext),
@@ -102,7 +105,10 @@ const normalizeParams = (base: ProposalParams, raw: any = {}): ProposalParams =>
     enrollmentFee: num(raw.enrollmentFee, base.enrollmentFee),
     dueDay: Math.min(28, Math.max(1, num(raw.dueDay, base.dueDay))),
     installments: Math.max(1, Math.round(num(raw.installments, base.installments))),
-    semesters: Math.min(20, Math.max(1, Math.round(num(raw.semesters, base.semesters)))),
+    courseSemesters: Math.min(20, Math.max(1, Math.round(num(raw.courseSemesters, num(raw.semesters, base.courseSemesters || 8))))),
+    entrySemester: 1,
+    admissionType: raw.admissionType !== undefined ? raw.admissionType || null : base.admissionType || null,
+    semesters: 1,
     startYear: Math.round(num(raw.startYear, base.startYear)),
     startSemester: (num(raw.startSemester, base.startSemester) === 1 ? 1 : 2) as 1 | 2,
     bolsaFirst: num(raw.bolsaFirst, base.bolsaFirst),
@@ -113,10 +119,16 @@ const normalizeParams = (base: ProposalParams, raw: any = {}): ProposalParams =>
     annualMin: num(raw.annualMin, base.annualMin),
     annualMax: num(raw.annualMax, base.annualMax),
     semestralSchedule: raw.semestralSchedule ? parseSchedule(raw.semestralSchedule) : base.semestralSchedule,
-    projectionFrom: raw.projectionFrom ? Math.round(num(raw.projectionFrom)) : null,
-    projectionTo: raw.projectionTo ? Math.round(num(raw.projectionTo)) : null,
+    projectionFrom: null,
+    projectionTo: null,
     firstDueDate: raw.firstDueDate || null
   };
+  // the projection covers only the semesters still to be attended
+  p.entrySemester = Math.min(
+    p.courseSemesters || 1,
+    Math.max(1, Math.round(num(raw.entrySemester, base.entrySemester || 1)))
+  );
+  p.semesters = (p.courseSemesters || 1) - p.entrySemester + 1;
   if (!(p.gross > 0)) throw new AppError("ERR_PROPOSAL_NO_GROSS");
   if (!(p.firstMonthly > 0) || p.firstMonthly > p.gross) throw new AppError("ERR_PROPOSAL_FIRST_MONTHLY");
   return p;

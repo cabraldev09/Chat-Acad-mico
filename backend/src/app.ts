@@ -15,6 +15,7 @@ import webchatRoutes from "./routes/webchatRoutes";
 import metaWebhookRoutes from "./routes/metaWebhookRoutes";
 import leadFormRoutes from "./routes/leadFormRoutes";
 import proposalPublicRoutes from "./routes/proposalPublicRoutes";
+import efiWebhookRoutes from "./routes/efiWebhookRoutes";
 
 Sentry.init({ dsn: process.env.SENTRY_DSN });
 
@@ -31,7 +32,8 @@ app.use(
       req.rawBody = buf;
     }
   }),
-  metaWebhookRoutes
+  metaWebhookRoutes,
+  efiWebhookRoutes
 );
 
 app.use(

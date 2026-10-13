@@ -14,6 +14,20 @@ export const CRM_OPTIONS = {
     "Outro"
   ],
   modalities: ["Presencial", "EAD", "Semipresencial"],
+  admissionTypes: [
+    "Vestibular / prova online",
+    "ENEM",
+    "Transferência externa",
+    "Portador de diploma (2ª graduação)",
+    "Aproveitamento de estudos",
+    "Outro"
+  ],
+  // forms of admission where the candidate may enter after the 1st semester
+  admissionNeedsSemester: [
+    "Transferência externa",
+    "Portador de diploma (2ª graduação)",
+    "Aproveitamento de estudos"
+  ],
   shifts: ["Manhã", "Tarde", "Noite", "Flexível (EAD)"],
   financing: ["Bolsa da instituição", "FIES", "ProUni", "Financiamento próprio", "Pagamento particular", "Ainda não sabe"],
   educationLevels: ["Ensino médio cursando", "Ensino médio completo", "Superior cursando", "Superior completo", "Técnico"],

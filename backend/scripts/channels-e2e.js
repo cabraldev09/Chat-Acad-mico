@@ -38,6 +38,8 @@ const waitFor = async (fn, ms = 12000, label = "condition") => {
 // ----------------------------------------------------------------- mocks
 const tg = { updates: [], sent: [], offset: 0, n: 100 };
 const graph = { sent: [], media: [], n: 0 };
+const efi = { charges: {}, calls: [], webhook: null, authOk: 0 };
+const EFI_PORT = 9103;
 
 const startTelegramMock = () => {
   const app = express();
@@ -100,6 +102,40 @@ const startGraphMock = () => {
   return new Promise(r => { const s = app.listen(GRAPH_PORT, () => r(s)); });
 };
 
+const startEfiMock = () => {
+  const app = express();
+  app.use(express.json());
+  app.post("/oauth/token", (req, res) => {
+    const basic = Buffer.from(String(req.headers.authorization || "").replace("Basic ", ""), "base64").toString();
+    if (basic !== "Client_Id_test:Client_Secret_test") return res.status(401).json({ error: "invalid_client", error_description: "credenciais inválidas" });
+    efi.authOk += 1;
+    return res.json({ access_token: "tok-123", expires_in: 3600 });
+  });
+  const guard = (req, res, next) => (req.headers.authorization === "Bearer tok-123" ? next() : res.status(401).json({ mensagem: "sem token" }));
+  app.put("/v2/cob/:txid", guard, (req, res) => {
+    efi.calls.push({ method: "PUT", path: req.path, body: req.body });
+    const txid = req.params.txid;
+    efi.charges[txid] = { body: req.body, status: "ATIVA", pix: [] };
+    res.status(201).json({ txid, status: "ATIVA", loc: { id: 777, location: "pix.example/qr/v2/abc" }, pixCopiaECola: `00020126EFI${txid}` });
+  });
+  app.get("/v2/loc/:id/qrcode", guard, (req, res) => res.json({ qrcode: "00020126-QR-FALLBACK", imagemQrcode: `data:image/png;base64,${PNG.toString("base64")}` }));
+  app.get("/v2/cob/:txid", guard, (req, res) => {
+    const c = efi.charges[req.params.txid];
+    if (!c) return res.status(404).json({ mensagem: "cobrança não encontrada" });
+    return res.json({ txid: req.params.txid, status: c.status, pix: c.pix });
+  });
+  app.patch("/v2/cob/:txid", guard, (req, res) => {
+    efi.calls.push({ method: "PATCH", path: req.path, body: req.body });
+    if (efi.charges[req.params.txid]) efi.charges[req.params.txid].status = req.body.status;
+    res.json({ txid: req.params.txid, status: req.body.status });
+  });
+  app.put("/v2/webhook/:chave", guard, (req, res) => {
+    efi.webhook = { chave: req.params.chave, url: req.body.webhookUrl, skipMtls: req.headers["x-skip-mtls-checking"] };
+    res.json({ webhookUrl: req.body.webhookUrl });
+  });
+  return new Promise(r => { const s2 = app.listen(EFI_PORT, () => r(s2)); });
+};
+
 // ---------------------------------------------------------------- harness
 const results = [];
 const test = async (name, fn) => {
@@ -143,12 +179,13 @@ const postMeta = (id, payload, secret, badSig) => {
       PORT: String(PORT), PROXY_PORT: String(PORT), BACKEND_URL: "http://localhost", PUBLIC_URL: API,
       FRONTEND_URL: "http://localhost:3000", JWT_SECRET: "e2e", JWT_REFRESH_SECRET: "e2e-r",
       TELEGRAM_API_URL: `http://localhost:${TG_PORT}`, GRAPH_API_URL: `http://localhost:${GRAPH_PORT}`,
-      SKIP_WHATSAPP_SESSIONS: "1", LOG_LEVEL: "warn"
+      SKIP_WHATSAPP_SESSIONS: "1", LOG_LEVEL: "warn", EFI_API_URL: `http://localhost:${EFI_PORT}`, EFI_POLL_MS: "1500"
     };
     execFileSync("npx", ["sequelize", "db:migrate"], { cwd: ROOT, env, stdio: "ignore" });
     execFileSync("npx", ["sequelize", "db:seed:all"], { cwd: ROOT, env, stdio: "ignore" });
     await startTelegramMock();
     await startGraphMock();
+    await startEfiMock();
     backend = spawn("node", ["dist/server.js"], { cwd: ROOT, env, stdio: ["ignore", "pipe", "pipe"] });
     let log = "";
     backend.stdout.on("data", d => (log += d));
@@ -542,6 +579,143 @@ const postMeta = (id, payload, secret, badSig) => {
       const shown = (await http.get(`/proposals/${prop.id}`, auth())).data;
       assert(!shown.html.includes("texto novo") && shown.html.includes("R$ 99,00"), "template change leaked into an issued proposal");
       await http.put(`/proposal-templates/${tpl.id}`, { enrollmentFee: 99, observation: tpl.observation }, auth());
+    });
+
+    // ------------------------------------------- admission, CPF and payments
+    console.log("\nadmission & enrollment payments");
+    const VALID_CPF = "529.982.247-25";
+    const mkLead = async (name, phone, extra = {}) => (await http.post("/leads", { name, phone, source: "WhatsApp", ...extra }, auth())).data.lead;
+
+    await test("CPF is validated, hidden from lists and returned only by the detail view", async () => {
+      const l = await mkLead("Aluno Cpf", "11 94444-0001");
+      assert((await http.put(`/leads/${l.id}`, { cpf: "111.111.111-11" }, auth())).status === 400, "invalid CPF accepted");
+      assert((await http.put(`/leads/${l.id}`, { cpf: "123.456.789-00" }, auth())).status === 400, "bad check digits accepted");
+      assert((await http.put(`/leads/${l.id}`, { cpf: VALID_CPF }, auth())).status === 200, "valid CPF refused");
+      const list = (await http.get("/leads?limit=200", auth())).data.leads.find(x => x.id === l.id);
+      assert(list.cpf === undefined && list.hasCpf === true && /^\*\*\*\.\*\*\*\.247-25$/.test(list.cpfMasked), `list leaks CPF: ${JSON.stringify([list.cpf, list.cpfMasked])}`);
+      assert((await http.get(`/leads/${l.id}`, auth())).data.cpf === "52998224725", "detail view should return the CPF");
+      const dup = await mkLead("Outro", "11 94444-0002");
+      assert((await http.put(`/leads/${dup.id}`, { cpf: VALID_CPF }, auth())).status === 400, "same CPF accepted on two leads");
+    });
+    await test("new leads get the intake period the administrator chose", async () => {
+      await http.put("/crm/settings", { entryTerms: ["2027/1", "2027/2"], defaultEntryTerm: "2027/2" }, auth());
+      const l = await mkLead("Aluno Periodo", "11 94444-0003");
+      assert(sql(`SELECT entryTerm FROM Leads WHERE id=${l.id}`) === "2027/2", "default intake not applied");
+      const o = (await http.get("/crm/options", auth())).data;
+      assert(o.entryTerms.join() === "2027/1,2027/2" && o.defaultEntryTerm === "2027/2", "options");
+      assert(o.admissionTypes.includes("Transferência externa") && !o.shifts.includes("Tarde-x"), "admission types");
+    });
+    await test("catalog import understands Brazilian prices and updates by name", async () => {
+      const r = await http.post("/courses/import", { items: [
+        { name: "Direito", category: "Graduação - Teste", modality: "Semipresencial", monthlyFee: "1.290,50", semesters: "10" },
+        { name: "Pedagogia", category: "Graduação - Teste", modality: "EAD", monthlyFee: "954,80", semesters: "8" }] }, auth());
+      assert(r.data.created === 2, JSON.stringify(r.data));
+      const again = await http.post("/courses/import", { items: [{ name: "Direito", category: "Graduação - Teste", modality: "Semipresencial", monthlyFee: "1.300,00", semesters: "10" }] }, auth());
+      assert(again.data.updated === 1 && sql("SELECT monthlyFee FROM Courses WHERE name='Direito'") === "1300.00", "update by name");
+      assert(sql("SELECT semesters FROM Courses WHERE name='Pedagogia'") === "8", "semesters");
+    });
+    await test("a transfer student's projection covers only the semesters left to attend", async () => {
+      const direito = sql("SELECT id FROM Courses WHERE name='Direito'");
+      const l = await mkLead("Aluno Transferido", "11 94444-0004", { courseId: Number(direito), admissionType: "Transferência externa", entrySemester: 4, entryTerm: "2027/1" });
+      const r = await http.post("/proposals/preview", { leadId: l.id, params: { gross: 1300, firstMonthly: 260, bolsaFirst: 25, bolsaNext: 20 } }, auth());
+      assert(r.status === 200, `preview ${r.status} ${JSON.stringify(r.data)}`);
+      assert(r.data.result.rows.length === 7, `rows ${r.data.result.rows.length} (10 semesters, enters at 4th => 7)`);
+      assert(r.data.result.rows[0].courseSemester === 4 && r.data.result.rows[6].courseSemester === 10, "course semester numbering");
+      assert(r.data.result.rows[0].period === "2027.1" && r.data.result.rows[1].period === "2027.2", "calendar starts at the intake period");
+      assert(r.data.html.includes("Ingresso no 4º semestre") && r.data.html.includes("Transferência externa") && r.data.html.includes("7 semestres a cursar"), "document header");
+      const full = await mkLead("Aluno Calouro", "11 94444-0005", { courseId: Number(direito), admissionType: "ENEM" });
+      const f = await http.post("/proposals/preview", { leadId: full.id, params: { gross: 1300, firstMonthly: 260 } }, auth());
+      assert(f.data.result.rows.length === 10, "freshman should see all 10 semesters");
+    });
+
+    const paying = await mkLead("Aluno Pagante", "5511955550011");
+    await test("charging the enrollment fee needs CPF, and Efí credentials", async () => {
+      assert((await http.post(`/leads/${paying.id}/payments`, {}, auth())).data.error === "ERR_LEAD_NEEDS_CPF", "no CPF should be refused");
+      await http.put(`/leads/${paying.id}`, { cpf: "168.995.350-09" }, auth());
+      assert((await http.post(`/leads/${paying.id}/payments`, {}, auth())).data.error === "ERR_EFI_NOT_CONFIGURED", "unconfigured Efí should be refused");
+    });
+    await test("Efí settings: secret is masked, wrong credentials fail, correct ones connect", async () => {
+      await http.put("/payments/efi/settings", { env: "sandbox", clientId: "Client_Id_wrong", clientSecret: "nope", pixKey: "chave-pix@exemplo.com", expiryMinutes: 60 }, auth());
+      assert((await http.post("/payments/efi/test", {}, auth())).status === 400, "wrong credentials accepted");
+      const v = (await http.put("/payments/efi/settings", { clientId: "Client_Id_test", clientSecret: "Client_Secret_test" }, auth())).data;
+      assert(v.clientSecret.startsWith("••••") && !JSON.stringify(v).includes("Client_Secret_test"), "secret leaked");
+      assert(v.configured && v.webhookUrl.includes("/webhooks/efi/"), "settings view");
+      assert((await http.post("/payments/efi/test", {}, auth())).data.ok === true, "test connection");
+      const reg = await http.post("/payments/efi/webhook", {}, auth());
+      assert(reg.status === 200 && efi.webhook && efi.webhook.chave === "chave-pix@exemplo.com" && efi.webhook.skipMtls === "true", `webhook registration ${JSON.stringify(efi.webhook)}`);
+    });
+    let pay;
+    await test("generates a Pix charge with the right payload and keeps the QR code", async () => {
+      const r = await http.post(`/leads/${paying.id}/payments`, {}, auth());
+      assert(r.status === 201, `status ${r.status} ${JSON.stringify(r.data)}`);
+      pay = r.data;
+      const call = efi.calls.find(c => c.path === `/v2/cob/${pay.txid}`);
+      assert(call.body.valor.original === "99.00" && call.body.devedor.cpf === "16899535009" && call.body.devedor.nome === "Aluno Pagante", `payload ${JSON.stringify(call.body)}`);
+      assert(call.body.chave === "chave-pix@exemplo.com" && call.body.calendario.expiracao === 3600, "key / expiry");
+      assert(pay.txid.length >= 26 && pay.txid.length <= 35 && /^[a-zA-Z0-9]+$/.test(pay.txid), `txid ${pay.txid}`);
+      assert(pay.pixCopiaECola.startsWith("00020126") && pay.qrImage.startsWith("data:image/png;base64,"), "pix code / qr");
+      assert(pay.status === "pending", "status");
+      const again = await http.post(`/leads/${paying.id}/payments`, {}, auth());
+      assert(again.data.id === pay.id, "second request should reuse the open charge");
+    });
+    await test("a webhook never marks a payment as paid on its own word", async () => {
+      assert((await http.post("/webhooks/efi/wrong-secret/pix", { pix: [{ txid: pay.txid }] })).status === 404, "wrong secret accepted");
+      const secret = (await http.get("/payments/efi/settings", auth())).data.webhookUrl.split("/").pop();
+      await http.post(`/webhooks/efi/${secret}/pix`, { pix: [{ txid: pay.txid, valor: "99.00" }] }); // Efí still says ATIVA
+      await sleep(1200);
+      assert(sql(`SELECT status FROM Payments WHERE id=${pay.id}`) === "pending", "forged webhook marked it paid");
+    });
+    await test("an underpayment is not accepted", async () => {
+      efi.charges[pay.txid].status = "CONCLUIDA";
+      efi.charges[pay.txid].pix = [{ endToEndId: "E1", txid: pay.txid, valor: "50.00", horario: new Date().toISOString() }];
+      const secret = (await http.get("/payments/efi/settings", auth())).data.webhookUrl.split("/").pop();
+      await http.post(`/webhooks/efi/${secret}/pix`, { pix: [{ txid: pay.txid }] });
+      await sleep(1500);
+      assert(sql(`SELECT status FROM Payments WHERE id=${pay.id}`) === "pending", "partial payment accepted as full");
+      assert(sql(`SELECT lastError LIKE 'Pagamento parcial%' FROM Payments WHERE id=${pay.id}`) === "1", "partial not recorded");
+    });
+    await test("a confirmed webhook marks the fee paid, moves the lead and logs it", async () => {
+      efi.charges[pay.txid].pix = [{ endToEndId: "E2026ABC", txid: pay.txid, valor: "99.00", horario: new Date().toISOString() }];
+      const secret = (await http.get("/payments/efi/settings", auth())).data.webhookUrl.split("/").pop();
+      await http.post(`/webhooks/efi/${secret}/pix`, { pix: [{ txid: pay.txid }] });
+      await waitFor(() => sql(`SELECT status FROM Payments WHERE id=${pay.id}`) === "paid", 8000, "payment paid");
+      assert(sql(`SELECT endToEndId FROM Payments WHERE id=${pay.id}`) === "E2026ABC", "endToEndId");
+      assert(stageName(paying.id) === "Matrícula em andamento", `stage ${stageName(paying.id)}`);
+      assert(sql(`SELECT COUNT(*) FROM LeadActivities WHERE leadId=${paying.id} AND body LIKE 'Taxa de matrícula paga%'`) === "1", "activity");
+      // the same notification again (webhook + poller) must not duplicate anything
+      await http.post(`/webhooks/efi/${secret}/pix`, { pix: [{ txid: pay.txid }] });
+      await sleep(1500);
+      assert(sql(`SELECT COUNT(*) FROM LeadActivities WHERE leadId=${paying.id} AND body LIKE 'Taxa de matrícula paga%'`) === "1", "duplicate activity");
+    });
+    await test("without a webhook (localhost) the poller still detects the payment", async () => {
+      const l = await mkLead("Aluno Poller", "5511955550002");
+      await http.put(`/leads/${l.id}`, { cpf: "111.444.777-35" }, auth());
+      const p = (await http.post(`/leads/${l.id}/payments`, { amount: "150,50" }, auth())).data;
+      assert(efi.calls.find(c => c.path === `/v2/cob/${p.txid}`).body.valor.original === "150.50", "custom amount");
+      efi.charges[p.txid].status = "CONCLUIDA";
+      efi.charges[p.txid].pix = [{ endToEndId: "E9", txid: p.txid, valor: "150.50", horario: new Date().toISOString() }];
+      await waitFor(() => sql(`SELECT status FROM Payments WHERE id=${p.id}`) === "paid", 12000, "poller detection");
+      assert(/matr/i.test(stageName(l.id)), `stage ${stageName(l.id)}`);
+    });
+    await test("an open charge can be cancelled at Efí", async () => {
+      const l = await mkLead("Aluno Cancela", "5511955550003");
+      await http.put(`/leads/${l.id}`, { cpf: "935.411.347-80" }, auth());
+      const p = (await http.post(`/leads/${l.id}/payments`, {}, auth())).data;
+      const r = await http.post(`/payments/${p.id}/cancel`, {}, auth());
+      assert(r.status === 200 && r.data.status === "cancelled", "cancel");
+      assert(efi.calls.some(c => c.method === "PATCH" && c.path === `/v2/cob/${p.txid}` && c.body.status === "REMOVIDA_PELO_USUARIO_RECEBEDOR"), "Efí not told");
+      assert((await http.post(`/payments/${p.id}/cancel`, {}, auth())).status === 400, "cancelled twice");
+    });
+    await test("the Pix code and QR image are sent to the candidate in the conversation", async () => {
+      const l = await mkLead("Aluno Envio", "5511955550004");
+      await http.put(`/leads/${l.id}`, { cpf: "111.444.777-35".replace("111.444.777-35", "390.533.447-05") }, auth());
+      const p = (await http.post(`/leads/${l.id}/payments`, {}, auth())).data;
+      const before = graph.sent.length;
+      const r = await http.post(`/payments/${p.id}/send`, { whatsappId: cid }, auth());
+      assert(r.status === 200, `send ${r.status} ${JSON.stringify(r.data)}`);
+      const sent = graph.sent.slice(before);
+      assert(sent.some(x => x.body && x.body.type === "image"), "QR image not sent");
+      assert(sent.some(x => x.body && x.body.image && x.body.image.caption && x.body.image.caption.includes(p.pixCopiaECola)), "copia e cola missing from the message");
     });
   } catch (e) {
     results.push([false, `harness: ${e.stack || e.message}`]);

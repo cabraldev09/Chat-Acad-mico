@@ -5,7 +5,7 @@ import {
   Button, TextField, MenuItem, InputAdornment, Dialog, DialogTitle, DialogContent, DialogActions,
   Typography, makeStyles, ButtonGroup, Chip, Table, TableHead, TableRow, TableCell, TableBody, Paper,
 } from "@material-ui/core";
-import { Search, Plus, Upload, LayoutGrid, List, Calendar } from "lucide-react";
+import { Search, Plus, Upload, LayoutGrid, List, Calendar, BadgeCheck } from "lucide-react";
 import { format, parseISO } from "date-fns";
 
 import MainContainer from "../../components/MainContainer";
@@ -51,6 +51,7 @@ const useStyles = makeStyles((theme) => ({
   cardFoot: { display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: theme.palette.text.secondary, minWidth: 0 },
   chip: { display: "inline-flex", alignItems: "center", gap: 4, borderRadius: 999, padding: "1px 8px", fontSize: 11.5, fontWeight: 500, background: theme.palette.action.selected, whiteSpace: "nowrap", minWidth: 0, maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis" },
   chipLate: { background: "rgba(220,38,38,.12)", color: "#dc2626" },
+  chipPaid: { background: "rgba(22,163,74,.14)", color: "#15803d" },
   more: { fontSize: 12.5, color: theme.palette.text.secondary, textAlign: "center", cursor: "pointer", padding: 4, "&:hover": { color: theme.palette.text.primary } },
   empty: { fontSize: 12.5, color: theme.palette.text.secondary, textAlign: "center", padding: theme.spacing(2, 1), border: `1px dashed ${theme.palette.divider}`, borderRadius: 10 },
   tableWrap: { flex: 1, overflowY: "auto", overflowX: "hidden", ...theme.scrollbarStyles },
@@ -65,7 +66,7 @@ const LeadCard = ({ lead, onOpen, onDragStart, onDragEnd, dragging }) => {
         <div className={classes.cardName}>{lead.name}</div>
         <ScoreRing value={lead.score} />
       </div>
-      {lead.course && <div className={classes.cardCourse}>{lead.course.name}{lead.modality ? ` · ${lead.modality}` : ""}</div>}
+      {lead.course && <div className={classes.cardCourse}>{lead.course.name}{lead.course.modality ? ` · ${lead.course.modality}` : ""}</div>}
       {lead.tags && lead.tags.length > 0 && (
         <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
           {lead.tags.slice(0, 3).map((t) => (<span key={t.id} className={classes.chip} style={{ background: t.color, color: "#fff" }}>{t.name}</span>))}
@@ -73,6 +74,9 @@ const LeadCard = ({ lead, onOpen, onDragStart, onDragEnd, dragging }) => {
       )}
       <div className={classes.cardFoot}>
         <span className={classes.chip} title={`Origem: ${lead.source}`}><SourceIcon source={lead.source} size={12} />{lead.source}</span>
+        {lead.payments && lead.payments.length > 0 && (
+          <span className={`${classes.chip} ${classes.chipPaid}`} title="Taxa de matrícula paga"><BadgeCheck size={12} />Taxa paga</span>
+        )}
         {lead.nextFollowUpAt && (
           <span className={`${classes.chip} ${isOverdue(lead.nextFollowUpAt) ? classes.chipLate : ""}`} title="Próximo contato">
             <Calendar size={12} />{format(parseISO(lead.nextFollowUpAt), "dd/MM HH:mm")}

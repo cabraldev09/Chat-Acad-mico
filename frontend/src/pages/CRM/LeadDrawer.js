@@ -17,6 +17,7 @@ import openSocket from "../../services/socket-io";
 import { WhatsAppBrand } from "../../icons/brands";
 import LeadFields from "./LeadFields";
 import ProposalStudio from "./ProposalStudio";
+import PaymentTab from "./PaymentTab";
 import { ScoreRing, SourceIcon, ago, isOverdue, burst, initials } from "./shared";
 
 const useStyles = makeStyles((theme) => ({
@@ -43,6 +44,8 @@ const useStyles = makeStyles((theme) => ({
   tlIcon: { width: 28, height: 28, borderRadius: "50%", display: "grid", placeItems: "center", background: theme.palette.action.selected, flex: "none", color: theme.palette.text.secondary },
   tlBody: { fontSize: 14, lineHeight: 1.45, overflowWrap: "anywhere", whiteSpace: "pre-wrap" },
   tlMeta: { fontSize: 12, color: theme.palette.text.secondary },
+  tab: { padding: "4px 6px", fontSize: 13, minWidth: 0 },
+  tabCount: { marginLeft: 5, fontSize: 11, fontWeight: 600, padding: "0 6px", borderRadius: 999, background: theme.palette.action.selected },
   taskRow: { display: "flex", alignItems: "center", gap: 4, padding: theme.spacing(0.5, 0), borderBottom: theme.border.divider },
 }));
 
@@ -124,8 +127,8 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab }) => {
       const { __dirty, ...d } = draft;
       await api.put(`/leads/${lead.id}`, {
         name: d.name, phone: d.phone, email: d.email, city: d.city, state: d.state, courseId: d.courseId,
-        modality: d.modality, shift: d.shift, entryTerm: d.entryTerm, educationLevel: d.educationLevel,
-        enemScore: d.enemScore, financing: d.financing, source: d.source, notes: d.notes, ownerId: d.ownerId, tagIds: d.tagIds,
+        entryTerm: d.entryTerm, educationLevel: d.educationLevel, cpf: d.cpf || null, admissionType: d.admissionType,
+        entrySemester: d.entrySemester || 1, enemScore: d.admissionType === "ENEM" ? d.enemScore : null, financing: d.financing, source: d.source, notes: d.notes, ownerId: d.ownerId, tagIds: d.tagIds,
       });
       toast.success("Lead atualizado");
       setDraft(null);
@@ -231,11 +234,12 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab }) => {
             </div>
           </div>
 
-          <Tabs value={tab} onChange={(e, v) => setTab(v)} style={{ margin: "12px 20px 0" }}>
-            <Tab label="Resumo" />
-            <Tab label={`Atividade (${acts.length})`} />
-            <Tab label={`Tarefas (${tasks.filter((t) => !t.doneAt).length})`} />
-            <Tab label={`Propostas (${proposals.length})`} />
+          <Tabs value={tab} onChange={(e, v) => setTab(v)} variant="fullWidth" style={{ margin: "12px 20px 0" }}>
+            <Tab className={classes.tab} label="Resumo" />
+            <Tab className={classes.tab} label={<span>Atividade{acts.length ? <b className={classes.tabCount}>{acts.length}</b> : null}</span>} />
+            <Tab className={classes.tab} label={<span>Tarefas{tasks.filter((t) => !t.doneAt).length ? <b className={classes.tabCount}>{tasks.filter((t) => !t.doneAt).length}</b> : null}</span>} />
+            <Tab className={classes.tab} label={<span>Propostas{proposals.length ? <b className={classes.tabCount}>{proposals.length}</b> : null}</span>} />
+            <Tab className={classes.tab} label="Matrícula" />
           </Tabs>
 
           <div className={classes.body}>
@@ -301,6 +305,8 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab }) => {
                 </div>
               </>
             )}
+            {tab === 4 && <PaymentTab lead={lead} onChanged={changed} />}
+
             {tab === 3 && (
               <>
                 <Button variant="contained" color="primary" size="small" startIcon={<FilePlus2 size={16} />} onClick={() => setStudio({})}>Nova proposta</Button>

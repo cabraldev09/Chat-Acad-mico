@@ -3,6 +3,7 @@ import { useHistory } from "react-router-dom";
 import { toast } from "react-toastify";
 import openSocket from "../../services/socket-io";
 import { AuthContext } from "../../context/Auth/AuthContext";
+import { burst } from "../../pages/CRM/shared";
 
 // Toast when one of my follow-up tasks becomes due
 const CrmReminders = () => {
@@ -16,6 +17,14 @@ const CrmReminders = () => {
       toast.info(`⏰ ${t.title}${t.leadName ? ` — ${t.leadName}` : ""}`, {
         autoClose: 12000,
         onClick: () => history.push(`/crm?lead=${t.leadId}`),
+      });
+    });
+    // enrollment fee confirmed by Efí
+    socket.on("payment", (d) => {
+      burst(window.innerWidth - 200, 90);
+      toast.success(`💰 ${d.leadName} pagou a taxa de matrícula (${Number(d.amount).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })})`, {
+        autoClose: 15000,
+        onClick: () => history.push(`/crm?lead=${d.leadId}`),
       });
     });
     return () => socket.disconnect();

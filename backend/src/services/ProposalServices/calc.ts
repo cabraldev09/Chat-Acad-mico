@@ -20,7 +20,12 @@ export interface ProposalParams {
   enrollmentFee: number;
   dueDay: number;
   installments: number;
+  // semesters the candidate will actually attend (course semesters - entry + 1)
   semesters: number;
+  courseSemesters?: number;
+  // semester of the course the candidate enters (transfer students start later)
+  entrySemester?: number;
+  admissionType?: string | null;
   startYear: number;
   startSemester: 1 | 2;
   bolsaFirst: number;
@@ -38,6 +43,8 @@ export interface ProposalParams {
 
 export interface ProjectionRow {
   semester: number;
+  // semester number inside the course (differs from `semester` for transfers)
+  courseSemester: number;
   period: string;
   bolsa: number;
   bolsaAdjust: number;
@@ -103,6 +110,7 @@ export const calcProposal = (p: ProposalParams): ProposalResult => {
     }
     all.push({
       semester: i,
+      courseSemester: (p.entrySemester || 1) - 1 + i,
       period: `${year}.${sem}`,
       bolsa: i === 1 ? Number(p.bolsaFirst) : Number(p.bolsaNext),
       bolsaAdjust,

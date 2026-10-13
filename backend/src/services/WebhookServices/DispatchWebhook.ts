@@ -17,7 +17,8 @@ export const WEBHOOK_EVENTS = [
   "lead.won",
   "lead.lost",
   "proposal.sent",
-  "proposal.viewed"
+  "proposal.viewed",
+  "payment.paid"
 ];
 
 const dispatchWebhook = (event: string, data: unknown): void => {

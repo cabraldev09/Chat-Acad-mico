@@ -59,7 +59,7 @@ button:hover{filter:brightness(1.1)}button:active{transform:scale(.98)}button:di
 <label>E-mail<input name="email" type="email" autocomplete="email"></label></div>
 <label>Curso de interesse<select name="courseId"><option value="">Selecione</option>${courses.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join("")}</select></label>
 <div class="row"><label>Modalidade<select name="modality"><option value="">Selecione</option>${opt(CRM_OPTIONS.modalities)}</select></label>
-<label>Turno<select name="shift"><option value="">Selecione</option>${opt(CRM_OPTIONS.shifts)}</select></label></div>
+<label>Forma de ingresso<select name="admissionType"><option value="">Selecione</option>${opt(CRM_OPTIONS.admissionTypes)}</select></label></div>
 <label>Cidade<input name="city" autocomplete="address-level2"></label>
 <input class="hp" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">
 <label class="consent"><input type="checkbox" name="consent" required> Concordo em receber contato por WhatsApp, e-mail ou telefone sobre cursos, conforme a LGPD.</label>
@@ -102,7 +102,7 @@ router.post("/:token/submit", express.json(), async (req: Request, res: Response
     city: clip(b.city, 80),
     courseId: course ? course.id : null,
     modality: CRM_OPTIONS.modalities.includes(b.modality) ? b.modality : undefined,
-    shift: CRM_OPTIONS.shifts.includes(b.shift) ? b.shift : undefined,
+    admissionType: CRM_OPTIONS.admissionTypes.includes(b.admissionType) ? b.admissionType : undefined,
     source: "Site / formulário",
     channel: "form",
     utmSource: clip(b.utm_source),

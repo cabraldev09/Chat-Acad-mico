@@ -16,8 +16,10 @@ import * as Stats from "../controllers/StatsController";
 import * as Channel from "../controllers/ChannelController";
 import * as Lead from "../controllers/LeadController";
 import * as Proposal from "../controllers/ProposalController";
+import * as Payment from "../controllers/PaymentController";
 
 const upload = multer({ ...uploadConfig, limits: { fileSize: 30 * 1024 * 1024 } });
+const certUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 1024 * 1024 } });
 const r = express.Router();
 
 // generic upload used by campaigns / schedules to attach media
@@ -151,5 +153,18 @@ r.post("/proposal-templates", isAuth, isAdmin, Proposal.templates.store);
 r.put("/proposal-templates/:id", isAuth, isAdmin, Proposal.templates.update);
 r.delete("/proposal-templates/:id", isAuth, isAdmin, Proposal.templates.remove);
 r.post("/courses/import", isAuth, isAdmin, Lead.importCourses);
+
+// ----------------------------------------------------- enrollment payments (Efí)
+r.get("/payments/efi/settings", isAuth, isAdmin, Payment.getSettings);
+r.put("/payments/efi/settings", isAuth, isAdmin, Payment.putSettings);
+r.post("/payments/efi/certificate", isAuth, isAdmin, certUpload.single("certificate"), Payment.uploadCertificate);
+r.post("/payments/efi/test", isAuth, isAdmin, Payment.testConnection);
+r.post("/payments/efi/webhook", isAuth, isAdmin, Payment.registerWebhook);
+r.get("/leads/:id/payments", isAuth, Payment.listForLead);
+r.post("/leads/:id/payments", isAuth, Payment.createForLead);
+r.get("/payments/:id", isAuth, Payment.show);
+r.post("/payments/:id/refresh", isAuth, Payment.refresh);
+r.post("/payments/:id/cancel", isAuth, Payment.cancel);
+r.post("/payments/:id/send", isAuth, Payment.send);
 
 export default r;

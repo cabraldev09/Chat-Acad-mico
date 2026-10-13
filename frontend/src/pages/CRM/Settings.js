@@ -3,7 +3,7 @@ import { toast } from "react-toastify";
 import {
   Paper, Tabs, Tab, Typography, Switch, FormControlLabel, TextField, MenuItem, Button, makeStyles,
 } from "@material-ui/core";
-import { Copy, RefreshCw, DatabaseBackup, Upload } from "lucide-react";
+import { Copy, RefreshCw, DatabaseBackup, Upload, ShieldCheck, PlugZap, KeyRound } from "lucide-react";
 import { Dialog, DialogTitle, DialogContent, DialogActions } from "@material-ui/core";
 
 import CrudPage from "../../components/CrudPage";
@@ -73,6 +73,75 @@ const Capture = ({ s, setS, save }) => {
   );
 };
 
+const EfiSettings = ({ stages }) => {
+  const classes = useStyles();
+  const [v, setV] = useState(null);
+  const [secret, setSecret] = useState("");
+  const [busy, setBusy] = useState("");
+  const load = () => api.get("/payments/efi/settings").then(({ data }) => { setV(data); setSecret(data.clientSecret); }).catch(toastError);
+  useEffect(() => { load(); }, []);
+  if (!v) return null;
+  const run = (name, fn) => async () => { setBusy(name); try { await fn(); } catch (err) { toastError(err); } finally { setBusy(""); } };
+  const save = run("save", async () => {
+    const { data } = await api.put("/payments/efi/settings", { ...v, clientSecret: secret });
+    setV(data); setSecret(data.clientSecret); toast.success("Configurações salvas");
+  });
+  const upload = async (e) => {
+    const file = e.target.files[0]; e.target.value = "";
+    if (!file) return;
+    const form = new FormData(); form.append("certificate", file);
+    try { const { data } = await api.post("/payments/efi/certificate", form); setV(data); toast.success("Certificado enviado"); } catch (err) { toastError(err); }
+  };
+  const row = (ok, text) => (<div style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13.5 }}><ShieldCheck size={16} style={{ color: ok ? "#16a34a" : "#94a3b8" }} />{text}</div>);
+
+  return (
+    <Paper variant="outlined" className={classes.pane}>
+      <div>
+        <Typography variant="subtitle1" style={{ fontWeight: 600 }}>Cobrança da taxa de matrícula pela Efí</Typography>
+        <Typography className={classes.hint}>
+          O sistema gera um PIX com QR Code para cada candidato (usando o CPF da ficha) e detecta sozinho quando ele paga: pelo aviso da Efí (webhook) e, como garantia, consultando as cobranças abertas a cada 30 segundos.
+        </Typography>
+      </div>
+      <div style={{ display: "grid", gap: 6 }}>
+        {row(!!v.clientId && !!v.clientSecret, v.clientId && v.clientSecret ? "Credenciais informadas" : "Credenciais pendentes (Client ID e Client Secret)")}
+        {row(v.certificate, v.certificate ? "Certificado .p12 enviado" : "Certificado .p12 pendente")}
+        {row(!!v.pixKey, v.pixKey ? "Chave PIX informada" : "Chave PIX pendente")}
+      </div>
+      <TextField select size="small" variant="outlined" label="Ambiente" value={v.env} onChange={(e) => setV({ ...v, env: e.target.value })} style={{ maxWidth: 260 }}>
+        <MenuItem value="sandbox">Homologação (testes)</MenuItem><MenuItem value="production">Produção</MenuItem>
+      </TextField>
+      <TextField size="small" variant="outlined" label="Client ID" value={v.clientId} onChange={(e) => setV({ ...v, clientId: e.target.value })} />
+      <TextField size="small" variant="outlined" label="Client Secret" type="password" value={secret} onChange={(e) => setSecret(e.target.value)} autoComplete="off" />
+      <TextField size="small" variant="outlined" label="Chave PIX da conta Efí" value={v.pixKey} onChange={(e) => setV({ ...v, pixKey: e.target.value })} helperText="CPF/CNPJ, e-mail, telefone ou chave aleatória" />
+      <div className={classes.row}>
+        <Button component="label" variant="outlined" startIcon={<KeyRound size={16} />}>{v.certificate ? "Trocar certificado (.p12)" : "Enviar certificado (.p12)"}
+          <input hidden type="file" accept=".p12,.pfx" onChange={upload} /></Button>
+        <Typography className={classes.hint}>Baixe em Efí → API → Meus certificados. Fica guardado só no servidor.</Typography>
+      </div>
+      <div className={classes.row}>
+        <TextField size="small" variant="outlined" label="Validade da cobrança (minutos)" type="number" value={v.expiryMinutes} onChange={(e) => setV({ ...v, expiryMinutes: e.target.value })} style={{ width: 230 }} />
+        <TextField select size="small" variant="outlined" label="Ao pagar, mover o lead para" value={v.moveStageId || ""} onChange={(e) => setV({ ...v, moveStageId: e.target.value || null })} style={{ minWidth: 260 }}>
+          <MenuItem value="">Automático (etapa “Matrícula…”)</MenuItem>
+          {stages.map((st) => (<MenuItem key={st.id} value={st.id}>{st.name}</MenuItem>))}
+        </TextField>
+      </div>
+      <div className={classes.row}>
+        <Button variant="contained" color="primary" disabled={busy === "save"} onClick={save}>Salvar</Button>
+        <Button variant="outlined" startIcon={<PlugZap size={16} />} disabled={busy === "test"} onClick={run("test", async () => { await api.post("/payments/efi/test"); toast.success("Conexão com a Efí funcionando"); })}>Testar conexão</Button>
+      </div>
+      <div style={{ borderTop: "1px solid rgba(128,128,128,.25)", paddingTop: 16 }}>
+        <Typography variant="subtitle1" style={{ fontWeight: 600 }}>Aviso automático de pagamento (webhook)</Typography>
+        <Typography className={classes.hint} gutterBottom>
+          A Efí só entrega em endereço público HTTPS. {v.publicUrlIsHttps ? "O endereço público já está em HTTPS." : "Em localhost, use um túnel (ex.: cloudflared) e defina PUBLIC_URL em backend/.env. Sem isso o sistema confere os pagamentos sozinho a cada 30 s."}
+        </Typography>
+        <Copyable text={v.webhookUrl} />
+        <Button style={{ marginTop: 8 }} variant="outlined" startIcon={<RefreshCw size={16} />} disabled={busy === "hook"}
+          onClick={run("hook", async () => { await api.post("/payments/efi/webhook"); toast.success("Webhook registrado na Efí"); })}>Registrar webhook na Efí</Button>
+      </div>
+    </Paper>
+  );
+};
+
 const Automation = ({ s, setS, save, users }) => {
   const classes = useStyles();
   const [busy, setBusy] = useState(false);
@@ -83,6 +152,18 @@ const Automation = ({ s, setS, save, users }) => {
       <Typography className={classes.hint} style={{ marginTop: -12 }}>Vale para todos os canais. Grupos não viram lead. Quem já existe (mesmo telefone ou contato) não é duplicado.</Typography>
       <FormControlLabel control={<Switch color="primary" checked={!!s.autoadvance} onChange={(e) => save({ autoadvance: e.target.checked })} />}
         label="Mover para “Primeiro contato” quando um atendente responder" />
+      <div>
+        <Typography variant="subtitle2" style={{ fontWeight: 600 }}>Períodos de ingresso</Typography>
+        <Typography className={classes.hint} gutterBottom>Os períodos que a instituição está captando. O padrão vem preenchido em todo lead novo e nas propostas.</Typography>
+        <div className={classes.row}>
+          <TextField size="small" variant="outlined" label="Períodos (ex.: 2026/2, 2027/1)" value={(s.entryTerms || []).join(", ")} style={{ minWidth: 280 }}
+            onChange={(e) => setS({ ...s, entryTerms: e.target.value.split(",").map((t) => t.trim()).filter(Boolean) })}
+            onBlur={() => save({ entryTerms: s.entryTerms })} />
+          <TextField select size="small" variant="outlined" label="Período padrão" value={s.defaultEntryTerm || ""} onChange={(e) => save({ defaultEntryTerm: e.target.value })} style={{ minWidth: 160 }}>
+            {(s.entryTerms || []).map((t) => (<MenuItem key={t} value={t}>{t}</MenuItem>))}
+          </TextField>
+        </div>
+      </div>
       <TextField select variant="outlined" size="small" label="Distribuição de novos leads" value={s.autoassign || "roundrobin"} onChange={(e) => save({ autoassign: e.target.value })} style={{ maxWidth: 360 }}>
         <MenuItem value="roundrobin">Rodízio entre os consultores</MenuItem>
         <MenuItem value="none">Sem responsável (o primeiro a atender assume)</MenuItem>
@@ -158,6 +239,7 @@ const CrmSettings = () => {
   const [users, setUsers] = useState([]);
   const [options, setOptions] = useState({});
   const [institutions, setInstitutions] = useState([]);
+  const [stages, setStages] = useState([]);
   const [importOpen, setImportOpen] = useState(false);
   const [reload, setReload] = useState(0);
 
@@ -167,6 +249,7 @@ const CrmSettings = () => {
     api.get("/users", { params: { pageNumber: 1 } }).then(({ data }) => setUsers(data.users || []));
     api.get("/crm/options").then(({ data }) => setOptions(data));
     api.get("/institutions").then(({ data }) => setInstitutions(data)).catch(() => {});
+    api.get("/lead-stages").then(({ data }) => setStages(data)).catch(() => {});
   }, [tab, reload]);
   const save = async (patch) => {
     try { const { data } = await api.put("/crm/settings", patch); setS(data); toast.success("Salvo"); } catch (err) { toastError(err); }
@@ -179,7 +262,7 @@ const CrmSettings = () => {
       <MainHeader><Title>Configurações do CRM</Title></MainHeader>
       <Paper variant="outlined" style={{ marginBottom: 8 }}>
         <Tabs value={tab} onChange={(e, v) => setTab(v)}>
-          <Tab label="Etapas do funil" /><Tab label="Cursos" /><Tab label="Instituições" /><Tab label="Modelos de proposta" /><Tab label="Captação" /><Tab label="Automação" />
+          <Tab label="Etapas do funil" /><Tab label="Cursos" /><Tab label="Instituições" /><Tab label="Modelos de proposta" /><Tab label="Captação" /><Tab label="Pagamentos (Efí)" /><Tab label="Automação" />
         </Tabs>
       </Paper>
       <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
@@ -272,7 +355,8 @@ const CrmSettings = () => {
             ]} />
         )}
         {tab === 4 && <Capture s={s} setS={setS} save={save} />}
-        {tab === 5 && <Automation s={s} setS={setS} save={save} users={users} />}
+        {tab === 5 && <EfiSettings stages={stages} />}
+        {tab === 6 && <Automation s={s} setS={setS} save={save} users={users} />}
       </div>
     </MainContainer>
   );

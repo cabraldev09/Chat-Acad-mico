@@ -51,7 +51,7 @@ export const renderProposalHtml = (i: RenderInput): string => {
   const rows = r.rows
     .map(
       row => `<tr>
-<td>${row.semester}</td><td>${esc(row.period)}</td><td>${pct1(row.bolsa)}</td>
+<td>${row.courseSemester}º</td><td>${esc(row.period)}</td><td>${pct1(row.bolsa)}</td>
 <td>${dash(row.bolsaAdjust, pct1)}</td><td>${dash(row.semestral, pct1)}</td>
 <td>${dash(row.annualMin, pct1)}</td><td>${dash(row.totalMin, pct1)}</td><td class="m">${brl(row.monthlyMin)}</td>
 <td>${dash(row.annualMax, pct1)}</td><td>${dash(row.totalMax, pct1)}</td><td class="m">${brl(row.monthlyMax)}</td>
@@ -96,7 +96,11 @@ table{width:100%;border-collapse:collapse}
   <div class="inst"><b>${esc(i.institution?.name || "")}</b>${i.institution?.cnpj ? `CNPJ ${esc(i.institution.cnpj)}` : ""}</div>
 </div>
 <h1>Proposta de Bolsa - ${esc(i.title)}</h1>
-<div class="muted">Semestres: ${p.semesters}${i.modalityLabel ? ` · ${esc(i.modalityLabel)}` : ""}</div>
+<div class="muted">${
+  (p.entrySemester || 1) > 1
+    ? `Ingresso no ${p.entrySemester}º semestre${p.admissionType ? ` (${esc(p.admissionType)})` : ""} · ${p.semesters} semestre${p.semesters > 1 ? "s" : ""} a cursar`
+    : `Semestres: ${p.semesters}`
+}${i.modalityLabel ? ` · ${esc(i.modalityLabel)}` : ""}</div>
 <div class="muted" style="margin-top:6px">Proposta destinada a <b style="color:#1f2937">${esc(i.leadName)}</b></div>
 <div class="muted" style="margin:8px 0 10px">Documento gerado em ${esc(fmtDate(i.generatedAt))}</div>
 

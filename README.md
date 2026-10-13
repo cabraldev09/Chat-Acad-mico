@@ -49,10 +49,26 @@ Modelos de proposta**; instituições (nome, CNPJ, logo) e o catálogo de cursos
 Propostas já enviadas guardam uma cópia dos valores e textos: mudar o modelo não altera o que o candidato recebeu.
 Gerar PDF exige o Google Chrome (`CHROME_BIN`).
 
+## Ingresso por transferência e projeção
+
+A ficha do lead tem **forma de ingresso** (vestibular, ENEM, transferência, portador de diploma, aproveitamento) e, nas formas que
+permitem, o **semestre do curso em que o aluno ingressa**. A proposta projeta apenas os semestres que ele ainda vai cursar, com o
+calendário a partir do período de ingresso. O administrador define os períodos captados e o padrão em Configurar CRM → Automação.
+
+## Taxa de matrícula por PIX (Efí)
+
+Com o **CPF** do candidato na ficha, a aba **Matrícula** gera uma cobrança PIX imediata na Efí (QR Code e copia e cola) e pode
+enviá-la pelo canal da conversa. O pagamento é detectado de duas formas: pelo **webhook** da Efí e por **consulta periódica** das
+cobranças abertas (funciona em localhost, sem URL pública). Nenhum aviso é aceito sem confirmar a cobrança na própria Efí. Ao
+confirmar, o lead avança de etapa (configurável), a equipe é avisada e o evento `payment.paid` sai nos webhooks.
+
+Configuração (admin): Configurar CRM → Pagamentos (Efí): ambiente, Client ID/Secret, chave PIX e o certificado `.p12`
+(guardado em `backend/secrets/`, fora do Git). O CPF não aparece em listas e só a ficha detalhada o exibe.
+
 ## Testes
 
 `npm --prefix backend run test:channels` sobe o backend com um banco descartável e servidores falsos do Telegram e da Graph API
-da Meta, e verifica canais, assinatura de webhooks, mídia, chatbot, CRM e campanhas com modelo (53 verificações, incluindo a conferência célula a célula das propostas de referência).
+da Meta, e verifica canais, assinatura de webhooks, mídia, chatbot, CRM e campanhas com modelo (66 verificações, incluindo a conferência célula a célula das propostas de referência e o fluxo PIX contra uma Efí simulada).
 
 ## Rodando localmente (macOS)
 

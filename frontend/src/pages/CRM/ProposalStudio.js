@@ -1,25 +1,30 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "react-toastify";
 import {
-  Dialog, IconButton, Button, TextField, MenuItem, Typography, makeStyles, Collapse, Checkbox,
-  FormControlLabel, CircularProgress, DialogTitle, DialogContent, DialogActions,
+  Dialog, IconButton, Button, TextField, MenuItem, Typography, makeStyles, Collapse,
+  CircularProgress, DialogTitle, DialogContent, DialogActions,
 } from "@material-ui/core";
-import { X, Save, Download, Link2, SendHorizonal, ChevronDown, SlidersHorizontal, Type, Plus, Trash2 } from "lucide-react";
+import { Autocomplete } from "@material-ui/lab";
+import { X, Save, Download, Link2, SendHorizonal, ChevronDown, SlidersHorizontal, Type, Plus, Trash2, GraduationCap, Wallet } from "lucide-react";
 
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
+import { termLabel } from "./LeadFields";
 
 const useStyles = makeStyles((theme) => ({
   paper: { background: theme.palette.background.default },
   top: { display: "flex", alignItems: "center", gap: 12, padding: theme.spacing(1.25, 2.5), borderBottom: theme.border.divider, background: theme.palette.cards.background },
   title: { fontSize: 17, fontWeight: 600, letterSpacing: "-0.01em" },
-  layout: { flex: 1, minHeight: 0, display: "grid", gridTemplateColumns: "460px 1fr", [theme.breakpoints.down("sm")]: { gridTemplateColumns: "1fr", gridTemplateRows: "auto 1fr" } },
-  form: { overflowY: "auto", overflowX: "hidden", padding: theme.spacing(2.5), borderRight: theme.border.divider, background: theme.palette.cards.background, ...theme.scrollbarStyles },
-  group: { marginBottom: theme.spacing(2.5) },
-  groupTitle: { fontSize: 12.5, fontWeight: 600, color: theme.palette.text.secondary, marginBottom: theme.spacing(0.75), display: "flex", alignItems: "center", gap: 6 },
+  layout: { flex: 1, minHeight: 0, display: "grid", gridTemplateColumns: "480px 1fr", [theme.breakpoints.down("sm")]: { gridTemplateColumns: "1fr", gridTemplateRows: "auto 1fr" } },
+  form: { overflowY: "auto", overflowX: "hidden", padding: theme.spacing(2), borderRight: theme.border.divider, ...theme.scrollbarStyles },
+  card: { background: theme.palette.cards.background, border: theme.border.divider, borderRadius: 14, padding: theme.spacing(2), marginBottom: theme.spacing(1.5) },
+  cardHead: { display: "flex", alignItems: "center", gap: 8, fontSize: 14, fontWeight: 600, marginBottom: theme.spacing(1.25) },
   grid2: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: theme.spacing(1.25) },
   grid3: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: theme.spacing(1.25) },
-  adv: { cursor: "pointer", display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, fontWeight: 600, padding: theme.spacing(1, 0), userSelect: "none", border: 0, background: "transparent", color: "inherit", fontFamily: "inherit", width: "100%" },
+  facts: { display: "flex", flexWrap: "wrap", gap: 6, margin: theme.spacing(0.25, 0, 1) },
+  fact: { fontSize: 12.5, fontWeight: 500, padding: "2px 10px", borderRadius: 999, background: theme.palette.action.selected },
+  note: { fontSize: 12.5, color: theme.palette.text.secondary, marginTop: 2 },
+  adv: { cursor: "pointer", display: "flex", alignItems: "center", gap: 8, fontSize: 14, fontWeight: 600, userSelect: "none", border: 0, background: "transparent", color: "inherit", fontFamily: "inherit", width: "100%", padding: 0 },
   stage: { overflow: "auto", padding: theme.spacing(2.5), background: theme.palette.type === "dark" ? "#050a12" : "#e9eef5", display: "flex", flexDirection: "column", alignItems: "center", gap: theme.spacing(1.5) },
   chips: { display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center" },
   chip: { background: theme.palette.cards.background, border: theme.border.divider, borderRadius: 999, padding: "3px 12px", fontSize: 13, fontWeight: 500 },
@@ -30,7 +35,7 @@ const useStyles = makeStyles((theme) => ({
 }));
 
 const ERR = {
-  ERR_PROPOSAL_NO_GROSS: "Informe a mensalidade bruta do curso.",
+  ERR_PROPOSAL_NO_GROSS: "Escolha o curso: a mensalidade bruta vem do catálogo.",
   ERR_PROPOSAL_FIRST_MONTHLY: "A primeira mensalidade precisa ser maior que zero e não pode passar da mensalidade bruta.",
   ERR_NO_PROPOSAL_TEMPLATE: "Cadastre um modelo de proposta em Configurar CRM.",
 };
@@ -40,29 +45,32 @@ const money = (n) => (n === null || n === undefined ? "" : Number(n).toFixed(2).
 const r2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
 const brl = (n) => Number(n || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
-// Backend params -> text inputs
+// backend params -> text inputs
 const toForm = (p) => ({
   gross: money(p.gross), first: money(p.firstMonthly), bolsa: p.gross ? money(r2((1 - p.firstMonthly / p.gross) * 100)) : "",
   enrollmentFee: money(p.enrollmentFee), dueDay: String(p.dueDay), installments: String(p.installments), firstDueDate: p.firstDueDate || "",
-  startYear: String(p.startYear), startSemester: p.startSemester, semesters: String(p.semesters),
+  entryTerm: `${p.startYear}/${p.startSemester}`, entrySemester: p.entrySemester || 1, courseSemesters: p.courseSemesters || p.semesters, admissionType: p.admissionType || "",
   bolsaFirst: money(p.bolsaFirst), bolsaNext: money(p.bolsaNext),
   punctualityPct: String(p.punctualityPct), lateFee1Pct: String(p.lateFee1Pct), lateFee2Pct: String(p.lateFee2Pct),
   annualMin: money(p.annualMin), annualMax: money(p.annualMax),
   schedule: (p.semestralSchedule || []).map((s) => ({ from: String(s.from), pct: money(s.pct) })),
-  customRange: !!(p.projectionFrom || p.projectionTo), projectionFrom: p.projectionFrom ? String(p.projectionFrom) : "", projectionTo: p.projectionTo ? String(p.projectionTo) : "",
 });
 
 // text inputs -> backend params
-const toParams = (f) => ({
-  gross: toNum(f.gross), firstMonthly: toNum(f.first), enrollmentFee: toNum(f.enrollmentFee), dueDay: toNum(f.dueDay), installments: toNum(f.installments),
-  firstDueDate: f.firstDueDate || null, startYear: toNum(f.startYear), startSemester: Number(f.startSemester), semesters: toNum(f.semesters),
-  bolsaFirst: toNum(f.bolsaFirst), bolsaNext: toNum(f.bolsaNext), punctualityPct: toNum(f.punctualityPct), lateFee1Pct: toNum(f.lateFee1Pct), lateFee2Pct: toNum(f.lateFee2Pct),
-  annualMin: toNum(f.annualMin), annualMax: toNum(f.annualMax), semestralSchedule: f.schedule.map((s) => ({ from: toNum(s.from), pct: toNum(s.pct) })),
-  projectionFrom: f.customRange ? toNum(f.projectionFrom) || null : null, projectionTo: f.customRange ? toNum(f.projectionTo) || null : null,
-});
+const toParams = (f) => {
+  const [y, s] = String(f.entryTerm).split("/").map(Number);
+  return {
+    gross: toNum(f.gross), firstMonthly: toNum(f.first), enrollmentFee: toNum(f.enrollmentFee), dueDay: toNum(f.dueDay), installments: toNum(f.installments),
+    firstDueDate: f.firstDueDate || null, startYear: y, startSemester: s === 1 ? 1 : 2,
+    courseSemesters: Number(f.courseSemesters), entrySemester: Number(f.entrySemester) || 1, admissionType: f.admissionType || null,
+    bolsaFirst: toNum(f.bolsaFirst), bolsaNext: toNum(f.bolsaNext), punctualityPct: toNum(f.punctualityPct), lateFee1Pct: toNum(f.lateFee1Pct), lateFee2Pct: toNum(f.lateFee2Pct),
+    annualMin: toNum(f.annualMin), annualMax: toNum(f.annualMax), semestralSchedule: f.schedule.map((x) => ({ from: toNum(x.from), pct: toNum(x.pct) })),
+  };
+};
 
 const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
   const classes = useStyles();
+  const { options } = ctx;
   const [courses, setCourses] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [institutions, setInstitutions] = useState([]);
@@ -75,7 +83,7 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
   const [error, setError] = useState("");
   const [advanced, setAdvanced] = useState(false);
   const [texts, setTexts] = useState(false);
-  const [saved, setSaved] = useState(null); // persisted proposal (id, token, link)
+  const [saved, setSaved] = useState(null);
   const [busy, setBusy] = useState("");
   const [sendOpen, setSendOpen] = useState(false);
   const [message, setMessage] = useState("");
@@ -93,19 +101,22 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
     return () => ro.disconnect();
   }, [f]);
 
-  const loadDefaults = useCallback(async (cId, tId, keepBolsa) => {
+  const loadDefaults = useCallback(async (cId, tId, keep) => {
     const { data } = await api.get("/proposals/defaults", { params: { leadId: lead.id, courseId: cId || undefined, templateId: tId || undefined } });
     setCourseId(data.courseId);
     setTemplateId(data.templateId);
     setSnapshot(data.snapshot);
     setF((prev) => {
       const next = toForm(data.params);
-      if (keepBolsa && prev && toNum(prev.bolsa) > 0 && data.params.gross) {
-        const first = r2(data.params.gross * (1 - toNum(prev.bolsa) / 100));
-        next.first = money(first);
-        next.bolsa = prev.bolsa;
+      if (keep && prev) {
+        // switching course: keep the negotiated discount and the candidate's ingress choices
+        if (toNum(prev.bolsa) > 0 && data.params.gross) {
+          next.first = money(r2(data.params.gross * (1 - toNum(prev.bolsa) / 100)));
+          next.bolsa = prev.bolsa;
+        }
+        next.entryTerm = prev.entryTerm; next.admissionType = prev.admissionType; next.firstDueDate = prev.firstDueDate;
+        next.entrySemester = Math.min(prev.entrySemester, next.courseSemesters);
       }
-      if (prev && keepBolsa) { next.firstDueDate = prev.firstDueDate; next.startYear = prev.startYear; next.startSemester = prev.startSemester; }
       return next;
     });
   }, [lead.id]);
@@ -196,15 +207,19 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
   });
 
   const locked = saved && saved.status !== "draft";
-  const institutionName = (institutions.find((i) => i.id === (snapshot && snapshot.institutionId)) || {}).name;
+  const course = courses.find((c) => c.id === courseId);
+  const institution = institutions.find((i) => i.id === (snapshot && snapshot.institutionId));
+  const needsSemester = f && (options.admissionNeedsSemester || []).includes(f.admissionType);
+  const attend = f ? f.courseSemesters - f.entrySemester + 1 : 0;
+  const terms = f ? [...new Set([...(options.entryTerms || []), f.entryTerm])] : [];
 
   return (
     <Dialog fullScreen open onClose={() => onClose()} classes={{ paper: classes.paper }}>
       <div className={classes.top}>
         <IconButton onClick={() => onClose()} aria-label="Fechar"><X /></IconButton>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div className={classes.title}>Gerar proposta{saved ? ` #${saved.id}` : ""}</div>
-          <Typography variant="body2" color="textSecondary" noWrap>{lead.name}{institutionName ? ` · ${institutionName}` : ""}</Typography>
+          <div className={classes.title}>Proposta de bolsa{saved ? ` #${saved.id}` : ""}</div>
+          <Typography variant="body2" color="textSecondary" noWrap>{lead.name}{institution ? ` · ${institution.name}` : ""}</Typography>
         </div>
         {locked && <span className={classes.chip}>Já enviada — duplique para alterar</span>}
       </div>
@@ -212,102 +227,121 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
       {!f ? <div style={{ margin: "auto" }}><CircularProgress /></div> : (
         <div className={classes.layout}>
           <div className={classes.form}>
-            <div className={classes.group}>
-              <div className={classes.groupTitle}>Curso e modelo</div>
-              <TextField select fullWidth variant="outlined" margin="dense" label="Curso" value={courseId || ""} disabled={locked}
-                onChange={(e) => loadDefaults(e.target.value, templateId, true)}>
-                {courses.map((c) => (<MenuItem key={c.id} value={c.id}>{c.name}{c.modality ? ` · ${c.modality}` : ""}{c.monthlyFee ? ` · ${brl(c.monthlyFee)}` : ""}</MenuItem>))}
-              </TextField>
-              <div className={classes.grid2}>
-                <TextField select fullWidth variant="outlined" margin="dense" label="Modelo" value={templateId || ""} disabled={locked}
-                  onChange={(e) => loadDefaults(courseId, e.target.value, true)}>
-                  {templates.map((t) => (<MenuItem key={t.id} value={t.id}>{t.name}</MenuItem>))}
-                </TextField>
-                <TextField select fullWidth variant="outlined" margin="dense" label="Instituição" disabled={locked}
-                  value={(snapshot && snapshot.institutionId) || ""} onChange={(e) => setSnapshot({ ...snapshot, institutionId: e.target.value || null })}>
-                  <MenuItem value="">—</MenuItem>
-                  {institutions.map((i) => (<MenuItem key={i.id} value={i.id}>{i.name}</MenuItem>))}
-                </TextField>
-              </div>
-            </div>
-
-            <div className={classes.group}>
-              <div className={classes.groupTitle}>Valores</div>
-              <div className={classes.grid2}>
-                {field("gross", "Mensalidade bruta (R$)", { onChange: setGross, disabled: locked })}
-                {field("bolsa", "Bolsa aplicada (%)", { onChange: setBolsa, disabled: locked })}
-                {field("first", "Primeira mensalidade (R$)", { onChange: setFirst, disabled: locked, helperText: "Altere o valor ou a bolsa: o outro se ajusta." })}
-                {field("enrollmentFee", "Taxa de matrícula (R$)", { disabled: locked })}
-                {field("dueDay", "Vencimento (dia do mês)", { disabled: locked })}
-                {field("installments", "Parcelas deste semestre", { disabled: locked })}
-              </div>
-              {field("firstDueDate", "Vencimento da 1ª mensalidade (opcional)", { type: "date", InputLabelProps: { shrink: true }, disabled: locked })}
-            </div>
-
-            <div className={classes.group}>
-              <div className={classes.groupTitle}>Ingresso e bolsa</div>
-              <div className={classes.grid3}>
-                {field("startYear", "Ano inicial", { disabled: locked })}
-                <TextField select fullWidth variant="outlined" margin="dense" label="Semestre" value={f.startSemester} disabled={locked} onChange={set("startSemester")}>
-                  <MenuItem value={1}>1º semestre</MenuItem><MenuItem value={2}>2º semestre</MenuItem>
-                </TextField>
-                {field("semesters", "Semestres do curso", { disabled: locked })}
-              </div>
-              <div className={classes.grid2}>
-                {field("bolsaFirst", "Bolsa no 1º semestre (%)", { disabled: locked })}
-                {field("bolsaNext", "Bolsa do 2º sem. em diante (%)", { disabled: locked })}
-              </div>
-            </div>
-
-            <button type="button" className={classes.adv} onClick={() => setAdvanced(!advanced)}>
-              <SlidersHorizontal size={16} /> Regras de pontualidade e reajuste
-              <ChevronDown size={16} style={{ marginLeft: "auto", transform: advanced ? "rotate(180deg)" : "none", transition: "transform .2s" }} />
-            </button>
-            <Collapse in={advanced}>
-              <div className={classes.group}>
-                <div className={classes.grid3}>
-                  {field("punctualityPct", "Pontualidade (%)", { disabled: locked })}
-                  {field("lateFee1Pct", "Perde (dias 11–25) %", { disabled: locked })}
-                  {field("lateFee2Pct", "Perde (após venc.) %", { disabled: locked })}
-                </div>
-                <div className={classes.grid2}>
-                  {field("annualMin", "Reajuste anual mínimo (%)", { disabled: locked })}
-                  {field("annualMax", "Reajuste anual teto (%)", { disabled: locked })}
-                </div>
-                <div className={classes.groupTitle} style={{ marginTop: 8 }}>Reajuste semestral (a partir do semestre…)</div>
-                {f.schedule.map((s, i) => (
-                  <div key={i} style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                    <TextField variant="outlined" margin="dense" label="Semestre" value={s.from} disabled={locked} style={{ width: 110 }}
-                      onChange={(e) => setF((p) => ({ ...p, schedule: p.schedule.map((x, j) => (j === i ? { ...x, from: e.target.value } : x)) }))} />
-                    <TextField variant="outlined" margin="dense" label="% por semestre" value={s.pct} disabled={locked} style={{ flex: 1 }}
-                      onChange={(e) => setF((p) => ({ ...p, schedule: p.schedule.map((x, j) => (j === i ? { ...x, pct: e.target.value } : x)) }))} />
-                    <IconButton size="small" disabled={locked} onClick={() => setF((p) => ({ ...p, schedule: p.schedule.filter((_, j) => j !== i) }))}><Trash2 size={16} /></IconButton>
-                  </div>
-                ))}
-                <Button size="small" startIcon={<Plus size={14} />} disabled={locked} onClick={() => setF((p) => ({ ...p, schedule: [...p.schedule, { from: "", pct: "" }] }))}>Adicionar degrau</Button>
-                <FormControlLabel style={{ display: "flex", marginTop: 8 }} control={<Checkbox color="primary" checked={f.customRange} disabled={locked} onChange={(e) => setF((p) => ({ ...p, customRange: e.target.checked }))} />}
-                  label="Definir período da projeção" />
-                {f.customRange && (
-                  <div className={classes.grid2}>
-                    {field("projectionFrom", "Do semestre", { disabled: locked })}
-                    {field("projectionTo", "Até o semestre", { disabled: locked })}
+            <div className={classes.card}>
+              <div className={classes.cardHead}><GraduationCap size={17} /> Curso e ingresso</div>
+              <Autocomplete
+                disabled={!!locked} options={courses} value={course || null} openOnFocus
+                getOptionLabel={(c) => c.name} getOptionSelected={(a, b) => a.id === b.id} noOptionsText="Nenhum curso encontrado"
+                groupBy={(c) => c.modality || "Outros"}
+                renderOption={(c) => (
+                  <div style={{ display: "flex", width: "100%", gap: 8 }}>
+                    <span style={{ flex: 1 }}>{c.name}</span><span style={{ opacity: 0.6 }}>{c.monthlyFee ? brl(c.monthlyFee) : ""}</span>
                   </div>
                 )}
+                onChange={(e, c) => c && loadDefaults(c.id, templateId, true)}
+                renderInput={(params) => <TextField {...params} variant="outlined" margin="dense" label="Curso" placeholder="Busque pelo nome" />}
+              />
+              {course && (
+                <div className={classes.facts}>
+                  {course.modality && <span className={classes.fact}>{course.modality}</span>}
+                  <span className={classes.fact}>{course.semesters} semestres</span>
+                  {course.category && <span className={classes.fact}>{course.category}</span>}
+                </div>
+              )}
+              <div className={classes.grid2}>
+                <TextField select fullWidth variant="outlined" margin="dense" label="Forma de ingresso" value={f.admissionType} disabled={!!locked}
+                  onChange={(e) => setF((p) => ({ ...p, admissionType: e.target.value, entrySemester: (options.admissionNeedsSemester || []).includes(e.target.value) ? p.entrySemester : 1 }))}>
+                  <MenuItem value="">—</MenuItem>
+                  {(options.admissionTypes || []).map((t) => (<MenuItem key={t} value={t}>{t}</MenuItem>))}
+                </TextField>
+                <TextField select fullWidth variant="outlined" margin="dense" label="Período de ingresso" value={f.entryTerm} onChange={set("entryTerm")} disabled={!!locked}>
+                  {terms.map((t) => (<MenuItem key={t} value={t}>{termLabel(t)}</MenuItem>))}
+                </TextField>
               </div>
-            </Collapse>
+              {needsSemester && (
+                <TextField select fullWidth variant="outlined" margin="dense" label="Semestre do curso em que ingressa" value={f.entrySemester} disabled={!!locked}
+                  onChange={(e) => setF((p) => ({ ...p, entrySemester: Number(e.target.value) }))}>
+                  {Array.from({ length: f.courseSemesters }, (_, i) => (<MenuItem key={i + 1} value={i + 1}>{i + 1}º semestre{i === 0 ? " (início do curso)" : ""}</MenuItem>))}
+                </TextField>
+              )}
+              <div className={classes.note}>
+                {attend < f.courseSemesters ? `Ingressa no ${f.entrySemester}º semestre: a projeção mostra os ${attend} semestres que ainda vai cursar.` : `A projeção cobre os ${attend} semestres do curso.`}
+              </div>
+            </div>
 
-            <button type="button" className={classes.adv} onClick={() => setTexts(!texts)}>
-              <Type size={16} /> Textos do documento
-              <ChevronDown size={16} style={{ marginLeft: "auto", transform: texts ? "rotate(180deg)" : "none", transition: "transform .2s" }} />
-            </button>
-            <Collapse in={texts}>
-              <div className={classes.group}>
-                {[["observation", "Observação"], ["disclaimer", "Aviso da projeção"], ["finalMessage", "Mensagem final"], ["bolsaNote", "Nota da bolsa aplicada"]].map(([k, label]) => (
-                  <TextField key={k} fullWidth multiline rows={2} variant="outlined" margin="dense" label={label} disabled={locked}
-                    value={(snapshot.texts && snapshot.texts[k]) || ""} onChange={(e) => setSnapshot({ ...snapshot, texts: { ...snapshot.texts, [k]: e.target.value } })} />
-                ))}
+            <div className={classes.card}>
+              <div className={classes.cardHead}><Wallet size={17} /> Condições comerciais</div>
+              <div className={classes.grid2}>
+                {field("gross", "Mensalidade bruta (R$)", { onChange: setGross, disabled: !!locked })}
+                {field("bolsa", "Bolsa aplicada (%)", { onChange: setBolsa, disabled: !!locked })}
+                {field("first", "Primeira mensalidade (R$)", { onChange: setFirst, disabled: !!locked })}
+                {field("enrollmentFee", "Taxa de matrícula (R$)", { disabled: !!locked })}
+                {field("dueDay", "Dia de vencimento", { disabled: !!locked })}
+                {field("installments", "Parcelas deste semestre", { disabled: !!locked })}
               </div>
-            </Collapse>
+              <div className={classes.note}>Mude a primeira mensalidade ou a bolsa: o outro valor se ajusta.</div>
+              {field("firstDueDate", "Vencimento da 1ª mensalidade (opcional)", { type: "date", InputLabelProps: { shrink: true }, disabled: !!locked })}
+            </div>
+
+            <div className={classes.card}>
+              <button type="button" className={classes.adv} onClick={() => setAdvanced(!advanced)}>
+                <SlidersHorizontal size={17} /> Bolsa, pontualidade e reajustes
+                <ChevronDown size={16} style={{ marginLeft: "auto", transform: advanced ? "rotate(180deg)" : "none", transition: "transform .2s" }} />
+              </button>
+              <Collapse in={advanced}>
+                <div style={{ paddingTop: 12 }}>
+                  <div className={classes.grid2}>
+                    {field("bolsaFirst", "Bolsa no 1º semestre (%)", { disabled: !!locked })}
+                    {field("bolsaNext", "Bolsa dos demais (%)", { disabled: !!locked })}
+                  </div>
+                  <div className={classes.grid3}>
+                    {field("punctualityPct", "Pontualidade (%)", { disabled: !!locked })}
+                    {field("lateFee1Pct", "Perde dias 11–25 (%)", { disabled: !!locked })}
+                    {field("lateFee2Pct", "Perde após venc. (%)", { disabled: !!locked })}
+                  </div>
+                  <div className={classes.grid2}>
+                    {field("annualMin", "Reajuste anual mínimo (%)", { disabled: !!locked })}
+                    {field("annualMax", "Reajuste anual teto (%)", { disabled: !!locked })}
+                  </div>
+                  <div className={classes.note} style={{ marginTop: 8 }}>Reajuste semestral (a partir do semestre…)</div>
+                  {f.schedule.map((s, i) => (
+                    <div key={i} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                      <TextField variant="outlined" margin="dense" label="Semestre" value={s.from} disabled={!!locked} style={{ width: 110 }}
+                        onChange={(e) => setF((p) => ({ ...p, schedule: p.schedule.map((x, j) => (j === i ? { ...x, from: e.target.value } : x)) }))} />
+                      <TextField variant="outlined" margin="dense" label="% por semestre" value={s.pct} disabled={!!locked} style={{ flex: 1 }}
+                        onChange={(e) => setF((p) => ({ ...p, schedule: p.schedule.map((x, j) => (j === i ? { ...x, pct: e.target.value } : x)) }))} />
+                      <IconButton size="small" disabled={!!locked} onClick={() => setF((p) => ({ ...p, schedule: p.schedule.filter((_, j) => j !== i) }))}><Trash2 size={16} /></IconButton>
+                    </div>
+                  ))}
+                  <Button size="small" startIcon={<Plus size={14} />} disabled={!!locked} onClick={() => setF((p) => ({ ...p, schedule: [...p.schedule, { from: "", pct: "" }] }))}>Adicionar degrau</Button>
+                  <div className={classes.grid2} style={{ marginTop: 8 }}>
+                    <TextField select fullWidth variant="outlined" margin="dense" label="Modelo" value={templateId || ""} disabled={!!locked} onChange={(e) => loadDefaults(courseId, e.target.value, true)}>
+                      {templates.map((t) => (<MenuItem key={t.id} value={t.id}>{t.name}</MenuItem>))}
+                    </TextField>
+                    <TextField select fullWidth variant="outlined" margin="dense" label="Instituição" disabled={!!locked}
+                      value={(snapshot && snapshot.institutionId) || ""} onChange={(e) => setSnapshot({ ...snapshot, institutionId: e.target.value || null })}>
+                      <MenuItem value="">—</MenuItem>
+                      {institutions.map((i) => (<MenuItem key={i.id} value={i.id}>{i.name}</MenuItem>))}
+                    </TextField>
+                  </div>
+                </div>
+              </Collapse>
+            </div>
+
+            <div className={classes.card}>
+              <button type="button" className={classes.adv} onClick={() => setTexts(!texts)}>
+                <Type size={17} /> Textos do documento
+                <ChevronDown size={16} style={{ marginLeft: "auto", transform: texts ? "rotate(180deg)" : "none", transition: "transform .2s" }} />
+              </button>
+              <Collapse in={texts}>
+                <div style={{ paddingTop: 12 }}>
+                  {[["observation", "Observação"], ["disclaimer", "Aviso da projeção"], ["finalMessage", "Mensagem final"], ["bolsaNote", "Nota da bolsa aplicada"]].map(([k, label]) => (
+                    <TextField key={k} fullWidth multiline rows={2} variant="outlined" margin="dense" label={label} disabled={!!locked}
+                      value={(snapshot.texts && snapshot.texts[k]) || ""} onChange={(e) => setSnapshot({ ...snapshot, texts: { ...snapshot.texts, [k]: e.target.value } })} />
+                  ))}
+                </div>
+              </Collapse>
+            </div>
           </div>
 
           <div className={classes.stage}>

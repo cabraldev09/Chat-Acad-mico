@@ -6,6 +6,7 @@ import { StartAllWhatsAppsSessions } from "./services/WbotServices/StartAllWhats
 import { startScheduler } from "./workers/Scheduler";
 import { startCampaignRunner } from "./workers/CampaignRunner";
 import { startCrmReminders } from "./workers/CrmReminders";
+import { startPaymentPoller } from "./workers/PaymentPoller";
 
 const server = app.listen(process.env.PORT, () => {
   logger.info(`Server started on port: ${process.env.PORT}`);
@@ -16,6 +17,7 @@ StartAllWhatsAppsSessions();
 startScheduler();
 startCampaignRunner();
 startCrmReminders();
+startPaymentPoller();
 // every contact already in the system becomes a lead too (idempotent)
 import("./services/CrmServices/LeadCore")
   .then(({ backfillLeads }) => backfillLeads())

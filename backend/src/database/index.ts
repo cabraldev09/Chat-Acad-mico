@@ -31,6 +31,7 @@ import LeadTag from "../models/LeadTag";
 import Institution from "../models/Institution";
 import ProposalTemplate from "../models/ProposalTemplate";
 import Proposal from "../models/Proposal";
+import Payment from "../models/Payment";
 
 // eslint-disable-next-line
 const dbConfig = require("../config/database");
@@ -70,7 +71,8 @@ const models = [
   LeadTag,
   Institution,
   ProposalTemplate,
-  Proposal
+  Proposal,
+  Payment
 ];
 
 sequelize.addModels(models);

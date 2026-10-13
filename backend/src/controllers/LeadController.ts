@@ -15,6 +15,7 @@ import Whatsapp from "../models/Whatsapp";
 import { getIO } from "../libs/socket";
 import { getSetting, setSetting } from "../helpers/AppSettings";
 import { normalizeEmail, normalizePhone } from "../helpers/Phone";
+import { isValidCpf, normalizeCpf } from "../helpers/Cpf";
 import FindOrCreateTicketService from "../services/TicketServices/FindOrCreateTicketService";
 import UpdateTicketService from "../services/TicketServices/UpdateTicketService";
 import { resolveOutboundContact } from "../services/ChannelServices/ResolveOutboundContact";
@@ -22,6 +23,7 @@ import { CRM_OPTIONS } from "../services/CrmServices/crmOptions";
 import {
   addActivity,
   changeStage,
+  getEntryTerms,
   leadInclude,
   loadLead,
   rescore,
@@ -107,13 +109,14 @@ export const board = async (req: Request, res: Response): Promise<Response> => {
 export const show = async (req: Request, res: Response): Promise<Response> => {
   const lead = await loadLead(req.params.id);
   if (!lead) throw new AppError("ERR_LEAD_NOT_FOUND", 404);
-  return res.json(lead);
+  // the CPF is hidden from every list; only the detail view returns it
+  return res.json({ ...lead.toJSON(), cpf: lead.cpf });
 };
 
 const FIELDS = [
-  "name", "phone", "email", "city", "state", "courseId", "modality", "shift", "entryTerm",
+  "name", "phone", "email", "city", "state", "courseId", "modality", "entryTerm",
   "educationLevel", "enemScore", "financing", "source", "utmSource", "utmMedium", "utmCampaign",
-  "notes", "ownerId", "nextFollowUpAt"
+  "notes", "ownerId", "nextFollowUpAt", "cpf", "admissionType", "entrySemester"
 ];
 
 export const store = async (req: Request, res: Response): Promise<Response> => {
@@ -122,6 +125,7 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
   if (!normalizePhone(b.phone) && !normalizeEmail(b.email)) {
     throw new AppError("ERR_LEAD_NEEDS_PHONE_OR_EMAIL");
   }
+  if (b.cpf && !isValidCpf(b.cpf)) throw new AppError("ERR_CPF_INVALID");
   const { lead, created } = await upsertLead(
     { ...b, source: b.source || "Outro", ownerId: b.ownerId === undefined ? undefined : b.ownerId || null },
     uid(req)
@@ -136,6 +140,15 @@ export const update = async (req: Request, res: Response): Promise<Response> => 
   FIELDS.forEach(f => {
     if (req.body[f] !== undefined) patch[f] = req.body[f] === "" ? null : req.body[f];
   });
+  if (patch.cpf !== undefined) {
+    if (patch.cpf !== null && !isValidCpf(patch.cpf)) throw new AppError("ERR_CPF_INVALID");
+    patch.cpf = normalizeCpf(patch.cpf);
+    if (patch.cpf) {
+      const other = await Lead.findOne({ where: { cpf: patch.cpf, id: { [Op.ne]: lead.id } } });
+      if (other) throw new AppError("ERR_CPF_ALREADY_USED");
+    }
+  }
+  if (patch.entrySemester !== undefined) patch.entrySemester = Math.max(1, Number(patch.entrySemester) || 1);
   if (patch.phone !== undefined) patch.phone = normalizePhone(patch.phone);
   if (patch.email !== undefined) patch.email = normalizeEmail(patch.email);
   if (patch.name === null) throw new AppError("ERR_FIELD_REQUIRED_name");
@@ -357,8 +370,8 @@ export const importLeads = async (req: Request, res: Response): Promise<Response
           courseId: it.course ? byName.get(String(it.course).toLowerCase()) || null : null,
           notes: it.course && !byName.has(String(it.course).toLowerCase()) ? `Curso de interesse: ${it.course}` : it.notes,
           modality: it.modality,
-          shift: it.shift,
           entryTerm: it.entryTerm,
+          admissionType: it.admissionType,
           source: it.source || req.body.source || "Importação",
           ownerId: req.body.ownerId || undefined
         },
@@ -432,8 +445,10 @@ export const importCourses = async (req: Request, res: Response): Promise<Respon
   return res.json({ created, updated, errors: errors.slice(0, 20) });
 };
 
-export const options = async (_req: Request, res: Response): Promise<Response> =>
-  res.json(CRM_OPTIONS);
+export const options = async (_req: Request, res: Response): Promise<Response> => {
+  const { terms, defaultTerm } = await getEntryTerms();
+  return res.json({ ...CRM_OPTIONS, entryTerms: terms, defaultEntryTerm: defaultTerm });
+};
 
 export const getSettings = async (_req: Request, res: Response): Promise<Response> =>
   res.json({
@@ -441,6 +456,8 @@ export const getSettings = async (_req: Request, res: Response): Promise<Respons
     autocreate: (await getSetting("crm_autocreate", "true")) !== "false",
     autoadvance: (await getSetting("crm_autoadvance", "true")) !== "false",
     ownerIds: JSON.parse(await getSetting("crm_owner_ids", "[]")),
+    entryTerms: (await getEntryTerms()).terms,
+    defaultEntryTerm: (await getEntryTerms()).defaultTerm,
     formToken: await getSetting("crm_form_token", ""),
     formTitle: await getSetting("crm_form_title", "Quero conhecer a instituição"),
     formThanks: await getSetting("crm_form_thanks", "Recebemos seus dados! Em breve um consultor entra em contato."),
@@ -452,6 +469,11 @@ export const putSettings = async (req: Request, res: Response): Promise<Response
   if (b.autoassign !== undefined) await setSetting("crm_autoassign", b.autoassign === "none" ? "none" : "roundrobin");
   if (b.autocreate !== undefined) await setSetting("crm_autocreate", b.autocreate ? "true" : "false");
   if (b.autoadvance !== undefined) await setSetting("crm_autoadvance", b.autoadvance ? "true" : "false");
+  if (Array.isArray(b.entryTerms)) {
+    const terms = b.entryTerms.map((t: any) => String(t).trim()).filter((t: string) => /^20\d{2}\/[12]$/.test(t));
+    await setSetting("crm_entry_terms", JSON.stringify(terms));
+  }
+  if (typeof b.defaultEntryTerm === "string") await setSetting("crm_default_entry", b.defaultEntryTerm);
   if (Array.isArray(b.ownerIds)) await setSetting("crm_owner_ids", JSON.stringify(b.ownerIds.map(Number)));
   if (typeof b.formTitle === "string") await setSetting("crm_form_title", b.formTitle.slice(0, 120));
   if (typeof b.formThanks === "string") await setSetting("crm_form_thanks", b.formThanks.slice(0, 300));

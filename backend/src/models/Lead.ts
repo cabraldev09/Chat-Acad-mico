@@ -23,6 +23,8 @@ import Tag from "./Tag";
 import LeadTag from "./LeadTag";
 import LeadActivity from "./LeadActivity";
 import LeadTask from "./LeadTask";
+import Payment from "./Payment";
+import { maskCpf } from "../helpers/Cpf";
 
 @Table
 class Lead extends Model<Lead> {
@@ -58,6 +60,19 @@ class Lead extends Model<Lead> {
 
   @Column
   educationLevel: string;
+
+  // digits only; never serialised (see toJSON), the detail endpoint adds it back
+  @Column
+  cpf: string;
+
+  // Vestibular, ENEM, Transferência...
+  @Column
+  admissionType: string;
+
+  // semester of the course the candidate enters (transfers start later)
+  @Default(1)
+  @Column
+  entrySemester: number;
 
   @Column
   enemScore: number;
@@ -150,6 +165,17 @@ class Lead extends Model<Lead> {
 
   @HasMany(() => LeadTask)
   tasks: LeadTask[];
+
+  @HasMany(() => Payment)
+  payments: Payment[];
+
+  toJSON(): any {
+    const data: any = super.toJSON();
+    data.hasCpf = !!data.cpf;
+    data.cpfMasked = maskCpf(data.cpf);
+    delete data.cpf;
+    return data;
+  }
 
   @CreatedAt
   createdAt: Date;
