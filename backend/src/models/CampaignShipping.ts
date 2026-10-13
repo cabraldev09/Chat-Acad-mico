@@ -41,6 +41,10 @@ class CampaignShipping extends Model<CampaignShipping> {
   @Column(DataType.TEXT)
   error: string;
 
+  @Default(0)
+  @Column
+  stepsDone: number;
+
   @Column
   sentAt: Date;
 

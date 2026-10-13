@@ -41,6 +41,17 @@ class Campaign extends Model<Campaign> {
   @Column
   mediaUrl: string;
 
+  // up to 5 messages sent in sequence to each recipient (see helpers/CampaignText)
+  @Column(DataType.JSON)
+  steps: any;
+
+  @Column
+  nextRunAt: Date;
+
+  @Default(0)
+  @Column
+  sentInBatch: number;
+
   @Column
   scheduledAt: Date;
 

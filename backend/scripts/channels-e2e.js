@@ -555,6 +555,43 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(s.body.template.components[0].parameters[0].text === "Rita", "first name parameter");
       assert(s.body.to === "5511966665555", "recipient");
     });
+    await test("a campaign with several messages delivers them in order, then marks the recipient as sent", async () => {
+      const list = (await http.post("/contact-lists", { name: "Sequência" }, auth())).data;
+      await http.post(`/contact-lists/${list.id}/import`, { items: [{ name: "Paula Dias", number: "5511955554444" }] }, auth());
+      const steps = [
+        { body: "Oi {{name}}! {{spin|Tudo bem|Tudo certo}}?", delaySec: 0 },
+        { body: "Abrimos as inscrições do vestibular.", delaySec: 3 },
+        { body: "Posso te explicar as bolsas?", delaySec: 3 }
+      ];
+      const bad = await http.post("/campaigns", { name: "Sem texto", contactListId: list.id, steps: [{ body: "" }] }, auth());
+      assert(bad.status === 400, `empty step should be refused, got ${bad.status}`);
+      const six = await http.post("/campaigns", { name: "Seis", contactListId: list.id, steps: Array.from({ length: 6 }, () => ({ body: "x" })) }, auth());
+      assert(six.status === 400, `6 steps should be refused, got ${six.status}`);
+      const tpl = await http.post("/campaigns", { name: "Modelo + sequência", contactListId: list.id, whatsappId: cid, templateName: "inscricoes_abertas", steps }, auth());
+      assert(tpl.status === 400, `template + several steps should be refused, got ${tpl.status}`);
+      const c = (await http.post("/campaigns", { name: "Sequência", steps, contactListId: list.id, whatsappId: cid, intervalMin: 0, intervalMax: 0, batchSize: 50, batchPause: 1 }, auth())).data;
+      assert(c.message.startsWith("Oi {{name}}") && !c.templateName, "first step should mirror message");
+      const before = graph.sent.length;
+      assert((await http.post(`/campaigns/${c.id}/start`, {}, auth())).status === 200, "start");
+      await waitFor(() => graph.sent.slice(before).filter(x => x.body && x.body.type === "text").length >= 3, 30000, "three messages");
+      const texts = graph.sent.slice(before).filter(x => x.body && x.body.type === "text").map(x => x.body.text.body);
+      assert(/^Oi Paula Dias! Tudo (bem|certo)\?$/.test(texts[0]), `first: ${texts[0]}`);
+      assert(texts[1] === steps[1].body && texts[2] === steps[2].body, `order: ${JSON.stringify(texts)}`);
+      await waitFor(() => sql(`SELECT status FROM CampaignShippings WHERE campaignId=${c.id}`) === "sent", 8000, "shipping sent");
+      assert(sql(`SELECT stepsDone FROM CampaignShippings WHERE campaignId=${c.id}`) === "3", "stepsDone");
+      assert(sql(`SELECT nextRunAt IS NOT NULL FROM Campaigns WHERE id=${c.id}`) === "1", "runner state was not persisted");
+    });
+    await test("a contact list can be built from the CRM funnel with a live count", async () => {
+      const dry = await http.post("/contact-lists/from-leads", { dryRun: true }, auth());
+      assert(dry.status === 200 && dry.data.count > 0, `dry run ${JSON.stringify(dry.data)}`);
+      const made = await http.post("/contact-lists/from-leads", { name: "Funil aberto" }, auth());
+      assert(made.status === 200 && made.data.imported === dry.data.count, `created ${JSON.stringify(made.data)}`);
+      const items = (await http.get(`/contact-lists/${made.data.id}/items`, auth())).data;
+      assert(items.length === made.data.imported && items.every(i => /^\d{10,}$/.test(i.number)), "items are valid numbers");
+      const again = await http.post("/contact-lists/from-leads", { listId: made.data.id }, auth());
+      assert(again.data.imported === 0 && again.data.skipped === made.data.imported, "second run should add nobody");
+      assert((await http.post("/contact-lists/from-leads", {}, auth())).status === 400, "name is required");
+    });
 
     // -------------------------------------------------------------- proposals
     console.log("\nproposals");

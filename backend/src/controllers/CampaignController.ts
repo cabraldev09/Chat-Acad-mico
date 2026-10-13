@@ -1,14 +1,57 @@
 import { Request, Response } from "express";
-import { fn, col } from "sequelize";
+import { fn, col, Op } from "sequelize";
 
 import Campaign from "../models/Campaign";
 import CampaignShipping from "../models/CampaignShipping";
 import ContactList from "../models/ContactList";
 import ContactListItem from "../models/ContactListItem";
 import Whatsapp from "../models/Whatsapp";
+import Lead from "../models/Lead";
+import LeadStage from "../models/LeadStage";
+import Tag from "../models/Tag";
+import { withLeadScope } from "../middleware/scope";
 import AppError from "../errors/AppError";
 import { getIO } from "../libs/socket";
 import makeCrud from "./crudFactory";
+import { CampaignStep, MAX_CAMPAIGN_STEPS } from "../helpers/CampaignText";
+
+// message/mediaUrl (the first step) stay filled for older screens and integrations
+const cleanSteps = (raw: any): CampaignStep[] => {
+  if (!Array.isArray(raw)) throw new AppError("ERR_CAMPAIGN_NO_MESSAGE");
+  if (raw.length > MAX_CAMPAIGN_STEPS) throw new AppError("ERR_CAMPAIGN_TOO_MANY_STEPS");
+  const out = raw.map((s: any) => {
+    const body = String(s?.body || "").trim().slice(0, 4000);
+    const mediaUrl = s?.mediaUrl ? String(s.mediaUrl) : null;
+    if (!body && !mediaUrl) throw new AppError("ERR_CAMPAIGN_STEP_EMPTY");
+    const delaySec = Math.min(600, Math.max(0, Math.round(Number(s?.delaySec) || 0)));
+    return { type: mediaUrl ? "media" : "text", body, mediaUrl, delaySec } as CampaignStep;
+  });
+  if (!out.length) throw new AppError("ERR_CAMPAIGN_NO_MESSAGE");
+  return out;
+};
+
+const applySteps = async (data: any, existing?: Campaign) => {
+  if (data.steps === undefined && data.message !== undefined && !existing) {
+    // legacy payload: a single message
+    data.steps = [{ body: data.message, mediaUrl: data.mediaUrl || null, delaySec: 0 }];
+  }
+  if (data.steps === undefined) {
+    if (!existing) throw new AppError("ERR_CAMPAIGN_NO_MESSAGE");
+    return;
+  }
+  const steps = cleanSteps(data.steps);
+  data.steps = steps;
+  data.message = steps[0].body;
+  data.mediaUrl = steps[0].mediaUrl;
+
+  // an approved template opens the conversation; free text after it only works once the person answered
+  const whatsappId = data.whatsappId !== undefined ? data.whatsappId : existing?.whatsappId;
+  const templateName = data.templateName !== undefined ? data.templateName : existing?.templateName;
+  if (steps.length > 1 && whatsappId && templateName) {
+    const w = await Whatsapp.findByPk(whatsappId);
+    if (w?.channel === "whatsapp_cloud") throw new AppError("ERR_CAMPAIGN_STEPS_TEMPLATE");
+  }
+};
 
 const crud = makeCrud(Campaign, {
   event: "campaign",
@@ -16,6 +59,7 @@ const crud = makeCrud(Campaign, {
     "name",
     "message",
     "mediaUrl",
+    "steps",
     "scheduledAt",
     "intervalMin",
     "intervalMax",
@@ -26,15 +70,16 @@ const crud = makeCrud(Campaign, {
     "templateName",
     "templateLanguage"
   ],
-  required: ["name", "message", "contactListId"],
+  required: ["name", "contactListId"],
   include: [
     { model: ContactList, as: "contactList", attributes: ["id", "name"] },
     { model: Whatsapp, as: "whatsapp", attributes: ["id", "name", "channel"] }
   ],
-  beforeSave: (data, _req, existing) => {
+  beforeSave: async (data, _req, existing) => {
     if (existing && !["draft", "scheduled", "paused"].includes(existing.status)) {
       throw new AppError("ERR_CAMPAIGN_LOCKED");
     }
+    await applySteps(data, existing);
     if (data.whatsappId === "" || data.whatsappId === 0) data.whatsappId = null;
     if (data.scheduledAt === "") data.scheduledAt = null;
     if (data.intervalMin !== undefined && data.intervalMax !== undefined) {
@@ -183,6 +228,68 @@ export const listItems = async (req: Request, res: Response): Promise<Response> 
 };
 
 const normalizeNumber = (n: string) => String(n || "").replace(/\D/g, "");
+
+// Brazilian numbers typed without the country code get 55
+const withCountry = (n: string) => {
+  const d = normalizeNumber(n);
+  return d.length === 10 || d.length === 11 ? `55${d}` : d;
+};
+
+// Builds (or fills) a contact list from the CRM funnel. `dryRun` only counts, so the screen
+// can show "N pessoas" before anything is created. Honors the signed-in user's lead scope.
+export const listFromLeads = async (req: Request, res: Response): Promise<Response> => {
+  const b = req.body || {};
+  const and: any[] = [{ phone: { [Op.ne]: null } }];
+  if (b.stageId) and.push({ stageId: b.stageId });
+  if (b.courseId) and.push({ courseId: b.courseId });
+  if (b.poloId) and.push({ poloId: b.poloId });
+  if (b.source) and.push({ source: b.source });
+  if (b.ownerId) and.push({ ownerId: b.ownerId });
+  const quiet = Number(b.noReplyDays);
+  if (quiet > 0) {
+    const limit = new Date(Date.now() - quiet * 24 * 3600 * 1000);
+    and.push({ [Op.or]: [{ lastContactAt: { [Op.lt]: limit } }, { lastContactAt: { [Op.is]: null } }] });
+  }
+  const include: any[] = [];
+  // without an explicit stage, never include people already enrolled or lost
+  if (!b.stageId) include.push({ model: LeadStage, as: "stage", attributes: [], where: { type: "open" }, required: true });
+  if (b.tagId) include.push({ model: Tag, as: "tags", attributes: [], where: { id: b.tagId }, required: true, through: { attributes: [] } });
+
+  const leads = await Lead.findAll({
+    where: await withLeadScope(req, { [Op.and]: and }),
+    include,
+    attributes: ["id", "name", "phone"],
+    limit: 5000
+  });
+  const seen = new Set<string>();
+  const people: Array<{ name: string; number: string }> = [];
+  leads.forEach(l => {
+    const number = withCountry(l.phone || "");
+    if (number.length < 10 || seen.has(number)) return;
+    seen.add(number);
+    people.push({ name: l.name, number });
+  });
+  if (b.dryRun) return res.json({ count: people.length });
+
+  let list: ContactList | null = null;
+  if (b.listId) {
+    list = await ContactList.findByPk(b.listId);
+    if (!list) throw new AppError("ERR_NOT_FOUND", 404);
+  } else {
+    const name = String(b.name || "").trim();
+    if (!name) throw new AppError("ERR_FIELD_REQUIRED_name");
+    list = await ContactList.create({ name });
+  }
+  if (!people.length) throw new AppError("ERR_CAMPAIGN_NO_LEADS");
+
+  const existing = new Set(
+    (await ContactListItem.findAll({ where: { contactListId: list.id }, attributes: ["number"] })).map(i => i.number)
+  );
+  const fresh = people.filter(p => !existing.has(p.number));
+  await ContactListItem.bulkCreate(fresh.map(p => ({ contactListId: list!.id, name: p.name, number: p.number })));
+  getIO().emit("contactList", { action: "update", row: list });
+  return res.json({ id: list.id, name: list.name, imported: fresh.length, skipped: people.length - fresh.length });
+};
 
 export const importItems = async (req: Request, res: Response): Promise<Response> => {
   const list = await ContactList.findByPk(req.params.id);

@@ -239,6 +239,10 @@ const CrudPage = ({
       helperText: f.helper,
       autoFocus: f === fields[0],
     };
+    // free-form field: f.render(value, setValue, allValues) returns the element
+    if (f.type === "custom") {
+      return <div key={f.name} className={classes.field}>{f.render(values[f.name], (v) => set(f.name, v), values)}</div>;
+    }
     if (f.type === "switch") {
       return (
         <div key={f.name} className={classes.field}>

@@ -13,6 +13,7 @@ import {
   DialogContent,
   DialogActions,
   TextField,
+  MenuItem,
   Table,
   TableBody,
   TableCell,
@@ -29,7 +30,11 @@ import People from "@material-ui/icons/People";
 import { DeleteOutline } from "@material-ui/icons";
 import { format, parseISO } from "date-fns";
 
+import { Plus as PlusIcon, Users as UsersIcon } from "lucide-react";
 import CrudPage from "../../components/CrudPage";
+import IconAction from "../../components/IconAction";
+import StepsEditor, { emptyStep } from "./StepsEditor";
+import NewListDialog from "./NewListDialog";
 import MainContainer from "../../components/MainContainer";
 import MainHeader from "../../components/MainHeader";
 import Title from "../../components/Title";
@@ -143,7 +148,12 @@ const ListItemsDialog = ({ list, onClose }) => {
           </Button>
           <Button variant="outlined" onClick={importSystemContacts}>Importar contatos do sistema</Button>
         </div>
-        <div className={classes.scroll}>
+        {items.length === 0 && (
+          <Typography color="textSecondary" style={{ textAlign: "center", padding: "24px 0" }}>
+            Esta lista está vazia. Cole os contatos acima, envie um arquivo ou importe os contatos do sistema.
+          </Typography>
+        )}
+        <div className={classes.scroll} style={items.length === 0 ? { display: "none" } : undefined}>
           <Table size="small" stickyHeader>
             <TableHead>
               <TableRow>
@@ -160,15 +170,15 @@ const ListItemsDialog = ({ list, onClose }) => {
                   <TableCell>{i.number}</TableCell>
                   <TableCell>{i.email}</TableCell>
                   <TableCell align="right">
-                    <IconButton
-                      size="small"
+                    <IconAction
+                      title="Remover da lista"
                       onClick={async () => {
                         await api.delete(`/contact-lists/${list.id}/items/${i.id}`);
                         load();
                       }}
                     >
                       <DeleteOutline fontSize="small" />
-                    </IconButton>
+                    </IconAction>
                   </TableCell>
                 </TableRow>
               ))}
@@ -234,6 +244,27 @@ const ReportDialog = ({ campaignId, onClose }) => {
   );
 };
 
+// list select plus a shortcut to create one without leaving the campaign form
+const ListPicker = ({ value, lists, picked, onPicked, setValue, onNew }) => {
+  useEffect(() => {
+    if (picked) { setValue(picked.id); onPicked(); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [picked]);
+  return (
+    <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+      <TextField
+        select fullWidth required variant="outlined" margin="dense" label="Lista de contatos"
+        value={lists.some((l) => l.id === value) ? value : ""}
+        onChange={(e) => setValue(e.target.value)}
+        helperText={lists.length ? "Quem vai receber as mensagens." : "Você ainda não tem listas: crie a primeira ao lado."}
+      >
+        {lists.map((l) => (<MenuItem key={l.id} value={l.id}>{l.name} ({l.itemCount} {Number(l.itemCount) === 1 ? "pessoa" : "pessoas"})</MenuItem>))}
+      </TextField>
+      <Button variant="outlined" color="primary" onClick={onNew} startIcon={<PlusIcon size={16} />} style={{ marginTop: 8, whiteSpace: "nowrap", height: 40 }}>Nova lista</Button>
+    </div>
+  );
+};
+
 const Campaigns = () => {
   const [tab, setTab] = useState(0);
   const [lists, setLists] = useState([]);
@@ -241,13 +272,16 @@ const Campaigns = () => {
   const [listDialog, setListDialog] = useState(null);
   const [report, setReport] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const [newList, setNewList] = useState(false);
+  const [pickedList, setPickedList] = useState(null);
+  const loadLists = useCallback(() => api.get("/contact-lists").then(({ data }) => setLists(data)), []);
 
   useEffect(() => {
-    api.get("/contact-lists").then(({ data }) => setLists(data));
+    loadLists();
     api.get("/whatsapp").then(({ data }) =>
       setConnections(data.filter((w) => ["whatsapp", "whatsapp_cloud"].includes(w.channel)))
     );
-  }, [tab, listDialog]);
+  }, [tab, listDialog, loadLists]);
 
   const act = (id, action, reload) => async () => {
     try {
@@ -262,6 +296,11 @@ const Campaigns = () => {
     <MainContainer>
       {listDialog && <ListItemsDialog list={listDialog} onClose={() => { setListDialog(null); setReloadKey((k) => k + 1); }} />}
       {report && <ReportDialog campaignId={report} onClose={() => setReport(null)} />}
+      <NewListDialog
+        open={newList}
+        onClose={() => setNewList(false)}
+        onCreated={(l) => { loadLists(); setReloadKey((k) => k + 1); setPickedList(l); }}
+      />
       <MainHeader>
         <Title>Campanhas em massa</Title>
       </MainHeader>
@@ -282,17 +321,29 @@ const Campaigns = () => {
             socketEvent="campaign"
             reloadKey={reloadKey}
             dialogWidth="md"
-            emptyText="Nenhuma campanha. Crie uma lista de contatos e depois a campanha."
+            mapIn={(row) => ({
+              ...row,
+              steps: Array.isArray(row.steps) && row.steps.length
+                ? row.steps.map((st) => ({ ...st, mediaName: st.mediaUrl || "" }))
+                : [{ ...emptyStep(), body: row.message || "", mediaUrl: row.mediaUrl || null, mediaName: row.mediaUrl || "", type: row.mediaUrl ? "media" : "text" }],
+            })}
+            mapOut={(payload) => {
+              const steps = (payload.steps || []).map(({ mediaName, ...st }) => st);
+              return { ...payload, steps, message: steps[0] ? steps[0].body : "" };
+            }}
+            emptyText="Nenhuma campanha ainda. Clique em Nova campanha: você pode criar a lista de contatos dentro do formulário."
             canEdit={(r) => ["draft", "scheduled", "paused"].includes(r.status)}
             canDelete={(r) => !["running"].includes(r.status)}
             fields={[
               { name: "name", label: "Nome da campanha", required: true },
               {
                 name: "contactListId",
-                label: "Lista de contatos",
-                type: "select",
+                type: "custom",
                 required: true,
-                options: lists.map((l) => ({ value: l.id, label: `${l.name} (${l.itemCount})` })),
+                label: "Lista de contatos",
+                render: (value, setValue) => (
+                  <ListPicker value={value} lists={lists} picked={pickedList} onPicked={() => setPickedList(null)} setValue={setValue} onNew={() => setNewList(true)} />
+                ),
               },
               {
                 name: "whatsappId",
@@ -306,14 +357,18 @@ const Campaigns = () => {
                   "Conexões por QR Code (não oficiais) só disparam para quem já conversou com você, respeitam um limite diário de aquecimento e pausam sozinhas se o WhatsApp encerrar a sessão. Para contatos novos use a API oficial (Cloud).",
               },
               {
-                name: "message",
-                label: "Mensagem",
-                type: "textarea",
-                rows: 5,
-                required: true,
-                helper: "Variáveis: {{name}} (nome) e {{number}}. Varie o texto entre campanhas para reduzir risco de bloqueio.",
+                name: "steps",
+                type: "custom",
+                label: "Mensagens",
+                default: [emptyStep()],
+                render: (value, setValue) => (
+                  <StepsEditor
+                    steps={Array.isArray(value) && value.length ? value : [emptyStep()]}
+                    onChange={setValue}
+                    riskNote="Em conexão por QR Code, mensagens em sequência aumentam o risco: prefira poucas e curtas."
+                  />
+                ),
               },
-              { name: "mediaUrl", label: "Anexar imagem/documento (opcional)", type: "file" },
               { name: "scheduledAt", label: "Agendar início (vazio = iniciar manualmente)", type: "datetime" },
               { name: "intervalMin", label: "Intervalo mínimo entre mensagens (s)", type: "number", default: 20 },
               { name: "intervalMax", label: "Intervalo máximo entre mensagens (s)", type: "number", default: 60 },
@@ -359,15 +414,15 @@ const Campaigns = () => {
             rowActions={(r, reload) => (
               <>
                 {["draft", "paused", "scheduled"].includes(r.status) && (
-                  <IconButton size="small" title="Iniciar" onClick={act(r.id, "start", reload)}><PlayArrow /></IconButton>
+                  <IconAction title="Iniciar" onClick={act(r.id, "start", reload)}><PlayArrow /></IconAction>
                 )}
                 {["running", "scheduled"].includes(r.status) && (
-                  <IconButton size="small" title="Pausar" onClick={act(r.id, "pause", reload)}><Pause /></IconButton>
+                  <IconAction title="Pausar" onClick={act(r.id, "pause", reload)}><Pause /></IconAction>
                 )}
                 {["running", "paused", "scheduled"].includes(r.status) && (
-                  <IconButton size="small" title="Cancelar" onClick={act(r.id, "cancel", reload)}><Stop /></IconButton>
+                  <IconAction title="Cancelar campanha" onClick={act(r.id, "cancel", reload)}><Stop /></IconAction>
                 )}
-                <IconButton size="small" title="Relatório" onClick={() => setReport(r.id)}><Assessment /></IconButton>
+                <IconAction title="Ver relatório" onClick={() => setReport(r.id)}><Assessment /></IconAction>
               </>
             )}
           />
@@ -378,14 +433,15 @@ const Campaigns = () => {
             endpoint="/contact-lists"
             addLabel="Nova lista"
             reloadKey={reloadKey}
-            emptyText="Nenhuma lista ainda."
+            emptyText="Nenhuma lista ainda. Use “Criar a partir do CRM” para montar uma lista com os leads do funil."
+            headerExtra={<Button variant="outlined" color="primary" startIcon={<UsersIcon size={16} />} onClick={() => setNewList(true)}>Criar a partir do CRM</Button>}
             fields={[{ name: "name", label: "Nome da lista", required: true }]}
             columns={[
               { header: "Lista", field: "name" },
               { header: "Contatos", field: "itemCount" },
             ]}
             rowActions={(r) => (
-              <IconButton size="small" title="Gerenciar contatos" onClick={() => setListDialog(r)}><People /></IconButton>
+              <IconAction title="Ver e editar os contatos" onClick={() => setListDialog(r)}><People /></IconAction>
             )}
           />
         )}

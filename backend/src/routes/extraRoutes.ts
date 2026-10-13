@@ -87,6 +87,7 @@ r.post("/campaigns/:id/pause", isAuth, Campaign.pause);
 r.post("/campaigns/:id/cancel", isAuth, Campaign.cancel);
 r.get("/contact-lists", isAuth, Campaign.lists.index);
 r.post("/contact-lists", isAuth, Campaign.lists.store);
+r.post("/contact-lists/from-leads", isAuth, Campaign.listFromLeads);
 r.put("/contact-lists/:id", isAuth, Campaign.lists.update);
 r.delete("/contact-lists/:id", isAuth, Campaign.lists.remove);
 r.get("/contact-lists/:id/items", isAuth, Campaign.listItems);
