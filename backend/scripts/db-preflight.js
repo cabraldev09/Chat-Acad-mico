@@ -28,6 +28,14 @@ if (url) {
   }
 }
 
+// obviously not a connection string (for example a documentation link pasted by mistake)
+if (url && (/^(www\.)?supabase\.(com|co)$/.test(cfg.host) || !cfg.user || !cfg.password || /\//.test(cfg.database || ""))) {
+  say(`A DATABASE_URL não é uma string de conexão: ela aponta para "${cfg.host}" e não traz usuário e senha de banco.`);
+  say("O que fazer: no Supabase clique em Connect (botão no topo do projeto), escolha Session pooler e copie a linha que começa com postgresql://. Ela tem este formato:");
+  say("  postgresql://postgres.CODIGO_DO_PROJETO:SUA_SENHA@aws-0-REGIAO.pooler.supabase.com:5432/postgres");
+  process.exit(1);
+}
+
 say(`conectando em ${cfg.host}:${cfg.port}/${cfg.database} como ${cfg.user} (SSL ${process.env.DB_SSL === "true" ? "ligado" : "desligado"})`);
 
 const hints = (text, code) => {
