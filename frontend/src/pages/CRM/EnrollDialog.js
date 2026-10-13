@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { toast } from "react-toastify";
 import {
   Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField, MenuItem, Typography,
-  CircularProgress, makeStyles, RadioGroup, Radio, FormControlLabel,
+  CircularProgress, makeStyles, RadioGroup, Radio, FormControlLabel, Switch,
 } from "@material-ui/core";
 import { GraduationCap } from "lucide-react";
 
@@ -109,7 +109,7 @@ const EnrollDialog = ({ open, lead, onClose, onDone }) => {
         <div className={classes.section}>Passagem de bastão</div>
         <TextField fullWidth multiline rows={2} variant="outlined" margin="dense" label="Observação para o tutor (opcional)" value={v.note} onChange={(e) => setV({ ...v, note: e.target.value })}
           helperText="Aparece no histórico. Ex.: prefere à noite, já tem notebook." />
-        <FormControlLabel control={<Radio color="primary" checked={v.intro} onClick={() => setV({ ...v, intro: !v.intro })} />} label="Enviar mensagem de boas-vindas da tutoria ao aluno" />
+        <FormControlLabel control={<Switch color="primary" checked={v.intro} onChange={(e) => setV({ ...v, intro: e.target.checked })} />} label={v.intro ? "Enviar mensagem de boas-vindas da tutoria: ligado" : "Enviar mensagem de boas-vindas da tutoria: desligado"} />
         <div className={classes.hint}>Daqui para frente o consultor não vê as mensagens do tutor, e o tutor não vê as suas. O contato com o aluno volta a você depois da ambientação.</div>
       </DialogContent>
       <DialogActions>
