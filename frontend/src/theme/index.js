@@ -77,6 +77,7 @@ const createAppTheme = (type) => {
     },
 
     scrollbarStyles: {
+      overflowX: "hidden",
       "&::-webkit-scrollbar": { width: "8px", height: "8px" },
       "&::-webkit-scrollbar-track": { background: "transparent" },
       "&::-webkit-scrollbar-thumb": {

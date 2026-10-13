@@ -3,6 +3,11 @@
 :where(.ico-small) { font-size: 1.125rem; }
 :where(.ico-large) { font-size: 2rem; }
 
+/* ---------- no sideways scrolling anywhere ---------- */
+html, body, #root { max-width: 100vw; overflow-x: hidden; overscroll-behavior-x: none; }
+main { overflow-x: hidden !important; overscroll-behavior-x: none; }
+.page-enter { overflow-x: hidden; max-width: 100%; }
+
 /* ---------- motion tokens ---------- */
 :root {
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);

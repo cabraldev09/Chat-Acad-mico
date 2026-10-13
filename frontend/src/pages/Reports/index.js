@@ -40,7 +40,7 @@ import api from "../../services/api";
 import toastError from "../../errors/toastError";
 
 const useStyles = makeStyles((theme) => ({
-  scroll: { flex: 1, overflowY: "auto", ...theme.scrollbarStyles, paddingBottom: theme.spacing(2) },
+  scroll: { flex: 1, overflowY: "auto", overflowX: "hidden", ...theme.scrollbarStyles, padding: theme.spacing(1, 1, 2) },
   kpi: { padding: theme.spacing(2), height: "100%" },
   kpiValue: { fontSize: 30, fontWeight: 600, lineHeight: 1.2, letterSpacing: "-0.02em" },
   card: { padding: theme.spacing(2) },

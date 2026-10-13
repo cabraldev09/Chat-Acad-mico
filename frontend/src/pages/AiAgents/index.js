@@ -10,7 +10,7 @@ import api from "../../services/api";
 import toastError from "../../errors/toastError";
 
 const useStyles = makeStyles((theme) => ({
-  wrap: { display: "flex", flexDirection: "column", flex: 1, overflowY: "auto", gap: theme.spacing(2) },
+  wrap: { display: "flex", flexDirection: "column", flex: 1, overflowY: "auto", overflowX: "hidden", gap: theme.spacing(2) },
   paper: { padding: theme.spacing(2) },
   row: { display: "flex", gap: theme.spacing(1), flexWrap: "wrap", alignItems: "center" },
 }));

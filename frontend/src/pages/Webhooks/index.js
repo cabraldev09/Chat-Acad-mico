@@ -31,7 +31,7 @@ import { getBackendUrl } from "../../config";
 import toastError from "../../errors/toastError";
 
 const useStyles = makeStyles((theme) => ({
-  wrap: { display: "flex", flexDirection: "column", flex: 1, overflowY: "auto", gap: theme.spacing(2) },
+  wrap: { display: "flex", flexDirection: "column", flex: 1, overflowY: "auto", overflowX: "hidden", gap: theme.spacing(2) },
   paper: { padding: theme.spacing(2) },
   code: {
     fontFamily: "monospace",
