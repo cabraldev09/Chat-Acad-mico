@@ -8,7 +8,16 @@ import ShowTicketService from "../TicketServices/ShowTicketService";
 import UpdateTicketService from "../TicketServices/UpdateTicketService";
 import ShowWhatsAppService from "../WhatsappService/ShowWhatsAppService";
 import SendWhatsAppMessage from "../WbotServices/SendWhatsAppMessage";
-import { findAgentForTicket, generateReply, HANDOFF_MARKER } from "../AiServices/RunAiAgent";
+import { findAgentForTicket, runAiForTicket } from "../AiServices/RunAiAgent";
+import { addActivity, changeStage } from "../CrmServices/LeadCore";
+import { applyToLead } from "../AiServices/Tools";
+import Lead from "../../models/Lead";
+import Polo from "../../models/Polo";
+import Queue from "../../models/Queue";
+import Tag from "../../models/Tag";
+import LeadTag from "../../models/LeadTag";
+import { isUrlSafe } from "../../helpers/SafeUrl";
+import axios from "axios";
 import AutoAssignTicket from "./AutoAssignTicket";
 import { isWithinBusinessHours } from "./BusinessHours";
 import { Op } from "sequelize";
@@ -62,6 +71,13 @@ const menuText = (
 const finishFlow = (ticket: Ticket) =>
   ticket.update({ chatbotNodeId: FLOW_DONE });
 
+// after an action that does not wait for the person: run the node's first child, or end the flow
+const goNext = async (ticket: Ticket, node: ChatbotNode): Promise<void> => {
+  const [next] = await loadChildren(ticket.whatsappId, node.id);
+  if (next) await runNodeAction(ticket, next);
+  else await finishFlow(ticket);
+};
+
 const runNodeAction = async (ticket: Ticket, node: ChatbotNode): Promise<void> => {
   const whatsappId = ticket.whatsappId;
   switch (node.action) {
@@ -112,6 +128,53 @@ const runNodeAction = async (ticket: Ticket, node: ChatbotNode): Promise<void> =
       if (node.message) await say(ticket, node.message);
       return;
     }
+    case "ask": {
+      // wait for a free-text answer; it is saved to the lead when it arrives
+      await ticket.update({ chatbotNodeId: node.id });
+      await say(ticket, node.message || node.title);
+      return;
+    }
+    case "polo": {
+      const polos = await Polo.findAll({ where: { active: true }, order: [["name", "ASC"]] });
+      if (!polos.length) {
+        await goNext(ticket, node);
+        return;
+      }
+      await ticket.update({ chatbotNodeId: node.id });
+      await say(
+        ticket,
+        `${node.message || "Qual polo fica mais perto de você?"}\n\n${polos
+          .map((p, i) => `*${i + 1}* - ${p.name}${p.city ? ` (${p.city})` : ""}`)
+          .join("\n")}`
+      );
+      return;
+    }
+    case "stage": {
+      const lead = await Lead.findOne({ where: { contactId: ticket.contactId } });
+      if (lead && node.targetId) await changeStage(lead.id, node.targetId, null).catch(err => logger.warn(`chatbot stage: ${err}`));
+      if (node.message) await say(ticket, node.message);
+      await goNext(ticket, node);
+      return;
+    }
+    case "tag": {
+      const lead = await Lead.findOne({ where: { contactId: ticket.contactId } });
+      const tag = node.targetId ? await Tag.findByPk(node.targetId) : null;
+      if (lead && tag) await LeadTag.findOrCreate({ where: { leadId: lead.id, tagId: tag.id }, defaults: { leadId: lead.id, tagId: tag.id } as any });
+      if (node.message) await say(ticket, node.message);
+      await goNext(ticket, node);
+      return;
+    }
+    case "webhook": {
+      // sends what the bot knows to another system (only public https/http addresses)
+      if (node.field && (await isUrlSafe(node.field))) {
+        await axios
+          .post(node.field, { ticketId: ticket.id, contactId: ticket.contactId, collected: ticket.aiSlots || {} }, { timeout: 5000 })
+          .catch(err => logger.warn(`chatbot webhook failed: ${err.message}`));
+      }
+      if (node.message) await say(ticket, node.message);
+      await goNext(ticket, node);
+      return;
+    }
     default: {
       // "message": answer with text and end the flow
       if (node.message) await say(ticket, node.message);
@@ -152,6 +215,52 @@ const runChatbot = async (
   }
 
   const currentId = ticket.chatbotNodeId;
+
+  // the bot asked a question or offered polos: this message is the answer
+  if (currentId !== ROOT) {
+    const waiting = await ChatbotNode.findByPk(currentId);
+    if (waiting?.action === "ask") {
+      const field = waiting.field || "nome";
+      const value = body.trim().slice(0, 200);
+      if (field === "email" && !/^\S+@\S+\.\S+$/.test(value)) {
+        await say(ticket, "Não consegui entender o e-mail. Pode digitar de novo?");
+        return true;
+      }
+      const collected = { ...(ticket.aiSlots || {}), [field]: value };
+      await ticket.update({ aiSlots: collected });
+      await applyToLead(ticket, collected);
+      await goNext(ticket, waiting);
+      return true;
+    }
+    if (waiting?.action === "polo") {
+      const polos = await Polo.findAll({ where: { active: true }, order: [["name", "ASC"]] });
+      const typed = normalize(body);
+      const chosenPolo =
+        (/^\d+$/.test(typed) ? polos[Number(typed) - 1] : undefined) ||
+        polos.find(p => normalize(p.name) === typed || (p.city && normalize(p.city) === typed));
+      if (!chosenPolo) {
+        await say(ticket, "Não encontrei esse polo. Responda com o número de um polo da lista.");
+        return true;
+      }
+      const lead = await Lead.findOne({ where: { contactId: ticket.contactId } });
+      if (lead) {
+        await lead.update({ poloId: chosenPolo.id });
+        await addActivity(lead.id, null, "system", `Polo escolhido no atendimento automático: ${chosenPolo.name}`);
+      }
+      const salesQueue = await Queue.findOne({ where: { poloId: chosenPolo.id, role: "comercial" } });
+      if (salesQueue) {
+        await UpdateTicketService({ ticketData: { queueId: salesQueue.id }, ticketId: ticket.id });
+        await ticket.reload();
+      }
+      await goNext(ticket, waiting);
+      // when nothing follows, the polo's sales team takes the conversation
+      if (salesQueue && (await ticket.reload()).chatbotNodeId === FLOW_DONE) {
+        await AutoAssignTicket(await ShowTicketService(ticket.id));
+      }
+      return true;
+    }
+  }
+
   const parentId = currentId === ROOT ? null : currentId;
   const options = await loadChildren(whatsappId, parentId);
   const answer = normalize(body);
@@ -190,32 +299,47 @@ const runChatbot = async (
   return true;
 };
 
+// The person may write several short messages in a row: wait until they stop, then answer once.
+const aiTimers = new Map<number, NodeJS.Timeout>();
+const aiRunning = new Set<number>();
+
+const scheduleAi = (ticketId: number, waitSeconds: number): void => {
+  const previous = aiTimers.get(ticketId);
+  if (previous) clearTimeout(previous);
+  aiTimers.set(
+    ticketId,
+    setTimeout(async () => {
+      aiTimers.delete(ticketId);
+      if (aiRunning.has(ticketId)) {
+        scheduleAi(ticketId, 1);
+        return;
+      }
+      aiRunning.add(ticketId);
+      try {
+        await runAiForTicket(ticketId, say);
+      } catch (err) {
+        logger.error(`AI run failed: ${err}`);
+      } finally {
+        aiRunning.delete(ticketId);
+      }
+    }, Math.min(15, Math.max(0, waitSeconds)) * 1000)
+  );
+};
+
 const runAi = async (ticket: Ticket): Promise<boolean> => {
   if (!ticket.aiActive) return false;
   const agent = await findAgentForTicket(ticket);
   if (!agent) return false;
-
-  try {
-    const reply = await generateReply(agent, ticket);
-    if (!reply) return true;
-    if (reply.includes(HANDOFF_MARKER)) {
-      await ticket.update({ aiActive: false });
-      await say(
-        ticket,
-        agent.handoffMessage ||
-          "Vou transferir você para um de nossos atendentes. Um momento, por favor."
-      );
-      await AutoAssignTicket(await ShowTicketService(ticket.id));
-      return true;
-    }
-    await say(ticket, reply);
-  } catch (err) {
-    const detail = err?.response?.data?.error?.message || err?.message || err;
-    logger.error(`AI agent "${agent.name}" failed: ${detail}`);
-    // leave the ticket for a human instead of going silent
-    await ticket.update({ aiActive: false });
-  }
+  scheduleAi(ticket.id, agent.waitSeconds ?? 4);
   return true;
+};
+
+// Reminder for people who left the bot hanging at a menu or question (see workers/ChatbotReminder)
+export const remindWaiting = async (ticketId: number): Promise<void> => {
+  const ticket = await ShowTicketService(ticketId);
+  if (ticket.status === "closed" || ticket.userId || !(ticket.chatbotNodeId > 0)) return;
+  await ticket.update({ botReminderAt: new Date() });
+  await say(ticket, "Ainda está por aí? Responda quando puder e eu continuo de onde paramos. 🙂");
 };
 
 const runClassicQueueMenu = async (
@@ -259,6 +383,7 @@ const RunInboundAutomation = async ({ ticketId, body }: Input): Promise<void> =>
   try {
     const ticket = await ShowTicketService(ticketId);
     if (ticket.isGroup || ticket.status === "closed" || ticket.userId) return;
+    if (ticket.botReminderAt) await ticket.update({ botReminderAt: null });
 
     const whatsapp = await ShowWhatsAppService(ticket.whatsappId);
 

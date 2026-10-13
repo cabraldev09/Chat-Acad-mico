@@ -56,6 +56,32 @@ class AiAgent extends Model<AiAgent> {
   @Column
   active: boolean;
 
+  // tone, rules and prohibitions: { tone, rules, forbidden, greeting }
+  @Column(DataType.JSON)
+  persona: any;
+
+  @Default(350)
+  @Column
+  maxTokens: number;
+
+  // 0 = no daily limit
+  @Default(300000)
+  @Column
+  dailyTokenCap: number;
+
+  @Default(14)
+  @Column
+  handoffAfterTurns: number;
+
+  // seconds to wait for the person to finish writing before answering once
+  @Default(4)
+  @Column
+  waitSeconds: number;
+
+  // what the agent must find out before handing over: [{ key, label, required }]
+  @Column(DataType.JSON)
+  slots: any;
+
   @Column
   queueId: number;
 

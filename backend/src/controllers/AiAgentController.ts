@@ -3,6 +3,20 @@ import AiAgent from "../models/AiAgent";
 import { getSetting, setSetting } from "../helpers/AppSettings";
 import { isMasked, maskSecret } from "../helpers/Secrets";
 import makeCrud from "./crudFactory";
+import axios from "axios";
+import { Op, fn, col, QueryTypes } from "sequelize";
+import sequelize from "../database";
+import AppError from "../errors/AppError";
+import KbDocument from "../models/KbDocument";
+import KbChunk from "../models/KbChunk";
+import AiUsage from "../models/AiUsage";
+import Ticket from "../models/Ticket";
+import { addDocument, indexDocument, ensureLegacy } from "../services/AiServices/Kb";
+import { respond } from "../services/AiServices/RunAiAgent";
+import { priceOf, tokensToday } from "../services/AiServices/Usage";
+import { DEFAULT_SLOTS } from "../services/AiServices/Tools";
+import { isUrlSafe } from "../helpers/SafeUrl";
+import { dayBounds, shiftDays } from "../helpers/AppTime";
 
 const crud = makeCrud(AiAgent, {
   fields: [
@@ -16,7 +30,13 @@ const crud = makeCrud(AiAgent, {
     "maxHistory",
     "active",
     "queueId",
-    "whatsappId"
+    "whatsappId",
+    "persona",
+    "maxTokens",
+    "dailyTokenCap",
+    "handoffAfterTurns",
+    "waitSeconds",
+    "slots"
   ],
   required: ["name", "model"],
   beforeSave: data => {
@@ -46,3 +66,209 @@ export const setKeys = async (req: Request, res: Response): Promise<Response> =>
   }
   return res.json({ ok: true });
 };
+
+// ------------------------------------------------------------------ knowledge base
+
+const loadAgent = async (id: string) => {
+  const agent = await AiAgent.findByPk(id);
+  if (!agent) throw new AppError("ERR_NOT_FOUND", 404);
+  return agent;
+};
+
+export const kbList = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await loadAgent(req.params.id);
+  await ensureLegacy(agent);
+  const docs = await KbDocument.findAll({
+    where: { agentId: { [Op.or]: [agent.id, null] } } as any,
+    attributes: { exclude: ["content"] },
+    order: [["id", "DESC"]]
+  });
+  const counts: any[] = await KbChunk.findAll({
+    attributes: ["documentId", [fn("COUNT", col("id")), "n"]],
+    where: { documentId: docs.map(d => d.id) },
+    group: ["documentId"],
+    raw: true
+  });
+  return res.json(
+    docs.map(d => ({ ...d.toJSON(), chunks: Number(counts.find(c => c.documentId === d.id)?.n || 0), shared: d.agentId === null }))
+  );
+};
+
+export const kbShow = async (req: Request, res: Response): Promise<Response> => {
+  const doc = await KbDocument.findByPk(req.params.docId);
+  if (!doc) throw new AppError("ERR_NOT_FOUND", 404);
+  return res.json(doc);
+};
+
+export const kbAdd = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await loadAgent(req.params.id);
+  const { title, content, kind, keywords, shared } = req.body || {};
+  const text = String(content || "").trim();
+  if (!String(title || "").trim()) throw new AppError("ERR_FIELD_REQUIRED_title");
+  if (!text) throw new AppError("ERR_KB_EMPTY");
+  const doc = await addDocument({
+    title,
+    content: text.slice(0, 200000),
+    kind: kind === "faq" ? "faq" : "doc",
+    keywords,
+    agentId: shared ? null : agent.id
+  });
+  return res.status(201).json(doc);
+};
+
+export const kbUpdate = async (req: Request, res: Response): Promise<Response> => {
+  const doc = await KbDocument.findByPk(req.params.docId);
+  if (!doc) throw new AppError("ERR_NOT_FOUND", 404);
+  const { title, content, keywords } = req.body || {};
+  await doc.update({
+    ...(title !== undefined ? { title: String(title).trim().slice(0, 250) } : {}),
+    ...(content !== undefined ? { content: String(content).slice(0, 200000) } : {}),
+    ...(keywords !== undefined ? { keywords } : {})
+  });
+  await indexDocument(doc);
+  return res.json(doc);
+};
+
+export const kbRemove = async (req: Request, res: Response): Promise<Response> => {
+  await KbChunk.destroy({ where: { documentId: req.params.docId } });
+  await KbDocument.destroy({ where: { id: req.params.docId } });
+  return res.json({ message: "deleted" });
+};
+
+// text of an uploaded file: txt/md/csv/json as they are, PDF and DOCX through their readers
+const textOfFile = async (file: Express.Multer.File): Promise<string> => {
+  const name = file.originalname.toLowerCase();
+  if (name.endsWith(".pdf")) {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const pdf = require("pdf-parse/lib/pdf-parse.js");
+    return (await pdf(file.buffer)).text;
+  }
+  if (name.endsWith(".docx")) {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const mammoth = require("mammoth");
+    return (await mammoth.extractRawText({ buffer: file.buffer })).value;
+  }
+  if (/\.(txt|md|csv|json|html?)$/.test(name)) {
+    const raw = file.buffer.toString("utf8");
+    return /\.html?$/.test(name) ? stripHtml(raw) : raw;
+  }
+  throw new AppError("ERR_KB_FILE_TYPE");
+};
+
+const stripHtml = (html: string): string =>
+  html
+    .replace(/<(script|style|nav|footer|header)[\s\S]*?<\/\1>/gi, " ")
+    .replace(/<\/(p|div|h[1-6]|li|tr|br)>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n\s*\n\s*/g, "\n\n")
+    .trim();
+
+export const kbUpload = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await loadAgent(req.params.id);
+  const file = (req as any).file as Express.Multer.File | undefined;
+  if (!file) throw new AppError("ERR_KB_EMPTY");
+  let text = "";
+  try {
+    text = (await textOfFile(file)).trim();
+  } catch (err) {
+    if (err instanceof AppError) throw err;
+    throw new AppError("ERR_KB_FILE_READ");
+  }
+  if (!text) throw new AppError("ERR_KB_FILE_READ");
+  const doc = await addDocument({
+    title: String(req.body?.title || "").trim() || file.originalname,
+    content: text.slice(0, 200000),
+    source: "arquivo",
+    agentId: req.body?.shared === "true" ? null : agent.id
+  });
+  return res.status(201).json(doc);
+};
+
+export const kbFromUrl = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await loadAgent(req.params.id);
+  const url = String(req.body?.url || "").trim();
+  if (!(await isUrlSafe(url))) throw new AppError("ERR_KB_URL");
+  let html = "";
+  try {
+    const r = await axios.get(url, { timeout: 10000, maxContentLength: 2 * 1024 * 1024, responseType: "text", maxRedirects: 3 });
+    html = String(r.data);
+  } catch (err) {
+    throw new AppError("ERR_KB_URL_FETCH");
+  }
+  const text = stripHtml(html);
+  if (text.length < 40) throw new AppError("ERR_KB_URL_FETCH");
+  const doc = await addDocument({
+    title: String(req.body?.title || "").trim() || url.replace(/^https?:\/\//, "").slice(0, 120),
+    content: text.slice(0, 200000),
+    source: "url",
+    agentId: req.body?.shared ? null : agent.id
+  });
+  return res.status(201).json(doc);
+};
+
+// ------------------------------------------------------------------ tester and usage
+
+// "Testar agente": the same brain without WhatsApp. Nothing is written except the usage (not counted against the daily limit).
+export const test = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await loadAgent(req.params.id);
+  const history = (Array.isArray(req.body?.messages) ? req.body.messages : [])
+    .filter((m: any) => m && ["user", "assistant"].includes(m.role) && String(m.content || "").trim())
+    .map((m: any) => ({ role: m.role, content: String(m.content).slice(0, 2000) }));
+  if (!history.length || history[history.length - 1].role !== "user") throw new AppError("ERR_AI_NO_HISTORY");
+  try {
+    const result = await respond(agent, {
+      ticket: null,
+      history,
+      collected: req.body?.collected || {},
+      summary: null,
+      sandbox: true
+    });
+    return res.json({
+      text: result.handoff ? "(o agente passaria a conversa para uma pessoa)" : result.text,
+      handoff: result.handoff,
+      tools: result.tools,
+      collected: result.collected,
+      tokens: result.tokens
+    });
+  } catch (err) {
+    if (err.message === "ERR_AI_NO_API_KEY") throw new AppError("ERR_AI_NO_API_KEY");
+    throw new AppError("ERR_AI_FAILED", 502);
+  }
+};
+
+export const usage = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await loadAgent(req.params.id);
+  const days = Math.min(30, Math.max(1, Number(req.query.days) || 7));
+  const since = shiftDays(dayBounds().start, -(days - 1));
+  const rows: any[] = await AiUsage.findAll({
+    attributes: ["model", "kind", [fn("SUM", col("inputTokens")), "input"], [fn("SUM", col("outputTokens")), "output"], [fn("SUM", col("cacheReadTokens")), "cacheRead"], [fn("COUNT", col("id")), "calls"]],
+    where: { agentId: agent.id, createdAt: { [Op.gte]: since } },
+    group: ["model", "kind"],
+    raw: true
+  });
+  const perDay: any[] = await sequelize.query(
+    `SELECT TO_CHAR("createdAt" AT TIME ZONE :tz, 'YYYY-MM-DD') AS day, SUM("inputTokens") AS input, SUM("outputTokens") AS output, COUNT(*) AS calls
+       FROM "AiUsage" WHERE "agentId" = :id AND kind <> 'test' AND "createdAt" >= :since GROUP BY 1 ORDER BY 1`,
+    { replacements: { tz: process.env.APP_TIMEZONE || "America/Porto_Velho", id: agent.id, since }, type: QueryTypes.SELECT }
+  ).catch(() => []);
+  const answered = await Ticket.count({ where: { aiTurns: { [Op.gt]: 0 }, updatedAt: { [Op.gte]: since } } });
+  const price = await priceOf(agent.model);
+  const live = rows.filter(r => r.kind !== "test");
+  const input = live.reduce((a, r) => a + Number(r.input || 0), 0);
+  const output = live.reduce((a, r) => a + Number(r.output || 0), 0);
+  return res.json({
+    days,
+    today: await tokensToday(agent.id),
+    cap: agent.dailyTokenCap,
+    total: { input, output, cacheRead: live.reduce((a, r) => a + Number(r.cacheRead || 0), 0), calls: live.reduce((a, r) => a + Number(r.calls || 0), 0) },
+    conversations: answered,
+    perDay: perDay.map(d => ({ day: d.day, input: Number(d.input), output: Number(d.output), calls: Number(d.calls) })),
+    // only when the administrator typed the price of this model in Settings
+    costUsd: price ? Math.round(((input * price.in + output * price.out) / 1e6) * 100) / 100 : null
+  });
+};
+
+export const defaults = async (_req: Request, res: Response): Promise<Response> => res.json({ slots: DEFAULT_SLOTS, model: "claude-haiku-5-5" });

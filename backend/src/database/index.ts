@@ -34,6 +34,9 @@ import Proposal from "../models/Proposal";
 import Payment from "../models/Payment";
 import TicketEvent from "../models/TicketEvent";
 import TicketPin from "../models/TicketPin";
+import KbDocument from "../models/KbDocument";
+import KbChunk from "../models/KbChunk";
+import AiUsage from "../models/AiUsage";
 import Polo from "../models/Polo";
 import PoloMember from "../models/PoloMember";
 import ProposalTemplateInstitution from "../models/ProposalTemplateInstitution";
@@ -80,6 +83,9 @@ const models = [
   Payment,
   TicketEvent,
   TicketPin,
+  KbDocument,
+  KbChunk,
+  AiUsage,
   Polo,
   PoloMember,
   ProposalTemplateInstitution

@@ -23,6 +23,7 @@ import * as PoloCtl from "../controllers/PoloController";
 
 const upload = multer({ ...uploadConfig, limits: { fileSize: 30 * 1024 * 1024 } });
 const certUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 1024 * 1024 } });
+const kbUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024 } });
 const r = express.Router();
 
 // generic upload used by campaigns / schedules to attach media
@@ -59,6 +60,16 @@ r.get("/ai-agents", isAuth, isAdmin, Ai.index);
 r.post("/ai-agents", isAuth, isAdmin, Ai.store);
 r.put("/ai-agents/:id", isAuth, isAdmin, Ai.update);
 r.delete("/ai-agents/:id", isAuth, isAdmin, Ai.remove);
+r.get("/ai-defaults", isAuth, isAdmin, Ai.defaults);
+r.get("/ai-agents/:id/kb", isAuth, isAdmin, Ai.kbList);
+r.post("/ai-agents/:id/kb", isAuth, isAdmin, Ai.kbAdd);
+r.post("/ai-agents/:id/kb/upload", isAuth, isAdmin, kbUpload.single("file"), Ai.kbUpload);
+r.post("/ai-agents/:id/kb/url", isAuth, isAdmin, Ai.kbFromUrl);
+r.get("/ai-agents/:id/kb/:docId", isAuth, isAdmin, Ai.kbShow);
+r.put("/ai-agents/:id/kb/:docId", isAuth, isAdmin, Ai.kbUpdate);
+r.delete("/ai-agents/:id/kb/:docId", isAuth, isAdmin, Ai.kbRemove);
+r.post("/ai-agents/:id/test", isAuth, isAdmin, Ai.test);
+r.get("/ai-agents/:id/usage", isAuth, isAdmin, Ai.usage);
 r.get("/ai-settings", isAuth, isAdmin, Ai.getKeys);
 r.put("/ai-settings", isAuth, isAdmin, Ai.setKeys);
 

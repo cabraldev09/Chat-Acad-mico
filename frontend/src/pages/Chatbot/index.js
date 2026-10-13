@@ -16,6 +16,9 @@ import {
 } from "@material-ui/core";
 import { DeleteOutline, Edit } from "@material-ui/icons";
 import AddCircleOutline from "@material-ui/icons/AddCircleOutline";
+import { Play } from "lucide-react";
+import Simulator from "./Simulator";
+import IconAction from "../../components/IconAction";
 
 import MainContainer from "../../components/MainContainer";
 import MainHeader from "../../components/MainHeader";
@@ -46,9 +49,26 @@ const ACTIONS = [
   { value: "user", label: "Encaminhar para atendente" },
   { value: "ai", label: "Passar para o agente de IA" },
   { value: "close", label: "Encerrar atendimento" },
+  { value: "ask", label: "Fazer uma pergunta e guardar a resposta" },
+  { value: "polo", label: "Perguntar o polo e enviar à equipe dele" },
+  { value: "stage", label: "Mover o lead de etapa no funil" },
+  { value: "tag", label: "Marcar o lead com uma etiqueta" },
+  { value: "webhook", label: "Avisar outro sistema (webhook)" },
 ];
 
-const emptyNode = { title: "", action: "message", message: "", keywords: "", targetId: "", position: 0 };
+// actions that do not end the flow: the first option below them runs next
+const SEQUENCE = ["ask", "polo", "stage", "tag", "webhook"];
+const FIELDS = [
+  { value: "nome", label: "Nome" },
+  { value: "email", label: "E-mail" },
+  { value: "cidade", label: "Cidade" },
+  { value: "curso", label: "Curso de interesse" },
+  { value: "modalidade", label: "Modalidade" },
+  { value: "forma_ingresso", label: "Forma de ingresso" },
+  { value: "semestre_transferencia", label: "Semestre (transferência)" },
+];
+
+const emptyNode = { title: "", action: "message", message: "", keywords: "", targetId: "", field: "", position: 0 };
 
 const Chatbot = () => {
   const classes = useStyles();
@@ -57,6 +77,10 @@ const Chatbot = () => {
   const [queues, setQueues] = useState([]);
   const [users, setUsers] = useState([]);
   const [nodes, setNodes] = useState([]);
+  const [stages, setStages] = useState([]);
+  const [tags, setTags] = useState([]);
+  const [polos, setPolos] = useState([]);
+  const [simulating, setSimulating] = useState(false);
   const [dialog, setDialog] = useState(null); // {node, parentId}
   const [deleting, setDeleting] = useState(null);
 
@@ -64,6 +88,9 @@ const Chatbot = () => {
     api.get("/whatsapp").then(({ data }) => setConnections(data));
     api.get("/queue").then(({ data }) => setQueues(data));
     api.get("/users", { params: { pageNumber: 1 } }).then(({ data }) => setUsers(data.users || []));
+    api.get("/lead-stages").then(({ data }) => setStages(data)).catch(() => {});
+    api.get("/tags").then(({ data }) => setTags(data)).catch(() => {});
+    api.get("/polos").then(({ data }) => setPolos(data.filter((p) => p.active))).catch(() => {});
   }, []);
 
   const load = useCallback(async () => {
@@ -82,7 +109,9 @@ const Chatbot = () => {
   const save = async () => {
     const { node, parentId } = dialog;
     if (!node.title.trim()) return toast.error("Informe o texto da opção");
-    if (["queue", "user"].includes(node.action) && !node.targetId) return toast.error("Escolha o destino");
+    if (["queue", "user", "stage", "tag"].includes(node.action) && !node.targetId) return toast.error("Escolha o destino");
+    if (node.action === "webhook" && !/^https?:\/\//.test(node.field || "")) return toast.error("Informe o endereço (https://…) que receberá o aviso");
+    if (node.action === "ask" && !node.field) return toast.error("Escolha onde guardar a resposta");
     const payload = {
       ...node,
       parentId: parentId || null,
@@ -115,6 +144,9 @@ const Chatbot = () => {
   const targetLabel = (n) => {
     if (n.action === "queue") return queues.find((q) => q.id === n.targetId)?.name;
     if (n.action === "user") return users.find((u) => u.id === n.targetId)?.name;
+    if (n.action === "stage") return stages.find((s) => s.id === n.targetId)?.name;
+    if (n.action === "tag") return tags.find((t) => t.id === n.targetId)?.name;
+    if (n.action === "ask") return `guarda em: ${FIELDS.find((x) => x.value === n.field)?.label || "?"}`;
     return null;
   };
 
@@ -128,17 +160,17 @@ const Chatbot = () => {
             <Chip size="small" label={ACTIONS.find((a) => a.value === n.action)?.label.split(" (")[0]} />
             {targetLabel(n) && <Chip size="small" color="primary" variant="outlined" label={targetLabel(n)} />}
             <span style={{ flex: 1 }} />
-            {n.action === "menu" && (
-              <IconButton size="small" title="Adicionar opção filha" onClick={() => setDialog({ node: { ...emptyNode, position: childrenOf(n.id).length + 1 }, parentId: n.id })}>
+            {(n.action === "menu" || SEQUENCE.includes(n.action)) && (
+              <IconAction title={n.action === "menu" ? "Adicionar opção filha" : "Adicionar o próximo passo"} onClick={() => setDialog({ node: { ...emptyNode, position: childrenOf(n.id).length + 1 }, parentId: n.id })}>
                 <AddCircleOutline />
-              </IconButton>
+              </IconAction>
             )}
-            <IconButton size="small" onClick={() => setDialog({ node: { ...emptyNode, ...n, targetId: n.targetId || "", keywords: n.keywords || "", message: n.message || "" }, parentId: n.parentId })}>
+            <IconAction title="Editar" onClick={() => setDialog({ node: { ...emptyNode, ...n, targetId: n.targetId || "", keywords: n.keywords || "", message: n.message || "", field: n.field || "" }, parentId: n.parentId })}>
               <Edit />
-            </IconButton>
-            <IconButton size="small" onClick={() => setDeleting(n)}>
+            </IconAction>
+            <IconAction title="Remover" onClick={() => setDeleting(n)}>
               <DeleteOutline />
-            </IconButton>
+            </IconAction>
           </div>
           {n.message && (
             <Typography variant="caption" color="textSecondary" display="block">
@@ -146,7 +178,7 @@ const Chatbot = () => {
             </Typography>
           )}
         </div>
-        {n.action === "menu" && <div className={classes.children}>{renderNodes(n.id, depth + 1)}</div>}
+        {(n.action === "menu" || SEQUENCE.includes(n.action)) && <div className={classes.children}>{renderNodes(n.id, depth + 1)}</div>}
       </div>
     ));
 
@@ -163,6 +195,7 @@ const Chatbot = () => {
       >
         As opções filhas também serão removidas.
       </ConfirmationModal>
+      <Simulator open={simulating} onClose={() => setSimulating(false)} nodes={nodes} queues={queues} polos={polos} greeting={null} />
       <Dialog open={!!dialog} onClose={() => setDialog(null)} maxWidth="sm" fullWidth>
         <DialogTitle>{f?.id ? "Editar opção" : "Nova opção"}</DialogTitle>
         {f && (
@@ -183,7 +216,25 @@ const Chatbot = () => {
                 {users.map((u) => (<MenuItem key={u.id} value={u.id}>{u.name}</MenuItem>))}
               </TextField>
             )}
-            {f.action !== "close" || true ? (
+            {f.action === "stage" && (
+              <TextField fullWidth select variant="outlined" margin="dense" label="Etapa" value={f.targetId} onChange={(e) => setF({ targetId: e.target.value })}>
+                {stages.map((s) => (<MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>))}
+              </TextField>
+            )}
+            {f.action === "tag" && (
+              <TextField fullWidth select variant="outlined" margin="dense" label="Etiqueta" value={f.targetId} onChange={(e) => setF({ targetId: e.target.value })}>
+                {tags.map((t) => (<MenuItem key={t.id} value={t.id}>{t.name}</MenuItem>))}
+              </TextField>
+            )}
+            {f.action === "ask" && (
+              <TextField fullWidth select variant="outlined" margin="dense" label="Guardar a resposta em" value={f.field} onChange={(e) => setF({ field: e.target.value })} helperText="A resposta vai para o cadastro do lead. O próximo passo é a primeira opção abaixo desta.">
+                {FIELDS.map((x) => (<MenuItem key={x.value} value={x.value}>{x.label}</MenuItem>))}
+              </TextField>
+            )}
+            {f.action === "webhook" && (
+              <TextField fullWidth variant="outlined" margin="dense" label="Endereço que recebe o aviso (https://…)" value={f.field} onChange={(e) => setF({ field: e.target.value })} helperText="Recebe os dados coletados na conversa. Só endereços públicos." />
+            )}
+            {true ? (
               <TextField
                 fullWidth
                 multiline
@@ -213,6 +264,7 @@ const Chatbot = () => {
             <MenuItem value="global">Todas as conexões</MenuItem>
             {connections.map((c) => (<MenuItem key={c.id} value={String(c.id)}>{c.name}</MenuItem>))}
           </TextField>
+          <Button variant="outlined" color="primary" startIcon={<Play size={15} />} onClick={() => setSimulating(true)}>Testar o fluxo</Button>
           <Button variant="contained" color="primary" onClick={() => setDialog({ node: { ...emptyNode, position: childrenOf(null).length + 1 }, parentId: null })}>
             Nova opção no menu
           </Button>

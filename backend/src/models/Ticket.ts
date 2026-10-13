@@ -10,7 +10,8 @@ import {
   HasMany,
   BelongsToMany,
   AutoIncrement,
-  Default
+  Default,
+  DataType
 } from "sequelize-typescript";
 
 import Contact from "./Contact";
@@ -50,6 +51,21 @@ class Ticket extends Model<Ticket> {
   // set while the conversation is archived; a new message from the contact clears it
   @Column
   archivedAt: Date;
+
+  // rolling summary of the AI conversation, number of AI answers and what it has collected so far
+  @Column(DataType.TEXT)
+  aiSummary: string;
+
+  @Default(0)
+  @Column
+  aiTurns: number;
+
+  @Column(DataType.JSON)
+  aiSlots: any;
+
+  // when the bot last nudged a person who stopped answering (cleared by their next message)
+  @Column
+  botReminderAt: Date;
 
   @Column
   chatbotNodeId: number;

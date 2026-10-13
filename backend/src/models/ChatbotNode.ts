@@ -49,6 +49,10 @@ class ChatbotNode extends Model<ChatbotNode> {
   @Column
   targetId: number;
 
+  // ask: the lead field that receives the answer · webhook: the URL called
+  @Column
+  field: string;
+
   @CreatedAt
   createdAt: Date;
 

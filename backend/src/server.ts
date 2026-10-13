@@ -8,6 +8,7 @@ import { startCampaignRunner } from "./workers/CampaignRunner";
 import { startCrmReminders } from "./workers/CrmReminders";
 import { startPaymentPoller } from "./workers/PaymentPoller";
 import { startOnboardingSla } from "./workers/OnboardingSla";
+import { startChatbotReminder } from "./workers/ChatbotReminder";
 import { loadAppTz } from "./helpers/AppTime";
 import { whenLeader } from "./helpers/SingleInstance";
 import { ensureRls } from "./helpers/EnsureRls";
@@ -27,6 +28,7 @@ whenLeader(() => {
   startCrmReminders();
   startPaymentPoller();
   startOnboardingSla();
+  startChatbotReminder();
   // every contact already in the system becomes a lead too (idempotent)
   import("./services/CrmServices/LeadCore")
     .then(({ backfillLeads }) => backfillLeads())

@@ -13,7 +13,8 @@ const crud = makeCrud(ChatbotNode, {
     "keywords",
     "message",
     "action",
-    "targetId"
+    "targetId",
+    "field"
   ],
   required: ["title"],
   order: [

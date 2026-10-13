@@ -51,10 +51,12 @@ const waitFor = async (fn, ms = 12000, label = "condition") => {
 
 // ----------------------------------------------------------------- mocks
 const tg = { updates: [], sent: [], offset: 0, n: 100 };
-const graph = { sent: [], media: [], n: 0 };
+const graph = { sent: [], media: [], n: 0, hooks: [] };
 const efi = { charges: {}, calls: [], webhook: null, authOk: 0 };
 const EFI_PORT = 9103;
 const BILLET_PORT = 9104;
+const AI_PORT = 9105;
+const anthropic = { requests: [] };
 const billet = { charges: {}, calls: [], notifications: {}, n: 500 };
 
 const startTelegramMock = () => {
@@ -86,11 +88,40 @@ const startTelegramMock = () => {
   return new Promise(r => { const s = app.listen(TG_PORT, () => r(s)); });
 };
 
+// Anthropic Messages API: answers by what the last user message says, and asks for tools when the scenario needs them
+const startAnthropicMock = () => {
+  const app = express();
+  app.use(express.json({ limit: "5mb" }));
+  app.post("/v1/messages", (req, res) => {
+    anthropic.requests.push(req.body);
+    const usage = { input_tokens: 120, output_tokens: 30, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 };
+    const last = req.body.messages[req.body.messages.length - 1];
+    const text = t => res.json({ content: [{ type: "text", text: t }], stop_reason: "end_turn", usage });
+    const tool = (name, input) => res.json({ content: [{ type: "tool_use", id: `toolu_${anthropic.requests.length}`, name, input }], stop_reason: "tool_use", usage });
+    if (req.body.max_tokens === 220) return text("O aluno quer saber sobre bolsas e cursos.");
+    const result = Array.isArray(last.content) && last.content.find(b => b.type === "tool_result");
+    if (result) {
+      const out = JSON.parse(result.content);
+      if (out.completo) return text("Perfeito, Paulo! Um consultor da equipe continua com você.");
+      if (out.cursos) return text(`O curso ${out.cursos[0].nome} tem mensalidade de tabela de R$ ${out.cursos[0].mensalidade_bruta_de_tabela}.`);
+      return text("Anotado!");
+    }
+    const said = typeof last.content === "string" ? last.content : "";
+    if (/valor do curso/i.test(said)) return tool("buscar_curso", { nome: "Direit" });
+    if (/meu nome é/i.test(said)) return tool("salvar_lead", { nome: "Paulo Mendes", cidade: "Ji-Paraná", curso: "Direito" });
+    if (/falar com (uma )?pessoa/i.test(said)) return text("[HANDOFF]");
+    return text("Claro! Posso ajudar com as bolsas. Qual curso você quer?");
+  });
+  return new Promise(r => { const s = app.listen(AI_PORT, () => r(s)); });
+};
+
 const startGraphMock = () => {
   const app = express();
   const upload = multer({ storage: multer.memoryStorage() });
   app.use(express.json());
   app.get("/pic.jpg", (q, res) => res.type("image/png").send(PNG));
+  app.get("/page.html", (q, res) => res.type("html").send("<html><head><style>x{}</style></head><body><nav>menu</nav><h1>Calendário acadêmico</h1><p>As aulas do segundo semestre começam em 3 de agosto e a rematrícula vai até 20 de julho para todos os cursos de graduação a distância.</p></body></html>"));
+  app.post("/hook", (req, res) => { graph.hooks.push(req.body); res.json({ ok: true }); });
   app.get("/att.png", (q, res) => res.type("image/png").send(PNG));
   app.get("/media/:id", (q, res) => res.type("image/png").send(PNG));
   app.get("/me", (q, res) => res.json({ id: "PAGE1", name: "Mock Page" }));
@@ -228,7 +259,8 @@ const postMeta = (id, payload, secret, badSig) => {
       PORT: String(PORT), PROXY_PORT: String(PORT), BACKEND_URL: "http://localhost", PUBLIC_URL: API,
       FRONTEND_URL: "http://localhost:3000", JWT_SECRET: "e2e", JWT_REFRESH_SECRET: "e2e-r",
       TELEGRAM_API_URL: `http://localhost:${TG_PORT}`, GRAPH_API_URL: `http://localhost:${GRAPH_PORT}`,
-      SKIP_WHATSAPP_SESSIONS: "1", LOG_LEVEL: "warn", EFI_API_URL: `http://localhost:${EFI_PORT}`, EFI_BILLET_API_URL: `http://localhost:${BILLET_PORT}`, EFI_POLL_MS: "1500"
+      SKIP_WHATSAPP_SESSIONS: "1", LOG_LEVEL: "warn", EFI_API_URL: `http://localhost:${EFI_PORT}`, EFI_BILLET_API_URL: `http://localhost:${BILLET_PORT}`, EFI_POLL_MS: "1500",
+      ANTHROPIC_API_URL: `http://localhost:${AI_PORT}`, ALLOW_PRIVATE_URLS: "true"
     };
     execFileSync("npx", ["sequelize", "db:migrate"], { cwd: ROOT, env, stdio: "ignore" });
     execFileSync("npx", ["sequelize", "db:seed:all"], { cwd: ROOT, env, stdio: "ignore" });
@@ -236,6 +268,7 @@ const postMeta = (id, payload, secret, badSig) => {
     await startGraphMock();
     await startEfiMock();
     await startBilletMock();
+    await startAnthropicMock();
     backend = spawn("node", ["dist/server.js"], { cwd: ROOT, env, stdio: ["ignore", "pipe", "pipe"] });
     let log = "";
     backend.stdout.on("data", d => (log += d));
@@ -1089,6 +1122,154 @@ const postMeta = (id, payload, secret, badSig) => {
       const s = tg.sent.slice(before).find(x => x.method === "sendChatAction");
       assert(s && s.body.action === "typing" && String(s.body.chat_id) === "5551", "sendChatAction payload");
     });
+    // -------------------------------------------------------------- AI agent and chatbot
+    console.log("\nAI agent and chatbot");
+    sql("DELETE FROM ChatbotNodes");
+    let aiId, jiPolo;
+    const inboundCloud = (from, id, body) => postMeta(cid, cloudEvent([{ from, id, type: "text", text: { body } }], { contacts: [{ wa_id: from, profile: { name: "Aluno IA" } }] }), cloudCfg.appSecret);
+    const sentTexts = since => graph.sent.slice(since).filter(x => x.body && x.body.type === "text").map(x => x.body.text.body);
+    await test("knowledge base: documents are split, FAQ and files can be added", async () => {
+      aiId = (await http.post("/ai-agents", { name: "Agente de matrículas", provider: "anthropic", model: "claude-haiku-5-5", apiKey: "sk-ant-test", whatsappId: cid, waitSeconds: 1, dailyTokenCap: 100000, handoffAfterTurns: 14, handoffMessage: "Vou chamar um consultor.", persona: { tone: "acolhedor", rules: "Pergunte uma coisa por vez", forbidden: "Prometer mensalidade fixa" } }, auth())).data.id;
+      assert(aiId, "agent not created");
+      const long = Array.from({ length: 12 }, (_, i) => `Parágrafo ${i}: ${"informação sobre o calendário ".repeat(20)}`).join("\n\n");
+      const d1 = await http.post(`/ai-agents/${aiId}/kb`, { title: "Calendário", content: long }, auth());
+      assert(d1.status === 201, `doc ${d1.status}`);
+      assert(await http.post(`/ai-agents/${aiId}/kb`, { title: "Bolsas de transferência", content: "Alunos que transferem de outra instituição podem ter bolsa de 40% na primeira mensalidade, conforme análise do histórico.\n\nPara solicitar, envie o histórico escolar ao consultor." }, auth()).then(r => r.status === 201), "bolsas");
+      assert((await http.post(`/ai-agents/${aiId}/kb`, { title: "Qual o endereço do polo?", kind: "faq", keywords: "endereco, onde fica", content: "Rua das Flores, 100, centro." }, auth())).status === 201, "faq");
+      const up = new FormData();
+      up.append("file", Buffer.from("Regras da rematrícula: o aluno confirma os dados no portal até o dia 20.\n\nQuem não confirma perde a vaga."), { filename: "rematricula.txt", contentType: "text/plain" });
+      const u = await http.post(`/ai-agents/${aiId}/kb/upload`, up, { headers: { ...up.getHeaders(), Authorization: `Bearer ${token}` } });
+      assert(u.status === 201, `upload ${u.status} ${JSON.stringify(u.data)}`);
+      const url = await http.post(`/ai-agents/${aiId}/kb/url`, { url: `http://localhost:${GRAPH_PORT}/page.html` }, auth());
+      assert(url.status === 201, `url ${url.status} ${JSON.stringify(url.data)}`);
+      assert(!/menu|x\{\}/.test(sql(`SELECT content FROM KbDocuments WHERE id=${url.data.id}`)), "html chrome was kept");
+      const kb = (await http.get(`/ai-agents/${aiId}/kb`, auth())).data;
+      assert(kb.length >= 5, `kb docs ${kb.length}`);
+      assert(kb.find(d => d.title === "Calendário").chunks > 1, "long document should be several chunks");
+      assert((await http.post(`/ai-agents/${aiId}/kb/upload`, (() => { const f = new FormData(); f.append("file", Buffer.from("x"), { filename: "a.exe" }); return f; })(), { headers: { Authorization: `Bearer ${token}` } })).status !== 201, "exe accepted");
+    });
+    await test("SSRF guard refuses private addresses and non-http URLs", async () => {
+      const prev = process.env.ALLOW_PRIVATE_URLS;
+      process.env.ALLOW_PRIVATE_URLS = "false";
+      const { isUrlSafe } = require("../dist/helpers/SafeUrl");
+      for (const bad of ["http://127.0.0.1/x", "http://localhost/x", "http://169.254.169.254/latest", "http://10.0.0.5/", "http://192.168.1.1/", "file:///etc/passwd", "ftp://example.com/"]) {
+        assert(!(await isUrlSafe(bad)), `${bad} should be refused`);
+      }
+      process.env.ALLOW_PRIVATE_URLS = prev;
+    });
+    await test("an FAQ is answered without calling the model", async () => {
+      const calls = anthropic.requests.length, before = graph.sent.length;
+      await inboundCloud("5511910000001", "wamid.ai-faq1", "Qual o endereço do polo?");
+      await waitFor(() => sentTexts(before).some(t => t.includes("Rua das Flores")), 12000, "faq answer");
+      assert(anthropic.requests.length === calls, "the model was called for an FAQ");
+    });
+    await test("short messages in a row get one answer, with a small prompt, caching, tools and only the relevant passages", async () => {
+      await http.put(`/ai-agents/${aiId}`, { waitSeconds: 4 }, auth());
+      const calls = anthropic.requests.length, before = graph.sent.length;
+      await Promise.all([
+        inboundCloud("5511910000002", "wamid.ai-a1", "oi, tudo bem?"),
+        sleep(300).then(() => inboundCloud("5511910000002", "wamid.ai-a2", "queria saber sobre bolsa de transferência"))
+      ]);
+      await waitFor(() => sentTexts(before).some(t => t.includes("Posso ajudar com as bolsas")), 20000, "ai reply");
+      await sleep(2500);
+      await http.put(`/ai-agents/${aiId}`, { waitSeconds: 1 }, auth());
+      assert(anthropic.requests.length === calls + 1, `expected 1 model call for the burst, got ${anthropic.requests.length - calls}`);
+      assert(sentTexts(before).filter(t => t.includes("Posso ajudar")).length === 1, "answered more than once");
+      const req = anthropic.requests[anthropic.requests.length - 1];
+      assert(req.model === "claude-haiku-5-5" && req.max_tokens === 350, `model/max_tokens ${req.model} ${req.max_tokens}`);
+      assert(req.system[0].cache_control && req.system[0].cache_control.type === "ephemeral", "stable prompt is not cached");
+      assert(req.system[0].text.includes("acolhedor") && req.system[0].text.includes("Prometer mensalidade fixa"), "persona missing");
+      assert(req.system[0].text.includes("Nunca diga que a mensalidade é fixa"), "fixed tuition rule missing");
+      assert(req.system[1].text.includes("bolsa de 40%") && !req.system[1].text.includes("Parágrafo 3"), `only the relevant passages should be sent: ${req.system[1].text.slice(0, 700)}`);
+      assert(["buscar_curso", "listar_polos", "simular_bolsa", "salvar_lead"].every(n => req.tools.some(t => t.name === n)), "tools missing");
+      assert(req.messages.length === 1 && /oi, tudo bem\?\nqueria saber/.test(req.messages[0].content), `burst should be one user turn: ${JSON.stringify(req.messages)}`);
+      assert(Number(sql(`SELECT COUNT(*) FROM AiUsage WHERE agentId=${aiId} AND kind='reply'`)) >= 1, "usage not logged");
+    });
+    await test("the model can look up a course in the catalogue (tool use)", async () => {
+      const calls = anthropic.requests.length, before = graph.sent.length;
+      await inboundCloud("5511910000003", "wamid.ai-b1", "Qual o valor do curso de Direito?");
+      await waitFor(() => sentTexts(before).some(t => t.includes("Direito") && t.includes("1300")), 15000, "tool based answer");
+      assert(anthropic.requests.length === calls + 2, `tool loop calls ${anthropic.requests.length - calls}`);
+      const second = anthropic.requests[anthropic.requests.length - 1];
+      const result = second.messages[second.messages.length - 1].content[0];
+      assert(result.type === "tool_result" && result.content.includes("Direito") && result.content.includes("1300"), "tool result missing catalogue data");
+      assert(result.content.includes("não é fixa"), "tool result should warn that tuition is not fixed");
+    });
+    await test("collecting the data hands the student to the polo's sales team with a summary", async () => {
+      jiPolo = (await http.post("/polos", { name: "Polo Ji-Paraná", code: "JIP", city: "Ji-Paraná", state: "RO" }, auth())).data;
+      const before = graph.sent.length;
+      await inboundCloud("5511910000004", "wamid.ai-c1", "Oi! Meu nome é Paulo, moro em Ji-Paraná e quero Direito");
+      await waitFor(() => sentTexts(before).some(t => t.includes("consultor da equipe continua")), 15000, "closing reply");
+      const t = ticketOf("5511910000004");
+      await waitFor(() => sql(`SELECT aiActive FROM Tickets WHERE id=${t}`) === "0", 8000, "ai handed over");
+      const leadOfTicket = `(SELECT contactId FROM Tickets WHERE id=${t})`;
+      assert(sql(`SELECT name FROM Leads WHERE contactId=${leadOfTicket}`) === "Paulo Mendes", "name not saved");
+      assert(sql(`SELECT city FROM Leads WHERE contactId=${leadOfTicket}`) === "Ji-Paraná", "city not saved");
+      assert(sql(`SELECT courseId FROM Leads WHERE contactId=${leadOfTicket}`) === sql("SELECT id FROM Courses WHERE name='Direito'"), "course not matched in the catalogue");
+      assert(sql(`SELECT poloId FROM Leads WHERE contactId=${leadOfTicket}`) === String(jiPolo.id), "polo not matched by city");
+      assert(sql(`SELECT queueId FROM Tickets WHERE id=${t}`) === String(jiPolo.queues.find(q => q.role === "comercial").id), "ticket should go to the polo's sales queue");
+      assert(sql(`SELECT COUNT(*) FROM TicketEvents WHERE ticketId=${t} AND type='handoff' AND note LIKE '%Paulo Mendes%'`) === "1", "handoff summary note missing");
+      assert(sql(`SELECT aiSlots FROM Tickets WHERE id=${t}`).includes("Ji-Paraná"), "collected data not saved on the ticket");
+    });
+    await test("asking for a person hands over right away", async () => {
+      const calls = anthropic.requests.length, before = graph.sent.length;
+      await inboundCloud("5511910000005", "wamid.ai-d1", "quero falar com uma pessoa");
+      await waitFor(() => sentTexts(before).some(t => t.includes("Vou chamar um consultor")), 15000, "handoff message");
+      assert(anthropic.requests.length === calls + 1, "one call expected");
+      assert(sql(`SELECT aiActive FROM Tickets WHERE id=${ticketOf("5511910000005")}`) === "0", "ai still active");
+    });
+    await test("daily token cap and turn limit stop the AI before it spends more", async () => {
+      await http.put(`/ai-agents/${aiId}`, { dailyTokenCap: 10 }, auth());
+      let calls = anthropic.requests.length, before = graph.sent.length;
+      await inboundCloud("5511910000006", "wamid.ai-e1", "bom dia");
+      await waitFor(() => sentTexts(before).some(t => t.includes("Vou chamar um consultor")), 15000, "cap handoff");
+      assert(anthropic.requests.length === calls, "model called after the daily cap");
+      await http.put(`/ai-agents/${aiId}`, { dailyTokenCap: 0, handoffAfterTurns: 1 }, auth());
+      before = graph.sent.length;
+      await inboundCloud("5511910000007", "wamid.ai-f1", "bom dia");
+      await waitFor(() => sentTexts(before).some(t => t.includes("Posso ajudar")), 15000, "first answer");
+      before = graph.sent.length;
+      await inboundCloud("5511910000007", "wamid.ai-f2", "e então?");
+      await waitFor(() => sentTexts(before).some(t => t.includes("Vou chamar um consultor")), 15000, "turn limit handoff");
+      await http.put(`/ai-agents/${aiId}`, { handoffAfterTurns: 14 }, auth());
+    });
+    await test("the agent tester answers without WhatsApp and without touching the lead", async () => {
+      const leadsBefore = sql("SELECT COUNT(*) FROM Leads"), ticketsBefore = sql("SELECT COUNT(*) FROM Tickets");
+      const r = await http.post(`/ai-agents/${aiId}/test`, { messages: [{ role: "user", content: "Meu nome é Paulo" }] }, auth());
+      assert(r.status === 200 && r.data.tools.includes("salvar_lead") && r.data.collected.nome === "Paulo Mendes", `tester ${r.status} ${JSON.stringify(r.data)}`);
+      assert(sql("SELECT COUNT(*) FROM Leads") === leadsBefore && sql("SELECT COUNT(*) FROM Tickets") === ticketsBefore, "tester created records");
+      assert(Number(sql(`SELECT COUNT(*) FROM AiUsage WHERE kind='test'`)) >= 1, "tester usage not logged");
+      assert((await http.post(`/ai-agents/${aiId}/test`, { messages: [] }, auth())).status === 400, "empty conversation accepted");
+      const u = (await http.get(`/ai-agents/${aiId}/usage`, auth())).data;
+      assert(u.total.calls >= 5 && u.total.input > 0 && u.cap === 0, `usage ${JSON.stringify(u)}`);
+    });
+    await test("chatbot can ask a question, offer polos and call a webhook", async () => {
+      sql("DELETE FROM ChatbotNodes");
+      const root = (await http.post("/chatbot-nodes", { title: "Quero me matricular", action: "ask", message: "Qual o seu nome completo?", field: "nome", position: 1 }, auth())).data;
+      const polo = (await http.post("/chatbot-nodes", { title: "Escolher polo", action: "polo", message: "Em qual polo você quer estudar?", parentId: root.id, position: 1 }, auth())).data;
+      await http.post("/chatbot-nodes", { title: "Avisar sistema", action: "webhook", field: `http://localhost:${GRAPH_PORT}/hook`, message: "Anotado, já já um consultor fala com você.", parentId: polo.id, position: 1 }, auth());
+      const from = "5511910000008";
+      let before = graph.sent.length;
+      await inboundCloud(from, "wamid.bot-1", "oi");
+      await waitFor(() => sentTexts(before).some(t => t.includes("Quero me matricular")), 12000, "menu");
+      before = graph.sent.length;
+      await inboundCloud(from, "wamid.bot-2", "1");
+      await waitFor(() => sentTexts(before).some(t => t.includes("Qual o seu nome completo?")), 12000, "question");
+      before = graph.sent.length;
+      await inboundCloud(from, "wamid.bot-3", "Maria Clara Souza");
+      await waitFor(() => sentTexts(before).some(t => t.includes("Em qual polo")), 12000, "polo list");
+      assert(sentTexts(before).join("\n").includes("Polo Ji-Paraná"), "polos not listed");
+      before = graph.sent.length;
+      await inboundCloud(from, "wamid.bot-4", "Polo Ji-Paraná");
+      await waitFor(() => sentTexts(before).some(t => t.includes("um consultor fala com você")), 12000, "final message");
+      const t = ticketOf(from);
+      assert(sql(`SELECT name FROM Leads WHERE contactId=(SELECT contactId FROM Tickets WHERE id=${t})`) === "Maria Clara Souza", "answer was not saved to the lead");
+      assert(sql(`SELECT poloId FROM Leads WHERE contactId=(SELECT contactId FROM Tickets WHERE id=${t})`) === String(jiPolo.id), "polo not saved");
+      assert(sql(`SELECT queueId FROM Tickets WHERE id=${t}`) === String(jiPolo.queues.find(q => q.role === "comercial").id), "ticket not routed to the polo's sales queue");
+      await waitFor(() => graph.hooks.some(h => h.collected && h.collected.nome === "Maria Clara Souza"), 8000, "webhook call");
+      sql("DELETE FROM ChatbotNodes");
+    });
+    await http.put(`/ai-agents/${aiId}`, { active: false }, auth());
     let poloId, tutorId, consultorId, tutorToken, consultorToken;
     await test("polos create one queue per function, fill them from the team and import from a sheet", async () => {
       const r = await http.post("/polos", { name: "Polo Teste", code: "T1", city: "Porto Velho", state: "RO" }, auth());
