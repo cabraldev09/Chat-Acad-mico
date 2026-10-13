@@ -91,6 +91,14 @@ class Ticket extends Model<Ticket> {
   @BelongsTo(() => Queue)
   queue: Queue;
 
+  // sales | onboarding | support | postsale
+  @Default("sales")
+  @Column
+  segment: string;
+
+  @Column
+  leadId: number;
+
   @HasMany(() => Message)
   messages: Message[];
 

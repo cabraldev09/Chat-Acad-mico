@@ -4,6 +4,7 @@ import multer from "multer";
 import isAuth from "../middleware/isAuth";
 import isAdmin from "../middleware/isAdmin";
 import { canWriteTicket } from "../middleware/canAccessTicket";
+import { canAccessLead, canAccessProposal, canAccessPayment } from "../middleware/scope";
 import uploadConfig from "../config/upload";
 
 import * as Tag from "../controllers/TagController";
@@ -18,6 +19,7 @@ import * as Channel from "../controllers/ChannelController";
 import * as Lead from "../controllers/LeadController";
 import * as Proposal from "../controllers/ProposalController";
 import * as Payment from "../controllers/PaymentController";
+import * as PoloCtl from "../controllers/PoloController";
 
 const upload = multer({ ...uploadConfig, limits: { fileSize: 30 * 1024 * 1024 } });
 const certUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 1024 * 1024 } });
@@ -100,6 +102,14 @@ r.get("/channels", isAuth, Channel.index);
 r.get("/channels/:whatsappId/info", isAuth, isAdmin, Channel.info);
 r.get("/channels/:whatsappId/safety", isAuth, Channel.safety);
 
+// polos (branches) and the team of each one
+r.get("/polos", isAuth, PoloCtl.index);
+r.post("/polos", isAuth, isAdmin, PoloCtl.store);
+r.post("/polos/import", isAuth, isAdmin, PoloCtl.importPolos);
+r.put("/polos/:id", isAuth, isAdmin, PoloCtl.update);
+r.put("/polos/:id/members", isAuth, isAdmin, PoloCtl.setMembers);
+r.delete("/polos/:id", isAuth, isAdmin, PoloCtl.remove);
+
 // ------------------------------------------------------------------- CRM
 r.get("/crm/options", isAuth, Lead.options);
 r.get("/crm/board", isAuth, Lead.board);
@@ -121,31 +131,31 @@ r.post("/leads", isAuth, Lead.store);
 r.post("/leads/import", isAuth, Lead.importLeads);
 r.get("/leads/by-contact/:contactId", isAuth, Lead.byContact);
 r.post("/leads/from-contact/:contactId", isAuth, Lead.fromContact);
-r.get("/leads/:id", isAuth, Lead.show);
-r.put("/leads/:id", isAuth, Lead.update);
-r.delete("/leads/:id", isAuth, isAdmin, Lead.remove);
-r.put("/leads/:id/stage", isAuth, Lead.setStage);
-r.get("/leads/:id/activities", isAuth, Lead.activities);
-r.post("/leads/:id/activities", isAuth, Lead.addNote);
-r.get("/leads/:id/tasks", isAuth, Lead.leadTasks);
-r.post("/leads/:id/tasks", isAuth, Lead.addTask);
-r.post("/leads/:id/open-ticket", isAuth, Lead.openTicket);
+r.get("/leads/:id", isAuth, canAccessLead, Lead.show);
+r.put("/leads/:id", isAuth, canAccessLead, Lead.update);
+r.delete("/leads/:id", isAuth, canAccessLead, isAdmin, Lead.remove);
+r.put("/leads/:id/stage", isAuth, canAccessLead, Lead.setStage);
+r.get("/leads/:id/activities", isAuth, canAccessLead, Lead.activities);
+r.post("/leads/:id/activities", isAuth, canAccessLead, Lead.addNote);
+r.get("/leads/:id/tasks", isAuth, canAccessLead, Lead.leadTasks);
+r.post("/leads/:id/tasks", isAuth, canAccessLead, Lead.addTask);
+r.post("/leads/:id/open-ticket", isAuth, canAccessLead, Lead.openTicket);
 r.get("/lead-tasks", isAuth, Lead.tasksIndex);
-r.put("/leads/:id/tasks/:taskId", isAuth, Lead.updateTask);
-r.post("/leads/:id/tasks/:taskId/toggle", isAuth, Lead.completeTask);
-r.delete("/leads/:id/tasks/:taskId", isAuth, Lead.removeTask);
+r.put("/leads/:id/tasks/:taskId", isAuth, canAccessLead, Lead.updateTask);
+r.post("/leads/:id/tasks/:taskId/toggle", isAuth, canAccessLead, Lead.completeTask);
+r.delete("/leads/:id/tasks/:taskId", isAuth, canAccessLead, Lead.removeTask);
 
 // ---------------------------------------------------------------- proposals
 r.get("/proposals/defaults", isAuth, Proposal.defaults);
 r.post("/proposals/preview", isAuth, Proposal.preview);
 r.get("/proposals", isAuth, Proposal.index);
 r.post("/proposals", isAuth, Proposal.store);
-r.get("/proposals/:id", isAuth, Proposal.show);
-r.put("/proposals/:id", isAuth, Proposal.update);
-r.delete("/proposals/:id", isAuth, Proposal.remove);
-r.post("/proposals/:id/duplicate", isAuth, Proposal.duplicate);
-r.get("/proposals/:id/pdf", isAuth, Proposal.pdf);
-r.post("/proposals/:id/send", isAuth, Proposal.send);
+r.get("/proposals/:id", isAuth, canAccessProposal, Proposal.show);
+r.put("/proposals/:id", isAuth, canAccessProposal, Proposal.update);
+r.delete("/proposals/:id", isAuth, canAccessProposal, Proposal.remove);
+r.post("/proposals/:id/duplicate", isAuth, canAccessProposal, Proposal.duplicate);
+r.get("/proposals/:id/pdf", isAuth, canAccessProposal, Proposal.pdf);
+r.post("/proposals/:id/send", isAuth, canAccessProposal, Proposal.send);
 r.get("/institutions", isAuth, Proposal.institutions.index);
 r.post("/institutions", isAuth, isAdmin, Proposal.institutions.store);
 r.put("/institutions/:id", isAuth, isAdmin, Proposal.institutions.update);
@@ -162,11 +172,11 @@ r.put("/payments/efi/settings", isAuth, isAdmin, Payment.putSettings);
 r.post("/payments/efi/certificate", isAuth, isAdmin, certUpload.single("certificate"), Payment.uploadCertificate);
 r.post("/payments/efi/test", isAuth, isAdmin, Payment.testConnection);
 r.post("/payments/efi/webhook", isAuth, isAdmin, Payment.registerWebhook);
-r.get("/leads/:id/payments", isAuth, Payment.listForLead);
-r.post("/leads/:id/payments", isAuth, Payment.createForLead);
-r.get("/payments/:id", isAuth, Payment.show);
-r.post("/payments/:id/refresh", isAuth, Payment.refresh);
-r.post("/payments/:id/cancel", isAuth, Payment.cancel);
-r.post("/payments/:id/send", isAuth, Payment.send);
+r.get("/leads/:id/payments", isAuth, canAccessLead, Payment.listForLead);
+r.post("/leads/:id/payments", isAuth, canAccessLead, Payment.createForLead);
+r.get("/payments/:id", isAuth, canAccessPayment, Payment.show);
+r.post("/payments/:id/refresh", isAuth, canAccessPayment, Payment.refresh);
+r.post("/payments/:id/cancel", isAuth, canAccessPayment, Payment.cancel);
+r.post("/payments/:id/send", isAuth, canAccessPayment, Payment.send);
 
 export default r;

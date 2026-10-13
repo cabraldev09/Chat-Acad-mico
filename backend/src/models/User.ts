@@ -44,9 +44,14 @@ class User extends Model<User> {
   @Column
   tokenVersion: number;
 
-  @Default("admin")
+  @Default("user")
   @Column
   profile: string;
+
+  // admin | coordenacao | consultor | tutor | academico
+  @Default("consultor")
+  @Column
+  role: string;
 
   @ForeignKey(() => Whatsapp)
   @Column

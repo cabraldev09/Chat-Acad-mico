@@ -33,6 +33,8 @@ import ProposalTemplate from "../models/ProposalTemplate";
 import Proposal from "../models/Proposal";
 import Payment from "../models/Payment";
 import TicketEvent from "../models/TicketEvent";
+import Polo from "../models/Polo";
+import PoloMember from "../models/PoloMember";
 
 // eslint-disable-next-line
 const dbConfig = require("../config/database");
@@ -74,7 +76,9 @@ const models = [
   ProposalTemplate,
   Proposal,
   Payment,
-  TicketEvent
+  TicketEvent,
+  Polo,
+  PoloMember
 ];
 
 sequelize.addModels(models);

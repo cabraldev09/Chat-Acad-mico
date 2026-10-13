@@ -3,6 +3,7 @@ import * as Yup from "yup";
 import AppError from "../../errors/AppError";
 import { SerializeUser } from "../../helpers/SerializeUser";
 import User from "../../models/User";
+import { ROLES } from "../../helpers/Roles";
 
 interface Request {
   email: string;
@@ -10,6 +11,7 @@ interface Request {
   name: string;
   queueIds?: number[];
   profile?: string;
+  role?: string;
   whatsappId?: number;
 }
 
@@ -25,7 +27,8 @@ const CreateUserService = async ({
   password,
   name,
   queueIds = [],
-  profile = "admin",
+  profile = "user",
+  role,
   whatsappId
 }: Request): Promise<Response> => {
   const schema = Yup.object().shape({
@@ -53,12 +56,19 @@ const CreateUserService = async ({
     throw new AppError(err.message);
   }
 
+  if (role !== undefined && !(ROLES as readonly string[]).includes(role)) {
+    throw new AppError("ERR_INVALID_ROLE", 400);
+  }
+  // the role decides the permission level: only "admin" is an administrator
+  const finalRole = role || (profile === "admin" ? "admin" : "consultor");
+
   const user = await User.create(
     {
       email,
       password,
       name,
-      profile,
+      profile: finalRole === "admin" ? "admin" : "user",
+      role: finalRole,
       whatsappId: whatsappId ? whatsappId : null
     },
     { include: ["queues", "whatsapp"] }

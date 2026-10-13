@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { dayBounds, shiftDays } from "../helpers/AppTime";
+import { withLeadScope, isAdminReq, reqRole } from "../middleware/scope";
 import { portable, nowSql, nowMinus, diffMinutes, diffHours, dayOf, countIf } from "../helpers/sqlDialect";
 import { Op } from "sequelize";
 import { randomBytes } from "crypto";
@@ -73,7 +74,7 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
   const limit = Math.min(Number(req.query.limit) || 50, 500);
   const offset = Number(req.query.offset) || 0;
   const { rows, count } = await Lead.findAndCountAll({
-    where: buildWhere(req.query),
+    where: await withLeadScope(req, buildWhere(req.query)),
     include: withTag(req.query.tagId as string),
     order: [["updatedAt", "DESC"]],
     limit,
@@ -85,14 +86,14 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
 
 export const board = async (req: Request, res: Response): Promise<Response> => {
   const stages = await LeadStage.findAll({ order: [["position", "ASC"]] });
-  const where = buildWhere({ ...req.query, stageId: undefined });
+  const where = await withLeadScope(req, buildWhere({ ...req.query, stageId: undefined }));
   const include = withTag(req.query.tagId as string);
   const perStage = Math.min(Number(req.query.perStage) || 30, 100);
 
   const out = await Promise.all(
     stages.map(async stage => {
       const { rows, count } = await Lead.findAndCountAll({
-        where: { ...where, stageId: stage.id },
+        where: { [Op.and]: [where, { stageId: stage.id }] },
         include,
         order: [
           ["score", "DESC"],
@@ -129,7 +130,12 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
   }
   if (b.cpf && !isValidCpf(b.cpf)) throw new AppError("ERR_CPF_INVALID");
   const { lead, created } = await upsertLead(
-    { ...b, source: b.source || "Outro", ownerId: b.ownerId === undefined ? undefined : b.ownerId || null },
+    {
+      ...b,
+      source: b.source || "Outro",
+      // a consultant's own new lead is theirs unless they say otherwise
+      ownerId: b.ownerId === undefined ? (reqRole(req) === "consultor" ? uid(req) : undefined) : b.ownerId || null
+    },
     uid(req)
   );
   return res.status(created ? 201 : 200).json({ lead, created });
@@ -286,7 +292,7 @@ export const removeTask = async (req: Request, res: Response): Promise<Response>
 export const tasksIndex = async (req: Request, res: Response): Promise<Response> => {
   const { scope = "mine", status = "open" } = req.query as any;
   const where: any = {};
-  if (scope === "mine") where.userId = uid(req);
+  if (scope === "mine" || !isAdminReq(req)) where.userId = uid(req);
   const now = new Date();
   const { start, end } = dayBounds();
   if (status === "done") where.doneAt = { [Op.not]: null };
@@ -307,7 +313,10 @@ export const tasksIndex = async (req: Request, res: Response): Promise<Response>
 
 // ------------------------------------------------------------ chat bridge
 export const byContact = async (req: Request, res: Response): Promise<Response> => {
-  const lead = await Lead.findOne({ where: { contactId: req.params.contactId }, include: leadInclude as any });
+  const lead = await Lead.findOne({
+    where: await withLeadScope(req, { contactId: req.params.contactId }),
+    include: leadInclude as any
+  });
   return res.json(lead || null);
 };
 
@@ -492,7 +501,8 @@ export const metrics = async (req: Request, res: Response): Promise<Response> =>
   const { QueryTypes } = await import("sequelize");
   const to = dayBounds(req.query.to ? String(req.query.to) : undefined).end;
   const from = req.query.from ? dayBounds(String(req.query.from)).start : dayBounds(shiftDays(new Date(), -29)).start;
-  const ownerId = req.query.ownerId ? Number(req.query.ownerId) : null;
+  // consultants only ever see their own numbers
+  const ownerId = reqRole(req) === "consultor" ? Number(req.user.id) : req.query.ownerId ? Number(req.query.ownerId) : null;
   const courseId = req.query.courseId ? Number(req.query.courseId) : null;
   const rep = { from, to, ownerId, courseId };
   const f = `AND (:ownerId IS NULL OR l.ownerId = :ownerId) AND (:courseId IS NULL OR l.courseId = :courseId)`;

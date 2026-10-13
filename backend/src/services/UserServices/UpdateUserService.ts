@@ -3,12 +3,14 @@ import * as Yup from "yup";
 import AppError from "../../errors/AppError";
 import { SerializeUser } from "../../helpers/SerializeUser";
 import ShowUserService from "./ShowUserService";
+import { ROLES } from "../../helpers/Roles";
 
 interface UserData {
   email?: string;
   password?: string;
   name?: string;
   profile?: string;
+  role?: string;
   queueIds?: number[];
   whatsappId?: number;
 }
@@ -42,6 +44,7 @@ const UpdateUserService = async ({
     email,
     password,
     profile,
+    role,
     name,
     queueIds = [],
     whatsappId
@@ -53,10 +56,16 @@ const UpdateUserService = async ({
     throw new AppError(err.message);
   }
 
+  if (role !== undefined && !(ROLES as readonly string[]).includes(role)) {
+    throw new AppError("ERR_INVALID_ROLE", 400);
+  }
+  const finalRole = role || (profile === "admin" ? "admin" : undefined);
+
   await user.update({
     email,
     password,
-    profile,
+    profile: finalRole ? (finalRole === "admin" ? "admin" : "user") : profile,
+    role: finalRole,
     name,
     whatsappId: whatsappId ? whatsappId : null
   });

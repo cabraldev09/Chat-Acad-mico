@@ -3,11 +3,13 @@ import { Request, Response, NextFunction } from "express";
 
 import AppError from "../errors/AppError";
 import authConfig from "../config/auth";
+import { roleOf } from "../helpers/Roles";
 
 interface TokenPayload {
   id: string;
   username: string;
   profile: string;
+  role?: string;
   iat: number;
   exp: number;
 }
@@ -23,11 +25,12 @@ const isAuth = (req: Request, res: Response, next: NextFunction): void => {
 
   try {
     const decoded = verify(token, authConfig.secret);
-    const { id, profile } = decoded as TokenPayload;
+    const { id, profile, role } = decoded as TokenPayload;
 
     req.user = {
       id,
-      profile
+      profile,
+      role: roleOf({ role, profile })
     };
   } catch (err) {
     throw new AppError(

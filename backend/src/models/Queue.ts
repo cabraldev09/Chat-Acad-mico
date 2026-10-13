@@ -8,8 +8,11 @@ import {
   AutoIncrement,
   AllowNull,
   Unique,
-  BelongsToMany
+  BelongsToMany,
+  ForeignKey,
+  BelongsTo
 } from "sequelize-typescript";
+import Polo from "./Polo";
 import User from "./User";
 import UserQueue from "./UserQueue";
 
@@ -38,6 +41,17 @@ class Queue extends Model<Queue> {
 
   @Column
   autoAssign: string;
+
+  // set when the queue belongs to a polo: comercial | tutoria | academico | coordenacao
+  @ForeignKey(() => Polo)
+  @Column
+  poloId: number;
+
+  @BelongsTo(() => Polo)
+  polo: Polo;
+
+  @Column
+  role: string;
 
   @CreatedAt
   createdAt: Date;

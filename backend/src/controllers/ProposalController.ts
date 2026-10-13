@@ -5,6 +5,7 @@ import { Op } from "sequelize";
 import { randomBytes } from "crypto";
 
 import Lead from "../models/Lead";
+import { leadScopeWhere } from "../middleware/scope";
 import LeadStage from "../models/LeadStage";
 import Course from "../models/Course";
 import Institution from "../models/Institution";
@@ -241,8 +242,15 @@ export const update = async (req: Request, res: Response): Promise<Response> => 
 };
 
 export const index = async (req: Request, res: Response): Promise<Response> => {
+  const scope = await leadScopeWhere(req);
+  const allowed = scope
+    ? (await Lead.findAll({ where: scope, attributes: ["id"], limit: 5000 })).map(l => l.id)
+    : null;
   const rows = await Proposal.findAll({
-    where: req.query.leadId ? { leadId: Number(req.query.leadId) } : {},
+    where: {
+      ...(req.query.leadId ? { leadId: Number(req.query.leadId) } : {}),
+      ...(allowed ? { leadId: req.query.leadId ? { [Op.and]: [Number(req.query.leadId), { [Op.in]: allowed }] } : { [Op.in]: allowed } } : {})
+    },
     include: [{ model: User, as: "author", attributes: ["id", "name"] }],
     order: [["id", "DESC"]],
     limit: 100

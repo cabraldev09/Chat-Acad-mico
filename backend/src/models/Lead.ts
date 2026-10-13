@@ -19,6 +19,7 @@ import Course from "./Course";
 import LeadStage from "./LeadStage";
 import User from "./User";
 import Contact from "./Contact";
+import Polo from "./Polo";
 import Tag from "./Tag";
 import LeadTag from "./LeadTag";
 import LeadActivity from "./LeadActivity";
@@ -162,6 +163,13 @@ class Lead extends Model<Lead> {
 
   @BelongsTo(() => User)
   owner: User;
+
+  @ForeignKey(() => Polo)
+  @Column
+  poloId: number;
+
+  @BelongsTo(() => Polo)
+  polo: Polo;
 
   @ForeignKey(() => Contact)
   @Column
