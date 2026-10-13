@@ -275,7 +275,6 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
                     const entry = (options.admissionNeedsSemester || []).includes(e.target.value) ? p.entrySemester : 1;
                     return { ...p, admissionType: e.target.value, entrySemester: entry, ...(p.attendAuto ? { attend: String(p.courseSemesters - entry + 1) } : {}) };
                   })}>
-                  <MenuItem value="">—</MenuItem>
                   {(options.admissionTypes || []).map((t) => (<MenuItem key={t} value={t}>{t}</MenuItem>))}
                 </TextField>
                 <TextField select fullWidth variant="outlined" margin="dense" label="Período de ingresso" value={f.entryTerm} onChange={set("entryTerm")} disabled={!!locked}>
@@ -389,7 +388,6 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
                     </TextField>
                     <TextField select fullWidth variant="outlined" margin="dense" label="Instituição" disabled={!!locked}
                       value={(snapshot && snapshot.institutionId) || ""} onChange={(e) => setSnapshot({ ...snapshot, institutionId: e.target.value || null })}>
-                      <MenuItem value="">—</MenuItem>
                       {institutions.map((i) => (<MenuItem key={i.id} value={i.id}>{i.name}</MenuItem>))}
                     </TextField>
                   </div>

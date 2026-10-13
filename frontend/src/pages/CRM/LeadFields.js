@@ -18,7 +18,6 @@ export const termLabel = (t) => {
 const Select = ({ label, value, onChange, items, allowEmpty = true, className, ...rest }) => (
   <TextField select fullWidth variant="outlined" margin="dense" label={label} className={className}
     value={value ?? ""} onChange={(e) => onChange(e.target.value === "" ? null : e.target.value)} {...rest}>
-    {allowEmpty && <MenuItem value="">—</MenuItem>}
     {items.map((i) => (
       <MenuItem key={i.value} value={i.value}>{i.label}</MenuItem>
     ))}

@@ -359,7 +359,6 @@ const CrudPage = ({
           value={values[f.name] === null || values[f.name] === undefined ? "" : values[f.name]}
           onChange={(e) => set(f.name, e.target.value)}
         >
-          {!multi && !f.required && <MenuItem value="">— nenhum —</MenuItem>}
           {(f.options || []).map((o) => (
             <MenuItem key={String(o.value)} value={o.value}>
               {o.label}
