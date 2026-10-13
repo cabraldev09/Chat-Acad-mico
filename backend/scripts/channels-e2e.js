@@ -745,6 +745,102 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(sent.some(x => x.body && x.body.type === "image"), "QR image not sent");
       assert(sent.some(x => x.body && x.body.image && x.body.image.caption && x.body.image.caption.includes(p.pixCopiaECola)), "copia e cola missing from the message");
     });
+
+    // ------------------------------------------------ hardening / transfer / safety
+    console.log("\nSegurança, transferência de setor e proteção da API não oficial");
+    const asUser = t => ({ headers: { Authorization: `Bearer ${t}` } });
+    let agentToken, agentId, qA, qB;
+    await test("public signup is closed by default", async () => {
+      const r = await http.post("/auth/signup", { name: "Intruso", email: "intruso@x.com", password: "123456", profile: "admin" });
+      assert(r.status === 403, `signup answered ${r.status}`);
+      assert(sql(`SELECT COUNT(*) FROM Users WHERE email='intruso@x.com'`) === "0", "user was created");
+    });
+    await test("an agent can log in but cannot change settings, queues, users or delete data", async () => {
+      qA = (await http.post("/queue", { name: "Setor A", color: "#0b4279" }, auth())).data.id;
+      qB = (await http.post("/queue", { name: "Setor B", color: "#e08a00" }, auth())).data.id;
+      const created = await http.post("/users", { name: "Atendente A", email: "agente-a@x.com", password: "agente123", profile: "user", queueIds: [qA] }, auth());
+      assert(created.status === 200, `create agent ${created.status} ${JSON.stringify(created.data)}`);
+      agentId = created.data.id;
+      agentToken = (await http.post("/auth/login", { email: "agente-a@x.com", password: "agente123" })).data.token;
+      assert(agentToken, "agent login");
+      assert((await http.post("/queue", { name: "X", color: "#000000" }, asUser(agentToken))).status === 403, "agent created a queue");
+      assert((await http.post("/users", { name: "Z", email: "z@x.com", password: "123456" }, asUser(agentToken))).status === 403, "agent created a user");
+      assert((await http.delete(`/tickets/${tgTicket}`, asUser(agentToken))).status === 403, "agent deleted a ticket");
+      assert((await http.post("/whatsapp", { name: "Hack", channel: "telegram", config: "{}" }, asUser(agentToken))).status === 403, "agent created a connection");
+    });
+    await test("an agent cannot open conversations of another sector", async () => {
+      const t = ticketOf("tg_5552"); // sits in "Admissão", which the agent does not belong to
+      assert((await http.get(`/tickets/${t}`, asUser(agentToken))).status === 403, "ticket readable");
+      assert((await http.get(`/messages/${t}`, asUser(agentToken))).status === 403, "messages readable");
+      assert((await http.post(`/messages/${t}`, { body: "intruso" }, asUser(agentToken))).status === 403, "message sendable");
+      assert((await http.get(`/tickets/${t}`, auth())).status === 200, "admin lost access");
+    });
+    await test("transferring to a sector releases the ticket and silences the bots", async () => {
+      sql(`UPDATE Tickets SET aiActive=1, chatbotNodeId=NULL WHERE id=${tgTicket}`);
+      const r = await http.put(`/tickets/${tgTicket}`, { queueId: qB }, auth());
+      assert(r.status === 200, `transfer ${r.status} ${JSON.stringify(r.data)}`);
+      assert(sql(`SELECT CONCAT(status,'|',IFNULL(userId,'null'),'|',queueId,'|',aiActive,'|',chatbotNodeId) FROM Tickets WHERE id=${tgTicket}`) === `pending|null|${qB}|0|-1`, `ticket state after transfer: ${sql(`SELECT CONCAT(status,'|',IFNULL(userId,'null'),'|',IFNULL(queueId,'null'),'|',aiActive,'|',IFNULL(chatbotNodeId,'null')) FROM Tickets WHERE id=${tgTicket}`)}`);
+      const ev = sql(`SELECT CONCAT(type,'|',toQueueId) FROM TicketEvents WHERE ticketId=${tgTicket} ORDER BY id DESC LIMIT 1`);
+      assert(ev === `transfer|${qB}`, `event ${ev}`);
+      const events = (await http.get(`/tickets/${tgTicket}/events`, auth())).data;
+      assert(events.length >= 1 && events[0].toQueue.name === "Setor B", "history endpoint");
+    });
+    await test("transfer validates agent, sector and status", async () => {
+      assert((await http.put(`/tickets/${tgTicket}`, { userId: agentId, queueId: qB }, auth())).status === 422, "agent outside the sector accepted");
+      assert((await http.put(`/tickets/${tgTicket}`, { queueId: 99999 }, auth())).status === 404, "unknown sector accepted");
+      assert((await http.put(`/tickets/${tgTicket}`, { status: "banana" }, auth())).status === 400, "invalid status accepted");
+    });
+    await test("a sector with auto-assignment gives the transferred ticket to an agent and the note + notice are sent", async () => {
+      const upd = await http.put(`/queue/${qA}`, { name: "Setor A", color: "#0b4279", autoAssign: "roundrobin" }, auth());
+      assert(upd.status === 200 || upd.status === 201, `queue update ${upd.status}`);
+      const before = tg.sent.length;
+      const r = await http.put(`/tickets/${tgTicket}`, { queueId: qA, note: "Cliente quer Direito", notifyClient: true }, auth());
+      assert(r.status === 200, `transfer ${r.status} ${JSON.stringify(r.data)}`);
+      assert(sql(`SELECT CONCAT(status,'|',userId) FROM Tickets WHERE id=${tgTicket}`) === `open|${agentId}`, "auto-assign did not run");
+      assert(sql(`SELECT COUNT(*) FROM TicketEvents WHERE ticketId=${tgTicket} AND type='auto_assigned' AND toUserId=${agentId}`) === "1", "auto-assign not logged");
+      assert(sql(`SELECT note FROM TicketEvents WHERE ticketId=${tgTicket} AND type='transfer' ORDER BY id DESC LIMIT 1`) === "Cliente quer Direito", "note");
+      assert(tg.sent.slice(before).some(x => x.method === "sendMessage" && x.body.text.includes("encaminhado para o setor")), "client was not told");
+      // the agent now owns it and may read it; another agent's write is refused by the guard
+      assert((await http.get(`/tickets/${tgTicket}`, asUser(agentToken))).status === 200, "owner cannot read");
+    });
+    await test("SAIR opts the contact out and VOLTAR brings them back", async () => {
+      const before = tg.sent.length;
+      tg.updates.push({ update_id: 30, message: { message_id: 90, chat: { id: 5551, type: "private" }, from: { first_name: "Ana" }, text: "SAIR" } });
+      await waitFor(() => sql(`SELECT optOut FROM Contacts WHERE number='tg_5551'`) === "1", 8000, "opt-out");
+      await waitFor(() => tg.sent.slice(before).some(x => x.body.text && x.body.text.includes("não receberá mais")), 8000, "confirmation");
+      tg.updates.push({ update_id: 31, message: { message_id: 91, chat: { id: 5551, type: "private" }, from: { first_name: "Ana" }, text: "voltar" } });
+      await waitFor(() => sql(`SELECT optOut FROM Contacts WHERE number='tg_5551'`) === "0", 8000, "opt-in");
+    });
+    await test("unofficial connection: campaigns block cold contacts and opted-out contacts", async () => {
+      const wa = (await http.post("/whatsapp", { name: "QR de teste", channel: "whatsapp" }, auth())).data;
+      await sleep(1500); // let the (skipped) session start finish before faking the status
+      sql(`UPDATE Whatsapps SET status='CONNECTED' WHERE id=${wa.id}`);
+      const list = (await http.post("/contact-lists", { name: "Frios" }, auth())).data;
+      await http.post(`/contact-lists/${list.id}/import`, { items: [{ name: "Frio Um", number: "5511977770001" }] }, auth());
+      const c = (await http.post("/campaigns", { name: "Frios", message: "Oi {{name}}", contactListId: list.id, whatsappId: wa.id, intervalMin: 0, intervalMax: 0, batchSize: 50, batchPause: 1 }, auth())).data;
+      assert((await http.post(`/campaigns/${c.id}/start`, {}, auth())).status === 200, "start");
+      try {
+        await waitFor(() => {
+          // the (skipped) session start may still overwrite the status: keep faking it
+          sql(`UPDATE Whatsapps SET status='CONNECTED' WHERE id=${wa.id}`);
+          return sql(`SELECT status FROM CampaignShippings WHERE campaignId=${c.id} LIMIT 1`) === "failed";
+        }, 45000, "cold contact blocked");
+      } catch (e) {
+        throw new Error(`${e.message}; shipping=${sql(`SELECT CONCAT(status,'|',IFNULL(error,'')) FROM CampaignShippings WHERE campaignId=${c.id} LIMIT 1`)} wa=${sql(`SELECT status FROM Whatsapps WHERE id=${wa.id}`)} campaign=${sql(`SELECT CONCAT(status,'|',IFNULL(pauseReason,'')) FROM Campaigns WHERE id=${c.id}`)}`);
+      }
+      const why = sql(`SELECT error FROM CampaignShippings WHERE campaignId=${c.id} LIMIT 1`);
+      assert(/nunca respondeu/.test(why), `reason: ${why}`);
+      const safety = (await http.get(`/channels/${wa.id}/safety`, auth())).data;
+      assert(safety.unofficial === true && safety.riskMode === "strict" && safety.dailyLimit === 20, `safety ${JSON.stringify(safety)}`);
+      assert((await http.put(`/whatsapp/${wa.id}`, { name: "QR de teste", riskMode: "xyz" }, auth())).status === 400, "bad riskMode accepted");
+    });
+    await test("login is rate limited", async () => {
+      let limited = false;
+      for (let i = 0; i < 40 && !limited; i += 1) {
+        limited = (await http.post("/auth/login", { email: "naoexiste@x.com", password: "errada" })).status === 429;
+      }
+      assert(limited, "no 429 after 40 wrong logins");
+    });
   } catch (e) {
     results.push([false, `harness: ${e.stack || e.message}`]);
     console.log("harness error:", e.stack || e.message);

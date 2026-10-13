@@ -298,7 +298,12 @@ const Campaigns = () => {
                 name: "whatsappId",
                 label: "Enviar pela conexão (vazio = padrão)",
                 type: "select",
-                options: connections.map((c) => ({ value: c.id, label: c.name })),
+                options: connections.map((c) => ({
+                  value: c.id,
+                  label: c.channel === "whatsapp" ? `${c.name} (WhatsApp não oficial · modo ${c.riskMode === "relaxed" ? "flexível" : "seguro"})` : c.name,
+                })),
+                helper:
+                  "Conexões por QR Code (não oficiais) só disparam para quem já conversou com você, respeitam um limite diário de aquecimento e pausam sozinhas se o WhatsApp encerrar a sessão. Para contatos novos use a API oficial (Cloud).",
               },
               {
                 name: "message",
@@ -322,7 +327,16 @@ const Campaigns = () => {
                 header: "Status",
                 render: (r) => {
                   const [label, color] = STATUS[r.status] || [r.status, "default"];
-                  return <Chip size="small" label={label} color={color} />;
+                  return (
+                    <div>
+                      <Chip size="small" label={label} color={color} />
+                      {r.pauseReason && (
+                        <Typography variant="caption" color="error" display="block" style={{ maxWidth: 260 }}>
+                          {r.pauseReason}
+                        </Typography>
+                      )}
+                    </div>
+                  );
                 },
               },
               {

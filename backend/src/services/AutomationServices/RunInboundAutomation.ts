@@ -19,7 +19,7 @@ const MARK = "‎";
 
 const say = async (ticket: Ticket, body: string): Promise<void> => {
   try {
-    await SendWhatsAppMessage({ body: `${MARK}${body}`, ticket });
+    await SendWhatsAppMessage({ body: `${MARK}${body}`, ticket, automated: true });
   } catch (err) {
     logger.error(`Automation could not send message: ${err}`);
   }

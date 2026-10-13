@@ -9,6 +9,9 @@ import UpdateTicketService from "../services/TicketServices/UpdateTicketService"
 import SendWhatsAppMessage from "../services/WbotServices/SendWhatsAppMessage";
 import ShowWhatsAppService from "../services/WhatsappService/ShowWhatsAppService";
 import formatBody from "../helpers/Mustache";
+import TicketEvent from "../models/TicketEvent";
+import User from "../models/User";
+import Queue from "../models/Queue";
 
 type IndexQuery = {
   searchParam: string;
@@ -26,6 +29,8 @@ interface TicketData {
   status: string;
   queueId: number;
   userId: number;
+  note?: string;
+  notifyClient?: boolean;
 }
 
 export const index = async (req: Request, res: Response): Promise<Response> => {
@@ -92,9 +97,14 @@ export const update = async (
   const { ticketId } = req.params;
   const ticketData: TicketData = req.body;
 
+  const { note, notifyClient, ...changes } = ticketData;
+
   const { ticket } = await UpdateTicketService({
-    ticketData,
-    ticketId
+    ticketData: changes,
+    ticketId,
+    actorId: Number(req.user.id),
+    note,
+    notifyClient: Boolean(notifyClient)
   });
 
   if (ticket.status === "closed") {
@@ -105,7 +115,8 @@ export const update = async (
     if (farewellMessage) {
       await SendWhatsAppMessage({
         body: formatBody(farewellMessage, ticket.contact),
-        ticket
+        ticket,
+        automated: true
       });
     }
   }
@@ -128,4 +139,23 @@ export const remove = async (
   });
 
   return res.status(200).json({ message: "ticket deleted" });
+};
+
+export const events = async (req: Request, res: Response): Promise<Response> => {
+  const { ticketId } = req.params;
+
+  const rows = await TicketEvent.findAll({
+    where: { ticketId },
+    order: [["createdAt", "DESC"]],
+    limit: 100,
+    include: [
+      { model: User, as: "actor", attributes: ["id", "name"] },
+      { model: Queue, as: "fromQueue", attributes: ["id", "name", "color"] },
+      { model: Queue, as: "toQueue", attributes: ["id", "name", "color"] },
+      { model: User, as: "fromUser", attributes: ["id", "name"] },
+      { model: User, as: "toUser", attributes: ["id", "name"] }
+    ]
+  });
+
+  return res.json(rows);
 };

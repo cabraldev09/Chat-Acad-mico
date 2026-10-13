@@ -72,6 +72,14 @@ class Whatsapp extends Model<Whatsapp> {
   @Column(DataType.TEXT)
   outOfHoursMessage: string;
 
+  // "strict" | "relaxed": how hard the sending guard limits an unofficial connection
+  @Default("strict")
+  @Column
+  riskMode: string;
+
+  @Column
+  connectedSince: Date;
+
   @CreatedAt
   createdAt: Date;
 

@@ -51,6 +51,9 @@ class Campaign extends Model<Campaign> {
   finishedAt: Date;
 
   @Column
+  pauseReason: string;
+
+  @Column
   templateName: string;
 
   @Column

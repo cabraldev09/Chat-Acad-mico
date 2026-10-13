@@ -28,23 +28,26 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
 
 export const store = async (req: Request, res: Response): Promise<Response> => {
   const { email, password, name, profile, queueIds, whatsappId } = req.body;
+  const isSignup = req.url === "/signup";
 
-  if (
-    req.url === "/signup" &&
-    (await CheckSettingsHelper("userCreation")) === "disabled"
-  ) {
-    throw new AppError("ERR_USER_CREATION_DISABLED", 403);
-  } else if (req.url !== "/signup" && req.user.profile !== "admin") {
+  if (isSignup) {
+    // self-registration is opt-in: only an explicit "enabled" opens it
+    const setting = await CheckSettingsHelper("userCreation").catch(() => "");
+    if (setting !== "enabled") {
+      throw new AppError("ERR_USER_CREATION_DISABLED", 403);
+    }
+  } else if (req.user.profile !== "admin") {
     throw new AppError("ERR_NO_PERMISSION", 403);
   }
 
+  // a public signup can never choose its own role, sectors or connection
   const user = await CreateUserService({
     email,
     password,
     name,
-    profile,
-    queueIds,
-    whatsappId
+    profile: isSignup ? "user" : profile,
+    queueIds: isSignup ? [] : queueIds,
+    whatsappId: isSignup ? undefined : whatsappId
   });
 
   const io = getIO();

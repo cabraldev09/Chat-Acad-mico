@@ -255,6 +255,10 @@ const messages = {
         fieldQueuePlaceholder: "Selecione uma fila",
         fieldConnectionPlaceholder: "Selecione uma conexão",
         noOptions: "Nenhum usuário encontrado com esse nome",
+        chooseDestination: "Escolha um atendente ou um setor para transferir.",
+        noteLabel: "Observação para quem vai atender (opcional)",
+        notePlaceholder: "Ex.: cliente quer proposta para Direito, já tem histórico",
+        notifyClient: "Avisar o cliente sobre a transferência",
         buttons: {
           ok: "Transferir",
           cancel: "Cancelar",
@@ -470,6 +474,13 @@ const messages = {
         ERR_SESSION_EXPIRED: "Sessão expirada. Por favor entre.",
         ERR_USER_CREATION_DISABLED:
           "A criação do usuário foi desabilitada pelo administrador.",
+        ERR_TOO_MANY_REQUESTS:
+          "Muitas tentativas em pouco tempo. Aguarde um instante e tente de novo.",
+        ERR_INVALID_TICKET_STATUS: "Status de atendimento inválido.",
+        ERR_NO_QUEUE_FOUND: "Setor não encontrado.",
+        ERR_USER_NOT_IN_QUEUE: "Esse atendente não pertence ao setor escolhido.",
+        ERR_CHANNEL_MISMATCH:
+          "Não é possível mudar para uma conexão de outro canal.",
         ERR_NO_PERMISSION: "Você não tem permissão para acessar este recurso.",
         ERR_DUPLICATED_CONTACT: "Já existe um contato com este número.",
         ERR_NO_SETTING_FOUND: "Nenhuma configuração encontrada com este ID.",

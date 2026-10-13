@@ -12,6 +12,7 @@ import { logger } from "../../utils/logger";
 import CreateMessageService from "../MessageServices/CreateMessageService";
 import FindOrCreateTicketService from "../TicketServices/FindOrCreateTicketService";
 import RunInboundAutomation from "../AutomationServices/RunInboundAutomation";
+import processOptOut from "../SafetyServices/OptOut";
 
 const writeFileAsync = promisify(writeFile);
 
@@ -136,10 +137,12 @@ const HandleChannelMessage = async (
     await ticket.update({ lastMessage: messageData.body });
     const message = await CreateMessageService({ messageData });
 
-    await RunInboundAutomation({
-      ticketId: ticket.id,
-      body: input.body
-    });
+    if (!(await processOptOut(ticket.id, input.body))) {
+      await RunInboundAutomation({
+        ticketId: ticket.id,
+        body: input.body
+      });
+    }
 
     return { ticket, message };
   } catch (err) {

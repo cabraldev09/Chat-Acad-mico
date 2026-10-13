@@ -6,6 +6,7 @@ import User from "../../models/User";
 import { getSetting, setSetting } from "../../helpers/AppSettings";
 import UpdateTicketService from "../TicketServices/UpdateTicketService";
 import { logger } from "../../utils/logger";
+import TicketEvent from "../../models/TicketEvent";
 
 // Queue.autoAssign: "none" | "roundrobin" | "least" (fewest open tickets)
 const AutoAssignTicket = async (ticket: Ticket): Promise<boolean> => {
@@ -39,6 +40,12 @@ const AutoAssignTicket = async (ticket: Ticket): Promise<boolean> => {
     await UpdateTicketService({
       ticketData: { userId: chosen.id, status: "open" },
       ticketId: ticket.id
+    });
+    await TicketEvent.create({
+      ticketId: ticket.id,
+      type: "auto_assigned",
+      toQueueId: queue.id,
+      toUserId: chosen.id
     });
     return true;
   } catch (err) {

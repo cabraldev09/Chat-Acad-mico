@@ -72,10 +72,11 @@ const SendToContact = async ({
         path: path.join(PUBLIC_DIR, copyName)
       } as Express.Multer.File,
       ticket,
-      body
+      body,
+      automated: !keepOpen
     });
   } else {
-    await SendWhatsAppMessage({ body, ticket });
+    await SendWhatsAppMessage({ body, ticket, automated: !keepOpen });
   }
 
   if (keepOpen) {

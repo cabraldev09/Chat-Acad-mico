@@ -1,5 +1,6 @@
 import express from "express";
 import isAuth from "../middleware/isAuth";
+import isAdmin from "../middleware/isAdmin";
 
 import * as ContactController from "../controllers/ContactController";
 import * as ImportPhoneContactsController from "../controllers/ImportPhoneContactsController";
@@ -22,6 +23,6 @@ contactRoutes.post("/contact", isAuth, ContactController.getContact);
 
 contactRoutes.put("/contacts/:contactId", isAuth, ContactController.update);
 
-contactRoutes.delete("/contacts/:contactId", isAuth, ContactController.remove);
+contactRoutes.delete("/contacts/:contactId", isAuth, isAdmin, ContactController.remove);
 
 export default contactRoutes;

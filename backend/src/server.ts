@@ -25,8 +25,20 @@ import("./services/CrmServices/LeadCore")
   .catch(err => logger.warn(`CRM backfill failed: ${err}`));
 gracefulShutdown(server);
 
+// A stray exception is logged and survived, but a burst means the process is
+// in a bad state: exit so the supervisor (pm2/launchd/docker) restarts it clean.
+const recentCrashes: number[] = [];
 process.on("uncaughtException", err => {
   logger.error({ info: "Global uncaught exception", err });
+  const now = Date.now();
+  recentCrashes.push(now);
+  while (recentCrashes.length && now - recentCrashes[0] > 60000) {
+    recentCrashes.shift();
+  }
+  if (recentCrashes.length >= 10) {
+    logger.fatal("Too many uncaught exceptions in 60s, exiting");
+    process.exit(1);
+  }
 });
 
 process.on("unhandledRejection", err => {

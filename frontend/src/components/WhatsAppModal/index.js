@@ -100,6 +100,7 @@ const WhatsAppModal = ({ open, onClose, whatsAppId }) => {
 	const [selectedQueueIds, setSelectedQueueIds] = useState([]);
 	const [channels, setChannels] = useState([]);
 	const [info, setInfo] = useState(null);
+	const [safety, setSafety] = useState(null);
 	const [saving, setSaving] = useState(false);
 
 	useEffect(() => {
@@ -118,6 +119,8 @@ const WhatsAppModal = ({ open, onClose, whatsAppId }) => {
 				setSelectedQueueIds(data.queues?.map(queue => queue.id) || []);
 				if (data.channel !== "whatsapp") {
 					api.get(`/channels/${whatsAppId}/info`).then(({ data: i }) => setInfo(i)).catch(() => {});
+				} else {
+					api.get(`/channels/${whatsAppId}/safety`).then(({ data: s }) => setSafety(s)).catch(() => {});
 				}
 			} catch (err) {
 				toastError(err);
@@ -136,6 +139,7 @@ const WhatsAppModal = ({ open, onClose, whatsAppId }) => {
 		setHours(defaultHours());
 		setSelectedQueueIds([]);
 		setInfo(null);
+		setSafety(null);
 	};
 
 	const handleSave = async () => {
@@ -149,6 +153,7 @@ const WhatsAppModal = ({ open, onClose, whatsAppId }) => {
 			greetingMessage: whatsApp.greetingMessage,
 			farewellMessage: whatsApp.farewellMessage,
 			outOfHoursMessage: whatsApp.outOfHoursMessage,
+			riskMode: whatsApp.riskMode,
 			businessHours: JSON.stringify(hours),
 			queueIds: selectedQueueIds,
 		};
@@ -228,6 +233,40 @@ const WhatsAppModal = ({ open, onClose, whatsAppId }) => {
 						<MenuItem key={c.type} value={c.type}>{c.label}</MenuItem>
 					))}
 				</TextField>
+
+				{(whatsApp.channel || "whatsapp") === "whatsapp" && (
+					<div className={classes.section}>
+						<Typography variant="subtitle2">Proteção contra bloqueio (conexão não oficial)</Typography>
+						<Typography variant="caption" className={classes.hint} display="block">
+							Esta conexão usa o WhatsApp Web (QR Code), que não é oficial. Para reduzir o risco de banimento o sistema
+							simula digitação nas respostas automáticas, limita o ritmo de envio, respeita pedidos de SAIR, aquece números
+							novos e pausa as campanhas se a sessão cair.
+						</Typography>
+						<TextField
+							select
+							fullWidth
+							variant="outlined"
+							margin="dense"
+							label="Modo de segurança"
+							value={whatsApp.riskMode || "strict"}
+							onChange={e => setWhatsApp({ ...whatsApp, riskMode: e.target.value })}
+							helperText={
+								(whatsApp.riskMode || "strict") === "strict"
+									? "Recomendado: campanhas só para contatos que já responderam."
+									: "Atenção: permite disparo a contatos novos (limite diário reduzido). Risco maior de banimento."
+							}
+						>
+							<MenuItem value="strict">Seguro (recomendado)</MenuItem>
+							<MenuItem value="relaxed">Flexível (aceito o risco)</MenuItem>
+						</TextField>
+						{safety && (
+							<Typography variant="caption" display="block" style={{ marginTop: 4 }}>
+								Número conectado há {safety.ageDays} dia(s) · campanhas hoje: {safety.sentToday}/{safety.dailyLimit} ·
+								falhas seguidas: {safety.failuresInRow} · máximo {safety.perMinute} msgs/min
+							</Typography>
+						)}
+					</div>
+				)}
 
 				{channelDef && channelDef.fields.length > 0 && (
 					<div className={classes.section}>

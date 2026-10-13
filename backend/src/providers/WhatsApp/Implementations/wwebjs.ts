@@ -7,6 +7,7 @@ import {
   Contact as WbotContact,
   MessageSendOptions
 } from "whatsapp-web.js";
+import { onDisconnected } from "../../../services/SafetyServices/SendGuard";
 import { getIO } from "../../../libs/socket";
 import Whatsapp from "../../../models/Whatsapp";
 import AppError from "../../../errors/AppError";
@@ -312,6 +313,9 @@ const removeSession = (whatsappId: number): void => {
   }
 };
 
+const reconnectAttempts = new Map<number, number>();
+const RECONNECT_MAX_ATTEMPTS = 6;
+
 const sendMessage = async (
   sessionId: number,
   to: string,
@@ -392,6 +396,16 @@ const sendSeen = async (sessionId: number, chatId: string): Promise<void> => {
   const wbot = getWbot(sessionId);
   const chat = await wbot.getChatById(chatId);
   await chat.sendSeen();
+};
+
+const sendTyping = async (sessionId: number, chatId: string): Promise<void> => {
+  try {
+    const wbot = getWbot(sessionId);
+    const chat = await wbot.getChatById(chatId);
+    await chat.sendStateTyping();
+  } catch (err) {
+    logger.debug(`typing indicator not sent: ${err}`);
+  }
 };
 
 const fetchChatMessages = async (
@@ -511,12 +525,14 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
 
     wbot.on("ready", async () => {
       logger.info(`Session: ${sessionName} READY`);
+      reconnectAttempts.set(whatsapp.id, 0);
 
       try {
         await whatsapp.update({
           status: "CONNECTED",
           qrcode: "",
-          retries: 0
+          retries: 0,
+          ...(whatsapp.connectedSince ? {} : { connectedSince: new Date() })
         });
 
         io.emit("whatsappSession", {
@@ -561,11 +577,24 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
           session: whatsapp
         });
 
+        onDisconnected(whatsapp.id, String(reason));
+
+        // exponential backoff: hammering WhatsApp with reconnects is itself a
+        // ban signal, so give up after a few tries and wait for a person
+        const attempt = (reconnectAttempts.get(whatsapp.id) || 0) + 1;
+        reconnectAttempts.set(whatsapp.id, attempt);
+        if (attempt > RECONNECT_MAX_ATTEMPTS) {
+          logger.error(`Session ${sessionName}: giving up after ${attempt - 1} reconnect attempts`);
+          await whatsapp.update({ status: "DISCONNECTED", qrcode: "" });
+          io.emit("whatsappSession", { action: "update", session: whatsapp });
+          return;
+        }
+        const delay = Math.min(2000 * 2 ** (attempt - 1), 60000);
         logger.warn(
-          `Session ${sessionName} disconnected. Restarting in 2 seconds...`
+          `Session ${sessionName} disconnected. Restarting in ${delay / 1000}s (attempt ${attempt})...`
         );
 
-        await new Promise(r => setTimeout(r, 2000));
+        await new Promise(r => setTimeout(r, delay));
 
         init(whatsapp);
       } catch (err) {
@@ -630,5 +659,6 @@ export const WhatsappWebJsProvider: WhatsappProvider = {
   getProfilePicUrl,
   getContacts,
   sendSeen,
+  sendTyping,
   fetchChatMessages
 };

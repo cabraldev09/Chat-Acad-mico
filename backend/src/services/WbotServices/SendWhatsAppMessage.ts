@@ -7,17 +7,26 @@ import formatBody from "../../helpers/Mustache";
 import Whatsapp from "../../models/Whatsapp";
 import { getAdapter } from "../../channels";
 import CreateMessageService from "../MessageServices/CreateMessageService";
+import {
+  isUnofficial,
+  paceSend,
+  recordSendResult,
+  typingDelay
+} from "../SafetyServices/SendGuard";
 
 interface Request {
   body: string;
   ticket: Ticket;
   quotedMsg?: Message;
+  // sent by a bot/campaign (not typed by a person): gets "typing…" and a delay
+  automated?: boolean;
 }
 
 const SendWhatsAppMessage = async ({
   body,
   ticket,
-  quotedMsg
+  quotedMsg,
+  automated = false
 }: Request): Promise<ProviderMessage> => {
   if (!ticket.whatsappId) {
     throw new AppError("ERR_TICKET_NO_WHATSAPP");
@@ -64,11 +73,22 @@ const SendWhatsAppMessage = async ({
 
   const chatId = `${ticket.contact.number}@${ticket.isGroup ? "g" : "c"}.us`;
 
+  const whatsapp = await Whatsapp.findByPk(ticket.whatsappId);
+  if (!whatsapp) throw new AppError("ERR_NO_WAPP_FOUND", 404);
+  const text = formatBody(body, ticket.contact);
+
+  // unofficial connection: never reply like a machine
+  if (automated && isUnofficial(whatsapp)) {
+    await whatsappProvider.sendTyping?.(ticket.whatsappId, chatId);
+    await new Promise(r => setTimeout(r, typingDelay(text)));
+  }
+  await paceSend(whatsapp, automated);
+
   try {
     const sentMessage = await whatsappProvider.sendMessage(
       ticket.whatsappId,
       chatId,
-      formatBody(body, ticket.contact),
+      text,
       {
         quotedMessageId: quotedMsg?.id,
         quotedMessageFromMe: quotedMsg?.fromMe,
@@ -76,9 +96,11 @@ const SendWhatsAppMessage = async ({
       }
     );
 
+    recordSendResult(whatsapp, true);
     await ticket.update({ lastMessage: body });
     return sentMessage;
   } catch (err) {
+    recordSendResult(whatsapp, false);
     throw new AppError("ERR_SENDING_WAPP_MSG");
   }
 };

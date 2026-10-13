@@ -16,17 +16,33 @@ import metaWebhookRoutes from "./routes/metaWebhookRoutes";
 import leadFormRoutes from "./routes/leadFormRoutes";
 import proposalPublicRoutes from "./routes/proposalPublicRoutes";
 import efiWebhookRoutes from "./routes/efiWebhookRoutes";
+import securityHeaders from "./middleware/securityHeaders";
+import rateLimit from "./middleware/rateLimit";
 
 Sentry.init({ dsn: process.env.SENTRY_DSN });
 
 const app = express();
 
+app.disable("x-powered-by");
+// behind a reverse proxy/tunnel the real client IP comes in X-Forwarded-For
+if (process.env.TRUST_PROXY) app.set("trust proxy", process.env.TRUST_PROXY);
+app.use(securityHeaders);
+
+// brute-force / abuse protection on the unauthenticated entry points
+const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20 });
+const publicLimiter = rateLimit({ windowMs: 60 * 1000, max: 120 });
+const webhookLimiter = rateLimit({ windowMs: 60 * 1000, max: 600 });
+app.use("/auth/login", loginLimiter);
+app.use("/auth/signup", loginLimiter);
+app.use("/auth/refresh_token", loginLimiter);
+
 // Public endpoints (embedded web chat, provider webhooks): no cookies, any origin
-app.use("/webchat", cors({ origin: true }), express.json(), webchatRoutes);
-app.use("/leadform", cors({ origin: true }), leadFormRoutes);
-app.use("/p", proposalPublicRoutes);
+app.use("/webchat", publicLimiter, cors({ origin: true }), express.json(), webchatRoutes);
+app.use("/leadform", publicLimiter, cors({ origin: true }), leadFormRoutes);
+app.use("/p", publicLimiter, proposalPublicRoutes);
 app.use(
   "/webhooks",
+  webhookLimiter,
   express.json({
     verify: (req: any, _res, buf) => {
       req.rawBody = buf;
@@ -45,7 +61,19 @@ app.use(
 app.use(cookieParser());
 app.use(express.json());
 app.use(Sentry.Handlers.requestHandler());
-app.use("/public", express.static(uploadConfig.directory));
+app.use(
+  "/public",
+  express.static(uploadConfig.directory, {
+    index: false,
+    dotfiles: "deny",
+    setHeaders: (res, filePath) => {
+      // never let an uploaded html/svg/js run in the app's origin
+      if (/\.(html?|svg|xml|js|mjs)$/i.test(filePath)) {
+        res.setHeader("Content-Disposition", "attachment");
+      }
+    }
+  })
+);
 app.use(routes);
 
 app.use(Sentry.Handlers.errorHandler());

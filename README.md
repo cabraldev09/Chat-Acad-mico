@@ -72,6 +72,31 @@ confirmar, o lead avança de etapa (configurável), a equipe é avisada e o even
 Configuração (admin): Configurar CRM → Pagamentos (Efí): ambiente, Client ID/Secret, chave PIX e o certificado `.p12`
 (guardado em `backend/secrets/`, fora do Git). O CPF não aparece em listas e só a ficha detalhada o exibe.
 
+## Segurança e proteção contra bloqueio
+
+**Acesso**
+- O cadastro público (`/auth/signup`) vem **desligado**; só o administrador cria usuários. Quem se cadastra sozinho (se você ligar a opção) nunca escolhe perfil nem setores.
+- Criar/editar/excluir usuários, setores, conexões e sessões é só do administrador. Excluir ticket ou contato também.
+- Atendente só abre conversas dos **seus setores** (ou suas); só responde/transfere as **suas** ou as ainda sem dono. Administrador vê tudo.
+- Login, formulário de captação, web chat, link da proposta e webhooks têm limite de requisições (429). Arquivos enviados recebem nome aleatório e HTML/SVG nunca executa na origem do app.
+- Atrás de proxy/túnel, defina `TRUST_PROXY=1` para o limite enxergar o IP real. Em produção `JWT_SECRET` e `JWT_REFRESH_SECRET` são obrigatórios.
+
+**Transferência de setor**
+- Setor sozinho = ticket volta para "Aguardando" desse setor (e, se o setor tem distribuição automática, já cai para o próximo atendente).
+- Atendente escolhido precisa pertencer ao setor. Bot e IA ficam em silêncio depois da transferência.
+- Observação interna e aviso opcional ao cliente; histórico em `GET /tickets/:id/events`.
+
+**WhatsApp por QR Code (não oficial)**
+A conexão por QR usa o WhatsApp Web e **pode ser banida**. O sistema reduz o risco, mas não o elimina:
+- respostas automáticas (bot, IA, fora de horário, despedida) mostram "digitando…" e esperam como uma pessoa;
+- ritmo máximo por conexão (≈20 msgs/min, intervalo mínimo entre envios);
+- modo **Seguro** (padrão): campanhas só para quem **já respondeu** alguma vez; o modo **Flexível** libera contatos novos com limite menor;
+- aquecimento: teto diário de campanhas cresce com a idade do número (20 → 40 → 80 → 150);
+- o cliente que escrever **SAIR/PARAR/STOP** deixa de receber campanhas (**VOLTAR** reativa);
+- 5 falhas seguidas ou sessão encerrada pelo WhatsApp (logout/conflito) **pausam as campanhas** daquela conexão;
+- reconexão com espera crescente e limite de tentativas.
+Para contatos frios e disparos em volume, use a **WhatsApp Cloud API** (oficial, com template aprovado).
+
 ## Testes
 
 `npm --prefix backend run test:channels` sobe o backend com um banco descartável e servidores falsos do Telegram e da Graph API

@@ -3,6 +3,7 @@ import { Op } from "sequelize";
 import Campaign from "../models/Campaign";
 import CampaignShipping from "../models/CampaignShipping";
 import Whatsapp from "../models/Whatsapp";
+import Contact from "../models/Contact";
 import GetDefaultWhatsApp from "../helpers/GetDefaultWhatsApp";
 import formatBody from "../helpers/Mustache";
 import SendToContact from "../services/ChannelServices/SendToContact";
@@ -10,6 +11,7 @@ import { resolveOutboundContact } from "../services/ChannelServices/ResolveOutbo
 import { getIO } from "../libs/socket";
 import { logger } from "../utils/logger";
 import Mustache from "mustache";
+import { checkCampaignSend } from "../services/SafetyServices/SendGuard";
 
 interface RunState {
   nextAt: number;
@@ -59,6 +61,29 @@ const processCampaign = async (campaign: Campaign): Promise<void> => {
     }
 
     try {
+      // Protects unofficial connections (opt-out, cold contacts, daily ceiling).
+      // Decided from our own records BEFORE asking WhatsApp whether the number
+      // exists: bulk number lookups are a ban signal too.
+      const known =
+        whatsapp.channel === "whatsapp" || whatsapp.channel === "whatsapp_cloud"
+          ? await Contact.findOne({ where: { number: shipping.number.replace(/\D/g, "") } })
+          : null;
+      const block = await checkCampaignSend(whatsapp, known);
+      if (block?.kind === "daily") {
+        // keep everything pending and look again in an hour
+        state.nextAt = Date.now() + 60 * 60 * 1000;
+        await fresh.update({ pauseReason: block.reason });
+        await emitCampaign(fresh.id);
+        return;
+      }
+      if (block) {
+        await shipping.update({ status: "failed", error: block.reason });
+        state.nextAt = Date.now() + 500;
+        await emitCampaign(fresh.id);
+        return;
+      }
+      if (fresh.pauseReason) await fresh.update({ pauseReason: null });
+
       const contact = await resolveOutboundContact(whatsapp, shipping.number, shipping.name || "");
       const body = Mustache.render(fresh.message, {
         name: shipping.name || contact.name,

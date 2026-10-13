@@ -17,6 +17,9 @@ import Autocomplete, {
 	createFilterOptions,
 } from "@material-ui/lab/Autocomplete";
 import CircularProgress from "@material-ui/core/CircularProgress";
+import Checkbox from "@material-ui/core/Checkbox";
+import FormControlLabel from "@material-ui/core/FormControlLabel";
+import { toast } from "react-toastify";
 
 import { i18n } from "../../translate/i18n";
 import api from "../../services/api";
@@ -47,6 +50,8 @@ const TransferTicketModal = ({ modalOpen, onClose, ticketid, ticketWhatsappId })
 	const [selectedUser, setSelectedUser] = useState(null);
 	const [selectedQueue, setSelectedQueue] = useState('');
 	const [selectedWhatsapp, setSelectedWhatsapp] = useState(ticketWhatsappId);
+	const [note, setNote] = useState("");
+	const [notifyClient, setNotifyClient] = useState(false);
 	const classes = useStyles();
 	const { findAll: findAllQueues } = useQueues();
 	const { loadingWhatsapps, whatsApps } = useWhatsApps();
@@ -92,11 +97,18 @@ const TransferTicketModal = ({ modalOpen, onClose, ticketid, ticketWhatsappId })
 		onClose();
 		setSearchParam("");
 		setSelectedUser(null);
+		setSelectedQueue("");
+		setNote("");
+		setNotifyClient(false);
 	};
 
 	const handleSaveTicket = async e => {
 		e.preventDefault();
 		if (!ticketid) return;
+		if (!selectedUser && !selectedQueue) {
+			toast.error(i18n.t("transferTicketModal.chooseDestination"));
+			return;
+		}
 		setLoading(true);
 		try {
 			let data = {};
@@ -117,6 +129,9 @@ const TransferTicketModal = ({ modalOpen, onClose, ticketid, ticketWhatsappId })
 			if(selectedWhatsapp) {
 				data.whatsappId = selectedWhatsapp;
 			}
+
+			if (note.trim()) data.note = note.trim();
+			if (notifyClient) data.notifyClient = true;
 
 			await api.put(`/tickets/${ticketid}`, data);
 
@@ -158,7 +173,6 @@ const TransferTicketModal = ({ modalOpen, onClose, ticketid, ticketWhatsappId })
 								{...params}
 								label={i18n.t("transferTicketModal.fieldLabel")}
 								variant="outlined"
-								required
 								autoFocus
 								onChange={e => setSearchParam(e.target.value)}
 								InputProps={{
@@ -188,6 +202,29 @@ const TransferTicketModal = ({ modalOpen, onClose, ticketid, ticketWhatsappId })
 							))}
 						</Select>
 					</FormControl>
+					<TextField
+						className={classes.maxWidth}
+						style={{ marginTop: 20 }}
+						variant="outlined"
+						multiline
+						rows={2}
+						inputProps={{ maxLength: 500 }}
+						label={i18n.t("transferTicketModal.noteLabel")}
+						placeholder={i18n.t("transferTicketModal.notePlaceholder")}
+						value={note}
+						onChange={e => setNote(e.target.value)}
+					/>
+					<FormControlLabel
+						style={{ marginTop: 8 }}
+						control={
+							<Checkbox
+								color="primary"
+								checked={notifyClient}
+								onChange={e => setNotifyClient(e.target.checked)}
+							/>
+						}
+						label={i18n.t("transferTicketModal.notifyClient")}
+					/>
 					<Can
 						role={loggedInUser.profile}
 						perform="ticket-options:transferWhatsapp"

@@ -18,6 +18,7 @@ interface WhatsappData {
   config?: string;
   businessHours?: string;
   outOfHoursMessage?: string;
+  riskMode?: string;
 }
 
 interface Request {
@@ -50,6 +51,7 @@ const UpdateWhatsAppService = async ({
     config,
     businessHours,
     outOfHoursMessage,
+    riskMode,
     queueIds = []
   } = whatsappData;
 
@@ -61,6 +63,10 @@ const UpdateWhatsAppService = async ({
 
   if (queueIds.length > 1 && !greetingMessage) {
     throw new AppError("ERR_WAPP_GREETING_REQUIRED");
+  }
+
+  if (riskMode !== undefined && !["strict", "relaxed"].includes(riskMode)) {
+    throw new AppError("ERR_INVALID_RISK_MODE", 400);
   }
 
   let oldDefaultWhatsapp: Whatsapp | null = null;
@@ -88,7 +94,8 @@ const UpdateWhatsAppService = async ({
     isDefault,
     config: mergedConfig,
     businessHours,
-    outOfHoursMessage
+    outOfHoursMessage,
+    riskMode
   });
 
   await AssociateWhatsappQueue(whatsapp, queueIds);

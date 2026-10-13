@@ -51,6 +51,14 @@ class Contact extends Model<Contact> {
   @Column
   channel: string;
 
+  // asked to stop receiving mass messages
+  @Default(false)
+  @Column
+  optOut: boolean;
+
+  @Column
+  optOutAt: Date;
+
   @CreatedAt
   createdAt: Date;
 

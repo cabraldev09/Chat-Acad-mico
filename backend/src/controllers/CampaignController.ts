@@ -124,7 +124,7 @@ export const start = async (req: Request, res: Response): Promise<Response> => {
   const future = campaign.scheduledAt && campaign.scheduledAt.getTime() > Date.now();
   const updated = future
     ? await apply({ status: "scheduled" })
-    : await apply({ startedAt: campaign.startedAt || new Date() });
+    : await apply({ startedAt: campaign.startedAt || new Date(), pauseReason: null });
   getIO().emit("campaign", { action: "update", row: updated });
   return res.json(updated);
 };

@@ -36,6 +36,7 @@ import {
 } from "../types";
 import { WhatsappProvider } from "../whatsappProvider";
 import { sleep } from "../../../utils/sleep";
+import { onDisconnected } from "../../../services/SafetyServices/SendGuard";
 import {
   handleMessage,
   handleMessageAck,
@@ -729,7 +730,12 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
     if (event.status === "open") {
       reconnectAttemptsBySession.set(sessionId, 0);
 
-      await whatsapp.update({ status: "CONNECTED", qrcode: "", retries: 0 });
+      await whatsapp.update({
+        status: "CONNECTED",
+        qrcode: "",
+        retries: 0,
+        ...(whatsapp.connectedSince ? {} : { connectedSince: new Date() })
+      });
       await emitSession(sessionId);
 
       logger.info({ info: "Session connected", sessionId });
@@ -740,6 +746,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
       event.isLogout || FATAL_DISCONNECT_REASONS.includes(event.reason);
 
     if (isFatal) {
+      onDisconnected(sessionId, event.isLogout ? "LOGOUT" : String(event.reason));
       await whatsapp.update({
         status: "DISCONNECTED",
         qrcode: "",

@@ -3,6 +3,7 @@ import Whatsapp from "../models/Whatsapp";
 import AppError from "../errors/AppError";
 import { getConfig } from "../channels/types";
 import { getPublicUrl } from "../helpers/PublicUrl";
+import { getSafetyStatus } from "../services/SafetyServices/SendGuard";
 
 // Field definitions drive the connection form in the frontend
 const CHANNELS = [
@@ -77,4 +78,10 @@ export const info = async (req: Request, res: Response): Promise<Response> => {
     out.snippet = `<script src="${publicUrl}/webchat/widget.js?token=${token}" async></script>`;
   }
   return res.json(out);
+};
+
+export const safety = async (req: Request, res: Response): Promise<Response> => {
+  const whatsapp = await Whatsapp.findByPk(req.params.whatsappId);
+  if (!whatsapp) throw new AppError("ERR_NO_WAPP_FOUND", 404);
+  return res.json(await getSafetyStatus(whatsapp));
 };

@@ -3,6 +3,7 @@ import multer from "multer";
 
 import isAuth from "../middleware/isAuth";
 import isAdmin from "../middleware/isAdmin";
+import { canWriteTicket } from "../middleware/canAccessTicket";
 import uploadConfig from "../config/upload";
 
 import * as Tag from "../controllers/TagController";
@@ -36,7 +37,7 @@ r.get("/tags", isAuth, Tag.index);
 r.post("/tags", isAuth, isAdmin, Tag.store);
 r.put("/tags/:id", isAuth, isAdmin, Tag.update);
 r.delete("/tags/:id", isAuth, isAdmin, Tag.remove);
-r.put("/tickets/:ticketId/tags", isAuth, Tag.setTicketTags);
+r.put("/tickets/:ticketId/tags", isAuth, canWriteTicket, Tag.setTicketTags);
 r.get("/contacts/:contactId/tags", isAuth, Tag.contactTags);
 r.put("/contacts/:contactId/tags", isAuth, Tag.setContactTags);
 
@@ -97,6 +98,7 @@ r.get("/stats/live", isAuth, isAdmin, Stats.live);
 // channels
 r.get("/channels", isAuth, Channel.index);
 r.get("/channels/:whatsappId/info", isAuth, isAdmin, Channel.info);
+r.get("/channels/:whatsappId/safety", isAuth, Channel.safety);
 
 // ------------------------------------------------------------------- CRM
 r.get("/crm/options", isAuth, Lead.options);

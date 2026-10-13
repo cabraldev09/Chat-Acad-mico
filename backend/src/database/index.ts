@@ -32,6 +32,7 @@ import Institution from "../models/Institution";
 import ProposalTemplate from "../models/ProposalTemplate";
 import Proposal from "../models/Proposal";
 import Payment from "../models/Payment";
+import TicketEvent from "../models/TicketEvent";
 
 // eslint-disable-next-line
 const dbConfig = require("../config/database");
@@ -72,7 +73,8 @@ const models = [
   Institution,
   ProposalTemplate,
   Proposal,
-  Payment
+  Payment,
+  TicketEvent
 ];
 
 sequelize.addModels(models);

@@ -7,17 +7,20 @@ import formatBody from "../../helpers/Mustache";
 import Whatsapp from "../../models/Whatsapp";
 import { getAdapter } from "../../channels";
 import CreateMessageService from "../MessageServices/CreateMessageService";
+import { paceSend, recordSendResult } from "../SafetyServices/SendGuard";
 
 interface Request {
   media: Express.Multer.File;
   ticket: Ticket;
   body?: string;
+  automated?: boolean;
 }
 
 const SendWhatsAppMedia = async ({
   media,
   ticket,
-  body
+  body,
+  automated = false
 }: Request): Promise<ProviderMessage> => {
   try {
     if (!ticket.whatsappId) {
@@ -87,12 +90,23 @@ const SendWhatsAppMedia = async ({
         !/^.*\.(jpe?g|png|gif)?$/i.exec(media.filename)
     };
 
-    const sentMessage = await whatsappProvider.sendMedia(
-      ticket.whatsappId,
-      chatId,
-      mediaInput,
-      mediaOptions
-    );
+    const whatsapp = await Whatsapp.findByPk(ticket.whatsappId);
+    if (!whatsapp) throw new AppError("ERR_NO_WAPP_FOUND", 404);
+    await paceSend(whatsapp, automated);
+
+    let sentMessage: ProviderMessage;
+    try {
+      sentMessage = await whatsappProvider.sendMedia(
+        ticket.whatsappId,
+        chatId,
+        mediaInput,
+        mediaOptions
+      );
+      recordSendResult(whatsapp, true);
+    } catch (sendErr) {
+      recordSendResult(whatsapp, false);
+      throw sendErr;
+    }
 
     await ticket.update({ lastMessage: body || media.filename });
 
