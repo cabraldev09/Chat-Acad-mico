@@ -9,6 +9,7 @@ import Signup from "../pages/Signup/";
 import Login from "../pages/Login/";
 import Connections from "../pages/Connections/";
 import Settings from "../pages/Settings/";
+import Polos from "../pages/Polos";
 import Users from "../pages/Users";
 import Contacts from "../pages/Contacts/";
 import QuickAnswers from "../pages/QuickAnswers/";
@@ -45,6 +46,7 @@ const Routes = () => {
                 <Route exact path="/connections" component={Connections} isPrivate />
                 <Route exact path="/contacts" component={Contacts} isPrivate />
                 <Route exact path="/users" component={Users} isPrivate />
+                <Route exact path="/polos" component={Polos} isPrivate />
                 <Route exact path="/quickAnswers" component={QuickAnswers} isPrivate />
                 <Route exact path="/Settings" component={Settings} isPrivate />
                 <Route exact path="/Queues" component={Queues} isPrivate />

@@ -266,7 +266,7 @@ const Users = () => {
                     align="center"
                     data-label={i18n.t("users.table.profile")}
                   >
-                    {user.profile}
+                    {{ admin: "Administrador", coordenacao: "Coordenação", consultor: "Consultor", tutor: "Tutor", academico: "Acadêmico" }[user.role] || user.profile}
                   </TableCell>
                   <TableCell
                     align="center"

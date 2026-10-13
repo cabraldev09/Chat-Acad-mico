@@ -66,11 +66,11 @@ const useStyles = makeStyles(theme => ({
 
 const UserSchema = Yup.object().shape({
 	name: Yup.string()
-		.min(2, "Too Short!")
-		.max(50, "Too Long!")
-		.required("Required"),
-	password: Yup.string().min(5, "Too Short!").max(50, "Too Long!"),
-	email: Yup.string().email("Invalid email").required("Required"),
+		.min(2, "Nome muito curto.")
+		.max(50, "Nome muito longo.")
+		.required("Informe o nome."),
+	password: Yup.string().min(5, "A senha precisa ter ao menos 5 caracteres.").max(50, "Senha muito longa."),
+	email: Yup.string().email("Digite um e-mail válido.").required("Informe o e-mail."),
 });
 
 const UserModal = ({ open, onClose, userId }) => {
@@ -80,7 +80,8 @@ const UserModal = ({ open, onClose, userId }) => {
 		name: "",
 		email: "",
 		password: "",
-		profile: "user"
+		profile: "user",
+		role: "consultor"
 	};
 
 	const { user: loggedInUser } = useContext(AuthContext);
@@ -222,13 +223,16 @@ const UserModal = ({ open, onClose, userId }) => {
 													<Field
 														as={Select}
 														label={i18n.t("userModal.form.profile")}
-														name="profile"
+														name="role"
 														labelId="profile-selection-label"
 														id="profile-selection"
 														required
 													>
-														<MenuItem value="admin">Admin</MenuItem>
-														<MenuItem value="user">User</MenuItem>
+														<MenuItem value="admin">Administrador (acesso total)</MenuItem>
+														<MenuItem value="coordenacao">Coordenação acadêmica</MenuItem>
+														<MenuItem value="consultor">Consultor comercial</MenuItem>
+														<MenuItem value="tutor">Tutor</MenuItem>
+														<MenuItem value="academico">Setor acadêmico</MenuItem>
 													</Field>
 												</>
 											)}

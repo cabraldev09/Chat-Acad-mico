@@ -169,7 +169,7 @@ const MainListItems = (props) => {
     <div onClick={drawerClose}>
       <ListItemLink
         to="/"
-        primary="Dashboard"
+        primary="Painel"
         icon={<DashboardOutlinedIcon />}
         collapsed={collapsed}
       />
@@ -248,6 +248,12 @@ const MainListItems = (props) => {
               to="/users"
               primary={i18n.t("mainDrawer.listItems.users")}
               icon={<PeopleAltOutlinedIcon />}
+              collapsed={collapsed}
+            />
+            <ListItemLink
+              to="/polos"
+              primary="Polos e equipes"
+              icon={<AccountTreeOutlinedIcon />}
               collapsed={collapsed}
             />
             <ListItemLink

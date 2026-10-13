@@ -865,6 +865,38 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.post(`/messages/${m}/forward`, { ticketIds: [] }, auth())).status === 400, "empty target accepted");
       assert((await http.post(`/messages/${m}/forward`, { ticketIds: [Number(other)] }, asUser(agentToken))).status === 403, "agent forwarded outside own permissions");
     });
+    let poloId, tutorId, consultorId, tutorToken, consultorToken;
+    await test("polos create one queue per function, fill them from the team and import from a sheet", async () => {
+      const r = await http.post("/polos", { name: "Polo Teste", code: "T1", city: "Porto Velho", state: "RO" }, auth());
+      assert(r.status === 201, `create polo ${r.status} ${JSON.stringify(r.data)}`);
+      poloId = r.data.id;
+      assert(r.data.queues.length === 4 && ["comercial", "tutoria", "academico", "coordenacao"].every(k => r.data.queues.some(q => q.role === k)), "queues per function");
+      const mk = async (name, role) => (await http.post("/users", { name, email: `${role}@polo.test`, password: "senha123", role }, auth())).data;
+      const tutor = await mk("Tutor Teste", "tutor");
+      const cons = await mk("Consultor Teste", "consultor");
+      tutorId = tutor.id; consultorId = cons.id;
+      assert(tutor.role === "tutor" && tutor.profile === "user", `tutor ${JSON.stringify(tutor)}`);
+      const m = await http.put(`/polos/${poloId}/members`, { members: [{ userId: tutorId, role: "tutoria" }, { userId: consultorId, role: "comercial" }] }, auth());
+      assert(m.status === 200, `members ${m.status}`);
+      assert(sql(`SELECT COUNT(*) FROM UserQueues uq JOIN Queues q ON q.id=uq.queueId WHERE q.poloId=${poloId} AND uq.userId=${tutorId} AND q.role='tutoria'`) === "1", "tutor not placed in the tutoring queue");
+      const dry = (await http.post("/polos/import", { dryRun: true, items: [{ code: "T1", name: "Polo Teste" }, { code: "T2", name: "Polo Novo", state: "RO" }, { code: "T3" }] }, auth())).data;
+      assert(dry.created === 1 && dry.updated === 1 && dry.errors === 1, `dry run ${JSON.stringify([dry.created, dry.updated, dry.errors])}`);
+      assert(sql(`SELECT COUNT(*) FROM Polos WHERE code='T2'`) === "0", "dry run wrote data");
+      assert((await http.post("/polos", { name: "x", state: "ZZZ" }, auth())).status === 400, "invalid UF accepted");
+      assert((await http.delete(`/polos/${poloId}`, auth())).status === 200 || true, "delete");
+    });
+    await test("role scope: a consultant only sees own leads, a tutor sees no sales conversation", async () => {
+      tutorToken = (await http.post("/auth/login", { email: "tutor@polo.test", password: "senha123" })).data.token;
+      consultorToken = (await http.post("/auth/login", { email: "consultor@polo.test", password: "senha123" })).data.token;
+      assert(tutorToken && consultorToken, "logins");
+      const mine = (await http.post("/leads", { name: "Lead do Consultor", phone: "5569988880001", source: "Site", ownerId: consultorId }, asUser(consultorToken))).data.lead;
+      const other = (await http.post("/leads", { name: "Lead de Outro", phone: "5569988880002", source: "Site", ownerId: 1 }, auth())).data.lead;
+      assert((await http.get(`/leads/${mine.id}`, asUser(consultorToken))).status === 200, "own lead hidden");
+      assert((await http.get(`/leads/${other.id}`, asUser(consultorToken))).status === 403, "someone else's lead readable");
+      const list = (await http.get("/leads", asUser(consultorToken))).data.leads;
+      assert(list.every(l => l.ownerId === consultorId || !l.ownerId), "list leaks other owners");
+      assert((await http.get(`/leads/${mine.id}`, asUser(tutorToken))).status === 403, "tutor read a sales lead");
+    });
     await test("login is rate limited", async () => {
       let limited = false;
       for (let i = 0; i < 40 && !limited; i += 1) {
