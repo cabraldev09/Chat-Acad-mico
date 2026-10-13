@@ -71,3 +71,18 @@ mostra antes uma linha `[banco] FALHOU …` com o que fazer. As causas, em ordem
 | erro de SSL / `pg_hba.conf` | falta SSL | `DB_SSL=true` |
 
 Depois de corrigir a variável, o Railway reinicia sozinho (ou use **Redeploy**).
+
+## Qual WhatsApp não oficial usar
+Use **`wwebjs` (whatsapp-web.js)**, que já é o padrão do `Dockerfile` (`WHATSAPP_PROVIDER=wwebjs`). É o único motor deste sistema com
+"digitando…", reações, controle de grupos e reconexão com espera crescente. O `zapo` fica como experimental.
+O risco de bloqueio é parecido nos dois motores: o que mais pesa é o comportamento (número novo, rajadas, texto repetido,
+denúncias), e é isso que o SendGuard controla. Plano de Railway com pelo menos **1 GB de memória** para o Chromium.
+
+## Primeiro acesso
+Na primeira subida o sistema cria o administrador. Defina em *Variables* `ADMIN_EMAIL` e `ADMIN_PASSWORD` para escolher os seus.
+Sem `ADMIN_PASSWORD`, uma senha aleatória aparece **uma única vez** no log (`SENHA INICIAL`). Entre e troque.
+
+## Vercel (telas)
+1. *Add New → Project* e importe o repositório. **Root Directory: `frontend`**. O `frontend/vercel.json` já define build e rotas.
+2. *Environment Variables*: `VITE_BACKEND_URL` = endereço público da API **terminado em barra** (ex.: `https://chat-acad-mico-production.up.railway.app/`).
+3. Depois do deploy, copie o endereço da Vercel para `FRONTEND_URL` no Railway (libera o acesso e o cookie de login entre os dois domínios).

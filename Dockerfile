@@ -11,7 +11,9 @@ ENV CHROME_BIN=/usr/bin/chromium \
     PUPPETEER_SKIP_DOWNLOAD=true \
     PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
     NODE_ENV=production \
-    NODE_OPTIONS=--max-old-space-size=1024
+    NODE_OPTIONS=--max-old-space-size=1024 \
+    WHATSAPP_PROVIDER=wwebjs \
+    CHROME_ARGS="--no-sandbox --disable-setuid-sandbox --disable-dev-shm-usage --disable-gpu --no-zygote"
 
 WORKDIR /app/backend
 COPY backend/package*.json backend/.npmrc ./
@@ -24,4 +26,4 @@ RUN npm run build && mkdir -p /data
 #   UPLOAD_DIR=/data/public  WWEBJS_AUTH_PATH=/data/wwebjs  ZAPO_AUTH_PATH=/data/zapo/state.sqlite
 EXPOSE 8080
 ENTRYPOINT ["dumb-init", "--"]
-CMD ["sh", "-c", "mkdir -p \"${UPLOAD_DIR:-public}\" && node scripts/db-preflight.js && npx sequelize db:migrate && node dist/server.js"]
+CMD ["sh", "-c", "mkdir -p \"${UPLOAD_DIR:-public}\" && node scripts/db-preflight.js && npx sequelize db:migrate && node scripts/bootstrap-production.js && node dist/server.js"]
