@@ -71,11 +71,14 @@ const AgentEditor = ({ open, agent, onClose, onSaved }) => {
 
   // returns the agent id (creating the agent first when it is new); used by the tabs that need an id
   const save = async (stay) => {
-    if (!v.name.trim() || !v.model.trim()) { toast.error("Dê um nome ao agente para continuar."); setTab(0); return null; }
+    if (!v.model.trim()) { toast.warn("Informe o modelo do agente."); setTab(0); return null; }
+    // a new agent without a name gets a provisional one, so the tabs can be used right away
+    const name = v.name.trim() || "Agente de matrículas";
+    if (!v.name.trim()) set("name", name);
     setSaving(true);
     let savedId = id;
     try {
-      const payload = { ...v, queueId: v.queueId || null, whatsappId: v.whatsappId || null, slots: v.slots };
+      const payload = { ...v, name, queueId: v.queueId || null, whatsappId: v.whatsappId || null, slots: v.slots };
       const { data } = id ? await api.put(`/ai-agents/${id}`, payload) : await api.post("/ai-agents", payload);
       savedId = data.id;
       if (!id) setId(data.id);
