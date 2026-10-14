@@ -94,8 +94,8 @@ class Whatsapp extends Model<Whatsapp> {
   @BelongsTo(() => User, "ownerId")
   owner: User;
 
-  // off | selected | all: which WhatsApp groups become conversations
-  @Default("off")
+  // off | selected | all: which WhatsApp groups become conversations (new numbers bring all of them, like the app)
+  @Default("all")
   @Column
   groupsMode: string;
 

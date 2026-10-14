@@ -276,7 +276,7 @@ const TicketsManager = () => {
               <TicketsList status="pending" groups="exclude" selectedQueueIds={selectedQueueIds} updateCount={(v) => setPendingCount(v)} />
             </div>
             {filter === "groups" && (
-              <TicketsList groups="only" showAll={true} selectedQueueIds={selectedQueueIds} />
+              <TicketsList groups="only" everything showAll={true} selectedQueueIds={selectedQueueIds} />
             )}
             {filter === "unread" && (
               <TicketsList withUnreadMessages showAll={showAllTickets} selectedQueueIds={selectedQueueIds} />

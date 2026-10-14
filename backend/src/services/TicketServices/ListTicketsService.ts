@@ -197,8 +197,12 @@ const ListTicketsService = async ({
       role === "admin"
         ? null
         : (await Whatsapp.findAll({ where: { ownerId: Number(userId) }, attributes: ["id"] })).map(w => w.id);
-    const history: any =
-      owned === null ? { isHistorical: true } : { isHistorical: true, whatsappId: { [Op.in]: owned.length ? owned : [0] } };
+    const history: any = {
+      isHistorical: true,
+      ...(owned === null ? {} : { whatsappId: { [Op.in]: owned.length ? owned : [0] } }),
+      // the Grupos / private-only views apply to the history as well
+      ...(groups === "only" ? { isGroup: true } : groups === "exclude" ? { isGroup: false } : {})
+    };
     finalWhere =
       historical === "true"
         ? { [Op.and]: [whereCondition || {}, history] }

@@ -23,7 +23,7 @@ export const overview = async (req: Request, res: Response): Promise<Response> =
   const queueId = req.query.queueId ? Number(req.query.queueId) : null;
   const userId = req.query.userId ? Number(req.query.userId) : null;
   const rep = { from, to, queueId, userId };
-  const filter = `AND t.isHistorical = false AND (:queueId IS NULL OR t.queueId = :queueId) AND (:userId IS NULL OR t.userId = :userId)`;
+  const filter = `AND t.isHistorical = false AND t.isGroup = false AND (:queueId IS NULL OR t.queueId = :queueId) AND (:userId IS NULL OR t.userId = :userId)`;
 
   const [totals] = await q(
     `SELECT

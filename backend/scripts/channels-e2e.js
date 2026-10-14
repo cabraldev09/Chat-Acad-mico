@@ -1241,6 +1241,18 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(msgs.includes("mensagem antiga") && msgs.includes("voltei a escrever"), `thread lost: ${msgs}`);
       assert(sql(`SELECT COUNT(*) FROM Tickets WHERE contactId=${contactId}`) === "1", "a second ticket was created instead of reusing the history one");
     });
+    await test("the Grupos tab lists every group (copied history and live) and statistics ignore groups", async () => {
+      const gid = sql(`INSERT INTO Contacts (name, number, email, isGroup, channel, createdAt, updatedAt) VALUES ('Grupo da turma', '120363000000000001-1600000000', '', true, 'telegram', NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const gt = sql(`INSERT INTO Tickets (status, contactId, whatsappId, unreadMessages, isGroup, segment, isHistorical, lastMessage, closedAt, createdAt, updatedAt) VALUES ('closed', ${gid}, ${tgId}, 0, true, 'sales', true, 'bem-vindos', NOW(), NOW() - INTERVAL '3 days', NOW() - INTERVAL '3 days') RETURNING id`).split("\n")[0];
+      const queueIds = JSON.stringify((await http.get("/queue", auth())).data.map(q => q.id));
+      const ids = async (params) => (await http.get("/tickets", { params: { showAll: "true", queueIds, ...params }, ...auth() })).data.tickets.map(t => String(t.id));
+      assert((await ids({ groups: "only", historical: "all" })).includes(String(gt)), "group missing from the Grupos tab");
+      assert(!(await ids({ groups: "exclude", historical: "all" })).includes(String(gt)), "group leaked into the private chats");
+      assert((await ids({ historical: "all" })).includes(String(gt)), "group missing from Todas");
+      const before = Number((await http.get("/stats/overview", { params: { from: "2020-01-01", to: "2099-12-31" }, ...auth() })).data.totals.total);
+      sql(`INSERT INTO Tickets (status, contactId, whatsappId, unreadMessages, isGroup, segment, createdAt, updatedAt) VALUES ('open', ${gid}, ${tgId}, 0, true, 'sales', NOW(), NOW())`);
+      assert(Number((await http.get("/stats/overview", { params: { from: "2020-01-01", to: "2099-12-31" }, ...auth() })).data.totals.total) === before, "a group conversation was counted as a service ticket");
+    });
     await test("messages can be deleted for everyone or only here, edits are limited to WhatsApp, \"mark as unread\" and the all-conversations view work", async () => {
       const t = ticketOf("tg_5551");
       const mine = "del-out-1", theirs = "del-in-1";

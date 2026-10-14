@@ -348,9 +348,9 @@ const reducer = (state, action) => {
 								</p>
 							) : props.groups === "only" ? (
 								<p className={classes.noTicketsText}>
-									Nenhum grupo entrou ainda. Os grupos do WhatsApp só viram conversa depois que você escolhe quais deles receber.
+									Nenhum grupo ainda. Os grupos e comunidades do WhatsApp aparecem aqui quando o número conecta (ou ao copiar as conversas).
 									<br />
-									<Link to="/connections" style={{ fontWeight: 600 }}>Escolher meus grupos</Link>
+									<Link to="/connections" style={{ fontWeight: 600 }}>Ir para Conexões e copiar as conversas</Link>
 								</p>
 							) : (
 								<p className={classes.noTicketsText}>
