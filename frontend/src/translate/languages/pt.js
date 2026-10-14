@@ -509,6 +509,7 @@ const messages = {
         ERR_LEARNING_DONE: "Este aprendizado já foi aprovado.",
         ERR_INVALID_PARAMETER: "Algum dado enviado não é válido. Recarregue a página e tente de novo.",
         ERR_CONNECTION_LIMIT: "Você já conectou o número que o administrador permite. Para conectar outro, remova o atual ou peça ao administrador para aumentar o limite.",
+        ERR_CONNECTION_CAPACITY: "O servidor está no limite de números por QR Code. Peça ao administrador para aumentar a memória do servidor ou remover um número que não usa mais.",
         ERR_PAYMENT_AMOUNT: "Informe o valor da taxa de matrícula.",
         ERR_PROPOSAL_NO_GROSS: "Informe a mensalidade bruta do curso.",
         ERR_PROPOSAL_FIRST_MONTHLY: "A primeira mensalidade precisa ser maior que zero e não pode passar da mensalidade bruta.",

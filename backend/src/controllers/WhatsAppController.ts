@@ -68,6 +68,12 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
   }: WhatsappData = req.body;
   let ownerId: number | null = req.body.ownerId ? Number(req.body.ownerId) : null;
 
+  // each QR Code number runs its own Chromium (about 500 MB): past the server's capacity everything would be killed
+  if ((channel || "whatsapp") === "whatsapp" || !isAdminReq(req)) {
+    const cap = Number(process.env.WHATSAPP_MAX_QR || 8);
+    if ((await Whatsapp.count({ where: { channel: "whatsapp" } })) >= cap) throw new AppError("ERR_CONNECTION_CAPACITY", 400);
+  }
+
   if (!isAdminReq(req)) {
     // anyone else connects only their own QR Code number, up to the limit the administrator set
     const limit = Number(await getSetting("max_connections_per_user", "1")) || 1;

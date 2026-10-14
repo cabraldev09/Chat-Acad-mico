@@ -254,13 +254,19 @@ export const markPaid = async (
     return false;
   }
 
-  await payment.update({
-    status: "paid",
-    paidAt: info.horario ? new Date(info.horario) : new Date(),
-    paidAmount: paidValue,
-    endToEndId: info.endToEndId || null,
-    lastError: null
-  });
+  // atomic: the webhook and the poller can arrive at the same moment, and only one of them may log the payment
+  const [changed] = await Payment.update(
+    {
+      status: "paid",
+      paidAt: info.horario ? new Date(info.horario) : new Date(),
+      paidAmount: paidValue,
+      endToEndId: info.endToEndId || null,
+      lastError: null
+    },
+    { where: { id: payment.id, status: { [Op.ne]: "paid" } } }
+  );
+  if (!changed) return false;
+  await payment.reload();
   if (!lead) return true;
 
   await addActivity(

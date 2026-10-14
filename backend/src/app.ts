@@ -33,7 +33,8 @@ app.use(securityHeaders);
 app.get("/health", async (_req: Request, res: Response) => {
   try {
     await sequelize.query("SELECT 1");
-    res.json({ ok: true });
+    // version: the commit Railway is running, so a deploy can be checked from outside
+    res.json({ ok: true, version: String(process.env.RAILWAY_GIT_COMMIT_SHA || "").slice(0, 7) || undefined });
   } catch (e) {
     res.status(503).json({ ok: false });
   }
