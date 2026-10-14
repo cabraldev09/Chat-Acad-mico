@@ -58,21 +58,14 @@ const startContactsImport = async (userId: number, whatsappId?: number) => {
     const stats = phoneContacts.stats || {};
     const people = await SaveImportedContacts(phoneContacts);
 
-    // groups follow the connection's own rule: none, only the chosen ones, or all
+    // Every group of the number becomes a contact (marked "Grupo") so it can be found and opened. Whether the
+    // group's messages become conversations is a separate choice of the connection (none, chosen ones, all).
     let groupsFound = 0;
     let groupsCreated = 0;
     const mode = connection.groupsMode || "off";
-    if (mode !== "off" && whatsappProvider.listGroups) {
+    if (whatsappProvider.listGroups) {
       try {
-        let allowed: string[] = [];
-        try {
-          allowed = connection.allowedGroups ? JSON.parse(connection.allowedGroups) : [];
-        } catch (e) {
-          allowed = [];
-        }
-        const groups = (await whatsappProvider.listGroups(connection.id)).filter(
-          g => mode === "all" || allowed.includes(g.id)
-        );
+        const groups = await whatsappProvider.listGroups(connection.id);
         groupsFound = groups.length;
         const saved = await SaveImportedContacts(
           groups.map(g => ({ number: g.id, name: g.name, isGroup: true }))

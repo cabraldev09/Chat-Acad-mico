@@ -104,6 +104,7 @@ const Contacts = () => {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
+  const [total, setTotal] = useState(null);
   const [importing, setImporting] = useState(false);
 
   useEffect(() => {
@@ -121,6 +122,7 @@ const Contacts = () => {
           });
           dispatch({ type: "LOAD_CONTACTS", payload: data.contacts });
           setHasMore(data.hasMore);
+          setTotal(data.count);
           setLoading(false);
         } catch (err) {
           toastError(err);
@@ -160,8 +162,8 @@ const Contacts = () => {
           : "nenhum contato novo"
       );
       parts.push(`${d.withPhone} de ${d.total} contatos do WhatsApp têm telefone utilizável`);
-      if (d.groupsMode === "off") parts.push("grupos: desligados nesta conexão (escolha em Conexões)");
-      else parts.push(`${d.groupsFound} grupos encontrados, ${d.groupsCreated} novos`);
+      parts.push(`${d.groupsFound} grupos encontrados, ${d.groupsCreated} novos`);
+      if (d.groupsMode === "off" && d.groupsFound) parts.push("as mensagens dos grupos só viram conversa depois que você escolhe os grupos em Conexões");
       toast.success(`Importação de “${d.connection}” concluída: ${parts.join("; ")}.`, { autoClose: 15000 });
       dispatch({ type: "RESET" });
       setPageNumber(1);
@@ -272,7 +274,7 @@ const Contacts = () => {
           : `${i18n.t("contacts.confirmationModal.importMessage")}`}
       </ConfirmationModal>
       <MainHeader>
-        <Title>{i18n.t("contacts.title")}</Title>
+        <Title>{i18n.t("contacts.title")}{total !== null ? ` (${Number(total).toLocaleString("pt-BR")})` : ""}</Title>
         <MainHeaderButtonsWrapper>
           <TextField
             placeholder={i18n.t("contacts.searchPlaceholder")}
