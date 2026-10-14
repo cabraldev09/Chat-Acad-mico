@@ -6,9 +6,11 @@ import App from "./App";
 import "./styles/app.css";
 import { installModernToast } from "./utils/modernToast";
 import { installAutoTitles } from "./utils/autoTitles";
+import { installChunkRecovery } from "./utils/lazyPage";
 
 installModernToast();
 installAutoTitles();
+installChunkRecovery();
 
 ReactDOM.render(
 	<CssBaseline>

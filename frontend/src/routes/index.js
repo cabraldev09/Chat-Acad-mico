@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useEffect } from "react";
+import React, { Suspense, useEffect } from "react";
 import { BrowserRouter, Switch } from "react-router-dom";
 import { ToastContainer } from "react-toastify";
 
@@ -9,6 +9,8 @@ import { AuthProvider } from "../context/Auth/AuthContext";
 import { WhatsAppsProvider } from "../context/WhatsApp/WhatsAppsContext";
 import { ThemeProvider } from "../context/DarkMode";
 import BackdropLoading from "../components/BackdropLoading";
+import PageErrorBoundary from "../components/PageErrorBoundary";
+import { lazyPage as lazy } from "../utils/lazyPage";
 import Route from "./Route";
 
 // every page is its own file: the first screen downloads only what it shows
@@ -40,9 +42,11 @@ const Affiliates = lazy(() => import("../pages/Affiliates"));
 const AffiliatePortal = lazy(() => import("../pages/AffiliatePortal"));
 // Switch only looks at direct <Route> children, so the Suspense lives inside the page component
 const AffiliatePortalPage = (props) => (
-  <Suspense fallback={<BackdropLoading />}>
-    <AffiliatePortal {...props} />
-  </Suspense>
+  <PageErrorBoundary>
+    <Suspense fallback={<BackdropLoading />}>
+      <AffiliatePortal {...props} />
+    </Suspense>
+  </PageErrorBoundary>
 );
 
 // the two pages everyone opens next are fetched in the background right after the first paint
@@ -64,6 +68,7 @@ const Routes = () => {
             <Route exact path="/afiliado/:token" component={AffiliatePortalPage} publicPage />
             <WhatsAppsProvider>
               <LoggedInLayout>
+                <PageErrorBoundary>
                 <Suspense fallback={<BackdropLoading />}>
                 <Route exact path="/" component={Dashboard} isPrivate />
                 <Route exact path="/tickets/:ticketId?" component={Tickets} isPrivate />
@@ -91,6 +96,7 @@ const Routes = () => {
                 <Route exact path="/afiliados" component={Affiliates} isPrivate />
                 <Route exact path="/crm/config" component={CrmSettings} isPrivate managerOnly />
                 </Suspense>
+                </PageErrorBoundary>
               </LoggedInLayout>
             </WhatsAppsProvider>
           </Switch>
