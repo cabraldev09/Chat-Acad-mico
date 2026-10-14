@@ -597,12 +597,18 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(m.funnel.reduce((a, b) => a + b.total, 0) === total, "funnel sum");
       assert(m.bySource.length >= 4, "bySource");
     });
-    await test("backfill registers contacts that have no lead yet", async () => {
-      await http.post("/api/v1/contacts", { name: "Contato antigo", number: "5531977770000" }, { headers: { Authorization: `Bearer ${(await http.post("/api-tokens", { name: "bf" }, auth())).data.token}` } });
-      assert(!leadOf("5531977770000"), "lead existed before backfill");
+    await test("backfill registers people who have a conversation, never an imported address book", async () => {
+      const headers = { headers: { Authorization: `Bearer ${(await http.post("/api-tokens", { name: "bf" }, auth())).data.token}` } };
+      await http.post("/api/v1/contacts", { name: "Contato antigo", number: "5531977770000" }, headers);
+      await http.post("/api/v1/contacts", { name: "So agenda", number: "5531977771111" }, headers);
+      assert(!leadOf("5531977770000") && !leadOf("5531977771111"), "lead existed before backfill");
+      // only the first one has a conversation here
+      const contactId = sql(`SELECT id FROM Contacts WHERE number='5531977770000'`);
+      sql(`INSERT INTO Tickets (status, contactId, whatsappId, unreadMessages, isGroup, segment, createdAt, updatedAt) VALUES ('closed', ${contactId}, ${tgId}, 0, false, 'sales', NOW(), NOW())`);
       const r = await http.post("/crm/backfill", {}, auth());
       assert(r.status === 200 && r.data.created >= 1, `backfill ${JSON.stringify(r.data)}`);
-      assert(leadOf("5531977770000"), "backfill did not create the lead");
+      assert(leadOf("5531977770000"), "backfill did not create the lead of the conversation");
+      assert(!leadOf("5531977771111"), "an address-book contact became a lead");
     });
     await test("Cloud API campaign sends the approved template, not free text", async () => {
       const list = (await http.post("/contact-lists", { name: "Vestibular" }, auth())).data;

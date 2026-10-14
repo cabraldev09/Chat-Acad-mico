@@ -510,6 +510,12 @@ const getProfilePicUrl = async (
   return profilePicUrl;
 };
 
+const getChatPicUrl = async (sessionId: number, chatId: string): Promise<string | undefined> => {
+  const wbot = getWbot(sessionId);
+  const url = await wbot.getProfilePicUrl(chatId);
+  return url || undefined;
+};
+
 const sendSeen = async (sessionId: number, chatId: string): Promise<void> => {
   const wbot = getWbot(sessionId);
   const chat = await wbot.getChatById(chatId);
@@ -944,6 +950,7 @@ export const WhatsappWebJsProvider: WhatsappProvider = {
   deleteMessage,
   checkNumber,
   getProfilePicUrl,
+  getChatPicUrl,
   getContacts,
   sendSeen,
   sendTyping,

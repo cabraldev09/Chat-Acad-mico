@@ -13,6 +13,7 @@ import {
   BelongsToMany,
   DataType
 } from "sequelize-typescript";
+import { publicPicUrl } from "../helpers/PicUrl";
 import ContactCustomField from "./ContactCustomField";
 import Ticket from "./Ticket";
 import Tag from "./Tag";
@@ -41,8 +42,19 @@ class Contact extends Model<Contact> {
   @Column
   email: string;
 
+  // WhatsApp's own picture links expire, so pictures are saved on our side and stored as a relative path;
+  // anything that starts with http (not saved yet) is returned untouched
   @Column(DataType.TEXT)
-  profilePicUrl: string;
+  get profilePicUrl(): string | null {
+    return publicPicUrl(this.getDataValue("profilePicUrl"));
+  }
+
+  set profilePicUrl(value: string | null) {
+    this.setDataValue("profilePicUrl", value);
+  }
+
+  @Column
+  picCheckedAt: Date;
 
   @Default(false)
   @Column

@@ -88,6 +88,9 @@ class Whatsapp extends Model<Whatsapp> {
   @Column
   ownerId: number;
 
+  @Column
+  historyImportedAt: Date;
+
   @BelongsTo(() => User, "ownerId")
   owner: User;
 

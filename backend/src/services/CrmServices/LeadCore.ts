@@ -8,6 +8,7 @@ import User from "../../models/User";
 import Contact from "../../models/Contact";
 import Tag from "../../models/Tag";
 import Whatsapp from "../../models/Whatsapp";
+import Ticket from "../../models/Ticket";
 import Payment from "../../models/Payment";
 import { getIO } from "../../libs/socket";
 import { getSetting, setSetting } from "../../helpers/AppSettings";
@@ -330,6 +331,19 @@ export const hookInbound = async (contactId: number, channel?: string): Promise<
       lead = await ensureLead(contact, channel || contact.channel || "whatsapp");
       if (!lead) return;
     }
+    if (lead.isHistorical) {
+      // someone from the history wrote again: from now on this is a real lead, counted from this moment
+      const first = (await openStages())[0];
+      await lead.update({
+        isHistorical: false,
+        createdAt: new Date(),
+        firstContactAt: null,
+        slaAlertedAt: null,
+        ...(first ? { stageId: first.id } : {}),
+        ...(lead.ownerId ? {} : { ownerId: await pickOwner() })
+      } as any);
+      await addActivity(lead.id, null, "reopened", "Voltou a escrever: lead reativado a partir do histórico.");
+    }
     await lead.update({ lastInboundAt: new Date(), lastContactAt: new Date() });
     await rescore(lead);
   } catch (err) {
@@ -339,7 +353,11 @@ export const hookInbound = async (contactId: number, channel?: string): Promise<
 
 // Registers contacts that already exist (e.g. from before the CRM was enabled)
 export const backfillLeads = async (): Promise<{ created: number; skipped: number }> => {
-  const contacts = await Contact.findAll({ where: { isGroup: false }, order: [["id", "ASC"]] });
+  // only people who actually have a conversation here: an imported address book is not a list of leads
+  const talked = new Set(
+    (await Ticket.findAll({ where: { isHistorical: false }, attributes: ["contactId"] })).map(t => t.contactId)
+  );
+  const contacts = (await Contact.findAll({ where: { isGroup: false }, order: [["id", "ASC"]] })).filter(c => talked.has(c.id));
   const have = new Set((await Lead.findAll({ attributes: ["contactId"] })).map(l => l.contactId));
   let created = 0;
   let skipped = 0;

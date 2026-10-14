@@ -3,6 +3,7 @@ import { QueryTypes } from "sequelize";
 
 import sequelize from "../database";
 import { dayBounds, shiftDays } from "../helpers/AppTime";
+import { publicPicUrl } from "../helpers/PicUrl";
 import { getBusinessConfig, businessMinutes } from "../helpers/BusinessTime";
 import { portable, nowSql, diffSeconds, dayOf, countIf } from "../helpers/sqlDialect";
 
@@ -165,5 +166,9 @@ export const live = async (_req: Request, res: Response): Promise<Response> => {
     `SELECT id, name, channel, status FROM Whatsapps ORDER BY id`,
     {}
   );
-  return res.json({ tickets, connections, now: new Date() });
+  return res.json({
+    tickets: tickets.map((t: any) => ({ ...t, profilePicUrl: publicPicUrl(t.profilePicUrl) })),
+    connections,
+    now: new Date()
+  });
 };

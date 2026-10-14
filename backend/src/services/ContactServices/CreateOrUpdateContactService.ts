@@ -1,3 +1,4 @@
+import { isLocalPic } from "../../helpers/PicUrl";
 import { getIO } from "../../libs/socket";
 import Contact from "../../models/Contact";
 import Ticket from "../../models/Ticket";
@@ -54,7 +55,7 @@ const CreateOrUpdateContactService = async ({
 
     await contactByNumber.update({
       lid: contactByLid.lid,
-      ...(profilePicUrl ? { profilePicUrl } : {})
+      ...(profilePicUrl && !isLocalPic(contactByNumber.getDataValue("profilePicUrl")) ? { profilePicUrl } : {})
     });
 
     logger.info({
@@ -71,7 +72,7 @@ const CreateOrUpdateContactService = async ({
   if (contactByNumber) {
     await contactByNumber.update({
       lid: lid || contactByNumber.lid,
-      ...(profilePicUrl ? { profilePicUrl } : {})
+      ...(profilePicUrl && !isLocalPic(contactByNumber.getDataValue("profilePicUrl")) ? { profilePicUrl } : {})
     });
 
     emitContact("update", contactByNumber);
@@ -82,7 +83,7 @@ const CreateOrUpdateContactService = async ({
   if (contactByLid) {
     await contactByLid.update({
       number: number || contactByLid.number,
-      ...(profilePicUrl ? { profilePicUrl } : {})
+      ...(profilePicUrl && !isLocalPic(contactByLid.getDataValue("profilePicUrl")) ? { profilePicUrl } : {})
     });
 
     emitContact("update", contactByLid);

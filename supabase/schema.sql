@@ -448,7 +448,8 @@ CREATE TABLE public."Contacts" (
     lid character varying(255) DEFAULT NULL::character varying,
     channel character varying(255) DEFAULT 'whatsapp'::character varying NOT NULL,
     "optOut" boolean DEFAULT false NOT NULL,
-    "optOutAt" timestamp with time zone
+    "optOutAt" timestamp with time zone,
+    "picCheckedAt" timestamp with time zone
 );
 
 
@@ -1513,7 +1514,8 @@ CREATE TABLE public."Whatsapps" (
     "connectedSince" timestamp with time zone,
     "groupsMode" character varying(255) DEFAULT 'off'::character varying NOT NULL,
     "allowedGroups" text,
-    "ownerId" integer
+    "ownerId" integer,
+    "historyImportedAt" timestamp with time zone
 );
 
 
@@ -3143,6 +3145,7 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261029000001-whatsapp-owner.js') O
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261030000001-long-urls.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261030000002-historical-flag.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261030000003-sla-and-preferences.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261030000004-history-and-pictures.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

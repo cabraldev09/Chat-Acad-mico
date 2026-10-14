@@ -1,3 +1,4 @@
+import { isLocalPic } from "../../helpers/PicUrl";
 import { join } from "path";
 import { writeFile } from "fs";
 import { promisify } from "util";
@@ -68,7 +69,7 @@ export const findOrCreateChannelContact = async (
   let contact = await Contact.findOne({ where: { number } });
   if (contact) {
     const patch: Partial<Contact> = {};
-    if (profilePicUrl && profilePicUrl !== contact.profilePicUrl) {
+    if (profilePicUrl && !isLocalPic(contact.getDataValue("profilePicUrl")) && profilePicUrl !== contact.profilePicUrl) {
       patch.profilePicUrl = profilePicUrl;
     }
     if (name && contact.name === contact.number) patch.name = name;
