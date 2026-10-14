@@ -1262,6 +1262,49 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await list("histórico do ensino")).some(a => a.shortcut === "fichamatricula"), "search by text broke");
       assert(sql(`SELECT COUNT(*) FROM QuickAnswers WHERE LOWER(shortcut)='fichamatricula'`) === "1", "default duplicated");
     });
+    await test("commissions: wallet registered by any user, received vs owed vs waiting, each consultant sees only theirs, settle is admin-only", async () => {
+      const mk = async (name, email) => (await http.post("/users", { name, email, password: "senha123", role: "consultor" }, auth())).data;
+      const ca = await mk("Comissão A", "comis-a@x.com"), cb = await mk("Comissão B", "comis-b@x.com");
+      const ta = (await http.post("/auth/login", { email: "comis-a@x.com", password: "senha123" })).data.token;
+      const tb = (await http.post("/auth/login", { email: "comis-b@x.com", password: "senha123" })).data.token;
+      const stageId = sql(`SELECT id FROM LeadStages ORDER BY position LIMIT 1`);
+      const lead = (name, owner) => sql(`INSERT INTO Leads (name, stageId, ownerId, createdAt, updatedAt) VALUES ('${name}', ${stageId}, ${owner}, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const pay = (leadId, owner, status, code, amount) => sql(`INSERT INTO Payments (leadId, provider, kind, txid, amount, status, description, recipientUserId, recipientCode, splitPct, paidAmount, paidAt, method, createdBy, createdAt, updatedAt) VALUES (${leadId}, 'efi', 'matricula', 'COM${Math.random().toString(36).slice(2, 10)}', ${amount}, '${status}', 'Taxa', ${owner}, ${code ? `'${code}'` : "NULL"}, ${code ? 100 : 0}, ${status === "paid" ? amount : "NULL"}, ${status === "paid" ? "NOW()" : "NULL"}, 'pix', ${owner}, NOW(), NOW()) RETURNING id`).split("\n")[0];
+
+      // the wallet is registered by the consultant, never shown in full
+      assert((await http.put("/me/efi", { payeeCode: "curto" }, asUser(ta))).status === 400, "short wallet accepted");
+      const saved = await http.put("/me/efi", { payeeCode: "ABCD1234EFGH5678" }, asUser(ta));
+      assert(saved.status === 200 && saved.data.masked === "••••5678", `wallet ${saved.status} ${JSON.stringify(saved.data)}`);
+
+      const l1 = lead("Aluna Paga Carteira", ca.id), l2 = lead("Aluno Sem Carteira", ca.id), l3 = lead("Aluna Aguardando", ca.id), l4 = lead("Aluno do B", cb.id);
+      pay(l1, ca.id, "paid", "ABCD1234EFGH5678", 100);
+      const owed = pay(l2, ca.id, "paid", null, 100);
+      pay(l3, ca.id, "pending", null, 100);
+      pay(l4, cb.id, "paid", null, 100);
+
+      const mineA = (await http.get("/commissions", asUser(ta))).data;
+      assert(mineA.scope === "mine" && mineA.wallet.informed === true, "scope or wallet flag");
+      assert(mineA.summary.received.count === 1 && mineA.summary.owed.count === 1 && mineA.summary.waiting.count === 1, `buckets ${JSON.stringify(mineA.summary)}`);
+      assert(mineA.rows.every(r => r.consultantId === ca.id), "a consultant saw someone else's commission");
+      assert(mineA.summary.received.total === 100 && mineA.summary.owed.total === 100, "commission amounts");
+      assert((await http.get("/commissions", { params: { bucket: "owed" }, ...asUser(ta) })).data.rows.length === 1, "bucket filter");
+      assert((await http.get("/commissions", { params: { search: "Sem Carteira" }, ...asUser(ta) })).data.rows.length === 1, "search filter");
+      assert((await http.get("/commissions", asUser(tb))).data.rows.length === 1, "B should see only theirs");
+
+      const all = (await http.get("/commissions", auth())).data;
+      assert(all.scope === "all" && all.summary.owed.count === 2 && all.consultants.length >= 2, `admin overview ${JSON.stringify(all.summary)}`);
+
+      // paying back by hand: only administration, only a paid fee that stayed with the company
+      assert((await http.put(`/commissions/${owed}/settle`, {}, asUser(ta))).status === 403, "a consultant settled their own commission");
+      const done = await http.put(`/commissions/${owed}/settle`, { note: "Pix de teste" }, auth());
+      assert(done.status === 200, `settle ${done.status}`);
+      const after = (await http.get("/commissions", asUser(ta))).data;
+      assert(after.summary.owed.count === 0 && after.summary.received.count === 2, `after settle ${JSON.stringify(after.summary)}`);
+      assert((await http.put(`/commissions/${owed}/settle`, { undo: true }, auth())).status === 200 && (await http.get("/commissions", asUser(ta))).data.summary.owed.count === 1, "undo");
+      const csv = await http.get("/commissions/export.csv", asUser(ta));
+      assert(csv.status === 200 && String(csv.data).includes("Aluno Sem Carteira") && !String(csv.data).includes("Aluno do B"), "csv scope");
+      assert((await http.delete("/me/efi", asUser(ta))).data.informed === false, "wallet removal");
+    });
     await test("one conversation per person: writing after a closed attendance brings the same one back, reopening never errors", async () => {
       const cid = sql(`SELECT id FROM Contacts WHERE number='tg_7777'`);
       const tid = sql(`SELECT id FROM Tickets WHERE contactId=${cid} ORDER BY id DESC LIMIT 1`);

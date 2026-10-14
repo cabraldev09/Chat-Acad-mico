@@ -105,6 +105,16 @@ class Payment extends Model<Payment> {
   @Column
   reminderTaskId: number;
 
+  // commission paid by hand to the consultant when the money stayed with the company (no wallet at payment time)
+  @Column(DataType.DATE)
+  commissionSettledAt: Date;
+
+  @Column
+  commissionSettledBy: number;
+
+  @Column(DataType.TEXT)
+  commissionNote: string;
+
   @ForeignKey(() => Lead)
   @Column
   leadId: number;

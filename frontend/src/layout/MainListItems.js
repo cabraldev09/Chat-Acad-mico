@@ -31,6 +31,7 @@ import ListTodoIcon from "lucide-react/dist/esm/icons/list-todo";
 import HeartHandshakeIcon from "lucide-react/dist/esm/icons/heart-handshake";
 import GraduationCapIcon from "lucide-react/dist/esm/icons/graduation-cap";
 import Share2Icon from "lucide-react/dist/esm/icons/share-2";
+import WalletIcon from "lucide-react/dist/esm/icons/wallet";
 
 import api from "../services/api";
 import openSocket from "../services/socket-io";
@@ -243,6 +244,9 @@ const MainListItems = (props) => {
       <ListItemLink to="/crm" primary="Funil de captação" icon={<KanbanSquareIcon className="ico" />} collapsed={collapsed} />
       <ListItemLink to="/crm/painel" primary="Painel do CRM" icon={<TrendingUpIcon className="ico" />} collapsed={collapsed} />
       <ListItemLink to="/crm/tarefas" primary="Tarefas" icon={<ListTodoIcon className="ico" />} collapsed={collapsed} />
+      {["admin", "coordenacao", "consultor"].includes(user.profile === "admin" ? "admin" : user.role || "consultor") && (
+        <ListItemLink to="/crm/comissoes" primary="Comissões" icon={<WalletIcon className="ico" />} collapsed={collapsed} />
+      )}
       <ListItemLink to="/ambientacao" primary="Ambientação" icon={<HeartHandshakeIcon className="ico" />} collapsed={collapsed} />
       {["admin", "coordenacao", "consultor"].includes(user.profile === "admin" ? "admin" : user.role || "consultor") && (
         <ListItemLink to="/afiliados" primary="Afiliados" icon={<Share2Icon className="ico" />} collapsed={collapsed} />

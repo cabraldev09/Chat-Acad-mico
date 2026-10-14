@@ -26,6 +26,7 @@ import * as Proposal from "../controllers/ProposalController";
 import * as Payment from "../controllers/PaymentController";
 import * as PoloCtl from "../controllers/PoloController";
 import * as Aff from "../controllers/AffiliateController";
+import * as Commission from "../controllers/CommissionController";
 import * as AffMat from "../controllers/AffiliateMaterialController";
 import { affiliateUpload } from "../config/affiliateUpload";
 import { affiliateStaff, canAccessAffiliate } from "../helpers/Affiliates";
@@ -246,6 +247,10 @@ r.post("/payments/efi/webhook", isAuth, isAdmin, Payment.registerWebhook);
 r.get("/me/efi", isAuth, Payment.myEfi);
 r.put("/me/efi", isAuth, Payment.saveMyEfi);
 r.delete("/me/efi", isAuth, Payment.clearMyEfi);
+// commissions of the enrollment fee: each person sees their own, administration and coordination see everyone's
+r.get("/commissions", isAuth, Commission.index);
+r.get("/commissions/export.csv", isAuth, Commission.exportCsv);
+r.put("/commissions/:id/settle", isAuth, Commission.settle);
 r.get("/leads/:id/payments", isAuth, canAccessLead, Payment.listForLead);
 r.post("/leads/:id/payments", isAuth, canAccessLead, Payment.createForLead);
 r.get("/payments/:id", isAuth, canAccessPayment, Payment.show);
