@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
 
+env:
+  # the browser is only needed at runtime (inside the Docker image), not to check the code
+  PUPPETEER_SKIP_DOWNLOAD: "true"
+  PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: "true"
+
 jobs:
   verificar:
     runs-on: ubuntu-latest
@@ -16,13 +21,13 @@ jobs:
       - name: Backend compila
         working-directory: backend
         run: |
-          npm ci --legacy-peer-deps
-          npx tsc --noEmit
+          npm install --legacy-peer-deps --no-audit --no-fund
+          ./node_modules/.bin/tsc --noEmit
       - name: Tudo em português
         working-directory: backend
         run: node scripts/i18n-check.js
       - name: Frontend compila
         working-directory: frontend
         run: |
-          npm ci --legacy-peer-deps
+          npm install --legacy-peer-deps --no-audit --no-fund
           npx vite build
