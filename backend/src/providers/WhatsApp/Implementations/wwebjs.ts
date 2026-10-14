@@ -13,6 +13,8 @@ import { onDisconnected } from "../../../services/SafetyServices/SendGuard";
 import { getIO } from "../../../libs/socket";
 import Whatsapp from "../../../models/Whatsapp";
 import AppError from "../../../errors/AppError";
+import SaveImportedContacts from "../../../helpers/SaveImportedContacts";
+import User from "../../../models/User";
 import { logger } from "../../../utils/logger";
 import { WhatsappProvider } from "../whatsappProvider";
 import {
@@ -177,7 +179,9 @@ const convertToMediaPayload = async (
 };
 
 const shouldHandleMessage = (msg: WbotMessage): boolean => {
-  if (msg.from === "status@broadcast") return false;
+  if (msg.from === "status@broadcast" || msg.to === "status@broadcast") {
+    return false;
+  }
 
   if (
     !(
@@ -463,14 +467,47 @@ const getContacts = async (sessionId: number): Promise<ProviderContact[]> => {
   const wbot = getWbot(sessionId);
   const contacts = await wbot.getContacts();
 
-  return contacts.map(contact => ({
-    id: contact.id.user,
-    name: contact.name || contact.pushname,
-    pushname: contact.pushname,
-    number: contact.id.user,
-    profilePicUrl: undefined,
-    isGroup: contact.isGroup
-  }));
+  // only people saved in the phone's address book, with a real phone number
+  // (no groups, channels, statuses, or "@lid" identifiers that hide the number)
+  return contacts
+    .filter(
+      contact =>
+        contact.isMyContact &&
+        !contact.isGroup &&
+        !contact.isMe &&
+        contact.id.server === "c.us" &&
+        /^\d{8,15}$/.test(contact.id.user)
+    )
+    .map(contact => ({
+      id: contact.id.user,
+      name: contact.name || contact.pushname,
+      pushname: contact.pushname,
+      number: contact.id.user,
+      profilePicUrl: undefined,
+      isGroup: false
+    }));
+};
+
+// The first time a number connects, its address book becomes the company's contact list. Numbers that belong
+// to a regular user are not copied automatically (their contacts are personal): they use "Importar contatos".
+const importContactsOnFirstConnection = async (whatsapp: Whatsapp) => {
+  try {
+    if (whatsapp.ownerId) {
+      const owner = await User.findByPk(whatsapp.ownerId, {
+        attributes: ["profile"]
+      });
+      if (owner?.profile !== "admin") return;
+    }
+    // WhatsApp Web needs a moment to load the address book after "ready"
+    await new Promise(resolve => setTimeout(resolve, 15000));
+    const list = await getContacts(whatsapp.id);
+    const created = await SaveImportedContacts(list);
+    logger.info(
+      `Session ${whatsapp.name}: ${created} contacts imported from the phone`
+    );
+  } catch (err) {
+    logger.error(err, "Could not import contacts after connecting");
+  }
 };
 
 const logout = async (sessionId: number): Promise<void> => {
@@ -614,6 +651,8 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
       logger.info(`Session: ${sessionName} READY (${memoryNote()})`);
       reconnectAttempts.set(whatsapp.id, 0);
 
+      const firstConnection = !whatsapp.connectedSince;
+
       try {
         await whatsapp.update({
           status: "CONNECTED",
@@ -635,6 +674,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
 
         wbot.sendPresenceAvailable();
         await syncUnreadMessages(wbot);
+        if (firstConnection) importContactsOnFirstConnection(whatsapp);
       } catch (err) {
         logger.error(err, "Error on whatsapp ready event");
       }

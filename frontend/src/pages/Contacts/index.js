@@ -196,8 +196,15 @@ const Contacts = () => {
 
   const handleimportContact = async () => {
     try {
-      await api.post("/contacts/import");
-      history.go(0);
+      const { data } = await api.post("/contacts/import");
+      toast.success(
+        data.imported
+          ? `${data.imported} contatos importados do seu WhatsApp.`
+          : "Nenhum contato novo: todos os contatos salvos no seu WhatsApp já estão aqui."
+      );
+      setContacts({ type: "RESET" });
+      setPageNumber(1);
+      setSearchParam("");
     } catch (err) {
       toastError(err);
     }

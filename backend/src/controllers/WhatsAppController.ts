@@ -105,10 +105,15 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
     ownerId
   });
 
-  // the new number becomes the person's sending number when they had none
+  // the person's own number becomes their sending number (unless they already use another number of theirs)
   if (ownerId) {
     const owner = await User.findByPk(ownerId);
-    if (owner && !owner.whatsappId) await owner.update({ whatsappId: whatsapp.id });
+    if (owner) {
+      const current = owner.whatsappId
+        ? await Whatsapp.findByPk(owner.whatsappId, { attributes: ["id", "ownerId"] })
+        : null;
+      if (!current || current.ownerId !== ownerId) await owner.update({ whatsappId: whatsapp.id });
+    }
   }
 
   StartWhatsAppSession(whatsapp);
