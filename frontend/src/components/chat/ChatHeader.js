@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useState } from "react";
+import React, { useContext, useEffect, useRef, useState } from "react";
 import { Pin, PinOff, Archive, ArchiveRestore, Bell, BellOff, BellRing, Check, Undo2, CheckCircle2, UserCheck, RotateCcw } from "lucide-react";
 import { toast } from "react-toastify";
 import { useHistory } from "react-router-dom";
@@ -7,6 +7,8 @@ import Avatar from "@material-ui/core/Avatar";
 import IconButton from "@material-ui/core/IconButton";
 import Tooltip from "@material-ui/core/Tooltip";
 import Menu from "@material-ui/core/Menu";
+import ListItemIcon from "@material-ui/core/ListItemIcon";
+import MoreHoriz from "@material-ui/icons/MoreHoriz";
 import MenuItem from "@material-ui/core/MenuItem";
 import CircularProgress from "@material-ui/core/CircularProgress";
 import ArrowBack from "@material-ui/icons/ArrowBack";
@@ -41,7 +43,7 @@ const useStyles = makeStyles((theme) => {
     },
     back: { color: c.textSecondary, [theme.breakpoints.up("md")]: { display: "none" } },
     closeChat: { color: c.textSecondary, [theme.breakpoints.down("sm")]: { display: "none" } },
-    who: { flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: theme.spacing(1.5), cursor: "pointer" },
+    who: { flex: 1, minWidth: 120, display: "flex", alignItems: "center", gap: theme.spacing(1.5), cursor: "pointer" },
     avatar: { width: 40, height: 40 },
     names: { minWidth: 0, display: "flex", flexDirection: "column" },
     name: {
@@ -83,7 +85,6 @@ const useStyles = makeStyles((theme) => {
       "&:disabled": { opacity: 0.6, cursor: "default" },
       [theme.breakpoints.down("xs")]: { padding: "0 10px" },
     },
-    btnLabel: { [theme.breakpoints.down("sm")]: { display: "none" } },
     primary: { backgroundColor: c.accent, borderColor: c.accent, color: "#fff", "&:hover": { backgroundColor: c.accent, filter: "brightness(1.08)" } },
     tag: { display: "inline-block", marginLeft: 6, padding: "0 7px", borderRadius: 999, fontSize: 11, color: "#fff" },
   };
@@ -102,6 +103,20 @@ const ChatHeader = ({ contact, ticket, onOpenInfo, onToggleSearch, typing }) => 
   useEffect(() => setPinned(!!ticket.pinned), [ticket.id, ticket.pinned]);
 
   const closeConversation = () => history.push("/tickets");
+
+  // the panel (not the window) decides how much room the buttons get: full labels, short labels, or icons only
+  const barRef = useRef(null);
+  const [barWidth, setBarWidth] = useState(1200);
+  useEffect(() => {
+    const el = barRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return undefined;
+    const ro = new ResizeObserver((entries) => setBarWidth(entries[0].contentRect.width));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const labelMode = barWidth >= 1050 ? "full" : barWidth >= 760 ? "short" : "none";
+  const compact = barWidth < 1050;
+  const [moreEl, setMoreEl] = useState(null);
 
   const [soundEl, setSoundEl] = useState(null);
   const [soundPref, setSoundPref] = useState("default");
@@ -176,12 +191,13 @@ const ChatHeader = ({ contact, ticket, onOpenInfo, onToggleSearch, typing }) => 
     setLoading(false);
   };
 
+  const SHORT = { "Aceitar atendimento": "Aceitar", "Devolver à fila": "Devolver", "Finalizar atendimento": "Finalizar", "Reabrir atendimento": "Reabrir" };
   const button = (label, onClick, primary, icon, hint) => (
     <Tooltip title={hint || ""}>
       <span>
         <button type="button" className={`${classes.btn} ${primary ? classes.primary : ""}`} disabled={loading} onClick={onClick} aria-label={label}>
           {loading ? <CircularProgress size={13} color="inherit" /> : icon}
-          <span className={classes.btnLabel}>{label}</span>
+          {labelMode !== "none" && <span>{labelMode === "full" ? label : SHORT[label] || label}</span>}
         </button>
       </span>
     </Tooltip>
@@ -196,7 +212,7 @@ const ChatHeader = ({ contact, ticket, onOpenInfo, onToggleSearch, typing }) => 
     .join(" · ");
 
   return (
-    <div className={classes.bar}>
+    <div className={classes.bar} ref={barRef}>
       <IconButton className={classes.back} onClick={() => history.push("/tickets")}>
         <ArrowBack />
       </IconButton>
@@ -237,6 +253,8 @@ const ChatHeader = ({ contact, ticket, onOpenInfo, onToggleSearch, typing }) => 
         </Tooltip>
         {ticket.id && (
           <>
+            {!compact && (
+              <>
             <Tooltip title="Etiquetas">
               <IconButton className={classes.icon} onClick={() => setTagsOpen(true)}>
                 <LocalOfferOutlined />
@@ -247,6 +265,9 @@ const ChatHeader = ({ contact, ticket, onOpenInfo, onToggleSearch, typing }) => 
                 <ScheduleIcon />
               </IconButton>
             </Tooltip>
+              </>
+            )}
+            {!compact && (
             <Tooltip title={soundHint}>
               <IconButton
                 className={classes.icon}
@@ -257,6 +278,7 @@ const ChatHeader = ({ contact, ticket, onOpenInfo, onToggleSearch, typing }) => 
                 {soundIcon}
               </IconButton>
             </Tooltip>
+            )}
             <Menu anchorEl={soundEl} open={Boolean(soundEl)} onClose={() => setSoundEl(null)} getContentAnchorEl={null} anchorOrigin={{ vertical: "bottom", horizontal: "right" }} transformOrigin={{ vertical: "top", horizontal: "right" }}>
               {SOUND_CHOICES.map((choice) => (
                 <MenuItem
@@ -283,6 +305,8 @@ const ChatHeader = ({ contact, ticket, onOpenInfo, onToggleSearch, typing }) => 
                 </MenuItem>
               ))}
             </Menu>
+            {!compact && (
+              <>
             <Tooltip title={pinned ? "Desafixar conversa" : "Fixar conversa no topo"}>
               <IconButton className={classes.icon} onClick={togglePin} aria-label={pinned ? "Desafixar conversa" : "Fixar conversa"}>
                 {pinned ? <PinOff size={20} /> : <Pin size={20} />}
@@ -293,6 +317,34 @@ const ChatHeader = ({ contact, ticket, onOpenInfo, onToggleSearch, typing }) => 
                 {archived ? <ArchiveRestore size={20} /> : <Archive size={20} />}
               </IconButton>
             </Tooltip>
+              </>
+            )}
+            {compact && (
+              <>
+                <Tooltip title="Mais ações da conversa">
+                  <IconButton className={classes.icon} onClick={(e) => setMoreEl(e.currentTarget)} aria-label="Mais ações da conversa">
+                    <MoreHoriz />
+                  </IconButton>
+                </Tooltip>
+                <Menu anchorEl={moreEl} open={Boolean(moreEl)} onClose={() => setMoreEl(null)} getContentAnchorEl={null} anchorOrigin={{ vertical: "bottom", horizontal: "right" }} transformOrigin={{ vertical: "top", horizontal: "right" }}>
+                  <MenuItem onClick={() => { setMoreEl(null); setTagsOpen(true); }}>
+                    <ListItemIcon style={{ minWidth: 36 }}><LocalOfferOutlined fontSize="small" /></ListItemIcon>Etiquetas
+                  </MenuItem>
+                  <MenuItem onClick={() => { setMoreEl(null); setScheduleOpen(true); }}>
+                    <ListItemIcon style={{ minWidth: 36 }}><ScheduleIcon fontSize="small" /></ListItemIcon>Agendar mensagem
+                  </MenuItem>
+                  <MenuItem onClick={() => { const anchor = moreEl; setMoreEl(null); setSoundEl(anchor); }}>
+                    <ListItemIcon style={{ minWidth: 36 }}>{soundIcon}</ListItemIcon>Som desta conversa
+                  </MenuItem>
+                  <MenuItem onClick={() => { setMoreEl(null); togglePin(); }}>
+                    <ListItemIcon style={{ minWidth: 36 }}>{pinned ? <PinOff size={20} /> : <Pin size={20} />}</ListItemIcon>{pinned ? "Desafixar conversa" : "Fixar conversa no topo"}
+                  </MenuItem>
+                  <MenuItem onClick={() => { setMoreEl(null); toggleArchive(); }}>
+                    <ListItemIcon style={{ minWidth: 36 }}>{archived ? <ArchiveRestore size={20} /> : <Archive size={20} />}</ListItemIcon>{archived ? "Desarquivar conversa" : "Arquivar conversa"}
+                  </MenuItem>
+                </Menu>
+              </>
+            )}
             <TicketTagsDialog open={tagsOpen} onClose={() => setTagsOpen(false)} ticket={ticket} />
             <ScheduleMessageDialog open={scheduleOpen} onClose={() => setScheduleOpen(false)} ticket={ticket} />
           </>
