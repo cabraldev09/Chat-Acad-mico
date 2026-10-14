@@ -10,6 +10,7 @@ import CircularProgress from "@material-ui/core/CircularProgress";
 import ArrowBack from "@material-ui/icons/ArrowBack";
 import Search from "@material-ui/icons/Search";
 import MoreVert from "@material-ui/icons/MoreVert";
+import Close from "@material-ui/icons/Close";
 import LocalOfferOutlined from "@material-ui/icons/LocalOfferOutlined";
 import ScheduleIcon from "@material-ui/icons/Schedule";
 
@@ -36,6 +37,7 @@ const useStyles = makeStyles((theme) => {
       borderBottom: `1px solid ${c.divider}`,
     },
     back: { color: c.textSecondary, [theme.breakpoints.up("md")]: { display: "none" } },
+    closeChat: { color: c.textSecondary, [theme.breakpoints.down("sm")]: { display: "none" } },
     who: { flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: theme.spacing(1.5), cursor: "pointer" },
     avatar: { width: 40, height: 40 },
     names: { minWidth: 0, display: "flex", flexDirection: "column" },
@@ -94,6 +96,20 @@ const ChatHeader = ({ contact, ticket, onOpenInfo, onToggleSearch, typing }) => 
   const [pinned, setPinned] = useState(!!ticket.pinned);
   const archived = !!ticket.archivedAt;
   useEffect(() => setPinned(!!ticket.pinned), [ticket.id, ticket.pinned]);
+
+  const closeConversation = () => history.push("/tickets");
+
+  // Esc leaves the conversation (like WhatsApp Web), unless a dialog, menu or picker is open
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      if (document.querySelector(".MuiDialog-root, .MuiPopover-root, .MuiMenu-root, .emoji-picker-react, em-emoji-picker")) return;
+      closeConversation();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const togglePin = async () => {
     try {
@@ -215,6 +231,11 @@ const ChatHeader = ({ contact, ticket, onOpenInfo, onToggleSearch, typing }) => 
             <TicketOptionsMenu ticket={ticket} anchorEl={menuEl} menuOpen={Boolean(menuEl)} handleClose={() => setMenuEl(null)} />
           </>
         )}
+        <Tooltip title="Fechar conversa (Esc)">
+          <IconButton className={classes.closeChat} onClick={closeConversation} aria-label="Fechar conversa">
+            <Close />
+          </IconButton>
+        </Tooltip>
       </div>
     </div>
   );
