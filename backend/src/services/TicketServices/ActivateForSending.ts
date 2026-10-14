@@ -1,10 +1,16 @@
 import Ticket from "../../models/Ticket";
+import Contact from "../../models/Contact";
 import { getIO } from "../../libs/socket";
 
 // WhatsApp has no "reopen": writing in a chat is enough. Groups and conversations copied from the phone's history
-// are therefore opened by the first message the team sends (no "Reabrir atendimento" button in the way).
+// (and team members' chats) are therefore opened by the first message the team sends (no "Reabrir atendimento" button in the way).
 const ActivateForSending = async (ticket: Ticket, userId: number): Promise<Ticket> => {
-  const needs = ticket.isHistorical || (ticket.isGroup && ticket.status !== "open");
+  let plain = ticket.isGroup;
+  if (!plain && ticket.status !== "open") {
+    const contact = await Contact.findByPk(ticket.contactId, { attributes: ["id", "isStaff"] });
+    plain = !!contact?.isStaff;
+  }
+  const needs = ticket.isHistorical || (plain && ticket.status !== "open");
   if (!needs) return ticket;
 
   const wasHistory = ticket.isHistorical;

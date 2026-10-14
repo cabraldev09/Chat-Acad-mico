@@ -1244,6 +1244,15 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(msgs.includes("mensagem antiga") && msgs.includes("voltei a escrever"), `thread lost: ${msgs}`);
       assert(sql(`SELECT COUNT(*) FROM Tickets WHERE contactId=${contactId}`) === "1", "a second ticket was created instead of reusing the history one");
     });
+    await test("a team member's chat has no queue: the ticket carries isStaff and writing to it opens it without a Reabrir", async () => {
+      const cid = sql(`INSERT INTO Contacts (name, number, email, isGroup, isStaff, channel, createdAt, updatedAt) VALUES ('Colega da equipe', 'tg_7790', '', false, true, 'telegram', NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const tid = sql(`INSERT INTO Tickets (status, contactId, whatsappId, unreadMessages, isGroup, segment, isHistorical, createdAt, updatedAt) VALUES ('closed', ${cid}, ${tgId}, 0, false, 'sales', false, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const t = (await http.get(`/tickets/${tid}`, auth())).data;
+      assert(t.contact.isStaff === true, "ticket payload lacks contact.isStaff");
+      const r = await http.post(`/messages/${tid}`, { body: "bom dia, time" }, auth());
+      assert(r.status === 200, `send to a closed team chat: ${r.status}`);
+      assert(sql(`SELECT status FROM Tickets WHERE id=${tid}`) === "open", "team chat not reopened by sending");
+    });
     await test("one conversation per person: writing after a closed attendance brings the same one back, reopening never errors", async () => {
       const cid = sql(`SELECT id FROM Contacts WHERE number='tg_7777'`);
       const tid = sql(`SELECT id FROM Tickets WHERE contactId=${cid} ORDER BY id DESC LIMIT 1`);
@@ -1385,7 +1394,7 @@ const postMeta = (id, payload, secret, badSig) => {
       const mkContact = (name, num, group = false) => sql(`INSERT INTO Contacts (name, number, email, isGroup, channel, createdAt, updatedAt) VALUES ('${name}', '${num}', '', ${group}, 'telegram', NOW(), NOW()) RETURNING id`).split("\n")[0];
       const mkTicket = (cid, group = false) => sql(`INSERT INTO Tickets (status, contactId, whatsappId, unreadMessages, isGroup, segment, isHistorical, createdAt, updatedAt) VALUES ('open', ${cid}, ${tgId}, 0, ${group}, 'sales', false, NOW(), NOW()) RETURNING id`).split("\n")[0];
       const before = (await http.get("/dashboard", auth())).data;
-      assert(before.now && before.day && before.day.week.length === 7 && before.day.byHour.length >= 13, "dashboard shape");
+      assert(before.now && before.period && before.period.week.length === 7 && before.period.byHour.length >= 13, "dashboard shape");
 
       const customer = mkTicket(mkContact("Cliente Painel", "tg_dash_1"));
       const mate = mkContact("Colega Painel", "tg_dash_2");
@@ -1398,14 +1407,14 @@ const postMeta = (id, payload, secret, badSig) => {
       msg("dash-m-1", mateTicket, "papo interno", false, "1 minute");
       msg("dash-g-1", grp, "mensagem de grupo", false, "1 minute");
       const after = (await http.get("/dashboard", auth())).data;
-      assert(after.day.received - before.day.received === 2, `received counts today's customer + team message only: ${after.day.received - before.day.received}`);
-      assert(after.day.sent - before.day.sent === 1, "sent");
-      assert(after.day.conversations - before.day.conversations === 2, "conversations of the day (group out, yesterday's message not counted)");
+      assert(after.period.received - before.period.received === 2, `received counts today's customer + team message only: ${after.period.received - before.period.received}`);
+      assert(after.period.sent - before.period.sent === 1, "sent");
+      assert(after.period.attendances - before.period.attendances === 2, "conversations of the day (group out, yesterday's message not counted)");
 
       // marking the colleague as team removes them from every number
       assert((await http.put(`/contacts/${mate}/staff`, { isStaff: true }, auth())).status === 200, "mark staff");
       const staffed = (await http.get("/dashboard", auth())).data;
-      assert(staffed.day.received - before.day.received === 1 && staffed.day.conversations - before.day.conversations === 1, "team member still counted");
+      assert(staffed.period.received - before.period.received === 1 && staffed.period.attendances - before.period.attendances === 1, "team member still counted");
       const ov = (await http.get("/stats/overview", { params: { from: "2020-01-01", to: "2099-12-31" }, ...auth() })).data;
       assert(sql(`SELECT isStaff FROM Contacts WHERE id=${mate}`) === "1", "flag not saved");
       assert(ov.totals, "stats still answers");
@@ -1413,7 +1422,7 @@ const postMeta = (id, payload, secret, badSig) => {
       // another day: yesterday shows the old message, today's are not mixed in
       const y = new Date(Date.now() - 86400000).toLocaleDateString("en-CA", { timeZone: "America/Porto_Velho" });
       const yesterday = (await http.get("/dashboard", { params: { date: y }, ...auth() })).data;
-      assert(yesterday.date === y && yesterday.day.received >= 1, "yesterday keeps its own message");
+      assert(yesterday.date === y && yesterday.period.received >= 1, "yesterday keeps its own message");
       const agentView = await http.get("/dashboard", asUser(agentToken));
       assert(agentView.status === 200 && agentView.data.scope === "mine", `dashboard for a non-admin: ${agentView.status}`);
     });

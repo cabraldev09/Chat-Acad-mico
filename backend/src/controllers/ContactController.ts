@@ -186,3 +186,12 @@ export const setStaff = async (req: Request, res: Response): Promise<Response> =
   getIO().emit("contact", { action: "update", contact });
   return res.status(200).json(contact);
 };
+
+// "Does not need an answer": the person (a notice, a broadcast) stops showing in the dashboard's "no answer" list
+export const setNoReply = async (req: Request, res: Response): Promise<Response> => {
+  const contact = await Contact.findByPk(req.params.contactId);
+  if (!contact) throw new AppError("ERR_NO_CONTACT_FOUND", 404);
+  await contact.update({ noReply: Boolean(req.body.noReply) });
+  getIO().emit("contact", { action: "update", contact });
+  return res.status(200).json(contact);
+};

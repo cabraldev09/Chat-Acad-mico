@@ -204,6 +204,8 @@ const ChatHeader = ({ contact, ticket, onOpenInfo, onToggleSearch, typing }) => 
     setLoading(false);
   };
 
+  // team members' chats work like groups: no queue, so no accept / give back / finish buttons
+  const plain = !!ticket.isGroup || !!contact.isStaff;
   const SHORT = { "Aceitar atendimento": "Aceitar", "Devolver à fila": "Devolver", "Finalizar atendimento": "Finalizar", "Reabrir atendimento": "Reabrir" };
   const button = (label, onClick, primary, icon, hint) => (
     <Tooltip title={hint || ""}>
@@ -250,15 +252,15 @@ const ChatHeader = ({ contact, ticket, onOpenInfo, onToggleSearch, typing }) => 
         </div>
       </div>
       <div className={classes.actions}>
-        {ticket.status === "pending" && !ticket.isGroup &&
+        {ticket.status === "pending" && !plain &&
           button("Aceitar atendimento", () => setStatus("open", user?.id), true, <UserCheck size={16} />, "Assumir esta conversa: ela passa a ser sua")}
-        {ticket.status === "open" && !ticket.isGroup && (
+        {ticket.status === "open" && !plain && (
           <>
             {button("Devolver à fila", () => setStatus("pending", null), false, <Undo2 size={16} />, "A conversa deixa de ser sua e volta para Aguardando, para outro atendente assumir")}
             {button("Finalizar atendimento", () => setStatus("closed", user?.id), true, <CheckCircle2 size={16} />, "Encerra a conversa. Se o contato escrever de novo, ela reabre")}
           </>
         )}
-        {ticket.status === "closed" && !ticket.isGroup &&
+        {ticket.status === "closed" && !plain &&
           button("Reabrir atendimento", () => setStatus("open", user?.id), true, <RotateCcw size={16} />, "Traz a conversa de volta para você")}
         <Tooltip title="Pesquisar na conversa">
           <IconButton className={classes.icon} onClick={onToggleSearch}>

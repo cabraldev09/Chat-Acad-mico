@@ -65,7 +65,7 @@ const ListTicketsService = async ({
     {
       model: Contact,
       as: "contact",
-      attributes: ["id", "name", "number", "profilePicUrl", "channel"],
+      attributes: ["id", "name", "number", "profilePicUrl", "channel", "isStaff", "kind"],
       // the search filters on the contact's name and number, so the count query must join it too
       required: !!searchParam
     },
@@ -154,6 +154,11 @@ const ListTicketsService = async ({
     if (groups === "only") whereCondition = { ...whereCondition, isGroup: true };
     if (groups === "exclude") whereCondition = { ...whereCondition, isGroup: false };
   }
+
+  // channels (newsletters) and similar feeds are not conversations
+  whereCondition = {
+    [Op.and]: [whereCondition, literal(`NOT EXISTS (SELECT 1 FROM "Contacts" kc WHERE kc."id" = "Ticket"."contactId" AND kc."kind" = 'channel')`)]
+  } as any;
 
   // archived conversations only show in their own view
   whereCondition = {

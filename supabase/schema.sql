@@ -663,7 +663,9 @@ CREATE TABLE public."Contacts" (
     "optOut" boolean DEFAULT false NOT NULL,
     "optOutAt" timestamp with time zone,
     "picCheckedAt" timestamp with time zone,
-    "isStaff" boolean DEFAULT false NOT NULL
+    "isStaff" boolean DEFAULT false NOT NULL,
+    kind character varying(255) DEFAULT 'person'::character varying NOT NULL,
+    "noReply" boolean DEFAULT false NOT NULL
 );
 
 
@@ -2640,6 +2642,13 @@ CREATE INDEX contacts_is_staff_idx ON public."Contacts" USING btree ("isStaff") 
 
 
 --
+-- Name: contacts_kind_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX contacts_kind_idx ON public."Contacts" USING btree (kind) WHERE ((kind)::text <> 'person'::text);
+
+
+--
 -- Name: kb_chunks_document_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3657,6 +3666,7 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261102000002-groups-open.js') ON C
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261102000003-affiliate-external-link.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261102000004-merge-duplicate-tickets.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261103000001-clean-vcard-preview.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261103000002-contact-kind.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

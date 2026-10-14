@@ -284,6 +284,11 @@ const shouldHandleMessage = (msg: WbotMessage): boolean => {
     return false;
   }
 
+  // WhatsApp Channels (newsletters) are feeds, not conversations: no ticket, no lead, no "waiting for an answer"
+  if (String(msg.from).endsWith("@newsletter") || String(msg.to).endsWith("@newsletter")) {
+    return false;
+  }
+
   if (
     !(
       msg.type === "chat" ||

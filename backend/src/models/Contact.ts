@@ -64,6 +64,16 @@ class Contact extends Model<Contact> {
   @Column
   channel: string;
 
+  // person | group | channel | business: channels and communities are not customers
+  @Default("person")
+  @Column
+  kind: string;
+
+  // does not need an answer (notices, broadcasts): out of the "no answer" list
+  @Default(false)
+  @Column
+  noReply: boolean;
+
   // belongs to the team (with or without a login): never counted in statistics or the CRM funnel
   @Default(false)
   @Column
