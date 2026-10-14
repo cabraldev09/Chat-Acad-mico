@@ -97,6 +97,14 @@ app.use(async (err: Error, req: Request, res: Response, _: NextFunction) => {
     return res.status(err.statusCode).json({ error: err.message });
   }
 
+  // a value that is not valid for its column (for example text where a number is expected) is the caller's
+  // mistake: answer 400, not a server error
+  const code = (err as any)?.parent?.code;
+  if (code === "22P02" || code === "22003" || code === "22007") {
+    logger.warn({ request: `${req.method} ${req.originalUrl}`, message: err.message });
+    return res.status(400).json({ error: "ERR_INVALID_PARAMETER" });
+  }
+
   // one line that names the request, so a 500 on the screen can be found in the log
   logger.error({ request: `${req.method} ${req.originalUrl}`, message: err.message, err });
   return res.status(500).json({ error: "Internal server error" });

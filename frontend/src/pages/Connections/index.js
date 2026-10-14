@@ -1,3 +1,4 @@
+import { AuthContext } from "../../context/Auth/AuthContext";
 import React, { useState, useCallback, useContext } from "react";
 import ChannelIcon from "../../components/ChannelIcon";
 import { toast } from "react-toastify";
@@ -97,6 +98,9 @@ const Connections = () => {
 	const classes = useStyles();
 
 	const { whatsApps, loading } = useContext(WhatsAppsContext);
+	// connecting and removing numbers is for the administrator; everyone else only sees the status
+	const { user } = useContext(AuthContext);
+	const isAdmin = user && user.profile === "admin";
 	const [whatsAppModalOpen, setWhatsAppModalOpen] = useState(false);
 	const [qrModalOpen, setQrModalOpen] = useState(false);
 	const [selectedWhatsApp, setSelectedWhatsApp] = useState(null);
@@ -196,6 +200,7 @@ const Connections = () => {
 	};
 
 	const renderActionButtons = whatsApp => {
+		if (!isAdmin) return <span style={{ fontSize: 13, opacity: 0.7 }}>Só o administrador gerencia</span>;
 		return (
 			<>
 				{whatsApp.status === "qrcode" && (
@@ -315,13 +320,15 @@ const Connections = () => {
 			<MainHeader>
 				<Title>{i18n.t("connections.title")}</Title>
 				<MainHeaderButtonsWrapper>
-					<Button
-						variant="contained"
-						color="primary"
-						onClick={handleOpenWhatsAppModal}
-					>
-						{i18n.t("connections.buttons.add")}
-					</Button>
+					{isAdmin && (
+						<Button
+							variant="contained"
+							color="primary"
+							onClick={handleOpenWhatsAppModal}
+						>
+							{i18n.t("connections.buttons.add")}
+						</Button>
+					)}
 				</MainHeaderButtonsWrapper>
 			</MainHeader>
 			<Paper className={classes.mainPaper} variant="outlined">
@@ -391,21 +398,25 @@ const Connections = () => {
 												)}
 											</TableCell>
 											<TableCell align="center">
-												<IconButton
-													size="small"
-													onClick={() => handleEditWhatsApp(whatsApp)}
-												>
-													<Edit />
-												</IconButton>
+												{isAdmin && (
+													<>
+														<IconButton
+															size="small"
+															onClick={() => handleEditWhatsApp(whatsApp)}
+														>
+															<Edit />
+														</IconButton>
 
-												<IconButton
-													size="small"
-													onClick={e => {
-														handleOpenConfirmationModal("delete", whatsApp.id);
-													}}
-												>
-													<DeleteOutline />
-												</IconButton>
+														<IconButton
+															size="small"
+															onClick={e => {
+																handleOpenConfirmationModal("delete", whatsApp.id);
+															}}
+														>
+															<DeleteOutline />
+														</IconButton>
+													</>
+												)}
 											</TableCell>
 										</TableRow>
 									))}
