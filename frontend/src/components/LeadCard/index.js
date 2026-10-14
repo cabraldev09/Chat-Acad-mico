@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useCallback, useEffect, useState } from "react";
+import React, { Suspense, useCallback, useEffect, useState } from "react";
 import { useHistory } from "react-router-dom";
 import { toast } from "react-toastify";
 import { Button, TextField, Typography, makeStyles } from "@material-ui/core";
@@ -7,6 +7,7 @@ import { FilePlus2, FileText, KanbanSquare, UserPlus } from "lucide-react";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import { ScoreRing, burst } from "../../pages/CRM/shared";
+import { lazyPage as lazy } from "../../utils/lazyPage";
 
 // the heavy CRM dialogs load only when someone opens them
 const ProposalStudio = lazy(() => import("../../pages/CRM/ProposalStudio"));
