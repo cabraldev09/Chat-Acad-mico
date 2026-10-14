@@ -235,8 +235,11 @@ const TicketListItem = ({ ticket }) => {
     return () => window.removeEventListener("chatDraft", onDraft);
   }, [ticket.id]);
   const draft = !selected ? getDraft(ticket.id) : "";
-  const [KindIcon, kindLabel] = KIND[ticket.lastMessageType] || [];
-  const previewText = plain(ticket.lastMessage) || kindLabel || "";
+  // a contact card shows the person's name, never the card's raw text
+  const cardName = /^\s*BEGIN:VCARD/i.test(ticket.lastMessage || "") ? ((/(?:^|\n)FN[^:\n]*:([^\n\r]+)/i.exec(ticket.lastMessage) || [])[1] || "Contato").trim() : null;
+  const kindOf = KIND[cardName ? "vcard" : ticket.lastMessageType] || [];
+  const previewText = cardName || (ticket.lastMessageType === "vcard" ? String(ticket.lastMessage || "").replace(/^👤\s*/, "") : null) || plain(ticket.lastMessage) || kindOf[1] || "";
+  const [KindIcon, kindLabel] = KIND[cardName ? "vcard" : ticket.lastMessageType] || [];
 
   return (
     <div

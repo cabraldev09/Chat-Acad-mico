@@ -1098,6 +1098,9 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(tgReact && String(tgReact.body.chat_id) === "5551" && tgReact.body.reaction[0].emoji === "👍", `setMessageReaction ${JSON.stringify(tgReact && tgReact.body)}`);
       tg.updates.push({ update_id: 40, message_reaction: { chat: { id: 5551, type: "private" }, message_id: 10, user: { id: 5551 }, new_reaction: [{ type: "emoji", emoji: "❤" }] } });
       await waitFor(() => sql(`SELECT reactions FROM Messages WHERE id='tg-${tgId}-5551-10'`).includes("❤"), 8000, "telegram inbound reaction");
+      // the list tells about the reaction without opening the conversation
+      await waitFor(() => sql(`SELECT lastMessageType FROM Tickets t JOIN Messages m ON m.ticketId=t.id WHERE m.id='tg-${tgId}-5551-10'`) === "reaction", 6000, "reaction in the list preview");
+      assert(sql(`SELECT lastMessage FROM Tickets t JOIN Messages m ON m.ticketId=t.id WHERE m.id='tg-${tgId}-5551-10'`).startsWith("Reagiu com ❤"), "reaction preview text");
       // forward into the other open Telegram conversation (Beto)
       const other = ticketOf("tg_5552");
       assert(sql(`SELECT status FROM Tickets WHERE id=${other}`) !== "closed", "target ticket closed");
@@ -1261,6 +1264,25 @@ const postMeta = (id, payload, secret, badSig) => {
       const created = await http.post("/tickets", { contactId: Number(cid), status: "open", userId: 1 }, auth());
       assert(created.status === 200 || created.status === 201, `create ${created.status} ${JSON.stringify(created.data).slice(0, 120)}`);
       assert(Number(created.data.id) === Number(tid) && sql(`SELECT COUNT(*) FROM Tickets WHERE contactId=${cid}`) === "1", "manual new conversation duplicated the thread");
+    });
+    await test("history conversations and groups are written in directly (the message opens them); contact cards read well in the list", async () => {
+      const mkc = (name, num, group) => sql(`INSERT INTO Contacts (name, number, email, isGroup, channel, createdAt, updatedAt) VALUES ('${name}', '${num}', '', ${group}, 'telegram', NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const c1 = mkc("Histórica Escreve", "tg_8801", false);
+      const t1 = sql(`INSERT INTO Tickets (status, contactId, whatsappId, unreadMessages, isGroup, segment, isHistorical, lastMessage, closedAt, createdAt, updatedAt) VALUES ('closed', ${c1}, ${tgId}, 0, false, 'sales', true, 'antiga', NOW(), NOW() - INTERVAL '30 days', NOW() - INTERVAL '30 days') RETURNING id`).split("\n")[0];
+      const r1 = await http.post(`/messages/${t1}`, { body: "voltei", read: 1, fromMe: true, mediaUrl: "" }, auth());
+      assert(r1.status === 200 || r1.status === 201 || r1.status === 204, `send into history ${r1.status}`);
+      assert(sql(`SELECT CONCAT(status,'|',CASE WHEN isHistorical THEN 1 ELSE 0 END) FROM Tickets WHERE id=${t1}`) === "open|0", "history conversation not opened by the message");
+
+      const g = mkc("Grupo Escreve", "tg_8802", true);
+      const t2 = sql(`INSERT INTO Tickets (status, contactId, whatsappId, unreadMessages, isGroup, segment, isHistorical, closedAt, createdAt, updatedAt) VALUES ('closed', ${g}, ${tgId}, 0, true, 'sales', false, NOW(), NOW(), NOW()) RETURNING id`).split("\n")[0];
+      await http.post(`/messages/${t2}`, { body: "oi grupo", read: 1, fromMe: true, mediaUrl: "" }, auth());
+      assert(sql(`SELECT status FROM Tickets WHERE id=${t2}`) === "open", "group still needs reopening");
+
+      // a contact card never shows its raw text in the list
+      const { previewOf } = require("../dist/helpers/MessagePreview");
+      assert(previewOf("BEGIN:VCARD\nVERSION:3.0\nFN:Laura Jonjob\nTEL:+5511\nEND:VCARD", "vcard") === "👤 Laura Jonjob", "vcard preview");
+      assert(previewOf("BEGIN:VCARD\nVERSION:3.0\nEND:VCARD") === "👤 Contato", "vcard without name");
+      assert(previewOf("oi") === "oi", "text untouched");
     });
     await test("the Grupos tab lists every group (copied history and live) and statistics ignore groups", async () => {
       const gid = sql(`INSERT INTO Contacts (name, number, email, isGroup, channel, createdAt, updatedAt) VALUES ('Grupo da turma', '120363000000000001-1600000000', '', true, 'telegram', NOW(), NOW()) RETURNING id`).split("\n")[0];

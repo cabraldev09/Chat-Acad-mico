@@ -14,6 +14,7 @@ import { AlignLeft, Camera, Folder, Image as ImageIcon, Plus, Trash2, UserCircle
 import { toast } from "react-toastify";
 
 import api from "../../services/api";
+import NewTicketModal from "../NewTicketModal";
 import toastError from "../../errors/toastError";
 import { wa } from "../chat/chatTheme";
 
@@ -52,58 +53,6 @@ const useStyles = makeStyles((theme) => {
     "@global": { "@keyframes attachIn": { from: { opacity: 0, transform: "translateY(8px) scale(.97)" }, to: { opacity: 1, transform: "none" } } },
   };
 });
-
-const ContactDialog = ({ open, ticketId, onClose }) => {
-  const [options, setOptions] = useState([]);
-  const [picked, setPicked] = useState(null);
-  const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    if (!open) return;
-    setPicked(null);
-    api.get("/contacts", { params: { pageNumber: 1 } }).then(({ data }) => setOptions((data.contacts || []).filter((x) => !x.isGroup && x.number))).catch(() => undefined);
-  }, [open]);
-
-  const search = (text) => {
-    if (text.length < 2) return;
-    api.get("/contacts", { params: { searchParam: text } }).then(({ data }) => setOptions((data.contacts || []).filter((x) => !x.isGroup && x.number))).catch(() => undefined);
-  };
-
-  const send = async () => {
-    setBusy(true);
-    try {
-      const card = `BEGIN:VCARD\nVERSION:3.0\nFN:${picked.name}\nTEL;type=CELL;waid=${picked.number}:+${picked.number}\nEND:VCARD`;
-      await api.post(`/messages/${ticketId}`, { read: 1, fromMe: true, mediaUrl: "", body: card });
-      onClose();
-    } catch (err) {
-      toastError(err);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
-      <DialogTitle>Enviar contato</DialogTitle>
-      <DialogContent>
-        <Autocomplete
-          options={options}
-          value={picked}
-          onChange={(e, v) => setPicked(v)}
-          onInputChange={(e, v, reason) => reason === "input" && search(v)}
-          getOptionLabel={(o) => `${o.name} · +${o.number}`}
-          filterOptions={(o) => o}
-          noOptionsText="Nenhum contato encontrado"
-          renderInput={(p) => <TextField {...p} autoFocus variant="outlined" label="Buscar nome ou número" margin="dense" />}
-        />
-      </DialogContent>
-      <DialogActions style={{ padding: "8px 20px 16px" }}>
-        <Button onClick={onClose}>Cancelar</Button>
-        <Button variant="contained" color="primary" disabled={!picked || busy} onClick={send}>Enviar</Button>
-      </DialogActions>
-    </Dialog>
-  );
-};
 
 const PollDialog = ({ open, ticketId, onClose }) => {
   const [title, setTitle] = useState("");
@@ -196,7 +145,20 @@ const AttachMenu = ({ anchorEl, onClose, inputs, onQuick, signMessage, setSignMe
           <Switch size="small" color="primary" checked={signMessage} onChange={(e) => setSignMessage(e.target.checked)} />
         </div>
       </Popover>
-      <ContactDialog open={dialog === "contact"} ticketId={ticketId} onClose={() => setDialog(null)} />
+      <NewTicketModal
+        modalOpen={dialog === "contact"}
+        title="Enviar contato"
+        hideNew
+        onClose={() => setDialog(null)}
+        onPick={async (contact) => {
+          try {
+            await api.post(`/messages/${ticketId}/contact`, { contactId: contact.id });
+            toast.success(`Contato de ${contact.name} enviado.`);
+          } catch (err) {
+            toastError(err);
+          }
+        }}
+      />
       <PollDialog open={dialog === "poll"} ticketId={ticketId} onClose={() => setDialog(null)} />
     </>
   );

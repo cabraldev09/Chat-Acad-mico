@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useContext, useRef } from "react";
-import "emoji-mart/css/emoji-mart.css";
 import { useParams } from "react-router-dom";
 import { toast } from "react-toastify";
-import { Picker } from "emoji-mart";
+import EmojiPicker from "../EmojiPicker";
 import clsx from "clsx";
 import { makeStyles, useTheme } from "@material-ui/core/styles";
 import InputBase from "@material-ui/core/InputBase";
@@ -115,52 +114,10 @@ const useStyles = makeStyles((theme) => {
       transformOrigin: "bottom left",
       animation: "emojiIn .16s ease-out",
       maxWidth: "calc(100vw - 24px)",
-      "& .emoji-mart": {
-        width: "min(372px, calc(100vw - 24px)) !important",
-        fontFamily: "inherit",
-        color: c.text,
-        backgroundColor: c.panel,
-        border: `1px solid ${c.divider}`,
-        borderRadius: 22,
-        boxShadow: c.float,
-        overflow: "hidden",
-      },
-      "& .emoji-mart-bar": { borderColor: c.divider },
-      "& .emoji-mart-anchors": { padding: "0 6px" },
-      "& .emoji-mart-anchor": { color: c.textSecondary, padding: "12px 4px 10px", transition: "color .15s" },
-      "& .emoji-mart-anchor:hover, & .emoji-mart-anchor-selected": { color: `${c.accent} !important` },
-      "& .emoji-mart-anchor-bar": { backgroundColor: `${c.accent} !important`, height: 3, borderRadius: 3 },
-      "& .emoji-mart-search": { margin: "10px 12px 4px" },
-      "& .emoji-mart-search input": {
-        fontFamily: "inherit",
-        fontSize: 14,
-        padding: "9px 14px",
-        color: c.text,
-        backgroundColor: c.inputBg,
-        border: "2px solid transparent",
-        borderRadius: 999,
-        outline: "none",
-        transition: "border-color .15s",
-        "&:focus": { borderColor: c.accent },
-        "&::placeholder": { color: c.textSecondary },
-      },
-      "& .emoji-mart-search-icon": { top: 6, right: 8 },
-      "& .emoji-mart-scroll": { height: 250, padding: "0 8px 8px", ...theme.scrollbarStyles },
-      "& .emoji-mart-category .emoji-mart-category-label": { margin: 0, padding: 0, fontFamily: "inherit" },
-      "& .emoji-mart-category .emoji-mart-category-label span": {
-        fontFamily: "inherit",
-        fontSize: 12,
-        fontWeight: 700,
-        letterSpacing: ".02em",
-        color: c.textSecondary,
-        padding: "10px 6px 6px",
-        backgroundColor: `${c.panel} !important`,
-      },
-      "& .emoji-mart-emoji": { borderRadius: 12, transition: "transform .1s" },
-      "& .emoji-mart-emoji:hover": { transform: "scale(1.18)" },
-      "& .emoji-mart-emoji:hover:before, & .emoji-mart-emoji-native:hover": { backgroundColor: `${c.hover} !important` },
-      "& .emoji-mart-emoji span": { cursor: "pointer" },
-      "& .emoji-mart-no-results": { color: c.textSecondary, fontFamily: "inherit" },
+      borderRadius: 18,
+      overflow: "hidden",
+      boxShadow: c.float,
+      "& em-emoji-picker": { "--font-family": "inherit", "--rgb-accent": "0, 168, 132", height: 380, maxHeight: "60vh" },
     },
     blocked: { padding: theme.spacing(2), textAlign: "center", fontSize: 14, color: c.textSecondary },
     menuItem: { display: "flex", alignItems: "center", gap: 14, padding: "10px 22px 10px 16px", cursor: "pointer", fontSize: 15, color: c.text, "&:hover": { backgroundColor: c.hover } },
@@ -203,33 +160,9 @@ const useStyles = makeStyles((theme) => {
   };
 });
 
-const EMOJI_PT = {
-  search: "Buscar emoji",
-  clear: "Limpar",
-  notfound: "Nenhum emoji encontrado",
-  skintext: "Escolha o tom de pele",
-  categorieslabel: "Categorias de emoji",
-  categories: {
-    search: "Resultados da busca",
-    recent: "Usados recentemente",
-    smileys: "Carinhas e pessoas",
-    people: "Pessoas e corpo",
-    nature: "Animais e natureza",
-    foods: "Comidas e bebidas",
-    activity: "Atividades",
-    places: "Viagens e lugares",
-    objects: "Objetos",
-    symbols: "Símbolos",
-    flags: "Bandeiras",
-    custom: "Personalizados",
-  },
-  categorieslabel2: "",
-  skintones: { 1: "Tom padrão", 2: "Tom claro", 3: "Tom médio-claro", 4: "Tom médio", 5: "Tom médio-escuro", 6: "Tom escuro" },
-};
-
 const isImage = (f) => f && f.type && f.type.startsWith("image/");
 
-const MessageInput = ({ ticketStatus, historical, contactName, channel }) => {
+const MessageInput = ({ ticketStatus, historical, isGroup, contactName, channel }) => {
   const classes = useStyles();
   const emojiDark = useTheme().palette.type === "dark";
   const { ticketId } = useParams();
@@ -254,7 +187,8 @@ const MessageInput = ({ ticketStatus, historical, contactName, channel }) => {
   const { setReplyingMessage, replyingMessage } = useContext(ReplyMessageContext);
   const { user } = useContext(AuthContext);
   const [signMessage, setSignMessage] = useLocalStorage("signOption", true);
-  const open = ticketStatus === "open";
+  // groups and conversations from the phone's history are written in directly: the first message opens them
+  const open = ticketStatus === "open" || !!isGroup || !!historical;
 
   useEffect(() => {
     inputRef.current && inputRef.current.focus();
@@ -576,19 +510,9 @@ const MessageInput = ({ ticketStatus, historical, contactName, channel }) => {
             {showEmoji && (
               <div className={classes.emojiBox}>
                 <ClickAwayListener onClickAway={() => setShowEmoji(false)}>
-                  <Picker
-                    native
-                    perLine={8}
-                    emojiSize={26}
-                    emojiButtonSize={40}
-                    showPreview={false}
-                    showSkinTones={false}
-                    title=""
-                    color="#00a884"
-                    theme={emojiDark ? "dark" : "light"}
-                    i18n={EMOJI_PT}
-                    onSelect={(e) => setInputMessage((s) => s + e.native)}
-                  />
+                  <div>
+                    <EmojiPicker dark={emojiDark} onSelect={(emoji) => setInputMessage((s) => s + emoji)} />
+                  </div>
                 </ClickAwayListener>
               </div>
             )}

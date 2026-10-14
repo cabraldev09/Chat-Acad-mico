@@ -677,9 +677,14 @@ const sendReaction = async (
   emoji: string
 ): Promise<void> => {
   const wbot = getWbot(sessionId);
-  const message = await wbot.getMessageById(getSerializedMessageId(chatId, fromMe, messageId));
-  if (!message) throw new Error("message not found");
-  await message.react(emoji);
+  // same lookup as delete/edit: direct id first, then the recent messages of the chat (history copies, lid chats...)
+  const message = await findMessage(wbot, chatId, messageId, fromMe);
+  if (!message) throw new AppError("ERR_MESSAGE_NOT_ON_PHONE", 404);
+  try {
+    await message.react(emoji);
+  } catch (err) {
+    throw new AppError("ERR_REACTION_FAILED", 400);
+  }
 };
 
 const fetchChatMessages = async (

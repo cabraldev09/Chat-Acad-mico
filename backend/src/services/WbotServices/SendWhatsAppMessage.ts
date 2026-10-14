@@ -1,4 +1,5 @@
 import { chatIdOf } from "../../helpers/ChatId";
+import { previewOf } from "../../helpers/MessagePreview";
 import AppError from "../../errors/AppError";
 import Message from "../../models/Message";
 import Ticket from "../../models/Ticket";
@@ -56,7 +57,7 @@ const SendWhatsAppMessage = async ({
           quotedMsgId: quotedMsg?.id
         }
       });
-      await ticket.update({ lastMessage: text });
+      await ticket.update({ lastMessage: previewOf(text) });
       return {
         id: sent.id,
         body: text,
@@ -98,7 +99,7 @@ const SendWhatsAppMessage = async ({
     );
 
     recordSendResult(whatsapp, true);
-    await ticket.update({ lastMessage: body });
+    await ticket.update({ lastMessage: previewOf(body) });
     return sentMessage;
   } catch (err) {
     recordSendResult(whatsapp, false);

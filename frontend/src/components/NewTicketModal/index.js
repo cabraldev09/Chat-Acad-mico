@@ -70,7 +70,9 @@ const phoneLabel = (c) => {
 };
 
 // "Nova conversa": search first, then add a contact, recent chats and the full A–Z list.
-const NewTicketModal = ({ modalOpen, onClose }) => {
+// With onPick the same list serves other screens (for example "Enviar contato"): a click hands the contact over
+// instead of opening a conversation, and the "Novo contato" block can be hidden.
+const NewTicketModal = ({ modalOpen, onClose, title = "Nova conversa", onPick, hideNew }) => {
   const classes = useStyles();
   const history = useHistory();
   const { user } = useContext(AuthContext);
@@ -163,7 +165,7 @@ const NewTicketModal = ({ modalOpen, onClose }) => {
   };
 
   const row = (c) => (
-    <div key={c.id} className={classes.row} onClick={() => open(c.id)}>
+    <div key={c.id} className={classes.row} onClick={() => (onPick ? (onClose(), onPick(c)) : open(c.id))}>
       <Avatar className={classes.avatar} src={c.profilePicUrl}>
         {(c.name || "?").charAt(0).toUpperCase()}
       </Avatar>
@@ -202,7 +204,7 @@ const NewTicketModal = ({ modalOpen, onClose }) => {
       />
       <Dialog open={modalOpen} onClose={onClose} fullWidth maxWidth="xs" PaperProps={{ className: classes.paper }}>
         <div className={classes.top}>
-          <span className={classes.title}>Nova conversa</span>
+          <span className={classes.title}>{title}</span>
           <IconButton className={classes.close} size="small" onClick={onClose} aria-label="Fechar">
             <Close />
           </IconButton>
@@ -226,7 +228,7 @@ const NewTicketModal = ({ modalOpen, onClose }) => {
         </div>
 
         <div ref={bodyRef} className={classes.body} onScroll={onScroll}>
-          <div className={classes.card}>
+          {!hideNew && <div className={classes.card}>
             <div
               className={classes.row}
               onClick={() => {
@@ -241,7 +243,7 @@ const NewTicketModal = ({ modalOpen, onClose }) => {
                 <div className={classes.name}>{query.trim() ? `Adicionar “${query.trim()}” como novo contato` : "Novo contato"}</div>
               </div>
             </div>
-          </div>
+          </div>}
 
           {!searching && recents.length > 0 && (
             <>

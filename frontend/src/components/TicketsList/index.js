@@ -124,7 +124,14 @@ const reducer = (state, action) => {
 		const ticketIndex = state.findIndex(t => t.id === ticket.id);
 		if (ticketIndex !== -1) {
 			// socket payloads do not carry this person's pin: keep what the list already knows
-			state[ticketIndex] = { ...state[ticketIndex], ...ticket, pinned: state[ticketIndex].pinned };
+			const previous = state[ticketIndex];
+			const merged = { ...previous, ...ticket, pinned: previous.pinned };
+			// something newer happened (a reaction, a message): the conversation goes up, like WhatsApp
+			if (ticket.lastMessageAt && previous.lastMessageAt && new Date(ticket.lastMessageAt) > new Date(previous.lastMessageAt)) {
+				toTop(state, merged, ticketIndex);
+			} else {
+				state[ticketIndex] = merged;
+			}
 		} else {
 			toTop(state, ticket, -1);
 		}

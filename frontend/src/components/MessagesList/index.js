@@ -258,11 +258,19 @@ const useStyles = makeStyles((theme) => {
 const reducer = (state, action) => {
   if (action.type === "LOAD_MESSAGES") {
     const fresh = [];
+    let changed = false;
+    const sig = (m) => `${m.ack}|${m.reactions}|${m.isDeleted}|${m.body}|${m.starred}|${m.mediaUrl}|${m.isEdited}|${m.read}`;
     action.payload.forEach((message) => {
       const i = state.findIndex((m) => m.id === message.id);
-      if (i !== -1) state[i] = message;
-      else fresh.push(message);
+      if (i !== -1) {
+        // a periodic refresh that finds nothing new must not redraw the whole conversation
+        if (sig(state[i]) !== sig(message)) {
+          state[i] = message;
+          changed = true;
+        }
+      } else fresh.push(message);
     });
+    if (!fresh.length && !changed) return state;
     // older pages go in front, newer ones (a refresh after a gap) at the end: always in the order they were written
     return [...fresh, ...state].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
   }
@@ -395,6 +403,29 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
       socket.disconnect();
     };
   }, [ticketId, scrollToBottom]);
+
+  // pictures, videos and file previews change the height AFTER the list was scrolled to the end: while the person is at
+  // the end, keep them there as things load (otherwise the conversation "jumps" when it is opened)
+  useEffect(() => {
+    const el = listRef.current;
+    if (!el) return undefined;
+    const keep = () => {
+      if (atBottomRef.current) el.scrollTop = el.scrollHeight;
+    };
+    el.addEventListener("load", keep, true);
+    el.addEventListener("loadedmetadata", keep, true);
+    let observer;
+    if (typeof ResizeObserver !== "undefined") {
+      observer = new ResizeObserver(keep);
+      Array.from(el.children).forEach((child) => observer.observe(child));
+    }
+    return () => {
+      el.removeEventListener("load", keep, true);
+      el.removeEventListener("loadedmetadata", keep, true);
+      if (observer) observer.disconnect();
+    };
+    // the rows change with the messages
+  }, [messagesList.length, ticketId]);
 
   const onScroll = (e) => {
     const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;

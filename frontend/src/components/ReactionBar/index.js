@@ -1,8 +1,8 @@
 import React, { useState } from "react";
 import Popover from "@material-ui/core/Popover";
 import { makeStyles } from "@material-ui/core/styles";
-import { Picker } from "emoji-mart";
-import "emoji-mart/css/emoji-mart.css";
+import EmojiPicker from "../EmojiPicker";
+import { bumpEmoji, topEmojis } from "../../utils/emojiUsage";
 import { Plus, Smile } from "lucide-react";
 
 import api from "../../services/api";
@@ -25,7 +25,8 @@ const ReactionBar = ({ message, channel = "whatsapp", className }) => {
   const classes = useStyles();
   const [anchor, setAnchor] = useState(null);
   const [full, setFull] = useState(false);
-  const palette = REACTIONS[channel] || REACTIONS.whatsapp;
+  // WhatsApp: the six you use most; other channels keep their own fixed set
+  const palette = channel === "whatsapp" ? topEmojis(6) : REACTIONS[channel] || REACTIONS.whatsapp;
 
   let mine = null;
   try {
@@ -42,6 +43,7 @@ const ReactionBar = ({ message, channel = "whatsapp", className }) => {
     close();
     try {
       await api.post(`/messages/${message.id}/react`, { emoji: mine === emoji ? "" : emoji });
+      if (mine !== emoji) bumpEmoji(emoji);
     } catch (err) {
       toastError(err);
     }
@@ -53,6 +55,7 @@ const ReactionBar = ({ message, channel = "whatsapp", className }) => {
         <Smile size={17} />
       </button>
       <Popover
+        disableScrollLock
         open={Boolean(anchor)}
         anchorEl={anchor}
         onClose={close}
@@ -61,7 +64,7 @@ const ReactionBar = ({ message, channel = "whatsapp", className }) => {
         PaperProps={{ style: { borderRadius: full ? 12 : 999, overflow: "hidden" } }}
       >
         {full ? (
-          <Picker native perLine={8} emojiSize={24} emojiButtonSize={36} showPreview={false} showSkinTones={false} title="" onSelect={(e) => react(e.native)} />
+          <EmojiPicker onSelect={(emoji) => react(emoji)} perLine={8} />
         ) : (
           <div className={classes.bar}>
             {palette.map((e) => (

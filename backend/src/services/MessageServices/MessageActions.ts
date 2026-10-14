@@ -1,4 +1,8 @@
+import { Op } from "sequelize";
 import { chatIdOf } from "../../helpers/ChatId";
+import { previewOf } from "../../helpers/MessagePreview";
+import Contact from "../../models/Contact";
+import Tag from "../../models/Tag";
 import fs from "fs";
 import path from "path";
 import { Request } from "express";
@@ -61,6 +65,46 @@ export const applyReaction = async (id: string, emoji: string, fromMe: boolean, 
   if (emoji) next.push({ emoji, fromMe, sender });
   await message.update({ reactions: next.length ? JSON.stringify(next) : null });
   broadcast(message);
+
+  // somebody reacted to a message: the list says so ("Reagiu com ❤️ a “texto”") without opening the conversation
+  if (emoji && !fromMe && message.ticket) await announceReaction(message, emoji, sender);
+};
+
+const announceReaction = async (message: Message, emoji: string, sender: string): Promise<void> => {
+  try {
+    const { ticket } = message;
+    const key = String(sender || "").split("@")[0];
+    let who: string | null = null;
+    if (ticket.isGroup && key) {
+      const person = await Contact.findOne({ where: { [Op.or]: [{ number: key }, { lid: { [Op.like]: `${key}%` } }] } as any, attributes: ["name"] });
+      who = person ? person.name : null;
+    }
+    const raw = previewOf(String(message.body || ""), message.mediaType);
+    const labels: Record<string, string> = { image: "📷 Foto", video: "🎥 Vídeo", audio: "🎤 Áudio", document: "📄 Documento" };
+    const snippet = (message.mediaUrl && labels[message.mediaType] && (!raw || raw === message.mediaUrl) ? labels[message.mediaType] : raw).replace(/\s+/g, " ").slice(0, 40);
+    await Ticket.update(
+      {
+        lastMessage: `Reagiu com ${emoji} a “${snippet}”`,
+        lastMessageType: "reaction",
+        lastMessageFromMe: false,
+        lastMessageAuthor: who,
+        lastMessageAt: new Date(),
+        unreadMessages: (ticket.unreadMessages || 0) + 1
+      } as any,
+      { where: { id: ticket.id }, silent: true } as any
+    );
+    const fresh = await Ticket.findByPk(ticket.id, {
+      include: [
+        "contact",
+        "queue",
+        { model: Tag, as: "tags", attributes: ["id", "name", "color"], through: { attributes: [] } },
+        { model: Whatsapp, as: "whatsapp", attributes: ["name", "channel"] }
+      ]
+    });
+    if (fresh) getIO().to(fresh.status).to(String(fresh.id)).to("notification").emit("ticket", { action: "update", ticket: fresh });
+  } catch (err) {
+    // the preview is a courtesy: the reaction itself is already saved
+  }
 };
 
 export const reactToMessage = async (id: string, emoji: string): Promise<Message> => {
@@ -72,7 +116,13 @@ export const reactToMessage = async (id: string, emoji: string): Promise<Message
   if (channel === "whatsapp") {
     if (!whatsappProvider.sendReaction) throw new AppError("ERR_REACTION_UNSUPPORTED", 400);
     const chatId = chatIdOf(ticket.contact, ticket.isGroup);
-    await whatsappProvider.sendReaction(ticket.whatsappId, chatId, message.id, message.fromMe, emoji);
+    try {
+      await whatsappProvider.sendReaction(ticket.whatsappId, chatId, message.id, message.fromMe, emoji);
+    } catch (err) {
+      // whatever the phone side threw, the person gets a readable answer instead of "Erro interno"
+      if (err instanceof AppError) throw err;
+      throw new AppError("ERR_REACTION_FAILED", 400);
+    }
   } else {
     // Cloud API, Telegram, Messenger, Instagram: through the channel adapter
     const adapter = getAdapter(channel);

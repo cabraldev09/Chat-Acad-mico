@@ -23,6 +23,7 @@ import Whatsapp from "../models/Whatsapp";
 import Tag from "../models/Tag";
 import processOptOut from "../services/SafetyServices/OptOut";
 import { MessageType, MessageAck } from "../providers/WhatsApp/types";
+import { previewOf } from "../helpers/MessagePreview";
 
 const writeFileAsync = promisify(writeFile);
 
@@ -243,7 +244,7 @@ export const handleMessage = async (
       lastMessageText = processedMessage.body || mediaPayload?.filename || "";
     }
 
-    await ticket.update({ lastMessage: lastMessageText });
+    await ticket.update({ lastMessage: previewOf(lastMessageText, processedMessage.type) });
 
     await CreateMessageService({ messageData });
 

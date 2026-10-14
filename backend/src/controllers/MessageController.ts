@@ -4,9 +4,12 @@ import SetTicketMessagesAsRead from "../helpers/SetTicketMessagesAsRead";
 import { getIO } from "../libs/socket";
 import { Op } from "sequelize";
 import AppError from "../errors/AppError";
+import ActivateForSending from "../services/TicketServices/ActivateForSending";
 import CreateMessageService from "../services/MessageServices/CreateMessageService";
 import { whatsappProvider } from "../providers/WhatsApp";
 import { chatIdOf } from "../helpers/ChatId";
+import Contact from "../models/Contact";
+import { previewOf } from "../helpers/MessagePreview";
 import Message from "../models/Message";
 
 import ListMessagesService from "../services/MessageServices/ListMessagesService";
@@ -50,6 +53,7 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
   const medias = req.files as Express.Multer.File[];
 
   const ticket = await ShowTicketService(ticketId);
+  await ActivateForSending(ticket, Number(req.user.id));
 
   SetTicketMessagesAsRead(ticket);
 
@@ -155,6 +159,7 @@ export const loadMedia = async (req: Request, res: Response): Promise<Response> 
 // Sends a poll (WhatsApp only). The phone does not report polls back as messages, so the system keeps its own line.
 export const sendPoll = async (req: Request, res: Response): Promise<Response> => {
   const ticket = await ShowTicketService(req.params.ticketId);
+  await ActivateForSending(ticket, Number(req.user.id));
   if ((ticket.whatsapp?.channel || "whatsapp") !== "whatsapp" || !whatsappProvider.sendPoll) throw new AppError("ERR_POLL_UNSUPPORTED", 400);
   const title = String(req.body.title || "").trim().slice(0, 140);
   const options: string[] = (Array.isArray(req.body.options) ? req.body.options : [])
@@ -174,5 +179,29 @@ export const sendPoll = async (req: Request, res: Response): Promise<Response> =
     messageData: { id: sent.id, ticketId: ticket.id, body, fromMe: true, read: true, mediaType: "chat", ack: 1 }
   });
   await ticket.update({ lastMessage: `📊 ${title}` });
+  return res.status(201).json(message);
+};
+
+// Sends a contact card. The card is built here from the contact record and the message is stored at once (the screen
+// does not wait for the phone to report it back), without the human-like pause meant for bulk sending.
+export const sendContact = async (req: Request, res: Response): Promise<Response> => {
+  const ticket = await ShowTicketService(req.params.ticketId);
+  await ActivateForSending(ticket, Number(req.user.id));
+  if ((ticket.whatsapp?.channel || "whatsapp") !== "whatsapp") throw new AppError("ERR_CONTACT_CARD_UNSUPPORTED", 400);
+  const contact = await Contact.findByPk(Number(req.body.contactId), { attributes: ["id", "name", "number", "isGroup"] });
+  if (!contact || contact.isGroup || !contact.number || !/^\d{8,15}$/.test(contact.number)) throw new AppError("ERR_NO_CONTACT_FOUND", 404);
+
+  const name = contact.name.replace(/[\r\n]+/g, " ").trim();
+  const card = `BEGIN:VCARD\nVERSION:3.0\nFN:${name}\nTEL;type=CELL;waid=${contact.number}:+${contact.number}\nEND:VCARD`;
+  let sent;
+  try {
+    sent = await whatsappProvider.sendMessage(ticket.whatsappId, chatIdOf(ticket.contact, ticket.isGroup), card, { linkPreview: false });
+  } catch (err) {
+    throw new AppError("ERR_SENDING_WAPP_MSG");
+  }
+  const message = await CreateMessageService({
+    messageData: { id: sent.id, ticketId: ticket.id, body: card, fromMe: true, read: true, mediaType: "vcard", ack: 1 }
+  });
+  await ticket.update({ lastMessage: previewOf(card, "vcard") });
   return res.status(201).json(message);
 };
