@@ -13,8 +13,12 @@ import quickAnswerRoutes from "./quickAnswerRoutes";
 import apiRoutes from "./apiRoutes";
 import extraRoutes from "./extraRoutes";
 import apiV1Routes from "./apiV1Routes";
+import { clearCacheOnChange } from "../middleware/refCache";
 
 const routes = Router();
+
+// a saved change anywhere clears the short-lived cache of reference data
+routes.use(clearCacheOnChange);
 
 routes.use(userRoutes);
 routes.use("/auth", authRoutes);

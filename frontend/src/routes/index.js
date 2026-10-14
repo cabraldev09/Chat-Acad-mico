@@ -1,40 +1,57 @@
-import React from "react";
+import React, { Suspense, lazy, useEffect } from "react";
 import { BrowserRouter, Switch } from "react-router-dom";
 import { ToastContainer } from "react-toastify";
 
 import LoggedInLayout from "../layout";
-import Dashboard from "../pages/Dashboard/";
-import Tickets from "../pages/Tickets/";
 import Signup from "../pages/Signup/";
 import Login from "../pages/Login/";
-import Connections from "../pages/Connections/";
-import Settings from "../pages/Settings/";
-import Polos from "../pages/Polos";
-import Onboarding from "../pages/Onboarding";
-import Users from "../pages/Users";
-import Contacts from "../pages/Contacts/";
-import QuickAnswers from "../pages/QuickAnswers/";
-import Queues from "../pages/Queues/";
-import Tags from "../pages/Tags/";
-import Schedules from "../pages/Schedules/";
-import Campaigns from "../pages/Campaigns/";
-import Chatbot from "../pages/Chatbot/";
-import AiAgents from "../pages/AiAgents/";
-import Webhooks from "../pages/Webhooks/";
-import Reports from "../pages/Reports/";
-import LiveMonitor from "../pages/LiveMonitor/";
-import CrmBoard from "../pages/CRM/Board";
-import CrmPanel from "../pages/CRM/Panel";
-import CrmTasks from "../pages/CRM/Tasks";
-import CrmSettings from "../pages/CRM/Settings";
-import Affiliates from "../pages/Affiliates";
 import { AuthProvider } from "../context/Auth/AuthContext";
 import { WhatsAppsProvider } from "../context/WhatsApp/WhatsAppsContext";
 import { ThemeProvider } from "../context/DarkMode";
-import AffiliatePortal from "../pages/AffiliatePortal";
+import BackdropLoading from "../components/BackdropLoading";
 import Route from "./Route";
 
+// every page is its own file: the first screen downloads only what it shows
+const Dashboard = lazy(() => import("../pages/Dashboard/"));
+const Tickets = lazy(() => import("../pages/Tickets/"));
+const Connections = lazy(() => import("../pages/Connections/"));
+const Settings = lazy(() => import("../pages/Settings/"));
+const Polos = lazy(() => import("../pages/Polos"));
+const Onboarding = lazy(() => import("../pages/Onboarding"));
+const Users = lazy(() => import("../pages/Users"));
+const Contacts = lazy(() => import("../pages/Contacts/"));
+const QuickAnswers = lazy(() => import("../pages/QuickAnswers/"));
+const Queues = lazy(() => import("../pages/Queues/"));
+const Tags = lazy(() => import("../pages/Tags/"));
+const Schedules = lazy(() => import("../pages/Schedules/"));
+const Campaigns = lazy(() => import("../pages/Campaigns/"));
+const Chatbot = lazy(() => import("../pages/Chatbot/"));
+const AiAgents = lazy(() => import("../pages/AiAgents/"));
+const Webhooks = lazy(() => import("../pages/Webhooks/"));
+const Reports = lazy(() => import("../pages/Reports/"));
+const LiveMonitor = lazy(() => import("../pages/LiveMonitor/"));
+const CrmBoard = lazy(() => import("../pages/CRM/Board"));
+const CrmPanel = lazy(() => import("../pages/CRM/Panel"));
+const CrmTasks = lazy(() => import("../pages/CRM/Tasks"));
+const CrmSettings = lazy(() => import("../pages/CRM/Settings"));
+const Affiliates = lazy(() => import("../pages/Affiliates"));
+const AffiliatePortal = lazy(() => import("../pages/AffiliatePortal"));
+// Switch only looks at direct <Route> children, so the Suspense lives inside the page component
+const AffiliatePortalPage = (props) => (
+  <Suspense fallback={<BackdropLoading />}>
+    <AffiliatePortal {...props} />
+  </Suspense>
+);
+
+// the two pages everyone opens next are fetched in the background right after the first paint
+const warmUp = () => {
+  const go = () => { import("../pages/Tickets/"); import("../pages/Dashboard/"); };
+  if (typeof window.requestIdleCallback === "function") window.requestIdleCallback(go, { timeout: 4000 });
+  else setTimeout(go, 2000);
+};
+
 const Routes = () => {
+  useEffect(() => { warmUp(); }, []);
   return (
     <BrowserRouter>
       <AuthProvider>
@@ -42,9 +59,10 @@ const Routes = () => {
           <Switch>
             <Route exact path="/login" component={Login} />
             <Route exact path="/signup" component={Signup} />
-            <Route exact path="/afiliado/:token" component={AffiliatePortal} publicPage />
+            <Route exact path="/afiliado/:token" component={AffiliatePortalPage} publicPage />
             <WhatsAppsProvider>
               <LoggedInLayout>
+                <Suspense fallback={<BackdropLoading />}>
                 <Route exact path="/" component={Dashboard} isPrivate />
                 <Route exact path="/tickets/:ticketId?" component={Tickets} isPrivate />
                 <Route exact path="/connections" component={Connections} isPrivate />
@@ -68,6 +86,7 @@ const Routes = () => {
                 <Route exact path="/crm/tarefas" component={CrmTasks} isPrivate />
                 <Route exact path="/afiliados" component={Affiliates} isPrivate />
                 <Route exact path="/crm/config" component={CrmSettings} isPrivate adminOnly />
+                </Suspense>
               </LoggedInLayout>
             </WhatsAppsProvider>
           </Switch>

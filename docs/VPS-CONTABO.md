@@ -36,6 +36,8 @@ O script instala Docker, firewall e 4 GB de memória extra, baixa o código, faz
 | DATABASE_URL | Supabase → **Connect → Session pooler** (porta **5432**, não 6543) |
 | E-mail e senha do administrador | os que você vai usar para entrar |
 
+**Velocidade com muitos usuários:** em `/opt/chat-academico/deploy/vps/.env` acrescente `DATABASE_URL_POOL` com o endereço do **Transaction pooler** (porta **6543**) e rode `./update.sh --force`. A API passa a atender as requisições por ele (pool de 12 conexões); o lock do WhatsApp e as migrações seguem na `DATABASE_URL` (porta 5432). `curl https://SEU-ENDERECO/health` mostra o pool (`using`, `waiting`): `waiting` acima de zero por muito tempo indica pool pequeno.
+
 A senha do banco e a do administrador são digitadas por você no servidor e ficam só no arquivo `/opt/chat-academico/deploy/vps/.env`.
 
 Ao terminar, aparece **PRONTO** e `{"ok":true,...}`.

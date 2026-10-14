@@ -2,6 +2,7 @@ import express from "express";
 import multer from "multer";
 
 import isAuth from "../middleware/isAuth";
+import { cached } from "../middleware/refCache";
 import { crmReport } from "../controllers/ReportController";
 import * as Preferences from "../controllers/PreferencesController";
 import canManageWhatsapp from "../middleware/canManageWhatsapp";
@@ -78,7 +79,7 @@ r.post("/affiliate-campaigns/:id/release", isAuth, affiliateStaff, AffMat.releas
 r.get("/dashboard", isAuth, Dashboard.index);
 
 // tags
-r.get("/tags", isAuth, Tag.index);
+r.get("/tags", isAuth, cached(), Tag.index);
 r.post("/tags", isAuth, isAdmin, Tag.store);
 r.put("/tags/:id", isAuth, isAdmin, Tag.update);
 r.delete("/tags/:id", isAuth, isAdmin, Tag.remove);
@@ -165,7 +166,7 @@ r.get("/channels/:whatsappId/safety", isAuth, Channel.safety);
 r.get("/channels/:whatsappId/groups", isAuth, canManageWhatsapp, Channel.groups);
 
 // polos (branches) and the team of each one
-r.get("/polos", isAuth, PoloCtl.index);
+r.get("/polos", isAuth, cached(), PoloCtl.index);
 r.get("/polos/:id/tutors", isAuth, PoloCtl.tutors);
 r.post("/polos", isAuth, isAdmin, PoloCtl.store);
 r.post("/polos/import", isAuth, isAdmin, PoloCtl.importPolos);
@@ -174,7 +175,7 @@ r.put("/polos/:id/members", isAuth, isAdmin, PoloCtl.setMembers);
 r.delete("/polos/:id", isAuth, isAdmin, PoloCtl.remove);
 
 // ------------------------------------------------------------------- CRM
-r.get("/crm/options", isAuth, Lead.options);
+r.get("/crm/options", isAuth, cached(), Lead.options);
 r.get("/crm/board", isAuth, Lead.board);
 r.get("/crm/metrics", isAuth, Lead.metrics);
 r.get("/crm/report", isAuth, crmReport);
@@ -183,11 +184,11 @@ r.put("/me/preferences", isAuth, Preferences.update);
 r.post("/crm/backfill", isAuth, isAdmin, Lead.backfill);
 r.get("/crm/settings", isAuth, isAdmin, Lead.getSettings);
 r.put("/crm/settings", isAuth, isAdmin, Lead.putSettings);
-r.get("/lead-stages", isAuth, Lead.stages.index);
+r.get("/lead-stages", isAuth, cached(), Lead.stages.index);
 r.post("/lead-stages", isAuth, isAdmin, Lead.stages.store);
 r.put("/lead-stages/:id", isAuth, isAdmin, Lead.stages.update);
 r.delete("/lead-stages/:id", isAuth, isAdmin, Lead.stages.remove);
-r.get("/courses", isAuth, Lead.courses.index);
+r.get("/courses", isAuth, cached(), Lead.courses.index);
 r.post("/courses", isAuth, isAdmin, Lead.courses.store);
 r.put("/courses/:id", isAuth, isAdmin, Lead.courses.update);
 r.delete("/courses/:id", isAuth, isAdmin, Lead.courses.remove);

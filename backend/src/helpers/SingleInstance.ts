@@ -9,12 +9,14 @@ import { logger } from "../utils/logger";
 // the workers; the others keep serving the API and wait.
 //
 // Needs a session-level connection (Supabase: direct 5432 or the session
-// pooler, NOT the transaction pooler on 6543).
+// pooler, NOT the transaction pooler on 6543). DATABASE_URL_POOL, when set,
+// only changes where the API's requests go; this lock keeps using DATABASE_URL.
 const LOCK_KEY = 7420131;
 const RETRY_MS = 15000;
 
 const connect = async (): Promise<any> => {
-  const cfg = require("../config/database");
+  // the lock needs a session-level connection: DATABASE_URL, never the transaction pooler
+  const cfg = { ...require("../config/database"), ...(require("../config/database").lock || {}) };
   const client = new Client({
     host: cfg.host,
     port: cfg.port || 5432,

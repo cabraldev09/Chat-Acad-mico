@@ -1096,7 +1096,10 @@ CREATE TABLE public."Payments" (
     "recipientUserId" integer,
     "recipientCode" character varying(255),
     "splitPct" integer,
-    "reminderTaskId" integer
+    "reminderTaskId" integer,
+    "commissionSettledAt" timestamp with time zone,
+    "commissionSettledBy" integer,
+    "commissionNote" text
 );
 
 
@@ -2670,6 +2673,13 @@ CREATE INDEX leads_affiliate_id ON public."Leads" USING btree ("affiliateId");
 
 
 --
+-- Name: leads_contact_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX leads_contact_idx ON public."Leads" USING btree ("contactId");
+
+
+--
 -- Name: leads_cpf; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2712,6 +2722,20 @@ CREATE INDEX leads_stage_id ON public."Leads" USING btree ("stageId");
 
 
 --
+-- Name: leads_won_at_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX leads_won_at_idx ON public."Leads" USING btree ("wonAt") WHERE ("wonAt" IS NOT NULL);
+
+
+--
+-- Name: messages_contact_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX messages_contact_idx ON public."Messages" USING btree ("contactId") WHERE ("contactId" IS NOT NULL);
+
+
+--
 -- Name: messages_ticket_created_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2719,10 +2743,24 @@ CREATE INDEX messages_ticket_created_idx ON public."Messages" USING btree ("tick
 
 
 --
+-- Name: messages_ticket_unread_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX messages_ticket_unread_idx ON public."Messages" USING btree ("ticketId") WHERE ((read = false) AND ("fromMe" = false));
+
+
+--
 -- Name: payments_lead_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX payments_lead_id ON public."Payments" USING btree ("leadId");
+
+
+--
+-- Name: payments_recipient_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX payments_recipient_idx ON public."Payments" USING btree ("recipientUserId", status);
 
 
 --
@@ -2754,10 +2792,24 @@ CREATE INDEX proposals_affiliate_id ON public."Proposals" USING btree ("affiliat
 
 
 --
+-- Name: ticket_events_ticket_created_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ticket_events_ticket_created_idx ON public."TicketEvents" USING btree ("ticketId", "createdAt");
+
+
+--
 -- Name: ticket_events_ticket_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX ticket_events_ticket_id ON public."TicketEvents" USING btree ("ticketId");
+
+
+--
+-- Name: tickets_contact_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX tickets_contact_idx ON public."Tickets" USING btree ("contactId");
 
 
 --
@@ -2772,6 +2824,34 @@ CREATE INDEX tickets_last_message_at_idx ON public."Tickets" USING btree ("lastM
 --
 
 CREATE INDEX tickets_lead_id ON public."Tickets" USING btree ("leadId");
+
+
+--
+-- Name: tickets_queue_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX tickets_queue_idx ON public."Tickets" USING btree ("queueId");
+
+
+--
+-- Name: tickets_status_last_message_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX tickets_status_last_message_idx ON public."Tickets" USING btree (status, "lastMessageAt" DESC);
+
+
+--
+-- Name: tickets_user_status_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX tickets_user_status_idx ON public."Tickets" USING btree ("userId", status);
+
+
+--
+-- Name: tickets_whatsapp_contact_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX tickets_whatsapp_contact_idx ON public."Tickets" USING btree ("whatsappId", "contactId");
 
 
 --
@@ -3668,6 +3748,8 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261102000004-merge-duplicate-ticke
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261103000001-clean-vcard-preview.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261103000002-contact-kind.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261103000003-default-quick-answers.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261104000001-performance-indexes.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261104000002-commission-settlement.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

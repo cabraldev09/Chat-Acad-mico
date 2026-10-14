@@ -6,9 +6,9 @@ require("../bootstrap");
 //   DB_SSL=true                                        (Supabase needs SSL)
 // Every timestamp is stored in UTC; the company timezone (APP_TIMEZONE /
 // Setting "appTimezone") is applied only when dates are shown or day-bounded.
-const fromUrl = (): Record<string, any> => {
-  if (!process.env.DATABASE_URL) return {};
-  const u = new URL(process.env.DATABASE_URL);
+const fromUrl = (raw = process.env.DATABASE_URL): Record<string, any> => {
+  if (!raw) return {};
+  const u = new URL(raw);
   return {
     host: u.hostname,
     port: u.port ? Number(u.port) : undefined,
@@ -38,15 +38,33 @@ module.exports = {
   database: process.env.DB_NAME,
   username: process.env.DB_USER,
   password: process.env.DB_PASS,
-  ...fromUrl(),
+  // DATABASE_URL_POOL (optional): the same database through Supabase's transaction pooler (port 6543) for the API's
+  // requests. The leader lock and the migrations need a session connection, so they keep using DATABASE_URL (see `lock`).
+  ...fromUrl(process.env.DATABASE_URL_POOL || process.env.DATABASE_URL),
+  lock: fromUrl(process.env.DATABASE_URL),
   dialectOptions: useSsl
     ? { ssl: { require: true, rejectUnauthorized: false } }
     : {},
-  // Supabase's session pooler allows only ~15 simultaneous connections per project, and a deploy briefly
-  // runs two copies of the API: keep the pool small there
+  // Supabase offers two poolers: "session" (port 5432) allows only ~15 connections for the whole project, and a deploy
+  // briefly runs two copies of the API, so the pool stays small there. "Transaction" (port 6543) serves many clients
+  // from few connections, so the pool can be larger and requests do not queue behind each other.
   pool: {
-    max: Number(process.env.DB_POOL_MAX || (/pooler\.supabase\.com/.test(process.env.DATABASE_URL || "") ? 4 : 10)),
-    idle: 10000
+    max: Number(
+      process.env.DB_POOL_MAX ||
+        (/pooler\.supabase\.com/.test(process.env.DATABASE_URL_POOL || process.env.DATABASE_URL || "")
+          ? /:6543\//.test(process.env.DATABASE_URL_POOL || process.env.DATABASE_URL || "") ? 12 : 4
+          : 10)
+    ),
+    idle: 10000,
+    acquire: 30000
   },
-  logging: false
+  // queries slower than SLOW_QUERY_MS (default 400) are written to the log with the time they took
+  benchmark: true,
+  logging: (sql: string, ms?: number) => {
+    const limit = Number(process.env.SLOW_QUERY_MS || 400);
+    if (typeof ms === "number" && ms >= limit) {
+      // eslint-disable-next-line no-console
+      console.warn(`[slow-query] ${Math.round(ms)}ms ${String(sql).replace(/\s+/g, " ").slice(0, 300)}`);
+    }
+  }
 };
