@@ -11,7 +11,7 @@ ENV CHROME_BIN=/usr/bin/chromium \
     PUPPETEER_SKIP_DOWNLOAD=true \
     PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
     NODE_ENV=production \
-    NODE_OPTIONS=--max-old-space-size=1024 \
+    NODE_OPTIONS=--max-old-space-size=384 \
     WHATSAPP_PROVIDER=wwebjs \
     CHROME_ARGS="--no-sandbox --disable-setuid-sandbox --disable-dev-shm-usage --disable-gpu --no-zygote"
 

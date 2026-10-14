@@ -516,6 +516,16 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
           "--no-first-run",
           "--no-zygote",
           "--disable-gpu",
+          // lighter and faster on a small server: nothing the WhatsApp session does not need
+          "--disable-extensions",
+          "--disable-background-networking",
+          "--disable-default-apps",
+          "--disable-sync",
+          "--disable-translate",
+          "--metrics-recording-only",
+          "--mute-audio",
+          "--no-default-browser-check",
+          "--disable-features=Translate,MediaRouter,OptimizationHints,BackForwardCache",
           ...args.split(" ")
         ]
       }
