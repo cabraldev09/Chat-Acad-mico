@@ -9,6 +9,8 @@ import {
 } from "whatsapp-web.js";
 import { applyReaction } from "../../../services/MessageServices/MessageActions";
 import { WWEBJS_AUTH_DIR } from "../../../config/paths";
+import fs from "fs";
+import path from "path";
 import { onDisconnected } from "../../../services/SafetyServices/SendGuard";
 import { getIO } from "../../../libs/socket";
 import Whatsapp from "../../../models/Whatsapp";
@@ -575,6 +577,20 @@ const deleteMessage = async (
   await message.delete(true);
 };
 
+// A container that was stopped (deploy, restart) leaves Chromium's "profile in use" markers behind, tied to the old
+// container's hostname. The next start then refuses to open the saved session. Only one process owns each
+// session here (leader lock), so the markers are always stale at this point.
+const clearStaleBrowserLocks = (whatsappId: number): void => {
+  const profile = path.join(WWEBJS_AUTH_DIR, `session-bd_${whatsappId}`);
+  ["SingletonLock", "SingletonCookie", "SingletonSocket"].forEach(name => {
+    try {
+      fs.rmSync(path.join(profile, name), { force: true });
+    } catch (err) {
+      logger.warn(`Could not remove ${name} of session ${whatsappId}`);
+    }
+  });
+};
+
 const init = async (whatsapp: Whatsapp): Promise<void> => {
   try {
     removeSession(whatsapp.id);
@@ -583,6 +599,8 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
     const sessionName = whatsapp.name;
 
     const args: string = process.env.CHROME_ARGS || "";
+
+    clearStaleBrowserLocks(whatsapp.id);
 
     const wbot: Session = new Client({
       authStrategy: new LocalAuth({ clientId: `bd_${whatsapp.id}`, dataPath: WWEBJS_AUTH_DIR }),
