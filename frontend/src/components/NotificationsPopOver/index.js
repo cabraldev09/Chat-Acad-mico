@@ -107,6 +107,27 @@ const NotificationsPopOver = () => {
 	const [notifications, setNotifications] = useState([]);
 
 	const [, setDesktopNotifications] = useState([]);
+	const [mutedUntil, setMutedUntilState] = useState(readMutedUntil);
+	const mutedRef = useRef(mutedUntil);
+
+	const setMutedUntil = until => {
+		mutedRef.current = until;
+		setMutedUntilState(until);
+		try {
+			if (until) localStorage.setItem(MUTE_KEY, String(until));
+			else localStorage.removeItem(MUTE_KEY);
+		} catch (e) {
+			/* private window: the setting only lasts until the page is closed */
+		}
+	};
+
+	// turns notifications back on by itself when the chosen time ends
+	useEffect(() => {
+		if (!mutedUntil || mutedUntil === FOREVER) return undefined;
+		const wait = Math.max(mutedUntil - Date.now(), 0) + 500;
+		const timer = setTimeout(() => setMutedUntil(0), Math.min(wait, 2147483000));
+		return () => clearTimeout(timer);
+	}, [mutedUntil]);
 
 	const { tickets } = useTickets({ withUnreadMessages: "true" });
 	const [play] = useSound(alertSound);
@@ -195,6 +216,8 @@ const NotificationsPopOver = () => {
 	}, [user]);
 
 	const handleNotifications = data => {
+		if (mutedRef.current && mutedRef.current > Date.now()) return;
+		if (isTicketMuted(data.ticket.id)) return;
 		const { message, contact, ticket } = data;
 
 		const options = {

@@ -202,7 +202,7 @@ const Contacts = () => {
           ? `${data.imported} contatos importados do seu WhatsApp.`
           : "Nenhum contato novo: todos os contatos salvos no seu WhatsApp já estão aqui."
       );
-      setContacts({ type: "RESET" });
+      dispatch({ type: "RESET" });
       setPageNumber(1);
       setSearchParam("");
     } catch (err) {
