@@ -14,9 +14,13 @@ import { AuthContext } from "../../context/Auth/AuthContext";
 import { Link } from "react-router-dom";
 
 const useStyles = makeStyles(theme => ({
+	// fills the width of its container: without this the list shrank to the width of its longest message
 	ticketsListWrapper: {
 		position: "relative",
 		display: "flex",
+		flex: "1 1 auto",
+		width: "100%",
+		minWidth: 0,
 		height: "100%",
 		flexDirection: "column",
 		overflow: "hidden",
@@ -24,7 +28,8 @@ const useStyles = makeStyles(theme => ({
 
 	ticketsList: {
 		flex: 1,
-		overflowY: "scroll",
+		minWidth: 0,
+		overflowY: "auto",
 		...theme.scrollbarStyles,
 	},
 
