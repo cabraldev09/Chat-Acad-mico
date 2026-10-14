@@ -18,6 +18,7 @@ interface MessageData {
   mediaUrl?: string;
   ack?: number;
   quotedMsgId?: string;
+  createdAt?: Date;
 }
 interface Request {
   messageData: MessageData;

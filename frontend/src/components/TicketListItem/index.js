@@ -10,7 +10,8 @@ import Menu from "@material-ui/core/Menu";
 import MenuItem from "@material-ui/core/MenuItem";
 import ListItemIcon from "@material-ui/core/ListItemIcon";
 import ListItemText from "@material-ui/core/ListItemText";
-import { Pin, PinOff, Archive, ArchiveRestore, ChevronDown } from "lucide-react";
+import { Pin, PinOff, Archive, ArchiveRestore, ChevronDown, BellOff } from "lucide-react";
+import { isTicketMuted } from "../../utils/muteStore";
 
 import ChannelIcon from "../ChannelIcon";
 import api from "../../services/api";
@@ -181,6 +182,13 @@ const TicketListItem = ({ ticket }) => {
   };
 
   const [menuEl, setMenuEl] = useState(null);
+  const [muted, setMuted] = useState(() => isTicketMuted(ticket.id));
+  useEffect(() => {
+    const refresh = () => setMuted(isTicketMuted(ticket.id));
+    refresh();
+    window.addEventListener("ticketMuteChanged", refresh);
+    return () => window.removeEventListener("ticketMuteChanged", refresh);
+  }, [ticket.id]);
   const run = async (e, fn) => {
     e.stopPropagation();
     setMenuEl(null);
@@ -231,6 +239,11 @@ const TicketListItem = ({ ticket }) => {
           <span className={classes.preview} style={unread ? { color: undefined, fontWeight: 500 } : undefined}>
             {plain(ticket.lastMessage) || "Sem mensagens"}
           </span>
+          {muted && (
+            <Tooltip arrow title="Conversa silenciada">
+              <span className={classes.pin}><BellOff size={14} /></span>
+            </Tooltip>
+          )}
           {ticket.pinned && (
             <Tooltip arrow title="Fixada no topo">
               <span className={classes.pin}><Pin size={14} /></span>

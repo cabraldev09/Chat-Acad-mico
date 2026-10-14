@@ -1,11 +1,13 @@
 import React, { useContext, useEffect, useState } from "react";
-import { Pin, PinOff, Archive, ArchiveRestore } from "lucide-react";
+import { Pin, PinOff, Archive, ArchiveRestore, Bell, BellOff, Undo2, CheckCircle2, UserCheck, RotateCcw } from "lucide-react";
 import { toast } from "react-toastify";
 import { useHistory } from "react-router-dom";
 import { makeStyles } from "@material-ui/core/styles";
 import Avatar from "@material-ui/core/Avatar";
 import IconButton from "@material-ui/core/IconButton";
 import Tooltip from "@material-ui/core/Tooltip";
+import Menu from "@material-ui/core/Menu";
+import MenuItem from "@material-ui/core/MenuItem";
 import CircularProgress from "@material-ui/core/CircularProgress";
 import ArrowBack from "@material-ui/icons/ArrowBack";
 import Search from "@material-ui/icons/Search";
@@ -22,6 +24,7 @@ import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import { AuthContext } from "../../context/Auth/AuthContext";
 import { wa } from "./chatTheme";
+import { FOREVER, MUTE_CHOICES, getTicketMute, muteTicket, unmuteTicket } from "../../utils/muteStore";
 
 const useStyles = makeStyles((theme) => {
   const c = wa(theme);
@@ -80,6 +83,7 @@ const useStyles = makeStyles((theme) => {
       "&:disabled": { opacity: 0.6, cursor: "default" },
       [theme.breakpoints.down("xs")]: { padding: "0 10px" },
     },
+    btnLabel: { [theme.breakpoints.down("sm")]: { display: "none" } },
     primary: { backgroundColor: c.accent, borderColor: c.accent, color: "#fff", "&:hover": { backgroundColor: c.accent, filter: "brightness(1.08)" } },
     tag: { display: "inline-block", marginLeft: 6, padding: "0 7px", borderRadius: 999, fontSize: 11, color: "#fff" },
   };
@@ -98,6 +102,21 @@ const ChatHeader = ({ contact, ticket, onOpenInfo, onToggleSearch, typing }) => 
   useEffect(() => setPinned(!!ticket.pinned), [ticket.id, ticket.pinned]);
 
   const closeConversation = () => history.push("/tickets");
+
+  const [muteEl, setMuteEl] = useState(null);
+  const [mutedUntil, setMutedUntil] = useState(() => getTicketMute(ticket.id));
+  useEffect(() => {
+    const refresh = () => setMutedUntil(getTicketMute(ticket.id));
+    refresh();
+    window.addEventListener("ticketMuteChanged", refresh);
+    return () => window.removeEventListener("ticketMuteChanged", refresh);
+  }, [ticket.id]);
+  const muted = mutedUntil > Date.now();
+  const muteHint = !muted
+    ? "Silenciar esta conversa"
+    : mutedUntil === FOREVER
+    ? "Silenciada até você reativar"
+    : `Silenciada até ${new Date(mutedUntil).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}`;
 
   // Esc leaves the conversation (like WhatsApp Web), unless a dialog, menu or picker is open
   useEffect(() => {
@@ -137,6 +156,13 @@ const ChatHeader = ({ contact, ticket, onOpenInfo, onToggleSearch, typing }) => 
     setLoading(true);
     try {
       await api.put(`/tickets/${ticket.id}`, { status, userId: userId || null });
+      toast.success(
+        {
+          open: ticket.status === "closed" ? "Atendimento reaberto. A conversa voltou para você." : "Você assumiu o atendimento.",
+          pending: "Conversa devolvida à fila. Outro atendente pode assumir.",
+          closed: "Atendimento finalizado. Se o contato escrever de novo, a conversa reabre.",
+        }[status]
+      );
       history.push(status === "open" ? `/tickets/${ticket.id}` : "/tickets");
     } catch (err) {
       toastError(err);
@@ -144,11 +170,15 @@ const ChatHeader = ({ contact, ticket, onOpenInfo, onToggleSearch, typing }) => 
     setLoading(false);
   };
 
-  const button = (label, onClick, primary) => (
-    <button type="button" className={`${classes.btn} ${primary ? classes.primary : ""}`} disabled={loading} onClick={onClick}>
-      {loading && <CircularProgress size={13} color="inherit" />}
-      {label}
-    </button>
+  const button = (label, onClick, primary, icon, hint) => (
+    <Tooltip title={hint || ""}>
+      <span>
+        <button type="button" className={`${classes.btn} ${primary ? classes.primary : ""}`} disabled={loading} onClick={onClick} aria-label={label}>
+          {loading ? <CircularProgress size={13} color="inherit" /> : icon}
+          <span className={classes.btnLabel}>{label}</span>
+        </button>
+      </span>
+    </Tooltip>
   );
 
   const subtitle = [
@@ -184,14 +214,16 @@ const ChatHeader = ({ contact, ticket, onOpenInfo, onToggleSearch, typing }) => 
         </div>
       </div>
       <div className={classes.actions}>
-        {ticket.status === "pending" && button("Aceitar", () => setStatus("open", user?.id), true)}
+        {ticket.status === "pending" &&
+          button("Aceitar atendimento", () => setStatus("open", user?.id), true, <UserCheck size={16} />, "Assumir esta conversa: ela passa a ser sua")}
         {ticket.status === "open" && (
           <>
-            {button("Devolver", () => setStatus("pending", null))}
-            {button("Resolver", () => setStatus("closed", user?.id), true)}
+            {button("Devolver à fila", () => setStatus("pending", null), false, <Undo2 size={16} />, "A conversa deixa de ser sua e volta para Aguardando, para outro atendente assumir")}
+            {button("Finalizar atendimento", () => setStatus("closed", user?.id), true, <CheckCircle2 size={16} />, "Encerra a conversa. Se o contato escrever de novo, ela reabre")}
           </>
         )}
-        {ticket.status === "closed" && button("Reabrir", () => setStatus("open", user?.id), true)}
+        {ticket.status === "closed" &&
+          button("Reabrir atendimento", () => setStatus("open", user?.id), true, <RotateCcw size={16} />, "Traz a conversa de volta para você")}
         <Tooltip title="Pesquisar na conversa">
           <IconButton className={classes.icon} onClick={onToggleSearch}>
             <Search />
@@ -209,6 +241,36 @@ const ChatHeader = ({ contact, ticket, onOpenInfo, onToggleSearch, typing }) => 
                 <ScheduleIcon />
               </IconButton>
             </Tooltip>
+            <Tooltip title={muteHint}>
+              <IconButton className={classes.icon} onClick={(e) => setMuteEl(e.currentTarget)} aria-label="Silenciar conversa" style={muted ? { color: "#ed6c02" } : undefined}>
+                {muted ? <BellOff size={20} /> : <Bell size={20} />}
+              </IconButton>
+            </Tooltip>
+            <Menu anchorEl={muteEl} open={Boolean(muteEl)} onClose={() => setMuteEl(null)} getContentAnchorEl={null} anchorOrigin={{ vertical: "bottom", horizontal: "right" }} transformOrigin={{ vertical: "top", horizontal: "right" }}>
+              {MUTE_CHOICES.map((choice) => (
+                <MenuItem
+                  key={choice.label}
+                  onClick={() => {
+                    muteTicket(ticket.id, choice.until());
+                    setMuteEl(null);
+                    toast.success(`Conversa silenciada: ${choice.label.toLowerCase()}.`);
+                  }}
+                >
+                  Silenciar {choice.label.startsWith("Até") ? choice.label.toLowerCase() : `por ${choice.label}`}
+                </MenuItem>
+              ))}
+              {muted && (
+                <MenuItem
+                  onClick={() => {
+                    unmuteTicket(ticket.id);
+                    setMuteEl(null);
+                    toast.success("Notificações desta conversa reativadas.");
+                  }}
+                >
+                  Reativar notificações
+                </MenuItem>
+              )}
+            </Menu>
             <Tooltip title={pinned ? "Desafixar conversa" : "Fixar conversa no topo"}>
               <IconButton className={classes.icon} onClick={togglePin} aria-label={pinned ? "Desafixar conversa" : "Fixar conversa"}>
                 {pinned ? <PinOff size={20} /> : <Pin size={20} />}

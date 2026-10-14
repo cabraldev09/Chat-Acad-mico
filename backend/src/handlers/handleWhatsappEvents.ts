@@ -203,7 +203,13 @@ export const handleMessage = async (
       groupContact
     );
 
+    // keep the order the phone shows: a message that reached us late (offline period, history) is stored
+    // with the time WhatsApp gave it; live messages keep their arrival time (finer than WhatsApp's seconds)
+    const sentAt = Number(processedMessage.timestamp) * 1000;
+    const late = sentAt > 0 && Math.abs(Date.now() - sentAt) > 5000;
+
     const messageData: any = {
+      ...(late ? { createdAt: new Date(sentAt) } : {}),
       id: processedMessage.id,
       ticketId: ticket.id,
       contactId: processedMessage.fromMe ? undefined : contact.id,

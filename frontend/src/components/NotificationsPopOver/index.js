@@ -21,6 +21,7 @@ import { i18n } from "../../translate/i18n";
 import useTickets from "../../hooks/useTickets";
 import alertSound from "../../assets/sound.mp3";
 import { AuthContext } from "../../context/Auth/AuthContext";
+import { isTicketMuted } from "../../utils/muteStore";
 
 const useStyles = makeStyles(theme => ({
 	tabContainer: {

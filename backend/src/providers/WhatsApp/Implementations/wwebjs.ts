@@ -15,6 +15,8 @@ import Whatsapp from "../../../models/Whatsapp";
 import AppError from "../../../errors/AppError";
 import SaveImportedContacts from "../../../helpers/SaveImportedContacts";
 import User from "../../../models/User";
+import Message from "../../../models/Message";
+import Ticket from "../../../models/Ticket";
 import { logger } from "../../../utils/logger";
 import { WhatsappProvider } from "../whatsappProvider";
 import {
@@ -103,10 +105,36 @@ const getSerializedMessageId = (
   return serializedMsgId;
 };
 
+// Fetching the profile picture is a round trip to WhatsApp for every message, which made incoming messages
+// slow to show up. Pictures are cached for a few hours and a slow answer never holds the message back.
+const PIC_TTL_MS = 6 * 60 * 60 * 1000;
+const picCache = new Map<string, { url?: string; at: number }>();
+
+const getProfilePic = async (
+  msgContact: WbotContact
+): Promise<string | undefined> => {
+  const key = msgContact.id._serialized;
+  const hit = picCache.get(key);
+  if (hit && Date.now() - hit.at < PIC_TTL_MS) return hit.url;
+
+  try {
+    const url = await Promise.race([
+      msgContact.getProfilePicUrl(),
+      new Promise<undefined>(resolve => setTimeout(resolve, 1500))
+    ]);
+    if (url !== undefined) {
+      picCache.set(key, { url: url || undefined, at: Date.now() });
+    }
+    return url || undefined;
+  } catch (err) {
+    return undefined;
+  }
+};
+
 const convertToContactPayload = async (
   msgContact: WbotContact
 ): Promise<ContactPayload> => {
-  const profilePicUrl = await msgContact.getProfilePicUrl();
+  const profilePicUrl = await getProfilePic(msgContact);
 
   return {
     name: msgContact.name || msgContact.pushname || msgContact.id.user,
@@ -269,20 +297,39 @@ const getMessageData = async (
   };
 };
 
-const syncUnreadMessages = async (wbot: Session) => {
+// After a (re)connection, catches up only on what arrived while the system was offline: messages newer than the
+// last one it already stored. A first connection imports nothing, and old unanswered chats never become tickets.
+// Chats are not marked as read on the phone.
+const syncUnreadMessages = async (wbot: Session, whatsappId: number) => {
   try {
+    const last = await Message.findOne({
+      attributes: ["createdAt"],
+      include: [
+        {
+          model: Ticket,
+          as: "ticket",
+          attributes: [],
+          where: { whatsappId },
+          required: true
+        }
+      ],
+      order: [["createdAt", "DESC"]]
+    });
+    if (!last) return;
+    const sinceSeconds = Math.floor(last.createdAt.getTime() / 1000) - 5;
+
     const chats = await wbot.getChats();
 
     /* eslint-disable no-restricted-syntax */
     /* eslint-disable no-await-in-loop */
     for (const chat of chats) {
-      if (chat.unreadCount > 0) {
+      if (chat.unreadCount > 0 && !chat.isGroup) {
         const unreadMessages = await chat.fetchMessages({
           limit: chat.unreadCount
         });
 
         for (const msg of unreadMessages) {
-          if (shouldHandleMessage(msg)) {
+          if (msg.timestamp >= sinceSeconds && shouldHandleMessage(msg)) {
             const {
               messagePayload,
               contactPayload,
@@ -298,8 +345,6 @@ const syncUnreadMessages = async (wbot: Session) => {
             );
           }
         }
-
-        await chat.sendSeen();
       }
     }
   } catch (err) {
@@ -673,7 +718,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
         }
 
         wbot.sendPresenceAvailable();
-        await syncUnreadMessages(wbot);
+        await syncUnreadMessages(wbot, whatsapp.id);
         if (firstConnection) importContactsOnFirstConnection(whatsapp);
       } catch (err) {
         logger.error(err, "Error on whatsapp ready event");
