@@ -31,6 +31,7 @@ type IndexQuery = {
   queueIds: string;
   tagId: string;
   archived: string;
+  historical: string;
 };
 
 interface TicketData {
@@ -53,7 +54,8 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
     withUnreadMessages,
     groups,
     tagId,
-    archived
+    archived,
+    historical
   } = req.query as IndexQuery;
 
   const userId = req.user.id;
@@ -82,6 +84,7 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
     groups,
     tagId,
     archived,
+    historical,
     role: roleOf(req.user)
   });
 

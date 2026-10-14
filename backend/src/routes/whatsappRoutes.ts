@@ -3,6 +3,7 @@ import isAuth from "../middleware/isAuth";
 import canManageWhatsapp from "../middleware/canManageWhatsapp";
 
 import * as WhatsAppController from "../controllers/WhatsAppController";
+import * as ImportController from "../controllers/ImportPhoneContactsController";
 
 const whatsappRoutes = express.Router();
 
@@ -21,5 +22,8 @@ whatsappRoutes.delete(
   canManageWhatsapp,
   WhatsAppController.remove
 );
+
+// copies the conversations that already exist on the phone, as history
+whatsappRoutes.post("/whatsapp/:whatsappId/import-history", isAuth, canManageWhatsapp, ImportController.history);
 
 export default whatsappRoutes;

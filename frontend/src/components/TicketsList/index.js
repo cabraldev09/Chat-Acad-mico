@@ -176,7 +176,7 @@ const reducer = (state, action) => {
 };
 
 	const TicketsList = (props) => {
-		const { status, searchParam, showAll, selectedQueueIds, updateCount, style, withUnreadMessages, groups, archived } =
+		const { status, searchParam, showAll, selectedQueueIds, updateCount, style, withUnreadMessages, groups, archived, historical } =
 			props;
 	const classes = useStyles();
 	const [pageNumber, setPageNumber] = useState(1);
@@ -186,7 +186,7 @@ const reducer = (state, action) => {
 	useEffect(() => {
 		dispatch({ type: "RESET" });
 		setPageNumber(1);
-	}, [status, searchParam, dispatch, showAll, selectedQueueIds, withUnreadMessages, groups, archived]);
+	}, [status, searchParam, dispatch, showAll, selectedQueueIds, withUnreadMessages, groups, archived, historical]);
 
 	const { tickets, hasMore, loading } = useTickets({
 		pageNumber,
@@ -196,11 +196,12 @@ const reducer = (state, action) => {
 		withUnreadMessages: withUnreadMessages ? "true" : undefined,
 		groups,
 		archived: archived ? "true" : undefined,
+		historical: historical ? "true" : undefined,
 		queueIds: JSON.stringify(selectedQueueIds),
 	});
 
 	useEffect(() => {
-		if (!status && !searchParam && !withUnreadMessages && !groups && !archived) return;
+		if (!status && !searchParam && !withUnreadMessages && !groups && !archived && !historical) return;
 		dispatch({
 			type: "LOAD_TICKETS",
 			payload: tickets,
@@ -217,7 +218,7 @@ const reducer = (state, action) => {
 		// archived conversations live only in their own view
 		const archiveOk = ticket => !!ticket.archivedAt === !!archived;
 
-		const shouldUpdateTicket = ticket => !searchParam && groupOk(ticket) && archiveOk(ticket) &&
+		const shouldUpdateTicket = ticket => !historical && !searchParam && groupOk(ticket) && archiveOk(ticket) &&
 			(!ticket.userId || ticket.userId === user?.id || showAll) &&
 			(!ticket.queueId || selectedQueueIds.indexOf(ticket.queueId) > -1);
 
@@ -339,7 +340,13 @@ const reducer = (state, action) => {
 							<span className={classes.noTicketsTitle}>
 								{i18n.t("ticketsList.noTicketsTitle")}
 							</span>
-							{props.groups === "only" ? (
+							{historical ? (
+								<p className={classes.noTicketsText}>
+									O histórico são as conversas que já existiam no WhatsApp quando o número foi conectado. Elas aparecem aqui sem entrar nas contagens.
+									<br />
+									<Link to="/connections" style={{ fontWeight: 600 }}>Copiar as conversas do WhatsApp</Link>
+								</p>
+							) : props.groups === "only" ? (
 								<p className={classes.noTicketsText}>
 									Nenhum grupo entrou ainda. Os grupos do WhatsApp só viram conversa depois que você escolhe quais deles receber.
 									<br />

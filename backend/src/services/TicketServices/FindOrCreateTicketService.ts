@@ -37,14 +37,40 @@ const FindOrCreateTicketService = async (
     });
 
     if (ticket) {
+      const wasHistory = ticket.isHistorical;
       await ticket.update({
         status: "pending",
         userId: null,
         unreadMessages,
         chatbotNodeId: null,
         aiActive: true,
-        closedAt: null
+        closedAt: null,
+        ...(wasHistory ? { isHistorical: false, firstResponseAt: null } : {})
       });
+      if (wasHistory) await Ticket.update({ createdAt: new Date() } as any, { where: { id: ticket.id }, silent: true } as any);
+    }
+  }
+
+  // someone from the copied history wrote again: that conversation comes back to life (same thread, counted from now)
+  if (!ticket) {
+    const history = await Ticket.findOne({
+      where: { contactId: groupContact ? groupContact.id : contact.id, whatsappId, isHistorical: true },
+      order: [["updatedAt", "DESC"]]
+    });
+    if (history) {
+      await history.update({
+        isHistorical: false,
+        status: "pending",
+        userId: null,
+        unreadMessages,
+        chatbotNodeId: null,
+        aiActive: true,
+        closedAt: null,
+        firstResponseAt: null
+      });
+      await Ticket.update({ createdAt: new Date() } as any, { where: { id: history.id }, silent: true } as any);
+      ticket = history;
+      if (!groupContact) hookTicketCreated(contact, (await Whatsapp.findByPk(whatsappId))?.channel || "whatsapp");
     }
   }
 

@@ -23,6 +23,7 @@ interface Request {
   queueIds: number[];
   tagId?: string;
   archived?: string;
+  historical?: string;
   // who is asking: lists follow the same visibility rules as opening a conversation
   role?: Role;
 }
@@ -45,12 +46,16 @@ const ListTicketsService = async ({
   groups,
   tagId,
   archived,
+  historical,
   role
 }: Request): Promise<Response> => {
-  let whereCondition: Filterable["where"] = {
-    [Op.or]: [{ userId }, { status: "pending" }],
-    queueId: { [Op.or]: [queueIds, null] }
-  };
+  let whereCondition: Filterable["where"] =
+    historical === "true"
+      ? {}
+      : {
+          [Op.or]: [{ userId }, { status: "pending" }],
+          queueId: { [Op.or]: [queueIds, null] }
+        };
   let includeCondition: Includeable[];
 
   includeCondition = [
@@ -81,11 +86,11 @@ const ListTicketsService = async ({
     }
   ];
 
-  if (showAll === "true") {
+  if (showAll === "true" && historical !== "true") {
     whereCondition = { queueId: { [Op.or]: [queueIds, null] } };
   }
 
-  if (status) {
+  if (status && historical !== "true") {
     whereCondition = {
       ...whereCondition,
       status
@@ -183,8 +188,19 @@ const ListTicketsService = async ({
   const limit = 40;
   const offset = limit * (+pageNumber - 1);
 
+  // History (conversations copied from the phone) has its own view, and only the administrator and the person
+  // who owns the number may open it: it is that person's personal chat history
+  let historyScope: any = { isHistorical: false };
+  if (historical === "true") {
+    const owned =
+      role === "admin"
+        ? null
+        : (await Whatsapp.findAll({ where: { ownerId: Number(userId) }, attributes: ["id"] })).map(w => w.id);
+    historyScope = owned === null ? { isHistorical: true } : { isHistorical: true, whatsappId: { [Op.in]: owned.length ? owned : [0] } };
+  }
+
   const { count, rows: tickets } = await Ticket.findAndCountAll({
-    where: { [Op.and]: [whereCondition || {}, { isHistorical: false }] } as any,
+    where: { [Op.and]: [whereCondition || {}, historyScope] } as any,
     include: includeCondition,
     distinct: true,
     limit,

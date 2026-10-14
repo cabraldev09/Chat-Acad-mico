@@ -5,6 +5,13 @@ cd /opt/chat-academico
 exec 9>/tmp/chat-academico-update.lock
 flock -n 9 || exit 0
 
+# Updating restarts the API for about a minute, so the automatic update waits for the quiet hours (22h to 6h in
+# Porto Velho). "update.sh --force" updates right away.
+if [ "${1:-}" != "--force" ]; then
+  HOUR=$(TZ=America/Porto_Velho date +%H)
+  if [ "$HOUR" -ge 6 ] && [ "$HOUR" -lt 22 ]; then exit 0; fi
+fi
+
 git fetch -q origin main
 LOCAL=$(git rev-parse HEAD)
 REMOTE=$(git rev-parse origin/main)

@@ -1,5 +1,6 @@
 import { AuthContext } from "../../context/Auth/AuthContext";
-import React, { useState, useCallback, useContext } from "react";
+import React, { useState, useCallback, useContext, useEffect } from "react";
+import openSocket from "../../services/socket-io";
 import ChannelIcon from "../../components/ChannelIcon";
 import { toast } from "react-toastify";
 import { format, parseISO } from "date-fns";
@@ -105,6 +106,35 @@ const Connections = () => {
 	// administrators manage everything; anyone else manages the number they connected themselves
 	const canManage = w => isAdmin || (w.ownerId && user && w.ownerId === user.id && (!w.channel || w.channel === "whatsapp"));
 	const [myDialog, setMyDialog] = useState({ open: false, whatsApp: null });
+	// progress of "copy the conversations of the phone", by connection
+	const [copying, setCopying] = useState({});
+	useEffect(() => {
+		const socket = openSocket();
+		socket.on("historyImport", d => {
+			setCopying(prev => ({ ...prev, [d.whatsappId]: d.finished ? null : { done: d.done, total: d.total } }));
+			const mine = user && (d.userId === user.id || !d.userId);
+			if (!d.finished || !mine) return;
+			if (!d.ok) {
+				const text = i18n.t(`backendErrors.${d.message}`);
+				toast.error(text && !text.startsWith("backendErrors.") ? text : "Não foi possível copiar as conversas.");
+				return;
+			}
+			toast.success(
+				`Conversas de “${d.connection}” copiadas: ${d.chats} conversas (${d.newConversations} novas), ${d.messages} mensagens${d.pinned ? `, ${d.pinned} fixadas` : ""}. Veja em Tickets → Histórico.`,
+				{ autoClose: 15000 }
+			);
+		});
+		return () => socket.disconnect();
+	}, [user]);
+	const handleCopyHistory = async id => {
+		try {
+			await api.post(`/whatsapp/${id}/import-history`, {});
+			setCopying(prev => ({ ...prev, [id]: { done: 0, total: 0 } }));
+			toast.info("Copiando as conversas do WhatsApp. Pode continuar usando o sistema, aviso quando terminar.");
+		} catch (err) {
+			toastError(err);
+		}
+	};
 	const [whatsAppModalOpen, setWhatsAppModalOpen] = useState(false);
 	const [qrModalOpen, setQrModalOpen] = useState(false);
 	const [selectedWhatsApp, setSelectedWhatsApp] = useState(null);
@@ -243,6 +273,24 @@ const Connections = () => {
 						)}
 					</>
 				)}
+				{whatsApp.status === "CONNECTED" && (!whatsApp.channel || whatsApp.channel === "whatsapp") && (
+					<>
+						<Button
+							size="small"
+							variant="outlined"
+							color="primary"
+							disabled={!!copying[whatsApp.id]}
+							onClick={() => handleCopyHistory(whatsApp.id)}
+							title="Traz para o sistema as conversas, os grupos e os fixados que já existem neste WhatsApp, como histórico"
+						>
+							{copying[whatsApp.id]
+								? copying[whatsApp.id].total
+									? `Copiando ${copying[whatsApp.id].done}/${copying[whatsApp.id].total}`
+									: "Copiando…"
+								: "Copiar conversas"}
+						</Button>{" "}
+					</>
+				)}
 				{(whatsApp.status === "CONNECTED" ||
 					whatsApp.status === "PAIRING" ||
 					whatsApp.status === "TIMEOUT") && (
@@ -353,6 +401,9 @@ const Connections = () => {
 					)}
 				</MainHeaderButtonsWrapper>
 			</MainHeader>
+			<Typography variant="caption" color="textSecondary" component="div" style={{ padding: "0 16px 10px" }}>
+				Dica: o WhatsApp desconecta os aparelhos vinculados quando o celular fica cerca de 14 dias sem internet. Abra o WhatsApp no celular pelo menos uma vez por semana. Se desconectar, as mensagens que já chegaram continuam guardadas aqui, e as que chegaram enquanto estava desconectado são recuperadas depois que você ler o QR Code de novo.
+			</Typography>
 			<Paper className={classes.mainPaper} variant="outlined">
 				<ResponsiveTable>
 					<TableHead>

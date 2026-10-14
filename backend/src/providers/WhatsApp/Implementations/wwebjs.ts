@@ -28,6 +28,8 @@ import {
   SendMessageOptions,
   SendMediaOptions,
   MessageType,
+  ProviderHistoryChat,
+  HistoryOptions,
   MessageAck,
   ProviderContact
 } from "../types";
@@ -353,9 +355,10 @@ const getMessageData = async (
   };
 };
 
-// After a (re)connection, catches up only on what arrived while the system was offline: messages newer than the
-// last one it already stored. A first connection imports nothing, and old unanswered chats never become tickets.
-// Chats are not marked as read on the phone.
+// After a (re)connection, catches up on everything that happened while the system was offline: messages newer than
+// the last one it already stored, in both directions (including what was answered from the phone). A first
+// connection imports nothing here (the history has its own, silent import), and a message already stored is never
+// handled twice. Chats are not marked as read on the phone.
 const syncUnreadMessages = async (wbot: Session, whatsappId: number) => {
   try {
     const last = await Message.findOne({
@@ -374,37 +377,27 @@ const syncUnreadMessages = async (wbot: Session, whatsappId: number) => {
     if (!last) return;
     const sinceSeconds = Math.floor(last.createdAt.getTime() / 1000) - 5;
 
-    const chats = await wbot.getChats();
+    const chats = (await wbot.getChats())
+      .filter(chat => (chat.timestamp || 0) >= sinceSeconds && !chat.id._serialized.includes("@broadcast"))
+      .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0))
+      .slice(-300);
 
     /* eslint-disable no-restricted-syntax */
     /* eslint-disable no-await-in-loop */
+    let caught = 0;
     for (const chat of chats) {
-      if (chat.unreadCount > 0 && !chat.isGroup) {
-        const unreadMessages = await chat.fetchMessages({
-          limit: chat.unreadCount
-        });
-
-        for (const msg of unreadMessages) {
-          if (msg.timestamp >= sinceSeconds && shouldHandleMessage(msg)) {
-            const {
-              messagePayload,
-              contactPayload,
-              contextPayload,
-              mediaPayload
-            } = await getMessageData(msg, wbot);
-
-            handleMessage(
-              messagePayload,
-              contactPayload,
-              contextPayload,
-              mediaPayload
-            );
-          }
-        }
+      const recent = await chat.fetchMessages({ limit: 100 });
+      for (const msg of recent) {
+        if (msg.timestamp < sinceSeconds || !shouldHandleMessage(msg)) continue;
+        if (await Message.findByPk(msg.id.id, { attributes: ["id"] })) continue;
+        const { messagePayload, contactPayload, contextPayload, mediaPayload } = await getMessageData(msg, wbot);
+        await handleMessage(messagePayload, contactPayload, contextPayload, mediaPayload);
+        caught += 1;
       }
     }
+    if (caught) logger.info(`Session ${whatsappId}: caught up ${caught} messages from the time it was offline`);
   } catch (err) {
-    logger.error(err, "Error syncing unread messages");
+    logger.error(err, "Error syncing messages after reconnecting");
   }
 };
 
@@ -545,6 +538,97 @@ const listGroups = async (sessionId: number) => {
     .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
 };
 
+// What a message looks like when its file is not copied: a short label, so the conversation still reads fully.
+const HISTORY_LABELS: Record<string, string> = {
+  image: "📷 Imagem",
+  video: "🎥 Vídeo",
+  audio: "🎤 Áudio",
+  ptt: "🎤 Mensagem de voz",
+  document: "📄 Documento",
+  sticker: "Figurinha",
+  location: "📍 Localização",
+  vcard: "👤 Contato"
+};
+
+const importChats = async (
+  sessionId: number,
+  options: HistoryOptions,
+  onChat: (chat: ProviderHistoryChat) => Promise<void>,
+  onProgress?: (done: number, total: number) => void
+): Promise<void> => {
+  const wbot = getWbot(sessionId);
+  const all = await wbot.getChats();
+  const chats = all
+    .filter(chat => {
+      const id = chat.id._serialized;
+      if (id.includes("@broadcast") || chat.id.server === "newsletter") return false;
+      return options.includeGroups || !chat.isGroup;
+    })
+    .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+  let done = 0;
+  for (const chat of chats) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const contact = await wbot.getContactById(chat.id._serialized);
+      // eslint-disable-next-line no-await-in-loop
+      const payload = await convertToContactPayload(contact, wbot);
+      // eslint-disable-next-line no-await-in-loop
+      const raw = await chat.fetchMessages({ limit: options.perChat });
+      // in groups each message carries who wrote it (looked up once per person)
+      const authors = new Map<string, { name: string; number: string; lid?: string }>();
+      const authorOf = async (m: WbotMessage) => {
+        if (!chat.isGroup || m.fromMe) return undefined;
+        const id = (m as any).author || (m as any).participant;
+        if (!id) return undefined;
+        if (!authors.has(id)) {
+          try {
+            const c = await convertToContactPayload(await wbot.getContactById(id), wbot);
+            authors.set(id, { name: c.name, number: c.number, lid: c.lid });
+          } catch (err) {
+            authors.set(id, { name: String(id).split("@")[0], number: String(id).split("@")[0] });
+          }
+        }
+        return authors.get(id);
+      };
+
+      const messages: ProviderHistoryChat["messages"] = [];
+      for (const m of raw) {
+        if (m.from === "status@broadcast" || m.to === "status@broadcast") continue;
+        const body =
+          (m.body && (m.type === "chat" || m.hasMedia) ? m.body : "") ||
+          HISTORY_LABELS[m.type] ||
+          (m.type === "chat" ? "" : `(${m.type})`);
+        if (!body) continue;
+        messages.push({
+          id: m.id.id,
+          body,
+          fromMe: m.fromMe,
+          timestamp: m.timestamp,
+          ack: mapMessageAck(m.ack),
+          // eslint-disable-next-line no-await-in-loop
+          author: await authorOf(m)
+        });
+      }
+      if (messages.length) {
+        // eslint-disable-next-line no-await-in-loop
+        await onChat({
+          isGroup: chat.isGroup,
+          pinned: !!(chat as any).pinned,
+          archived: !!chat.archived,
+          name: chat.name || payload.name,
+          contact: { name: payload.name, number: payload.number, lid: payload.lid, isGroup: chat.isGroup },
+          messages
+        });
+      }
+    } catch (err) {
+      logger.warn(`History: could not copy chat ${chat.id._serialized}: ${err}`);
+    }
+    done += 1;
+    if (onProgress && (done % 10 === 0 || done === chats.length)) onProgress(done, chats.length);
+  }
+};
+
 const sendReaction = async (
   sessionId: number,
   chatId: string,
@@ -620,25 +704,28 @@ const getContacts = async (sessionId: number): Promise<ProviderContact[]> => {
   return Object.assign(result, { stats });
 };
 
-// The first time a number connects, its address book becomes the company's contact list. Numbers that belong
-// to a regular user are not copied automatically (their contacts are personal): they use "Importar contatos".
-const importContactsOnFirstConnection = async (whatsapp: Whatsapp) => {
+// The first time a number connects: its address book becomes the company's contacts (only for the company's own
+// numbers and administrators; the address book of a regular user is personal and uses "Importar contatos"), and its
+// existing conversations are copied as history for whoever owns the number.
+const afterFirstConnection = async (whatsapp: Whatsapp) => {
   try {
+    // WhatsApp Web needs a moment to load everything after "ready"
+    await new Promise(resolve => setTimeout(resolve, 20000));
+
+    let shareContacts = true;
     if (whatsapp.ownerId) {
-      const owner = await User.findByPk(whatsapp.ownerId, {
-        attributes: ["profile"]
-      });
-      if (owner?.profile !== "admin") return;
+      const owner = await User.findByPk(whatsapp.ownerId, { attributes: ["profile"] });
+      shareContacts = owner?.profile === "admin";
     }
-    // WhatsApp Web needs a moment to load the address book after "ready"
-    await new Promise(resolve => setTimeout(resolve, 15000));
-    const list = await getContacts(whatsapp.id);
-    const saved = await SaveImportedContacts(list);
-    logger.info(
-      `Session ${whatsapp.name}: ${saved.created} contacts imported from the phone, ${saved.updated} completed`
-    );
+    if (shareContacts) {
+      const saved = await SaveImportedContacts(await getContacts(whatsapp.id));
+      logger.info(`Session ${whatsapp.name}: ${saved.created} contacts imported from the phone, ${saved.updated} completed`);
+    }
+
+    const { startHistoryImport } = await import("../../../services/WbotServices/ImportHistoryService");
+    startHistoryImport(whatsapp, whatsapp.ownerId || null);
   } catch (err) {
-    logger.error(err, "Could not import contacts after connecting");
+    logger.error(err, "Could not import contacts and history after connecting");
   }
 };
 
@@ -822,7 +909,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
 
         wbot.sendPresenceAvailable();
         await syncUnreadMessages(wbot, whatsapp.id);
-        if (firstConnection) importContactsOnFirstConnection(whatsapp);
+        if (firstConnection) afterFirstConnection(whatsapp);
       } catch (err) {
         logger.error(err, "Error on whatsapp ready event");
       }
@@ -863,6 +950,8 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
           logger.error(`Session ${sessionName}: giving up after ${attempt - 1} reconnect attempts`);
           await whatsapp.update({ status: "DISCONNECTED", qrcode: "" });
           io.emit("whatsappSession", { action: "update", session: whatsapp });
+          // WhatsApp also unlinks linked devices when the phone stays offline for about 14 days
+          io.emit("whatsappAlert", { whatsappId: whatsapp.id, name: whatsapp.name, ownerId: whatsapp.ownerId, reason: String(reason) });
           return;
         }
         const delay = Math.min(2000 * 2 ** (attempt - 1), 60000);
@@ -955,6 +1044,7 @@ export const WhatsappWebJsProvider: WhatsappProvider = {
   sendSeen,
   sendTyping,
   listGroups,
+  importChats,
   sendReaction,
   fetchChatMessages
 };

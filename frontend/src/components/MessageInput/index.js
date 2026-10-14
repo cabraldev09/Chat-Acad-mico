@@ -224,7 +224,7 @@ const EMOJI_PT = {
 
 const isImage = (f) => f && f.type && f.type.startsWith("image/");
 
-const MessageInput = ({ ticketStatus }) => {
+const MessageInput = ({ ticketStatus, historical }) => {
   const classes = useStyles();
   const emojiDark = useTheme().palette.type === "dark";
   const { ticketId } = useParams();
@@ -469,6 +469,8 @@ const MessageInput = ({ ticketStatus }) => {
         <div className={classes.blocked}>
           {ticketStatus === "pending"
             ? "Aceite a conversa para responder."
+            : historical
+            ? "Esta conversa é do histórico do WhatsApp. Clique em Reabrir atendimento para voltar a responder."
             : ticketStatus === "closed"
             ? "Conversa resolvida. Reabra para voltar a responder."
             : ""}

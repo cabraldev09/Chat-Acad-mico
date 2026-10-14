@@ -246,6 +246,7 @@ const TicketsManager = () => {
           {chip("groups", "Grupos", 0)}
           {chip("closed", "Resolvidas", 0)}
           {chip("archived", "Arquivadas", 0)}
+          {chip("historical", "Histórico", 0)}
         </div>
       )}
 
@@ -270,6 +271,7 @@ const TicketsManager = () => {
             )}
             {filter === "closed" && <TicketsList status="closed" showAll={true} selectedQueueIds={selectedQueueIds} />}
             {filter === "archived" && <TicketsList archived showAll={true} selectedQueueIds={selectedQueueIds} />}
+            {filter === "historical" && <TicketsList historical showAll={true} selectedQueueIds={selectedQueueIds} />}
           </>
         )}
         <Tooltip title="Nova conversa">

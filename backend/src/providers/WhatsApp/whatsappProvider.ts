@@ -4,7 +4,9 @@ import {
   ProviderMediaInput,
   ProviderContact,
   SendMessageOptions,
-  SendMediaOptions
+  SendMediaOptions,
+  ProviderHistoryChat,
+  HistoryOptions
 } from "./types";
 import { WhatsappWebJsProvider } from "./Implementations/wwebjs";
 import { ZapoProvider } from "./Implementations/zapo";
@@ -41,6 +43,13 @@ export interface WhatsappProvider {
   sendTyping?(sessionId: number, chatId: string): Promise<void>;
   // groups this connection belongs to (used to pick which ones become conversations)
   listGroups?(sessionId: number): Promise<{ id: string; name: string; participants: number }[]>;
+  // walks over the existing conversations of the phone (most recent first), calling `onChat` for each one
+  importChats?(
+    sessionId: number,
+    options: HistoryOptions,
+    onChat: (chat: ProviderHistoryChat) => Promise<void>,
+    onProgress?: (done: number, total: number) => void
+  ): Promise<void>;
   // reacts to a message with an emoji ("" removes the reaction)
   sendReaction?(
     sessionId: number,

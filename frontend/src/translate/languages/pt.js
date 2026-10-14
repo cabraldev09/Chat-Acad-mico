@@ -527,6 +527,7 @@ const messages = {
         ERR_NO_OTHER_WHATSAPP: "Deve haver pelo menos um WhatsApp padrão.",
         ERR_NO_DEF_WAPP_FOUND:
           "Nenhum WhatsApp padrão encontrado. Verifique a página de conexões.",
+        ERR_HISTORY_RUNNING: "A cópia das conversas deste número já está em andamento.",
         ERR_IMPORT: "Não foi possível importar os contatos.",
         ERR_NO_CONNECTED_WHATSAPP:
           "Nenhum WhatsApp conectado. Conecte um número em Conexões para importar os contatos.",

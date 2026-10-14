@@ -1221,6 +1221,26 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(csv.data.split("\r\n").some(l => l.startsWith('"Total";')), "csv has no total line");
       assert((await http.get("/crm/report", { params: range })).status === 401, "report without login");
     });
+    await test("copied history is its own view, stays out of the lists and comes back to life when the person writes", async () => {
+      const contactId = sql(`INSERT INTO Contacts (name, number, email, isGroup, channel, createdAt, updatedAt) VALUES ('Fulana do histórico', 'tg_7777', '', false, 'telegram', NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const ticketId = sql(`INSERT INTO Tickets (status, contactId, whatsappId, unreadMessages, isGroup, segment, isHistorical, lastMessage, closedAt, createdAt, updatedAt) VALUES ('closed', ${contactId}, ${tgId}, 0, false, 'sales', true, 'mensagem antiga', NOW(), NOW() - INTERVAL '30 days', NOW() - INTERVAL '30 days') RETURNING id`).split("\n")[0];
+      sql(`INSERT INTO Messages (id, ticketId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('hist-old-1', ${ticketId}, 'mensagem antiga', false, true, 'chat', 0, NOW() - INTERVAL '30 days', NOW())`);
+
+      const queueIds = JSON.stringify((await http.get("/queue", auth())).data.map(q => q.id));
+      const ids = async (params, who = auth()) => (await http.get("/tickets", { params: { queueIds, ...params }, ...who })).data.tickets.map(t => String(t.id));
+      assert((await ids({ historical: "true" })).includes(String(ticketId)), "history missing from its own view");
+      assert(!(await ids({ showAll: "true", status: "closed" })).includes(String(ticketId)), "history leaked into the resolved list");
+      assert(!(await ids({ historical: "true" }, asUser(agentToken))).includes(String(ticketId)), "an agent without a number saw someone's history");
+
+      tg.updates.push({ update_id: 777, message: { message_id: 7771, chat: { id: 7777, type: "private" }, from: { first_name: "Fulana" }, text: "voltei a escrever" } });
+      await waitFor(async () => sql(`SELECT isHistorical FROM Tickets WHERE id=${ticketId}`) === "0", 10000, "history conversation reactivated");
+      const t = (await http.get(`/tickets/${ticketId}`, auth())).data;
+      assert(t.status !== "closed" && t.isHistorical === false, `ticket after reactivation: ${t.status} ${t.isHistorical}`);
+      assert(!(await ids({ historical: "true" })).includes(String(ticketId)), "reactivated ticket still in the history view");
+      const msgs = (await http.get(`/messages/${ticketId}`, auth())).data.messages.map(m => m.body);
+      assert(msgs.includes("mensagem antiga") && msgs.includes("voltei a escrever"), `thread lost: ${msgs}`);
+      assert(sql(`SELECT COUNT(*) FROM Tickets WHERE contactId=${contactId}`) === "1", "a second ticket was created instead of reusing the history one");
+    });
     await test("each person connects their own WhatsApp: scoped list, one number by default, no one else's QR Code", async () => {
       const mk = async (name, email) => (await http.post("/users", { name, email, password: "senha123", role: "consultor" }, auth())).data;
       const u1 = await mk("Dona Um", "dona1@x.com"), u2 = await mk("Dono Dois", "dono2@x.com");

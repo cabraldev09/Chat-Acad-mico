@@ -117,6 +117,12 @@ const UpdateTicketService = async ({
     await ticket.update({ closedAt: null, chatbotNodeId: null, aiActive: true });
   }
 
+  // reopening a conversation from the copied history makes it a real one, counted from this moment
+  if (status && status !== "closed" && ticket.isHistorical) {
+    await ticket.update({ isHistorical: false, firstResponseAt: null });
+    await Ticket.update({ createdAt: new Date() } as any, { where: { id: ticket.id }, silent: true } as any);
+  }
+
   if (whatsappId) {
     await ticket.update({
       whatsappId

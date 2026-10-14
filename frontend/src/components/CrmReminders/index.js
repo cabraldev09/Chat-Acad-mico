@@ -37,6 +37,15 @@ const CrmReminders = () => {
         }
       }
     });
+    // a number stopped being connected: its owner and the administrators must scan the QR Code again
+    socket.on("whatsappAlert", (a) => {
+      const admin = user.profile === "admin" || user.role === "admin";
+      if (!(a.ownerId === user.id || admin)) return;
+      toast.error(`O WhatsApp “${a.name}” desconectou. Abra Conexões e leia o QR Code de novo para voltar a receber mensagens (as mensagens que já chegaram continuam guardadas aqui).`, {
+        autoClose: false,
+        onClick: () => history.push("/connections"),
+      });
+    });
     // enrollment fee confirmed by Efí
     socket.on("payment", (d) => {
       burst(window.innerWidth - 200, 90);
