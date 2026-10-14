@@ -5,6 +5,7 @@ import CircularProgress from "@material-ui/core/CircularProgress";
 import IconButton from "@material-ui/core/IconButton";
 import AccessTime from "@material-ui/icons/AccessTime";
 import Block from "@material-ui/icons/Block";
+import ErrorOutline from "@material-ui/icons/ErrorOutline";
 import Done from "@material-ui/icons/Done";
 import DoneAll from "@material-ui/icons/DoneAll";
 import ExpandMore from "@material-ui/icons/ExpandMore";
@@ -413,6 +414,7 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
 
   const ack = (m) => {
     if (!m.fromMe) return null;
+    if (m.ack < 0) return <ErrorOutline className={classes.ack} style={{ fontSize: 15, color: "#ea0038" }} titleAccess="Falha no envio" />;
     if (m.ack === 0) return <AccessTime className={classes.ack} style={{ fontSize: 14 }} />;
     if (m.ack === 1) return <Done className={classes.ack} />;
     if (m.ack === 2) return <DoneAll className={classes.ack} />;

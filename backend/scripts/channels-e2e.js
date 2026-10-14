@@ -1290,6 +1290,30 @@ const postMeta = (id, payload, secret, badSig) => {
       const all = (await http.get("/tickets", { params: { showAll: "true", historical: "all", queueIds }, ...auth() })).data.tickets.map(x => String(x.id));
       assert(all.includes(String(t)), "the all view misses a live conversation");
     });
+    await test("list ticks: the backfill fills old conversations and acks only move forward", async () => {
+      const t = ticketOf("tg_5551");
+      sql(`INSERT INTO Messages (id, ticketId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('bf-old-1', ${t}, 'antiga', false, true, 'chat', 0, NOW() + INTERVAL '1 day', NOW()), ('bf-last-1', ${t}, 'ultima enviada', true, true, 'chat', 2, NOW() + INTERVAL '2 days', NOW())`);
+      sql(`UPDATE Tickets SET lastMessageId=NULL, lastMessageFromMe=false, lastMessageAck=0 WHERE id=${t}`);
+      // same statement the migration runs
+      psql(DB, `UPDATE "Tickets" t SET "lastMessageId" = m."id", "lastMessageFromMe" = m."fromMe", "lastMessageAck" = COALESCE(m."ack", 0) FROM (SELECT DISTINCT ON ("ticketId") "id", "ticketId", "fromMe", "ack" FROM "Messages" ORDER BY "ticketId", "createdAt" DESC) m WHERE m."ticketId" = t."id" AND t."lastMessageId" IS NULL`);
+      assert(sql(`SELECT CONCAT(lastMessageId,'|',CASE WHEN lastMessageFromMe THEN 1 ELSE 0 END,'|',lastMessageAck) FROM Tickets WHERE id=${t}`) === "bf-last-1|1|2", "backfill did not copy the last message state");
+      assert(sql(`SELECT COUNT(*) FROM pg_indexes WHERE indexname='messages_ticket_created_idx'`) === "1", "messages index missing");
+    });
+    await test("the default course catalogue loads once, keeps manual prices and --force restores them", async () => {
+      const first = await http.post("/courses/load-default", {}, auth());
+      assert(first.status === 200 && first.data.total === 128, `catalogue size ${JSON.stringify(first.data)}`);
+      assert(Number(sql(`SELECT COUNT(*) FROM Courses WHERE category='Graduação - Cruzeiro'`)) === 128, "128 courses expected");
+      assert(sql(`SELECT monthlyFee FROM Courses WHERE name='Administração' AND modality='EAD'`) === "1073.80", "price without scholarship wrong");
+      assert(Number(sql(`SELECT COUNT(*) FROM Courses WHERE modality='Semipresencial' AND category='Graduação - Cruzeiro'`)) === 45, "format split wrong");
+      sql(`UPDATE Courses SET monthlyFee=999 WHERE name='Administração' AND modality='EAD'`);
+      const again = await http.post("/courses/load-default", {}, auth());
+      assert(again.data.created === 0 && again.data.skipped === 128, `second load must not duplicate ${JSON.stringify(again.data)}`);
+      assert(sql(`SELECT monthlyFee FROM Courses WHERE name='Administração' AND modality='EAD'`) === "999.00", "manual price was overwritten");
+      await http.post("/courses/load-default", { force: true }, auth());
+      assert(sql(`SELECT monthlyFee FROM Courses WHERE name='Administração' AND modality='EAD'`) === "1073.80", "force did not restore the price");
+      const cid = (await http.post("/auth/login", { email: "admin@whaticket.com", password: "admin" })).data.token;
+      assert((await http.post("/courses/load-default", {}, { headers: { Authorization: `Bearer ${cid}` } })).status === 200, "admin load");
+    });
     await test("each person connects their own WhatsApp: scoped list, one number by default, no one else's QR Code", async () => {
       const mk = async (name, email) => (await http.post("/users", { name, email, password: "senha123", role: "consultor" }, auth())).data;
       const u1 = await mk("Dona Um", "dona1@x.com"), u2 = await mk("Dono Dois", "dono2@x.com");

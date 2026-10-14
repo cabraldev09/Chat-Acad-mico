@@ -444,7 +444,7 @@ const yes = (v: any, fallback = true): boolean => {
   return !["0", "nao", "não", "n", "false", "inativo", "no"].includes(String(v).trim().toLowerCase());
 };
 
-const MODALITIES = ["Presencial", "EAD", "Semipresencial"];
+const MODALITIES = ["Presencial", "EAD", "Semipresencial", "Flex"];
 const normalizeModality = (v: any): string | null => {
   const t = String(v || "").trim();
   if (!t) return null;
@@ -501,6 +501,12 @@ export const importCourses = async (req: Request, res: Response): Promise<Respon
     rows.push({ line, status: existing ? "update" : "new", ...data });
   }
   return res.json({ created, updated, errors: rows.filter(r => r.status === "error").length, rows, dryRun });
+};
+
+// Loads the catalogue shipped with the system (admin button on the courses tab)
+export const loadDefaultCourses = async (req: Request, res: Response): Promise<Response> => {
+  const { loadDefaultCatalog } = await import("../services/CrmServices/CatalogLoader");
+  return res.json(await loadDefaultCatalog({ force: Boolean(req.body?.force) }));
 };
 
 export const options = async (_req: Request, res: Response): Promise<Response> => {

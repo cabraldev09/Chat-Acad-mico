@@ -13,7 +13,7 @@ export const CRM_OPTIONS = {
     "Importação",
     "Outro"
   ],
-  modalities: ["Presencial", "EAD", "Semipresencial"],
+  modalities: ["Presencial", "EAD", "Semipresencial", "Flex"],
   admissionTypes: [
     "Vestibular / prova online",
     "ENEM",

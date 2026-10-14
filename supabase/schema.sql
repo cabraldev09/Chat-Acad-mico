@@ -2349,6 +2349,13 @@ CREATE INDEX leads_stage_id ON public."Leads" USING btree ("stageId");
 
 
 --
+-- Name: messages_ticket_created_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX messages_ticket_created_idx ON public."Messages" USING btree ("ticketId", "createdAt");
+
+
+--
 -- Name: payments_lead_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3152,6 +3159,7 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261030000003-sla-and-preferences.j
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261030000004-history-and-pictures.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261031000001-message-edited.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261031000002-ticket-last-message-state.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261101000001-ticket-last-message-backfill.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

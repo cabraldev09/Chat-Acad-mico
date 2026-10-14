@@ -27,6 +27,13 @@ interface Request {
 const CreateMessageService = async ({
   messageData
 }: Request): Promise<Message> => {
+  // the same message is processed more than once (media upload + create); a later pass must not lower the ticks
+  if (messageData.id) {
+    const current = await Message.findByPk(messageData.id, { attributes: ["id", "ack"] });
+    if (current && (current.ack || 0) > (messageData.ack || 0)) {
+      messageData.ack = current.ack;
+    }
+  }
   await Message.upsert(messageData);
 
   const message = await Message.findByPk(messageData.id, {
@@ -75,6 +82,11 @@ const CreateMessageService = async ({
   await Ticket.update(
     { lastMessageId: message.id, lastMessageFromMe: !!message.fromMe, lastMessageAck: message.ack || 0 } as any,
     { where: { id: message.ticketId }, silent: true } as any
+  );
+  // the event below carries this ticket to the list, so it must already hold the new last message
+  message.ticket.set(
+    { lastMessageId: message.id, lastMessageFromMe: !!message.fromMe, lastMessageAck: message.ack || 0 } as any,
+    { raw: true } as any
   );
 
   // what the team answers after the AI handed a question over becomes a lesson for the owner to review

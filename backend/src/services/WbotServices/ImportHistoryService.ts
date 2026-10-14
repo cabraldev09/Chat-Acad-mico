@@ -71,6 +71,9 @@ export const importHistory = async (
             isHistorical: true,
             userId: connection.ownerId || null,
             lastMessage: latest.body.slice(0, 1000),
+            lastMessageId: latest.id,
+            lastMessageFromMe: !!latest.fromMe,
+            lastMessageAck: latest.ack || 0,
             closedAt: last,
             createdAt: first
           } as any);
@@ -122,7 +125,15 @@ export const importHistory = async (
         report.messages += chat.messages.length;
         report.chats += 1;
         if (!isNew && ticket.isHistorical) {
-          await Ticket.update({ lastMessage: latest.body.slice(0, 1000) }, { where: { id: ticket.id }, silent: true } as any);
+          await Ticket.update(
+            {
+              lastMessage: latest.body.slice(0, 1000),
+              lastMessageId: latest.id,
+              lastMessageFromMe: !!latest.fromMe,
+              lastMessageAck: latest.ack || 0
+            } as any,
+            { where: { id: ticket.id }, silent: true } as any
+          );
         }
       },
       onProgress

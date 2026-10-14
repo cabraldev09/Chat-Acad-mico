@@ -10,7 +10,7 @@ import Menu from "@material-ui/core/Menu";
 import MenuItem from "@material-ui/core/MenuItem";
 import ListItemIcon from "@material-ui/core/ListItemIcon";
 import ListItemText from "@material-ui/core/ListItemText";
-import { Pin, PinOff, Archive, ArchiveRestore, ChevronDown, BellOff, BellRing, MailOpen, Check, CheckCheck, Clock } from "lucide-react";
+import { Pin, PinOff, Archive, ArchiveRestore, ChevronDown, BellOff, BellRing, MailOpen, Check, CheckCheck, Clock, AlertCircle } from "lucide-react";
 import { getContactSound, onSoundPrefsChange } from "../../utils/soundPrefs";
 
 import ChannelIcon from "../ChannelIcon";
@@ -239,8 +239,8 @@ const TicketListItem = ({ ticket }) => {
         <div className={classes.line}>
           <span className={classes.preview} style={unread ? { color: undefined, fontWeight: 500 } : undefined}>
             {ticket.lastMessageFromMe && ticket.lastMessage && (
-              <span className={classes.tick} title={["Enviando", "Enviada", "Entregue", "Lida", "Ouvida"][ticket.lastMessageAck] || ""} style={{ color: ticket.lastMessageAck >= 3 ? "#53bdeb" : undefined }}>
-                {ticket.lastMessageAck <= 0 ? <Clock size={14} /> : ticket.lastMessageAck === 1 ? <Check size={16} /> : <CheckCheck size={16} />}
+              <span className={classes.tick} title={ticket.lastMessageAck < 0 ? "Falha no envio" : ["Enviando", "Enviada", "Entregue", "Lida", "Ouvida"][ticket.lastMessageAck] || ""} style={{ color: ticket.lastMessageAck >= 3 ? "#53bdeb" : ticket.lastMessageAck < 0 ? "#ea0038" : undefined }}>
+                {ticket.lastMessageAck < 0 ? <AlertCircle size={15} /> : ticket.lastMessageAck === 0 ? <Clock size={14} /> : ticket.lastMessageAck === 1 ? <Check size={16} /> : <CheckCheck size={16} />}
               </span>
             )}
             {plain(ticket.lastMessage) || "Sem mensagens"}

@@ -74,13 +74,14 @@ const mapMessageType = (wbotType: any): MessageType => {
 
 const mapMessageAck = (wbotAck: any): MessageAck => {
   const ackMap: Record<number, MessageAck> = {
+    "-1": -1,
     0: 0,
     1: 1,
     2: 2,
     3: 3,
     4: 4
   };
-  return ackMap[wbotAck] || 0;
+  return ackMap[wbotAck] ?? 0;
 };
 
 const convertToProviderMessage = (

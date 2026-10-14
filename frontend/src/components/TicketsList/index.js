@@ -124,7 +124,7 @@ const reducer = (state, action) => {
 		const ticketIndex = state.findIndex(t => t.id === ticket.id);
 		if (ticketIndex !== -1) {
 			// socket payloads do not carry this person's pin: keep what the list already knows
-			state[ticketIndex] = { ...ticket, pinned: state[ticketIndex].pinned };
+			state[ticketIndex] = { ...state[ticketIndex], ...ticket, pinned: state[ticketIndex].pinned };
 		} else {
 			toTop(state, ticket, -1);
 		}

@@ -41,6 +41,14 @@ const { v4: uuid } = require("uuid");
     };
     await ensure("userCreation", "disabled");
     await ensure("userApiToken", uuid());
+    // an environment with no courses yet gets the shipped catalogue (never touches an existing one)
+    try {
+      const { loadCatalogIfEmpty } = require("../dist/services/CrmServices/CatalogLoader");
+      const loaded = await loadCatalogIfEmpty();
+      if (loaded) console.log(`[início] Catálogo de cursos carregado: ${loaded.created} cursos.`);
+    } catch (err) {
+      console.error(`[início] Catálogo de cursos não carregado: ${err.message}`);
+    }
     await sequelize.close();
     process.exit(0);
   } catch (err) {

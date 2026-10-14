@@ -20,6 +20,7 @@ import CreateContactService from "../services/ContactServices/CreateContactServi
 import RunInboundAutomation from "../services/AutomationServices/RunInboundAutomation";
 import { PUBLIC_DIR } from "../config/paths";
 import Whatsapp from "../models/Whatsapp";
+import Tag from "../models/Tag";
 import processOptOut from "../services/SafetyServices/OptOut";
 import { MessageType, MessageAck } from "../providers/WhatsApp/types";
 
@@ -275,18 +276,30 @@ export const handleMessageAck = async (
   const io = getIO();
 
   try {
-    const messageToUpdate = await Message.findByPk(messageId, {
-      include: [
-        "contact",
-        {
-          model: Message,
-          as: "quotedMsg",
-          include: ["contact"]
-        }
-      ]
-    });
+    const include = [
+      "contact",
+      {
+        model: Message,
+        as: "quotedMsg",
+        include: ["contact"]
+      }
+    ];
+    let messageToUpdate = await Message.findByPk(messageId, { include });
+
+    // the ack can beat the row that is still being saved (contact lookup, media download)
+    for (let i = 0; !messageToUpdate && i < 3; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise(r => setTimeout(r, 500));
+      // eslint-disable-next-line no-await-in-loop
+      messageToUpdate = await Message.findByPk(messageId, { include });
+    }
 
     if (!messageToUpdate) {
+      return;
+    }
+
+    // ticks only go forward (sent -> delivered -> read); -1 is a failure and always applies
+    if (ack >= 0 && (messageToUpdate.ack || 0) >= ack) {
       return;
     }
 
@@ -298,7 +311,14 @@ export const handleMessageAck = async (
       { where: { id: messageToUpdate.ticketId, lastMessageId: messageToUpdate.id }, silent: true } as any
     );
     if (changed) {
-      const fresh = await Ticket.findByPk(messageToUpdate.ticketId, { include: ["contact"] });
+      const fresh = await Ticket.findByPk(messageToUpdate.ticketId, {
+        include: [
+          "contact",
+          "queue",
+          { model: Tag, as: "tags", attributes: ["id", "name", "color"], through: { attributes: [] } },
+          { model: Whatsapp, as: "whatsapp", attributes: ["name", "channel"] }
+        ]
+      });
       if (fresh) io.to(fresh.status).to(String(fresh.id)).emit("ticket", { action: "update", ticket: fresh });
     }
 

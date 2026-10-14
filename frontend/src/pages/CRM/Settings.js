@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { toast } from "react-toastify";
 import {
-  Paper, Tabs, Tab, Typography, Switch, FormControlLabel, TextField, MenuItem, Button, makeStyles,
+  Paper, Tabs, Tab, Typography, Switch, FormControlLabel, TextField, MenuItem, Button, Tooltip, makeStyles,
 } from "@material-ui/core";
-import { Copy, RefreshCw, DatabaseBackup, Upload, ShieldCheck, PlugZap, KeyRound } from "lucide-react";
+import { Copy, RefreshCw, DatabaseBackup, Library, Upload, ShieldCheck, PlugZap, KeyRound } from "lucide-react";
 import { Dialog, DialogTitle, DialogContent, DialogActions } from "@material-ui/core";
 
 import CrudPage from "../../components/CrudPage";
@@ -374,7 +374,20 @@ const CrmSettings = () => {
             />
             <CrudPage embedded title="Cursos" endpoint="/courses" addLabel="Novo curso" socketEvent="course" reloadKey={reload}
               emptyText="Cadastre os cursos (ou importe o catálogo) para gerar propostas com a mensalidade certa."
-              headerExtra={<Button variant="outlined" startIcon={<Upload size={16} />} onClick={() => setImportOpen(true)}>Importar catálogo</Button>}
+              headerExtra={(
+                <>
+                  <Tooltip arrow title="Carrega os cursos, formatos e mensalidades sem bolsa que acompanham o sistema. Cursos já cadastrados não são alterados.">
+                    <Button variant="outlined" startIcon={<Library size={16} />} onClick={async () => {
+                      try {
+                        const { data } = await api.post("/courses/load-default");
+                        toast.success(`Catálogo carregado: ${data.created} novos, ${data.skipped} já existiam.`);
+                        setReload((r) => r + 1);
+                      } catch (err) { toastError(err); }
+                    }}>Carregar catálogo padrão</Button>
+                  </Tooltip>
+                  <Button variant="outlined" startIcon={<Upload size={16} />} onClick={() => setImportOpen(true)}>Importar catálogo</Button>
+                </>
+              )}
               fields={[
                 { name: "name", label: "Nome do curso", required: true },
                 { name: "category", label: "Categoria", type: "combo", options: categories },

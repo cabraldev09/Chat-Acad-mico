@@ -9,7 +9,7 @@ export type MessageType =
   | "sticker"
   | "location";
 
-export type MessageAck = 0 | 1 | 2 | 3 | 4; // PENDING, SERVER, DEVICE, READ, PLAYED
+export type MessageAck = -1 | 0 | 1 | 2 | 3 | 4; // FAILED, PENDING, SERVER, DEVICE, READ, PLAYED
 
 export interface ProviderMessage {
   id: string;

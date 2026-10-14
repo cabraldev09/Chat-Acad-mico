@@ -195,6 +195,7 @@ r.post("/proposal-templates", isAuth, isAdmin, Proposal.templates.store);
 r.put("/proposal-templates/:id", isAuth, isAdmin, Proposal.templates.update);
 r.delete("/proposal-templates/:id", isAuth, isAdmin, Proposal.templates.remove);
 r.post("/courses/import", isAuth, isAdmin, Lead.importCourses);
+r.post("/courses/load-default", isAuth, isAdmin, Lead.loadDefaultCourses);
 
 // ----------------------------------------------------- enrollment payments (Efí)
 r.get("/payments/efi/settings", isAuth, isAdmin, Payment.getSettings);
