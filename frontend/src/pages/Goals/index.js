@@ -60,6 +60,21 @@ const Goals = () => {
   const [newOpen, setNewOpen] = useState(false);
   const [period, setPeriod] = useState({ startsOn: "", endsOn: "" });
   const shareRef = useRef(null);
+  const boxRef = useRef(null);
+  // the card is drawn at its real size (520 px, the size of the downloaded picture) and shrunk to fit the column
+  const [fit, setFit] = useState({ scale: 1, height: 0 });
+  useEffect(() => {
+    const measure = () => {
+      if (!boxRef.current || !shareRef.current) return;
+      const scale = Math.min(1, boxRef.current.clientWidth / 520);
+      setFit((f) => (f.scale === scale && f.height === shareRef.current.offsetHeight ? f : { scale, height: shareRef.current.offsetHeight }));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    if (boxRef.current) ro.observe(boxRef.current);
+    if (shareRef.current) ro.observe(shareRef.current);
+    return () => ro.disconnect();
+  });
 
   const load = useCallback(async (keep) => {
     try {
@@ -123,7 +138,7 @@ const Goals = () => {
   };
   const picture = async () => {
     try {
-      const url = await toPng(shareRef.current, { pixelRatio: 2, cacheBust: true, backgroundColor: "#ffffff" });
+      const url = await toPng(shareRef.current, { pixelRatio: 2, cacheBust: true, backgroundColor: "#ffffff", style: { transform: "none" }, width: 520, height: shareRef.current.offsetHeight });
       const a = document.createElement("a");
       a.href = url; a.download = `metas-${view.startsOn}-${view.endsOn}.png`; a.click();
     } catch (e) { toast.error("Não foi possível gerar a imagem. Tire um print da tela."); }
@@ -221,9 +236,10 @@ const Goals = () => {
                 </div>
               </div>
 
-              <div className={classes.card} style={{ overflowX: "auto" }}>
+              <div className={classes.card}>
                 <Typography style={{ fontWeight: 700, marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}><Download size={15} /> Cartão para print</Typography>
-                <div ref={shareRef} className={classes.share}>
+                <div ref={boxRef} style={{ width: "100%", height: fit.height ? fit.height * fit.scale : "auto", overflow: "hidden" }}>
+                <div ref={shareRef} className={classes.share} style={{ transform: `scale(${fit.scale})`, transformOrigin: "top left" }}>
                   <div className={classes.shareTop}>
                     <div style={{ fontSize: 13, opacity: 0.85 }}>Cruzeiro do Sul Virtual</div>
                     <div style={{ fontSize: 24, fontWeight: 700, letterSpacing: "-0.02em", marginTop: 4 }}>{view.title || `Metas de ${MONTHS[Number(view.endsOn.slice(5, 7)) - 1].toLowerCase()}`}</div>
@@ -241,6 +257,7 @@ const Goals = () => {
                   <div style={{ padding: "12px 26px", background: "#f4f8fc", display: "flex", justifyContent: "space-between", fontWeight: 700 }}>
                     <span>Total</span><span>{view.total.done}{view.total.target ? ` / ${view.total.target}` : ""}</span>
                   </div>
+                </div>
                 </div>
               </div>
             </div>
