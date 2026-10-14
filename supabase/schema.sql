@@ -50,7 +50,10 @@ CREATE TABLE public."AiAgents" (
     "dailyTokenCap" integer DEFAULT 300000 NOT NULL,
     "handoffAfterTurns" integer DEFAULT 14 NOT NULL,
     "waitSeconds" integer DEFAULT 4 NOT NULL,
-    slots json
+    slots json,
+    "reviewNumber" character varying(255),
+    "reviewWhatsappId" integer,
+    "learnFromTeam" boolean DEFAULT true NOT NULL
 );
 
 
@@ -72,6 +75,46 @@ CREATE SEQUENCE public."AiAgents_id_seq"
 --
 
 ALTER SEQUENCE public."AiAgents_id_seq" OWNED BY public."AiAgents".id;
+
+
+--
+-- Name: AiLearnings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."AiLearnings" (
+    id integer NOT NULL,
+    "agentId" integer NOT NULL,
+    "ticketId" integer,
+    "contactName" character varying(255),
+    question text NOT NULL,
+    "suggestedAnswer" text,
+    status character varying(255) DEFAULT 'aguardando_equipe'::character varying NOT NULL,
+    "answerSource" character varying(255),
+    "documentId" integer,
+    "reviewedAt" timestamp with time zone,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: AiLearnings_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."AiLearnings_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: AiLearnings_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."AiLearnings_id_seq" OWNED BY public."AiLearnings".id;
 
 
 --
@@ -1465,7 +1508,8 @@ CREATE TABLE public."Whatsapps" (
     "riskMode" character varying(255) DEFAULT 'strict'::character varying NOT NULL,
     "connectedSince" timestamp with time zone,
     "groupsMode" character varying(255) DEFAULT 'off'::character varying NOT NULL,
-    "allowedGroups" text
+    "allowedGroups" text,
+    "ownerId" integer
 );
 
 
@@ -1529,6 +1573,13 @@ ALTER SEQUENCE public."WppKeys_id_seq" OWNED BY public."WppKeys".id;
 --
 
 ALTER TABLE ONLY public."AiAgents" ALTER COLUMN id SET DEFAULT nextval('public."AiAgents_id_seq"'::regclass);
+
+
+--
+-- Name: AiLearnings id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AiLearnings" ALTER COLUMN id SET DEFAULT nextval('public."AiLearnings_id_seq"'::regclass);
 
 
 --
@@ -1768,6 +1819,14 @@ ALTER TABLE ONLY public."WppKeys" ALTER COLUMN id SET DEFAULT nextval('public."W
 
 ALTER TABLE ONLY public."AiAgents"
     ADD CONSTRAINT "AiAgents_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: AiLearnings AiLearnings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AiLearnings"
+    ADD CONSTRAINT "AiLearnings_pkey" PRIMARY KEY (id);
 
 
 --
@@ -2203,6 +2262,20 @@ ALTER TABLE ONLY public."WppKeys"
 
 
 --
+-- Name: ai_learnings_agent_id_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ai_learnings_agent_id_status ON public."AiLearnings" USING btree ("agentId", status);
+
+
+--
+-- Name: ai_learnings_ticket_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ai_learnings_ticket_id ON public."AiLearnings" USING btree ("ticketId");
+
+
+--
 -- Name: ai_usage_agent_id_created_at; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2328,6 +2401,14 @@ ALTER TABLE ONLY public."AiAgents"
 
 ALTER TABLE ONLY public."AiAgents"
     ADD CONSTRAINT "AiAgents_whatsappId_fkey" FOREIGN KEY ("whatsappId") REFERENCES public."Whatsapps"(id) ON DELETE SET NULL;
+
+
+--
+-- Name: AiLearnings AiLearnings_agentId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AiLearnings"
+    ADD CONSTRAINT "AiLearnings_agentId_fkey" FOREIGN KEY ("agentId") REFERENCES public."AiAgents"(id) ON DELETE CASCADE;
 
 
 --
@@ -2755,6 +2836,14 @@ ALTER TABLE ONLY public."Users"
 
 
 --
+-- Name: Whatsapps Whatsapps_ownerId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."Whatsapps"
+    ADD CONSTRAINT "Whatsapps_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES public."Users"(id) ON UPDATE CASCADE ON DELETE SET NULL;
+
+
+--
 -- Name: WppKeys WppKeys_connectionId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3045,6 +3134,8 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261024000001-enrollment-onboarding
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261025000001-campaign-steps.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261026000001-ticket-pin-archive.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261027000001-ai-v2.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261028000001-ai-learning.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261029000001-whatsapp-owner.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

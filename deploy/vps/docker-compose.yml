@@ -1,0 +1,54 @@
+# API + HTTPS automático (Caddy) para um VPS Ubuntu. Usado por install.sh e update.sh.
+name: chat-academico
+
+services:
+  api:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    image: chat-academico-api:vps
+    init: true
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PORT: "8080"
+      # o VPS tem memória de sobra: o limite pequeno do Dockerfile é para planos de 1 GB
+      NODE_OPTIONS: "--max-old-space-size=1536"
+      WHATSAPP_PROVIDER: wwebjs
+    # o Chromium (WhatsApp Web) trava com o /dev/shm padrão de 64 MB
+    shm_size: "1gb"
+    volumes:
+      - data:/data
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:8080/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "5" }
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      API_DOMAIN: ${API_DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  # sessões do WhatsApp e arquivos enviados: o que o backup guarda
+  data:
+    name: chat-academico-data
+  caddy_data:
+  caddy_config:

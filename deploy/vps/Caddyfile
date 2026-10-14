@@ -1,0 +1,5 @@
+# HTTPS com certificado gratuito (Let's Encrypt), renovado sozinho. WebSocket (Socket.IO) funciona sem ajuste.
+{$API_DOMAIN} {
+	encode gzip
+	reverse_proxy api:8080
+}
