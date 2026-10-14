@@ -27,9 +27,11 @@ import CrmBoard from "../pages/CRM/Board";
 import CrmPanel from "../pages/CRM/Panel";
 import CrmTasks from "../pages/CRM/Tasks";
 import CrmSettings from "../pages/CRM/Settings";
+import Affiliates from "../pages/Affiliates";
 import { AuthProvider } from "../context/Auth/AuthContext";
 import { WhatsAppsProvider } from "../context/WhatsApp/WhatsAppsContext";
 import { ThemeProvider } from "../context/DarkMode";
+import AffiliatePortal from "../pages/AffiliatePortal";
 import Route from "./Route";
 
 const Routes = () => {
@@ -40,6 +42,7 @@ const Routes = () => {
           <Switch>
             <Route exact path="/login" component={Login} />
             <Route exact path="/signup" component={Signup} />
+            <Route exact path="/afiliado/:token" component={AffiliatePortal} publicPage />
             <WhatsAppsProvider>
               <LoggedInLayout>
                 <Route exact path="/" component={Dashboard} isPrivate />
@@ -63,6 +66,7 @@ const Routes = () => {
                 <Route exact path="/crm" component={CrmBoard} isPrivate />
                 <Route exact path="/crm/painel" component={CrmPanel} isPrivate />
                 <Route exact path="/crm/tarefas" component={CrmTasks} isPrivate />
+                <Route exact path="/afiliados" component={Affiliates} isPrivate />
                 <Route exact path="/crm/config" component={CrmSettings} isPrivate adminOnly />
               </LoggedInLayout>
             </WhatsAppsProvider>

@@ -205,6 +205,7 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab }) => {
                 <div className={classes.name}>{lead.name}</div>
                 <div className={classes.meta}>
                   <SourceIcon source={lead.source} /> {lead.source}
+                  {lead.affiliate && <span style={{ color: "#0b4279", fontWeight: 600 }}>· indicado por {lead.affiliate.name}</span>}
                   {lead.course && <span>· {lead.course.name}</span>}
                   {lead.payments && lead.payments.length > 0 && <span style={{ color: "#15803d", fontWeight: 600 }}>· taxa de matrícula paga</span>}
                   <span>· criado {ago(lead.createdAt)}</span>
