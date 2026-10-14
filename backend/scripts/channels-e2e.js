@@ -1341,6 +1341,45 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.post("/users", { name: "X", email: "x-x@x.com", password: "senha123", role: "consultor" }, asUser(cons))).status === 403, "consultant created a user");
       assert((await http.get("/commissions", as)).data.scope === "all", "coordinator does not see everyone's commissions");
     });
+    await test("team goals: automatic count from the CRM, manual adjustment, shared line, repeat the period, managers only", async () => {
+      const mk = async (name, email) => (await http.post("/users", { name, email, password: "senha123", role: "consultor" }, auth())).data;
+      const leila = await mk("Leila Meta", "leila-meta@x.com"), pedro = await mk("Pedro Meta", "pedro-meta@x.com"), dany = await mk("Dany Meta", "dany-meta@x.com");
+      const stageId = sql(`SELECT id FROM LeadStages ORDER BY position LIMIT 1`);
+      const won = (name, owner, when) => sql(`INSERT INTO Leads (name, stageId, ownerId, wonAt, createdAt, updatedAt) VALUES ('${name}', ${stageId}, ${owner}, ${when}, NOW(), NOW()) RETURNING id`);
+      const year = new Date().getUTCFullYear();
+      const startsOn = `${year - 1}-09-26`, endsOn = `${year + 1}-10-26`;
+      won("Mat 1", leila.id, "NOW() - INTERVAL '3 days'"); won("Mat 2", leila.id, "NOW() - INTERVAL '2 days'");
+      won("Mat 3", pedro.id, "NOW() - INTERVAL '1 day'"); won("Mat 4", dany.id, "NOW() - INTERVAL '1 day'");
+      won("Fora", leila.id, `'${year - 3}-01-10 12:00:00+00'`);
+
+      const made = await http.post("/goals", { startsOn, endsOn, members: [
+        { label: "Leila", userIds: [leila.id], target: 3 },
+        { label: "Pedro e Dany", userIds: [pedro.id, dany.id], target: 4, manualCount: 1 },
+        { label: "Sem login", userIds: [], target: 2, manualCount: 1 },
+        { label: "Sem meta", userIds: [] }
+      ] }, auth());
+      assert(made.status === 201, `create ${made.status} ${JSON.stringify(made.data).slice(0, 160)}`);
+      const m = made.data.members;
+      assert(m[0].done === 2 && m[0].missing === 1 && m[0].pct === 67, `Leila ${JSON.stringify(m[0])}`);
+      assert(m[1].auto === 2 && m[1].manual === 1 && m[1].done === 3, `shared line ${JSON.stringify(m[1])}`);
+      assert(m[2].done === 1 && m[2].auto === 0 && m[2].pct === 50, "manual-only line");
+      assert(m[3].target === null && m[3].pct === null && m[3].missing === null, "line without a target");
+      assert(made.data.total.target === 9 && made.data.total.done === 6, `totals ${JSON.stringify(made.data.total)}`);
+
+      const upd = await http.put(`/goals/${made.data.id}`, { title: "Meta de teste", members: [{ label: "Leila", userIds: [leila.id], target: 2 }] }, auth());
+      assert(upd.status === 200 && upd.data.members.length === 1 && upd.data.members[0].reached === true, `update ${JSON.stringify(upd.data.members)}`);
+      assert((await http.put(`/goals/${made.data.id}`, { startsOn: "2027-01-02", endsOn: "2027-01-01" }, auth())).status === 400, "inverted period accepted");
+
+      const rep = await http.post(`/goals/${made.data.id}/repeat`, {}, auth());
+      assert(rep.status === 201 && rep.data.startsOn.endsWith("-26") && rep.data.endsOn.endsWith("-26"), `repeat ${rep.data.startsOn} ${rep.data.endsOn}`);
+      assert(rep.data.members[0].target === 2 && rep.data.members[0].manual === 0, "repeat keeps targets, drops adjustments");
+
+      const tl = (await http.post("/auth/login", { email: "leila-meta@x.com", password: "senha123" })).data.token;
+      assert((await http.get("/goals", asUser(tl))).status === 403, "a consultant read the goals");
+      const list = (await http.get("/goals", auth())).data;
+      assert(list.length >= 2, "list");
+      assert((await http.delete(`/goals/${rep.data.id}`, auth())).status === 200 && (await http.get("/goals", auth())).data.length === list.length - 1, "delete");
+    });
     await test("one conversation per person: writing after a closed attendance brings the same one back, reopening never errors", async () => {
       const cid = sql(`SELECT id FROM Contacts WHERE number='tg_7777'`);
       const tid = sql(`SELECT id FROM Tickets WHERE contactId=${cid} ORDER BY id DESC LIMIT 1`);

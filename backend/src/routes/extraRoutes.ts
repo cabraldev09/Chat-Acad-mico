@@ -28,6 +28,7 @@ import * as Payment from "../controllers/PaymentController";
 import * as PoloCtl from "../controllers/PoloController";
 import * as Aff from "../controllers/AffiliateController";
 import * as Commission from "../controllers/CommissionController";
+import * as Goal from "../controllers/GoalController";
 import * as AffMat from "../controllers/AffiliateMaterialController";
 import { affiliateUpload } from "../config/affiliateUpload";
 import { affiliateStaff, canAccessAffiliate } from "../helpers/Affiliates";
@@ -249,6 +250,12 @@ r.get("/me/efi", isAuth, Payment.myEfi);
 r.put("/me/efi", isAuth, Payment.saveMyEfi);
 r.delete("/me/efi", isAuth, Payment.clearMyEfi);
 // commissions of the enrollment fee: each person sees their own, administration and coordination see everyone's
+// team enrollment goals (administration and coordination)
+r.get("/goals", isAuth, isManager, Goal.index);
+r.post("/goals", isAuth, isManager, Goal.store);
+r.put("/goals/:id", isAuth, isManager, Goal.update);
+r.delete("/goals/:id", isAuth, isManager, Goal.remove);
+r.post("/goals/:id/repeat", isAuth, isManager, Goal.repeat);
 r.get("/commissions", isAuth, Commission.index);
 r.get("/commissions/export.csv", isAuth, Commission.exportCsv);
 r.put("/commissions/:id/settle", isAuth, Commission.settle);

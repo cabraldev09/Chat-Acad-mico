@@ -40,6 +40,8 @@ import AiUsage from "../models/AiUsage";
 import AiLearning from "../models/AiLearning";
 import Polo from "../models/Polo";
 import PoloMember from "../models/PoloMember";
+import Goal from "../models/Goal";
+import GoalMember from "../models/GoalMember";
 import ProposalTemplateInstitution from "../models/ProposalTemplateInstitution";
 import Affiliate from "../models/Affiliate";
 import AffiliateCampaign from "../models/AffiliateCampaign";
@@ -95,6 +97,8 @@ const models = [
   AiLearning,
   Polo,
   PoloMember,
+  Goal,
+  GoalMember,
   ProposalTemplateInstitution,
   Affiliate,
   AffiliateCampaign,

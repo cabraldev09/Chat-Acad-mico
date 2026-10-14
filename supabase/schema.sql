@@ -729,6 +729,80 @@ ALTER SEQUENCE public."Courses_id_seq" OWNED BY public."Courses".id;
 
 
 --
+-- Name: GoalMembers; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."GoalMembers" (
+    id integer NOT NULL,
+    "goalId" integer NOT NULL,
+    label character varying(255) NOT NULL,
+    "userIds" text DEFAULT '[]'::text NOT NULL,
+    target integer,
+    "manualCount" integer DEFAULT 0 NOT NULL,
+    note character varying(255),
+    "position" integer DEFAULT 0 NOT NULL,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: GoalMembers_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."GoalMembers_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: GoalMembers_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."GoalMembers_id_seq" OWNED BY public."GoalMembers".id;
+
+
+--
+-- Name: Goals; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."Goals" (
+    id integer NOT NULL,
+    title character varying(255),
+    "startsOn" date NOT NULL,
+    "endsOn" date NOT NULL,
+    status character varying(255) DEFAULT 'active'::character varying NOT NULL,
+    "createdBy" integer,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: Goals_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."Goals_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: Goals_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."Goals_id_seq" OWNED BY public."Goals".id;
+
+
+--
 -- Name: Institutions; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1924,6 +1998,20 @@ ALTER TABLE ONLY public."Courses" ALTER COLUMN id SET DEFAULT nextval('public."C
 
 
 --
+-- Name: GoalMembers id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."GoalMembers" ALTER COLUMN id SET DEFAULT nextval('public."GoalMembers_id_seq"'::regclass);
+
+
+--
+-- Name: Goals id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."Goals" ALTER COLUMN id SET DEFAULT nextval('public."Goals_id_seq"'::regclass);
+
+
+--
 -- Name: Institutions id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -2282,6 +2370,22 @@ ALTER TABLE ONLY public."Contacts"
 
 ALTER TABLE ONLY public."Courses"
     ADD CONSTRAINT "Courses_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: GoalMembers GoalMembers_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."GoalMembers"
+    ADD CONSTRAINT "GoalMembers_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: Goals Goals_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."Goals"
+    ADD CONSTRAINT "Goals_pkey" PRIMARY KEY (id);
 
 
 --
@@ -2650,6 +2754,13 @@ CREATE INDEX contacts_is_staff_idx ON public."Contacts" USING btree ("isStaff") 
 --
 
 CREATE INDEX contacts_kind_idx ON public."Contacts" USING btree (kind) WHERE ((kind)::text <> 'person'::text);
+
+
+--
+-- Name: goal_members_goal_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX goal_members_goal_idx ON public."GoalMembers" USING btree ("goalId", "position");
 
 
 --
@@ -3060,6 +3171,14 @@ ALTER TABLE ONLY public."ContactTags"
 
 ALTER TABLE ONLY public."Courses"
     ADD CONSTRAINT "Courses_institutionId_fkey" FOREIGN KEY ("institutionId") REFERENCES public."Institutions"(id) ON DELETE SET NULL;
+
+
+--
+-- Name: GoalMembers GoalMembers_goalId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."GoalMembers"
+    ADD CONSTRAINT "GoalMembers_goalId_fkey" FOREIGN KEY ("goalId") REFERENCES public."Goals"(id) ON DELETE CASCADE;
 
 
 --
@@ -3752,6 +3871,7 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261103000003-default-quick-answers
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261104000001-performance-indexes.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261104000002-commission-settlement.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261104000003-user-coord-area.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261104000004-team-goals.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.
