@@ -72,7 +72,7 @@ const emptyNode = { title: "", action: "message", message: "", keywords: "", tar
 
 const Chatbot = () => {
   const classes = useStyles();
-  const [scope, setScope] = useState("global");
+  const [scope, setScope] = useState("shared");
   const [connections, setConnections] = useState([]);
   const [queues, setQueues] = useState([]);
   const [users, setUsers] = useState([]);
@@ -115,7 +115,7 @@ const Chatbot = () => {
     const payload = {
       ...node,
       parentId: parentId || null,
-      whatsappId: scope === "global" ? null : Number(scope),
+      whatsappId: scope === "shared" ? null : Number(scope),
       targetId: node.targetId || null,
     };
     try {
@@ -261,7 +261,7 @@ const Chatbot = () => {
         <Title>Chatbot (fluxo de atendimento)</Title>
         <MainHeaderButtonsWrapper>
           <TextField select size="small" variant="outlined" label="Fluxo de" value={scope} onChange={(e) => setScope(e.target.value)} style={{ minWidth: 200 }}>
-            <MenuItem value="global">Todas as conexões</MenuItem>
+            <MenuItem value="shared">Todas as conexões</MenuItem>
             {connections.map((c) => (<MenuItem key={c.id} value={String(c.id)}>{c.name}</MenuItem>))}
           </TextField>
           <Button variant="outlined" color="primary" startIcon={<Play size={15} />} onClick={() => setSimulating(true)}>Testar o fluxo</Button>

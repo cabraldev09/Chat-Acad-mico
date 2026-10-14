@@ -46,7 +46,8 @@ export const { show, store, update, remove } = crud;
 export const index = async (req: Request, res: Response): Promise<Response> => {
   const { whatsappId } = req.query;
   const where: any = {};
-  if (whatsappId === "global") where.whatsappId = { [Op.is]: null };
+  // "shared": nodes of every connection. ("global"/"globalThis": older screens; the production build of the front rewrote the word)
+  if (whatsappId === "shared" || whatsappId === "global" || whatsappId === "globalThis") where.whatsappId = { [Op.is]: null };
   else if (whatsappId) where.whatsappId = whatsappId;
   const nodes = await ChatbotNode.findAll({
     where,
