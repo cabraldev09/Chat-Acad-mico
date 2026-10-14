@@ -125,7 +125,8 @@ function ListItemLink(props) {
       React.forwardRef((itemProps, ref) => (
         <NavLink
           to={to}
-          exact={to === "/"}
+          // "/" and "/crm" are the start of other addresses ("/crm/painel"...): only the exact address lights them
+          exact={to === "/" || to === "/crm"}
           activeClassName={classes.navItemActive}
           ref={ref}
           {...itemProps}

@@ -10,6 +10,7 @@ interface SerializedUser {
   profile: string;
   role: string;
   coordArea: string | null;
+  phone: string | null;
   queues: Queue[];
   whatsapp: Whatsapp;
 }
@@ -22,6 +23,7 @@ export const SerializeUser = (user: User): SerializedUser => {
     profile: user.profile,
     role: roleOf(user),
     coordArea: user.coordArea || null,
+    phone: user.phone || null,
     queues: user.queues,
     whatsapp: user.whatsapp
   };

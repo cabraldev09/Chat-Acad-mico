@@ -5,7 +5,7 @@ import {
   Button, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, MenuItem, Paper, Switch, TextField, Typography,
 } from "@material-ui/core";
 import {
-  BookOpen, Download, Eye, FileText, Image as ImageIcon, Layers, Link2, Megaphone, Paperclip, Pencil, Plus, Trash2, Type, Video, Users,
+  BookOpen, Copy, Download, Eye, FileText, Image as ImageIcon, Layers, Link2, Megaphone, Paperclip, Pencil, Plus, Trash2, Type, Video, Users,
 } from "lucide-react";
 
 import GlowCard from "../../components/GlowCard";
@@ -19,7 +19,8 @@ import { KINDS, KIND_LABEL, fetchAllUsers, saveBlob, useStyles } from "./shared"
 
 const ICONS = { banner: ImageIcon, copy: Type, video: Video, course_info: BookOpen, course_list: Layers, campaign: Megaphone, other: Paperclip };
 
-const EMPTY = { title: "", kind: "banner", description: "", copyText: "", externalUrl: "", courseId: "", campaignId: "", active: true, audience: "all", ownerIds: [], affiliateIds: [] };
+const COLLECTIONS = [["graduacao", "Graduação"], ["pos", "Pós-graduação"], ["tecnico", "Cursos técnicos"], ["programa", "Programa de afiliados"]];
+const EMPTY = { title: "", kind: "banner", collection: "", description: "", copyText: "", externalUrl: "", courseId: "", campaignId: "", active: true, audience: "all", ownerIds: [], affiliateIds: [] };
 
 const MaterialForm = ({ open, material, courses, campaigns, consultants, affiliates, isAdmin, onClose, onSaved }) => {
   const [f, setF] = useState(EMPTY);
@@ -39,7 +40,7 @@ const MaterialForm = ({ open, material, courses, campaigns, consultants, affilia
     setBusy(true);
     try {
       const fd = new FormData();
-      ["title", "kind", "description", "copyText", "externalUrl", "courseId", "campaignId", "audience"].forEach((k) => fd.append(k, f[k] ?? ""));
+      ["title", "kind", "collection", "description", "copyText", "externalUrl", "courseId", "campaignId", "audience"].forEach((k) => fd.append(k, f[k] ?? ""));
       fd.append("active", String(f.active));
       fd.append("ownerIds", JSON.stringify(f.ownerIds));
       fd.append("affiliateIds", JSON.stringify(f.affiliateIds));
@@ -62,6 +63,10 @@ const MaterialForm = ({ open, material, courses, campaigns, consultants, affilia
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <TextField select label="Tipo" value={f.kind} onChange={set("kind")} margin="dense" variant="outlined">
             {KINDS.map(([v, l]) => <MenuItem key={v} value={v}>{l}</MenuItem>)}
+          </TextField>
+          <TextField select label="Coleção na Central do Afiliado" value={f.collection || ""} onChange={set("collection")} margin="dense" variant="outlined">
+            <MenuItem value="">Nenhuma (só na lista geral)</MenuItem>
+            {COLLECTIONS.map(([v, l]) => <MenuItem key={v} value={v}>{l}</MenuItem>)}
           </TextField>
           <TextField select label="Curso (opcional)" value={f.courseId || ""} onChange={set("courseId")} margin="dense" variant="outlined">
             <MenuItem value="">Nenhum</MenuItem>
@@ -175,6 +180,8 @@ const MaterialsTab = () => {
                     <Users size={12} /> {m.audience === "all" ? "Todos" : `Restrito (${m.ownerIds.length + m.affiliateIds.length})`}
                   </span>
                   {!m.active && <span className={classes.chip} style={{ background: "rgba(100,116,139,.18)" }}>Oculto</span>}
+                  {m.collection && <span className={classes.chip} style={{ background: "rgba(11,66,121,.12)" }}>{(COLLECTIONS.find((c) => c[0] === m.collection) || [])[1]}</span>}
+                  {m.copies > 0 && <span className={classes.chip} style={{ background: "rgba(6,147,227,.12)" }} title="Vezes que a mensagem foi copiada"><Copy size={12} /> {m.copies}</span>}
                   {m.downloads > 0 && <span className={classes.chip} style={{ background: "rgba(6,147,227,.12)" }}><Download size={12} /> {m.downloads}</span>}
                   {m.externalUrl && <span className={classes.chip} style={{ background: "rgba(6,147,227,.12)" }}><Link2 size={12} /> link</span>}
                 </div>

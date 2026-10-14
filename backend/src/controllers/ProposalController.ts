@@ -5,6 +5,7 @@ import path from "path";
 import { Op } from "sequelize";
 import { randomBytes } from "crypto";
 
+import Affiliate from "../models/Affiliate";
 import Lead from "../models/Lead";
 import { leadScopeWhere } from "../middleware/scope";
 import LeadStage from "../models/LeadStage";
@@ -208,6 +209,13 @@ const compose = async (lead: Lead, params: ProposalParams, snapshot: Snapshot, g
 };
 
 const link = (p: Proposal) => `${getPublicUrl()}/p/${p.token}`;
+// who referred the student: proposals carry the affiliate so the team can follow what each one brings
+const affiliateNames = async (ids: Array<number | null | undefined>): Promise<Map<number, string>> => {
+  const list = Array.from(new Set(ids.filter(Boolean) as number[]));
+  const rows = list.length ? await Affiliate.findAll({ where: { id: list }, attributes: ["id", "name"] }) : [];
+  return new Map(rows.map(a => [a.id, a.name]));
+};
+
 const present = (p: Proposal) => ({ ...p.toJSON(), params: JSON.parse(p.params), link: link(p) });
 
 // ---------------------------------------------------------------------------
@@ -299,14 +307,16 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
     order: [["id", "DESC"]],
     limit: 100
   });
-  return res.json(rows.map(r => ({ ...r.toJSON(), params: undefined, link: link(r) })));
+  const names = await affiliateNames(rows.map(r => r.affiliateId));
+  return res.json(rows.map(r => ({ ...r.toJSON(), params: undefined, link: link(r), affiliate: r.affiliateId ? { id: r.affiliateId, name: names.get(r.affiliateId) || null } : null })));
 };
 
 export const show = async (req: Request, res: Response): Promise<Response> => {
   const p = await Proposal.findByPk(req.params.id);
   if (!p) throw new AppError("ERR_NOT_FOUND", 404);
   const { html, result, messages } = await rebuild(p);
-  return res.json({ ...present(p), html, result, messages });
+  const names = await affiliateNames([p.affiliateId]);
+  return res.json({ ...present(p), html, result, messages, affiliate: p.affiliateId ? { id: p.affiliateId, name: names.get(p.affiliateId) || null } : null });
 };
 
 export const duplicate = async (req: Request, res: Response): Promise<Response> => {

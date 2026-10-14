@@ -233,7 +233,7 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
         <IconButton onClick={() => onClose()} aria-label="Fechar"><X /></IconButton>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div className={classes.title}>Proposta de bolsa{saved ? ` #${saved.id}` : ""}</div>
-          <Typography variant="body2" color="textSecondary" noWrap>{lead.name}{institution ? ` · ${institution.name}` : ""}</Typography>
+          <Typography variant="body2" color="textSecondary" noWrap>{lead.name}{institution ? ` · ${institution.name}` : ""}{lead.affiliate ? ` · indicado pelo afiliado ${lead.affiliate.name}` : ""}</Typography>
         </div>
         {locked && <span className={classes.chip}>Já enviada — duplique para alterar</span>}
       </div>

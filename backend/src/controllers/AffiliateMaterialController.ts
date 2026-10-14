@@ -89,6 +89,8 @@ const ownAudience = async (req: Request): Promise<{ ownerIds: number[]; affiliat
 
 // ---------------------------------------------------------------- materials
 
+export const COLLECTIONS = ["graduacao", "pos", "tecnico", "programa"];
+
 const presentMaterial = (m: AffiliateMaterial, aud?: Audience) => ({
   ...m.toJSON(),
   hasFile: !!m.fileName,
@@ -114,6 +116,7 @@ const materialData = (b: any, req: Request, isNew: boolean) => {
     if (!data.title) throw new AppError("ERR_FIELD_REQUIRED_title");
   }
   if (b.kind !== undefined) data.kind = KINDS.includes(b.kind) ? b.kind : "other";
+  if (b.collection !== undefined) data.collection = COLLECTIONS.includes(b.collection) ? b.collection : null;
   if (b.description !== undefined) data.description = text(b.description, 1000);
   if (b.copyText !== undefined) data.copyText = text(b.copyText, 6000);
   if (b.externalUrl !== undefined) {

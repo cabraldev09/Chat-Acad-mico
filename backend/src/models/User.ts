@@ -56,6 +56,10 @@ class User extends Model<User> {
   @Column
   efiPayeeCode: string;
 
+  // WhatsApp the affiliates registered by this person use to reach them (support)
+  @Column
+  phone: string;
+
   // comercial | academica: the side a coordinator coordinates
   @Column
   coordArea: string;

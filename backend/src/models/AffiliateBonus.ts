@@ -61,6 +61,10 @@ class AffiliateBonus extends Model<AffiliateBonus> {
   @Column
   paymentRef: string;
 
+  // when the affiliate is due to be paid (confirmation + the number of days in the rules)
+  @Column(DataType.DATEONLY)
+  dueAt: string;
+
   @Column(DataType.TEXT)
   note: string;
 

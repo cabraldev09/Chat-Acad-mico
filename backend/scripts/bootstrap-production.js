@@ -19,16 +19,16 @@ const { v4: uuid } = require("uuid");
       // existing user with this e-mail and set the password (so changing the variables fixes a lost access)
       const found = await User.findOne({ where: { email } });
       if (found) {
-        await found.update({ profile: "admin", password: process.env.ADMIN_PASSWORD, tokenVersion: (found.tokenVersion || 0) + 1 });
+        await found.update({ profile: "admin", role: "admin", password: process.env.ADMIN_PASSWORD, tokenVersion: (found.tokenVersion || 0) + 1 });
         console.log(`[início] ${email} é administrador (senha definida por ADMIN_PASSWORD).`);
       } else {
-        await User.create({ name: process.env.ADMIN_NAME || "Administrador", email, password: process.env.ADMIN_PASSWORD, profile: "admin" });
+        await User.create({ name: process.env.ADMIN_NAME || "Administrador", email, password: process.env.ADMIN_PASSWORD, profile: "admin", role: "admin" });
         console.log(`[início] Administrador criado: ${email}`);
       }
     } else if (!(await User.count({ where: { profile: "admin" } }))) {
       const adminEmail = email || "admin@whaticket.com";
       const password = crypto.randomBytes(9).toString("base64").replace(/[+/=]/g, "x");
-      await User.create({ name: process.env.ADMIN_NAME || "Administrador", email: adminEmail, password, profile: "admin" });
+      await User.create({ name: process.env.ADMIN_NAME || "Administrador", email: adminEmail, password, profile: "admin", role: "admin" });
       console.log(`[início] Administrador criado: ${adminEmail}`);
       console.log("[início] ==============================================================");
       console.log(`[início] SENHA INICIAL (aparece só desta vez): ${password}`);

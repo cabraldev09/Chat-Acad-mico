@@ -300,7 +300,7 @@ const AffiliatesTab = () => {
   const load = useCallback(() => {
     Promise.all([
       api.get("/affiliates", { params: { days } }),
-      api.get("/affiliates/ranking", { params: { days } }),
+      api.get("/affiliates/ranking", { params: { days, by: "paid" } }),
     ]).then(([a, r]) => { setRows(a.data); setRank(r.data); }).catch(toastError).finally(() => setLoading(false));
   }, [days]);
   useEffect(() => { load(); }, [load]);
@@ -334,6 +334,12 @@ const AffiliatesTab = () => {
             <div className={classes.kpiLabel}>{l}{l !== "Afiliados" ? ` · ${days} dias` : ""}</div>
           </GlowCard>
         ))}
+        {rank && (
+          <GlowCard className={classes.kpi} style={{ animationDelay: "200ms" }}>
+            <div className={classes.kpiValue}><NumberTicker value={rank.totals.bonusPaid || 0} format={brl} /></div>
+            <div className={classes.kpiLabel}>Já pago · {days} dias</div>
+          </GlowCard>
+        )}
         {top && (
           <GlowCard className={classes.kpi} style={{ animationDelay: "240ms" }}>
             <div className={classes.kpiValue} style={{ fontSize: 17, display: "flex", gap: 6, alignItems: "center" }}><Trophy size={18} color="#d97706" />{top.name.split(" ")[0]}</div>
@@ -341,6 +347,22 @@ const AffiliatesTab = () => {
           </GlowCard>
         )}
       </div>
+
+      {rank && rank.affiliates.some((a) => a.bonusPaid + a.bonusPending + a.bonusApproved > 0) && (
+        <Paper variant="outlined" style={{ padding: 16, margin: "0 0 12px", animation: "page-in .4s var(--ease-out) both" }}>
+          <Typography variant="subtitle2" style={{ fontWeight: 700, display: "flex", gap: 6, alignItems: "center" }}><Trophy size={16} color="#d97706" /> Quem mais recebeu · {days} dias</Typography>
+          <div style={{ display: "grid", gap: 6, marginTop: 8 }}>
+            {rank.affiliates.filter((a) => a.bonusPaid + a.bonusPending + a.bonusApproved > 0).slice(0, 5).map((a, i) => (
+              <div key={a.id} style={{ display: "grid", gridTemplateColumns: "24px 1fr auto auto", gap: 10, alignItems: "baseline", fontSize: 14 }}>
+                <b>{i + 1}</b>
+                <span>{a.name}<span style={{ opacity: 0.6 }}>{a.owner ? ` · ${a.owner}` : ""}</span></span>
+                <span style={{ fontWeight: 700 }}>{brl(a.bonusPaid)} <span style={{ fontWeight: 400, opacity: 0.6 }}>pagos</span></span>
+                <span style={{ opacity: 0.75 }}>{brl(a.bonusPending + a.bonusApproved)} a pagar</span>
+              </div>
+            ))}
+          </div>
+        </Paper>
+      )}
 
       <div className={classes.toolbar}>
         <TextField className={classes.grow} size="small" variant="outlined" placeholder="Buscar por nome, cidade, código ou consultor" value={search} onChange={(e) => setSearch(e.target.value)}
@@ -372,6 +394,7 @@ const AffiliatesTab = () => {
                 <span className={classes.stat}><b>{a.stats.proposals}</b><span>propostas</span></span>
                 <span className={classes.stat}><b>{a.stats.enrolled}</b><span>matrículas</span></span>
                 <span className={classes.stat}><b>{brl(a.stats.bonusPending + a.stats.bonusApproved)}</b><span>a pagar</span></span>
+                <span className={classes.stat}><b>{brl(a.stats.bonusPaid)}</b><span>recebido</span></span>
               </div>
               {a.status === "paused" ? <span className={classes.chip} style={{ background: "rgba(220,38,38,.14)", color: "#b91c1c" }}>Pausado</span> : <span />}
             </GlowCard>

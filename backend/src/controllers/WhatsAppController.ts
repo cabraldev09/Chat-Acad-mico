@@ -13,6 +13,7 @@ import AppError from "../errors/AppError";
 import User from "../models/User";
 import Whatsapp from "../models/Whatsapp";
 import { getSetting } from "../helpers/AppSettings";
+import { isManagerRole, roleOf } from "../helpers/Roles";
 
 const isAdminReq = (req: Request) => req.user.profile === "admin";
 const me = (req: Request) => Number(req.user.id);
@@ -39,7 +40,7 @@ interface WhatsappData {
 export const index = async (req: Request, res: Response): Promise<Response> => {
   const all = await ListWhatsAppsService();
   // shared numbers (the administrator's) plus the person's own; never someone else's personal number
-  const visible = isAdminReq(req) ? all : all.filter(w => !w.ownerId || w.ownerId === me(req));
+  const visible = isAdminReq(req) || isManagerRole(roleOf(req.user)) ? all : all.filter(w => !w.ownerId || w.ownerId === me(req));
 
   return res.status(200).json(visible.map(w => present(req, w)));
 };

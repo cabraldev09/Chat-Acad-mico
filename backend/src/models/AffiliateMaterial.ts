@@ -51,6 +51,14 @@ class AffiliateMaterial extends Model<AffiliateMaterial> {
   @Column
   campaignId: number;
 
+  // graduacao | pos | tecnico | programa (null = only in the full list)
+  @Column
+  collection: string;
+
+  @Default(0)
+  @Column
+  copies: number;
+
   @Default("all")
   @Column
   audience: string;

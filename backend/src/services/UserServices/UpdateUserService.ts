@@ -1,7 +1,9 @@
 import * as Yup from "yup";
 
 import AppError from "../../errors/AppError";
+import { normalizePhone } from "../../helpers/Phone";
 import { SerializeUser } from "../../helpers/SerializeUser";
+import User from "../../models/User";
 import ShowUserService from "./ShowUserService";
 import { COORD_AREAS, ROLES } from "../../helpers/Roles";
 
@@ -14,6 +16,7 @@ interface UserData {
   queueIds?: number[];
   whatsappId?: number;
   coordArea?: string;
+  phone?: string;
 }
 
 interface Request {
@@ -49,7 +52,8 @@ const UpdateUserService = async ({
     name,
     queueIds = [],
     whatsappId,
-    coordArea
+    coordArea,
+    phone
   } = userData;
 
   try {
@@ -63,6 +67,11 @@ const UpdateUserService = async ({
   }
   const finalRole = role || (profile === "admin" ? "admin" : undefined);
 
+  // the system always keeps one administrator: nobody can demote the last one (not even themselves)
+  if (user.profile === "admin" && finalRole && finalRole !== "admin" && (await User.count({ where: { profile: "admin" } })) <= 1) {
+    throw new AppError("ERR_LAST_ADMIN", 400);
+  }
+
   await user.update({
     email,
     password,
@@ -71,6 +80,7 @@ const UpdateUserService = async ({
     name,
     // the area only matters for coordinators; any other role clears it
     coordArea: (finalRole || user.role) === "coordenacao" && (COORD_AREAS as readonly string[]).includes(String(coordArea)) ? coordArea : (finalRole || user.role) === "coordenacao" ? user.coordArea : null,
+    ...(phone !== undefined ? { phone: normalizePhone(phone) || null } : {}),
     whatsappId: whatsappId ? whatsappId : null
   });
 

@@ -83,7 +83,8 @@ const UserModal = ({ open, onClose, userId }) => {
 		password: "",
 		profile: "user",
 		role: "consultor",
-		coordArea: ""
+		coordArea: "",
+		phone: ""
 	};
 
 	const { user: loggedInUser } = useContext(AuthContext);
@@ -158,7 +159,7 @@ const UserModal = ({ open, onClose, userId }) => {
 						}, 400);
 					}}
 				>
-					{({ touched, errors, isSubmitting, values }) => (
+					{({ touched, errors, isSubmitting, values, setFieldValue }) => (
 						<Form>
 							<DialogContent dividers>
 								<div className={classes.multFieldLine}>
@@ -241,6 +242,16 @@ const UserModal = ({ open, onClose, userId }) => {
 										/>
 									</FormControl>
 								</div>
+								<TextField
+									label="WhatsApp de contato"
+									name="phone"
+									value={values.phone || ""}
+									onChange={(e) => setFieldValue("phone", e.target.value)}
+									variant="outlined"
+									margin="dense"
+									fullWidth
+									helperText="É o suporte que os afiliados cadastrados por esta pessoa veem"
+								/>
 								{values.role === "coordenacao" && (
 									<FormControl variant="outlined" margin="dense" fullWidth>
 										<InputLabel id="coord-area-label">Área de coordenação</InputLabel>

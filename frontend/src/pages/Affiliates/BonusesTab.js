@@ -83,7 +83,7 @@ const BonusesTab = () => {
                 </div>
                 <div style={{ minWidth: 0 }}>
                   <div className={classes.name}>{b.lead ? b.lead.name : ""}</div>
-                  <div className={classes.sub}>{b.reason} · {day(b.createdAt)}{b.paymentRef ? ` · ${b.paymentRef}` : ""}</div>
+                  <div className={classes.sub}>{b.reason} · {day(b.createdAt)}{b.dueAt && b.status !== "paid" && b.status !== "cancelled" ? ` · pagar até ${day(b.dueAt)}` : ""}{b.paymentRef ? ` · ${b.paymentRef}` : ""}</div>
                 </div>
                 <div style={{ textAlign: "right" }}>
                   <div style={{ fontWeight: 700, fontSize: 16 }}>{brl(b.amount)}</div>

@@ -2,26 +2,34 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { toast } from "react-toastify";
 import {
-  Copy, Download, Send, Search, Image as ImageIcon, Video, FileText, BookOpen, GraduationCap, Megaphone,
-  Users, X, Check, ExternalLink, Play, Link2, Clock, MessageCircle, UserPlus, Gift, Lock, Layers, Type, Paperclip,
+  ArrowLeft, ArrowRight, ArrowUpRight, BookOpen, Check, Clock, Copy, Download, ExternalLink, FileText, Gift, GraduationCap, Home as HomeIcon, Image as ImageIcon,
+  Layers, Link2, Lock, Megaphone, MessageCircle, Paperclip, Play, Search, Send, Type, UserPlus, Users, Video, Folders, HelpCircle,
 } from "lucide-react";
 
 import { getBackendUrl } from "../../config";
 import NumberTicker from "../../components/NumberTicker";
-import "./portal.css";
+import logo from "../../assets/logo-cruzeiro-color.svg";
+import "./central.css";
 
-// Public portal: no login, no cookies. The token in the address is the access.
+// Public page of one affiliate: no login, no cookies. The token in the address is the access. It never shows prices.
 const API = String(getBackendUrl() || "").replace(/\/+$/, "");
 const http = axios.create({ baseURL: API });
 
 const KIND = {
   banner: { label: "Banner", Icon: ImageIcon },
-  copy: { label: "Texto pronto", Icon: Type },
+  copy: { label: "Mensagem pronta", Icon: Type },
   video: { label: "Vídeo", Icon: Video },
   course_info: { label: "Sobre o curso", Icon: BookOpen },
   course_list: { label: "Lista de cursos", Icon: Layers },
   campaign: { label: "Campanha", Icon: Megaphone },
   other: { label: "Material", Icon: Paperclip },
+};
+
+const COLLECTIONS = {
+  graduacao: { name: "Graduação", line: "Um primeiro passo.", about: "Divulgue os cursos de graduação.", tag: "01 / GRADUAÇÃO" },
+  pos: { name: "Pós-graduação", line: "O próximo capítulo.", about: "Apresente novas possibilidades de formação.", tag: "02 / PÓS-GRADUAÇÃO" },
+  tecnico: { name: "Cursos técnicos", line: "Formação que vai direto ao ponto.", about: "Banner de divulgação dos cursos técnicos.", tag: "03 / TÉCNICOS" },
+  programa: { name: "Programa de afiliados", line: "Uma rede que cresce.", about: "Kit, vídeos e texto de convite.", tag: "04 / PROGRAMA" },
 };
 
 const FORMAT_NOTE = {
@@ -34,6 +42,12 @@ const FORMAT_NOTE = {
 const brl = (n) => Number(n || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const day = (d) => (d ? new Date(d).toLocaleDateString("pt-BR") : "");
 const sizeOf = (b) => (!b ? "" : b > 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
+const daysLeft = (end) => {
+  if (!end) return null;
+  const d = Math.ceil((new Date(end) - new Date()) / 86400000);
+  if (d < 0) return null;
+  return d === 0 ? "termina hoje" : d === 1 ? "termina amanhã" : `termina em ${d} dias`;
+};
 
 const copyText = async (text, ok = "Copiado!") => {
   try {
@@ -56,13 +70,7 @@ const copyText = async (text, ok = "Copiado!") => {
   }
 };
 
-const youtubeEmbed = (url) => {
-  const m = String(url || "").match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([\w-]{11})/);
-  return m ? `https://www.youtube.com/embed/${m[1]}` : null;
-};
-
-// button that confirms the copy for a moment
-const CopyButton = ({ text, label = "Copiar texto", ok, className = "ap-btn" }) => {
+const CopyButton = ({ text, label = "Copiar mensagem", ok, className = "ca-btn", onCopied }) => {
   const [done, setDone] = useState(false);
   return (
     <button
@@ -71,6 +79,7 @@ const CopyButton = ({ text, label = "Copiar texto", ok, className = "ap-btn" }) 
       onClick={async () => {
         if (await copyText(text, ok)) {
           setDone(true);
+          if (onCopied) onCopied();
           setTimeout(() => setDone(false), 1800);
         }
       }}
@@ -80,6 +89,8 @@ const CopyButton = ({ text, label = "Copiar texto", ok, className = "ap-btn" }) 
     </button>
   );
 };
+
+const isImage = (m) => m.hasFile && /^image\//.test(m.mimeType || "");
 
 const ReferralSheet = ({ token, courses, presetCourse, onClose, onDone }) => {
   const [form, setForm] = useState({ name: "", phone: "", courseId: presetCourse || "", consent: false, website: "" });
@@ -110,18 +121,18 @@ const ReferralSheet = ({ token, courses, presetCourse, onClose, onDone }) => {
   };
 
   return (
-    <div className="ap-overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()} role="presentation">
-      <form className="ap-sheet" onSubmit={submit} role="dialog" aria-modal="true" aria-labelledby="ap-ind-title">
-        <h2 id="ap-ind-title">Indicar alguém</h2>
-        <p className="ap-help">Seu consultor entra em contato com a pessoa e você acompanha aqui.</p>
-        {error && <div className="ap-error" role="alert">{error}</div>}
-        <label className="ap-field">Nome de quem você indica
+    <div className="ca-overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()} role="presentation">
+      <form className="ca-sheet" onSubmit={submit} role="dialog" aria-modal="true" aria-labelledby="ca-ind-title">
+        <h2 id="ca-ind-title">Indicar alguém</h2>
+        <p className="ca-help">Seu consultor entra em contato com a pessoa e você acompanha o andamento aqui.</p>
+        {error && <div className="ca-error" role="alert">{error}</div>}
+        <label className="ca-field">Nome de quem você indica
           <input value={form.name} onChange={set("name")} required minLength={2} autoComplete="off" autoFocus />
         </label>
-        <label className="ap-field">WhatsApp com DDD
+        <label className="ca-field">WhatsApp com DDD
           <input value={form.phone} onChange={set("phone")} required inputMode="tel" placeholder="(69) 99999-0000" autoComplete="off" />
         </label>
-        <label className="ap-field">Curso de interesse (se souber)
+        <label className="ca-field">Curso de interesse (se souber)
           <select value={form.courseId} onChange={set("courseId")}>
             <option value="">Ainda não sei</option>
             {courses.map((g) => (
@@ -131,14 +142,14 @@ const ReferralSheet = ({ token, courses, presetCourse, onClose, onDone }) => {
             ))}
           </select>
         </label>
-        <input className="ap-hp" tabIndex={-1} aria-hidden="true" autoComplete="off" value={form.website} onChange={set("website")} />
-        <label className="ap-consent">
+        <input className="ca-hp" tabIndex={-1} aria-hidden="true" autoComplete="off" value={form.website} onChange={set("website")} />
+        <label className="ca-consent">
           <input type="checkbox" checked={form.consent} onChange={set("consent")} required />
           Essa pessoa sabe da indicação e aceita receber contato por WhatsApp, e-mail ou telefone.
         </label>
-        <div className="ap-actions">
-          <button type="button" className="ap-btn" onClick={onClose}>Cancelar</button>
-          <button type="submit" className="ap-btn is-primary" disabled={busy || !form.consent}>
+        <div className="ca-actions">
+          <button type="button" className="ca-btn" onClick={onClose}>Cancelar</button>
+          <button type="submit" className="ca-btn is-primary" disabled={busy || !form.consent}>
             <Send size={16} /> {busy ? "Enviando..." : "Enviar indicação"}
           </button>
         </div>
@@ -147,36 +158,34 @@ const ReferralSheet = ({ token, courses, presetCourse, onClose, onDone }) => {
   );
 };
 
-const MaterialCard = ({ token, m }) => {
+const MaterialCard = ({ token, m, onCopied }) => {
   const kind = KIND[m.kind] || KIND.other;
   const fileUrl = `${API}/affiliate-portal/${token}/files/${m.id}`;
-  const isImage = m.hasFile && /^image\//.test(m.mimeType || "");
   const isVideoFile = m.hasFile && /^video\//.test(m.mimeType || "");
   const embed = m.externalUrl && youtubeEmbed(m.externalUrl);
-
   return (
-    <article className="ap-card">
-      <div className="ap-media">
-        <span className="ap-kind"><kind.Icon size={13} /> {kind.label}</span>
-        {isImage && <img src={`${fileUrl}?preview=1`} alt={m.title} loading="lazy" />}
+    <article className="ca-card">
+      <div className="ca-media">
+        <span className="ca-kind"><kind.Icon size={12} /> {kind.label}</span>
+        {isImage(m) && <img src={`${fileUrl}?preview=1`} alt={m.title} loading="lazy" />}
         {isVideoFile && <video src={`${fileUrl}?preview=1`} controls preload="metadata" />}
-        {!isImage && !isVideoFile && embed && <iframe src={embed} title={m.title} loading="lazy" allowFullScreen />}
-        {!isImage && !isVideoFile && !embed && <kind.Icon size={44} strokeWidth={1.5} />}
+        {!isImage(m) && !isVideoFile && embed && <iframe src={embed} title={m.title} loading="lazy" allowFullScreen />}
+        {!isImage(m) && !isVideoFile && !embed && <kind.Icon size={44} strokeWidth={1.4} />}
       </div>
-      <div className="ap-body">
+      <div className="ca-body">
         <h3>{m.title}</h3>
         {m.description && <p>{m.description}</p>}
-        {m.copyText && <div className="ap-copy">{m.copyText}</div>}
-        {m.course && <span className="ap-tag"><GraduationCap size={13} /> {m.course.name}</span>}
-        <div className="ap-foot">
-          {m.copyText && <CopyButton text={m.copyText} className="ap-btn is-primary" />}
+        {m.copyText && <div className="ca-copy">{m.copyText}</div>}
+        {m.course && <span className="ca-tag"><GraduationCap size={13} /> {m.course.name}</span>}
+        <div className="ca-foot">
+          {m.copyText && <CopyButton text={m.copyText} className="ca-btn is-primary" onCopied={() => onCopied(m.id)} />}
           {m.hasFile && (
-            <a className="ap-btn" href={`${fileUrl}?download=1`} download>
+            <a className="ca-btn" href={`${fileUrl}?download=1`} download>
               <Download size={16} /> Baixar {m.fileSize ? <small style={{ fontWeight: 400 }}>({sizeOf(m.fileSize)})</small> : null}
             </a>
           )}
           {m.externalUrl && (
-            <a className="ap-btn" href={m.externalUrl} target="_blank" rel="noopener noreferrer">
+            <a className="ca-btn" href={m.externalUrl} target="_blank" rel="noopener noreferrer">
               {embed ? <Play size={16} /> : <ExternalLink size={16} />} {embed ? "Abrir no YouTube" : "Abrir link"}
             </a>
           )}
@@ -186,22 +195,40 @@ const MaterialCard = ({ token, m }) => {
   );
 };
 
-const daysLeft = (end) => {
-  if (!end) return null;
-  const d = Math.ceil((new Date(end) - new Date()) / 86400000);
-  if (d < 0) return null;
-  return d === 0 ? "termina hoje" : d === 1 ? "termina amanhã" : `termina em ${d} dias`;
+function youtubeEmbed(url) {
+  const m = String(url || "").match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([\w-]{11})/);
+  return m ? `https://www.youtube.com/embed/${m[1]}` : null;
+}
+
+const PAGES = ["home", "materials", "campaigns", "learn", "referrals"];
+const readHash = () => {
+  const h = String(window.location.hash || "").replace(/^#\/?/, "");
+  if (h.startsWith("colecao-")) return { page: "collection", key: h.slice(8) };
+  if (h.startsWith("video-")) return { page: "video", key: h.slice(6) };
+  return { page: PAGES.includes(h) ? h : "home", key: null };
 };
 
 const AffiliatePortal = ({ match }) => {
   const token = match.params.token;
   const [data, setData] = useState(null);
   const [state, setState] = useState("loading");
-  const [tab, setTab] = useState(0);
+  const [route, setRoute] = useState(readHash);
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState("all");
+  const [colFilter, setColFilter] = useState("all");
+  const [view, setView] = useState("materials"); // materials | courses
   const [format, setFormat] = useState("");
   const [sheet, setSheet] = useState(null);
+
+  const go = useCallback((page, key) => {
+    window.location.hash = key ? `${page === "collection" ? "colecao" : page}-${key}` : page;
+    window.scrollTo({ top: 0 });
+  }, []);
+  useEffect(() => {
+    const onHash = () => setRoute(readHash());
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -213,47 +240,48 @@ const AffiliatePortal = ({ match }) => {
       setState(err.response?.status === 404 ? "invalid" : "error");
     }
   }, [token]);
-
   useEffect(() => { load(); }, [load]);
-  useEffect(() => {
-    if (data) document.title = `${data.title} · ${data.affiliate.firstName}`;
-  }, [data]);
+  useEffect(() => { if (data) document.title = `${data.title} · ${data.affiliate.firstName}`; }, [data]);
 
-  const kinds = useMemo(() => {
-    const set = new Set((data?.materials || []).map((m) => m.kind));
-    return [...set];
-  }, [data]);
+  const copied = (id) => { http.post(`/affiliate-portal/${token}/materials/${id}/copied`).catch(() => undefined); };
 
-  const materials = useMemo(() => {
+  const materials = useMemo(() => data?.materials || [], [data]);
+  const byCollection = useMemo(() => {
+    const map = {};
+    materials.forEach((m) => { if (m.collection && COLLECTIONS[m.collection]) (map[m.collection] = map[m.collection] || []).push(m); });
+    return map;
+  }, [materials]);
+  const banners = useMemo(() => materials.filter((m) => m.kind === "banner" && isImage(m)), [materials]);
+  const coverOf = (key) => (byCollection[key] || []).find((m) => isImage(m));
+  const kinds = useMemo(() => [...new Set(materials.map((m) => m.kind))], [materials]);
+
+  const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return (data?.materials || []).filter(
+    return materials.filter(
       (m) => (kind === "all" || m.kind === kind) &&
+        (colFilter === "all" || (colFilter === "none" ? !m.collection : m.collection === colFilter)) &&
         (!q || `${m.title} ${m.description || ""} ${m.copyText || ""} ${m.course?.name || ""}`.toLowerCase().includes(q))
     );
-  }, [data, query, kind]);
+  }, [materials, query, kind, colFilter]);
 
   if (state === "loading") {
     return (
-      <div className="ap-root">
-        <div className="ap-hero"><div className="ap-wrap"><div className="ap-skel" style={{ height: 110, opacity: 0.25 }} /></div></div>
-        <div className="ap-wrap" style={{ marginTop: -40 }}><div className="ap-skel" style={{ height: 90 }} /></div>
-      </div>
+      <div className="ca-root"><div className="ca-wrap" style={{ paddingTop: 80 }}>
+        <div className="ca-skel" style={{ height: 40, width: 220 }} /><div className="ca-skel" style={{ height: 220, marginTop: 24 }} />
+      </div></div>
     );
   }
-
   if (state !== "ready") {
     return (
-      <div className="ap-root">
-        <div className="ap-center">
-          <div className="ap-box">
+      <div className="ca-root">
+        <div className="ca-center">
+          <div>
             <Lock size={40} color="#0693E3" />
-            <h1>{state === "invalid" ? "Este link não está disponível" : "Não conseguimos abrir agora"}</h1>
-            <p>
-              {state === "invalid"
-                ? "Ele pode ter sido trocado ou pausado. Peça um link novo ao seu consultor."
-                : "Confira sua internet e tente de novo em instantes."}
+            <h1 className="ca-h2">{state === "invalid" ? "Este link não está disponível" : "Não conseguimos abrir agora"}</h1>
+            <p className="ca-lead" style={{ margin: "12px auto" }}>
+              {state === "invalid" ? "Ele pode ter sido trocado ou pausado. Peça um link novo ao seu consultor." : "Confira sua internet e tente de novo em instantes."}
             </p>
-            {state === "error" && <button type="button" className="ap-btn is-primary" style={{ marginTop: 16 }} onClick={load}>Tentar de novo</button>}
+            {state === "error" && <button type="button" className="ca-btn is-primary" onClick={load}>Tentar de novo</button>}
           </div>
         </div>
       </div>
@@ -261,208 +289,340 @@ const AffiliatePortal = ({ match }) => {
   }
 
   const { affiliate, stats, owner } = data;
+  const page = route.page === "collection" || route.page === "video" ? (route.page === "video" ? "learn" : "materials") : route.page;
   const shareText = `Quer estudar com a gente? Peça informações por este link: ${data.referralUrl}`;
-  const tabs = [
-    { key: "mat", label: "Materiais", Icon: Gift, count: data.materials.length },
-    { key: "camp", label: "Campanhas", Icon: Megaphone, count: data.campaigns.length },
-    { key: "cur", label: "Cursos", Icon: GraduationCap, count: data.courses.reduce((t, g) => t + g.courses.length, 0) },
-    { key: "ind", label: "Indicações", Icon: Users, count: data.referrals.length },
-  ];
+  const NAV = [["home", "Início", HomeIcon], ["materials", "Materiais", Folders], ["campaigns", "Campanhas", Megaphone], ["learn", "Orientações", HelpCircle], ["referrals", "Indicações", Users]];
+  const courseListText = (g) => `${g.modality}\n${g.courses.map((c) => `• ${c.name}`).join("\n")}`;
+  const collectionKeys = Object.keys(COLLECTIONS);
+  const shown = collectionKeys.filter((k) => byCollection[k]);
 
-  const courseListText = (g) =>
-    `${g.modality}\n${g.courses.map((c) => `• ${c.name}`).join("\n")}`;
+  const CollectionTile = ({ k }) => {
+    const c = COLLECTIONS[k];
+    const cover = coverOf(k);
+    const count = (byCollection[k] || []).length;
+    return (
+      <button key={k} type="button" className="ca-collection" onClick={() => go("collection", k)}>
+        <div className="ca-cover">
+          {cover ? <img src={`${API}/affiliate-portal/${token}/files/${cover.id}?preview=1`} alt="" loading="lazy" /> : <div className="words">{c.name.toUpperCase()}<br /><em>EM DESTAQUE.</em></div>}
+          <span>{c.tag}</span>
+        </div>
+        <div className="ca-collection-body">
+          <strong>{c.line} <ArrowUpRight size={18} /></strong>
+          <p>{c.about}</p>
+          <small>{count} {count === 1 ? "material" : "materiais"}</small>
+        </div>
+      </button>
+    );
+  };
+
+  const Home = () => {
+    const camp = data.campaigns[0];
+    return (
+      <>
+        <div className="ca-hero">
+          <div>
+            <span className="ca-over">Olá, {affiliate.firstName}</span>
+            <h1 className="ca-h1">Sua indicação.<br /><em>Um novo futuro.</em></h1>
+            <p className="ca-lead">{data.message}</p>
+            <div className="ca-hero-actions">
+              <button type="button" className="ca-btn is-primary" onClick={() => go("materials")}>Encontrar meus materiais <ArrowUpRight size={16} /></button>
+              <button type="button" className="ca-btn" onClick={() => setSheet({})}><UserPlus size={16} /> Indicar alguém</button>
+            </div>
+            {owner && <p className="ca-help" style={{ marginTop: 18, color: "var(--muted)" }}>Seu consultor: <strong style={{ color: "var(--ink)" }}>{owner.name}</strong></p>}
+          </div>
+          <div className="ca-collage" aria-hidden="true">
+            <div className="a">{banners[0] && <img src={`${API}/affiliate-portal/${token}/files/${banners[0].id}?preview=1`} alt="" />}</div>
+            <div className="b">{banners[1] && <img src={`${API}/affiliate-portal/${token}/files/${banners[1].id}?preview=1`} alt="" />}</div>
+            <div className="stamp">Você compartilha.<br />A educação transforma.</div>
+          </div>
+        </div>
+
+        <section className="ca-stats" aria-label="Sua produção">
+          <div className="ca-stat"><b><NumberTicker value={stats.referrals} /></b><span>pessoas indicadas</span></div>
+          <div className="ca-stat"><b><NumberTicker value={stats.enrolled} /></b><span>matrículas{stats.referrals ? ` · ${stats.conversion}%` : ""}</span></div>
+          <div className="ca-stat"><b><NumberTicker value={stats.bonusPending} format={brl} /></b><span>a receber</span></div>
+          <div className="ca-stat"><b><NumberTicker value={stats.bonusPaid} format={brl} /></b><span>já recebido</span></div>
+        </section>
+
+        <section className="ca-link">
+          <div><strong>Seu link de indicação</strong><code>{data.referralUrl}</code></div>
+          <div className="ca-link-actions">
+            <CopyButton text={data.referralUrl} label="Copiar link" ok="Link copiado!" />
+            <a className="ca-btn is-wa" href={`https://wa.me/?text=${encodeURIComponent(shareText)}`} target="_blank" rel="noopener noreferrer"><MessageCircle size={16} /> Enviar no WhatsApp</a>
+          </div>
+        </section>
+
+        <div className="ca-section-head">
+          <div><span className="ca-over">Sua próxima divulgação</span><h2 className="ca-h2">Escolha uma coleção.</h2></div>
+          <button type="button" className="ca-text-link" onClick={() => go("materials")}>Ver todos os materiais <ArrowRight size={16} /></button>
+        </div>
+        {shown.length ? (
+          <div className="ca-collections">{shown.map((k) => CollectionTile({ k }))}</div>
+        ) : (
+          <div className="ca-empty"><Folders size={34} /><strong>As coleções chegam em breve</strong>Quando a equipe publicar os materiais, eles aparecem aqui organizados.</div>
+        )}
+
+        {camp && (
+          <section className="ca-feature">
+            <div>
+              <span className="ca-over">Campanha em andamento</span>
+              <h2 className="ca-h2" style={{ color: "#fff" }}>{camp.title}</h2>
+              {camp.description && <p>{camp.description}</p>}
+              <div className="ca-pills">
+                {camp.bonusValue ? <span className="ca-pill is-bonus"><Gift size={13} /> {brl(camp.bonusValue)} por matrícula</span> : null}
+                {camp.endsAt && <span className="ca-pill"><Clock size={13} /> até {day(camp.endsAt)}</span>}
+              </div>
+              <button type="button" className="ca-btn" onClick={() => go("campaigns")}>Ver campanha <ArrowUpRight size={16} /></button>
+            </div>
+            {camp.hasCover ? <img src={`${API}/affiliate-portal/${token}/campaigns/${camp.id}/cover`} alt="" /> : <div className="ca-stamp">Uma ação.<br />Todos os materiais juntos.</div>}
+          </section>
+        )}
+
+        {data.videos.length > 0 && (
+          <>
+            <div className="ca-section-head"><div><span className="ca-over">Comece com confiança</span><h2 className="ca-h2">Veja como funciona.</h2></div></div>
+            <div className="ca-videos">
+              {data.videos.map((v) => (
+                <button key={v.key} type="button" className="ca-film" onClick={() => go("video", v.key)}>
+                  <i><Play size={18} /></i><span><strong>{v.title}</strong><small>Vídeo · YouTube</small></span>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </>
+    );
+  };
+
+  const Materials = () => (
+    <>
+      <span className="ca-over">Biblioteca organizada por objetivo</span>
+      <h1 className="ca-h1" style={{ fontSize: "clamp(34px, 5vw, 54px)" }}>Seu material.<br />Do jeito certo.</h1>
+      <div className="ca-tools">
+        <div className="ca-chips">
+          <button type="button" className="ca-chip" aria-pressed={view === "materials"} onClick={() => setView("materials")}>Materiais</button>
+          <button type="button" className="ca-chip" aria-pressed={view === "courses"} onClick={() => setView("courses")}>Lista de cursos</button>
+        </div>
+      </div>
+      {view === "materials" ? (
+        <>
+          <div className="ca-tools" style={{ marginTop: 0 }}>
+            <div className="ca-search">
+              <Search size={16} />
+              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar banner, texto, vídeo ou curso" aria-label="Buscar material" />
+            </div>
+            <div className="ca-chips">
+              <button type="button" className="ca-chip" aria-pressed={colFilter === "all"} onClick={() => setColFilter("all")}>Todas as coleções</button>
+              {shown.map((k) => <button key={k} type="button" className="ca-chip" aria-pressed={colFilter === k} onClick={() => setColFilter(k)}>{COLLECTIONS[k].name}</button>)}
+            </div>
+            {kinds.length > 1 && (
+              <div className="ca-chips">
+                <button type="button" className="ca-chip" aria-pressed={kind === "all"} onClick={() => setKind("all")}>Qualquer tipo</button>
+                {kinds.map((k) => <button key={k} type="button" className="ca-chip" aria-pressed={kind === k} onClick={() => setKind(k)}>{(KIND[k] || KIND.other).label}</button>)}
+              </div>
+            )}
+          </div>
+          {filtered.length ? (
+            <div className="ca-grid">{filtered.map((m) => <MaterialCard key={m.id} token={token} m={m} onCopied={copied} />)}</div>
+          ) : (
+            <div className="ca-empty"><FileText size={34} /><strong>{materials.length ? "Nada com essa busca" : "Ainda não há materiais"}</strong>{materials.length ? "Tente outra palavra ou limpe os filtros." : "Assim que sua equipe publicar, eles aparecem aqui."}</div>
+          )}
+        </>
+      ) : data.courses.length ? (
+        <>
+          <div className="ca-tools" style={{ marginTop: 0 }}>
+            <div className="ca-chips">
+              {data.courses.map((g) => <button key={g.modality} type="button" className="ca-chip" aria-pressed={format === g.modality} onClick={() => setFormat(g.modality)}>{g.modality} · {g.courses.length}</button>)}
+            </div>
+            <div className="ca-search"><Search size={16} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar curso" aria-label="Buscar curso" /></div>
+          </div>
+          {data.courses.filter((g) => g.modality === format).map((g) => (
+            <div key={g.modality}>
+              <p className="ca-help">{FORMAT_NOTE[g.modality] || ""}</p>
+              <div className="ca-courses">
+                {g.courses.filter((c) => !query.trim() || c.name.toLowerCase().includes(query.trim().toLowerCase())).map((c) => (
+                  <div className="ca-course" key={c.id}>
+                    <div><strong>{c.name}</strong><small>{c.semesters} semestres ({c.semesters / 2} anos){c.category ? ` · ${c.category.replace("Graduação - ", "")}` : ""}</small></div>
+                    <button type="button" className="ca-btn" title="Indicar alguém para este curso" onClick={() => setSheet({ course: c.id })}><UserPlus size={15} /></button>
+                  </div>
+                ))}
+              </div>
+              <div style={{ marginTop: 16 }}><CopyButton text={courseListText(g)} label={`Copiar lista de ${g.modality}`} ok="Lista copiada!" /></div>
+            </div>
+          ))}
+        </>
+      ) : (
+        <div className="ca-empty"><GraduationCap size={34} /><strong>Lista de cursos indisponível</strong>Peça ao seu consultor.</div>
+      )}
+    </>
+  );
+
+  const CollectionPage = ({ k }) => {
+    const c = COLLECTIONS[k];
+    const list = byCollection[k] || [];
+    if (!c) return <div className="ca-empty"><strong>Coleção não encontrada</strong><button type="button" className="ca-text-link" onClick={() => go("materials")}>Voltar aos materiais</button></div>;
+    const arts = list.filter((m) => isImage(m));
+    const texts = list.filter((m) => m.copyText);
+    const others = list.filter((m) => !isImage(m) && !m.copyText);
+    return (
+      <>
+        <button type="button" className="ca-back" onClick={() => go("materials")}><ArrowLeft size={16} /> Todas as coleções</button>
+        <span className="ca-over">Coleção de divulgação</span>
+        <h1 className="ca-h1" style={{ fontSize: "clamp(34px, 5vw, 54px)" }}>{c.name}</h1>
+        <p className="ca-lead">{c.line} {c.about}</p>
+        <div className="ca-split">
+          <div className="ca-stack">
+            {arts.map((m) => (
+              <figure className="ca-art" key={m.id} style={{ margin: 0 }}>
+                <img src={`${API}/affiliate-portal/${token}/files/${m.id}?preview=1`} alt={m.title} loading="lazy" />
+                <figcaption><span>{m.title}</span><a className="ca-btn" href={`${API}/affiliate-portal/${token}/files/${m.id}?download=1`} download><Download size={15} /> Baixar</a></figcaption>
+              </figure>
+            ))}
+            {others.length > 0 && <div className="ca-grid">{others.map((m) => <MaterialCard key={m.id} token={token} m={m} onCopied={copied} />)}</div>}
+            {!arts.length && !others.length && <div className="ca-empty"><ImageIcon size={32} /><strong>Sem artes por enquanto</strong>As artes desta coleção aparecem aqui.</div>}
+          </div>
+          <div className="ca-stack">
+            {texts.map((m) => (
+              <div className="ca-box" key={m.id}>
+                <span className="ca-over">Combine a arte com esta mensagem</span>
+                <h3 style={{ marginTop: 10 }}>{m.title}</h3>
+                <div className="ca-copy" style={{ margin: "12px 0" }}>{m.copyText}</div>
+                <CopyButton text={m.copyText} className="ca-btn is-primary" onCopied={() => copied(m.id)} />
+              </div>
+            ))}
+            {!texts.length && <div className="ca-box"><h3>Mensagens prontas</h3><small>Ainda não há texto sugerido para esta coleção.</small></div>}
+            <p className="ca-help">Adapte a abordagem ao seu público. Mantenha as informações e as artes oficiais, sem valores, bolsas ou condições.</p>
+          </div>
+        </div>
+      </>
+    );
+  };
+
+  const Campaigns = () => (
+    <>
+      <span className="ca-over">Um espaço para cada ação</span>
+      <h1 className="ca-h1" style={{ fontSize: "clamp(34px, 5vw, 54px)" }}>Campanhas<br />em movimento.</h1>
+      <div style={{ marginTop: 28 }}>
+        {data.campaigns.length ? data.campaigns.map((c) => (
+          <article className="ca-campaign" key={c.id}>
+            <div className="cover">{c.hasCover ? <img src={`${API}/affiliate-portal/${token}/campaigns/${c.id}/cover`} alt="" loading="lazy" /> : <Megaphone size={48} strokeWidth={1.4} />}</div>
+            <div className="inner">
+              <h3 className="ca-h2" style={{ fontSize: 26 }}>{c.title}</h3>
+              <div className="ca-pills">
+                {c.bonusValue ? <span className="ca-pill is-bonus"><Gift size={13} /> {brl(c.bonusValue)} por matrícula</span> : null}
+                {c.endsAt && <span className="ca-pill"><Clock size={13} /> até {day(c.endsAt)}</span>}
+                {daysLeft(c.endsAt) && <span className="ca-pill">{daysLeft(c.endsAt)}</span>}
+              </div>
+              {c.description && <p className="ca-help">{c.description}</p>}
+              <button type="button" className="ca-btn" style={{ marginTop: 10 }} onClick={() => go("materials")}><Gift size={16} /> Ver materiais</button>
+            </div>
+          </article>
+        )) : <div className="ca-empty"><Megaphone size={34} /><strong>Nenhuma campanha agora</strong>Quando houver uma campanha para você, ela aparece aqui com as datas.</div>}
+      </div>
+    </>
+  );
+
+  const Learn = () => {
+    const playing = route.page === "video" ? data.videos.find((v) => v.key === route.key) : null;
+    return (
+      <>
+        {playing ? (
+          <>
+            <button type="button" className="ca-back" onClick={() => go("learn")}><ArrowLeft size={16} /> Orientações</button>
+            <h1 className="ca-h2">{playing.title}</h1>
+            <div style={{ marginTop: 18 }}>
+              {playing.embed ? <iframe className="ca-player" src={playing.embed} title={playing.title} allowFullScreen /> : <a className="ca-btn is-primary" href={playing.url} target="_blank" rel="noopener noreferrer"><ExternalLink size={16} /> Abrir vídeo</a>}
+            </div>
+          </>
+        ) : (
+          <>
+            <span className="ca-over">Apoio para começar e continuar</span>
+            <h1 className="ca-h1" style={{ fontSize: "clamp(34px, 5vw, 54px)" }}>Seu caminho<br />mais claro.</h1>
+            {data.videos.length > 0 && (
+              <div className="ca-videos" style={{ marginTop: 28 }}>
+                {data.videos.map((v) => <button key={v.key} type="button" className="ca-film" onClick={() => go("video", v.key)}><i><Play size={18} /></i><span><strong>{v.title}</strong><small>Vídeo · YouTube</small></span></button>)}
+              </div>
+            )}
+            <div className="ca-section-head" style={{ marginTop: 44 }}><h2 className="ca-h2">Perguntas frequentes</h2></div>
+            {data.faq.map((f, i) => <details className="ca-faq" key={i}><summary>{f.q}</summary><p>{f.a}</p></details>)}
+            <div className="ca-box" style={{ marginTop: 32 }}>
+              <h3>Conte com a equipe</h3>
+              <p className="ca-help" style={{ margin: "4px 0 14px" }}>Precisa de ajuda para orientar uma pessoa interessada?</p>
+              {data.support ? (
+                <a className="ca-btn is-primary" href={data.support.url} target="_blank" rel="noopener noreferrer"><MessageCircle size={16} /> Falar com o suporte</a>
+              ) : owner ? <small>Fale com o seu consultor, {owner.name}.</small> : <small>Fale com o seu consultor.</small>}
+            </div>
+          </>
+        )}
+      </>
+    );
+  };
+
+  const Referrals = () => (
+    <>
+      <span className="ca-over">Sua rede</span>
+      <h1 className="ca-h1" style={{ fontSize: "clamp(34px, 5vw, 54px)" }}>Suas indicações.</h1>
+      <div className="ca-tools"><button type="button" className="ca-btn is-primary" onClick={() => setSheet({})}><UserPlus size={16} /> Indicar alguém</button></div>
+      {data.referrals.length ? (
+        <div className="ca-list">
+          {data.referrals.map((r) => (
+            <div className="ca-row" key={r.id}>
+              <span className="ca-avatar">{r.name[0]}</span>
+              <div><strong>{r.name}</strong><small>indicado em {day(r.createdAt)}</small></div>
+              <span className={`ca-status ${r.status}`}>{r.status === "enrolled" ? "Matriculado" : r.status === "lost" ? "Não seguiu" : "Em atendimento"}</span>
+            </div>
+          ))}
+        </div>
+      ) : <div className="ca-empty"><Link2 size={34} /><strong>Você ainda não indicou ninguém</strong>Compartilhe seu link ou use o botão acima.</div>}
+      {data.bonuses.length > 0 && (
+        <>
+          <h2 className="ca-h2" style={{ margin: "44px 0 16px", fontSize: 26 }}>Suas bonificações</h2>
+          <div className="ca-list">
+            {data.bonuses.map((b) => (
+              <div className="ca-row" key={b.id}>
+                <span className="ca-avatar" style={{ background: b.status === "paid" ? "#14803c" : undefined }}><Gift size={18} /></span>
+                <div><strong>{brl(b.amount)}</strong><small>{b.status === "paid" ? `pago em ${day(b.paidAt)}` : `gerada em ${day(b.createdAt)}${b.dueAt ? ` · previsão até ${day(b.dueAt)}` : ""}`}</small></div>
+                <span className={`ca-status ${b.status === "paid" ? "enrolled" : "open"}`}>{b.status === "paid" ? "Pago" : b.status === "approved" ? "Aprovado" : "A pagar"}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </>
+  );
 
   return (
-    <div className="ap-root">
-      <header className="ap-hero">
-        <div className="ap-wrap">
-          <div className="ap-brand"><i />{data.title}</div>
-          <h1 className="ap-hello">Olá, {affiliate.firstName}</h1>
-          <p className="ap-sub">{data.message}</p>
-          {owner && <div className="ap-owner">Seu consultor: <strong>{owner.name}</strong></div>}
+    <div className="ca-root">
+      <header className="ca-top">
+        <div className="ca-wrap">
+          <button type="button" className="ca-brand" onClick={() => go("home")} aria-label="Cruzeiro do Sul Virtual, início">
+            <img src={logo} alt="Cruzeiro do Sul Virtual" draggable={false} />
+            <small>{String(data.title || "Central do Afiliado").toUpperCase()}</small>
+          </button>
+          <nav className="ca-nav" aria-label="Menu principal">
+            {NAV.map(([key, label]) => <button key={key} type="button" aria-current={page === key ? "page" : undefined} onClick={() => go(key)}>{label}</button>)}
+          </nav>
+          <div className="ca-top-actions">
+            <button type="button" className="ca-btn is-primary" onClick={() => setSheet({})}><UserPlus size={16} /><span>Indicar alguém</span></button>
+          </div>
         </div>
       </header>
 
-      <div className="ap-wrap" role="main">
-        <section className="ap-stats" aria-label="Sua produção">
-          <div className="ap-stat"><b><NumberTicker value={stats.referrals} /></b><span>pessoas indicadas</span></div>
-          <div className="ap-stat"><b><NumberTicker value={stats.enrolled} /></b><span>matrículas{stats.referrals ? ` · ${stats.conversion}%` : ""}</span></div>
-          <div className="ap-stat is-money"><b><NumberTicker value={stats.bonusPending} format={brl} /></b><span>a receber</span></div>
-          <div className="ap-stat"><b><NumberTicker value={stats.bonusPaid} format={brl} /></b><span>já recebido</span></div>
-        </section>
+      <main className="ca-wrap ca-page" key={`${route.page}-${route.key}`}>
+        {route.page === "home" && Home()}
+        {route.page === "materials" && Materials()}
+        {route.page === "collection" && CollectionPage({ k: route.key })}
+        {route.page === "campaigns" && Campaigns()}
+        {(route.page === "learn" || route.page === "video") && Learn()}
+        {route.page === "referrals" && Referrals()}
+      </main>
 
-        <section className="ap-link">
-          <div className="ap-link-text">
-            <strong>Seu link de indicação</strong>
-            <code>{data.referralUrl}</code>
-          </div>
-          <div className="ap-link-actions">
-            <CopyButton text={data.referralUrl} label="Copiar link" ok="Link copiado!" />
-            <a className="ap-btn is-wa" href={`https://wa.me/?text=${encodeURIComponent(shareText)}`} target="_blank" rel="noopener noreferrer">
-              <MessageCircle size={16} /> Enviar no WhatsApp
-            </a>
-            <button type="button" className="ap-btn is-primary" onClick={() => setSheet({})}><UserPlus size={16} /> Indicar alguém</button>
-          </div>
-        </section>
-      </div>
-
-      <div className="ap-tabs-bar">
-        <div className="ap-wrap">
-          <div className="ap-tabs" role="tablist">
-            {tabs.map((t, i) => (
-              <button key={t.key} role="tab" type="button" className="ap-tab" aria-selected={tab === i} onClick={() => setTab(i)}>
-                <t.Icon size={17} /> <span className="ap-tab-label">{t.label}</span>{t.count > 0 && <em>{t.count}</em>}
-              </button>
-            ))}
-            <span className="ap-ink" style={{ transform: `translateX(${tab * 100}%)` }} />
-          </div>
-        </div>
-      </div>
-
-      <div className="ap-wrap">
-        <div className="ap-panel" key={tab} role="tabpanel">
-          {tab === 0 && (
-            <>
-              <div className="ap-tools">
-                <div className="ap-search">
-                  <Search size={16} />
-                  <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar banner, texto, vídeo ou curso" aria-label="Buscar material" />
-                </div>
-                {kinds.length > 1 && (
-                  <div className="ap-chips">
-                    <button type="button" className="ap-chip" aria-pressed={kind === "all"} onClick={() => setKind("all")}>Tudo</button>
-                    {kinds.map((k) => (
-                      <button key={k} type="button" className="ap-chip" aria-pressed={kind === k} onClick={() => setKind(k)}>{(KIND[k] || KIND.other).label}</button>
-                    ))}
-                  </div>
-                )}
-              </div>
-              {materials.length ? (
-                <div className="ap-grid">{materials.map((m) => <MaterialCard key={m.id} token={token} m={m} />)}</div>
-              ) : (
-                <div className="ap-empty"><FileText size={34} /><strong>{data.materials.length ? "Nada com essa busca" : "Ainda não há materiais"}</strong>{data.materials.length ? "Tente outra palavra ou limpe o filtro." : "Assim que sua equipe publicar, eles aparecem aqui."}</div>
-              )}
-            </>
-          )}
-
-          {tab === 1 && (
-            data.campaigns.length ? (
-              <div className="ap-campaigns">
-                {data.campaigns.map((c) => (
-                  <article className="ap-campaign" key={c.id}>
-                    <div className="ap-cover">
-                      {c.hasCover ? <img src={`${API}/affiliate-portal/${token}/campaigns/${c.id}/cover`} alt="" loading="lazy" /> : <Megaphone size={48} strokeWidth={1.4} />}
-                    </div>
-                    <div className="ap-campaign-body">
-                      <h3>{c.title}</h3>
-                      <div className="ap-pills">
-                        {c.bonusValue ? <span className="ap-pill is-bonus"><Gift size={13} /> {brl(c.bonusValue)} por matrícula</span> : null}
-                        {c.endsAt && <span className="ap-pill"><Clock size={13} /> até {day(c.endsAt)}</span>}
-                        {daysLeft(c.endsAt) && <span className="ap-pill is-ok">{daysLeft(c.endsAt)}</span>}
-                      </div>
-                      {c.description && <p>{c.description}</p>}
-                      <div>
-                        <button type="button" className="ap-btn" onClick={() => { setTab(0); setQuery(""); setKind("all"); }}>
-                          <Gift size={16} /> Ver materiais
-                        </button>
-                      </div>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            ) : (
-              <div className="ap-empty"><Megaphone size={34} /><strong>Nenhuma campanha agora</strong>Quando houver uma campanha para você, ela aparece aqui com as datas.</div>
-            )
-          )}
-
-          {tab === 2 && (
-            data.courses.length ? (
-              <>
-                <div className="ap-tools">
-                  <div className="ap-chips">
-                    {data.courses.map((g) => (
-                      <button key={g.modality} type="button" className="ap-chip" aria-pressed={format === g.modality} onClick={() => setFormat(g.modality)}>
-                        {g.modality} · {g.courses.length}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="ap-search">
-                    <Search size={16} />
-                    <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar curso" aria-label="Buscar curso" />
-                  </div>
-                </div>
-                {data.courses.filter((g) => g.modality === format).map((g) => (
-                  <div key={g.modality}>
-                    <p className="ap-format-note">{FORMAT_NOTE[g.modality] || ""}</p>
-                    <div className="ap-courses">
-                      {g.courses
-                        .filter((c) => !query.trim() || c.name.toLowerCase().includes(query.trim().toLowerCase()))
-                        .map((c) => (
-                          <div className="ap-course" key={c.id}>
-                            <div>
-                              <strong>{c.name}</strong>
-                              <small>{c.semesters} semestres ({c.semesters / 2} anos){c.category ? ` · ${c.category.replace("Graduação - ", "")}` : ""}</small>
-                            </div>
-                            <button type="button" className="ap-btn" title="Indicar alguém para este curso" onClick={() => setSheet({ course: c.id })}><UserPlus size={15} /></button>
-                          </div>
-                        ))}
-                    </div>
-                    <div style={{ marginTop: 16 }}>
-                      <CopyButton text={courseListText(g)} label={`Copiar lista de ${g.modality}`} ok="Lista copiada!" />
-                    </div>
-                  </div>
-                ))}
-              </>
-            ) : (
-              <div className="ap-empty"><GraduationCap size={34} /><strong>Lista de cursos indisponível</strong>Peça ao seu consultor.</div>
-            )
-          )}
-
-          {tab === 3 && (
-            <>
-              <div className="ap-tools">
-                <button type="button" className="ap-btn is-primary" onClick={() => setSheet({})}><UserPlus size={16} /> Indicar alguém</button>
-              </div>
-              {data.referrals.length ? (
-                <div className="ap-list">
-                  {data.referrals.map((r) => (
-                    <div className="ap-row" key={r.id}>
-                      <span className="ap-avatar">{r.name[0]}</span>
-                      <div><strong>{r.name}</strong><small>indicado em {day(r.createdAt)}</small></div>
-                      <span className={`ap-status ${r.status}`}>{r.status === "enrolled" ? "Matriculado" : r.status === "lost" ? "Não seguiu" : "Em atendimento"}</span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="ap-empty"><Link2 size={34} /><strong>Você ainda não indicou ninguém</strong>Compartilhe seu link ou use o botão acima.</div>
-              )}
-              {data.bonuses.length > 0 && (
-                <>
-                  <h2 className="ap-h2">Suas bonificações</h2>
-                  <div className="ap-list">
-                    {data.bonuses.map((b) => (
-                      <div className="ap-row" key={b.id}>
-                        <span className="ap-avatar" style={{ background: b.status === "paid" ? "#14803c" : undefined }}><Gift size={18} /></span>
-                        <div><strong>{brl(b.amount)}</strong><small>{b.status === "paid" ? `pago em ${day(b.paidAt)}` : `gerada em ${day(b.createdAt)}`}</small></div>
-                        <span className={`ap-status ${b.status === "paid" ? "enrolled" : "open"}`}>{b.status === "paid" ? "Pago" : b.status === "approved" ? "Aprovado" : "A pagar"}</span>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
-            </>
-          )}
-        </div>
-      </div>
+      <nav className="ca-bottom" aria-label="Navegação no celular">
+        {NAV.map(([key, label, Icon]) => <button key={key} type="button" aria-current={page === key ? "page" : undefined} onClick={() => go(key)}><Icon size={20} />{label}</button>)}
+      </nav>
 
       {sheet && (
-        <ReferralSheet
-          token={token}
-          courses={data.courses}
-          presetCourse={sheet.course}
-          onClose={() => setSheet(null)}
-          onDone={() => { setSheet(null); setTab(3); load(); }}
-        />
+        <ReferralSheet token={token} courses={data.courses} presetCourse={sheet.course} onClose={() => setSheet(null)} onDone={() => { setSheet(null); go("referrals"); load(); }} />
       )}
     </div>
   );

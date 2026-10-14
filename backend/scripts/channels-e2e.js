@@ -1380,6 +1380,111 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(list.length >= 2, "list");
       assert((await http.delete(`/goals/${rep.data.id}`, auth())).status === 200 && (await http.get("/goals", auth())).data.length === list.length - 1, "delete");
     });
+    await test("Central do Afiliado: collections, FAQ, videos and support edited by the administration, copy counter, no prices", async () => {
+      const aff = (await http.post("/affiliates", { name: "Central Teste", phone: "(69) 97777-1234" }, auth())).data;
+      const set = await http.put("/affiliate-rules", {
+        faq: [{ q: "Pergunta de teste?", a: "Resposta de teste." }, { q: "", a: "sem pergunta" }],
+        videoProgram: "https://youtu.be/dQw4w9WgXcQ", videoTutorial: "", supportPhone: "(69) 99999-0000"
+      }, auth());
+      assert(set.status === 200 && set.data.faq.length === 1 && set.data.supportPhone === "69999990000", `rules ${set.status} ${JSON.stringify(set.data).slice(0, 200)}`);
+      assert((await http.put("/affiliate-rules", { videoProgram: "javascript:alert(1)" }, auth())).status === 400, "unsafe video link accepted");
+
+      const mat = (await http.post("/affiliate-materials", { title: "Texto da pós", kind: "copy", copyText: "Quer dar o próximo passo?", audience: "all", collection: "pos" }, auth())).data;
+      assert(mat.collection === "pos", "collection not saved");
+      const bogus = (await http.post("/affiliate-materials", { title: "Sem coleção", kind: "copy", copyText: "Olá!", audience: "all", collection: "qualquer" }, auth())).data;
+      assert(bogus.collection === null, "unknown collection accepted");
+
+      const portal = (await http.get(`/affiliate-portal/${aff.portalToken}`)).data;
+      assert(portal.materials.find(m => m.id === mat.id).collection === "pos", "portal lacks the collection");
+      assert(portal.faq.length === 1 && portal.faq[0].q === "Pergunta de teste?", "portal FAQ");
+      assert(portal.videos.length === 1 && portal.videos[0].key === "program" && portal.videos[0].embed.includes("dQw4w9WgXcQ"), `videos ${JSON.stringify(portal.videos)}`);
+      assert(portal.support && portal.support.url === "https://wa.me/69999990000", "support link");
+      assert(!/R\$ ?\d/.test(JSON.stringify({ m: portal.materials, c: portal.courses, f: portal.faq })), "a price leaked into the portal");
+
+      // the copy counter
+      assert((await http.post(`/affiliate-portal/${aff.portalToken}/materials/${mat.id}/copied`)).status === 200, "copied");
+      assert((await http.post(`/affiliate-portal/${aff.portalToken}/materials/${mat.id}/copied`)).status === 200, "copied again");
+      const listed = (await http.get("/affiliate-materials", auth())).data.find(m => m.id === mat.id);
+      assert(listed.copies === 2, `copies ${listed.copies}`);
+      assert((await http.post(`/affiliate-portal/${"0".repeat(48)}/materials/${mat.id}/copied`)).status === 404, "wrong token counted a copy");
+
+      // back to the default FAQ when it is emptied
+      const empty = await http.put("/affiliate-rules", { faq: [] }, auth());
+      assert(empty.data.faq.length >= 3, "default FAQ not restored");
+    });
+    await test("managers see every conversation of every attendant in one place, filter by attendant and connection; others do not", async () => {
+      const mk = async (name, email, role) => (await http.post("/users", { name, email, password: "senha123", role }, auth())).data;
+      const a1 = await mk("Atendente Um", "att1@x.com", "consultor"), a2 = await mk("Atendente Dois", "att2@x.com", "consultor");
+      await mk("Coord Central", "coord-central@x.com", "coordenacao");
+      const q = (await http.get("/queue", auth())).data[0];
+      const mkTicket = (name, number, user) => {
+        const c = sql(`INSERT INTO Contacts (name, number, email, isGroup, channel, createdAt, updatedAt) VALUES ('${name}', '${number}', '', false, 'telegram', NOW(), NOW()) RETURNING id`).split("\n")[0];
+        return sql(`INSERT INTO Tickets (status, contactId, whatsappId, userId, queueId, unreadMessages, isGroup, segment, isHistorical, lastMessage, lastMessageId, lastMessageAt, createdAt, updatedAt) VALUES ('open', ${c}, ${tgId}, ${user}, ${q.id}, 2, false, 'sales', false, 'oi', 'cent-${number}', NOW(), NOW(), NOW()) RETURNING id`).split("\n")[0];
+      };
+      const t1 = mkTicket("Cliente do Um", "tg_9101", a1.id), t2 = mkTicket("Cliente do Dois", "tg_9102", a2.id);
+      const ids = async (params, who) => (await http.get("/tickets", { params: { status: "open", showAll: "true", queueIds: "[]", ...params }, ...who })).data.tickets.map(t => String(t.id));
+
+      const tc = (await http.post("/auth/login", { email: "coord-central@x.com", password: "senha123" })).data.token;
+      const t1a = (await http.post("/auth/login", { email: "att1@x.com", password: "senha123" })).data.token;
+      const seen = await ids({ allQueues: "true" }, asUser(tc));
+      assert(seen.includes(t1) && seen.includes(t2), "the coordinator does not see everyone's conversations");
+      assert((await ids({ allQueues: "true" }, auth())).includes(t1), "the administrator does not see the conversations");
+      const onlyOne = await ids({ allQueues: "true", attendantId: String(a2.id) }, asUser(tc));
+      assert(onlyOne.includes(t2) && !onlyOne.includes(t1), "attendant filter");
+      const byConn = await ids({ allQueues: "true", connectionId: String(tgId) }, asUser(tc));
+      assert(byConn.includes(t1), "connection filter");
+      assert(!(await ids({ allQueues: "true", connectionId: "999999" }, asUser(tc))).includes(t1), "connection filter leaked");
+      const unread = (await http.get("/tickets", { params: { withUnreadMessages: "true", showAll: "true", allQueues: "true", queueIds: "[]", groups: "exclude" }, ...asUser(tc) })).data.tickets.map(t => String(t.id));
+      assert(unread.includes(t1) && unread.includes(t2), "unread view of everyone");
+      const mine = await ids({ allQueues: "true", attendantId: String(a2.id) }, asUser(t1a));
+      assert(!mine.includes(t2), "an attendant saw a colleague's conversation");
+      assert(!(await ids({ allQueues: "true" }, asUser(t1a))).includes(t2), "allQueues worked for a non-manager");
+      assert((await http.get("/whatsapp", asUser(tc))).data.length >= 1, "coordinator does not list the connections");
+    });
+    await test("the last administrator cannot be demoted, and the user form shows the effective role", async () => {
+      const users = (await http.get("/users", auth())).data.users;
+      const admin = users.find(u => u.profile === "admin");
+      assert((await http.get(`/users/${admin.id}`, auth())).data.role === "admin", "the form would show another role for the administrator");
+      const demote = await http.put(`/users/${admin.id}`, { role: "consultor" }, auth());
+      assert(demote.status === 400 && demote.data.error === "ERR_LAST_ADMIN", `the last admin was demoted: ${demote.status}`);
+      assert((await http.get(`/users/${admin.id}`, auth())).data.profile === "admin", "profile changed");
+    });
+    await test("affiliates: the proposal names the affiliate, bonus = first monthly fee due in N days, support = who registered the affiliate, ranking by paid", async () => {
+      const mk = async (name, email) => (await http.post("/users", { name, email, password: "senha123", role: "consultor" }, auth())).data;
+      const owner = await mk("Dona do Afiliado", "dona-afil@x.com");
+      const to = (await http.post("/auth/login", { email: "dona-afil@x.com", password: "senha123" })).data.token;
+      // support number: set by the person themselves
+      assert((await http.put("/me/phone", { phone: "abc" }, asUser(to))).status === 400, "invalid phone accepted");
+      assert((await http.put("/me/phone", { phone: "(69) 98111-2222" }, asUser(to))).data.phone === "5569981112222", "phone not normalised");
+
+      const aff = (await http.post("/affiliates", { name: "Indicadora da Dona", phone: "(69) 97000-1111" }, asUser(to))).data;
+      const portal = (await http.get(`/affiliate-portal/${aff.portalToken}`)).data;
+      assert(portal.support && portal.support.url === "https://wa.me/5569981112222" && portal.support.name === "Dona do Afiliado", `support ${JSON.stringify(portal.support)}`);
+
+      // rule: first monthly fee, 45 days
+      assert((await http.put("/affiliate-rules", { mode: "first_monthly", payDays: 45, trigger: "enrolled", kind: "pix" }, auth())).data.payDays === 45, "rules");
+      const referred = (await http.post(`/affiliates/${aff.id}/referrals`, { name: "Aluna Indicada", phone: "(69) 96000-3333" }, asUser(to))).data.lead;
+      assert(referred.affiliate && referred.affiliate.id === aff.id, "referral lost its affiliate");
+      const course = (await http.get("/courses", auth())).data.find(c => c.active) || (await http.get("/courses", auth())).data[0];
+      sql(`INSERT INTO Proposals (leadId, affiliateId, token, status, courseName, grossFee, firstMonthly, bolsaPct, params, createdBy, createdAt, updatedAt) VALUES (${referred.id}, ${aff.id}, 'tok${Date.now()}', 'sent', 'Curso de teste', 500, 250.5, 50, '{}', ${owner.id}, NOW(), NOW())`);
+      const proposals = (await http.get("/proposals", { params: { leadId: referred.id }, ...auth() })).data;
+      assert(proposals[0].affiliate && proposals[0].affiliate.name === "Indicadora da Dona", `proposal list lacks the affiliate: ${JSON.stringify(proposals[0].affiliate)}`);
+
+      const won = (await http.get("/lead-stages", auth())).data.find(s => s.type === "won");
+      const moved = await http.put(`/leads/${referred.id}/stage`, { stageId: won.id, skipEnroll: true }, auth());
+      assert(moved.status === 200, `enroll ${moved.status}`);
+      const bonus = (await http.get("/affiliate-bonuses", auth())).data.rows.find(b => b.leadId === referred.id);
+      assert(bonus && Number(bonus.amount) === 250.5 && /1ª mensalidade/.test(bonus.reason), `bonus ${JSON.stringify(bonus)}`);
+      const due = new Date(`${bonus.dueAt}T12:00:00Z`).getTime(), expected = Date.now() + 45 * 86400000;
+      assert(bonus.dueAt && Math.abs(due - expected) < 2 * 86400000, `due date ${bonus.dueAt}`);
+      const fresh = (await http.get(`/affiliate-portal/${aff.portalToken}`)).data;
+      assert(fresh.bonuses.some(b => Number(b.amount) === 250.5 && b.dueAt), "portal bonus without the due date");
+      assert(fresh.faq.some(f => /45 dias/.test(f.a)), "FAQ does not state the payment term");
+
+      // ranking by what was paid
+      const rank = (await http.get("/affiliates/ranking", { params: { by: "paid" }, ...auth() })).data;
+      assert(rank.totals.bonusPaid !== undefined && Array.isArray(rank.affiliates), "ranking shape");
+    });
     await test("one conversation per person: writing after a closed attendance brings the same one back, reopening never errors", async () => {
       const cid = sql(`SELECT id FROM Contacts WHERE number='tg_7777'`);
       const tid = sql(`SELECT id FROM Tickets WHERE contactId=${cid} ORDER BY id DESC LIMIT 1`);

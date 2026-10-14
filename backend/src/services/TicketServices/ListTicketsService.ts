@@ -28,6 +28,10 @@ interface Request {
   countOnly?: boolean;
   // who is asking: lists follow the same visibility rules as opening a conversation
   role?: Role;
+  // administration and coordination only: every sector (not just their own), and the view of one attendant / one connection
+  allQueues?: string;
+  attendantId?: string;
+  connectionId?: string;
 }
 
 interface Response {
@@ -50,7 +54,10 @@ const ListTicketsService = async ({
   archived,
   historical,
   countOnly,
-  role
+  role,
+  allQueues,
+  attendantId,
+  connectionId
 }: Request): Promise<Response> => {
   let whereCondition: Filterable["where"] =
     historical === "true"
@@ -91,8 +98,12 @@ const ListTicketsService = async ({
     }
   ];
 
+  const manager = isManagerRole(role);
+  // the whole team in one place: a manager is not limited to the sectors they belong to
+  const queueScope: any = manager && allQueues === "true" ? {} : { queueId: { [Op.or]: [queueIds, null] } };
+
   if (showAll === "true" && historical !== "true") {
-    whereCondition = { queueId: { [Op.or]: [queueIds, null] } };
+    whereCondition = { ...queueScope };
   }
 
   if (status && historical !== "true") {
@@ -143,8 +154,8 @@ const ListTicketsService = async ({
     const userQueueIds = user.queues.map(queue => queue.id);
 
     whereCondition = {
-      [Op.or]: [{ userId }, { status: "pending" }],
-      queueId: { [Op.or]: [userQueueIds, null] },
+      ...(manager && showAll === "true" ? {} : { [Op.or]: [{ userId }, { status: "pending" }] }),
+      ...(manager && allQueues === "true" ? {} : { queueId: { [Op.or]: [manager && showAll === "true" ? queueIds : userQueueIds, null] } }),
       unreadMessages: { [Op.gt]: 0 }
     };
   }
@@ -159,6 +170,10 @@ const ListTicketsService = async ({
   whereCondition = {
     [Op.and]: [whereCondition, literal(`NOT EXISTS (SELECT 1 FROM "Contacts" kc WHERE kc."id" = "Ticket"."contactId" AND kc."kind" = 'channel')`)]
   } as any;
+
+  // a manager can look at one attendant's conversations or one connection's
+  if (manager && Number(attendantId)) whereCondition = { [Op.and]: [whereCondition, { userId: Number(attendantId) }] } as any;
+  if (manager && Number(connectionId)) whereCondition = { [Op.and]: [whereCondition, { whatsappId: Number(connectionId) }] } as any;
 
   // archived conversations only show in their own view
   whereCondition = {

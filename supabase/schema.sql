@@ -81,7 +81,8 @@ CREATE TABLE public."AffiliateBonuses" (
     "paymentRef" character varying(255),
     note text,
     "createdAt" timestamp with time zone NOT NULL,
-    "updatedAt" timestamp with time zone NOT NULL
+    "updatedAt" timestamp with time zone NOT NULL,
+    "dueAt" date
 );
 
 
@@ -168,7 +169,9 @@ CREATE TABLE public."AffiliateMaterials" (
     downloads integer DEFAULT 0 NOT NULL,
     "createdBy" integer,
     "createdAt" timestamp with time zone NOT NULL,
-    "updatedAt" timestamp with time zone NOT NULL
+    "updatedAt" timestamp with time zone NOT NULL,
+    collection character varying(255),
+    copies integer DEFAULT 0 NOT NULL
 );
 
 
@@ -1717,7 +1720,8 @@ CREATE TABLE public."Users" (
     role character varying(255) DEFAULT 'consultor'::character varying NOT NULL,
     "efiPayeeCode" character varying(255),
     preferences text,
-    "coordArea" character varying(255)
+    "coordArea" character varying(255),
+    phone character varying(255)
 );
 
 
@@ -3872,6 +3876,9 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261104000001-performance-indexes.j
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261104000002-commission-settlement.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261104000003-user-coord-area.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261104000004-team-goals.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261104000005-affiliate-central.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261104000006-admin-role-consistency.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261104000007-affiliate-first-monthly.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

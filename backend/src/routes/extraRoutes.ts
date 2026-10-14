@@ -50,6 +50,8 @@ r.post("/uploads", isAuth, upload.single("file"), (req, res) =>
 // affiliates: people outside the team who refer students (consultants see their own)
 r.get("/affiliates", isAuth, affiliateStaff, Aff.index);
 r.get("/affiliates/ranking", isAuth, affiliateStaff, Aff.ranking);
+r.get("/me/phone", isAuth, Aff.myPhone);
+r.put("/me/phone", isAuth, Aff.saveMyPhone);
 r.get("/affiliates/polos", isAuth, affiliateStaff, Aff.polos);
 r.post("/affiliates", isAuth, affiliateStaff, Aff.store);
 r.get("/affiliates/:id", isAuth, affiliateStaff, canAccessAffiliate, Aff.show);

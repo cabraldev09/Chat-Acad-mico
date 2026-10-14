@@ -332,6 +332,7 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab }) => {
                         <div className={classes.tlMeta}>
                           {pr.status === "draft" ? "Rascunho" : `Enviada ${ago(pr.sentAt)}${pr.viewedAt ? ` · visualizada ${ago(pr.viewedAt)}` : " · ainda não visualizada"}`}
                           {pr.author ? ` · ${pr.author.name}` : ""}
+                          {pr.affiliate ? ` · indicado pelo afiliado ${pr.affiliate.name}` : ""}
                         </div>
                       </div>
                       <div style={{ display: "flex", gap: 2, flexWrap: "wrap", justifyContent: "flex-end", maxWidth: 190 }}>

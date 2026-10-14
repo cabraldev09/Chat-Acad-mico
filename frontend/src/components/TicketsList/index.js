@@ -183,7 +183,7 @@ const reducer = (state, action) => {
 };
 
 	const TicketsList = (props) => {
-		const { status, searchParam, showAll, selectedQueueIds, updateCount, style, withUnreadMessages, groups, archived, historical, everything, tagId } =
+		const { status, searchParam, showAll, selectedQueueIds, updateCount, style, withUnreadMessages, groups, archived, historical, everything, tagId, allQueues, attendantId, connectionId } =
 			props;
 	const classes = useStyles();
 	const [pageNumber, setPageNumber] = useState(1);
@@ -195,7 +195,7 @@ const reducer = (state, action) => {
 	useEffect(() => {
 		dispatch({ type: "RESET" });
 		setPageNumber(1);
-	}, [status, searchParam, dispatch, showAll, selectedQueueIds, withUnreadMessages, groups, archived, historical, everything, tagId]);
+	}, [status, searchParam, dispatch, showAll, selectedQueueIds, withUnreadMessages, groups, archived, historical, everything, tagId, allQueues, attendantId, connectionId]);
 
 	const { tickets, hasMore, loading } = useTickets({
 		pageNumber,
@@ -208,6 +208,9 @@ const reducer = (state, action) => {
 		historical: everything ? "all" : historical ? "true" : undefined,
 		queueIds: JSON.stringify(selectedQueueIds),
 		tagId: tagId || undefined,
+		allQueues: allQueues ? "true" : undefined,
+		attendantId: attendantId || undefined,
+		connectionId: connectionId || undefined,
 		reloadKey,
 	});
 
@@ -231,10 +234,12 @@ const reducer = (state, action) => {
 
 		const shouldUpdateTicket = ticket => !historical && !searchParam && groupOk(ticket) && archiveOk(ticket) &&
 			(!ticket.userId || ticket.userId === user?.id || showAll) &&
-			(!ticket.queueId || selectedQueueIds.indexOf(ticket.queueId) > -1);
+			(allQueues || !ticket.queueId || selectedQueueIds.indexOf(ticket.queueId) > -1) &&
+			(!attendantId || ticket.userId === Number(attendantId)) &&
+			(!connectionId || ticket.whatsappId === Number(connectionId));
 
 		const notBelongsToUserQueues = ticket =>
-			ticket.queueId && selectedQueueIds.indexOf(ticket.queueId) === -1;
+			!allQueues && ticket.queueId && selectedQueueIds.indexOf(ticket.queueId) === -1;
 
 		socket.on("connect", () => {
 			if (status) {

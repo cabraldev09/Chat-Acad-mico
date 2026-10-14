@@ -25,6 +25,8 @@ import { AuthContext } from "../../context/Auth/AuthContext";
 import api from "../../services/api";
 import openSocket from "../../services/socket-io";
 import TicketsQueueSelect from "../TicketsQueueSelect";
+import { isManager } from "../../utils/access";
+import { fetchAllUsers } from "../../pages/Affiliates/shared";
 import { wa, getChatAccent, setChatAccent } from "../chat/chatTheme";
 
 const useStyles = makeStyles((theme) => {
@@ -143,7 +145,20 @@ const TicketsManager = () => {
   const [pendingCount, setPendingCount] = useState(0);
   const userQueueIds = (user.queues || []).map((q) => q.id);
   const [selectedQueueIds, setSelectedQueueIds] = useState(userQueueIds || []);
-  const isAdmin = user.profile.toUpperCase() === "ADMIN";
+  const manager = isManager(user);
+  const isAdmin = manager; // the "everything of everyone" view belongs to administration and coordination
+  // managers see every sector and can narrow the list to one attendant or one connection
+  const [queueTouched, setQueueTouched] = useState(false);
+  const [attendantId, setAttendantId] = useState("");
+  const [connectionId, setConnectionId] = useState("");
+  const [attendants, setAttendants] = useState([]);
+  const [connections, setConnections] = useState([]);
+  const scope = { allQueues: manager && !queueTouched, attendantId, connectionId };
+  useEffect(() => {
+    if (!manager) return;
+    fetchAllUsers().then(setAttendants).catch(() => undefined);
+    api.get("/whatsapp").then(({ data }) => setConnections(data)).catch(() => undefined);
+  }, [manager]);
 
   useEffect(() => {
     if (isAdmin) setShowAllTickets(true);
@@ -183,7 +198,7 @@ const TicketsManager = () => {
       clearTimeout(timer);
       timer = setTimeout(() => {
         const count = (groups) =>
-          api.get("/tickets", { params: { withUnreadMessages: "true", groups, showAll: "true", countOnly: "true", queueIds: JSON.stringify(selectedQueueIds) } })
+          api.get("/tickets", { params: { withUnreadMessages: "true", groups, showAll: "true", countOnly: "true", queueIds: JSON.stringify(selectedQueueIds), allQueues: scope.allQueues ? "true" : undefined, attendantId: attendantId || undefined, connectionId: connectionId || undefined } })
             .then(({ data }) => data.count || 0);
         Promise.all([count("only"), count("exclude")]).then(([g, d]) => { setGroupUnread(g); setDmUnread(d); }).catch(() => undefined);
       }, 700);
@@ -197,7 +212,7 @@ const TicketsManager = () => {
       clearTimeout(timer);
       socket.disconnect();
     };
-  }, [selectedQueueIds]);
+  }, [selectedQueueIds, scope.allQueues, attendantId, connectionId]);
 
   const searching = searchParam.length > 0;
   const chip = (key, label, count) => (
@@ -286,10 +301,24 @@ const TicketsManager = () => {
         <div className={classes.filters}>
           <TicketsQueueSelect
             style={{ flex: 1 }}
-            selectedQueueIds={selectedQueueIds}
+            selectedQueueIds={selectedQueueIds} {...scope}
             userQueues={user?.queues}
-            onChange={(values) => setSelectedQueueIds(values)}
+            onChange={(values) => { setQueueTouched(true); setSelectedQueueIds(values); }}
           />
+          {manager && (
+            <>
+              <Select displayEmpty value={attendantId} onChange={(e) => setAttendantId(e.target.value)} style={{ minWidth: 130 }}
+                renderValue={(v) => { const u = attendants.find((x) => x.id === v); return u ? u.name : "Todos os atendentes"; }}>
+                <MenuItem value="">Todos os atendentes</MenuItem>
+                {attendants.map((u) => <MenuItem key={u.id} value={u.id}>{u.name}</MenuItem>)}
+              </Select>
+              <Select displayEmpty value={connectionId} onChange={(e) => setConnectionId(e.target.value)} style={{ minWidth: 130 }}
+                renderValue={(v) => { const c = connections.find((x) => x.id === v); return c ? c.name : "Todas as conexões"; }}>
+                <MenuItem value="">Todas as conexões</MenuItem>
+                {connections.map((c) => <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>)}
+              </Select>
+            </>
+          )}
           {tags.length > 0 && (
             <Select
               displayEmpty
@@ -338,26 +367,26 @@ const TicketsManager = () => {
 
       <div className={classes.body}>
         {searching ? (
-          <TicketsList tagId={tagId} searchParam={searchParam} showAll={true} selectedQueueIds={selectedQueueIds} />
+          <TicketsList tagId={tagId} searchParam={searchParam} showAll={true} selectedQueueIds={selectedQueueIds} {...scope} />
         ) : (
           <>
             {/* both live lists stay mounted so counters and sockets keep updating */}
             <div style={{ display: filter === "open" ? "flex" : "none", flex: 1, minHeight: 0 }}>
-              <TicketsList tagId={tagId} status="open" groups="exclude" showAll={showAllTickets} selectedQueueIds={selectedQueueIds}
+              <TicketsList tagId={tagId} status="open" groups="exclude" showAll={showAllTickets} selectedQueueIds={selectedQueueIds} {...scope}
                 updateCount={(v) => setOpenCount(v)} />
             </div>
             <div style={{ display: filter === "pending" ? "flex" : "none", flex: 1, minHeight: 0 }}>
-              <TicketsList tagId={tagId} status="pending" groups="exclude" selectedQueueIds={selectedQueueIds} updateCount={(v) => setPendingCount(v)} />
+              <TicketsList tagId={tagId} status="pending" groups="exclude" selectedQueueIds={selectedQueueIds} {...scope} updateCount={(v) => setPendingCount(v)} />
             </div>
             {filter === "groups" && (
-              <TicketsList tagId={tagId} groups="only" everything showAll={true} selectedQueueIds={selectedQueueIds} />
+              <TicketsList tagId={tagId} groups="only" everything showAll={true} selectedQueueIds={selectedQueueIds} {...scope} />
             )}
             {filter === "unread" && (
-              <TicketsList tagId={tagId} withUnreadMessages groups="exclude" showAll={showAllTickets} selectedQueueIds={selectedQueueIds} />
+              <TicketsList tagId={tagId} withUnreadMessages groups="exclude" showAll={showAllTickets} selectedQueueIds={selectedQueueIds} {...scope} />
             )}
-            {filter === "closed" && <TicketsList tagId={tagId} status="closed" showAll={true} selectedQueueIds={selectedQueueIds} />}
-            {filter === "archived" && <TicketsList tagId={tagId} archived showAll={true} selectedQueueIds={selectedQueueIds} />}
-            {filter === "everything" && <TicketsList tagId={tagId} everything showAll={true} selectedQueueIds={selectedQueueIds} />}
+            {filter === "closed" && <TicketsList tagId={tagId} status="closed" showAll={true} selectedQueueIds={selectedQueueIds} {...scope} />}
+            {filter === "archived" && <TicketsList tagId={tagId} archived showAll={true} selectedQueueIds={selectedQueueIds} {...scope} />}
+            {filter === "everything" && <TicketsList tagId={tagId} everything showAll={true} selectedQueueIds={selectedQueueIds} {...scope} />}
           </>
         )}
         <Tooltip title="Nova conversa">

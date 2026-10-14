@@ -39,7 +39,7 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
 };
 
 export const store = async (req: Request, res: Response): Promise<Response> => {
-  const { email, password, name, profile, role, queueIds, whatsappId, coordArea } = req.body;
+  const { email, password, name, profile, role, queueIds, whatsappId, coordArea, phone } = req.body;
   const isSignup = req.url === "/signup";
 
   if (isSignup) {
@@ -61,7 +61,8 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
     role: isSignup ? "consultor" : role,
     queueIds: isSignup ? [] : queueIds,
     whatsappId: isSignup ? undefined : whatsappId,
-    coordArea: isSignup ? undefined : coordArea
+    coordArea: isSignup ? undefined : coordArea,
+    phone: isSignup ? undefined : phone
   });
 
   const io = getIO();
@@ -78,7 +79,8 @@ export const show = async (req: Request, res: Response): Promise<Response> => {
 
   const user = await ShowUserService(userId);
 
-  return res.status(200).json(user);
+  // the form shows the effective role: an administrator is "admin" even when the stored role was left at the default
+  return res.status(200).json({ ...user.toJSON(), role: roleOf(user) });
 };
 
 export const update = async (

@@ -1,6 +1,7 @@
 import * as Yup from "yup";
 
 import AppError from "../../errors/AppError";
+import { normalizePhone } from "../../helpers/Phone";
 import { SerializeUser } from "../../helpers/SerializeUser";
 import User from "../../models/User";
 import { COORD_AREAS, ROLES } from "../../helpers/Roles";
@@ -14,6 +15,7 @@ interface Request {
   role?: string;
   whatsappId?: number;
   coordArea?: string;
+  phone?: string;
 }
 
 interface Response {
@@ -31,7 +33,8 @@ const CreateUserService = async ({
   profile = "user",
   role,
   whatsappId,
-  coordArea
+  coordArea,
+  phone
 }: Request): Promise<Response> => {
   const schema = Yup.object().shape({
     name: Yup.string().required().min(2),
@@ -72,6 +75,7 @@ const CreateUserService = async ({
       profile: finalRole === "admin" ? "admin" : "user",
       role: finalRole,
       coordArea: finalRole === "coordenacao" && (COORD_AREAS as readonly string[]).includes(String(coordArea)) ? coordArea : null,
+      phone: normalizePhone(phone) || null,
       whatsappId: whatsappId ? whatsappId : null
     },
     { include: ["queues", "whatsapp"] }

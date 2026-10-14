@@ -17,6 +17,9 @@ const useTickets = ({
     historical,
     tagId,
     reloadKey,
+    allQueues,
+    attendantId,
+    connectionId,
 }) => {
     const [loading, setLoading] = useState(true);
     const [hasMore, setHasMore] = useState(false);
@@ -41,6 +44,9 @@ const useTickets = ({
                             archived,
                             historical,
                             tagId,
+                            allQueues,
+                            attendantId,
+                            connectionId,
                         },
                     })
                     setTickets(data.tickets)
@@ -94,6 +100,9 @@ const useTickets = ({
         historical,
         tagId,
         reloadKey,
+        allQueues,
+        attendantId,
+        connectionId,
     ])
 
     return { tickets, loading, hasMore, count };

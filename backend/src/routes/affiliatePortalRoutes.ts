@@ -10,6 +10,7 @@ import Lead from "../models/Lead";
 import LeadStage from "../models/LeadStage";
 import User from "../models/User";
 import { getSetting } from "../helpers/AppSettings";
+import { getPortalTexts } from "../services/AffiliateServices/Bonus";
 import { inWindow, isVisibleTo, referralUrl, releasedIds } from "../helpers/Affiliates";
 import { normalizePhone } from "../helpers/Phone";
 import { statsFor } from "../services/AffiliateServices/Stats";
@@ -59,6 +60,26 @@ const shortName = (n: string): string => {
   return parts.length > 1 ? `${parts[0]} ${parts[parts.length - 1][0].toUpperCase()}.` : parts[0];
 };
 
+// FAQ, videos and the way to reach support, all edited by the administration
+const portalTexts = async (owner: { name: string; phone?: string | null } | null) => {
+  const t = await getPortalTexts();
+  const embed = (url: string) => {
+    const m = String(url || "").match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([\w-]{11})/);
+    return m ? `https://www.youtube.com/embed/${m[1]}` : null;
+  };
+  const videos = [
+    { key: "program", title: "Como funciona o programa", url: t.videoProgram },
+    { key: "tutorial", title: "Como usar os materiais", url: t.videoTutorial }
+  ].filter(v => v.url).map(v => ({ ...v, embed: embed(v.url) }));
+  // support is the person who registered the affiliate (their WhatsApp); the general number is only a fallback
+  const phone = (owner && owner.phone) || t.supportPhone;
+  return {
+    faq: t.faq,
+    videos,
+    support: phone ? { name: owner ? owner.name : "Equipe", url: `https://wa.me/${phone}` } : null
+  };
+};
+
 router.get("/:token", loadAffiliate, async (req: Request, res: Response) => {
   const aff = req.affiliate as Affiliate;
 
@@ -89,6 +110,7 @@ router.get("/:token", loadAffiliate, async (req: Request, res: Response) => {
       originalName: m.originalName,
       course: (m as any).course ? { id: (m as any).course.id, name: (m as any).course.name } : null,
       campaignId: m.campaignId,
+      collection: m.collection || null,
       updatedAt: m.updatedAt
     }));
 
@@ -106,7 +128,7 @@ router.get("/:token", loadAffiliate, async (req: Request, res: Response) => {
   });
 
   const stats = (await statsFor([aff.id])).get(aff.id);
-  const owner = aff.ownerId ? await User.findByPk(aff.ownerId, { attributes: ["name"] }) : null;
+  const owner = aff.ownerId ? await User.findByPk(aff.ownerId, { attributes: ["name", "phone"] }) : null;
   const referrals = await Lead.findAll({
     where: { affiliateId: aff.id },
     attributes: ["id", "name", "createdAt", "wonAt"],
@@ -116,7 +138,7 @@ router.get("/:token", loadAffiliate, async (req: Request, res: Response) => {
   });
   const bonusLines = await AffiliateBonus.findAll({
     where: { affiliateId: aff.id, status: { [Op.ne]: "cancelled" } },
-    attributes: ["id", "leadId", "amount", "status", "paidAt", "createdAt"],
+    attributes: ["id", "leadId", "amount", "status", "paidAt", "createdAt", "dueAt"],
     order: [["createdAt", "DESC"]],
     limit: 50
   });
@@ -124,8 +146,9 @@ router.get("/:token", loadAffiliate, async (req: Request, res: Response) => {
   return res.json({
     affiliate: { name: aff.name, firstName: aff.name.split(" ")[0], refCode: aff.refCode, pixKey: !!aff.pixKey },
     owner: owner ? { name: owner.name } : null,
-    title: await getSetting("affiliate_portal_title", "Portal do Afiliado"),
+    title: await getSetting("affiliate_portal_title", "Central do Afiliado"),
     message: await getSetting("affiliate_portal_message", "Tudo o que você precisa para indicar: materiais, cursos e campanhas."),
+    ...(await portalTexts(owner)),
     referralUrl: referralUrl(aff.refCode),
     externalLink: aff.externalLink || null,
     stats: stats && {
@@ -148,8 +171,17 @@ router.get("/:token", loadAffiliate, async (req: Request, res: Response) => {
       status: l.wonAt ? "enrolled" : (l as any).stage?.type === "lost" ? "lost" : "open",
       stage: (l as any).stage?.name || null
     })),
-    bonuses: bonusLines.map(b => ({ id: b.id, amount: Number(b.amount), status: b.status, paidAt: b.paidAt, createdAt: b.createdAt }))
+    bonuses: bonusLines.map(b => ({ id: b.id, amount: Number(b.amount), status: b.status, paidAt: b.paidAt, createdAt: b.createdAt, dueAt: b.dueAt }))
   });
+});
+
+// the affiliate copied a ready message: only a counter, so the team learns what is used
+router.post("/:token/materials/:id/copied", loadAffiliate, async (req: Request, res: Response) => {
+  const aff = req.affiliate as Affiliate;
+  if (throttled(`copy:${aff.id}`, 120, 60 * 60 * 1000)) return res.json({ ok: true });
+  const m = await AffiliateMaterial.findOne({ where: { id: Number(req.params.id) || 0, active: true }, attributes: ["id", "audience"] });
+  if (m) await AffiliateMaterial.increment("copies", { where: { id: m.id } });
+  return res.json({ ok: true });
 });
 
 router.get("/:token/files/:id", loadAffiliate, async (req: Request, res: Response) => {

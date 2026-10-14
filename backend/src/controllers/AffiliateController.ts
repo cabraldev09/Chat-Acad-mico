@@ -18,7 +18,7 @@ import {
 } from "../helpers/Affiliates";
 import { isAdminReq, withLeadScope } from "../middleware/scope";
 import { statsFor } from "../services/AffiliateServices/Stats";
-import { getRules } from "../services/AffiliateServices/Bonus";
+import { getPortalTexts, getRules } from "../services/AffiliateServices/Bonus";
 import { addActivity, loadLead, resolveLeadTarget, upsertLead } from "../services/CrmServices/LeadCore";
 import SendToContact from "../services/ChannelServices/SendToContact";
 import { getIO } from "../libs/socket";
@@ -193,12 +193,14 @@ export const ranking = async (req: Request, res: Response): Promise<Response> =>
   const rows = await Affiliate.findAll({ where, include: [{ model: User, as: "owner", attributes: ["id", "name"] }] });
   const days = Number(req.query.days) || 30;
   const stats = await statsFor(rows.map(r => r.id), new Date(Date.now() - days * 86400000));
+  const byPaid = req.query.by === "paid";
   const list = rows
     .map(a => ({ id: a.id, name: a.name, owner: (a as any).owner?.name || null, ...stats.get(a.id)! }))
-    .sort((x, y) => y.enrolled - x.enrolled || y.referrals - x.referrals);
+    // "who received the most" counts what was already paid, then what is owed
+    .sort((x, y) => (byPaid ? y.bonusPaid - x.bonusPaid || (y.bonusPending + y.bonusApproved) - (x.bonusPending + x.bonusApproved) : 0) || y.enrolled - x.enrolled || y.referrals - x.referrals);
   const totals = list.reduce(
-    (t, r) => ({ referrals: t.referrals + r.referrals, enrolled: t.enrolled + r.enrolled, proposals: t.proposals + r.proposals, bonusOwed: t.bonusOwed + r.bonusPending + r.bonusApproved }),
-    { referrals: 0, enrolled: 0, proposals: 0, bonusOwed: 0 }
+    (t, r) => ({ referrals: t.referrals + r.referrals, enrolled: t.enrolled + r.enrolled, proposals: t.proposals + r.proposals, bonusOwed: t.bonusOwed + r.bonusPending + r.bonusApproved, bonusPaid: t.bonusPaid + r.bonusPaid }),
+    { referrals: 0, enrolled: 0, proposals: 0, bonusOwed: 0, bonusPaid: 0 }
   );
   return res.json({ days, totals, affiliates: list });
 };
@@ -237,6 +239,8 @@ export const attachLead = async (req: Request, res: Response): Promise<Response>
   if (!lead) throw new AppError("ERR_LEAD_NOT_FOUND", 404);
   if (lead.affiliateId && lead.affiliateId !== a.id) throw new AppError("ERR_LEAD_HAS_AFFILIATE");
   await lead.update({ affiliateId: a.id });
+  // the proposals already made for this person now count for the affiliate too
+  await Proposal.update({ affiliateId: a.id } as any, { where: { leadId: lead.id, affiliateId: null } });
   await addActivity(lead.id, uid(req), "system", `Lead atribuído ao afiliado ${a.name}`);
   return res.json(await loadLead(lead.id));
 };
@@ -368,13 +372,15 @@ export const exportBonuses = async (req: Request, res: Response): Promise<void> 
 export const getRulesRoute = async (_req: Request, res: Response): Promise<Response> =>
   res.json({
     ...(await getRules()),
-    portalTitle: await getSetting("affiliate_portal_title", "Portal do Afiliado"),
+    ...(await getPortalTexts()),
+    portalTitle: await getSetting("affiliate_portal_title", "Central do Afiliado"),
     portalMessage: await getSetting("affiliate_portal_message", "Tudo o que você precisa para indicar: materiais, cursos e campanhas.")
   });
 
 export const putRules = async (req: Request, res: Response): Promise<Response> => {
   const b = req.body || {};
-  if (b.mode !== undefined) await setSetting("affiliate_bonus_mode", b.mode === "pct" ? "pct" : "fixed");
+  if (b.mode !== undefined) await setSetting("affiliate_bonus_mode", b.mode === "pct" || b.mode === "first_monthly" ? b.mode : "fixed");
+  if (b.payDays !== undefined) await setSetting("affiliate_pay_days", String(Math.min(365, Math.max(1, Math.round(Number(b.payDays)) || 60))));
   if (b.value !== undefined) {
     const v = Number(String(b.value).replace(",", "."));
     if (Number.isNaN(v) || v < 0) throw new AppError("ERR_INVALID_AMOUNT");
@@ -382,9 +388,36 @@ export const putRules = async (req: Request, res: Response): Promise<Response> =
   }
   if (b.trigger !== undefined) await setSetting("affiliate_bonus_trigger", b.trigger === "fee_paid" ? "fee_paid" : "enrolled");
   if (b.kind !== undefined) await setSetting("affiliate_bonus_kind", b.kind === "pix" ? "pix" : "bonus");
+  if (b.faq !== undefined) {
+    const list = (Array.isArray(b.faq) ? b.faq : []).filter((i: any) => i && String(i.q || "").trim() && String(i.a || "").trim()).slice(0, 20)
+      .map((i: any) => ({ q: String(i.q).trim().slice(0, 160), a: String(i.a).trim().slice(0, 1200) }));
+    await setSetting("affiliate_faq", list.length ? JSON.stringify(list) : "");
+  }
+  for (const [field, key] of [["videoProgram", "affiliate_video_program"], ["videoTutorial", "affiliate_video_tutorial"]] as const) {
+    if (b[field] !== undefined) {
+      const url = String(b[field] || "").trim();
+      if (url && !/^https?:\/\//i.test(url)) throw new AppError("ERR_AFFILIATE_BAD_URL");
+      await setSetting(key, url.slice(0, 300));
+    }
+  }
+  if (b.supportPhone !== undefined) await setSetting("affiliate_support_phone", String(b.supportPhone || "").replace(/\D/g, "").slice(0, 15));
   if (b.portalTitle !== undefined) await setSetting("affiliate_portal_title", String(b.portalTitle).slice(0, 80));
   if (b.portalMessage !== undefined) await setSetting("affiliate_portal_message", String(b.portalMessage).slice(0, 300));
   return getRulesRoute(req, res);
+};
+
+// the WhatsApp the person's affiliates see as "support" (each person sets their own)
+export const myPhone = async (req: Request, res: Response): Promise<Response> => {
+  const u = await User.findByPk(uid(req), { attributes: ["id", "phone"] });
+  return res.json({ phone: u?.phone || null });
+};
+
+export const saveMyPhone = async (req: Request, res: Response): Promise<Response> => {
+  const raw = String(req.body.phone || "").trim();
+  const phone = raw ? normalizePhone(raw) : null;
+  if (raw && !phone) throw new AppError("ERR_INVALID_PHONE", 400);
+  await User.update({ phone } as any, { where: { id: uid(req) } });
+  return res.json({ phone });
 };
 
 // polos for the form
