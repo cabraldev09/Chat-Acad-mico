@@ -20,7 +20,8 @@ COPY backend/package*.json backend/.npmrc ./
 RUN npm install --include=dev --no-audit --no-fund
 
 COPY backend/ ./
-RUN npm run build && mkdir -p /data
+# the small heap above is for running the API next to Chromium; compiling needs more
+RUN NODE_OPTIONS=--max-old-space-size=3072 npm run build && mkdir -p /data
 
 # Mount the Railway volume at /data and set:
 #   UPLOAD_DIR=/data/public  WWEBJS_AUTH_PATH=/data/wwebjs  ZAPO_AUTH_PATH=/data/zapo/state.sqlite
