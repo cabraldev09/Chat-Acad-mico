@@ -86,3 +86,12 @@ Sem `ADMIN_PASSWORD`, uma senha aleatória aparece **uma única vez** no log (`S
 1. *Add New → Project* e importe o repositório. **Root Directory: `frontend`**. O `frontend/vercel.json` já define build e rotas.
 2. *Environment Variables*: `VITE_BACKEND_URL` = endereço público da API **terminado em barra** (ex.: `https://chat-acad-mico-production.up.railway.app/`).
 3. Depois do deploy, copie o endereço da Vercel para `FRONTEND_URL` no Railway (libera o acesso e o cookie de login entre os dois domínios).
+
+## WhatsApp conectou no celular mas a tela fica em "QR CODE"
+Depois de ler o QR Code, o servidor ainda precisa carregar o WhatsApp Web no Chromium. Nos logs do Railway procure, nesta ordem:
+`AUTHENTICATED` → `carregando N%` → `READY`. Os grupos e as conversas só aparecem depois de `READY`.
+* Parou em `carregando…` ou aparece `não ficou pronta em 150s`: quase sempre falta **memória**. O plano de teste do Railway tem pouca
+  RAM para o Chromium; use o plano **Hobby** (ou aumente a memória do serviço em *Settings*).
+* Aparece `Killed`/`out of memory` ou o serviço reinicia sozinho: mesma causa.
+* Sem volume em `/data`, cada reinício apaga a sessão e pede um QR Code novo.
+A tela mostra "Iniciando" enquanto carrega e "Tempo esgotado" se não ficar pronta; o sistema tenta de novo sozinho.

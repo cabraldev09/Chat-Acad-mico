@@ -318,6 +318,17 @@ const removeSession = (whatsappId: number): void => {
 const reconnectAttempts = new Map<number, number>();
 const RECONNECT_MAX_ATTEMPTS = 6;
 
+// After the QR Code is read, WhatsApp Web must finish loading ("ready"). When it never does (little memory
+// for Chromium, or a WhatsApp Web update) the screen would stay on "QR CODE" forever: this timer says so and retries.
+const READY_TIMEOUT_MS = 150000;
+const readyTimers = new Map<number, NodeJS.Timeout>();
+const clearReadyTimer = (whatsappId: number) => {
+  const t = readyTimers.get(whatsappId);
+  if (t) clearTimeout(t);
+  readyTimers.delete(whatsappId);
+};
+const memoryNote = () => `memória do processo ${Math.round(process.memoryUsage().rss / 1048576)} MB`;
+
 const sendMessage = async (
   sessionId: number,
   to: string,
@@ -528,10 +539,47 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
     });
 
     wbot.on("authenticated", async () => {
-      logger.info(`Session: ${sessionName} AUTHENTICATED`);
+      logger.info(`Session: ${sessionName} AUTHENTICATED (QR Code lido, carregando o WhatsApp Web; ${memoryNote()})`);
+      try {
+        await whatsapp.update({ status: "OPENING", qrcode: "" });
+        io.emit("whatsappSession", { action: "update", session: whatsapp });
+      } catch (err) {
+        logger.error(err, "Error on whatsapp authenticated event");
+      }
+      clearReadyTimer(whatsapp.id);
+      readyTimers.set(
+        whatsapp.id,
+        setTimeout(async () => {
+          readyTimers.delete(whatsapp.id);
+          logger.error(
+            `Session: ${sessionName} não ficou pronta em ${READY_TIMEOUT_MS / 1000}s depois de ler o QR Code (${memoryNote()}). ` +
+              "Causas comuns: pouca memória no servidor para o Chromium, ou o WhatsApp Web mudou. Reiniciando a sessão."
+          );
+          try {
+            await whatsapp.update({ status: "TIMEOUT" });
+            io.emit("whatsappSession", { action: "update", session: whatsapp });
+            await wbot.destroy().catch(() => undefined);
+          } catch (err) {
+            logger.error(err, "Error closing a session that did not become ready");
+          }
+          const attempt = (reconnectAttempts.get(whatsapp.id) || 0) + 1;
+          reconnectAttempts.set(whatsapp.id, attempt);
+          if (attempt > RECONNECT_MAX_ATTEMPTS) {
+            await whatsapp.update({ status: "DISCONNECTED" }).catch(() => undefined);
+            io.emit("whatsappSession", { action: "update", session: whatsapp });
+            return;
+          }
+          init(whatsapp);
+        }, READY_TIMEOUT_MS)
+      );
+    });
+
+    wbot.on("loading_screen", (percent: any, message: any) => {
+      logger.info(`Session: ${sessionName} carregando ${percent}% ${message || ""}`);
     });
 
     wbot.on("auth_failure", async msg => {
+      clearReadyTimer(whatsapp.id);
       console.error(
         `Session: ${sessionName} AUTHENTICATION FAILURE! Reason: ${msg}`
       );
@@ -552,7 +600,8 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
     });
 
     wbot.on("ready", async () => {
-      logger.info(`Session: ${sessionName} READY`);
+      clearReadyTimer(whatsapp.id);
+      logger.info(`Session: ${sessionName} READY (${memoryNote()})`);
       reconnectAttempts.set(whatsapp.id, 0);
 
       try {
@@ -596,6 +645,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
     });
 
     wbot.on("disconnected", async reason => {
+      clearReadyTimer(whatsapp.id);
       logger.info(`Disconnected session: ${sessionName}, reason: ${reason}`);
       try {
         await whatsapp.update({ status: "OPENING", session: "" });
@@ -683,6 +733,13 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
     await wbot.initialize();
   } catch (err) {
     logger.error(err, "Error on whatsapp session");
+    // the screen must not stay on "QR CODE" when the browser could not even start
+    try {
+      await whatsapp.update({ status: "DISCONNECTED", qrcode: "" });
+      getIO().emit("whatsappSession", { action: "update", session: whatsapp });
+    } catch (e) {
+      logger.error(e, "Error saving the failed session status");
+    }
   }
 };
 
