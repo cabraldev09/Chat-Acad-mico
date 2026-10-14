@@ -1223,7 +1223,7 @@ const postMeta = (id, payload, secret, badSig) => {
     });
     await test("copied history is its own view, stays out of the lists and comes back to life when the person writes", async () => {
       const contactId = sql(`INSERT INTO Contacts (name, number, email, isGroup, channel, createdAt, updatedAt) VALUES ('Fulana do histórico', 'tg_7777', '', false, 'telegram', NOW(), NOW()) RETURNING id`).split("\n")[0];
-      const ticketId = sql(`INSERT INTO Tickets (status, contactId, whatsappId, unreadMessages, isGroup, segment, isHistorical, lastMessage, closedAt, createdAt, updatedAt) VALUES ('closed', ${contactId}, ${tgId}, 0, false, 'sales', true, 'mensagem antiga', NOW(), NOW() - INTERVAL '30 days', NOW() - INTERVAL '30 days') RETURNING id`).split("\n")[0];
+      const ticketId = sql(`INSERT INTO Tickets (status, contactId, whatsappId, unreadMessages, isGroup, segment, isHistorical, lastMessage, lastMessageId, closedAt, createdAt, updatedAt) VALUES ('closed', ${contactId}, ${tgId}, 0, false, 'sales', true, 'mensagem antiga', 'hist-old-1', NOW(), NOW() - INTERVAL '30 days', NOW() - INTERVAL '30 days') RETURNING id`).split("\n")[0];
       sql(`INSERT INTO Messages (id, ticketId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('hist-old-1', ${ticketId}, 'mensagem antiga', false, true, 'chat', 0, NOW() - INTERVAL '30 days', NOW())`);
 
       const queueIds = JSON.stringify((await http.get("/queue", auth())).data.map(q => q.id));
@@ -1256,7 +1256,7 @@ const postMeta = (id, payload, secret, badSig) => {
     await test("the list is ordered by the last message (not by when the row was touched), newest first, pinned on top", async () => {
       const mk = (name, num, at, touched) => {
         const c = sql(`INSERT INTO Contacts (name, number, email, isGroup, channel, createdAt, updatedAt) VALUES ('${name}', '${num}', '', false, 'telegram', NOW(), NOW()) RETURNING id`).split("\n")[0];
-        return sql(`INSERT INTO Tickets (status, contactId, whatsappId, unreadMessages, isGroup, segment, isHistorical, lastMessage, lastMessageAt, closedAt, createdAt, updatedAt) VALUES ('closed', ${c}, ${tgId}, 0, false, 'sales', true, 'oi', NOW() - INTERVAL '${at}', NOW(), NOW() - INTERVAL '90 days', NOW() - INTERVAL '${touched}') RETURNING id`).split("\n")[0];
+        return sql(`INSERT INTO Tickets (status, contactId, whatsappId, unreadMessages, isGroup, segment, isHistorical, lastMessage, lastMessageId, lastMessageAt, closedAt, createdAt, updatedAt) VALUES ('closed', ${c}, ${tgId}, 0, false, 'sales', true, 'oi', 'ord-msg', NOW() - INTERVAL '${at}', NOW(), NOW() - INTERVAL '90 days', NOW() - INTERVAL '${touched}') RETURNING id`).split("\n")[0];
       };
       // A wrote yesterday but was imported "just now"; B wrote last week but was touched yesterday
       const a = mk("Ordem A", "tg_ord_a", "1 day", "1 minute");
