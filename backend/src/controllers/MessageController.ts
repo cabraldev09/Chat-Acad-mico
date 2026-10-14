@@ -6,7 +6,7 @@ import Message from "../models/Message";
 
 import ListMessagesService from "../services/MessageServices/ListMessagesService";
 import ShowTicketService from "../services/TicketServices/ShowTicketService";
-import DeleteWhatsAppMessage from "../services/WbotServices/DeleteWhatsAppMessage";
+import DeleteWhatsAppMessage, { EditWhatsAppMessage } from "../services/WbotServices/DeleteWhatsAppMessage";
 import SendWhatsAppMedia from "../services/WbotServices/SendWhatsAppMedia";
 import SendWhatsAppMessage from "../services/WbotServices/SendWhatsAppMessage";
 import { hookHumanReply } from "../services/CrmServices/LeadCore";
@@ -69,8 +69,9 @@ export const remove = async (
   res: Response
 ): Promise<Response> => {
   const { messageId } = req.params;
+  const scope = req.query.scope === "local" ? "local" : "everyone";
 
-  const message = await DeleteWhatsAppMessage(messageId);
+  const message = await DeleteWhatsAppMessage(messageId, scope);
 
   const io = getIO();
   io.to(message.ticketId.toString()).emit("appMessage", {
@@ -79,6 +80,12 @@ export const remove = async (
   });
 
   return res.send();
+};
+
+export const edit = async (req: Request, res: Response): Promise<Response> => {
+  const message = await EditWhatsAppMessage(req.params.messageId, req.body.body);
+  getIO().to(message.ticketId.toString()).emit("appMessage", { action: "update", message });
+  return res.json({ id: message.id, body: message.body, isEdited: message.isEdited });
 };
 
 export const star = async (req: Request, res: Response): Promise<Response> => {

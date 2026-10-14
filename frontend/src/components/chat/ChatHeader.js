@@ -143,7 +143,7 @@ const ChatHeader = ({ contact, ticket, onOpenInfo, onToggleSearch, typing }) => 
   useEffect(() => {
     const onKeyDown = (e) => {
       if (e.key !== "Escape" || e.defaultPrevented) return;
-      if (document.querySelector(".MuiDialog-root, .MuiPopover-root, .MuiMenu-root, .emoji-picker-react, em-emoji-picker")) return;
+      if (document.querySelector("[data-quick-list], .MuiDialog-root, .MuiPopover-root, .MuiMenu-root, .emoji-picker-react, em-emoji-picker")) return;
       closeConversation();
     };
     document.addEventListener("keydown", onKeyDown);

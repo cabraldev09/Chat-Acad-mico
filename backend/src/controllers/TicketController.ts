@@ -144,6 +144,18 @@ export const archive = async (req: Request, res: Response): Promise<Response> =>
   return res.json({ archived });
 };
 
+// "Mark as unread": the conversation shows the unread badge again until someone opens it
+export const markUnread = async (req: Request, res: Response): Promise<Response> => {
+  const ticket = await ShowTicketService(req.params.ticketId);
+  await ticket.update({ unreadMessages: Math.max(1, ticket.unreadMessages || 0) });
+  getIO()
+    .to(ticket.status)
+    .to(String(ticket.id))
+    .to("notification")
+    .emit("ticket", { action: "update", ticket });
+  return res.json({ unreadMessages: ticket.unreadMessages });
+};
+
 // The agent started typing: tell the contact where the channel allows it
 const typingSent = new Map<number, number>();
 export const typing = async (req: Request, res: Response): Promise<Response> => {

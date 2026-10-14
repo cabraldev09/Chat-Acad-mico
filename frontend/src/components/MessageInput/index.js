@@ -25,6 +25,7 @@ import Edit from "@material-ui/icons/Edit";
 import api from "../../services/api";
 import MediaPreview from "../MediaPreview";
 import { shrinkImage, isImageFile } from "../../utils/imageTools";
+import { fillQuickVars } from "../../utils/quickVars";
 import RecordingTimer from "./RecordingTimer";
 import { ReplyMessageContext } from "../../context/ReplyingMessage/ReplyingMessageContext";
 import { AuthContext } from "../../context/Auth/AuthContext";
@@ -94,13 +95,13 @@ const useStyles = makeStyles((theme) => {
       width: 42,
       height: 42,
       flex: "none",
-      background: "linear-gradient(140deg, #0693e3 0%, #0b4279 100%)",
+      background: c.accent,
       color: "#fff",
-      boxShadow: "0 4px 12px rgba(6,147,227,.35)",
+      boxShadow: "0 3px 10px rgba(0,168,132,.35)",
       transition: "transform .12s, box-shadow .15s",
-      "&:hover": { background: "linear-gradient(140deg, #0693e3 0%, #0b4279 100%)", filter: "brightness(1.08)", transform: "translateY(-1px)" },
+      "&:hover": { background: c.accent, filter: "brightness(1.08)", transform: "translateY(-1px)" },
       "&:active": { transform: "scale(.94)" },
-      "&.Mui-disabled": { background: "linear-gradient(140deg, #0693e3 0%, #0b4279 100%)", opacity: 0.5, color: "#fff", boxShadow: "none" },
+      "&.Mui-disabled": { background: c.accent, opacity: 0.5, color: "#fff", boxShadow: "none" },
     },
     mic: { color: c.textSecondary },
     emojiBox: {
@@ -126,7 +127,7 @@ const useStyles = makeStyles((theme) => {
       "& .emoji-mart-anchors": { padding: "0 6px" },
       "& .emoji-mart-anchor": { color: c.textSecondary, padding: "12px 4px 10px", transition: "color .15s" },
       "& .emoji-mart-anchor:hover, & .emoji-mart-anchor-selected": { color: `${c.accent} !important` },
-      "& .emoji-mart-anchor-bar": { backgroundColor: "#0693e3 !important", height: 3, borderRadius: 3 },
+      "& .emoji-mart-anchor-bar": { backgroundColor: `${c.accent} !important`, height: 3, borderRadius: 3 },
       "& .emoji-mart-search": { margin: "10px 12px 4px" },
       "& .emoji-mart-search input": {
         fontFamily: "inherit",
@@ -138,7 +139,7 @@ const useStyles = makeStyles((theme) => {
         borderRadius: 999,
         outline: "none",
         transition: "border-color .15s",
-        "&:focus": { borderColor: "#0693e3" },
+        "&:focus": { borderColor: c.accent },
         "&::placeholder": { color: c.textSecondary },
       },
       "& .emoji-mart-search-icon": { top: 6, right: 8 },
@@ -179,6 +180,8 @@ const useStyles = makeStyles((theme) => {
       "& li": { padding: theme.spacing(1, 2), fontSize: 14, color: c.text, cursor: "pointer", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", "&:hover": { backgroundColor: c.hover } },
       "& b": { color: c.accent, marginRight: 8 },
     },
+    quickOn: { backgroundColor: c.selected },
+    quickHint: { fontSize: 12, color: c.textSecondary, cursor: "default", textAlign: "right", borderTop: `1px solid ${c.divider}`, "&:hover": { backgroundColor: "transparent !important" } },
     recorder: { flex: 1, display: "flex", alignItems: "center", gap: theme.spacing(1) },
     rec: { display: "flex", alignItems: "center", gap: 8, flex: 1, color: c.text, fontSize: 15 },
     recDot: { width: 10, height: 10, borderRadius: "50%", backgroundColor: "#ea0038", animation: "waPulse 1.2s ease-in-out infinite" },
@@ -224,7 +227,7 @@ const EMOJI_PT = {
 
 const isImage = (f) => f && f.type && f.type.startsWith("image/");
 
-const MessageInput = ({ ticketStatus, historical }) => {
+const MessageInput = ({ ticketStatus, historical, contactName }) => {
   const classes = useStyles();
   const emojiDark = useTheme().palette.type === "dark";
   const { ticketId } = useParams();
@@ -238,6 +241,7 @@ const MessageInput = ({ ticketStatus, historical }) => {
   const [recording, setRecording] = useState(false);
   const [quickAnswers, setQuickAnswer] = useState([]);
   const [typeBar, setTypeBar] = useState(false);
+  const [quickIndex, setQuickIndex] = useState(0);
   const [attachEl, setAttachEl] = useState(null);
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef();
@@ -303,6 +307,7 @@ const MessageInput = ({ ticketStatus, historical }) => {
       try {
         const { data } = await api.get("/quickAnswers/", { params: { searchParam: value.substring(1) } });
         setQuickAnswer(data.quickAnswers);
+        setQuickIndex(0);
         setTypeBar(data.quickAnswers.length > 0);
       } catch (err) {
         setTypeBar(false);
@@ -310,6 +315,13 @@ const MessageInput = ({ ticketStatus, historical }) => {
     } else {
       setTypeBar(false);
     }
+  };
+
+  // puts a quick reply in the field, with its variables filled in ({{nome}}, {{saudacao}}, ...), ready to edit
+  const pickQuick = (answer) => {
+    setInputMessage(fillQuickVars(answer.message, { contactName, agentName: user && user.name }));
+    setTypeBar(false);
+    inputRef.current && inputRef.current.focus();
   };
 
   // tells the contact "digitando…" where the channel supports it (the server also throttles)
@@ -515,19 +527,19 @@ const MessageInput = ({ ticketStatus, historical }) => {
       )}
 
       {typeBar && (
-        <ul className={classes.quick}>
-          {quickAnswers.map((value) => (
+        <ul className={classes.quick} data-quick-list>
+          {quickAnswers.map((value, i) => (
             <li
               key={value.id || value.shortcut}
-              onClick={() => {
-                setInputMessage(value.message);
-                setTypeBar(false);
-              }}
+              className={i === quickIndex ? classes.quickOn : undefined}
+              onMouseEnter={() => setQuickIndex(i)}
+              onClick={() => pickQuick(value)}
             >
               <b>{value.shortcut}</b>
-              {value.message}
+              {fillQuickVars(value.message, { contactName, agentName: user && user.name })}
             </li>
           ))}
+          <li className={classes.quickHint}>↑ ↓ escolher · Enter ou Tab inserir · Esc fechar</li>
         </ul>
       )}
 
@@ -561,7 +573,7 @@ const MessageInput = ({ ticketStatus, historical }) => {
                     showPreview={false}
                     showSkinTones={false}
                     title=""
-                    color="#0693e3"
+                    color="#00a884"
                     theme={emojiDark ? "dark" : "light"}
                     i18n={EMOJI_PT}
                     onSelect={(e) => setInputMessage((s) => s + e.native)}
@@ -626,10 +638,25 @@ const MessageInput = ({ ticketStatus, historical }) => {
                 onChange={handleChange}
                 disabled={loading}
                 onPaste={handlePaste}
+                onKeyDown={(e) => {
+                  if (!typeBar || !quickAnswers.length) return;
+                  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                    e.preventDefault();
+                    setQuickIndex((i) => (e.key === "ArrowDown" ? (i + 1) % quickAnswers.length : (i - 1 + quickAnswers.length) % quickAnswers.length));
+                  } else if (e.key === "Enter" || e.key === "Tab") {
+                    e.preventDefault();
+                    pickQuick(quickAnswers[quickIndex] || quickAnswers[0]);
+                  } else if (e.key === "Escape") {
+                    e.preventDefault();
+                    setTypeBar(false);
+                  }
+                }}
                 onKeyPress={(e) => {
                   if (loading || e.shiftKey) return;
                   if (e.key === "Enter") {
                     e.preventDefault();
+                    // Enter while the quick reply list is open inserts the reply (handled in onKeyDown)
+                    if (typeBar && quickAnswers.length) return;
                     handleSend();
                   }
                 }}

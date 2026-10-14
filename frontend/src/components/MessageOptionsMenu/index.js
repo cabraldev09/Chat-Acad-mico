@@ -11,9 +11,10 @@ import Star from "@material-ui/icons/Star";
 import StarBorder from "@material-ui/icons/StarBorder";
 import Forward from "@material-ui/icons/Forward";
 import DeleteOutline from "@material-ui/icons/DeleteOutline";
+import Edit from "@material-ui/icons/Edit";
+import { Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField, Typography } from "@material-ui/core";
 
 import api from "../../services/api";
-import ConfirmationModal from "../ConfirmationModal";
 import ForwardDialog from "../chat/ForwardDialog";
 import { ReplyMessageContext } from "../../context/ReplyingMessage/ReplyingMessageContext";
 import toastError from "../../errors/toastError";
@@ -57,6 +58,8 @@ const MessageOptionsMenu = ({ message, menuOpen, handleClose, anchorEl, ticketId
   const { setReplyingMessage } = useContext(ReplyMessageContext);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [forwardOpen, setForwardOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [draft, setDraft] = useState("");
 
   let mine = null;
   try {
@@ -64,6 +67,12 @@ const MessageOptionsMenu = ({ message, menuOpen, handleClose, anchorEl, ticketId
   } catch (e) {
     mine = null;
   }
+
+  const age = Date.now() - new Date(message.createdAt).getTime();
+  const isWhatsapp = channel === "whatsapp";
+  // WhatsApp's own limits: delete for everyone for about 2 days, edit for about 15 minutes
+  const canDeleteForAll = !!message.fromMe && age < 2 * 24 * 3600 * 1000;
+  const canEdit = isWhatsapp && !!message.fromMe && !message.mediaUrl && message.mediaType === "chat" && !!message.body && age < 15 * 60 * 1000;
 
   const run = async (fn) => {
     handleClose();
@@ -84,14 +93,45 @@ const MessageOptionsMenu = ({ message, menuOpen, handleClose, anchorEl, ticketId
 
   return (
     <>
-      <ConfirmationModal
-        title="Apagar mensagem?"
-        open={confirmOpen}
-        onClose={setConfirmOpen}
-        onConfirm={() => run(() => api.delete(`/messages/${message.id}`))}
-      >
-        A mensagem será apagada para todos na conversa.
-      </ConfirmationModal>
+      <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>Apagar mensagem?</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="textSecondary">
+            {canDeleteForAll
+              ? "Apagar para todos some também para o contato. Apagar só aqui esconde a mensagem no sistema e não muda nada no WhatsApp."
+              : message.fromMe
+              ? "O WhatsApp só deixa apagar para todos por cerca de 2 dias. Você pode esconder a mensagem só aqui no sistema; nada muda no WhatsApp."
+              : "Esta mensagem é do contato: só dá para escondê-la aqui no sistema, nada muda no WhatsApp."}
+          </Typography>
+        </DialogContent>
+        <DialogActions style={{ flexWrap: "wrap", gap: 8, padding: "8px 16px 16px" }}>
+          <Button onClick={() => setConfirmOpen(false)}>Cancelar</Button>
+          <Button variant="outlined" onClick={() => { setConfirmOpen(false); run(() => api.delete(`/messages/${message.id}`, { params: { scope: "local" } })); }}>
+            Apagar só aqui
+          </Button>
+          {canDeleteForAll && (
+            <Button variant="contained" color="primary" onClick={() => { setConfirmOpen(false); run(() => api.delete(`/messages/${message.id}`)); }}>
+              Apagar para todos
+            </Button>
+          )}
+        </DialogActions>
+      </Dialog>
+      <Dialog open={editOpen} onClose={() => setEditOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Editar mensagem</DialogTitle>
+        <DialogContent>
+          <TextField autoFocus fullWidth multiline minRows={3} variant="outlined" value={draft} onChange={(e) => setDraft(e.target.value)} />
+          <Typography variant="caption" color="textSecondary" style={{ display: "block", marginTop: 8 }}>
+            O contato vê a mensagem com o aviso “editada”. O WhatsApp só permite editar por cerca de 15 minutos.
+          </Typography>
+        </DialogContent>
+        <DialogActions style={{ padding: "8px 16px 16px" }}>
+          <Button onClick={() => setEditOpen(false)}>Cancelar</Button>
+          <Button variant="contained" color="primary" disabled={!draft.trim() || draft.trim() === (message.body || "").trim()}
+            onClick={() => { setEditOpen(false); run(async () => { await api.put(`/messages/${message.id}`, { body: draft.trim() }); toast.success("Mensagem editada."); }); }}>
+            Salvar
+          </Button>
+        </DialogActions>
+      </Dialog>
       <ForwardDialog open={forwardOpen} onClose={() => setForwardOpen(false)} message={message} fromTicketId={ticketId} />
       <Menu
         anchorEl={anchorEl}
@@ -128,12 +168,16 @@ const MessageOptionsMenu = ({ message, menuOpen, handleClose, anchorEl, ticketId
           <ListItemIcon className={classes.icon}>{message.starred ? <Star fontSize="small" /> : <StarBorder fontSize="small" />}</ListItemIcon>
           <ListItemText primary={message.starred ? "Desfavoritar" : "Favoritar"} />
         </MenuItem>
-        {message.fromMe && (
-          <MenuItem onClick={() => { setConfirmOpen(true); handleClose(); }}>
-            <ListItemIcon className={classes.icon}><DeleteOutline fontSize="small" /></ListItemIcon>
-            <ListItemText primary="Apagar" />
+        {canEdit && (
+          <MenuItem onClick={() => { setDraft(message.body || ""); setEditOpen(true); handleClose(); }}>
+            <ListItemIcon className={classes.icon}><Edit fontSize="small" /></ListItemIcon>
+            <ListItemText primary="Editar" />
           </MenuItem>
         )}
+        <MenuItem onClick={() => { setConfirmOpen(true); handleClose(); }}>
+          <ListItemIcon className={classes.icon}><DeleteOutline fontSize="small" /></ListItemIcon>
+          <ListItemText primary="Apagar" />
+        </MenuItem>
       </Menu>
     </>
   );

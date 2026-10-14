@@ -40,7 +40,7 @@ const useStyles = makeStyles((theme) => ({
     cursor: "pointer",
     "&:hover": { backgroundColor: theme.palette.action.hover },
   },
-  chipOn: { background: "#0b4279", borderColor: "#0b4279", color: "#fff", "&:hover": { backgroundColor: "#0b4279" } },
+  chipOn: { background: "#00a884", borderColor: "#00a884", color: "#fff", "&:hover": { backgroundColor: "#00a884" } },
   actions: { display: "flex", justifyContent: "flex-end", gap: theme.spacing(1), padding: theme.spacing(1, 2.5, 2) },
 }));
 

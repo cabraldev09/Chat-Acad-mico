@@ -189,18 +189,24 @@ const ListTicketsService = async ({
   const offset = limit * (+pageNumber - 1);
 
   // History (conversations copied from the phone) has its own view, and only the administrator and the person
-  // who owns the number may open it: it is that person's personal chat history
-  let historyScope: any = { isHistorical: false };
-  if (historical === "true") {
+  // who owns the number may open it: it is that person's personal chat history. "all" is the WhatsApp-like view:
+  // every live conversation plus the history the person is allowed to see, newest first, pinned on top.
+  let finalWhere: any = { [Op.and]: [whereCondition || {}, { isHistorical: false }] };
+  if (historical === "true" || historical === "all") {
     const owned =
       role === "admin"
         ? null
         : (await Whatsapp.findAll({ where: { ownerId: Number(userId) }, attributes: ["id"] })).map(w => w.id);
-    historyScope = owned === null ? { isHistorical: true } : { isHistorical: true, whatsappId: { [Op.in]: owned.length ? owned : [0] } };
+    const history: any =
+      owned === null ? { isHistorical: true } : { isHistorical: true, whatsappId: { [Op.in]: owned.length ? owned : [0] } };
+    finalWhere =
+      historical === "true"
+        ? { [Op.and]: [whereCondition || {}, history] }
+        : { [Op.or]: [{ [Op.and]: [whereCondition || {}, { isHistorical: false }] }, history] };
   }
 
   const { count, rows: tickets } = await Ticket.findAndCountAll({
-    where: { [Op.and]: [whereCondition || {}, historyScope] } as any,
+    where: finalWhere as any,
     include: includeCondition,
     distinct: true,
     limit,

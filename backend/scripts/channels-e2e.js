@@ -1241,6 +1241,43 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(msgs.includes("mensagem antiga") && msgs.includes("voltei a escrever"), `thread lost: ${msgs}`);
       assert(sql(`SELECT COUNT(*) FROM Tickets WHERE contactId=${contactId}`) === "1", "a second ticket was created instead of reusing the history one");
     });
+    await test("messages can be deleted for everyone or only here, edits are limited to WhatsApp, \"mark as unread\" and the all-conversations view work", async () => {
+      const t = ticketOf("tg_5551");
+      const mine = "del-out-1", theirs = "del-in-1";
+      sql(`INSERT INTO Messages (id, ticketId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('${mine}', ${t}, 'enviada', true, true, 'chat', 1, NOW(), NOW()), ('${theirs}', ${t}, 'recebida', false, true, 'chat', 0, NOW(), NOW())`);
+      sql(`UPDATE Tickets SET lastMessageId='${mine}' WHERE id=${t}`);
+
+      // a received message can only be hidden here
+      const r1 = await http.delete(`/messages/${theirs}`, auth());
+      assert(r1.status === 400, `deleting someone else's message for everyone: ${r1.status}`);
+      assert((await http.delete(`/messages/${theirs}`, { params: { scope: "local" }, ...auth() })).status === 200, "local delete of a received message");
+      assert(sql(`SELECT isDeleted FROM Messages WHERE id='${theirs}'`) === "1", "local delete did not mark it");
+
+      // editing is a WhatsApp-only feature; on other channels it says so
+      const e = await http.put(`/messages/${mine}`, { body: "texto novo" }, auth());
+      assert(e.status === 400, `edit on telegram: ${e.status}`);
+
+      // own message, inside the time limit: deleted for everyone
+      assert((await http.delete(`/messages/${mine}`, auth())).status === 200, "delete for everyone");
+      assert(sql(`SELECT isDeleted FROM Messages WHERE id='${mine}'`) === "1", "delete for everyone did not mark it");
+
+      // an old own message cannot be deleted for everyone
+      sql(`INSERT INTO Messages (id, ticketId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('old-own-1', ${t}, 'velha', true, true, 'chat', 1, NOW() - INTERVAL '5 days', NOW())`);
+      assert((await http.delete(`/messages/old-own-1`, auth())).status === 400, "old message deleted for everyone");
+
+      // mark as unread
+      sql(`UPDATE Tickets SET unreadMessages=0 WHERE id=${t}`);
+      assert((await http.put(`/tickets/${t}/unread`, {}, auth())).status === 200, "mark unread");
+      assert(Number(sql(`SELECT unreadMessages FROM Tickets WHERE id=${t}`)) >= 1, "unread badge not set");
+
+      // the last message state used by the list ticks follows new messages
+      assert(sql(`SELECT lastMessageId IS NOT NULL FROM Tickets WHERE id=${t}`) === "1", "ticket does not know its last message");
+
+      // everything: live conversations (any status) in one list
+      const queueIds = JSON.stringify((await http.get("/queue", auth())).data.map(q => q.id));
+      const all = (await http.get("/tickets", { params: { showAll: "true", historical: "all", queueIds }, ...auth() })).data.tickets.map(x => String(x.id));
+      assert(all.includes(String(t)), "the all view misses a live conversation");
+    });
     await test("each person connects their own WhatsApp: scoped list, one number by default, no one else's QR Code", async () => {
       const mk = async (name, email) => (await http.post("/users", { name, email, password: "senha123", role: "consultor" }, auth())).data;
       const u1 = await mk("Dona Um", "dona1@x.com"), u2 = await mk("Dono Dois", "dono2@x.com");

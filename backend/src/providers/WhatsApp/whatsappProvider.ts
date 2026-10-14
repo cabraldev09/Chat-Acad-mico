@@ -33,6 +33,14 @@ export interface WhatsappProvider {
     messageId: string,
     fromMe: boolean
   ): Promise<void>;
+  // changes the text of a message already sent (WhatsApp allows it for about 15 minutes)
+  editMessage?(
+    sessionId: number,
+    chatId: string,
+    messageId: string,
+    fromMe: boolean,
+    body: string
+  ): Promise<void>;
   checkNumber(sessionId: number, number: string): Promise<string>;
   getProfilePicUrl(sessionId: number, number: string): Promise<string>;
   // the picture of any chat (person or group), addressed by its full WhatsApp id

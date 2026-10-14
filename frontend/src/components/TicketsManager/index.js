@@ -15,6 +15,7 @@ import MoreVert from "@material-ui/icons/MoreVert";
 import ClearIcon from "@material-ui/icons/Clear";
 import ArrowBack from "@material-ui/icons/ArrowBack";
 import FilterList from "@material-ui/icons/FilterList";
+import Keyboard from "@material-ui/icons/Keyboard";
 
 import NewTicketModal from "../NewTicketModal";
 import TicketsList from "../TicketsList";
@@ -154,6 +155,12 @@ const TicketsManager = () => {
     setSearchParam("");
   };
 
+  useEffect(() => {
+    const open = () => setNewTicketModalOpen(true);
+    window.addEventListener("openNewConversation", open);
+    return () => window.removeEventListener("openNewConversation", open);
+  }, []);
+
   const searching = searchParam.length > 0;
   const chip = (key, label, count) => (
     <button
@@ -201,6 +208,10 @@ const TicketsManager = () => {
             <ListItemIcon style={{ minWidth: 32 }}><FilterList fontSize="small" /></ListItemIcon>
             <ListItemText primary="Filtrar por fila" />
           </MenuItem>
+          <MenuItem onClick={() => { setMenuEl(null); window.dispatchEvent(new CustomEvent("openShortcuts")); }}>
+            <ListItemIcon style={{ minWidth: 32 }}><Keyboard fontSize="small" /></ListItemIcon>
+            <ListItemText primary="Atalhos do teclado" />
+          </MenuItem>
         </Menu>
       </div>
 
@@ -243,6 +254,7 @@ const TicketsManager = () => {
           {chip("open", "Atendendo", openCount)}
           {chip("pending", "Aguardando", pendingCount)}
           {chip("unread", "Não lidas", 0)}
+          {chip("everything", "Todas", 0)}
           {chip("groups", "Grupos", 0)}
           {chip("closed", "Resolvidas", 0)}
           {chip("archived", "Arquivadas", 0)}
@@ -271,6 +283,7 @@ const TicketsManager = () => {
             )}
             {filter === "closed" && <TicketsList status="closed" showAll={true} selectedQueueIds={selectedQueueIds} />}
             {filter === "archived" && <TicketsList archived showAll={true} selectedQueueIds={selectedQueueIds} />}
+            {filter === "everything" && <TicketsList everything showAll={true} selectedQueueIds={selectedQueueIds} />}
             {filter === "historical" && <TicketsList historical showAll={true} selectedQueueIds={selectedQueueIds} />}
           </>
         )}

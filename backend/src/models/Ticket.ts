@@ -119,6 +119,18 @@ class Ticket extends Model<Ticket> {
   @Column
   leadId: number;
 
+  // the last message and its delivery state, shown in the conversation list
+  @Column
+  lastMessageId: string;
+
+  @Default(false)
+  @Column
+  lastMessageFromMe: boolean;
+
+  @Default(0)
+  @Column
+  lastMessageAck: number;
+
   // a conversation that existed before the number was connected: kept, but never counted
   @Default(false)
   @Column

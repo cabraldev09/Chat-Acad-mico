@@ -1,5 +1,6 @@
-import React from "react";
-import { useParams } from "react-router-dom";
+import React, { useEffect, useState } from "react";
+import { useParams, useHistory } from "react-router-dom";
+import ShortcutsDialog from "../../components/ShortcutsDialog";
 import clsx from "clsx";
 import { makeStyles } from "@material-ui/core/styles";
 import ChatBubbleOutline from "@material-ui/icons/ChatBubbleOutline";
@@ -84,9 +85,49 @@ const useStyles = makeStyles((theme) => {
 const Chat = () => {
   const classes = useStyles();
   const { ticketId } = useParams();
+  const history = useHistory();
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+
+  // keyboard shortcuts for the conversations screen (the list is on screen, so it is read straight from the page)
+  useEffect(() => {
+    const onKey = (e) => {
+      const mod = e.ctrlKey || e.metaKey;
+      const key = e.key.toLowerCase();
+      if (mod && key === "k") {
+        e.preventDefault();
+        const input = document.querySelector('input[placeholder^="Pesquisar nome"]');
+        if (input) input.focus();
+      } else if (mod && key === "/") {
+        e.preventDefault();
+        setShortcutsOpen(true);
+      } else if (e.altKey && key === "n") {
+        e.preventDefault();
+        window.dispatchEvent(new CustomEvent("openNewConversation"));
+      } else if (e.altKey && key === "m") {
+        e.preventDefault();
+        const box = document.querySelector('textarea[placeholder="Digite uma mensagem"]');
+        if (box) box.focus();
+      } else if (e.altKey && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+        e.preventDefault();
+        const ids = [...document.querySelectorAll("[data-ticket-id]")].filter((el) => el.offsetParent !== null).map((el) => el.getAttribute("data-ticket-id"));
+        if (!ids.length) return;
+        const at = ids.indexOf(String(ticketId));
+        const next = e.key === "ArrowDown" ? (at + 1) % ids.length : (at <= 0 ? ids.length - 1 : at - 1);
+        history.push(`/tickets/${ids[next]}`);
+      }
+    };
+    const open = () => setShortcutsOpen(true);
+    document.addEventListener("keydown", onKey);
+    window.addEventListener("openShortcuts", open);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("openShortcuts", open);
+    };
+  }, [ticketId, history]);
 
   return (
     <div className={classes.root}>
+      <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
       <aside className={clsx(classes.left, ticketId && classes.leftHidden)}>
         <TicketsManager />
       </aside>

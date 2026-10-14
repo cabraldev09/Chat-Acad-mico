@@ -10,7 +10,7 @@ import Menu from "@material-ui/core/Menu";
 import MenuItem from "@material-ui/core/MenuItem";
 import ListItemIcon from "@material-ui/core/ListItemIcon";
 import ListItemText from "@material-ui/core/ListItemText";
-import { Pin, PinOff, Archive, ArchiveRestore, ChevronDown, BellOff, BellRing } from "lucide-react";
+import { Pin, PinOff, Archive, ArchiveRestore, ChevronDown, BellOff, BellRing, MailOpen, Check, CheckCheck, Clock } from "lucide-react";
 import { getContactSound, onSoundPrefsChange } from "../../utils/soundPrefs";
 
 import ChannelIcon from "../ChannelIcon";
@@ -118,6 +118,7 @@ const useStyles = makeStyles((theme) => {
     },
     closed: { opacity: 0.8 },
     pin: { flex: "none", color: c.textSecondary, display: "flex" },
+    tick: { display: "inline-flex", verticalAlign: "-3px", marginRight: 4, color: c.textSecondary },
     more: {
       flex: "none",
       width: 24,
@@ -213,6 +214,7 @@ const TicketListItem = ({ ticket }) => {
     <div
       role="button"
       tabIndex={0}
+      data-ticket-id={ticket.id}
       className={clsx(classes.row, selected && classes.selected, ticket.status === "closed" && classes.closed)}
       onClick={() => ticket.status !== "pending" && history.push(`/tickets/${ticket.id}`)}
       onKeyDown={(e) => e.key === "Enter" && ticket.status !== "pending" && history.push(`/tickets/${ticket.id}`)}
@@ -236,6 +238,11 @@ const TicketListItem = ({ ticket }) => {
         </div>
         <div className={classes.line}>
           <span className={classes.preview} style={unread ? { color: undefined, fontWeight: 500 } : undefined}>
+            {ticket.lastMessageFromMe && ticket.lastMessage && (
+              <span className={classes.tick} title={["Enviando", "Enviada", "Entregue", "Lida", "Ouvida"][ticket.lastMessageAck] || ""} style={{ color: ticket.lastMessageAck >= 3 ? "#53bdeb" : undefined }}>
+                {ticket.lastMessageAck <= 0 ? <Clock size={14} /> : ticket.lastMessageAck === 1 ? <Check size={16} /> : <CheckCheck size={16} />}
+              </span>
+            )}
             {plain(ticket.lastMessage) || "Sem mensagens"}
           </span>
           {soundPref === "mute" && (
@@ -268,6 +275,10 @@ const TicketListItem = ({ ticket }) => {
             <MenuItem onClick={togglePin}>
               <ListItemIcon style={{ minWidth: 34 }}>{ticket.pinned ? <PinOff size={18} /> : <Pin size={18} />}</ListItemIcon>
               <ListItemText primary={ticket.pinned ? "Desafixar" : "Fixar no topo"} />
+            </MenuItem>
+            <MenuItem onClick={(e) => run(e, async () => { await api.put(`/tickets/${ticket.id}/unread`); })}>
+              <ListItemIcon style={{ minWidth: 34 }}><MailOpen size={18} /></ListItemIcon>
+              <ListItemText primary="Marcar como não lida" />
             </MenuItem>
             <MenuItem onClick={toggleArchive}>
               <ListItemIcon style={{ minWidth: 34 }}>{ticket.archivedAt ? <ArchiveRestore size={18} /> : <Archive size={18} />}</ListItemIcon>

@@ -292,6 +292,16 @@ export const handleMessageAck = async (
 
     await messageToUpdate.update({ ack });
 
+    // when it is the message shown in the conversation list, the list gets the new ticks too
+    const [changed] = await Ticket.update(
+      { lastMessageAck: ack } as any,
+      { where: { id: messageToUpdate.ticketId, lastMessageId: messageToUpdate.id }, silent: true } as any
+    );
+    if (changed) {
+      const fresh = await Ticket.findByPk(messageToUpdate.ticketId, { include: ["contact"] });
+      if (fresh) io.to(fresh.status).to(String(fresh.id)).emit("ticket", { action: "update", ticket: fresh });
+    }
+
     io.to(messageToUpdate.ticketId.toString()).emit("appMessage", {
       action: "update",
       message: messageToUpdate

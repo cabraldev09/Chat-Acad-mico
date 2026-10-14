@@ -71,6 +71,12 @@ const CreateMessageService = async ({
     await message.ticket.update({ firstResponseAt: new Date() });
   }
 
+  // the list shows this message (and later its ticks) under the contact's name
+  await Ticket.update(
+    { lastMessageId: message.id, lastMessageFromMe: !!message.fromMe, lastMessageAck: message.ack || 0 } as any,
+    { where: { id: message.ticketId }, silent: true } as any
+  );
+
   // what the team answers after the AI handed a question over becomes a lesson for the owner to review
   if (message.fromMe && message.ticket.userId && !message.ticket.isGroup && message.mediaType === "chat") {
     captureTeamReply(message.ticket, message.body).catch(() => undefined);

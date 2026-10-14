@@ -527,6 +527,13 @@ const messages = {
         ERR_NO_OTHER_WHATSAPP: "Deve haver pelo menos um WhatsApp padrão.",
         ERR_NO_DEF_WAPP_FOUND:
           "Nenhum WhatsApp padrão encontrado. Verifique a página de conexões.",
+        ERR_MESSAGE_NOT_ON_PHONE: "Não encontrei esta mensagem no celular. Ela pode ser muito antiga. Você ainda pode apagar só aqui no sistema.",
+        ERR_DELETE_ONLY_OWN: "Só dá para apagar para todos as mensagens que você enviou.",
+        ERR_DELETE_TOO_OLD: "O WhatsApp só permite apagar para todos por cerca de 2 dias. Você ainda pode apagar só aqui no sistema.",
+        ERR_EDIT_NOT_ALLOWED: "Só dá para editar mensagens de texto que você enviou.",
+        ERR_EDIT_TOO_OLD: "O WhatsApp só permite editar por cerca de 15 minutos depois de enviar.",
+        ERR_EDIT_NOT_SUPPORTED: "Este canal não permite editar mensagens.",
+        ERR_EMPTY_MESSAGE: "A mensagem não pode ficar vazia.",
         ERR_HISTORY_RUNNING: "A cópia das conversas deste número já está em andamento.",
         ERR_IMPORT: "Não foi possível importar os contatos.",
         ERR_NO_CONNECTED_WHATSAPP:

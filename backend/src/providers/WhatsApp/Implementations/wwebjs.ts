@@ -359,6 +359,17 @@ const getMessageData = async (
 // the last one it already stored, in both directions (including what was answered from the phone). A first
 // connection imports nothing here (the history has its own, silent import), and a message already stored is never
 // handled twice. Chats are not marked as read on the phone.
+// Updates a stored message and tells the open screens.
+const markMessageChanged = async (messageId: string, patch: { isDeleted?: boolean; body?: string; isEdited?: boolean }) => {
+  const found = await Message.findByPk(messageId);
+  if (!found) return;
+  await found.update(patch);
+  const message = await Message.findByPk(messageId, {
+    include: ["contact", { model: Message, as: "quotedMsg", include: ["contact"] }]
+  });
+  getIO().to(String(found.ticketId)).emit("appMessage", { action: "update", message });
+};
+
 const syncUnreadMessages = async (wbot: Session, whatsappId: number) => {
   try {
     const last = await Message.findOne({
@@ -734,6 +745,25 @@ const logout = async (sessionId: number): Promise<void> => {
   await wbot.logout();
 };
 
+// The id WhatsApp keeps for a message depends on how the chat is addressed (phone or internal id), so building it
+// by hand often misses. Fall back to searching the latest messages of the chat for the short id we store.
+const findMessage = async (
+  wbot: Session,
+  chatId: string,
+  messageId: string,
+  fromMe: boolean
+): Promise<WbotMessage | null> => {
+  const direct = await wbot
+    .getMessageById(getSerializedMessageId(chatId, fromMe, messageId))
+    .catch(() => null);
+  if (direct) return direct;
+
+  const chat = await wbot.getChatById(chatId).catch(() => null);
+  if (!chat) return null;
+  const recent = await chat.fetchMessages({ limit: 400 });
+  return recent.find(m => m.id.id === messageId) || null;
+};
+
 const deleteMessage = async (
   sessionId: number,
   chatId: string,
@@ -741,12 +771,23 @@ const deleteMessage = async (
   fromMe: boolean
 ): Promise<void> => {
   const wbot = getWbot(sessionId);
-
-  const serializedMsgId = getSerializedMessageId(chatId, fromMe, messageId);
-
-  const message = await wbot.getMessageById(serializedMsgId);
-
+  const message = await findMessage(wbot, chatId, messageId, fromMe);
+  if (!message) throw new AppError("ERR_MESSAGE_NOT_ON_PHONE", 404);
   await message.delete(true);
+};
+
+const editMessage = async (
+  sessionId: number,
+  chatId: string,
+  messageId: string,
+  fromMe: boolean,
+  body: string
+): Promise<void> => {
+  const wbot = getWbot(sessionId);
+  const message = await findMessage(wbot, chatId, messageId, fromMe);
+  if (!message) throw new AppError("ERR_MESSAGE_NOT_ON_PHONE", 404);
+  const edited = await message.edit(body);
+  if (!edited) throw new AppError("ERR_EDIT_NOT_ALLOWED", 400);
 };
 
 // A container that was stopped (deploy, restart) leaves Chromium's "profile in use" markers behind, tied to the old
@@ -1013,6 +1054,51 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
       }
     });
 
+    // the other person deleted a message for everyone
+    wbot.on("message_revoke_everyone", async (after: WbotMessage, before?: WbotMessage) => {
+      try {
+        const id = (before || after)?.id?.id || after?.id?.id;
+        if (id) await markMessageChanged(id, { isDeleted: true });
+      } catch (err) {
+        logger.error(err, "Error on whatsapp message revoke event");
+      }
+    });
+
+    // a message was edited (by the person or from the phone)
+    wbot.on("message_edit", async (msg: WbotMessage, newBody: string) => {
+      try {
+        if (msg?.id?.id) await markMessageChanged(msg.id.id, { body: newBody, isEdited: true });
+      } catch (err) {
+        logger.error(err, "Error on whatsapp message edit event");
+      }
+    });
+
+    // a call nobody answered here: it becomes a line in the conversation, so it is never missed
+    wbot.on("call", async (call: any) => {
+      try {
+        if (call.isGroup || !call.from) return;
+        const contact = await wbot.getContactById(call.from);
+        const contactPayload = await convertToContactPayload(contact, wbot);
+        await handleMessage(
+          {
+            id: `call-${call.id}`,
+            body: `📞 Ligação ${call.isVideo ? "de vídeo " : ""}recebida, não atendida por aqui.`,
+            fromMe: false,
+            hasMedia: false,
+            type: "chat",
+            timestamp: call.timestamp || Math.floor(Date.now() / 1000),
+            from: call.from,
+            to: ""
+          } as any,
+          contactPayload,
+          { whatsappId: whatsapp.id, unreadMessages: 1 } as any,
+          undefined
+        );
+      } catch (err) {
+        logger.error(err, "Error on whatsapp call event");
+      }
+    });
+
     wbot.on("message_ack", async (msg, ack) => {
       handleMessageAck(msg.id.id, mapMessageAck(ack));
     });
@@ -1037,6 +1123,7 @@ export const WhatsappWebJsProvider: WhatsappProvider = {
   sendMessage,
   sendMedia,
   deleteMessage,
+  editMessage,
   checkNumber,
   getProfilePicUrl,
   getChatPicUrl,

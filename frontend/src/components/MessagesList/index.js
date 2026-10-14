@@ -22,6 +22,8 @@ import MessageOptionsMenu from "../MessageOptionsMenu";
 import Audio from "../Audio";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
+import whatsBackground from "../../assets/wa-background.png";
+import whatsBackgroundDark from "../../assets/wa-background-dark.png";
 import { wa, dayLabel, clock } from "../chat/chatTheme";
 
 const useStyles = makeStyles((theme) => {
@@ -53,8 +55,8 @@ const useStyles = makeStyles((theme) => {
       flexDirection: "column",
       padding: theme.spacing(1.5, 2, 1),
       backgroundColor: c.wallpaper,
-      backgroundImage: `radial-gradient(${c.dots} 1.2px, transparent 1.2px), linear-gradient(180deg, ${dark ? "rgba(11,66,121,.20)" : "rgba(255,255,255,.55)"} 0%, transparent 45%)`,
-      backgroundSize: "22px 22px, 100% 100%",
+      backgroundImage: `url(${dark ? whatsBackgroundDark : whatsBackground})`,
+      backgroundSize: 412,
       ...theme.scrollbarStyles,
       [theme.breakpoints.up("md")]: { padding: theme.spacing(1.5, 7, 1) },
     },
@@ -64,29 +66,28 @@ const useStyles = makeStyles((theme) => {
     rowFirst: { marginTop: 12 },
     bubbleIn: {
       ...bubble(c.bubbleIn, c.text),
-      border: `1px solid ${dark ? "rgba(255,255,255,.04)" : "rgba(11,66,121,.06)"}`,
+      border: `1px solid ${dark ? "rgba(255,255,255,.04)" : "rgba(11,20,26,.06)"}`,
     },
     bubbleOut: {
       ...bubble(c.bubbleOutBg, c.bubbleOutText),
-      "& a": { color: "#bfe3ff" },
+      "& a": { color: c.linkOut },
       "& $meta": { color: c.timeOut },
       "& $ack": { color: c.ackOut },
       "& $ackRead": { color: c.ackReadOut },
       "& $quote": { backgroundColor: c.quoteOut },
-      "& $quoteBar": { backgroundColor: "#fef84c" },
-      "& $quoteBarMe": { backgroundColor: "#bfe3ff" },
-      "& $quoteName": { color: "#fef84c" },
-      "& $quoteBody": { color: "rgba(255,255,255,.85)" },
-      "& $doc": { backgroundColor: "rgba(255,255,255,.12)" },
-      "& $doc svg": { color: "#fff" },
-      "& $deleted": { color: "rgba(255,255,255,.75)" },
+      "& $quoteBar": { backgroundColor: c.quoteBar },
+      "& $quoteBarMe": { backgroundColor: c.quoteBarMe },
+      "& $quoteName": { color: c.quoteName },
+      "& $quoteBody": { color: c.textSecondary },
+      "& $doc": { backgroundColor: dark ? "rgba(0,0,0,.18)" : "rgba(11,20,26,.06)" },
+      "& $deleted": { color: c.textSecondary },
     },
     tailed: {},
     tailedIn: { borderTopLeftRadius: 5 },
     tailedOut: { borderTopRightRadius: 5 },
-    match: { outline: `2px solid ${dark ? "#8ca0b8" : "#fef84c"}`, outlineOffset: 1 },
-    matchActive: { outline: `3px solid ${dark ? "#fef84c" : "#0693e3"}`, outlineOffset: 1 },
-    sender: { fontSize: 13, fontWeight: 700, color: dark ? "#7cc4f5" : "#0b6fb8", marginBottom: 1 },
+    match: { outline: `2px solid ${dark ? "#667781" : "#ffd279"}`, outlineOffset: 1 },
+    matchActive: { outline: `3px solid ${c.accent}`, outlineOffset: 1 },
+    sender: { fontSize: 13, fontWeight: 600, color: c.sender, marginBottom: 1 },
     chevron: {
       position: "absolute",
       top: 2,
@@ -111,10 +112,10 @@ const useStyles = makeStyles((theme) => {
       backgroundColor: c.quoteIn,
     },
     quoteOut: { backgroundColor: c.quoteOut },
-    quoteBar: { flex: "none", width: 4, backgroundColor: "#0693e3" },
-    quoteBarMe: { backgroundColor: "#0b4279" },
+    quoteBar: { flex: "none", width: 4, backgroundColor: c.quoteBar },
+    quoteBarMe: { backgroundColor: c.quoteBarMe },
     quoteBody: { padding: "5px 9px", minWidth: 0, fontSize: 13, color: c.textSecondary, maxHeight: 64, overflow: "hidden" },
-    quoteName: { display: "block", fontSize: 12.5, fontWeight: 700, color: dark ? "#7cc4f5" : "#0b6fb8", marginBottom: 1 },
+    quoteName: { display: "block", fontSize: 12.5, fontWeight: 700, color: c.quoteName, marginBottom: 1 },
     text: { whiteSpace: "pre-wrap", overflowWrap: "anywhere", "& p": { margin: 0 } },
     deleted: { fontStyle: "italic", color: c.textSecondary, display: "flex", alignItems: "center", gap: 6 },
     meta: {
@@ -182,8 +183,8 @@ const useStyles = makeStyles((theme) => {
       textAlign: "center",
       fontSize: 12,
       fontWeight: 700,
-      color: dark ? "#fef84c" : "#0b4279",
-      backgroundColor: dark ? "rgba(254,248,76,.14)" : "#fef84c",
+      color: c.pillText,
+      backgroundColor: c.pill,
       boxShadow: c.shadow,
     },
     empty: { margin: "auto", padding: "10px 18px", borderRadius: 999, fontSize: 13, color: c.textSecondary, backgroundColor: c.chatChip, boxShadow: c.shadow, textAlign: "center" },
@@ -511,6 +512,7 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
                   <MarkdownWrapper>{m.body}</MarkdownWrapper>
                   <span className={classes.meta}>
                     {m.starred && <Star style={{ fontSize: 12 }} />}
+                    {m.isEdited && <span style={{ fontStyle: "italic" }}>editada</span>}
                     {clock(m.createdAt)}
                     {ack(m)}
                   </span>

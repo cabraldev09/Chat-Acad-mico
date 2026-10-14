@@ -838,7 +838,8 @@ CREATE TABLE public."Messages" (
     "contactId" integer,
     "quotedMsgId" character varying(255),
     starred boolean DEFAULT false NOT NULL,
-    reactions text
+    reactions text,
+    "isEdited" boolean DEFAULT false NOT NULL
 );
 
 
@@ -1361,7 +1362,10 @@ CREATE TABLE public."Tickets" (
     "aiTurns" integer DEFAULT 0 NOT NULL,
     "aiSlots" json,
     "botReminderAt" timestamp with time zone,
-    "isHistorical" boolean DEFAULT false NOT NULL
+    "isHistorical" boolean DEFAULT false NOT NULL,
+    "lastMessageId" character varying(255),
+    "lastMessageFromMe" boolean DEFAULT false NOT NULL,
+    "lastMessageAck" integer DEFAULT 0 NOT NULL
 );
 
 
@@ -3146,6 +3150,8 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261030000001-long-urls.js') ON CON
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261030000002-historical-flag.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261030000003-sla-and-preferences.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261030000004-history-and-pictures.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261031000001-message-edited.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261031000002-ticket-last-message-state.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.
