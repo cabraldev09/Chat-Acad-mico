@@ -9,9 +9,8 @@ import BackdropLoading from "../components/BackdropLoading";
 const Route = ({ component: Component, isPrivate = false, adminOnly = false, ...rest }) => {
   const { isAuth, loading, user } = useContext(AuthContext);
 
-  if (isAuth && adminOnly && !loading && user && user.profile && user.profile !== "admin") {
-    return <Redirect to="/" />;
-  }
+  // decided inside the matching route: every Route is rendered on every page, only the one for the open address may redirect
+  const blocked = isAuth && adminOnly && !loading && user && user.profile && user.profile !== "admin";
 
   if (!isAuth && isPrivate) {
     return (
@@ -34,7 +33,7 @@ const Route = ({ component: Component, isPrivate = false, adminOnly = false, ...
   return (
     <>
       {loading && <BackdropLoading />}
-      <RouterRoute {...rest} component={Component} />
+      <RouterRoute {...rest} render={(props) => (blocked ? <Redirect to="/" /> : <Component {...props} />)} />
     </>
   );
 };
