@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useContext, useRef } from "react";
 import "emoji-mart/css/emoji-mart.css";
 import { useParams } from "react-router-dom";
+import { toast } from "react-toastify";
 import { Picker } from "emoji-mart";
 import clsx from "clsx";
-import { makeStyles } from "@material-ui/core/styles";
+import { makeStyles, useTheme } from "@material-ui/core/styles";
 import InputBase from "@material-ui/core/InputBase";
 import IconButton from "@material-ui/core/IconButton";
 import CircularProgress from "@material-ui/core/CircularProgress";
@@ -22,6 +23,8 @@ import CameraAlt from "@material-ui/icons/CameraAlt";
 import Edit from "@material-ui/icons/Edit";
 
 import api from "../../services/api";
+import MediaPreview from "../MediaPreview";
+import { shrinkImage, isImageFile } from "../../utils/imageTools";
 import RecordingTimer from "./RecordingTimer";
 import { ReplyMessageContext } from "../../context/ReplyingMessage/ReplyingMessageContext";
 import { AuthContext } from "../../context/Auth/AuthContext";
@@ -29,25 +32,20 @@ import { useLocalStorage } from "../../hooks/useLocalStorage";
 import toastError from "../../errors/toastError";
 import { wa } from "../chat/chatTheme";
 
-let Mp3Recorder = null;
-
-const initRecorder = async () => {
-  if (!Mp3Recorder) {
-    try {
-      const MicRecorder = (await import("mic-recorder-to-mp3")).default;
-      Mp3Recorder = new MicRecorder({ bitRate: 128 });
-    } catch (error) {
-      console.error("Failed to initialize recorder:", error);
-      return null;
-    }
-  }
-  return Mp3Recorder;
+const MIC_ERRORS = {
+  NotAllowedError: "Permita o uso do microfone no navegador (ícone de cadeado ao lado do endereço) e tente de novo.",
+  PermissionDeniedError: "Permita o uso do microfone no navegador (ícone de cadeado ao lado do endereço) e tente de novo.",
+  NotFoundError: "Nenhum microfone encontrado neste computador.",
+  NotReadableError: "O microfone está sendo usado por outro programa.",
 };
+
+const AUDIO_TYPES = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"];
+const extensionOf = (mime) => (/mp4|aac/.test(mime) ? "m4a" : /ogg/.test(mime) ? "ogg" : "webm");
 
 const useStyles = makeStyles((theme) => {
   const c = wa(theme);
   return {
-    wrap: { flex: "none", position: "relative", backgroundColor: c.header, borderTop: `1px solid ${c.divider}` },
+    wrap: { flex: "none", position: "relative", backgroundColor: c.wallpaper },
     drop: {
       position: "absolute",
       inset: 0,
@@ -68,8 +66,19 @@ const useStyles = makeStyles((theme) => {
     replyBarMe: { backgroundColor: "#53bdeb" },
     replyBody: { padding: "6px 10px", minWidth: 0, fontSize: 13.5, color: c.textSecondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
     replyName: { display: "block", fontSize: 13, fontWeight: 600, color: "#06cf9c" },
-    bar: { display: "flex", alignItems: "flex-end", gap: theme.spacing(0.5), padding: theme.spacing(1, 1.5) },
-    icon: { color: c.textSecondary, padding: 8 },
+    bar: {
+      display: "flex",
+      alignItems: "flex-end",
+      gap: theme.spacing(0.25),
+      margin: theme.spacing(0.5, 2, 1.75),
+      padding: "6px 8px",
+      borderRadius: 28,
+      backgroundColor: c.panel,
+      boxShadow: c.float,
+      border: `1px solid ${c.divider}`,
+      [theme.breakpoints.down("xs")]: { margin: theme.spacing(0.5, 1, 1) },
+    },
+    icon: { color: c.textSecondary, padding: 9, transition: "color .15s, background-color .15s", "&:hover": { color: c.accent, backgroundColor: c.hover } },
     iconOn: { color: c.accent, transform: "rotate(45deg)" },
     field: {
       flex: 1,
@@ -78,22 +87,78 @@ const useStyles = makeStyles((theme) => {
       display: "flex",
       alignItems: "center",
       minHeight: 42,
-      padding: "0 14px",
-      borderRadius: 22,
-      backgroundColor: c.inputBg,
+      padding: "0 6px",
     },
     input: { flex: 1, fontSize: 15, color: c.text, padding: "9px 0", "& textarea": { lineHeight: "21px" } },
     send: {
-      width: 44,
-      height: 44,
+      width: 42,
+      height: 42,
       flex: "none",
-      backgroundColor: c.accent,
+      background: "linear-gradient(140deg, #0693e3 0%, #0b4279 100%)",
       color: "#fff",
-      "&:hover": { backgroundColor: c.accent, filter: "brightness(1.08)" },
-      "&.Mui-disabled": { backgroundColor: c.accent, opacity: 0.55, color: "#fff" },
+      boxShadow: "0 4px 12px rgba(6,147,227,.35)",
+      transition: "transform .12s, box-shadow .15s",
+      "&:hover": { background: "linear-gradient(140deg, #0693e3 0%, #0b4279 100%)", filter: "brightness(1.08)", transform: "translateY(-1px)" },
+      "&:active": { transform: "scale(.94)" },
+      "&.Mui-disabled": { background: "linear-gradient(140deg, #0693e3 0%, #0b4279 100%)", opacity: 0.5, color: "#fff", boxShadow: "none" },
     },
     mic: { color: c.textSecondary },
-    emojiBox: { position: "absolute", bottom: "100%", left: 8, zIndex: 20, marginBottom: 6 },
+    emojiBox: {
+      position: "absolute",
+      bottom: "100%",
+      left: 0,
+      zIndex: 20,
+      marginBottom: 12,
+      transformOrigin: "bottom left",
+      animation: "emojiIn .16s ease-out",
+      maxWidth: "calc(100vw - 24px)",
+      "& .emoji-mart": {
+        width: "min(372px, calc(100vw - 24px)) !important",
+        fontFamily: "inherit",
+        color: c.text,
+        backgroundColor: c.panel,
+        border: `1px solid ${c.divider}`,
+        borderRadius: 22,
+        boxShadow: c.float,
+        overflow: "hidden",
+      },
+      "& .emoji-mart-bar": { borderColor: c.divider },
+      "& .emoji-mart-anchors": { padding: "0 6px" },
+      "& .emoji-mart-anchor": { color: c.textSecondary, padding: "12px 4px 10px", transition: "color .15s" },
+      "& .emoji-mart-anchor:hover, & .emoji-mart-anchor-selected": { color: `${c.accent} !important` },
+      "& .emoji-mart-anchor-bar": { backgroundColor: "#0693e3 !important", height: 3, borderRadius: 3 },
+      "& .emoji-mart-search": { margin: "10px 12px 4px" },
+      "& .emoji-mart-search input": {
+        fontFamily: "inherit",
+        fontSize: 14,
+        padding: "9px 14px",
+        color: c.text,
+        backgroundColor: c.inputBg,
+        border: "2px solid transparent",
+        borderRadius: 999,
+        outline: "none",
+        transition: "border-color .15s",
+        "&:focus": { borderColor: "#0693e3" },
+        "&::placeholder": { color: c.textSecondary },
+      },
+      "& .emoji-mart-search-icon": { top: 6, right: 8 },
+      "& .emoji-mart-scroll": { height: 250, padding: "0 8px 8px", ...theme.scrollbarStyles },
+      "& .emoji-mart-category .emoji-mart-category-label": { margin: 0, padding: 0, fontFamily: "inherit" },
+      "& .emoji-mart-category .emoji-mart-category-label span": {
+        fontFamily: "inherit",
+        fontSize: 12,
+        fontWeight: 700,
+        letterSpacing: ".02em",
+        color: c.textSecondary,
+        padding: "10px 6px 6px",
+        backgroundColor: `${c.panel} !important`,
+      },
+      "& .emoji-mart-emoji": { borderRadius: 12, transition: "transform .1s" },
+      "& .emoji-mart-emoji:hover": { transform: "scale(1.18)" },
+      "& .emoji-mart-emoji:hover:before, & .emoji-mart-emoji-native:hover": { backgroundColor: `${c.hover} !important` },
+      "& .emoji-mart-emoji span": { cursor: "pointer" },
+      "& .emoji-mart-no-results": { color: c.textSecondary, fontFamily: "inherit" },
+    },
     blocked: { padding: theme.spacing(2), textAlign: "center", fontSize: 14, color: c.textSecondary },
     menuItem: { display: "flex", alignItems: "center", gap: 14, padding: "10px 22px 10px 16px", cursor: "pointer", fontSize: 15, color: c.text, "&:hover": { backgroundColor: c.hover } },
     menuIcon: { width: 40, height: 40, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff" },
@@ -117,7 +182,10 @@ const useStyles = makeStyles((theme) => {
     recorder: { flex: 1, display: "flex", alignItems: "center", gap: theme.spacing(1) },
     rec: { display: "flex", alignItems: "center", gap: 8, flex: 1, color: c.text, fontSize: 15 },
     recDot: { width: 10, height: 10, borderRadius: "50%", backgroundColor: "#ea0038", animation: "waPulse 1.2s ease-in-out infinite" },
-    "@global": { "@keyframes waPulse": { "0%,100%": { opacity: 1 }, "50%": { opacity: 0.25 } } },
+    "@global": {
+      "@keyframes waPulse": { "0%,100%": { opacity: 1 }, "50%": { opacity: 0.25 } },
+      "@keyframes emojiIn": { from: { opacity: 0, transform: "translateY(8px) scale(.96)" }, to: { opacity: 1, transform: "none" } },
+    },
     preview: { display: "flex", flexDirection: "column", backgroundColor: c.header, borderTop: `1px solid ${c.divider}` },
     previewTop: { display: "flex", alignItems: "center", gap: 8, padding: theme.spacing(1, 1.5), color: c.textSecondary, fontSize: 14 },
     previewStage: { display: "flex", alignItems: "center", justifyContent: "center", minHeight: 200, maxHeight: 340, padding: theme.spacing(1, 2), backgroundColor: c.wallpaper },
@@ -130,10 +198,35 @@ const useStyles = makeStyles((theme) => {
   };
 });
 
+const EMOJI_PT = {
+  search: "Buscar emoji",
+  clear: "Limpar",
+  notfound: "Nenhum emoji encontrado",
+  skintext: "Escolha o tom de pele",
+  categorieslabel: "Categorias de emoji",
+  categories: {
+    search: "Resultados da busca",
+    recent: "Usados recentemente",
+    smileys: "Carinhas e pessoas",
+    people: "Pessoas e corpo",
+    nature: "Animais e natureza",
+    foods: "Comidas e bebidas",
+    activity: "Atividades",
+    places: "Viagens e lugares",
+    objects: "Objetos",
+    symbols: "Símbolos",
+    flags: "Bandeiras",
+    custom: "Personalizados",
+  },
+  categorieslabel2: "",
+  skintones: { 1: "Tom padrão", 2: "Tom claro", 3: "Tom médio-claro", 4: "Tom médio", 5: "Tom médio-escuro", 6: "Tom escuro" },
+};
+
 const isImage = (f) => f && f.type && f.type.startsWith("image/");
 
 const MessageInput = ({ ticketStatus }) => {
   const classes = useStyles();
+  const emojiDark = useTheme().palette.type === "dark";
   const { ticketId } = useParams();
 
   const [medias, setMedias] = useState([]);
@@ -148,6 +241,7 @@ const MessageInput = ({ ticketStatus }) => {
   const [attachEl, setAttachEl] = useState(null);
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef();
+  const recorderRef = useRef(null);
   const docInput = useRef();
   const mediaInput = useRef();
   const cameraInput = useRef();
@@ -160,6 +254,15 @@ const MessageInput = ({ ticketStatus }) => {
     inputRef.current && inputRef.current.focus();
   }, [replyingMessage]);
 
+  // leaving the conversation (or the page) must not leave the microphone on
+  useEffect(
+    () => () => {
+      const r = recorderRef.current;
+      if (r && r.stream) r.stream.getTracks().forEach((t) => t.stop());
+    },
+    []
+  );
+
   useEffect(() => {
     inputRef.current && inputRef.current.focus();
     return () => {
@@ -171,12 +274,22 @@ const MessageInput = ({ ticketStatus }) => {
     };
   }, [ticketId, setReplyingMessage]);
 
-  const addFiles = (files) => {
-    const list = Array.from(files || []).slice(0, 10);
+  const addFiles = async (files, append = false) => {
+    const incoming = Array.from(files || []);
+    if (!incoming.length) return;
+    const room = append ? Math.max(0, 10 - medias.length) : 10;
+    if (incoming.length > room) toast.info("Você pode enviar até 10 arquivos de uma vez.");
+    const list = await Promise.all(incoming.slice(0, room).map((f) => shrinkImage(f)));
     if (!list.length) return;
-    setMedias(list);
-    setCaptions(list.map(() => ""));
-    setCurrent(0);
+    if (append) {
+      setMedias((cur) => [...cur, ...list]);
+      setCaptions((cur) => [...cur, ...list.map(() => "")]);
+      setCurrent(medias.length);
+    } else {
+      setMedias(list);
+      setCaptions(list.map(() => ""));
+      setCurrent(0);
+    }
   };
 
   const clearMedias = () => {
@@ -210,10 +323,11 @@ const MessageInput = ({ ticketStatus }) => {
     }
   };
 
+  // Ctrl+V with a picture or file on the clipboard (print screen, copied image) goes to the preview
   const handlePaste = (e) => {
     if (e.clipboardData.files && e.clipboardData.files.length) {
       e.preventDefault();
-      addFiles(e.clipboardData.files);
+      addFiles(e.clipboardData.files, medias.length > 0);
     }
   };
 
@@ -255,16 +369,47 @@ const MessageInput = ({ ticketStatus }) => {
     setLoading(false);
   };
 
+  // returns what was recorded, or null when nothing was
+  const finishRecording = () =>
+    new Promise((resolve) => {
+      const r = recorderRef.current;
+      recorderRef.current = null;
+      if (!r) {
+        resolve(null);
+        return;
+      }
+      const done = () => {
+        r.stream.getTracks().forEach((t) => t.stop());
+        resolve({ blob: new Blob(r.chunks, { type: r.type }), ms: Date.now() - r.startedAt, type: r.type });
+      };
+      if (r.rec.state === "inactive") {
+        done();
+        return;
+      }
+      r.rec.onstop = done;
+      r.rec.stop();
+    });
+
   const startRecording = async () => {
     setLoading(true);
     try {
-      const recorder = await initRecorder();
-      if (!recorder) throw new Error("Recorder not available");
-      await navigator.mediaDevices.getUserMedia({ audio: true });
-      await recorder.start();
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || typeof MediaRecorder === "undefined") {
+        toast.error("Este navegador não permite gravar áudio. Use o Chrome, Edge ou Safari atualizado.");
+        setLoading(false);
+        return;
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+      const mimeType = AUDIO_TYPES.find((t) => MediaRecorder.isTypeSupported(t));
+      const rec = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      const chunks = [];
+      rec.ondataavailable = (e) => {
+        if (e.data && e.data.size) chunks.push(e.data);
+      };
+      rec.start(250);
+      recorderRef.current = { rec, stream, chunks, type: rec.mimeType || mimeType || "audio/webm", startedAt: Date.now() };
       setRecording(true);
     } catch (err) {
-      toastError(err);
+      toast.error(MIC_ERRORS[err && err.name] || "Não foi possível gravar o áudio.");
     }
     setLoading(false);
   };
@@ -272,13 +417,12 @@ const MessageInput = ({ ticketStatus }) => {
   const sendAudio = async () => {
     setLoading(true);
     try {
-      const recorder = await initRecorder();
-      if (!recorder) throw new Error("Recorder not available");
-      const [, blob] = await recorder.stop().getMp3();
-      if (blob.size >= 10000) {
+      const result = await finishRecording();
+      if (!result || result.ms < 700 || result.blob.size < 1000) {
+        toast.info("Áudio muito curto. Segure a gravação por mais tempo.");
+      } else {
         const formData = new FormData();
-        const filename = `${new Date().getTime()}.mp3`;
-        formData.append("medias", blob, filename);
+        formData.append("medias", result.blob, `audio-${Date.now()}.${extensionOf(result.type)}`);
         formData.append("body", "");
         formData.append("fromMe", true);
         await api.post(`/messages/${ticketId}`, formData);
@@ -291,12 +435,7 @@ const MessageInput = ({ ticketStatus }) => {
   };
 
   const cancelAudio = async () => {
-    try {
-      const recorder = await initRecorder();
-      if (recorder) await recorder.stop().getMp3();
-    } catch (err) {
-      toastError(err);
-    }
+    await finishRecording();
     setRecording(false);
   };
 
@@ -308,60 +447,19 @@ const MessageInput = ({ ticketStatus }) => {
 
   // ---------------------------------------------------------------- media preview
   if (medias.length > 0) {
-    const file = medias[current];
-    const url = isImage(file) ? URL.createObjectURL(file) : null;
     return (
-      <div className={classes.preview}>
-        <div className={classes.previewTop}>
-          <IconButton className={classes.icon} onClick={clearMedias}>
-            <Close />
-          </IconButton>
-          <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{file.name}</span>
-        </div>
-        <div className={classes.previewStage}>
-          {url ? (
-            <img className={classes.previewImg} src={url} alt={file.name} />
-          ) : (
-            <div className={classes.previewFile}>
-              <InsertDriveFile />
-              <span>{file.name}</span>
-              <span style={{ fontSize: 12 }}>{(file.size / 1024).toFixed(0)} KB · sem pré-visualização</span>
-            </div>
-          )}
-        </div>
-        {medias.length > 1 && (
-          <div className={classes.thumbs}>
-            {medias.map((m, i) => (
-              <div key={i} className={clsx(classes.thumb, i === current && classes.thumbOn)} onClick={() => setCurrent(i)}>
-                {isImage(m) ? <img src={URL.createObjectURL(m)} alt="" /> : <InsertDriveFile />}
-              </div>
-            ))}
-          </div>
-        )}
-        <div className={classes.previewBar}>
-          <div className={classes.field}>
-            <InputBase
-              fullWidth
-              autoFocus
-              multiline
-              maxRows={4}
-              className={classes.input}
-              placeholder="Adicione uma legenda"
-              value={captions[current] || ""}
-              onChange={(e) => setCaptions((cs) => cs.map((c2, i) => (i === current ? e.target.value : c2)))}
-              onKeyPress={(e) => {
-                if (e.key === "Enter" && !e.shiftKey && !loading) {
-                  e.preventDefault();
-                  handleUploadMedia();
-                }
-              }}
-            />
-          </div>
-          <IconButton className={classes.send} onClick={handleUploadMedia} disabled={loading}>
-            {loading ? <CircularProgress size={20} color="inherit" /> : <Send />}
-          </IconButton>
-        </div>
-      </div>
+      <MediaPreview
+        medias={medias}
+        setMedias={setMedias}
+        captions={captions}
+        setCaptions={setCaptions}
+        current={current}
+        setCurrent={setCurrent}
+        loading={loading}
+        onSend={handleUploadMedia}
+        onClose={clearMedias}
+        onAdd={(files) => addFiles(files, true)}
+      />
     );
   }
 
@@ -454,9 +552,16 @@ const MessageInput = ({ ticketStatus }) => {
               <div className={classes.emojiBox}>
                 <ClickAwayListener onClickAway={() => setShowEmoji(false)}>
                   <Picker
-                    perLine={9}
+                    native
+                    perLine={8}
+                    emojiSize={26}
+                    emojiButtonSize={40}
                     showPreview={false}
                     showSkinTones={false}
+                    title=""
+                    color="#0693e3"
+                    theme={emojiDark ? "dark" : "light"}
+                    i18n={EMOJI_PT}
                     onSelect={(e) => setInputMessage((s) => s + e.native)}
                   />
                 </ClickAwayListener>

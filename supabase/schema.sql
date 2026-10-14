@@ -792,7 +792,8 @@ CREATE TABLE public."Leads" (
     "onboardingStartedAt" timestamp with time zone,
     "onboardingDoneAt" timestamp with time zone,
     "onboardingAlertAt" timestamp with time zone,
-    "indicatedBy" integer
+    "indicatedBy" integer,
+    "isHistorical" boolean DEFAULT false NOT NULL
 );
 
 
@@ -1357,7 +1358,8 @@ CREATE TABLE public."Tickets" (
     "aiSummary" text,
     "aiTurns" integer DEFAULT 0 NOT NULL,
     "aiSlots" json,
-    "botReminderAt" timestamp with time zone
+    "botReminderAt" timestamp with time zone,
+    "isHistorical" boolean DEFAULT false NOT NULL
 );
 
 
@@ -3137,6 +3139,7 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261027000001-ai-v2.js') ON CONFLIC
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261028000001-ai-learning.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261029000001-whatsapp-owner.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261030000001-long-urls.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261030000002-historical-flag.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

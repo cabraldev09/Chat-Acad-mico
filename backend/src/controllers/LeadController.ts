@@ -42,7 +42,8 @@ const uid = (req: Request) => Number(req.user.id);
 
 // ------------------------------------------------------------------ filters
 const buildWhere = (q: any) => {
-  const where: any = {};
+  // history (leads from conversations that predate the connection) is hidden unless asked for
+  const where: any = q.historical === "1" ? {} : { isHistorical: false };
   if (q.stageId) where.stageId = q.stageId;
   if (q.ownerId === "none") where.ownerId = { [Op.is]: null };
   else if (q.ownerId) where.ownerId = q.ownerId;
@@ -550,7 +551,7 @@ export const metrics = async (req: Request, res: Response): Promise<Response> =>
   const ownerId = reqRole(req) === "consultor" ? Number(req.user.id) : req.query.ownerId ? Number(req.query.ownerId) : null;
   const courseId = req.query.courseId ? Number(req.query.courseId) : null;
   const rep = { from, to, ownerId, courseId };
-  const f = `AND (:ownerId IS NULL OR l.ownerId = :ownerId) AND (:courseId IS NULL OR l.courseId = :courseId)`;
+  const f = `AND l.isHistorical = false AND (:ownerId IS NULL OR l.ownerId = :ownerId) AND (:courseId IS NULL OR l.courseId = :courseId)`;
   const q = async (sql: string): Promise<any[]> =>
     (await sequelize.query(portable(sql), { replacements: rep, type: QueryTypes.SELECT })) as any[];
 

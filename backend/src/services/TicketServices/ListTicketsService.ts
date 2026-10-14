@@ -184,7 +184,7 @@ const ListTicketsService = async ({
   const offset = limit * (+pageNumber - 1);
 
   const { count, rows: tickets } = await Ticket.findAndCountAll({
-    where: whereCondition,
+    where: { [Op.and]: [whereCondition || {}, { isHistorical: false }] } as any,
     include: includeCondition,
     distinct: true,
     limit,

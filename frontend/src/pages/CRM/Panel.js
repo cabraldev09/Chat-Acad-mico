@@ -1,3 +1,4 @@
+import { fillDays } from "../../utils/chartDays";
 import React, { useEffect, useState } from "react";
 import { useHistory } from "react-router-dom";
 import { Typography, TextField, MenuItem, makeStyles, Table, TableHead, TableRow, TableCell, TableBody, LinearProgress } from "@material-ui/core";
@@ -36,6 +37,7 @@ const useStyles = makeStyles((theme) => ({
 const span = (n) => ({ gridColumn: `span ${n}`, minWidth: 0 });
 const mins = (m) => {
   if (m === null || m === undefined) return "—";
+  if (m < 1) return "menos de 1 min";
   if (m < 60) return `${Math.round(m)} min`;
   if (m < 1440) return `${(m / 60).toFixed(1).replace(".", ",")} h`;
   return `${(m / 1440).toFixed(1).replace(".", ",")} d`;
@@ -58,10 +60,10 @@ const Panel = () => {
       .then(({ data }) => setD(data)).catch(toastError);
   }, [from, to, ownerId, courseId]);
 
-  const days = {};
-  (d?.created || []).forEach((r) => { const k = String(r.day).slice(0, 10); days[k] = { day: k.slice(5), leads: r.total, matriculas: 0 }; });
-  (d?.wonDaily || []).forEach((r) => { const k = String(r.day).slice(0, 10); days[k] = { day: k.slice(5), leads: 0, ...days[k], matriculas: r.total }; });
-  const series = Object.keys(days).sort().map((k) => days[k]);
+  const byDay = {};
+  (d?.created || []).forEach((r) => { const k = String(r.day).slice(0, 10); byDay[k] = { ...byDay[k], leads: Number(r.total) }; });
+  (d?.wonDaily || []).forEach((r) => { const k = String(r.day).slice(0, 10); byDay[k] = { ...byDay[k], matriculas: Number(r.total) }; });
+  const series = fillDays(from, to, byDay, { leads: 0, matriculas: 0 });
   // "reached stage" = leads now in this stage or any later one (enrolled included)
   const steps = d ? d.funnel.filter((f) => f.type !== "lost") : [];
   const reached = steps.map((f, i) => ({ ...f, reached: steps.slice(i).reduce((a, x) => a + x.total, 0) }));
@@ -166,7 +168,7 @@ const Panel = () => {
                       <linearGradient id="gWon" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#16a34a" stopOpacity={0.35} /><stop offset="100%" stopColor="#16a34a" stopOpacity={0} /></linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                    <XAxis dataKey="day" /><YAxis allowDecimals={false} /><Tooltip /><Legend />
+                    <XAxis dataKey="day" interval="preserveStartEnd" minTickGap={18} /><YAxis allowDecimals={false} /><Tooltip /><Legend />
                     <Area type="monotone" dataKey="leads" name="Leads" stroke="#0693E3" strokeWidth={2} fill="url(#gLeads)" />
                     <Area type="monotone" dataKey="matriculas" name="Matrículas" stroke="#16a34a" strokeWidth={2} fill="url(#gWon)" />
                   </AreaChart>

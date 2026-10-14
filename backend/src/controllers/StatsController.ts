@@ -21,7 +21,7 @@ export const overview = async (req: Request, res: Response): Promise<Response> =
   const queueId = req.query.queueId ? Number(req.query.queueId) : null;
   const userId = req.query.userId ? Number(req.query.userId) : null;
   const rep = { from, to, queueId, userId };
-  const filter = `AND (:queueId IS NULL OR t.queueId = :queueId) AND (:userId IS NULL OR t.userId = :userId)`;
+  const filter = `AND t.isHistorical = false AND (:queueId IS NULL OR t.queueId = :queueId) AND (:userId IS NULL OR t.userId = :userId)`;
 
   const [totals] = await q(
     `SELECT
@@ -65,7 +65,7 @@ export const overview = async (req: Request, res: Response): Promise<Response> =
        COUNT(CASE WHEN t.createdAt BETWEEN :from AND :to THEN 1 END) AS handled,
        AVG(CASE WHEN t.createdAt BETWEEN :from AND :to
                 THEN ${diffSeconds('t.createdAt', 't.firstResponseAt')} END) AS avgFirstResponse
-     FROM Users u LEFT JOIN Tickets t ON t.userId = u.id
+     FROM Users u LEFT JOIN Tickets t ON t.userId = u.id AND t.isHistorical = false
      WHERE (:userId IS NULL OR u.id = :userId) AND (:queueId IS NULL OR t.queueId = :queueId OR t.id IS NULL)
      GROUP BY u.id, u.name ORDER BY closed DESC`,
     rep
@@ -132,7 +132,7 @@ export const live = async (_req: Request, res: Response): Promise<Response> => {
      LEFT JOIN Users u ON u.id = t.userId
      LEFT JOIN Queues qu ON qu.id = t.queueId
      LEFT JOIN Whatsapps w ON w.id = t.whatsappId
-     WHERE t.status IN ('open', 'pending')
+     WHERE t.status IN ('open', 'pending') AND t.isHistorical = false
      ORDER BY t.status = 'pending' DESC, t.updatedAt ASC
      LIMIT 300`,
     {}

@@ -119,6 +119,11 @@ class Ticket extends Model<Ticket> {
   @Column
   leadId: number;
 
+  // a conversation that existed before the number was connected: kept, but never counted
+  @Default(false)
+  @Column
+  isHistorical: boolean;
+
   @HasMany(() => Message)
   messages: Message[];
 

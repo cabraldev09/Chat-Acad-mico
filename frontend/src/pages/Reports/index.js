@@ -1,3 +1,4 @@
+import { fillDays } from "../../utils/chartDays";
 import React, { useEffect, useState } from "react";
 import {
   Paper,
@@ -93,16 +94,16 @@ const Reports = () => {
       .catch(toastError);
   }, [from, to, queueId, userId]);
 
-  const days = {};
+  const byDay = {};
   (data?.perDay || []).forEach((d) => {
     const k = String(d.day).slice(0, 10);
-    days[k] = { day: k.slice(5), created: Number(d.created), closed: 0 };
+    byDay[k] = { ...byDay[k], created: Number(d.created) };
   });
   (data?.closedPerDay || []).forEach((d) => {
     const k = String(d.day).slice(0, 10);
-    days[k] = { day: k.slice(5), created: 0, ...days[k], closed: Number(d.closed) };
+    byDay[k] = { ...byDay[k], closed: Number(d.closed) };
   });
-  const series = Object.keys(days).sort().map((k) => days[k]);
+  const series = fillDays(from, to, byDay, { created: 0, closed: 0 });
 
   const channelData = (data?.perChannel || []).map((c) => ({
     name: CHANNELS[c.channel]?.label || c.channel,
@@ -137,22 +138,22 @@ const Reports = () => {
             <Grid item xs={6} md={3}><Kpi label="Tempo médio de resolução" value={duration(data.period.avgResolution)} /></Grid>
             <Grid item xs={6} md={3}><Kpi label="Mensagens recebidas" value={data.messages.received || 0} /></Grid>
             <Grid item xs={6} md={3}><Kpi label="Mensagens enviadas" value={data.messages.sent || 0} /></Grid>
-            <Grid item xs={12} md={6}><Kpi label="Total de atendimentos (histórico)" value={data.totals.total || 0} hint={`${data.totals.closed || 0} finalizados`} /></Grid>
+            <Grid item xs={12} md={6}><Kpi label="Total de atendimentos" value={data.totals.total || 0} hint={`${data.totals.closed || 0} finalizados`} /></Grid>
 
             <Grid item xs={12} md={8}>
               <Paper variant="outlined" className={classes.card}>
                 <Typography variant="subtitle2" gutterBottom>Atendimentos por dia</Typography>
                 <div className={classes.chartBox}>
                   <ResponsiveContainer>
-                    <LineChart data={series}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="day" />
+                    <BarChart data={series} barGap={2}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                      <XAxis dataKey="day" interval="preserveStartEnd" minTickGap={18} />
                       <YAxis allowDecimals={false} />
                       <Tooltip />
                       <Legend />
-                      <Line type="monotone" dataKey="created" name="Abertos" stroke="#2196f3" strokeWidth={2} />
-                      <Line type="monotone" dataKey="closed" name="Finalizados" stroke="#4caf50" strokeWidth={2} />
-                    </LineChart>
+                      <Bar dataKey="created" name="Novos" fill="#0693e3" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="closed" name="Finalizados" fill="#0b4279" radius={[4, 4, 0, 0]} />
+                    </BarChart>
                   </ResponsiveContainer>
                 </div>
               </Paper>
@@ -163,7 +164,7 @@ const Reports = () => {
                 <div className={classes.chartBox}>
                   <ResponsiveContainer>
                     <PieChart>
-                      <Pie data={channelData} dataKey="value" nameKey="name" outerRadius={85} label>
+                      <Pie data={channelData} dataKey="value" nameKey="name" innerRadius={50} outerRadius={85} paddingAngle={2}>
                         {channelData.map((c) => (<Cell key={c.name} fill={c.color} />))}
                       </Pie>
                       <Tooltip />

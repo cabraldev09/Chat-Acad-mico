@@ -1142,6 +1142,26 @@ const postMeta = (id, payload, secret, badSig) => {
       const admin = (await http.get("/tickets", { params: { showAll: "true", queueIds: JSON.stringify([q.id]) }, ...auth() })).data.tickets.map(t => String(t.id));
       assert(admin.includes(String(colleagues)) && admin.includes(String(tutoring)), "admin should see everything");
     });
+    await test("history from before the connection never counts: lists, statistics and the CRM ignore it", async () => {
+      const contactId = sql(`SELECT id FROM Contacts WHERE number='tg_5551'`);
+      const stageId = sql(`SELECT id FROM LeadStages WHERE type='open' ORDER BY position LIMIT 1`);
+      const metrics = async () => (await http.get("/crm/metrics", { params: { from: "2020-01-01", to: "2099-12-31" }, ...auth() })).data;
+      const stats = async () => (await http.get("/stats/overview", { params: { from: "2020-01-01", to: "2099-12-31" }, ...auth() })).data;
+      const before = { leads: (await metrics()).kpi.leads, total: Number((await stats()).totals.total) };
+
+      const oldTicket = sql(`INSERT INTO Tickets (status, contactId, whatsappId, unreadMessages, isGroup, segment, isHistorical, createdAt, updatedAt) VALUES ('open', ${contactId}, ${tgId}, 3, false, 'sales', true, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      sql(`INSERT INTO Leads (name, stageId, contactId, isHistorical, createdAt, updatedAt) VALUES ('Conversa antiga', ${stageId}, ${contactId}, true, NOW(), NOW())`);
+
+      assert((await metrics()).kpi.leads === before.leads, "a historical lead was counted in the CRM");
+      assert(Number((await stats()).totals.total) === before.total, "a historical conversation was counted in the statistics");
+      const queueIds = JSON.stringify((await http.get("/queue", auth())).data.map(q => q.id));
+      const listed = (await http.get("/tickets", { params: { showAll: "true", status: "open", queueIds }, ...auth() })).data.tickets.map(t => String(t.id));
+      assert(!listed.includes(String(oldTicket)), "a historical conversation is in the inbox");
+      const leads = (await http.get("/leads", { params: { limit: 500 }, ...auth() })).data.leads.map(l => l.name);
+      assert(!leads.includes("Conversa antiga"), "a historical lead is in the funnel list");
+      const all = (await http.get("/leads", { params: { limit: 500, historical: "1" }, ...auth() })).data.leads.map(l => l.name);
+      assert(all.includes("Conversa antiga"), "the historical lead should still be reachable on request");
+    });
     await test("each person connects their own WhatsApp: scoped list, one number by default, no one else's QR Code", async () => {
       const mk = async (name, email) => (await http.post("/users", { name, email, password: "senha123", role: "consultor" }, auth())).data;
       const u1 = await mk("Dona Um", "dona1@x.com"), u2 = await mk("Dono Dois", "dono2@x.com");
