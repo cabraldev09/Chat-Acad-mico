@@ -33,7 +33,7 @@ const CreateOrUpdateContactService = async ({
   email = "",
   extraInfo = []
 }: Request): Promise<Contact> => {
-  const number = isGroup ? rawNumber : rawNumber.replace(/[^0-9]/g, "");
+  const number = isGroup ? String(rawNumber || "") : String(rawNumber || "").replace(/[^0-9]/g, "");
   if (!number && !lid) throw new Error("Either number or lid must be provided");
 
   const [contactByNumber, contactByLid] = await Promise.all([
@@ -91,7 +91,8 @@ const CreateOrUpdateContactService = async ({
 
   const created = await Contact.create({
     name,
-    number,
+    // people known only by WhatsApp's internal id have no phone number yet
+    number: number || (null as any),
     lid,
     profilePicUrl,
     email,

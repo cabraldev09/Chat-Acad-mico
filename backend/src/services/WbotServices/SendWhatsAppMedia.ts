@@ -1,3 +1,4 @@
+import { chatIdOf } from "../../helpers/ChatId";
 import fs from "fs";
 import path from "path";
 import AppError from "../../errors/AppError";
@@ -74,7 +75,7 @@ const SendWhatsAppMedia = async ({
       };
     }
 
-    const chatId = `${ticket.contact.number}@${ticket.isGroup ? "g" : "c"}.us`;
+    const chatId = chatIdOf(ticket.contact, ticket.isGroup);
 
     const hasBody = body
       ? formatBody(body as string, ticket.contact)

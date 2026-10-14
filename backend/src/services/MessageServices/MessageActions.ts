@@ -1,3 +1,4 @@
+import { chatIdOf } from "../../helpers/ChatId";
 import fs from "fs";
 import path from "path";
 import { Request } from "express";
@@ -70,7 +71,7 @@ export const reactToMessage = async (id: string, emoji: string): Promise<Message
 
   if (channel === "whatsapp") {
     if (!whatsappProvider.sendReaction) throw new AppError("ERR_REACTION_UNSUPPORTED", 400);
-    const chatId = `${ticket.contact.number}@${ticket.isGroup ? "g" : "c"}.us`;
+    const chatId = chatIdOf(ticket.contact, ticket.isGroup);
     await whatsappProvider.sendReaction(ticket.whatsappId, chatId, message.id, message.fromMe, emoji);
   } else {
     // Cloud API, Telegram, Messenger, Instagram: through the channel adapter

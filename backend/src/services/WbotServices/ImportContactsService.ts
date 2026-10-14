@@ -30,19 +30,73 @@ const pickConnection = async (userId: number, whatsappId?: number): Promise<What
   return found;
 };
 
-// Imports the saved contacts of a connected number into the company's contact list.
-const ImportContactsService = async (userId: number, whatsappId?: number): Promise<number> => {
+export interface ImportReport {
+  connection: string;
+  total: number;
+  saved: number;
+  withPhone: number;
+  created: number;
+  updated: number;
+  groupsMode: string;
+  groupsFound: number;
+  groupsCreated: number;
+}
+
+// Picks the number (quickly, so a problem is reported right away) and returns what to run in the background:
+// reading a big address book from WhatsApp can take a while.
+const startContactsImport = async (userId: number, whatsappId?: number) => {
   const connection = await pickConnection(userId, whatsappId);
 
-  let phoneContacts;
-  try {
-    phoneContacts = await whatsappProvider.getContacts(connection.id);
-  } catch (err) {
-    logger.error(`Could not get whatsapp contacts from phone. Err: ${err}`);
-    throw new AppError("ERR_WAPP_NOT_INITIALIZED");
-  }
+  const run = async (): Promise<ImportReport> => {
+    let phoneContacts: any;
+    try {
+      phoneContacts = await whatsappProvider.getContacts(connection.id);
+    } catch (err) {
+      logger.error(`Could not get whatsapp contacts from phone. Err: ${err}`);
+      throw new AppError("ERR_WAPP_NOT_INITIALIZED");
+    }
+    const stats = phoneContacts.stats || {};
+    const people = await SaveImportedContacts(phoneContacts);
 
-  return SaveImportedContacts(phoneContacts);
+    // groups follow the connection's own rule: none, only the chosen ones, or all
+    let groupsFound = 0;
+    let groupsCreated = 0;
+    const mode = connection.groupsMode || "off";
+    if (mode !== "off" && whatsappProvider.listGroups) {
+      try {
+        let allowed: string[] = [];
+        try {
+          allowed = connection.allowedGroups ? JSON.parse(connection.allowedGroups) : [];
+        } catch (e) {
+          allowed = [];
+        }
+        const groups = (await whatsappProvider.listGroups(connection.id)).filter(
+          g => mode === "all" || allowed.includes(g.id)
+        );
+        groupsFound = groups.length;
+        const saved = await SaveImportedContacts(
+          groups.map(g => ({ number: g.id, name: g.name, isGroup: true }))
+        );
+        groupsCreated = saved.created;
+      } catch (err) {
+        logger.error(`Could not list the groups of the phone. Err: ${err}`);
+      }
+    }
+
+    return {
+      connection: connection.name,
+      total: stats.total ?? phoneContacts.length,
+      saved: stats.saved ?? phoneContacts.length,
+      withPhone: phoneContacts.length,
+      created: people.created,
+      updated: people.updated,
+      groupsMode: mode,
+      groupsFound,
+      groupsCreated
+    };
+  };
+
+  return { connection, run };
 };
 
-export default ImportContactsService;
+export default startContactsImport;

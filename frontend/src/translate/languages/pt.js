@@ -131,7 +131,7 @@ const messages = {
           importTitlte: "Importar contatos",
           deleteMessage:
             "Tem certeza que deseja deletar este contato? Todos os tickets relacionados serão perdidos.",
-          importMessage: "Deseja importas todos os contatos do telefone?",
+          importMessage: "Importar os contatos salvos na agenda do número conectado? Quem já está aqui não é duplicado, e os nomes que eram só números são completados.",
         },
         buttons: {
           import: "Importar Contatos",
@@ -527,6 +527,7 @@ const messages = {
         ERR_NO_OTHER_WHATSAPP: "Deve haver pelo menos um WhatsApp padrão.",
         ERR_NO_DEF_WAPP_FOUND:
           "Nenhum WhatsApp padrão encontrado. Verifique a página de conexões.",
+        ERR_IMPORT: "Não foi possível importar os contatos.",
         ERR_NO_CONNECTED_WHATSAPP:
           "Nenhum WhatsApp conectado. Conecte um número em Conexões para importar os contatos.",
         ERR_WAPP_NOT_INITIALIZED:

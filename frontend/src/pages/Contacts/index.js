@@ -103,6 +103,8 @@ const Contacts = () => {
   const [deletingContact, setDeletingContact] = useState(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [hasMore, setHasMore] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [importing, setImporting] = useState(false);
 
   useEffect(() => {
     dispatch({ type: "RESET" });
@@ -127,7 +129,7 @@ const Contacts = () => {
       fetchContacts();
     }, 500);
     return () => clearTimeout(delayDebounceFn);
-  }, [searchParam, pageNumber]);
+  }, [searchParam, pageNumber, reloadKey]);
 
   useEffect(() => {
     const socket = openSocket();
@@ -142,10 +144,34 @@ const Contacts = () => {
       }
     });
 
+    // the import runs on the server in the background; its result arrives here
+    socket.on("contactsImport", (d) => {
+      if (d.userId !== user.id) return;
+      setImporting(false);
+      if (!d.ok) {
+        const text = i18n.t(`backendErrors.${d.message}`);
+        toast.error(text && !text.startsWith("backendErrors.") ? text : "Não foi possível importar os contatos.");
+        return;
+      }
+      const parts = [];
+      parts.push(
+        d.created || d.updated
+          ? `${d.created} contatos novos${d.updated ? ` e ${d.updated} completados` : ""}`
+          : "nenhum contato novo"
+      );
+      parts.push(`${d.withPhone} de ${d.total} contatos do WhatsApp têm telefone utilizável`);
+      if (d.groupsMode === "off") parts.push("grupos: desligados nesta conexão (escolha em Conexões)");
+      else parts.push(`${d.groupsFound} grupos encontrados, ${d.groupsCreated} novos`);
+      toast.success(`Importação de “${d.connection}” concluída: ${parts.join("; ")}.`, { autoClose: 15000 });
+      dispatch({ type: "RESET" });
+      setPageNumber(1);
+      setReloadKey((k) => k + 1);
+    });
+
     return () => {
       socket.disconnect();
     };
-  }, []);
+  }, [user.id]);
 
   const handleSearch = (event) => {
     setSearchParam(event.target.value.toLowerCase());
@@ -195,17 +221,12 @@ const Contacts = () => {
   };
 
   const handleimportContact = async () => {
+    setImporting(true);
     try {
       const { data } = await api.post("/contacts/import");
-      toast.success(
-        data.imported
-          ? `${data.imported} contatos importados do seu WhatsApp.`
-          : "Nenhum contato novo: todos os contatos salvos no seu WhatsApp já estão aqui."
-      );
-      dispatch({ type: "RESET" });
-      setPageNumber(1);
-      setSearchParam("");
+      toast.info(`Importando os contatos do número “${data.connection}”. Aviso quando terminar, pode continuar usando o sistema.`);
     } catch (err) {
+      setImporting(false);
       toastError(err);
     }
   };
@@ -270,8 +291,9 @@ const Contacts = () => {
             variant="contained"
             color="primary"
             onClick={(e) => setConfirmOpen(true)}
+            disabled={importing}
           >
-            {i18n.t("contacts.buttons.import")}
+            {importing ? "Importando…" : i18n.t("contacts.buttons.import")}
           </Button>
           <Button
             variant="contained"
@@ -310,12 +332,15 @@ const Contacts = () => {
                   <TableCell style={{ paddingRight: 0 }}>
                     {<Avatar src={contact.profilePicUrl} />}
                   </TableCell>
-                  <TableCell>{contact.name}</TableCell>
+                  <TableCell>
+                    {contact.name}
+                    {contact.isGroup && <span style={{ marginLeft: 8, fontSize: 11, padding: "1px 8px", borderRadius: 999, background: "rgba(6,147,227,.14)", color: "#0b4279", fontWeight: 700 }}>Grupo</span>}
+                  </TableCell>
                   <TableCell
                     align="center"
                     data-label={i18n.t("contacts.table.whatsapp")}
                   >
-                    {contact.number}
+                    {contact.number || <span style={{ opacity: 0.6 }} title="O WhatsApp esconde o telefone de algumas pessoas até elas escreverem para você">telefone oculto</span>}
                   </TableCell>
                   <TableCell
                     align="center"

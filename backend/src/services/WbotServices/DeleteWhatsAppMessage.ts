@@ -1,3 +1,4 @@
+import { chatIdOf } from "../../helpers/ChatId";
 import AppError from "../../errors/AppError";
 import Message from "../../models/Message";
 import Ticket from "../../models/Ticket";
@@ -25,7 +26,7 @@ const DeleteWhatsAppMessage = async (messageId: string): Promise<Message> => {
   const { ticket } = message;
 
   if ((ticket.whatsapp?.channel || "whatsapp") === "whatsapp") {
-    const chatId = `${ticket.contact.number}@${ticket.isGroup ? "g" : "c"}.us`;
+    const chatId = chatIdOf(ticket.contact, ticket.isGroup);
 
     await whatsappProvider.deleteMessage(
       ticket.whatsappId,

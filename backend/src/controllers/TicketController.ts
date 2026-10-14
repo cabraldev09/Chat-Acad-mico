@@ -1,3 +1,4 @@
+import { chatIdOf } from "../helpers/ChatId";
 import { Request, Response } from "express";
 import { getIO } from "../libs/socket";
 
@@ -152,7 +153,7 @@ export const typing = async (req: Request, res: Response): Promise<Response> => 
   const channel = ticket.whatsapp?.channel || "whatsapp";
   try {
     if (channel === "whatsapp") {
-      await whatsappProvider.sendTyping?.(ticket.whatsappId, `${ticket.contact.number}@c.us`);
+      await whatsappProvider.sendTyping?.(ticket.whatsappId, chatIdOf(ticket.contact, false));
     } else {
       const whatsapp = await ShowWhatsAppService(ticket.whatsappId);
       await getAdapter(channel).sendTyping?.(whatsapp, ticket.contact as any);

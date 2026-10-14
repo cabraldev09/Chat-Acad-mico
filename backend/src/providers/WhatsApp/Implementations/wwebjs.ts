@@ -16,6 +16,7 @@ import { getIO } from "../../../libs/socket";
 import Whatsapp from "../../../models/Whatsapp";
 import AppError from "../../../errors/AppError";
 import SaveImportedContacts from "../../../helpers/SaveImportedContacts";
+import { isPhoneNumber } from "../../../helpers/ChatId";
 import User from "../../../models/User";
 import Message from "../../../models/Message";
 import Ticket from "../../../models/Ticket";
@@ -133,10 +134,63 @@ const getProfilePic = async (
   }
 };
 
+// Many people are now known to WhatsApp only by an internal id ("...@lid"), which looks like a phone number
+// but is not one. The real phone is looked up (and remembered) so contacts keep their true number.
+const phoneOfLid = new Map<string, string>();
+const onlyDigits = (value?: string): string => String(value || "").split("@")[0].replace(/\D/g, "");
+
+const resolvePhones = async (
+  wbot: Session,
+  serializedIds: string[]
+): Promise<Map<string, string>> => {
+  const out = new Map<string, string>();
+  const todo: string[] = [];
+  serializedIds.forEach(id => {
+    if (phoneOfLid.has(id)) out.set(id, phoneOfLid.get(id) as string);
+    else todo.push(id);
+  });
+  for (let i = 0; i < todo.length; i += 50) {
+    const batch = todo.slice(i, i + 50);
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const found = await (wbot as any).getContactLidAndPhone(batch);
+      batch.forEach((id, k) => {
+        const digits = onlyDigits(found?.[k]?.pn);
+        const phone = isPhoneNumber(digits) ? digits : "";
+        phoneOfLid.set(id, phone);
+        out.set(id, phone);
+      });
+    } catch (err) {
+      batch.forEach(id => out.set(id, ""));
+    }
+  }
+  return out;
+};
+
 const convertToContactPayload = async (
-  msgContact: WbotContact
+  msgContact: WbotContact,
+  wbot: Session
 ): Promise<ContactPayload> => {
   const profilePicUrl = await getProfilePic(msgContact);
+  const isLid = msgContact.id.server === "lid";
+
+  if (isLid) {
+    const phone =
+      (await resolvePhones(wbot, [msgContact.id._serialized])).get(
+        msgContact.id._serialized
+      ) || "";
+    return {
+      name:
+        msgContact.name ||
+        msgContact.pushname ||
+        phone ||
+        "Contato sem telefone",
+      number: phone,
+      lid: msgContact.id.user,
+      profilePicUrl,
+      isGroup: false
+    };
+  }
 
   return {
     name: msgContact.name || msgContact.pushname || msgContact.id.user,
@@ -276,12 +330,12 @@ const getMessageData = async (
       msgGroupContact = await wbot.getContactById(msg.from);
     }
 
-    groupContact = await convertToContactPayload(msgGroupContact);
+    groupContact = await convertToContactPayload(msgGroupContact, wbot);
   }
 
   const unreadMessages = msg.fromMe ? 0 : chat.unreadCount;
 
-  const contactPayload = await convertToContactPayload(msgContact);
+  const contactPayload = await convertToContactPayload(msgContact, wbot);
   const messagePayload = await convertToMessagePayload(msg);
   const mediaPayload = await convertToMediaPayload(msg);
 
@@ -514,36 +568,50 @@ const getContacts = async (sessionId: number): Promise<ProviderContact[]> => {
   const wbot = getWbot(sessionId);
   const contacts = await wbot.getContacts();
 
-  // People saved in the phone's address book. WhatsApp now identifies many people by an "@lid" id that hides
-  // the phone, so the number is taken from the contact itself when the id is not a phone id. Groups, channels,
-  // statuses and yourself are never imported.
-  const phoneOf = (contact: WbotContact): string => {
-    const fromId = contact.id.server === "c.us" ? contact.id.user : "";
-    const raw = fromId || String((contact as any).number || "");
-    const digits = raw.replace(/\D/g, "");
-    return digits.length >= 8 && digits.length <= 15 ? digits : "";
-  };
-
+  // People saved in the phone's address book: marked as "my contact" or carrying a name typed on the phone.
+  // Groups, channels, statuses and yourself are never imported.
   const saved = contacts.filter(
-    contact => contact.isMyContact && !contact.isGroup && !contact.isMe
+    contact =>
+      !contact.isGroup &&
+      !contact.isMe &&
+      contact.id.server !== "status" &&
+      (contact.isMyContact || !!contact.name)
   );
-  const result = saved
-    .map(contact => ({ contact, number: phoneOf(contact) }))
-    .filter(item => item.number)
-    .map(({ contact, number }) => ({
-      id: number,
+
+  const lids = saved
+    .filter(contact => contact.id.server === "lid")
+    .map(contact => contact.id._serialized);
+  const phones = await resolvePhones(wbot, lids);
+
+  const result: ProviderContact[] = [];
+  saved.forEach(contact => {
+    const isLid = contact.id.server === "lid";
+    const phone = isLid
+      ? phones.get(contact.id._serialized) || ""
+      : onlyDigits(contact.id.user);
+    if (!isPhoneNumber(phone)) return;
+    result.push({
+      id: phone,
       name: contact.name || contact.pushname,
       pushname: contact.pushname,
-      number,
+      number: phone,
+      lid: isLid ? contact.id.user : undefined,
       profilePicUrl: undefined,
       isGroup: false
-    }));
+    });
+  });
 
+  const stats = {
+    total: contacts.length,
+    saved: saved.length,
+    lidOnly: lids.length,
+    withPhone: result.length
+  };
   logger.info(
-    `Session ${sessionId}: ${contacts.length} contacts on WhatsApp, ${saved.length} saved in the phone, ${result.length} with a usable phone number`
+    `Session ${sessionId}: ${stats.total} contacts on WhatsApp, ${stats.saved} saved in the phone, ${stats.lidOnly} identified only by the internal id, ${stats.withPhone} with a usable phone number`
   );
 
-  return result;
+  return Object.assign(result, { stats });
 };
 
 // The first time a number connects, its address book becomes the company's contact list. Numbers that belong
@@ -559,9 +627,9 @@ const importContactsOnFirstConnection = async (whatsapp: Whatsapp) => {
     // WhatsApp Web needs a moment to load the address book after "ready"
     await new Promise(resolve => setTimeout(resolve, 15000));
     const list = await getContacts(whatsapp.id);
-    const created = await SaveImportedContacts(list);
+    const saved = await SaveImportedContacts(list);
     logger.info(
-      `Session ${whatsapp.name}: ${created} contacts imported from the phone`
+      `Session ${whatsapp.name}: ${saved.created} contacts imported from the phone, ${saved.updated} completed`
     );
   } catch (err) {
     logger.error(err, "Could not import contacts after connecting");

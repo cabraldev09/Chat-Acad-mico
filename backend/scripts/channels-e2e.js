@@ -1180,6 +1180,16 @@ const postMeta = (id, payload, secret, badSig) => {
       // switch it off again so the other checks keep measuring elapsed time
       await http.put("/crm/settings", { businessHours: { enabled: false }, slaMinutes: 15 }, auth());
     });
+    await test("chats are addressed by phone, or by WhatsApp's internal id when the person has no phone number", async () => {
+      const { chatIdOf, isPhoneNumber } = require("../dist/helpers/ChatId");
+      assert(chatIdOf({ number: "5569992979581" }) === "5569992979581@c.us", "plain phone");
+      assert(chatIdOf({ number: "5569992979581", lid: "198028224942211" }) === "5569992979581@c.us", "phone wins over the id");
+      assert(chatIdOf({ number: "", lid: "198028224942211" }) === "198028224942211@lid", "no phone: use the internal id");
+      assert(chatIdOf({ number: null, lid: "198028224942211" }) === "198028224942211@lid", "null phone: use the internal id");
+      assert(chatIdOf({ number: "198028224942211", lid: "198028224942211" }) === "198028224942211@lid", "id stored as number: use it as an id");
+      assert(chatIdOf({ number: "120363041234567890-1600000000" }, true) === "120363041234567890-1600000000@g.us", "group");
+      assert(isPhoneNumber("5569992979581") && !isPhoneNumber("123") && !isPhoneNumber(""), "phone shape");
+    });
     await test("preferences follow the person: stored on the server and sanitized", async () => {
       assert((await http.get("/me/preferences", auth())).data.sound === undefined, "fresh user already has preferences");
       const put = await http.put("/me/preferences", { sound: { mode: "alerts", popup: false, contacts: { "12": "alert", "13": "mute", "14": "weird", "x": "alert" } } }, auth());

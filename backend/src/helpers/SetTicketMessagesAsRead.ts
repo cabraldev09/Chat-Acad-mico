@@ -1,3 +1,4 @@
+import { chatIdOf } from "./ChatId";
 import { getIO } from "../libs/socket";
 import Message from "../models/Message";
 import Ticket from "../models/Ticket";
@@ -21,7 +22,7 @@ const SetTicketMessagesAsRead = async (ticket: Ticket): Promise<void> => {
     if (ticket.whatsappId && (ticket.whatsapp?.channel || "whatsapp") === "whatsapp") {
       await whatsappProvider.sendSeen(
         ticket.whatsappId,
-        `${ticket.contact.number}@${ticket.isGroup ? "g" : "c"}.us`
+        chatIdOf(ticket.contact, ticket.isGroup)
       );
     }
   } catch (err) {

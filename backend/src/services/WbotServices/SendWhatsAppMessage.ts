@@ -1,3 +1,4 @@
+import { chatIdOf } from "../../helpers/ChatId";
 import AppError from "../../errors/AppError";
 import Message from "../../models/Message";
 import Ticket from "../../models/Ticket";
@@ -71,7 +72,7 @@ const SendWhatsAppMessage = async ({
     }
   }
 
-  const chatId = `${ticket.contact.number}@${ticket.isGroup ? "g" : "c"}.us`;
+  const chatId = chatIdOf(ticket.contact, ticket.isGroup);
 
   const whatsapp = await Whatsapp.findByPk(ticket.whatsappId);
   if (!whatsapp) throw new AppError("ERR_NO_WAPP_FOUND", 404);
