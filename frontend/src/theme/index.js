@@ -179,8 +179,16 @@ const createAppTheme = (type) => {
         input: { padding: "10px 12px" },
         inputMarginDense: { paddingTop: 8, paddingBottom: 8 },
       },
+      // long labels were wrapping onto two lines and landing on top of the typed value
       MuiInputLabel: {
-        outlined: { fontSize: 14 },
+        outlined: {
+          fontSize: 14,
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          maxWidth: "calc(100% - 28px)",
+          "&$shrink": { maxWidth: "calc(133% - 40px)" },
+        },
       },
       MuiFormHelperText: {
         root: { fontSize: 12, marginLeft: 2 },
@@ -371,17 +379,6 @@ const createAppTheme = (type) => {
             "& $input": { padding: "6px 4px", minWidth: 80 },
             '& $endAdornment': { right: 8 },
           },
-        },
-      },
-
-      // long labels were wrapping onto two lines and landing on top of the typed value
-      MuiInputLabel: {
-        outlined: {
-          whiteSpace: "nowrap",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          maxWidth: "calc(100% - 28px)",
-          "&$shrink": { maxWidth: "calc(133% - 40px)" },
         },
       },
 

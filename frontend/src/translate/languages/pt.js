@@ -553,7 +553,6 @@ const messages = {
         ERR_USER_NOT_IN_QUEUE: "Esse atendente não pertence ao setor escolhido.",
         ERR_CHANNEL_MISMATCH:
           "Não é possível mudar para uma conexão de outro canal.",
-        ERR_NO_PERMISSION: "Você não tem permissão para acessar este recurso.",
         ERR_DUPLICATED_CONTACT: "Já existe um contato com este número.",
         ERR_NO_SETTING_FOUND: "Nenhuma configuração encontrada com este ID.",
         ERR_NO_CONTACT_FOUND: "Nenhum contato encontrado com este ID.",
