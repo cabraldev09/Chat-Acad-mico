@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 
 import SetTicketMessagesAsRead from "../helpers/SetTicketMessagesAsRead";
 import { getIO } from "../libs/socket";
+import { Op } from "sequelize";
 import Message from "../models/Message";
 
 import ListMessagesService from "../services/MessageServices/ListMessagesService";
@@ -103,4 +104,38 @@ export const forward = async (req: Request, res: Response): Promise<Response> =>
   const ids = Array.isArray(req.body.ticketIds) ? req.body.ticketIds : [];
   const sent = await forwardMessage(req, req.params.messageId, ids);
   return res.json({ sent });
+};
+
+// What the conversation drawer lists, like WhatsApp's "Mídia, links e docs" and "Mensagens favoritas".
+// kind: media (photos and videos) | docs | links | starred
+export const listByKind = async (req: Request, res: Response): Promise<Response> => {
+  const ticketId = Number(req.params.ticketId);
+  const kind = String(req.query.kind || "media");
+  const base: any = { ticketId, isDeleted: false };
+  const attributes = ["id", "body", "mediaType", "mediaUrl", "fromMe", "createdAt", "starred"];
+
+  if (kind === "links") {
+    const rows = await Message.findAll({
+      where: { ...base, mediaType: "chat", body: { [Op.iLike]: "%http%" } },
+      attributes,
+      order: [["createdAt", "DESC"]],
+      limit: 300
+    });
+    const items: any[] = [];
+    rows.forEach(m => {
+      (String(m.body).match(/https?:\/\/[^\s<>"']+/gi) || []).forEach(url => {
+        items.push({ id: m.id, url: url.replace(/[.,;)]+$/, ""), fromMe: m.fromMe, createdAt: m.createdAt });
+      });
+    });
+    return res.json(items.slice(0, 200));
+  }
+
+  const where: any =
+    kind === "docs"
+      ? { ...base, mediaType: "document" }
+      : kind === "starred"
+      ? { ...base, starred: true }
+      : { ...base, mediaType: { [Op.in]: ["image", "video"] } };
+  const rows = await Message.findAll({ where, attributes, order: [["createdAt", "DESC"]], limit: 200 });
+  return res.json(rows);
 };

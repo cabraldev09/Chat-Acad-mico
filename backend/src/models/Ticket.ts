@@ -38,6 +38,13 @@ class Ticket extends Model<Ticket> {
   @Column
   lastMessage: string;
 
+  // kind of that message (chat, image, audio...) and, in groups, who wrote it: the list previews it like WhatsApp
+  @Column
+  lastMessageType: string;
+
+  @Column
+  lastMessageAuthor: string;
+
   @Default(false)
   @Column
   isGroup: boolean;

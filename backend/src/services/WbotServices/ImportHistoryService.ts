@@ -74,6 +74,8 @@ export const importHistory = async (
             lastMessageId: latest.id,
             lastMessageFromMe: !!latest.fromMe,
             lastMessageAck: latest.ack || 0,
+            lastMessageType: "chat",
+            lastMessageAuthor: chat.isGroup && !latest.fromMe && latest.author ? latest.author.name : null,
             closedAt: last,
             createdAt: first
           } as any);
@@ -130,7 +132,9 @@ export const importHistory = async (
               lastMessage: latest.body.slice(0, 1000),
               lastMessageId: latest.id,
               lastMessageFromMe: !!latest.fromMe,
-              lastMessageAck: latest.ack || 0
+              lastMessageAck: latest.ack || 0,
+              lastMessageType: "chat",
+              lastMessageAuthor: chat.isGroup && !latest.fromMe && latest.author ? latest.author.name : null
             } as any,
             { where: { id: ticket.id }, silent: true } as any
           );

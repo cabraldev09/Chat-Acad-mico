@@ -16,7 +16,7 @@ const useStyles = makeStyles(theme => ({
 	},
 }));
 
-const ModalImageCors = ({ imageUrl }) => {
+const ModalImageCors = ({ imageUrl, onOpen }) => {
 	const classes = useStyles();
 	const [fetching, setFetching] = useState(true);
 	const [blobUrl, setBlobUrl] = useState("");
@@ -35,6 +35,19 @@ const ModalImageCors = ({ imageUrl }) => {
 		};
 		fetchImage();
 	}, [imageUrl]);
+
+	// inside a conversation the picture opens in the gallery (arrows to the neighbours)
+	if (onOpen) {
+		return (
+			<img
+				className={classes.messageMedia}
+				style={{ cursor: "zoom-in", display: "block" }}
+				src={fetching ? imageUrl : blobUrl}
+				alt="imagem"
+				onClick={onOpen}
+			/>
+		);
+	}
 
 	return (
 		<ModalImage

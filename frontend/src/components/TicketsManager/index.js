@@ -8,6 +8,7 @@ import Tooltip from "@material-ui/core/Tooltip";
 import Menu from "@material-ui/core/Menu";
 import MenuItem from "@material-ui/core/MenuItem";
 import Switch from "@material-ui/core/Switch";
+import Select from "@material-ui/core/Select";
 import ListItemIcon from "@material-ui/core/ListItemIcon";
 import ListItemText from "@material-ui/core/ListItemText";
 import AddIcon from "@material-ui/icons/Add";
@@ -20,6 +21,7 @@ import Keyboard from "@material-ui/icons/Keyboard";
 import NewTicketModal from "../NewTicketModal";
 import TicketsList from "../TicketsList";
 import { AuthContext } from "../../context/Auth/AuthContext";
+import api from "../../services/api";
 import TicketsQueueSelect from "../TicketsQueueSelect";
 import { wa } from "../chat/chatTheme";
 
@@ -128,6 +130,8 @@ const TicketsManager = () => {
   const [showAllTickets, setShowAllTickets] = useState(false);
   const [menuEl, setMenuEl] = useState(null);
   const [showFilters, setShowFilters] = useState(false);
+  const [tags, setTags] = useState([]);
+  const [tagId, setTagId] = useState("");
   const searchTimeout = useRef();
   const { user } = useContext(AuthContext);
   const [openCount, setOpenCount] = useState(0);
@@ -142,6 +146,10 @@ const TicketsManager = () => {
   }, []);
 
   useEffect(() => () => clearTimeout(searchTimeout.current), []);
+
+  useEffect(() => {
+    api.get("/tags").then(({ data }) => setTags(data)).catch(() => undefined);
+  }, []);
 
   const handleSearch = (e) => {
     const value = e.target.value;
@@ -246,6 +254,26 @@ const TicketsManager = () => {
             userQueues={user?.queues}
             onChange={(values) => setSelectedQueueIds(values)}
           />
+          {tags.length > 0 && (
+            <Select
+              displayEmpty
+              value={tagId}
+              onChange={(e) => setTagId(e.target.value)}
+              style={{ minWidth: 130 }}
+              renderValue={(v) => {
+                const t = tags.find((x) => x.id === v);
+                return t ? t.name : "Todas as etiquetas";
+              }}
+            >
+              <MenuItem value="">Todas as etiquetas</MenuItem>
+              {tags.map((t) => (
+                <MenuItem key={t.id} value={t.id}>
+                  <span style={{ width: 10, height: 10, borderRadius: "50%", background: t.color, marginRight: 8, flex: "none" }} />
+                  {t.name}
+                </MenuItem>
+              ))}
+            </Select>
+          )}
         </div>
       )}
 
@@ -264,27 +292,27 @@ const TicketsManager = () => {
 
       <div className={classes.body}>
         {searching ? (
-          <TicketsList searchParam={searchParam} showAll={true} selectedQueueIds={selectedQueueIds} />
+          <TicketsList tagId={tagId} searchParam={searchParam} showAll={true} selectedQueueIds={selectedQueueIds} />
         ) : (
           <>
             {/* both live lists stay mounted so counters and sockets keep updating */}
             <div style={{ display: filter === "open" ? "flex" : "none", flex: 1, minHeight: 0 }}>
-              <TicketsList status="open" groups="exclude" showAll={showAllTickets} selectedQueueIds={selectedQueueIds}
+              <TicketsList tagId={tagId} status="open" groups="exclude" showAll={showAllTickets} selectedQueueIds={selectedQueueIds}
                 updateCount={(v) => setOpenCount(v)} />
             </div>
             <div style={{ display: filter === "pending" ? "flex" : "none", flex: 1, minHeight: 0 }}>
-              <TicketsList status="pending" groups="exclude" selectedQueueIds={selectedQueueIds} updateCount={(v) => setPendingCount(v)} />
+              <TicketsList tagId={tagId} status="pending" groups="exclude" selectedQueueIds={selectedQueueIds} updateCount={(v) => setPendingCount(v)} />
             </div>
             {filter === "groups" && (
-              <TicketsList groups="only" everything showAll={true} selectedQueueIds={selectedQueueIds} />
+              <TicketsList tagId={tagId} groups="only" everything showAll={true} selectedQueueIds={selectedQueueIds} />
             )}
             {filter === "unread" && (
-              <TicketsList withUnreadMessages showAll={showAllTickets} selectedQueueIds={selectedQueueIds} />
+              <TicketsList tagId={tagId} withUnreadMessages showAll={showAllTickets} selectedQueueIds={selectedQueueIds} />
             )}
-            {filter === "closed" && <TicketsList status="closed" showAll={true} selectedQueueIds={selectedQueueIds} />}
-            {filter === "archived" && <TicketsList archived showAll={true} selectedQueueIds={selectedQueueIds} />}
-            {filter === "everything" && <TicketsList everything showAll={true} selectedQueueIds={selectedQueueIds} />}
-            {filter === "historical" && <TicketsList historical showAll={true} selectedQueueIds={selectedQueueIds} />}
+            {filter === "closed" && <TicketsList tagId={tagId} status="closed" showAll={true} selectedQueueIds={selectedQueueIds} />}
+            {filter === "archived" && <TicketsList tagId={tagId} archived showAll={true} selectedQueueIds={selectedQueueIds} />}
+            {filter === "everything" && <TicketsList tagId={tagId} everything showAll={true} selectedQueueIds={selectedQueueIds} />}
+            {filter === "historical" && <TicketsList tagId={tagId} historical showAll={true} selectedQueueIds={selectedQueueIds} />}
           </>
         )}
         <Tooltip title="Nova conversa">

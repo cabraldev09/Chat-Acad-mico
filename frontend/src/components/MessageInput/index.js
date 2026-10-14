@@ -32,6 +32,7 @@ import { AuthContext } from "../../context/Auth/AuthContext";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 import toastError from "../../errors/toastError";
 import { wa } from "../chat/chatTheme";
+import { getDraft, setDraft } from "../../utils/drafts";
 
 const MIC_ERRORS = {
   NotAllowedError: "Permita o uso do microfone no navegador (ícone de cadeado ao lado do endereço) e tente de novo.",
@@ -269,6 +270,8 @@ const MessageInput = ({ ticketStatus, historical, contactName }) => {
 
   useEffect(() => {
     inputRef.current && inputRef.current.focus();
+    // what was typed and not sent comes back when the conversation is opened again
+    setInputMessage(getDraft(ticketId));
     return () => {
       setInputMessage("");
       setShowEmoji(false);
@@ -326,8 +329,13 @@ const MessageInput = ({ ticketStatus, historical, contactName }) => {
 
   // tells the contact "digitando…" where the channel supports it (the server also throttles)
   const lastTyping = useRef(0);
+  const draftTimer = useRef(null);
   const handleChange = (e) => {
     setInputMessage(e.target.value);
+    const id = ticketId;
+    const text = e.target.value;
+    clearTimeout(draftTimer.current);
+    draftTimer.current = setTimeout(() => setDraft(id, text), 300);
     loadQuick(e.target.value);
     if (ticketStatus === "open" && e.target.value && !e.target.value.startsWith("/") && Date.now() - lastTyping.current > 4000) {
       lastTyping.current = Date.now();
@@ -357,6 +365,8 @@ const MessageInput = ({ ticketStatus, historical, contactName }) => {
     } catch (err) {
       toastError(err);
     }
+    clearTimeout(draftTimer.current);
+    setDraft(ticketId, "");
     setInputMessage("");
     setShowEmoji(false);
     setLoading(false);

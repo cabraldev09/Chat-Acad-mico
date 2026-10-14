@@ -10,7 +10,8 @@ import Menu from "@material-ui/core/Menu";
 import MenuItem from "@material-ui/core/MenuItem";
 import ListItemIcon from "@material-ui/core/ListItemIcon";
 import ListItemText from "@material-ui/core/ListItemText";
-import { Pin, PinOff, Archive, ArchiveRestore, ChevronDown, BellOff, BellRing, MailOpen, Check, CheckCheck, Clock, AlertCircle } from "lucide-react";
+import { Pin, PinOff, Archive, ArchiveRestore, ChevronDown, BellOff, BellRing, MailOpen, Check, CheckCheck, Clock, AlertCircle, Camera, Video, Mic, FileText, MapPin, Contact, Sticker } from "lucide-react";
+import { getDraft } from "../../utils/drafts";
 import { getContactSound, onSoundPrefsChange } from "../../utils/soundPrefs";
 
 import ChannelIcon from "../ChannelIcon";
@@ -142,6 +143,18 @@ const useStyles = makeStyles((theme) => {
 });
 
 // markdown markers and the invisible bot mark would look odd in a one-line preview
+// WhatsApp previews media with an icon and a short label instead of a file name
+const KIND = {
+  image: [Camera, "Foto"],
+  video: [Video, "Vídeo"],
+  audio: [Mic, "Áudio"],
+  ptt: [Mic, "Mensagem de voz"],
+  document: [FileText, ""],
+  location: [MapPin, "Localização"],
+  vcard: [Contact, "Contato"],
+  sticker: [Sticker, "Figurinha"],
+};
+
 const plain = (text) =>
   String(text || "")
     .replace(/‎/g, "")
@@ -210,6 +223,17 @@ const TicketListItem = ({ ticket }) => {
   const unread = ticket.unreadMessages > 0;
   const selected = ticketId && +ticketId === ticket.id;
 
+  // unsent text typed in this conversation (kept on this device)
+  const [, bumpDraft] = useState(0);
+  useEffect(() => {
+    const onDraft = (e) => e.detail && e.detail.ticketId === ticket.id && bumpDraft((n) => n + 1);
+    window.addEventListener("chatDraft", onDraft);
+    return () => window.removeEventListener("chatDraft", onDraft);
+  }, [ticket.id]);
+  const draft = !selected ? getDraft(ticket.id) : "";
+  const [KindIcon, kindLabel] = KIND[ticket.lastMessageType] || [];
+  const previewText = plain(ticket.lastMessage) || kindLabel || "";
+
   return (
     <div
       role="button"
@@ -217,7 +241,19 @@ const TicketListItem = ({ ticket }) => {
       data-ticket-id={ticket.id}
       className={clsx(classes.row, selected && classes.selected, ticket.status === "closed" && classes.closed)}
       onClick={() => ticket.status !== "pending" && history.push(`/tickets/${ticket.id}`)}
-      onKeyDown={(e) => e.key === "Enter" && ticket.status !== "pending" && history.push(`/tickets/${ticket.id}`)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" && ticket.status !== "pending") history.push(`/tickets/${ticket.id}`);
+        // arrow keys walk the list like WhatsApp Web (only rows that are on screen: other tabs stay mounted, hidden)
+        if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+          const rows = Array.from(document.querySelectorAll("[data-ticket-id]")).filter((el) => el.offsetParent !== null);
+          const next = rows[rows.indexOf(e.currentTarget) + (e.key === "ArrowDown" ? 1 : -1)];
+          if (next) {
+            e.preventDefault();
+            next.focus();
+            next.scrollIntoView({ block: "nearest" });
+          }
+        }
+      }}
     >
       <div className={classes.avatarWrap}>
         <Avatar className={classes.avatar} src={ticket?.contact?.profilePicUrl}>
@@ -243,7 +279,20 @@ const TicketListItem = ({ ticket }) => {
                 {ticket.lastMessageAck < 0 ? <AlertCircle size={15} /> : ticket.lastMessageAck === 0 ? <Clock size={14} /> : ticket.lastMessageAck === 1 ? <Check size={16} /> : <CheckCheck size={16} />}
               </span>
             )}
-            {plain(ticket.lastMessage) || "Sem mensagens"}
+            {draft ? (
+              <>
+                <span style={{ color: "#1fa855", fontWeight: 500 }}>Rascunho: </span>
+                {plain(draft)}
+              </>
+            ) : (
+              <>
+                {ticket.isGroup && ticket.lastMessageAuthor && !ticket.lastMessageFromMe && (
+                  <span style={{ opacity: 0.85 }}>{ticket.lastMessageAuthor.split(" ")[0]}: </span>
+                )}
+                {KindIcon && <KindIcon size={14} style={{ verticalAlign: -2, marginRight: 4, opacity: 0.7 }} />}
+                {previewText || "Sem mensagens"}
+              </>
+            )}
           </span>
           {soundPref === "mute" && (
             <Tooltip arrow title="Contato silenciado">

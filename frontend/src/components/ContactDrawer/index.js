@@ -15,6 +15,7 @@ import ContactModal from "../ContactModal";
 import LeadCard from "../LeadCard";
 import ContactDrawerSkeleton from "../ContactDrawerSkeleton";
 import MarkdownWrapper from "../MarkdownWrapper";
+import SharedMedia from "../SharedMedia";
 import { wa } from "../chat/chatTheme";
 
 const useStyles = makeStyles(theme => {
@@ -94,6 +95,7 @@ const ContactDrawer = ({ open, handleDrawerClose, contact, loading }) => {
 					<div style={{ marginBottom: 8 }}>
 						<LeadCard contactId={contact.id} />
 					</div>
+					<SharedMedia />
 					<ContactModal open={modalOpen} onClose={() => setModalOpen(false)} contactId={contact.id} />
 					{contact?.extraInfo?.length > 0 && (
 						<div className={classes.card}>

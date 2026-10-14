@@ -12,6 +12,14 @@ import ExpandMore from "@material-ui/icons/ExpandMore";
 import GetApp from "@material-ui/icons/GetApp";
 import Star from "@material-ui/icons/Star";
 import KeyboardArrowDown from "@material-ui/icons/KeyboardArrowDown";
+import Close from "@material-ui/icons/Close";
+import Forward from "@material-ui/icons/Forward";
+import StarBorder from "@material-ui/icons/StarBorder";
+import DeleteOutline from "@material-ui/icons/DeleteOutline";
+import CheckCircle from "@material-ui/icons/CheckCircle";
+import RadioButtonUnchecked from "@material-ui/icons/RadioButtonUnchecked";
+import { Dialog, DialogTitle, DialogContent, DialogActions, Button, Typography } from "@material-ui/core";
+import ForwardDialog from "../chat/ForwardDialog";
 import InsertDriveFile from "@material-ui/icons/InsertDriveFile";
 
 import openSocket from "../../services/socket-io";
@@ -19,6 +27,7 @@ import MarkdownWrapper from "../MarkdownWrapper";
 import VcardPreview from "../VcardPreview";
 import LocationPreview from "../LocationPreview";
 import ModalImageCors from "../ModalImageCors";
+import MediaGallery, { openGallery } from "../MediaGallery";
 import MessageOptionsMenu from "../MessageOptionsMenu";
 import Audio from "../Audio";
 import api from "../../services/api";
@@ -49,6 +58,16 @@ const useStyles = makeStyles((theme) => {
 
   return {
     wrapper: { position: "relative", flex: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" },
+    pickBar: {
+      position: "absolute", top: 0, left: 0, right: 0, zIndex: 5, display: "flex", alignItems: "center", gap: 4, padding: "6px 12px",
+      backgroundColor: c.header, borderBottom: `1px solid ${c.divider}`, color: c.text, boxShadow: c.shadow, animation: "pickIn .16s ease-out",
+    },
+    pickCount: { flex: 1, fontSize: 15, marginLeft: 6 },
+    pickRow: { cursor: "pointer", transition: "background-color .12s", "&:hover": { backgroundColor: "rgba(127,127,127,.08)" } },
+    pickRowOn: { backgroundColor: "rgba(0,168,132,.16) !important" },
+    pickMark: { alignSelf: "center", flex: "none", margin: "0 8px", color: c.textSecondary },
+    pickMarkOn: { color: c.accent },
+    "@global": { "@keyframes pickIn": { from: { opacity: 0, transform: "translateY(-8px)" }, to: { opacity: 1, transform: "none" } } },
     list: {
       flex: 1,
       overflowY: "auto",
@@ -260,6 +279,18 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(false);
   const [selectedMessage, setSelectedMessage] = useState({});
+  // select several messages (forward, star, hide)
+  const [picked, setPicked] = useState(null);
+  const [forwardMany, setForwardMany] = useState(false);
+  const [confirmMany, setConfirmMany] = useState(false);
+  const togglePick = (id) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
+  useEffect(() => {
+    if (!picked) return undefined;
+    const onKey = (e) => e.key === "Escape" && setPicked(null);
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [picked]);
+  useEffect(() => { setPicked(null); }, [ticketId]);
   const [anchorEl, setAnchorEl] = useState(null);
   const [atBottom, setAtBottom] = useState(true);
   const [newCount, setNewCount] = useState(0);
@@ -391,7 +422,22 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
     if (m.mediaType === "image") {
       return (
         <div className={classes.media}>
-          <ModalImageCors imageUrl={m.mediaUrl} />
+          <ModalImageCors
+            imageUrl={m.mediaUrl}
+            onOpen={() => {
+              // every photo and video of the loaded conversation, opened at this one
+              const items = messagesList
+                .filter((x) => !x.isDeleted && x.mediaUrl && (x.mediaType === "image" || x.mediaType === "video"))
+                .map((x) => ({
+                  url: x.mediaUrl,
+                  type: x.mediaType,
+                  fromMe: x.fromMe,
+                  title: x.fromMe ? "Você" : x.contact && x.contact.name,
+                  date: new Date(x.createdAt).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }),
+                }));
+              openGallery(items, Math.max(0, items.findIndex((x) => x.url === m.mediaUrl)));
+            }}
+          />
         </div>
       );
     }
@@ -472,7 +518,16 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
     const isActive = isMatch && matchIds[matchIndex] === m.id;
 
     items.push(
-      <div key={m.id} className={clsx(classes.row, mine ? classes.rowOut : classes.rowIn, newSender && classes.rowFirst)}>
+      <div
+        key={m.id}
+        className={clsx(classes.row, mine ? classes.rowOut : classes.rowIn, newSender && classes.rowFirst, picked && !m.isDeleted && classes.pickRow, picked && picked.includes(m.id) && classes.pickRowOn)}
+        onClick={picked && !m.isDeleted ? () => togglePick(m.id) : undefined}
+      >
+        {picked && !m.isDeleted && (
+          <span className={clsx(classes.pickMark, picked.includes(m.id) && classes.pickMarkOn)}>
+            {picked.includes(m.id) ? <CheckCircle /> : <RadioButtonUnchecked />}
+          </span>
+        )}
         <div
           ref={(el) => {
             bubbleRefs.current[m.id] = el;
@@ -543,6 +598,7 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
 
   return (
     <div className={classes.wrapper}>
+      <MediaGallery />
       <MessageOptionsMenu
         message={selectedMessage}
         anchorEl={anchorEl}
@@ -550,7 +606,42 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
         handleClose={() => setAnchorEl(null)}
         ticketId={ticketId}
         channel={channel}
+        onSelect={(m) => setPicked([m.id])}
       />
+      {picked && (() => {
+        const chosen = messagesList.filter((m) => picked.includes(m.id));
+        const allStarred = chosen.length > 0 && chosen.every((m) => m.starred);
+        return (
+          <>
+            <div className={classes.pickBar}>
+              <IconButton size="small" onClick={() => setPicked(null)} aria-label="Cancelar seleção" title="Cancelar (Esc)"><Close /></IconButton>
+              <span className={classes.pickCount}>{picked.length} {picked.length === 1 ? "selecionada" : "selecionadas"}</span>
+              <IconButton size="small" disabled={!picked.length} title={allStarred ? "Desfavoritar" : "Favoritar"}
+                onClick={async () => {
+                  try { for (const m of chosen) await api.put(`/messages/${m.id}/star`, { starred: !allStarred }); } catch (err) { toastError(err); }
+                  setPicked(null);
+                }}>{allStarred ? <StarBorder /> : <Star />}</IconButton>
+              <IconButton size="small" disabled={!picked.length} title="Encaminhar" onClick={() => setForwardMany(true)}><Forward /></IconButton>
+              <IconButton size="small" disabled={!picked.length} title="Apagar só aqui" onClick={() => setConfirmMany(true)}><DeleteOutline /></IconButton>
+            </div>
+            <ForwardDialog open={forwardMany} onClose={() => { setForwardMany(false); setPicked(null); }} messages={chosen} fromTicketId={ticketId} />
+            <Dialog open={confirmMany} onClose={() => setConfirmMany(false)} maxWidth="xs" fullWidth>
+              <DialogTitle>Apagar {picked.length} {picked.length === 1 ? "mensagem" : "mensagens"} só aqui?</DialogTitle>
+              <DialogContent>
+                <Typography variant="body2" color="textSecondary">As mensagens somem no sistema, mas continuam no WhatsApp do contato. Para apagar para todos, use o menu de cada mensagem.</Typography>
+              </DialogContent>
+              <DialogActions style={{ padding: "8px 16px 16px" }}>
+                <Button onClick={() => setConfirmMany(false)}>Cancelar</Button>
+                <Button variant="contained" color="primary" onClick={async () => {
+                  setConfirmMany(false);
+                  try { for (const m of chosen) await api.delete(`/messages/${m.id}`, { params: { scope: "local" } }); } catch (err) { toastError(err); }
+                  setPicked(null);
+                }}>Apagar só aqui</Button>
+              </DialogActions>
+            </Dialog>
+          </>
+        );
+      })()}
       <div ref={listRef} id="messagesList" className={classes.list} onScroll={onScroll}>
         {messagesList.length > 0 ? items : !loading && <div className={classes.empty}>Nenhuma mensagem ainda. Diga olá!</div>}
       </div>

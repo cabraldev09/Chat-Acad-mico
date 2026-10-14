@@ -30,7 +30,7 @@ const useStyles = makeStyles((theme) => {
 });
 
 // Pick the open/waiting conversations a message should be forwarded to.
-const ForwardDialog = ({ open, onClose, message, fromTicketId }) => {
+const ForwardDialog = ({ open, onClose, message, messages, fromTicketId }) => {
   const classes = useStyles();
   const { user } = useContext(AuthContext);
   const [tickets, setTickets] = useState([]);
@@ -58,8 +58,13 @@ const ForwardDialog = ({ open, onClose, message, fromTicketId }) => {
   const send = async () => {
     setSending(true);
     try {
-      await api.post(`/messages/${message.id}/forward`, { ticketIds: selected });
-      toast.success(selected.length > 1 ? "Mensagem encaminhada." : "Mensagem encaminhada para a conversa.");
+      // one or several messages, in the order they were written
+      const list = messages && messages.length ? messages : [message];
+      for (const m of list) {
+        // eslint-disable-next-line no-await-in-loop
+        await api.post(`/messages/${m.id}/forward`, { ticketIds: selected });
+      }
+      toast.success(list.length > 1 || selected.length > 1 ? "Mensagens encaminhadas." : "Mensagem encaminhada para a conversa.");
       onClose();
     } catch (err) {
       toastError(err);

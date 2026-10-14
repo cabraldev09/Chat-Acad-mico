@@ -15,6 +15,7 @@ const useTickets = ({
     groups,
     archived,
     historical,
+    tagId,
 }) => {
     const [loading, setLoading] = useState(true);
     const [hasMore, setHasMore] = useState(false);
@@ -38,6 +39,7 @@ const useTickets = ({
                             groups,
                             archived,
                             historical,
+                            tagId,
                         },
                     })
                     setTickets(data.tickets)

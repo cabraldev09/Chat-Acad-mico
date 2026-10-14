@@ -12,6 +12,7 @@ import StarBorder from "@material-ui/icons/StarBorder";
 import Forward from "@material-ui/icons/Forward";
 import DeleteOutline from "@material-ui/icons/DeleteOutline";
 import Edit from "@material-ui/icons/Edit";
+import CheckBoxOutlined from "@material-ui/icons/CheckBoxOutlined";
 import { Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField, Typography } from "@material-ui/core";
 
 import api from "../../services/api";
@@ -52,7 +53,7 @@ const useStyles = makeStyles((theme) => {
   };
 });
 
-const MessageOptionsMenu = ({ message, menuOpen, handleClose, anchorEl, ticketId, channel = "whatsapp" }) => {
+const MessageOptionsMenu = ({ message, menuOpen, handleClose, anchorEl, ticketId, channel = "whatsapp", onSelect }) => {
   const palette = REACTIONS[channel] || REACTIONS.whatsapp;
   const classes = useStyles();
   const { setReplyingMessage } = useContext(ReplyMessageContext);
@@ -168,6 +169,12 @@ const MessageOptionsMenu = ({ message, menuOpen, handleClose, anchorEl, ticketId
           <ListItemIcon className={classes.icon}>{message.starred ? <Star fontSize="small" /> : <StarBorder fontSize="small" />}</ListItemIcon>
           <ListItemText primary={message.starred ? "Desfavoritar" : "Favoritar"} />
         </MenuItem>
+        {onSelect && (
+          <MenuItem onClick={() => { onSelect(message); handleClose(); }}>
+            <ListItemIcon className={classes.icon}><CheckBoxOutlined fontSize="small" /></ListItemIcon>
+            <ListItemText primary="Selecionar" />
+          </MenuItem>
+        )}
         {canEdit && (
           <MenuItem onClick={() => { setDraft(message.body || ""); setEditOpen(true); handleClose(); }}>
             <ListItemIcon className={classes.icon}><Edit fontSize="small" /></ListItemIcon>

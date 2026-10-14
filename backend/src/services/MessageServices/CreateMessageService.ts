@@ -79,13 +79,19 @@ const CreateMessageService = async ({
   }
 
   // the list shows this message (and later its ticks) under the contact's name
+  const lastState = {
+    lastMessageId: message.id,
+    lastMessageFromMe: !!message.fromMe,
+    lastMessageType: message.mediaType || "chat",
+    lastMessageAuthor: message.ticket.isGroup && !message.fromMe ? (message.contact?.name || null) : null
+  };
   await Ticket.update(
-    { lastMessageId: message.id, lastMessageFromMe: !!message.fromMe, lastMessageAck: message.ack || 0 } as any,
+    { ...lastState, lastMessageAck: message.ack || 0 } as any,
     { where: { id: message.ticketId }, silent: true } as any
   );
   // the event below carries this ticket to the list, so it must already hold the new last message
   message.ticket.set(
-    { lastMessageId: message.id, lastMessageFromMe: !!message.fromMe, lastMessageAck: message.ack || 0 } as any,
+    { ...lastState, lastMessageAck: message.ack || 0 } as any,
     { raw: true } as any
   );
 

@@ -3,7 +3,7 @@ import { dayBounds } from "../../helpers/AppTime";
 
 import Ticket from "../../models/Ticket";
 import Contact from "../../models/Contact";
-import Message from "../../models/Message";
+import sequelize from "../../database";
 import Queue from "../../models/Queue";
 import ShowUserService from "../UserServices/ShowUserService";
 import Whatsapp from "../../models/Whatsapp";
@@ -62,7 +62,9 @@ const ListTicketsService = async ({
     {
       model: Contact,
       as: "contact",
-      attributes: ["id", "name", "number", "profilePicUrl", "channel"]
+      attributes: ["id", "name", "number", "profilePicUrl", "channel"],
+      // the search filters on the contact's name and number, so the count query must join it too
+      required: !!searchParam
     },
     {
       model: Queue,
@@ -103,45 +105,26 @@ const ListTicketsService = async ({
 
   if (searchParam) {
     const sanitizedSearchParam = searchParam.toLocaleLowerCase().trim();
+    const like = `%${sanitizedSearchParam.replace(/[\\%_]/g, m => `\\${m}`)}%`;
 
-    includeCondition = [
-      ...includeCondition,
+    const or: any[] = [
       {
-        model: Message,
-        as: "messages",
-        attributes: ["id", "body"],
-        where: {
-          body: where(
-            fn("LOWER", col("body")),
-            "LIKE",
-            `%${sanitizedSearchParam}%`
-          )
-        },
-        required: false,
-        duplicating: false
-      }
+        "$contact.name$": where(fn("LOWER", col("contact.name")), "LIKE", like)
+      },
+      { "$contact.number$": { [Op.like]: like } }
     ];
-
-    whereCondition = {
-      ...whereCondition,
-      [Op.or]: [
-        {
-          "$contact.name$": where(
-            fn("LOWER", col("contact.name")),
-            "LIKE",
-            `%${sanitizedSearchParam}%`
+    // looking inside messages needs at least 3 letters (shorter than that matches everything and is slow);
+    // EXISTS stops at the first hit instead of joining every message of every conversation
+    if (sanitizedSearchParam.length >= 3) {
+      or.push(
+        literal(
+          portable(
+            `EXISTS (SELECT 1 FROM Messages sm WHERE sm.ticketId = Ticket.id AND sm.isDeleted = false AND LOWER(sm.body) LIKE ${sequelize.escape(like)})`
           )
-        },
-        { "$contact.number$": { [Op.like]: `%${sanitizedSearchParam}%` } },
-        {
-          "$message.body$": where(
-            fn("LOWER", col("body")),
-            "LIKE",
-            `%${sanitizedSearchParam}%`
-          )
-        }
-      ]
-    };
+        )
+      );
+    }
+    whereCondition = { ...whereCondition, [Op.or]: or };
   }
 
   if (date) {

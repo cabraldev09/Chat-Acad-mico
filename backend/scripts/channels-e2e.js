@@ -1299,6 +1299,30 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(sql(`SELECT CONCAT(lastMessageId,'|',CASE WHEN lastMessageFromMe THEN 1 ELSE 0 END,'|',lastMessageAck) FROM Tickets WHERE id=${t}`) === "bf-last-1|1|2", "backfill did not copy the last message state");
       assert(sql(`SELECT COUNT(*) FROM pg_indexes WHERE indexname='messages_ticket_created_idx'`) === "1", "messages index missing");
     });
+    await test("conversation drawer lists media, documents, links and starred; search looks in messages from 3 letters", async () => {
+      const t = sql(`SELECT t.id FROM Tickets t JOIN Contacts c ON c.id=t.contactId WHERE c.number='tg_5551' AND t.isHistorical=false ORDER BY t.id DESC LIMIT 1`);
+      sql(`INSERT INTO Messages (id, ticketId, body, fromMe, read, mediaType, mediaUrl, ack, starred, createdAt, updatedAt) VALUES
+        ('dr-img-1', ${t}, 'foto da prova', false, true, 'image', 'dr-img-1.jpg', 0, false, NOW(), NOW()),
+        ('dr-doc-1', ${t}, 'edital.pdf', false, true, 'document', 'dr-doc-1.pdf', 0, false, NOW(), NOW()),
+        ('dr-link-1', ${t}, 'veja https://cruzeirodosulvirtual.com.br/cursos, e depois me chame', true, true, 'chat', NULL, 1, false, NOW(), NOW()),
+        ('dr-star-1', ${t}, 'lembrar xyzzycode', true, true, 'chat', NULL, 1, true, NOW(), NOW())`);
+      const kind = async k => (await http.get(`/messages/${t}/list`, { params: { kind: k }, ...auth() })).data;
+      assert((await kind("media")).some(m => m.id === "dr-img-1"), "media tab");
+      assert((await kind("docs")).some(m => m.id === "dr-doc-1"), "docs tab");
+      const links = await kind("links");
+      assert(links.length === 1 && links[0].url === "https://cruzeirodosulvirtual.com.br/cursos", `links tab ${JSON.stringify(links)}`);
+      assert((await kind("starred")).map(m => m.id).join() === "dr-star-1", "starred tab");
+      assert((await http.get(`/messages/${t}/list`, { params: { kind: "media" }, ...asUser((await http.post("/auth/login", { email: "afil-tutor@x.com", password: "senha123" })).data.token) })).status === 403, "tutor reads a sales conversation");
+
+      const found = async q => {
+        const r = await http.get("/tickets", { params: { showAll: "true", searchParam: q, queueIds: JSON.stringify((await http.get("/queue", auth())).data.map(x => x.id)) }, ...auth() });
+        assert(r.status === 200 && r.data.tickets, `search ${r.status} ${JSON.stringify(r.data).slice(0, 200)}`);
+        return r.data.tickets.map(x => x.id);
+      };
+      assert((await found("xyzzycode")).includes(Number(t)), "search by message text");
+      assert(!(await found("xy")).includes(Number(t)), "two letters must not search message bodies");
+      assert((await found("xyzzycode")).length === new Set(await found("xyzzycode")).size, "duplicated rows in search");
+    });
     await test("the default course catalogue loads once, keeps manual prices and --force restores them", async () => {
       const first = await http.post("/courses/load-default", {}, auth());
       assert(first.status === 200 && first.data.total === 128, `catalogue size ${JSON.stringify(first.data)}`);
