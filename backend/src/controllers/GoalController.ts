@@ -81,6 +81,20 @@ const present = async (goal: Goal) => {
   };
 };
 
+// the goals a person is part of (for their own home screen): their line and the team total
+export const progressForUser = async (userId: number) => {
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Porto_Velho", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  const goals = await Goal.findAll({ where: { status: "active", endsOn: { [Op.gte]: today } as any }, include: [GoalMember], order: [["endsOn", "ASC"]], limit: 6 });
+  const out: any[] = [];
+  for (const g of goals) {
+    // eslint-disable-next-line no-await-in-loop
+    const p = await present(g);
+    const mine = p.members.find(m => m.userIds.includes(userId));
+    if (mine) out.push({ id: p.id, title: p.title, startsOn: p.startsOn, endsOn: p.endsOn, daysLeft: p.daysLeft, elapsedPct: p.elapsedPct, mine, total: p.total });
+  }
+  return out;
+};
+
 const load = async (id: number | string): Promise<Goal> => {
   const goal = await Goal.findByPk(id, { include: [GoalMember] });
   if (!goal) throw new AppError("ERR_NOT_FOUND", 404);

@@ -29,6 +29,7 @@ import * as PoloCtl from "../controllers/PoloController";
 import * as Aff from "../controllers/AffiliateController";
 import * as Commission from "../controllers/CommissionController";
 import * as Goal from "../controllers/GoalController";
+import * as DashboardMgmt from "../controllers/DashboardManagementController";
 import * as AffMat from "../controllers/AffiliateMaterialController";
 import { affiliateUpload } from "../config/affiliateUpload";
 import { affiliateStaff, canAccessAffiliate } from "../helpers/Affiliates";
@@ -81,6 +82,8 @@ r.delete("/affiliate-campaigns/:id", isAuth, affiliateStaff, AffMat.removeCampai
 r.get("/affiliate-campaigns/:id/cover", isAuth, affiliateStaff, AffMat.campaignCover);
 r.post("/affiliate-campaigns/:id/release", isAuth, affiliateStaff, AffMat.releaseTo("campaign"));
 
+r.get("/dashboard/management", isAuth, DashboardMgmt.management);
+r.get("/dashboard/me", isAuth, DashboardMgmt.myDay);
 r.get("/dashboard", isAuth, Dashboard.index);
 
 // tags

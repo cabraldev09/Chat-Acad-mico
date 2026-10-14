@@ -80,6 +80,21 @@ const fetchRows = async (req: Request) => {
   return { rows, defaultPct };
 };
 
+// totals of one person's commissions since a date, for their home screen
+export const summaryForUser = async (userId: number, since: Date) => {
+  const defaultPct = Math.min(100, Math.max(1, Number(await getSetting("efi_consultant_pct", "100")) || 100));
+  const payments = await Payment.findAll({ where: { recipientUserId: userId, createdAt: { [Op.gte]: since } }, limit: 2000 });
+  const out: Record<string, { count: number; total: number }> = { received: { count: 0, total: 0 }, owed: { count: 0, total: 0 }, waiting: { count: 0, total: 0 } };
+  payments.forEach(p => {
+    const b = bucketOf(p);
+    if (!out[b]) return;
+    const pct = p.splitPct && p.recipientCode ? Number(p.splitPct) : defaultPct;
+    out[b].count += 1;
+    out[b].total = Math.round((out[b].total + (Number(p.paidAmount || p.amount || 0) * pct) / 100) * 100) / 100;
+  });
+  return out;
+};
+
 export const index = async (req: Request, res: Response): Promise<Response> => {
   const { rows, defaultPct } = await fetchRows(req);
   const summary: Record<string, { count: number; total: number }> = {};

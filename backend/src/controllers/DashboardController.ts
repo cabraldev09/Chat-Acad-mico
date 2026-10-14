@@ -8,6 +8,8 @@ import { businessMinutes, getBusinessConfig } from "../helpers/BusinessTime";
 import { roleOf } from "../helpers/Roles";
 import { portable } from "../helpers/sqlDialect";
 import { remember } from "../helpers/TtlCache";
+import { getSetting } from "../helpers/AppSettings";
+import { buildInsights, pairGaps, summarize } from "../helpers/ResponseTimes";
 
 const q = async (sql: string, replacements: Record<string, any>): Promise<any[]> =>
   (await sequelize.query(portable(sql), { replacements, type: QueryTypes.SELECT })) as any[];
@@ -123,7 +125,15 @@ const weekP = q(
     rep
   );
   const businessP = getBusinessConfig();
-  const [[counts], waitingRows, candidates, rows, [closed], [enrolled], [prev], weekRows, business] = await Promise.all([countsP, waitingP, candidatesP, rowsP, closedP, enrolledP, prevP, weekP, businessP]);
+  // every message of the period (and of the one before) in order, to measure how long customers waited for an answer
+  const pairSql = (a: string, b: string) =>
+    `SELECT m.ticketId, m.fromMe, m.createdAt FROM Messages m JOIN Tickets t ON t.id = m.ticketId
+     WHERE m.createdAt BETWEEN ${a} AND ${b} AND m.isDeleted = false AND ${base} ${scope}
+     ORDER BY m.ticketId, m.createdAt LIMIT 40000`;
+  const msgsP = q(pairSql(":from", ":to"), rep);
+  const prevMsgsP = q(pairSql(":prevFrom", ":prevTo"), rep);
+  const slaP = getSetting("response_sla_minutes", "15");
+  const [[counts], waitingRows, candidates, rows, [closed], [enrolled], [prev], weekRows, business, msgRows, prevMsgRows, slaRaw] = await Promise.all([countsP, waitingP, candidatesP, rowsP, closedP, enrolledP, prevP, weekP, businessP, msgsP, prevMsgsP, slaP]);
 
   // ---------------------------------------------------------------- now
       // the customer spoke last, nobody answered, and it is not a notice: counted in working hours, last 24 hours only
@@ -181,6 +191,25 @@ const weekP = q(
     return { date: d, attendances: perDay.get(d) || 0 };
   });
 
+  // ---------------------------------------------------------------- response time (median, not average)
+  const slaMinutes = Math.min(1440, Math.max(1, Number(slaRaw) || 15));
+  const gaps = pairGaps(msgRows as any, business);
+  const prevGaps = pairGaps(prevMsgRows as any, business);
+  const reply = summarize(gaps.map(g => g.minutes), slaMinutes);
+  const previousReply = summarize(prevGaps.map(g => g.minutes), slaMinutes);
+  const hourBuckets = new Map<number, number[]>();
+  gaps.forEach(g => {
+    const h = Number(new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", hourCycle: "h23" }).format(g.at));
+    if (!hourBuckets.has(h)) hourBuckets.set(h, []);
+    hourBuckets.get(h)!.push(g.minutes);
+  });
+  const replyByHour = Array.from({ length: 24 }, (_, h) => ({ hour: h, ...(({ median, count }) => ({ median, count }))(summarize(hourBuckets.get(h) || [], slaMinutes)) }));
+  const customerMsgs = (msgRows as any[]).filter(m => !(m.fromMe === true || m.fromMe === 1 || m.fromMe === "t"));
+  const afterHours = business && business.enabled && customerMsgs.length
+    ? Math.round((customerMsgs.filter(m => businessMinutes(business, new Date(m.createdAt), new Date(new Date(m.createdAt).getTime() + 60000)) === 0).length / customerMsgs.length) * 100)
+    : null;
+  const insights = buildInsights({ reply, previous: previousReply, slaMinutes, byHour: replyByHour, unanswered: unanswered.length, waiting: waiting.length, rangeDays });
+
   const table = rows.slice(0, 100).map(r => ({
     id: r.id,
     name: r.name,
@@ -199,6 +228,7 @@ const weekP = q(
     rangeDays,
     scope: admin ? "all" : "mine",
     label: fmtDate(endBounds.start),
+    insights,
     now: {
       open: num(counts?.open),
       pending: num(counts?.pending),
@@ -215,6 +245,15 @@ const weekP = q(
       closed: num(closed?.n),
       enrolled: num(enrolled?.n),
       avgFirstResponse,
+      response: {
+        slaMinutes,
+        ...reply,
+        // the same, in clock time: what the customer actually lived (differs when working hours are set)
+        wallMedian: gaps.length ? summarize(gaps.map(g => g.wall), slaMinutes).median : null,
+        previousMedian: previousReply.median,
+        byHour: replyByHour.filter(h => h.hour >= first && h.hour <= last),
+        afterHoursPct: afterHours
+      },
       previousAttendances: num(prev?.n),
       byHour: byHour.slice(first, last + 1),
       week,

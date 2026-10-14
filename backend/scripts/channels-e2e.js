@@ -1485,6 +1485,41 @@ const postMeta = (id, payload, secret, badSig) => {
       const rank = (await http.get("/affiliates/ranking", { params: { by: "paid" }, ...auth() })).data;
       assert(rank.totals.bonusPaid !== undefined && Array.isArray(rank.affiliates), "ranking shape");
     });
+    await test("response times by median / p90 / target, per department and attendant, smart insights, manager-only view and My day", async () => {
+      const mk = async (name, email, role) => (await http.post("/users", { name, email, password: "senha123", role }, auth())).data;
+      const att = await mk("Atendente Tempo", "tempo@x.com", "consultor");
+      await mk("Coord Tempo", "coord-tempo@x.com", "coordenacao");
+      const tok = async email => (await http.post("/auth/login", { email, password: "senha123" })).data.token;
+      const queue = (await http.get("/queue", auth())).data[0];
+      const c = sql(`INSERT INTO Contacts (name, number, email, isGroup, channel, createdAt, updatedAt) VALUES ('Cliente do Tempo', 'tg_9301', '', false, 'telegram', NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const t = sql(`INSERT INTO Tickets (status, contactId, whatsappId, userId, queueId, unreadMessages, isGroup, segment, isHistorical, lastMessage, lastMessageId, lastMessageFromMe, lastMessageAt, createdAt, updatedAt) VALUES ('open', ${c}, ${tgId}, ${att.id}, ${queue.id}, 0, false, 'onboarding', false, 'ok', 'tempo-x', true, NOW(), NOW() - INTERVAL '4 hours', NOW()) RETURNING id`).split("\n")[0];
+      // customer writes, the team answers after 10, 60 and 5 minutes
+      const m = (id, fromMe, ago) => sql(`INSERT INTO Messages (id, body, ack, read, mediaType, ticketId, createdAt, updatedAt, fromMe) VALUES ('tempo-${id}', 'x', 1, true, 'chat', ${t}, NOW() - INTERVAL '${ago} minutes', NOW(), ${fromMe})`);
+      m(1, false, 200); m(2, true, 190); m(3, false, 170); m(4, true, 110); m(5, false, 90); m(6, true, 85);
+
+      const mgmt = (await http.get("/dashboard/management", { params: { days: 7 }, ...auth() })).data;
+      const me = mgmt.attendants.find(a => a.id === att.id);
+      assert(me && me.reply.count === 3 && me.reply.median === 10 && me.reply.p90 === 50 && me.reply.withinSlaPct === 67, `reply stats ${JSON.stringify(me && me.reply)}`);
+      assert(me.reply.avg === 25, `the average hides the problem: ${me.reply.avg}`);
+      const dept = mgmt.departments.find(d => d.key === "onboarding");
+      assert(dept && dept.label === "Ambientação" && dept.attendances >= 1 && dept.reply.count >= 3, `department ${JSON.stringify(dept && dept.reply)}`);
+      assert(Array.isArray(mgmt.insights) && mgmt.insights.length >= 1 && mgmt.total.reply.count >= 3 && mgmt.slaMinutes === 15, "insights or totals missing");
+
+      const dash = (await http.get("/dashboard", { params: { days: 7 }, ...auth() })).data;
+      assert(dash.period.response.count >= 3 && dash.period.response.median !== null && Array.isArray(dash.insights), "overview lacks the response block");
+
+      // management is for managers only
+      assert((await http.get("/dashboard/management", asUser(await tok("tempo@x.com")))).status === 403, "a consultant opened the management view");
+      assert((await http.get("/dashboard/management", { params: { days: 7 }, ...asUser(await tok("coord-tempo@x.com")) })).status === 200, "the coordinator cannot open the management view");
+
+      // my day: a customer waiting 40 minutes
+      const c2 = sql(`INSERT INTO Contacts (name, number, email, isGroup, channel, createdAt, updatedAt) VALUES ('Cliente Esperando', 'tg_9302', '', false, 'telegram', NOW(), NOW()) RETURNING id`).split("\n")[0];
+      sql(`INSERT INTO Tickets (status, contactId, whatsappId, userId, queueId, unreadMessages, isGroup, segment, isHistorical, lastMessage, lastMessageId, lastMessageFromMe, lastMessageAt, createdAt, updatedAt) VALUES ('open', ${c2}, ${tgId}, ${att.id}, ${queue.id}, 1, false, 'sales', false, 'oi?', 'tempo-w', false, NOW() - INTERVAL '40 minutes', NOW(), NOW())`);
+      const day = (await http.get("/dashboard/me", asUser(await tok("tempo@x.com")))).data;
+      assert(day.toReplyCount === 1 && day.toReply[0].name === "Cliente Esperando" && day.toReply[0].minutes >= 39, `my day ${JSON.stringify(day.toReply)}`);
+      assert(day.insights.some(i => /esperando resposta/.test(i.text)), "my day has no sentence about the waiting customer");
+      assert(day.reply.count >= 3 && day.reply.median === 10, "my own response time");
+    });
     await test("one conversation per person: writing after a closed attendance brings the same one back, reopening never errors", async () => {
       const cid = sql(`SELECT id FROM Contacts WHERE number='tg_7777'`);
       const tid = sql(`SELECT id FROM Tickets WHERE contactId=${cid} ORDER BY id DESC LIMIT 1`);
