@@ -37,6 +37,7 @@ import ResponsiveTable from "../../components/ResponsiveTable";
 
 import api from "../../services/api";
 import WhatsAppModal from "../../components/WhatsAppModal";
+import MyNumberDialog from "./MyNumberDialog";
 import ConfirmationModal from "../../components/ConfirmationModal";
 import QrcodeModal from "../../components/QrcodeModal";
 import { i18n } from "../../translate/i18n";
@@ -101,6 +102,9 @@ const Connections = () => {
 	// connecting and removing numbers is for the administrator; everyone else only sees the status
 	const { user } = useContext(AuthContext);
 	const isAdmin = user && user.profile === "admin";
+	// administrators manage everything; anyone else manages the number they connected themselves
+	const canManage = w => isAdmin || (w.ownerId && user && w.ownerId === user.id && (!w.channel || w.channel === "whatsapp"));
+	const [myDialog, setMyDialog] = useState({ open: false, whatsApp: null });
 	const [whatsAppModalOpen, setWhatsAppModalOpen] = useState(false);
 	const [qrModalOpen, setQrModalOpen] = useState(false);
 	const [selectedWhatsApp, setSelectedWhatsApp] = useState(null);
@@ -153,6 +157,10 @@ const Connections = () => {
 	}, [setQrModalOpen, setSelectedWhatsApp]);
 
 	const handleEditWhatsApp = whatsApp => {
+		if (!isAdmin) {
+			setMyDialog({ open: true, whatsApp });
+			return;
+		}
 		setSelectedWhatsApp(whatsApp);
 		setWhatsAppModalOpen(true);
 	};
@@ -200,7 +208,7 @@ const Connections = () => {
 	};
 
 	const renderActionButtons = whatsApp => {
-		if (!isAdmin) return <span style={{ fontSize: 13, opacity: 0.7 }}>Só o administrador gerencia</span>;
+		if (!canManage(whatsApp)) return <span style={{ fontSize: 13, opacity: 0.7 }}>{whatsApp.ownerId ? "Número de outra pessoa" : "Só o administrador gerencia"}</span>;
 		return (
 			<>
 				{whatsApp.status === "qrcode" && (
@@ -312,6 +320,12 @@ const Connections = () => {
 				onClose={handleCloseQrModal}
 				whatsAppId={!whatsAppModalOpen && selectedWhatsApp?.id}
 			/>
+			<MyNumberDialog
+				open={myDialog.open}
+				whatsApp={myDialog.whatsApp}
+				onClose={() => setMyDialog({ open: false, whatsApp: null })}
+				onCreated={w => handleOpenQrModal(w)}
+			/>
 			<WhatsAppModal
 				open={whatsAppModalOpen}
 				onClose={handleCloseWhatsAppModal}
@@ -320,13 +334,21 @@ const Connections = () => {
 			<MainHeader>
 				<Title>{i18n.t("connections.title")}</Title>
 				<MainHeaderButtonsWrapper>
-					{isAdmin && (
+					{isAdmin ? (
 						<Button
 							variant="contained"
 							color="primary"
 							onClick={handleOpenWhatsAppModal}
 						>
 							{i18n.t("connections.buttons.add")}
+						</Button>
+					) : (
+						<Button
+							variant="contained"
+							color="primary"
+							onClick={() => setMyDialog({ open: true, whatsApp: null })}
+						>
+							Conectar meu WhatsApp
 						</Button>
 					)}
 				</MainHeaderButtonsWrapper>
@@ -368,6 +390,9 @@ const Connections = () => {
 													<ChannelIcon channel={whatsApp.channel} />
 													{whatsApp.name}
 												</span>
+												{isAdmin && whatsApp.owner && (
+													<div style={{ fontSize: 12, opacity: 0.65 }}>Número de {whatsApp.owner.name}</div>
+												)}
 											</TableCell>
 											<TableCell
 												align="center"
@@ -398,7 +423,7 @@ const Connections = () => {
 												)}
 											</TableCell>
 											<TableCell align="center">
-												{isAdmin && (
+												{canManage(whatsApp) && (
 													<>
 														<IconButton
 															size="small"

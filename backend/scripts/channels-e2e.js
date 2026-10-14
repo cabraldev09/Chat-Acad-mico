@@ -1010,7 +1010,10 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.post("/queue", { name: "X", color: "#000000" }, asUser(agentToken))).status === 403, "agent created a queue");
       assert((await http.post("/users", { name: "Z", email: "z@x.com", password: "123456" }, asUser(agentToken))).status === 403, "agent created a user");
       assert((await http.delete(`/tickets/${tgTicket}`, asUser(agentToken))).status === 403, "agent deleted a ticket");
-      assert((await http.post("/whatsapp", { name: "Hack", channel: "telegram", config: "{}" }, asUser(agentToken))).status === 403, "agent created a connection");
+      // an agent may connect only their own QR Code number: other channels and the admin-only fields are ignored
+      const own = await http.post("/whatsapp", { name: "Hack", channel: "telegram", config: "{}", isDefault: true }, asUser(agentToken));
+      assert(own.status === 200 && own.data.channel === "whatsapp" && own.data.isDefault === false && own.data.config == null, `agent connection ${own.status} ${JSON.stringify(own.data).slice(0, 150)}`);
+      assert((await http.delete(`/whatsapp/${own.data.id}`, asUser(agentToken))).status === 200, "agent removes own number");
     });
     await test("an agent cannot open conversations of another sector", async () => {
       const t = ticketOf("tg_5552"); // sits in "Admissão", which the agent does not belong to
@@ -1138,6 +1141,53 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(!other.includes(String(colleagues)), "queueIds outside the person's sectors were honored");
       const admin = (await http.get("/tickets", { params: { showAll: "true", queueIds: JSON.stringify([q.id]) }, ...auth() })).data.tickets.map(t => String(t.id));
       assert(admin.includes(String(colleagues)) && admin.includes(String(tutoring)), "admin should see everything");
+    });
+    await test("each person connects their own WhatsApp: scoped list, one number by default, no one else's QR Code", async () => {
+      const mk = async (name, email) => (await http.post("/users", { name, email, password: "senha123", role: "consultor" }, auth())).data;
+      const u1 = await mk("Dona Um", "dona1@x.com"), u2 = await mk("Dono Dois", "dono2@x.com");
+      const t1 = (await http.post("/auth/login", { email: "dona1@x.com", password: "senha123" })).data.token;
+      const t2 = (await http.post("/auth/login", { email: "dono2@x.com", password: "senha123" })).data.token;
+
+      const made = await http.post("/whatsapp", { name: "x", channel: "telegram", config: "{}", queueIds: [1] }, asUser(t1));
+      assert(made.status === 200 && made.data.channel === "whatsapp" && made.data.ownerId === u1.id, `own number ${made.status} ${JSON.stringify(made.data).slice(0, 200)}`);
+      assert(/Dona/.test(made.data.name) || made.data.name === "x", "name");
+      assert(made.data.isDefault === false, "a personal number must not become the default");
+      assert(sql(`SELECT whatsappId FROM Users WHERE id=${u1.id}`) === String(made.data.id), "becomes the person's sending number");
+      assert((await http.post("/whatsapp", { name: "outro" }, asUser(t1))).status === 400, "second number allowed beyond the limit");
+      assert((await http.put("/settings/max_connections_per_user", { value: "2" }, auth())).status === 200, "limit setting");
+      const second = await http.post("/whatsapp", { name: "Segundo número" }, asUser(t1));
+      assert(second.status === 200, `second number with a higher limit ${second.status}`);
+      await http.put("/settings/max_connections_per_user", { value: "1" }, auth());
+
+      // visibility
+      const ids = r => r.data.map(w => w.id);
+      assert(ids(await http.get("/whatsapp", asUser(t1))).includes(made.data.id), "owner does not see own number");
+      assert(!ids(await http.get("/whatsapp", asUser(t2))).includes(made.data.id), "someone else's number is listed");
+      assert((await http.get(`/whatsapp/${made.data.id}`, asUser(t2))).status === 403, "someone else's number can be opened");
+      assert(ids(await http.get("/whatsapp", auth())).includes(made.data.id), "admin should see everything");
+
+      // management
+      assert((await http.put(`/whatsapp/${made.data.id}`, { name: "Meu WhatsApp", greetingMessage: "hack", queueIds: [1] }, asUser(t1))).status === 200, "owner rename");
+      assert(sql(`SELECT name FROM Whatsapps WHERE id=${made.data.id}`) === "Meu WhatsApp", "renamed");
+      assert(sql(`SELECT IFNULL(greetingMessage,'') FROM Whatsapps WHERE id=${made.data.id}`) === "", "owner changed an admin-only field");
+      assert((await http.put(`/whatsapp/${made.data.id}`, { name: "invadido" }, asUser(t2))).status === 403, "someone else renamed it");
+      assert((await http.delete(`/whatsapp/${made.data.id}`, asUser(t2))).status === 403, "someone else deleted it");
+      assert((await http.post(`/whatsappsession/${made.data.id}`, {}, asUser(t2))).status === 403, "someone else started its session");
+      const shared = ids(await http.get("/whatsapp", auth())).find(i => i === cid);
+      assert((await http.delete(`/whatsapp/${shared}`, asUser(t1))).status === 403, "a person deleted a shared connection");
+      assert((await http.post("/whatsapp", { name: "Via admin", channel: "whatsapp" }, auth())).status === 200, "admin can still create connections");
+      assert((await http.delete(`/whatsapp/${made.data.id}`, asUser(t1))).status === 200, "owner deletes own number");
+    });
+    await test("conversations that arrive on a personal number go straight to its owner", async () => {
+      const owner = await http.post("/users", { name: "Dona Cloud", email: "donacloud@x.com", password: "senha123", role: "consultor" }, auth());
+      const cfg = { accessToken: "EAAB-owner", phoneNumberId: "PN1", appSecret: "owner-secret", verifyToken: "owner-verify" };
+      const conn = await http.post("/whatsapp", { name: "Cloud da Dona", channel: "whatsapp_cloud", config: JSON.stringify(cfg), ownerId: owner.data.id }, auth());
+      assert(conn.status === 200 && conn.data.ownerId === owner.data.id, `connection ${conn.status}`);
+      await waitFor(async () => (await http.get(`/whatsapp/${conn.data.id}`, auth())).data.status === "CONNECTED", 12000, "connected");
+      const r = await postMeta(conn.data.id, cloudEvent([{ from: "5511900011122", id: "wamid.owner1", type: "text", text: { body: "Oi, quero informações" } }]), cfg.appSecret);
+      assert(r.status === 200, `webhook ${r.status}`);
+      const t = await waitFor(() => ticketOf("5511900011122"), 8000, "ticket");
+      assert(sql(`SELECT CONCAT(status,'|',userId) FROM Tickets WHERE id=${t}`) === `open|${owner.data.id}`, "ticket should be open and assigned to the owner");
     });
     await test("typing on Telegram goes out as a chat action", async () => {
       const a = ticketOf("tg_5551");

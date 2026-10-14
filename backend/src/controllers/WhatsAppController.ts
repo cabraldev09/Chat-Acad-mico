@@ -9,6 +9,19 @@ import ShowWhatsAppService from "../services/WhatsappService/ShowWhatsAppService
 import UpdateWhatsAppService from "../services/WhatsappService/UpdateWhatsAppService";
 import { whatsappProvider } from "../providers/WhatsApp";
 import { getAdapter } from "../channels";
+import AppError from "../errors/AppError";
+import User from "../models/User";
+import Whatsapp from "../models/Whatsapp";
+import { getSetting } from "../helpers/AppSettings";
+
+const isAdminReq = (req: Request) => req.user.profile === "admin";
+const me = (req: Request) => Number(req.user.id);
+// QR Codes are only shown to administrators and to the person who owns the number
+const present = (req: Request, w: Whatsapp) => {
+  const json: any = w.toJSON();
+  if (!isAdminReq(req) && w.ownerId !== me(req)) delete json.qrcode;
+  return json;
+};
 
 interface WhatsappData {
   name: string;
@@ -24,24 +37,53 @@ interface WhatsappData {
 }
 
 export const index = async (req: Request, res: Response): Promise<Response> => {
-  const whatsapps = await ListWhatsAppsService();
+  const all = await ListWhatsAppsService();
+  // shared numbers (the administrator's) plus the person's own; never someone else's personal number
+  const visible = isAdminReq(req) ? all : all.filter(w => !w.ownerId || w.ownerId === me(req));
 
-  return res.status(200).json(whatsapps);
+  return res.status(200).json(visible.map(w => present(req, w)));
 };
 
 export const store = async (req: Request, res: Response): Promise<Response> => {
-  const {
+  let {
     name,
+    // eslint-disable-next-line prefer-const
     status,
+    // eslint-disable-next-line prefer-const
     isDefault,
+    // eslint-disable-next-line prefer-const
     greetingMessage,
+    // eslint-disable-next-line prefer-const
     farewellMessage,
+    // eslint-disable-next-line prefer-const
     queueIds,
+    // eslint-disable-next-line prefer-const
     channel,
+    // eslint-disable-next-line prefer-const
     config,
+    // eslint-disable-next-line prefer-const
     businessHours,
+    // eslint-disable-next-line prefer-const
     outOfHoursMessage
   }: WhatsappData = req.body;
+  let ownerId: number | null = req.body.ownerId ? Number(req.body.ownerId) : null;
+
+  if (!isAdminReq(req)) {
+    // anyone else connects only their own QR Code number, up to the limit the administrator set
+    const limit = Number(await getSetting("max_connections_per_user", "1")) || 1;
+    if ((await Whatsapp.count({ where: { ownerId: me(req) } })) >= limit) throw new AppError("ERR_CONNECTION_LIMIT", 400);
+    const user = await User.findByPk(me(req));
+    const first = String(user?.name || "Usuário").split(" ")[0];
+    let candidate = String(name || "").trim().length >= 2 ? String(name).trim() : `WhatsApp de ${first}`;
+    for (let n = 2; await Whatsapp.findOne({ where: { name: candidate } }); n += 1) candidate = `WhatsApp de ${first} ${n}`;
+    name = candidate;
+    channel = "whatsapp";
+    queueIds = [];
+    config = undefined;
+    status = undefined;
+    isDefault = false;
+    ownerId = me(req);
+  }
 
   const { whatsapp, oldDefaultWhatsapp } = await CreateWhatsAppService({
     name,
@@ -53,8 +95,15 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
     channel,
     config,
     businessHours,
-    outOfHoursMessage
+    outOfHoursMessage,
+    ownerId
   });
+
+  // the new number becomes the person's sending number when they had none
+  if (ownerId) {
+    const owner = await User.findByPk(ownerId);
+    if (owner && !owner.whatsappId) await owner.update({ whatsappId: whatsapp.id });
+  }
 
   StartWhatsAppSession(whatsapp);
 
@@ -78,8 +127,9 @@ export const show = async (req: Request, res: Response): Promise<Response> => {
   const { whatsappId } = req.params;
 
   const whatsapp = await ShowWhatsAppService(whatsappId);
+  if (!isAdminReq(req) && whatsapp.ownerId && whatsapp.ownerId !== me(req)) throw new AppError("ERR_NO_PERMISSION", 403);
 
-  return res.status(200).json(whatsapp);
+  return res.status(200).json(present(req, whatsapp));
 };
 
 export const update = async (
@@ -87,7 +137,8 @@ export const update = async (
   res: Response
 ): Promise<Response> => {
   const { whatsappId } = req.params;
-  const whatsappData = req.body;
+  // the owner may only rename their number; everything else is the administrator's
+  const whatsappData = isAdminReq(req) ? req.body : { name: req.body.name };
 
   const { whatsapp, oldDefaultWhatsapp } = await UpdateWhatsAppService({
     whatsappData,

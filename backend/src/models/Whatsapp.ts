@@ -11,9 +11,12 @@ import {
   AllowNull,
   HasMany,
   Unique,
-  BelongsToMany
+  BelongsToMany,
+  ForeignKey,
+  BelongsTo
 } from "sequelize-typescript";
 import Queue from "./Queue";
+import User from "./User";
 import Ticket from "./Ticket";
 import WhatsappQueue from "./WhatsappQueue";
 import { maskConfig } from "../helpers/Secrets";
@@ -79,6 +82,14 @@ class Whatsapp extends Model<Whatsapp> {
 
   @Column
   connectedSince: Date;
+
+  // who connected this number: its conversations go to that person (null = shared, managed by the administrator)
+  @ForeignKey(() => User)
+  @Column
+  ownerId: number;
+
+  @BelongsTo(() => User, "ownerId")
+  owner: User;
 
   // off | selected | all: which WhatsApp groups become conversations
   @Default("off")

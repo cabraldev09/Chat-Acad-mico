@@ -15,6 +15,26 @@ export const initIO = (httpServer: Server): SocketIO => {
     }
   });
 
+  // Connection events carry the QR Code. Everyone receives them without it; the QR Code itself only goes to
+  // the administrators and to the owner of that number.
+  const broadcast = io.emit.bind(io);
+  (io as any).emit = (event: string, ...args: any[]) => {
+    const payload = args[0];
+    const key = event === "whatsappSession" ? "session" : event === "whatsapp" ? "whatsapp" : null;
+    const item = key && payload ? payload[key] : null;
+    if (!item || typeof item !== "object") return broadcast(event, ...args);
+    const plain = typeof item.toJSON === "function" ? item.toJSON() : { ...item };
+    const { qrcode, ...withoutQr } = plain;
+    // one by one: the QR Code only goes to administrators and to the owner of that number
+    // a personal number is not announced to other people at all
+    io.sockets.sockets.forEach((sock: any) => {
+      const mayScan = sock.isAdminUser || (plain.ownerId && sock.userIdOf === plain.ownerId);
+      if (plain.ownerId && !mayScan) return;
+      sock.emit(event, { ...payload, [key as string]: mayScan ? plain : withoutQr });
+    });
+    return true;
+  };
+
   io.on("connection", socket => {
     const { token } = socket.handshake.query;
     let tokenData = null;
@@ -28,6 +48,9 @@ export const initIO = (httpServer: Server): SocketIO => {
     }
 
     logger.info("Client Connected");
+    const who: any = tokenData;
+    (socket as any).isAdminUser = who?.profile === "admin";
+    (socket as any).userIdOf = who?.id ? Number(who.id) : null;
     socket.on("joinChatBox", (ticketId: string) => {
       logger.info("A client joined a ticket channel");
       socket.join(ticketId);

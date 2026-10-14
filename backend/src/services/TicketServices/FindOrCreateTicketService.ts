@@ -88,6 +88,12 @@ const FindOrCreateTicketService = async (
     });
   }
 
+  // a personal number: the conversation belongs to the person who connected it (the bots stay out)
+  const connection = await Whatsapp.findByPk(whatsappId, { attributes: ["id", "ownerId"] });
+  if (connection?.ownerId && !groupContact && ticket.status === "pending" && !ticket.userId) {
+    await ticket.update({ status: "open", userId: connection.ownerId });
+  }
+
   ticket = await ShowTicketService(ticket.id);
 
   return ticket;

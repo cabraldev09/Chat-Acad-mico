@@ -97,6 +97,12 @@ const Settings = () => {
               {HOURS.map((h) => (<MenuItem key={h} value={h}>{h} horas</MenuItem>))}
             </TextField>
             <Typography className={classes.hint}>Vale para o tutor que ainda não falou com o aluno depois da matrícula.</Typography>
+            <TextField select fullWidth variant="outlined" margin="dense" label="WhatsApp que cada pessoa pode conectar"
+              value={Number(values.max_connections_per_user || 1)} onChange={(e) => save("max_connections_per_user", e.target.value)}
+              InputLabelProps={{ shrink: true }}>
+              {[1, 2, 3].map((n) => (<MenuItem key={n} value={n}>{n} {n === 1 ? "número" : "números"} por pessoa</MenuItem>))}
+            </TextField>
+            <Typography className={classes.hint}>Cada pessoa conecta o próprio número em Conexões. As conversas dele ficam com ela.</Typography>
             <TextField select fullWidth variant="outlined" margin="dense" label="Lembrar quem largou o chatbot após"
               value={Number(values.chatbot_reminder_minutes ?? 30)} onChange={(e) => save("chatbot_reminder_minutes", e.target.value)}
               InputLabelProps={{ shrink: true }}>

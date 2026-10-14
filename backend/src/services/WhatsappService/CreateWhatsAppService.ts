@@ -15,6 +15,7 @@ interface Request {
   config?: string;
   businessHours?: string;
   outOfHoursMessage?: string;
+  ownerId?: number | null;
 }
 
 interface Response {
@@ -32,7 +33,8 @@ const CreateWhatsAppService = async ({
   channel = "whatsapp",
   config,
   businessHours,
-  outOfHoursMessage
+  outOfHoursMessage,
+  ownerId = null
 }: Request): Promise<Response> => {
   const schema = Yup.object().shape({
     name: Yup.string()
@@ -60,7 +62,8 @@ const CreateWhatsAppService = async ({
 
   const whatsappFound = await Whatsapp.findOne();
 
-  isDefault = !whatsappFound;
+  // a personal number never becomes the system default
+  isDefault = !whatsappFound && !ownerId;
 
   let oldDefaultWhatsapp: Whatsapp | null = null;
 
@@ -87,7 +90,8 @@ const CreateWhatsAppService = async ({
       channel,
       config,
       businessHours,
-      outOfHoursMessage
+      outOfHoursMessage,
+      ownerId
     },
     { include: ["queues"] }
   );

@@ -1,6 +1,6 @@
 import express from "express";
 import isAuth from "../middleware/isAuth";
-import isAdmin from "../middleware/isAdmin";
+import canManageWhatsapp from "../middleware/canManageWhatsapp";
 
 import * as WhatsAppController from "../controllers/WhatsAppController";
 
@@ -8,16 +8,17 @@ const whatsappRoutes = express.Router();
 
 whatsappRoutes.get("/whatsapp/", isAuth, WhatsAppController.index);
 
-whatsappRoutes.post("/whatsapp/", isAuth, isAdmin, WhatsAppController.store);
+// anyone may connect their own QR Code number (the controller limits what they can set)
+whatsappRoutes.post("/whatsapp/", isAuth, WhatsAppController.store);
 
 whatsappRoutes.get("/whatsapp/:whatsappId", isAuth, WhatsAppController.show);
 
-whatsappRoutes.put("/whatsapp/:whatsappId", isAuth, isAdmin, WhatsAppController.update);
+whatsappRoutes.put("/whatsapp/:whatsappId", isAuth, canManageWhatsapp, WhatsAppController.update);
 
 whatsappRoutes.delete(
   "/whatsapp/:whatsappId",
   isAuth,
-  isAdmin,
+  canManageWhatsapp,
   WhatsAppController.remove
 );
 
