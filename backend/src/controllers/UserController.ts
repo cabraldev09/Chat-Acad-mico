@@ -3,6 +3,8 @@ import { getIO } from "../libs/socket";
 
 import CheckSettingsHelper from "../helpers/CheckSettings";
 import AppError from "../errors/AppError";
+import User from "../models/User";
+import { roleOf } from "../helpers/Roles";
 
 import CreateUserService from "../services/UserServices/CreateUserService";
 import ListUsersService from "../services/UserServices/ListUsersService";
@@ -13,6 +15,16 @@ import DeleteUserService from "../services/UserServices/DeleteUserService";
 type IndexQuery = {
   searchParam: string;
   pageNumber: string;
+};
+
+// Administrators manage everyone. Coordinators manage the team (create, edit, set sectors and roles) but can neither
+// create or promote administrators nor change an administrator. Nobody else manages users.
+const assertMayManage = (req: Request, wanted: { role?: string; profile?: string }, target?: User | null): void => {
+  const me = roleOf(req.user);
+  if (me === "admin") return;
+  if (me !== "coordenacao") throw new AppError("ERR_NO_PERMISSION", 403);
+  if (wanted.role === "admin" || wanted.profile === "admin") throw new AppError("ERR_NO_PERMISSION", 403);
+  if (target && roleOf(target) === "admin") throw new AppError("ERR_NO_PERMISSION", 403);
 };
 
 export const index = async (req: Request, res: Response): Promise<Response> => {
@@ -27,7 +39,7 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
 };
 
 export const store = async (req: Request, res: Response): Promise<Response> => {
-  const { email, password, name, profile, role, queueIds, whatsappId } = req.body;
+  const { email, password, name, profile, role, queueIds, whatsappId, coordArea } = req.body;
   const isSignup = req.url === "/signup";
 
   if (isSignup) {
@@ -36,8 +48,8 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
     if (setting !== "enabled") {
       throw new AppError("ERR_USER_CREATION_DISABLED", 403);
     }
-  } else if (req.user.profile !== "admin") {
-    throw new AppError("ERR_NO_PERMISSION", 403);
+  } else {
+    assertMayManage(req, { role, profile });
   }
 
   // a public signup can never choose its own role, sectors or connection
@@ -48,7 +60,8 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
     profile: isSignup ? "user" : profile,
     role: isSignup ? "consultor" : role,
     queueIds: isSignup ? [] : queueIds,
-    whatsappId: isSignup ? undefined : whatsappId
+    whatsappId: isSignup ? undefined : whatsappId,
+    coordArea: isSignup ? undefined : coordArea
   });
 
   const io = getIO();
@@ -72,12 +85,10 @@ export const update = async (
   req: Request,
   res: Response
 ): Promise<Response> => {
-  if (req.user.profile !== "admin") {
-    throw new AppError("ERR_NO_PERMISSION", 403);
-  }
-
   const { userId } = req.params;
   const userData = req.body;
+  const target = await User.findByPk(userId, { attributes: ["id", "profile", "role"] });
+  assertMayManage(req, { role: userData.role, profile: userData.profile }, target);
 
   const user = await UpdateUserService({ userData, userId });
 

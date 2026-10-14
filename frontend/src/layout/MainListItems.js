@@ -27,6 +27,7 @@ import AccountTreeIcon from "@material-ui/icons/AccountTree";
 import CodeIcon from "@material-ui/icons/Code";
 import KanbanSquareIcon from "lucide-react/dist/esm/icons/kanban-square";
 import TrendingUpIcon from "lucide-react/dist/esm/icons/trending-up";
+import { accessLevel, isManager, isStrictAdmin } from "../utils/access";
 import ListTodoIcon from "lucide-react/dist/esm/icons/list-todo";
 import HeartHandshakeIcon from "lucide-react/dist/esm/icons/heart-handshake";
 import GraduationCapIcon from "lucide-react/dist/esm/icons/graduation-cap";
@@ -165,13 +166,13 @@ const MainListItems = (props) => {
 
   // answers the team gave that the owner has not reviewed yet
   useEffect(() => {
-    if (user.profile !== "admin") return undefined;
+    if (!isManager(user)) return undefined;
     const load = () => api.get("/ai-learnings/pending").then(({ data }) => setAiReview(data.count)).catch(() => {});
     load();
     const socket = openSocket();
     socket.on("aiLearning", load);
     return () => socket.disconnect();
-  }, [user.profile]);
+  }, [user]);
 
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
@@ -271,7 +272,7 @@ const MainListItems = (props) => {
         collapsed={collapsed}
       />
       <Can
-        role={user.profile}
+        role={accessLevel(user)}
         perform="drawer-admin-items:view"
         yes={() => (
           <>
@@ -330,18 +331,22 @@ const MainListItems = (props) => {
               collapsed={collapsed}
               adornment={aiReview > 0 && <span className={classes.countBadge} title="Respostas da equipe para você revisar">{aiReview}</span>}
             />
-            <ListItemLink
-              to="/integrations"
-              primary="API & Webhooks"
-              icon={<CodeIcon />}
-              collapsed={collapsed}
-            />
-            <ListItemLink
-              to="/settings"
-              primary={i18n.t("mainDrawer.listItems.settings")}
-              icon={<SettingsOutlinedIcon />}
-              collapsed={collapsed}
-            />
+            {isStrictAdmin(user) && (
+              <>
+                <ListItemLink
+                  to="/integrations"
+                  primary="API & Webhooks"
+                  icon={<CodeIcon />}
+                  collapsed={collapsed}
+                />
+                <ListItemLink
+                  to="/settings"
+                  primary={i18n.t("mainDrawer.listItems.settings")}
+                  icon={<SettingsOutlinedIcon />}
+                  collapsed={collapsed}
+                />
+              </>
+            )}
           </>
         )}
       />

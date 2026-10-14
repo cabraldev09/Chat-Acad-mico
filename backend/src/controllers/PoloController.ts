@@ -29,7 +29,7 @@ export const tutors = async (req: Request, res: Response): Promise<Response> => 
 };
 
 export const index = async (req: Request, res: Response): Promise<Response> => {
-  const admin = req.user.role === "admin" || req.user.profile === "admin";
+  const admin = req.user.role === "admin" || req.user.role === "coordenacao" || req.user.profile === "admin";
   const polos = await Polo.findAll({
     order: [["name", "ASC"]],
     ...(admin

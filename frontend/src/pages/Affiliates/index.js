@@ -1,4 +1,5 @@
 import React, { useContext, useState } from "react";
+import { isManager } from "../../utils/access";
 import { Paper, Tab, Tabs } from "@material-ui/core";
 import { useLocation, useHistory } from "react-router-dom";
 
@@ -18,7 +19,7 @@ const Affiliates = () => {
   const { user } = useContext(AuthContext);
   const location = useLocation();
   const history = useHistory();
-  const isAdmin = user.profile === "admin";
+  const isAdmin = isManager(user);
   const tabs = [
     ["afiliados", "Afiliados", AffiliatesTab],
     ["materiais", "Materiais de apoio", MaterialsTab],

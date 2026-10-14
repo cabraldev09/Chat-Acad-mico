@@ -56,6 +56,10 @@ class User extends Model<User> {
   @Column
   efiPayeeCode: string;
 
+  // comercial | academica: the side a coordinator coordinates
+  @Column
+  coordArea: string;
+
   // admin | coordenacao | consultor | tutor | academico
   @Default("consultor")
   @Column

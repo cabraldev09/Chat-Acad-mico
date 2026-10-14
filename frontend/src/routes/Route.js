@@ -3,17 +3,21 @@ import { Route as RouterRoute, Redirect } from "react-router-dom";
 
 import { AuthContext } from "../context/Auth/AuthContext";
 import BackdropLoading from "../components/BackdropLoading";
+import { isManager, isStrictAdmin } from "../utils/access";
 
 // adminOnly: administration pages. Anyone else who types the address goes back to the home page
 // instead of seeing a wall of "no permission" errors.
-const Route = ({ component: Component, isPrivate = false, adminOnly = false, publicPage = false, ...rest }) => {
+const Route = ({ component: Component, isPrivate = false, adminOnly = false, managerOnly = false, publicPage = false, ...rest }) => {
   const { isAuth, loading, user } = useContext(AuthContext);
 
   // decided inside the matching route: every Route is rendered on every page, only the one for the open address may redirect
   // a page for people without an account (the affiliate portal): open to everyone, whether or not there is a session
   if (publicPage) return <RouterRoute {...rest} render={(props) => <Component {...props} />} />;
 
-  const blocked = isAuth && adminOnly && !loading && user && user.profile && user.profile !== "admin";
+  // adminOnly: administrator alone; managerOnly: administrator or coordinator
+  const blocked =
+    isAuth && !loading && user && user.profile &&
+    ((adminOnly && !isStrictAdmin(user)) || (managerOnly && !isManager(user)));
 
   if (!isAuth && isPrivate) {
     return (

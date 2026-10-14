@@ -48,7 +48,7 @@ app.get("/health", async (_req: Request, res: Response) => {
 });
 
 // brute-force / abuse protection on the unauthenticated entry points
-const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20 });
+const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: Number(process.env.LOGIN_RATE_MAX) || 20 });
 const publicLimiter = rateLimit({ windowMs: 60 * 1000, max: 120 });
 const webhookLimiter = rateLimit({ windowMs: 60 * 1000, max: 600 });
 app.use("/auth/login", loginLimiter);

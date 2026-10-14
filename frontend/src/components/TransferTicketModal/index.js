@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useContext } from "react";
+import { accessLevel } from "../../utils/access";
 import { useHistory } from "react-router-dom";
 
 import Button from "@material-ui/core/Button";
@@ -227,7 +228,7 @@ const TransferTicketModal = ({ modalOpen, onClose, ticketid, ticketWhatsappId })
 						label={i18n.t("transferTicketModal.notifyClient")}
 					/>
 					<Can
-						role={loggedInUser.profile}
+						role={accessLevel(loggedInUser)}
 						perform="ticket-options:transferWhatsapp"
 						yes={() => (!loadingWhatsapps && 
 							<FormControl variant="outlined" className={classes.maxWidth} style={{ marginTop: 20 }}>

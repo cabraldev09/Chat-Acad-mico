@@ -5,7 +5,7 @@ import Queue from "../models/Queue";
 import Ticket from "../models/Ticket";
 import UserQueue from "../models/UserQueue";
 import Message from "../models/Message";
-import { SEGMENTS_OF, roleOf } from "../helpers/Roles";
+import { SEGMENTS_OF, isManagerRole, roleOf } from "../helpers/Roles";
 import { poloIdsOf } from "./scope";
 
 const queueIdsOf = async (userId: number): Promise<number[]> => {
@@ -24,7 +24,7 @@ export const assertTicketAccess = async (
   mode: "read" | "write"
 ): Promise<void> => {
     const role = roleOf(req.user);
-    if (role === "admin") return;
+    if (isManagerRole(role)) return;
 
     const ticket = await Ticket.findByPk(ticketId, {
       attributes: ["id", "userId", "queueId", "segment"]

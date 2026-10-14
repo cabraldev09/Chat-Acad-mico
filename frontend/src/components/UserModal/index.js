@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useContext } from "react";
+import { accessLevel, isStrictAdmin } from "../../utils/access";
 
 import * as Yup from "yup";
 import { Formik, Form, Field } from "formik";
@@ -81,7 +82,8 @@ const UserModal = ({ open, onClose, userId }) => {
 		email: "",
 		password: "",
 		profile: "user",
-		role: "consultor"
+		role: "consultor",
+		coordArea: ""
 	};
 
 	const { user: loggedInUser } = useContext(AuthContext);
@@ -156,7 +158,7 @@ const UserModal = ({ open, onClose, userId }) => {
 						}, 400);
 					}}
 				>
-					{({ touched, errors, isSubmitting }) => (
+					{({ touched, errors, isSubmitting, values }) => (
 						<Form>
 							<DialogContent dividers>
 								<div className={classes.multFieldLine}>
@@ -212,7 +214,7 @@ const UserModal = ({ open, onClose, userId }) => {
 										margin="dense"
 									>
 										<Can
-											role={loggedInUser.profile}
+											role={accessLevel(loggedInUser)}
 											perform="user-modal:editProfile"
 											yes={() => (
 												<>
@@ -228,8 +230,8 @@ const UserModal = ({ open, onClose, userId }) => {
 														id="profile-selection"
 														required
 													>
-														<MenuItem value="admin">Administrador (acesso total)</MenuItem>
-														<MenuItem value="coordenacao">Coordenação acadêmica</MenuItem>
+														{isStrictAdmin(loggedInUser) && <MenuItem value="admin">Administrador (acesso total)</MenuItem>}
+														<MenuItem value="coordenacao">Coordenador de polo (gerencia todos os polos)</MenuItem>
 														<MenuItem value="consultor">Consultor comercial</MenuItem>
 														<MenuItem value="tutor">Tutor</MenuItem>
 														<MenuItem value="academico">Setor acadêmico</MenuItem>
@@ -239,8 +241,17 @@ const UserModal = ({ open, onClose, userId }) => {
 										/>
 									</FormControl>
 								</div>
+								{values.role === "coordenacao" && (
+									<FormControl variant="outlined" margin="dense" fullWidth>
+										<InputLabel id="coord-area-label">Área de coordenação</InputLabel>
+										<Field as={Select} label="Área de coordenação" name="coordArea" labelId="coord-area-label" id="coord-area">
+											<MenuItem value="comercial">Comercial</MenuItem>
+											<MenuItem value="academica">Acadêmica</MenuItem>
+										</Field>
+									</FormControl>
+								)}
 								<Can
-									role={loggedInUser.profile}
+									role={accessLevel(loggedInUser)}
 									perform="user-modal:editQueues"
 									yes={() => (
 										<QueueSelect
@@ -250,7 +261,7 @@ const UserModal = ({ open, onClose, userId }) => {
 									)}
 								/>
 								<Can
-									role={loggedInUser.profile}
+									role={accessLevel(loggedInUser)}
 									perform="user-modal:editQueues"
 									yes={() => (!loading &&
 										<FormControl variant="outlined" margin="dense" className={classes.maxWidth} fullWidth>

@@ -1,6 +1,12 @@
 export const ROLES = ["admin", "coordenacao", "consultor", "tutor", "academico"] as const;
 export type Role = typeof ROLES[number];
 
+// administrators and coordinators see and manage everything in every polo
+export const isManagerRole = (role: string | undefined): boolean => role === "admin" || role === "coordenacao";
+
+// which side a coordinator coordinates (a label: it does not limit access)
+export const COORD_AREAS = ["comercial", "academica"] as const;
+
 export const POLO_FUNCTIONS = ["comercial", "tutoria", "academico", "coordenacao"] as const;
 export type PoloFunction = typeof POLO_FUNCTIONS[number];
 

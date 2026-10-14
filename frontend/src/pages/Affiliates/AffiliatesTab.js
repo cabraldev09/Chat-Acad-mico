@@ -1,4 +1,5 @@
 import React, { useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { isManager } from "../../utils/access";
 import { useHistory } from "react-router-dom";
 import { toast } from "react-toastify";
 import {
@@ -283,7 +284,7 @@ const AffiliateDrawer = ({ id, canOwner, isAdmin, users, polos, courses, onClose
 const AffiliatesTab = () => {
   const classes = useStyles();
   const { user } = useContext(AuthContext);
-  const isAdmin = user.profile === "admin";
+  const isAdmin = isManager(user);
   const canOwner = isAdmin || user.role === "coordenacao";
   const [rows, setRows] = useState([]);
   const [rank, setRank] = useState(null);

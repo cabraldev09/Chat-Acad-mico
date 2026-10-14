@@ -3,7 +3,7 @@ import * as Yup from "yup";
 import AppError from "../../errors/AppError";
 import { SerializeUser } from "../../helpers/SerializeUser";
 import User from "../../models/User";
-import { ROLES } from "../../helpers/Roles";
+import { COORD_AREAS, ROLES } from "../../helpers/Roles";
 
 interface Request {
   email: string;
@@ -13,6 +13,7 @@ interface Request {
   profile?: string;
   role?: string;
   whatsappId?: number;
+  coordArea?: string;
 }
 
 interface Response {
@@ -29,7 +30,8 @@ const CreateUserService = async ({
   queueIds = [],
   profile = "user",
   role,
-  whatsappId
+  whatsappId,
+  coordArea
 }: Request): Promise<Response> => {
   const schema = Yup.object().shape({
     name: Yup.string().required().min(2),
@@ -69,6 +71,7 @@ const CreateUserService = async ({
       name,
       profile: finalRole === "admin" ? "admin" : "user",
       role: finalRole,
+      coordArea: finalRole === "coordenacao" && (COORD_AREAS as readonly string[]).includes(String(coordArea)) ? coordArea : null,
       whatsappId: whatsappId ? whatsappId : null
     },
     { include: ["queues", "whatsapp"] }

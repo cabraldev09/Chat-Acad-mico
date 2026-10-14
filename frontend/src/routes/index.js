@@ -68,26 +68,26 @@ const Routes = () => {
                 <Route exact path="/tickets/:ticketId?" component={Tickets} isPrivate />
                 <Route exact path="/connections" component={Connections} isPrivate />
                 <Route exact path="/contacts" component={Contacts} isPrivate />
-                <Route exact path="/users" component={Users} isPrivate adminOnly />
-                <Route exact path="/polos" component={Polos} isPrivate adminOnly />
+                <Route exact path="/users" component={Users} isPrivate managerOnly />
+                <Route exact path="/polos" component={Polos} isPrivate managerOnly />
                 <Route exact path="/ambientacao" component={Onboarding} isPrivate />
                 <Route exact path="/quickAnswers" component={QuickAnswers} isPrivate />
                 <Route exact path="/Settings" component={Settings} isPrivate adminOnly />
-                <Route exact path="/Queues" component={Queues} isPrivate adminOnly />
-                <Route exact path="/tags" component={Tags} isPrivate adminOnly />
+                <Route exact path="/Queues" component={Queues} isPrivate managerOnly />
+                <Route exact path="/tags" component={Tags} isPrivate managerOnly />
                 <Route exact path="/schedules" component={Schedules} isPrivate />
                 <Route exact path="/campaigns" component={Campaigns} isPrivate />
-                <Route exact path="/chatbot" component={Chatbot} isPrivate adminOnly />
-                <Route exact path="/ai-agents" component={AiAgents} isPrivate adminOnly />
+                <Route exact path="/chatbot" component={Chatbot} isPrivate managerOnly />
+                <Route exact path="/ai-agents" component={AiAgents} isPrivate managerOnly />
                 <Route exact path="/integrations" component={Webhooks} isPrivate adminOnly />
                 <Route exact path="/reports" component={Reports} isPrivate />
-                <Route exact path="/monitor" component={LiveMonitor} isPrivate adminOnly />
+                <Route exact path="/monitor" component={LiveMonitor} isPrivate managerOnly />
                 <Route exact path="/crm" component={CrmBoard} isPrivate />
                 <Route exact path="/crm/painel" component={CrmPanel} isPrivate />
                 <Route exact path="/crm/tarefas" component={CrmTasks} isPrivate />
                 <Route exact path="/crm/comissoes" component={CrmCommissions} isPrivate />
                 <Route exact path="/afiliados" component={Affiliates} isPrivate />
-                <Route exact path="/crm/config" component={CrmSettings} isPrivate adminOnly />
+                <Route exact path="/crm/config" component={CrmSettings} isPrivate managerOnly />
                 </Suspense>
               </LoggedInLayout>
             </WhatsAppsProvider>

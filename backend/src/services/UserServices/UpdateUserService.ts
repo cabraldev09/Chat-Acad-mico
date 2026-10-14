@@ -3,7 +3,7 @@ import * as Yup from "yup";
 import AppError from "../../errors/AppError";
 import { SerializeUser } from "../../helpers/SerializeUser";
 import ShowUserService from "./ShowUserService";
-import { ROLES } from "../../helpers/Roles";
+import { COORD_AREAS, ROLES } from "../../helpers/Roles";
 
 interface UserData {
   email?: string;
@@ -13,6 +13,7 @@ interface UserData {
   role?: string;
   queueIds?: number[];
   whatsappId?: number;
+  coordArea?: string;
 }
 
 interface Request {
@@ -47,7 +48,8 @@ const UpdateUserService = async ({
     role,
     name,
     queueIds = [],
-    whatsappId
+    whatsappId,
+    coordArea
   } = userData;
 
   try {
@@ -67,6 +69,8 @@ const UpdateUserService = async ({
     profile: finalRole ? (finalRole === "admin" ? "admin" : "user") : profile,
     role: finalRole,
     name,
+    // the area only matters for coordinators; any other role clears it
+    coordArea: (finalRole || user.role) === "coordenacao" && (COORD_AREAS as readonly string[]).includes(String(coordArea)) ? coordArea : (finalRole || user.role) === "coordenacao" ? user.coordArea : null,
     whatsappId: whatsappId ? whatsappId : null
   });
 

@@ -1,4 +1,5 @@
 import React, { useContext, useEffect, useRef, useState } from "react";
+import { accessLevel } from "../../utils/access";
 
 import MenuItem from "@material-ui/core/MenuItem";
 import Menu from "@material-ui/core/Menu";
@@ -69,7 +70,7 @@ const TicketOptionsMenu = ({ ticket, menuOpen, handleClose, anchorEl }) => {
 					{i18n.t("ticketOptionsMenu.transfer")}
 				</MenuItem>
 				<Can
-					role={user.profile}
+					role={accessLevel(user)}
 					perform="ticket-options:deleteTicket"
 					yes={() => (
 						<MenuItem onClick={handleOpenConfirmationModal}>

@@ -8,6 +8,7 @@ import AffiliateAudience from "../models/AffiliateAudience";
 import { allowedOrigins } from "./AllowedOrigins";
 import { getPublicUrl } from "./PublicUrl";
 import { isAdminReq, poloIdsOf, reqRole } from "../middleware/scope";
+import { isManagerRole } from "./Roles";
 
 // Letters and digits that cannot be confused when read aloud or typed (no 0/O, 1/I/L)
 const ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
@@ -32,13 +33,9 @@ export const referralUrl = (refCode: string): string => `${getPublicUrl()}/r/${r
 // Tutors and academic staff have no access.
 export const affiliateScopeWhere = async (req: Request): Promise<any | null> => {
   const role = reqRole(req);
-  if (role === "admin") return null;
+  if (isManagerRole(role)) return null;
   const me = Number(req.user.id);
   if (role === "consultor") return { ownerId: me };
-  if (role === "coordenacao") {
-    const polos = await poloIdsOf(me);
-    return { [Op.or]: [{ ownerId: me }, { poloId: { [Op.in]: polos } }] };
-  }
   throw new AppError("ERR_NO_PERMISSION", 403);
 };
 

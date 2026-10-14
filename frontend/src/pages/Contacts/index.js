@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useReducer, useContext } from "react";
+import { accessLevel } from "../../utils/access";
 import openSocket from "../../services/socket-io";
 import { toast } from "react-toastify";
 import Tooltip from "@material-ui/core/Tooltip";
@@ -385,7 +386,7 @@ const Contacts = () => {
                       <EditIcon />
                     </IconButton>
                     <Can
-                      role={user.profile}
+                      role={accessLevel(user)}
                       perform="contacts-page:deleteContact"
                       yes={() => (
                         <IconButton

@@ -7,6 +7,7 @@ import { crmReport } from "../controllers/ReportController";
 import * as Preferences from "../controllers/PreferencesController";
 import canManageWhatsapp from "../middleware/canManageWhatsapp";
 import isAdmin from "../middleware/isAdmin";
+import isManager from "../middleware/isManager";
 import { canWriteTicket } from "../middleware/canAccessTicket";
 import { canAccessLead, canAccessProposal, canAccessPayment } from "../middleware/scope";
 import uploadConfig from "../config/upload";
@@ -60,10 +61,10 @@ r.post("/affiliates/:id/attach-lead", isAuth, affiliateStaff, canAccessAffiliate
 r.post("/affiliates/:id/send-portal", isAuth, affiliateStaff, canAccessAffiliate, Aff.sendPortal);
 r.post("/affiliates/:id/send-proposal", isAuth, affiliateStaff, canAccessAffiliate, Aff.sendProposal);
 r.get("/affiliate-rules", isAuth, affiliateStaff, Aff.getRulesRoute);
-r.put("/affiliate-rules", isAuth, isAdmin, Aff.putRules);
+r.put("/affiliate-rules", isAuth, isManager, Aff.putRules);
 r.get("/affiliate-bonuses", isAuth, affiliateStaff, Aff.listBonuses);
 r.get("/affiliate-bonuses/export.csv", isAuth, affiliateStaff, Aff.exportBonuses);
-r.put("/affiliate-bonuses/:id/:action", isAuth, isAdmin, Aff.bonusAction);
+r.put("/affiliate-bonuses/:id/:action", isAuth, isManager, Aff.bonusAction);
 r.get("/affiliate-materials", isAuth, affiliateStaff, AffMat.listMaterials);
 r.post("/affiliate-materials", isAuth, affiliateStaff, affiliateUpload.single("file"), AffMat.createMaterial);
 r.put("/affiliate-materials/:id", isAuth, affiliateStaff, affiliateUpload.single("file"), AffMat.updateMaterial);
@@ -81,9 +82,9 @@ r.get("/dashboard", isAuth, Dashboard.index);
 
 // tags
 r.get("/tags", isAuth, cached(), Tag.index);
-r.post("/tags", isAuth, isAdmin, Tag.store);
-r.put("/tags/:id", isAuth, isAdmin, Tag.update);
-r.delete("/tags/:id", isAuth, isAdmin, Tag.remove);
+r.post("/tags", isAuth, isManager, Tag.store);
+r.put("/tags/:id", isAuth, isManager, Tag.update);
+r.delete("/tags/:id", isAuth, isManager, Tag.remove);
 r.put("/tickets/:ticketId/tags", isAuth, canWriteTicket, Tag.setTicketTags);
 r.get("/contacts/:contactId/tags", isAuth, Tag.contactTags);
 r.put("/contacts/:contactId/tags", isAuth, Tag.setContactTags);
@@ -100,35 +101,35 @@ r.post("/api-tokens", isAuth, isAdmin, ApiToken.store);
 r.delete("/api-tokens/:id", isAuth, isAdmin, ApiToken.remove);
 
 // AI agents
-r.get("/ai-agents", isAuth, isAdmin, Ai.index);
-r.post("/ai-agents", isAuth, isAdmin, Ai.store);
-r.put("/ai-agents/:id", isAuth, isAdmin, Ai.update);
-r.delete("/ai-agents/:id", isAuth, isAdmin, Ai.remove);
-r.get("/ai-defaults", isAuth, isAdmin, Ai.defaults);
-r.get("/ai-agents/:id/kb", isAuth, isAdmin, Ai.kbList);
-r.post("/ai-agents/:id/kb", isAuth, isAdmin, Ai.kbAdd);
-r.post("/ai-agents/:id/kb/upload", isAuth, isAdmin, kbUpload.single("file"), Ai.kbUpload);
-r.post("/ai-agents/:id/kb/url", isAuth, isAdmin, Ai.kbFromUrl);
-r.get("/ai-agents/:id/kb/:docId", isAuth, isAdmin, Ai.kbShow);
-r.put("/ai-agents/:id/kb/:docId", isAuth, isAdmin, Ai.kbUpdate);
-r.delete("/ai-agents/:id/kb/:docId", isAuth, isAdmin, Ai.kbRemove);
-r.post("/ai-agents/:id/test", isAuth, isAdmin, Ai.test);
-r.post("/ai-agents/:id/kb-search", isAuth, isAdmin, Ai.kbSearch);
-r.get("/ai-agents/:id/learnings", isAuth, isAdmin, Ai.learningList);
-r.post("/ai-agents/:id/learnings", isAuth, isAdmin, Ai.learningTeach);
-r.get("/ai-learnings/pending", isAuth, isAdmin, Ai.learningPending);
-r.put("/ai-learnings/:id", isAuth, isAdmin, Ai.learningUpdate);
-r.post("/ai-learnings/:id/approve", isAuth, isAdmin, Ai.learningApprove);
-r.post("/ai-learnings/:id/discard", isAuth, isAdmin, Ai.learningDiscard);
-r.get("/ai-agents/:id/usage", isAuth, isAdmin, Ai.usage);
+r.get("/ai-agents", isAuth, isManager, Ai.index);
+r.post("/ai-agents", isAuth, isManager, Ai.store);
+r.put("/ai-agents/:id", isAuth, isManager, Ai.update);
+r.delete("/ai-agents/:id", isAuth, isManager, Ai.remove);
+r.get("/ai-defaults", isAuth, isManager, Ai.defaults);
+r.get("/ai-agents/:id/kb", isAuth, isManager, Ai.kbList);
+r.post("/ai-agents/:id/kb", isAuth, isManager, Ai.kbAdd);
+r.post("/ai-agents/:id/kb/upload", isAuth, isManager, kbUpload.single("file"), Ai.kbUpload);
+r.post("/ai-agents/:id/kb/url", isAuth, isManager, Ai.kbFromUrl);
+r.get("/ai-agents/:id/kb/:docId", isAuth, isManager, Ai.kbShow);
+r.put("/ai-agents/:id/kb/:docId", isAuth, isManager, Ai.kbUpdate);
+r.delete("/ai-agents/:id/kb/:docId", isAuth, isManager, Ai.kbRemove);
+r.post("/ai-agents/:id/test", isAuth, isManager, Ai.test);
+r.post("/ai-agents/:id/kb-search", isAuth, isManager, Ai.kbSearch);
+r.get("/ai-agents/:id/learnings", isAuth, isManager, Ai.learningList);
+r.post("/ai-agents/:id/learnings", isAuth, isManager, Ai.learningTeach);
+r.get("/ai-learnings/pending", isAuth, isManager, Ai.learningPending);
+r.put("/ai-learnings/:id", isAuth, isManager, Ai.learningUpdate);
+r.post("/ai-learnings/:id/approve", isAuth, isManager, Ai.learningApprove);
+r.post("/ai-learnings/:id/discard", isAuth, isManager, Ai.learningDiscard);
+r.get("/ai-agents/:id/usage", isAuth, isManager, Ai.usage);
 r.get("/ai-settings", isAuth, isAdmin, Ai.getKeys);
 r.put("/ai-settings", isAuth, isAdmin, Ai.setKeys);
 
 // chatbot flow
-r.get("/chatbot-nodes", isAuth, isAdmin, Chatbot.index);
-r.post("/chatbot-nodes", isAuth, isAdmin, Chatbot.store);
-r.put("/chatbot-nodes/:id", isAuth, isAdmin, Chatbot.update);
-r.delete("/chatbot-nodes/:id", isAuth, isAdmin, Chatbot.remove);
+r.get("/chatbot-nodes", isAuth, isManager, Chatbot.index);
+r.post("/chatbot-nodes", isAuth, isManager, Chatbot.store);
+r.put("/chatbot-nodes/:id", isAuth, isManager, Chatbot.update);
+r.delete("/chatbot-nodes/:id", isAuth, isManager, Chatbot.remove);
 
 // scheduled messages
 r.get("/schedules", isAuth, Schedule.index);
@@ -158,22 +159,22 @@ r.delete("/contact-lists/:id/items/:itemId", isAuth, Campaign.removeItem);
 
 // stats & live monitor
 r.get("/stats/overview", isAuth, Stats.overview);
-r.get("/stats/live", isAuth, isAdmin, Stats.live);
+r.get("/stats/live", isAuth, isManager, Stats.live);
 
 // channels
 r.get("/channels", isAuth, Channel.index);
-r.get("/channels/:whatsappId/info", isAuth, isAdmin, Channel.info);
+r.get("/channels/:whatsappId/info", isAuth, isManager, Channel.info);
 r.get("/channels/:whatsappId/safety", isAuth, Channel.safety);
 r.get("/channels/:whatsappId/groups", isAuth, canManageWhatsapp, Channel.groups);
 
 // polos (branches) and the team of each one
 r.get("/polos", isAuth, cached(), PoloCtl.index);
 r.get("/polos/:id/tutors", isAuth, PoloCtl.tutors);
-r.post("/polos", isAuth, isAdmin, PoloCtl.store);
-r.post("/polos/import", isAuth, isAdmin, PoloCtl.importPolos);
-r.put("/polos/:id", isAuth, isAdmin, PoloCtl.update);
-r.put("/polos/:id/members", isAuth, isAdmin, PoloCtl.setMembers);
-r.delete("/polos/:id", isAuth, isAdmin, PoloCtl.remove);
+r.post("/polos", isAuth, isManager, PoloCtl.store);
+r.post("/polos/import", isAuth, isManager, PoloCtl.importPolos);
+r.put("/polos/:id", isAuth, isManager, PoloCtl.update);
+r.put("/polos/:id/members", isAuth, isManager, PoloCtl.setMembers);
+r.delete("/polos/:id", isAuth, isManager, PoloCtl.remove);
 
 // ------------------------------------------------------------------- CRM
 r.get("/crm/options", isAuth, cached(), Lead.options);
@@ -182,17 +183,17 @@ r.get("/crm/metrics", isAuth, Lead.metrics);
 r.get("/crm/report", isAuth, crmReport);
 r.get("/me/preferences", isAuth, Preferences.show);
 r.put("/me/preferences", isAuth, Preferences.update);
-r.post("/crm/backfill", isAuth, isAdmin, Lead.backfill);
-r.get("/crm/settings", isAuth, isAdmin, Lead.getSettings);
-r.put("/crm/settings", isAuth, isAdmin, Lead.putSettings);
+r.post("/crm/backfill", isAuth, isManager, Lead.backfill);
+r.get("/crm/settings", isAuth, isManager, Lead.getSettings);
+r.put("/crm/settings", isAuth, isManager, Lead.putSettings);
 r.get("/lead-stages", isAuth, cached(), Lead.stages.index);
-r.post("/lead-stages", isAuth, isAdmin, Lead.stages.store);
-r.put("/lead-stages/:id", isAuth, isAdmin, Lead.stages.update);
-r.delete("/lead-stages/:id", isAuth, isAdmin, Lead.stages.remove);
+r.post("/lead-stages", isAuth, isManager, Lead.stages.store);
+r.put("/lead-stages/:id", isAuth, isManager, Lead.stages.update);
+r.delete("/lead-stages/:id", isAuth, isManager, Lead.stages.remove);
 r.get("/courses", isAuth, cached(), Lead.courses.index);
-r.post("/courses", isAuth, isAdmin, Lead.courses.store);
-r.put("/courses/:id", isAuth, isAdmin, Lead.courses.update);
-r.delete("/courses/:id", isAuth, isAdmin, Lead.courses.remove);
+r.post("/courses", isAuth, isManager, Lead.courses.store);
+r.put("/courses/:id", isAuth, isManager, Lead.courses.update);
+r.delete("/courses/:id", isAuth, isManager, Lead.courses.remove);
 
 r.get("/leads", isAuth, Lead.index);
 r.post("/leads", isAuth, Lead.store);
@@ -228,15 +229,15 @@ r.post("/proposals/:id/duplicate", isAuth, canAccessProposal, Proposal.duplicate
 r.get("/proposals/:id/pdf", isAuth, canAccessProposal, Proposal.pdf);
 r.post("/proposals/:id/send", isAuth, canAccessProposal, Proposal.send);
 r.get("/institutions", isAuth, Proposal.institutions.index);
-r.post("/institutions", isAuth, isAdmin, Proposal.institutions.store);
-r.put("/institutions/:id", isAuth, isAdmin, Proposal.institutions.update);
-r.delete("/institutions/:id", isAuth, isAdmin, Proposal.institutions.remove);
+r.post("/institutions", isAuth, isManager, Proposal.institutions.store);
+r.put("/institutions/:id", isAuth, isManager, Proposal.institutions.update);
+r.delete("/institutions/:id", isAuth, isManager, Proposal.institutions.remove);
 r.get("/proposal-templates", isAuth, Proposal.templates.index);
-r.post("/proposal-templates", isAuth, isAdmin, Proposal.templates.store);
-r.put("/proposal-templates/:id", isAuth, isAdmin, Proposal.templates.update);
-r.delete("/proposal-templates/:id", isAuth, isAdmin, Proposal.templates.remove);
-r.post("/courses/import", isAuth, isAdmin, Lead.importCourses);
-r.post("/courses/load-default", isAuth, isAdmin, Lead.loadDefaultCourses);
+r.post("/proposal-templates", isAuth, isManager, Proposal.templates.store);
+r.put("/proposal-templates/:id", isAuth, isManager, Proposal.templates.update);
+r.delete("/proposal-templates/:id", isAuth, isManager, Proposal.templates.remove);
+r.post("/courses/import", isAuth, isManager, Lead.importCourses);
+r.post("/courses/load-default", isAuth, isManager, Lead.loadDefaultCourses);
 
 // ----------------------------------------------------- enrollment payments (Efí)
 r.get("/payments/efi/settings", isAuth, isAdmin, Payment.getSettings);

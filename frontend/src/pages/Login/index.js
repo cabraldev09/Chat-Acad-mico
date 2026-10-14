@@ -213,7 +213,7 @@ const Login = () => {
                 ),
               }}
             />
-            <Button type="submit" fullWidth variant="contained" color="primary" className={`${classes.submit} shimmer-btn`}>
+            <Button type="submit" fullWidth variant="contained" color="primary" className={classes.submit}>
               {i18n.t("login.buttons.submit")}
             </Button>
             <div className={classes.foot}>

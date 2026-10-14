@@ -1,4 +1,5 @@
 import React, { useCallback, useContext, useEffect, useRef, useState } from "react";
+import { isManager } from "../../utils/access";
 import { toast } from "react-toastify";
 import {
   Button, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, MenuItem, Paper, Switch, TextField, Typography,
@@ -106,7 +107,7 @@ const MaterialForm = ({ open, material, courses, campaigns, consultants, affilia
 const MaterialsTab = () => {
   const classes = useStyles();
   const { user } = useContext(AuthContext);
-  const isAdmin = user.profile === "admin";
+  const isAdmin = isManager(user);
   const [rows, setRows] = useState([]);
   const [courses, setCourses] = useState([]);
   const [campaigns, setCampaigns] = useState([]);

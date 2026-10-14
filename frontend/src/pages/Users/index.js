@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useReducer } from "react";
+import { roleLabel } from "../../utils/access";
 import { toast } from "react-toastify";
 import openSocket from "../../services/socket-io";
 
@@ -266,7 +267,7 @@ const Users = () => {
                     align="center"
                     data-label={i18n.t("users.table.profile")}
                   >
-                    {{ admin: "Administrador", coordenacao: "Coordenação", consultor: "Consultor", tutor: "Tutor", academico: "Acadêmico" }[user.role] || user.profile}
+                    {roleLabel(user)}
                   </TableCell>
                   <TableCell
                     align="center"

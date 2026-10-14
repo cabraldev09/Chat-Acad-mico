@@ -6,11 +6,10 @@ import Lead from "../models/Lead";
 import Payment from "../models/Payment";
 import PoloMember from "../models/PoloMember";
 import Proposal from "../models/Proposal";
-import { roleOf } from "../helpers/Roles";
+import { isManagerRole, roleOf } from "../helpers/Roles";
 
 // What each job role may see of the CRM (leads and what hangs from them):
-//   admin        everything
-//   coordenacao  leads of their polos (and leads with no polo yet)
+//   admin, coordenacao  everything (the coordinator manages all polos)
 //   consultor    their own leads, plus unassigned ones of their polos (the intake queue)
 //   tutor/acad.  students of their polos
 export const poloIdsOf = async (userId: number): Promise<number[]> =>
@@ -18,17 +17,15 @@ export const poloIdsOf = async (userId: number): Promise<number[]> =>
 
 export const reqRole = (req: Request): string => roleOf(req.user);
 
-export const isAdminReq = (req: Request): boolean => reqRole(req) === "admin";
+// "admin" here means full access: administrators and coordinators (see helpers/Roles.isManagerRole)
+export const isAdminReq = (req: Request): boolean => isManagerRole(reqRole(req));
 
 // Sequelize `where` for Lead queries; null = no restriction
 export const leadScopeWhere = async (req: Request): Promise<any | null> => {
   const role = reqRole(req);
-  if (role === "admin") return null;
+  if (isManagerRole(role)) return null;
   const me = Number(req.user.id);
   const polos = await poloIdsOf(me);
-  if (role === "coordenacao") {
-    return { [Op.or]: [{ poloId: { [Op.in]: polos } }, { poloId: { [Op.is]: null } }] };
-  }
   if (role === "consultor") {
     return {
       [Op.or]: [

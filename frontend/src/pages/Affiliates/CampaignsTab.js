@@ -1,4 +1,5 @@
 import React, { useCallback, useContext, useEffect, useRef, useState } from "react";
+import { isManager } from "../../utils/access";
 import { toast } from "react-toastify";
 import { Button, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, Paper, Switch, TextField, Typography } from "@material-ui/core";
 import { CalendarDays, Gift, ImagePlus, Megaphone, Pencil, Plus, Trash2, Users } from "lucide-react";
@@ -88,7 +89,7 @@ const state = (c) => {
 const CampaignsTab = () => {
   const classes = useStyles();
   const { user } = useContext(AuthContext);
-  const isAdmin = user.profile === "admin";
+  const isAdmin = isManager(user);
   const [rows, setRows] = useState([]);
   const [consultants, setConsultants] = useState([]);
   const [affiliates, setAffiliates] = useState([]);

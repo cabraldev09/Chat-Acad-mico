@@ -1,4 +1,5 @@
 import React, { useCallback, useContext, useEffect, useState } from "react";
+import { isManager } from "../../utils/access";
 import { toast } from "react-toastify";
 import { Button, Dialog, DialogActions, DialogContent, DialogTitle, Paper, TextField, Typography } from "@material-ui/core";
 import { Banknote, Check, CircleDollarSign, Download, Pencil, X } from "lucide-react";
@@ -17,7 +18,7 @@ const FILTERS = [["", "Todas"], ["pending", "A aprovar"], ["approved", "Aprovada
 const BonusesTab = () => {
   const classes = useStyles();
   const { user } = useContext(AuthContext);
-  const isAdmin = user.profile === "admin";
+  const isAdmin = isManager(user);
   const [status, setStatus] = useState("");
   const [data, setData] = useState({ rows: [], totals: { pending: 0, approved: 0, paid: 0 } });
   const [pay, setPay] = useState(null);

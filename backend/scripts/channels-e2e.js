@@ -259,7 +259,7 @@ const postMeta = (id, payload, secret, badSig) => {
     const env = {
       ...process.env, DB_NAME: DB, DB_HOST: "localhost", DB_USER: PGUSER, DB_PASS: "", DB_PORT: "5432", DB_DIALECT: "postgres",
       PORT: String(PORT), PROXY_PORT: String(PORT), BACKEND_URL: "http://localhost", PUBLIC_URL: API,
-      FRONTEND_URL: "http://localhost:3000", JWT_SECRET: "e2e", JWT_REFRESH_SECRET: "e2e-r", DASHBOARD_CACHE_MS: "0",
+      FRONTEND_URL: "http://localhost:3000", JWT_SECRET: "e2e", JWT_REFRESH_SECRET: "e2e-r", DASHBOARD_CACHE_MS: "0", LOGIN_RATE_MAX: "60",
       TELEGRAM_API_URL: `http://localhost:${TG_PORT}`, GRAPH_API_URL: `http://localhost:${GRAPH_PORT}`,
       SKIP_WHATSAPP_SESSIONS: "1", LOG_LEVEL: "warn", EFI_API_URL: `http://localhost:${EFI_PORT}`, EFI_BILLET_API_URL: `http://localhost:${BILLET_PORT}`, EFI_POLL_MS: "1500",
       ANTHROPIC_API_URL: `http://localhost:${AI_PORT}`, ALLOW_PRIVATE_URLS: "true"
@@ -1305,6 +1305,42 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(csv.status === 200 && String(csv.data).includes("Aluno Sem Carteira") && !String(csv.data).includes("Aluno do B"), "csv scope");
       assert((await http.delete("/me/efi", asUser(ta))).data.informed === false, "wallet removal");
     });
+    await test("coordinator: manages every polo and sees every lead, creates the team but never administrators, no access to payment credentials", async () => {
+      const made = await http.post("/users", { name: "Coord Comercial", email: "coord-c@x.com", password: "senha123", role: "coordenacao", coordArea: "comercial" }, auth());
+      assert(made.status === 200 && made.data.role === "coordenacao" && made.data.coordArea === "comercial", `create coordinator ${made.status} ${JSON.stringify(made.data).slice(0, 160)}`);
+      const academic = (await http.post("/users", { name: "Coord Acadêmica", email: "coord-a@x.com", password: "senha123", role: "coordenacao", coordArea: "academica" }, auth())).data;
+      assert(academic.coordArea === "academica", "academic area");
+      const tc = (await http.post("/auth/login", { email: "coord-c@x.com", password: "senha123" })).data.token;
+      const as = asUser(tc);
+
+      // creates and edits the team
+      const team = await http.post("/users", { name: "Consultor do Coord", email: "do-coord@x.com", password: "senha123", role: "consultor" }, as);
+      assert(team.status === 200 && team.data.role === "consultor" && team.data.coordArea === null, `coordinator creating a consultant: ${team.status}`);
+      assert((await http.put(`/users/${team.data.id}`, { name: "Consultor Editado" }, as)).status === 200, "coordinator editing the team");
+      // never administrators
+      assert((await http.post("/users", { name: "Intruso", email: "intruso@x.com", password: "senha123", role: "admin" }, as)).status === 403, "coordinator created an admin");
+      assert((await http.post("/users", { name: "Intruso", email: "intruso2@x.com", password: "senha123", profile: "admin" }, as)).status === 403, "coordinator created an admin by profile");
+      assert((await http.put(`/users/${team.data.id}`, { role: "admin" }, as)).status === 403, "coordinator promoted someone to admin");
+      const adminId = (await http.get("/users", auth())).data.users.find(u => u.profile === "admin").id;
+      assert((await http.put(`/users/${adminId}`, { name: "Trocado" }, as)).status === 403, "coordinator edited an admin");
+      assert((await http.delete(`/users/${team.data.id}`, as)).status === 403, "coordinator deleted a user");
+
+      // every polo and every lead, whatever the polo
+      const lead = (await http.post("/leads", { name: "Lead sem dono", phone: "5569988887771", source: "Site" }, auth())).data.lead;
+      assert((await http.get(`/leads/${lead.id}`, as)).status === 200, "coordinator cannot open any lead");
+      assert((await http.get("/polos", as)).status === 200, "polos list");
+      assert((await http.post("/polos", { name: "Polo do Coord", city: "Porto Velho" }, as)).status === 201, "coordinator creating a polo");
+
+      // what stays with the administrator
+      assert((await http.get("/payments/efi/settings", as)).status === 403, "coordinator reached the payment credentials");
+      assert((await http.get("/api-tokens", as)).status === 403, "coordinator reached API tokens");
+      assert((await http.get("/ai-settings", as)).status === 403, "coordinator reached AI keys");
+      assert((await http.delete(`/leads/${lead.id}`, as)).status === 403, "coordinator deleted a lead");
+      // a consultant still cannot manage anybody
+      const cons = (await http.post("/auth/login", { email: "do-coord@x.com", password: "senha123" })).data.token;
+      assert((await http.post("/users", { name: "X", email: "x-x@x.com", password: "senha123", role: "consultor" }, asUser(cons))).status === 403, "consultant created a user");
+      assert((await http.get("/commissions", as)).data.scope === "all", "coordinator does not see everyone's commissions");
+    });
     await test("one conversation per person: writing after a closed attendance brings the same one back, reopening never errors", async () => {
       const cid = sql(`SELECT id FROM Contacts WHERE number='tg_7777'`);
       const tid = sql(`SELECT id FROM Tickets WHERE contactId=${cid} ORDER BY id DESC LIMIT 1`);
@@ -1840,7 +1876,7 @@ const postMeta = (id, payload, secret, badSig) => {
       const aff = made.data;
       const second = (await http.post("/affiliates", { name: "Pedro do Outro", phone: "(69) 98888-2222" }, asUser(tb))).data;
       assert((await http.get(`/affiliates/${aff.id}`, asUser(tb))).status === 403, "another consultant reads the affiliate");
-      assert(!(await http.get("/affiliates", asUser(tb))).data.some(a => a.id === aff.id), "list leaked an affiliate");
+      assert(!((r => { if (!Array.isArray(r.data)) throw new Error(`list ${r.status} ${JSON.stringify(r.data).slice(0,200)}`); return r.data; })(await http.get("/affiliates", asUser(tb)))).some(a => a.id === aff.id), "list leaked an affiliate");
       assert((await http.get("/affiliates", auth())).data.length >= 2, "admin does not see everyone");
       const tutorTok = await (async () => {
         await http.post("/users", { name: "Tutor Afil", email: "afil-tutor@x.com", password: "senha123", role: "tutor" }, auth());
@@ -1965,10 +2001,10 @@ const postMeta = (id, payload, secret, badSig) => {
     });
     await test("login is rate limited", async () => {
       let limited = false;
-      for (let i = 0; i < 40 && !limited; i += 1) {
+      for (let i = 0; i < 120 && !limited; i += 1) {
         limited = (await http.post("/auth/login", { email: "naoexiste@x.com", password: "errada" })).status === 429;
       }
-      assert(limited, "no 429 after 40 wrong logins");
+      assert(limited, "no 429 after 120 wrong logins");
     });
   } catch (e) {
     results.push([false, `harness: ${e.stack || e.message}`]);

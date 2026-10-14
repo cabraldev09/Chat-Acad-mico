@@ -9,7 +9,7 @@ import ShowUserService from "../UserServices/ShowUserService";
 import Whatsapp from "../../models/Whatsapp";
 import Tag from "../../models/Tag";
 import { portable } from "../../helpers/sqlDialect";
-import { Role, SEGMENTS_OF } from "../../helpers/Roles";
+import { Role, SEGMENTS_OF, isManagerRole } from "../../helpers/Roles";
 
 interface Request {
   searchParam?: string;
@@ -167,7 +167,7 @@ const ListTicketsService = async ({
 
   // the consultant and the tutor must not see each other's conversations, not even in the list:
   // own conversations plus the ones still waiting for someone (coordination also reads colleagues')
-  if (role && role !== "admin") {
+  if (role && !isManagerRole(role)) {
     const me = Number(userId);
     const segments = SEGMENTS_OF[role] || [];
     const bySegment: any[] = [{ userId: me }, { segment: { [Op.in]: segments } }];
