@@ -17,11 +17,13 @@ import { normalizeCpf } from "../../helpers/Cpf";
 import dispatchWebhook from "../WebhookServices/DispatchWebhook";
 import { computeScore } from "./LeadScore";
 import { logger } from "../../utils/logger";
+import Affiliate from "../../models/Affiliate";
 
 export const leadInclude = [
   { model: Course, as: "course", attributes: ["id", "name", "modality", "level"] },
   { model: LeadStage, as: "stage" },
   { model: User, as: "owner", attributes: ["id", "name"] },
+  { model: Affiliate, as: "affiliate", attributes: ["id", "name"] },
   { model: Contact, as: "contact", attributes: ["id", "name", "number", "profilePicUrl", "channel"] },
   { model: Tag, as: "tags", attributes: ["id", "name", "color"], through: { attributes: [] } },
   // only paid enrollment fees: lets cards show a "taxa paga" badge
@@ -109,6 +111,7 @@ export interface LeadInput {
   contactId?: number | null;
   consentAt?: Date | null;
   tagIds?: number[];
+  affiliateId?: number | null;
 }
 
 const FILL_FIELDS: Array<keyof LeadInput> = [
@@ -214,6 +217,7 @@ export const upsertLead = async (
     utmCampaign: input.utmCampaign,
     notes: input.notes,
     consentAt: input.consentAt || null,
+    affiliateId: input.affiliateId || null,
     stageId: stage.id,
     ownerId,
     contactId
@@ -221,6 +225,7 @@ export const upsertLead = async (
 
   if (input.tagIds?.length) await (created as any).$set("tags", input.tagIds);
   await addActivity(created.id, actorId, "system", `Lead criado${input.source ? ` via ${input.source}` : ""}`);
+  if (input.affiliateId) await addActivity(created.id, actorId, "system", "Indicação de afiliado: a produção dele é contada a partir desta matrícula");
   await rescore(created);
 
   const lead = (await loadLead(created.id)) as Lead;
@@ -272,6 +277,13 @@ export const changeStage = async (
     { from: from?.id, to: to.id }
   );
   await rescore(lead);
+
+  // affiliates earn on the enrolment, however the card got to "Matriculado"; undoing it cancels what was not paid
+  if (lead.affiliateId) {
+    const { recordBonus, cancelPendingBonus } = await import("../AffiliateServices/Bonus");
+    if (to.type === "won") await recordBonus(lead.id, "enrolled").catch(() => null);
+    else if (from?.type === "won") await cancelPendingBonus(lead.id).catch(() => null);
+  }
 
   const fresh = (await loadLead(lead.id)) as Lead;
   emitLead("update", fresh);

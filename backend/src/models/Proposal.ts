@@ -89,6 +89,10 @@ class Proposal extends Model<Proposal> {
   @Column
   createdBy: number;
 
+  // the affiliate behind the lead when the proposal was made
+  @Column
+  affiliateId: number;
+
   @BelongsTo(() => User, "createdBy")
   author: User;
 

@@ -284,6 +284,12 @@ export const markPaid = async (
   }
   await lead.update({ lastContactAt: new Date() });
 
+  // when the maintainer only pays affiliates after the fee is paid
+  if (lead.affiliateId) {
+    const { recordBonus } = await import("../AffiliateServices/Bonus");
+    await recordBonus(lead.id, "fee_paid").catch(() => null);
+  }
+
   const fresh = await loadLead(lead.id);
   getIO().emit("lead", { action: "update", lead: fresh });
   getIO().emit("payment", { paymentId: payment.id, leadId: lead.id, leadName: lead.name, amount: paidValue });

@@ -23,6 +23,10 @@ import * as Lead from "../controllers/LeadController";
 import * as Proposal from "../controllers/ProposalController";
 import * as Payment from "../controllers/PaymentController";
 import * as PoloCtl from "../controllers/PoloController";
+import * as Aff from "../controllers/AffiliateController";
+import * as AffMat from "../controllers/AffiliateMaterialController";
+import { affiliateUpload } from "../config/affiliateUpload";
+import { affiliateStaff, canAccessAffiliate } from "../helpers/Affiliates";
 
 const upload = multer({ ...uploadConfig, limits: { fileSize: 30 * 1024 * 1024 } });
 const certUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 1024 * 1024 } });
@@ -37,6 +41,38 @@ r.post("/uploads", isAuth, upload.single("file"), (req, res) =>
     mimetype: req.file?.mimetype
   })
 );
+
+// affiliates: people outside the team who refer students (consultants see their own)
+r.get("/affiliates", isAuth, affiliateStaff, Aff.index);
+r.get("/affiliates/ranking", isAuth, affiliateStaff, Aff.ranking);
+r.get("/affiliates/polos", isAuth, affiliateStaff, Aff.polos);
+r.post("/affiliates", isAuth, affiliateStaff, Aff.store);
+r.get("/affiliates/:id", isAuth, affiliateStaff, canAccessAffiliate, Aff.show);
+r.put("/affiliates/:id", isAuth, affiliateStaff, canAccessAffiliate, Aff.update);
+r.delete("/affiliates/:id", isAuth, isAdmin, Aff.remove);
+r.get("/affiliates/:id/summary", isAuth, affiliateStaff, canAccessAffiliate, Aff.summary);
+r.post("/affiliates/:id/rotate-token", isAuth, affiliateStaff, canAccessAffiliate, Aff.rotateToken);
+r.post("/affiliates/:id/referrals", isAuth, affiliateStaff, canAccessAffiliate, Aff.addReferral);
+r.post("/affiliates/:id/attach-lead", isAuth, affiliateStaff, canAccessAffiliate, Aff.attachLead);
+r.post("/affiliates/:id/send-portal", isAuth, affiliateStaff, canAccessAffiliate, Aff.sendPortal);
+r.post("/affiliates/:id/send-proposal", isAuth, affiliateStaff, canAccessAffiliate, Aff.sendProposal);
+r.get("/affiliate-rules", isAuth, affiliateStaff, Aff.getRulesRoute);
+r.put("/affiliate-rules", isAuth, isAdmin, Aff.putRules);
+r.get("/affiliate-bonuses", isAuth, affiliateStaff, Aff.listBonuses);
+r.get("/affiliate-bonuses/export.csv", isAuth, affiliateStaff, Aff.exportBonuses);
+r.put("/affiliate-bonuses/:id/:action", isAuth, isAdmin, Aff.bonusAction);
+r.get("/affiliate-materials", isAuth, affiliateStaff, AffMat.listMaterials);
+r.post("/affiliate-materials", isAuth, isAdmin, affiliateUpload.single("file"), AffMat.createMaterial);
+r.put("/affiliate-materials/:id", isAuth, isAdmin, affiliateUpload.single("file"), AffMat.updateMaterial);
+r.delete("/affiliate-materials/:id", isAuth, isAdmin, AffMat.removeMaterial);
+r.get("/affiliate-materials/:id/file", isAuth, affiliateStaff, AffMat.materialFile);
+r.post("/affiliate-materials/:id/release", isAuth, affiliateStaff, AffMat.releaseTo("material"));
+r.get("/affiliate-campaigns", isAuth, affiliateStaff, AffMat.listCampaigns);
+r.post("/affiliate-campaigns", isAuth, isAdmin, affiliateUpload.single("file"), AffMat.createCampaign);
+r.put("/affiliate-campaigns/:id", isAuth, isAdmin, affiliateUpload.single("file"), AffMat.updateCampaign);
+r.delete("/affiliate-campaigns/:id", isAuth, isAdmin, AffMat.removeCampaign);
+r.get("/affiliate-campaigns/:id/cover", isAuth, affiliateStaff, AffMat.campaignCover);
+r.post("/affiliate-campaigns/:id/release", isAuth, affiliateStaff, AffMat.releaseTo("campaign"));
 
 // tags
 r.get("/tags", isAuth, Tag.index);

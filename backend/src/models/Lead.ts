@@ -25,6 +25,7 @@ import LeadTag from "./LeadTag";
 import LeadActivity from "./LeadActivity";
 import LeadTask from "./LeadTask";
 import Payment from "./Payment";
+import Affiliate from "./Affiliate";
 import { maskCpf } from "../helpers/Cpf";
 
 @Table
@@ -186,6 +187,14 @@ class Lead extends Model<Lead> {
 
   @Column
   indicatedBy: number;
+
+  // the affiliate who referred this person (set only when the lead is created through the affiliate)
+  @ForeignKey(() => Affiliate)
+  @Column
+  affiliateId: number;
+
+  @BelongsTo(() => Affiliate)
+  affiliate: Affiliate;
 
   @Column
   slaAlertedAt: Date;

@@ -1,6 +1,7 @@
 import express, { Request, Response } from "express";
 
 import Course from "../models/Course";
+import Affiliate from "../models/Affiliate";
 import { getSetting } from "../helpers/AppSettings";
 import { normalizeEmail, normalizePhone } from "../helpers/Phone";
 import { upsertLead } from "../services/CrmServices/LeadCore";
@@ -26,15 +27,10 @@ const validToken = async (token: string): Promise<boolean> => {
 const esc = (s: string) =>
   String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
 
-router.get("/:token", async (req: Request, res: Response) => {
-  if (!(await validToken(req.params.token))) return res.status(404).send("Formulário indisponível");
-  const [title, color, courses] = await Promise.all([
-    getSetting("crm_form_title", "Quero conhecer a instituição"),
-    getSetting("crm_form_color", "#0B4279"),
-    Course.findAll({ where: { active: true }, order: [["name", "ASC"]] })
-  ]);
+const page = (opts: { title: string; color: string; courses: Course[]; sub: string }): string => {
+  const { title, color, courses } = opts;
   const opt = (arr: string[]) => arr.map(v => `<option>${esc(v)}</option>`).join("");
-  return res.type("html").send(`<!doctype html><html lang="pt-BR"><meta charset="utf-8">
+  return `<!doctype html><html lang="pt-BR"><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title>
 <style>
 :root{--c:${/^#[0-9a-f]{6}$/i.test(color) ? color : "#0B4279"}}
@@ -52,7 +48,7 @@ button:hover{filter:brightness(1.1)}button:active{transform:scale(.98)}button:di
 .hp{position:absolute;left:-9999px}.msg{padding:14px;border-radius:10px;font-size:14px;display:none}
 .ok{background:#dcfce7;color:#14532d}.err{background:#fee2e2;color:#7f1d1d}
 </style>
-<div class="wrap"><h1>${esc(title)}</h1><p class="sub">Preencha seus dados e um consultor fala com você.</p>
+<div class="wrap"><h1>${esc(title)}</h1><p class="sub">${esc(opts.sub)}</p>
 <form id="f" novalidate>
 <label>Nome completo<input name="name" required autocomplete="name"></label>
 <div class="row"><label>WhatsApp<input name="phone" required inputmode="tel" autocomplete="tel" placeholder="(11) 99999-0000"></label>
@@ -79,11 +75,21 @@ document.getElementById('f').addEventListener('submit',function(e){
   .then(function(r){if(r.s<300){ok.textContent=r.j.message;ok.style.display='block';f.reset();}else{er.textContent=r.j.error||'Não foi possível enviar.';er.style.display='block';}b.disabled=false})
   .catch(function(){er.textContent='Falha de conexão. Tente de novo.';er.style.display='block';b.disabled=false});
 });
-</script></html>`);
+</script></html>`;
+};
+
+router.get("/:token", async (req: Request, res: Response) => {
+  if (!(await validToken(req.params.token))) return res.status(404).send("Formulário indisponível");
+  const [title, color, courses] = await Promise.all([
+    getSetting("crm_form_title", "Quero conhecer a instituição"),
+    getSetting("crm_form_color", "#0B4279"),
+    Course.findAll({ where: { active: true }, order: [["name", "ASC"]] })
+  ]);
+  return res.type("html").send(page({ title, color, courses, sub: "Preencha seus dados e um consultor fala com você." }));
 });
 
-router.post("/:token/submit", express.json(), async (req: Request, res: Response) => {
-  if (!(await validToken(req.params.token))) return res.status(404).json({ error: "Formulário indisponível" });
+// validates the submission and creates (or enriches) the lead; the affiliate, when there is one, owns the referral
+const submit = async (req: Request, res: Response, affiliate: Affiliate | null) => {
   if (throttled(req.ip || "")) return res.status(429).json({ error: "Muitas tentativas. Aguarde alguns minutos." });
   const b = req.body || {};
   if (b.website) return res.json({ message: "Recebido" }); // honeypot: pretend success
@@ -103,14 +109,43 @@ router.post("/:token/submit", express.json(), async (req: Request, res: Response
     courseId: course ? course.id : null,
     modality: CRM_OPTIONS.modalities.includes(b.modality) ? b.modality : undefined,
     admissionType: CRM_OPTIONS.admissionTypes.includes(b.admissionType) ? b.admissionType : undefined,
-    source: "Site / formulário",
-    channel: "form",
+    source: affiliate ? "Indicação" : "Site / formulário",
+    channel: affiliate ? "affiliate" : "form",
     utmSource: clip(b.utm_source),
     utmMedium: clip(b.utm_medium),
     utmCampaign: clip(b.utm_campaign),
-    consentAt: new Date()
+    consentAt: new Date(),
+    ...(affiliate ? { affiliateId: affiliate.id, ownerId: affiliate.ownerId } : {})
   });
   return res.json({ message: await getSetting("crm_form_thanks", "Recebemos seus dados! Em breve um consultor entra em contato.") });
+};
+
+router.post("/:token/submit", express.json(), async (req: Request, res: Response) => {
+  if (!(await validToken(req.params.token))) return res.status(404).json({ error: "Formulário indisponível" });
+  return submit(req, res, null);
+});
+
+// Referral link of an affiliate (/r/CODE): the same form, and the lead is credited to the affiliate
+export const referralRouter = express.Router();
+
+const activeAffiliate = (code: string) =>
+  Affiliate.findOne({ where: { refCode: String(code || "").toUpperCase(), status: "active" } });
+
+referralRouter.get("/:code", async (req: Request, res: Response) => {
+  const aff = await activeAffiliate(req.params.code);
+  if (!aff) return res.status(404).send("Link indisponível");
+  const [title, color, courses] = await Promise.all([
+    getSetting("crm_form_title", "Quero conhecer a instituição"),
+    getSetting("crm_form_color", "#0B4279"),
+    Course.findAll({ where: { active: true }, order: [["name", "ASC"]] })
+  ]);
+  return res.type("html").send(page({ title, color, courses, sub: `Indicação de ${aff.name.split(" ")[0]}. Preencha seus dados e um consultor fala com você.` }));
+});
+
+referralRouter.post("/:code/submit", express.json(), async (req: Request, res: Response) => {
+  const aff = await activeAffiliate(req.params.code);
+  if (!aff) return res.status(404).json({ error: "Link indisponível" });
+  return submit(req, res, aff);
 });
 
 export default router;

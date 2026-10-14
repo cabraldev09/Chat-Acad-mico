@@ -262,7 +262,7 @@ const save = async (req: Request, existing?: Proposal) => {
     await existing.update(data);
     return existing;
   }
-  return Proposal.create({ ...data, leadId: lead.id, token: randomBytes(18).toString("hex"), createdBy: uid(req), status: "draft" });
+  return Proposal.create({ ...data, leadId: lead.id, affiliateId: lead.affiliateId || null, token: randomBytes(18).toString("hex"), createdBy: uid(req), status: "draft" });
 };
 
 const rebuild = async (p: Proposal) => {

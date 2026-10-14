@@ -1649,6 +1649,141 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(r2.status === 200 && r2.data.warnings.length === 0, `enroll later ${JSON.stringify(r2.data.warnings)}`);
       assert(sql(`SELECT CONCAT(status,'|',dueDate) FROM Payments WHERE leadId=${l2.id} ORDER BY id DESC LIMIT 1`) === `scheduled|${due}`, "fee not scheduled for the negotiated date");
     });
+    await test("affiliates: scoped to their consultant, portal without prices, material by audience, bonus once per enrolment", async () => {
+      const mkU = async (name, email) => (await http.post("/users", { name, email, password: "senha123", role: "consultor" }, auth())).data;
+      const ca = await mkU("Consultora A", "afil-a@x.com"), cb = await mkU("Consultor B", "afil-b@x.com");
+      const ta = (await http.post("/auth/login", { email: "afil-a@x.com", password: "senha123" })).data.token;
+      const tb = (await http.post("/auth/login", { email: "afil-b@x.com", password: "senha123" })).data.token;
+
+      // registering: the consultant becomes the follower; B does not see A's affiliate
+      const made = await http.post("/affiliates", { name: "Joana Indicadora", phone: "(69) 99999-1111", pixKeyType: "cpf", pixKey: "12345678900" }, asUser(ta));
+      assert(made.status === 201 && made.data.ownerId === ca.id && made.data.refCode && made.data.portalUrl.includes("/afiliado/"), `create ${made.status} ${JSON.stringify(made.data).slice(0, 200)}`);
+      const aff = made.data;
+      const second = (await http.post("/affiliates", { name: "Pedro do Outro", phone: "(69) 98888-2222" }, asUser(tb))).data;
+      assert((await http.get(`/affiliates/${aff.id}`, asUser(tb))).status === 403, "another consultant reads the affiliate");
+      assert(!(await http.get("/affiliates", asUser(tb))).data.some(a => a.id === aff.id), "list leaked an affiliate");
+      assert((await http.get("/affiliates", auth())).data.length >= 2, "admin does not see everyone");
+      const tutorTok = await (async () => {
+        await http.post("/users", { name: "Tutor Afil", email: "afil-tutor@x.com", password: "senha123", role: "tutor" }, auth());
+        return (await http.post("/auth/login", { email: "afil-tutor@x.com", password: "senha123" })).data.token;
+      })();
+      assert((await http.get("/affiliates", asUser(tutorTok))).status === 403, "a tutor reached the affiliates");
+
+      // general rule: R$ 80 per enrolment
+      assert((await http.put("/affiliate-rules", { mode: "fixed", value: 80, trigger: "enrolled", kind: "pix" }, auth())).status === 200, "rules");
+      assert((await http.put("/affiliate-rules", { value: 10 }, asUser(ta))).status === 403, "consultant changed the rules");
+
+      // material: never prices
+      const bad = await http.post("/affiliate-materials", { title: "Texto", kind: "copy", copyText: "Mensalidade a partir de R$ 500" }, auth());
+      assert(bad.status === 400, `price accepted in the material ${bad.status}`);
+      const pub = (await http.post("/affiliate-materials", { title: "Texto de divulgação", kind: "copy", copyText: "Faça sua graduação a distância!", audience: "all" }, auth())).data;
+      const onlyB = (await http.post("/affiliate-materials", { title: "Só para o Pedro", kind: "copy", copyText: "Exclusivo", audience: "restricted", affiliateIds: [second.id] }, auth())).data;
+      assert(pub.id && onlyB.id, "materials not created");
+      // a real file goes through multipart and is delivered by the portal only
+      const fd = new FormData();
+      fd.append("title", "Banner Graduação");
+      fd.append("kind", "banner");
+      fd.append("audience", "all");
+      fd.append("file", Buffer.from("89504e470d0a1a0a", "hex"), { filename: "banner.png", contentType: "image/png" });
+      const up = await http.post("/affiliate-materials", fd, { headers: { Authorization: `Bearer ${token}`, ...fd.getHeaders() } });
+      const banner = up.data;
+      assert(up.status === 201 && banner.hasFile, `banner upload ${up.status}`);
+      const badType = new FormData();
+      badType.append("title", "Executável");
+      badType.append("file", Buffer.from("x"), { filename: "virus.exe", contentType: "application/x-msdownload" });
+      assert((await http.post("/affiliate-materials", badType, { headers: { Authorization: `Bearer ${token}`, ...badType.getHeaders() } })).status === 400, ".exe accepted");
+
+      // a campaign for everyone, paying R$ 120 per enrolment while it runs
+      const camp = (await http.post("/affiliate-campaigns", { title: "Matrícula premiada", description: "Bônus maior este mês", audience: "all", bonusValue: 120, startsAt: new Date(Date.now() - 86400000).toISOString(), endsAt: new Date(Date.now() + 5 * 86400000).toISOString() }, auth())).data;
+      assert(camp.id, "campaign not created");
+      const past = (await http.post("/affiliate-campaigns", { title: "Campanha antiga", audience: "all", startsAt: new Date(Date.now() - 20 * 86400000).toISOString(), endsAt: new Date(Date.now() - 10 * 86400000).toISOString() }, auth())).data;
+
+      // the portal: no login, no prices, only what was released
+      const portal = await http.get(`/affiliate-portal/${aff.portalToken}`);
+      assert(portal.status === 200, `portal ${portal.status}`);
+      const raw = JSON.stringify(portal.data);
+      assert(!/monthlyFee|mensalidade|1073/i.test(raw), "the portal exposes a price");
+      assert(portal.data.materials.some(m => m.id === pub.id) && portal.data.materials.some(m => m.id === banner.id), "material missing in the portal");
+      assert(!portal.data.materials.some(m => m.id === onlyB.id), "restricted material leaked to another affiliate");
+      assert(portal.data.campaigns.some(c => c.id === camp.id) && !portal.data.campaigns.some(c => c.id === past.id), "campaign window not respected");
+      assert(portal.data.courses.some(g => g.modality === "EAD" && g.courses.length > 0), "course list missing");
+      const secondPortal = await http.get(`/affiliate-portal/${second.portalToken}`);
+      assert(secondPortal.data.materials.some(m => m.id === onlyB.id), "released material missing for its affiliate");
+      const file = await fetch(`${API}/affiliate-portal/${aff.portalToken}/files/${banner.id}`);
+      assert(file.status === 200 && (file.headers.get("content-type") || "").includes("image/png"), `portal file ${file.status}`);
+      assert((await fetch(`${API}/affiliate-portal/${aff.portalToken}/files/${onlyB.id}`)).status === 404, "file of another audience served");
+      assert((await http.get(`/affiliate-portal/${"0".repeat(48)}`)).status === 404, "wrong token answered");
+
+      // a consultant releases a restricted material to their own affiliate, never to someone else's
+      sql(`UPDATE AffiliateMaterials SET audience='restricted' WHERE id=${pub.id}`);
+      assert(!(await http.get(`/affiliate-portal/${aff.portalToken}`)).data.materials.some(m => m.id === pub.id), "restricted material still visible");
+      assert((await http.post(`/affiliate-materials/${pub.id}/release`, { affiliateIds: [aff.id, second.id] }, asUser(ta))).status === 403, "consultant released a material they cannot see");
+      sql(`INSERT INTO AffiliateAudiences (targetType, targetId, ownerId, createdAt, updatedAt) VALUES ('material', ${pub.id}, ${ca.id}, NOW(), NOW())`);
+      const rel = await http.post(`/affiliate-materials/${pub.id}/release`, { affiliateIds: [aff.id, second.id] }, asUser(ta));
+      assert(rel.status === 200 && rel.data.released.length === 1 && rel.data.released[0] === aff.id, `release ${JSON.stringify(rel.data)}`);
+      assert((await http.get(`/affiliate-portal/${aff.portalToken}`)).data.materials.some(m => m.id === pub.id), "released material not visible");
+      assert(!(await http.get(`/affiliate-portal/${second.portalToken}`)).data.materials.some(m => m.id === pub.id), "released to the wrong affiliate");
+
+      // referral from the portal: the lead belongs to the affiliate's consultant
+      const ref = await http.post(`/affiliate-portal/${aff.portalToken}/referrals`, { name: "Maria Indicada", phone: "(69) 97777-3333", consent: true }, {});
+      assert(ref.status === 201 && ref.data.created, `portal referral ${ref.status}`);
+      const leadId = sql(`SELECT id FROM Leads WHERE name='Maria Indicada'`);
+      assert(sql(`SELECT CONCAT(affiliateId,'|',ownerId,'|',source) FROM Leads WHERE id=${leadId}`) === `${aff.id}|${ca.id}|Indicação`, "lead not credited to the affiliate");
+      assert((await http.post(`/affiliate-portal/${aff.portalToken}/referrals`, { name: "Sem Aceite", phone: "(69) 97777-4444" })).status === 400, "referral without consent");
+      // the same person again is not credited twice
+      const again = await http.post(`/affiliate-portal/${second.portalToken}/referrals`, { name: "Maria Indicada", phone: "(69) 97777-3333", consent: true });
+      assert(again.status === 200 && !again.data.created, "duplicate referral credited");
+      assert(sql(`SELECT affiliateId FROM Leads WHERE id=${leadId}`) === String(aff.id), "first affiliate lost the lead");
+
+      // referral link of the affiliate (/r/CODE)
+      const form = await fetch(`${API}/r/${aff.refCode}`);
+      assert(form.status === 200 && (await form.text()).includes("Joana"), "referral page");
+      const sub = await fetch(`${API}/r/${aff.refCode}/submit`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: "Carlos Link", phone: "(69) 96666-5555", consent: true }) });
+      assert(sub.status === 200, `referral submit ${sub.status}`);
+      assert(sql(`SELECT affiliateId FROM Leads WHERE name='Carlos Link'`) === String(aff.id), "link lead not credited");
+
+      // proposals keep the affiliate
+      const prop = await http.post("/proposals", { leadId: Number(leadId), params: { gross: 1000, firstMonthly: 200, semesters: 6, startYear: 2026, startSemester: 2 } }, asUser(ta));
+      assert(prop.status === 201, `proposal ${prop.status}`);
+      assert(sql(`SELECT affiliateId FROM Proposals WHERE id=${prop.data.id}`) === String(aff.id), "proposal lost the affiliate");
+
+      // enrolment: one bonus line, whichever way the card got to "Matriculado"; the campaign pays R$ 120
+      const stages = (await http.get("/lead-stages", auth())).data;
+      const won = stages.find(x => x.type === "won"), firstStage = stages.find(x => x.type === "open");
+      assert((await http.put(`/leads/${leadId}/stage`, { stageId: won.id }, asUser(ta))).status === 200, "won");
+      assert(sql(`SELECT CONCAT(COUNT(*),'|',MAX(amount),'|',MAX(status),'|',MAX(kind)) FROM AffiliateBonuses WHERE leadId=${leadId}`) === "1|120.00|pending|pix", "bonus line wrong");
+      await http.put(`/leads/${leadId}/stage`, { stageId: firstStage.id }, asUser(ta));
+      assert(sql(`SELECT status FROM AffiliateBonuses WHERE leadId=${leadId}`) === "cancelled", "undoing the enrolment did not cancel the bonus");
+      await http.put(`/leads/${leadId}/stage`, { stageId: won.id }, asUser(ta));
+      assert(sql(`SELECT CONCAT(COUNT(*),'|',MAX(status)) FROM AffiliateBonuses WHERE leadId=${leadId}`) === "1|pending", "re-enrolment must reuse the same line");
+
+      // numbers of production
+      const sum = (await http.get(`/affiliates/${aff.id}/summary`, asUser(ta))).data;
+      assert(sum.affiliate.stats.referrals === 2 && sum.affiliate.stats.enrolled === 1 && sum.affiliate.stats.proposals === 1 && sum.affiliate.stats.bonusPending === 120, `stats ${JSON.stringify(sum.affiliate.stats)}`);
+      const rank = (await http.get("/affiliates/ranking", auth())).data;
+      assert(rank.affiliates[0].id === aff.id, "ranking order");
+
+      // paying: only the admin; the CSV carries the Pix key
+      const bonusId = sql(`SELECT id FROM AffiliateBonuses WHERE leadId=${leadId}`);
+      assert((await http.put(`/affiliate-bonuses/${bonusId}/pay`, {}, asUser(ta))).status === 403, "consultant paid a bonus");
+      assert((await http.put(`/affiliate-bonuses/${bonusId}/approve`, {}, auth())).status === 200, "approve");
+      const paid = await http.put(`/affiliate-bonuses/${bonusId}/pay`, { paymentRef: "Pix 123" }, auth());
+      assert(paid.status === 200 && paid.data.status === "paid", "pay");
+      assert((await http.put(`/affiliate-bonuses/${bonusId}/cancel`, {}, auth())).status === 400, "a paid bonus was cancelled");
+      const csv = await http.get("/affiliate-bonuses/export.csv", auth());
+      assert(csv.status === 200 && String(csv.data).includes("12345678900") && String(csv.data).includes("120,00"), "csv content");
+      assert((await http.get("/affiliate-bonuses", asUser(tb))).data.rows.length === 0, "another consultant sees the bonus");
+      assert((await http.get(`/affiliate-portal/${aff.portalToken}`)).data.stats.bonusPaid === 120, "portal does not show the paid bonus");
+      assert((await http.delete(`/affiliates/${aff.id}`, auth())).status === 200, "delete after everything is paid");
+
+      // the link can be cut: new token, paused affiliate
+      const tok = second.portalToken;
+      const rot = await http.post(`/affiliates/${second.id}/rotate-token`, {}, asUser(tb));
+      assert(rot.status === 200 && rot.data.portalToken !== tok, "rotate");
+      assert((await http.get(`/affiliate-portal/${tok}`)).status === 404, "the old link still works");
+      await http.put(`/affiliates/${second.id}`, { status: "paused" }, asUser(tb));
+      assert((await http.get(`/affiliate-portal/${rot.data.portalToken}`)).status === 404, "paused affiliate still has access");
+    });
     await test("login is rate limited", async () => {
       let limited = false;
       for (let i = 0; i < 40 && !limited; i += 1) {

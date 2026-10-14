@@ -18,3 +18,4 @@ yarn-error.log
 .wwebjs_auth/
 .zapo_auth/
 secrets/
+affiliate-files/

@@ -14,7 +14,8 @@ import routes from "./routes";
 import { logger } from "./utils/logger";
 import webchatRoutes from "./routes/webchatRoutes";
 import metaWebhookRoutes from "./routes/metaWebhookRoutes";
-import leadFormRoutes from "./routes/leadFormRoutes";
+import leadFormRoutes, { referralRouter } from "./routes/leadFormRoutes";
+import affiliatePortalRoutes from "./routes/affiliatePortalRoutes";
 import proposalPublicRoutes from "./routes/proposalPublicRoutes";
 import efiWebhookRoutes from "./routes/efiWebhookRoutes";
 import securityHeaders from "./middleware/securityHeaders";
@@ -52,6 +53,8 @@ app.use("/auth/refresh_token", rateLimit({ windowMs: 15 * 60 * 1000, max: 400 })
 // Public endpoints (embedded web chat, provider webhooks): no cookies, any origin
 app.use("/webchat", publicLimiter, cors({ origin: true }), express.json(), webchatRoutes);
 app.use("/leadform", publicLimiter, cors({ origin: true }), leadFormRoutes);
+app.use("/r", publicLimiter, cors({ origin: true }), referralRouter);
+app.use("/affiliate-portal", publicLimiter, cors({ origin: true }), affiliatePortalRoutes);
 app.use("/p", publicLimiter, proposalPublicRoutes);
 app.use(
   "/webhooks",

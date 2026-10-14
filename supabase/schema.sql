@@ -27,6 +27,218 @@ SET default_tablespace = '';
 SET default_table_access_method = heap;
 
 --
+-- Name: AffiliateAudiences; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."AffiliateAudiences" (
+    id integer NOT NULL,
+    "targetType" character varying(255) NOT NULL,
+    "targetId" integer NOT NULL,
+    "ownerId" integer,
+    "affiliateId" integer,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: AffiliateAudiences_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."AffiliateAudiences_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: AffiliateAudiences_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."AffiliateAudiences_id_seq" OWNED BY public."AffiliateAudiences".id;
+
+
+--
+-- Name: AffiliateBonuses; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."AffiliateBonuses" (
+    id integer NOT NULL,
+    "affiliateId" integer NOT NULL,
+    "leadId" integer NOT NULL,
+    "campaignId" integer,
+    kind character varying(255) DEFAULT 'bonus'::character varying NOT NULL,
+    amount numeric(10,2) DEFAULT 0 NOT NULL,
+    status character varying(255) DEFAULT 'pending'::character varying NOT NULL,
+    reason character varying(255),
+    "approvedBy" integer,
+    "approvedAt" timestamp with time zone,
+    "paidBy" integer,
+    "paidAt" timestamp with time zone,
+    "paymentRef" character varying(255),
+    note text,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: AffiliateBonuses_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."AffiliateBonuses_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: AffiliateBonuses_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."AffiliateBonuses_id_seq" OWNED BY public."AffiliateBonuses".id;
+
+
+--
+-- Name: AffiliateCampaigns; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."AffiliateCampaigns" (
+    id integer NOT NULL,
+    title character varying(255) NOT NULL,
+    description text,
+    "coverFile" character varying(255),
+    "startsAt" timestamp with time zone,
+    "endsAt" timestamp with time zone,
+    audience character varying(255) DEFAULT 'all'::character varying NOT NULL,
+    "bonusValue" numeric(10,2),
+    active boolean DEFAULT true NOT NULL,
+    "createdBy" integer,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: AffiliateCampaigns_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."AffiliateCampaigns_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: AffiliateCampaigns_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."AffiliateCampaigns_id_seq" OWNED BY public."AffiliateCampaigns".id;
+
+
+--
+-- Name: AffiliateMaterials; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."AffiliateMaterials" (
+    id integer NOT NULL,
+    title character varying(255) NOT NULL,
+    kind character varying(255) DEFAULT 'other'::character varying NOT NULL,
+    description text,
+    "fileName" character varying(255),
+    "originalName" character varying(255),
+    "mimeType" character varying(255),
+    "fileSize" integer,
+    "externalUrl" text,
+    "copyText" text,
+    "courseId" integer,
+    "campaignId" integer,
+    audience character varying(255) DEFAULT 'all'::character varying NOT NULL,
+    active boolean DEFAULT true NOT NULL,
+    "sortOrder" integer DEFAULT 0 NOT NULL,
+    downloads integer DEFAULT 0 NOT NULL,
+    "createdBy" integer,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: AffiliateMaterials_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."AffiliateMaterials_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: AffiliateMaterials_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."AffiliateMaterials_id_seq" OWNED BY public."AffiliateMaterials".id;
+
+
+--
+-- Name: Affiliates; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."Affiliates" (
+    id integer NOT NULL,
+    name character varying(255) NOT NULL,
+    phone character varying(255),
+    email character varying(255),
+    document character varying(255),
+    city character varying(255),
+    "ownerId" integer,
+    "poloId" integer,
+    "refCode" character varying(255) NOT NULL,
+    "portalToken" character varying(255) NOT NULL,
+    "pixKeyType" character varying(255),
+    "pixKey" character varying(255),
+    status character varying(255) DEFAULT 'active'::character varying NOT NULL,
+    notes text,
+    "bonusValue" numeric(10,2),
+    "lastAccessAt" timestamp with time zone,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: Affiliates_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."Affiliates_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: Affiliates_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."Affiliates_id_seq" OWNED BY public."Affiliates".id;
+
+
+--
 -- Name: AiAgents; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -795,7 +1007,8 @@ CREATE TABLE public."Leads" (
     "onboardingAlertAt" timestamp with time zone,
     "indicatedBy" integer,
     "isHistorical" boolean DEFAULT false NOT NULL,
-    "slaAlertedAt" timestamp with time zone
+    "slaAlertedAt" timestamp with time zone,
+    "affiliateId" integer
 );
 
 
@@ -1082,7 +1295,8 @@ CREATE TABLE public."Proposals" (
     "institutionId" integer,
     "createdBy" integer,
     "createdAt" timestamp with time zone NOT NULL,
-    "updatedAt" timestamp with time zone NOT NULL
+    "updatedAt" timestamp with time zone NOT NULL,
+    "affiliateId" integer
 );
 
 
@@ -1579,6 +1793,41 @@ ALTER SEQUENCE public."WppKeys_id_seq" OWNED BY public."WppKeys".id;
 
 
 --
+-- Name: AffiliateAudiences id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AffiliateAudiences" ALTER COLUMN id SET DEFAULT nextval('public."AffiliateAudiences_id_seq"'::regclass);
+
+
+--
+-- Name: AffiliateBonuses id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AffiliateBonuses" ALTER COLUMN id SET DEFAULT nextval('public."AffiliateBonuses_id_seq"'::regclass);
+
+
+--
+-- Name: AffiliateCampaigns id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AffiliateCampaigns" ALTER COLUMN id SET DEFAULT nextval('public."AffiliateCampaigns_id_seq"'::regclass);
+
+
+--
+-- Name: AffiliateMaterials id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AffiliateMaterials" ALTER COLUMN id SET DEFAULT nextval('public."AffiliateMaterials_id_seq"'::regclass);
+
+
+--
+-- Name: Affiliates id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."Affiliates" ALTER COLUMN id SET DEFAULT nextval('public."Affiliates_id_seq"'::regclass);
+
+
+--
 -- Name: AiAgents id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -1821,6 +2070,70 @@ ALTER TABLE ONLY public."Whatsapps" ALTER COLUMN id SET DEFAULT nextval('public.
 --
 
 ALTER TABLE ONLY public."WppKeys" ALTER COLUMN id SET DEFAULT nextval('public."WppKeys_id_seq"'::regclass);
+
+
+--
+-- Name: AffiliateAudiences AffiliateAudiences_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AffiliateAudiences"
+    ADD CONSTRAINT "AffiliateAudiences_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: AffiliateBonuses AffiliateBonuses_leadId_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AffiliateBonuses"
+    ADD CONSTRAINT "AffiliateBonuses_leadId_key" UNIQUE ("leadId");
+
+
+--
+-- Name: AffiliateBonuses AffiliateBonuses_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AffiliateBonuses"
+    ADD CONSTRAINT "AffiliateBonuses_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: AffiliateCampaigns AffiliateCampaigns_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AffiliateCampaigns"
+    ADD CONSTRAINT "AffiliateCampaigns_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: AffiliateMaterials AffiliateMaterials_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AffiliateMaterials"
+    ADD CONSTRAINT "AffiliateMaterials_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: Affiliates Affiliates_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."Affiliates"
+    ADD CONSTRAINT "Affiliates_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: Affiliates Affiliates_portalToken_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."Affiliates"
+    ADD CONSTRAINT "Affiliates_portalToken_key" UNIQUE ("portalToken");
+
+
+--
+-- Name: Affiliates Affiliates_refCode_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."Affiliates"
+    ADD CONSTRAINT "Affiliates_refCode_key" UNIQUE ("refCode");
 
 
 --
@@ -2272,6 +2585,27 @@ ALTER TABLE ONLY public."WppKeys"
 
 
 --
+-- Name: affiliate_audiences_target_type_target_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX affiliate_audiences_target_type_target_id ON public."AffiliateAudiences" USING btree ("targetType", "targetId");
+
+
+--
+-- Name: affiliate_bonuses_affiliate_id_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX affiliate_bonuses_affiliate_id_status ON public."AffiliateBonuses" USING btree ("affiliateId", status);
+
+
+--
+-- Name: affiliates_owner_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX affiliates_owner_id ON public."Affiliates" USING btree ("ownerId");
+
+
+--
 -- Name: ai_learnings_agent_id_status; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2304,6 +2638,13 @@ CREATE INDEX kb_chunks_document_id ON public."KbChunks" USING btree ("documentId
 --
 
 CREATE INDEX kb_chunks_tsv_idx ON public."KbChunks" USING gin (tsv);
+
+
+--
+-- Name: leads_affiliate_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX leads_affiliate_id ON public."Leads" USING btree ("affiliateId");
 
 
 --
@@ -2384,6 +2725,13 @@ CREATE UNIQUE INDEX proposal_template_institutions_template_id_institution_id ON
 
 
 --
+-- Name: proposals_affiliate_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX proposals_affiliate_id ON public."Proposals" USING btree ("affiliateId");
+
+
+--
 -- Name: ticket_events_ticket_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2402,6 +2750,110 @@ CREATE INDEX tickets_lead_id ON public."Tickets" USING btree ("leadId");
 --
 
 CREATE UNIQUE INDEX wpp_keys_connection_type_key_unique ON public."WppKeys" USING btree ("connectionId", type, "keyId");
+
+
+--
+-- Name: AffiliateAudiences AffiliateAudiences_affiliateId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AffiliateAudiences"
+    ADD CONSTRAINT "AffiliateAudiences_affiliateId_fkey" FOREIGN KEY ("affiliateId") REFERENCES public."Affiliates"(id) ON DELETE CASCADE;
+
+
+--
+-- Name: AffiliateAudiences AffiliateAudiences_ownerId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AffiliateAudiences"
+    ADD CONSTRAINT "AffiliateAudiences_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES public."Users"(id) ON DELETE CASCADE;
+
+
+--
+-- Name: AffiliateBonuses AffiliateBonuses_affiliateId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AffiliateBonuses"
+    ADD CONSTRAINT "AffiliateBonuses_affiliateId_fkey" FOREIGN KEY ("affiliateId") REFERENCES public."Affiliates"(id) ON DELETE CASCADE;
+
+
+--
+-- Name: AffiliateBonuses AffiliateBonuses_approvedBy_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AffiliateBonuses"
+    ADD CONSTRAINT "AffiliateBonuses_approvedBy_fkey" FOREIGN KEY ("approvedBy") REFERENCES public."Users"(id) ON DELETE SET NULL;
+
+
+--
+-- Name: AffiliateBonuses AffiliateBonuses_campaignId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AffiliateBonuses"
+    ADD CONSTRAINT "AffiliateBonuses_campaignId_fkey" FOREIGN KEY ("campaignId") REFERENCES public."AffiliateCampaigns"(id) ON DELETE SET NULL;
+
+
+--
+-- Name: AffiliateBonuses AffiliateBonuses_leadId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AffiliateBonuses"
+    ADD CONSTRAINT "AffiliateBonuses_leadId_fkey" FOREIGN KEY ("leadId") REFERENCES public."Leads"(id) ON DELETE CASCADE;
+
+
+--
+-- Name: AffiliateBonuses AffiliateBonuses_paidBy_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AffiliateBonuses"
+    ADD CONSTRAINT "AffiliateBonuses_paidBy_fkey" FOREIGN KEY ("paidBy") REFERENCES public."Users"(id) ON DELETE SET NULL;
+
+
+--
+-- Name: AffiliateCampaigns AffiliateCampaigns_createdBy_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AffiliateCampaigns"
+    ADD CONSTRAINT "AffiliateCampaigns_createdBy_fkey" FOREIGN KEY ("createdBy") REFERENCES public."Users"(id) ON DELETE SET NULL;
+
+
+--
+-- Name: AffiliateMaterials AffiliateMaterials_campaignId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AffiliateMaterials"
+    ADD CONSTRAINT "AffiliateMaterials_campaignId_fkey" FOREIGN KEY ("campaignId") REFERENCES public."AffiliateCampaigns"(id) ON DELETE SET NULL;
+
+
+--
+-- Name: AffiliateMaterials AffiliateMaterials_courseId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AffiliateMaterials"
+    ADD CONSTRAINT "AffiliateMaterials_courseId_fkey" FOREIGN KEY ("courseId") REFERENCES public."Courses"(id) ON DELETE SET NULL;
+
+
+--
+-- Name: AffiliateMaterials AffiliateMaterials_createdBy_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AffiliateMaterials"
+    ADD CONSTRAINT "AffiliateMaterials_createdBy_fkey" FOREIGN KEY ("createdBy") REFERENCES public."Users"(id) ON DELETE SET NULL;
+
+
+--
+-- Name: Affiliates Affiliates_ownerId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."Affiliates"
+    ADD CONSTRAINT "Affiliates_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES public."Users"(id) ON DELETE SET NULL;
+
+
+--
+-- Name: Affiliates Affiliates_poloId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."Affiliates"
+    ADD CONSTRAINT "Affiliates_poloId_fkey" FOREIGN KEY ("poloId") REFERENCES public."Polos"(id) ON DELETE SET NULL;
 
 
 --
@@ -2565,6 +3017,14 @@ ALTER TABLE ONLY public."LeadTasks"
 
 
 --
+-- Name: Leads Leads_affiliateId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."Leads"
+    ADD CONSTRAINT "Leads_affiliateId_fkey" FOREIGN KEY ("affiliateId") REFERENCES public."Affiliates"(id) ON DELETE SET NULL;
+
+
+--
 -- Name: Leads Leads_contactId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2690,6 +3150,14 @@ ALTER TABLE ONLY public."ProposalTemplateInstitutions"
 
 ALTER TABLE ONLY public."ProposalTemplates"
     ADD CONSTRAINT "ProposalTemplates_institutionId_fkey" FOREIGN KEY ("institutionId") REFERENCES public."Institutions"(id) ON DELETE SET NULL;
+
+
+--
+-- Name: Proposals Proposals_affiliateId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."Proposals"
+    ADD CONSTRAINT "Proposals_affiliateId_fkey" FOREIGN KEY ("affiliateId") REFERENCES public."Affiliates"(id) ON DELETE SET NULL;
 
 
 --
@@ -3160,6 +3628,7 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261030000004-history-and-pictures.
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261031000001-message-edited.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261031000002-ticket-last-message-state.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261101000001-ticket-last-message-backfill.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261101000002-affiliates.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

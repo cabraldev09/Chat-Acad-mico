@@ -41,6 +41,11 @@ import AiLearning from "../models/AiLearning";
 import Polo from "../models/Polo";
 import PoloMember from "../models/PoloMember";
 import ProposalTemplateInstitution from "../models/ProposalTemplateInstitution";
+import Affiliate from "../models/Affiliate";
+import AffiliateCampaign from "../models/AffiliateCampaign";
+import AffiliateMaterial from "../models/AffiliateMaterial";
+import AffiliateAudience from "../models/AffiliateAudience";
+import AffiliateBonus from "../models/AffiliateBonus";
 
 // eslint-disable-next-line
 const dbConfig = require("../config/database");
@@ -90,7 +95,12 @@ const models = [
   AiLearning,
   Polo,
   PoloMember,
-  ProposalTemplateInstitution
+  ProposalTemplateInstitution,
+  Affiliate,
+  AffiliateCampaign,
+  AffiliateMaterial,
+  AffiliateAudience,
+  AffiliateBonus
 ];
 
 sequelize.addModels(models);
