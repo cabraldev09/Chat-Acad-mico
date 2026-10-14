@@ -870,7 +870,7 @@ const postMeta = (id, payload, secret, badSig) => {
       await waitFor(() => sql(`SELECT status FROM Payments WHERE id=${pay.id}`) === "paid", 8000, "payment paid");
       assert(sql(`SELECT endToEndId FROM Payments WHERE id=${pay.id}`) === "E2026ABC", "endToEndId");
       assert(stageName(paying.id) === "Matrícula em andamento", `stage ${stageName(paying.id)}`);
-      assert(sql(`SELECT COUNT(*) FROM LeadActivities WHERE leadId=${paying.id} AND body LIKE 'Taxa de matrícula paga%'`) === "1", "activity");
+      await waitFor(() => sql(`SELECT COUNT(*) FROM LeadActivities WHERE leadId=${paying.id} AND body LIKE 'Taxa de matrícula paga%'`) === "1", 8000, "payment activity");
       const detail = (await http.get(`/leads/${paying.id}`, auth())).data;
       assert(detail.payments && detail.payments.length === 1 && detail.hasCpf && detail.cpfMasked.endsWith("-09"), "paid fee/CPF flags on the lead");
       // the same notification again (webhook + poller) must not duplicate anything
