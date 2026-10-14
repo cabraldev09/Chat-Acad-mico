@@ -97,7 +97,8 @@ app.use(async (err: Error, req: Request, res: Response, _: NextFunction) => {
     return res.status(err.statusCode).json({ error: err.message });
   }
 
-  logger.error(err);
+  // one line that names the request, so a 500 on the screen can be found in the log
+  logger.error({ request: `${req.method} ${req.originalUrl}`, message: err.message, err });
   return res.status(500).json({ error: "Internal server error" });
 });
 

@@ -42,6 +42,11 @@ module.exports = {
   dialectOptions: useSsl
     ? { ssl: { require: true, rejectUnauthorized: false } }
     : {},
-  pool: { max: Number(process.env.DB_POOL_MAX || 10), idle: 10000 },
+  // Supabase's session pooler allows only ~15 simultaneous connections per project, and a deploy briefly
+  // runs two copies of the API: keep the pool small there
+  pool: {
+    max: Number(process.env.DB_POOL_MAX || (/pooler\.supabase\.com/.test(process.env.DATABASE_URL || "") ? 4 : 10)),
+    idle: 10000
+  },
   logging: false
 };
