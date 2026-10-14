@@ -8,6 +8,10 @@ import { BellOff, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Clock3,
 import { AuthContext } from "../../context/Auth/AuthContext";
 import openSocket from "../../services/socket-io";
 import api from "../../services/api";
+import Management from "./Management";
+import MyDay from "./MyDay";
+import { Insights, hm } from "./shared";
+import { isManager } from "../../utils/access";
 import toastError from "../../errors/toastError";
 
 // Home. "Agora" (what needs attention right now) is kept apart from the chosen period (what happened), and the period
@@ -104,15 +108,35 @@ const Dashboard = () => {
   const [date, setDate] = useState("");
   const [days, setDays] = useState(1);
   const [data, setData] = useState(null);
+  const manager = isManager(user);
+  const [tab, setTab] = useState("geral");
+  const [mgmt, setMgmt] = useState(null);
+  const [myDay, setMyDay] = useState(null);
+
+  const loadExtra = useCallback(async () => {
+    try {
+      if (manager && tab === "gestao") {
+        const { data: m } = await api.get("/dashboard/management", { params: { date: date || undefined, days } });
+        setMgmt(m);
+      }
+      if (!manager) {
+        const { data: d } = await api.get("/dashboard/me");
+        setMyDay(d);
+      }
+    } catch (err) {
+      toastError(err);
+    }
+  }, [manager, tab, date, days]);
 
   const load = useCallback(async () => {
+    loadExtra();
     try {
       const { data: d } = await api.get("/dashboard", { params: { date: date || undefined, days } });
       setData(d);
     } catch (err) {
       toastError(err);
     }
-  }, [date, days]);
+  }, [date, days, loadExtra]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
@@ -188,8 +212,21 @@ const Dashboard = () => {
         </div>
       </div>
 
+      {manager && (
+        <div className={classes.seg} role="tablist" aria-label="Visão" style={{ marginBottom: 20 }}>
+          {[["geral", "Visão geral"], ["gestao", "Gestão"]].map(([k, l]) => (
+            <button key={k} type="button" role="tab" aria-selected={tab === k} className={`${classes.segBtn} ${tab === k ? classes.segOn : ""}`} onClick={() => setTab(k)}>{l}</button>
+          ))}
+        </div>
+      )}
+      {!manager && <MyDay data={myDay} />}
+
+      {manager && tab === "gestao" ? (
+        <Management data={mgmt} sla={mgmt ? mgmt.slaMinutes : 15} />
+      ) : (
       <div className={classes.layout}>
         <div className={classes.stack}>
+          {data && data.insights && data.insights.length > 0 && <Insights items={data.insights} />}
           <div className={classes.band}>
             <div className={classes.cell}>
               <div className={classes.cellLabel}><Users size={14} /> Atendimentos</div>
@@ -219,9 +256,13 @@ const Dashboard = () => {
               <div className={classes.cellNote}>{p ? `${p.closed} finalizadas` : ""}</div>
             </div>
             <div className={classes.cell}>
-              <div className={classes.cellLabel}><Timer size={14} /> 1ª resposta</div>
-              <div className={classes.cellValue}>{p && p.avgFirstResponse !== null ? minutes(p.avgFirstResponse) : "—"}</div>
-              <div className={classes.cellNote}>{p && p.avgFirstResponse === null ? "sem respostas no período" : "média, em horário de trabalho"}</div>
+              <div className={classes.cellLabel}><Timer size={14} /> Tempo de resposta</div>
+              <div className={classes.cellValue}>{p && p.response && p.response.median !== null ? hm(p.response.median) : "—"}</div>
+              <div className={classes.cellNote}>
+                {p && p.response && p.response.count
+                  ? `mediana · ${p.response.withinSlaPct}% em até ${p.response.slaMinutes} min${p.response.p90 !== null ? ` · P90 ${hm(p.response.p90)}` : ""}`
+                  : "sem respostas no período"}
+              </div>
             </div>
           </div>
 
@@ -324,6 +365,7 @@ const Dashboard = () => {
           </div>
         </div>
       </div>
+      )}
     </div>
   );
 };
