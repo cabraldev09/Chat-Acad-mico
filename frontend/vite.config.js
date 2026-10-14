@@ -60,12 +60,14 @@ export default defineConfig({
     sourcemap: true,
     rollupOptions: {
       output: {
-        // stable vendor files cache well between deploys; recharts is left to the bundler so it stays with the pages that draw charts
-        manualChunks(id) {
-          if (!id.includes("node_modules")) return undefined;
-          if (/node_modules\/(react|react-dom|scheduler|react-router|react-router-dom|history|prop-types|react-is)\//.test(id)) return "react";
-          if (/node_modules\/(@material-ui|lucide-react|jss|jss-[^/]+|clsx)\//.test(id)) return "material-ui";
-          return undefined;
+        // keep this split as it is: separating react / jss / clsx from material-ui creates a circular chunk and the
+        // production page stays blank ("Cannot access before initialization"). Pages are already split by route.
+        manualChunks: {
+          "material-ui": [
+            "@material-ui/core",
+            "lucide-react",
+            "@material-ui/lab",
+          ],
         },
       },
     },
