@@ -31,3 +31,10 @@ jobs:
         run: |
           npm install --legacy-peer-deps --no-audit --no-fund
           npx vite build
+      - name: Frontend sem variáveis inexistentes (evita tela branca)
+        working-directory: frontend
+        run: >
+          npx eslint --no-eslintrc --parser-options=ecmaVersion:2021 --parser-options=sourceType:module
+          --parser-options=ecmaFeatures:{jsx:true} --env browser,es2021 --plugin react --plugin react-hooks
+          --rule 'no-undef:error' --rule 'react/jsx-no-undef:error' --rule 'react/jsx-uses-vars:error'
+          --rule 'react/jsx-uses-react:error' src
