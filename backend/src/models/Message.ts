@@ -34,7 +34,7 @@ class Message extends Model<Message> {
   @Column(DataType.TEXT)
   body: string;
 
-  @Column(DataType.STRING)
+  @Column(DataType.TEXT)
   get mediaUrl(): string | null {
     if (this.getDataValue("mediaUrl")) {
       const base = process.env.BACKEND_URL || "";

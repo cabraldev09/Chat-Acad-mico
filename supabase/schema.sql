@@ -440,7 +440,7 @@ CREATE TABLE public."Contacts" (
     id integer NOT NULL,
     name character varying(255) NOT NULL,
     number character varying(255),
-    "profilePicUrl" character varying(255),
+    "profilePicUrl" text,
     "createdAt" timestamp with time zone NOT NULL,
     "updatedAt" timestamp with time zone NOT NULL,
     email character varying(255) DEFAULT ''::character varying NOT NULL,
@@ -826,7 +826,7 @@ CREATE TABLE public."Messages" (
     ack integer DEFAULT 0 NOT NULL,
     read boolean DEFAULT false NOT NULL,
     "mediaType" character varying(255),
-    "mediaUrl" character varying(255),
+    "mediaUrl" text,
     "ticketId" integer NOT NULL,
     "createdAt" timestamp with time zone NOT NULL,
     "updatedAt" timestamp with time zone NOT NULL,
@@ -3136,6 +3136,7 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261026000001-ticket-pin-archive.js
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261027000001-ai-v2.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261028000001-ai-learning.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261029000001-whatsapp-owner.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261030000001-long-urls.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.
