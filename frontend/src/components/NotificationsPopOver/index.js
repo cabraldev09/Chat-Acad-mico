@@ -11,7 +11,10 @@ import ListItem from "@material-ui/core/ListItem";
 import ListItemText from "@material-ui/core/ListItemText";
 import { makeStyles } from "@material-ui/core/styles";
 import Badge from "@material-ui/core/Badge";
-import { Bell } from "lucide-react";
+import Tooltip from "@material-ui/core/Tooltip";
+import Switch from "@material-ui/core/Switch";
+import Chip from "@material-ui/core/Chip";
+import { Bell, BellOff } from "lucide-react";
 
 import TicketListItem from "../TicketListItem";
 import { i18n } from "../../translate/i18n";
@@ -40,7 +43,56 @@ const useStyles = makeStyles(theme => ({
 	iconButton: {
 		color: theme.palette.text.secondary,
 	},
+	mutedIcon: {
+		color: theme.palette.warning ? theme.palette.warning.main : "#ed6c02",
+	},
+	muteBar: {
+		padding: theme.spacing(1.25, 2),
+		borderBottom: `1px solid ${theme.palette.divider}`,
+	},
+	muteRow: {
+		display: "flex",
+		alignItems: "center",
+		justifyContent: "space-between",
+		gap: theme.spacing(1),
+	},
+	muteTitle: { fontSize: 14, fontWeight: 600 },
+	muteHint: { fontSize: 12, color: theme.palette.text.secondary },
+	muteChips: { display: "flex", flexWrap: "wrap", gap: theme.spacing(0.75), marginTop: theme.spacing(1) },
 }));
+
+// Silenced notifications keep the unread badge and the list, but make no sound and show no pop-up.
+const FOREVER = 8640000000000000;
+const MUTE_KEY = "notifications-muted-until";
+
+const readMutedUntil = () => {
+	try {
+		const value = Number(localStorage.getItem(MUTE_KEY) || 0);
+		return value > Date.now() ? value : 0;
+	} catch (e) {
+		return 0;
+	}
+};
+
+const tomorrowMorning = () => {
+	const d = new Date();
+	d.setDate(d.getDate() + 1);
+	d.setHours(8, 0, 0, 0);
+	return d.getTime();
+};
+
+const MUTE_OPTIONS = [
+	{ label: "Silenciar por 1 hora", until: () => Date.now() + 60 * 60 * 1000 },
+	{ label: "Silenciar por 8 horas", until: () => Date.now() + 8 * 60 * 60 * 1000 },
+	{ label: "Silenciar até amanhã 8h", until: tomorrowMorning },
+	{ label: "Silenciar até eu reativar", until: () => FOREVER },
+];
+
+const muteLabel = until => {
+	if (!until) return "";
+	if (until === FOREVER) return "Silenciadas até você reativar";
+	return `Silenciadas até ${format(new Date(until), "HH:mm")}`;
+};
 
 const NotificationsPopOver = () => {
 	const classes = useStyles();
@@ -190,16 +242,18 @@ const NotificationsPopOver = () => {
 
 	return (
 		<>
-			<IconButton
-				onClick={handleClick}
-				ref={anchorEl}
-				aria-label="Open Notifications"
-				className={classes.iconButton}
-			>
-				<Badge badgeContent={notifications.length} color="primary" overlap="rectangular">
-					<Bell size={20} />
-				</Badge>
-			</IconButton>
+			<Tooltip title={mutedUntil ? muteLabel(mutedUntil) : "Notificações"}>
+				<IconButton
+					onClick={handleClick}
+					ref={anchorEl}
+					aria-label="Notificações"
+					className={`${classes.iconButton} ${mutedUntil ? classes.mutedIcon : ""}`}
+				>
+					<Badge badgeContent={notifications.length} color="primary" overlap="rectangular">
+						{mutedUntil ? <BellOff size={20} /> : <Bell size={20} />}
+					</Badge>
+				</IconButton>
+			</Tooltip>
 			<Popover
 				disableScrollLock
 				open={isOpen}
@@ -215,6 +269,34 @@ const NotificationsPopOver = () => {
 				classes={{ paper: classes.popoverPaper }}
 				onClose={handleClickAway}
 			>
+				<div className={classes.muteBar}>
+					<div className={classes.muteRow}>
+						<div>
+							<div className={classes.muteTitle}>Som e avisos na tela</div>
+							<div className={classes.muteHint}>
+								{mutedUntil ? muteLabel(mutedUntil) : "Ativados: você recebe aviso de novas mensagens"}
+							</div>
+						</div>
+						<Switch
+							color="primary"
+							checked={!mutedUntil}
+							onChange={e => setMutedUntil(e.target.checked ? 0 : FOREVER)}
+							inputProps={{ "aria-label": "Ativar som e avisos na tela" }}
+						/>
+					</div>
+					<div className={classes.muteChips}>
+						{MUTE_OPTIONS.map(option => (
+							<Chip
+								key={option.label}
+								size="small"
+								clickable
+								variant="outlined"
+								label={option.label}
+								onClick={() => setMutedUntil(option.until())}
+							/>
+						))}
+					</div>
+				</div>
 				<List dense className={classes.tabContainer}>
 					{notifications.length === 0 ? (
 						<ListItem>
