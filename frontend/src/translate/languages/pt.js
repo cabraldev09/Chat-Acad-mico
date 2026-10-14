@@ -527,6 +527,8 @@ const messages = {
         ERR_NO_OTHER_WHATSAPP: "Deve haver pelo menos um WhatsApp padrão.",
         ERR_NO_DEF_WAPP_FOUND:
           "Nenhum WhatsApp padrão encontrado. Verifique a página de conexões.",
+        ERR_NO_CONNECTED_WHATSAPP:
+          "Nenhum WhatsApp conectado. Conecte um número em Conexões para importar os contatos.",
         ERR_WAPP_NOT_INITIALIZED:
           "Esta sessão do WhatsApp não foi inicializada. Verifique a página de conexões.",
         ERR_WAPP_CHECK_CONTACT:

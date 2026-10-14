@@ -134,7 +134,7 @@ const Reports = () => {
           <Grid container spacing={2}>
             <Grid item xs={6} md={3}><Kpi label="Em atendimento agora" value={data.totals.open || 0} hint={`${data.totals.pending || 0} aguardando`} /></Grid>
             <Grid item xs={6} md={3}><Kpi label="Atendimentos no período" value={data.period.created} hint={`${data.period.closedInPeriod || 0} finalizados`} /></Grid>
-            <Grid item xs={6} md={3}><Kpi label="Tempo médio 1ª resposta" value={duration(data.period.avgFirstResponse)} /></Grid>
+            <Grid item xs={6} md={3}><Kpi label="Tempo médio 1ª resposta" value={duration(data.period.avgFirstResponse)} hint={data.businessHours ? "só horário comercial" : undefined} /></Grid>
             <Grid item xs={6} md={3}><Kpi label="Tempo médio de resolução" value={duration(data.period.avgResolution)} /></Grid>
             <Grid item xs={6} md={3}><Kpi label="Mensagens recebidas" value={data.messages.received || 0} /></Grid>
             <Grid item xs={6} md={3}><Kpi label="Mensagens enviadas" value={data.messages.sent || 0} /></Grid>

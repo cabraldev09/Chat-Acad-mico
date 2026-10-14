@@ -1162,6 +1162,49 @@ const postMeta = (id, payload, secret, badSig) => {
       const all = (await http.get("/leads", { params: { limit: 500, historical: "1" }, ...auth() })).data.leads.map(l => l.name);
       assert(all.includes("Conversa antiga"), "the historical lead should still be reachable on request");
     });
+    await test("working hours: answer time counts only business time, settings and alert threshold are saved", async () => {
+      const { businessMinutes, normalizeBusiness } = require("../dist/helpers/BusinessTime");
+      const cfg = normalizeBusiness({ enabled: true, days: { "1": [{ start: "08:00", end: "18:00" }], "2": [{ start: "08:00", end: "18:00" }] } });
+      // company timezone is America/Porto_Velho (UTC-4): Monday 2026-10-12 17:00 local = 21:00 UTC
+      const monday17 = new Date("2026-10-12T21:00:00Z"), tuesday09 = new Date("2026-10-13T13:00:00Z");
+      // 17:00 -> 18:00 Monday (60 min) + 08:00 -> 09:00 Tuesday (60 min); the night in between does not count
+      assert(Math.round(businessMinutes(cfg, monday17, tuesday09)) === 120, `business minutes: ${businessMinutes(cfg, monday17, tuesday09)}`);
+      assert(Math.round(businessMinutes(normalizeBusiness({ enabled: false }), monday17, tuesday09)) === 960, "disabled hours should be elapsed time");
+      // a closed day (Sunday) gives nothing
+      assert(businessMinutes(cfg, new Date("2026-10-18T12:00:00Z"), new Date("2026-10-18T22:00:00Z")) === 0, "closed day counted");
+
+      const saved = (await http.put("/crm/settings", { slaMinutes: 20, businessHours: { enabled: true, days: { "1": [{ start: "09:00", end: "17:00" }] } } }, auth())).data;
+      assert(saved.slaMinutes === 20, "sla not saved");
+      assert(saved.businessHours.enabled === true && saved.businessHours.days["1"][0].start === "09:00", "hours not saved");
+      assert(saved.businessHours.days["3"].length === 1, "missing days should fall back to the default week");
+      // switch it off again so the other checks keep measuring elapsed time
+      await http.put("/crm/settings", { businessHours: { enabled: false }, slaMinutes: 15 }, auth());
+    });
+    await test("preferences follow the person: stored on the server and sanitized", async () => {
+      assert((await http.get("/me/preferences", auth())).data.sound === undefined, "fresh user already has preferences");
+      const put = await http.put("/me/preferences", { sound: { mode: "alerts", popup: false, contacts: { "12": "alert", "13": "mute", "14": "weird", "x": "alert" } } }, auth());
+      assert(put.status === 200 && put.data.sound.mode === "alerts" && put.data.sound.popup === false, "preferences not saved");
+      assert(JSON.stringify(put.data.sound.contacts) === JSON.stringify({ "12": "alert", "13": "mute" }), `contacts not sanitized: ${JSON.stringify(put.data.sound.contacts)}`);
+      const back = (await http.get("/me/preferences", auth())).data;
+      assert(back.sound.mode === "alerts", "preferences not returned");
+      // someone else never sees it
+      assert((await http.get("/me/preferences", asUser(agentToken))).data.sound === undefined, "preferences leaked to another user");
+      await http.put("/me/preferences", { sound: { mode: "all", popup: true, contacts: {} } }, auth());
+    });
+    await test("CRM report by consultant and by polo, as a table and as a spreadsheet", async () => {
+      const range = { from: "2020-01-01", to: "2099-12-31" };
+      const owner = (await http.get("/crm/report", { params: { ...range, groupBy: "owner" }, ...auth() })).data;
+      assert(owner.rows.length > 0 && owner.total.name === "Total", "report has no rows");
+      assert(owner.total.leads === owner.rows.reduce((a, r) => a + r.leads, 0), "total does not add up");
+      assert(owner.rows.every(r => r.leads === r.contacted + r.noContact), "contacted + without contact should equal leads");
+      const polo = (await http.get("/crm/report", { params: { ...range, groupBy: "polo" }, ...auth() })).data;
+      assert(polo.groupBy === "polo" && polo.total.leads === owner.total.leads, "polo report should cover the same leads");
+      const csv = await http.get("/crm/report", { params: { ...range, groupBy: "owner", format: "csv" }, ...auth(), responseType: "text", transformResponse: x => x });
+      assert(/text\/csv/.test(csv.headers["content-type"]) && /attachment/.test(csv.headers["content-disposition"]), "csv headers");
+      assert(csv.data.replace(/^\uFEFF/, "").startsWith('"Nome";"Leads captados"'), `csv header: ${csv.data.slice(0, 40)}`);
+      assert(csv.data.split("\r\n").some(l => l.startsWith('"Total";')), "csv has no total line");
+      assert((await http.get("/crm/report", { params: range })).status === 401, "report without login");
+    });
     await test("each person connects their own WhatsApp: scoped list, one number by default, no one else's QR Code", async () => {
       const mk = async (name, email) => (await http.post("/users", { name, email, password: "senha123", role: "consultor" }, auth())).data;
       const u1 = await mk("Dona Um", "dona1@x.com"), u2 = await mk("Dono Dois", "dono2@x.com");

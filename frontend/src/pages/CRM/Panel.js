@@ -1,11 +1,11 @@
 import { fillDays } from "../../utils/chartDays";
 import React, { useEffect, useState } from "react";
 import { useHistory } from "react-router-dom";
-import { Typography, TextField, MenuItem, makeStyles, Table, TableHead, TableRow, TableCell, TableBody, LinearProgress } from "@material-ui/core";
+import { Typography, TextField, MenuItem, makeStyles, Table, TableHead, TableRow, TableCell, TableBody, LinearProgress, Button, Menu } from "@material-ui/core";
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar, Cell, PieChart, Pie, Legend,
 } from "recharts";
-import { AlertTriangle, Hourglass, UserX, Flame } from "lucide-react";
+import { AlertTriangle, Hourglass, UserX, Flame, Download } from "lucide-react";
 import { format, subDays } from "date-fns";
 
 import MainContainer from "../../components/MainContainer";
@@ -54,6 +54,23 @@ const Panel = () => {
   const [ownerId, setOwnerId] = useState("");
   const [courseId, setCourseId] = useState("");
   const [d, setD] = useState(null);
+  const [exportEl, setExportEl] = useState(null);
+
+  // downloads the report (opens in Excel) for the period on screen
+  const exportReport = async (groupBy) => {
+    setExportEl(null);
+    try {
+      const { data } = await api.get("/crm/report", { params: { from, to, groupBy, format: "csv" }, responseType: "blob" });
+      const url = URL.createObjectURL(data);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `relatorio-${groupBy === "polo" ? "polos" : "consultores"}-${from}-a-${to}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      toastError(err);
+    }
+  };
 
   useEffect(() => {
     api.get("/crm/metrics", { params: { from, to, ownerId: ownerId || undefined, courseId: courseId || undefined } })
@@ -91,6 +108,11 @@ const Panel = () => {
           <TextField select size="small" label="Curso" variant="outlined" value={courseId} onChange={(e) => setCourseId(e.target.value)} style={{ minWidth: 160 }}>
             <MenuItem value="">Todos</MenuItem>{courses.map((c) => (<MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>))}
           </TextField>
+          <Button variant="outlined" startIcon={<Download size={16} />} onClick={(e) => setExportEl(e.currentTarget)}>Exportar relatório</Button>
+          <Menu anchorEl={exportEl} open={Boolean(exportEl)} onClose={() => setExportEl(null)} getContentAnchorEl={null} anchorOrigin={{ vertical: "bottom", horizontal: "right" }} transformOrigin={{ vertical: "top", horizontal: "right" }}>
+            <MenuItem onClick={() => exportReport("owner")}>Por consultor (planilha)</MenuItem>
+            <MenuItem onClick={() => exportReport("polo")}>Por polo (planilha)</MenuItem>
+          </Menu>
         </MainHeaderButtonsWrapper>
       </MainHeader>
 
@@ -100,7 +122,7 @@ const Panel = () => {
             <Kpi label="Leads captados" value={d.kpi.leads} hint={`${d.kpi.open} em andamento`} />
             <Kpi label="Matrículas" value={d.kpi.won} hint={`${d.kpi.lost} perdidos`} />
             <Kpi label="Conversão" value={`${d.kpi.conversion.toFixed(1).replace(".", ",")}%`} hint="lead → matrícula" />
-            <Kpi label="Tempo até o 1º contato" value={mins(d.kpi.avgFirstContactMin)} hint="média" />
+            <Kpi label="Tempo até o 1º contato" value={mins(d.kpi.avgFirstContactMin)} hint={d.kpi.businessHours ? "média, só horário comercial" : "média"} />
             <Kpi label="Tempo até a matrícula" value={d.kpi.avgDaysToEnroll === null ? "—" : `${Number(d.kpi.avgDaysToEnroll).toFixed(1).replace(".", ",")} dias`} hint="média" />
           </div>
 

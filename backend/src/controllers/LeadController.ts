@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import { getBusinessConfig, normalizeBusiness, resetBusinessCache, businessMinutes } from "../helpers/BusinessTime";
 import { dayBounds, shiftDays } from "../helpers/AppTime";
 import { withLeadScope, isAdminReq, reqRole } from "../middleware/scope";
 import { portable, nowSql, nowMinus, diffMinutes, diffHours, dayOf, countIf } from "../helpers/sqlDialect";
@@ -518,7 +519,9 @@ export const getSettings = async (_req: Request, res: Response): Promise<Respons
     formToken: await getSetting("crm_form_token", ""),
     formTitle: await getSetting("crm_form_title", "Quero conhecer a instituição"),
     formThanks: await getSetting("crm_form_thanks", "Recebemos seus dados! Em breve um consultor entra em contato."),
-    formColor: await getSetting("crm_form_color", "#0B4279")
+    formColor: await getSetting("crm_form_color", "#0B4279"),
+    slaMinutes: Number(await getSetting("crm_sla_minutes", "15")),
+    businessHours: await getBusinessConfig()
   });
 
 export const putSettings = async (req: Request, res: Response): Promise<Response> => {
@@ -535,6 +538,11 @@ export const putSettings = async (req: Request, res: Response): Promise<Response
   if (typeof b.formTitle === "string") await setSetting("crm_form_title", b.formTitle.slice(0, 120));
   if (typeof b.formThanks === "string") await setSetting("crm_form_thanks", b.formThanks.slice(0, 300));
   if (typeof b.formColor === "string" && /^#[0-9a-f]{6}$/i.test(b.formColor)) await setSetting("crm_form_color", b.formColor);
+  if (b.slaMinutes !== undefined) await setSetting("crm_sla_minutes", String(Math.max(0, Math.min(1440, Math.round(Number(b.slaMinutes) || 0)))));
+  if (b.businessHours) {
+    await setSetting("business_hours", JSON.stringify(normalizeBusiness(b.businessHours)));
+    resetBusinessCache();
+  }
   if (b.regenerateFormToken || !(await getSetting("crm_form_token", ""))) {
     await setSetting("crm_form_token", randomBytes(16).toString("hex"));
   }
@@ -564,6 +572,21 @@ export const metrics = async (req: Request, res: Response): Promise<Response> =>
     FROM Leads l JOIN LeadStages s ON s.id = l.stageId
     WHERE l.createdAt BETWEEN :from AND :to ${f}`);
 
+  // time to the first contact counts only working hours (plain elapsed time when none are configured)
+  const business = await getBusinessConfig();
+  const contacted = await q(`
+    SELECT l.createdAt AS c, l.firstContactAt AS f, l.ownerId AS o FROM Leads l
+    WHERE l.firstContactAt IS NOT NULL AND l.createdAt BETWEEN :from AND :to ${f} LIMIT 20000`);
+  const sums: Record<string, { s: number; n: number }> = {};
+  let allSum = 0;
+  contacted.forEach(r => {
+    const m = businessMinutes(business, new Date(r.c), new Date(r.f));
+    allSum += m;
+    const k = String(r.o ?? "none");
+    sums[k] = { s: (sums[k]?.s || 0) + m, n: (sums[k]?.n || 0) + 1 };
+  });
+  const avgAll = contacted.length ? allSum / contacted.length : null;
+
   const funnel = await q(`
     SELECT s.id, s.name, s.color, s.type, s.position, COUNT(l.id) AS total
     FROM LeadStages s
@@ -581,7 +604,7 @@ export const metrics = async (req: Request, res: Response): Promise<Response> =>
     WHERE l.createdAt BETWEEN :from AND :to ${f} GROUP BY c.id, c.name ORDER BY leads DESC LIMIT 12`);
 
   const byOwner = await q(`
-    SELECT COALESCE(u.name,'Sem responsável') AS name, COUNT(*) AS leads, ${countIf("s.type='won'")} AS won,
+    SELECT COALESCE(u.name,'Sem responsável') AS name, u.id AS ownerId, COUNT(*) AS leads, ${countIf("s.type='won'")} AS won,
       ${countIf("s.type='open'")} AS open,
       AVG(CASE WHEN l.firstContactAt IS NOT NULL THEN ${diffMinutes('l.createdAt', 'l.firstContactAt')} END) AS avgFirstContactMin
     FROM Leads l JOIN LeadStages s ON s.id = l.stageId LEFT JOIN Users u ON u.id = l.ownerId
@@ -616,14 +639,18 @@ export const metrics = async (req: Request, res: Response): Promise<Response> =>
       lost: Number(kpi.lost) || 0,
       open: Number(kpi.open) || 0,
       conversion: Number(kpi.leads) ? (Number(kpi.won) / Number(kpi.leads)) * 100 : 0,
-      avgFirstContactMin: num(kpi.avgFirstContactMin),
+      avgFirstContactMin: avgAll,
+      businessHours: business.enabled,
       avgDaysToEnroll: num(kpi.avgDaysToEnroll),
       unassigned: Number(kpi.unassigned) || 0
     },
     funnel: funnel.map(r => ({ ...r, total: Number(r.total) })),
     bySource: bySource.map(r => ({ ...r, leads: Number(r.leads), won: Number(r.won) })),
     byCourse: byCourse.map(r => ({ ...r, leads: Number(r.leads), won: Number(r.won) })),
-    byOwner: byOwner.map(r => ({ ...r, leads: Number(r.leads), won: Number(r.won), open: Number(r.open), avgFirstContactMin: num(r.avgFirstContactMin) })),
+    byOwner: byOwner.map(r => {
+      const k = sums[String(r.ownerId ?? "none")];
+      return { ...r, leads: Number(r.leads), won: Number(r.won), open: Number(r.open), avgFirstContactMin: k ? k.s / k.n : null };
+    }),
     lostReasons: lostReasons.map(r => ({ ...r, total: Number(r.total) })),
     created: created.map(r => ({ day: r.day, total: Number(r.total) })),
     wonDaily: wonDaily.map(r => ({ day: r.day, total: Number(r.total) })),

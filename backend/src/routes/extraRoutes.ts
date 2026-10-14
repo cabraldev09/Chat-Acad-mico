@@ -2,6 +2,8 @@ import express from "express";
 import multer from "multer";
 
 import isAuth from "../middleware/isAuth";
+import { crmReport } from "../controllers/ReportController";
+import * as Preferences from "../controllers/PreferencesController";
 import canManageWhatsapp from "../middleware/canManageWhatsapp";
 import isAdmin from "../middleware/isAdmin";
 import { canWriteTicket } from "../middleware/canAccessTicket";
@@ -136,6 +138,9 @@ r.delete("/polos/:id", isAuth, isAdmin, PoloCtl.remove);
 r.get("/crm/options", isAuth, Lead.options);
 r.get("/crm/board", isAuth, Lead.board);
 r.get("/crm/metrics", isAuth, Lead.metrics);
+r.get("/crm/report", isAuth, crmReport);
+r.get("/me/preferences", isAuth, Preferences.show);
+r.put("/me/preferences", isAuth, Preferences.update);
 r.post("/crm/backfill", isAuth, isAdmin, Lead.backfill);
 r.get("/crm/settings", isAuth, isAdmin, Lead.getSettings);
 r.put("/crm/settings", isAuth, isAdmin, Lead.putSettings);

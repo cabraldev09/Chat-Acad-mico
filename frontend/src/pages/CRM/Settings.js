@@ -143,6 +143,75 @@ const EfiSettings = ({ stages }) => {
   );
 };
 
+const WEEK = [
+  { d: "1", label: "Segunda" }, { d: "2", label: "Terça" }, { d: "3", label: "Quarta" }, { d: "4", label: "Quinta" },
+  { d: "5", label: "Sexta" }, { d: "6", label: "Sábado" }, { d: "0", label: "Domingo" },
+];
+
+// Working hours (used to measure answer times) and the "lead without an answer" alert.
+const HoursAndAlerts = ({ s, save }) => {
+  const classes = useStyles();
+  const [hours, setHours] = useState(null);
+  const [sla, setSla] = useState("15");
+  useEffect(() => {
+    if (s.businessHours) setHours(s.businessHours);
+    if (s.slaMinutes !== undefined) setSla(String(s.slaMinutes));
+  }, [s.businessHours, s.slaMinutes]);
+  if (!hours) return null;
+
+  const setDay = (d, patch) => {
+    const list = hours.days[d] || [];
+    const first = { start: "08:00", end: "18:00", ...(list[0] || {}), ...patch };
+    setHours({ ...hours, days: { ...hours.days, [d]: [first, ...list.slice(1)] } });
+  };
+  const toggleDay = (d, on) => setHours({ ...hours, days: { ...hours.days, [d]: on ? [{ start: "08:00", end: "18:00" }] : [] } });
+
+  return (
+    <div style={{ borderTop: "1px solid rgba(128,128,128,.25)", paddingTop: 16, display: "grid", gap: 12 }}>
+      <div>
+        <Typography variant="subtitle1" style={{ fontWeight: 600 }}>Horário comercial e alerta de lead sem resposta</Typography>
+        <Typography className={classes.hint}>
+          Com o horário ligado, o tempo de resposta e o alerta contam só as horas de trabalho: uma mensagem que chega às 22h não conta como atraso na manhã seguinte.
+        </Typography>
+      </div>
+      <FormControlLabel
+        control={<Switch color="primary" checked={!!hours.enabled} onChange={(e) => setHours({ ...hours, enabled: e.target.checked })} />}
+        label={hours.enabled ? "Horário comercial ligado" : "Horário comercial desligado (conta o tempo corrido)"}
+      />
+      {hours.enabled && (
+        <div style={{ display: "grid", gap: 8 }}>
+          {WEEK.map(({ d, label }) => {
+            const list = hours.days[d] || [];
+            const on = list.length > 0;
+            return (
+              <div key={d} className={classes.row} style={{ alignItems: "center" }}>
+                <FormControlLabel style={{ width: 130, margin: 0 }} control={<Switch size="small" color="primary" checked={on} onChange={(e) => toggleDay(d, e.target.checked)} />} label={label} />
+                {on ? (
+                  <>
+                    <TextField size="small" variant="outlined" type="time" label="Das" InputLabelProps={{ shrink: true }} value={list[0].start} onChange={(e) => setDay(d, { start: e.target.value })} />
+                    <TextField size="small" variant="outlined" type="time" label="Às" InputLabelProps={{ shrink: true }} value={list[0].end} onChange={(e) => setDay(d, { end: e.target.value })} />
+                  </>
+                ) : (
+                  <Typography className={classes.hint}>Fechado</Typography>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <TextField
+        size="small" variant="outlined" type="number" label="Avisar quando um lead novo ficar sem resposta por (minutos)"
+        value={sla} onChange={(e) => setSla(e.target.value)} inputProps={{ min: 0, max: 1440 }}
+        helperText="0 desliga o alerta. O aviso chega para o consultor responsável e para a coordenação."
+        style={{ maxWidth: 460 }}
+      />
+      <div>
+        <Button variant="contained" color="primary" onClick={() => save({ businessHours: hours, slaMinutes: Number(sla) || 0 })}>Salvar horário e alerta</Button>
+      </div>
+    </div>
+  );
+};
+
 const Automation = ({ s, setS, save, users }) => {
   const classes = useStyles();
   const [busy, setBusy] = useState(false);
@@ -175,6 +244,7 @@ const Automation = ({ s, setS, save, users }) => {
           {users.map((u) => (<MenuItem key={u.id} value={u.id}>{u.name}</MenuItem>))}
         </TextField>
       )}
+      <HoursAndAlerts s={s} save={save} />
       <div style={{ borderTop: "1px solid rgba(128,128,128,.25)", paddingTop: 16 }}>
         <Typography variant="subtitle1" style={{ fontWeight: 600 }}>Contatos já existentes</Typography>
         <Typography className={classes.hint} gutterBottom>Ao iniciar, o sistema já registra no CRM os contatos que ainda não são leads. Rode manualmente se importar contatos novos.</Typography>

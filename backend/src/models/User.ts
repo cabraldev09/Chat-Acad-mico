@@ -44,6 +44,10 @@ class User extends Model<User> {
   @Column
   tokenVersion: number;
 
+  // JSON with the person's own preferences (notification sound, ...)
+  @Column(DataType.TEXT)
+  preferences: string;
+
   @Default("user")
   @Column
   profile: string;

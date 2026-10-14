@@ -3,6 +3,7 @@ import { QueryTypes } from "sequelize";
 
 import sequelize from "../database";
 import { dayBounds, shiftDays } from "../helpers/AppTime";
+import { getBusinessConfig, businessMinutes } from "../helpers/BusinessTime";
 import { portable, nowSql, diffSeconds, dayOf, countIf } from "../helpers/sqlDialect";
 
 const range = (req: Request) => {
@@ -44,6 +45,23 @@ export const overview = async (req: Request, res: Response): Promise<Response> =
      WHERE t.createdAt BETWEEN :from AND :to ${filter}`,
     rep
   );
+
+  // first response time counts only working hours (plain elapsed time when none are configured)
+  const business = await getBusinessConfig();
+  const answered = await q(
+    `SELECT t.createdAt AS c, t.firstResponseAt AS f, t.userId AS u
+     FROM Tickets t WHERE t.firstResponseAt IS NOT NULL AND t.createdAt BETWEEN :from AND :to ${filter} LIMIT 50000`,
+    rep
+  );
+  const bySeconds: Record<string, { s: number; n: number }> = {};
+  let allSeconds = 0;
+  answered.forEach(r => {
+    const secs = businessMinutes(business, new Date(r.c), new Date(r.f)) * 60;
+    allSeconds += secs;
+    const k = String(r.u ?? "none");
+    bySeconds[k] = { s: (bySeconds[k]?.s || 0) + secs, n: (bySeconds[k]?.n || 0) + 1 };
+  });
+  period.avgFirstResponse = answered.length ? allSeconds / answered.length : null;
 
   const perDay = await q(
     `SELECT ${dayOf('t.createdAt')} AS day, COUNT(*) AS created
@@ -103,8 +121,14 @@ export const overview = async (req: Request, res: Response): Promise<Response> =
     rep
   );
 
+  perUser.forEach((u: any) => {
+    const k = bySeconds[String(u.id)];
+    u.avgFirstResponse = k ? k.s / k.n : null;
+  });
+
   return res.json({
     range: { from, to },
+    businessHours: business.enabled,
     totals,
     period,
     messages,

@@ -4,6 +4,8 @@ import { toast } from "react-toastify";
 import openSocket from "../../services/socket-io";
 import { AuthContext } from "../../context/Auth/AuthContext";
 import { burst } from "../../pages/CRM/shared";
+import alertSound from "../../assets/sound.mp3";
+import { getSoundMode } from "../../utils/soundPrefs";
 
 // Toast when one of my follow-up tasks becomes due
 const CrmReminders = () => {
@@ -18,6 +20,22 @@ const CrmReminders = () => {
         autoClose: 12000,
         onClick: () => history.push(`/crm?lead=${t.leadId}`),
       });
+    });
+    // a new lead nobody answered in time: the owner and the managers are warned
+    socket.on("leadAlert", (a) => {
+      const manager = user.profile === "admin" || user.role === "admin" || user.role === "coordenacao";
+      if (!(a.ownerId === user.id || manager)) return;
+      toast.warn(`⚠️ ${a.name} está sem resposta há ${a.minutes} min`, {
+        autoClose: 20000,
+        onClick: () => history.push(`/crm?lead=${a.leadId}`),
+      });
+      if (a.ownerId === user.id || getSoundMode() === "all") {
+        try {
+          new Audio(alertSound).play().catch(() => {});
+        } catch (e) {
+          /* the browser may block sound before the first click */
+        }
+      }
     });
     // enrollment fee confirmed by Efí
     socket.on("payment", (d) => {

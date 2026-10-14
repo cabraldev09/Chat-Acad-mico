@@ -187,6 +187,9 @@ class Lead extends Model<Lead> {
   @Column
   indicatedBy: number;
 
+  @Column
+  slaAlertedAt: Date;
+
   // comes from a conversation that existed before the number was connected: kept, but never counted
   @Default(false)
   @Column

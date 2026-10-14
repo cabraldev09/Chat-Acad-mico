@@ -29,6 +29,7 @@ import {
 	alertContactCount,
 	shouldAlert,
 	onSoundPrefsChange,
+	loadSoundPrefsFromServer,
 } from "../../utils/soundPrefs";
 
 const useStyles = makeStyles(theme => ({
@@ -106,6 +107,7 @@ const NotificationsPopOver = () => {
 	// preferences are per user; reload them when the user or any setting changes
 	useEffect(() => {
 		setSoundPrefsUser(user?.id);
+		if (user?.id) loadSoundPrefsFromServer();
 		const refresh = () => {
 			setSoundModeState(getSoundMode());
 			setPopupOnState(getPopupEnabled());

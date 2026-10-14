@@ -6,6 +6,7 @@ import { StartAllWhatsAppsSessions } from "./services/WbotServices/StartAllWhats
 import { startScheduler } from "./workers/Scheduler";
 import { startCampaignRunner } from "./workers/CampaignRunner";
 import { startCrmReminders } from "./workers/CrmReminders";
+import { startLeadSlaAlert } from "./workers/LeadSlaAlert";
 import { startPaymentPoller } from "./workers/PaymentPoller";
 import { startOnboardingSla } from "./workers/OnboardingSla";
 import { startChatbotReminder } from "./workers/ChatbotReminder";
@@ -26,6 +27,7 @@ whenLeader(() => {
   startScheduler();
   startCampaignRunner();
   startCrmReminders();
+  startLeadSlaAlert();
   startPaymentPoller();
   startOnboardingSla();
   startChatbotReminder();

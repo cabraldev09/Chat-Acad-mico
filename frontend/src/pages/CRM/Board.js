@@ -5,7 +5,7 @@ import {
   Button, TextField, MenuItem, InputAdornment, Dialog, DialogTitle, DialogContent, DialogActions,
   Typography, makeStyles, ButtonGroup, Chip, Table, TableHead, TableRow, TableCell, TableBody, Paper,
 } from "@material-ui/core";
-import { HeartHandshake, Search, Plus, Upload, LayoutGrid, List, Calendar, BadgeCheck, Rocket } from "lucide-react";
+import { HeartHandshake, Search, Plus, Upload, LayoutGrid, List, Calendar, BadgeCheck, Rocket, Hourglass } from "lucide-react";
 import { format, parseISO } from "date-fns";
 
 import MainContainer from "../../components/MainContainer";
@@ -76,6 +76,11 @@ const LeadCard = ({ lead, onOpen, onDragStart, onDragEnd, dragging }) => {
       )}
       <div className={classes.cardFoot}>
         <span className={classes.chip} title={`Origem: ${lead.source}`}><SourceIcon source={lead.source} size={12} />{lead.source}</span>
+        {lead.slaAlertedAt && !lead.firstContactAt && (
+          <span className={`${classes.chip} ${classes.chipLate}`} title="Este lead novo passou do tempo de resposta e ainda não foi atendido">
+            <Hourglass size={12} />Sem resposta
+          </span>
+        )}
         {lead.decisionTimeline === "Quer matricular agora" && (
           <span className={`${classes.chip} ${classes.chipHot}`} title="Quer matricular agora"><Rocket size={12} />Quer matricular</span>
         )}
