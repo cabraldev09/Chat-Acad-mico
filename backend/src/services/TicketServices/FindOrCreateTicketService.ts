@@ -74,27 +74,27 @@ const FindOrCreateTicketService = async (
     }
   }
 
+  // One conversation per person, like WhatsApp: when someone writes again after the attendance was closed, the same
+  // conversation comes back (instead of a second one beside it). Within 2 hours it is the same attendance; later it
+  // starts again from zero (counted from now), keeping all the messages in one thread.
   if (!ticket && !groupContact) {
     ticket = await Ticket.findOne({
-      where: {
-        updatedAt: {
-          [Op.between]: [+subHours(new Date(), 2), +new Date()]
-        },
-        contactId: contact.id,
-        whatsappId: whatsappId
-      },
+      where: { contactId: contact.id, whatsappId, isHistorical: false },
       order: [["updatedAt", "DESC"]]
     });
 
     if (ticket) {
+      const recent = new Date(ticket.updatedAt).getTime() > Date.now() - 2 * 3600 * 1000;
       await ticket.update({
         status: "pending",
         userId: null,
         unreadMessages,
         chatbotNodeId: null,
         aiActive: true,
-        closedAt: null
+        closedAt: null,
+        ...(recent ? {} : { firstResponseAt: null })
       });
+      if (!recent) await Ticket.update({ createdAt: new Date() } as any, { where: { id: ticket.id }, silent: true } as any);
     }
   }
 

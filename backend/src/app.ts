@@ -100,7 +100,7 @@ app.use(Sentry.Handlers.errorHandler());
 app.use(async (err: Error, req: Request, res: Response, _: NextFunction) => {
   if (err instanceof AppError) {
     logger.warn(err);
-    return res.status(err.statusCode).json({ error: err.message });
+    return res.status(err.statusCode).json({ error: err.message, ...(err.data ? { data: err.data } : {}) });
   }
 
   // a value that is not valid for its column (for example text where a number is expected) is the caller's

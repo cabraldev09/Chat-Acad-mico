@@ -192,7 +192,14 @@ const ChatHeader = ({ contact, ticket, onOpenInfo, onToggleSearch, typing }) => 
       );
       history.push(status === "open" ? `/tickets/${ticket.id}` : "/tickets");
     } catch (err) {
-      toastError(err);
+      // the person already has another open conversation: take the user there instead of an error
+      const openId = err && err.response && err.response.data && err.response.data.data && err.response.data.data.ticketId;
+      if (err && err.response && err.response.data && err.response.data.error === "ERR_OTHER_OPEN_TICKET" && openId) {
+        toast.info("Esta pessoa já tem uma conversa aberta. Abri ela para você.");
+        history.push(`/tickets/${openId}`);
+      } else {
+        toastError(err);
+      }
     }
     setLoading(false);
   };

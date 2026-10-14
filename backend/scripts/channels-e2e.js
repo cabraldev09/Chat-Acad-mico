@@ -1241,6 +1241,27 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(msgs.includes("mensagem antiga") && msgs.includes("voltei a escrever"), `thread lost: ${msgs}`);
       assert(sql(`SELECT COUNT(*) FROM Tickets WHERE contactId=${contactId}`) === "1", "a second ticket was created instead of reusing the history one");
     });
+    await test("one conversation per person: writing after a closed attendance brings the same one back, reopening never errors", async () => {
+      const cid = sql(`SELECT id FROM Contacts WHERE number='tg_7777'`);
+      const tid = sql(`SELECT id FROM Tickets WHERE contactId=${cid} ORDER BY id DESC LIMIT 1`);
+      sql(`UPDATE Tickets SET status='closed', closedAt=NOW() - INTERVAL '3 days', updatedAt=NOW() - INTERVAL '3 days' WHERE id=${tid}`);
+      tg.updates.push({ update_id: 7780, message: { message_id: 7781, chat: { id: 7777, type: "private" }, from: { first_name: "Fulana" }, text: "oi de novo, depois de dias" } });
+      await waitFor(async () => sql(`SELECT status FROM Tickets WHERE id=${tid}`) !== "closed", 10000, "closed conversation comes back");
+      assert(sql(`SELECT COUNT(*) FROM Tickets WHERE contactId=${cid}`) === "1", "a second conversation was opened for the same person");
+      assert(sql(`SELECT COUNT(*) FROM Messages WHERE ticketId=${tid} AND body LIKE 'oi de novo%'`) === "1", "message not in the same thread");
+
+      // a duplicate that already exists: reopening answers with the open one instead of failing
+      const dup = sql(`INSERT INTO Tickets (status, contactId, whatsappId, unreadMessages, isGroup, segment, isHistorical, createdAt, updatedAt) VALUES ('closed', ${cid}, ${tgId}, 0, false, 'sales', false, NOW(), NOW() - INTERVAL '9 days') RETURNING id`).split("\n")[0];
+      const r = await http.put(`/tickets/${dup}`, { status: "open" }, auth());
+      assert(r.status === 400 && r.data.error === "ERR_OTHER_OPEN_TICKET" && r.data.data && Number(r.data.data.ticketId) === Number(tid), `reopen response ${r.status} ${JSON.stringify(r.data)}`);
+      sql(`DELETE FROM Tickets WHERE id=${dup}`);
+
+      // a new conversation started by the team reopens the closed one too
+      sql(`UPDATE Tickets SET status='closed', closedAt=NOW() WHERE id=${tid}`);
+      const created = await http.post("/tickets", { contactId: Number(cid), status: "open", userId: 1 }, auth());
+      assert(created.status === 200 || created.status === 201, `create ${created.status} ${JSON.stringify(created.data).slice(0, 120)}`);
+      assert(Number(created.data.id) === Number(tid) && sql(`SELECT COUNT(*) FROM Tickets WHERE contactId=${cid}`) === "1", "manual new conversation duplicated the thread");
+    });
     await test("the Grupos tab lists every group (copied history and live) and statistics ignore groups", async () => {
       const gid = sql(`INSERT INTO Contacts (name, number, email, isGroup, channel, createdAt, updatedAt) VALUES ('Grupo da turma', '120363000000000001-1600000000', '', true, 'telegram', NOW(), NOW()) RETURNING id`).split("\n")[0];
       const gt = sql(`INSERT INTO Tickets (status, contactId, whatsappId, unreadMessages, isGroup, segment, isHistorical, lastMessage, closedAt, createdAt, updatedAt) VALUES ('closed', ${gid}, ${tgId}, 0, true, 'sales', true, 'bem-vindos', NOW(), NOW() - INTERVAL '3 days', NOW() - INTERVAL '3 days') RETURNING id`).split("\n")[0];

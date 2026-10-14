@@ -11,7 +11,7 @@ const CheckContactOpenTickets = async (
   });
 
   if (ticket) {
-    throw new AppError("ERR_OTHER_OPEN_TICKET");
+    throw new AppError("ERR_OTHER_OPEN_TICKET", 400, { ticketId: ticket.id });
   }
 };
 

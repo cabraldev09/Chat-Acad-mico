@@ -29,6 +29,26 @@ const CreateTicketService = async ({
     queueId = user?.queues.length === 1 ? user.queues[0].id : undefined;
   }
 
+  // the person already has a closed conversation here: it is reopened (one thread per person)
+  const previous = await Ticket.findOne({
+    where: { contactId, whatsappId: defaultWhatsapp.id, status: "closed", isHistorical: false },
+    order: [["updatedAt", "DESC"]]
+  });
+  if (previous) {
+    await previous.update({
+      status,
+      userId,
+      ...(queueId !== undefined ? { queueId } : {}),
+      unreadMessages: 0,
+      closedAt: null,
+      chatbotNodeId: null,
+      aiActive: true,
+      firstResponseAt: null
+    });
+    await Ticket.update({ createdAt: new Date() } as any, { where: { id: previous.id }, silent: true } as any);
+    return (await Ticket.findByPk(previous.id, { include: ["contact"] })) as Ticket;
+  }
+
   const { id }: Ticket = await defaultWhatsapp.$create("ticket", {
     contactId,
     status,
