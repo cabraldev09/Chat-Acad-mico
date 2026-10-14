@@ -132,3 +132,33 @@ export const forwardMessage = async (req: Request, id: string, ticketIds: number
   }
   return sent;
 };
+
+// Downloads the file of a message that arrived without it (or that came from the copied history) and attaches it.
+export const loadMessageMedia = async (id: string): Promise<Message> => {
+  const message = await loadFull(id);
+  if (!message) throw new AppError("ERR_NO_MESSAGE_FOUND", 404);
+  if (message.getDataValue("mediaUrl")) return message;
+  const { ticket } = message;
+  if ((ticket.whatsapp?.channel || "whatsapp") !== "whatsapp" || !whatsappProvider.downloadMessageMedia) {
+    throw new AppError("ERR_MEDIA_NOT_AVAILABLE", 400);
+  }
+  const chatId = chatIdOf(ticket.contact, ticket.isGroup);
+  const media = await whatsappProvider
+    .downloadMessageMedia(ticket.whatsappId, chatId, message.id, message.fromMe)
+    .catch(() => null);
+  if (!media) throw new AppError("ERR_MEDIA_NOT_AVAILABLE", 404);
+
+  const { saveMediaFile } = await import("../../handlers/handleWhatsappEvents");
+  const filename = await saveMediaFile({ filename: media.filename, mimetype: media.mimetype, data: media.data });
+  const [kind] = media.mimetype.split("/");
+  const label = /^[\p{Extended_Pictographic}\s]*(Imagem|Vídeo|Áudio|Mensagem de voz|Documento|Figurinha)$/u.test(message.body || "");
+  await message.update({
+    mediaUrl: filename,
+    mediaType: kind === "application" ? "document" : kind,
+    isGif: !!media.isGif,
+    // the label placed by the history copy gives way to the file name
+    body: !message.body || label ? media.filename || filename : message.body
+  });
+  broadcast(message);
+  return (await loadFull(id)) as Message;
+};

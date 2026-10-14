@@ -64,6 +64,11 @@ class Contact extends Model<Contact> {
   @Column
   channel: string;
 
+  // belongs to the team (with or without a login): never counted in statistics or the CRM funnel
+  @Default(false)
+  @Column
+  isStaff: boolean;
+
   // asked to stop receiving mass messages
   @Default(false)
   @Column

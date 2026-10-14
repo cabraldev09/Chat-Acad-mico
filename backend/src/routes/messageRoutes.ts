@@ -26,6 +26,7 @@ messageRoutes.delete("/messages/:messageId", isAuth, canWriteMessage, MessageCon
 
 messageRoutes.put("/messages/:messageId", isAuth, canWriteMessage, MessageController.edit);
 messageRoutes.put("/messages/:messageId/star", isAuth, canWriteMessage, MessageController.star);
+messageRoutes.post("/messages/:messageId/media", isAuth, canWriteMessage, MessageController.loadMedia);
 messageRoutes.post("/messages/:messageId/react", isAuth, canWriteMessage, MessageController.react);
 messageRoutes.post("/messages/:messageId/forward", isAuth, canWriteMessage, MessageController.forward);
 

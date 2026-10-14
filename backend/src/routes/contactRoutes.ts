@@ -23,6 +23,8 @@ contactRoutes.post("/contact", isAuth, ContactController.getContact);
 
 contactRoutes.put("/contacts/:contactId", isAuth, ContactController.update);
 
+contactRoutes.put("/contacts/:contactId/staff", isAuth, ContactController.setStaff);
+
 contactRoutes.delete("/contacts/:contactId", isAuth, isAdmin, ContactController.remove);
 
 export default contactRoutes;

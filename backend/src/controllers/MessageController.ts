@@ -11,10 +11,11 @@ import DeleteWhatsAppMessage, { EditWhatsAppMessage } from "../services/WbotServ
 import SendWhatsAppMedia from "../services/WbotServices/SendWhatsAppMedia";
 import SendWhatsAppMessage from "../services/WbotServices/SendWhatsAppMessage";
 import { hookHumanReply } from "../services/CrmServices/LeadCore";
-import { toggleStar, reactToMessage, forwardMessage } from "../services/MessageServices/MessageActions";
+import { toggleStar, reactToMessage, forwardMessage, loadMessageMedia } from "../services/MessageServices/MessageActions";
 
 type IndexQuery = {
   pageNumber: string;
+  silent?: string;
 };
 
 type MessageData = {
@@ -26,14 +27,15 @@ type MessageData = {
 
 export const index = async (req: Request, res: Response): Promise<Response> => {
   const { ticketId } = req.params;
-  const { pageNumber } = req.query as IndexQuery;
+  const { pageNumber, silent } = req.query as IndexQuery;
 
   const { count, messages, ticket, hasMore } = await ListMessagesService({
     pageNumber,
     ticketId
   });
 
-  SetTicketMessagesAsRead(ticket);
+  // opening the conversation marks it read; scrolling back through older pages must not repeat that
+  if (!silent && (!pageNumber || Number(pageNumber) <= 1)) SetTicketMessagesAsRead(ticket);
 
   return res.json({ count, messages, ticket, hasMore });
 };
@@ -138,4 +140,10 @@ export const listByKind = async (req: Request, res: Response): Promise<Response>
       : { ...base, mediaType: { [Op.in]: ["image", "video"] } };
   const rows = await Message.findAll({ where, attributes, order: [["createdAt", "DESC"]], limit: 200 });
   return res.json(rows);
+};
+
+// "Carregar mídia": brings the file of a message that came without it
+export const loadMedia = async (req: Request, res: Response): Promise<Response> => {
+  const message = await loadMessageMedia(req.params.messageId);
+  return res.json(message);
 };

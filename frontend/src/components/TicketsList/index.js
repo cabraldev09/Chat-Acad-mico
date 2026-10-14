@@ -180,6 +180,8 @@ const reducer = (state, action) => {
 			props;
 	const classes = useStyles();
 	const [pageNumber, setPageNumber] = useState(1);
+	// bumped when the live connection came back after a gap: the list is read again from the start
+	const [reloadKey, setReloadKey] = useState(0);
 	const [ticketsList, dispatch] = useReducer(reducer, []);
 	const { user } = useContext(AuthContext);
 
@@ -199,6 +201,7 @@ const reducer = (state, action) => {
 		historical: everything ? "all" : historical ? "true" : undefined,
 		queueIds: JSON.stringify(selectedQueueIds),
 		tagId: tagId || undefined,
+		reloadKey,
 	});
 
 	useEffect(() => {
@@ -291,6 +294,16 @@ const reducer = (state, action) => {
 			socket.disconnect();
 		};
 	}, [status, searchParam, showAll, user, selectedQueueIds, groups, archived]);
+
+	useEffect(() => {
+		const again = () => {
+			dispatch({ type: "RESET" });
+			setPageNumber(1);
+			setReloadKey(k => k + 1);
+		};
+		window.addEventListener("socketReconnected", again);
+		return () => window.removeEventListener("socketReconnected", again);
+	}, []);
 
 	// pins are toggled from the list item or the chat header
 	useEffect(() => {

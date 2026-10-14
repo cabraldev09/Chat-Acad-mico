@@ -28,8 +28,11 @@ import VcardPreview from "../VcardPreview";
 import LocationPreview from "../LocationPreview";
 import ModalImageCors from "../ModalImageCors";
 import MediaGallery, { openGallery } from "../MediaGallery";
-import MessageOptionsMenu from "../MessageOptionsMenu";
+import MessageOptionsMenu, { REACTIONS } from "../MessageOptionsMenu";
+import ReactionBar from "../ReactionBar";
 import Audio from "../Audio";
+import FileCard from "../FileCard";
+import MediaPlaceholder, { needsMedia } from "../MediaPlaceholder";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import whatsBackground from "../../assets/wa-background.png";
@@ -80,7 +83,7 @@ const useStyles = makeStyles((theme) => {
       ...theme.scrollbarStyles,
       [theme.breakpoints.up("md")]: { padding: theme.spacing(1.5, 7, 1) },
     },
-    row: { display: "flex", marginTop: 3 },
+    row: { display: "flex", marginTop: 4 },
     rowIn: { justifyContent: "flex-start" },
     rowOut: { justifyContent: "flex-end" },
     rowFirst: { marginTop: 12 },
@@ -103,8 +106,20 @@ const useStyles = makeStyles((theme) => {
       "& $deleted": { color: c.textSecondary },
     },
     tailed: {},
-    tailedIn: { borderTopLeftRadius: 5 },
-    tailedOut: { borderTopRightRadius: 5 },
+    sticker: {
+      background: "transparent !important", boxShadow: "none !important", border: "0 !important", padding: "0 !important", minWidth: 0,
+      "& $media": { margin: 0, overflow: "visible" },
+      "& $meta": { float: "none", display: "flex", justifyContent: "flex-end", margin: "2px 4px 0", color: c.textSecondary },
+    },
+    reactBtn: {
+      alignSelf: "center", flex: "none", width: 30, height: 30, borderRadius: "50%", border: 0, padding: 0, margin: "0 6px", cursor: "pointer",
+      display: "inline-flex", alignItems: "center", justifyContent: "center", color: c.textSecondary,
+      background: c.panel, boxShadow: c.shadow, opacity: 0, transition: "opacity .12s, transform .12s",
+      "&:hover": { transform: "scale(1.1)", color: c.accent },
+    },
+    rowHover: { "&:hover $reactBtn, & $reactBtn:focus-visible": { opacity: 1 } },
+    tailedIn: { borderBottomLeftRadius: 5 },
+    tailedOut: { borderBottomRightRadius: 5 },
     match: { outline: `2px solid ${dark ? "#667781" : "#ffd279"}`, outlineOffset: 1 },
     matchActive: { outline: `3px solid ${c.accent}`, outlineOffset: 1 },
     sender: { fontSize: 13, fontWeight: 600, color: c.sender, marginBottom: 1 },
@@ -248,7 +263,8 @@ const reducer = (state, action) => {
       if (i !== -1) state[i] = message;
       else fresh.push(message);
     });
-    return [...fresh, ...state];
+    // older pages go in front, newer ones (a refresh after a gap) at the end: always in the order they were written
+    return [...fresh, ...state].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
   }
   if (action.type === "ADD_MESSAGE") {
     const i = state.findIndex((m) => m.id === action.payload.id);
@@ -270,7 +286,7 @@ const fileNameOf = (m) => {
   return m.body && m.body.length < 120 && !m.body.includes("\n") ? m.body : fromUrl || "arquivo";
 };
 
-const isOnlyFileName = (m) => !m.body || m.body === (m.mediaUrl || "").split("/").pop() || /^\d{10,}\.\w{2,5}$/.test(m.body);
+const isOnlyFileName = (m) => !m.body || /^[\p{Extended_Pictographic}\s]*(Imagem|Vídeo|Áudio|Mensagem de voz|Documento|Figurinha|Foto)$/u.test(m.body) || m.body === (m.mediaUrl || "").split("/").pop() || /^\d{10,}\.\w{2,5}$/.test(m.body);
 
 const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex = 0, onMatches }) => {
   const classes = useStyles();
@@ -343,7 +359,28 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
 
   useEffect(() => {
     const socket = openSocket();
-    socket.on("connect", () => socket.emit("joinChatBox", ticketId));
+    // newest messages again (no "mark as read"): after a reconnection, when coming back to the tab, and every 25 s
+    // while it is open, so a missed live event never leaves the conversation behind
+    const resync = async () => {
+      try {
+        const { data } = await api.get("/messages/" + ticketId, { params: { pageNumber: 1, silent: 1 } });
+        if (currentTicketId.current === ticketId) {
+          dispatch({ type: "LOAD_MESSAGES", payload: data.messages });
+          if (atBottomRef.current) setTimeout(() => scrollToBottom(false), 30);
+        }
+      } catch (e) {
+        /* the next round tries again */
+      }
+    };
+    let first = true;
+    socket.on("connect", () => {
+      socket.emit("joinChatBox", ticketId);
+      if (!first) resync();
+      first = false;
+    });
+    const poll = setInterval(() => document.visibilityState === "visible" && resync(), 25000);
+    const onVisible = () => document.visibilityState === "visible" && resync();
+    document.addEventListener("visibilitychange", onVisible);
     socket.on("appMessage", (data) => {
       if (data.action === "create") {
         dispatch({ type: "ADD_MESSAGE", payload: data.message });
@@ -353,6 +390,8 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
       if (data.action === "update") dispatch({ type: "UPDATE_MESSAGE", payload: data.message });
     });
     return () => {
+      clearInterval(poll);
+      document.removeEventListener("visibilitychange", onVisible);
       socket.disconnect();
     };
   }, [ticketId, scrollToBottom]);
@@ -403,6 +442,7 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
 
   // ---------------------------------------------------------------- rendering
   const renderMedia = (m) => {
+    if (needsMedia(m)) return <MediaPlaceholder message={m} />;
     if (m.mediaType === "location" && (m.body || "").split("|").length >= 2) {
       const [image, link, description] = m.body.split("|");
       return <LocationPreview image={image} link={link} description={description || null} />;
@@ -424,6 +464,7 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
         <div className={classes.media}>
           <ModalImageCors
             imageUrl={m.mediaUrl}
+            sticker={/\.webp(\?|$)/i.test(m.mediaUrl || "")}
             onOpen={() => {
               // every photo and video of the loaded conversation, opened at this one
               const items = messagesList
@@ -445,23 +486,24 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
     if (m.mediaType === "video") {
       return (
         <div className={classes.media}>
-          <video className={classes.video} src={m.mediaUrl} controls preload="metadata" />
+          {m.isGif ? (
+            // GIFs loop silently, like on WhatsApp
+            <video className={classes.video} src={m.mediaUrl} autoPlay loop muted playsInline />
+          ) : (
+            <video className={classes.video} src={m.mediaUrl} controls preload="metadata" />
+          )}
         </div>
       );
     }
-    return (
-      <a className={classes.doc} href={m.mediaUrl} target="_blank" rel="noopener noreferrer" download>
-        <InsertDriveFile />
-        <span className={classes.docName}>{fileNameOf(m)}</span>
-        <GetApp />
-      </a>
-    );
+    return <FileCard url={m.mediaUrl} name={fileNameOf(m)} />;
   };
 
   const ack = (m) => {
     if (!m.fromMe) return null;
     if (m.ack < 0) return <ErrorOutline className={classes.ack} style={{ fontSize: 15, color: "#ea0038" }} titleAccess="Falha no envio" />;
-    if (m.ack === 0) return <AccessTime className={classes.ack} style={{ fontSize: 14 }} />;
+    // the clock is only for the first moments: a message older than 2 minutes was surely sent
+    if (m.ack === 0 && Date.now() - new Date(m.createdAt).getTime() < 120000) return <AccessTime className={classes.ack} style={{ fontSize: 14 }} />;
+    if (m.ack === 0) return <Done className={classes.ack} />;
     if (m.ack === 1) return <Done className={classes.ack} />;
     if (m.ack === 2) return <DoneAll className={classes.ack} />;
     if (m.ack >= 3) return <DoneAll className={classes.ackRead} />;
@@ -495,6 +537,9 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
     const prev = messagesList[i - 1];
     const newDay = !prev || new Date(prev.createdAt).toDateString() !== new Date(m.createdAt).toDateString();
     const newSender = !prev || prev.fromMe !== m.fromMe || newDay;
+    const following = messagesList[i + 1];
+    // the last bubble of a sequence carries the "tail" (bottom corner), like the WhatsApp app
+    const isLast = !following || following.fromMe !== m.fromMe || new Date(following.createdAt).toDateString() !== new Date(m.createdAt).toDateString();
     if (newDay) {
       items.push(
         <span key={`day-${m.id}`} className={classes.day}>
@@ -510,7 +555,9 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
       );
     }
     const mine = m.fromMe;
-    const hasMedia = m.mediaUrl || m.mediaType === "location" || m.mediaType === "vcard";
+    // stickers (webp) show alone, without a bubble, like on WhatsApp
+    const isSticker = m.mediaType === "image" && /\.webp(\?|$)/i.test(m.mediaUrl || "");
+    const hasMedia = m.mediaUrl || needsMedia(m) || m.mediaType === "location" || m.mediaType === "vcard";
     const mediaOnly = hasMedia && (m.mediaType === "image" || m.mediaType === "video") && isOnlyFileName(m);
     const showText = !m.isDeleted && !(hasMedia && (isOnlyFileName(m) || m.mediaType === "vcard" || m.mediaType === "location" || m.mediaType === "audio"));
     const rx = reactionsOf(m);
@@ -520,9 +567,12 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
     items.push(
       <div
         key={m.id}
-        className={clsx(classes.row, mine ? classes.rowOut : classes.rowIn, newSender && classes.rowFirst, picked && !m.isDeleted && classes.pickRow, picked && picked.includes(m.id) && classes.pickRowOn)}
+        className={clsx(classes.row, classes.rowHover, mine ? classes.rowOut : classes.rowIn, newSender && classes.rowFirst, picked && !m.isDeleted && classes.pickRow, picked && picked.includes(m.id) && classes.pickRowOn)}
         onClick={picked && !m.isDeleted ? () => togglePick(m.id) : undefined}
       >
+        {mine && !picked && !m.isDeleted && (REACTIONS[channel] || REACTIONS.whatsapp).length > 0 && (
+          <ReactionBar message={m} channel={channel} className={classes.reactBtn} />
+        )}
         {picked && !m.isDeleted && (
           <span className={clsx(classes.pickMark, picked.includes(m.id) && classes.pickMarkOn)}>
             {picked.includes(m.id) ? <CheckCircle /> : <RadioButtonUnchecked />}
@@ -534,8 +584,9 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
           }}
           className={clsx(
             mine ? classes.bubbleOut : classes.bubbleIn,
-            newSender && classes.tailed,
-            newSender && (mine ? classes.tailedOut : classes.tailedIn),
+            isLast && !isSticker && classes.tailed,
+            isLast && !isSticker && (mine ? classes.tailedOut : classes.tailedIn),
+            isSticker && classes.sticker,
             rx.length > 0 && classes.withReactions,
             isMatch && classes.match,
             isActive && classes.matchActive
@@ -592,6 +643,9 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
             </span>
           )}
         </div>
+        {!mine && !picked && !m.isDeleted && (REACTIONS[channel] || REACTIONS.whatsapp).length > 0 && (
+          <ReactionBar message={m} channel={channel} className={classes.reactBtn} />
+        )}
       </div>
     );
   });

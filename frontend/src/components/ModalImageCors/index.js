@@ -16,13 +16,14 @@ const useStyles = makeStyles(theme => ({
 	},
 }));
 
-const ModalImageCors = ({ imageUrl, onOpen }) => {
+const ModalImageCors = ({ imageUrl, onOpen, sticker }) => {
 	const classes = useStyles();
 	const [fetching, setFetching] = useState(true);
 	const [blobUrl, setBlobUrl] = useState("");
 
 	useEffect(() => {
-		if (!imageUrl) return;
+		// the gallery shows the picture straight from the server (cached by the browser): no extra download here
+		if (!imageUrl || onOpen) return;
 		const fetchImage = async () => {
 			const { data, headers } = await api.get(imageUrl, {
 				responseType: "blob",
@@ -41,9 +42,11 @@ const ModalImageCors = ({ imageUrl, onOpen }) => {
 		return (
 			<img
 				className={classes.messageMedia}
-				style={{ cursor: "zoom-in", display: "block" }}
-				src={fetching ? imageUrl : blobUrl}
-				alt="imagem"
+				style={sticker ? { cursor: "zoom-in", display: "block", width: 150, height: 150, objectFit: "contain", background: "transparent" } : { cursor: "zoom-in", display: "block" }}
+				src={imageUrl}
+				loading="lazy"
+				decoding="async"
+				alt={sticker ? "figurinha" : "imagem"}
 				onClick={onOpen}
 			/>
 		);

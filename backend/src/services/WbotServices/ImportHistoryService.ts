@@ -17,6 +17,15 @@ export interface HistoryReport {
 }
 
 const running = new Set<number>();
+const MEDIA_KIND: Record<string, string> = {
+  image: "image",
+  sticker: "image",
+  video: "video",
+  audio: "audio",
+  ptt: "audio",
+  document: "document"
+};
+
 export const isHistoryRunning = (whatsappId: number): boolean => running.has(whatsappId);
 
 // Copies the conversations that already exist on the phone into the system as HISTORY: readable and
@@ -108,7 +117,8 @@ export const importHistory = async (
             body: m.body,
             fromMe: m.fromMe,
             read: true,
-            mediaType: "chat",
+            // the kind stays known so the file can be loaded later with one click
+            mediaType: MEDIA_KIND[m.type || ""] || "chat",
             ack: m.ack,
             contactId: m.fromMe ? undefined : (m.author && people.get(`${m.author.number}|${m.author.lid || ""}`)) || contact.id,
             createdAt: new Date(m.timestamp * 1000)

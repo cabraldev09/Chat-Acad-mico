@@ -15,7 +15,7 @@ import { brl, day, fetchAllUsers, useStyles } from "./shared";
 const EMPTY = { title: "", description: "", startsAt: "", endsAt: "", bonusValue: "", active: true, audience: "all", ownerIds: [], affiliateIds: [] };
 const dateInput = (v) => (v ? new Date(v).toISOString().slice(0, 10) : "");
 
-const CampaignForm = ({ open, campaign, consultants, affiliates, onClose, onSaved }) => {
+const CampaignForm = ({ open, campaign, consultants, affiliates, isAdmin, onClose, onSaved }) => {
   const [f, setF] = useState(EMPTY);
   const [file, setFile] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -57,14 +57,16 @@ const CampaignForm = ({ open, campaign, consultants, affiliates, onClose, onSave
           <TextField label="Começa em" type="date" value={f.startsAt} onChange={set("startsAt")} margin="dense" variant="outlined" InputLabelProps={{ shrink: true }} />
           <TextField label="Termina em" type="date" value={f.endsAt} onChange={set("endsAt")} margin="dense" variant="outlined" InputLabelProps={{ shrink: true }} />
         </div>
-        <TextField label="Bonificação por matrícula nesta campanha (R$)" type="number" value={f.bonusValue ?? ""} onChange={set("bonusValue")} fullWidth margin="dense" variant="outlined"
-          helperText="Opcional. Enquanto a campanha valer, substitui o valor padrão para quem a vê." />
+        {isAdmin && (
+          <TextField label="Bonificação por matrícula nesta campanha (R$)" type="number" value={f.bonusValue ?? ""} onChange={set("bonusValue")} fullWidth margin="dense" variant="outlined"
+            helperText="Opcional. Enquanto a campanha valer, substitui o valor padrão para quem a vê." />
+        )}
         <div style={{ margin: "8px 0", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <input ref={input} type="file" hidden accept=".png,.jpg,.jpeg,.webp,.gif" onChange={(e) => setFile(e.target.files[0] || null)} />
           <Button variant="outlined" startIcon={<ImagePlus size={15} />} onClick={() => input.current.click()}>{campaign && campaign.hasCover ? "Trocar imagem de capa" : "Imagem de capa"}</Button>
           {file && <Typography variant="body2">{file.name}</Typography>}
         </div>
-        <AudiencePicker value={f} onChange={setF} consultants={consultants} affiliates={affiliates} />
+        <AudiencePicker value={f} onChange={setF} consultants={consultants} affiliates={affiliates} limited={!isAdmin} />
         <FormControlLabel control={<Switch color="primary" checked={!!f.active} onChange={(e) => setF({ ...f, active: e.target.checked })} />} label={f.active ? "Publicada" : "Oculta"} />
       </DialogContent>
       <DialogActions>
@@ -107,14 +109,14 @@ const CampaignsTab = () => {
         <Typography variant="body2" color="textSecondary" className={classes.grow}>
           Campanhas que a instituição faz (ou que o administrador libera) aparecem no portal dos afiliados enquanto estiverem valendo.
         </Typography>
-        {isAdmin && <Button variant="contained" color="primary" startIcon={<Plus size={16} />} onClick={() => setForm({})}>Nova campanha</Button>}
+        <Button variant="contained" color="primary" startIcon={<Plus size={16} />} onClick={() => setForm({})}>Nova campanha</Button>
       </div>
       <div className={classes.body}>
         {rows.length === 0 && (
           <Paper variant="outlined" className={classes.empty}>
             <Megaphone size={36} style={{ opacity: 0.6 }} />
             <Typography variant="subtitle1" style={{ fontWeight: 600 }}>Nenhuma campanha</Typography>
-            <Typography variant="body2">{isAdmin ? "Crie uma campanha com datas, regras e, se quiser, uma bonificação maior por matrícula." : "Quando houver campanha liberada para você, ela aparece aqui."}</Typography>
+            <Typography variant="body2">{isAdmin ? "Crie uma campanha com datas, regras e, se quiser, uma bonificação maior por matrícula." : "Crie campanhas para os seus afiliados, com datas e regras. As que o administrador liberar para você também aparecem aqui."}</Typography>
           </Paper>
         )}
         <div className={classes.cards}>
@@ -138,16 +140,16 @@ const CampaignsTab = () => {
                   </span>
                 </div>
                 <div className={classes.actions} style={{ marginLeft: 0, justifyContent: "flex-end" }}>
-                  {!isAdmin && <Button size="small" variant="outlined" onClick={() => setRelease(c)}>Liberar aos meus afiliados</Button>}
-                  {isAdmin && <IconAction title="Editar" onClick={() => setForm(c)}><Pencil size={16} /></IconAction>}
-                  {isAdmin && <IconAction title="Excluir" onClick={() => setDel(c)}><Trash2 size={16} /></IconAction>}
+                  {!isAdmin && c.createdBy !== user.id && <Button size="small" variant="outlined" onClick={() => setRelease(c)}>Liberar aos meus afiliados</Button>}
+                  {(isAdmin || c.createdBy === user.id) && <IconAction title="Editar" onClick={() => setForm(c)}><Pencil size={16} /></IconAction>}
+                  {(isAdmin || c.createdBy === user.id) && <IconAction title="Excluir" onClick={() => setDel(c)}><Trash2 size={16} /></IconAction>}
                 </div>
               </GlowCard>
             );
           })}
         </div>
       </div>
-      <CampaignForm open={!!form} campaign={form && form.id ? form : null} consultants={consultants} affiliates={affiliates}
+      <CampaignForm open={!!form} campaign={form && form.id ? form : null} consultants={consultants} affiliates={affiliates} isAdmin={isAdmin}
         onClose={() => setForm(null)} onSaved={() => { setForm(null); load(); }} />
       {release && <ReleaseDialog open kind="campaign" item={release} onClose={() => setRelease(null)} onDone={() => { setRelease(null); load(); }} />}
       <ConfirmationModal open={!!del} onClose={() => setDel(null)} title="Excluir campanha?"

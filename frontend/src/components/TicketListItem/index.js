@@ -244,9 +244,9 @@ const TicketListItem = ({ ticket }) => {
       tabIndex={0}
       data-ticket-id={ticket.id}
       className={clsx(classes.row, selected && classes.selected, ticket.status === "closed" && classes.closed)}
-      onClick={() => ticket.status !== "pending" && history.push(`/tickets/${ticket.id}`)}
+      onClick={() => (ticket.status !== "pending" || ticket.isGroup) && history.push(`/tickets/${ticket.id}`)}
       onKeyDown={(e) => {
-        if (e.key === "Enter" && ticket.status !== "pending") history.push(`/tickets/${ticket.id}`);
+        if (e.key === "Enter" && (ticket.status !== "pending" || ticket.isGroup)) history.push(`/tickets/${ticket.id}`);
         // arrow keys walk the list like WhatsApp Web (only rows that are on screen: other tabs stay mounted, hidden)
         if (e.key === "ArrowDown" || e.key === "ArrowUp") {
           const rows = Array.from(document.querySelectorAll("[data-ticket-id]")).filter((el) => el.offsetParent !== null);
@@ -280,7 +280,7 @@ const TicketListItem = ({ ticket }) => {
           <span className={classes.preview} style={unread ? { color: undefined, fontWeight: 500 } : undefined}>
             {ticket.lastMessageFromMe && ticket.lastMessage && (
               <span className={classes.tick} title={ticket.lastMessageAck < 0 ? "Falha no envio" : ["Enviando", "Enviada", "Entregue", "Lida", "Ouvida"][ticket.lastMessageAck] || ""} style={{ color: ticket.lastMessageAck >= 3 ? "#53bdeb" : ticket.lastMessageAck < 0 ? "#ea0038" : undefined }}>
-                {ticket.lastMessageAck < 0 ? <AlertCircle size={15} /> : ticket.lastMessageAck === 0 ? <Clock size={14} /> : ticket.lastMessageAck === 1 ? <Check size={16} /> : <CheckCheck size={16} />}
+                {ticket.lastMessageAck < 0 ? <AlertCircle size={15} /> : (ticket.lastMessageAck === 0 && Date.now() - new Date(ticket.lastMessageAt || ticket.updatedAt).getTime() < 120000) ? <Clock size={14} /> : ticket.lastMessageAck === 1 ? <Check size={16} /> : <CheckCheck size={16} />}
               </span>
             )}
             {draft ? (
@@ -313,12 +313,12 @@ const TicketListItem = ({ ticket }) => {
               <span className={classes.pin}><Pin size={14} /></span>
             </Tooltip>
           )}
-          {ticket.status === "pending" ? (
+          {ticket.status === "pending" && !ticket.isGroup ? (
             <button type="button" className={classes.accept} onClick={accept} disabled={loading}>
               {loading ? <CircularProgress size={14} color="inherit" /> : "Aceitar"}
             </button>
           ) : (
-            unread && <span className={classes.badge}>{ticket.unreadMessages > 99 ? "99+" : ticket.unreadMessages}</span>
+            unread && <span className={classes.badge} style={soundPref === "mute" ? { backgroundColor: "#8696a0" } : undefined}>{ticket.unreadMessages > 99 ? "99+" : ticket.unreadMessages}</span>
           )}
           <button type="button" className={classes.more} aria-label="Mais opções da conversa" title="Mais opções" onClick={(e) => { e.stopPropagation(); setMenuEl(e.currentTarget); }}>
             <ChevronDown size={16} />

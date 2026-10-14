@@ -16,6 +16,7 @@ const useTickets = ({
     archived,
     historical,
     tagId,
+    reloadKey,
 }) => {
     const [loading, setLoading] = useState(true);
     const [hasMore, setHasMore] = useState(false);
@@ -90,6 +91,9 @@ const useTickets = ({
         withUnreadMessages,
         groups,
         archived,
+        historical,
+        tagId,
+        reloadKey,
     ])
 
     return { tickets, loading, hasMore, count };

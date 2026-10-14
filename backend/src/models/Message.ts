@@ -57,6 +57,11 @@ class Message extends Model<Message> {
   @Column
   isEdited: boolean;
 
+  // animated GIF (a looping video)
+  @Default(false)
+  @Column
+  isGif: boolean;
+
   @Default(false)
   @Column
   starred: boolean;

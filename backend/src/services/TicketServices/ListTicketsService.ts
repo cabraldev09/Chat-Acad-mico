@@ -24,6 +24,8 @@ interface Request {
   tagId?: string;
   archived?: string;
   historical?: string;
+  // only the total (chip counters): no rows are loaded
+  countOnly?: boolean;
   // who is asking: lists follow the same visibility rules as opening a conversation
   role?: Role;
 }
@@ -47,6 +49,7 @@ const ListTicketsService = async ({
   tagId,
   archived,
   historical,
+  countOnly,
   role
 }: Request): Promise<Response> => {
   let whereCondition: Filterable["where"] =
@@ -146,6 +149,12 @@ const ListTicketsService = async ({
     };
   }
 
+  // the unread view rebuilt the filter above: the Grupos / private-only choice still applies
+  if (withUnreadMessages === "true") {
+    if (groups === "only") whereCondition = { ...whereCondition, isGroup: true };
+    if (groups === "exclude") whereCondition = { ...whereCondition, isGroup: false };
+  }
+
   // archived conversations only show in their own view
   whereCondition = {
     [Op.and]: [whereCondition, { archivedAt: archived === "true" ? { [Op.ne]: null } : { [Op.is]: null } }]
@@ -192,6 +201,11 @@ const ListTicketsService = async ({
       historical === "true"
         ? { [Op.and]: [whereCondition || {}, history] }
         : { [Op.or]: [{ [Op.and]: [whereCondition || {}, { isHistorical: false }] }, history] };
+  }
+
+  if (countOnly) {
+    const total = await Ticket.count({ where: finalWhere as any, include: includeCondition, distinct: true });
+    return { tickets: [], count: total, hasMore: false };
   }
 
   const { count, rows: tickets } = await Ticket.findAndCountAll({

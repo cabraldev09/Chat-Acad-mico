@@ -93,6 +93,8 @@ const Chat = () => {
     const onKey = (e) => {
       const mod = e.ctrlKey || e.metaKey;
       const key = e.key.toLowerCase();
+      // on a Mac, Option + letter types another character (Option+N gives "˜"): the physical key is what counts
+      const alt = e.altKey ? e.code : "";
       if (mod && key === "k") {
         e.preventDefault();
         const input = document.querySelector('input[placeholder^="Pesquisar nome"]');
@@ -100,10 +102,10 @@ const Chat = () => {
       } else if (mod && key === "/") {
         e.preventDefault();
         setShortcutsOpen(true);
-      } else if (e.altKey && key === "n") {
+      } else if (alt === "KeyN") {
         e.preventDefault();
         window.dispatchEvent(new CustomEvent("openNewConversation"));
-      } else if (e.altKey && key === "m") {
+      } else if (alt === "KeyM") {
         e.preventDefault();
         const box = document.querySelector('textarea[placeholder="Digite uma mensagem"]');
         if (box) box.focus();

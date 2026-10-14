@@ -1338,6 +1338,42 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(!(await found("xy")).includes(Number(t)), "two letters must not search message bodies");
       assert((await found("xyzzycode")).length === new Set(await found("xyzzycode")).size, "duplicated rows in search");
     });
+    await test("home dashboard: per day (days do not mix), groups, history and team members stay out, staff flag works", async () => {
+      const mkContact = (name, num, group = false) => sql(`INSERT INTO Contacts (name, number, email, isGroup, channel, createdAt, updatedAt) VALUES ('${name}', '${num}', '', ${group}, 'telegram', NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const mkTicket = (cid, group = false) => sql(`INSERT INTO Tickets (status, contactId, whatsappId, unreadMessages, isGroup, segment, isHistorical, createdAt, updatedAt) VALUES ('open', ${cid}, ${tgId}, 0, ${group}, 'sales', false, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const before = (await http.get("/dashboard", auth())).data;
+      assert(before.now && before.day && before.day.week.length === 7 && before.day.byHour.length >= 13, "dashboard shape");
+
+      const customer = mkTicket(mkContact("Cliente Painel", "tg_dash_1"));
+      const mate = mkContact("Colega Painel", "tg_dash_2");
+      const mateTicket = mkTicket(mate);
+      const grp = mkTicket(mkContact("Grupo Painel", "tg_dash_g"), true);
+      const msg = (id, ticket, body, fromMe, ago) => sql(`INSERT INTO Messages (id, ticketId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('${id}', ${ticket}, '${body}', ${fromMe}, true, 'chat', 0, NOW() - INTERVAL '${ago}', NOW())`);
+      msg("dash-c-1", customer, "oi", false, "1 minute");
+      msg("dash-c-2", customer, "tudo bem?", true, "30 seconds");
+      msg("dash-old", customer, "ontem", false, "30 hours");
+      msg("dash-m-1", mateTicket, "papo interno", false, "1 minute");
+      msg("dash-g-1", grp, "mensagem de grupo", false, "1 minute");
+      const after = (await http.get("/dashboard", auth())).data;
+      assert(after.day.received - before.day.received === 2, `received counts today's customer + team message only: ${after.day.received - before.day.received}`);
+      assert(after.day.sent - before.day.sent === 1, "sent");
+      assert(after.day.conversations - before.day.conversations === 2, "conversations of the day (group out, yesterday's message not counted)");
+
+      // marking the colleague as team removes them from every number
+      assert((await http.put(`/contacts/${mate}/staff`, { isStaff: true }, auth())).status === 200, "mark staff");
+      const staffed = (await http.get("/dashboard", auth())).data;
+      assert(staffed.day.received - before.day.received === 1 && staffed.day.conversations - before.day.conversations === 1, "team member still counted");
+      const ov = (await http.get("/stats/overview", { params: { from: "2020-01-01", to: "2099-12-31" }, ...auth() })).data;
+      assert(sql(`SELECT isStaff FROM Contacts WHERE id=${mate}`) === "1", "flag not saved");
+      assert(ov.totals, "stats still answers");
+
+      // another day: yesterday shows the old message, today's are not mixed in
+      const y = new Date(Date.now() - 86400000).toLocaleDateString("en-CA", { timeZone: "America/Porto_Velho" });
+      const yesterday = (await http.get("/dashboard", { params: { date: y }, ...auth() })).data;
+      assert(yesterday.date === y && yesterday.day.received >= 1, "yesterday keeps its own message");
+      const agentView = await http.get("/dashboard", asUser(agentToken));
+      assert(agentView.status === 200 && agentView.data.scope === "mine", `dashboard for a non-admin: ${agentView.status}`);
+    });
     await test("the default course catalogue loads once, keeps manual prices and --force restores them", async () => {
       const first = await http.post("/courses/load-default", {}, auth());
       assert(first.status === 200 && first.data.total === 128, `catalogue size ${JSON.stringify(first.data)}`);

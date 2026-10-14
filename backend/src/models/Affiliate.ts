@@ -47,6 +47,10 @@ class Affiliate extends Model<Affiliate> {
   @Column
   portalToken: string;
 
+  // the affiliate's own link in the "Minhas indicações" app, saved by the consultant
+  @Column(DataType.TEXT)
+  externalLink: string;
+
   @Column
   pixKeyType: string;
 

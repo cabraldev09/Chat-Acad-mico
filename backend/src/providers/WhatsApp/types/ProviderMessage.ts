@@ -21,5 +21,7 @@ export interface ProviderMessage {
   from: string;
   to: string;
   hasQuotedMsg?: boolean;
+  // animated GIF sent as a looping video
+  isGif?: boolean;
   ack?: MessageAck;
 }

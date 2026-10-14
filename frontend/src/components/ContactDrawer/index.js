@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 
 import { makeStyles } from "@material-ui/core/styles";
 import Typography from "@material-ui/core/Typography";
@@ -16,6 +16,12 @@ import LeadCard from "../LeadCard";
 import ContactDrawerSkeleton from "../ContactDrawerSkeleton";
 import MarkdownWrapper from "../MarkdownWrapper";
 import SharedMedia from "../SharedMedia";
+import GroupInfo from "../GroupInfo";
+import Switch from "@material-ui/core/Switch";
+import FormControlLabel from "@material-ui/core/FormControlLabel";
+import { toast } from "react-toastify";
+import api from "../../services/api";
+import toastError from "../../errors/toastError";
 import { wa } from "../chat/chatTheme";
 
 const useStyles = makeStyles(theme => {
@@ -67,6 +73,9 @@ const ContactDrawer = ({ open, handleDrawerClose, contact, loading }) => {
 	const classes = useStyles();
 
 	const [modalOpen, setModalOpen] = useState(false);
+	const [staff, setStaff] = useState(null);
+	// the drawer is reused from one contact to the next
+	useEffect(() => setStaff(null), [contact && contact.id]);
 
 	if (!open) return null;
 
@@ -92,6 +101,37 @@ const ContactDrawer = ({ open, handleDrawerClose, contact, loading }) => {
 							{i18n.t("contactDrawer.buttons.edit")}
 						</Button>
 					</div>
+					{contact.isGroup && <GroupInfo />}
+					{!contact.isGroup && (
+						<div className={classes.card} style={{ paddingTop: 8, paddingBottom: 8 }}>
+							<FormControlLabel
+								style={{ margin: 0, alignItems: "flex-start" }}
+								control={
+									<Switch
+										color="primary"
+										checked={staff === null ? !!contact.isStaff : staff}
+										onChange={async (e) => {
+											const next = e.target.checked;
+											setStaff(next);
+											try {
+												await api.put(`/contacts/${contact.id}/staff`, { isStaff: next });
+												toast.success(next ? "Marcado como da equipe." : "Desmarcado da equipe.");
+											} catch (err) {
+												setStaff(!next);
+												toastError(err);
+											}
+										}}
+									/>
+								}
+								label={
+									<span>
+										<span style={{ fontSize: 14 }}>É da equipe</span>
+										<span style={{ display: "block", fontSize: 12, opacity: 0.7 }}>Não conta nas estatísticas nem no funil, mesmo sem login no sistema.</span>
+									</span>
+								}
+							/>
+						</div>
+					)}
 					<div style={{ marginBottom: 8 }}>
 						<LeadCard contactId={contact.id} />
 					</div>

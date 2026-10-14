@@ -1,4 +1,5 @@
 import React, { useContext, useEffect, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 import clsx from "clsx";
 import { makeStyles } from "@material-ui/core/styles";
 import SearchIcon from "@material-ui/icons/Search";
@@ -22,8 +23,9 @@ import NewTicketModal from "../NewTicketModal";
 import TicketsList from "../TicketsList";
 import { AuthContext } from "../../context/Auth/AuthContext";
 import api from "../../services/api";
+import openSocket from "../../services/socket-io";
 import TicketsQueueSelect from "../TicketsQueueSelect";
-import { wa } from "../chat/chatTheme";
+import { wa, getChatAccent, setChatAccent } from "../chat/chatTheme";
 
 const useStyles = makeStyles((theme) => {
   const c = wa(theme);
@@ -125,7 +127,10 @@ const TicketsManager = () => {
   const classes = useStyles();
   const [searchParam, setSearchParam] = useState("");
   const [searchText, setSearchText] = useState("");
-  const [filter, setFilter] = useState("open"); // open | pending | closed | unread
+  const location = useLocation();
+  const asked = new URLSearchParams(location.search).get("filtro");
+  const [filter, setFilter] = useState(["open", "pending", "unread", "everything", "groups", "closed", "archived"].includes(asked) ? asked : "open");
+  const [moreEl, setMoreEl] = useState(null);
   const [newTicketModalOpen, setNewTicketModalOpen] = useState(false);
   const [showAllTickets, setShowAllTickets] = useState(false);
   const [menuEl, setMenuEl] = useState(null);
@@ -168,6 +173,31 @@ const TicketsManager = () => {
     window.addEventListener("openNewConversation", open);
     return () => window.removeEventListener("openNewConversation", open);
   }, []);
+
+  // groups do not show in "Atendendo", so their unread count lives on the Grupos chip (like WhatsApp's unread filter)
+  const [groupUnread, setGroupUnread] = useState(0);
+  const [dmUnread, setDmUnread] = useState(0);
+  useEffect(() => {
+    let timer;
+    const refresh = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        const count = (groups) =>
+          api.get("/tickets", { params: { withUnreadMessages: "true", groups, showAll: "true", countOnly: "true", queueIds: JSON.stringify(selectedQueueIds) } })
+            .then(({ data }) => data.count || 0);
+        Promise.all([count("only"), count("exclude")]).then(([g, d]) => { setGroupUnread(g); setDmUnread(d); }).catch(() => undefined);
+      }, 700);
+    };
+    refresh();
+    const socket = openSocket();
+    socket.on("connect", () => socket.emit("joinNotification"));
+    socket.on("appMessage", refresh);
+    socket.on("ticket", refresh);
+    return () => {
+      clearTimeout(timer);
+      socket.disconnect();
+    };
+  }, [selectedQueueIds]);
 
   const searching = searchParam.length > 0;
   const chip = (key, label, count) => (
@@ -215,6 +245,12 @@ const TicketsManager = () => {
           <MenuItem onClick={() => { setShowFilters((v) => !v); setMenuEl(null); }}>
             <ListItemIcon style={{ minWidth: 32 }}><FilterList fontSize="small" /></ListItemIcon>
             <ListItemText primary="Filtrar por fila" />
+          </MenuItem>
+          <MenuItem onClick={() => { setMenuEl(null); setChatAccent(getChatAccent() === "blue" ? "green" : "blue"); }}>
+            <ListItemIcon style={{ minWidth: 32 }}>
+              <span style={{ width: 18, height: 18, borderRadius: "50%", background: getChatAccent() === "blue" ? "#25d366" : "#1a8ff0", display: "inline-block" }} />
+            </ListItemIcon>
+            <ListItemText primary={getChatAccent() === "blue" ? "Mensagens enviadas em verde" : "Mensagens enviadas em azul"} />
           </MenuItem>
           <MenuItem onClick={() => { setMenuEl(null); window.dispatchEvent(new CustomEvent("openShortcuts")); }}>
             <ListItemIcon style={{ minWidth: 32 }}><Keyboard fontSize="small" /></ListItemIcon>
@@ -280,13 +316,23 @@ const TicketsManager = () => {
       {!searching && (
         <div className={classes.chips}>
           {chip("open", "Atendendo", openCount)}
-          {chip("pending", "Aguardando", pendingCount)}
-          {chip("unread", "Não lidas", 0)}
+          {/* nobody waiting: the chip would only be noise (it comes back, with a number, when someone does) */}
+          {(pendingCount > 0 || filter === "pending") && chip("pending", "Aguardando", pendingCount)}
+          {chip("unread", "Não lidas", dmUnread)}
+          {chip("groups", "Grupos", groupUnread)}
           {chip("everything", "Todas", 0)}
-          {chip("groups", "Grupos", 0)}
-          {chip("closed", "Resolvidas", 0)}
-          {chip("archived", "Arquivadas", 0)}
-          {chip("historical", "Histórico", 0)}
+          <button
+            type="button"
+            className={clsx(classes.chip, (filter === "closed" || filter === "archived") && !searching && classes.chipOn)}
+            onClick={(e) => setMoreEl(e.currentTarget)}
+          >
+            {filter === "closed" ? "Resolvidas" : filter === "archived" ? "Arquivadas" : "Mais"} ▾
+          </button>
+          <Menu anchorEl={moreEl} open={Boolean(moreEl)} onClose={() => setMoreEl(null)} getContentAnchorEl={null}
+            anchorOrigin={{ vertical: "bottom", horizontal: "left" }} transformOrigin={{ vertical: "top", horizontal: "left" }}>
+            <MenuItem selected={filter === "closed"} onClick={() => { setMoreEl(null); clearSearch(); setFilter("closed"); }}>Resolvidas</MenuItem>
+            <MenuItem selected={filter === "archived"} onClick={() => { setMoreEl(null); clearSearch(); setFilter("archived"); }}>Arquivadas</MenuItem>
+          </Menu>
         </div>
       )}
 
@@ -307,12 +353,11 @@ const TicketsManager = () => {
               <TicketsList tagId={tagId} groups="only" everything showAll={true} selectedQueueIds={selectedQueueIds} />
             )}
             {filter === "unread" && (
-              <TicketsList tagId={tagId} withUnreadMessages showAll={showAllTickets} selectedQueueIds={selectedQueueIds} />
+              <TicketsList tagId={tagId} withUnreadMessages groups="exclude" showAll={showAllTickets} selectedQueueIds={selectedQueueIds} />
             )}
             {filter === "closed" && <TicketsList tagId={tagId} status="closed" showAll={true} selectedQueueIds={selectedQueueIds} />}
             {filter === "archived" && <TicketsList tagId={tagId} archived showAll={true} selectedQueueIds={selectedQueueIds} />}
             {filter === "everything" && <TicketsList tagId={tagId} everything showAll={true} selectedQueueIds={selectedQueueIds} />}
-            {filter === "historical" && <TicketsList tagId={tagId} historical showAll={true} selectedQueueIds={selectedQueueIds} />}
           </>
         )}
         <Tooltip title="Nova conversa">

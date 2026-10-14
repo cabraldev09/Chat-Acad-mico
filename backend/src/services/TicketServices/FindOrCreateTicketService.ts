@@ -114,9 +114,10 @@ const FindOrCreateTicketService = async (
     });
   }
 
-  // a personal number: the conversation belongs to the person who connected it (the bots stay out)
+  // a personal number: the conversation belongs to the person who connected it (the bots stay out).
+  // Groups too: nobody "accepts" a group, whoever is in it already took part
   const connection = await Whatsapp.findByPk(whatsappId, { attributes: ["id", "ownerId"] });
-  if (connection?.ownerId && !groupContact && ticket.status === "pending" && !ticket.userId) {
+  if (connection?.ownerId && ticket.status === "pending" && !ticket.userId) {
     await ticket.update({ status: "open", userId: connection.ownerId });
   }
 

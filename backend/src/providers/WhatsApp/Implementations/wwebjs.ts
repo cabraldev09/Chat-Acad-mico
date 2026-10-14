@@ -246,6 +246,7 @@ const convertToMessagePayload = async (
     from: processedMsg.from,
     to: processedMsg.to,
     hasQuotedMsg: processedMsg.hasQuotedMsg,
+    isGif: !!(processedMsg as any)._data?.isGif,
     quotedMsgId
   };
 };
@@ -255,7 +256,19 @@ const convertToMediaPayload = async (
 ): Promise<MediaPayload | undefined> => {
   if (!msg.hasMedia) return undefined;
 
-  const media = await msg.downloadMedia();
+  // a download that fails (GIFs and stickers sometimes are not ready yet) must not lose the message:
+  // two tries, then the message is stored without the file and can be loaded later on demand
+  let media: any;
+  for (let attempt = 0; attempt < 2 && !media; attempt += 1) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      media = await msg.downloadMedia();
+    } catch (err) {
+      logger.warn(`Media download failed (${msg.type}): ${err}`);
+    }
+    // eslint-disable-next-line no-await-in-loop
+    if (!media && attempt === 0) await new Promise(r => setTimeout(r, 2500));
+  }
   if (!media) return undefined;
 
   return {
@@ -620,6 +633,7 @@ const importChats = async (
           fromMe: m.fromMe,
           timestamp: m.timestamp,
           ack: mapMessageAck(m.ack),
+          type: m.type,
           // eslint-disable-next-line no-await-in-loop
           author: await authorOf(m)
         });
@@ -765,6 +779,46 @@ const findMessage = async (
   if (!chat) return null;
   const recent = await chat.fetchMessages({ limit: 400 });
   return recent.find(m => m.id.id === messageId) || null;
+};
+
+const getGroupInfo = async (
+  sessionId: number,
+  chatId: string
+): Promise<{ name: string; description: string; createdAt?: number; participants: { id: string; isAdmin: boolean }[] } | null> => {
+  const chat: any = await getWbot(sessionId).getChatById(chatId).catch(() => null);
+  if (!chat || !chat.isGroup) return null;
+  return {
+    name: chat.name,
+    description: chat.description || "",
+    createdAt: chat.createdAt ? Math.floor(new Date(chat.createdAt).getTime() / 1000) : undefined,
+    participants: (chat.participants || []).map((p: any) => ({
+      id: p.id?._serialized || "",
+      isAdmin: !!(p.isAdmin || p.isSuperAdmin)
+    }))
+  };
+};
+
+const getMessageAck = async (
+  sessionId: number,
+  chatId: string,
+  messageId: string,
+  fromMe: boolean
+): Promise<number | null> => {
+  const message = await findMessage(getWbot(sessionId), chatId, messageId, fromMe).catch(() => null);
+  return message ? mapMessageAck(message.ack) : null;
+};
+
+const downloadMessageMedia = async (
+  sessionId: number,
+  chatId: string,
+  messageId: string,
+  fromMe: boolean
+): Promise<{ filename: string; mimetype: string; data: string; isGif?: boolean } | null> => {
+  const message = await findMessage(getWbot(sessionId), chatId, messageId, fromMe);
+  if (!message || !message.hasMedia) return null;
+  const media = await message.downloadMedia();
+  if (!media) return null;
+  return { filename: media.filename || "", mimetype: media.mimetype, data: media.data, isGif: !!(message as any)._data?.isGif };
 };
 
 const deleteMessage = async (
@@ -1135,6 +1189,9 @@ export const WhatsappWebJsProvider: WhatsappProvider = {
   sendTyping,
   listGroups,
   importChats,
+  getGroupInfo,
+  getMessageAck,
+  downloadMessageMedia,
   sendReaction,
   fetchChatMessages
 };

@@ -44,6 +44,7 @@ export interface MessagePayload {
   from: string;
   to: string;
   hasQuotedMsg?: boolean;
+  isGif?: boolean;
   quotedMsgId?: string;
   mediaUrl?: string;
   mediaType?: string;
@@ -83,7 +84,7 @@ const processLocationMessage = (
   return messagePayload;
 };
 
-const saveMediaFile = async (mediaPayload: MediaPayload): Promise<string> => {
+export const saveMediaFile = async (mediaPayload: MediaPayload): Promise<string> => {
   const randomId = makeRandomId(5);
   const { filename: originalFilename } = mediaPayload;
 
@@ -217,7 +218,10 @@ export const handleMessage = async (
       body: processedMessage.body,
       fromMe: processedMessage.fromMe,
       read: processedMessage.fromMe,
-      mediaType: processedMessage.type,
+      mediaType: ["image", "video", "audio", "ptt", "document", "sticker"].includes(processedMessage.type)
+        ? (processedMessage.type === "ptt" ? "audio" : processedMessage.type === "sticker" ? "image" : processedMessage.type)
+        : processedMessage.type,
+      isGif: !!processedMessage.isGif,
       quotedMsgId: processedMessage.quotedMsgId,
       ack: processedMessage.ack !== undefined ? processedMessage.ack : 0
     };

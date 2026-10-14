@@ -71,6 +71,11 @@ const fieldsOf = (b: any, isNew: boolean) => {
   if (b.document !== undefined) data.document = clip(b.document, 20);
   if (b.city !== undefined) data.city = clip(b.city, 80);
   if (b.poloId !== undefined) data.poloId = b.poloId ? Number(b.poloId) : null;
+  if (b.externalLink !== undefined) {
+    const link = clip(b.externalLink, 600);
+    if (link && !/^https?:\/\//i.test(link)) throw new AppError("ERR_AFFILIATE_BAD_URL");
+    data.externalLink = link;
+  }
   if (b.pixKeyType !== undefined) data.pixKeyType = clip(b.pixKeyType, 20);
   if (b.pixKey !== undefined) data.pixKey = clip(b.pixKey, 140);
   if (b.notes !== undefined) data.notes = clip(b.notes, 2000);

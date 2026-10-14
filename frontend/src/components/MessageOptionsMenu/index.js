@@ -22,7 +22,7 @@ import toastError from "../../errors/toastError";
 import { wa } from "../chat/chatTheme";
 
 // each channel accepts a different set of reactions; webchat has none
-const REACTIONS = {
+export const REACTIONS = {
   whatsapp: ["👍", "❤️", "😂", "😮", "😢", "🙏"],
   whatsapp_cloud: ["👍", "❤️", "😂", "😮", "😢", "🙏"],
   telegram: ["👍", "❤", "🔥", "😁", "🎉", "🙏"],

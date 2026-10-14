@@ -13,6 +13,9 @@ import CheckIsValidContact from "../services/WbotServices/CheckIsValidContact";
 import GetProfilePicUrl from "../services/WbotServices/GetProfilePicUrl";
 import AppError from "../errors/AppError";
 import GetContactService from "../services/ContactServices/GetContactService";
+import Contact from "../models/Contact";
+import Lead from "../models/Lead";
+import Ticket from "../models/Ticket";
 
 type IndexQuery = {
   searchParam: string;
@@ -162,4 +165,24 @@ export const remove = async (
   });
 
   return res.status(200).json({ message: "Contact deleted" });
+};
+
+// Marks a person as part of the team (employee), with or without a login. A team member's conversations and
+// leads never count in statistics or the CRM funnel; the conversation itself stays as it is.
+export const setStaff = async (req: Request, res: Response): Promise<Response> => {
+  const contact = await Contact.findByPk(req.params.contactId);
+  if (!contact) throw new AppError("ERR_NO_CONTACT_FOUND", 404);
+  if (contact.isGroup) throw new AppError("ERR_STAFF_GROUP", 400);
+  const isStaff = Boolean(req.body.isStaff);
+  await contact.update({ isStaff });
+
+  if (isStaff) {
+    // their leads leave the funnel and the metrics (kept, not deleted)
+    await Lead.update({ isHistorical: true } as any, { where: { contactId: contact.id } });
+  } else if (await Ticket.count({ where: { contactId: contact.id, isHistorical: false } })) {
+    await Lead.update({ isHistorical: false } as any, { where: { contactId: contact.id } });
+  }
+
+  getIO().emit("contact", { action: "update", contact });
+  return res.status(200).json(contact);
 };

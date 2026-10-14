@@ -66,6 +66,20 @@ export interface WhatsappProvider {
     fromMe: boolean,
     emoji: string
   ): Promise<void>;
+  // current delivery state of a message as the phone knows it (null: not found)
+  getMessageAck?(sessionId: number, chatId: string, messageId: string, fromMe: boolean): Promise<number | null>;
+  // downloads the file of a message again (media that did not arrive, or history copied without files)
+  downloadMessageMedia?(
+    sessionId: number,
+    chatId: string,
+    messageId: string,
+    fromMe: boolean
+  ): Promise<{ filename: string; mimetype: string; data: string; isGif?: boolean } | null>;
+  // group description and members, as the phone shows them
+  getGroupInfo?(
+    sessionId: number,
+    chatId: string
+  ): Promise<{ name: string; description: string; createdAt?: number; participants: { id: string; isAdmin: boolean }[] } | null>;
   fetchChatMessages(
     sessionId: number,
     chatId: string,

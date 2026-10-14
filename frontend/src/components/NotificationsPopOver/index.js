@@ -16,6 +16,7 @@ import Switch from "@material-ui/core/Switch";
 import { Bell, BellRing, Volume2, VolumeX } from "lucide-react";
 
 import TicketListItem from "../TicketListItem";
+import { showMessageToast, dismissMessageToast } from "../MessageToast";
 import { i18n } from "../../translate/i18n";
 import useTickets from "../../hooks/useTickets";
 import alertSound from "../../assets/sound.mp3";
@@ -28,6 +29,7 @@ import {
 	setPopupEnabled,
 	alertContactCount,
 	shouldAlert,
+	getContactSound as getSoundPref,
 	onSoundPrefsChange,
 	loadSoundPrefsFromServer,
 } from "../../utils/soundPrefs";
@@ -139,6 +141,14 @@ const NotificationsPopOver = () => {
 
 	useEffect(() => {
 		ticketIdRef.current = ticketIdUrl;
+		if (!ticketIdUrl) return;
+		// entering a conversation clears its notification: the bell, the pop-up card and the browser notice
+		dismissMessageToast(ticketIdUrl);
+		setNotifications(prev => (prev.some(t => t.id === ticketIdUrl) ? prev.filter(t => t.id !== ticketIdUrl) : prev));
+		setDesktopNotifications(prev => {
+			prev.filter(n => n.tag === String(ticketIdUrl)).forEach(n => n.close());
+			return prev.filter(n => n.tag !== String(ticketIdUrl));
+		});
 	}, [ticketIdUrl]);
 
 	useEffect(() => {
@@ -189,8 +199,7 @@ const NotificationsPopOver = () => {
 				const shouldNotNotificate =
 					(data.message.ticketId === ticketIdRef.current &&
 						document.visibilityState === "visible") ||
-					(data.ticket.userId && data.ticket.userId !== user?.id) ||
-					data.ticket.isGroup;
+					(data.ticket.userId && data.ticket.userId !== user?.id);
 
 				if (shouldNotNotificate) return;
 
@@ -205,10 +214,18 @@ const NotificationsPopOver = () => {
 
 	const handleNotifications = data => {
 		const { message, contact, ticket } = data;
-		// sound and pop-up follow the same rule: system-wide mode plus the contact's own setting
-		if (!shouldAlert(contact.id)) return;
+		const loud = shouldAlert(contact.id);
+		// a silenced contact never pops up; a group pops up quietly (no sound) unless it is marked as alert
+		if (!loud && (ticket.isGroup ? getSoundPref(contact.id) === "mute" : true)) return;
 
-		if (getPopupEnabled() && "Notification" in window && Notification.permission === "granted") {
+		// on screen: a short card, wherever the person is in the system
+		if (getPopupEnabled() && document.visibilityState === "visible") {
+			showMessageToast({ ticket, contact, message }, () => historyRef.current.push(`/tickets/${ticket.id}`));
+		}
+
+		if (!loud) return;
+
+		if (getPopupEnabled() && document.visibilityState !== "visible" && "Notification" in window && Notification.permission === "granted") {
 			const notification = new Notification(
 				`${i18n.t("tickets.notification.message")} ${contact.name}`,
 				{

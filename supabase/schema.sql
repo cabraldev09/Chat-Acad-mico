@@ -214,7 +214,8 @@ CREATE TABLE public."Affiliates" (
     "bonusValue" numeric(10,2),
     "lastAccessAt" timestamp with time zone,
     "createdAt" timestamp with time zone NOT NULL,
-    "updatedAt" timestamp with time zone NOT NULL
+    "updatedAt" timestamp with time zone NOT NULL,
+    "externalLink" text
 );
 
 
@@ -661,7 +662,8 @@ CREATE TABLE public."Contacts" (
     channel character varying(255) DEFAULT 'whatsapp'::character varying NOT NULL,
     "optOut" boolean DEFAULT false NOT NULL,
     "optOutAt" timestamp with time zone,
-    "picCheckedAt" timestamp with time zone
+    "picCheckedAt" timestamp with time zone,
+    "isStaff" boolean DEFAULT false NOT NULL
 );
 
 
@@ -1052,7 +1054,8 @@ CREATE TABLE public."Messages" (
     "quotedMsgId" character varying(255),
     starred boolean DEFAULT false NOT NULL,
     reactions text,
-    "isEdited" boolean DEFAULT false NOT NULL
+    "isEdited" boolean DEFAULT false NOT NULL,
+    "isGif" boolean DEFAULT false NOT NULL
 );
 
 
@@ -2630,6 +2633,13 @@ CREATE INDEX ai_usage_agent_id_created_at ON public."AiUsage" USING btree ("agen
 
 
 --
+-- Name: contacts_is_staff_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX contacts_is_staff_idx ON public."Contacts" USING btree ("isStaff") WHERE ("isStaff" = true);
+
+
+--
 -- Name: kb_chunks_document_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3642,6 +3652,9 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261101000002-affiliates.js') ON CO
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261101000003-ticket-last-message-kind.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261101000004-ticket-last-message-at.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261101000005-ticket-dangling-last-message.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261102000001-message-gif-staff.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261102000002-groups-open.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261102000003-affiliate-external-link.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

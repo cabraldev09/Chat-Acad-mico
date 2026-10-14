@@ -20,7 +20,7 @@ const ICONS = { banner: ImageIcon, copy: Type, video: Video, course_info: BookOp
 
 const EMPTY = { title: "", kind: "banner", description: "", copyText: "", externalUrl: "", courseId: "", campaignId: "", active: true, audience: "all", ownerIds: [], affiliateIds: [] };
 
-const MaterialForm = ({ open, material, courses, campaigns, consultants, affiliates, onClose, onSaved }) => {
+const MaterialForm = ({ open, material, courses, campaigns, consultants, affiliates, isAdmin, onClose, onSaved }) => {
   const [f, setF] = useState(EMPTY);
   const [file, setFile] = useState(null);
   const [removeFile, setRemoveFile] = useState(false);
@@ -92,7 +92,7 @@ const MaterialForm = ({ open, material, courses, campaigns, consultants, affilia
             {campaigns.map((c) => <MenuItem key={c.id} value={c.id}>{c.title}</MenuItem>)}
           </TextField>
         )}
-        <AudiencePicker value={f} onChange={setF} consultants={consultants} affiliates={affiliates} />
+        <AudiencePicker value={f} onChange={setF} consultants={consultants} affiliates={affiliates} limited={!isAdmin} />
         <FormControlLabel control={<Switch color="primary" checked={!!f.active} onChange={(e) => setF({ ...f, active: e.target.checked })} />} label={f.active ? "Publicado" : "Oculto (rascunho)"} />
       </DialogContent>
       <DialogActions>
@@ -145,7 +145,7 @@ const MaterialsTab = () => {
           {KINDS.map(([v, l]) => <MenuItem key={v} value={v}>{l}</MenuItem>)}
         </TextField>
         <span className={classes.grow} />
-        {isAdmin && <Button variant="contained" color="primary" startIcon={<Plus size={16} />} onClick={() => setForm({})}>Novo material</Button>}
+        <Button variant="contained" color="primary" startIcon={<Plus size={16} />} onClick={() => setForm({})}>Novo material</Button>
       </div>
 
       <div className={classes.body}>
@@ -153,7 +153,7 @@ const MaterialsTab = () => {
           <Paper variant="outlined" className={classes.empty}>
             <FileText size={36} style={{ opacity: 0.6 }} />
             <Typography variant="subtitle1" style={{ fontWeight: 600 }}>Nenhum material {kind ? "desse tipo" : "ainda"}</Typography>
-            <Typography variant="body2">{isAdmin ? "Publique banners, textos prontos, vídeos e informações dos cursos. Eles aparecem no portal dos afiliados." : "Quando o administrador liberar material para você ou para os seus afiliados, ele aparece aqui."}</Typography>
+            <Typography variant="body2">{isAdmin ? "Publique banners, textos prontos, vídeos e informações dos cursos. Eles aparecem no portal dos afiliados." : "Publique banners, textos e vídeos para os seus afiliados. Material que o administrador liberar para você também aparece aqui."}</Typography>
           </Paper>
         )}
         <div className={classes.cards}>
@@ -179,9 +179,9 @@ const MaterialsTab = () => {
                 </div>
                 <div className={classes.actions} style={{ marginLeft: 0, justifyContent: "flex-end" }}>
                   {m.hasFile && <IconAction title="Baixar o arquivo" onClick={() => open(m)}><Eye size={16} /></IconAction>}
-                  {!isAdmin && <Button size="small" variant="outlined" onClick={() => setRelease(m)}>Liberar aos meus afiliados</Button>}
-                  {isAdmin && <IconAction title="Editar" onClick={() => setForm(m)}><Pencil size={16} /></IconAction>}
-                  {isAdmin && <IconAction title="Excluir" onClick={() => setDel(m)}><Trash2 size={16} /></IconAction>}
+                  {!isAdmin && m.createdBy !== user.id && <Button size="small" variant="outlined" onClick={() => setRelease(m)}>Liberar aos meus afiliados</Button>}
+                  {(isAdmin || m.createdBy === user.id) && <IconAction title="Editar" onClick={() => setForm(m)}><Pencil size={16} /></IconAction>}
+                  {(isAdmin || m.createdBy === user.id) && <IconAction title="Excluir" onClick={() => setDel(m)}><Trash2 size={16} /></IconAction>}
                 </div>
               </GlowCard>
             );
@@ -189,7 +189,7 @@ const MaterialsTab = () => {
         </div>
       </div>
 
-      <MaterialForm open={!!form} material={form && form.id ? form : null} courses={courses} campaigns={campaigns} consultants={consultants} affiliates={affiliates}
+      <MaterialForm open={!!form} material={form && form.id ? form : null} courses={courses} campaigns={campaigns} consultants={consultants} affiliates={affiliates} isAdmin={isAdmin}
         onClose={() => setForm(null)} onSaved={() => { setForm(null); load(); }} />
       {release && <ReleaseDialog open kind="material" item={release} onClose={() => setRelease(null)} onDone={() => { setRelease(null); load(); }} />}
       <ConfirmationModal open={!!del} onClose={() => setDel(null)} title="Excluir material?"

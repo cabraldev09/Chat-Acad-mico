@@ -18,6 +18,7 @@ import * as Chatbot from "../controllers/ChatbotController";
 import * as Schedule from "../controllers/ScheduleController";
 import * as Campaign from "../controllers/CampaignController";
 import * as Stats from "../controllers/StatsController";
+import * as Dashboard from "../controllers/DashboardController";
 import * as Channel from "../controllers/ChannelController";
 import * as Lead from "../controllers/LeadController";
 import * as Proposal from "../controllers/ProposalController";
@@ -62,17 +63,19 @@ r.get("/affiliate-bonuses", isAuth, affiliateStaff, Aff.listBonuses);
 r.get("/affiliate-bonuses/export.csv", isAuth, affiliateStaff, Aff.exportBonuses);
 r.put("/affiliate-bonuses/:id/:action", isAuth, isAdmin, Aff.bonusAction);
 r.get("/affiliate-materials", isAuth, affiliateStaff, AffMat.listMaterials);
-r.post("/affiliate-materials", isAuth, isAdmin, affiliateUpload.single("file"), AffMat.createMaterial);
-r.put("/affiliate-materials/:id", isAuth, isAdmin, affiliateUpload.single("file"), AffMat.updateMaterial);
-r.delete("/affiliate-materials/:id", isAuth, isAdmin, AffMat.removeMaterial);
+r.post("/affiliate-materials", isAuth, affiliateStaff, affiliateUpload.single("file"), AffMat.createMaterial);
+r.put("/affiliate-materials/:id", isAuth, affiliateStaff, affiliateUpload.single("file"), AffMat.updateMaterial);
+r.delete("/affiliate-materials/:id", isAuth, affiliateStaff, AffMat.removeMaterial);
 r.get("/affiliate-materials/:id/file", isAuth, affiliateStaff, AffMat.materialFile);
 r.post("/affiliate-materials/:id/release", isAuth, affiliateStaff, AffMat.releaseTo("material"));
 r.get("/affiliate-campaigns", isAuth, affiliateStaff, AffMat.listCampaigns);
-r.post("/affiliate-campaigns", isAuth, isAdmin, affiliateUpload.single("file"), AffMat.createCampaign);
-r.put("/affiliate-campaigns/:id", isAuth, isAdmin, affiliateUpload.single("file"), AffMat.updateCampaign);
-r.delete("/affiliate-campaigns/:id", isAuth, isAdmin, AffMat.removeCampaign);
+r.post("/affiliate-campaigns", isAuth, affiliateStaff, affiliateUpload.single("file"), AffMat.createCampaign);
+r.put("/affiliate-campaigns/:id", isAuth, affiliateStaff, affiliateUpload.single("file"), AffMat.updateCampaign);
+r.delete("/affiliate-campaigns/:id", isAuth, affiliateStaff, AffMat.removeCampaign);
 r.get("/affiliate-campaigns/:id/cover", isAuth, affiliateStaff, AffMat.campaignCover);
 r.post("/affiliate-campaigns/:id/release", isAuth, affiliateStaff, AffMat.releaseTo("campaign"));
+
+r.get("/dashboard", isAuth, Dashboard.index);
 
 // tags
 r.get("/tags", isAuth, Tag.index);

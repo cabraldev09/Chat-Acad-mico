@@ -23,7 +23,7 @@ const copy = async (text, msg) => {
   try { await navigator.clipboard.writeText(text); toast.success(msg); } catch (e) { toast.error("Não foi possível copiar."); }
 };
 
-const EMPTY = { name: "", phone: "", email: "", city: "", document: "", pixKeyType: "cpf", pixKey: "", poloId: "", ownerId: "", bonusValue: "", status: "active", notes: "" };
+const EMPTY = { name: "", phone: "", email: "", city: "", document: "", externalLink: "", pixKeyType: "cpf", pixKey: "", poloId: "", ownerId: "", bonusValue: "", status: "active", notes: "" };
 
 const AffiliateForm = ({ open, affiliate, users, polos, canOwner, isAdmin, onClose, onSaved }) => {
   const [f, setF] = useState(EMPTY);
@@ -71,6 +71,8 @@ const AffiliateForm = ({ open, affiliate, users, polos, canOwner, isAdmin, onClo
             <TextField label="Bonificação própria (R$)" value={f.bonusValue} onChange={set("bonusValue")} margin="dense" variant="outlined" type="number" helperText="Vazio usa a regra geral ou da campanha" />
           )}
         </div>
+        <TextField label="Link do afiliado no app Minhas indicações" value={f.externalLink || ""} onChange={set("externalLink")} fullWidth margin="dense" variant="outlined"
+          placeholder="https://..." helperText="Guarde aqui o link para não perder e usar quando for indicar" />
         <TextField label="Observações" value={f.notes || ""} onChange={set("notes")} fullWidth multiline rows={2} margin="dense" variant="outlined" />
         {affiliate && (
           <FormControlLabel
@@ -172,6 +174,20 @@ const AffiliateDrawer = ({ id, canOwner, isAdmin, users, polos, courses, onClose
                 <Button size="small" variant="outlined" startIcon={<RefreshCw size={15} />} onClick={() => setRotate(true)}>Trocar o link</Button>
               </div>
               {!a.phone && <Typography variant="caption" color="textSecondary" display="block" style={{ marginTop: 6 }}>Cadastre o WhatsApp para enviar.</Typography>}
+              {a.externalLink && (
+                <>
+                  <div className={classes.sectionTitle} style={{ marginTop: 16 }}>Link no app Minhas indicações</div>
+                  <div className={classes.linkBox}>
+                    <code title={a.externalLink}>{a.externalLink}</code>
+                    <IconAction title="Copiar o link" onClick={() => copy(a.externalLink, "Link copiado.")}><Copy size={16} /></IconAction>
+                    <IconAction title="Abrir o link" onClick={() => window.open(a.externalLink, "_blank", "noopener")}><ExternalLink size={16} /></IconAction>
+                  </div>
+                  <Button size="small" variant="outlined" style={{ marginTop: 8 }} startIcon={<Send size={14} />}
+                    onClick={() => copy(`Olá! Se você quer estudar com a gente, fale por este link: ${a.externalLink}`, "Mensagem de indicação copiada. É só colar na conversa.")}>
+                    Copiar mensagem para indicar
+                  </Button>
+                </>
+              )}
               <div className={classes.sectionTitle} style={{ marginTop: 16 }}>Link de indicação (formulário público)</div>
               <div className={classes.linkBox}>
                 <code title={a.referralUrl}>{a.referralUrl}</code>

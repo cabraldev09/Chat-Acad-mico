@@ -127,6 +127,7 @@ router.get("/:token", loadAffiliate, async (req: Request, res: Response) => {
     title: await getSetting("affiliate_portal_title", "Portal do Afiliado"),
     message: await getSetting("affiliate_portal_message", "Tudo o que você precisa para indicar: materiais, cursos e campanhas."),
     referralUrl: referralUrl(aff.refCode),
+    externalLink: aff.externalLink || null,
     stats: stats && {
       referrals: stats.referrals,
       enrolled: stats.enrolled,

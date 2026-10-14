@@ -43,6 +43,8 @@ export const initIO = (httpServer: Server): SocketIO => {
       logger.debug(JSON.stringify(tokenData), "io-onConnection: tokenData");
     } catch (error) {
       logger.error(JSON.stringify(error), "Error decoding token");
+      // tell the browser why: it renews its login and connects again instead of staying silent
+      socket.emit("authError", { reason: error?.name === "TokenExpiredError" ? "expired" : "invalid" });
       socket.disconnect();
       return io;
     }

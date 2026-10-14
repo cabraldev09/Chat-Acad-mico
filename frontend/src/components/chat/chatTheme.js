@@ -1,6 +1,42 @@
 // WhatsApp's own palette for the conversations screen (light and dark), so the screen looks like the app people
 // already know: green outgoing bubbles, the same wallpaper, blue "read" ticks.
-export const wa = (theme) =>
+// Color of the messages you send: WhatsApp green (default) or the blue of the desktop app
+export const getChatAccent = () => {
+  try {
+    return localStorage.getItem("chatAccent") === "blue" ? "blue" : "green";
+  } catch (e) {
+    return "green";
+  }
+};
+export const setChatAccent = (value) => {
+  try {
+    localStorage.setItem("chatAccent", value === "blue" ? "blue" : "green");
+  } catch (e) {
+    /* storage blocked */
+  }
+  window.location.reload();
+};
+
+const BLUE = {
+  bubbleOut: "#1a8ff0",
+  bubbleOutBg: "#1a8ff0",
+  bubbleOutText: "#ffffff",
+  timeOut: "rgba(255,255,255,.82)",
+  ackOut: "rgba(255,255,255,.82)",
+  ackReadOut: "#0a3d7a",
+  quoteOut: "rgba(0,0,0,.16)",
+  quoteBar: "#ffffff",
+  quoteBarMe: "#ffffff",
+  quoteName: "#ffffff",
+  linkOut: "#ffffff",
+};
+
+export const wa = (theme) => {
+  const base = palette(theme);
+  return getChatAccent() === "blue" ? { ...base, ...BLUE } : base;
+};
+
+const palette = (theme) =>
   theme.palette.type === "dark"
     ? {
         panel: "#111b21",

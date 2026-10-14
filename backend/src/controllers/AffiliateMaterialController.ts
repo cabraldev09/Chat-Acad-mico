@@ -58,7 +58,7 @@ const setAudience = async (type: "material" | "campaign", targetId: number, owne
 };
 
 // what a consultant / coordinator can use: everything released to them or to one of their affiliates
-const visibleTo = async (req: Request, type: "material" | "campaign", all: Array<{ id: number; audience: string }>) => {
+const visibleTo = async (req: Request, type: "material" | "campaign", all: Array<{ id: number; audience: string; createdBy?: number }>) => {
   if (isAdminReq(req)) return all.map(x => x.id);
   const mine = (await Affiliate.findAll({ where: await withAffiliateScope(req, {}), attributes: ["id"] })).map(a => a.id);
   const rows = await AffiliateAudience.findAll({
@@ -66,7 +66,25 @@ const visibleTo = async (req: Request, type: "material" | "campaign", all: Array
     attributes: ["targetId"]
   });
   const released = new Set(rows.map(r => r.targetId));
-  return all.filter(x => x.audience === "all" || released.has(x.id)).map(x => x.id);
+  // what the person created is always theirs to see
+  return all.filter(x => x.audience === "all" || released.has(x.id) || x.createdBy === me(req)).map(x => x.id);
+};
+
+// An admin manages everything; a consultant (or coordinator) creates material and campaigns for THEIR affiliates only,
+// and edits or deletes only what they created.
+const assertCanManage = (req: Request, item: { createdBy?: number }): void => {
+  if (isAdminReq(req)) return;
+  if (item.createdBy !== me(req)) throw new AppError("ERR_NO_PERMISSION", 403);
+};
+
+// who sees what a non-admin creates: all their affiliates (default) or only the chosen ones among them
+const ownAudience = async (req: Request): Promise<{ ownerIds: number[]; affiliateIds: number[] }> => {
+  if (isAdminReq(req)) return { ownerIds: ids(req.body.ownerIds), affiliateIds: ids(req.body.affiliateIds) };
+  const mine = new Set((await Affiliate.findAll({ where: await withAffiliateScope(req, {}), attributes: ["id"] })).map(a => a.id));
+  const chosen = ids(req.body.affiliateIds).filter(id => mine.has(id));
+  return req.body.audience === "restricted" && chosen.length
+    ? { ownerIds: [], affiliateIds: chosen }
+    : { ownerIds: [me(req)], affiliateIds: [] };
 };
 
 // ---------------------------------------------------------------- materials
@@ -120,8 +138,10 @@ export const createMaterial = async (req: Request, res: Response): Promise<Respo
     const data = materialData(req.body, req, true);
     if (file) Object.assign(data, { fileName: file.filename, originalName: file.originalname, mimeType: mimeFromName(file.originalname), fileSize: file.size });
     if (!file && !data.externalUrl && !data.copyText) throw new AppError("ERR_AFFILIATE_MATERIAL_EMPTY");
+    if (!isAdminReq(req)) data.audience = "restricted";
     const m = await AffiliateMaterial.create(data);
-    await setAudience("material", m.id, ids(req.body.ownerIds), ids(req.body.affiliateIds));
+    const aud0 = await ownAudience(req);
+    await setAudience("material", m.id, aud0.ownerIds, aud0.affiliateIds);
     const aud = await audienceOf("material", [m.id]);
     return res.status(201).json(presentMaterial(m, aud.get(m.id)));
   } catch (err) {
@@ -135,7 +155,9 @@ export const updateMaterial = async (req: Request, res: Response): Promise<Respo
   const file = (req as any).file as Express.Multer.File | undefined;
   try {
     if (!m) throw new AppError("ERR_NOT_FOUND", 404);
+    assertCanManage(req, m);
     const data = materialData(req.body, req, false);
+    if (!isAdminReq(req)) delete data.audience;
     let old: string | null = null;
     if (file) {
       old = m.fileName;
@@ -146,8 +168,9 @@ export const updateMaterial = async (req: Request, res: Response): Promise<Respo
     }
     await m.update(data);
     removeAffiliateFile(old);
-    if (req.body.ownerIds !== undefined || req.body.affiliateIds !== undefined) {
-      await setAudience("material", m.id, ids(req.body.ownerIds), ids(req.body.affiliateIds));
+    if (req.body.ownerIds !== undefined || req.body.affiliateIds !== undefined || req.body.audience !== undefined) {
+      const aud1 = await ownAudience(req);
+      await setAudience("material", m.id, aud1.ownerIds, aud1.affiliateIds);
     }
     const aud = await audienceOf("material", [m.id]);
     return res.json(presentMaterial(m, aud.get(m.id)));
@@ -160,6 +183,7 @@ export const updateMaterial = async (req: Request, res: Response): Promise<Respo
 export const removeMaterial = async (req: Request, res: Response): Promise<Response> => {
   const m = await AffiliateMaterial.findByPk(req.params.id);
   if (!m) throw new AppError("ERR_NOT_FOUND", 404);
+  assertCanManage(req, m);
   removeAffiliateFile(m.fileName);
   await AffiliateAudience.destroy({ where: { targetType: "material", targetId: m.id } });
   await m.destroy();
@@ -170,7 +194,7 @@ export const removeMaterial = async (req: Request, res: Response): Promise<Respo
 export const materialFile = async (req: Request, res: Response): Promise<void> => {
   const m = await AffiliateMaterial.findByPk(req.params.id);
   if (!m || !m.fileName) throw new AppError("ERR_NOT_FOUND", 404);
-  const all = [{ id: m.id, audience: m.audience }];
+  const all = [{ id: m.id, audience: m.audience, createdBy: m.createdBy }];
   if (!(await visibleTo(req, "material", all)).length) throw new AppError("ERR_NO_PERMISSION", 403);
   sendFile(res, m, false);
 };
@@ -253,8 +277,11 @@ export const createCampaign = async (req: Request, res: Response): Promise<Respo
   try {
     const data = campaignData(req.body, req, true);
     if (file) data.coverFile = file.filename;
+    // money commitments are the administrator's: a consultant's campaign has no bonus of its own
+    if (!isAdminReq(req)) { data.bonusValue = null; data.audience = "restricted"; }
     const c = await AffiliateCampaign.create(data);
-    await setAudience("campaign", c.id, ids(req.body.ownerIds), ids(req.body.affiliateIds));
+    const aud2 = await ownAudience(req);
+    await setAudience("campaign", c.id, aud2.ownerIds, aud2.affiliateIds);
     const aud = await audienceOf("campaign", [c.id]);
     return res.status(201).json(presentCampaign(c, aud.get(c.id)));
   } catch (err) {
@@ -268,14 +295,17 @@ export const updateCampaign = async (req: Request, res: Response): Promise<Respo
   const file = (req as any).file as Express.Multer.File | undefined;
   try {
     if (!c) throw new AppError("ERR_NOT_FOUND", 404);
+    assertCanManage(req, c);
     const data = campaignData(req.body, req, false);
+    if (!isAdminReq(req)) { delete data.bonusValue; delete data.audience; }
     let old: string | null = null;
     if (file) { old = c.coverFile; data.coverFile = file.filename; }
     else if (req.body.removeFile === "true") { old = c.coverFile; data.coverFile = null; }
     await c.update(data);
     removeAffiliateFile(old);
-    if (req.body.ownerIds !== undefined || req.body.affiliateIds !== undefined) {
-      await setAudience("campaign", c.id, ids(req.body.ownerIds), ids(req.body.affiliateIds));
+    if (req.body.ownerIds !== undefined || req.body.affiliateIds !== undefined || req.body.audience !== undefined) {
+      const aud3 = await ownAudience(req);
+      await setAudience("campaign", c.id, aud3.ownerIds, aud3.affiliateIds);
     }
     const aud = await audienceOf("campaign", [c.id]);
     return res.json(presentCampaign(c, aud.get(c.id)));
@@ -288,6 +318,7 @@ export const updateCampaign = async (req: Request, res: Response): Promise<Respo
 export const removeCampaign = async (req: Request, res: Response): Promise<Response> => {
   const c = await AffiliateCampaign.findByPk(req.params.id);
   if (!c) throw new AppError("ERR_NOT_FOUND", 404);
+  assertCanManage(req, c);
   removeAffiliateFile(c.coverFile);
   await AffiliateMaterial.update({ campaignId: null }, { where: { campaignId: c.id } });
   await AffiliateAudience.destroy({ where: { targetType: "campaign", targetId: c.id } });

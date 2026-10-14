@@ -6,6 +6,8 @@ export interface ProviderHistoryMessage {
   // seconds since 1970, as WhatsApp gives it
   timestamp: number;
   ack: number;
+  // kind of message (image, video, ptt, document...): lets the file be loaded later on demand
+  type?: string;
   // in groups: who wrote it
   author?: { name: string; number: string; lid?: string };
 }

@@ -29,9 +29,11 @@ const ListMessagesService = async ({
   const limit = 20;
   const offset = limit * (+pageNumber - 1);
 
-  const { count, rows: messages } = await Message.findAndCountAll({
+  // one extra row tells whether there is another page, instead of a COUNT over the whole conversation
+  // (the index on ticketId + createdAt makes this a short walk even in groups with years of messages)
+  const rows = await Message.findAll({
     where: { ticketId },
-    limit,
+    limit: limit + 1,
     include: [
       "contact",
       {
@@ -44,12 +46,13 @@ const ListMessagesService = async ({
     order: [["createdAt", "DESC"]]
   });
 
-  const hasMore = count > offset + messages.length;
+  const hasMore = rows.length > limit;
+  const messages = rows.slice(0, limit);
 
   return {
     messages: messages.reverse(),
     ticket,
-    count,
+    count: offset + messages.length + (hasMore ? 1 : 0),
     hasMore
   };
 };

@@ -3,7 +3,6 @@ import { createPortal } from "react-dom";
 import { makeStyles } from "@material-ui/core/styles";
 import { ChevronLeft, ChevronRight, Download, X } from "lucide-react";
 
-import api from "../../services/api";
 
 // Photo and video viewer with arrows (like WhatsApp Web): opened from anywhere with openGallery(items, index)
 export const openGallery = (items, index = 0) =>
@@ -35,23 +34,8 @@ const useStyles = makeStyles(() => ({
   },
 }));
 
-const cache = new Map();
-
-const Photo = ({ url, className }) => {
-  const [src, setSrc] = useState(cache.get(url) || "");
-  useEffect(() => {
-    if (cache.has(url)) { setSrc(cache.get(url)); return undefined; }
-    let alive = true;
-    setSrc("");
-    api.get(url, { responseType: "blob" }).then(({ data, headers }) => {
-      const blobUrl = URL.createObjectURL(new Blob([data], { type: headers["content-type"] }));
-      cache.set(url, blobUrl);
-      if (alive) setSrc(blobUrl);
-    }).catch(() => alive && setSrc(url));
-    return () => { alive = false; };
-  }, [url]);
-  return src ? <img className={className} src={src} alt="" /> : null;
-};
+// straight from the server: fast, and the browser keeps what was already seen in the conversation
+const Photo = ({ url, className }) => <img className={className} src={url} alt="" decoding="async" />;
 
 const MediaGallery = () => {
   const classes = useStyles();

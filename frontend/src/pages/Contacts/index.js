@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useReducer, useContext } from "react";
 import openSocket from "../../services/socket-io";
 import { toast } from "react-toastify";
+import Tooltip from "@material-ui/core/Tooltip";
+import { BadgeCheck } from "lucide-react";
 import { useHistory } from "react-router-dom";
 
 import { makeStyles } from "@material-ui/core/styles";
@@ -336,6 +338,7 @@ const Contacts = () => {
                   </TableCell>
                   <TableCell>
                     {contact.name}
+                    {contact.isStaff && <span style={{ marginLeft: 8, fontSize: 11, padding: "1px 8px", borderRadius: 999, background: "rgba(22,163,74,.16)", color: "#15803d", fontWeight: 700 }} title="Da equipe: não conta nas estatísticas nem no funil">Equipe</span>}
                     {contact.isGroup && <span style={{ marginLeft: 8, fontSize: 11, padding: "1px 8px", borderRadius: 999, background: "rgba(6,147,227,.14)", color: "#0b4279", fontWeight: 700 }}>Grupo</span>}
                   </TableCell>
                   <TableCell
@@ -351,6 +354,24 @@ const Contacts = () => {
                     {contact.email}
                   </TableCell>
                   <TableCell align="center">
+                    {!contact.isGroup && (
+                      <Tooltip arrow title={contact.isStaff ? "Da equipe (clique para desmarcar). Não conta nas estatísticas." : "Marcar como da equipe: a conversa não conta nas estatísticas nem no funil"}>
+                        <IconButton
+                          size="small"
+                          style={contact.isStaff ? { color: "#15803d" } : undefined}
+                          onClick={async () => {
+                            try {
+                              await api.put(`/contacts/${contact.id}/staff`, { isStaff: !contact.isStaff });
+                              toast.success(contact.isStaff ? "Contato desmarcado da equipe." : "Contato marcado como da equipe.");
+                            } catch (err) {
+                              toastError(err);
+                            }
+                          }}
+                        >
+                          <BadgeCheck size={20} />
+                        </IconButton>
+                      </Tooltip>
+                    )}
                     <IconButton
                       size="small"
                       onClick={() => handleSaveTicket(contact.id)}

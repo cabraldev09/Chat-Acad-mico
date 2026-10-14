@@ -143,7 +143,13 @@ const ChatHeader = ({ contact, ticket, onOpenInfo, onToggleSearch, typing }) => 
   useEffect(() => {
     const onKeyDown = (e) => {
       if (e.key !== "Escape" || e.defaultPrevented) return;
-      if (document.querySelector("[data-quick-list], .MuiDialog-root, .MuiPopover-root, .MuiMenu-root, .emoji-picker-react, em-emoji-picker")) return;
+      // only what is really open blocks it: closed menus can stay in the page (hidden), they must not take Esc away
+      const open = Array.from(document.querySelectorAll("[data-quick-list], .MuiDialog-root, .MuiPopover-root, .MuiMenu-root, .emoji-mart, .emoji-picker-react, em-emoji-picker, [role='dialog']")).some(
+        (el) => el.getClientRects().length > 0 && getComputedStyle(el).visibility !== "hidden"
+      );
+      if (open) return;
+      // what was typed stays as a draft, so leaving is safe
+      if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
       closeConversation();
     };
     document.addEventListener("keydown", onKeyDown);
@@ -237,15 +243,15 @@ const ChatHeader = ({ contact, ticket, onOpenInfo, onToggleSearch, typing }) => 
         </div>
       </div>
       <div className={classes.actions}>
-        {ticket.status === "pending" &&
+        {ticket.status === "pending" && !ticket.isGroup &&
           button("Aceitar atendimento", () => setStatus("open", user?.id), true, <UserCheck size={16} />, "Assumir esta conversa: ela passa a ser sua")}
-        {ticket.status === "open" && (
+        {ticket.status === "open" && !ticket.isGroup && (
           <>
             {button("Devolver à fila", () => setStatus("pending", null), false, <Undo2 size={16} />, "A conversa deixa de ser sua e volta para Aguardando, para outro atendente assumir")}
             {button("Finalizar atendimento", () => setStatus("closed", user?.id), true, <CheckCircle2 size={16} />, "Encerra a conversa. Se o contato escrever de novo, ela reabre")}
           </>
         )}
-        {ticket.status === "closed" &&
+        {ticket.status === "closed" && !ticket.isGroup &&
           button("Reabrir atendimento", () => setStatus("open", user?.id), true, <RotateCcw size={16} />, "Traz a conversa de volta para você")}
         <Tooltip title="Pesquisar na conversa">
           <IconButton className={classes.icon} onClick={onToggleSearch}>

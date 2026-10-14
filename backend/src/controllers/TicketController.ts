@@ -19,6 +19,8 @@ import AppError from "../errors/AppError";
 import { roleOf } from "../helpers/Roles";
 import { getAdapter } from "../channels";
 import { whatsappProvider } from "../providers/WhatsApp";
+import Contact from "../models/Contact";
+import { Op } from "sequelize";
 
 type IndexQuery = {
   searchParam: string;
@@ -32,6 +34,7 @@ type IndexQuery = {
   tagId: string;
   archived: string;
   historical: string;
+  countOnly: string;
 };
 
 interface TicketData {
@@ -55,7 +58,8 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
     groups,
     tagId,
     archived,
-    historical
+    historical,
+    countOnly
   } = req.query as IndexQuery;
 
   const userId = req.user.id;
@@ -85,6 +89,7 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
     tagId,
     archived,
     historical,
+    countOnly: countOnly === "true",
     role: roleOf(req.user)
   });
 
@@ -248,4 +253,45 @@ export const events = async (req: Request, res: Response): Promise<Response> => 
   });
 
   return res.json(rows);
+};
+
+// Description and members of a group, as the phone shows them (names come from the contacts we already know)
+export const groupInfo = async (req: Request, res: Response): Promise<Response> => {
+  const ticket = await ShowTicketService(req.params.ticketId);
+  if (!ticket.isGroup || !whatsappProvider.getGroupInfo || (ticket.whatsapp?.channel || "whatsapp") !== "whatsapp") {
+    return res.json({ participants: [] });
+  }
+  const info = await whatsappProvider.getGroupInfo(ticket.whatsappId, chatIdOf(ticket.contact, true)).catch(() => null);
+  if (!info) return res.json({ participants: [] });
+
+  const raw = info.participants.map(p => ({ ...p, key: p.id.split("@")[0] }));
+  const keys = raw.map(p => p.key);
+  const known = keys.length
+    ? await Contact.findAll({
+        where: { [Op.or]: [{ number: { [Op.in]: keys } }, { lid: { [Op.in]: keys } }] } as any,
+        attributes: ["id", "name", "number", "lid", "isStaff", "profilePicUrl"]
+      })
+    : [];
+  const byKey = new Map<string, Contact>();
+  known.forEach(c => {
+    if (c.number) byKey.set(c.number, c);
+    if (c.lid) byKey.set(String(c.lid).split("@")[0], c);
+  });
+
+  const participants = raw
+    .map(p => {
+      const c = byKey.get(p.key);
+      return {
+        id: p.key,
+        contactId: c ? c.id : null,
+        name: c ? c.name : null,
+        number: c && c.number ? c.number : /^\d{8,15}$/.test(p.key) ? p.key : null,
+        isAdmin: p.isAdmin,
+        isStaff: c ? c.isStaff : false,
+        profilePicUrl: c ? c.profilePicUrl : null
+      };
+    })
+    .sort((a, b) => Number(b.isAdmin) - Number(a.isAdmin) || String(a.name || a.number || "").localeCompare(String(b.name || b.number || "")));
+
+  return res.json({ name: info.name, description: info.description, createdAt: info.createdAt, participants });
 };
