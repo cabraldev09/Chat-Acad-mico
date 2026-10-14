@@ -896,7 +896,8 @@ const postMeta = (id, payload, secret, badSig) => {
       const d1 = dv(d, 10); const d2 = dv([...d, d1], 11);
       return [...d, d1, d2].join("");
     };
-    const ymdPlus = d => new Date(Date.now() + d * 86400000).toISOString().slice(0, 10);
+    // the system counts days in the company timezone (Rondônia), not in UTC: late in the evening the two dates differ
+    const ymdPlus = d => new Date(Date.now() + d * 86400000).toLocaleDateString("en-CA", { timeZone: "America/Porto_Velho" });
     let bolix, bolixLead, bolixConsultantToken, bolixConsultantId;
     await test("Bolix routes the fee to the consultant's Efí account, or to the company when none is set", async () => {
       const mkUser = async (name, email) => (await http.post("/users", { name, email, password: "senha123", role: "consultor" }, auth())).data;
