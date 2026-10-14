@@ -27,6 +27,7 @@ import MediaPreview from "../MediaPreview";
 import { shrinkImage, isImageFile } from "../../utils/imageTools";
 import { fillQuickVars } from "../../utils/quickVars";
 import RecordingTimer from "./RecordingTimer";
+import AttachMenu from "./AttachMenu";
 import { ReplyMessageContext } from "../../context/ReplyingMessage/ReplyingMessageContext";
 import { AuthContext } from "../../context/Auth/AuthContext";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
@@ -228,7 +229,7 @@ const EMOJI_PT = {
 
 const isImage = (f) => f && f.type && f.type.startsWith("image/");
 
-const MessageInput = ({ ticketStatus, historical, contactName }) => {
+const MessageInput = ({ ticketStatus, historical, contactName, channel }) => {
   const classes = useStyles();
   const emojiDark = useTheme().palette.type === "dark";
   const { ticketId } = useParams();
@@ -599,38 +600,16 @@ const MessageInput = ({ ticketStatus, historical, contactName }) => {
             >
               <Add />
             </IconButton>
-            <Popover
-              open={Boolean(attachEl)}
+            <AttachMenu
               anchorEl={attachEl}
               onClose={() => setAttachEl(null)}
-              anchorOrigin={{ vertical: "top", horizontal: "left" }}
-              transformOrigin={{ vertical: "bottom", horizontal: "left" }}
-              PaperProps={{ style: { borderRadius: 14, marginTop: -8, overflow: "hidden" } }}
-            >
-              {attachItems.map((it) => (
-                <div
-                  key={it.label}
-                  className={classes.menuItem}
-                  onClick={() => {
-                    setAttachEl(null);
-                    it.ref.current && it.ref.current.click();
-                  }}
-                >
-                  <span className={classes.menuIcon} style={{ backgroundColor: it.color }}>
-                    {it.icon}
-                  </span>
-                  {it.label}
-                </div>
-              ))}
-              <div className={classes.menuItem} onClick={() => { setAttachEl(null); setInputMessage("/"); loadQuick("/"); inputRef.current && inputRef.current.focus(); }}>
-                <span className={classes.menuIcon} style={{ backgroundColor: "#00a884" }}><Edit /></span>
-                Respostas rápidas
-              </div>
-              <div className={classes.menuSwitch}>
-                Assinar com meu nome
-                <Switch size="small" color="primary" checked={signMessage} onChange={(e) => setSignMessage(e.target.checked)} />
-              </div>
-            </Popover>
+              inputs={{ doc: docInput, media: mediaInput, camera: cameraInput }}
+              onQuick={() => { setInputMessage("/"); loadQuick("/"); inputRef.current && inputRef.current.focus(); }}
+              signMessage={signMessage}
+              setSignMessage={setSignMessage}
+              ticketId={ticketId}
+              channel={channel}
+            />
             <input ref={docInput} hidden multiple type="file" onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
             <input ref={mediaInput} hidden multiple type="file" accept="image/*,video/*" onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
             <input ref={cameraInput} hidden type="file" accept="image/*" capture="environment" onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />

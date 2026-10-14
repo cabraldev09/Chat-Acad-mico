@@ -75,6 +75,8 @@ export interface WhatsappProvider {
     messageId: string,
     fromMe: boolean
   ): Promise<{ filename: string; mimetype: string; data: string; isGif?: boolean } | null>;
+  // a poll (title, options)
+  sendPoll?(sessionId: number, chatId: string, title: string, options: string[], multiple: boolean): Promise<ProviderMessage>;
   // group description and members, as the phone shows them
   getGroupInfo?(
     sessionId: number,

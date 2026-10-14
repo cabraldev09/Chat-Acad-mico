@@ -3,6 +3,10 @@ import { Request, Response } from "express";
 import SetTicketMessagesAsRead from "../helpers/SetTicketMessagesAsRead";
 import { getIO } from "../libs/socket";
 import { Op } from "sequelize";
+import AppError from "../errors/AppError";
+import CreateMessageService from "../services/MessageServices/CreateMessageService";
+import { whatsappProvider } from "../providers/WhatsApp";
+import { chatIdOf } from "../helpers/ChatId";
 import Message from "../models/Message";
 
 import ListMessagesService from "../services/MessageServices/ListMessagesService";
@@ -146,4 +150,29 @@ export const listByKind = async (req: Request, res: Response): Promise<Response>
 export const loadMedia = async (req: Request, res: Response): Promise<Response> => {
   const message = await loadMessageMedia(req.params.messageId);
   return res.json(message);
+};
+
+// Sends a poll (WhatsApp only). The phone does not report polls back as messages, so the system keeps its own line.
+export const sendPoll = async (req: Request, res: Response): Promise<Response> => {
+  const ticket = await ShowTicketService(req.params.ticketId);
+  if ((ticket.whatsapp?.channel || "whatsapp") !== "whatsapp" || !whatsappProvider.sendPoll) throw new AppError("ERR_POLL_UNSUPPORTED", 400);
+  const title = String(req.body.title || "").trim().slice(0, 140);
+  const options: string[] = (Array.isArray(req.body.options) ? req.body.options : [])
+    .map((o: any) => String(o || "").trim().slice(0, 80))
+    .filter(Boolean);
+  if (!title || options.length < 2 || new Set(options).size !== options.length) throw new AppError("ERR_POLL_INVALID", 400);
+  if (options.length > 12) throw new AppError("ERR_POLL_INVALID", 400);
+
+  let sent;
+  try {
+    sent = await whatsappProvider.sendPoll(ticket.whatsappId, chatIdOf(ticket.contact, ticket.isGroup), title, options, Boolean(req.body.multiple));
+  } catch (err) {
+    throw new AppError("ERR_SENDING_WAPP_MSG");
+  }
+  const body = `📊 ${title}\n${options.map(o => `▫️ ${o}`).join("\n")}`;
+  const message = await CreateMessageService({
+    messageData: { id: sent.id, ticketId: ticket.id, body, fromMe: true, read: true, mediaType: "chat", ack: 1 }
+  });
+  await ticket.update({ lastMessage: `📊 ${title}` });
+  return res.status(201).json(message);
 };

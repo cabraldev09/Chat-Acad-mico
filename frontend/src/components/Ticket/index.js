@@ -181,7 +181,7 @@ const Ticket = () => {
             matchIndex={matchIndex}
             onMatches={setMatches}
           />
-          <MessageInput ticketStatus={ticket.status} historical={!!ticket.isHistorical} contactName={contact.name} />
+          <MessageInput channel={ticket.whatsapp?.channel || "whatsapp"} ticketStatus={ticket.status} historical={!!ticket.isHistorical} contactName={contact.name} />
         </ReplyMessageProvider>
       </div>
       <ContactDrawer open={drawerOpen} handleDrawerClose={() => setDrawerOpen(false)} contact={contact} loading={loading} />

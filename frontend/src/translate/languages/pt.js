@@ -517,6 +517,8 @@ const messages = {
         ERR_PROPOSAL_SEND_FAILED: "Não foi possível enviar a proposta. Confira se a conexão do atendimento está ativa.",
         ERR_PDF_UNAVAILABLE: "Não foi possível gerar o PDF: o Google Chrome não está configurado no servidor (CHROME_BIN).",
         ERR_NO_PROPOSAL_TEMPLATE: "Cadastre um modelo de proposta em Configurar CRM.",
+        ERR_POLL_UNSUPPORTED: "Enquetes só podem ser enviadas em conversas de WhatsApp.",
+        ERR_POLL_INVALID: "A enquete precisa de uma pergunta e de 2 a 12 opções diferentes.",
         ERR_STAFF_GROUP: "Grupos não podem ser marcados como da equipe. Marque as pessoas, uma a uma, na lista de participantes.",
         ERR_MEDIA_NOT_AVAILABLE: "Não foi possível baixar este arquivo do celular. Ele pode ter sido apagado ou a conexão está fora do ar.",
         ERR_USER_NOT_FOUND: "Usuário não encontrado.",

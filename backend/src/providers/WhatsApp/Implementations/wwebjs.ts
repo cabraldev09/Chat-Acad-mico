@@ -7,6 +7,7 @@ import {
   Contact as WbotContact,
   MessageSendOptions
 } from "whatsapp-web.js";
+import { Poll } from "whatsapp-web.js";
 import { applyReaction } from "../../../services/MessageServices/MessageActions";
 import { WWEBJS_AUTH_DIR } from "../../../config/paths";
 import fs from "fs";
@@ -474,6 +475,17 @@ const sendMessage = async (
   });
 
   return convertToProviderMessage(sentMessage);
+};
+
+const sendPoll = async (
+  sessionId: number,
+  to: string,
+  title: string,
+  options: string[],
+  multiple: boolean
+): Promise<ProviderMessage> => {
+  const sent = await getWbot(sessionId).sendMessage(to, new Poll(title, options, { allowMultipleAnswers: multiple } as any));
+  return convertToProviderMessage(sent);
 };
 
 const sendMedia = async (
@@ -1189,6 +1201,7 @@ export const WhatsappWebJsProvider: WhatsappProvider = {
   sendTyping,
   listGroups,
   importChats,
+  sendPoll,
   getGroupInfo,
   getMessageAck,
   downloadMessageMedia,
