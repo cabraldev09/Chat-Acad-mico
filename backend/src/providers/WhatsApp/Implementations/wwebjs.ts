@@ -559,7 +559,9 @@ const HISTORY_LABELS: Record<string, string> = {
   document: "📄 Documento",
   sticker: "Figurinha",
   location: "📍 Localização",
-  vcard: "👤 Contato"
+  vcard: "👤 Contato",
+  multi_vcard: "👤 Contatos",
+  poll_creation: "📊 Enquete"
 };
 
 const importChats = async (
@@ -610,7 +612,7 @@ const importChats = async (
         const body =
           (m.body && (m.type === "chat" || m.hasMedia) ? m.body : "") ||
           HISTORY_LABELS[m.type] ||
-          (m.type === "chat" ? "" : `(${m.type})`);
+          "";
         if (!body) continue;
         messages.push({
           id: m.id.id,

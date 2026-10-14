@@ -45,6 +45,10 @@ class Ticket extends Model<Ticket> {
   @Column
   lastMessageAuthor: string;
 
+  // when that message was written: the list is ordered by it, like WhatsApp
+  @Column(DataType.DATE(6))
+  lastMessageAt: Date;
+
   @Default(false)
   @Column
   isGroup: boolean;

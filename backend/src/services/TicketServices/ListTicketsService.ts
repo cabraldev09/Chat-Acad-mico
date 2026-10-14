@@ -199,7 +199,7 @@ const ListTicketsService = async ({
     limit,
     offset,
     attributes: { include: [[pinnedSql, "pinned"]] },
-    order: [[pinnedSql, "DESC"], ["updatedAt", "DESC"]]
+    order: [[pinnedSql, "DESC"], [literal('COALESCE("Ticket"."lastMessageAt", "Ticket"."updatedAt")'), "DESC"]]
   });
 
   const hasMore = count > offset + tickets.length;

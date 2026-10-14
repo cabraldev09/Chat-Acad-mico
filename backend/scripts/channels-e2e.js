@@ -1253,6 +1253,21 @@ const postMeta = (id, payload, secret, badSig) => {
       sql(`INSERT INTO Tickets (status, contactId, whatsappId, unreadMessages, isGroup, segment, createdAt, updatedAt) VALUES ('open', ${gid}, ${tgId}, 0, true, 'sales', NOW(), NOW())`);
       assert(Number((await http.get("/stats/overview", { params: { from: "2020-01-01", to: "2099-12-31" }, ...auth() })).data.totals.total) === before, "a group conversation was counted as a service ticket");
     });
+    await test("the list is ordered by the last message (not by when the row was touched), newest first, pinned on top", async () => {
+      const mk = (name, num, at, touched) => {
+        const c = sql(`INSERT INTO Contacts (name, number, email, isGroup, channel, createdAt, updatedAt) VALUES ('${name}', '${num}', '', false, 'telegram', NOW(), NOW()) RETURNING id`).split("\n")[0];
+        return sql(`INSERT INTO Tickets (status, contactId, whatsappId, unreadMessages, isGroup, segment, isHistorical, lastMessage, lastMessageAt, closedAt, createdAt, updatedAt) VALUES ('closed', ${c}, ${tgId}, 0, false, 'sales', true, 'oi', NOW() - INTERVAL '${at}', NOW(), NOW() - INTERVAL '90 days', NOW() - INTERVAL '${touched}') RETURNING id`).split("\n")[0];
+      };
+      // A wrote yesterday but was imported "just now"; B wrote last week but was touched yesterday
+      const a = mk("Ordem A", "tg_ord_a", "1 day", "1 minute");
+      const b = mk("Ordem B", "tg_ord_b", "7 days", "30 minutes");
+      const c = mk("Ordem C", "tg_ord_c", "3 hours", "40 days");
+      const queueIds = JSON.stringify((await http.get("/queue", auth())).data.map(q => q.id));
+      const list = (await http.get("/tickets", { params: { showAll: "true", historical: "all", queueIds }, ...auth() })).data.tickets.map(t => Number(t.id));
+      assert(list.indexOf(Number(c)) < list.indexOf(Number(a)) && list.indexOf(Number(a)) < list.indexOf(Number(b)), `order by last message: C ${list.indexOf(Number(c))}, A ${list.indexOf(Number(a))}, B ${list.indexOf(Number(b))}`);
+      const first = (await http.get("/tickets", { params: { showAll: "true", historical: "all", queueIds }, ...auth() })).data.tickets.find(t => Number(t.id) === Number(a));
+      assert(first.lastMessageAt, "the list does not carry lastMessageAt");
+    });
     await test("messages can be deleted for everyone or only here, edits are limited to WhatsApp, \"mark as unread\" and the all-conversations view work", async () => {
       const t = ticketOf("tg_5551");
       const mine = "del-out-1", theirs = "del-in-1";

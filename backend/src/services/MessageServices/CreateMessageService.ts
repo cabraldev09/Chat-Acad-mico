@@ -83,6 +83,7 @@ const CreateMessageService = async ({
     lastMessageId: message.id,
     lastMessageFromMe: !!message.fromMe,
     lastMessageType: message.mediaType || "chat",
+    lastMessageAt: message.createdAt || new Date(),
     lastMessageAuthor: message.ticket.isGroup && !message.fromMe ? (message.contact?.name || null) : null
   };
   await Ticket.update(

@@ -165,7 +165,11 @@ const plain = (text) =>
 const stamp = (iso) => {
   const d = new Date(iso);
   const label = dayLabel(d);
-  return label === "Hoje" ? clock(d) : label === "Ontem" ? "Ontem" : d.toLocaleDateString("pt-BR");
+  if (label === "Hoje") return clock(d);
+  if (label === "Ontem") return "Ontem";
+  // like WhatsApp: the weekday for the last week, the date after that
+  if (Date.now() - d.getTime() < 6 * 86400000) return d.toLocaleDateString("pt-BR", { weekday: "long" });
+  return d.toLocaleDateString("pt-BR");
 };
 
 const TicketListItem = ({ ticket }) => {
@@ -269,7 +273,7 @@ const TicketListItem = ({ ticket }) => {
             {ticket.contact.name}
           </span>
           {ticket.lastMessage && (
-            <span className={clsx(classes.time, unread && classes.timeUnread)}>{stamp(ticket.updatedAt)}</span>
+            <span className={clsx(classes.time, unread && classes.timeUnread)}>{stamp(ticket.lastMessageAt || ticket.updatedAt)}</span>
           )}
         </div>
         <div className={classes.line}>

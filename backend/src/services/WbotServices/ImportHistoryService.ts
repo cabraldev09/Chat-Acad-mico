@@ -75,6 +75,7 @@ export const importHistory = async (
             lastMessageFromMe: !!latest.fromMe,
             lastMessageAck: latest.ack || 0,
             lastMessageType: "chat",
+            lastMessageAt: last,
             lastMessageAuthor: chat.isGroup && !latest.fromMe && latest.author ? latest.author.name : null,
             closedAt: last,
             createdAt: first
@@ -134,6 +135,7 @@ export const importHistory = async (
               lastMessageFromMe: !!latest.fromMe,
               lastMessageAck: latest.ack || 0,
               lastMessageType: "chat",
+              lastMessageAt: last,
               lastMessageAuthor: chat.isGroup && !latest.fromMe && latest.author ? latest.author.name : null
             } as any,
             { where: { id: ticket.id }, silent: true } as any

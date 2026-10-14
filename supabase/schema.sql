@@ -1581,7 +1581,8 @@ CREATE TABLE public."Tickets" (
     "lastMessageFromMe" boolean DEFAULT false NOT NULL,
     "lastMessageAck" integer DEFAULT 0 NOT NULL,
     "lastMessageType" character varying(255),
-    "lastMessageAuthor" character varying(255)
+    "lastMessageAuthor" character varying(255),
+    "lastMessageAt" timestamp with time zone
 );
 
 
@@ -2741,6 +2742,13 @@ CREATE INDEX ticket_events_ticket_id ON public."TicketEvents" USING btree ("tick
 
 
 --
+-- Name: tickets_last_message_at_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX tickets_last_message_at_idx ON public."Tickets" USING btree ("lastMessageAt");
+
+
+--
 -- Name: tickets_lead_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3632,6 +3640,7 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261031000002-ticket-last-message-s
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261101000001-ticket-last-message-backfill.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261101000002-affiliates.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261101000003-ticket-last-message-kind.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261101000004-ticket-last-message-at.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.
