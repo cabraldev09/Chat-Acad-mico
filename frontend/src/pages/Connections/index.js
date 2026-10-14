@@ -275,7 +275,7 @@ const Connections = () => {
 				{whatsApp.status === "qrcode" && (
 					<CustomToolTip
 						title={i18n.t("connections.toolTips.qrcode.title")}
-						content={i18n.t("connections.toolTips.qrcode.content")}
+						content={isAdmin ? i18n.t("connections.toolTips.qrcode.content") : "Este número ainda não foi conectado. Peça ao administrador para ler o QR Code com o celular do número."}
 					>
 						<CropFree />
 					</CustomToolTip>
