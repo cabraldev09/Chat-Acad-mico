@@ -11,6 +11,7 @@ import TicketsListSkeleton from "../TicketsListSkeleton";
 import useTickets from "../../hooks/useTickets";
 import { i18n } from "../../translate/i18n";
 import { AuthContext } from "../../context/Auth/AuthContext";
+import { Link } from "react-router-dom";
 
 const useStyles = makeStyles(theme => ({
 	ticketsListWrapper: {
@@ -333,9 +334,17 @@ const reducer = (state, action) => {
 							<span className={classes.noTicketsTitle}>
 								{i18n.t("ticketsList.noTicketsTitle")}
 							</span>
-							<p className={classes.noTicketsText}>
-								{i18n.t("ticketsList.noTicketsMessage")}
-							</p>
+							{props.groups === "only" ? (
+								<p className={classes.noTicketsText}>
+									Nenhum grupo entrou ainda. Os grupos do WhatsApp só viram conversa depois que você escolhe quais deles receber.
+									<br />
+									<Link to="/connections" style={{ fontWeight: 600 }}>Escolher meus grupos</Link>
+								</p>
+							) : (
+								<p className={classes.noTicketsText}>
+									{i18n.t("ticketsList.noTicketsMessage")}
+								</p>
+							)}
 						</div>
 					) : (
 						<>

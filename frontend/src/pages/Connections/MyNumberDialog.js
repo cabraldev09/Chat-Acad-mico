@@ -4,19 +4,31 @@ import { Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField, T
 
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
+import GroupsPicker from "../../components/GroupsPicker";
 
 // Anyone connects their own WhatsApp here: they only choose a name, then read the QR Code with the phone.
 const MyNumberDialog = ({ open, whatsApp, onClose, onCreated }) => {
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
-  useEffect(() => { if (open) setName(whatsApp ? whatsApp.name : ""); }, [open, whatsApp]);
+  const [mode, setMode] = useState("off");
+  const [allowed, setAllowed] = useState([]);
+  useEffect(() => {
+    if (!open) return;
+    setName(whatsApp ? whatsApp.name : "");
+    setMode((whatsApp && whatsApp.groupsMode) || "off");
+    try {
+      setAllowed(whatsApp && whatsApp.allowedGroups ? JSON.parse(whatsApp.allowedGroups) : []);
+    } catch (e) {
+      setAllowed([]);
+    }
+  }, [open, whatsApp]);
 
   const save = async () => {
     setBusy(true);
     try {
       if (whatsApp) {
-        await api.put(`/whatsapp/${whatsApp.id}`, { name });
-        toast.success("Nome atualizado.");
+        await api.put(`/whatsapp/${whatsApp.id}`, { name, groupsMode: mode, allowedGroups: allowed });
+        toast.success("Alterações salvas.");
         onClose();
       } else {
         const { data } = await api.post("/whatsapp", { name });
@@ -32,7 +44,7 @@ const MyNumberDialog = ({ open, whatsApp, onClose, onCreated }) => {
 
   return (
     <Dialog open={open} onClose={busy ? undefined : onClose} maxWidth="xs" fullWidth>
-      <DialogTitle>{whatsApp ? "Renomear meu WhatsApp" : "Conectar meu WhatsApp"}</DialogTitle>
+      <DialogTitle>{whatsApp ? "Meu WhatsApp" : "Conectar meu WhatsApp"}</DialogTitle>
       <DialogContent>
         {!whatsApp && (
           <Typography variant="body2" color="textSecondary" gutterBottom>
@@ -40,6 +52,12 @@ const MyNumberDialog = ({ open, whatsApp, onClose, onCreated }) => {
           </Typography>
         )}
         <TextField autoFocus fullWidth variant="outlined" margin="dense" label="Nome do número (opcional)" value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex.: WhatsApp da Maria" />
+        {whatsApp && (
+          <div style={{ marginTop: 12 }}>
+            <Typography variant="subtitle2">Grupos do WhatsApp</Typography>
+            <GroupsPicker whatsappId={whatsApp.id} connected={whatsApp.status === "CONNECTED"} mode={mode} onMode={setMode} allowed={allowed} onAllowed={setAllowed} />
+          </div>
+        )}
       </DialogContent>
       <DialogActions>
         <Button variant="outlined" color="secondary" onClick={onClose} disabled={busy}>Cancelar</Button>

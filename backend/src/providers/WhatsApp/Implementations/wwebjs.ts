@@ -514,25 +514,36 @@ const getContacts = async (sessionId: number): Promise<ProviderContact[]> => {
   const wbot = getWbot(sessionId);
   const contacts = await wbot.getContacts();
 
-  // only people saved in the phone's address book, with a real phone number
-  // (no groups, channels, statuses, or "@lid" identifiers that hide the number)
-  return contacts
-    .filter(
-      contact =>
-        contact.isMyContact &&
-        !contact.isGroup &&
-        !contact.isMe &&
-        contact.id.server === "c.us" &&
-        /^\d{8,15}$/.test(contact.id.user)
-    )
-    .map(contact => ({
-      id: contact.id.user,
+  // People saved in the phone's address book. WhatsApp now identifies many people by an "@lid" id that hides
+  // the phone, so the number is taken from the contact itself when the id is not a phone id. Groups, channels,
+  // statuses and yourself are never imported.
+  const phoneOf = (contact: WbotContact): string => {
+    const fromId = contact.id.server === "c.us" ? contact.id.user : "";
+    const raw = fromId || String((contact as any).number || "");
+    const digits = raw.replace(/\D/g, "");
+    return digits.length >= 8 && digits.length <= 15 ? digits : "";
+  };
+
+  const saved = contacts.filter(
+    contact => contact.isMyContact && !contact.isGroup && !contact.isMe
+  );
+  const result = saved
+    .map(contact => ({ contact, number: phoneOf(contact) }))
+    .filter(item => item.number)
+    .map(({ contact, number }) => ({
+      id: number,
       name: contact.name || contact.pushname,
       pushname: contact.pushname,
-      number: contact.id.user,
+      number,
       profilePicUrl: undefined,
       isGroup: false
     }));
+
+  logger.info(
+    `Session ${sessionId}: ${contacts.length} contacts on WhatsApp, ${saved.length} saved in the phone, ${result.length} with a usable phone number`
+  );
+
+  return result;
 };
 
 // The first time a number connects, its address book becomes the company's contact list. Numbers that belong

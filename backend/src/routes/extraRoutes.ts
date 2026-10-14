@@ -2,6 +2,7 @@ import express from "express";
 import multer from "multer";
 
 import isAuth from "../middleware/isAuth";
+import canManageWhatsapp from "../middleware/canManageWhatsapp";
 import isAdmin from "../middleware/isAdmin";
 import { canWriteTicket } from "../middleware/canAccessTicket";
 import { canAccessLead, canAccessProposal, canAccessPayment } from "../middleware/scope";
@@ -120,7 +121,7 @@ r.get("/stats/live", isAuth, isAdmin, Stats.live);
 r.get("/channels", isAuth, Channel.index);
 r.get("/channels/:whatsappId/info", isAuth, isAdmin, Channel.info);
 r.get("/channels/:whatsappId/safety", isAuth, Channel.safety);
-r.get("/channels/:whatsappId/groups", isAuth, isAdmin, Channel.groups);
+r.get("/channels/:whatsappId/groups", isAuth, canManageWhatsapp, Channel.groups);
 
 // polos (branches) and the team of each one
 r.get("/polos", isAuth, PoloCtl.index);

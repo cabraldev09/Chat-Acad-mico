@@ -10,8 +10,8 @@ import Menu from "@material-ui/core/Menu";
 import MenuItem from "@material-ui/core/MenuItem";
 import ListItemIcon from "@material-ui/core/ListItemIcon";
 import ListItemText from "@material-ui/core/ListItemText";
-import { Pin, PinOff, Archive, ArchiveRestore, ChevronDown, BellOff } from "lucide-react";
-import { isTicketMuted } from "../../utils/muteStore";
+import { Pin, PinOff, Archive, ArchiveRestore, ChevronDown, BellOff, BellRing } from "lucide-react";
+import { getContactSound, onSoundPrefsChange } from "../../utils/soundPrefs";
 
 import ChannelIcon from "../ChannelIcon";
 import api from "../../services/api";
@@ -182,13 +182,12 @@ const TicketListItem = ({ ticket }) => {
   };
 
   const [menuEl, setMenuEl] = useState(null);
-  const [muted, setMuted] = useState(() => isTicketMuted(ticket.id));
+  const [soundPref, setSoundPref] = useState("default");
   useEffect(() => {
-    const refresh = () => setMuted(isTicketMuted(ticket.id));
+    const refresh = () => setSoundPref(getContactSound(ticket.contact.id));
     refresh();
-    window.addEventListener("ticketMuteChanged", refresh);
-    return () => window.removeEventListener("ticketMuteChanged", refresh);
-  }, [ticket.id]);
+    return onSoundPrefsChange(refresh);
+  }, [ticket.contact.id]);
   const run = async (e, fn) => {
     e.stopPropagation();
     setMenuEl(null);
@@ -239,9 +238,14 @@ const TicketListItem = ({ ticket }) => {
           <span className={classes.preview} style={unread ? { color: undefined, fontWeight: 500 } : undefined}>
             {plain(ticket.lastMessage) || "Sem mensagens"}
           </span>
-          {muted && (
-            <Tooltip arrow title="Conversa silenciada">
+          {soundPref === "mute" && (
+            <Tooltip arrow title="Contato silenciado">
               <span className={classes.pin}><BellOff size={14} /></span>
+            </Tooltip>
+          )}
+          {soundPref === "alert" && (
+            <Tooltip arrow title="Contato de alerta: sempre toca o som">
+              <span className={classes.pin} style={{ color: "#c9a800" }}><BellRing size={14} /></span>
             </Tooltip>
           )}
           {ticket.pinned && (

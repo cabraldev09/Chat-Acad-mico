@@ -13,15 +13,23 @@ import { makeStyles } from "@material-ui/core/styles";
 import Badge from "@material-ui/core/Badge";
 import Tooltip from "@material-ui/core/Tooltip";
 import Switch from "@material-ui/core/Switch";
-import Chip from "@material-ui/core/Chip";
-import { Bell, BellOff } from "lucide-react";
+import { Bell, BellRing, Volume2, VolumeX } from "lucide-react";
 
 import TicketListItem from "../TicketListItem";
 import { i18n } from "../../translate/i18n";
 import useTickets from "../../hooks/useTickets";
 import alertSound from "../../assets/sound.mp3";
 import { AuthContext } from "../../context/Auth/AuthContext";
-import { isTicketMuted } from "../../utils/muteStore";
+import {
+	setSoundPrefsUser,
+	getSoundMode,
+	setSoundMode,
+	getPopupEnabled,
+	setPopupEnabled,
+	alertContactCount,
+	shouldAlert,
+	onSoundPrefsChange,
+} from "../../utils/soundPrefs";
 
 const useStyles = makeStyles(theme => ({
 	tabContainer: {
@@ -44,56 +52,40 @@ const useStyles = makeStyles(theme => ({
 	iconButton: {
 		color: theme.palette.text.secondary,
 	},
-	mutedIcon: {
-		color: theme.palette.warning ? theme.palette.warning.main : "#ed6c02",
-	},
-	muteBar: {
-		padding: theme.spacing(1.25, 2),
+	prefs: {
+		padding: theme.spacing(1.5, 2, 1.25),
 		borderBottom: `1px solid ${theme.palette.divider}`,
 	},
-	muteRow: {
+	prefsTitle: { fontSize: 13, fontWeight: 700, marginBottom: theme.spacing(1) },
+	choice: {
 		display: "flex",
 		alignItems: "center",
-		justifyContent: "space-between",
-		gap: theme.spacing(1),
+		gap: theme.spacing(1.25),
+		width: "100%",
+		padding: theme.spacing(1, 1.25),
+		marginBottom: theme.spacing(0.75),
+		textAlign: "left",
+		fontFamily: "inherit",
+		color: theme.palette.text.primary,
+		background: "transparent",
+		border: `1px solid ${theme.palette.divider}`,
+		borderRadius: 12,
+		cursor: "pointer",
+		transition: "border-color .15s, background-color .15s",
+		"&:hover": { backgroundColor: theme.palette.action.hover },
 	},
-	muteTitle: { fontSize: 14, fontWeight: 600 },
-	muteHint: { fontSize: 12, color: theme.palette.text.secondary },
-	muteChips: { display: "flex", flexWrap: "wrap", gap: theme.spacing(0.75), marginTop: theme.spacing(1) },
+	choiceOn: {
+		borderColor: theme.palette.primary.main,
+		backgroundColor: theme.palette.type === "dark" ? "rgba(6,147,227,.14)" : "rgba(6,147,227,.08)",
+	},
+	choiceIcon: { flex: "none", display: "flex", color: theme.palette.text.secondary },
+	choiceIconOn: { color: theme.palette.primary.main },
+	choiceLabel: { fontSize: 13.5, fontWeight: 600, lineHeight: 1.25 },
+	choiceHint: { fontSize: 12, color: theme.palette.text.secondary, lineHeight: 1.3 },
+	popupRow: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: theme.spacing(1) },
+	popupText: { fontSize: 13.5, fontWeight: 600 },
+	popupHint: { fontSize: 12, color: theme.palette.text.secondary },
 }));
-
-// Silenced notifications keep the unread badge and the list, but make no sound and show no pop-up.
-const FOREVER = 8640000000000000;
-const MUTE_KEY = "notifications-muted-until";
-
-const readMutedUntil = () => {
-	try {
-		const value = Number(localStorage.getItem(MUTE_KEY) || 0);
-		return value > Date.now() ? value : 0;
-	} catch (e) {
-		return 0;
-	}
-};
-
-const tomorrowMorning = () => {
-	const d = new Date();
-	d.setDate(d.getDate() + 1);
-	d.setHours(8, 0, 0, 0);
-	return d.getTime();
-};
-
-const MUTE_OPTIONS = [
-	{ label: "Silenciar por 1 hora", until: () => Date.now() + 60 * 60 * 1000 },
-	{ label: "Silenciar por 8 horas", until: () => Date.now() + 8 * 60 * 60 * 1000 },
-	{ label: "Silenciar até amanhã 8h", until: tomorrowMorning },
-	{ label: "Silenciar até eu reativar", until: () => FOREVER },
-];
-
-const muteLabel = until => {
-	if (!until) return "";
-	if (until === FOREVER) return "Silenciadas até você reativar";
-	return `Silenciadas até ${format(new Date(until), "HH:mm")}`;
-};
 
 const NotificationsPopOver = () => {
 	const classes = useStyles();
@@ -107,27 +99,21 @@ const NotificationsPopOver = () => {
 	const [notifications, setNotifications] = useState([]);
 
 	const [, setDesktopNotifications] = useState([]);
-	const [mutedUntil, setMutedUntilState] = useState(readMutedUntil);
-	const mutedRef = useRef(mutedUntil);
+	const [soundMode, setSoundModeState] = useState("all");
+	const [popupOn, setPopupOnState] = useState(true);
+	const [alertCount, setAlertCount] = useState(0);
 
-	const setMutedUntil = until => {
-		mutedRef.current = until;
-		setMutedUntilState(until);
-		try {
-			if (until) localStorage.setItem(MUTE_KEY, String(until));
-			else localStorage.removeItem(MUTE_KEY);
-		} catch (e) {
-			/* private window: the setting only lasts until the page is closed */
-		}
-	};
-
-	// turns notifications back on by itself when the chosen time ends
+	// preferences are per user; reload them when the user or any setting changes
 	useEffect(() => {
-		if (!mutedUntil || mutedUntil === FOREVER) return undefined;
-		const wait = Math.max(mutedUntil - Date.now(), 0) + 500;
-		const timer = setTimeout(() => setMutedUntil(0), Math.min(wait, 2147483000));
-		return () => clearTimeout(timer);
-	}, [mutedUntil]);
+		setSoundPrefsUser(user?.id);
+		const refresh = () => {
+			setSoundModeState(getSoundMode());
+			setPopupOnState(getPopupEnabled());
+			setAlertCount(alertContactCount());
+		};
+		refresh();
+		return onSoundPrefsChange(refresh);
+	}, [user]);
 
 	const { tickets } = useTickets({ withUnreadMessages: "true" });
 	const [play] = useSound(alertSound);
@@ -216,40 +202,40 @@ const NotificationsPopOver = () => {
 	}, [user]);
 
 	const handleNotifications = data => {
-		if (mutedRef.current && mutedRef.current > Date.now()) return;
-		if (isTicketMuted(data.ticket.id)) return;
 		const { message, contact, ticket } = data;
+		// sound and pop-up follow the same rule: system-wide mode plus the contact's own setting
+		if (!shouldAlert(contact.id)) return;
 
-		const options = {
-			body: `${message.body} - ${format(new Date(), "HH:mm")}`,
-			icon: contact.profilePicUrl,
-			tag: ticket.id,
-			renotify: true,
-		};
-
-		const notification = new Notification(
-			`${i18n.t("tickets.notification.message")} ${contact.name}`,
-			options
-		);
-
-		notification.onclick = e => {
-			e.preventDefault();
-			window.focus();
-			historyRef.current.push(`/tickets/${ticket.id}`);
-		};
-
-		setDesktopNotifications(prevState => {
-			const notfiticationIndex = prevState.findIndex(
-				n => n.tag === notification.tag
+		if (getPopupEnabled() && "Notification" in window && Notification.permission === "granted") {
+			const notification = new Notification(
+				`${i18n.t("tickets.notification.message")} ${contact.name}`,
+				{
+					body: `${message.body} - ${format(new Date(), "HH:mm")}`,
+					icon: contact.profilePicUrl,
+					tag: ticket.id,
+					renotify: true,
+				}
 			);
-			if (notfiticationIndex !== -1) {
-				prevState[notfiticationIndex] = notification;
-				return [...prevState];
-			}
-			return [notification, ...prevState];
-		});
 
-		soundAlertRef.current();
+			notification.onclick = e => {
+				e.preventDefault();
+				window.focus();
+				historyRef.current.push(`/tickets/${ticket.id}`);
+			};
+
+			setDesktopNotifications(prevState => {
+				const notfiticationIndex = prevState.findIndex(
+					n => n.tag === notification.tag
+				);
+				if (notfiticationIndex !== -1) {
+					prevState[notfiticationIndex] = notification;
+					return [...prevState];
+				}
+				return [notification, ...prevState];
+			});
+		}
+
+		if (soundAlertRef.current) soundAlertRef.current();
 	};
 
 	const handleClick = () => {
@@ -266,15 +252,15 @@ const NotificationsPopOver = () => {
 
 	return (
 		<>
-			<Tooltip title={mutedUntil ? muteLabel(mutedUntil) : "Notificações"}>
+			<Tooltip title="Notificações e som">
 				<IconButton
 					onClick={handleClick}
 					ref={anchorEl}
-					aria-label="Notificações"
-					className={`${classes.iconButton} ${mutedUntil ? classes.mutedIcon : ""}`}
+					aria-label="Notificações e som"
+					className={classes.iconButton}
 				>
 					<Badge badgeContent={notifications.length} color="primary" overlap="rectangular">
-						{mutedUntil ? <BellOff size={20} /> : <Bell size={20} />}
+						{soundMode === "alerts" ? <BellRing size={20} /> : <Bell size={20} />}
 					</Badge>
 				</IconButton>
 			</Tooltip>
@@ -293,32 +279,48 @@ const NotificationsPopOver = () => {
 				classes={{ paper: classes.popoverPaper }}
 				onClose={handleClickAway}
 			>
-				<div className={classes.muteBar}>
-					<div className={classes.muteRow}>
+				<div className={classes.prefs}>
+					<div className={classes.prefsTitle}>Som das novas mensagens</div>
+					{[
+						{ value: "all", icon: Volume2, label: "Todas as conversas", hint: "Toca para qualquer contato, menos os que você silenciou" },
+						{
+							value: "alerts",
+							icon: VolumeX,
+							label: "Só contatos de alerta",
+							hint: alertCount
+								? `Toca apenas para ${alertCount} ${alertCount === 1 ? "contato" : "contatos"} marcados como alerta`
+								: "Silêncio geral. Abra uma conversa e marque o contato como alerta",
+						},
+					].map(option => {
+						const Icon = option.icon;
+						const on = soundMode === option.value;
+						return (
+							<button
+								type="button"
+								key={option.value}
+								className={`${classes.choice} ${on ? classes.choiceOn : ""}`}
+								onClick={() => setSoundMode(option.value)}
+								aria-pressed={on}
+							>
+								<span className={`${classes.choiceIcon} ${on ? classes.choiceIconOn : ""}`}><Icon size={20} /></span>
+								<span>
+									<div className={classes.choiceLabel}>{option.label}</div>
+									<div className={classes.choiceHint}>{option.hint}</div>
+								</span>
+							</button>
+						);
+					})}
+					<div className={classes.popupRow}>
 						<div>
-							<div className={classes.muteTitle}>Som e avisos na tela</div>
-							<div className={classes.muteHint}>
-								{mutedUntil ? muteLabel(mutedUntil) : "Ativados: você recebe aviso de novas mensagens"}
-							</div>
+							<div className={classes.popupText}>Aviso na tela</div>
+							<div className={classes.popupHint}>Mostra a notificação do navegador junto com o som</div>
 						</div>
 						<Switch
 							color="primary"
-							checked={!mutedUntil}
-							onChange={e => setMutedUntil(e.target.checked ? 0 : FOREVER)}
-							inputProps={{ "aria-label": "Ativar som e avisos na tela" }}
+							checked={popupOn}
+							onChange={e => setPopupEnabled(e.target.checked)}
+							inputProps={{ "aria-label": "Mostrar aviso na tela" }}
 						/>
-					</div>
-					<div className={classes.muteChips}>
-						{MUTE_OPTIONS.map(option => (
-							<Chip
-								key={option.label}
-								size="small"
-								clickable
-								variant="outlined"
-								label={option.label}
-								onClick={() => setMutedUntil(option.until())}
-							/>
-						))}
 					</div>
 				</div>
 				<List dense className={classes.tabContainer}>

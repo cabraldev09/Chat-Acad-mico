@@ -148,8 +148,17 @@ export const update = async (
   res: Response
 ): Promise<Response> => {
   const { whatsappId } = req.params;
-  // the owner may only rename their number; everything else is the administrator's
-  const whatsappData = isAdminReq(req) ? req.body : { name: req.body.name };
+  // the owner may rename their number and choose which of its groups become conversations;
+  // everything else is the administrator's
+  const whatsappData = isAdminReq(req)
+    ? req.body
+    : ["name", "groupsMode", "allowedGroups"].reduce(
+        (acc: Record<string, unknown>, key) => {
+          if (req.body[key] !== undefined) acc[key] = req.body[key];
+          return acc;
+        },
+        {}
+      );
 
   const { whatsapp, oldDefaultWhatsapp } = await UpdateWhatsAppService({
     whatsappData,

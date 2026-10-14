@@ -1,5 +1,5 @@
 import React, { useContext, useEffect, useState } from "react";
-import { Pin, PinOff, Archive, ArchiveRestore, Bell, BellOff, Undo2, CheckCircle2, UserCheck, RotateCcw } from "lucide-react";
+import { Pin, PinOff, Archive, ArchiveRestore, Bell, BellOff, BellRing, Check, Undo2, CheckCircle2, UserCheck, RotateCcw } from "lucide-react";
 import { toast } from "react-toastify";
 import { useHistory } from "react-router-dom";
 import { makeStyles } from "@material-ui/core/styles";
@@ -24,7 +24,7 @@ import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import { AuthContext } from "../../context/Auth/AuthContext";
 import { wa } from "./chatTheme";
-import { FOREVER, MUTE_CHOICES, getTicketMute, muteTicket, unmuteTicket } from "../../utils/muteStore";
+import { SOUND_CHOICES, getContactSound, setContactSound, getSoundMode, onSoundPrefsChange } from "../../utils/soundPrefs";
 
 const useStyles = makeStyles((theme) => {
   const c = wa(theme);
@@ -103,20 +103,26 @@ const ChatHeader = ({ contact, ticket, onOpenInfo, onToggleSearch, typing }) => 
 
   const closeConversation = () => history.push("/tickets");
 
-  const [muteEl, setMuteEl] = useState(null);
-  const [mutedUntil, setMutedUntil] = useState(() => getTicketMute(ticket.id));
+  const [soundEl, setSoundEl] = useState(null);
+  const [soundPref, setSoundPref] = useState("default");
+  const [soundMode, setSoundMode] = useState("all");
   useEffect(() => {
-    const refresh = () => setMutedUntil(getTicketMute(ticket.id));
+    const refresh = () => {
+      setSoundPref(getContactSound(ticket.contact?.id || contact.id));
+      setSoundMode(getSoundMode());
+    };
     refresh();
-    window.addEventListener("ticketMuteChanged", refresh);
-    return () => window.removeEventListener("ticketMuteChanged", refresh);
-  }, [ticket.id]);
-  const muted = mutedUntil > Date.now();
-  const muteHint = !muted
-    ? "Silenciar esta conversa"
-    : mutedUntil === FOREVER
-    ? "Silenciada até você reativar"
-    : `Silenciada até ${new Date(mutedUntil).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}`;
+    return onSoundPrefsChange(refresh);
+  }, [ticket.contact?.id, contact.id]);
+  const soundIcon = soundPref === "alert" ? <BellRing size={20} /> : soundPref === "mute" ? <BellOff size={20} /> : <Bell size={20} />;
+  const soundHint =
+    soundPref === "alert"
+      ? "Contato de alerta: sempre toca o som"
+      : soundPref === "mute"
+      ? "Contato silenciado: nunca toca o som"
+      : soundMode === "all"
+      ? "Som desta conversa: segue o padrão (toca)"
+      : "Som desta conversa: segue o padrão (silêncio). Marque como alerta para tocar";
 
   // Esc leaves the conversation (like WhatsApp Web), unless a dialog, menu or picker is open
   useEffect(() => {
@@ -241,35 +247,41 @@ const ChatHeader = ({ contact, ticket, onOpenInfo, onToggleSearch, typing }) => 
                 <ScheduleIcon />
               </IconButton>
             </Tooltip>
-            <Tooltip title={muteHint}>
-              <IconButton className={classes.icon} onClick={(e) => setMuteEl(e.currentTarget)} aria-label="Silenciar conversa" style={muted ? { color: "#ed6c02" } : undefined}>
-                {muted ? <BellOff size={20} /> : <Bell size={20} />}
+            <Tooltip title={soundHint}>
+              <IconButton
+                className={classes.icon}
+                onClick={(e) => setSoundEl(e.currentTarget)}
+                aria-label="Som desta conversa"
+                style={soundPref === "alert" ? { color: "#c9a800" } : soundPref === "mute" ? { color: "#ed6c02" } : undefined}
+              >
+                {soundIcon}
               </IconButton>
             </Tooltip>
-            <Menu anchorEl={muteEl} open={Boolean(muteEl)} onClose={() => setMuteEl(null)} getContentAnchorEl={null} anchorOrigin={{ vertical: "bottom", horizontal: "right" }} transformOrigin={{ vertical: "top", horizontal: "right" }}>
-              {MUTE_CHOICES.map((choice) => (
+            <Menu anchorEl={soundEl} open={Boolean(soundEl)} onClose={() => setSoundEl(null)} getContentAnchorEl={null} anchorOrigin={{ vertical: "bottom", horizontal: "right" }} transformOrigin={{ vertical: "top", horizontal: "right" }}>
+              {SOUND_CHOICES.map((choice) => (
                 <MenuItem
-                  key={choice.label}
+                  key={choice.value}
+                  selected={soundPref === choice.value}
                   onClick={() => {
-                    muteTicket(ticket.id, choice.until());
-                    setMuteEl(null);
-                    toast.success(`Conversa silenciada: ${choice.label.toLowerCase()}.`);
+                    setContactSound(ticket.contact?.id || contact.id, choice.value);
+                    setSoundEl(null);
+                    toast.success(
+                      {
+                        default: "Este contato volta a seguir o som padrão do sistema.",
+                        alert: "Contato de alerta: o som sempre toca para ele.",
+                        mute: "Contato silenciado: o som não toca para ele.",
+                      }[choice.value]
+                    );
                   }}
+                  style={{ alignItems: "flex-start", whiteSpace: "normal", maxWidth: 320 }}
                 >
-                  Silenciar {choice.label.startsWith("Até") ? choice.label.toLowerCase() : `por ${choice.label}`}
+                  <span style={{ width: 22, flex: "none", paddingTop: 2 }}>{soundPref === choice.value && <Check size={16} />}</span>
+                  <span>
+                    <div style={{ fontWeight: 600, fontSize: 14 }}>{choice.label}</div>
+                    <div style={{ fontSize: 12, opacity: 0.7 }}>{choice.hint}</div>
+                  </span>
                 </MenuItem>
               ))}
-              {muted && (
-                <MenuItem
-                  onClick={() => {
-                    unmuteTicket(ticket.id);
-                    setMuteEl(null);
-                    toast.success("Notificações desta conversa reativadas.");
-                  }}
-                >
-                  Reativar notificações
-                </MenuItem>
-              )}
             </Menu>
             <Tooltip title={pinned ? "Desafixar conversa" : "Fixar conversa no topo"}>
               <IconButton className={classes.icon} onClick={togglePin} aria-label={pinned ? "Desafixar conversa" : "Fixar conversa"}>
