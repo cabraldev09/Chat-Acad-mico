@@ -1253,6 +1253,15 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(r.status === 200, `send to a closed team chat: ${r.status}`);
       assert(sql(`SELECT status FROM Tickets WHERE id=${tid}`) === "open", "team chat not reopened by sending");
     });
+    await test("ready-made quick replies exist from the first boot and are found by shortcut or text", async () => {
+      const list = async (q) => (await http.get("/quickAnswers", { params: { searchParam: q }, ...auth() })).data.quickAnswers;
+      const all = await list("");
+      for (const key of ["fichamatricula", "documentos", "boasvindas", "ambientacao"]) assert(all.some(a => a.shortcut === key), `default reply missing: ${key}`);
+      const ficha = (await list("fichamat"))[0];
+      assert(ficha && ficha.message.includes("\n• CPF:") && !ficha.message.includes("\u2060"), "the ficha lost its line breaks or kept invisible characters");
+      assert((await list("histórico do ensino")).some(a => a.shortcut === "fichamatricula"), "search by text broke");
+      assert(sql(`SELECT COUNT(*) FROM QuickAnswers WHERE LOWER(shortcut)='fichamatricula'`) === "1", "default duplicated");
+    });
     await test("one conversation per person: writing after a closed attendance brings the same one back, reopening never errors", async () => {
       const cid = sql(`SELECT id FROM Contacts WHERE number='tg_7777'`);
       const tid = sql(`SELECT id FROM Tickets WHERE contactId=${cid} ORDER BY id DESC LIMIT 1`);

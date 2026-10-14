@@ -15,6 +15,7 @@ import {
   CircularProgress,
 } from "@material-ui/core";
 import { green } from "@material-ui/core/colors";
+import { QUICK_VARIABLES } from "../../utils/quickVars";
 import { i18n } from "../../translate/i18n";
 
 import api from "../../services/api";
@@ -48,13 +49,14 @@ const useStyles = makeStyles((theme) => ({
 
 const QuickAnswerSchema = Yup.object().shape({
   shortcut: Yup.string()
-    .min(2, "Too Short!")
-    .max(15, "Too Long!")
-    .required("Required"),
+    .min(2, "Use pelo menos 2 letras")
+    .max(30, "No máximo 30 caracteres")
+    .matches(/^[^\s/]+$/, "Sem espaços e sem a barra")
+    .required("Escolha um atalho"),
   message: Yup.string()
-    .min(8, "Too Short!")
-    .max(30000, "Too Long!")
-    .required("Required"),
+    .min(2, "Escreva a resposta")
+    .max(30000, "Resposta muito longa")
+    .required("Escreva a resposta"),
 });
 
 const QuickAnswersModal = ({
@@ -151,7 +153,7 @@ const QuickAnswersModal = ({
             }, 400);
           }}
         >
-          {({ values, errors, touched, isSubmitting }) => (
+          {({ values, errors, touched, isSubmitting, setFieldValue }) => (
             <Form>
               <DialogContent dividers>
                 <div className={classes.textQuickAnswerContainer}>
@@ -161,7 +163,7 @@ const QuickAnswersModal = ({
                     name="shortcut"
                     autoFocus
                     error={touched.shortcut && Boolean(errors.shortcut)}
-                    helperText={touched.shortcut && errors.shortcut}
+                    helperText={(touched.shortcut && errors.shortcut) || "Na conversa, digite / e o atalho para usar esta resposta"}
                     variant="outlined"
                     margin="dense"
                     className={classes.textField}
@@ -179,9 +181,23 @@ const QuickAnswersModal = ({
                     margin="dense"
                     className={classes.textField}
                     multiline
-                    rows={5}
+                    rows={9}
                     fullWidth
                   />
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8, alignItems: "center" }}>
+                    <span style={{ fontSize: 12, opacity: 0.7 }}>Inserir:</span>
+                    {QUICK_VARIABLES.map((v) => (
+                      <button
+                        key={v.token}
+                        type="button"
+                        title={v.help}
+                        onClick={() => setFieldValue("message", `${values.message || ""}${v.token}`)}
+                        style={{ border: "1px solid rgba(127,127,127,.35)", background: "transparent", color: "inherit", borderRadius: 999, padding: "2px 10px", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}
+                      >
+                        {v.token}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </DialogContent>
               <DialogActions>

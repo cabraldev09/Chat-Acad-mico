@@ -1,20 +1,9 @@
 import React, { useState, useEffect, useReducer } from "react";
 import openSocket from "../../services/socket-io";
 
-import {
-  Button,
-  IconButton,
-  makeStyles,
-  Paper,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableRow,
-  InputAdornment,
-  TextField,
-} from "@material-ui/core";
-import { Edit, DeleteOutline } from "@material-ui/icons";
+import { Button, IconButton, makeStyles, Tooltip, InputAdornment, TextField } from "@material-ui/core";
 import SearchIcon from "@material-ui/icons/Search";
+import { Copy, Pencil, Trash2 } from "lucide-react";
 
 import MainContainer from "../../components/MainContainer";
 import MainHeader from "../../components/MainHeader";
@@ -23,8 +12,6 @@ import Title from "../../components/Title";
 
 import api from "../../services/api";
 import { i18n } from "../../translate/i18n";
-import TableRowSkeleton from "../../components/TableRowSkeleton";
-import ResponsiveTable from "../../components/ResponsiveTable";
 import QuickAnswersModal from "../../components/QuickAnswersModal";
 import ConfirmationModal from "../../components/ConfirmationModal";
 import { toast } from "react-toastify";
@@ -77,10 +64,18 @@ const reducer = (state, action) => {
 const useStyles = makeStyles((theme) => ({
   mainPaper: {
     flex: 1,
-    padding: theme.spacing(1),
-    overflowY: "scroll",
+    padding: theme.spacing(0.5, 0.5, 2),
+    overflowY: "auto",
     ...theme.scrollbarStyles,
   },
+  intro: { color: theme.palette.text.secondary, fontSize: 14, margin: theme.spacing(0, 0.5, 2), maxWidth: 760 },
+  grid: { display: "grid", gap: theme.spacing(2), gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))" },
+  card: { display: "flex", flexDirection: "column", gap: theme.spacing(1), padding: theme.spacing(2), borderRadius: 14, border: theme.border.divider, background: theme.palette.cards.background, minWidth: 0 },
+  head: { display: "flex", alignItems: "center", gap: 4 },
+  shortcut: { flex: 1, minWidth: 0, fontWeight: 700, fontSize: 14, color: theme.palette.primary.main, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+  // the text keeps the line breaks and bullets exactly as they will be sent
+  text: { margin: 0, fontFamily: "inherit", fontSize: 13.5, lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word", display: "-webkit-box", WebkitLineClamp: 9, WebkitBoxOrient: "vertical", overflow: "hidden" },
+  empty: { textAlign: "center", color: theme.palette.text.secondary, padding: theme.spacing(6, 2) },
 }));
 
 const QuickAnswers = () => {
@@ -141,6 +136,15 @@ const QuickAnswers = () => {
       socket.disconnect();
     };
   }, []);
+
+  const copyText = async (text) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success("Texto copiado");
+    } catch (err) {
+      toast.error("Não foi possível copiar. Selecione o texto e copie manualmente.");
+    }
+  };
 
   const handleSearch = (event) => {
     setSearchParam(event.target.value.toLowerCase());
@@ -231,61 +235,49 @@ const QuickAnswers = () => {
           </Button>
         </MainHeaderButtonsWrapper>
       </MainHeader>
-      <Paper
-        className={classes.mainPaper}
-        variant="outlined"
-        onScroll={handleScroll}
-      >
-        <ResponsiveTable>
-          <TableHead>
-            <TableRow>
-              <TableCell align="center">
-                {i18n.t("quickAnswers.table.shortcut")}
-              </TableCell>
-              <TableCell align="center">
-                {i18n.t("quickAnswers.table.message")}
-              </TableCell>
-              <TableCell align="center">
-                {i18n.t("quickAnswers.table.actions")}
-              </TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            <>
-              {quickAnswers.map((quickAnswer) => (
-                <TableRow key={quickAnswer.id}>
-                  <TableCell align="center">{quickAnswer.shortcut}</TableCell>
-                  <TableCell
-                    align="center"
-                    data-label={i18n.t("quickAnswers.table.message")}
+      <div className={classes.mainPaper} onScroll={handleScroll}>
+        <p className={classes.intro}>
+          Textos prontos para a rotina de atendimento. Na conversa, digite <b>/</b> e o atalho (por exemplo, <b>/ficha</b>) e a resposta entra no campo de mensagem com as variáveis preenchidas, pronta para editar antes de enviar.
+        </p>
+        <div className={classes.grid}>
+          {quickAnswers.map((quickAnswer) => (
+            <div key={quickAnswer.id} className={classes.card}>
+              <div className={classes.head}>
+                <span className={classes.shortcut}>/{quickAnswer.shortcut}</span>
+                <Tooltip title="Copiar texto">
+                  <IconButton size="small" aria-label="Copiar texto" onClick={() => copyText(quickAnswer.message)}>
+                    <Copy size={16} />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title="Editar">
+                  <IconButton size="small" aria-label="Editar" onClick={() => handleEditQuickAnswers(quickAnswer)}>
+                    <Pencil size={16} />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title="Excluir">
+                  <IconButton
+                    size="small"
+                    aria-label="Excluir"
+                    onClick={() => {
+                      setConfirmModalOpen(true);
+                      setDeletingQuickAnswers(quickAnswer);
+                    }}
                   >
-                    {quickAnswer.message}
-                  </TableCell>
-                  <TableCell align="center">
-                    <IconButton
-                      size="small"
-                      onClick={() => handleEditQuickAnswers(quickAnswer)}
-                    >
-                      <Edit />
-                    </IconButton>
-
-                    <IconButton
-                      size="small"
-                      onClick={(e) => {
-                        setConfirmModalOpen(true);
-                        setDeletingQuickAnswers(quickAnswer);
-                      }}
-                    >
-                      <DeleteOutline />
-                    </IconButton>
-                  </TableCell>
-                </TableRow>
-              ))}
-              {loading && <TableRowSkeleton columns={3} />}
-            </>
-          </TableBody>
-        </ResponsiveTable>
-      </Paper>
+                    <Trash2 size={16} />
+                  </IconButton>
+                </Tooltip>
+              </div>
+              <pre className={classes.text}>{quickAnswer.message}</pre>
+            </div>
+          ))}
+        </div>
+        {!loading && quickAnswers.length === 0 && (
+          <div className={classes.empty}>
+            {searchParam ? "Nenhuma resposta encontrada para essa busca." : "Nenhuma resposta rápida ainda. Use o botão acima para criar a primeira."}
+          </div>
+        )}
+        {loading && <div className={classes.empty}>Carregando...</div>}
+      </div>
     </MainContainer>
   );
 };

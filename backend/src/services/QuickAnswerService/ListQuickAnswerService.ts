@@ -1,4 +1,4 @@
-import { Sequelize } from "sequelize";
+import { Op, Sequelize } from "sequelize";
 import QuickAnswer from "../../models/QuickAnswer";
 
 interface Request {
@@ -16,21 +16,22 @@ const ListQuickAnswerService = async ({
   searchParam = "",
   pageNumber = "1"
 }: Request): Promise<Response> => {
+  // typing "/ficha" in a conversation must find "fichamatricula": the shortcut counts as much as the text
+  const term = `%${searchParam.toLowerCase().trim()}%`;
   const whereCondition = {
-    message: Sequelize.where(
-      Sequelize.fn("LOWER", Sequelize.col("message")),
-      "LIKE",
-      `%${searchParam.toLowerCase().trim()}%`
-    )
+    [Op.or]: [
+      Sequelize.where(Sequelize.fn("LOWER", Sequelize.col("shortcut")), "LIKE", term),
+      Sequelize.where(Sequelize.fn("LOWER", Sequelize.col("message")), "LIKE", term)
+    ]
   };
-  const limit = 20;
+  const limit = 40;
   const offset = limit * (+pageNumber - 1);
 
   const { count, rows: quickAnswers } = await QuickAnswer.findAndCountAll({
     where: whereCondition,
     limit,
     offset,
-    order: [["message", "ASC"]]
+    order: [["shortcut", "ASC"]]
   });
 
   const hasMore = count > offset + quickAnswers.length;
