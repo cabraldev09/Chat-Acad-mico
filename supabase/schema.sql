@@ -269,7 +269,8 @@ CREATE TABLE public."AiAgents" (
     slots json,
     "reviewNumber" character varying(255),
     "reviewWhatsappId" integer,
-    "learnFromTeam" boolean DEFAULT true NOT NULL
+    "learnFromTeam" boolean DEFAULT true NOT NULL,
+    functions json
 );
 
 
@@ -2019,7 +2020,8 @@ CREATE TABLE public."Whatsapps" (
     "groupsMode" character varying(255) DEFAULT 'off'::character varying NOT NULL,
     "allowedGroups" text,
     "ownerId" integer,
-    "historyImportedAt" timestamp with time zone
+    "historyImportedAt" timestamp with time zone,
+    "statusSince" timestamp with time zone
 );
 
 
@@ -4246,6 +4248,8 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261106000001-goal-polos.js') ON CO
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261106000002-goal-semester.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261106000003-merge-tutoria-academico.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261107000001-chat-flows.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261108000001-whatsapp-status-since.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261109000001-ai-agent-functions.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

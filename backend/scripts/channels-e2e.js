@@ -122,6 +122,7 @@ const startAnthropicMock = () => {
     const result = Array.isArray(last.content) && last.content.find(b => b.type === "tool_result");
     if (result) {
       const out = JSON.parse(result.content);
+      if (out.iniciado) return text("Pronto, enviei o menu de cursos para você.");
       if (out.completo) return text("Perfeito, Paulo! Um consultor da equipe continua com você.");
       if (out.cursos) return text(`O curso ${out.cursos[0].nome} tem mensalidade de tabela de R$ ${out.cursos[0].mensalidade_bruta_de_tabela}.`);
       return text("Anotado!");
@@ -129,6 +130,7 @@ const startAnthropicMock = () => {
     const said = typeof last.content === "string" ? last.content : "";
     const knowledge = (req.body.system[1] && req.body.system[1].text) || "";
     if (/atletas/i.test(said)) return text(knowledge.includes("30% de bolsa") ? "Atletas federados têm 30% de bolsa, mediante comprovação." : "[DESCONHECIDO]");
+    if (/menu de cursos/i.test(said)) return tool("fluxo_menu_cursos", {});
     if (/valor do curso/i.test(said)) return tool("buscar_curso", { nome: "Direit" });
     if (/meu nome é/i.test(said)) return tool("salvar_lead", { nome: "Paulo Mendes", cidade: "Ji-Paraná", curso: "Direito" });
     if (/falar com (uma )?pessoa/i.test(said)) return text("[HANDOFF]");
@@ -2178,6 +2180,31 @@ const postMeta = (id, payload, secret, badSig) => {
       await waitFor(() => tg.sent.slice(tbefore).some(x => x.method === "sendMessage" && x.body.text && x.body.text.includes("Você escolheu Não")), 12000, "tap answered");
       assert(tg.sent.slice(tbefore).some(x => x.method === "answerCallbackQuery"), "the tap was not acknowledged");
       await http.post(`/flows/${tgFlow}/unpublish`, {}, auth());
+    });
+    await test("AI functions: the agent starts a published flow by itself and the flow takes over", async () => {
+      const flow = (await http.post("/flows", { name: "Menu de cursos", entry: { type: "manual" }, graph: { nodes: [
+        { id: "s", type: "start", data: {} }, { id: "m", type: "message", data: { text: "Menu de cursos do fluxo: Administração, Direito e Pedagogia." } }, { id: "e", type: "end", data: {} }],
+        edges: [{ id: "1", source: "s", target: "m" }, { id: "2", source: "m", target: "e" }] } }, auth())).data;
+      // the agent form keeps only valid functions (a name, when to use it and a flow)
+      const saved = await http.put(`/ai-agents/${aiId}`, { functions: [{ name: "Menu cursos", description: "Use quando o aluno pedir o menu de cursos.", flowId: flow.id }, { name: "", description: "sem nome", flowId: flow.id }, { name: "x", description: "sem fluxo" }] }, auth());
+      assert(saved.status === 200 && saved.data.functions.length === 1 && saved.data.functions[0].name === "menu_cursos", `functions ${JSON.stringify(saved.data.functions)}`);
+      // the tester never starts a flow
+      const tryIt = await http.post(`/ai-agents/${aiId}/test`, { messages: [{ role: "user", content: "quero ver o menu de cursos" }] }, auth());
+      assert(tryIt.status === 200 && !JSON.stringify(tryIt.data).includes("Menu de cursos do fluxo"), `the tester ran the flow ${tryIt.status}`);
+      // not published yet: the function does nothing and the agent says so
+      let before = graph.sent.length;
+      await inboundCloud("5511910000051", "wamid.fn-1", "quero ver o menu de cursos");
+      await waitFor(() => sentTexts(before).length > 0, 15000, "agent reply without a published flow");
+      assert(!sentTexts(before).some(t => t.includes("Menu de cursos do fluxo")), "an unpublished flow ran");
+      assert((await http.post(`/flows/${flow.id}/publish`, {}, auth())).status === 200, "publish");
+      before = graph.sent.length;
+      await inboundCloud("5511910000052", "wamid.fn-2", "quero ver o menu de cursos");
+      await waitFor(() => sentTexts(before).some(t => t.includes("Menu de cursos do fluxo")), 15000, "the flow started by the agent");
+      await new Promise(r => setTimeout(r, 1500));
+      assert(!sentTexts(before).some(t => t.includes("Pronto, enviei o menu")), "the agent talked over the flow");
+      assert(sql(`SELECT COUNT(*) FROM ChatFlowRuns WHERE flowId=${flow.id}`) === "1", "the run was not recorded");
+      await http.put(`/ai-agents/${aiId}`, { functions: [] }, auth());
+      await http.post(`/flows/${flow.id}/unpublish`, {}, auth());
     });
     await test("what the agent does not know is kept, the team's answer is captured, the owner reviews and the agent learns", async () => {
       assert((await http.put(`/ai-agents/${aiId}`, { reviewNumber: "(11) 99999-0000", reviewWhatsappId: cid, learnFromTeam: true, dailyTokenCap: 0 }, auth())).status === 200, "agent update");

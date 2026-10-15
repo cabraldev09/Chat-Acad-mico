@@ -39,6 +39,7 @@ const crud = makeCrud(AiAgent, {
     "handoffAfterTurns",
     "waitSeconds",
     "slots",
+    "functions",
     "reviewNumber",
     "reviewWhatsappId",
     "learnFromTeam"
@@ -51,6 +52,14 @@ const crud = makeCrud(AiAgent, {
       if (digits && (digits.length < 10 || digits.length > 15)) throw new AppError("ERR_REVIEW_NUMBER_INVALID");
       // Brazilian numbers typed with area code only get the country code
       data.reviewNumber = digits ? (digits.length <= 11 ? `55${digits}` : digits) : null;
+    }
+    if (data.functions !== undefined) {
+      // only what the tools can use: a short name, when to use it and a flow
+      const seen = new Set<string>();
+      data.functions = (Array.isArray(data.functions) ? data.functions : [])
+        .map((f: any) => ({ name: String(f?.name || "").toLowerCase().replace(/[^a-z0-9_]/g, "_").slice(0, 30), description: String(f?.description || "").trim().slice(0, 200), flowId: Number(f?.flowId) || 0 }))
+        .filter((f: any) => f.name && f.description && f.flowId && !seen.has(f.name) && seen.add(f.name))
+        .slice(0, 10);
     }
     ["queueId", "whatsappId", "reviewWhatsappId"].forEach(k => {
       if (data[k] === "" || data[k] === 0) data[k] = null;

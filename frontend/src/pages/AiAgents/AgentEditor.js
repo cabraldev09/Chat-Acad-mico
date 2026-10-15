@@ -13,6 +13,7 @@ import KbTab from "./KbTab";
 import UsageTab from "./UsageTab";
 import TestTab from "./TestTab";
 import LearningTab from "./LearningTab";
+import FunctionsTab from "./FunctionsTab";
 
 const MODELS = { anthropic: "claude-haiku-5-5", openai: "gpt-4o-mini" };
 
@@ -124,6 +125,7 @@ const AgentEditor = ({ open, agent, onClose, onSaved }) => {
           <Tab style={{ minWidth: 0 }} label="Base de conhecimento" />
           <Tab style={{ minWidth: 0 }} label={<Badge color="secondary" badgeContent={toReview} invisible={!toReview} style={{ paddingRight: toReview ? 14 : 0 }}>Aprendizado</Badge>} />
           <Tab style={{ minWidth: 0 }} label="Qualificação" />
+          <Tab style={{ minWidth: 0 }} label="Funções" />
           <Tab style={{ minWidth: 0 }} label="Consumo" />
           <Tab style={{ minWidth: 0 }} label="Testar agente" />
         </Tabs>
@@ -207,8 +209,9 @@ const AgentEditor = ({ open, agent, onClose, onSaved }) => {
             <Typography variant="caption" color="textSecondary" display="block" style={{ marginTop: 12 }}>Lembre de salvar na aba Persona e limites depois de mudar os campos.</Typography>
           </>
         )}
-        {tab === 4 && locked(<UsageTab agentId={id} model={v.model} />)}
-        {tab === 5 && locked(<TestTab agentId={id} />)}
+        {tab === 4 && <FunctionsTab value={v.functions} onChange={(list) => set("functions", list)} />}
+        {tab === 5 && locked(<UsageTab agentId={id} model={v.model} />)}
+        {tab === 6 && locked(<TestTab agentId={id} />)}
       </DialogContent>
       <DialogActions>
         <Button variant="outlined" color="secondary" onClick={onClose}>Fechar</Button>

@@ -78,6 +78,10 @@ class AiAgent extends Model<AiAgent> {
   @Column
   waitSeconds: number;
 
+  // flows the agent may start by itself: [{ name, description, flowId }]
+  @Column(DataType.JSON)
+  functions: any;
+
   // what the agent must find out before handing over: [{ key, label, required }]
   @Column(DataType.JSON)
   slots: any;

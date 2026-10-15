@@ -31,6 +31,14 @@ export const slotsOf = (agent: AiAgent): Slot[] =>
 export const missingSlots = (agent: AiAgent, collected: Record<string, string> | null): Slot[] =>
   slotsOf(agent).filter(s => s.required && !(collected && String(collected[s.key] || "").trim()));
 
+// the flows the agent may start, as tools: "fluxo_<name>"
+const functionTools = (agent: AiAgent) =>
+  (Array.isArray(agent.functions) ? agent.functions : []).map((f: any) => ({
+    name: `fluxo_${f.name}`,
+    description: `${f.description} Ao chamar, um fluxo de atendimento assume a conversa e envia as mensagens por conta própria: depois disso não escreva mais nada.`,
+    input_schema: { type: "object", properties: {} }
+  }));
+
 export const toolDefs = (agent: AiAgent) => [
   {
     name: "buscar_curso",
@@ -60,7 +68,8 @@ export const toolDefs = (agent: AiAgent) => [
       type: "object",
       properties: slotsOf(agent).reduce((acc: any, s) => ({ ...acc, [s.key]: { type: "string", description: s.label } }), {})
     }
-  }
+  },
+  ...functionTools(agent)
 ];
 
 const like = (text: string) => (isPg() ? { [Op.iLike]: `%${text}%` } : { [Op.like]: `%${text}%` });
@@ -76,10 +85,22 @@ interface Ctx {
   // the agent tester never writes to the database
   dryRun: boolean;
   collected: Record<string, string>;
+  // set when a function started a flow: the agent says nothing more
+  flowStarted?: boolean;
 }
 
 export const runTool = async (name: string, input: any, ctx: Ctx): Promise<any> => {
   input = input || {};
+  if (name.startsWith("fluxo_")) {
+    const fn = (Array.isArray(ctx.agent.functions) ? ctx.agent.functions : []).find((f: any) => `fluxo_${f.name}` === name);
+    if (!fn) return { erro: "Função desconhecida." };
+    // the tester never talks to people
+    if (ctx.dryRun || !ctx.ticket) return { iniciado: false, aviso: "Simulação: no teste o fluxo não é executado." };
+    const { startFlowForTicket } = await import("../FlowServices/Runner");
+    const started = await startFlowForTicket(fn.flowId, ctx.ticket.id);
+    if (started) ctx.flowStarted = true;
+    return started ? { iniciado: true, aviso: "O fluxo assumiu a conversa. Não escreva mais nada agora." } : { iniciado: false, erro: "O fluxo não está publicado." };
+  }
   if (name === "buscar_curso") {
     const courses = await findCourses(String(input.nome || ""));
     if (!courses.length) return { encontrados: 0, aviso: "Nenhum curso com esse nome no catálogo." };

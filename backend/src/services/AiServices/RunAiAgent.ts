@@ -159,7 +159,7 @@ export const respond = async (agent: AiAgent, opts: RespondOptions): Promise<AiR
     { type: "text", text: dynamicPrompt(agent, opts.summary || null, collected, passages) }
   ];
   const tools = toolDefs(agent);
-  const ctx = { agent, ticket: opts.ticket, dryRun: !!opts.sandbox, collected };
+  const ctx: any = { agent, ticket: opts.ticket, dryRun: !!opts.sandbox, collected };
 
   for (let round = 0; round <= MAX_TOOL_ROUNDS; round += 1) {
     // eslint-disable-next-line no-await-in-loop
@@ -199,6 +199,8 @@ export const respond = async (agent: AiAgent, opts: RespondOptions): Promise<AiR
     messages.push({ role: "user", content: results });
   }
 
+  // a flow took the conversation: whatever the model still wanted to say would arrive on top of it
+  if (ctx.flowStarted) text = "";
   return { text, handoff: text.includes(HANDOFF_MARKER), unknown: text.includes(UNKNOWN_MARKER), sources, tools: toolsUsed, collected, tokens };
 };
 
