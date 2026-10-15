@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "react-toastify";
 import { Autocomplete } from "@material-ui/lab";
 import { Button, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, TextField, Tooltip, Typography, makeStyles } from "@material-ui/core";
-import { CalendarDays, Copy, Download, ImageDown, Plus, Repeat2, Save, Share2, Trash2 } from "lucide-react";
+import { CalendarDays, Copy, Download, ImageDown, Plus, Repeat2, Save, Trash2 } from "lucide-react";
 
 import MainContainer from "../../components/MainContainer";
 import MainHeader from "../../components/MainHeader";
@@ -10,7 +10,7 @@ import MainHeaderButtonsWrapper from "../../components/MainHeaderButtonsWrapper"
 import Title from "../../components/Title";
 import ShareFrame from "../../components/ShareFrame";
 import BrandLogo from "../../components/BrandLogo";
-import { copyPng, downloadPng, renderPng, sharePng } from "../../utils/shareImage";
+import { copyPng, downloadPng, renderPng } from "../../utils/shareImage";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import { fetchAllUsers } from "../Affiliates/shared";
@@ -55,7 +55,8 @@ const Goals = () => {
   const [draft, setDraft] = useState(null);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [mode, setMode] = useState("goals");
+  // the group always gets the progress ("feitas" and "faltam"), the message with only the targets is no longer offered
+  const mode = "progress";
   const [newOpen, setNewOpen] = useState(false);
   const [period, setPeriod] = useState({ startsOn: "", endsOn: "" });
   const shareRef = useRef(null);
@@ -130,10 +131,6 @@ const Goals = () => {
   const picture = withPng(async (url) => { downloadPng(url, fileName); });
   const copyImage = withPng(async (url) => {
     try { await copyPng(url); toast.success("Imagem copiada. Cole na conversa do WhatsApp."); } catch (e) { downloadPng(url, fileName); toast.info("Este navegador não copia imagem; a imagem foi baixada."); }
-  });
-  const shareImage = withPng(async (url) => {
-    const ok = await sharePng(url, fileName, text).catch(() => true);
-    if (!ok) { downloadPng(url, fileName); toast.info("Imagem baixada. Envie pelo WhatsApp."); }
   });
 
   const userOptions = users.map((u) => ({ id: u.id, name: u.name }));
@@ -217,10 +214,6 @@ const Goals = () => {
             <div>
               <div className={classes.card}>
                 <Typography style={{ fontWeight: 700 }}>Mensagem para o grupo</Typography>
-                <div className={classes.seg} style={{ marginTop: 8 }}>
-                  <button type="button" className={`${classes.segBtn} ${mode === "goals" ? classes.segOn : ""}`} onClick={() => setMode("goals")}>Metas</button>
-                  <button type="button" className={`${classes.segBtn} ${mode === "progress" ? classes.segOn : ""}`} onClick={() => setMode("progress")}>Andamento</button>
-                </div>
                 <pre className={classes.pre}>{text}</pre>
                 <div style={{ display: "flex", gap: 8 }}>
                   <Button variant="contained" color="primary" startIcon={<Copy size={16} />} onClick={copy}>Copiar</Button>
@@ -228,7 +221,6 @@ const Goals = () => {
                 </div>
                 <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
                   <Button variant="outlined" startIcon={<Copy size={16} />} onClick={copyImage} disabled={busy}>Copiar imagem</Button>
-                  <Button variant="outlined" startIcon={<Share2 size={16} />} onClick={shareImage} disabled={busy}>Enviar no WhatsApp</Button>
                 </div>
               </div>
 

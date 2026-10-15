@@ -1,7 +1,7 @@
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "react-toastify";
 import { Button, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, TextField, makeStyles } from "@material-ui/core";
-import { Copy, ImageDown, LayoutGrid, Pencil, Share2, Table2, Trash2 } from "lucide-react";
+import { Copy, ImageDown, LayoutGrid, Pencil, Table2, Trash2 } from "lucide-react";
 
 import MainContainer from "../../components/MainContainer";
 import MainHeader from "../../components/MainHeader";
@@ -11,7 +11,7 @@ import ShareFrame from "../../components/ShareFrame";
 import BrandLogo from "../../components/BrandLogo";
 import { AuthContext } from "../../context/Auth/AuthContext";
 import { isManager } from "../../utils/access";
-import { brDecimal, copyPng, downloadPng, renderPng, sharePng } from "../../utils/shareImage";
+import { brDecimal, copyPng, downloadPng, renderPng } from "../../utils/shareImage";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 
@@ -246,10 +246,6 @@ const PoloGoals = () => {
   const copyImage = withPng(async (url) => {
     try { await copyPng(url); toast.success("Imagem copiada. Cole na conversa do WhatsApp."); } catch (e) { downloadPng(url, fileName); toast.info("Este navegador não copia imagem; a imagem foi baixada."); }
   });
-  const share = withPng(async (url) => {
-    const ok = await sharePng(url, fileName, textFor(data)).catch(() => true);
-    if (!ok) { downloadPng(url, fileName); toast.info("Imagem baixada. Envie pelo WhatsApp."); }
-  });
   const copyText = async () => {
     try { await navigator.clipboard.writeText(textFor(data)); toast.success("Texto copiado. É só colar no grupo."); } catch (e) { toast.error("Não foi possível copiar."); }
   };
@@ -309,7 +305,6 @@ const PoloGoals = () => {
               <Button size="small" variant="outlined" startIcon={<Copy size={15} />} onClick={copyText}>Copiar texto</Button>
               <Button size="small" variant="outlined" startIcon={<ImageDown size={15} />} onClick={download} disabled={busy}>Baixar imagem</Button>
               <Button size="small" variant="outlined" startIcon={<Copy size={15} />} onClick={copyImage} disabled={busy}>Copiar imagem</Button>
-              <Button size="small" variant="contained" color="primary" startIcon={<Share2 size={15} />} onClick={share} disabled={busy}>Enviar no WhatsApp</Button>
             </div>
 
             {rows.length === 0 && <div className={classes.empty}>Nenhum polo com meta neste período.{manager ? " Use “Editar metas” para definir." : ""}</div>}
