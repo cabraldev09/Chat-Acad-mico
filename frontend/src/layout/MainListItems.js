@@ -243,12 +243,14 @@ const MainListItems = (props) => {
         icon={<ScheduleIcon />}
         collapsed={collapsed}
       />
-      <ListItemLink
-        to="/campaigns"
-        primary="Campanhas"
-        icon={<MegaphoneIcon className="ico" />}
-        collapsed={collapsed}
-      />
+      {["admin", "coordenacao", "consultor"].includes(user.profile === "admin" ? "admin" : user.role || "consultor") && (
+        <ListItemLink
+          to="/campaigns"
+          primary="Campanhas"
+          icon={<MegaphoneIcon className="ico" />}
+          collapsed={collapsed}
+        />
+      )}
       <ListItemLink
         to="/reports"
         primary="Estatísticas"

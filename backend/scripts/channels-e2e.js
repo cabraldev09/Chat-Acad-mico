@@ -2123,6 +2123,15 @@ const postMeta = (id, payload, secret, badSig) => {
       const person = await http.get("/whatsapp-health", asUser(tk));
       assert(person.status === 200 && person.data.every(w => !w.ownerId || w.ownerId === cons.id), "a person saw someone else's number");
     });
+    await test("mass messages are for the commercial team: a tutor cannot reach campaigns or contact lists", async () => {
+      await http.post("/users", { name: "Tutor sem campanhas", email: "tutor-camp@x.com", password: "senha123", role: "tutor" }, auth());
+      const tk = (await http.post("/auth/login", { email: "tutor-camp@x.com", password: "senha123" })).data.token;
+      for (const [m, url] of [["get", "/campaigns"], ["post", "/campaigns"], ["get", "/contact-lists"], ["post", "/contact-lists"]]) {
+        const r = await http[m](url, ...(m === "post" ? [{}, asUser(tk)] : [asUser(tk)]));
+        assert(r.status === 403, `${m} ${url} answered ${r.status} to a tutor`);
+      }
+      assert((await http.get("/campaigns", auth())).status === 200, "the administration lost the campaigns");
+    });
     await test("what the agent does not know is kept, the team's answer is captured, the owner reviews and the agent learns", async () => {
       assert((await http.put(`/ai-agents/${aiId}`, { reviewNumber: "(11) 99999-0000", reviewWhatsappId: cid, learnFromTeam: true, dailyTokenCap: 0 }, auth())).status === 200, "agent update");
       assert((await http.put(`/ai-agents/${aiId}`, { reviewNumber: "123" }, auth())).status === 400, "short review number accepted");

@@ -169,24 +169,25 @@ r.put("/schedules/:id", isAuth, Schedule.update);
 r.post("/schedules/:id/cancel", isAuth, Schedule.cancel);
 r.delete("/schedules/:id", isAuth, Schedule.remove);
 
-// campaigns + contact lists
-r.get("/campaigns", isAuth, Campaign.index);
-r.post("/campaigns", isAuth, Campaign.store);
-r.get("/campaigns/:id", isAuth, Campaign.show);
-r.put("/campaigns/:id", isAuth, Campaign.update);
-r.delete("/campaigns/:id", isAuth, Campaign.remove);
-r.get("/campaigns/:id/report", isAuth, Campaign.report);
-r.post("/campaigns/:id/start", isAuth, Campaign.start);
-r.post("/campaigns/:id/pause", isAuth, Campaign.pause);
-r.post("/campaigns/:id/cancel", isAuth, Campaign.cancel);
-r.get("/contact-lists", isAuth, Campaign.lists.index);
-r.post("/contact-lists", isAuth, Campaign.lists.store);
-r.post("/contact-lists/from-leads", isAuth, Campaign.listFromLeads);
-r.put("/contact-lists/:id", isAuth, Campaign.lists.update);
-r.delete("/contact-lists/:id", isAuth, Campaign.lists.remove);
-r.get("/contact-lists/:id/items", isAuth, Campaign.listItems);
-r.post("/contact-lists/:id/import", isAuth, Campaign.importItems);
-r.delete("/contact-lists/:id/items/:itemId", isAuth, Campaign.removeItem);
+// campaigns + contact lists: mass messages are for the commercial team and the administration, never for the tutoring
+const salesStaff = affiliateStaff;
+r.get("/campaigns", isAuth, salesStaff, Campaign.index);
+r.post("/campaigns", isAuth, salesStaff, Campaign.store);
+r.get("/campaigns/:id", isAuth, salesStaff, Campaign.show);
+r.put("/campaigns/:id", isAuth, salesStaff, Campaign.update);
+r.delete("/campaigns/:id", isAuth, salesStaff, Campaign.remove);
+r.get("/campaigns/:id/report", isAuth, salesStaff, Campaign.report);
+r.post("/campaigns/:id/start", isAuth, salesStaff, Campaign.start);
+r.post("/campaigns/:id/pause", isAuth, salesStaff, Campaign.pause);
+r.post("/campaigns/:id/cancel", isAuth, salesStaff, Campaign.cancel);
+r.get("/contact-lists", isAuth, salesStaff, Campaign.lists.index);
+r.post("/contact-lists", isAuth, salesStaff, Campaign.lists.store);
+r.post("/contact-lists/from-leads", isAuth, salesStaff, Campaign.listFromLeads);
+r.put("/contact-lists/:id", isAuth, salesStaff, Campaign.lists.update);
+r.delete("/contact-lists/:id", isAuth, salesStaff, Campaign.lists.remove);
+r.get("/contact-lists/:id/items", isAuth, salesStaff, Campaign.listItems);
+r.post("/contact-lists/:id/import", isAuth, salesStaff, Campaign.importItems);
+r.delete("/contact-lists/:id/items/:itemId", isAuth, salesStaff, Campaign.removeItem);
 
 // stats & live monitor
 r.get("/stats/overview", isAuth, Stats.overview);

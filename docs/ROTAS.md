@@ -1,0 +1,127 @@
+# Rotas da API (305)
+
+Públicas: 18 · logado (qualquer perfil): 172 · gestão: 86 · admin: 21
+
+## Públicas (sem login)
+
+- POST /signup (authRoutes.ts)
+- POST /login (authRoutes.ts)
+- POST /refresh_token (authRoutes.ts)
+- POST /efi/:secret/pix (efiWebhookRoutes.ts)
+- POST /efi/:secret/billet (efiWebhookRoutes.ts)
+- POST /efi/:secret (efiWebhookRoutes.ts)
+- GET /:token (leadFormRoutes.ts)
+- POST /:token/submit (leadFormRoutes.ts)
+- GET /meta/:whatsappId (metaWebhookRoutes.ts)
+- POST /meta/:whatsappId (metaWebhookRoutes.ts)
+- GET /:token (proposalPublicRoutes.ts)
+- GET /:token/pdf (proposalPublicRoutes.ts)
+- GET /widget.js (webchatRoutes.ts)
+- GET /:token/config (webchatRoutes.ts)
+- POST /:token/messages (webchatRoutes.ts)
+- GET /:token/messages (webchatRoutes.ts)
+- POST /:token/typing (webchatRoutes.ts)
+- GET /:token/demo (webchatRoutes.ts)
+
+## Para revisar: alteram dados e só pedem login, sem checagem de escopo
+
+- DELETE /logout (authRoutes.ts)
+- POST /contacts/import (contactRoutes.ts)
+- POST /contacts (contactRoutes.ts)
+- POST /contact (contactRoutes.ts)
+- PUT /contacts/:contactId (contactRoutes.ts)
+- PUT /contacts/:contactId/no-reply (contactRoutes.ts)
+- PUT /contacts/:contactId/staff (contactRoutes.ts)
+- PUT /contacts/:contactId/community (contactRoutes.ts)
+- POST /uploads (extraRoutes.ts)
+- PUT /me/phone (extraRoutes.ts)
+- PUT /contacts/:contactId/tags (extraRoutes.ts)
+- POST /schedules (extraRoutes.ts)
+- PUT /schedules/:id (extraRoutes.ts)
+- POST /schedules/:id/cancel (extraRoutes.ts)
+- DELETE /schedules/:id (extraRoutes.ts)
+- PUT /me/preferences (extraRoutes.ts)
+- POST /leads (extraRoutes.ts)
+- POST /leads/import (extraRoutes.ts)
+- POST /leads/from-contact/:contactId (extraRoutes.ts)
+- POST /proposals/preview (extraRoutes.ts)
+- POST /proposals (extraRoutes.ts)
+- PUT /me/efi (extraRoutes.ts)
+- DELETE /me/efi (extraRoutes.ts)
+- PUT /commissions/:id/settle (extraRoutes.ts)
+- POST /quickAnswers (quickAnswerRoutes.ts)
+- PUT /quickAnswers/:quickAnswerId (quickAnswerRoutes.ts)
+- DELETE /quickAnswers/:quickAnswerId (quickAnswerRoutes.ts)
+- PUT /settings/:settingKey (settingRoutes.ts)
+- POST /tickets (ticketRoutes.ts)
+- POST /whatsapp/ (whatsappRoutes.ts)
+
+## Alteram dados com checagem de escopo
+
+- POST /affiliates → affiliateStaff
+- PUT /affiliates/:id → affiliateStaff, canAccessAffiliate
+- POST /affiliates/:id/rotate-token → affiliateStaff, canAccessAffiliate
+- POST /affiliates/:id/referrals → affiliateStaff, canAccessAffiliate
+- POST /affiliates/:id/attach-lead → affiliateStaff, canAccessAffiliate
+- POST /affiliates/:id/send-portal → affiliateStaff, canAccessAffiliate
+- POST /affiliates/:id/send-proposal → affiliateStaff, canAccessAffiliate
+- POST /affiliate-materials → affiliateStaff
+- PUT /affiliate-materials/:id → affiliateStaff
+- DELETE /affiliate-materials/:id → affiliateStaff
+- POST /affiliate-materials/:id/release → affiliateStaff
+- POST /affiliate-campaigns → affiliateStaff
+- PUT /affiliate-campaigns/:id → affiliateStaff
+- DELETE /affiliate-campaigns/:id → affiliateStaff
+- POST /affiliate-campaigns/:id/release → affiliateStaff
+- PUT /tickets/:ticketId/tags → canWriteTicket
+- POST /campaigns → salesStaff
+- PUT /campaigns/:id → salesStaff
+- DELETE /campaigns/:id → salesStaff
+- POST /campaigns/:id/start → salesStaff
+- POST /campaigns/:id/pause → salesStaff
+- POST /campaigns/:id/cancel → salesStaff
+- POST /contact-lists → salesStaff
+- POST /contact-lists/from-leads → salesStaff
+- PUT /contact-lists/:id → salesStaff
+- DELETE /contact-lists/:id → salesStaff
+- POST /contact-lists/:id/import → salesStaff
+- DELETE /contact-lists/:id/items/:itemId → salesStaff
+- PUT /leads/:id → canAccessLead
+- PUT /leads/:id/stage → canAccessLead
+- POST /leads/:id/activities → canAccessLead
+- POST /leads/:id/tasks → canAccessLead
+- POST /leads/:id/open-ticket → canAccessLead
+- POST /leads/:id/enroll → canAccessLead
+- POST /leads/:id/onboarding → canAccessLead
+- PUT /leads/:id/onboarding → canAccessLead
+- PUT /leads/:id/tasks/:taskId → canAccessLead
+- POST /leads/:id/tasks/:taskId/toggle → canAccessLead
+- DELETE /leads/:id/tasks/:taskId → canAccessLead
+- PUT /proposals/:id → canAccessProposal
+- DELETE /proposals/:id → canAccessProposal
+- POST /proposals/:id/duplicate → canAccessProposal
+- POST /proposals/:id/send → canAccessProposal
+- POST /leads/:id/payments → canAccessLead
+- POST /payments/:id/refresh → canAccessPayment
+- POST /payments/:id/cancel → canAccessPayment
+- POST /payments/:id/send → canAccessPayment
+- POST /messages/:ticketId/contact → canSendTicket
+- POST /messages/:ticketId/poll → canSendTicket
+- POST /messages/:ticketId → canSendTicket
+- DELETE /messages/:messageId → canWriteMessage
+- PUT /messages/:messageId → canWriteMessage
+- PUT /messages/:messageId/star → canWriteMessage
+- POST /messages/:messageId/media → canWriteMessage
+- POST /messages/:messageId/react → canWriteMessage
+- POST /messages/:messageId/forward → canWriteMessage
+- PUT /tickets/:ticketId/pin → canReadTicket
+- PUT /tickets/:ticketId/archive → canWriteTicket
+- PUT /tickets/:ticketId/unread → canWriteTicket
+- POST /tickets/:ticketId/typing → canWriteTicket
+- PUT /tickets/:ticketId → canWriteTicket
+- PUT /whatsapp/:whatsappId → canManageWhatsapp
+- DELETE /whatsapp/:whatsappId → canManageWhatsapp
+- POST /whatsapp/:whatsappId/import-history → canManageWhatsapp
+- POST /whatsappsession/:whatsappId → canManageWhatsapp
+- PUT /whatsappsession/:whatsappId → canManageWhatsapp
+- DELETE /whatsappsession/:whatsappId → canManageWhatsapp
