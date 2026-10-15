@@ -70,6 +70,25 @@ const handleUpdate = async (whatsapp: Whatsapp, token: string, update: any) => {
     await handleReaction(whatsapp, update);
     return;
   }
+  // a tap on an option of a question: it goes in as if the person had written that option
+  if (update.callback_query) {
+    const cq = update.callback_query;
+    const chat = cq.message && cq.message.chat;
+    if (!chat || chat.type !== "private") return;
+    call(token, "answerCallbackQuery", { callback_query_id: cq.id }, 8000).catch(() => undefined);
+    const keys: any[] = ((cq.message.reply_markup && cq.message.reply_markup.inline_keyboard) || []).reduce((all: any[], row: any[]) => all.concat(row), []);
+    const label = (keys.find(k => k.callback_data === cq.data) || {}).text || String(cq.data || "");
+    const person = cq.from || {};
+    await HandleChannelMessage({
+      whatsapp,
+      contactNumber: `${PREFIX}${chat.id}`,
+      contactName: [person.first_name, person.last_name].filter(Boolean).join(" ") || person.username || String(chat.id),
+      profilePicUrl: undefined,
+      messageId: `tg-${whatsapp.id}-${chat.id}-cb${update.update_id}`,
+      body: label
+    });
+    return;
+  }
   const msg = update.message || update.edited_message;
   if (!msg || msg.chat.type !== "private") return;
 
@@ -135,7 +154,7 @@ const poll = async (whatsapp: Whatsapp, token: string, control: { stop: boolean 
       const updates = await call(
         token,
         "getUpdates",
-        { offset, timeout: 25, allowed_updates: ["message", "edited_message", "message_reaction"] },
+        { offset, timeout: 25, allowed_updates: ["message", "edited_message", "message_reaction", "callback_query"] },
         40000
       );
       for (const update of updates) {
@@ -196,6 +215,17 @@ const telegram: ChannelAdapter = {
     const result = await call(botToken, "sendMessage", {
       chat_id: externalIdOf(contact, PREFIX),
       text: body
+    });
+    return { id: `tg-${whatsapp.id}-${result.chat.id}-${result.message_id}` };
+  },
+
+  // inline keyboard: one option per row; the tap arrives as a callback_query (see handleUpdate)
+  async sendChoices(whatsapp, contact: Contact, question, options) {
+    const { botToken } = getConfig(whatsapp);
+    const result = await call(botToken, "sendMessage", {
+      chat_id: externalIdOf(contact, PREFIX),
+      text: question,
+      reply_markup: { inline_keyboard: options.map((o, i) => [{ text: o.label.slice(0, 60), callback_data: String(i + 1) }]) }
     });
     return { id: `tg-${whatsapp.id}-${result.chat.id}-${result.message_id}` };
   },

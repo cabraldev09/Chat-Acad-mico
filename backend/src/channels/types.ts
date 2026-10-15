@@ -26,6 +26,14 @@ export interface ChannelAdapter {
     contact: Contact,
     body: string
   ): Promise<{ id: string }>;
+  // A question with options the person taps (buttons, list, quick replies). The tap comes back as an ordinary message
+  // whose text is the option; channels without this fall back to a numbered text menu.
+  sendChoices?(
+    whatsapp: Whatsapp,
+    contact: Contact,
+    question: string,
+    options: Array<{ id: string; label: string }>
+  ): Promise<{ id: string }>;
   sendMedia(
     whatsapp: Whatsapp,
     contact: Contact,

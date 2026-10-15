@@ -5,7 +5,8 @@ import { FlowNode, Graph, handleOf, nextNodeId } from "./Graph";
 // (effects that only record what would happen).
 
 export interface Effects {
-  say(text: string): Promise<void>;
+  // the text is what the history shows; `choices` lets channels with buttons send them natively
+  say(text: string, choices?: { question: string; options: Array<{ id: string; label: string }> }): Promise<void>;
   // the value a condition looks at ("lead.course", "tag", "hours", "channel", "message"...)
   readField(field: string): Promise<string>;
   // an answer to a question: saved on the lead when the field is one of its own
@@ -60,6 +61,11 @@ const pickOption = (options: any[], answer: string): any | null => {
   if (/^\d+$/.test(a)) return options[Number(a) - 1] || null;
   const exact = options.find(o => normalize(o.label) === a);
   if (exact) return exact;
+  // buttons cut long names (20 to 24 characters): the beginning of one option is enough when it is unambiguous
+  if (a.length >= 3) {
+    const starts = options.filter(o => normalize(o.label).startsWith(a));
+    if (starts.length === 1) return starts[0];
+  }
   return (
     options.find(o =>
       String(o.keywords || "")
@@ -136,7 +142,7 @@ export const advance = async (graph: Graph, startId: string | null, state: RunSt
         state.nodeId = node.id;
         state.tries = 0;
         // eslint-disable-next-line no-await-in-loop
-        await fx.say(menuText(render(d.text, state.vars, who), d.options || []));
+        await fx.say(menuText(render(d.text, state.vars, who), d.options || []), { question: render(d.text, state.vars, who), options: (d.options || []).map((o: any) => ({ id: String(o.id), label: String(o.label) })) });
         return done("waiting");
       }
       case "ask":

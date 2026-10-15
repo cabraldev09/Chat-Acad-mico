@@ -1789,6 +1789,8 @@ const postMeta = (id, payload, secret, badSig) => {
     let aiId, jiPolo;
     const inboundCloud = (from, id, body) => postMeta(cid, cloudEvent([{ from, id, type: "text", text: { body } }], { contacts: [{ wa_id: from, profile: { name: "Aluno IA" } }] }), cloudCfg.appSecret);
     const sentTexts = since => graph.sent.slice(since).filter(x => x.body && x.body.type === "text").map(x => x.body.text.body);
+    // everything a person sees: texts, and the question plus the options of buttons and lists
+    const sentAny = since => graph.sent.slice(since).filter(x => x.body).map(x => x.body.type === "text" ? x.body.text.body : x.body.type === "interactive" ? [x.body.interactive.body.text, ...(x.body.interactive.action.buttons ? x.body.interactive.action.buttons.map(b => b.reply.title) : x.body.interactive.action.sections[0].rows.map(r => r.title))].join(" | ") : "");
     await test("knowledge base: documents are split, FAQ and files can be added", async () => {
       aiId = (await http.post("/ai-agents", { name: "Agente de matrículas", provider: "anthropic", model: "claude-haiku-5-5", apiKey: "sk-ant-test", whatsappId: cid, waitSeconds: 1, dailyTokenCap: 100000, handoffAfterTurns: 14, handoffMessage: "Vou chamar um consultor.", persona: { tone: "acolhedor", rules: "Pergunte uma coisa por vez", forbidden: "Prometer mensalidade fixa" } }, auth())).data.id;
       assert(aiId, "agent not created");
@@ -1978,7 +1980,7 @@ const postMeta = (id, payload, secret, badSig) => {
       const from = "5511910000021";
       let before = graph.sent.length;
       await inboundCloud(from, "wamid.flow-1", "oi");
-      await waitFor(() => sentTexts(before).some(t => t.includes("*2* - Tenho uma dúvida")), 12000, "flow menu");
+      await waitFor(() => sentAny(before).some(t => t.includes("Tenho uma dúvida") && t.includes("Oi ")), 12000, "flow menu");
       before = graph.sent.length;
       await inboundCloud(from, "wamid.flow-2", "quero me matricular");
       await waitFor(() => sentTexts(before).some(t => t.includes("nome completo")), 12000, "flow question");
@@ -1996,7 +1998,7 @@ const postMeta = (id, payload, secret, badSig) => {
       before = graph.sent.length;
       await inboundCloud(from, "wamid.flow-4", "obrigada");
       await new Promise(r => setTimeout(r, 1500));
-      assert(!sentTexts(before).some(t => t.includes("Escolha")), "the flow started again on the same conversation");
+      assert(!sentAny(before).some(t => t.includes("Escolha")), "the flow started again on the same conversation");
 
       // keyword entry beats the first message, and "wait" blocks go on by themselves
       const kw = (await http.post("/flows", { name: "Bolsa", entry: { type: "keyword", keywords: ["bolsa"] }, graph: { nodes: [
@@ -2008,7 +2010,7 @@ const postMeta = (id, payload, secret, badSig) => {
       before = graph.sent.length;
       await inboundCloud(from2, "wamid.flow-5", "tem bolsa?");
       await waitFor(() => sentTexts(before).some(t => t.includes("Vamos falar de bolsas")), 12000, "keyword flow");
-      assert(!sentTexts(before).some(t => t.includes("Escolha")), "the first-message flow answered a keyword conversation");
+      assert(!sentAny(before).some(t => t.includes("Escolha")), "the first-message flow answered a keyword conversation");
       const tk2 = ticketOf(from2);
       assert(sql(`SELECT status FROM ChatFlowRuns WHERE ticketId=${tk2}`) === "delayed", "the run is not waiting for time");
       sql(`UPDATE ChatFlowRuns SET resumeAt = NOW() - INTERVAL '1 minute' WHERE ticketId=${tk2}`);
@@ -2131,6 +2133,51 @@ const postMeta = (id, payload, secret, badSig) => {
         assert(r.status === 403, `${m} ${url} answered ${r.status} to a tutor`);
       }
       assert((await http.get("/campaigns", auth())).status === 200, "the administration lost the campaigns");
+    });
+    await test("choices go out as native buttons and lists, and the tap comes back as the option", async () => {
+      const mk = async (name, labels) => {
+        const f = (await http.post("/flows", { name, entry: { type: "first_message" }, whatsappId: cid, graph: { nodes: [
+          { id: "s", type: "start", data: {} },
+          { id: "q", type: "buttons", data: { text: "Escolha uma opção, {{primeiro_nome}}", options: labels.map((label, i) => ({ id: `o${i}`, label })) } },
+          ...labels.map((l, i) => ({ id: `m${i}`, type: "message", data: { text: `Você escolheu ${l}` } })), { id: "e", type: "end", data: {} }],
+          edges: [{ id: "a", source: "s", target: "q" }, ...labels.map((l, i) => ({ id: `b${i}`, source: "q", target: `m${i}`, sourceHandle: `o${i}` })), ...labels.map((l, i) => ({ id: `c${i}`, source: `m${i}`, target: "e" }))] } }, auth())).data;
+        assert((await http.post(`/flows/${f.id}/publish`, {}, auth())).status === 200, `${name} not published`);
+        return f.id;
+      };
+      // two options: reply buttons; the tap carries the title the person saw
+      const two = await mk("Dois botoes", ["Cursos", "Financeiro de matrícula e mensalidade"]);
+      const from = "5511910000041";
+      let before = graph.sent.length;
+      await inboundCloud(from, "wamid.choice-1", "oi");
+      await waitFor(() => graph.sent.slice(before).some(x => x.body && x.body.type === "interactive"), 12000, "interactive message");
+      const msg = graph.sent.slice(before).find(x => x.body && x.body.type === "interactive").body.interactive;
+      assert(msg.type === "button" && msg.action.buttons.length === 2 && msg.action.buttons[1].reply.title.length <= 20 && msg.action.buttons[0].reply.id === "1", `buttons ${JSON.stringify(msg)}`);
+      assert(!sentTexts(before).some(t => t.includes("*1* -")), "the numbered text went out together with the buttons");
+      before = graph.sent.length;
+      await postMeta(cid, cloudEvent([{ from, id: "wamid.choice-2", type: "interactive", interactive: { type: "button_reply", button_reply: { id: "2", title: "Financeiro de matrícu" } } }], { contacts: [{ wa_id: from, profile: { name: "Aluno IA" } }] }), cloudCfg.appSecret);
+      await waitFor(() => sentTexts(before).some(t => t.includes("Você escolheu Financeiro de matrícula e mensalidade")), 12000, "the tap on the second button");
+      assert((await http.post(`/flows/${two}/unpublish`, {}, auth())).status === 200, "unpublish");
+      // five options: a list
+      const five = await mk("Lista", ["Um", "Dois", "Três", "Quatro", "Cinco"]);
+      const from2 = "5511910000042";
+      before = graph.sent.length;
+      await inboundCloud(from2, "wamid.choice-3", "oi");
+      await waitFor(() => graph.sent.slice(before).some(x => x.body && x.body.type === "interactive"), 12000, "list");
+      const list = graph.sent.slice(before).find(x => x.body && x.body.type === "interactive").body.interactive;
+      assert(list.type === "list" && list.action.sections[0].rows.length === 5, `list ${JSON.stringify(list).slice(0, 200)}`);
+      await http.post(`/flows/${five}/unpublish`, {}, auth());
+      // Telegram: an inline keyboard, and a tap (callback_query) answered like a message
+      const tgFlow = await mk("Telegram", ["Sim", "Não"]);
+      await http.put(`/flows/${tgFlow}`, { whatsappId: tgId }, auth());
+      const tbefore = tg.sent.length;
+      tg.updates.push({ update_id: 7791, message: { message_id: 91, chat: { id: 7771, type: "private" }, from: { first_name: "Teca" }, text: "oi" } });
+      await waitFor(() => tg.sent.slice(tbefore).some(x => x.method === "sendMessage" && x.body.reply_markup), 12000, "inline keyboard");
+      const kb = tg.sent.slice(tbefore).find(x => x.body.reply_markup).body.reply_markup.inline_keyboard;
+      assert(kb.length === 2 && kb[0][0].callback_data === "1" && kb[1][0].text === "Não", `keyboard ${JSON.stringify(kb)}`);
+      tg.updates.push({ update_id: 7792, callback_query: { id: "cb1", from: { first_name: "Teca" }, data: "2", message: { message_id: 5, chat: { id: 7771, type: "private" }, reply_markup: { inline_keyboard: kb } } } });
+      await waitFor(() => tg.sent.slice(tbefore).some(x => x.method === "sendMessage" && x.body.text && x.body.text.includes("Você escolheu Não")), 12000, "tap answered");
+      assert(tg.sent.slice(tbefore).some(x => x.method === "answerCallbackQuery"), "the tap was not acknowledged");
+      await http.post(`/flows/${tgFlow}/unpublish`, {}, auth());
     });
     await test("what the agent does not know is kept, the team's answer is captured, the owner reviews and the agent learns", async () => {
       assert((await http.put(`/ai-agents/${aiId}`, { reviewNumber: "(11) 99999-0000", reviewWhatsappId: cid, learnFromTeam: true, dailyTokenCap: 0 }, auth())).status === 200, "agent update");

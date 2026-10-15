@@ -50,9 +50,9 @@ export const ticketEffects = (ticket: Ticket, flowName: string): Effects => {
   };
 
   return {
-    async say(text) {
+    async say(text, choices) {
       try {
-        await SendWhatsAppMessage({ body: `${MARK}${text}`, ticket, automated: true });
+        await SendWhatsAppMessage({ body: `${MARK}${text}`, ticket, automated: true, choices: choices ? { ...choices, question: `${MARK}${choices.question}` } : undefined });
       } catch (err) {
         logger.error(`Flow could not send a message: ${err}`);
       }

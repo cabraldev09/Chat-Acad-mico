@@ -69,7 +69,7 @@ const Inspector = ({ node, update, remove, lists, nodes }) => {
             <Button size="small" variant="outlined" startIcon={<Plus size={15} />} onClick={() => set({ options: [...(d.options || []), { id: newId("o"), label: `Opção ${(d.options || []).length + 1}` }] })}>Adicionar opção</Button>
           )}
           <T label="Guardar a escolha em (opcional)" value={d.saveTo || ""} onChange={(e) => set({ saveTo: e.target.value.replace(/[^\w]/g, "") })} placeholder="modalidade" helperText="A escolha vira uma variável e, se for um campo do lead (modalidade, curso…), vai para o cadastro." />
-          <Typography variant="caption" color="textSecondary">No WhatsApp as opções aparecem numeradas; a pessoa responde com o número, o nome ou uma palavra da lista. A saída “Resposta inesperada” é usada depois de 2 tentativas.</Typography>
+          <Typography variant="caption" color="textSecondary">Na WhatsApp oficial (Cloud API) as opções viram botões (até 3) ou uma lista (4 a 10); no Telegram, Messenger e Instagram também são botões. No WhatsApp por QR Code aparecem numeradas e a pessoa responde com o número, o nome ou uma palavra da lista. A saída “Resposta inesperada” é usada depois de 2 tentativas.</Typography>
         </Section>
       )}
 

@@ -23,13 +23,16 @@ interface Request {
   quotedMsg?: Message;
   // sent by a bot/campaign (not typed by a person): gets "typing…" and a delay
   automated?: boolean;
+  // a question with options: channels that have buttons send them natively (the text stays in the history)
+  choices?: { question: string; options: Array<{ id: string; label: string }> };
 }
 
 const SendWhatsAppMessage = async ({
   body,
   ticket,
   quotedMsg,
-  automated = false
+  automated = false,
+  choices
 }: Request): Promise<ProviderMessage> => {
   if (!ticket.whatsappId) {
     throw new AppError("ERR_TICKET_NO_WHATSAPP");
@@ -41,11 +44,11 @@ const SendWhatsAppMessage = async ({
     if (!whatsapp) throw new AppError("ERR_NO_WAPP_FOUND", 404);
     const text = formatBody(body, ticket.contact);
     try {
-      const sent = await getAdapter(channel).sendText(
-        whatsapp,
-        ticket.contact as any,
-        text
-      );
+      const adapter = getAdapter(channel);
+      const sent =
+        choices && choices.options.length && adapter.sendChoices
+          ? await adapter.sendChoices(whatsapp, ticket.contact as any, choices.question, choices.options)
+          : await adapter.sendText(whatsapp, ticket.contact as any, text);
       await CreateMessageService({
         messageData: {
           id: sent.id,

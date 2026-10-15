@@ -101,6 +101,24 @@ const socialAdapter = (type: "messenger" | "instagram", prefix: string): Channel
     return { id: data.message_id };
   },
 
+  // Messenger and Instagram: quick replies (up to 13 short options under the question)
+  async sendChoices(whatsapp, contact: Contact, question, options) {
+    const { accessToken } = getConfig(whatsapp);
+    const { data } = await axios.post(
+      `${GRAPH}/me/messages`,
+      {
+        recipient: { id: externalIdOf(contact, prefix) },
+        message: {
+          text: question.slice(0, 1900),
+          quick_replies: options.slice(0, 13).map((o, i) => ({ content_type: "text", title: o.label.slice(0, 20), payload: String(i + 1) }))
+        },
+        messaging_type: "RESPONSE"
+      },
+      { params: { access_token: accessToken } }
+    );
+    return { id: data.message_id };
+  },
+
   async sendMedia(whatsapp, contact: Contact, media: OutboundMedia, caption) {
     const { accessToken } = getConfig(whatsapp);
     const kind = mediaKindOf(media.mimetype);
@@ -186,6 +204,29 @@ export const whatsappCloud: ChannelAdapter = {
         type: "text",
         text: { body, preview_url: false }
       },
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+    return { id: data.messages[0].id };
+  },
+
+  // WhatsApp Cloud: up to 3 reply buttons, or a list for 4 to 10 options
+  async sendChoices(whatsapp, contact: Contact, question, options) {
+    const { accessToken, phoneNumberId } = getConfig(whatsapp);
+    const interactive =
+      options.length <= 3
+        ? {
+            type: "button",
+            body: { text: question.slice(0, 1000) },
+            action: { buttons: options.map((o, i) => ({ type: "reply", reply: { id: String(i + 1), title: o.label.slice(0, 20) } })) }
+          }
+        : {
+            type: "list",
+            body: { text: question.slice(0, 1000) },
+            action: { button: "Escolher", sections: [{ title: "Opções", rows: options.slice(0, 10).map((o, i) => ({ id: String(i + 1), title: o.label.slice(0, 24) })) }] }
+          };
+    const { data } = await axios.post(
+      `${GRAPH}/${phoneNumberId}/messages`,
+      { messaging_product: "whatsapp", to: contact.number, type: "interactive", interactive },
       { headers: { Authorization: `Bearer ${accessToken}` } }
     );
     return { id: data.messages[0].id };
@@ -306,7 +347,8 @@ const processSocial = async (whatsapp: Whatsapp, entry: any, type: ChannelType) 
 
     const attachments: any[] = msg.attachments || [];
     let media: { filename?: string; mimetype: string; data: Buffer } | undefined;
-    let body: string = msg.text || "";
+    // a quick reply arrives with its title as text; the number is the payload
+    let body: string = msg.text || (msg.quick_reply && msg.quick_reply.payload) || "";
     const first = attachments.find(a => a.payload?.url);
     if (first) {
       try {
