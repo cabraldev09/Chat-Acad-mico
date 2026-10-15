@@ -1,3 +1,4 @@
+import { tagAffiliateLead } from "../services/AffiliateServices/AffiliateLane";
 import { Request, Response } from "express";
 import { Op } from "sequelize";
 
@@ -239,6 +240,7 @@ export const attachLead = async (req: Request, res: Response): Promise<Response>
   if (!lead) throw new AppError("ERR_LEAD_NOT_FOUND", 404);
   if (lead.affiliateId && lead.affiliateId !== a.id) throw new AppError("ERR_LEAD_HAS_AFFILIATE");
   await lead.update({ affiliateId: a.id });
+  await tagAffiliateLead(lead);
   // the proposals already made for this person now count for the affiliate too
   await Proposal.update({ affiliateId: a.id } as any, { where: { leadId: lead.id, affiliateId: null } });
   await addActivity(lead.id, uid(req), "system", `Lead atribuído ao afiliado ${a.name}`);

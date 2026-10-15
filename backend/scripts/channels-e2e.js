@@ -2188,6 +2188,45 @@ const postMeta = (id, payload, secret, badSig) => {
       await http.put(`/affiliates/${second.id}`, { status: "paused" }, asUser(tb));
       assert((await http.get(`/affiliate-portal/${rot.data.portalToken}`)).status === 404, "paused affiliate still has access");
     });
+    await test("affiliates in the CRM: a contact shared by an affiliate becomes a tagged lead in the affiliate column", async () => {
+      const ow = (await http.post("/users", { name: "Dona da Indicação", email: "afil-ref@x.com", password: "senha123", role: "consultor" }, auth())).data;
+      const tk = (await http.post("/auth/login", { email: "afil-ref@x.com", password: "senha123" })).data.token;
+      const aff = (await http.post("/affiliates", { name: "Marta Indicadora", phone: "(69) 97777-0001" }, asUser(tk))).data;
+      assert(aff.id && aff.ownerId === ow.id, "affiliate not created");
+      const script = `
+        const http = require("http");
+        require("./dist/database");
+        const { initIO } = require("./dist/libs/socket");
+        initIO(http.createServer());
+        const { parseVcards, registerAffiliateReferrals } = require("./dist/services/AffiliateServices/ReferralFromContact");
+        (async () => {
+          const card = "BEGIN:VCARD\\nVERSION:3.0\\nFN:Carlos Indicado\\nTEL;type=CELL;waid=5511922220001:+55 11 92222-0001\\nEND:VCARD\\nBEGIN:VCARD\\nVERSION:3.0\\nFN:Ana Indicada\\nTEL;type=CELL:+55 11 92222-0002\\nEND:VCARD";
+          const people = parseVcards(card);
+          const fromAffiliate = await registerAffiliateReferrals("5569977770001", people);
+          const fromStranger = await registerAffiliateReferrals("5569911110000", parseVcards("BEGIN:VCARD\\nFN:Estranho\\nTEL:+55 11 92222-0003\\nEND:VCARD"));
+          console.log(JSON.stringify({ n: people.length, fromAffiliate, fromStranger }));
+          process.exit(0);
+        })().catch(e => { console.error(e); process.exit(1); });`;
+      const raw = execFileSync("node", ["-e", script], { cwd: ROOT, env: { ...env, LOG_LEVEL: "error" } }).toString().trim();
+      const out = JSON.parse(raw.split("\n").pop());
+      if (out.fromAffiliate !== 2 || /LOGERR/.test(raw)) throw new Error(`child output: ${raw.slice(0, 1500)} leads=${sql("SELECT string_agg(id||':'||COALESCE(phone,'-')||':'||stageId||':'||COALESCE(affiliateId,0), ',') FROM Leads")}`);
+      assert(out.n === 2 && out.fromAffiliate === 2 && out.fromStranger === 0, `vcard ${JSON.stringify(out)}`);
+      const stage = sql(`SELECT name FROM LeadStages WHERE id=(SELECT CAST(value AS INTEGER) FROM Settings WHERE key='affiliate_stage_id')`);
+      assert(stage === "Indicações de afiliados", `stage ${stage}`);
+      assert(sql(`SELECT MIN(position) FROM LeadStages`) === sql(`SELECT position FROM LeadStages WHERE name='Indicações de afiliados'`), "the affiliate column is not the first");
+      assert(sql(`SELECT COUNT(*) FROM Leads l JOIN LeadStages s ON s.id=l.stageId WHERE l.affiliateId=${aff.id} AND s.name='Indicações de afiliados' AND l.ownerId=${ow.id} AND l.source='Indicação'`) === "2", "leads not in the affiliate column with the right owner");
+      assert(sql(`SELECT COUNT(*) FROM LeadTags lt JOIN Tags t ON t.id=lt.tagId JOIN Leads l ON l.id=lt.leadId WHERE l.affiliateId=${aff.id} AND t.name='Afiliado'`) === "2", "tag Afiliado missing");
+      assert(sql(`SELECT COUNT(*) FROM Leads WHERE name='Estranho'`) === "0", "a stranger's card created a lead");
+      assert(sql(`SELECT COUNT(*) FROM LeadTasks WHERE userId=${ow.id} AND title LIKE '%Marta Indicadora%'`) === "2", "first-contact tasks missing");
+      // a normal lead does not land in the affiliate column
+      const normal = (await http.post("/leads", { name: "Lead comum", phone: "69988887777", source: "Site" }, auth())).data;
+      const nl = normal.lead || normal;
+      assert(sql(`SELECT s.name FROM Leads l JOIN LeadStages s ON s.id=l.stageId WHERE l.id=${nl.id}`) !== "Indicações de afiliados", "regular lead went to the affiliate column");
+      // funnel filter
+      const only = await http.get("/crm/board?affiliate=any", auth());
+      const all = JSON.stringify(only.data);
+      assert(only.status === 200 && all.includes("Carlos Indicado") && !all.includes("Lead comum"), `affiliate filter ${only.status}`);
+    });
     await test("login is rate limited", async () => {
       let limited = false;
       for (let i = 0; i < 120 && !limited; i += 1) {

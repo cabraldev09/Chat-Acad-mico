@@ -138,7 +138,7 @@ const Board = () => {
   const location = useLocation();
   const ctx = useCrmOptions();
   const [view, setView] = useState("board");
-  const [filters, setFilters] = useState({ search: "", ownerId: "", courseId: "", source: "", followUp: new URLSearchParams(location.search).get("followUp") || "" });
+  const [filters, setFilters] = useState({ search: "", ownerId: "", courseId: "", source: "", affiliate: "", followUp: new URLSearchParams(location.search).get("followUp") || "" });
   const [board, setBoard] = useState(null);
   const [list, setList] = useState({ leads: [], count: 0 });
   const [openId, setOpenId] = useState(Number(new URLSearchParams(location.search).get("lead")) || null);
@@ -256,6 +256,10 @@ const Board = () => {
         <TextField select size="small" variant="outlined" label="Origem" value={filters.source} onChange={(e) => setFilters({ ...filters, source: e.target.value })} style={{ minWidth: 150 }}>
           <MenuItem value="">Todas</MenuItem>
           {(ctx.options.sources || []).map((s) => (<MenuItem key={s} value={s}>{s}</MenuItem>))}
+        </TextField>
+        <TextField select size="small" variant="outlined" label="Afiliados" value={filters.affiliate} onChange={(e) => setFilters({ ...filters, affiliate: e.target.value })} style={{ minWidth: 150 }}>
+          <MenuItem value="">Todos os leads</MenuItem>
+          <MenuItem value="any">Só indicados por afiliado</MenuItem>
         </TextField>
         <TextField select size="small" variant="outlined" label="Retorno" value={filters.followUp} onChange={(e) => setFilters({ ...filters, followUp: e.target.value })} style={{ minWidth: 140 }}>
           <MenuItem value="">Todos</MenuItem>

@@ -1,3 +1,4 @@
+import { parseVcards, registerAffiliateReferrals } from "../services/AffiliateServices/ReferralFromContact";
 import { join } from "path";
 import { promisify } from "util";
 import { writeFile } from "fs";
@@ -116,35 +117,22 @@ export const saveMediaFile = async (mediaPayload: MediaPayload): Promise<string>
 };
 
 const processVcardMessage = async (
-  messagePayload: MessagePayload
+  messagePayload: MessagePayload,
+  senderNumber?: string
 ): Promise<void> => {
   if (messagePayload.type !== "vcard") return;
 
   try {
-    const array = messagePayload.body.split("\n");
-    const phoneNumbers: Array<{ number: string }> = [];
-    let contactName = "";
-
-    array.forEach(line => {
-      const values = line.split(":");
-      values.forEach((value, index) => {
-        if (value.indexOf("+") !== -1) {
-          phoneNumbers.push({ number: value });
-        }
-        if (value.indexOf("FN") !== -1 && values[index + 1]) {
-          contactName = values[index + 1];
-        }
-      });
-    });
-
+    const people = parseVcards(messagePayload.body);
     await Promise.all(
-      phoneNumbers.map(({ number }) =>
-        CreateContactService({
-          name: contactName,
-          number: number.replace(/\D/g, "")
-        })
+      people.map(({ name, number }) =>
+        CreateContactService({ name: name || number, number })
       )
     );
+    // a contact shared BY an affiliate is a referral: it goes to the CRM in the affiliate column
+    if (senderNumber && !messagePayload.fromMe) {
+      await registerAffiliateReferrals(senderNumber, people);
+    }
   } catch (error) {
     logger.error("Error processing vcard message:", error);
   }
@@ -251,7 +239,7 @@ export const handleMessage = async (
 
     await CreateMessageService({ messageData });
 
-    await processVcardMessage(processedMessage);
+    await processVcardMessage(processedMessage, contextPayload.groupContact ? undefined : contact.number);
 
     if (!contextPayload.groupContact && !processedMessage.fromMe) {
       const optedOut = await processOptOut(ticket.id, processedMessage.body);

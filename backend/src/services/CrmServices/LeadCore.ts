@@ -18,6 +18,7 @@ import dispatchWebhook from "../WebhookServices/DispatchWebhook";
 import { computeScore } from "./LeadScore";
 import { logger } from "../../utils/logger";
 import Affiliate from "../../models/Affiliate";
+import { affiliateStageId, ensureAffiliateStage, tagAffiliateLead } from "../AffiliateServices/AffiliateLane";
 
 export const leadInclude = [
   { model: Course, as: "course", attributes: ["id", "name", "modality", "level"] },
@@ -185,9 +186,12 @@ export const upsertLead = async (
     return { lead, created: false };
   }
 
+  // people an affiliate referred start in their own column; everyone else in the first regular open column
+  const lane = await affiliateStageId();
   const stage =
     (input.stageId && (await LeadStage.findByPk(input.stageId))) ||
-    (await LeadStage.findOne({ where: { type: "open" }, order: [["position", "ASC"]] }));
+    (input.affiliateId && (await ensureAffiliateStage())) ||
+    (await LeadStage.findOne({ where: { type: "open", ...(lane ? { id: { [Op.ne]: lane } } : {}) }, order: [["position", "ASC"]] }));
   if (!stage) throw new Error("ERR_NO_LEAD_STAGES");
 
   const ownerId = input.ownerId === undefined ? await pickOwner() : input.ownerId;
@@ -225,7 +229,10 @@ export const upsertLead = async (
 
   if (input.tagIds?.length) await (created as any).$set("tags", input.tagIds);
   await addActivity(created.id, actorId, "system", `Lead criado${input.source ? ` via ${input.source}` : ""}`);
-  if (input.affiliateId) await addActivity(created.id, actorId, "system", "Indicação de afiliado: a produção dele é contada a partir desta matrícula");
+  if (input.affiliateId) {
+    await addActivity(created.id, actorId, "system", "Indicação de afiliado: a produção dele é contada a partir desta matrícula");
+    await tagAffiliateLead(created);
+  }
   await rescore(created);
 
   const lead = (await loadLead(created.id)) as Lead;

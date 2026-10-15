@@ -50,6 +50,9 @@ const buildWhere = (q: any) => {
   else if (q.ownerId) where.ownerId = q.ownerId;
   if (q.courseId) where.courseId = q.courseId;
   if (q.source) where.source = q.source;
+  // "any" = every lead an affiliate referred; a number = that affiliate
+  if (q.affiliate === "any") where.affiliateId = { [Op.ne]: null };
+  else if (q.affiliate) where.affiliateId = Number(q.affiliate);
   if (q.search) {
     const s = `%${String(q.search).trim()}%`;
     const digits = String(q.search).replace(/\D/g, "");

@@ -7,7 +7,7 @@ import {
 } from "@material-ui/core";
 import {
   X, MessageSquare, Phone, Mail, StickyNote, PhoneCall, MapPin, ArrowRight, ListTodo,
-  Info, Trash2, Trophy, ThumbsDown, Check, FileText, FilePlus2, Download, Link2, CopyPlus, SendHorizonal,
+  Info, Trash2, Trophy, ThumbsDown, Check, FileText, FilePlus2, Download, Link2, CopyPlus, SendHorizonal, Send,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 
@@ -344,6 +344,11 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab }) => {
                             toast.success("Mensagem copiada. Cole na conversa do WhatsApp.");
                           } catch (e) { toastError(e); }
                         }}><MessageSquare size={16} /></IconAction>
+                        {lead.affiliate && pr.status !== "draft" && (
+                          <IconAction title={`Enviar ao afiliado ${lead.affiliate.name} para encaminhar`} onClick={async () => {
+                            try { await api.post(`/affiliates/${lead.affiliate.id}/send-proposal`, { proposalId: pr.id }); toast.success("Proposta enviada ao afiliado."); } catch (e) { toastError(e); }
+                          }}><Send size={16} /></IconAction>
+                        )}
                         <IconAction title="Baixar PDF" onClick={async () => {
                           try { const r = await api.get(`/proposals/${pr.id}/pdf`, { responseType: "blob" }); const u = URL.createObjectURL(r.data); const a = document.createElement("a"); a.href = u; a.download = `Proposta - ${lead.name}.pdf`; a.click(); URL.revokeObjectURL(u); } catch (e) { toastError(e); }
                         }}><Download size={16} /></IconAction>
