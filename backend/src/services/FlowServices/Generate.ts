@@ -25,11 +25,12 @@ Blocos (campo "type"); todo bloco tem "key" único (texto curto sem espaços):
 - message: {"text"} envia um texto.
 - buttons: {"text", "options": ["Opção 1", "Opção 2"], "saveTo"?} pergunta com opções que a pessoa escolhe (2 a 8). O texto das opções é curto.
 - ask: {"text", "field", "validate"} pergunta aberta. field: nome, email, cidade, curso, modalidade, forma_ingresso ou um nome livre sem espaços. validate: text, email, phone ou number.
-- condition: {"rules": [{"label", "field", "op", "value"}]} desvia o caminho. field: hours (valor open/closed), tag, lead.course, lead.polo, lead.stage, lead.city, channel, ou var:NOME. op: eq, neq, contains, notcontains, empty, notempty.
+- polo: {"text"} pergunta qual polo a pessoa prefere (lista os polos ativos, entende número, nome e cidade, mesmo com erro de digitação) e guarda o polo no lead. Saída "outra resposta" para quando não for entendido. Depois dele, a variável var:polo tem o nome do polo.
+- condition: {"rules": [{"label", "field", "op", "value"}]} desvia o caminho. field: hours (valor open/closed), tag, lead.course, lead.polo, lead.stage, lead.city, channel, ou var:NOME. op: eq, neq, contains, notcontains, in (valor com vários itens separados por vírgula), empty, notempty.
 - crm: {"action", ...} ações: send_to_crm (cria ou atualiza o lead com o que foi coletado; aceita "stageName", "tagName", "ownerMode":"roundrobin"), move_stage ("stageName"), add_tag/remove_tag ("tagName"), add_note ("text"), create_task ("title", "minutes").
 - delay: {"minutes"} espera e continua.
 - ai: {} passa a conversa para o agente de IA e encerra o fluxo.
-- transfer: {"to": "queue" | "polo_sales" | "polo_tutoria", "queueName"?, "text"?} passa para uma pessoa e encerra o fluxo.
+- transfer: {"to": "queue" | "polo_sales" | "polo_tutoria" | "chosen_polo_sales" (comercial do polo escolhido no bloco polo), "queueName"?, "text"?} passa para uma pessoa e encerra o fluxo.
 - webhook: {"url"}.
 - random: {"branches": [{"label", "weight"}]} teste A/B.
 - end: {"text"?, "close"?: true} encerra.
@@ -86,6 +87,7 @@ export const normalizeGenerated = async (raw: any): Promise<{ name: string; entr
         d.options = (Array.isArray(r.options) ? r.options : []).slice(0, 10).map((o: any, k: number) => ({ id: `o${k + 1}`, label: String(typeof o === "string" ? o : o?.label || "").slice(0, 40) }));
         if (r.saveTo) d.saveTo = idLike(r.saveTo);
         break;
+      case "polo": d.text = String(r.text || "Qual polo fica mais perto de você?"); break;
       case "ask":
         d.text = String(r.text || "");
         d.field = idLike(r.field || "nome");
@@ -95,7 +97,7 @@ export const normalizeGenerated = async (raw: any): Promise<{ name: string; entr
         d.rules = (Array.isArray(r.rules) ? r.rules : []).slice(0, 8).map((x: any, k: number) => ({
           id: `r${k + 1}`,
           label: String(x?.label || `Condição ${k + 1}`).slice(0, 40),
-          all: [{ field: String(x?.field || "tag"), op: ["eq", "neq", "contains", "notcontains", "empty", "notempty"].includes(x?.op) ? x.op : "eq", value: String(x?.value ?? "") }]
+          all: [{ field: String(x?.field || "tag"), op: ["eq", "neq", "contains", "notcontains", "in", "empty", "notempty"].includes(x?.op) ? x.op : "eq", value: String(x?.value ?? "") }]
         }));
         break;
       case "crm":
@@ -110,7 +112,7 @@ export const normalizeGenerated = async (raw: any): Promise<{ name: string; entr
         break;
       case "delay": d.minutes = Math.max(1, Number(r.minutes) || 5); break;
       case "transfer":
-        d.to = ["queue", "polo_sales", "polo_tutoria", "user"].includes(r.to) ? r.to : "polo_sales";
+        d.to = ["queue", "polo_sales", "polo_tutoria", "chosen_polo_sales", "user"].includes(r.to) ? r.to : "polo_sales";
         if (d.to === "queue") d.queueId = pickByName(queues, r.queueName);
         if (r.text) d.text = String(r.text);
         break;

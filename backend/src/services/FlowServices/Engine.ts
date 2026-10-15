@@ -18,6 +18,15 @@ export interface Effects {
   webhook(url: string, vars: Record<string, any>): Promise<boolean>;
   // first name and full name of the person, for {{primeiro_nome}} and {{nome}}
   who(): { name: string; first: string };
+  // the active polos the person can choose from, and the choice (lead polo + the sales queue of that polo); returns its name
+  listPolos(): Promise<PoloOption[]>;
+  setPolo(poloId: number): Promise<string>;
+}
+
+export interface PoloOption {
+  id: number;
+  name: string;
+  city: string;
 }
 
 export interface RunState {
@@ -77,6 +86,55 @@ const pickOption = (options: any[], answer: string): any | null => {
   );
 };
 
+// letters and digits only, without accents: "Ji-Paraná" and "ji parana" are the same thing
+const plain = (s: string): string =>
+  normalize(s)
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+
+const distance = (a: string, b: string): number => {
+  const dp = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j += 1) dp[0][j] = j;
+  for (let i = 1; i <= a.length; i += 1) {
+    for (let j = 1; j <= b.length; j += 1) {
+      dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+  }
+  return dp[a.length][b.length];
+};
+
+// What the person wrote, matched to a polo: the number, the exact name or city, a phrase that contains it ("moro em ji
+// parana") or something close to it ("ji parna"). Several polos fit equally: the answer is returned as `ambiguous`.
+export const matchPolo = (polos: PoloOption[], answer: string): { polo?: PoloOption; ambiguous?: PoloOption[] } => {
+  const a = plain(answer);
+  if (!a) return {};
+  if (/^\d+$/.test(a)) return polos[Number(a) - 1] ? { polo: polos[Number(a) - 1] } : {};
+  const keys = (p: PoloOption): string[] => [plain(p.city), plain(p.name), plain(p.name).replace(/^polo /, "")].filter(k => k.length >= 3);
+  const words = a.split(" ");
+  const score = (p: PoloOption): number => {
+    let best = 0;
+    for (const k of keys(p)) {
+      if (k === a) best = Math.max(best, 100);
+      else if (` ${a} `.includes(` ${k} `)) best = Math.max(best, 80 + Math.min(k.length, 15));
+      else if (a.length >= 3 && ` ${k} `.includes(` ${a} `)) best = Math.max(best, 50 + a.length);
+      else {
+        // close spellings: compare with every stretch of the answer that has as many words as the key
+        const n = k.split(" ").length;
+        const tolerance = k.length >= 8 ? 2 : k.length >= 5 ? 1 : 0;
+        for (let i = 0; i + n <= words.length; i += 1) {
+          const d = distance(words.slice(i, i + n).join(" "), k);
+          if (d <= tolerance) best = Math.max(best, 40 - d * 5);
+        }
+      }
+    }
+    return best;
+  };
+  const scored = polos.map(p => ({ p, s: score(p) })).filter(x => x.s > 0).sort((x, y) => y.s - x.s);
+  if (!scored.length) return {};
+  const top = scored.filter(x => x.s === scored[0].s);
+  return top.length === 1 ? { polo: top[0].p } : { ambiguous: top.map(x => x.p) };
+};
+
 const validators: Record<string, (v: string) => string | null> = {
   text: v => (v.trim() ? v.trim().slice(0, 200) : null),
   email: v => (/^\S+@\S+\.\S+$/.test(v.trim()) ? v.trim().toLowerCase().slice(0, 120) : null),
@@ -102,6 +160,7 @@ const ruleHolds = async (rule: any, vars: Record<string, any>, fx: Effects): Pro
       case "neq": ok = left !== right; break;
       case "contains": ok = left.includes(right); break;
       case "notcontains": ok = !left.includes(right); break;
+      case "in": ok = String(c.value ?? "").split(",").map(v => normalize(v)).filter(Boolean).includes(left); break;
       case "empty": ok = left === ""; break;
       case "notempty": ok = left !== ""; break;
       default: ok = false;
@@ -151,6 +210,22 @@ export const advance = async (graph: Graph, startId: string | null, state: RunSt
         // eslint-disable-next-line no-await-in-loop
         await fx.say(render(d.text, state.vars, who));
         return done("waiting");
+      case "polo": {
+        // eslint-disable-next-line no-await-in-loop
+        const polos = await fx.listPolos();
+        if (!polos.length) {
+          // nothing to choose from: go on instead of asking a question nobody can answer
+          current = go("other") || go();
+          break;
+        }
+        state.nodeId = node.id;
+        state.tries = 0;
+        const question = render(d.text, state.vars, who);
+        const options = polos.map(p => ({ id: String(p.id), label: p.name }));
+        // eslint-disable-next-line no-await-in-loop
+        await fx.say(menuText(question, options), polos.length <= 10 ? { question, options } : undefined);
+        return done("waiting");
+      }
       case "condition": {
         let handle = "else";
         for (const rule of d.rules || []) {
@@ -252,6 +327,27 @@ export const resume = async (graph: Graph, state: RunState, input: string, fx: E
       return { ...step, path: [node.id, ...step.path] };
     }
     await fx.say(`Não entendi. Responda com o número de uma das opções:\n\n${options.map((o: any, i: number) => `*${i + 1}* - ${o.label}`).join("\n")}`);
+    return { status: "waiting", state, path: [] };
+  }
+
+  if (node.type === "polo") {
+    const polos = await fx.listPolos();
+    const found = matchPolo(polos, input);
+    if (found.polo) {
+      state.vars.polo = found.polo.name;
+      state.vars.poloId = found.polo.id;
+      await fx.setPolo(found.polo.id);
+      const step = await advance(graph, nextNodeId(graph, node.id), state, fx);
+      return { ...step, path: [node.id, ...step.path] };
+    }
+    state.tries += 1;
+    const other = nextNodeId(graph, node.id, "other");
+    if (state.tries >= MAX_TRIES && other) {
+      const step = await advance(graph, other, state, fx);
+      return { ...step, path: [node.id, ...step.path] };
+    }
+    const list = (found.ambiguous || polos).map(p => `*${polos.indexOf(p) + 1}* - ${p.name}`).join("\n");
+    await fx.say(found.ambiguous ? `Encontrei mais de um polo. Qual deles?\n\n${list}` : `Não encontrei esse polo. Responda com o número, o nome ou a cidade:\n\n${list}`);
     return { status: "waiting", state, path: [] };
   }
 

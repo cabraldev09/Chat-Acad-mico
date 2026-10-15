@@ -49,7 +49,29 @@ export const ticketEffects = (ticket: Ticket, flowName: string): Effects => {
     return out.lead;
   };
 
+  // the lead takes the polo and the conversation goes to the sales queue of that polo
+  const choosePolo = async (lead: Lead, poloId: number): Promise<string> => {
+    const polo = await Polo.findByPk(poloId);
+    if (!polo) return "";
+    await lead.update({ poloId });
+    const salesQueue = await Queue.findOne({ where: { poloId, role: "comercial" } });
+    if (salesQueue) await UpdateTicketService({ ticketData: { queueId: salesQueue.id }, ticketId: ticket.id });
+    return polo.name;
+  };
+
   return {
+    async listPolos() {
+      const rows = await Polo.findAll({ where: { active: true }, order: [["name", "ASC"]], attributes: ["id", "name", "city"] });
+      return rows.map(p => ({ id: p.id, name: p.name, city: p.city || "" }));
+    },
+
+    async setPolo(poloId) {
+      const lead = await ensureLead({}, { id: "polo", type: "polo", data: { source: "Chatbot" } });
+      const name = await choosePolo(lead, poloId);
+      if (name) await addActivity(lead.id, null, "system", `Polo escolhido no fluxo “${flowName}”: ${name}`);
+      return name;
+    },
+
     async say(text, choices) {
       try {
         await SendWhatsAppMessage({ body: `${MARK}${text}`, ticket, automated: true, choices: choices ? { ...choices, question: `${MARK}${choices.question}` } : undefined });
@@ -119,12 +141,7 @@ export const ticketEffects = (ticket: Ticket, flowName: string): Effects => {
           return "";
         }
         case "set_polo": {
-          const poloId = d.poloId ? Number(d.poloId) : null;
-          if (poloId) {
-            await lead.update({ poloId });
-            const salesQueue = await Queue.findOne({ where: { poloId, role: "comercial" } });
-            if (salesQueue) await UpdateTicketService({ ticketData: { queueId: salesQueue.id }, ticketId: ticket.id });
-          }
+          if (d.poloId) await choosePolo(lead, Number(d.poloId));
           return "";
         }
         case "create_task":
@@ -147,16 +164,17 @@ export const ticketEffects = (ticket: Ticket, flowName: string): Effects => {
         return;
       }
       let queueId: number | null = d.to === "queue" ? Number(d.queueId) : null;
-      if (d.to === "polo_sales" || d.to === "polo_tutoria") {
+      if (d.to === "polo_sales" || d.to === "polo_tutoria" || d.to === "chosen_polo_sales") {
         const lead = await leadOf();
-        const q = lead?.poloId ? await Queue.findOne({ where: { poloId: lead.poloId, role: d.to === "polo_sales" ? "comercial" : "tutoria" } }) : null;
+        // "chosen": the polo the person picked inside the flow, else the one already on the lead
+        const poloId = d.to === "chosen_polo_sales" && vars.poloId ? Number(vars.poloId) : lead?.poloId;
+        const q = poloId ? await Queue.findOne({ where: { poloId, role: d.to === "polo_tutoria" ? "tutoria" : "comercial" } }) : null;
         queueId = q ? q.id : null;
       }
       if (queueId) {
         await UpdateTicketService({ ticketData: { queueId }, ticketId: ticket.id });
         await AutoAssignTicket(await ShowTicketService(ticket.id));
       }
-      void vars;
     },
 
     async handToAi() {
@@ -187,6 +205,7 @@ export const ticketEffects = (ticket: Ticket, flowName: string): Effects => {
 };
 
 export interface SimSample {
+  polos?: Array<{ id: number; name: string; city?: string }>;
   name?: string;
   channel?: string;
   hours?: string; // open | closed
@@ -200,6 +219,15 @@ export const simEffects = (sample: SimSample = {}): { fx: Effects; messages: str
   const actions: string[] = [];
   const name = sample.name || "Maria";
   const fx: Effects = {
+    async listPolos() {
+      return (sample.polos && sample.polos.length ? sample.polos : [{ id: 1, name: "Polo Porto Velho", city: "Porto Velho" }, { id: 2, name: "Polo Ji-Paraná", city: "Ji-Paraná" }, { id: 3, name: "Polo Vilhena", city: "Vilhena" }]).map(p => ({ id: p.id, name: p.name, city: p.city || "" }));
+    },
+    async setPolo(poloId) {
+      const chosen = (await fx.listPolos()).find(p => p.id === poloId);
+      sample.lead = { ...(sample.lead || {}), polo: chosen ? chosen.name : "" };
+      actions.push(`Define o polo: ${chosen ? chosen.name : poloId}`);
+      return chosen ? chosen.name : "";
+    },
     async say(text) { messages.push(text); },
     async readField(field) {
       if (field === "hours") return sample.hours || "open";

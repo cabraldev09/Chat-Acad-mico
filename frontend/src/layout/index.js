@@ -202,7 +202,7 @@ const LoggedInLayout = ({ children }) => {
       </AppBar>
       <CrmReminders />
       <main className={classes.content}>
-        <div key={location.pathname.split("/")[1]} className="page-enter">
+        <div key={location.pathname.split("/")[1]} className={clsx("page-enter", /^\/chatbot\/\d+/.test(location.pathname) && "page-fill")}>
           <div className={classes.appBarSpacer} />
           <ConnectionAlert />
           {children ? children : null}

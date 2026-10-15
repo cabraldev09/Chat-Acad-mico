@@ -2058,6 +2058,104 @@ const postMeta = (id, payload, secret, badSig) => {
       // the other tests talk to the AI agent and the old menu: no flow may stay live
       assert((await http.post(`/flows/${flowId}/unpublish`, {}, auth())).data.status === "draft", "unpublish triage");
     });
+    await test("visual flows: the person chooses the polo (number, name, city, typo), the lead and the conversation go to that polo, the whole path", async () => {
+      const vil = (await http.post("/polos", { name: "Polo Vilhena", code: "VIL", city: "Vilhena", state: "RO" }, auth())).data;
+      const g = {
+        nodes: [
+          { id: "s", type: "start", data: {} },
+          { id: "oi", type: "message", data: { text: "Olá, {{primeiro_nome}}! Vou te ajudar." } },
+          { id: "curso", type: "buttons", data: { text: "Escolha o curso:", saveTo: "curso", options: [{ id: "c1", label: "Administração" }, { id: "c2", label: "Direito" }] } },
+          { id: "polo", type: "polo", data: { text: "Qual polo fica mais perto de você?" } },
+          { id: "cond", type: "condition", data: { rules: [{ id: "r1", label: "Interior", all: [{ field: "var:polo", op: "in", value: "Polo Ji-Paraná, Polo Vilhena" }] }] } },
+          { id: "interior", type: "message", data: { text: "Atendimento do interior: {{polo}}." } },
+          { id: "capital", type: "message", data: { text: "Atendimento da capital." } },
+          { id: "crm", type: "crm", data: { action: "send_to_crm", ownerMode: "roundrobin", source: "Chatbot" } },
+          { id: "tr", type: "transfer", data: { to: "chosen_polo_sales", text: "Chamando a equipe do polo." } },
+          { id: "naosei", type: "message", data: { text: "Sem problemas, vou chamar alguém para ajudar." } },
+          { id: "fim", type: "end", data: {} }
+        ],
+        edges: [
+          { id: "1", source: "s", target: "oi" }, { id: "2", source: "oi", target: "curso" },
+          { id: "3", source: "curso", target: "polo", sourceHandle: "c1" }, { id: "4", source: "curso", target: "polo", sourceHandle: "c2" },
+          { id: "5", source: "polo", target: "cond", sourceHandle: "out" }, { id: "6", source: "polo", target: "naosei", sourceHandle: "other" },
+          { id: "7", source: "cond", target: "interior", sourceHandle: "r1" }, { id: "8", source: "cond", target: "capital", sourceHandle: "else" },
+          { id: "9", source: "interior", target: "crm" }, { id: "10", source: "capital", target: "crm" }, { id: "11", source: "crm", target: "tr" },
+          { id: "12", source: "naosei", target: "fim" }
+        ]
+      };
+      const mk = await http.post("/flows", { name: "Escolha de polo", entry: { type: "first_message" }, graph: g }, auth());
+      assert(mk.status === 201 && mk.data.errors === 0, `create ${mk.status} errors=${mk.data.errors} ${JSON.stringify(mk.data.issues).slice(0, 200)}`);
+      const flowId = mk.data.id;
+      // a polo block without its question is a validation error
+      const bad = JSON.parse(JSON.stringify(g)); bad.nodes.find(n => n.id === "polo").data.text = "";
+      assert((await http.put(`/flows/${flowId}`, { graph: bad }, auth())).data.errors >= 1, "an empty polo question passed validation");
+      assert((await http.put(`/flows/${flowId}`, { graph: g }, auth())).data.errors === 0, "restore");
+
+      // simulator: the list, a typo, the choice, the branch
+      const sent0 = graph.sent.length;
+      let sim = (await http.post(`/flows/${flowId}/simulate`, {}, auth())).data;
+      sim = (await http.post(`/flows/${flowId}/simulate`, { state: sim.state, input: "2" }, auth())).data;
+      assert(sim.messages.some(m => m.includes("Qual polo") && m.includes("*1* - ")), `polo list ${JSON.stringify(sim.messages)}`);
+      const simDone = (await http.post(`/flows/${flowId}/simulate`, { state: sim.state, input: "moro em ji parna" }, auth())).data;
+      assert(simDone.actions.some(a => a.includes("Define o polo: Polo Ji-Paraná")) && simDone.messages.some(m => m.includes("interior")), `sim choice ${JSON.stringify([simDone.actions, simDone.messages])}`);
+      assert(simDone.actions.some(a => /Transfere/.test(a)), "sim transfer");
+      assert(graph.sent.length === sent0, "the simulator sent a real message");
+
+      assert((await http.post(`/flows/${flowId}/publish`, {}, auth())).status === 200, "publish");
+      // the real conversation, on the Cloud API: free text with a typo
+      const from = "5511910000031";
+      let before = graph.sent.length;
+      await inboundCloud(from, "wamid.polo-1", "oi");
+      await waitFor(() => sentAny(before).some(t => t.includes("Escolha o curso") && t.includes("Direito")), 12000, "course question");
+      before = graph.sent.length;
+      await inboundCloud(from, "wamid.polo-2", "Direito");
+      await waitFor(() => sentAny(before).some(t => t.includes("Qual polo") && t.includes("Polo Ji-Paran")), 12000, "polo question lists the active polos");
+      // an answer that fits several polos asks which one
+      before = graph.sent.length;
+      await inboundCloud(from, "wamid.polo-3", "polo");
+      await waitFor(() => sentAny(before).some(t => t.includes("mais de um polo")), 12000, "ambiguous answer");
+      before = graph.sent.length;
+      await inboundCloud(from, "wamid.polo-4", "moro em ji parna");
+      await waitFor(() => sentTexts(before).some(t => t.includes("Chamando a equipe do polo")), 15000, "transfer message");
+      assert(sentTexts(before).some(t => t.includes("Atendimento do interior: Polo Ji-Paraná")), "the condition did not take the interior branch with the polo name");
+      const tk = ticketOf(from);
+      const leadOf = `(SELECT id FROM Leads WHERE contactId=(SELECT contactId FROM Tickets WHERE id=${tk}))`;
+      assert(sql(`SELECT poloId FROM Leads WHERE id=${leadOf}`) === String(jiPolo.id), "the lead did not get the chosen polo");
+      const salesQueue = sql(`SELECT id FROM Queues WHERE poloId=${jiPolo.id} AND role='comercial'`);
+      assert(salesQueue && sql(`SELECT queueId FROM Tickets WHERE id=${tk}`) === salesQueue, "the conversation did not go to the sales queue of the polo");
+      assert(sql(`SELECT COUNT(*) FROM LeadActivities WHERE leadId=${leadOf} AND body LIKE '%Polo escolhido no fluxo%'`) === "1", "the choice left no trace on the lead");
+      assert(sql(`SELECT COUNT(*) FROM LeadActivities WHERE leadId=${leadOf} AND body LIKE '%Enviado ao CRM pelo fluxo%'`) === "1", "the CRM step left no trace");
+
+      // a second person picks by number (the list order) and lands on another polo
+      const from2 = "5511910000032";
+      before = graph.sent.length;
+      await inboundCloud(from2, "wamid.polo-5", "oi");
+      await waitFor(() => sentAny(before).some(t => t.includes("Escolha o curso")), 12000, "second menu");
+      await inboundCloud(from2, "wamid.polo-6", "Administração");
+      await waitFor(() => sentAny(before).some(t => t.includes("Qual polo")), 12000, "second polo question");
+      before = graph.sent.length;
+      await inboundCloud(from2, "wamid.polo-7", "vilhena");
+      await waitFor(() => sentTexts(before).some(t => t.includes("Chamando a equipe do polo")), 15000, "second transfer");
+      const tk2 = ticketOf(from2);
+      assert(sql(`SELECT poloId FROM Leads WHERE contactId=(SELECT contactId FROM Tickets WHERE id=${tk2})`) === String(vil.id), "the second lead did not get Vilhena");
+
+      // somebody who never says a polo: two tries and the "did not understand" exit
+      const from3 = "5511910000033";
+      before = graph.sent.length;
+      await inboundCloud(from3, "wamid.polo-8", "oi");
+      await waitFor(() => sentAny(before).some(t => t.includes("Escolha o curso")), 12000, "third menu");
+      await inboundCloud(from3, "wamid.polo-9", "Direito");
+      await waitFor(() => sentAny(before).some(t => t.includes("Qual polo")), 12000, "third polo question");
+      before = graph.sent.length;
+      await inboundCloud(from3, "wamid.polo-10", "qwertyuiop");
+      await waitFor(() => sentTexts(before).some(t => t.includes("Não encontrei esse polo")), 12000, "asked again");
+      before = graph.sent.length;
+      await inboundCloud(from3, "wamid.polo-11", "zxcvbnm");
+      await waitFor(() => sentTexts(before).some(t => t.includes("vou chamar alguém")), 12000, "the other exit");
+      assert(!sql(`SELECT poloId FROM Leads WHERE contactId=(SELECT contactId FROM Tickets WHERE id=${ticketOf(from3)})`), "a lead got a polo nobody chose");
+
+      assert((await http.post(`/flows/${flowId}/unpublish`, {}, auth())).data.status === "draft", "unpublish");
+    });
     await test("visual flows: templates, the old menu as a flow, and flows made by AI", async () => {
       const tpl = (await http.get("/flow-templates", auth())).data;
       assert(tpl.length >= 3 && tpl.every(t => t.name && t.blocks > 2), "templates");

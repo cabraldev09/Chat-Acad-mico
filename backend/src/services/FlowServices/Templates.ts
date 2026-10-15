@@ -65,17 +65,17 @@ export const TEMPLATES: FlowTemplate[] = [
         }],
         ["nome", "ask", { text: "Que bom! Para começar, qual é o seu nome completo?", field: "nome", validate: "text" }],
         ["curso", "ask", { text: "Qual curso você tem interesse?", field: "curso", validate: "text" }],
-        ["cidade", "ask", { text: "E em qual cidade você mora?", field: "cidade", validate: "text" }],
+        ["polo", "polo", { text: "Qual polo fica mais perto de você? Responda com o número, o nome ou a cidade." }],
         ["crm", "crm", { action: "send_to_crm", ownerMode: "roundrobin", source: "Chatbot" }],
         ["fim1", "message", { text: "Perfeito, {{primeiro_nome}}! Um consultor vai falar com você em instantes. 🎓" }],
-        ["transfer", "transfer", { to: "polo_sales" }],
+        ["transfer", "transfer", { to: "chosen_polo_sales" }],
         ["aluno", "message", { text: "Para assuntos acadêmicos, a tutoria do seu polo vai te atender." }],
         ["aluno_t", "transfer", { to: "polo_tutoria" }],
         ["humano", "transfer", { to: "polo_sales", text: "Certo! Já estou chamando um atendente." }]
       ],
       links: [
         ["start", "menu"], ["menu", "nome", "o1"], ["menu", "aluno", "o2"], ["menu", "humano", "o3"],
-        ["nome", "curso"], ["curso", "cidade"], ["cidade", "crm"], ["crm", "fim1"], ["fim1", "transfer"],
+        ["nome", "curso"], ["curso", "polo"], ["polo", "crm"], ["polo", "crm", "other"], ["crm", "fim1"], ["fim1", "transfer"],
         ["aluno", "aluno_t"]
       ]
     })
@@ -96,6 +96,25 @@ export const TEMPLATES: FlowTemplate[] = [
         ["ia", "ai", {}]
       ],
       links: [["start", "cond"], ["cond", "aviso", "r1"], ["cond", "ia", "else"], ["aviso", "nome"], ["nome", "crm"], ["crm", "fim"]]
+    })
+  },
+  {
+    key: "escolha-de-polo",
+    name: "Escolha de polo",
+    description: "Pergunta qual polo a pessoa prefere (entende número, nome ou cidade), grava o polo no lead e leva para o comercial daquele polo.",
+    entry: { type: "first_message" },
+    graph: build({
+      nodes: [
+        ["start", "start", {}],
+        ["oi", "message", { text: "Olá, {{primeiro_nome}}! 👋 Vou te ajudar a falar com o polo certo." }],
+        ["polo", "polo", { text: "Qual polo fica mais perto de você? Responda com o número, o nome ou a cidade." }],
+        ["nome", "ask", { text: "Qual é o seu nome completo?", field: "nome", validate: "text" }],
+        ["crm", "crm", { action: "send_to_crm", ownerMode: "roundrobin", source: "Chatbot" }],
+        ["fim", "message", { text: "Pronto! A equipe do polo {{polo}} já vai falar com você. 🎓" }],
+        ["transfer", "transfer", { to: "chosen_polo_sales" }],
+        ["ia", "ai", {}]
+      ],
+      links: [["start", "oi"], ["oi", "polo"], ["polo", "nome"], ["polo", "ia", "other"], ["nome", "crm"], ["crm", "fim"], ["fim", "transfer"]]
     })
   },
   {

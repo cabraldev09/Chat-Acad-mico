@@ -24,16 +24,17 @@ export interface Issue {
 }
 
 // blocks that stop and wait for the person (or for time)
-export const WAITING = ["buttons", "ask", "delay"];
+export const WAITING = ["buttons", "ask", "delay", "polo"];
 // blocks that end the conversation inside the flow
 export const TERMINAL = ["end", "ai", "transfer"];
-export const NODE_TYPES = ["start", "message", "buttons", "ask", "condition", "crm", "delay", "ai", "transfer", "webhook", "random", "goto", "end", "comment"];
+export const NODE_TYPES = ["start", "message", "buttons", "ask", "polo", "condition", "crm", "delay", "ai", "transfer", "webhook", "random", "goto", "end", "comment"];
 
 export const TITLE: Record<string, string> = {
   start: "Início",
   message: "Mensagem",
   buttons: "Pergunta com botões",
   ask: "Pergunta aberta",
+  polo: "Escolher polo",
   condition: "Condição",
   crm: "Ação no CRM",
   delay: "Espera",
@@ -80,6 +81,11 @@ export const exitsOf = (node: FlowNode): Array<{ handle: string; required: boole
         { handle: "out", required: true, label: "saída" },
         { handle: "error", required: false, label: "saída se falhar" }
       ];
+    case "polo":
+      return [
+        { handle: "out", required: true, label: "saída (polo escolhido)" },
+        { handle: "other", required: false, label: "resposta que não é um polo" }
+      ];
     case "buttons":
       return [
         ...(d.options || []).map((o: any) => ({ handle: String(o.id), required: true, label: `opção “${o.label || "?"}”` })),
@@ -113,7 +119,7 @@ export const validateGraph = (graph: Graph, ctx: { hasAiAgent?: boolean } = {}):
   graph.nodes.forEach(n => {
     const d = n.data || {};
     const title = TITLE[n.type] || n.type;
-    if (["message", "buttons", "ask"].includes(n.type) && !String(d.text || "").trim()) err(`${title}: escreva o texto da mensagem.`, n.id);
+    if (["message", "buttons", "ask", "polo"].includes(n.type) && !String(d.text || "").trim()) err(`${title}: escreva o texto da mensagem.`, n.id);
     if (n.type === "buttons") {
       const options = d.options || [];
       if (options.length < 2) err(`${title}: precisa de pelo menos 2 opções.`, n.id);

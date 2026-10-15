@@ -12,9 +12,9 @@ const FIELDS = [
 ];
 const CONDITION_FIELDS = [
   ["hours", "Horário de atendimento"], ["tag", "Etiquetas do lead"], ["lead.course", "Curso do lead"], ["lead.polo", "Polo do lead"], ["lead.stage", "Etapa do funil"],
-  ["lead.city", "Cidade do lead"], ["lead.source", "Origem do lead"], ["channel", "Canal da conversa"], ["message", "Última mensagem da pessoa"],
+  ["var:polo", "Polo escolhido neste fluxo"], ["lead.city", "Cidade do lead"], ["lead.source", "Origem do lead"], ["channel", "Canal da conversa"], ["message", "Última mensagem da pessoa"],
 ];
-const OPS = [["eq", "é igual a"], ["neq", "é diferente de"], ["contains", "contém"], ["notcontains", "não contém"], ["empty", "está vazio"], ["notempty", "não está vazio"]];
+const OPS = [["eq", "é igual a"], ["neq", "é diferente de"], ["contains", "contém"], ["notcontains", "não contém"], ["in", "é um de (separe por vírgula)"], ["empty", "está vazio"], ["notempty", "não está vazio"]];
 const VALIDATE = [["text", "Texto livre"], ["email", "E-mail"], ["phone", "Telefone"], ["number", "Número"]];
 
 const T = (props) => <TextField fullWidth size="small" variant="outlined" margin="dense" InputLabelProps={{ shrink: true }} {...props} />;
@@ -70,6 +70,16 @@ const Inspector = ({ node, update, remove, lists, nodes }) => {
           )}
           <T label="Guardar a escolha em (opcional)" value={d.saveTo || ""} onChange={(e) => set({ saveTo: e.target.value.replace(/[^\w]/g, "") })} placeholder="modalidade" helperText="A escolha vira uma variável e, se for um campo do lead (modalidade, curso…), vai para o cadastro." />
           <Typography variant="caption" color="textSecondary">Na WhatsApp oficial (Cloud API) as opções viram botões (até 3) ou uma lista (4 a 10); no Telegram, Messenger e Instagram também são botões. No WhatsApp por QR Code aparecem numeradas e a pessoa responde com o número, o nome ou uma palavra da lista. A saída “Resposta inesperada” é usada depois de 2 tentativas.</Typography>
+        </Section>
+      )}
+
+      {node.type === "polo" && (
+        <Section>
+          {text("Pergunta")}
+          <VarsHint />
+          <Typography variant="caption" color="textSecondary">
+            O sistema mostra os polos ativos numerados. A pessoa pode responder com o número, o nome ou a cidade (“moro em Ji-Paraná”), mesmo com erro de digitação; se a resposta servir para mais de um polo, ele pergunta qual. O polo escolhido vai para o lead, a conversa vai para a fila comercial daquele polo, e {"{{polo}}"} fica disponível nas mensagens. Para levar a conversa ao comercial do polo, use “Transferir → Comercial do polo escolhido no fluxo”. A saída “Não entendi o polo” é usada depois de 2 tentativas. Com mais de 10 polos a lista vai como texto numerado.
+          </Typography>
         </Section>
       )}
 

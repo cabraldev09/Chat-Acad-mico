@@ -4,8 +4,8 @@ import { toast } from "react-toastify";
 import ReactFlow, { Background, Controls, MiniMap, ReactFlowProvider, MarkerType } from "react-flow-renderer";
 import "react-flow-renderer/dist/style.css";
 import "react-flow-renderer/dist/theme-default.css";
-import { Button, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, MenuItem, Tab, Tabs, TextField, Tooltip, makeStyles } from "@material-ui/core";
-import { AlertTriangle, ArrowLeft, BarChart3, CheckCircle2, LayoutTemplate, Play, Rocket, Save, Settings2, Wand2 } from "lucide-react";
+import { Button, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Menu, MenuItem, Tab, Tabs, TextField, Tooltip, makeStyles, useMediaQuery, useTheme } from "@material-ui/core";
+import { AlertTriangle, ArrowLeft, BarChart3, CheckCircle2, LayoutTemplate, PanelRight, Play, Plus, Rocket, Save, Settings2, Wand2 } from "lucide-react";
 
 import { AuthContext } from "../../context/Auth/AuthContext";
 import { WhatsAppsContext } from "../../context/WhatsApp/WhatsAppsContext";
@@ -17,15 +17,22 @@ import Simulator from "./Simulator";
 import { BLOCKS, PALETTE, defaultData, newId, nodeTypes } from "./nodes";
 
 const useStyles = makeStyles((theme) => ({
-  page: { display: "flex", flexDirection: "column", height: "calc(100vh - 64px)", minHeight: 520, margin: theme.spacing(-1.5, -2, 0), background: theme.palette.background.default },
-  bar: { display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", flexWrap: "wrap", borderBottom: theme.border.divider, background: theme.palette.cards.background },
-  body: { flex: 1, display: "flex", minHeight: 0 },
-  palette: { width: 190, flexShrink: 0, overflowY: "auto", padding: 12, borderRight: theme.border.divider, background: theme.palette.cards.background, [theme.breakpoints.down("sm")]: { display: "none" } },
+  // fills what is left of the screen under the top bar (the layout makes the page a column, see .page-fill)
+  page: { display: "flex", flexDirection: "column", minHeight: 440, minWidth: 0, background: theme.palette.background.default },
+  bar: { display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", flexWrap: "wrap", flex: "none", borderBottom: theme.border.divider, background: theme.palette.cards.background },
+  body: { flex: 1, display: "flex", minHeight: 0, minWidth: 0, position: "relative", overflow: "hidden" },
+  palette: { width: "clamp(150px, 14vw, 190px)", flexShrink: 0, overflowY: "auto", padding: 12, borderRight: theme.border.divider, background: theme.palette.cards.background, [theme.breakpoints.down("sm")]: { display: "none" } },
+  onlyNarrow: { display: "none", [theme.breakpoints.down("sm")]: { display: "inline-flex" } },
+  tab: { minWidth: 0, padding: "6px 6px", fontSize: 13 },
   group: { fontSize: 11.5, fontWeight: 700, color: theme.palette.text.secondary, margin: "12px 0 6px", textTransform: "uppercase", letterSpacing: ".04em", "&:first-child": { marginTop: 0 } },
   item: { display: "flex", alignItems: "center", gap: 8, padding: "7px 9px", borderRadius: 10, marginBottom: 5, cursor: "grab", border: theme.border.divider, background: theme.palette.background.default, fontSize: 13, fontWeight: 600, "&:hover": { borderColor: theme.palette.primary.main } },
   icon: { width: 24, height: 24, borderRadius: 7, display: "grid", placeItems: "center", color: "#fff", flexShrink: 0 },
-  canvas: { flex: 1, minWidth: 0, position: "relative" },
-  side: { width: 340, flexShrink: 0, display: "flex", flexDirection: "column", borderLeft: theme.border.divider, background: theme.palette.cards.background, minHeight: 0, [theme.breakpoints.down("sm")]: { width: 300 } },
+  canvas: { flex: 1, minWidth: 0, position: "relative", overflow: "hidden" },
+  side: {
+    width: "clamp(300px, 26vw, 400px)", flexShrink: 0, display: "flex", flexDirection: "column", borderLeft: theme.border.divider, background: theme.palette.cards.background, minHeight: 0, minWidth: 0,
+    // on a narrow window the panel slides over the drawing instead of squeezing it
+    [theme.breakpoints.down("sm")]: { position: "absolute", top: 0, right: 0, bottom: 0, width: "min(340px, 92vw)", zIndex: 5, boxShadow: "-10px 0 28px rgba(0,0,0,.22)" },
+  },
   sideBody: { flex: 1, overflowY: "auto", minHeight: 0 },
   chip: { display: "inline-flex", alignItems: "center", gap: 5, borderRadius: 999, padding: "3px 10px", fontSize: 12.5, fontWeight: 700 },
   issue: { display: "flex", gap: 8, padding: "9px 14px", borderBottom: theme.border.divider, fontSize: 13.5, lineHeight: 1.4, cursor: "pointer", "&:hover": { background: theme.palette.action.hover } },
@@ -115,6 +122,11 @@ const Builder = () => {
   const wrapper = useRef(null);
   const [rf, setRf] = useState(null);
   const manager = isManager(user);
+  // narrow window: no palette column, blocks come from a menu, and the panel slides over the drawing
+  const theme = useTheme();
+  const narrow = useMediaQuery(theme.breakpoints.down("sm"));
+  const [sideOpen, setSideOpen] = useState(false);
+  const [blockMenu, setBlockMenu] = useState(null);
 
   const apply = useCallback((f) => {
     setFlow(f);
@@ -164,7 +176,7 @@ const Builder = () => {
       changes.forEach((c) => {
         if (c.type === "position" && c.position) next = next.map((n) => (n.id === c.id ? { ...n, position: c.position } : n));
         if (c.type === "remove") next = next.filter((n) => n.id !== c.id);
-        if (c.type === "select") { if (c.selected) setSelected(c.id); else setSelected((cur) => (cur === c.id ? null : cur)); }
+        if (c.type === "select") { if (c.selected) { setSelected(c.id); setSideOpen(true); } else setSelected((cur) => (cur === c.id ? null : cur)); }
       });
       return next;
     });
@@ -191,6 +203,7 @@ const Builder = () => {
     change(() => setNodes((ns) => [...ns, { id: nid, type, position: at, data: defaultData(type) }]));
     setSelected(nid);
     setTab(0);
+    setSideOpen(true);
   };
   const onDrop = (e) => {
     e.preventDefault();
@@ -242,24 +255,33 @@ const Builder = () => {
   const back = () => { if (dirty && !window.confirm("Há alterações que não foram salvas. Sair mesmo assim?")) return; history.push("/chatbot"); };
 
   if (!flow) return <div style={{ padding: 24 }}>Carregando o fluxo...</div>;
+  const sideVisible = !narrow || sideOpen;
   const errors = issues.filter((i) => i.level === "error");
   const picked = nodes.find((n) => n.id === selected) || null;
   const connections = (whatsApps || []).filter((w) => ["whatsapp", "whatsapp_cloud", undefined].includes(w.channel));
 
   return (
-    <div className={classes.page}>
+    <div className={`${classes.page} page-grow`}>
       <div className={classes.bar}>
         <Tooltip title="Voltar para os fluxos"><IconButton size="small" onClick={back} aria-label="Voltar"><ArrowLeft size={20} /></IconButton></Tooltip>
-        <TextField size="small" variant="outlined" value={flow.name} onChange={(e) => { setFlow({ ...flow, name: e.target.value }); setDirty(true); }} style={{ width: 260 }} inputProps={{ "aria-label": "Nome do fluxo", style: { fontWeight: 700 } }} />
+        <TextField size="small" variant="outlined" value={flow.name} onChange={(e) => { setFlow({ ...flow, name: e.target.value }); setDirty(true); }} style={{ flex: "1 1 160px", maxWidth: 260, minWidth: 140 }} inputProps={{ "aria-label": "Nome do fluxo", style: { fontWeight: 700 } }} />
         <span className={classes.chip} style={{ background: flow.status === "published" ? "rgba(22,163,74,.16)" : "rgba(100,116,139,.18)", color: flow.status === "published" ? "#15803d" : "#475569" }}>
           {flow.status === "published" ? `Publicado v${flow.version}` : "Rascunho"}
         </span>
         {flow.status === "published" && (dirty || flow.changed) && <span className={classes.chip} style={{ background: "rgba(217,119,6,.16)", color: "#b45309" }}>Alterações não publicadas</span>}
         <span style={{ flex: 1 }} />
-        <Button size="small" variant="outlined" startIcon={<Settings2 size={15} />} onClick={() => setEntryOpen(true)}>Quando começa: {ENTRY_LABEL[flow.entry.type]}</Button>
+        <Tooltip title={`Começa: ${ENTRY_LABEL[flow.entry.type]}`}><Button size="small" variant="outlined" startIcon={<Settings2 size={15} />} onClick={() => setEntryOpen(true)}>Quando começa</Button></Tooltip>
+        <Button size="small" variant="outlined" className={classes.onlyNarrow} startIcon={<Plus size={15} />} onClick={(e) => setBlockMenu(e.currentTarget)}>Bloco</Button>
+        <Menu anchorEl={blockMenu} open={Boolean(blockMenu)} onClose={() => setBlockMenu(null)}>
+          {PALETTE.map(([group, types]) => [
+            <MenuItem key={group} disabled style={{ opacity: 0.7, fontSize: 12, fontWeight: 700, minHeight: 28 }}>{group}</MenuItem>,
+            ...types.map((t) => <MenuItem key={t} onClick={() => { setBlockMenu(null); addBlock(t); }}>{BLOCKS[t].title}</MenuItem>),
+          ])}
+        </Menu>
+        <Button size="small" variant="outlined" className={classes.onlyNarrow} startIcon={<PanelRight size={15} />} onClick={() => setSideOpen((v) => !v)}>Painel</Button>
         <Button size="small" variant="outlined" startIcon={<LayoutTemplate size={15} />} onClick={() => { setNodes((ns) => arrange(ns, edges)); setDirty(true); setTimeout(() => rf && rf.setTransform({ x: 40, y: 70, zoom: 0.85 }), 50); }}>Organizar</Button>
         <Button size="small" variant={showStats ? "contained" : "outlined"} startIcon={<BarChart3 size={15} />} onClick={() => setShowStats((v) => !v)}>Números</Button>
-        <Button size="small" variant="outlined" startIcon={<Play size={15} />} onClick={() => setTab(2)}>Testar</Button>
+        <Button size="small" variant="outlined" startIcon={<Play size={15} />} onClick={() => { setTab(2); setSideOpen(true); }}>Testar</Button>
         <Button size="small" variant="outlined" startIcon={<Save size={15} />} onClick={() => save()} disabled={busy || !dirty}>Salvar rascunho</Button>
         {manager && <Button size="small" variant="contained" color="primary" startIcon={<Rocket size={15} />} onClick={publish} disabled={busy}>{flow.status === "published" ? "Publicar alterações" : "Publicar"}</Button>}
       </div>
@@ -288,14 +310,14 @@ const Builder = () => {
           >
             <Background gap={22} size={1.4} color="rgba(127,140,160,.35)" />
             <Controls showInteractive={false} />
-            <MiniMap pannable zoomable nodeColor={(n) => (BLOCKS[n.type] ? BLOCKS[n.type].color : "#999")} style={{ height: 90, width: 140 }} />
+            {!narrow && <MiniMap pannable zoomable nodeColor={(n) => (BLOCKS[n.type] ? BLOCKS[n.type].color : "#999")} style={{ height: 80, width: 120 }} />}
           </ReactFlow>
         </div>
-        <div className={classes.side}>
+        {sideVisible && <div className={classes.side}>
           <Tabs value={tab} onChange={(e, v) => setTab(v)} variant="fullWidth" indicatorColor="primary" textColor="primary">
-            <Tab label="Bloco" />
-            <Tab label={errors.length ? `Problemas (${issues.length})` : issues.length ? `Avisos (${issues.length})` : "Problemas"} />
-            <Tab label="Testar" />
+            <Tab className={classes.tab} label="Bloco" />
+            <Tab className={classes.tab} label={errors.length ? `Problemas (${issues.length})` : issues.length ? `Avisos (${issues.length})` : "Problemas"} />
+            <Tab className={classes.tab} label="Testar" />
           </Tabs>
           <div className={classes.sideBody}>
             {tab === 0 && <Inspector node={picked} update={updateNode} remove={removeNode} lists={lists} nodes={nodes} />}
@@ -311,7 +333,7 @@ const Builder = () => {
             )}
             {tab === 2 && <Simulator flowId={id} getGraph={graphNow} onPath={setPath} onClose={() => { setTab(0); setPath([]); }} />}
           </div>
-        </div>
+        </div>}
       </div>
       <EntryDialog open={entryOpen} onClose={() => setEntryOpen(false)} flow={flow} onSave={saveEntry} connections={connections} />
     </div>

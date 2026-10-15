@@ -70,6 +70,10 @@ main { overflow-x: hidden !important; overscroll-behavior-x: none; }
 
 /* ---------- app-wide transitions ---------- */
 .page-enter { animation: page-in 0.32s var(--ease-out) both; height: 100%; }
+/* a page that fills the screen under the top bar (the flow builder): the alert shrinks it instead of pushing it off screen */
+.page-fill { display: flex; flex-direction: column; overflow: hidden; }
+.page-fill > * { flex: none; }
+.page-fill > .page-grow { flex: 1 1 auto; min-height: 0; }
 
 .MuiDialog-paper { animation: dialog-in 0.26s var(--ease-out) both; }
 .MuiPopover-paper, .MuiMenu-paper { transform-origin: top; }

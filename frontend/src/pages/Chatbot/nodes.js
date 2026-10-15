@@ -1,7 +1,7 @@
 import React, { useEffect } from "react";
 import { Handle, Position, useUpdateNodeInternals } from "react-flow-renderer";
 import {
-  Bot, CornerDownRight, Database, Flag, GitBranch, ListChecks, MessageSquare, Play, Shuffle, StickyNote, TextCursorInput, Timer, UserCog, Webhook,
+  Bot, CornerDownRight, Database, Flag, GitBranch, ListChecks, MapPin, MessageSquare, Play, Shuffle, StickyNote, TextCursorInput, Timer, UserCog, Webhook,
 } from "lucide-react";
 
 // The blocks of a flow: what each one is called, how it looks and what it starts with.
@@ -10,6 +10,7 @@ export const BLOCKS = {
   message: { title: "Mensagem", icon: MessageSquare, color: "#0693E3", hint: "Envia um texto." },
   buttons: { title: "Pergunta com botões", icon: ListChecks, color: "#7c3aed", hint: "A pessoa escolhe uma opção." },
   ask: { title: "Pergunta aberta", icon: TextCursorInput, color: "#0891b2", hint: "A pessoa responde com texto; a resposta é guardada." },
+  polo: { title: "Escolher polo", icon: MapPin, color: "#0d9488", hint: "A pessoa escolhe o polo; o lead e a conversa vão para ele." },
   condition: { title: "Condição", icon: GitBranch, color: "#d97706", hint: "Muda o caminho conforme os dados." },
   crm: { title: "Ação no CRM", icon: Database, color: "#16a34a", hint: "Envia ao CRM, muda de etapa, etiqueta, tarefa…" },
   delay: { title: "Espera", icon: Timer, color: "#64748b", hint: "Espera um tempo e continua." },
@@ -23,7 +24,7 @@ export const BLOCKS = {
 };
 
 export const PALETTE = [
-  ["Conversa", ["message", "buttons", "ask"]],
+  ["Conversa", ["message", "buttons", "ask", "polo"]],
   ["Lógica", ["condition", "random", "delay", "goto"]],
   ["CRM e equipe", ["crm", "transfer", "ai"]],
   ["Integração", ["webhook", "end", "comment"]],
@@ -38,6 +39,7 @@ export const defaultData = (type) => {
     case "message": return { text: "" };
     case "buttons": return { text: "", options: [{ id: newId("o"), label: "Opção 1" }, { id: newId("o"), label: "Opção 2" }] };
     case "ask": return { text: "", field: "nome", validate: "text" };
+    case "polo": return { text: "Qual polo fica mais perto de você? Responda com o número, o nome ou a cidade." };
     case "condition": return { rules: [{ id: newId("r"), label: "Condição 1", all: [{ field: "hours", op: "eq", value: "closed" }] }] };
     case "crm": return { action: "send_to_crm", ownerMode: "roundrobin", source: "Chatbot" };
     case "delay": return { minutes: 5 };
@@ -56,7 +58,7 @@ const ACTIONS = {
   send_to_crm: "Enviar a conversa ao CRM", move_stage: "Mover de etapa", add_tag: "Colocar etiqueta", remove_tag: "Tirar etiqueta",
   set_owner: "Definir o responsável", set_polo: "Definir o polo", create_task: "Criar tarefa", add_note: "Registrar nota",
 };
-const TRANSFER = { queue: "Para uma fila", user: "Para um atendente", polo_sales: "Comercial do polo do aluno", polo_tutoria: "Tutoria do polo do aluno" };
+const TRANSFER = { queue: "Para uma fila", user: "Para um atendente", polo_sales: "Comercial do polo do aluno", chosen_polo_sales: "Comercial do polo escolhido no fluxo", polo_tutoria: "Tutoria do polo do aluno" };
 export const ACTION_LABEL = ACTIONS;
 export const TRANSFER_LABEL = TRANSFER;
 
@@ -64,7 +66,7 @@ const summary = (type, d) => {
   switch (type) {
     case "message": case "ask": case "ai": case "end": case "comment":
       return d.text || (type === "ask" ? "Escreva a pergunta" : type === "message" ? "Escreva a mensagem" : "");
-    case "buttons": return d.text || "Escreva a pergunta";
+    case "buttons": case "polo": return d.text || "Escreva a pergunta";
     case "crm": return ACTIONS[d.action] || "Escolha a ação";
     case "delay": return `Espera ${d.minutes || "?"} min`;
     case "transfer": return TRANSFER[d.to] || "Escolha o destino";
@@ -108,13 +110,19 @@ const FlowNode = ({ id, type, data, selected }) => {
         <Icon size={15} /> <span style={{ flex: 1 }}>{b.title}</span>
         {stat ? <span title="Pessoas que passaram por aqui" style={{ background: "rgba(255,255,255,.25)", borderRadius: 999, padding: "1px 8px", fontSize: 11.5 }}>{stat}</span> : null}
       </div>
-      <div style={{ padding: "8px 10px", fontSize: 12.5, lineHeight: 1.4, opacity: summary(type, data) && !data.text && ["message", "ask", "buttons"].includes(type) ? 0.55 : 0.9, display: "-webkit-box", WebkitLineClamp: 4, WebkitBoxOrient: "vertical", overflow: "hidden", whiteSpace: "pre-wrap" }}>
+      <div style={{ padding: "8px 10px", fontSize: 12.5, lineHeight: 1.4, opacity: summary(type, data) && !data.text && ["message", "ask", "buttons", "polo"].includes(type) ? 0.55 : 0.9, display: "-webkit-box", WebkitLineClamp: 4, WebkitBoxOrient: "vertical", overflow: "hidden", whiteSpace: "pre-wrap" }}>
         {summary(type, data)}
       </div>
       {type === "buttons" && (
         <>
           {(data.options || []).map((o) => <Exit key={o.id} id={String(o.id)} label={o.label || "Opção sem nome"} />)}
           <Exit id="other" label="Resposta inesperada" muted />
+        </>
+      )}
+      {type === "polo" && (
+        <>
+          <Exit id="out" label="Polo escolhido" />
+          <Exit id="other" label="Não entendi o polo" muted />
         </>
       )}
       {type === "condition" && (
