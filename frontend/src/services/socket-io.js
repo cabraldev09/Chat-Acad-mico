@@ -1,5 +1,5 @@
 import openSocket from "socket.io-client";
-import api from "./api";
+import { currentToken, renewToken } from "./session";
 import { getBackendUrl } from "../config";
 
 // Live updates (new messages, ticks, notifications) need a valid login at every (re)connection.
@@ -7,43 +7,8 @@ import { getBackendUrl } from "../config";
 // token it had when it was opened is refused and the screen silently stops updating. Here the token is renewed:
 //  - every 9 minutes while the system is open, and when the tab comes back;
 //  - whenever the server says the token is no longer good (authError), the socket reconnects with the new one.
-const currentToken = () => {
-  try {
-    return JSON.parse(localStorage.getItem("token"));
-  } catch (e) {
-    return null;
-  }
-};
-
-const expiresInSeconds = (token) => {
-  try {
-    const payload = JSON.parse(atob(String(token).split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
-    return payload.exp - Date.now() / 1000;
-  } catch (e) {
-    return 0;
-  }
-};
-
-let renewing = null;
-export const renewToken = (force = false) => {
-  const token = currentToken();
-  if (!token) return Promise.resolve(null);
-  if (!force && expiresInSeconds(token) > 180) return Promise.resolve(token);
-  if (!renewing) {
-    renewing = api
-      .post("/auth/refresh_token")
-      .then(({ data }) => {
-        localStorage.setItem("token", JSON.stringify(data.token));
-        api.defaults.headers.Authorization = `Bearer ${data.token}`;
-        return data.token;
-      })
-      .catch(() => null)
-      .finally(() => {
-        renewing = null;
-      });
-  }
-  return renewing;
-};
+// the renewal lives in session.js; it is exported from here as well for the places that already import it
+export { renewToken, refreshSession } from "./session";
 
 let timerStarted = false;
 const startRenewal = () => {
