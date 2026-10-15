@@ -1,9 +1,9 @@
+import Model from "./BaseModel";
 import {
   Table,
   Column,
   CreatedAt,
   UpdatedAt,
-  Model,
   ForeignKey,
   BelongsTo
 } from "sequelize-typescript";

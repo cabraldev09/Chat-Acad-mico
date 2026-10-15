@@ -17,7 +17,7 @@ import Polo from "../../models/Polo";
 import Queue from "../../models/Queue";
 import Tag from "../../models/Tag";
 import LeadTag from "../../models/LeadTag";
-import { isUrlSafe } from "../../helpers/SafeUrl";
+import { isUrlSafe, safeRequest } from "../../helpers/SafeUrl";
 import axios from "axios";
 import AutoAssignTicket from "./AutoAssignTicket";
 import { isWithinBusinessHours } from "./BusinessHours";

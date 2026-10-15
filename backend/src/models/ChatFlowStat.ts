@@ -1,4 +1,6 @@
-import { Table, Column, CreatedAt, UpdatedAt, Model, PrimaryKey, AutoIncrement, Default } from "sequelize-typescript";
+import Model from "./BaseModel";
+import { Table, Column, CreatedAt, UpdatedAt, PrimaryKey, AutoIncrement, Default
+} from "sequelize-typescript";
 
 @Table
 class ChatFlowStat extends Model<ChatFlowStat> {

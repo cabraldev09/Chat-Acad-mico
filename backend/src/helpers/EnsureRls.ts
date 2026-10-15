@@ -27,6 +27,7 @@ export const ensureRls = async (): Promise<void> => {
       END $$;
     `);
   } catch (err) {
-    logger.warn(`Could not enforce row level security: ${err}`);
+    logger.error(`Could not enforce row level security: ${err}`);
+    throw err;
   }
 };

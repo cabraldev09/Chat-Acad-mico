@@ -1,4 +1,5 @@
-import { Table, Column, DataType, CreatedAt, UpdatedAt, Model, PrimaryKey, AutoIncrement, AllowNull } from "sequelize-typescript";
+import Model from "./BaseModel";
+import { Table, Column, DataType, CreatedAt, UpdatedAt, PrimaryKey, AutoIncrement, AllowNull } from "sequelize-typescript";
 
 @Table
 class ClientError extends Model<ClientError> {

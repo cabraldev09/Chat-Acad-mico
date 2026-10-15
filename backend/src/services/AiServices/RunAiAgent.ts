@@ -134,23 +134,33 @@ export const respond = async (agent: AiAgent, opts: RespondOptions): Promise<AiR
   let text = "";
 
   if (agent.provider === "openai") {
-    const { data } = await axios.post(
-      `${OPENAI_URL()}/v1/chat/completions`,
-      {
-        model: agent.model,
-        max_tokens: agent.maxTokens || 350,
-        messages: [
-          { role: "system", content: `${staticPrompt(agent)}\n\n${dynamicPrompt(agent, opts.summary || null, collected, passages)}` },
-          ...recent
-        ]
-      },
-      { headers: { Authorization: `Bearer ${apiKey}` }, timeout: 60000 }
-    );
-    text = (data.choices?.[0]?.message?.content || "").trim();
-    tokens.input += data.usage?.prompt_tokens || 0;
-    tokens.output += data.usage?.completion_tokens || 0;
-    await logUsage({ agentId: agent.id, ticketId: opts.ticket?.id, model: agent.model, kind, usage: data.usage });
-    return { text, handoff: text.includes(HANDOFF_MARKER), unknown: text.includes(UNKNOWN_MARKER), sources, tools: [], collected, tokens };
+    const messages: any[] = [{ role: "system", content: `${staticPrompt(agent)}\n\n${dynamicPrompt(agent, opts.summary || null, collected, passages)}` }, ...recent];
+    const tools = toolDefs(agent).map((tool: any) => ({ type: "function", function: { name: tool.name, description: tool.description, parameters: tool.input_schema } }));
+    const ctx: any = { agent, ticket: opts.ticket, dryRun: !!opts.sandbox, collected };
+    for (let round = 0; round <= MAX_TOOL_ROUNDS; round += 1) {
+      const { data } = await axios.post(`${OPENAI_URL()}/v1/chat/completions`, {
+        model: agent.model, max_completion_tokens: agent.maxTokens || 350, messages,
+        ...(round < MAX_TOOL_ROUNDS && tools.length ? { tools, parallel_tool_calls: false } : {})
+      }, { headers: { Authorization: `Bearer ${apiKey}` }, timeout: 60000 });
+      const answer = data.choices?.[0]?.message;
+      text = String(answer?.content || "").trim();
+      tokens.input += data.usage?.prompt_tokens || 0;
+      tokens.output += data.usage?.completion_tokens || 0;
+      await logUsage({ agentId: agent.id, ticketId: opts.ticket?.id, model: agent.model, kind, usage: data.usage });
+      if (!answer?.tool_calls?.length || round === MAX_TOOL_ROUNDS) break;
+      messages.push(answer);
+      const permitted = new Set(tools.map((tool: any) => tool.function.name));
+      for (const call of answer.tool_calls) {
+        let out: any;
+        try {
+          if (call.type !== "function" || !permitted.has(call.function.name)) throw new Error("Unknown tool");
+          toolsUsed.push(call.function.name);
+          out = await runTool(call.function.name, JSON.parse(call.function.arguments || "{}"), ctx);
+        } catch (err) { out = { erro: "Não foi possível consultar agora." }; }
+        messages.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(out) });
+      }
+    }
+    return { text, handoff: text.includes(HANDOFF_MARKER), unknown: text.includes(UNKNOWN_MARKER), sources, tools: toolsUsed, collected, tokens };
   }
 
   const messages: any[] = recent.map(t => ({ role: t.role, content: t.content }));

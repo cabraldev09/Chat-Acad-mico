@@ -1,4 +1,5 @@
-import { Table, Column, DataType, CreatedAt, UpdatedAt, Model, PrimaryKey, AutoIncrement, AllowNull, Default } from "sequelize-typescript";
+import Model from "./BaseModel";
+import { Table, Column, DataType, CreatedAt, UpdatedAt, PrimaryKey, AutoIncrement, AllowNull, Default } from "sequelize-typescript";
 
 // A commercial matrix ("grade"): what the commercial team tells a candidate about a course, and the PDF to send.
 @Table({ tableName: "CommercialGrades" })

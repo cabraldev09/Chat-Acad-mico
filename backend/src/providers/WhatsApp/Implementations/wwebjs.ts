@@ -1,3 +1,4 @@
+import { syncChatRead } from "../../../services/MessageServices/SyncReadState";
 import qrCode from "qrcode-terminal";
 import {
   Client,
@@ -481,10 +482,15 @@ const syncUnreadMessages = async (wbot: Session, whatsappId: number) => {
       ],
       order: [["createdAt", "DESC"]]
     });
+    const observedAt = new Date();
+    const allChats = await wbot.getChats();
+    for (const chat of allChats) {
+      if (chat.unreadCount === 0) await syncChatRead(whatsappId, chat.id._serialized, observedAt);
+    }
     if (!last) return;
     const sinceSeconds = Math.floor(last.createdAt.getTime() / 1000) - 5;
 
-    const chats = (await wbot.getChats())
+    const chats = allChats
       .filter(chat => (chat.timestamp || 0) >= sinceSeconds && !chat.id._serialized.includes("@broadcast"))
       .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0))
       .slice(-300);
@@ -1264,28 +1270,16 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
       }
     });
 
-    // the chat was read on the phone (or on another device): the unread badge here follows
     // a group changed (someone joined, left, a community was linked): look at the communities again
     ["group_join", "group_leave", "group_update", "group_admin_changed"].forEach(evt => wbot.on(evt as any, () => scheduleCommunitySync(wbot, whatsapp.id, 8000)));
 
+    // The event uses either a phone id, group id or LID depending on the account.
     wbot.on("unread_count", async (chat: any) => {
+      const observedAt = new Date();
       try {
-        if (!chat || Number(chat.unreadCount) > 0) return;
-        const number = String(chat.id?.user || "");
-        if (!number) return;
-        const contact = await Contact.findOne({ where: { number } });
-        if (!contact) return;
-        const tickets = await Ticket.findAll({ where: { contactId: contact.id, whatsappId: whatsapp.id, unreadMessages: { [Op.gt]: 0 } } });
-        for (const t of tickets) {
-          // eslint-disable-next-line no-await-in-loop
-          await t.update({ unreadMessages: 0 }, { silent: true } as any);
-          // eslint-disable-next-line no-await-in-loop
-          await Message.update({ read: true }, { where: { ticketId: t.id, fromMe: false, read: false } });
-          getIO().to(t.status).to(String(t.id)).to("notification").emit("ticket", { action: "update", ticket: t });
-        }
-      } catch (err) {
-        logger.warn(`unread_count sync failed: ${err.message}`);
-      }
+        if (Number(chat?.unreadCount) !== 0) return;
+        await syncChatRead(whatsapp.id, chat.id?._serialized || chat.id?.user || "", observedAt);
+      } catch (err) { logger.warn(`unread_count sync failed: ${err.message}`); }
     });
 
     wbot.on("message_ack", async (msg, ack) => {
@@ -1324,6 +1318,10 @@ export const WhatsappWebJsProvider: WhatsappProvider = {
   sendPoll,
   getGroupInfo,
   getMessageAck,
+  getChatUnreadCount: async (sessionId, chatId) => {
+    const chat = await getWbot(sessionId).getChatById(chatId);
+    return Number.isFinite(chat.unreadCount) ? chat.unreadCount : null;
+  },
   downloadMessageMedia,
   sendReaction,
   fetchChatMessages

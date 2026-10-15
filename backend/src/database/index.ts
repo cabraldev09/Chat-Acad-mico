@@ -1,3 +1,5 @@
+import WebhookDelivery from "../models/WebhookDelivery";
+import { transactionContext } from "../helpers/TransactionContext";
 import { Sequelize } from "sequelize-typescript";
 import User from "../models/User";
 import Setting from "../models/Setting";
@@ -65,9 +67,11 @@ import AffiliateBonus from "../models/AffiliateBonus";
 const dbConfig = require("../config/database");
 // import dbConfig from "../config/database";
 
+Sequelize.useCLS(transactionContext as any);
 const sequelize = new Sequelize(dbConfig);
 
 const models = [
+  WebhookDelivery,
   User,
   Contact,
   Ticket,

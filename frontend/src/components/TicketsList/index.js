@@ -254,10 +254,7 @@ const reducer = (state, action) => {
 
 		socket.on("ticket", data => {
 			if (data.action === "updateUnread") {
-				dispatch({
-					type: "RESET_UNREAD",
-					payload: data.ticketId,
-				});
+                dispatch({ type: withUnreadMessages === "true" ? "DELETE_TICKET" : "RESET_UNREAD", payload: data.ticketId });
 			}
 
 			if (data.action === "update" && shouldUpdateTicket(data.ticket)) {

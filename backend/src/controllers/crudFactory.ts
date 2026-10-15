@@ -11,6 +11,7 @@ interface CrudOptions {
   order?: any[];
   fields: string[];
   where?: (req: Request) => any;
+  authorize?: (req: Request, row: any) => Promise<void>;
   beforeSave?: (data: any, req: Request, existing?: any) => Promise<any> | any;
   afterSave?: (row: any, req: Request, created: boolean) => Promise<void> | void;
   afterDelete?: (row: any) => Promise<void> | void;
@@ -25,9 +26,10 @@ const pick = (body: any, fields: string[]) => {
 };
 
 const makeCrud = (Model: ModelCtor<any>, opts: CrudOptions) => {
-  const load = async (id: string) => {
+  const load = async (id: string, req?: Request) => {
     const row = await Model.findByPk(id, { include: opts.include });
     if (!row) throw new AppError("ERR_NOT_FOUND", 404);
+    if (req && opts.authorize) await opts.authorize(req, row);
     return row;
   };
 
@@ -46,7 +48,7 @@ const makeCrud = (Model: ModelCtor<any>, opts: CrudOptions) => {
     },
 
     show: async (req: Request, res: Response): Promise<Response> =>
-      res.json(await load(req.params.id)),
+      res.json(await load(req.params.id, req)),
 
     store: async (req: Request, res: Response): Promise<Response> => {
       let data = pick(req.body, opts.fields);
@@ -64,21 +66,21 @@ const makeCrud = (Model: ModelCtor<any>, opts: CrudOptions) => {
     },
 
     update: async (req: Request, res: Response): Promise<Response> => {
-      const row = await load(req.params.id);
+      const row = await load(req.params.id, req);
       let data = pick(req.body, opts.fields);
       if (opts.beforeSave) data = await opts.beforeSave(data, req, row);
       await row.update(data);
-      const fresh = await load(req.params.id);
+      const fresh = await load(req.params.id, req);
       if (opts.afterSave) await opts.afterSave(fresh, req, false);
       emit("update", { row: fresh });
       return res.json(fresh);
     },
 
     remove: async (req: Request, res: Response): Promise<Response> => {
-      const row = await load(req.params.id);
+      const row = await load(req.params.id, req);
       await row.destroy();
       if (opts.afterDelete) await opts.afterDelete(row);
-      emit("delete", { id: Number(req.params.id) });
+      emit("delete", { id: Number(req.params.id), ...(opts.event === "schedule" ? { row } : {}) });
       return res.json({ message: "deleted" });
     }
   };

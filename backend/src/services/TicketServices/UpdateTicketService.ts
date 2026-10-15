@@ -168,7 +168,7 @@ const UpdateTicketService = async ({
       ticket
     });
 
-  dispatchWebhook(
+  await dispatchWebhook(
     ticket.status === "closed" && oldStatus !== "closed"
       ? "ticket.closed"
       : "ticket.updated",

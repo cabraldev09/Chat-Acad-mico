@@ -58,13 +58,13 @@ const startRenewal = () => {
 function connectToSocket() {
   startRenewal();
   const socket = openSocket(getBackendUrl(), {
-    transports: ["websocket", "polling", "flashsocket"],
-    query: { token: currentToken() },
+    transports: ["websocket", "polling"],
+    auth: { token: currentToken() },
   });
 
   // every new attempt carries the latest token
   socket.io.on("reconnect_attempt", () => {
-    socket.io.opts.query = { token: currentToken() };
+    socket.auth = { token: currentToken() };
   });
 
   // the connection came back after a gap (server update, network): lists read what they missed
@@ -74,20 +74,23 @@ function connectToSocket() {
     wasConnected = true;
   });
 
-  // the server refused the token: renew it and connect again. A refused socket does not retry by itself, and a plain
-  // connect() would reuse the old handshake: the connection is closed so the new attempt carries the new token.
-  // Few tries per minute: a login that cannot be renewed must not turn into a loop of connections.
-  const authErrors = [];
-  socket.on("authError", async () => {
+  // the server refused the token: renew it and connect again (a refused socket does not retry by itself)
+  // at most a few tries per minute: a login that cannot be renewed must not turn into a loop of connections
+  const tries = [];
+  const reauthenticate = async () => {
     const now = Date.now();
-    while (authErrors.length && now - authErrors[0] > 60000) authErrors.shift();
-    authErrors.push(now);
-    if (authErrors.length > 3) return;
+    while (tries.length && now - tries[0] > 60000) tries.shift();
+    tries.push(now);
+    if (tries.length > 4) return;
     const token = await renewToken(true);
     if (!token) return;
-    socket.io.opts.query = { token };
-    try { socket.io.engine.close(); } catch (e) { /* already closed */ }
-    setTimeout(() => socket.connect(), 100);
+    socket.auth = { token };
+    // authError arrives immediately before the server closes the connection.
+    setTimeout(() => socket.connect(), 50);
+  };
+  socket.on("authError", reauthenticate);
+  socket.on("connect_error", (error) => {
+    if (error.message === "ERR_SESSION_EXPIRED") reauthenticate();
   });
 
   return socket;

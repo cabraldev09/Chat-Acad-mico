@@ -1,4 +1,6 @@
-import { Table, Column, CreatedAt, UpdatedAt, Model, PrimaryKey, AutoIncrement, AllowNull, Default } from "sequelize-typescript";
+import Model from "./BaseModel";
+import { Table, Column, CreatedAt, UpdatedAt, PrimaryKey, AutoIncrement, AllowNull, Default
+} from "sequelize-typescript";
 
 @Table({ tableName: "AiUsage" })
 class AiUsage extends Model<AiUsage> {

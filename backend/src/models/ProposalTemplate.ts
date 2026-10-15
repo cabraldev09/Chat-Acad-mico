@@ -1,10 +1,10 @@
+import Model from "./BaseModel";
 import {
   Table,
   Column,
   DataType,
   CreatedAt,
   UpdatedAt,
-  Model,
   PrimaryKey,
   AutoIncrement,
   Default,

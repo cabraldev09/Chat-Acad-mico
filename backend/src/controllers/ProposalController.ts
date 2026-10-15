@@ -1,3 +1,4 @@
+import { assertLead } from "../middleware/scope";
 import { Request, Response } from "express";
 import { PUBLIC_DIR } from "../config/paths";
 import fs from "fs";
@@ -221,6 +222,7 @@ const present = (p: Proposal) => ({ ...p.toJSON(), params: JSON.parse(p.params),
 // ---------------------------------------------------------------------------
 
 export const defaults = async (req: Request, res: Response): Promise<Response> => {
+  await assertLead(req, String(req.query.leadId));
   const lead = await Lead.findByPk(String(req.query.leadId));
   if (!lead) throw new AppError("ERR_LEAD_NOT_FOUND", 404);
   const { params, snapshot, tpl, course } = await buildDefaults(
@@ -233,6 +235,7 @@ export const defaults = async (req: Request, res: Response): Promise<Response> =
 
 export const preview = async (req: Request, res: Response): Promise<Response> => {
   const { leadId, courseId, templateId, params: raw, snapshot: snapRaw } = req.body;
+  await assertLead(req, leadId);
   const lead = await Lead.findByPk(leadId);
   if (!lead) throw new AppError("ERR_LEAD_NOT_FOUND", 404);
   const d = await buildDefaults(lead, courseId, templateId);
@@ -247,6 +250,7 @@ export const preview = async (req: Request, res: Response): Promise<Response> =>
 
 const save = async (req: Request, existing?: Proposal) => {
   const { leadId, courseId, templateId, params: raw, snapshot: snapRaw } = req.body;
+  await assertLead(req, existing ? existing.leadId : leadId);
   const lead = await Lead.findByPk(existing ? existing.leadId : leadId);
   if (!lead) throw new AppError("ERR_LEAD_NOT_FOUND", 404);
   const d = await buildDefaults(lead, existing ? existing.courseId : courseId, existing ? existing.templateId : templateId);
@@ -397,7 +401,7 @@ export const send = async (req: Request, res: Response): Promise<Response> => {
   if (target && current && current.type === "open" && current.position < target.position) {
     await changeStage(lead.id, target.id, uid(req));
   }
-  dispatchWebhook("proposal.sent", { proposalId: p.id, leadId: lead.id, course: p.courseName, firstMonthly: Number(p.firstMonthly), link: link(p) });
+  await dispatchWebhook("proposal.sent", { proposalId: p.id, leadId: lead.id, course: p.courseName, firstMonthly: Number(p.firstMonthly), link: link(p) });
   getIO().emit("lead", { action: "update", lead: await loadLead(lead.id) });
   return res.json(present(p));
 };
@@ -409,7 +413,7 @@ export const publicView = async (req: Request, res: Response): Promise<Response>
   if (!p.viewedAt) {
     await p.update({ viewedAt: new Date() });
     await addActivity(p.leadId, null, "system", `O candidato abriu a proposta #${p.id}`);
-    dispatchWebhook("proposal.viewed", { proposalId: p.id, leadId: p.leadId });
+    await dispatchWebhook("proposal.viewed", { proposalId: p.id, leadId: p.leadId });
     getIO().emit("lead", { action: "update", lead: await loadLead(p.leadId) });
   }
   const { html } = await rebuild(p);

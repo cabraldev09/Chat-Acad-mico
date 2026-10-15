@@ -1,40 +1,32 @@
-FROM node:22-bookworm as build-deps
+# Use the same supported image and startup checks as Railway and VPS.
+# Build from the repository root: docker build -f backend/Dockerfile .
+# Backend (API + WhatsApp sessions + workers) for Railway/Docker.
+# The frontend is deployed separately (Vercel, root directory "frontend").
+FROM node:22-bookworm-slim
 
-RUN apt-get update && apt-get install -y wget ffmpeg
-
-ENV DOCKERIZE_VERSION v0.6.1
-RUN wget https://github.com/jwilder/dockerize/releases/download/$DOCKERIZE_VERSION/dockerize-linux-amd64-$DOCKERIZE_VERSION.tar.gz \
-    && tar -C /usr/local/bin -xzvf dockerize-linux-amd64-$DOCKERIZE_VERSION.tar.gz \
-    && rm dockerize-linux-amd64-$DOCKERIZE_VERSION.tar.gz
-
-RUN apt-get update \
-    && apt-get install -y wget gnupg \
-    && wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - \
-    && sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list' \
-    && apt-get update \
-    && apt-get install -y google-chrome-stable fonts-ipafont-gothic fonts-wqy-zenhei fonts-thai-tlwg fonts-kacst fonts-freefont-ttf libxss1 \
-      --no-install-recommends \
+# git: whatsapp-web.js is installed from GitHub; chromium: WhatsApp Web + PDF
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      git ca-certificates chromium ffmpeg fonts-liberation fonts-noto-color-emoji dumb-init \
     && rm -rf /var/lib/apt/lists/*
 
-ADD https://github.com/Yelp/dumb-init/releases/download/v1.2.1/dumb-init_1.2.1_amd64 /usr/local/bin/dumb-init
-RUN chmod +x /usr/local/bin/dumb-init
+ENV CHROME_BIN=/usr/bin/chromium \
+    PUPPETEER_SKIP_DOWNLOAD=true \
+    PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
+    NODE_ENV=production \
+    NODE_OPTIONS=--max-old-space-size=384 \
+    WHATSAPP_PROVIDER=wwebjs \
+    CHROME_ARGS="--no-sandbox --disable-setuid-sandbox --disable-dev-shm-usage --disable-gpu --no-zygote"
 
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD true
+WORKDIR /app/backend
+COPY backend/package*.json backend/.npmrc ./
+RUN npm ci --include=dev --no-audit --no-fund
 
-WORKDIR /usr/src/app
-COPY package*.json .npmrc ./
-RUN npm install
+COPY backend/ ./
+# the small heap above is for running the API next to Chromium; compiling needs more
+RUN NODE_OPTIONS=--max-old-space-size=3072 npm run build && mkdir -p /data
 
-COPY . .
-RUN npm run build
-
-ENV NODE_ENV=production
-ENV PORT=3000
-ENV CHROME_BIN=google-chrome-stable
-
-EXPOSE 3000
-
+# Mount the Railway volume at /data and set:
+#   UPLOAD_DIR=/data/public  WWEBJS_AUTH_PATH=/data/wwebjs  ZAPO_AUTH_PATH=/data/zapo/state.sqlite
+EXPOSE 8080
 ENTRYPOINT ["dumb-init", "--"]
-CMD dockerize -wait tcp://${DB_HOST}:3306 \
-  && npx sequelize db:migrate \
-  && node dist/server.js
+CMD ["sh", "-c", "mkdir -p \"${UPLOAD_DIR:-public}\" && node scripts/db-preflight.js && npx sequelize db:migrate && node scripts/bootstrap-production.js && node dist/server.js"]

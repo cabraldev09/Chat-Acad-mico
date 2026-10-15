@@ -27,7 +27,10 @@ const app = express();
 
 app.disable("x-powered-by");
 // behind a reverse proxy/tunnel the real client IP comes in X-Forwarded-For
-if (process.env.TRUST_PROXY) app.set("trust proxy", process.env.TRUST_PROXY);
+if (process.env.TRUST_PROXY) {
+  const value = process.env.TRUST_PROXY;
+  app.set("trust proxy", /^\d+$/.test(value) ? Number(value) : value === "true" ? true : value === "false" ? false : value);
+}
 app.use(securityHeaders);
 
 // Railway/Docker health check: answers only when the database does too
@@ -86,7 +89,7 @@ app.use(
 );
 app.use(cookieParser());
 app.use(express.json());
-app.use(Sentry.Handlers.requestHandler());
+
 app.use(
   "/public",
   express.static(uploadConfig.directory, {
@@ -104,7 +107,7 @@ app.use(
 );
 app.use(routes);
 
-app.use(Sentry.Handlers.errorHandler());
+
 
 app.use(async (err: Error, req: Request, res: Response, _: NextFunction) => {
   if (err instanceof AppError) {
@@ -121,6 +124,7 @@ app.use(async (err: Error, req: Request, res: Response, _: NextFunction) => {
   }
 
   // one line that names the request, so a 500 on the screen can be found in the log
+  Sentry.captureException(err);
   logger.error({ request: `${req.method} ${req.originalUrl}`, message: err.message, err });
   return res.status(500).json({ error: "Internal server error" });
 });

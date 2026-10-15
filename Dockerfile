@@ -17,7 +17,7 @@ ENV CHROME_BIN=/usr/bin/chromium \
 
 WORKDIR /app/backend
 COPY backend/package*.json backend/.npmrc ./
-RUN npm install --include=dev --no-audit --no-fund
+RUN npm ci --include=dev --no-audit --no-fund
 
 COPY backend/ ./
 # the small heap above is for running the API next to Chromium; compiling needs more

@@ -6,6 +6,7 @@ import { SerializeUser } from "../../helpers/SerializeUser";
 import User from "../../models/User";
 import ShowUserService from "./ShowUserService";
 import { COORD_AREAS, ROLES } from "../../helpers/Roles";
+import { disconnectUser } from "../../libs/socket";
 
 interface UserData {
   email?: string;
@@ -73,6 +74,7 @@ const UpdateUserService = async ({
   }
 
   await user.update({
+    tokenVersion: user.tokenVersion + 1,
     email,
     password,
     profile: finalRole ? (finalRole === "admin" ? "admin" : "user") : profile,
@@ -87,6 +89,7 @@ const UpdateUserService = async ({
   await user.$set("queues", queueIds);
 
   await user.reload();
+  disconnectUser(user.id);
 
   return SerializeUser(user);
 };

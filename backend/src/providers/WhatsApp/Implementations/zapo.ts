@@ -1,3 +1,4 @@
+import { syncChatRead } from "../../../services/MessageServices/SyncReadState";
 import { mkdirSync, readFileSync } from "fs";
 import path from "path";
 
@@ -551,10 +552,18 @@ const ackByReceiptStatus: Record<string, MessageAck> = {
 };
 
 const dispatchReceipt = async (
-  event: WaIncomingReceiptEvent
+  event: WaIncomingReceiptEvent, sessionId: number
 ): Promise<void> => {
   const ack = ackByReceiptStatus[event.status];
-  if (ack === undefined || event.fromSelfDevice) return;
+  if (ack === undefined) return;
+  if (event.fromSelfDevice) {
+    if (ack >= 3) {
+      const messages = await import("../../../models/Message");
+      const row = await messages.default.findOne({ where: { id: event.messageIds, fromMe: false }, include: [{ model: (await import("../../../models/Ticket")).default, as: "ticket", where: { whatsappId: sessionId }, include: ["contact"] }], order: [["createdAt", "DESC"]] });
+      if (row?.ticket) await syncChatRead(sessionId, String(row.ticket.contact.number || row.ticket.contact.lid), row.createdAt);
+    }
+    return;
+  }
 
   await Promise.all(
     event.messageIds.map(async messageId => {
@@ -821,7 +830,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
   });
 
   client.on("receipt", event => {
-    dispatchReceipt(event).catch(err => {
+    dispatchReceipt(event, sessionId).catch(err => {
       logger.error({ info: "Error handling receipt", err, sessionId });
     });
   });

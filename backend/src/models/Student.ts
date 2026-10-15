@@ -1,4 +1,5 @@
-import { Table, Column, DataType, CreatedAt, UpdatedAt, Model, PrimaryKey, AutoIncrement, AllowNull, Default, HasMany } from "sequelize-typescript";
+import Model from "./BaseModel";
+import { Table, Column, DataType, CreatedAt, UpdatedAt, PrimaryKey, AutoIncrement, AllowNull, Default, HasMany } from "sequelize-typescript";
 
 import AcademicAnalysis from "./AcademicAnalysis";
 import StudentToken from "./StudentToken";

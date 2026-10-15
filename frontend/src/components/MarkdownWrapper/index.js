@@ -1,3 +1,5 @@
+import PhoneActions from "../PhoneActions";
+import { linkPhoneNumbers } from "../../utils/phoneNumbers";
 import React from "react";
 import Markdown from "markdown-to-jsx";
 
@@ -143,7 +145,7 @@ const elements = [
 
 const allowedElements = ["a", "b", "strong", "em", "u", "code", "del"];
 
-const CustomLink = ({ children, ...props }) => (
+const CustomLink = ({ children, ...props }) => /^tel:/.test(props.href || "") ? <PhoneActions href={props.href}>{children}</PhoneActions> : (
 	<a {...props} target="_blank" rel="noopener noreferrer">
 		{children}
 	</a>
@@ -187,7 +189,7 @@ const MarkdownWrapper = ({ children }) => {
 
 	if (!children) return null;
 	
-	return <Markdown options={options}>{children}</Markdown>;
+	return <Markdown options={options}>{linkPhoneNumbers(children)}</Markdown>;
 };
 
 export default MarkdownWrapper;

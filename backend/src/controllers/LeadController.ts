@@ -186,7 +186,7 @@ export const update = async (req: Request, res: Response): Promise<Response> => 
   await rescore(lead);
   const fresh = (await loadLead(lead.id)) as Lead;
   getIO().emit("lead", { action: "update", lead: fresh });
-  dispatchWebhook("lead.updated", { id: fresh.id, name: fresh.name, stage: fresh.stage?.name });
+  await dispatchWebhook("lead.updated", { id: fresh.id, name: fresh.name, stage: fresh.stage?.name });
   return res.json(fresh);
 };
 

@@ -1,6 +1,7 @@
 import User from "../../models/User";
 import AppError from "../../errors/AppError";
 import Ticket from "../../models/Ticket";
+import { disconnectUser } from "../../libs/socket";
 import UpdateDeletedUserOpenTicketsStatus from "../../helpers/UpdateDeletedUserOpenTicketsStatus";
 
 const DeleteUserService = async (id: string | number): Promise<void> => {
@@ -21,6 +22,7 @@ const DeleteUserService = async (id: string | number): Promise<void> => {
   }
 
   await user.destroy();
+  disconnectUser(user.id);
 };
 
 export default DeleteUserService;

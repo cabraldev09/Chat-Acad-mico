@@ -113,7 +113,7 @@ const CreateOrUpdateContactService = async ({
     profilePicUrl,
     email,
     isGroup,
-    extraInfo,
+    extraInfo: extraInfo as any,
     ...communityFields
   });
 

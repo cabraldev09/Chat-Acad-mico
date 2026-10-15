@@ -1,45 +1,11 @@
-import { verify } from "jsonwebtoken";
 import { Request, Response, NextFunction } from "express";
-
 import AppError from "../errors/AppError";
-import authConfig from "../config/auth";
-import { roleOf } from "../helpers/Roles";
+import { sessionUser } from "../helpers/SessionUser";
 
-interface TokenPayload {
-  id: string;
-  username: string;
-  profile: string;
-  role?: string;
-  iat: number;
-  exp: number;
-}
-
-const isAuth = (req: Request, res: Response, next: NextFunction): void => {
-  const authHeader = req.headers.authorization;
-
-  if (!authHeader) {
-    throw new AppError("ERR_SESSION_EXPIRED", 401);
-  }
-
-  const [, token] = authHeader.split(" ");
-
-  try {
-    const decoded = verify(token, authConfig.secret);
-    const { id, profile, role } = decoded as TokenPayload;
-
-    req.user = {
-      id,
-      profile,
-      role: roleOf({ role, profile })
-    };
-  } catch (err) {
-    throw new AppError(
-      "Invalid token. We'll try to assign a new one on next request",
-      403
-    );
-  }
-
-  return next();
+const isAuth = async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
+  const match = /^Bearer\s+(\S+)$/i.exec(req.headers.authorization || "");
+  if (!match) throw new AppError("ERR_SESSION_EXPIRED", 401);
+  req.user = await sessionUser(match[1]);
+  next();
 };
-
 export default isAuth;

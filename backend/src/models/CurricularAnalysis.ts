@@ -1,4 +1,5 @@
-import { Table, Column, DataType, CreatedAt, UpdatedAt, Model, PrimaryKey, AutoIncrement, AllowNull, Default } from "sequelize-typescript";
+import Model from "./BaseModel";
+import { Table, Column, DataType, CreatedAt, UpdatedAt, PrimaryKey, AutoIncrement, AllowNull, Default } from "sequelize-typescript";
 
 // Analysis of a candidate's curricular document: from the PDF to the forecast of the entry (semester by semester).
 // Subjects, claims and the computed result are JSON kept as text; the result is recomputed whenever the entry period

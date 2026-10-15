@@ -29,7 +29,7 @@ const LocationPreview = ({ image, link, description }) => {
 					{ description && (
 					<div style={{ display: "flex", flexWrap: "wrap" }}>
 						<Typography style={{ marginTop: "12px", marginLeft: "15px", marginRight: "15px", float: "left" }} variant="subtitle1" color="primary" gutterBottom>
-							<div dangerouslySetInnerHTML={{ __html: description.replace('\\n', '<br />') }}></div>
+							<div style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{String(description).replace(/\\n/g, "\n")}</div>
 						</Typography>
 					</div>
 					)}

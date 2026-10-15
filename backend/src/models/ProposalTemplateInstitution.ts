@@ -1,4 +1,6 @@
-import { Table, Column, CreatedAt, UpdatedAt, Model, PrimaryKey, AutoIncrement, ForeignKey } from "sequelize-typescript";
+import Model from "./BaseModel";
+import { Table, Column, CreatedAt, UpdatedAt, PrimaryKey, AutoIncrement, ForeignKey
+} from "sequelize-typescript";
 import ProposalTemplate from "./ProposalTemplate";
 import Institution from "./Institution";
 
