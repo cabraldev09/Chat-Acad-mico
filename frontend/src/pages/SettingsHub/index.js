@@ -237,7 +237,9 @@ const Cadastros = ({ admin }) => {
   const classes = useStyles();
   const { whatsApps } = useContext(WhatsAppsContext);
   const [counts, setCounts] = useState({});
+  const [health, setHealth] = useState([]);
   useEffect(() => {
+    api.get("/whatsapp-health").then(({ data }) => setHealth(data)).catch(() => undefined);
     const count = (key, url, pick) => api.get(url).then(({ data }) => setCounts((c) => ({ ...c, [key]: pick(data) }))).catch(() => undefined);
     const len = (d) => (Array.isArray(d) ? d.length : (d.rows || d.polos || d.users || d.queues || d.tags || d.quickAnswers || []).length);
     count("users", "/users", (d) => (d.count !== undefined ? d.count : len(d)));
@@ -257,11 +259,16 @@ const Cadastros = ({ admin }) => {
         {list.length === 0 && <div className={classes.hint}>Nenhuma conexão cadastrada.</div>}
         {list.map((w) => {
           const [label, color] = STATUS[w.status] || [w.status || "—", "#7b8a9d"];
+          const h = health.find((x) => x.id === w.id);
+          const mins = w.statusSince ? Math.max(0, Math.floor((Date.now() - new Date(w.statusSince).getTime()) / 60000)) : null;
           return (
             <div key={w.id} className={classes.conn}>
               <span className={classes.dot} style={{ background: color }} />
-              <span style={{ flex: 1, minWidth: 0, fontWeight: 600, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{w.name}</span>
-              <span className={classes.hint}>{label}</span>
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ display: "block", fontWeight: 600, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{w.name}</span>
+                {h && <span className={classes.hint}>Hoje: {h.receivedToday} recebidas · {h.sentToday} enviadas{h.lastMessageAt ? ` · última mensagem ${new Date(h.lastMessageAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}` : ""}{h.ownerName ? ` · de ${h.ownerName}` : ""}</span>}
+              </span>
+              <span className={classes.hint} style={{ textAlign: "right" }}>{label}{w.status !== "CONNECTED" && mins !== null ? ` há ${mins < 60 ? `${mins} min` : `${Math.floor(mins / 60)} h`}` : ""}</span>
             </div>
           );
         })}

@@ -13,7 +13,9 @@ import {
   Unique,
   BelongsToMany,
   ForeignKey,
-  BelongsTo
+  BelongsTo,
+  BeforeUpdate,
+  BeforeCreate
 } from "sequelize-typescript";
 import Queue from "./Queue";
 import User from "./User";
@@ -41,6 +43,20 @@ class Whatsapp extends Model<Whatsapp> {
 
   @Column
   status: string;
+
+  // since when the connection is in this state (set by the hook below)
+  @Column(DataType.DATE)
+  statusSince: Date;
+
+  @BeforeCreate
+  static startState(instance: Whatsapp): void {
+    instance.statusSince = new Date();
+  }
+
+  @BeforeUpdate
+  static trackState(instance: Whatsapp): void {
+    if (instance.changed("status")) instance.statusSince = new Date();
+  }
 
   @Column
   battery: string;

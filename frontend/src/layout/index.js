@@ -21,6 +21,7 @@ import SidebarUserMenu from "../components/SidebarUserMenu";
 import { AuthContext } from "../context/Auth/AuthContext";
 import BackdropLoading from "../components/BackdropLoading";
 import CrmReminders from "../components/CrmReminders";
+import ConnectionAlert from "../components/ConnectionAlert";
 import { i18n } from "../translate/i18n";
 import { useThemeContext } from "../context/DarkMode";
 import BrandLogo from "../components/BrandLogo";
@@ -203,6 +204,7 @@ const LoggedInLayout = ({ children }) => {
       <main className={classes.content}>
         <div key={location.pathname.split("/")[1]} className="page-enter">
           <div className={classes.appBarSpacer} />
+          <ConnectionAlert />
           {children ? children : null}
         </div>
       </main>

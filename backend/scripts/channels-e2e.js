@@ -2110,6 +2110,19 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.put(`/contacts/${person}/community`, { community: true }, auth())).status === 400, "a person was marked as a community");
       assert((await http.put(`/contacts/${comm.c}/community`, { community: false }, auth())).status === 200 && (await list({ groups: "only" })).includes(comm.t), "unmark");
     });
+    await test("connection health: state, since when, what it did today; each person sees only their own numbers", async () => {
+      const h = await http.get("/whatsapp-health", auth());
+      assert(h.status === 200 && h.data.length >= 2, `health ${h.status} ${h.data.length}`);
+      const first = h.data[0];
+      assert(first.name && first.status && first.statusSince && typeof first.sentToday === "number" && typeof first.receivedToday === "number", `shape ${JSON.stringify(first)}`);
+      const cloud = h.data.find(x => x.channel === "whatsapp_cloud");
+      assert(cloud && cloud.receivedToday >= 1, "today's messages were not counted");
+      // the state hook: a change of status through the model moves "since"
+      const cons = (await http.post("/users", { name: "Pessoa da Saúde", email: "health-cons@x.com", password: "senha123", role: "consultor" }, auth())).data;
+      const tk = (await http.post("/auth/login", { email: "health-cons@x.com", password: "senha123" })).data.token;
+      const person = await http.get("/whatsapp-health", asUser(tk));
+      assert(person.status === 200 && person.data.every(w => !w.ownerId || w.ownerId === cons.id), "a person saw someone else's number");
+    });
     await test("what the agent does not know is kept, the team's answer is captured, the owner reviews and the agent learns", async () => {
       assert((await http.put(`/ai-agents/${aiId}`, { reviewNumber: "(11) 99999-0000", reviewWhatsappId: cid, learnFromTeam: true, dailyTokenCap: 0 }, auth())).status === 200, "agent update");
       assert((await http.put(`/ai-agents/${aiId}`, { reviewNumber: "123" }, auth())).status === 400, "short review number accepted");

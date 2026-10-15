@@ -8,6 +8,7 @@ import * as ImportController from "../controllers/ImportPhoneContactsController"
 const whatsappRoutes = express.Router();
 
 whatsappRoutes.get("/whatsapp/", isAuth, WhatsAppController.index);
+whatsappRoutes.get("/whatsapp-health", isAuth, WhatsAppController.health);
 
 // anyone may connect their own QR Code number (the controller limits what they can set)
 whatsappRoutes.post("/whatsapp/", isAuth, WhatsAppController.store);

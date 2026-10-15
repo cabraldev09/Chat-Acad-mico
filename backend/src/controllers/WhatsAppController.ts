@@ -14,6 +14,8 @@ import User from "../models/User";
 import Whatsapp from "../models/Whatsapp";
 import { getSetting } from "../helpers/AppSettings";
 import { isManagerRole, roleOf } from "../helpers/Roles";
+import { startOfTodayApp } from "../helpers/AppTime";
+import { QueryTypes } from "sequelize";
 
 const isAdminReq = (req: Request) => req.user.profile === "admin";
 const me = (req: Request) => Number(req.user.id);
@@ -43,6 +45,40 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
   const visible = isAdminReq(req) || isManagerRole(roleOf(req.user)) ? all : all.filter(w => !w.ownerId || w.ownerId === me(req));
 
   return res.status(200).json(visible.map(w => present(req, w)));
+};
+
+// The state of every connection the person may see, with what it did today: who is down, since when, the last message.
+export const health = async (req: Request, res: Response): Promise<Response> => {
+  const all = await ListWhatsAppsService();
+  const visible = isAdminReq(req) || isManagerRole(roleOf(req.user)) ? all : all.filter(w => !w.ownerId || w.ownerId === me(req));
+  const start = startOfTodayApp();
+  const [today, last] = await Promise.all([
+    Whatsapp.sequelize!.query(
+      `SELECT t."whatsappId" AS id, SUM(CASE WHEN m."fromMe" THEN 1 ELSE 0 END) AS sent, SUM(CASE WHEN m."fromMe" THEN 0 ELSE 1 END) AS received
+         FROM "Messages" m JOIN "Tickets" t ON t.id = m."ticketId" WHERE m."createdAt" >= :start GROUP BY t."whatsappId"`,
+      { replacements: { start }, type: QueryTypes.SELECT }
+    ) as unknown as Promise<any[]>,
+    Whatsapp.sequelize!.query(`SELECT "whatsappId" AS id, MAX("lastMessageAt") AS last FROM "Tickets" GROUP BY "whatsappId"`, { type: QueryTypes.SELECT }) as unknown as Promise<any[]>
+  ]);
+  const owners = await User.findAll({ where: { id: visible.map(w => w.ownerId).filter(Boolean) as number[] }, attributes: ["id", "name"] });
+  return res.json(
+    visible.map(w => {
+      const t = today.find(x => Number(x.id) === w.id);
+      const l = last.find(x => Number(x.id) === w.id);
+      return {
+        id: w.id,
+        name: w.name,
+        channel: w.channel || "whatsapp",
+        status: w.status,
+        statusSince: w.statusSince,
+        ownerId: w.ownerId,
+        ownerName: owners.find(o => o.id === w.ownerId)?.name || null,
+        sentToday: t ? Number(t.sent) : 0,
+        receivedToday: t ? Number(t.received) : 0,
+        lastMessageAt: l ? l.last : null
+      };
+    })
+  );
 };
 
 export const store = async (req: Request, res: Response): Promise<Response> => {
