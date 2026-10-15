@@ -21,6 +21,10 @@ import ContactListItem from "../models/ContactListItem";
 import Campaign from "../models/Campaign";
 import CampaignShipping from "../models/CampaignShipping";
 import ChatbotNode from "../models/ChatbotNode";
+import ChatFlow from "../models/ChatFlow";
+import ChatFlowRun from "../models/ChatFlowRun";
+import ChatFlowStat from "../models/ChatFlowStat";
+import AutomationTrigger from "../models/AutomationTrigger";
 import AiAgent from "../models/AiAgent";
 import LeadStage from "../models/LeadStage";
 import Course from "../models/Course";
@@ -79,6 +83,10 @@ const models = [
   Campaign,
   CampaignShipping,
   ChatbotNode,
+  ChatFlow,
+  ChatFlowRun,
+  ChatFlowStat,
+  AutomationTrigger,
   AiAgent,
   LeadStage,
   Course,

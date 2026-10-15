@@ -249,7 +249,8 @@ const perDayOf = (missing: number | null, daysLeft: number): number | null =>
 
 export const poloBoard = async (req: Request, res: Response): Promise<Response> => {
   const periods = await Goal.findAll({ where: { status: "active", kind: "polo" }, order: [["startsOn", "DESC"], ["id", "DESC"]], limit: 24 });
-  if (!periods.length) return res.json({ periods: [], goal: null, rows: [], totals: null });
+  // no semester yet: the same shape, empty, so the screen can show the way to create one
+  if (!periods.length) return res.json({ periods: [], goal: null, months: [], month: null, rows: [], totals: null, monthTotals: [], available: [] });
   const tz = getAppTz();
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(new Date());
   const wanted = Number(req.query.goalId) || 0;
@@ -447,10 +448,7 @@ const norm = (s: string): string =>
 // body: { items: [{ code, name, target, done, canceled }] } — a table pasted from the spreadsheet. A polo is found by its
 // code or name and created when it does not exist yet. "done" is the TOTAL the polo has in the period: what the CRM already
 // counted is discounted, so the same enrollment is never counted twice.
-export const importPoloGoals = async (req: Request, res: Response): Promise<Response> => {
-  const goal = await load(req.params.id);
-  const items: any[] = Array.isArray(req.body.items) ? req.body.items.slice(0, 300) : [];
-  const dryRun = Boolean(req.body.dryRun);
+export const applyPoloImport = async (goal: Goal, items: any[], dryRun: boolean) => {
   const months = monthsOf(goal.startsOn, goal.endsOn);
   const polos = await Polo.findAll();
   const startAt = dayBounds(goal.startsOn).start;
@@ -481,5 +479,11 @@ export const importPoloGoals = async (req: Request, res: Response): Promise<Resp
     }
     out.push({ line: i + 1, status, name: polo ? polo.name : name, code: code || polo?.code || null, target, done: int(it.done) || 0, canceled: int(it.canceled) || 0 });
   }
-  return res.json({ rows: out, created: out.filter(r => r.status === "new").length, updated: out.filter(r => r.status === "update").length, errors: out.filter(r => r.status === "error").length, dryRun });
+  return { rows: out, created: out.filter(r => r.status === "new").length, updated: out.filter(r => r.status === "update").length, errors: out.filter(r => r.status === "error").length, dryRun };
+};
+
+export const importPoloGoals = async (req: Request, res: Response): Promise<Response> => {
+  const goal = await load(req.params.id);
+  const items: any[] = Array.isArray(req.body.items) ? req.body.items.slice(0, 300) : [];
+  return res.json(await applyPoloImport(goal, items, Boolean(req.body.dryRun)));
 };

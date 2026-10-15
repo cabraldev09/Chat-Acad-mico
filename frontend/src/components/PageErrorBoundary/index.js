@@ -13,7 +13,12 @@ class PageErrorBoundary extends React.Component {
     return { failed: true };
   }
 
-  componentDidCatch(error) {
+  // a failed screen must not take the next ones down with it: moving to another address starts clean
+  componentDidUpdate(prev) {
+    if (this.state.failed && prev.resetKey !== this.props.resetKey) this.setState({ failed: false, code: "" });
+  }
+
+  componentDidCatch(error, info) {
     // eslint-disable-next-line no-console
     console.error("Screen failed to render:", error);
     // short code the user can read out; the same code is written to the server log with the message and the route
@@ -24,7 +29,8 @@ class PageErrorBoundary extends React.Component {
         code,
         route: window.location.pathname + window.location.hash,
         message: error && error.message,
-        stack: error && error.stack
+        stack: error && error.stack,
+        components: info && info.componentStack
       }).catch(() => {});
     } catch (e) { /* reporting must never break the fallback screen */ }
   }

@@ -1,5 +1,5 @@
 import React, { Suspense, useEffect } from "react";
-import { BrowserRouter, Redirect, Switch } from "react-router-dom";
+import { BrowserRouter, Redirect, Switch, useLocation } from "react-router-dom";
 import { ToastContainer } from "react-toastify";
 
 import LoggedInLayout from "../layout";
@@ -49,6 +49,12 @@ const AffiliatePortalPage = (props) => (
   </PageErrorBoundary>
 );
 
+// every address gets its own boundary state: an error on one screen never shows on the next
+const Guarded = ({ children }) => {
+  const { pathname } = useLocation();
+  return <PageErrorBoundary resetKey={pathname}>{children}</PageErrorBoundary>;
+};
+
 // the two pages everyone opens next are fetched in the background right after the first paint
 const warmUp = () => {
   const go = () => { import("../pages/Tickets/"); import("../pages/Reports/"); };
@@ -68,7 +74,7 @@ const Routes = () => {
             <Route exact path="/afiliado/:token" component={AffiliatePortalPage} publicPage />
             <WhatsAppsProvider>
               <LoggedInLayout>
-                <PageErrorBoundary>
+                <Guarded>
                 <Suspense fallback={<BackdropLoading />}>
                 {/* the conversations are the home of the system */}
                 <Route exact path="/" component={() => <Redirect to="/tickets" />} isPrivate />
@@ -100,7 +106,7 @@ const Routes = () => {
                 <Route exact path="/afiliados" component={Affiliates} isPrivate />
                 <Route exact path="/crm/config" component={CrmSettings} isPrivate managerOnly />
                 </Suspense>
-                </PageErrorBoundary>
+                </Guarded>
               </LoggedInLayout>
             </WhatsAppsProvider>
           </Switch>

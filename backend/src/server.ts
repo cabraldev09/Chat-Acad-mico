@@ -35,6 +35,8 @@ whenLeader(() => {
   startPaymentPoller();
   startOnboardingSla();
   startChatbotReminder();
+  // the polos and goals of the spreadsheet are loaded once, so the goals screen is never empty
+  import("./services/GoalServices/SeedPoloGoals").then(({ seedPoloGoals }) => seedPoloGoals()).catch(() => undefined);
   // every contact already in the system becomes a lead too (idempotent)
   import("./services/CrmServices/LeadCore")
     .then(({ backfillLeads }) => backfillLeads())

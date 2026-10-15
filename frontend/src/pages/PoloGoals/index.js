@@ -239,7 +239,7 @@ const PoloDialog = ({ open, onClose, row, data, onSaved }) => {
   const classes = useStyles();
   const [f, setF] = useState(null);
   const [saving, setSaving] = useState(false);
-  const months = data ? data.months : [];
+  const months = (data && data.months) || [];
   useEffect(() => {
     if (!open || !row) return;
     setF({ target: row.target, manual: row.manual, canceled: row.canceled, monthly: [...row.monthly], adjust: months.map((m) => row.manualMonthly[m] || 0) });
@@ -305,11 +305,11 @@ const EditDialog = ({ open, onClose, data, onSaved }) => {
   const [add, setAdd] = useState("");
   useEffect(() => {
     if (!open || !data) return;
-    setRows(data.rows.map((r) => ({ poloId: r.poloId, name: r.name, code: r.code, target: r.target, manual: r.manual, canceled: r.canceled, auto: r.auto, monthly: r.monthly, manualMonthly: r.manualMonthly, oldTarget: r.target })));
+    setRows((data.rows || []).map((r) => ({ poloId: r.poloId, name: r.name, code: r.code, target: r.target, manual: r.manual, canceled: r.canceled, auto: r.auto, monthly: r.monthly, manualMonthly: r.manualMonthly, oldTarget: r.target })));
     setAdd("");
   }, [open, data]);
   const set = (i, patch) => setRows((rs) => rs.map((r, k) => (k === i ? { ...r, ...patch } : r)));
-  const free = (data ? data.available : []).filter((p) => !rows.some((r) => r.poloId === p.id));
+  const free = ((data && data.available) || []).filter((p) => !rows.some((r) => r.poloId === p.id));
   const save = async () => {
     setSaving(true);
     try {
@@ -424,7 +424,7 @@ const PoloGoals = () => {
     try {
       const { data: d } = await api.get("/goals/polos", { params: goalId ? { goalId } : {} });
       setData(d);
-      setMonth((m) => (m && d.months.includes(m) ? m : null));
+      setMonth((m) => (m && (d.months || []).includes(m) ? m : null));
     } catch (e) { toastError(e); }
   }, []);
   useEffect(() => { load(); }, [load]);

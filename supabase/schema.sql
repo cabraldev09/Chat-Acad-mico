@@ -407,6 +407,45 @@ ALTER SEQUENCE public."ApiTokens_id_seq" OWNED BY public."ApiTokens".id;
 
 
 --
+-- Name: AutomationTriggers; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."AutomationTriggers" (
+    id integer NOT NULL,
+    name character varying(255) NOT NULL,
+    active boolean DEFAULT true NOT NULL,
+    event character varying(255) NOT NULL,
+    config text DEFAULT '{}'::text NOT NULL,
+    "flowId" integer,
+    "runCount" integer DEFAULT 0 NOT NULL,
+    "lastRunAt" timestamp with time zone,
+    "createdBy" integer,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: AutomationTriggers_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."AutomationTriggers_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: AutomationTriggers_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."AutomationTriggers_id_seq" OWNED BY public."AutomationTriggers".id;
+
+
+--
 -- Name: CampaignShippings; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -493,6 +532,121 @@ CREATE SEQUENCE public."Campaigns_id_seq"
 --
 
 ALTER SEQUENCE public."Campaigns_id_seq" OWNED BY public."Campaigns".id;
+
+
+--
+-- Name: ChatFlowRuns; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."ChatFlowRuns" (
+    id integer NOT NULL,
+    "flowId" integer NOT NULL,
+    "ticketId" integer,
+    "contactId" integer,
+    version integer DEFAULT 1 NOT NULL,
+    "nodeId" character varying(255),
+    status character varying(255) DEFAULT 'waiting'::character varying NOT NULL,
+    vars text DEFAULT '{}'::text NOT NULL,
+    tries integer DEFAULT 0 NOT NULL,
+    "resumeAt" timestamp with time zone,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: ChatFlowRuns_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."ChatFlowRuns_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: ChatFlowRuns_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."ChatFlowRuns_id_seq" OWNED BY public."ChatFlowRuns".id;
+
+
+--
+-- Name: ChatFlowStats; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."ChatFlowStats" (
+    id integer NOT NULL,
+    "flowId" integer NOT NULL,
+    "nodeId" character varying(255) NOT NULL,
+    entered integer DEFAULT 0 NOT NULL,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: ChatFlowStats_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."ChatFlowStats_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: ChatFlowStats_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."ChatFlowStats_id_seq" OWNED BY public."ChatFlowStats".id;
+
+
+--
+-- Name: ChatFlows; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."ChatFlows" (
+    id integer NOT NULL,
+    name character varying(255) NOT NULL,
+    description character varying(255),
+    "whatsappId" integer,
+    status character varying(255) DEFAULT 'draft'::character varying NOT NULL,
+    entry text DEFAULT '{"type":"first_message"}'::text NOT NULL,
+    draft text DEFAULT '{"nodes":[],"edges":[]}'::text NOT NULL,
+    published text,
+    version integer DEFAULT 0 NOT NULL,
+    "publishedAt" timestamp with time zone,
+    "createdBy" integer,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: ChatFlows_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."ChatFlows_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: ChatFlows_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."ChatFlows_id_seq" OWNED BY public."ChatFlows".id;
 
 
 --
@@ -1988,6 +2142,13 @@ ALTER TABLE ONLY public."ApiTokens" ALTER COLUMN id SET DEFAULT nextval('public.
 
 
 --
+-- Name: AutomationTriggers id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AutomationTriggers" ALTER COLUMN id SET DEFAULT nextval('public."AutomationTriggers_id_seq"'::regclass);
+
+
+--
 -- Name: CampaignShippings id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -1999,6 +2160,27 @@ ALTER TABLE ONLY public."CampaignShippings" ALTER COLUMN id SET DEFAULT nextval(
 --
 
 ALTER TABLE ONLY public."Campaigns" ALTER COLUMN id SET DEFAULT nextval('public."Campaigns_id_seq"'::regclass);
+
+
+--
+-- Name: ChatFlowRuns id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."ChatFlowRuns" ALTER COLUMN id SET DEFAULT nextval('public."ChatFlowRuns_id_seq"'::regclass);
+
+
+--
+-- Name: ChatFlowStats id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."ChatFlowStats" ALTER COLUMN id SET DEFAULT nextval('public."ChatFlowStats_id_seq"'::regclass);
+
+
+--
+-- Name: ChatFlows id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."ChatFlows" ALTER COLUMN id SET DEFAULT nextval('public."ChatFlows_id_seq"'::regclass);
 
 
 --
@@ -2330,6 +2512,14 @@ ALTER TABLE ONLY public."ApiTokens"
 
 
 --
+-- Name: AutomationTriggers AutomationTriggers_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AutomationTriggers"
+    ADD CONSTRAINT "AutomationTriggers_pkey" PRIMARY KEY (id);
+
+
+--
 -- Name: CampaignShippings CampaignShippings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2343,6 +2533,30 @@ ALTER TABLE ONLY public."CampaignShippings"
 
 ALTER TABLE ONLY public."Campaigns"
     ADD CONSTRAINT "Campaigns_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: ChatFlowRuns ChatFlowRuns_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."ChatFlowRuns"
+    ADD CONSTRAINT "ChatFlowRuns_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: ChatFlowStats ChatFlowStats_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."ChatFlowStats"
+    ADD CONSTRAINT "ChatFlowStats_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: ChatFlows ChatFlows_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."ChatFlows"
+    ADD CONSTRAINT "ChatFlows_pkey" PRIMARY KEY (id);
 
 
 --
@@ -2804,6 +3018,34 @@ CREATE INDEX ai_usage_agent_id_created_at ON public."AiUsage" USING btree ("agen
 
 
 --
+-- Name: automationtriggers_event_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX automationtriggers_event_idx ON public."AutomationTriggers" USING btree (event, active);
+
+
+--
+-- Name: chatflowruns_resume_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX chatflowruns_resume_idx ON public."ChatFlowRuns" USING btree (status, "resumeAt");
+
+
+--
+-- Name: chatflowruns_ticket_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX chatflowruns_ticket_idx ON public."ChatFlowRuns" USING btree ("ticketId", status);
+
+
+--
+-- Name: chatflowstats_unique; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX chatflowstats_unique ON public."ChatFlowStats" USING btree ("flowId", "nodeId");
+
+
+--
 -- Name: contacts_is_staff_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3177,6 +3419,14 @@ ALTER TABLE ONLY public."AiLearnings"
 
 
 --
+-- Name: AutomationTriggers AutomationTriggers_flowId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AutomationTriggers"
+    ADD CONSTRAINT "AutomationTriggers_flowId_fkey" FOREIGN KEY ("flowId") REFERENCES public."ChatFlows"(id) ON DELETE SET NULL;
+
+
+--
 -- Name: CampaignShippings CampaignShippings_campaignId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3198,6 +3448,30 @@ ALTER TABLE ONLY public."Campaigns"
 
 ALTER TABLE ONLY public."Campaigns"
     ADD CONSTRAINT "Campaigns_whatsappId_fkey" FOREIGN KEY ("whatsappId") REFERENCES public."Whatsapps"(id) ON DELETE SET NULL;
+
+
+--
+-- Name: ChatFlowRuns ChatFlowRuns_flowId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."ChatFlowRuns"
+    ADD CONSTRAINT "ChatFlowRuns_flowId_fkey" FOREIGN KEY ("flowId") REFERENCES public."ChatFlows"(id) ON DELETE CASCADE;
+
+
+--
+-- Name: ChatFlowRuns ChatFlowRuns_ticketId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."ChatFlowRuns"
+    ADD CONSTRAINT "ChatFlowRuns_ticketId_fkey" FOREIGN KEY ("ticketId") REFERENCES public."Tickets"(id) ON DELETE CASCADE;
+
+
+--
+-- Name: ChatFlowStats ChatFlowStats_flowId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."ChatFlowStats"
+    ADD CONSTRAINT "ChatFlowStats_flowId_fkey" FOREIGN KEY ("flowId") REFERENCES public."ChatFlows"(id) ON DELETE CASCADE;
 
 
 --
@@ -3971,6 +4245,7 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261105000002-dedupe-reactions.js')
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261106000001-goal-polos.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261106000002-goal-semester.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261106000003-merge-tutoria-academico.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261107000001-chat-flows.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

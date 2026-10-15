@@ -74,6 +74,8 @@ export default defineConfig({
   },
   envPrefix: "VITE_",
   esbuild: {
+    // real component names in the error reports of the screens (instead of one-letter names)
+    keepNames: true,
     loader: "jsx",
     include: /src\/.*\.[jt]sx?$/,
     exclude: [],

@@ -261,7 +261,7 @@ const postMeta = (id, payload, secret, badSig) => {
       PORT: String(PORT), PROXY_PORT: String(PORT), BACKEND_URL: "http://localhost", PUBLIC_URL: API,
       FRONTEND_URL: "http://localhost:3000", JWT_SECRET: "e2e", JWT_REFRESH_SECRET: "e2e-r", DASHBOARD_CACHE_MS: "0", LOGIN_RATE_MAX: "60",
       TELEGRAM_API_URL: `http://localhost:${TG_PORT}`, GRAPH_API_URL: `http://localhost:${GRAPH_PORT}`,
-      SKIP_WHATSAPP_SESSIONS: "1", LOG_LEVEL: "warn", EFI_API_URL: `http://localhost:${EFI_PORT}`, EFI_BILLET_API_URL: `http://localhost:${BILLET_PORT}`, EFI_POLL_MS: "1500",
+      SKIP_WHATSAPP_SESSIONS: "1", SKIP_DEFAULT_DATA: "1", LOG_LEVEL: "warn", EFI_API_URL: `http://localhost:${EFI_PORT}`, EFI_BILLET_API_URL: `http://localhost:${BILLET_PORT}`, EFI_POLL_MS: "1500",
       ANTHROPIC_API_URL: `http://localhost:${AI_PORT}`, ALLOW_PRIVATE_URLS: "true"
     };
     execFileSync("npx", ["sequelize", "db:migrate"], { cwd: ROOT, env, stdio: "ignore" });
@@ -2226,6 +2226,11 @@ const postMeta = (id, payload, secret, badSig) => {
       const only = await http.get("/crm/board?affiliate=any", auth());
       const all = JSON.stringify(only.data);
       assert(only.status === 200 && all.includes("Carlos Indicado") && !all.includes("Lead comum"), `affiliate filter ${only.status}`);
+    });
+    await test("goals per polo before any semester exists: an empty board with every list the screen reads", async () => {
+      const empty = await http.get("/goals/polos", auth());
+      assert(empty.status === 200 && empty.data.goal === null, `empty ${empty.status}`);
+      ["periods", "months", "rows", "monthTotals", "available"].forEach(k => assert(Array.isArray(empty.data[k]), `${k} is not a list`));
     });
     await test("goals per polo: everyone follows, only managers edit, numbers come from the CRM", async () => {
       const iso = (n) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Porto_Velho" }).format(new Date(Date.now() + n * 86400000)); // the app counts days in its own timezone

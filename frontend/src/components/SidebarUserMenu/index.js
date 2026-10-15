@@ -1,3 +1,4 @@
+import { roleLabel } from "../../utils/access";
 import React, { useContext, useState } from "react";
 import clsx from "clsx";
 
@@ -92,7 +93,7 @@ const SidebarUserMenu = ({ collapsed }) => {
                 noWrap
                 className={classes.userProfile}
               >
-                {user.profile}
+                {roleLabel(user)}
               </Typography>
             </div>
             <ExpandLessIcon fontSize="small" className={classes.expandIcon} />

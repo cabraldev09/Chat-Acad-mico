@@ -27,7 +27,7 @@ routes.use(clearCacheOnChange);
 routes.post("/client-errors", isAuth, rateLimit({ windowMs: 60000, max: 20, key: req => `ce:${(req as any).user?.id || req.ip}` }), (req, res) => {
   const b = req.body || {};
   const cut = (v: unknown, n: number) => String(v || "").slice(0, n);
-  logger.warn(`[client-error] user=${(req as any).user?.id} route=${cut(b.route, 120)} code=${cut(b.code, 20)} message=${cut(b.message, 300)} stack=${cut(b.stack, 600)}`);
+  logger.warn(`[client-error] user=${(req as any).user?.id} route=${cut(b.route, 120)} code=${cut(b.code, 20)} message=${cut(b.message, 300)} stack=${cut(b.stack, 600)} components=${cut(b.components, 500)}`);
   res.status(204).end();
 });
 
