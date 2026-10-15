@@ -131,7 +131,7 @@ const TicketsManager = () => {
   const [searchText, setSearchText] = useState("");
   const location = useLocation();
   const asked = new URLSearchParams(location.search).get("filtro");
-  const [filter, setFilter] = useState(["open", "pending", "unread", "everything", "groups", "closed", "archived"].includes(asked) ? asked : "open");
+  const [filter, setFilter] = useState(["open", "pending", "unread", "everything", "groups", "communities", "closed", "archived"].includes(asked) ? asked : "open");
   const [moreEl, setMoreEl] = useState(null);
   const [newTicketModalOpen, setNewTicketModalOpen] = useState(false);
   const [showAllTickets, setShowAllTickets] = useState(false);
@@ -352,14 +352,15 @@ const TicketsManager = () => {
           {chip("everything", "Todas", 0)}
           <button
             type="button"
-            className={clsx(classes.chip, (filter === "closed" || filter === "archived") && !searching && classes.chipOn)}
+            className={clsx(classes.chip, (filter === "closed" || filter === "archived" || filter === "communities") && !searching && classes.chipOn)}
             onClick={(e) => setMoreEl(e.currentTarget)}
           >
-            {filter === "closed" ? "Resolvidas" : filter === "archived" ? "Arquivadas" : "Mais"} ▾
+            {filter === "closed" ? "Resolvidas" : filter === "archived" ? "Arquivadas" : filter === "communities" ? "Comunidades" : "Mais"} ▾
           </button>
           <Menu anchorEl={moreEl} open={Boolean(moreEl)} onClose={() => setMoreEl(null)} getContentAnchorEl={null}
             anchorOrigin={{ vertical: "bottom", horizontal: "left" }} transformOrigin={{ vertical: "top", horizontal: "left" }}>
             <MenuItem selected={filter === "closed"} onClick={() => { setMoreEl(null); clearSearch(); setFilter("closed"); }}>Resolvidas</MenuItem>
+            <MenuItem selected={filter === "communities"} onClick={() => { setMoreEl(null); clearSearch(); setFilter("communities"); }}>Comunidades</MenuItem>
             <MenuItem selected={filter === "archived"} onClick={() => { setMoreEl(null); clearSearch(); setFilter("archived"); }}>Arquivadas</MenuItem>
           </Menu>
         </div>
@@ -380,6 +381,9 @@ const TicketsManager = () => {
             </div>
             {filter === "groups" && (
               <TicketsList tagId={tagId} groups="only" everything showAll={true} selectedQueueIds={selectedQueueIds} {...scope} />
+            )}
+            {filter === "communities" && (
+              <TicketsList tagId={tagId} communities="only" everything showAll={true} selectedQueueIds={selectedQueueIds} {...scope} />
             )}
             {filter === "unread" && (
               <TicketsList tagId={tagId} withUnreadMessages groups="exclude" showAll={showAllTickets} selectedQueueIds={selectedQueueIds} {...scope} />

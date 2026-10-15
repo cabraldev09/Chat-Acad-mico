@@ -2090,6 +2090,26 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.delete(`/automation-triggers/${trig.data.id}`, auth())).status === 200, "delete trigger");
       assert((await http.post(`/flows/${flow.id}/unpublish`, {}, auth())).status === 200, "unpublish");
     });
+    await test("communities: a group marked as community leaves the Grupos list and has its own view", async () => {
+      const mkGroup = (name, number) => {
+        const c = sql(`INSERT INTO Contacts (name, number, email, isGroup, channel, createdAt, updatedAt) VALUES ('${name}', '${number}', '', true, 'telegram', NOW(), NOW()) RETURNING id`).split("\n")[0];
+        const t = sql(`INSERT INTO Tickets (status, contactId, whatsappId, unreadMessages, isGroup, segment, isHistorical, lastMessage, lastMessageAt, createdAt, updatedAt) VALUES ('open', ${c}, ${tgId}, 0, true, 'sales', false, 'oi', NOW(), NOW(), NOW()) RETURNING id`).split("\n")[0];
+        return { c, t };
+      };
+      const common = mkGroup("Grupo comum", "tg_g1"), comm = mkGroup("Grupo da comunidade", "tg_g2");
+      const ids = r => r.data.tickets.map(x => String(x.id));
+      const list = async params => ids(await http.get("/tickets", { ...auth(), params: { showAll: "true", historical: "all", ...params } }));
+      assert((await http.put(`/contacts/${comm.c}/community`, { community: true, readOnly: true }, auth())).status === 200, "mark as community");
+      const groups = await list({ groups: "only" });
+      assert(groups.includes(common.t) && !groups.includes(comm.t), `groups list ${groups}`);
+      const communities = await list({ communities: "only" });
+      assert(communities.includes(comm.t) && !communities.includes(common.t), `communities list ${communities}`);
+      const one = (await http.get("/tickets", { ...auth(), params: { showAll: "true", historical: "all", communities: "only" } })).data.tickets.find(x => String(x.id) === comm.t);
+      assert(one.contact.kind === "community" && one.contact.readOnly === true, "the list does not say the group is read-only");
+      const person = sql(`SELECT id FROM Contacts WHERE isGroup=false LIMIT 1`);
+      assert((await http.put(`/contacts/${person}/community`, { community: true }, auth())).status === 400, "a person was marked as a community");
+      assert((await http.put(`/contacts/${comm.c}/community`, { community: false }, auth())).status === 200 && (await list({ groups: "only" })).includes(comm.t), "unmark");
+    });
     await test("what the agent does not know is kept, the team's answer is captured, the owner reviews and the agent learns", async () => {
       assert((await http.put(`/ai-agents/${aiId}`, { reviewNumber: "(11) 99999-0000", reviewWhatsappId: cid, learnFromTeam: true, dailyTokenCap: 0 }, auth())).status === 200, "agent update");
       assert((await http.put(`/ai-agents/${aiId}`, { reviewNumber: "123" }, auth())).status === 400, "short review number accepted");

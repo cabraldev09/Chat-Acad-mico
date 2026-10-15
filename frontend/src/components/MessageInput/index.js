@@ -162,7 +162,7 @@ const useStyles = makeStyles((theme) => {
 
 const isImage = (f) => f && f.type && f.type.startsWith("image/");
 
-const MessageInput = ({ ticketStatus, historical, isGroup, contactName, channel }) => {
+const MessageInput = ({ ticketStatus, historical, isGroup, contactName, channel, readOnly }) => {
   const classes = useStyles();
   const emojiDark = useTheme().palette.type === "dark";
   const { ticketId } = useParams();
@@ -427,6 +427,15 @@ const MessageInput = ({ ticketStatus, historical, isGroup, contactName, channel 
         onClose={clearMedias}
         onAdd={(files) => addFiles(files, true)}
       />
+    );
+  }
+
+  // a channel or an announcement group where only the administrators write
+  if (readOnly) {
+    return (
+      <div className={classes.wrap}>
+        <div className={classes.blocked}>Só os administradores podem escrever aqui. Você acompanha as mensagens, mas não responde.</div>
+      </div>
     );
   }
 

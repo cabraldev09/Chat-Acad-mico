@@ -214,6 +214,9 @@ const NotificationsPopOver = () => {
 
 	const handleNotifications = data => {
 		const { message, contact, ticket } = data;
+		// the groups of a community are only read in their own list: no card, no sound
+		const asCommunity = (ticket && ticket.contact) || contact;
+		if (asCommunity && (asCommunity.kind === "community" || asCommunity.parentGroupId)) return;
 		const loud = shouldAlert(contact.id);
 		// a silenced contact never pops up; a group pops up quietly (no sound) unless it is marked as alert
 		if (!loud && (ticket.isGroup ? getSoundPref(contact.id) === "mute" : true)) return;

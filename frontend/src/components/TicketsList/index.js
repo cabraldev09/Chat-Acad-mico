@@ -183,7 +183,7 @@ const reducer = (state, action) => {
 };
 
 	const TicketsList = (props) => {
-		const { status, searchParam, showAll, selectedQueueIds, updateCount, style, withUnreadMessages, groups, archived, historical, everything, tagId, allQueues, attendantId, connectionId } =
+		const { status, searchParam, showAll, selectedQueueIds, updateCount, style, withUnreadMessages, groups, communities, archived, historical, everything, tagId, allQueues, attendantId, connectionId } =
 			props;
 	const classes = useStyles();
 	const [pageNumber, setPageNumber] = useState(1);
@@ -204,6 +204,7 @@ const reducer = (state, action) => {
 		showAll,
 		withUnreadMessages: withUnreadMessages ? "true" : undefined,
 		groups,
+		communities,
 		archived: archived ? "true" : undefined,
 		historical: everything ? "all" : historical ? "true" : undefined,
 		queueIds: JSON.stringify(selectedQueueIds),
@@ -215,7 +216,7 @@ const reducer = (state, action) => {
 	});
 
 	useEffect(() => {
-		if (!status && !searchParam && !withUnreadMessages && !groups && !archived && !historical && !everything) return;
+		if (!status && !searchParam && !withUnreadMessages && !groups && !communities && !archived && !historical && !everything) return;
 		dispatch({
 			type: "LOAD_TICKETS",
 			payload: tickets,
@@ -226,8 +227,10 @@ const reducer = (state, action) => {
 		const socket = openSocket();
 
 		// "only": just groups; "exclude": private chats only
+		// a group of a community has its own view: the ordinary groups list leaves it out
+		const inCommunity = ticket => !!ticket.contact && (ticket.contact.kind === "community" || !!ticket.contact.parentGroupId);
 		const groupOk = ticket =>
-			groups === "only" ? !!ticket.isGroup : groups === "exclude" ? !ticket.isGroup : true;
+			communities === "only" ? !!ticket.isGroup && inCommunity(ticket) : groups === "only" ? !!ticket.isGroup && !inCommunity(ticket) : groups === "exclude" ? !ticket.isGroup : true;
 
 		// archived conversations live only in their own view
 		const archiveOk = ticket => !!ticket.archivedAt === !!archived;
@@ -305,7 +308,7 @@ const reducer = (state, action) => {
 		return () => {
 			socket.disconnect();
 		};
-	}, [status, searchParam, showAll, user, selectedQueueIds, groups, archived]);
+	}, [status, searchParam, showAll, user, selectedQueueIds, groups, communities, archived]);
 
 	useEffect(() => {
 		const again = () => {

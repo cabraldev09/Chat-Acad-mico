@@ -74,6 +74,7 @@ const ContactDrawer = ({ open, handleDrawerClose, contact, loading }) => {
 
 	const [modalOpen, setModalOpen] = useState(false);
 	const [staff, setStaff] = useState(null);
+	const [community, setCommunity] = useState(null);
 	// the drawer is reused from one contact to the next
 	useEffect(() => setStaff(null), [contact && contact.id]);
 
@@ -101,6 +102,36 @@ const ContactDrawer = ({ open, handleDrawerClose, contact, loading }) => {
 							{i18n.t("contactDrawer.buttons.edit")}
 						</Button>
 					</div>
+					{contact.isGroup && (
+						<div className={classes.card} style={{ paddingTop: 8, paddingBottom: 8 }}>
+							<FormControlLabel
+								style={{ margin: 0, alignItems: "flex-start" }}
+								control={
+									<Switch
+										color="primary"
+										checked={community === null ? contact.kind === "community" : community}
+										onChange={async (e) => {
+											const next = e.target.checked;
+											setCommunity(next);
+											try {
+												await api.put(`/contacts/${contact.id}/community`, { community: next });
+												toast.success(next ? "Este grupo agora aparece em Comunidades." : "Este grupo voltou para Grupos.");
+											} catch (err) {
+												setCommunity(!next);
+												toastError(err);
+											}
+										}}
+									/>
+								}
+								label={
+									<div>
+										<div style={{ fontWeight: 600, fontSize: 14 }}>Grupo de uma comunidade</div>
+										<div style={{ fontSize: 12.5, opacity: 0.7 }}>Fica na lista Comunidades, sem aviso sonoro e sem bagunçar os grupos comuns.</div>
+									</div>
+								}
+							/>
+						</div>
+					)}
 					{contact.isGroup && <GroupInfo />}
 					{!contact.isGroup && (
 						<div className={classes.card} style={{ paddingTop: 8, paddingBottom: 8 }}>
