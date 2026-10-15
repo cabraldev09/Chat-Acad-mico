@@ -58,13 +58,13 @@ const startRenewal = () => {
 function connectToSocket() {
   startRenewal();
   const socket = openSocket(getBackendUrl(), {
-    transports: ["websocket", "polling", "flashsocket"],
-    query: { token: currentToken() },
+    transports: ["websocket", "polling"],
+    auth: { token: currentToken() },
   });
 
   // every new attempt carries the latest token
   socket.io.on("reconnect_attempt", () => {
-    socket.io.opts.query = { token: currentToken() };
+    socket.auth = { token: currentToken() };
   });
 
   // the connection came back after a gap (server update, network): lists read what they missed
@@ -75,11 +75,16 @@ function connectToSocket() {
   });
 
   // the server refused the token: renew it and connect again (a refused socket does not retry by itself)
-  socket.on("authError", async () => {
+  const reauthenticate = async () => {
     const token = await renewToken(true);
     if (!token) return;
-    socket.io.opts.query = { token };
-    socket.connect();
+    socket.auth = { token };
+    // authError arrives immediately before the server closes the connection.
+    setTimeout(() => socket.connect(), 50);
+  };
+  socket.on("authError", reauthenticate);
+  socket.on("connect_error", (error) => {
+    if (error.message === "ERR_SESSION_EXPIRED") reauthenticate();
   });
 
   return socket;

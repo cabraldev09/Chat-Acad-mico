@@ -46,7 +46,7 @@ export const withLeadScope = async (req: Request, where: any): Promise<any> => {
   return scope ? { [Op.and]: [where, scope] } : where;
 };
 
-const assertLead = async (req: Request, leadId: number | string): Promise<void> => {
+export const assertLead = async (req: Request, leadId: number | string): Promise<void> => {
   const scope = await leadScopeWhere(req);
   if (!scope) return;
   const lead = await Lead.findOne({ where: { [Op.and]: [{ id: leadId }, scope] }, attributes: ["id"] });

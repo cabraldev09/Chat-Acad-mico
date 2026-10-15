@@ -1,3 +1,4 @@
+import sequelize from "../../database";
 import { fire } from "../../helpers/Fire";
 import fs from "fs";
 import { PUBLIC_DIR } from "../../config/paths";
@@ -241,7 +242,7 @@ const targetStage = async (): Promise<LeadStage | null> => {
   return stages.find(s => s.type === "open" && /matr[ií]cula/i.test(s.name)) || null;
 };
 
-export const markPaid = async (
+const markPaidCore = async (
   payment: Payment,
   info: { valor?: string | number; horario?: string; endToEndId?: string }
 ): Promise<boolean> => {
@@ -249,6 +250,7 @@ export const markPaid = async (
   const paidValue = info.valor !== undefined ? Number(info.valor) : Number(payment.amount);
   const lead = await Lead.findByPk(payment.leadId);
 
+  if (!Number.isFinite(paidValue) || paidValue <= 0) throw new AppError("ERR_PAYMENT_AMOUNT", 400);
   if (paidValue + 0.001 < Number(payment.amount)) {
     await payment.update({ lastError: `Pagamento parcial recebido: ${brl(paidValue)} de ${brl(Number(payment.amount))}` });
     if (lead) await addActivity(lead.id, null, "system", `Pagamento parcial da taxa de matrícula: ${brl(paidValue)} de ${brl(Number(payment.amount))}`);
@@ -295,9 +297,18 @@ export const markPaid = async (
   getIO().emit("lead", { action: "update", lead: fresh });
   getIO().emit("payment", { paymentId: payment.id, leadId: lead.id, leadName: lead.name, amount: paidValue });
   fire("fee.paid", { leadId: lead.id, contactId: lead.contactId });
-  dispatchWebhook("payment.paid", { paymentId: payment.id, leadId: lead.id, lead: lead.name, amount: paidValue, txid: payment.txid });
+  await dispatchWebhook("payment.paid", { paymentId: payment.id, leadId: lead.id, lead: lead.name, amount: paidValue, txid: payment.txid });
   return true;
 };
+
+export const markPaid = async (payment: Payment, info: { valor?: string | number; horario?: string; endToEndId?: string }): Promise<boolean> =>
+  sequelize.transaction(async transaction => {
+    const locked = await Payment.findByPk(payment.id, { transaction, lock: transaction.LOCK.UPDATE });
+    if (!locked || locked.status === "paid") return false;
+    const changed = await markPaidCore(locked, info);
+    await payment.reload();
+    return changed;
+  });
 
 // Asks Efí for the truth about a charge and applies it
 export const refreshPayment = async (payment: Payment): Promise<Payment> => {
@@ -338,8 +349,9 @@ export const cancelPayment = async (payment: Payment, userId: number): Promise<P
       await Efi.cancelCharge(await requireConfig(), payment.txid);
     }
   } catch (err) {
-    // already gone on Efí's side: just reflect it locally
-    logger.warn(`Efí cancel failed (${err.message}), marking locally`);
+    // A timeout does not prove cancellation. Keep polling the authoritative provider.
+    await payment.update({ lastError: `Não foi possível confirmar o cancelamento: ${String(err.message).slice(0, 300)}` });
+    throw new AppError("ERR_PAYMENT_CANCEL_FAILED", 502);
   }
   await payment.update({ status: "cancelled" });
   await addActivity(payment.leadId, userId, "system", `Cobrança PIX cancelada (${brl(Number(payment.amount))})`);
@@ -380,15 +392,19 @@ export const pollPendingPayments = async (): Promise<void> => {
   if (!cfg.clientId || !cfg.clientSecret) return;
   await generateScheduledCharges();
   const open = await Payment.findAll({
-    where: { status: "pending", createdAt: { [Op.gt]: new Date(Date.now() - 7 * 86400000) } },
+    where: { status: "pending" },
+    order: [["updatedAt", "ASC"]],
     limit: 50
   });
   for (const p of open) {
     try {
       // eslint-disable-next-line no-await-in-loop
       await refreshPayment(p);
+      await p.changed("updatedAt", true);
+      await p.save();
     } catch (err) {
       logger.warn(`Payment ${p.id} refresh failed: ${err.message}`);
+      await p.update({ lastError: String(err.message).slice(0, 400) });
     }
   }
 };

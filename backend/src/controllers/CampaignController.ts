@@ -1,3 +1,5 @@
+import { publicFile } from "../helpers/PublicFile";
+import { assertConnectionUse } from "../middleware/outboundScope";
 import { Request, Response } from "express";
 import { fn, col, Op } from "sequelize";
 
@@ -22,6 +24,7 @@ const cleanSteps = (raw: any): CampaignStep[] => {
   const out = raw.map((s: any) => {
     const body = String(s?.body || "").trim().slice(0, 4000);
     const mediaUrl = s?.mediaUrl ? String(s.mediaUrl) : null;
+    if (mediaUrl) publicFile(mediaUrl);
     if (!body && !mediaUrl) throw new AppError("ERR_CAMPAIGN_STEP_EMPTY");
     const delaySec = Math.min(600, Math.max(0, Math.round(Number(s?.delaySec) || 0)));
     return { type: mediaUrl ? "media" : "text", body, mediaUrl, delaySec } as CampaignStep;
@@ -76,6 +79,8 @@ const crud = makeCrud(Campaign, {
     { model: Whatsapp, as: "whatsapp", attributes: ["id", "name", "channel"] }
   ],
   beforeSave: async (data, _req, existing) => {
+    const connectionId = data.whatsappId || existing?.whatsappId;
+    if (connectionId) await assertConnectionUse(_req, Number(connectionId));
     if (existing && !["draft", "scheduled", "paused"].includes(existing.status)) {
       throw new AppError("ERR_CAMPAIGN_LOCKED");
     }
@@ -148,6 +153,8 @@ export const start = async (req: Request, res: Response): Promise<Response> => {
     "paused",
     "scheduled"
   ]);
+
+  if (campaign.whatsappId) await assertConnectionUse(req, campaign.whatsappId);
 
   // (re)build the shipping list the first time the campaign starts
   const existing = await CampaignShipping.count({ where: { campaignId: campaign.id } });

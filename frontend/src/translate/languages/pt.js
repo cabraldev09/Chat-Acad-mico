@@ -490,6 +490,7 @@ const messages = {
         ERR_NO_POLO_FOUND: "Polo não encontrado.",
         ERR_POLO_IN_USE: "Este polo já tem leads ou conversas. Desative-o em vez de excluir.",
         ERR_POLO_MEMBER_INVALID: "Escolha um usuário e uma função válidos para este polo.",
+        ERR_PAYMENT_CANCEL_FAILED: "Não foi possível confirmar o cancelamento. A cobrança continua sendo acompanhada; tente novamente.",
         ERR_SCHEDULE_DATE_INVALID: "Data do agendamento inválida.",
         ERR_SCHEDULE_IN_PAST: "A data do agendamento precisa estar no futuro.",
         ERR_SCHEDULE_NOT_PENDING: "Este agendamento já foi enviado ou cancelado.",

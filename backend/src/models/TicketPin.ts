@@ -1,4 +1,6 @@
-import { Table, Column, CreatedAt, UpdatedAt, Model, PrimaryKey, ForeignKey } from "sequelize-typescript";
+import Model from "./BaseModel";
+import { Table, Column, CreatedAt, UpdatedAt, PrimaryKey, ForeignKey
+} from "sequelize-typescript";
 
 import Ticket from "./Ticket";
 import User from "./User";

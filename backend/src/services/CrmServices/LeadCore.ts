@@ -238,7 +238,7 @@ export const upsertLead = async (
 
   const lead = (await loadLead(created.id)) as Lead;
   emitLead("create", lead);
-  dispatchWebhook("lead.created", leadPayload(lead));
+  await dispatchWebhook("lead.created", leadPayload(lead));
   fire("lead.created", { leadId: lead.id, contactId: lead.contactId });
   if (input.affiliateId) fire("affiliate.referral", { leadId: lead.id, contactId: lead.contactId, affiliateId: input.affiliateId });
   return { lead, created: true };
@@ -298,11 +298,11 @@ export const changeStage = async (
   const fresh = (await loadLead(lead.id)) as Lead;
   emitLead("update", fresh);
   const payload = { ...leadPayload(fresh), from: from?.name };
-  dispatchWebhook("lead.stage_changed", payload);
+  await dispatchWebhook("lead.stage_changed", payload);
   fire("stage.changed", { leadId: lead.id, contactId: lead.contactId, stageId: to.id });
   if (to.type === "won") fire("enrollment.confirmed", { leadId: lead.id, contactId: lead.contactId });
-  if (to.type === "won") dispatchWebhook("lead.won", payload);
-  if (to.type === "lost") dispatchWebhook("lead.lost", payload);
+  if (to.type === "won") await dispatchWebhook("lead.won", payload);
+  if (to.type === "lost") await dispatchWebhook("lead.lost", payload);
   return fresh;
 };
 

@@ -14,6 +14,7 @@ import SendWhatsAppMessage from "../WbotServices/SendWhatsAppMessage";
 import SendWhatsAppMedia from "../WbotServices/SendWhatsAppMedia";
 import CreateMessageService from "../MessageServices/CreateMessageService";
 import { getAdapter } from "../../channels";
+import { publicFile } from "../../helpers/PublicFile";
 
 
 
@@ -60,7 +61,7 @@ const SendToContact = async ({
     });
     await ticket.update({ lastMessage: body || `[Modelo: ${template.name}]` });
   } else if (mediaUrl) {
-    const source = path.join(PUBLIC_DIR, mediaUrl);
+    const source = publicFile(mediaUrl);
     if (!fs.existsSync(source)) throw new AppError("ERR_MEDIA_NOT_FOUND");
     // SendWhatsAppMedia consumes (deletes) the file it sends, so hand it a copy
     const copyName = `send-${Date.now()}-${Math.random().toString(36).slice(2, 6)}${path.extname(mediaUrl)}`;

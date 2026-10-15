@@ -62,13 +62,13 @@ const FileCard = ({ url, name }) => {
     const render = async () => {
       try {
         const [pdfjs, worker, { data }] = await Promise.all([
-          import("pdfjs-dist/build/pdf"),
-          import("pdfjs-dist/build/pdf.worker.min.js?url"),
+          import("pdfjs-dist/build/pdf.mjs"),
+          import("pdfjs-dist/build/pdf.worker.min.mjs?url"),
           api.get(url, { responseType: "blob" }),
         ]);
         pdfjs.GlobalWorkerOptions.workerSrc = worker.default;
         const buffer = await data.arrayBuffer();
-        const doc = await pdfjs.getDocument({ data: buffer }).promise;
+        const doc = await pdfjs.getDocument({ data: buffer, isEvalSupported: false }).promise;
         const page = await doc.getPage(1);
         const base = page.getViewport({ scale: 1 });
         const viewport = page.getViewport({ scale: (300 * (window.devicePixelRatio || 1)) / base.width });

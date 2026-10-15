@@ -14,6 +14,7 @@ import Ticket from "../../models/Ticket";
 import Whatsapp from "../../models/Whatsapp";
 import { getIO } from "../../libs/socket";
 import { PUBLIC_DIR } from "../../config/paths";
+import { publicFile } from "../../helpers/PublicFile";
 import { mimeFromName } from "../../helpers/MimeFromName";
 import { whatsappProvider } from "../../providers/WhatsApp";
 import { getAdapter } from "../../channels";
@@ -154,13 +155,13 @@ export const forwardMessage = async (req: Request, id: string, ticketIds: number
   if (!ids.length) throw new AppError("ERR_FORWARD_NO_TARGET", 400);
 
   const rawMedia = message.getDataValue("mediaUrl") as string | null;
-  const source = rawMedia ? path.join(PUBLIC_DIR, rawMedia) : null;
+  const source = rawMedia ? publicFile(rawMedia) : null;
   if (source && !fs.existsSync(source)) throw new AppError("ERR_MEDIA_NOT_FOUND", 404);
 
   let sent = 0;
   for (const ticketId of ids) {
     // eslint-disable-next-line no-await-in-loop
-    await assertTicketAccess(req, ticketId, "write");
+    await assertTicketAccess(req, ticketId, "send");
     // eslint-disable-next-line no-await-in-loop
     const ticket = await ShowTicketService(ticketId);
     if (ticket.status === "closed") throw new AppError("ERR_FORWARD_CLOSED_TICKET", 400);

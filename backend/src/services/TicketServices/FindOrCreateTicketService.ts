@@ -107,7 +107,7 @@ const FindOrCreateTicketService = async (
       whatsappId
     });
     hookTicketCreated(contact, (await Whatsapp.findByPk(whatsappId))?.channel || "whatsapp");
-    dispatchWebhook("ticket.created", {
+    await dispatchWebhook("ticket.created", {
       ticketId: ticket.id,
       contactId: ticket.contactId,
       whatsappId

@@ -1,9 +1,9 @@
+import Model from "./BaseModel";
 import {
   Table,
   Column,
   CreatedAt,
   UpdatedAt,
-  Model,
   PrimaryKey,
   AutoIncrement,
   ForeignKey,

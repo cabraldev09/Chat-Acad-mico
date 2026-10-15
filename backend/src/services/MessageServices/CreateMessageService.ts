@@ -114,7 +114,7 @@ const CreateMessageService = async ({
     }
   }
 
-  dispatchWebhook(message.fromMe ? "message.sent" : "message.received", {
+  await dispatchWebhook(message.fromMe ? "message.sent" : "message.received", {
     messageId: message.id,
     ticketId: message.ticketId,
     body: message.body,

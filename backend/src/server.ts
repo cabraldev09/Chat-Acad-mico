@@ -1,3 +1,6 @@
+import { createServer } from "http";
+import { startWebhookQueue } from "./services/WebhookServices/DispatchWebhook";
+import { startUnreadReconciler } from "./workers/UnreadReconciler";
 import gracefulShutdown from "http-graceful-shutdown";
 import app from "./app";
 import { initIO } from "./libs/socket";
@@ -17,22 +20,23 @@ import { loadAppTz } from "./helpers/AppTime";
 import { whenLeader } from "./helpers/SingleInstance";
 import { ensureRls } from "./helpers/EnsureRls";
 
-const server = app.listen(process.env.PORT, () => {
-  logger.info(`Server started on port: ${process.env.PORT}`);
-});
-
+const server = createServer(app);
 initIO(server);
-loadAppTz();
-ensureRls();
+const boot = async () => {
+  await ensureRls();
+  await loadAppTz();
+  server.listen(process.env.PORT, () => logger.info(`Server started on port: ${process.env.PORT}`));
 // Only one instance may own the WhatsApp sessions and the background workers
 whenLeader(() => {
   StartAllWhatsAppsSessions();
   startScheduler();
+  startWebhookQueue();
   startCampaignRunner();
   startCrmReminders();
   startLeadSlaAlert();
   startProfilePicSync();
   startAckReconciler();
+  startUnreadReconciler();
   startPaymentPoller();
   startOnboardingSla();
   startChatbotReminder();
@@ -45,24 +49,10 @@ whenLeader(() => {
     .then(r => logger.info(`CRM backfill: ${r.created} new leads`))
     .catch(err => logger.warn(`CRM backfill failed: ${err}`));
 });
+};
+boot().catch(err => { logger.fatal({ err }, "Startup checks failed"); process.exit(1); });
 gracefulShutdown(server);
 
-// A stray exception is logged and survived, but a burst means the process is
-// in a bad state: exit so the supervisor (pm2/launchd/docker) restarts it clean.
-const recentCrashes: number[] = [];
-process.on("uncaughtException", err => {
-  logger.error({ info: "Global uncaught exception", err });
-  const now = Date.now();
-  recentCrashes.push(now);
-  while (recentCrashes.length && now - recentCrashes[0] > 60000) {
-    recentCrashes.shift();
-  }
-  if (recentCrashes.length >= 10) {
-    logger.fatal("Too many uncaught exceptions in 60s, exiting");
-    process.exit(1);
-  }
-});
-
-process.on("unhandledRejection", err => {
-  if (err) logger.error({ info: "Global unhandled rejection", err });
-});
+// Exit after an uncaught failure: continuing could serve partially corrupted state.
+process.on("uncaughtException", err => { logger.fatal({ err }, "Uncaught exception"); process.exit(1); });
+process.on("unhandledRejection", err => { logger.fatal({ err }, "Unhandled rejection"); process.exit(1); });

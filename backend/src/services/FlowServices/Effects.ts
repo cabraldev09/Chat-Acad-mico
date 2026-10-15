@@ -1,6 +1,6 @@
 import axios from "axios";
 
-import { isUrlSafe } from "../../helpers/SafeUrl";
+import { isUrlSafe, safeRequest } from "../../helpers/SafeUrl";
 import Contact from "../../models/Contact";
 import Course from "../../models/Course";
 import Lead from "../../models/Lead";
@@ -171,7 +171,7 @@ export const ticketEffects = (ticket: Ticket, flowName: string): Effects => {
     async webhook(url, vars) {
       if (!(await isUrlSafe(url))) return false;
       try {
-        await axios.post(url, { ticketId: ticket.id, contactId: ticket.contactId, flow: flowName, collected: Object.entries(vars).filter(([k]) => !k.startsWith("__")).reduce((o: Record<string, any>, [k, v]) => ({ ...o, [k]: v }), {}) }, { timeout: 5000 });
+        await safeRequest({ url, method: "POST", data: { ticketId: ticket.id, contactId: ticket.contactId, flow: flowName, collected: Object.entries(vars).filter(([k]) => !k.startsWith("__")).reduce((o: Record<string, any>, [k, v]) => ({ ...o, [k]: v }), {}) }, timeout: 5000 });
         return true;
       } catch (err) {
         logger.warn(`flow webhook failed: ${err.message}`);

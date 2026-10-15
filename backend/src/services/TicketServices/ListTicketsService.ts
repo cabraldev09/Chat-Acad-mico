@@ -150,6 +150,7 @@ const ListTicketsService = async ({
 
   if (date) {
     whereCondition = {
+      ...whereCondition,
       createdAt: {
         [Op.between]: [+dayBounds(date).start, +dayBounds(date).end]
       }

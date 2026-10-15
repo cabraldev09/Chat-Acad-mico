@@ -13,10 +13,10 @@ const FormData = require("form-data");
 
 const ROOT = path.resolve(__dirname, "..");
 // PostgreSQL (the same engine as Supabase) is the supported database.
-const PGBIN = process.env.PG_BIN || "/opt/homebrew/opt/postgresql@16/bin";
+const PGBIN = process.env.PG_BIN || path.dirname(execFileSync("which", ["psql"]).toString().trim());
 const PGUSER = process.env.PGUSER || require("os").userInfo().username;
 const psql = (db, q) => execFileSync(`${PGBIN}/psql`, ["-X", "-U", PGUSER, "-d", db, "-At", "-c", q]).toString().trim();
-const DB = "whaticket_e2e";
+const DB = `chat_e2e_${process.pid}_${crypto.randomBytes(4).toString("hex")}`;
 const PORT = 8091;
 const TG_PORT = 9101;
 const GRAPH_PORT = 9102;
@@ -273,13 +273,12 @@ const postMeta = (id, payload, secret, badSig) => {
   let backend;
   const cleanup = async () => {
     if (backend) backend.kill();
-    try { psql("postgres", `DROP DATABASE IF EXISTS ${DB}`); } catch (e) {}
+    try { psql("postgres", `DROP DATABASE IF EXISTS ${DB} WITH (FORCE)`); } catch (e) {}
   };
   try {
-    psql("postgres", `DROP DATABASE IF EXISTS ${DB}`);
     psql("postgres", `CREATE DATABASE ${DB}`);
     const env = {
-      ...process.env, DB_NAME: DB, DB_HOST: "localhost", DB_USER: PGUSER, DB_PASS: "", DB_PORT: "5432", DB_DIALECT: "postgres",
+      ...process.env, DATABASE_URL: "", DATABASE_URL_POOL: "", DB_SSL: "false", NODE_ENV: "test", DB_NAME: DB, DB_HOST: "localhost", DB_USER: PGUSER, DB_PASS: "", DB_PORT: "5432", DB_DIALECT: "postgres",
       PORT: String(PORT), PROXY_PORT: String(PORT), BACKEND_URL: "http://localhost", PUBLIC_URL: API,
       FRONTEND_URL: "http://localhost:3000", JWT_SECRET: "e2e", JWT_REFRESH_SECRET: "e2e-r", DASHBOARD_CACHE_MS: "0", LOGIN_RATE_MAX: "60",
       TELEGRAM_API_URL: `http://localhost:${TG_PORT}`, GRAPH_API_URL: `http://localhost:${GRAPH_PORT}`,

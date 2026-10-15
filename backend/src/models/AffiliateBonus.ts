@@ -1,4 +1,6 @@
-import { Table, Column, DataType, CreatedAt, UpdatedAt, Model, PrimaryKey, AutoIncrement, Default, AllowNull, ForeignKey, BelongsTo } from "sequelize-typescript";
+import Model from "./BaseModel";
+import { Table, Column, DataType, CreatedAt, UpdatedAt, PrimaryKey, AutoIncrement, Default, AllowNull, ForeignKey, BelongsTo
+} from "sequelize-typescript";
 import Affiliate from "./Affiliate";
 import Lead from "./Lead";
 

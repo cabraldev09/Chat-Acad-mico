@@ -1,3 +1,4 @@
+import sequelize from "../../database";
 import { Op } from "sequelize";
 
 import AppError from "../../errors/AppError";
@@ -35,7 +36,7 @@ export interface EnrollInput {
 // Confirms the enrollment and hands the student to the polo's tutoring team:
 // the sales conversation is closed (the consultant keeps the lead, not the chat) and a
 // separate "onboarding" conversation opens for the tutor.
-const enrollLead = async (lead: Lead, actorId: number, input: EnrollInput) => {
+const enrollLeadCore = async (lead: Lead, actorId: number, input: EnrollInput) => {
   const warnings: string[] = [];
 
   const polo = await Polo.findByPk(input.poloId);
@@ -154,19 +155,6 @@ const enrollLead = async (lead: Lead, actorId: number, input: EnrollInput) => {
     } as any);
   }
 
-  // 5) the enrollment fee
-  const fee = input.fee || "paid";
-  if (fee !== "paid") {
-    try {
-      await createEnrollmentCharge(lead, actorId, {
-        method: "bolix",
-        dueDate: fee === "later" ? input.feeDueDate || null : null,
-        force: true
-      });
-    } catch (err) {
-      warnings.push(`A cobrança da taxa não foi gerada (${err.message}). Gere pela aba Matrícula.`);
-    }
-  }
 
   await addActivity(
     lead.id,
@@ -176,10 +164,29 @@ const enrollLead = async (lead: Lead, actorId: number, input: EnrollInput) => {
   );
   const out = (await loadLead(lead.id)) as Lead;
   getIO().emit("lead", { action: "update", lead: out });
-  dispatchWebhook("lead.enrolled", { leadId: lead.id, lead: lead.name, poloId: polo.id, tutorId: tutor?.id || null });
+  await dispatchWebhook("lead.enrolled", { leadId: lead.id, lead: lead.name, poloId: polo.id, tutorId: tutor?.id || null });
   return { lead: out, ticketId: ticket.id, tutor: tutor ? { id: tutor.id, name: tutor.name } : null, warnings };
 };
 
+const enrollLead = async (lead: Lead, actorId: number, input: EnrollInput) => {
+  const result = await sequelize.transaction(async transaction => {
+    const locked = await Lead.findByPk(lead.id, { transaction, lock: transaction.LOCK.UPDATE });
+    if (!locked) throw new AppError("ERR_LEAD_NOT_FOUND", 404);
+    // A retried confirmation must not duplicate the tutor's task or the payment.
+    if (locked.onboardingStatus && locked.onboardingStatus !== "none") {
+      const ticket = await Ticket.findOne({ where: { leadId: locked.id, segment: "onboarding", status: { [Op.in]: ["open", "pending"] } } });
+      if (ticket) return { lead: locked, ticketId: ticket.id, tutor: null, warnings: [] as string[], repeated: true };
+    }
+    return { ...(await enrollLeadCore(locked, actorId, input)), repeated: false };
+  });
+  // Network calls happen after the atomic local enrollment, never while holding the row lock.
+  if (!result.repeated && input.fee && input.fee !== "paid") {
+    try {
+      await createEnrollmentCharge(result.lead, actorId, { method: "bolix", dueDate: input.fee === "later" ? input.feeDueDate || null : null });
+    } catch (err) { result.warnings.push(`A cobrança da taxa não foi gerada (${err.message}). Gere pela aba Matrícula.`); }
+  }
+  return result;
+};
 export default enrollLead;
 
 // start / done of the onboarding (tutor side). Done schedules the follow-ups of the consultant.
@@ -204,7 +211,7 @@ export const setOnboarding = async (lead: Lead, actorId: number, action: "start"
         { leadId: lead.id, userId: lead.ownerId, type: "whatsapp", title: "Oferecer nova graduação ou pós a este aluno", dueAt: new Date(Date.now() + 90 * day) }
       ] as any);
     }
-    dispatchWebhook("onboarding.done", { leadId: lead.id, lead: lead.name, tutorId: lead.onboardingTutorId });
+    await dispatchWebhook("onboarding.done", { leadId: lead.id, lead: lead.name, tutorId: lead.onboardingTutorId });
   }
   const out = (await loadLead(lead.id)) as Lead;
   getIO().emit("lead", { action: "update", lead: out });
@@ -223,6 +230,7 @@ export const editOnboarding = async (lead: Lead, actorId: number, input: EditOnb
   if (lead.onboardingStatus === "none") throw new AppError("ERR_ONBOARDING_NOT_STARTED", 400);
   const notes: string[] = [];
 
+  const previousTutorId = lead.onboardingTutorId;
   const changesPolo = !!input.poloId && input.poloId !== lead.poloId;
   const changesTutor = input.tutorId !== undefined && (input.tutorId === "auto" || Number(input.tutorId) !== lead.onboardingTutorId);
   if (changesPolo || changesTutor) {
@@ -264,7 +272,7 @@ export const editOnboarding = async (lead: Lead, actorId: number, input: EditOnb
       getIO().to(fresh.status).to("notification").emit("ticket", { action: "update", ticket: fresh });
     }
     // open tutor task goes with the new tutor
-    if (tutor) await LeadTask.update({ userId: tutor.id } as any, { where: { leadId: lead.id, userId: before ? lead.onboardingTutorId || tutor.id : tutor.id, doneAt: null, title: { [Op.like]: "Ambientar o aluno%" } } as any });
+    if (tutor) await LeadTask.update({ userId: tutor.id } as any, { where: { leadId: lead.id, userId: previousTutorId || tutor.id, doneAt: null, title: { [Op.like]: "Ambientar o aluno%" } } as any });
   }
 
   if (input.status && input.status !== lead.onboardingStatus) {

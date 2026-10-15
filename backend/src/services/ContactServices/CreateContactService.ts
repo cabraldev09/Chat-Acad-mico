@@ -33,7 +33,7 @@ const CreateContactService = async ({
       name,
       number,
       email,
-      extraInfo
+      extraInfo: extraInfo as any
     },
     {
       include: ["extraInfo"]

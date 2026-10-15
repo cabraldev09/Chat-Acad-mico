@@ -1,9 +1,9 @@
+import Model from "./BaseModel";
 import {
   Table,
   Column,
   CreatedAt,
   UpdatedAt,
-  Model,
   DataType,
   BeforeCreate,
   BeforeUpdate,
@@ -97,7 +97,7 @@ class User extends Model<User> {
   };
 
   public checkPassword = async (password: string): Promise<boolean> => {
-    return compare(password, this.getDataValue("passwordHash"));
+    return compare(password, String(this.getDataValue("passwordHash") || ""));
   };
 }
 

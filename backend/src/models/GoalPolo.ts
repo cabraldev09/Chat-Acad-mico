@@ -1,4 +1,6 @@
-import { Table, Column, DataType, CreatedAt, UpdatedAt, Model, PrimaryKey, AutoIncrement, AllowNull, Default, ForeignKey, BelongsTo } from "sequelize-typescript";
+import Model from "./BaseModel";
+import { Table, Column, DataType, CreatedAt, UpdatedAt, PrimaryKey, AutoIncrement, AllowNull, Default, ForeignKey, BelongsTo
+} from "sequelize-typescript";
 import Goal from "./Goal";
 import Polo from "./Polo";
 

@@ -46,6 +46,7 @@ export interface WhatsappProvider {
   // the picture of any chat (person or group), addressed by its full WhatsApp id
   getChatPicUrl?(sessionId: number, chatId: string): Promise<string | undefined>;
   getContacts(sessionId: number): Promise<ProviderContact[]>;
+  getChatUnreadCount?(sessionId: number, chatId: string): Promise<number | null>;
   sendSeen(sessionId: number, chatId: string): Promise<void>;
   // shows "typing…" to the contact (optional, used to humanize bot replies)
   sendTyping?(sessionId: number, chatId: string): Promise<void>;

@@ -157,9 +157,11 @@ const NotificationsPopOver = () => {
 		socket.on("connect", () => socket.emit("joinNotification"));
 
 		socket.on("ticket", data => {
-			if (data.action === "updateUnread" || data.action === "delete") {
+			if (data.action === "updateUnread" || data.action === "delete" || (data.action === "update" && data.ticket && Number(data.ticket.unreadMessages) === 0)) {
+                const clearedId = Number(data.ticketId || data.ticket?.id);
+                dismissMessageToast(clearedId);
 				setNotifications(prevState => {
-					const ticketIndex = prevState.findIndex(t => t.id === data.ticketId);
+					const ticketIndex = prevState.findIndex(t => Number(t.id) === clearedId);
 					if (ticketIndex !== -1) {
 						prevState.splice(ticketIndex, 1);
 						return [...prevState];
@@ -169,7 +171,7 @@ const NotificationsPopOver = () => {
 
 				setDesktopNotifications(prevState => {
 					const notfiticationIndex = prevState.findIndex(
-						n => n.tag === String(data.ticketId)
+						n => n.tag === String(clearedId)
 					);
 					if (notfiticationIndex !== -1) {
 						prevState[notfiticationIndex].close();
@@ -184,6 +186,7 @@ const NotificationsPopOver = () => {
 		socket.on("appMessage", data => {
 			if (
 				data.action === "create" &&
+                !data.message.fromMe &&
 				!data.message.read &&
 				(data.ticket.userId === user?.id || !data.ticket.userId)
 			) {

@@ -1,63 +1,53 @@
-version: '3'
-
-networks:
-  whaticket:
-
+name: chat-academico-local
 services:
-
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: whaticket
+      POSTGRES_USER: whaticket
+      POSTGRES_PASSWORD: ${DB_PASS:?Defina DB_PASS no arquivo .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U whaticket"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
   backend:
     build:
-      context: ./backend
-      dockerfile: ./Dockerfile
+      context: .
+      dockerfile: Dockerfile
     environment:
-      - DB_HOST=mysql
-      - DB_USER=root
-      - DB_PASS=${MYSQL_ROOT_PASSWORD:-strongpassword}
-      - DB_NAME=${MYSQL_DATABASE:-whaticket}
-      - JWT_SECRET=${JWT_SECRET:-3123123213123}
-      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET:-75756756756}
-      - BACKEND_URL=${BACKEND_URL:-http://localhost}
-      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
-      - PROXY_PORT=${PROXY_PORT:-8080}
-      - CHROME_ARGS=--no-sandbox --disable-setuid-sandbox
-    ports:
-      - ${BACKEND_PORT:-8080}:3000
+      PORT: "8080"
+      DB_DIALECT: postgres
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: whaticket
+      DB_USER: whaticket
+      DB_PASS: ${DB_PASS:?Defina DB_PASS}
+      JWT_SECRET: ${JWT_SECRET:?Defina JWT_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?Defina JWT_REFRESH_SECRET}
+      BACKEND_URL: ${BACKEND_URL:-http://localhost:8080}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      UPLOAD_DIR: /data/public
+      WWEBJS_AUTH_PATH: /data/wwebjs
+      ZAPO_AUTH_PATH: /data/zapo/state.sqlite
     volumes:
-      - ./backend/public/:/usr/src/app/public/
-      - ./backend/.wwebjs_auth/:/usr/src/app/.wwebjs_auth/
-      - ./backend/.zapo_auth/:/usr/src/app/.zapo_auth/
-    networks:
-      - whaticket
-
+      - media-data:/data
+    ports: ["127.0.0.1:${BACKEND_PORT:-8080}:8080"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
   frontend:
-    ports:
-      - ${FRONTEND_PORT:-3000}:80
-      - ${FRONTEND_SSL_PORT:-3001}:443
     build:
       context: ./frontend
-      dockerfile: ./Dockerfile
+    ports: ["127.0.0.1:${FRONTEND_PORT:-3000}:80"]
     environment:
-      - URL_BACKEND=backend:3000
-      - REACT_APP_BACKEND_URL=${BACKEND_URL:-http://localhost}:${PROXY_PORT:-8080}/
-      - FRONTEND_SERVER_NAME=${FRONTEND_SERVER_NAME}
-      - BACKEND_SERVER_NAME=${BACKEND_SERVER_NAME}
-    volumes:
-      - ./ssl/certs/:/etc/nginx/ssl/
-      - ./ssl/www/:/var/www/letsencrypt/
-    networks:
-      - whaticket
-
-  mysql:
-    image: ${MYSQL_ENGINE:-mariadb}:${MYSQL_VERSION:-10.6}
-    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_bin    
-    volumes:
-      - ./.docker/data/:/var/lib/mysql
-    environment:
-      - MYSQL_DATABASE=${MYSQL_DATABASE:-whaticket}
-      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-strongpassword}
-      - TZ=${TZ:-America/Fortaleza}
-    ports:
-      - ${MYSQL_PORT:-3306}:3306
-    restart: always
-    networks:
-      - whaticket
+      URL_BACKEND: backend:8080
+      VITE_BACKEND_URL: ${BACKEND_URL:-http://localhost:8080}
+      REACT_APP_BACKEND_URL: ${BACKEND_URL:-http://localhost:8080}
+    depends_on: [backend]
+volumes:
+  postgres-data:
+  media-data:

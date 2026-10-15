@@ -1,18 +1,10 @@
 import React, { useState, useContext } from "react";
 import { toast } from "react-toastify";
 import { makeStyles } from "@material-ui/core/styles";
+import Popover from "@material-ui/core/Popover";
+import Divider from "@material-ui/core/Divider";
 import Menu from "@material-ui/core/Menu";
 import MenuItem from "@material-ui/core/MenuItem";
-import ListItemIcon from "@material-ui/core/ListItemIcon";
-import ListItemText from "@material-ui/core/ListItemText";
-import Reply from "@material-ui/icons/Reply";
-import FileCopyOutlined from "@material-ui/icons/FileCopyOutlined";
-import Star from "@material-ui/icons/Star";
-import StarBorder from "@material-ui/icons/StarBorder";
-import Forward from "@material-ui/icons/Forward";
-import DeleteOutline from "@material-ui/icons/DeleteOutline";
-import Edit from "@material-ui/icons/Edit";
-import CheckBoxOutlined from "@material-ui/icons/CheckBoxOutlined";
 import { Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField, Typography } from "@material-ui/core";
 
 import api from "../../services/api";
@@ -34,6 +26,16 @@ export const REACTIONS = {
 const useStyles = makeStyles((theme) => {
   const c = wa(theme);
   return {
+    paper: {
+      width: 228, maxWidth: "calc(100vw - 24px)", padding: "5px 0", borderRadius: 16,
+      background: theme.palette.type === "dark" ? "rgba(35,45,51,.97)" : "rgba(250,250,250,.97)",
+      color: c.text, border: "1px solid rgba(127,127,127,.18)",
+      boxShadow: "0 6px 24px rgba(0,0,0,.20), 0 1px 4px rgba(0,0,0,.12)", backdropFilter: "blur(24px)",
+      "& .MuiMenuItem-root": { minHeight: 32, padding: "5px 20px", fontSize: 14, lineHeight: "22px", margin: "0 5px", borderRadius: 7 },
+      "& .MuiMenuItem-root:hover": { background: theme.palette.type === "dark" ? "#40515c" : "#d9eaf3" },
+      "& .MuiDivider-root": { margin: "5px 15px" },
+    },
+    reactionPaper: { borderRadius: 30, padding: "5px 6px", background: c.panelAlt, boxShadow: "0 3px 14px rgba(0,0,0,.18)" },
     reactions: { display: "flex", gap: 2, padding: "4px 10px 8px", borderBottom: `1px solid ${c.divider}`, marginBottom: 4 },
     emoji: {
       width: 36,
@@ -61,6 +63,8 @@ const MessageOptionsMenu = ({ message, menuOpen, handleClose, anchorEl, ticketId
   const [forwardOpen, setForwardOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [draft, setDraft] = useState("");
+  const [reactionAnchor, setReactionAnchor] = useState(null);
+  const [infoOpen, setInfoOpen] = useState(false);
 
   let mine = null;
   try {
@@ -134,57 +138,38 @@ const MessageOptionsMenu = ({ message, menuOpen, handleClose, anchorEl, ticketId
         </DialogActions>
       </Dialog>
       <ForwardDialog open={forwardOpen} onClose={() => setForwardOpen(false)} message={message} fromTicketId={ticketId} />
-      <Menu
-        anchorEl={anchorEl}
-        getContentAnchorEl={null}
-        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
-        transformOrigin={{ vertical: "top", horizontal: "right" }}
-        open={menuOpen}
-        onClose={handleClose}
-      >
-        {palette.length > 0 && (
-          <div className={classes.reactions}>
-            {palette.map((e) => (
-              <button key={e} type="button" className={`${classes.emoji} ${mine === e ? classes.emojiOn : ""}`} onClick={() => react(e)}>
-                {e}
-              </button>
-            ))}
-          </div>
-        )}
-        <MenuItem onClick={() => { setReplyingMessage(message); handleClose(); }}>
-          <ListItemIcon className={classes.icon}><Reply fontSize="small" /></ListItemIcon>
-          <ListItemText primary="Responder" />
-        </MenuItem>
-        {message.body && !message.mediaUrl && (
-          <MenuItem onClick={copy}>
-            <ListItemIcon className={classes.icon}><FileCopyOutlined fontSize="small" /></ListItemIcon>
-            <ListItemText primary="Copiar" />
-          </MenuItem>
-        )}
-        <MenuItem onClick={() => { setForwardOpen(true); handleClose(); }}>
-          <ListItemIcon className={classes.icon}><Forward fontSize="small" /></ListItemIcon>
-          <ListItemText primary="Encaminhar" />
-        </MenuItem>
-        <MenuItem onClick={star}>
-          <ListItemIcon className={classes.icon}>{message.starred ? <Star fontSize="small" /> : <StarBorder fontSize="small" />}</ListItemIcon>
-          <ListItemText primary={message.starred ? "Desfavoritar" : "Favoritar"} />
-        </MenuItem>
-        {onSelect && (
-          <MenuItem onClick={() => { onSelect(message); handleClose(); }}>
-            <ListItemIcon className={classes.icon}><CheckBoxOutlined fontSize="small" /></ListItemIcon>
-            <ListItemText primary="Selecionar" />
-          </MenuItem>
-        )}
-        {canEdit && (
-          <MenuItem onClick={() => { setDraft(message.body || ""); setEditOpen(true); handleClose(); }}>
-            <ListItemIcon className={classes.icon}><Edit fontSize="small" /></ListItemIcon>
-            <ListItemText primary="Editar" />
-          </MenuItem>
-        )}
-        <MenuItem onClick={() => { setConfirmOpen(true); handleClose(); }}>
-          <ListItemIcon className={classes.icon}><DeleteOutline fontSize="small" /></ListItemIcon>
-          <ListItemText primary="Apagar" />
-        </MenuItem>
+      <Dialog open={infoOpen} onClose={() => setInfoOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>Dados da mensagem</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2">{message.fromMe ? "Enviada" : "Recebida"} em {new Date(message.createdAt).toLocaleString("pt-BR")}</Typography>
+          {message.fromMe && <Typography variant="body2" style={{ marginTop: 12 }}>{Number(message.ack) >= 3 ? "Lida" : Number(message.ack) >= 2 ? "Entregue" : Number(message.ack) >= 1 ? "Enviada" : "Aguardando confirmação"}</Typography>}
+          {message.isEdited && <Typography variant="body2" style={{ marginTop: 12 }}>Mensagem editada</Typography>}
+        </DialogContent>
+        <DialogActions><Button onClick={() => setInfoOpen(false)}>Fechar</Button></DialogActions>
+      </Dialog>
+      <Popover open={!!reactionAnchor} anchorEl={reactionAnchor} onClose={() => setReactionAnchor(null)}
+        anchorOrigin={{ vertical: "top", horizontal: "right" }} transformOrigin={{ vertical: "bottom", horizontal: "right" }}
+        PaperProps={{ className: classes.reactionPaper }}>
+        <div style={{ display: "flex" }} role="group" aria-label="Reagir à mensagem">
+          {palette.map((emoji) => <button key={emoji} type="button" aria-label={`Reagir com ${emoji}`}
+            aria-pressed={mine === emoji} className={`${classes.emoji} ${mine === emoji ? classes.emojiOn : ""}`}
+            onClick={() => { setReactionAnchor(null); react(emoji); }}>{emoji}</button>)}
+        </div>
+      </Popover>
+      <Menu anchorEl={anchorEl} getContentAnchorEl={null} open={menuOpen} onClose={handleClose}
+        anchorOrigin={{ vertical: "bottom", horizontal: "right" }} transformOrigin={{ vertical: "top", horizontal: "right" }}
+        marginThreshold={12} PaperProps={{ className: classes.paper }} MenuListProps={{ dense: true, "aria-label": "Ações da mensagem" }}>
+        <MenuItem onClick={() => { setReplyingMessage(message); handleClose(); }}>Responder</MenuItem>
+        {palette.length > 0 && <MenuItem onClick={() => { setReactionAnchor(anchorEl); handleClose(); }}>Reagir</MenuItem>}
+        <MenuItem onClick={star}>{message.starred ? "Desfavoritar" : "Favoritar"}</MenuItem>
+        <MenuItem onClick={() => { setForwardOpen(true); handleClose(); }}>Encaminhar</MenuItem>
+        {message.body && <MenuItem onClick={copy}>Copiar</MenuItem>}
+        {canEdit && <MenuItem onClick={() => { setDraft(message.body || ""); setEditOpen(true); handleClose(); }}>Editar</MenuItem>}
+        <MenuItem onClick={() => { setInfoOpen(true); handleClose(); }}>Dados</MenuItem>
+        <Divider />
+        <MenuItem onClick={() => { setConfirmOpen(true); handleClose(); }}>Apagar</MenuItem>
+        {onSelect && <Divider />}
+        {onSelect && <MenuItem onClick={() => { onSelect(message); handleClose(); }}>Selecionar mensagens</MenuItem>}
       </Menu>
     </>
   );

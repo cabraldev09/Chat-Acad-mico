@@ -43,7 +43,7 @@ module.exports = {
   ...fromUrl(process.env.DATABASE_URL_POOL || process.env.DATABASE_URL),
   lock: fromUrl(process.env.DATABASE_URL),
   dialectOptions: useSsl
-    ? { ssl: { require: true, rejectUnauthorized: false } }
+    ? { ssl: { require: true, rejectUnauthorized: true, ...(process.env.DB_SSL_CA ? { ca: require("fs").readFileSync(process.env.DB_SSL_CA, "utf8") } : {}) } }
     : {},
   // Supabase offers two poolers: "session" (port 5432) allows only ~15 connections for the whole project, and a deploy
   // briefly runs two copies of the API, so the pool stays small there. "Transaction" (port 6543) serves many clients

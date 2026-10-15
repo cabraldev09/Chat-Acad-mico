@@ -17,7 +17,7 @@ import { approve, discard } from "../services/AiServices/Learning";
 import { respond } from "../services/AiServices/RunAiAgent";
 import { priceOf, tokensToday } from "../services/AiServices/Usage";
 import { DEFAULT_SLOTS } from "../services/AiServices/Tools";
-import { isUrlSafe } from "../helpers/SafeUrl";
+import { isUrlSafe, safeRequest } from "../helpers/SafeUrl";
 import { dayBounds, shiftDays } from "../helpers/AppTime";
 
 const crud = makeCrud(AiAgent, {
@@ -213,7 +213,7 @@ export const kbFromUrl = async (req: Request, res: Response): Promise<Response> 
   if (!(await isUrlSafe(url))) throw new AppError("ERR_KB_URL");
   let html = "";
   try {
-    const r = await axios.get(url, { timeout: 10000, maxContentLength: 2 * 1024 * 1024, responseType: "text", maxRedirects: 3 });
+    const r = await safeRequest({ url, method: "GET", timeout: 10000, maxContentLength: 2 * 1024 * 1024, responseType: "text" });
     html = String(r.data);
   } catch (err) {
     throw new AppError("ERR_KB_URL_FETCH");
