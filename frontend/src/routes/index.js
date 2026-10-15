@@ -1,5 +1,5 @@
 import React, { Suspense, useEffect } from "react";
-import { BrowserRouter, Switch } from "react-router-dom";
+import { BrowserRouter, Redirect, Switch } from "react-router-dom";
 import { ToastContainer } from "react-toastify";
 
 import LoggedInLayout from "../layout";
@@ -14,10 +14,8 @@ import { lazyPage as lazy } from "../utils/lazyPage";
 import Route from "./Route";
 
 // every page is its own file: the first screen downloads only what it shows
-const Dashboard = lazy(() => import("../pages/Dashboard/"));
 const Tickets = lazy(() => import("../pages/Tickets/"));
 const Connections = lazy(() => import("../pages/Connections/"));
-const Settings = lazy(() => import("../pages/Settings/"));
 const Polos = lazy(() => import("../pages/Polos"));
 const Onboarding = lazy(() => import("../pages/Onboarding"));
 const Users = lazy(() => import("../pages/Users"));
@@ -53,7 +51,7 @@ const AffiliatePortalPage = (props) => (
 
 // the two pages everyone opens next are fetched in the background right after the first paint
 const warmUp = () => {
-  const go = () => { import("../pages/Tickets/"); import("../pages/Dashboard/"); };
+  const go = () => { import("../pages/Tickets/"); import("../pages/Reports/"); };
   if (typeof window.requestIdleCallback === "function") window.requestIdleCallback(go, { timeout: 4000 });
   else setTimeout(go, 2000);
 };
@@ -72,7 +70,8 @@ const Routes = () => {
               <LoggedInLayout>
                 <PageErrorBoundary>
                 <Suspense fallback={<BackdropLoading />}>
-                <Route exact path="/" component={Dashboard} isPrivate />
+                {/* the conversations are the home of the system */}
+                <Route exact path="/" component={() => <Redirect to="/tickets" />} isPrivate />
                 <Route exact path="/tickets/:ticketId?" component={Tickets} isPrivate />
                 <Route exact path="/connections" component={Connections} isPrivate />
                 <Route exact path="/contacts" component={Contacts} isPrivate />
@@ -80,7 +79,8 @@ const Routes = () => {
                 <Route exact path="/polos" component={Polos} isPrivate managerOnly />
                 <Route exact path="/ambientacao" component={Onboarding} isPrivate />
                 <Route exact path="/quickAnswers" component={QuickAnswers} isPrivate />
-                <Route exact path="/Settings" component={Settings} isPrivate adminOnly />
+                {/* the general settings moved into Configurações */}
+                <Route exact path="/Settings" component={() => <Redirect to="/configuracoes?secao=geral" />} isPrivate adminOnly />
                 <Route exact path="/Queues" component={Queues} isPrivate managerOnly />
                 <Route exact path="/tags" component={Tags} isPrivate managerOnly />
                 <Route exact path="/schedules" component={Schedules} isPrivate />

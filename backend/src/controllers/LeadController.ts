@@ -698,6 +698,17 @@ export const onboarding = async (req: Request, res: Response): Promise<Response>
   return res.json(await setOnboarding(lead, uid(req), action));
 };
 
+// edit a confirmed enrollment: tutor, polo or the step of the onboarding
+export const editOnboarding = async (req: Request, res: Response): Promise<Response> => {
+  const lead = await Lead.findByPk(req.params.id);
+  if (!lead) throw new AppError("ERR_LEAD_NOT_FOUND", 404);
+  const { editOnboarding: edit } = await import("../services/CrmServices/EnrollLead");
+  const b = req.body || {};
+  const status = ["pending", "started", "done"].includes(b.status) ? b.status : undefined;
+  const tutorId = b.tutorId === "auto" ? "auto" : b.tutorId === null ? null : b.tutorId ? Number(b.tutorId) : undefined;
+  return res.json(await edit(lead, uid(req), { status, tutorId, poloId: b.poloId ? Number(b.poloId) : undefined }));
+};
+
 export const onboardingList = async (req: Request, res: Response): Promise<Response> => {
   const rows = await Lead.findAll({
     where: await withLeadScope(req, { onboardingStatus: { [Op.ne]: "none" } }),

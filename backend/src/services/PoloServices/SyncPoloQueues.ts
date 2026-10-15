@@ -6,7 +6,6 @@ import { POLO_FUNCTIONS, POLO_FUNCTION_LABEL, PoloFunction } from "../../helpers
 const BASE_HUE: Record<PoloFunction, number> = {
   comercial: 212,
   tutoria: 168,
-  academico: 268,
   coordenacao: 28
 };
 

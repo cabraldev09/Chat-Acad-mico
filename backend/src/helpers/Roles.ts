@@ -7,14 +7,15 @@ export const isManagerRole = (role: string | undefined): boolean => role === "ad
 // which side a coordinator coordinates (a label: it does not limit access)
 export const COORD_AREAS = ["comercial", "academica"] as const;
 
-export const POLO_FUNCTIONS = ["comercial", "tutoria", "academico", "coordenacao"] as const;
+// the tutor IS the academic sector: one function covers the first access and the academic life of the student
+export const POLO_FUNCTIONS = ["comercial", "tutoria", "coordenacao"] as const;
 export type PoloFunction = typeof POLO_FUNCTIONS[number];
 
 // queue function that belongs to each job role
 export const QUEUE_ROLE_OF: Record<string, PoloFunction | null> = {
   consultor: "comercial",
   tutor: "tutoria",
-  academico: "academico",
+  academico: "tutoria",
   coordenacao: "coordenacao",
   admin: null
 };
@@ -22,8 +23,8 @@ export const QUEUE_ROLE_OF: Record<string, PoloFunction | null> = {
 // conversation segment each role may work on
 export const SEGMENTS_OF: Record<string, string[]> = {
   consultor: ["sales", "postsale"],
-  tutor: ["onboarding"],
-  academico: ["support"],
+  tutor: ["onboarding", "support"],
+  academico: ["onboarding", "support"],
   coordenacao: ["sales", "postsale", "onboarding", "support"],
   admin: ["sales", "postsale", "onboarding", "support"]
 };
@@ -34,11 +35,10 @@ export const SEGMENTS_OF: Record<string, string[]> = {
 export const roleOf = (u: { role?: string; profile?: string }): Role =>
   u.profile === "admin"
     ? "admin"
-    : ((u.role && (ROLES as readonly string[]).includes(u.role) ? u.role : "consultor") as Role);
+    : ((u.role === "academico" ? "tutor" : u.role && (ROLES as readonly string[]).includes(u.role) ? u.role : "consultor") as Role);
 
 export const POLO_FUNCTION_LABEL: Record<PoloFunction, string> = {
   comercial: "Comercial",
   tutoria: "Tutoria",
-  academico: "Acadêmico",
   coordenacao: "Coordenação"
 };

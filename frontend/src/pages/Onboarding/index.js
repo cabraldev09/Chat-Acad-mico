@@ -2,8 +2,8 @@ import React, { useCallback, useEffect, useState } from "react";
 import { useHistory } from "react-router-dom";
 import { toast } from "react-toastify";
 import { makeStyles } from "@material-ui/core/styles";
-import { Typography, Chip, CircularProgress } from "@material-ui/core";
-import { Play, CheckCheck, MessageSquare } from "lucide-react";
+import { Typography, Chip, CircularProgress, Menu, MenuItem, Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField, ListItemIcon } from "@material-ui/core";
+import { Play, CheckCheck, MessageSquare, MoreVertical, UserCog, Undo2, MoveRight } from "lucide-react";
 
 import MainContainer from "../../components/MainContainer";
 import MainHeader from "../../components/MainHeader";
@@ -49,6 +49,8 @@ const Onboarding = () => {
   const history = useHistory();
   const [rows, setRows] = useState(null);
   const [busyId, setBusyId] = useState(null);
+  const [menu, setMenu] = useState(null); // { anchor, lead }
+  const [tutorFor, setTutorFor] = useState(null); // { lead, tutors, pick }
 
   const load = useCallback(async () => {
     try {
@@ -78,6 +80,30 @@ const Onboarding = () => {
       toastError(err);
     }
     setBusyId(null);
+  };
+
+  // a confirmed enrollment can still be edited: put the student back to another step, or change the tutor
+  const edit = async (lead, body, ok) => {
+    setBusyId(lead.id);
+    try {
+      await api.put(`/leads/${lead.id}/onboarding`, body);
+      toast.success(ok);
+      await load();
+    } catch (err) {
+      toastError(err);
+    }
+    setBusyId(null);
+  };
+  const openTutor = async (lead) => {
+    setMenu(null);
+    let tutors = [];
+    try { if (lead.poloId) tutors = (await api.get(`/polos/${lead.poloId}/tutors`)).data; } catch (err) { toastError(err); }
+    setTutorFor({ lead, tutors, pick: lead.onboardingTutorId || 0 });
+  };
+  const saveTutor = async () => {
+    const { lead, pick } = tutorFor;
+    setTutorFor(null);
+    await edit(lead, { tutorId: pick === "auto" ? "auto" : pick || null }, pick ? "Tutor atualizado. A conversa foi para ele." : "Aluno devolvido para a fila da tutoria.");
   };
 
   if (!rows) return <MainContainer><div className={classes.empty}><CircularProgress size={24} /></div></MainContainer>;
@@ -121,6 +147,9 @@ const Onboarding = () => {
                           <CheckCheck size={16} />
                         </IconAction>
                       )}
+                      <IconAction title="Editar" disabled={busyId === l.id} onClick={(e) => setMenu({ anchor: e.currentTarget, lead: l })}>
+                        <MoreVertical size={16} />
+                      </IconAction>
                     </div>
                     <div className={classes.meta}>{l.course ? l.course.name : "Curso não informado"}</div>
                     <div className={classes.meta}>Tutor: {l.tutorName || "aguardando na fila"}{l.owner ? ` · Consultor: ${l.owner.name}` : ""}</div>
@@ -134,6 +163,34 @@ const Onboarding = () => {
           );
         })}
       </div>
+      <Menu anchorEl={menu && menu.anchor} open={!!menu} onClose={() => setMenu(null)}>
+        {menu && <MenuItem onClick={() => openTutor(menu.lead)}><ListItemIcon><UserCog size={17} /></ListItemIcon>Trocar o tutor</MenuItem>}
+        {menu && COLUMNS.filter((c) => c.key !== menu.lead.onboardingStatus).map((c) => (
+          <MenuItem key={c.key} onClick={() => { const l = menu.lead; setMenu(null); edit(l, { status: c.key }, `Aluno movido para ${c.title.toLowerCase()}.`); }}>
+            <ListItemIcon>{c.key === "done" ? <MoveRight size={17} /> : <Undo2 size={17} />}</ListItemIcon>Mover para {c.title.toLowerCase()}
+          </MenuItem>
+        ))}
+      </Menu>
+      <Dialog open={!!tutorFor} onClose={() => setTutorFor(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>Trocar o tutor</DialogTitle>
+        <DialogContent>
+          {tutorFor && (
+            <>
+              <Typography variant="body2" color="textSecondary" style={{ marginBottom: 8 }}>{tutorFor.lead.name}. A conversa de ambientação passa para o tutor escolhido e nada é enviado ao aluno.</Typography>
+              <TextField select fullWidth variant="outlined" size="small" label="Tutor" value={tutorFor.pick} onChange={(e) => setTutorFor({ ...tutorFor, pick: e.target.value })}>
+                <MenuItem value="auto">Escolher pelo rodízio da tutoria</MenuItem>
+                <MenuItem value={0}>Sem tutor (volta para a fila)</MenuItem>
+                {tutorFor.tutors.map((t) => <MenuItem key={t.id} value={t.id}>{t.name}</MenuItem>)}
+              </TextField>
+              {tutorFor.tutors.length === 0 && <Typography variant="caption" color="textSecondary">Este polo não tem tutor cadastrado em Polos e equipes.</Typography>}
+            </>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button variant="outlined" color="secondary" onClick={() => setTutorFor(null)}>Cancelar</Button>
+          <Button variant="contained" color="primary" onClick={saveTutor}>Salvar</Button>
+        </DialogActions>
+      </Dialog>
       <Typography variant="caption" color="textSecondary">O sistema avisa quando um aluno passa de 24 horas sem o primeiro contato do tutor.</Typography>
     </MainContainer>
   );

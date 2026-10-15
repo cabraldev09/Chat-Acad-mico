@@ -234,8 +234,7 @@ const UserModal = ({ open, onClose, userId }) => {
 														{isStrictAdmin(loggedInUser) && <MenuItem value="admin">Administrador (acesso total)</MenuItem>}
 														<MenuItem value="coordenacao">Coordenador de polo (gerencia todos os polos)</MenuItem>
 														<MenuItem value="consultor">Consultor comercial</MenuItem>
-														<MenuItem value="tutor">Tutor</MenuItem>
-														<MenuItem value="academico">Setor acadêmico</MenuItem>
+														<MenuItem value="tutor">Tutor (setor acadêmico)</MenuItem>
 													</Field>
 												</>
 											)}

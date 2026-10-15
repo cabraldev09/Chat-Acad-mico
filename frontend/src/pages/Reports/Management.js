@@ -1,5 +1,4 @@
 import React from "react";
-import { useHistory } from "react-router-dom";
 import { Bar, BarChart, CartesianGrid, Cell, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Building2, Gauge, MapPin, Users } from "lucide-react";
 
@@ -16,7 +15,6 @@ const Kpi = ({ label, value, note, tone }) => (
 // Management: every department, attendant and polo side by side, with response times that do not lie (median, P90, share on time)
 const Management = ({ data, sla }) => {
   const c = useShared();
-  const history = useHistory();
   if (!data) return <div className={c.panel} style={{ opacity: 0.6 }}>Carregando a visão de gestão...</div>;
   const t = data.total;
   const delta = t.reply.median !== null && t.previousMedian ? Math.round(((t.reply.median - t.previousMedian) / t.previousMedian) * 100) : null;
@@ -26,12 +24,11 @@ const Management = ({ data, sla }) => {
   return (
     <div className={c.stack}>
       <div className={c.panel} style={{ padding: 0, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))" }}>
-        <Kpi label="Atendimentos" value={t.attendances} note={`${t.received} recebidas · ${t.sent} enviadas`} />
         <Kpi label="Tempo mediano de resposta" value={hm(t.reply.median)} tone={medianTone}
           note={delta === null ? `meta: ${sla} min` : `${delta > 0 ? "+" : ""}${delta}% vs. período anterior · meta ${sla} min`} />
         <Kpi label="Respondidas no prazo" value={t.reply.withinSlaPct === null ? "—" : `${t.reply.withinSlaPct}%`} note={`P90: ${hm(t.reply.p90)} · ${t.reply.count} respostas`} />
         <Kpi label="Sem resposta agora" value={t.unansweredNow} tone={t.unansweredNow ? "#dc2626" : undefined} note={`${t.waitingNow} na fila de espera`} />
-        <Kpi label="Matrículas" value={t.enrolled} note={`${t.openNow} conversas abertas`} />
+        <Kpi label="Conversas abertas" value={t.openNow} note="em atendimento agora" />
       </div>
 
       <Insights items={data.insights} title="O que a gestão precisa saber" />
@@ -127,7 +124,6 @@ const Management = ({ data, sla }) => {
           </div>
         </div>
       )}
-      <button type="button" onClick={() => history.push("/reports")} style={{ justifySelf: "start", border: 0, background: "transparent", color: "#0693E3", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>Ver relatórios detalhados</button>
     </div>
   );
 };

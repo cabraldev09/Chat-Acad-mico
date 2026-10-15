@@ -210,3 +210,78 @@ export const setOnboarding = async (lead: Lead, actorId: number, action: "start"
   getIO().emit("lead", { action: "update", lead: out });
   return out;
 };
+
+// Editing an enrollment after it was confirmed: swap the tutor, move the student to another polo, or put the onboarding
+// back to an earlier step. The tutor's conversation follows (queue and attendant); nothing is sent to the student.
+export interface EditOnboardingInput {
+  status?: "pending" | "started" | "done";
+  tutorId?: number | "auto" | null;
+  poloId?: number | null;
+}
+
+export const editOnboarding = async (lead: Lead, actorId: number, input: EditOnboardingInput) => {
+  if (lead.onboardingStatus === "none") throw new AppError("ERR_ONBOARDING_NOT_STARTED", 400);
+  const notes: string[] = [];
+
+  const changesPolo = !!input.poloId && input.poloId !== lead.poloId;
+  const changesTutor = input.tutorId !== undefined && (input.tutorId === "auto" || Number(input.tutorId) !== lead.onboardingTutorId);
+  if (changesPolo || changesTutor) {
+    const poloId = changesPolo ? Number(input.poloId) : lead.poloId;
+    const polo = poloId ? await Polo.findByPk(poloId) : null;
+    if (!polo) throw new AppError("ERR_NO_POLO_FOUND", 404);
+    let queue = await Queue.findOne({ where: { poloId: polo.id, role: "tutoria" } });
+    if (!queue) {
+      await syncPoloQueues(polo);
+      queue = await Queue.findOne({ where: { poloId: polo.id, role: "tutoria" } });
+    }
+    if (!queue) throw new AppError("ERR_POLO_NO_TUTORING_QUEUE", 400);
+    let tutor: User | null = null;
+    if (input.tutorId && input.tutorId !== "auto") {
+      const member = await PoloMember.findOne({ where: { poloId: polo.id, userId: Number(input.tutorId), role: "tutoria" } });
+      if (!member) throw new AppError("ERR_USER_NOT_IN_QUEUE", 422);
+      tutor = await User.findByPk(Number(input.tutorId));
+    } else if (input.tutorId === null) {
+      tutor = null; // back to the polo's waiting line
+    } else {
+      // a new polo without a chosen tutor: the queue rule picks one; the same polo keeps the tutor
+      tutor = changesPolo || input.tutorId === "auto" ? await pickUserForQueue(queue, true) : await User.findByPk(lead.onboardingTutorId);
+    }
+    const before = lead.onboardingTutorId ? (await User.findByPk(lead.onboardingTutorId))?.name : null;
+    await lead.update({ poloId: polo.id, onboardingTutorId: tutor?.id || null });
+    notes.push(changesPolo ? `Polo alterado para ${polo.name}` : "");
+    notes.push(`Tutor: ${before || "fila"} → ${tutor ? tutor.name : "fila"}`);
+
+    const tickets = lead.contactId
+      ? await Ticket.findAll({ where: { contactId: lead.contactId, segment: "onboarding", status: { [Op.in]: ["open", "pending"] } } })
+      : [];
+    for (const t of tickets) {
+      // eslint-disable-next-line no-await-in-loop
+      await t.update({ queueId: queue.id, userId: tutor?.id || null, status: tutor ? "open" : "pending" });
+      // eslint-disable-next-line no-await-in-loop
+      await TicketEvent.create({ ticketId: t.id, type: "handoff", actorId, toQueueId: queue.id, toUserId: tutor?.id || null, note: notes.filter(Boolean).join(". ") });
+      // eslint-disable-next-line no-await-in-loop
+      const fresh = await ShowTicketService(t.id);
+      getIO().to(fresh.status).to("notification").emit("ticket", { action: "update", ticket: fresh });
+    }
+    // open tutor task goes with the new tutor
+    if (tutor) await LeadTask.update({ userId: tutor.id } as any, { where: { leadId: lead.id, userId: before ? lead.onboardingTutorId || tutor.id : tutor.id, doneAt: null, title: { [Op.like]: "Ambientar o aluno%" } } as any });
+  }
+
+  if (input.status && input.status !== lead.onboardingStatus) {
+    if (input.status === "done") {
+      await setOnboarding(lead, actorId, "done");
+    } else if (input.status === "started") {
+      await lead.update({ onboardingStatus: "started", onboardingStartedAt: lead.onboardingStartedAt || new Date(), onboardingDoneAt: null });
+      notes.push("Ambientação em andamento");
+    } else {
+      await lead.update({ onboardingStatus: "pending", onboardingStartedAt: null, onboardingDoneAt: null, onboardingAlertAt: null });
+      notes.push("Ambientação voltou para pendente");
+    }
+  }
+
+  const summary = notes.filter(Boolean).join(". ");
+  if (summary) await addActivity(lead.id, actorId, "system", `Matrícula editada: ${summary}.`);
+  const out = (await loadLead(lead.id)) as Lead;
+  getIO().emit("lead", { action: "update", lead: out });
+  return out;
+};

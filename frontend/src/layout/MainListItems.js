@@ -8,7 +8,6 @@ import ListItemIcon from "@material-ui/core/ListItemIcon";
 import ListItemText from "@material-ui/core/ListItemText";
 import ListSubheader from "@material-ui/core/ListSubheader";
 import Divider from "@material-ui/core/Divider";
-import DashboardOutlinedIcon from "@material-ui/icons/DashboardOutlined";
 import MessagesSquareIcon from "lucide-react/dist/esm/icons/messages-square";
 import SyncAltIcon from "@material-ui/icons/SyncAlt";
 import ContactPhoneOutlinedIcon from "@material-ui/icons/ContactPhoneOutlined";
@@ -192,49 +191,37 @@ const MainListItems = (props) => {
 
   return (
     <div onClick={drawerClose}>
-      <ListItemLink
-        to="/"
-        primary="Painel"
-        icon={<DashboardOutlinedIcon />}
-        collapsed={collapsed}
-      />
-      {!isManager(user) && (
-      <ListItemLink
-          to="/connections"
-          primary={i18n.t("mainDrawer.listItems.connections")}
-          icon={<SyncAltIcon />}
-          collapsed={collapsed}
-          adornment={
-            connectionWarning && (
-              <span
-                className={clsx(
-                  classes.connectionDot,
-                  collapsed && classes.connectionDotCollapsed
-                )}
-              />
-            )
-          }
-        />
-      )}
+      {/* the conversations come first: they are the home of the system */}
       <ListItemLink
         to="/tickets"
-        primary={i18n.t("mainDrawer.listItems.tickets")}
+        primary="Conversas"
         icon={<MessagesSquareIcon className="ico" />}
         collapsed={collapsed}
       />
-
       <ListItemLink
         to="/contacts"
         primary={i18n.t("mainDrawer.listItems.contacts")}
         icon={<ContactPhoneOutlinedIcon />}
         collapsed={collapsed}
       />
-      <ListItemLink
-        to="/quickAnswers"
-        primary={i18n.t("mainDrawer.listItems.quickAnswers")}
-        icon={<QuestionAnswerOutlinedIcon />}
-        collapsed={collapsed}
-      />
+      {/* administration and coordination find these two in Configurações; everyone else keeps them here */}
+      {!isManager(user) && (
+        <>
+          <ListItemLink
+            to="/connections"
+            primary={i18n.t("mainDrawer.listItems.connections")}
+            icon={<SyncAltIcon />}
+            collapsed={collapsed}
+            adornment={connectionWarning && <span className={clsx(classes.connectionDot, collapsed && classes.connectionDotCollapsed)} />}
+          />
+          <ListItemLink
+            to="/quickAnswers"
+            primary={i18n.t("mainDrawer.listItems.quickAnswers")}
+            icon={<QuestionAnswerOutlinedIcon />}
+            collapsed={collapsed}
+          />
+        </>
+      )}
       {!collapsed && (
         <ListSubheader disableSticky className={classes.sectionLabel}>CRM</ListSubheader>
       )}
@@ -273,7 +260,7 @@ const MainListItems = (props) => {
           <Divider className={classes.divider} />
           <ListItemLink
             to="/configuracoes"
-            alsoActive={["/connections", "/users", "/polos", "/queues", "/tags", "/chatbot", "/ai-agents", "/monitor", "/crm/config", "/settings", "/integrations"]}
+            alsoActive={["/connections", "/quickAnswers", "/users", "/polos", "/queues", "/tags", "/chatbot", "/ai-agents", "/monitor", "/crm/config", "/settings", "/integrations"]}
             primary="Configurações"
             icon={<SlidersIcon className="ico" />}
             collapsed={collapsed}

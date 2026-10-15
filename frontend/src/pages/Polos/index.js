@@ -19,14 +19,13 @@ import toastError from "../../errors/toastError";
 
 const FUNCTIONS = [
   { key: "comercial", label: "Comercial", hint: "Consultores que atendem candidatos e geram propostas." },
-  { key: "tutoria", label: "Tutoria", hint: "Tutores que ambientam o aluno na plataforma. Pode haver mais de um." },
-  { key: "academico", label: "Setor acadêmico", hint: "Secretaria e suporte acadêmico do polo." },
+  { key: "tutoria", label: "Tutoria (setor acadêmico)", hint: "Tutores que ambientam o aluno na plataforma e acompanham a vida acadêmica dele. Pode haver mais de um." },
   { key: "coordenacao", label: "Coordenação acadêmica", hint: "Acompanha o polo (leitura)." },
 ];
 
 const UFS = ["AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT","MS","MG","PA","PB","PR","PE","PI","RJ","RN","RS","RO","RR","SC","SP","SE","TO"];
 
-const ROLE_LABEL = { admin: "Administrador", coordenacao: "Coordenação", consultor: "Consultor", tutor: "Tutor", academico: "Acadêmico" };
+const ROLE_LABEL = { admin: "Administrador", coordenacao: "Coordenação", consultor: "Consultor", tutor: "Tutor (acadêmico)", academico: "Tutor (acadêmico)" };
 
 const DISTRIBUTION = [
   { value: "none", label: "Manual (cada um assume)" },

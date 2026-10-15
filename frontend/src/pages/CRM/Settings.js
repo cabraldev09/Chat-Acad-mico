@@ -35,7 +35,7 @@ const Copyable = ({ text }) => {
   );
 };
 
-const Capture = ({ s, setS, save }) => {
+export const Capture = ({ s, setS, save }) => {
   const classes = useStyles();
   const base = getBackendUrl().replace(/\/$/, "");
   const link = s.formToken ? `${base}/leadform/${s.formToken}` : "";
@@ -74,7 +74,7 @@ const Capture = ({ s, setS, save }) => {
   );
 };
 
-const EfiSettings = ({ stages }) => {
+export const EfiSettings = ({ stages }) => {
   const classes = useStyles();
   const [v, setV] = useState(null);
   const [secret, setSecret] = useState("");
@@ -149,7 +149,7 @@ const WEEK = [
 ];
 
 // Working hours (used to measure answer times) and the "lead without an answer" alert.
-const HoursAndAlerts = ({ s, save }) => {
+export const HoursAndAlerts = ({ s, save }) => {
   const classes = useStyles();
   const [hours, setHours] = useState(null);
   const [sla, setSla] = useState("15");
@@ -212,7 +212,7 @@ const HoursAndAlerts = ({ s, save }) => {
   );
 };
 
-const Automation = ({ s, setS, save, users }) => {
+export const Automation = ({ s, setS, save, users }) => {
   const classes = useStyles();
   const [busy, setBusy] = useState(false);
   return (
@@ -244,7 +244,6 @@ const Automation = ({ s, setS, save, users }) => {
           {users.map((u) => (<MenuItem key={u.id} value={u.id}>{u.name}</MenuItem>))}
         </TextField>
       )}
-      <HoursAndAlerts s={s} save={save} />
       <div style={{ borderTop: "1px solid rgba(128,128,128,.25)", paddingTop: 16 }}>
         <Typography variant="subtitle1" style={{ fontWeight: 600 }}>Contatos já existentes</Typography>
         <Typography className={classes.hint} gutterBottom>Ao iniciar, o sistema já registra no CRM os contatos que ainda não são leads. Rode manualmente se importar contatos novos.</Typography>
@@ -331,10 +330,10 @@ const CrmSettings = () => {
 
   return (
     <MainContainer>
-      <MainHeader><Title>Configurações do CRM</Title></MainHeader>
+      <MainHeader><Title>Funil, cursos e propostas</Title></MainHeader>
       <Paper variant="outlined" style={{ marginBottom: 8 }}>
         <Tabs value={tab} onChange={(e, v) => setTab(v)}>
-          <Tab label="Etapas do funil" /><Tab label="Cursos" /><Tab label="Instituições" /><Tab label="Modelos de proposta" /><Tab label="Captação" /><Tab label="Pagamentos (Efí)" /><Tab label="Automação" />
+          <Tab label="Etapas do funil" /><Tab label="Cursos" /><Tab label="Instituições" /><Tab label="Modelos de proposta" />
         </Tabs>
       </Paper>
       <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
@@ -461,9 +460,6 @@ const CrmSettings = () => {
               { header: "Instituições", render: (r) => ((r.institutions || []).map((i) => i.name).join(", ") || "Todas") },
             ]} />
         )}
-        {tab === 4 && <Capture s={s} setS={setS} save={save} />}
-        {tab === 5 && <EfiSettings stages={stages} />}
-        {tab === 6 && <Automation s={s} setS={setS} save={save} users={users} />}
       </div>
     </MainContainer>
   );

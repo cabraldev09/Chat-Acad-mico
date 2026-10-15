@@ -1962,7 +1962,7 @@ const postMeta = (id, payload, secret, badSig) => {
       const r = await http.post("/polos", { name: "Polo Teste", code: "T1", city: "Porto Velho", state: "RO" }, auth());
       assert(r.status === 201, `create polo ${r.status} ${JSON.stringify(r.data)}`);
       poloId = r.data.id;
-      assert(r.data.queues.length === 4 && ["comercial", "tutoria", "academico", "coordenacao"].every(k => r.data.queues.some(q => q.role === k)), "queues per function");
+      assert(r.data.queues.length === 3 && ["comercial", "tutoria", "coordenacao"].every(k => r.data.queues.some(q => q.role === k)), "queues per function");
       const mk = async (name, role) => (await http.post("/users", { name, email: `${role}@polo.test`, password: "senha123", role }, auth())).data;
       const tutor = await mk("Tutor Teste", "tutor");
       const cons = await mk("Consultor Teste", "consultor");
@@ -2263,6 +2263,27 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(again.target === 30 && again.done === 5 && again.manual === 4, `import discounts the CRM ${JSON.stringify([again.target, again.done, again.manual])}`);
       // the team goals list does not show the polo semester
       assert(!(await http.get("/goals", auth())).data.some(g => g.id === goal.id), "polo goal leaked into the team goals");
+    });
+    await test("a confirmed enrollment can be edited: step back, swap the tutor, no message goes out", async () => {
+      const row = sql(`SELECT id||'|'||poloId||'|'||COALESCE(onboardingTutorId,0) FROM Leads WHERE onboardingStatus='pending' AND poloId IS NOT NULL ORDER BY id DESC LIMIT 1`);
+      assert(row, "no enrolled lead to edit");
+      const [leadId, poloIdOf] = row.split("|").map(Number);
+      const second = (await http.post("/users", { name: "Segundo Tutor", email: "tutor2@polo.test", password: "senha123", role: "tutor" }, auth())).data;
+      const members = sql(`SELECT string_agg(userId||':'||role, ',') FROM PoloMembers WHERE poloId=${poloIdOf}`).split(",").filter(Boolean).map(x => { const [u, r] = x.split(":"); return { userId: Number(u), role: r }; });
+      assert((await http.put(`/polos/${poloIdOf}/members`, { members: [...members, { userId: second.id, role: "tutoria" }] }, auth())).status === 200, "member not added");
+      const sentBefore = graph.sent.length;
+      const started = await http.put(`/leads/${leadId}/onboarding`, { status: "started" }, auth());
+      assert(started.status === 200 && started.data.onboardingStatus === "started", `started ${started.status}`);
+      const done = await http.put(`/leads/${leadId}/onboarding`, { status: "done" }, auth());
+      assert(done.data.onboardingStatus === "done", "not done");
+      const back = await http.put(`/leads/${leadId}/onboarding`, { status: "pending" }, auth());
+      assert(back.data.onboardingStatus === "pending" && !back.data.onboardingDoneAt, `back ${JSON.stringify([back.data.onboardingStatus, back.data.onboardingDoneAt])}`);
+      const swapped = await http.put(`/leads/${leadId}/onboarding`, { tutorId: second.id }, auth());
+      assert(swapped.status === 200 && swapped.data.onboardingTutorId === second.id, `swap ${swapped.status} ${JSON.stringify(swapped.data).slice(0, 120)}`);
+      assert(sql(`SELECT COUNT(*) FROM Tickets t JOIN Leads l ON l.contactId=t.contactId WHERE l.id=${leadId} AND t.segment='onboarding' AND t.status IN ('open','pending') AND t.userId=${second.id}`) === "1", "the onboarding conversation did not follow the new tutor");
+      const outsider = (await http.post("/users", { name: "Fora do Polo", email: "forapolo@polo.test", password: "senha123", role: "tutor" }, auth())).data;
+      assert((await http.put(`/leads/${leadId}/onboarding`, { tutorId: outsider.id }, auth())).status === 422, "a tutor from outside the polo was accepted");
+      assert(graph.sent.length === sentBefore, "editing the enrollment sent a message");
     });
     await test("login is rate limited", async () => {
       let limited = false;

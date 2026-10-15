@@ -219,6 +219,7 @@ r.get("/lead-tasks", isAuth, Lead.tasksIndex);
 r.get("/onboarding", isAuth, Lead.onboardingList);
 r.post("/leads/:id/enroll", isAuth, canAccessLead, Lead.enroll);
 r.post("/leads/:id/onboarding", isAuth, canAccessLead, Lead.onboarding);
+r.put("/leads/:id/onboarding", isAuth, canAccessLead, Lead.editOnboarding);
 r.put("/leads/:id/tasks/:taskId", isAuth, canAccessLead, Lead.updateTask);
 r.post("/leads/:id/tasks/:taskId/toggle", isAuth, canAccessLead, Lead.completeTask);
 r.delete("/leads/:id/tasks/:taskId", isAuth, canAccessLead, Lead.removeTask);
