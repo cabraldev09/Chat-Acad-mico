@@ -2045,6 +2045,51 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(gen.data.graph.edges.length === 6, `the invalid link was kept: ${gen.data.graph.edges.length}`);
       assert((await http.post("/flows/generate", { description: "curto" }, auth())).status === 400, "short description accepted");
     });
+    await test("triggers: an event runs a flow on the conversation, with filters, a cooldown and only real events", async () => {
+      const cat = (await http.get("/automation-events", auth())).data;
+      assert(cat.some(e => e.key === "tag.added" && e.available) && cat.some(e => e.key === "shopify" && !e.available && e.note), "event catalog");
+      const tag = (await http.post("/tags", { name: "Gatilho teste", color: "#16a34a" }, auth())).data;
+      const flow = (await http.post("/flows", { name: "Resposta ao gatilho", entry: { type: "manual" }, graph: { nodes: [
+        { id: "s", type: "start", data: {} }, { id: "m", type: "message", data: { text: "Gatilho de etiqueta funcionou, {{primeiro_nome}}!" } }, { id: "e", type: "end", data: {} }],
+        edges: [{ id: "1", source: "s", target: "m" }, { id: "2", source: "m", target: "e" }] } }, auth())).data;
+      assert((await http.post("/automation-triggers", { name: "x", event: "shopify", flowId: flow.id }, auth())).status === 400, "an unavailable event was accepted");
+      const trig = await http.post("/automation-triggers", { name: "Etiqueta colocada", event: "tag.added", config: { tagId: tag.id, lixo: 1 }, flowId: flow.id }, auth());
+      assert(trig.status === 201 && trig.data.config.tagId === tag.id && trig.data.config.lixo === undefined, `create trigger ${trig.status} ${JSON.stringify(trig.data.config)}`);
+      const from = "5511910000031";
+      let before = graph.sent.length;
+      await inboundCloud(from, "wamid.trig-1", "oi, tudo bem?");
+      await waitFor(() => ticketOf(from), 8000, "ticket");
+      const tk = ticketOf(from);
+      sql(`UPDATE Tickets SET chatbotNodeId=-1 WHERE id=${tk}`);
+      // a draft flow does not run
+      assert((await http.put(`/tickets/${tk}/tags`, { tagIds: [tag.id] }, auth())).status === 200, "tag not set");
+      await new Promise(r => setTimeout(r, 1500));
+      assert(!sentTexts(before).some(t => t.includes("Gatilho de etiqueta")), "a draft flow ran");
+      assert((await http.post(`/flows/${flow.id}/publish`, {}, auth())).status === 200, "publish");
+      // the cooldown still holds from the first (ignored) call? no: a flow that was not live did not start, so a new tag change counts
+      await http.put(`/tickets/${tk}/tags`, { tagIds: [] }, auth());
+      await new Promise(r => setTimeout(r, 300));
+      // another tag does not fire it
+      const other = (await http.post("/tags", { name: "Outra etiqueta", color: "#dc2626" }, auth())).data;
+      await http.put(`/tickets/${tk}/tags`, { tagIds: [other.id] }, auth());
+      await new Promise(r => setTimeout(r, 1200));
+      assert(!sentTexts(before).some(t => t.includes("Gatilho de etiqueta")), "the filter did not hold");
+      before = graph.sent.length;
+      await http.put(`/tickets/${tk}/tags`, { tagIds: [tag.id] }, auth());
+      await waitFor(() => sentTexts(before).some(t => t.includes("Gatilho de etiqueta funcionou")), 12000, "trigger message");
+      const list = (await http.get("/automation-triggers", auth())).data.find(t => t.id === trig.data.id);
+      assert(list.runCount === 1 && list.flowName === "Resposta ao gatilho", `run count ${list.runCount}`);
+      // the same trigger does not repeat on the same conversation right away
+      before = graph.sent.length;
+      await http.put(`/tickets/${tk}/tags`, { tagIds: [] }, auth());
+      await http.put(`/tickets/${tk}/tags`, { tagIds: [tag.id] }, auth());
+      await new Promise(r => setTimeout(r, 1500));
+      assert(!sentTexts(before).some(t => t.includes("Gatilho de etiqueta")), "the cooldown did not hold");
+      // paused triggers do nothing
+      assert((await http.put(`/automation-triggers/${trig.data.id}`, { active: false }, auth())).data.active === false, "pause");
+      assert((await http.delete(`/automation-triggers/${trig.data.id}`, auth())).status === 200, "delete trigger");
+      assert((await http.post(`/flows/${flow.id}/unpublish`, {}, auth())).status === 200, "unpublish");
+    });
     await test("what the agent does not know is kept, the team's answer is captured, the owner reviews and the agent learns", async () => {
       assert((await http.put(`/ai-agents/${aiId}`, { reviewNumber: "(11) 99999-0000", reviewWhatsappId: cid, learnFromTeam: true, dailyTokenCap: 0 }, auth())).status === 200, "agent update");
       assert((await http.put(`/ai-agents/${aiId}`, { reviewNumber: "123" }, auth())).status === 400, "short review number accepted");

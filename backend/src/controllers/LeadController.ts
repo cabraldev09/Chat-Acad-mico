@@ -1,3 +1,4 @@
+import { fire } from "../helpers/Fire";
 import { Request, Response } from "express";
 import { getBusinessConfig, normalizeBusiness, resetBusinessCache, businessMinutes } from "../helpers/BusinessTime";
 import { dayBounds, shiftDays } from "../helpers/AppTime";
@@ -171,7 +172,13 @@ export const update = async (req: Request, res: Response): Promise<Response> => 
 
   const ownerChanged = patch.ownerId !== undefined && patch.ownerId !== lead.ownerId;
   await lead.update(patch);
-  if (Array.isArray(req.body.tagIds)) await (lead as any).$set("tags", req.body.tagIds.map(Number));
+  if (Array.isArray(req.body.tagIds)) {
+    const nextTags: number[] = req.body.tagIds.map(Number);
+    const beforeTags = ((await (lead as any).$get("tags", { attributes: ["id"], joinTableAttributes: [] })) as any[]).map(t => t.id);
+    await (lead as any).$set("tags", nextTags);
+    nextTags.filter(t => !beforeTags.includes(t)).forEach(tagId => fire("tag.added", { leadId: lead.id, contactId: lead.contactId, tagId }));
+    beforeTags.filter(t => !nextTags.includes(t)).forEach(tagId => fire("tag.removed", { leadId: lead.id, contactId: lead.contactId, tagId }));
+  }
   if (ownerChanged) {
     const owner = patch.ownerId ? await User.findByPk(patch.ownerId) : null;
     await addActivity(lead.id, uid(req), "system", owner ? `Responsável: ${owner.name}` : "Responsável removido");

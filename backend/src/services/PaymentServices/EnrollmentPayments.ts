@@ -1,3 +1,4 @@
+import { fire } from "../../helpers/Fire";
 import fs from "fs";
 import { PUBLIC_DIR } from "../../config/paths";
 import { fmtDateTime } from "../../helpers/AppTime";
@@ -293,6 +294,7 @@ export const markPaid = async (
   const fresh = await loadLead(lead.id);
   getIO().emit("lead", { action: "update", lead: fresh });
   getIO().emit("payment", { paymentId: payment.id, leadId: lead.id, leadName: lead.name, amount: paidValue });
+  fire("fee.paid", { leadId: lead.id, contactId: lead.contactId });
   dispatchWebhook("payment.paid", { paymentId: payment.id, leadId: lead.id, lead: lead.name, amount: paidValue, txid: payment.txid });
   return true;
 };

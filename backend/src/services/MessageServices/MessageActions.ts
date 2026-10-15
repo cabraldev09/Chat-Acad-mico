@@ -1,4 +1,5 @@
 import { Op } from "sequelize";
+import { fire } from "../../helpers/Fire";
 import { chatIdOf } from "../../helpers/ChatId";
 import { previewOf } from "../../helpers/MessagePreview";
 import Contact from "../../models/Contact";
@@ -69,7 +70,10 @@ export const applyReaction = async (id: string, emoji: string, fromMe: boolean, 
   broadcast(message);
 
   // somebody reacted to a message: the list says so ("Reagiu com ❤️ a “texto”") without opening the conversation
-  if (emoji && !fromMe && message.ticket) await announceReaction(message, emoji, sender);
+  if (emoji && !fromMe && message.ticket) {
+    fire("message.reaction", { ticketId: message.ticket.id, contactId: message.ticket.contactId, emoji });
+    await announceReaction(message, emoji, sender);
+  }
 };
 
 const announceReaction = async (message: Message, emoji: string, sender: string): Promise<void> => {

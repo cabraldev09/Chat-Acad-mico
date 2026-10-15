@@ -30,6 +30,7 @@ import * as Aff from "../controllers/AffiliateController";
 import * as Commission from "../controllers/CommissionController";
 import * as Goal from "../controllers/GoalController";
 import * as Flow from "../controllers/FlowController";
+import * as Trigger from "../controllers/TriggerController";
 import * as DashboardMgmt from "../controllers/DashboardManagementController";
 import * as AffMat from "../controllers/AffiliateMaterialController";
 import { affiliateUpload } from "../config/affiliateUpload";
@@ -147,6 +148,13 @@ r.post("/flows/:id/unpublish", isAuth, isManager, Flow.unpublish);
 r.post("/flows/:id/duplicate", isAuth, isManager, Flow.duplicate);
 r.post("/flows/:id/simulate", isAuth, isManager, Flow.simulate);
 r.get("/flows/:id/stats", isAuth, isManager, Flow.stats);
+
+// triggers ("Gatilhos"): when something happens, run a flow
+r.get("/automation-events", isAuth, isManager, Trigger.catalog);
+r.get("/automation-triggers", isAuth, isManager, Trigger.index);
+r.post("/automation-triggers", isAuth, isManager, Trigger.store);
+r.put("/automation-triggers/:id", isAuth, isManager, Trigger.update);
+r.delete("/automation-triggers/:id", isAuth, isManager, Trigger.remove);
 
 // chatbot flow
 r.get("/chatbot-nodes", isAuth, isManager, Chatbot.index);

@@ -28,6 +28,7 @@
     "react-color": "^2.19.3",
     "react-dom": "^16.13.1",
     "react-easy-crop": "^4.7.5",
+    "react-flow-renderer": "^10.3.17",
     "react-modal-image": "^2.5.0",
     "react-router-dom": "^5.2.0",
     "react-toastify": "^6.0.9",

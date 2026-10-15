@@ -1,24 +1,8 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useCallback, useEffect, useState } from "react";
+import { useHistory } from "react-router-dom";
 import { toast } from "react-toastify";
-import {
-  Button,
-  Paper,
-  Typography,
-  makeStyles,
-  IconButton,
-  TextField,
-  MenuItem,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  Chip,
-} from "@material-ui/core";
-import { DeleteOutline, Edit } from "@material-ui/icons";
-import AddCircleOutline from "@material-ui/icons/AddCircleOutline";
-import { Play } from "lucide-react";
-import Simulator from "./Simulator";
-import IconAction from "../../components/IconAction";
+import { Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Menu, MenuItem, TextField, Tooltip, makeStyles } from "@material-ui/core";
+import { AlertTriangle, Copy, FileInput, History, MoreVertical, Plus, Sparkles, Trash2, Workflow } from "lucide-react";
 
 import MainContainer from "../../components/MainContainer";
 import MainHeader from "../../components/MainHeader";
@@ -27,263 +11,176 @@ import Title from "../../components/Title";
 import ConfirmationModal from "../../components/ConfirmationModal";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
+import Triggers from "./Triggers";
 
 const useStyles = makeStyles((theme) => ({
-  paper: { flex: 1, padding: theme.spacing(2), overflowY: "auto", ...theme.scrollbarStyles },
-  node: {
-    borderLeft: `3px solid ${theme.palette.primary.main}`,
-    margin: theme.spacing(0.75, 0),
-    padding: theme.spacing(0.5, 1),
-    background: theme.palette.action.hover,
-    borderRadius: 4,
-  },
-  children: { marginLeft: theme.spacing(3) },
-  line: { display: "flex", alignItems: "center", gap: theme.spacing(1), flexWrap: "wrap" },
-  hint: { opacity: 0.75, marginBottom: theme.spacing(2) },
+  body: { flex: 1, overflowY: "auto", overflowX: "hidden", ...theme.scrollbarStyles, paddingBottom: theme.spacing(3) },
+  tabs: { display: "inline-flex", gap: 4, padding: 4, borderRadius: 14, background: theme.palette.action.hover, marginBottom: theme.spacing(2) },
+  tab: { border: 0, background: "transparent", color: theme.palette.text.secondary, borderRadius: 10, padding: "7px 16px", cursor: "pointer", fontFamily: "inherit", fontSize: 13.5, fontWeight: 600 },
+  tabOn: { background: theme.palette.cards.background, color: theme.palette.text.primary, boxShadow: "0 1px 4px rgba(11,66,121,.16)" },
+  intro: { color: theme.palette.text.secondary, fontSize: 14, maxWidth: 760, marginBottom: theme.spacing(2) },
+  grid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: theme.spacing(1.5) },
+  card: { background: theme.palette.cards.background, border: theme.border.divider, borderRadius: 16, padding: theme.spacing(2), cursor: "pointer", transition: "transform .15s, box-shadow .15s, border-color .15s", "&:hover": { transform: "translateY(-2px)", boxShadow: "0 8px 22px rgba(11,66,121,.14)", borderColor: theme.palette.primary.main } },
+  chip: { display: "inline-flex", alignItems: "center", gap: 5, borderRadius: 999, padding: "2px 9px", fontSize: 12, fontWeight: 700 },
+  nums: { display: "flex", gap: 18, marginTop: 14, paddingTop: 12, borderTop: theme.border.divider },
+  num: { fontSize: 20, fontWeight: 700, letterSpacing: "-0.02em", lineHeight: 1.1, fontVariantNumeric: "tabular-nums" },
+  hint: { fontSize: 12.5, color: theme.palette.text.secondary },
+  empty: { textAlign: "center", color: theme.palette.text.secondary, padding: theme.spacing(6, 2), border: `1px dashed ${theme.palette.divider}`, borderRadius: 16 },
+  choice: { display: "flex", gap: 12, alignItems: "flex-start", padding: 12, borderRadius: 12, border: theme.border.divider, cursor: "pointer", marginBottom: 8, "&:hover": { borderColor: theme.palette.primary.main }, "&[data-on=true]": { borderColor: theme.palette.primary.main, background: "rgba(6,147,227,.08)" } },
 }));
 
-const ACTIONS = [
-  { value: "menu", label: "Submenu (mostra opções filhas)" },
-  { value: "message", label: "Responder com texto" },
-  { value: "queue", label: "Encaminhar para fila" },
-  { value: "user", label: "Encaminhar para atendente" },
-  { value: "ai", label: "Passar para o agente de IA" },
-  { value: "close", label: "Encerrar atendimento" },
-  { value: "ask", label: "Fazer uma pergunta e guardar a resposta" },
-  { value: "polo", label: "Perguntar o polo e enviar à equipe dele" },
-  { value: "stage", label: "Mover o lead de etapa no funil" },
-  { value: "tag", label: "Marcar o lead com uma etiqueta" },
-  { value: "webhook", label: "Avisar outro sistema (webhook)" },
+const ENTRY = { first_message: "Primeira mensagem", keyword: "Palavra-chave", any: "Qualquer primeira mensagem", manual: "Só por gatilho" };
+const EXAMPLES = [
+  "Pergunte se a pessoa quer conhecer os cursos, falar do financeiro ou já é aluno. Para quem quer conhecer, peça nome, curso e cidade e envie ao CRM com um consultor.",
+  "Se a mensagem chegar fora do horário, avise, peça o nome e deixe o contato no CRM para o primeiro horário.",
+  "Quando a pessoa escrever “bolsa”, pergunte o curso, a modalidade (EAD, semipresencial ou presencial) e envie ao CRM.",
 ];
 
-// actions that do not end the flow: the first option below them runs next
-const SEQUENCE = ["ask", "polo", "stage", "tag", "webhook"];
-const FIELDS = [
-  { value: "nome", label: "Nome" },
-  { value: "email", label: "E-mail" },
-  { value: "cidade", label: "Cidade" },
-  { value: "curso", label: "Curso de interesse" },
-  { value: "modalidade", label: "Modalidade" },
-  { value: "forma_ingresso", label: "Forma de ingresso" },
-  { value: "semestre_transferencia", label: "Semestre (transferência)" },
-];
+const NewFlow = ({ open, onClose, onCreated }) => {
+  const classes = useStyles();
+  const [mode, setMode] = useState("blank");
+  const [name, setName] = useState("");
+  const [templates, setTemplates] = useState([]);
+  const [template, setTemplate] = useState("");
+  const [description, setDescription] = useState("");
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    setMode("blank"); setName(""); setDescription(""); setTemplate("");
+    api.get("/flow-templates").then(({ data }) => { setTemplates(data); setTemplate(data[0] ? data[0].key : ""); }).catch(() => undefined);
+  }, [open]);
 
-const emptyNode = { title: "", action: "message", message: "", keywords: "", targetId: "", field: "", position: 0 };
+  const create = async () => {
+    setBusy(true);
+    try {
+      let data;
+      if (mode === "ai") ({ data } = await api.post("/flows/generate", { description, name: name || undefined }));
+      else ({ data } = await api.post("/flows", { name: name || (mode === "template" ? (templates.find((t) => t.key === template) || {}).name : "Novo fluxo"), template: mode === "template" ? template : undefined }));
+      onCreated(data);
+    } catch (e) { toastError(e); }
+    setBusy(false);
+  };
+  const choice = (key, icon, title, text) => (
+    <div className={classes.choice} data-on={mode === key} onClick={() => setMode(key)} role="button" tabIndex={0}>
+      <span style={{ marginTop: 2 }}>{icon}</span><span><b style={{ fontSize: 14 }}>{title}</b><div className={classes.hint}>{text}</div></span>
+    </div>
+  );
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+      <DialogTitle>Novo fluxo</DialogTitle>
+      <DialogContent>
+        {choice("ai", <Sparkles size={20} color="#db2777" />, "Descrever e a IA cria", "Conte como o atendimento deve ser. A IA desenha os botões, as perguntas e o envio ao CRM, e você confere no quadro antes de publicar.")}
+        {mode === "ai" && (
+          <div style={{ marginBottom: 12 }}>
+            <TextField fullWidth multiline rows={4} variant="outlined" size="small" label="Como deve ser o atendimento?" value={description} onChange={(e) => setDescription(e.target.value)} InputLabelProps={{ shrink: true }} />
+            <div className={classes.hint} style={{ margin: "6px 0 4px" }}>Exemplos (clique para usar):</div>
+            {EXAMPLES.map((x) => <div key={x} role="button" tabIndex={0} onClick={() => setDescription(x)} style={{ fontSize: 12.5, padding: "5px 8px", borderRadius: 8, border: "1px solid rgba(127,140,160,.3)", marginBottom: 4, cursor: "pointer" }}>{x}</div>)}
+          </div>
+        )}
+        {choice("template", <Workflow size={20} color="#0693E3" />, "Começar de um modelo", "Boas-vindas com qualificação, fora do horário ou interesse em bolsa. Tudo editável.")}
+        {mode === "template" && (
+          <TextField select fullWidth variant="outlined" size="small" label="Modelo" value={template} onChange={(e) => setTemplate(e.target.value)} InputLabelProps={{ shrink: true }} style={{ marginBottom: 12 }}>
+            {templates.map((t) => <MenuItem key={t.key} value={t.key}>{t.name}</MenuItem>)}
+          </TextField>
+        )}
+        {choice("blank", <Plus size={20} />, "Em branco", "Só o bloco de início: você monta o resto no quadro.")}
+        <TextField fullWidth variant="outlined" size="small" label="Nome do fluxo (opcional)" value={name} onChange={(e) => setName(e.target.value)} InputLabelProps={{ shrink: true }} style={{ marginTop: 8 }} />
+      </DialogContent>
+      <DialogActions>
+        <Button variant="outlined" color="secondary" onClick={onClose}>Cancelar</Button>
+        <Button variant="contained" color="primary" onClick={create} disabled={busy || (mode === "ai" && description.trim().length < 10)}>{busy ? "Criando..." : mode === "ai" ? "Criar com IA" : "Criar"}</Button>
+      </DialogActions>
+    </Dialog>
+  );
+};
 
 const Chatbot = () => {
   const classes = useStyles();
-  const [scope, setScope] = useState("shared");
-  const [connections, setConnections] = useState([]);
-  const [queues, setQueues] = useState([]);
-  const [users, setUsers] = useState([]);
-  const [nodes, setNodes] = useState([]);
-  const [stages, setStages] = useState([]);
-  const [tags, setTags] = useState([]);
-  const [polos, setPolos] = useState([]);
-  const [simulating, setSimulating] = useState(false);
-  const [dialog, setDialog] = useState(null); // {node, parentId}
-  const [deleting, setDeleting] = useState(null);
+  const history = useHistory();
+  const [tab, setTab] = useState("fluxos");
+  const [rows, setRows] = useState(null);
+  const [open, setOpen] = useState(false);
+  const [menu, setMenu] = useState(null);
+  const [del, setDel] = useState(null);
 
-  useEffect(() => {
-    api.get("/whatsapp").then(({ data }) => setConnections(data));
-    api.get("/queue").then(({ data }) => setQueues(data));
-    api.get("/users", { params: { pageNumber: 1 } }).then(({ data }) => setUsers(data.users || []));
-    api.get("/lead-stages").then(({ data }) => setStages(data)).catch(() => {});
-    api.get("/tags").then(({ data }) => setTags(data)).catch(() => {});
-    api.get("/polos").then(({ data }) => setPolos(data.filter((p) => p.active))).catch(() => {});
-  }, []);
+  const load = useCallback(() => api.get("/flows").then(({ data }) => setRows(data)).catch((e) => { toastError(e); setRows([]); }), []);
+  useEffect(() => { load(); }, [load]);
 
-  const load = useCallback(async () => {
+  const importLegacy = async () => {
     try {
-      const { data } = await api.get("/chatbot-nodes", { params: { whatsappId: scope } });
-      setNodes(data);
-    } catch (err) {
-      toastError(err);
-    }
-  }, [scope]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  const save = async () => {
-    const { node, parentId } = dialog;
-    if (!node.title.trim()) return toast.error("Informe o texto da opção");
-    if (["queue", "user", "stage", "tag"].includes(node.action) && !node.targetId) return toast.error("Escolha o destino");
-    if (node.action === "webhook" && !/^https?:\/\//.test(node.field || "")) return toast.error("Informe o endereço (https://…) que receberá o aviso");
-    if (node.action === "ask" && !node.field) return toast.error("Escolha onde guardar a resposta");
-    const payload = {
-      ...node,
-      parentId: parentId || null,
-      whatsappId: scope === "shared" ? null : Number(scope),
-      targetId: node.targetId || null,
-    };
-    try {
-      if (node.id) await api.put(`/chatbot-nodes/${node.id}`, payload);
-      else await api.post("/chatbot-nodes", payload);
-      setDialog(null);
-      load();
-    } catch (err) {
-      toastError(err);
-    }
+      const { data } = await api.post("/flows/import-legacy", {});
+      toast.success("Menu atual importado como rascunho. Veja no quadro antes de publicar.");
+      history.push(`/chatbot/${data.id}`);
+    } catch (e) { toastError(e); }
   };
-
-  const remove = async () => {
-    try {
-      await api.delete(`/chatbot-nodes/${deleting.id}`);
-      load();
-    } catch (err) {
-      toastError(err);
-    }
-    setDeleting(null);
-  };
-
-  const childrenOf = (parentId) =>
-    nodes.filter((n) => (n.parentId || null) === (parentId || null));
-
-  const targetLabel = (n) => {
-    if (n.action === "queue") return queues.find((q) => q.id === n.targetId)?.name;
-    if (n.action === "user") return users.find((u) => u.id === n.targetId)?.name;
-    if (n.action === "stage") return stages.find((s) => s.id === n.targetId)?.name;
-    if (n.action === "tag") return tags.find((t) => t.id === n.targetId)?.name;
-    if (n.action === "ask") return `guarda em: ${FIELDS.find((x) => x.value === n.field)?.label || "?"}`;
-    return null;
-  };
-
-  const renderNodes = (parentId, depth = 0) =>
-    childrenOf(parentId).map((n, i) => (
-      <div key={n.id} className={depth ? undefined : undefined}>
-        <div className={classes.node}>
-          <div className={classes.line}>
-            <b>{i + 1}.</b>
-            <span>{n.title}</span>
-            <Chip size="small" label={ACTIONS.find((a) => a.value === n.action)?.label.split(" (")[0]} />
-            {targetLabel(n) && <Chip size="small" color="primary" variant="outlined" label={targetLabel(n)} />}
-            <span style={{ flex: 1 }} />
-            {(n.action === "menu" || SEQUENCE.includes(n.action)) && (
-              <IconAction title={n.action === "menu" ? "Adicionar opção filha" : "Adicionar o próximo passo"} onClick={() => setDialog({ node: { ...emptyNode, position: childrenOf(n.id).length + 1 }, parentId: n.id })}>
-                <AddCircleOutline />
-              </IconAction>
-            )}
-            <IconAction title="Editar" onClick={() => setDialog({ node: { ...emptyNode, ...n, targetId: n.targetId || "", keywords: n.keywords || "", message: n.message || "", field: n.field || "" }, parentId: n.parentId })}>
-              <Edit />
-            </IconAction>
-            <IconAction title="Remover" onClick={() => setDeleting(n)}>
-              <DeleteOutline />
-            </IconAction>
-          </div>
-          {n.message && (
-            <Typography variant="caption" color="textSecondary" display="block">
-              “{n.message.length > 90 ? `${n.message.slice(0, 90)}…` : n.message}”
-            </Typography>
-          )}
-        </div>
-        {(n.action === "menu" || SEQUENCE.includes(n.action)) && <div className={classes.children}>{renderNodes(n.id, depth + 1)}</div>}
-      </div>
-    ));
-
-  const f = dialog?.node;
-  const setF = (patch) => setDialog({ ...dialog, node: { ...dialog.node, ...patch } });
+  const duplicate = async (f) => { setMenu(null); try { await api.post(`/flows/${f.id}/duplicate`); toast.success("Fluxo duplicado."); load(); } catch (e) { toastError(e); } };
+  const remove = async () => { try { await api.delete(`/flows/${del.id}`); toast.success("Fluxo excluído."); setDel(null); load(); } catch (e) { toastError(e); } };
 
   return (
     <MainContainer>
-      <ConfirmationModal
-        title={deleting ? `Remover "${deleting.title}"?` : ""}
-        open={!!deleting}
-        onClose={() => setDeleting(null)}
-        onConfirm={remove}
-      >
-        As opções filhas também serão removidas.
-      </ConfirmationModal>
-      <Simulator open={simulating} onClose={() => setSimulating(false)} nodes={nodes} queues={queues} polos={polos} greeting={null} />
-      <Dialog open={!!dialog} onClose={() => setDialog(null)} maxWidth="sm" fullWidth>
-        <DialogTitle>{f?.id ? "Editar opção" : "Nova opção"}</DialogTitle>
-        {f && (
-          <DialogContent dividers>
-            <TextField fullWidth variant="outlined" margin="dense" label="Texto da opção (aparece no menu)" value={f.title} onChange={(e) => setF({ title: e.target.value })} />
-            <TextField fullWidth select variant="outlined" margin="dense" label="O que fazer ao escolher" value={f.action} onChange={(e) => setF({ action: e.target.value, targetId: "" })}>
-              {ACTIONS.map((a) => (
-                <MenuItem key={a.value} value={a.value}>{a.label}</MenuItem>
-              ))}
-            </TextField>
-            {f.action === "queue" && (
-              <TextField fullWidth select variant="outlined" margin="dense" label="Fila" value={f.targetId} onChange={(e) => setF({ targetId: e.target.value })}>
-                {queues.map((q) => (<MenuItem key={q.id} value={q.id}>{q.name}</MenuItem>))}
-              </TextField>
-            )}
-            {f.action === "user" && (
-              <TextField fullWidth select variant="outlined" margin="dense" label="Atendente" value={f.targetId} onChange={(e) => setF({ targetId: e.target.value })}>
-                {users.map((u) => (<MenuItem key={u.id} value={u.id}>{u.name}</MenuItem>))}
-              </TextField>
-            )}
-            {f.action === "stage" && (
-              <TextField fullWidth select variant="outlined" margin="dense" label="Etapa" value={f.targetId} onChange={(e) => setF({ targetId: e.target.value })}>
-                {stages.map((s) => (<MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>))}
-              </TextField>
-            )}
-            {f.action === "tag" && (
-              <TextField fullWidth select variant="outlined" margin="dense" label="Etiqueta" value={f.targetId} onChange={(e) => setF({ targetId: e.target.value })}>
-                {tags.map((t) => (<MenuItem key={t.id} value={t.id}>{t.name}</MenuItem>))}
-              </TextField>
-            )}
-            {f.action === "ask" && (
-              <TextField fullWidth select variant="outlined" margin="dense" label="Guardar a resposta em" value={f.field} onChange={(e) => setF({ field: e.target.value })} helperText="A resposta vai para o cadastro do lead. O próximo passo é a primeira opção abaixo desta.">
-                {FIELDS.map((x) => (<MenuItem key={x.value} value={x.value}>{x.label}</MenuItem>))}
-              </TextField>
-            )}
-            {f.action === "webhook" && (
-              <TextField fullWidth variant="outlined" margin="dense" label="Endereço que recebe o aviso (https://…)" value={f.field} onChange={(e) => setF({ field: e.target.value })} helperText="Recebe os dados coletados na conversa. Só endereços públicos." />
-            )}
-            {true ? (
-              <TextField
-                fullWidth
-                multiline
-                rows={4}
-                variant="outlined"
-                margin="dense"
-                label={f.action === "menu" ? "Texto acima das opções do submenu" : "Mensagem enviada ao cliente"}
-                helperText="Use {{name}} para o nome do cliente."
-                value={f.message}
-                onChange={(e) => setF({ message: e.target.value })}
-              />
-            ) : null}
-            <TextField fullWidth variant="outlined" margin="dense" label="Palavras-chave (separadas por vírgula, opcional)" helperText="Além do número, o cliente também pode digitar uma dessas palavras." value={f.keywords} onChange={(e) => setF({ keywords: e.target.value })} />
-            <TextField fullWidth type="number" variant="outlined" margin="dense" label="Ordem" value={f.position} onChange={(e) => setF({ position: Number(e.target.value) })} />
-          </DialogContent>
-        )}
-        <DialogActions>
-          <Button onClick={() => setDialog(null)} color="secondary" variant="outlined">Cancelar</Button>
-          <Button onClick={save} color="primary" variant="contained">Salvar</Button>
-        </DialogActions>
-      </Dialog>
-
       <MainHeader>
-        <Title>Chatbot (fluxo de atendimento)</Title>
+        <Title>Chatbot e fluxos</Title>
         <MainHeaderButtonsWrapper>
-          <TextField select size="small" variant="outlined" label="Fluxo de" value={scope} onChange={(e) => setScope(e.target.value)} style={{ minWidth: 200 }}>
-            <MenuItem value="shared">Todas as conexões</MenuItem>
-            {connections.map((c) => (<MenuItem key={c.id} value={String(c.id)}>{c.name}</MenuItem>))}
-          </TextField>
-          <Button variant="outlined" color="primary" startIcon={<Play size={15} />} onClick={() => setSimulating(true)}>Testar o fluxo</Button>
-          <Button variant="contained" color="primary" onClick={() => setDialog({ node: { ...emptyNode, position: childrenOf(null).length + 1 }, parentId: null })}>
-            Nova opção no menu
-          </Button>
+          <Button variant="outlined" startIcon={<History size={16} />} onClick={() => history.push("/chatbot-antigo")}>Menu antigo</Button>
+          <Button variant="outlined" startIcon={<FileInput size={16} />} onClick={importLegacy}>Importar o menu atual</Button>
+          <Button variant="contained" color="primary" startIcon={<Plus size={16} />} onClick={() => setOpen(true)}>Novo fluxo</Button>
         </MainHeaderButtonsWrapper>
       </MainHeader>
-      <Paper className={classes.paper} variant="outlined">
-        <Typography variant="body2" className={classes.hint}>
-          Quando o cliente escreve pela primeira vez, o bot envia a mensagem de saudação da conexão seguida deste menu.
-          O cliente responde com o número da opção (ou uma palavra-chave) e o bot executa a ação. Digite <b>0</b> para voltar nos submenus.
-          Um fluxo específico de uma conexão vale junto com o fluxo geral.
-        </Typography>
-        {nodes.length === 0 ? (
-          <Typography align="center" color="textSecondary" style={{ padding: 32 }}>
-            Nenhuma opção ainda. Clique em “Nova opção no menu”.
-          </Typography>
-        ) : (
-          renderNodes(null)
+      <div className={classes.body}>
+        <div className={classes.tabs} role="tablist">
+          <button type="button" role="tab" aria-selected={tab === "fluxos"} className={`${classes.tab} ${tab === "fluxos" ? classes.tabOn : ""}`} onClick={() => setTab("fluxos")}>Fluxos</button>
+          <button type="button" role="tab" aria-selected={tab === "gatilhos"} className={`${classes.tab} ${tab === "gatilhos" ? classes.tabOn : ""}`} onClick={() => setTab("gatilhos")}>Gatilhos</button>
+        </div>
+
+        {tab === "gatilhos" && <Triggers flows={rows || []} />}
+
+        {tab === "fluxos" && (
+          <>
+            <div className={classes.intro}>Desenhe o atendimento arrastando blocos: mensagens, perguntas com botões, condições e o envio ao CRM. Veja e teste tudo no quadro antes de publicar. Um fluxo publicado atende primeiro; se nenhum valer, o menu antigo e o agente de IA seguem como antes.</div>
+            {!rows && <CircularProgress size={24} />}
+            {rows && rows.length === 0 && (
+              <div className={classes.empty}>
+                <Workflow size={36} style={{ opacity: 0.6 }} />
+                <div style={{ fontWeight: 700, margin: "8px 0 4px" }}>Nenhum fluxo ainda</div>
+                <div style={{ marginBottom: 12 }}>Crie o primeiro descrevendo o atendimento para a IA, ou comece de um modelo.</div>
+                <Button variant="contained" color="primary" startIcon={<Sparkles size={16} />} onClick={() => setOpen(true)}>Criar o primeiro fluxo</Button>
+              </div>
+            )}
+            <div className={classes.grid}>
+              {(rows || []).map((f) => (
+                <div key={f.id} className={classes.card} role="button" tabIndex={0} onClick={() => history.push(`/chatbot/${f.id}`)} onKeyDown={(e) => { if (e.key === "Enter") history.push(`/chatbot/${f.id}`); }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 700, fontSize: 15.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</div>
+                      <div className={classes.hint}>{ENTRY[f.entry.type]}{f.entry.type === "keyword" && f.entry.keywords.length ? `: ${f.entry.keywords.join(", ")}` : ""} · {f.blocks} blocos</div>
+                    </div>
+                    <IconButton size="small" aria-label="Mais ações" onClick={(e) => { e.stopPropagation(); setMenu({ anchor: e.currentTarget, flow: f }); }}><MoreVertical size={17} /></IconButton>
+                  </div>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
+                    <span className={classes.chip} style={{ background: f.status === "published" ? "rgba(22,163,74,.16)" : "rgba(100,116,139,.18)", color: f.status === "published" ? "#15803d" : "#475569" }}>{f.status === "published" ? `Publicado v${f.version}` : "Rascunho"}</span>
+                    {f.status === "published" && f.changed && <span className={classes.chip} style={{ background: "rgba(217,119,6,.16)", color: "#b45309" }}>Alterações não publicadas</span>}
+                    {f.errors > 0 && <Tooltip title="Corrija antes de publicar"><span className={classes.chip} style={{ background: "rgba(220,38,38,.14)", color: "#b91c1c" }}><AlertTriangle size={12} /> {f.errors} {f.errors === 1 ? "erro" : "erros"}</span></Tooltip>}
+                  </div>
+                  <div className={classes.nums}>
+                    <div><div className={classes.num}>{f.stats.started}</div><div className={classes.hint}>começaram</div></div>
+                    <div><div className={classes.num}>{f.stats.crm}</div><div className={classes.hint}>foram ao CRM</div></div>
+                    <div><div className={classes.num}>{f.stats.waiting}</div><div className={classes.hint}>em andamento</div></div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
         )}
-      </Paper>
+      </div>
+      <Menu anchorEl={menu && menu.anchor} open={!!menu} onClose={() => setMenu(null)}>
+        <MenuItem onClick={() => { const f = menu.flow; setMenu(null); history.push(`/chatbot/${f.id}`); }}>Editar</MenuItem>
+        <MenuItem onClick={() => duplicate(menu.flow)}><Copy size={15} style={{ marginRight: 8 }} />Duplicar</MenuItem>
+        <MenuItem onClick={() => { setDel(menu.flow); setMenu(null); }}><Trash2 size={15} style={{ marginRight: 8 }} />Excluir</MenuItem>
+      </Menu>
+      <ConfirmationModal open={!!del} onClose={() => setDel(null)} title={`Excluir “${del ? del.name : ""}”?`} onConfirm={remove}>
+        As conversas que estão dentro dele passam para o menu antigo ou para o agente de IA. Isso não pode ser desfeito.
+      </ConfirmationModal>
+      <NewFlow open={open} onClose={() => setOpen(false)} onCreated={(f) => { setOpen(false); history.push(`/chatbot/${f.id}`); }} />
     </MainContainer>
   );
 };

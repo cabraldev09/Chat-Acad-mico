@@ -1,3 +1,4 @@
+import { fire } from "../../helpers/Fire";
 import { isLocalPic } from "../../helpers/PicUrl";
 import { getIO } from "../../libs/socket";
 import Contact from "../../models/Contact";
@@ -115,6 +116,7 @@ const CreateOrUpdateContactService = async ({
   });
 
   emitContact("create", created);
+  fire("contact.created", { contactId: created.id });
   return created;
 };
 

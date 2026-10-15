@@ -18,6 +18,7 @@ import dispatchWebhook from "../WebhookServices/DispatchWebhook";
 import { computeScore } from "./LeadScore";
 import { logger } from "../../utils/logger";
 import Affiliate from "../../models/Affiliate";
+import { fire } from "../../helpers/Fire";
 import { affiliateStageId, ensureAffiliateStage, tagAffiliateLead } from "../AffiliateServices/AffiliateLane";
 
 export const leadInclude = [
@@ -238,6 +239,8 @@ export const upsertLead = async (
   const lead = (await loadLead(created.id)) as Lead;
   emitLead("create", lead);
   dispatchWebhook("lead.created", leadPayload(lead));
+  fire("lead.created", { leadId: lead.id, contactId: lead.contactId });
+  if (input.affiliateId) fire("affiliate.referral", { leadId: lead.id, contactId: lead.contactId, affiliateId: input.affiliateId });
   return { lead, created: true };
 };
 
@@ -296,6 +299,8 @@ export const changeStage = async (
   emitLead("update", fresh);
   const payload = { ...leadPayload(fresh), from: from?.name };
   dispatchWebhook("lead.stage_changed", payload);
+  fire("stage.changed", { leadId: lead.id, contactId: lead.contactId, stageId: to.id });
+  if (to.type === "won") fire("enrollment.confirmed", { leadId: lead.id, contactId: lead.contactId });
   if (to.type === "won") dispatchWebhook("lead.won", payload);
   if (to.type === "lost") dispatchWebhook("lead.lost", payload);
   return fresh;

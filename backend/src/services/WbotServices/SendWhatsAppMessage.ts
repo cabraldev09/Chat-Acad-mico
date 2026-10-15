@@ -1,3 +1,4 @@
+import { fire } from "../../helpers/Fire";
 import { chatIdOf } from "../../helpers/ChatId";
 import { previewOf } from "../../helpers/MessagePreview";
 import AppError from "../../errors/AppError";
@@ -58,6 +59,7 @@ const SendWhatsAppMessage = async ({
         }
       });
       await ticket.update({ lastMessage: previewOf(text) });
+      if (!automated) fire("message.agent_sent", { ticketId: ticket.id, contactId: ticket.contactId });
       return {
         id: sent.id,
         body: text,
@@ -100,6 +102,7 @@ const SendWhatsAppMessage = async ({
 
     recordSendResult(whatsapp, true);
     await ticket.update({ lastMessage: previewOf(body) });
+    if (!automated) fire("message.agent_sent", { ticketId: ticket.id, contactId: ticket.contactId });
     return sentMessage;
   } catch (err) {
     recordSendResult(whatsapp, false);
