@@ -17,6 +17,41 @@ import toastError from "../../errors/toastError";
 import { AudiencePicker, ReleaseDialog } from "./Audience";
 import { KINDS, KIND_LABEL, fetchAllUsers, saveBlob, useStyles } from "./shared";
 
+// where the affiliates pick the materials up: every affiliate has a personal link to the Central (no login, no prices)
+const CentralLink = ({ affiliates }) => {
+  const [id, setId] = useState("");
+  const list = affiliates.filter((a) => a.portalUrl);
+  const chosen = list.find((a) => a.id === Number(id)) || (list.length === 1 ? list[0] : null);
+  const copy = async (text, msg) => {
+    try { await navigator.clipboard.writeText(text); toast.success(msg); } catch (e) { toast.error("Não foi possível copiar."); }
+  };
+  const send = async () => {
+    try { await api.post(`/affiliates/${chosen.id}/send-portal`); toast.success("Link enviado pelo WhatsApp."); } catch (e) { toastError(e); }
+  };
+  return (
+    <Paper variant="outlined" style={{ padding: 16, marginBottom: 16, borderRadius: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 700 }}><Link2 size={18} /> Central do Afiliado: onde eles pegam os materiais</div>
+      <Typography variant="body2" color="textSecondary" style={{ marginTop: 4 }}>
+        Cada afiliado tem um link só dele. Ele abre a Central sem precisar de login e mostra apenas o que foi liberado para ele: banners, textos, vídeos e informações dos cursos, sem preços.
+      </Typography>
+      {list.length === 0 && <Typography variant="body2" style={{ marginTop: 10 }}>Cadastre um afiliado na aba Afiliados para gerar o link dele.</Typography>}
+      {list.length > 1 && (
+        <TextField select size="small" variant="outlined" label="Afiliado" value={chosen ? chosen.id : ""} onChange={(e) => setId(e.target.value)} style={{ minWidth: 260, marginTop: 12 }}>
+          {list.map((a) => <MenuItem key={a.id} value={a.id}>{a.name}</MenuItem>)}
+        </TextField>
+      )}
+      {chosen && (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 12 }}>
+          <code style={{ flex: 1, minWidth: 220, padding: "8px 12px", borderRadius: 10, background: "rgba(127,140,160,.14)", fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={chosen.portalUrl}>{chosen.portalUrl}</code>
+          <Button size="small" variant="outlined" startIcon={<Copy size={15} />} onClick={() => copy(chosen.portalUrl, "Link da Central copiado.")}>Copiar link</Button>
+          <Button size="small" variant="outlined" startIcon={<Eye size={15} />} onClick={() => window.open(chosen.portalUrl, "_blank", "noopener")}>Abrir como o afiliado vê</Button>
+          {chosen.phone && <Button size="small" variant="contained" color="primary" onClick={send}>Enviar pelo WhatsApp</Button>}
+        </div>
+      )}
+    </Paper>
+  );
+};
+
 const ICONS = { banner: ImageIcon, copy: Type, video: Video, course_info: BookOpen, course_list: Layers, campaign: Megaphone, other: Paperclip };
 
 const COLLECTIONS = [["graduacao", "Graduação"], ["pos", "Pós-graduação"], ["tecnico", "Cursos técnicos"], ["programa", "Programa de afiliados"]];
@@ -145,6 +180,7 @@ const MaterialsTab = () => {
 
   return (
     <div className={classes.page}>
+      <CentralLink affiliates={affiliates} />
       <div className={classes.toolbar}>
         <TextField select size="small" variant="outlined" value={kind} onChange={(e) => setKind(e.target.value)} style={{ minWidth: 200 }} label="Tipo">
           <MenuItem value="">Todos os tipos</MenuItem>

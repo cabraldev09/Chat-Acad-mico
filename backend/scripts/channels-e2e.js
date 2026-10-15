@@ -2231,7 +2231,7 @@ const postMeta = (id, payload, secret, badSig) => {
       const iso = (n) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Porto_Velho" }).format(new Date(Date.now() + n * 86400000)); // the app counts days in its own timezone
       const polo = (await http.post("/polos", { name: "Polo da Meta", code: "9001", state: "RO" }, auth())).data;
       assert(polo.id, "polo not created");
-      const goal = (await http.post("/goals", { startsOn: iso(-5), endsOn: iso(10), members: [] }, auth())).data;
+      const goal = (await http.post("/goals", { startsOn: iso(-5), endsOn: iso(10), kind: "polo", members: [] }, auth())).data;
       const lead = (await http.post("/leads", { name: "Aluno da Meta", phone: "5511966660001", source: "Site" }, auth())).data.lead;
       sql(`UPDATE Leads SET wonAt=NOW(), poloId=${polo.id} WHERE id=${lead.id}`);
       const tk = (await http.post("/auth/login", { email: "consultor@polo.test", password: "senha123" })).data.token;
@@ -2244,6 +2244,25 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(row && row.auto === 1 && row.manual === 2 && row.done === 3 && row.target === 10 && row.missing === 7 && row.canceled === 1 && row.inCourse === 2, `row ${JSON.stringify(row)}`);
       assert(seen.data.goal.daysLeft === 11 && row.perDay === 0.64 && row.status === "warn", `pace ${seen.data.goal.daysLeft} ${row.perDay} ${row.status}`);
       assert(seen.data.totals.target === 10 && seen.data.totals.done === 3 && seen.data.totals.pct === 30 && seen.data.totals.inCourse === 2, `totals ${JSON.stringify(seen.data.totals)}`);
+      // the target is for the whole period and spread over its months
+      assert(row.monthly.length === seen.data.months.length && row.monthly.reduce((t, n) => t + n, 0) === 10, `monthly ${JSON.stringify(row.monthly)}`);
+      assert(!JSON.stringify(seen.data).includes("leadsPerDay"), "leads per day is gone");
+      // quick edit of one polo: a new target is spread again; the other fields are kept
+      const quick = await http.put(`/goals/${goal.id}/polos/${polo.id}`, { target: 20 }, auth());
+      const q = quick.data.rows.find(r => r.poloId === polo.id);
+      assert(quick.status === 200 && q.target === 20 && q.manual === 2 && q.canceled === 1 && q.monthly.reduce((t, n) => t + n, 0) === 20, `quick ${quick.status} ${JSON.stringify(q && [q.target, q.manual, q.canceled, q.monthly])}`);
+      assert((await http.put(`/goals/${goal.id}/polos/${polo.id}`, { target: 5 }, asUser(tk))).status === 403, "a consultant edited one polo");
+      // the spreadsheet import: total done discounts what the CRM already counted, unknown polos are created
+      const dry = (await http.post(`/goals/${goal.id}/polos/import`, { dryRun: true, items: [{ code: "9001", name: "Polo da Meta - RO", target: 30, done: 5, canceled: 1 }, { code: "7777", name: "Polo Inventado - RO", target: 12, done: 3, canceled: 0 }, { name: "", target: 1 }] }, auth())).data;
+      assert(dry.updated === 1 && dry.created === 1 && dry.errors === 1, `dry ${JSON.stringify([dry.updated, dry.created, dry.errors])}`);
+      assert(sql(`SELECT COUNT(*) FROM Polos WHERE code='7777'`) === "0", "dry run created a polo");
+      const imp = await http.post(`/goals/${goal.id}/polos/import`, { items: [{ code: "9001", name: "Polo da Meta - RO", target: 30, done: 5, canceled: 1 }, { code: "7777", name: "Polo Inventado - RO", target: 12, done: 3, canceled: 0 }] }, auth());
+      assert(imp.status === 200 && sql(`SELECT COUNT(*) FROM Polos WHERE code='7777'`) === "1", "import did not create the polo");
+      const after = (await http.get(`/goals/polos?goalId=${goal.id}`, asUser(tk))).data;
+      const again = after.rows.find(r => r.poloId === polo.id);
+      assert(again.target === 30 && again.done === 5 && again.manual === 4, `import discounts the CRM ${JSON.stringify([again.target, again.done, again.manual])}`);
+      // the team goals list does not show the polo semester
+      assert(!(await http.get("/goals", auth())).data.some(g => g.id === goal.id), "polo goal leaked into the team goals");
     });
     await test("login is rate limited", async () => {
       let limited = false;

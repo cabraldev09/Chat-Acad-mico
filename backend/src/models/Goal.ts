@@ -29,6 +29,11 @@ class Goal extends Model<Goal> {
   @Column
   workDays: number;
 
+  // team = monthly goals of the consultants · polo = semester goals of the polos
+  @Default("team")
+  @Column
+  kind: string;
+
   @Column
   createdBy: number;
 

@@ -259,6 +259,8 @@ r.delete("/me/efi", isAuth, Payment.clearMyEfi);
 // the whole team follows the polos; only managers change the numbers
 r.get("/goals/polos", isAuth, Goal.poloBoard);
 r.put("/goals/:id/polos", isAuth, isManager, Goal.updatePolos);
+r.put("/goals/:id/polos/:poloId", isAuth, isManager, Goal.updatePolo);
+r.post("/goals/:id/polos/import", isAuth, isManager, Goal.importPoloGoals);
 r.get("/goals", isAuth, isManager, Goal.index);
 r.post("/goals", isAuth, isManager, Goal.store);
 r.put("/goals/:id", isAuth, isManager, Goal.update);

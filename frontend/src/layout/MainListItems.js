@@ -11,37 +11,26 @@ import Divider from "@material-ui/core/Divider";
 import DashboardOutlinedIcon from "@material-ui/icons/DashboardOutlined";
 import MessagesSquareIcon from "lucide-react/dist/esm/icons/messages-square";
 import SyncAltIcon from "@material-ui/icons/SyncAlt";
-import SettingsOutlinedIcon from "@material-ui/icons/SettingsOutlined";
-import PeopleAltOutlinedIcon from "@material-ui/icons/PeopleAltOutlined";
 import ContactPhoneOutlinedIcon from "@material-ui/icons/ContactPhoneOutlined";
-import AccountTreeOutlinedIcon from "@material-ui/icons/AccountTreeOutlined";
-import LocationCityOutlinedIcon from "@material-ui/icons/LocationCityOutlined";
 import QuestionAnswerOutlinedIcon from "@material-ui/icons/QuestionAnswerOutlined";
-import LocalOfferOutlinedIcon from "@material-ui/icons/LocalOfferOutlined";
 import ScheduleIcon from "@material-ui/icons/Schedule";
 import MegaphoneIcon from "lucide-react/dist/esm/icons/megaphone";
 import AssessmentOutlinedIcon from "@material-ui/icons/AssessmentOutlined";
-import VisibilityOutlinedIcon from "@material-ui/icons/VisibilityOutlined";
-import AndroidIcon from "@material-ui/icons/Android";
-import AccountTreeIcon from "@material-ui/icons/AccountTree";
-import CodeIcon from "@material-ui/icons/Code";
 import KanbanSquareIcon from "lucide-react/dist/esm/icons/kanban-square";
 import TrendingUpIcon from "lucide-react/dist/esm/icons/trending-up";
-import { accessLevel, isManager, isStrictAdmin } from "../utils/access";
+import { isManager } from "../utils/access";
 import ListTodoIcon from "lucide-react/dist/esm/icons/list-todo";
 import HeartHandshakeIcon from "lucide-react/dist/esm/icons/heart-handshake";
-import GraduationCapIcon from "lucide-react/dist/esm/icons/graduation-cap";
 import Share2Icon from "lucide-react/dist/esm/icons/share-2";
-import TargetIcon from "lucide-react/dist/esm/icons/target";
 import WalletIcon from "lucide-react/dist/esm/icons/wallet";
-import MapPinIcon from "lucide-react/dist/esm/icons/map-pin";
+import GoalIcon from "lucide-react/dist/esm/icons/goal";
+import SlidersIcon from "lucide-react/dist/esm/icons/sliders-horizontal";
 
 import api from "../services/api";
 import openSocket from "../services/socket-io";
 import { i18n } from "../translate/i18n";
 import { WhatsAppsContext } from "../context/WhatsApp/WhatsAppsContext";
 import { AuthContext } from "../context/Auth/AuthContext";
-import { Can } from "../components/Can";
 
 const useStyles = makeStyles((theme) => ({
   navItem: {
@@ -118,7 +107,7 @@ const useStyles = makeStyles((theme) => ({
 }));
 
 function ListItemLink(props) {
-  const { icon, primary, to, collapsed, adornment } = props;
+  const { icon, primary, to, collapsed, adornment, alsoActive } = props;
   const classes = useStyles();
 
   const renderLink = React.useMemo(
@@ -128,12 +117,14 @@ function ListItemLink(props) {
           to={to}
           // "/" and "/crm" are the start of other addresses ("/crm/painel"...): only the exact address lights them
           exact={to === "/" || to === "/crm"}
+          // a group stays lit while one of its pages is open (Configurações over Conexões, Usuários...)
+          isActive={alsoActive ? (match, location) => !!match || alsoActive.some((p) => location.pathname === p || location.pathname.startsWith(`${p}/`)) : undefined}
           activeClassName={classes.navItemActive}
           ref={ref}
           {...itemProps}
         />
       )),
-    [to, classes.navItemActive]
+    [to, classes.navItemActive, alsoActive]
   );
 
   return (
@@ -207,22 +198,24 @@ const MainListItems = (props) => {
         icon={<DashboardOutlinedIcon />}
         collapsed={collapsed}
       />
+      {!isManager(user) && (
       <ListItemLink
-        to="/connections"
-        primary={i18n.t("mainDrawer.listItems.connections")}
-        icon={<SyncAltIcon />}
-        collapsed={collapsed}
-        adornment={
-          connectionWarning && (
-            <span
-              className={clsx(
-                classes.connectionDot,
-                collapsed && classes.connectionDotCollapsed
-              )}
-            />
-          )
-        }
-      />
+          to="/connections"
+          primary={i18n.t("mainDrawer.listItems.connections")}
+          icon={<SyncAltIcon />}
+          collapsed={collapsed}
+          adornment={
+            connectionWarning && (
+              <span
+                className={clsx(
+                  classes.connectionDot,
+                  collapsed && classes.connectionDotCollapsed
+                )}
+              />
+            )
+          }
+        />
+      )}
       <ListItemLink
         to="/tickets"
         primary={i18n.t("mainDrawer.listItems.tickets")}
@@ -251,10 +244,7 @@ const MainListItems = (props) => {
       {["admin", "coordenacao", "consultor"].includes(user.profile === "admin" ? "admin" : user.role || "consultor") && (
         <ListItemLink to="/crm/comissoes" primary="Comissões" icon={<WalletIcon className="ico" />} collapsed={collapsed} />
       )}
-      {isManager(user) && (
-        <ListItemLink to="/crm/metas" primary="Metas da equipe" icon={<TargetIcon className="ico" />} collapsed={collapsed} />
-      )}
-      <ListItemLink to="/crm/metas-polos" primary="Metas por polo" icon={<MapPinIcon className="ico" />} collapsed={collapsed} />
+      <ListItemLink to="/crm/metas-polos" alsoActive={["/crm/metas"]} primary="Metas" icon={<GoalIcon className="ico" />} collapsed={collapsed} />
       <ListItemLink to="/ambientacao" primary="Ambientação" icon={<HeartHandshakeIcon className="ico" />} collapsed={collapsed} />
       {["admin", "coordenacao", "consultor"].includes(user.profile === "admin" ? "admin" : user.role || "consultor") && (
         <ListItemLink to="/afiliados" primary="Afiliados" icon={<Share2Icon className="ico" />} collapsed={collapsed} />
@@ -278,85 +268,25 @@ const MainListItems = (props) => {
         icon={<AssessmentOutlinedIcon />}
         collapsed={collapsed}
       />
-      <Can
-        role={accessLevel(user)}
-        perform="drawer-admin-items:view"
-        yes={() => (
-          <>
-            <Divider className={classes.divider} />
-            {!collapsed && (
-              <ListSubheader disableSticky className={classes.sectionLabel}>
-                {i18n.t("mainDrawer.listItems.administration")}
-              </ListSubheader>
-            )}
-            <ListItemLink
-              to="/users"
-              primary={i18n.t("mainDrawer.listItems.users")}
-              icon={<PeopleAltOutlinedIcon />}
-              collapsed={collapsed}
-            />
-            <ListItemLink
-              to="/polos"
-              primary="Polos e equipes"
-              icon={<LocationCityOutlinedIcon />}
-              collapsed={collapsed}
-            />
-            <ListItemLink
-              to="/queues"
-              primary={i18n.t("mainDrawer.listItems.queues")}
-              icon={<AccountTreeOutlinedIcon />}
-              collapsed={collapsed}
-            />
-            <ListItemLink
-              to="/crm/config"
-              primary="Configurar CRM"
-              icon={<GraduationCapIcon className="ico" />}
-              collapsed={collapsed}
-            />
-            <ListItemLink
-              to="/monitor"
-              primary="Monitor ao vivo"
-              icon={<VisibilityOutlinedIcon />}
-              collapsed={collapsed}
-            />
-            <ListItemLink
-              to="/tags"
-              primary="Etiquetas"
-              icon={<LocalOfferOutlinedIcon />}
-              collapsed={collapsed}
-            />
-            <ListItemLink
-              to="/chatbot"
-              primary="Chatbot"
-              icon={<AccountTreeIcon />}
-              collapsed={collapsed}
-            />
-            <ListItemLink
-              to="/ai-agents"
-              primary="Agentes de IA"
-              icon={<AndroidIcon />}
-              collapsed={collapsed}
-              adornment={aiReview > 0 && <span className={classes.countBadge} title="Respostas da equipe para você revisar">{aiReview}</span>}
-            />
-            {isStrictAdmin(user) && (
-              <>
-                <ListItemLink
-                  to="/integrations"
-                  primary="API & Webhooks"
-                  icon={<CodeIcon />}
-                  collapsed={collapsed}
-                />
-                <ListItemLink
-                  to="/settings"
-                  primary={i18n.t("mainDrawer.listItems.settings")}
-                  icon={<SettingsOutlinedIcon />}
-                  collapsed={collapsed}
-                />
-              </>
-            )}
-          </>
-        )}
-      />
+      {isManager(user) && (
+        <>
+          <Divider className={classes.divider} />
+          <ListItemLink
+            to="/configuracoes"
+            alsoActive={["/connections", "/users", "/polos", "/queues", "/tags", "/chatbot", "/ai-agents", "/monitor", "/crm/config", "/settings", "/integrations"]}
+            primary="Configurações"
+            icon={<SlidersIcon className="ico" />}
+            collapsed={collapsed}
+            adornment={
+              (connectionWarning || aiReview > 0) && (
+                connectionWarning
+                  ? <span className={clsx(classes.connectionDot, collapsed && classes.connectionDotCollapsed)} title="Há conexão desconectada" />
+                  : <span className={classes.countBadge} title="Respostas da equipe para você revisar">{aiReview}</span>
+              )
+            }
+          />
+        </>
+      )}
     </div>
   );
 };

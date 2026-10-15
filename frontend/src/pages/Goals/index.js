@@ -8,6 +8,8 @@ import MainContainer from "../../components/MainContainer";
 import MainHeader from "../../components/MainHeader";
 import MainHeaderButtonsWrapper from "../../components/MainHeaderButtonsWrapper";
 import Title from "../../components/Title";
+import GoalsTabs from "../../components/GoalsTabs";
+import NumberField from "../../components/NumberField";
 import ShareFrame from "../../components/ShareFrame";
 import BrandLogo from "../../components/BrandLogo";
 import { copyPng, downloadPng, renderPng } from "../../utils/shareImage";
@@ -145,6 +147,7 @@ const Goals = () => {
       </MainHeader>
 
       <div className={classes.body}>
+        <GoalsTabs current="team" />
         {goals && goals.length > 0 && (
           <div className={classes.tabs}>
             {goals.map((g) => (
@@ -192,12 +195,12 @@ const Goals = () => {
                     <Autocomplete multiple size="small" options={userOptions} getOptionLabel={(o) => o.name} value={userOptions.filter((u) => (m.userIds || []).includes(u.id))}
                       onChange={(_, v) => setMember(i, { userIds: v.map((u) => u.id) })} getOptionSelected={(o, v) => o.id === v.id}
                       renderInput={(p) => <TextField {...p} variant="outlined" placeholder={m.userIds && m.userIds.length ? "" : "Só ajuste manual"} />} />
-                    <TextField size="small" variant="outlined" type="number" inputProps={{ min: 0 }} value={m.target === null || m.target === undefined ? "" : m.target} onChange={(e) => setMember(i, { target: e.target.value === "" ? null : Number(e.target.value) })} />
-                    <TextField size="small" variant="outlined" type="number" inputProps={{ min: 0 }} value={m.manual || 0} onChange={(e) => setMember(i, { manual: Number(e.target.value) })} />
+                    <NumberField size="small" variant="outlined" nullable value={m.target} onChange={(v) => setMember(i, { target: v })} />
+                    <NumberField size="small" variant="outlined" value={m.manual} onChange={(v) => setMember(i, { manual: v })} />
                     <div>
                       <div className={classes.done}>{m.done}{m.target ? ` / ${m.target}` : ""} {m.reached ? "✅" : ""}</div>
                       <div className={classes.bar}><div className={classes.fill} style={{ width: `${m.pct || 0}%`, background: m.reached ? "#16a34a" : "#0693E3" }} /></div>
-                      <div className={classes.hint}>{m.auto ? `${m.auto} do CRM` : "sem matrícula no CRM"}{m.missing ? ` · falta ${m.missing}${m.pace ? ` (${m.pace}/dia)` : ""}` : ""}</div>
+                      <div className={classes.hint}>{m.auto ? `${m.auto} do CRM` : "sem matrícula no CRM"}{m.missing ? ` · falta ${m.missing}${m.pace ? ` (${String(m.pace).replace(".", ",")}/dia)` : ""}` : ""}</div>
                     </div>
                     <IconButton size="small" aria-label="Remover linha" onClick={() => change((d) => { d.members.splice(i, 1); })}><Trash2 size={16} /></IconButton>
                   </div>

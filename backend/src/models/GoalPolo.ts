@@ -1,4 +1,4 @@
-import { Table, Column, CreatedAt, UpdatedAt, Model, PrimaryKey, AutoIncrement, AllowNull, Default, ForeignKey, BelongsTo } from "sequelize-typescript";
+import { Table, Column, DataType, CreatedAt, UpdatedAt, Model, PrimaryKey, AutoIncrement, AllowNull, Default, ForeignKey, BelongsTo } from "sequelize-typescript";
 import Goal from "./Goal";
 import Polo from "./Polo";
 
@@ -37,6 +37,14 @@ class GoalPolo extends Model<GoalPolo> {
   @Default(0)
   @Column
   canceled: number;
+
+  // JSON array with the target of each month of the period
+  @Column(DataType.TEXT)
+  monthly: string;
+
+  // JSON object {"2026-10": n} with hand adjustments of a month
+  @Column(DataType.TEXT)
+  manualMonthly: string;
 
   @CreatedAt
   createdAt: Date;
