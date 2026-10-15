@@ -51,8 +51,10 @@ export const initIO = (httpServer: Server): SocketIO => {
 
     logger.info("Client Connected");
     const who: any = tokenData;
-    (socket as any).isAdminUser = who?.profile === "admin";
+    (socket as any).isAdminUser = who?.profile === "admin" || who?.role === "coordenacao";
     (socket as any).userIdOf = who?.id ? Number(who.id) : null;
+    // a private room: what only this person needs to hear (the progress of what they sent in the background)
+    if (who?.id) socket.join(`user:${who.id}`);
     socket.on("joinChatBox", (ticketId: string) => {
       logger.info("A client joined a ticket channel");
       socket.join(ticketId);

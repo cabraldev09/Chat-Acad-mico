@@ -3,13 +3,14 @@ import User from "../../models/User";
 import SaveImportedContacts from "../../helpers/SaveImportedContacts";
 import { whatsappProvider } from "../../providers/WhatsApp";
 import AppError from "../../errors/AppError";
+import { isManagerRole, roleOf } from "../../helpers/Roles";
 import { logger } from "../../utils/logger";
 
 // Which connected WhatsApp number to read the address book from: the user's own, then the one linked to them or
 // the company default, and finally (administrators only) any connected number.
 const pickConnection = async (userId: number, whatsappId?: number): Promise<Whatsapp> => {
-  const user = await User.findByPk(userId, { attributes: ["id", "profile", "whatsappId"] });
-  const isAdmin = user?.profile === "admin";
+  const user = await User.findByPk(userId, { attributes: ["id", "profile", "role", "whatsappId"] });
+  const isAdmin = !!user && isManagerRole(roleOf(user));
   const connected = await Whatsapp.findAll({
     where: { status: "CONNECTED", channel: "whatsapp" },
     order: [["id", "ASC"]]

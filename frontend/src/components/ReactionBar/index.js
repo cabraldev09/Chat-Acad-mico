@@ -5,7 +5,7 @@ import EmojiPicker from "../EmojiPicker";
 import { bumpEmoji, topEmojis } from "../../utils/emojiUsage";
 import { Plus, Smile } from "lucide-react";
 
-import api from "../../services/api";
+import { reactNow } from "../../utils/optimisticReaction";
 import toastError from "../../errors/toastError";
 import { REACTIONS } from "../MessageOptionsMenu";
 
@@ -42,7 +42,7 @@ const ReactionBar = ({ message, channel = "whatsapp", className }) => {
   const react = async (emoji) => {
     close();
     try {
-      await api.post(`/messages/${message.id}/react`, { emoji: mine === emoji ? "" : emoji });
+      await reactNow(message, mine === emoji ? "" : emoji);
       if (mine !== emoji) bumpEmoji(emoji);
     } catch (err) {
       toastError(err);

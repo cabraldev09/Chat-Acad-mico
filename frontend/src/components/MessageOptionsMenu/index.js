@@ -1,5 +1,6 @@
 import React, { useState, useContext } from "react";
 import { toast } from "react-toastify";
+import { reactNow } from "../../utils/optimisticReaction";
 import { makeStyles } from "@material-ui/core/styles";
 import Menu from "@material-ui/core/Menu";
 import MenuItem from "@material-ui/core/MenuItem";
@@ -84,7 +85,7 @@ const MessageOptionsMenu = ({ message, menuOpen, handleClose, anchorEl, ticketId
     }
   };
 
-  const react = (emoji) => run(() => api.post(`/messages/${message.id}/react`, { emoji: mine === emoji ? "" : emoji }));
+  const react = (emoji) => run(() => reactNow(message, mine === emoji ? "" : emoji));
   const copy = () =>
     run(async () => {
       await navigator.clipboard.writeText(message.body || "");

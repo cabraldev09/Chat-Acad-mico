@@ -2,7 +2,7 @@ import { Request, Response } from "express";
 
 import { getIO } from "../libs/socket";
 import AppError from "../errors/AppError";
-import { isManagerRole } from "../helpers/Roles";
+import { isManagerRole, roleOf } from "../helpers/Roles";
 
 import UpdateSettingService from "../services/SettingServices/UpdateSettingService";
 import ListSettingsService from "../services/SettingServices/ListSettingsService";
@@ -15,8 +15,8 @@ const MANAGER_KEYS = [
 ];
 
 export const index = async (req: Request, res: Response): Promise<Response> => {
-  const admin = req.user.profile === "admin";
-  if (!admin && !isManagerRole(req.user.role)) {
+  const admin = isManagerRole(roleOf(req.user));
+  if (!admin) {
     throw new AppError("ERR_NO_PERMISSION", 403);
   }
 
@@ -30,7 +30,7 @@ export const update = async (
   res: Response
 ): Promise<Response> => {
   const { settingKey: key } = req.params;
-  if (req.user.profile !== "admin" && !(isManagerRole(req.user.role) && MANAGER_KEYS.includes(key))) {
+  if (!isManagerRole(roleOf(req.user))) {
     throw new AppError("ERR_NO_PERMISSION", 403);
   }
   const { value } = req.body;

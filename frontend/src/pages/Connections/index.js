@@ -44,6 +44,7 @@ import QrcodeModal from "../../components/QrcodeModal";
 import { i18n } from "../../translate/i18n";
 import { WhatsAppsContext } from "../../context/WhatsApp/WhatsAppsContext";
 import toastError from "../../errors/toastError";
+import { isManager } from "../../utils/access";
 
 const useStyles = makeStyles(theme => ({
 	mainPaper: {
@@ -102,7 +103,7 @@ const Connections = () => {
 	const { whatsApps, loading } = useContext(WhatsAppsContext);
 	// connecting and removing numbers is for the administrator; everyone else only sees the status
 	const { user } = useContext(AuthContext);
-	const isAdmin = user && user.profile === "admin";
+	const isAdmin = isManager(user);
 	// administrators manage everything; anyone else manages the number they connected themselves
 	const canManage = w => isAdmin || (w.ownerId && user && w.ownerId === user.id && (!w.channel || w.channel === "whatsapp"));
 	const [myDialog, setMyDialog] = useState({ open: false, whatsApp: null });

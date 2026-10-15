@@ -3,7 +3,7 @@ import { Route as RouterRoute, Redirect } from "react-router-dom";
 
 import { AuthContext } from "../context/Auth/AuthContext";
 import BackdropLoading from "../components/BackdropLoading";
-import { isManager, isStrictAdmin } from "../utils/access";
+import { isManager } from "../utils/access";
 
 // adminOnly: administration pages. Anyone else who types the address goes back to the home page
 // instead of seeing a wall of "no permission" errors.
@@ -17,7 +17,7 @@ const Route = ({ component: Component, isPrivate = false, adminOnly = false, man
   // adminOnly: administrator alone; managerOnly: administrator or coordinator
   const blocked =
     isAuth && !loading && user && user.profile &&
-    ((adminOnly && !isStrictAdmin(user)) || (managerOnly && !isManager(user)) || (salesOnly && !isManager(user) && user.role !== "consultor"));
+    ((adminOnly && !isManager(user)) || (managerOnly && !isManager(user)) || (salesOnly && !isManager(user) && user.role !== "consultor"));
 
   if (!isAuth && isPrivate) {
     return (

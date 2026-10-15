@@ -1133,6 +1133,34 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.post(`/messages/${m}/forward`, { ticketIds: [] }, auth())).status === 400, "empty target accepted");
       assert((await http.post(`/messages/${m}/forward`, { ticketIds: [Number(other)] }, asUser(agentToken))).status === 403, "agent forwarded outside own permissions");
     });
+    await test("forwarding in a batch answers at once, sends in the background and reports the progress; a reaction shows at once and is not doubled by its echo", async () => {
+      const mine = sql(`SELECT id FROM Messages WHERE ticketId=${tgTicket} AND fromMe=1 ORDER BY createdAt LIMIT 2`).split("\n").filter(Boolean);
+      assert(mine.length >= 1, "no outbound messages");
+      const other = ticketOf("tg_5552");
+      const before = tg.sent.length;
+      const t0 = Date.now();
+      const f = await http.post("/messages/forward-batch", { messageIds: mine, ticketIds: [Number(other)] }, auth());
+      assert(f.status === 202 && f.data.total === mine.length && f.data.batchId, `batch ${f.status} ${JSON.stringify(f.data)}`);
+      assert(Date.now() - t0 < 2500, "the batch waited for the sending");
+      await waitFor(() => tg.sent.slice(before).filter(x => /^send(Message|Photo|Document|Video|Audio|Voice)$/.test(x.method) && String(x.body.chat_id) === "5552").length >= mine.length, 15000, "batch delivered").catch(e => { throw new Error(`${e.message}: ${JSON.stringify(tg.sent.slice(before).map(x => [x.method, x.body.chat_id]))} mine=${mine}`); });
+      assert((await http.post("/messages/forward-batch", { messageIds: mine, ticketIds: [] }, auth())).status === 400, "empty target accepted");
+      assert((await http.post("/messages/forward-batch", { messageIds: ["nao-existe"], ticketIds: [Number(other)] }, auth())).status === 404, "unknown message accepted");
+      assert((await http.post("/messages/forward-batch", { messageIds: mine, ticketIds: [Number(other)] }, asUser(agentToken))).status === 403, "agent forwarded outside own permissions");
+      // the same reaction twice (the echo of the phone) does not double it
+      const m = mine[0];
+      assert((await http.post(`/messages/${m}/react`, { emoji: "🙏" }, auth())).status === 200, "react");
+      assert((await http.post(`/messages/${m}/react`, { emoji: "🙏" }, auth())).status === 200, "react again");
+      const rx = JSON.parse(sql(`SELECT reactions FROM Messages WHERE id='${m}'`));
+      assert(rx.filter(r => r.fromMe).length === 1, `reaction doubled ${JSON.stringify(rx)}`);
+    });
+    await test("screen errors are kept in the database for the administration and the coordination", async () => {
+      assert((await http.post("/client-errors", { code: "ABCDE", route: "/afiliados", message: "Cannot read properties of null (reading 'value')", stack: "at X" }, auth())).status === 204, "report");
+      const list = await http.get("/client-errors", auth());
+      assert(list.status === 200 && list.data.some(e => e.code === "ABCDE" && e.route === "/afiliados"), `list ${JSON.stringify(list.data).slice(0, 120)}`);
+      assert((await http.get("/client-errors?code=abcde", auth())).data.length === 1, "filter by code");
+      assert((await http.get("/client-errors", asUser(agentToken))).status === 403, "an agent read the errors");
+      assert((await http.delete("/client-errors", auth())).status === 204 && (await http.get("/client-errors", auth())).data.length === 0, "clear");
+    });
     await test("conversations can be pinned (personally) and archived until the contact writes again", async () => {
       const a = ticketOf("tg_5551"), b = ticketOf("tg_5552");
       assert((await http.put(`/tickets/${b}/pin`, { pinned: true }, auth())).status === 200, "pin");
@@ -1353,11 +1381,15 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.get("/polos", as)).status === 200, "polos list");
       assert((await http.post("/polos", { name: "Polo do Coord", city: "Porto Velho" }, as)).status === 201, "coordinator creating a polo");
 
-      // what stays with the administrator
-      assert((await http.get("/payments/efi/settings", as)).status === 403, "coordinator reached the payment credentials");
-      assert((await http.get("/api-tokens", as)).status === 403, "coordinator reached API tokens");
-      assert((await http.get("/ai-settings", as)).status === 403, "coordinator reached AI keys");
-      assert((await http.delete(`/leads/${lead.id}`, as)).status === 403, "coordinator deleted a lead");
+      // the coordination has the same powers as the administrator (decided by the company): credentials, keys, tokens...
+      assert((await http.get("/payments/efi/settings", as)).status === 200, "coordinator cannot reach the payment credentials");
+      assert((await http.get("/api-tokens", as)).status === 200, "coordinator cannot reach API tokens");
+      assert((await http.get("/ai-settings", as)).status === 200, "coordinator cannot reach AI keys");
+      assert((await http.put("/ai-settings", {}, as)).status === 200, "coordinator cannot save AI keys");
+      const allSettings = await http.get("/settings", as);
+      assert(allSettings.status === 200 && allSettings.data.length > 0, "coordinator cannot read every setting");
+      assert((await http.put("/settings/appTimezone", { value: "America/Porto_Velho" }, as)).status === 200, "coordinator cannot change a setting");
+      assert((await http.delete(`/leads/${lead.id}`, as)).status === 200, "coordinator cannot delete a lead");
       // a consultant still cannot manage anybody
       const cons = (await http.post("/auth/login", { email: "do-coord@x.com", password: "senha123" })).data.token;
       assert((await http.post("/users", { name: "X", email: "x-x@x.com", password: "senha123", role: "consultor" }, asUser(cons))).status === 403, "consultant created a user");

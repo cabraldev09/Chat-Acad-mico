@@ -24,6 +24,8 @@ import { ScoreRing, SourceIcon, ago, isOverdue, burst, initials } from "./shared
 
 const useStyles = makeStyles((theme) => ({
   paper: { width: 500, maxWidth: "100vw", display: "flex", flexDirection: "column", borderLeft: theme.border.divider, animation: "slide-in-left .0s" },
+  // beside the conversation: it does not block the chat, so the consultant can copy from it and paste here
+  paperSide: { width: "min(500px, 38vw)", minWidth: 380, top: 56, height: "calc(100% - 56px)", boxShadow: "-8px 0 24px -12px rgba(0,0,0,.25)" },
   head: { padding: theme.spacing(2.5, 2.5, 1.5), borderBottom: theme.border.divider },
   titleRow: { display: "flex", alignItems: "center", gap: theme.spacing(1.5) },
   avatar: { width: 44, height: 44, borderRadius: 12, background: "#0B4279", color: "#fff", display: "grid", placeItems: "center", fontWeight: 600, flex: "none" },
@@ -79,7 +81,7 @@ export const LostDialog = ({ open, reasons = [], onClose, onConfirm }) => {
   );
 };
 
-const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab }) => {
+const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab, side = false }) => {
   const classes = useStyles();
   const history = useHistory();
   const { options, courses, stages, users, tags } = ctx;
@@ -190,7 +192,7 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab }) => {
   const currentIdx = lead ? openStages.findIndex((s) => s.id === lead.stageId) : -1;
 
   return (
-    <Drawer anchor="right" open={!!leadId} onClose={onClose} classes={{ paper: classes.paper }}>
+    <Drawer anchor="right" variant={side ? "persistent" : "temporary"} open={!!leadId} onClose={onClose} classes={{ paper: side ? `${classes.paper} ${classes.paperSide}` : classes.paper }}>
       {!lead || !draft ? (
         <div style={{ margin: "auto" }}><CircularProgress /></div>
       ) : (

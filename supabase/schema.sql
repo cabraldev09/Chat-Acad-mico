@@ -691,6 +691,45 @@ ALTER SEQUENCE public."ChatbotNodes_id_seq" OWNED BY public."ChatbotNodes".id;
 
 
 --
+-- Name: ClientErrors; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."ClientErrors" (
+    id integer NOT NULL,
+    code character varying(20) NOT NULL,
+    "userId" integer,
+    role character varying(30),
+    route character varying(200),
+    message text,
+    stack text,
+    components text,
+    "userAgent" character varying(300),
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: ClientErrors_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."ClientErrors_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: ClientErrors_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."ClientErrors_id_seq" OWNED BY public."ClientErrors".id;
+
+
+--
 -- Name: ContactCustomFields; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2193,6 +2232,13 @@ ALTER TABLE ONLY public."ChatbotNodes" ALTER COLUMN id SET DEFAULT nextval('publ
 
 
 --
+-- Name: ClientErrors id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."ClientErrors" ALTER COLUMN id SET DEFAULT nextval('public."ClientErrors_id_seq"'::regclass);
+
+
+--
 -- Name: ContactCustomFields id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -2567,6 +2613,14 @@ ALTER TABLE ONLY public."ChatFlows"
 
 ALTER TABLE ONLY public."ChatbotNodes"
     ADD CONSTRAINT "ChatbotNodes_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: ClientErrors ClientErrors_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."ClientErrors"
+    ADD CONSTRAINT "ClientErrors_pkey" PRIMARY KEY (id);
 
 
 --
@@ -3045,6 +3099,20 @@ CREATE INDEX chatflowruns_ticket_idx ON public."ChatFlowRuns" USING btree ("tick
 --
 
 CREATE UNIQUE INDEX chatflowstats_unique ON public."ChatFlowStats" USING btree ("flowId", "nodeId");
+
+
+--
+-- Name: client_errors_code; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX client_errors_code ON public."ClientErrors" USING btree (code);
+
+
+--
+-- Name: client_errors_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX client_errors_created_at ON public."ClientErrors" USING btree ("createdAt");
 
 
 --
@@ -4250,6 +4318,7 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261106000003-merge-tutoria-academi
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261107000001-chat-flows.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261108000001-whatsapp-status-since.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261109000001-ai-agent-functions.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261110000001-client-errors.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

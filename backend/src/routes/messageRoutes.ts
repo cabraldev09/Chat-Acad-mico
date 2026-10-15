@@ -10,6 +10,8 @@ const messageRoutes = Router();
 
 const upload = multer(uploadConfig);
 
+// before the routes with a :ticketId, which would take "forward-batch" for an id
+messageRoutes.post("/messages/forward-batch", isAuth, MessageController.forwardMany);
 messageRoutes.get("/messages/:ticketId", isAuth, canReadTicket, MessageController.index);
 
 messageRoutes.post("/messages/:ticketId/contact", isAuth, canSendTicket, MessageController.sendContact);

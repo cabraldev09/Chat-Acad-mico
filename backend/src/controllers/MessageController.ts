@@ -18,7 +18,7 @@ import DeleteWhatsAppMessage, { EditWhatsAppMessage } from "../services/WbotServ
 import SendWhatsAppMedia from "../services/WbotServices/SendWhatsAppMedia";
 import SendWhatsAppMessage from "../services/WbotServices/SendWhatsAppMessage";
 import { hookHumanReply } from "../services/CrmServices/LeadCore";
-import { toggleStar, reactToMessage, forwardMessage, loadMessageMedia } from "../services/MessageServices/MessageActions";
+import { toggleStar, reactToMessage, forwardMessage, forwardBatch, loadMessageMedia } from "../services/MessageServices/MessageActions";
 
 type IndexQuery = {
   pageNumber: string;
@@ -114,6 +114,13 @@ export const forward = async (req: Request, res: Response): Promise<Response> =>
   const ids = Array.isArray(req.body.ticketIds) ? req.body.ticketIds : [];
   const sent = await forwardMessage(req, req.params.messageId, ids);
   return res.json({ sent });
+};
+
+export const forwardMany = async (req: Request, res: Response): Promise<Response> => {
+  const messageIds = Array.isArray(req.body.messageIds) ? req.body.messageIds : [];
+  const ticketIds = Array.isArray(req.body.ticketIds) ? req.body.ticketIds : [];
+  const out = await forwardBatch(req, messageIds, ticketIds);
+  return res.status(202).json(out);
 };
 
 // What the conversation drawer lists, like WhatsApp's "Mídia, links e docs" and "Mensagens favoritas".

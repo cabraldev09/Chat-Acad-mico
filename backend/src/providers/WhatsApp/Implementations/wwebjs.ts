@@ -825,6 +825,10 @@ const findMessage = async (
 
   const chat = await wbot.getChatById(chatId).catch(() => null);
   if (!chat) return null;
+  // most of the time the message is among the last few: look there first, the long scan is the last resort
+  const latest = await chat.fetchMessages({ limit: 60 });
+  const quick = latest.find(m => m.id.id === messageId);
+  if (quick) return quick;
   const recent = await chat.fetchMessages({ limit: 400 });
   return recent.find(m => m.id.id === messageId) || null;
 };

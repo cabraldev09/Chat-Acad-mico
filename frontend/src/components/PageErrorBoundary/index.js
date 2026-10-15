@@ -6,7 +6,7 @@ import api from "../../services/api";
 class PageErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
-    this.state = { failed: false, code: "" };
+    this.state = { failed: false, code: "", detail: "" };
   }
 
   static getDerivedStateFromError() {
@@ -15,7 +15,7 @@ class PageErrorBoundary extends React.Component {
 
   // a failed screen must not take the next ones down with it: moving to another address starts clean
   componentDidUpdate(prev) {
-    if (this.state.failed && prev.resetKey !== this.props.resetKey) this.setState({ failed: false, code: "" });
+    if (this.state.failed && prev.resetKey !== this.props.resetKey) this.setState({ failed: false, code: "", detail: "" });
   }
 
   componentDidCatch(error, info) {
@@ -23,7 +23,7 @@ class PageErrorBoundary extends React.Component {
     console.error("Screen failed to render:", error);
     // short code the user can read out; the same code is written to the server log with the message and the route
     const code = Math.random().toString(36).slice(2, 7).toUpperCase();
-    this.setState({ code });
+    this.setState({ code, detail: String((error && error.message) || "").slice(0, 160) });
     try {
       api.post("/client-errors", {
         code,
@@ -45,6 +45,7 @@ class PageErrorBoundary extends React.Component {
             Pode ser uma versão nova do sistema. Atualize a página; se continuar, volte ao início.
             {this.state.code ? ` Código do erro: ${this.state.code}.` : ""}
           </p>
+          {this.state.detail && <p style={{ opacity: 0.55, fontSize: 12, maxWidth: 460, margin: "-8px auto 16px", overflowWrap: "anywhere" }}>{this.state.detail}</p>}
           <button type="button" onClick={() => window.location.reload()} style={{ padding: "10px 18px", borderRadius: 10, border: 0, background: "#0B4279", color: "#fff", fontSize: 15, cursor: "pointer", marginRight: 8 }}>
             Atualizar a página
           </button>

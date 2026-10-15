@@ -17,9 +17,9 @@ import { isManagerRole, roleOf } from "../helpers/Roles";
 import { startOfTodayApp } from "../helpers/AppTime";
 import { QueryTypes } from "sequelize";
 
-const isAdminReq = (req: Request) => req.user.profile === "admin";
+const isAdminReq = (req: Request) => isManagerRole(roleOf(req.user));
 const me = (req: Request) => Number(req.user.id);
-// QR Codes are only shown to administrators and to the person who owns the number
+// QR Codes are only shown to administrators, coordinators and to the person who owns the number
 const present = (req: Request, w: Whatsapp) => {
   const json: any = w.toJSON();
   if (!isAdminReq(req) && w.ownerId !== me(req)) delete json.qrcode;

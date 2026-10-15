@@ -13,6 +13,7 @@ import Message from "../../models/Message";
 import Ticket from "../../models/Ticket";
 import Whatsapp from "../../models/Whatsapp";
 import { getIO } from "../../libs/socket";
+import { logger } from "../../utils/logger";
 import { PUBLIC_DIR } from "../../config/paths";
 import { mimeFromName } from "../../helpers/MimeFromName";
 import { whatsappProvider } from "../../providers/WhatsApp";
@@ -59,14 +60,17 @@ export const toggleStar = async (id: string, starred: boolean): Promise<Message>
 
 // Stores one reaction per sender (an empty emoji removes it). `sender` is the
 // WhatsApp id of the person, or "me" for the agent.
-export const applyReaction = async (id: string, emoji: string, fromMe: boolean, sender: string): Promise<void> => {
+export const applyReaction = async (id: string, emoji: string, fromMe: boolean, sender: string): Promise<Message | null> => {
   const message = await loadFull(id);
-  if (!message) return;
+  if (!message) return null;
   // my own reaction comes back from WhatsApp with my phone id: it is the same person as "me", never a second reaction
   if (fromMe) sender = "me";
   const next = parse(message).filter(r => !(r.fromMe === fromMe && (r.sender || "") === sender));
   if (emoji) next.push({ emoji, fromMe, sender });
-  await message.update({ reactions: next.length ? JSON.stringify(next) : null });
+  const stored = next.length ? JSON.stringify(next) : null;
+  // the echo of a reaction that is already saved changes nothing: no write, no broadcast
+  if ((message.reactions || null) === stored) return message;
+  await message.update({ reactions: stored });
   broadcast(message);
 
   // somebody reacted to a message: the list says so ("Reagiu com ❤️ a “texto”") without opening the conversation
@@ -74,6 +78,7 @@ export const applyReaction = async (id: string, emoji: string, fromMe: boolean, 
     fire("message.reaction", { ticketId: message.ticket.id, contactId: message.ticket.contactId, emoji });
     await announceReaction(message, emoji, sender);
   }
+  return message;
 };
 
 const announceReaction = async (message: Message, emoji: string, sender: string): Promise<void> => {
@@ -119,31 +124,41 @@ export const reactToMessage = async (id: string, emoji: string): Promise<Message
   const { ticket } = message;
   const channel = ticket.whatsapp?.channel || "whatsapp";
 
-  if (channel === "whatsapp") {
-    if (!whatsappProvider.sendReaction) throw new AppError("ERR_REACTION_UNSUPPORTED", 400);
-    const chatId = chatIdOf(ticket.contact, ticket.isGroup);
-    try {
-      await whatsappProvider.sendReaction(ticket.whatsappId, chatId, message.id, message.fromMe, emoji);
-    } catch (err) {
-      // whatever the phone side threw, the person gets a readable answer instead of "Erro interno"
-      if (err instanceof AppError) throw err;
-      throw new AppError("ERR_REACTION_FAILED", 400);
+  const deliver = async (): Promise<void> => {
+    if (channel === "whatsapp") {
+      if (!whatsappProvider.sendReaction) throw new AppError("ERR_REACTION_UNSUPPORTED", 400);
+      const chatId = chatIdOf(ticket.contact, ticket.isGroup);
+      try {
+        await whatsappProvider.sendReaction(ticket.whatsappId, chatId, message.id, message.fromMe, emoji);
+      } catch (err) {
+        // whatever the phone side threw, the person gets a readable answer instead of "Erro interno"
+        if (err instanceof AppError) throw err;
+        throw new AppError("ERR_REACTION_FAILED", 400);
+      }
+    } else {
+      // Cloud API, Telegram, Messenger, Instagram: through the channel adapter
+      const adapter = getAdapter(channel);
+      if (!adapter.sendReaction) throw new AppError("ERR_REACTION_UNSUPPORTED", 400);
+      const whatsapp = await Whatsapp.findByPk(ticket.whatsappId);
+      try {
+        await adapter.sendReaction(whatsapp as Whatsapp, ticket.contact as any, message.id, emoji);
+      } catch (err) {
+        if (err instanceof AppError) throw err;
+        throw new AppError("ERR_REACTION_FAILED", 400);
+      }
     }
-  } else {
-    // Cloud API, Telegram, Messenger, Instagram: through the channel adapter
-    const adapter = getAdapter(channel);
-    if (!adapter.sendReaction) throw new AppError("ERR_REACTION_UNSUPPORTED", 400);
-    const whatsapp = await Whatsapp.findByPk(ticket.whatsappId);
-    try {
-      await adapter.sendReaction(whatsapp as Whatsapp, ticket.contact as any, message.id, emoji);
-    } catch (err) {
-      if (err instanceof AppError) throw err;
-      throw new AppError("ERR_REACTION_FAILED", 400);
-    }
-  }
+  };
 
-  await applyReaction(id, emoji, true, "me");
-  return (await loadFull(id)) as Message;
+  // the reaction shows on every screen right away while the phone is told; if the phone refuses, it is taken back
+  const previous = message.reactions || null;
+  const [, sent] = await Promise.all([applyReaction(id, emoji, true, "me"), deliver().then(() => null, (err: Error) => err)]);
+  if (sent) {
+    await Message.update({ reactions: previous } as any, { where: { id } });
+    const fresh = await loadFull(id);
+    if (fresh) broadcast(fresh);
+    throw sent;
+  }
+  return (await Message.findByPk(id)) as Message;
 };
 
 // Sends a copy of a message (text or file) into other conversations
@@ -187,6 +202,105 @@ export const forwardMessage = async (req: Request, id: string, ticketIds: number
     sent += 1;
   }
   return sent;
+};
+
+// Forwards several messages to several conversations. The checks happen now (so a mistake is answered at once); the
+// sending itself runs in the background, one queue per connection (the pacing of each number is kept) with the
+// different numbers working side by side. The person sees the progress on the screen instead of waiting.
+export interface ForwardProgress {
+  batchId: string;
+  done: number;
+  failed: number;
+  total: number;
+  finished: boolean;
+  failedPairs: Array<{ messageId: string; ticketId: number }>;
+}
+
+export const forwardBatch = async (req: Request, messageIds: string[], ticketIds: number[]): Promise<{ batchId: string; total: number }> => {
+  const mids = [...new Set(messageIds.map(String))].filter(Boolean).slice(0, 50);
+  const tids = [...new Set(ticketIds.map(Number))].filter(Boolean).slice(0, 10);
+  if (!mids.length) throw new AppError("ERR_NO_MESSAGE_FOUND", 404);
+  if (!tids.length) throw new AppError("ERR_FORWARD_NO_TARGET", 400);
+
+  const messages = await Message.findAll({ where: { id: { [Op.in]: mids } } });
+  const byId = new Map(messages.map(m => [m.id, m]));
+  // keep the order the person selected them in
+  const ordered = mids.map(id => byId.get(id)).filter((m): m is Message => !!m && !m.isDeleted);
+  if (!ordered.length) throw new AppError("ERR_NO_MESSAGE_FOUND", 404);
+  ordered.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+  // the person must be allowed to read where the messages come from
+  for (const sourceTicketId of [...new Set(ordered.map(m => m.ticketId))]) {
+    // eslint-disable-next-line no-await-in-loop
+    await assertTicketAccess(req, sourceTicketId, "read");
+  }
+
+  const tickets: Ticket[] = [];
+  for (const ticketId of tids) {
+    // eslint-disable-next-line no-await-in-loop
+    await assertTicketAccess(req, ticketId, "write");
+    // eslint-disable-next-line no-await-in-loop
+    const ticket = await ShowTicketService(ticketId);
+    if (ticket.status === "closed") throw new AppError("ERR_FORWARD_CLOSED_TICKET", 400);
+    tickets.push(ticket);
+  }
+  for (const m of ordered) {
+    const raw = m.getDataValue("mediaUrl") as string | null;
+    if (raw && !fs.existsSync(path.join(PUBLIC_DIR, raw))) throw new AppError("ERR_MEDIA_NOT_FOUND", 404);
+  }
+
+  const batchId = `fb${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+  const total = ordered.length * tickets.length;
+  const progress: ForwardProgress = { batchId, done: 0, failed: 0, total, finished: false, failedPairs: [] };
+  const userId = Number(req.user.id);
+  const tell = (): void => {
+    try { getIO().to(`user:${userId}`).emit("forwardProgress", progress); } catch (e) { /* no socket: nobody to tell */ }
+  };
+
+  const sendOne = async (message: Message, ticket: Ticket): Promise<void> => {
+    const rawMedia = message.getDataValue("mediaUrl") as string | null;
+    if (rawMedia) {
+      // SendWhatsAppMedia consumes the file it sends: hand it a copy
+      const copyName = `fwd-${Date.now()}-${Math.random().toString(36).slice(2, 7)}${path.extname(rawMedia)}`;
+      fs.copyFileSync(path.join(PUBLIC_DIR, rawMedia), path.join(PUBLIC_DIR, copyName));
+      const caption = message.body && message.body !== rawMedia && !/^\d{10,}\.\w{2,5}$/.test(message.body) ? message.body : "";
+      await SendWhatsAppMedia({
+        media: { filename: copyName, originalname: rawMedia, mimetype: mimeFromName(rawMedia), path: path.join(PUBLIC_DIR, copyName) } as Express.Multer.File,
+        ticket,
+        body: caption
+      });
+    } else {
+      await SendWhatsAppMessage({ body: message.body, ticket });
+    }
+  };
+
+  // one queue per connection: the same number never sends two at once, different numbers do
+  const lanes = new Map<number, Ticket[]>();
+  tickets.forEach(t => lanes.set(t.whatsappId, [...(lanes.get(t.whatsappId) || []), t]));
+  setImmediate(() => {
+    tell();
+    Promise.all(
+      [...lanes.values()].map(async laneTickets => {
+        for (const ticket of laneTickets) {
+          for (const message of ordered) {
+            try {
+              // eslint-disable-next-line no-await-in-loop
+              await sendOne(message, ticket);
+              progress.done += 1;
+            } catch (err) {
+              logger.warn(`forward batch ${batchId}: message ${message.id} to ticket ${ticket.id} failed: ${(err as Error).message}`);
+              progress.failed += 1;
+              progress.failedPairs.push({ messageId: message.id, ticketId: ticket.id });
+            }
+            tell();
+          }
+        }
+      })
+    ).then(() => {
+      progress.finished = true;
+      tell();
+    });
+  });
+  return { batchId, total };
 };
 
 // Downloads the file of a message that arrived without it (or that came from the copied history) and attaches it.

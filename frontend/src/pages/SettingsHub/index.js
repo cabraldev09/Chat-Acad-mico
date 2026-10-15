@@ -4,7 +4,7 @@ import { toast } from "react-toastify";
 import { Button, FormControlLabel, InputAdornment, MenuItem, Paper, Switch, TextField, Typography, makeStyles } from "@material-ui/core";
 import {
   ArrowUpRight, BellRing, Bot, Building2, Clock, CreditCard, Eye, EyeOff, FileInput, GraduationCap, KeyRound, ListTree, Plug, Search,
-  Settings2, Tags, Users, Workflow, Zap, Copy, SlidersHorizontal,
+  Settings2, Tags, Users, Workflow, Zap, Copy, SlidersHorizontal, Bug, Trash2,
 } from "lucide-react";
 
 import MainContainer from "../../components/MainContainer";
@@ -14,7 +14,7 @@ import TimezoneSelect from "../../components/TimezoneSelect";
 import { Automation, Capture, EfiSettings, HoursAndAlerts } from "../CRM/Settings";
 import { AuthContext } from "../../context/Auth/AuthContext";
 import { WhatsAppsContext } from "../../context/WhatsApp/WhatsAppsContext";
-import { isStrictAdmin } from "../../utils/access";
+import { isManager } from "../../utils/access";
 import openSocket from "../../services/socket-io";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
@@ -29,6 +29,7 @@ const GROUPS = [
   { id: "captacao", label: "Captação", icon: FileInput, hint: "Formulário público e API" },
   { id: "pagamentos", label: "Pagamentos", icon: CreditCard, hint: "Taxa de matrícula (Efí)", admin: true },
   { id: "cadastros", label: "Cadastros", icon: ListTree, hint: "Conexões, equipe, polos, filas" },
+  { id: "erros", label: "Erros de tela", icon: Bug, hint: "Telas que falharam no navegador de alguém", admin: true },
 ];
 
 const useStyles = makeStyles((theme) => ({
@@ -296,12 +297,53 @@ const Cadastros = ({ admin }) => {
   );
 };
 
+// every screen that failed to draw in someone's browser, with the code shown on that person's screen
+const ErrosDeTela = () => {
+  const classes = useStyles();
+  const [rows, setRows] = useState(null);
+  const [code, setCode] = useState("");
+  const load = useCallback(() => {
+    api.get("/client-errors", { params: code.trim() ? { code: code.trim() } : {} }).then(({ data }) => setRows(Array.isArray(data) ? data : [])).catch((e) => { setRows([]); toastError(e); });
+  }, [code]);
+  useEffect(() => { load(); }, [load]);
+  const clear = async () => {
+    if (!window.confirm("Apagar todos os registros de erro de tela?")) return;
+    try { await api.delete("/client-errors"); setRows([]); toast.success("Registros apagados"); } catch (e) { toastError(e); }
+  };
+  return (
+    <Paper variant="outlined" className={classes.card}>
+      <div className={classes.row}>
+        <TextField size="small" variant="outlined" label="Código do erro" value={code} onChange={(e) => setCode(e.target.value)} style={{ width: 180 }} />
+        <Button variant="outlined" onClick={load}>Buscar</Button>
+        <span style={{ flex: 1 }} />
+        <Button variant="outlined" color="secondary" startIcon={<Trash2 size={15} />} onClick={clear} disabled={!rows || !rows.length}>Limpar</Button>
+      </div>
+      <div className={classes.hint}>O código aparece na tela de erro de quem teve o problema. Aqui ficam a tela, a mensagem e o trecho que falhou.</div>
+      {rows === null && <Typography className={classes.hint}>Carregando...</Typography>}
+      {rows && rows.length === 0 && <Typography className={classes.hint}>Nenhum erro registrado.</Typography>}
+      {(rows || []).map((r) => (
+        <div key={r.id} style={{ borderTop: "1px solid rgba(127,140,160,.25)", paddingTop: 10 }}>
+          <div className={classes.row}>
+            <b style={{ fontFamily: "monospace" }}>{r.code}</b>
+            <span className={classes.hint}>{new Date(r.createdAt).toLocaleString("pt-BR")} · {r.route} · usuário {r.userId || "-"} ({r.role || "-"})</span>
+          </div>
+          <div style={{ fontSize: 13.5, marginTop: 2, overflowWrap: "anywhere" }}>{r.message}</div>
+          <details>
+            <summary className={classes.hint} style={{ cursor: "pointer" }}>Detalhes</summary>
+            <pre style={{ whiteSpace: "pre-wrap", fontSize: 11.5, overflowWrap: "anywhere", margin: "6px 0 0" }}>{`${r.stack || ""}\n${r.components || ""}\n${r.userAgent || ""}`}</pre>
+          </details>
+        </div>
+      ))}
+    </Paper>
+  );
+};
+
 const SettingsHub = () => {
   const classes = useStyles();
   const { user } = useContext(AuthContext);
   const history = useHistory();
   const { search } = useLocation();
-  const admin = isStrictAdmin(user);
+  const admin = isManager(user); // the coordination has the same powers as the administrator
   const groups = useMemo(() => GROUPS.filter((g) => !g.admin || admin), [admin]);
   const wanted = new URLSearchParams(search).get("secao");
   const [group, setGroup] = useState(groups.some((g) => g.id === wanted) ? wanted : "geral");
@@ -351,6 +393,7 @@ const SettingsHub = () => {
                 {current.id === "captacao" && <Capture s={crm.s} setS={crm.setS} save={crm.save} />}
                 {current.id === "pagamentos" && admin && <Pagamentos />}
                 {current.id === "cadastros" && <Cadastros admin={admin} />}
+                {current.id === "erros" && admin && <ErrosDeTela />}
               </>
             )}
           </div>

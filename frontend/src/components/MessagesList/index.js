@@ -16,8 +16,7 @@ import Close from "@material-ui/icons/Close";
 import Forward from "@material-ui/icons/Forward";
 import StarBorder from "@material-ui/icons/StarBorder";
 import DeleteOutline from "@material-ui/icons/DeleteOutline";
-import CheckCircle from "@material-ui/icons/CheckCircle";
-import RadioButtonUnchecked from "@material-ui/icons/RadioButtonUnchecked";
+import { Check } from "lucide-react";
 import { Dialog, DialogTitle, DialogContent, DialogActions, Button, Typography } from "@material-ui/core";
 import ForwardDialog from "../chat/ForwardDialog";
 import InsertDriveFile from "@material-ui/icons/InsertDriveFile";
@@ -66,10 +65,22 @@ const useStyles = makeStyles((theme) => {
       backgroundColor: c.header, borderBottom: `1px solid ${c.divider}`, color: c.text, boxShadow: c.shadow, animation: "pickIn .16s ease-out",
     },
     pickCount: { flex: 1, fontSize: 15, marginLeft: 6 },
-    pickRow: { cursor: "pointer", transition: "background-color .12s", "&:hover": { backgroundColor: "rgba(127,127,127,.08)" } },
-    pickRowOn: { backgroundColor: "rgba(0,168,132,.16) !important" },
-    pickMark: { alignSelf: "center", flex: "none", margin: "0 8px", color: c.textSecondary },
-    pickMarkOn: { color: c.accent },
+    // like WhatsApp Web: the whole line is tinted edge to edge and a round box sits in the left margin
+    pickRow: {
+      cursor: "pointer", position: "relative", userSelect: "none",
+      "&::before": { content: '""', position: "absolute", top: -2, bottom: -2, left: -100, right: -100, backgroundColor: "transparent", transition: "background-color .15s", pointerEvents: "none" },
+      "&:hover::before": { backgroundColor: dark ? "rgba(255,255,255,.04)" : "rgba(11,20,26,.04)" },
+      "& > *": { position: "relative", zIndex: 1 },
+    },
+    pickRowOn: { "&::before, &:hover::before": { backgroundColor: dark ? "rgba(0,168,132,.22)" : "rgba(37,211,102,.18)" } },
+    pickMark: {
+      position: "absolute !important", left: -42, top: "50%", marginTop: -10, width: 20, height: 20, borderRadius: "50%", boxSizing: "border-box",
+      border: `2px solid ${c.textSecondary}`, display: "grid", placeItems: "center", color: "#fff", transition: "background-color .12s, border-color .12s",
+      [theme.breakpoints.down("sm")]: { left: -28 },
+    },
+    pickMarkOn: { backgroundColor: c.accent, borderColor: c.accent },
+    listPicking: { overflowX: "hidden", [theme.breakpoints.down("sm")]: { paddingLeft: theme.spacing(5) } },
+    pickGo: { backgroundColor: c.accent, color: "#fff", borderRadius: 999, padding: "5px 16px", fontSize: 14, fontWeight: 600, marginLeft: 8, "&:hover": { backgroundColor: c.accent, filter: "brightness(.92)" } },
     "@global": { "@keyframes pickIn": { from: { opacity: 0, transform: "translateY(-8px)" }, to: { opacity: 1, transform: "none" } } },
     list: {
       flex: 1,
@@ -285,6 +296,13 @@ const reducer = (state, action) => {
     if (i !== -1) state[i] = action.payload;
     return [...state];
   }
+  if (action.type === "SET_REACTIONS") {
+    const i = state.findIndex((m) => m.id === action.payload.id);
+    if (i === -1) return state;
+    const next = [...state];
+    next[i] = { ...state[i], reactions: action.payload.reactions };
+    return next;
+  }
   if (action.type === "RESET") return [];
   return state;
 };
@@ -299,6 +317,8 @@ const isOnlyFileName = (m) => !m.body || /^[\p{Extended_Pictographic}\s]*(Imagem
 const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex = 0, onMatches }) => {
   const classes = useStyles();
   const [messagesList, dispatch] = useReducer(reducer, []);
+  const messagesListRef = useRef([]);
+  messagesListRef.current = messagesList;
   const [pageNumber, setPageNumber] = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -307,7 +327,19 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
   const [picked, setPicked] = useState(null);
   const [forwardMany, setForwardMany] = useState(false);
   const [confirmMany, setConfirmMany] = useState(false);
-  const togglePick = (id) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
+  const lastPick = useRef(null);
+  // a click picks or unpicks one; with Shift it takes the whole stretch since the last click
+  const togglePick = (id, range = false) => setPicked((p) => {
+    const ids = messagesListRef.current.filter((m) => !m.isDeleted).map((m) => m.id);
+    const from = ids.indexOf(lastPick.current);
+    const to = ids.indexOf(id);
+    lastPick.current = id;
+    if (range && from !== -1 && to !== -1) {
+      const stretch = ids.slice(Math.min(from, to), Math.max(from, to) + 1);
+      return [...new Set([...p, ...stretch])];
+    }
+    return p.includes(id) ? p.filter((x) => x !== id) : [...p, id];
+  });
   useEffect(() => {
     if (!picked) return undefined;
     const onKey = (e) => e.key === "Escape" && setPicked(null);
@@ -386,6 +418,9 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
       if (!first) resync();
       first = false;
     });
+    // reactions appear at once (see utils/optimisticReaction): the server answers later
+    const onReactions = (e) => dispatch({ type: "SET_REACTIONS", payload: e.detail });
+    window.addEventListener("message-reactions", onReactions);
     const poll = setInterval(() => document.visibilityState === "visible" && resync(), 25000);
     const onVisible = () => document.visibilityState === "visible" && resync();
     document.addEventListener("visibilitychange", onVisible);
@@ -399,6 +434,7 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
     });
     return () => {
       clearInterval(poll);
+      window.removeEventListener("message-reactions", onReactions);
       document.removeEventListener("visibilitychange", onVisible);
       socket.disconnect();
     };
@@ -599,14 +635,14 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
       <div
         key={m.id}
         className={clsx(classes.row, classes.rowHover, mine ? classes.rowOut : classes.rowIn, newSender && classes.rowFirst, picked && !m.isDeleted && classes.pickRow, picked && picked.includes(m.id) && classes.pickRowOn)}
-        onClick={picked && !m.isDeleted ? () => togglePick(m.id) : undefined}
+        onClick={picked && !m.isDeleted ? (e) => togglePick(m.id, e.shiftKey) : undefined}
       >
         {mine && !picked && !m.isDeleted && (REACTIONS[channel] || REACTIONS.whatsapp).length > 0 && (
           <ReactionBar message={m} channel={channel} className={classes.reactBtn} />
         )}
         {picked && !m.isDeleted && (
           <span className={clsx(classes.pickMark, picked.includes(m.id) && classes.pickMarkOn)}>
-            {picked.includes(m.id) ? <CheckCircle /> : <RadioButtonUnchecked />}
+            {picked.includes(m.id) && <Check size={14} strokeWidth={3} />}
           </span>
         )}
         <div
@@ -703,10 +739,10 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
               <span className={classes.pickCount}>{picked.length} {picked.length === 1 ? "selecionada" : "selecionadas"}</span>
               <IconButton size="small" disabled={!picked.length} title={allStarred ? "Desfavoritar" : "Favoritar"}
                 onClick={async () => {
-                  try { for (const m of chosen) await api.put(`/messages/${m.id}/star`, { starred: !allStarred }); } catch (err) { toastError(err); }
+                  try { await Promise.all(chosen.map((m) => api.put(`/messages/${m.id}/star`, { starred: !allStarred }))); } catch (err) { toastError(err); }
                   setPicked(null);
                 }}>{allStarred ? <StarBorder /> : <Star />}</IconButton>
-              <IconButton size="small" disabled={!picked.length} title="Encaminhar" onClick={() => setForwardMany(true)}><Forward /></IconButton>
+              <Button size="small" className={classes.pickGo} disabled={!picked.length} startIcon={<Forward />} onClick={() => setForwardMany(true)}>Encaminhar{picked.length ? ` (${picked.length})` : ""}</Button>
               <IconButton size="small" disabled={!picked.length} title="Apagar só aqui" onClick={() => setConfirmMany(true)}><DeleteOutline /></IconButton>
             </div>
             <ForwardDialog open={forwardMany} onClose={() => { setForwardMany(false); setPicked(null); }} messages={chosen} fromTicketId={ticketId} />
@@ -719,7 +755,7 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
                 <Button onClick={() => setConfirmMany(false)}>Cancelar</Button>
                 <Button variant="contained" color="primary" onClick={async () => {
                   setConfirmMany(false);
-                  try { for (const m of chosen) await api.delete(`/messages/${m.id}`, { params: { scope: "local" } }); } catch (err) { toastError(err); }
+                  try { await Promise.all(chosen.map((m) => api.delete(`/messages/${m.id}`, { params: { scope: "local" } }))); } catch (err) { toastError(err); }
                   setPicked(null);
                 }}>Apagar só aqui</Button>
               </DialogActions>
@@ -727,7 +763,7 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
           </>
         );
       })()}
-      <div ref={listRef} id="messagesList" className={classes.list} onScroll={onScroll}>
+      <div ref={listRef} id="messagesList" className={clsx(classes.list, picked && classes.listPicking)} onScroll={onScroll}>
         {messagesList.length > 0 ? items : !loading && <div className={classes.empty}>Nenhuma mensagem ainda. Diga olá!</div>}
       </div>
       {loading && <CircularProgress size={28} className={classes.loading} />}

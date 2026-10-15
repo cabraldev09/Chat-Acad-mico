@@ -1,5 +1,4 @@
 import React, { useContext, useEffect, useState } from "react";
-import { toast } from "react-toastify";
 import { makeStyles } from "@material-ui/core/styles";
 import Dialog from "@material-ui/core/Dialog";
 import DialogTitle from "@material-ui/core/DialogTitle";
@@ -13,6 +12,7 @@ import CircularProgress from "@material-ui/core/CircularProgress";
 import Search from "@material-ui/icons/Search";
 
 import api from "../../services/api";
+import { trackForward } from "../../utils/forwardProgress";
 import toastError from "../../errors/toastError";
 import { AuthContext } from "../../context/Auth/AuthContext";
 import { wa } from "./chatTheme";
@@ -60,12 +60,10 @@ const ForwardDialog = ({ open, onClose, message, messages, fromTicketId }) => {
     try {
       // one or several messages, in the order they were written
       const list = messages && messages.length ? messages : [message];
-      for (const m of list) {
-        // eslint-disable-next-line no-await-in-loop
-        await api.post(`/messages/${m.id}/forward`, { ticketIds: selected });
-      }
-      toast.success(list.length > 1 || selected.length > 1 ? "Mensagens encaminhadas." : "Mensagem encaminhada para a conversa.");
+      // the server checks everything now and sends in the background: the window closes at once
+      const { data } = await api.post("/messages/forward-batch", { messageIds: list.map((m) => m.id), ticketIds: selected });
       onClose();
+      trackForward(data);
     } catch (err) {
       toastError(err);
     }
