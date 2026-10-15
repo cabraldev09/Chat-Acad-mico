@@ -217,6 +217,9 @@ const Login = () => {
               {i18n.t("login.buttons.submit")}
             </Button>
             <div className={classes.foot}>
+              <Link component={RouterLink} to="/esqueci-a-senha" underline="always" style={{ display: "block", marginBottom: 8 }}>
+                Esqueci minha senha
+              </Link>
               <Link component={RouterLink} to="/signup" underline="always">
                 {i18n.t("login.buttons.register")}
               </Link>

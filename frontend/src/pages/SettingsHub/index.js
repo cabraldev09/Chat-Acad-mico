@@ -4,7 +4,7 @@ import { toast } from "react-toastify";
 import { Button, FormControlLabel, InputAdornment, MenuItem, Paper, Switch, TextField, Typography, makeStyles } from "@material-ui/core";
 import {
   ArrowUpRight, BellRing, Bot, Building2, Clock, CreditCard, Eye, EyeOff, FileInput, GraduationCap, KeyRound, ListTree, Plug, Search,
-  Settings2, Tags, Users, Workflow, Zap, Copy, SlidersHorizontal, Bug, Trash2,
+  Settings2, Tags, Users, Workflow, Zap, Copy, SlidersHorizontal, Bug, Trash2, Mail,
 } from "lucide-react";
 
 import MainContainer from "../../components/MainContainer";
@@ -29,6 +29,7 @@ const GROUPS = [
   { id: "captacao", label: "Captação", icon: FileInput, hint: "Formulário público e API" },
   { id: "pagamentos", label: "Pagamentos", icon: CreditCard, hint: "Taxa de matrícula (Efí)", admin: true },
   { id: "cadastros", label: "Cadastros", icon: ListTree, hint: "Conexões, equipe, polos, filas" },
+  { id: "email", label: "E-mail", icon: Mail, hint: "Conta que envia a recuperação de senha", admin: true },
   { id: "erros", label: "Erros de tela", icon: Bug, hint: "Telas que falharam no navegador de alguém", admin: true },
 ];
 
@@ -297,6 +298,58 @@ const Cadastros = ({ admin }) => {
   );
 };
 
+// the e-mail account the system sends from ("Esqueci minha senha"). The password is typed here and never comes back.
+const Email = () => {
+  const classes = useStyles();
+  const [f, setF] = useState(null);
+  const [pass, setPass] = useState("");
+  const [show, setShow] = useState(false);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { api.get("/mail/settings").then(({ data }) => setF(data)).catch(toastError); }, []);
+  if (!f) return <Typography className={classes.hint}>Carregando...</Typography>;
+  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  const save = async () => {
+    setBusy(true);
+    try {
+      const body = { host: f.host, port: Number(f.port), secure: !!f.secure, user: f.user, fromName: f.fromName };
+      if (pass.trim()) body.pass = pass;
+      const { data } = await api.put("/mail/settings", body);
+      setF(data);
+      setPass("");
+      toast.success("E-mail salvo.");
+    } catch (e) { toastError(e); }
+    setBusy(false);
+  };
+  const test = async () => {
+    setBusy(true);
+    try { const { data } = await api.post("/mail/test", {}); toast.success(`E-mail de teste enviado para ${data.to}.`); } catch (e) { toastError(e); }
+    setBusy(false);
+  };
+  return (
+    <Paper variant="outlined" className={classes.card}>
+      <div className={classes.cardTitle}>Conta de e-mail do sistema</div>
+      <div className={classes.hint}>
+        É daqui que sai o e-mail do “Esqueci minha senha”. Para uma conta Gmail, ative a verificação em duas etapas, crie uma “senha de app” em myaccount.google.com/apppasswords e digite aqui. Você pode trocar a conta quando quiser.
+      </div>
+      <TextField size="small" variant="outlined" label="E-mail que envia" value={f.user || ""} onChange={set("user")} fullWidth InputLabelProps={{ shrink: true }} />
+      <TextField size="small" variant="outlined" label={f.hasPassword ? "Senha de app (já salva; digite só para trocar)" : "Senha de app"} type={show ? "text" : "password"} value={pass} onChange={(e) => setPass(e.target.value)} fullWidth autoComplete="new-password"
+        placeholder={f.hasPassword ? "••••••••" : "xxxx xxxx xxxx xxxx"} InputLabelProps={{ shrink: true }}
+        InputProps={{ endAdornment: <InputAdornment position="end"><Button size="small" onClick={() => setShow((v) => !v)}>{show ? "Ocultar" : "Mostrar"}</Button></InputAdornment> }} />
+      <TextField size="small" variant="outlined" label="Nome que aparece como remetente" value={f.fromName || ""} onChange={set("fromName")} fullWidth InputLabelProps={{ shrink: true }} />
+      <div className={classes.row}>
+        <TextField size="small" variant="outlined" label="Servidor" value={f.host || ""} onChange={set("host")} style={{ flex: 1, minWidth: 200 }} InputLabelProps={{ shrink: true }} />
+        <TextField size="small" variant="outlined" label="Porta" type="number" value={f.port || ""} onChange={set("port")} style={{ width: 110 }} InputLabelProps={{ shrink: true }} />
+        <FormControlLabel control={<Switch color="primary" checked={!!f.secure} onChange={(e) => setF({ ...f, secure: e.target.checked })} />} label="Conexão segura (SSL)" />
+      </div>
+      <div className={classes.row}>
+        <Button variant="contained" color="primary" onClick={save} disabled={busy}>Salvar</Button>
+        <Button variant="outlined" onClick={test} disabled={busy || !f.hasPassword}>Enviar e-mail de teste para mim</Button>
+        <span className={classes.hint}>{f.hasPassword ? "Senha salva." : "Falta digitar a senha de app."}</span>
+      </div>
+    </Paper>
+  );
+};
+
 // every screen that failed to draw in someone's browser, with the code shown on that person's screen
 const ErrosDeTela = () => {
   const classes = useStyles();
@@ -393,6 +446,7 @@ const SettingsHub = () => {
                 {current.id === "captacao" && <Capture s={crm.s} setS={crm.setS} save={crm.save} />}
                 {current.id === "pagamentos" && admin && <Pagamentos />}
                 {current.id === "cadastros" && <Cadastros admin={admin} />}
+                {current.id === "email" && admin && <Email />}
                 {current.id === "erros" && admin && <ErrosDeTela />}
               </>
             )}

@@ -1377,6 +1377,42 @@ CREATE TABLE public."Messages" (
 
 
 --
+-- Name: PasswordResets; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."PasswordResets" (
+    id integer NOT NULL,
+    "userId" integer NOT NULL,
+    "tokenHash" character varying(64) NOT NULL,
+    "expiresAt" timestamp with time zone NOT NULL,
+    "usedAt" timestamp with time zone,
+    "requestIp" character varying(64),
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: PasswordResets_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."PasswordResets_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: PasswordResets_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."PasswordResets_id_seq" OWNED BY public."PasswordResets".id;
+
+
+--
 -- Name: Payments; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2346,6 +2382,13 @@ ALTER TABLE ONLY public."Leads" ALTER COLUMN id SET DEFAULT nextval('public."Lea
 
 
 --
+-- Name: PasswordResets id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."PasswordResets" ALTER COLUMN id SET DEFAULT nextval('public."PasswordResets_id_seq"'::regclass);
+
+
+--
 -- Name: Payments id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -2791,6 +2834,14 @@ ALTER TABLE ONLY public."Leads"
 
 ALTER TABLE ONLY public."Messages"
     ADD CONSTRAINT "Messages_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: PasswordResets PasswordResets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."PasswordResets"
+    ADD CONSTRAINT "PasswordResets_pkey" PRIMARY KEY (id);
 
 
 --
@@ -3255,6 +3306,20 @@ CREATE INDEX messages_ticket_created_idx ON public."Messages" USING btree ("tick
 --
 
 CREATE INDEX messages_ticket_unread_idx ON public."Messages" USING btree ("ticketId") WHERE ((read = false) AND ("fromMe" = false));
+
+
+--
+-- Name: password_resets_token_hash; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX password_resets_token_hash ON public."PasswordResets" USING btree ("tokenHash");
+
+
+--
+-- Name: password_resets_user_id_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX password_resets_user_id_created_at ON public."PasswordResets" USING btree ("userId", "createdAt");
 
 
 --
@@ -3759,6 +3824,14 @@ ALTER TABLE ONLY public."Messages"
 
 ALTER TABLE ONLY public."Messages"
     ADD CONSTRAINT "Messages_ticketId_fkey" FOREIGN KEY ("ticketId") REFERENCES public."Tickets"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+--
+-- Name: PasswordResets PasswordResets_userId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."PasswordResets"
+    ADD CONSTRAINT "PasswordResets_userId_fkey" FOREIGN KEY ("userId") REFERENCES public."Users"(id) ON UPDATE CASCADE ON DELETE CASCADE;
 
 
 --
@@ -4329,6 +4402,7 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261108000001-whatsapp-status-since
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261109000001-ai-agent-functions.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261110000001-client-errors.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261110000002-contact-community-role.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261110000003-password-resets.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

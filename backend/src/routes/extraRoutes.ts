@@ -14,6 +14,7 @@ import uploadConfig from "../config/upload";
 
 import * as Tag from "../controllers/TagController";
 import * as Community from "../controllers/CommunityController";
+import * as MailSettings from "../controllers/MailSettingsController";
 import * as Webhook from "../controllers/WebhookController";
 import * as ApiToken from "../controllers/ApiTokenController";
 import * as Ai from "../controllers/AiAgentController";
@@ -92,6 +93,9 @@ r.get("/dashboard", isAuth, Dashboard.index);
 // tags
 r.get("/tags", isAuth, cached(), Tag.index);
 r.get("/communities", isAuth, Community.index);
+r.get("/mail/settings", isAuth, isAdmin, MailSettings.show);
+r.put("/mail/settings", isAuth, isAdmin, MailSettings.update);
+r.post("/mail/test", isAuth, isAdmin, MailSettings.test);
 r.post("/tags", isAuth, isManager, Tag.store);
 r.put("/tags/:id", isAuth, isManager, Tag.update);
 r.delete("/tags/:id", isAuth, isManager, Tag.remove);

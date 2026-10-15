@@ -48,3 +48,34 @@ export const mergeConfig = (oldConfig: string | null | undefined, newConfig: str
   });
   return JSON.stringify(next);
 };
+
+// ------------------------------------------------------------------ secrets kept in the database
+// A password the system must read back later (the e-mail account) is stored sealed with AES-256-GCM, keyed from the
+// server secret, so a copy of the database alone does not reveal it. Values written before sealing existed (plain)
+// are read as they are.
+import crypto from "crypto";
+import authConfig from "../config/auth";
+
+const SEAL_PREFIX = "enc:v1:";
+const sealKey = (): Buffer => crypto.createHash("sha256").update(`seal:${authConfig.secret}`).digest();
+
+export const sealSecret = (plain: string): string => {
+  if (!plain) return "";
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", sealKey(), iv);
+  const data = Buffer.concat([cipher.update(plain, "utf8"), cipher.final()]);
+  return `${SEAL_PREFIX}${iv.toString("base64")}:${cipher.getAuthTag().toString("base64")}:${data.toString("base64")}`;
+};
+
+export const openSecret = (stored: string): string => {
+  if (!stored || !stored.startsWith(SEAL_PREFIX)) return stored || "";
+  try {
+    const [iv, tag, data] = stored.slice(SEAL_PREFIX.length).split(":").map(p => Buffer.from(p, "base64"));
+    const decipher = crypto.createDecipheriv("aes-256-gcm", sealKey(), iv);
+    decipher.setAuthTag(tag);
+    return Buffer.concat([decipher.update(data), decipher.final()]).toString("utf8");
+  } catch (e) {
+    // sealed with another server secret: unreadable, the administrator types it again
+    return "";
+  }
+};

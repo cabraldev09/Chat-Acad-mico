@@ -26,6 +26,7 @@ import ChatFlowRun from "../models/ChatFlowRun";
 import ChatFlowStat from "../models/ChatFlowStat";
 import AutomationTrigger from "../models/AutomationTrigger";
 import ClientError from "../models/ClientError";
+import PasswordReset from "../models/PasswordReset";
 import AiAgent from "../models/AiAgent";
 import LeadStage from "../models/LeadStage";
 import Course from "../models/Course";
@@ -89,6 +90,7 @@ const models = [
   ChatFlowStat,
   AutomationTrigger,
   ClientError,
+  PasswordReset,
   AiAgent,
   LeadStage,
   Course,

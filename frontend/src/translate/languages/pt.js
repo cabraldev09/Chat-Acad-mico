@@ -588,6 +588,13 @@ const messages = {
         ERR_REACTION_UNSUPPORTED: "Este canal não permite reagir a mensagens.",
         ERR_FORWARD_NO_TARGET: "Escolha ao menos uma conversa.",
         ERR_FORWARD_CLOSED_TICKET: "Só é possível encaminhar para conversas abertas.",
+        ERR_MAIL_NOT_CONFIGURED: "O e-mail do sistema ainda não foi configurado. Digite a senha de app em Configurações > E-mail.",
+        ERR_MAIL_SEND_FAILED: "Não foi possível enviar o e-mail. Confira o servidor, o usuário e a senha de app em Configurações > E-mail.",
+        ERR_MAIL_HOST_INVALID: "Servidor de e-mail inválido.",
+        ERR_MAIL_USER_INVALID: "O usuário do e-mail precisa ser um endereço de e-mail.",
+        ERR_MAIL_PORT_INVALID: "Porta inválida.",
+        ERR_INVALID_RESET_TOKEN: "Este link não vale mais. Peça um novo link para criar a senha.",
+        ERR_PASSWORD_TOO_SHORT: "A senha precisa ter pelo menos 8 caracteres.",
         ERR_TOO_MANY_REQUESTS:
           "Muitas tentativas em pouco tempo. Aguarde um instante e tente de novo.",
         ERR_INVALID_TICKET_STATUS: "Status de atendimento inválido.",

@@ -22,7 +22,9 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
 
   const settings = await ListSettingsService();
 
-  return res.status(200).json(admin ? settings : (settings || []).filter(s => MANAGER_KEYS.includes(s.key)));
+  // the e-mail password lives only behind /mail/settings (sealed): it never travels in the generic list
+  const visible = (settings || []).filter(s => s.key !== "mail_pass");
+  return res.status(200).json(admin ? visible : visible.filter(s => MANAGER_KEYS.includes(s.key)));
 };
 
 export const update = async (
@@ -33,6 +35,7 @@ export const update = async (
   if (!isManagerRole(roleOf(req.user))) {
     throw new AppError("ERR_NO_PERMISSION", 403);
   }
+  if (key === "mail_pass") throw new AppError("ERR_NO_PERMISSION", 403);
   const { value } = req.body;
 
   const setting = await UpdateSettingService({

@@ -1153,6 +1153,92 @@ const postMeta = (id, payload, secret, badSig) => {
       const rx = JSON.parse(sql(`SELECT reactions FROM Messages WHERE id='${m}'`));
       assert(rx.filter(r => r.fromMe).length === 1, `reaction doubled ${JSON.stringify(rx)}`);
     });
+    await test("password recovery by e-mail: the account is set on screen, the link works once, nobody can tell who has an account", async () => {
+      // a tiny SMTP server that keeps what it receives
+      const net = require("net");
+      const inbox = [];
+      const smtp = net.createServer(sock => {
+        let mode = "cmd", data = "", authStep = 0, rec = { auth: "", raw: "" };
+        sock.write("220 mock ESMTP\r\n");
+        let buf = "";
+        sock.on("data", chunk => {
+          buf += chunk.toString();
+          if (mode === "data") {
+            if (buf.endsWith("\r\n.\r\n")) { rec.raw = buf; inbox.push(rec); rec = { auth: rec.auth, raw: "" }; buf = ""; mode = "cmd"; sock.write("250 queued\r\n"); }
+            return;
+          }
+          const lines = buf.split("\r\n"); buf = lines.pop();
+          for (const line of lines) {
+            if (authStep === 1) { rec.auth = Buffer.from(line, "base64").toString() + "|"; authStep = 2; sock.write("334 UGFzc3dvcmQ6\r\n"); continue; }
+            if (authStep === 2) { rec.auth += Buffer.from(line, "base64").toString(); authStep = 0; sock.write("235 ok\r\n"); continue; }
+            if (/^EHLO|^HELO/i.test(line)) sock.write("250-mock\r\n250-AUTH PLAIN LOGIN\r\n250 8BITMIME\r\n");
+            else if (/^AUTH PLAIN/i.test(line)) { const parts = Buffer.from(line.split(" ")[2] || "", "base64").toString().split("\0"); rec.auth = `${parts[1]}|${parts[2]}`; sock.write("235 ok\r\n"); }
+            else if (/^AUTH LOGIN/i.test(line)) { authStep = 1; sock.write("334 VXNlcm5hbWU6\r\n"); }
+            else if (/^MAIL FROM|^RCPT TO/i.test(line)) sock.write("250 ok\r\n");
+            else if (/^DATA/i.test(line)) { mode = "data"; sock.write("354 go\r\n"); }
+            else if (/^QUIT/i.test(line)) { sock.write("221 bye\r\n"); sock.end(); }
+            else sock.write("250 ok\r\n");
+          }
+        });
+        sock.on("error", () => {});
+      });
+      await new Promise(r => smtp.listen(9106, "127.0.0.1", r));
+      try {
+        const decode = raw => raw.replace(/=\r?\n/g, "").replace(/=3D/g, "=");
+        // nothing is set up yet: asking for a link answers the same and sends nothing
+        await http.post("/users", { name: "Maria Recupera", email: "recupera@x.com", password: "senha-antiga1", role: "consultor" }, auth());
+        assert((await http.post("/auth/forgot", { email: "recupera@x.com" })).status === 200, "forgot (not set up)");
+        await new Promise(r => setTimeout(r, 400));
+        assert(inbox.length === 0, "an e-mail went out without an account set up");
+        assert((await http.post("/mail/test", {}, auth())).status === 400, "test mail without setup");
+
+        // set up from the screen: the password is sealed and never comes back
+        const saved = await http.put("/mail/settings", { host: "127.0.0.1", port: 9106, secure: false, user: "cruzeirogpt@gmail.com", fromName: "Cruzeiro Teste", pass: "abcd efgh ijkl mnop" }, auth());
+        assert(saved.status === 200 && saved.data.hasPassword === true && !JSON.stringify(saved.data).includes("abcdefgh"), `settings ${JSON.stringify(saved.data)}`);
+        assert(sql(`SELECT value FROM Settings WHERE key='mail_pass'`).startsWith("enc:v1:"), "the mail password is not sealed");
+        assert(!JSON.stringify((await http.get("/settings", auth())).data).includes("mail_pass"), "the mail password is in the generic settings list");
+        assert((await http.put("/settings/mail_pass", { value: "x" }, auth())).status === 403, "the mail password was written raw");
+        assert((await http.get("/mail/settings", asUser(agentToken))).status === 403, "an agent read the mail settings");
+        assert((await http.put("/mail/settings", { port: 99999 }, auth())).status === 400, "bad port accepted");
+        // the masked placeholder sent back does not replace the password
+        assert((await http.put("/mail/settings", { pass: "••••••••" }, auth())).data.hasPassword === true, "mask replaced the password");
+
+        const t = await http.post("/mail/test", {}, auth());
+        assert(t.status === 200, `test mail ${t.status} ${JSON.stringify(t.data)}`);
+        await waitFor(() => inbox.length === 1, 8000, "test e-mail arrived");
+        assert(inbox[0].auth === "cruzeirogpt@gmail.com|abcdefghijklmnop", `smtp login ${inbox[0].auth}`);
+        assert(/Subject: Chat Acad/.test(inbox[0].raw) || /Subject: =\?UTF-8/.test(inbox[0].raw), "test e-mail without subject");
+
+        // the link: same answer for known and unknown addresses
+        assert((await http.post("/auth/forgot", { email: "ninguem@x.com" })).data.ok === true, "unknown address answered differently");
+        await new Promise(r => setTimeout(r, 500));
+        assert(inbox.length === 1, "an e-mail went to an address that has no account");
+        assert((await http.post("/auth/forgot", { email: "Recupera@X.com" })).data.ok === true, "forgot");
+        await waitFor(() => inbox.length === 2, 8000, "recovery e-mail");
+        const link1 = decode(inbox[1].raw).match(/redefinir-senha\/([a-f0-9]{64})/);
+        assert(link1 && /To: recupera@x.com/i.test(inbox[1].raw), "no link in the e-mail");
+        // a newer request cancels the older link
+        assert((await http.post("/auth/forgot", { email: "recupera@x.com" })).status === 200, "forgot again");
+        await waitFor(() => inbox.length === 3, 8000, "second recovery e-mail");
+        const link2 = decode(inbox[2].raw).match(/redefinir-senha\/([a-f0-9]{64})/);
+        assert(link2[1] !== link1[1], "same token twice");
+        assert((await http.get(`/auth/reset/${link1[1]}`)).data.valid === false, "the older link still works");
+        assert((await http.get(`/auth/reset/${link2[1]}`)).data.valid === true, "the new link does not work");
+        assert((await http.post("/auth/reset", { token: link2[1], password: "curta" })).status === 400, "a short password was accepted");
+        assert((await http.post("/auth/reset", { token: "0".repeat(64), password: "outra-senha-9" })).status === 400, "an invented token worked");
+        assert((await http.post("/auth/reset", { token: link1[1], password: "outra-senha-9" })).status === 400, "the cancelled link worked");
+
+        const refreshBefore = (await http.post("/auth/login", { email: "recupera@x.com", password: "senha-antiga1" })).status;
+        assert(refreshBefore === 200, "login before");
+        assert((await http.post("/auth/reset", { token: link2[1], password: "outra-senha-9" })).status === 200, "reset");
+        assert((await http.post("/auth/login", { email: "recupera@x.com", password: "senha-antiga1" })).status === 401, "the old password still works");
+        assert((await http.post("/auth/login", { email: "recupera@x.com", password: "outra-senha-9" })).status === 200, "the new password does not work");
+        assert((await http.post("/auth/reset", { token: link2[1], password: "mais-uma-senha-1" })).status === 400, "a link worked twice");
+        assert(sql(`SELECT COUNT(*) FROM PasswordResets WHERE tokenHash LIKE '${link2[1].slice(0, 8)}%'`) === "0", "the token was stored in the clear");
+      } finally {
+        smtp.close();
+      }
+    });
     await test("screen errors are kept in the database for the administration and the coordination", async () => {
       assert((await http.post("/client-errors", { code: "ABCDE", route: "/afiliados", message: "Cannot read properties of null (reading 'value')", stack: "at X" }, auth())).status === 204, "report");
       const list = await http.get("/client-errors", auth());
