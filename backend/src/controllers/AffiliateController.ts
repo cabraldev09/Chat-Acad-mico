@@ -84,6 +84,9 @@ const fieldsOf = (b: any, isNew: boolean) => {
   return data;
 };
 
+import { mailConfigured, sendMail } from "../services/MailServices/SendMail";
+import { affiliateWelcomeMail } from "../services/MailServices/Templates";
+
 export const index = async (req: Request, res: Response): Promise<Response> => {
   const where = await withAffiliateScope(req, {});
   const search = String(req.query.search || "").trim();
@@ -267,6 +270,17 @@ export const sendPortal = async (req: Request, res: Response): Promise<Response>
     throw new AppError("ERR_AFFILIATE_SEND_FAILED");
   });
   return res.json({ message: "sent" });
+};
+
+// sends the portal link to the affiliate by e-mail (the same link, in a message with the brand)
+export const sendPortalMail = async (req: Request, res: Response): Promise<Response> => {
+  const a = await load(req.params.id);
+  if (!a.email) throw new AppError("Este afiliado não tem e-mail cadastrado.", 400);
+  if (!(await mailConfigured())) throw new AppError("O envio de e-mails ainda não foi configurado em Configurações > E-mail.", 400);
+  await sendMail({ to: a.email, ...affiliateWelcomeMail(a.name, portalUrl(a.portalToken)) }).catch(() => {
+    throw new AppError("Não foi possível enviar o e-mail agora. Tente novamente em instantes.", 502);
+  });
+  return res.json({ message: "sent", to: a.email });
 };
 
 // sends a proposal made for a referred person to the affiliate, who forwards it

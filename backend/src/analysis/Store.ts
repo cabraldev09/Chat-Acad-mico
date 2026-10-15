@@ -18,7 +18,8 @@ import {
   type StoredSubject
 } from "./Engine";
 import { DEFAULT_RULES, type AcademicRules } from "./domain/curricular-analysis";
-import type { AcademicGridSnapshot } from "./domain/academic-analysis/types";
+import type { AcademicGridSnapshot, EnrollmentSituation } from "./domain/academic-analysis/types";
+import { enrollmentFromCode } from "./domain/academic-analysis/enrollment";
 import { academicDiff, academicFingerprint, canonicalCourse, canonicalRgm, contentFingerprint } from "./services/student-portal/fingerprints";
 import { validatePdfBytes, PdfValidationError } from "./services/pdf/validate";
 
@@ -351,7 +352,7 @@ export const createAcademic = async (
 export const correctAcademic = async (
   row: AcademicAnalysis,
   userId: number,
-  patch: { currentPeriod?: number | null; discipline?: { index: number; period?: number | null; normalizedStatus?: string; inMainCurriculum?: boolean; workload?: number | null; name?: string } }
+  patch: { currentPeriod?: number | null; enrollment?: string | null; discipline?: { index: number; period?: number | null; normalizedStatus?: string; inMainCurriculum?: boolean; workload?: number | null; name?: string } }
 ): Promise<AcademicAnalysis> => {
   const snapshot = parse<AcademicGridSnapshot | null>(row.snapshot, null);
   if (!snapshot) throw new AppError("Análise sem dados.", 400);
@@ -387,7 +388,12 @@ export const correctAcademic = async (
     snapshot.manuallyEdited = true;
   }
   const rules = await getRules();
-  const evaluated = evaluateAcademic(snapshot, { currentPeriod, rules });
+  let enrollment: EnrollmentSituation | null | undefined;
+  if (patch.enrollment !== undefined) {
+    enrollment = patch.enrollment ? enrollmentFromCode(patch.enrollment, "STAFF") : null;
+    if (patch.enrollment && !enrollment) throw new AppError("Situação da matrícula inválida.", 400);
+  }
+  const evaluated = evaluateAcademic(snapshot, { currentPeriod, rules, enrollment });
   const facts = academicFingerprint(evaluated.snapshot);
   if (row.studentId && row.isCurrent && facts !== row.factsHash) {
     // a student's published history never changes behind their back: the correction is a new version

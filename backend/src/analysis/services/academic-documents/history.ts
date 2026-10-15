@@ -4,6 +4,7 @@ import type {
 } from "../../domain/academic-analysis/types";
 import { academicStatusOutcome } from "../../domain/academic-analysis/rules";
 import { analyzeAcademicGrid } from "../../domain/academic-analysis/analyze";
+import { enrollmentFromText } from "../../domain/academic-analysis/enrollment";
 import { applyHistoryPeriodInference } from "../../domain/academic-analysis/history-period-inference";
 import type { LocalExtraction } from "../pdf/parser";
 import { foldDocument, type AcademicDocumentType } from "./classifier";
@@ -156,6 +157,7 @@ export function extractAcademicHistory(
   const recoveredCount = disciplines.length;
   let currentPeriod = previous?.result.currentPeriod ?? null;
   let currentPeriodConfirmed = previous?.result.currentPeriodConfirmed ?? false;
+  let periodSuggestion = previous?.periodSuggestion ?? null;
   const mapped = applyHistoryPeriodInference({
     disciplines,
     result: analyzeAcademicGrid({ disciplines, currentPeriod, currentPeriodConfirmed }),
@@ -169,6 +171,8 @@ export function extractAcademicHistory(
     disciplines.splice(0, disciplines.length, ...mapped.snapshot.disciplines);
     currentPeriod = mapped.snapshot.result.currentPeriod;
     currentPeriodConfirmed = mapped.snapshot.result.currentPeriodConfirmed;
+    periodSuggestion = mapped.snapshot.periodSuggestion ?? periodSuggestion;
+    if (!currentPeriodConfirmed && periodSuggestion?.inferred != null) warnings.push(periodSuggestion.note);
   }
   // Missing rows in a newer document are not evidence that prior curriculum knowledge is wrong.
   for (const row of previous?.disciplines ?? [])
@@ -200,6 +204,9 @@ export function extractAcademicHistory(
     plannedWorkload: workload("PREVISTA"),
     integralizedWorkload: workload("INTEGRALIZADA"),
     mappingRequired,
+    periodSuggestion,
+    // what the document says wins; otherwise what the team informed before stays
+    enrollmentSituation: enrollmentFromText(text) ?? previous?.enrollmentSituation ?? null,
     sourceDisciplineCount: expectedCount,
     sourceParsedDisciplineCount: recoveredCount,
     extractionWarnings: warnings,

@@ -1,5 +1,6 @@
 import type { AcademicDiscipline, AcademicGridSnapshot } from "./types";
 import { analyzeAcademicGrid } from "./analyze";
+import { estimatePeriod } from "./enrollment";
 
 /**
  * O Histórico Escolar lista as disciplinas período a período e, dentro de cada
@@ -153,12 +154,15 @@ export function applyHistoryPeriodInference(
     mappedRows++;
   });
 
-  const inferredCurrent = assigned
+  const latestTermPeriod = assigned
     ? Math.max(0, ...ordered.filter((row) => isAcademicTerm(row.academicTerm)).map((row) => row.period ?? 0)) || null
     : inference.currentPeriod;
+  // never trust the order of the history alone: the period is deduced two ways and only confirmed when they agree
+  const suggestion = estimatePeriod(snapshot.disciplines, latestTermPeriod);
+  snapshot.periodSuggestion = suggestion;
   const keepCurrent = snapshot.result.currentPeriodConfirmed && snapshot.result.currentPeriod !== null;
-  const currentPeriod = keepCurrent ? snapshot.result.currentPeriod : inferredCurrent;
-  const currentPeriodConfirmed = keepCurrent || currentPeriod !== null;
+  const currentPeriod = keepCurrent ? snapshot.result.currentPeriod : suggestion.inferred;
+  const currentPeriodConfirmed = keepCurrent || (suggestion.inferred !== null && suggestion.agrees);
   snapshot.result = analyzeAcademicGrid({
     disciplines: snapshot.disciplines,
     currentPeriod,
@@ -171,5 +175,6 @@ export function applyHistoryPeriodInference(
     snapshot.extractionWarnings.push(
       "MAPEAMENTO CURRICULAR NECESSÁRIO: o tutor deve confirmar a posição curricular e o período atual. Semestre letivo não é período curricular.",
     );
+  if (!currentPeriodConfirmed && suggestion.inferred !== null) snapshot.extractionWarnings.push(suggestion.note);
   return { snapshot, applied: mappedRows > 0, mappedRows, inference };
 }

@@ -6,7 +6,8 @@ import PasswordReset from "../../models/PasswordReset";
 import User from "../../models/User";
 import { logger } from "../../utils/logger";
 import { mailConfigured, sendMail } from "../MailServices/SendMail";
-import { resetPasswordMail } from "../MailServices/Templates";
+import { frontBase, notify } from "../MailServices/Notify";
+import { passwordChangedMail, resetPasswordMail } from "../MailServices/Templates";
 
 const TOKEN_MINUTES = 30;
 // per person, per hour: nobody can use this to flood somebody's inbox
@@ -14,12 +15,6 @@ const MAX_PER_HOUR = 3;
 const MIN_PASSWORD = 8;
 
 const hashOf = (token: string): string => crypto.createHash("sha256").update(token).digest("hex");
-
-// where the link points to: the screen of the system (the first FRONTEND_URL when there are several)
-const frontBase = (): string => {
-  const first = String(process.env.FRONTEND_URL || "").split(",")[0].trim().replace(/\/$/, "");
-  return first || "http://localhost:3000";
-};
 
 // Asks for a new password. The answer to the person is always the same, whether the address exists or not (so the
 // form cannot be used to find out who has an account); the e-mail goes out in the background.
@@ -61,4 +56,6 @@ export const confirmReset = async (token: string, password: string): Promise<voi
   // the new password, and every session opened before stops working
   await user.update({ password, tokenVersion: (user.tokenVersion || 0) + 1 });
   await PasswordReset.update({ usedAt: new Date() }, { where: { userId: user.id, usedAt: null } as any });
+  // a security notice: if it was not the person, they know right away
+  notify(user.email, passwordChangedMail(user.name, `${frontBase()}/login`), "password changed");
 };

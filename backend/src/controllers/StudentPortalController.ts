@@ -10,7 +10,8 @@ import Student from "../models/Student";
 import StudentToken from "../models/StudentToken";
 import { academicView, createAcademic, currentAcademicOf, findValidToken, issueToken } from "../analysis/Store";
 import { mailConfigured, sendMail } from "../services/MailServices/SendMail";
-import { studentLinkMail } from "../services/MailServices/Templates";
+import { studentActivatedMail, studentLinkMail } from "../services/MailServices/Templates";
+import { notify } from "../services/MailServices/Notify";
 import { logger } from "../utils/logger";
 
 // The Portal do Aluno: its own login (RGM or e-mail + password the student chose), its own token, and access only to
@@ -79,8 +80,10 @@ export const activate = async (req: Request, res: Response): Promise<Response> =
   if (!t || !t.student) throw new AppError("Este link não vale mais. Peça um novo link à sua equipe acadêmica.", 400);
   const student = t.student;
   if (student.blockedAt) throw new AppError("Este acesso está bloqueado. Procure a sua equipe acadêmica.", 400);
+  const firstAccess = !student.activatedAt;
   await student.update({ passwordHash: await hash(password, 10), activatedAt: student.activatedAt || new Date(), sessionVersion: (student.sessionVersion || 0) + 1 });
   await StudentToken.update({ usedAt: new Date() }, { where: { studentId: student.id, usedAt: null } as any });
+  if (firstAccess) notify(student.email, studentActivatedMail(student.name, student.rgm, `${frontBase()}/portal/login`), "student activated");
   return res.json({ ok: true });
 };
 

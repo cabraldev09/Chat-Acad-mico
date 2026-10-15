@@ -25,7 +25,8 @@ import {
   updateCurricular
 } from "../analysis/Store";
 import { mailConfigured, sendMail } from "../services/MailServices/SendMail";
-import { studentLinkMail } from "../services/MailServices/Templates";
+import { studentAnalysisMail, studentLinkMail } from "../services/MailServices/Templates";
+import { notify } from "../services/MailServices/Notify";
 import { logger } from "../utils/logger";
 
 // ------------------------------------------------------------------ who may do what
@@ -175,13 +176,20 @@ export const academicShow = async (req: Request, res: Response): Promise<Respons
   return res.json({ ...academicView(row), versions: history.map(h => ({ id: h.id, version: h.version, isCurrent: h.isCurrent, origin: h.origin, createdAt: h.createdAt, changeSummary: academicView(h, false).changeSummary })) });
 };
 
+// the student who already uses the portal is told when the team publishes a new version of the analysis
+const notifyAnalysis = (student: Student | null, course: string | null): void => {
+  if (student && student.activatedAt && !student.blockedAt) notify(student.email, studentAnalysisMail(student.name, course || student.courseName || "", `${frontBase()}/portal/login`), "student analysis");
+};
+
 export const academicUpdate = async (req: Request, res: Response): Promise<Response> => {
   const row = await loadAcademic(req);
   const b = req.body || {};
   const out = await correctAcademic(row, me(req), {
     currentPeriod: b.currentPeriod === undefined ? undefined : num(b.currentPeriod),
+    enrollment: b.enrollmentSituation === undefined ? undefined : String(b.enrollmentSituation || "") || null,
     discipline: b.discipline && typeof b.discipline === "object" ? b.discipline : undefined
   });
+  if (out.id !== row.id && row.studentId) notifyAnalysis(await Student.findByPk(row.studentId), out.courseName);
   if (b.leadId !== undefined) await out.update({ leadId: num(b.leadId) });
   if (b.contactId !== undefined) await out.update({ contactId: num(b.contactId) });
   return res.json(academicView(out));
@@ -292,6 +300,7 @@ export const studentUpload = async (req: Request, res: Response): Promise<Respon
   const s = await loadStudent(req);
   const { bytes, name } = fileOf(req);
   const { analysis, reused } = await createAcademic(me(req), bytes, name, { student: s, origin: "STAFF_UPLOAD" });
+  if (!reused) notifyAnalysis(s, analysis.courseName);
   return res.status(reused ? 200 : 201).json({ ...academicView(analysis), reused });
 };
 

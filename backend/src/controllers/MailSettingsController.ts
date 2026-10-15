@@ -4,7 +4,7 @@ import AppError from "../errors/AppError";
 import { setSetting } from "../helpers/AppSettings";
 import { isMasked, sealSecret } from "../helpers/Secrets";
 import { readMailConfig, sendMail } from "../services/MailServices/SendMail";
-import { testMail } from "../services/MailServices/Templates";
+import { MAIL_CATALOG, testMail } from "../services/MailServices/Templates";
 import User from "../models/User";
 
 const view = async () => {
@@ -38,5 +38,30 @@ export const test = async (req: Request, res: Response): Promise<Response> => {
   const me = await User.findByPk(req.user.id, { attributes: ["email"] });
   if (!me) throw new AppError("ERR_NO_USER_FOUND", 404);
   await sendMail({ to: me.email, ...testMail() });
+  return res.json({ ok: true, to: me.email });
+};
+
+// the catalog of e-mails the system sends: what each one is for, when it goes out and how it looks
+export const templates = async (_req: Request, res: Response): Promise<Response> =>
+  res.json(MAIL_CATALOG.map(t => ({ key: t.key, title: t.title, audience: t.audience, trigger: t.trigger, automatic: t.automatic, subject: t.build().subject })));
+
+const findTemplate = (key: string) => {
+  const t = MAIL_CATALOG.find(x => x.key === key);
+  if (!t) throw new AppError("Modelo de e-mail não encontrado.", 404);
+  return t;
+};
+
+export const preview = async (req: Request, res: Response): Promise<Response> => {
+  const mail = findTemplate(req.params.key).build();
+  return res.json({ subject: mail.subject, html: mail.html, text: mail.text });
+};
+
+// sends the model, filled with example data, to the address of the person who is logged in
+export const testTemplate = async (req: Request, res: Response): Promise<Response> => {
+  const t = findTemplate(req.params.key);
+  const me = await User.findByPk(req.user.id, { attributes: ["email"] });
+  if (!me) throw new AppError("ERR_NO_USER_FOUND", 404);
+  const mail = t.build();
+  await sendMail({ to: me.email, ...mail, subject: `[Exemplo] ${mail.subject}` });
   return res.json({ ok: true, to: me.email });
 };

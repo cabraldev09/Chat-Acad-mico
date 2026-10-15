@@ -80,6 +80,7 @@ export function academicFingerprint(snapshot: AcademicGridSnapshot): string {
           .reduce((n, r) => n + (r.workload ?? 0), 0),
       period: snapshot.result.currentPeriod,
       confirmed: snapshot.result.currentPeriodConfirmed,
+      enrollment: snapshot.enrollmentSituation?.code ?? null,
       rows,
     }),
   );

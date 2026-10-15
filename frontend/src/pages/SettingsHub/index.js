@@ -30,7 +30,7 @@ const GROUPS = [
   { id: "pagamentos", label: "Pagamentos", icon: CreditCard, hint: "Taxa de matrícula (Efí)", admin: true },
   { id: "cadastros", label: "Cadastros", icon: ListTree, hint: "Conexões, equipe, polos, filas" },
   { id: "regras", label: "Regras acadêmicas", icon: Calculator, hint: "Vagas extras e semestres nas previsões", admin: true },
-  { id: "email", label: "E-mail", icon: Mail, hint: "Conta que envia a recuperação de senha", admin: true },
+  { id: "email", label: "E-mail", icon: Mail, hint: "Conta de envio e modelos de e-mail", admin: true },
   { id: "erros", label: "Erros de tela", icon: Bug, hint: "Telas que falharam no navegador de alguém", admin: true },
 ];
 
@@ -387,6 +387,51 @@ const Email = () => {
   );
 };
 
+// the e-mails the system sends: what each is for, when it goes out, and how it looks (with example data)
+const EmailModels = () => {
+  const classes = useStyles();
+  const [list, setList] = useState(null);
+  const [key, setKey] = useState("");
+  const [view, setView] = useState(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { api.get("/mail/templates").then(({ data }) => { setList(data); if (data[0]) setKey(data[0].key); }).catch(toastError); }, []);
+  useEffect(() => { if (!key) return; setView(null); api.get(`/mail/templates/${key}/preview`).then(({ data }) => setView(data)).catch(toastError); }, [key]);
+  if (!list) return null;
+  const current = list.find((t) => t.key === key);
+  const send = async () => {
+    setBusy(true);
+    try { const { data } = await api.post(`/mail/templates/${key}/test`, {}); toast.success(`Exemplo enviado para ${data.to}.`); } catch (e) { toastError(e); }
+    setBusy(false);
+  };
+  return (
+    <Paper variant="outlined" className={classes.card}>
+      <div className={classes.cardTitle}>E-mails do sistema</div>
+      <div className={classes.hint}>Todos usam o mesmo modelo, com a marca, um botão principal e o motivo do envio. Escolha um para ver como a pessoa recebe.</div>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(220px, 300px) minmax(0, 1fr)", gap: 16 }}>
+        <div style={{ display: "grid", gap: 6, alignContent: "start" }}>
+          {list.map((t) => (
+            <button key={t.key} type="button" onClick={() => setKey(t.key)}
+              style={{ textAlign: "left", cursor: "pointer", padding: "10px 12px", borderRadius: 10, border: `1px solid ${t.key === key ? "#0B4279" : "rgba(128,128,128,.3)"}`, background: t.key === key ? "rgba(11,66,121,.08)" : "transparent", color: "inherit", font: "inherit" }}>
+              <div style={{ fontWeight: 600 }}>{t.title}</div>
+              <div style={{ fontSize: 12, opacity: 0.7 }}>{t.audience} · {t.automatic ? "automático" : "manual"}</div>
+            </button>
+          ))}
+        </div>
+        <div style={{ minWidth: 0 }}>
+          {current && <>
+            <div style={{ fontWeight: 600 }}>{view ? view.subject : current.subject}</div>
+            <div className={classes.hint} style={{ marginBottom: 8 }}>{current.trigger}</div>
+            <div className={classes.row} style={{ marginBottom: 8 }}>
+              <Button variant="outlined" size="small" onClick={send} disabled={busy}>Enviar este exemplo para mim</Button>
+            </div>
+            <iframe title="Prévia do e-mail" sandbox="" srcDoc={view ? view.html : ""} style={{ width: "100%", height: 560, border: "1px solid rgba(128,128,128,.3)", borderRadius: 10, background: "#eef2f7" }} />
+          </>}
+        </div>
+      </div>
+    </Paper>
+  );
+};
+
 // every screen that failed to draw in someone's browser, with the code shown on that person's screen
 const ErrosDeTela = () => {
   const classes = useStyles();
@@ -484,7 +529,7 @@ const SettingsHub = () => {
                 {current.id === "pagamentos" && admin && <Pagamentos />}
                 {current.id === "cadastros" && <Cadastros admin={admin} />}
                 {current.id === "regras" && admin && <RegrasAcademicas />}
-                {current.id === "email" && admin && <Email />}
+                {current.id === "email" && admin && <><Email /><EmailModels /></>}
                 {current.id === "erros" && admin && <ErrosDeTela />}
               </>
             )}

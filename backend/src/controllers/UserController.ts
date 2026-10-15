@@ -27,6 +27,11 @@ const assertMayManage = (req: Request, wanted: { role?: string; profile?: string
   if (target && roleOf(target) === "admin") throw new AppError("ERR_NO_PERMISSION", 403);
 };
 
+import { frontBase, notify } from "../services/MailServices/Notify";
+import { staffWelcomeMail } from "../services/MailServices/Templates";
+
+const ROLE_LABEL: Record<string, string> = { admin: "Administrador", coordenacao: "Coordenação", consultor: "Consultor", tutor: "Tutor" };
+
 export const index = async (req: Request, res: Response): Promise<Response> => {
   const { searchParam, pageNumber } = req.query as IndexQuery;
 
@@ -64,6 +69,8 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
     coordArea: isSignup ? undefined : coordArea,
     phone: isSignup ? undefined : phone
   });
+
+  if (!isSignup) notify(user.email, staffWelcomeMail(user.name, ROLE_LABEL[String(role || "")] || "Equipe", user.email, `${frontBase()}/login`), "staff welcome");
 
   const io = getIO();
   io.emit("user", {

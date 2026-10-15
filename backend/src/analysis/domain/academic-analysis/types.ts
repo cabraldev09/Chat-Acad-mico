@@ -23,7 +23,25 @@ export type AcademicReviewStatus =
   | "CAN_ADD"
   | "NEAR_LIMIT"
   | "LIMIT_REACHED"
-  | "MANUAL_REVIEW_REQUIRED";
+  | "MANUAL_REVIEW_REQUIRED"
+  | "ENROLLMENT_INACTIVE";
+
+/** Situation of the student's enrollment in the academic system (SIAA): only an active one can add subjects. */
+export type EnrollmentSituationCode = "ACTIVE" | "CANCELLED" | "LOCKED" | "GRADUATED" | "TRANSFERRED";
+export interface EnrollmentSituation {
+  code: EnrollmentSituationCode;
+  label: string;
+  source: "DOCUMENT" | "STAFF";
+}
+
+/** What the document suggests as the current period, and what the check by workload says. */
+export interface PeriodSuggestion {
+  inferred: number | null;
+  byWorkload: number | null;
+  method: "LATEST_TERM" | null;
+  agrees: boolean;
+  note: string;
+}
 
 export interface AcademicGridResult {
   currentPeriod: number | null;
@@ -52,6 +70,8 @@ export interface AcademicGridSnapshot {
   plannedWorkload?: number | null;
   integralizedWorkload?: number | null;
   mappingRequired?: boolean;
+  enrollmentSituation?: EnrollmentSituation | null;
+  periodSuggestion?: PeriodSuggestion | null;
   disciplines: AcademicDiscipline[];
   result: AcademicGridResult;
   projectionRules?: AcademicRules;

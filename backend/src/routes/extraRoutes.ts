@@ -67,6 +67,7 @@ r.post("/affiliates/:id/rotate-token", isAuth, affiliateStaff, canAccessAffiliat
 r.post("/affiliates/:id/referrals", isAuth, affiliateStaff, canAccessAffiliate, Aff.addReferral);
 r.post("/affiliates/:id/attach-lead", isAuth, affiliateStaff, canAccessAffiliate, Aff.attachLead);
 r.post("/affiliates/:id/send-portal", isAuth, affiliateStaff, canAccessAffiliate, Aff.sendPortal);
+r.post("/affiliates/:id/send-access-email", isAuth, affiliateStaff, canAccessAffiliate, Aff.sendPortalMail);
 r.post("/affiliates/:id/send-proposal", isAuth, affiliateStaff, canAccessAffiliate, Aff.sendProposal);
 r.get("/affiliate-rules", isAuth, affiliateStaff, Aff.getRulesRoute);
 r.put("/affiliate-rules", isAuth, isManager, Aff.putRules);
@@ -96,6 +97,9 @@ r.get("/communities", isAuth, Community.index);
 r.get("/mail/settings", isAuth, isAdmin, MailSettings.show);
 r.put("/mail/settings", isAuth, isAdmin, MailSettings.update);
 r.post("/mail/test", isAuth, isAdmin, MailSettings.test);
+r.get("/mail/templates", isAuth, isAdmin, MailSettings.templates);
+r.get("/mail/templates/:key/preview", isAuth, isAdmin, MailSettings.preview);
+r.post("/mail/templates/:key/test", isAuth, isAdmin, MailSettings.testTemplate);
 r.post("/tags", isAuth, isManager, Tag.store);
 r.put("/tags/:id", isAuth, isManager, Tag.update);
 r.delete("/tags/:id", isAuth, isManager, Tag.remove);

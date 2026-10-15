@@ -1426,6 +1426,38 @@ const postMeta = (id, payload, secret, badSig) => {
       // forgot password: same answer for everyone
       assert((await http.post("/portal/forgot", { login: "123456" })).data.ok === true && (await http.post("/portal/forgot", { login: "nao-existe" })).data.ok === true, "forgot answers differently");
     });
+    await test("academic analysis: a cancelled enrollment cannot add subjects nor graduate, and the period is only suggested when the checks disagree", async () => {
+      const tk = (await http.post("/auth/login", { email: "tutora-portal@x.com", password: "senha123" })).data.token;
+      const f = new FormData();
+      f.append("file", academicPdfJs("777002", "A CURSAR"), { filename: "extrato.pdf", contentType: "application/pdf" });
+      const made = await http.post("/analysis/academic", f, { headers: { ...f.getHeaders(), Authorization: `Bearer ${tk}` } });
+      assert(made.status === 201, `upload ${made.status}`);
+      const id = made.data.id;
+      const ok = (await http.put(`/analysis/academic/${id}`, { currentPeriod: 3 }, asUser(tk))).data;
+      assert(ok.status !== "ENROLLMENT_INACTIVE", "active by default");
+      const cancelled = (await http.put(`/analysis/academic/${id}`, { enrollmentSituation: "CANCELLED" }, asUser(tk))).data;
+      assert(cancelled.status === "ENROLLMENT_INACTIVE" && cancelled.forecast === null && /Situação da matrícula: Cancelada/.test(cancelled.message) && cancelled.snapshot.enrollmentSituation.source === "STAFF", `cancelled ${JSON.stringify(cancelled).slice(0, 300)}`);
+      assert(cancelled.snapshot.result.canAddNow === 0, "a cancelled enrollment can add subjects");
+      assert((await http.put(`/analysis/academic/${id}`, { enrollmentSituation: "NOPE" }, asUser(tk))).status === 400, "an invalid situation was accepted");
+      const back = (await http.put(`/analysis/academic/${id}`, { enrollmentSituation: "" }, asUser(tk))).data;
+      assert(back.status !== "ENROLLMENT_INACTIVE" && !back.snapshot.enrollmentSituation, "clearing the situation did not restore the analysis");
+      await http.delete(`/analysis/academic/${id}`, asUser(tk));
+    });
+
+    await test("e-mails of the system: one catalog, a preview of each, and the test goes only to the administration", async () => {
+      const list = (await http.get("/mail/templates", auth())).data;
+      assert(Array.isArray(list) && list.length >= 9 && list.every(t => t.key && t.title && t.trigger && t.subject), `catalog ${JSON.stringify(list).slice(0, 200)}`);
+      for (const t of list) {
+        const pv = await http.get(`/mail/templates/${t.key}/preview`, auth());
+        assert(pv.status === 200 && /<!doctype html>/i.test(pv.data.html) && /mensagem automática/.test(pv.data.text), `preview ${t.key} ${pv.status}`);
+      }
+      assert((await http.get("/mail/templates/nao-existe/preview", auth())).status === 404, "unknown template");
+      const consTk = (await http.post("/auth/login", { email: "outro-an@x.com", password: "senha123" })).data.token;
+      assert((await http.get("/mail/templates", asUser(consTk))).status === 403 && (await http.post("/mail/templates/mail-test/test", {}, asUser(consTk))).status === 403, "a consultant reached the e-mail catalog");
+      // no mail account in the test environment: the answer says so (and nothing is sent)
+      assert([400, 502].includes((await http.post("/mail/templates/mail-test/test", {}, auth())).status), "the test without a mail account");
+    });
+
     await test("commercial grades: the matrices that come with the system are read, searchable, downloadable and sendable; only the management publishes", async () => {
       // the first start already read the PDFs that come with the system (or the button does it now): nothing is lost twice
       const imp = await http.post("/grades/import-defaults", {}, auth());
@@ -1454,6 +1486,12 @@ const postMeta = (id, payload, secret, badSig) => {
       const out = tg.sent.slice(before);
       assert(out.some(x => x.method === "sendMessage" && /Matriz curricular/.test(String(x.body.text || ""))) && out.some(x => x.method === "sendDocument"), `sent ${JSON.stringify(out.map(x => x.method))}`);
       assert((await http.post(`/grades/${marketing.id}/send`, { ticketId: Number(tgTicket), summary: false, pdf: false }, auth())).status === 400, "nothing to send accepted");
+      // the contact can be chosen instead of a conversation: its open conversation is used
+      const tgTicketData = (await http.get(`/tickets/${tgTicket}`, auth())).data;
+      const before2 = tg.sent.length;
+      const byContact = await http.post(`/grades/${marketing.id}/send`, { contactId: tgTicketData.contactId, pdf: false }, auth());
+      assert(byContact.status === 200 && tg.sent.slice(before2).some(x => /Matriz curricular/.test(String(x.body.text || ""))), `send by contact ${byContact.status} ${JSON.stringify(byContact.data)}`);
+      assert((await http.post(`/grades/${marketing.id}/send`, {}, auth())).status === 400 && (await http.post(`/grades/${marketing.id}/send`, { contactId: 99999999 }, auth())).status === 404, "send without a target");
       // permissions: a consultant reads and sends but does not publish or delete
       const consTk = (await http.post("/auth/login", { email: "outro-an@x.com", password: "senha123" })).data.token;
       assert((await http.get("/grades", asUser(consTk))).status === 200, "a consultant cannot read the catalog");

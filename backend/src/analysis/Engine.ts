@@ -24,7 +24,8 @@ import {
 } from "./domain/curricular-analysis";
 import { analyzeAcademicGrid, buildStudentMessage } from "./domain/academic-analysis/analyze";
 import { estimateGraduation, type GraduationForecast } from "./domain/academic-analysis/graduation-forecast";
-import type { AcademicGridSnapshot } from "./domain/academic-analysis/types";
+import type { AcademicGridSnapshot, EnrollmentSituation } from "./domain/academic-analysis/types";
+import { enrollmentBlocks, enrollmentMessage, enrollmentWarning } from "./domain/academic-analysis/enrollment";
 import { DEFAULT_ACADEMIC_CALENDAR, buildAcademicCalendar } from "./domain/academic-calendar/calendar";
 import { zonedDateParts } from "./lib/time";
 import { extractAcademicDocument } from "./services/academic-documents/adapters";
@@ -267,8 +268,9 @@ const todayIso = (): string => {
 };
 
 // the grid result + the graduation forecast + the text for the student, always recomputed from the disciplines
-export const evaluateAcademic = (snapshotIn: AcademicGridSnapshot, opts: { currentPeriod?: number | null; rules?: AcademicRules } = {}): AcademicEvaluation => {
+export const evaluateAcademic = (snapshotIn: AcademicGridSnapshot, opts: { currentPeriod?: number | null; rules?: AcademicRules; enrollment?: EnrollmentSituation | null } = {}): AcademicEvaluation => {
   const snapshot: AcademicGridSnapshot = { ...snapshotIn };
+  if (opts.enrollment !== undefined) snapshot.enrollmentSituation = opts.enrollment;
   const period = opts.currentPeriod === undefined ? snapshot.result.currentPeriod : opts.currentPeriod;
   const confirmed = period !== null && (opts.currentPeriod === undefined ? snapshot.result.currentPeriodConfirmed : true);
   const rules = opts.rules ?? snapshot.projectionRules ?? DEFAULT_RULES;
@@ -288,6 +290,12 @@ export const evaluateAcademic = (snapshotIn: AcademicGridSnapshot, opts: { curre
           sourceParsedDisciplineCount: snapshot.sourceParsedDisciplineCount
         })
       : null;
+  // an enrollment that is not active cannot add subjects nor graduate: say so, instead of a forecast that does not hold
+  const situation = snapshot.enrollmentSituation;
+  if (enrollmentBlocks(situation)) {
+    snapshot.result = { ...snapshot.result, status: "ENROLLMENT_INACTIVE", canAddNow: 0, warnings: [enrollmentWarning(situation!), ...snapshot.result.warnings] };
+    return { snapshot, forecast: null, message: enrollmentMessage(situation!) };
+  }
   // a forecast with doubts is shown as a draft: the text for the student does not announce a date
   const publishable = forecast && !forecast.incomplete && forecast.uncertainRows === 0 ? forecast : null;
   return { snapshot, forecast, message: buildStudentMessage({ result: snapshot.result, forecast: publishable }) };

@@ -172,9 +172,11 @@ const AffiliateDrawer = ({ id, canOwner, isAdmin, users, polos, courses, onClose
               <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
                 <Button size="small" variant="contained" color="primary" startIcon={<MessageCircle size={15} />} disabled={!a.phone}
                   onClick={() => run(() => api.post(`/affiliates/${a.id}/send-portal`), "Link enviado pelo WhatsApp.")}>Enviar por WhatsApp</Button>
+                <Button size="small" variant="outlined" disabled={!a.email}
+                  onClick={() => run(() => api.post(`/affiliates/${a.id}/send-access-email`), "Acesso enviado por e-mail.")}>Enviar por e-mail</Button>
                 <Button size="small" variant="outlined" startIcon={<RefreshCw size={15} />} onClick={() => setRotate(true)}>Trocar o link</Button>
               </div>
-              {!a.phone && <Typography variant="caption" color="textSecondary" display="block" style={{ marginTop: 6 }}>Cadastre o WhatsApp para enviar.</Typography>}
+              {(!a.phone || !a.email) && <Typography variant="caption" color="textSecondary" display="block" style={{ marginTop: 6 }}>{!a.phone && !a.email ? "Cadastre o WhatsApp ou o e-mail para enviar." : !a.phone ? "Cadastre o WhatsApp para enviar por lá." : "Cadastre o e-mail para enviar por e-mail."}</Typography>}
               {a.externalLink && (
                 <>
                   <div className={classes.sectionTitle} style={{ marginTop: 16 }}>Link no app Minhas indicações</div>
