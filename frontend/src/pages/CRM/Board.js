@@ -49,8 +49,9 @@ const useStyles = makeStyles((theme) => ({
   cardTop: { display: "flex", alignItems: "flex-start", gap: 8 },
   cardName: { fontWeight: 600, fontSize: 14, lineHeight: 1.25, flex: 1, minWidth: 0, overflowWrap: "anywhere" },
   cardCourse: { fontSize: 12.5, color: theme.palette.text.secondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
-  cardFoot: { display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: theme.palette.text.secondary, minWidth: 0 },
-  chip: { display: "inline-flex", alignItems: "center", gap: 4, borderRadius: 999, padding: "1px 8px", fontSize: 11.5, fontWeight: 500, background: theme.palette.action.selected, whiteSpace: "nowrap", minWidth: 0, maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis" },
+  // the chips wrap onto a second line instead of being cut ("Out…", "Quer r…"): every one stays readable
+  cardFoot: { display: "flex", alignItems: "center", flexWrap: "wrap", gap: 6, fontSize: 12, color: theme.palette.text.secondary, minWidth: 0 },
+  chip: { display: "inline-flex", alignItems: "center", gap: 4, borderRadius: 999, padding: "1px 8px", fontSize: 11.5, fontWeight: 500, background: theme.palette.action.selected, whiteSpace: "nowrap", minWidth: 0, maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis" },
   chipLate: { background: "rgba(220,38,38,.12)", color: "#dc2626" },
   chipHot: { background: "rgba(254,248,76,.45)", color: "#6b5d00" },
   chipPaid: { background: "rgba(22,163,74,.14)", color: "#15803d" },
@@ -75,13 +76,15 @@ const LeadCard = ({ lead, onOpen, onDragStart, onDragEnd, dragging }) => {
         </div>
       )}
       <div className={classes.cardFoot}>
-        <span className={classes.chip} title={`Origem: ${lead.source}`}><SourceIcon source={lead.source} size={12} />{lead.source}</span>
+        {/* an enrolled student is past "where did it come from" and "wants to enrol": only what still matters is shown */}
+        {!lead.wonAt && <span className={classes.chip} title={`Origem: ${lead.source}`}><SourceIcon source={lead.source} size={12} />{lead.source}</span>}
+        {lead.affiliate && <span className={`${classes.chip} ${classes.chipHot}`} title={`Indicado pelo afiliado ${lead.affiliate.name}`}>Afiliado: {lead.affiliate.name.split(" ")[0]}</span>}
         {lead.slaAlertedAt && !lead.firstContactAt && (
           <span className={`${classes.chip} ${classes.chipLate}`} title="Este lead novo passou do tempo de resposta e ainda não foi atendido">
             <Hourglass size={12} />Sem resposta
           </span>
         )}
-        {lead.decisionTimeline === "Quer matricular agora" && (
+        {!lead.wonAt && lead.decisionTimeline === "Quer matricular agora" && (
           <span className={`${classes.chip} ${classes.chipHot}`} title="Quer matricular agora"><Rocket size={12} />Quer matricular</span>
         )}
         {lead.payments && lead.payments.length > 0 && (

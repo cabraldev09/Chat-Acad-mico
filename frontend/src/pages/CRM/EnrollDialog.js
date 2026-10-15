@@ -24,11 +24,11 @@ const EnrollDialog = ({ open, lead, onClose, onDone }) => {
   const [tutors, setTutors] = useState([]);
   const [busy, setBusy] = useState(false);
   const [detail, setDetail] = useState(null);
-  const [v, setV] = useState({ poloId: "", tutorId: "auto", fee: "paid", feeDueDate: "", note: "", intro: true });
+  const [v, setV] = useState({ poloId: "", tutorId: "auto", fee: "paid", feeDueDate: "", note: "" });
 
   useEffect(() => {
     if (!open) return;
-    setV({ poloId: lead.poloId || "", tutorId: "auto", fee: "paid", feeDueDate: "", note: "", intro: true });
+    setV({ poloId: lead.poloId || "", tutorId: "auto", fee: "paid", feeDueDate: "", note: "" });
     api.get("/polos").then(({ data }) => setPolos(data.filter((p) => p.active))).catch(toastError);
     // the board card is a summary: the CPF and polo come from the full record
     api.get(`/leads/${lead.id}`).then(({ data }) => {
@@ -54,10 +54,7 @@ const EnrollDialog = ({ open, lead, onClose, onDone }) => {
         tutorId: v.tutorId,
         fee: v.fee,
         feeDueDate: v.feeDueDate || null,
-        note: v.note,
-        introMessage: v.intro
-          ? `Olá, ${first}! Parabéns pela matrícula! 🎓 Sou da tutoria${tutors.find((t) => t.id === v.tutorId) ? `, meu nome é ${tutors.find((t) => t.id === v.tutorId).name}` : ""} e vou te ajudar no primeiro acesso à plataforma. Qual o melhor horário para falarmos?`
-          : "",
+        note: v.note
       });
       toast.success(data.tutor ? `Matrícula confirmada. Tutor: ${data.tutor.name}.` : "Matrícula confirmada. Aguardando um tutor na fila.");
       (data.warnings || []).forEach((w) => toast.warn(w));
@@ -109,8 +106,7 @@ const EnrollDialog = ({ open, lead, onClose, onDone }) => {
         <div className={classes.section}>Passagem de bastão</div>
         <TextField fullWidth multiline rows={2} variant="outlined" margin="dense" label="Observação para o tutor (opcional)" value={v.note} onChange={(e) => setV({ ...v, note: e.target.value })}
           helperText="Aparece no histórico. Ex.: prefere à noite, já tem notebook." />
-        <FormControlLabel control={<Switch color="primary" checked={v.intro} onChange={(e) => setV({ ...v, intro: e.target.checked })} />} label={v.intro ? "Enviar mensagem de boas-vindas da tutoria: ligado" : "Enviar mensagem de boas-vindas da tutoria: desligado"} />
-        <div className={classes.hint}>Daqui para frente o consultor não vê as mensagens do tutor, e o tutor não vê as suas. O contato com o aluno volta a você depois da ambientação.</div>
+        <div className={classes.hint}>Nenhuma mensagem é enviada ao aluno agora. O tutor recebe a conversa com o texto de boas-vindas pronto e envia quando quiser. Daqui para frente o consultor não vê as mensagens do tutor, e o tutor não vê as suas; o contato com o aluno volta a você depois da ambientação.</div>
       </DialogContent>
       <DialogActions>
         <Button variant="outlined" color="secondary" onClick={onClose} disabled={busy}>Cancelar</Button>

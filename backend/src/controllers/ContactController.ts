@@ -187,6 +187,18 @@ export const setStaff = async (req: Request, res: Response): Promise<Response> =
   return res.status(200).json(contact);
 };
 
+// A group of a WhatsApp Community: it goes to the Comunidades view and stays out of the customer numbers. Marked by hand
+// when the automatic detection did not tell (or to take it back).
+export const setCommunity = async (req: Request, res: Response): Promise<Response> => {
+  const contact = await Contact.findByPk(req.params.contactId);
+  if (!contact) throw new AppError("ERR_NO_CONTACT_FOUND", 404);
+  if (!contact.isGroup) throw new AppError("ERR_COMMUNITY_NOT_GROUP", 400);
+  const community = Boolean(req.body.community);
+  await contact.update({ kind: community ? "community" : "group", ...(req.body.readOnly !== undefined ? { readOnly: Boolean(req.body.readOnly) } : {}) });
+  getIO().emit("contact", { action: "update", contact });
+  return res.status(200).json(contact);
+};
+
 // "Does not need an answer": the person (a notice, a broadcast) stops showing in the dashboard's "no answer" list
 export const setNoReply = async (req: Request, res: Response): Promise<Response> => {
   const contact = await Contact.findByPk(req.params.contactId);

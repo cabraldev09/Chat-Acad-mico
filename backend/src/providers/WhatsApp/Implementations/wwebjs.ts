@@ -19,8 +19,10 @@ import AppError from "../../../errors/AppError";
 import SaveImportedContacts from "../../../helpers/SaveImportedContacts";
 import { isPhoneNumber } from "../../../helpers/ChatId";
 import User from "../../../models/User";
+import Contact from "../../../models/Contact";
 import Message from "../../../models/Message";
 import Ticket from "../../../models/Ticket";
+import { Op } from "sequelize";
 import { logger } from "../../../utils/logger";
 import { WhatsappProvider } from "../whatsappProvider";
 import {
@@ -204,6 +206,29 @@ const convertToContactPayload = async (
   };
 };
 
+// Is this group a WhatsApp Community (or the announcement group of one), or a sub-group of one? WhatsApp Web keeps this in
+// the group metadata; the field names changed between versions, so every known spelling is read and anything missing
+// simply means "ordinary group". It never throws: a group that cannot be classified stays a group.
+const communityOf = (chat: any, wbot: any): ContactPayload["community"] => {
+  try {
+    const md = chat?.groupMetadata || {};
+    const type = String(md.groupType || md.type || "").toUpperCase();
+    const parent = md.parentGroupId?._serialized || md.parentGroup?._serialized || md.parent?._serialized || null;
+    const isParent = md.isParentGroup === true || md.isCommunity === true || type === "COMMUNITY" || type === "PARENT";
+    const isAnnouncement = md.isCommunityAnnounce === true || md.isDefaultSubgroup === true || md.defaultSubgroup === true || type === "DEFAULT_SUBGROUP" || type === "COMMUNITY_ANNOUNCEMENT" || type === "LINKED_ANNOUNCEMENT_GROUP";
+    const meId = wbot?.info?.wid?._serialized;
+    const me = (chat.participants || []).find((p: any) => p.id?._serialized === meId);
+    const adminsOnly = md.announce === true || chat.isReadOnly === true;
+    if (isParent || isAnnouncement) {
+      return { kind: "community", parentGroupId: parent, readOnly: adminsOnly && !(me && (me.isAdmin || me.isSuperAdmin)) };
+    }
+    if (parent) return { kind: "group", parentGroupId: parent, readOnly: adminsOnly && !(me && (me.isAdmin || me.isSuperAdmin)) };
+  } catch (e) {
+    // fall through: ordinary group
+  }
+  return undefined;
+};
+
 const verifyQuotedMessage = async (
   msg: WbotMessage
 ): Promise<string | undefined> => {
@@ -353,6 +378,7 @@ const getMessageData = async (
     }
 
     groupContact = await convertToContactPayload(msgGroupContact, wbot);
+    groupContact.community = communityOf(chat, wbot);
   }
 
   const unreadMessages = msg.fromMe ? 0 : chat.unreadCount;
@@ -1175,6 +1201,27 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
         );
       } catch (err) {
         logger.error(err, "Error on whatsapp call event");
+      }
+    });
+
+    // the chat was read on the phone (or on another device): the unread badge here follows
+    wbot.on("unread_count", async (chat: any) => {
+      try {
+        if (!chat || Number(chat.unreadCount) > 0) return;
+        const number = String(chat.id?.user || "");
+        if (!number) return;
+        const contact = await Contact.findOne({ where: { number } });
+        if (!contact) return;
+        const tickets = await Ticket.findAll({ where: { contactId: contact.id, whatsappId: whatsapp.id, unreadMessages: { [Op.gt]: 0 } } });
+        for (const t of tickets) {
+          // eslint-disable-next-line no-await-in-loop
+          await t.update({ unreadMessages: 0 }, { silent: true } as any);
+          // eslint-disable-next-line no-await-in-loop
+          await Message.update({ read: true }, { where: { ticketId: t.id, fromMe: false, read: false } });
+          getIO().to(t.status).to(String(t.id)).to("notification").emit("ticket", { action: "update", ticket: t });
+        }
+      } catch (err) {
+        logger.warn(`unread_count sync failed: ${err.message}`);
       }
     });
 

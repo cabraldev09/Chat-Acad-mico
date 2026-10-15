@@ -14,7 +14,6 @@ import TicketEvent from "../../models/TicketEvent";
 import User from "../../models/User";
 import Whatsapp from "../../models/Whatsapp";
 import { pickUserForQueue } from "../AutomationServices/AutoAssignTicket";
-import SendToContact from "../ChannelServices/SendToContact";
 import syncPoloQueues from "../PoloServices/SyncPoloQueues";
 import { createEnrollmentCharge } from "../PaymentServices/EnrollmentPayments";
 import ShowTicketService from "../TicketServices/ShowTicketService";
@@ -28,6 +27,7 @@ export interface EnrollInput {
   note?: string;
   fee?: "paid" | "now" | "later";
   feeDueDate?: string | null;
+  // ignored: kept only so older screens that still send it do not break
   introMessage?: string | null;
   whatsappId?: number | null; // connection of the tutoring chat (default: the sales conversation's)
 }
@@ -68,8 +68,17 @@ const enrollLead = async (lead: Lead, actorId: number, input: EnrollInput) => {
   if (!won) throw new AppError("ERR_STAGE_NOT_FOUND", 400);
 
   const { contact, whatsapp: salesConn } = await resolveLeadTarget(lead, actorId, input.whatsappId || null);
-  const tutoriaConnId = input.whatsappId ? 0 : Number(await getSetting("tutoria_whatsapp_id", "0")) || 0;
-  const whatsapp = (tutoriaConnId && (await Whatsapp.findByPk(tutoriaConnId))) || salesConn;
+  // the student's tutoring conversation lives on the TUTOR's number (their own connection, else the tutoring number set by
+  // the administration, else a shared number). It is never the consultant's personal number.
+  let whatsapp: Whatsapp | null = null;
+  if (input.whatsappId) whatsapp = await Whatsapp.findByPk(input.whatsappId);
+  if (!whatsapp && tutor) whatsapp = await Whatsapp.findOne({ where: { ownerId: tutor.id, channel: "whatsapp" }, order: [["id", "ASC"]] });
+  if (!whatsapp) {
+    const tutoriaConnId = Number(await getSetting("tutoria_whatsapp_id", "0")) || 0;
+    whatsapp = tutoriaConnId ? await Whatsapp.findByPk(tutoriaConnId) : null;
+  }
+  if (!whatsapp) whatsapp = await Whatsapp.findOne({ where: { ownerId: null as any, channel: salesConn.channel }, order: [["isDefault", "DESC"], ["id", "ASC"]] });
+  if (!whatsapp) whatsapp = salesConn;
 
   // 1) the sales conversations end here
   const sales = await Ticket.findAll({
@@ -131,18 +140,8 @@ const enrollLead = async (lead: Lead, actorId: number, input: EnrollInput) => {
   const fresh = await ShowTicketService(ticket.id);
   getIO().to(fresh.status).to("notification").emit("ticket", { action: "update", ticket: fresh });
 
-  if (input.introMessage && input.introMessage.trim()) {
-    try {
-      await SendToContact({
-        contact,
-        whatsapp,
-        body: input.introMessage.trim(),
-        keepOpen: tutor ? { userId: tutor.id } : null
-      });
-    } catch (err) {
-      warnings.push("A mensagem de apresentação não pôde ser enviada agora.");
-    }
-  }
+  // No greeting is sent here. The tutor sees the text the administration wrote ready in the message box ("Enviar
+  // boas-vindas") and sends it, or not, when they decide to.
 
   // 4) the tutor's task
   if (tutor) {

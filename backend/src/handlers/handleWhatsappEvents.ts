@@ -33,6 +33,8 @@ export interface ContactPayload {
   lid?: string;
   profilePicUrl?: string;
   isGroup: boolean;
+  // set for groups when WhatsApp tells they belong to a community
+  community?: { kind: "community" | "group"; parentGroupId?: string | null; readOnly?: boolean };
 }
 
 export interface MessagePayload {
@@ -186,7 +188,8 @@ export const handleMessage = async (
         number: contextPayload.groupContact.number,
         lid: contextPayload.groupContact.lid,
         profilePicUrl: contextPayload.groupContact.profilePicUrl,
-        isGroup: contextPayload.groupContact.isGroup
+        isGroup: contextPayload.groupContact.isGroup,
+        community: contextPayload.groupContact.community
       });
     }
 

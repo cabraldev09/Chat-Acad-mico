@@ -2016,7 +2016,17 @@ const postMeta = (id, payload, secret, badSig) => {
       const ob = r.data.ticketId;
       assert(sql(`SELECT CONCAT(segment,'|',status,'|',userId) FROM Tickets WHERE id=${ob}`) === `onboarding|open|${tutorId}`, "onboarding ticket");
       assert(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${lead.id} AND userId=${tutorId} AND title LIKE 'Ambientar%'`) === "1", "tutor task");
-      assert(graph.sent.slice(before).some(x => x.body && x.body.text && x.body.text.body.includes("tutoria")), "intro not delivered");
+      // nothing is sent to the student by the system: the tutor decides if and when to greet
+      assert(graph.sent.length === before, `the system sent a message by itself on enrollment (${graph.sent.length - before})`);
+      // the administration writes the greeting; the tutor gets it ready, edited with their data, while nobody has answered yet
+      assert((await http.put("/settings/onboarding_welcome_template", { value: "Oi, {{primeiro_nome}}! Sou {{tutor}} do polo {{polo}}." }, auth())).status === 200, "welcome template setting");
+      const mineTok = tutorId === tA.id ? atok : btok;
+      const welcome = (await http.get(`/tickets/${ob}/welcome`, asUser(mineTok))).data;
+      assert(welcome.show === true && welcome.text.startsWith("Oi, Aluna!") && welcome.text.includes("Polo Matricula"), `welcome ${JSON.stringify(welcome)}`);
+      // the administrator reads everything but does not answer as the tutor
+      const adminSend = await http.post(`/messages/${ob}`, { body: "Oi, sou o admin" }, auth());
+      assert(adminSend.status === 403 && adminSend.data.error === "ERR_ONBOARDING_TUTOR_ONLY", `administrator answered in the tutor's conversation: ${adminSend.status}`);
+      assert((await http.get(`/messages/${ob}`, auth())).status === 200, "administrator cannot read the tutor's conversation");
 
       // separation: the consultant cannot read the tutor's chat; the tutor can; the other tutor cannot
       const mine = tutorId === tA.id ? atok : btok;

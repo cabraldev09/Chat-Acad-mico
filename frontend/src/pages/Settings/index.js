@@ -110,6 +110,22 @@ const Settings = () => {
             </TextField>
           </Section>
 
+          <Section icon={<BellRing size={18} />} title="Boas-vindas do tutor" sub="O texto que o tutor recebe pronto, na conversa do aluno recém-matriculado.">
+            <TextField fullWidth multiline rows={5} variant="outlined" margin="dense" label="Mensagem de boas-vindas"
+              defaultValue={values.onboarding_welcome_template || ""} key={values.onboarding_welcome_template || "vazio"}
+              placeholder="Olá, {{primeiro_nome}}! Parabéns pela matrícula! Eu sou {{tutor}}, do polo {{polo}}..."
+              onBlur={(e) => { if (e.target.value !== (values.onboarding_welcome_template || "")) save("onboarding_welcome_template", e.target.value); }}
+              InputLabelProps={{ shrink: true }} />
+            <Typography className={classes.hint}>
+              O sistema nunca envia esta mensagem sozinho: o tutor vê o texto no campo de mensagem, pode editar e envia se quiser. Variáveis: {"{{primeiro_nome}}"}, {"{{nome}}"}, {"{{tutor}}"} e {"{{polo}}"}. Em branco, vale um texto padrão.
+            </Typography>
+            <TextField select fullWidth variant="outlined" margin="dense" label="Meta de tempo de resposta"
+              value={Number(values.response_sla_minutes || 15)} onChange={(e) => save("response_sla_minutes", e.target.value)} InputLabelProps={{ shrink: true }}>
+              {[5, 10, 15, 30, 60].map((m) => (<MenuItem key={m} value={m}>{m} minutos</MenuItem>))}
+            </TextField>
+            <Typography className={classes.hint}>Usada no Painel para dizer quantos clientes foram respondidos no prazo e quem está esperando.</Typography>
+          </Section>
+
           <Section icon={<KeyRound size={18} />} title="Integração" sub="Token usado pelas integrações externas (API).">
             <div className={classes.tokenRow}>
               <TextField style={{ flex: "1 1 100%" }} variant="outlined" margin="dense" label="Token da API" value={token} type={showToken ? "text" : "password"} InputProps={{ readOnly: true }} />

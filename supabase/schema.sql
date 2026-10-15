@@ -668,7 +668,9 @@ CREATE TABLE public."Contacts" (
     "picCheckedAt" timestamp with time zone,
     "isStaff" boolean DEFAULT false NOT NULL,
     kind character varying(255) DEFAULT 'person'::character varying NOT NULL,
-    "noReply" boolean DEFAULT false NOT NULL
+    "noReply" boolean DEFAULT false NOT NULL,
+    "parentGroupId" character varying(255),
+    "readOnly" boolean DEFAULT false NOT NULL
 );
 
 
@@ -2761,6 +2763,13 @@ CREATE INDEX contacts_kind_idx ON public."Contacts" USING btree (kind) WHERE ((k
 
 
 --
+-- Name: contacts_parent_group_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX contacts_parent_group_idx ON public."Contacts" USING btree ("parentGroupId") WHERE ("parentGroupId" IS NOT NULL);
+
+
+--
 -- Name: goal_members_goal_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3879,6 +3888,8 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261104000004-team-goals.js') ON CO
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261104000005-affiliate-central.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261104000006-admin-role-consistency.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261104000007-affiliate-first-monthly.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261105000001-contact-community.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261105000002-dedupe-reactions.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

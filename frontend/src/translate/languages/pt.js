@@ -474,6 +474,8 @@ const messages = {
         ERR_INVALID_STAGE_TYPE: "O tipo da etapa precisa ser: em andamento, ganho ou perdido.",
         ERR_NO_FILE: "Escolha um arquivo para enviar.",
         ERR_EFI_PAYEE_INVALID: "O Wallet ID da Efí precisa ter de 6 a 64 letras e números, sem espaços nem traços.",
+        ERR_ONBOARDING_TUTOR_ONLY: "Esta é a conversa do tutor com o aluno. Quem responde é o tutor; para assumir, transfira a conversa para você.",
+        ERR_COMMUNITY_NOT_GROUP: "Só grupos do WhatsApp podem ser marcados como comunidade.",
         ERR_LAST_ADMIN: "O sistema precisa de pelo menos um administrador. Promova outra pessoa antes de mudar este acesso.",
         ERR_GOAL_PERIOD: "Informe as datas do período: o início não pode ser depois do fim.",
         ERR_COMMISSION_NOT_PAID: "Só dá para marcar como repassada a comissão de uma taxa já paga.",

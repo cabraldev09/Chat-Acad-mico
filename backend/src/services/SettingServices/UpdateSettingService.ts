@@ -3,7 +3,7 @@ import Setting from "../../models/Setting";
 import { isValidTz, setAppTz } from "../../helpers/AppTime";
 
 // settings that may be created on first save
-const CREATABLE = ["appTimezone", "appName", "onboarding_sla_hours", "chatbot_reminder_minutes", "max_connections_per_user"];
+const CREATABLE = ["appTimezone", "appName", "onboarding_sla_hours", "chatbot_reminder_minutes", "max_connections_per_user", "onboarding_welcome_template", "response_sla_minutes"];
 // per-model token prices, typed by the administrator
 const CREATABLE_PREFIX = ["ai_price_"];
 

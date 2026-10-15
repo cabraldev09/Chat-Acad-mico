@@ -61,6 +61,8 @@ export const toggleStar = async (id: string, starred: boolean): Promise<Message>
 export const applyReaction = async (id: string, emoji: string, fromMe: boolean, sender: string): Promise<void> => {
   const message = await loadFull(id);
   if (!message) return;
+  // my own reaction comes back from WhatsApp with my phone id: it is the same person as "me", never a second reaction
+  if (fromMe) sender = "me";
   const next = parse(message).filter(r => !(r.fromMe === fromMe && (r.sender || "") === sender));
   if (emoji) next.push({ emoji, fromMe, sender });
   await message.update({ reactions: next.length ? JSON.stringify(next) : null });

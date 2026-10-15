@@ -17,6 +17,13 @@ interface Request {
   email?: string;
   profilePicUrl?: string;
   extraInfo?: ExtraInfo[];
+  community?: CommunityInfo;
+}
+
+export interface CommunityInfo {
+  kind: "community" | "group";
+  parentGroupId?: string | null;
+  readOnly?: boolean;
 }
 
 const emitContact = (action: "update" | "create", contact: Contact) => {
@@ -32,7 +39,8 @@ const CreateOrUpdateContactService = async ({
   profilePicUrl,
   isGroup,
   email = "",
-  extraInfo = []
+  extraInfo = [],
+  community
 }: Request): Promise<Contact> => {
   const number = isGroup ? String(rawNumber || "") : String(rawNumber || "").replace(/[^0-9]/g, "");
   if (!number && !lid) throw new Error("Either number or lid must be provided");
@@ -69,8 +77,12 @@ const CreateOrUpdateContactService = async ({
     return contactByNumber;
   }
 
+  // community info detected from WhatsApp; a person who marked the group by hand keeps their choice
+  const communityFields = isGroup && community ? { kind: community.kind, parentGroupId: community.parentGroupId || null, readOnly: !!community.readOnly } : {};
+
   if (contactByNumber) {
     await contactByNumber.update({
+      ...(contactByNumber.kind === "community" && !community?.kind ? {} : communityFields),
       lid: lid || contactByNumber.lid,
       ...(profilePicUrl && !isLocalPic(contactByNumber.getDataValue("profilePicUrl")) ? { profilePicUrl } : {})
     });
@@ -98,7 +110,8 @@ const CreateOrUpdateContactService = async ({
     profilePicUrl,
     email,
     isGroup,
-    extraInfo
+    extraInfo,
+    ...communityFields
   });
 
   emitContact("create", created);

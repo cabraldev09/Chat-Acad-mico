@@ -10,6 +10,7 @@ import UpdateTicketService from "../services/TicketServices/UpdateTicketService"
 import SendWhatsAppMessage from "../services/WbotServices/SendWhatsAppMessage";
 import ShowWhatsAppService from "../services/WhatsappService/ShowWhatsAppService";
 import formatBody from "../helpers/Mustache";
+import Ticket from "../models/Ticket";
 import TicketEvent from "../models/TicketEvent";
 import User from "../models/User";
 import Queue from "../models/Queue";
@@ -36,6 +37,7 @@ type IndexQuery = {
   historical: string;
   countOnly: string;
   allQueues: string;
+  communities: string;
   attendantId: string;
   connectionId: string;
 };
@@ -64,6 +66,7 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
     historical,
     countOnly,
     allQueues,
+    communities,
     attendantId,
     connectionId
   } = req.query as IndexQuery;
@@ -98,11 +101,23 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
     countOnly: countOnly === "true",
     role: roleOf(req.user),
     allQueues,
+    communities,
     attendantId,
     connectionId
   });
 
   return res.status(200).json({ tickets, count, hasMore });
+};
+
+// "Enviar boas-vindas" (tutor): the text the administration wrote, ready to be edited and sent by the tutor. Shown only
+// while nobody has answered the student yet.
+export const welcome = async (req: Request, res: Response): Promise<Response> => {
+  const ticket = await Ticket.findByPk(req.params.ticketId);
+  if (!ticket) throw new AppError("ERR_NO_TICKET_FOUND", 404);
+  const show = ticket.segment === "onboarding" && ticket.status !== "closed" && !ticket.firstResponseAt && !ticket.isGroup;
+  if (!show) return res.json({ show: false, text: "" });
+  const { renderWelcome } = await import("../helpers/OnboardingWelcome");
+  return res.json({ show: true, text: await renderWelcome(ticket, Number(req.user.id)) });
 };
 
 export const store = async (req: Request, res: Response): Promise<Response> => {

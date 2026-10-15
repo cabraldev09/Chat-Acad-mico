@@ -30,6 +30,7 @@ interface Request {
   role?: Role;
   // administration and coordination only: every sector (not just their own), and the view of one attendant / one connection
   allQueues?: string;
+  communities?: string;
   attendantId?: string;
   connectionId?: string;
 }
@@ -56,6 +57,7 @@ const ListTicketsService = async ({
   countOnly,
   role,
   allQueues,
+  communities,
   attendantId,
   connectionId
 }: Request): Promise<Response> => {
@@ -72,7 +74,7 @@ const ListTicketsService = async ({
     {
       model: Contact,
       as: "contact",
-      attributes: ["id", "name", "number", "profilePicUrl", "channel", "isStaff", "kind"],
+      attributes: ["id", "name", "number", "profilePicUrl", "channel", "isStaff", "kind", "parentGroupId", "readOnly"],
       // the search filters on the contact's name and number, so the count query must join it too
       required: !!searchParam
     },
@@ -113,8 +115,13 @@ const ListTicketsService = async ({
     };
   }
 
+  // communities have their own view; the Grupos filter keeps ordinary groups only
+  const communityCond = literal(`EXISTS (SELECT 1 FROM "Contacts" cc WHERE cc."id" = "Ticket"."contactId" AND (cc."kind" = 'community' OR cc."parentGroupId" IS NOT NULL))`);
+  const notCommunityCond = literal(`NOT EXISTS (SELECT 1 FROM "Contacts" cc WHERE cc."id" = "Ticket"."contactId" AND cc."kind" = 'community')`);
+  if (communities === "only") whereCondition = { [Op.and]: [whereCondition, { isGroup: true }, communityCond] } as any;
+  else if (groups === "only") whereCondition = { [Op.and]: [whereCondition, { isGroup: true }, notCommunityCond] } as any;
+
   // groups live under their own filter so they never bury private chats
-  if (groups === "only") whereCondition = { ...whereCondition, isGroup: true };
   if (groups === "exclude") whereCondition = { ...whereCondition, isGroup: false };
 
   if (searchParam) {

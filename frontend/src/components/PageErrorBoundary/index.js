@@ -1,10 +1,12 @@
 import React from "react";
 
+import api from "../../services/api";
+
 // A screen that fails to draw must never leave a blank page: say what happened and offer the way out.
 class PageErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
-    this.state = { failed: false };
+    this.state = { failed: false, code: "" };
   }
 
   static getDerivedStateFromError() {
@@ -14,6 +16,17 @@ class PageErrorBoundary extends React.Component {
   componentDidCatch(error) {
     // eslint-disable-next-line no-console
     console.error("Screen failed to render:", error);
+    // short code the user can read out; the same code is written to the server log with the message and the route
+    const code = Math.random().toString(36).slice(2, 7).toUpperCase();
+    this.setState({ code });
+    try {
+      api.post("/client-errors", {
+        code,
+        route: window.location.pathname + window.location.hash,
+        message: error && error.message,
+        stack: error && error.stack
+      }).catch(() => {});
+    } catch (e) { /* reporting must never break the fallback screen */ }
   }
 
   render() {
@@ -24,6 +37,7 @@ class PageErrorBoundary extends React.Component {
           <h2 style={{ margin: 0, fontSize: 22 }}>Não foi possível abrir esta tela</h2>
           <p style={{ opacity: 0.75, maxWidth: 420, margin: "10px auto 18px" }}>
             Pode ser uma versão nova do sistema. Atualize a página; se continuar, volte ao início.
+            {this.state.code ? ` Código do erro: ${this.state.code}.` : ""}
           </p>
           <button type="button" onClick={() => window.location.reload()} style={{ padding: "10px 18px", borderRadius: 10, border: 0, background: "#0B4279", color: "#fff", fontSize: 15, cursor: "pointer", marginRight: 8 }}>
             Atualizar a página

@@ -47,6 +47,26 @@ const useStyles = makeStyles((theme) => {
   };
 });
 
+// "Novo aluno": the administration's greeting, ready to edit and send by the tutor. It disappears once someone answers.
+const WelcomeBanner = ({ ticket }) => {
+  const [welcome, setWelcome] = useState(null);
+  useEffect(() => {
+    setWelcome(null);
+    if (!ticket.id || ticket.segment !== "onboarding" || ticket.firstResponseAt) return;
+    api.get(`/tickets/${ticket.id}/welcome`).then(({ data }) => setWelcome(data)).catch(() => undefined);
+  }, [ticket.id, ticket.segment, ticket.firstResponseAt, ticket.status]);
+  if (!welcome || !welcome.show) return null;
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", padding: "10px 16px", background: "rgba(6,147,227,.1)", borderBottom: "1px solid rgba(6,147,227,.25)", fontSize: 14 }}>
+      <span style={{ flex: 1, minWidth: 220 }}><b>Novo aluno para ambientar.</b> A mensagem de boas-vindas não é enviada sozinha: use o texto pronto e envie quando quiser.</span>
+      <button type="button" onClick={() => window.dispatchEvent(new CustomEvent("fillMessageInput", { detail: { ticketId: ticket.id, text: welcome.text } }))}
+        style={{ border: 0, borderRadius: 10, background: "#0B4279", color: "#fff", padding: "8px 14px", fontFamily: "inherit", fontWeight: 600, cursor: "pointer" }}>
+        Usar texto de boas-vindas
+      </button>
+    </div>
+  );
+};
+
 const Ticket = () => {
   const { ticketId } = useParams();
   const history = useHistory();
@@ -172,6 +192,7 @@ const Ticket = () => {
             </IconButton>
           </div>
         )}
+        <WelcomeBanner ticket={ticket} />
         <ReplyMessageProvider>
           <MessagesList
             ticketId={ticketId}

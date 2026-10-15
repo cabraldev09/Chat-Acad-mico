@@ -21,10 +21,18 @@ const queueIdsOf = async (userId: number): Promise<number[]> => {
 export const assertTicketAccess = async (
   req: Request,
   ticketId: string | number,
-  mode: "read" | "write"
+  mode: "read" | "write" | "send"
 ): Promise<void> => {
     const role = roleOf(req.user);
-    if (isManagerRole(role)) return;
+    if (isManagerRole(role)) {
+      // administration and coordination read everything; in a student's tutoring conversation they write only when it is
+      // assigned to them (the tutor is the one who talks to the student: nobody answers "as the tutor" by accident)
+      // ("send" = a message goes out; changing the conversation, e.g. transferring it, stays allowed)
+      if (mode !== "send") return;
+      const t = await Ticket.findByPk(ticketId, { attributes: ["id", "userId", "segment"] });
+      if (t && t.segment === "onboarding" && t.userId !== Number(req.user.id)) throw new AppError("ERR_ONBOARDING_TUTOR_ONLY", 403);
+      return;
+    }
 
     const ticket = await Ticket.findByPk(ticketId, {
       attributes: ["id", "userId", "queueId", "segment"]
@@ -51,13 +59,13 @@ export const assertTicketAccess = async (
     // Coordination reads its queues and its whole polo.
     const sharedRead = !ticket.userId || role === "coordenacao";
     if (mode === "read" && (mine || (inMyQueues && sharedRead) || poloRead)) return;
-    if (mode === "write" && (mine || (!ticket.userId && inMyQueues))) return;
+    if ((mode === "write" || mode === "send") && (mine || (!ticket.userId && inMyQueues))) return;
 
     throw new AppError("ERR_NO_PERMISSION", 403);
 };
 
 const buildGuard =
-  (mode: "read" | "write", param = "ticketId") =>
+  (mode: "read" | "write" | "send", param = "ticketId") =>
   async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
     await assertTicketAccess(req, req.params[param], mode);
     next();
@@ -73,3 +81,4 @@ export const canWriteMessage = async (req: Request, _res: Response, next: NextFu
 
 export const canReadTicket = buildGuard("read");
 export const canWriteTicket = buildGuard("write");
+export const canSendTicket = buildGuard("send");

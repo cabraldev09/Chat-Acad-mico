@@ -25,6 +25,7 @@ contactRoutes.put("/contacts/:contactId", isAuth, ContactController.update);
 
 contactRoutes.put("/contacts/:contactId/no-reply", isAuth, ContactController.setNoReply);
 contactRoutes.put("/contacts/:contactId/staff", isAuth, ContactController.setStaff);
+contactRoutes.put("/contacts/:contactId/community", isAuth, ContactController.setCommunity);
 
 contactRoutes.delete("/contacts/:contactId", isAuth, isAdmin, ContactController.remove);
 

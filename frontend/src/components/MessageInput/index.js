@@ -171,6 +171,16 @@ const MessageInput = ({ ticketStatus, historical, isGroup, contactName, channel 
   const [captions, setCaptions] = useState([]);
   const [current, setCurrent] = useState(0);
   const [inputMessage, setInputMessage] = useState("");
+  // other parts of the screen (the tutor's welcome banner) can put a ready text in the box; the person still sends it
+  useEffect(() => {
+    const fill = (e) => {
+      if (!e.detail || String(e.detail.ticketId) !== String(ticketId)) return;
+      setInputMessage(e.detail.text || "");
+      setTimeout(() => inputRef.current && inputRef.current.focus(), 50);
+    };
+    window.addEventListener("fillMessageInput", fill);
+    return () => window.removeEventListener("fillMessageInput", fill);
+  }, [ticketId]);
   const [showEmoji, setShowEmoji] = useState(false);
   const [loading, setLoading] = useState(false);
   const [recording, setRecording] = useState(false);

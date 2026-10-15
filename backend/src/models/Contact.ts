@@ -69,6 +69,14 @@ class Contact extends Model<Contact> {
   @Column
   kind: string;
 
+  // the community this group belongs to (WhatsApp id of the community), when known
+  @Column
+  parentGroupId: string;
+
+  // only administrators can write and this number is not one: the composer is locked
+  @Column
+  readOnly: boolean;
+
   // does not need an answer (notices, broadcasts): out of the "no answer" list
   @Default(false)
   @Column

@@ -177,7 +177,7 @@ const MaterialsTab = () => {
                 {m.description && <Typography variant="body2" color="textSecondary" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{m.description}</Typography>}
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                   <span className={classes.chip} style={{ background: m.audience === "all" ? "rgba(22,163,74,.14)" : "rgba(245,158,11,.16)", color: m.audience === "all" ? "#15803d" : "#b45309" }}>
-                    <Users size={12} /> {m.audience === "all" ? "Todos" : `Restrito (${m.ownerIds.length + m.affiliateIds.length})`}
+                    <Users size={12} /> {m.audience === "all" ? "Todos" : `Restrito (${(m.ownerIds || []).length + (m.affiliateIds || []).length})`}
                   </span>
                   {!m.active && <span className={classes.chip} style={{ background: "rgba(100,116,139,.18)" }}>Oculto</span>}
                   {m.collection && <span className={classes.chip} style={{ background: "rgba(11,66,121,.12)" }}>{(COLLECTIONS.find((c) => c[0] === m.collection) || [])[1]}</span>}
