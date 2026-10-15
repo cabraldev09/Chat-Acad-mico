@@ -5,6 +5,7 @@ import { Op } from "sequelize";
 
 import { PUBLIC_DIR } from "../config/paths";
 import AppError from "../errors/AppError";
+import { getSetting, setSetting } from "../helpers/AppSettings";
 import CommercialGrade from "../models/CommercialGrade";
 import { logger } from "../utils/logger";
 import { cleanReadingText, readCommercialGrade, type CommercialGradeReading } from "./services/commercial-grades/reader";
@@ -172,8 +173,40 @@ export const importDefaultGrades = async (): Promise<{ created: number; updated:
   return out;
 };
 
-// at the first start, when the catalog is empty
+// At every start: the matrices that came with this version of the system and were never offered before are published
+// (new courses added to the system appear on their own). A course that already exists, or one the team deleted on
+// purpose, is not touched again: each shipped file is tried only once.
 export const importDefaultGradesIfEmpty = async (): Promise<void> => {
-  if ((await CommercialGrade.count()) > 0) return;
-  await importDefaultGrades();
+  const root = path.join(__dirname, "..", "..", "data", "grades");
+  if (!fs.existsSync(root)) return;
+  const files: Array<{ file: string; hint?: string }> = [];
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    if (entry.isFile() && /\.pdf$/i.test(entry.name)) files.push({ file: path.join(root, entry.name) });
+    if (entry.isDirectory()) {
+      for (const inner of fs.readdirSync(path.join(root, entry.name))) {
+        if (/\.pdf$/i.test(inner)) files.push({ file: path.join(root, entry.name, inner), hint: entry.name === "pos" ? "Pós-graduação" : undefined });
+      }
+    }
+  }
+  let seen: string[] = [];
+  try { seen = JSON.parse(await getSetting("grades_default_seen", "[]")); } catch (e) { seen = []; }
+  const done = new Set(seen);
+  let created = 0;
+  for (const { file, hint } of files) {
+    const bytes = fs.readFileSync(file);
+    const hash = createHash("sha256").update(bytes).digest("hex");
+    if (done.has(hash)) continue;
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const r = await publishGrade({ bytes, filename: path.basename(file), userId: null, upsert: false, degreeHint: hint });
+      if (r.action === "created") created += 1;
+      done.add(hash);
+    } catch (err) {
+      // "this course already has a matrix": nothing to do, and not asked again
+      if (err instanceof AppError && err.statusCode === 409) done.add(hash);
+      else logger.warn(`default grade ${path.basename(file)} not imported: ${(err as Error).message}`);
+    }
+  }
+  await setSetting("grades_default_seen", JSON.stringify([...done]));
+  if (created) logger.info(`default grades: ${created} new course(s) published`);
 };

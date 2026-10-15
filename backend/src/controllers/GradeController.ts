@@ -9,6 +9,9 @@ import { isManagerRole, roleOf } from "../helpers/Roles";
 import CommercialGrade from "../models/CommercialGrade";
 import { assertTicketAccess } from "../middleware/canAccessTicket";
 import ShowTicketService from "../services/TicketServices/ShowTicketService";
+import CreateTicketService from "../services/TicketServices/CreateTicketService";
+import Ticket from "../models/Ticket";
+import Contact from "../models/Contact";
 import SendWhatsAppMedia from "../services/WbotServices/SendWhatsAppMedia";
 import SendWhatsAppMessage from "../services/WbotServices/SendWhatsAppMessage";
 import { gradePath, gradeView, importDefaultGrades, publishGrade, removeGrade } from "../analysis/Grades";
@@ -87,8 +90,16 @@ export const importDefaults = async (req: Request, res: Response): Promise<Respo
 // Sends the matrix into a conversation: the summary text and/or the PDF, through the same safe path as any message
 export const send = async (req: Request, res: Response): Promise<Response> => {
   const g = await load(req.params.id);
-  const ticketId = Number(req.body?.ticketId);
-  if (!ticketId) throw new AppError("Escolha a conversa.", 400);
+  let ticketId = Number(req.body?.ticketId);
+  // a contact was chosen (not a conversation): its open conversation is used, or one is opened for the person
+  const contactId = Number(req.body?.contactId);
+  if (!ticketId && contactId) {
+    const contact = await Contact.findByPk(contactId, { attributes: ["id", "isGroup"] });
+    if (!contact) throw new AppError("Contato não encontrado.", 404);
+    const open = await Ticket.findOne({ where: { contactId, status: { [Op.in]: ["open", "pending"] } } as any, order: [["updatedAt", "DESC"]], attributes: ["id"] });
+    ticketId = open ? open.id : (await CreateTicketService({ contactId, status: "open", userId: Number(req.user.id) })).id;
+  }
+  if (!ticketId) throw new AppError("Escolha o contato.", 400);
   const wantSummary = req.body?.summary !== false;
   const wantPdf = req.body?.pdf !== false;
   if (!wantSummary && !wantPdf) throw new AppError("Escolha enviar o resumo, o PDF ou os dois.", 400);
