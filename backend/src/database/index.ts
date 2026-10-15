@@ -27,6 +27,11 @@ import ChatFlowStat from "../models/ChatFlowStat";
 import AutomationTrigger from "../models/AutomationTrigger";
 import ClientError from "../models/ClientError";
 import PasswordReset from "../models/PasswordReset";
+import Student from "../models/Student";
+import StudentToken from "../models/StudentToken";
+import CurricularAnalysis from "../models/CurricularAnalysis";
+import AcademicAnalysis from "../models/AcademicAnalysis";
+import CommercialGrade from "../models/CommercialGrade";
 import AiAgent from "../models/AiAgent";
 import LeadStage from "../models/LeadStage";
 import Course from "../models/Course";
@@ -91,6 +96,11 @@ const models = [
   AutomationTrigger,
   ClientError,
   PasswordReset,
+  Student,
+  StudentToken,
+  CurricularAnalysis,
+  AcademicAnalysis,
+  CommercialGrade,
   AiAgent,
   LeadStage,
   Course,

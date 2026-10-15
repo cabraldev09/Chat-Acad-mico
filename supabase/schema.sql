@@ -27,6 +27,59 @@ SET default_tablespace = '';
 SET default_table_access_method = heap;
 
 --
+-- Name: AcademicAnalyses; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."AcademicAnalyses" (
+    id integer NOT NULL,
+    "userId" integer,
+    "studentId" integer,
+    "leadId" integer,
+    "contactId" integer,
+    origin character varying(20) DEFAULT 'STAFF_UPLOAD'::character varying NOT NULL,
+    "originalName" character varying(255),
+    "fileHash" character varying(64),
+    "contentHash" character varying(64),
+    "factsHash" character varying(64),
+    "documentType" character varying(40),
+    rgm character varying(40),
+    "studentName" character varying(160),
+    "courseName" character varying(200),
+    "currentPeriod" integer,
+    "currentPeriodConfirmed" boolean DEFAULT false NOT NULL,
+    status character varying(30),
+    version integer DEFAULT 1 NOT NULL,
+    "isCurrent" boolean DEFAULT true NOT NULL,
+    "changeSummary" text,
+    snapshot text NOT NULL,
+    forecast text,
+    message text,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: AcademicAnalyses_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."AcademicAnalyses_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: AcademicAnalyses_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."AcademicAnalyses_id_seq" OWNED BY public."AcademicAnalyses".id;
+
+
+--
 -- Name: AffiliateAudiences; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -730,6 +783,56 @@ ALTER SEQUENCE public."ClientErrors_id_seq" OWNED BY public."ClientErrors".id;
 
 
 --
+-- Name: CommercialGrades; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."CommercialGrades" (
+    id integer NOT NULL,
+    "courseName" character varying(200) NOT NULL,
+    modality character varying(80),
+    "curriculumTerm" character varying(40),
+    degree character varying(80),
+    "knowledgeArea" character varying(80),
+    "durationSemesters" integer,
+    "courseTracks" text DEFAULT '[]'::text NOT NULL,
+    "internshipInfo" text,
+    "hasTcc" boolean DEFAULT false NOT NULL,
+    "totalInternshipHours" integer,
+    "totalCourseHours" integer,
+    "whatsappSummary" text,
+    complete boolean DEFAULT true NOT NULL,
+    "contentHash" character varying(64) NOT NULL,
+    "catalogKey" character varying(64) NOT NULL,
+    "originalName" character varying(255),
+    "fileName" character varying(120) NOT NULL,
+    "sizeBytes" integer,
+    "uploadedById" integer,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: CommercialGrades_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."CommercialGrades_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: CommercialGrades_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."CommercialGrades_id_seq" OWNED BY public."CommercialGrades".id;
+
+
+--
 -- Name: ContactCustomFields; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -927,6 +1030,58 @@ CREATE SEQUENCE public."Courses_id_seq"
 --
 
 ALTER SEQUENCE public."Courses_id_seq" OWNED BY public."Courses".id;
+
+
+--
+-- Name: CurricularAnalyses; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."CurricularAnalyses" (
+    id integer NOT NULL,
+    "userId" integer,
+    "leadId" integer,
+    "contactId" integer,
+    "candidateName" character varying(160),
+    "originalName" character varying(255),
+    "fileHash" character varying(64),
+    "pageCount" integer,
+    status character varying(20) DEFAULT 'COMPLETED'::character varying NOT NULL,
+    "errorMessage" text,
+    "courseName" character varying(200),
+    "matrixLabel" character varying(120),
+    campus character varying(120),
+    modality character varying(120),
+    "headerEntryPeriod" integer,
+    "entryPeriod" integer,
+    "entryPeriodSource" character varying(12),
+    "startTerm" character varying(8),
+    subjects text DEFAULT '[]'::text NOT NULL,
+    claims text DEFAULT '[]'::text NOT NULL,
+    "baseWarnings" text DEFAULT '[]'::text NOT NULL,
+    result text,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: CurricularAnalyses_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."CurricularAnalyses_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: CurricularAnalyses_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."CurricularAnalyses_id_seq" OWNED BY public."CurricularAnalyses".id;
 
 
 --
@@ -1812,6 +1967,86 @@ CREATE TABLE public."Settings" (
 
 
 --
+-- Name: StudentTokens; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."StudentTokens" (
+    id integer NOT NULL,
+    "studentId" integer NOT NULL,
+    kind character varying(12) NOT NULL,
+    "tokenHash" character varying(64) NOT NULL,
+    "expiresAt" timestamp with time zone NOT NULL,
+    "usedAt" timestamp with time zone,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: StudentTokens_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."StudentTokens_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: StudentTokens_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."StudentTokens_id_seq" OWNED BY public."StudentTokens".id;
+
+
+--
+-- Name: Students; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."Students" (
+    id integer NOT NULL,
+    rgm character varying(40) NOT NULL,
+    name character varying(160) NOT NULL,
+    email character varying(160),
+    phone character varying(40),
+    "courseName" character varying(200),
+    "poloId" integer,
+    "responsibleUserId" integer,
+    "leadId" integer,
+    "passwordHash" character varying(255),
+    "activatedAt" timestamp with time zone,
+    "blockedAt" timestamp with time zone,
+    "sessionVersion" integer DEFAULT 0 NOT NULL,
+    "lastLoginAt" timestamp with time zone,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: Students_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."Students_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: Students_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."Students_id_seq" OWNED BY public."Students".id;
+
+
+--
 -- Name: Tags; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2158,6 +2393,13 @@ ALTER SEQUENCE public."WppKeys_id_seq" OWNED BY public."WppKeys".id;
 
 
 --
+-- Name: AcademicAnalyses id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AcademicAnalyses" ALTER COLUMN id SET DEFAULT nextval('public."AcademicAnalyses_id_seq"'::regclass);
+
+
+--
 -- Name: AffiliateAudiences id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -2277,6 +2519,13 @@ ALTER TABLE ONLY public."ClientErrors" ALTER COLUMN id SET DEFAULT nextval('publ
 
 
 --
+-- Name: CommercialGrades id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."CommercialGrades" ALTER COLUMN id SET DEFAULT nextval('public."CommercialGrades_id_seq"'::regclass);
+
+
+--
 -- Name: ContactCustomFields id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -2309,6 +2558,13 @@ ALTER TABLE ONLY public."Contacts" ALTER COLUMN id SET DEFAULT nextval('public."
 --
 
 ALTER TABLE ONLY public."Courses" ALTER COLUMN id SET DEFAULT nextval('public."Courses_id_seq"'::regclass);
+
+
+--
+-- Name: CurricularAnalyses id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."CurricularAnalyses" ALTER COLUMN id SET DEFAULT nextval('public."CurricularAnalyses_id_seq"'::regclass);
 
 
 --
@@ -2452,6 +2708,20 @@ ALTER TABLE ONLY public."Schedules" ALTER COLUMN id SET DEFAULT nextval('public.
 
 
 --
+-- Name: StudentTokens id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."StudentTokens" ALTER COLUMN id SET DEFAULT nextval('public."StudentTokens_id_seq"'::regclass);
+
+
+--
+-- Name: Students id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."Students" ALTER COLUMN id SET DEFAULT nextval('public."Students_id_seq"'::regclass);
+
+
+--
 -- Name: Tags id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -2498,6 +2768,14 @@ ALTER TABLE ONLY public."Whatsapps" ALTER COLUMN id SET DEFAULT nextval('public.
 --
 
 ALTER TABLE ONLY public."WppKeys" ALTER COLUMN id SET DEFAULT nextval('public."WppKeys_id_seq"'::regclass);
+
+
+--
+-- Name: AcademicAnalyses AcademicAnalyses_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AcademicAnalyses"
+    ADD CONSTRAINT "AcademicAnalyses_pkey" PRIMARY KEY (id);
 
 
 --
@@ -2669,6 +2947,14 @@ ALTER TABLE ONLY public."ClientErrors"
 
 
 --
+-- Name: CommercialGrades CommercialGrades_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."CommercialGrades"
+    ADD CONSTRAINT "CommercialGrades_pkey" PRIMARY KEY (id);
+
+
+--
 -- Name: ContactCustomFields ContactCustomFields_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2738,6 +3024,14 @@ ALTER TABLE ONLY public."Contacts"
 
 ALTER TABLE ONLY public."Courses"
     ADD CONSTRAINT "Courses_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: CurricularAnalyses CurricularAnalyses_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."CurricularAnalyses"
+    ADD CONSTRAINT "CurricularAnalyses_pkey" PRIMARY KEY (id);
 
 
 --
@@ -2973,6 +3267,22 @@ ALTER TABLE ONLY public."Settings"
 
 
 --
+-- Name: StudentTokens StudentTokens_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."StudentTokens"
+    ADD CONSTRAINT "StudentTokens_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: Students Students_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."Students"
+    ADD CONSTRAINT "Students_pkey" PRIMARY KEY (id);
+
+
+--
 -- Name: Tags Tags_name_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3085,6 +3395,27 @@ ALTER TABLE ONLY public."WppKeys"
 
 
 --
+-- Name: academic_analyses_rgm; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX academic_analyses_rgm ON public."AcademicAnalyses" USING btree (rgm);
+
+
+--
+-- Name: academic_analyses_student_id_version; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX academic_analyses_student_id_version ON public."AcademicAnalyses" USING btree ("studentId", version);
+
+
+--
+-- Name: academic_analyses_user_id_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX academic_analyses_user_id_created_at ON public."AcademicAnalyses" USING btree ("userId", "createdAt");
+
+
+--
 -- Name: affiliate_audiences_target_type_target_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3169,6 +3500,27 @@ CREATE INDEX client_errors_created_at ON public."ClientErrors" USING btree ("cre
 
 
 --
+-- Name: commercial_grades_catalog_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX commercial_grades_catalog_key ON public."CommercialGrades" USING btree ("catalogKey");
+
+
+--
+-- Name: commercial_grades_content_hash; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX commercial_grades_content_hash ON public."CommercialGrades" USING btree ("contentHash");
+
+
+--
+-- Name: commercial_grades_course_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX commercial_grades_course_name ON public."CommercialGrades" USING btree ("courseName");
+
+
+--
 -- Name: contacts_community_id_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3194,6 +3546,20 @@ CREATE INDEX contacts_kind_idx ON public."Contacts" USING btree (kind) WHERE ((k
 --
 
 CREATE INDEX contacts_parent_group_idx ON public."Contacts" USING btree ("parentGroupId") WHERE ("parentGroupId" IS NOT NULL);
+
+
+--
+-- Name: curricular_analyses_lead_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX curricular_analyses_lead_id ON public."CurricularAnalyses" USING btree ("leadId");
+
+
+--
+-- Name: curricular_analyses_user_id_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX curricular_analyses_user_id_created_at ON public."CurricularAnalyses" USING btree ("userId", "createdAt");
 
 
 --
@@ -3365,6 +3731,27 @@ CREATE INDEX proposals_affiliate_id ON public."Proposals" USING btree ("affiliat
 
 
 --
+-- Name: student_tokens_token_hash; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX student_tokens_token_hash ON public."StudentTokens" USING btree ("tokenHash");
+
+
+--
+-- Name: students_responsible_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX students_responsible_user_id ON public."Students" USING btree ("responsibleUserId");
+
+
+--
+-- Name: students_rgm; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX students_rgm ON public."Students" USING btree (rgm);
+
+
+--
 -- Name: ticket_events_ticket_created_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3432,6 +3819,14 @@ CREATE INDEX tickets_whatsapp_contact_idx ON public."Tickets" USING btree ("what
 --
 
 CREATE UNIQUE INDEX wpp_keys_connection_type_key_unique ON public."WppKeys" USING btree ("connectionId", type, "keyId");
+
+
+--
+-- Name: AcademicAnalyses AcademicAnalyses_studentId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AcademicAnalyses"
+    ADD CONSTRAINT "AcademicAnalyses_studentId_fkey" FOREIGN KEY ("studentId") REFERENCES public."Students"(id) ON UPDATE CASCADE ON DELETE SET NULL;
 
 
 --
@@ -3987,6 +4382,14 @@ ALTER TABLE ONLY public."Schedules"
 
 
 --
+-- Name: StudentTokens StudentTokens_studentId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."StudentTokens"
+    ADD CONSTRAINT "StudentTokens_studentId_fkey" FOREIGN KEY ("studentId") REFERENCES public."Students"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+--
 -- Name: TicketEvents TicketEvents_ticketId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4403,6 +4806,8 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261109000001-ai-agent-functions.js
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261110000001-client-errors.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261110000002-contact-community-role.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261110000003-password-resets.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261111000001-analysis.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261111000002-commercial-grades.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

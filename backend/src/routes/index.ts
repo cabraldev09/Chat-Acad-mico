@@ -12,6 +12,7 @@ import queueRoutes from "./queueRoutes";
 import quickAnswerRoutes from "./quickAnswerRoutes";
 import apiRoutes from "./apiRoutes";
 import extraRoutes from "./extraRoutes";
+import analysisRoutes from "./analysisRoutes";
 import apiV1Routes from "./apiV1Routes";
 import { clearCacheOnChange } from "../middleware/refCache";
 import isAuth from "../middleware/isAuth";
@@ -29,6 +30,7 @@ routes.post("/client-errors", isAuth, rateLimit({ windowMs: 60000, max: 20, key:
 routes.get("/client-errors", isAuth, isAdmin, ClientErrors.index);
 routes.delete("/client-errors", isAuth, isAdmin, ClientErrors.clear);
 
+routes.use(analysisRoutes);
 routes.use(userRoutes);
 routes.use("/auth", authRoutes);
 routes.use(settingRoutes);

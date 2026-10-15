@@ -74,12 +74,20 @@ function connectToSocket() {
     wasConnected = true;
   });
 
-  // the server refused the token: renew it and connect again (a refused socket does not retry by itself)
+  // the server refused the token: renew it and connect again. A refused socket does not retry by itself, and a plain
+  // connect() would reuse the old handshake: the connection is closed so the new attempt carries the new token.
+  // Few tries per minute: a login that cannot be renewed must not turn into a loop of connections.
+  const authErrors = [];
   socket.on("authError", async () => {
+    const now = Date.now();
+    while (authErrors.length && now - authErrors[0] > 60000) authErrors.shift();
+    authErrors.push(now);
+    if (authErrors.length > 3) return;
     const token = await renewToken(true);
     if (!token) return;
     socket.io.opts.query = { token };
-    socket.connect();
+    try { socket.io.engine.close(); } catch (e) { /* already closed */ }
+    setTimeout(() => socket.connect(), 100);
   });
 
   return socket;

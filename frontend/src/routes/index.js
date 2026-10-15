@@ -16,6 +16,14 @@ import { lazyPage as lazy } from "../utils/lazyPage";
 import Route from "./Route";
 
 // every page is its own file: the first screen downloads only what it shows
+const Grades = lazy(() => import("../pages/Grades"));
+const CurricularAnalysis = lazy(() => import("../pages/CurricularAnalysis"));
+const AcademicAnalysis = lazy(() => import("../pages/AcademicAnalysis"));
+const Students = lazy(() => import("../pages/Students"));
+// the student portal has its own login and no menu of the team
+const PortalHome = lazy(() => import("../pages/Portal"));
+const PortalLogin = lazy(() => import("../pages/Portal").then((m) => ({ default: m.PortalLogin })));
+const PortalActivate = lazy(() => import("../pages/Portal").then((m) => ({ default: m.PortalActivate })));
 const Tickets = lazy(() => import("../pages/Tickets/"));
 const Connections = lazy(() => import("../pages/Connections/"));
 const Polos = lazy(() => import("../pages/Polos"));
@@ -53,6 +61,17 @@ const AffiliatePortalPage = (props) => (
   </PageErrorBoundary>
 );
 
+const inPage = (Page) => (props) => (
+  <PageErrorBoundary>
+    <Suspense fallback={<BackdropLoading />}>
+      <Page {...props} />
+    </Suspense>
+  </PageErrorBoundary>
+);
+const PortalLoginPage = inPage(PortalLogin);
+const PortalActivatePage = inPage(PortalActivate);
+const PortalHomePage = inPage(PortalHome);
+
 // every address gets its own boundary state: an error on one screen never shows on the next
 const Guarded = ({ children }) => {
   const { pathname } = useLocation();
@@ -78,6 +97,9 @@ const Routes = () => {
             <Route exact path="/esqueci-a-senha" component={ForgotPassword} publicPage />
             <Route exact path="/redefinir-senha/:token" component={ResetPassword} publicPage />
             <Route exact path="/afiliado/:token" component={AffiliatePortalPage} publicPage />
+            <Route exact path="/portal/login" component={PortalLoginPage} publicPage />
+            <Route exact path="/portal/ativar/:token" component={PortalActivatePage} publicPage />
+            <Route exact path="/portal" component={PortalHomePage} publicPage />
             <WhatsAppsProvider>
               <LoggedInLayout>
                 <Guarded>
@@ -112,6 +134,10 @@ const Routes = () => {
                 <Route exact path="/crm/metas" component={Goals} isPrivate managerOnly />
                 <Route exact path="/crm/metas-polos" component={PoloGoals} isPrivate />
                 <Route exact path="/afiliados" component={Affiliates} isPrivate />
+                <Route exact path="/grades" component={Grades} isPrivate />
+                <Route exact path="/analise-curricular/:id?" component={CurricularAnalysis} isPrivate />
+                <Route exact path="/analise-academica/:id?" component={AcademicAnalysis} isPrivate academicOnly />
+                <Route exact path="/alunos" component={Students} isPrivate academicOnly />
                 <Route exact path="/crm/config" component={CrmSettings} isPrivate managerOnly />
                 </Suspense>
                 </Guarded>

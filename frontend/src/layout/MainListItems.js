@@ -24,6 +24,10 @@ import Share2Icon from "lucide-react/dist/esm/icons/share-2";
 import WalletIcon from "lucide-react/dist/esm/icons/wallet";
 import GoalIcon from "lucide-react/dist/esm/icons/goal";
 import SlidersIcon from "lucide-react/dist/esm/icons/sliders-horizontal";
+import GraduationCapIcon from "lucide-react/dist/esm/icons/graduation-cap";
+import FileSearchIcon from "lucide-react/dist/esm/icons/file-search";
+import LibraryIcon from "lucide-react/dist/esm/icons/library";
+import BookOpenCheckIcon from "lucide-react/dist/esm/icons/book-open-check";
 
 import api from "../services/api";
 import openSocket from "../services/socket-io";
@@ -233,6 +237,17 @@ const MainListItems = (props) => {
       )}
       <ListItemLink to="/crm/metas-polos" alsoActive={["/crm/metas"]} primary="Metas" icon={<GoalIcon className="ico" />} collapsed={collapsed} />
       <ListItemLink to="/ambientacao" primary="Ambientação" icon={<HeartHandshakeIcon className="ico" />} collapsed={collapsed} />
+      {!collapsed && (
+        <ListSubheader disableSticky className={classes.sectionLabel}>Cursos e alunos</ListSubheader>
+      )}
+      <ListItemLink to="/grades" primary="Grades" icon={<LibraryIcon className="ico" />} collapsed={collapsed} />
+      <ListItemLink to="/analise-curricular" primary="Análise curricular" icon={<FileSearchIcon className="ico" />} collapsed={collapsed} />
+      {(isManager(user) || user.role === "tutor") && (
+        <>
+          <ListItemLink to="/analise-academica" primary="Análise acadêmica" icon={<BookOpenCheckIcon className="ico" />} collapsed={collapsed} />
+          <ListItemLink to="/alunos" primary="Alunos do portal" icon={<GraduationCapIcon className="ico" />} collapsed={collapsed} />
+        </>
+      )}
       {["admin", "coordenacao", "consultor"].includes(user.profile === "admin" ? "admin" : user.role || "consultor") && (
         <ListItemLink to="/afiliados" primary="Afiliados" icon={<Share2Icon className="ico" />} collapsed={collapsed} />
       )}

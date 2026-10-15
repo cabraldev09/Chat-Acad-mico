@@ -38,6 +38,44 @@ const sql = q => {
   const out = psql(DB, pgSql(q));
   return out === "t" ? "1" : out === "f" ? "0" : out;
 };
+// small selectable PDFs for the analysis tests (the same generators of the unit tests, no personal data)
+const selectablePdfJs = (lines, metadata = "") => {
+  const stream = lines.map(([x, y, text]) => `BT /F1 10 Tf ${x} ${y} Td (${text.replace(/[\\()]/g, "\\$&")}) Tj ET`).join("\n");
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    `<< /Length ${Buffer.byteLength(stream)} >>\nstream\n${stream}\nendstream`
+  ];
+  let document = `%PDF-1.4\n% ${metadata}\n`;
+  const offsets = [0];
+  objects.forEach((object, index) => {
+    offsets.push(Buffer.byteLength(document));
+    document += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+  const xref = Buffer.byteLength(document);
+  document += `xref\n0 6\n0000000000 65535 f \n${offsets.slice(1).map(o => `${String(o).padStart(10, "0")} 00000 n \n`).join("")}trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+  return Buffer.from(document);
+};
+const academicPdfJs = (rgm, status = "A CURSAR", metadata = "") =>
+  selectablePdfJs([
+    [30, 780, "Aluno: Aluno Teste Portal"], [30, 760, `RGM: ${rgm}`], [30, 740, "Curso: Administracao"], [30, 720, "Periodo atual: 3"],
+    [30, 680, "Codigo"], [130, 680, "Disciplina"], [300, 680, "Periodo"], [390, 680, "Status"], [510, 680, "CH"],
+    [30, 650, "001"], [130, 650, "Matematica"], [315, 650, "1"], [390, 650, status], [510, 650, "40"],
+    [30, 620, "002"], [130, 620, "Gestao"], [315, 620, "3"], [390, 620, "CURSANDO"], [510, 620, "60"],
+    [30, 590, "003"], [130, 590, "Economia"], [315, 590, "2"], [390, 590, "AE"], [510, 590, "40"]
+  ], metadata);
+const academicHistoryPdfJs = (rgm, official = false, approved = false) =>
+  selectablePdfJs([
+    [40, 800, "HISTORICO ESCOLAR"], [40, 780, `RGM: ${rgm}`], [40, 760, "Nome: Aluno Teste Portal"], [40, 740, "Curso: Administracao"],
+    [40, 700, "Disciplina"], [195, 700, "Periodo"], [250, 700, "C/Horaria"], [306, 700, "Media"], [353, 700, "Situacao"], [420, 700, "Docente / Titulacao"],
+    [40, 670, "001 - Matematica"], [205, 670, "2026/2"], [264, 670, "40"], [310, 670, approved ? "8.5" : "******"], [353, 670, approved ? "Aprovado" : "Pendente"], [420, 670, "Professor Teste"],
+    [40, 640, "002 - Gestao"], [205, 640, "2026/2"], [264, 640, "60"], [310, 640, "******"], [353, 640, "Pendente"], [420, 640, "Professor Teste"],
+    [40, 610, "003 - Economia"], [205, 610, "2026/2"], [264, 610, "40"], [310, 610, "AE"], [353, 610, "Aprovado"], [420, 610, "Professor Teste"],
+    [40, 560, "Dados Complementares"], [40, 540, "Carga Horaria Prevista: 140 horas"], [40, 520, `Carga Horaria Integralizada: ${approved ? 80 : 40} horas`],
+    [40, 490, official ? "Assinatura eletronica via Certificado Digital" : "SIMPLES CONFERENCIA"], [40, 470, official ? "https://validar.iti.gov.br" : "Somente para conferencia"]
+  ]);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const waitFor = async (fn, ms = 12000, label = "condition") => {
   const end = Date.now() + ms;
@@ -1238,6 +1276,209 @@ const postMeta = (id, payload, secret, badSig) => {
       } finally {
         smtp.close();
       }
+    });
+    await test("curricular analysis: the PDF becomes the entry forecast, the entry period and a corrected line recompute it", async () => {
+      const sample = fs.readFileSync(path.join(__dirname, "fixtures", "sample-analise.pdf"));
+      const send = (extra = {}, name = "analise.pdf", bytes = sample, who = token) => {
+        const f = new FormData();
+        f.append("file", bytes, { filename: name, contentType: "application/pdf" });
+        Object.entries(extra).forEach(([k, v]) => f.append(k, String(v)));
+        return http.post("/analysis/curricular", f, { headers: { ...f.getHeaders(), Authorization: `Bearer ${who}` } });
+      };
+      const made = await send({ entryPeriod: 2, startTerm: "2026.2", candidateName: "Candidato Teste" });
+      assert(made.status === 201, `create ${made.status} ${JSON.stringify(made.data).slice(0, 200)}`);
+      const a = made.data;
+      assert(a.subjects.length > 5 && a.entryPeriod === 2 && a.entryPeriodSource === "USER" && a.status === "COMPLETED", `fields ${JSON.stringify([a.subjects.length, a.entryPeriod, a.entryPeriodSource, a.status])}`);
+      assert(a.result.totals.total === a.subjects.length && a.result.totals.exempted + a.result.totals.pending + a.result.totals.review === a.result.totals.total, "totals do not add up");
+      assert(a.result.simulation && a.result.simulation.semesters.length >= 1 && /^\d{4}\.[12]$/.test(a.result.simulation.estimatedCompletionTerm), "no forecast");
+      assert(a.result.simulation.semesters.every(x => x.semesterLoad <= x.maximumCapacity), "a semester above its capacity");
+      assert(a.result.narrative.text.includes("Ingresso: *2º semestre*"), "narrative");
+      assert(!a.result.warnings.some(w => w.code.startsWith("INVARIANT_")), "an invariant was broken");
+      // the PDF itself is not kept: only a hash
+      assert(sql(`SELECT COUNT(*) FROM CurricularAnalyses WHERE fileHash IS NOT NULL`) !== "0", "hash not kept");
+
+      // changing the entry period recomputes from the saved lines (no PDF again)
+      const early = (await http.put(`/analysis/curricular/${a.id}`, { entryPeriod: 1 }, auth())).data;
+      assert(early.entryPeriod === 1 && early.result.previousBacklogCount === 0, `entry 1 ${JSON.stringify(early.result.previousBacklogCount)}`);
+      const noEntry = (await http.put(`/analysis/curricular/${a.id}`, { entryPeriod: null }, auth())).data;
+      assert(noEntry.result.simulation === null && noEntry.status === "WAITING_REVIEW" && noEntry.result.warnings.some(w => w.code === "ENTRY_PERIOD_REQUIRED"), "no entry period must not forecast");
+      assert((await http.put(`/analysis/curricular/${a.id}`, { entryPeriod: 99 }, auth())).status === 400, "entry 99 accepted");
+      assert((await http.put(`/analysis/curricular/${a.id}`, { startTerm: "banana" }, auth())).status === 400, "bad term accepted");
+      await http.put(`/analysis/curricular/${a.id}`, { entryPeriod: 2, startTerm: "2026.2" }, auth());
+
+      // a line read wrong is fixed by hand and the forecast follows
+      const pendingLine = a.subjects.find(x => x.status === "PENDING");
+      const fixed = (await http.put(`/analysis/curricular/${a.id}/subject/${pendingLine.id}`, { status: "EXEMPTED" }, auth())).data;
+      assert(fixed.result.totals.exempted === a.result.totals.exempted + 1 && fixed.result.totals.pending === a.result.totals.pending - 1, "the correction did not change the totals");
+      assert((await http.put(`/analysis/curricular/${a.id}/subject/${pendingLine.id}`, { status: "XYZ" }, auth())).status === 400, "bad status accepted");
+
+      // refusals: not a PDF, a PDF without the table
+      assert((await send({}, "x.pdf", Buffer.from("PK\x03\x04 nao e pdf"))).status === 400, "a zip passed");
+      const noTable = await send({ entryPeriod: 1 }, "bolo.pdf", selectablePdfJs([[40, 700, "Receita de bolo"]]));
+      assert(noTable.status === 400 && /tabela de disciplinas/.test(JSON.stringify(noTable.data)), `no table ${noTable.status} ${JSON.stringify(noTable.data)}`);
+
+      // who sees what: the owner and the management, nobody else
+      await http.post("/users", { name: "Outro Consultor", email: "outro-an@x.com", password: "senha123", role: "consultor" }, auth());
+      const other = (await http.post("/auth/login", { email: "outro-an@x.com", password: "senha123" })).data.token;
+      assert((await http.get(`/analysis/curricular/${a.id}`, asUser(other))).status === 403, "another consultant opened it");
+      assert((await http.get("/analysis/curricular", asUser(other))).data.length === 0, "another consultant listed it");
+      assert((await http.get("/analysis/curricular", auth())).data.some(x => x.id === a.id), "the admin does not list it");
+      assert((await http.get("/analysis/curricular")).status === 401, "no login");
+      // the rules are editable: bad values are ignored
+      assert((await http.put("/analysis/rules", { extraSubjectsAllowed: 99, maximumSubjectsPerSemester: "abc" }, auth())).data.extraSubjectsAllowed === 3, "a bad rule was accepted");
+      assert((await http.put("/analysis/rules", { extraSubjectsAllowed: 2 }, auth())).data.extraSubjectsAllowed === 2, "rule not saved");
+      assert((await http.put("/analysis/rules", { extraSubjectsAllowed: 3 }, asUser(other))).status === 403, "a consultant changed the rules");
+      await http.put("/analysis/rules", { extraSubjectsAllowed: 3 }, auth());
+      assert((await http.delete(`/analysis/curricular/${a.id}`, auth())).status === 204, "delete");
+    });
+    await test("academic analysis and the student portal: versions only when the facts change, RGM check, invitation, login, isolation", async () => {
+      await http.post("/users", { name: "Tutora Portal", email: "tutora-portal@x.com", password: "senha123", role: "tutor" }, auth());
+      await http.post("/users", { name: "Tutor Intruso", email: "tutor-intruso@x.com", password: "senha123", role: "tutor" }, auth());
+      const tk = (await http.post("/auth/login", { email: "tutora-portal@x.com", password: "senha123" })).data.token;
+      const intruder = (await http.post("/auth/login", { email: "tutor-intruso@x.com", password: "senha123" })).data.token;
+      const consTk = (await http.post("/auth/login", { email: "outro-an@x.com", password: "senha123" })).data.token;
+      assert((await http.get("/students", asUser(consTk))).status === 403 && (await http.get("/analysis/academic", asUser(consTk))).status === 403, "a consultant reached the academic area");
+      const up = (route, bytes, who, name = "extrato.pdf") => {
+        const f = new FormData();
+        f.append("file", bytes, { filename: name, contentType: "application/pdf" });
+        return http.post(route, f, { headers: { ...f.getHeaders(), Authorization: `Bearer ${who}` } });
+      };
+
+      // a standalone analysis: the tutor confirms the current period and the forecast appears
+      const solo = await up("/analysis/academic", academicPdfJs("777001", "A CURSAR"), tk);
+      assert(solo.status === 201 && solo.data.documentType === "CURRICULAR_EXTRACT" && solo.data.rgm === "777001", `solo ${solo.status} ${JSON.stringify(solo.data).slice(0, 200)}`);
+      const confirmed = (await http.put(`/analysis/academic/${solo.data.id}`, { currentPeriod: 3 }, asUser(tk))).data;
+      assert(confirmed.currentPeriod === 3 && confirmed.currentPeriodConfirmed === true && /Resumo da análise/.test(confirmed.message), `confirm ${JSON.stringify(confirmed).slice(0, 200)}`);
+      assert((await http.put(`/analysis/academic/${solo.data.id}`, { currentPeriod: 77 }, asUser(tk))).status === 400, "period 77 accepted");
+      assert((await http.get(`/analysis/academic/${solo.data.id}`, asUser(intruder))).status === 403, "another tutor opened it");
+      assert((await up("/analysis/academic", selectablePdfJs([[40, 700, "Receita de bolo"]]), tk, "bolo.pdf")).status === 400, "an unknown document was accepted");
+      assert((await http.delete(`/analysis/academic/${solo.data.id}`, asUser(tk))).status === 204, "delete standalone");
+
+      // the student: created by the tutor, invited, activated, logged in
+      const st = await http.post("/students", { rgm: "123456", name: "Aluno Teste Portal", email: "aluno.portal@x.com", courseName: "Administracao" }, asUser(tk));
+      assert(st.status === 201 && st.data.responsibleUserId, `student ${st.status} ${JSON.stringify(st.data)}`);
+      const sid = st.data.id;
+      assert((await http.post("/students", { rgm: "123456", name: "Repetido" }, asUser(tk))).status === 409, "duplicated RGM accepted");
+      assert((await http.get(`/students/${sid}`, asUser(intruder))).status === 403, "another tutor opened the student");
+      assert((await http.get("/students", asUser(intruder))).data.length === 0, "another tutor listed the student");
+      // before the invitation the student cannot sign in
+      assert((await http.post("/portal/login", { login: "123456", password: "qualquer-coisa-1" })).status === 401, "login before the invitation");
+      const inv = await http.post(`/students/${sid}/invite`, {}, asUser(tk));
+      assert(inv.status === 200 && /\/portal\/ativar\/[a-f0-9]{64}$/.test(inv.data.link), `invite ${JSON.stringify(inv.data)}`);
+      const stoken = inv.data.link.split("/").pop();
+      assert((await http.get(`/portal/token/${stoken}`)).data.valid === true, "invite link not valid");
+      assert((await http.post("/portal/activate", { token: stoken, password: "curta" })).status === 400, "short password accepted");
+      assert((await http.post("/portal/activate", { token: stoken, password: "senha-do-aluno-1" })).status === 200, "activate");
+      assert((await http.get(`/portal/token/${stoken}`)).data.valid === false && (await http.post("/portal/activate", { token: stoken, password: "outra-senha-aluno" })).status === 400, "the link worked twice");
+      assert(sql(`SELECT COUNT(*) FROM StudentTokens WHERE tokenHash LIKE '${stoken.slice(0, 8)}%'`) === "0", "the token was stored in the clear");
+      assert(!sql(`SELECT passwordHash FROM Students WHERE id=${sid}`).includes("senha-do-aluno"), "the password is not hashed");
+      assert((await http.post("/portal/login", { login: "123456", password: "errada-errada" })).status === 401, "wrong password");
+      const login = await http.post("/portal/login", { login: "Aluno.Portal@X.com", password: "senha-do-aluno-1" });
+      assert(login.status === 200 && login.data.token, `login ${login.status}`);
+      const stu = login.data.token;
+      // a student token is not a user token, and a user token is not a student token
+      assert((await http.get("/students", asUser(stu))).status !== 200 && (await http.get("/analysis/curricular", asUser(stu))).status !== 200, "a student token worked on the staff routes");
+      assert((await http.get("/portal/me", asUser(tk))).status === 401, "a user token worked on the portal");
+      assert((await http.get("/portal/me")).status === 401, "portal without login");
+      assert((await http.get("/portal/me", asUser(stu))).data.current === null, "analysis before any upload");
+
+      // the student sends the extract: the RGM must be theirs
+      const wrong = await up("/portal/upload", academicPdfJs("999999", "A CURSAR"), stu);
+      assert(wrong.status === 400 && /RGM/.test(JSON.stringify(wrong.data)), `wrong RGM ${wrong.status} ${JSON.stringify(wrong.data)}`);
+      const first = await up("/portal/upload", academicPdfJs("123456", "A CURSAR"), stu);
+      assert(first.status === 201 && first.data.current.version === 1 && first.data.reused === false, `first ${first.status} ${JSON.stringify(first.data).slice(0, 200)}`);
+      // the same file again, and another file with the same facts: nothing new
+      const again = await up("/portal/upload", academicPdfJs("123456", "A CURSAR"), stu);
+      assert(again.status === 200 && again.data.reused === true && again.data.versions.length === 1, "the same file created a version");
+      const sameFacts = await up("/portal/upload", academicPdfJs("123456", "A CURSAR", "arquivo-reimpresso-outra-data"), stu);
+      assert(sameFacts.data.reused === true && sameFacts.data.versions.length === 1, "equal academic facts created a version");
+      // a real change: a new immutable version with what changed
+      const changed = await up("/portal/upload", academicPdfJs("123456", "APROVADO"), stu);
+      assert(changed.status === 201 && changed.data.current.version === 2 && changed.data.versions.length === 2, `changed ${changed.status} ${JSON.stringify(changed.data).slice(0, 200)}`);
+      assert(changed.data.current.changeSummary.some(x => /Matematica|Pendências/i.test(x)), `summary ${JSON.stringify(changed.data.current.changeSummary)}`);
+      const me = (await http.get("/portal/me", asUser(stu))).data;
+      assert(me.current.version === 2 && me.versions.map(v => v.version).join() === "2,1" && me.student.rgm === "123456", "the portal does not show the current version");
+      const old = me.versions.find(v => v.version === 1);
+      assert((await http.get(`/portal/versions/${old.id}`, asUser(stu))).data.version === 1, "an old version is not readable");
+      // another student's version is not reachable by id
+      const st2 = await http.post("/students", { rgm: "654321", name: "Outro Aluno", email: "outro.aluno@x.com", courseName: "Administracao" }, asUser(tk));
+      const inv2 = await http.post(`/students/${st2.data.id}/invite`, {}, asUser(tk));
+      await http.post("/portal/activate", { token: inv2.data.link.split("/").pop(), password: "senha-outro-aluno1" });
+      const stu2 = (await http.post("/portal/login", { login: "654321", password: "senha-outro-aluno1" })).data.token;
+      assert((await http.get(`/portal/versions/${old.id}`, asUser(stu2))).status === 404, "a student read another student's version");
+      // a history from the staff, on behalf of the student, keeps the same checks
+      const hist = await up(`/students/${sid}/upload`, academicHistoryPdfJs("123456", true, true), tk, "historico.pdf");
+      assert(hist.status === 200 || hist.status === 201, `history ${hist.status} ${JSON.stringify(hist.data).slice(0, 160)}`);
+      // the staff cannot delete what is in a student's history
+      assert((await http.delete(`/analysis/academic/${changed.data.current.id}`, asUser(tk))).status === 400, "history entry deleted");
+
+      // blocking cuts the session at once; unblocking does not revive it
+      assert((await http.put(`/students/${sid}`, { blocked: true }, asUser(tk))).status === 200, "block");
+      assert((await http.get("/portal/me", asUser(stu))).status === 401, "a blocked student kept the session");
+      assert((await http.post("/portal/login", { login: "123456", password: "senha-do-aluno-1" })).status === 401, "a blocked student logged in");
+      await http.put(`/students/${sid}`, { blocked: false }, asUser(tk));
+      assert((await http.get("/portal/me", asUser(stu))).status === 401, "an old session came back after unblocking");
+      assert((await http.post("/portal/login", { login: "123456", password: "senha-do-aluno-1" })).status === 200, "login after unblocking");
+      // password change asks for a new login
+      const stu3 = (await http.post("/portal/login", { login: "123456", password: "senha-do-aluno-1" })).data.token;
+      assert((await http.put("/portal/password", { password: "errada", newPassword: "nova-senha-aluno-1" }, asUser(stu3))).status === 400, "wrong current password");
+      assert((await http.put("/portal/password", { password: "senha-do-aluno-1", newPassword: "nova-senha-aluno-1" }, asUser(stu3))).status === 200, "change password");
+      assert((await http.get("/portal/me", asUser(stu3))).status === 401, "the session survived the password change");
+      // forgot password: same answer for everyone
+      assert((await http.post("/portal/forgot", { login: "123456" })).data.ok === true && (await http.post("/portal/forgot", { login: "nao-existe" })).data.ok === true, "forgot answers differently");
+    });
+    await test("commercial grades: the matrices that come with the system are read, searchable, downloadable and sendable; only the management publishes", async () => {
+      // the first start already read the PDFs that come with the system (or the button does it now): nothing is lost twice
+      const imp = await http.post("/grades/import-defaults", {}, auth());
+      assert(imp.status === 200 && imp.data.failed.length === 0, `import ${imp.status} ${JSON.stringify(imp.data).slice(0, 300)}`);
+      const all = (await http.get("/grades", auth())).data;
+      assert(all.grades.length >= 105, `only ${all.grades.length} grades`);
+      assert((await http.post("/grades/import-defaults", {}, auth())).data.unchanged === all.grades.length, "a second import changed something");
+      const marketing = all.grades.find(g => g.courseName === "CST EM MARKETING");
+      assert(marketing && marketing.modality === "EAD" && marketing.degree === "Tecnólogo" && marketing.totalCourseHours === 1600 && marketing.durationSemesters === 4, `marketing ${JSON.stringify(marketing)}`);
+      assert(all.grades.some(g => g.degree === "Pós-graduação"), "the postgraduate matrices are missing");
+      assert(all.grades.filter(g => !g.complete).length <= 8, "too many incomplete readings");
+      // search and filters
+      assert((await http.get("/grades", { ...auth(), params: { search: "marketing" } })).data.grades.length >= 2, "search");
+      assert((await http.get("/grades", { ...auth(), params: { degree: "Licenciatura" } })).data.grades.every(g => g.degree === "Licenciatura"), "degree filter");
+      assert(all.degrees.includes("Bacharelado") && all.areas.length > 3, "facets");
+      // the summary text and the PDF behind the login
+      const one = (await http.get(`/grades/${marketing.id}`, auth())).data;
+      assert(/Matriz curricular: CST EM MARKETING/.test(one.whatsappSummary) && /1\.600 horas/.test(one.whatsappSummary), `summary ${one.whatsappSummary}`);
+      const pdfRes = await http.get(`/grades/${marketing.id}/file`, { ...auth(), responseType: "arraybuffer" });
+      assert(pdfRes.status === 200 && Buffer.from(pdfRes.data).subarray(0, 5).toString() === "%PDF-" && /pdf/.test(pdfRes.headers["content-type"]), "pdf download");
+      assert((await http.get(`/grades/${marketing.id}/file`)).status === 401, "the pdf without login");
+      // send into a conversation: summary text and the PDF
+      const before = tg.sent.length;
+      const sent = await http.post(`/grades/${marketing.id}/send`, { ticketId: Number(tgTicket) }, auth());
+      assert(sent.status === 200, `send ${sent.status} ${JSON.stringify(sent.data)}`);
+      const out = tg.sent.slice(before);
+      assert(out.some(x => x.method === "sendMessage" && /Matriz curricular/.test(String(x.body.text || ""))) && out.some(x => x.method === "sendDocument"), `sent ${JSON.stringify(out.map(x => x.method))}`);
+      assert((await http.post(`/grades/${marketing.id}/send`, { ticketId: Number(tgTicket), summary: false, pdf: false }, auth())).status === 400, "nothing to send accepted");
+      // permissions: a consultant reads and sends but does not publish or delete
+      const consTk = (await http.post("/auth/login", { email: "outro-an@x.com", password: "senha123" })).data.token;
+      assert((await http.get("/grades", asUser(consTk))).status === 200, "a consultant cannot read the catalog");
+      assert((await http.delete(`/grades/${marketing.id}`, asUser(consTk))).status === 403 && (await http.post("/grades/import-defaults", {}, asUser(consTk))).status === 403, "a consultant changed the catalog");
+      const f = new FormData();
+      f.append("files", fs.readFileSync(path.join(__dirname, "fixtures", "sample-analise.pdf")), { filename: "x.pdf", contentType: "application/pdf" });
+      assert((await http.post("/grades", f, { headers: { ...f.getHeaders(), Authorization: `Bearer ${consTk}` } })).status === 403, "a consultant published a grade");
+      // the management publishes a new matrix (an old version is replaced) and refuses what is not a PDF
+      const bad = new FormData();
+      bad.append("files", Buffer.from("PK\x03\x04 nao e pdf"), { filename: "zip.pdf", contentType: "application/pdf" });
+      const badRes = await http.post("/grades", bad, { headers: { ...bad.getHeaders(), ...auth().headers } });
+      assert(badRes.status === 400 && badRes.data.failed === 1, `not a pdf ${badRes.status}`);
+      const again = new FormData();
+      again.append("files", fs.readFileSync(path.join(__dirname, "..", "data", "grades", "CST EM MARKETING.PDF")), { filename: "CST EM MARKETING.PDF", contentType: "application/pdf" });
+      // a single file without "upsert" is refused with a clear message (the same PDF is already there)
+      const refused = await http.post("/grades", again, { headers: { ...again.getHeaders(), ...auth().headers } });
+      assert(refused.status === 400 && /já está disponível/.test(JSON.stringify(refused.data)), `duplicate ${refused.status}`);
+      const again2 = new FormData();
+      again2.append("mode", "upsert");
+      again2.append("files", fs.readFileSync(path.join(__dirname, "..", "data", "grades", "CST EM MARKETING.PDF")), { filename: "CST EM MARKETING.PDF", contentType: "application/pdf" });
+      const up = await http.post("/grades", again2, { headers: { ...again2.getHeaders(), ...auth().headers } });
+      assert(up.status === 201 && up.data.unchanged === 1, `same pdf again ${up.status} ${JSON.stringify(up.data).slice(0, 200)}`);
+      assert((await http.delete(`/grades/${marketing.id}`, auth())).status === 204 && (await http.get(`/grades/${marketing.id}`, auth())).status === 404, "delete");
+      assert((await http.post("/grades/import-defaults", {}, auth())).data.created === 1, "the import did not bring the deleted grade back");
     });
     await test("screen errors are kept in the database for the administration and the coordination", async () => {
       assert((await http.post("/client-errors", { code: "ABCDE", route: "/afiliados", message: "Cannot read properties of null (reading 'value')", stack: "at X" }, auth())).status === 204, "report");

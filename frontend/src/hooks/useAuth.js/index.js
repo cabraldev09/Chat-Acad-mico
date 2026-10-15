@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useHistory } from "react-router-dom";
-import openSocket from "../../services/socket-io";
+import openSocket, { renewToken } from "../../services/socket-io";
 
 import { toast } from "react-toastify";
 
@@ -14,44 +14,48 @@ const useAuth = () => {
 	const [loading, setLoading] = useState(true);
 	const [user, setUser] = useState({});
 
-	api.interceptors.request.use(
-		config => {
-			const token = localStorage.getItem("token");
-			if (token) {
-				config.headers["Authorization"] = `Bearer ${JSON.parse(token)}`;
-				setIsAuth(true);
-			}
-			return config;
-		},
-		error => {
-			Promise.reject(error);
-		}
-	);
-
-	api.interceptors.response.use(
-		response => {
-			return response;
-		},
-		async error => {
-			const originalRequest = error.config;
-			if (error?.response?.status === 403 && !originalRequest._retry) {
-				originalRequest._retry = true;
-
-				const { data } = await api.post("/auth/refresh_token");
-				if (data) {
-					localStorage.setItem("token", JSON.stringify(data.token));
-					api.defaults.headers.Authorization = `Bearer ${data.token}`;
+	// The interceptors are registered once (they used to be registered again on every render, so the number of
+	// handlers kept growing and a single expired token triggered a storm of "refresh" calls).
+	useEffect(() => {
+		const requestId = api.interceptors.request.use(
+			config => {
+				const token = localStorage.getItem("token");
+				if (token) {
+					try { config.headers["Authorization"] = `Bearer ${JSON.parse(token)}`; } catch (e) { /* a broken value is ignored */ }
 				}
-				return api(originalRequest);
+				return config;
+			},
+			error => Promise.reject(error)
+		);
+
+		const responseId = api.interceptors.response.use(
+			response => response,
+			async error => {
+				const originalRequest = error.config || {};
+				const status = error?.response?.status;
+				const isRefresh = String(originalRequest.url || "").includes("/auth/refresh_token");
+				// an expired access token: one shared renewal (not one per failed request), then the request is repeated once
+				if (status === 403 && !originalRequest._retry && !isRefresh) {
+					originalRequest._retry = true;
+					const token = await renewToken(true);
+					if (token) {
+						originalRequest.headers = { ...(originalRequest.headers || {}), Authorization: `Bearer ${token}` };
+						return api(originalRequest);
+					}
+				}
+				if (status === 401) {
+					localStorage.removeItem("token");
+					api.defaults.headers.Authorization = undefined;
+					setIsAuth(false);
+				}
+				return Promise.reject(error);
 			}
-			if (error?.response?.status === 401) {
-				localStorage.removeItem("token");
-				api.defaults.headers.Authorization = undefined;
-				setIsAuth(false);
-			}
-			return Promise.reject(error);
-		}
-	);
+		);
+		return () => {
+			api.interceptors.request.eject(requestId);
+			api.interceptors.response.eject(responseId);
+		};
+	}, []);
 
 	useEffect(() => {
 		const token = localStorage.getItem("token");

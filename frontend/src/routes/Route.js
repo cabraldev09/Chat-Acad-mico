@@ -7,7 +7,7 @@ import { isManager } from "../utils/access";
 
 // adminOnly: administration pages. Anyone else who types the address goes back to the home page
 // instead of seeing a wall of "no permission" errors.
-const Route = ({ component: Component, isPrivate = false, adminOnly = false, managerOnly = false, salesOnly = false, publicPage = false, ...rest }) => {
+const Route = ({ component: Component, isPrivate = false, adminOnly = false, managerOnly = false, salesOnly = false, academicOnly = false, publicPage = false, ...rest }) => {
   const { isAuth, loading, user } = useContext(AuthContext);
 
   // decided inside the matching route: every Route is rendered on every page, only the one for the open address may redirect
@@ -17,7 +17,7 @@ const Route = ({ component: Component, isPrivate = false, adminOnly = false, man
   // adminOnly: administrator alone; managerOnly: administrator or coordinator
   const blocked =
     isAuth && !loading && user && user.profile &&
-    ((adminOnly && !isManager(user)) || (managerOnly && !isManager(user)) || (salesOnly && !isManager(user) && user.role !== "consultor"));
+    ((adminOnly && !isManager(user)) || (managerOnly && !isManager(user)) || (salesOnly && !isManager(user) && user.role !== "consultor") || (academicOnly && !isManager(user) && user.role !== "tutor"));
 
   if (!isAuth && isPrivate) {
     return (

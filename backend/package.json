@@ -13,6 +13,7 @@
     "posttest": "NODE_ENV=test sequelize db:migrate:undo:all",
     "db:migrate": "npm run build && sequelize db:migrate",
     "db:seed": "sequelize db:seed:all",
+    "test:analysis": "vitest run",
     "test:channels": "npm run build && node scripts/channels-e2e.js",
     "i18n:check": "node scripts/i18n-check.js",
     "format": "prettier --write \"src/**/*.ts\""
@@ -46,6 +47,7 @@
     "node-cache": "^5.1.2",
     "nodemailer": "^6.10.1",
     "pdf-parse": "^1.1.1",
+    "pdfjs-dist": "^6.3.289",
     "pg": "^8.4.1",
     "pino": "^6.9.0",
     "pino-pretty": "~4.7.1",
@@ -98,7 +100,9 @@
     "supertest": "^5.0.0",
     "ts-jest": "^26.4.1",
     "ts-node-dev": "^1.0.0-pre.63",
-    "typescript": "~5.4"
+    "typescript": "~5.4",
+    "vite": "^8.3.0",
+    "vitest": "^5.0.1"
   },
   "optionalDependencies": {
     "@zapo-js/media-utils": "^1.0.0",

@@ -311,8 +311,12 @@ const reducer = (state, action) => {
 	}, [status, searchParam, showAll, user, selectedQueueIds, groups, communities, archived]);
 
 	useEffect(() => {
+		// the connection came back: the list reads what it missed, quietly (the rows stay on screen) and at most
+		// once every 20 seconds, so a flaky connection never makes the list blink
+		let last = 0;
 		const again = () => {
-			dispatch({ type: "RESET" });
+			if (Date.now() - last < 20000) return;
+			last = Date.now();
 			setPageNumber(1);
 			setReloadKey(k => k + 1);
 		};
@@ -394,7 +398,7 @@ const reducer = (state, action) => {
 							))}
 						</>
 					)}
-					{loading && <TicketsListSkeleton />}
+					{loading && (ticketsList.length === 0 || pageNumber > 1) && <TicketsListSkeleton />}
 				</List>
 			</Paper>
     </Paper>
