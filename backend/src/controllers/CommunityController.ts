@@ -42,6 +42,7 @@ export const index = async (_req: Request, res: Response): Promise<Response> => 
     };
   };
   const idOf = (c: Contact) => `${c.number}@g.us`;
+  const at = (g: { lastMessageAt: Date | null }): number => (g.lastMessageAt ? new Date(g.lastMessageAt).getTime() : 0);
   const parents = related.filter(c => c.communityRole === "parent");
   // communities the parent of which is unknown yet (older markings): grouped under a generic entry
   const members = related.filter(c => c.communityRole !== "parent");
@@ -49,12 +50,19 @@ export const index = async (_req: Request, res: Response): Promise<Response> => 
     const mine = members.filter(m => (m.communityId || m.parentGroupId) === idOf(p));
     const announcement = mine.find(m => m.communityRole === "announcement") || null;
     const groups = mine.filter(m => m.communityRole === "member" || (!m.communityRole && m !== announcement)).map(view);
+    // the groups of a community, the most recent message first (the announcements group stays on top, as in WhatsApp)
+    groups.sort((a, b) => at(b) - at(a) || String(a.name).localeCompare(String(b.name), "pt-BR"));
     const list = [announcement ? view(announcement) : null, ...groups].filter(Boolean) as ReturnType<typeof view>[];
+    const latest = list.filter(g => g.lastMessageAt).sort((a, b) => at(b) - at(a))[0];
     return {
       id: p.id,
       name: p.name,
       profilePicUrl: p.profilePicUrl,
       unread: list.reduce((n, g) => n + g.unread, 0),
+      // what the community row previews: the latest message among its groups, with the group that wrote it
+      lastMessage: latest ? latest.lastMessage : null,
+      lastMessageAt: latest ? latest.lastMessageAt : null,
+      lastGroup: latest ? latest.name : null,
       announcement: announcement ? view(announcement) : null,
       groups
     };
@@ -67,7 +75,10 @@ export const index = async (_req: Request, res: Response): Promise<Response> => 
   const loose = members.filter(m => !placed.has(m.id));
   if (loose.length) {
     const list = loose.map(view);
-    communities.push({ id: 0, name: "Outras comunidades", profilePicUrl: undefined as any, unread: list.reduce((n, g) => n + g.unread, 0), announcement: null, groups: list });
+    list.sort((a, b) => at(b) - at(a));
+    communities.push({ id: 0, name: "Outras comunidades", profilePicUrl: undefined as any, unread: list.reduce((n, g) => n + g.unread, 0), lastMessage: list[0]?.lastMessage ?? null, lastMessageAt: list[0]?.lastMessageAt ?? null, lastGroup: list[0]?.name ?? null, announcement: null, groups: list });
   }
+  // the communities with the most recent message first, like the list of WhatsApp
+  communities.sort((a, b) => at(b) - at(a) || String(a.name).localeCompare(String(b.name), "pt-BR"));
   return res.json({ communities });
 };

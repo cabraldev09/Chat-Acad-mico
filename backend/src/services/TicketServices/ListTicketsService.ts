@@ -200,9 +200,9 @@ const ListTicketsService = async ({
     whereCondition = { [Op.and]: [whereCondition, ...scope] } as any;
   }
 
-  // this person's pins come first (pins are personal)
+  // pins come first: the ones this person made in the system, and the ones pinned on the phone's WhatsApp
   const pinnedSql = literal(
-    portable(`EXISTS (SELECT 1 FROM TicketPins tp WHERE tp.ticketId = Ticket.id AND tp.userId = ${Number(userId) || 0})`)
+    portable(`(EXISTS (SELECT 1 FROM TicketPins tp WHERE tp.ticketId = Ticket.id AND tp.userId = ${Number(userId) || 0}) OR Ticket.waPinned = TRUE)`)
   );
 
   const limit = 40;

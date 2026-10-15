@@ -252,6 +252,12 @@ const reducer = (state, action) => {
 			}
 		});
 
+		// the chats pinned (or unpinned) on the phone's WhatsApp: the list follows without a reload
+		socket.on("ticketPins", data => {
+			(data.pinned || []).forEach(ticketId => dispatch({ type: "SET_PINNED", payload: { ticketId, pinned: true } }));
+			(data.unpinned || []).forEach(ticketId => dispatch({ type: "SET_PINNED", payload: { ticketId, pinned: false } }));
+		});
+
 		socket.on("ticket", data => {
 			if (data.action === "updateUnread") {
                 dispatch({ type: withUnreadMessages === "true" ? "DELETE_TICKET" : "RESET_UNREAD", payload: data.ticketId });

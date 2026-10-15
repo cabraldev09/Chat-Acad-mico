@@ -53,6 +53,11 @@ class Ticket extends Model<Ticket> {
   @Column
   isGroup: boolean;
 
+  // pinned at the top of the phone's WhatsApp (kept up to date by the connection)
+  @Default(false)
+  @Column
+  waPinned: boolean;
+
   @Column
   closedAt: Date;
 

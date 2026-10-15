@@ -162,7 +162,7 @@ const plain = (text) =>
     .replace(/\s*\n\s*/g, " ")
     .trim();
 
-const stamp = (iso) => {
+export const stamp = (iso) => {
   const d = new Date(iso);
   const label = dayLabel(d);
   if (label === "Hoje") return clock(d);

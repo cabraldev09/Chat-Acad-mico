@@ -2176,7 +2176,8 @@ CREATE TABLE public."Tickets" (
     "lastMessageAck" integer DEFAULT 0 NOT NULL,
     "lastMessageType" character varying(255),
     "lastMessageAuthor" character varying(255),
-    "lastMessageAt" timestamp with time zone
+    "lastMessageAt" timestamp with time zone,
+    "waPinned" boolean DEFAULT false NOT NULL
 );
 
 
@@ -2252,6 +2253,44 @@ CREATE SEQUENCE public."Users_id_seq"
 --
 
 ALTER SEQUENCE public."Users_id_seq" OWNED BY public."Users".id;
+
+
+--
+-- Name: WebhookDeliveries; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."WebhookDeliveries" (
+    id integer NOT NULL,
+    "webhookId" integer NOT NULL,
+    payload text NOT NULL,
+    status character varying(16) DEFAULT 'pending'::character varying NOT NULL,
+    attempts integer DEFAULT 0 NOT NULL,
+    "nextAttemptAt" timestamp with time zone NOT NULL,
+    "claimedAt" timestamp with time zone,
+    "lastError" text,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: WebhookDeliveries_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."WebhookDeliveries_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: WebhookDeliveries_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."WebhookDeliveries_id_seq" OWNED BY public."WebhookDeliveries".id;
 
 
 --
@@ -2747,6 +2786,13 @@ ALTER TABLE ONLY public."Tickets" ALTER COLUMN id SET DEFAULT nextval('public."T
 --
 
 ALTER TABLE ONLY public."Users" ALTER COLUMN id SET DEFAULT nextval('public."Users_id_seq"'::regclass);
+
+
+--
+-- Name: WebhookDeliveries id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."WebhookDeliveries" ALTER COLUMN id SET DEFAULT nextval('public."WebhookDeliveries_id_seq"'::regclass);
 
 
 --
@@ -3355,6 +3401,14 @@ ALTER TABLE ONLY public."Users"
 
 
 --
+-- Name: WebhookDeliveries WebhookDeliveries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."WebhookDeliveries"
+    ADD CONSTRAINT "WebhookDeliveries_pkey" PRIMARY KEY (id);
+
+
+--
 -- Name: Webhooks Webhooks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3812,6 +3866,13 @@ CREATE INDEX tickets_user_status_idx ON public."Tickets" USING btree ("userId", 
 --
 
 CREATE INDEX tickets_whatsapp_contact_idx ON public."Tickets" USING btree ("whatsappId", "contactId");
+
+
+--
+-- Name: webhook_deliveries_status_next_attempt_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX webhook_deliveries_status_next_attempt_at ON public."WebhookDeliveries" USING btree (status, "nextAttemptAt");
 
 
 --
@@ -4470,6 +4531,14 @@ ALTER TABLE ONLY public."Users"
 
 
 --
+-- Name: WebhookDeliveries WebhookDeliveries_webhookId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."WebhookDeliveries"
+    ADD CONSTRAINT "WebhookDeliveries_webhookId_fkey" FOREIGN KEY ("webhookId") REFERENCES public."Webhooks"(id) ON DELETE CASCADE;
+
+
+--
 -- Name: Whatsapps Whatsapps_ownerId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4678,6 +4747,12 @@ ALTER TABLE public."UserQueues" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."Users" ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: WebhookDeliveries; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public."WebhookDeliveries" ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: Webhooks; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -4753,6 +4828,7 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261013000004-create-campaigns.js')
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261013000005-create-chatbot-ai.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261014000001-create-crm.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261015000001-create-proposals.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261015144841-webhook-deliveries.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261016000001-crm-admission-cpf-payments.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261017000001-lead-decision-and-extra-semesters.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261018000001-ticket-events-and-hardening.js') ON CONFLICT DO NOTHING;
@@ -4808,6 +4884,7 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261110000002-contact-community-rol
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261110000003-password-resets.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261111000001-analysis.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261111000002-commercial-grades.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261112000001-ticket-wa-pinned.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

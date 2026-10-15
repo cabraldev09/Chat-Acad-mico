@@ -270,6 +270,62 @@ const syncCommunities = async (wbot: Session): Promise<number> => {
   return found;
 };
 
+// What the phone shows, the list shows the same: the chats pinned at the top, and the pictures of the chats that have
+// none yet. Reads the chats once (it is a local read inside WhatsApp Web) and only writes what changed.
+const photoTried = new Map<string, number>();
+const syncChatState = async (wbot: Session, whatsappId: number): Promise<void> => {
+  const chats: any[] = await wbot.getChats();
+  const key = (isGroup: boolean, number: string) => `${isGroup ? "g" : "p"}:${number}`;
+  const pinned = new Set<string>();
+  chats.filter(c => c.pinned && !c.archived && c.id?.user).forEach(c => pinned.add(key(!!c.isGroup, c.id.user)));
+
+  // the phone allows only a few pinned chats: look at those and at what is marked now, never at every ticket of the number
+  const pinnedChats = chats.filter(c => c.pinned && !c.archived && c.id?.user);
+  const pinnedContacts = pinnedChats.length
+    ? await Contact.findAll({ where: { number: { [Op.in]: pinnedChats.map(c => String(c.id.user)) } }, attributes: ["id", "number", "isGroup"] })
+    : [];
+  const shouldBe = pinnedContacts.filter(ct => pinned.has(key(!!ct.isGroup, String(ct.number)))).map(ct => ct.id);
+  const marked = await Ticket.findAll({ where: { whatsappId, isHistorical: false, waPinned: true }, attributes: ["id", "contactId"] });
+  const wanted = shouldBe.length
+    ? await Ticket.findAll({ where: { whatsappId, isHistorical: false, contactId: { [Op.in]: shouldBe } }, attributes: ["id", "waPinned"] })
+    : [];
+  const turnOn: number[] = wanted.filter(t => !t.waPinned).map(t => t.id);
+  const wantedIds = new Set(wanted.map(t => t.id));
+  const turnOff: number[] = marked.filter(t => !wantedIds.has(t.id)).map(t => t.id);
+  if (turnOn.length) await Ticket.update({ waPinned: true }, { where: { id: { [Op.in]: turnOn } } });
+  if (turnOff.length) await Ticket.update({ waPinned: false }, { where: { id: { [Op.in]: turnOff } } });
+  if (turnOn.length || turnOff.length) getIO().emit("ticketPins", { whatsappId, pinned: turnOn, unpinned: turnOff });
+
+  // pictures: the most recent chats first, a few per round, and a chat without a picture is not asked again for hours
+  const recent = [...chats].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)).slice(0, 120).filter(c => c.id?.user);
+  const contacts = await Contact.findAll({
+    where: { number: { [Op.in]: recent.map(c => String(c.id.user)) } },
+    attributes: ["id", "number", "isGroup", "profilePicUrl"]
+  });
+  const missing = new Map<string, Contact>();
+  contacts.forEach(c => { if (!c.getDataValue("profilePicUrl")) missing.set(key(!!c.isGroup, String(c.number)), c); });
+  let asked = 0;
+  for (const chat of recent) {
+    if (asked >= 25) break;
+    const k = key(!!chat.isGroup, String(chat.id.user));
+    const contact = missing.get(k);
+    if (!contact) continue;
+    const last = photoTried.get(`${whatsappId}:${k}`) || 0;
+    if (Date.now() - last < 6 * 3600 * 1000) continue;
+    photoTried.set(`${whatsappId}:${k}`, Date.now());
+    asked += 1;
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const pic = await wbot.getProfilePicUrl(serializedId(chat.id) as string);
+      if (pic) {
+        // eslint-disable-next-line no-await-in-loop
+        await contact.update({ profilePicUrl: pic });
+        getIO().emit("contact", { action: "update", contact });
+      }
+    } catch (e) { /* no picture (privacy) or not reachable now: the placeholder stays */ }
+  }
+};
+
 const communityTimers = new Map<number, NodeJS.Timeout>();
 const scheduleCommunitySync = (wbot: Session, whatsappId: number, delayMs: number): void => {
   const old = communityTimers.get(whatsappId);
@@ -1118,6 +1174,13 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
         if (firstConnection) afterFirstConnection(whatsapp);
         // the communities of this number, a little after WhatsApp Web finished loading and then every 15 minutes
         scheduleCommunitySync(wbot, whatsapp.id, 30000);
+        // the pins and pictures as the phone has them: a little after loading, then every 3 minutes
+        const chatState = () => syncChatState(wbot, whatsapp.id).catch(err => logger.warn(`chat state sync (${whatsapp.id}) failed: ${err}`));
+        setTimeout(chatState, 20000);
+        const stateTimer = setInterval(() => {
+          if (!sessions.some(x => x.id === whatsapp.id)) { clearInterval(stateTimer); return; }
+          chatState();
+        }, 3 * 60 * 1000);
         const again = setInterval(() => {
           if (!sessions.some(x => x.id === whatsapp.id)) { clearInterval(again); return; }
           scheduleCommunitySync(wbot, whatsapp.id, 1000);
