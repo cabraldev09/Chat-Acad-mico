@@ -4,7 +4,7 @@ import { toast } from "react-toastify";
 import { Button, FormControlLabel, InputAdornment, MenuItem, Paper, Switch, TextField, Typography, makeStyles } from "@material-ui/core";
 import {
   ArrowUpRight, BellRing, Bot, Building2, Clock, CreditCard, Eye, EyeOff, FileInput, GraduationCap, KeyRound, ListTree, Plug, Search,
-  Settings2, Tags, Users, Workflow, Zap, Copy, SlidersHorizontal, Bug, Trash2, Mail,
+  Settings2, Tags, Users, Workflow, Zap, Copy, SlidersHorizontal, Bug, Trash2, Mail, Calculator,
 } from "lucide-react";
 
 import MainContainer from "../../components/MainContainer";
@@ -29,6 +29,7 @@ const GROUPS = [
   { id: "captacao", label: "Captação", icon: FileInput, hint: "Formulário público e API" },
   { id: "pagamentos", label: "Pagamentos", icon: CreditCard, hint: "Taxa de matrícula (Efí)", admin: true },
   { id: "cadastros", label: "Cadastros", icon: ListTree, hint: "Conexões, equipe, polos, filas" },
+  { id: "regras", label: "Regras acadêmicas", icon: Calculator, hint: "Vagas extras e semestres nas previsões", admin: true },
   { id: "email", label: "E-mail", icon: Mail, hint: "Conta que envia a recuperação de senha", admin: true },
   { id: "erros", label: "Erros de tela", icon: Bug, hint: "Telas que falharam no navegador de alguém", admin: true },
 ];
@@ -298,6 +299,42 @@ const Cadastros = ({ admin }) => {
   );
 };
 
+// the rules of the academic engine (curricular and academic analysis): how many extra disciplines a semester takes
+const RegrasAcademicas = () => {
+  const classes = useStyles();
+  const [r, setR] = useState(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { api.get("/analysis/rules").then(({ data }) => setR(data)).catch(toastError); }, []);
+  if (!r) return <Typography className={classes.hint}>Carregando...</Typography>;
+  const add = r.additionalSemesterCapacityRule || { type: "SAME_AS_LAST_PERIOD" };
+  const save = async () => {
+    setBusy(true);
+    try { const { data } = await api.put("/analysis/rules", r); setR(data); toast.success("Regras salvas. As próximas análises e recálculos já usam estes valores."); } catch (e) { toastError(e); }
+    setBusy(false);
+  };
+  return (
+    <Paper variant="outlined" className={classes.card}>
+      <div className={classes.cardTitle}>Regras das previsões</div>
+      <div className={classes.hint}>Valem para a análise curricular (previsão de ingresso) e para a análise acadêmica (previsão de formatura). Uma análise já feita só muda quando for recalculada.</div>
+      <div className={classes.row}>
+        <TextField size="small" variant="outlined" type="number" label="Disciplinas extras por semestre" value={r.extraSubjectsAllowed} onChange={(e) => setR({ ...r, extraSubjectsAllowed: e.target.value })} style={{ width: 240 }} InputLabelProps={{ shrink: true }} helperText="Hoje: +3 além das do período" />
+        <TextField size="small" variant="outlined" type="number" label="Máximo de disciplinas por semestre" value={r.maximumSubjectsPerSemester ?? ""} onChange={(e) => setR({ ...r, maximumSubjectsPerSemester: e.target.value === "" ? null : e.target.value })} style={{ width: 260 }} InputLabelProps={{ shrink: true }} helperText="Em branco: sem teto" />
+        <TextField size="small" variant="outlined" type="number" label="Semestres adicionais simulados" value={r.maxAdditionalSemesters} onChange={(e) => setR({ ...r, maxAdditionalSemesters: e.target.value })} style={{ width: 230 }} InputLabelProps={{ shrink: true }} helperText="Limite de segurança" />
+      </div>
+      <div className={classes.row}>
+        <TextField select size="small" variant="outlined" label="Se sobrar pendência depois do último período" value={add.type} onChange={(e) => setR({ ...r, additionalSemesterCapacityRule: e.target.value === "FIXED_VALUE" ? { type: "FIXED_VALUE", value: add.value || 11 } : { type: e.target.value } })} style={{ minWidth: 340 }} InputLabelProps={{ shrink: true }}>
+          <MenuItem value="SAME_AS_LAST_PERIOD">Cria semestres com a mesma capacidade do último período</MenuItem>
+          <MenuItem value="FIXED_VALUE">Cria semestres com um número fixo de disciplinas</MenuItem>
+          <MenuItem value="UNCONFIGURED">Não cria: a previsão fica em aberto com aviso</MenuItem>
+        </TextField>
+        {add.type === "FIXED_VALUE" && <TextField size="small" variant="outlined" type="number" label="Disciplinas por semestre" value={add.value || ""} onChange={(e) => setR({ ...r, additionalSemesterCapacityRule: { type: "FIXED_VALUE", value: e.target.value } })} style={{ width: 200 }} InputLabelProps={{ shrink: true }} />}
+        <FormControlLabel control={<Switch color="primary" checked={!!r.reviewCountsAsPending} onChange={(e) => setR({ ...r, reviewCountsAsPending: e.target.checked })} />} label="Disciplina “a revisar” conta como pendente" />
+      </div>
+      <div><Button variant="contained" color="primary" onClick={save} disabled={busy}>Salvar</Button></div>
+    </Paper>
+  );
+};
+
 // the e-mail account the system sends from ("Esqueci minha senha"). The password is typed here and never comes back.
 const Email = () => {
   const classes = useStyles();
@@ -446,6 +483,7 @@ const SettingsHub = () => {
                 {current.id === "captacao" && <Capture s={crm.s} setS={crm.setS} save={crm.save} />}
                 {current.id === "pagamentos" && admin && <Pagamentos />}
                 {current.id === "cadastros" && <Cadastros admin={admin} />}
+                {current.id === "regras" && admin && <RegrasAcademicas />}
                 {current.id === "email" && admin && <Email />}
                 {current.id === "erros" && admin && <ErrosDeTela />}
               </>
