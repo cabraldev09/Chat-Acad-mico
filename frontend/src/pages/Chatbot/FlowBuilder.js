@@ -279,7 +279,7 @@ const Builder = () => {
           ])}
         </Menu>
         <Button size="small" variant="outlined" className={classes.onlyNarrow} startIcon={<PanelRight size={15} />} onClick={() => setSideOpen((v) => !v)}>Painel</Button>
-        <Button size="small" variant="outlined" startIcon={<LayoutTemplate size={15} />} onClick={() => { setNodes((ns) => arrange(ns, edges)); setDirty(true); setTimeout(() => rf && rf.setTransform({ x: 40, y: 70, zoom: 0.85 }), 50); }}>Organizar</Button>
+        <Button size="small" variant="outlined" startIcon={<LayoutTemplate size={15} />} onClick={() => { setNodes((ns) => arrange(ns, edges)); setDirty(true); setTimeout(() => rf && rf.setViewport({ x: 40, y: 70, zoom: 0.85 }), 50); }}>Organizar</Button>
         <Button size="small" variant={showStats ? "contained" : "outlined"} startIcon={<BarChart3 size={15} />} onClick={() => setShowStats((v) => !v)}>Números</Button>
         <Button size="small" variant="outlined" startIcon={<Play size={15} />} onClick={() => { setTab(2); setSideOpen(true); }}>Testar</Button>
         <Button size="small" variant="outlined" startIcon={<Save size={15} />} onClick={() => save()} disabled={busy || !dirty}>Salvar rascunho</Button>
@@ -305,7 +305,7 @@ const Builder = () => {
         <div className={classes.canvas} ref={wrapper} onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }} onDrop={onDrop}>
           <ReactFlow
             nodes={shownNodes} edges={edges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onInit={(inst) => { setRf(inst); // starts readable, at the start block; the controls fit the whole flow
-              inst.setTransform({ x: 40, y: 70, zoom: 0.85 }); }} minZoom={0.2} maxZoom={1.6} deleteKeyCode={["Backspace", "Delete"]}
+              inst.setViewport({ x: 40, y: 70, zoom: 0.85 }); }} minZoom={0.2} maxZoom={1.6} deleteKeyCode={["Backspace", "Delete"]}
             onPaneClick={() => setSelected(null)} defaultEdgeOptions={{ type: "smoothstep", markerEnd: { type: MarkerType.ArrowClosed } }}
           >
             <Background gap={22} size={1.4} color="rgba(127,140,160,.35)" />

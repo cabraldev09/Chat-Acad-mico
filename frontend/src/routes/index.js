@@ -133,7 +133,7 @@ const Routes = () => {
                 <Route exact path="/configuracoes" component={SettingsHub} isPrivate managerOnly />
                 <Route exact path="/crm/metas" component={Goals} isPrivate managerOnly />
                 <Route exact path="/crm/metas-polos" component={PoloGoals} isPrivate />
-                <Route exact path="/afiliados" component={Affiliates} isPrivate />
+                <Route exact path="/afiliados" component={Affiliates} isPrivate salesOnly />
                 <Route exact path="/grades" component={Grades} isPrivate />
                 <Route exact path="/analise-curricular/:id?" component={CurricularAnalysis} isPrivate />
                 <Route exact path="/analise-academica/:id?" component={AcademicAnalysis} isPrivate academicOnly />

@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 import iconMap from "./src/icons/map.js";
 
 // Serve every `@material-ui/icons/<Name>` import (and the barrel) from Lucide.
@@ -46,6 +47,8 @@ export default wrap(I);`;
 
 export default defineConfig({
   plugins: [
+    // the screens ported from the original analysis system use its Tailwind classes (see src/styles/orig.css)
+    tailwindcss(),
     lucideForMaterialIcons(),
     react({
       jsxRuntime: "classic",

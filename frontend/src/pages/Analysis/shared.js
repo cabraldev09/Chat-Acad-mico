@@ -60,3 +60,5 @@ export const Kpi = ({ value, label, tone }) => {
 };
 
 export const hours = (n) => (n || n === 0 ? `${Number(n).toLocaleString("pt-BR")} h` : "—");
+
+export const initialsOf = (name) => (String(name || "?").trim().split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]).join("") || "?").toUpperCase();

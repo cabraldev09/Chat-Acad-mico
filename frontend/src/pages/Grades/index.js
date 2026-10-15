@@ -1,76 +1,105 @@
-import React, { useCallback, useContext, useEffect, useRef, useState } from "react";
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "react-toastify";
-import {
-  Button, Checkbox, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, IconButton, InputAdornment, MenuItem,
-  Paper, TextField, Tooltip, Typography,
-} from "@material-ui/core";
-import { AlertTriangle, ClipboardCopy, FileText, GraduationCap, Search, Send, Trash2, Upload } from "lucide-react";
+import { Briefcase, ChevronDown, ClipboardCopy, Download, FileText, Filter, GraduationCap, Route, Search, Send, ShieldCheck, SlidersHorizontal, Trash2, X } from "lucide-react";
 
-import MainContainer from "../../components/MainContainer";
-import MainHeader from "../../components/MainHeader";
-import MainHeaderButtonsWrapper from "../../components/MainHeaderButtonsWrapper";
-import Title from "../../components/Title";
 import { AuthContext } from "../../context/Auth/AuthContext";
 import { isManager } from "../../utils/access";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
-import { copyText, errorText, hours, openPdf, useShared } from "../Analysis/shared";
+import { copyText, errorText, openPdf } from "../Analysis/shared";
+import { Button, Card, CardContent, CardHeader, CardTitle, Input, cn } from "../Analysis/orig";
 
-// "Grades": the matrices of the courses. The commercial team finds a course, copies the summary or sends the PDF to
-// the candidate in the conversation; the management publishes and updates the matrices.
+// "Grades": the matrices of the courses, in the look of the original ("Grades comerciais"). The commercial team finds a
+// course, copies the summary or sends the PDF to the candidate in the conversation; the management publishes them.
 
+const selectClass = "h-10 w-full appearance-none rounded-md border bg-background px-3 pr-10 text-sm text-foreground outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring";
+
+const SelectField = ({ label, value, onChange, emptyLabel, options }) => (
+  <label className="grid gap-1 text-xs font-medium text-muted-foreground">{label}
+    <span className="relative block">
+      <select value={value} onChange={(e) => onChange(e.target.value)} className={selectClass}>
+        <option value="">{emptyLabel}</option>
+        {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+      <ChevronDown aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+    </span>
+  </label>
+);
+
+const Modal = ({ title, description, children, onClose }) => (
+  <div role="dialog" aria-modal="true" aria-label={title} className="orig fixed inset-0 z-[1300] grid place-items-center p-4">
+    <button type="button" aria-label="Fechar" onClick={onClose} className="absolute inset-0 bg-black/40" />
+    <div className="relative w-full max-w-md space-y-3 rounded-2xl bg-white p-5 shadow-xl">
+      <div><h2 className="text-base font-semibold text-slate-900">{title}</h2>{description && <p className="mt-1 text-sm text-slate-500">{description}</p>}</div>
+      {children}
+    </div>
+  </div>
+);
+
+// choose the contact (not a conversation): the open conversation of the person is used, or one is opened
 const SendDialog = ({ grade, onClose }) => {
-  const [tickets, setTickets] = useState(null);
-  const [ticketId, setTicketId] = useState("");
+  const [options, setOptions] = useState([]);
+  const [contact, setContact] = useState(null);
+  const [text, setText] = useState("");
+  const [loading, setLoading] = useState(false);
   const [summary, setSummary] = useState(true);
   const [pdf, setPdf] = useState(true);
   const [busy, setBusy] = useState(false);
 
+  useEffect(() => { if (grade) { setContact(null); setText(""); setOptions([]); } }, [grade]);
   useEffect(() => {
-    if (!grade) return;
-    setTicketId("");
-    setTickets(null);
-    Promise.all(["open", "pending"].map((status) => api.get("/tickets", { params: { status, showAll: "false", groups: "exclude" } })))
-      .then(([a, b]) => setTickets([...a.data.tickets, ...b.data.tickets]))
-      .catch((e) => { toastError(e); setTickets([]); });
-  }, [grade]);
+    if (!grade) return undefined;
+    setLoading(true);
+    const t = setTimeout(() => {
+      api.get("/contacts", { params: { searchParam: text.trim(), pageNumber: 1 } })
+        .then(({ data }) => setOptions((data.contacts || []).filter((c) => !c.isGroup)))
+        .catch(() => setOptions([]))
+        .finally(() => setLoading(false));
+    }, 300);
+    return () => clearTimeout(t);
+  }, [text, grade]);
 
+  if (!grade) return null;
   const send = async () => {
     setBusy(true);
     try {
-      await api.post(`/grades/${grade.id}/send`, { ticketId: Number(ticketId), summary, pdf });
-      toast.success("Grade enviada na conversa.");
+      await api.post(`/grades/${grade.id}/send`, { contactId: contact.id, summary, pdf });
+      toast.success(`Grade enviada para ${contact.name}.`);
       onClose();
     } catch (e) { toastError(e); }
     setBusy(false);
   };
 
   return (
-    <Dialog open={!!grade} onClose={onClose} maxWidth="xs" fullWidth>
-      <DialogTitle>Enviar na conversa</DialogTitle>
-      <DialogContent>
-        <Typography variant="body2" color="textSecondary" gutterBottom>{grade && grade.courseName}</Typography>
-        {tickets === null ? <CircularProgress size={22} /> : (
-          <TextField select fullWidth size="small" variant="outlined" margin="dense" label="Conversa" value={ticketId} onChange={(e) => setTicketId(e.target.value)} InputLabelProps={{ shrink: true }}
-            helperText={tickets.length ? "" : "Nenhuma conversa aberta. Abra a conversa do candidato primeiro."}>
-            {tickets.map((t) => <MenuItem key={t.id} value={t.id}>{t.contact.name}</MenuItem>)}
-          </TextField>
-        )}
-        <div style={{ display: "grid" }}>
-          <FormControlLabel control={<Checkbox color="primary" checked={summary} onChange={(e) => setSummary(e.target.checked)} />} label="Mensagem com o resumo da grade" />
-          <FormControlLabel control={<Checkbox color="primary" checked={pdf} onChange={(e) => setPdf(e.target.checked)} />} label="PDF da matriz" />
+    <Modal title="Enviar para um contato" description={grade.courseName} onClose={onClose}>
+      {contact ? (
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-sky-200 bg-sky-50/80 p-3 text-sm">
+          <span className="min-w-0"><strong className="block truncate">{contact.name}</strong><span className="text-xs text-slate-500">{contact.number}</span></span>
+          <button type="button" aria-label="Trocar o contato" onClick={() => setContact(null)} className="grid size-8 place-items-center rounded-lg text-slate-500 hover:bg-white"><X className="size-4" /></button>
         </div>
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose} variant="outlined" color="secondary">Cancelar</Button>
-        <Button onClick={send} variant="contained" color="primary" disabled={busy || !ticketId || (!summary && !pdf)}>{busy ? <CircularProgress size={18} /> : "Enviar"}</Button>
-      </DialogActions>
-    </Dialog>
+      ) : (
+        <div>
+          <span className="relative block"><Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" /><Input autoFocus value={text} onChange={(e) => setText(e.target.value)} placeholder="Digite o nome ou o telefone" className="h-10 bg-white pl-9" /></span>
+          <ul className="mt-2 max-h-56 overflow-y-auto rounded-xl border bg-white">
+            {loading && <li className="px-3 py-3 text-sm text-slate-500">Buscando…</li>}
+            {!loading && options.length === 0 && <li className="px-3 py-3 text-sm text-slate-500">{text.trim() ? "Nenhum contato encontrado." : "Digite o nome ou o telefone."}</li>}
+            {options.map((c) => (
+              <li key={c.id}><button type="button" onClick={() => setContact(c)} className="flex w-full items-center justify-between gap-3 border-b px-3 py-2.5 text-left text-sm last:border-0 hover:bg-muted/60"><span className="min-w-0 truncate font-medium">{c.name}</span><span className="shrink-0 text-xs text-slate-500">{c.number}</span></button></li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <p className="text-xs text-slate-500">Se o contato já tem uma conversa aberta, o envio vai nela. Se não tem, abrimos uma conversa para você.</p>
+      <div className="grid gap-2 text-sm">
+        <label className="flex items-center gap-2"><input type="checkbox" checked={summary} onChange={(e) => setSummary(e.target.checked)} className="size-4 accent-[#003B71]" style={{ appearance: "auto" }} />Mensagem com o resumo da grade</label>
+        <label className="flex items-center gap-2"><input type="checkbox" checked={pdf} onChange={(e) => setPdf(e.target.checked)} className="size-4 accent-[#003B71]" style={{ appearance: "auto" }} />PDF da matriz</label>
+      </div>
+      <div className="flex justify-end gap-2"><Button variant="outline" onClick={onClose}>Cancelar</Button><Button onClick={send} disabled={busy || !contact || (!summary && !pdf)}>{busy ? "Enviando…" : "Enviar"}</Button></div>
+    </Modal>
   );
 };
 
 const GradeCard = ({ g, manager, onSend, onDelete }) => {
-  const c = useShared();
   const [busy, setBusy] = useState(false);
   const copy = async () => {
     setBusy(true);
@@ -80,41 +109,67 @@ const GradeCard = ({ g, manager, onSend, onDelete }) => {
     } catch (e) { toastError(e); }
     setBusy(false);
   };
+  const hasInternship = Boolean(g.internshipInfo);
+  const tracks = g.courseTracks || [];
+  const decisionSemester = tracks.map((t) => t.decisionSemester).find(Boolean);
   return (
-    <Paper variant="outlined" className={c.card}>
-      <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-        <Typography style={{ fontWeight: 700, fontSize: 15, lineHeight: 1.3, flex: 1 }}>{g.courseName}</Typography>
-        {!g.complete && <Tooltip title="O PDF não trouxe todos os dados (curso, carga horária ou duração). Confira antes de enviar."><span><AlertTriangle size={17} color="#d97706" /></span></Tooltip>}
-      </div>
-      <div className={c.row}>
-        {g.degree && <span className={c.chip}>{g.degree}</span>}
-        {g.modality && <span className={c.chip}>{g.modality}</span>}
-        {g.curriculumTerm && <span className={c.chip}>Matriz {g.curriculumTerm}</span>}
-        {g.knowledgeArea && <span className={c.chip}>{g.knowledgeArea}</span>}
-      </div>
-      <div className={c.muted} style={{ display: "grid", gap: 2 }}>
-        <span>Duração: {g.durationSemesters ? `${g.durationSemesters} semestres` : "—"} · Carga total: {hours(g.totalCourseHours)}</span>
-        <span>Estágio: {g.totalInternshipHours ? hours(g.totalInternshipHours) : "sem estágio obrigatório"} · TCC: {g.hasTcc ? "sim" : "não"}</span>
-      </div>
-      <div className={c.row} style={{ marginTop: 4 }}>
-        <Button size="small" variant="contained" color="primary" startIcon={<Send size={15} />} onClick={() => onSend(g)}>Enviar</Button>
-        <Button size="small" variant="outlined" startIcon={<ClipboardCopy size={15} />} onClick={copy} disabled={busy}>Copiar resumo</Button>
-        <Button size="small" variant="outlined" startIcon={<FileText size={15} />} onClick={() => openPdf(`/grades/${g.id}/file`)}>PDF</Button>
-        <span style={{ flex: 1 }} />
-        {manager && <IconButton size="small" aria-label="Excluir a grade" onClick={() => onDelete(g)}><Trash2 size={16} /></IconButton>}
-      </div>
-    </Paper>
+    <Card className="flex h-full min-h-[25rem] flex-col overflow-hidden shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md">
+      <CardHeader className="min-h-24">
+        <CardTitle className="flex items-start gap-2 text-base">
+          <GraduationCap className="mt-0.5 size-4 shrink-0 text-brand-cyan-700" />
+          <span className="line-clamp-2">{g.courseName}</span>
+        </CardTitle>
+        <p className="text-xs text-muted-foreground">{[g.modality, g.curriculumTerm && `Matriz ${g.curriculumTerm}`].filter(Boolean).join(" · ") || "Modalidade não informada"}</p>
+      </CardHeader>
+      <CardContent className="flex flex-1 flex-col space-y-3 text-sm">
+        <div className="flex flex-wrap gap-2">
+          <span className={cn("rounded-full px-2 py-1 text-xs font-medium", g.hasTcc ? "bg-status-success-bg text-status-success" : "bg-muted text-muted-foreground")}>{g.hasTcc ? "Possui TCC" : "Sem TCC informado"}</span>
+          <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs font-medium", hasInternship ? "bg-brand-cyan-50 text-brand-cyan-700" : "bg-status-warning-bg text-status-warning")}>
+            <Briefcase className="size-3" />
+            {hasInternship ? (g.totalInternshipHours ? `${g.totalInternshipHours.toLocaleString("pt-BR")}h de estágio` : "Possui estágio obrigatório") : "Não tem estágio obrigatório"}
+          </span>
+          <span className="rounded-full bg-muted px-2 py-1 text-xs"><FileText className="mr-1 inline size-3" /> PDF</span>
+          {!g.complete && <span title="O PDF não trouxe todos os dados (curso, carga horária ou duração). Confira antes de enviar." className="rounded-full bg-status-warning-bg px-2 py-1 text-xs font-medium text-status-warning">Conferir dados</span>}
+        </div>
+        {(g.degree || g.knowledgeArea || g.durationSemesters) && (
+          <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+            <span>{g.degree || "Grau não identificado"}</span>
+            {g.knowledgeArea && <span>• {g.knowledgeArea}</span>}
+            {g.durationSemesters && <span>• {g.durationSemesters} semestres</span>}
+          </div>
+        )}
+        {tracks.length > 1 && (
+          <div className="rounded-lg border border-brand-cyan/30 bg-brand-cyan-50/60 p-3">
+            <div className="flex items-center gap-2 font-medium text-brand-navy"><Route className="size-4" /> Duas formações disponíveis</div>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">{decisionSemester ? `O aluno define entre Bacharelado e Licenciatura no ${decisionSemester}º semestre.` : "O PDF apresenta Bacharelado e Licenciatura."}</p>
+          </div>
+        )}
+        <div className="line-clamp-3 min-h-[4.5rem] whitespace-pre-line text-sm leading-6 text-muted-foreground">{g.internshipInfo || "Esta matriz não prevê estágio obrigatório."}</div>
+        {g.totalCourseHours ? <p className="text-xs text-muted-foreground">Carga horária total: {g.totalCourseHours.toLocaleString("pt-BR")}h.</p> : null}
+        <div className="mt-auto space-y-3 pt-2">
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={() => onSend(g)} className="h-9 gap-2 px-3"><Send className="size-4" /> Enviar ao contato</Button>
+            <Button variant="outline" onClick={copy} disabled={busy} className="h-9 gap-2 px-3"><ClipboardCopy className="size-4" /> Copiar resumo</Button>
+          </div>
+          <div className="border-t pt-3 text-xs text-muted-foreground">Atualizada em {new Date(g.updatedAt).toLocaleString("pt-BR")}</div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="button" onClick={() => openPdf(`/grades/${g.id}/file`)} className="inline-flex h-9 items-center gap-2 rounded-md bg-brand-navy px-3 text-sm font-medium text-white transition-opacity hover:opacity-90"><Download className="size-4" /> Baixar PDF</button>
+            {manager && <Button variant="ghost" onClick={() => onDelete(g)} className="h-9 gap-1.5 px-2 text-status-danger hover:bg-status-danger-bg"><Trash2 className="size-4" /> Excluir</Button>}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 };
 
 const Grades = () => {
-  const c = useShared();
   const { user } = useContext(AuthContext);
   const manager = isManager(user);
   const [data, setData] = useState(null);
   const [search, setSearch] = useState("");
   const [degree, setDegree] = useState("");
   const [area, setArea] = useState("");
+  const [duration, setDuration] = useState("");
   const [sendFor, setSendFor] = useState(null);
   const [delFor, setDelFor] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -147,7 +202,6 @@ const Grades = () => {
     setBusy(false);
     if (fileInput.current) fileInput.current.value = "";
   };
-
   const importDefaults = async () => {
     setBusy(true);
     try {
@@ -157,60 +211,72 @@ const Grades = () => {
     } catch (e) { toastError(e); }
     setBusy(false);
   };
-
   const remove = async () => {
     try { await api.delete(`/grades/${delFor.id}`); toast.success("Grade excluída."); setDelFor(null); load(); } catch (e) { toastError(e); }
   };
 
+  const durations = useMemo(() => [...new Set((data ? data.grades : []).map((g) => g.durationSemesters).filter(Boolean))].sort((a, b) => a - b), [data]);
+  const visible = (data ? data.grades : []).filter((g) => !duration || g.durationSemesters === Number(duration));
+  const active = Boolean(degree || area || duration);
+
   return (
-    <MainContainer>
-      <MainHeader>
-        <Title>Grades</Title>
-        <MainHeaderButtonsWrapper>
-          <TextField size="small" variant="outlined" placeholder="Buscar curso, área ou tipo" value={search} onChange={(e) => setSearch(e.target.value)} style={{ minWidth: 240 }}
-            InputProps={{ startAdornment: <InputAdornment position="start"><Search size={16} /></InputAdornment> }} />
-          {manager && (
-            <>
-              <input ref={fileInput} type="file" accept="application/pdf,.pdf" multiple hidden onChange={(e) => upload(e.target.files)} />
-              <Button variant="contained" color="primary" startIcon={busy ? <CircularProgress size={16} color="inherit" /> : <Upload size={16} />} disabled={busy} onClick={() => fileInput.current && fileInput.current.click()}>Enviar grades (PDF)</Button>
-              <Button variant="outlined" disabled={busy} onClick={importDefaults}>Importar grades padrão</Button>
-            </>
-          )}
-        </MainHeaderButtonsWrapper>
-      </MainHeader>
-      <div className={c.body}>
-        <div className={c.row} style={{ marginBottom: 12 }}>
-          <TextField select size="small" variant="outlined" label="Tipo" value={degree} onChange={(e) => setDegree(e.target.value)} style={{ minWidth: 170 }} InputLabelProps={{ shrink: true }}>
-            <MenuItem value="">Todos</MenuItem>
-            {(data ? data.degrees : []).map((d) => <MenuItem key={d} value={d}>{d}</MenuItem>)}
-          </TextField>
-          <TextField select size="small" variant="outlined" label="Área" value={area} onChange={(e) => setArea(e.target.value)} style={{ minWidth: 200 }} InputLabelProps={{ shrink: true }}>
-            <MenuItem value="">Todas</MenuItem>
-            {(data ? data.areas : []).map((d) => <MenuItem key={d} value={d}>{d}</MenuItem>)}
-          </TextField>
-          <span className={c.muted}>{data ? `${data.grades.length} grade(s)` : ""}</span>
+    <div className="orig mx-auto w-full max-w-[1440px] flex-1 overflow-y-auto p-4 pb-10 sm:p-6" style={{ minHeight: 0 }}>
+      <div className="mb-6 flex animate-blur-fade flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <div className="min-w-0 flex-1 space-y-1">
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-brand-cyan-700"><span aria-hidden="true" className="h-px w-6 bg-gradient-to-r from-brand-cyan to-transparent" />Material comercial</div>
+          <h1 className="break-words bg-gradient-to-r from-[#003B71] via-[#0a5a9a] to-[#0693e3] bg-clip-text text-2xl font-semibold tracking-tight text-transparent sm:text-3xl">Grades curriculares</h1>
+          <p className="max-w-2xl text-sm text-muted-foreground">Biblioteca de PDFs com informações objetivas para orientar a conversa e o envio ao candidato.</p>
         </div>
-        {!data ? <CircularProgress size={26} /> : data.grades.length === 0 ? (
-          <Paper variant="outlined" className={c.card} style={{ maxWidth: 560 }}>
-            <div className={c.row}><GraduationCap size={22} /><Typography style={{ fontWeight: 700 }}>Nenhuma grade encontrada</Typography></div>
-            <Typography variant="body2" color="textSecondary">{manager ? "Envie os PDFs das matrizes curriculares (vários de uma vez) ou use “Importar grades padrão”." : "Peça à coordenação para publicar as matrizes."}</Typography>
-          </Paper>
-        ) : (
-          <div className={c.grid}>
-            {data.grades.map((g) => <GradeCard key={g.id} g={g} manager={manager} onSend={setSendFor} onDelete={setDelFor} />)}
-          </div>
-        )}
       </div>
+
+      {manager && (
+        <Card className="mb-6 shadow-sm">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base"><ShieldCheck className="size-4 text-brand-cyan-700" /> Anexar uma matriz curricular</CardTitle>
+            <p className="text-sm text-muted-foreground">Envie o PDF da matriz (vários de uma vez, se quiser). O sistema lê grau, área, duração, estágios e TCC e confere com o documento.</p>
+          </CardHeader>
+          <CardContent className="flex flex-wrap items-center gap-2">
+            <input ref={fileInput} type="file" accept="application/pdf,.pdf" multiple className="hidden" onChange={(e) => upload(e.target.files)} />
+            <Button className="h-9 px-3" disabled={busy} onClick={() => fileInput.current && fileInput.current.click()}>{busy ? "Lendo os PDFs…" : "Enviar grades (PDF)"}</Button>
+            <Button variant="outline" className="h-9 px-3" disabled={busy} onClick={importDefaults}>Importar grades padrão</Button>
+          </CardContent>
+        </Card>
+      )}
+
+      <div className="relative mb-4">
+        <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar curso, área ou tipo" className="h-11 bg-card pl-9" />
+      </div>
+
+      <div className="mb-6 rounded-xl border bg-card p-4 shadow-sm">
+        <div className="mb-3 flex items-center gap-2 text-sm font-medium"><SlidersHorizontal className="size-4 text-brand-cyan-700" /> Organizar catálogo</div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <SelectField label="Grau" value={degree} onChange={setDegree} emptyLabel="Todos os graus" options={(data ? data.degrees : []).map((d) => ({ value: d, label: d }))} />
+          <SelectField label="Área" value={area} onChange={setArea} emptyLabel="Todas as áreas" options={(data ? data.areas : []).map((d) => ({ value: d, label: d }))} />
+          <SelectField label="Duração" value={duration} onChange={setDuration} emptyLabel="Todas as durações" options={durations.map((d) => ({ value: String(d), label: `${d} semestres` }))} />
+          <div className="flex items-end gap-2">
+            <Button className="h-8 flex-1" onClick={load}><Filter className="mr-1.5 size-4" /> Filtrar</Button>
+            {(active || search) && <Button variant="ghost" className="h-8" onClick={() => { setSearch(""); setDegree(""); setArea(""); setDuration(""); }}><X className="mr-1 size-4" /> Limpar</Button>}
+          </div>
+        </div>
+      </div>
+
+      <p className="mb-4 text-sm text-muted-foreground">{visible.length} {visible.length === 1 ? "grade encontrada" : "grades encontradas"}{search || active ? " com os filtros atuais." : "."}</p>
+      {!data ? <p className="text-sm text-muted-foreground">Carregando…</p> : (
+        <div className="grid items-start gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {visible.length === 0 ? (
+            <Card className="md:col-span-2 xl:col-span-3"><CardContent className="py-12 text-center text-sm text-muted-foreground">{manager && !search && !active ? "Nenhuma grade ainda. Envie os PDFs das matrizes ou use “Importar grades padrão”." : "Nenhuma grade corresponde aos filtros selecionados."}</CardContent></Card>
+          ) : visible.map((g) => <GradeCard key={g.id} g={g} manager={manager} onSend={setSendFor} onDelete={setDelFor} />)}
+        </div>
+      )}
+
       <SendDialog grade={sendFor} onClose={() => setSendFor(null)} />
-      <Dialog open={!!delFor} onClose={() => setDelFor(null)} maxWidth="xs" fullWidth>
-        <DialogTitle>Excluir a grade?</DialogTitle>
-        <DialogContent><Typography variant="body2">“{delFor && delFor.courseName}” e o PDF dela saem do catálogo. Para trazer de volta é preciso enviar o PDF de novo.</Typography></DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDelFor(null)} variant="outlined" color="secondary">Cancelar</Button>
-          <Button onClick={remove} variant="contained" color="primary">Excluir</Button>
-        </DialogActions>
-      </Dialog>
-    </MainContainer>
+      {delFor && (
+        <Modal title="Excluir a grade?" description={`“${delFor.courseName}” e o PDF dela saem do catálogo. Para trazer de volta é preciso enviar o PDF de novo.`} onClose={() => setDelFor(null)}>
+          <div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setDelFor(null)}>Cancelar</Button><Button onClick={remove}>Excluir</Button></div>
+        </Modal>
+      )}
+    </div>
   );
 };
 
