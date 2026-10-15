@@ -43,7 +43,10 @@ module.exports = {
   ...fromUrl(process.env.DATABASE_URL_POOL || process.env.DATABASE_URL),
   lock: fromUrl(process.env.DATABASE_URL),
   dialectOptions: useSsl
-    ? { ssl: { require: true, rejectUnauthorized: true, ...(process.env.DB_SSL_CA ? { ca: require("fs").readFileSync(process.env.DB_SSL_CA, "utf8") } : {}) } }
+    // The connection is always encrypted. The certificate is verified only when its authority is provided (DB_SSL_CA) or
+    // DB_SSL_STRICT=true: Supabase's pooler certificate is not in Node's default list and a strict check stops the API
+    // from starting ("self-signed certificate in certificate chain").
+    ? { ssl: { require: true, rejectUnauthorized: !!process.env.DB_SSL_CA || process.env.DB_SSL_STRICT === "true", ...(process.env.DB_SSL_CA ? { ca: require("fs").readFileSync(process.env.DB_SSL_CA, "utf8") } : {}) } }
     : {},
   // Supabase offers two poolers: "session" (port 5432) allows only ~15 connections for the whole project, and a deploy
   // briefly runs two copies of the API, so the pool stays small there. "Transaction" (port 6543) serves many clients
