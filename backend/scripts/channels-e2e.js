@@ -2146,6 +2146,27 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.put(`/contacts/${person}/community`, { community: true }, auth())).status === 400, "a person was marked as a community");
       assert((await http.put(`/contacts/${comm.c}/community`, { community: false }, auth())).status === 200 && (await list({ groups: "only" })).includes(comm.t), "unmark");
     });
+    await test("communities like WhatsApp Web: the community with its announcements group and the groups inside, unread totals", async () => {
+      const mk = (name, number, role, communityId, unread) => {
+        const c = sql(`INSERT INTO Contacts (name, number, email, isGroup, channel, kind, communityRole, communityId, parentGroupId, createdAt, updatedAt) VALUES ('${name}', '${number}', '', true, 'telegram', '${role === "member" ? "group" : "community"}', '${role}', ${communityId ? `'${communityId}'` : "NULL"}, ${communityId && role !== "parent" ? `'${communityId}'` : "NULL"}, NOW(), NOW()) RETURNING id`).split("\n")[0];
+        if (role === "parent") return { c };
+        const t = sql(`INSERT INTO Tickets (status, contactId, whatsappId, unreadMessages, isGroup, segment, isHistorical, lastMessage, lastMessageAt, createdAt, updatedAt) VALUES ('open', ${c}, ${tgId}, ${unread}, true, 'sales', false, 'aviso', NOW(), NOW(), NOW()) RETURNING id`).split("\n")[0];
+        return { c, t };
+      };
+      mk("Comunidade Polo PVH", "120363000000000001", "parent", "120363000000000001@g.us", 0);
+      const avisos = mk("Avisos Polo PVH", "120363000000000002", "announcement", "120363000000000001@g.us", 2);
+      const turma = mk("Turma 2026", "120363000000000003", "member", "120363000000000001@g.us", 3);
+      const r = await http.get("/communities", auth());
+      assert(r.status === 200, `communities ${r.status}`);
+      const c = r.data.communities.find(x => x.name === "Comunidade Polo PVH");
+      assert(c && c.announcement && String(c.announcement.ticketId) === avisos.t && c.announcement.readOnly === false, `announcement ${JSON.stringify(c)}`);
+      assert(c.groups.length === 1 && String(c.groups[0].ticketId) === turma.t && c.groups[0].unread === 3 && c.unread === 5, `groups/unread ${JSON.stringify(c)}`);
+      // an ordinary group stays in Grupos, the announcement does not
+      const ids = x => x.data.tickets.map(t => String(t.id));
+      const groupsOnly = ids(await http.get("/tickets", { ...auth(), params: { showAll: "true", historical: "all", groups: "only" } }));
+      assert(groupsOnly.includes(turma.t) && !groupsOnly.includes(avisos.t), "the announcement group must not show in Grupos");
+      assert((await http.get("/communities")).status === 401, "communities without login");
+    });
     await test("connection health: state, since when, what it did today; each person sees only their own numbers", async () => {
       const h = await http.get("/whatsapp-health", auth());
       assert(h.status === 200 && h.data.length >= 2, `health ${h.status} ${h.data.length}`);

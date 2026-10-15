@@ -342,9 +342,10 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
   });
   useEffect(() => {
     if (!picked) return undefined;
-    const onKey = (e) => e.key === "Escape" && setPicked(null);
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
+    // Esc leaves the selection only: it must not also close the conversation (the header listens for the same key)
+    const onKey = (e) => { if (e.key === "Escape") { e.preventDefault(); setPicked(null); } };
+    document.addEventListener("keydown", onKey, true);
+    return () => document.removeEventListener("keydown", onKey, true);
   }, [picked]);
   useEffect(() => { setPicked(null); }, [ticketId]);
   const [anchorEl, setAnchorEl] = useState(null);

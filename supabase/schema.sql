@@ -864,7 +864,9 @@ CREATE TABLE public."Contacts" (
     kind character varying(255) DEFAULT 'person'::character varying NOT NULL,
     "noReply" boolean DEFAULT false NOT NULL,
     "parentGroupId" character varying(255),
-    "readOnly" boolean DEFAULT false NOT NULL
+    "readOnly" boolean DEFAULT false NOT NULL,
+    "communityRole" character varying(20),
+    "communityId" character varying(255)
 );
 
 
@@ -3116,6 +3118,13 @@ CREATE INDEX client_errors_created_at ON public."ClientErrors" USING btree ("cre
 
 
 --
+-- Name: contacts_community_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX contacts_community_id_idx ON public."Contacts" USING btree ("communityId") WHERE ("communityId" IS NOT NULL);
+
+
+--
 -- Name: contacts_is_staff_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4319,6 +4328,7 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261107000001-chat-flows.js') ON CO
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261108000001-whatsapp-status-since.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261109000001-ai-agent-functions.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261110000001-client-errors.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261110000002-contact-community-role.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

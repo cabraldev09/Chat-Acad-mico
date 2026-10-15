@@ -35,7 +35,7 @@ export interface ContactPayload {
   profilePicUrl?: string;
   isGroup: boolean;
   // set for groups when WhatsApp tells they belong to a community
-  community?: { kind: "community" | "group"; parentGroupId?: string | null; readOnly?: boolean };
+  community?: { kind: "community" | "group"; role?: "parent" | "announcement" | "member"; communityId?: string | null; parentGroupId?: string | null; readOnly?: boolean };
 }
 
 export interface MessagePayload {

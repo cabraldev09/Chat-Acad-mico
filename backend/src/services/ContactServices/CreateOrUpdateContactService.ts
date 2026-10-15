@@ -23,6 +23,8 @@ interface Request {
 
 export interface CommunityInfo {
   kind: "community" | "group";
+  role?: "parent" | "announcement" | "member";
+  communityId?: string | null;
   parentGroupId?: string | null;
   readOnly?: boolean;
 }
@@ -79,7 +81,7 @@ const CreateOrUpdateContactService = async ({
   }
 
   // community info detected from WhatsApp; a person who marked the group by hand keeps their choice
-  const communityFields = isGroup && community ? { kind: community.kind, parentGroupId: community.parentGroupId || null, readOnly: !!community.readOnly } : {};
+  const communityFields = isGroup && community ? { kind: community.kind, parentGroupId: community.parentGroupId || null, communityRole: community.role || null, communityId: community.communityId || community.parentGroupId || null, readOnly: !!community.readOnly } : {};
 
   if (contactByNumber) {
     await contactByNumber.update({

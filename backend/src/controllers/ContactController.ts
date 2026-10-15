@@ -194,7 +194,7 @@ export const setCommunity = async (req: Request, res: Response): Promise<Respons
   if (!contact) throw new AppError("ERR_NO_CONTACT_FOUND", 404);
   if (!contact.isGroup) throw new AppError("ERR_COMMUNITY_NOT_GROUP", 400);
   const community = Boolean(req.body.community);
-  await contact.update({ kind: community ? "community" : "group", ...(req.body.readOnly !== undefined ? { readOnly: Boolean(req.body.readOnly) } : {}) });
+  await contact.update({ kind: community ? "community" : "group", ...(community ? {} : { communityRole: null, communityId: null, parentGroupId: null }), ...(req.body.readOnly !== undefined ? { readOnly: Boolean(req.body.readOnly) } : {}) });
   getIO().emit("contact", { action: "update", contact });
   return res.status(200).json(contact);
 };

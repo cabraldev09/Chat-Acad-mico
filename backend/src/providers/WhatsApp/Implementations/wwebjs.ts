@@ -17,6 +17,7 @@ import { getIO } from "../../../libs/socket";
 import Whatsapp from "../../../models/Whatsapp";
 import AppError from "../../../errors/AppError";
 import SaveImportedContacts from "../../../helpers/SaveImportedContacts";
+import CreateOrUpdateContactService from "../../../services/ContactServices/CreateOrUpdateContactService";
 import { isPhoneNumber } from "../../../helpers/ChatId";
 import User from "../../../models/User";
 import Contact from "../../../models/Contact";
@@ -209,24 +210,73 @@ const convertToContactPayload = async (
 // Is this group a WhatsApp Community (or the announcement group of one), or a sub-group of one? WhatsApp Web keeps this in
 // the group metadata; the field names changed between versions, so every known spelling is read and anything missing
 // simply means "ordinary group". It never throws: a group that cannot be classified stays a group.
+const serializedId = (v: any): string | null => (v && (v._serialized || (typeof v === "string" ? v : null))) || null;
+
 const communityOf = (chat: any, wbot: any): ContactPayload["community"] => {
   try {
     const md = chat?.groupMetadata || {};
     const type = String(md.groupType || md.type || "").toUpperCase();
-    const parent = md.parentGroupId?._serialized || md.parentGroup?._serialized || md.parent?._serialized || null;
+    const parent = serializedId(md.parentGroupId) || serializedId(md.parentGroup) || serializedId(md.parent) || serializedId(md.linkedParent) || null;
     const isParent = md.isParentGroup === true || md.isCommunity === true || type === "COMMUNITY" || type === "PARENT";
     const isAnnouncement = md.isCommunityAnnounce === true || md.isDefaultSubgroup === true || md.defaultSubgroup === true || type === "DEFAULT_SUBGROUP" || type === "COMMUNITY_ANNOUNCEMENT" || type === "LINKED_ANNOUNCEMENT_GROUP";
     const meId = wbot?.info?.wid?._serialized;
     const me = (chat.participants || []).find((p: any) => p.id?._serialized === meId);
     const adminsOnly = md.announce === true || chat.isReadOnly === true;
-    if (isParent || isAnnouncement) {
-      return { kind: "community", parentGroupId: parent, readOnly: adminsOnly && !(me && (me.isAdmin || me.isSuperAdmin)) };
-    }
-    if (parent) return { kind: "group", parentGroupId: parent, readOnly: adminsOnly && !(me && (me.isAdmin || me.isSuperAdmin)) };
+    const readOnly = adminsOnly && !(me && (me.isAdmin || me.isSuperAdmin));
+    if (isParent) return { kind: "community", role: "parent", communityId: serializedId(chat.id), parentGroupId: null, readOnly };
+    if (isAnnouncement) return { kind: "community", role: "announcement", communityId: parent, parentGroupId: parent, readOnly };
+    if (parent) return { kind: "group", role: "member", communityId: parent, parentGroupId: parent, readOnly };
   } catch (e) {
     // fall through: ordinary group
   }
   return undefined;
+};
+
+// Reads every group of the number once and records which communities exist, their announcements group and the groups
+// inside them (the "Comunidades" list of WhatsApp Web). A community parent has no messages, so it may not be among the
+// chats: it is created from what its groups say about it.
+const syncCommunities = async (wbot: Session): Promise<number> => {
+  const chats: any[] = await wbot.getChats();
+  const known = new Set<string>();
+  const parents = new Set<string>();
+  let found = 0;
+  for (const chat of chats.filter(c => c.isGroup)) {
+    const info = communityOf(chat, wbot);
+    if (!info) continue;
+    const id = serializedId(chat.id);
+    if (!id) continue;
+    known.add(id);
+    if (info.communityId) parents.add(info.communityId);
+    let pic: string | undefined;
+    try { pic = (await wbot.getProfilePicUrl(id)) || undefined; } catch (e) { pic = undefined; }
+    // eslint-disable-next-line no-await-in-loop
+    await CreateOrUpdateContactService({ name: chat.name || chat.id.user, number: chat.id.user, isGroup: true, profilePicUrl: pic, community: info });
+    found += 1;
+  }
+  for (const parentId of parents) {
+    if (known.has(parentId)) continue;
+    let name = "Comunidade";
+    let pic: string | undefined;
+    try {
+      const c: any = await wbot.getContactById(parentId);
+      name = c?.name || c?.pushname || name;
+      pic = (await wbot.getProfilePicUrl(parentId)) || undefined;
+    } catch (e) { /* the name stays generic until WhatsApp tells it */ }
+    // eslint-disable-next-line no-await-in-loop
+    await CreateOrUpdateContactService({ name, number: parentId.split("@")[0], isGroup: true, profilePicUrl: pic, community: { kind: "community", role: "parent", communityId: parentId, parentGroupId: null, readOnly: true } });
+    found += 1;
+  }
+  return found;
+};
+
+const communityTimers = new Map<number, NodeJS.Timeout>();
+const scheduleCommunitySync = (wbot: Session, whatsappId: number, delayMs: number): void => {
+  const old = communityTimers.get(whatsappId);
+  if (old) clearTimeout(old);
+  communityTimers.set(whatsappId, setTimeout(() => {
+    communityTimers.delete(whatsappId);
+    syncCommunities(wbot).catch(err => logger.warn(`communities sync (${whatsappId}) failed: ${err}`));
+  }, delayMs));
 };
 
 const verifyQuotedMessage = async (
@@ -1060,6 +1110,12 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
         wbot.sendPresenceAvailable();
         await syncUnreadMessages(wbot, whatsapp.id);
         if (firstConnection) afterFirstConnection(whatsapp);
+        // the communities of this number, a little after WhatsApp Web finished loading and then every 15 minutes
+        scheduleCommunitySync(wbot, whatsapp.id, 30000);
+        const again = setInterval(() => {
+          if (!sessions.some(x => x.id === whatsapp.id)) { clearInterval(again); return; }
+          scheduleCommunitySync(wbot, whatsapp.id, 1000);
+        }, 15 * 60 * 1000);
       } catch (err) {
         logger.error(err, "Error on whatsapp ready event");
       }
@@ -1209,6 +1265,9 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
     });
 
     // the chat was read on the phone (or on another device): the unread badge here follows
+    // a group changed (someone joined, left, a community was linked): look at the communities again
+    ["group_join", "group_leave", "group_update", "group_admin_changed"].forEach(evt => wbot.on(evt as any, () => scheduleCommunitySync(wbot, whatsapp.id, 8000)));
+
     wbot.on("unread_count", async (chat: any) => {
       try {
         if (!chat || Number(chat.unreadCount) > 0) return;

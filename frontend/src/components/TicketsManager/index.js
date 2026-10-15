@@ -21,6 +21,7 @@ import Keyboard from "@material-ui/icons/Keyboard";
 
 import NewTicketModal from "../NewTicketModal";
 import TicketsList from "../TicketsList";
+import CommunitiesList from "../CommunitiesList";
 import { AuthContext } from "../../context/Auth/AuthContext";
 import api from "../../services/api";
 import openSocket from "../../services/socket-io";
@@ -214,6 +215,22 @@ const TicketsManager = () => {
     };
   }, [selectedQueueIds, scope.allQueues, attendantId, connectionId]);
 
+  // the communities of the connected numbers (WhatsApp Web's "Comunidades"): the list and the unread total for the chip
+  const [communities, setCommunities] = useState(null);
+  useEffect(() => {
+    let timer;
+    const load = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => api.get("/communities").then(({ data }) => setCommunities(data.communities || [])).catch(() => setCommunities((c) => c || [])), 600);
+    };
+    load();
+    const socket = openSocket();
+    socket.on("connect", () => socket.emit("joinNotification"));
+    ["ticket", "appMessage", "contact"].forEach((evt) => socket.on(evt, load));
+    return () => { clearTimeout(timer); socket.disconnect(); };
+  }, []);
+  const communityUnread = (communities || []).reduce((n, c) => n + (c.unread || 0), 0);
+
   const searching = searchParam.length > 0;
   const chip = (key, label, count) => (
     <button
@@ -349,18 +366,18 @@ const TicketsManager = () => {
           {(pendingCount > 0 || filter === "pending") && chip("pending", "Aguardando", pendingCount)}
           {chip("unread", "Não lidas", dmUnread)}
           {chip("groups", "Grupos", groupUnread)}
+          {((communities || []).length > 0 || filter === "communities") && chip("communities", "Comunidades", communityUnread)}
           {chip("everything", "Todas", 0)}
           <button
             type="button"
-            className={clsx(classes.chip, (filter === "closed" || filter === "archived" || filter === "communities") && !searching && classes.chipOn)}
+            className={clsx(classes.chip, (filter === "closed" || filter === "archived") && !searching && classes.chipOn)}
             onClick={(e) => setMoreEl(e.currentTarget)}
           >
-            {filter === "closed" ? "Resolvidas" : filter === "archived" ? "Arquivadas" : filter === "communities" ? "Comunidades" : "Mais"} ▾
+            {filter === "closed" ? "Resolvidas" : filter === "archived" ? "Arquivadas" : "Mais"} ▾
           </button>
           <Menu anchorEl={moreEl} open={Boolean(moreEl)} onClose={() => setMoreEl(null)} getContentAnchorEl={null}
             anchorOrigin={{ vertical: "bottom", horizontal: "left" }} transformOrigin={{ vertical: "top", horizontal: "left" }}>
             <MenuItem selected={filter === "closed"} onClick={() => { setMoreEl(null); clearSearch(); setFilter("closed"); }}>Resolvidas</MenuItem>
-            <MenuItem selected={filter === "communities"} onClick={() => { setMoreEl(null); clearSearch(); setFilter("communities"); }}>Comunidades</MenuItem>
             <MenuItem selected={filter === "archived"} onClick={() => { setMoreEl(null); clearSearch(); setFilter("archived"); }}>Arquivadas</MenuItem>
           </Menu>
         </div>
@@ -382,9 +399,7 @@ const TicketsManager = () => {
             {filter === "groups" && (
               <TicketsList tagId={tagId} groups="only" everything showAll={true} selectedQueueIds={selectedQueueIds} {...scope} />
             )}
-            {filter === "communities" && (
-              <TicketsList tagId={tagId} communities="only" everything showAll={true} selectedQueueIds={selectedQueueIds} {...scope} />
-            )}
+            {filter === "communities" && <CommunitiesList communities={communities} />}
             {filter === "unread" && (
               <TicketsList tagId={tagId} withUnreadMessages groups="exclude" showAll={showAllTickets} selectedQueueIds={selectedQueueIds} {...scope} />
             )}
