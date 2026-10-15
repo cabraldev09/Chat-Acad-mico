@@ -772,6 +772,42 @@ ALTER SEQUENCE public."GoalMembers_id_seq" OWNED BY public."GoalMembers".id;
 
 
 --
+-- Name: GoalPolos; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."GoalPolos" (
+    id integer NOT NULL,
+    "goalId" integer NOT NULL,
+    "poloId" integer NOT NULL,
+    target integer,
+    "manualCount" integer DEFAULT 0 NOT NULL,
+    canceled integer DEFAULT 0 NOT NULL,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: GoalPolos_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."GoalPolos_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: GoalPolos_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."GoalPolos_id_seq" OWNED BY public."GoalPolos".id;
+
+
+--
 -- Name: Goals; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -783,7 +819,8 @@ CREATE TABLE public."Goals" (
     status character varying(255) DEFAULT 'active'::character varying NOT NULL,
     "createdBy" integer,
     "createdAt" timestamp with time zone NOT NULL,
-    "updatedAt" timestamp with time zone NOT NULL
+    "updatedAt" timestamp with time zone NOT NULL,
+    "workDays" integer DEFAULT 5 NOT NULL
 );
 
 
@@ -2011,6 +2048,13 @@ ALTER TABLE ONLY public."GoalMembers" ALTER COLUMN id SET DEFAULT nextval('publi
 
 
 --
+-- Name: GoalPolos id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."GoalPolos" ALTER COLUMN id SET DEFAULT nextval('public."GoalPolos_id_seq"'::regclass);
+
+
+--
 -- Name: Goals id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -2384,6 +2428,14 @@ ALTER TABLE ONLY public."Courses"
 
 ALTER TABLE ONLY public."GoalMembers"
     ADD CONSTRAINT "GoalMembers_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: GoalPolos GoalPolos_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."GoalPolos"
+    ADD CONSTRAINT "GoalPolos_pkey" PRIMARY KEY (id);
 
 
 --
@@ -2774,6 +2826,13 @@ CREATE INDEX contacts_parent_group_idx ON public."Contacts" USING btree ("parent
 --
 
 CREATE INDEX goal_members_goal_idx ON public."GoalMembers" USING btree ("goalId", "position");
+
+
+--
+-- Name: goal_polos_unique; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX goal_polos_unique ON public."GoalPolos" USING btree ("goalId", "poloId");
 
 
 --
@@ -3192,6 +3251,22 @@ ALTER TABLE ONLY public."Courses"
 
 ALTER TABLE ONLY public."GoalMembers"
     ADD CONSTRAINT "GoalMembers_goalId_fkey" FOREIGN KEY ("goalId") REFERENCES public."Goals"(id) ON DELETE CASCADE;
+
+
+--
+-- Name: GoalPolos GoalPolos_goalId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."GoalPolos"
+    ADD CONSTRAINT "GoalPolos_goalId_fkey" FOREIGN KEY ("goalId") REFERENCES public."Goals"(id) ON DELETE CASCADE;
+
+
+--
+-- Name: GoalPolos GoalPolos_poloId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."GoalPolos"
+    ADD CONSTRAINT "GoalPolos_poloId_fkey" FOREIGN KEY ("poloId") REFERENCES public."Polos"(id) ON DELETE CASCADE;
 
 
 --
@@ -3890,6 +3965,7 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261104000006-admin-role-consistenc
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261104000007-affiliate-first-monthly.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261105000001-contact-community.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261105000002-dedupe-reactions.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261106000001-goal-polos.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

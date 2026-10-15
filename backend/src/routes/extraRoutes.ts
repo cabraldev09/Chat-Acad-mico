@@ -256,6 +256,9 @@ r.put("/me/efi", isAuth, Payment.saveMyEfi);
 r.delete("/me/efi", isAuth, Payment.clearMyEfi);
 // commissions of the enrollment fee: each person sees their own, administration and coordination see everyone's
 // team enrollment goals (administration and coordination)
+// the whole team follows the polos; only managers change the numbers
+r.get("/goals/polos", isAuth, Goal.poloBoard);
+r.put("/goals/:id/polos", isAuth, isManager, Goal.updatePolos);
 r.get("/goals", isAuth, isManager, Goal.index);
 r.post("/goals", isAuth, isManager, Goal.store);
 r.put("/goals/:id", isAuth, isManager, Goal.update);

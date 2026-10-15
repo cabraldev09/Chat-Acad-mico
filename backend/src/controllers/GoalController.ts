@@ -4,8 +4,10 @@ import { Op } from "sequelize";
 import AppError from "../errors/AppError";
 import Goal from "../models/Goal";
 import GoalMember from "../models/GoalMember";
+import GoalPolo from "../models/GoalPolo";
+import Polo from "../models/Polo";
 import Lead from "../models/Lead";
-import { dayBounds } from "../helpers/AppTime";
+import { dayBounds, getAppTz } from "../helpers/AppTime";
 
 // Team enrollment goals (administration and coordination). Each line counts, by itself, the enrollments (Leads.wonAt) of
 // its CRM users inside the period, plus a manual adjustment for people without a login or shared lines.
@@ -180,4 +182,154 @@ export const repeat = async (req: Request, res: Response): Promise<Response> => 
     (goal.members || []).map(m => ({ label: m.label, userIds: ids(m.userIds), target: m.target, manualCount: 0, note: m.note }))
   );
   return res.status(201).json(await present(await load(copy.id)));
+};
+
+// ---------------------------------------------------------------- goals per polo (the whole team follows them)
+
+const dayOk = (iso: string, workDays: number): boolean => {
+  const dow = new Date(`${iso}T12:00:00Z`).getUTCDay(); // 0 = Sunday
+  return workDays >= 7 ? true : workDays === 6 ? dow !== 0 : dow !== 0 && dow !== 6;
+};
+
+// working days from `from` to `to`, both included
+const countWorkDays = (from: string, to: string, workDays: number): number => {
+  let n = 0;
+  const cur = new Date(`${from}T12:00:00Z`);
+  const end = new Date(`${to}T12:00:00Z`);
+  for (let i = 0; cur <= end && i < 400; i += 1) {
+    if (dayOk(cur.toISOString().slice(0, 10), workDays)) n += 1;
+    cur.setUTCDate(cur.getUTCDate() + 1);
+  }
+  return n;
+};
+
+// how many leads it takes to get one enrollment, from what the CRM did in the last 120 days (4 when there is too little data)
+const leadsPerEnrollment = async (): Promise<number> => {
+  const since = new Date(Date.now() - 120 * 86400000);
+  const [created, won] = await Promise.all([
+    Lead.count({ where: { isHistorical: false, createdAt: { [Op.gte]: since } as any } }),
+    Lead.count({ where: { isHistorical: false, wonAt: { [Op.gte]: since } as any } })
+  ]);
+  if (created < 30 || won < 5) return 4;
+  return Math.min(20, Math.max(1, Math.round((created / won) * 10) / 10));
+};
+
+const poloStatus = (pct: number | null): "great" | "good" | "warn" | "low" | "none" =>
+  pct === null ? "none" : pct >= 100 ? "great" : pct >= 60 ? "good" : pct >= 30 ? "warn" : "low";
+
+export const poloBoard = async (req: Request, res: Response): Promise<Response> => {
+  const periods = await Goal.findAll({ where: { status: "active" }, order: [["endsOn", "DESC"], ["id", "DESC"]], limit: 24 });
+  if (!periods.length) return res.json({ periods: [], goal: null, rows: [], totals: null });
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: getAppTz() }).format(new Date());
+  const wanted = Number(req.query.goalId) || 0;
+  const goal =
+    periods.find(g => g.id === wanted) ||
+    periods.find(g => g.startsOn <= today && g.endsOn >= today) ||
+    periods[0];
+
+  const start = dayBounds(goal.startsOn).start;
+  const end = dayBounds(goal.endsOn).end;
+  const [polos, saved, wonRows, ratio] = await Promise.all([
+    Polo.findAll({ where: { active: true }, order: [["name", "ASC"]] }),
+    GoalPolo.findAll({ where: { goalId: goal.id } }),
+    Lead.findAll({
+      where: { isHistorical: false, poloId: { [Op.ne]: null } as any, wonAt: { [Op.gte]: start, [Op.lte]: end } as any },
+      attributes: ["poloId"],
+      raw: true
+    }) as unknown as Promise<any[]>,
+    leadsPerEnrollment()
+  ]);
+  const won = new Map<number, number>();
+  wonRows.forEach(r => won.set(r.poloId, (won.get(r.poloId) || 0) + 1));
+  const line = new Map(saved.map(g => [g.poloId, g]));
+
+  const from = today > goal.startsOn ? today : goal.startsOn;
+  const daysLeft = goal.endsOn < today ? 0 : countWorkDays(from, goal.endsOn, goal.workDays || 5);
+  const rows = polos
+    .map(p => {
+      const g = line.get(p.id);
+      const target = g && g.target !== null && g.target !== undefined ? g.target : null;
+      const auto = won.get(p.id) || 0;
+      const manual = g?.manualCount || 0;
+      const done = auto + manual;
+      const canceled = g?.canceled || 0;
+      const missing = target === null ? null : target - done; // negative = above the target
+      // enrollments needed per remaining working day (0 once the target is reached, null when there is no day left)
+      const perDay = missing === null ? null : missing <= 0 ? 0 : daysLeft ? Math.round((missing / daysLeft) * 100) / 100 : null;
+      const pct = target ? Math.round((done / target) * 10000) / 100 : null;
+      return {
+        poloId: p.id,
+        code: p.code,
+        name: p.name,
+        target,
+        auto,
+        manual,
+        done,
+        missing,
+        pct,
+        status: poloStatus(pct),
+        perDay,
+        leadsPerDay: perDay === null ? null : Math.round(perDay * ratio * 100) / 100,
+        canceled,
+        inCourse: Math.max(0, done - canceled),
+        canceledPct: done ? Math.round((canceled / done) * 10000) / 100 : 0
+      };
+    })
+    .filter(r => r.target !== null || r.done > 0 || r.canceled > 0)
+    .sort((a, b) => (b.pct ?? -1) - (a.pct ?? -1) || b.done - a.done);
+
+  // the totals add up only the polos that have a target, so "done", "target" and "missing" always agree
+  const scoped = rows.filter(r => r.target !== null);
+  const sum = (f: (r: typeof rows[number]) => number) => scoped.reduce((t, r) => t + f(r), 0);
+  const target = sum(r => r.target || 0);
+  const done = sum(r => r.done);
+  const missing = target - done;
+  const perDay = missing <= 0 ? 0 : daysLeft ? Math.round((missing / daysLeft) * 100) / 100 : null;
+  const canceled = sum(r => r.canceled);
+  const totals = {
+    target,
+    done,
+    missing,
+    pct: target ? Math.round((done / target) * 10000) / 100 : null,
+    perDay,
+    leadsPerDay: perDay === null ? null : Math.round(perDay * ratio * 100) / 100,
+    canceled,
+    inCourse: Math.max(0, done - canceled),
+    canceledPct: done ? Math.round((canceled / done) * 10000) / 100 : 0
+  };
+  return res.json({
+    periods: periods.map(g => ({ id: g.id, title: g.title, startsOn: g.startsOn, endsOn: g.endsOn })),
+    goal: { id: goal.id, title: goal.title, startsOn: goal.startsOn, endsOn: goal.endsOn, workDays: goal.workDays || 5, daysLeft },
+    leadsPerEnrollment: ratio,
+    rows,
+    totals,
+    // polos without a line yet, so the administration can add them
+    available: polos.filter(p => !rows.some(r => r.poloId === p.id)).map(p => ({ id: p.id, code: p.code, name: p.name }))
+  });
+};
+
+// administration: targets, adjustments and the working-day rule of the period
+export const updatePolos = async (req: Request, res: Response): Promise<Response> => {
+  const goal = await load(req.params.id);
+  const b = req.body || {};
+  if (b.workDays !== undefined) {
+    const wd = Number(b.workDays);
+    await goal.update({ workDays: wd === 6 || wd === 7 ? wd : 5 });
+  }
+  if (Array.isArray(b.rows)) {
+    const valid = new Set((await Polo.findAll({ attributes: ["id"] })).map(p => p.id));
+    await GoalPolo.destroy({ where: { goalId: goal.id } });
+    const rows = b.rows
+      .map((r: any) => ({
+        goalId: goal.id,
+        poloId: Number(r.poloId),
+        target: int(r.target),
+        manualCount: int(r.manual) || 0,
+        canceled: int(r.canceled) || 0
+      }))
+      .filter((r: any) => valid.has(r.poloId));
+    if (rows.length) await GoalPolo.bulkCreate(rows as any);
+  }
+  req.query.goalId = String(goal.id);
+  return poloBoard(req, res);
 };

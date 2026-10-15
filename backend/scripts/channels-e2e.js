@@ -2227,6 +2227,24 @@ const postMeta = (id, payload, secret, badSig) => {
       const all = JSON.stringify(only.data);
       assert(only.status === 200 && all.includes("Carlos Indicado") && !all.includes("Lead comum"), `affiliate filter ${only.status}`);
     });
+    await test("goals per polo: everyone follows, only managers edit, numbers come from the CRM", async () => {
+      const iso = (n) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Porto_Velho" }).format(new Date(Date.now() + n * 86400000)); // the app counts days in its own timezone
+      const polo = (await http.post("/polos", { name: "Polo da Meta", code: "9001", state: "RO" }, auth())).data;
+      assert(polo.id, "polo not created");
+      const goal = (await http.post("/goals", { startsOn: iso(-5), endsOn: iso(10), members: [] }, auth())).data;
+      const lead = (await http.post("/leads", { name: "Aluno da Meta", phone: "5511966660001", source: "Site" }, auth())).data.lead;
+      sql(`UPDATE Leads SET wonAt=NOW(), poloId=${polo.id} WHERE id=${lead.id}`);
+      const tk = (await http.post("/auth/login", { email: "consultor@polo.test", password: "senha123" })).data.token;
+      assert((await http.put(`/goals/${goal.id}/polos`, { rows: [] }, asUser(tk))).status === 403, "a consultant edited the polo goals");
+      const saved = await http.put(`/goals/${goal.id}/polos`, { workDays: 7, rows: [{ poloId: polo.id, target: 10, manual: 2, canceled: 1 }] }, auth());
+      assert(saved.status === 200, `save ${saved.status}`);
+      const seen = await http.get(`/goals/polos?goalId=${goal.id}`, asUser(tk));
+      assert(seen.status === 200, `a consultant cannot follow the polos ${seen.status}`);
+      const row = seen.data.rows.find(r => r.poloId === polo.id);
+      assert(row && row.auto === 1 && row.manual === 2 && row.done === 3 && row.target === 10 && row.missing === 7 && row.canceled === 1 && row.inCourse === 2, `row ${JSON.stringify(row)}`);
+      assert(seen.data.goal.daysLeft === 11 && row.perDay === 0.64 && row.status === "warn", `pace ${seen.data.goal.daysLeft} ${row.perDay} ${row.status}`);
+      assert(seen.data.totals.target === 10 && seen.data.totals.done === 3 && seen.data.totals.pct === 30 && seen.data.totals.inCourse === 2, `totals ${JSON.stringify(seen.data.totals)}`);
+    });
     await test("login is rate limited", async () => {
       let limited = false;
       for (let i = 0; i < 120 && !limited; i += 1) {

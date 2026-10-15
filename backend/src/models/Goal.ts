@@ -24,6 +24,11 @@ class Goal extends Model<Goal> {
   @Column
   status: string;
 
+  // working days that count in the countdown: 5 = Mon-Fri, 6 = Mon-Sat, 7 = every day
+  @Default(5)
+  @Column
+  workDays: number;
+
   @Column
   createdBy: number;
 

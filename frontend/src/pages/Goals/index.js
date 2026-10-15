@@ -2,17 +2,20 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "react-toastify";
 import { Autocomplete } from "@material-ui/lab";
 import { Button, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, TextField, Tooltip, Typography, makeStyles } from "@material-ui/core";
-import { CalendarDays, Copy, Download, ImageDown, Plus, Repeat2, Save, Trash2 } from "lucide-react";
-import { toPng } from "html-to-image";
+import { CalendarDays, Copy, Download, ImageDown, Plus, Repeat2, Save, Share2, Trash2 } from "lucide-react";
 
 import MainContainer from "../../components/MainContainer";
 import MainHeader from "../../components/MainHeader";
 import MainHeaderButtonsWrapper from "../../components/MainHeaderButtonsWrapper";
 import Title from "../../components/Title";
+import ShareFrame from "../../components/ShareFrame";
+import BrandLogo from "../../components/BrandLogo";
+import { copyPng, downloadPng, renderPng, sharePng } from "../../utils/shareImage";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import { fetchAllUsers } from "../Affiliates/shared";
 
+const SHARE_WIDTH = 600;
 const MONTHS = ["JANEIRO", "FEVEREIRO", "MARÇO", "ABRIL", "MAIO", "JUNHO", "JULHO", "AGOSTO", "SETEMBRO", "OUTUBRO", "NOVEMBRO", "DEZEMBRO"];
 const dm = (iso) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
 const clean = (g) => ({ ...g, members: g.members.map((m) => ({ ...m })) });
@@ -21,7 +24,7 @@ const clean = (g) => ({ ...g, members: g.members.map((m) => ({ ...m })) });
 const headline = (g) => `✅ ${g.title ? g.title.toUpperCase() : `META DO MÊS DE ${MONTHS[Number(g.endsOn.slice(5, 7)) - 1]}`} — ${dm(g.startsOn)} ATÉ ${dm(g.endsOn)}`;
 const goalsText = (g) => `${headline(g)}\n\n${g.members.map((m) => `${m.label} —${m.target ? ` ${m.target}` : ""}`).join("\n")}`;
 const progressText = (g) =>
-  `${headline(g)}\n\n${g.members.map((m) => `${m.label} — ${m.target ? `${m.done}/${m.target}` : m.done}${m.reached ? " ✅" : ""}`).join("\n")}\n\nTotal — ${g.total.done}${g.total.target ? `/${g.total.target}` : ""}`;
+  `${headline(g)}\n\n${g.members.map((m) => `${m.label} — ${m.target ? `${m.done}/${m.target}${m.reached ? " ✅" : ` (${m.missing === 1 ? "falta 1" : `faltam ${m.missing}`})`}` : m.done}`).join("\n")}\n\nTotal — ${g.total.done}${g.total.target ? `/${g.total.target} (faltam ${Math.max(0, g.total.target - g.total.done)})` : ""}`;
 
 const useStyles = makeStyles((theme) => ({
   body: { flex: 1, overflowY: "auto", overflowX: "hidden", ...theme.scrollbarStyles, paddingBottom: theme.spacing(3) },
@@ -41,10 +44,6 @@ const useStyles = makeStyles((theme) => ({
   seg: { display: "inline-flex", border: theme.border.divider, borderRadius: 10, overflow: "hidden", marginBottom: 6 },
   segBtn: { border: 0, background: "transparent", color: "inherit", padding: "5px 12px", fontFamily: "inherit", fontSize: 13, fontWeight: 600, cursor: "pointer" },
   segOn: { background: theme.palette.primary.main, color: "#fff" },
-  // the picture that is downloaded: its own colors, whatever the theme
-  share: { width: 520, borderRadius: 20, overflow: "hidden", background: "#ffffff", color: "#0b1a2e", fontFamily: "Geist, system-ui, sans-serif", boxShadow: "0 10px 30px rgba(11,66,121,.18)" },
-  shareTop: { background: "linear-gradient(135deg, #0B4279, #0693E3)", color: "#fff", padding: "22px 26px" },
-  shareLine: { display: "grid", gridTemplateColumns: "1fr 64px", gap: 6, alignItems: "center", padding: "10px 26px", borderBottom: "1px solid #e6ecf4" },
   empty: { textAlign: "center", color: theme.palette.text.secondary, padding: theme.spacing(6, 2) },
 }));
 
@@ -60,21 +59,7 @@ const Goals = () => {
   const [newOpen, setNewOpen] = useState(false);
   const [period, setPeriod] = useState({ startsOn: "", endsOn: "" });
   const shareRef = useRef(null);
-  const boxRef = useRef(null);
-  // the card is drawn at its real size (520 px, the size of the downloaded picture) and shrunk to fit the column
-  const [fit, setFit] = useState({ scale: 1, height: 0 });
-  useEffect(() => {
-    const measure = () => {
-      if (!boxRef.current || !shareRef.current) return;
-      const scale = Math.min(1, boxRef.current.clientWidth / 520);
-      setFit((f) => (f.scale === scale && f.height === shareRef.current.offsetHeight ? f : { scale, height: shareRef.current.offsetHeight }));
-    };
-    measure();
-    const ro = new ResizeObserver(measure);
-    if (boxRef.current) ro.observe(boxRef.current);
-    if (shareRef.current) ro.observe(shareRef.current);
-    return () => ro.disconnect();
-  });
+  const [busy, setBusy] = useState(false);
 
   const load = useCallback(async (keep) => {
     try {
@@ -136,13 +121,20 @@ const Goals = () => {
   const copy = async () => {
     try { await navigator.clipboard.writeText(text); toast.success("Mensagem copiada. É só colar no grupo."); } catch (e) { toast.error("Não foi possível copiar. Selecione o texto e copie."); }
   };
-  const picture = async () => {
-    try {
-      const url = await toPng(shareRef.current, { pixelRatio: 2, cacheBust: true, backgroundColor: "#ffffff", style: { transform: "none" }, width: 520, height: shareRef.current.offsetHeight });
-      const a = document.createElement("a");
-      a.href = url; a.download = `metas-${view.startsOn}-${view.endsOn}.png`; a.click();
-    } catch (e) { toast.error("Não foi possível gerar a imagem. Tire um print da tela."); }
+  const fileName = view ? `metas-${view.startsOn}-${view.endsOn}.png` : "metas.png";
+  const withPng = (fn) => async () => {
+    setBusy(true);
+    try { await fn(await renderPng(shareRef.current, SHARE_WIDTH)); } catch (e) { toast.error("Não foi possível gerar a imagem. Tire um print da tela."); }
+    setBusy(false);
   };
+  const picture = withPng(async (url) => { downloadPng(url, fileName); });
+  const copyImage = withPng(async (url) => {
+    try { await copyPng(url); toast.success("Imagem copiada. Cole na conversa do WhatsApp."); } catch (e) { downloadPng(url, fileName); toast.info("Este navegador não copia imagem; a imagem foi baixada."); }
+  });
+  const shareImage = withPng(async (url) => {
+    const ok = await sharePng(url, fileName, text).catch(() => true);
+    if (!ok) { downloadPng(url, fileName); toast.info("Imagem baixada. Envie pelo WhatsApp."); }
+  });
 
   const userOptions = users.map((u) => ({ id: u.id, name: u.name }));
 
@@ -232,33 +224,50 @@ const Goals = () => {
                 <pre className={classes.pre}>{text}</pre>
                 <div style={{ display: "flex", gap: 8 }}>
                   <Button variant="contained" color="primary" startIcon={<Copy size={16} />} onClick={copy}>Copiar</Button>
-                  <Button variant="outlined" startIcon={<ImageDown size={16} />} onClick={picture}>Baixar imagem</Button>
+                  <Button variant="outlined" startIcon={<ImageDown size={16} />} onClick={picture} disabled={busy}>Baixar imagem</Button>
+                </div>
+                <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                  <Button variant="outlined" startIcon={<Copy size={16} />} onClick={copyImage} disabled={busy}>Copiar imagem</Button>
+                  <Button variant="outlined" startIcon={<Share2 size={16} />} onClick={shareImage} disabled={busy}>Enviar no WhatsApp</Button>
                 </div>
               </div>
 
               <div className={classes.card}>
                 <Typography style={{ fontWeight: 700, marginBottom: 8, display: "flex", alignItems: "center", gap: 6 }}><Download size={15} /> Cartão para print</Typography>
-                <div ref={boxRef} style={{ width: "100%", height: fit.height ? fit.height * fit.scale : "auto", overflow: "hidden" }}>
-                <div ref={shareRef} className={classes.share} style={{ transform: `scale(${fit.scale})`, transformOrigin: "top left" }}>
-                  <div className={classes.shareTop}>
-                    <div style={{ fontSize: 13, opacity: 0.85 }}>Cruzeiro do Sul Virtual</div>
-                    <div style={{ fontSize: 24, fontWeight: 700, letterSpacing: "-0.02em", marginTop: 4 }}>{view.title || `Metas de ${MONTHS[Number(view.endsOn.slice(5, 7)) - 1].toLowerCase()}`}</div>
-                    <div style={{ fontSize: 14, opacity: 0.9, marginTop: 2 }}>{dm(view.startsOn)} até {dm(view.endsOn)}</div>
-                  </div>
-                  {view.members.map((m, i) => (
-                    <div key={i} className={classes.shareLine}>
-                      <div>
-                        <div style={{ fontWeight: 600 }}>{m.label || "—"}</div>
-                        <div style={{ height: 8, borderRadius: 999, background: "#e6ecf4", marginTop: 6, overflow: "hidden" }}><div style={{ width: `${m.pct || 0}%`, height: "100%", background: m.reached ? "#16a34a" : "#0693E3" }} /></div>
-                      </div>
-                      <div style={{ textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{mode === "goals" ? (m.target || "") : `${m.done}${m.target ? `/${m.target}` : ""}`}</div>
+                <ShareFrame width={SHARE_WIDTH} innerRef={shareRef}>
+                  <div style={{ background: "#fff", color: "#0b1a2e", fontFamily: "Geist, system-ui, sans-serif" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "20px 28px 16px" }}>
+                      <BrandLogo height={42} tone="color" />
+                      <div style={{ fontSize: 14, color: "#4b5d73" }}>{dm(view.startsOn)} até {dm(view.endsOn)}</div>
                     </div>
-                  ))}
-                  <div style={{ padding: "12px 26px", background: "#f4f8fc", display: "flex", justifyContent: "space-between", fontWeight: 700 }}>
-                    <span>Total</span><span>{view.total.done}{view.total.target ? ` / ${view.total.target}` : ""}</span>
+                    <div style={{ background: "linear-gradient(135deg, #0B4279, #0693E3)", color: "#fff", padding: "18px 28px 20px" }}>
+                      <div style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-0.03em" }}>{view.title || `Metas de ${MONTHS[Number(view.endsOn.slice(5, 7)) - 1].toLowerCase()}`}</div>
+                      {view.total.target ? (
+                        <>
+                          <div style={{ display: "flex", gap: 26, marginTop: 12 }}>
+                            {[["Feitas", view.total.done], ["Meta", view.total.target], ["Faltam", Math.max(0, view.total.target - view.total.done)]].map(([l, v]) => (
+                              <div key={l}><div style={{ fontSize: 13, opacity: 0.85 }}>{l}</div><div style={{ fontSize: 34, fontWeight: 700, letterSpacing: "-0.04em", lineHeight: 1.05 }}>{v}</div></div>
+                            ))}
+                          </div>
+                          <div style={{ height: 10, borderRadius: 999, background: "rgba(255,255,255,.25)", marginTop: 14, overflow: "hidden" }}><div style={{ width: `${view.total.pct || 0}%`, height: "100%", background: "#FEF84C", borderRadius: 999 }} /></div>
+                        </>
+                      ) : null}
+                    </div>
+                    {view.members.map((m, i) => (
+                      <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 96px", gap: 10, alignItems: "center", padding: "13px 28px", borderBottom: "1px solid #e6ecf4" }}>
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: 18 }}>{m.label || "—"}</div>
+                          <div style={{ height: 10, borderRadius: 999, background: "#e6ecf4", marginTop: 8, overflow: "hidden" }}><div style={{ width: `${m.pct || 0}%`, height: "100%", borderRadius: 999, background: m.reached ? "#16a34a" : "#0693E3" }} /></div>
+                          {mode === "progress" && m.target ? <div style={{ fontSize: 13, color: m.reached ? "#15803d" : "#4b5d73", marginTop: 5 }}>{m.reached ? "Meta batida" : `${m.done} ${m.done === 1 ? "feita" : "feitas"} · ${m.missing === 1 ? "falta 1" : `faltam ${m.missing}`}`}</div> : null}
+                        </div>
+                        <div style={{ textAlign: "right", fontWeight: 700, fontSize: 22, fontVariantNumeric: "tabular-nums" }}>{mode === "goals" ? (m.target || "") : `${m.done}${m.target ? `/${m.target}` : ""}`}</div>
+                      </div>
+                    ))}
+                    <div style={{ padding: "14px 28px", background: "#f4f8fc", display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: 18 }}>
+                      <span>Total</span><span>{view.total.done}{view.total.target ? ` / ${view.total.target}` : ""}</span>
+                    </div>
                   </div>
-                </div>
-                </div>
+                </ShareFrame>
               </div>
             </div>
           </div>

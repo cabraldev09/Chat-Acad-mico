@@ -42,6 +42,7 @@ import Polo from "../models/Polo";
 import PoloMember from "../models/PoloMember";
 import Goal from "../models/Goal";
 import GoalMember from "../models/GoalMember";
+import GoalPolo from "../models/GoalPolo";
 import ProposalTemplateInstitution from "../models/ProposalTemplateInstitution";
 import Affiliate from "../models/Affiliate";
 import AffiliateCampaign from "../models/AffiliateCampaign";
@@ -99,6 +100,7 @@ const models = [
   PoloMember,
   Goal,
   GoalMember,
+  GoalPolo,
   ProposalTemplateInstitution,
   Affiliate,
   AffiliateCampaign,

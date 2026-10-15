@@ -34,6 +34,7 @@ import GraduationCapIcon from "lucide-react/dist/esm/icons/graduation-cap";
 import Share2Icon from "lucide-react/dist/esm/icons/share-2";
 import TargetIcon from "lucide-react/dist/esm/icons/target";
 import WalletIcon from "lucide-react/dist/esm/icons/wallet";
+import MapPinIcon from "lucide-react/dist/esm/icons/map-pin";
 
 import api from "../services/api";
 import openSocket from "../services/socket-io";
@@ -253,6 +254,7 @@ const MainListItems = (props) => {
       {isManager(user) && (
         <ListItemLink to="/crm/metas" primary="Metas da equipe" icon={<TargetIcon className="ico" />} collapsed={collapsed} />
       )}
+      <ListItemLink to="/crm/metas-polos" primary="Metas por polo" icon={<MapPinIcon className="ico" />} collapsed={collapsed} />
       <ListItemLink to="/ambientacao" primary="Ambientação" icon={<HeartHandshakeIcon className="ico" />} collapsed={collapsed} />
       {["admin", "coordenacao", "consultor"].includes(user.profile === "admin" ? "admin" : user.role || "consultor") && (
         <ListItemLink to="/afiliados" primary="Afiliados" icon={<Share2Icon className="ico" />} collapsed={collapsed} />
