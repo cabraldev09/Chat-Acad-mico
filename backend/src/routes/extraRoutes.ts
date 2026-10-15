@@ -29,6 +29,7 @@ import * as PoloCtl from "../controllers/PoloController";
 import * as Aff from "../controllers/AffiliateController";
 import * as Commission from "../controllers/CommissionController";
 import * as Goal from "../controllers/GoalController";
+import * as Flow from "../controllers/FlowController";
 import * as DashboardMgmt from "../controllers/DashboardManagementController";
 import * as AffMat from "../controllers/AffiliateMaterialController";
 import { affiliateUpload } from "../config/affiliateUpload";
@@ -130,6 +131,22 @@ r.post("/ai-learnings/:id/discard", isAuth, isManager, Ai.learningDiscard);
 r.get("/ai-agents/:id/usage", isAuth, isManager, Ai.usage);
 r.get("/ai-settings", isAuth, isAdmin, Ai.getKeys);
 r.put("/ai-settings", isAuth, isAdmin, Ai.setKeys);
+
+// visual flows (the chatbot builder)
+r.get("/flows", isAuth, isManager, Flow.index);
+r.get("/flow-templates", isAuth, isManager, Flow.templates);
+r.post("/flows", isAuth, isManager, Flow.store);
+r.post("/flows/import-legacy", isAuth, isManager, Flow.importLegacy);
+r.post("/flows/generate", isAuth, isManager, Flow.generate);
+r.get("/flows/:id", isAuth, isManager, Flow.show);
+r.put("/flows/:id", isAuth, isManager, Flow.update);
+r.delete("/flows/:id", isAuth, isManager, Flow.remove);
+r.post("/flows/:id/validate", isAuth, isManager, Flow.validate);
+r.post("/flows/:id/publish", isAuth, isManager, Flow.publish);
+r.post("/flows/:id/unpublish", isAuth, isManager, Flow.unpublish);
+r.post("/flows/:id/duplicate", isAuth, isManager, Flow.duplicate);
+r.post("/flows/:id/simulate", isAuth, isManager, Flow.simulate);
+r.get("/flows/:id/stats", isAuth, isManager, Flow.stats);
 
 // chatbot flow
 r.get("/chatbot-nodes", isAuth, isManager, Chatbot.index);

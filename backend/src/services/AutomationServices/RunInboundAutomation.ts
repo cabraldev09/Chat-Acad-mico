@@ -9,6 +9,7 @@ import UpdateTicketService from "../TicketServices/UpdateTicketService";
 import ShowWhatsAppService from "../WhatsappService/ShowWhatsAppService";
 import SendWhatsAppMessage from "../WbotServices/SendWhatsAppMessage";
 import { findAgentForTicket, runAiForTicket } from "../AiServices/RunAiAgent";
+import { runFlowForTicket } from "../FlowServices/Runner";
 import { addActivity, changeStage } from "../CrmServices/LeadCore";
 import { applyToLead } from "../AiServices/Tools";
 import Lead from "../../models/Lead";
@@ -397,6 +398,8 @@ const RunInboundAutomation = async ({ ticketId, body }: Input): Promise<void> =>
       return;
     }
 
+    // the visual flows come first; the old menu and the AI agent only answer when no flow took the message
+    if (await runFlowForTicket(ticket, body)) return;
     if (await runChatbot(ticket, body, whatsapp.greetingMessage)) return;
     if (await runAi(ticket)) return;
     await runClassicQueueMenu(ticket, body, ticket.whatsappId);

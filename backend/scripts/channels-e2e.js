@@ -98,6 +98,26 @@ const startAnthropicMock = () => {
     const last = req.body.messages[req.body.messages.length - 1];
     const text = t => res.json({ content: [{ type: "text", text: t }], stop_reason: "end_turn", usage });
     const tool = (name, input) => res.json({ content: [{ type: "tool_use", id: `toolu_${anthropic.requests.length}`, name, input }], stop_reason: "tool_use", usage });
+    if (typeof req.body.system === "string" && /desenha fluxos/.test(req.body.system)) {
+      return text(JSON.stringify({
+        name: "Triagem gerada",
+        entry: { type: "first_message" },
+        nodes: [
+          { key: "start", type: "start" },
+          { key: "menu", type: "buttons", text: "Oi! Sobre o que você quer falar?", options: ["Cursos", "Financeiro"] },
+          { key: "nome", type: "ask", text: "Qual o seu nome?", field: "nome", validate: "text" },
+          { key: "crm", type: "crm", action: "send_to_crm", ownerMode: "roundrobin", tagName: "Etiqueta que não existe" },
+          { key: "fim", type: "end", text: "Anotado, até já!" },
+          { key: "fin", type: "message", text: "O financeiro responde em horário comercial." },
+          { key: "fimf", type: "end" }
+        ],
+        edges: [
+          { from: "start", to: "menu" }, { from: "menu", to: "nome", option: "Cursos" }, { from: "menu", to: "fin", option: "Financeiro" },
+          { from: "nome", to: "crm" }, { from: "crm", to: "fim" }, { from: "fin", to: "fimf" },
+          { from: "menu", to: "nome", option: "opção que não existe" }
+        ]
+      }));
+    }
     if (req.body.max_tokens === 220) return text("O aluno quer saber sobre bolsas e cursos.");
     const result = Array.isArray(last.content) && last.content.find(b => b.type === "tool_result");
     if (result) {
@@ -1909,6 +1929,121 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(sql(`SELECT queueId FROM Tickets WHERE id=${t}`) === String(jiPolo.queues.find(q => q.role === "comercial").id), "ticket not routed to the polo's sales queue");
       await waitFor(() => graph.hooks.some(h => h.collected && h.collected.nome === "Maria Clara Souza"), 8000, "webhook call");
       sql("DELETE FROM ChatbotNodes");
+    });
+    await test("visual flows: validation, simulator, publishing, a real conversation, counters and the CRM", async () => {
+      sql("DELETE FROM ChatbotNodes");
+      const graph1 = {
+        nodes: [
+          { id: "s", type: "start", data: {} },
+          { id: "menu", type: "buttons", data: { text: "Oi {{primeiro_nome}}! Escolha:", options: [{ id: "a", label: "Quero me matricular" }, { id: "b", label: "Tenho uma dúvida" }] } },
+          { id: "nome", type: "ask", data: { text: "Qual o seu nome completo?", field: "nome", validate: "text" } },
+          { id: "crm", type: "crm", data: { action: "send_to_crm", source: "Chatbot" } },
+          { id: "fim", type: "end", data: { text: "Pronto! Um consultor fala com você." } },
+          { id: "duv", type: "message", data: { text: "Pode escrever a sua dúvida." } },
+          { id: "fim2", type: "end", data: {} }
+        ],
+        edges: [
+          { id: "1", source: "s", target: "menu" }, { id: "2", source: "menu", target: "nome", sourceHandle: "a" },
+          { id: "3", source: "nome", target: "crm" }, { id: "4", source: "crm", target: "fim" }, { id: "5", source: "menu", target: "duv", sourceHandle: "b" }, { id: "6", source: "duv", target: "fim2" }
+        ]
+      };
+      const broken = JSON.parse(JSON.stringify(graph1));
+      broken.edges = broken.edges.filter(e => e.id !== "5");
+      const mk = await http.post("/flows", { name: "Triagem", entry: { type: "first_message" }, graph: broken }, auth());
+      assert(mk.status === 201 && mk.data.errors >= 1, `create ${mk.status} ${mk.data.errors}`);
+      const flowId = mk.data.id;
+      assert(mk.data.issues.some(i => /Tenho uma dúvida/.test(i.text)), "validation did not point at the open option");
+      assert((await http.post(`/flows/${flowId}/publish`, {}, auth())).status === 422, "a flow with errors was published");
+      await http.post("/users", { name: "Consultor dos Fluxos", email: "flows-cons@x.com", password: "senha123", role: "consultor" }, auth());
+      const consTk = (await http.post("/auth/login", { email: "flows-cons@x.com", password: "senha123" })).data.token;
+      assert((await http.get("/flows", asUser(consTk))).status === 403, "a consultant reached the flows");
+
+      // the simulator walks the draft and nothing leaves the system
+      const upd = await http.put(`/flows/${flowId}`, { graph: graph1 }, auth());
+      assert(upd.status === 200 && upd.data.errors === 0, `fixed ${upd.status} ${upd.data.errors}`);
+      const sent0 = graph.sent.length;
+      const s1 = (await http.post(`/flows/${flowId}/simulate`, { sample: { name: "Maria Souza" } }, auth())).data;
+      assert(s1.status === "waiting" && s1.messages[0].includes("Oi Maria!") && s1.messages[0].includes("*1* - Quero me matricular"), `sim1 ${JSON.stringify(s1.messages)}`);
+      const s2 = (await http.post(`/flows/${flowId}/simulate`, { state: s1.state, input: "1" }, auth())).data;
+      assert(s2.messages[0].includes("nome completo") && s2.status === "waiting", "sim2");
+      const s3 = (await http.post(`/flows/${flowId}/simulate`, { state: s2.state, input: "Maria Clara Souza" }, auth())).data;
+      assert(s3.status === "done" && s3.actions.some(a => /CRM/.test(a)) && s3.messages.some(m => m.includes("consultor")), `sim3 ${JSON.stringify(s3)}`);
+      const sBad = (await http.post(`/flows/${flowId}/simulate`, { state: s1.state, input: "xyz" }, auth())).data;
+      assert(sBad.status === "waiting" && sBad.messages[0].includes("Não entendi"), "an unknown answer was not asked again");
+      assert(graph.sent.length === sent0, "the simulator sent a real message");
+
+      // published: a real conversation
+      const pub = await http.post(`/flows/${flowId}/publish`, {}, auth());
+      assert(pub.status === 200 && pub.data.status === "published" && pub.data.version === 1, `publish ${pub.status}`);
+      const from = "5511910000021";
+      let before = graph.sent.length;
+      await inboundCloud(from, "wamid.flow-1", "oi");
+      await waitFor(() => sentTexts(before).some(t => t.includes("*2* - Tenho uma dúvida")), 12000, "flow menu");
+      before = graph.sent.length;
+      await inboundCloud(from, "wamid.flow-2", "quero me matricular");
+      await waitFor(() => sentTexts(before).some(t => t.includes("nome completo")), 12000, "flow question");
+      before = graph.sent.length;
+      await inboundCloud(from, "wamid.flow-3", "Joana Paula Lima");
+      await waitFor(() => sentTexts(before).some(t => t.includes("consultor fala com você")), 12000, "flow end");
+      const tk = ticketOf(from);
+      assert(sql(`SELECT name FROM Leads WHERE contactId=(SELECT contactId FROM Tickets WHERE id=${tk})`) === "Joana Paula Lima", "the answer did not reach the lead");
+      assert(sql(`SELECT COUNT(*) FROM LeadActivities WHERE leadId=(SELECT id FROM Leads WHERE contactId=(SELECT contactId FROM Tickets WHERE id=${tk})) AND body LIKE '%Enviado ao CRM pelo fluxo%'`) === "1", "the CRM action left no trace");
+      assert(sql(`SELECT status FROM ChatFlowRuns WHERE ticketId=${tk}`) === "done", "the run did not finish");
+      const st = (await http.get(`/flows/${flowId}/stats`, auth())).data;
+      assert(st.started >= 1 && st.crm >= 1 && st.nodes.menu >= 1 && st.done >= 1, `stats ${JSON.stringify(st)}`);
+
+      // a second message after the flow ended is not taken by the same flow again
+      before = graph.sent.length;
+      await inboundCloud(from, "wamid.flow-4", "obrigada");
+      await new Promise(r => setTimeout(r, 1500));
+      assert(!sentTexts(before).some(t => t.includes("Escolha")), "the flow started again on the same conversation");
+
+      // keyword entry beats the first message, and "wait" blocks go on by themselves
+      const kw = (await http.post("/flows", { name: "Bolsa", entry: { type: "keyword", keywords: ["bolsa"] }, graph: { nodes: [
+        { id: "s", type: "start", data: {} }, { id: "m", type: "message", data: { text: "Vamos falar de bolsas!" } },
+        { id: "d", type: "delay", data: { minutes: 1 } }, { id: "m2", type: "message", data: { text: "Voltei com mais uma dica." } }, { id: "e", type: "end", data: {} }],
+        edges: [{ id: "1", source: "s", target: "m" }, { id: "2", source: "m", target: "d" }, { id: "3", source: "d", target: "m2" }, { id: "4", source: "m2", target: "e" }] } }, auth())).data;
+      assert((await http.post(`/flows/${kw.id}/publish`, {}, auth())).status === 200, "keyword flow not published");
+      const from2 = "5511910000022";
+      before = graph.sent.length;
+      await inboundCloud(from2, "wamid.flow-5", "tem bolsa?");
+      await waitFor(() => sentTexts(before).some(t => t.includes("Vamos falar de bolsas")), 12000, "keyword flow");
+      assert(!sentTexts(before).some(t => t.includes("Escolha")), "the first-message flow answered a keyword conversation");
+      const tk2 = ticketOf(from2);
+      assert(sql(`SELECT status FROM ChatFlowRuns WHERE ticketId=${tk2}`) === "delayed", "the run is not waiting for time");
+      sql(`UPDATE ChatFlowRuns SET resumeAt = NOW() - INTERVAL '1 minute' WHERE ticketId=${tk2}`);
+      await waitFor(() => sentTexts(before).some(t => t.includes("Voltei com mais uma dica")), 45000, "after the wait");
+
+      // unpublishing hands the conversation back; duplicate and delete work
+      assert((await http.post(`/flows/${kw.id}/unpublish`, {}, auth())).data.status === "draft", "unpublish");
+      const dup = await http.post(`/flows/${flowId}/duplicate`, {}, auth());
+      assert(dup.status === 201 && dup.data.name.includes("cópia") && dup.data.status === "draft", "duplicate");
+      assert((await http.delete(`/flows/${dup.data.id}`, auth())).status === 200, "delete");
+      // the other tests talk to the AI agent and the old menu: no flow may stay live
+      assert((await http.post(`/flows/${flowId}/unpublish`, {}, auth())).data.status === "draft", "unpublish triage");
+    });
+    await test("visual flows: templates, the old menu as a flow, and flows made by AI", async () => {
+      const tpl = (await http.get("/flow-templates", auth())).data;
+      assert(tpl.length >= 3 && tpl.every(t => t.name && t.blocks > 2), "templates");
+      const fromTpl = await http.post("/flows", { name: "Do modelo", template: tpl[0].key }, auth());
+      assert(fromTpl.status === 201 && fromTpl.data.graph.nodes.some(n => n.type === "buttons") && fromTpl.data.errors === 0, `template flow ${fromTpl.status} errors=${fromTpl.data.errors} ${JSON.stringify(fromTpl.data.issues && fromTpl.data.issues.filter(i => i.level === "error").map(i => i.text))}`);
+      // the old tree of the chatbot, as a flow
+      sql("DELETE FROM ChatbotNodes");
+      const q = (await http.get("/queue", auth())).data[0];
+      const root = (await http.post("/chatbot-nodes", { title: "Financeiro", action: "queue", targetId: q.id, message: "Já te encaminho.", position: 1 }, auth())).data;
+      await http.post("/chatbot-nodes", { title: "Cursos", action: "message", message: "Temos 128 cursos.", position: 2 }, auth());
+      const imp = await http.post("/flows/import-legacy", {}, auth());
+      assert(imp.status === 201 && imp.data.graph.nodes.some(n => n.type === "buttons" && n.data.options.length === 2) && imp.data.graph.nodes.some(n => n.type === "transfer"), `import ${imp.status}`);
+      assert(root.id && imp.data.errors === 0, `legacy flow errors ${JSON.stringify(imp.data.issues && imp.data.issues.filter(i => i.level === "error").map(i => i.text))}`);
+      sql("DELETE FROM ChatbotNodes");
+      // the AI draws it: unknown things are dropped and the validation points at what is left
+      const gen = await http.post("/flows/generate", { description: "Quero um fluxo que pergunte se a pessoa quer falar de cursos ou do financeiro" }, auth());
+      assert(gen.status === 201 && gen.data.name === "Triagem gerada", `generate ${gen.status} ${JSON.stringify(gen.data).slice(0, 200)}`);
+      const types = gen.data.graph.nodes.map(n => n.type);
+      assert(types.includes("buttons") && types.includes("crm") && types.includes("ask"), "blocks missing");
+      assert(gen.data.graph.nodes.every(n => typeof n.x === "number"), "no layout");
+      assert(gen.data.graph.edges.length === 6, `the invalid link was kept: ${gen.data.graph.edges.length}`);
+      assert((await http.post("/flows/generate", { description: "curto" }, auth())).status === 400, "short description accepted");
     });
     await test("what the agent does not know is kept, the team's answer is captured, the owner reviews and the agent learns", async () => {
       assert((await http.put(`/ai-agents/${aiId}`, { reviewNumber: "(11) 99999-0000", reviewWhatsappId: cid, learnFromTeam: true, dailyTokenCap: 0 }, auth())).status === 200, "agent update");
