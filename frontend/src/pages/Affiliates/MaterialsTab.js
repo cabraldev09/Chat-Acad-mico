@@ -69,7 +69,7 @@ const MaterialForm = ({ open, material, courses, campaigns, consultants, affilia
     setRemoveFile(false);
     setF(material ? { ...EMPTY, ...Object.fromEntries(Object.entries(material).filter(([, v]) => v !== null)) } : EMPTY);
   }, [open, material]);
-  const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }));
+  const set = (k) => (e) => { e && e.persist && e.persist(); return (setF((x) => ({ ...x, [k]: e.target.value }))); };
 
   const save = async () => {
     setBusy(true);
@@ -159,7 +159,7 @@ const MaterialsTab = () => {
   const [release, setRelease] = useState(null);
 
   const load = useCallback(() => {
-    api.get("/affiliate-materials").then(({ data }) => setRows(data)).catch(toastError);
+    api.get("/affiliate-materials").then(({ data }) => setRows(Array.isArray(data) ? data : [])).catch(toastError);
   }, []);
   useEffect(() => {
     load();

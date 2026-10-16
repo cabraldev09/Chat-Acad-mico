@@ -570,7 +570,7 @@ const MessageInput = ({ ticketStatus, historical, isGroup, contactName, channel,
                 onChange={handleChange}
                 disabled={loading}
                 onPaste={handlePaste}
-                onKeyDown={(e) => {
+                onKeyDown={(e) => { e && e.persist && e.persist();
                   if (!typeBar || !quickAnswers.length) return;
                   if (e.key === "ArrowDown" || e.key === "ArrowUp") {
                     e.preventDefault();

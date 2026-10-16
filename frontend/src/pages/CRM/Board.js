@@ -78,7 +78,7 @@ const LeadCard = ({ lead, onOpen, onDragStart, onDragEnd, dragging }) => {
       <div className={classes.cardFoot}>
         {/* an enrolled student is past "where did it come from" and "wants to enrol": only what still matters is shown */}
         {!lead.wonAt && <span className={classes.chip} title={`Origem: ${lead.source}`}><SourceIcon source={lead.source} size={12} />{lead.source}</span>}
-        {lead.affiliate && <span className={`${classes.chip} ${classes.chipHot}`} title={`Indicado pelo afiliado ${lead.affiliate.name}`}>Afiliado: {lead.affiliate.name.split(" ")[0]}</span>}
+        {lead.affiliate && <span className={`${classes.chip} ${classes.chipHot}`} title={`Indicado pelo afiliado ${lead.affiliate.name}`}>Afiliado: {String(lead.affiliate.name || "").split(" ")[0]}</span>}
         {lead.slaAlertedAt && !lead.firstContactAt && (
           <span className={`${classes.chip} ${classes.chipLate}`} title="Este lead novo passou do tempo de resposta e ainda não foi atendido">
             <Hourglass size={12} />Sem resposta
@@ -176,7 +176,7 @@ const Board = () => {
     return () => { clearTimeout(timer.current); socket.disconnect(); };
   }, [load]);
 
-  const moveLead = async (leadId, stage, e, extra = {}) => {
+  const moveLead = async (leadId, stage, e, extra = {}) => { e && e.persist && e.persist();
     // optimistic update so the card lands instantly
     setBoard((prev) => {
       if (!prev) return prev;

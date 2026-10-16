@@ -201,7 +201,7 @@ const MediaPreview = ({ medias, setMedias, captions, setCaptions, current, setCu
             className={classes.input}
             placeholder={medias.length > 1 ? "Legenda desta imagem (opcional)" : "Adicione uma legenda (opcional)"}
             value={captions[index] || ""}
-            onChange={(e) => setCaptions((cs) => cs.map((c2, i) => (i === index ? e.target.value : c2)))}
+            onChange={(e) => { e && e.persist && e.persist(); return (setCaptions((cs) => cs.map((c2, i) => (i === index ? e.target.value : c2)))); }}
             onKeyPress={(e) => {
               if (e.key === "Enter" && !e.shiftKey && !loading) {
                 e.preventDefault();

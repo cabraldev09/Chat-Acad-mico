@@ -83,8 +83,8 @@ export const short = (iso) => {
 
 export const isOverdue = (iso) => !!iso && isPast(parseISO(iso));
 
-export const initials = (name = "") =>
-  name.split(" ").filter(Boolean).slice(0, 2).map((p) => p[0].toUpperCase()).join("");
+export const initials = (name) =>
+  String(name || "").split(" ").filter(Boolean).slice(0, 2).map((p) => p[0].toUpperCase()).join("");
 
 export const OwnerAvatar = ({ owner, size = 22 }) =>
   owner ? (

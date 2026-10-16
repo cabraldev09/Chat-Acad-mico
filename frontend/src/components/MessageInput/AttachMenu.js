@@ -88,7 +88,7 @@ const PollDialog = ({ open, ticketId, onClose }) => {
         {options.map((o, i) => (
           <div key={i} style={{ display: "flex", alignItems: "center", gap: 4 }}>
             <TextField fullWidth variant="outlined" margin="dense" label={`Opção ${i + 1}`} value={o} inputProps={{ maxLength: 80 }}
-              onChange={(e) => setOptions((list) => list.map((x, j) => (j === i ? e.target.value : x)))} />
+              onChange={(e) => { e && e.persist && e.persist(); return (setOptions((list) => list.map((x, j) => (j === i ? e.target.value : x)))); }} />
             {options.length > 2 && (
               <Button size="small" onClick={() => setOptions((list) => list.filter((x, j) => j !== i))} aria-label="Remover opção" style={{ minWidth: 36 }}><Trash2 size={16} /></Button>
             )}

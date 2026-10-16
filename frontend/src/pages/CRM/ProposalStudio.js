@@ -76,7 +76,7 @@ const toParams = (f) => {
 
 const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
   const classes = useStyles();
-  const { options } = ctx;
+  const options = (ctx && ctx.options) || {};
   const [courses, setCourses] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [institutions, setInstitutions] = useState([]);
@@ -114,8 +114,10 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
     setCourseId(data.courseId);
     setTemplateId(data.templateId);
     setSnapshot(data.snapshot);
+    // read here, not inside the updater (which runs while drawing, out of reach of the error handling around this call)
+    const fresh = toForm(data.params);
     setF((prev) => {
-      const next = toForm(data.params);
+      const next = { ...fresh };
       if (keep && prev) {
         // switching course: keep the negotiated discount and the candidate's ingress choices
         if (toNum(prev.bolsa) > 0 && data.params.gross) {
@@ -165,19 +167,19 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
     return () => clearTimeout(t);
   }, [f, snapshot, courseId, templateId, lead.id]);
 
-  const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }));
+  const set = (k) => (e) => { e && e.persist && e.persist(); return (setF((p) => ({ ...p, [k]: e.target.value }))); };
   const field = (k, label, extra = {}) => (
     <TextField fullWidth variant="outlined" margin="dense" label={label} value={f[k]} onChange={set(k)} {...extra} />
   );
-  const setBolsa = (e) => setF((p) => {
+  const setBolsa = (e) => { e && e.persist && e.persist(); return (setF((p) => {
     const b = toNum(e.target.value);
     return { ...p, bolsa: e.target.value, first: money(r2(toNum(p.gross) * (1 - b / 100))) };
-  });
-  const setFirst = (e) => setF((p) => ({ ...p, first: e.target.value, bolsa: toNum(p.gross) ? money(r2((1 - toNum(e.target.value) / toNum(p.gross)) * 100)) : "" }));
-  const setGross = (e) => setF((p) => {
+  })); };
+  const setFirst = (e) => { e && e.persist && e.persist(); return (setF((p) => ({ ...p, first: e.target.value, bolsa: toNum(p.gross) ? money(r2((1 - toNum(e.target.value) / toNum(p.gross)) * 100)) : "" }))); };
+  const setGross = (e) => { e && e.persist && e.persist(); return (setF((p) => {
     const g = toNum(e.target.value);
     return { ...p, gross: e.target.value, first: money(r2(g * (1 - toNum(p.bolsa) / 100))) };
-  });
+  })); };
 
   const persist = async () => {
     const body = { leadId: lead.id, courseId, templateId, params: toParams(f), snapshot };
@@ -271,10 +273,10 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
               </TextField>
               <div className={classes.grid2}>
                 <TextField select fullWidth variant="outlined" margin="dense" label="Forma de ingresso" value={f.admissionType} disabled={!!locked}
-                  onChange={(e) => setF((p) => {
+                  onChange={(e) => { e && e.persist && e.persist(); return (setF((p) => {
                     const entry = (options.admissionNeedsSemester || []).includes(e.target.value) ? p.entrySemester : 1;
                     return { ...p, admissionType: e.target.value, entrySemester: entry, ...(p.attendAuto ? { attend: String(p.courseSemesters - entry + 1) } : {}) };
-                  })}>
+                  })); }}>
                   {(options.admissionTypes || []).map((t) => (<MenuItem key={t} value={t}>{t}</MenuItem>))}
                 </TextField>
                 <TextField select fullWidth variant="outlined" margin="dense" label="Período de ingresso" value={f.entryTerm} onChange={set("entryTerm")} disabled={!!locked}>
@@ -283,12 +285,12 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
               </div>
               {needsSemester && (
                 <TextField select fullWidth variant="outlined" margin="dense" label="Semestre do curso em que ingressa" value={f.entrySemester} disabled={!!locked}
-                  onChange={(e) => setF((p) => ({ ...p, entrySemester: Number(e.target.value), ...(p.attendAuto ? { attend: String(p.courseSemesters - Number(e.target.value) + 1) } : {}) }))}>
+                  onChange={(e) => { e && e.persist && e.persist(); return (setF((p) => ({ ...p, entrySemester: Number(e.target.value), ...(p.attendAuto ? { attend: String(p.courseSemesters - Number(e.target.value) + 1) } : {}) }))); }}>
                   {Array.from({ length: f.courseSemesters }, (_, i) => (<MenuItem key={i + 1} value={i + 1}>{i + 1}º semestre{i === 0 ? " (início do curso)" : ""}</MenuItem>))}
                 </TextField>
               )}
               <TextField fullWidth variant="outlined" margin="dense" label="Semestres a cursar" value={f.attend} disabled={!!locked} type="number"
-                inputProps={{ min: 1, max: 20 }} onChange={(e) => setF((p) => ({ ...p, attend: e.target.value, attendAuto: false }))}
+                inputProps={{ min: 1, max: 20 }} onChange={(e) => { e && e.persist && e.persist(); return (setF((p) => ({ ...p, attend: e.target.value, attendAuto: false }))); }}
                 helperText={extra > 0
                   ? `Currículo restante: ${remaining}. Inclui ${extra} semestre${extra > 1 ? "s" : ""} de adaptação além do que falta no curso.`
                   : attend < remaining ? `Menos que os ${remaining} restantes (aproveitamento de estudos).` : `Todos os ${remaining} semestres que faltam no currículo.`} />
@@ -309,7 +311,7 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
               </div>
               <div className={classes.note}>Mude a primeira mensalidade ou a bolsa: o outro valor se ajusta.</div>
               <FormControlLabel
-                control={<Switch color="primary" checked={!!f.firstExempt} disabled={!!locked} onChange={(e) => setF((p) => ({ ...p, firstExempt: e.target.checked }))} />}
+                control={<Switch color="primary" checked={!!f.firstExempt} disabled={!!locked} onChange={(e) => { e && e.persist && e.persist(); return (setF((p) => ({ ...p, firstExempt: e.target.checked }))); }} />}
                 label="1ª mensalidade isenta"
               />
               <div className={classes.grid2}>
@@ -318,17 +320,17 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
               </div>
               {field("installmentsFixed", "Total de parcelas do curso (vazio = até o fim do curso)", { disabled: !!locked, type: "number", inputProps: { min: 1, max: 120 } })}
               <FormControlLabel
-                control={<Switch color="primary" checked={!!f.fixedUntilEnd} disabled={!!locked} onChange={(e) => setF((p) => ({ ...p, fixedUntilEnd: e.target.checked }))} />}
+                control={<Switch color="primary" checked={!!f.fixedUntilEnd} disabled={!!locked} onChange={(e) => { e && e.persist && e.persist(); return (setF((p) => ({ ...p, fixedUntilEnd: e.target.checked }))); }} />}
                 label="Mensalidade fixa até o fim do curso"
               />
               {!f.fixedUntilEnd && (
                 <>
                   <FormControlLabel
-                    control={<Switch color="primary" checked={!!f.hasRegression} disabled={!!locked} onChange={(e) => setF((p) => ({ ...p, hasRegression: e.target.checked }))} />}
+                    control={<Switch color="primary" checked={!!f.hasRegression} disabled={!!locked} onChange={(e) => { e && e.persist && e.persist(); return (setF((p) => ({ ...p, hasRegression: e.target.checked }))); }} />}
                     label="Tem regressão da bolsa (cai após o 1º semestre)"
                   />
                   <FormControlLabel
-                    control={<Switch color="primary" checked={!!f.hasAdjustment} disabled={!!locked} onChange={(e) => setF((p) => ({ ...p, hasAdjustment: e.target.checked }))} />}
+                    control={<Switch color="primary" checked={!!f.hasAdjustment} disabled={!!locked} onChange={(e) => { e && e.persist && e.persist(); return (setF((p) => ({ ...p, hasAdjustment: e.target.checked }))); }} />}
                     label="Tem reajuste semestral e anual"
                   />
                 </>
@@ -345,7 +347,7 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
                     <Button size="small" startIcon={<Copy size={14} />} onClick={() => copyText(textOf(b), b.title)}>Copiar</Button>
                   </div>
                   <TextField fullWidth multiline variant="outlined" margin="dense" value={textOf(b)} disabled={!!locked}
-                    onChange={(e) => setBlockEdits((m) => ({ ...m, [b.id]: e.target.value }))} />
+                    onChange={(e) => { e && e.persist && e.persist(); return (setBlockEdits((m) => ({ ...m, [b.id]: e.target.value }))); }} />
                 </div>
               ))}
               <Button fullWidth variant="outlined" startIcon={<Copy size={15} />} disabled={!blocks.length} onClick={() => copyText(blocks.map(textOf).join("\n\n"), "Mensagem completa")}>Copiar tudo</Button>
@@ -375,9 +377,9 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
                   {f.schedule.map((s, i) => (
                     <div key={i} style={{ display: "flex", gap: 8, alignItems: "center" }}>
                       <TextField variant="outlined" margin="dense" label="Semestre" value={s.from} disabled={!!locked} style={{ width: 110 }}
-                        onChange={(e) => setF((p) => ({ ...p, schedule: p.schedule.map((x, j) => (j === i ? { ...x, from: e.target.value } : x)) }))} />
+                        onChange={(e) => { e && e.persist && e.persist(); return (setF((p) => ({ ...p, schedule: p.schedule.map((x, j) => (j === i ? { ...x, from: e.target.value } : x)) }))); }} />
                       <TextField variant="outlined" margin="dense" label="% por semestre" value={s.pct} disabled={!!locked} style={{ flex: 1 }}
-                        onChange={(e) => setF((p) => ({ ...p, schedule: p.schedule.map((x, j) => (j === i ? { ...x, pct: e.target.value } : x)) }))} />
+                        onChange={(e) => { e && e.persist && e.persist(); return (setF((p) => ({ ...p, schedule: p.schedule.map((x, j) => (j === i ? { ...x, pct: e.target.value } : x)) }))); }} />
                       <IconButton size="small" disabled={!!locked} onClick={() => setF((p) => ({ ...p, schedule: p.schedule.filter((_, j) => j !== i) }))}><Trash2 size={16} /></IconButton>
                     </div>
                   ))}
@@ -404,7 +406,7 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
                 <div style={{ paddingTop: 12 }}>
                   {[["observation", "Observação"], ["disclaimer", "Aviso da projeção"], ["finalMessage", "Mensagem final"], ["bolsaNote", "Nota da bolsa aplicada"]].map(([k, label]) => (
                     <TextField key={k} fullWidth multiline rows={2} variant="outlined" margin="dense" label={label} disabled={!!locked}
-                      value={(snapshot.texts && snapshot.texts[k]) || ""} onChange={(e) => setSnapshot({ ...snapshot, texts: { ...snapshot.texts, [k]: e.target.value } })} />
+                      value={(snapshot && snapshot.texts && snapshot.texts[k]) || ""} onChange={(e) => { const v = e.target.value; setSnapshot((s) => ({ ...(s || {}), texts: { ...((s && s.texts) || {}), [k]: v } })); }} />
                   ))}
                 </div>
               </Collapse>
@@ -417,7 +419,7 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
                 <span className={classes.chip}>Bolsa <b>{result.bolsaApplied.toFixed(2).replace(".", ",")}%</b></span>
                 <span className={classes.chip}>1ª mensalidade <b>{brl(toNum(f.first))}</b></span>
                 <span className={classes.chip}>Até o dia {f.dueDay}: <b>{brl(result.tiers.onTime)}</b></span>
-                <span className={classes.chip}>Última parcela (cenário teto): <b>{brl(result.rows[result.rows.length - 1].monthlyMax)}</b></span>
+                {result.rows.length > 0 && <span className={classes.chip}>Última parcela (cenário teto): <b>{brl(result.rows[result.rows.length - 1].monthlyMax)}</b></span>}
               </div>
             )}
             {error && <div className={classes.err}>{error}</div>}

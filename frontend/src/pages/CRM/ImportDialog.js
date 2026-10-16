@@ -58,7 +58,7 @@ const ImportDialog = ({ open, onClose, onDone }) => {
           placeholder={"nome;telefone;email;curso\nMaria Souza;(11) 99999-0000;maria@email.com;Direito"} />
         <Button component="label" variant="outlined" size="small" style={{ marginTop: 8 }}>
           Escolher arquivo CSV
-          <input hidden type="file" accept=".csv,.txt" onChange={async (e) => { const f = e.target.files[0]; if (f) setText(await f.text()); e.target.value = ""; }} />
+          <input hidden type="file" accept=".csv,.txt" onChange={async (e) => { e && e.persist && e.persist(); const f = e.target.files[0]; if (f) setText(await f.text()); e.target.value = ""; }} />
         </Button>
         {text && <Typography variant="caption" color="textSecondary" style={{ marginLeft: 8 }}>{parseLeads(text).length} linhas reconhecidas</Typography>}
         {report && (

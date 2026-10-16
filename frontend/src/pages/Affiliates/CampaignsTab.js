@@ -14,7 +14,7 @@ import { AudiencePicker, ReleaseDialog } from "./Audience";
 import { brl, day, fetchAllUsers, useStyles } from "./shared";
 
 const EMPTY = { title: "", description: "", startsAt: "", endsAt: "", bonusValue: "", active: true, audience: "all", ownerIds: [], affiliateIds: [] };
-const dateInput = (v) => (v ? new Date(v).toISOString().slice(0, 10) : "");
+const dateInput = (v) => { const d = v ? new Date(v) : null; return d && !isNaN(d.getTime()) ? d.toISOString().slice(0, 10) : ""; };
 
 const CampaignForm = ({ open, campaign, consultants, affiliates, isAdmin, onClose, onSaved }) => {
   const [f, setF] = useState(EMPTY);
@@ -26,7 +26,7 @@ const CampaignForm = ({ open, campaign, consultants, affiliates, isAdmin, onClos
     setFile(null);
     setF(campaign ? { ...EMPTY, ...Object.fromEntries(Object.entries(campaign).filter(([, v]) => v !== null)), startsAt: dateInput(campaign.startsAt), endsAt: dateInput(campaign.endsAt) } : EMPTY);
   }, [open, campaign]);
-  const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }));
+  const set = (k) => (e) => { e && e.persist && e.persist(); return (setF((x) => ({ ...x, [k]: e.target.value }))); };
 
   const save = async () => {
     setBusy(true);
@@ -97,10 +97,10 @@ const CampaignsTab = () => {
   const [del, setDel] = useState(null);
   const [release, setRelease] = useState(null);
 
-  const load = useCallback(() => { api.get("/affiliate-campaigns").then(({ data }) => setRows(data)).catch(toastError); }, []);
+  const load = useCallback(() => { api.get("/affiliate-campaigns").then(({ data }) => setRows(Array.isArray(data) ? data : [])).catch(toastError); }, []);
   useEffect(() => {
     load();
-    api.get("/affiliates").then(({ data }) => setAffiliates(data)).catch(() => undefined);
+    api.get("/affiliates").then(({ data }) => setAffiliates(Array.isArray(data) ? data : [])).catch(() => undefined);
     if (isAdmin) fetchAllUsers().then((l) => setConsultants(l.filter((u) => u.role === "consultor" || u.role === "coordenacao"))).catch(() => undefined);
   }, [load, isAdmin]);
 
@@ -137,7 +137,7 @@ const CampaignsTab = () => {
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                   {c.bonusValue ? <span className={classes.chip} style={{ background: "#FEF84C", color: "#3a3300" }}><Gift size={12} /> {brl(c.bonusValue)} por matrícula</span> : null}
                   <span className={classes.chip} style={{ background: c.audience === "all" ? "rgba(22,163,74,.14)" : "rgba(245,158,11,.16)", color: c.audience === "all" ? "#15803d" : "#b45309" }}>
-                    <Users size={12} /> {c.audience === "all" ? "Todos" : `Restrita (${c.ownerIds.length + c.affiliateIds.length})`}
+                    <Users size={12} /> {c.audience === "all" ? "Todos" : `Restrita (${(c.ownerIds || []).length + (c.affiliateIds || []).length})`}
                   </span>
                 </div>
                 <div className={classes.actions} style={{ marginLeft: 0, justifyContent: "flex-end" }}>

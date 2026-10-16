@@ -26,7 +26,7 @@ const BonusesTab = () => {
   const [amount, setAmount] = useState(null);
 
   const load = useCallback(() => {
-    api.get("/affiliate-bonuses", { params: { status: status || undefined } }).then(({ data: d }) => setData(d)).catch(toastError);
+    api.get("/affiliate-bonuses", { params: { status: status || undefined } }).then(({ data: d }) => setData(d && Array.isArray(d.rows) && d.totals ? d : { rows: [], totals: { pending: 0, approved: 0, paid: 0 } })).catch(toastError);
   }, [status]);
   useEffect(() => { load(); }, [load]);
   useEffect(() => {

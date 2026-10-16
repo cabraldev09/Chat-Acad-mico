@@ -86,7 +86,7 @@ const LeadCard = ({ contactId }) => {
   }
 
   const lost = stages.find((s) => s.type === "lost");
-  const move = async (stage, extra = {}, e) => {
+  const move = async (stage, extra = {}, e) => { e && e.persist && e.persist();
     setBusy(true);
     try {
       await api.put(`/leads/${lead.id}/stage`, { stageId: stage.id, ...extra });

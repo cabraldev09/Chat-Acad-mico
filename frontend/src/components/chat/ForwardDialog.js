@@ -70,7 +70,7 @@ const ForwardDialog = ({ open, onClose, message, messages, fromTicketId }) => {
     setSending(false);
   };
 
-  const shown = tickets.filter((t) => !filter || t.contact.name.toLowerCase().includes(filter.toLowerCase()));
+  const shown = tickets.filter((t) => !filter || String((t.contact && t.contact.name) || "").toLowerCase().includes(filter.toLowerCase()));
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
@@ -89,7 +89,7 @@ const ForwardDialog = ({ open, onClose, message, messages, fromTicketId }) => {
             shown.map((t) => (
               <div key={t.id} className={classes.row} onClick={() => toggle(t.id)}>
                 <Checkbox color="primary" checked={selected.includes(t.id)} style={{ padding: 4 }} />
-                <Avatar src={t.contact.profilePicUrl} style={{ width: 36, height: 36 }}>{t.contact.name.charAt(0)}</Avatar>
+                <Avatar src={t.contact && t.contact.profilePicUrl} style={{ width: 36, height: 36 }}>{String((t.contact && t.contact.name) || "").charAt(0)}</Avatar>
                 <div className={classes.name}>
                   {t.contact.name}
                   <div className={classes.sub}>{t.queue?.name || "Sem fila"}</div>

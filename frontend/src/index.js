@@ -7,10 +7,12 @@ import "./styles/app.css";
 import { installModernToast } from "./utils/modernToast";
 import { installAutoTitles } from "./utils/autoTitles";
 import { installChunkRecovery } from "./utils/lazyPage";
+import { installGlobalErrorReporting } from "./utils/errorReporting";
 
 installModernToast();
 installAutoTitles();
 installChunkRecovery();
+installGlobalErrorReporting();
 
 ReactDOM.render(
 	<CssBaseline>

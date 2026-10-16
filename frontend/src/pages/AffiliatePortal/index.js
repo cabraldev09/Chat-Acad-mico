@@ -103,7 +103,7 @@ const ReferralSheet = ({ token, courses, presetCourse, onClose, onDone }) => {
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value }));
+  const set = (k) => (e) => { e && e.persist && e.persist(); return (setForm((f) => ({ ...f, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value }))); };
 
   const submit = async (e) => {
     e.preventDefault();
@@ -233,6 +233,8 @@ const AffiliatePortal = ({ match }) => {
   const load = useCallback(async () => {
     try {
       const { data: d } = await http.get(`/affiliate-portal/${token}`);
+      // a proxy or a deploy in the middle can answer 200 with something that is not the portal: treat it as a failure
+      if (!d || typeof d !== "object" || !Array.isArray(d.courses)) throw new Error("bad payload");
       setData(d);
       setFormat((f) => f || (d.courses[0] ? d.courses[0].modality : ""));
       setState("ready");

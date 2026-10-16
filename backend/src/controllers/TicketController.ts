@@ -148,6 +148,7 @@ export const pin = async (req: Request, res: Response): Promise<Response> => {
   const { ticketId } = req.params;
   const userId = Number(req.user.id);
   const wanted = req.body?.pinned !== false;
+  if (!(await Ticket.findByPk(ticketId, { attributes: ["id"] }))) throw new AppError("ERR_NO_TICKET_FOUND", 404);
   const count = await TicketPin.count({ where: { userId } });
   if (wanted) {
     if (count >= 5 && !(await TicketPin.findOne({ where: { userId, ticketId } }))) {

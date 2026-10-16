@@ -339,7 +339,7 @@ const WhatsAppModal = ({ open, onClose, whatsAppId }) => {
 														size="small"
 														color="primary"
 														checked={allowed.includes(g.id)}
-														onChange={e => setAllowed(a => (e.target.checked ? [...a, g.id] : a.filter(x => x !== g.id)))}
+														onChange={e => { e && e.persist && e.persist(); return (setAllowed(a => (e.target.checked ? [...a, g.id] : a.filter(x => x !== g.id)))); }}
 													/>
 												}
 												label={`${g.name} (${g.participants})`}

@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 
 import MainContainer from "../../components/MainContainer";
+import SectionBoundary from "../../components/SectionBoundary";
 import MainHeader from "../../components/MainHeader";
 import Title from "../../components/Title";
 import TimezoneSelect from "../../components/TimezoneSelect";
@@ -520,7 +521,7 @@ const SettingsHub = () => {
               <div className={classes.sub}>{current.hint}</div>
             </div>
             {!values ? <Typography className={classes.hint}>Carregando...</Typography> : (
-              <>
+              <SectionBoundary name={current.id} resetKey={current.id}>
                 {current.id === "geral" && <Geral values={values} save={save} admin={admin} />}
                 {current.id === "horario" && <Horario values={values} save={save} crm={crm} />}
                 {current.id === "atendimento" && <Atendimento values={values} save={save} crm={crm} />}
@@ -531,7 +532,7 @@ const SettingsHub = () => {
                 {current.id === "regras" && admin && <RegrasAcademicas />}
                 {current.id === "email" && admin && <><Email /><EmailModels /></>}
                 {current.id === "erros" && admin && <ErrosDeTela />}
-              </>
+              </SectionBoundary>
             )}
           </div>
         </div>

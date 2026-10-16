@@ -1,6 +1,6 @@
 import React from "react";
 
-import api from "../../services/api";
+import { newErrorCode, reportClientError } from "../../utils/errorReporting";
 
 // A screen that fails to draw must never leave a blank page: say what happened and offer the way out.
 class PageErrorBoundary extends React.Component {
@@ -22,17 +22,9 @@ class PageErrorBoundary extends React.Component {
     // eslint-disable-next-line no-console
     console.error("Screen failed to render:", error);
     // short code the user can read out; the same code is written to the server log with the message and the route
-    const code = Math.random().toString(36).slice(2, 7).toUpperCase();
+    const code = newErrorCode();
     this.setState({ code, detail: String((error && error.message) || "").slice(0, 160) });
-    try {
-      api.post("/client-errors", {
-        code,
-        route: window.location.pathname + window.location.hash,
-        message: error && error.message,
-        stack: error && error.stack,
-        components: info && info.componentStack
-      }).catch(() => {});
-    } catch (e) { /* reporting must never break the fallback screen */ }
+    reportClientError({ code, error, info });
   }
 
   render() {

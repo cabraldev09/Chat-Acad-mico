@@ -139,7 +139,7 @@ const ListItemsDialog = ({ list, onClose }) => {
               hidden
               type="file"
               accept=".csv,.txt"
-              onChange={async (e) => {
+              onChange={async (e) => { e && e.persist && e.persist();
                 const f = e.target.files[0];
                 if (f) doImport(parseRows(await f.text()));
                 e.target.value = "";

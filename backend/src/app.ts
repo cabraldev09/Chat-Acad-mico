@@ -123,6 +123,17 @@ app.use(async (err: Error, req: Request, res: Response, _: NextFunction) => {
     return res.status(400).json({ error: "ERR_INVALID_PARAMETER" });
   }
 
+  // an id that is not a number reaches the query as NaN ("column nan does not exist"): nothing is there to find
+  if (code === "42703" && /column "nan" does not exist/i.test(err.message)) {
+    logger.warn({ request: `${req.method} ${req.originalUrl}`, message: err.message });
+    return res.status(404).json({ error: "ERR_NOT_FOUND" });
+  }
+  // a reference to a record that does not exist (insert) is a missing thing; deleting what is still in use is a conflict
+  if (code === "23503") {
+    logger.warn({ request: `${req.method} ${req.originalUrl}`, message: err.message });
+    return /^update or delete/i.test(err.message) ? res.status(409).json({ error: "ERR_IN_USE" }) : res.status(404).json({ error: "ERR_NOT_FOUND" });
+  }
+
   // one line that names the request, so a 500 on the screen can be found in the log
   Sentry.captureException(err);
   logger.error({ request: `${req.method} ${req.originalUrl}`, message: err.message, err });

@@ -2,7 +2,7 @@
 // Sweeps every screen of the system as each role: opens it in a real (headless) Chrome, clicks its tabs and groups, and
 // reports a screen that falls on the error page, a script error, a failed request (5xx) or an error toast.
 // Usage (local stack running):  node scripts/smoke-pages.js [role ...]
-//   env: BASE=http://localhost:3000 API=http://localhost:8080 ADMIN_EMAIL=... ADMIN_PASSWORD=... CHROME_BIN=...
+//   env: BASE=http://localhost:3000 API=http://localhost:8080 ADMIN_EMAIL=... ADMIN_PASSWORD=... CHROME_BIN=... FUZZ=0 (skip typing in forms)
 const path = require("path");
 const fs = require("fs");
 const axios = require(path.resolve(__dirname, "../../backend/node_modules/axios"));
@@ -12,6 +12,7 @@ const BASE = process.env.BASE || "http://localhost:3000";
 const API = process.env.API || "http://localhost:8080";
 const ADMIN = { email: process.env.ADMIN_EMAIL || "admin@whaticket.com", password: process.env.ADMIN_PASSWORD || "admin" };
 const PASS = "sweep-pass-1234";
+const FUZZ = process.env.FUZZ !== "0";
 
 const chromePath = () => {
   if (process.env.CHROME_BIN) return process.env.CHROME_BIN;
@@ -113,12 +114,43 @@ async function sweepRole(browser, name, def) {
     await page.evaluate(() => document.querySelectorAll(".Toastify__toast--error").forEach((n) => n.remove()));
   };
 
+  // opens the forms of the screen ("Novo", "Adicionar", "Editar"...) and types fast in every field, as a person does:
+  // React 16 batches the updates, which is where a handler that reads the event late breaks
+  const fuzz = async (label) => {
+    if (!FUZZ) return;
+    const labels = await page.evaluate(() => [...new Set([...document.querySelectorAll("button, [role=button]")]
+      .filter((b) => b.offsetParent && !b.disabled && /^(novo|nova|adicionar|editar|criar|cadastrar)\b/i.test((b.innerText || "").trim()))
+      .map((b) => (b.innerText || "").trim().split("\n")[0]))].slice(0, 3)).catch(() => []);
+    for (const text of labels) {
+      try {
+        const clicked = await page.evaluate((t) => {
+          const b = [...document.querySelectorAll("button, [role=button]")].find((x) => x.offsetParent && !x.disabled && (x.innerText || "").trim().split("\n")[0] === t);
+          if (b) b.click();
+          return !!b;
+        }, text);
+        if (!clicked) continue;
+        await sleep(700);
+        const fields = await page.$$('[role="dialog"] input:not([type=file]):not([type=checkbox]):not([type=radio]):not([type=hidden]), [role="dialog"] textarea, form input:not([type=file]):not([type=checkbox]):not([type=radio]):not([type=hidden]):not([type=password])');
+        for (const field of fields.slice(0, 8)) {
+          try {
+            await field.click({ clickCount: 3 });
+            await page.keyboard.type("Teste 12 rapido", { delay: 0 });
+          } catch (e) { /* the field closed or moved */ }
+        }
+        await check(`${label} › ${text} (digitando)`);
+        await page.keyboard.press("Escape");
+        await sleep(300);
+      } catch (e) { /* the screen changed under the click */ }
+    }
+  };
+
   for (const route of ROUTES) {
     current = route;
     try {
       await page.goto(BASE + route, { waitUntil: "networkidle2", timeout: 40000 });
     } catch (e) { note("timeout", e.message); }
     await check(route);
+    await fuzz(route);
     // the tabs and groups of the screen: open each one
     const tabCount = await page.$$eval('[role="tab"]', (n) => n.length).catch(() => 0);
     for (let i = 0; i < Math.min(tabCount, 8); i++) {

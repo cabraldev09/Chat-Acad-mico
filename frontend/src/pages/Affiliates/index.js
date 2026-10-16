@@ -18,6 +18,8 @@ import RulesTab from "./RulesTab";
 import { useStyles } from "./shared";
 
 // the WhatsApp the person's affiliates see as "support": each person sets their own
+import SectionBoundary from "../../components/SectionBoundary";
+
 const SupportPhone = () => {
   const [phone, setPhone] = useState(null);
   const [value, setValue] = useState("");
@@ -58,7 +60,9 @@ const Affiliates = () => {
   ];
   const wanted = tabs.findIndex(([k]) => k === new URLSearchParams(location.search).get("aba"));
   const [tab, setTab] = useState(wanted >= 0 ? wanted : 0);
-  const Current = tabs[tab][2];
+  // the list of tabs can shrink (a change of role while the screen is open): an index beyond it falls back to the first
+  const current = tabs[tab] || tabs[0];
+  const Current = current[2];
 
   return (
     <MainContainer>
@@ -69,8 +73,8 @@ const Affiliates = () => {
           {tabs.map(([k, l]) => <Tab key={k} label={l} />)}
         </Tabs>
       </Paper>
-      <div className={`${classes.page} page-enter`} key={tabs[tab][0]}>
-        <Current />
+      <div className={`${classes.page} page-enter`} key={current[0]}>
+        <SectionBoundary name={current[0]} resetKey={tab}><Current /></SectionBoundary>
       </div>
     </MainContainer>
   );

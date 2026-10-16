@@ -146,7 +146,7 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab, side = false 
     }
   };
 
-  const move = async (stage, e, extra = {}) => {
+  const move = async (stage, e, extra = {}) => { e && e.persist && e.persist();
     // confirming an enrollment hands the student to the tutor: dedicated dialog
     if (stage.type === "won" && !extra.skipEnroll) { setEnrollOpen(true); return; }
     try {
@@ -348,7 +348,8 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab, side = false 
                         }}><MessageSquare size={16} /></IconAction>
                         {lead.affiliate && pr.status !== "draft" && (
                           <IconAction title={`Enviar ao afiliado ${lead.affiliate.name} para encaminhar`} onClick={async () => {
-                            try { await api.post(`/affiliates/${lead.affiliate.id}/send-proposal`, { proposalId: pr.id }); toast.success("Proposta enviada ao afiliado."); } catch (e) { toastError(e); }
+                            const affiliateId = lead.affiliate.id;
+                            try { await api.post(`/affiliates/${affiliateId}/send-proposal`, { proposalId: pr.id }); toast.success("Proposta enviada ao afiliado."); } catch (e) { toastError(e); }
                           }}><Send size={16} /></IconAction>
                         )}
                         <IconAction title="Baixar PDF" onClick={async () => {
