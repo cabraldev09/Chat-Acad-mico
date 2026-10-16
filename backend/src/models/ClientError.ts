@@ -33,6 +33,12 @@ class ClientError extends Model<ClientError> {
   @Column
   userAgent: string;
 
+  @Column
+  build: string;
+
+  @Column(DataType.DATE)
+  resolvedAt: Date | null;
+
   @CreatedAt
   createdAt: Date;
 

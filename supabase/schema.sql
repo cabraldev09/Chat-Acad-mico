@@ -758,7 +758,9 @@ CREATE TABLE public."ClientErrors" (
     components text,
     "userAgent" character varying(300),
     "createdAt" timestamp with time zone NOT NULL,
-    "updatedAt" timestamp with time zone NOT NULL
+    "updatedAt" timestamp with time zone NOT NULL,
+    build character varying(20),
+    "resolvedAt" timestamp with time zone
 );
 
 
@@ -3562,6 +3564,13 @@ CREATE INDEX client_errors_created_at ON public."ClientErrors" USING btree ("cre
 
 
 --
+-- Name: client_errors_route; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX client_errors_route ON public."ClientErrors" USING btree (route);
+
+
+--
 -- Name: commercial_grades_catalog_key; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4901,6 +4910,7 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261111000001-analysis.js') ON CONF
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261111000002-commercial-grades.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261112000001-ticket-wa-pinned.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261113000001-curricular-follow-up.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261116000001-client-errors-build.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

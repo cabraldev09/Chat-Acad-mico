@@ -36,3 +36,36 @@ pessoa vê na tela.
 - Os ícones vêm do `lucide-react` 0.292: `HelpCircle` (não `CircleHelp`), `User` (não `UserRound`).
 - Resposta de API que não é o formato esperado (um `200` com HTML durante um deploy) não pode derrubar a tela:
   normalize ao receber (`Array.isArray(x) ? x : []`).
+
+## O que o GitHub roda sozinho (`.github/workflows/checks.yml`)
+
+A cada envio para `main` e a cada pull request:
+
+| Trabalho | O que faz |
+|---|---|
+| `verificar` | `tsc`, textos em português, auditoria de rotas, testes de unidade, build do frontend, verificador de leitura tardia de evento e variáveis inexistentes (ESLint `no-undef`) |
+| `api-ponta-a-ponta` | `channels-e2e.js`: a API inteira contra WhatsApp/Telegram/Efí simulados, num banco descartável (Postgres 16) |
+| `telas` | sobe a API e o build de produção do frontend e roda `smoke-pages.js` como administrador, coordenação, consultor e tutor, digitando nos formulários; falha se alguma tela cair, der erro de script ou 5xx |
+
+Quando um trabalho falha, o relatório da varredura e o fim do registro da API aparecem no final do trabalho `telas`.
+
+## Regras que já evitaram queda de tela
+
+- **Uma conexão em tempo real por conjunto de salas.** `openSocket(chave)` (`services/socket-io.js`) devolve uma
+  alça sobre uma conexão compartilhada. Quem entra nas mesmas salas usa a mesma chave: `"notification"`,
+  `` `tickets:${status}` ``, `` `chat:${ticketId}` ``; quem não entra em sala usa a conexão `"global"` (sem argumento).
+  Não junte chaves diferentes: o servidor entrega eventos por sala e as listas de conversas dependem disso. No console,
+  `window.__socketStats()` mostra as conexões abertas e quantos componentes usam cada uma.
+- **Listas de usuários inteiras:** `/users` responde 20 por vez; use `fetchAllUsers()` (`utils/fetchAllUsers.js`) em
+  qualquer seletor.
+- **Coordenação = administração** nas guardas do servidor: use `isManagerRole(...)`, não `profile === "admin"`. Só
+  administradores são protegidos da coordenação (criar, promover, editar e excluir).
+- **Status ou formato que a tela não conhece não derruba a tela:** use `statusMap[x] || padrão`, `data.contact || {}`,
+  `Array.isArray(x) ? x : []`.
+- **Sondagens** (`setInterval`) só rodam com a aba visível.
+
+## Erros de tela por versão
+
+Configurações → Erros de tela → Resumo agrupa a mesma falha (tela + mensagem), mostra quantas vezes, quantas pessoas e
+em quais versões do código. "Esconder o que só aconteceu em versões antigas" separa defeito vivo de aba que ficou aberta
+antes da atualização. "Marcar como corrigido" guarda a decisão da equipe.

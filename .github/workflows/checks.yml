@@ -26,11 +26,20 @@ jobs:
       - name: Tudo em português
         working-directory: backend
         run: node scripts/i18n-check.js
+      - name: Rotas por perfil (auditoria)
+        working-directory: backend
+        run: node scripts/audit-routes.js
+      - name: Testes de unidade (motor de análise, proposta, e-mails)
+        working-directory: backend
+        run: npx vitest run
       - name: Frontend compila
         working-directory: frontend
         run: |
           npm install --legacy-peer-deps --no-audit --no-fund
           npx vite build
+      - name: Frontend sem leitura tardia de evento (erro "reading 'value'" no React 16)
+        working-directory: frontend
+        run: node scripts/check-lazy-events.js
       - name: Frontend sem variáveis inexistentes (evita tela branca)
         working-directory: frontend
         run: >
@@ -38,3 +47,107 @@ jobs:
           --parser-options=ecmaFeatures:{jsx:true} --env browser,es2021 --plugin react --plugin react-hooks
           --rule 'no-undef:error' --rule 'react/jsx-no-undef:error' --rule 'react/jsx-uses-vars:error'
           --rule 'react/jsx-uses-react:error' src
+
+  # a API inteira (WhatsApp/Telegram/Efí simulados) num banco descartável
+  api-ponta-a-ponta:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_USER: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGUSER: postgres
+      PGHOST: localhost
+      CHROME_BIN: /usr/bin/google-chrome
+      CHROME_ARGS: "--no-sandbox --disable-setuid-sandbox"
+      LOGIN_RATE_MAX: "100"
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Instala e compila o backend
+        working-directory: backend
+        run: |
+          npm install --legacy-peer-deps --no-audit --no-fund
+          npm run build
+      - name: Testes de ponta a ponta
+        working-directory: backend
+        run: node scripts/channels-e2e.js
+
+  # todas as telas, como administrador, coordenação, consultor e tutor, digitando nos formulários
+  telas:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_USER: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGUSER: postgres
+      CHROME_BIN: /usr/bin/google-chrome
+      DB_DIALECT: postgres
+      DB_HOST: localhost
+      DB_PORT: "5432"
+      DB_USER: postgres
+      DB_PASS: ""
+      DB_NAME: telas
+      DB_SSL: "false"
+      DATABASE_URL: ""
+      DATABASE_URL_POOL: ""
+      JWT_SECRET: ci
+      JWT_REFRESH_SECRET: ci-r
+      PORT: "8080"
+      BACKEND_URL: http://localhost
+      PUBLIC_URL: http://localhost:8080
+      FRONTEND_URL: http://localhost:3000
+      SKIP_WHATSAPP_SESSIONS: "1"
+      SKIP_DEFAULT_DATA: "1"
+      LOG_LEVEL: warn
+      LOGIN_RATE_MAX: "1000"
+      VITE_BACKEND_URL: http://localhost:8080/
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Backend no ar (banco novo, migrado e com os dados iniciais)
+        working-directory: backend
+        run: |
+          npm install --legacy-peer-deps --no-audit --no-fund
+          npm run build
+          psql -h localhost -U postgres -c "CREATE DATABASE telas"
+          npx sequelize db:migrate
+          npx sequelize db:seed:all
+          nohup node dist/server.js > /tmp/api.log 2>&1 &
+          for i in $(seq 1 60); do curl -fs http://localhost:8080/health && break; sleep 2; done
+      - name: Frontend (build de produção) no ar
+        working-directory: frontend
+        run: |
+          npm install --legacy-peer-deps --no-audit --no-fund
+          npx vite build
+          nohup npx vite preview --port 3000 > /tmp/web.log 2>&1 &
+          for i in $(seq 1 30); do curl -fs http://localhost:3000/ > /dev/null && break; sleep 2; done
+      - name: Varredura das telas
+        working-directory: frontend
+        env:
+          BASE: http://localhost:3000
+          API: http://localhost:8080
+          REPORT: /tmp/telas.txt
+        run: node scripts/smoke-pages.js admin coordenacao consultor tutor
+      - name: Relatório da varredura e registro da API
+        if: always()
+        run: |
+          echo "--- relatório ---"; cat /tmp/telas.txt || true
+          echo "--- API (fim) ---"; tail -40 /tmp/api.log || true
+

@@ -20,7 +20,8 @@ export const reportClientError = ({ code, error, info, kind }) => {
     api.post("/client-errors", {
       code: code || newErrorCode(),
       // which version of the code the person was running: tells a defect still present from an old tab
-      route: `${window.location.pathname}${window.location.hash} @${BUILD}`,
+      route: window.location.pathname + window.location.hash,
+      build: BUILD,
       message: kind ? `[${kind}] ${message}` : message,
       // the server keeps a short text: a long component stack would be refused for its size and the report lost
       stack: error && error.stack ? String(error.stack).slice(0, 4000) : undefined,

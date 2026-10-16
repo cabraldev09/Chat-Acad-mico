@@ -28,6 +28,8 @@ routes.use(clearCacheOnChange);
 // A screen that fails to draw in someone's browser is reported here and kept in the database (see Configurações > Erros de tela)
 routes.post("/client-errors", isAuth, rateLimit({ windowMs: 60000, max: 20, key: req => `ce:${(req as any).user?.id || req.ip}` }), ClientErrors.store);
 routes.get("/client-errors", isAuth, isAdmin, ClientErrors.index);
+routes.get("/client-errors/summary", isAuth, isAdmin, ClientErrors.summary);
+routes.put("/client-errors/resolve", isAuth, isAdmin, ClientErrors.resolve);
 routes.delete("/client-errors", isAuth, isAdmin, ClientErrors.clear);
 
 routes.use(analysisRoutes);

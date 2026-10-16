@@ -1620,6 +1620,16 @@ const postMeta = (id, payload, secret, badSig) => {
       const list = await http.get("/client-errors", auth());
       assert(list.status === 200 && list.data.some(e => e.code === "ABCDE" && e.route === "/afiliados"), `list ${JSON.stringify(list.data).slice(0, 120)}`);
       assert((await http.get("/client-errors?code=abcde", auth())).data.length === 1, "filter by code");
+      // the same failure many times is one problem; the version of the code comes in its own field (or as " @version" on old screens)
+      await http.post("/client-errors", { code: "FGHIJ", route: "/afiliados", build: "v2new", message: "Cannot read properties of null (reading 'value')" }, auth());
+      await http.post("/client-errors", { code: "KLMNO", route: "/afiliados @v1old", message: "Cannot read properties of null (reading 'value')" }, auth());
+      const grouped = (await http.get("/client-errors/summary", auth())).data;
+      const g = grouped.find(x => x.route === "/afiliados" && /reading 'value'/.test(x.message));
+      assert(g && g.n === 3 && g.users === 1 && g.builds.includes("v2new") && g.builds.includes("v1old") && g.resolved === false, `summary ${JSON.stringify(grouped).slice(0, 300)}`);
+      assert((await http.put("/client-errors/resolve", { route: "/afiliados", message: g.message }, auth())).status === 200, "resolve");
+      assert((await http.get("/client-errors/summary", auth())).data.find(x => x.route === "/afiliados").resolved === true, "not marked as fixed");
+      assert((await http.put("/client-errors/resolve", { route: "/afiliados", message: g.message, resolved: false }, auth())).status === 200 && (await http.get("/client-errors/summary", auth())).data.find(x => x.route === "/afiliados").resolved === false, "reopen");
+      assert((await http.get("/client-errors/summary", asUser(agentToken))).status === 403, "an agent read the summary");
       assert((await http.get("/client-errors", asUser(agentToken))).status === 403, "an agent read the errors");
       assert((await http.delete("/client-errors", auth())).status === 204 && (await http.get("/client-errors", auth())).data.length === 0, "clear");
     });
@@ -1835,7 +1845,10 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.put(`/users/${team.data.id}`, { role: "admin" }, as)).status === 403, "coordinator promoted someone to admin");
       const adminId = (await http.get("/users", auth())).data.users.find(u => u.profile === "admin").id;
       assert((await http.put(`/users/${adminId}`, { name: "Trocado" }, as)).status === 403, "coordinator edited an admin");
-      assert((await http.delete(`/users/${team.data.id}`, as)).status === 403, "coordinator deleted a user");
+      // it removes people of the team, never an administrator
+      const throwaway = (await http.post("/users", { name: "Descartavel", email: "descartavel@x.com", password: "senha123", role: "consultor" }, as)).data;
+      assert([200, 204].includes((await http.delete(`/users/${throwaway.id}`, as)).status), "coordinator cannot remove a member of the team");
+      assert((await http.delete(`/users/${adminId}`, as)).status === 403, "coordinator removed an administrator");
 
       // every polo and every lead, whatever the polo
       const lead = (await http.post("/leads", { name: "Lead sem dono", phone: "5569988887771", source: "Site" }, auth())).data.lead;
@@ -1884,6 +1897,9 @@ const postMeta = (id, payload, secret, badSig) => {
 
       const upd = await http.put(`/goals/${made.data.id}`, { title: "Meta de teste", members: [{ label: "Leila", userIds: [leila.id], target: 2 }] }, auth());
       assert(upd.status === 200 && upd.data.members.length === 1 && upd.data.members[0].reached === true, `update ${JSON.stringify(upd.data.members)}`);
+      // the screen sends the adjustment as `manual` (the same name the list answers with): it must be kept
+      const adj = await http.put(`/goals/${made.data.id}`, { members: [{ label: "Leila", userIds: [leila.id], target: 2, manual: 4 }] }, auth());
+      assert(adj.status === 200 && adj.data.members[0].manual === 4, `manual adjustment lost ${JSON.stringify(adj.data.members)}`);
       assert((await http.put(`/goals/${made.data.id}`, { startsOn: "2027-01-02", endsOn: "2027-01-01" }, auth())).status === 400, "inverted period accepted");
 
       const rep = await http.post(`/goals/${made.data.id}/repeat`, {}, auth());
@@ -3140,6 +3156,49 @@ const postMeta = (id, payload, secret, badSig) => {
       const only = await http.get("/crm/board?affiliate=any", auth());
       const all = JSON.stringify(only.data);
       assert(only.status === 200 && all.includes("Carlos Indicado") && !all.includes("Lead comum"), `affiliate filter ${only.status}`);
+    });
+    await test("review fixes: coordination at the personal numbers and the dashboard, funnel paging order, renaming a contact, the ticket tells if a group is read-only", async () => {
+      const tcoord = (await http.post("/auth/login", { email: "coord-c@x.com", password: "senha123" })).data.token;
+      const consTok = (await http.post("/auth/login", { email: "do-coord@x.com", password: "senha123" })).data.token;
+      const as = asUser(tcoord);
+      // the coordination reads the whole company in the dashboard (a consultant only their own)
+      assert((await http.get("/dashboard", as)).data.scope === "all", "coordinator dashboard is not the whole company");
+      assert((await http.get("/dashboard", asUser(consTok))).data.scope === "mine", "a consultant reads the whole company");
+      assert((await http.get("/stats/overview", asUser(consTok))).status === 200, "stats overview for a consultant");
+
+      // a number that belongs to another person can still be used by the coordination (schedules, campaigns...)
+      const consId = sql(`SELECT id FROM Users WHERE email = 'do-coord@x.com'`);
+      const tgContactId = (await http.get(`/tickets/${tgTicket}`, auth())).data.contactId;
+      sql(`UPDATE Whatsapps SET ownerId = ${consId} WHERE id = ${tgId}`);
+      const when = new Date(Date.now() + 3600000).toISOString();
+      const own = await http.post("/schedules", { body: "lembrete", sendAt: when, contactId: tgContactId, ticketId: Number(tgTicket), whatsappId: Number(tgId) }, as);
+      assert(own.status === 200 || own.status === 201, `coordinator cannot use someone else's number ${own.status} ${JSON.stringify(own.data).slice(0, 120)}`);
+      const other = (await http.post("/auth/login", { email: "outro-an@x.com", password: "senha123" })).data.token;
+      assert((await http.post("/schedules", { body: "x", sendAt: when, contactId: tgContactId, whatsappId: Number(tgId) }, asUser(other))).status === 403, "a consultant used another person's number");
+      sql(`UPDATE Whatsapps SET ownerId = NULL WHERE id = ${tgId}`);
+
+      // "Carregar mais" follows the order of the column (score first), so no lead repeats or is skipped
+      const stage = sql(`SELECT id FROM LeadStages ORDER BY position LIMIT 1`);
+      const made = [];
+      for (const [i, score] of [10, 50, 30, 50, 20].entries()) {
+        const l = await mkLead(`Paginacao ${i}`, `55119555520${i}0`, { stageId: Number(stage) });
+        sql(`UPDATE Leads SET score = ${score} WHERE id = ${l.id}`);
+        made.push(l.id);
+      }
+      const page1 = (await http.get("/leads", { ...auth(), params: { stageId: stage, limit: 3, offset: 0, search: "Paginacao" } })).data.leads;
+      const page2 = (await http.get("/leads", { ...auth(), params: { stageId: stage, limit: 3, offset: 3, search: "Paginacao" } })).data.leads;
+      const seq = [...page1, ...page2].filter(l => made.includes(l.id));
+      assert(seq.length === 5 && new Set(seq.map(l => l.id)).size === 5, `paging repeated or skipped leads ${JSON.stringify(seq.map(l => l.id))}`);
+      assert(seq.every((l, i) => i === 0 || Number(seq[i - 1].score) >= Number(l.score)), `paging not by score ${JSON.stringify(seq.map(l => l.score))}`);
+
+      // renaming a contact does not depend on a connected WhatsApp (only a changed number is checked there)
+      const originalName = (await http.get(`/contacts/${tgContactId}`, auth())).data.name;
+      const renamed = await http.put(`/contacts/${tgContactId}`, { name: "Ana Renomeada" }, auth());
+      assert(renamed.status === 200 && renamed.data.name === "Ana Renomeada", `rename ${renamed.status} ${JSON.stringify(renamed.data).slice(0, 120)}`);
+      await http.put(`/contacts/${tgContactId}`, { name: originalName }, auth());
+      // the conversation carries what the composer needs to lock an announcement group
+      const shown = (await http.get(`/tickets/${tgTicket}`, auth())).data;
+      assert(shown.contact && Object.prototype.hasOwnProperty.call(shown.contact, "readOnly"), "ticket contact without readOnly");
     });
     await test("goals per polo before any semester exists: an empty board with every list the screen reads", async () => {
       const empty = await http.get("/goals/polos", auth());

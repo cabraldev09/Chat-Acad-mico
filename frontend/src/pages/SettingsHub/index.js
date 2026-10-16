@@ -19,6 +19,8 @@ import { isManager } from "../../utils/access";
 import openSocket from "../../services/socket-io";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
+import { fetchAllUsersPage } from "../../utils/fetchAllUsers";
+import { BUILD } from "../../utils/versionWatch";
 
 // Configurações: where the rules of the system are set. Each group holds the real controls (saved as soon as they change);
 // "Cadastros" shows what exists (connections, people, polos...) with a way into each list.
@@ -112,7 +114,7 @@ const useCrm = (enabled) => {
   useEffect(() => {
     if (!enabled) return;
     api.get("/crm/settings").then(({ data }) => setS(data)).catch(toastError);
-    api.get("/users", { params: { pageNumber: 1 } }).then(({ data }) => setUsers(data.users || [])).catch(() => undefined);
+    fetchAllUsersPage().then(({ data }) => setUsers(data.users || [])).catch(() => undefined);
   }, [enabled]);
   const save = async (patch) => {
     try { const { data } = await api.put("/crm/settings", patch); setS(data); toast.success("Salvo."); } catch (err) { toastError(err); }
@@ -251,7 +253,7 @@ const Cadastros = ({ admin }) => {
     count("queues", "/queue", len);
     count("tags", "/tags", len);
     count("quick", "/quickAnswers", len);
-    count("chatbot", "/chatbot", len);
+    count("chatbot", "/flows", len);
     count("agents", "/ai-agents", len);
     count("stages", "/lead-stages", len);
   }, []);
@@ -433,43 +435,102 @@ const EmailModels = () => {
   );
 };
 
-// every screen that failed to draw in someone's browser, with the code shown on that person's screen
+// every screen that failed to draw in someone's browser. "Resumo" groups the same failure (screen + message) with how often,
+// how many people and which versions of the code; "Registros" lists each one with the code shown on that person's screen.
 const ErrosDeTela = () => {
   const classes = useStyles();
+  const [view, setView] = useState("resumo");
+  const [days, setDays] = useState(30);
+  const [onlyCurrent, setOnlyCurrent] = useState(true);
+  const [groups, setGroups] = useState(null);
   const [rows, setRows] = useState(null);
   const [code, setCode] = useState("");
-  const load = useCallback(() => {
+
+  const loadGroups = useCallback(() => {
+    api.get("/client-errors/summary", { params: { days } }).then(({ data }) => setGroups(Array.isArray(data) ? data : [])).catch((e) => { setGroups([]); toastError(e); });
+  }, [days]);
+  const loadRows = useCallback(() => {
     api.get("/client-errors", { params: code.trim() ? { code: code.trim() } : {} }).then(({ data }) => setRows(Array.isArray(data) ? data : [])).catch((e) => { setRows([]); toastError(e); });
   }, [code]);
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { if (view === "resumo") loadGroups(); else loadRows(); }, [view, loadGroups, loadRows]);
+
   const clear = async () => {
     if (!window.confirm("Apagar todos os registros de erro de tela?")) return;
-    try { await api.delete("/client-errors"); setRows([]); toast.success("Registros apagados"); } catch (e) { toastError(e); }
+    try { await api.delete("/client-errors"); setRows([]); setGroups([]); toast.success("Registros apagados"); } catch (e) { toastError(e); }
   };
+  const mark = async (g, resolved) => {
+    try { await api.put("/client-errors/resolve", { route: g.route, message: g.message, resolved }); loadGroups(); } catch (e) { toastError(e); }
+  };
+  // the failure happened on the version of the code that is open here, only on older ones, or on one that did not say
+  const kind = (g) => ((g.builds || []).length === 0 ? "unknown" : g.builds.includes(BUILD) ? "current" : "old");
+  const shown = (groups || []).filter((g) => !onlyCurrent || kind(g) !== "old");
+
+  const tag = (text, color) => <span style={{ fontSize: 11.5, padding: "2px 8px", borderRadius: 10, background: `${color}22`, color, whiteSpace: "nowrap" }}>{text}</span>;
+
   return (
     <Paper variant="outlined" className={classes.card}>
       <div className={classes.row}>
-        <TextField size="small" variant="outlined" label="Código do erro" value={code} onChange={(e) => setCode(e.target.value)} style={{ width: 180 }} />
-        <Button variant="outlined" onClick={load}>Buscar</Button>
+        <Button variant={view === "resumo" ? "contained" : "outlined"} color="primary" onClick={() => setView("resumo")}>Resumo</Button>
+        <Button variant={view === "registros" ? "contained" : "outlined"} color="primary" onClick={() => setView("registros")}>Registros</Button>
         <span style={{ flex: 1 }} />
-        <Button variant="outlined" color="secondary" startIcon={<Trash2 size={15} />} onClick={clear} disabled={!rows || !rows.length}>Limpar</Button>
+        <Button variant="outlined" color="secondary" startIcon={<Trash2 size={15} />} onClick={clear}>Limpar</Button>
       </div>
-      <div className={classes.hint}>O código aparece na tela de erro de quem teve o problema. Aqui ficam a tela, a mensagem e o trecho que falhou.</div>
-      {rows === null && <Typography className={classes.hint}>Carregando...</Typography>}
-      {rows && rows.length === 0 && <Typography className={classes.hint}>Nenhum erro registrado.</Typography>}
-      {(rows || []).map((r) => (
-        <div key={r.id} style={{ borderTop: "1px solid rgba(127,140,160,.25)", paddingTop: 10 }}>
+
+      {view === "resumo" ? (
+        <>
           <div className={classes.row}>
-            <b style={{ fontFamily: "monospace" }}>{r.code}</b>
-            <span className={classes.hint}>{new Date(r.createdAt).toLocaleString("pt-BR")} · {r.route} · usuário {r.userId || "-"} ({r.role || "-"})</span>
+            <TextField select size="small" variant="outlined" label="Período" value={days} onChange={(e) => setDays(Number(e.target.value))} style={{ width: 150 }} SelectProps={{ native: true }}>
+              <option value={7}>7 dias</option><option value={30}>30 dias</option><option value={90}>90 dias</option>
+            </TextField>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 14 }}>
+              <input type="checkbox" checked={onlyCurrent} onChange={(e) => setOnlyCurrent(e.target.checked)} style={{ appearance: "auto" }} />
+              Esconder o que só aconteceu em versões antigas
+            </label>
           </div>
-          <div style={{ fontSize: 13.5, marginTop: 2, overflowWrap: "anywhere" }}>{r.message}</div>
-          <details>
-            <summary className={classes.hint} style={{ cursor: "pointer" }}>Detalhes</summary>
-            <pre style={{ whiteSpace: "pre-wrap", fontSize: 11.5, overflowWrap: "anywhere", margin: "6px 0 0" }}>{`${r.stack || ""}\n${r.components || ""}\n${r.userAgent || ""}`}</pre>
-          </details>
-        </div>
-      ))}
+          <div className={classes.hint}>Uma aba aberta antes de uma atualização continua com o código velho: um erro que só aparece em versões antigas já foi corrigido, basta atualizar a página. Versão atual desta tela: <b style={{ fontFamily: "monospace" }}>{BUILD}</b>.</div>
+          {groups === null && <Typography className={classes.hint}>Carregando...</Typography>}
+          {groups && shown.length === 0 && <Typography className={classes.hint}>{groups.length ? "Nada na versão atual. Desmarque o filtro para ver as versões antigas." : "Nenhum erro registrado nesse período."}</Typography>}
+          {shown.map((g) => {
+            const k = kind(g);
+            return (
+              <div key={`${g.route}|${g.message}`} style={{ borderTop: "1px solid rgba(127,140,160,.25)", paddingTop: 10, opacity: g.resolved ? 0.6 : 1 }}>
+                <div className={classes.row}>
+                  <b style={{ fontFamily: "monospace" }}>{g.route || "(sem tela)"}</b>
+                  {g.resolved ? tag("Corrigido", "#15803d") : k === "old" ? tag("Só versão antiga", "#6b7a85") : k === "current" ? tag("Versão atual", "#b45309") : tag("Versão não informada", "#6b7a85")}
+                  <span className={classes.hint}>{g.n} {g.n === 1 ? "vez" : "vezes"} · {g.users} {g.users === 1 ? "pessoa" : "pessoas"} · última em {new Date(g.lastAt).toLocaleString("pt-BR")}</span>
+                  <span style={{ flex: 1 }} />
+                  <Button size="small" variant="outlined" onClick={() => mark(g, !g.resolved)}>{g.resolved ? "Reabrir" : "Marcar como corrigido"}</Button>
+                </div>
+                <div style={{ fontSize: 13.5, marginTop: 2, overflowWrap: "anywhere" }}>{g.message}</div>
+                <div className={classes.hint}>Código mais recente: <b style={{ fontFamily: "monospace" }}>{g.code}</b>{(g.builds || []).length ? ` · versões: ${g.builds.join(", ")}` : ""}</div>
+              </div>
+            );
+          })}
+        </>
+      ) : (
+        <>
+          <div className={classes.row}>
+            <TextField size="small" variant="outlined" label="Código do erro" value={code} onChange={(e) => setCode(e.target.value)} style={{ width: 180 }} />
+            <Button variant="outlined" onClick={loadRows}>Buscar</Button>
+          </div>
+          <div className={classes.hint}>O código aparece na tela de erro de quem teve o problema. Aqui ficam a tela, a mensagem e o trecho que falhou.</div>
+          {rows === null && <Typography className={classes.hint}>Carregando...</Typography>}
+          {rows && rows.length === 0 && <Typography className={classes.hint}>Nenhum erro registrado.</Typography>}
+          {(rows || []).map((r) => (
+            <div key={r.id} style={{ borderTop: "1px solid rgba(127,140,160,.25)", paddingTop: 10 }}>
+              <div className={classes.row}>
+                <b style={{ fontFamily: "monospace" }}>{r.code}</b>
+                <span className={classes.hint}>{new Date(r.createdAt).toLocaleString("pt-BR")} · {r.route} · usuário {r.userId || "-"} ({r.role || "-"}){r.build ? ` · versão ${r.build}` : ""}</span>
+              </div>
+              <div style={{ fontSize: 13.5, marginTop: 2, overflowWrap: "anywhere" }}>{r.message}</div>
+              <details>
+                <summary className={classes.hint} style={{ cursor: "pointer" }}>Detalhes</summary>
+                <pre style={{ whiteSpace: "pre-wrap", fontSize: 11.5, overflowWrap: "anywhere", margin: "6px 0 0" }}>{`${r.stack || ""}\n${r.components || ""}\n${r.userAgent || ""}`}</pre>
+              </details>
+            </div>
+          ))}
+        </>
+      )}
     </Paper>
   );
 };
