@@ -22,8 +22,17 @@ import {
   saveRules,
   searchStudents,
   studentView,
-  updateCurricular
+  updateCurricular,
+  countDueFollowUps,
+  listDueFollowUps,
+  listStaleEnrollmentCases,
+  setEnrollment
 } from "../analysis/Store";
+import { buildCommercialMessage, buildCommercialProposal, type CommercialProposalInput } from "../analysis/domain/commercial/proposal";
+import { ticketFromTarget } from "../helpers/ChatTarget";
+import { assertTicketAccess } from "../middleware/canAccessTicket";
+import ShowTicketService from "../services/TicketServices/ShowTicketService";
+import SendWhatsAppMessage from "../services/WbotServices/SendWhatsAppMessage";
 import { mailConfigured, sendMail } from "../services/MailServices/SendMail";
 import { studentAnalysisMail, studentLinkMail } from "../services/MailServices/Templates";
 import { notify } from "../services/MailServices/Notify";
@@ -116,6 +125,64 @@ export const curricularSubject = async (req: Request, res: Response): Promise<Re
   const b = req.body || {};
   const out = await correctCurricularSubject(row, String(req.params.subjectId), { status: b.status, period: b.period === undefined ? undefined : Number(b.period), workload: b.workload === undefined ? undefined : Number(b.workload) });
   return res.json(curricularView(out));
+};
+
+// ------------------------------------------------------------------ the 24-hour return and the commercial proposal
+
+export const curricularEnrollment = async (req: Request, res: Response): Promise<Response> => {
+  const row = await loadCurricular(req);
+  const b = req.body || {};
+  const out = await setEnrollment(row, me(req), { status: b.status, note: b.note, reanalysis: b.reanalysis === true });
+  return res.json(curricularView(out));
+};
+
+// returns waiting for an answer: the owner sees theirs, the management sees everyone's and the cases without enrollment for too long
+export const followUps = async (req: Request, res: Response): Promise<Response> => {
+  const scope = isManager(req) ? null : me(req);
+  const [rows, total, stale] = await Promise.all([listDueFollowUps(scope, 20), countDueFollowUps(scope), isManager(req) ? listStaleEnrollmentCases(null, 6) : Promise.resolve([])]);
+  const owners = new Map<number, string>();
+  if (isManager(req)) {
+    const ids = [...new Set([...rows, ...stale].map(r => r.userId).filter(Boolean))];
+    (await User.findAll({ where: { id: ids }, attributes: ["id", "name"] })).forEach(u => owners.set(u.id, u.name));
+  }
+  const item = (r: CurricularAnalysis) => ({ id: r.id, candidateName: r.candidateName, courseName: r.courseName, dueAt: r.followUpDueAt, reanalysis: !!r.enrollmentReanalysisAt, status: r.enrollmentStatus, ownerName: owners.get(r.userId) || null, deliveredAt: r.enrollmentReanalysisAt || r.createdAt });
+  return res.json({ total, due: rows.map(item), stale: stale.map(item) });
+};
+
+const proposalInputOf = (row: CurricularAnalysis): CommercialProposalInput => {
+  const view = curricularView(row, false);
+  const result: any = view.result || {};
+  const totals = result.totals || { total: 0, exempted: 0, periods: [] };
+  const sim = result.simulation;
+  return {
+    studentName: row.candidateName || null,
+    courseName: row.courseName || null,
+    totalSubjects: totals.total || 0,
+    exemptedSubjects: totals.exempted || 0,
+    totalPeriods: Math.max(0, ...(totals.periods || [0])),
+    projectedPeriods: sim ? (sim.semestersRemaining ?? sim.semesters?.length ?? null) : null,
+    estimatedCompletionTerm: sim?.estimatedCompletionTerm || null
+  };
+};
+
+export const curricularProposal = async (req: Request, res: Response): Promise<Response> => {
+  const row = await loadCurricular(req);
+  const input = proposalInputOf(row);
+  return res.json({ ...buildCommercialProposal(input), message: buildCommercialMessage(input) });
+};
+
+// the message of the proposal goes to the chosen contact (its open conversation, or a new one) and the analysis is linked to it
+export const curricularSendProposal = async (req: Request, res: Response): Promise<Response> => {
+  const row = await loadCurricular(req);
+  if (row.status !== "COMPLETED") throw new AppError("A análise ainda não está pronta para ser enviada.", 400);
+  const ticketId = await ticketFromTarget(req, req.body || {});
+  await assertTicketAccess(req, ticketId, "send");
+  const ticket = await ShowTicketService(ticketId);
+  if (ticket.status === "closed") throw new AppError("Só é possível enviar para conversas abertas.", 400);
+  if (ticket.isGroup) throw new AppError("A proposta tem dados do candidato: envie para um contato, não para um grupo.", 400);
+  await SendWhatsAppMessage({ body: buildCommercialMessage(proposalInputOf(row)), ticket });
+  if (!row.contactId) await row.update({ contactId: ticket.contactId });
+  return res.json({ ok: true, ticketId });
 };
 
 export const curricularRemove = async (req: Request, res: Response): Promise<Response> => {

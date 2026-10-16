@@ -18,13 +18,15 @@ interface Request {
   ticket: Ticket;
   body?: string;
   automated?: boolean;
+  displayName?: string;
 }
 
 const SendWhatsAppMedia = async ({
   media,
   ticket,
   body,
-  automated = false
+  automated = false,
+  displayName
 }: Request): Promise<ProviderMessage> => {
   try {
     if (!ticket.whatsappId) {
@@ -36,7 +38,7 @@ const SendWhatsAppMedia = async ({
       const whatsapp = await Whatsapp.findByPk(ticket.whatsappId);
       if (!whatsapp) throw new AppError("ERR_NO_WAPP_FOUND", 404);
       const caption = body ? formatBody(body, ticket.contact) : undefined;
-      let outgoing = { path: media.path, filename: media.filename, mimetype: media.mimetype };
+      let outgoing = { path: media.path, filename: displayName || media.filename, mimetype: media.mimetype };
       if (isAudio(media.mimetype)) {
         const mp3 = await toMp3(outgoing);
         if (mp3) outgoing = mp3;
@@ -81,10 +83,11 @@ const SendWhatsAppMedia = async ({
       ? formatBody(body as string, ticket.contact)
       : undefined;
 
-    let mediaInput = {
+    let mediaInput: { filename: string; mimetype: string; path: string; displayName?: string } = {
       filename: media.filename,
       mimetype: media.mimetype,
-      path: media.path
+      path: media.path,
+      ...(displayName ? { displayName } : {})
     };
     let asVoice = false;
     let converted: string | null = null;

@@ -10,7 +10,7 @@ import BrandLogo from "../../components/BrandLogo";
 import portalApi, { portalToken, setPortalToken } from "../../services/portalApi";
 import { NAVY, SKY } from "../Analysis/visual";
 import {
-  AcademicDashboardOverview, AcademicPeriodJourney, Button as OButton, ConclusionPath, PendingDistribution, cn, completionOf, formatDay, readableName,
+  AcademicDashboardOverview, AcademicPeriodJourney, Button as OButton, ConclusionPath, PendingDistribution, Portal as BodyPortal, cn, completionOf, formatDay, readableName,
 } from "../Analysis/orig";
 
 // The Portal do Aluno: the student signs in with the RGM (or e-mail) and the password chosen from the invitation, sees
@@ -226,7 +226,7 @@ const SettingsSheet = ({ open, onClose, student, onChangePassword }) => {
   if (!open) return null;
   const rows = [["Nome", student.name], ["E-mail", student.email || "Acesso ainda não criado"], ["RGM", student.rgm]];
   return (
-    <div role="dialog" aria-modal="true" aria-label="Configurações" className="orig fixed inset-0 z-[1300]">
+    <BodyPortal><div role="dialog" aria-modal="true" aria-label="Configurações" className="fixed inset-0 z-[1300]">
       <button type="button" aria-label="Fechar" onClick={onClose} className="absolute inset-0 bg-black/40" />
       <div className="absolute inset-y-0 right-0 flex w-full flex-col bg-slate-50 shadow-2xl sm:max-w-md">
         <div className="border-b border-slate-200 bg-gradient-to-br from-brand-cyan-50 via-white to-white px-5 py-5">
@@ -265,7 +265,7 @@ const SettingsSheet = ({ open, onClose, student, onChangePassword }) => {
           </section>
         </div>
       </div>
-    </div>
+    </div></BodyPortal>
   );
 };
 

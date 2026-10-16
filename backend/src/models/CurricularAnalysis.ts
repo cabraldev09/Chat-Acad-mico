@@ -79,6 +79,33 @@ class CurricularAnalysis extends Model<CurricularAnalysis> {
   @Column(DataType.TEXT)
   result: string;
 
+  // the result of the commercial service (see the migration 20261113000001)
+  @Default("PENDING")
+  @Column
+  enrollmentStatus: string;
+
+  @Column(DataType.TEXT)
+  enrollmentNote: string;
+
+  @Column(DataType.DATE)
+  enrollmentUpdatedAt: Date;
+
+  @Column
+  enrollmentUpdatedById: number;
+
+  @Column(DataType.DATE)
+  enrollmentReanalysisAt: Date;
+
+  @Column(DataType.DATE)
+  followUpDueAt: Date;
+
+  @Column(DataType.DATE)
+  followUpNotifiedAt: Date;
+
+  @Default(0)
+  @Column
+  followUpNotificationCount: number;
+
   @CreatedAt
   createdAt: Date;
 

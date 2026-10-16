@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { getAppTz } from "../helpers/AppTime";
 import { Op } from "sequelize";
 
 import AppError from "../errors/AppError";
@@ -6,6 +7,7 @@ import { getSetting, setSetting } from "../helpers/AppSettings";
 import AcademicAnalysis from "../models/AcademicAnalysis";
 import CurricularAnalysis from "../models/CurricularAnalysis";
 import Student from "../models/Student";
+import { addActivity } from "../services/CrmServices/LeadCore";
 import {
   AnalysisError,
   MAX_PDF_BYTES,
@@ -114,6 +116,15 @@ export const curricularView = (row: CurricularAnalysis, withSubjects = true) => 
   entryPeriod: row.entryPeriod,
   entryPeriodSource: row.entryPeriodSource,
   startTerm: row.startTerm,
+  enrollment: {
+    status: row.enrollmentStatus || "PENDING",
+    note: row.enrollmentNote,
+    updatedAt: row.enrollmentUpdatedAt,
+    updatedById: row.enrollmentUpdatedById,
+    reanalysisAt: row.enrollmentReanalysisAt,
+    dueAt: row.followUpDueAt,
+    due: !!row.followUpDueAt && (row.enrollmentStatus || "PENDING") === "PENDING" && new Date(row.followUpDueAt).getTime() <= Date.now()
+  },
   result: parse(row.result, null),
   ...(withSubjects ? { subjects: parse<StoredSubject[]>(row.subjects, []) } : {}),
   createdAt: row.createdAt,
@@ -131,15 +142,21 @@ const recompute = async (row: CurricularAnalysis, patch: { entryPeriod?: number 
     rules: await getRules(),
     baseWarnings: parse(row.baseWarnings, [])
   });
+  const completed = entryPeriod !== null;
   await row.update({
     entryPeriod,
     startTerm,
-    status: entryPeriod === null ? "WAITING_REVIEW" : "COMPLETED",
+    status: completed ? "COMPLETED" : "WAITING_REVIEW",
     errorMessage: null,
-    result: JSON.stringify(result)
+    result: JSON.stringify(result),
+    // the 24 hours count from the moment the analysis is delivered (ready), not from the upload; only once and only
+    // while nobody answered it (a later recalculation does not restart the clock)
+    ...(completed && !row.followUpDueAt && (row.enrollmentStatus || "PENDING") === "PENDING" && !row.enrollmentUpdatedAt ? { followUpDueAt: new Date(Date.now() + FOLLOW_UP_HOURS * 3600000) } : {})
   });
   return row;
 };
+
+export const FOLLOW_UP_HOURS = 24;
 
 export const createCurricular = async (
   userId: number,
@@ -473,4 +490,74 @@ export const findValidToken = async (token: string) => {
 export const searchStudents = (q: string) => {
   const like = `%${q.replace(/[%_]/g, "")}%`;
   return { [Op.or]: [{ name: { [Op.iLike]: like } }, { rgm: { [Op.iLike]: like } }, { email: { [Op.iLike]: like } }] };
+};
+
+// ------------------------------------------------------------------ the 24-hour return (result of the commercial service)
+
+export type EnrollmentDecision = { status: "ENROLLED" | "NOT_ENROLLED"; note?: string | null; reanalysis?: boolean };
+
+// weekdays between two instants, counted on the calendar of the company (Saturday and Sunday do not count), as "business
+// days without a result"
+const localDate = (d: Date): { y: number; m: number; d: number } => {
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: getAppTz(), year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(d);
+  const get = (t: string) => Number(parts.find(p => p.type === t)?.value);
+  return { y: get("year"), m: get("month"), d: get("day") };
+};
+
+export const businessDaysBetween = (from: Date, to: Date = new Date()): number => {
+  const a = localDate(new Date(from));
+  const b = localDate(new Date(to));
+  const end = Date.UTC(b.y, b.m - 1, b.d);
+  let days = 0;
+  for (let t = Date.UTC(a.y, a.m - 1, a.d); t < end; t += 86400000) {
+    const day = new Date(t).getUTCDay();
+    if (day !== 0 && day !== 6) days += 1;
+  }
+  return days;
+};
+
+// Enrolled closes the question; not enrolled closes it with the reason; a new analysis asks again in 24 hours.
+export const setEnrollment = async (row: CurricularAnalysis, userId: number, decision: EnrollmentDecision): Promise<CurricularAnalysis> => {
+  if (row.status !== "COMPLETED") throw new AppError("O resultado só pode ser registrado depois que a análise estiver pronta.", 400);
+  const note = String(decision.note || "").trim().slice(0, 300);
+  const now = new Date();
+  let patch: Record<string, unknown>;
+  let activity: string;
+  if (decision.reanalysis) {
+    patch = { enrollmentStatus: "PENDING", enrollmentNote: note || null, enrollmentReanalysisAt: now, followUpDueAt: new Date(now.getTime() + FOLLOW_UP_HOURS * 3600000), followUpNotifiedAt: null, followUpNotificationCount: 0 };
+    activity = `Reanálise da análise curricular: novo retorno em ${FOLLOW_UP_HOURS} horas.`;
+  } else if (decision.status === "ENROLLED") {
+    patch = { enrollmentStatus: "ENROLLED", enrollmentNote: note || null, followUpDueAt: null };
+    activity = "Análise curricular: o candidato se matriculou.";
+  } else if (decision.status === "NOT_ENROLLED") {
+    if (note.length < 3) throw new AppError("Informe o motivo da não matrícula.", 400);
+    patch = { enrollmentStatus: "NOT_ENROLLED", enrollmentNote: note, followUpDueAt: null };
+    activity = `Análise curricular: o candidato não se matriculou. Motivo: ${note}`;
+  } else {
+    throw new AppError("Resultado inválido.", 400);
+  }
+  await row.update({ ...patch, enrollmentUpdatedAt: now, enrollmentUpdatedById: userId });
+  if (row.leadId) await addActivity(row.leadId, userId, "followup", activity).catch(() => undefined);
+  return row;
+};
+
+const dueWhere = () => ({ status: "COMPLETED", enrollmentStatus: "PENDING", followUpDueAt: { [Op.lte]: new Date() } });
+
+// returns waiting for an answer (the bell of the owner; the management sees everyone's)
+export const listDueFollowUps = async (userId: number | null, take = 20): Promise<CurricularAnalysis[]> =>
+  CurricularAnalysis.findAll({ where: { ...dueWhere(), ...(userId ? { userId } : {}) } as any, order: [["followUpDueAt", "ASC"]], limit: take });
+
+export const countDueFollowUps = async (userId: number | null): Promise<number> =>
+  CurricularAnalysis.count({ where: { ...dueWhere(), ...(userId ? { userId } : {}) } as any });
+
+// delivered more than two business days ago and still waiting for an answer (a new analysis keeps counting from its date);
+// only the ones that carry a return date, so what existed before this control does not flood the list
+export const listStaleEnrollmentCases = async (userId: number | null, take = 6): Promise<CurricularAnalysis[]> => {
+  const candidates = await CurricularAnalysis.findAll({
+    // two business days are at least two calendar days: the return fell due at least a day ago
+    where: { status: "COMPLETED", enrollmentStatus: "PENDING", followUpDueAt: { [Op.lte]: new Date(Date.now() - 24 * 3600000) }, ...(userId ? { userId } : {}) } as any,
+    order: [["followUpDueAt", "ASC"]],
+    limit: 500
+  });
+  return candidates.filter(c => businessDaysBetween(c.enrollmentReanalysisAt || c.createdAt) > 2).slice(0, take);
 };

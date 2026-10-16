@@ -646,6 +646,7 @@ const sendMedia = async (
         media.data?.toString("base64") || "",
         media.filename
       );
+  if (media.displayName) messageMedia.filename = media.displayName;
 
   const mediaOptions: MessageSendOptions = {
     caption: options?.caption,

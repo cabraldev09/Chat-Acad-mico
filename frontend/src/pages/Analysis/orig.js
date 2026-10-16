@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import React, { useLayoutEffect, useRef } from "react";
 import { GraduationCap } from "lucide-react";
 
@@ -451,3 +452,8 @@ export const statusBadgeClass = {
   info: "bg-status-info-bg text-status-info",
   neutral: "bg-status-neutral-bg text-status-neutral",
 };
+
+// A dialog is drawn straight into <body>: the pages animate when they open (filter/transform), and inside such an
+// element "position: fixed" is measured from the element, not from the window, which pushes the dialog out of view.
+// `orig` is repeated because the portal leaves the page that carries it.
+export const Portal = ({ children }) => createPortal(<div className="orig">{children}</div>, document.body);

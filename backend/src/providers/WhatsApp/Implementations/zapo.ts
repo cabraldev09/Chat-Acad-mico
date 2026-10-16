@@ -947,7 +947,7 @@ const sendMedia = async (
     media: mediaBuffer,
     mimetype: media.mimetype,
     ...(options?.caption ? { caption: options.caption } : {}),
-    ...(mediaType === "document" ? { fileName: media.filename } : {}),
+    ...(mediaType === "document" ? { fileName: media.displayName || media.filename } : {}),
     ...(isVoice ? { ptt: true } : {})
   } as WaSendMediaMessage;
 

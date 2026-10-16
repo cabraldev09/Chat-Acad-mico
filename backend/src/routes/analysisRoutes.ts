@@ -21,7 +21,11 @@ r.put("/analysis/rules", isAuth, isAdmin, Analysis.rulesSave);
 
 r.get("/analysis/curricular", isAuth, Analysis.curricularIndex);
 r.post("/analysis/curricular", isAuth, rateLimit({ windowMs: 60000, max: 20, key: req => `an:${(req as any).user?.id}` }), pdf.single("file"), Analysis.curricularStore);
+r.get("/analysis/follow-ups", isAuth, Analysis.followUps);
 r.get("/analysis/curricular/:id", isAuth, Analysis.curricularShow);
+r.put("/analysis/curricular/:id/enrollment", isAuth, Analysis.curricularEnrollment);
+r.get("/analysis/curricular/:id/proposal", isAuth, Analysis.curricularProposal);
+r.post("/analysis/curricular/:id/send-proposal", isAuth, Analysis.curricularSendProposal);
 r.put("/analysis/curricular/:id", isAuth, Analysis.curricularUpdate);
 r.put("/analysis/curricular/:id/subject/:subjectId", isAuth, Analysis.curricularSubject);
 r.delete("/analysis/curricular/:id", isAuth, Analysis.curricularRemove);

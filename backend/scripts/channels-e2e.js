@@ -1444,6 +1444,101 @@ const postMeta = (id, payload, secret, badSig) => {
       await http.delete(`/analysis/academic/${id}`, asUser(tk));
     });
 
+    await test("curricular analysis: the 24-hour return (matriculou / não / reanálise) and the commercial proposal sent to a contact", async () => {
+      const sample = fs.readFileSync(path.join(__dirname, "fixtures", "sample-analise.pdf"));
+      const make = async (who, name) => {
+        const f = new FormData();
+        f.append("file", sample, { filename: "analise.pdf", contentType: "application/pdf" });
+        f.append("entryPeriod", "2");
+        f.append("startTerm", "2026.2");
+        f.append("candidateName", name);
+        const r = await http.post("/analysis/curricular", f, { headers: { ...f.getHeaders(), Authorization: `Bearer ${who}` } });
+        assert(r.status === 201, `create ${r.status} ${JSON.stringify(r.data).slice(0, 200)}`);
+        return r.data;
+      };
+      const hoursFromNow = d => (new Date(d).getTime() - Date.now()) / 3600000;
+      await http.post("/users", { name: "Segundo Consultor", email: "segundo-an@x.com", password: "senha123", role: "consultor" }, auth());
+      await http.post("/users", { name: "Outro Consultor", email: "outro-an@x.com", password: "senha123", role: "consultor" }, auth());
+      const owner = (await http.post("/auth/login", { email: "outro-an@x.com", password: "senha123" })).data.token;
+      const third = (await http.post("/auth/login", { email: "segundo-an@x.com", password: "senha123" })).data.token;
+
+      // born waiting, with the return due in 24 hours
+      const a = await make(owner, "Candidata Retorno");
+      assert(a.enrollment.status === "PENDING" && a.enrollment.due === false && hoursFromNow(a.enrollment.dueAt) > 23.5 && hoursFromNow(a.enrollment.dueAt) < 24.5, `new ${JSON.stringify(a.enrollment)}`);
+      assert((await http.get("/analysis/follow-ups", asUser(owner))).data.total === 0, "a return not due yet is on the bell");
+
+      // 24 hours later: it is on the bell of the owner and of the management, not of another consultant
+      sql(`UPDATE CurricularAnalyses SET followUpDueAt = now() - interval '2 hours' WHERE id = ${a.id}`);
+      const bell = (await http.get("/analysis/follow-ups", asUser(owner))).data;
+      assert(bell.total === 1 && bell.due[0].id === a.id && bell.due[0].candidateName === "Candidata Retorno", `bell ${JSON.stringify(bell)}`);
+      assert((await http.get("/analysis/follow-ups", asUser(third))).data.total === 0, "another consultant sees the return of someone else");
+      const mgmt = (await http.get("/analysis/follow-ups", auth())).data;
+      assert(mgmt.due.some(x => x.id === a.id && x.ownerName === "Outro Consultor"), `management ${JSON.stringify(mgmt).slice(0, 200)}`);
+      assert((await http.get(`/analysis/curricular/${a.id}`, asUser(owner))).data.enrollment.due === true, "the analysis does not say it is overdue");
+
+      // the three outcomes
+      const put = (body, who = owner) => http.put(`/analysis/curricular/${a.id}/enrollment`, body, asUser(who));
+      assert((await put({ status: "NOT_ENROLLED" })).status === 400 && (await put({ status: "NOT_ENROLLED", note: "ab" })).status === 400, "not enrolled without a reason was accepted");
+      assert((await put({ status: "BANANA", note: "qualquer motivo" })).status === 400 && (await put({})).status === 400, "an invalid outcome was recorded as not enrolled");
+      assert((await put({ status: "ENROLLED" }, third)).status === 403, "another consultant registered the outcome");
+      const re = (await put({ status: "NOT_ENROLLED", reanalysis: true })).data;
+      assert(re.enrollment.status === "PENDING" && re.enrollment.reanalysisAt && re.enrollment.due === false && hoursFromNow(re.enrollment.dueAt) > 23.5, `reanalysis ${JSON.stringify(re.enrollment)}`);
+      assert((await http.get("/analysis/follow-ups", asUser(owner))).data.total === 0, "a reanalysis stays on the bell");
+      const no = (await put({ status: "NOT_ENROLLED", note: "Aguardará nova condição" })).data;
+      assert(no.enrollment.status === "NOT_ENROLLED" && no.enrollment.note === "Aguardará nova condição" && !no.enrollment.dueAt, `not enrolled ${JSON.stringify(no.enrollment)}`);
+      const yes = (await put({ status: "ENROLLED" })).data;
+      assert(yes.enrollment.status === "ENROLLED" && yes.enrollment.due === false, `enrolled ${JSON.stringify(yes.enrollment)}`);
+      assert((await http.get("/analysis/follow-ups", asUser(owner))).data.total === 0, "an answered return is still on the bell");
+
+      // the commercial proposal: indicators and a message without any financial promise
+      const prop = (await http.get(`/analysis/curricular/${a.id}/proposal`, asUser(owner))).data;
+      assert(Number.isInteger(prop.exemptedPercentage) && typeof prop.isHighValue === "boolean" && /^Olá, Candidata Retorno!/.test(prop.message) && /Estimativas sujeitas/.test(prop.message) && !/R\$/.test(prop.message), `proposal ${JSON.stringify(prop).slice(0, 300)}`);
+      assert((await http.get(`/analysis/curricular/${a.id}/proposal`, asUser(third))).status === 403, "another consultant read the proposal");
+
+      // sent to a contact chosen on the screen (its open conversation), and the analysis is linked to it
+      const mine = await make(token, "Candidata Proposta");
+      const tgContact = (await http.get(`/tickets/${tgTicket}`, auth())).data.contactId;
+      const before = tg.sent.length;
+      const ok = await http.post(`/analysis/curricular/${mine.id}/send-proposal`, { contactId: tgContact }, auth());
+      assert(ok.status === 200 && tg.sent.slice(before).some(x => x.method === "sendMessage" && /aproveitamento curricular/.test(String(x.body.text || "")) && /Candidata Proposta/.test(String(x.body.text || ""))), `send ${ok.status} ${JSON.stringify(ok.data)} ${JSON.stringify(tg.sent.slice(before).map(x => x.method))}`);
+      assert((await http.get(`/analysis/curricular/${mine.id}`, auth())).data.contactId === tgContact, "the analysis was not linked to the contact");
+      assert((await http.post(`/analysis/curricular/${mine.id}/send-proposal`, {}, auth())).status === 400, "sent without a target");
+      const grp = sql(`SELECT id FROM Contacts WHERE isGroup = 1 LIMIT 1`);
+      if (grp) assert((await http.post(`/analysis/curricular/${mine.id}/send-proposal`, { contactId: Number(grp) }, auth())).status === 400, "the proposal went to a group");
+      assert((await http.post(`/analysis/curricular/${mine.id}/send-proposal`, { contactId: 99999999 }, auth())).status === 404, "sent to a contact that does not exist");
+      assert((await http.post(`/analysis/curricular/${mine.id}/send-proposal`, { contactId: tgContact }, asUser(owner))).status === 403, "another consultant sent someone else's proposal");
+    });
+
+    await test("no route answers 500 to a malformed or unknown id (each route with a :param, three bad values, as the administrator)", async () => {
+      const fs = require("fs");
+      const dir = path.join(__dirname, "../src/routes");
+      const routes = [];
+      fs.readdirSync(dir).filter(f => f.endsWith(".ts")).forEach(file => {
+        const text = fs.readFileSync(path.join(dir, file), "utf8").replace(/\n\s+/g, " ");
+        const re = /\b(?:r|\w*Routes?|router)\.(get|post|put|patch|delete)\(\s*(["'`])([^"'`]+)\2\s*,([^;]*)\);/g;
+        let m;
+        while ((m = re.exec(text))) if (/:\w+/.test(m[3])) routes.push({ method: m[1], path: m[3], guards: m[4] });
+      });
+      assert(routes.length > 100, `only ${routes.length} routes with a parameter were found`);
+      // routes that act on the outside world even for an unknown id (a webhook of a provider, a public form) are not part of this
+      const skip = /\/(webhook|webhooks|hooks|public|portal|afiliado|r)\b/i;
+      const bad = [];
+      for (const r of routes.filter(x => !skip.test(x.path))) {
+        for (const value of ["abc", "0", "99999999"]) {
+          const url = r.path.replace(/:\w+\??/g, value);
+          let res;
+          try { res = await http.request({ method: r.method, url, data: r.method === "get" || r.method === "delete" ? undefined : {}, ...auth() }); } catch (err) { bad.push(`${r.method.toUpperCase()} ${url} -> ${err.message}`); continue; }
+          if (res.status >= 500) {
+            // the server names the request and the reason in its log: show it so the failure can be fixed without guessing
+            const log = String(global.__backendLog ? global.__backendLog() : "");
+            const at = log.lastIndexOf(`${r.method.toUpperCase()} ${url}`);
+            bad.push(`${r.method.toUpperCase()} ${url} -> ${res.status} ${at >= 0 ? log.slice(at, at + 400).replace(/\s+/g, " ") : ""}`);
+          }
+        }
+      }
+      assert(bad.length === 0, `${bad.length} route(s) answered 5xx:\n  ${bad.slice(0, 25).join("\n  ")}`);
+    });
+
     await test("e-mails of the system: one catalog, a preview of each, and the test goes only to the administration", async () => {
       const list = (await http.get("/mail/templates", auth())).data;
       assert(Array.isArray(list) && list.length >= 9 && list.every(t => t.key && t.title && t.trigger && t.subject), `catalog ${JSON.stringify(list).slice(0, 200)}`);
@@ -1484,7 +1579,8 @@ const postMeta = (id, payload, secret, badSig) => {
       const sent = await http.post(`/grades/${marketing.id}/send`, { ticketId: Number(tgTicket) }, auth());
       assert(sent.status === 200, `send ${sent.status} ${JSON.stringify(sent.data)}`);
       const out = tg.sent.slice(before);
-      assert(out.some(x => x.method === "sendMessage" && /Matriz curricular/.test(String(x.body.text || ""))) && out.some(x => x.method === "sendDocument"), `sent ${JSON.stringify(out.map(x => x.method))}`);
+      // one message: the PDF with the summary as its description (as when a document is attached with a caption)
+      assert(out.length === 1 && out[0].method === "sendDocument" && /Matriz curricular/.test(String(out[0].body.caption || "")) && /1\.600 horas/.test(String(out[0].body.caption || "")), `sent ${JSON.stringify(out.map(x => [x.method, String(x.body.caption || "").slice(0, 40)]))}`);
       assert((await http.post(`/grades/${marketing.id}/send`, { ticketId: Number(tgTicket), summary: false, pdf: false }, auth())).status === 400, "nothing to send accepted");
       // the contact can be chosen instead of a conversation: its open conversation is used
       const tgTicketData = (await http.get(`/tickets/${tgTicket}`, auth())).data;
@@ -1860,8 +1956,10 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.get("/whatsapp", asUser(tc))).data.length >= 1, "coordinator does not list the connections");
     });
     await test("the last administrator cannot be demoted, and the user form shows the effective role", async () => {
-      const users = (await http.get("/users", auth())).data.users;
+      // the list is paged: look for the administrator by e-mail instead of hoping it is on the first page
+      const users = (await http.get("/users", { ...auth(), params: { searchParam: "admin@whaticket.com" } })).data.users;
       const admin = users.find(u => u.profile === "admin");
+      assert(admin, "the administrator was not found");
       assert((await http.get(`/users/${admin.id}`, auth())).data.role === "admin", "the form would show another role for the administrator");
       const demote = await http.put(`/users/${admin.id}`, { role: "consultor" }, auth());
       assert(demote.status === 400 && demote.data.error === "ERR_LAST_ADMIN", `the last admin was demoted: ${demote.status}`);

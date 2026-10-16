@@ -462,6 +462,7 @@ const messages = {
         ERR_AI_NO_HISTORY: "Escreva uma mensagem do aluno para o agente responder.",
         ERR_AI_FAILED: "O provedor de IA não respondeu. Confira a chave, o modelo e tente de novo.",
         ERR_NOT_FOUND: "Não encontramos este registro. Ele pode ter sido removido.",
+        ERR_IN_USE: "Não é possível remover: este registro ainda está em uso em outra parte do sistema.",
         ERR_CAMPAIGN_LOCKED: "Só dá para editar campanhas em rascunho, agendadas ou pausadas. Pause a campanha para alterar.",
         ERR_CAMPAIGN_INTERVAL: "O intervalo mínimo entre mensagens não pode ser maior que o máximo.",
         ERR_CAMPAIGN_INVALID_STATE: "Esta ação não está disponível para a situação atual da campanha.",

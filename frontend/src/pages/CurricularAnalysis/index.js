@@ -7,7 +7,9 @@ import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import { errorText } from "../Analysis/shared";
 import heroImage from "../../assets/orig/foto-04-cruzeiro.jpg";
-import { Badge, Button, Card, CardContent, Input, cn, formatDay, pluralize } from "../Analysis/orig";
+import { Badge, Button, Card, CardContent, Input, Portal, cn, formatDay, pluralize } from "../Analysis/orig";
+import SectionBoundary from "../../components/SectionBoundary";
+import { EnrollmentBanner, FollowUpPanel, ProposalCard } from "./FollowUp";
 
 // "Análise curricular", as in the original system: the PDF of the candidate's curricular analysis (SIAA) becomes the
 // forecast of the entry, semester by semester, with the text ready for WhatsApp. The numbers come from the academic
@@ -53,13 +55,13 @@ const PageHeader = ({ eyebrow, title, description }) => (
 );
 
 const Modal = ({ title, description, children, onClose }) => (
-  <div role="dialog" aria-modal="true" aria-label={title} className="fixed inset-0 z-[1300] grid place-items-center p-4">
+  <Portal><div role="dialog" aria-modal="true" aria-label={title} className="fixed inset-0 z-[1300] grid place-items-center p-4">
     <button type="button" aria-label="Fechar" onClick={onClose} className="absolute inset-0 bg-black/40" />
     <div className="relative w-full max-w-sm space-y-3 rounded-2xl bg-white p-5 shadow-xl">
       <div><h2 className="text-base font-semibold text-slate-900">{title}</h2>{description && <p className="mt-1 text-sm text-slate-500">{description}</p>}</div>
       {children}
     </div>
-  </div>
+  </div></Portal>
 );
 
 // ------------------------------------------------------------------ new analysis (page of the original)
@@ -135,6 +137,7 @@ const List = () => {
   const [rows, setRows] = useState(null);
   const [query, setQuery] = useState("");
   const [applied, setApplied] = useState("");
+  const [onlyDue, setOnlyDue] = useState(false);
   const load = useCallback(() => {
     api.get("/analysis/curricular", { params: { search: applied.trim() || undefined } }).then(({ data }) => setRows(data)).catch((e) => { toastError(e); setRows([]); });
   }, [applied]);
@@ -155,22 +158,26 @@ const List = () => {
         <UploadCard onCreated={(a) => history.push(`/analise-curricular/${a.id}`)} />
       </section>
 
+      <SectionBoundary name="Retornos pendentes"><FollowUpPanel /></SectionBoundary>
+
       <section>
         <PageHeader eyebrow="Análises" title="Análises curriculares" description="As análises feitas por você, da mais recente para a mais antiga." />
         <form onSubmit={(e) => { e.preventDefault(); setApplied(query); }} className="mb-4 flex flex-col gap-2 sm:flex-row">
           <span className="relative block sm:w-80"><Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" /><Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar candidato ou curso" className="h-10 bg-white pl-9" /></span>
           <Button type="submit" size="lg" className="h-10"><Search className="mr-2 size-4" />Buscar</Button>
+          <label className="flex h-10 items-center gap-2 text-sm text-slate-600"><input type="checkbox" checked={onlyDue} onChange={(e) => setOnlyDue(e.target.checked)} className="size-4 accent-[#003B71]" style={{ appearance: "auto" }} />Só retornos vencidos</label>
         </form>
-        {rows === null ? <p className="text-sm text-slate-500">Carregando…</p> : rows.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/70 p-8 text-center"><p className="font-medium text-slate-800">Nenhuma análise curricular ainda.</p><p className="mt-1 text-sm text-slate-500">Envie o PDF do candidato acima: o sistema lê a grade, calcula quantas disciplinas faltam e mostra, semestre a semestre, quando ele termina o curso.</p></div>
+        {rows === null ? <p className="text-sm text-slate-500">Carregando…</p> : rows.filter((r) => !onlyDue || (r.enrollment && r.enrollment.due)).length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/70 p-8 text-center">{rows.length > 0 && onlyDue ? <p className="font-medium text-slate-800">Nenhum retorno vencido.</p> : <><p className="font-medium text-slate-800">Nenhuma análise curricular ainda.</p><p className="mt-1 text-sm text-slate-500">Envie o PDF do candidato acima: o sistema lê a grade, calcula quantas disciplinas faltam e mostra, semestre a semestre, quando ele termina o curso.</p></>}</div>
         ) : (
           <Card className="overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[40rem] text-left text-sm">
-                <thead><tr className="border-b text-xs text-muted-foreground"><th className="px-4 py-3 font-medium">Candidato</th><th className="px-4 py-3 font-medium">Curso</th><th className="px-4 py-3 font-medium">Ingresso</th><th className="px-4 py-3 font-medium">Previsão</th><th className="px-4 py-3 font-medium">Verificação</th><th className="px-4 py-3 font-medium">Data</th></tr></thead>
+              <table className="w-full min-w-[48rem] text-left text-sm">
+                <thead><tr className="border-b text-xs text-muted-foreground"><th className="px-4 py-3 font-medium">Candidato</th><th className="px-4 py-3 font-medium">Curso</th><th className="px-4 py-3 font-medium">Ingresso</th><th className="px-4 py-3 font-medium">Previsão</th><th className="px-4 py-3 font-medium">Verificação</th><th className="px-4 py-3 font-medium">Retorno</th><th className="px-4 py-3 font-medium">Data</th></tr></thead>
                 <tbody>
-                  {rows.map((r) => {
+                  {rows.filter((r) => !onlyDue || (r.enrollment && r.enrollment.due)).map((r) => {
                     const sim = r.result && r.result.simulation;
+                    const enr = r.enrollment || { status: "PENDING" };
                     const rel = r.result && RELIABILITY[r.result.reliability];
                     return (
                       <tr key={r.id} onClick={() => history.push(`/analise-curricular/${r.id}`)} className="cursor-pointer border-b last:border-0 hover:bg-muted/50">
@@ -179,6 +186,7 @@ const List = () => {
                         <td className="px-4 py-3">{r.entryPeriod ? ordinal(r.entryPeriod) : <span className="text-status-warning">Pendente</span>}</td>
                         <td className="px-4 py-3 font-semibold text-brand-navy">{sim && sim.estimatedCompletionTerm ? sim.estimatedCompletionTerm : "—"}</td>
                         <td className="px-4 py-3">{rel ? <Badge variant="outline" className={cn("border-transparent font-medium", rel[1])}>{rel[0]}</Badge> : "—"}</td>
+                        <td className="px-4 py-3">{enr.status === "ENROLLED" ? <Badge variant="outline" className="border-transparent bg-status-success-bg font-medium text-status-success">Matriculou</Badge> : enr.status === "NOT_ENROLLED" ? <Badge variant="outline" className="border-transparent bg-status-danger-bg font-medium text-status-danger">Não matriculou</Badge> : enr.due ? <Badge variant="outline" className="border-transparent bg-status-warning-bg font-medium text-status-warning">Retorno vencido</Badge> : <Badge variant="outline" className="border-transparent bg-muted font-medium text-muted-foreground">Aguardando</Badge>}</td>
                         <td className="px-4 py-3 text-xs text-slate-500">{new Date(r.createdAt).toLocaleString("pt-BR")}</td>
                       </tr>
                     );
@@ -271,7 +279,7 @@ const GradeTable = ({ subjects, onStatus }) => {
   const [period, setPeriod] = useState("ALL");
   const [q, setQ] = useState("");
   const periods = [...new Set(subjects.map((s) => s.period))].sort((a, b) => a - b);
-  const rows = subjects.filter((s) => (filter === "ALL" || s.status === filter) && (period === "ALL" || String(s.period) === period) && (!q.trim() || s.name.toLowerCase().includes(q.trim().toLowerCase())));
+  const rows = subjects.filter((s) => (filter === "ALL" || s.status === filter) && (period === "ALL" || String(s.period) === period) && (!q.trim() || String(s.name || "").toLowerCase().includes(q.trim().toLowerCase())));
   const FILTERS = [["ALL", "Todas"], ["EXEMPTED", "Dispensadas"], ["PENDING", "Pendentes"], ["REVIEW", "Revisar"]];
   return (
     <div className="space-y-3">
@@ -508,9 +516,17 @@ const Detail = ({ id }) => {
           <div className="rounded-xl border border-status-warning/30 bg-status-warning-bg p-4 text-sm text-status-warning">O PDF indica o {a.headerEntryPeriod}º período; a análise está simulando o {a.entryPeriod}º.</div>
         )}
 
+        {a.status === "COMPLETED" && a.enrollment && (
+          <SectionBoundary name="Resultado do atendimento">
+            <EnrollmentBanner key={`${a.enrollment.status}-${a.enrollment.reanalysisAt}-${a.enrollment.updatedAt}`} analysis={a} onChanged={apply} />
+          </SectionBoundary>
+        )}
+
         {subjects.length > 0 ? <SummaryCards a={a} /> : (
           <div className="rounded-xl border border-status-warning/30 bg-status-warning-bg p-5"><div className="font-semibold text-status-warning">Ainda não há disciplinas disponíveis nesta análise</div><p className="mt-1 text-sm text-status-warning/90">Envie o PDF atualizado para criar uma nova análise.</p></div>
         )}
+
+        {a.status === "COMPLETED" && subjects.length > 0 && <SectionBoundary name="Proposta comercial"><ProposalCard key={a.id} analysis={a} onChanged={apply} /></SectionBoundary>}
 
         <div className="flex flex-wrap items-center gap-2">
           {r.narrative && <Button variant="outline" className="h-9" onClick={() => copy(r.narrative.text)}><ClipboardCopy className="mr-1.5 size-4" />Gerar resumo para candidato</Button>}

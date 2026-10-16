@@ -10,7 +10,7 @@ import { AcademicReportOverlay } from "../Analysis/Report";
 import heroImage from "../../assets/orig/formatura-portal-2026.jpg";
 import {
   AcademicDashboardOverview, AcademicPeriodJourney, Badge, Button, Card, CardContent, CardHeader, CardTitle, ConclusionPath, FormulaFlow, Input,
-  PendingDistribution, StudentMessagePreview, cn, completionOf, readableName,
+  PendingDistribution, Portal, StudentMessagePreview, cn, completionOf, readableName,
 } from "../Analysis/orig";
 
 // "Análise acadêmica", as in the original system: the banner, the card to send a document, the history of analyses with
@@ -250,7 +250,7 @@ const EditableDiscipline = ({ index, discipline, busy, onSave }) => {
   return (
     <div id={`academic-discipline-${index}`} className={cn("group min-w-0 overflow-hidden rounded-xl border bg-white", uncertain ? "border-amber-300" : discipline.manualEdited && "border-brand-cyan/50")}>
       <button type="button" aria-expanded={isOpen} onClick={() => setIsOpen((v) => !v)} className="flex w-full min-w-0 flex-wrap items-center justify-between gap-3 px-5 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
-        <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold text-slate-800">{discipline.name.trim() || "Nova disciplina (rascunho)"}</span><span className="mt-0.5 block truncate text-xs text-slate-500">{summary}</span></span>
+        <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold text-slate-800">{String(discipline.name || "").trim() || "Nova disciplina (rascunho)"}</span><span className="mt-0.5 block truncate text-xs text-slate-500">{summary}</span></span>
         <span className="flex shrink-0 items-center gap-2"><span className={cn("rounded-full px-2.5 py-1 text-xs font-semibold", uncertain ? "bg-amber-100 text-amber-900" : "bg-slate-100 text-slate-600")}>{uncertain ? "Revisar" : isOpen ? "Recolher" : "Editar"}</span><span aria-hidden="true" className={cn("text-base leading-none text-slate-500 transition-transform", isOpen && "rotate-180")}>⌄</span></span>
       </button>
       {isOpen && (
@@ -567,13 +567,13 @@ const Detail = ({ id }) => {
 
       {report && <AcademicReportOverlay a={a} onClose={() => setReport(false)} />}
       {del && (
-        <div role="dialog" aria-modal="true" aria-labelledby="del-title" className="fixed inset-0 z-[1300] grid place-items-center bg-black/40 p-4">
+        <Portal><div role="dialog" aria-modal="true" aria-labelledby="del-title" className="fixed inset-0 z-[1300] grid place-items-center bg-black/40 p-4">
           <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl">
             <h2 id="del-title" className="text-base font-semibold text-slate-900">Excluir esta análise?</h2>
             <p className="mt-2 text-sm text-slate-600">A análise de {a.studentName || "este aluno"} sai da lista. O PDF não é guardado pelo sistema.</p>
             <div className="mt-4 flex justify-end gap-2"><Button variant="outline" onClick={() => setDel(false)}>Cancelar</Button><Button onClick={remove}>Excluir</Button></div>
           </div>
-        </div>
+        </div></Portal>
       )}
     </div>
   );

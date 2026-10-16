@@ -1060,7 +1060,15 @@ CREATE TABLE public."CurricularAnalyses" (
     "baseWarnings" text DEFAULT '[]'::text NOT NULL,
     result text,
     "createdAt" timestamp with time zone NOT NULL,
-    "updatedAt" timestamp with time zone NOT NULL
+    "updatedAt" timestamp with time zone NOT NULL,
+    "enrollmentStatus" character varying(20) DEFAULT 'PENDING'::character varying NOT NULL,
+    "enrollmentNote" text,
+    "enrollmentUpdatedAt" timestamp with time zone,
+    "enrollmentUpdatedById" integer,
+    "enrollmentReanalysisAt" timestamp with time zone,
+    "followUpDueAt" timestamp with time zone,
+    "followUpNotifiedAt" timestamp with time zone,
+    "followUpNotificationCount" integer DEFAULT 0 NOT NULL
 );
 
 
@@ -3617,6 +3625,13 @@ CREATE INDEX curricular_analyses_user_id_created_at ON public."CurricularAnalyse
 
 
 --
+-- Name: curricular_followup_due_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX curricular_followup_due_idx ON public."CurricularAnalyses" USING btree ("followUpDueAt") WHERE ("followUpDueAt" IS NOT NULL);
+
+
+--
 -- Name: goal_members_goal_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4885,6 +4900,7 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261110000003-password-resets.js') 
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261111000001-analysis.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261111000002-commercial-grades.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261112000001-ticket-wa-pinned.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261113000001-curricular-follow-up.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

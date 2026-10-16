@@ -8,7 +8,7 @@ import { isManager } from "../../utils/access";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import { copyText, errorText, initialsOf } from "../Analysis/shared";
-import { Badge, Button, Card, CardContent, Input, cn } from "../Analysis/orig";
+import { Badge, Button, Card, CardContent, Input, Portal, cn } from "../Analysis/orig";
 import { DOC_LABEL, RESULT_LABEL } from "../AcademicAnalysis";
 
 // "Alunos": who has access to the Portal do Aluno, in the look of the original. The tutor registers the student (by RGM),
@@ -16,13 +16,13 @@ import { DOC_LABEL, RESULT_LABEL } from "../AcademicAnalysis";
 // and follows the versions.
 
 const Modal = ({ title, description, children, onClose, wide }) => (
-  <div role="dialog" aria-modal="true" aria-label={title} className="orig fixed inset-0 z-[1300] grid place-items-center p-4">
+  <Portal><div role="dialog" aria-modal="true" aria-label={title} className="fixed inset-0 z-[1300] grid place-items-center p-4">
     <button type="button" aria-label="Fechar" onClick={onClose} className="absolute inset-0 bg-black/40" />
     <div className={cn("relative w-full space-y-3 rounded-2xl bg-white p-5 shadow-xl", wide ? "max-w-lg" : "max-w-sm")}>
       <div><h2 className="text-base font-semibold text-slate-900">{title}</h2>{description && <p className="mt-1 text-sm text-slate-500">{description}</p>}</div>
       {children}
     </div>
-  </div>
+  </div></Portal>
 );
 
 const Field = ({ label, hint, children }) => <label className="block text-xs font-semibold text-slate-600">{label}<span className="mt-1.5 block">{children}</span>{hint && <span className="mt-1 block text-xs font-normal text-slate-500">{hint}</span>}</label>;

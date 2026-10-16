@@ -7,7 +7,8 @@ import { isManager } from "../../utils/access";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import { copyText, errorText, openPdf } from "../Analysis/shared";
-import { Button, Card, CardContent, CardHeader, CardTitle, Input, cn } from "../Analysis/orig";
+import { Button, Card, CardContent, CardHeader, CardTitle, Input, Portal, cn } from "../Analysis/orig";
+import { ContactChooser } from "../Analysis/ContactChooser";
 
 // "Grades": the matrices of the courses, in the look of the original ("Grades comerciais"). The commercial team finds a
 // course, copies the summary or sends the PDF to the candidate in the conversation; the management publishes them.
@@ -27,37 +28,23 @@ const SelectField = ({ label, value, onChange, emptyLabel, options }) => (
 );
 
 const Modal = ({ title, description, children, onClose }) => (
-  <div role="dialog" aria-modal="true" aria-label={title} className="orig fixed inset-0 z-[1300] grid place-items-center p-4">
+  <Portal><div role="dialog" aria-modal="true" aria-label={title} className="fixed inset-0 z-[1300] grid place-items-center p-4">
     <button type="button" aria-label="Fechar" onClick={onClose} className="absolute inset-0 bg-black/40" />
     <div className="relative w-full max-w-md space-y-3 rounded-2xl bg-white p-5 shadow-xl">
       <div><h2 className="text-base font-semibold text-slate-900">{title}</h2>{description && <p className="mt-1 text-sm text-slate-500">{description}</p>}</div>
       {children}
     </div>
-  </div>
+  </div></Portal>
 );
 
 // choose the contact (not a conversation): the open conversation of the person is used, or one is opened
 const SendDialog = ({ grade, onClose }) => {
-  const [options, setOptions] = useState([]);
   const [contact, setContact] = useState(null);
-  const [text, setText] = useState("");
-  const [loading, setLoading] = useState(false);
   const [summary, setSummary] = useState(true);
   const [pdf, setPdf] = useState(true);
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => { if (grade) { setContact(null); setText(""); setOptions([]); } }, [grade]);
-  useEffect(() => {
-    if (!grade) return undefined;
-    setLoading(true);
-    const t = setTimeout(() => {
-      api.get("/contacts", { params: { searchParam: text.trim(), pageNumber: 1 } })
-        .then(({ data }) => setOptions((data.contacts || []).filter((c) => !c.isGroup)))
-        .catch(() => setOptions([]))
-        .finally(() => setLoading(false));
-    }, 300);
-    return () => clearTimeout(t);
-  }, [text, grade]);
+  useEffect(() => { if (grade) setContact(null); }, [grade]);
 
   if (!grade) return null;
   const send = async () => {
@@ -72,26 +59,10 @@ const SendDialog = ({ grade, onClose }) => {
 
   return (
     <Modal title="Enviar para um contato" description={grade.courseName} onClose={onClose}>
-      {contact ? (
-        <div className="flex items-center justify-between gap-3 rounded-xl border border-sky-200 bg-sky-50/80 p-3 text-sm">
-          <span className="min-w-0"><strong className="block truncate">{contact.name}</strong><span className="text-xs text-slate-500">{contact.number}</span></span>
-          <button type="button" aria-label="Trocar o contato" onClick={() => setContact(null)} className="grid size-8 place-items-center rounded-lg text-slate-500 hover:bg-white"><X className="size-4" /></button>
-        </div>
-      ) : (
-        <div>
-          <span className="relative block"><Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" /><Input autoFocus value={text} onChange={(e) => setText(e.target.value)} placeholder="Digite o nome ou o telefone" className="h-10 bg-white pl-9" /></span>
-          <ul className="mt-2 max-h-56 overflow-y-auto rounded-xl border bg-white">
-            {loading && <li className="px-3 py-3 text-sm text-slate-500">Buscando…</li>}
-            {!loading && options.length === 0 && <li className="px-3 py-3 text-sm text-slate-500">{text.trim() ? "Nenhum contato encontrado." : "Digite o nome ou o telefone."}</li>}
-            {options.map((c) => (
-              <li key={c.id}><button type="button" onClick={() => setContact(c)} className="flex w-full items-center justify-between gap-3 border-b px-3 py-2.5 text-left text-sm last:border-0 hover:bg-muted/60"><span className="min-w-0 truncate font-medium">{c.name}</span><span className="shrink-0 text-xs text-slate-500">{c.number}</span></button></li>
-            ))}
-          </ul>
-        </div>
-      )}
-      <p className="text-xs text-slate-500">Se o contato já tem uma conversa aberta, o envio vai nela. Se não tem, abrimos uma conversa para você.</p>
+      <ContactChooser autoOpen title="Enviar grade ao contato" contact={contact} onPick={setContact} />
+      <p className="text-xs text-slate-500">Se o contato já tem uma conversa aberta, o envio vai nela. Se não tem, abrimos uma conversa para você. Com o PDF, o resumo vai como descrição dele, numa mensagem só.</p>
       <div className="grid gap-2 text-sm">
-        <label className="flex items-center gap-2"><input type="checkbox" checked={summary} onChange={(e) => setSummary(e.target.checked)} className="size-4 accent-[#003B71]" style={{ appearance: "auto" }} />Mensagem com o resumo da grade</label>
+        <label className="flex items-center gap-2"><input type="checkbox" checked={summary} onChange={(e) => setSummary(e.target.checked)} className="size-4 accent-[#003B71]" style={{ appearance: "auto" }} />Resumo da grade</label>
         <label className="flex items-center gap-2"><input type="checkbox" checked={pdf} onChange={(e) => setPdf(e.target.checked)} className="size-4 accent-[#003B71]" style={{ appearance: "auto" }} />PDF da matriz</label>
       </div>
       <div className="flex justify-end gap-2"><Button variant="outline" onClick={onClose}>Cancelar</Button><Button onClick={send} disabled={busy || !contact || (!summary && !pdf)}>{busy ? "Enviando…" : "Enviar"}</Button></div>

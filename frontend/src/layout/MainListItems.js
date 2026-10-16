@@ -160,6 +160,22 @@ const MainListItems = (props) => {
   const { user } = useContext(AuthContext);
   const [connectionWarning, setConnectionWarning] = useState(false);
   const [aiReview, setAiReview] = useState(0);
+  const [followUps, setFollowUps] = useState(0);
+
+  // curricular analyses whose 24-hour return is waiting for an answer (mine; the management sees all)
+  useEffect(() => {
+    if (!user || !user.id) return undefined;
+    const load = () => api.get("/analysis/follow-ups").then(({ data }) => setFollowUps(Number(data.total) || 0)).catch(() => {});
+    load();
+    const timer = setInterval(load, 5 * 60 * 1000);
+    window.addEventListener("followups:changed", load);
+    const socket = openSocket();
+    // the live notice refreshes this counter and any open list (they listen to the same event)
+    const live = () => { try { window.dispatchEvent(new Event("followups:changed")); } catch (e) { /* old browser */ } };
+    socket.on("followUp", live);
+    return () => { clearInterval(timer); window.removeEventListener("followups:changed", load); socket.off("followUp", live); socket.disconnect(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user && user.id]);
 
   // answers the team gave that the owner has not reviewed yet
   useEffect(() => {
@@ -241,7 +257,13 @@ const MainListItems = (props) => {
         <ListSubheader disableSticky className={classes.sectionLabel}>Cursos e alunos</ListSubheader>
       )}
       <ListItemLink to="/grades" primary="Grades" icon={<LibraryIcon className="ico" />} collapsed={collapsed} />
-      <ListItemLink to="/analise-curricular" primary="Análise curricular" icon={<FileSearchIcon className="ico" />} collapsed={collapsed} />
+      <ListItemLink
+        to="/analise-curricular"
+        primary="Análise curricular"
+        icon={<FileSearchIcon className="ico" />}
+        collapsed={collapsed}
+        adornment={followUps > 0 && <span className={classes.countBadge} title="Retornos de 24 horas para registrar">{followUps}</span>}
+      />
       {(isManager(user) || user.role === "tutor") && (
         <>
           <ListItemLink to="/analise-academica" primary="Análise acadêmica" icon={<BookOpenCheckIcon className="ico" />} collapsed={collapsed} />

@@ -157,6 +157,25 @@ export const testMail = (): MailBody =>
     reason: "Você recebeu este e-mail porque um administrador pediu um teste em Configurações > E-mail."
   });
 
+export const followUpMail = (name: string, items: Array<{ id: number; student: string; course: string; businessDays: number }>, listUrl: string): MailBody => {
+  const urgent = items.some(i => i.businessDays > 2);
+  const first = items.slice(0, 5).map(i => `**${i.student}** · ${i.course}`);
+  return build(urgent ? `Urgente: ${items.length} resultado(s) de atendimento sem atualização` : `Registre o resultado de ${items.length === 1 ? "1 atendimento" : `${items.length} atendimentos`}`, {
+    preheader: "Informe se a pessoa se matriculou para manter a carteira atualizada.",
+    area: "Análise curricular",
+    title: urgent ? "Resultados sem atualização há mais de 2 dias úteis" : "Registre o resultado do atendimento",
+    name,
+    paragraphs: [
+      items.length === 1 ? "Já se passaram 24 horas desde a entrega desta análise. Informe se o candidato se matriculou." : `Já se passaram 24 horas desde a entrega de ${items.length} análises. Informe se os candidatos se matricularam.`,
+      ...first,
+      ...(items.length > 5 ? [`E mais ${items.length - 5}.`] : [])
+    ],
+    button: { label: "Registrar os resultados", link: listUrl },
+    notes: ["Escolha Matriculou, Não se matriculou (com o motivo) ou Reanálise, que programa um novo retorno em 24 horas."],
+    reason: "Você recebeu este e-mail porque entregou estas análises e o resultado ainda não foi informado."
+  });
+};
+
 // ------------------------------------------------------------------ student portal
 
 // invitation to the student portal (first access) and the recovery link of the student's password
@@ -235,6 +254,7 @@ export const MAIL_CATALOG: MailTemplateInfo[] = [
   { key: "student-reset", title: "Nova senha do Portal do Aluno", audience: "Aluno", trigger: "Quando o aluno pede a recuperação da senha no portal, ou a equipe reenvia o acesso.", automatic: true, build: () => studentLinkMail("reset", "João Pereira", SAMPLE_LINK, "1 hora") },
   { key: "student-activated", title: "Acesso do aluno ativado", audience: "Aluno", trigger: "Quando o aluno cria a senha pelo convite.", automatic: true, build: () => studentActivatedMail("João Pereira", "44868774", SAMPLE_LINK) },
   { key: "student-analysis", title: "Análise atualizada", audience: "Aluno", trigger: "Quando a equipe publica uma nova versão da análise de um aluno que já ativou o portal.", automatic: true, build: () => studentAnalysisMail("João Pereira", "Pedagogia (Licenciatura)", SAMPLE_LINK) },
+  { key: "follow-up", title: "Retorno de matrícula (24 h)", audience: "Equipe", trigger: "Quando o resultado de uma análise curricular continua sem resposta 24 h depois da entrega; repete nos dias úteis, de manhã e à tarde.", automatic: true, build: () => followUpMail("Maria Souza", [{ id: 1, student: "Raimunda Exemplo", course: "CST em Gestão Pública", businessDays: 1 }, { id: 2, student: "João Pereira", course: "Pedagogia (Licenciatura)", businessDays: 3 }], SAMPLE_LINK) },
   { key: "affiliate-welcome", title: "Boas-vindas ao afiliado", audience: "Afiliado", trigger: "Enviado manualmente pelo botão “Enviar acesso por e-mail” do afiliado.", automatic: false, build: () => affiliateWelcomeMail("Carlos Lima", SAMPLE_LINK) },
   { key: "mail-test", title: "E-mail de teste", audience: "Administração", trigger: "Botão “Enviar e-mail de teste” em Configurações > E-mail.", automatic: false, build: () => testMail() }
 ];

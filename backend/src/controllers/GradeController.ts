@@ -9,9 +9,7 @@ import { isManagerRole, roleOf } from "../helpers/Roles";
 import CommercialGrade from "../models/CommercialGrade";
 import { assertTicketAccess } from "../middleware/canAccessTicket";
 import ShowTicketService from "../services/TicketServices/ShowTicketService";
-import CreateTicketService from "../services/TicketServices/CreateTicketService";
-import Ticket from "../models/Ticket";
-import Contact from "../models/Contact";
+import { ticketFromTarget } from "../helpers/ChatTarget";
 import SendWhatsAppMedia from "../services/WbotServices/SendWhatsAppMedia";
 import SendWhatsAppMessage from "../services/WbotServices/SendWhatsAppMessage";
 import { gradePath, gradeView, importDefaultGrades, publishGrade, removeGrade } from "../analysis/Grades";
@@ -87,26 +85,24 @@ export const importDefaults = async (req: Request, res: Response): Promise<Respo
   return res.json(await importDefaultGrades());
 };
 
+const CAPTION_LIMIT = 1000;
+
 // Sends the matrix into a conversation: the summary text and/or the PDF, through the same safe path as any message
 export const send = async (req: Request, res: Response): Promise<Response> => {
   const g = await load(req.params.id);
-  let ticketId = Number(req.body?.ticketId);
   // a contact was chosen (not a conversation): its open conversation is used, or one is opened for the person
-  const contactId = Number(req.body?.contactId);
-  if (!ticketId && contactId) {
-    const contact = await Contact.findByPk(contactId, { attributes: ["id", "isGroup"] });
-    if (!contact) throw new AppError("Contato não encontrado.", 404);
-    const open = await Ticket.findOne({ where: { contactId, status: { [Op.in]: ["open", "pending"] } } as any, order: [["updatedAt", "DESC"]], attributes: ["id"] });
-    ticketId = open ? open.id : (await CreateTicketService({ contactId, status: "open", userId: Number(req.user.id) })).id;
-  }
-  if (!ticketId) throw new AppError("Escolha o contato.", 400);
+  const ticketId = await ticketFromTarget(req, req.body || {});
   const wantSummary = req.body?.summary !== false;
   const wantPdf = req.body?.pdf !== false;
   if (!wantSummary && !wantPdf) throw new AppError("Escolha enviar o resumo, o PDF ou os dois.", 400);
   await assertTicketAccess(req, ticketId, "send");
   const ticket = await ShowTicketService(ticketId);
   if (ticket.status === "closed") throw new AppError("Só é possível enviar para conversas abertas.", 400);
-  if (wantSummary && g.whatsappSummary) await SendWhatsAppMessage({ body: g.whatsappSummary, ticket });
+  // with the PDF, the summary goes as its description (one message, like attaching a document with a caption);
+  // a caption has a size limit, so a longer text goes first as its own message
+  const summary = wantSummary ? String(g.whatsappSummary || "").trim() : "";
+  const asCaption = wantPdf && summary.length > 0 && summary.length <= CAPTION_LIMIT && !summary.includes("{{");
+  if (summary && !asCaption) await SendWhatsAppMessage({ body: summary, ticket });
   if (wantPdf) {
     const source = gradePath(g);
     if (!fs.existsSync(source)) throw new AppError("O PDF desta grade não está mais disponível.", 410);
@@ -116,7 +112,8 @@ export const send = async (req: Request, res: Response): Promise<Response> => {
     await SendWhatsAppMedia({
       media: { filename: copyName, originalname: `${g.courseName}.pdf`.replace(/[\\/:*?"<>|]/g, "_"), mimetype: "application/pdf", path: path.join(PUBLIC_DIR, copyName) } as Express.Multer.File,
       ticket,
-      body: ""
+      body: asCaption ? summary : "",
+      displayName: `${g.courseName}.pdf`.replace(/[\\/:*?"<>|]/g, "_")
     });
   }
   return res.json({ ok: true });

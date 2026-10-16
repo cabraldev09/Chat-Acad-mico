@@ -10,6 +10,7 @@ import { startScheduler } from "./workers/Scheduler";
 import { startCampaignRunner } from "./workers/CampaignRunner";
 import { startCrmReminders } from "./workers/CrmReminders";
 import { startLeadSlaAlert } from "./workers/LeadSlaAlert";
+import { startFollowUpAlert } from "./workers/FollowUpAlert";
 import { startProfilePicSync } from "./workers/ProfilePicSync";
 import { startAckReconciler } from "./workers/AckReconciler";
 import { startPaymentPoller } from "./workers/PaymentPoller";
@@ -34,6 +35,7 @@ whenLeader(() => {
   startCampaignRunner();
   startCrmReminders();
   startLeadSlaAlert();
+  startFollowUpAlert();
   startProfilePicSync();
   startAckReconciler();
   startUnreadReconciler();
