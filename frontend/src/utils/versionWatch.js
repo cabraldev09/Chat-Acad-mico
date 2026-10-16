@@ -6,6 +6,8 @@
 //    the new version, without interrupting what the person is typing), and a small notice offers "Atualizar agora";
 //  - a screen that fails to draw in an out-of-date tab reloads by itself (see PageErrorBoundary).
 
+// __BUILD_ID__ is put in place by the build (vite.config.js, `define`); in development it does not exist
+/* global __BUILD_ID__ */
 export const BUILD = typeof __BUILD_ID__ !== "undefined" ? String(__BUILD_ID__) : "dev";
 
 let stale = false;
