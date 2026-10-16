@@ -88,7 +88,10 @@ const Goals = () => {
   const save = async () => {
     setSaving(true);
     try {
-      const { data } = await api.put(`/goals/${draft.id}`, { title: draft.title || "", startsOn: draft.startsOn, endsOn: draft.endsOn, members: draft.members });
+      // the adjustment goes under both names: `manual` (what the list answers with) and `manualCount` (the column), so
+      // it is kept whichever of the two the server reads
+      const members = draft.members.map((m) => ({ ...m, manualCount: Number(m.manual) || 0 }));
+      const { data } = await api.put(`/goals/${draft.id}`, { title: draft.title || "", startsOn: draft.startsOn, endsOn: draft.endsOn, members });
       toast.success("Metas salvas.");
       await load(data.id);
     } catch (e) { toastError(e); }
