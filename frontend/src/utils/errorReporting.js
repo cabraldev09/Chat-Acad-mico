@@ -1,4 +1,5 @@
 import api from "../services/api";
+import { BUILD } from "./versionWatch";
 
 // Where every failure that reaches the browser is written down (Configurações > Erros de tela): the boundaries around
 // screens and sections, and the errors that escape React altogether (a promise nobody caught, a script error).
@@ -18,7 +19,8 @@ export const reportClientError = ({ code, error, info, kind }) => {
     if (lastSent.size > 50) lastSent.clear();
     api.post("/client-errors", {
       code: code || newErrorCode(),
-      route: window.location.pathname + window.location.hash,
+      // which version of the code the person was running: tells a defect still present from an old tab
+      route: `${window.location.pathname}${window.location.hash} @${BUILD}`,
       message: kind ? `[${kind}] ${message}` : message,
       // the server keeps a short text: a long component stack would be refused for its size and the report lost
       stack: error && error.stack ? String(error.stack).slice(0, 4000) : undefined,

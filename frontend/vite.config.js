@@ -45,8 +45,19 @@ export default wrap(I);`;
   };
 };
 
+// which version of the code this build is: the browser compares it with /version.json to know when it is out of date
+const BUILD_ID = (process.env.VERCEL_GIT_COMMIT_SHA || "").slice(0, 8) || Date.now().toString(36);
+const versionFile = () => ({
+  name: "version-file",
+  apply: "build",
+  generateBundle() {
+    this.emitFile({ type: "asset", fileName: "version.json", source: JSON.stringify({ id: BUILD_ID }) });
+  },
+});
+
 export default defineConfig({
   plugins: [
+    versionFile(),
     // the screens ported from the original analysis system use its Tailwind classes (see src/styles/orig.css)
     tailwindcss(),
     lucideForMaterialIcons(),
@@ -85,6 +96,7 @@ export default defineConfig({
   },
   define: {
     global: "globalThis",
+    __BUILD_ID__: JSON.stringify(BUILD_ID),
   },
   optimizeDeps: {
     esbuildOptions: {

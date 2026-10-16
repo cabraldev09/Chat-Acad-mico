@@ -99,7 +99,8 @@ export const saveMediaFile = async (mediaPayload: MediaPayload): Promise<string>
   } else {
     const baseName = originalFilename.split(".").slice(0, -1).join(".");
     const extension = originalFilename.split(".").slice(-1)[0];
-    filename = `${baseName}.${randomId}.${extension}`;
+    // the tilde marks the unique part, so the screen can show the real name of the file without guessing
+    filename = `${baseName}~${randomId}.${extension}`;
   }
 
   try {

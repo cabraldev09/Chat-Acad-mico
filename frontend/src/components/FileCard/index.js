@@ -9,8 +9,11 @@ import api from "../../services/api";
 const useStyles = makeStyles(() => ({
   card: {
     display: "block",
-    width: 300,
-    maxWidth: "100%",
+    // fills the bubble (a caption makes it wide); alone it stays a reasonable size, and never wider than the screen
+    width: "100%",
+    minWidth: 220,
+    maxWidth: 520,
+    boxSizing: "border-box",
     margin: "-2px -3px 5px -4px",
     borderRadius: 12,
     overflow: "hidden",
@@ -22,11 +25,11 @@ const useStyles = makeStyles(() => ({
   },
   thumb: {
     position: "relative",
-    height: 168,
+    aspectRatio: "16 / 9",
     overflow: "hidden",
     background: "rgba(255,255,255,.55)",
     borderBottom: "1px solid rgba(11,20,26,.08)",
-    "& canvas": { display: "block", width: "100%", height: "auto", animation: "fileThumbIn .3s ease-out" },
+    "& img": { display: "block", width: "100%", height: "100%", objectFit: "cover", objectPosition: "top center", animation: "fileThumbIn .3s ease-out" },
   },
   shade: { position: "absolute", left: 0, right: 0, bottom: 0, height: 40, background: "linear-gradient(transparent, rgba(0,0,0,.10))", pointerEvents: "none" },
   row: { display: "flex", alignItems: "center", gap: 10, padding: "9px 10px" },
@@ -35,7 +38,7 @@ const useStyles = makeStyles(() => ({
     fontSize: 10.5, fontWeight: 800, letterSpacing: ".03em", boxShadow: "0 1px 2px rgba(0,0,0,.25)",
   },
   info: { flex: 1, minWidth: 0 },
-  name: { fontSize: 14, lineHeight: "18px", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", wordBreak: "break-all" },
+  name: { fontSize: 14, lineHeight: "18px", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", overflowWrap: "anywhere" },
   sub: { marginTop: 2, fontSize: 12, opacity: 0.7 },
   dl: { flex: "none", opacity: 0.75 },
   "@global": { "@keyframes fileThumbIn": { from: { opacity: 0 }, to: { opacity: 1 } } },
@@ -71,7 +74,7 @@ const FileCard = ({ url, name }) => {
         const doc = await pdfjs.getDocument({ data: buffer, isEvalSupported: false }).promise;
         const page = await doc.getPage(1);
         const base = page.getViewport({ scale: 1 });
-        const viewport = page.getViewport({ scale: (300 * (window.devicePixelRatio || 1)) / base.width });
+        const viewport = page.getViewport({ scale: (520 * Math.min(window.devicePixelRatio || 1, 2)) / base.width });
         const canvas = document.createElement("canvas");
         canvas.width = viewport.width;
         canvas.height = viewport.height;
@@ -80,6 +83,9 @@ const FileCard = ({ url, name }) => {
         cache.set(url, meta);
         if (!cancelled) setInfo(meta);
       } catch (e) {
+        // the card still works without the picture; the reason stays in the console for whoever investigates
+        // eslint-disable-next-line no-console
+        console.warn("PDF preview failed:", e);
         if (!cancelled) setInfo({ failed: true });
       }
     };
@@ -103,7 +109,7 @@ const FileCard = ({ url, name }) => {
     <a ref={box} className={classes.card} href={url} target="_blank" rel="noopener noreferrer" download={name}>
       {isPdf && info && info.image && (
         <div className={classes.thumb} ref={canvasHost}>
-          <img src={info.image} alt="" style={{ display: "block", width: "100%", animation: "fileThumbIn .3s ease-out" }} />
+          <img src={info.image} alt="" />
           <span className={classes.shade} />
         </div>
       )}

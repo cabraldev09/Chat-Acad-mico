@@ -1,6 +1,8 @@
 import React from "react";
 
 import { newErrorCode, reportClientError } from "../../utils/errorReporting";
+import { checkVersion } from "../../utils/versionWatch";
+import { reloadForNewVersion } from "../../utils/lazyPage";
 
 // A screen that fails to draw must never leave a blank page: say what happened and offer the way out.
 class PageErrorBoundary extends React.Component {
@@ -25,6 +27,9 @@ class PageErrorBoundary extends React.Component {
     const code = newErrorCode();
     this.setState({ code, detail: String((error && error.message) || "").slice(0, 160) });
     reportClientError({ code, error, info });
+    // a tab that still runs an old version of the code is the usual reason for a screen that was fixed to fall again:
+    // when a newer version is published, load it (once; reloadForNewVersion does not loop)
+    checkVersion().then((outOfDate) => { if (outOfDate) reloadForNewVersion(); });
   }
 
   render() {

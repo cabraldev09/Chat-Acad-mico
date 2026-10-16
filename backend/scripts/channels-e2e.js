@@ -1029,7 +1029,9 @@ const postMeta = (id, payload, secret, badSig) => {
     await test("an open Bolix can be cancelled at Efí", async () => {
       const l = await mkLead("Aluno Bolix Cancela", "5511955551004");
       await http.put(`/leads/${l.id}`, { cpf: cpfFor(123456783) }, auth());
-      const p = (await http.post(`/leads/${l.id}/payments`, { method: "bolix", dueDate: ymdPlus(3) }, auth())).data;
+      // due in 2 days: the charge (generated 3 days before) is already open at any hour (with 3 days it is only generated
+      // at 07:00 local, so between midnight and 07:00 it would still be "scheduled")
+      const p = (await http.post(`/leads/${l.id}/payments`, { method: "bolix", dueDate: ymdPlus(2) }, auth())).data;
       assert(p.status === "pending", `status ${p.status}`);
       const r = await http.post(`/payments/${p.id}/cancel`, {}, auth());
       assert(r.status === 200 && r.data.status === "cancelled", "cancel");

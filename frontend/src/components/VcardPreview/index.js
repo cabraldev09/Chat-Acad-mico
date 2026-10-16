@@ -60,7 +60,7 @@ const VcardPreview = ({ contact, numbers }) => {
     return (
         <>
             <div style={{
-                minWidth: "250px",
+                minWidth: "min(250px, 100%)",
             }}>
                 <Grid container spacing={1}>
                     <Grid item xs={2}>

@@ -54,7 +54,9 @@ const useStyles = makeStyles((theme) => {
     lineHeight: "20px",
     letterSpacing: "-0.003em",
     wordBreak: "break-word",
-    [theme.breakpoints.down("xs")]: { maxWidth: "86%" },
+    // the conversation shares the screen with the list on tablets: the bubble may use more of what is left
+    [theme.breakpoints.down("sm")]: { maxWidth: "80%" },
+    [theme.breakpoints.down("xs")]: { maxWidth: "88%" },
     "&:hover $chevron": { opacity: 1 },
   });
 
@@ -189,7 +191,7 @@ const useStyles = makeStyles((theme) => {
     ack: { fontSize: 16, color: c.time },
     ackRead: { fontSize: 16, color: c.tick },
     media: { margin: "-2px -3px 4px -4px", position: "relative", borderRadius: 6, overflow: "hidden", lineHeight: 0 },
-    video: { display: "block", maxWidth: "100%", width: 300, borderRadius: 6 },
+    video: { display: "block", maxWidth: "100%", width: 320, height: "auto", maxHeight: 420, borderRadius: 6, background: "#000" },
     doc: {
       display: "flex",
       alignItems: "center",
@@ -200,7 +202,7 @@ const useStyles = makeStyles((theme) => {
       backgroundColor: dark ? "rgba(0,0,0,.18)" : "rgba(11,20,26,.05)",
       textDecoration: "none",
       color: "inherit",
-      minWidth: 230,
+      minWidth: "min(230px, 100%)",
       "& svg": { fontSize: 32, color: c.textSecondary, flex: "none" },
     },
     docName: { flex: 1, minWidth: 0, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
@@ -307,9 +309,20 @@ const reducer = (state, action) => {
   return state;
 };
 
+// The stored file carries a unique part so two files with the same name never overwrite each other: "Nome~k3F9a.pdf"
+// (older files: "Nome.k3F9a.pdf"). The person must see the real name.
+const REAL_NAME = (name) =>
+  name
+    .replace(/~[A-Za-z0-9]{5}(\.[^.]+)$/, "$1")
+    // older files: five characters with at least a capital letter and a digit, right before the extension (a rare random
+    // name without both stays as it is: harmless, and no real name like "v2024" or "final" is cut)
+    .replace(/\.(?=[A-Za-z0-9]{5}\.[^.]+$)(?=[A-Za-z0-9]*\d)(?=[A-Za-z0-9]*[A-Z])[A-Za-z0-9]{5}(\.[^.]+)$/, "$1");
+
 const fileNameOf = (m) => {
-  const fromUrl = decodeURIComponent((m.mediaUrl || "").split("/").pop() || "");
-  return m.body && m.body.length < 120 && !m.body.includes("\n") ? m.body : fromUrl || "arquivo";
+  const fromUrl = REAL_NAME(decodeURIComponent((m.mediaUrl || "").split("/").pop() || ""));
+  // WhatsApp puts the file name in the text of a document sent without a caption; a short caption ("Segue") is not a name
+  const bodyIsName = m.body && m.body.length < 120 && !m.body.includes("\n") && /\.[A-Za-z0-9]{2,5}$/.test(m.body);
+  return bodyIsName ? m.body : fromUrl || "arquivo";
 };
 
 const isOnlyFileName = (m) => !m.body || /^[\p{Extended_Pictographic}\s]*(Imagem|Vídeo|Áudio|Mensagem de voz|Documento|Figurinha|Foto)$/u.test(m.body) || m.body === (m.mediaUrl || "").split("/").pop() || /^\d{10,}\.\w{2,5}$/.test(m.body);

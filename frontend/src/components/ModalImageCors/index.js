@@ -7,8 +7,11 @@ import api from "../../services/api";
 const useStyles = makeStyles(theme => ({
 	messageMedia: {
 		objectFit: "cover",
-		width: 250,
-		height: 200,
+		// the picture follows the bubble (never wider than it) and keeps a fixed proportion while it loads
+		width: 300,
+		maxWidth: "100%",
+		height: "auto",
+		aspectRatio: "4 / 3",
 		borderTopLeftRadius: 8,
 		borderTopRightRadius: 8,
 		borderBottomLeftRadius: 8,
@@ -42,7 +45,7 @@ const ModalImageCors = ({ imageUrl, onOpen, sticker }) => {
 		return (
 			<img
 				className={classes.messageMedia}
-				style={sticker ? { cursor: "zoom-in", display: "block", width: 150, height: 150, objectFit: "contain", background: "transparent" } : { cursor: "zoom-in", display: "block" }}
+				style={sticker ? { cursor: "zoom-in", display: "block", width: 150, maxWidth: "100%", height: "auto", aspectRatio: "1 / 1", objectFit: "contain", background: "transparent" } : { cursor: "zoom-in", display: "block" }}
 				src={imageUrl}
 				loading="lazy"
 				decoding="async"
