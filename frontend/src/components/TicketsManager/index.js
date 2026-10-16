@@ -205,7 +205,7 @@ const TicketsManager = () => {
       }, 700);
     };
     refresh();
-    const socket = openSocket();
+    const socket = openSocket("notification");
     socket.on("connect", () => socket.emit("joinNotification"));
     socket.on("appMessage", refresh);
     socket.on("ticket", refresh);
@@ -224,7 +224,7 @@ const TicketsManager = () => {
       timer = setTimeout(() => api.get("/communities").then(({ data }) => setCommunities(data.communities || [])).catch(() => setCommunities((c) => c || [])), 600);
     };
     load();
-    const socket = openSocket();
+    const socket = openSocket("notification");
     socket.on("connect", () => socket.emit("joinNotification"));
     ["ticket", "appMessage", "contact"].forEach((evt) => socket.on(evt, load));
     return () => { clearTimeout(timer); socket.disconnect(); };

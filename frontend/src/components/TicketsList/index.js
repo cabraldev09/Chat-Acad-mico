@@ -224,7 +224,8 @@ const reducer = (state, action) => {
 	}, [tickets]);
 
 	useEffect(() => {
-		const socket = openSocket();
+		// the lists of each status join their own room: only the lists of the same status share a connection
+		const socket = openSocket(status ? `tickets:${status}` : "notification");
 
 		// "only": just groups; "exclude": private chats only
 		// a group of a community has its own view: the ordinary groups list leaves it out

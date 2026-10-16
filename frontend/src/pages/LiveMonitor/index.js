@@ -48,14 +48,18 @@ const LiveMonitor = () => {
 
   useEffect(() => {
     load();
-    const timer = setInterval(load, 10000);
-    const socket = openSocket();
+    // a hidden tab does not poll, and a burst of messages asks for one refresh instead of one per message
+    const timer = setInterval(() => { if (document.visibilityState === "visible") load(); }, 10000);
+    let soon;
+    const again = () => { clearTimeout(soon); soon = setTimeout(load, 1500); };
+    const socket = openSocket("notification");
     socket.on("connect", () => {
       socket.emit("joinNotification");
     });
-    socket.on("appMessage", load);
-    socket.on("ticket", load);
+    socket.on("appMessage", again);
+    socket.on("ticket", again);
     return () => {
+      clearTimeout(soon);
       clearInterval(timer);
       socket.disconnect();
     };

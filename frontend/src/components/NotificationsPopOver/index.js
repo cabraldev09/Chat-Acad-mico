@@ -152,7 +152,7 @@ const NotificationsPopOver = () => {
 	}, [ticketIdUrl]);
 
 	useEffect(() => {
-		const socket = openSocket();
+		const socket = openSocket("notification");
 
 		socket.on("connect", () => socket.emit("joinNotification"));
 
