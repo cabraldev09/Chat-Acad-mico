@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useContext, useEffect, useState } from "react";
 import { useHistory } from "react-router-dom";
 import { toast } from "react-toastify";
 import {
@@ -13,6 +13,8 @@ import { format, parseISO } from "date-fns";
 
 import EnrollDialog from "./EnrollDialog";
 import IconAction from "../../components/IconAction";
+import { AuthContext } from "../../context/Auth/AuthContext";
+import { isManager } from "../../utils/access";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import openSocket from "../../services/socket-io";
@@ -84,7 +86,10 @@ export const LostDialog = ({ open, reasons = [], onClose, onConfirm }) => {
 const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab, side = false }) => {
   const classes = useStyles();
   const history = useHistory();
+  const { user: me } = useContext(AuthContext);
   const { options, courses, stages, users, tags } = ctx;
+  // sending a proposal to the affiliate: the management, or the consultant who owns the lead (the server refuses the others)
+  const canSendToAffiliate = (l) => !!me && (isManager(me) || (me.role === "consultor" && l && l.ownerId === me.id));
   const [lead, setLead] = useState(null);
   const [draft, setDraft] = useState(null);
   const [tab, setTab] = useState(0);
@@ -107,7 +112,7 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab, side = false 
       ]);
       setProposals(pr.data);
       setLead(l.data);
-      setDraft((prev) => (prev && prev.id === l.data.id && prev.__dirty ? prev : { ...l.data, tagIds: l.data.tags.map((x) => x.id) }));
+      setDraft((prev) => (prev && prev.id === l.data.id && prev.__dirty ? prev : { ...l.data, tagIds: (l.data.tags || []).map((x) => x.id) }));
       setActs(a.data);
       setTasks(t.data);
     } catch (err) {
@@ -346,7 +351,7 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab, side = false 
                             toast.success("Mensagem copiada. Cole na conversa do WhatsApp.");
                           } catch (e) { toastError(e); }
                         }}><MessageSquare size={16} /></IconAction>
-                        {lead.affiliate && pr.status !== "draft" && (
+                        {lead.affiliate && pr.status !== "draft" && canSendToAffiliate(lead) && (
                           <IconAction title={`Enviar ao afiliado ${lead.affiliate.name} para encaminhar`} onClick={async () => {
                             const affiliateId = lead.affiliate.id;
                             try { await api.post(`/affiliates/${affiliateId}/send-proposal`, { proposalId: pr.id }); toast.success("Proposta enviada ao afiliado."); } catch (e) { toastError(e); }

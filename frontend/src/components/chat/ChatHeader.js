@@ -90,7 +90,8 @@ const useStyles = makeStyles((theme) => {
   };
 });
 
-const ChatHeader = ({ contact, ticket, onOpenInfo, onToggleSearch, typing }) => {
+const ChatHeader = ({ contact: contactProp, ticket, onOpenInfo, onToggleSearch, typing }) => {
+  const contact = contactProp || {};
   const classes = useStyles();
   const history = useHistory();
   const { user } = useContext(AuthContext);

@@ -94,7 +94,7 @@ const Ticket = () => {
       const fetchTicket = async () => {
         try {
           const { data } = await api.get("/tickets/" + ticketId);
-          setContact(data.contact);
+          setContact(data.contact || {});
           setTicket(data);
           setLoading(false);
         } catch (err) {
@@ -108,7 +108,7 @@ const Ticket = () => {
   }, [ticketId, history]);
 
   useEffect(() => {
-    const socket = openSocket();
+    const socket = openSocket(`chat:${ticketId}`);
 
     socket.on("connect", () => socket.emit("joinChatBox", ticketId));
 

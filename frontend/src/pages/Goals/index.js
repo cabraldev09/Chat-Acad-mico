@@ -19,11 +19,13 @@ import { fetchAllUsers } from "../Affiliates/shared";
 
 const SHARE_WIDTH = 600;
 const MONTHS = ["JANEIRO", "FEVEREIRO", "MARÇO", "ABRIL", "MAIO", "JUNHO", "JULHO", "AGOSTO", "SETEMBRO", "OUTUBRO", "NOVEMBRO", "DEZEMBRO"];
-const dm = (iso) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+const dm = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : "");
+// the month name of a date; empty when there is no (valid) date
+const monthOf = (iso) => MONTHS[Number(String(iso || "").slice(5, 7)) - 1] || "";
 const clean = (g) => ({ ...g, members: g.members.map((m) => ({ ...m })) });
 
 // the message that goes to the team group
-const headline = (g) => `✅ ${g.title ? g.title.toUpperCase() : `META DO MÊS DE ${MONTHS[Number(g.endsOn.slice(5, 7)) - 1]}`} — ${dm(g.startsOn)} ATÉ ${dm(g.endsOn)}`;
+const headline = (g) => `✅ ${g.title ? g.title.toUpperCase() : `META DO MÊS DE ${monthOf(g.endsOn)}`} — ${dm(g.startsOn)} ATÉ ${dm(g.endsOn)}`;
 const goalsText = (g) => `${headline(g)}\n\n${g.members.map((m) => `${m.label} —${m.target ? ` ${m.target}` : ""}`).join("\n")}`;
 const progressText = (g) =>
   `${headline(g)}\n\n${g.members.map((m) => `${m.label} — ${m.target ? `${m.done}/${m.target}${m.reached ? " ✅" : ` (${m.missing === 1 ? "falta 1" : `faltam ${m.missing}`})`}` : m.done}`).join("\n")}\n\nTotal — ${g.total.done}${g.total.target ? `/${g.total.target} (faltam ${Math.max(0, g.total.target - g.total.done)})` : ""}`;
@@ -236,7 +238,7 @@ const Goals = () => {
                       <div style={{ fontSize: 14, color: "#4b5d73" }}>{dm(view.startsOn)} até {dm(view.endsOn)}</div>
                     </div>
                     <div style={{ background: "linear-gradient(135deg, #0B4279, #0693E3)", color: "#fff", padding: "18px 28px 20px" }}>
-                      <div style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-0.03em" }}>{view.title || `Metas de ${MONTHS[Number(view.endsOn.slice(5, 7)) - 1].toLowerCase()}`}</div>
+                      <div style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-0.03em" }}>{view.title || `Metas de ${monthOf(view.endsOn).toLowerCase()}`}</div>
                       {view.total.target ? (
                         <>
                           <div style={{ display: "flex", gap: 26, marginTop: 12 }}>

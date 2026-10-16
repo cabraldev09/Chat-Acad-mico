@@ -91,7 +91,7 @@ const ForwardDialog = ({ open, onClose, message, messages, fromTicketId }) => {
                 <Checkbox color="primary" checked={selected.includes(t.id)} style={{ padding: 4 }} />
                 <Avatar src={t.contact && t.contact.profilePicUrl} style={{ width: 36, height: 36 }}>{String((t.contact && t.contact.name) || "").charAt(0)}</Avatar>
                 <div className={classes.name}>
-                  {t.contact.name}
+                  {(t.contact && t.contact.name) || "Sem nome"}
                   <div className={classes.sub}>{t.queue?.name || "Sem fila"}</div>
                 </div>
               </div>

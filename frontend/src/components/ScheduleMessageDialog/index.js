@@ -24,13 +24,15 @@ const ScheduleMessageDialog = ({ open, onClose, ticket }) => {
 
   const save = async () => {
     if (!body.trim()) return toast.error("Escreva a mensagem");
+    const sendAt = new Date(when);
+    if (!when || Number.isNaN(sendAt.getTime())) return toast.error("Informe a data e a hora do envio");
     try {
       await api.post("/schedules", {
-        contactId: ticket.contact.id,
+        contactId: ticket.contact && ticket.contact.id,
         ticketId: ticket.id,
         whatsappId: ticket.whatsappId,
         body,
-        sendAt: new Date(when).toISOString(),
+        sendAt: sendAt.toISOString(),
       });
       toast.success("Mensagem agendada");
       setBody("");

@@ -15,6 +15,7 @@ import ColorSwatchPicker from "../../components/ColorSwatchPicker";
 import api from "../../services/api";
 import { getBackendUrl } from "../../config";
 import toastError from "../../errors/toastError";
+import { fetchAllUsersPage } from "../../utils/fetchAllUsers";
 
 const useStyles = makeStyles((theme) => ({
   pane: { padding: theme.spacing(2.5), display: "grid", gap: theme.spacing(2), maxWidth: 720, overflowY: "auto", overflowX: "hidden", ...theme.scrollbarStyles },
@@ -313,7 +314,7 @@ const CrmSettings = () => {
   const load = () => api.get("/crm/settings").then(({ data }) => setS(data)).catch(toastError);
   useEffect(() => {
     load();
-    api.get("/users", { params: { pageNumber: 1 } }).then(({ data }) => setUsers(data.users || []));
+    fetchAllUsersPage().then(({ data }) => setUsers(data.users || []));
     api.get("/crm/options").then(({ data }) => setOptions(data));
     api.get("/institutions").then(({ data }) => setInstitutions(data)).catch(() => {});
     api.get("/lead-stages").then(({ data }) => setStages(data)).catch(() => {});
@@ -423,7 +424,7 @@ const CrmSettings = () => {
         {tab === 3 && (
           <CrudPage embedded title="Modelos de proposta" endpoint="/proposal-templates" addLabel="Novo modelo" socketEvent="proposalTemplate" dialogWidth="md"
             emptyText="Nenhum modelo." reloadKey={reload}
-            mapIn={(r) => ({ ...r, institutionIds: (r.institutions || []).map((i) => i.id), semestralSchedule: JSON.parse(r.semestralSchedule || "[]").map((x) => `${x.from}=${x.pct}`).join("\n") })}
+            mapIn={(r) => ({ ...r, institutionIds: (r.institutions || []).map((i) => i.id), semestralSchedule: (() => { try { const v = JSON.parse(r.semestralSchedule || "[]"); return Array.isArray(v) ? v : []; } catch (e) { return []; } })().map((x) => `${x.from}=${x.pct}`).join("\n") })}
             mapOut={(v) => ({ ...v, semestralSchedule: String(v.semestralSchedule || "").split(/\n/).map((l) => l.trim()).filter(Boolean).map((l) => { const [from, pct] = l.split("="); return { from: Number(from), pct: Number(String(pct).replace(",", ".")) }; }) })}
             fields={[
               { name: "name", label: "Nome do modelo", required: true },

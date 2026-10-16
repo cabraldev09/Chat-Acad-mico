@@ -24,19 +24,16 @@ const VcardPreview = ({ contact, numbers }) => {
     useEffect(() => {
         const delayDebounceFn = setTimeout(() => {
             const fetchContacts = async () => {
+                // a card without a number or a name cannot become a contact: nothing to ask the server, nothing to show
+                const digits = typeof numbers === "string" ? numbers.replace(/\D/g, "") : "";
+                if (!digits || !String(contact || "").trim()) return;
                 try {
-                    let contactObj = {
-                        name: contact,
-                        // number: numbers.replace(/\D/g, ""),
-                        number: numbers !== undefined && numbers.replace(/\D/g, ""),
-                        email: ""
-                    }
-                    const { data } = await api.post("/contact", contactObj);
-                    setContact(data)
-
+                    const { data } = await api.post("/contact", { name: contact, number: digits, email: "" });
+                    setContact(data);
                 } catch (err) {
-                    console.log(err)
-                    toastError(err);
+                    // opening a conversation must not fill the screen with errors because of a shared card
+                    // eslint-disable-next-line no-console
+                    console.warn("Contact card not saved:", err && err.message);
                 }
             };
             fetchContacts();

@@ -202,10 +202,10 @@ const TicketListItem = ({ ticket }) => {
   const [menuEl, setMenuEl] = useState(null);
   const [soundPref, setSoundPref] = useState("default");
   useEffect(() => {
-    const refresh = () => setSoundPref(getContactSound(ticket.contact.id));
+    const refresh = () => setSoundPref(getContactSound(ticket.contact && ticket.contact.id));
     refresh();
     return onSoundPrefsChange(refresh);
-  }, [ticket.contact.id]);
+  }, [ticket.contact && ticket.contact.id]);
   const run = async (e, fn) => {
     e.stopPropagation();
     setMenuEl(null);
@@ -264,7 +264,7 @@ const TicketListItem = ({ ticket }) => {
     >
       <div className={classes.avatarWrap}>
         <Avatar className={classes.avatar} src={ticket?.contact?.profilePicUrl}>
-          {ticket.isGroup ? <Group /> : ticket.contact.name.charAt(0)}
+          {ticket.isGroup ? <Group /> : String((ticket.contact && ticket.contact.name) || "?").charAt(0)}
         </Avatar>
         <span className={classes.channel}>
           <ChannelIcon channel={ticket.whatsapp?.channel} size={13} />
@@ -273,7 +273,7 @@ const TicketListItem = ({ ticket }) => {
       <div className={classes.content}>
         <div className={classes.line}>
           <span className={classes.name} style={{ fontWeight: unread ? 600 : 400 }}>
-            {ticket.contact.name}
+            {(ticket.contact && ticket.contact.name) || "Sem nome"}
           </span>
           {ticket.lastMessage && (
             <span className={clsx(classes.time, unread && classes.timeUnread)}>{stamp(ticket.lastMessageAt || ticket.updatedAt)}</span>

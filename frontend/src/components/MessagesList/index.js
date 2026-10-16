@@ -319,7 +319,11 @@ const REAL_NAME = (name) =>
     .replace(/\.(?=[A-Za-z0-9]{5}\.[^.]+$)(?=[A-Za-z0-9]*\d)(?=[A-Za-z0-9]*[A-Z])[A-Za-z0-9]{5}(\.[^.]+)$/, "$1");
 
 const fileNameOf = (m) => {
-  const fromUrl = REAL_NAME(decodeURIComponent((m.mediaUrl || "").split("/").pop() || ""));
+  const last = (m.mediaUrl || "").split("/").pop() || "";
+  // a file called "Histórico 90%.pdf" is not valid URL text: decoding it throws, and that must not close the conversation
+  let decoded = last;
+  try { decoded = decodeURIComponent(last); } catch (e) { /* keep the name as it is */ }
+  const fromUrl = REAL_NAME(decoded);
   // WhatsApp puts the file name in the text of a document sent without a caption; a short caption ("Segue") is not a name
   const bodyIsName = m.body && m.body.length < 120 && !m.body.includes("\n") && /\.[A-Za-z0-9]{2,5}$/.test(m.body);
   return bodyIsName ? m.body : fromUrl || "arquivo";
@@ -412,7 +416,7 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
   }, [pageNumber, ticketId, scrollToBottom]);
 
   useEffect(() => {
-    const socket = openSocket();
+    const socket = openSocket(`chat:${ticketId}`);
     // newest messages again (no "mark as read"): after a reconnection, when coming back to the tab, and every 25 s
     // while it is open, so a missed live event never leaves the conversation behind
     const resync = async () => {

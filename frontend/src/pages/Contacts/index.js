@@ -129,6 +129,7 @@ const Contacts = () => {
           setLoading(false);
         } catch (err) {
           toastError(err);
+          setLoading(false);
         }
       };
       fetchContacts();

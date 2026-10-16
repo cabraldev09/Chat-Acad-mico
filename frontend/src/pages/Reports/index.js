@@ -16,6 +16,7 @@ import { Insights } from "./shared";
 import { isManager } from "../../utils/access";
 import { fillDays } from "../../utils/chartDays";
 import toastError from "../../errors/toastError";
+import { fetchAllUsersPage } from "../../utils/fetchAllUsers";
 
 // Estatísticas: the one place for the numbers. Every figure appears once:
 //   Visão geral  what is happening now and what happened in the period (volume, matrículas, resolução, atendimentos)
@@ -150,7 +151,7 @@ const Reports = () => {
   useEffect(() => {
     if (!manager) return;
     api.get("/queue").then(({ data: d }) => setQueues(d)).catch(() => undefined);
-    api.get("/users", { params: { pageNumber: 1 } }).then(({ data: d }) => setUsers(d.users || [])).catch(() => undefined);
+    fetchAllUsersPage().then(({ data: d }) => setUsers(d.users || [])).catch(() => undefined);
   }, [manager]);
 
   const load = useCallback(async () => {
@@ -168,18 +169,18 @@ const Reports = () => {
     if (tab === "equipe" && manager) api.get("/dashboard/management", { params: { date: date || undefined, days } }).then(({ data: m }) => setMgmt(m)).catch(toastError);
     if (tab !== "equipe") {
       api.get("/stats/overview", { params: { from: range.from, to: range.to, queueId: queueId || undefined, userId: userId || undefined } })
-        .then(({ data: o }) => setOverview(o)).catch(toastError);
+        .then(({ data: o }) => setOverview(o && typeof o === "object" ? { ...o, perQueue: o.perQueue || [], perTag: o.perTag || [], period: o.period || {} } : null)).catch(toastError);
     }
   }, [tab, data, range.from, range.to, queueId, userId, date, days, manager]);
 
   useEffect(() => {
     let timer;
     const again = () => { clearTimeout(timer); timer = setTimeout(load, 1500); };
-    const socket = openSocket();
+    const socket = openSocket("notification");
     socket.on("connect", () => socket.emit("joinNotification"));
     socket.on("appMessage", again);
     socket.on("ticket", again);
-    const poll = setInterval(load, 60000);
+    const poll = setInterval(() => { if (document.visibilityState === "visible") load(); }, 60000);
     return () => { clearTimeout(timer); clearInterval(poll); socket.disconnect(); };
   }, [load]);
 

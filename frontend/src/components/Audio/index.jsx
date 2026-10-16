@@ -7,7 +7,7 @@ const LS_NAME = 'audioMessageRate';
 
 export default function({url}) {
     const audioRef = useRef(null);
-    const [audioRate, setAudioRate] = useState( parseFloat(localStorage.getItem(LS_NAME) || "1") );
+    const [audioRate, setAudioRate] = useState(() => { try { const v = parseFloat(localStorage.getItem(LS_NAME) || "1"); return Number.isFinite(v) && v > 0 ? v : 1; } catch (e) { return 1; } });
     const [showButtonRate, setShowButtonRate] = useState(false);
 
     useEffect(() => {

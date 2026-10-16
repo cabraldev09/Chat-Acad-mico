@@ -80,7 +80,7 @@ const TicketOptionsMenu = ({ ticket, menuOpen, handleClose, anchorEl }) => {
 				/>
 			</Menu>
 			<ConfirmationModal
-				title={`Excluir a conversa #${ticket.id} com ${ticket.contact.name}?`}
+				title={`Excluir a conversa #${ticket.id} com ${(ticket.contact && ticket.contact.name) || "este contato"}?`}
 				open={confirmationOpen}
 				onClose={setConfirmationOpen}
 				onConfirm={handleDeleteTicket}

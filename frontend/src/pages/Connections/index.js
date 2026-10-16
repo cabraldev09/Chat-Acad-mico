@@ -462,7 +462,7 @@ const Connections = () => {
 												align="center"
 												data-label={i18n.t("connections.table.lastUpdate")}
 											>
-												{format(parseISO(whatsApp.updatedAt), "dd/MM/yy HH:mm")}
+												{whatsApp.updatedAt ? format(parseISO(whatsApp.updatedAt), "dd/MM/yy HH:mm") : "—"}
 											</TableCell>
 											<TableCell
 												align="center"

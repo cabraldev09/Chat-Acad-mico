@@ -59,6 +59,13 @@ const defaultHours = () => ({
 	},
 });
 
+// a stored value of another shape (an old format, {}) must not break the editor: every day exists
+const mergeHours = (value) => {
+	const base = defaultHours();
+	const v = value && typeof value === "object" ? value : {};
+	return { ...base, ...v, days: { ...base.days, ...(v.days && typeof v.days === "object" ? v.days : {}) } };
+};
+
 const parse = (text, fallback) => {
 	try {
 		return text ? JSON.parse(text) : fallback;
@@ -119,7 +126,7 @@ const WhatsAppModal = ({ open, onClose, whatsAppId }) => {
 				const { data } = await api.get(`whatsapp/${whatsAppId}`);
 				setWhatsApp({ ...initialState, ...data });
 				setConfig(parse(data.config, {}));
-				setHours(parse(data.businessHours, defaultHours()));
+				setHours(mergeHours(parse(data.businessHours, defaultHours())));
 				setSelectedQueueIds(data.queues?.map(queue => queue.id) || []);
 				try {
 					setAllowed(data.allowedGroups ? JSON.parse(data.allowedGroups) : []);
@@ -209,7 +216,7 @@ const WhatsAppModal = ({ open, onClose, whatsAppId }) => {
 	const setDayTime = (d, key, value) =>
 		setHours({
 			...hours,
-			days: { ...hours.days, [d]: [{ ...(hours.days[d][0] || {}), [key]: value }] },
+			days: { ...hours.days, [d]: [{ ...((hours.days[d] || [])[0] || {}), [key]: value }] },
 		});
 
 	return (

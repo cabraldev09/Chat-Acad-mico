@@ -37,7 +37,9 @@ const useStyles = makeStyles((theme) => ({
 }));
 
 const brl = (n) => Number(n).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-const statusMap = { pending: ["Aguardando pagamento", "pending"], paid: ["Pago", "paid"], cancelled: ["Cancelada", "muted"], expired: ["Expirada", "muted"] };
+const statusMap = { pending: ["Aguardando pagamento", "pending"], paid: ["Pago", "paid"], cancelled: ["Cancelada", "muted"], expired: ["Expirada", "muted"], scheduled: ["Agendada", "muted"] };
+// a status this screen does not know (a new one on the server) must not take the screen down
+const statusOf = (status) => statusMap[status] || [String(status || "—"), "muted"];
 
 const left = (iso) => {
   const m = differenceInMinutes(parseISO(iso), new Date());
@@ -219,7 +221,7 @@ const PaymentTab = ({ lead, acts = [], onChanged, onEditSummary }) => {
           {history_.map((p) => (
             <div key={p.id} className={classes.row}>
               <span style={{ flex: 1 }}>{brl(p.amount)} · {format(parseISO(p.createdAt), "dd/MM HH:mm")}</span>
-              <span className={`${classes.status} ${classes[statusMap[p.status][1]]}`}>{statusMap[p.status][0]}</span>
+              <span className={`${classes.status} ${classes[statusOf(p.status)[1]]}`}>{statusOf(p.status)[0]}</span>
             </div>
           ))}
         </div>

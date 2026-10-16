@@ -69,7 +69,8 @@ const useStyles = makeStyles(theme => {
 	};
 });
 
-const ContactDrawer = ({ open, handleDrawerClose, contact, loading }) => {
+const ContactDrawer = ({ open, handleDrawerClose, contact: contactProp, loading }) => {
+	const contact = contactProp || {};
 	const classes = useStyles();
 
 	const [modalOpen, setModalOpen] = useState(false);
