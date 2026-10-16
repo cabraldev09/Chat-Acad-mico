@@ -204,6 +204,11 @@ const MessageInput = ({ ticketStatus, historical, isGroup, contactName, channel,
     inputRef.current && inputRef.current.focus();
   }, [replyingMessage]);
 
+  // an upload or a recording ended: the cursor is back in the box
+  useEffect(() => {
+    if (!loading && inputRef.current) inputRef.current.focus();
+  }, [loading]);
+
   // leaving the conversation (or the page) must not leave the microphone on
   useEffect(
     () => () => {
@@ -296,26 +301,30 @@ const MessageInput = ({ ticketStatus, historical, isGroup, contactName, channel,
     }
   };
 
-  const handleSend = async () => {
-    if (!inputMessage.trim()) return;
-    setLoading(true);
-    try {
-      await api.post(`/messages/${ticketId}`, {
-        read: 1,
-        fromMe: true,
-        mediaUrl: "",
-        body: signMessage ? `*${user?.name}:*\n${inputMessage.trim()}` : inputMessage.trim(),
-        quotedMsg: replyingMessage,
-      });
-    } catch (err) {
-      toastError(err);
-    }
+  // messages typed one after the other go out in the order they were typed, one request at a time
+  const sendQueue = useRef(Promise.resolve());
+
+  const handleSend = () => {
+    const text = inputMessage.trim();
+    if (!text) return;
+    const quoted = replyingMessage;
+    const body = signMessage ? `*${user?.name}:*\n${text}` : text;
+    // the box is free at once, with the cursor in it: the next message can be typed while this one goes out
     clearTimeout(draftTimer.current);
     setDraft(ticketId, "");
     setInputMessage("");
     setShowEmoji(false);
-    setLoading(false);
     setReplyingMessage(null);
+    if (inputRef.current) inputRef.current.focus();
+    sendQueue.current = sendQueue.current.then(async () => {
+      try {
+        await api.post(`/messages/${ticketId}`, { read: 1, fromMe: true, mediaUrl: "", body, quotedMsg: quoted });
+      } catch (err) {
+        toastError(err);
+        // what was typed comes back, unless something new is already being typed
+        setInputMessage((current) => (current ? current : text));
+      }
+    });
   };
 
   const handleUploadMedia = async () => {
@@ -568,7 +577,7 @@ const MessageInput = ({ ticketStatus, historical, isGroup, contactName, channel,
                 maxRows={6}
                 value={inputMessage}
                 onChange={handleChange}
-                disabled={loading}
+                readOnly={loading}
                 onPaste={handlePaste}
                 onKeyDown={(e) => { e && e.persist && e.persist();
                   if (!typeBar || !quickAnswers.length) return;
