@@ -14,6 +14,9 @@ import SendWhatsAppMessage from "../WbotServices/SendWhatsAppMessage";
 import SendWhatsAppMedia from "../WbotServices/SendWhatsAppMedia";
 import CreateMessageService from "../MessageServices/CreateMessageService";
 import { getAdapter } from "../../channels";
+import Ticket from "../../models/Ticket";
+import { getIO } from "../../libs/socket";
+import { logger } from "../../utils/logger";
 import { publicFile } from "../../helpers/PublicFile";
 
 
@@ -43,6 +46,25 @@ const SendToContact = async ({
   const found = await FindOrCreateTicketService(contact, whatsapp.id, 0);
   const ticket = await ShowTicketService(found.id);
   const hadMessages = (await Message.count({ where: { ticketId: ticket.id } })) > 0;
+  try {
+    await deliver();
+  } catch (err) {
+    // nothing was sent and the conversation was opened only for this: it goes away, so the failure leaves no trace
+    // (an empty conversation "assigned to me" in the list, for a contact that was not even written to)
+    if (!hadMessages && Date.now() - new Date(ticket.createdAt).getTime() < 120000) {
+      try {
+        if ((await Message.count({ where: { ticketId: ticket.id } })) === 0) {
+          await Ticket.destroy({ where: { id: ticket.id } });
+          getIO().emit("ticket", { action: "delete", ticketId: ticket.id });
+        }
+      } catch (cleanupErr) {
+        logger.warn(`Could not remove the empty conversation ${ticket.id}: ${cleanupErr}`);
+      }
+    }
+    throw err;
+  }
+
+  async function deliver(): Promise<void> {
 
   if (template && whatsapp.channel === "whatsapp_cloud") {
     const adapter = getAdapter("whatsapp_cloud");
@@ -93,6 +115,7 @@ const SendToContact = async ({
       ticketData: { status: "closed" },
       ticketId: ticket.id
     });
+  }
   }
 };
 

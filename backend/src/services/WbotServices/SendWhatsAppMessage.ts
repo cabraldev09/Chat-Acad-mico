@@ -8,6 +8,7 @@ import { whatsappProvider, ProviderMessage } from "../../providers/WhatsApp";
 
 import formatBody from "../../helpers/Mustache";
 import Whatsapp from "../../models/Whatsapp";
+import { logger } from "../../utils/logger";
 import { getAdapter } from "../../channels";
 import CreateMessageService from "../MessageServices/CreateMessageService";
 import {
@@ -109,6 +110,7 @@ const SendWhatsAppMessage = async ({
     return sentMessage;
   } catch (err) {
     recordSendResult(whatsapp, false);
+    logger.error({ ticketId: ticket.id, whatsappId: whatsapp.id, chatId, err: String((err as any)?.message || err) }, "WhatsApp send failed");
     throw new AppError("ERR_SENDING_WAPP_MSG");
   }
 };
