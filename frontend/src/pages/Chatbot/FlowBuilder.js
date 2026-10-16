@@ -15,6 +15,7 @@ import toastError from "../../errors/toastError";
 import Inspector from "./Inspector";
 import Simulator from "./Simulator";
 import { BLOCKS, PALETTE, defaultData, newId, nodeTypes } from "./nodes";
+import { fetchAllUsersPage } from "../../utils/fetchAllUsers";
 
 const useStyles = makeStyles((theme) => ({
   // fills what is left of the screen under the top bar (the layout makes the page a column, see .page-fill)
@@ -141,7 +142,7 @@ const Builder = () => {
     api.get("/lead-stages").then(({ data }) => setLists((l) => ({ ...l, stages: data }))).catch(() => undefined);
     api.get("/tags").then(({ data }) => setLists((l) => ({ ...l, tags: Array.isArray(data) ? data : data.tags || [] }))).catch(() => undefined);
     api.get("/queue").then(({ data }) => setLists((l) => ({ ...l, queues: data }))).catch(() => undefined);
-    api.get("/users", { params: { pageNumber: 1 } }).then(({ data }) => setLists((l) => ({ ...l, users: data.users || [] }))).catch(() => undefined);
+    fetchAllUsersPage().then(({ data }) => setLists((l) => ({ ...l, users: data.users || [] }))).catch(() => undefined);
     api.get("/polos").then(({ data }) => setLists((l) => ({ ...l, polos: Array.isArray(data) ? data : data.polos || [] }))).catch(() => undefined);
   }, [id, apply, history]);
 

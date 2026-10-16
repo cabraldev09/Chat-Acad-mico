@@ -112,7 +112,8 @@ const writeMembers = async (goalId: number, list: any[]): Promise<void> => {
       label: String(m.label || "").trim().slice(0, 80),
       userIds: JSON.stringify([...new Set(ids(m.userIds))]),
       target: int(m.target),
-      manualCount: int(m.manualCount) || 0,
+      // the screen sends it as `manual` (what the list answers with); `manualCount` is the column name
+      manualCount: int(m.manual ?? m.manualCount) || 0,
       note: m.note ? String(m.note).slice(0, 120) : null,
       position: i
     }))

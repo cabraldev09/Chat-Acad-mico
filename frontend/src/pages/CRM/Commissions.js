@@ -66,7 +66,8 @@ const Commissions = () => {
   const classes = useStyles();
   const history = useHistory();
   const { user } = useContext(AuthContext);
-  const isAdmin = user.profile === "admin";
+  // the coordination reads and settles everyone's commissions, like the administration
+  const isAdmin = user.profile === "admin" || user.role === "coordenacao";
   const [data, setData] = useState(null);
   const [bucket, setBucket] = useState("");
   const [range, setRange] = useState("month");

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useContext, useEffect, useState } from "react";
 import { useHistory } from "react-router-dom";
 import { toast } from "react-toastify";
 import { makeStyles } from "@material-ui/core/styles";
@@ -9,6 +9,7 @@ import MainContainer from "../../components/MainContainer";
 import MainHeader from "../../components/MainHeader";
 import Title from "../../components/Title";
 import IconAction from "../../components/IconAction";
+import { AuthContext } from "../../context/Auth/AuthContext";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import openSocket from "../../services/socket-io";
@@ -45,6 +46,9 @@ const since = (iso) => {
 
 // Tutors and coordination follow every enrolled student until the first access is done.
 const Onboarding = () => {
+  const { user: me } = useContext(AuthContext);
+  // the conversation of a student in tutoring is the tutor's (and the coordination's), not the consultant's
+  const canOpenChat = !!me && me.role !== "consultor";
   const classes = useStyles();
   const history = useHistory();
   const [rows, setRows] = useState(null);
@@ -132,7 +136,7 @@ const Onboarding = () => {
                   <div key={l.id} className={classes.card}>
                     <div className={classes.row}>
                       <span className={classes.name} title={l.name}>{l.name}</span>
-                      {l.ticketId && (
+                      {l.ticketId && canOpenChat && (
                         <IconAction title="Abrir a conversa" onClick={() => history.push(`/tickets/${l.ticketId}`)}>
                           <MessageSquare size={16} />
                         </IconAction>

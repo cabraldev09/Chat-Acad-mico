@@ -3,6 +3,8 @@ import { useHistory } from "react-router-dom";
 import { PlugZap, X } from "lucide-react";
 
 import { WhatsAppsContext } from "../../context/WhatsApp/WhatsAppsContext";
+import { AuthContext } from "../../context/Auth/AuthContext";
+import { isManager } from "../../utils/access";
 
 // A number that stays disconnected stops receiving messages: the alert says so, with how long it has been down, as soon
 // as it is more than a blip (a reconnection takes a minute or two on its own).
@@ -13,6 +15,7 @@ const since = (min) => (min < 60 ? `${min} min` : min < 1440 ? `${Math.floor(min
 
 const ConnectionAlert = () => {
   const { whatsApps } = useContext(WhatsAppsContext);
+  const { user } = useContext(AuthContext);
   const history = useHistory();
   const [now, setNow] = useState(Date.now());
   const [hidden, setHidden] = useState(() => {
@@ -20,7 +23,9 @@ const ConnectionAlert = () => {
   });
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 30000); return () => clearInterval(t); }, []);
 
+  // reconnecting is done on the Conexões screen, which only the management and the owner of the number can use
   const down = (whatsApps || [])
+    .filter((w) => isManager(user) || (user && w.ownerId === user.id))
     .filter((w) => DOWN[w.status] !== undefined && w.statusSince)
     .map((w) => ({ w, minutes: Math.floor((now - new Date(w.statusSince).getTime()) / 60000), key: `${w.id}:${w.status}:${w.statusSince}` }))
     .filter((d) => d.minutes >= DOWN[d.w.status] && !hidden.includes(d.key));

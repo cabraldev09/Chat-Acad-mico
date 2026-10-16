@@ -27,6 +27,7 @@ import Title from "../../components/Title";
 import ConfirmationModal from "../../components/ConfirmationModal";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
+import { fetchAllUsersPage } from "../../utils/fetchAllUsers";
 
 const useStyles = makeStyles((theme) => ({
   paper: { flex: 1, padding: theme.spacing(2), overflowY: "auto", ...theme.scrollbarStyles },
@@ -87,7 +88,7 @@ const Chatbot = () => {
   useEffect(() => {
     api.get("/whatsapp").then(({ data }) => setConnections(data));
     api.get("/queue").then(({ data }) => setQueues(data));
-    api.get("/users", { params: { pageNumber: 1 } }).then(({ data }) => setUsers(data.users || []));
+    fetchAllUsersPage().then(({ data }) => setUsers(data.users || []));
     api.get("/lead-stages").then(({ data }) => setStages(data)).catch(() => {});
     api.get("/tags").then(({ data }) => setTags(data)).catch(() => {});
     api.get("/polos").then(({ data }) => setPolos(data.filter((p) => p.active))).catch(() => {});

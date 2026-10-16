@@ -10,6 +10,7 @@ import api from "../../services/api";
 import {
   WhatsAppBrand, InstagramBrand, FacebookBrand, TelegramBrand,
 } from "../../icons/brands";
+import { fetchAllUsersPage } from "../../utils/fetchAllUsers";
 
 export const useCrmOptions = () => {
   const [options, setOptions] = useState({});
@@ -21,7 +22,7 @@ export const useCrmOptions = () => {
     api.get("/crm/options").then(({ data }) => setOptions(data)).catch(() => {});
     api.get("/courses").then(({ data }) => setCourses(data)).catch(() => {});
     api.get("/lead-stages").then(({ data }) => setStages(data)).catch(() => {});
-    api.get("/users", { params: { pageNumber: 1 } }).then(({ data }) => setUsers(data.users || [])).catch(() => {});
+    fetchAllUsersPage().then(({ data }) => setUsers(data.users || [])).catch(() => {});
     api.get("/tags").then(({ data }) => setTags(data)).catch(() => {});
   }, []);
   return { options, courses, stages, users, tags };

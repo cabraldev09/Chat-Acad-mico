@@ -10,6 +10,10 @@ const rules = {
 			"tickets-manager:showall",
 			"user-modal:editProfile",
 			"user-modal:editQueues",
+			// the coordination has the same powers as the administration
+			"ticket-options:deleteTicket",
+			"ticket-options:transferWhatsapp",
+			"contacts-page:deleteContact",
 		],
 	},
 

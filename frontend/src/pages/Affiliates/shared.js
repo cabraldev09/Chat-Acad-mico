@@ -75,14 +75,4 @@ export const useStyles = makeStyles((theme) => ({
   actions: { display: "flex", gap: 4, marginLeft: "auto", flex: "none" },
 }));
 
-// /users answers 20 at a time
-export const fetchAllUsers = async () => {
-  let all = [];
-  for (let page = 1; page <= 25; page += 1) {
-    // eslint-disable-next-line no-await-in-loop
-    const { data } = await api.get("/users", { params: { pageNumber: page } });
-    all = all.concat(data.users || []);
-    if (!data.hasMore) break;
-  }
-  return all;
-};
+export { fetchAllUsers } from "../../utils/fetchAllUsers";

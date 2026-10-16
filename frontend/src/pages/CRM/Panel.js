@@ -1,5 +1,5 @@
 import { fillDays } from "../../utils/chartDays";
-import React, { useEffect, useState } from "react";
+import React, { useContext, useEffect, useState } from "react";
 import { useHistory } from "react-router-dom";
 import { Typography, TextField, MenuItem, makeStyles, Table, TableHead, TableRow, TableCell, TableBody, LinearProgress, Button, Menu } from "@material-ui/core";
 import {
@@ -14,6 +14,7 @@ import MainHeaderButtonsWrapper from "../../components/MainHeaderButtonsWrapper"
 import Title from "../../components/Title";
 import GlowCard from "../../components/GlowCard";
 import NumberTicker from "../../components/NumberTicker";
+import { AuthContext } from "../../context/Auth/AuthContext";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import { useCrmOptions, SourceIcon } from "./shared";
@@ -46,6 +47,8 @@ const pct = (a, b) => (b ? `${((a / b) * 100).toFixed(1).replace(".", ",")}%` : 
 const PIE = ["#0B4279", "#0693E3", "#FEF84C", "#6366f1", "#f97316", "#14b8a6", "#ec4899", "#64748b", "#84cc16"];
 
 const Panel = () => {
+  const { user: me } = useContext(AuthContext);
+  const canExport = !!me && me.role !== "tutor";
   const classes = useStyles();
   const history = useHistory();
   const { courses, users } = useCrmOptions();
@@ -108,7 +111,7 @@ const Panel = () => {
           <TextField select size="small" label="Curso" variant="outlined" value={courseId} onChange={(e) => setCourseId(e.target.value)} style={{ minWidth: 160 }}>
             <MenuItem value="">Todos</MenuItem>{courses.map((c) => (<MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>))}
           </TextField>
-          <Button variant="outlined" startIcon={<Download size={16} />} onClick={(e) => setExportEl(e.currentTarget)}>Exportar relatório</Button>
+          {canExport && <Button variant="outlined" startIcon={<Download size={16} />} onClick={(e) => setExportEl(e.currentTarget)}>Exportar relatório</Button>}
           <Menu anchorEl={exportEl} open={Boolean(exportEl)} onClose={() => setExportEl(null)} getContentAnchorEl={null} anchorOrigin={{ vertical: "bottom", horizontal: "right" }} transformOrigin={{ vertical: "top", horizontal: "right" }}>
             <MenuItem onClick={() => exportReport("owner")}>Por consultor (planilha)</MenuItem>
             <MenuItem onClick={() => exportReport("polo")}>Por polo (planilha)</MenuItem>

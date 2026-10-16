@@ -5,7 +5,7 @@ import sequelize from "../database";
 import UserQueue from "../models/UserQueue";
 import { dayBounds, fmtDate, getAppTz, shiftDays } from "../helpers/AppTime";
 import { businessMinutes, getBusinessConfig } from "../helpers/BusinessTime";
-import { roleOf } from "../helpers/Roles";
+import { isManagerRole, roleOf } from "../helpers/Roles";
 import { portable } from "../helpers/sqlDialect";
 import { remember } from "../helpers/TtlCache";
 import { getSetting } from "../helpers/AppSettings";
@@ -31,7 +31,8 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
   // many people open the home screen at the same moment and every message asks for a refresh: one computation per
   // few seconds and per view is shared by all of them
   const me = Number(req.user.id);
-  const admin = roleOf(req.user) === "admin";
+  // the coordination sees what the administration sees
+  const admin = isManagerRole(roleOf(req.user));
   const key = `dashboard:${admin ? "all" : `u${me}:${roleOf(req.user)}`}:${req.query.date || ""}:${req.query.days || ""}`;
   return res.json(await remember(key, Number(process.env.DASHBOARD_CACHE_MS ?? 8000), () => build(req)));
 };
@@ -48,7 +49,7 @@ const build = async (req: Request): Promise<any> => {
 
   const me = Number(req.user.id);
   const role = roleOf(req.user);
-  const admin = role === "admin";
+  const admin = isManagerRole(role);
 
   const base = `t.isHistorical = false AND t.isGroup = false AND NOT EXISTS (SELECT 1 FROM Contacts sc WHERE sc.id = t.contactId AND (sc.isStaff = true OR sc.kind <> 'person'))`;
   const scope = admin

@@ -77,7 +77,7 @@ export const eventAllowed = async (user: User, event: string, data: any, rooms: 
       if (!id && data.leadId) id = (await Lead.findByPk(data.leadId))?.affiliateId;
       return !!id && !!(await Affiliate.findOne({ where: { id, ownerId: Number(user.id) }, attributes: ["id"] }));
     }
-    if (event === "user") return user.profile === "admin" || Number(data.user?.id || data.userId) === Number(user.id);
+    if (event === "user") return manager || user.profile === "admin" || Number(data.user?.id || data.userId) === Number(user.id);
     if (event === "contactsImport") return Number(data.userId) === Number(user.id);
     // the return of a curricular analysis is for its owner (the management reads it on the screen)
     if (event === "followUp") return Number(data.userId) === Number(user.id);
@@ -87,7 +87,8 @@ export const eventAllowed = async (user: User, event: string, data: any, rooms: 
     if (event === "forwardProgress") return true;
     if (["aiLearning", "flow", "automationTrigger"].includes(event)) return manager;
     if (["campaign", "contactList"].includes(event)) return manager || user.role === "consultor";
-    if (["tag", "queue", "quickAnswer", "course", "leadStage", "polo"].includes(event)) return true;
+    // ids of the conversations pinned on the phone of a number: the lists of everyone who sees that number follow them
+    if (["tag", "queue", "quickAnswer", "course", "leadStage", "polo", "ticketPins"].includes(event)) return true;
     return user.profile === "admin";
   } catch (_) { return false; }
 };

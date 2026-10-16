@@ -11,7 +11,9 @@ import { isManagerRole } from "../helpers/Roles";
 export const assertConnectionUse = async (req: Request, id: number): Promise<void> => {
   const connection = await Whatsapp.findByPk(id);
   if (!connection) throw new AppError("ERR_NO_WAPP_FOUND", 404);
-  if (req.user.profile !== "admin" && connection.ownerId && connection.ownerId !== Number(req.user.id)) {
+  // the coordination has the same powers as the administration
+  const manager = req.user.profile === "admin" || isManagerRole(req.user.role);
+  if (!manager && connection.ownerId && connection.ownerId !== Number(req.user.id)) {
     throw new AppError("ERR_NO_PERMISSION", 403);
   }
 };

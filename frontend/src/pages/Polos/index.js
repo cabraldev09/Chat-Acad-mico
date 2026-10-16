@@ -16,6 +16,7 @@ import ImportWizard from "../../components/ImportWizard";
 import ConfirmationModal from "../../components/ConfirmationModal";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
+import { fetchAllUsersPage } from "../../utils/fetchAllUsers";
 
 const FUNCTIONS = [
   { key: "comercial", label: "Comercial", hint: "Consultores que atendem candidatos e geram propostas." },
@@ -194,7 +195,7 @@ const Polos = () => {
 
   const load = useCallback(async () => {
     try {
-      const [p, u] = await Promise.all([api.get("/polos"), api.get("/users", { params: { pageNumber: 1 } })]);
+      const [p, u] = await Promise.all([api.get("/polos"), fetchAllUsersPage()]);
       setPolos(p.data);
       setUsers(u.data.users || []);
     } catch (err) {

@@ -3,6 +3,7 @@ import { QueryTypes } from "sequelize";
 
 import sequelize from "../database";
 import { dayBounds, shiftDays } from "../helpers/AppTime";
+import { isManagerRole, roleOf } from "../helpers/Roles";
 import { publicPicUrl } from "../helpers/PicUrl";
 import { getBusinessConfig, businessMinutes } from "../helpers/BusinessTime";
 import { portable, nowSql, diffSeconds, dayOf, countIf } from "../helpers/sqlDialect";
@@ -21,7 +22,9 @@ const q = async (sql: string, replacements: Record<string, any>): Promise<any[]>
 export const overview = async (req: Request, res: Response): Promise<Response> => {
   const { from, to } = range(req);
   const queueId = req.query.queueId ? Number(req.query.queueId) : null;
-  const userId = req.query.userId ? Number(req.query.userId) : null;
+  // the management reads the whole company (and can filter); everyone else reads their own conversations only
+  const manager = isManagerRole(roleOf(req.user));
+  const userId = manager ? (req.query.userId ? Number(req.query.userId) : null) : Number(req.user.id);
   const rep = { from, to, queueId, userId };
   // people of the team (marked on the contact) are not customers: they never count
   const filter = `AND t.isHistorical = false AND t.isGroup = false AND NOT EXISTS (SELECT 1 FROM Contacts sc WHERE sc.id = t.contactId AND (sc.isStaff = true OR sc.kind = 'channel')) AND (:queueId IS NULL OR t.queueId = :queueId) AND (:userId IS NULL OR t.userId = :userId)`;

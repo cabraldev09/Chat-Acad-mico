@@ -10,6 +10,7 @@ import toastError from "../../errors/toastError";
 import { copyText, errorText, initialsOf } from "../Analysis/shared";
 import { Badge, Button, Card, CardContent, Input, Portal, cn } from "../Analysis/orig";
 import { DOC_LABEL, RESULT_LABEL } from "../AcademicAnalysis";
+import { fetchAllUsersPage } from "../../utils/fetchAllUsers";
 
 // "Alunos": who has access to the Portal do Aluno, in the look of the original. The tutor registers the student (by RGM),
 // sends the invitation (the link goes by e-mail when the account is set up, and can always be copied to send by WhatsApp),
@@ -76,7 +77,7 @@ const Students = () => {
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
     api.get("/students/portal-url").then(({ data }) => setPortal(data.url)).catch(() => undefined);
-    if (manager) api.get("/users", { params: { pageNumber: 1 } }).then(({ data }) => setUsers((data.users || []).filter((u) => u.role === "tutor" || u.role === "coordenacao"))).catch(() => undefined);
+    if (manager) fetchAllUsersPage().then(({ data }) => setUsers((data.users || []).filter((u) => u.role === "tutor" || u.role === "coordenacao"))).catch(() => undefined);
   }, [manager]);
 
   const sendInvite = async (s) => {

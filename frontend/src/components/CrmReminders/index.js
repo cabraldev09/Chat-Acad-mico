@@ -39,7 +39,7 @@ const CrmReminders = () => {
     });
     // a number stopped being connected: its owner and the administrators must scan the QR Code again
     socket.on("whatsappAlert", (a) => {
-      const admin = user.profile === "admin" || user.role === "admin";
+      const admin = user.profile === "admin" || user.role === "admin" || user.role === "coordenacao";
       if (!(a.ownerId === user.id || admin)) return;
       toast.error(`O WhatsApp “${a.name}” desconectou. Abra Conexões e leia o QR Code de novo para voltar a receber mensagens (as mensagens que já chegaram continuam guardadas aqui).`, {
         autoClose: false,

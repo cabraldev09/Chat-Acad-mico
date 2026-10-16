@@ -84,7 +84,9 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
   const { rows, count } = await Lead.findAndCountAll({
     where: await withLeadScope(req, buildWhere(req.query)),
     include: withTag(req.query.tagId as string),
-    order: [["updatedAt", "DESC"]],
+    // one column of the board is ordered by score first: the next page ("Carregar mais") must follow the same order,
+    // or leads repeat and others are skipped
+    order: req.query.stageId ? [["score", "DESC"], ["updatedAt", "DESC"]] : [["updatedAt", "DESC"]],
     limit,
     offset,
     distinct: true

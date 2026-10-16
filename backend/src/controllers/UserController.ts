@@ -116,9 +116,8 @@ export const remove = async (
 ): Promise<Response> => {
   const { userId } = req.params;
 
-  if (req.user.profile !== "admin") {
-    throw new AppError("ERR_NO_PERMISSION", 403);
-  }
+  // the administration removes anyone; the coordination removes the team, never an administrator
+  assertMayManage(req, {}, await User.findByPk(userId));
 
   await DeleteUserService(userId);
 

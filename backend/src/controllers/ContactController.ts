@@ -135,9 +135,14 @@ export const update = async (
     throw new AppError(err.message);
   }
 
-  await CheckIsValidContact(contactData.number);
-
   const { contactId } = req.params;
+
+  // the number is only checked at WhatsApp when it changed: renaming a contact must work with the number disconnected
+  const current = await Contact.findByPk(contactId, { attributes: ["id", "number"] });
+  if (!current) throw new AppError("ERR_NO_CONTACT_FOUND", 404);
+  if (contactData.number && String(contactData.number) !== String(current.number)) {
+    await CheckIsValidContact(contactData.number);
+  }
 
   const contact = await UpdateContactService({ contactData, contactId });
 

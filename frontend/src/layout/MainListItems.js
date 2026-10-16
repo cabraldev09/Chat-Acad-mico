@@ -167,7 +167,7 @@ const MainListItems = (props) => {
     if (!user || !user.id) return undefined;
     const load = () => api.get("/analysis/follow-ups").then(({ data }) => setFollowUps(Number(data.total) || 0)).catch(() => {});
     load();
-    const timer = setInterval(load, 5 * 60 * 1000);
+    const timer = setInterval(() => { if (document.visibilityState === "visible") load(); }, 5 * 60 * 1000);
     window.addEventListener("followups:changed", load);
     const socket = openSocket();
     // the live notice refreshes this counter and any open list (they listen to the same event)
@@ -191,6 +191,8 @@ const MainListItems = (props) => {
     const delayDebounceFn = setTimeout(() => {
       if (whatsApps.length > 0) {
         const offlineWhats = whatsApps.filter((whats) => {
+          // only the numbers this person can reconnect (all for the management, their own for the others)
+          if (!isManager(user) && whats.ownerId !== user.id) return false;
           return (
             whats.status === "qrcode" ||
             whats.status === "PAIRING" ||
@@ -207,7 +209,7 @@ const MainListItems = (props) => {
       }
     }, 2000);
     return () => clearTimeout(delayDebounceFn);
-  }, [whatsApps]);
+  }, [whatsApps, user && user.id]);
 
   return (
     <div onClick={drawerClose}>

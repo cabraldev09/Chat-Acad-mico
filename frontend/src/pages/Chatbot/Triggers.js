@@ -6,6 +6,7 @@ import { Pencil, Plus, Trash2, Zap } from "lucide-react";
 import ConfirmationModal from "../../components/ConfirmationModal";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
+import { fetchAllUsersPage } from "../../utils/fetchAllUsers";
 
 const useStyles = makeStyles((theme) => ({
   intro: { color: theme.palette.text.secondary, fontSize: 14, maxWidth: 760, marginBottom: theme.spacing(2) },
@@ -88,7 +89,7 @@ const Triggers = ({ flows }) => {
     api.get("/automation-events").then(({ data }) => setEvents(data)).catch(() => undefined);
     api.get("/lead-stages").then(({ data }) => setLists((l) => ({ ...l, stages: data }))).catch(() => undefined);
     api.get("/tags").then(({ data }) => setLists((l) => ({ ...l, tags: Array.isArray(data) ? data : data.tags || [] }))).catch(() => undefined);
-    api.get("/users", { params: { pageNumber: 1 } }).then(({ data }) => setLists((l) => ({ ...l, users: data.users || [] }))).catch(() => undefined);
+    fetchAllUsersPage().then(({ data }) => setLists((l) => ({ ...l, users: data.users || [] }))).catch(() => undefined);
   }, [load]);
 
   const toggle = async (t) => { try { await api.put(`/automation-triggers/${t.id}`, { active: !t.active }); load(); } catch (e) { toastError(e); } };

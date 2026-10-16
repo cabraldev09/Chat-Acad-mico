@@ -1,4 +1,6 @@
-import React, { useState, useEffect, useReducer } from "react";
+import React, { useState, useEffect, useReducer, useContext } from "react";
+import { AuthContext } from "../../context/Auth/AuthContext";
+import { isStrictAdmin } from "../../utils/access";
 import { roleLabel } from "../../utils/access";
 import { toast } from "react-toastify";
 import openSocket from "../../services/socket-io";
@@ -85,6 +87,9 @@ const useStyles = makeStyles((theme) => ({
 }));
 
 const Users = () => {
+  const { user: me } = useContext(AuthContext);
+  // the coordination manages the team but never an administrator: those rows are read-only for it
+  const canChange = (row) => isStrictAdmin(me) || (row.role !== "admin" && row.profile !== "admin");
   const classes = useStyles();
 
   const [loading, setLoading] = useState(false);
@@ -115,6 +120,7 @@ const Users = () => {
           setLoading(false);
         } catch (err) {
           toastError(err);
+          setLoading(false);
         }
       };
       fetchUsers();
@@ -276,22 +282,26 @@ const Users = () => {
                     {user.whatsapp?.name}
                   </TableCell>
                   <TableCell align="center">
-                    <IconButton
-                      size="small"
-                      onClick={() => handleEditUser(user)}
-                    >
-                      <EditIcon />
-                    </IconButton>
+                    {canChange(user) && (
+                      <>
+                        <IconButton
+                          size="small"
+                          onClick={() => handleEditUser(user)}
+                        >
+                          <EditIcon />
+                        </IconButton>
 
-                    <IconButton
-                      size="small"
-                      onClick={(e) => {
-                        setConfirmModalOpen(true);
-                        setDeletingUser(user);
-                      }}
-                    >
-                      <DeleteOutlineIcon />
-                    </IconButton>
+                        <IconButton
+                          size="small"
+                          onClick={(e) => {
+                            setConfirmModalOpen(true);
+                            setDeletingUser(user);
+                          }}
+                        >
+                          <DeleteOutlineIcon />
+                        </IconButton>
+                      </>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}
