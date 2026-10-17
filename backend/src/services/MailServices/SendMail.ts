@@ -4,6 +4,7 @@ import AppError from "../../errors/AppError";
 import { getSetting } from "../../helpers/AppSettings";
 import { openSecret } from "../../helpers/Secrets";
 import { logger } from "../../utils/logger";
+import { logoAttachments } from "./Logo";
 
 // The e-mail account the system sends from (password recovery). Everything is set by the administration on the
 // Configurações screen; the defaults are the company Gmail account, which needs an "app password" typed there.
@@ -54,7 +55,7 @@ export const sendMail = async (mail: Mail): Promise<void> => {
     socketTimeout: 20000
   });
   try {
-    await transport.sendMail({ from: `"${cfg.fromName.replace(/"/g, "")}" <${cfg.user}>`, to: mail.to, subject: mail.subject, text: mail.text, html: mail.html });
+    await transport.sendMail({ from: `"${cfg.fromName.replace(/"/g, "")}" <${cfg.user}>`, to: mail.to, subject: mail.subject, text: mail.text, html: mail.html, attachments: logoAttachments(mail.html) });
   } catch (err) {
     logger.warn(`mail to ${mail.to.replace(/(.).+(@.+)/, "$1***$2")} failed: ${(err as Error).message}`);
     throw new AppError("ERR_MAIL_SEND_FAILED", 502);

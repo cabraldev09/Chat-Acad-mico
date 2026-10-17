@@ -8,6 +8,8 @@ export interface MailBody {
   html: string;
 }
 
+import { LOGO_CID } from "./Logo";
+
 const BRAND = "Cruzeiro do Sul Virtual";
 const BLUE = "#0B4279";
 const INK = "#17202b";
@@ -66,8 +68,8 @@ const build = (subject: string, l: Layout): MailBody => {
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#eef2f7"><tr><td align="center" style="padding:28px 12px">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px">
     <tr><td style="background:${BLUE};border-radius:14px 14px 0 0;padding:22px 28px">
-      <div style="font-family:${FONT};font-size:19px;font-weight:700;color:#ffffff;letter-spacing:.2px">${esc(BRAND)}</div>
-      <div style="font-family:${FONT};font-size:13px;color:#b9d2ee;margin-top:2px">${esc(l.area)}</div>
+      <img src="cid:${LOGO_CID}" width="230" height="54" alt="${esc(BRAND)}" style="display:block;border:0;outline:none;text-decoration:none;width:230px;height:auto;max-width:100%;font-family:${FONT};font-size:19px;font-weight:700;color:#ffffff">
+      <div style="font-family:${FONT};font-size:13px;color:#b9d2ee;margin-top:10px">${esc(l.area)}</div>
     </td></tr>
     <tr><td style="background:#ffffff;border:1px solid ${LINE};border-top:0;border-radius:0 0 14px 14px;padding:30px 28px 18px;font-family:${FONT}">
       <h1 style="margin:0 0 16px;font-size:21px;line-height:1.3;color:${INK}">${esc(l.title)}</h1>

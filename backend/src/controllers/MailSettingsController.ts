@@ -5,6 +5,7 @@ import { setSetting } from "../helpers/AppSettings";
 import { isMasked, sealSecret } from "../helpers/Secrets";
 import { readMailConfig, sendMail } from "../services/MailServices/SendMail";
 import { MAIL_CATALOG, testMail } from "../services/MailServices/Templates";
+import { inlineLogoForScreen } from "../services/MailServices/Logo";
 import User from "../models/User";
 
 const view = async () => {
@@ -53,7 +54,7 @@ const findTemplate = (key: string) => {
 
 export const preview = async (req: Request, res: Response): Promise<Response> => {
   const mail = findTemplate(req.params.key).build();
-  return res.json({ subject: mail.subject, html: mail.html, text: mail.text });
+  return res.json({ subject: mail.subject, html: inlineLogoForScreen(mail.html), text: mail.text });
 };
 
 // sends the model, filled with example data, to the address of the person who is logged in
