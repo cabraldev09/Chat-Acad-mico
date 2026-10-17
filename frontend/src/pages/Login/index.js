@@ -6,6 +6,7 @@ import { Visibility, VisibilityOff } from "@material-ui/icons";
 import { Bot, Megaphone, BarChart3, MessageCircle, Check } from "lucide-react";
 import { WhatsAppBrand } from "../../icons/brands";
 import BrandLogo from "../../components/BrandLogo";
+import BrandStar from "../../components/BrandStar";
 
 import { i18n } from "../../translate/i18n";
 import { AuthContext } from "../../context/Auth/AuthContext";
@@ -16,7 +17,7 @@ const useStyles = makeStyles((theme) => ({
     minHeight: "100vh",
     gridTemplateColumns: "1.05fr 1fr",
     backgroundColor: theme.palette.background.default,
-    [theme.breakpoints.down("sm")]: { gridTemplateColumns: "1fr" },
+    [theme.breakpoints.down("sm")]: { gridTemplateColumns: "1fr", gridTemplateRows: "auto 1fr" },
   },
   hero: {
     position: "relative",
@@ -28,7 +29,7 @@ const useStyles = makeStyles((theme) => ({
     flexDirection: "column",
     justifyContent: "space-between",
     background: "linear-gradient(155deg, #0B4279 0%, #08305a 55%, #061f3b 100%)",
-    [theme.breakpoints.down("sm")]: { display: "none" },
+    [theme.breakpoints.down("sm")]: { padding: "20px 20px 0", height: 200, justifyContent: "flex-start", gap: 12 },
   },
   grid: {
     position: "absolute",
@@ -49,21 +50,26 @@ const useStyles = makeStyles((theme) => ({
     transition: "background .1s",
   },
   logo: { height: 30, width: "auto", alignSelf: "flex-start" },
-  headline: { fontSize: 40, lineHeight: 1.1, fontWeight: 600, letterSpacing: "-0.03em", maxWidth: 460, margin: 0 },
-  sub: { marginTop: theme.spacing(2), color: "rgba(255,255,255,0.72)", maxWidth: 420, fontSize: 16, lineHeight: 1.55 },
-  features: { display: "grid", gap: theme.spacing(1.5), marginTop: theme.spacing(4), maxWidth: 440 },
+  // the large star rides the lower right corner of the dark side, behind the text and half cut by the edge
+  art: { position: "absolute", right: "-8%", bottom: "-9%", width: "clamp(230px, 28vw, 440px)", zIndex: -1, pointerEvents: "none", opacity: 0.98, animation: "page-in .9s var(--ease-out) both", "@media (max-width: 1199px)": { display: "none" },
+    "@media (max-width: 959px)": { display: "block", width: 150, right: "-6%", bottom: "-4%", opacity: 0.95 } },
+  headline: { fontSize: 40, lineHeight: 1.1, fontWeight: 600, letterSpacing: "-0.03em", maxWidth: 460, margin: 0, [theme.breakpoints.down("sm")]: { fontSize: 22, maxWidth: "62%" } },
+  sub: {
+    [theme.breakpoints.down("sm")]: { display: "none" }, marginTop: theme.spacing(2), color: "rgba(255,255,255,0.72)", maxWidth: 420, fontSize: 16, lineHeight: 1.55 },
+  features: { display: "grid", gap: theme.spacing(1.5), marginTop: theme.spacing(4), maxWidth: 440, [theme.breakpoints.down("sm")]: { display: "none" } },
   feature: {
     display: "flex",
     alignItems: "center",
     gap: theme.spacing(1.5),
     padding: theme.spacing(1.25, 1.5),
     borderRadius: 12,
-    border: "1px solid rgba(255,255,255,0.12)",
-    background: "rgba(255,255,255,0.05)",
-    backdropFilter: "blur(6px)",
+    border: "1px solid rgba(255,255,255,0.14)",
+    // dark glass: the text stays readable when the star passes behind it
+    background: "rgba(6,31,59,0.58)",
+    backdropFilter: "blur(10px)",
     fontSize: 14.5,
     transition: "transform .25s var(--ease-out), background .25s",
-    "&:hover": { transform: "translateX(4px)", background: "rgba(255,255,255,0.09)" },
+    "&:hover": { transform: "translateX(4px)", background: "rgba(10,48,92,0.7)" },
     "& svg": { color: "#fef84c", flex: "none" },
     animation: "slide-in-left .6s var(--ease-out) both",
   },
@@ -88,7 +94,7 @@ const useStyles = makeStyles((theme) => ({
     animation: "pop-in .5s var(--ease-spring) both",
   },
   bubbleMine: { marginLeft: 36, borderRadius: "16px 16px 4px 16px", background: "#fef84c", color: "#0a2a4d" },
-  formSide: { display: "grid", placeItems: "center", padding: theme.spacing(3) },
+  formSide: { display: "grid", placeItems: "center", padding: theme.spacing(3), [theme.breakpoints.down("sm")]: { display: "block", padding: "0 16px 28px", background: theme.palette.type === "dark" ? "#0f1520" : "#eaf1f9" } },
   card: {
     width: "100%",
     maxWidth: 400,
@@ -98,8 +104,9 @@ const useStyles = makeStyles((theme) => ({
     border: theme.border.divider,
     boxShadow: "0 24px 60px -24px rgba(11,66,121,.28)",
     animation: "page-in .5s var(--ease-out) both",
+    [theme.breakpoints.down("sm")]: { position: "relative", zIndex: 2, margin: "-28px auto 0", padding: theme.spacing(2.75, 2.5, 2.5), borderRadius: 22, boxShadow: "0 22px 46px -18px rgba(11,66,121,.45), 0 2px 6px rgba(11,66,121,.10)" },
   },
-  mobileLogo: { margin: "0 auto", marginBottom: theme.spacing(3), display: "none", [theme.breakpoints.down("sm")]: { display: "block" } },
+  mobileLogo: { margin: "0 auto", marginBottom: theme.spacing(3), display: "none" },
   title: { fontSize: 26, fontWeight: 600, letterSpacing: "-0.02em" },
   subtitle: { color: theme.palette.text.secondary, marginTop: 4, marginBottom: theme.spacing(3) },
   submit: { marginTop: theme.spacing(3), height: 44, fontSize: 15 },
@@ -142,6 +149,9 @@ const Login = () => {
         <div className={classes.blob} style={{ width: 420, height: 420, left: -120, top: -80, background: "#0693E3", opacity: 0.45 }} />
         <div className={classes.blob} style={{ width: 300, height: 300, right: -60, bottom: -40, background: "#FEF84C", opacity: 0.16, animationDelay: "-6s" }} />
         <div className={classes.spot} />
+        <div className={classes.art} aria-hidden>
+          <BrandStar variant="flow" size="100%" float shine />
+        </div>
 
         <BrandLogo tone="white" height={52} />
 

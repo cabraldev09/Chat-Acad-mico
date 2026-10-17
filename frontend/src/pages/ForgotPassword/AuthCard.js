@@ -4,7 +4,7 @@ import { makeStyles, useTheme } from "@material-ui/core/styles";
 import BrandLogo from "../../components/BrandLogo";
 
 const useStyles = makeStyles((theme) => ({
-  root: { minHeight: "100vh", display: "grid", placeItems: "center", padding: theme.spacing(2), background: theme.palette.background.default },
+  root: { minHeight: "100vh", display: "grid", placeItems: "center", padding: theme.spacing(2), background: `radial-gradient(900px circle at 50% -8%, rgba(6,147,227,.20), transparent 62%), radial-gradient(700px circle at 100% 100%, rgba(11,66,121,.10), transparent 60%), ${theme.palette.background.default}` },
   card: { width: "100%", maxWidth: 420, padding: theme.spacing(4, 3.5), borderRadius: 20, background: theme.palette.cards ? theme.palette.cards.background : theme.palette.background.paper, border: theme.border ? theme.border.divider : "1px solid rgba(127,140,160,.25)", boxShadow: "0 18px 50px -24px rgba(11,66,121,.45)" },
   logo: { display: "block", margin: "0 auto 18px" },
   title: { fontSize: 22, fontWeight: 700, letterSpacing: "-0.02em", margin: "0 0 6px", textAlign: "center" },

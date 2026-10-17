@@ -172,3 +172,21 @@ main { overflow-x: hidden !important; overscroll-behavior-x: none; }
 .msgtoast-progress.Toastify__progress-bar { background: #00a884; height: 3px; }
 @keyframes msgtoast-in { from { opacity: 0; transform: translateX(28px) scale(.97); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .msgtoast-card.Toastify__toast { animation: none; } }
+
+/* ---- the star of the brand (components/BrandStar): sign-in screens ---- */
+.brand-star { position: relative; display: inline-block; line-height: 0; flex: none; max-width: 100%; }
+.brand-star-img { position: relative; z-index: 1; display: block; width: 100%; height: auto; user-select: none; -webkit-user-drag: none; pointer-events: none;
+  /* two shadows: a wide soft one that lifts it off the page and a tight one that grounds it */
+  filter: drop-shadow(0 22px 28px rgba(5, 32, 78, 0.38)) drop-shadow(0 4px 7px rgba(5, 32, 78, 0.28)); }
+.brand-star-flat { filter: none; }
+.brand-star-glow { position: absolute; z-index: 0; inset: -16% -14%; border-radius: 50%; pointer-events: none; filter: blur(18px);
+  background: radial-gradient(closest-side, rgba(0, 190, 255, 0.50), rgba(20, 110, 255, 0.20) 56%, transparent 74%); }
+/* a band of light that crosses the metal, only over the pixels of the image (the mask is the image itself) */
+.brand-star-shine { position: absolute; z-index: 2; inset: 0; pointer-events: none; mix-blend-mode: soft-light; opacity: 0.9;
+  -webkit-mask-size: 100% 100%; mask-size: 100% 100%; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+  background: linear-gradient(112deg, transparent 38%, rgba(255, 255, 255, 0.95) 50%, transparent 62%) 160% 0 / 260% 100% no-repeat;
+  animation: brand-star-shine 7.5s ease-in-out 1.2s infinite; }
+@keyframes brand-star-shine { 0%, 62% { background-position: 160% 0; } 100% { background-position: -60% 0; } }
+@keyframes brand-star-float { 0%, 100% { transform: translateY(0) rotate(0deg); } 50% { transform: translateY(-11px) rotate(1.4deg); } }
+.brand-star-float { animation: brand-star-float 8s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .brand-star-float, .brand-star-shine { animation: none; } .brand-star-shine { opacity: 0; } }

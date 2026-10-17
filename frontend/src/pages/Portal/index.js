@@ -7,6 +7,8 @@ import { Visibility, VisibilityOff } from "@material-ui/icons";
 import { CalendarClock, ChevronDown, KeyRound, Map as MapIcon, Settings, ShieldCheck, UploadCloud, X } from "lucide-react";
 
 import BrandLogo from "../../components/BrandLogo";
+import BrandStar from "../../components/BrandStar";
+import waves from "../../assets/brand/estudante-ondas.webp";
 import portalApi, { portalToken, setPortalToken } from "../../services/portalApi";
 import { NAVY, SKY } from "../Analysis/visual";
 import {
@@ -19,15 +21,36 @@ import {
 const useStyles = makeStyles((theme) => ({
   page: { minHeight: "100vh", background: theme.palette.type === "dark" ? "#0f1520" : "#eef3f9", color: theme.palette.type === "dark" ? "#e8edf5" : "#12202f" },
   // ---- sign in
-  split: { minHeight: "100vh", display: "grid", gridTemplateColumns: "minmax(0, 1.05fr) minmax(0, 1fr)", [theme.breakpoints.down("sm")]: { gridTemplateColumns: "1fr" } },
-  brandSide: { background: NAVY, color: "#fff", padding: "44px 56px", display: "flex", flexDirection: "column", justifyContent: "space-between", gap: 32, [theme.breakpoints.down("sm")]: { padding: "24px 22px 28px", gap: 18 } },
-  headline: { fontSize: 40, lineHeight: 1.08, fontWeight: 800, letterSpacing: "-0.035em", margin: 0, maxWidth: 460, [theme.breakpoints.down("sm")]: { fontSize: 27 } },
-  lead: { fontSize: 16, lineHeight: 1.6, color: "#c9dcf2", maxWidth: 440, margin: "14px 0 0", [theme.breakpoints.down("sm")]: { fontSize: 14.5 } },
+  split: { minHeight: "100vh", display: "grid", gridTemplateColumns: "minmax(0, 1.05fr) minmax(0, 1fr)", [theme.breakpoints.down("sm")]: { gridTemplateColumns: "1fr", gridTemplateRows: "auto 1fr" } },
+  // the ribbon star (it ends in gold and red, the colors of graduation) leans out of the upper right corner
+  // the graduate fills the lower right of the dark side; a gradient from the navy keeps the text on the left readable
+  art: { position: "absolute", inset: 0, zIndex: 0, pointerEvents: "none", },
+  artCut: { position: "absolute", right: "-33%", bottom: 0, height: "64%", width: "auto", maxWidth: "none", animation: "page-in .9s var(--ease-out) both",
+    // the edges dissolve into the background: the left (waves) and the bottom (the gown) fade out instead of being cut
+    WebkitMaskImage: "linear-gradient(90deg, transparent 0%, #000 24%), linear-gradient(180deg, #000 76%, transparent 100%)", maskImage: "linear-gradient(90deg, transparent 0%, #000 24%), linear-gradient(180deg, #000 76%, transparent 100%)",
+    WebkitMaskComposite: "source-in", maskComposite: "intersect",
+    // a narrower dark side (small notebooks): the graduate is smaller and stays below the text
+    "@media (min-width: 960px) and (max-width: 1279px)": { height: "48%", right: "-13%" },
+    [theme.breakpoints.down("sm")]: { right: "-27%", height: "82%" } },
+  artShade: { position: "absolute", inset: 0, [theme.breakpoints.down("sm")]: { background: `linear-gradient(90deg, rgba(11,66,121,.97) 0%, rgba(11,66,121,.88) 44%, rgba(11,66,121,0) 76%), linear-gradient(0deg, rgba(8,38,78,.75) 0%, rgba(8,38,78,0) 28%)` }, background: `linear-gradient(90deg, ${NAVY} 0%, rgba(11,66,121,.9) 26%, rgba(11,66,121,.2) 55%, rgba(11,66,121,0) 100%), linear-gradient(0deg, rgba(8,38,78,.9) 0%, rgba(8,38,78,.45) 16%, rgba(8,38,78,0) 42%), linear-gradient(180deg, rgba(8,38,78,.55) 0%, rgba(8,38,78,0) 22%)` },
+  artGlow: { position: "absolute", right: "-12%", bottom: "-8%", width: "86%", height: "74%", background: "radial-gradient(closest-side, rgba(6,147,227,.55), rgba(6,147,227,.12) 62%, transparent 76%)", filter: "blur(10px)" },
+  brandContent: { position: "relative", zIndex: 1 },
+  brandText: { position: "relative", zIndex: 1, marginTop: "clamp(8px, 6vh, 64px)", [theme.breakpoints.down("sm")]: { marginTop: 4 } },
+  // on a phone the logo stands on the top edge of the box (all of it outside, its base on the dividing line)
+  signature: { display: "block", margin: "0 0 22px", [theme.breakpoints.down("sm")]: { display: "none" } },
+  // on a phone the whole logo stands on the edge of the box (its base touches the dividing line, nothing of it is covered)
+  signatureBehind: { display: "none", [theme.breakpoints.down("sm")]: { display: "block", position: "absolute", top: -116, left: "calc(50% - min(50% - 16px, 200px) + 14px)", width: "132px !important", zIndex: 1, pointerEvents: "none" } },
+  brandSide: { position: "relative", overflow: "hidden", isolation: "isolate", background: `radial-gradient(900px circle at 85% 0%, rgba(6,147,227,.38), transparent 60%), ${NAVY}`, color: "#fff", padding: "44px 56px", display: "flex", flexDirection: "column", justifyContent: "flex-start", gap: 32, [theme.breakpoints.down("sm")]: { padding: "20px 20px 0", gap: 10, height: 296 } },
+  headline: { fontSize: 40, lineHeight: 1.08, fontWeight: 800, letterSpacing: "-0.035em", margin: 0, maxWidth: 460, [theme.breakpoints.down("sm")]: { fontSize: 22, maxWidth: "60%" } },
+  lead: { fontSize: 16, lineHeight: 1.6, color: "#c9dcf2", maxWidth: 440, margin: "14px 0 0", [theme.breakpoints.down("sm")]: { display: "none" } },
   points: { display: "grid", gap: 12, margin: 0, padding: 0, listStyle: "none", [theme.breakpoints.down("sm")]: { display: "none" } },
   point: { display: "flex", gap: 12, alignItems: "center", fontSize: 15, color: "#e6f0fb" },
   decor: { [theme.breakpoints.down("sm")]: { display: "none" } },
-  formSide: { display: "grid", placeItems: "center", padding: theme.spacing(4, 2), background: theme.palette.type === "dark" ? "#141b27" : "#ffffff" },
-  formBox: { width: "100%", maxWidth: 400 },
+  formSide: { display: "grid", placeItems: "center", padding: theme.spacing(4, 2), background: theme.palette.type === "dark" ? "#141b27" : "#ffffff",
+    [theme.breakpoints.down("sm")]: { display: "block", position: "relative", padding: "0 16px 28px", background: theme.palette.type === "dark" ? "#0f1520" : "#eaf1f9" } },
+  formBox: { width: "100%", maxWidth: 400,
+    // on a phone the area is a box that stands out from the background and rises over the edge of the banner
+    [theme.breakpoints.down("sm")]: { position: "relative", zIndex: 2, margin: "-28px auto 0", padding: "22px 20px 20px", borderRadius: 22, background: theme.palette.type === "dark" ? "#141b27" : "#ffffff", boxShadow: "0 22px 46px -18px rgba(11,66,121,.45), 0 2px 6px rgba(11,66,121,.10)", border: `1px solid ${theme.palette.type === "dark" ? "rgba(255,255,255,.08)" : "rgba(11,66,121,.08)"}` } },
   h1: { fontSize: 28, fontWeight: 800, letterSpacing: "-0.03em", margin: "0 0 6px" },
   sub: { fontSize: 15, lineHeight: 1.55, color: theme.palette.text.secondary, margin: "0 0 18px" },
   cta: { marginTop: 16, height: 50, borderRadius: 12, fontSize: 16, fontWeight: 700, textTransform: "none", boxShadow: "none", background: NAVY, color: "#fff", "&:hover": { background: "#093663", boxShadow: "none" }, "&.Mui-disabled": { background: theme.palette.action.disabledBackground } },
@@ -52,19 +75,16 @@ const say = (err) => {
   return (d && (d.error || d.message)) || "Algo deu errado. Tente novamente.";
 };
 
-// a decorative sample of the trail (not the student's data): it shows what the portal will draw for them
-const SAMPLE = [[3, 0, 0], [3, 0, 0], [3, 0, 0], [3, 0, 0], [2, 1, 1], [0, 1, 3], [0, 0, 4], [0, 0, 4]];
-const Decor = () => {
+// The graduate of the sign-in screen: cut out (no photo background), over the navy with a blue light behind her and the
+// ribbon of waves, a shadow under her and a navy gradient on the left so the text stays readable. (Tried also with the
+// sunset campus photo as the background and with the turquoise ribbon version: the cut-out on the navy looked best.)
+const StudentArt = () => {
   const c = useStyles();
   return (
-    <div className={c.decor} aria-hidden="true" style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
-      {SAMPLE.map(([done, doing, pending], i) => (
-        <div key={i} style={{ display: "grid", gap: 5, justifyItems: "center" }}>
-          {Array.from({ length: pending }, (_, k) => <span key={`p${k}`} style={{ width: 22, height: 22, borderRadius: 6, border: "2.5px solid rgba(255,255,255,.55)" }} />)}
-          {Array.from({ length: doing }, (_, k) => <span key={`d${k}`} style={{ width: 22, height: 22, borderRadius: 6, background: SKY, boxShadow: `0 0 0 2.5px ${NAVY}, 0 0 0 5px ${SKY}` }} />)}
-          {Array.from({ length: done }, (_, k) => <span key={`o${k}`} style={{ width: 22, height: 22, borderRadius: 6, background: "#fff" }} />)}
-        </div>
-      ))}
+    <div className={c.art} aria-hidden="true">
+      <div className={c.artGlow} />
+      <img src={waves} alt="" className={c.artCut} draggable={false} />
+      <div className={c.artShade} />
     </div>
   );
 };
@@ -75,20 +95,22 @@ const AuthShell = ({ title, subtitle, children, wide }) => {
     <div className={c.page}>
       <div className={c.split}>
         <div className={c.brandSide}>
-          <BrandLogo tone="white" height={44} />
-          <div>
+          <StudentArt />
+          <div className={c.brandContent}><BrandLogo tone="white" height={44} /></div>
+          <div className={c.brandText}>
             <h2 className={c.headline}>Sua trajetória até a formatura, num só lugar.</h2>
             <p className={c.lead}>Veja o que você já concluiu, o que ainda falta cursar e quando o curso termina.</p>
           </div>
-          <Decor />
-          <ul className={c.points}>
+          <ul className={`${c.points} ${c.brandContent}`} style={{ marginTop: "auto" }}>
             <li className={c.point}><MapIcon size={20} color="#7cc0ff" />O mapa do seu curso, disciplina por disciplina</li>
             <li className={c.point}><CalendarClock size={20} color="#7cc0ff" />Previsão de formatura sempre atualizada</li>
             <li className={c.point}><ShieldCheck size={20} color="#7cc0ff" />Acesso só seu, com senha que você mesmo cria</li>
           </ul>
         </div>
         <div className={c.formSide}>
+          <BrandStar variant="escolha" size={132} glow={false} className={c.signatureBehind} alt="" />
           <div className={c.formBox} style={wide ? { maxWidth: 440 } : undefined}>
+            <BrandStar variant="escolha" size={176} glow={false} className={c.signature} alt="Escolha ter estrela" />
             <h1 className={c.h1}>{title}</h1>
             {subtitle && <p className={c.sub}>{subtitle}</p>}
             {children}
