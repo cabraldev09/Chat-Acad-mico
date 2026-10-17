@@ -75,6 +75,57 @@ export const Capture = ({ s, setS, save }) => {
   );
 };
 
+const PROFILE_LABEL = { admin: "Administração", coordenacao: "Coordenação", consultor: "Consultor", tutor: "Tutor" };
+
+// The Wallet ID of the Efí account of each seller (and of the admin who also sells): it is all a seller has to inform.
+// The administration can inform it for them. The commission goes straight to that wallet when the student pays.
+const SellerWallets = () => {
+  const classes = useStyles();
+  const [list, setList] = useState(null);
+  const [typed, setTyped] = useState({});
+  const [busy, setBusy] = useState(0);
+  const load = () => api.get("/payments/efi/wallets").then(({ data }) => setList(Array.isArray(data) ? data : [])).catch((e) => { setList([]); toastError(e); });
+  useEffect(() => { load(); }, []);
+  if (!list) return null;
+  const save = async (u) => {
+    setBusy(u.id);
+    try {
+      await api.put(`/payments/efi/wallets/${u.id}`, { payeeCode: typed[u.id] });
+      toast.success(`Wallet ID de ${u.name} salvo`);
+      setTyped((t) => ({ ...t, [u.id]: "" }));
+      await load();
+    } catch (e) { toastError(e); }
+    setBusy(0);
+  };
+  const remove = async (u) => {
+    setBusy(u.id);
+    try { await api.delete(`/payments/efi/wallets/${u.id}`); toast.success(`Wallet ID de ${u.name} removido`); await load(); } catch (e) { toastError(e); }
+    setBusy(0);
+  };
+  return (
+    <div style={{ borderTop: "1px solid rgba(128,128,128,.25)", paddingTop: 16, display: "grid", gap: 10 }}>
+      <div>
+        <Typography variant="subtitle1" style={{ fontWeight: 600 }}>Wallet ID de cada vendedor</Typography>
+        <Typography className={classes.hint}>
+          A conta da empresa é a das credenciais acima: ela recebe a taxa e fica com o que não for comissão. O vendedor só precisa informar o Wallet ID da conta Efí dele (em Comissões); aqui a administração também pode informar por ele, inclusive o da própria conta de quem vende. Sem Wallet ID, a comissão fica com a empresa e é repassada depois.
+        </Typography>
+      </div>
+      {list.length === 0 && <Typography className={classes.hint}>Nenhum usuário cadastrado.</Typography>}
+      {list.map((u) => (
+        <div key={u.id} className={classes.row} style={{ borderTop: "1px solid rgba(128,128,128,.15)", paddingTop: 8 }}>
+          <div style={{ minWidth: 180, flex: "1 1 180px" }}>
+            <div style={{ fontWeight: 600, fontSize: 14 }}>{u.name}</div>
+            <div className={classes.hint}>{PROFILE_LABEL[u.profile] || u.profile} · {u.informed ? <>Wallet ID <b style={{ fontFamily: "monospace" }}>{u.masked}</b></> : "sem Wallet ID"}</div>
+          </div>
+          <TextField size="small" variant="outlined" label={u.informed ? "Novo Wallet ID" : "Wallet ID"} value={typed[u.id] || ""} onChange={(e) => setTyped({ ...typed, [u.id]: e.target.value })} style={{ width: 260 }} />
+          <Button variant="contained" color="primary" size="small" disabled={busy === u.id || (typed[u.id] || "").replace(/\s+/g, "").length < 6} onClick={() => save(u)}>Salvar</Button>
+          {u.informed && <Button size="small" color="secondary" disabled={busy === u.id} onClick={() => remove(u)}>Remover</Button>}
+        </div>
+      ))}
+    </div>
+  );
+};
+
 export const EfiSettings = ({ stages }) => {
   const classes = useStyles();
   const [v, setV] = useState(null);
@@ -115,6 +166,7 @@ export const EfiSettings = ({ stages }) => {
       <TextField size="small" variant="outlined" label="ID do cliente (Client_Id)" value={v.clientId} onChange={(e) => setV({ ...v, clientId: e.target.value })} />
       <TextField size="small" variant="outlined" label="Segredo do cliente (Client_Secret)" type="password" value={secret} onChange={(e) => setSecret(e.target.value)} autoComplete="off" />
       <TextField size="small" variant="outlined" label="Chave PIX da conta Efí" value={v.pixKey} onChange={(e) => setV({ ...v, pixKey: e.target.value })} helperText="CPF/CNPJ, e-mail, telefone ou chave aleatória" />
+      <TextField size="small" variant="outlined" label="Wallet ID da conta da empresa (opcional)" value={v.companyPayeeCode || ""} onChange={(e) => setV({ ...v, companyPayeeCode: e.target.value })} helperText="Serve para impedir que o Wallet ID da empresa seja informado por engano como o de um vendedor." />
       <div className={classes.row}>
         <Button component="label" variant="outlined" startIcon={<KeyRound size={16} />}>{v.certificate ? "Trocar certificado (.p12)" : "Enviar certificado (.p12)"}
           <input hidden type="file" accept=".p12,.pfx" onChange={upload} /></Button>
@@ -122,6 +174,11 @@ export const EfiSettings = ({ stages }) => {
       </div>
       <div className={classes.row}>
         <TextField size="small" variant="outlined" label="Validade da cobrança (minutos)" type="number" value={v.expiryMinutes} onChange={(e) => setV({ ...v, expiryMinutes: e.target.value })} style={{ width: 230 }} />
+        <TextField size="small" variant="outlined" label="Parte da taxa que vai ao vendedor (%)" type="number" value={v.consultantPct} onChange={(e) => setV({ ...v, consultantPct: e.target.value })} style={{ width: 260 }} inputProps={{ min: 1, max: 100 }} />
+        <TextField select size="small" variant="outlined" label="Forma de cobrança padrão" value={v.defaultMethod || "pix"} onChange={(e) => setV({ ...v, defaultMethod: e.target.value })} style={{ width: 260 }}>
+          <MenuItem value="pix">Pix com QR Code</MenuItem><MenuItem value="bolix">Bolix (boleto com Pix)</MenuItem>
+        </TextField>
+        <TextField size="small" variant="outlined" label="Gerar a cobrança agendada (dias antes)" type="number" value={v.chargeDaysBefore} onChange={(e) => setV({ ...v, chargeDaysBefore: e.target.value })} style={{ width: 260 }} inputProps={{ min: 0, max: 30 }} />
         <TextField select size="small" variant="outlined" label="Ao pagar, mover o lead para" value={v.moveStageId || ""} onChange={(e) => setV({ ...v, moveStageId: e.target.value || null })} style={{ minWidth: 260 }}>
           <MenuItem value="">Automático (etapa “Matrícula…”)</MenuItem>
           {stages.map((st) => (<MenuItem key={st.id} value={st.id}>{st.name}</MenuItem>))}
@@ -140,6 +197,7 @@ export const EfiSettings = ({ stages }) => {
         <Button style={{ marginTop: 8 }} variant="outlined" startIcon={<RefreshCw size={16} />} disabled={busy === "hook"}
           onClick={run("hook", async () => { await api.post("/payments/efi/webhook"); toast.success("Webhook registrado na Efí"); })}>Registrar webhook na Efí</Button>
       </div>
+      <SellerWallets />
     </Paper>
   );
 };

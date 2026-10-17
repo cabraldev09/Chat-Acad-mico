@@ -475,6 +475,7 @@ const messages = {
         ERR_INVALID_STAGE_TYPE: "O tipo da etapa precisa ser: em andamento, ganho ou perdido.",
         ERR_NO_FILE: "Escolha um arquivo para enviar.",
         ERR_EFI_PAYEE_INVALID: "O Wallet ID da Efí precisa ter de 6 a 64 letras e números, sem espaços nem traços.",
+        ERR_EFI_PAYEE_IS_COMPANY: "Esse Wallet ID é o da conta da empresa. Informe o da conta do vendedor.",
         ERR_TRIGGER_EVENT_UNAVAILABLE: "Esse acontecimento ainda não está disponível para gatilhos. Escolha outro da lista.",
         ERR_FLOW_HAS_ERRORS: "O fluxo tem erros. Corrija os pontos marcados em vermelho antes de publicar.",
         ERR_AI_NO_KEY: "Cadastre a chave da IA em Agentes de IA para criar fluxos com IA.",

@@ -214,9 +214,18 @@ export const myEfi = async (req: Request, res: Response): Promise<Response> => {
   return res.json({ informed: !!code, masked: code ? maskCode(code) : null });
 };
 
-export const saveMyEfi = async (req: Request, res: Response): Promise<Response> => {
-  const code = String(req.body.payeeCode || "").trim();
+// the seller informs ONLY the Wallet ID of the Efí account (what the Efí app calls "identificador da conta"): spaces
+// pasted along with it are dropped; the company account cannot be its own seller
+const cleanWallet = async (raw: unknown): Promise<string> => {
+  const code = String(raw || "").replace(/\s+/g, "");
   if (!/^[A-Za-z0-9]{6,64}$/.test(code)) throw new AppError("ERR_EFI_PAYEE_INVALID", 400);
+  const company = (await getSetting("efi_company_payee_code", "")).trim();
+  if (company && company.toLowerCase() === code.toLowerCase()) throw new AppError("ERR_EFI_PAYEE_IS_COMPANY", 400);
+  return code;
+};
+
+export const saveMyEfi = async (req: Request, res: Response): Promise<Response> => {
+  const code = await cleanWallet(req.body.payeeCode);
   await User.update({ efiPayeeCode: code } as any, { where: { id: uid(req) } });
   return res.json({ informed: true, masked: maskCode(code) });
 };
@@ -224,4 +233,30 @@ export const saveMyEfi = async (req: Request, res: Response): Promise<Response> 
 export const clearMyEfi = async (req: Request, res: Response): Promise<Response> => {
   await User.update({ efiPayeeCode: null } as any, { where: { id: uid(req) } });
   return res.json({ informed: false, masked: null });
+};
+
+// ------------------------------------------- receiving accounts of the team (admin and coordination)
+// The administration can inform the Wallet ID of a seller on their behalf; the code never goes back whole.
+export const listWallets = async (_req: Request, res: Response): Promise<Response> => {
+  const users = await User.findAll({ attributes: ["id", "name", "profile", "efiPayeeCode"], order: [["name", "ASC"]] });
+  return res.json(
+    users
+      .filter(u => u.profile !== "academico")
+      .map(u => ({ id: u.id, name: u.name, profile: u.profile, informed: !!u.efiPayeeCode, masked: u.efiPayeeCode ? maskCode(u.efiPayeeCode) : null }))
+  );
+};
+
+export const saveUserWallet = async (req: Request, res: Response): Promise<Response> => {
+  const user = await User.findByPk(Number(req.params.userId), { attributes: ["id"] });
+  if (!user) throw new AppError("ERR_NO_USER_FOUND", 404);
+  const code = await cleanWallet(req.body.payeeCode);
+  await User.update({ efiPayeeCode: code } as any, { where: { id: user.id } });
+  return res.json({ id: user.id, informed: true, masked: maskCode(code) });
+};
+
+export const clearUserWallet = async (req: Request, res: Response): Promise<Response> => {
+  const user = await User.findByPk(Number(req.params.userId), { attributes: ["id"] });
+  if (!user) throw new AppError("ERR_NO_USER_FOUND", 404);
+  await User.update({ efiPayeeCode: null } as any, { where: { id: user.id } });
+  return res.json({ id: user.id, informed: false, masked: null });
 };
