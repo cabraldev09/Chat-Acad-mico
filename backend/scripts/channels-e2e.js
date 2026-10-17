@@ -222,6 +222,11 @@ const startBilletMock = () => {
   });
   const guard = (req, res, next) => (req.headers.authorization === "Bearer bt-123" ? next() : res.status(401).json({ error: "sem token" }));
   app.post("/v1/charge/one-step", guard, (req, res) => {
+    const repasses = (req.body.items[0].marketplace || {}).repasses || [];
+    if (repasses.some(r => String(r.payee_code).startsWith("RECUSADO"))) {
+      billet.calls.push({ method: "POST", path: req.path, body: req.body, refused: true });
+      return res.status(400).json({ code: 3500034, error: "validation_error", error_description: { property: "items[0].marketplace.repasses[0].payee_code", message: "payee_code inválido: a conta não foi encontrada" } });
+    }
     billet.n += 1;
     const id = billet.n;
     billet.calls.push({ method: "POST", path: req.path, body: req.body });
@@ -1010,6 +1015,49 @@ const postMeta = (id, payload, secret, badSig) => {
       await waitFor(() => sql(`SELECT status FROM Payments WHERE id=${r.data.id}`) === "pending", 12000, "scheduled charge issued");
       assert(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${l.id} AND userId=${bolixConsultantId} AND title LIKE 'Enviar o boleto%'`) === "1", "no reminder task for the consultant");
     });
+    await test("a seller with a Wallet ID gets the Bolix with the split by itself; who pays the fee is the manager's choice; a refused Wallet ID does not stop the charge", async () => {
+      const due = ymdPlus(2);
+      const callsOf = () => billet.calls.filter(c => c.method === "POST" && !c.refused);
+      // the default of the company is Pix, nobody chose: the seller's Wallet ID turns it into a Bolix with the split
+      assert((await http.get("/payments/efi/settings", auth())).data.defaultMethod === "pix", "the default is not Pix");
+      const a = await mkLead("Aluno Repasse Automatico", "5511955579001", { ownerId: bolixConsultantId });
+      await http.put(`/leads/${a.id}`, { cpf: cpfFor(223456780) }, auth());
+      const before = callsOf().length;
+      const ra = await http.post(`/leads/${a.id}/payments`, { dueDate: due, amount: "120" }, auth());
+      assert(ra.status === 201 && ra.data.method === "bolix", `automatic method ${ra.status} ${ra.data.method}`);
+      const callA = callsOf().pop();
+      assert(callsOf().length === before + 1 && callA.body.items[0].marketplace.repasses[0].payee_code === "A1b2C3d4E5f6", "the Wallet ID was not sent");
+      assert(callA.body.items[0].marketplace.mode === 2, `fee mode ${callA.body.items[0].marketplace.mode}`);
+      // the manager makes the company pay the Efí fee (mode 1)
+      const cfg = (await http.put("/payments/efi/settings", { feeMode: "company" }, auth())).data;
+      assert(cfg.feeMode === "company", "fee mode not saved");
+      const b = await mkLead("Aluno Taxa Empresa", "5511955579002", { ownerId: bolixConsultantId });
+      await http.put(`/leads/${b.id}`, { cpf: cpfFor(223456781) }, auth());
+      await http.post(`/leads/${b.id}/payments`, { dueDate: due }, auth());
+      assert(callsOf().pop().body.items[0].marketplace.mode === 1, "the company fee mode was not sent");
+      await http.put("/payments/efi/settings", { feeMode: "proportional" }, auth());
+      // choosing Pix on purpose keeps the Pix (it cannot be split by Wallet ID): the commission stays to be paid back by hand
+      const c = await mkLead("Aluno Pix Escolhido", "5511955579003", { ownerId: bolixConsultantId });
+      await http.put(`/leads/${c.id}`, { cpf: cpfFor(223456782) }, auth());
+      const rc = await http.post(`/leads/${c.id}/payments`, { method: "pix" }, auth());
+      assert(rc.status === 201 && rc.data.method !== "bolix", "Pix chosen on purpose became a Bolix");
+      // a seller without a Wallet ID: the default (Pix) stays
+      const d = await mkLead("Aluno Vendedor Sem Conta", "5511955579004", { ownerId: 1 });
+      await http.put(`/leads/${d.id}`, { cpf: cpfFor(223456783) }, auth());
+      const rd = await http.post(`/leads/${d.id}/payments`, {}, auth());
+      assert(rd.status === 201 && rd.data.method !== "bolix", "a seller without a Wallet ID got a Bolix");
+      // Efí refuses the Wallet ID: the student still gets the charge, in the company account, and the team is told
+      sql(`UPDATE Users SET efiPayeeCode='RECUSADO12345' WHERE id=${bolixConsultantId}`);
+      const e = await mkLead("Aluno Wallet Recusado", "5511955579005", { ownerId: bolixConsultantId });
+      await http.put(`/leads/${e.id}`, { cpf: cpfFor(223456784) }, auth());
+      const re = await http.post(`/leads/${e.id}/payments`, { dueDate: due }, auth());
+      assert(re.status === 201 && re.data.status === "pending", `refused wallet ${re.status} ${JSON.stringify(re.data).slice(0, 160)}`);
+      assert(billet.calls.some(x => x.refused), "the refusal was not exercised");
+      assert(!callsOf().pop().body.items[0].marketplace, "the charge was issued with the refused split");
+      assert(sql(`SELECT CONCAT(COALESCE(recipientCode,'-'),'|',splitPct) FROM Payments WHERE id=${re.data.id}`) === "-|0", "the refused Wallet ID stayed on the payment");
+      assert(/não aceitou o Wallet ID/.test(sql(`SELECT body FROM LeadActivities WHERE leadId=${e.id} AND body LIKE '%Wallet ID%' LIMIT 1`)), "the team was not told");
+      sql(`UPDATE Users SET efiPayeeCode='A1b2C3d4E5f6' WHERE id=${bolixConsultantId}`);
+    });
     await test("a Bolix payment is confirmed only after Efí itself says so", async () => {
       const secret = (await http.get("/payments/efi/settings", auth())).data.webhookUrl.split("/").pop();
       const chargeId = sql(`SELECT chargeId FROM Payments WHERE id=${bolix.id}`);
@@ -1025,6 +1073,42 @@ const postMeta = (id, payload, secret, badSig) => {
       await http.post(`/webhooks/efi/${secret}/billet`, "notification=real", { headers: { "content-type": "application/x-www-form-urlencoded" } });
       await waitFor(() => sql(`SELECT status FROM Payments WHERE id=${bolix.id}`) === "paid", 8000, "bolix paid");
       assert(/matr/i.test(stageName(bolixLead.id)), `stage ${stageName(bolixLead.id)}`);
+    });
+    await test("the enrollment fee label: Taxa pendente when the student is enrolled without paying, Taxa paga the moment the payment is confirmed", async () => {
+      const due = ymdPlus(2);
+      const l = await mkLead("Aluno Taxa Etiqueta", "5511955579101", { ownerId: bolixConsultantId });
+      await http.put(`/leads/${l.id}`, { cpf: cpfFor(323456780) }, auth());
+      const names = (table, col, id) => sql(`SELECT COALESCE(STRING_AGG(t.name, ',' ORDER BY t.name), '') FROM ${table} x JOIN Tags t ON t.id=x.tagId WHERE x.${col}=${id}`);
+      // the person has a contact and an open conversation: the label must show there too
+      const contactId = sql(`INSERT INTO Contacts (name, number, email, isGroup, channel, createdAt, updatedAt) VALUES ('Aluno Taxa Etiqueta', 'tg_7903', '', false, 'telegram', NOW(), NOW()) RETURNING id`).split("\n")[0];
+      sql(`UPDATE Leads SET contactId=${contactId} WHERE id=${l.id}`);
+      const feeTicket = sql(`INSERT INTO Tickets (status, contactId, whatsappId, unreadMessages, isGroup, segment, isHistorical, createdAt, updatedAt) VALUES ('open', ${contactId}, ${tgId}, 0, false, 'sales', false, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const r = await http.post(`/leads/${l.id}/payments`, { method: "bolix", dueDate: due, amount: "80" }, auth());
+      assert(r.status === 201, `charge ${r.status}`);
+      assert(names("LeadTags", "leadId", l.id) === "", "a label before the enrollment");
+      // enrolled (the won column) with the fee still to pay: the label appears on the lead and on the contact
+      const wonId = sql(`SELECT id FROM LeadStages WHERE type='won' ORDER BY position LIMIT 1`);
+      const moved = await http.put(`/leads/${l.id}/stage`, { stageId: Number(wonId) }, auth());
+      assert(moved.status === 200, `move ${moved.status}`);
+      assert(names("LeadTags", "leadId", l.id) === "Taxa pendente", `lead labels: ${names("LeadTags", "leadId", l.id)}`);
+      assert(names("ContactTags", "contactId", contactId) === "Taxa pendente", "the contact has no pending label");
+      assert(names("TicketTags", "ticketId", feeTicket) === "Taxa pendente", "the conversation has no pending label");
+      // moving the card again never doubles the label
+      await http.put(`/leads/${l.id}/stage`, { stageId: Number(wonId) }, auth());
+      assert(names("LeadTags", "leadId", l.id) === "Taxa pendente", "the label doubled");
+      // the payment is confirmed by Efí: the label changes at once
+      const secret = (await http.get("/payments/efi/settings", auth())).data.webhookUrl.split("/").pop();
+      const chargeId = sql(`SELECT chargeId FROM Payments WHERE id=${r.data.id}`);
+      billet.notifications.feeLabel = [chargeId];
+      billet.charges[chargeId].status = "paid";
+      await http.post(`/webhooks/efi/${secret}/billet`, "notification=feeLabel", { headers: { "content-type": "application/x-www-form-urlencoded" } });
+      await waitFor(() => names("LeadTags", "leadId", l.id) === "Taxa paga", 8000, "Taxa paga on the lead");
+      assert(names("ContactTags", "contactId", contactId) === "Taxa paga", "the contact label was not swapped");
+      assert(names("TicketTags", "ticketId", feeTicket) === "Taxa paga", "the conversation label was not swapped");
+      // a lead that already paid is never marked as pending again
+      await http.put(`/leads/${l.id}/stage`, { stageId: Number(sql(`SELECT id FROM LeadStages WHERE type='open' ORDER BY position LIMIT 1`)) }, auth());
+      await http.put(`/leads/${l.id}/stage`, { stageId: Number(wonId) }, auth());
+      assert(names("LeadTags", "leadId", l.id) === "Taxa paga", `a paid fee came back as pending: ${names("LeadTags", "leadId", l.id)}`);
     });
     await test("an open Bolix can be cancelled at Efí", async () => {
       const l = await mkLead("Aluno Bolix Cancela", "5511955551004");
@@ -3116,6 +3200,30 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(seen && seen.total === clicksOf() && seen.unique >= 1 && seen.unique <= seen.total && seen.last7 === seen.total, `portal clicks ${JSON.stringify(seen)}`);
       const staffSees = (await http.get(`/affiliates/${aff.id}/summary`, asUser(ta))).data.clicks;
       assert(staffSees && staffSees.total === seen.total, "the team does not see the clicks");
+
+      // The affiliate column comes before every other column, but it is not "the first column" of the regular funnel: a
+      // person who is not an affiliate's referral never starts in it, nor goes back to it when they write again
+      const laneId = sql(`SELECT CAST(value AS INTEGER) FROM Settings WHERE key='affiliate_stage_id'`);
+      assert(laneId, "the affiliate column was not created by the referral");
+      const regular = n => sql(`SELECT id FROM LeadStages WHERE type='open' AND id<>${laneId} ORDER BY position ASC LIMIT 1 OFFSET ${n}`);
+      tg.updates.push({ update_id: 9101, message: { message_id: 9101, chat: { id: 7701, type: "private" }, from: { first_name: "Lívia", last_name: "Nova" }, text: "Olá, tenho interesse" } });
+      const newTicket = await waitFor(() => ticketOf("tg_7701"), 8000, "ticket of a new person");
+      await waitFor(() => sql(`SELECT id FROM Leads WHERE contactId=(SELECT id FROM Contacts WHERE number='tg_7701')`), 8000, "lead of a new person");
+      const fresh = sql(`SELECT stageId FROM Leads WHERE contactId=(SELECT id FROM Contacts WHERE number='tg_7701')`);
+      assert(fresh === regular(0) && fresh !== laneId, `a new person started in column ${fresh} (the affiliate column is ${laneId})`);
+      assert(sql(`SELECT COUNT(*) FROM LeadTags WHERE leadId=(SELECT id FROM Leads WHERE contactId=(SELECT id FROM Contacts WHERE number='tg_7701'))`) === "0", "a new person got the Afiliado label");
+      // the first reply moves them to the second regular column, not to the first one again
+      const reply = await http.post(`/messages/${newTicket}`, { body: "Oi Lívia, tudo bem?" }, auth());
+      assert(reply.status === 200, `reply ${reply.status}`);
+      await waitFor(() => sql(`SELECT stageId FROM Leads WHERE contactId=(SELECT id FROM Contacts WHERE number='tg_7701')`) === regular(1), 8000, "first reply advances to the second regular column");
+      // someone from the history who writes again starts in the first regular column
+      const hc = sql(`INSERT INTO Contacts (name, number, email, isGroup, channel, createdAt, updatedAt) VALUES ('Antiga Volta', 'tg_7702', '', false, 'telegram', NOW(), NOW()) RETURNING id`).split("\n")[0];
+      sql(`INSERT INTO Tickets (status, contactId, whatsappId, unreadMessages, isGroup, segment, isHistorical, lastMessage, closedAt, createdAt, updatedAt) VALUES ('closed', ${hc}, ${tgId}, 0, false, 'sales', true, 'antiga', NOW(), NOW() - INTERVAL '30 days', NOW() - INTERVAL '30 days')`);
+      sql(`INSERT INTO Leads (name, stageId, contactId, isHistorical, createdAt, updatedAt) VALUES ('Antiga Volta', ${regular(2)}, ${hc}, true, NOW() - INTERVAL '30 days', NOW() - INTERVAL '30 days')`);
+      tg.updates.push({ update_id: 9102, message: { message_id: 9102, chat: { id: 7702, type: "private" }, from: { first_name: "Antiga", last_name: "Volta" }, text: "voltei" } });
+      await waitFor(() => sql(`SELECT isHistorical FROM Leads WHERE contactId=${hc}`) === "0", 8000, "history lead reactivated");
+      const back = sql(`SELECT stageId FROM Leads WHERE contactId=${hc}`);
+      assert(back === regular(0) && back !== laneId, `a person from the history came back to column ${back} (the affiliate column is ${laneId})`);
 
       // proposals keep the affiliate
       const prop = await http.post("/proposals", { leadId: Number(leadId), params: { gross: 1000, firstMonthly: 200, semesters: 6, startYear: 2026, startSemester: 2 } }, asUser(ta));
