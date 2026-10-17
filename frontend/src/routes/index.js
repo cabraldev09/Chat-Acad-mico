@@ -48,6 +48,9 @@ const CrmTasks = lazy(() => import("../pages/CRM/Tasks"));
 const CrmCommissions = lazy(() => import("../pages/CRM/Commissions"));
 const Goals = lazy(() => import("../pages/Goals"));
 const PoloGoals = lazy(() => import("../pages/PoloGoals"));
+const Marketing = lazy(() => import("../pages/Marketing"));
+const Retention = lazy(() => import("../pages/Retention"));
+const CoursePage = lazy(() => import("../pages/CoursePage"));
 const SettingsHub = lazy(() => import("../pages/SettingsHub"));
 const CrmSettings = lazy(() => import("../pages/CRM/Settings"));
 const Affiliates = lazy(() => import("../pages/Affiliates"));
@@ -69,6 +72,7 @@ const inPage = (Page) => (props) => (
   </PageErrorBoundary>
 );
 const PortalLoginPage = inPage(PortalLogin);
+const CoursePageRoute = inPage(CoursePage);
 const PortalActivatePage = inPage(PortalActivate);
 const PortalHomePage = inPage(PortalHome);
 
@@ -97,6 +101,7 @@ const Routes = () => {
             <Route exact path="/esqueci-a-senha" component={ForgotPassword} publicPage />
             <Route exact path="/redefinir-senha/:token" component={ResetPassword} publicPage />
             <Route exact path="/afiliado/:token" component={AffiliatePortalPage} publicPage />
+            <Route exact path="/curso/:slug" component={CoursePageRoute} publicPage />
             <Route exact path="/portal/login" component={PortalLoginPage} publicPage />
             <Route exact path="/portal/ativar/:token" component={PortalActivatePage} publicPage />
             <Route exact path="/portal" component={PortalHomePage} publicPage />
@@ -133,6 +138,8 @@ const Routes = () => {
                 <Route exact path="/configuracoes" component={SettingsHub} isPrivate managerOnly />
                 <Route exact path="/crm/metas" component={Goals} isPrivate managerOnly />
                 <Route exact path="/crm/metas-polos" component={PoloGoals} isPrivate />
+                <Route exact path="/crm/marketing" component={Marketing} isPrivate managerOnly />
+                <Route exact path="/crm/retencao" component={Retention} isPrivate academicOnly />
                 <Route exact path="/afiliados" component={Affiliates} isPrivate salesOnly />
                 <Route exact path="/grades" component={Grades} isPrivate />
                 <Route exact path="/analise-curricular/:id?" component={CurricularAnalysis} isPrivate />

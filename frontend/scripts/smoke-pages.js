@@ -40,7 +40,7 @@ const ROUTES = [
   "/crm", "/crm/painel", "/crm/tarefas", "/crm/comissoes", "/crm/metas-polos", "/crm/metas", "/crm/config",
   "/afiliados", "/afiliados?aba=materiais", "/afiliados?aba=campanhas", "/afiliados?aba=bonificacoes", "/afiliados?aba=regras",
   "/campaigns", "/chatbot", "/chatbot/1", "/chatbot-antigo", "/ai-agents", "/monitor", "/integrations",
-  "/users", "/polos", "/Queues", "/tags", "/configuracoes",
+  "/users", "/polos", "/Queues", "/tags", "/configuracoes", "/crm/marketing", "/crm/retencao",
   "/grades", "/analise-curricular", "/analise-curricular/1", "/analise-academica", "/analise-academica/1", "/alunos",
 ];
 const SETTINGS_GROUPS = ["geral", "horario", "atendimento", "tutoria", "captacao", "pagamentos", "cadastros", "regras", "email", "erros"];
@@ -65,12 +65,16 @@ async function seed(auth) {
   await tryPost("/quickAnswers", { shortcut: "varredura", message: "Mensagem de teste" });
   await tryPost("/leads", { name: "Lead Varredura", phone: "5569977770001", source: "Site" });
   void polo;
-  return aff && aff.data && aff.data.portalToken ? aff.data.portalToken : null;
+  // a course to open its public page
+  const courses = await http.get("/courses", auth).catch(() => null);
+  const list = courses && Array.isArray(courses.data) ? courses.data : (courses && courses.data && (courses.data.courses || courses.data.rows)) || [];
+  const course = list.find((c) => c.active !== false);
+  return { token: aff && aff.data && aff.data.portalToken ? aff.data.portalToken : null, courseId: course ? course.id : null };
 }
 
 // The public page of an affiliate (no login): every tab, the QR Code, and the art in both formats must come out as a
 // real image. Page errors, 5xx answers and the error page are findings, like in the private area.
-async function sweepPortal(browser, token) {
+async function sweepPortal(browser, token, courseId) {
   const issues = [];
   let current = "/afiliado";
   const note = (kind, text) => issues.push({ role: "portal", route: current, kind, text: String(text).slice(0, 220) });
@@ -115,6 +119,15 @@ async function sweepPortal(browser, token) {
     }
     const copy = await page.evaluate(() => [...document.querySelectorAll(".ca-idea .ca-copy, .ca-kit .ca-copy")].map((n) => n.innerText).join("\n"));
     if (/\{\{|\[\[|\]\]/.test(copy)) note("script", "a ready-made text came out with a variable that was not filled in");
+    // the public page of a course: the name, the form and no price
+    if (courseId) {
+      current = "/curso";
+      await page.goto(`${BASE}/curso/${courseId}-teste?utm_source=varredura`, { waitUntil: "networkidle2", timeout: 40000 });
+      await sleep(900);
+      const text = await page.evaluate(() => document.body.innerText || "");
+      if (!/Quero saber mais/.test(text) || !(await page.$("form input[type=checkbox]"))) note("ERROR PAGE", "the course page did not open with its form");
+      if (/R\$\s*\d|mensalidade/i.test(text)) note("script", "the public course page shows a price");
+    }
   } catch (e) { note("timeout", e.message); }
   await ctx.close();
   return issues;
@@ -228,7 +241,7 @@ async function sweepRole(browser, name, def) {
   const login = await http.post("/auth/login", ADMIN);
   if (login.status !== 200) { console.log("cannot sign in as the administrator:", login.status); process.exit(2); }
   const auth = await ensureUsers(login.data.token);
-  const portalToken = await seed(auth);
+  const { token: portalToken, courseId } = await seed(auth);
   const browser = await puppeteer.launch({ executablePath: chromePath(), headless: true, args: ["--no-sandbox", "--disable-setuid-sandbox"] });
   const all = [];
   for (const [name, def] of Object.entries(ROLES)) {
@@ -241,7 +254,7 @@ async function sweepRole(browser, name, def) {
   if (!wanted.length || wanted.includes("portal")) {
     process.stdout.write("> portal (público)... ");
     if (!portalToken) { console.log("no affiliate to open"); all.push({ role: "portal", route: "/afiliado", kind: "script", text: "could not create the affiliate of the sweep" }); }
-    else { const issues = await sweepPortal(browser, portalToken); console.log(`${issues.length} finding(s)`); all.push(...issues); }
+    else { const issues = await sweepPortal(browser, portalToken, courseId); console.log(`${issues.length} finding(s)`); all.push(...issues); }
   }
   await browser.close();
   const lines = all.map((i) => `${i.role.padEnd(11)} ${i.route.padEnd(36)} ${i.kind.padEnd(11)} ${i.text}`);

@@ -320,6 +320,36 @@ export const Automation = ({ s, setS, save, users }) => {
           </TextField>
         </div>
       </div>
+      <div>
+        <Typography variant="subtitle2" style={{ fontWeight: 600 }}>Prazo de matrícula de cada período</Typography>
+        <Typography className={classes.hint} gutterBottom>
+          O último dia para se matricular. Com o prazo cadastrado, o gatilho “Prazo de matrícula se aproximando” (em Gatilhos) lembra, uma vez, os leads do período que ainda não se matricularam. O gatilho “Lead parado” retoma quem deixou de responder.
+        </Typography>
+        <div className={classes.row}>
+          {(s.entryTerms || []).map((t) => (
+            <TextField key={t} size="small" variant="outlined" type="date" label={`Prazo de ${t}`} InputLabelProps={{ shrink: true }} style={{ width: 190 }}
+              value={(s.entryDeadlines || {})[t] || ""}
+              onChange={(e) => setS({ ...s, entryDeadlines: { ...(s.entryDeadlines || {}), [t]: e.target.value } })}
+              onBlur={() => save({ entryDeadlines: s.entryDeadlines || {} })} />
+          ))}
+          <Button size="small" variant="outlined" onClick={async () => { try { const { data } = await api.post("/crm/cadences/run"); toast.success(`Follow-ups rodados: ${data.idle} de lead parado, ${data.deadline} de prazo.`); } catch (e) { toastError(e); } }}>Rodar os follow-ups agora</Button>
+        </div>
+      </div>
+      <div>
+        <Typography variant="subtitle2" style={{ fontWeight: 600 }}>Documentos da matrícula</Typography>
+        <Typography className={classes.hint} gutterBottom>Os documentos que o aluno entrega depois de confirmada a matrícula, um por linha. Enquanto faltar algum, o aluno fica com a etiqueta “Documentos pendentes” e a aba Documentos do lead mostra o que falta.</Typography>
+        <TextField multiline rows={5} fullWidth size="small" variant="outlined" label="Documentos exigidos (um por linha)" value={(s.requiredDocs || []).join("\n")}
+          onChange={(e) => setS({ ...s, requiredDocs: e.target.value.split("\n") })}
+          onBlur={() => save({ requiredDocs: (s.requiredDocs || []).map((d) => d.trim()).filter(Boolean) })} />
+        <FormControlLabel control={<Switch color="primary" checked={!!s.docsAutoReminder} onChange={(e) => save({ docsAutoReminder: e.target.checked })} />}
+          label="Cobrar os documentos pendentes por WhatsApp automaticamente" />
+        {s.docsAutoReminder && (
+          <div className={classes.row}>
+            <TextField size="small" variant="outlined" type="number" label="A cada (dias)" style={{ width: 150 }} value={s.docsReminderDays || 3} onChange={(e) => setS({ ...s, docsReminderDays: e.target.value })} onBlur={() => save({ docsReminderDays: s.docsReminderDays })} />
+            <TextField size="small" variant="outlined" type="number" label="No máximo (vezes)" style={{ width: 170 }} value={s.docsReminderMax || 3} onChange={(e) => setS({ ...s, docsReminderMax: e.target.value })} onBlur={() => save({ docsReminderMax: s.docsReminderMax })} />
+          </div>
+        )}
+      </div>
       <TextField select variant="outlined" size="small" label="Distribuição de novos leads" value={s.autoassign || "roundrobin"} onChange={(e) => save({ autoassign: e.target.value })} style={{ maxWidth: 360 }}>
         <MenuItem value="roundrobin">Rodízio entre os consultores</MenuItem>
         <MenuItem value="none">Sem responsável (o primeiro a atender assume)</MenuItem>

@@ -22,6 +22,7 @@ import { WhatsAppBrand } from "../../icons/brands";
 import LeadFields from "./LeadFields";
 import ProposalStudio from "./ProposalStudio";
 import PaymentTab from "./PaymentTab";
+import DocumentsTab from "./DocumentsTab";
 import { ScoreRing, SourceIcon, ago, isOverdue, burst, initials } from "./shared";
 
 const useStyles = makeStyles((theme) => ({
@@ -256,6 +257,7 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab, side = false 
             <Tab className={classes.tab} label={<span>Tarefas{tasks.filter((t) => !t.doneAt).length ? <b className={classes.tabCount}>{tasks.filter((t) => !t.doneAt).length}</b> : null}</span>} />
             <Tab className={classes.tab} label={<span>Propostas{proposals.length ? <b className={classes.tabCount}>{proposals.length}</b> : null}</span>} />
             <Tab className={classes.tab} label="Matrícula" />
+            <Tab className={classes.tab} label="Documentos" />
           </Tabs>
 
           <div className={classes.body}>
@@ -322,6 +324,7 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab, side = false 
               </>
             )}
             {tab === 4 && <PaymentTab lead={lead} acts={acts} onChanged={changed} onEditSummary={() => setTab(0)} />}
+            {tab === 5 && <DocumentsTab lead={lead} onChanged={changed} />}
 
             {tab === 3 && (
               <>
