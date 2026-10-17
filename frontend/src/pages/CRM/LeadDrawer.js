@@ -52,7 +52,7 @@ const useStyles = makeStyles((theme) => ({
   tlIcon: { width: 28, height: 28, borderRadius: "50%", display: "grid", placeItems: "center", background: theme.palette.action.selected, flex: "none", color: theme.palette.text.secondary },
   tlBody: { fontSize: 14, lineHeight: 1.45, overflowWrap: "anywhere", whiteSpace: "pre-wrap" },
   tlMeta: { fontSize: 12, color: theme.palette.text.secondary },
-  tab: { padding: "4px 6px", fontSize: 13, minWidth: 0 },
+  tab: { padding: "4px 13px", fontSize: 13, minWidth: 0, whiteSpace: "nowrap" },
   tabCount: { marginLeft: 5, fontSize: 11, fontWeight: 600, padding: "0 6px", borderRadius: 999, background: theme.palette.action.selected },
   taskRow: { display: "flex", alignItems: "center", gap: 4, padding: theme.spacing(0.5, 0), borderBottom: theme.border.divider },
 }));
@@ -253,7 +253,7 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab, side = false 
             </div>
           </div>
 
-          <Tabs value={tab} onChange={(e, v) => setTab(v)} variant="fullWidth" style={{ margin: "12px 20px 0" }}>
+          <Tabs value={tab} onChange={(e, v) => setTab(v)} variant="scrollable" scrollButtons="auto" style={{ margin: "12px 20px 0" }}>
             <Tab className={classes.tab} label="Resumo" />
             <Tab className={classes.tab} label={<span>Atividade{acts.length ? <b className={classes.tabCount}>{acts.length}</b> : null}</span>} />
             <Tab className={classes.tab} label={<span>Tarefas{tasks.filter((t) => !t.doneAt).length ? <b className={classes.tabCount}>{tasks.filter((t) => !t.doneAt).length}</b> : null}</span>} />
