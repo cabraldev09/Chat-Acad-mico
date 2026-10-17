@@ -61,14 +61,13 @@ export const renderLeadPage = (o: LeadPageOptions): string => {
 <meta name="description" content="Cursos de graduação a distância (EAD) e semipresenciais, com tutoria depois da matrícula. Fale com um consultor.">
 <style>
 :root{--c:${color};--b:#0693E3;--y:#FEF84C;--ink:#0b1a2e;--mut:#5d6f86;--line:#e2e8f0}
-*{box-sizing:border-box}html{scroll-behavior:smooth}
-body{margin:0;font-family:Geist,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--ink);background:#f6f8fb;line-height:1.5}
+*{box-sizing:border-box}html{scroll-behavior:smooth;overflow-x:hidden;-webkit-text-size-adjust:100%}
+body{margin:0;font-family:Geist,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--ink);background:#f6f8fb;line-height:1.5;overflow-x:hidden;max-width:100vw;overscroll-behavior-x:none}
 img,svg{max-width:100%}
 .wrap{max-width:1080px;margin:0 auto;padding:0 20px}
-.hero{background:linear-gradient(135deg,#08213f 0%,var(--c) 45%,var(--b) 100%);color:#fff;position:relative;overflow:hidden}
+.hero{background:radial-gradient(ellipse 85% 38% at 72% 100%,rgba(255,176,120,.55),rgba(255,120,160,.22) 55%,rgba(255,120,160,0) 78%),linear-gradient(135deg,#08213f 0%,var(--c) 45%,var(--b) 100%);color:#fff;position:relative;overflow:hidden;overflow:clip}
 .hero:before{content:"";position:absolute;right:-120px;top:-120px;width:520px;height:520px;border-radius:50%;background:radial-gradient(circle,rgba(255,255,255,.28),rgba(255,255,255,0) 68%)}
-.hero:after{content:"";position:absolute;left:-160px;bottom:-200px;width:520px;height:520px;border-radius:50%;border:44px solid rgba(255,255,255,.07)}
-.hero .wrap{position:relative;z-index:1;display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:end;padding-top:26px}
+.hero .wrap{position:relative;z-index:1;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;align-items:end;padding-top:26px}
 .hero-copy{padding:18px 0 54px}
 .logo{display:block;width:230px;height:auto;margin-bottom:34px}.logo-text{display:block;margin-bottom:34px;font-size:20px}
 .eyebrow{display:inline-flex;gap:8px;align-items:center;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.22);padding:6px 14px;border-radius:999px;font-size:13px;font-weight:600;margin-bottom:16px}
@@ -80,7 +79,9 @@ h1 mark{background:none;color:var(--y);padding:0}
 .cta{display:inline-flex;align-items:center;gap:10px;background:var(--y);color:#0b1a2e;font-weight:800;text-decoration:none;padding:15px 26px;border-radius:14px;font-size:17px;box-shadow:0 14px 30px -14px rgba(0,0,0,.55);transition:transform .15s}
 .cta:hover{transform:translateY(-2px)}
 .pills{display:flex;gap:8px;flex-wrap:wrap;margin-top:22px}.pills span{background:rgba(255,255,255,.14);padding:6px 13px;border-radius:999px;font-size:13.5px;font-weight:600}
-.student{align-self:end;justify-self:end;width:min(135%,760px);margin:0 -30px -4px 0}.student img{display:block;width:100%;height:auto}
+.student{position:relative;-webkit-mask-image:linear-gradient(to right,transparent 0,#000 20%,#000 100%),linear-gradient(to top,transparent 0,#000 6%,#000 100%);-webkit-mask-composite:source-in;mask-image:linear-gradient(to right,transparent 0,#000 20%,#000 100%),linear-gradient(to top,transparent 0,#000 6%,#000 100%);mask-composite:intersect;align-self:end;justify-self:end;width:min(135%,760px);margin:0 -30px -4px 0}
+.student img{display:block;width:100%;height:auto}
+.student:after{content:"";position:absolute;left:0;right:0;bottom:0;height:46%;pointer-events:none;background:linear-gradient(to top,rgba(255,170,120,.62) 0,rgba(255,120,160,.28) 40%,rgba(255,120,160,0) 100%);mix-blend-mode:soft-light}
 .section{padding:54px 0}
 .section h2{font-size:clamp(24px,3.4vw,34px);letter-spacing:-.02em;margin:0 0 8px}
 .section .sub{color:var(--mut);margin:0 0 26px;max-width:620px}
@@ -120,7 +121,7 @@ button.send:hover{filter:brightness(1.12)}button.send:active{transform:scale(.98
 footer{padding:30px 0 90px;color:var(--mut);font-size:13px;text-align:center}
 .sticky{position:fixed;left:0;right:0;bottom:0;z-index:5;padding:10px 14px;background:rgba(255,255,255,.94);backdrop-filter:blur(8px);border-top:1px solid var(--line);display:none}
 .sticky a{display:block;text-align:center;text-decoration:none;background:var(--c);color:#fff;font-weight:800;padding:14px;border-radius:12px}
-@media(max-width:860px){.hero .wrap{grid-template-columns:1fr}.student{width:min(120%,520px);margin:-6px -20px -4px auto}.hero-copy{padding-bottom:10px}.cards,.steps{grid-template-columns:1fr}.formbox{grid-template-columns:1fr;padding:22px}.tutor{grid-template-columns:1fr}.sticky{display:block}.sticky.off{display:none}}
+@media(max-width:860px){.hero .wrap{grid-template-columns:1fr}.student{width:calc(100% + 40px);max-width:none;margin:-6px -20px -4px -20px}.hero-copy{padding-bottom:10px}.cards,.steps{grid-template-columns:1fr}.formbox{grid-template-columns:1fr;padding:22px}.tutor{grid-template-columns:1fr}.sticky{display:block}.sticky.off{display:none}}
 @media(max-width:480px){.row{grid-template-columns:1fr}.logo{width:190px;margin-bottom:24px}}
 @media(prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}
 </style>
