@@ -4088,7 +4088,7 @@ const postMeta = (id, payload, secret, badSig) => {
 
       // a message written by hand to the chosen ones: the student of another tutor is refused
       assert((await http.post("/retention/send", { kind: "custom", leadIds: [davi.leadId], text: "" }, asUser(tutorTok))).status === 400, "an empty message was sent");
-      assert((await http.post("/retention/send", { kind: "custom", leadIds: Array.from({ length: 51 }, (_, i) => i + 1), text: "x" }, auth())).status === 400, "more than 50 at once");
+      assert((await http.post("/retention/send", { kind: "custom", leadIds: Array.from({ length: 201 }, (_, i) => i + 1), text: "x" }, auth())).status === 400, "more than 200 at once");
       assert((await http.post("/retention/send", { kind: "custom", leadIds: [davi.leadId], text: "x" }, asUser(cons))).status === 403, "a consultant sent");
       const sent = await http.post("/retention/send", { kind: "custom", leadIds: [davi.leadId, elis.leadId, Number(other)], text: "Oi {{nome}}, passando para saber como vai." }, asUser(tutorTok));
       assert(sent.status === 200 && sent.data.sent === 2 && sent.data.failed === 1 && sent.data.results.find(r => r.leadId === Number(other)).ok === false, `send ${JSON.stringify(sent.data)}`);
@@ -4130,9 +4130,37 @@ const postMeta = (id, payload, secret, badSig) => {
       const plain = await waitFor(() => graph.sent.slice(before2).find(x => x.body && x.body.to === elis.from), 12000, "the plain survey");
       assert(plain.body.type === "text" && plain.body.text.body.includes("Olá, Elis!"), `plain survey ${JSON.stringify(plain.body).slice(0, 160)}`);
 
+      // the official API only allows free text and buttons in the 24 hours after the student wrote: outside it nothing is attempted
+      // (no call that Meta would refuse), unless the company has an approved template for the survey
+      sql(`UPDATE Messages SET createdAt = NOW() - INTERVAL '30 hours' WHERE fromMe=false AND ticketId IN (SELECT id FROM Tickets WHERE contactId=${elis.contactId})`);
+      assert((await http.put("/retention/config", { nps: { buttons: true } }, auth())).data.nps.buttons === true, "buttons on");
+      const before3 = graph.sent.length;
+      const closed = await http.post("/retention/send", { kind: "nps", leadIds: [elis.leadId] }, auth());
+      assert(closed.status === 200 && closed.data.failed === 1 && /24 horas/.test(closed.data.results[0].error), `window closed ${JSON.stringify(closed.data).slice(0, 220)}`);
+      assert(!graph.sent.slice(before3).some(x => x.body && x.body.to === elis.from), "a message was sent outside the 24 hours without a template");
+      const failedRow = (await http.get("/retention/log", { params: { kind: "nps", search: "Elis" }, ...auth() })).data.rows[0];
+      assert(failedRow.status === "failed" && /24 horas/.test(failedRow.error), "the refusal is not in the log with its reason");
+      const tpl = await http.put("/retention/config", { nps: { templateName: "pesquisa nps!", templateLanguage: "pt_BR" } }, auth());
+      assert(tpl.data.nps.templateName === "pesquisanps", `template name ${tpl.data.nps.templateName}`);
+      const before4 = graph.sent.length;
+      const viaTpl = await http.post("/retention/send", { kind: "nps", leadIds: [elis.leadId] }, auth());
+      assert(viaTpl.status === 200 && viaTpl.data.sent === 1, `template send ${JSON.stringify(viaTpl.data).slice(0, 200)}`);
+      const tplMsg = await waitFor(() => graph.sent.slice(before4).find(x => x.body && x.body.to === elis.from && x.body.type === "template"), 12000, "the template survey");
+      assert(tplMsg.body.template.name === "pesquisanps" && tplMsg.body.template.components[0].parameters[0].text === "Elis", "template payload");
+      assert(!graph.sent.slice(before4).some(x => x.body && x.body.type === "interactive"), "buttons were sent outside the 24 hours");
+      await http.put("/retention/config", { nps: { templateName: "" } }, auth());
+
+      // who asked to stop (SAIR) receives nothing
+      sql(`UPDATE Contacts SET optOut=true WHERE id=${elis.contactId}`);
+      const before5 = graph.sent.length;
+      const stopped = await http.post("/retention/send", { kind: "custom", leadIds: [elis.leadId], text: "Oi {{nome}}" }, auth());
+      assert(stopped.data.failed === 1 && /SAIR/.test(stopped.data.results[0].error), `opted out ${JSON.stringify(stopped.data).slice(0, 200)}`);
+      assert(!graph.sent.slice(before5).some(x => x.body && x.body.to === elis.from), "a message went to someone who asked to stop");
+      sql(`UPDATE Contacts SET optOut=false WHERE id=${elis.contactId}`);
+
       // the numbers of the operation
       const ops = (await http.get("/retention/operations", auth())).data;
-      assert(ops.sent.custom >= 2 && ops.sent.nps >= 3 && ops.sent.total >= 5 && ops.sent.failed === 0, `sent ${JSON.stringify(ops.sent)}`);
+      assert(ops.sent.custom >= 2 && ops.sent.nps >= 3 && ops.sent.total >= 5 && ops.sent.failed === 2, `sent ${JSON.stringify(ops.sent)}`);
       assert(ops.survey.sent >= 2 && ops.survey.answered >= 1 && ops.survey.detractors >= 1 && ops.survey.pending >= 1 && typeof ops.survey.medianAnswerMin === "number", `survey ${JSON.stringify(ops.survey)}`);
       assert(Array.isArray(ops.perDay) && ops.perDay.length >= 1 && ops.byTutor.some(t => t.name === "Tutor Envios" && t.sent >= 4 && t.detractors === 1 && t.pending === 1), `by tutor ${JSON.stringify(ops.byTutor)}`);
       sql(`UPDATE LeadTasks SET doneAt=NOW() WHERE leadId=${davi.leadId} AND title LIKE 'Falar com o aluno que deu nota 4%'`);
@@ -4142,6 +4170,68 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(opsTutor.byTutor.every(t => t.name === "Tutor Envios"), "the tutor read the operation of the others");
       const sum = (await http.get("/retention/summary", auth())).data;
       assert(typeof sum.nps.detractorsOpen === "number", "summary without the detractors to attend");
+    });
+    await test("retenção: o envio pode ser de alunos, do CRM com filtros, de uma lista ou de contatos escolhidos", async () => {
+      const tutorTok = (await http.post("/auth/login", { email: "tutorx@env.test", password: "senha123" })).data.token;
+      const cons = (await http.post("/auth/login", { email: "consultor@polo.test", password: "senha123" })).data.token;
+      const poloId = sql(`SELECT id FROM Polos WHERE code='ENV1'`);
+      const daviLead = sql(`SELECT l.id FROM Leads l WHERE l.name='Davi Selecionado' LIMIT 1`);
+      const daviNumber = sql(`SELECT c.number FROM Leads l JOIN Contacts c ON c.id=l.contactId WHERE l.id=${daviLead}`);
+      const aud = (params, tk) => http.get("/retention/audience", { params, ...(tk ? asUser(tk) : auth()) });
+
+      // the CRM with filters: the enrolled of a polo
+      const crm = await aud({ source: "crm", poloId, enrolled: "yes" });
+      assert(crm.status === 200 && crm.data.total === 2 && crm.data.items.every(i => i.kind === "lead" && i.leadId && i.number), `crm ${JSON.stringify(crm.data).slice(0, 240)}`);
+      assert((await aud({ source: "crm", poloId, search: "Davi" })).data.items.length === 1, "crm search by name");
+      assert((await aud({ source: "crm", enrolled: "no", poloId })).data.total === 0, "crm enrolled=no");
+      // a tutor only reaches their own students, and only from the students and the CRM
+      const tutorCrm = (await aud({ source: "crm" }, tutorTok)).data;
+      assert(tutorCrm.items.length > 0 && tutorCrm.items.every(i => ["Davi Selecionado", "Elis Selecionada"].includes(i.name)), `tutor crm ${JSON.stringify(tutorCrm).slice(0, 200)}`);
+      assert((await aud({ source: "list", listId: 1 }, tutorTok)).status === 403 && (await aud({ source: "contacts" }, tutorTok)).status === 403, "a tutor read the lists or the contacts");
+      assert((await aud({ source: "crm" }, cons)).status === 403, "a consultant read the audience");
+
+      // a list: numbers that are leads come as leads (any way of writing the phone), the others as plain numbers
+      const list = (await http.post("/contact-lists", { name: "Convidados do evento" }, auth())).data;
+      await http.post(`/contact-lists/${list.id}/import`, { items: [{ name: "Davi na lista", number: daviNumber }, { name: "Visita Sem Cadastro", number: "5511910000777" }] }, auth());
+      const fromList = (await aud({ source: "list", listId: list.id })).data;
+      assert(fromList.total === 2 && fromList.unmatched === 1, `list ${JSON.stringify(fromList)}`);
+      assert(fromList.items.some(i => i.kind === "lead" && i.leadId === Number(daviLead)) && fromList.items.some(i => i.kind === "number" && i.number === "5511910000777" && i.name === "Visita Sem Cadastro"), "list items");
+      // the contacts of the system do not bring groups, friends or the team
+      const contacts = (await aud({ source: "contacts", search: "Selecion" })).data;
+      assert(contacts.items.length >= 2 && contacts.items.every(i => !String(i.number).includes("@")), `contacts ${JSON.stringify(contacts).slice(0, 200)}`);
+
+      // who is outside the CRM only gets the text written by hand, and only from the management
+      const person = { number: "5511910000777", name: "Visita Sem Cadastro" };
+      assert((await http.post("/retention/send", { kind: "nps", recipients: [person] }, auth())).status === 403, "a survey went to someone outside the CRM");
+      assert((await http.post("/retention/send", { kind: "custom", text: "Oi", recipients: [person] }, asUser(tutorTok))).status === 403, "a tutor wrote to someone outside the CRM");
+      assert((await http.post("/retention/send", { kind: "custom", text: "Oi", recipients: [person], whatsappId: 999999 }, auth())).status >= 400, "an invented connection was accepted");
+
+      // never talked to and on the official API: nothing leaves (the window of 24 hours is closed) and the log says who and why
+      const before = graph.sent.length;
+      const cold = await http.post("/retention/send", { kind: "custom", text: "Oi {{nome}}, venha ao evento!", recipients: [person] }, auth());
+      assert(cold.status === 200 && cold.data.failed === 1 && /24 horas/.test(cold.data.results[0].error), `cold ${JSON.stringify(cold.data).slice(0, 220)}`);
+      assert(!graph.sent.slice(before).some(x => x.body && String(x.body.to).endsWith("910000777")), "a message was sent to a number that never wrote, outside the window");
+      const coldRow = (await http.get("/retention/log", { params: { search: "Visita Sem" }, ...auth() })).data.rows[0];
+      assert(coldRow && coldRow.leadId === null && coldRow.lead === "Visita Sem Cadastro" && coldRow.phone === "5511910000777" && coldRow.status === "failed", `cold row ${JSON.stringify(coldRow)}`);
+
+      // someone who wrote a minute ago but is not in the CRM can be answered: the message leaves, the same guards apply, the log keeps name and number
+      const visitor = "5511910000778";
+      await inboundCloud(visitor, "wamid.env-visit", "oi, tenho uma dúvida");
+      await waitFor(() => ticketOf(visitor), 8000, "ticket of the visitor");
+      sql(`UPDATE Leads SET isHistorical=true WHERE contactId=(SELECT id FROM Contacts WHERE number='${visitor}')`);
+      const sent = await http.post("/retention/send", { kind: "custom", text: "Oi {{nome}}, seguem as informações.", recipients: [{ number: visitor, name: "Visitante" }, { number: visitor, name: "Repetido" }] }, auth());
+      assert(sent.status === 200 && sent.data.sent === 1 && sent.data.failed === 0, `outside send ${JSON.stringify(sent.data).slice(0, 220)}`);
+      await waitFor(() => graph.sent.slice(before).some(x => x.body && String(x.body.to) === visitor && x.body.text && /seguem as informações/.test(x.body.text.body)), 12000, "the message to the visitor");
+      const visitRow = (await http.get("/retention/log", { params: { search: "Visitante" }, ...auth() })).data.rows[0];
+      assert(visitRow && visitRow.status === "sent" && visitRow.leadId === null && visitRow.phone === visitor && visitRow.kind === "custom", `visit row ${JSON.stringify(visitRow)}`);
+      assert((await http.get("/retention/log", asUser(tutorTok))).data.rows.every(r => r.lead !== "Visitante"), "the tutor read the log of people outside the CRM");
+
+      // who asked to stop is left out here too
+      sql(`UPDATE Contacts SET optOut=true WHERE number='${visitor}'`);
+      const stopped = await http.post("/retention/send", { kind: "custom", text: "Oi", recipients: [{ number: visitor, name: "Visitante" }] }, auth());
+      assert(stopped.data.failed === 1 && /SAIR/.test(stopped.data.results[0].error), `opted out ${JSON.stringify(stopped.data).slice(0, 200)}`);
+      sql(`UPDATE Contacts SET optOut=false WHERE number='${visitor}'`);
+      assert(Number(sql(`SELECT COUNT(*) FROM RetentionMessages WHERE leadId IS NULL`)) >= 3, "the log lost the people outside the CRM");
     });
     await test("retenção: resumo, planilhas e o tutor vê só a satisfação dos próprios alunos", async () => {
       const tutor = (await http.post("/auth/login", { email: "tutorr@ret.test", password: "senha123" })).data.token;

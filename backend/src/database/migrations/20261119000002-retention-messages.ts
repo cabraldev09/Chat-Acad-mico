@@ -7,8 +7,11 @@ module.exports = {
   up: async (queryInterface: QueryInterface) => {
     await queryInterface.createTable("RetentionMessages", {
       id: { type: DataTypes.INTEGER, autoIncrement: true, primaryKey: true, allowNull: false },
-      leadId: { type: DataTypes.INTEGER, allowNull: false, references: { model: "Leads", key: "id" }, onUpdate: "CASCADE", onDelete: "CASCADE" },
+      // null when the person is not in the CRM (a number from a list, a contact): then `name` and `number` tell who it was
+      leadId: { type: DataTypes.INTEGER, allowNull: true, references: { model: "Leads", key: "id" }, onUpdate: "CASCADE", onDelete: "SET NULL" },
       contactId: { type: DataTypes.INTEGER, allowNull: true },
+      name: { type: DataTypes.STRING(160), allowNull: true },
+      number: { type: DataTypes.STRING(40), allowNull: true },
       // nps | risk | remat | custom
       kind: { type: DataTypes.STRING(10), allowNull: false },
       body: { type: DataTypes.TEXT, allowNull: false },

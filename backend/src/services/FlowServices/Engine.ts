@@ -65,8 +65,12 @@ export const render = (text: string, vars: Record<string, any>, who: { name: str
 const menuText = (text: string, options: any[]): string => `${text}\n\n${options.map((o, i) => `*${i + 1}* - ${o.label}`).join("\n")}`;
 
 // what a person typed, matched to one of the options: the number, the name, or a keyword of the option
-const pickOption = (options: any[], answer: string): any | null => {
-  const a = normalize(answer);
+export const pickOption = (options: any[], answer: string): any | null => {
+  // a title that was cut shows "…" at the end, and two that looked the same come with their number in front ("2. Curso de…")
+  let a = normalize(answer).replace(/…$/, "").trim();
+  const numbered = a.match(/^(\d+)[.)]\s+\S/);
+  if (numbered && options[Number(numbered[1]) - 1]) return options[Number(numbered[1]) - 1];
+  a = a.replace(/^\d+[.)]\s+/, "").trim();
   if (/^\d+$/.test(a)) return options[Number(a) - 1] || null;
   const exact = options.find(o => normalize(o.label) === a);
   if (exact) return exact;
@@ -201,7 +205,8 @@ export const advance = async (graph: Graph, startId: string | null, state: RunSt
         state.nodeId = node.id;
         state.tries = 0;
         // eslint-disable-next-line no-await-in-loop
-        await fx.say(menuText(render(d.text, state.vars, who), d.options || []), { question: render(d.text, state.vars, who), options: (d.options || []).map((o: any) => ({ id: String(o.id), label: String(o.label) })) });
+        // (over 10 options a channel cannot show buttons: only the numbered text goes)
+        await fx.say(menuText(render(d.text, state.vars, who), d.options || []), (d.options || []).length <= 10 ? { question: render(d.text, state.vars, who), options: (d.options || []).map((o: any) => ({ id: String(o.id), label: String(o.label) })) } : undefined);
         return done("waiting");
       }
       case "ask":

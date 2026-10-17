@@ -2105,8 +2105,10 @@ ALTER SEQUENCE public."QuickAnswers_id_seq" OWNED BY public."QuickAnswers".id;
 
 CREATE TABLE public."RetentionMessages" (
     id integer NOT NULL,
-    "leadId" integer NOT NULL,
+    "leadId" integer,
     "contactId" integer,
+    name character varying(160),
+    number character varying(40),
     kind character varying(10) NOT NULL,
     body text NOT NULL,
     "surveyId" integer,
@@ -4849,7 +4851,7 @@ ALTER TABLE ONLY public."Queues"
 --
 
 ALTER TABLE ONLY public."RetentionMessages"
-    ADD CONSTRAINT "RetentionMessages_leadId_fkey" FOREIGN KEY ("leadId") REFERENCES public."Leads"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+    ADD CONSTRAINT "RetentionMessages_leadId_fkey" FOREIGN KEY ("leadId") REFERENCES public."Leads"(id) ON UPDATE CASCADE ON DELETE SET NULL;
 
 
 --

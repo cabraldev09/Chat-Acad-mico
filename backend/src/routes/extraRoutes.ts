@@ -242,6 +242,7 @@ r.put("/retention/config", isAuth, isManager, Retention.putConfig);
 r.post("/retention/run", isAuth, isManager, Retention.runNow);
 r.get("/retention/summary", isAuth, Retention.summary);
 r.get("/retention/students", isAuth, Retention.students);
+r.get("/retention/audience", isAuth, Retention.audience);
 r.post("/retention/preview", isAuth, Retention.preview);
 r.post("/retention/send", isAuth, Retention.sendBulk);
 r.get("/retention/log", isAuth, Retention.log);

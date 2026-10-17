@@ -12,10 +12,10 @@ import aluna from "../../assets/brand/aluna.webp";
 // institution. Everything happens in the browser: nothing is sent anywhere.
 export const SIZES = { story: [1080, 1920], feed: [1080, 1080] };
 export const THEMES = {
-  azul: { logoGlow: "rgba(255,255,255,.3)", logoWashA: "rgba(125,215,255,.38)", logoWashB: "rgba(255,255,255,0)", label: "Azul", a: "#0b4279", b: "#0693e3", ink: "#ffffff", sub: "rgba(255,255,255,.82)", accent: "#fef84c", marker: "rgba(254,248,76,.9)", chip: "rgba(255,255,255,.16)", chipInk: "#ffffff", glow: "rgba(255,255,255,.3)", ring: "rgba(255,255,255,.1)", dot: "rgba(255,255,255,.12)", halo: "rgba(255,255,255,.16)" },
-  noite: { logoGlow: "rgba(6,147,227,.38)", logoWashA: "rgba(125,215,255,.34)", logoWashB: "rgba(255,255,255,0)", label: "Noite", a: "#08111e", b: "#0b4279", ink: "#ffffff", sub: "rgba(255,255,255,.78)", accent: "#fef84c", marker: "rgba(254,248,76,.9)", chip: "rgba(255,255,255,.12)", chipInk: "#ffffff", glow: "rgba(6,147,227,.4)", ring: "rgba(255,255,255,.07)", dot: "rgba(255,255,255,.1)", halo: "rgba(6,147,227,.28)" },
-  sol: { logoGlow: "rgba(255,255,255,.55)", logoWashA: "rgba(11,66,121,.22)", logoWashB: "rgba(255,255,255,0)", label: "Sol", a: "#ffd23f", b: "#fef84c", ink: "#0b1a2e", sub: "rgba(11,26,46,.78)", accent: "#0b4279", marker: "rgba(11,66,121,.9)", chip: "rgba(11,26,46,.1)", chipInk: "#0b1a2e", glow: "rgba(255,255,255,.7)", ring: "rgba(11,66,121,.1)", dot: "rgba(11,66,121,.13)", halo: "rgba(255,255,255,.5)", markerInk: "#ffffff" },
-  claro: { logoGlow: "rgba(6,147,227,.16)", logoWashA: "rgba(6,147,227,.22)", logoWashB: "rgba(255,255,255,0)", label: "Claro", a: "#ffffff", b: "#d6e8fb", ink: "#0b1a2e", sub: "rgba(11,26,46,.75)", accent: "#0b4279", marker: "rgba(254,248,76,.95)", chip: "rgba(11,66,121,.08)", chipInk: "#0b4279", glow: "rgba(6,147,227,.22)", ring: "rgba(11,66,121,.07)", dot: "rgba(11,66,121,.12)", halo: "rgba(6,147,227,.16)" },
+  azul: { shade: "rgba(8,33,63,.55)", shade2: "rgba(8,33,63,.92)", dawnA: "rgba(255,150,110,.26)", dawnB: "rgba(255,214,150,.5)", logoGlow: "rgba(255,255,255,.3)", logoWashA: "rgba(125,215,255,.38)", logoWashB: "rgba(255,255,255,0)", label: "Azul", a: "#0b4279", b: "#0693e3", ink: "#ffffff", sub: "rgba(255,255,255,.82)", accent: "#fef84c", marker: "rgba(254,248,76,.9)", chip: "rgba(255,255,255,.16)", chipInk: "#ffffff", glow: "rgba(255,255,255,.3)", ring: "rgba(255,255,255,.1)", dot: "rgba(255,255,255,.12)", halo: "rgba(255,255,255,.16)" },
+  noite: { shade: "rgba(4,10,20,.6)", shade2: "rgba(4,10,20,.94)", dawnA: "rgba(255,110,120,.2)", dawnB: "rgba(255,180,110,.42)", logoGlow: "rgba(6,147,227,.38)", logoWashA: "rgba(125,215,255,.34)", logoWashB: "rgba(255,255,255,0)", label: "Noite", a: "#08111e", b: "#0b4279", ink: "#ffffff", sub: "rgba(255,255,255,.78)", accent: "#fef84c", marker: "rgba(254,248,76,.9)", chip: "rgba(255,255,255,.12)", chipInk: "#ffffff", glow: "rgba(6,147,227,.4)", ring: "rgba(255,255,255,.07)", dot: "rgba(255,255,255,.1)", halo: "rgba(6,147,227,.28)" },
+  sol: { shade: "rgba(11,66,121,.5)", shade2: "rgba(11,66,121,.9)", dawnA: "rgba(255,120,70,.2)", dawnB: "rgba(255,255,255,.6)", logoGlow: "rgba(255,255,255,.55)", logoWashA: "rgba(11,66,121,.22)", logoWashB: "rgba(255,255,255,0)", label: "Sol", a: "#ffd23f", b: "#fef84c", ink: "#0b1a2e", sub: "rgba(11,26,46,.78)", accent: "#0b4279", marker: "rgba(11,66,121,.9)", chip: "rgba(11,26,46,.1)", chipInk: "#0b1a2e", glow: "rgba(255,255,255,.7)", ring: "rgba(11,66,121,.1)", dot: "rgba(11,66,121,.13)", halo: "rgba(255,255,255,.5)", markerInk: "#ffffff" },
+  claro: { shade: "rgba(11,66,121,.42)", shade2: "rgba(11,66,121,.9)", dawnA: "rgba(255,170,120,.22)", dawnB: "rgba(255,226,172,.6)", logoGlow: "rgba(6,147,227,.16)", logoWashA: "rgba(6,147,227,.22)", logoWashB: "rgba(255,255,255,0)", label: "Claro", a: "#ffffff", b: "#d6e8fb", ink: "#0b1a2e", sub: "rgba(11,26,46,.75)", accent: "#0b4279", marker: "rgba(254,248,76,.95)", chip: "rgba(11,66,121,.08)", chipInk: "#0b4279", glow: "rgba(6,147,227,.22)", ring: "rgba(11,66,121,.07)", dot: "rgba(11,66,121,.12)", halo: "rgba(6,147,227,.16)" },
 };
 const FONT = 'Geist, system-ui, -apple-system, "Segoe UI", sans-serif';
 
@@ -132,16 +132,69 @@ const spark = (ctx, x, y, r, color) => {
 
 const BENEFITS = ["100% online", "Estude no seu ritmo", "Fale com um consultor"];
 
-export const drawArt = (canvas, { format, theme, phrase, curso, courseTags = [], nome, link, qr, logo, student }) => {
-  const [W, H] = SIZES[format] || SIZES.feed;
-  const t = THEMES[theme] || THEMES.azul;
-  const story = format === "story";
-  canvas.width = W;
-  canvas.height = H;
-  const ctx = canvas.getContext("2d");
-  ctx.textBaseline = "alphabetic";
+// the models of the art: where the photo, the headline and the QR Code go
+export const LAYOUTS = { classico: "Clássico", destaque: "Foto grande", curso: "Foco no curso", centro: "Centralizado" };
+export const LAYOUT_KEYS = Object.keys(LAYOUTS);
 
-  // ---- the background: a gradient, soft lights, a ring and a field of dots (depth without a photo)
+// a text on one line: the size goes down until it fits (no line break in a title that must stay whole)
+const fitOne = (ctx, text, weight, maxW, size, min = 18) => {
+  let sz = size;
+  ctx.font = `${weight} ${sz}px ${FONT}`;
+  while (ctx.measureText(text).width > maxW && sz > min) { sz -= 1; ctx.font = `${weight} ${sz}px ${FONT}`; }
+  return sz;
+};
+
+// the photo of the student with its edges melted: the bottom fades out (so nothing cuts her off) and so do the sides of the ribbon
+const meltedPhoto = (img, w, h, { bottom = 0.58, left = 0.16, right = 0.12 } = {}) => {
+  const c = document.createElement("canvas");
+  c.width = Math.round(w);
+  c.height = Math.round(h);
+  const o = c.getContext("2d");
+  o.drawImage(img, 0, 0, c.width, c.height);
+  o.globalCompositeOperation = "destination-in";
+  const v = o.createLinearGradient(0, 0, 0, c.height);
+  v.addColorStop(0, "rgba(0,0,0,1)");
+  v.addColorStop(bottom, "rgba(0,0,0,1)");
+  v.addColorStop(1, "rgba(0,0,0,0)");
+  o.fillStyle = v;
+  o.fillRect(0, 0, c.width, c.height);
+  const hz = o.createLinearGradient(0, 0, c.width, 0);
+  hz.addColorStop(0, "rgba(0,0,0,0)");
+  hz.addColorStop(left, "rgba(0,0,0,1)");
+  hz.addColorStop(1 - right, "rgba(0,0,0,1)");
+  hz.addColorStop(1, "rgba(0,0,0,0)");
+  o.fillStyle = hz;
+  o.fillRect(0, 0, c.width, c.height);
+  return c;
+};
+
+// photo centered by her face (about 59% of the picture) and resting on `bottom`
+const putPhoto = (ctx, img, { faceX, bottom, h, fade }) => {
+  const w = h * (img.naturalWidth / img.naturalHeight);
+  const x = faceX - w * 0.59;
+  const y = bottom - h;
+  ctx.drawImage(meltedPhoto(img, w, h, fade), x, y);
+  return { x, y, w, h, faceY: y + h * 0.34 };
+};
+
+// the light of the dawn: warm at the bottom edge, rising and dissolving, with a glow behind the photo
+const dawn = (ctx, W, H, t, glowX) => {
+  const g = ctx.createLinearGradient(0, H * 0.42, 0, H);
+  g.addColorStop(0, "rgba(255,170,100,0)");
+  g.addColorStop(0.55, t.dawnA);
+  g.addColorStop(1, t.dawnB);
+  ctx.fillStyle = g;
+  ctx.fillRect(0, H * 0.42, W, H * 0.58);
+  const r = ctx.createRadialGradient(glowX, H * 0.92, 0, glowX, H * 0.92, W * 0.75);
+  r.addColorStop(0, t.dawnB);
+  r.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.globalAlpha = 0.55;
+  ctx.fillStyle = r;
+  ctx.fillRect(0, H * 0.3, W, H * 0.7);
+  ctx.globalAlpha = 1;
+};
+
+const background = (ctx, W, H, t, glowX) => {
   const bg = ctx.createLinearGradient(0, 0, W * 0.6, H);
   bg.addColorStop(0, t.a);
   bg.addColorStop(1, t.b);
@@ -152,173 +205,249 @@ export const drawArt = (canvas, { format, theme, phrase, curso, courseTags = [],
   glow.addColorStop(1, "rgba(255,255,255,0)");
   ctx.fillStyle = glow;
   ctx.fillRect(0, 0, W, H);
-  const glow2 = ctx.createRadialGradient(W * 0.05, H * 0.8, 0, W * 0.05, H * 0.8, W * 0.7);
-  glow2.addColorStop(0, t.glow);
-  glow2.addColorStop(1, "rgba(255,255,255,0)");
-  ctx.globalAlpha = 0.55;
-  ctx.fillStyle = glow2;
-  ctx.fillRect(0, 0, W, H);
-  ctx.globalAlpha = 1;
-  ctx.strokeStyle = t.ring;
-  ctx.lineWidth = 46;
-  ctx.beginPath();
-  ctx.arc(W * 0.04, story ? H * 0.5 : H * 0.6, W * 0.44, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.fillStyle = t.dot;
-  for (let gx = 0; gx < 8; gx += 1) for (let gy = 0; gy < 6; gy += 1) {
-    ctx.beginPath();
-    ctx.arc(W - 70 - gx * 36, (story ? 410 : 70) + gy * 36, 4.5, 0, Math.PI * 2);
-    ctx.fill();
-  }
+  dawn(ctx, W, H, t, glowX);
+};
 
-  const pad = story ? 84 : 76;
-  const cardH = story ? 480 : 290;
-  const cy = H - pad + 10 - cardH;
-  let y = story ? 120 : 64;
-  if (logo) {
-    const lw = story ? 540 : 280;
-    y += drawLogo(ctx, logo, pad, y, lw, t);
-  }
-
-  // ---- the headline: the last line gets the marker
-  const textW = story ? W - pad * 2 : Math.round(W * 0.56) - pad;
-  const size = story ? 104 : 66;
+// the headline, in lines that fit; returns where it ends
+const headline = (ctx, t, phrase, x, y, maxW, size, { align = "left", maxLines = 4 } = {}) => {
   ctx.font = `800 ${size}px ${FONT}`;
-  const lines = wrap(ctx, phrase, textW).slice(0, 4);
-  let ty = y + (story ? 80 : 40) + size;
+  const lines = wrap(ctx, phrase, maxW).slice(0, maxLines);
   ctx.save();
-  ctx.shadowColor = t.ink === "#ffffff" ? "rgba(3,14,32,.35)" : "rgba(255,255,255,.0)";
-  ctx.shadowBlur = 18;
+  ctx.textAlign = align;
+  ctx.shadowColor = t.ink === "#ffffff" ? "rgba(3,14,32,.38)" : "rgba(255,255,255,0)";
+  ctx.shadowBlur = 20;
   ctx.shadowOffsetY = 4;
-  lines.forEach((ln) => {
-    ctx.fillStyle = t.ink;
-    ctx.fillText(ln, pad, ty);
-    ty += size * 1.06;
-  });
+  ctx.fillStyle = t.ink;
+  let ty = y + size;
+  lines.forEach((ln) => { ctx.fillText(ln, x, ty); ty += size * 1.06; });
   ctx.restore();
-  const headBottom = ty - size * 0.5;
+  return ty - size * 0.5;
+};
 
-  // ---- the student: a photo with the background taken out (behind the card and the texts)
-  if (student) {
-    const ratio = student.naturalWidth / student.naturalHeight;
-    const hMax = story ? 920 : 700;
-    const sh = story ? Math.min(hMax, cy + 110 - (headBottom + 6)) : Math.min(hMax, cy + 80 - 90);
-    const sw = sh * ratio;
-    // her face sits at about 59% of the picture: it goes to the right part of the card
-    const sx = (story ? W * 0.66 : W * 0.72) - sw * 0.59;
-    const sy = cy + (story ? 110 : 80) - sh;
-    const faceX = sx + sw * 0.59;
-    const faceY = sy + sh * 0.34;
-    const halo = ctx.createRadialGradient(faceX, faceY, 0, faceX, faceY, sw * 0.38);
-    halo.addColorStop(0, t.halo);
-    halo.addColorStop(1, "rgba(255,255,255,0)");
-    ctx.fillStyle = halo;
-    ctx.fillRect(faceX - sw * 0.4, faceY - sw * 0.4, sw * 0.8, sw * 0.8);
-    ctx.save();
-    ctx.shadowColor = "rgba(3,14,32,.28)";
-    ctx.shadowBlur = 40;
-    ctx.shadowOffsetY = 10;
-    ctx.drawImage(student, sx, sy, sw, sh);
-    ctx.restore();
-  }
-
-  // ---- the course (or the courses): this is what the person is looking for
-  const left = pad;
-  let by = headBottom + (story ? 36 : 22);
-  const maxLeft = story ? W * 0.5 : textW;
+// the course, or the courses, or the benefits: what the person is looking for. `limit` is the lowest point allowed.
+const offer = (ctx, t, { x, y, maxW, limit, story, curso, courseTags }) => {
+  let by = y;
   if (curso) {
     ctx.font = `500 ${story ? 32 : 26}px ${FONT}`;
     ctx.fillStyle = t.sub;
-    ctx.fillText("Curso a distância", left + 4, by + (story ? 30 : 24));
+    ctx.fillText("Curso a distância", x + 4, by + (story ? 30 : 24));
     by += story ? 52 : 40;
     ctx.font = `800 ${story ? 62 : 46}px ${FONT}`;
     const lh0 = story ? 70 : 54;
-    const room = Math.max(1, Math.floor((cy - 24 - by - 36) / lh0));
-    const all = wrap(ctx, curso, Math.min(maxLeft, story ? 560 : textW));
+    const room = Math.max(1, Math.floor((limit - by - 36) / lh0));
+    const all = wrap(ctx, curso, maxW - 64);
     const lns = all.slice(0, Math.min(3, room));
     if (all.length > lns.length) lns[lns.length - 1] = `${lns[lns.length - 1].replace(/\s+\S*$/, "")}…`;
-    const lh = story ? 70 : 54;
-    const bw = Math.min(maxLeft, Math.max(...lns.map((l) => ctx.measureText(l).width)) + 64);
-    const bh = lns.length * lh + 36;
+    const bw = Math.min(maxW, Math.max(...lns.map((l) => ctx.measureText(l).width)) + 64);
+    const bh = lns.length * lh0 + 36;
     ctx.save();
     ctx.shadowColor = "rgba(3,14,32,.28)";
     ctx.shadowBlur = 36;
     ctx.shadowOffsetY = 12;
     ctx.fillStyle = "#ffffff";
-    roundRect(ctx, left, by, bw, bh, 30);
+    roundRect(ctx, x, by, bw, bh, 30);
     ctx.fill();
     ctx.restore();
     ctx.fillStyle = "#0b4279";
-    ctx.fillRect(left, by + 26, 10, bh - 52);
+    ctx.fillRect(x, by + 26, 10, bh - 52);
     ctx.fillStyle = "#0b1a2e";
-    lns.forEach((l, i) => ctx.fillText(l, left + 36, by + 18 + (story ? 56 : 42) + i * lh));
-    by += bh + 22;
-  } else if (courseTags.length) {
+    lns.forEach((l, i) => ctx.fillText(l, x + 36, by + 18 + (story ? 56 : 42) + i * lh0));
+    return by + bh + 22;
+  }
+  if (courseTags.length) {
     ctx.font = `500 ${story ? 32 : 26}px ${FONT}`;
     ctx.fillStyle = t.sub;
-    ctx.fillText("Graduação a distância em", left + 4, by + (story ? 30 : 24));
+    ctx.fillText("Graduação a distância em", x + 4, by + (story ? 30 : 24));
     by += story ? 56 : 44;
     courseTags.slice(0, story ? 3 : 2).forEach((c) => {
       const label = c.length > 26 ? `${c.slice(0, 25)}…` : c;
       const size = story ? 38 : 28;
       const padY = story ? 17 : 12;
-      // only what fits above the card
-      if (by + size + padY * 2 > cy - 24) return;
-      const r = pill(ctx, left, by, label, { size, bg: "#ffffff", ink: "#0b4279", weight: 700, padX: story ? 32 : 24, padY });
+      if (by + size + padY * 2 > limit) return;
+      const r = pill(ctx, x, by, label, { size, bg: "#ffffff", ink: "#0b4279", weight: 700, padX: story ? 32 : 24, padY });
       by += r.h + (story ? 16 : 10);
     });
-  } else {
-    BENEFITS.forEach((b) => {
-      const size = story ? 36 : 26;
-      const padY = story ? 16 : 11;
-      if (by + size + padY * 2 > cy - 24) return;
-      const r = pill(ctx, left, by, b, { size, bg: t.chip, ink: t.chipInk, weight: 700, padX: story ? 32 : 24, padY, icon: "dot" });
-      by += r.h + (story ? 14 : 9);
-    });
+    return by;
   }
+  BENEFITS.forEach((b) => {
+    const size = story ? 36 : 26;
+    const padY = story ? 16 : 11;
+    if (by + size + padY * 2 > limit) return;
+    const r = pill(ctx, x, by, b, { size, bg: t.chip, ink: t.chipInk, weight: 700, padX: story ? 32 : 24, padY, icon: "dot" });
+    by += r.h + (story ? 14 : 9);
+  });
+  return by;
+};
 
-  // ---- the card with the QR Code: white, so the code reads on any phone
-  const cx = pad;
-  const cw = W - pad * 2;
+// the white card with the QR Code. "wide": the code on the left and the text on the right (the title always on one line).
+// "tall": the code on top and the text under it.
+const qrCard = (ctx, { x, y, w, h, qr, link, nome, story, mode = "wide" }) => {
   ctx.save();
-  ctx.shadowColor = "rgba(3,14,32,.42)";
+  ctx.shadowColor = "rgba(3,14,32,.4)";
   ctx.shadowBlur = 54;
   ctx.shadowOffsetY = 20;
   ctx.fillStyle = "#ffffff";
-  roundRect(ctx, cx, cy, cw, cardH, 44);
+  roundRect(ctx, x, y, w, h, 44);
   ctx.fill();
   ctx.restore();
-  const qs = cardH - (story ? 84 : 56);
-  const qx = cx + (story ? 42 : 28);
-  const qy = cy + (cardH - qs) / 2;
+  const first = String(nome || "").trim();
+  if (mode === "tall") {
+    const qs = w - 64;
+    if (qr) ctx.drawImage(qr, x + 32, y + 28, qs, qs);
+    ctx.textAlign = "center";
+    const mid = x + w / 2;
+    ctx.fillStyle = "#0b1a2e";
+    fitOne(ctx, "Fale com a gente", 800, w - 48, story ? 46 : 34);
+    let ky = y + 28 + qs + (story ? 62 : 46);
+    ctx.fillText("Fale com a gente", mid, ky);
+    ctx.fillStyle = "#5d6f86";
+    fitOne(ctx, "Aponte a câmera do celular", 500, w - 48, story ? 27 : 20);
+    ctx.fillText("Aponte a câmera do celular", mid, ky + (story ? 38 : 28));
+    if (first) {
+      ctx.fillStyle = "#0b4279";
+      fitOne(ctx, `Indicação de ${first}`, 700, w - 48, story ? 26 : 20);
+      ctx.fillText(`Indicação de ${first}`, mid, ky + (story ? 80 : 58));
+    }
+    ctx.textAlign = "left";
+    return;
+  }
+  const qs = h - (story ? 84 : 56);
+  const qx = x + (story ? 42 : 28);
+  const qy = y + (h - qs) / 2;
   if (qr) ctx.drawImage(qr, qx, qy, qs, qs);
-  const tx = qx + qs + (story ? 44 : 32);
-  const tw = cx + cw - tx - (story ? 40 : 28);
-  // the text of the card runs down in order, each line under the one before
+  const tx = qx + qs + (story ? 40 : 30);
+  const tw = x + w - tx - (story ? 36 : 26);
   let ky = qy + (story ? 56 : 40);
   ctx.fillStyle = "#0b1a2e";
-  ctx.font = `800 ${story ? 52 : 38}px ${FONT}`;
-  wrap(ctx, "Fale com a gente", tw).slice(0, 2).forEach((l) => { ctx.fillText(l, tx, ky); ky += story ? 56 : 42; });
+  fitOne(ctx, "Fale com a gente", 800, tw, story ? 54 : 38);
+  ctx.fillText("Fale com a gente", tx, ky);
   ctx.fillStyle = "#5d6f86";
-  ctx.font = `500 ${story ? 29 : 22}px ${FONT}`;
-  ky -= story ? 12 : 10;
-  wrap(ctx, "Aponte a câmera do celular para o QR Code.", tw).slice(0, 2).forEach((l) => { ctx.fillText(l, tx, ky + (story ? 22 : 16)); ky += story ? 36 : 28; });
-  ky += story ? 18 : 8;
+  ky += story ? 40 : 30;
+  const subSize = fitOne(ctx, "Aponte a câmera do celular para o QR Code.", 500, tw, story ? 29 : 22, 20);
+  const sub = "Aponte a câmera do celular para o QR Code.";
+  if (ctx.measureText(sub).width <= tw) { ctx.fillText(sub, tx, ky); ky += story ? 14 : 8; }
+  else { ctx.font = `500 ${subSize}px ${FONT}`; wrap(ctx, sub, tw).slice(0, 2).forEach((l) => { ctx.fillText(l, tx, ky); ky += subSize + 6; }); ky -= 10; }
+  ky += story ? 22 : 14;
   const wp = pill(ctx, tx, ky, "WhatsApp", { size: story ? 28 : 21, bg: "#25D366", ink: "#ffffff", weight: 700, padX: story ? 24 : 18, padY: story ? 11 : 8, icon: "dot" });
   ky += wp.h + (story ? 38 : 26);
   ctx.fillStyle = "#0b4279";
-  ctx.font = `600 ${story ? 25 : 19}px ${FONT}`;
-  wrap(ctx, linkWithoutScheme(link), tw).slice(0, 1).forEach((l) => ctx.fillText(l, tx, ky));
-  const first = String(nome || "").trim();
+  fitOne(ctx, linkWithoutScheme(link), 600, tw, story ? 25 : 19, 14);
+  ctx.fillText(linkWithoutScheme(link), tx, ky);
   if (first) {
     ctx.fillStyle = "#5d6f86";
-    ctx.font = `600 ${story ? 26 : 20}px ${FONT}`;
+    fitOne(ctx, `Indicação de ${first}`, 600, tw, story ? 26 : 20, 14);
     ctx.fillText(`Indicação de ${first}`, tx, ky + (story ? 36 : 26));
   }
 };
 
+export const drawArt = (canvas, { format, theme, phrase, curso, courseTags = [], nome, link, qr, logo, student, layout = "classico" }) => {
+  const [W, H] = SIZES[format] || SIZES.feed;
+  const t = THEMES[theme] || THEMES.azul;
+  const story = format === "story";
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext("2d");
+  ctx.textBaseline = "alphabetic";
+  const pad = story ? 84 : 76;
+  const wideH = story ? 460 : 286;
+  const wideY = H - pad + 10 - wideH;
+  const L = LAYOUTS[layout] ? layout : "classico";
+
+  if (L === "classico") {
+    background(ctx, W, H, t, W * 0.7);
+    let y = story ? 120 : 64;
+    if (logo) y += drawLogo(ctx, logo, pad, y, story ? 540 : 280, t);
+    const size = story ? 104 : 66;
+    const head = headline(ctx, t, phrase, pad, y + (story ? 80 : 40), story ? W - pad * 2 : Math.round(W * 0.56) - pad, size);
+    if (student) {
+      const sh = story ? Math.min(940, wideY + 70 - (head + 6)) : Math.min(720, wideY + 60 - 90);
+      putPhoto(ctx, student, { faceX: story ? W * 0.66 : W * 0.72, bottom: wideY + (story ? 70 : 60), h: sh, fade: { bottom: 0.62 } });
+    }
+    offer(ctx, t, { x: pad, y: head + (story ? 36 : 22), maxW: story ? W * 0.5 : Math.round(W * 0.56) - pad, limit: wideY - 24, story, curso, courseTags });
+    qrCard(ctx, { x: pad, y: wideY, w: W - pad * 2, h: wideH, qr, link, nome, story });
+    return;
+  }
+
+  if (L === "destaque") {
+    background(ctx, W, H, t, W * 0.5);
+    if (student) {
+      const ph = story ? 1180 : 860;
+      putPhoto(ctx, student, { faceX: W * 0.5, bottom: (story ? 150 : 30) + ph, h: ph, fade: { bottom: 0.72, left: 0.1, right: 0.1 } });
+    }
+    // a shade of the color of the card rises from the bottom, so the words rest on it
+    const shade = ctx.createLinearGradient(0, H * (story ? 0.42 : 0.36), 0, H);
+    shade.addColorStop(0, "rgba(255,255,255,0)");
+    shade.addColorStop(0.55, `${t.shade}`);
+    shade.addColorStop(1, t.shade2);
+    ctx.fillStyle = shade;
+    ctx.fillRect(0, H * 0.3, W, H * 0.7);
+    if (logo) drawLogo(ctx, logo, pad, story ? 110 : 56, story ? 520 : 260, t);
+    const size = story ? 96 : 62;
+    const cardH = story ? 400 : 250;
+    const cardY = H - pad + 10 - cardH;
+    ctx.font = `800 ${size}px ${FONT}`;
+    const lines = wrap(ctx, phrase, W - pad * 2).slice(0, 3);
+    const tyTop = cardY - 34 - lines.length * size * 1.06 - (curso || courseTags.length ? 0 : 0);
+    headline(ctx, t, phrase, pad, tyTop, W - pad * 2, size, { maxLines: 3 });
+    qrCard(ctx, { x: pad, y: cardY, w: W - pad * 2, h: cardH, qr, link, nome, story });
+    if (curso) {
+      const r = pill(ctx, pad, tyTop - (story ? 92 : 70), curso.length > 30 ? `${curso.slice(0, 29)}…` : curso, { size: story ? 38 : 28, bg: "#ffffff", ink: "#0b4279", weight: 800, padX: 30, padY: story ? 16 : 12 });
+      return r;
+    }
+    return;
+  }
+
+  if (L === "curso") {
+    background(ctx, W, H, t, W * 0.3);
+    if (student) {
+      const ph = story ? 1000 : 760;
+      putPhoto(ctx, student, { faceX: story ? W * 0.78 : W * 0.8, bottom: H - (story ? 120 : 40), h: ph, fade: { bottom: 0.7, left: 0.2, right: 0.06 } });
+    }
+    let y = story ? 110 : 60;
+    if (logo) y += drawLogo(ctx, logo, pad, y, story ? 500 : 250, t);
+    ctx.font = `600 ${story ? 36 : 28}px ${FONT}`;
+    ctx.fillStyle = t.sub;
+    ctx.fillText(curso ? "Graduação a distância" : "Seu próximo passo", pad + 4, y + (story ? 100 : 62));
+    const big = curso || courseTags[0] || phrase;
+    // the size goes down until the longest word fits: a name is never broken in the middle
+    const colW = story ? W * 0.62 : W * 0.5;
+    let size = story ? 112 : 74;
+    const longest = (sz) => { ctx.font = `800 ${sz}px ${FONT}`; return Math.max(...String(big).split(/\s+/).map((w) => ctx.measureText(w).width)); };
+    while (longest(size) > colW && size > 36) size -= 4;
+    const bottom = headline(ctx, t, big, pad, y + (story ? 126 : 76), colW, size, { maxLines: 4 });
+    ctx.font = `500 ${story ? 36 : 28}px ${FONT}`;
+    ctx.fillStyle = t.sub;
+    wrap(ctx, curso ? "EAD e semipresencial, com tutoria depois da matrícula." : phrase, story ? W * 0.58 : W * 0.46).slice(0, 3).forEach((l, i) => ctx.fillText(l, pad + 4, bottom + (story ? 44 : 34) + i * (story ? 46 : 36)));
+    const cw = story ? 420 : 300;
+    const ch = story ? 590 : 400;
+    qrCard(ctx, { x: pad, y: H - pad + 10 - ch, w: cw, h: ch, qr, link, nome, story, mode: "tall" });
+    return;
+  }
+
+  // "centro": everything centered, the photo in the middle and the QR Code under her
+  background(ctx, W, H, t, W * 0.5);
+  if (logo) {
+    const lw = story ? 520 : 270;
+    const lh = (lw * logo.naturalHeight) / logo.naturalWidth;
+    drawLogo(ctx, logo, (W - lw) / 2, story ? 100 : 50, lw, t);
+    const size = story ? 94 : 60;
+    const head = headline(ctx, t, phrase, W / 2, (story ? 100 : 50) + lh + (story ? 40 : 14), W - pad * 2, size, { align: "center", maxLines: 3 });
+    if (student) {
+      const ph = story ? 880 : 520;
+      putPhoto(ctx, student, { faceX: W * 0.5, bottom: wideY + (story ? 60 : 30), h: Math.min(ph, wideY + (story ? 60 : 30) - head + 10), fade: { bottom: 0.66, left: 0.16, right: 0.16 } });
+    }
+    if (curso || courseTags.length) {
+      const label = curso || courseTags.slice(0, 2).join(" · ");
+      ctx.font = `700 ${story ? 38 : 28}px ${FONT}`;
+      const tw = Math.min(W - pad * 2, ctx.measureText(label.length > 40 ? `${label.slice(0, 39)}…` : label).width + 60);
+      pill(ctx, (W - tw) / 2, head + (story ? 6 : 4), label.length > 40 ? `${label.slice(0, 39)}…` : label, { size: story ? 38 : 28, bg: "#ffffff", ink: "#0b4279", weight: 800, padX: 30, padY: story ? 16 : 12 });
+    }
+  }
+  qrCard(ctx, { x: pad, y: wideY, w: W - pad * 2, h: wideH, qr, link, nome, story });
+};
+
 // the canvas, redrawn when something changes. The QR Code is drawn by a hidden component and copied into the art.
-export const ArtCanvas = ({ format, theme, phrase, curso, courseTags, person = "foto", nome, link, canvasRef, className }) => {
+export const ArtCanvas = ({ format, theme, phrase, curso, courseTags, person = "foto", layout = "classico", nome, link, canvasRef, className }) => {
   const own = useRef(null);
   const ref = canvasRef || own;
   const qrBox = useRef(null);
@@ -334,11 +463,11 @@ export const ArtCanvas = ({ format, theme, phrase, curso, courseTags, person = "
       } catch (e) { /* the art is drawn anyway, with the font of the system */ }
       if (off || !ref.current) return;
       const qr = qrBox.current ? qrBox.current.querySelector("canvas") : null;
-      try { drawArt(ref.current, { format, theme, phrase, curso, courseTags, nome, link, qr, logo, student }); } catch (e) { /* a canvas that cannot draw leaves the box empty */ }
+      try { drawArt(ref.current, { format, theme, phrase, curso, courseTags, nome, link, qr, logo, student, layout }); } catch (e) { /* a canvas that cannot draw leaves the box empty */ }
     })();
     return () => { off = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [format, theme, phrase, curso, (courseTags || []).join("|"), person, nome, link, ref]);
+  }, [format, theme, phrase, curso, (courseTags || []).join("|"), person, layout, nome, link, ref]);
   return (
     <>
       <canvas ref={ref} className={className} role="img" aria-label={`Cartão de divulgação: ${phrase}`} />
@@ -359,6 +488,7 @@ const ArtMaker = ({ nome, link, courses, initialPhrase, initialCourse }) => {
   const [phrase, setPhrase] = useState(initialPhrase || PHRASES[0]);
   const [curso, setCurso] = useState(initialCourse || "");
   const [person, setPerson] = useState("foto");
+  const [layout, setLayout] = useState("classico");
   const canvasRef = useRef(null);
   const canShare = typeof navigator !== "undefined" && typeof navigator.share === "function";
 
@@ -387,13 +517,18 @@ const ArtMaker = ({ nome, link, courses, initialPhrase, initialCourse }) => {
   return (
     <div className="ca-art-maker">
       <div className="ca-art-preview">
-        <ArtCanvas canvasRef={canvasRef} format={format} theme={theme} phrase={phrase} curso={curso} courseTags={courses.slice(0, 3)} person={person} nome={nome} link={link} className={`ca-art-canvas is-${format}`} />
+        <ArtCanvas canvasRef={canvasRef} format={format} theme={theme} phrase={phrase} curso={curso} courseTags={courses.slice(0, 3)} person={person} layout={layout} nome={nome} link={link} className={`ca-art-canvas is-${format}`} />
       </div>
       <div className="ca-art-controls">
         <div className="ca-field"><span>Formato</span>
           <div className="ca-chips">
             <button type="button" className="ca-chip" aria-pressed={format === "story"} onClick={() => setFormat("story")}>Story (1080×1920)</button>
             <button type="button" className="ca-chip" aria-pressed={format === "feed"} onClick={() => setFormat("feed")}>Feed (1080×1080)</button>
+          </div>
+        </div>
+        <div className="ca-field"><span>Modelo</span>
+          <div className="ca-chips">
+            {LAYOUT_KEYS.map((k) => <button key={k} type="button" className="ca-chip" aria-pressed={layout === k} onClick={() => setLayout(k)}>{LAYOUTS[k]}</button>)}
           </div>
         </div>
         <div className="ca-field"><span>Cor</span>

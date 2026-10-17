@@ -10,7 +10,7 @@ import LeadTask from "../../models/LeadTask";
 import { logger } from "../../utils/logger";
 import SendToContact from "../ChannelServices/SendToContact";
 import { setLabel } from "./Labels";
-import { logRetention } from "./RetentionLog";
+import { assertCanSend, logRetention } from "./RetentionLog";
 import { addActivity, resolveLeadTarget } from "./LeadCore";
 
 // Keeping the students: who went quiet (risk of dropping out) and the re-enrollment of the next period.
@@ -133,6 +133,7 @@ export const sendRetentionMessage = async (lead: Lead, userId: number, custom?: 
   const kind = custom && custom.trim() ? "custom" : "risk";
   const { contact, whatsapp } = await resolveLeadTarget(lead, userId, null);
   try {
+    await assertCanSend(contact, whatsapp);
     await SendToContact({ contact, whatsapp, body, keepOpen: { userId } });
   } catch (err) {
     await logRetention({ lead, contactId: contact.id, kind, body, userId, error: (err as Error).message });
@@ -239,6 +240,8 @@ export const runRematricula = async (): Promise<number> => {
         // eslint-disable-next-line no-await-in-loop
         const { contact, whatsapp } = await resolveLeadTarget(lead, lead.onboardingTutorId || lead.ownerId || 0, null);
         const text = render(c.message, lead.name, { periodo: c.term });
+        // eslint-disable-next-line no-await-in-loop
+        await assertCanSend(contact, whatsapp);
         // eslint-disable-next-line no-await-in-loop
         await SendToContact({ contact, whatsapp, body: text });
         // eslint-disable-next-line no-await-in-loop

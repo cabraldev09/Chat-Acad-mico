@@ -3,7 +3,7 @@ import QRCode from "qrcode.react";
 import { Download } from "lucide-react";
 import { toast } from "react-toastify";
 
-import { drawArt, loadAluna, loadLogo } from "./ArtMaker";
+import { LAYOUT_KEYS, drawArt, loadAluna, loadLogo } from "./ArtMaker";
 
 import { PHRASES } from "./promoContent";
 
@@ -14,14 +14,14 @@ const THUMB = { story: [216, 384], feed: [300, 300] };
 
 const THEME_CYCLE = ["azul", "noite", "sol", "claro"];
 const buildItems = (groups) => {
-  const items = PHRASES.map((phrase, i) => ({ id: `f${i}`, phrase, theme: THEME_CYCLE[i % THEME_CYCLE.length], curso: "", label: phrase }));
+  const items = PHRASES.map((phrase, i) => ({ id: `f${i}`, phrase, theme: THEME_CYCLE[i % THEME_CYCLE.length], layout: LAYOUT_KEYS[i % LAYOUT_KEYS.length], curso: "", label: phrase }));
   const seen = new Set();
   const picks = [];
   (groups || []).forEach((g) => g.courses.forEach((c) => {
     const key = c.category || g.modality;
     if (!seen.has(key) && picks.length < 6) { seen.add(key); picks.push(c.name); }
   }));
-  picks.forEach((curso, i) => items.push({ id: `c${i}`, phrase: PHRASES[i % 2 ? 7 : 1], theme: THEME_CYCLE[(i + 1) % THEME_CYCLE.length], curso, label: curso }));
+  picks.forEach((curso, i) => items.push({ id: `c${i}`, phrase: PHRASES[i % 2 ? 7 : 1], theme: THEME_CYCLE[(i + 1) % THEME_CYCLE.length], layout: LAYOUT_KEYS[(i + 2) % LAYOUT_KEYS.length], curso, label: curso }));
   return items;
 };
 
@@ -54,7 +54,7 @@ const ArtLibrary = ({ nome, link, groups, limit, onMore }) => {
         if (off) return;
         if (drawn.current.has(key)) continue;
         try {
-          drawArt(work, { format, theme: it.theme, phrase: it.phrase, curso: it.curso, nome, link, qr, logo, student: photo });
+          drawArt(work, { format, theme: it.theme, phrase: it.phrase, curso: it.curso, nome, link, qr, logo, student: photo, layout: it.layout });
           const small = document.createElement("canvas");
           small.width = tw * 2; small.height = th * 2;
           small.getContext("2d").drawImage(work, 0, 0, small.width, small.height);
@@ -76,7 +76,7 @@ const ArtLibrary = ({ nome, link, groups, limit, onMore }) => {
       const logo = await loadLogo();
       const student = await loadAluna();
       const canvas = document.createElement("canvas");
-      drawArt(canvas, { format, theme: it.theme, phrase: it.phrase, curso: it.curso, nome, link, qr, logo, student });
+      drawArt(canvas, { format, theme: it.theme, phrase: it.phrase, curso: it.curso, nome, link, qr, logo, student, layout: it.layout });
       const blob = await new Promise((r) => canvas.toBlob(r, "image/png"));
       if (!blob) throw new Error("no image");
       const url = URL.createObjectURL(blob);

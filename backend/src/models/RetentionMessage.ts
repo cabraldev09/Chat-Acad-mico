@@ -9,12 +9,17 @@ class RetentionMessage extends Model<RetentionMessage> {
   @Column
   id: number;
 
-  @AllowNull(false)
   @Column
   leadId: number;
 
   @Column
   contactId: number;
+
+  @Column
+  name: string;
+
+  @Column
+  number: string;
 
   @AllowNull(false)
   @Column

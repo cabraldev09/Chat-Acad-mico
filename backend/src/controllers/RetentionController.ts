@@ -7,8 +7,16 @@ import { isManagerRole, roleOf } from "../helpers/Roles";
 import Lead from "../models/Lead";
 import { runCadences } from "../services/CrmServices/Cadences";
 import { GROUP_OPTIONS, NPS_KINDS, npsAnswers, npsSummary, readNpsConfig, sendSurvey } from "../services/CrmServices/Nps";
-import { renderRetentionText } from "../services/CrmServices/RetentionLog";
-import { retentionLog, retentionOperations, searchStudents } from "../services/CrmServices/RetentionOps";
+import { renderRetentionText, sendErrorText } from "../services/CrmServices/RetentionLog";
+import Whatsapp from "../models/Whatsapp";
+import { logger } from "../utils/logger";
+import { retentionAudience, retentionLog, retentionOperations, searchStudents } from "../services/CrmServices/RetentionOps";
+import Contact from "../models/Contact";
+import GetDefaultWhatsApp from "../helpers/GetDefaultWhatsApp";
+import { assertConnectionUse } from "../middleware/outboundScope";
+import { resolveOutboundContact } from "../services/ChannelServices/ResolveOutboundContact";
+import SendToContact from "../services/ChannelServices/SendToContact";
+import { assertCanSend, logRetention } from "../services/CrmServices/RetentionLog";
 import { Scope, markReenrolled, readRetentionConfig, rematriculaList, riskStudents, sendRetentionMessage } from "../services/CrmServices/Retention";
 import { csvAsText, csvDay, sendCsv } from "../helpers/Csv";
 
@@ -115,6 +123,21 @@ export const students = async (req: Request, res: Response): Promise<Response> =
   return res.json(list);
 };
 
+// who can be chosen: the students, leads of the CRM (with filters), the people of a contact list or contacts of the system.
+// The tutor only reaches their own students.
+export const audience = async (req: Request, res: Response): Promise<Response> => {
+  const scope = scopeOf(req);
+  const q = req.query as any;
+  const source = ["students", "crm", "list", "contacts"].includes(String(q.source)) ? String(q.source) : "students";
+  if (scope.tutorId && source !== "students" && source !== "crm") throw new AppError("ERR_NO_PERMISSION", 403);
+  const n = (v: any) => (Number(v) > 0 ? Number(v) : undefined);
+  return res.json(await retentionAudience(scope, {
+    source: source as any, search: String(q.search || ""), stageId: n(q.stageId), courseId: n(q.courseId), poloId: n(q.poloId),
+    leadSource: q.leadSource ? String(q.leadSource) : undefined, tagId: n(q.tagId), enrolled: q.enrolled === "yes" ? "yes" : q.enrolled === "no" ? "no" : "",
+    listId: n(q.listId), limit: Number(q.limit) || (q.all === "1" ? 500 : 50)
+  }));
+};
+
 const KINDS = ["nps", "risk", "remat", "custom"];
 const KIND_NAME: Record<string, string> = { nps: "Pesquisa de satisfação", risk: "Mensagem de retenção", remat: "Aviso de rematrícula", custom: "Mensagem escrita na hora" };
 
@@ -130,7 +153,9 @@ export const preview = async (req: Request, res: Response): Promise<Response> =>
   const ids: number[] = (Array.isArray(req.body?.leadIds) ? req.body.leadIds : []).map(Number).filter(Boolean).slice(0, 5);
   const leads = ids.length ? await Lead.findAll({ where: { id: ids }, attributes: ["id", "name", "onboardingTutorId"] }) : [];
   const allowed = leads.filter(l => !scope.tutorId || l.onboardingTutorId === scope.tutorId);
-  const people = allowed.length ? allowed.map(l => ({ leadId: l.id, name: l.name })) : [{ leadId: null, name: "Maria Souza" }];
+  const names: string[] = (Array.isArray(req.body?.names) ? req.body.names : []).map((x: any) => String(x).slice(0, 80)).filter(Boolean).slice(0, 3);
+  const found = [...allowed.map(l => ({ leadId: l.id as number | null, name: l.name })), ...names.map(name => ({ leadId: null as number | null, name }))].slice(0, 5);
+  const people = found.length ? found : [{ leadId: null as number | null, name: "Maria Souza" }];
   return res.json({
     kind,
     title: KIND_NAME[kind],
@@ -148,12 +173,58 @@ export const sendBulk = async (req: Request, res: Response): Promise<Response> =
   if (!["nps", "risk", "custom"].includes(kind)) throw new AppError("ERR_INVALID_PARAMETER", 400);
   const text = String(req.body?.text || "").trim().slice(0, 1000);
   if (kind === "custom" && !text) throw new AppError("ERR_FIELD_REQUIRED_text", 400);
-  const ids: number[] = [...new Set<number>((Array.isArray(req.body?.leadIds) ? req.body.leadIds : []).map(Number).filter(Boolean))];
-  if (!ids.length) throw new AppError("ERR_FIELD_REQUIRED_leadIds", 400);
-  if (ids.length > 50) throw new AppError("ERR_RETENTION_TOO_MANY", 400);
+  // who receives: leads (by id), contacts of the system or plain numbers (a list). Only the management writes to people outside the CRM.
+  type Target = { leadId?: number; contactId?: number; number?: string; name?: string };
+  const targets: Target[] = [
+    ...(Array.isArray(req.body?.leadIds) ? req.body.leadIds : []).map((x: any) => ({ leadId: Number(x) })),
+    ...(Array.isArray(req.body?.recipients) ? req.body.recipients : [])
+  ].filter((t: Target) => t && (t.leadId || t.contactId || t.number));
+  const seen = new Set<string>();
+  const unique = targets.filter(t => {
+    const k = t.leadId ? `l${t.leadId}` : t.contactId ? `c${t.contactId}` : `n${String(t.number).replace(/\D/g, "")}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+  if (!unique.length) throw new AppError("ERR_FIELD_REQUIRED_leadIds", 400);
+  if (unique.length > 200) throw new AppError("ERR_RETENTION_TOO_MANY", 400);
+  const outside = unique.some(t => !t.leadId);
+  if (outside && (scope.tutorId || kind !== "custom")) throw new AppError("ERR_NO_PERMISSION", 403);
+  const ids: number[] = unique.map(t => t.leadId).filter(Boolean) as number[];
+  const whatsappId = Number(req.body?.whatsappId) || 0;
+  if (whatsappId) await assertConnectionUse(req, whatsappId);
 
   const leads = await Lead.findAll({ where: { id: ids } });
   const results: Array<{ leadId: number; name: string | null; ok: boolean; error?: string }> = [];
+  const loop = async (): Promise<void> => {
+  // people outside the CRM: the connection chosen (or the default), the same guards, and the log keeps their name and number
+  for (const t of unique.filter(x => !x.leadId)) {
+    const label = t.name || t.number || "Contato";
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const whatsapp = whatsappId ? await Whatsapp.findByPk(whatsappId) : await GetDefaultWhatsApp(uid(req));
+      if (!whatsapp) throw new AppError("ERR_NO_DEF_WAPP_FOUND");
+      // eslint-disable-next-line no-await-in-loop
+      const contact = t.contactId ? await Contact.findByPk(t.contactId) : await resolveOutboundContact(whatsapp, String(t.number), t.name || "");
+      if (!contact) throw new AppError("ERR_NO_CONTACT_FOUND");
+      const body = renderRetentionText(text, contact.name || t.name || "");
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        await assertCanSend(contact, whatsapp);
+        // eslint-disable-next-line no-await-in-loop
+        await SendToContact({ contact, whatsapp, body });
+      } catch (err) {
+        // eslint-disable-next-line no-await-in-loop
+        await logRetention({ lead: null, name: label, number: contact.number, contactId: contact.id, kind: "custom", body, userId: uid(req), error: (err as Error).message });
+        throw err;
+      }
+      // eslint-disable-next-line no-await-in-loop
+      await logRetention({ lead: null, name: label, number: contact.number, contactId: contact.id, kind: "custom", body, userId: uid(req) });
+      results.push({ leadId: 0, name: label, ok: true });
+    } catch (err) {
+      results.push({ leadId: 0, name: label, ok: false, error: sendErrorText((err as Error).message) });
+    }
+  }
   for (const id of ids) {
     const lead = leads.find(l => l.id === id);
     if (!lead) { results.push({ leadId: id, name: null, ok: false, error: "Aluno não encontrado." }); continue; }
@@ -166,10 +237,19 @@ export const sendBulk = async (req: Request, res: Response): Promise<Response> =
       else await sendRetentionMessage(lead, uid(req), kind === "custom" ? text : undefined);
       results.push({ leadId: id, name: lead.name, ok: true });
     } catch (err) {
-      results.push({ leadId: id, name: lead.name, ok: false, error: String((err as Error).message || "Não foi possível enviar.") });
+      results.push({ leadId: id, name: lead.name, ok: false, error: sendErrorText((err as Error).message) });
     }
   }
-  return res.json({ sent: results.filter(r => r.ok).length, failed: results.filter(r => !r.ok).length, results });
+  };
+  // a connection by QR Code sends one message every few seconds (see RetentionLog): a long list goes on in the background, and
+  // every message appears in "Envios" as it leaves
+  const slow = unique.length > 3 && (await Whatsapp.count({ where: { channel: "whatsapp" } })) > 0;
+  if (slow) {
+    loop().catch(err => logger.warn(`Retention send in the background stopped: ${(err as Error).message}`));
+    return res.status(202).json({ background: true, queued: unique.length, sent: 0, failed: 0, results: [] });
+  }
+  await loop();
+  return res.json({ background: false, sent: results.filter(r => r.ok).length, failed: results.filter(r => !r.ok).length, results });
 };
 
 // ------------------------------------------------------------------ the log and the numbers of the operation
@@ -215,6 +295,8 @@ export const putConfig = async (req: Request, res: Response): Promise<Response> 
     if (Array.isArray(b.nps.moments)) await setSetting("nps_moments", JSON.stringify(b.nps.moments.filter((m: any) => (NPS_KINDS as readonly string[]).includes(m))));
     if (typeof b.nps.question === "string") await setSetting("nps_question", b.nps.question.trim().slice(0, 500));
     if (b.nps.buttons !== undefined) await setSetting("nps_buttons", b.nps.buttons ? "true" : "false");
+    if (typeof b.nps.templateName === "string") await setSetting("nps_template", b.nps.templateName.trim().replace(/[^a-z0-9_]/gi, "").slice(0, 80));
+    if (typeof b.nps.templateLanguage === "string") await setSetting("nps_template_language", /^[a-z]{2}(_[A-Z]{2})?$/.test(b.nps.templateLanguage.trim()) ? b.nps.templateLanguage.trim() : "pt_BR");
   }
   if (b.risk) {
     if (b.risk.days !== undefined) await setSetting("retention_risk_days", String(Math.min(365, Math.max(7, Math.round(Number(b.risk.days) || 30)))));

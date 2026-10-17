@@ -10,7 +10,7 @@ import { logger } from "../../utils/logger";
 import SendToContact from "../ChannelServices/SendToContact";
 import { emitEvent } from "../FlowServices/Events";
 import { getIO } from "../../libs/socket";
-import { logRetention, renderRetentionText } from "./RetentionLog";
+import { assertCanSend, logRetention, renderRetentionText } from "./RetentionLog";
 import { setLabel } from "./Labels";
 import { addActivity, resolveLeadTarget } from "./LeadCore";
 
@@ -54,6 +54,9 @@ export interface NpsConfig {
   question: string;
   // use the buttons when the connection is the official API
   buttons: boolean;
+  // the approved template that opens the survey outside the 24 hours of the official API (its quick-reply buttons are the three groups)
+  templateName: string;
+  templateLanguage: string;
 }
 
 export const readNpsConfig = async (): Promise<NpsConfig> => {
@@ -68,7 +71,9 @@ export const readNpsConfig = async (): Promise<NpsConfig> => {
     enabled: (await getSetting("nps_enabled", "false")) === "true",
     moments,
     question: (await getSetting("nps_question", DEFAULT_QUESTION)) || DEFAULT_QUESTION,
-    buttons: (await getSetting("nps_buttons", "true")) !== "false"
+    buttons: (await getSetting("nps_buttons", "true")) !== "false",
+    templateName: await getSetting("nps_template", ""),
+    templateLanguage: (await getSetting("nps_template_language", "pt_BR")) || "pt_BR"
   };
 };
 
@@ -76,15 +81,19 @@ const render = (text: string, name: string): string => renderRetentionText(text,
 
 // sends the survey to a student now
 export const sendSurvey = async (lead: Lead, kind: string, userId: number | null): Promise<NpsSurvey> => {
-  const { question, buttons } = await readNpsConfig();
+  const { question, buttons, templateName, templateLanguage } = await readNpsConfig();
   const { contact, whatsapp } = await resolveLeadTarget(lead, userId || lead.onboardingTutorId || lead.ownerId || 0, null);
   const text = render(question, lead.name);
-  const withButtons = buttons && whatsapp.channel === "whatsapp_cloud";
+  // buttons exist only inside the 24 hours of the official API; outside it the approved template opens the survey
+  let withButtons = false;
   try {
+    const { outsideWindow } = await assertCanSend(contact, whatsapp, { allowTemplate: !!templateName });
+    withButtons = buttons && whatsapp.channel === "whatsapp_cloud" && !outsideWindow;
     await SendToContact({
       contact,
       whatsapp,
       body: text,
+      template: outsideWindow ? { name: templateName, language: templateLanguage, params: [(lead.name || "").trim().split(/\s+/)[0] || ""] } : null,
       choices: withButtons ? { question: text, options: GROUP_OPTIONS.map(o => ({ id: o.id, label: o.label })) } : null
     });
   } catch (err) {

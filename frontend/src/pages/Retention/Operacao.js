@@ -29,6 +29,7 @@ const Operacao = () => {
   const [range, setRange] = useState("30");
   const [d, setD] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [missing, setMissing] = useState(false);
   const period = useMemo(() => {
     const day = (t) => t.toLocaleDateString("en-CA", { timeZone: "America/Porto_Velho" });
     const to = new Date();
@@ -36,10 +37,14 @@ const Operacao = () => {
   }, [range]);
   useEffect(() => {
     setLoading(true);
-    api.get("/retention/operations", { params: period }).then(({ data }) => setD(data)).catch(toastError).finally(() => setLoading(false));
+    api.get("/retention/operations", { params: period })
+      .then(({ data }) => { setMissing(false); setD(data); })
+      .catch((err) => { if (err && err.response && err.response.status === 404) setMissing(true); else toastError(err); })
+      .finally(() => setLoading(false));
   }, [period]);
 
-  if (!d) return <TopLoader active />;
+  if (missing) return <div className={classes.card}><Typography>Os dados da operação chegam com a próxima atualização do servidor.</Typography></div>;
+  if (!d) return <TopLoader active={loading} />;
   const days = [...d.perDay, ...(d.answeredOnlyDays || [])].sort((a, b) => a.day.localeCompare(b.day)).map((x) => ({ ...x, label: `${x.day.slice(8, 10)}/${x.day.slice(5, 7)}` }));
   const s = d.survey;
   return (

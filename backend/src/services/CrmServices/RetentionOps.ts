@@ -1,7 +1,12 @@
-import { QueryTypes } from "sequelize";
+import { Op, QueryTypes } from "sequelize";
 
 import sequelize from "../../database";
 import { getAppTz } from "../../helpers/AppTime";
+import { brPhoneVariants } from "../../helpers/PhoneVariants";
+import Contact from "../../models/Contact";
+import ContactListItem from "../../models/ContactListItem";
+import Lead from "../../models/Lead";
+import { contactsSearchWhere } from "../ContactServices/ListContactsService";
 import { Scope, riskStudents } from "./Retention";
 
 // What the retention area did and how it went: the log of the messages and the numbers of the operation.
@@ -24,25 +29,26 @@ export interface LogFilter {
 export const retentionLog = async (scope: Scope, f: LogFilter) => {
   const where = `m."createdAt" BETWEEN :from AND :to ${tutorSql(scope)}
     ${["nps", "risk", "remat", "custom"].includes(String(f.kind)) ? "AND m.kind = :kind" : ""}
-    ${f.search ? 'AND l.name ILIKE :search' : ""}`;
+    ${f.search ? 'AND COALESCE(l.name, m.name, \'\') ILIKE :search' : ""}`;
   const rep = { from: f.from, to: f.to, tutor: scope.tutorId || 0, kind: f.kind, search: `%${String(f.search || "").trim()}%`, limit: f.limit, offset: f.offset };
   const rows = await q(
-    `SELECT m.id, m.kind, m.body, m.status, m.error, m."withButtons", m."createdAt", m."leadId", l.name AS lead, l.phone, p.name AS polo,
+    `SELECT m.id, m.kind, m.body, m.status, m.error, m."withButtons", m."createdAt", m."leadId", COALESCE(l.name, m.name, 'Sem cadastro') AS lead,
+            COALESCE(l.phone, m.number) AS phone, p.name AS polo,
             tu.name AS tutor, su.name AS "sentBy", s.status AS "surveyStatus", s.score, s."answeredAt", s.comment
-       FROM "RetentionMessages" m JOIN "Leads" l ON l.id = m."leadId"
+       FROM "RetentionMessages" m LEFT JOIN "Leads" l ON l.id = m."leadId"
        LEFT JOIN "Polos" p ON p.id = l."poloId" LEFT JOIN "Users" tu ON tu.id = l."onboardingTutorId" LEFT JOIN "Users" su ON su.id = m."userId"
        LEFT JOIN "NpsSurveys" s ON s.id = m."surveyId"
       WHERE ${where} ORDER BY m."createdAt" DESC LIMIT :limit OFFSET :offset`,
     rep
   );
-  const [{ total }] = await q(`SELECT COUNT(*) AS total FROM "RetentionMessages" m JOIN "Leads" l ON l.id = m."leadId" WHERE ${where}`, rep);
+  const [{ total }] = await q(`SELECT COUNT(*) AS total FROM "RetentionMessages" m LEFT JOIN "Leads" l ON l.id = m."leadId" WHERE ${where}`, rep);
   return { total: num(total), rows };
 };
 
 export const retentionOperations = async (scope: Scope, from: Date, to: Date) => {
   const rep = { from, to, tutor: scope.tutorId || 0 };
   const tz = getAppTz();
-  const base = `FROM "RetentionMessages" m JOIN "Leads" l ON l.id = m."leadId" WHERE m."createdAt" BETWEEN :from AND :to ${tutorSql(scope)}`;
+  const base = `FROM "RetentionMessages" m LEFT JOIN "Leads" l ON l.id = m."leadId" WHERE m."createdAt" BETWEEN :from AND :to ${tutorSql(scope)}`;
 
   const byKind = await q(`SELECT m.kind, m.status, COUNT(*) AS n ${base} GROUP BY m.kind, m.status`, rep);
   const perDay = await q(
@@ -137,4 +143,108 @@ export const searchStudents = async (scope: Scope, search: string, limit = 30) =
       ORDER BY l.name LIMIT :limit`,
     { tutor: scope.tutorId || 0, like: `%${term}%`, digits: `%${digits}%`, limit }
   );
+};
+
+// ------------------------------------------------------------------ who can be chosen to receive a message
+export interface AudienceItem {
+  key: string;
+  kind: "lead" | "contact" | "number";
+  leadId?: number;
+  contactId?: number;
+  number?: string;
+  name: string;
+  sub: string;
+}
+
+export interface AudienceQuery {
+  source: "students" | "crm" | "list" | "contacts";
+  search?: string;
+  stageId?: number;
+  courseId?: number;
+  poloId?: number;
+  leadSource?: string;
+  tagId?: number;
+  enrolled?: "yes" | "no" | "";
+  listId?: number;
+  limit: number;
+}
+
+const leadItem = (r: any): AudienceItem => ({
+  key: `l${r.id}`,
+  kind: "lead",
+  leadId: Number(r.id),
+  name: r.name,
+  number: r.phone || undefined,
+  sub: [r.stage, r.polo, r.tutor ? `tutor ${r.tutor}` : null].filter(Boolean).join(" · ")
+});
+
+// leads that have one of these phones (a phone is the same with or without the ninth digit)
+const leadsByPhones = async (numbers: string[]): Promise<Map<string, any>> => {
+  const found = new Map<string, any>();
+  const variants = [...new Set(numbers.flatMap(n => brPhoneVariants(n)))];
+  for (let i = 0; i < variants.length; i += 800) {
+    // eslint-disable-next-line no-await-in-loop
+    const rows = await Lead.findAll({ where: { phone: { [Op.in]: variants.slice(i, i + 800) }, isHistorical: false }, attributes: ["id", "name", "phone"], raw: true });
+    rows.forEach((r: any) => brPhoneVariants(r.phone).forEach(v => { if (!found.has(v)) found.set(v, r); }));
+  }
+  return found;
+};
+
+export const retentionAudience = async (scope: Scope, p: AudienceQuery): Promise<{ items: AudienceItem[]; total: number; unmatched?: number }> => {
+  const limit = Math.min(500, Math.max(1, p.limit || 50));
+  const term = String(p.search || "").trim();
+  if (p.source === "students") {
+    const rows = await searchStudents(scope, term, limit);
+    return { items: rows.map(leadItem), total: rows.length };
+  }
+  if (p.source === "crm") {
+    const rows = await q(
+      `SELECT l.id, l.name, l.phone, st.name AS stage, p.name AS polo, u.name AS tutor, COUNT(*) OVER() AS total
+         FROM "Leads" l JOIN "LeadStages" st ON st.id = l."stageId"
+         LEFT JOIN "Polos" p ON p.id = l."poloId" LEFT JOIN "Users" u ON u.id = l."onboardingTutorId"
+        WHERE l."isHistorical" = false AND l.phone IS NOT NULL AND st.type <> 'lost'
+          ${scope.tutorId ? 'AND l."onboardingTutorId" = :tutor AND l."enrolledAt" IS NOT NULL' : ""}
+          ${p.stageId ? 'AND l."stageId" = :stageId' : ""}
+          ${p.courseId ? 'AND l."courseId" = :courseId' : ""}
+          ${p.poloId ? 'AND l."poloId" = :poloId' : ""}
+          ${p.leadSource ? "AND l.source = :leadSource" : ""}
+          ${p.tagId ? 'AND EXISTS (SELECT 1 FROM "LeadTags" lt WHERE lt."leadId" = l.id AND lt."tagId" = :tagId)' : ""}
+          ${p.enrolled === "yes" ? 'AND l."enrolledAt" IS NOT NULL' : p.enrolled === "no" ? 'AND l."enrolledAt" IS NULL' : ""}
+          ${term ? "AND l.name ILIKE :like" : ""}
+        ORDER BY l.name LIMIT :limit`,
+      { tutor: scope.tutorId || 0, stageId: p.stageId, courseId: p.courseId, poloId: p.poloId, leadSource: p.leadSource, tagId: p.tagId, like: `%${term}%`, limit }
+    );
+    return { items: rows.map(leadItem), total: rows.length ? num(rows[0].total) : 0 };
+  }
+  if (scope.tutorId) return { items: [], total: 0 };
+  if (p.source === "list") {
+    const all = await ContactListItem.findAll({ where: { contactListId: p.listId || 0 }, order: [["id", "ASC"]], limit: 5000 });
+    const byPhone = await leadsByPhones(all.map(i => i.number));
+    const seen = new Set<string>();
+    const items: AudienceItem[] = [];
+    all.forEach(i => {
+      const lead = brPhoneVariants(i.number).map(v => byPhone.get(v)).find(Boolean);
+      const key = lead ? `l${lead.id}` : `n${i.number}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      items.push(lead ? { key, kind: "lead", leadId: Number(lead.id), name: lead.name, number: lead.phone, sub: "no CRM" } : { key, kind: "number", number: i.number, name: i.name || i.number, sub: "só na lista" });
+    });
+    return { items: items.slice(0, limit), total: items.length, unmatched: items.filter(i => i.kind === "number").length };
+  }
+  // contacts of the system (people, not groups; friends and the team are left out)
+  const contacts = await Contact.findAll({
+    where: { [Op.and]: [contactsSearchWhere(term), { isGroup: false, isStaff: false, isPersonal: false, kind: { [Op.in]: ["person", "business"] } }] } as any,
+    order: [["name", "ASC"]],
+    limit,
+    attributes: ["id", "name", "number"]
+  });
+  const leads = contacts.length ? await Lead.findAll({ where: { contactId: { [Op.in]: contacts.map(c => c.id) }, isHistorical: false }, attributes: ["id", "contactId"], raw: true }) : [];
+  const leadOf = new Map<number, number>((leads as any[]).map(l => [Number(l.contactId), Number(l.id)]));
+  const items: AudienceItem[] = contacts.map(c => {
+    const leadId = leadOf.get(c.id);
+    return leadId
+      ? { key: `l${leadId}`, kind: "lead" as const, leadId, name: c.name || c.number, number: c.number, sub: "no CRM" }
+      : { key: `c${c.id}`, kind: "contact" as const, contactId: c.id, name: c.name || c.number, number: c.number, sub: "contato do sistema" };
+  });
+  return { items, total: items.length };
 };

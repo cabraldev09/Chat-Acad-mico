@@ -7,6 +7,7 @@ import Contact from "../models/Contact";
 import { logger } from "../utils/logger";
 import AppError from "../errors/AppError";
 import { getPublicUrl } from "../helpers/PublicUrl";
+import { buildInteractive } from "../helpers/Interactive";
 import { setChannelStatus } from "../services/ChannelServices/ChannelStatus";
 import HandleChannelMessage from "../services/InboundServices/HandleChannelMessage";
 import { handleAckByExternalId } from "../services/InboundServices/HandleAck";
@@ -209,21 +210,15 @@ export const whatsappCloud: ChannelAdapter = {
     return { id: data.messages[0].id };
   },
 
-  // WhatsApp Cloud: up to 3 reply buttons, or a list for 4 to 10 options
+  // WhatsApp Cloud: up to 3 reply buttons, or a list for 4 to 10 options (see helpers/Interactive for the rules of Meta). More than
+  // 10 options cannot be sent as buttons: they go as a numbered text, which the flow understands too.
   async sendChoices(whatsapp, contact: Contact, question, options) {
     const { accessToken, phoneNumberId } = getConfig(whatsapp);
-    const interactive =
-      options.length <= 3
-        ? {
-            type: "button",
-            body: { text: question.slice(0, 1000) },
-            action: { buttons: options.map((o, i) => ({ type: "reply", reply: { id: String(i + 1), title: o.label.slice(0, 20) } })) }
-          }
-        : {
-            type: "list",
-            body: { text: question.slice(0, 1000) },
-            action: { button: "Escolher", sections: [{ title: "Opções", rows: options.slice(0, 10).map((o, i) => ({ id: String(i + 1), title: o.label.slice(0, 24) })) }] }
-          };
+    const interactive = buildInteractive(question, options);
+    if (!interactive) {
+      const menu = options.map((o, i) => `*${i + 1}* - ${o.label}`).join("\n");
+      return this.sendText(whatsapp, contact, `${question}\n\n${menu}`);
+    }
     const { data } = await axios.post(
       `${GRAPH}/${phoneNumberId}/messages`,
       { messaging_product: "whatsapp", to: contact.number, type: "interactive", interactive },

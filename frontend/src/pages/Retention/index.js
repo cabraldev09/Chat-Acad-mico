@@ -374,6 +374,12 @@ const Config = () => {
               note={c.nps.buttons !== false ? "Depois do toque, vem a nota exata (por exemplo 9 ou 10). Quem usa conexão por QR Code responde digitando de 0 a 10." : "O aluno responde digitando a nota de 0 a 10."} />
           </div>
         </div>
+        <div className={classes.row} style={{ marginTop: 8 }}>
+          <TextField size="small" variant="outlined" label="Modelo aprovado (fora das 24 h da API oficial)" value={c.nps.templateName || ""} onChange={(e) => setC({ ...c, nps: { ...c.nps, templateName: e.target.value } })} onBlur={() => save({ nps: { templateName: c.nps.templateName || "" } })}
+            helperText="Opcional. Sem ele, a pesquisa só sai para quem escreveu nas últimas 24 horas." style={{ flex: 1, minWidth: 280 }} />
+          <TextField size="small" variant="outlined" label="Idioma do modelo" value={c.nps.templateLanguage || "pt_BR"} onChange={(e) => setC({ ...c, nps: { ...c.nps, templateLanguage: e.target.value } })} onBlur={() => save({ nps: { templateLanguage: c.nps.templateLanguage || "pt_BR" } })} style={{ width: 160 }} />
+        </div>
+        <Typography className={classes.hint} style={{ marginTop: 6 }}>Crie o modelo no painel da Meta com o texto da pergunta ({"{{1}}"} é o primeiro nome) e três botões de resposta rápida com os mesmos textos acima. Os botões só aparecem na API oficial; conexões por QR Code recebem a pergunta em texto e o aluno digita a nota.</Typography>
         <Typography className={classes.hint} style={{ marginTop: 8 }}>Cada resposta é registrada com a nota e o motivo. Nota de 0 a 6 gera um alerta na hora, uma tarefa para o tutor e a etiqueta “Detrator NPS”.</Typography>
       </div>
 
@@ -421,7 +427,10 @@ const Retention = () => {
   const [tab, setTab] = useState("nps");
   const [summary, setSummary] = useState(null);
   const [compose, setCompose] = useState(false);
-  const loadSummary = useCallback(() => api.get("/retention/summary").then(({ data }) => setSummary(data)).catch(() => {}), []);
+  const [serverOld, setServerOld] = useState(false);
+  const loadSummary = useCallback(() => api.get("/retention/summary")
+    .then(({ data }) => { setServerOld(false); setSummary(data); })
+    .catch((err) => { if (err && err.response && err.response.status === 404) setServerOld(true); }), []);
   useEffect(() => { loadSummary(); }, [loadSummary]);
   // a student gave a low score: the team sees it at once
   useEffect(() => {
@@ -452,10 +461,16 @@ const Retention = () => {
       <Composer open={compose} onClose={() => setCompose(false)} onSent={() => { loadSummary(); }} manager={manager} />
       <MainHeader>
         <Title>Retenção</Title>
-        <Button variant="contained" color="primary" startIcon={<Send size={16} />} onClick={() => setCompose(true)}>Novo envio</Button>
+        <Button variant="contained" color="primary" startIcon={<Send size={16} />} disabled={serverOld} onClick={() => setCompose(true)}>Novo envio</Button>
       </MainHeader>
       <div className={classes.body}>
         <div className={classes.wrap}>
+          {serverOld && (
+            <div className={classes.card} style={{ borderLeft: "4px solid #d97706" }}>
+              <Typography style={{ fontWeight: 600 }}>O servidor ainda não recebeu a atualização desta tela</Typography>
+              <Typography className={classes.hint}>O resumo, os envios e os dados da operação aparecem assim que a atualização for instalada. As demais abas continuam funcionando.</Typography>
+            </div>
+          )}
           {summary && (
             <div className={classes.strip}>
               {cards.map(([target, label, value, sub, color]) => (
