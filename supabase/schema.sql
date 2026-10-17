@@ -200,6 +200,39 @@ ALTER SEQUENCE public."AffiliateCampaigns_id_seq" OWNED BY public."AffiliateCamp
 
 
 --
+-- Name: AffiliateClicks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."AffiliateClicks" (
+    id integer NOT NULL,
+    "affiliateId" integer NOT NULL,
+    visitor character varying(64) NOT NULL,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: AffiliateClicks_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."AffiliateClicks_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: AffiliateClicks_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."AffiliateClicks_id_seq" OWNED BY public."AffiliateClicks".id;
+
+
+--
 -- Name: AffiliateMaterials; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1353,6 +1386,77 @@ ALTER SEQUENCE public."LeadActivities_id_seq" OWNED BY public."LeadActivities".i
 
 
 --
+-- Name: LeadDocuments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."LeadDocuments" (
+    id integer NOT NULL,
+    "leadId" integer NOT NULL,
+    name character varying(120) NOT NULL,
+    status character varying(12) DEFAULT 'pending'::character varying NOT NULL,
+    "position" integer DEFAULT 0 NOT NULL,
+    "receivedAt" timestamp with time zone,
+    "receivedBy" integer,
+    note text,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: LeadDocuments_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."LeadDocuments_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: LeadDocuments_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."LeadDocuments_id_seq" OWNED BY public."LeadDocuments".id;
+
+
+--
+-- Name: LeadReminderLogs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."LeadReminderLogs" (
+    id integer NOT NULL,
+    "leadId" integer NOT NULL,
+    key character varying(120) NOT NULL,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: LeadReminderLogs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."LeadReminderLogs_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: LeadReminderLogs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."LeadReminderLogs_id_seq" OWNED BY public."LeadReminderLogs".id;
+
+
+--
 -- Name: LeadStages; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1492,7 +1596,9 @@ CREATE TABLE public."Leads" (
     "indicatedBy" integer,
     "isHistorical" boolean DEFAULT false NOT NULL,
     "slaAlertedAt" timestamp with time zone,
-    "affiliateId" integer
+    "affiliateId" integer,
+    "reenrolledTerm" character varying(10),
+    "reenrolledAt" timestamp with time zone
 );
 
 
@@ -1514,6 +1620,43 @@ CREATE SEQUENCE public."Leads_id_seq"
 --
 
 ALTER SEQUENCE public."Leads_id_seq" OWNED BY public."Leads".id;
+
+
+--
+-- Name: MarketingSpends; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."MarketingSpends" (
+    id integer NOT NULL,
+    month character varying(7) NOT NULL,
+    source character varying(80) NOT NULL,
+    campaign character varying(120),
+    amount numeric(12,2) DEFAULT 0 NOT NULL,
+    note text,
+    "createdBy" integer,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: MarketingSpends_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."MarketingSpends_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: MarketingSpends_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."MarketingSpends_id_seq" OWNED BY public."MarketingSpends".id;
 
 
 --
@@ -1539,6 +1682,46 @@ CREATE TABLE public."Messages" (
     "isEdited" boolean DEFAULT false NOT NULL,
     "isGif" boolean DEFAULT false NOT NULL
 );
+
+
+--
+-- Name: NpsSurveys; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."NpsSurveys" (
+    id integer NOT NULL,
+    "leadId" integer NOT NULL,
+    "contactId" integer,
+    kind character varying(12) NOT NULL,
+    status character varying(10) DEFAULT 'sent'::character varying NOT NULL,
+    score integer,
+    comment text,
+    "awaitingComment" boolean DEFAULT false NOT NULL,
+    "sentAt" timestamp with time zone NOT NULL,
+    "answeredAt" timestamp with time zone,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: NpsSurveys_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."NpsSurveys_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: NpsSurveys_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."NpsSurveys_id_seq" OWNED BY public."NpsSurveys".id;
 
 
 --
@@ -2470,6 +2653,13 @@ ALTER TABLE ONLY public."AffiliateCampaigns" ALTER COLUMN id SET DEFAULT nextval
 
 
 --
+-- Name: AffiliateClicks id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AffiliateClicks" ALTER COLUMN id SET DEFAULT nextval('public."AffiliateClicks_id_seq"'::regclass);
+
+
+--
 -- Name: AffiliateMaterials id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -2666,6 +2856,20 @@ ALTER TABLE ONLY public."LeadActivities" ALTER COLUMN id SET DEFAULT nextval('pu
 
 
 --
+-- Name: LeadDocuments id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."LeadDocuments" ALTER COLUMN id SET DEFAULT nextval('public."LeadDocuments_id_seq"'::regclass);
+
+
+--
+-- Name: LeadReminderLogs id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."LeadReminderLogs" ALTER COLUMN id SET DEFAULT nextval('public."LeadReminderLogs_id_seq"'::regclass);
+
+
+--
 -- Name: LeadStages id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -2684,6 +2888,20 @@ ALTER TABLE ONLY public."LeadTasks" ALTER COLUMN id SET DEFAULT nextval('public.
 --
 
 ALTER TABLE ONLY public."Leads" ALTER COLUMN id SET DEFAULT nextval('public."Leads_id_seq"'::regclass);
+
+
+--
+-- Name: MarketingSpends id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."MarketingSpends" ALTER COLUMN id SET DEFAULT nextval('public."MarketingSpends_id_seq"'::regclass);
+
+
+--
+-- Name: NpsSurveys id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."NpsSurveys" ALTER COLUMN id SET DEFAULT nextval('public."NpsSurveys_id_seq"'::regclass);
 
 
 --
@@ -2864,6 +3082,14 @@ ALTER TABLE ONLY public."AffiliateBonuses"
 
 ALTER TABLE ONLY public."AffiliateCampaigns"
     ADD CONSTRAINT "AffiliateCampaigns_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: AffiliateClicks AffiliateClicks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AffiliateClicks"
+    ADD CONSTRAINT "AffiliateClicks_pkey" PRIMARY KEY (id);
 
 
 --
@@ -3147,6 +3373,22 @@ ALTER TABLE ONLY public."LeadActivities"
 
 
 --
+-- Name: LeadDocuments LeadDocuments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."LeadDocuments"
+    ADD CONSTRAINT "LeadDocuments_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: LeadReminderLogs LeadReminderLogs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."LeadReminderLogs"
+    ADD CONSTRAINT "LeadReminderLogs_pkey" PRIMARY KEY (id);
+
+
+--
 -- Name: LeadStages LeadStages_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3179,11 +3421,27 @@ ALTER TABLE ONLY public."Leads"
 
 
 --
+-- Name: MarketingSpends MarketingSpends_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."MarketingSpends"
+    ADD CONSTRAINT "MarketingSpends_pkey" PRIMARY KEY (id);
+
+
+--
 -- Name: Messages Messages_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public."Messages"
     ADD CONSTRAINT "Messages_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: NpsSurveys NpsSurveys_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."NpsSurveys"
+    ADD CONSTRAINT "NpsSurveys_pkey" PRIMARY KEY (id);
 
 
 --
@@ -3494,6 +3752,13 @@ CREATE INDEX affiliate_bonuses_affiliate_id_status ON public."AffiliateBonuses" 
 
 
 --
+-- Name: affiliate_clicks_affiliate_id_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX affiliate_clicks_affiliate_id_created_at ON public."AffiliateClicks" USING btree ("affiliateId", "createdAt");
+
+
+--
 -- Name: affiliates_owner_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3669,6 +3934,20 @@ CREATE INDEX kb_chunks_tsv_idx ON public."KbChunks" USING gin (tsv);
 
 
 --
+-- Name: lead_documents_lead_id_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX lead_documents_lead_id_name ON public."LeadDocuments" USING btree ("leadId", name);
+
+
+--
+-- Name: lead_reminder_logs_lead_id_key_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX lead_reminder_logs_lead_id_key_created_at ON public."LeadReminderLogs" USING btree ("leadId", key, "createdAt");
+
+
+--
 -- Name: leads_affiliate_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3732,6 +4011,13 @@ CREATE INDEX leads_won_at_idx ON public."Leads" USING btree ("wonAt") WHERE ("wo
 
 
 --
+-- Name: marketing_spends_month_source; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX marketing_spends_month_source ON public."MarketingSpends" USING btree (month, source);
+
+
+--
 -- Name: messages_contact_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3750,6 +4036,20 @@ CREATE INDEX messages_ticket_created_idx ON public."Messages" USING btree ("tick
 --
 
 CREATE INDEX messages_ticket_unread_idx ON public."Messages" USING btree ("ticketId") WHERE ((read = false) AND ("fromMe" = false));
+
+
+--
+-- Name: nps_surveys_contact_id_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX nps_surveys_contact_id_status ON public."NpsSurveys" USING btree ("contactId", status);
+
+
+--
+-- Name: nps_surveys_lead_id_kind; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX nps_surveys_lead_id_kind ON public."NpsSurveys" USING btree ("leadId", kind);
 
 
 --
@@ -3979,6 +4279,14 @@ ALTER TABLE ONLY public."AffiliateCampaigns"
 
 
 --
+-- Name: AffiliateClicks AffiliateClicks_affiliateId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AffiliateClicks"
+    ADD CONSTRAINT "AffiliateClicks_affiliateId_fkey" FOREIGN KEY ("affiliateId") REFERENCES public."Affiliates"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+--
 -- Name: AffiliateMaterials AffiliateMaterials_campaignId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4203,6 +4511,22 @@ ALTER TABLE ONLY public."LeadActivities"
 
 
 --
+-- Name: LeadDocuments LeadDocuments_leadId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."LeadDocuments"
+    ADD CONSTRAINT "LeadDocuments_leadId_fkey" FOREIGN KEY ("leadId") REFERENCES public."Leads"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+--
+-- Name: LeadReminderLogs LeadReminderLogs_leadId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."LeadReminderLogs"
+    ADD CONSTRAINT "LeadReminderLogs_leadId_fkey" FOREIGN KEY ("leadId") REFERENCES public."Leads"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+--
 -- Name: LeadTags LeadTags_leadId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4304,6 +4628,14 @@ ALTER TABLE ONLY public."Messages"
 
 ALTER TABLE ONLY public."Messages"
     ADD CONSTRAINT "Messages_ticketId_fkey" FOREIGN KEY ("ticketId") REFERENCES public."Tickets"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+--
+-- Name: NpsSurveys NpsSurveys_leadId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."NpsSurveys"
+    ADD CONSTRAINT "NpsSurveys_leadId_fkey" FOREIGN KEY ("leadId") REFERENCES public."Leads"(id) ON UPDATE CASCADE ON DELETE CASCADE;
 
 
 --
@@ -4911,6 +5243,11 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261111000002-commercial-grades.js'
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261112000001-ticket-wa-pinned.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261113000001-curricular-follow-up.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261116000001-client-errors-build.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261117000001-affiliate-clicks.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261118000001-lead-reminder-log.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261118000002-lead-documents.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261118000003-marketing-spend.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261118000004-retention.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

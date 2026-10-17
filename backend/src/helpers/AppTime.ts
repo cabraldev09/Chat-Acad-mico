@@ -105,6 +105,9 @@ export const dayBounds = (day?: string | Date, tz = getAppTz()): { start: Date; 
 
 export const startOfTodayApp = (): Date => dayBounds().start;
 
+// today as YYYY-MM-DD in the timezone of the company
+export const todayInAppTz = (): string => new Date().toLocaleDateString("en-CA", { timeZone: getAppTz() });
+
 export const shiftDays = (date: Date, days: number): Date => new Date(date.getTime() + days * 86400000);
 
 export const fmtDate = (d: Date | string | number, tz = getAppTz()): string =>

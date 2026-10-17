@@ -1,12 +1,25 @@
-# Rotas da API (305)
+# Rotas da API (381)
 
-Públicas: 18 · logado (qualquer perfil): 172 · gestão: 86 · admin: 21
+Públicas: 31 · logado (qualquer perfil): 217 · gestão: 94 · admin: 31
 
 ## Públicas (sem login)
 
+- POST /portal/login (analysisRoutes.ts)
+- GET /portal/token/:token (analysisRoutes.ts)
+- POST /portal/activate (analysisRoutes.ts)
+- POST /portal/forgot (analysisRoutes.ts)
+- GET /portal/me (analysisRoutes.ts)
+- GET /portal/versions/:id (analysisRoutes.ts)
+- POST /portal/upload (analysisRoutes.ts)
+- PUT /portal/password (analysisRoutes.ts)
 - POST /signup (authRoutes.ts)
 - POST /login (authRoutes.ts)
+- POST /forgot (authRoutes.ts)
+- GET /reset/:token (authRoutes.ts)
+- POST /reset (authRoutes.ts)
 - POST /refresh_token (authRoutes.ts)
+- GET /:slug (courseLandingRoutes.ts)
+- POST /:slug/lead (courseLandingRoutes.ts)
 - POST /efi/:secret/pix (efiWebhookRoutes.ts)
 - POST /efi/:secret/billet (efiWebhookRoutes.ts)
 - POST /efi/:secret (efiWebhookRoutes.ts)
@@ -25,6 +38,23 @@ Públicas: 18 · logado (qualquer perfil): 172 · gestão: 86 · admin: 21
 
 ## Para revisar: alteram dados e só pedem login, sem checagem de escopo
 
+- POST /analysis/curricular (analysisRoutes.ts)
+- PUT /analysis/curricular/:id/enrollment (analysisRoutes.ts)
+- POST /analysis/curricular/:id/send-proposal (analysisRoutes.ts)
+- PUT /analysis/curricular/:id (analysisRoutes.ts)
+- PUT /analysis/curricular/:id/subject/:subjectId (analysisRoutes.ts)
+- DELETE /analysis/curricular/:id (analysisRoutes.ts)
+- POST /analysis/academic (analysisRoutes.ts)
+- PUT /analysis/academic/:id (analysisRoutes.ts)
+- DELETE /analysis/academic/:id (analysisRoutes.ts)
+- POST /students (analysisRoutes.ts)
+- PUT /students/:id (analysisRoutes.ts)
+- POST /students/:id/invite (analysisRoutes.ts)
+- POST /students/:id/upload (analysisRoutes.ts)
+- POST /grades (analysisRoutes.ts)
+- POST /grades/import-defaults (analysisRoutes.ts)
+- POST /grades/:id/send (analysisRoutes.ts)
+- DELETE /grades/:id (analysisRoutes.ts)
 - DELETE /logout (authRoutes.ts)
 - POST /contacts/import (contactRoutes.ts)
 - POST /contacts (contactRoutes.ts)
@@ -41,6 +71,9 @@ Públicas: 18 · logado (qualquer perfil): 172 · gestão: 86 · admin: 21
 - POST /schedules/:id/cancel (extraRoutes.ts)
 - DELETE /schedules/:id (extraRoutes.ts)
 - PUT /me/preferences (extraRoutes.ts)
+- POST /retention/nps/send/:leadId (extraRoutes.ts)
+- POST /retention/risk/:leadId/message (extraRoutes.ts)
+- POST /retention/rematricula/:leadId (extraRoutes.ts)
 - POST /leads (extraRoutes.ts)
 - POST /leads/import (extraRoutes.ts)
 - POST /leads/from-contact/:contactId (extraRoutes.ts)
@@ -49,6 +82,7 @@ Públicas: 18 · logado (qualquer perfil): 172 · gestão: 86 · admin: 21
 - PUT /me/efi (extraRoutes.ts)
 - DELETE /me/efi (extraRoutes.ts)
 - PUT /commissions/:id/settle (extraRoutes.ts)
+- POST /messages/forward-batch (messageRoutes.ts)
 - POST /quickAnswers (quickAnswerRoutes.ts)
 - PUT /quickAnswers/:quickAnswerId (quickAnswerRoutes.ts)
 - DELETE /quickAnswers/:quickAnswerId (quickAnswerRoutes.ts)
@@ -64,6 +98,7 @@ Públicas: 18 · logado (qualquer perfil): 172 · gestão: 86 · admin: 21
 - POST /affiliates/:id/referrals → affiliateStaff, canAccessAffiliate
 - POST /affiliates/:id/attach-lead → affiliateStaff, canAccessAffiliate
 - POST /affiliates/:id/send-portal → affiliateStaff, canAccessAffiliate
+- POST /affiliates/:id/send-access-email → affiliateStaff, canAccessAffiliate
 - POST /affiliates/:id/send-proposal → affiliateStaff, canAccessAffiliate
 - POST /affiliate-materials → affiliateStaff
 - PUT /affiliate-materials/:id → affiliateStaff
@@ -86,6 +121,8 @@ Públicas: 18 · logado (qualquer perfil): 172 · gestão: 86 · admin: 21
 - DELETE /contact-lists/:id → salesStaff
 - POST /contact-lists/:id/import → salesStaff
 - DELETE /contact-lists/:id/items/:itemId → salesStaff
+- PUT /leads/:id/documents/:docId → canAccessLead
+- POST /leads/:id/documents/remind → canAccessLead
 - PUT /leads/:id → canAccessLead
 - PUT /leads/:id/stage → canAccessLead
 - POST /leads/:id/activities → canAccessLead
@@ -114,6 +151,7 @@ Públicas: 18 · logado (qualquer perfil): 172 · gestão: 86 · admin: 21
 - POST /messages/:messageId/media → canWriteMessage
 - POST /messages/:messageId/react → canWriteMessage
 - POST /messages/:messageId/forward → canWriteMessage
+- POST /tickets/:ticketId/phone → canSendTicket, phoneLimiter
 - PUT /tickets/:ticketId/pin → canReadTicket
 - PUT /tickets/:ticketId/archive → canWriteTicket
 - PUT /tickets/:ticketId/unread → canWriteTicket

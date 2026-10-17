@@ -29,7 +29,7 @@ const MARK = "‎";
 const FLOW_DONE = -1;
 
 // the answers that fill a field of the lead (the other ones stay only inside the flow)
-const LEAD_FIELDS = ["nome", "email", "cidade", "curso", "modalidade", "forma_ingresso", "semestre_transferencia"];
+const LEAD_FIELDS = ["nome", "email", "cidade", "curso", "modalidade", "forma_ingresso", "semestre_transferencia", "prazo_decisao", "motivacao", "turno"];
 
 const firstName = (n: string): string => String(n || "").trim().split(/\s+/)[0] || "";
 

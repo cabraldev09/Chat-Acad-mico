@@ -18,6 +18,7 @@ import { pickUserForQueue } from "../AutomationServices/AutoAssignTicket";
 import syncPoloQueues from "../PoloServices/SyncPoloQueues";
 import { createEnrollmentCharge } from "../PaymentServices/EnrollmentPayments";
 import { markFeeExempt, markFeePaid, markFeePending } from "../PaymentServices/FeeTags";
+import { startDocuments } from "./Documents";
 import ShowTicketService from "../TicketServices/ShowTicketService";
 import UpdateTicketService from "../TicketServices/UpdateTicketService";
 import dispatchWebhook from "../WebhookServices/DispatchWebhook";
@@ -181,6 +182,8 @@ const enrollLead = async (lead: Lead, actorId: number, input: EnrollInput) => {
     }
     return { ...(await enrollLeadCore(locked, actorId, input)), repeated: false };
   });
+  // the documents the student has to deliver (the list of the administration), with the label while something is missing
+  if (!result.repeated) await startDocuments(result.lead).catch(() => undefined);
   // the label of the fee: paid when it was declared paid, otherwise "Taxa pendente" until the payment is confirmed
   if (!result.repeated && input.fee) {
     if (input.fee === "exempt") {

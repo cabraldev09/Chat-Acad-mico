@@ -16,6 +16,8 @@ import Course from "../models/Course";
 import User from "../models/User";
 import Ticket from "../models/Ticket";
 import Contact from "../models/Contact";
+import { readDeadlines, runCadences } from "../services/CrmServices/Cadences";
+import { listDocuments, remindDocuments, requiredDocs, setDocumentStatus } from "../services/CrmServices/Documents";
 import AppError from "../errors/AppError";
 import GetDefaultWhatsApp from "../helpers/GetDefaultWhatsApp";
 import Whatsapp from "../models/Whatsapp";
@@ -533,6 +535,13 @@ export const getSettings = async (_req: Request, res: Response): Promise<Respons
     autoadvance: (await getSetting("crm_autoadvance", "true")) !== "false",
     ownerIds: JSON.parse(await getSetting("crm_owner_ids", "[]")),
     entryTerms: (await getEntryTerms()).terms,
+    // the last day to enroll in each period (the reminders of "deadline close" count from it)
+    entryDeadlines: await readDeadlines(),
+    // the documents a student delivers after the enrollment, and the automatic reminder about the missing ones
+    requiredDocs: await requiredDocs(),
+    docsAutoReminder: (await getSetting("docs_auto_reminder", "false")) === "true",
+    docsReminderDays: Number(await getSetting("docs_reminder_days", "3")),
+    docsReminderMax: Number(await getSetting("docs_reminder_max", "3")),
     defaultEntryTerm: (await getEntryTerms()).defaultTerm,
     formToken: await getSetting("crm_form_token", ""),
     formTitle: await getSetting("crm_form_title", "Quero conhecer a instituição"),
@@ -552,6 +561,20 @@ export const putSettings = async (req: Request, res: Response): Promise<Response
     await setSetting("crm_entry_terms", JSON.stringify(terms));
   }
   if (typeof b.defaultEntryTerm === "string") await setSetting("crm_default_entry", b.defaultEntryTerm);
+  if (Array.isArray(b.requiredDocs)) {
+    const names = [...new Set(b.requiredDocs.map((d: any) => String(d).trim().slice(0, 120)).filter(Boolean))].slice(0, 30);
+    await setSetting("crm_required_docs", JSON.stringify(names));
+  }
+  if (b.docsAutoReminder !== undefined) await setSetting("docs_auto_reminder", b.docsAutoReminder ? "true" : "false");
+  if (b.docsReminderDays !== undefined) await setSetting("docs_reminder_days", String(Math.min(30, Math.max(1, Math.round(Number(b.docsReminderDays) || 3)))));
+  if (b.docsReminderMax !== undefined) await setSetting("docs_reminder_max", String(Math.min(10, Math.max(1, Math.round(Number(b.docsReminderMax) || 3)))));
+  if (b.entryDeadlines && typeof b.entryDeadlines === "object") {
+    const out: Record<string, string> = {};
+    Object.entries(b.entryDeadlines).forEach(([term, date]) => {
+      if (/^20\d{2}\/[12]$/.test(term) && /^\d{4}-\d{2}-\d{2}$/.test(String(date))) out[term] = String(date);
+    });
+    await setSetting("crm_entry_deadlines", JSON.stringify(out));
+  }
   if (Array.isArray(b.ownerIds)) await setSetting("crm_owner_ids", JSON.stringify(b.ownerIds.map(Number)));
   if (typeof b.formTitle === "string") await setSetting("crm_form_title", b.formTitle.slice(0, 120));
   if (typeof b.formThanks === "string") await setSetting("crm_form_thanks", b.formThanks.slice(0, 300));
@@ -739,4 +762,28 @@ export const onboardingList = async (req: Request, res: Response): Promise<Respo
       ticketId: tickets.find(t => t.contactId === r.contactId)?.id || null
     }))
   );
+};
+
+// runs the follow-ups now (the worker does it every ten minutes): useful to see the result of a new trigger
+export const runCadencesNow = async (_req: Request, res: Response): Promise<Response> => res.json(await runCadences());
+
+// ------------------------------------------------ documents of the student
+export const documents = async (req: Request, res: Response): Promise<Response> => {
+  const lead = await Lead.findByPk(req.params.id);
+  if (!lead) throw new AppError("ERR_LEAD_NOT_FOUND", 404);
+  return res.json(await listDocuments(lead.id));
+};
+
+export const setDocument = async (req: Request, res: Response): Promise<Response> => {
+  const lead = await Lead.findByPk(req.params.id);
+  if (!lead) throw new AppError("ERR_LEAD_NOT_FOUND", 404);
+  const summary = await setDocumentStatus(lead, Number(req.params.docId), String(req.body.status || ""), uid(req), req.body.note);
+  return res.json({ ...(await listDocuments(lead.id)), summary });
+};
+
+export const remindDocs = async (req: Request, res: Response): Promise<Response> => {
+  const lead = await Lead.findByPk(req.params.id);
+  if (!lead) throw new AppError("ERR_LEAD_NOT_FOUND", 404);
+  const sent = await remindDocuments(lead, uid(req));
+  return res.json({ ok: true, missing: sent });
 };

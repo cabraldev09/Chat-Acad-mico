@@ -252,14 +252,22 @@ export const listFromLeads = async (req: Request, res: Response): Promise<Respon
   if (b.poloId) and.push({ poloId: b.poloId });
   if (b.source) and.push({ source: b.source });
   if (b.ownerId) and.push({ ownerId: b.ownerId });
+  // the students: enrolled and not lost; the ones who finished the onboarding, and the ones enrolled for at least N days
+  const students = b.audience === "students";
+  if (students) {
+    and.push({ enrolledAt: { [Op.ne]: null } });
+    if (b.onboardingDone) and.push({ onboardingStatus: "done" });
+    const since = Number(b.enrolledDays);
+    if (since > 0) and.push({ enrolledAt: { [Op.lt]: new Date(Date.now() - since * 24 * 3600 * 1000) } });
+  }
   const quiet = Number(b.noReplyDays);
   if (quiet > 0) {
     const limit = new Date(Date.now() - quiet * 24 * 3600 * 1000);
     and.push({ [Op.or]: [{ lastContactAt: { [Op.lt]: limit } }, { lastContactAt: { [Op.is]: null } }] });
   }
   const include: any[] = [];
-  // without an explicit stage, never include people already enrolled or lost
-  if (!b.stageId) include.push({ model: LeadStage, as: "stage", attributes: [], where: { type: "open" }, required: true });
+  // without an explicit stage, never include people already enrolled or lost (the students are the enrolled ones: only the lost stay out)
+  if (!b.stageId) include.push({ model: LeadStage, as: "stage", attributes: [], where: students ? { type: { [Op.ne]: "lost" } } : { type: "open" }, required: true });
   if (b.tagId) include.push({ model: Tag, as: "tags", attributes: [], where: { id: b.tagId }, required: true, through: { attributes: [] } });
 
   const leads = await Lead.findAll({

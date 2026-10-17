@@ -17,6 +17,7 @@ import { startPaymentPoller } from "./workers/PaymentPoller";
 import { startOnboardingSla } from "./workers/OnboardingSla";
 import { startChatbotReminder } from "./workers/ChatbotReminder";
 import { startFlowRunner } from "./workers/FlowRunner";
+import { startCadences } from "./workers/Cadences";
 import { loadAppTz } from "./helpers/AppTime";
 import { whenLeader } from "./helpers/SingleInstance";
 import { ensureRls } from "./helpers/EnsureRls";
@@ -43,6 +44,7 @@ whenLeader(() => {
   startOnboardingSla();
   startChatbotReminder();
   startFlowRunner();
+  startCadences();
   // the polos and goals of the spreadsheet are loaded once, so the goals screen is never empty
   import("./services/GoalServices/SeedPoloGoals").then(({ seedPoloGoals }) => seedPoloGoals()).catch(() => undefined);
   // the commercial matrices that come with the system, read once when the catalog is empty

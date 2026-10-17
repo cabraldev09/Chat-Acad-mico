@@ -1,3 +1,4 @@
+import { CRM_OPTIONS } from "../CrmServices/crmOptions";
 import { Op } from "sequelize";
 
 import Course from "../../models/Course";
@@ -165,6 +166,14 @@ export const applyToLead = async (ticket: Ticket, c: Record<string, string>): Pr
   if (c.cidade && !lead.city) patch.city = c.cidade;
   if (c.modalidade && !lead.modality) patch.modality = c.modalidade;
   if (c.forma_ingresso && !lead.admissionType) patch.admissionType = c.forma_ingresso;
+  // the answers of the screening: only values the CRM knows, and the most advanced answer about the decision wins
+  const known = (list: string[], v?: string) => list.find(x => x.toLowerCase() === String(v || "").trim().toLowerCase());
+  const timeline = known(CRM_OPTIONS.decisionTimelines, c.prazo_decisao);
+  if (timeline && CRM_OPTIONS.decisionTimelines.indexOf(timeline) < (CRM_OPTIONS.decisionTimelines.indexOf(lead.decisionTimeline) < 0 ? 99 : CRM_OPTIONS.decisionTimelines.indexOf(lead.decisionTimeline))) patch.decisionTimeline = timeline;
+  const motivation = known(CRM_OPTIONS.motivations, c.motivacao);
+  if (motivation && !lead.motivation) patch.motivation = motivation;
+  const shift = known(CRM_OPTIONS.shifts, c.turno);
+  if (shift && !lead.shift) patch.shift = shift;
   if (c.semestre_transferencia && !lead.entrySemester) {
     const n = Number(String(c.semestre_transferencia).replace(/\D/g, ""));
     if (n > 0) patch.entrySemester = n;

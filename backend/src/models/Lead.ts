@@ -176,6 +176,13 @@ class Lead extends Model<Lead> {
   @Column
   enrolledAt: Date;
 
+  // the period the student already re-enrolled for, and when
+  @Column
+  reenrolledTerm: string;
+
+  @Column
+  reenrolledAt: Date;
+
   @Column
   onboardingStartedAt: Date;
 
