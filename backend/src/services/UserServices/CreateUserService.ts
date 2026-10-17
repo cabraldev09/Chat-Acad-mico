@@ -1,3 +1,4 @@
+import { joinRelationshipQueue } from "../RelationshipServices/Relationship";
 import * as Yup from "yup";
 
 import AppError from "../../errors/AppError";
@@ -82,6 +83,8 @@ const CreateUserService = async ({
   );
 
   await user.$set("queues", queueIds);
+  // the relationship team works from the queue of the department
+  if (finalRole === "relacionamento") await joinRelationshipQueue(user.id);
 
   await user.reload();
 

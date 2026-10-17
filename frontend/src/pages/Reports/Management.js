@@ -54,7 +54,7 @@ const Management = ({ data, sla }) => {
 
       <div className={c.panel}>
         <h2 className={c.title}><Building2 size={16} /> Departamentos</h2>
-        <div className={c.sub}>Cada departamento é a etapa da conversa: Comercial, Pós-venda, Ambientação e Acadêmico.</div>
+        <div className={c.sub}>Cada departamento é a etapa da conversa: Comercial, Pós-venda, Ambientação, Acadêmico e Relacionamento.</div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 12, marginTop: 12 }}>
           {data.departments.length === 0 && <div style={{ opacity: 0.6 }}>Nenhum atendimento neste período.</div>}
           {data.departments.map((d) => (

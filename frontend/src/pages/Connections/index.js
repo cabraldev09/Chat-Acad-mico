@@ -107,6 +107,12 @@ const Connections = () => {
 	// administrators manage everything; anyone else manages the number they connected themselves
 	const canManage = w => isAdmin || (w.ownerId && user && w.ownerId === user.id && (!w.channel || w.channel === "whatsapp"));
 	const [myDialog, setMyDialog] = useState({ open: false, whatsApp: null });
+	// the number the relationship department works from (chosen in Retenção > Configurar)
+	const [relationshipId, setRelationshipId] = useState(0);
+	useEffect(() => {
+		if (!isAdmin) return;
+		api.get("/retention/config").then(({ data }) => setRelationshipId((data.relationship && data.relationship.whatsappId) || 0)).catch(() => undefined);
+	}, [isAdmin]);
 	// progress of "copy the conversations of the phone", by connection
 	const [copying, setCopying] = useState({});
 	useEffect(() => {
@@ -444,6 +450,9 @@ const Connections = () => {
 												</span>
 												{isAdmin && whatsApp.owner && (
 													<div style={{ fontSize: 12, opacity: 0.65 }}>Número de {whatsApp.owner.name}</div>
+												)}
+												{relationshipId > 0 && whatsApp.id === relationshipId && (
+													<div><span style={{ display: "inline-block", marginTop: 4, padding: "1px 9px", borderRadius: 999, fontSize: 11.5, fontWeight: 700, background: "rgba(124,58,237,.14)", color: "#6d28d9" }}>Relacionamento</span></div>
 												)}
 											</TableCell>
 											<TableCell

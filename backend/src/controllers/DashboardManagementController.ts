@@ -24,7 +24,8 @@ const DEPARTMENTS: Array<[string, string]> = [
   ["sales", "Comercial"],
   ["postsale", "Pós-venda"],
   ["onboarding", "Ambientação"],
-  ["support", "Acadêmico"]
+  ["support", "Acadêmico"],
+  ["relationship", "Relacionamento"]
 ];
 
 const BASE = `t.isHistorical = false AND t.isGroup = false AND NOT EXISTS (SELECT 1 FROM Contacts sc WHERE sc.id = t.contactId AND (sc.isStaff = true OR sc.isPersonal = true OR sc.kind <> 'person'))`;

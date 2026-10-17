@@ -38,6 +38,8 @@ export const leadScopeWhere = async (req: Request): Promise<any | null> => {
     };
   }
   if (role === "tutor") return { onboardingTutorId: me };
+  // the relationship team follows the students (the ones already enrolled) of every polo, never the sales funnel
+  if (role === "relacionamento") return { enrolledAt: { [Op.ne]: null } };
   return { poloId: { [Op.in]: polos } };
 };
 

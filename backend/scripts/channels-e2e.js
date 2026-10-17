@@ -190,6 +190,7 @@ const startGraphMock = () => {
   app.get("/:id", (req, res) => {
     const { id } = req.params;
     if (id === "PN1") return res.json({ display_phone_number: "+55 11 99999-0000", verified_name: "Mock Co" });
+    if (id === "PN2") return res.json({ display_phone_number: "+55 11 98888-0000", verified_name: "Mantenedora" });
     if (id.startsWith("PSID") || id.startsWith("IGSID")) return res.json({ name: "Maria Silva", profile_pic: `http://localhost:${GRAPH_PORT}/pic.jpg` });
     if (id.startsWith("MEDIA")) return res.json({ url: `http://localhost:${GRAPH_PORT}/media/${id}` });
     return res.status(404).json({ error: { message: "unknown id" } });
@@ -4326,6 +4327,113 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(hand.data.sent === 1 && hand.data.failed === 0, `text to a prospect ${JSON.stringify(hand.data).slice(0, 200)}`);
       await waitFor(() => graph.sent.some(x => x.body && String(x.body.to) === prospect && x.body.text && /ainda dá tempo/.test(x.body.text.body)), 12000, "the message to the prospect");
       assert((await http.post("/retention/send", { kind: "custom", text: "Oi", leadIds: [prospectLead] }, asUser(tutorTok))).data.failed === 1, "a tutor wrote to a lead that is not theirs");
+    });
+    await test("departamento Relacionamento: o pós-venda sai pelo número da instituição, as respostas caem na fila própria e o robô fica de fora", async () => {
+      const relCfg = { phoneNumberId: "PN2", accessToken: "REL-TOKEN", appSecret: "rel-secret", verifyToken: "rel-verify" };
+      const relId = await createConnection("Relacionamento Mantenedor", "whatsapp_cloud", relCfg);
+      const relEvent = (from, messages, name = "Aluno") => ({ object: "whatsapp_business_account", entry: [{ id: "WABA", changes: [{ field: "messages", value: { messaging_product: "whatsapp", metadata: { phone_number_id: "PN2" }, contacts: [{ wa_id: from, profile: { name } }], messages } }] }] });
+      const onRel = (from, message, name) => postMeta(relId, relEvent(from, [message], name), relCfg.appSecret);
+      const textOnRel = (from, id, body, name) => onRel(from, { from, id, type: "text", text: { body } }, name);
+      const tapOnRel = (from, id, kind, title, group, name) => onRel(from, { from, id, type: "interactive", interactive: kind === "button" ? { type: "button_reply", button_reply: { id: group, title } } : { type: "list_reply", list_reply: { id: group, title } } }, name);
+      const viaRel = since => graph.sent.slice(since).filter(x => x.path === "/PN2/messages");
+      const viaTutor = since => graph.sent.slice(since).filter(x => x.path === "/PN1/messages");
+      const poloId = sql(`SELECT id FROM Polos WHERE code='ENV1'`);
+      const tutorId = sql(`SELECT id FROM Users WHERE email='tutorx@env.test'`);
+      const tutorTok = (await http.post("/auth/login", { email: "tutorx@env.test", password: "senha123" })).data.token;
+      let n = 0;
+      const student = async name => {
+        n += 1;
+        const from = `55119100005${String(10 + n)}`;
+        await inboundCloud(from, `wamid.rel-${n}`, "oi, quero me matricular");
+        await waitFor(() => ticketOf(from), 8000, `ticket of ${name}`);
+        const leadId = Number(await waitFor(() => sql(`SELECT l.id FROM Leads l JOIN Contacts c ON c.id=l.contactId WHERE c.number='${from}'`), 8000, `lead of ${name}`));
+        sql(`UPDATE Leads SET name='${name}' WHERE id=${leadId}`);
+        assert((await http.post(`/leads/${leadId}/enroll`, { poloId, tutorId: Number(tutorId), fee: "paid", whatsappId: cid }, auth())).status === 200, `enroll ${name}`);
+        return { from, leadId, contactId: sql(`SELECT contactId FROM Leads WHERE id=${leadId}`) };
+      };
+      const rita = await student("Rita Relacionamento");
+      const caio = await student("Caio Relacionamento");
+
+      // the queue of the department exists (one for the institution) and nothing is chosen yet
+      assert(sql(`SELECT COUNT(*) FROM Queues WHERE role='relacionamento' AND poloId IS NULL`) === "1", "the queue of the relationship department");
+      const cfg0 = (await http.get("/retention/config", auth())).data;
+      assert(cfg0.relationship.whatsappId === 0, `relationship before ${JSON.stringify(cfg0.relationship)}`);
+      assert((await http.put("/retention/config", { relationshipWhatsappId: 999999 }, auth())).status === 400, "an invented connection was accepted");
+      assert((await http.put("/retention/config", { relationshipWhatsappId: relId }, asUser(tutorTok))).status === 403, "a tutor chose the number");
+      const set = await http.put("/retention/config", { relationshipWhatsappId: relId, nps: { enabled: true, buttons: true, templateName: "pesquisa_nps", templateLanguage: "pt_BR" } }, auth());
+      assert(set.status === 200 && set.data.relationship.whatsappId === relId && set.data.relationship.channel === "whatsapp_cloud" && set.data.relationship.status === "CONNECTED", `relationship ${JSON.stringify(set.data.relationship)}`);
+
+      // Rita never wrote to this number: the window of this number is closed, so the survey opens with the approved template, from the institution's number
+      let before = graph.sent.length;
+      const cold = await http.post("/retention/send", { kind: "nps", leadIds: [rita.leadId] }, auth());
+      assert(cold.data.sent === 1, `cold survey ${JSON.stringify(cold.data).slice(0, 220)}`);
+      const tpl = await waitFor(() => viaRel(before).find(x => x.body && x.body.type === "template"), 12000, "the template by the relationship number");
+      assert(tpl.body.template.name === "pesquisa_nps" && tpl.auth === "Bearer REL-TOKEN", "template payload");
+      assert(viaTutor(before).length === 0, "the survey also went out from the tutor's number");
+      assert(sql(`SELECT whatsappId FROM NpsSurveys WHERE leadId=${rita.leadId} ORDER BY id DESC LIMIT 1`) === String(relId), "the survey does not know the number it went out from");
+      assert(sql(`SELECT whatsappId FROM RetentionMessages WHERE leadId=${rita.leadId} AND kind='nps' ORDER BY id DESC LIMIT 1`) === String(relId), "the log does not know the number");
+      // the conversation of the department: its own segment and queue
+      const ritaTicket = sql(`SELECT t.id FROM Tickets t WHERE t.contactId=${rita.contactId} AND t.whatsappId=${relId}`);
+      assert(sql(`SELECT CONCAT(segment,'|',queueId) FROM Tickets WHERE id=${ritaTicket}`) === `relationship|${sql(`SELECT id FROM Queues WHERE role='relacionamento'`)}`, "the conversation is not in the relationship queue");
+      // the student's conversation with the tutor stays apart
+      assert(sql(`SELECT COUNT(*) FROM Messages WHERE ticketId IN (SELECT id FROM Tickets WHERE contactId=${rita.contactId} AND whatsappId=${cid}) AND fromMe=true AND body LIKE '%recomendaria%'`) === "0", "the survey went into the conversation of the tutor");
+
+      // Rita answers on the institution's number: the detractor group, then the exact score
+      assert((await tapOnRel(rita.from, "wamid.rel-t1", "button", "Não recomendo (0-6)", "g-detractor", "Rita")).status === 200, "tap");
+      await waitFor(() => sql(`SELECT COALESCE(scoreGroup,'') FROM NpsSurveys WHERE leadId=${rita.leadId} ORDER BY id DESC LIMIT 1`) === "detractor", 10000, "the group");
+      const second = await waitFor(() => viaRel(before).find(x => x.body && x.body.type === "interactive" && x.body.interactive.type === "list"), 12000, "the second step by the relationship number");
+      assert(second.body.interactive.action.sections[0].rows.length === 7, "the scores of a detractor");
+      assert((await tapOnRel(rita.from, "wamid.rel-t2", "list", "4", "n-4", "Rita")).status === 200, "tap score");
+      await waitFor(() => sql(`SELECT score FROM NpsSurveys WHERE leadId=${rita.leadId} AND status='answered'`) === "4", 10000, "the score");
+      await waitFor(() => viaRel(before).some(x => x.body && x.body.type === "text" && /Obrigado pela nota/.test(x.body.text.body)), 10000, "the thanks by the relationship number");
+      assert(viaTutor(before).length === 0, "something went out from the tutor's number");
+      // a detractor stays in the queue for the team to call
+      assert(sql(`SELECT status FROM Tickets WHERE id=${ritaTicket}`) === "pending", `detractor conversation ${sql(`SELECT status FROM Tickets WHERE id=${ritaTicket}`)}`);
+      assert(Number(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${rita.leadId} AND title LIKE 'Falar com o aluno que deu nota 4%'`)) === 1, "the alert task");
+
+      // Caio wrote to the institution's number a minute ago: the survey goes with buttons, and a number typed to the TUTOR is not the answer
+      await textOnRel(caio.from, "wamid.rel-c1", "oi, tudo bem?", "Caio");
+      await waitFor(() => sql(`SELECT COUNT(*) FROM Tickets WHERE contactId=${caio.contactId} AND whatsappId=${relId}`) === "1", 8000, "ticket of Caio on the relationship number");
+      await sleep(1500);
+      assert(viaRel(before).filter(x => x.body.to === caio.from).length === 0, "a robot answered on the institution's number");
+      before = graph.sent.length;
+      assert((await http.post("/retention/send", { kind: "nps", leadIds: [caio.leadId] }, auth())).data.sent === 1, "survey to Caio");
+      const btn = await waitFor(() => viaRel(before).find(x => x.body && x.body.to === caio.from && x.body.type === "interactive"), 12000, "buttons by the relationship number");
+      assert(btn.body.interactive.type === "button" && btn.body.interactive.action.buttons.length === 3, "the three groups");
+      await inboundCloud(caio.from, "wamid.rel-c2", "8");
+      await sleep(1200);
+      assert(sql(`SELECT status FROM NpsSurveys WHERE leadId=${caio.leadId} ORDER BY id DESC LIMIT 1`) === "sent", "a number typed to the tutor answered the survey");
+      assert((await textOnRel(caio.from, "wamid.rel-c3", "10", "Caio")).status === 200, "answer");
+      await waitFor(() => sql(`SELECT score FROM NpsSurveys WHERE leadId=${caio.leadId} AND status='answered'`) === "10", 10000, "the score of Caio");
+      // a promoter: the conversation of the department closes by itself, the queue keeps only what needs a person
+      const caioTicket = sql(`SELECT id FROM Tickets WHERE contactId=${caio.contactId} AND whatsappId=${relId}`);
+      await waitFor(() => sql(`SELECT status FROM Tickets WHERE id=${caioTicket}`) === "closed", 10000, "the conversation of a promoter closes");
+
+      // the relationship team: its own profile, in the queue of the department, sees only that department
+      const team = await http.post("/users", { name: "Ana Relacionamento", email: "ana@rel.test", password: "senha123", role: "relacionamento" }, auth());
+      assert(team.status === 200, `team user ${team.status} ${JSON.stringify(team.data).slice(0, 160)}`);
+      assert(sql(`SELECT COUNT(*) FROM UserQueues uq JOIN Queues q ON q.id=uq.queueId WHERE uq.userId=${team.data.id} AND q.role='relacionamento'`) === "1", "the new member is not in the queue");
+      const anaTok = (await http.post("/auth/login", { email: "ana@rel.test", password: "senha123" })).data.token;
+      assert((await http.get(`/tickets/${ritaTicket}`, asUser(anaTok))).status === 200, "the team cannot open its own conversation");
+      assert((await http.get(`/tickets/${ticketOf(rita.from) === String(ritaTicket) ? 1 : ticketOf(rita.from)}`, asUser(anaTok))).status === 403, "the team opened a conversation of another department");
+      assert((await http.get("/retention/summary", asUser(anaTok))).status === 200, "the team cannot see the retention numbers");
+      assert((await http.put("/retention/config", { relationshipWhatsappId: 0 }, asUser(anaTok))).status === 403, "the team changed the number");
+      assert((await http.get("/leads?pageNumber=1", asUser(anaTok))).status !== 500, "leads scope of the team");
+
+      // the number is off: nothing goes out (not even from the tutor's number)
+      sql(`UPDATE Whatsapps SET status='DISCONNECTED' WHERE id=${relId}`);
+      before = graph.sent.length;
+      const off = await http.post("/retention/send", { kind: "risk", leadIds: [caio.leadId] }, auth());
+      assert(off.data.failed === 1 && /desconectado/.test(off.data.results[0].error), `offline ${JSON.stringify(off.data).slice(0, 220)}`);
+      assert(graph.sent.slice(before).length === 0, "a message left while the number was off");
+      sql(`UPDATE Whatsapps SET status='CONNECTED' WHERE id=${relId}`);
+
+      // the department shows in the statistics
+      const mgmt = await http.get("/dashboard/management", auth());
+      assert(mgmt.status !== 500, "statistics");
+
+      // back to the old behaviour for the tests that follow
+      assert((await http.put("/retention/config", { relationshipWhatsappId: 0, nps: { templateName: "" } }, auth())).data.relationship.whatsappId === 0, "clear the number");
     });
     await test("retenção: resumo, planilhas e o tutor vê só a satisfação dos próprios alunos", async () => {
       const tutor = (await http.post("/auth/login", { email: "tutorr@ret.test", password: "senha123" })).data.token;

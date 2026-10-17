@@ -19,13 +19,15 @@ import SendToContact from "../services/ChannelServices/SendToContact";
 import { assertCanSend, logRetention } from "../services/CrmServices/RetentionLog";
 import { Scope, markReenrolled, readRetentionConfig, rematriculaList, riskStudents, sendRetentionMessage } from "../services/CrmServices/Retention";
 import { csvAsText, csvDay, sendCsv } from "../helpers/Csv";
+import { relationshipConnection, relationshipWhatsappId, setRelationshipWhatsappId } from "../services/RelationshipServices/Relationship";
 
 const uid = (req: Request): number => Number(req.user.id);
 
 // The management sees every student; a tutor only the ones they follow; nobody else comes in here.
 const scopeOf = (req: Request): Scope => {
   const role = roleOf(req.user);
-  if (isManagerRole(role)) return {};
+  // the relationship team works every student's after-sales: it sees them all
+  if (isManagerRole(role) || role === "relacionamento") return {};
   if (role === "tutor" || role === "academico") return { tutorId: uid(req) };
   throw new AppError("ERR_NO_PERMISSION", 403);
 };
@@ -202,7 +204,10 @@ export const sendBulk = async (req: Request, res: Response): Promise<Response> =
     const label = t.name || t.number || "Contato";
     try {
       // eslint-disable-next-line no-await-in-loop
-      let whatsapp = whatsappId ? await Whatsapp.findByPk(whatsappId) : await GetDefaultWhatsApp(uid(req));
+      // the chosen connection, else the institution's number of the relationship department, else the default
+      let whatsapp = whatsappId ? await Whatsapp.findByPk(whatsappId) : await relationshipConnection();
+      if (!whatsappId && whatsapp && whatsapp.status !== "CONNECTED") throw new AppError("ERR_RELATIONSHIP_WAPP_OFFLINE");
+      if (!whatsapp && !whatsappId) whatsapp = await GetDefaultWhatsApp(uid(req));
       // the default may be a Telegram or Instagram connection: the message of retention goes by WhatsApp
       if (!whatsapp || !["whatsapp", "whatsapp_cloud"].includes(whatsapp.channel || "whatsapp")) {
         if (whatsappId) throw new AppError("ERR_NO_DEF_WAPP_FOUND");
@@ -221,11 +226,11 @@ export const sendBulk = async (req: Request, res: Response): Promise<Response> =
         await SendToContact({ contact, whatsapp, body });
       } catch (err) {
         // eslint-disable-next-line no-await-in-loop
-        await logRetention({ lead: null, name: label, number: contact.number, contactId: contact.id, kind: "custom", body, userId: uid(req), error: (err as Error).message });
+        await logRetention({ lead: null, name: label, number: contact.number, contactId: contact.id, kind: "custom", body, userId: uid(req), error: (err as Error).message, whatsappId: whatsapp.id });
         throw err;
       }
       // eslint-disable-next-line no-await-in-loop
-      await logRetention({ lead: null, name: label, number: contact.number, contactId: contact.id, kind: "custom", body, userId: uid(req) });
+      await logRetention({ lead: null, name: label, number: contact.number, contactId: contact.id, kind: "custom", body, userId: uid(req), whatsappId: whatsapp.id });
       results.push({ leadId: 0, name: label, ok: true });
     } catch (err) {
       results.push({ leadId: 0, name: label, ok: false, error: sendErrorText((err as Error).message) });
@@ -286,8 +291,21 @@ export const operations = async (req: Request, res: Response): Promise<Response>
 
 // ------------------------------------------------------------------ settings (management)
 const configView = async () => {
-  const [n, r] = await Promise.all([readNpsConfig(), readRetentionConfig()]);
-  return { nps: n, npsKinds: NPS_KINDS, risk: { days: r.riskDays, message: r.riskMessage }, rematricula: r.rematricula };
+  const [n, r, relId, rel] = await Promise.all([readNpsConfig(), readRetentionConfig(), relationshipWhatsappId(), relationshipConnection()]);
+  return {
+    nps: n,
+    npsKinds: NPS_KINDS,
+    risk: { days: r.riskDays, message: r.riskMessage },
+    rematricula: r.rematricula,
+    // the institution's number for after-sales (null: none chosen, the messages follow the student's last conversation)
+    relationship: {
+      whatsappId: rel ? rel.id : relId || 0,
+      name: rel ? rel.name : null,
+      channel: rel ? rel.channel : null,
+      status: rel ? rel.status : relId ? "MISSING" : null,
+      riskMode: rel ? rel.riskMode : null
+    }
+  };
 };
 
 export const getConfig = async (req: Request, res: Response): Promise<Response> => {
@@ -297,6 +315,14 @@ export const getConfig = async (req: Request, res: Response): Promise<Response> 
 
 export const putConfig = async (req: Request, res: Response): Promise<Response> => {
   const b = req.body || {};
+  if (b.relationshipWhatsappId !== undefined) {
+    const id = Number(b.relationshipWhatsappId) || 0;
+    if (id) {
+      const w = await Whatsapp.findByPk(id);
+      if (!w || !["whatsapp", "whatsapp_cloud"].includes(w.channel || "whatsapp")) throw new AppError("ERR_INVALID_PARAMETER", 400);
+    }
+    await setRelationshipWhatsappId(id);
+  }
   if (b.nps) {
     if (b.nps.enabled !== undefined) await setSetting("nps_enabled", b.nps.enabled ? "true" : "false");
     if (Array.isArray(b.nps.moments)) await setSetting("nps_moments", JSON.stringify(b.nps.moments.filter((m: any) => (NPS_KINDS as readonly string[]).includes(m))));

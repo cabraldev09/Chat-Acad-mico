@@ -470,3 +470,25 @@ export const resolveLeadTarget = async (
   }
   return { contact, whatsapp };
 };
+
+// After-sales messages (the satisfaction survey, retention, re-enrollment) go out from the institution's own number, never from
+// the tutor's. When the number is chosen but not connected the message is refused with a clear reason (it would otherwise leave
+// from the tutor's number, which is what this exists to avoid); when none was chosen yet, the old behaviour stays.
+export const resolveRelationshipTarget = async (
+  lead: Lead,
+  userId: number
+): Promise<{ contact: Contact; whatsapp: Whatsapp }> => {
+  const { relationshipWhatsappId, relationshipConnection } = await import("../RelationshipServices/Relationship");
+  const { resolveOutboundContact } = await import("../ChannelServices/ResolveOutboundContact");
+  const { default: AppError } = await import("../../errors/AppError");
+  if (!(await relationshipWhatsappId())) return resolveLeadTarget(lead, userId, null);
+  const whatsapp = await relationshipConnection();
+  if (!whatsapp || whatsapp.status !== "CONNECTED") throw new AppError("ERR_RELATIONSHIP_WAPP_OFFLINE");
+  let contact: Contact | null = lead.contactId ? await Contact.findByPk(lead.contactId) : null;
+  if (!contact) {
+    if (!lead.phone) throw new AppError("ERR_LEAD_NO_PHONE");
+    contact = await resolveOutboundContact(whatsapp, lead.phone, lead.name);
+    await lead.update({ contactId: contact.id });
+  }
+  return { contact, whatsapp };
+};

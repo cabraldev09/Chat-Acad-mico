@@ -342,9 +342,14 @@ const Rematricula = ({ manager, onChanged }) => {
 
 const Config = () => {
   const classes = useStyles();
+  const history = useHistory();
   const [c, setC] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [numbers, setNumbers] = useState([]);
   useEffect(() => { api.get("/retention/config").then(({ data }) => setC(data)).catch(toastError); }, []);
+  useEffect(() => {
+    api.get("/whatsapp").then(({ data }) => setNumbers((Array.isArray(data) ? data : data.whatsapps || []).filter((w) => ["whatsapp", "whatsapp_cloud"].includes(w.channel)))).catch(() => undefined);
+  }, []);
   if (!c) return null;
   const save = async (patch, ok = "Salvo.") => { try { const { data } = await api.put("/retention/config", patch); setC(data); toast.success(ok); } catch (e) { toastError(e); } };
   const run = async () => {
@@ -353,8 +358,33 @@ const Config = () => {
     setBusy(false);
   };
   const r = c.rematricula;
+  const rel = c.relationship || {};
+  const cloud = rel.channel === "whatsapp_cloud";
+  const down = rel.whatsappId && rel.status !== "CONNECTED";
   return (
     <div>
+      <div className={classes.card} style={down || !rel.whatsappId ? { borderColor: "#d97706" } : undefined}>
+        <Typography style={{ fontWeight: 600 }}>Número do relacionamento</Typography>
+        <Typography className={classes.hint} gutterBottom>
+          A pesquisa de satisfação, a mensagem de retenção, o aviso de rematrícula e os envios da aba Envios saem por este número, o da instituição, separado do número do tutor. As respostas caem na fila Relacionamento.
+        </Typography>
+        <TextField select size="small" variant="outlined" label="Conexão" value={rel.whatsappId || 0} style={{ minWidth: 280 }}
+          onChange={(e) => save({ relationshipWhatsappId: Number(e.target.value) }, "Número do relacionamento salvo.")}>
+          <MenuItem value={0}>Nenhum (segue a última conversa do aluno)</MenuItem>
+          {numbers.map((w) => <MenuItem key={w.id} value={w.id}>{w.name}{w.channel === "whatsapp_cloud" ? " · API oficial" : " · QR Code"}</MenuItem>)}
+        </TextField>
+        <Typography className={classes.hint} style={{ marginTop: 8 }}>
+          Ainda não tem o número? Conecte o número do mantenedor em <b style={{ cursor: "pointer", textDecoration: "underline" }} onClick={() => history.push("/connections")}>Conexões</b> (QR Code ou API oficial) e escolha-o aqui.
+        </Typography>
+        {!rel.whatsappId && <Typography className={classes.hint} style={{ marginTop: 8, color: "#b45309" }}>Sem número escolhido, as mensagens saem pela conversa mais recente do aluno, que depois da matrícula é a da tutoria. Escolha o número do mantenedor para separar.</Typography>}
+        {down && <Typography className={classes.hint} style={{ marginTop: 8, color: "#b91c1c" }}>{rel.status === "MISSING" ? "A conexão escolhida não existe mais." : `A conexão ${rel.name || ""} está desconectada.`} Enquanto isso nada é enviado, para não sair pelo número do tutor. Reconecte em Conexões.</Typography>}
+        {rel.whatsappId > 0 && !down && cloud && <Typography className={classes.hint} style={{ marginTop: 8 }}>API oficial: a pesquisa vai com botões dentro de 24 horas depois da última mensagem do aluno. Fora disso, só com modelo aprovado (campo mais abaixo).</Typography>}
+        {rel.whatsappId > 0 && !down && !cloud && (
+          <Typography className={classes.hint} style={{ marginTop: 8 }}>
+            QR Code: sem botões (o aluno digita a nota). {rel.riskMode === "relaxed" ? "Modo flexível: escreve para quem nunca escreveu para este número, por sua conta e risco." : "Modo seguro: só escreve para quem já escreveu para este número. Para pesquisar toda a base, use a API oficial."} Há limite diário de envios para proteger o número.
+          </Typography>
+        )}
+      </div>
       <div className={classes.card}>
         <Typography style={{ fontWeight: 600 }}>Pesquisa de satisfação (NPS)</Typography>
         <Typography className={classes.hint} gutterBottom>Começa desligada. Ligada, o sistema pergunta pelo WhatsApp, de 0 a 10, o quanto o aluno recomendaria a instituição, e guarda a nota e o motivo. Nota de 0 a 6 vira tarefa para o tutor.</Typography>

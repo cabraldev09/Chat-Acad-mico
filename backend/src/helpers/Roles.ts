@@ -1,4 +1,4 @@
-export const ROLES = ["admin", "coordenacao", "consultor", "tutor", "academico"] as const;
+export const ROLES = ["admin", "coordenacao", "consultor", "tutor", "academico", "relacionamento"] as const;
 export type Role = typeof ROLES[number];
 
 // administrators and coordinators see and manage everything in every polo
@@ -17,16 +17,24 @@ export const QUEUE_ROLE_OF: Record<string, PoloFunction | null> = {
   tutor: "tutoria",
   academico: "tutoria",
   coordenacao: "coordenacao",
+  relacionamento: null,
   admin: null
 };
+
+// The relationship department: the institution's own number for after-sales (satisfaction survey, retention, re-enrollment).
+// One queue for the whole institution (not one per polo), and its conversations have their own segment.
+export const RELATIONSHIP_SEGMENT = "relationship";
+export const RELATIONSHIP_QUEUE_ROLE = "relacionamento";
+export const RELATIONSHIP_QUEUE_NAME = "Relacionamento";
 
 // conversation segment each role may work on
 export const SEGMENTS_OF: Record<string, string[]> = {
   consultor: ["sales", "postsale"],
   tutor: ["onboarding", "support"],
   academico: ["onboarding", "support"],
-  coordenacao: ["sales", "postsale", "onboarding", "support"],
-  admin: ["sales", "postsale", "onboarding", "support"]
+  relacionamento: [RELATIONSHIP_SEGMENT],
+  coordenacao: ["sales", "postsale", "onboarding", "support", RELATIONSHIP_SEGMENT],
+  admin: ["sales", "postsale", "onboarding", "support", RELATIONSHIP_SEGMENT]
 };
 
 // users created before roles existed carry only `profile`

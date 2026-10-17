@@ -32,6 +32,10 @@ class RetentionMessage extends Model<RetentionMessage> {
   @Column
   surveyId: number;
 
+  // the connection it was sent from (the daily limits are counted per connection)
+  @Column
+  whatsappId: number;
+
   @Column
   userId: number;
 

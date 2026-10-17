@@ -5,10 +5,12 @@ import Ticket from "../../models/Ticket";
 // person last wrote to it. Outside that window only an approved template goes out. This tells whether the window is open.
 export const WINDOW_MS = 24 * 3600 * 1000;
 
-export const insideServiceWindow = async (contactId: number): Promise<boolean> => {
+// `whatsappId`: the window belongs to the connection the person wrote to (a person who wrote to the tutor's number has not opened
+// the window of the institution's number)
+export const insideServiceWindow = async (contactId: number, whatsappId?: number): Promise<boolean> => {
   const last = await Message.findOne({
     where: { fromMe: false },
-    include: [{ model: Ticket, as: "ticket", attributes: [], where: { contactId }, required: true }],
+    include: [{ model: Ticket, as: "ticket", attributes: [], where: { contactId, ...(whatsappId ? { whatsappId } : {}) }, required: true }],
     order: [["createdAt", "DESC"]],
     attributes: ["createdAt"]
   });

@@ -103,7 +103,7 @@ export const sentTodayByCampaigns = async (whatsappId: number): Promise<number> 
   });
 };
 
-export const hasConversed = async (contactId: number): Promise<boolean> => {
+export const hasConversed = async (contactId: number, whatsappId?: number): Promise<boolean> => {
   const incoming = await Message.count({
     where: { fromMe: false },
     include: [
@@ -111,7 +111,7 @@ export const hasConversed = async (contactId: number): Promise<boolean> => {
         model: Ticket,
         as: "ticket",
         attributes: [],
-        where: { contactId },
+        where: { contactId, ...(whatsappId ? { whatsappId } : {}) },
         required: true
       }
     ]

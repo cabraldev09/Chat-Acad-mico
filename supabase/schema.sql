@@ -1702,7 +1702,8 @@ CREATE TABLE public."NpsSurveys" (
     "answeredAt" timestamp with time zone,
     "createdAt" timestamp with time zone NOT NULL,
     "updatedAt" timestamp with time zone NOT NULL,
-    "scoreGroup" character varying(10)
+    "scoreGroup" character varying(10),
+    "whatsappId" integer
 );
 
 
@@ -2117,7 +2118,8 @@ CREATE TABLE public."RetentionMessages" (
     error text,
     "withButtons" boolean DEFAULT false NOT NULL,
     "createdAt" timestamp with time zone NOT NULL,
-    "updatedAt" timestamp with time zone NOT NULL
+    "updatedAt" timestamp with time zone NOT NULL,
+    "whatsappId" integer
 );
 
 
@@ -4189,6 +4191,13 @@ CREATE INDEX retention_messages_lead_id_kind ON public."RetentionMessages" USING
 
 
 --
+-- Name: retention_messages_whatsapp_id_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX retention_messages_whatsapp_id_created_at ON public."RetentionMessages" USING btree ("whatsappId", "createdAt");
+
+
+--
 -- Name: student_tokens_token_hash; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5339,6 +5348,7 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261118000004-retention.js') ON CON
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261119000001-contact-personal.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261119000002-retention-messages.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261119000003-sticker-last-message.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261120000001-relationship-department.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

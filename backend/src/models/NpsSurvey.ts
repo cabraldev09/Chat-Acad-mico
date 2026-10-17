@@ -34,6 +34,10 @@ class NpsSurvey extends Model<NpsSurvey> {
   @Column
   awaitingComment: boolean;
 
+  // the connection the survey went out from: only an answer that comes back on it counts (a number typed to the tutor is not a score)
+  @Column
+  whatsappId: number;
+
   // the group the student chose with the buttons (promoter | neutral | detractor), before the exact score
   @Column
   scoreGroup: string;

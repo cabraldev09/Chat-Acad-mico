@@ -6,6 +6,8 @@ import dispatchWebhook from "../WebhookServices/DispatchWebhook";
 import Whatsapp from "../../models/Whatsapp";
 import { hookTicketCreated } from "../CrmServices/LeadCore";
 import ShowTicketService from "./ShowTicketService";
+import { RELATIONSHIP_SEGMENT } from "../../helpers/Roles";
+import { ensureRelationshipQueue, isRelationshipConnection } from "../RelationshipServices/Relationship";
 
 const FindOrCreateTicketService = async (
   contact: Contact,
@@ -112,6 +114,12 @@ const FindOrCreateTicketService = async (
       contactId: ticket.contactId,
       whatsappId
     });
+  }
+
+  // the institution's own number: its conversations are the relationship department's (own segment, own queue)
+  if (!groupContact && ticket.segment !== RELATIONSHIP_SEGMENT && (await isRelationshipConnection(whatsappId))) {
+    const queue = await ensureRelationshipQueue();
+    await ticket.update({ segment: RELATIONSHIP_SEGMENT, queueId: queue.id });
   }
 
   // a personal number: the conversation belongs to the person who connected it (the bots stay out).

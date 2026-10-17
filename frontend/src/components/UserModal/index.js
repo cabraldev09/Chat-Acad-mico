@@ -235,6 +235,7 @@ const UserModal = ({ open, onClose, userId }) => {
 														<MenuItem value="coordenacao">Coordenador de polo (gerencia todos os polos)</MenuItem>
 														<MenuItem value="consultor">Consultor comercial</MenuItem>
 														<MenuItem value="tutor">Tutor (setor acadêmico)</MenuItem>
+														<MenuItem value="relacionamento">Relacionamento (pós-venda, número da instituição)</MenuItem>
 													</Field>
 												</>
 											)}

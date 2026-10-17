@@ -1,3 +1,4 @@
+import { joinRelationshipQueue, leaveRelationshipQueue } from "../RelationshipServices/Relationship";
 import * as Yup from "yup";
 
 import AppError from "../../errors/AppError";
@@ -87,6 +88,9 @@ const UpdateUserService = async ({
   });
 
   await user.$set("queues", queueIds);
+  // the relationship team works from the queue of the department; leaving the team leaves the queue
+  if ((finalRole || user.role) === "relacionamento") await joinRelationshipQueue(user.id);
+  else if (finalRole) await leaveRelationshipQueue(user.id);
 
   await user.reload();
   disconnectUser(user.id);

@@ -257,7 +257,7 @@ const MainListItems = (props) => {
       )}
       <ListItemLink to="/crm/metas-polos" alsoActive={["/crm/metas"]} primary="Metas" icon={<GoalIcon className="ico" />} collapsed={collapsed} />
       <ListItemLink to="/ambientacao" primary="Ambientação" icon={<MonitorCheckIcon className="ico" />} collapsed={collapsed} />
-      {(isManager(user) || user.role === "tutor") && (
+      {(isManager(user) || user.role === "tutor" || user.role === "relacionamento") && (
         <ListItemLink to="/crm/retencao" primary="Retenção" icon={<HeartPulseIcon className="ico" />} collapsed={collapsed} />
       )}
       {!collapsed && (

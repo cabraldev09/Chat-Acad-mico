@@ -467,6 +467,7 @@ const messages = {
         ERR_CAMPAIGN_INTERVAL: "O intervalo mínimo entre mensagens não pode ser maior que o máximo.",
         ERR_CAMPAIGN_INVALID_STATE: "Esta ação não está disponível para a situação atual da campanha.",
         ERR_CAMPAIGN_EMPTY_LIST: "A lista de contatos está vazia. Adicione contatos antes de iniciar a campanha.",
+        ERR_RELATIONSHIP_WAPP_OFFLINE: "O número do relacionamento está desconectado. Reconecte em Conexões.",
         ERR_RETENTION_COLD: "Esta pessoa nunca respondeu e a conexão por QR Code está em modo seguro.",
         ERR_CONTACT_OPTED_OUT: "Esta pessoa pediu para não receber mensagens (SAIR).",
         ERR_CLOUD_WINDOW_CLOSED: "Fora das 24 horas da API oficial do WhatsApp só sai mensagem por modelo aprovado.",

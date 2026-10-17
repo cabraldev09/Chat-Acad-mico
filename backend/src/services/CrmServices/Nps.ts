@@ -12,7 +12,12 @@ import { emitEvent } from "../FlowServices/Events";
 import { getIO } from "../../libs/socket";
 import { assertCanSend, logRetention, renderRetentionText } from "./RetentionLog";
 import { setLabel } from "./Labels";
-import { addActivity, resolveLeadTarget } from "./LeadCore";
+import { addActivity, resolveRelationshipTarget } from "./LeadCore";
+import Contact from "../../models/Contact";
+import Ticket from "../../models/Ticket";
+import Whatsapp from "../../models/Whatsapp";
+import UpdateTicketService from "../TicketServices/UpdateTicketService";
+import { isRelationshipConnection } from "../RelationshipServices/Relationship";
 
 // Satisfaction survey (NPS) by WhatsApp: "from 0 to 10, how much would you recommend us?". The student answers with the
 // number; right after, the next message is taken as the reason. Nine and ten are promoters, seven and eight are neutral, zero to
@@ -82,7 +87,7 @@ const render = (text: string, name: string): string => renderRetentionText(text,
 // sends the survey to a student now
 export const sendSurvey = async (lead: Lead, kind: string, userId: number | null): Promise<NpsSurvey> => {
   const { question, buttons, templateName, templateLanguage } = await readNpsConfig();
-  const { contact, whatsapp } = await resolveLeadTarget(lead, userId || lead.onboardingTutorId || lead.ownerId || 0, null);
+  const { contact, whatsapp } = await resolveRelationshipTarget(lead, userId || lead.onboardingTutorId || lead.ownerId || 0);
   const text = render(question, lead.name);
   // buttons exist only inside the 24 hours of the official API; outside it the approved template opens the survey
   let withButtons = false;
@@ -97,11 +102,11 @@ export const sendSurvey = async (lead: Lead, kind: string, userId: number | null
       choices: withButtons ? { question: text, options: GROUP_OPTIONS.map(o => ({ id: o.id, label: o.label })) } : null
     });
   } catch (err) {
-    await logRetention({ lead, contactId: contact.id, kind: "nps", body: text, userId, error: (err as Error).message, withButtons });
+    await logRetention({ lead, contactId: contact.id, kind: "nps", body: text, userId, error: (err as Error).message, withButtons, whatsappId: whatsapp.id });
     throw err;
   }
-  const survey = await NpsSurvey.create({ leadId: lead.id, contactId: contact.id, kind, status: "sent", sentAt: new Date() } as any);
-  await logRetention({ lead, contactId: contact.id, kind: "nps", body: text, userId, surveyId: survey.id, withButtons });
+  const survey = await NpsSurvey.create({ leadId: lead.id, contactId: contact.id, kind, status: "sent", sentAt: new Date(), whatsappId: whatsapp.id } as any);
+  await logRetention({ lead, contactId: contact.id, kind: "nps", body: text, userId, surveyId: survey.id, withButtons, whatsappId: whatsapp.id });
   await addActivity(lead.id, userId, "whatsapp", `Pesquisa de satisfação enviada (${kind === "onboarding" ? "após a ambientação" : kind === "d30" ? "30 dias de matrícula" : kind === "d90" ? "90 dias de matrícula" : "manual"})`);
   return survey;
 };
@@ -143,9 +148,41 @@ export const runNpsSurveys = async (): Promise<number> => {
   return sent;
 };
 
+// The survey is answered from the number it was sent from: the thanks and the second step go out there too
+const surveyTarget = async (lead: Lead, survey: NpsSurvey): Promise<{ contact: Contact; whatsapp: Whatsapp }> => {
+  const whatsapp = survey.whatsappId ? await Whatsapp.findByPk(survey.whatsappId) : null;
+  const contact = survey.contactId ? await Contact.findByPk(survey.contactId) : null;
+  if (whatsapp && contact) return { contact, whatsapp };
+  return resolveRelationshipTarget(lead, lead.onboardingTutorId || lead.ownerId || 0);
+};
+
+// the survey of this person that is waiting for an answer: only an answer that comes back on the connection it went out from
+// counts (surveys from before the connection was recorded accept any)
+const openSurvey = (contactId: number, whatsappId?: number | null) =>
+  NpsSurvey.findOne({
+    where: {
+      contactId,
+      status: "sent",
+      sentAt: { [Op.gt]: new Date(Date.now() - 5 * 86400000) },
+      ...(whatsappId ? { [Op.or]: [{ whatsappId: null }, { whatsappId }] } : {})
+    } as any,
+    order: [["sentAt", "DESC"]]
+  });
+
+// the conversation of the relationship department is done once the answer is in: the queue only keeps what needs a person
+const closeRelationshipTicket = async (contactId: number, whatsappId?: number | null): Promise<void> => {
+  try {
+    if (!whatsappId || !(await isRelationshipConnection(whatsappId))) return;
+    const ticket = await Ticket.findOne({ where: { contactId, whatsappId, status: { [Op.in]: ["open", "pending"] } }, order: [["updatedAt", "DESC"]] });
+    if (ticket) await UpdateTicketService({ ticketData: { status: "closed" }, ticketId: ticket.id });
+  } catch (err) {
+    logger.warn(`NPS conversation not closed: ${(err as Error).message}`);
+  }
+};
+
 // Called for every message a person sends us. A bare number from 0 to 10 answers the open survey of that person (sent in the
-// last five days); the message after it, within a day, is the reason. Anything else is just a conversation.
-export const captureNpsAnswer = async (contactId: number, body: string): Promise<void> => {
+// last five days, on the same connection); the message after it, within a day, is the reason. Anything else is just a conversation.
+export const captureNpsAnswer = async (contactId: number, body: string, whatsappId?: number | null): Promise<void> => {
   const text = String(body || "").trim();
   if (!text) return;
   const bare = text.match(/^(10|[0-9])\s*[.!]?$/);
@@ -153,16 +190,16 @@ export const captureNpsAnswer = async (contactId: number, body: string): Promise
   // the student tapped a group: the exact score is asked next (buttons or a list)
   const group = groupOfLabel(text);
   if (group) {
-    const open = await NpsSurvey.findOne({ where: { contactId, status: "sent", sentAt: { [Op.gt]: new Date(Date.now() - 5 * 86400000) } }, order: [["sentAt", "DESC"]] });
+    const open = await openSurvey(contactId, whatsappId);
     if (!open) return;
     await open.update({ scoreGroup: group });
     const lead = await Lead.findByPk(open.leadId);
     if (!lead) return;
     const step = SECOND_STEP[group];
     try {
-      const { contact, whatsapp } = await resolveLeadTarget(lead, lead.onboardingTutorId || lead.ownerId || 0, null);
+      const { contact, whatsapp } = await surveyTarget(lead, open);
       await SendToContact({ contact, whatsapp, body: step.text, choices: { question: step.text, options: step.options.map(o => ({ id: `n-${o}`, label: o })) } });
-      await logRetention({ lead, contactId: contact.id, kind: "nps", body: step.text, surveyId: open.id, withButtons: whatsapp.channel === "whatsapp_cloud" });
+      await logRetention({ lead, contactId: contact.id, kind: "nps", body: step.text, surveyId: open.id, withButtons: whatsapp.channel === "whatsapp_cloud", whatsappId: whatsapp.id });
     } catch (err) {
       logger.warn(`NPS second step not sent: ${(err as Error).message}`);
     }
@@ -170,7 +207,7 @@ export const captureNpsAnswer = async (contactId: number, body: string): Promise
   }
 
   if (bare) {
-    const survey = await NpsSurvey.findOne({ where: { contactId, status: "sent", sentAt: { [Op.gt]: new Date(Date.now() - 5 * 86400000) } }, order: [["sentAt", "DESC"]] });
+    const survey = await openSurvey(contactId, whatsappId);
     if (!survey) return;
     const score = Number(bare[1]);
     await survey.update({ score, status: "answered", answeredAt: new Date(), awaitingComment: true });
@@ -179,14 +216,14 @@ export const captureNpsAnswer = async (contactId: number, body: string): Promise
     const category = categoryOf(score);
     await addActivity(lead.id, null, "system", `Nota na pesquisa de satisfação: ${score} (${category === "promoter" ? "promotor" : category === "neutral" ? "neutro" : "detrator"})`);
     try {
-      const { contact, whatsapp } = await resolveLeadTarget(lead, lead.onboardingTutorId || lead.ownerId || 0, null);
+      const { contact, whatsapp } = await surveyTarget(lead, survey);
       await SendToContact({ contact, whatsapp, body: THANKS });
     } catch (err) {
       logger.warn(`NPS thanks not sent: ${(err as Error).message}`);
     }
     if (category === "detractor") {
       await setLabel(lead, DETRACTOR_LABEL, true);
-      // the team is told at once (the Retenção screen shows it and the tutor gets a task)
+      // the team is told at once (the Retenção screen shows it and the tutor gets a task); the conversation stays open in the queue
       getIO().emit("npsAlert", { leadId: lead.id, leadName: lead.name, score, tutorId: lead.onboardingTutorId || null, ownerId: lead.ownerId || null });
       const owner = lead.onboardingTutorId || lead.ownerId;
       if (owner) {
@@ -194,16 +231,18 @@ export const captureNpsAnswer = async (contactId: number, body: string): Promise
       }
     } else {
       await setLabel(lead, DETRACTOR_LABEL, false);
+      await closeRelationshipTicket(contactId, whatsappId);
     }
     await emitEvent("nps.answered", { leadId: lead.id, contactId, score, category });
     return;
   }
 
   // the reason, in the next message
-  const waiting = await NpsSurvey.findOne({ where: { contactId, awaitingComment: true, answeredAt: { [Op.gt]: new Date(Date.now() - 86400000) } }, order: [["answeredAt", "DESC"]] });
+  const waiting = await NpsSurvey.findOne({ where: { contactId, awaitingComment: true, answeredAt: { [Op.gt]: new Date(Date.now() - 86400000) }, ...(whatsappId ? { [Op.or]: [{ whatsappId: null }, { whatsappId }] } : {}) } as any, order: [["answeredAt", "DESC"]] });
   if (waiting && text.length >= 3) {
     await waiting.update({ comment: text.slice(0, 1000), awaitingComment: false });
     await addActivity(waiting.leadId, null, "system", `Motivo da nota na pesquisa de satisfação: ${text.slice(0, 200)}`);
+    if (categoryOf(Number(waiting.score)) !== "detractor") await closeRelationshipTicket(contactId, whatsappId);
   }
 };
 

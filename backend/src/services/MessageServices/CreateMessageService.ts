@@ -112,7 +112,7 @@ const CreateMessageService = async ({
     if (!message.fromMe) {
       hookInbound(message.ticket.contactId, message.ticket.whatsapp?.channel);
       // a bare number from 0 to 10 answers the satisfaction survey that was sent to this person
-      if (message.mediaType === "chat") captureNpsAnswer(message.ticket.contactId, message.body).catch(() => undefined);
+      if (message.mediaType === "chat") captureNpsAnswer(message.ticket.contactId, message.body, message.ticket.whatsappId).catch(() => undefined);
     } else if (message.ticket.userId) {
       hookHumanReply(message.ticket.contactId, message.ticket.userId);
     }

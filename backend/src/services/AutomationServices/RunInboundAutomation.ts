@@ -1,3 +1,4 @@
+import { isRelationshipConnection } from "../RelationshipServices/Relationship";
 import { subHours } from "date-fns";
 
 import ChatbotNode from "../../models/ChatbotNode";
@@ -384,6 +385,9 @@ const RunInboundAutomation = async ({ ticketId, body }: Input): Promise<void> =>
   try {
     const ticket = await ShowTicketService(ticketId);
     if (ticket.isGroup || ticket.status === "closed" || ticket.userId) return;
+    // the institution's own number belongs to the relationship team: no flow, chatbot, AI agent, greeting or queue menu answers
+    // there (the satisfaction survey is read by the system and everything else waits in the queue for a person)
+    if (await isRelationshipConnection(ticket.whatsappId)) return;
     if (ticket.botReminderAt) await ticket.update({ botReminderAt: null });
 
     const whatsapp = await ShowWhatsAppService(ticket.whatsappId);

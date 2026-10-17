@@ -26,6 +26,7 @@ export const logRetention = async (o: {
   surveyId?: number | null;
   error?: string | null;
   withButtons?: boolean;
+  whatsappId?: number | null;
 }): Promise<void> => {
   try {
     await RetentionMessage.create({
@@ -39,7 +40,8 @@ export const logRetention = async (o: {
       surveyId: o.surveyId || null,
       status: o.error ? "failed" : "sent",
       error: o.error ? sendErrorText(o.error).slice(0, 400) : null,
-      withButtons: !!o.withButtons
+      withButtons: !!o.withButtons,
+      whatsappId: o.whatsappId || null
     } as any);
   } catch (err) {
     logger.warn(`Retention log not written: ${(err as Error).message}`);
@@ -60,7 +62,8 @@ const SEND_ERRORS: Record<string, string> = {
   ERR_CONTACT_OPTED_OUT: "O aluno pediu para não receber mensagens (SAIR).",
   ERR_CLOUD_WINDOW_CLOSED: "Fora das 24 horas da API oficial do WhatsApp: só sai por modelo aprovado. Informe um modelo na pesquisa ou espere o aluno escrever.",
   ERR_RETENTION_DAILY_LIMIT: "Limite diário de envios desta conexão por QR Code atingido. Continue amanhã para proteger o número.",
-  ERR_RETENTION_COLD: "Esta pessoa nunca respondeu e a conexão por QR Code está em modo seguro. Use a API oficial ou espere ela escrever.",
+  ERR_RETENTION_COLD: "Esta pessoa nunca escreveu para este número e a conexão por QR Code está em modo seguro. Use a API oficial ou espere ela escrever.",
+  ERR_RELATIONSHIP_WAPP_OFFLINE: "O número do relacionamento está desconectado. Reconecte em Conexões; o envio não sai pelo número do tutor.",
   ERR_RATE_LIMITED: "Envio em ritmo alto demais para proteger o número. Tente de novo em alguns minutos.",
   ERR_SENDING_WAPP_MSG: "O WhatsApp não aceitou o envio.",
   ERR_NO_DEF_WAPP_FOUND: "Não há conexão de WhatsApp disponível.",
@@ -82,12 +85,12 @@ export const assertCanSend = async (contact: Contact, whatsapp: Whatsapp, opts: 
   if (contact.optOut) throw new AppError("ERR_CONTACT_OPTED_OUT");
   if (isUnofficial(whatsapp)) {
     // a number that never answered is not written to by QR Code in the safe mode (what gets numbers banned)
-    if (whatsapp.riskMode !== "relaxed" && !(await hasConversed(contact.id))) throw new AppError("ERR_RETENTION_COLD");
-    const today = await RetentionMessage.count({ where: { status: "sent", createdAt: { [Op.gte]: startOfTodayApp() } } });
+    if (whatsapp.riskMode !== "relaxed" && !(await hasConversed(contact.id, whatsapp.id))) throw new AppError("ERR_RETENTION_COLD");
+    const today = await RetentionMessage.count({ where: { status: "sent", whatsappId: whatsapp.id, createdAt: { [Op.gte]: startOfTodayApp() } } });
     if (today + (await sentTodayByCampaigns(whatsapp.id)) >= dailyColdLimit(whatsapp) * 2) throw new AppError("ERR_RETENTION_DAILY_LIMIT");
     await gap(whatsapp.id);
   }
-  const outside = whatsapp.channel === "whatsapp_cloud" ? !(await insideServiceWindow(contact.id)) : false;
+  const outside = whatsapp.channel === "whatsapp_cloud" ? !(await insideServiceWindow(contact.id, whatsapp.id)) : false;
   if (outside && !opts.allowTemplate) throw new AppError("ERR_CLOUD_WINDOW_CLOSED");
   return { outsideWindow: outside };
 };
