@@ -43,7 +43,7 @@ const EnrollDialog = ({ open, lead, onClose, onDone }) => {
   }, [v.poloId]);
 
   const first = (lead.name || "").split(" ")[0];
-  const needsCpf = v.fee !== "paid" && !(detail && detail.cpf);
+  const needsCpf = (v.fee === "now" || v.fee === "later") && !(detail && detail.cpf);
   const invalid = !v.poloId || (v.fee === "later" && !v.feeDueDate) || needsCpf;
 
   const confirm = async () => {
@@ -95,7 +95,9 @@ const EnrollDialog = ({ open, lead, onClose, onDone }) => {
             <FormControlLabel value="paid" control={<Radio color="primary" />} label="Já foi paga (ou será tratada fora do sistema)" />
             <FormControlLabel value="now" control={<Radio color="primary" />} label="Gerar a cobrança agora (boleto com Pix)" />
             <FormControlLabel value="later" control={<Radio color="primary" />} label="Pagar depois: data combinada com o aluno" />
+            <FormControlLabel value="exempt" control={<Radio color="primary" />} label="Matrícula isenta (não cobrar a taxa)" />
           </RadioGroup>
+          {v.fee === "exempt" && <div className={classes.hint} style={{ margin: "0 0 8px" }}>Nenhuma cobrança é gerada. O aluno fica com a etiqueta “Matrícula isenta”.</div>}
           {v.fee === "later" && (
             <TextField fullWidth type="date" variant="outlined" margin="dense" label="Vencimento combinado" InputLabelProps={{ shrink: true }} value={v.feeDueDate} onChange={(e) => setV({ ...v, feeDueDate: e.target.value })}
               helperText="Você recebe um aviso para enviar o boleto alguns dias antes do vencimento." />

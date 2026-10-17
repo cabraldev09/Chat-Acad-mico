@@ -1122,7 +1122,7 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(billet.calls.some(c => c.method === "PUT" && c.path.endsWith("/cancel")), "Efí not told");
     });
     await test("an open charge can be cancelled at Efí", async () => {
-      const l = await mkLead("Aluno Cancela", "5511955550003");
+      const l = await mkLead("Aluno Cancela", "5511955550003", { ownerId: 1 });
       await http.put(`/leads/${l.id}`, { cpf: "935.411.347-80" }, auth());
       const p = (await http.post(`/leads/${l.id}/payments`, {}, auth())).data;
       const r = await http.post(`/payments/${p.id}/cancel`, {}, auth());
@@ -1131,7 +1131,7 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.post(`/payments/${p.id}/cancel`, {}, auth())).status === 400, "cancelled twice");
     });
     await test("the Pix code and QR image are sent to the candidate in the conversation", async () => {
-      const l = await mkLead("Aluno Envio", "5511955550004");
+      const l = await mkLead("Aluno Envio", "5511955550004", { ownerId: 1 });
       await http.put(`/leads/${l.id}`, { cpf: "111.444.777-35".replace("111.444.777-35", "390.533.447-05") }, auth());
       const p = (await http.post(`/leads/${l.id}/payments`, {}, auth())).data;
       const before = graph.sent.length;
@@ -3022,6 +3022,45 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.get(`/leads/${mine.id}`, asUser(tutorToken))).status === 403, "tutor read a sales lead");
     });
     // ----------------------------------------------- enrollment -> tutor
+    await test("Matrícula isenta: the consultant informs it at the confirmation instead of charging; no charge is created; a payment that arrives anyway wins", async () => {
+      const mk = async (name, email, role) => (await http.post("/users", { name, email, password: "senha123", role }, auth())).data;
+      const tutorX = await mk("Tutora Isenta", "tutorx@isenta.test", "tutor");
+      const consX = await mk("Consultor Isenta", "consultorx@isenta.test", "consultor");
+      const poloX = (await http.post("/polos", { name: "Polo Isenta", code: "ISE1", state: "RO" }, auth())).data;
+      await http.put(`/polos/${poloX.id}/members`, { members: [{ userId: tutorX.id, role: "tutoria" }, { userId: consX.id, role: "comercial" }] }, auth());
+      const consTok = (await http.post("/auth/login", { email: "consultorx@isenta.test", password: "senha123" })).data.token;
+      const names = (table, col, id) => sql(`SELECT COALESCE(STRING_AGG(t.name, ',' ORDER BY t.name), '') FROM ${table} x JOIN Tags t ON t.id=x.tagId WHERE x.${col}=${id}`);
+      const enrolled = async (name, phone) => {
+        const lead = await mkLead(name, phone, { ownerId: consX.id });
+        const opened = await http.post(`/leads/${lead.id}/open-ticket`, { whatsappId: cid }, auth());
+        assert(opened.status === 200 || opened.status === 201, `open-ticket ${opened.status}`);
+        return lead;
+      };
+
+      // 1) a consultant confirms the enrollment informing that there is no fee: no charge, the label, the record
+      const a = await enrolled("Aluno Isento", "5511955579201");
+      const r = await http.post(`/leads/${a.id}/enroll`, { poloId: poloX.id, tutorId: "auto", fee: "exempt", whatsappId: cid }, asUser(consTok));
+      assert(r.status === 200, `exempt enrollment ${r.status} ${JSON.stringify(r.data).slice(0, 160)}`);
+      assert(sql(`SELECT COUNT(*) FROM Payments WHERE leadId=${a.id}`) === "0", "a charge was created for an exempt enrollment");
+      assert(names("LeadTags", "leadId", a.id) === "Matrícula isenta", `lead labels: ${names("LeadTags", "leadId", a.id)}`);
+      const aContact = sql(`SELECT contactId FROM Leads WHERE id=${a.id}`);
+      if (aContact) assert(names("ContactTags", "contactId", aContact) === "Matrícula isenta", "the contact has no exempt label");
+      assert(/Matrícula isenta/.test(sql(`SELECT body FROM LeadActivities WHERE leadId=${a.id} AND body LIKE '%isenta%' LIMIT 1`)), "no record of the waiver");
+      // moving the card never turns it into pending
+      await http.put(`/leads/${a.id}/stage`, { stageId: Number(sql(`SELECT id FROM LeadStages WHERE type='won' ORDER BY position LIMIT 1`)) }, auth());
+      assert(names("LeadTags", "leadId", a.id) === "Matrícula isenta", "the exempt label was overwritten by the stage change");
+
+      // 2) a payment that arrives anyway wins over the waiver (the money was received)
+      await http.put(`/leads/${a.id}`, { cpf: cpfFor(423456780) }, auth());
+      const rc = await http.post(`/leads/${a.id}/payments`, { method: "bolix", dueDate: ymdPlus(2), amount: "70" }, auth());
+      assert(rc.status === 201, `charge ${rc.status}`);
+      const secret = (await http.get("/payments/efi/settings", auth())).data.webhookUrl.split("/").pop();
+      const chargeId = sql(`SELECT chargeId FROM Payments WHERE id=${rc.data.id}`);
+      billet.notifications.exemptPaid = [chargeId];
+      billet.charges[chargeId].status = "paid";
+      await http.post(`/webhooks/efi/${secret}/billet`, "notification=exemptPaid", { headers: { "content-type": "application/x-www-form-urlencoded" } });
+      await waitFor(() => names("LeadTags", "leadId", a.id) === "Taxa paga", 8000, "Taxa paga over the waiver");
+    });
     await test("confirming the enrollment hands the student to the tutor and separates the conversations", async () => {
       const mk = async (name, email, role) => (await http.post("/users", { name, email, password: "senha123", role }, auth())).data;
       const tA = await mk("Tutora A", "tutora@matricula.test", "tutor");

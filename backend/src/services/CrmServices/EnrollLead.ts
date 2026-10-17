@@ -17,7 +17,7 @@ import Whatsapp from "../../models/Whatsapp";
 import { pickUserForQueue } from "../AutomationServices/AutoAssignTicket";
 import syncPoloQueues from "../PoloServices/SyncPoloQueues";
 import { createEnrollmentCharge } from "../PaymentServices/EnrollmentPayments";
-import { markFeePaid, markFeePending } from "../PaymentServices/FeeTags";
+import { markFeeExempt, markFeePaid, markFeePending } from "../PaymentServices/FeeTags";
 import ShowTicketService from "../TicketServices/ShowTicketService";
 import UpdateTicketService from "../TicketServices/UpdateTicketService";
 import dispatchWebhook from "../WebhookServices/DispatchWebhook";
@@ -27,7 +27,8 @@ export interface EnrollInput {
   poloId: number;
   tutorId?: number | "auto" | null;
   note?: string;
-  fee?: "paid" | "now" | "later";
+  // "exempt": the consultant informs that there is no fee to charge (no charge, label "Matrícula isenta")
+  fee?: "paid" | "now" | "later" | "exempt";
   feeDueDate?: string | null;
   // ignored: kept only so older screens that still send it do not break
   introMessage?: string | null;
@@ -181,9 +182,14 @@ const enrollLead = async (lead: Lead, actorId: number, input: EnrollInput) => {
     return { ...(await enrollLeadCore(locked, actorId, input)), repeated: false };
   });
   // the label of the fee: paid when it was declared paid, otherwise "Taxa pendente" until the payment is confirmed
-  if (!result.repeated && input.fee) await (input.fee === "paid" ? markFeePaid : markFeePending)(result.lead);
+  if (!result.repeated && input.fee) {
+    if (input.fee === "exempt") {
+      await markFeeExempt(result.lead);
+      await addActivity(result.lead.id, actorId, "system", "Matrícula isenta: informado na confirmação que o aluno não paga a taxa (nenhuma cobrança foi gerada).");
+    } else await (input.fee === "paid" ? markFeePaid : markFeePending)(result.lead);
+  }
   // Network calls happen after the atomic local enrollment, never while holding the row lock.
-  if (!result.repeated && input.fee && input.fee !== "paid") {
+  if (!result.repeated && input.fee && input.fee !== "paid" && input.fee !== "exempt") {
     try {
       await createEnrollmentCharge(result.lead, actorId, { method: "bolix", dueDate: input.fee === "later" ? input.feeDueDate || null : null });
     } catch (err) { result.warnings.push(`A cobrança da taxa não foi gerada (${err.message}). Gere pela aba Matrícula.`); }
