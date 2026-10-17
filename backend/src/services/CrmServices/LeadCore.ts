@@ -52,8 +52,13 @@ export const addActivity = async (
     meta: meta ? JSON.stringify(meta) : null
   });
 
-const openStages = () =>
-  LeadStage.findAll({ where: { type: "open" }, order: [["position", "ASC"]] });
+// The open columns of the regular funnel, in order. The column of the people an affiliate referred is not one of them: it
+// comes before all the others only to hold those people until the first contact, so "the first column" of an ordinary
+// lead (a person from the history who wrote again, the score by stage, the advance after the first reply) is the next one.
+const openStages = async () => {
+  const lane = await affiliateStageId();
+  return LeadStage.findAll({ where: { type: "open", ...(lane ? { id: { [Op.ne]: lane } } : {}) }, order: [["position", "ASC"]] });
+};
 
 export const rescore = async (lead: Lead): Promise<void> => {
   const [stage, open] = await Promise.all([LeadStage.findByPk(lead.stageId), openStages()]);
@@ -301,6 +306,11 @@ export const changeStage = async (
   await dispatchWebhook("lead.stage_changed", payload);
   fire("stage.changed", { leadId: lead.id, contactId: lead.contactId, stageId: to.id });
   if (to.type === "won") fire("enrollment.confirmed", { leadId: lead.id, contactId: lead.contactId });
+  // enrolled with the fee not recorded as paid: "Taxa pendente" (the payment confirmed later turns it into "Taxa paga")
+  if (to.type === "won") {
+    const { markFeePending } = await import("../PaymentServices/FeeTags");
+    await markFeePending(lead);
+  }
   if (to.type === "won") await dispatchWebhook("lead.won", payload);
   if (to.type === "lost") await dispatchWebhook("lead.lost", payload);
   return fresh;
@@ -419,9 +429,10 @@ export const hookHumanReply = async (contactId: number, userId: number): Promise
     if (claimed) {
       await addActivity(lead.id, userId, "whatsapp", "Primeiro contato realizado");
       if ((await getSetting("crm_autoadvance", "true")) !== "false") {
-        const open = await openStages();
-        const idx = open.findIndex(s => s.id === lead.stageId);
-        if (idx === 0 && open[1]) await changeStage(lead.id, open[1].id, userId);
+        const [open, lane] = await Promise.all([openStages(), affiliateStageId()]);
+        // the first reply moves a lead out of the first column (or out of the affiliate column) to the next one
+        const waiting = lead.stageId === lane || open.findIndex(s => s.id === lead.stageId) === 0;
+        if (waiting && open[1]) await changeStage(lead.id, open[1].id, userId);
       }
     }
     await rescore(lead);
