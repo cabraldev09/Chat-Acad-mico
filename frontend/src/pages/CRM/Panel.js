@@ -29,6 +29,13 @@ const useStyles = makeStyles((theme) => {
   const soft = dark ? "rgba(255,255,255,.05)" : "#f1f4f8";
   return {
     scroll: { flex: 1, overflowY: "auto", overflowX: "hidden", padding: theme.spacing(1, 1, 3), ...theme.scrollbarStyles },
+    // changing a filter: the numbers dim and settle back instead of jumping (nothing moves, so the page keeps its place)
+    content: {
+      transition: "opacity .28s ease, filter .28s ease",
+      "@media (prefers-reduced-motion: reduce)": { transition: "none" },
+    },
+    contentBusy: { opacity: 0.45, filter: "saturate(.8)", pointerEvents: "none" },
+    progressSlot: { height: 3, flex: "none", overflow: "hidden" },
     label: { fontSize: 13, color: theme.palette.text.secondary, fontWeight: 500 },
     chips: { display: "inline-flex", gap: 4, padding: 3, borderRadius: 12, background: soft, border: `1px solid ${line}` },
     chip: {
@@ -39,7 +46,7 @@ const useStyles = makeStyles((theme) => {
     sectionHead: { display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", margin: theme.spacing(2.5, 0, 1) },
     sectionTitle: { fontSize: 16, fontWeight: 700, letterSpacing: "-0.01em" },
     sectionHint: { fontSize: 12.5, color: theme.palette.text.secondary },
-    alerts: { display: "grid", gap: theme.spacing(1.25), gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))" },
+    alerts: { display: "grid", gap: theme.spacing(1.25), gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))" },
     alert: {
       padding: theme.spacing(1.5, 2), display: "flex", alignItems: "center", gap: 12, cursor: "pointer", textAlign: "left", transition: "transform .15s",
       "&:hover": { transform: "translateY(-1px)" }, "&:focus-visible": { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: 2 },
@@ -199,15 +206,15 @@ const Panel = () => {
               <button key={label} type="button" className={`${classes.chip} ${from === start && to === todayStr() ? classes.chipOn : ""}`} onClick={() => { setFrom(start); setTo(todayStr()); }}>{label}</button>
             ))}
           </div>
-          <TextField size="small" type="date" label="De" variant="outlined" InputLabelProps={{ shrink: true }} value={from} onChange={(e) => setFrom(e.target.value)} />
-          <TextField size="small" type="date" label="Até" variant="outlined" InputLabelProps={{ shrink: true }} value={to} onChange={(e) => setTo(e.target.value)} />
-          <TextField select size="small" label="Consultor" variant="outlined" value={ownerId} onChange={(e) => setOwnerId(e.target.value)} style={{ minWidth: 150 }}>
+          <TextField size="small" type="date" label="De" variant="outlined" InputLabelProps={{ shrink: true }} value={from} onChange={(e) => setFrom(e.target.value)} style={{ width: 150 }} />
+          <TextField size="small" type="date" label="Até" variant="outlined" InputLabelProps={{ shrink: true }} value={to} onChange={(e) => setTo(e.target.value)} style={{ width: 150 }} />
+          <TextField select size="small" label="Consultor" variant="outlined" value={ownerId} onChange={(e) => setOwnerId(e.target.value)} style={{ minWidth: 130 }}>
             <MenuItem value="">Todos</MenuItem>{users.map((u) => (<MenuItem key={u.id} value={u.id}>{u.name}</MenuItem>))}
           </TextField>
-          <TextField select size="small" label="Curso" variant="outlined" value={courseId} onChange={(e) => setCourseId(e.target.value)} style={{ minWidth: 160 }}>
+          <TextField select size="small" label="Curso" variant="outlined" value={courseId} onChange={(e) => setCourseId(e.target.value)} style={{ minWidth: 130 }}>
             <MenuItem value="">Todos</MenuItem>{courses.map((c) => (<MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>))}
           </TextField>
-          {canExport && <Button variant="outlined" startIcon={<Download size={16} />} onClick={(e) => setExportEl(e.currentTarget)}>Exportar relatório</Button>}
+          {canExport && <Button variant="outlined" startIcon={<Download size={16} />} onClick={(e) => setExportEl(e.currentTarget)}>Exportar</Button>}
           <Menu anchorEl={exportEl} open={Boolean(exportEl)} onClose={() => setExportEl(null)} getContentAnchorEl={null} anchorOrigin={{ vertical: "bottom", horizontal: "right" }} transformOrigin={{ vertical: "top", horizontal: "right" }}>
             <MenuItem onClick={() => exportReport("owner")}>Por consultor (planilha)</MenuItem>
             <MenuItem onClick={() => exportReport("polo")}>Por polo (planilha)</MenuItem>
@@ -215,7 +222,7 @@ const Panel = () => {
         </MainHeaderButtonsWrapper>
       </MainHeader>
 
-      {loading && d && <LinearProgress />}
+      <div className={classes.progressSlot}>{loading && d && <LinearProgress />}</div>
       {failed && !d && (
         <GlowCard className={classes.error}>
           <Typography>Não foi possível carregar o painel.</Typography>
@@ -224,6 +231,7 @@ const Panel = () => {
       )}
       {d && (
         <div className={classes.scroll}>
+         <div className={`${classes.content} ${loading ? classes.contentBusy : ""}`} aria-busy={loading}>
           <SectionHead title="Pontos de atenção" hint="Situação de agora, não muda com o período escolhido" />
           <div className={classes.alerts}>
             {alerts.map(([Icon, label, value, fg, bg, to2]) => (
@@ -418,6 +426,7 @@ const Panel = () => {
               </Table>
             </GlowCard>
           </div>
+         </div>
         </div>
       )}
       {!d && !failed && <LinearProgress />}
