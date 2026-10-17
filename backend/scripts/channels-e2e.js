@@ -4197,8 +4197,8 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(fromList.total === 2 && fromList.unmatched === 1, `list ${JSON.stringify(fromList)}`);
       assert(fromList.items.some(i => i.kind === "lead" && i.leadId === Number(daviLead)) && fromList.items.some(i => i.kind === "number" && i.number === "5511910000777" && i.name === "Visita Sem Cadastro"), "list items");
       // the contacts of the system do not bring groups, friends or the team
-      const contacts = (await aud({ source: "contacts", search: "Selecion" })).data;
-      assert(contacts.items.length >= 2 && contacts.items.every(i => !String(i.number).includes("@")), `contacts ${JSON.stringify(contacts).slice(0, 200)}`);
+      const contacts = (await aud({ source: "contacts", search: daviNumber.slice(-8) })).data;
+      assert(contacts.items.length === 1 && contacts.items[0].kind === "lead" && contacts.items[0].leadId === Number(daviLead) && !String(contacts.items[0].number).includes("@"), `contacts ${JSON.stringify(contacts).slice(0, 200)}`);
 
       // who is outside the CRM only gets the text written by hand, and only from the management
       const person = { number: "5511910000777", name: "Visita Sem Cadastro" };

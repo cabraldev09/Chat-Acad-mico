@@ -202,7 +202,13 @@ export const sendBulk = async (req: Request, res: Response): Promise<Response> =
     const label = t.name || t.number || "Contato";
     try {
       // eslint-disable-next-line no-await-in-loop
-      const whatsapp = whatsappId ? await Whatsapp.findByPk(whatsappId) : await GetDefaultWhatsApp(uid(req));
+      let whatsapp = whatsappId ? await Whatsapp.findByPk(whatsappId) : await GetDefaultWhatsApp(uid(req));
+      // the default may be a Telegram or Instagram connection: the message of retention goes by WhatsApp
+      if (!whatsapp || !["whatsapp", "whatsapp_cloud"].includes(whatsapp.channel || "whatsapp")) {
+        if (whatsappId) throw new AppError("ERR_NO_DEF_WAPP_FOUND");
+        // eslint-disable-next-line no-await-in-loop
+        whatsapp = await Whatsapp.findOne({ where: { channel: ["whatsapp", "whatsapp_cloud"], status: "CONNECTED" }, order: [["isDefault", "DESC"], ["id", "ASC"]] });
+      }
       if (!whatsapp) throw new AppError("ERR_NO_DEF_WAPP_FOUND");
       // eslint-disable-next-line no-await-in-loop
       const contact = t.contactId ? await Contact.findByPk(t.contactId) : await resolveOutboundContact(whatsapp, String(t.number), t.name || "");
