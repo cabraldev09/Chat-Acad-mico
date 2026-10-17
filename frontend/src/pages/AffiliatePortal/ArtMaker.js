@@ -91,6 +91,14 @@ const wrap = (ctx, text, maxW) => {
   return lines;
 };
 
+// the font size at which the longest word fits in `maxW`: a word is never cut in two ("Administraç / ão")
+const fitWords = (ctx, text, weight, maxW, size, min = 20) => {
+  let sz = size;
+  const widest = () => { ctx.font = `${weight} ${sz}px ${FONT}`; return Math.max(0, ...String(text).split(/\s+/).map((w) => ctx.measureText(w).width)); };
+  while (widest() > maxW && sz > min) sz -= 1;
+  return sz;
+};
+
 const roundRect = (ctx, x, y, w, h, r) => {
   ctx.beginPath();
   ctx.moveTo(x + r, y);
@@ -209,7 +217,8 @@ const background = (ctx, W, H, t, glowX) => {
 };
 
 // the headline, in lines that fit; returns where it ends
-const headline = (ctx, t, phrase, x, y, maxW, size, { align = "left", maxLines = 4 } = {}) => {
+const headline = (ctx, t, phrase, x, y, maxW, size0, { align = "left", maxLines = 4 } = {}) => {
+  const size = fitWords(ctx, phrase, 800, maxW, size0);
   ctx.font = `800 ${size}px ${FONT}`;
   const lines = wrap(ctx, phrase, maxW).slice(0, maxLines);
   ctx.save();
@@ -232,8 +241,9 @@ const offer = (ctx, t, { x, y, maxW, limit, story, curso, courseTags }) => {
     ctx.fillStyle = t.sub;
     ctx.fillText("Curso a distância", x + 4, by + (story ? 30 : 24));
     by += story ? 52 : 40;
-    ctx.font = `800 ${story ? 62 : 46}px ${FONT}`;
-    const lh0 = story ? 70 : 54;
+    const fs0 = fitWords(ctx, curso, 800, maxW - 64, story ? 62 : 46);
+    ctx.font = `800 ${fs0}px ${FONT}`;
+    const lh0 = Math.round(fs0 * 1.13);
     const room = Math.max(1, Math.floor((limit - by - 36) / lh0));
     const all = wrap(ctx, curso, maxW - 64);
     const lns = all.slice(0, Math.min(3, room));
@@ -251,7 +261,7 @@ const offer = (ctx, t, { x, y, maxW, limit, story, curso, courseTags }) => {
     ctx.fillStyle = "#0b4279";
     ctx.fillRect(x, by + 26, 10, bh - 52);
     ctx.fillStyle = "#0b1a2e";
-    lns.forEach((l, i) => ctx.fillText(l, x + 36, by + 18 + (story ? 56 : 42) + i * lh0));
+    lns.forEach((l, i) => ctx.fillText(l, x + 36, by + 18 + Math.round(fs0 * 0.9) + i * lh0));
     return by + bh + 22;
   }
   if (courseTags.length) {
