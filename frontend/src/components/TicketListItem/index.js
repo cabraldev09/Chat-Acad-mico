@@ -88,8 +88,10 @@ const useStyles = makeStyles((theme) => {
       color: c.badgeText,
     },
     meta: { display: "flex", alignItems: "center", gap: 6, minWidth: 0, flexWrap: "nowrap", overflow: "hidden" },
+    // the labels share the line: when they do not all fit, each one gets shorter with "..." instead of the last being cut in half
     pill: {
-      flex: "none",
+      flex: "0 1 auto",
+      minWidth: 0,
       maxWidth: 110,
       overflow: "hidden",
       textOverflow: "ellipsis",
@@ -353,6 +355,11 @@ const TicketListItem = ({ ticket }) => {
               {t.name}
             </span>
           ))}
+          {(ticket.tags || []).length > 2 && (
+            <Tooltip arrow title={(ticket.tags || []).slice(2).map((t) => t.name).join(", ")}>
+              <span className={classes.pill} style={{ flex: "none" }}>+{ticket.tags.length - 2}</span>
+            </Tooltip>
+          )}
         </div>
       </div>
     </div>
