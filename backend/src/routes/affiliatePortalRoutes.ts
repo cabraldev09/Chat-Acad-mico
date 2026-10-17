@@ -14,6 +14,7 @@ import { getPortalTexts } from "../services/AffiliateServices/Bonus";
 import { inWindow, isVisibleTo, referralUrl, releasedIds } from "../helpers/Affiliates";
 import { normalizePhone } from "../helpers/Phone";
 import { statsFor } from "../services/AffiliateServices/Stats";
+import { clicksFor } from "../services/AffiliateServices/Clicks";
 import { upsertLead } from "../services/CrmServices/LeadCore";
 import { AFFILIATE_DIR } from "../config/affiliateUpload";
 import { sendFile } from "../controllers/AffiliateMaterialController";
@@ -152,6 +153,7 @@ router.get("/:token", loadAffiliate, async (req: Request, res: Response) => {
     referralUrl: referralUrl(aff.refCode),
     externalLink: aff.externalLink || null,
     stats: stats && {
+      clicks: (await clicksFor([aff.id])).get(aff.id),
       referrals: stats.referrals,
       enrolled: stats.enrolled,
       conversion: stats.conversion,

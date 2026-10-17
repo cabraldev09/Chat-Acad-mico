@@ -7,8 +7,12 @@ import {
 } from "lucide-react";
 
 import { getBackendUrl } from "../../config";
-import NumberTicker from "../../components/NumberTicker";
 import logo from "../../assets/logo-cruzeiro-color.svg";
+import BrandStar from "../../components/BrandStar";
+import { CopyButton } from "./shared";
+import PromoPanel, { Messages } from "./PromoPanel";
+import ArtLibrary from "./ArtLibrary";
+import { Funnel, HeroCard, ShareBar } from "./HomeParts";
 import "./central.css";
 
 // Public page of one affiliate: no login, no cookies. The token in the address is the access. It never shows prices.
@@ -47,47 +51,6 @@ const daysLeft = (end) => {
   const d = Math.ceil((new Date(end) - new Date()) / 86400000);
   if (d < 0) return null;
   return d === 0 ? "termina hoje" : d === 1 ? "termina amanhã" : `termina em ${d} dias`;
-};
-
-const copyText = async (text, ok = "Copiado!") => {
-  try {
-    if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(text);
-    else {
-      const ta = document.createElement("textarea");
-      ta.value = text;
-      ta.style.position = "fixed";
-      ta.style.opacity = "0";
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand("copy");
-      document.body.removeChild(ta);
-    }
-    toast.success(ok);
-    return true;
-  } catch (e) {
-    toast.error("Não foi possível copiar. Selecione o texto e copie à mão.");
-    return false;
-  }
-};
-
-const CopyButton = ({ text, label = "Copiar mensagem", ok, className = "ca-btn", onCopied }) => {
-  const [done, setDone] = useState(false);
-  return (
-    <button
-      type="button"
-      className={`${className}${done ? " is-done" : ""}`}
-      onClick={async () => {
-        if (await copyText(text, ok)) {
-          setDone(true);
-          if (onCopied) onCopied();
-          setTimeout(() => setDone(false), 1800);
-        }
-      }}
-    >
-      {done ? <Check size={16} /> : <Copy size={16} />}
-      {done ? "Copiado" : label}
-    </button>
-  );
 };
 
 const isImage = (m) => m.hasFile && /^image\//.test(m.mimeType || "");
@@ -216,7 +179,7 @@ const AffiliatePortal = ({ match }) => {
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState("all");
   const [colFilter, setColFilter] = useState("all");
-  const [view, setView] = useState("materials"); // materials | courses
+  const [view, setView] = useState("library"); // library | materials | courses
   const [format, setFormat] = useState("");
   const [sheet, setSheet] = useState(null);
 
@@ -253,7 +216,6 @@ const AffiliatePortal = ({ match }) => {
     materials.forEach((m) => { if (m.collection && COLLECTIONS[m.collection]) (map[m.collection] = map[m.collection] || []).push(m); });
     return map;
   }, [materials]);
-  const banners = useMemo(() => materials.filter((m) => m.kind === "banner" && isImage(m)), [materials]);
   const coverOf = (key) => (byCollection[key] || []).find((m) => isImage(m));
   const kinds = useMemo(() => [...new Set(materials.map((m) => m.kind))], [materials]);
 
@@ -278,7 +240,7 @@ const AffiliatePortal = ({ match }) => {
       <div className="ca-root">
         <div className="ca-center">
           <div>
-            <Lock size={40} color="#0693E3" />
+            <BrandStar variant="emblem" size={92} float shine style={{ marginBottom: 10 }} />
             <h1 className="ca-h2">{state === "invalid" ? "Este link não está disponível" : "Não conseguimos abrir agora"}</h1>
             <p className="ca-lead" style={{ margin: "12px auto" }}>
               {state === "invalid" ? "Ele pode ter sido trocado ou pausado. Peça um link novo ao seu consultor." : "Confira sua internet e tente de novo em instantes."}
@@ -295,6 +257,7 @@ const AffiliatePortal = ({ match }) => {
   const shareText = `Quer estudar com a gente? Peça informações por este link: ${data.referralUrl}`;
   const NAV = [["home", "Início", HomeIcon], ["materials", "Materiais", Folders], ["campaigns", "Campanhas", Megaphone], ["learn", "Orientações", HelpCircle], ["referrals", "Indicações", Users]];
   const courseListText = (g) => `${g.modality}\n${g.courses.map((c) => `• ${c.name}`).join("\n")}`;
+  const courseNames = [...new Set(data.courses.flatMap((g) => g.courses.map((c) => c.name)))].sort((a, b) => a.localeCompare(b, "pt-BR"));
   const collectionKeys = Object.keys(COLLECTIONS);
   const shown = collectionKeys.filter((k) => byCollection[k]);
 
@@ -332,37 +295,19 @@ const AffiliatePortal = ({ match }) => {
             </div>
             {owner && <p className="ca-help" style={{ marginTop: 18, color: "var(--muted)" }}>Seu consultor: <strong style={{ color: "var(--ink)" }}>{owner.name}</strong></p>}
           </div>
-          <div className="ca-collage" aria-hidden="true">
-            <div className="a">{banners[0] && <img src={`${API}/affiliate-portal/${token}/files/${banners[0].id}?preview=1`} alt="" />}</div>
-            <div className="b">{banners[1] && <img src={`${API}/affiliate-portal/${token}/files/${banners[1].id}?preview=1`} alt="" />}</div>
-            <div className="stamp">Você compartilha.<br />A educação transforma.</div>
-          </div>
+          <HeroCard nome={affiliate.firstName} link={data.referralUrl} />
         </div>
 
-        <section className="ca-stats" aria-label="Sua produção">
-          <div className="ca-stat"><b><NumberTicker value={stats.referrals} /></b><span>pessoas indicadas</span></div>
-          <div className="ca-stat"><b><NumberTicker value={stats.enrolled} /></b><span>matrículas{stats.referrals ? ` · ${stats.conversion}%` : ""}</span></div>
-          <div className="ca-stat"><b><NumberTicker value={stats.bonusPending} format={brl} /></b><span>a receber</span></div>
-          <div className="ca-stat"><b><NumberTicker value={stats.bonusPaid} format={brl} /></b><span>já recebido</span></div>
-        </section>
+        <ShareBar link={data.referralUrl} nome={affiliate.firstName} />
+        <Funnel stats={stats} />
+        {!affiliate.pixKey && <p className="ca-notice">Falta cadastrar a sua chave Pix para receber as bonificações. Peça ao seu consultor{owner ? `, ${owner.name}` : ""}.</p>}
 
-        <section className="ca-link">
-          <div><strong>Seu link de indicação</strong><code>{data.referralUrl}</code></div>
-          <div className="ca-link-actions">
-            <CopyButton text={data.referralUrl} label="Copiar link" ok="Link copiado!" />
-            <a className="ca-btn is-wa" href={`https://wa.me/?text=${encodeURIComponent(shareText)}`} target="_blank" rel="noopener noreferrer"><MessageCircle size={16} /> Enviar no WhatsApp</a>
-          </div>
-        </section>
+        <PromoPanel nome={affiliate.firstName} link={data.referralUrl} groups={data.courses} />
 
-        <div className="ca-section-head">
-          <div><span className="ca-over">Sua próxima divulgação</span><h2 className="ca-h2">Escolha uma coleção.</h2></div>
-          <button type="button" className="ca-text-link" onClick={() => go("materials")}>Ver todos os materiais <ArrowRight size={16} /></button>
+        <div className="ca-section-head" style={{ marginTop: 56 }}>
+          <div><span className="ca-over">Prontas para postar</span><h2 className="ca-h2">Artes que já saem com o seu QR Code.</h2></div>
         </div>
-        {shown.length ? (
-          <div className="ca-collections">{shown.map((k) => CollectionTile({ k }))}</div>
-        ) : (
-          <div className="ca-empty"><Folders size={34} /><strong>As coleções chegam em breve</strong>Quando a equipe publicar os materiais, eles aparecem aqui organizados.</div>
-        )}
+        <ArtLibrary nome={affiliate.firstName} link={data.referralUrl} groups={data.courses} limit={6} onMore={() => { setView("library"); go("materials"); }} />
 
         {camp && (
           <section className="ca-feature">
@@ -378,6 +323,16 @@ const AffiliatePortal = ({ match }) => {
             </div>
             {camp.hasCover ? <img src={`${API}/affiliate-portal/${token}/campaigns/${camp.id}/cover`} alt="" /> : <div className="ca-stamp">Uma ação.<br />Todos os materiais juntos.</div>}
           </section>
+        )}
+
+        <div className="ca-section-head">
+          <div><span className="ca-over">Materiais da equipe</span><h2 className="ca-h2">Escolha uma coleção.</h2></div>
+          <button type="button" className="ca-text-link" onClick={() => go("materials")}>Ver todos os materiais <ArrowRight size={16} /></button>
+        </div>
+        {shown.length ? (
+          <div className="ca-collections">{shown.map((k) => CollectionTile({ k }))}</div>
+        ) : (
+          <div className="ca-empty"><Folders size={34} /><strong>As coleções chegam em breve</strong>Quando a equipe publicar os materiais, eles aparecem aqui organizados.</div>
         )}
 
         {data.videos.length > 0 && (
@@ -402,11 +357,17 @@ const AffiliatePortal = ({ match }) => {
       <h1 className="ca-h1" style={{ fontSize: "clamp(34px, 5vw, 54px)" }}>Seu material.<br />Do jeito certo.</h1>
       <div className="ca-tools">
         <div className="ca-chips">
-          <button type="button" className="ca-chip" aria-pressed={view === "materials"} onClick={() => setView("materials")}>Materiais</button>
+          <button type="button" className="ca-chip" aria-pressed={view === "library"} onClick={() => setView("library")}>Artes e mensagens prontas</button>
+          <button type="button" className="ca-chip" aria-pressed={view === "materials"} onClick={() => setView("materials")}>Materiais da equipe</button>
           <button type="button" className="ca-chip" aria-pressed={view === "courses"} onClick={() => setView("courses")}>Lista de cursos</button>
         </div>
       </div>
-      {view === "materials" ? (
+      {view === "library" ? (
+        <>
+          <ArtLibrary nome={affiliate.firstName} link={data.referralUrl} groups={data.courses} />
+          <div style={{ marginTop: 28 }}><Messages nome={affiliate.firstName} link={data.referralUrl} courses={courseNames} /></div>
+        </>
+      ) : view === "materials" ? (
         <>
           <div className="ca-tools" style={{ marginTop: 0 }}>
             <div className="ca-search">
@@ -570,7 +531,7 @@ const AffiliatePortal = ({ match }) => {
           {data.referrals.map((r) => (
             <div className="ca-row" key={r.id}>
               <span className="ca-avatar">{r.name[0]}</span>
-              <div><strong>{r.name}</strong><small>indicado em {day(r.createdAt)}</small></div>
+              <div><strong>{r.name}</strong><small>indicado em {day(r.createdAt)}{r.stage && r.status === "open" ? ` · ${r.stage}` : ""}</small></div>
               <span className={`ca-status ${r.status}`}>{r.status === "enrolled" ? "Matriculado" : r.status === "lost" ? "Não seguiu" : "Em atendimento"}</span>
             </div>
           ))}

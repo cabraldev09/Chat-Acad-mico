@@ -64,7 +64,60 @@ async function seed(auth) {
   await tryPost("/tags", { name: "Varredura", color: "#0693E3" });
   await tryPost("/quickAnswers", { shortcut: "varredura", message: "Mensagem de teste" });
   await tryPost("/leads", { name: "Lead Varredura", phone: "5569977770001", source: "Site" });
-  void polo; void aff;
+  void polo;
+  return aff && aff.data && aff.data.portalToken ? aff.data.portalToken : null;
+}
+
+// The public page of an affiliate (no login): every tab, the QR Code, and the art in both formats must come out as a
+// real image. Page errors, 5xx answers and the error page are findings, like in the private area.
+async function sweepPortal(browser, token) {
+  const issues = [];
+  let current = "/afiliado";
+  const note = (kind, text) => issues.push({ role: "portal", route: current, kind, text: String(text).slice(0, 220) });
+  const ctx = await browser.createBrowserContext();
+  const page = await ctx.newPage();
+  await page.setViewport({ width: 1280, height: 900 });
+  page.on("pageerror", (e) => note("script", e.message));
+  page.on("console", (m) => { if (m.type() === "error" && !/Failed to load resource|favicon/.test(m.text())) note("console", m.text()); });
+  page.on("response", (res) => { if (res.status() >= 500) note("http " + res.status(), res.url().replace(API, "")); });
+  const base = `${BASE}/afiliado/${token}`;
+  try {
+    for (const tab of ["home", "materials", "campaigns", "learn", "referrals"]) {
+      current = `/afiliado#${tab}`;
+      await page.goto(`${base}#${tab}`, { waitUntil: "networkidle2", timeout: 40000 });
+      await sleep(900);
+      const text = await page.evaluate(() => document.body.innerText || "");
+      if (/Não conseguimos abrir|Este link não está disponível|Não foi possível abrir esta tela/.test(text)) note("ERROR PAGE", text.slice(0, 80));
+      if (text.trim().length < 40) note("blank", "empty page");
+    }
+    current = "/afiliado#home (QR Code e arte)";
+    await page.goto(`${base}#home`, { waitUntil: "networkidle2", timeout: 40000 });
+    await sleep(1200);
+    const qrOpened = await page.evaluate(() => {
+      const b = [...document.querySelectorAll("button")].find((x) => /QR Code/.test(x.innerText));
+      if (b) b.click();
+      return !!b;
+    });
+    await sleep(500);
+    if (!qrOpened || !(await page.$(".ca-qr-box canvas"))) note("script", "the QR Code did not open");
+    await page.keyboard.press("Escape");
+    await sleep(300);
+    for (const format of ["Story", "Feed"]) {
+      await page.evaluate((f) => { const b = [...document.querySelectorAll(".ca-chip")].find((x) => x.innerText.startsWith(f)); if (b) b.click(); }, format);
+      await sleep(900);
+      const size = await page.evaluate(async () => {
+        const c = document.querySelector(".ca-art-canvas");
+        if (!c) return -1;
+        const blob = await new Promise((r) => c.toBlob(r, "image/png"));
+        return blob ? blob.size : 0;
+      });
+      if (!(size > 20000)) note("script", `the art (${format}) did not come out as an image (size ${size})`);
+    }
+    const copy = await page.evaluate(() => [...document.querySelectorAll(".ca-idea .ca-copy, .ca-kit .ca-copy")].map((n) => n.innerText).join("\n"));
+    if (/\{\{|\[\[|\]\]/.test(copy)) note("script", "a ready-made text came out with a variable that was not filled in");
+  } catch (e) { note("timeout", e.message); }
+  await ctx.close();
+  return issues;
 }
 
 async function sweepRole(browser, name, def) {
@@ -175,7 +228,7 @@ async function sweepRole(browser, name, def) {
   const login = await http.post("/auth/login", ADMIN);
   if (login.status !== 200) { console.log("cannot sign in as the administrator:", login.status); process.exit(2); }
   const auth = await ensureUsers(login.data.token);
-  await seed(auth);
+  const portalToken = await seed(auth);
   const browser = await puppeteer.launch({ executablePath: chromePath(), headless: true, args: ["--no-sandbox", "--disable-setuid-sandbox"] });
   const all = [];
   for (const [name, def] of Object.entries(ROLES)) {
@@ -184,6 +237,11 @@ async function sweepRole(browser, name, def) {
     const issues = await sweepRole(browser, name, def);
     console.log(`${issues.length} finding(s)`);
     all.push(...issues);
+  }
+  if (!wanted.length || wanted.includes("portal")) {
+    process.stdout.write("> portal (público)... ");
+    if (!portalToken) { console.log("no affiliate to open"); all.push({ role: "portal", route: "/afiliado", kind: "script", text: "could not create the affiliate of the sweep" }); }
+    else { const issues = await sweepPortal(browser, portalToken); console.log(`${issues.length} finding(s)`); all.push(...issues); }
   }
   await browser.close();
   const lines = all.map((i) => `${i.role.padEnd(11)} ${i.route.padEnd(36)} ${i.kind.padEnd(11)} ${i.text}`);

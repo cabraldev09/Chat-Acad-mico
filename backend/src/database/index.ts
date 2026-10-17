@@ -61,6 +61,7 @@ import Affiliate from "../models/Affiliate";
 import AffiliateCampaign from "../models/AffiliateCampaign";
 import AffiliateMaterial from "../models/AffiliateMaterial";
 import AffiliateAudience from "../models/AffiliateAudience";
+import AffiliateClick from "../models/AffiliateClick";
 import AffiliateBonus from "../models/AffiliateBonus";
 
 // eslint-disable-next-line
@@ -132,6 +133,7 @@ const models = [
   AffiliateCampaign,
   AffiliateMaterial,
   AffiliateAudience,
+  AffiliateClick,
   AffiliateBonus
 ];
 

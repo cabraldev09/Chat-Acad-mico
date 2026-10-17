@@ -19,6 +19,7 @@ import {
 } from "../helpers/Affiliates";
 import { isAdminReq, withLeadScope } from "../middleware/scope";
 import { statsFor } from "../services/AffiliateServices/Stats";
+import { clicksFor } from "../services/AffiliateServices/Clicks";
 import { getPortalTexts, getRules } from "../services/AffiliateServices/Bonus";
 import { addActivity, loadLead, resolveLeadTarget, upsertLead } from "../services/CrmServices/LeadCore";
 import SendToContact from "../services/ChannelServices/SendToContact";
@@ -188,6 +189,7 @@ export const summary = async (req: Request, res: Response): Promise<Response> =>
   const stats = await statsFor([a.id]);
   return res.json({
     affiliate: present(a, { stats: stats.get(a.id) }),
+    clicks: (await clicksFor([a.id])).get(a.id),
     leads,
     proposals: proposals.map(p => ({ ...p.toJSON(), publicUrl: `${getPublicUrl()}/p/${p.token}` })),
     bonuses

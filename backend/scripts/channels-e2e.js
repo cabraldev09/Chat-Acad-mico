@@ -1826,6 +1826,24 @@ const postMeta = (id, payload, secret, badSig) => {
       const csv = await http.get("/commissions/export.csv", asUser(ta));
       assert(csv.status === 200 && String(csv.data).includes("Aluno Sem Carteira") && !String(csv.data).includes("Aluno do B"), "csv scope");
       assert((await http.delete("/me/efi", asUser(ta))).data.informed === false, "wallet removal");
+
+      // the administration informs the Wallet ID on behalf of a seller (only the Wallet ID); a seller cannot do it for another
+      assert((await http.put(`/payments/efi/wallets/${cb.id}`, { payeeCode: "ZZZZ1111YYYY2222" }, asUser(ta))).status === 403, "a consultant set someone else's wallet");
+      assert((await http.get("/payments/efi/wallets", asUser(ta))).status === 403, "a consultant listed the wallets");
+      assert((await http.put(`/payments/efi/wallets/${cb.id}`, { payeeCode: "curto" }, auth())).status === 400, "short wallet accepted for a seller");
+      const byAdmin = await http.put(`/payments/efi/wallets/${cb.id}`, { payeeCode: "ZZZZ 1111 YYYY 2222" }, auth());
+      assert(byAdmin.status === 200 && byAdmin.data.masked === "••••2222", `admin wallet ${byAdmin.status} ${JSON.stringify(byAdmin.data)}`);
+      const wallets = (await http.get("/payments/efi/wallets", auth())).data;
+      const rowB = wallets.find(w => w.id === cb.id);
+      assert(rowB && rowB.informed === true && rowB.masked === "••••2222" && !JSON.stringify(wallets).includes("ZZZZ1111"), "wallet list shows the code whole or misses the seller");
+      assert((await http.get("/me/efi", asUser(tb))).data.informed === true, "the seller does not see the wallet the admin informed");
+      // the company account cannot be informed as a seller's
+      await http.put("/payments/efi/settings", { companyPayeeCode: "EMPRESA0000AAAA" }, auth());
+      assert((await http.put(`/payments/efi/wallets/${cb.id}`, { payeeCode: "empresa0000aaaa" }, auth())).status === 400, "company wallet accepted as a seller's");
+      assert((await http.put("/me/efi", { payeeCode: "EMPRESA0000AAAA" }, asUser(ta))).status === 400, "company wallet accepted by a seller");
+      await http.put("/payments/efi/settings", { companyPayeeCode: "" }, auth());
+      assert((await http.delete(`/payments/efi/wallets/${cb.id}`, auth())).data.informed === false, "admin wallet removal");
+      assert((await http.put("/payments/efi/wallets/999999", { payeeCode: "ZZZZ1111YYYY2222" }, auth())).status === 404, "wallet of a missing user");
     });
     await test("coordinator: manages every polo and sees every lead, creates the team but never administrators, no access to payment credentials", async () => {
       const made = await http.post("/users", { name: "Coord Comercial", email: "coord-c@x.com", password: "senha123", role: "coordenacao", coordArea: "comercial" }, auth());
@@ -3075,6 +3093,29 @@ const postMeta = (id, payload, secret, badSig) => {
       const sub = await fetch(`${API}/r/${aff.refCode}/submit`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: "Carlos Link", phone: "(69) 96666-5555", consent: true }) });
       assert(sub.status === 200, `referral submit ${sub.status}`);
       assert(sql(`SELECT affiliateId FROM Leads WHERE name='Carlos Link'`) === String(aff.id), "link lead not credited");
+
+      // opens of the link are counted: people, once a day each; previews and robots are not people
+      const clicksOf = () => Number(sql(`SELECT count(*) FROM AffiliateClicks WHERE affiliateId=${aff.id}`));
+      const opens = async ua => { await fetch(`${API}/r/${aff.refCode}`, { headers: { "User-Agent": ua } }); await new Promise(r => setTimeout(r, 250)); };
+      const before = clicksOf();
+      const CHROME = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1";
+      await opens(CHROME);
+      await opens(CHROME);
+      assert(clicksOf() === before + 2, `two opens by the same person were ${clicksOf() - before}`);
+      assert(Number(sql(`SELECT count(DISTINCT visitor) FROM AffiliateClicks WHERE affiliateId=${aff.id} AND visitor IN (SELECT visitor FROM AffiliateClicks ORDER BY id DESC LIMIT 2)`)) === 1, "the same person was counted as two");
+      await opens("WhatsApp/2.23.20.0 A");
+      await opens("facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)");
+      await opens("Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)");
+      assert(clicksOf() === before + 2, "a link preview or a robot was counted as a person");
+      const allBefore = Number(sql(`SELECT count(*) FROM AffiliateClicks`));
+      assert((await fetch(`${API}/r/NAOEXISTE9`, { headers: { "User-Agent": CHROME } })).status === 404, "unknown link");
+      await new Promise(r => setTimeout(r, 250));
+      assert(Number(sql(`SELECT count(*) FROM AffiliateClicks`)) === allBefore, "an unknown link was counted");
+      assert(!sql(`SELECT visitor FROM AffiliateClicks WHERE affiliateId=${aff.id} LIMIT 1`).includes("."), "the visitor is not a hash");
+      const seen = (await http.get(`/affiliate-portal/${aff.portalToken}`)).data.stats.clicks;
+      assert(seen && seen.total === clicksOf() && seen.unique >= 1 && seen.unique <= seen.total && seen.last7 === seen.total, `portal clicks ${JSON.stringify(seen)}`);
+      const staffSees = (await http.get(`/affiliates/${aff.id}/summary`, asUser(ta))).data.clicks;
+      assert(staffSees && staffSees.total === seen.total, "the team does not see the clicks");
 
       // proposals keep the affiliate
       const prop = await http.post("/proposals", { leadId: Number(leadId), params: { gross: 1000, firstMonthly: 200, semesters: 6, startYear: 2026, startSemester: 2 } }, asUser(ta));

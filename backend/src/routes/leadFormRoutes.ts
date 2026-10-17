@@ -3,6 +3,7 @@ import express, { Request, Response } from "express";
 import Course from "../models/Course";
 import Affiliate from "../models/Affiliate";
 import { getSetting } from "../helpers/AppSettings";
+import { recordClick } from "../services/AffiliateServices/Clicks";
 import { normalizeEmail, normalizePhone } from "../helpers/Phone";
 import { upsertLead } from "../services/CrmServices/LeadCore";
 import { CRM_OPTIONS } from "../services/CrmServices/crmOptions";
@@ -134,6 +135,7 @@ const activeAffiliate = (code: string) =>
 referralRouter.get("/:code", async (req: Request, res: Response) => {
   const aff = await activeAffiliate(req.params.code);
   if (!aff) return res.status(404).send("Link indisponível");
+  recordClick(req, aff.id);
   const [title, color, courses] = await Promise.all([
     getSetting("crm_form_title", "Quero conhecer a instituição"),
     getSetting("crm_form_color", "#0B4279"),
