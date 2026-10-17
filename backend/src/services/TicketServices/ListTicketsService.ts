@@ -74,7 +74,7 @@ const ListTicketsService = async ({
     {
       model: Contact,
       as: "contact",
-      attributes: ["id", "name", "number", "profilePicUrl", "channel", "isStaff", "kind", "parentGroupId", "readOnly"],
+      attributes: ["id", "name", "number", "profilePicUrl", "channel", "isStaff", "isPersonal", "kind", "parentGroupId", "readOnly"],
       // the search filters on the contact's name and number, so the count query must join it too
       required: !!searchParam
     },

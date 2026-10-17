@@ -1004,7 +1004,8 @@ CREATE TABLE public."Contacts" (
     "parentGroupId" character varying(255),
     "readOnly" boolean DEFAULT false NOT NULL,
     "communityRole" character varying(20),
-    "communityId" character varying(255)
+    "communityId" character varying(255),
+    "isPersonal" boolean DEFAULT false NOT NULL
 );
 
 
@@ -3864,6 +3865,13 @@ CREATE INDEX contacts_community_id_idx ON public."Contacts" USING btree ("commun
 
 
 --
+-- Name: contacts_is_personal_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX contacts_is_personal_idx ON public."Contacts" USING btree ("isPersonal") WHERE ("isPersonal" = true);
+
+
+--
 -- Name: contacts_is_staff_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5248,6 +5256,7 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261118000001-lead-reminder-log.js'
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261118000002-lead-documents.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261118000003-marketing-spend.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261118000004-retention.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261119000001-contact-personal.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

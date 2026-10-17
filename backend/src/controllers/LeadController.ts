@@ -16,8 +16,13 @@ import Course from "../models/Course";
 import User from "../models/User";
 import Ticket from "../models/Ticket";
 import Contact from "../models/Contact";
+import Tag from "../models/Tag";
 import { readDeadlines, runCadences } from "../services/CrmServices/Cadences";
-import { listDocuments, remindDocuments, requiredDocs, setDocumentStatus } from "../services/CrmServices/Documents";
+import { DOCS_PENDING_LABEL, listDocuments, remindDocuments, requiredDocs, setDocumentStatus } from "../services/CrmServices/Documents";
+import { FEE_PENDING_TAG } from "../services/PaymentServices/FeeTags";
+import { affiliateStageId } from "../services/AffiliateServices/AffiliateLane";
+import { RELATIONS, Relation, applyRelation } from "../services/CrmServices/Relation";
+import { brPhoneVariants } from "../helpers/PhoneVariants";
 import AppError from "../errors/AppError";
 import GetDefaultWhatsApp from "../helpers/GetDefaultWhatsApp";
 import Whatsapp from "../models/Whatsapp";
@@ -200,6 +205,33 @@ export const remove = async (req: Request, res: Response): Promise<Response> => 
   await lead.destroy();
   getIO().emit("lead", { action: "delete", leadId: Number(req.params.id) });
   return res.json({ message: "deleted" });
+};
+
+// "This is not a lead": a friend or family member (or someone of the team) who wrote to the system. The lead leaves the funnel
+// and every number, and no new lead is made for that person; the conversation stays. "customer" brings it back.
+const RELATION_NOTE: Record<Relation, string> = {
+  customer: "Voltou a ser tratado como cliente.",
+  friend: "Marcado como amigo ou pessoal: saiu do funil e das estatísticas.",
+  staff: "Marcado como da equipe: saiu do funil e das estatísticas."
+};
+export const classify = async (req: Request, res: Response): Promise<Response> => {
+  const relation = String(req.body?.relation) as Relation;
+  if (!RELATIONS.includes(relation)) throw new AppError("ERR_INVALID_PARAMETER", 400);
+  const lead = await Lead.findByPk(req.params.id);
+  if (!lead) throw new AppError("ERR_LEAD_NOT_FOUND", 404);
+  // a student is never "just a friend": the mistake would take a paying student out of every number
+  if (relation !== "customer" && lead.enrolledAt) throw new AppError("ERR_LEAD_ENROLLED_RELATION", 400);
+  const contact = lead.contactId
+    ? await Contact.findByPk(lead.contactId)
+    : lead.phone
+      ? await Contact.findOne({ where: { number: { [Op.in]: brPhoneVariants(lead.phone) }, isGroup: false } })
+      : null;
+  if (contact) await applyRelation(contact, relation, true);
+  // no contact yet (a lead from a form): only the lead leaves, and its phone keeps no mark
+  else await lead.update({ isHistorical: relation !== "customer" } as any);
+  await addActivity(lead.id, uid(req), "system", RELATION_NOTE[relation]);
+  getIO().emit("lead", { action: "update", lead: await loadLead(lead.id) });
+  return res.json({ ok: true, relation });
 };
 
 export const setStage = async (req: Request, res: Response): Promise<Response> => {
@@ -599,8 +631,9 @@ export const metrics = async (req: Request, res: Response): Promise<Response> =>
   // consultants only ever see their own numbers
   const ownerId = reqRole(req) === "consultor" ? Number(req.user.id) : req.query.ownerId ? Number(req.query.ownerId) : null;
   const courseId = req.query.courseId ? Number(req.query.courseId) : null;
-  const rep = { from, to, ownerId, courseId };
+  const rep = { from, to, ownerId, courseId, feeTag: FEE_PENDING_TAG.name, docsTag: DOCS_PENDING_LABEL.name };
   const f = `AND l.isHistorical = false AND (:ownerId IS NULL OR l.ownerId = :ownerId) AND (:courseId IS NULL OR l.courseId = :courseId)`;
+  const lane = await affiliateStageId();
   const q = async (sql: string): Promise<any[]> =>
     (await sequelize.query(portable(sql), { replacements: rep, type: QueryTypes.SELECT })) as any[];
 
@@ -663,14 +696,42 @@ export const metrics = async (req: Request, res: Response): Promise<Response> =>
     SELECT ${dayOf('l.wonAt')} AS day, COUNT(*) AS total FROM Leads l
     WHERE l.wonAt BETWEEN :from AND :to ${f} GROUP BY ${dayOf('l.wonAt')} ORDER BY day`);
 
+  // new people waiting for the first contact: the team confirms who is a lead (or marks a friend / team member)
+  const triage = await q(`
+    SELECT l.id, l.name, l.phone, l.source, l.createdAt FROM Leads l JOIN LeadStages s ON s.id = l.stageId
+    WHERE s.type = 'open' AND l.firstContactAt IS NULL AND l.enrolledAt IS NULL ${f}
+    ORDER BY l.createdAt DESC LIMIT 8`);
+
+  // the same count for the period right before this one, to show the change
+  const span = to.getTime() - from.getTime();
+  const [prev] = await sequelize.query(
+    portable(`SELECT COUNT(*) AS leads, ${countIf("s.type='won'")} AS won FROM Leads l JOIN LeadStages s ON s.id = l.stageId
+      WHERE l.createdAt BETWEEN :pfrom AND :pto ${f}`),
+    { replacements: { ...rep, pfrom: new Date(from.getTime() - span - 1), pto: new Date(from.getTime() - 1) }, type: QueryTypes.SELECT }
+  ) as any[];
+
+  // open leads nobody contacted for over an hour, by consultant (now, not tied to the period)
+  const waitingByOwner = await q(`
+    SELECT l.ownerId AS ownerId, COUNT(*) AS total FROM Leads l JOIN LeadStages s ON s.id = l.stageId
+    WHERE s.type = 'open' AND l.firstContactAt IS NULL AND l.createdAt < ${nowMinus(1, "HOUR")} ${f} GROUP BY l.ownerId`);
+
   const [attention] = await q(`
     SELECT
       (SELECT COUNT(*) FROM LeadTasks t JOIN Leads l ON l.id = t.leadId WHERE t.doneAt IS NULL AND t.dueAt < ${nowSql()} ${f}) AS overdueTasks,
       (SELECT COUNT(*) FROM Leads l JOIN LeadStages s ON s.id = l.stageId
          WHERE s.type='open' AND COALESCE(l.lastContactAt, l.createdAt) < ${nowMinus(3, 'DAY')} ${f}) AS stale,
       (SELECT COUNT(*) FROM Leads l JOIN LeadStages s ON s.id = l.stageId
-         WHERE s.type='open' AND l.firstContactAt IS NULL AND l.createdAt < ${nowMinus(1, 'HOUR')} ${f}) AS waitingFirstContact`);
+         WHERE s.type='open' AND l.firstContactAt IS NULL AND l.createdAt < ${nowMinus(1, 'HOUR')} ${f}) AS waitingFirstContact,
+      (SELECT COUNT(*) FROM Leads l JOIN LeadStages s ON s.id = l.stageId
+         WHERE s.type='open' AND l.ownerId IS NULL ${f}) AS unassigned,
+      (SELECT COUNT(DISTINCT l.id) FROM Leads l JOIN LeadTags lt ON lt.leadId = l.id JOIN Tags tg ON tg.id = lt.tagId
+         WHERE tg.name = :feeTag ${f}) AS feePending,
+      (SELECT COUNT(DISTINCT l.id) FROM Leads l JOIN LeadTags lt ON lt.leadId = l.id JOIN Tags tg ON tg.id = lt.tagId
+         WHERE tg.name = :docsTag ${f}) AS docsPending`);
 
+  // the funnel opens filtered by these labels when a card of the panel is clicked
+  const tagIds = await Tag.findAll({ where: { name: { [Op.in]: [FEE_PENDING_TAG.name, DOCS_PENDING_LABEL.name] } }, attributes: ["id", "name"] });
+  const tagIdOf = (name: string) => tagIds.find(t => t.name === name)?.id ?? null;
   const num = (v: any) => (v === null || v === undefined ? null : Number(v));
   return res.json({
     range: { from, to },
@@ -685,20 +746,29 @@ export const metrics = async (req: Request, res: Response): Promise<Response> =>
       avgDaysToEnroll: num(kpi.avgDaysToEnroll),
       unassigned: Number(kpi.unassigned) || 0
     },
-    funnel: funnel.map(r => ({ ...r, total: Number(r.total) })),
+    // the column of the people an affiliate referred comes before the funnel (it only holds them until the first contact)
+    funnel: funnel.map(r => ({ ...r, total: Number(r.total), isAffiliateLane: !!lane && Number(r.id) === lane })),
     bySource: bySource.map(r => ({ ...r, leads: Number(r.leads), won: Number(r.won) })),
     byCourse: byCourse.map(r => ({ ...r, leads: Number(r.leads), won: Number(r.won) })),
     byOwner: byOwner.map(r => {
       const k = sums[String(r.ownerId ?? "none")];
-      return { ...r, leads: Number(r.leads), won: Number(r.won), open: Number(r.open), avgFirstContactMin: k ? k.s / k.n : null };
+      const w = waitingByOwner.find(x => (x.ownerId ?? null) === (r.ownerId ?? null));
+      return { ...r, leads: Number(r.leads), won: Number(r.won), open: Number(r.open), avgFirstContactMin: k ? k.s / k.n : null, waiting: w ? Number(w.total) : 0 };
     }),
+    previous: { leads: Number(prev?.leads) || 0, won: Number(prev?.won) || 0, conversion: Number(prev?.leads) ? (Number(prev.won) / Number(prev.leads)) * 100 : 0 },
+    triage: triage.map(r => ({ id: r.id, name: r.name, phone: r.phone, source: r.source, createdAt: r.createdAt })),
     lostReasons: lostReasons.map(r => ({ ...r, total: Number(r.total) })),
     created: created.map(r => ({ day: r.day, total: Number(r.total) })),
     wonDaily: wonDaily.map(r => ({ day: r.day, total: Number(r.total) })),
     attention: {
       overdueTasks: Number(attention.overdueTasks) || 0,
       stale: Number(attention.stale) || 0,
-      waitingFirstContact: Number(attention.waitingFirstContact) || 0
+      waitingFirstContact: Number(attention.waitingFirstContact) || 0,
+      unassigned: Number(attention.unassigned) || 0,
+      feePending: Number(attention.feePending) || 0,
+      docsPending: Number(attention.docsPending) || 0,
+      feeTagId: tagIdOf(FEE_PENDING_TAG.name),
+      docsTagId: tagIdOf(DOCS_PENDING_LABEL.name)
     }
   });
 };

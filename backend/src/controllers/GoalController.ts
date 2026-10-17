@@ -248,20 +248,22 @@ const pctOf = (done: number, target: number | null): number | null => (target ? 
 const perDayOf = (missing: number | null, daysLeft: number): number | null =>
   missing === null ? null : missing <= 0 ? 0 : daysLeft ? Math.round((missing / daysLeft) * 100) / 100 : null;
 
-export const poloBoard = async (req: Request, res: Response): Promise<Response> => {
+// The board of the polos: target, done and pace of each one in the current period. Used by the Metas screen and by the
+// manager's overview (Estatísticas), so both always show the same numbers.
+export const buildPoloBoard = async (goalIdWanted = 0, monthWanted = ""): Promise<any> => {
   const periods = await Goal.findAll({ where: { status: "active", kind: "polo" }, order: [["startsOn", "DESC"], ["id", "DESC"]], limit: 24 });
   // no semester yet: the same shape, empty, so the screen can show the way to create one
-  if (!periods.length) return res.json({ periods: [], goal: null, months: [], month: null, rows: [], totals: null, monthTotals: [], available: [] });
+  if (!periods.length) return { periods: [], goal: null, months: [], month: null, rows: [], totals: null, monthTotals: [], available: [] };
   const tz = getAppTz();
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(new Date());
-  const wanted = Number(req.query.goalId) || 0;
+  const wanted = goalIdWanted;
   const goal =
     periods.find(g => g.id === wanted) ||
     periods.find(g => g.startsOn <= today && g.endsOn >= today) ||
     periods[0];
   const wd = goal.workDays || 5;
   const months = monthsOf(goal.startsOn, goal.endsOn);
-  const monthKey = months.includes(String(req.query.month || "")) ? String(req.query.month) : null;
+  const monthKey = months.includes(monthWanted) ? monthWanted : null;
 
   const start = dayBounds(goal.startsOn).start;
   const end = dayBounds(goal.endsOn).end;
@@ -287,6 +289,10 @@ export const poloBoard = async (req: Request, res: Response): Promise<Response> 
 
   const from = today > goal.startsOn ? today : goal.startsOn;
   const daysLeft = goal.endsOn < today ? 0 : countWorkDays(from, goal.endsOn, wd);
+  // how much of the period has already gone by (in working days): the pace a polo should have by now
+  const daysTotal = countWorkDays(goal.startsOn, goal.endsOn, wd);
+  const daysDone = today < goal.startsOn ? 0 : countWorkDays(goal.startsOn, goal.endsOn < today ? goal.endsOn : today, wd);
+  const elapsed = daysTotal ? Math.min(1, daysDone / daysTotal) : 0;
   // working days still ahead inside each month
   const monthDaysLeft = (key: string): number => {
     const first = `${key}-01`;
@@ -319,6 +325,8 @@ export const poloBoard = async (req: Request, res: Response): Promise<Response> 
         const mMissing = mTarget === null ? null : mTarget - mDone;
         return { month: m, target: mTarget, done: mDone, missing: mMissing, pct: pctOf(mDone, mTarget), status: statusOf(pctOf(mDone, mTarget)), perDay: perDayOf(mMissing, monthDaysLeft(m)), adjust: Number(manualMonthly[m]) || 0 };
       });
+      // where the polo ends up if it keeps the pace so far (only with a target and enough of the period behind us)
+      const forecast = target !== null && elapsed >= 0.1 ? Math.round(done / elapsed) : null;
       return {
         poloId: p.id,
         code: p.code,
@@ -332,6 +340,8 @@ export const poloBoard = async (req: Request, res: Response): Promise<Response> 
         pct,
         status: statusOf(pct),
         perDay: perDayOf(missing, daysLeft),
+        expectedPct: target !== null ? Math.round(elapsed * 10000) / 100 : null,
+        forecast,
         canceled,
         inCourse: Math.max(0, done - canceled),
         canceledPct: done ? Math.round((canceled / done) * 10000) / 100 : 0,
@@ -371,9 +381,9 @@ export const poloBoard = async (req: Request, res: Response): Promise<Response> 
     const d = sum(r => r.months[i].done);
     return { month: m, target: t, done: d, missing: t - d, pct: pctOf(d, t), status: statusOf(pctOf(d, t)), perDay: perDayOf(t - d, monthDaysLeft(m)), daysLeft: monthDaysLeft(m) };
   });
-  return res.json({
+  return {
     periods: periods.map(g => ({ id: g.id, title: g.title, startsOn: g.startsOn, endsOn: g.endsOn })),
-    goal: { id: goal.id, title: goal.title, startsOn: goal.startsOn, endsOn: goal.endsOn, workDays: wd, daysLeft },
+    goal: { id: goal.id, title: goal.title, startsOn: goal.startsOn, endsOn: goal.endsOn, workDays: wd, daysLeft, daysTotal, elapsed },
     months,
     month: monthKey,
     rows,
@@ -381,8 +391,11 @@ export const poloBoard = async (req: Request, res: Response): Promise<Response> 
     monthTotals,
     // polos without a line yet, so the administration can add them
     available: polos.filter(p => !rows.some(r => r.poloId === p.id)).map(p => ({ id: p.id, code: p.code, name: p.name }))
-  });
+  };
 };
+
+export const poloBoard = async (req: Request, res: Response): Promise<Response> =>
+  res.json(await buildPoloBoard(Number(req.query.goalId) || 0, String(req.query.month || "")));
 
 const poloLine = (goalId: number, months: string[], r: any) => {
   const target = int(r.target);

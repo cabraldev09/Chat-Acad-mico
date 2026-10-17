@@ -95,6 +95,11 @@ class Contact extends Model<Contact> {
   @Column
   isStaff: boolean;
 
+  // a friend or family member who wrote to the system: like the team, out of the statistics and the CRM funnel
+  @Default(false)
+  @Column
+  isPersonal: boolean;
+
   // asked to stop receiving mass messages
   @Default(false)
   @Column

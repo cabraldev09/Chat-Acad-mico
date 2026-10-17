@@ -48,7 +48,6 @@ const CrmTasks = lazy(() => import("../pages/CRM/Tasks"));
 const CrmCommissions = lazy(() => import("../pages/CRM/Commissions"));
 const Goals = lazy(() => import("../pages/Goals"));
 const PoloGoals = lazy(() => import("../pages/PoloGoals"));
-const Marketing = lazy(() => import("../pages/Marketing"));
 const Retention = lazy(() => import("../pages/Retention"));
 const CoursePage = lazy(() => import("../pages/CoursePage"));
 const SettingsHub = lazy(() => import("../pages/SettingsHub"));
@@ -138,7 +137,7 @@ const Routes = () => {
                 <Route exact path="/configuracoes" component={SettingsHub} isPrivate managerOnly />
                 <Route exact path="/crm/metas" component={Goals} isPrivate managerOnly />
                 <Route exact path="/crm/metas-polos" component={PoloGoals} isPrivate />
-                <Route exact path="/crm/marketing" component={Marketing} isPrivate managerOnly />
+                <Route exact path="/crm/marketing" component={() => <Redirect to="/crm/painel" />} isPrivate managerOnly />
                 <Route exact path="/crm/retencao" component={Retention} isPrivate academicOnly />
                 <Route exact path="/afiliados" component={Affiliates} isPrivate salesOnly />
                 <Route exact path="/grades" component={Grades} isPrivate />

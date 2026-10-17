@@ -324,7 +324,7 @@ const creating = new Map<number, Promise<Lead | null>>();
 
 export const ensureLead = async (contact: Contact, channel: string): Promise<Lead | null> => {
   // groups and people of the team are not candidates
-  if (contact.isGroup || contact.isStaff || contact.kind === "channel") return null;
+  if (contact.isGroup || contact.isStaff || contact.isPersonal || contact.kind === "channel") return null;
   const existing = await Lead.findOne({ where: { contactId: contact.id } });
   if (existing) return existing;
   if ((await getSetting("crm_autocreate", "true")) === "false") return null;

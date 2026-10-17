@@ -72,7 +72,10 @@ const addDays = (ymd: string, days: number): string => {
 export const riskStudents = async (scope: Scope = {}, limit = 200) => {
   const { riskDays } = await readRetentionConfig();
   const rows = (await sequelize.query(
-    `SELECT l.id, l.name, l."onboardingTutorId" AS "tutorId", u.name AS tutor, p.name AS polo,
+    `SELECT l.id, l.name, l."onboardingTutorId" AS "tutorId", u.name AS tutor, l."poloId" AS "poloId", p.name AS polo,
+            (SELECT t.id FROM "Tickets" t WHERE t."contactId" = l."contactId" ORDER BY t."updatedAt" DESC LIMIT 1) AS "ticketId",
+            (SELECT MAX(a."createdAt") FROM "LeadActivities" a WHERE a."leadId" = l.id AND a.body LIKE 'Mensagem de retenção enviada%') AS "messagedAt",
+            COUNT(*) OVER() AS "total",
             GREATEST(COALESCE(l."lastInboundAt", 'epoch'), COALESCE(l."onboardingDoneAt", 'epoch'), l."enrolledAt") AS last,
             floor(extract(epoch FROM (now() - GREATEST(COALESCE(l."lastInboundAt", 'epoch'), COALESCE(l."onboardingDoneAt", 'epoch'), l."enrolledAt"))) / 86400)::int AS days
        FROM "Leads" l JOIN "LeadStages" s ON s.id = l."stageId"
@@ -82,8 +85,8 @@ export const riskStudents = async (scope: Scope = {}, limit = 200) => {
         ${scope.tutorId ? `AND l."onboardingTutorId" = :tutor` : ""}
       ORDER BY days DESC LIMIT :limit`,
     { replacements: { days: riskDays, tutor: scope.tutorId || 0, limit }, type: QueryTypes.SELECT }
-  )) as Array<{ id: number; name: string; tutorId: number | null; tutor: string | null; polo: string | null; last: Date; days: number }>;
-  return { riskDays, students: rows.map(r => ({ ...r, level: r.days >= riskDays * 2 ? "high" : "attention" })) };
+  )) as Array<{ id: number; name: string; tutorId: number | null; tutor: string | null; poloId: number | null; polo: string | null; ticketId: number | null; messagedAt: Date | null; total: string | number; last: Date; days: number }>;
+  return { riskDays, total: rows.length ? Number(rows[0].total) : 0, students: rows.map(({ total, ...r }) => ({ ...r, level: r.days >= riskDays * 2 ? "high" : "attention" })) };
 };
 
 // labels the students at risk (and takes it off those who wrote again), one task for the tutor per silence
@@ -134,17 +137,19 @@ export const sendRetentionMessage = async (lead: Lead, userId: number): Promise<
 export const rematriculaWindow = (c: RematConfig, today = todayInAppTz()): "off" | "before" | "open" | "closed" =>
   !c.term || !c.startsAt || !c.endsAt ? "off" : today < c.startsAt ? "before" : today > c.endsAt ? "closed" : "open";
 
-export const rematriculaList = async (scope: Scope = {}) => {
+export const rematriculaList = async (scope: Scope = {}, full = false) => {
   const { rematricula: c } = await readRetentionConfig();
   const rows = (await sequelize.query(
-    `SELECT l.id, l.name, l."reenrolledTerm" AS "doneTerm", l."reenrolledAt" AS "doneAt", u.name AS tutor, p.name AS polo
+    `SELECT l.id, l.name, l."reenrolledTerm" AS "doneTerm", l."reenrolledAt" AS "doneAt", u.name AS tutor, p.name AS polo,
+            l."onboardingTutorId" AS "tutorId", l."poloId" AS "poloId",
+            (SELECT t.id FROM "Tickets" t WHERE t."contactId" = l."contactId" ORDER BY t."updatedAt" DESC LIMIT 1) AS "ticketId"
        FROM "Leads" l JOIN "LeadStages" s ON s.id = l."stageId"
        LEFT JOIN "Users" u ON u.id = l."onboardingTutorId" LEFT JOIN "Polos" p ON p.id = l."poloId"
       WHERE l."enrolledAt" IS NOT NULL AND l."isHistorical" = false AND s.type <> 'lost' AND COALESCE(l."onboardingStatus", 'none') <> 'none'
         ${scope.tutorId ? `AND l."onboardingTutorId" = :tutor` : ""}
       ORDER BY l.name LIMIT 1000`,
     { replacements: { tutor: scope.tutorId || 0 }, type: QueryTypes.SELECT }
-  )) as Array<{ id: number; name: string; doneTerm: string | null; doneAt: Date | null; tutor: string | null; polo: string | null }>;
+  )) as Array<{ id: number; name: string; doneTerm: string | null; doneAt: Date | null; tutor: string | null; polo: string | null; tutorId: number | null; poloId: number | null; ticketId: number | null }>;
   const done = rows.filter(r => c.term && r.doneTerm === c.term);
   const pending = rows.filter(r => !(c.term && r.doneTerm === c.term));
   return {
@@ -155,8 +160,9 @@ export const rematriculaList = async (scope: Scope = {}) => {
     done: done.length,
     pending: pending.length,
     rate: rows.length ? Math.round((done.length / rows.length) * 100) : null,
-    pendingStudents: pending.slice(0, 300).map(r => ({ id: r.id, name: r.name, tutor: r.tutor, polo: r.polo })),
-    doneStudents: done.slice(0, 300).map(r => ({ id: r.id, name: r.name, tutor: r.tutor, polo: r.polo, at: r.doneAt }))
+    // the lists are cut at 300 each; `pending` and `done` above are the real counts
+    pendingStudents: (full ? pending : pending.slice(0, 300)).map(r => ({ id: r.id, name: r.name, tutor: r.tutor, tutorId: r.tutorId, polo: r.polo, poloId: r.poloId, ticketId: r.ticketId })),
+    doneStudents: (full ? done : done.slice(0, 300)).map(r => ({ id: r.id, name: r.name, tutor: r.tutor, tutorId: r.tutorId, polo: r.polo, poloId: r.poloId, ticketId: r.ticketId, at: r.doneAt }))
   };
 };
 

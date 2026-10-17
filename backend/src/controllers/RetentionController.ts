@@ -6,8 +6,9 @@ import { setSetting } from "../helpers/AppSettings";
 import { isManagerRole, roleOf } from "../helpers/Roles";
 import Lead from "../models/Lead";
 import { runCadences } from "../services/CrmServices/Cadences";
-import { NPS_KINDS, npsSummary, readNpsConfig, sendSurvey } from "../services/CrmServices/Nps";
+import { NPS_KINDS, npsAnswers, npsSummary, readNpsConfig, sendSurvey } from "../services/CrmServices/Nps";
 import { Scope, markReenrolled, readRetentionConfig, rematriculaList, riskStudents, sendRetentionMessage } from "../services/CrmServices/Retention";
+import { csvDay, sendCsv } from "../helpers/Csv";
 
 const uid = (req: Request): number => Number(req.user.id);
 
@@ -38,7 +39,31 @@ const period = (q: any) => {
 export const nps = async (req: Request, res: Response): Promise<Response> => {
   scopeOf(req);
   const p = period(req.query);
-  return res.json({ from: p.from, to: p.to, ...(await npsSummary(p.start, p.end)) });
+  return res.json({ from: p.from, to: p.to, ...(await npsSummary(p.start, p.end, scopeOf(req).tutorId)) });
+};
+
+const KIND_LABEL: Record<string, string> = { onboarding: "Após a ambientação", d30: "30 dias de matrícula", d90: "90 dias de matrícula", manual: "Manual" };
+const CATEGORY_LABEL: Record<string, string> = { promoter: "Promotor", neutral: "Neutro", detractor: "Detrator" };
+
+export const npsCsv = async (req: Request, res: Response): Promise<Response> => {
+  const scope = scopeOf(req);
+  const p = period(req.query);
+  const rows = await npsAnswers(p.start, p.end, scope.tutorId);
+  return sendCsv(res, `satisfacao-${p.from}-a-${p.to}.csv`, ["Data", "Aluno", "Momento", "Nota", "Classificação", "Motivo"],
+    rows.map(r => [csvDay(r.at), r.lead, KIND_LABEL[r.kind] || r.kind, r.score, CATEGORY_LABEL[r.category], r.comment]));
+};
+
+// the three numbers on top of the screen (and the badge of each tab)
+export const summary = async (req: Request, res: Response): Promise<Response> => {
+  const scope = scopeOf(req);
+  const today = todayInAppTz();
+  const from = dayBounds(shiftDays(dayBounds(today).start, -29)).start;
+  const [risk, remat, n] = await Promise.all([riskStudents(scope, 1000), rematriculaList(scope), npsSummary(from, dayBounds(today).end, scope.tutorId)]);
+  return res.json({
+    risk: { days: risk.riskDays, total: risk.total, high: risk.students.filter(s => s.level === "high").length, attention: risk.students.filter(s => s.level === "attention").length },
+    rematricula: { term: remat.config.term, window: remat.window, daysLeft: remat.daysLeft, pending: remat.pending, done: remat.done, rate: remat.rate },
+    nps: { days: 30, value: n.nps, answered: n.answered, detractors: n.detractors }
+  });
 };
 
 export const sendNps = async (req: Request, res: Response): Promise<Response> => {
@@ -51,6 +76,12 @@ export const sendNps = async (req: Request, res: Response): Promise<Response> =>
 // ------------------------------------------------------------------ risk of dropping out
 export const risk = async (req: Request, res: Response): Promise<Response> => res.json(await riskStudents(scopeOf(req)));
 
+export const riskCsv = async (req: Request, res: Response): Promise<Response> => {
+  const { students } = await riskStudents(scopeOf(req), 1000);
+  return sendCsv(res, `alunos-em-risco-${todayInAppTz()}.csv`, ["Aluno", "Polo", "Tutor", "Dias sem notícias", "Nível", "Última notícia", "Mensagem de retenção enviada em"],
+    students.map(s => [s.name, s.polo || "", s.tutor || "", s.days, s.level === "high" ? "Alto" : "Atenção", csvDay(s.last), csvDay(s.messagedAt)]));
+};
+
 export const riskMessage = async (req: Request, res: Response): Promise<Response> => {
   const lead = await leadOf(req);
   await sendRetentionMessage(lead, uid(req));
@@ -59,6 +90,15 @@ export const riskMessage = async (req: Request, res: Response): Promise<Response
 
 // ------------------------------------------------------------------ re-enrollment
 export const rematricula = async (req: Request, res: Response): Promise<Response> => res.json(await rematriculaList(scopeOf(req)));
+
+export const rematriculaCsv = async (req: Request, res: Response): Promise<Response> => {
+  const d = await rematriculaList(scopeOf(req), true);
+  const rows = [
+    ...d.pendingStudents.map(s => [s.name, s.polo || "", s.tutor || "", "Falta renovar", ""]),
+    ...d.doneStudents.map(s => [s.name, s.polo || "", s.tutor || "", "Renovou", csvDay((s as any).at)])
+  ];
+  return sendCsv(res, `rematricula-${(d.config.term || "sem-periodo").replace("/", "-")}.csv`, ["Aluno", "Polo", "Tutor", "Situação", "Renovou em"], rows);
+};
 
 export const setRematricula = async (req: Request, res: Response): Promise<Response> => {
   const lead = await leadOf(req);

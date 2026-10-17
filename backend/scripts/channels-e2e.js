@@ -703,13 +703,163 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(c.message.startsWith("Oi {{name}}") && !c.templateName, "first step should mirror message");
       const before = graph.sent.length;
       assert((await http.post(`/campaigns/${c.id}/start`, {}, auth())).status === 200, "start");
-      await waitFor(() => graph.sent.slice(before).filter(x => x.body && x.body.type === "text").length >= 3, 30000, "three messages");
+      try {
+        await waitFor(() => graph.sent.slice(before).filter(x => x.body && x.body.type === "text").length >= 3, 30000, "three messages");
+      } catch (e) {
+        throw new Error(`${e.message}; shipping=${sql(`SELECT status||'|'||stepsDone||'|'||COALESCE(error,'') FROM CampaignShippings WHERE campaignId=${c.id}`)} campaign=${sql(`SELECT status||'|'||COALESCE(pauseReason,'') FROM Campaigns WHERE id=${c.id}`)} sent=${JSON.stringify(graph.sent.slice(before).map(x => x.body && x.body.type))}`);
+      }
       const texts = graph.sent.slice(before).filter(x => x.body && x.body.type === "text").map(x => x.body.text.body);
       assert(/^Oi Paula Dias! Tudo (bem|certo)\?$/.test(texts[0]), `first: ${texts[0]}`);
       assert(texts[1] === steps[1].body && texts[2] === steps[2].body, `order: ${JSON.stringify(texts)}`);
       await waitFor(() => sql(`SELECT status FROM CampaignShippings WHERE campaignId=${c.id}`) === "sent", 8000, "shipping sent");
       assert(sql(`SELECT stepsDone FROM CampaignShippings WHERE campaignId=${c.id}`) === "3", "stepsDone");
       assert(sql(`SELECT nextRunAt IS NOT NULL FROM Campaigns WHERE id=${c.id}`) === "1", "runner state was not persisted");
+    });
+    await test("campanhas: nome com apóstrofo e &, primeiro nome, número sem 55 e número curto demais", async () => {
+      const list = (await http.post("/contact-lists", { name: "Nomes difíceis" }, auth())).data;
+      const imp = (await http.post(`/contact-lists/${list.id}/import`, { items: [{ name: "D'Ávila & Cia Ltda", number: "(11) 95555-1111" }, { name: "Curto", number: "12345" }] }, auth())).data;
+      assert(imp.imported === 1 && imp.invalid === 1, `import ${JSON.stringify(imp)}`);
+      const items = (await http.get(`/contact-lists/${list.id}/items`, auth())).data;
+      assert(items.length === 1 && items[0].number === "5511955551111", `the country code was not added: ${JSON.stringify(items)}`);
+      const again = (await http.post(`/contact-lists/${list.id}/import`, { items: [{ name: "Repetido", number: "11955551111" }] }, auth())).data;
+      assert(again.imported === 0 && again.duplicated === 1, `the same number typed another way came twice ${JSON.stringify(again)}`);
+      const c = (await http.post("/campaigns", { name: "Nomes", message: "Oi {{name}} ({{primeiro_nome}})", contactListId: list.id, whatsappId: cid, intervalMin: 0, intervalMax: 0, batchSize: 50, batchPause: 1 }, auth())).data;
+      const before = graph.sent.length;
+      assert((await http.post(`/campaigns/${c.id}/start`, {}, auth())).status === 200, "start");
+      const sent = await waitFor(() => graph.sent.slice(before).find(x => x.body && x.body.type === "text" && x.body.to === "5511955551111"), 15000, "the message");
+      assert(sent.body.text.body === "Oi D'Ávila & Cia Ltda (D'Ávila)", `text ${JSON.stringify(sent.body.text.body)}`);
+    });
+    await test("campanhas: agendar, iniciar agora, iniciar sozinha na hora, não disparar atrasada, pausar, retomar e cancelar", async () => {
+      const mk = async (name, numbers) => {
+        const list = (await http.post("/contact-lists", { name }, auth())).data;
+        await http.post(`/contact-lists/${list.id}/import`, { items: numbers.map((n, i) => ({ name: `${name} ${i + 1}`, number: n })) }, auth());
+        return list;
+      };
+      const base = { intervalMin: 0, intervalMax: 0, batchSize: 50, batchPause: 1, whatsappId: cid };
+      const future = () => new Date(Date.now() + 3600000).toISOString();
+      const list = await mk("Agenda", ["5521955552001"]);
+      const empty = (await http.post("/contact-lists", { name: "Agenda vazia" }, auth())).data;
+
+      assert((await http.post("/campaigns", { ...base, name: "Passada", message: "x", contactListId: list.id, scheduledAt: new Date(Date.now() - 3600000).toISOString() }, auth())).status === 400, "a start date in the past was accepted");
+      assert((await http.post("/campaigns", { ...base, name: "Sem ninguém", message: "x", contactListId: empty.id, scheduledAt: future() }, auth())).status === 400, "scheduled with an empty list");
+      const made = await http.post("/campaigns", { ...base, name: "Agendada", message: "Oi {{name}}", contactListId: list.id, scheduledAt: future() }, auth());
+      assert(made.status === 201 && made.data.status === "scheduled", `saving with a date should schedule: ${made.status} ${made.data.status}`);
+      const id = made.data.id;
+      assert((await http.put(`/campaigns/${id}`, { scheduledAt: "" }, auth())).data.status === "draft", "clearing the date should make it a draft");
+      assert((await http.put(`/campaigns/${id}`, { scheduledAt: future() }, auth())).data.status === "scheduled", "the date was not scheduled again");
+      assert((await http.post(`/campaigns/${id}/start`, {}, auth())).data.status === "scheduled", "start without 'now' should keep waiting for the date");
+      const before = graph.sent.length;
+      const go = await http.post(`/campaigns/${id}/start`, { now: true }, auth());
+      assert(go.data.status === "running" && go.data.scheduledAt === null, `start now ${go.data.status} ${go.data.scheduledAt}`);
+      await waitFor(() => graph.sent.slice(before).some(x => x.body && x.body.to === "5521955552001"), 15000, "the message of the campaign started now");
+      await waitFor(() => sql(`SELECT status FROM Campaigns WHERE id=${id}`) === "finished", 15000, "finished");
+
+      // the time comes: it starts by itself and copies the recipients then
+      const l2 = await mk("Agenda dois", ["5521955552002"]);
+      const c2 = (await http.post("/campaigns", { ...base, name: "Sozinha", message: "Oi", contactListId: l2.id, scheduledAt: future() }, auth())).data;
+      assert(sql(`SELECT COUNT(*) FROM CampaignShippings WHERE campaignId=${c2.id}`) === "0", "recipients copied too early");
+      const before2 = graph.sent.length;
+      sql(`UPDATE Campaigns SET scheduledAt = NOW() - INTERVAL '10 seconds' WHERE id=${c2.id}`);
+      await waitFor(() => graph.sent.slice(before2).some(x => x.body && x.body.to === "5521955552002"), 20000, "the scheduled campaign starting by itself");
+      await waitFor(() => sql(`SELECT status FROM Campaigns WHERE id=${c2.id}`) === "finished", 15000, "scheduled campaign finished");
+
+      // hours late (the system was off): a person decides
+      const l3 = await mk("Agenda tres", ["5521955552003"]);
+      const c3 = (await http.post("/campaigns", { ...base, name: "Atrasada", message: "Oi", contactListId: l3.id, scheduledAt: future() }, auth())).data;
+      const before3 = graph.sent.length;
+      sql(`UPDATE Campaigns SET scheduledAt = NOW() - INTERVAL '8 hours' WHERE id=${c3.id}`);
+      await waitFor(() => sql(`SELECT status FROM Campaigns WHERE id=${c3.id}`) === "paused", 15000, "late campaign paused");
+      assert(/passou/.test(sql(`SELECT pauseReason FROM Campaigns WHERE id=${c3.id}`)), "no reason for the pause");
+      assert(!graph.sent.slice(before3).some(x => x.body && x.body.to === "5521955552003"), "a campaign hours late was fired");
+
+      // pause, resume, cancel
+      const l4 = await mk("Ritmo", ["5521955552004", "5521955552005"]);
+      const c4 = (await http.post("/campaigns", { ...base, intervalMin: 600, intervalMax: 600, name: "Devagar", message: "Oi", contactListId: l4.id }, auth())).data;
+      const before4 = graph.sent.length;
+      assert((await http.post(`/campaigns/${c4.id}/start`, {}, auth())).data.status === "running", "start");
+      await waitFor(() => graph.sent.slice(before4).some(x => x.body && x.body.to === "5521955552004"), 15000, "first message");
+      assert((await http.put(`/campaigns/${c4.id}`, { name: "Mudou" }, auth())).status === 400, "a running campaign was edited");
+      assert((await http.post(`/campaigns/${c4.id}/pause`, {}, auth())).data.status === "paused", "pause");
+      await sleep(4000);
+      assert(!graph.sent.slice(before4).some(x => x.body && x.body.to === "5521955552005"), "a paused campaign kept sending");
+      assert((await http.post(`/campaigns/${c4.id}/start`, {}, auth())).data.status === "running", "resume");
+      await sleep(4000);
+      assert(!graph.sent.slice(before4).some(x => x.body && x.body.to === "5521955552005"), "the pause between messages was skipped after resuming");
+      assert((await http.post(`/campaigns/${c4.id}/cancel`, {}, auth())).data.status === "cancelled", "cancel");
+      const rep = (await http.get(`/campaigns/${c4.id}/report`, auth())).data;
+      assert(rep.campaign.counters.sent === 1 && rep.campaign.counters.cancelled === 1 && rep.campaign.counters.pending === 0, `counters ${JSON.stringify(rep.campaign.counters)}`);
+    });
+    await test("campanhas: reenviar falhas, relatório com motivo em português e em planilha, duplicar, lista em uso e conexão fora do ar", async () => {
+      const list = (await http.post("/contact-lists", { name: "Falhas" }, auth())).data;
+      await http.post(`/contact-lists/${list.id}/import`, { items: [{ name: "Falha Um", number: "5521955553001" }, { name: "Falha Dois", number: "5521955553002" }] }, auth());
+      const c = (await http.post("/campaigns", { name: "Com falhas", message: "Oi {{name}}", contactListId: list.id, whatsappId: cid, intervalMin: 0, intervalMax: 0, batchSize: 50, batchPause: 1 }, auth())).data;
+      assert((await http.post(`/campaigns/${c.id}/retry-failed`, {}, auth())).status === 400, "retry on a campaign that never started");
+      assert((await http.post(`/campaigns/${c.id}/start`, {}, auth())).status === 200, "start");
+      await waitFor(() => sql(`SELECT status FROM Campaigns WHERE id=${c.id}`) === "finished", 20000, "finished");
+      sql(`UPDATE CampaignShippings SET status='failed', error='ERR_WAPP_INVALID_CONTACT', sentAt=NULL WHERE campaignId=${c.id} AND number='5521955553001'`);
+      sql(`UPDATE CampaignShippings SET status='failed', error='Contato pediu para não receber mensagens (SAIR).' WHERE campaignId=${c.id} AND number='5521955553002'`);
+
+      const rep = (await http.get(`/campaigns/${c.id}/report`, auth())).data;
+      assert(rep.campaign.counters.failed === 2, `failed ${JSON.stringify(rep.campaign.counters)}`);
+      assert(rep.shippings.find(x => x.number === "5521955553001").errorText === "Este número não tem WhatsApp.", "the error code was not translated");
+      assert((await http.get(`/campaigns/${c.id}/report?status=failed`, auth())).data.shippings.length === 2 && (await http.get(`/campaigns/${c.id}/report?status=sent`, auth())).data.shippings.length === 0, "filter by status");
+      const csv = await http.get(`/campaigns/${c.id}/report?format=csv`, auth());
+      assert(csv.status === 200 && String(csv.data).startsWith('"Nome";"WhatsApp";"Situação"') && String(csv.data).includes('="5521955553001"') && String(csv.data).includes("Este número não tem WhatsApp."), `csv ${csv.status} ${JSON.stringify(String(csv.data).slice(0, 200))}`);
+
+      const before = graph.sent.length;
+      const retry = await http.post(`/campaigns/${c.id}/retry-failed`, {}, auth());
+      assert(retry.status === 200 && retry.data.requeued === 1 && retry.data.campaign.status === "running", `retry ${retry.status} ${JSON.stringify(retry.data).slice(0, 160)}`);
+      await waitFor(() => graph.sent.slice(before).some(x => x.body && x.body.to === "5521955553001"), 15000, "the failed one sent again");
+      assert(!graph.sent.slice(before).some(x => x.body && x.body.to === "5521955553002"), "someone who asked not to receive was written to again");
+      await waitFor(() => sql(`SELECT status FROM Campaigns WHERE id=${c.id}`) === "finished", 15000, "finished again");
+      assert((await http.post(`/campaigns/${c.id}/retry-failed`, {}, auth())).status === 400, "nothing left to retry should be refused");
+
+      const copy = await http.post(`/campaigns/${c.id}/duplicate`, {}, auth());
+      assert(copy.status === 201 && copy.data.name === "Com falhas (cópia)" && copy.data.status === "draft" && copy.data.contactListId === list.id, `duplicate ${copy.status} ${JSON.stringify(copy.data).slice(0, 120)}`);
+      const used = await http.delete(`/contact-lists/${list.id}`, auth());
+      assert(used.status === 400 && used.data.error === "ERR_CAMPAIGN_LIST_IN_USE", `a list used by campaigns was deleted ${used.status} ${JSON.stringify(used.data)}`);
+      const lcsv = await http.get(`/contact-lists/${list.id}/export.csv`, auth());
+      assert(lcsv.status === 200 && String(lcsv.data).startsWith('"Nome";"WhatsApp";"E-mail"') && String(lcsv.data).includes('="5521955553001"'), "list spreadsheet");
+
+      // the connection goes down: the campaign says it is waiting and goes on when it is back
+      const l2 = (await http.post("/contact-lists", { name: "Conexão cai" }, auth())).data;
+      await http.post(`/contact-lists/${l2.id}/import`, { items: [{ name: "Espera", number: "5521955553003" }] }, auth());
+      const c2 = (await http.post("/campaigns", { name: "Espera a conexão", message: "Oi", contactListId: l2.id, whatsappId: cid, intervalMin: 0, intervalMax: 0, batchSize: 50, batchPause: 1 }, auth())).data;
+      sql(`UPDATE Whatsapps SET status='DISCONNECTED' WHERE id=${cid}`);
+      const before2 = graph.sent.length;
+      try {
+        assert((await http.post(`/campaigns/${c2.id}/start`, {}, auth())).status === 200, "start");
+        await waitFor(() => { sql(`UPDATE Whatsapps SET status='DISCONNECTED' WHERE id=${cid}`); return /Aguardando a conexão/.test(sql(`SELECT COALESCE(pauseReason,'') FROM Campaigns WHERE id=${c2.id}`)); }, 20000, "the waiting reason");
+        assert(sql(`SELECT status FROM Campaigns WHERE id=${c2.id}`) === "running" && !graph.sent.slice(before2).some(x => x.body && x.body.to === "5521955553003"), "sent while disconnected");
+      } finally {
+        sql(`UPDATE Whatsapps SET status='CONNECTED' WHERE id=${cid}`);
+      }
+      await waitFor(() => graph.sent.slice(before2).some(x => x.body && x.body.to === "5521955553003"), 45000, "sent after the connection came back");
+      assert(sql(`SELECT COALESCE(pauseReason,'') FROM Campaigns WHERE id=${c2.id}`) === "", "the waiting reason stayed after sending");
+    });
+    await test("campanhas: antes de iniciar mostra quantos podem receber (contato conhecido com ou sem o nono dígito, descadastrado, desconhecido)", async () => {
+      const wa = (await http.post("/whatsapp", { name: "QR conferência", channel: "whatsapp" }, auth())).data;
+      await sleep(1500);
+      sql(`UPDATE Whatsapps SET status='CONNECTED' WHERE id=${wa.id}`);
+      const known = sql(`INSERT INTO Contacts (name, number, email, isGroup, kind, channel, createdAt, updatedAt) VALUES ('Conhecida', '556999993333', '', false, 'person', 'whatsapp', NOW(), NOW()) RETURNING id`).split("\n")[0];
+      sql(`INSERT INTO Contacts (name, number, email, isGroup, kind, channel, optOut, createdAt, updatedAt) VALUES ('Saiu', '5569977775555', '', false, 'person', 'whatsapp', true, NOW(), NOW())`);
+      const t = sql(`INSERT INTO Tickets (status, contactId, whatsappId, unreadMessages, isGroup, segment, createdAt, updatedAt) VALUES ('closed', ${known}, ${wa.id}, 0, false, 'sales', NOW(), NOW()) RETURNING id`).split("\n")[0];
+      sql(`INSERT INTO Messages (id, ticketId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('pre-known-1', ${t}, 'oi', false, true, 'chat', 0, NOW(), NOW())`);
+      const list = (await http.post("/contact-lists", { name: "Conferência" }, auth())).data;
+      await http.post(`/contact-lists/${list.id}/import`, { items: [{ name: "Conhecida", number: "5569999993333" }, { name: "Desconhecida", number: "5569988884444" }, { name: "Saiu", number: "5569977775555" }] }, auth());
+      const c = (await http.post("/campaigns", { name: "Conferência", message: "Oi", contactListId: list.id, whatsappId: wa.id }, auth())).data;
+      const pre = await http.get(`/campaigns/${c.id}/preflight`, auth());
+      assert(pre.status === 200 && pre.data.total === 3 && pre.data.blocked.optedOut === 1 && pre.data.blocked.cold === 1 && pre.data.canReceive === 1, `preflight ${JSON.stringify(pre.data).slice(0, 300)}`);
+      assert(pre.data.connection.riskMode === "strict" && pre.data.warnings.length >= 2 && typeof pre.data.estimatedSeconds === "number", "connection, warnings and duration");
+      assert((await http.put(`/whatsapp/${wa.id}`, { name: "QR conferência", riskMode: "relaxed" }, auth())).status === 200, "relaxed mode");
+      const relaxed = (await http.get(`/campaigns/${c.id}/preflight`, auth())).data;
+      assert(relaxed.canReceive === 2 && relaxed.blocked.cold === 0 && relaxed.blocked.optedOut === 1, `relaxed ${JSON.stringify(relaxed.blocked)} ${relaxed.canReceive}`);
+      const noList = (await http.post("/contact-lists", { name: "Vazia conferência" }, auth())).data;
+      const empty = (await http.post("/campaigns", { name: "Vazia", message: "Oi", contactListId: noList.id, whatsappId: wa.id }, auth())).data;
+      const e = (await http.get(`/campaigns/${empty.id}/preflight`, auth())).data;
+      assert(e.total === 0 && e.canReceive === 0 && e.warnings.some(w => /vazia/.test(w)), "empty list preflight");
+      assert((await http.post(`/campaigns/${empty.id}/start`, {}, auth())).status === 400, "an empty list started");
+      assert((await http.post(`/campaigns/${c.id}/test`, { number: "123" }, auth())).status === 400, "test with an invalid number");
     });
     await test("a contact list can be built from the CRM funnel with a live count", async () => {
       const dry = await http.post("/contact-lists/from-leads", { dryRun: true }, auth());
@@ -2197,7 +2347,7 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(previewOf("oi") === "oi", "text untouched");
     });
     await test("the Grupos tab lists every group (copied history and live) and statistics ignore groups", async () => {
-      const gid = sql(`INSERT INTO Contacts (name, number, email, isGroup, channel, createdAt, updatedAt) VALUES ('Grupo da turma', '120363000000000001-1600000000', '', true, 'telegram', NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const gid = sql(`INSERT INTO Contacts (name, number, email, isGroup, channel, createdAt, updatedAt) VALUES ('Grupo da turma', '120363777000000001-1600000000', '', true, 'telegram', NOW(), NOW()) RETURNING id`).split("\n")[0];
       const gt = sql(`INSERT INTO Tickets (status, contactId, whatsappId, unreadMessages, isGroup, segment, isHistorical, lastMessage, closedAt, createdAt, updatedAt) VALUES ('closed', ${gid}, ${tgId}, 0, true, 'sales', true, 'bem-vindos', NOW(), NOW() - INTERVAL '3 days', NOW() - INTERVAL '3 days') RETURNING id`).split("\n")[0];
       const queueIds = JSON.stringify((await http.get("/queue", auth())).data.map(q => q.id));
       const ids = async (params) => (await http.get("/tickets", { params: { showAll: "true", queueIds, ...params }, ...auth() })).data.tickets.map(t => String(t.id));
@@ -2836,9 +2986,9 @@ const postMeta = (id, payload, secret, badSig) => {
         const t = sql(`INSERT INTO Tickets (status, contactId, whatsappId, unreadMessages, isGroup, segment, isHistorical, lastMessage, lastMessageAt, createdAt, updatedAt) VALUES ('open', ${c}, ${tgId}, ${unread}, true, 'sales', false, 'aviso', NOW(), NOW(), NOW()) RETURNING id`).split("\n")[0];
         return { c, t };
       };
-      mk("Comunidade Polo PVH", "120363000000000001", "parent", "120363000000000001@g.us", 0);
-      const avisos = mk("Avisos Polo PVH", "120363000000000002", "announcement", "120363000000000001@g.us", 2);
-      const turma = mk("Turma 2026", "120363000000000003", "member", "120363000000000001@g.us", 3);
+      mk("Comunidade Polo PVH", "120363777000000001", "parent", "120363777000000001@g.us", 0);
+      const avisos = mk("Avisos Polo PVH", "120363000000000002", "announcement", "120363777000000001@g.us", 2);
+      const turma = mk("Turma 2026", "120363000000000003", "member", "120363777000000001@g.us", 3);
       const r = await http.get("/communities", auth());
       assert(r.status === 200, `communities ${r.status}`);
       const c = r.data.communities.find(x => x.name === "Comunidade Polo PVH");
@@ -3846,6 +3996,145 @@ const postMeta = (id, payload, secret, badSig) => {
       const outsider = (await http.post("/users", { name: "Fora do Polo", email: "forapolo@polo.test", password: "senha123", role: "tutor" }, auth())).data;
       assert((await http.put(`/leads/${leadId}/onboarding`, { tutorId: outsider.id }, auth())).status === 422, "a tutor from outside the polo was accepted");
       assert(graph.sent.length === sentBefore, "editing the enrollment sent a message");
+    });
+    await test("Estatísticas do gestor: alertas de agora, progresso dos polos e quem pode ver", async () => {
+      const cons = (await http.post("/auth/login", { email: "consultor@polo.test", password: "senha123" })).data.token;
+      const tut = (await http.post("/auth/login", { email: "tutor@polo.test", password: "senha123" })).data.token;
+      assert((await http.get("/dashboard/manager", asUser(cons))).status === 403, "a consultant opened the manager overview");
+      assert((await http.get("/dashboard/manager", asUser(tut))).status === 403, "a tutor opened the manager overview");
+      assert((await http.get("/dashboard/manager")).status === 401, "the manager overview without login");
+      const alertOf = (d, key) => (d.alerts.find(a => a.key === key) || { count: 0 }).count;
+
+      const base = await http.get("/dashboard/manager", { params: { days: 7 }, ...auth() });
+      assert(base.status === 200, `overview ${base.status}`);
+      ["alerts", "polos"].forEach(k => assert(Array.isArray(base.data[k]), `${k} is not a list`));
+      assert(base.data.period && Array.isArray(base.data.period.daily) && typeof base.data.period.attendances === "number", "period shape");
+      assert(base.data.alerts.every(a => a.count > 0 && ["danger", "warn"].includes(a.tone) && a.to.startsWith("/")), "an alert without count, tone or link");
+
+      // a lead that nobody contacted for hours is an alert; once contacted it goes away
+      const lead = (await http.post("/leads", { name: "Lead Parado Gestor", phone: "5511966661111", source: "Site" }, auth())).data.lead;
+      sql(`UPDATE Leads SET createdAt=NOW() - INTERVAL '5 hours', firstContactAt=NULL WHERE id=${lead.id}`);
+      const before = alertOf((await http.get("/dashboard/manager", auth())).data, "first-contact");
+      assert(before >= 1, "the lead without first contact is not an alert");
+      sql(`UPDATE Leads SET firstContactAt=NOW() WHERE id=${lead.id}`);
+      assert(alertOf((await http.get("/dashboard/manager", auth())).data, "first-contact") === before - 1, "the alert did not go away when the lead was contacted");
+
+      // an overdue task
+      const tasks0 = alertOf((await http.get("/dashboard/manager", auth())).data, "tasks");
+      sql(`INSERT INTO LeadTasks (leadId, userId, type, title, dueAt, createdAt, updatedAt) SELECT ${lead.id}, id, 'ligar', 'Atrasada de teste', NOW() - INTERVAL '2 days', NOW(), NOW() FROM Users WHERE email='admin@whaticket.com'`);
+      assert(alertOf((await http.get("/dashboard/manager", auth())).data, "tasks") === tasks0 + 1, "the overdue task is not an alert");
+
+      // the polo with a target: progress, pace and forecast
+      const row = (await http.get("/dashboard/manager", auth())).data.polos.find(p => p.name === "Polo da Meta" || p.code === "9001");
+      assert(row && row.target > 0 && typeof row.pct === "number" && row.expectedPct > 0, `polo row ${JSON.stringify(row)}`);
+      assert(row.forecast === Math.round(row.done / (row.expectedPct / 100)), `forecast ${row.forecast} for ${row.done} at ${row.expectedPct}%`);
+      assert(["unanswered", "onboardingLate", "atRisk"].every(k => typeof row[k] === "number"), "stuck counters");
+
+      // the Painel do CRM: the affiliate column is marked and the new alerts are numbers
+      const m = (await http.get("/crm/metrics", auth())).data;
+      const lane = sql(`SELECT id FROM LeadStages WHERE name='Indicações de afiliados'`);
+      const marked = m.funnel.filter(f => f.isAffiliateLane);
+      assert(lane ? marked.length === 1 && String(marked[0].id) === lane : marked.length === 0, `affiliate column marking ${JSON.stringify(marked)}`);
+      ["feePending", "docsPending", "unassigned", "waitingFirstContact", "overdueTasks", "stale"].forEach(k => assert(typeof m.attention[k] === "number", `attention.${k}`));
+    });
+    await test("retenção: resumo, planilhas e o tutor vê só a satisfação dos próprios alunos", async () => {
+      const tutor = (await http.post("/auth/login", { email: "tutorr@ret.test", password: "senha123" })).data.token;
+      const cons = (await http.post("/auth/login", { email: "consultor@polo.test", password: "senha123" })).data.token;
+      const sum = await http.get("/retention/summary", auth());
+      assert(sum.status === 200 && typeof sum.data.risk.total === "number" && typeof sum.data.rematricula.pending === "number" && sum.data.nps.days === 30, `summary ${sum.status} ${JSON.stringify(sum.data).slice(0, 200)}`);
+      assert((await http.get("/retention/summary", asUser(tutor))).status === 200, "the tutor cannot see the summary");
+      assert((await http.get("/retention/summary", asUser(cons))).status === 403, "a consultant opened the retention summary");
+
+      const risk = (await http.get("/retention/risk", auth())).data;
+      assert(typeof risk.total === "number" && risk.total >= risk.students.length, "risk total");
+      risk.students.forEach(st => ["poloId", "ticketId", "tutorId", "messagedAt"].forEach(k => assert(Object.prototype.hasOwnProperty.call(st, k), `risk student without ${k}`)));
+      const rem = (await http.get("/retention/rematricula", auth())).data;
+      [...rem.pendingStudents, ...rem.doneStudents].forEach(st => ["poloId", "ticketId", "tutorId"].forEach(k => assert(Object.prototype.hasOwnProperty.call(st, k), `re-enrollment student without ${k}`)));
+
+      // spreadsheets: BOM, ";" and the header; the other roles stay out
+      for (const [path, head] of [["/retention/risk.csv", '"Aluno";"Polo";"Tutor"'], ["/retention/rematricula.csv", '"Aluno";"Polo";"Tutor"'], ["/retention/nps.csv", '"Data";"Aluno";"Momento"']]) {
+        const r = await http.get(path, auth());
+        assert(r.status === 200 && String(r.headers["content-type"]).startsWith("text/csv"), `${path} ${r.status} ${r.headers["content-type"]}`);
+        assert(String(r.data).startsWith(head), `${path} header ${JSON.stringify(String(r.data).slice(0, 60))}`);
+        assert((await http.get(path, asUser(cons))).status === 403, `${path} for a consultant`);
+        assert((await http.get(path, asUser(tutor))).status === 200, `${path} for the tutor`);
+      }
+
+      // the satisfaction of a student that the tutor does not follow is not theirs to read
+      const other = sql(`SELECT id FROM Leads WHERE isHistorical=false AND COALESCE(onboardingTutorId,0) <> (SELECT id FROM Users WHERE email='tutorr@ret.test') ORDER BY id LIMIT 1`);
+      assert(other, "no lead of another tutor");
+      sql(`INSERT INTO NpsSurveys (leadId, kind, status, score, comment, awaitingComment, sentAt, answeredAt, createdAt, updatedAt) VALUES (${other}, 'd30', 'answered', 2, 'comentario-secreto-de-outro-tutor', false, NOW(), NOW(), NOW(), NOW())`);
+      const adminNps = (await http.get("/retention/nps", auth())).data;
+      const tutorNps = (await http.get("/retention/nps", asUser(tutor))).data;
+      assert(adminNps.comments.some(c => c.comment === "comentario-secreto-de-outro-tutor"), "the management does not see the answer");
+      assert(!tutorNps.comments.some(c => c.comment === "comentario-secreto-de-outro-tutor") && tutorNps.answered < adminNps.answered, "the tutor read the answer of a student they do not follow");
+      assert(!String((await http.get("/retention/nps.csv", asUser(tutor))).data).includes("comentario-secreto-de-outro-tutor"), "the tutor's spreadsheet leaked the answer");
+      assert(Array.isArray(adminNps.series) && adminNps.series.length >= 1 && adminNps.series[0].week && typeof adminNps.commentsTotal === "number", "series by week");
+      adminNps.byKind.forEach(k => assert(Object.prototype.hasOwnProperty.call(k, "nps"), "byKind without nps"));
+    });
+    await test("contatos: baixar a lista em planilha (gestão e consultor), com a busca da tela e sem fórmulas", async () => {
+      const cons = (await http.post("/auth/login", { email: "consultor@polo.test", password: "senha123" })).data.token;
+      const tut = (await http.post("/auth/login", { email: "tutor@polo.test", password: "senha123" })).data.token;
+      sql(`INSERT INTO Contacts (name, number, email, isGroup, kind, channel, createdAt, updatedAt) VALUES ('=HYPERLINK("http://x.test")', '5511977779991', '', false, 'person', 'whatsapp', NOW(), NOW())`);
+      sql(`INSERT INTO Contacts (name, number, email, isGroup, kind, channel, createdAt, updatedAt) VALUES ('Grupo do Export', '120363888000000555', '', true, 'group', 'whatsapp', NOW(), NOW())`);
+
+      assert((await http.get("/contacts/export.csv")).status === 401, "export without login");
+      assert((await http.get("/contacts/export.csv", asUser(tut))).status === 403, "a tutor downloaded the contacts");
+      const all = await http.get("/contacts/export.csv", auth());
+      assert(all.status === 200 && String(all.headers["content-type"]).startsWith("text/csv") && /attachment; filename="contatos-/.test(all.headers["content-disposition"]), `export ${all.status} ${all.headers["content-disposition"]}`);
+      const text = String(all.data);
+      const raw = Buffer.from((await http.get("/contacts/export.csv", { responseType: "arraybuffer", ...auth() })).data);
+      assert(raw[0] === 0xef && raw[1] === 0xbb && raw[2] === 0xbf, "the spreadsheet has no BOM (Excel would break the accents)");
+      assert(text.startsWith('"Nome";"WhatsApp";"E-mail";"Tipo";"Relação";"Canal";"Etiquetas";"Criado em"\r\n'), `header ${JSON.stringify(text.slice(0, 90))}`);
+      assert(text.includes(`"'=HYPERLINK(""http://x.test"")";="5511977779991"`), "the formula was not neutralised or the phone is not kept as text");
+      assert(!text.includes("Grupo do Export"), "a group came in the default list");
+      assert(String((await http.get("/contacts/export.csv", { params: { groups: "1" }, ...auth() })).data).includes("Grupo do Export"), "groups=1 did not include the group");
+
+      // the search of the screen narrows the file
+      const one = String((await http.get("/contacts/export.csv", { params: { searchParam: "5511977779991" }, ...auth() })).data).trim().split("\r\n");
+      assert(one.length === 2 && one[1].includes("5511977779991"), `search gave ${one.length} lines`);
+      assert((await http.get("/contacts/export.csv", { params: { searchParam: "5511977779991" }, ...asUser(cons) })).status === 200, "a consultant cannot download");
+    });
+    await test("amigos e equipe: saem do funil e das estatísticas, não viram lead de novo e dá para desfazer", async () => {
+      const metrics = async () => (await http.get("/crm/metrics", auth())).data;
+      const before = await metrics();
+      const lead = (await http.post("/leads", { name: "Amigo que escreveu", phone: "5521933330001", source: "WhatsApp" }, auth())).data.lead;
+      const mid = await metrics();
+      assert(mid.kpi.leads === before.kpi.leads + 1, "the new lead was not counted");
+      assert(mid.triage.some(t => t.id === lead.id), "a lead nobody contacted is not offered for triage");
+
+      assert((await http.post(`/leads/${lead.id}/relation`, { relation: "inventado" }, auth())).status === 400, "invalid relation accepted");
+      const out = await http.post(`/leads/${lead.id}/relation`, { relation: "friend" }, auth());
+      assert(out.status === 200, `classify ${out.status} ${JSON.stringify(out.data)}`);
+      assert(sql(`SELECT isHistorical FROM Leads WHERE id=${lead.id}`) === "1", "the lead is still in the funnel");
+      const after = await metrics();
+      assert(after.kpi.leads === before.kpi.leads && !after.triage.some(t => t.id === lead.id), "a friend still counts in the numbers");
+      assert(!(await http.get("/leads", { params: { search: "Amigo que escreveu" }, ...auth() })).data.leads.some(l => l.id === lead.id), "a friend still shows in the funnel list");
+      assert(sql(`SELECT COUNT(*) FROM LeadActivities WHERE leadId=${lead.id} AND body LIKE '%amigo ou pessoal%'`) === "1" || sql(`SELECT COUNT(*) FROM LeadActivities WHERE leadId=${lead.id} AND body LIKE 'Marcado como amigo%'`) === "1", "no record of who took it out");
+      assert((await http.post(`/leads/${lead.id}/relation`, { relation: "customer" }, auth())).status === 200 && sql(`SELECT isHistorical FROM Leads WHERE id=${lead.id}`) === "0", "undo did not bring the lead back");
+      assert((await metrics()).kpi.leads === before.kpi.leads + 1, "the lead is back but does not count");
+
+      // a student is never "just a friend"
+      const student = sql(`SELECT id FROM Leads WHERE enrolledAt IS NOT NULL AND isHistorical=false LIMIT 1`);
+      if (student) assert((await http.post(`/leads/${student}/relation`, { relation: "staff" }, auth())).status === 400, "an enrolled student was marked as team");
+
+      // a contact marked before writing: no lead is created for the next message
+      const cons = (await http.post("/auth/login", { email: "consultor@polo.test", password: "senha123" })).data.token;
+      const contactId = sql(`INSERT INTO Contacts (name, number, email, isGroup, kind, channel, isPersonal, createdAt, updatedAt) VALUES ('Amiga Pessoal', '5521933330009', '', false, 'person', 'whatsapp_cloud', true, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const r = await postMeta(cid, cloudEvent([{ from: "5521933330009", id: "wamid.amiga1", type: "text", text: { body: "Oi, tudo bem? Sou eu" } }], { contacts: [{ wa_id: "5521933330009", profile: { name: "Amiga Pessoal" } }] }), cloudCfg.appSecret);
+      assert(r.status === 200, `inbound ${r.status}`);
+      await waitFor(() => ticketOf("5521933330009"), 8000, "the friend's conversation");
+      assert(sql(`SELECT COUNT(*) FROM Leads WHERE contactId=${contactId}`) === "0", "a lead was created for a friend");
+
+      // the contact routes: who they are, and the old team switch keeps working
+      assert((await http.put(`/contacts/${contactId}/relation`, { relation: "xyz" }, auth())).status === 400, "bad relation on the contact");
+      assert((await http.put(`/contacts/${contactId}/relation`, { relation: "staff" }, auth())).status === 200 && sql(`SELECT isStaff::int||'|'||isPersonal::int FROM Contacts WHERE id=${contactId}`) === "1|0", "staff");
+      assert((await http.put(`/contacts/${contactId}/staff`, { isStaff: false }, auth())).status === 200 && sql(`SELECT isStaff::int||'|'||isPersonal::int FROM Contacts WHERE id=${contactId}`) === "0|0", "team switch off");
+      assert((await http.put(`/contacts/${contactId}/relation`, { relation: "friend" }, auth())).data.isPersonal === true, "friend");
+      const csv = String((await http.get("/contacts/export.csv", { params: { searchParam: "5521933330009" }, ...auth() })).data);
+      assert(csv.includes("Amigo ou pessoal"), "the spreadsheet does not tell who the friend is");
+      // marking someone is for whoever can reach the contact list
+      assert((await http.put(`/contacts/${contactId}/relation`, { relation: "customer" }, asUser(cons))).status === 200, "a consultant cannot take the mark off");
     });
     await test("login is rate limited", async () => {
       let limited = false;

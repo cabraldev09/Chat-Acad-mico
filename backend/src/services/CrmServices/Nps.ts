@@ -2,6 +2,7 @@ import { Op, QueryTypes } from "sequelize";
 
 import sequelize from "../../database";
 import { getSetting } from "../../helpers/AppSettings";
+import { getAppTz } from "../../helpers/AppTime";
 import Lead from "../../models/Lead";
 import LeadTask from "../../models/LeadTask";
 import NpsSurvey from "../../models/NpsSurvey";
@@ -19,6 +20,14 @@ export const DETRACTOR_LABEL = { name: "Detrator NPS", color: "#DC2626" };
 export const NPS_KINDS = ["onboarding", "d30", "d90"] as const;
 export const DEFAULT_QUESTION = "Olá, {{nome}}! De 0 a 10, o quanto você recomendaria a Cruzeiro do Sul Virtual para um amigo? Responda só com o número.";
 const THANKS = "Obrigado pela nota! Se quiser, conte em uma frase o motivo: isso nos ajuda a melhorar.";
+
+// NPS of a list of answered surveys: % of promoters minus % of detractors
+const npsOf = (list: NpsSurvey[]): number | null => {
+  if (!list.length) return null;
+  const p = list.filter(r => categoryOf(Number(r.score)) === "promoter").length;
+  const d = list.filter(r => categoryOf(Number(r.score)) === "detractor").length;
+  return Math.round(((p - d) / list.length) * 100);
+};
 
 export const categoryOf = (score: number): "promoter" | "neutral" | "detractor" => (score >= 9 ? "promoter" : score >= 7 ? "neutral" : "detractor");
 
@@ -136,8 +145,20 @@ export const captureNpsAnswer = async (contactId: number, body: string): Promise
 };
 
 // ------------------------------------------------------------------ the numbers
-export const npsSummary = async (from: Date, to: Date) => {
-  const rows = await NpsSurvey.findAll({ where: { sentAt: { [Op.between]: [from, to] } }, order: [["sentAt", "DESC"]] });
+// every answer of the period, one per line (for the spreadsheet)
+export const npsAnswers = async (from: Date, to: Date, tutorId?: number | null) => {
+  const where: any = { sentAt: { [Op.between]: [from, to] }, status: "answered" };
+  if (tutorId) where.leadId = { [Op.in]: sequelize.literal(`(SELECT id FROM "Leads" WHERE "onboardingTutorId" = ${Number(tutorId)})`) };
+  const rows = await NpsSurvey.findAll({ where, order: [["answeredAt", "DESC"]], limit: 5000 });
+  const leads = await Lead.findAll({ where: { id: { [Op.in]: [...new Set(rows.map(r => r.leadId))] } }, attributes: ["id", "name"] });
+  return rows.map(r => ({ at: r.answeredAt, lead: leads.find(l => l.id === r.leadId)?.name || "—", kind: r.kind, score: r.score, category: categoryOf(Number(r.score)), comment: r.comment || "" }));
+};
+
+// `tutorId`: a tutor sees only the surveys of the students they follow
+export const npsSummary = async (from: Date, to: Date, tutorId?: number | null) => {
+  const where: any = { sentAt: { [Op.between]: [from, to] } };
+  if (tutorId) where.leadId = { [Op.in]: sequelize.literal(`(SELECT id FROM "Leads" WHERE "onboardingTutorId" = ${Number(tutorId)})`) };
+  const rows = await NpsSurvey.findAll({ where, order: [["sentAt", "DESC"]] });
   const answered = rows.filter(r => r.status === "answered" && r.score !== null);
   const count = (c: string) => answered.filter(r => categoryOf(Number(r.score)) === c).length;
   const promoters = count("promoter");
@@ -146,8 +167,23 @@ export const npsSummary = async (from: Date, to: Date) => {
   const sent = rows.filter(r => r.status !== "expired").length;
   const byKind = (NPS_KINDS as readonly string[]).map(kind => {
     const a = answered.filter(r => r.kind === kind);
-    return { kind, answered: a.length, avg: a.length ? Math.round((a.reduce((t, r) => t + Number(r.score), 0) / a.length) * 10) / 10 : null };
+    return { kind, answered: a.length, avg: a.length ? Math.round((a.reduce((t, r) => t + Number(r.score), 0) / a.length) * 10) / 10 : null, nps: npsOf(a) };
   });
+  // by week (Monday of the week, in the company timezone): the trend of the score
+  const tz = getAppTz();
+  const dayFmt = new Intl.DateTimeFormat("en-CA", { timeZone: tz });
+  const weekOf = (d: Date): string => {
+    const day = dayFmt.format(d);
+    const t = new Date(`${day}T12:00:00Z`);
+    t.setUTCDate(t.getUTCDate() - ((t.getUTCDay() + 6) % 7));
+    return t.toISOString().slice(0, 10);
+  };
+  const weeks = new Map<string, NpsSurvey[]>();
+  answered.forEach(r => {
+    const w = weekOf(new Date(r.answeredAt || r.sentAt));
+    weeks.set(w, [...(weeks.get(w) || []), r]);
+  });
+  const series = [...weeks.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([week, list]) => ({ week, answered: list.length, nps: npsOf(list) }));
   const comments = answered.filter(r => r.comment).slice(0, 20);
   const leads = await Lead.findAll({ where: { id: { [Op.in]: [...new Set(comments.map(c => c.leadId))] } }, attributes: ["id", "name"] });
   return {
@@ -158,8 +194,10 @@ export const npsSummary = async (from: Date, to: Date) => {
     neutrals,
     detractors,
     // NPS = % of promoters - % of detractors
-    nps: answered.length ? Math.round(((promoters - detractors) / answered.length) * 100) : null,
+    nps: npsOf(answered),
     byKind,
+    series,
+    commentsTotal: answered.filter(r => r.comment).length,
     comments: comments.map(c => ({ id: c.id, lead: leads.find(l => l.id === c.leadId)?.name || "—", leadId: c.leadId, score: c.score, comment: c.comment, at: c.answeredAt }))
   };
 };

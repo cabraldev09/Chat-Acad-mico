@@ -25,14 +25,7 @@ export const BONUS_STATUS = {
 
 export const PIX_TYPES = [["cpf", "CPF"], ["cnpj", "CNPJ"], ["phone", "Celular"], ["email", "E-mail"], ["random", "Chave aleatória"]];
 
-export const saveBlob = (blob, name) => {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = name;
-  a.click();
-  URL.revokeObjectURL(url);
-};
+export { saveBlob } from "../../utils/saveBlob";
 
 export const useStyles = makeStyles((theme) => ({
   page: { flex: 1, minHeight: 0, display: "flex", flexDirection: "column" },

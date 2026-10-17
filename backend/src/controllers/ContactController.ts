@@ -2,7 +2,13 @@ import * as Yup from "yup";
 import { Request, Response } from "express";
 import { getIO } from "../libs/socket";
 
-import ListContactsService from "../services/ContactServices/ListContactsService";
+import ListContactsService, { contactsSearchWhere } from "../services/ContactServices/ListContactsService";
+import ContactTag from "../models/ContactTag";
+import Tag from "../models/Tag";
+import { Op } from "sequelize";
+import { csvAsText, csvDay, csvBody } from "../helpers/Csv";
+import { roleOf } from "../helpers/Roles";
+import { RELATIONS, Relation, applyRelation } from "../services/CrmServices/Relation";
 import CreateContactService from "../services/ContactServices/CreateContactService";
 import ShowContactService from "../services/ContactServices/ShowContactService";
 import UpdateContactService from "../services/ContactServices/UpdateContactService";
@@ -47,6 +53,57 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
   });
 
   return res.json({ contacts, count, hasMore });
+};
+
+const KIND_LABEL: Record<string, string> = { person: "Pessoa", group: "Grupo", channel: "Canal", business: "Empresa" };
+const EXPORT_LIMIT = 100000;
+
+// The list of contacts as a spreadsheet (opens in Excel): the same search as the screen. Groups and channels stay out unless
+// asked for (`groups=1`). Management and consultants only: the tutor works with the students, not with the whole list.
+export const exportCsv = async (req: Request, res: Response): Promise<Response> => {
+  if (!["admin", "coordenacao", "consultor"].includes(roleOf(req.user))) throw new AppError("ERR_NO_PERMISSION", 403);
+  const searchParam = String(req.query.searchParam || "");
+  const withGroups = req.query.groups === "1";
+  const where: any = {
+    [Op.and]: [contactsSearchWhere(searchParam), ...(withGroups ? [] : [{ isGroup: false }, { kind: { [Op.in]: ["person", "business"] } }])]
+  };
+
+  const rows: Contact[] = [];
+  for (let offset = 0; offset < EXPORT_LIMIT; offset += 1000) {
+    // eslint-disable-next-line no-await-in-loop
+    const page = await Contact.findAll({ where, order: [["id", "ASC"]], limit: 1000, offset });
+    rows.push(...page);
+    if (page.length < 1000) break;
+  }
+
+  // labels of all of them, in one query
+  const tagsOf = new Map<number, string[]>();
+  for (let i = 0; i < rows.length; i += 2000) {
+    const ids = rows.slice(i, i + 2000).map(c => c.id);
+    // eslint-disable-next-line no-await-in-loop
+    const links = await ContactTag.findAll({ where: { contactId: { [Op.in]: ids } }, attributes: ["contactId", "tagId"], raw: true });
+    // eslint-disable-next-line no-await-in-loop
+    const tags = await Tag.findAll({ where: { id: { [Op.in]: [...new Set(links.map((l: any) => l.tagId))] } }, attributes: ["id", "name"], raw: true });
+    const nameOf = new Map<number, string>(tags.map((t: any) => [t.id, t.name]));
+    links.forEach((l: any) => tagsOf.set(l.contactId, [...(tagsOf.get(l.contactId) || []), nameOf.get(l.tagId) || ""].filter(Boolean)));
+  }
+
+  const body = csvBody(
+    ["Nome", "WhatsApp", "E-mail", "Tipo", "Relação", "Canal", "Etiquetas", "Criado em"],
+    rows.map(c => [
+      c.name || "",
+      csvAsText(c.number),
+      c.email || "",
+      c.isGroup ? "Grupo" : KIND_LABEL[c.kind] || "Pessoa",
+      c.isStaff ? "Equipe" : c.isPersonal ? "Amigo ou pessoal" : "Cliente",
+      c.channel || "whatsapp",
+      (tagsOf.get(c.id) || []).sort((a, b) => a.localeCompare(b, "pt-BR")).join(", "),
+      csvDay(c.createdAt)
+    ])
+  );
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="contatos-${new Date().toLocaleDateString("en-CA", { timeZone: "America/Porto_Velho" })}.csv"`);
+  return res.send(body);
 };
 
 export const getContact = async (
@@ -179,16 +236,20 @@ export const setStaff = async (req: Request, res: Response): Promise<Response> =
   if (!contact) throw new AppError("ERR_NO_CONTACT_FOUND", 404);
   if (contact.isGroup) throw new AppError("ERR_STAFF_GROUP", 400);
   const isStaff = Boolean(req.body.isStaff);
-  await contact.update({ isStaff });
+  // taking the mark off a team member makes them a customer again; a friend is not touched by this
+  if (isStaff) await applyRelation(contact, "staff");
+  else if (contact.isStaff) await applyRelation(contact, "customer");
+  return res.status(200).json(contact);
+};
 
-  if (isStaff) {
-    // their leads leave the funnel and the metrics (kept, not deleted)
-    await Lead.update({ isHistorical: true } as any, { where: { contactId: contact.id } });
-  } else if (await Ticket.count({ where: { contactId: contact.id, isHistorical: false } })) {
-    await Lead.update({ isHistorical: false } as any, { where: { contactId: contact.id } });
-  }
-
-  getIO().emit("contact", { action: "update", contact });
+// Who the person is for us: customer, friend/family or team. A friend or a team member leaves the CRM funnel and the numbers.
+export const setRelation = async (req: Request, res: Response): Promise<Response> => {
+  const contact = await Contact.findByPk(req.params.contactId);
+  if (!contact) throw new AppError("ERR_NO_CONTACT_FOUND", 404);
+  if (contact.isGroup) throw new AppError("ERR_STAFF_GROUP", 400);
+  const relation = String(req.body.relation) as Relation;
+  if (!RELATIONS.includes(relation)) throw new AppError("ERR_INVALID_PARAMETER", 400);
+  await applyRelation(contact, relation);
   return res.status(200).json(contact);
 };
 

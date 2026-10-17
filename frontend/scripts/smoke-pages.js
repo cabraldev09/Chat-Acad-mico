@@ -40,7 +40,7 @@ const ROUTES = [
   "/crm", "/crm/painel", "/crm/tarefas", "/crm/comissoes", "/crm/metas-polos", "/crm/metas", "/crm/config",
   "/afiliados", "/afiliados?aba=materiais", "/afiliados?aba=campanhas", "/afiliados?aba=bonificacoes", "/afiliados?aba=regras",
   "/campaigns", "/chatbot", "/chatbot/1", "/chatbot-antigo", "/ai-agents", "/monitor", "/integrations",
-  "/users", "/polos", "/Queues", "/tags", "/configuracoes", "/crm/marketing", "/crm/retencao",
+  "/users", "/polos", "/Queues", "/tags", "/configuracoes", "/crm/retencao",
   "/grades", "/analise-curricular", "/analise-curricular/1", "/analise-academica", "/analise-academica/1", "/alunos",
 ];
 const SETTINGS_GROUPS = ["geral", "horario", "atendimento", "tutoria", "captacao", "pagamentos", "cadastros", "regras", "email", "erros"];

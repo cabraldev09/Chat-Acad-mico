@@ -13,6 +13,7 @@ import MainHeader from "../../components/MainHeader";
 import Title from "../../components/Title";
 import TimezoneSelect from "../../components/TimezoneSelect";
 import { Automation, Capture, EfiSettings, HoursAndAlerts } from "../CRM/Settings";
+import CoursePages from "../CRM/CoursePages";
 import { AuthContext } from "../../context/Auth/AuthContext";
 import { WhatsAppsContext } from "../../context/WhatsApp/WhatsAppsContext";
 import { isManager } from "../../utils/access";
@@ -29,7 +30,7 @@ const GROUPS = [
   { id: "horario", label: "Horário e prazos", icon: Clock, hint: "Expediente e metas de resposta" },
   { id: "atendimento", label: "Atendimento e CRM", icon: SlidersHorizontal, hint: "Distribuição, lembretes e períodos" },
   { id: "tutoria", label: "Tutoria (acadêmico)", icon: BellRing, hint: "Boas-vindas e prazo do 1º contato" },
-  { id: "captacao", label: "Captação", icon: FileInput, hint: "Formulário público e API" },
+  { id: "captacao", label: "Captação", icon: FileInput, hint: "Formulário público, páginas por curso e API" },
   { id: "pagamentos", label: "Pagamentos", icon: CreditCard, hint: "Taxa de matrícula (Efí)", admin: true },
   { id: "cadastros", label: "Cadastros", icon: ListTree, hint: "Conexões, equipe, polos, filas" },
   { id: "regras", label: "Regras acadêmicas", icon: Calculator, hint: "Vagas extras e semestres nas previsões", admin: true },
@@ -599,7 +600,12 @@ const SettingsHub = () => {
                 {current.id === "horario" && <Horario values={values} save={save} crm={crm} />}
                 {current.id === "atendimento" && <Atendimento values={values} save={save} crm={crm} />}
                 {current.id === "tutoria" && <Tutoria values={values} save={save} />}
-                {current.id === "captacao" && <Capture s={crm.s} setS={crm.setS} save={crm.save} />}
+                {current.id === "captacao" && (
+                  <>
+                    <Capture s={crm.s} setS={crm.setS} save={crm.save} />
+                    <div style={{ marginTop: 20 }}><CoursePages /></div>
+                  </>
+                )}
                 {current.id === "pagamentos" && admin && <Pagamentos />}
                 {current.id === "cadastros" && <Cadastros admin={admin} />}
                 {current.id === "regras" && admin && <RegrasAcademicas />}

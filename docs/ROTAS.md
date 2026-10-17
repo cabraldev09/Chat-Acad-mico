@@ -1,6 +1,6 @@
-# Rotas da API (381)
+# Rotas da API (394)
 
-Públicas: 31 · logado (qualquer perfil): 217 · gestão: 94 · admin: 31
+Públicas: 31 · logado (qualquer perfil): 230 · gestão: 94 · admin: 31
 
 ## Públicas (sem login)
 
@@ -62,6 +62,7 @@ Públicas: 31 · logado (qualquer perfil): 217 · gestão: 94 · admin: 31
 - PUT /contacts/:contactId (contactRoutes.ts)
 - PUT /contacts/:contactId/no-reply (contactRoutes.ts)
 - PUT /contacts/:contactId/staff (contactRoutes.ts)
+- PUT /contacts/:contactId/relation (contactRoutes.ts)
 - PUT /contacts/:contactId/community (contactRoutes.ts)
 - POST /uploads (extraRoutes.ts)
 - PUT /me/phone (extraRoutes.ts)
@@ -115,6 +116,9 @@ Públicas: 31 · logado (qualquer perfil): 217 · gestão: 94 · admin: 31
 - POST /campaigns/:id/start → salesStaff
 - POST /campaigns/:id/pause → salesStaff
 - POST /campaigns/:id/cancel → salesStaff
+- POST /campaigns/:id/retry-failed → salesStaff
+- POST /campaigns/:id/duplicate → salesStaff
+- POST /campaigns/:id/test → salesStaff
 - POST /contact-lists → salesStaff
 - POST /contact-lists/from-leads → salesStaff
 - PUT /contact-lists/:id → salesStaff
@@ -125,6 +129,7 @@ Públicas: 31 · logado (qualquer perfil): 217 · gestão: 94 · admin: 31
 - POST /leads/:id/documents/remind → canAccessLead
 - PUT /leads/:id → canAccessLead
 - PUT /leads/:id/stage → canAccessLead
+- POST /leads/:id/relation → canAccessLead
 - POST /leads/:id/activities → canAccessLead
 - POST /leads/:id/tasks → canAccessLead
 - POST /leads/:id/open-ticket → canAccessLead

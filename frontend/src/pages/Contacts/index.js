@@ -3,7 +3,7 @@ import { accessLevel } from "../../utils/access";
 import openSocket from "../../services/socket-io";
 import { toast } from "react-toastify";
 import Tooltip from "@material-ui/core/Tooltip";
-import { BadgeCheck } from "lucide-react";
+import { Download } from "lucide-react";
 import { useHistory } from "react-router-dom";
 
 import { makeStyles } from "@material-ui/core/styles";
@@ -37,6 +37,8 @@ import MainContainer from "../../components/MainContainer";
 import toastError from "../../errors/toastError";
 import { AuthContext } from "../../context/Auth/AuthContext";
 import { Can } from "../../components/Can";
+import { downloadFile } from "../../utils/saveBlob";
+import RelationMenu from "../../components/RelationMenu";
 
 const reducer = (state, action) => {
   if (action.type === "LOAD_CONTACTS") {
@@ -100,6 +102,7 @@ const Contacts = () => {
   const [loading, setLoading] = useState(false);
   const [pageNumber, setPageNumber] = useState(1);
   const [searchParam, setSearchParam] = useState("");
+  const [exporting, setExporting] = useState(false);
   const [contacts, dispatch] = useReducer(reducer, []);
   const [selectedContactId, setSelectedContactId] = useState(null);
   const [contactModalOpen, setContactModalOpen] = useState(false);
@@ -181,6 +184,15 @@ const Contacts = () => {
 
   const handleSearch = (event) => {
     setSearchParam(event.target.value.toLowerCase());
+  };
+
+  // the whole list (or what the search found) as a spreadsheet; management and consultants only
+  const canExport = ["admin", "coordenacao", "consultor"].includes(user.profile === "admin" ? "admin" : user.role || "consultor");
+  const exportContacts = async () => {
+    setExporting(true);
+    const ok = await downloadFile("/contacts/export.csv", { searchParam: searchParam || undefined }, "contatos.csv");
+    setExporting(false);
+    if (ok) toast.success(searchParam ? "Planilha dos contatos encontrados baixada." : "Planilha de todos os contatos baixada.");
   };
 
   const handleOpenContactModal = () => {
@@ -301,6 +313,15 @@ const Contacts = () => {
           >
             {importing ? "Importando…" : i18n.t("contacts.buttons.import")}
           </Button>
+          {canExport && (
+            <Tooltip title={searchParam ? "Baixa só os contatos da busca atual" : "Baixa todos os contatos em uma planilha"}>
+              <span>
+                <Button variant="outlined" color="primary" startIcon={<Download size={16} />} onClick={exportContacts} disabled={exporting}>
+                  {exporting ? "Preparando..." : "Baixar lista de contatos"}
+                </Button>
+              </span>
+            </Tooltip>
+          )}
           <Button
             variant="contained"
             color="primary"
@@ -341,6 +362,7 @@ const Contacts = () => {
                   <TableCell>
                     {contact.name}
                     {contact.isStaff && <span style={{ marginLeft: 8, fontSize: 11, padding: "1px 8px", borderRadius: 999, background: "rgba(22,163,74,.16)", color: "#15803d", fontWeight: 700 }} title="Da equipe: não conta nas estatísticas nem no funil">Equipe</span>}
+                    {contact.isPersonal && <span style={{ marginLeft: 8, fontSize: 11, padding: "1px 8px", borderRadius: 999, background: "rgba(190,24,93,.12)", color: "#be185d", fontWeight: 700 }} title="Amigo ou família: não conta nas estatísticas nem no funil">Amigo</span>}
                     {contact.isGroup && <span style={{ marginLeft: 8, fontSize: 11, padding: "1px 8px", borderRadius: 999, background: "rgba(6,147,227,.14)", color: "#0b4279", fontWeight: 700 }}>Grupo</span>}
                   </TableCell>
                   <TableCell
@@ -356,24 +378,7 @@ const Contacts = () => {
                     {contact.email}
                   </TableCell>
                   <TableCell align="center">
-                    {!contact.isGroup && (
-                      <Tooltip arrow title={contact.isStaff ? "Da equipe (clique para desmarcar). Não conta nas estatísticas." : "Marcar como da equipe: a conversa não conta nas estatísticas nem no funil"}>
-                        <IconButton
-                          size="small"
-                          style={contact.isStaff ? { color: "#15803d" } : undefined}
-                          onClick={async () => {
-                            try {
-                              await api.put(`/contacts/${contact.id}/staff`, { isStaff: !contact.isStaff });
-                              toast.success(contact.isStaff ? "Contato desmarcado da equipe." : "Contato marcado como da equipe.");
-                            } catch (err) {
-                              toastError(err);
-                            }
-                          }}
-                        >
-                          <BadgeCheck size={20} />
-                        </IconButton>
-                      </Tooltip>
-                    )}
+                    {!contact.isGroup && <RelationMenu contact={contact} />}
                     <IconButton
                       size="small"
                       onClick={() => handleSaveTicket(contact.id)}

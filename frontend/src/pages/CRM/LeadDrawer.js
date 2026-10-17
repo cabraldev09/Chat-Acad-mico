@@ -23,6 +23,7 @@ import LeadFields from "./LeadFields";
 import ProposalStudio from "./ProposalStudio";
 import PaymentTab from "./PaymentTab";
 import DocumentsTab from "./DocumentsTab";
+import NotALead from "./NotALead";
 import { ScoreRing, SourceIcon, ago, isOverdue, burst, initials } from "./shared";
 
 const useStyles = makeStyles((theme) => ({
@@ -248,6 +249,7 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab, side = false 
                   <Button size="small" variant="outlined" startIcon={<ThumbsDown size={16} />} onClick={() => setLostOpen(true)} style={{ color: "#dc2626", borderColor: "rgba(220,38,38,.4)" }}>Perdido</Button>
                 </>
               )}
+              {!lead.enrolledAt && <NotALead lead={lead} onDone={() => { changed(); onClose(); }} />}
             </div>
           </div>
 

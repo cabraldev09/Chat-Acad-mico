@@ -51,7 +51,7 @@ const build = async (req: Request): Promise<any> => {
   const role = roleOf(req.user);
   const admin = isManagerRole(role);
 
-  const base = `t.isHistorical = false AND t.isGroup = false AND NOT EXISTS (SELECT 1 FROM Contacts sc WHERE sc.id = t.contactId AND (sc.isStaff = true OR sc.kind <> 'person'))`;
+  const base = `t.isHistorical = false AND t.isGroup = false AND NOT EXISTS (SELECT 1 FROM Contacts sc WHERE sc.id = t.contactId AND (sc.isStaff = true OR sc.isPersonal = true OR sc.kind <> 'person'))`;
   const scope = admin
     ? ""
     : `AND (t.userId = :me OR (t.userId IS NULL AND (t.queueId IS NULL OR t.queueId IN (:queueIds))))`;

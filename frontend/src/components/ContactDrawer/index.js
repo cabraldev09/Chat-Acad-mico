@@ -18,6 +18,9 @@ import MarkdownWrapper from "../MarkdownWrapper";
 import SharedMedia from "../SharedMedia";
 import GroupInfo from "../GroupInfo";
 import Switch from "@material-ui/core/Switch";
+import TextField from "@material-ui/core/TextField";
+import MenuItem from "@material-ui/core/MenuItem";
+import { relationOf } from "../RelationMenu";
 import FormControlLabel from "@material-ui/core/FormControlLabel";
 import { toast } from "react-toastify";
 import api from "../../services/api";
@@ -74,10 +77,10 @@ const ContactDrawer = ({ open, handleDrawerClose, contact: contactProp, loading 
 	const classes = useStyles();
 
 	const [modalOpen, setModalOpen] = useState(false);
-	const [staff, setStaff] = useState(null);
+	const [relation, setRelation] = useState(null);
 	const [community, setCommunity] = useState(null);
 	// the drawer is reused from one contact to the next
-	useEffect(() => setStaff(null), [contact && contact.id]);
+	useEffect(() => setRelation(null), [contact && contact.id]);
 
 	if (!open) return null;
 
@@ -135,33 +138,28 @@ const ContactDrawer = ({ open, handleDrawerClose, contact: contactProp, loading 
 					)}
 					{contact.isGroup && <GroupInfo />}
 					{!contact.isGroup && (
-						<div className={classes.card} style={{ paddingTop: 8, paddingBottom: 8 }}>
-							<FormControlLabel
-								style={{ margin: 0, alignItems: "flex-start" }}
-								control={
-									<Switch
-										color="primary"
-										checked={staff === null ? !!contact.isStaff : staff}
-										onChange={async (e) => {
-											const next = e.target.checked;
-											setStaff(next);
-											try {
-												await api.put(`/contacts/${contact.id}/staff`, { isStaff: next });
-												toast.success(next ? "Marcado como da equipe." : "Desmarcado da equipe.");
-											} catch (err) {
-												setStaff(!next);
-												toastError(err);
-											}
-										}}
-									/>
-								}
-								label={
-									<span>
-										<span style={{ fontSize: 14 }}>É da equipe</span>
-										<span style={{ display: "block", fontSize: 12, opacity: 0.7 }}>Não conta nas estatísticas nem no funil, mesmo sem login no sistema.</span>
-									</span>
-								}
-							/>
+						<div className={classes.card} style={{ paddingTop: 12, paddingBottom: 12 }}>
+							<TextField
+								select fullWidth size="small" variant="outlined" label="Quem é esta pessoa"
+								value={relation === null ? relationOf(contact) : relation}
+								helperText={(relation === null ? relationOf(contact) : relation) === "customer" ? "Entra no funil e nas estatísticas." : "Fica fora do funil e das estatísticas, mesmo escrevendo para o sistema."}
+								onChange={async (e) => {
+									const next = e.target.value;
+									const before = relation === null ? relationOf(contact) : relation;
+									setRelation(next);
+									try {
+										await api.put(`/contacts/${contact.id}/relation`, { relation: next });
+										toast.success(next === "customer" ? "Voltou a ser tratado como cliente." : "Fora do funil e das estatísticas.");
+									} catch (err) {
+										setRelation(before);
+										toastError(err);
+									}
+								}}
+							>
+								<MenuItem value="customer">Cliente</MenuItem>
+								<MenuItem value="friend">Amigo ou família</MenuItem>
+								<MenuItem value="staff">Equipe da empresa</MenuItem>
+							</TextField>
 						</div>
 					)}
 					<div style={{ marginBottom: 8 }}>

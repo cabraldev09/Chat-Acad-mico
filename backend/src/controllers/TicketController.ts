@@ -294,7 +294,7 @@ export const groupInfo = async (req: Request, res: Response): Promise<Response> 
   const known = keys.length
     ? await Contact.findAll({
         where: { [Op.or]: [{ number: { [Op.in]: keys } }, { lid: { [Op.in]: keys } }] } as any,
-        attributes: ["id", "name", "number", "lid", "isStaff", "profilePicUrl"]
+        attributes: ["id", "name", "number", "lid", "isStaff", "isPersonal", "profilePicUrl"]
       })
     : [];
   const byKey = new Map<string, Contact>();
@@ -313,6 +313,7 @@ export const groupInfo = async (req: Request, res: Response): Promise<Response> 
         number: c && c.number ? c.number : /^\d{8,15}$/.test(p.key) ? p.key : null,
         isAdmin: p.isAdmin,
         isStaff: c ? c.isStaff : false,
+        isPersonal: c ? c.isPersonal : false,
         profilePicUrl: c ? c.profilePicUrl : null
       };
     })

@@ -30,9 +30,10 @@ import People from "@material-ui/icons/People";
 import { DeleteOutline } from "@material-ui/icons";
 import { format, parseISO } from "date-fns";
 
-import { Plus as PlusIcon, Users as UsersIcon } from "lucide-react";
+import { Plus as PlusIcon, Users as UsersIcon, Copy, Download, RotateCcw, SendHorizontal, AlertTriangle } from "lucide-react";
 import CrudPage from "../../components/CrudPage";
 import IconAction from "../../components/IconAction";
+import ConfirmationModal from "../../components/ConfirmationModal";
 import StepsEditor, { emptyStep } from "./StepsEditor";
 import NewListDialog from "./NewListDialog";
 import MainContainer from "../../components/MainContainer";
@@ -40,6 +41,7 @@ import MainHeader from "../../components/MainHeader";
 import Title from "../../components/Title";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
+import { downloadFile } from "../../utils/saveBlob";
 
 const useStyles = makeStyles((theme) => ({
   body: { display: "flex", flexDirection: "column", flex: 1, minHeight: 0 },
@@ -55,6 +57,22 @@ const STATUS = {
   finished: ["Concluída", "default"],
   cancelled: ["Cancelada", "default"],
 };
+
+// "cerca de 1 h 20 min"
+const duration = (sec) => {
+  const m = Math.max(1, Math.round(sec / 60));
+  if (m < 60) return `cerca de ${m} min`;
+  const h = Math.floor(m / 60);
+  if (h >= 24) return `cerca de ${Math.round(h / 24)} dia${Math.round(h / 24) === 1 ? "" : "s"}`;
+  return `cerca de ${h} h${m % 60 ? ` ${String(m % 60).padStart(2, "0")} min` : ""}`;
+};
+
+const RISK = {
+  cloud: ["API oficial", "#15803d"],
+  strict: ["QR Code · modo seguro", "#b45309"],
+  relaxed: ["QR Code · modo flexível", "#b91c1c"],
+};
+const riskOf = (c) => (c.channel === "whatsapp_cloud" ? RISK.cloud : c.riskMode === "relaxed" ? RISK.relaxed : RISK.strict);
 
 // tiny CSV/TSV/“name;number” parser: header optional
 const parseRows = (text) => {
@@ -96,7 +114,10 @@ const ListItemsDialog = ({ list, onClose }) => {
   const doImport = async (rows) => {
     try {
       const { data } = await api.post(`/contact-lists/${list.id}/import`, { items: rows });
-      toast.success(`${data.imported} importados, ${data.skipped} ignorados (duplicados/inválidos)`);
+      const parts = [`${data.imported} importados`];
+      if (data.duplicated) parts.push(`${data.duplicated} já estavam na lista`);
+      if (data.invalid) parts.push(`${data.invalid} sem número válido (precisa de DDD)`);
+      toast.success(`${parts.join(", ")}.`);
       setText("");
       load();
     } catch (err) {
@@ -147,6 +168,8 @@ const ListItemsDialog = ({ list, onClose }) => {
             />
           </Button>
           <Button variant="outlined" onClick={importSystemContacts}>Importar contatos do sistema</Button>
+          <span style={{ flex: 1 }} />
+          <Button variant="outlined" startIcon={<Download size={15} />} disabled={!items.length} onClick={() => downloadFile(`/contact-lists/${list.id}/export.csv`, undefined, `lista-${list.name}.csv`)}>Baixar a lista</Button>
         </div>
         {items.length === 0 && (
           <Typography color="textSecondary" style={{ textAlign: "center", padding: "24px 0" }}>
@@ -193,25 +216,58 @@ const ListItemsDialog = ({ list, onClose }) => {
   );
 };
 
-const ReportDialog = ({ campaignId, onClose }) => {
+const SHIP_STATUS = { pending: "Pendente", sent: "Enviada", failed: "Falhou", cancelled: "Cancelada" };
+
+const ReportDialog = ({ campaignId, onClose, onChanged }) => {
   const classes = useStyles();
   const [data, setData] = useState(null);
-  useEffect(() => {
-    api.get(`/campaigns/${campaignId}/report`).then(({ data: d }) => setData(d)).catch(toastError);
-  }, [campaignId]);
+  const [only, setOnly] = useState("");
+  const [busy, setBusy] = useState(false);
+  const load = useCallback(() => api.get(`/campaigns/${campaignId}/report`, { params: { status: only || undefined } }).then(({ data: d }) => setData(d)).catch(toastError), [campaignId, only]);
+  useEffect(() => { load(); }, [load]);
   const c = data?.campaign;
+  // while it is going, the report follows it
+  const live = c && ["running", "scheduled"].includes(c.status);
+  useEffect(() => {
+    if (!live) return undefined;
+    const t = setInterval(load, 5000);
+    return () => clearInterval(t);
+  }, [live, load]);
+  const retry = async () => {
+    setBusy(true);
+    try {
+      const { data: r } = await api.post(`/campaigns/${campaignId}/retry-failed`);
+      toast.success(`${r.requeued} envio${r.requeued === 1 ? "" : "s"} voltou${r.requeued === 1 ? "" : "ram"} para a fila.`);
+      await load();
+      onChanged();
+    } catch (err) { toastError(err); }
+    setBusy(false);
+  };
+  const chip = (key, label, n, color) => (
+    <Chip key={key} clickable color={only === key ? "primary" : "default"} variant={only === key ? "default" : "outlined"} style={color && only !== key ? { borderColor: color } : undefined}
+      label={`${label} ${n}`} onClick={() => setOnly(only === key ? "" : key)} />
+  );
   return (
     <Dialog open onClose={onClose} maxWidth="md" fullWidth>
       <DialogTitle>Relatório{c ? ` — ${c.name}` : ""}</DialogTitle>
       <DialogContent dividers>
+        {!c && <LinearProgress />}
         {c && (
           <>
-            <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+            {c.pauseReason && <Typography variant="body2" style={{ marginBottom: 8, color: "#b45309" }}>{c.pauseReason}</Typography>}
+            <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
               <Chip label={`Total ${c.counters.total}`} />
-              <Chip color="primary" label={`Enviadas ${c.counters.sent}`} />
-              <Chip label={`Pendentes ${c.counters.pending}`} />
-              <Chip style={{ background: c.counters.failed ? "#ffcdd2" : undefined }} label={`Falhas ${c.counters.failed}`} />
+              {chip("sent", "Enviadas", c.counters.sent)}
+              {chip("pending", "Pendentes", c.counters.pending)}
+              {chip("failed", "Falhas", c.counters.failed, c.counters.failed ? "#dc2626" : undefined)}
+              {c.counters.cancelled > 0 && chip("cancelled", "Canceladas", c.counters.cancelled)}
+              <span style={{ flex: 1 }} />
+              {c.counters.failed > 0 && ["running", "paused", "finished"].includes(c.status) && (
+                <Button size="small" variant="outlined" startIcon={<RotateCcw size={15} />} disabled={busy} onClick={retry}>Reenviar as falhas</Button>
+              )}
+              <Button size="small" variant="outlined" startIcon={<Download size={15} />} onClick={() => downloadFile(`/campaigns/${campaignId}/report`, { format: "csv", status: only || undefined }, `campanha-${campaignId}.csv`)}>Baixar planilha</Button>
             </div>
+            {data.truncated && <Typography variant="caption" color="textSecondary" display="block" style={{ marginBottom: 6 }}>Mostrando os primeiros {data.shippings.length} envios. A planilha traz todos.</Typography>}
             <div className={classes.scroll}>
               <Table size="small" stickyHeader>
                 <TableHead>
@@ -219,7 +275,7 @@ const ReportDialog = ({ campaignId, onClose }) => {
                     <TableCell>Nome</TableCell>
                     <TableCell>Número</TableCell>
                     <TableCell>Situação</TableCell>
-                    <TableCell>Quando / erro</TableCell>
+                    <TableCell>Quando / motivo</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -227,10 +283,11 @@ const ReportDialog = ({ campaignId, onClose }) => {
                     <TableRow key={s.id}>
                       <TableCell>{s.name}</TableCell>
                       <TableCell>{s.number}</TableCell>
-                      <TableCell>{{ pending: "Pendente", sent: "Enviada", failed: "Falhou", cancelled: "Cancelada" }[s.status] || s.status}</TableCell>
-                      <TableCell>{s.error || (s.sentAt ? format(parseISO(s.sentAt), "dd/MM HH:mm:ss") : "—")}</TableCell>
+                      <TableCell>{SHIP_STATUS[s.status] || s.status}</TableCell>
+                      <TableCell>{s.errorText || s.error || (s.sentAt ? format(parseISO(s.sentAt), "dd/MM HH:mm:ss") : "—")}</TableCell>
                     </TableRow>
                   ))}
+                  {data.shippings.length === 0 && <TableRow><TableCell colSpan={4} align="center">Nenhum envio nesta situação.</TableCell></TableRow>}
                 </TableBody>
               </Table>
             </div>
@@ -241,6 +298,118 @@ const ReportDialog = ({ campaignId, onClose }) => {
         <Button onClick={onClose} color="primary" variant="contained">Fechar</Button>
       </DialogActions>
     </Dialog>
+  );
+};
+
+// Before it starts: how many people can really receive it through the chosen connection, why the others cannot, how long it takes.
+const StartDialog = ({ campaign, onClose, onStarted }) => {
+  const [pre, setPre] = useState(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { api.get(`/campaigns/${campaign.id}/preflight`).then(({ data }) => setPre(data)).catch((e) => { toastError(e); onClose(); }); }, [campaign.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const waiting = campaign.status === "scheduled";
+  const verb = waiting ? "Iniciar agora" : campaign.status === "paused" ? "Retomar" : "Iniciar";
+  const go = async () => {
+    setBusy(true);
+    try {
+      await api.post(`/campaigns/${campaign.id}/start`, waiting ? { now: true } : {});
+      toast.success(waiting ? "Campanha iniciada agora." : campaign.status === "paused" ? "Campanha retomada." : "Campanha iniciada.");
+      onStarted();
+      onClose();
+    } catch (err) { toastError(err); setBusy(false); }
+  };
+  return (
+    <Dialog open onClose={onClose} maxWidth="sm" fullWidth>
+      <DialogTitle>{verb} “{campaign.name}”?</DialogTitle>
+      <DialogContent dividers>
+        {!pre ? <LinearProgress /> : (
+          <>
+            <Typography variant="body1" gutterBottom>
+              <b>{pre.canReceive}</b> de <b>{pre.total}</b> {pre.total === 1 ? "pessoa pode" : "pessoas podem"} receber{pre.messagesPerPerson > 1 ? `, ${pre.messagesPerPerson} mensagens cada` : ""}.
+            </Typography>
+            {pre.connection && (
+              <Typography variant="body2" color="textSecondary" gutterBottom>
+                Conexão: <b>{pre.connection.name}</b> · {riskOf(pre.connection)[0]}{pre.connection.status !== "CONNECTED" ? " · desconectada agora" : ""}
+              </Typography>
+            )}
+            {pre.canReceive > 0 && <Typography variant="body2" color="textSecondary" gutterBottom>Duração do envio: {duration(pre.estimatedSeconds)} (com as pausas de segurança).</Typography>}
+            {waiting && campaign.scheduledAt && <Typography variant="body2" color="textSecondary" gutterBottom>Estava agendada para {format(parseISO(campaign.scheduledAt), "dd/MM 'às' HH:mm")}. Iniciando agora, essa data deixa de valer.</Typography>}
+            {pre.warnings.map((w) => (
+              <div key={w} style={{ display: "flex", gap: 8, alignItems: "flex-start", marginTop: 8, padding: "8px 10px", borderRadius: 10, background: "rgba(245,158,11,.14)", fontSize: 13.5 }}>
+                <AlertTriangle size={16} color="#d97706" style={{ marginTop: 2, flex: "none" }} /> <span>{w}</span>
+              </div>
+            ))}
+            {pre.total > 0 && pre.canReceive === 0 && <Typography variant="body2" color="error" style={{ marginTop: 10 }}>Ninguém receberia por esta conexão: resolva os avisos acima antes de iniciar.</Typography>}
+          </>
+        )}
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>Voltar</Button>
+        <Button variant="contained" color="primary" disabled={!pre || busy || pre.total === 0 || pre.canReceive === 0} onClick={go}>{waiting ? "Iniciar agora" : campaign.status === "paused" ? "Retomar" : "Iniciar campanha"}</Button>
+      </DialogActions>
+    </Dialog>
+  );
+};
+
+// sends the campaign's messages to the person's own number to see how they look
+const TestDialog = ({ campaign, onClose }) => {
+  const [number, setNumber] = useState(() => { try { return window.localStorage.getItem("campaignTestNumber") || ""; } catch (e) { return ""; } });
+  const [busy, setBusy] = useState(false);
+  const send = async () => {
+    setBusy(true);
+    try {
+      const { data } = await api.post(`/campaigns/${campaign.id}/test`, { number, name: "Teste" });
+      try { window.localStorage.setItem("campaignTestNumber", number); } catch (e) { /* the number is just a convenience */ }
+      toast.success(`${data.sent} mensagem${data.sent === 1 ? "" : "ns"} enviada${data.sent === 1 ? "" : "s"} para ${number}.`);
+      onClose();
+    } catch (err) { toastError(err); setBusy(false); }
+  };
+  return (
+    <Dialog open onClose={onClose} maxWidth="xs" fullWidth>
+      <DialogTitle>Enviar um teste</DialogTitle>
+      <DialogContent dividers>
+        <Typography variant="body2" gutterBottom>Envia “{campaign.name}” para um número seu, pela conexão da campanha, com o nome “Teste”. Salve a campanha antes se mexeu nas mensagens.</Typography>
+        <TextField fullWidth autoFocus variant="outlined" margin="dense" label="Seu WhatsApp com DDD" placeholder="(69) 99999-0000" value={number} onChange={(e) => setNumber(e.target.value)} />
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>Voltar</Button>
+        <Button variant="contained" color="primary" startIcon={<SendHorizontal size={15} />} disabled={busy || number.replace(/\D/g, "").length < 10} onClick={send}>Enviar teste</Button>
+      </DialogActions>
+    </Dialog>
+  );
+};
+
+// the connection that sends: what it is, how risky and how much it can still send today
+const ConnectionPicker = ({ value, setValue, connections }) => {
+  const standard = connections.find((c) => c.isDefault);
+  const current = connections.find((c) => c.id === value) || (value === "" || value === null || value === undefined ? standard : null);
+  const [safety, setSafety] = useState(null);
+  const currentId = current ? current.id : null;
+  const currentChannel = current ? current.channel : null;
+  useEffect(() => {
+    setSafety(null);
+    if (currentId && currentChannel === "whatsapp") api.get(`/channels/${currentId}/safety`).then(({ data }) => setSafety(data)).catch(() => {});
+  }, [currentId, currentChannel]);
+  const [label, color] = current ? riskOf(current) : [null, null];
+  return (
+    <div>
+      <TextField select fullWidth variant="outlined" margin="dense" label="Conexão de envio" value={value === null || value === undefined ? "" : value} onChange={(e) => setValue(e.target.value)}
+        helperText={current ? undefined : "Sem conexão padrão definida: escolha uma."}>
+        <MenuItem value="">Conexão padrão{standard ? ` (${standard.name})` : ""}</MenuItem>
+        {connections.map((c) => (<MenuItem key={c.id} value={c.id}>{c.name} · {riskOf(c)[0]}</MenuItem>))}
+      </TextField>
+      {current && (
+        <Typography variant="caption" color="textSecondary" display="block">
+          <b style={{ color }}>{label}</b>
+          {current.status !== "CONNECTED" ? " · desconectada agora" : ""}
+          {current.channel === "whatsapp"
+            ? current.riskMode === "relaxed"
+              ? ". Envia também a quem nunca respondeu, com risco maior de o WhatsApp bloquear o número."
+              : ". Só envia a quem já respondeu você, para proteger o número."
+            : ". Quem nunca conversou com você só recebe por um modelo aprovado."}
+          {safety && safety.dailyLimit !== null ? ` Hoje: ${safety.sentToday} de até ${safety.dailyLimit} envios.` : ""}
+        </Typography>
+      )}
+    </div>
   );
 };
 
@@ -271,6 +440,9 @@ const Campaigns = () => {
   const [connections, setConnections] = useState([]);
   const [listDialog, setListDialog] = useState(null);
   const [report, setReport] = useState(null);
+  const [starting, setStarting] = useState(null);
+  const [testing, setTesting] = useState(null);
+  const [cancelling, setCancelling] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [newList, setNewList] = useState(false);
   const [pickedList, setPickedList] = useState(null);
@@ -283,9 +455,10 @@ const Campaigns = () => {
     );
   }, [tab, listDialog, loadLists]);
 
-  const act = (id, action, reload) => async () => {
+  const act = (id, action, reload, done) => async () => {
     try {
       await api.post(`/campaigns/${id}/${action}`);
+      if (done) toast.success(done);
       reload();
     } catch (err) {
       toastError(err);
@@ -295,7 +468,12 @@ const Campaigns = () => {
   return (
     <MainContainer>
       {listDialog && <ListItemsDialog list={listDialog} onClose={() => { setListDialog(null); setReloadKey((k) => k + 1); }} />}
-      {report && <ReportDialog campaignId={report} onClose={() => setReport(null)} />}
+      {report && <ReportDialog campaignId={report} onClose={() => setReport(null)} onChanged={() => setReloadKey((k) => k + 1)} />}
+      {starting && <StartDialog campaign={starting} onClose={() => setStarting(null)} onStarted={() => setReloadKey((k) => k + 1)} />}
+      {testing && <TestDialog campaign={testing} onClose={() => setTesting(null)} />}
+      <ConfirmationModal title="Cancelar a campanha?" open={!!cancelling} onClose={() => setCancelling(null)} onConfirm={async () => { const c = cancelling; try { await api.post(`/campaigns/${c.id}/cancel`); toast.success("Campanha cancelada."); setReloadKey((k) => k + 1); } catch (err) { toastError(err); } }}>
+        {cancelling ? `“${cancelling.name}” para de enviar agora e os envios que faltam (${(cancelling.counters || {}).pending || 0}) são cancelados. Isso não pode ser desfeito.` : ""}
+      </ConfirmationModal>
       <NewListDialog
         open={newList}
         onClose={() => setNewList(false)}
@@ -347,14 +525,21 @@ const Campaigns = () => {
               },
               {
                 name: "whatsappId",
+                type: "custom",
                 label: "Conexão de envio",
-                type: "select",
-                options: connections.map((c) => ({
-                  value: c.id,
-                  label: c.channel === "whatsapp" ? `${c.name} (WhatsApp não oficial · modo ${c.riskMode === "relaxed" ? "flexível" : "seguro"})` : c.name,
-                })),
-                helper:
-                  "Se você não escolher, usa a conexão padrão. Conexões por QR Code (não oficiais) só disparam para quem já conversou com você, respeitam um limite diário de aquecimento e pausam sozinhas se o WhatsApp encerrar a sessão. Para contatos novos use a API oficial (Cloud).",
+                render: (value, setValue) => <ConnectionPicker value={value} setValue={setValue} connections={connections} />,
+              },
+              {
+                name: "templateName",
+                label: "Modelo aprovado da API oficial (obrigatório para quem nunca conversou)",
+                hideOn: (v) => (connections.find((c) => c.id === v.whatsappId) || {}).channel !== "whatsapp_cloud",
+                helper: "Nome do modelo aprovado no painel da Meta. Com modelo, só a primeira mensagem é enviada e o {{1}} do modelo recebe o primeiro nome.",
+              },
+              {
+                name: "templateLanguage",
+                label: "Idioma do modelo",
+                default: "pt_BR",
+                hideOn: (v) => (connections.find((c) => c.id === v.whatsappId) || {}).channel !== "whatsapp_cloud",
               },
               {
                 name: "steps",
@@ -369,8 +554,8 @@ const Campaigns = () => {
                   />
                 ),
               },
-              { name: "scheduledAt", label: "Agendar início (vazio = iniciar manualmente)", type: "datetime" },
-              { name: "intervalMin", label: "Intervalo mínimo entre mensagens (s)", type: "number", default: 20 },
+              { name: "scheduledAt", label: "Agendar início (vazio = iniciar manualmente)", type: "datetime", helper: "Com uma data, a campanha começa sozinha nesse horário. Dá para iniciar antes pelo botão de iniciar." },
+              { name: "intervalMin", label: "Intervalo mínimo entre mensagens (s)", type: "number", default: 20, helper: "Intervalos curtos aumentam o risco de bloqueio em conexão por QR Code." },
               { name: "intervalMax", label: "Intervalo máximo entre mensagens (s)", type: "number", default: 60 },
               { name: "batchSize", label: "Pausar a cada N mensagens", type: "number", default: 20 },
               { name: "batchPause", label: "Duração da pausa (s)", type: "number", default: 300 },
@@ -386,7 +571,7 @@ const Campaigns = () => {
                     <div>
                       <Chip size="small" label={label} color={color} />
                       {r.pauseReason && (
-                        <Typography variant="caption" color="error" display="block" style={{ maxWidth: 260 }}>
+                        <Typography variant="caption" display="block" style={{ maxWidth: 280, color: r.status === "paused" ? "#dc2626" : "#b45309" }}>
                           {r.pauseReason}
                         </Typography>
                       )}
@@ -397,13 +582,13 @@ const Campaigns = () => {
               {
                 header: "Progresso",
                 render: (r) => {
-                  const { sent, failed, total } = r.counters || { sent: 0, failed: 0, total: 0 };
-                  const done = sent + failed;
+                  const { sent, failed, cancelled = 0, total } = r.counters || { sent: 0, failed: 0, cancelled: 0, total: 0 };
+                  const done = sent + failed + cancelled;
                   return (
                     <div style={{ minWidth: 120 }}>
                       <LinearProgress variant="determinate" value={total ? (done / total) * 100 : 0} />
                       <Typography variant="caption">
-                        {sent}/{total} enviadas{failed ? ` · ${failed} falhas` : ""}
+                        {sent}/{total} enviadas{failed ? ` · ${failed} falhas` : ""}{cancelled ? ` · ${cancelled} canceladas` : ""}
                       </Typography>
                     </div>
                   );
@@ -414,14 +599,19 @@ const Campaigns = () => {
             rowActions={(r, reload) => (
               <>
                 {["draft", "paused", "scheduled"].includes(r.status) && (
-                  <IconAction title="Iniciar" onClick={act(r.id, "start", reload)}><PlayArrow /></IconAction>
+                  <IconAction title={r.status === "scheduled" ? "Iniciar agora" : r.status === "paused" ? "Retomar" : "Iniciar"} onClick={() => setStarting(r)}><PlayArrow /></IconAction>
                 )}
                 {["running", "scheduled"].includes(r.status) && (
-                  <IconAction title="Pausar" onClick={act(r.id, "pause", reload)}><Pause /></IconAction>
+                  <IconAction title="Pausar" onClick={act(r.id, "pause", reload, "Campanha pausada.")}><Pause /></IconAction>
                 )}
                 {["running", "paused", "scheduled"].includes(r.status) && (
-                  <IconAction title="Cancelar campanha" onClick={act(r.id, "cancel", reload)}><Stop /></IconAction>
+                  <IconAction title="Cancelar campanha" onClick={() => setCancelling(r)}><Stop /></IconAction>
                 )}
+                {r.counters && r.counters.failed > 0 && ["running", "paused", "finished"].includes(r.status) && (
+                  <IconAction title={`Reenviar as ${r.counters.failed} falhas`} onClick={act(r.id, "retry-failed", reload, "As falhas voltaram para a fila.")}><RotateCcw size={18} /></IconAction>
+                )}
+                <IconAction title="Enviar um teste para o meu número" onClick={() => setTesting(r)}><SendHorizontal size={18} /></IconAction>
+                <IconAction title="Duplicar como rascunho" onClick={act(r.id, "duplicate", reload, "Campanha duplicada como rascunho.")}><Copy size={18} /></IconAction>
                 <IconAction title="Ver relatório" onClick={() => setReport(r.id)}><Assessment /></IconAction>
               </>
             )}

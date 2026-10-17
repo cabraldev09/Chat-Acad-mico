@@ -9,17 +9,19 @@ import ListItemText from "@material-ui/core/ListItemText";
 import ListSubheader from "@material-ui/core/ListSubheader";
 import Divider from "@material-ui/core/Divider";
 import MessagesSquareIcon from "lucide-react/dist/esm/icons/messages-square";
-import SyncAltIcon from "@material-ui/icons/SyncAlt";
-import ContactPhoneOutlinedIcon from "@material-ui/icons/ContactPhoneOutlined";
-import QuestionAnswerOutlinedIcon from "@material-ui/icons/QuestionAnswerOutlined";
-import ScheduleIcon from "@material-ui/icons/Schedule";
+// one icon per entry, never repeated (src/layout/menuIcons.test.js checks it)
+import PlugIcon from "lucide-react/dist/esm/icons/plug-2";
+import ContactIcon from "lucide-react/dist/esm/icons/contact";
+import ZapIcon from "lucide-react/dist/esm/icons/zap";
+import CalendarClockIcon from "lucide-react/dist/esm/icons/calendar-clock";
 import MegaphoneIcon from "lucide-react/dist/esm/icons/megaphone";
-import AssessmentOutlinedIcon from "@material-ui/icons/AssessmentOutlined";
+import BarChartIcon from "lucide-react/dist/esm/icons/bar-chart-3";
 import KanbanSquareIcon from "lucide-react/dist/esm/icons/kanban-square";
-import TrendingUpIcon from "lucide-react/dist/esm/icons/trending-up";
+import LayoutDashboardIcon from "lucide-react/dist/esm/icons/layout-dashboard";
 import { isManager } from "../utils/access";
 import ListTodoIcon from "lucide-react/dist/esm/icons/list-todo";
-import HeartHandshakeIcon from "lucide-react/dist/esm/icons/heart-handshake";
+import SproutIcon from "lucide-react/dist/esm/icons/sprout";
+import HeartPulseIcon from "lucide-react/dist/esm/icons/heart-pulse";
 import Share2Icon from "lucide-react/dist/esm/icons/share-2";
 import WalletIcon from "lucide-react/dist/esm/icons/wallet";
 import GoalIcon from "lucide-react/dist/esm/icons/goal";
@@ -223,7 +225,7 @@ const MainListItems = (props) => {
       <ListItemLink
         to="/contacts"
         primary={i18n.t("mainDrawer.listItems.contacts")}
-        icon={<ContactPhoneOutlinedIcon />}
+        icon={<ContactIcon className="ico" />}
         collapsed={collapsed}
       />
       {/* administration and coordination find these two in Configurações; everyone else keeps them here */}
@@ -232,14 +234,14 @@ const MainListItems = (props) => {
           <ListItemLink
             to="/connections"
             primary={i18n.t("mainDrawer.listItems.connections")}
-            icon={<SyncAltIcon />}
+            icon={<PlugIcon className="ico" />}
             collapsed={collapsed}
             adornment={connectionWarning && <span className={clsx(classes.connectionDot, collapsed && classes.connectionDotCollapsed)} />}
           />
           <ListItemLink
             to="/quickAnswers"
             primary={i18n.t("mainDrawer.listItems.quickAnswers")}
-            icon={<QuestionAnswerOutlinedIcon />}
+            icon={<ZapIcon className="ico" />}
             collapsed={collapsed}
           />
         </>
@@ -248,18 +250,15 @@ const MainListItems = (props) => {
         <ListSubheader disableSticky className={classes.sectionLabel}>CRM</ListSubheader>
       )}
       <ListItemLink to="/crm" primary="Funil de captação" icon={<KanbanSquareIcon className="ico" />} collapsed={collapsed} />
-      <ListItemLink to="/crm/painel" primary="Painel do CRM" icon={<TrendingUpIcon className="ico" />} collapsed={collapsed} />
+      <ListItemLink to="/crm/painel" primary="Painel do CRM" icon={<LayoutDashboardIcon className="ico" />} collapsed={collapsed} />
       <ListItemLink to="/crm/tarefas" primary="Tarefas" icon={<ListTodoIcon className="ico" />} collapsed={collapsed} />
       {["admin", "coordenacao", "consultor"].includes(user.profile === "admin" ? "admin" : user.role || "consultor") && (
         <ListItemLink to="/crm/comissoes" primary="Comissões" icon={<WalletIcon className="ico" />} collapsed={collapsed} />
       )}
       <ListItemLink to="/crm/metas-polos" alsoActive={["/crm/metas"]} primary="Metas" icon={<GoalIcon className="ico" />} collapsed={collapsed} />
-      {isManager(user) && (
-        <ListItemLink to="/crm/marketing" primary="Marketing" icon={<TrendingUpIcon className="ico" />} collapsed={collapsed} />
-      )}
-      <ListItemLink to="/ambientacao" primary="Ambientação" icon={<HeartHandshakeIcon className="ico" />} collapsed={collapsed} />
+      <ListItemLink to="/ambientacao" primary="Ambientação" icon={<SproutIcon className="ico" />} collapsed={collapsed} />
       {(isManager(user) || user.role === "tutor") && (
-        <ListItemLink to="/crm/retencao" primary="Retenção" icon={<HeartHandshakeIcon className="ico" />} collapsed={collapsed} />
+        <ListItemLink to="/crm/retencao" primary="Retenção" icon={<HeartPulseIcon className="ico" />} collapsed={collapsed} />
       )}
       {!collapsed && (
         <ListSubheader disableSticky className={classes.sectionLabel}>Cursos e alunos</ListSubheader>
@@ -285,7 +284,7 @@ const MainListItems = (props) => {
       <ListItemLink
         to="/schedules"
         primary="Agendamentos"
-        icon={<ScheduleIcon />}
+        icon={<CalendarClockIcon className="ico" />}
         collapsed={collapsed}
       />
       {["admin", "coordenacao", "consultor"].includes(user.profile === "admin" ? "admin" : user.role || "consultor") && (
@@ -299,7 +298,7 @@ const MainListItems = (props) => {
       <ListItemLink
         to="/reports"
         primary="Estatísticas"
-        icon={<AssessmentOutlinedIcon />}
+        icon={<BarChartIcon className="ico" />}
         collapsed={collapsed}
       />
       {isManager(user) && (

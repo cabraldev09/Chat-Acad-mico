@@ -7,8 +7,8 @@ import { getIO } from "../../libs/socket";
 const ActivateForSending = async (ticket: Ticket, userId: number): Promise<Ticket> => {
   let plain = ticket.isGroup;
   if (!plain && ticket.status !== "open") {
-    const contact = await Contact.findByPk(ticket.contactId, { attributes: ["id", "isStaff"] });
-    plain = !!contact?.isStaff;
+    const contact = await Contact.findByPk(ticket.contactId, { attributes: ["id", "isStaff", "isPersonal"] });
+    plain = !!contact?.isStaff || !!contact?.isPersonal;
   }
   const needs = ticket.isHistorical || (plain && ticket.status !== "open");
   if (!needs) return ticket;

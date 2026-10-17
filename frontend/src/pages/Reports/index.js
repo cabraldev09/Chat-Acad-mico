@@ -11,6 +11,7 @@ import { AuthContext } from "../../context/Auth/AuthContext";
 import openSocket from "../../services/socket-io";
 import api from "../../services/api";
 import Management from "./Management";
+import ManagerView from "./ManagerView";
 import MyDay from "./MyDay";
 import { Insights } from "./shared";
 import { isManager } from "../../utils/access";
@@ -18,7 +19,9 @@ import { fillDays } from "../../utils/chartDays";
 import toastError from "../../errors/toastError";
 import { fetchAllUsersPage } from "../../utils/fetchAllUsers";
 
-// Estatísticas: the one place for the numbers. Every figure appears once:
+// Estatísticas: the one place for the numbers. Every figure appears once.
+// Administration and coordination open on the "Visão do gestor" (what needs attention + progress of the polos);
+// "Detalhes" keeps the full tabs:
 //   Visão geral  what is happening now and what happened in the period (volume, matrículas, resolução, atendimentos)
 //   Equipe       response times by hour, department, attendant and polo (managers)
 //   Canais       where the conversations come from: channel, queue and tag (managers)
@@ -127,6 +130,10 @@ const Reports = () => {
   const manager = isManager(user);
   const today = useMemo(() => iso(new Date()), []);
   const [tab, setTab] = useState("geral");
+  // managers open on the lean view; everyone else only has the details
+  const [view, setView] = useState("gestor");
+  const [overviewMgr, setOverviewMgr] = useState(null);
+  const [mgrError, setMgrError] = useState(false);
   const [date, setDate] = useState("");
   const [days, setDays] = useState(1);
   const [queueId, setQueueId] = useState("");
@@ -163,15 +170,29 @@ const Reports = () => {
   }, [date, days, manager]);
   useEffect(() => { load(); }, [load]);
 
+  const lean = manager && view === "gestor";
+  const loadLean = useCallback(() => {
+    setMgrError(false);
+    api.get("/dashboard/manager", { params: { date: date || undefined, days } })
+      .then(({ data: m }) => setOverviewMgr(m))
+      .catch((err) => { setMgrError(true); toastError(err); });
+  }, [date, days]);
+  useEffect(() => { if (lean) loadLean(); }, [lean, loadLean]);
+  useEffect(() => {
+    if (!lean) return undefined;
+    const poll = setInterval(() => { if (document.visibilityState === "visible") loadLean(); }, 60000);
+    return () => clearInterval(poll);
+  }, [lean, loadLean]);
+
   // the heavier numbers are fetched only for the tab that shows them
   useEffect(() => {
-    if (!data) return;
+    if (!data || lean) return;
     if (tab === "equipe" && manager) api.get("/dashboard/management", { params: { date: date || undefined, days } }).then(({ data: m }) => setMgmt(m)).catch(toastError);
     if (tab !== "equipe") {
       api.get("/stats/overview", { params: { from: range.from, to: range.to, queueId: queueId || undefined, userId: userId || undefined } })
         .then(({ data: o }) => setOverview(o && typeof o === "object" ? { ...o, perQueue: o.perQueue || [], perTag: o.perTag || [], period: o.period || {} } : null)).catch(toastError);
     }
-  }, [tab, data, range.from, range.to, queueId, userId, date, days, manager]);
+  }, [tab, data, lean, range.from, range.to, queueId, userId, date, days, manager]);
 
   useEffect(() => {
     let timer;
@@ -257,19 +278,29 @@ const Reports = () => {
         </div>
       </div>
 
-      {tabs.length > 1 && (
-        <div className={classes.seg} role="tablist" aria-label="Visão" style={{ marginBottom: 20 }}>
+      {manager && (
+        <div className={classes.seg} role="tablist" aria-label="Tipo de visão" style={{ marginBottom: 14 }}>
+          {[["gestor", "Visão do gestor"], ["detalhes", "Detalhes"]].map(([k, l]) => (
+            <button key={k} type="button" role="tab" aria-selected={view === k} className={`${classes.segBtn} ${view === k ? classes.segOn : ""}`} onClick={() => setView(k)}>{l}</button>
+          ))}
+        </div>
+      )}
+
+      {lean && <ManagerView data={overviewMgr} error={mgrError} onRetry={loadLean} periodName={periodName} />}
+
+      {!lean && tabs.length > 1 && (
+        <div className={classes.seg} role="tablist" aria-label="Visão" style={{ marginBottom: 20, display: "flex", width: "fit-content" }}>
           {tabs.map(([k, l, Icon]) => (
             <button key={k} type="button" role="tab" aria-selected={tab === k} className={`${classes.segBtn} ${tab === k ? classes.segOn : ""}`} onClick={() => setTab(k)}><Icon size={15} /> {l}</button>
           ))}
         </div>
       )}
 
-      {tab === "geral" && !manager && <div style={{ marginBottom: 20 }}><MyDay data={myDay} /></div>}
+      {!lean && tab === "geral" && !manager && <div style={{ marginBottom: 20 }}><MyDay data={myDay} /></div>}
 
-      {tab === "equipe" && manager && <Management data={mgmt} sla={mgmt ? mgmt.slaMinutes : 15} />}
+      {!lean && tab === "equipe" && manager && <Management data={mgmt} sla={mgmt ? mgmt.slaMinutes : 15} />}
 
-      {tab === "canais" && manager && (
+      {!lean && tab === "canais" && manager && (
         <div className={classes.stack}>
           <div className={classes.filters}>
             <TextField select size="small" label="Fila" variant="outlined" value={queueId} onChange={(e) => setQueueId(e.target.value)} style={{ minWidth: 160 }}>
@@ -343,7 +374,7 @@ const Reports = () => {
         </div>
       )}
 
-      {tab === "geral" && (
+      {!lean && tab === "geral" && (
         <div className={classes.layout}>
           <div className={classes.stack}>
             {data && data.insights && data.insights.length > 0 && <Insights items={data.insights} />}

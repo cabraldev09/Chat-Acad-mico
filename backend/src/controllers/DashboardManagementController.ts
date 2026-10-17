@@ -8,8 +8,10 @@ import { businessMinutes, getBusinessConfig } from "../helpers/BusinessTime";
 import { isManagerRole, roleOf } from "../helpers/Roles";
 import { remember } from "../helpers/TtlCache";
 import { buildInsights, human, pairGaps, summarize } from "../helpers/ResponseTimes";
-import { portable } from "../helpers/sqlDialect";
-import { progressForUser } from "./GoalController";
+import { buildPoloBoard, progressForUser } from "./GoalController";
+import { riskStudents } from "../services/CrmServices/Retention";
+import { FEE_PENDING_TAG } from "../services/PaymentServices/FeeTags";
+import { dayOf, nowMinus, nowSql, portable } from "../helpers/sqlDialect";
 import { summaryForUser } from "./CommissionController";
 
 const q = async (sql: string, replacements: Record<string, any>): Promise<any[]> =>
@@ -25,7 +27,7 @@ const DEPARTMENTS: Array<[string, string]> = [
   ["support", "Acadêmico"]
 ];
 
-const BASE = `t.isHistorical = false AND t.isGroup = false AND NOT EXISTS (SELECT 1 FROM Contacts sc WHERE sc.id = t.contactId AND (sc.isStaff = true OR sc.kind <> 'person'))`;
+const BASE = `t.isHistorical = false AND t.isGroup = false AND NOT EXISTS (SELECT 1 FROM Contacts sc WHERE sc.id = t.contactId AND (sc.isStaff = true OR sc.isPersonal = true OR sc.kind <> 'person'))`;
 
 const period = (req: Request) => {
   const day = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.date || "")) ? String(req.query.date) : undefined;
@@ -267,4 +269,111 @@ export const myDay = async (req: Request, res: Response): Promise<Response> => {
     openNow: live.length,
     insights
   });
+};
+
+// ------------------------------------------------------------------ manager overview (Estatísticas)
+// Few numbers, each one with something to do: what needs attention now, how each polo is going against its target, and the
+// period in four numbers. Administration and coordination only.
+type Alert = { key: string; label: string; count: number; tone: "danger" | "warn"; to: string };
+
+const buildManagerOverview = async (p: ReturnType<typeof period>): Promise<any> => {
+  const onboardingHours = Math.max(1, Number(await getSetting("onboarding_sla_hours", "24")) || 24);
+  const rep = { from: p.from, to: p.to, fee: FEE_PENDING_TAG.name, hours: onboardingHours };
+  const [mgmt, board, risk] = await Promise.all([buildManagement(p), buildPoloBoard(), riskStudents({}, 1000)]);
+
+  const one = async (sql: string): Promise<number> => num(((await q(sql, rep))[0] || {}).n);
+  const [waitingFirstContact, overdueTasks, onboardingLate, feePending, connectionsDown, paymentErrors] = await Promise.all([
+    one(`SELECT COUNT(*) AS n FROM Leads l JOIN LeadStages s ON s.id = l.stageId
+         WHERE s.type = 'open' AND l.isHistorical = false AND l.firstContactAt IS NULL AND l.createdAt < ${nowMinus(1, "HOUR")}`),
+    one(`SELECT COUNT(*) AS n FROM LeadTasks t JOIN Leads l ON l.id = t.leadId
+         WHERE t.doneAt IS NULL AND t.dueAt < ${nowSql()} AND l.isHistorical = false`),
+    one(`SELECT COUNT(*) AS n FROM Leads l WHERE l.isHistorical = false AND l.onboardingStatus = 'pending' AND l.enrolledAt < ${nowMinus(onboardingHours, "HOUR")}`),
+    one(`SELECT COUNT(DISTINCT l.id) AS n FROM Leads l JOIN LeadTags lt ON lt.leadId = l.id JOIN Tags tg ON tg.id = lt.tagId
+         WHERE tg.name = :fee AND l.isHistorical = false`),
+    one(`SELECT COUNT(*) AS n FROM Whatsapps w WHERE w.status IN ('qrcode', 'PAIRING', 'DISCONNECTED', 'TIMEOUT')`),
+    one(`SELECT COUNT(*) AS n FROM Payments x WHERE x.status = 'pending' AND x.lastError IS NOT NULL`)
+  ]);
+
+  const alerts: Alert[] = ([
+    { key: "unanswered", label: "Clientes esperando resposta além da meta", count: mgmt.total.unansweredNow, tone: "danger", to: "/monitor" },
+    { key: "connections", label: "Conexões fora do ar", count: connectionsDown, tone: "danger", to: "/connections" },
+    { key: "first-contact", label: "Leads sem o 1º contato", count: waitingFirstContact, tone: "danger", to: "/crm" },
+    { key: "payments", label: "Cobranças com erro", count: paymentErrors, tone: "danger", to: "/configuracoes?secao=pagamentos" },
+    { key: "tasks", label: "Tarefas atrasadas", count: overdueTasks, tone: "warn", to: "/crm/tarefas" },
+    { key: "onboarding", label: `Ambientação parada há +${onboardingHours} h`, count: onboardingLate, tone: "warn", to: "/ambientacao" },
+    { key: "fee", label: "Taxas de matrícula pendentes", count: feePending, tone: "warn", to: "/crm" },
+    { key: "risk", label: "Alunos em risco de evasão", count: risk.students.length, tone: "warn", to: "/crm/retencao" }
+  ] as Alert[]).filter(a => a.count > 0);
+
+  // per polo: the goal board plus what is stuck there
+  const riskBy = new Map<number, number>();
+  risk.students.forEach(s => s.poloId && riskBy.set(Number(s.poloId), (riskBy.get(Number(s.poloId)) || 0) + 1));
+  const lateRows = await q(`SELECT l.poloId AS id, COUNT(*) AS n FROM Leads l WHERE l.isHistorical = false AND l.onboardingStatus = 'pending'
+                            AND l.enrolledAt < ${nowMinus(onboardingHours, "HOUR")} AND l.poloId IS NOT NULL GROUP BY l.poloId`, rep);
+  const lateBy = new Map<number, number>(lateRows.map(r => [Number(r.id), num(r.n)]));
+  const live = new Map<number, any>((mgmt.polos as any[]).map(x => [Number(x.id), x]));
+  const stuck = (id: number) => ({ unanswered: num(live.get(id)?.unansweredNow), onboardingLate: lateBy.get(id) || 0, atRisk: riskBy.get(id) || 0 });
+
+  const polos: any[] = (board.rows as any[]).map(r => ({
+    poloId: r.poloId,
+    name: r.name,
+    code: r.code,
+    target: r.target,
+    done: r.done,
+    pct: r.pct,
+    status: r.status,
+    missing: r.missing,
+    perDay: r.perDay,
+    expectedPct: r.expectedPct,
+    forecast: r.forecast,
+    ...stuck(r.poloId)
+  }));
+  // a polo without a target can still be stuck: it appears if something there needs attention
+  const known = new Set(polos.map(x => Number(x.poloId)));
+  const names = new Map<number, string>((await q(`SELECT id, name FROM Polos WHERE active = true`, {})).map(r => [Number(r.id), r.name]));
+  names.forEach((name, id) => {
+    if (known.has(id)) return;
+    const st = stuck(id);
+    if (st.unanswered || st.onboardingLate || st.atRisk) polos.push({ poloId: id, name, code: null, target: null, done: 0, pct: null, status: "none", missing: null, perDay: null, expectedPct: null, forecast: null, ...st });
+  });
+
+  let unassignedWon = 0;
+  if (board.goal) {
+    const gs = dayBounds(board.goal.startsOn).start;
+    const ge = dayBounds(board.goal.endsOn).end;
+    unassignedWon = num(((await q(`SELECT COUNT(*) AS n FROM Leads l WHERE l.isHistorical = false AND l.poloId IS NULL AND l.wonAt BETWEEN :gs AND :ge`, { gs, ge }))[0] || {}).n);
+  }
+
+  const daily = await q(
+    `SELECT ${dayOf("m.createdAt")} AS day, COUNT(DISTINCT t.id) AS total
+       FROM Messages m JOIN Tickets t ON t.id = m.ticketId
+      WHERE m.createdAt BETWEEN :from AND :to AND m.isDeleted = false AND ${BASE}
+      GROUP BY ${dayOf("m.createdAt")} ORDER BY day`,
+    rep
+  );
+
+  return {
+    days: p.rangeDays,
+    slaMinutes: mgmt.slaMinutes,
+    alerts,
+    goal: board.goal,
+    totals: board.totals,
+    polos,
+    unassignedWon,
+    period: {
+      attendances: mgmt.total.attendances,
+      messages: mgmt.total.received + mgmt.total.sent,
+      medianMin: mgmt.total.reply.median,
+      withinSlaPct: mgmt.total.reply.withinSlaPct,
+      previousMedianMin: mgmt.total.previousMedian,
+      daily: daily.map(r => ({ day: String(r.day).slice(0, 10), total: num(r.total) }))
+    }
+  };
+};
+
+export const managerOverview = async (req: Request, res: Response): Promise<Response> => {
+  if (!isManagerRole(roleOf(req.user))) return res.status(403).json({ error: "ERR_NO_PERMISSION" });
+  const p = period(req);
+  const key = `dash-manager:${p.rangeDays}:${p.to.toISOString().slice(0, 10)}`;
+  return res.json(await remember(key, Number(process.env.DASHBOARD_CACHE_MS ?? 10000), () => buildManagerOverview(p)));
 };

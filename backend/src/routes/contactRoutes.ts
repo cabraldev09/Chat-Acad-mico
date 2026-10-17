@@ -15,6 +15,9 @@ contactRoutes.post(
 
 contactRoutes.get("/contacts", isAuth, ContactController.index);
 
+// before "/contacts/:contactId", or "export.csv" would be taken for an id
+contactRoutes.get("/contacts/export.csv", isAuth, ContactController.exportCsv);
+
 contactRoutes.get("/contacts/:contactId", isAuth, ContactController.show);
 
 contactRoutes.post("/contacts", isAuth, ContactController.store);
@@ -25,6 +28,7 @@ contactRoutes.put("/contacts/:contactId", isAuth, ContactController.update);
 
 contactRoutes.put("/contacts/:contactId/no-reply", isAuth, ContactController.setNoReply);
 contactRoutes.put("/contacts/:contactId/staff", isAuth, ContactController.setStaff);
+contactRoutes.put("/contacts/:contactId/relation", isAuth, ContactController.setRelation);
 contactRoutes.put("/contacts/:contactId/community", isAuth, ContactController.setCommunity);
 
 contactRoutes.delete("/contacts/:contactId", isAuth, isAdmin, ContactController.remove);

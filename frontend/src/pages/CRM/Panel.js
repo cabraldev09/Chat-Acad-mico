@@ -1,12 +1,12 @@
 import { fillDays } from "../../utils/chartDays";
-import React, { useContext, useEffect, useState } from "react";
+import React, { useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useHistory } from "react-router-dom";
 import { Typography, TextField, MenuItem, makeStyles, Table, TableHead, TableRow, TableCell, TableBody, LinearProgress, Button, Menu } from "@material-ui/core";
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar, Cell, PieChart, Pie, Legend,
 } from "recharts";
-import { AlertTriangle, Hourglass, UserX, Flame, Download } from "lucide-react";
-import { format, subDays } from "date-fns";
+import { AlertTriangle, Hourglass, UserX, Flame, Download, CircleDollarSign, FileWarning, Sprout, RefreshCw, ArrowUpRight, ArrowDownRight, Minus } from "lucide-react";
+import { format, subDays, startOfMonth } from "date-fns";
 
 import MainContainer from "../../components/MainContainer";
 import MainHeader from "../../components/MainHeader";
@@ -15,25 +15,51 @@ import Title from "../../components/Title";
 import GlowCard from "../../components/GlowCard";
 import NumberTicker from "../../components/NumberTicker";
 import { AuthContext } from "../../context/Auth/AuthContext";
+import { isManager } from "../../utils/access";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
-import { useCrmOptions, SourceIcon } from "./shared";
+import { downloadFile } from "../../utils/saveBlob";
+import { useCrmOptions, SourceIcon, ago } from "./shared";
+import Cac from "./Cac";
+import NotALead from "./NotALead";
 
-const useStyles = makeStyles((theme) => ({
-  scroll: { flex: 1, overflowY: "auto", overflowX: "hidden", padding: theme.spacing(1, 1, 2), ...theme.scrollbarStyles },
-  kpis: { display: "grid", gap: theme.spacing(1.5), gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))" },
-  kpi: { padding: theme.spacing(2) },
-  kpiVal: { fontSize: 30, fontWeight: 600, letterSpacing: "-0.02em", lineHeight: 1.2 },
-  label: { fontSize: 13, color: theme.palette.text.secondary, fontWeight: 500 },
-  alerts: { display: "grid", gap: theme.spacing(1.5), gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", marginTop: theme.spacing(1.5) },
-  alert: { padding: theme.spacing(1.5, 2), display: "flex", alignItems: "center", gap: 12, cursor: "pointer" },
-  alertIcon: { width: 36, height: 36, borderRadius: 10, display: "grid", placeItems: "center", flex: "none" },
-  grid: { display: "grid", gap: theme.spacing(1.5), marginTop: theme.spacing(1.5), gridTemplateColumns: "repeat(12, 1fr)" },
-  card: { padding: theme.spacing(2) },
-  chart: { height: 250 },
-  funnelRow: { display: "grid", gridTemplateColumns: "150px 1fr 70px", alignItems: "center", gap: 10, padding: "5px 0", fontSize: 13.5 },
-  bar: { height: 22, borderRadius: 6, transition: "width .8s var(--ease-out)", minWidth: 4 },
-}));
+const useStyles = makeStyles((theme) => {
+  const dark = theme.palette.type === "dark";
+  const line = dark ? "rgba(255,255,255,.09)" : "#e3e9f1";
+  const soft = dark ? "rgba(255,255,255,.05)" : "#f1f4f8";
+  return {
+    scroll: { flex: 1, overflowY: "auto", overflowX: "hidden", padding: theme.spacing(1, 1, 3), ...theme.scrollbarStyles },
+    label: { fontSize: 13, color: theme.palette.text.secondary, fontWeight: 500 },
+    chips: { display: "inline-flex", gap: 4, padding: 3, borderRadius: 12, background: soft, border: `1px solid ${line}` },
+    chip: {
+      border: 0, background: "transparent", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, color: theme.palette.text.secondary, padding: "5px 12px", borderRadius: 9,
+      "&:hover": { color: theme.palette.text.primary },
+    },
+    chipOn: { background: dark ? "#0f1826" : "#ffffff", color: theme.palette.text.primary, boxShadow: dark ? "none" : "0 1px 3px rgba(11,26,46,.12)" },
+    sectionHead: { display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", margin: theme.spacing(2.5, 0, 1) },
+    sectionTitle: { fontSize: 16, fontWeight: 700, letterSpacing: "-0.01em" },
+    sectionHint: { fontSize: 12.5, color: theme.palette.text.secondary },
+    alerts: { display: "grid", gap: theme.spacing(1.25), gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))" },
+    alert: {
+      padding: theme.spacing(1.5, 2), display: "flex", alignItems: "center", gap: 12, cursor: "pointer", textAlign: "left", transition: "transform .15s",
+      "&:hover": { transform: "translateY(-1px)" }, "&:focus-visible": { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: 2 },
+    },
+    alertIcon: { width: 36, height: 36, borderRadius: 10, display: "grid", placeItems: "center", flex: "none" },
+    triageRow: { display: "flex", alignItems: "center", gap: 12, padding: "9px 0", borderTop: `1px solid ${line}`, flexWrap: "wrap", "&:first-of-type": { borderTop: 0 } },
+    band: { display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", [theme.breakpoints.down("md")]: { gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }, [theme.breakpoints.down("xs")]: { gridTemplateColumns: "1fr" } },
+    cell: { padding: theme.spacing(2), borderRight: `1px solid ${line}`, borderBottom: `1px solid ${line}`, minWidth: 0 },
+    cellVal: { fontSize: 32, fontWeight: 700, letterSpacing: "-0.03em", lineHeight: 1.15, marginTop: 4, fontVariantNumeric: "tabular-nums" },
+    delta: { display: "inline-flex", alignItems: "center", gap: 2, fontSize: 12, fontWeight: 700, padding: "1px 7px", borderRadius: 999 },
+    grid: { display: "grid", gap: theme.spacing(1.5), gridTemplateColumns: "repeat(12, 1fr)" },
+    card: { padding: theme.spacing(2) },
+    chart: { height: 250 },
+    funnelRow: { display: "grid", gridTemplateColumns: "150px 1fr 90px", alignItems: "center", gap: 10, padding: "5px 0", fontSize: 13.5 },
+    bar: { height: 22, borderRadius: 6, transition: "width .8s var(--ease-out)", minWidth: 4 },
+    lane: { display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", marginBottom: 8, borderRadius: 8, background: "rgba(245,165,36,.12)", fontSize: 13, cursor: "pointer" },
+    error: { margin: theme.spacing(2), padding: theme.spacing(2), display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" },
+    miniBar: { height: 6, borderRadius: 4, background: soft, overflow: "hidden", minWidth: 50 },
+  };
+});
 
 const span = (n) => ({ gridColumn: `span ${n}`, minWidth: 0 });
 const mins = (m) => {
@@ -45,6 +71,53 @@ const mins = (m) => {
 };
 const pct = (a, b) => (b ? `${((a / b) * 100).toFixed(1).replace(".", ",")}%` : "—");
 const PIE = ["#0B4279", "#0693E3", "#FEF84C", "#6366f1", "#f97316", "#14b8a6", "#ec4899", "#64748b", "#84cc16"];
+const GREEN = "#16a34a";
+const AMBER = "#d97706";
+const RED = "#dc2626";
+
+// first contact: green up to 15 min, amber up to an hour, red beyond
+const contactTone = (m) => (m === null || m === undefined ? undefined : m <= 15 ? GREEN : m <= 60 ? AMBER : RED);
+
+// the change against the period right before: arrow and percentage (points for a rate)
+const Delta = ({ now, before, points = false, goodWhenDown = false }) => {
+  const c = useStyles();
+  if (before === undefined || before === null) return null;
+  if (!before && !now) return <span className={c.delta} style={{ background: "rgba(100,116,139,.14)", color: "#64748b" }}><Minus size={12} /> igual</span>;
+  const diff = points ? now - before : before ? ((now - before) / before) * 100 : 100;
+  const up = diff > 0.05;
+  const down = diff < -0.05;
+  const good = goodWhenDown ? down : up;
+  const bad = goodWhenDown ? up : down;
+  const color = good ? GREEN : bad ? RED : "#64748b";
+  const text = !before && !points ? "novo" : `${diff > 0 ? "+" : ""}${Math.abs(diff) >= 10 ? Math.round(diff) : diff.toFixed(1).replace(".", ",")}${points ? " p.p." : "%"}`;
+  return (
+    <span className={c.delta} style={{ background: `${color}22`, color }} title="Em relação ao período anterior de mesma duração">
+      {up ? <ArrowUpRight size={12} /> : down ? <ArrowDownRight size={12} /> : <Minus size={12} />} {text}
+    </span>
+  );
+};
+
+const Spark = ({ data, color }) => (
+  <div style={{ height: 34, marginTop: 6 }} aria-hidden="true">
+    <ResponsiveContainer>
+      <AreaChart data={data} margin={{ top: 2, right: 0, left: 0, bottom: 0 }}>
+        <Area type="monotone" dataKey="v" stroke={color} strokeWidth={1.8} fill={color} fillOpacity={0.14} isAnimationActive={false} />
+      </AreaChart>
+    </ResponsiveContainer>
+  </div>
+);
+
+const SectionHead = ({ title, hint }) => {
+  const c = useStyles();
+  return (
+    <div className={c.sectionHead}>
+      <span className={c.sectionTitle}>{title}</span>
+      {hint && <span className={c.sectionHint}>{hint}</span>}
+    </div>
+  );
+};
+
+const todayStr = () => format(new Date(), "yyyy-MM-dd");
 
 const Panel = () => {
   const { user: me } = useContext(AuthContext);
@@ -53,56 +126,79 @@ const Panel = () => {
   const history = useHistory();
   const { courses, users } = useCrmOptions();
   const [from, setFrom] = useState(format(subDays(new Date(), 29), "yyyy-MM-dd"));
-  const [to, setTo] = useState(format(new Date(), "yyyy-MM-dd"));
+  const [to, setTo] = useState(todayStr());
   const [ownerId, setOwnerId] = useState("");
   const [courseId, setCourseId] = useState("");
   const [d, setD] = useState(null);
+  const [failed, setFailed] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [exportEl, setExportEl] = useState(null);
+  const manager = isManager(me);
+
+  // quick periods; the one that matches the dates on screen is marked
+  const presets = useMemo(() => {
+    const t = new Date();
+    const semesterStart = new Date(t.getFullYear(), t.getMonth() < 6 ? 0 : 6, 1);
+    return [
+      ["7 dias", format(subDays(t, 6), "yyyy-MM-dd")],
+      ["30 dias", format(subDays(t, 29), "yyyy-MM-dd")],
+      ["Este mês", format(startOfMonth(t), "yyyy-MM-dd")],
+      ["Semestre", format(semesterStart, "yyyy-MM-dd")],
+    ];
+  }, []);
 
   // downloads the report (opens in Excel) for the period on screen
   const exportReport = async (groupBy) => {
     setExportEl(null);
-    try {
-      const { data } = await api.get("/crm/report", { params: { from, to, groupBy, format: "csv" }, responseType: "blob" });
-      const url = URL.createObjectURL(data);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `relatorio-${groupBy === "polo" ? "polos" : "consultores"}-${from}-a-${to}.csv`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      toastError(err);
-    }
+    await downloadFile("/crm/report", { from, to, groupBy, format: "csv" }, `relatorio-${groupBy === "polo" ? "polos" : "consultores"}-${from}-a-${to}.csv`);
   };
 
-  useEffect(() => {
+  const load = useCallback(() => {
+    setLoading(true);
+    setFailed(false);
     api.get("/crm/metrics", { params: { from, to, ownerId: ownerId || undefined, courseId: courseId || undefined } })
-      .then(({ data }) => setD(data)).catch(toastError);
+      .then(({ data }) => setD(data))
+      .catch((err) => { setFailed(true); toastError(err); })
+      .finally(() => setLoading(false));
   }, [from, to, ownerId, courseId]);
+  useEffect(() => { load(); }, [load]);
 
   const byDay = {};
   (d?.created || []).forEach((r) => { const k = String(r.day).slice(0, 10); byDay[k] = { ...byDay[k], leads: Number(r.total) }; });
   (d?.wonDaily || []).forEach((r) => { const k = String(r.day).slice(0, 10); byDay[k] = { ...byDay[k], matriculas: Number(r.total) }; });
   const series = fillDays(from, to, byDay, { leads: 0, matriculas: 0 });
-  // "reached stage" = leads now in this stage or any later one (enrolled included)
-  const steps = d ? d.funnel.filter((f) => f.type !== "lost") : [];
+  // "reached stage" = leads now in this stage or any later one (enrolled included). The column of the people an affiliate
+  // referred comes before the funnel (it only holds them until the first contact), so it is not a step of it.
+  const lane = d ? d.funnel.find((f) => f.isAffiliateLane) : null;
+  const steps = d ? d.funnel.filter((f) => f.type !== "lost" && !f.isAffiliateLane) : [];
   const reached = steps.map((f, i) => ({ ...f, reached: steps.slice(i).reduce((a, x) => a + x.total, 0) }));
   const lostTotal = d ? d.funnel.filter((f) => f.type === "lost").reduce((a, x) => a + x.total, 0) : 0;
   const maxFunnel = Math.max(1, ...reached.map((f) => f.reached));
+  const wonInPeriod = (d?.wonDaily || []).reduce((a, r) => a + Number(r.total || 0), 0);
+  const sparkLeads = series.map((r) => ({ v: r.leads || 0 }));
+  const sparkWon = series.map((r) => ({ v: r.matriculas || 0 }));
+  const prev = d?.previous;
+  const reload = () => { load(); };
 
-  const Kpi = ({ label, value, hint }) => (
-    <GlowCard className={classes.kpi}>
-      <div className={classes.label}>{label}</div>
-      <div className={classes.kpiVal}>{typeof value === "number" ? <NumberTicker value={value} /> : value}</div>
-      {hint && <div className={classes.label} style={{ fontSize: 12 }}>{hint}</div>}
-    </GlowCard>
-  );
+  const alerts = d ? [
+    [Hourglass, "Aguardando 1º contato", d.attention.waitingFirstContact, AMBER, "rgba(217,119,6,.14)", "/crm"],
+    [AlertTriangle, "Tarefas atrasadas", d.attention.overdueTasks, RED, "rgba(220,38,38,.12)", "/crm/tarefas"],
+    [Flame, "Leads esfriando (+3 dias)", d.attention.stale, "#0693E3", "rgba(6,147,227,.12)", "/crm?followUp=overdue"],
+    [UserX, "Sem responsável", d.attention.unassigned ?? d.kpi.unassigned, "#64748b", "rgba(100,116,139,.14)", "/crm"],
+    [CircleDollarSign, "Taxa de matrícula pendente", d.attention.feePending, "#E5484D", "rgba(229,72,77,.12)", d.attention.feeTagId ? `/crm?tagId=${d.attention.feeTagId}` : "/crm"],
+    [FileWarning, "Documentos pendentes", d.attention.docsPending, "#b45309", "rgba(245,158,11,.16)", d.attention.docsTagId ? `/crm?tagId=${d.attention.docsTagId}` : "/crm"],
+  ] : [];
 
   return (
     <MainContainer>
       <MainHeader>
         <Title>Painel do CRM</Title>
         <MainHeaderButtonsWrapper>
+          <div className={classes.chips} role="group" aria-label="Período">
+            {presets.map(([label, start]) => (
+              <button key={label} type="button" className={`${classes.chip} ${from === start && to === todayStr() ? classes.chipOn : ""}`} onClick={() => { setFrom(start); setTo(todayStr()); }}>{label}</button>
+            ))}
+          </div>
           <TextField size="small" type="date" label="De" variant="outlined" InputLabelProps={{ shrink: true }} value={from} onChange={(e) => setFrom(e.target.value)} />
           <TextField size="small" type="date" label="Até" variant="outlined" InputLabelProps={{ shrink: true }} value={to} onChange={(e) => setTo(e.target.value)} />
           <TextField select size="small" label="Consultor" variant="outlined" value={ownerId} onChange={(e) => setOwnerId(e.target.value)} style={{ minWidth: 150 }}>
@@ -119,39 +215,101 @@ const Panel = () => {
         </MainHeaderButtonsWrapper>
       </MainHeader>
 
+      {loading && d && <LinearProgress />}
+      {failed && !d && (
+        <GlowCard className={classes.error}>
+          <Typography>Não foi possível carregar o painel.</Typography>
+          <Button variant="outlined" startIcon={<RefreshCw size={16} />} onClick={load}>Tentar de novo</Button>
+        </GlowCard>
+      )}
       {d && (
         <div className={classes.scroll}>
-          <div className={classes.kpis}>
-            <Kpi label="Leads captados" value={d.kpi.leads} hint={`${d.kpi.open} em andamento`} />
-            <Kpi label="Matrículas" value={d.kpi.won} hint={`${d.kpi.lost} perdidos`} />
-            <Kpi label="Conversão" value={`${d.kpi.conversion.toFixed(1).replace(".", ",")}%`} hint="lead → matrícula" />
-            <Kpi label="Tempo até o 1º contato" value={mins(d.kpi.avgFirstContactMin)} hint={d.kpi.businessHours ? "média, só horário comercial" : "média"} />
-            <Kpi label="Tempo até a matrícula" value={d.kpi.avgDaysToEnroll === null ? "—" : `${Number(d.kpi.avgDaysToEnroll).toFixed(1).replace(".", ",")} dias`} hint="média" />
-          </div>
-
+          <SectionHead title="Pontos de atenção" hint="Situação de agora, não muda com o período escolhido" />
           <div className={classes.alerts}>
-            {[
-              [Hourglass, "Aguardando 1º contato", d.attention.waitingFirstContact, "#d97706", "rgba(217,119,6,.14)", "/crm"],
-              [AlertTriangle, "Tarefas atrasadas", d.attention.overdueTasks, "#dc2626", "rgba(220,38,38,.12)", "/crm/tarefas"],
-              [Flame, "Leads esfriando (+3 dias)", d.attention.stale, "#0693E3", "rgba(6,147,227,.12)", "/crm?followUp=overdue"],
-              [UserX, "Sem responsável", d.kpi.unassigned, "#64748b", "rgba(100,116,139,.14)", "/crm"],
-            ].map(([Icon, label, value, fg, bg, to2]) => (
-              <GlowCard key={label} className={classes.alert} onClick={() => history.push(to2)}>
+            {alerts.map(([Icon, label, value, fg, bg, to2]) => (
+              <GlowCard key={label} className={classes.alert} role="button" tabIndex={0} onClick={() => history.push(to2)}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); history.push(to2); } }}>
                 <span className={classes.alertIcon} style={{ background: bg, color: fg }}><Icon size={18} /></span>
                 <div>
                   <div className={classes.label}>{label}</div>
-                  <div style={{ fontSize: 22, fontWeight: 600, color: value ? fg : undefined }}><NumberTicker value={value} /></div>
+                  <div style={{ fontSize: 24, fontWeight: 700, color: value ? fg : undefined, fontVariantNumeric: "tabular-nums" }}><NumberTicker value={value || 0} /></div>
                 </div>
               </GlowCard>
             ))}
           </div>
 
-          <div className={classes.grid}>
+          {d.triage && d.triage.length > 0 && (
+            <>
+              <SectionHead title="Novos para conferir" hint="Quem escreveu e ninguém atendeu ainda. Amigo ou da equipe? Tire do funil para não contar como lead." />
+              <GlowCard className={classes.card}>
+                {d.triage.map((t) => (
+                  <div key={t.id} className={classes.triageRow}>
+                    <div style={{ flex: 1, minWidth: 180 }}>
+                      <div style={{ fontWeight: 600 }}>{t.name}</div>
+                      <div className={classes.label} style={{ fontSize: 12.5 }}>
+                        <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}><SourceIcon source={t.source} />{t.source}</span>
+                        {t.phone ? ` · ${t.phone}` : ""} · chegou {ago(t.createdAt)}
+                      </div>
+                    </div>
+                    <Button size="small" variant="outlined" onClick={() => history.push(`/crm?lead=${t.id}`)}>Abrir</Button>
+                    <NotALead lead={t} compact onDone={reload} />
+                  </div>
+                ))}
+                {d.attention.waitingFirstContact > d.triage.length && (
+                  <Button size="small" style={{ marginTop: 8 }} onClick={() => history.push("/crm")}>Ver os {d.attention.waitingFirstContact} que aguardam no funil</Button>
+                )}
+              </GlowCard>
+            </>
+          )}
+
+          <SectionHead title="Resultados do período" hint="Dos leads que entraram entre as datas escolhidas, quantos já se matricularam. A seta compara com o período anterior." />
+          <GlowCard style={{ padding: 0, overflow: "hidden" }}>
+            <div className={classes.band}>
+              <div className={classes.cell}>
+                <div className={classes.label}>Leads captados</div>
+                <div className={classes.cellVal}><NumberTicker value={d.kpi.leads} /></div>
+                <div style={{ marginTop: 4 }}><Delta now={d.kpi.leads} before={prev && prev.leads} /></div>
+                <Spark data={sparkLeads} color="#0693E3" />
+                <div className={classes.label} style={{ fontSize: 12 }}>{d.kpi.open} em andamento</div>
+              </div>
+              <div className={classes.cell}>
+                <div className={classes.label}>Matrículas</div>
+                <div className={classes.cellVal}><NumberTicker value={d.kpi.won} /></div>
+                <div style={{ marginTop: 4 }}><Delta now={d.kpi.won} before={prev && prev.won} /></div>
+                <Spark data={sparkWon} color={GREEN} />
+                <div className={classes.label} style={{ fontSize: 12 }}>{d.kpi.lost} perdidos · {wonInPeriod} confirmadas no período</div>
+              </div>
+              <div className={classes.cell}>
+                <div className={classes.label}>Conversão</div>
+                <div className={classes.cellVal}>{`${d.kpi.conversion.toFixed(1).replace(".", ",")}%`}</div>
+                <div style={{ marginTop: 4 }}><Delta now={d.kpi.conversion} before={prev && prev.conversion} points /></div>
+                <div className={classes.label} style={{ fontSize: 12, marginTop: 8 }}>lead → matrícula</div>
+              </div>
+              <div className={classes.cell}>
+                <div className={classes.label}>Tempo até o 1º contato</div>
+                <div className={classes.cellVal} style={{ color: contactTone(d.kpi.avgFirstContactMin) }}>{mins(d.kpi.avgFirstContactMin)}</div>
+                <div className={classes.label} style={{ fontSize: 12, marginTop: 8 }}>{d.kpi.businessHours ? "média, só horário comercial" : "média"} · ideal até 15 min</div>
+              </div>
+              <div className={classes.cell} style={{ borderRight: 0 }}>
+                <div className={classes.label}>Tempo até a matrícula</div>
+                <div className={classes.cellVal}>{d.kpi.avgDaysToEnroll === null ? "—" : `${Number(d.kpi.avgDaysToEnroll).toFixed(1).replace(".", ",")} dias`}</div>
+                <div className={classes.label} style={{ fontSize: 12, marginTop: 8 }}>média</div>
+              </div>
+            </div>
+          </GlowCard>
+
+          <div className={classes.grid} style={{ marginTop: 16 }}>
             <GlowCard className={classes.card} style={span(7)}>
               <Typography variant="subtitle2" gutterBottom>Funil de matrícula</Typography>
               <Typography variant="caption" color="textSecondary" display="block" style={{ marginBottom: 8 }}>
-                Leads que chegaram a cada etapa (a porcentagem é em relação à etapa anterior)
+                Leads que estão em cada etapa ou já passaram dela (a porcentagem é em relação à etapa anterior). Os perdidos ficam à parte.
               </Typography>
+              {lane && lane.total > 0 && (
+                <div className={classes.lane} role="button" tabIndex={0} onClick={() => history.push("/crm")}
+                  onKeyDown={(e) => { if (e.key === "Enter") history.push("/crm"); }}>
+                  <Sprout size={15} /> <b>{lane.total}</b> indicação{lane.total > 1 ? "ões" : ""} de afiliados aguardando o 1º contato (já contam em "Leads captados")
+                </div>
+              )}
               {reached.map((f, i) => (
                 <div key={f.id} className={classes.funnelRow}>
                   <span>{f.name}</span>
@@ -184,7 +342,7 @@ const Panel = () => {
             </GlowCard>
 
             <GlowCard className={classes.card} style={span(12)}>
-              <Typography variant="subtitle2" gutterBottom>Leads e matrículas por dia</Typography>
+              <Typography variant="subtitle2" gutterBottom>Leads captados e matrículas confirmadas por dia</Typography>
               <div className={classes.chart}>
                 <ResponsiveContainer>
                   <AreaChart data={series}>
@@ -204,12 +362,18 @@ const Panel = () => {
             <GlowCard className={classes.card} style={span(6)}>
               <Typography variant="subtitle2" gutterBottom>Origem dos leads</Typography>
               <Table size="small">
-                <TableHead><TableRow><TableCell>Origem</TableCell><TableCell align="right">Leads</TableCell><TableCell align="right">Matrículas</TableCell><TableCell align="right">Conversão</TableCell></TableRow></TableHead>
+                <TableHead><TableRow><TableCell>Origem</TableCell><TableCell align="right">Leads</TableCell><TableCell align="right">Matrículas</TableCell><TableCell align="right" style={{ minWidth: 110 }}>Conversão</TableCell></TableRow></TableHead>
                 <TableBody>
                   {d.bySource.map((s) => (
                     <TableRow key={s.name}>
                       <TableCell><span style={{ display: "inline-flex", gap: 8, alignItems: "center" }}><SourceIcon source={s.name} />{s.name}</span></TableCell>
-                      <TableCell align="right">{s.leads}</TableCell><TableCell align="right">{s.won}</TableCell><TableCell align="right">{pct(s.won, s.leads)}</TableCell>
+                      <TableCell align="right">{s.leads}</TableCell><TableCell align="right">{s.won}</TableCell>
+                      <TableCell align="right">
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "flex-end" }}>
+                          <div className={classes.miniBar} style={{ width: 50 }}><div style={{ width: `${Math.min(100, s.leads ? (s.won / s.leads) * 100 * 4 : 0)}%`, height: "100%", background: GREEN }} /></div>
+                          <span style={{ minWidth: 44 }}>{pct(s.won, s.leads)}</span>
+                        </div>
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -230,15 +394,24 @@ const Panel = () => {
               </div>
             </GlowCard>
 
+            {manager && (
+              <GlowCard className={classes.card} style={span(12)}>
+                <Typography variant="subtitle2" gutterBottom>Custo por origem</Typography>
+                <Cac from={from} to={to} />
+              </GlowCard>
+            )}
+
             <GlowCard className={classes.card} style={span(12)}>
               <Typography variant="subtitle2" gutterBottom>Desempenho dos consultores</Typography>
               <Table size="small">
-                <TableHead><TableRow><TableCell>Consultor</TableCell><TableCell align="right">Leads</TableCell><TableCell align="right">Em andamento</TableCell><TableCell align="right">Matrículas</TableCell><TableCell align="right">Conversão</TableCell><TableCell align="right">1º contato (média)</TableCell></TableRow></TableHead>
+                <TableHead><TableRow><TableCell>Consultor</TableCell><TableCell align="right">Leads</TableCell><TableCell align="right">Em andamento</TableCell><TableCell align="right">Matrículas</TableCell><TableCell align="right">Conversão</TableCell><TableCell align="right">1º contato (média)</TableCell><TableCell align="right">Sem 1º contato agora</TableCell></TableRow></TableHead>
                 <TableBody>
                   {d.byOwner.map((o) => (
                     <TableRow key={o.name}>
                       <TableCell>{o.name}</TableCell><TableCell align="right">{o.leads}</TableCell><TableCell align="right">{o.open}</TableCell>
-                      <TableCell align="right"><b>{o.won}</b></TableCell><TableCell align="right">{pct(o.won, o.leads)}</TableCell><TableCell align="right">{mins(o.avgFirstContactMin)}</TableCell>
+                      <TableCell align="right"><b>{o.won}</b></TableCell><TableCell align="right">{pct(o.won, o.leads)}</TableCell>
+                      <TableCell align="right" style={{ color: contactTone(o.avgFirstContactMin), fontWeight: 600 }}>{mins(o.avgFirstContactMin)}</TableCell>
+                      <TableCell align="right" style={{ color: o.waiting ? RED : undefined, fontWeight: o.waiting ? 700 : 400 }}>{o.waiting || 0}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -247,7 +420,7 @@ const Panel = () => {
           </div>
         </div>
       )}
-      {!d && <LinearProgress />}
+      {!d && !failed && <LinearProgress />}
     </MainContainer>
   );
 };

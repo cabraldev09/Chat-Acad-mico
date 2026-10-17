@@ -11,6 +11,7 @@ Rode tudo isto antes de enviar ao GitHub e de atualizar a VPS. Qualquer falha im
 | Esquema do banco (depois de criar uma migração) | `node scripts/build-schema.js` | `backend` |
 | Auditoria de rotas por perfil | `node scripts/audit-routes.js` | `backend` |
 | **Leitura tardia de evento (erro "reading 'value'")** | `node scripts/check-lazy-events.js` | `frontend` |
+| Menu lateral sem ícone repetido | `node scripts/check-menu-icons.js` | `frontend` |
 | Build do frontend | `npx vite build` | `frontend` |
 | Varredura de todas as telas, 4 perfis + a Central do Afiliado pública (abas, QR Code e arte em Story e Feed), digitando nos formulários | `node scripts/smoke-pages.js portal admin coordenacao consultor tutor` (API em 8080 e `vite preview` em 3000) | `frontend` |
 

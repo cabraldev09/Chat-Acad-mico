@@ -5,7 +5,7 @@ import {
   Button, TextField, MenuItem, InputAdornment, Dialog, DialogTitle, DialogContent, DialogActions,
   Typography, makeStyles, ButtonGroup, Chip, Table, TableHead, TableRow, TableCell, TableBody, Paper,
 } from "@material-ui/core";
-import { HeartHandshake, Search, Plus, Upload, LayoutGrid, List, Calendar, BadgeCheck, Rocket, Hourglass } from "lucide-react";
+import { Sprout, Search, Plus, Upload, LayoutGrid, List, Calendar, BadgeCheck, Rocket, Hourglass } from "lucide-react";
 import { format, parseISO } from "date-fns";
 
 import MainContainer from "../../components/MainContainer";
@@ -92,7 +92,7 @@ const LeadCard = ({ lead, onOpen, onDragStart, onDragEnd, dragging }) => {
         )}
         {lead.onboardingStatus && lead.onboardingStatus !== "none" && (
           <span className={`${classes.chip} ${lead.onboardingStatus === "done" ? classes.chipPaid : ""}`} title="Situação da ambientação com o tutor">
-            <HeartHandshake size={12} />{{ pending: "Aguarda tutor", started: "Em ambientação", done: "Ambientado" }[lead.onboardingStatus]}
+            <Sprout size={12} />{{ pending: "Aguarda tutor", started: "Em ambientação", done: "Ambientado" }[lead.onboardingStatus]}
           </span>
         )}
         {lead.nextFollowUpAt && (
@@ -138,7 +138,7 @@ const Board = () => {
   const location = useLocation();
   const ctx = useCrmOptions();
   const [view, setView] = useState("board");
-  const [filters, setFilters] = useState({ search: "", ownerId: "", courseId: "", source: "", affiliate: "", followUp: new URLSearchParams(location.search).get("followUp") || "" });
+  const [filters, setFilters] = useState({ search: "", ownerId: "", courseId: "", source: "", affiliate: "", tagId: new URLSearchParams(location.search).get("tagId") || "", followUp: new URLSearchParams(location.search).get("followUp") || "" });
   const [board, setBoard] = useState(null);
   const [list, setList] = useState({ leads: [], count: 0 });
   const [openId, setOpenId] = useState(Number(new URLSearchParams(location.search).get("lead")) || null);
@@ -260,6 +260,10 @@ const Board = () => {
         <TextField select size="small" variant="outlined" label="Afiliados" value={filters.affiliate} onChange={(e) => setFilters({ ...filters, affiliate: e.target.value })} style={{ minWidth: 150 }}>
           <MenuItem value="">Todos os leads</MenuItem>
           <MenuItem value="any">Só indicados por afiliado</MenuItem>
+        </TextField>
+        <TextField select size="small" variant="outlined" label="Etiqueta" value={filters.tagId} onChange={(e) => setFilters({ ...filters, tagId: e.target.value })} style={{ minWidth: 150 }}>
+          <MenuItem value="">Todas</MenuItem>
+          {ctx.tags.map((t) => (<MenuItem key={t.id} value={String(t.id)}>{t.name}</MenuItem>))}
         </TextField>
         <TextField select size="small" variant="outlined" label="Retorno" value={filters.followUp} onChange={(e) => setFilters({ ...filters, followUp: e.target.value })} style={{ minWidth: 140 }}>
           <MenuItem value="">Todos</MenuItem>

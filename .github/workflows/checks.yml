@@ -40,6 +40,9 @@ jobs:
       - name: Frontend sem leitura tardia de evento (erro "reading 'value'" no React 16)
         working-directory: frontend
         run: node scripts/check-lazy-events.js
+      - name: Menu sem ícones repetidos
+        working-directory: frontend
+        run: node scripts/check-menu-icons.js
       - name: Frontend sem variáveis inexistentes (evita tela branca)
         working-directory: frontend
         run: >
