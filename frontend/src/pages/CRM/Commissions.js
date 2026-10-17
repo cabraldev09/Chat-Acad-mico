@@ -173,11 +173,11 @@ const Commissions = () => {
                 <div className={classes.hint} style={{ marginTop: 4, maxWidth: 640 }}>
                   {informed
                     ? "Informe o novo Wallet ID. As próximas comissões vão para a nova conta."
-                    : "Informe o Wallet ID da sua conta Efí para receber a comissão direto na sua conta, no momento em que o aluno pagar a taxa. Sem ele, a comissão fica com a empresa e é repassada a você à mão (aparece como “A receber”)."}
+                    : "Informe o Wallet ID da sua conta Efí para receber a comissão direto na sua conta, no momento em que o aluno pagar a taxa (a cobrança dos seus alunos sai como boleto com QR Code Pix, para a Efí poder repassar). Sem ele, a comissão fica com a empresa e é repassada a você à mão (aparece como “A receber”)."}
                 </div>
                 <div className={classes.walletForm}>
                   <TextField size="small" variant="outlined" label="Wallet ID da Efí" value={wallet} onChange={(e) => setWallet(e.target.value)} style={{ minWidth: 320 }}
-                    helperText="De 6 a 64 letras e números, sem espaços" inputProps={{ autoComplete: "off", spellCheck: false }} />
+                    helperText="É o “identificador de conta” da sua conta Efí (só ele). Precisa ser uma conta Efí." inputProps={{ autoComplete: "off", spellCheck: false }} />
                   <Button variant="contained" color="primary" onClick={saveWallet} disabled={saving || wallet.trim().length < 6}>Salvar</Button>
                   {informed && <Button variant="outlined" onClick={() => { setEditing(false); setWallet(""); }}>Cancelar</Button>}
                   {informed && <Button color="secondary" onClick={removeWallet}>Remover carteira</Button>}

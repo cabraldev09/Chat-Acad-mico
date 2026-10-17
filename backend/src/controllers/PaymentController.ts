@@ -52,6 +52,8 @@ const settingsView = async () => {
     consultantPct: Number(await getSetting("efi_consultant_pct", "100")),
     chargeDaysBefore: Number(await getSetting("efi_charge_days_before", "3")),
     defaultMethod: (await getSetting("efi_default_method", "pix")) === "bolix" ? "bolix" : "pix",
+    // who pays the Efí fee on a split charge: "proportional" (each account, the default of Efí) or "company"
+    feeMode: (await getSetting("efi_fee_mode", "2")) === "1" ? "company" : "proportional",
     webhookUrl: `${getPublicUrl()}/webhooks/efi/${await webhookSecret()}`,
     publicUrlIsHttps: getPublicUrl().startsWith("https://")
   };
@@ -75,6 +77,7 @@ export const putSettings = async (req: Request, res: Response): Promise<Response
   if (b.consultantPct !== undefined) await setSetting("efi_consultant_pct", String(Math.min(100, Math.max(1, Math.round(Number(b.consultantPct) || 100)))));
   if (b.chargeDaysBefore !== undefined) await setSetting("efi_charge_days_before", String(Math.min(30, Math.max(0, Math.round(Number(b.chargeDaysBefore) || 0)))));
   if (b.defaultMethod) await setSetting("efi_default_method", b.defaultMethod === "bolix" ? "bolix" : "pix");
+  if (b.feeMode) await setSetting("efi_fee_mode", b.feeMode === "company" ? "1" : "2");
   Efi.clearTokens();
   Billet.clearBilletTokens();
   return res.json(await settingsView());
@@ -136,7 +139,8 @@ export const createForLead = async (req: Request, res: Response): Promise<Respon
   const payment = await createEnrollmentCharge(lead, uid(req), {
     amount: req.body.amount ? Number(String(req.body.amount).replace(",", ".")) : undefined,
     force: !!req.body.force,
-    method: req.body.method === "bolix" ? "bolix" : req.body.method === "pix" ? "pix" : ((await getSetting("efi_default_method", "pix")) === "bolix" ? "bolix" : "pix"),
+    // not chosen: the default of the company; with Pix as the default, a seller with a Wallet ID gets a Bolix (it splits by Wallet ID)
+    method: req.body.method === "bolix" ? "bolix" : req.body.method === "pix" ? "pix" : ((await getSetting("efi_default_method", "pix")) === "bolix" ? "bolix" : undefined),
     dueDate: req.body.dueDate || null
   });
   return res.status(201).json(present(payment, true));

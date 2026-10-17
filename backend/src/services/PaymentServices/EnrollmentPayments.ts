@@ -17,6 +17,7 @@ import { getIO } from "../../libs/socket";
 import { getSetting } from "../../helpers/AppSettings";
 import { isValidCpf, normalizeCpf } from "../../helpers/Cpf";
 import { logger } from "../../utils/logger";
+import { markFeePaid, syncPendingFeeTags } from "./FeeTags";
 import dispatchWebhook from "../WebhookServices/DispatchWebhook";
 import SendToContact from "../ChannelServices/SendToContact";
 import { addActivity, changeStage, loadLead, resolveLeadTarget } from "../CrmServices/LeadCore";
@@ -81,7 +82,15 @@ export const createEnrollmentCharge = async (
   opts: { amount?: number; force?: boolean; method?: "pix" | "bolix"; dueDate?: string | null } = {}
 ): Promise<Payment> => {
   if (!lead.cpf || !isValidCpf(lead.cpf)) throw new AppError("ERR_LEAD_NEEDS_CPF");
-  const method = opts.method === "bolix" ? "bolix" : "pix";
+  // Pix alone cannot be split by a Wallet ID (Efí asks for the CPF and the account number of who receives); the boleto with Pix
+  // (Bolix) can, by the Wallet ID only. So when nobody chose the method and the seller informed a Wallet ID, the charge goes
+  // out as Bolix, where the student still pays by Pix, and the commission reaches the seller by itself.
+  let method: "pix" | "bolix" = opts.method === "bolix" ? "bolix" : "pix";
+  let switched = false;
+  if (method === "pix" && !opts.method) {
+    const seller = await resolveRecipient(lead, userId);
+    if (seller.code) { method = "bolix"; switched = true; }
+  }
   const cfg = method === "bolix" ? await requireBilletConfig() : await requireConfig();
 
   if (!opts.force) {
@@ -104,7 +113,17 @@ export const createEnrollmentCharge = async (
   const amount = opts.amount && opts.amount > 0 ? Math.round(opts.amount * 100) / 100 : def.amount;
   if (!(amount > 0)) throw new AppError("ERR_PAYMENT_AMOUNT");
 
-  if (method === "bolix") return createBolixPayment(lead, userId, amount, def.proposalId, opts.dueDate || null);
+  if (method === "bolix") {
+    try {
+      return await createBolixPayment(lead, userId, amount, def.proposalId, opts.dueDate || null);
+    } catch (err) {
+      // the switch to Bolix was ours, not the person's: when Efí does not issue it (Bolix not enabled in the account, for
+      // example), the charge still goes out as Pix and the commission stays with the company to be paid back by hand
+      if (!switched) throw err;
+      logger.warn(`Bolix for the seller's split failed, falling back to Pix: ${(err as Error).message}`);
+      await addActivity(lead.id, userId, "system", "Não foi possível gerar o Bolix com repasse ao consultor; a cobrança foi gerada em Pix e a comissão fica com a empresa para repasse manual.");
+    }
+  }
 
   const minutes = Math.max(5, Number(await getSetting("efi_expiry_min", "1440")) || 1440);
   const txid = `MAT${randomBytes(14).toString("hex")}`;
@@ -196,24 +215,46 @@ const createBolixPayment = async (
     getIO().emit("lead", { action: "update", lead: await loadLead(lead.id) });
     return payment;
   }
-  return issueBolix(payment, lead);
+  try {
+    return await issueBolix(payment, lead);
+  } catch (err) {
+    await payment.update({ status: "cancelled", lastError: String((err as Error).message).slice(0, 400) });
+    throw err;
+  }
 };
 
 // Creates the charge at Efí for a bolix payment row (immediately or when its schedule is due)
 const issueBolix = async (payment: Payment, lead: Lead): Promise<Payment> => {
   const cfg = await requireBilletConfig();
   const secret = await getSetting("efi_webhook_secret", "");
-  const charge = await Billet.createBolix(cfg, {
+  // who pays the Efí fee when the charge is split: 2 = each account in proportion (the default of Efí), 1 = only the company
+  const feeMode: 1 | 2 = (await getSetting("efi_fee_mode", "2")) === "1" ? 1 : 2;
+  const params = (repass: { payeeCode: string; percentage: number; feeMode: 1 | 2 } | null) => ({
     customId: payment.txid,
     name: lead.name,
     cpf: normalizeCpf(lead.cpf) as string,
     phone: lead.phone ? String(lead.phone).replace(/\D/g, "") : null,
     amountCents: Math.round(Number(payment.amount) * 100),
-    dueDate: payment.dueDate,
+    dueDate: payment.dueDate as string,
     description: payment.description || "Taxa de matrícula",
     notificationUrl: secret && getPublicUrl().startsWith("https://") ? `${getPublicUrl()}/webhooks/efi/${secret}/billet` : undefined,
-    repass: payment.recipientCode ? { payeeCode: payment.recipientCode, percentage: Number(payment.splitPct || 100) * 100 } : null
+    repass
   });
+  const split = payment.recipientCode ? { payeeCode: payment.recipientCode, percentage: Number(payment.splitPct || 100) * 100, feeMode } : null;
+  let charge: Awaited<ReturnType<typeof Billet.createBolix>>;
+  try {
+    charge = await Billet.createBolix(cfg, params(split));
+  } catch (err) {
+    // Efí refused the data (4xx): when the seller's Wallet ID is the problem (not an Efí account, or the company's own), the
+    // student must still receive the charge. It is issued in the company account and the commission is paid back by hand.
+    // A failure of the network (no status) is not retried: the charge may exist at Efí.
+    const status = Number((err as any)?.data?.efiStatus || 0);
+    if (!split || !(status >= 400 && status < 500)) throw err;
+    logger.warn(`Efí refused the split of payment ${payment.id}, issuing without it: ${(err as Error).message}`);
+    charge = await Billet.createBolix(cfg, params(null));
+    await payment.update({ recipientCode: null, splitPct: 0 });
+    await addActivity(lead.id, payment.createdBy || null, "system", `A Efí não aceitou o Wallet ID do consultor (${String((err as Error).message).slice(0, 160)}). A cobrança foi gerada na conta da empresa e a comissão fica para repasse manual; confira o Wallet ID em Comissões.`);
+  }
   await payment.update({
     status: "pending",
     chargeId: String(charge.charge_id),
@@ -292,6 +333,9 @@ const markPaidCore = async (
     const { recordBonus } = await import("../AffiliateServices/Bonus");
     await recordBonus(lead.id, "fee_paid").catch(() => null);
   }
+
+  // "Taxa pendente" becomes "Taxa paga" right now, on the lead, the contact and the conversations
+  await markFeePaid(lead);
 
   const fresh = await loadLead(lead.id);
   getIO().emit("lead", { action: "update", lead: fresh });
@@ -388,6 +432,7 @@ export const sendPaymentToLead = async (payment: Payment, userId: number, whatsa
 
 // Safety net for localhost / missed webhooks: poll open charges
 export const pollPendingPayments = async (): Promise<void> => {
+  await syncPendingFeeTags();
   const cfg = await Efi.loadConfig();
   if (!cfg.clientId || !cfg.clientSecret) return;
   await generateScheduledCharges();

@@ -161,6 +161,12 @@ export const EfiSettings = ({ stages }) => {
         {row(v.certificate, v.certificate ? "Certificado .p12 enviado" : "Certificado .p12 pendente")}
         {row(!!v.pixKey, v.pixKey ? "Chave PIX informada" : "Chave PIX pendente")}
       </div>
+      <div style={{ borderTop: "1px solid rgba(128,128,128,.25)", paddingTop: 14 }}>
+        <Typography variant="subtitle1" style={{ fontWeight: 600 }}>Conta da empresa</Typography>
+        <Typography className={classes.hint}>
+          É a conta que emite as cobranças e recebe a taxa de matrícula. As credenciais são as de uma aplicação da API criada nessa conta da Efí (Efí → API → Minhas aplicações). Tudo o que não for repassado a um vendedor fica nela.
+        </Typography>
+      </div>
       <TextField select size="small" variant="outlined" label="Ambiente" value={v.env} onChange={(e) => setV({ ...v, env: e.target.value })} style={{ maxWidth: 260 }}>
         <MenuItem value="sandbox">Homologação (testes)</MenuItem><MenuItem value="production">Produção</MenuItem>
       </TextField>
@@ -175,15 +181,35 @@ export const EfiSettings = ({ stages }) => {
       </div>
       <div className={classes.row}>
         <TextField size="small" variant="outlined" label="Validade da cobrança (minutos)" type="number" value={v.expiryMinutes} onChange={(e) => setV({ ...v, expiryMinutes: e.target.value })} style={{ width: 230 }} />
-        <TextField size="small" variant="outlined" label="Parte da taxa que vai ao vendedor (%)" type="number" value={v.consultantPct} onChange={(e) => setV({ ...v, consultantPct: e.target.value })} style={{ width: 260 }} inputProps={{ min: 1, max: 100 }} />
-        <TextField select size="small" variant="outlined" label="Forma de cobrança padrão" value={v.defaultMethod || "pix"} onChange={(e) => setV({ ...v, defaultMethod: e.target.value })} style={{ width: 260 }}>
-          <MenuItem value="pix">Pix com QR Code</MenuItem><MenuItem value="bolix">Bolix (boleto com Pix)</MenuItem>
-        </TextField>
-        <TextField size="small" variant="outlined" label="Gerar a cobrança agendada (dias antes)" type="number" value={v.chargeDaysBefore} onChange={(e) => setV({ ...v, chargeDaysBefore: e.target.value })} style={{ width: 260 }} inputProps={{ min: 0, max: 30 }} />
         <TextField select size="small" variant="outlined" label="Ao pagar, mover o lead para" value={v.moveStageId || ""} onChange={(e) => setV({ ...v, moveStageId: e.target.value || null })} style={{ minWidth: 260 }}>
           <MenuItem value="">Automático (etapa “Matrícula…”)</MenuItem>
           {stages.map((st) => (<MenuItem key={st.id} value={st.id}>{st.name}</MenuItem>))}
         </TextField>
+      </div>
+      <div style={{ borderTop: "1px solid rgba(128,128,128,.25)", paddingTop: 14 }}>
+        <Typography variant="subtitle1" style={{ fontWeight: 600 }}>Repasse ao vendedor</Typography>
+        <Typography className={classes.hint}>
+          O vendedor informa só o Wallet ID da conta Efí dele (em Comissões), ou a administração informa por ele na lista mais abaixo. Quando o aluno paga, a Efí manda a parte do vendedor direto para a conta dele e o restante fica na conta da empresa.
+        </Typography>
+      </div>
+      <div className={classes.row}>
+        <TextField size="small" variant="outlined" label="Parte da taxa que vai ao vendedor (%)" type="number" value={v.consultantPct} onChange={(e) => setV({ ...v, consultantPct: e.target.value })} style={{ width: 260 }} inputProps={{ min: 1, max: 100 }} />
+        <TextField select size="small" variant="outlined" label="Tarifa da Efí no repasse" value={v.feeMode || "proportional"} onChange={(e) => setV({ ...v, feeMode: e.target.value })} style={{ width: "100%" }}>
+          <MenuItem value="proportional">Cada conta paga a sua parte (padrão da Efí)</MenuItem>
+          <MenuItem value="company">Só a empresa paga a tarifa</MenuItem>
+        </TextField>
+        <TextField select size="small" variant="outlined" label="Forma de cobrança padrão" value={v.defaultMethod || "pix"} onChange={(e) => setV({ ...v, defaultMethod: e.target.value })} style={{ width: "100%" }}>
+          <MenuItem value="pix">Pix com QR Code (Bolix quando o vendedor tem Wallet ID)</MenuItem><MenuItem value="bolix">Sempre Bolix (boleto com Pix)</MenuItem>
+        </TextField>
+        <TextField size="small" variant="outlined" label="Gerar a cobrança agendada (dias antes)" type="number" value={v.chargeDaysBefore} onChange={(e) => setV({ ...v, chargeDaysBefore: e.target.value })} style={{ width: 260 }} inputProps={{ min: 0, max: 30 }} />
+      </div>
+      <div style={{ background: "rgba(6,147,227,.08)", border: "1px solid rgba(6,147,227,.25)", borderRadius: 10, padding: "10px 14px", display: "grid", gap: 4 }}>
+        <Typography style={{ fontSize: 13.5, fontWeight: 600 }}>Como o repasse funciona na Efí</Typography>
+        <Typography className={classes.hint}>• O repasse só acontece entre contas Efí e usa apenas o Wallet ID (o “identificador de conta” de quem recebe).</Typography>
+        <Typography className={classes.hint}>• O Pix puro não permite repasse só pelo Wallet ID. Por isso, quando o vendedor tem Wallet ID, a cobrança sai como Bolix: um boleto com QR Code Pix, e o aluno paga como preferir.</Typography>
+        <Typography className={classes.hint}>• É preciso ativar o Bolix na conta da empresa: Efí → Configurações da conta → Configurações de cobranças → Boletos bancários e carnês → Bolix.</Typography>
+        <Typography className={classes.hint}>• Se a Efí não aceitar o Wallet ID de um vendedor, a cobrança sai mesmo assim na conta da empresa, a equipe é avisada no histórico do lead e a comissão fica para repasse manual.</Typography>
+        <Typography className={classes.hint}>• Sem Wallet ID, a cobrança é toda da empresa e a comissão aparece em “a repassar” na tela de Comissões.</Typography>
       </div>
       <div className={classes.row}>
         <Button variant="contained" color="primary" disabled={busy === "save"} onClick={save}>Salvar</Button>
