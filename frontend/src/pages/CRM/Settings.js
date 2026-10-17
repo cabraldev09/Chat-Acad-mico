@@ -84,7 +84,8 @@ const SellerWallets = () => {
   const [list, setList] = useState(null);
   const [typed, setTyped] = useState({});
   const [busy, setBusy] = useState(0);
-  const load = () => api.get("/payments/efi/wallets").then(({ data }) => setList(Array.isArray(data) ? data : [])).catch((e) => { setList([]); toastError(e); });
+  // an API that is not updated yet does not know this list (404): the block stays hidden, with no error
+  const load = () => api.get("/payments/efi/wallets").then(({ data }) => setList(Array.isArray(data) ? data : [])).catch((e) => { if (e?.response?.status === 404) return; setList([]); toastError(e); });
   useEffect(() => { load(); }, []);
   if (!list) return null;
   const save = async (u) => {
