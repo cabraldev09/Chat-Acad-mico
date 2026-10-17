@@ -161,13 +161,17 @@
 
 /* ---- sheet (referral form) ---- */
 .ca-overlay { position: fixed; inset: 0; background: rgba(4, 10, 20, .55); display: grid; place-items: center; z-index: 60; padding: 16px; }
-.ca-sheet { width: min(460px, 100%); max-height: 92vh; overflow: auto; background: var(--card); color: var(--ink); border-radius: 22px; padding: 26px; display: grid; gap: 12px; }
+.ca-sheet { width: min(460px, 100%); max-height: 92vh; overflow-x: hidden; overflow-y: auto; background: var(--card); color: var(--ink); border-radius: 22px; padding: 26px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; box-sizing: border-box; overscroll-behavior: contain; }
+.ca-sheet * { min-width: 0; }
 .ca-sheet h2 { margin: 0; font-size: 24px; letter-spacing: -.03em; }
 .ca-help { color: var(--muted); margin: 0; font-size: 14.5px; }
 .ca-field { display: grid; gap: 6px; font-size: 13.5px; font-weight: 600; }
-.ca-field input, .ca-field select { border: 1px solid var(--line); background: var(--bg); color: inherit; border-radius: 12px; padding: 11px 12px; font: inherit; font-weight: 400; }
+.ca-field input, .ca-field select { width: 100%; max-width: 100%; box-sizing: border-box; border: 1px solid var(--line); background: var(--bg); color: inherit; border-radius: 12px; padding: 11px 12px; font: inherit; font-size: 16px; font-weight: 400; }
+.ca-consent input { flex: none; margin-top: 3px; }
 .ca-consent { display: flex; gap: 10px; font-size: 13.5px; color: var(--muted); align-items: flex-start; }
-.ca-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.ca-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+.ca-actions .ca-btn { white-space: nowrap; }
+@media (max-width: 480px) { .ca-sheet { padding: 20px; } .ca-actions { display: grid; grid-template-columns: 1fr; } .ca-actions .ca-btn { justify-content: center; } .ca-actions .is-primary { order: -1; } }
 .ca-error { background: rgba(220, 38, 38, .12); color: #dc2626; border-radius: 12px; padding: 10px 12px; font-size: 14px; }
 .ca-hp { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; }
 
