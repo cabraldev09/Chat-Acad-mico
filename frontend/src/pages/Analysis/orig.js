@@ -1,6 +1,7 @@
 import { createPortal } from "react-dom";
 import React, { useLayoutEffect, useRef } from "react";
-import { GraduationCap } from "lucide-react";
+import { ArrowLeft, GraduationCap } from "lucide-react";
+import { useHistory } from "react-router-dom";
 
 import "../../styles/orig.css";
 
@@ -451,6 +452,21 @@ export const statusBadgeClass = {
   danger: "bg-status-danger-bg text-status-danger",
   info: "bg-status-info-bg text-status-info",
   neutral: "bg-status-neutral-bg text-status-neutral",
+};
+
+// The way back on a detail page: goes to the page the person came from (the list, the chat, the lead...) and, when there
+// is none (the address was opened directly), to the list of the area.
+export const BackButton = ({ to, label = "Voltar", className }) => {
+  const history = useHistory();
+  const go = () => {
+    if (window.history.length > 1 && history.action !== "POP") history.goBack();
+    else history.push(to);
+  };
+  return (
+    <button type="button" onClick={go} className={cn("inline-flex h-9 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm transition hover:border-brand-cyan hover:bg-brand-cyan-50 hover:text-brand-navy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-cyan", className)}>
+      <ArrowLeft className="size-4" aria-hidden="true" />{label}
+    </button>
+  );
 };
 
 // A dialog is drawn straight into <body>: the pages animate when they open (filter/transform), and inside such an

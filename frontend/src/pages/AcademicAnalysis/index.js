@@ -10,7 +10,7 @@ import { AcademicReportOverlay } from "../Analysis/Report";
 import heroImage from "../../assets/orig/formatura-portal-2026.jpg";
 import {
   AcademicDashboardOverview, AcademicPeriodJourney, Badge, Button, Card, CardContent, CardHeader, CardTitle, ConclusionPath, FormulaFlow, Input,
-  PendingDistribution, Portal, StudentMessagePreview, cn, completionOf, readableName,
+  BackButton, PendingDistribution, Portal, StudentMessagePreview, cn, completionOf, readableName,
 } from "../Analysis/orig";
 
 // "Análise acadêmica", as in the original system: the banner, the card to send a document, the history of analyses with
@@ -350,7 +350,7 @@ const Detail = ({ id }) => {
 
         <header className="mb-6 grid min-w-0 gap-5 border-b border-slate-200/80 pb-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
           <div className="min-w-0">
-            <button type="button" onClick={() => history.push("/analise-academica")} className="mb-2 text-xs font-semibold text-brand-cyan-700 hover:underline">← Voltar às análises</button>
+            <BackButton to="/analise-academica" label="Voltar às análises" className="mb-4" />
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-brand-cyan-700">Análise acadêmica</p>
             <h1 className="mt-1 break-words text-2xl font-semibold leading-tight tracking-tight text-slate-900 sm:text-3xl">{a.studentName || "Análise do extrato"}</h1>
             <p className="mt-2 break-words text-sm font-medium text-slate-600 sm:text-base">{a.courseName || "Curso não identificado"}</p>

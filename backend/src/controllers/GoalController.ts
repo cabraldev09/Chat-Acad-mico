@@ -301,6 +301,9 @@ export const poloBoard = async (req: Request, res: Response): Promise<Response> 
       const g = line.get(p.id);
       const target = g && g.target !== null && g.target !== undefined ? g.target : null;
       const monthly = monthlyOf(g, months.length, target);
+      // set by hand in the editor (the screen respects them) or just the even split (the screen re-distributes what is left)
+      const savedMonthly = parseJson(g?.monthly, null);
+      const monthlyCustom = Array.isArray(savedMonthly) && savedMonthly.length === months.length;
       const manualMonthly: Record<string, number> = parseJson(g?.manualMonthly, {});
       const crm = wonBy.get(p.id) || {};
       const auto = Object.values(crm).reduce((t, n) => t + n, 0);
@@ -333,6 +336,7 @@ export const poloBoard = async (req: Request, res: Response): Promise<Response> 
         inCourse: Math.max(0, done - canceled),
         canceledPct: done ? Math.round((canceled / done) * 10000) / 100 : 0,
         monthly,
+        monthlyCustom,
         manualMonthly,
         months: byMonth,
         month: monthKey ? byMonth[months.indexOf(monthKey)] : null

@@ -7,7 +7,7 @@ import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import { errorText } from "../Analysis/shared";
 import heroImage from "../../assets/orig/foto-04-cruzeiro.jpg";
-import { Badge, Button, Card, CardContent, Input, Portal, cn, formatDay, pluralize } from "../Analysis/orig";
+import { BackButton, Badge, Button, Card, CardContent, Input, Portal, cn, formatDay, pluralize } from "../Analysis/orig";
 import SectionBoundary from "../../components/SectionBoundary";
 import { EnrollmentBanner, FollowUpPanel, ProposalCard } from "./FollowUp";
 
@@ -500,7 +500,7 @@ const Detail = ({ id }) => {
     <div className="orig flex-1 overflow-y-auto" style={{ minHeight: 0 }}>
       <div className="mx-auto w-full max-w-[1440px] space-y-6 p-4 pb-10 sm:p-6">
         <div>
-          <button type="button" onClick={() => history.push("/analise-curricular")} className="mb-3 text-xs font-semibold text-brand-cyan-700 hover:underline">← Voltar às análises</button>
+          <BackButton to="/analise-curricular" label="Voltar às análises" className="mb-4" />
           <PageHeader
             eyebrow={<span className="inline-flex items-center gap-2">Análise curricular {ready && <Badge variant="outline" className="border-transparent bg-status-success-bg font-medium text-status-success">Pronta</Badge>}</span>}
             title={a.candidateName || a.courseName || "Análise curricular"}
