@@ -1523,6 +1523,84 @@ const postMeta = (id, payload, secret, badSig) => {
         smtp.close();
       }
     });
+    await test("an affiliate refers someone: the consultant and the administration get an e-mail, the person is in the CRM, the WhatsApp is required", async () => {
+      const net = require("net");
+      const inbox = [];
+      const smtp = net.createServer(sock => {
+        let mode = "cmd", buf = "", rec = { to: "", raw: "" };
+        sock.write("220 mock ESMTP\r\n");
+        sock.on("data", chunk => {
+          buf += chunk.toString();
+          if (mode === "data") {
+            if (buf.endsWith("\r\n.\r\n")) { rec.raw = buf; inbox.push(rec); rec = { to: "", raw: "" }; buf = ""; mode = "cmd"; sock.write("250 queued\r\n"); }
+            return;
+          }
+          const lines = buf.split("\r\n"); buf = lines.pop();
+          for (const line of lines) {
+            if (/^EHLO|^HELO/i.test(line)) sock.write("250-mock\r\n250-AUTH PLAIN LOGIN\r\n250 8BITMIME\r\n");
+            else if (/^AUTH PLAIN/i.test(line)) sock.write("235 ok\r\n");
+            else if (/^RCPT TO/i.test(line)) { rec.to = (line.match(/<([^>]+)>/) || [])[1] || ""; sock.write("250 ok\r\n"); }
+            else if (/^DATA/i.test(line)) { mode = "data"; sock.write("354 go\r\n"); }
+            else if (/^QUIT/i.test(line)) { sock.write("221 bye\r\n"); sock.end(); }
+            else sock.write("250 ok\r\n");
+          }
+        });
+        sock.on("error", () => {});
+      });
+      await new Promise(r => smtp.listen(9106, "127.0.0.1", r));
+      try {
+        const decode = raw => raw.replace(/=\r?\n/g, "").replace(/=3D/g, "=").replace(/=C3=A7/g, "ç").replace(/=C3=A3/g, "ã");
+        // the administrators that exist (creating another one would change what other tests assume about the last administrator)
+        const admins = sql(`SELECT email FROM Users WHERE (profile='admin' OR role IN ('admin','coordenacao')) AND email IS NOT NULL AND email <> ''`).split("\n").map(x => x.trim()).filter(Boolean);
+        assert(admins.length >= 1, "no administrator with an e-mail");
+        await http.post("/users", { name: "Cons Indicações", email: "cons-ind@x.com", password: "senha123", role: "consultor" }, auth());
+        await new Promise(r => setTimeout(r, 800));
+        inbox.length = 0; // the welcome e-mail of the new account
+        const tc = (await http.post("/auth/login", { email: "cons-ind@x.com", password: "senha123" })).data.token;
+        const aff = (await http.post("/affiliates", { name: "Indicadora Avisos", phone: "(69) 97000-9090" }, asUser(tc))).data;
+        const got = email => inbox.filter(m => m.to === email);
+
+        // without the WhatsApp (or with half of it) nothing is saved and nothing is sent
+        assert((await http.post(`/affiliate-portal/${aff.portalToken}/referrals`, { name: "Sem Zap", consent: true })).status === 400, "a referral without WhatsApp was accepted");
+        assert((await http.post(`/affiliate-portal/${aff.portalToken}/referrals`, { name: "Zap Curto", phone: "99999", consent: true })).status === 400, "an incomplete WhatsApp was accepted");
+        assert(sql(`SELECT COUNT(*) FROM Leads WHERE name IN ('Sem Zap','Zap Curto')`) === "0", "a lead without WhatsApp was created");
+        await new Promise(r => setTimeout(r, 500));
+        assert(inbox.length === 0, "an e-mail went out for a referral that was refused");
+
+        // a good one: in the CRM, in the affiliate column, and both the consultant and the administrators are told
+        const ok = await http.post(`/affiliate-portal/${aff.portalToken}/referrals`, { name: "Fulana Indicada", phone: "(69) 98123-4567", consent: true });
+        assert(ok.status === 201 && ok.data.created, `referral ${ok.status}`);
+        assert(sql(`SELECT s.name FROM Leads l JOIN LeadStages s ON s.id=l.stageId WHERE l.name='Fulana Indicada'`) === "Indicações de afiliados", "the referral is not in the affiliate column");
+        await waitFor(() => got("cons-ind@x.com").length === 1 && admins.every(a => got(a).length === 1), 10000, "the referral e-mails");
+        const mailC = decode(got("cons-ind@x.com")[0].raw);
+        assert(/Subject: .*Nova indica/i.test(mailC) || /Subject: =\?UTF-8/.test(mailC), "subject of the referral e-mail");
+        assert(mailC.includes("Indicadora Avisos") && mailC.includes("Fulana Indicada") && mailC.includes("+55 (69) 98123-4567") && mailC.includes("esperando o seu primeiro") && /crm\?lead=\d+/.test(mailC), "the e-mail of the consultant lacks who, the number or the link");
+        const mailA = decode(got(admins[0])[0].raw);
+        assert(mailA.includes("administra o sistema") && !mailA.includes("esperando o seu primeiro"), "the administration got the consultant's text");
+        assert(new Set(inbox.map(m => m.to)).size === inbox.length, "someone got the same notice twice");
+
+        // the same person again: the CRM keeps one, and the consultant is told it was already there
+        const before = inbox.length;
+        const again = await http.post(`/affiliate-portal/${aff.portalToken}/referrals`, { name: "Fulana Indicada", phone: "(69) 98123-4567", consent: true });
+        assert(again.status === 200 && !again.data.created, "duplicate");
+        await waitFor(() => inbox.length > before, 10000, "the duplicate notice");
+        assert(decode(inbox[inbox.length - 1].raw).includes("já estava no CRM") || decode(inbox[inbox.length - 1].raw).includes("j=C3=A1 estava"), "the duplicate notice does not say it was already there");
+        assert(sql(`SELECT COUNT(*) FROM Leads WHERE name='Fulana Indicada'`) === "1", "the person was duplicated");
+
+        // the link of the affiliate (/r/CODE) is a referral too
+        const n2 = inbox.length;
+        const sub = await fetch(`${API}/r/${aff.refCode}/submit`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: "Pelo Link Aviso", phone: "(69) 98555-4321", consent: true }) });
+        assert(sub.status === 200, `link submit ${sub.status}`);
+        await waitFor(() => inbox.length >= n2 + 2, 10000, "the link referral e-mails");
+        assert(inbox.slice(n2).some(m => m.to === "cons-ind@x.com" && decode(m.raw).includes("Pelo Link Aviso")), "the consultant was not told about the link referral");
+
+        // the consultant who registers it by hand also needs the WhatsApp
+        assert((await http.post(`/affiliates/${aff.id}/referrals`, { name: "Sem Número Manual" }, asUser(tc))).status === 400, "a manual referral without WhatsApp was accepted");
+        assert((await http.get("/mail/templates/affiliate-referral/preview", auth())).status === 200, "the referral e-mail is not in the catalog of the E-mail screen");
+      } finally {
+        smtp.close();
+      }
+    });
     await test("curricular analysis: the PDF becomes the entry forecast, the entry period and a corrected line recompute it", async () => {
       const sample = fs.readFileSync(path.join(__dirname, "fixtures", "sample-analise.pdf"));
       const send = (extra = {}, name = "analise.pdf", bytes = sample, who = token) => {
@@ -4232,6 +4310,22 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(stopped.data.failed === 1 && /SAIR/.test(stopped.data.results[0].error), `opted out ${JSON.stringify(stopped.data).slice(0, 200)}`);
       sql(`UPDATE Contacts SET optOut=false WHERE number='${visitor}'`);
       assert(Number(sql(`SELECT COUNT(*) FROM RetentionMessages WHERE leadId IS NULL`)) >= 3, "the log lost the people outside the CRM");
+
+      // someone who is a lead and has not enrolled yet: they can be chosen in the CRM and get the text written by hand, not the survey
+      const prospect = "5511910000779";
+      await inboundCloud(prospect, "wamid.env-prospect", "oi, quero saber dos cursos");
+      await waitFor(() => ticketOf(prospect), 8000, "ticket of the prospect");
+      const prospectLead = Number(await waitFor(() => sql(`SELECT l.id FROM Leads l JOIN Contacts c ON c.id=l.contactId WHERE c.number='${prospect}'`), 8000, "lead of the prospect"));
+      sql(`UPDATE Leads SET name='Futuro Aluno' WHERE id=${prospectLead}`);
+      const notEnrolled = (await aud({ source: "crm", enrolled: "no", search: "Futuro" })).data;
+      assert(notEnrolled.items.length === 1 && notEnrolled.items[0].leadId === prospectLead && notEnrolled.items[0].enrolled === false, `not enrolled ${JSON.stringify(notEnrolled).slice(0, 220)}`);
+      assert((await aud({ source: "crm", enrolled: "yes", search: "Futuro" })).data.items.length === 0, "a lead that is not enrolled came as a student");
+      const survey = await http.post("/retention/send", { kind: "nps", leadIds: [prospectLead] }, auth());
+      assert(survey.data.failed === 1 && /ainda não está matriculada/.test(survey.data.results[0].error), `survey to a prospect ${JSON.stringify(survey.data).slice(0, 200)}`);
+      const hand = await http.post("/retention/send", { kind: "custom", text: "Oi {{nome}}, ainda dá tempo de se matricular!", leadIds: [prospectLead] }, auth());
+      assert(hand.data.sent === 1 && hand.data.failed === 0, `text to a prospect ${JSON.stringify(hand.data).slice(0, 200)}`);
+      await waitFor(() => graph.sent.some(x => x.body && String(x.body.to) === prospect && x.body.text && /ainda dá tempo/.test(x.body.text.body)), 12000, "the message to the prospect");
+      assert((await http.post("/retention/send", { kind: "custom", text: "Oi", leadIds: [prospectLead] }, asUser(tutorTok))).data.failed === 1, "a tutor wrote to a lead that is not theirs");
     });
     await test("retenção: resumo, planilhas e o tutor vê só a satisfação dos próprios alunos", async () => {
       const tutor = (await http.post("/auth/login", { email: "tutorr@ret.test", password: "senha123" })).data.token;

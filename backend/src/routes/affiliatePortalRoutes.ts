@@ -12,10 +12,11 @@ import User from "../models/User";
 import { getSetting } from "../helpers/AppSettings";
 import { getPortalTexts } from "../services/AffiliateServices/Bonus";
 import { inWindow, isVisibleTo, referralUrl, releasedIds } from "../helpers/Affiliates";
-import { normalizePhone } from "../helpers/Phone";
+import { isWhatsappReady } from "../helpers/Phone";
 import { statsFor } from "../services/AffiliateServices/Stats";
 import { clicksFor } from "../services/AffiliateServices/Clicks";
 import { upsertLead } from "../services/CrmServices/LeadCore";
+import { notifyReferral } from "../services/AffiliateServices/ReferralNotice";
 import { AFFILIATE_DIR } from "../config/affiliateUpload";
 import { sendFile } from "../controllers/AffiliateMaterialController";
 import path from "path";
@@ -226,10 +227,10 @@ router.post("/:token/referrals", express.json(), loadAffiliate, async (req: Requ
   }
   const name = String(b.name || "").trim().slice(0, 120);
   if (name.length < 2) return res.status(400).json({ error: "Informe o nome de quem você está indicando." });
-  if (!normalizePhone(b.phone)) return res.status(400).json({ error: "Informe um WhatsApp válido com DDD." });
+  if (!isWhatsappReady(b.phone)) return res.status(400).json({ error: "Informe o WhatsApp de quem você indica, com DDD. Exemplo: (69) 99999-0000." });
   if (b.consent !== true) return res.status(400).json({ error: "Confirme que a pessoa aceita ser contatada." });
   const course = b.courseId ? await Course.findByPk(Number(b.courseId)) : null;
-  const { created } = await upsertLead({
+  const { lead, created } = await upsertLead({
     name,
     phone: b.phone,
     courseId: course ? course.id : null,
@@ -241,6 +242,7 @@ router.post("/:token/referrals", express.json(), loadAffiliate, async (req: Requ
     ownerId: aff.ownerId,
     affiliateId: aff.id
   });
+  notifyReferral(aff, lead, created);
   return res.status(created ? 201 : 200).json({
     created,
     message: created

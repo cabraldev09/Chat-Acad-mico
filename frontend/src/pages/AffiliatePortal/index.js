@@ -71,6 +71,9 @@ const ReferralSheet = ({ token, courses, presetCourse, onClose, onDone }) => {
   const submit = async (e) => {
     e.preventDefault();
     setError("");
+    // the WhatsApp is how the consultant reaches the person: it is required, with the area code
+    const digits = form.phone.replace(/\D/g, "").replace(/^0+/, "").replace(/^55(?=\d{10,11}$)/, "");
+    if (digits.length < 10 || digits.length > 11) { setError("Informe o WhatsApp de quem você indica, com DDD. Exemplo: (69) 99999-0000."); return; }
     setBusy(true);
     try {
       const { data } = await http.post(`/affiliate-portal/${token}/referrals`, { ...form, courseId: form.courseId || undefined });
@@ -92,8 +95,8 @@ const ReferralSheet = ({ token, courses, presetCourse, onClose, onDone }) => {
         <label className="ca-field">Nome de quem você indica
           <input value={form.name} onChange={set("name")} required minLength={2} autoComplete="off" autoFocus />
         </label>
-        <label className="ca-field">WhatsApp com DDD
-          <input value={form.phone} onChange={set("phone")} required inputMode="tel" placeholder="(69) 99999-0000" autoComplete="off" />
+        <label className="ca-field">WhatsApp com DDD (obrigatório)
+          <input value={form.phone} onChange={set("phone")} required inputMode="tel" type="tel" minLength={10} maxLength={20} placeholder="(69) 99999-0000" autoComplete="off" />
         </label>
         <label className="ca-field">Curso de interesse (se souber)
           <select value={form.courseId} onChange={set("courseId")}>

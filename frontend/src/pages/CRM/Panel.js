@@ -16,12 +16,10 @@ import GlowCard from "../../components/GlowCard";
 import TopLoader from "../../components/TopLoader";
 import NumberTicker from "../../components/NumberTicker";
 import { AuthContext } from "../../context/Auth/AuthContext";
-import { isManager } from "../../utils/access";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import { downloadFile } from "../../utils/saveBlob";
 import { useCrmOptions, SourceIcon, ago } from "./shared";
-import Cac from "./Cac";
 import NotALead from "./NotALead";
 
 const useStyles = makeStyles((theme) => {
@@ -140,7 +138,6 @@ const Panel = () => {
   const [failed, setFailed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [exportEl, setExportEl] = useState(null);
-  const manager = isManager(me);
 
   // quick periods; the one that matches the dates on screen is marked
   const presets = useMemo(() => {
@@ -408,13 +405,6 @@ const Panel = () => {
                 </ResponsiveContainer>
               </div>
             </GlowCard>
-
-            {manager && (
-              <GlowCard className={classes.card} style={span(12)}>
-                <Typography variant="subtitle2" gutterBottom>Custo por origem</Typography>
-                <Cac from={from} to={to} />
-              </GlowCard>
-            )}
 
             <GlowCard className={classes.card} style={span(12)}>
               <Typography variant="subtitle2" gutterBottom>Desempenho dos consultores</Typography>

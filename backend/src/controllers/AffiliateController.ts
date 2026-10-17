@@ -13,7 +13,7 @@ import Proposal from "../models/Proposal";
 import User from "../models/User";
 import { getSetting, setSetting } from "../helpers/AppSettings";
 import { getPublicUrl } from "../helpers/PublicUrl";
-import { normalizeEmail, normalizePhone } from "../helpers/Phone";
+import { isWhatsappReady, normalizeEmail, normalizePhone } from "../helpers/Phone";
 import {
   brl, newPortalToken, newRefCode, portalUrl, referralUrl, withAffiliateScope
 } from "../helpers/Affiliates";
@@ -219,7 +219,7 @@ export const addReferral = async (req: Request, res: Response): Promise<Response
   const a = await load(req.params.id);
   const name = clip(req.body.name, 120);
   if (!name) throw new AppError("ERR_FIELD_REQUIRED_name");
-  if (!normalizePhone(req.body.phone)) throw new AppError("ERR_INVALID_PHONE");
+  if (!isWhatsappReady(req.body.phone)) throw new AppError("ERR_INVALID_PHONE");
   const course = req.body.courseId ? await Course.findByPk(Number(req.body.courseId)) : null;
   const { lead, created } = await upsertLead(
     {

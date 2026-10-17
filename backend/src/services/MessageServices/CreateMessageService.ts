@@ -83,7 +83,8 @@ const CreateMessageService = async ({
   const lastState = {
     lastMessageId: message.id,
     lastMessageFromMe: !!message.fromMe,
-    lastMessageType: message.mediaType || "chat",
+    // a sticker travels as a .webp image: the list says "Figurinha", not "Foto"
+    lastMessageType: message.mediaType === "image" && /\.webp(\?|$)/i.test(message.mediaUrl || "") ? "sticker" : message.mediaType || "chat",
     lastMessageAt: message.createdAt || new Date(),
     lastMessageAuthor: message.ticket.isGroup && !message.fromMe ? (message.contact?.name || null) : null
   };

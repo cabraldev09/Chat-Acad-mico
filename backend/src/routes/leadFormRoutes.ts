@@ -6,6 +6,7 @@ import { getSetting } from "../helpers/AppSettings";
 import { recordClick } from "../services/AffiliateServices/Clicks";
 import { normalizeEmail, normalizePhone } from "../helpers/Phone";
 import { upsertLead } from "../services/CrmServices/LeadCore";
+import { notifyReferral } from "../services/AffiliateServices/ReferralNotice";
 import { CRM_OPTIONS } from "../services/CrmServices/crmOptions";
 import { renderLeadPage } from "../helpers/LeadPage";
 import path from "path";
@@ -57,7 +58,7 @@ const submit = async (req: Request, res: Response, affiliate: Affiliate | null) 
 
   const course = b.courseId ? await Course.findByPk(Number(b.courseId)) : null;
   const clip = (v: any, n = 120) => (v ? String(v).slice(0, n) : undefined);
-  await upsertLead({
+  const { lead, created } = await upsertLead({
     name: clip(name, 120),
     phone: b.phone,
     email: b.email,
@@ -73,6 +74,7 @@ const submit = async (req: Request, res: Response, affiliate: Affiliate | null) 
     consentAt: new Date(),
     ...(affiliate ? { affiliateId: affiliate.id, ownerId: affiliate.ownerId } : {})
   });
+  if (affiliate) notifyReferral(affiliate, lead, created);
   return res.json({ message: await getSetting("crm_form_thanks", "Recebemos seus dados! Em breve um consultor entra em contato.") });
 };
 

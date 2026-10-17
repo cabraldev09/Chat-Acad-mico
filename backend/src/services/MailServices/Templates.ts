@@ -235,6 +235,35 @@ export const affiliateWelcomeMail = (name: string, link: string): MailBody =>
     reason: "Você recebeu este e-mail porque foi cadastrado como afiliado do Cruzeiro do Sul Virtual."
   });
 
+// a person was referred (by the affiliate's portal or by the affiliate's link): the consultant and the administration know at once
+export const affiliateReferralMail = (
+  name: string,
+  r: { affiliate: string; person: string; phone: string; course?: string | null; consultant?: string | null; alreadyKnown: boolean },
+  leadLink: string,
+  forConsultant: boolean
+): MailBody =>
+  build(`${r.alreadyKnown ? "Nova indicação (já estava no CRM)" : "Nova indicação"}: ${r.person}`, {
+    preheader: `${r.affiliate} indicou ${r.person}. Faça o primeiro contato pelo WhatsApp.`,
+    area: "Chat Acadêmico",
+    title: r.alreadyKnown ? "Indicação de uma pessoa que já está no CRM" : "Nova indicação de afiliado",
+    name,
+    paragraphs: [
+      `**${r.affiliate}** indicou **${r.person}**.${forConsultant ? " A pessoa está na coluna Indicações de afiliados, esperando o seu primeiro contato." : ""}`,
+      ...(r.alreadyKnown ? ["Essa pessoa já estava no CRM: nada foi duplicado."] : [])
+    ],
+    facts: [
+      ["Indicado por", r.affiliate],
+      ["Nome", r.person],
+      ["WhatsApp", r.phone],
+      ...(r.course ? ([["Curso de interesse", r.course]] as Array<[string, string]>) : []),
+      ["Consultor responsável", r.consultant || "Ainda sem responsável"]
+    ],
+    button: { label: "Abrir no CRM", link: leadLink },
+    reason: forConsultant
+      ? "Você recebeu este e-mail porque é o consultor responsável por este afiliado."
+      : "Você recebeu este e-mail porque administra o sistema e acompanha as indicações dos afiliados."
+  });
+
 // ------------------------------------------------------------------ catalog (preview and test on the E-mail screen)
 
 export interface MailTemplateInfo {
@@ -258,5 +287,6 @@ export const MAIL_CATALOG: MailTemplateInfo[] = [
   { key: "student-analysis", title: "Análise atualizada", audience: "Aluno", trigger: "Quando a equipe publica uma nova versão da análise de um aluno que já ativou o portal.", automatic: true, build: () => studentAnalysisMail("João Pereira", "Pedagogia (Licenciatura)", SAMPLE_LINK) },
   { key: "follow-up", title: "Retorno de matrícula (24 h)", audience: "Equipe", trigger: "Quando o resultado de uma análise curricular continua sem resposta 24 h depois da entrega; repete nos dias úteis, de manhã e à tarde.", automatic: true, build: () => followUpMail("Maria Souza", [{ id: 1, student: "Raimunda Exemplo", course: "CST em Gestão Pública", businessDays: 1 }, { id: 2, student: "João Pereira", course: "Pedagogia (Licenciatura)", businessDays: 3 }], SAMPLE_LINK) },
   { key: "affiliate-welcome", title: "Boas-vindas ao afiliado", audience: "Afiliado", trigger: "Enviado manualmente pelo botão “Enviar acesso por e-mail” do afiliado.", automatic: false, build: () => affiliateWelcomeMail("Carlos Lima", SAMPLE_LINK) },
+  { key: "affiliate-referral", title: "Nova indicação de afiliado", audience: "Consultor e administração", trigger: "Quando um afiliado indica alguém pela Central do Afiliado ou pelo link de indicação.", automatic: true, build: () => affiliateReferralMail("Maria Souza", { affiliate: "Carlos Lima", person: "Ana Pereira", phone: "+55 (69) 99999-0000", course: "Pedagogia (Licenciatura)", consultant: "Maria Souza", alreadyKnown: false }, SAMPLE_LINK, true) },
   { key: "mail-test", title: "E-mail de teste", audience: "Administração", trigger: "Botão “Enviar e-mail de teste” em Configurações > E-mail.", automatic: false, build: () => testMail() }
 ];

@@ -235,7 +235,8 @@ export const sendBulk = async (req: Request, res: Response): Promise<Response> =
     const lead = leads.find(l => l.id === id);
     if (!lead) { results.push({ leadId: id, name: null, ok: false, error: "Aluno não encontrado." }); continue; }
     if (scope.tutorId && lead.onboardingTutorId !== scope.tutorId) { results.push({ leadId: id, name: lead.name, ok: false, error: "Este aluno não é seu." }); continue; }
-    if (!lead.enrolledAt) { results.push({ leadId: id, name: lead.name, ok: false, error: "O aluno ainda não está matriculado." }); continue; }
+    // the survey and the retention message are for students; a message written by hand may go to a lead that has not enrolled yet
+    if (!lead.enrolledAt && kind !== "custom") { results.push({ leadId: id, name: lead.name, ok: false, error: "A pessoa ainda não está matriculada." }); continue; }
     try {
       // eslint-disable-next-line no-await-in-loop
       if (kind === "nps") await sendSurvey(lead, "manual", uid(req));

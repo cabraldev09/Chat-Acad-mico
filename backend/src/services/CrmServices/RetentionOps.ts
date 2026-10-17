@@ -154,6 +154,8 @@ export interface AudienceItem {
   number?: string;
   name: string;
   sub: string;
+  // enrolled (a student) or not yet
+  enrolled?: boolean;
 }
 
 export interface AudienceQuery {
@@ -175,7 +177,8 @@ const leadItem = (r: any): AudienceItem => ({
   leadId: Number(r.id),
   name: r.name,
   number: r.phone || undefined,
-  sub: [r.stage, r.polo, r.tutor ? `tutor ${r.tutor}` : null].filter(Boolean).join(" · ")
+  sub: [r.enrolled === false ? "ainda não matriculado" : null, r.stage, r.polo, r.tutor ? `tutor ${r.tutor}` : null].filter(Boolean).join(" · "),
+  enrolled: r.enrolled !== false
 });
 
 // leads that have one of these phones (a phone is the same with or without the ninth digit)
@@ -184,7 +187,7 @@ const leadsByPhones = async (numbers: string[]): Promise<Map<string, any>> => {
   const variants = [...new Set(numbers.flatMap(n => brPhoneVariants(n)))];
   for (let i = 0; i < variants.length; i += 800) {
     // eslint-disable-next-line no-await-in-loop
-    const rows = await Lead.findAll({ where: { phone: { [Op.in]: variants.slice(i, i + 800) }, isHistorical: false }, attributes: ["id", "name", "phone"], raw: true });
+    const rows = await Lead.findAll({ where: { phone: { [Op.in]: variants.slice(i, i + 800) }, isHistorical: false }, attributes: ["id", "name", "phone", "enrolledAt"], raw: true });
     rows.forEach((r: any) => brPhoneVariants(r.phone).forEach(v => { if (!found.has(v)) found.set(v, r); }));
   }
   return found;
@@ -199,7 +202,7 @@ export const retentionAudience = async (scope: Scope, p: AudienceQuery): Promise
   }
   if (p.source === "crm") {
     const rows = await q(
-      `SELECT l.id, l.name, l.phone, st.name AS stage, p.name AS polo, u.name AS tutor, COUNT(*) OVER() AS total
+      `SELECT l.id, l.name, l.phone, (l."enrolledAt" IS NOT NULL) AS enrolled, st.name AS stage, p.name AS polo, u.name AS tutor, COUNT(*) OVER() AS total
          FROM "Leads" l JOIN "LeadStages" st ON st.id = l."stageId"
          LEFT JOIN "Polos" p ON p.id = l."poloId" LEFT JOIN "Users" u ON u.id = l."onboardingTutorId"
         WHERE l."isHistorical" = false AND l.phone IS NOT NULL AND st.type <> 'lost'
@@ -227,7 +230,7 @@ export const retentionAudience = async (scope: Scope, p: AudienceQuery): Promise
       const key = lead ? `l${lead.id}` : `n${i.number}`;
       if (seen.has(key)) return;
       seen.add(key);
-      items.push(lead ? { key, kind: "lead", leadId: Number(lead.id), name: lead.name, number: lead.phone, sub: "no CRM" } : { key, kind: "number", number: i.number, name: i.name || i.number, sub: "só na lista" });
+      items.push(lead ? { key, kind: "lead", leadId: Number(lead.id), name: lead.name, number: lead.phone, sub: "no CRM", enrolled: !!lead.enrolledAt } : { key, kind: "number", number: i.number, name: i.name || i.number, sub: "só na lista" });
     });
     return { items: items.slice(0, limit), total: items.length, unmatched: items.filter(i => i.kind === "number").length };
   }
@@ -238,12 +241,13 @@ export const retentionAudience = async (scope: Scope, p: AudienceQuery): Promise
     limit,
     attributes: ["id", "name", "number"]
   });
-  const leads = contacts.length ? await Lead.findAll({ where: { contactId: { [Op.in]: contacts.map(c => c.id) }, isHistorical: false }, attributes: ["id", "contactId"], raw: true }) : [];
+  const leads = contacts.length ? await Lead.findAll({ where: { contactId: { [Op.in]: contacts.map(c => c.id) }, isHistorical: false }, attributes: ["id", "contactId", "enrolledAt"], raw: true }) : [];
   const leadOf = new Map<number, number>((leads as any[]).map(l => [Number(l.contactId), Number(l.id)]));
+  const enrolledOf = new Map<number, boolean>((leads as any[]).map(l => [Number(l.id), !!l.enrolledAt]));
   const items: AudienceItem[] = contacts.map(c => {
     const leadId = leadOf.get(c.id);
     return leadId
-      ? { key: `l${leadId}`, kind: "lead" as const, leadId, name: c.name || c.number, number: c.number, sub: "no CRM" }
+      ? { key: `l${leadId}`, kind: "lead" as const, leadId, name: c.name || c.number, number: c.number, sub: "no CRM", enrolled: enrolledOf.get(leadId) }
       : { key: `c${c.id}`, kind: "contact" as const, contactId: c.id, name: c.name || c.number, number: c.number, sub: "contato do sistema" };
   });
   return { items, total: items.length };

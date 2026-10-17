@@ -45,7 +45,7 @@ const periodOf = (range) => {
 const MAX_PEOPLE = 200;
 const SOURCES = [
   ["students", "Alunos matriculados", "Quem já está matriculado"],
-  ["crm", "Leads do CRM", "Filtre por etapa, curso, polo ou etiqueta"],
+  ["crm", "Leads do CRM", "Inclui quem ainda não se matriculou. Filtre por etapa, curso, polo ou etiqueta"],
   ["list", "Lista de contatos", "Uma lista criada em Campanhas"],
   ["contacts", "Contatos do sistema", "Qualquer contato salvo, mesmo fora do CRM"],
 ];
@@ -69,9 +69,12 @@ export const Composer = ({ open, onClose, onSent, manager, initialIds = [] }) =>
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null);
 
-  // pesquisa e retenção só vão para alunos; só o texto livre alcança listas e contatos
-  const sources = SOURCES.filter(([k]) => (k === "students" || k === "crm") || (manager && kind === "custom"));
+  // a tutor reaches their own students; the management reaches everyone (the survey and the retention message are for students:
+  // choosing someone who is not one yet switches to the message written by hand)
+  const sources = SOURCES.filter(([k]) => k === "students" || k === "crm" || manager);
   const outside = picked.filter((x) => !x.leadId);
+  const notYet = picked.filter((x) => !x.leadId || x.enrolled === false);
+  const toHand = (why) => { if (kind !== "custom") { setKind("custom"); toast.info(why); } };
 
   useEffect(() => {
     if (!open) return;
@@ -99,17 +102,21 @@ export const Composer = ({ open, onClose, onSent, manager, initialIds = [] }) =>
   const changeKind = (value) => {
     setKind(value);
     if (value !== "custom") {
-      if (outside.length) toast.info(`${outside.length} ${outside.length === 1 ? "pessoa" : "pessoas"} fora do CRM saíram da seleção: essa mensagem só vai para alunos.`);
-      setPicked((cur) => cur.filter((x) => x.leadId));
+      if (notYet.length) toast.info(`${notYet.length} ${notYet.length === 1 ? "pessoa que ainda não é aluna saiu" : "pessoas que ainda não são alunas saíram"} da seleção: essa mensagem só vai para alunos matriculados.`);
+      setPicked((cur) => cur.filter((x) => x.leadId && x.enrolled !== false));
       if (source === "list" || source === "contacts") setSource("students");
+      setFilters((f) => ({ ...f, enrolled: f.enrolled === "no" ? "" : f.enrolled }));
       setWhatsappId("");
     }
   };
-  const changeSource = (value) => { setSource(value); setSearch(""); setFound({ items: [], total: 0 }); };
+  const changeSource = (value) => {
+    setSource(value); setSearch(""); setFound({ items: [], total: 0 });
+    if (value === "list" || value === "contacts") toHand("Para quem ainda não é aluno, a mensagem é escrita na hora.");
+  };
 
   const query = useMemo(() => ({
     source, search: search || undefined, listId: source === "list" ? listId || undefined : undefined,
-    ...(source === "crm" ? { stageId: filters.stageId || undefined, courseId: filters.courseId || undefined, poloId: filters.poloId || undefined, tagId: filters.tagId || undefined, enrolled: kind !== "custom" ? "yes" : filters.enrolled || undefined } : {}),
+    ...(source === "crm" ? { stageId: filters.stageId || undefined, courseId: filters.courseId || undefined, poloId: filters.poloId || undefined, tagId: filters.tagId || undefined, enrolled: filters.enrolled || (kind !== "custom" ? "yes" : undefined) } : {}),
   }), [source, search, listId, filters, kind]);
 
   useEffect(() => {
@@ -216,7 +223,7 @@ export const Composer = ({ open, onClose, onSent, manager, initialIds = [] }) =>
               {kind === "custom" && (
                 <TextField multiline rows={4} size="small" variant="outlined" label="Mensagem (use {{nome}} para o primeiro nome)" value={text} onChange={(e) => setText(e.target.value)} inputProps={{ maxLength: 1000 }} />
               )}
-              {kind !== "custom" && <Typography className={classes.hint}>O texto vem das configurações{manager ? " (aba Configurar)" : ""}. Esta mensagem vai só para alunos matriculados. Para falar com outras pessoas, escolha “Escrever uma mensagem agora”.</Typography>}
+              {kind !== "custom" && <Typography className={classes.hint}>O texto vem das configurações{manager ? " (aba Configurar)" : ""}. Esta mensagem vai só para alunos matriculados. Para falar com quem ainda não se matriculou, escolha “Escrever uma mensagem agora”.</Typography>}
 
               <div>
                 <Typography variant="subtitle2" gutterBottom>De onde vêm as pessoas</Typography>
@@ -234,8 +241,9 @@ export const Composer = ({ open, onClose, onSent, manager, initialIds = [] }) =>
                   {sel("Curso", "courseId", lookups.courses, "Todos")}
                   {sel("Polo", "poloId", lookups.polos, "Todos")}
                   {sel("Etiqueta", "tagId", lookups.tags, "Todas")}
-                  {kind === "custom" && (
-                    <TextField select size="small" variant="outlined" label="Matrícula" value={filters.enrolled} onChange={setFilter("enrolled")} style={{ minWidth: 150, flex: 1 }}>
+                  {manager && (
+                    <TextField select size="small" variant="outlined" label="Matrícula" value={filters.enrolled || (kind !== "custom" ? "yes" : "")}
+                      onChange={(e) => { setFilters({ ...filters, enrolled: e.target.value }); if (e.target.value !== "yes") toHand("Para quem ainda não é aluno, a mensagem é escrita na hora."); }} style={{ minWidth: 150, flex: 1 }}>
                       <MenuItem value="">Todos</MenuItem>
                       <MenuItem value="yes">Já matriculados</MenuItem>
                       <MenuItem value="no">Ainda não matriculados</MenuItem>
