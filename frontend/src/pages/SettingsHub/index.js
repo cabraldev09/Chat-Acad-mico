@@ -437,6 +437,16 @@ const EmailModels = () => {
 
 // every screen that failed to draw in someone's browser. "Resumo" groups the same failure (screen + message) with how often,
 // how many people and which versions of the code; "Registros" lists each one with the code shown on that person's screen.
+// the date of a failure in the timezone of the system (Rondônia), not the one of whoever has the browser open, and how long ago
+const errWhen = (v) => {
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return "-";
+  const at = new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Porto_Velho", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(d).replace(",", " às");
+  const min = Math.max(0, Math.round((Date.now() - d.getTime()) / 60000));
+  const ago = min < 1 ? "agora" : min < 60 ? `há ${min} min` : min < 1440 ? `há ${Math.floor(min / 60)} h` : `há ${Math.floor(min / 1440)} d`;
+  return `${at} (${ago})`;
+};
+
 const ErrosDeTela = () => {
   const classes = useStyles();
   const [view, setView] = useState("resumo");
@@ -463,7 +473,9 @@ const ErrosDeTela = () => {
   };
   // the failure happened on the version of the code that is open here, only on older ones, or on one that did not say
   const kind = (g) => ((g.builds || []).length === 0 ? "unknown" : g.builds.includes(BUILD) ? "current" : "old");
-  const shown = (groups || []).filter((g) => !onlyCurrent || kind(g) !== "old");
+  // a record without a version is from before the versions were recorded: always an old code
+  const isOld = (g) => kind(g) !== "current";
+  const shown = (groups || []).filter((g) => !onlyCurrent || !isOld(g));
 
   const tag = (text, color) => <span style={{ fontSize: 11.5, padding: "2px 8px", borderRadius: 10, background: `${color}22`, color, whiteSpace: "nowrap" }}>{text}</span>;
 
@@ -496,8 +508,8 @@ const ErrosDeTela = () => {
               <div key={`${g.route}|${g.message}`} style={{ borderTop: "1px solid rgba(127,140,160,.25)", paddingTop: 10, opacity: g.resolved ? 0.6 : 1 }}>
                 <div className={classes.row}>
                   <b style={{ fontFamily: "monospace" }}>{g.route || "(sem tela)"}</b>
-                  {g.resolved ? tag("Corrigido", "#15803d") : k === "old" ? tag("Só versão antiga", "#6b7a85") : k === "current" ? tag("Versão atual", "#b45309") : tag("Versão não informada", "#6b7a85")}
-                  <span className={classes.hint}>{g.n} {g.n === 1 ? "vez" : "vezes"} · {g.users} {g.users === 1 ? "pessoa" : "pessoas"} · última em {new Date(g.lastAt).toLocaleString("pt-BR")}</span>
+                  {g.resolved ? tag("Corrigido", "#15803d") : k === "current" ? tag("Versão atual", "#b45309") : k === "old" ? tag("Só versão antiga", "#6b7a85") : tag("Antes do registro de versões", "#6b7a85")}
+                  <span className={classes.hint}>{g.n} {g.n === 1 ? "vez" : "vezes"} · {g.users} {g.users === 1 ? "pessoa" : "pessoas"} · última em {errWhen(g.lastAt)}</span>
                   <span style={{ flex: 1 }} />
                   <Button size="small" variant="outlined" onClick={() => mark(g, !g.resolved)}>{g.resolved ? "Reabrir" : "Marcar como corrigido"}</Button>
                 </div>
@@ -520,7 +532,7 @@ const ErrosDeTela = () => {
             <div key={r.id} style={{ borderTop: "1px solid rgba(127,140,160,.25)", paddingTop: 10 }}>
               <div className={classes.row}>
                 <b style={{ fontFamily: "monospace" }}>{r.code}</b>
-                <span className={classes.hint}>{new Date(r.createdAt).toLocaleString("pt-BR")} · {r.route} · usuário {r.userId || "-"} ({r.role || "-"}){r.build ? ` · versão ${r.build}` : ""}</span>
+                <span className={classes.hint}>{errWhen(r.createdAt)} · {r.route} · usuário {r.userId || "-"} ({r.role || "-"}){r.build ? ` · versão ${r.build}` : ""}</span>
               </div>
               <div style={{ fontSize: 13.5, marginTop: 2, overflowWrap: "anywhere" }}>{r.message}</div>
               <details>
