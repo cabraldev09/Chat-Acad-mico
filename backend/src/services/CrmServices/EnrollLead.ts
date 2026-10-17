@@ -17,6 +17,7 @@ import Whatsapp from "../../models/Whatsapp";
 import { pickUserForQueue } from "../AutomationServices/AutoAssignTicket";
 import syncPoloQueues from "../PoloServices/SyncPoloQueues";
 import { createEnrollmentCharge } from "../PaymentServices/EnrollmentPayments";
+import { markFeePaid, markFeePending } from "../PaymentServices/FeeTags";
 import ShowTicketService from "../TicketServices/ShowTicketService";
 import UpdateTicketService from "../TicketServices/UpdateTicketService";
 import dispatchWebhook from "../WebhookServices/DispatchWebhook";
@@ -179,6 +180,8 @@ const enrollLead = async (lead: Lead, actorId: number, input: EnrollInput) => {
     }
     return { ...(await enrollLeadCore(locked, actorId, input)), repeated: false };
   });
+  // the label of the fee: paid when it was declared paid, otherwise "Taxa pendente" until the payment is confirmed
+  if (!result.repeated && input.fee) await (input.fee === "paid" ? markFeePaid : markFeePending)(result.lead);
   // Network calls happen after the atomic local enrollment, never while holding the row lock.
   if (!result.repeated && input.fee && input.fee !== "paid") {
     try {
