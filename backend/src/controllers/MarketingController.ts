@@ -3,7 +3,7 @@ import { QueryTypes } from "sequelize";
 
 import sequelize from "../database";
 import AppError from "../errors/AppError";
-import { dayBounds, shiftDays } from "../helpers/AppTime";
+import { dayBounds, getAppTz, shiftDays } from "../helpers/AppTime";
 import MarketingSpend from "../models/MarketingSpend";
 import { CRM_OPTIONS } from "../services/CrmServices/crmOptions";
 
@@ -19,6 +19,27 @@ const periodOf = (q: any) => {
   const from = /^\d{4}-\d{2}-\d{2}$/.test(String(q.from || "")) ? String(q.from) : ymd(shiftDays(today, -89));
   const to = /^\d{4}-\d{2}-\d{2}$/.test(String(q.to || "")) ? String(q.to) : ymd(today);
   return { from, to, start: dayBounds(from).start, end: dayBounds(to).end };
+};
+
+// Where the money goes. Leads that arrive by WhatsApp do not say which ad brought them, so the spending is recorded by
+// advertising channel and compared with the total result; only the channels that leave a trace in the lead's origin (the
+// "sources" below) can also be followed lead by lead.
+export const MARKETING_CHANNELS: Array<{ name: string; sources: string[]; hint: string }> = [
+  { name: "Meta Ads (Instagram e Facebook)", sources: ["Instagram", "Facebook"], hint: "Anúncios no Instagram e no Facebook" },
+  { name: "Google Ads", sources: ["Google"], hint: "Anúncios de busca e de rede do Google" },
+  { name: "TikTok Ads", sources: [], hint: "Anúncios no TikTok" },
+  { name: "Eventos e feiras", sources: ["Evento / feira"], hint: "Estande, patrocínio, visitas a escolas" },
+  { name: "Panfletos e outdoor", sources: [], hint: "Material impresso, faixas, outdoor" },
+  { name: "Rádio e TV", sources: [], hint: "Veiculação em rádio, TV e carro de som" },
+  { name: "Influenciadores e parcerias", sources: [], hint: "Divulgação paga por parceiros" },
+  { name: "Brindes e materiais", sources: [], hint: "Camisetas, canetas, kits" },
+  { name: "Outros", sources: [], hint: "O que não cabe nos demais" }
+];
+// a channel named like a lead source (how older entries were recorded) follows that source
+const sourcesOfChannel = (channel: string): string[] => {
+  const known = MARKETING_CHANNELS.find(c => c.name === channel);
+  if (known) return known.sources;
+  return CRM_OPTIONS.sources.includes(channel) && channel !== "WhatsApp" && channel !== "Outro" ? [channel] : [];
 };
 
 // ------------------------------------------------------------------ spending
@@ -38,9 +59,20 @@ const fields = (b: any) => {
   return { month, source, campaign: clip(b.campaign, 120) || null, amount, note: clip(b.note, 300) || null };
 };
 
+// `repeat` (1 to 12) records the same amount in that many consecutive months (a monthly contract)
 export const createSpend = async (req: Request, res: Response): Promise<Response> => {
-  const row = await MarketingSpend.create({ ...fields(req.body || {}), createdBy: uid(req) } as any);
-  return res.status(201).json(present(row));
+  const data = fields(req.body || {});
+  const repeat = Math.min(12, Math.max(1, Math.round(Number(req.body?.repeat) || 1)));
+  let first: MarketingSpend | null = null;
+  for (let i = 0; i < repeat; i += 1) {
+    const [y, m] = data.month.split("-").map(Number);
+    const d = new Date(Date.UTC(y, m - 1 + i, 1));
+    const month = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+    // eslint-disable-next-line no-await-in-loop
+    const row = await MarketingSpend.create({ ...data, month, createdBy: uid(req) } as any);
+    if (!first) first = row;
+  }
+  return res.status(201).json({ ...present(first as MarketingSpend), created: repeat });
 };
 
 export const updateSpend = async (req: Request, res: Response): Promise<Response> => {
@@ -61,7 +93,7 @@ export const removeSpend = async (req: Request, res: Response): Promise<Response
 // By source: the leads that arrived in the period, the enrollments confirmed in it and the money spent in its months.
 // "Cost per enrollment" (CAC) = spent / enrollments of the period. A source with spending and no enrollment shows no CAC
 // (it would be infinite), and one without spending shows no cost.
-const ratio = (a: number, b: number): number | null => (b > 0 ? Math.round((a / b) * 100) / 100 : null);
+const ratio = (a: number, b: number): number | null => (a > 0 && b > 0 ? Math.round((a / b) * 100) / 100 : null);
 
 export const cac = async (req: Request, res: Response): Promise<Response> => {
   const { from, to, start, end } = periodOf(req.query);
@@ -89,6 +121,47 @@ export const cac = async (req: Request, res: Response): Promise<Response> => {
       .sort((x, y) => y.enrolled - x.enrolled || y.leads - x.leads);
   };
   const bySource = build(leads, won, spent);
+
+  // month by month: the trend needs no tracking at all (everything spent against everything that came in)
+  const tz = getAppTz();
+  const monthOf = (col: string) => `to_char(${col} AT TIME ZONE '${tz}', 'YYYY-MM')`;
+  const mLeads = await q(`SELECT ${monthOf('"createdAt"')} AS k, count(*)::int AS n FROM "Leads" WHERE "createdAt" BETWEEN :start AND :end AND "isHistorical" = false GROUP BY 1`);
+  const mWon = await q(`SELECT ${monthOf('"wonAt"')} AS k, count(*)::int AS n FROM "Leads" WHERE "wonAt" BETWEEN :start AND :end GROUP BY 1`);
+  const mSpent = await q(`SELECT month AS k, sum(amount)::float AS n FROM "MarketingSpends" WHERE month BETWEEN :fm AND :tm GROUP BY 1`);
+  const months: string[] = [];
+  for (let [y, m] = fm.split("-").map(Number); y < Number(tm.slice(0, 4)) || (y === Number(tm.slice(0, 4)) && m <= Number(tm.slice(5))); m += 1) {
+    if (m > 12) { m = 1; y += 1; }
+    months.push(`${y}-${String(m).padStart(2, "0")}`);
+    if (months.length > 36) break;
+  }
+  const pick = (rows: any[], k: string) => Number(rows.find(r => r.k === k)?.n || 0);
+  const monthly = months.map(k => {
+    const l = pick(mLeads, k);
+    const w = pick(mWon, k);
+    const sp = Math.round(pick(mSpent, k) * 100) / 100;
+    return { month: k, leads: l, enrolled: w, spent: sp, costPerLead: ratio(sp, l), cac: ratio(sp, w) };
+  });
+
+  // where the money went, by channel; a channel that leaves a trace in the lead's origin also shows its own results
+  const spentByChannel = await q(`SELECT source AS k, sum(amount)::float AS n FROM "MarketingSpends" WHERE month BETWEEN :fm AND :tm GROUP BY 1 ORDER BY 2 DESC`);
+  const totalSpent = spentByChannel.reduce((t, r) => t + Number(r.n), 0);
+  const byChannel = spentByChannel.map(r => {
+    const sp = Math.round(Number(r.n) * 100) / 100;
+    const sources = sourcesOfChannel(r.k);
+    const l = sources.reduce((t, name) => t + Number(leads.find(x => x.k === name)?.n || 0), 0);
+    const w = sources.reduce((t, name) => t + Number(won.find(x => x.k === name)?.n || 0), 0);
+    return {
+      name: r.k,
+      spent: sp,
+      share: totalSpent > 0 ? Math.round((sp / totalSpent) * 1000) / 10 : 0,
+      trackable: sources.length > 0,
+      sources,
+      leads: sources.length ? l : null,
+      enrolled: sources.length ? w : null,
+      costPerLead: sources.length ? ratio(sp, l) : null,
+      cac: sources.length ? ratio(sp, w) : null
+    };
+  });
   const sum = (k: "leads" | "enrolled" | "spent") => bySource.reduce((t, r) => t + (r[k] as number), 0);
   const total = { leads: sum("leads"), enrolled: sum("enrolled"), spent: Math.round(sum("spent") * 100) / 100 };
   return res.json({
@@ -96,6 +169,9 @@ export const cac = async (req: Request, res: Response): Promise<Response> => {
     to,
     sources: [...new Set([...CRM_OPTIONS.sources, ...bySource.map(r => r.name)])],
     total: { ...total, costPerLead: ratio(total.spent, total.leads), cac: ratio(total.spent, total.enrolled) },
+    channels: MARKETING_CHANNELS.map(c => ({ name: c.name, hint: c.hint, trackable: c.sources.length > 0 })),
+    monthly,
+    byChannel,
     bySource,
     byCampaign: build(campLeads, campWon, campSpent)
   });

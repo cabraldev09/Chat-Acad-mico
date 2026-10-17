@@ -4136,6 +4136,26 @@ const postMeta = (id, payload, secret, badSig) => {
       // marking someone is for whoever can reach the contact list
       assert((await http.put(`/contacts/${contactId}/relation`, { relation: "customer" }, asUser(cons))).status === 200, "a consultant cannot take the mark off");
     });
+    await test("custo por origem: por canal de divulgação, mês a mês, repetir por vários meses e nenhum custo inventado", async () => {
+      const get = async (from, to) => (await http.get("/marketing/cac", { params: { from, to }, ...auth() })).data;
+      const r0 = await get("2019-01-01", "2019-03-31");
+      assert(r0.monthly.length === 3 && r0.monthly.every(m => m.cac === null && m.costPerLead === null && m.spent === 0), `empty months ${JSON.stringify(r0.monthly)}`);
+      assert(r0.total.costPerLead === null && r0.total.cac === null, "a cost appeared with nothing invested");
+      assert(r0.channels.some(c => c.name === "Google Ads" && c.trackable) && r0.channels.some(c => c.name === "Panfletos e outdoor" && !c.trackable), "channel catalogue");
+
+      const rep = await http.post("/marketing/spend", { month: "2019-01", source: "Panfletos e outdoor", amount: "100", repeat: 3 }, auth());
+      assert(rep.status === 201 && rep.data.created === 3, `repeat ${rep.status} ${JSON.stringify(rep.data)}`);
+      await http.post("/marketing/spend", { month: "2019-02", source: "Google Ads", amount: "50" }, auth());
+      const r1 = await get("2019-01-01", "2019-03-31");
+      assert(r1.monthly.map(m => m.spent).join() === "100,150,100", `months ${JSON.stringify(r1.monthly.map(m => m.spent))}`);
+      const flyers = r1.byChannel.find(c => c.name === "Panfletos e outdoor");
+      assert(flyers && flyers.spent === 300 && flyers.share === 85.7 && flyers.trackable === false && flyers.leads === null && flyers.cac === null, `flyers ${JSON.stringify(flyers)}`);
+      const ads = r1.byChannel.find(c => c.name === "Google Ads");
+      assert(ads && ads.trackable === true && ads.sources.join() === "Google" && ads.leads === 0 && ads.cac === null, `google ads ${JSON.stringify(ads)}`);
+      assert(r1.total.spent === 350, `total ${JSON.stringify(r1.total)}`);
+      // the year before the spending shows nothing
+      assert((await get("2018-01-01", "2018-02-28")).total.spent === 0, "spending leaked into another period");
+    });
     await test("login is rate limited", async () => {
       let limited = false;
       for (let i = 0; i < 120 && !limited; i += 1) {

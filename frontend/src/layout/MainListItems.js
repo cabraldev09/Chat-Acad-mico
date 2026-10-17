@@ -20,7 +20,7 @@ import KanbanSquareIcon from "lucide-react/dist/esm/icons/kanban-square";
 import LayoutDashboardIcon from "lucide-react/dist/esm/icons/layout-dashboard";
 import { isManager } from "../utils/access";
 import ListTodoIcon from "lucide-react/dist/esm/icons/list-todo";
-import SproutIcon from "lucide-react/dist/esm/icons/sprout";
+import MonitorCheckIcon from "lucide-react/dist/esm/icons/monitor-check";
 import HeartPulseIcon from "lucide-react/dist/esm/icons/heart-pulse";
 import Share2Icon from "lucide-react/dist/esm/icons/share-2";
 import WalletIcon from "lucide-react/dist/esm/icons/wallet";
@@ -256,7 +256,7 @@ const MainListItems = (props) => {
         <ListItemLink to="/crm/comissoes" primary="Comissões" icon={<WalletIcon className="ico" />} collapsed={collapsed} />
       )}
       <ListItemLink to="/crm/metas-polos" alsoActive={["/crm/metas"]} primary="Metas" icon={<GoalIcon className="ico" />} collapsed={collapsed} />
-      <ListItemLink to="/ambientacao" primary="Ambientação" icon={<SproutIcon className="ico" />} collapsed={collapsed} />
+      <ListItemLink to="/ambientacao" primary="Ambientação" icon={<MonitorCheckIcon className="ico" />} collapsed={collapsed} />
       {(isManager(user) || user.role === "tutor") && (
         <ListItemLink to="/crm/retencao" primary="Retenção" icon={<HeartPulseIcon className="ico" />} collapsed={collapsed} />
       )}

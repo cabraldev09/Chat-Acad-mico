@@ -1,7 +1,7 @@
 import { fillDays } from "../../utils/chartDays";
-import React, { useCallback, useContext, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useHistory } from "react-router-dom";
-import { Typography, TextField, MenuItem, makeStyles, Table, TableHead, TableRow, TableCell, TableBody, LinearProgress, Button, Menu } from "@material-ui/core";
+import { Typography, TextField, MenuItem, makeStyles, Table, TableHead, TableRow, TableCell, TableBody, Button, Menu } from "@material-ui/core";
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar, Cell, PieChart, Pie, Legend,
 } from "recharts";
@@ -13,6 +13,7 @@ import MainHeader from "../../components/MainHeader";
 import MainHeaderButtonsWrapper from "../../components/MainHeaderButtonsWrapper";
 import Title from "../../components/Title";
 import GlowCard from "../../components/GlowCard";
+import TopLoader from "../../components/TopLoader";
 import NumberTicker from "../../components/NumberTicker";
 import { AuthContext } from "../../context/Auth/AuthContext";
 import { isManager } from "../../utils/access";
@@ -31,11 +32,10 @@ const useStyles = makeStyles((theme) => {
     scroll: { flex: 1, overflowY: "auto", overflowX: "hidden", padding: theme.spacing(1, 1, 3), ...theme.scrollbarStyles },
     // changing a filter: the numbers dim and settle back instead of jumping (nothing moves, so the page keeps its place)
     content: {
-      transition: "opacity .28s ease, filter .28s ease",
+      transition: "opacity .45s cubic-bezier(.2,.8,.2,1), transform .45s cubic-bezier(.2,.8,.2,1), filter .45s ease",
       "@media (prefers-reduced-motion: reduce)": { transition: "none" },
     },
-    contentBusy: { opacity: 0.45, filter: "saturate(.8)", pointerEvents: "none" },
-    progressSlot: { height: 3, flex: "none", overflow: "hidden" },
+    contentBusy: { opacity: 0.55, transform: "translateY(3px)", filter: "saturate(.75)", pointerEvents: "none" },
     label: { fontSize: 13, color: theme.palette.text.secondary, fontWeight: 500 },
     chips: { display: "inline-flex", gap: 4, padding: 3, borderRadius: 12, background: soft, border: `1px solid ${line}` },
     chip: {
@@ -61,7 +61,7 @@ const useStyles = makeStyles((theme) => {
     card: { padding: theme.spacing(2) },
     chart: { height: 250 },
     funnelRow: { display: "grid", gridTemplateColumns: "150px 1fr 90px", alignItems: "center", gap: 10, padding: "5px 0", fontSize: 13.5 },
-    bar: { height: 22, borderRadius: 6, transition: "width .8s var(--ease-out)", minWidth: 4 },
+    bar: { height: 22, borderRadius: 6, transition: "width 1s cubic-bezier(.2,.8,.2,1)", minWidth: 4 },
     lane: { display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", marginBottom: 8, borderRadius: 8, background: "rgba(245,165,36,.12)", fontSize: 13, cursor: "pointer" },
     error: { margin: theme.spacing(2), padding: theme.spacing(2), display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" },
     miniBar: { height: 6, borderRadius: 4, background: soft, overflow: "hidden", minWidth: 50 },
@@ -108,7 +108,7 @@ const Spark = ({ data, color }) => (
   <div style={{ height: 34, marginTop: 6 }} aria-hidden="true">
     <ResponsiveContainer>
       <AreaChart data={data} margin={{ top: 2, right: 0, left: 0, bottom: 0 }}>
-        <Area type="monotone" dataKey="v" stroke={color} strokeWidth={1.8} fill={color} fillOpacity={0.14} isAnimationActive={false} />
+        <Area type="monotone" dataKey="v" stroke={color} strokeWidth={1.8} fill={color} fillOpacity={0.14} animationDuration={1100} animationEasing="ease-out" />
       </AreaChart>
     </ResponsiveContainer>
   </div>
@@ -160,15 +160,22 @@ const Panel = () => {
     await downloadFile("/crm/report", { from, to, groupBy, format: "csv" }, `relatorio-${groupBy === "polo" ? "polos" : "consultores"}-${from}-a-${to}.csv`);
   };
 
+  const ticket = useRef(0);
   const load = useCallback(() => {
+    const mine = ++ticket.current;
     setLoading(true);
     setFailed(false);
     api.get("/crm/metrics", { params: { from, to, ownerId: ownerId || undefined, courseId: courseId || undefined } })
-      .then(({ data }) => setD(data))
-      .catch((err) => { setFailed(true); toastError(err); })
-      .finally(() => setLoading(false));
+      .then(({ data }) => { if (mine === ticket.current) setD(data); })
+      .catch((err) => { if (mine === ticket.current) { setFailed(true); toastError(err); } })
+      .finally(() => { if (mine === ticket.current) setLoading(false); });
   }, [from, to, ownerId, courseId]);
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    // the first load is at once; after that a short wait keeps typing a date from firing one request per digit
+    const t = setTimeout(load, d ? 160 : 0);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [load]);
 
   const byDay = {};
   (d?.created || []).forEach((r) => { const k = String(r.day).slice(0, 10); byDay[k] = { ...byDay[k], leads: Number(r.total) }; });
@@ -222,7 +229,7 @@ const Panel = () => {
         </MainHeaderButtonsWrapper>
       </MainHeader>
 
-      <div className={classes.progressSlot}>{loading && d && <LinearProgress />}</div>
+      <TopLoader active={loading} />
       {failed && !d && (
         <GlowCard className={classes.error}>
           <Typography>Não foi possível carregar o painel.</Typography>
@@ -339,7 +346,7 @@ const Panel = () => {
                 <div className={classes.chart}>
                   <ResponsiveContainer>
                     <PieChart>
-                      <Pie data={d.lostReasons} dataKey="total" nameKey="name" innerRadius={48} outerRadius={80} paddingAngle={2}>
+                      <Pie data={d.lostReasons} dataKey="total" nameKey="name" innerRadius={48} outerRadius={80} paddingAngle={2} animationDuration={1000} animationEasing="ease-out">
                         {d.lostReasons.map((r, i) => (<Cell key={r.name} fill={PIE[i % PIE.length]} />))}
                       </Pie>
                       <Tooltip /><Legend />
@@ -360,8 +367,8 @@ const Panel = () => {
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} />
                     <XAxis dataKey="day" interval="preserveStartEnd" minTickGap={18} /><YAxis allowDecimals={false} /><Tooltip /><Legend />
-                    <Area type="monotone" dataKey="leads" name="Leads" stroke="#0693E3" strokeWidth={2} fill="url(#gLeads)" />
-                    <Area type="monotone" dataKey="matriculas" name="Matrículas" stroke="#16a34a" strokeWidth={2} fill="url(#gWon)" />
+                    <Area type="monotone" dataKey="leads" name="Leads" stroke="#0693E3" strokeWidth={2} fill="url(#gLeads)" animationDuration={1200} animationEasing="ease-out" />
+                    <Area type="monotone" dataKey="matriculas" name="Matrículas" stroke="#16a34a" strokeWidth={2} fill="url(#gWon)" animationDuration={1200} animationEasing="ease-out" />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
@@ -395,8 +402,8 @@ const Panel = () => {
                   <BarChart data={d.byCourse} layout="vertical" margin={{ left: 10 }}>
                     <CartesianGrid strokeDasharray="3 3" horizontal={false} />
                     <XAxis type="number" allowDecimals={false} /><YAxis type="category" dataKey="name" width={120} /><Tooltip /><Legend />
-                    <Bar dataKey="leads" name="Leads" fill="#0693E3" radius={[0, 6, 6, 0]} />
-                    <Bar dataKey="won" name="Matrículas" fill="#0B4279" radius={[0, 6, 6, 0]} />
+                    <Bar dataKey="leads" name="Leads" fill="#0693E3" radius={[0, 6, 6, 0]} animationDuration={1000} animationEasing="ease-out" />
+                    <Bar dataKey="won" name="Matrículas" fill="#0B4279" radius={[0, 6, 6, 0]} animationDuration={1000} animationEasing="ease-out" />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -429,7 +436,7 @@ const Panel = () => {
          </div>
         </div>
       )}
-      {!d && !failed && <LinearProgress />}
+
     </MainContainer>
   );
 };

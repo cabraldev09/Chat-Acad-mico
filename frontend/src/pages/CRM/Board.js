@@ -5,7 +5,7 @@ import {
   Button, TextField, MenuItem, InputAdornment, Dialog, DialogTitle, DialogContent, DialogActions,
   Typography, makeStyles, ButtonGroup, Chip, Table, TableHead, TableRow, TableCell, TableBody, Paper,
 } from "@material-ui/core";
-import { Sprout, Search, Plus, Upload, LayoutGrid, List, Calendar, BadgeCheck, Rocket, Hourglass } from "lucide-react";
+import { MonitorCheck, Search, Plus, Upload, LayoutGrid, List, Calendar, BadgeCheck, Rocket, Hourglass } from "lucide-react";
 import { format, parseISO } from "date-fns";
 
 import MainContainer from "../../components/MainContainer";
@@ -92,7 +92,7 @@ const LeadCard = ({ lead, onOpen, onDragStart, onDragEnd, dragging }) => {
         )}
         {lead.onboardingStatus && lead.onboardingStatus !== "none" && (
           <span className={`${classes.chip} ${lead.onboardingStatus === "done" ? classes.chipPaid : ""}`} title="Situação da ambientação com o tutor">
-            <Sprout size={12} />{{ pending: "Aguarda tutor", started: "Em ambientação", done: "Ambientado" }[lead.onboardingStatus]}
+            <MonitorCheck size={12} />{{ pending: "Aguarda tutor", started: "Em ambientação", done: "Ambientado" }[lead.onboardingStatus]}
           </span>
         )}
         {lead.nextFollowUpAt && (

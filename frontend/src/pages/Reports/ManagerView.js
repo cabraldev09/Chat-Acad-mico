@@ -40,7 +40,7 @@ const useStyles = makeStyles((theme) => {
     poloName: { fontWeight: 700, fontSize: 15, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
     poloNum: { fontSize: 24, fontWeight: 700, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums" },
     track: { position: "relative", height: 10, borderRadius: 999, background: soft },
-    fill: { height: "100%", borderRadius: 999, transition: "width .6s cubic-bezier(.2,.8,.2,1)" },
+    fill: { height: "100%", borderRadius: 999, transition: "width 1s cubic-bezier(.2,.8,.2,1)" },
     mark: { position: "absolute", top: -4, bottom: -4, width: 2, borderRadius: 2, background: dark ? "#e2e8f0" : "#0b1a2e" },
     line: { fontSize: 13, color: theme.palette.text.secondary, display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" },
     badges: { display: "flex", gap: 6, flexWrap: "wrap" },
@@ -215,7 +215,7 @@ const ManagerView = ({ data, error, onRetry, periodName }) => {
                   <XAxis dataKey="name" tickLine={false} axisLine={false} fontSize={12} interval="preserveStartEnd" minTickGap={16} />
                   <YAxis allowDecimals={false} tickLine={false} axisLine={false} fontSize={12} />
                   <Tooltip cursor={{ fill: "rgba(127,127,127,.08)" }} formatter={(v) => [v, "Atendimentos"]} />
-                  <Bar dataKey="total" fill="#0693E3" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="total" fill="#0693E3" radius={[4, 4, 0, 0]} animationDuration={1000} animationEasing="ease-out" />
                 </BarChart>
               </ResponsiveContainer>
             </div>
