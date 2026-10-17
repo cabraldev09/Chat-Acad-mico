@@ -36,21 +36,21 @@ const useStyles = makeStyles((theme) => ({
   artGlow: { position: "absolute", right: "-12%", bottom: "-8%", width: "86%", height: "74%", background: "radial-gradient(closest-side, rgba(6,147,227,.55), rgba(6,147,227,.12) 62%, transparent 76%)", filter: "blur(10px)" },
   brandContent: { position: "relative", zIndex: 1 },
   brandText: { position: "relative", zIndex: 1, marginTop: "clamp(8px, 6vh, 64px)", [theme.breakpoints.down("sm")]: { marginTop: 4 } },
-  // on a phone the logo stands on the top edge of the box (all of it outside, its base on the dividing line)
-  signature: { display: "block", margin: "0 0 22px", [theme.breakpoints.down("sm")]: { display: "none" } },
-  // on a phone the whole logo stands on the edge of the box (its base touches the dividing line, nothing of it is covered)
-  signatureBehind: { display: "none", [theme.breakpoints.down("sm")]: { display: "block", position: "absolute", top: -116, left: "calc(50% - min(50% - 16px, 200px) + 14px)", width: "132px !important", zIndex: 1, pointerEvents: "none" } },
+  // the logo is held by the top edge of the box: all of it outside, its base exactly on the dividing line (nothing goes into the
+  // box), lined up with the text of the box, on every screen size
+  signature: { position: "absolute", bottom: "100%", left: 32, width: "150px !important", pointerEvents: "none", [theme.breakpoints.down("sm")]: { left: 20, width: "132px !important" } },
   brandSide: { position: "relative", overflow: "hidden", isolation: "isolate", background: `radial-gradient(900px circle at 85% 0%, rgba(6,147,227,.38), transparent 60%), ${NAVY}`, color: "#fff", padding: "44px 56px", display: "flex", flexDirection: "column", justifyContent: "flex-start", gap: 32, [theme.breakpoints.down("sm")]: { padding: "20px 20px 0", gap: 10, height: 296 } },
   headline: { fontSize: 40, lineHeight: 1.08, fontWeight: 800, letterSpacing: "-0.035em", margin: 0, maxWidth: 460, [theme.breakpoints.down("sm")]: { fontSize: 22, maxWidth: "60%" } },
   lead: { fontSize: 16, lineHeight: 1.6, color: "#c9dcf2", maxWidth: 440, margin: "14px 0 0", [theme.breakpoints.down("sm")]: { display: "none" } },
   points: { display: "grid", gap: 12, margin: 0, padding: 0, listStyle: "none", [theme.breakpoints.down("sm")]: { display: "none" } },
   point: { display: "flex", gap: 12, alignItems: "center", fontSize: 15, color: "#e6f0fb" },
   decor: { [theme.breakpoints.down("sm")]: { display: "none" } },
-  formSide: { display: "grid", placeItems: "center", padding: theme.spacing(4, 2), background: theme.palette.type === "dark" ? "#141b27" : "#ffffff",
-    [theme.breakpoints.down("sm")]: { display: "block", position: "relative", padding: "0 16px 28px", background: theme.palette.type === "dark" ? "#0f1520" : "#eaf1f9" } },
-  formBox: { width: "100%", maxWidth: 400,
-    // on a phone the area is a box that stands out from the background and rises over the edge of the banner
-    [theme.breakpoints.down("sm")]: { position: "relative", zIndex: 2, margin: "-28px auto 0", padding: "22px 20px 20px", borderRadius: 22, background: theme.palette.type === "dark" ? "#141b27" : "#ffffff", boxShadow: "0 22px 46px -18px rgba(11,66,121,.45), 0 2px 6px rgba(11,66,121,.10)", border: `1px solid ${theme.palette.type === "dark" ? "rgba(255,255,255,.08)" : "rgba(11,66,121,.08)"}` } },
+  // the sign-in area is a box (white card with shadow) over a soft background, on every screen size
+  formSide: { display: "grid", placeItems: "center", padding: theme.spacing(4, 3), background: theme.palette.type === "dark" ? "#0f1520" : "#eaf1f9",
+    [theme.breakpoints.down("sm")]: { display: "block", position: "relative", padding: "0 16px 28px" } },
+  formBox: { position: "relative", width: "100%", maxWidth: 440, padding: "32px 32px 28px", borderRadius: 24, background: theme.palette.type === "dark" ? "#141b27" : "#ffffff", boxShadow: "0 26px 56px -24px rgba(11,66,121,.5), 0 2px 8px rgba(11,66,121,.10)", border: `1px solid ${theme.palette.type === "dark" ? "rgba(255,255,255,.08)" : "rgba(11,66,121,.08)"}`,
+    // on a phone the box rises over the edge of the banner
+    [theme.breakpoints.down("sm")]: { position: "relative", zIndex: 2, margin: "-28px auto 0", padding: "22px 20px 20px", borderRadius: 22, boxShadow: "0 22px 46px -18px rgba(11,66,121,.45), 0 2px 6px rgba(11,66,121,.10)" } },
   h1: { fontSize: 28, fontWeight: 800, letterSpacing: "-0.03em", margin: "0 0 6px" },
   sub: { fontSize: 15, lineHeight: 1.55, color: theme.palette.text.secondary, margin: "0 0 18px" },
   cta: { marginTop: 16, height: 50, borderRadius: 12, fontSize: 16, fontWeight: 700, textTransform: "none", boxShadow: "none", background: NAVY, color: "#fff", "&:hover": { background: "#093663", boxShadow: "none" }, "&.Mui-disabled": { background: theme.palette.action.disabledBackground } },
@@ -108,9 +108,8 @@ const AuthShell = ({ title, subtitle, children, wide }) => {
           </ul>
         </div>
         <div className={c.formSide}>
-          <BrandStar variant="escolha" size={132} glow={false} className={c.signatureBehind} alt="" />
           <div className={c.formBox} style={wide ? { maxWidth: 440 } : undefined}>
-            <BrandStar variant="escolha" size={176} glow={false} className={c.signature} alt="Escolha ter estrela" />
+            <BrandStar variant="escolha" size={150} glow={false} shadow={false} className={c.signature} alt="Escolha ter estrela" />
             <h1 className={c.h1}>{title}</h1>
             {subtitle && <p className={c.sub}>{subtitle}</p>}
             {children}
