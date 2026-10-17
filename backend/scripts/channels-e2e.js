@@ -635,7 +635,14 @@ const postMeta = (id, payload, secret, badSig) => {
       const tokenForm = settings.formToken || (await http.put("/crm/settings", {}, auth())).data.formToken;
       assert(tokenForm, "form token");
       const page = await http.get(`/leadform/${tokenForm}`);
-      assert(page.status === 200 && String(page.data).includes("Quero ser contatado"), "form page");
+      assert(page.status === 200 && String(page.data).includes("Quero falar com um consultor") && String(page.data).includes('name="consent"'), "form page");
+      // what the page sells: the formats, the tutoring after the enrollment, the brand and the photo; and never a price
+      const html = String(page.data);
+      assert(/EAD/.test(html) && /Semipresencial/i.test(html) && /tutoria depois da matr[ií]cula/i.test(html), "the page does not talk about EAD, blended courses and the tutoring");
+      assert(html.includes("data:image/png;base64,") && html.includes("/leadform/_aluna.webp"), "logo or photo missing");
+      assert(!/R\$\s?\d/.test(html), "the public page shows a price");
+      const photo = await http.get("/leadform/_aluna.webp", { responseType: "arraybuffer" });
+      assert(photo.status === 200 && String(photo.headers["content-type"]).includes("image/webp") && Buffer.from(photo.data).length > 20000, `photo ${photo.status}`);
       assert((await http.get("/leadform/wrong")).status === 404, "wrong token page");
       const body = { name: "Pedro Lima", phone: "11 98888-0001", email: "pedro@x.com", consent: true, utm_source: "instagram", utm_campaign: "vestibular" };
       assert((await http.post(`/leadform/${tokenForm}/submit`, { ...body, consent: false })).status === 400, "no consent accepted");
@@ -1055,7 +1062,7 @@ const postMeta = (id, payload, secret, badSig) => {
     });
     let pay;
     await test("generates a Pix charge with the right payload and keeps the QR code", async () => {
-      const r = await http.post(`/leads/${paying.id}/payments`, {}, auth());
+      const r = await http.post(`/leads/${paying.id}/payments`, { method: "pix" }, auth());
       assert(r.status === 201, `status ${r.status} ${JSON.stringify(r.data)}`);
       pay = r.data;
       const call = efi.calls.find(c => c.path === `/v2/cob/${pay.txid}`);
@@ -1064,7 +1071,7 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(pay.txid.length >= 26 && pay.txid.length <= 35 && /^[a-zA-Z0-9]+$/.test(pay.txid), `txid ${pay.txid}`);
       assert(pay.pixCopiaECola.startsWith("00020126") && pay.qrImage.startsWith("data:image/png;base64,"), "pix code / qr");
       assert(pay.status === "pending", "status");
-      const again = await http.post(`/leads/${paying.id}/payments`, {}, auth());
+      const again = await http.post(`/leads/${paying.id}/payments`, { method: "pix" }, auth());
       assert(again.data.id === pay.id, "second request should reuse the open charge");
     });
     await test("a webhook never marks a payment as paid on its own word", async () => {
@@ -1101,7 +1108,7 @@ const postMeta = (id, payload, secret, badSig) => {
     await test("without a webhook (localhost) the poller still detects the payment", async () => {
       const l = await mkLead("Aluno Poller", "5511955550002");
       await http.put(`/leads/${l.id}`, { cpf: "111.444.777-35" }, auth());
-      const p = (await http.post(`/leads/${l.id}/payments`, { amount: "150,50" }, auth())).data;
+      const p = (await http.post(`/leads/${l.id}/payments`, { amount: "150,50", method: "pix" }, auth())).data;
       assert(efi.calls.find(c => c.path === `/v2/cob/${p.txid}`).body.valor.original === "150.50", "custom amount");
       efi.charges[p.txid].status = "CONCLUIDA";
       efi.charges[p.txid].pix = [{ endToEndId: "E9", txid: p.txid, valor: "150.50", horario: new Date().toISOString() }];
@@ -1168,8 +1175,8 @@ const postMeta = (id, payload, secret, badSig) => {
     await test("a seller with a Wallet ID gets the Bolix with the split by itself; who pays the fee is the manager's choice; a refused Wallet ID does not stop the charge", async () => {
       const due = ymdPlus(2);
       const callsOf = () => billet.calls.filter(c => c.method === "POST" && !c.refused);
-      // the default of the company is Pix, nobody chose: the seller's Wallet ID turns it into a Bolix with the split
-      assert((await http.get("/payments/efi/settings", auth())).data.defaultMethod === "pix", "the default is not Pix");
+      // the fee is always a Bolix (boleto with a Pix QR Code); the seller's Wallet ID adds the split
+      assert((await http.get("/payments/efi/settings", auth())).data.defaultMethod === "bolix", "the fee is not always a Bolix");
       const a = await mkLead("Aluno Repasse Automatico", "5511955579001", { ownerId: bolixConsultantId });
       await http.put(`/leads/${a.id}`, { cpf: cpfFor(223456780) }, auth());
       const before = callsOf().length;
@@ -1191,11 +1198,15 @@ const postMeta = (id, payload, secret, badSig) => {
       await http.put(`/leads/${c.id}`, { cpf: cpfFor(223456782) }, auth());
       const rc = await http.post(`/leads/${c.id}/payments`, { method: "pix" }, auth());
       assert(rc.status === 201 && rc.data.method !== "bolix", "Pix chosen on purpose became a Bolix");
-      // a seller without a Wallet ID: the default (Pix) stays
+      // a seller without a Wallet ID: still a Bolix, all of it for the company (no split); the due date is the company default
       const d = await mkLead("Aluno Vendedor Sem Conta", "5511955579004", { ownerId: 1 });
       await http.put(`/leads/${d.id}`, { cpf: cpfFor(223456783) }, auth());
+      assert((await http.put("/payments/efi/settings", { dueDays: 2 }, auth())).data.dueDays === 2, "due days not saved");
       const rd = await http.post(`/leads/${d.id}/payments`, {}, auth());
-      assert(rd.status === 201 && rd.data.method !== "bolix", "a seller without a Wallet ID got a Bolix");
+      assert(rd.status === 201 && rd.data.method === "bolix" && rd.data.status === "pending" && !callsOf().pop().body.items[0].marketplace, `no-wallet charge ${rd.status} ${rd.data.method} ${rd.data.status}`);
+      const days = Number(sql(`SELECT dueDate - CURRENT_DATE FROM Payments WHERE id=${rd.data.id}`));
+      assert(days >= 1 && days <= 2, `the company default due date was not used (${days} days)`);
+      await http.put("/payments/efi/settings", { dueDays: 3 }, auth());
       // Efí refuses the Wallet ID: the student still gets the charge, in the company account, and the team is told
       sql(`UPDATE Users SET efiPayeeCode='RECUSADO12345' WHERE id=${bolixConsultantId}`);
       const e = await mkLead("Aluno Wallet Recusado", "5511955579005", { ownerId: bolixConsultantId });
@@ -1274,7 +1285,7 @@ const postMeta = (id, payload, secret, badSig) => {
     await test("an open charge can be cancelled at Efí", async () => {
       const l = await mkLead("Aluno Cancela", "5511955550003", { ownerId: 1 });
       await http.put(`/leads/${l.id}`, { cpf: "935.411.347-80" }, auth());
-      const p = (await http.post(`/leads/${l.id}/payments`, {}, auth())).data;
+      const p = (await http.post(`/leads/${l.id}/payments`, { method: "pix" }, auth())).data;
       const r = await http.post(`/payments/${p.id}/cancel`, {}, auth());
       assert(r.status === 200 && r.data.status === "cancelled", "cancel");
       assert(efi.calls.some(c => c.method === "PATCH" && c.path === `/v2/cob/${p.txid}` && c.body.status === "REMOVIDA_PELO_USUARIO_RECEBEDOR"), "Efí not told");
@@ -1283,7 +1294,7 @@ const postMeta = (id, payload, secret, badSig) => {
     await test("the Pix code and QR image are sent to the candidate in the conversation", async () => {
       const l = await mkLead("Aluno Envio", "5511955550004", { ownerId: 1 });
       await http.put(`/leads/${l.id}`, { cpf: "111.444.777-35".replace("111.444.777-35", "390.533.447-05") }, auth());
-      const p = (await http.post(`/leads/${l.id}/payments`, {}, auth())).data;
+      const p = (await http.post(`/leads/${l.id}/payments`, { method: "pix" }, auth())).data;
       const before = graph.sent.length;
       const r = await http.post(`/payments/${p.id}/send`, { whatsappId: cid }, auth());
       assert(r.status === 200, `send ${r.status} ${JSON.stringify(r.data)}`);
@@ -4036,6 +4047,101 @@ const postMeta = (id, payload, secret, badSig) => {
       const marked = m.funnel.filter(f => f.isAffiliateLane);
       assert(lane ? marked.length === 1 && String(marked[0].id) === lane : marked.length === 0, `affiliate column marking ${JSON.stringify(marked)}`);
       ["feePending", "docsPending", "unassigned", "waitingFirstContact", "overdueTasks", "stale"].forEach(k => assert(typeof m.attention[k] === "number", `attention.${k}`));
+    });
+    await test("retenção: escolher quem recebe, ver a mensagem antes, botões em duas etapas, registro dos envios e dados da operação", async () => {
+      const mkUser = async (name, email, role) => (await http.post("/users", { name, email, password: "senha123", role }, auth())).data;
+      const tutorX = await mkUser("Tutor Envios", "tutorx@env.test", "tutor");
+      const poloX = (await http.post("/polos", { name: "Polo Envios", code: "ENV1", state: "RO" }, auth())).data;
+      await http.put(`/polos/${poloX.id}/members`, { members: [{ userId: tutorX.id, role: "tutoria" }] }, auth());
+      const tutorTok = (await http.post("/auth/login", { email: "tutorx@env.test", password: "senha123" })).data.token;
+      const cons = (await http.post("/auth/login", { email: "consultor@polo.test", password: "senha123" })).data.token;
+      const said = (contactId, text) => Number(sql(`SELECT COUNT(*) FROM Messages m JOIN Tickets t ON t.id=m.ticketId WHERE t.contactId=${contactId} AND m.fromMe=true AND m.body LIKE '%${text}%'`));
+      let n = 0;
+      const student = async name => {
+        n += 1;
+        const from = `55119100003${String(10 + n)}`;
+        await inboundCloud(from, `wamid.env-${n}`, "oi, quero me matricular");
+        await waitFor(() => ticketOf(from), 8000, `ticket of ${name}`);
+        const leadId = Number(await waitFor(() => sql(`SELECT l.id FROM Leads l JOIN Contacts c ON c.id=l.contactId WHERE c.number='${from}'`), 8000, `lead of ${name}`));
+        sql(`UPDATE Leads SET name='${name}' WHERE id=${leadId}`);
+        const r = await http.post(`/leads/${leadId}/enroll`, { poloId: poloX.id, tutorId: tutorX.id, fee: "paid", whatsappId: cid }, auth());
+        assert(r.status === 200, `enroll ${name} ${r.status}`);
+        return { from, leadId, contactId: sql(`SELECT contactId FROM Leads WHERE id=${leadId}`) };
+      };
+      const davi = await student("Davi Selecionado");
+      const elis = await student("Elis Selecionada");
+      const other = sql(`SELECT id FROM Leads WHERE name='Ana Pesquisa' LIMIT 1`);
+
+      // the message before it goes: with the name of each chosen student, and the buttons of the survey
+      const pv = await http.post("/retention/preview", { kind: "nps", leadIds: [davi.leadId] }, auth());
+      assert(pv.status === 200 && pv.data.samples[0].text.includes("Davi") && pv.data.buttons.length === 3 && pv.data.buttons[0] === "Recomendo (9-10)", `preview ${JSON.stringify(pv.data).slice(0, 240)}`);
+      const pc = (await http.post("/retention/preview", { kind: "custom", text: "Oi {{nome}}, tudo bem?" }, auth())).data;
+      assert(pc.samples[0].text === "Oi Maria, tudo bem?" && pc.buttons.length === 0, `custom preview ${JSON.stringify(pc)}`);
+      assert((await http.post("/retention/preview", { kind: "inventado" }, auth())).status === 400, "invalid kind");
+      assert((await http.post("/retention/preview", { kind: "nps" }, asUser(cons))).status === 403, "a consultant previewed");
+
+      // who can be chosen: everyone for the management, only their own students for the tutor
+      const found = (await http.get("/retention/students", { params: { search: "Selecionad" }, ...auth() })).data;
+      assert(found.length === 2 && found.every(x => x.polo === "Polo Envios" && x.tutor === "Tutor Envios"), `students ${JSON.stringify(found)}`);
+      const mine = (await http.get("/retention/students", { params: { search: "" }, ...asUser(tutorTok) })).data;
+      assert(mine.length === 2 && !mine.some(x => x.name === "Ana Pesquisa"), "the tutor can choose students that are not theirs");
+
+      // a message written by hand to the chosen ones: the student of another tutor is refused
+      assert((await http.post("/retention/send", { kind: "custom", leadIds: [davi.leadId], text: "" }, asUser(tutorTok))).status === 400, "an empty message was sent");
+      assert((await http.post("/retention/send", { kind: "custom", leadIds: Array.from({ length: 51 }, (_, i) => i + 1), text: "x" }, auth())).status === 400, "more than 50 at once");
+      assert((await http.post("/retention/send", { kind: "custom", leadIds: [davi.leadId], text: "x" }, asUser(cons))).status === 403, "a consultant sent");
+      const sent = await http.post("/retention/send", { kind: "custom", leadIds: [davi.leadId, elis.leadId, Number(other)], text: "Oi {{nome}}, passando para saber como vai." }, asUser(tutorTok));
+      assert(sent.status === 200 && sent.data.sent === 2 && sent.data.failed === 1 && sent.data.results.find(r => r.leadId === Number(other)).ok === false, `send ${JSON.stringify(sent.data)}`);
+      await waitFor(() => said(davi.contactId, "Oi Davi, passando para saber") === 1 && said(elis.contactId, "Oi Elis, passando para saber") === 1, 12000, "the two messages");
+      assert(said(sql(`SELECT contactId FROM Leads WHERE id=${other}`), "passando para saber") === 0, "the student of another tutor got the message");
+
+      // the log: what, to whom, by whom
+      const log = (await http.get("/retention/log", auth())).data;
+      const row = log.rows.find(r => r.lead === "Davi Selecionado" && r.kind === "custom");
+      assert(row && row.body === "Oi Davi, passando para saber como vai." && row.polo === "Polo Envios" && row.tutor === "Tutor Envios" && row.sentBy === "Tutor Envios" && row.status === "sent", `log row ${JSON.stringify(row)}`);
+      assert((await http.get("/retention/log", { params: { kind: "custom", search: "Elis" }, ...auth() })).data.rows.every(r => r.lead === "Elis Selecionada"), "log filters");
+      assert(!(await http.get("/retention/log", asUser(tutorTok))).data.rows.some(r => r.lead === "Ana Pesquisa"), "the tutor read the log of someone else's students");
+      const lcsv = String((await http.get("/retention/log.csv", auth())).data);
+      assert(lcsv.includes("Oi Davi, passando para saber como vai.") && lcsv.startsWith('"Data";"Tipo";"Aluno"'), "log spreadsheet");
+
+      // the survey with buttons: first the group, then the exact score
+      assert((await http.put("/retention/config", { nps: { enabled: true, buttons: true, question: "Olá, {{nome}}! De 0 a 10, nos recomendaria?" } }, auth())).data.nps.buttons === true, "buttons setting");
+      const before = graph.sent.length;
+      const sv = await http.post("/retention/send", { kind: "nps", leadIds: [davi.leadId] }, auth());
+      assert(sv.status === 200 && sv.data.sent === 1, `survey ${JSON.stringify(sv.data)}`);
+      const first = await waitFor(() => graph.sent.slice(before).find(x => x.body && x.body.type === "interactive" && JSON.stringify(x.body.interactive).includes("Recomendo (9-10)")), 12000, "the survey with buttons");
+      const titles = first.body.interactive.action.buttons.map(b => b.reply.title);
+      assert(titles.join("|") === "Recomendo (9-10)|Neutro (7-8)|Não recomendo (0-6)", `buttons ${titles}`);
+      const tap = (id, kind, title, group) => postMeta(cid, cloudEvent([{ from: davi.from, id, type: "interactive", interactive: kind === "button" ? { button_reply: { id: group, title } } : { list_reply: { id: group, title } } }], { contacts: [{ wa_id: davi.from, profile: { name: "Davi" } }] }), cloudCfg.appSecret);
+      const mark = graph.sent.length;
+      assert((await tap("wamid.env-tap1", "button", "Não recomendo (0-6)", "g-detractor")).status === 200, "tap");
+      const second = await waitFor(() => graph.sent.slice(mark).find(x => x.body && x.body.type === "interactive" && x.body.interactive.type === "list"), 12000, "the second step");
+      assert(second.body.interactive.action.sections[0].rows.map(r => r.title).join() === "0,1,2,3,4,5,6", "the exact scores of a detractor");
+      assert(sql(`SELECT COALESCE(scoreGroup,'') FROM NpsSurveys WHERE leadId=${davi.leadId} ORDER BY id DESC LIMIT 1`) === "detractor", "the group was not saved");
+      assert(sql(`SELECT COUNT(*) FROM NpsSurveys WHERE leadId=${davi.leadId} AND status='answered'`) === "0", "the group alone was taken as the score");
+      assert((await tap("wamid.env-tap2", "list", "4", "n-4")).status === 200, "tap score");
+      await waitFor(() => sql(`SELECT score FROM NpsSurveys WHERE leadId=${davi.leadId} AND status='answered'`) === "4", 10000, "the score by buttons");
+      await waitFor(() => Number(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${davi.leadId} AND title LIKE 'Falar com o aluno que deu nota 4%'`)) === 1, 10000, "the alert task");
+
+      // without the buttons the student types the number (plain text)
+      assert((await http.put("/retention/config", { nps: { buttons: false } }, auth())).data.nps.buttons === false, "buttons off");
+      const before2 = graph.sent.length;
+      await http.post("/retention/send", { kind: "nps", leadIds: [elis.leadId] }, auth());
+      const plain = await waitFor(() => graph.sent.slice(before2).find(x => x.body && x.body.to === elis.from), 12000, "the plain survey");
+      assert(plain.body.type === "text" && plain.body.text.body.includes("Olá, Elis!"), `plain survey ${JSON.stringify(plain.body).slice(0, 160)}`);
+
+      // the numbers of the operation
+      const ops = (await http.get("/retention/operations", auth())).data;
+      assert(ops.sent.custom >= 2 && ops.sent.nps >= 3 && ops.sent.total >= 5 && ops.sent.failed === 0, `sent ${JSON.stringify(ops.sent)}`);
+      assert(ops.survey.sent >= 2 && ops.survey.answered >= 1 && ops.survey.detractors >= 1 && ops.survey.pending >= 1 && typeof ops.survey.medianAnswerMin === "number", `survey ${JSON.stringify(ops.survey)}`);
+      assert(Array.isArray(ops.perDay) && ops.perDay.length >= 1 && ops.byTutor.some(t => t.name === "Tutor Envios" && t.sent >= 4 && t.detractors === 1 && t.pending === 1), `by tutor ${JSON.stringify(ops.byTutor)}`);
+      sql(`UPDATE LeadTasks SET doneAt=NOW() WHERE leadId=${davi.leadId} AND title LIKE 'Falar com o aluno que deu nota 4%'`);
+      const ops2 = (await http.get("/retention/operations", auth())).data;
+      assert(ops2.survey.handled === ops.survey.handled + 1 && ops2.survey.pending === ops.survey.pending - 1 && typeof ops2.survey.avgHandleHours === "number", "the detractor that was attended is not counted as handled");
+      const opsTutor = (await http.get("/retention/operations", asUser(tutorTok))).data;
+      assert(opsTutor.byTutor.every(t => t.name === "Tutor Envios"), "the tutor read the operation of the others");
+      const sum = (await http.get("/retention/summary", auth())).data;
+      assert(typeof sum.nps.detractorsOpen === "number", "summary without the detractors to attend");
     });
     await test("retenção: resumo, planilhas e o tutor vê só a satisfação dos próprios alunos", async () => {
       const tutor = (await http.post("/auth/login", { email: "tutorr@ret.test", password: "senha123" })).data.token;

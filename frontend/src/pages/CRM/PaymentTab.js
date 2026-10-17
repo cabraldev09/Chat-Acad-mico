@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { useHistory } from "react-router-dom";
 import { toast } from "react-toastify";
 import { Button, TextField, Typography, makeStyles, CircularProgress, InputAdornment } from "@material-ui/core";
-import { Copy, RefreshCw, Send, XCircle, BadgeCheck, Banknote, QrCode, Fingerprint, History } from "lucide-react";
+import { Copy, RefreshCw, Send, XCircle, BadgeCheck, Banknote, QrCode, Fingerprint, History, ExternalLink, CalendarClock } from "lucide-react";
 import { format, parseISO, differenceInMinutes } from "date-fns";
 
 import api from "../../services/api";
@@ -54,6 +54,7 @@ const PaymentTab = ({ lead, acts = [], onChanged, onEditSummary }) => {
   const history = useHistory();
   const [payments, setPayments] = useState(null);
   const [amount, setAmount] = useState("");
+  const [dueDate, setDueDate] = useState("");
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
 
@@ -67,6 +68,8 @@ const PaymentTab = ({ lead, acts = [], onChanged, onEditSummary }) => {
   useEffect(() => { load(); }, [load, lead.stageId]);
 
   const open = (payments || []).find((p) => p.status === "pending");
+  // a charge far from its due date is only issued some days before it
+  const scheduled = (payments || []).find((p) => p.status === "scheduled");
 
   // while a charge is open: ask for news every 10 s (the server also polls) and listen for the push
   useEffect(() => {
@@ -88,12 +91,12 @@ const PaymentTab = ({ lead, acts = [], onChanged, onEditSummary }) => {
   };
 
   const create = (force) => run("create", async () => {
-    await api.post(`/leads/${lead.id}/payments`, { amount: amount || undefined, force: force || undefined });
-    setAmount(""); await load(); onChanged && onChanged();
+    await api.post(`/leads/${lead.id}/payments`, { amount: amount || undefined, dueDate: dueDate || undefined, force: force || undefined });
+    setAmount(""); setDueDate(""); await load(); onChanged && onChanged();
   });
   const refresh = run("refresh", async () => { await api.post(`/payments/${open.id}/refresh`); await load(); onChanged && onChanged(); toast.info("Status atualizado"); });
   const cancel = run("cancel", async () => { await api.post(`/payments/${open.id}/cancel`); await load(); onChanged && onChanged(); });
-  const send = run("send", async () => { await api.post(`/payments/${open.id}/send`, {}); toast.success("PIX enviado ao candidato"); onChanged && onChanged(); });
+  const send = run("send", async () => { await api.post(`/payments/${open.id}/send`, {}); toast.success("Boleto com Pix enviado ao candidato"); onChanged && onChanged(); });
 
   if (!payments) return <div style={{ textAlign: "center", padding: 32 }}><CircularProgress size={24} /></div>;
 
@@ -103,7 +106,7 @@ const PaymentTab = ({ lead, acts = [], onChanged, onEditSummary }) => {
   const state = paid ? "paid" : open ? "pending" : "none";
   const banner = {
     paid: ["Taxa de matrícula paga", "paid"],
-    pending: ["Aguardando o pagamento do PIX", "pending"],
+    pending: ["Aguardando o pagamento do boleto ou do Pix", "pending"],
     none: [payments.length ? "Nenhuma cobrança em aberto" : "Nenhuma cobrança gerada", "muted"],
   }[state];
   const updates = acts.filter((a) => /matr[ií]cula|PIX|cobran[cç]a/i.test(a.body || ""));
@@ -112,7 +115,7 @@ const PaymentTab = ({ lead, acts = [], onChanged, onEditSummary }) => {
     <div>
       <div className={classes.banner}>
         <span className={`${classes.status} ${classes[banner[1]]}`}>{state === "pending" && <span className={classes.dot} />}{banner[0]}</span>
-        <span className={classes.hint}>{state === "pending" ? "Atualiza sozinho assim que a Efí confirmar" : state === "paid" ? "Confirmado pela Efí" : "Gere o PIX abaixo"}</span>
+        <span className={classes.hint}>{state === "pending" ? "Atualiza sozinho assim que a Efí confirmar" : state === "paid" ? "Confirmado pela Efí" : "Gere o boleto com Pix abaixo"}</span>
       </div>
 
       {error && (
@@ -129,7 +132,7 @@ const PaymentTab = ({ lead, acts = [], onChanged, onEditSummary }) => {
             <span className={classes.paidIcon}><BadgeCheck size={24} /></span>
             <div style={{ flex: 1 }}>
               <div className={classes.title}>Taxa de matrícula paga</div>
-              <div className={classes.hint}>{paid.paidAt ? format(parseISO(paid.paidAt), "dd/MM/yyyy 'às' HH:mm") : ""} · PIX Efí{paid.endToEndId ? ` · ${paid.endToEndId.slice(0, 14)}…` : ""}</div>
+              <div className={classes.hint}>{paid.paidAt ? format(parseISO(paid.paidAt), "dd/MM/yyyy 'às' HH:mm") : ""} · {paid.method === "bolix" ? "Boleto com Pix" : "Pix"} Efí{paid.endToEndId ? ` · ${paid.endToEndId.slice(0, 14)}…` : ""}</div>
             </div>
             <div className={classes.amount} style={{ color: "#15803d" }}>{brl(paid.paidAmount || paid.amount)}</div>
           </div>
@@ -153,19 +156,23 @@ const PaymentTab = ({ lead, acts = [], onChanged, onEditSummary }) => {
           </div>
           {!lead.hasCpf ? (
             <Typography className={classes.hint}>
-              A cobrança usa o CPF informado no cadastro do candidato (aba Resumo): a Efí exige o documento do pagador para emitir o PIX.
+              A cobrança usa o CPF informado no cadastro do candidato (aba Resumo): a Efí exige o documento do pagador para emitir a cobrança.
             </Typography>
           ) : (
             <>
               <Typography className={classes.hint} gutterBottom>
-                O PIX é gerado na hora, com QR Code e copia e cola. Assim que o candidato pagar, o sistema detecta sozinho e avança o lead.
+                A cobrança é um boleto com QR Code de Pix: o candidato paga como preferir, até o vencimento. Assim que pagar, o sistema detecta sozinho e avança o lead.
               </Typography>
-              <TextField size="small" variant="outlined" label="Valor (opcional)" value={amount} onChange={(e) => setAmount(e.target.value)}
-                InputProps={{ startAdornment: <InputAdornment position="start">R$</InputAdornment> }}
-                helperText="Em branco: usa a taxa da última proposta (ou do modelo)." style={{ maxWidth: 260 }} />
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                <TextField size="small" variant="outlined" label="Valor (opcional)" value={amount} onChange={(e) => setAmount(e.target.value)}
+                  InputProps={{ startAdornment: <InputAdornment position="start">R$</InputAdornment> }}
+                  helperText="Em branco: usa a taxa da última proposta (ou do modelo)." style={{ maxWidth: 260 }} />
+                <TextField size="small" variant="outlined" type="date" label="Vencimento (opcional)" InputLabelProps={{ shrink: true }} value={dueDate} onChange={(e) => setDueDate(e.target.value)}
+                  helperText="Em branco: o prazo padrão da empresa." style={{ width: 210 }} />
+              </div>
               <div className={classes.actions}>
                 <Button variant="contained" color="primary" startIcon={busy === "create" ? <CircularProgress size={16} /> : <QrCode size={16} />} disabled={busy === "create"} onClick={create(false)}>
-                  Gerar PIX da matrícula
+                  Gerar boleto com Pix
                 </Button>
               </div>
             </>
@@ -173,19 +180,39 @@ const PaymentTab = ({ lead, acts = [], onChanged, onEditSummary }) => {
         </div>
       )}
 
+      {!open && scheduled && (
+        <div className={classes.card}>
+          <div className={classes.head}>
+            <CalendarClock size={20} />
+            <div className={classes.title}>Cobrança agendada</div>
+            <span className={`${classes.status} ${classes.muted}`}>Agendada</span>
+          </div>
+          <div className={classes.amount}>{brl(scheduled.amount)}</div>
+          <div className={classes.hint}>
+            Vence em {scheduled.dueDate ? format(parseISO(scheduled.dueDate), "dd/MM/yyyy") : "—"}. O boleto com Pix é gerado em {scheduled.generateAt ? format(parseISO(scheduled.generateAt), "dd/MM/yyyy") : "—"} e o consultor recebe uma tarefa para enviá-lo.
+          </div>
+        </div>
+      )}
+
       {open && (
         <div className={classes.card} style={{ animation: "pop-in .3s var(--ease-out)" }}>
           <div className={classes.head}>
-            <div className={classes.title}>Cobrança PIX da matrícula</div>
+            <div className={classes.title}>{open.method === "bolix" ? "Boleto com Pix da matrícula" : "Cobrança Pix da matrícula"}</div>
             <span className={`${classes.status} ${classes.pending}`}><span className={classes.dot} />Aguardando pagamento</span>
           </div>
           <div className={classes.qrRow}>
-            {open.qrImage ? <img className={classes.qr} alt="QR Code do PIX" src={open.qrImage} /> : null}
+            {open.qrImage ? <img className={classes.qr} alt="QR Code do Pix" src={open.qrImage} /> : null}
             <div style={{ flex: 1, minWidth: 220 }}>
               <div className={classes.amount}>{brl(open.amount)}</div>
-              <div className={classes.hint}>Expira em {open.expiresAt ? left(open.expiresAt) : "—"}</div>
+              <div className={classes.hint}>
+                {open.method === "bolix" && open.dueDate ? `Vence em ${format(parseISO(open.dueDate), "dd/MM/yyyy")}` : `Expira em ${open.expiresAt ? left(open.expiresAt) : "—"}`}
+              </div>
               <div className={classes.code}>{open.pixCopiaECola}</div>
-              <Button size="small" variant="outlined" startIcon={<Copy size={14} />} onClick={() => { navigator.clipboard.writeText(open.pixCopiaECola); toast.success("Código PIX copiado"); }}>Copiar código</Button>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <Button size="small" variant="outlined" startIcon={<Copy size={14} />} onClick={() => { navigator.clipboard.writeText(open.pixCopiaECola); toast.success("Código Pix copiado"); }}>Copiar Pix</Button>
+                {open.barcode && <Button size="small" variant="outlined" startIcon={<Copy size={14} />} onClick={() => { navigator.clipboard.writeText(open.barcode); toast.success("Linha digitável copiada"); }}>Copiar linha digitável</Button>}
+                {(open.pdfLink || open.billetLink) && <Button size="small" variant="outlined" startIcon={<ExternalLink size={14} />} href={open.pdfLink || open.billetLink} target="_blank" rel="noopener noreferrer">Abrir o boleto</Button>}
+              </div>
             </div>
           </div>
           <div className={classes.actions}>

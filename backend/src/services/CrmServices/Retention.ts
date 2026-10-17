@@ -10,6 +10,7 @@ import LeadTask from "../../models/LeadTask";
 import { logger } from "../../utils/logger";
 import SendToContact from "../ChannelServices/SendToContact";
 import { setLabel } from "./Labels";
+import { logRetention } from "./RetentionLog";
 import { addActivity, resolveLeadTarget } from "./LeadCore";
 
 // Keeping the students: who went quiet (risk of dropping out) and the re-enrollment of the next period.
@@ -125,12 +126,21 @@ export const runRiskScan = async (): Promise<number> => {
   return marked;
 };
 
-// a message of the team to a student at risk
-export const sendRetentionMessage = async (lead: Lead, userId: number): Promise<void> => {
+// a message of the team to a student: the retention message of the settings (at risk) or a text written by hand (`custom`)
+export const sendRetentionMessage = async (lead: Lead, userId: number, custom?: string): Promise<string> => {
   const { riskMessage } = await readRetentionConfig();
+  const body = render(custom && custom.trim() ? custom.trim() : riskMessage, lead.name);
+  const kind = custom && custom.trim() ? "custom" : "risk";
   const { contact, whatsapp } = await resolveLeadTarget(lead, userId, null);
-  await SendToContact({ contact, whatsapp, body: render(riskMessage, lead.name), keepOpen: { userId } });
-  await addActivity(lead.id, userId, "whatsapp", "Mensagem de retenção enviada ao aluno.");
+  try {
+    await SendToContact({ contact, whatsapp, body, keepOpen: { userId } });
+  } catch (err) {
+    await logRetention({ lead, contactId: contact.id, kind, body, userId, error: (err as Error).message });
+    throw err;
+  }
+  await logRetention({ lead, contactId: contact.id, kind, body, userId });
+  await addActivity(lead.id, userId, "whatsapp", kind === "custom" ? "Mensagem enviada ao aluno pela tela de Retenção." : "Mensagem de retenção enviada ao aluno.");
+  return body;
 };
 
 // ------------------------------------------------------------------ re-enrollment
@@ -228,8 +238,11 @@ export const runRematricula = async (): Promise<number> => {
       try {
         // eslint-disable-next-line no-await-in-loop
         const { contact, whatsapp } = await resolveLeadTarget(lead, lead.onboardingTutorId || lead.ownerId || 0, null);
+        const text = render(c.message, lead.name, { periodo: c.term });
         // eslint-disable-next-line no-await-in-loop
-        await SendToContact({ contact, whatsapp, body: render(c.message, lead.name, { periodo: c.term }) });
+        await SendToContact({ contact, whatsapp, body: text });
+        // eslint-disable-next-line no-await-in-loop
+        await logRetention({ lead, contactId: contact.id, kind: "remat", body: text });
         // eslint-disable-next-line no-await-in-loop
         await addActivity(lead.id, null, "whatsapp", `Lembrete de rematrícula enviado (${step === "start" ? "abertura" : step === "d7" ? "7 dias antes do fim" : "véspera do fim"}).`);
         sent += 1;

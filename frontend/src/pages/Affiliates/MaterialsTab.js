@@ -5,7 +5,7 @@ import {
   Button, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, MenuItem, Paper, Switch, TextField, Typography,
 } from "@material-ui/core";
 import {
-  BookOpen, Copy, Download, Eye, FileText, Image as ImageIcon, Layers, Link2, Megaphone, Paperclip, Pencil, Plus, Trash2, Type, Video, Users,
+  BookOpen, Copy, Download, Eye, FileText, Image as ImageIcon, Layers, Link2, Megaphone, Paperclip, Pencil, Play, Plus, Trash2, Type, Video, Users,
 } from "lucide-react";
 
 import GlowCard from "../../components/GlowCard";
@@ -16,6 +16,117 @@ import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import { AudiencePicker, ReleaseDialog } from "./Audience";
 import { KINDS, KIND_LABEL, fetchAllUsers, saveBlob, useStyles } from "./shared";
+
+const sizeOf = (bytes) => (bytes ? (bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1).replace(".", ",")} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`) : "");
+const hostOf = (url) => { try { return new URL(url).host; } catch (e) { return String(url || ""); } };
+const isImage = (m) => m.hasFile && /^image\//.test(m.mimeType || "");
+const isVideo = (m) => m.hasFile && /^video\//.test(m.mimeType || "");
+const isPdf = (m) => m.hasFile && /pdf/.test(m.mimeType || "");
+
+// loads the file of a material (with the login of the team) as an address the page can show; only when `want` is true
+const useFileUrl = (m, want) => {
+  const [url, setUrl] = useState("");
+  useEffect(() => {
+    if (!want || !m.hasFile) return undefined;
+    let off = false;
+    let made = "";
+    api.get(`/affiliate-materials/${m.id}/file`, { responseType: "blob" })
+      .then((r) => { if (off) return; made = URL.createObjectURL(r.data); setUrl(made); })
+      .catch(() => undefined);
+    return () => { off = true; if (made) URL.revokeObjectURL(made); };
+  }, [m.id, m.hasFile, want]);
+  return url;
+};
+
+// the picture of the card: what the material is, before opening it. Images load when they come near the screen.
+const Thumb = ({ m, onOpen, Icon }) => {
+  const ref = useRef(null);
+  const [near, setNear] = useState(false);
+  useEffect(() => {
+    if (!isImage(m)) return undefined;
+    if (typeof IntersectionObserver === "undefined") { setNear(true); return undefined; }
+    const io = new IntersectionObserver((entries) => { if (entries.some((e) => e.isIntersecting)) { setNear(true); io.disconnect(); } }, { rootMargin: "200px" });
+    if (ref.current) io.observe(ref.current);
+    return () => io.disconnect();
+  }, [m]);
+  const url = useFileUrl(m, near && isImage(m));
+  const base = { height: 150, borderRadius: 12, overflow: "hidden", position: "relative", cursor: "pointer", display: "grid", placeItems: "center", border: "1px solid rgba(128,128,128,.2)" };
+  let body;
+  if (isImage(m)) {
+    body = url
+      ? <img src={url} alt={m.title} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+      : <ImageIcon size={30} style={{ opacity: 0.4 }} />;
+  } else if (isVideo(m)) {
+    body = (
+      <div style={{ ...base, border: 0, width: "100%", background: "linear-gradient(135deg,#0b4279,#0693e3)", color: "#fff" }}>
+        <span style={{ width: 52, height: 52, borderRadius: "50%", background: "rgba(255,255,255,.22)", display: "grid", placeItems: "center" }}><Play size={24} fill="#fff" /></span>
+        <span style={{ position: "absolute", left: 10, bottom: 8, fontSize: 12, fontWeight: 600, opacity: 0.9 }}>Vídeo · {sizeOf(m.fileSize)}</span>
+      </div>
+    );
+  } else if (isPdf(m)) {
+    body = (
+      <div style={{ textAlign: "center", color: "#b91c1c" }}>
+        <FileText size={38} />
+        <div style={{ fontSize: 12.5, fontWeight: 700, marginTop: 4 }}>PDF · {sizeOf(m.fileSize)}</div>
+      </div>
+    );
+  } else if (m.copyText) {
+    body = (
+      <div style={{ padding: 14, fontSize: 13, lineHeight: 1.45, width: "100%", height: "100%", overflow: "hidden", textAlign: "left", background: "rgba(6,147,227,.07)", position: "relative" }}>
+        <Type size={14} style={{ opacity: 0.5, marginBottom: 4 }} />
+        <div style={{ display: "-webkit-box", WebkitLineClamp: 5, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{m.copyText}</div>
+      </div>
+    );
+  } else if (m.externalUrl) {
+    body = (
+      <div style={{ textAlign: "center", padding: 10 }}>
+        <Link2 size={30} style={{ opacity: 0.7 }} />
+        <div style={{ fontSize: 12.5, marginTop: 6, fontWeight: 600, wordBreak: "break-all" }}>{hostOf(m.externalUrl)}</div>
+      </div>
+    );
+  } else if (m.hasFile) {
+    body = (
+      <div style={{ textAlign: "center" }}>
+        <Paperclip size={32} style={{ opacity: 0.6 }} />
+        <div style={{ fontSize: 12.5, marginTop: 4, opacity: 0.8 }}>{m.originalName || "Arquivo"} · {sizeOf(m.fileSize)}</div>
+      </div>
+    );
+  } else {
+    body = <Icon size={34} style={{ opacity: 0.45 }} />;
+  }
+  return (
+    <div ref={ref} role="button" tabIndex={0} aria-label={`Ver a prévia de ${m.title}`} onClick={onOpen} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(); } }}
+      style={isVideo(m) ? { cursor: "pointer", borderRadius: 12, overflow: "hidden" } : base}>
+      {body}
+    </div>
+  );
+};
+
+// the preview in full size: the image, the video, the PDF or the text, with a button to download
+const PreviewDialog = ({ m, onClose, onDownload }) => {
+  const url = useFileUrl(m, !!m);
+  if (!m) return null;
+  let content;
+  if (isImage(m)) content = url ? <img src={url} alt={m.title} style={{ maxWidth: "100%", maxHeight: "70vh", display: "block", margin: "0 auto", borderRadius: 8 }} /> : <Typography>Carregando...</Typography>;
+  else if (isVideo(m)) content = url ? <video src={url} controls style={{ maxWidth: "100%", maxHeight: "70vh", display: "block", margin: "0 auto", borderRadius: 8 }} /> : <Typography>Carregando...</Typography>;
+  else if (isPdf(m)) content = url ? <iframe title={m.title} src={url} style={{ width: "100%", height: "70vh", border: 0, borderRadius: 8 }} /> : <Typography>Carregando...</Typography>;
+  else if (m.copyText) content = <Typography style={{ whiteSpace: "pre-wrap" }}>{m.copyText}</Typography>;
+  else if (m.externalUrl) content = <Typography>Link: <a href={m.externalUrl} target="_blank" rel="noopener noreferrer">{m.externalUrl}</a></Typography>;
+  else content = <Typography color="textSecondary">{m.description || "Este material não tem prévia."}</Typography>;
+  return (
+    <Dialog open onClose={onClose} maxWidth="md" fullWidth>
+      <DialogTitle>{m.title}</DialogTitle>
+      <DialogContent dividers>
+        {m.description && (isImage(m) || isVideo(m) || isPdf(m)) && <Typography variant="body2" color="textSecondary" gutterBottom>{m.description}</Typography>}
+        {content}
+      </DialogContent>
+      <DialogActions>
+        {m.hasFile && <Button startIcon={<Download size={16} />} onClick={() => onDownload(m)}>Baixar o arquivo</Button>}
+        <Button variant="contained" color="primary" onClick={onClose}>Fechar</Button>
+      </DialogActions>
+    </Dialog>
+  );
+};
 
 // where the affiliates pick the materials up: every affiliate has a personal link to the Central (no login, no prices)
 const CentralLink = ({ affiliates }) => {
@@ -171,6 +282,7 @@ const MaterialsTab = () => {
 
   const shown = rows.filter((m) => !kind || m.kind === kind);
 
+  const [preview, setPreview] = useState(null);
   const open = async (m) => {
     try {
       const r = await api.get(`/affiliate-materials/${m.id}/file`, { responseType: "blob" });
@@ -203,6 +315,7 @@ const MaterialsTab = () => {
             const Icon = ICONS[m.kind] || Paperclip;
             return (
               <GlowCard key={m.id} className={classes.card} style={{ animationDelay: `${Math.min(i, 10) * 35}ms`, opacity: m.active ? 1 : 0.6 }}>
+                <Thumb m={m} Icon={Icon} onOpen={() => setPreview(m)} />
                 <div className={classes.cardTop}>
                   <span className={classes.kindIcon}><Icon size={20} /></span>
                   <div style={{ minWidth: 0, flex: 1 }}>
@@ -222,7 +335,8 @@ const MaterialsTab = () => {
                   {m.externalUrl && <span className={classes.chip} style={{ background: "rgba(6,147,227,.12)" }}><Link2 size={12} /> link</span>}
                 </div>
                 <div className={classes.actions} style={{ marginLeft: 0, justifyContent: "flex-end" }}>
-                  {m.hasFile && <IconAction title="Baixar o arquivo" onClick={() => open(m)}><Eye size={16} /></IconAction>}
+                  <IconAction title="Ver a prévia" onClick={() => setPreview(m)}><Eye size={16} /></IconAction>
+                  {m.hasFile && <IconAction title="Baixar o arquivo" onClick={() => open(m)}><Download size={16} /></IconAction>}
                   {!isAdmin && m.createdBy !== user.id && <Button size="small" variant="outlined" onClick={() => setRelease(m)}>Liberar aos meus afiliados</Button>}
                   {(isAdmin || m.createdBy === user.id) && <IconAction title="Editar" onClick={() => setForm(m)}><Pencil size={16} /></IconAction>}
                   {(isAdmin || m.createdBy === user.id) && <IconAction title="Excluir" onClick={() => setDel(m)}><Trash2 size={16} /></IconAction>}
@@ -233,6 +347,7 @@ const MaterialsTab = () => {
         </div>
       </div>
 
+      {preview && <PreviewDialog m={preview} onClose={() => setPreview(null)} onDownload={open} />}
       <MaterialForm open={!!form} material={form && form.id ? form : null} courses={courses} campaigns={campaigns} consultants={consultants} affiliates={affiliates} isAdmin={isAdmin}
         onClose={() => setForm(null)} onSaved={() => { setForm(null); load(); }} />
       {release && <ReleaseDialog open kind="material" item={release} onClose={() => setRelease(null)} onDone={() => { setRelease(null); load(); }} />}

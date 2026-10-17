@@ -467,6 +467,7 @@ const messages = {
         ERR_CAMPAIGN_INTERVAL: "O intervalo mínimo entre mensagens não pode ser maior que o máximo.",
         ERR_CAMPAIGN_INVALID_STATE: "Esta ação não está disponível para a situação atual da campanha.",
         ERR_CAMPAIGN_EMPTY_LIST: "A lista de contatos está vazia. Adicione contatos antes de iniciar a campanha.",
+        ERR_RETENTION_TOO_MANY: "Escolha até 50 alunos por envio.",
         ERR_LEAD_ENROLLED_RELATION: "Este lead já é um aluno matriculado: não dá para marcá-lo como amigo ou equipe.",
         ERR_CAMPAIGN_SCHEDULE_PAST: "A data de início já passou. Escolha uma data futura ou deixe vazio para iniciar manualmente.",
         ERR_CAMPAIGN_LIST_IN_USE: "Esta lista é usada por campanhas. Apague ou troque a lista nessas campanhas antes de apagá-la.",

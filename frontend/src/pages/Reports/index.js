@@ -134,6 +134,8 @@ const Reports = () => {
   const [view, setView] = useState("gestor");
   const [overviewMgr, setOverviewMgr] = useState(null);
   const [mgrError, setMgrError] = useState(false);
+  // a server that does not have the manager overview yet (an older version still running): the full tabs open instead of an error
+  const [leanMissing, setLeanMissing] = useState(false);
   const [date, setDate] = useState("");
   const [days, setDays] = useState(1);
   const [queueId, setQueueId] = useState("");
@@ -170,12 +172,16 @@ const Reports = () => {
   }, [date, days, manager]);
   useEffect(() => { load(); }, [load]);
 
-  const lean = manager && view === "gestor";
+  const lean = manager && view === "gestor" && !leanMissing;
   const loadLean = useCallback(() => {
     setMgrError(false);
     api.get("/dashboard/manager", { params: { date: date || undefined, days } })
       .then(({ data: m }) => setOverviewMgr(m))
-      .catch((err) => { setMgrError(true); toastError(err); });
+      .catch((err) => {
+        if (err && err.response && err.response.status === 404) { setLeanMissing(true); return; }
+        setMgrError(true);
+        toastError(err);
+      });
   }, [date, days]);
   useEffect(() => { if (lean) loadLean(); }, [lean, loadLean]);
   useEffect(() => {
@@ -278,7 +284,7 @@ const Reports = () => {
         </div>
       </div>
 
-      {manager && (
+      {manager && !leanMissing && (
         <div className={classes.seg} role="tablist" aria-label="Tipo de visão" style={{ marginBottom: 14 }}>
           {[["gestor", "Visão do gestor"], ["detalhes", "Detalhes"]].map(([k, l]) => (
             <button key={k} type="button" role="tab" aria-selected={view === k} className={`${classes.segBtn} ${view === k ? classes.segOn : ""}`} onClick={() => setView(k)}>{l}</button>

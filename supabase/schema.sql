@@ -1701,7 +1701,8 @@ CREATE TABLE public."NpsSurveys" (
     "sentAt" timestamp with time zone NOT NULL,
     "answeredAt" timestamp with time zone,
     "createdAt" timestamp with time zone NOT NULL,
-    "updatedAt" timestamp with time zone NOT NULL
+    "updatedAt" timestamp with time zone NOT NULL,
+    "scoreGroup" character varying(10)
 );
 
 
@@ -2096,6 +2097,46 @@ CREATE SEQUENCE public."QuickAnswers_id_seq"
 --
 
 ALTER SEQUENCE public."QuickAnswers_id_seq" OWNED BY public."QuickAnswers".id;
+
+
+--
+-- Name: RetentionMessages; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."RetentionMessages" (
+    id integer NOT NULL,
+    "leadId" integer NOT NULL,
+    "contactId" integer,
+    kind character varying(10) NOT NULL,
+    body text NOT NULL,
+    "surveyId" integer,
+    "userId" integer,
+    status character varying(8) DEFAULT 'sent'::character varying NOT NULL,
+    error text,
+    "withButtons" boolean DEFAULT false NOT NULL,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: RetentionMessages_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."RetentionMessages_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: RetentionMessages_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."RetentionMessages_id_seq" OWNED BY public."RetentionMessages".id;
 
 
 --
@@ -2969,6 +3010,13 @@ ALTER TABLE ONLY public."QuickAnswers" ALTER COLUMN id SET DEFAULT nextval('publ
 
 
 --
+-- Name: RetentionMessages id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."RetentionMessages" ALTER COLUMN id SET DEFAULT nextval('public."RetentionMessages_id_seq"'::regclass);
+
+
+--
 -- Name: Schedules id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -3558,6 +3606,14 @@ ALTER TABLE ONLY public."QuickAnswers"
 
 
 --
+-- Name: RetentionMessages RetentionMessages_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."RetentionMessages"
+    ADD CONSTRAINT "RetentionMessages_pkey" PRIMARY KEY (id);
+
+
+--
 -- Name: Schedules Schedules_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4114,6 +4170,20 @@ CREATE UNIQUE INDEX proposal_template_institutions_template_id_institution_id ON
 --
 
 CREATE INDEX proposals_affiliate_id ON public."Proposals" USING btree ("affiliateId");
+
+
+--
+-- Name: retention_messages_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX retention_messages_created_at ON public."RetentionMessages" USING btree ("createdAt");
+
+
+--
+-- Name: retention_messages_lead_id_kind; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX retention_messages_lead_id_kind ON public."RetentionMessages" USING btree ("leadId", kind);
 
 
 --
@@ -4775,6 +4845,14 @@ ALTER TABLE ONLY public."Queues"
 
 
 --
+-- Name: RetentionMessages RetentionMessages_leadId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."RetentionMessages"
+    ADD CONSTRAINT "RetentionMessages_leadId_fkey" FOREIGN KEY ("leadId") REFERENCES public."Leads"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+--
 -- Name: Schedules Schedules_contactId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5257,6 +5335,7 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261118000002-lead-documents.js') O
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261118000003-marketing-spend.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261118000004-retention.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261119000001-contact-personal.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261119000002-retention-messages.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

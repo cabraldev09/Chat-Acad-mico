@@ -9,6 +9,8 @@ import NpsSurvey from "../../models/NpsSurvey";
 import { logger } from "../../utils/logger";
 import SendToContact from "../ChannelServices/SendToContact";
 import { emitEvent } from "../FlowServices/Events";
+import { getIO } from "../../libs/socket";
+import { logRetention, renderRetentionText } from "./RetentionLog";
 import { setLabel } from "./Labels";
 import { addActivity, resolveLeadTarget } from "./LeadCore";
 
@@ -31,10 +33,27 @@ const npsOf = (list: NpsSurvey[]): number | null => {
 
 export const categoryOf = (score: number): "promoter" | "neutral" | "detractor" => (score >= 9 ? "promoter" : score >= 7 ? "neutral" : "detractor");
 
+// On the official API the survey comes with buttons: first the group (recommend / neutral / do not recommend), then the exact
+// score. The tap arrives as an ordinary message with the text of the button. On every other connection the student types the
+// number from 0 to 10. A number typed on the official API works too.
+export const GROUP_OPTIONS = [
+  { id: "g-promoter", label: "Recomendo (9-10)", group: "promoter" },
+  { id: "g-neutral", label: "Neutro (7-8)", group: "neutral" },
+  { id: "g-detractor", label: "Não recomendo (0-6)", group: "detractor" }
+] as const;
+export const SECOND_STEP: Record<string, { text: string; options: string[] }> = {
+  promoter: { text: "Que bom saber! Qual é a nota exata?", options: ["9", "10"] },
+  neutral: { text: "Obrigado! Qual é a nota exata?", options: ["7", "8"] },
+  detractor: { text: "Sentimos muito por isso. Qual é a nota exata?", options: ["0", "1", "2", "3", "4", "5", "6"] }
+};
+const groupOfLabel = (text: string): string | null => GROUP_OPTIONS.find(o => o.label.toLowerCase() === text.trim().toLowerCase())?.group || null;
+
 export interface NpsConfig {
   enabled: boolean;
   moments: string[];
   question: string;
+  // use the buttons when the connection is the official API
+  buttons: boolean;
 }
 
 export const readNpsConfig = async (): Promise<NpsConfig> => {
@@ -48,18 +67,32 @@ export const readNpsConfig = async (): Promise<NpsConfig> => {
   return {
     enabled: (await getSetting("nps_enabled", "false")) === "true",
     moments,
-    question: (await getSetting("nps_question", DEFAULT_QUESTION)) || DEFAULT_QUESTION
+    question: (await getSetting("nps_question", DEFAULT_QUESTION)) || DEFAULT_QUESTION,
+    buttons: (await getSetting("nps_buttons", "true")) !== "false"
   };
 };
 
-const render = (text: string, name: string): string => text.replace(/\{\{\s*nome\s*\}\}/g, (name || "").trim().split(/\s+/)[0] || "");
+const render = (text: string, name: string): string => renderRetentionText(text, name);
 
 // sends the survey to a student now
 export const sendSurvey = async (lead: Lead, kind: string, userId: number | null): Promise<NpsSurvey> => {
-  const { question } = await readNpsConfig();
+  const { question, buttons } = await readNpsConfig();
   const { contact, whatsapp } = await resolveLeadTarget(lead, userId || lead.onboardingTutorId || lead.ownerId || 0, null);
-  await SendToContact({ contact, whatsapp, body: render(question, lead.name) });
+  const text = render(question, lead.name);
+  const withButtons = buttons && whatsapp.channel === "whatsapp_cloud";
+  try {
+    await SendToContact({
+      contact,
+      whatsapp,
+      body: text,
+      choices: withButtons ? { question: text, options: GROUP_OPTIONS.map(o => ({ id: o.id, label: o.label })) } : null
+    });
+  } catch (err) {
+    await logRetention({ lead, contactId: contact.id, kind: "nps", body: text, userId, error: (err as Error).message, withButtons });
+    throw err;
+  }
   const survey = await NpsSurvey.create({ leadId: lead.id, contactId: contact.id, kind, status: "sent", sentAt: new Date() } as any);
+  await logRetention({ lead, contactId: contact.id, kind: "nps", body: text, userId, surveyId: survey.id, withButtons });
   await addActivity(lead.id, userId, "whatsapp", `Pesquisa de satisfação enviada (${kind === "onboarding" ? "após a ambientação" : kind === "d30" ? "30 dias de matrícula" : kind === "d90" ? "90 dias de matrícula" : "manual"})`);
   return survey;
 };
@@ -108,6 +141,25 @@ export const captureNpsAnswer = async (contactId: number, body: string): Promise
   if (!text) return;
   const bare = text.match(/^(10|[0-9])\s*[.!]?$/);
 
+  // the student tapped a group: the exact score is asked next (buttons or a list)
+  const group = groupOfLabel(text);
+  if (group) {
+    const open = await NpsSurvey.findOne({ where: { contactId, status: "sent", sentAt: { [Op.gt]: new Date(Date.now() - 5 * 86400000) } }, order: [["sentAt", "DESC"]] });
+    if (!open) return;
+    await open.update({ scoreGroup: group });
+    const lead = await Lead.findByPk(open.leadId);
+    if (!lead) return;
+    const step = SECOND_STEP[group];
+    try {
+      const { contact, whatsapp } = await resolveLeadTarget(lead, lead.onboardingTutorId || lead.ownerId || 0, null);
+      await SendToContact({ contact, whatsapp, body: step.text, choices: { question: step.text, options: step.options.map(o => ({ id: `n-${o}`, label: o })) } });
+      await logRetention({ lead, contactId: contact.id, kind: "nps", body: step.text, surveyId: open.id, withButtons: whatsapp.channel === "whatsapp_cloud" });
+    } catch (err) {
+      logger.warn(`NPS second step not sent: ${(err as Error).message}`);
+    }
+    return;
+  }
+
   if (bare) {
     const survey = await NpsSurvey.findOne({ where: { contactId, status: "sent", sentAt: { [Op.gt]: new Date(Date.now() - 5 * 86400000) } }, order: [["sentAt", "DESC"]] });
     if (!survey) return;
@@ -125,6 +177,8 @@ export const captureNpsAnswer = async (contactId: number, body: string): Promise
     }
     if (category === "detractor") {
       await setLabel(lead, DETRACTOR_LABEL, true);
+      // the team is told at once (the Retenção screen shows it and the tutor gets a task)
+      getIO().emit("npsAlert", { leadId: lead.id, leadName: lead.name, score, tutorId: lead.onboardingTutorId || null, ownerId: lead.ownerId || null });
       const owner = lead.onboardingTutorId || lead.ownerId;
       if (owner) {
         await LeadTask.create({ leadId: lead.id, userId: owner, type: "whatsapp", title: `Falar com o aluno que deu nota ${score} na pesquisa de satisfação`, dueAt: new Date(Date.now() + 86400000) } as any);

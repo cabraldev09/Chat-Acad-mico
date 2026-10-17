@@ -82,15 +82,10 @@ export const createEnrollmentCharge = async (
   opts: { amount?: number; force?: boolean; method?: "pix" | "bolix"; dueDate?: string | null } = {}
 ): Promise<Payment> => {
   if (!lead.cpf || !isValidCpf(lead.cpf)) throw new AppError("ERR_LEAD_NEEDS_CPF");
-  // Pix alone cannot be split by a Wallet ID (Efí asks for the CPF and the account number of who receives); the boleto with Pix
-  // (Bolix) can, by the Wallet ID only. So when nobody chose the method and the seller informed a Wallet ID, the charge goes
-  // out as Bolix, where the student still pays by Pix, and the commission reaches the seller by itself.
-  let method: "pix" | "bolix" = opts.method === "bolix" ? "bolix" : "pix";
-  let switched = false;
-  if (method === "pix" && !opts.method) {
-    const seller = await resolveRecipient(lead, userId);
-    if (seller.code) { method = "bolix"; switched = true; }
-  }
+  // The fee is always charged as a Bolix: a boleto with a Pix QR Code. The student pays by Pix or by boleto, the charge has a due
+  // date, and it is the only form that Efí can split by the Wallet ID of the seller. Plain Pix is only made when a caller asks for
+  // it by name (nothing on the screens does).
+  const method: "pix" | "bolix" = opts.method === "pix" ? "pix" : "bolix";
   const cfg = method === "bolix" ? await requireBilletConfig() : await requireConfig();
 
   if (!opts.force) {
@@ -113,17 +108,7 @@ export const createEnrollmentCharge = async (
   const amount = opts.amount && opts.amount > 0 ? Math.round(opts.amount * 100) / 100 : def.amount;
   if (!(amount > 0)) throw new AppError("ERR_PAYMENT_AMOUNT");
 
-  if (method === "bolix") {
-    try {
-      return await createBolixPayment(lead, userId, amount, def.proposalId, opts.dueDate || null);
-    } catch (err) {
-      // the switch to Bolix was ours, not the person's: when Efí does not issue it (Bolix not enabled in the account, for
-      // example), the charge still goes out as Pix and the commission stays with the company to be paid back by hand
-      if (!switched) throw err;
-      logger.warn(`Bolix for the seller's split failed, falling back to Pix: ${(err as Error).message}`);
-      await addActivity(lead.id, userId, "system", "Não foi possível gerar o Bolix com repasse ao consultor; a cobrança foi gerada em Pix e a comissão fica com a empresa para repasse manual.");
-    }
-  }
+  if (method === "bolix") return createBolixPayment(lead, userId, amount, def.proposalId, opts.dueDate || null);
 
   const minutes = Math.max(5, Number(await getSetting("efi_expiry_min", "1440")) || 1440);
   const txid = `MAT${randomBytes(14).toString("hex")}`;
@@ -177,7 +162,9 @@ const createBolixPayment = async (
   dueDateRaw: string | null
 ): Promise<Payment> => {
   const today = dayBounds().start;
-  const due = dueDateRaw ? new Date(`${dueDateRaw}T12:00:00Z`) : shiftDays(today, 3);
+  // without a date chosen, the due date is the company's default (days from today)
+  const dueDays = Math.min(30, Math.max(1, Math.round(Number(await getSetting("efi_due_days", "3")) || 3)));
+  const due = dueDateRaw ? new Date(`${dueDateRaw}T12:00:00Z`) : shiftDays(today, dueDays);
   if (Number.isNaN(due.getTime())) throw new AppError("ERR_INVALID_DATE");
   const dueDate = ymd(due);
   if (dueDate < ymd(shiftDays(today, 0))) throw new AppError("ERR_PAYMENT_DUE_IN_PAST");

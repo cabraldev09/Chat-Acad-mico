@@ -24,6 +24,7 @@ const useStyles = makeStyles((theme) => ({
     borderRadius: 8, wordBreak: "break-all", display: "flex", justifyContent: "space-between", gap: 8, alignItems: "flex-start",
   },
   hint: { color: theme.palette.text.secondary, fontSize: 13 },
+  pill: { display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 600, padding: "3px 10px", borderRadius: 999 },
   row: { display: "flex", gap: theme.spacing(1), flexWrap: "wrap", alignItems: "center" },
 }));
 
@@ -127,11 +128,26 @@ const SellerWallets = () => {
   );
 };
 
+// A titled block of the payments settings: the title says what it is, one line says why, the fields follow.
+const Block = ({ title, hint, children, last = false }) => {
+  const classes = useStyles();
+  return (
+    <div style={{ display: "grid", gap: 12, paddingBottom: last ? 0 : 22, marginBottom: last ? 0 : 22, borderBottom: last ? 0 : "1px solid rgba(128,128,128,.2)" }}>
+      <div>
+        <Typography variant="subtitle1" style={{ fontWeight: 600 }}>{title}</Typography>
+        {hint && <Typography className={classes.hint}>{hint}</Typography>}
+      </div>
+      {children}
+    </div>
+  );
+};
+
 export const EfiSettings = ({ stages }) => {
   const classes = useStyles();
   const [v, setV] = useState(null);
   const [secret, setSecret] = useState("");
   const [busy, setBusy] = useState("");
+  const [advanced, setAdvanced] = useState(false);
   const load = () => api.get("/payments/efi/settings").then(({ data }) => { setV(data); setSecret(data.clientSecret); }).catch(toastError);
   useEffect(() => { load(); }, []);
   if (!v) return null;
@@ -140,91 +156,84 @@ export const EfiSettings = ({ stages }) => {
     const { data } = await api.put("/payments/efi/settings", { ...v, clientSecret: secret });
     setV(data); setSecret(data.clientSecret); toast.success("Configurações salvas");
   });
-  const upload = async (e) => {
-    const file = e.target.files[0]; e.target.value = "";
-    if (!file) return;
-    const form = new FormData(); form.append("certificate", file);
-    try { const { data } = await api.post("/payments/efi/certificate", form); setV(data); toast.success("Certificado enviado"); } catch (err) { toastError(err); }
-  };
-  const row = (ok, text) => (<div style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13.5 }}><ShieldCheck size={16} style={{ color: ok ? "#16a34a" : "#94a3b8" }} />{text}</div>);
+  const connected = !!v.clientId && !!v.clientSecret;
 
   return (
     <Paper variant="outlined" className={classes.pane}>
-      <div>
-        <Typography variant="subtitle1" style={{ fontWeight: 600 }}>Cobrança da taxa de matrícula pela Efí</Typography>
+      <Block
+        title="Taxa de matrícula pela Efí"
+        hint="A cobrança é sempre um boleto com QR Code de Pix: o aluno paga como preferir até o vencimento, e o sistema detecta o pagamento sozinho.">
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <span className={classes.pill} style={connected ? { background: "rgba(22,163,74,.14)", color: "#15803d" } : { background: "rgba(245,158,11,.18)", color: "#b45309" }}>
+            <ShieldCheck size={14} /> {connected ? "Conta da empresa conectada" : "Informe as credenciais da Efí"}
+          </span>
+          <span className={classes.pill} style={{ background: "rgba(6,147,227,.12)", color: "#0b4279" }}>{v.env === "production" ? "Produção" : "Homologação (testes)"}</span>
+        </div>
+      </Block>
+
+      <Block title="Conta da empresa" hint="A conta Efí que emite as cobranças. Use as credenciais de uma aplicação criada nela (Efí → API → Minhas aplicações). O que não for repassado a um vendedor fica nesta conta.">
+        <div className={classes.row}>
+          <TextField select size="small" variant="outlined" label="Ambiente" value={v.env} onChange={(e) => setV({ ...v, env: e.target.value })} style={{ width: 230 }}>
+            <MenuItem value="sandbox">Homologação (testes)</MenuItem><MenuItem value="production">Produção</MenuItem>
+          </TextField>
+          <TextField size="small" variant="outlined" label="Wallet ID da empresa (opcional)" value={v.companyPayeeCode || ""} onChange={(e) => setV({ ...v, companyPayeeCode: e.target.value })}
+            helperText="Evita que ele seja informado por engano como o de um vendedor." style={{ flex: 1, minWidth: 260 }} />
+        </div>
+        <div className={classes.row}>
+          <TextField size="small" variant="outlined" label="ID do cliente (Client_Id)" value={v.clientId} onChange={(e) => setV({ ...v, clientId: e.target.value })} style={{ flex: 1, minWidth: 260 }} />
+          <TextField size="small" variant="outlined" label="Segredo do cliente (Client_Secret)" type="password" value={secret} onChange={(e) => setSecret(e.target.value)} autoComplete="off" style={{ flex: 1, minWidth: 260 }} />
+        </div>
+        <div className={classes.row}>
+          <Button variant="contained" color="primary" disabled={busy === "save"} onClick={save}>Salvar</Button>
+          <Button variant="outlined" startIcon={<PlugZap size={16} />} disabled={busy === "test"} onClick={run("test", async () => { await api.post("/payments/efi/test"); toast.success("Conexão com a Efí funcionando"); })}>Testar conexão</Button>
+        </div>
+        <Typography className={classes.hint}>O Bolix precisa estar ativo na conta: Efí → Configurações da conta → Configurações de cobranças → Boletos bancários e carnês → Bolix.</Typography>
+      </Block>
+
+      <Block title="Cobrança" hint="Quando vence e o que acontece quando o aluno paga.">
+        <div className={classes.row}>
+          <TextField size="small" variant="outlined" type="number" label="Vence em (dias)" value={v.dueDays ?? 3} onChange={(e) => setV({ ...v, dueDays: e.target.value })} inputProps={{ min: 1, max: 30 }}
+            helperText="Quando o consultor não escolhe a data" style={{ width: 200 }} />
+          <TextField size="small" variant="outlined" type="number" label="Gerar o boleto (dias antes)" value={v.chargeDaysBefore} onChange={(e) => setV({ ...v, chargeDaysBefore: e.target.value })} inputProps={{ min: 0, max: 30 }}
+            helperText="Para vencimentos distantes" style={{ width: 220 }} />
+          <TextField select size="small" variant="outlined" label="Ao pagar, mover o lead para" value={v.moveStageId || ""} onChange={(e) => setV({ ...v, moveStageId: e.target.value || null })} style={{ flex: 1, minWidth: 240 }}>
+            <MenuItem value="">Automático (etapa “Matrícula…”)</MenuItem>
+            {stages.map((st) => (<MenuItem key={st.id} value={st.id}>{st.name}</MenuItem>))}
+          </TextField>
+        </div>
+        <div><Button variant="contained" color="primary" disabled={busy === "save"} onClick={save}>Salvar</Button></div>
+      </Block>
+
+      <Block title="Repasse ao vendedor" hint="O vendedor informa só o Wallet ID da conta Efí dele (em Comissões), ou a administração informa por ele na lista abaixo. Quando o aluno paga, a Efí manda a parte dele direto para a conta dele.">
+        <div className={classes.row}>
+          <TextField size="small" variant="outlined" label="Parte da taxa que vai ao vendedor (%)" type="number" value={v.consultantPct} onChange={(e) => setV({ ...v, consultantPct: e.target.value })} style={{ width: 280 }} inputProps={{ min: 1, max: 100 }} />
+          <TextField select size="small" variant="outlined" label="Quem paga a tarifa da Efí" value={v.feeMode || "proportional"} onChange={(e) => setV({ ...v, feeMode: e.target.value })} style={{ flex: 1, minWidth: 300 }}
+            helperText={(v.feeMode || "proportional") === "company" ? "A empresa paga a tarifa inteira; o vendedor recebe a parte dele sem desconto." : "Cada conta paga a tarifa sobre o que recebe: o vendedor arca com a tarifa da parte dele."}>
+            <MenuItem value="proportional">O vendedor paga a tarifa da parte dele</MenuItem>
+            <MenuItem value="company">Só a empresa paga a tarifa</MenuItem>
+          </TextField>
+        </div>
+        <div><Button variant="contained" color="primary" disabled={busy === "save"} onClick={save}>Salvar</Button></div>
         <Typography className={classes.hint}>
-          O sistema gera um PIX com QR Code para cada candidato (usando o CPF da ficha) e detecta sozinho quando ele paga: pelo aviso da Efí (webhook) e, como garantia, consultando as cobranças abertas a cada 30 segundos.
+          O repasse só existe entre contas Efí e usa apenas o Wallet ID. Se a Efí recusar o Wallet ID de um vendedor, o boleto sai mesmo assim na conta da empresa, o histórico do lead avisa e a comissão fica para repasse manual. Sem Wallet ID, a cobrança é toda da empresa e a comissão aparece em “a repassar” na tela de Comissões.
         </Typography>
-      </div>
-      <div style={{ display: "grid", gap: 6 }}>
-        {row(!!v.clientId && !!v.clientSecret, v.clientId && v.clientSecret ? "Credenciais informadas" : "Credenciais pendentes (Client ID e Client Secret)")}
-        {row(v.certificate, v.certificate ? "Certificado .p12 enviado" : "Certificado .p12 pendente")}
-        {row(!!v.pixKey, v.pixKey ? "Chave PIX informada" : "Chave PIX pendente")}
-      </div>
-      <div style={{ borderTop: "1px solid rgba(128,128,128,.25)", paddingTop: 14 }}>
-        <Typography variant="subtitle1" style={{ fontWeight: 600 }}>Conta da empresa</Typography>
-        <Typography className={classes.hint}>
-          É a conta que emite as cobranças e recebe a taxa de matrícula. As credenciais são as de uma aplicação da API criada nessa conta da Efí (Efí → API → Minhas aplicações). Tudo o que não for repassado a um vendedor fica nela.
-        </Typography>
-      </div>
-      <TextField select size="small" variant="outlined" label="Ambiente" value={v.env} onChange={(e) => setV({ ...v, env: e.target.value })} style={{ maxWidth: 260 }}>
-        <MenuItem value="sandbox">Homologação (testes)</MenuItem><MenuItem value="production">Produção</MenuItem>
-      </TextField>
-      <TextField size="small" variant="outlined" label="ID do cliente (Client_Id)" value={v.clientId} onChange={(e) => setV({ ...v, clientId: e.target.value })} />
-      <TextField size="small" variant="outlined" label="Segredo do cliente (Client_Secret)" type="password" value={secret} onChange={(e) => setSecret(e.target.value)} autoComplete="off" />
-      <TextField size="small" variant="outlined" label="Chave PIX da conta Efí" value={v.pixKey} onChange={(e) => setV({ ...v, pixKey: e.target.value })} helperText="CPF/CNPJ, e-mail, telefone ou chave aleatória" />
-      <TextField size="small" variant="outlined" label="Wallet ID da conta da empresa (opcional)" value={v.companyPayeeCode || ""} onChange={(e) => setV({ ...v, companyPayeeCode: e.target.value })} helperText="Serve para impedir que o Wallet ID da empresa seja informado por engano como o de um vendedor." />
-      <div className={classes.row}>
-        <Button component="label" variant="outlined" startIcon={<KeyRound size={16} />}>{v.certificate ? "Trocar certificado (.p12)" : "Enviar certificado (.p12)"}
-          <input hidden type="file" accept=".p12,.pfx" onChange={upload} /></Button>
-        <Typography className={classes.hint}>Baixe em Efí → API → Meus certificados. Fica guardado só no servidor.</Typography>
-      </div>
-      <div className={classes.row}>
-        <TextField size="small" variant="outlined" label="Validade da cobrança (minutos)" type="number" value={v.expiryMinutes} onChange={(e) => setV({ ...v, expiryMinutes: e.target.value })} style={{ width: 230 }} />
-        <TextField select size="small" variant="outlined" label="Ao pagar, mover o lead para" value={v.moveStageId || ""} onChange={(e) => setV({ ...v, moveStageId: e.target.value || null })} style={{ minWidth: 260 }}>
-          <MenuItem value="">Automático (etapa “Matrícula…”)</MenuItem>
-          {stages.map((st) => (<MenuItem key={st.id} value={st.id}>{st.name}</MenuItem>))}
-        </TextField>
-      </div>
-      <div style={{ borderTop: "1px solid rgba(128,128,128,.25)", paddingTop: 14 }}>
-        <Typography variant="subtitle1" style={{ fontWeight: 600 }}>Repasse ao vendedor</Typography>
-        <Typography className={classes.hint}>
-          O vendedor informa só o Wallet ID da conta Efí dele (em Comissões), ou a administração informa por ele na lista mais abaixo. Quando o aluno paga, a Efí manda a parte do vendedor direto para a conta dele e o restante fica na conta da empresa.
-        </Typography>
-      </div>
-      <div className={classes.row}>
-        <TextField size="small" variant="outlined" label="Parte da taxa que vai ao vendedor (%)" type="number" value={v.consultantPct} onChange={(e) => setV({ ...v, consultantPct: e.target.value })} style={{ width: 260 }} inputProps={{ min: 1, max: 100 }} />
-        <TextField select size="small" variant="outlined" label="Tarifa da Efí no repasse" value={v.feeMode || "proportional"} onChange={(e) => setV({ ...v, feeMode: e.target.value })} style={{ width: "100%" }}>
-          <MenuItem value="proportional">Cada conta paga a sua parte (padrão da Efí)</MenuItem>
-          <MenuItem value="company">Só a empresa paga a tarifa</MenuItem>
-        </TextField>
-        <TextField select size="small" variant="outlined" label="Forma de cobrança padrão" value={v.defaultMethod || "pix"} onChange={(e) => setV({ ...v, defaultMethod: e.target.value })} style={{ width: "100%" }}>
-          <MenuItem value="pix">Pix com QR Code (Bolix quando o vendedor tem Wallet ID)</MenuItem><MenuItem value="bolix">Sempre Bolix (boleto com Pix)</MenuItem>
-        </TextField>
-        <TextField size="small" variant="outlined" label="Gerar a cobrança agendada (dias antes)" type="number" value={v.chargeDaysBefore} onChange={(e) => setV({ ...v, chargeDaysBefore: e.target.value })} style={{ width: 260 }} inputProps={{ min: 0, max: 30 }} />
-      </div>
-      <div style={{ background: "rgba(6,147,227,.08)", border: "1px solid rgba(6,147,227,.25)", borderRadius: 10, padding: "10px 14px", display: "grid", gap: 4 }}>
-        <Typography style={{ fontSize: 13.5, fontWeight: 600 }}>Como o repasse funciona na Efí</Typography>
-        <Typography className={classes.hint}>• O repasse só acontece entre contas Efí e usa apenas o Wallet ID (o “identificador de conta” de quem recebe).</Typography>
-        <Typography className={classes.hint}>• O Pix puro não permite repasse só pelo Wallet ID. Por isso, quando o vendedor tem Wallet ID, a cobrança sai como Bolix: um boleto com QR Code Pix, e o aluno paga como preferir.</Typography>
-        <Typography className={classes.hint}>• É preciso ativar o Bolix na conta da empresa: Efí → Configurações da conta → Configurações de cobranças → Boletos bancários e carnês → Bolix.</Typography>
-        <Typography className={classes.hint}>• Se a Efí não aceitar o Wallet ID de um vendedor, a cobrança sai mesmo assim na conta da empresa, a equipe é avisada no histórico do lead e a comissão fica para repasse manual.</Typography>
-        <Typography className={classes.hint}>• Sem Wallet ID, a cobrança é toda da empresa e a comissão aparece em “a repassar” na tela de Comissões.</Typography>
-      </div>
-      <div className={classes.row}>
-        <Button variant="contained" color="primary" disabled={busy === "save"} onClick={save}>Salvar</Button>
-        <Button variant="outlined" startIcon={<PlugZap size={16} />} disabled={busy === "test"} onClick={run("test", async () => { await api.post("/payments/efi/test"); toast.success("Conexão com a Efí funcionando"); })}>Testar conexão</Button>
-      </div>
-      <div style={{ borderTop: "1px solid rgba(128,128,128,.25)", paddingTop: 16 }}>
-        <Typography variant="subtitle1" style={{ fontWeight: 600 }}>Aviso automático de pagamento (webhook)</Typography>
-        <Typography className={classes.hint} gutterBottom>
-          A Efí só entrega em endereço público HTTPS. {v.publicUrlIsHttps ? "O endereço público já está em HTTPS." : "Em localhost, use um túnel (ex.: cloudflared) e defina PUBLIC_URL em backend/.env. Sem isso o sistema confere os pagamentos sozinho a cada 30 s."}
-        </Typography>
-        <Copyable text={v.webhookUrl} />
-        <Button style={{ marginTop: 8 }} variant="outlined" startIcon={<RefreshCw size={16} />} disabled={busy === "hook"}
-          onClick={run("hook", async () => { await api.post("/payments/efi/webhook"); toast.success("Webhook registrado na Efí"); })}>Registrar webhook na Efí</Button>
-      </div>
+      </Block>
+
       <SellerWallets />
+
+      <Block title="Avançado" hint="Só mexa se a Efí pedir." last>
+        <div><Button size="small" onClick={() => setAdvanced((x) => !x)}>{advanced ? "Esconder" : "Mostrar o aviso automático de pagamento (webhook)"}</Button></div>
+        {advanced && (
+          <div style={{ display: "grid", gap: 8 }}>
+            <Typography className={classes.hint}>
+              A Efí avisa o pagamento neste endereço (precisa ser público e em HTTPS). {v.publicUrlIsHttps ? "O endereço público já está em HTTPS." : "Aqui ele ainda não é HTTPS: o sistema confere os pagamentos sozinho a cada 30 segundos."}
+            </Typography>
+            <Copyable text={v.webhookUrl} />
+            <div><Button variant="outlined" startIcon={<RefreshCw size={16} />} disabled={busy === "hook"}
+              onClick={run("hook", async () => { await api.post("/payments/efi/webhook"); toast.success("Webhook registrado na Efí"); })}>Registrar webhook na Efí</Button></div>
+          </div>
+        )}
+      </Block>
     </Paper>
   );
 };

@@ -87,6 +87,9 @@ export const PHRASES = [
   "Mude de carreira. Estude com a gente.",
   "Aponte a câmera e conheça.",
   "Indique, estude, transforme.",
+  "Ela voltou a estudar. E você?",
+  "Sua carreira não precisa esperar.",
+  "Graduação onde você estiver.",
 ];
 
 // the course of the day for the idea that needs one: always the same one on a given day, so the text does not change on every visit

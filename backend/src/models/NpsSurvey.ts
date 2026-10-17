@@ -34,6 +34,10 @@ class NpsSurvey extends Model<NpsSurvey> {
   @Column
   awaitingComment: boolean;
 
+  // the group the student chose with the buttons (promoter | neutral | detractor), before the exact score
+  @Column
+  scoreGroup: string;
+
   @AllowNull(false)
   @Column(DataType.DATE(6))
   sentAt: Date;

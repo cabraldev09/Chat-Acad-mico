@@ -1,6 +1,6 @@
-# Rotas da API (394)
+# Rotas da API (401)
 
-Públicas: 31 · logado (qualquer perfil): 230 · gestão: 94 · admin: 31
+Públicas: 32 · logado (qualquer perfil): 236 · gestão: 94 · admin: 31
 
 ## Públicas (sem login)
 
@@ -23,6 +23,7 @@ Públicas: 31 · logado (qualquer perfil): 230 · gestão: 94 · admin: 31
 - POST /efi/:secret/pix (efiWebhookRoutes.ts)
 - POST /efi/:secret/billet (efiWebhookRoutes.ts)
 - POST /efi/:secret (efiWebhookRoutes.ts)
+- GET /_aluna.webp (leadFormRoutes.ts)
 - GET /:token (leadFormRoutes.ts)
 - POST /:token/submit (leadFormRoutes.ts)
 - GET /meta/:whatsappId (metaWebhookRoutes.ts)
@@ -72,6 +73,8 @@ Públicas: 31 · logado (qualquer perfil): 230 · gestão: 94 · admin: 31
 - POST /schedules/:id/cancel (extraRoutes.ts)
 - DELETE /schedules/:id (extraRoutes.ts)
 - PUT /me/preferences (extraRoutes.ts)
+- POST /retention/preview (extraRoutes.ts)
+- POST /retention/send (extraRoutes.ts)
 - POST /retention/nps/send/:leadId (extraRoutes.ts)
 - POST /retention/risk/:leadId/message (extraRoutes.ts)
 - POST /retention/rematricula/:leadId (extraRoutes.ts)

@@ -66,6 +66,7 @@ import LeadReminderLog from "../models/LeadReminderLog";
 import LeadDocument from "../models/LeadDocument";
 import MarketingSpend from "../models/MarketingSpend";
 import NpsSurvey from "../models/NpsSurvey";
+import RetentionMessage from "../models/RetentionMessage";
 import AffiliateBonus from "../models/AffiliateBonus";
 
 // eslint-disable-next-line
@@ -142,6 +143,7 @@ const models = [
   LeadDocument,
   MarketingSpend,
   NpsSurvey,
+  RetentionMessage,
   AffiliateBonus
 ];
 

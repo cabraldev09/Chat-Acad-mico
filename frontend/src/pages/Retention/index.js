@@ -6,6 +6,10 @@ import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Too
 import { Download, MessageSquare, Play, RefreshCw, Send, User } from "lucide-react";
 
 import ConfirmationModal from "../../components/ConfirmationModal";
+import openSocket from "../../services/socket-io";
+import WhatsPreview, { fillSample } from "./Preview";
+import Envios, { Composer } from "./Envios";
+import Operacao from "./Operacao";
 import MainContainer from "../../components/MainContainer";
 import MainHeader from "../../components/MainHeader";
 import Title from "../../components/Title";
@@ -38,6 +42,7 @@ const useStyles = makeStyles((theme) => {
     },
     toolbar: { display: "flex", gap: theme.spacing(1.25), flexWrap: "wrap", alignItems: "center", marginBottom: theme.spacing(1.5) },
     badge: { marginLeft: 6, fontSize: 11.5, fontWeight: 700, padding: "1px 7px", borderRadius: 999, background: "rgba(220,38,38,.14)", color: "#dc2626" },
+    preview: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: theme.spacing(2), alignItems: "start", [theme.breakpoints.down("sm")]: { gridTemplateColumns: "1fr" } },
     diverge: { position: "relative", width: 120, height: 8, borderRadius: 6, background: theme.palette.action.hover },
   };
 });
@@ -359,7 +364,17 @@ const Config = () => {
             <FormControlLabel key={k} control={<Checkbox color="primary" checked={c.nps.moments.includes(k)} onChange={(e) => save({ nps: { moments: e.target.checked ? [...c.nps.moments, k] : c.nps.moments.filter((m) => m !== k) } })} />} label={KIND[k]} />
           ))}
         </div>
-        <TextField fullWidth multiline rows={2} size="small" variant="outlined" label="Pergunta (use {{nome}})" value={c.nps.question} onChange={(e) => setC({ ...c, nps: { ...c.nps, question: e.target.value } })} onBlur={() => save({ nps: { question: c.nps.question } })} style={{ marginTop: 8 }} />
+        <FormControlLabel control={<Switch color="primary" checked={c.nps.buttons !== false} onChange={(e) => save({ nps: { buttons: e.target.checked } })} />}
+          label="Botões no WhatsApp (API oficial): o aluno toca em vez de digitar" />
+        <div className={classes.preview}>
+          <TextField fullWidth multiline rows={3} size="small" variant="outlined" label="Pergunta (use {{nome}})" value={c.nps.question} onChange={(e) => setC({ ...c, nps: { ...c.nps, question: e.target.value } })} onBlur={() => save({ nps: { question: c.nps.question } })} />
+          <div>
+            <div className={classes.hint} style={{ marginBottom: 6 }}>Como o aluno recebe</div>
+            <WhatsPreview text={c.nps.question} buttons={c.nps.buttons !== false ? ["Recomendo (9-10)", "Neutro (7-8)", "Não recomendo (0-6)"] : []}
+              note={c.nps.buttons !== false ? "Depois do toque, vem a nota exata (por exemplo 9 ou 10). Quem usa conexão por QR Code responde digitando de 0 a 10." : "O aluno responde digitando a nota de 0 a 10."} />
+          </div>
+        </div>
+        <Typography className={classes.hint} style={{ marginTop: 8 }}>Cada resposta é registrada com a nota e o motivo. Nota de 0 a 6 gera um alerta na hora, uma tarefa para o tutor e a etiqueta “Detrator NPS”.</Typography>
       </div>
 
       <div className={classes.card}>
@@ -368,7 +383,10 @@ const Config = () => {
         <div className={classes.row}>
           <TextField size="small" variant="outlined" type="number" label="Dias sem notícias" value={c.risk.days} onChange={(e) => setC({ ...c, risk: { ...c.risk, days: e.target.value } })} onBlur={() => save({ risk: { days: c.risk.days } })} style={{ width: 170 }} />
         </div>
-        <TextField fullWidth multiline rows={2} size="small" variant="outlined" label="Mensagem de retenção (use {{nome}})" value={c.risk.message} onChange={(e) => setC({ ...c, risk: { ...c.risk, message: e.target.value } })} onBlur={() => save({ risk: { message: c.risk.message } })} style={{ marginTop: 8 }} />
+        <div className={classes.preview} style={{ marginTop: 8 }}>
+          <TextField fullWidth multiline rows={3} size="small" variant="outlined" label="Mensagem de retenção (use {{nome}})" value={c.risk.message} onChange={(e) => setC({ ...c, risk: { ...c.risk, message: e.target.value } })} onBlur={() => save({ risk: { message: c.risk.message } })} />
+          <div><div className={classes.hint} style={{ marginBottom: 6 }}>Como o aluno recebe</div><WhatsPreview text={c.risk.message} /></div>
+        </div>
       </div>
 
       <div className={classes.card}>
@@ -380,7 +398,12 @@ const Config = () => {
           <TextField size="small" variant="outlined" type="date" label="Fecha em" InputLabelProps={{ shrink: true }} value={r.endsAt} onChange={(e) => setC({ ...c, rematricula: { ...r, endsAt: e.target.value } })} onBlur={() => save({ rematricula: { endsAt: r.endsAt } })} style={{ width: 170 }} />
         </div>
         <FormControlLabel control={<Switch color="primary" checked={!!r.auto} onChange={(e) => save({ rematricula: { auto: e.target.checked } })} />} label="Avisar os alunos por WhatsApp (na abertura, 7 dias antes e na véspera do fim)" />
-        {r.auto && <TextField fullWidth multiline rows={2} size="small" variant="outlined" label="Mensagem (use {{nome}} e {{periodo}})" value={r.message} onChange={(e) => setC({ ...c, rematricula: { ...r, message: e.target.value } })} onBlur={() => save({ rematricula: { message: r.message } })} />}
+        {r.auto && (
+          <div className={classes.preview}>
+            <TextField fullWidth multiline rows={3} size="small" variant="outlined" label="Mensagem (use {{nome}} e {{periodo}})" value={r.message} onChange={(e) => setC({ ...c, rematricula: { ...r, message: e.target.value } })} onBlur={() => save({ rematricula: { message: r.message } })} />
+            <div><div className={classes.hint} style={{ marginBottom: 6 }}>Como o aluno recebe</div><WhatsPreview text={r.message} extra={{ periodo: r.term || "2026/2" }} /></div>
+          </div>
+        )}
       </div>
 
       <Button variant="outlined" startIcon={<Play size={15} />} disabled={busy} onClick={run}>Rodar agora</Button>
@@ -395,25 +418,42 @@ const Retention = () => {
   const classes = useStyles();
   const { user } = useContext(AuthContext);
   const manager = isManager(user);
-  const [tab, setTab] = useState(0);
+  const [tab, setTab] = useState("nps");
   const [summary, setSummary] = useState(null);
+  const [compose, setCompose] = useState(false);
   const loadSummary = useCallback(() => api.get("/retention/summary").then(({ data }) => setSummary(data)).catch(() => {}), []);
   useEffect(() => { loadSummary(); }, [loadSummary]);
+  // a student gave a low score: the team sees it at once
+  useEffect(() => {
+    const socket = openSocket();
+    const mine = (d) => manager || !d.tutorId || d.tutorId === user.id;
+    socket.on("npsAlert", (d) => {
+      if (!mine(d)) return;
+      toast.warn(`${d.leadName} deu nota ${d.score} na pesquisa de satisfação. Veja em Satisfação e fale com o aluno.`, { autoClose: 12000, toastId: `nps-${d.leadId}-${d.score}` });
+      loadSummary();
+    });
+    return () => socket.disconnect();
+  }, [loadSummary, manager, user.id]);
 
   const r = summary && summary.risk;
   const m = summary && summary.rematricula;
   const n = summary && summary.nps;
   const remState = !m ? "" : !m.term ? "Período não configurado" : m.window === "open" ? (m.daysLeft === 0 ? "Termina hoje" : `Termina em ${plural(m.daysLeft, "dia", "dias")}`) : m.window === "before" ? "Ainda não abriu" : m.window === "closed" ? "Encerrada" : "Sem período";
   const remTone = !m || !m.term ? "#64748b" : m.window === "open" && m.daysLeft <= 7 && m.pending > 0 ? RED : m.pending > 0 && m.window === "open" ? AMBER : GREEN;
+  const open = n ? n.detractorsOpen || 0 : 0;
   const cards = !summary ? [] : [
-    [1, "Em risco de evasão", r.total, r.total === 0 ? "Ninguém sem notícias agora" : `${r.high} em nível alto · sem notícias há ${r.days}+ dias`, r.high > 0 ? RED : r.total > 0 ? AMBER : GREEN],
-    [2, m.term ? `Faltam renovar (${m.term})` : "Rematrícula", m.term ? m.pending : "—", remState, remTone],
-    [0, "Satisfação (30 dias)", n.value === null ? "—" : n.value, n.answered === 0 ? "Sem respostas no período" : `${plural(n.answered, "resposta", "respostas")} · ${plural(n.detractors, "detrator", "detratores")}`, n.detractors > 0 ? RED : n.value !== null && n.value >= 50 ? GREEN : AMBER],
+    ["risk", "Em risco de evasão", r.total, r.total === 0 ? "Ninguém sem notícias agora" : `${r.high} em nível alto · sem notícias há ${r.days}+ dias`, r.high > 0 ? RED : r.total > 0 ? AMBER : GREEN],
+    ["remat", m.term ? `Faltam renovar (${m.term})` : "Rematrícula", m.term ? m.pending : "—", remState, remTone],
+    ["nps", "Satisfação (30 dias)", n.value === null ? "—" : n.value, open > 0 ? `${plural(open, "detrator", "detratores")} para atender` : n.answered === 0 ? "Sem respostas no período" : `${plural(n.answered, "resposta", "respostas")} · tudo atendido`, open > 0 || n.detractors > 0 ? RED : n.value !== null && n.value >= 50 ? GREEN : AMBER],
   ];
 
   return (
     <MainContainer>
-      <MainHeader><Title>Retenção</Title></MainHeader>
+      <Composer open={compose} onClose={() => setCompose(false)} onSent={() => { loadSummary(); }} manager={manager} />
+      <MainHeader>
+        <Title>Retenção</Title>
+        <Button variant="contained" color="primary" startIcon={<Send size={16} />} onClick={() => setCompose(true)}>Novo envio</Button>
+      </MainHeader>
       <div className={classes.body}>
         <div className={classes.wrap}>
           {summary && (
@@ -428,15 +468,19 @@ const Retention = () => {
             </div>
           )}
           <Tabs value={tab} onChange={(e, v) => setTab(v)} indicatorColor="primary" textColor="primary" variant="scrollable" scrollButtons="auto" style={{ marginBottom: 16 }}>
-            <Tab label="Satisfação (NPS)" />
-            <Tab label={<span>Risco de evasão{r && r.total > 0 ? <span className={classes.badge}>{r.total}</span> : null}</span>} />
-            <Tab label={<span>Rematrícula{m && m.pending > 0 && m.window === "open" ? <span className={classes.badge}>{m.pending}</span> : null}</span>} />
-            {manager && <Tab label="Configurar" />}
+            <Tab value="nps" label={<span>Satisfação (NPS){open > 0 ? <span className={classes.badge}>{open}</span> : null}</span>} />
+            <Tab value="risk" label={<span>Risco de evasão{r && r.total > 0 ? <span className={classes.badge}>{r.total}</span> : null}</span>} />
+            <Tab value="remat" label={<span>Rematrícula{m && m.pending > 0 && m.window === "open" ? <span className={classes.badge}>{m.pending}</span> : null}</span>} />
+            <Tab value="envios" label="Envios" />
+            <Tab value="operacao" label="Operação" />
+            {manager && <Tab value="config" label="Configurar" />}
           </Tabs>
-          {tab === 0 && <Nps manager={manager} />}
-          {tab === 1 && <Risk manager={manager} onChanged={loadSummary} />}
-          {tab === 2 && <Rematricula manager={manager} onChanged={loadSummary} />}
-          {tab === 3 && manager && <Config />}
+          {tab === "nps" && <Nps manager={manager} />}
+          {tab === "risk" && <Risk manager={manager} onChanged={loadSummary} />}
+          {tab === "remat" && <Rematricula manager={manager} onChanged={loadSummary} />}
+          {tab === "envios" && <Envios manager={manager} canCompose />}
+          {tab === "operacao" && <Operacao />}
+          {tab === "config" && manager && <Config />}
         </div>
       </div>
     </MainContainer>
