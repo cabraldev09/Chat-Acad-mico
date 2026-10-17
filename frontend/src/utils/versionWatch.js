@@ -2,8 +2,10 @@
 // problem that was already fixed keeps appearing. Here the tab learns that it is out of date:
 //  - the build writes /version.json with its id; the tab compares it with its own, when it opens, every few minutes
 //    and whenever it comes back to the screen;
-//  - once it is out of date, the next move to another screen loads that screen from the server (so it already runs
-//    the new version, without interrupting what the person is typing), and a small notice offers "Atualizar agora";
+//  - once it is out of date, the tab reloads BY ITSELF at a safe moment (see `safeToReload`): never while the person has
+//    something typed in a field or a window open, and only after a few seconds without touching anything (or at once when
+//    the tab is in the background). The next move to another screen is also loaded from the server. If a safe moment does
+//    not come for a few minutes, a small notice offers "Atualizar agora";
 //  - a screen that fails to draw in an out-of-date tab reloads by itself (see PageErrorBoundary).
 
 // __BUILD_ID__ is put in place by the build (vite.config.js, `define`); in development it does not exist
@@ -43,10 +45,70 @@ const showNotice = () => {
   document.body.appendChild(notice);
 };
 
-const markStale = () => { if (stale) showNotice(); };
+// ---- the automatic update
+const RELOADS = "versionReloads";
+let lastTouch = Date.now();
+let staleSince = 0;
+let ticking = false;
+
+// a reload loop (a copy of the page kept by the network that still answers with the old version) is cut after two tries
+const reloadsLeft = () => {
+  try {
+    const recent = JSON.parse(window.sessionStorage.getItem(RELOADS) || "[]").filter((t) => Date.now() - t < 10 * 60 * 1000);
+    return recent.length < 2;
+  } catch (e) {
+    return true;
+  }
+};
+const noteReload = () => {
+  try {
+    const recent = JSON.parse(window.sessionStorage.getItem(RELOADS) || "[]").filter((t) => Date.now() - t < 10 * 60 * 1000);
+    window.sessionStorage.setItem(RELOADS, JSON.stringify([...recent, Date.now()]));
+  } catch (e) { /* no storage: the notice still works */ }
+};
+
+// something typed and not sent yet (a message, a form): reloading would lose it
+const hasTypedText = () => {
+  const el = document.activeElement;
+  if (!el) return false;
+  const tag = el.tagName;
+  if (tag === "TEXTAREA") return String(el.value || "").length > 0;
+  if (tag === "INPUT" && !["checkbox", "radio", "button", "submit", "range", "color", "file"].includes(el.type)) return String(el.value || "").length > 0;
+  return !!el.isContentEditable && String(el.textContent || "").trim().length > 0;
+};
+const windowOpen = () => !!document.querySelector('[role="dialog"], [aria-modal="true"]');
+
+// the safe moment: nothing typed, no window open, and either the tab is in the background or the person stopped touching it
+export const safeToReload = () => {
+  if (hasTypedText() || windowOpen()) return false;
+  if (document.visibilityState === "hidden") return true;
+  return Date.now() - lastTouch > 15000;
+};
+
+const autoTick = () => {
+  if (!stale) return;
+  if (!staleSince) staleSince = Date.now();
+  if (reloadsLeft() && safeToReload()) {
+    noteReload();
+    window.location.reload();
+    return;
+  }
+  // no safe moment for a while (or the reloads did not fix it): the person decides
+  if (Date.now() - staleSince > 3 * 60 * 1000 || !reloadsLeft()) showNotice();
+};
+
+const markStale = () => {
+  if (!stale) return;
+  autoTick();
+  if (!ticking) {
+    ticking = true;
+    setInterval(autoTick, 5000);
+  }
+};
 
 export const installVersionWatch = () => {
   if (BUILD === "dev" || typeof window === "undefined") return;
+  ["keydown", "pointerdown", "wheel", "touchstart"].forEach((ev) => window.addEventListener(ev, () => { lastTouch = Date.now(); }, { capture: true, passive: true }));
   const run = () => checkVersion().then(markStale);
   setTimeout(run, 15000);
   setInterval(run, 3 * 60 * 1000);
