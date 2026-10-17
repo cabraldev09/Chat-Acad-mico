@@ -196,7 +196,10 @@ async function sweepRole(browser, name, def) {
         }, text);
         if (!clicked) continue;
         await sleep(700);
-        const fields = await page.$$('[role="dialog"] input:not([type=file]):not([type=checkbox]):not([type=radio]):not([type=hidden]), [role="dialog"] textarea, form input:not([type=file]):not([type=checkbox]):not([type=radio]):not([type=hidden]):not([type=password])');
+        // Fields that open a picker of the system (date, month, time, color...) are never touched: on a Mac they open a real calendar
+        // window on top of whatever the person is doing. Only plain text fields are typed into.
+        const PICKERS = ":not([type=date]):not([type=month]):not([type=week]):not([type=time]):not([type=datetime-local]):not([type=color]):not([type=range])";
+        const fields = await page.$$(`[role="dialog"] input:not([type=file]):not([type=checkbox]):not([type=radio]):not([type=hidden])${PICKERS}, [role="dialog"] textarea, form input:not([type=file]):not([type=checkbox]):not([type=radio]):not([type=hidden]):not([type=password])${PICKERS}`);
         for (const field of fields.slice(0, 8)) {
           try {
             await field.click({ clickCount: 3 });
