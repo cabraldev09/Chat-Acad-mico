@@ -179,6 +179,25 @@ const startAnthropicMock = () => {
     const systemText = Array.isArray(req.body.system) ? req.body.system.map(b => b.text).join("\n") : "";
     const inStage = /Etapa atual: Teste de Etapa/.test(systemText);
     const result = Array.isArray(last.content) && last.content.find(b => b.type === "tool_result");
+    // the commercial agent (graduation): the answer and what it understood come in the same turn, as the real model does
+    if (/Em TODA resposta chame registrar_turno/.test(systemText)) {
+      const turn = (txt, input, extra = []) => res.json({ content: [{ type: "text", text: txt }, ...extra, { type: "tool_use", id: `toolu_c${anthropic.requests.length}`, name: "registrar_turno", input }], stop_reason: "tool_use", usage });
+      if (result) {
+        const out = JSON.parse(result.content);
+        if (out.duracaoTexto !== undefined) return turn(`${out.nome}: ${out.duracaoTexto}, formato ${out.modalidade}. Quer ver a grade?`, { intent: "course_duration" });
+        if (out.modalidadeAtual !== undefined) return turn(`Regra: ${out.regulacaoAplicavel || "sem regra cadastrada"}; práticas presenciais: ${out.praticaPresencial}; cronograma definido: ${out.cronogramaPraticasDefinido}.`, { intent: "mec" });
+        return turn("Anotado!", { intent: "other" });
+      }
+      const said2 = typeof last.content === "string" ? last.content : "";
+      if (/transferir/i.test(said2)) return turn("Entendi! Com o seu histórico em PDF conseguimos pedir uma análise curricular. Pode me enviar o arquivo?", { intent: "transfer", curso: "Direito", cidade: "Porto Velho", tipo_ingresso: "transfer" });
+      if (/Direito em Porto Velho/i.test(said2)) return turn("Perfeito, Direito em Porto Velho! Posso te explicar como funciona o curso?", { intent: "other", curso: "Direito", cidade: "Porto Velho", tipo_ingresso: "first_degree", nome: "Paulo Mendes" });
+      if (/dura|tempo/i.test(said2)) return tool("buscar_curso", { courseName: "Direito" });
+      if (/mec/i.test(said2)) return tool("buscar_regra_modalidade", { courseName: "Direito" });
+      if (/nasa/i.test(said2)) return turn("Essa informação eu prefiro confirmar com a equipe para não te passar nada incorreto.", { intent: "unknown", pergunta_sem_resposta: "convênio com a Nasa" });
+      if (/vou pensar/i.test(said2)) return turn("Combinado! Fico no aguardo. 😊", { intent: "follow_up", retorno_em: "2026-12-01", motivo_retorno: "vai conversar com a família" });
+      if (/não tenho o histórico/i.test(said2)) return turn("Sem problema!", { intent: "other", tem_historico: false }, [{ type: "tool_use", id: `toolu_x${anthropic.requests.length}`, name: "escolher_resultado", input: { resultado: "sem_historico" } }]);
+      return turn("Claro! Pode me contar mais?", { intent: "other" });
+    }
     if (result) {
       const out = JSON.parse(result.content);
       if (inStage && out.valor_invalido) return text("Pode me passar o e-mail completo, por favor?");
@@ -319,8 +338,26 @@ const startEfiMock = () => {
 // ---------------------------------------------------------------- harness
 const results = [];
 const test = async (name, fn) => {
+  const from = global.__backendLog ? global.__backendLog().length : 0;
   try { await fn(); results.push([true, name]); console.log(`  ✓ ${name}`); }
-  catch (e) { results.push([false, `${name} -> ${e.message}`]); console.log(`  ✗ ${name}\n      ${e.message}`); }
+  catch (e) {
+    results.push([false, `${name} -> ${e.message}`]); console.log(`  ✗ ${name}\n      ${e.message}`);
+    // what the server complained about while this check ran (without the noise of the login tests)
+    if (process.env.E2E_DEBUG) {
+      try {
+        console.log("      --- debug ---");
+        console.log(psql(DB, pgSql(`SELECT id, ticketId, fromMe, left(body, 90) FROM Messages ORDER BY id DESC LIMIT 14`)));
+        console.log(psql(DB, pgSql(`SELECT id, flowId, ticketId, status, nodeId, left(vars, 120) FROM ChatFlowRuns ORDER BY id DESC LIMIT 5`)));
+        anthropic.requests.slice(-4).forEach(r => console.log("      request:", JSON.stringify(r.messages[r.messages.length - 1]).slice(0, 700)));
+        console.log(global.__backendLog().split("\n").filter(l => /ERROR|Error|error:|TypeError|ReferenceError| at /.test(l) && !/QR|Efí|INVALID_CRED|TOO_MANY/.test(l)).slice(-40).join("\n"));
+      } catch (err) { console.log(`      debug failed: ${err.message}`); }
+      if (process.env.E2E_DEBUG === "stop") { try { backend.kill(); } catch (er) {} process.exit(1); }
+    }
+    if (global.__backendLog) {
+      const lines = global.__backendLog().slice(from).split("\n").filter(l => /ERROR|WARN|Error|at /.test(l) && !/INVALID_CREDENTIALS|TOO_MANY/.test(l)).slice(0, 14);
+      if (lines.length) console.log(`      server: ${lines.join("\n              ").slice(0, 1800)}`);
+    }
+  }
 };
 const assert = (c, m) => { if (!c) throw new Error(m || "assertion failed"); };
 
@@ -2900,6 +2937,7 @@ const postMeta = (id, payload, secret, badSig) => {
       const c = "5511920000103";
       await typed(c, "wamid.blk-c1", "oi");
       await waitFor(() => cloudTexts(before0).some(t => /Qual é o seu nome completo/.test(t)) && ticketOf(c), 15000, "ticket of the third person");
+      await waitFor(() => Number(sql(`SELECT COUNT(*) FROM Messages WHERE ticketId=${ticketOf(c)} AND fromMe=true`)) >= 1, 8000, "the reply is stored");
       mark = graph.sent.length;
       await typed(c, "wamid.blk-c2", "quero falar com uma pessoa");
       await waitFor(() => cloudTexts(mark).some(t => /Vou chamar um colega/.test(t)), 15000, "the handoff message");
@@ -2935,6 +2973,177 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(gen.kind === "agent" && gen.status === "draft" && gen.errors === 0 && gen.graph.nodes.some(n => n.type === "stage" && n.data.objective && n.data.fields.length === 2 && n.data.outcomes[0].id === "reclamar"), `generated flow ${JSON.stringify(gen.issues)}`);
       assert(gen.graph.edges.some(e => e.sourceHandle === "reclamar") && gen.graph.edges.some(e => e.sourceHandle === "done"), "the exits were not connected");
       assert((await http.post(`/flows/${r.data.flowId}/publish`, {}, auth())).status === 200, "the generated agent cannot be published");
+    });
+    await test("commercial agent (graduation): made from the template, keeps the CRM by rules, never invents a price, hands over with a brief, never enrolls", async () => {
+      await http.put(`/ai-agents/${aiId}`, { active: false }, auth());
+      // 1) the template: agent turned off, answers by subject in the knowledge base, the funnel mapped and completed, a valid draft
+      const list = (await http.get("/ai-agent-templates", auth())).data;
+      const tpl = list.find(t => t.key === "graduacao_comercial_cruzeiro");
+      assert(tpl && tpl.name === "Comercial — Graduação" && tpl.commercial === true, `template listed ${JSON.stringify(tpl)}`);
+      const made = await http.post("/ai-agents/from-template", { template: "graduacao_comercial_cruzeiro" }, auth());
+      assert(made.status === 201 && made.data.funnel && Array.isArray(made.data.funnel.created), `made ${made.status} ${JSON.stringify(made.data)}`);
+      const agentId = made.data.agentId, flowId = made.data.flowId;
+      assert(sql(`SELECT active FROM AiAgents WHERE id=${agentId}`) === "0", "the commercial agent started turned on");
+      const topics = sql(`SELECT string_agg(topic, ',') FROM KbDocuments WHERE agentId=${agentId}`);
+      ["institutional/tutoring", "institutional/platform", "institutional/internship", "institutional/mec"].forEach(t => assert(topics.includes(t), `the knowledge base lacks ${t}: ${topics}`));
+      assert(!topics.includes("institutional/faculty") && !topics.includes("institutional/recognition"), "texts nobody approved were invented");
+      const fun = (await http.get("/crm-funnel", auth())).data;
+      assert(fun.keys.length === 15 && fun.keys.every(k => k.stageId), `funnel not complete: ${fun.keys.filter(k => !k.stageId).map(k => k.key)}`);
+      assert(new Set(fun.keys.map(k => k.stageId)).size === 15, "two steps share a column");
+      const draft = (await http.get(`/flows/${flowId}`, auth())).data;
+      assert(draft.kind === "agent" && draft.errors === 0 && draft.status === "draft", `flow ${draft.errors} ${JSON.stringify(draft.issues)}`);
+      const stageName = key => fun.keys.find(k => k.key === key).name;
+      // the funnel can be changed, but a won column can not serve a step that is not "won"
+      const wrongMap = Object.fromEntries(fun.keys.map(k => [k.key, k.stageId]));
+      wrongMap.enrolled = fun.keys.find(k => k.key === "new_lead").stageId;
+      assert((await http.put("/crm-funnel", { map: wrongMap }, auth())).status === 400, "an open column was accepted for 'Matriculado'");
+      // a block that moves to "Matriculado" can not be published: only the confirmed enrollment does it
+      const evil = JSON.parse(JSON.stringify(draft.graph));
+      evil.nodes.find(n => n.id === "crm_pronto").data.stageKey = "enrolled";
+      const evilFlow = (await http.post("/flows", { kind: "agent", agentId, name: "Tentativa de matricular", graph: evil }, auth())).data;
+      const evilPub = await http.post(`/flows/${evilFlow.id}/publish`, {}, auth());
+      assert(evilPub.status === 422 && evilPub.data.issues.some(i => /Matriculado/.test(i.text)), `a block to Matriculado was published: ${evilPub.status}`);
+      await http.delete(`/flows/${evilFlow.id}`, auth());
+
+      // 2) rules of the modality of a course (the MEC changes): invalid values are refused, nothing is invented without them
+      const direitoId = Number(sql("SELECT id FROM Courses WHERE name='Direito'"));
+      assert((await http.put(`/course-regulations/${direitoId}`, { percentualPresencial: 150 }, auth())).status === 400, "a percentage above 100");
+      assert((await http.put(`/course-regulations/${direitoId}`, { intakeTerm: "26-2" }, auth())).status === 400, "an invalid intake period");
+      const reg = await http.put(`/course-regulations/${direitoId}`, { mecImpacted: true, regulation: "Portaria de teste", teoriaAoVivo: true, praticaPresencial: true, cronogramaPraticasDefinido: false, commercialApprovedText: "Texto aprovado." }, auth());
+      assert(reg.status === 200 && (await http.get("/course-regulations", auth())).data.rules.some(r => r.courseId === direitoId && r.courseName === "Direito"), "regulation not saved");
+
+      // 3) a real conversation: the agent on, the flow published
+      await http.put(`/ai-agents/${agentId}`, { active: true, whatsappId: cid, apiKey: "sk-ant-test", waitSeconds: 0, provider: "anthropic", model: "claude-haiku-5-5" }, auth());
+      assert((await http.post(`/flows/${flowId}/publish`, {}, auth())).status === 200, "publish the commercial flow");
+      const texts = since => graph.sent.slice(since).filter(x => x.path === "/PN1/messages" && x.body && x.body.type === "text" && x.body.text).map(x => x.body.text.body);
+      const leadStage = number => sql(`SELECT s.name FROM Leads l JOIN LeadStages s ON s.id=l.stageId JOIN Contacts c ON c.id=l.contactId WHERE c.number='${number}'`);
+      const leadId = number => sql(`SELECT l.id FROM Leads l JOIN Contacts c ON c.id=l.contactId WHERE c.number='${number}'`);
+      const runOf = number => sql(`SELECT CONCAT(r.status,'|',COALESCE(r.nodeId,'')) FROM ChatFlowRuns r JOIN Tickets t ON t.id=r.ticketId JOIN Contacts c ON c.id=t.contactId WHERE c.number='${number}' AND r.flowId=${flowId} ORDER BY r.id DESC LIMIT 1`);
+      const say = async (from, id, body, until, label) => {
+        const mark = graph.sent.length;
+        await inboundCloud(from, id, body);
+        await waitFor(() => until(texts(mark)), 20000, label);
+        // the row of the reply is created after the channel answers: the next message must come after it
+        await waitFor(() => Number(sql(`SELECT COUNT(*) FROM Messages m JOIN Tickets t ON t.id=m.ticketId JOIN Contacts c ON c.id=t.contactId WHERE c.number='${from}' AND m.fromMe=true`)) >= texts(mark).length, 8000, "replies stored");
+        return texts(mark);
+      };
+
+      // A) a lead from the first "oi" to the handoff for the proposal
+      const A = "5511920000201";
+      let llm = anthropic.requests.length;
+      let out = await say(A, "wamid.com-a1", "oi", t => t.some(x => /assistente virtual da Cruzeiro do Sul Virtual/.test(x)), "the opening");
+      assert(/Qual curso/.test(out.join(" ")) && anthropic.requests.length === llm, "the opening should be written by the system, without the model");
+      await waitFor(() => runOf(A) === "waiting|qualificar", 8000, "waits at the first stage");
+      // the person wrote first, so the lead is already "in service" (the first contact is still recorded as a milestone)
+      assert(leadStage(A) === stageName("in_service"), `after the opening: ${leadStage(A)}`);
+      assert(Number(sql(`SELECT COUNT(*) FROM LeadCommercials WHERE leadId=${leadId(A)}`)) === 1, "no commercial state for the lead");
+      assert(sql(`SELECT deterministic FROM AgentTurnLogs WHERE leadId=${leadId(A)} ORDER BY id LIMIT 1`) === "1", "the opening was not logged as a turn without the model");
+
+      out = await say(A, "wamid.com-a2", "Quero Direito em Porto Velho, primeira graduação", t => t.some(x => /Direito em Porto Velho/.test(x)), "qualification");
+      await waitFor(() => runOf(A) === "waiting|apresentar", 8000, "goes to the presentation of the course");
+      const slotsA = () => JSON.parse(sql(`SELECT slots FROM LeadCommercials WHERE leadId=${leadId(A)}`));
+      assert(slotsA().courseName === "Direito" && slotsA().city === "Porto Velho" && slotsA().entryType === "first_degree", `slots ${JSON.stringify(slotsA())}`);
+      assert(leadStage(A) === stageName("in_service"), `after the qualification data: ${leadStage(A)}`);
+
+      llm = anthropic.requests.length;
+      out = await say(A, "wamid.com-a3", "Quanto tempo dura o curso?", t => t.some(x => /Direito:.*SEMIPRESENCIAL/i.test(x)), "the course comes from the tool");
+      assert(out.some(x => /10 semestres|5 anos/.test(x)), `the duration did not come from the data: ${out}`);
+      assert(anthropic.requests.length - llm === 2, `one question about the course should take two calls (tool + answer), took ${anthropic.requests.length - llm}`);
+      await waitFor(() => runOf(A) === "waiting|orientar", 8000, "goes to the academic guidance");
+      assert(leadStage(A) === stageName("qualified"), `after presenting the course: ${leadStage(A)}`);
+      assert(slotsA().courseExplained === true && slotsA().courseDurationSemesters === 10 && slotsA().courseModality === "SEMIPRESENCIAL", `slots from the tool ${JSON.stringify(slotsA())}`);
+
+      out = await say(A, "wamid.com-a4", "E sobre as mudanças do MEC, como fica?", t => t.some(x => /Portaria de teste/.test(x)), "the rule of the course");
+      assert(/práticas presenciais: true/.test(out.join(" ")) && /cronograma definido: false/.test(out.join(" ")), "the rule of the course was not read from the data");
+      const sysOfMec = anthropic.requests.filter(r => /Em TODA resposta/.test(JSON.stringify(r.system))).slice(-2)[0].system.map(b => b.text).join("\n");
+      assert(/mudanças do MEC/.test(sysOfMec) && /Já explicado/.test(sysOfMec), "the passage of the subject (MEC) or what was already explained did not reach the prompt");
+      assert(!/Tutoria|Plataforma de estudo/.test(sysOfMec.split("Base aprovada")[1] || ""), "passages of other subjects reached the prompt");
+
+      llm = anthropic.requests.length;
+      out = await say(A, "wamid.com-a5", "qual o valor da mensalidade? tem bolsa?", t => t.some(x => /consultor/.test(x)), "the handoff for the proposal");
+      assert(anthropic.requests.length === llm, "a question about price should not call the model");
+      assert(!out.some(x => /R\$|\d+,\d{2}/.test(x)), `a value was told: ${out}`);
+      await waitFor(() => /^handoff|^done/.test(runOf(A)), 8000, "the flow hands over");
+      assert(leadStage(A) === stageName("ready_for_proposal"), `column after the price: ${leadStage(A)}`);
+      assert(Number(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${leadId(A)} AND title='Gerar e apresentar proposta'`)) === 1, "the proposal task is missing or repeated");
+      const cs = JSON.parse(JSON.stringify((await http.get(`/leads/${leadId(A)}/commercial`, auth())).data));
+      assert(cs.exists && cs.temperature === "hot" && cs.readyForProposal === true && cs.commercialScore >= 40 && cs.nextAction, `commercial state ${JSON.stringify(cs).slice(0, 300)}`);
+      assert(/LEAD PRONTO PARA PROPOSTA/.test(cs.brief) && /Direito/.test(cs.brief) && /Porto Velho/.test(cs.brief) && /Primeira graduação/.test(cs.brief), `brief ${cs.brief}`);
+      assert(cs.handoff && /LEAD PRONTO PARA PROPOSTA/.test(cs.handoff.note), "the brief was not written in the conversation");
+      const viaTicket = (await http.get(`/tickets/${ticketOf(A)}/commercial`, auth())).data;
+      assert(viaTicket.exists && viaTicket.leadId === Number(leadId(A)) && viaTicket.handoff, "the panel of the conversation does not see the brief");
+      const leadJson = (await http.get(`/leads/${leadId(A)}`, auth())).data;
+      assert(leadJson.commercial && leadJson.commercial.temperature === "hot" && leadJson.commercial.commercialScore === cs.commercialScore, "the card of the CRM has no commercial data");
+      const events = sql(`SELECT string_agg(event, ',' ORDER BY id) FROM AgentMetricEvents WHERE leadId=${leadId(A)} AND once=true`).split(",");
+      ["lead_received", "contact_started", "replied", "qualified", "ready_for_proposal", "handoff_brief"].forEach(e => assert(events.includes(e), `milestone ${e} missing: ${events}`));
+      assert(new Set(events).size === events.length, "a milestone counted twice");
+      assert(Number(sql(`SELECT COUNT(*) FROM LeadActivities WHERE leadId=${leadId(A)} AND type='note'`)) >= 2, "the notes of the attendance were not written");
+
+      // B) a request for a person is answered at once, without the model
+      const B = "5511920000202";
+      await say(B, "wamid.com-b1", "oi", t => t.some(x => /assistente virtual/.test(x)), "opening of B");
+      llm = anthropic.requests.length;
+      out = await say(B, "wamid.com-b2", "Quero falar com um atendente", t => t.some(x => /consultor/.test(x)), "immediate handoff");
+      assert(anthropic.requests.length === llm, "a request for a person should not call the model");
+      await waitFor(() => leadStage(B) === stageName("human_service"), 8000, "column 'Atendimento humano'");
+      assert(Number(sql(`SELECT COUNT(*) FROM TicketEvents WHERE ticketId=${ticketOf(B)} AND type='handoff' AND note LIKE 'RESUMO DO ATENDIMENTO COM IA%'`)) === 1, "the brief for the human is missing");
+
+      // C) a question the base does not answer: safe answer, gap recorded for the team, the team takes over
+      const C = "5511920000203";
+      await say(C, "wamid.com-c1", "oi", t => t.some(x => /assistente virtual/.test(x)), "opening of C");
+      await say(C, "wamid.com-c2", "Quero Direito em Porto Velho", t => t.some(x => /Direito em Porto Velho/.test(x)), "qualification of C");
+      out = await say(C, "wamid.com-c3", "Vocês têm convênio com a Nasa?", t => t.some(x => /confirmar com a equipe/.test(x)), "safe answer");
+      await waitFor(() => Number(sql(`SELECT COUNT(*) FROM AiLearnings WHERE ticketId=${ticketOf(C)}`)) === 1, 8000, "the gap goes to the knowledge base of the team");
+      assert(sql(`SELECT question FROM AiLearnings WHERE ticketId=${ticketOf(C)}`).length > 5, "question not kept");
+      await waitFor(() => Number(sql(`SELECT COUNT(*) FROM AgentMetricEvents WHERE leadId=${leadId(C)} AND event='unknown'`)) >= 1, 8000, "unknown milestone");
+      assert(Number(sql(`SELECT COUNT(*) FROM TicketEvents WHERE ticketId=${ticketOf(C)} AND type='handoff'`)) >= 1, "the team did not receive the conversation");
+
+      // D) "vou pensar": follow-up with a task on the date; coming back days later resumes without asking again
+      const D = "5511920000204";
+      await say(D, "wamid.com-d1", "oi", t => t.some(x => /assistente virtual/.test(x)), "opening of D");
+      await say(D, "wamid.com-d2", "Quero Direito em Porto Velho", t => t.some(x => /Direito em Porto Velho/.test(x)), "qualification of D");
+      await say(D, "wamid.com-d3", "quanto tempo dura?", t => t.some(x => /Direito:/.test(x)), "course of D");
+      await say(D, "wamid.com-d4", "Vou pensar e volto depois", t => t.some(x => /Combinado/.test(x)), "follow-up");
+      await waitFor(() => leadStage(D) === stageName("follow_up") && /^done/.test(runOf(D)), 8000, "column 'Follow-up' and the run ended");
+      assert(Number(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${leadId(D)} AND title LIKE 'Retomar contato:%' AND dueAt >= '2026-11-30 12:00' AND dueAt < '2026-12-01 12:00'`)) === 1, `no follow-up task on the date the person gave: ${sql(`SELECT string_agg(title || ' @ ' || dueAt::text, ' | ') FROM LeadTasks WHERE leadId=${leadId(D)}`)}`);
+      assert(sql(`SELECT followUpReason FROM LeadCommercials WHERE leadId=${leadId(D)}`).includes("família"), "reason not kept");
+      // two days later
+      const sl = JSON.parse(sql(`SELECT slots FROM LeadCommercials WHERE leadId=${leadId(D)}`));
+      sl.lastOutboundAt = new Date(Date.now() - 2 * 86400000).toISOString();
+      sql(`UPDATE LeadCommercials SET slots='${JSON.stringify(sl).replace(/'/g, "''")}' WHERE leadId=${leadId(D)}`);
+      llm = anthropic.requests.length;
+      out = await say(D, "wamid.com-d5", "oi, voltei", t => t.some(x => /falar com você de novo/.test(x)), "the return");
+      assert(/Direito/.test(out.join(" ")) && !/Qual curso/.test(out.join(" ")) && anthropic.requests.length === llm, `the return should remember the course and not ask it again: ${out}`);
+      await waitFor(() => runOf(D) === "waiting|orientar", 8000, "back to the guidance, not to the start");
+
+      // E) transfer: the transcript is asked; without it the column and the task wait; the task is not repeated
+      const E = "5511920000205";
+      await say(E, "wamid.com-e1", "oi", t => t.some(x => /assistente virtual/.test(x)), "opening of E");
+      out = await say(E, "wamid.com-e2", "Quero transferir meu curso para cá", t => t.some(x => /histórico em PDF/.test(x)), "asks for the transcript");
+      await waitFor(() => runOf(E) === "waiting|pedir_historico", 8000, "waits at the transcript step");
+      assert(JSON.parse(sql(`SELECT slots FROM LeadCommercials WHERE leadId=${leadId(E)}`)).entryType === "transfer", "entry type not saved");
+      out = await say(E, "wamid.com-e3", "não tenho o histórico agora", t => t.some(x => /Quando tiver o histórico em mãos/.test(x)), "no transcript for now");
+      await waitFor(() => leadStage(E) === stageName("waiting_transcript") && /^done/.test(runOf(E)), 8000, "column 'Aguardando histórico'");
+      assert(Number(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${leadId(E)} AND title='Aguardar histórico acadêmico'`)) === 1, "the task to wait for the transcript is missing or repeated");
+
+      // nobody was enrolled by the AI, and the same person with or without the ninth digit is one lead
+      assert(Number(sql(`SELECT COUNT(*) FROM Leads l JOIN LeadStages s ON s.id=l.stageId WHERE s.type='won' AND l.id IN (${[A, B, C, D, E].map(leadId).join(",")})`)) === 0, "the agent enrolled a lead");
+      const nineDigit = "5569991234567", eightDigit = "556991234567";
+      const l1 = await http.post("/leads", { name: "Maria Nove", phone: nineDigit }, auth());
+      const l2 = await http.post("/leads", { name: "Maria Nove", phone: eightDigit }, auth());
+      assert(l1.status === 201 && (l2.status === 200 || l2.status === 201) && l1.data.id === l2.data.id, `the same person became two leads: ${l1.data.id} / ${l2.data.id}`);
+
+      // metrics: the funnel counts a lead once per step and the AI shows what it spent
+      const m = (await http.get(`/ai-agents/${agentId}/commercial-metrics`, auth())).data;
+      const f = e => m.funnel.find(x => x.event === e).leads;
+      assert(f("lead_received") >= 5 && f("contact_started") >= 5 && f("replied") >= 5 && f("qualified") >= 2 && f("ready_for_proposal") >= 1 && f("human_handoff") >= 1 && f("follow_up") >= 1, `funnel ${JSON.stringify(m.funnel)}`);
+      assert(m.ai.turns >= 15 && m.ai.deterministicTurns >= 8 && m.ai.llmCalls >= 5 && m.ai.toolCalls >= 3 && m.ai.tokens.total > 0 && m.ai.deterministicShare > 30, `ai ${JSON.stringify(m.ai)}`);
+      assert(m.ai.perConversation > 0 && m.ai.priceSet === false && m.ai.costUsd === null, "the cost must not be guessed without a configured price");
+      assert(m.unknownQuestions >= 1, "unknown question not counted");
+
+      // the old agent and the others are as they were
+      await http.put(`/ai-agents/${agentId}`, { active: false }, auth());
+      await http.put(`/ai-agents/${aiId}`, { active: true }, auth());
     });
     await test("chatbot can ask a question, offer polos and call a webhook", async () => {
       sql("DELETE FROM ChatbotNodes");
