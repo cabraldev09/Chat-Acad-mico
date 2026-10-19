@@ -130,6 +130,12 @@ const startTelegramMock = () => {
 const startAnthropicMock = () => {
   const app = express();
   app.use(express.json({ limit: "5mb" }));
+  // OpenAI audio transcription: the voice note says what the scenario needs
+  app.post("/v1/audio/transcriptions", (req, res) => {
+    anthropic.transcriptions = (anthropic.transcriptions || 0) + 1;
+    req.resume();
+    req.on("end", () => res.json({ text: "qual o valor do curso de Direito" }));
+  });
   app.post("/v1/messages", (req, res) => {
     anthropic.requests.push(req.body);
     const usage = { input_tokens: 120, output_tokens: 30, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 };
@@ -189,6 +195,10 @@ const startAnthropicMock = () => {
         return turn("Anotado!", { intent: "other" });
       }
       const said2 = typeof last.content === "string" ? last.content : "";
+      if (/forçar erro do provedor/i.test(said2)) return res.status(500).json({ error: { message: "boom" } });
+      if (/pergunta lenta/i.test(said2)) return setTimeout(() => turn("Resposta devagar, mas chegou.", { intent: "other" }), 2500);
+      if (/é caro/i.test(said2)) return turn("Sai por R$ 299 por mês, ótimo custo!", { intent: "other" });
+      if (/quando começam as aulas/i.test(said2)) return turn("As aulas começam em 03/08.", { intent: "other" });
       if (/transferir/i.test(said2)) return turn("Entendi! Com o seu histórico em PDF conseguimos pedir uma análise curricular. Pode me enviar o arquivo?", { intent: "transfer", curso: "Direito", cidade: "Porto Velho", tipo_ingresso: "transfer" });
       if (/Direito em Porto Velho/i.test(said2)) return turn("Perfeito, Direito em Porto Velho! Posso te explicar como funciona o curso?", { intent: "other", curso: "Direito", cidade: "Porto Velho", tipo_ingresso: "first_degree", nome: "Paulo Mendes" });
       if (/dura|tempo/i.test(said2)) return tool("buscar_curso", { courseName: "Direito" });
@@ -238,7 +248,12 @@ const startGraphMock = () => {
   app.post("/hook", (req, res) => { graph.hooks.push(req.body); res.json({ ok: true }); });
   app.get("/horarios", (req, res) => { graph.hooks.push({ horarios: req.query }); res.json({ livres: ["09:00", "10:30"] }); });
   app.get("/att.png", (q, res) => res.type("image/png").send(PNG));
-  app.get("/media/:id", (q, res) => res.type("image/png").send(PNG));
+  app.get("/media/:id", (q, res) => {
+    if (q.params.id.startsWith("MEDIAPDF")) return res.type("application/pdf").send(Buffer.from("%PDF-1.4\n%%EOF"));
+    if (q.params.id.startsWith("MEDIAOGG")) return res.type("audio/ogg").send(Buffer.from("OggS\0\0"));
+    if (q.params.id.startsWith("MEDIASTK")) return res.type("image/webp").send(Buffer.from("RIFF\0\0\0\0WEBP"));
+    return res.type("image/png").send(PNG);
+  });
   app.get("/me", (q, res) => res.json({ id: "PAGE1", name: "Mock Page" }));
   app.get("/:id", (req, res) => {
     const { id } = req.params;
@@ -398,7 +413,7 @@ const postMeta = (id, payload, secret, badSig) => {
       FRONTEND_URL: "http://localhost:3000", JWT_SECRET: "e2e", JWT_REFRESH_SECRET: "e2e-r", DASHBOARD_CACHE_MS: "0", LOGIN_RATE_MAX: "100",
       TELEGRAM_API_URL: `http://localhost:${TG_PORT}`, GRAPH_API_URL: `http://localhost:${GRAPH_PORT}`,
       SKIP_WHATSAPP_SESSIONS: "1", SKIP_DEFAULT_DATA: "1", LOG_LEVEL: "warn", EFI_API_URL: `http://localhost:${EFI_PORT}`, EFI_BILLET_API_URL: `http://localhost:${BILLET_PORT}`, EFI_POLL_MS: "1500",
-      ANTHROPIC_API_URL: `http://localhost:${AI_PORT}`, ALLOW_PRIVATE_URLS: "true"
+      ANTHROPIC_API_URL: `http://localhost:${AI_PORT}`, OPENAI_API_URL: `http://localhost:${AI_PORT}`, STALE_RUNS_MS: "4000", HANDOFF_SLA_MS: "4000", ALLOW_PRIVATE_URLS: "true"
     };
     execFileSync("npx", ["sequelize", "db:migrate"], { cwd: ROOT, env, stdio: "ignore" });
     execFileSync("npx", ["sequelize", "db:seed:all"], { cwd: ROOT, env, stdio: "ignore" });
@@ -3126,6 +3141,125 @@ const postMeta = (id, payload, secret, badSig) => {
       await waitFor(() => leadStage(E) === stageName("waiting_transcript") && /^done/.test(runOf(E)), 8000, "column 'Aguardando histórico'");
       assert(Number(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${leadId(E)} AND title='Aguardar histórico acadêmico'`)) === 1, "the task to wait for the transcript is missing or repeated");
 
+      // F) an unhappy person with a payment: straight to a person, without the model, and the reason is written down
+      const F = "5511920000206";
+      await say(F, "wamid.com-f1", "oi", t => t.some(x => /assistente virtual/.test(x)), "opening of F");
+      llm = anthropic.requests.length;
+      await say(F, "wamid.com-f2", "isso é um absurdo, já paguei o boleto e ninguém me responde", t => t.some(x => /consultor/.test(x)), "complaint handoff");
+      assert(anthropic.requests.length === llm, "a complaint should not call the model");
+      await waitFor(() => sql(`SELECT handoffReason FROM Tickets WHERE id=${ticketOf(F)}`) === "complaint", 8000, "reason complaint");
+
+      // G) a greeting that already carries the answers is not only a greeting: the model reads it and nothing is asked twice
+      const G = "5511920000207";
+      llm = anthropic.requests.length;
+      out = await say(G, "wamid.com-g1", "Bom dia, quero Direito em Porto Velho, primeira graduação", t => t.some(x => /Direito em Porto Velho/.test(x)), "greeting with content");
+      assert(anthropic.requests.length > llm && !out.some(x => /Qual curso você tem interesse/.test(x)), "the course and the city were asked again");
+      assert(JSON.parse(sql(`SELECT slots FROM LeadCommercials WHERE leadId=${leadId(G)}`)).courseName === "Direito", "the course in the greeting was lost");
+
+      // H) the transcript: an image is not it (asks for the PDF); a PDF with spaces in the name is, and the analysis starts
+      const media = (from, id, type, payload) => postMeta(cid, cloudEvent([{ from, id, type, [type]: payload }], { contacts: [{ wa_id: from, profile: { name: "Aluno IA" } }] }), cloudCfg.appSecret);
+      const H = "5511920000208";
+      await say(H, "wamid.com-h1", "oi", t => t.some(x => /assistente virtual/.test(x)), "opening of H");
+      await say(H, "wamid.com-h2", "Quero transferir meu curso para cá", t => t.some(x => /histórico em PDF/.test(x)), "asks for the transcript (H)");
+      await waitFor(() => runOf(H) === "waiting|pedir_historico", 8000, "waits for the transcript (H)");
+      llm = anthropic.requests.length;
+      let mk = graph.sent.length;
+      await media(H, "wamid.com-h3", "image", { id: "MEDIAPNG1", mime_type: "image/png" });
+      await waitFor(() => texts(mk).some(x => /preciso do histórico em PDF/.test(x)), 20000, "asks for the PDF when an image arrives");
+      assert(anthropic.requests.length === llm, "an image should not call the model");
+      mk = graph.sent.length;
+      await media(H, "wamid.com-h4", "document", { id: "MEDIAPDF1", mime_type: "application/pdf", filename: "Histórico Escolar.pdf" });
+      await waitFor(() => texts(mk).some(x => /Recebi o seu histórico/.test(x)), 20000, "the PDF is taken as the transcript");
+      assert(anthropic.requests.length === llm, "the transcript should not call the model");
+      await waitFor(() => JSON.parse(sql(`SELECT slots FROM LeadCommercials WHERE leadId=${leadId(H)}`)).hasTranscript === true, 8000, "hasTranscript saved");
+      // the file was found as a PDF (type "application") and the analysis was tried: the lead is told it is in progress
+      await waitFor(() => texts(mk).some(x => /análise está em andamento/.test(x)), 20000, "the analysis was started with the PDF");
+
+      // I) a voice note nobody can read is asked in writing once, then a person takes it; with transcription on it is read
+      const I = "5511920000209";
+      await say(I, "wamid.com-i1", "oi", t => t.some(x => /assistente virtual/.test(x)), "opening of I");
+      llm = anthropic.requests.length;
+      mk = graph.sent.length;
+      await media(I, "wamid.com-i2", "audio", { id: "MEDIAOGG1", mime_type: "audio/ogg" });
+      await waitFor(() => texts(mk).some(x => /não consigo ouvir áudios/.test(x)), 20000, "asks to write instead of a voice note");
+      await waitFor(() => Number(sql(`SELECT COUNT(*) FROM Messages m JOIN Tickets t ON t.id=m.ticketId JOIN Contacts c ON c.id=t.contactId WHERE c.number='${I}' AND m.fromMe=true`)) >= 2, 8000, "reply stored (I)");
+      assert(anthropic.requests.length === llm, "an unreadable voice note should not call the model");
+      mk = graph.sent.length;
+      await media(I, "wamid.com-i3", "audio", { id: "MEDIAOGG2", mime_type: "audio/ogg" });
+      await waitFor(() => sql(`SELECT handoffReason FROM Tickets WHERE id=${ticketOf(I)}`) === "media", 20000, "the second voice note goes to a person");
+      // transcription on (the company turned it on and the OpenAI key is connected): the voice note is read as text
+      assert((await http.put("/ai-settings", { openai: "sk-openai-test" }, auth())).status === 200, "openai key");
+      sql(`DELETE FROM Settings WHERE key='ai_transcribe_audio'`);
+      sql(`INSERT INTO Settings (key, value, createdAt, updatedAt) VALUES ('ai_transcribe_audio', '1', now(), now())`);
+      const J = "5511920000210";
+      await say(J, "wamid.com-j1", "oi", t => t.some(x => /assistente virtual/.test(x)), "opening of J");
+      llm = anthropic.requests.length;
+      mk = graph.sent.length;
+      await media(J, "wamid.com-j2", "audio", { id: "MEDIAOGG3", mime_type: "audio/ogg" });
+      await waitFor(() => texts(mk).some(x => /consultor/.test(x)), 20000, "the voice note was understood (price question)");
+      assert(anthropic.transcriptions >= 1 && anthropic.requests.length === llm, "the voice note was not transcribed, or the model was called for a price question");
+      await waitFor(() => sql(`SELECT handoffReason FROM Tickets WHERE id=${ticketOf(J)}`) === "proposal", 8000, "reason proposal (J)");
+      sql(`DELETE FROM Settings WHERE key='ai_transcribe_audio'`);
+
+      // K) the model writes a price: it never reaches the person, the lead goes to the proposal
+      const qualify = async (number, tag) => {
+        await say(number, `wamid.com-${tag}1`, "oi", t => t.some(x => /assistente virtual/.test(x)), `opening ${tag}`);
+        await say(number, `wamid.com-${tag}2`, "Quero Direito em Porto Velho", t => t.some(x => /Direito em Porto Velho/.test(x)), `qualification ${tag}`);
+        await waitFor(() => runOf(number) === "waiting|apresentar", 8000, `waits at the presentation ${tag}`);
+      };
+      const K = "5511920000211";
+      await qualify(K, "k");
+      out = await say(K, "wamid.com-k3", "O curso é caro?", t => t.some(x => /consultor/.test(x)), "price guard");
+      assert(!out.some(x => /R\$|299/.test(x)), `the price reached the person: ${out}`);
+      await waitFor(() => leadStage(K) === stageName("ready_for_proposal"), 8000, "the guarded price goes to the proposal");
+      assert(Number(sql(`SELECT COUNT(*) FROM AgentMetricEvents WHERE leadId=${leadId(K)} AND event='agent_guard'`)) >= 1, "the guard was not recorded");
+
+      // L) the model states a date nobody gave it: replaced by "I'll confirm", the question goes to the team, the conversation goes on
+      const L = "5511920000212";
+      await qualify(L, "l");
+      out = await say(L, "wamid.com-l3", "Quando começam as aulas?", t => t.some(x => /confirmar/.test(x)), "fact guard");
+      assert(!out.some(x => /03\/08/.test(x)), `an invented date reached the person: ${out}`);
+      await waitFor(() => Number(sql(`SELECT COUNT(*) FROM AiLearnings WHERE ticketId=${ticketOf(L)}`)) >= 1, 8000, "the unanswered question goes to the team");
+      assert(runOf(L) === "waiting|apresentar", `the conversation should go on: ${runOf(L)}`);
+
+      // M) the provider fails twice: the person is told a colleague continues, the conversation goes to the team with the reason, the failure is counted
+      const M = "5511920000213";
+      await qualify(M, "m");
+      mk = graph.sent.length;
+      await inboundCloud(M, "wamid.com-m3", "forçar erro do provedor");
+      await waitFor(() => texts(mk).some(x => /consultor/.test(x)), 40000, "handoff after the provider failed");
+      await waitFor(() => sql(`SELECT handoffReason FROM Tickets WHERE id=${ticketOf(M)}`) === "error", 10000, "reason error");
+      assert(Number(sql(`SELECT COUNT(*) FROM AgentMetricEvents WHERE event='agent_error' AND meta LIKE '%"ticketId":${ticketOf(M)}%'`)) >= 1, "the failure was not counted");
+
+      // N) a message that arrives while the AI is still answering the previous one is answered too
+      const N = "5511920000214";
+      await qualify(N, "n");
+      mk = graph.sent.length;
+      await inboundCloud(N, "wamid.com-n3", "pergunta lenta");
+      await new Promise(r => setTimeout(r, 600));
+      await inboundCloud(N, "wamid.com-n4", "e outra pergunta");
+      await waitFor(() => texts(mk).some(x => /Resposta devagar/.test(x)) && texts(mk).some(x => /Pode me contar mais/.test(x)), 45000, "both messages were answered");
+
+      // O) a conversation nobody continues is closed after a while: the lead goes to "Sem resposta" with a task, once
+      sql(`UPDATE ChatFlowRuns SET updatedAt = now() - interval '10 days' WHERE ticketId=${ticketOf(L)} AND status='waiting'`);
+      await waitFor(() => /^done/.test(runOf(L)) && leadStage(L) === stageName("no_response"), 40000, "the stopped conversation was closed");
+      assert(Number(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${leadId(L)} AND title LIKE 'Retomar contato: o lead parou%'`)) === 1, "no task for the lead that stopped answering");
+
+      // P) the keys of the external tools never come back to the browser, stay when saved again, and do not follow a tool to another host
+      const secretGraph = { nodes: [{ id: "st", type: "start", data: {} }, { id: "s", type: "stage", data: { title: "Etapa", objective: "Testar", http: [{ name: "agenda", description: "Consulta", url: `http://localhost:${GRAPH_PORT}/horarios`, method: "GET", params: [], headerName: "X-Api-Key", headerValue: "segredo-super-1234" }] } }, { id: "f", type: "end", data: {} }], edges: [{ id: "e1", source: "st", target: "s" }, { id: "e2", source: "s", sourceHandle: "done", target: "f" }] };
+      const sf = (await http.post("/flows", { kind: "agent", agentId, name: "Segredos", graph: secretGraph }, auth())).data;
+      assert(!JSON.stringify(sf).includes("segredo-super") && sf.graph.nodes.find(n => n.id === "s").data.http[0].headerValue.startsWith("••••"), "the key came back to the browser");
+      await http.put(`/flows/${sf.id}`, { graph: sf.graph }, auth());
+      assert(sql(`SELECT draft FROM ChatFlows WHERE id=${sf.id}`).includes("segredo-super-1234"), "saving the mask erased the key");
+      const dup = (await http.post(`/flows/${sf.id}/duplicate`, {}, auth())).data;
+      assert(!sql(`SELECT draft FROM ChatFlows WHERE id=${dup.id}`).includes("segredo-super"), "a copy carries the key");
+      const moved = JSON.parse(JSON.stringify(sf.graph));
+      moved.nodes.find(n => n.id === "s").data.http[0].url = "https://evil.example.org/collect";
+      await http.put(`/flows/${sf.id}`, { graph: moved }, auth());
+      assert(!sql(`SELECT draft FROM ChatFlows WHERE id=${sf.id}`).includes("segredo-super"), "the key followed the tool to another host");
+      await http.delete(`/flows/${sf.id}`, auth());
+      await http.delete(`/flows/${dup.id}`, auth());
+
       // nobody was enrolled by the AI, and the same person with or without the ninth digit is one lead
       assert(Number(sql(`SELECT COUNT(*) FROM Leads l JOIN LeadStages s ON s.id=l.stageId WHERE s.type='won' AND l.id IN (${[A, B, C, D, E].map(leadId).join(",")})`)) === 0, "the agent enrolled a lead");
       const nineDigit = "5569991234567", eightDigit = "556991234567";
@@ -3140,6 +3274,8 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(m.ai.turns >= 15 && m.ai.deterministicTurns >= 8 && m.ai.llmCalls >= 5 && m.ai.toolCalls >= 3 && m.ai.tokens.total > 0 && m.ai.deterministicShare > 30, `ai ${JSON.stringify(m.ai)}`);
       assert(m.ai.perConversation > 0 && m.ai.priceSet === false && m.ai.costUsd === null, "the cost must not be guessed without a configured price");
       assert(m.unknownQuestions >= 1, "unknown question not counted");
+      assert(m.handoffs && m.handoffs.total >= 5 && m.handoffs.byReason.some(r => r.why === "complaint") && m.handoffs.byReason.some(r => r.why === "proposal"), `handoffs ${JSON.stringify(m.handoffs)}`);
+      assert(m.technical.errors >= 1 && m.technical.guards >= 2, `technical ${JSON.stringify(m.technical)}`);
 
       // the old agent and the others are as they were
       await http.put(`/ai-agents/${agentId}`, { active: false }, auth());
@@ -3303,7 +3439,7 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(sim.messages.some(m => m.includes("Qual polo") && m.includes("*1* - ")), `polo list ${JSON.stringify(sim.messages)}`);
       const simDone = (await http.post(`/flows/${flowId}/simulate`, { state: sim.state, input: "moro em ji parna" }, auth())).data;
       assert(simDone.actions.some(a => a.includes("Define o polo: Polo Ji-Paraná")) && simDone.messages.some(m => m.includes("interior")), `sim choice ${JSON.stringify([simDone.actions, simDone.messages])}`);
-      assert(simDone.actions.some(a => /Transfere/.test(a)), "sim transfer");
+      assert(simDone.actions.some(a => /Comercial do polo Polo Ji-Paraná/.test(a)), `sim transfer ${JSON.stringify(simDone.actions)}`);
       assert(graph.sent.length === sent0, "the simulator sent a real message");
 
       assert((await http.post(`/flows/${flowId}/publish`, {}, auth())).status === 200, "publish");
@@ -4942,6 +5078,59 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(r1.total.spent === 350, `total ${JSON.stringify(r1.total)}`);
       // the year before the spending shows nothing
       assert((await get("2018-01-01", "2018-02-28")).total.spent === 0, "spending leaked into another period");
+    });
+    await test("handoff to the commercial team of the polo: the city finds the polo, a polo without a team uses the reserve queue, the consultant is warned and gets a task, and nobody answering raises an alert", async () => {
+      // the single-prompt agent answers on this connection (the other agents are off)
+      await http.put(`/ai-agents/${aiId}`, { active: true, dailyTokenCap: 0, handoffAfterTurns: 14 }, auth());
+      const cons = (await http.post("/users", { name: "Consultor Alfa", email: "alfa-cons@x.com", password: "senha123", role: "consultor" }, auth())).data;
+      const alfa = (await http.post("/polos", { name: "Polo Alfa", code: "ALF", city: "Cidade Alfa", state: "RO" }, auth())).data;
+      await http.put(`/polos/${alfa.id}/members`, { members: [{ userId: cons.id, role: "comercial" }] }, auth());
+      const beta = (await http.post("/polos", { name: "Polo Beta", code: "BET", city: "Cidade Beta", state: "RO" }, auth())).data;
+      const alfaQueue = sql(`SELECT id FROM Queues WHERE poloId=${alfa.id} AND role='comercial'`);
+      const betaQueue = sql(`SELECT id FROM Queues WHERE poloId=${beta.id} AND role='comercial'`);
+      assert(alfaQueue && betaQueue, "the polos did not get their commercial queues");
+      const handoff = async (number, city) => {
+        if (city) assert([200, 201].includes((await http.post("/leads", { name: `Lead ${number}`, phone: number, city }, auth())).status), "lead with a city");
+        const before = graph.sent.length;
+        await inboundCloud(number, `wamid.rt-${number}`, "quero falar com uma pessoa");
+        await waitFor(() => sentTexts(before).some(t => t.includes("Vou chamar um consultor")), 15000, "handoff message");
+        await waitFor(() => sql(`SELECT handoffReason FROM Tickets WHERE id=${ticketOf(number)}`) === "human_request", 10000, "the handoff was routed");
+        return ticketOf(number);
+      };
+      const leadOf = number => sql(`SELECT l.id FROM Leads l JOIN Contacts c ON c.id=l.contactId WHERE c.number='${number}'`);
+
+      // the city (no accents, no capitals) finds the polo; its commercial team takes the conversation
+      const a = "5511930000001";
+      const ta = await handoff(a, "cidade alfa");
+      assert(sql(`SELECT poloId FROM Leads WHERE id=${leadOf(a)}`) === String(alfa.id), "the polo was not found by the city");
+      assert(sql(`SELECT queueId FROM Tickets WHERE id=${ta}`) === alfaQueue && sql(`SELECT userId FROM Tickets WHERE id=${ta}`) === String(cons.id) && sql(`SELECT status FROM Tickets WHERE id=${ta}`) === "open", "the consultant of the polo did not take it");
+      assert(sql(`SELECT aiActive FROM Tickets WHERE id=${ta}`) === "0" && sql(`SELECT handoffAt IS NOT NULL FROM Tickets WHERE id=${ta}`) === "1", "the handoff was not marked");
+      assert(Number(sql(`SELECT COUNT(*) FROM TicketEvents WHERE ticketId=${ta} AND type='transfer' AND note LIKE 'Agente de IA →%' AND note LIKE '%Consultor Alfa%'`)) === 1, "the routing was not written down");
+      assert(Number(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${leadOf(a)} AND title='Atender lead encaminhado pelo agente de IA' AND userId=${cons.id}`)) === 1, "no task for the consultant");
+      assert(Number(sql(`SELECT COUNT(*) FROM AgentMetricEvents WHERE leadId=${leadOf(a)} AND event='handoff_human_request'`)) === 1, "no metric");
+
+      // nobody answers: the team is warned once the limit passes (the worker looks every minute)
+      sql(`UPDATE Tickets SET handoffAt = now() - interval '40 minutes' WHERE id=${ta}`);
+      await waitFor(() => sql(`SELECT handoffAlerts FROM Tickets WHERE id=${ta}`) === "1", 90000, "the alert for the conversation nobody answered");
+      assert(Number(sql(`SELECT COUNT(*) FROM LeadActivities WHERE leadId=${leadOf(a)} AND type='sla' AND body LIKE 'Aguardando atendimento humano%'`)) === 1, "the alert was not written in the history");
+
+      // a polo without a team: the reserve queue (a commercial queue with consultants) takes it, and it says so
+      const b = "5511930000002";
+      const tb = await handoff(b, "Cidade Beta");
+      assert(sql(`SELECT poloId FROM Leads WHERE id=${leadOf(b)}`) === String(beta.id), "the polo without a team was not found");
+      assert(sql(`SELECT queueId FROM Tickets WHERE id=${tb}`) !== betaQueue && sql(`SELECT userId FROM Tickets WHERE id=${tb}`) !== "", "the polo without consultants kept the conversation");
+      assert(Number(sql(`SELECT COUNT(*) FROM TicketEvents WHERE ticketId=${tb} AND type='transfer' AND note LIKE '%fila de reserva%'`)) === 1, "the reserve queue was not mentioned");
+
+      // the screen of the handoff: which polos would really answer, and the reserve queue chosen by the manager
+      const h0 = (await http.get("/ai-handoff", auth())).data;
+      assert(h0.polos.find(p => p.name === "Polo Alfa").ready === true && h0.polos.find(p => p.name === "Polo Beta").ready === false && /não tem consultores/.test(h0.polos.find(p => p.name === "Polo Beta").issue), `ai-handoff polos ${JSON.stringify(h0.polos.filter(p => /Alfa|Beta/.test(p.name)))}`);
+      const h1 = (await http.put("/ai-handoff", { fallbackQueueId: Number(alfaQueue), slaMinutes: 15, staleDays: 7 }, auth())).data;
+      assert(h1.settings.fallbackQueueId === Number(alfaQueue) && h1.reserve.id === Number(alfaQueue), "the reserve queue was not saved");
+
+      // no city, no polo: it still lands on a team, never in the air
+      const c = "5511930000003";
+      const tc = await handoff(c, null);
+      assert(sql(`SELECT queueId FROM Tickets WHERE id=${tc}`) === alfaQueue && sql(`SELECT userId FROM Tickets WHERE id=${tc}`) === String(cons.id), "a lead without a polo did not land on the reserve queue chosen by the manager");
     });
     await test("login is rate limited", async () => {
       let limited = false;

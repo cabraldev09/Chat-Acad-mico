@@ -38,3 +38,32 @@ O painel **Funil comercial** mostra chamadas, ferramentas, cache, respostas sem 
 - Agentes de IA → agente → **Funil comercial**: funil por passo e uso da IA.
 - Marcos fora da conversa: proposta enviada, cobrança da matrícula, matrícula confirmada e análise curricular concluída pela equipe
   (nesse caso o lead recebe um aviso e a resposta dele abre a explicação).
+
+## Quem assume a conversa (transferência para o comercial do polo)
+Toda passagem do agente para uma pessoa (pedido de atendente, hora da proposta, pergunta sem resposta, reclamação, erro da IA, limites)
+passa por um único serviço, `CommercialServices/Router.ts`:
+1. **Polo**: o do lead; se não houver, o que a cidade informada indica (sem acento, com frase e erro de digitação) e que passa a ser gravado no lead.
+2. **Fila**: a fila comercial do polo; sem equipe, a **fila de reserva** (Agentes de IA → *Quem assume*; padrão: a primeira fila comercial com consultores);
+   sem nenhuma, a conversa fica pendente na fila do polo e a gestão é avisada. Nunca fica sem destino.
+3. **Consultor**: o dono do lead, se for do polo; senão o rodízio da fila.
+4. **Aviso na hora** (toast + som para o consultor, a fila ou a gestão) e tarefa "Atender lead encaminhado pelo agente de IA"
+   (15 min no expediente; no primeiro quarto de hora do próximo expediente quando fora dele). Fora do horário o lead recebe quando a equipe retorna.
+5. **Registro**: evento "Agente de IA → Comercial do polo X (consultor)" com o motivo, colunas `Tickets.handoffAt/handoffReason`, métrica `handoff_<motivo>`.
+6. **Se ninguém atender** (padrão 15 min úteis): aviso ao consultor/fila/gestão; no segundo prazo a conversa passa ao próximo consultor da fila
+   (`workers/HandoffSla.ts`). Conversas paradas do agente por 7 dias viram "Sem resposta" com tarefa (`workers/StaleRuns.ts`).
+
+Motivos: `human_request`, `proposal`, `unknown`, `limit_turns`, `limit_tokens`, `error`, `complaint`, `media`, `loop`, `other`.
+
+## O que o agente nunca diz (e como falha com segurança)
+- `Guards.ts` barra, em toda resposta, valores em qualquer forma, "% de bolsa/desconto", gratuidade, promessa de aproveitamento e qualquer
+  número, porcentagem, data ou horário que não esteja no resultado das ferramentas, na base aprovada ou na mensagem da pessoa
+  (valor/bolsa → encaminha para a proposta; o resto → "vou confirmar" e a pergunta vai para a equipe). Cada bloqueio vira a métrica `agent_guard`.
+- Erro do provedor (sem chave, 401, 429, queda): uma nova tentativa; falhando, o lead é avisado, a conversa vai ao comercial do polo com o motivo
+  `error`, o responsável pela IA recebe um WhatsApp e a falha entra nas métricas (`agent_error`).
+- Reclamação, pagamento/boleto/estorno, termos jurídicos, número errado, mesmo pedido pela terceira vez e três perguntas seguidas sem resposta
+  vão direto para uma pessoa, sem chamar o modelo.
+- Mensagem do lead durante uma resposta em andamento é respondida em seguida (marca de "última mensagem respondida" na execução).
+- Áudios: com a opção ligada e a chave da OpenAI, são transcritos; senão o agente pede que a pessoa escreva e, no segundo áudio, chama um consultor.
+  Histórico em PDF é reconhecido pelo tipo do arquivo (nome com espaço ou legenda funcionam); imagem pede o PDF.
+- Chaves das ferramentas externas (cabeçalhos) nunca voltam inteiras ao navegador, não vão em cópias do fluxo e não acompanham a ferramenta
+  para outro endereço.
