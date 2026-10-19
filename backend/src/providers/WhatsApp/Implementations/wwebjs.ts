@@ -574,7 +574,7 @@ const removeSession = (whatsappId: number): void => {
   try {
     const sessionIndex = sessions.findIndex(s => s.id === whatsappId);
     if (sessionIndex !== -1) {
-      sessions[sessionIndex].destroy();
+      sessions[sessionIndex].destroy().catch(() => undefined);
       sessions.splice(sessionIndex, 1);
     }
   } catch (err) {
@@ -595,6 +595,73 @@ const clearReadyTimer = (whatsappId: number) => {
   readyTimers.delete(whatsappId);
 };
 const memoryNote = () => `memória do processo ${Math.round(process.memoryUsage().rss / 1048576)} MB`;
+
+// A number must always be receiving, in real time. Three things keep it so, besides the retries above:
+//  1. every browser that was started is remembered until it is closed, so a stuck one is closed before another opens;
+//  2. a session that neither shows the QR Code nor becomes ready in a few minutes (the page never loaded) is closed and tried again;
+//  3. a heartbeat asks the connected session for its state: one that does not answer (frozen Chromium) is restarted.
+// What the watchdog worker needs to know (see workers/WhatsappWatchdog) is exported at the end.
+const clients = new Map<number, Session>();
+const INIT_TIMEOUT_MS = Number(process.env.WHATSAPP_INIT_TIMEOUT_MS) || 4 * 60 * 1000;
+const HEARTBEAT_MS = Number(process.env.WHATSAPP_HEARTBEAT_MS) || 90 * 1000;
+const initTimers = new Map<number, NodeJS.Timeout>();
+const heartbeats = new Map<number, NodeJS.Timeout>();
+const retrying = new Set<number>();
+const clearInitTimer = (id: number) => {
+  const t = initTimers.get(id);
+  if (t) clearTimeout(t);
+  initTimers.delete(id);
+};
+const clearHeartbeat = (id: number) => {
+  const t = heartbeats.get(id);
+  if (t) clearInterval(t);
+  heartbeats.delete(id);
+};
+const closeClient = async (id: number): Promise<void> => {
+  clearInitTimer(id);
+  clearHeartbeat(id);
+  clearReadyTimer(id);
+  const c = clients.get(id);
+  clients.delete(id);
+  if (c) await Promise.race([c.destroy().catch(() => undefined), new Promise(r => setTimeout(r, 15000))]);
+};
+const withTimeout = <T>(p: Promise<T>, ms: number): Promise<T> => Promise.race([p, new Promise<T>((_, rej) => setTimeout(() => rej(new Error("timeout")), ms))]);
+
+// the browser of this number is gone or stuck: close it and open it again, slowing down (and finally asking a person) when it keeps failing
+const retryLater = async (whatsappId: number, reason: string): Promise<void> => {
+  if (retrying.has(whatsappId)) return;
+  retrying.add(whatsappId);
+  try {
+    const row = await Whatsapp.findByPk(whatsappId);
+    if (!row) return;
+    await closeClient(whatsappId);
+    const attempt = (reconnectAttempts.get(whatsappId) || 0) + 1;
+    reconnectAttempts.set(whatsappId, attempt);
+    if (attempt > RECONNECT_MAX_ATTEMPTS) {
+      logger.error(`Session ${row.name}: giving up after ${attempt - 1} attempts (${reason})`);
+      await row.update({ status: "DISCONNECTED", qrcode: "" });
+      getIO().emit("whatsappSession", { action: "update", session: row });
+      getIO().emit("whatsappAlert", { whatsappId, name: row.name, ownerId: row.ownerId, reason });
+      return;
+    }
+    const delay = Math.min(2000 * 2 ** (attempt - 1), 60000);
+    logger.warn(`Session ${row.name}: ${reason}. Opening again in ${delay / 1000}s (attempt ${attempt})`);
+    await row.update({ status: "OPENING" });
+    getIO().emit("whatsappSession", { action: "update", session: row });
+    await new Promise(r => setTimeout(r, delay));
+  } finally {
+    retrying.delete(whatsappId);
+  }
+  const fresh = await Whatsapp.findByPk(whatsappId);
+  if (fresh) init(fresh);
+};
+
+// state of the sessions for the watchdog worker
+export const sessionWatch = (whatsappId: number): { hasClient: boolean; live: boolean; initializing: boolean } => ({
+  hasClient: clients.has(whatsappId),
+  live: sessions.some(s => s.id === whatsappId),
+  initializing: initTimers.has(whatsappId) || retrying.has(whatsappId) || readyTimers.has(whatsappId)
+});
 
 const sendMessage = async (
   sessionId: number,
@@ -1028,6 +1095,8 @@ const clearStaleBrowserLocks = (whatsappId: number): void => {
 
 const init = async (whatsapp: Whatsapp): Promise<void> => {
   try {
+    // a browser that was left behind (stuck, or from a session that never got to "ready") is closed before a new one opens
+    await closeClient(whatsapp.id);
     removeSession(whatsapp.id);
 
     const io = getIO();
@@ -1066,7 +1135,21 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
       }
     });
 
+    clients.set(whatsapp.id, wbot);
+    // the page must show the QR Code or become ready: a browser that does neither in a few minutes is stuck
+    initTimers.set(
+      whatsapp.id,
+      setTimeout(() => {
+        initTimers.delete(whatsapp.id);
+        logger.error(`Session: ${sessionName} não abriu em ${INIT_TIMEOUT_MS / 1000}s (${memoryNote()})`);
+        whatsapp.update({ status: "TIMEOUT" }).then(() => getIO().emit("whatsappSession", { action: "update", session: whatsapp })).catch(() => undefined);
+        retryLater(whatsapp.id, "a página do WhatsApp não carregou").catch(err => logger.error(err, "retry after a stuck start failed"));
+      }, INIT_TIMEOUT_MS)
+    );
+
     wbot.on("qr", async qr => {
+      // waiting for someone to read the QR Code is normal: nothing is stuck
+      clearInitTimer(whatsapp.id);
       logger.info("Session:", sessionName);
       qrCode.generate(qr, { small: true });
       await whatsapp.update({ qrcode: qr, status: "qrcode", retries: 0 });
@@ -1146,8 +1229,28 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
 
     wbot.on("ready", async () => {
       clearReadyTimer(whatsapp.id);
+      clearInitTimer(whatsapp.id);
       logger.info(`Session: ${sessionName} READY (${memoryNote()})`);
       reconnectAttempts.set(whatsapp.id, 0);
+      // heartbeat: a frozen browser does not answer, and then no message would arrive until somebody noticed
+      clearHeartbeat(whatsapp.id);
+      let missed = 0;
+      heartbeats.set(
+        whatsapp.id,
+        setInterval(async () => {
+          try {
+            await withTimeout(wbot.getState(), 20000);
+            missed = 0;
+          } catch (err) {
+            missed += 1;
+            logger.warn(`Session: ${sessionName} did not answer the heartbeat (${missed}/2): ${(err as Error).message}`);
+            if (missed >= 2) {
+              clearHeartbeat(whatsapp.id);
+              retryLater(whatsapp.id, "a sessão parou de responder").catch(e => logger.error(e, "retry after a frozen session failed"));
+            }
+          }
+        }, HEARTBEAT_MS)
+      );
 
       const firstConnection = !whatsapp.connectedSince;
 
@@ -1207,6 +1310,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
 
     wbot.on("disconnected", async reason => {
       clearReadyTimer(whatsapp.id);
+      clearHeartbeat(whatsapp.id);
       logger.info(`Disconnected session: ${sessionName}, reason: ${reason}`);
       try {
         await whatsapp.update({ status: "OPENING", session: "" });
@@ -1353,19 +1457,27 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
     await wbot.initialize();
   } catch (err) {
     logger.error(err, "Error on whatsapp session");
-    // the screen must not stay on "QR CODE" when the browser could not even start
+    // the screen must not stay on "QR CODE" when the browser could not even start: say so, and try again by itself
     try {
       await whatsapp.update({ status: "DISCONNECTED", qrcode: "" });
       getIO().emit("whatsappSession", { action: "update", session: whatsapp });
     } catch (e) {
       logger.error(e, "Error saving the failed session status");
     }
+    retryLater(whatsapp.id, "o navegador da sessão não conseguiu iniciar").catch(e => logger.error(e, "retry after a failed start failed"));
   }
+};
+
+// deleting or logging out a connection also stops its timers and closes its browser
+const removeSessionFully = (whatsappId: number): void => {
+  removeSession(whatsappId);
+  reconnectAttempts.delete(whatsappId);
+  closeClient(whatsappId).catch(() => undefined);
 };
 
 export const WhatsappWebJsProvider: WhatsappProvider = {
   init,
-  removeSession,
+  removeSession: removeSessionFully,
   logout,
   sendMessage,
   sendMedia,

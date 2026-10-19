@@ -42,7 +42,7 @@ const ConnectionAlert = () => {
       <PlugZap size={18} style={{ flexShrink: 0 }} />
       <span style={{ flex: 1, lineHeight: 1.4 }}>
         {down.length === 1
-          ? <>A conexão <b>{first.w.name}</b> {WHAT[first.w.status]} há {since(first.minutes)}. Enquanto estiver assim, as mensagens desse número não chegam.</>
+          ? <>A conexão <b>{first.w.name}</b> {WHAT[first.w.status]} há {since(first.minutes)}. O sistema tenta reabrir sozinho; se continuar, toque em Reconectar. Enquanto estiver assim, as mensagens desse número não chegam.</>
           : <><b>{down.length} conexões</b> com problema: {down.map((d) => `${d.w.name} (${since(d.minutes)})`).join(", ")}. Enquanto estiverem assim, as mensagens desses números não chegam.</>}
       </span>
       <button type="button" onClick={() => history.push("/connections")} style={{ border: 0, background: "#7a3e00", color: "#fff", borderRadius: 8, padding: "6px 12px", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Reconectar</button>
