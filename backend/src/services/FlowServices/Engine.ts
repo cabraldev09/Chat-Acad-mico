@@ -213,6 +213,7 @@ const stageStep = async (graph: Graph, node: FlowNode, state: RunState, fx: Effe
   state.tries = 0;
   let turn: StageTurn;
   if (turns >= st.maxTurns) turn = { text: "", exit: "limit" };
+  else if (input === null && st.quiet) turn = { text: "", exit: null };
   else if (input === null && st.opening) turn = { text: st.opening, exit: null };
   else {
     state.vars[turnsKey(node.id)] = turns + 1;

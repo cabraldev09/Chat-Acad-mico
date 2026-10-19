@@ -23,6 +23,7 @@ import ShowTicketService from "../TicketServices/ShowTicketService";
 import UpdateTicketService from "../TicketServices/UpdateTicketService";
 import dispatchWebhook from "../WebhookServices/DispatchWebhook";
 import { addActivity, changeStage, loadLead, resolveLeadTarget } from "./LeadCore";
+import { markMilestone } from "../CommercialServices/Milestones";
 
 export interface EnrollInput {
   poloId: number;
@@ -113,6 +114,8 @@ const enrollLeadCore = async (lead: Lead, actorId: number, input: EnrollInput) =
     onboardingAlertAt: null
   });
   await changeStage(lead.id, won.id, actorId);
+  // the only way to the "Matriculado" column is this one (the AI agent cannot do it); the agent only records the milestone
+  void markMilestone(lead.id, "enrolled");
 
   // 3) the tutor's own conversation
   let ticket = await Ticket.findOne({

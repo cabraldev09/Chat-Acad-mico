@@ -12,6 +12,10 @@ export const STAGE_KEYS = [
 ] as const;
 export type StageKey = typeof STAGE_KEYS[number];
 
+// The columns that only the system itself may fill, from an official event (the confirmed enrollment): the agent can not put a lead there
+// by a rule, by a block of the flow or by anything the model says.
+export const OFFICIAL_ONLY: StageKey[] = ["enrolled"];
+
 interface Spec {
   name: string;
   type: "open" | "won" | "lost";

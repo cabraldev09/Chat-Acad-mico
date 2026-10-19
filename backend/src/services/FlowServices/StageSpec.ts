@@ -57,6 +57,8 @@ export interface StageData {
   // code that runs after each turn (the commercial funnel) and how many turns of the conversation the AI reads
   hooks: string[];
   historyTurns: number;
+  // the stage does not speak when the conversation reaches it (the last block already said what was needed): it waits for the person
+  quiet: boolean;
 }
 
 export const slug = (s: any, max = 30): string =>
@@ -70,6 +72,15 @@ export const slug = (s: any, max = 30): string =>
 
 const clip = (v: any, n: number): string => String(v ?? "").trim().slice(0, n);
 
+// the name of a field keeps its capitals (the data of the commercial agent is courseName, entryType...): only letters, digits and "_"
+const keyOf = (v: any): string =>
+  String(v ?? "")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^A-Za-z0-9_]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 30);
+
 // the data of a stage as the engine and the AI will read it: only known things, with sane sizes
 export const cleanStage = (raw: any): StageData => {
   const d = raw || {};
@@ -77,7 +88,7 @@ export const cleanStage = (raw: any): StageData => {
   const fields: StageField[] = (Array.isArray(d.fields) ? d.fields : [])
     .slice(0, 12)
     .map((f: any) => {
-      const key = slug(f?.key || f?.label, 30);
+      const key = keyOf(f?.key) || slug(f?.label, 30);
       const type = (FIELD_TYPES as readonly string[]).includes(f?.type) ? String(f.type) : "text";
       return {
         key,
@@ -122,7 +133,8 @@ export const cleanStage = (raw: any): StageData => {
     outcomes,
     agentId: Number(d.agentId) > 0 ? Number(d.agentId) : null,
     hooks: (Array.isArray(d.hooks) ? d.hooks : []).filter((h: any) => (STAGE_HOOKS as readonly string[]).includes(h)),
-    historyTurns: Math.min(12, Math.max(2, Math.round(Number(d.historyTurns) || 6)))
+    historyTurns: Math.min(12, Math.max(2, Math.round(Number(d.historyTurns) || 6))),
+    quiet: !!d.quiet
   };
 };
 

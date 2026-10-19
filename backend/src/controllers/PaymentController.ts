@@ -14,6 +14,7 @@ import { logger } from "../utils/logger";
 import * as Efi from "../services/PaymentServices/EfiClient";
 import * as Billet from "../services/PaymentServices/EfiBilletClient";
 import User from "../models/User";
+import { onEnrollmentStarted } from "../services/CommercialServices/Milestones";
 import {
   cancelPayment,
   createEnrollmentCharge,
@@ -145,6 +146,7 @@ export const createForLead = async (req: Request, res: Response): Promise<Respon
     method: req.body.method === "pix" ? "pix" : "bolix",
     dueDate: req.body.dueDate || null
   });
+  void onEnrollmentStarted(lead.id);
   return res.status(201).json(present(payment, true));
 };
 

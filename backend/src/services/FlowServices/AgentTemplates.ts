@@ -4,6 +4,7 @@ import { slotsOf } from "../AiServices/Tools";
 import { Graph } from "./Graph";
 import { build } from "./Templates";
 import { slug } from "./StageSpec";
+import { COMMERCIAL_KB, COMMERCIAL_PERSONA, COMMERCIAL_TEMPLATE_KEY, commercialGraph } from "../CommercialServices/Template";
 
 // Ready agents by segment: the persona, a few answers for the knowledge base and the blocks (stages, exits, CRM actions).
 // "Criar com IA" starts from a description; these start from a good example that the team edits.
@@ -14,6 +15,10 @@ export interface AgentTemplate {
   segment: string;
   persona: { systemPrompt: string; tone: string; rules: string; forbidden: string; handoffMessage: string; unknownMessage: string };
   faq: Array<{ title: string; content: string; keywords?: string }>;
+  // approved passages of the knowledge base by subject (topic), read only when the question is about that subject
+  kb?: Array<{ title: string; content: string; topic: string; keywords?: string }>;
+  // the agent keeps the CRM by itself: its columns of the funnel are mapped (and created when missing) when it is made
+  commercial?: boolean;
   graph: Graph;
 }
 
@@ -23,6 +28,17 @@ const UNKNOWN = "Ótima pergunta! Vou confirmar essa informação com a nossa eq
 const stage = (d: any) => ({ title: "Conversa", useKnowledge: true, maxTurns: 14, tools: [], http: [], outcomes: [], fields: [], instructions: "", opening: "", ...d });
 
 export const AGENT_TEMPLATES: AgentTemplate[] = [
+  {
+    key: COMMERCIAL_TEMPLATE_KEY,
+    name: "Comercial — Graduação",
+    description: "Atende, qualifica e orienta leads de graduação, consulta informações acadêmicas, acompanha o CRM e transfere leads prontos para proposta.",
+    segment: "Educação",
+    persona: COMMERCIAL_PERSONA,
+    faq: [],
+    kb: COMMERCIAL_KB,
+    commercial: true,
+    graph: commercialGraph()
+  },
   {
     key: "captacao-matricula",
     name: "Captação e matrícula",
@@ -197,7 +213,7 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
   }
 ];
 
-export const templateSummary = (t: AgentTemplate) => ({ key: t.key, name: t.name, description: t.description, segment: t.segment, stages: t.graph.nodes.filter(n => n.type === "stage").length, blocks: t.graph.nodes.length });
+export const templateSummary = (t: AgentTemplate) => ({ key: t.key, name: t.name, description: t.description, segment: t.segment, commercial: !!t.commercial, stages: t.graph.nodes.filter(n => n.type === "stage").length, blocks: t.graph.nodes.length });
 
 // The agent of today (one prompt, its fields and its functions) as blocks: the same behaviour in a draft the team can review.
 export const convertAgent = async (agent: AiAgent): Promise<Graph> => {

@@ -11,6 +11,7 @@ import ShowTicketService from "../TicketServices/ShowTicketService";
 import AutoAssignTicket from "../AutomationServices/AutoAssignTicket";
 import { logger } from "../../utils/logger";
 import { slotsOf, missingSlots } from "./Tools";
+import { briefIfCommercial } from "../CommercialServices/Brief";
 
 export type HandoffReason = "pedido" | "limite_turnos" | "limite_tokens" | "qualificado" | "sem_resposta" | "desconhecido";
 
@@ -54,7 +55,9 @@ export const handoffToHuman = async (ticketId: number, agent: AiAgent, reason: H
   const lead = await Lead.findOne({ where: { contactId: ticket.contactId } });
   if (lead) {
     await addActivity(lead.id, null, "system", `Atendimento com IA passou para a equipe (${REASON[reason]}).${summary ? `\n${summary}` : ""}`);
-    if (complete) {
+    // the commercial agent keeps the column and the tasks by its own rules (never back to "Qualificado"): here only the brief goes
+    const commercial = await briefIfCommercial(ticketId, lead).catch(() => false);
+    if (complete && !commercial) {
       const stage = await LeadStage.findOne({ where: { name: "Qualificado" } });
       if (stage && lead.stageId !== stage.id) await changeStage(lead.id, stage.id, null).catch(() => undefined);
       if (lead.ownerId) {

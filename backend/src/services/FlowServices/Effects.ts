@@ -29,7 +29,7 @@ import { HandoffReason, handoffToHuman } from "../AiServices/Handoff";
 import { captureUnknown } from "../AiServices/Learning";
 import { matchFaq } from "../AiServices/Kb";
 import { tokensToday } from "../AiServices/Usage";
-import TicketEvent from "../../models/TicketEvent";
+import { saveBrief } from "../CommercialServices/Brief";
 import { runCommercialBlock } from "../CommercialServices/Block";
 import { blankState, hydrate, loadState, mirror } from "../CommercialServices/Slots";
 import { dbPorts, simPorts, SimWorld } from "../CommercialServices/Ports";
@@ -245,15 +245,12 @@ export const ticketEffects = (ticket: Ticket, flowName: string, flowCtx: FlowCon
       const { lead, state, ports } = await commercialOf(node);
       const out = await runCommercialBlock(node, {
         ports, ticketId: ticket.id, sandbox: false, academic: { ticket, dryRun: false, slots: mirror(state), patch: {}, cacheHits: 0, agentId: flowCtx.agentId || null },
-        writeBrief: async brief => {
-          await TicketEvent.create({ ticketId: ticket.id, type: "handoff", note: brief.slice(0, 4000) } as any);
-          await addActivity(lead.id, null, "note", brief);
-        }
+        writeBrief: async brief => { await saveBrief(ticket.id, lead, state, brief); }
       });
       Object.assign(vars, out);
     },
 
-    async aiTurn({ node, vars, input }: StageTurnArgs): Promise<StageTurn> {
+    async aiTurn({ node, vars, input, turns }: StageTurnArgs): Promise<StageTurn> {
       const stage = cleanStage(node.data);
       const agent = await agentFor(stage.agentId);
       // nobody to talk as: the team takes the conversation
@@ -266,7 +263,9 @@ export const ticketEffects = (ticket: Ticket, flowName: string, flowCtx: FlowCon
       // the commercial agent: the state of the lead, the rules and the funnel are code; the model only talks and understands
       if (stage.hooks.includes("commercial")) {
         const { lead, ports } = await commercialOf(node);
-        const turn = await commercialAiTurn({ agent, stage, nodeId: node.id, flowId: flowCtx.flowId, ports, ticket, lead, history, input: input === null ? null : last.content, sandbox: false, contactName: ticket.contact?.name });
+        const turn = await commercialAiTurn({ agent, stage, nodeId: node.id, flowId: flowCtx.flowId, ports, ticket, lead, history, input: input === null ? null : last.content, sandbox: false, contactName: ticket.contact?.name, turns });
+        // what the person was told is not said again by the handoff of the exit
+        if (turn.text && turn.exit) vars.__spoke = turn.exit;
         return { text: turn.text, exit: turn.exit, collected: turn.collected };
       }
       const lastText = last && last.role === "user" ? last.content : "";
@@ -286,11 +285,11 @@ export const ticketEffects = (ticket: Ticket, flowName: string, flowCtx: FlowCon
       return { text, exit: result.exit || null, collected: result.collected };
     },
 
-    async humanHandoff(_node, exit) {
+    async humanHandoff(_node, exit, vars) {
       const agent = await agentFor(null);
       await ticket.update({ chatbotNodeId: FLOW_DONE });
       // a stage that ended by itself already said goodbye; for the others the person is told a colleague continues
-      if (agent && exit !== "off") await this.say(agent.handoffMessage || DEFAULT_HANDOFF);
+      if (agent && exit !== "off" && vars?.__spoke !== exit) await this.say(agent.handoffMessage || DEFAULT_HANDOFF);
       if (agent) await handoffToHuman(ticket.id, agent, REASON_OF[exit] || "pedido");
       else await ticket.update({ aiActive: false });
     },
@@ -394,7 +393,7 @@ export const simEffects = (sample: SimSample = {}, opts: { agent?: AiAgent | nul
       traces.push({ nodeId: node.id, tools: [], collected: out, exit: null, sources: [], tokens: { input: 0, output: 0, cacheRead: 0 }, commercial: { block: node.data?.op || null, crm: { before, after: world.stageKey }, audit: ports.audit, state: mirror(world.state) } });
     },
     // the AI really answers (with the model of the agent), but nothing is sent or saved: the history lives in the state of the simulator
-    async aiTurn({ node, vars, input }: StageTurnArgs): Promise<StageTurn> {
+    async aiTurn({ node, vars, input, turns }: StageTurnArgs): Promise<StageTurn> {
       const stage = cleanStage(node.data);
       const agent = opts.agent || null;
       if (!agent) return { text: "(Simulação: nenhum agente de IA ativo para conversar. Em produção a conversa iria para a equipe.)", exit: "human" };
@@ -405,7 +404,7 @@ export const simEffects = (sample: SimSample = {}, opts: { agent?: AiAgent | nul
         const world = worldOf(vars);
         const ports = simPorts(world);
         const before = { stage: world.stageKey, state: mirror(world.state) };
-        const turn = await commercialAiTurn({ agent, stage, nodeId: node.id, flowId: opts.flowId, ports, ticket: null, lead: null, history, input: input === null || input === "" ? null : input, sandbox: true, contactName: name });
+        const turn = await commercialAiTurn({ agent, stage, nodeId: node.id, flowId: opts.flowId, ports, ticket: null, lead: null, history, input: input === null || input === "" ? null : input, sandbox: true, contactName: name, turns });
         if (turn.text) hist.push({ role: "assistant", content: turn.text });
         vars.__hist = hist.slice(-20);
         ports.audit.forEach(a => actions.push(a.text));

@@ -35,7 +35,8 @@ const fake = (turns: StageTurn[]) => {
     setPolo: async () => "",
     aiTurn: async a => { calls.push(a); return turns.shift() || { text: "" }; },
     humanHandoff: async (_n, exit) => { handoffs.push(exit); },
-    startFlow: async () => true
+    startFlow: async () => true,
+    commercial: async () => undefined
   };
   return { fx, said, calls, handoffs, saved };
 };

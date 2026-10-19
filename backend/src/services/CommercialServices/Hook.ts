@@ -66,6 +66,7 @@ export const commercialTurn = async (ports: CommercialPorts, input: TurnInput): 
     if (used.has("buscar_curso")) s.slots.courseExplained = true;
     if (used.has("buscar_regra_modalidade")) { s.slots.modalityExplained = true; if (s.slots.mecImpacted) s.slots.mecExplained = true; }
     if (used.has("buscar_estagio")) s.slots.internshipExplained = true;
+    if (used.has("consultar_analise_curricular") && s.slots.analysisStatus === "completed") s.slots.analysisExplained = true;
     (input.topics || []).forEach(t => { if (TOPIC_FLAG[t]) s.slots[TOPIC_FLAG[t]] = true; });
   }
   if (input.replied) s.slots.lastInboundAt = now.toISOString();

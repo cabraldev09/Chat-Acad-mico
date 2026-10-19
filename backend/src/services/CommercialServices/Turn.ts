@@ -9,7 +9,7 @@ import { StageData } from "../FlowServices/StageSpec";
 import { StageTurn } from "../FlowServices/Engine";
 import { commercialTurn, CommercialTrace } from "./Hook";
 import { CommercialPorts } from "./Ports";
-import { ENTRY_LABEL, fastIntent, topicsOf } from "./Rules";
+import { ENTRY_LABEL, fastIntent, isGreeting, openingText, stageFieldsDone, topicsOf } from "./Rules";
 import { mirror } from "./Slots";
 
 // One turn of the commercial agent, the same in the real conversation and in the simulator (only the ports and the history change):
@@ -21,6 +21,9 @@ export const FIXED = {
   proposal: "Perfeito. Vou encaminhar seu atendimento para o consultor verificar a melhor condição de bolsa disponível e montar sua proposta certinha.",
   unknown: "Essa informação eu prefiro confirmar para não te passar nada incorreto. Vou encaminhar para o consultor verificar certinho para você."
 };
+
+// the person is back after a while (the conversation did not stop an hour ago)
+const returningSince = (iso: any): boolean => !!iso && Date.now() - new Date(String(iso)).getTime() > 6 * 3600000;
 
 // a value in reais in the answer: the agent never gives one (it would be an invention, or a price from an old table)
 export const leaksPrice = (text: string): boolean => /R\$\s*\d|\b\d[\d.,]*\s*(reais|conto)\b/i.test(text || "");
@@ -39,6 +42,8 @@ export interface TurnDeps {
   input: string | null;
   sandbox: boolean;
   contactName?: string | null;
+  // how many turns this stage already had
+  turns?: number;
 }
 
 export interface CommercialTurnResult extends StageTurn {
@@ -78,6 +83,30 @@ export const commercialAiTurn = async (d: TurnDeps): Promise<CommercialTurnResul
       latencyMs: r.latencyMs, outcome: r.outcome, model: d.agent.model
     } as any).catch(() => undefined);
   };
+
+  // 0) the opening: a greeting (or nobody wrote yet) is answered by the system, with the next question, without the model
+  const fresh = !state.slots.lastOutboundAt || returningSince(state.slots.lastOutboundAt);
+  if (fresh && !d.turns && (d.input === null || isGreeting(lastText))) {
+    const first = String(state.slots.leadName || d.contactName || "").trim().split(/\s+/)[0] || "";
+    const text = openingText(state.slots, first, !!state.slots.lastOutboundAt);
+    const hook = await commercialTurn(d.ports, { userText: lastText, intent: d.input === null ? null : "greeting", tools: [], hadText: true, replied: d.input !== null, firstContactSent: true, nodeId: d.nodeId });
+    const latencyMs = Date.now() - started;
+    await log({ intent: "greeting", deterministic: true, llmCalls: 0, toolCalls: 0, cacheHits: 0, tokens: base.tokens, outcome: null, latencyMs });
+    if (d.lead && !d.sandbox) await syncLead(d, hook.trace.changed);
+    return { text, exit: null, collected: flat(hook.trace.changed), trace: { ...base, deterministic: true, intent: "greeting", commercial: hook.trace, entry: ENTRY_LABEL[state.slots.entryType || "unknown"], latencyMs } };
+  }
+
+  // the transcript arrives (the text of a message with a file is its name): the stage that asked for it goes on without the model
+  const sentFile = d.input !== null && /^\S+\.(pdf|jpe?g|png|webp|heic)$/i.test(lastText.trim());
+  if (sentFile && (state.slots.entryType === "transfer" || state.slots.entryType === "second_degree") && d.stage.outcomes.some(o => o.id === "enviou_historico")) {
+    const hook = await commercialTurn(d.ports, { userText: lastText, intent: "analysis", patch: { hasTranscript: true }, tools: [], hadText: true, replied: true, nodeId: d.nodeId });
+    const latencyMs = Date.now() - started;
+    await log({ intent: "analysis", deterministic: true, llmCalls: 0, toolCalls: 0, cacheHits: 0, tokens: base.tokens, outcome: "enviou_historico", latencyMs });
+    return {
+      text: "Recebi o seu histórico, obrigado! Vou iniciar a análise curricular para verificar quais disciplinas poderão ser aproveitadas.", exit: hook.exit || "enviou_historico",
+      collected: flat(hook.trace.changed), trace: { ...base, deterministic: true, intent: "analysis", commercial: hook.trace, entry: ENTRY_LABEL[state.slots.entryType || "unknown"], latencyMs }
+    };
+  }
 
   // 1) the obvious: no model
   const fast = d.input === null ? null : fastIntent(lastText);
@@ -119,6 +148,11 @@ export const commercialAiTurn = async (d: TurnDeps): Promise<CommercialTurnResul
       hook.trace = { ...hook.trace, ...again.trace, actions: [...hook.trace.actions, ...again.trace.actions] };
     }
   } else if (hook.exit === "off" && !text) text = FIXED.unknown;
+  // no reason from the rules to leave: the stage ends by itself when what it asks for is known, or by the exit the model chose
+  if (!hook.exit) {
+    if (result.exit) hook.exit = result.exit;
+    else if (stageFieldsDone(d.stage.fields, state.slots)) hook.exit = "done";
+  }
   if (hook.exit === "off" && d.ticket && !d.sandbox && d.agent.learnFromTeam !== false && unknownQuestion) {
     await captureUnknown(d.agent, d.ticket, unknownQuestion, d.contactName || undefined).catch(() => undefined);
   }

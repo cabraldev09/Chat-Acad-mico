@@ -52,6 +52,48 @@ export const fastIntent = (text: string): FastIntent => {
   return null;
 };
 
+// a message that only says hello or shows interest, with nothing to answer: the opening of the system is enough (no model)
+export const isGreeting = (text: string): boolean => {
+  const t = plain(text);
+  if (!t || t.length > 70 || t.includes("?")) return false;
+  if (fastIntent(text)) return false;
+  return /^(oi+|ola+|opa|e ai|eae|bom dia|boa tarde|boa noite|hello|hi|tudo bem|tudo bom|quero (mais )?informac|gostaria de (mais )?informac|informac|vim (pelo|pela|do|da|de|atraves)|quero saber mais|tenho interesse|me interessei|quero conhecer|queria conhecer|queria saber mais)/.test(t);
+};
+
+// The first message of the agent, written by the system (a model would spend tokens to say the same thing every time): it welcomes the
+// person, mentions what is already known and asks only the next thing that is missing.
+export const openingText = (slots: Slots, first: string, returning: boolean): string => {
+  const name = first ? `, ${first}` : "";
+  const hasCourse = !!(slots.courseName || slots.courseId);
+  const hasCity = !!(slots.city || slots.poloId);
+  const hasEntry = !!slots.entryType && slots.entryType !== "unknown";
+  const ask = !hasCourse
+    ? "Qual curso você tem interesse?"
+    : !hasCity
+      ? "Em qual cidade você mora? Assim eu já te mostro o polo mais perto."
+      : !hasEntry
+        ? "Você vai começar a primeira graduação ou já cursou (ou cursa) outra faculdade?"
+        : "Em que posso te ajudar agora?";
+  const course = hasCourse ? String(slots.courseName || "") : "";
+  if (returning) {
+    return `Oi${name}! Que bom falar com você de novo. 😊${course ? ` Da última vez conversamos sobre ${course}.` : ""} ${hasCourse && hasCity && hasEntry ? "Em que posso te ajudar agora?" : ask}`;
+  }
+  return `Olá${name}! 👋 Aqui é o assistente virtual da Cruzeiro do Sul Virtual.${course ? ` Vi que você tem interesse em ${course}.` : ""} ${ask}`;
+};
+
+// the fields a stage asks for are filled when each one has a value in the state of the lead
+export const stageFieldsDone = (fields: Array<{ key: string; required: boolean }>, slots: Slots): boolean => {
+  const required = fields.filter(f => f.required);
+  if (!required.length) return false;
+  return required.every(f => {
+    const v = slots[f.key];
+    if (f.key === "entryType") return !!v && v !== "unknown";
+    if (f.key === "city") return !!(slots.city || slots.poloId);
+    if (f.key === "courseName") return !!(slots.courseName || slots.courseId);
+    return v !== undefined && v !== null && v !== "" && v !== false;
+  });
+};
+
 // the model said "no interest": it only counts when the person really said it
 export const confirmsNoInterest = (text: string): boolean => NO_INTEREST.some(r => r.test(plain(text)));
 

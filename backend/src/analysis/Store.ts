@@ -143,6 +143,7 @@ const recompute = async (row: CurricularAnalysis, patch: { entryPeriod?: number 
     baseWarnings: parse(row.baseWarnings, [])
   });
   const completed = entryPeriod !== null;
+  const wasWaiting = row.status !== "COMPLETED";
   await row.update({
     entryPeriod,
     startTerm,
@@ -153,6 +154,8 @@ const recompute = async (row: CurricularAnalysis, patch: { entryPeriod?: number 
     // while nobody answered it (a later recalculation does not restart the clock)
     ...(completed && !row.followUpDueAt && (row.enrollmentStatus || "PENDING") === "PENDING" && !row.enrollmentUpdatedAt ? { followUpDueAt: new Date(Date.now() + FOLLOW_UP_HOURS * 3600000) } : {})
   });
+  // an analysis that waited for a review and was finished by the team: the AI agent that attends this lead follows it
+  if (completed && wasWaiting) import("../services/CommercialServices/Milestones").then(m => m.onAnalysisCompleted(row)).catch(() => undefined);
   return row;
 };
 

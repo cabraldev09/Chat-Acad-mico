@@ -12,7 +12,8 @@ import {
   ForeignKey,
   BelongsTo,
   BelongsToMany,
-  HasMany
+  HasMany,
+  HasOne
 } from "sequelize-typescript";
 
 import Course from "./Course";
@@ -26,6 +27,7 @@ import LeadActivity from "./LeadActivity";
 import LeadTask from "./LeadTask";
 import Payment from "./Payment";
 import Affiliate from "./Affiliate";
+import LeadCommercial from "./LeadCommercial";
 import { maskCpf } from "../helpers/Cpf";
 
 @Table
@@ -224,6 +226,10 @@ class Lead extends Model<Lead> {
 
   @BelongsTo(() => Contact)
   contact: Contact;
+
+  // what the AI agent of graduation knows about the lead (temperature, score, next action...)
+  @HasOne(() => LeadCommercial, { foreignKey: "leadId" })
+  commercial: LeadCommercial;
 
   @BelongsToMany(() => Tag, () => LeadTag)
   tags: Tag[];

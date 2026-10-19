@@ -74,7 +74,15 @@ const stateOf = (run: ChatFlowRun): RunState => {
 // a flow that ended hands the ticket back to the rest of the automation; an agent in blocks that ended does not start over at the
 // next message (a person, or another automation, goes on)
 const release = async (ticket: Ticket, step: StepResult, flow?: ChatFlow): Promise<void> => {
-  if (step.status === "done" || step.status === "handoff") await ticket.update({ chatbotNodeId: -1, ...(flow?.kind === "agent" ? { aiActive: false } : {}) });
+  if (step.status !== "done" && step.status !== "handoff") return;
+  // an agent that handed over (or ended) stops answering; an "end" block marked "keep attending" leaves it on, so the person who comes
+  // back tomorrow ("I'll think about it", "I'll send the transcript later") is attended again by a new run
+  let keep = false;
+  if (flow?.kind === "agent" && step.status === "done") {
+    const last = parseGraph(flow.published).nodes.find(n => n.id === step.path[step.path.length - 1]);
+    keep = !!last && last.type === "end" && last.data?.resume === true && !last.data?.close;
+  }
+  await ticket.update({ chatbotNodeId: -1, ...(flow?.kind === "agent" && !keep ? { aiActive: false } : {}) });
 };
 
 // A run is being advanced (an AI turn can take seconds): a message that arrives meanwhile waits for it instead of touching a run that

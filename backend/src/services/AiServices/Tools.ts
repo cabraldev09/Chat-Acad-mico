@@ -53,7 +53,8 @@ export const stageToolDefs = (stage: StageData) => {
   // the tools of the commercial agent have their own short definitions; the others are the classic ones
   const tools: any[] = stage.tools.map(n => COMMERCIAL_TOOL_DEFS[n] || all.find(t => t.name === n)).filter(Boolean);
   if (commercial) tools.push(COMMERCIAL_TOOL_DEFS.registrar_turno);
-  if (stage.fields.length) {
+  // the commercial agent registers what it understood with registrar_turno (one call per turn); the classic stages use salvar_lead
+  if (stage.fields.length && !commercial) {
     tools.push({
       name: "salvar_lead",
       description: "Guarda os dados que a pessoa acabou de informar. Chame sempre que descobrir um dado novo. Devolve o que ainda falta.",
@@ -220,6 +221,8 @@ export const runTool = async (name: string, input: any, ctx: Ctx): Promise<any> 
     if (started) ctx.flowStarted = true;
     return started ? { iniciado: true, aviso: "O fluxo assumiu a conversa. Não escreva mais nada agora." } : { iniciado: false, erro: "O fluxo não está publicado." };
   }
+  // the commercial agent's tools answer from the academic data (no table prices); they come before the classic tools of the same name
+  if (ctx.stage && ctx.stage.hooks.includes("commercial") && ctx.academic && (ACADEMIC_TOOLS as readonly string[]).includes(name)) return runAcademicTool(name, input, ctx.academic);
   if (name === "buscar_curso") {
     const courses = await findCourses(String(input.nome || ""));
     if (!courses.length) return { encontrados: 0, aviso: "Nenhum curso com esse nome no catálogo." };

@@ -1,0 +1,294 @@
+import { Request, Response } from "express";
+import { Op, QueryTypes } from "sequelize";
+
+import sequelize from "../database";
+import AppError from "../errors/AppError";
+import { dayBounds, shiftDays, getAppTz } from "../helpers/AppTime";
+import AgentMetricEvent from "../models/AgentMetricEvent";
+import AgentTurnLog from "../models/AgentTurnLog";
+import AiAgent from "../models/AiAgent";
+import AiUsage from "../models/AiUsage";
+import Course from "../models/Course";
+import CourseRegulation from "../models/CourseRegulation";
+import Lead from "../models/Lead";
+import LeadStage from "../models/LeadStage";
+import Ticket from "../models/Ticket";
+import TicketEvent from "../models/TicketEvent";
+import { priceOf } from "../services/AiServices/Usage";
+import { ensurePipeline, effectiveMap, saveMap, STAGE_KEYS, STAGE_SPECS, StageKey } from "../services/CommercialServices/Pipeline";
+import { briefOf } from "../services/CommercialServices/Rules";
+import { loadState } from "../services/CommercialServices/Slots";
+
+// ------------------------------------------------------------------ the funnel of the commercial agent
+
+// Which column of the CRM each step of the journey uses. What already exists is recognised; what is missing can be created.
+const funnelData = async () => {
+  const map = await effectiveMap();
+  const stages = await LeadStage.findAll({ order: [["position", "ASC"]], attributes: ["id", "name", "type", "color", "position"] });
+  return {
+    keys: STAGE_KEYS.map(k => ({ key: k, name: STAGE_SPECS[k].name, type: STAGE_SPECS[k].type, stageId: map[k] })),
+    stages
+  };
+};
+
+export const funnelShow = async (_req: Request, res: Response): Promise<Response> => res.json(await funnelData());
+
+export const funnelSave = async (req: Request, res: Response): Promise<Response> => {
+  const body = (req.body?.map || {}) as Record<string, any>;
+  const stages = await LeadStage.findAll({ attributes: ["id", "type"] });
+  const byId = new Map(stages.map(s => [s.id, s]));
+  const clean: Partial<Record<StageKey, number | null>> = {};
+  const used = new Set<number>();
+  for (const k of STAGE_KEYS) {
+    const id = Number(body[k]);
+    if (!id) continue;
+    const stage = byId.get(id);
+    if (!stage) throw new AppError("ERR_NOT_FOUND", 404);
+    // the "won" step takes a won column and the "lost" one a lost column: the agent never ends a lead in the wrong kind of column
+    if (stage.type !== STAGE_SPECS[k].type) throw new AppError("ERR_FUNNEL_STAGE_TYPE", 400);
+    if (used.has(id)) throw new AppError("ERR_FUNNEL_STAGE_REPEATED", 400);
+    used.add(id);
+    clean[k] = id;
+  }
+  await saveMap(clean);
+  return res.json(await funnelData());
+};
+
+export const funnelCreate = async (_req: Request, res: Response): Promise<Response> => {
+  const out = await ensurePipeline({ create: true });
+  return res.json({ created: out.created, missing: out.missing, ...(await funnelData()) });
+};
+
+// ------------------------------------------------------------------ rules of the modality of each course (the MEC changes)
+
+const flag = (v: any): boolean | null => (v === null || v === undefined || v === "" ? null : v === true || v === "true" || v === 1 || v === "1");
+const pct = (v: any): number | null => {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(String(v).replace(",", "."));
+  if (!Number.isFinite(n) || n < 0 || n > 100) throw new AppError("ERR_PERCENT_INVALID", 400);
+  return Math.round(n * 100) / 100;
+};
+const text = (v: any, n: number): string | null => {
+  const s = String(v ?? "").trim().slice(0, n);
+  return s || null;
+};
+
+export const regulationsList = async (req: Request, res: Response): Promise<Response> => {
+  const rows = await CourseRegulation.findAll({ order: [["courseId", "ASC"], ["intakeTerm", "ASC"]] });
+  const courses = await Course.findAll({ attributes: ["id", "name", "modality", "level"], order: [["name", "ASC"]] });
+  const onlyCourse = Number(req.query.courseId) || 0;
+  return res.json({
+    courses,
+    rules: rows.filter(r => !onlyCourse || r.courseId === onlyCourse).map(r => ({ ...r.toJSON(), courseName: courses.find(c => c.id === r.courseId)?.name || "" }))
+  });
+};
+
+export const regulationSave = async (req: Request, res: Response): Promise<Response> => {
+  const b = req.body || {};
+  const courseId = Number(req.params.courseId);
+  if (!(await Course.findByPk(courseId))) throw new AppError("ERR_NOT_FOUND", 404);
+  const intakeTerm = text(b.intakeTerm, 10);
+  if (intakeTerm && !/^\d{4}\/[12]$/.test(intakeTerm)) throw new AppError("ERR_INTAKE_TERM_INVALID", 400);
+  const values = {
+    mecImpacted: flag(b.mecImpacted),
+    regulation: text(b.regulation, 300),
+    percentualPresencial: pct(b.percentualPresencial),
+    percentualSincrono: pct(b.percentualSincrono),
+    teoriaAoVivo: flag(b.teoriaAoVivo),
+    praticaPresencial: flag(b.praticaPresencial),
+    cronogramaPraticasDefinido: flag(b.cronogramaPraticasDefinido),
+    transitionStatus: text(b.transitionStatus, 40),
+    currentDelivery: text(b.currentDelivery, 40),
+    futureDelivery: text(b.futureDelivery, 40),
+    transitionNote: text(b.transitionNote, 2000),
+    commercialApprovedText: text(b.commercialApprovedText, 2000)
+  };
+  const existing = await CourseRegulation.findOne({ where: { courseId, intakeTerm: intakeTerm as any } });
+  const row = existing ? await existing.update(values as any) : await CourseRegulation.create({ courseId, intakeTerm, ...values } as any);
+  return res.json(row);
+};
+
+export const regulationRemove = async (req: Request, res: Response): Promise<Response> => {
+  const row = await CourseRegulation.findByPk(req.params.id);
+  if (!row) throw new AppError("ERR_NOT_FOUND", 404);
+  await row.destroy();
+  return res.json({ ok: true });
+};
+
+// ------------------------------------------------------------------ what the agent knows about a lead
+
+const handoffOf = async (leadId: number): Promise<{ note: string; at: Date; ticketId: number } | null> => {
+  const lead = await Lead.findByPk(leadId, { attributes: ["id", "contactId"] });
+  if (!lead || !lead.contactId) return null;
+  const tickets = await Ticket.findAll({ where: { contactId: lead.contactId }, attributes: ["id"] });
+  if (!tickets.length) return null;
+  // the brief of the agent (the other "handoff" events of the conversation are transfers)
+  const ev = await TicketEvent.findOne({
+    where: { ticketId: tickets.map(t => t.id), type: "handoff", [Op.or]: [{ note: { [Op.like]: "LEAD PRONTO PARA PROPOSTA%" } }, { note: { [Op.like]: "RESUMO DO ATENDIMENTO COM IA%" } }] } as any,
+    order: [["id", "DESC"]]
+  });
+  return ev ? { note: String(ev.getDataValue("note") || ""), at: ev.createdAt, ticketId: ev.ticketId } : null;
+};
+
+const commercialOf = async (leadId: number) => {
+  const lead = await Lead.findByPk(leadId, { attributes: ["id", "stageId"] });
+  if (!lead) throw new AppError("ERR_NOT_FOUND", 404);
+  const row = await (await import("../models/LeadCommercial")).default.findOne({ where: { leadId } });
+  if (!row) return { exists: false };
+  const state = await loadState(leadId);
+  const stageName = (await LeadStage.findByPk(lead.stageId))?.name || null;
+  const events = await AgentMetricEvent.findAll({ where: { leadId, once: true }, order: [["createdAt", "ASC"]], attributes: ["event", "createdAt"] });
+  const turns = await AgentTurnLog.findAll({ where: { leadId }, order: [["id", "DESC"]], limit: 10 });
+  const handoff = await handoffOf(leadId);
+  const { slots } = state;
+  return {
+    exists: true,
+    temperature: state.temperature,
+    commercialScore: state.commercialScore,
+    readyForProposal: state.readyForProposal,
+    nextAction: state.nextAction,
+    lastIntent: state.lastIntent,
+    followUpReason: state.followUpReason,
+    followUpAt: state.followUpAt,
+    summary: state.summary,
+    entryType: slots.entryType || "unknown",
+    analysisStatus: slots.analysisStatus || "not_applicable",
+    slots,
+    brief: briefOf(state, { stageName }),
+    handoff,
+    events: events.map(e => ({ event: e.event, at: e.createdAt })),
+    turns: turns.map(t => ({ id: t.id, intent: t.intent, deterministic: t.deterministic, llmCalls: t.llmCalls, toolCalls: t.toolCalls, tokens: t.inputTokens + t.outputTokens, outcome: t.outcome, at: t.createdAt }))
+  };
+};
+
+export const leadCommercial = async (req: Request, res: Response): Promise<Response> => res.json(await commercialOf(Number(req.params.id)));
+
+// the panel of the conversation: the lead of this contact
+export const ticketCommercial = async (req: Request, res: Response): Promise<Response> => {
+  const ticket = await Ticket.findByPk(req.params.ticketId, { attributes: ["id", "contactId"] });
+  if (!ticket) throw new AppError("ERR_NOT_FOUND", 404);
+  const lead = await Lead.findOne({ where: { contactId: ticket.contactId }, attributes: ["id"] });
+  if (!lead) return res.json({ exists: false });
+  return res.json({ leadId: lead.id, ...(await commercialOf(lead.id)) });
+};
+
+// ------------------------------------------------------------------ metrics of the agent
+
+export const FUNNEL_EVENTS: Array<{ event: string; label: string }> = [
+  { event: "lead_received", label: "Leads recebidos" },
+  { event: "contact_started", label: "Contato iniciado" },
+  { event: "replied", label: "Responderam" },
+  { event: "qualified", label: "Qualificados" },
+  { event: "transfer", label: "Transferência" },
+  { event: "second_degree", label: "Segunda graduação" },
+  { event: "analysis_requested", label: "Análise curricular pedida" },
+  { event: "analysis_completed", label: "Análise curricular concluída" },
+  { event: "ready_for_proposal", label: "Prontos para proposta" },
+  { event: "handoff_brief", label: "Entregues ao consultor com resumo" },
+  { event: "proposal_sent", label: "Proposta enviada" },
+  { event: "enrollment_started", label: "Matrícula em andamento" },
+  { event: "enrolled", label: "Matriculados" },
+  { event: "follow_up", label: "Follow-up" },
+  { event: "no_interest", label: "Sem interesse" },
+  { event: "human_handoff", label: "Pediram uma pessoa" }
+];
+
+const range = (req: Request): { from: Date; to: Date; days: number } => {
+  const days = Math.min(120, Math.max(1, Number(req.query.days) || 30));
+  const to = dayBounds().end;
+  return { from: shiftDays(dayBounds().start, -(days - 1)), to, days };
+};
+
+export const metrics = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await AiAgent.findByPk(req.params.id);
+  if (!agent) throw new AppError("ERR_NOT_FOUND", 404);
+  const { from, to, days } = range(req);
+  const rep = { agentId: agent.id, from, to };
+
+  // the funnel: each milestone counts once per lead
+  const rows: any[] = await sequelize.query(
+    `SELECT "event", COUNT(DISTINCT "leadId") AS leads, COUNT(*) AS total FROM "AgentMetricEvents"
+      WHERE "agentId" = :agentId AND "createdAt" >= :from AND "createdAt" < :to GROUP BY "event"`,
+    { replacements: rep, type: QueryTypes.SELECT }
+  );
+  const count = (event: string) => Number(rows.find(r => r.event === event)?.leads || 0);
+  const funnel = FUNNEL_EVENTS.map(e => ({ ...e, leads: count(e.event) }));
+  const first = funnel[0].leads;
+  const unknown = Number(rows.find(r => r.event === "unknown")?.total || 0);
+  const deterministicReplies = Number(rows.find(r => r.event === "deterministic_reply")?.total || 0);
+
+  // the turns: how much the AI was used and what it cost
+  const t: any = (await sequelize.query(
+    `SELECT COUNT(*) AS turns, COALESCE(SUM("llmCalls"),0) AS llm, COALESCE(SUM("toolCalls"),0) AS tools, COALESCE(SUM("cacheHits"),0) AS cache,
+            COALESCE(SUM("inputTokens"),0) AS input, COALESCE(SUM("outputTokens"),0) AS output, COALESCE(SUM("cacheReadTokens"),0) AS "cacheRead",
+            COALESCE(SUM(CASE WHEN "deterministic" THEN 1 ELSE 0 END),0) AS deterministic, COALESCE(AVG(NULLIF("latencyMs",0)),0) AS latency,
+            COUNT(DISTINCT "ticketId") AS conversations
+       FROM "AgentTurnLogs" WHERE "agentId" = :agentId AND "createdAt" >= :from AND "createdAt" < :to`,
+    { replacements: rep, type: QueryTypes.SELECT }
+  ))[0] || {};
+  const turns = Number(t.turns || 0);
+  const input = Number(t.input || 0);
+  const output = Number(t.output || 0);
+  const conversations = Number(t.conversations || 0);
+
+  // tokens per lead that reached a milestone (the cost of getting somewhere)
+  const perLead = async (event: string): Promise<{ leads: number; tokens: number | null }> => {
+    const r: any = (await sequelize.query(
+      `SELECT COUNT(DISTINCT m."leadId") AS leads, COALESCE(SUM(l."inputTokens" + l."outputTokens"),0) AS tokens
+         FROM "AgentMetricEvents" m JOIN "AgentTurnLogs" l ON l."leadId" = m."leadId" AND l."agentId" = m."agentId"
+        WHERE m."agentId" = :agentId AND m."event" = :event AND m."createdAt" >= :from AND m."createdAt" < :to`,
+      { replacements: { ...rep, event }, type: QueryTypes.SELECT }
+    ))[0] || {};
+    const leads = Number(r.leads || 0);
+    return { leads, tokens: leads ? Math.round(Number(r.tokens || 0) / leads) : null };
+  };
+
+  // by step of the flow
+  const byNode: any[] = await sequelize.query(
+    `SELECT "nodeId", COUNT(*) AS turns, COALESCE(SUM("inputTokens"+"outputTokens"),0) AS tokens, COALESCE(SUM("llmCalls"),0) AS llm
+       FROM "AgentTurnLogs" WHERE "agentId" = :agentId AND "createdAt" >= :from AND "createdAt" < :to AND "nodeId" IS NOT NULL GROUP BY "nodeId" ORDER BY tokens DESC LIMIT 12`,
+    { replacements: rep, type: QueryTypes.SELECT }
+  );
+  const perDay: any[] = await sequelize.query(
+    `SELECT TO_CHAR("createdAt" AT TIME ZONE :tz, 'YYYY-MM-DD') AS day, COUNT(*) AS turns, COALESCE(SUM("inputTokens"+"outputTokens"),0) AS tokens
+       FROM "AgentTurnLogs" WHERE "agentId" = :agentId AND "createdAt" >= :from AND "createdAt" < :to GROUP BY 1 ORDER BY 1`,
+    { replacements: { ...rep, tz: getAppTz() }, type: QueryTypes.SELECT }
+  ).catch(() => []);
+  const latencyUsage = await AiUsage.count({ where: { agentId: agent.id, kind: { [Op.ne]: "test" }, createdAt: { [Op.gte]: from } } as any });
+
+  // the cost only when the administrator typed the price of the model (prices are never guessed)
+  const price = await priceOf(agent.model);
+  const costUsd = price ? Math.round(((input * price.in + output * price.out) / 1e6) * 10000) / 10000 : null;
+  const qualified = await perLead("qualified");
+  const ready = await perLead("ready_for_proposal");
+
+  return res.json({
+    days,
+    funnel,
+    conversion: first ? funnel.slice(1).filter(f => ["qualified", "ready_for_proposal", "enrolled"].includes(f.event)).map(f => ({ event: f.event, label: f.label, rate: Math.round((f.leads / first) * 1000) / 10 })) : [],
+    unknownQuestions: unknown,
+    ai: {
+      turns,
+      conversations,
+      llmCalls: Number(t.llm || 0),
+      toolCalls: Number(t.tools || 0),
+      cacheHits: Number(t.cache || 0),
+      deterministicTurns: Number(t.deterministic || 0),
+      deterministicReplies,
+      deterministicShare: turns ? Math.round((Number(t.deterministic || 0) / turns) * 1000) / 10 : 0,
+      tokens: { input, output, cacheRead: Number(t.cacheRead || 0), total: input + output },
+      avgLatencyMs: Math.round(Number(t.latency || 0)),
+      perConversation: conversations ? Math.round((input + output) / conversations) : null,
+      perTurn: turns ? Math.round((input + output) / turns) : null,
+      perQualifiedLead: qualified.tokens,
+      perReadyLead: ready.tokens,
+      costUsd,
+      costPerConversationUsd: costUsd !== null && conversations ? Math.round((costUsd / conversations) * 10000) / 10000 : null,
+      priceSet: !!price,
+      model: agent.model,
+      calls: latencyUsage
+    },
+    byNode: byNode.map(n => ({ nodeId: n.nodeId, turns: Number(n.turns), tokens: Number(n.tokens), llmCalls: Number(n.llm) })),
+    perDay: perDay.map(d => ({ day: d.day, turns: Number(d.turns), tokens: Number(d.tokens) }))
+  });
+};

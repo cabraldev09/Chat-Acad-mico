@@ -190,6 +190,7 @@ export const validateGraph = (graph: Graph, ctx: { hasAiAgent?: boolean; kind?: 
     if (n.type === "commercial") {
       if (!(COMMERCIAL_OPS as readonly string[]).includes(d.op)) err(`${title}: escolha o que fazer.`, n.id);
       if (d.op === "sync_stage" && !String(d.stageKey || "").trim()) err(`${title}: escolha a coluna do funil.`, n.id);
+      if (d.op === "sync_stage" && String(d.stageKey) === "enrolled") err(`${title}: a coluna Matriculado só muda com a matrícula confirmada pelo sistema; o agente não pode movê-la.`, n.id);
       if (d.op === "task" && !String(d.title || "").trim()) err(`${title}: escreva o título da tarefa.`, n.id);
     }
     if (n.type === "flow" && !Number(d.flowId)) err(`${title}: escolha o fluxo que deve começar.`, n.id);
@@ -198,7 +199,7 @@ export const validateGraph = (graph: Graph, ctx: { hasAiAgent?: boolean; kind?: 
       if (!graph.edges.some(e => e.source === n.id && handleOf(e) === x.handle)) {
         if (x.required) err(`${title}: ligue a ${x.label} a um próximo passo.`, n.id);
         else if (x.handle === "other" || x.handle === "else") warn(`${title}: a ${x.label} não está ligada; a conversa termina ali.`, n.id);
-        else if (n.type === "stage" && (FIXED_EXITS as readonly string[]).includes(x.handle)) warn(`${title}: a ${x.label} não está ligada; a conversa vai para a equipe.`, n.id);
+        else if (n.type === "stage" && (FIXED_EXITS as readonly string[]).includes(x.handle) && !cleanStage(d).hooks.includes("commercial")) warn(`${title}: a ${x.label} não está ligada; a conversa vai para a equipe.`, n.id);
       }
     });
   });

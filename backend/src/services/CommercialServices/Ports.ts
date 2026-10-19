@@ -6,7 +6,7 @@ import LeadTask from "../../models/LeadTask";
 import { logger } from "../../utils/logger";
 import { syncNextFollowUp } from "../CrmServices/FollowUp";
 import { addActivity, changeStage } from "../CrmServices/LeadCore";
-import { StageKey, STAGE_SPECS, effectiveMap, keyOfStage } from "./Pipeline";
+import { OFFICIAL_ONLY, StageKey, STAGE_SPECS, effectiveMap, keyOfStage } from "./Pipeline";
 import { CommercialState, mirror, saveState } from "./Slots";
 
 // What the commercial rules need from the outside world. The real ports write to the CRM; the ports of the simulator only write
@@ -45,6 +45,10 @@ export const dbPorts = (lead: Lead, state: CommercialState, ctx: { agentId?: num
       return keyOfStage(await effectiveMap(), fresh ? fresh.stageId : lead.stageId);
     },
     async moveStage(key, reason) {
+      if (OFFICIAL_ONLY.includes(key)) {
+        audit.push({ kind: "crm", text: `“${STAGE_SPECS[key].name}” só muda com a matrícula confirmada pelo sistema: o agente não move para lá.` });
+        return false;
+      }
       const id = ((await effectiveMap())[key] ?? null) as number | null;
       if (!id) {
         audit.push({ kind: "crm", text: `Sem coluna mapeada para “${STAGE_SPECS[key].name}”: o lead fica onde está.` });
@@ -122,6 +126,10 @@ export const simPorts = (world: SimWorld): CommercialPorts => {
     audit,
     async stageKeyNow() { return world.stageKey; },
     async moveStage(key, reason) {
+      if (OFFICIAL_ONLY.includes(key)) {
+        audit.push({ kind: "crm", text: `“${STAGE_SPECS[key].name}” só muda com a matrícula confirmada pelo sistema: o agente não move para lá.` });
+        return false;
+      }
       world.stageKey = key;
       world.state.stageKey = key;
       audit.push({ kind: "crm", text: `Moveria para “${STAGE_SPECS[key].name}” (${reason})` });

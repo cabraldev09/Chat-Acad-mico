@@ -13,11 +13,13 @@ import Payment from "../../models/Payment";
 import { getIO } from "../../libs/socket";
 import { getSetting, setSetting } from "../../helpers/AppSettings";
 import { normalizeEmail, normalizePhone } from "../../helpers/Phone";
+import { brPhoneVariants } from "../../helpers/PhoneVariants";
 import { normalizeCpf } from "../../helpers/Cpf";
 import dispatchWebhook from "../WebhookServices/DispatchWebhook";
 import { computeScore } from "./LeadScore";
 import { logger } from "../../utils/logger";
 import Affiliate from "../../models/Affiliate";
+import LeadCommercial from "../../models/LeadCommercial";
 import { fire } from "../../helpers/Fire";
 import { affiliateStageId, ensureAffiliateStage, tagAffiliateLead } from "../AffiliateServices/AffiliateLane";
 
@@ -27,6 +29,7 @@ export const leadInclude = [
   { model: User, as: "owner", attributes: ["id", "name"] },
   { model: Affiliate, as: "affiliate", attributes: ["id", "name"] },
   { model: Contact, as: "contact", attributes: ["id", "name", "number", "profilePicUrl", "channel"] },
+  { model: LeadCommercial, as: "commercial", required: false, attributes: ["temperature", "commercialScore", "readyForProposal", "nextAction", "lastIntent", "followUpReason", "followUpAt", "stageKey", "lastInboundAt", "lastOutboundAt"] },
   { model: Tag, as: "tags", attributes: ["id", "name", "color"], through: { attributes: [] } },
   // only paid enrollment fees: lets cards show a "taxa paga" badge
   { model: Payment, as: "payments", attributes: ["id", "paidAt"], required: false, where: { status: "paid" } }
@@ -148,7 +151,8 @@ export const getEntryTerms = async (): Promise<{ terms: string[]; defaultTerm: s
 export const findDuplicate = async (phone: string | null, email: string | null, contactId?: number | null, cpf?: string | null) => {
   const or: any[] = [];
   if (cpf) or.push({ cpf });
-  if (phone) or.push({ phone });
+  // the same person with and without the ninth digit is one lead
+  if (phone) or.push({ phone: { [Op.in]: brPhoneVariants(phone) } });
   if (email) or.push({ email });
   if (contactId) or.push({ contactId });
   if (!or.length) return null;
@@ -166,7 +170,7 @@ export const upsertLead = async (
 
   let contactId = input.contactId || null;
   if (!contactId && phone) {
-    const contact = await Contact.findOne({ where: { number: phone } });
+    const contact = await Contact.findOne({ where: { number: { [Op.in]: brPhoneVariants(phone) } }, order: [["id", "ASC"]] });
     if (contact) contactId = contact.id;
   }
 

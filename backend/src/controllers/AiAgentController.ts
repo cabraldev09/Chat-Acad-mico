@@ -11,6 +11,7 @@ import KbDocument from "../models/KbDocument";
 import KbChunk from "../models/KbChunk";
 import AiUsage from "../models/AiUsage";
 import Ticket from "../models/Ticket";
+import Course from "../models/Course";
 import { addDocument, indexDocument, ensureLegacy, searchChunks } from "../services/AiServices/Kb";
 import AiLearning from "../models/AiLearning";
 import { approve, discard } from "../services/AiServices/Learning";
@@ -24,6 +25,8 @@ import ChatFlowRun from "../models/ChatFlowRun";
 import ChatFlowStat from "../models/ChatFlowStat";
 import { AGENT_TEMPLATES, convertAgent, templateSummary } from "../services/FlowServices/AgentTemplates";
 import { generateAgent } from "../services/FlowServices/GenerateAgent";
+import { defaultProvider } from "../services/AiServices/Keys";
+import { ensurePipeline } from "../services/CommercialServices/Pipeline";
 
 const crud = makeCrud(AiAgent, {
   fields: [
@@ -121,14 +124,18 @@ interface NewAgent {
   faq: Array<{ title: string; content: string; keywords?: string }>;
   graph: any;
   description: string;
+  kb?: Array<{ title: string; content: string; topic: string; keywords?: string }>;
+  // map (and create when missing) the columns of the commercial funnel
+  funnel?: boolean;
 }
 
 // the agent (turned off), its answers in the knowledge base and its blocks (a draft)
-const createAgentWithFlow = async (a: NewAgent, userId: number): Promise<{ agentId: number; flowId: number }> => {
+const createAgentWithFlow = async (a: NewAgent, userId: number): Promise<{ agentId: number; flowId: number; funnel?: { created: string[]; missing: string[] } }> => {
+  const access = await defaultProvider();
   const agent = await AiAgent.create({
     name: a.name,
-    provider: "anthropic",
-    model: DEFAULT_MODEL,
+    provider: access.provider,
+    model: access.model || DEFAULT_MODEL,
     systemPrompt: a.persona.systemPrompt,
     handoffMessage: a.persona.handoffMessage,
     persona: { tone: a.persona.tone, rules: a.persona.rules, forbidden: a.persona.forbidden, unknownMessage: a.persona.unknownMessage },
@@ -142,15 +149,22 @@ const createAgentWithFlow = async (a: NewAgent, userId: number): Promise<{ agent
     // eslint-disable-next-line no-await-in-loop
     await addDocument({ title: f.title, content: f.content, kind: "faq", source: "texto", keywords: f.keywords, agentId: agent.id } as any);
   }
+  for (const k of a.kb || []) {
+    // eslint-disable-next-line no-await-in-loop
+    await addDocument({ title: k.title, content: k.content, kind: "doc", source: "texto", keywords: k.keywords, topic: k.topic, agentId: agent.id } as any);
+  }
   const flow = await ChatFlow.create({ name: a.name, kind: "agent", agentId: agent.id, entry: JSON.stringify({ type: "agent", keywords: [] }), draft: JSON.stringify(a.graph), description: a.description, createdBy: userId } as any);
-  return { agentId: agent.id, flowId: flow.id };
+  const funnel = a.funnel ? await ensurePipeline({ create: true }) : undefined;
+  return { agentId: agent.id, flowId: flow.id, ...(funnel ? { funnel: { created: funnel.created, missing: funnel.missing } } : {}) };
 };
 
 export const fromTemplate = async (req: Request, res: Response): Promise<Response> => {
   const t = AGENT_TEMPLATES.find(x => x.key === req.body?.template);
   if (!t) throw new AppError("ERR_NOT_FOUND", 404);
   const name = String(req.body?.name || t.name).trim().slice(0, 80) || t.name;
-  return res.status(201).json(await createAgentWithFlow({ name, persona: t.persona, faq: t.faq, graph: t.graph, description: `Modelo: ${t.name}` }, uid(req)));
+  // the funnel of the commercial agent is mapped and completed unless the person unchecked it
+  const funnel = !!t.commercial && req.body?.createFunnel !== false;
+  return res.status(201).json(await createAgentWithFlow({ name, persona: t.persona, faq: t.faq, kb: t.kb, graph: t.graph, description: `Modelo: ${t.name}`, funnel }, uid(req)));
 };
 
 // "Criar com IA": a description of the business becomes the agent, its answers and its blocks (checked and fixed by the system before
@@ -206,9 +220,23 @@ export const kbShow = async (req: Request, res: Response): Promise<Response> => 
   return res.json(doc);
 };
 
+// the subject of a document: "institutional/tutoring", "courses/12/overview" (the passages are read only when the question is about it)
+const topicOf = (v: any): string | null => {
+  const t = String(v ?? "").trim().toLowerCase();
+  if (!t) return null;
+  if (!/^[a-z0-9_-]+(\/[a-z0-9_-]+){0,2}$/.test(t)) throw new AppError("ERR_KB_TOPIC_INVALID", 400);
+  return t;
+};
+const courseOf = async (v: any): Promise<number | null> => {
+  const id = Number(v);
+  if (!id) return null;
+  if (!(await Course.findByPk(id, { attributes: ["id"] }))) throw new AppError("ERR_NOT_FOUND", 404);
+  return id;
+};
+
 export const kbAdd = async (req: Request, res: Response): Promise<Response> => {
   const agent = await loadAgent(req.params.id);
-  const { title, content, kind, keywords, shared } = req.body || {};
+  const { title, content, kind, keywords, shared, topic, courseId } = req.body || {};
   const text = String(content || "").trim();
   if (!String(title || "").trim()) throw new AppError("ERR_FIELD_REQUIRED_title");
   if (!text) throw new AppError("ERR_KB_EMPTY");
@@ -217,6 +245,8 @@ export const kbAdd = async (req: Request, res: Response): Promise<Response> => {
     content: text.slice(0, 200000),
     kind: kind === "faq" ? "faq" : "doc",
     keywords,
+    topic: topicOf(topic),
+    courseId: await courseOf(courseId),
     agentId: shared ? null : agent.id
   });
   return res.status(201).json(doc);
@@ -225,8 +255,10 @@ export const kbAdd = async (req: Request, res: Response): Promise<Response> => {
 export const kbUpdate = async (req: Request, res: Response): Promise<Response> => {
   const doc = await KbDocument.findByPk(req.params.docId);
   if (!doc) throw new AppError("ERR_NOT_FOUND", 404);
-  const { title, content, keywords } = req.body || {};
+  const { title, content, keywords, topic, courseId } = req.body || {};
   await doc.update({
+    ...(topic !== undefined ? { topic: topicOf(topic) } : {}),
+    ...(courseId !== undefined ? { courseId: await courseOf(courseId) } : {}),
     ...(title !== undefined ? { title: String(title).trim().slice(0, 250) } : {}),
     ...(content !== undefined ? { content: String(content).slice(0, 200000) } : {}),
     ...(keywords !== undefined ? { keywords } : {})
@@ -288,6 +320,8 @@ export const kbUpload = async (req: Request, res: Response): Promise<Response> =
     title: String(req.body?.title || "").trim() || file.originalname,
     content: text.slice(0, 200000),
     source: "arquivo",
+    topic: topicOf(req.body?.topic),
+    courseId: await courseOf(req.body?.courseId),
     agentId: req.body?.shared === "true" ? null : agent.id
   });
   return res.status(201).json(doc);
@@ -310,6 +344,8 @@ export const kbFromUrl = async (req: Request, res: Response): Promise<Response> 
     title: String(req.body?.title || "").trim() || url.replace(/^https?:\/\//, "").slice(0, 120),
     content: text.slice(0, 200000),
     source: "url",
+    topic: topicOf(req.body?.topic),
+    courseId: await courseOf(req.body?.courseId),
     agentId: req.body?.shared ? null : agent.id
   });
   return res.status(201).json(doc);
