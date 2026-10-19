@@ -16,6 +16,10 @@ const useStyles = makeStyles((theme) => ({
 }));
 
 const nf = (n) => Number(n || 0).toLocaleString("pt-BR");
+const WHY = {
+  human_request: "Pediram uma pessoa", proposal: "Hora da proposta", unknown: "Pergunta sem resposta na base", limit_turns: "Limite de respostas", limit_tokens: "Limite diário de IA",
+  error: "Erro técnico da IA", complaint: "Insatisfação, pagamento ou jurídico", media: "Áudio ou arquivo que a IA não lê", loop: "Repetiu o pedido", other: "Outros",
+};
 
 // The journey of the leads of this agent (each lead counts once per step) and what the AI spent to get them there
 const CommercialTab = ({ agentId }) => {
@@ -88,6 +92,33 @@ const CommercialTab = ({ agentId }) => {
           <div className={classes.small}>{ai.costUsd !== null ? `custo no período${ai.costPerConversationUsd !== null ? ` · US$ ${ai.costPerConversationUsd.toLocaleString("pt-BR", { maximumFractionDigits: 4 })} por conversa` : ""}` : `custo: informe o preço de ${ai.model} na aba Uso`}</div>
         </div>
       </div>
+
+      <div className={classes.title}>Transferências para a equipe</div>
+      {m.handoffs.total === 0 ? (
+        <Typography variant="body2" color="textSecondary">Nenhuma conversa foi passada para uma pessoa neste período.</Typography>
+      ) : (
+        <>
+          <div className={classes.grid}>
+            <div className={classes.card}><div className={classes.big}>{nf(m.handoffs.total)}</div><div className={classes.small}>conversas passadas para a equipe</div></div>
+            <div className={classes.card}><div className={classes.big}>{m.handoffs.medianMinutes !== null ? `${nf(m.handoffs.medianMinutes)} min` : "—"}</div><div className={classes.small}>tempo típico até uma pessoa responder</div></div>
+            <div className={classes.card}><div className={classes.big} style={m.handoffs.unanswered ? { color: "#d97706" } : undefined}>{nf(m.handoffs.unanswered)}</div><div className={classes.small}>ainda sem resposta de uma pessoa</div></div>
+          </div>
+          {m.handoffs.byReason.map((r) => (
+            <div key={r.why} className={classes.step}>
+              <span>{WHY[r.why] || r.why}</span>
+              <div className={classes.track}><div className={classes.fill} style={{ width: `${Math.round((r.count / m.handoffs.byReason[0].count) * 100)}%`, background: "#ea580c" }} /></div>
+              <b style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{nf(r.count)}</b>
+            </div>
+          ))}
+          {m.handoffs.byPolo.length > 0 && <div className={classes.small} style={{ marginTop: 8 }}>Por polo: {m.handoffs.byPolo.map((p) => `${p.polo} (${p.count})`).join(" · ")}</div>}
+        </>
+      )}
+      {(m.technical.errors > 0 || m.technical.guards > 0) && (
+        <div className={classes.small} style={{ marginTop: 8 }}>
+          {m.technical.errors > 0 ? `${nf(m.technical.errors)} falha(s) da IA (a conversa foi para a equipe). ` : ""}
+          {m.technical.guards > 0 ? `${nf(m.technical.guards)} resposta(s) barradas por trazerem valor, promessa ou dado sem fonte.` : ""}
+        </div>
+      )}
 
       {m.byNode.length > 0 && (
         <>

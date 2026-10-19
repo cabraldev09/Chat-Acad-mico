@@ -2,12 +2,13 @@ import React, { useCallback, useEffect, useState } from "react";
 import { useHistory } from "react-router-dom";
 import { toast } from "react-toastify";
 import { Button, Paper, TextField, Typography, Switch, Tooltip, makeStyles } from "@material-ui/core";
-import { Bot, FileText, Filter, Plus, Scale, Settings2, Trash2, Workflow } from "lucide-react";
+import { AlertTriangle, Bot, FileText, Filter, Plus, Scale, Settings2, Trash2, UserCheck, Workflow } from "lucide-react";
 
 import IconAction from "../../components/IconAction";
 import ConfirmationModal from "../../components/ConfirmationModal";
 import AgentEditor from "./AgentEditor";
 import FunnelDialog from "./FunnelDialog";
+import HandoffDialog from "./HandoffDialog";
 import NewAgentDialog from "./NewAgentDialog";
 import RegulationsDialog from "./RegulationsDialog";
 import MainContainer from "../../components/MainContainer";
@@ -71,12 +72,16 @@ const AiAgents = () => {
   const [removing, setRemoving] = useState(null);
   const [funnelOpen, setFunnelOpen] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
+  const [handoffOpen, setHandoffOpen] = useState(false);
+  const [handoff, setHandoff] = useState(null);
 
   const load = useCallback(() => {
     api.get("/ai-agents").then(({ data }) => setAgents(data)).catch((e) => { toastError(e); setAgents([]); });
     api.get("/flows", { params: { kind: "agent" } }).then(({ data }) => setFlows(Array.isArray(data) ? data : [])).catch(() => setFlows([]));
   }, []);
   useEffect(() => { load(); }, [load]);
+  // polos where nobody would answer a handoff: the manager sees it before a lead is left waiting
+  useEffect(() => { if (!handoffOpen) api.get("/ai-handoff").then(({ data }) => setHandoff(data)).catch(() => setHandoff(null)); }, [handoffOpen]);
 
   const toggle = async (a) => {
     try { await api.put(`/ai-agents/${a.id}`, { active: !a.active }); load(); } catch (err) { toastError(err); }
@@ -98,6 +103,7 @@ const AiAgents = () => {
         }} />
       <FunnelDialog open={funnelOpen} onClose={() => setFunnelOpen(false)} />
       <RegulationsDialog open={rulesOpen} onClose={() => setRulesOpen(false)} />
+      <HandoffDialog open={handoffOpen} onClose={() => setHandoffOpen(false)} />
       <ConfirmationModal title="Remover este agente?" open={!!removing} onClose={() => setRemoving(null)}
         onConfirm={async () => { try { await api.delete(`/ai-agents/${removing.id}`); load(); } catch (e) { toastError(e); } setRemoving(null); }}>
         A base de conhecimento e os blocos dele também serão apagados.
@@ -105,6 +111,7 @@ const AiAgents = () => {
       <MainHeader>
         <Title>Agentes de IA</Title>
         <MainHeaderButtonsWrapper>
+          <Button variant="outlined" startIcon={<UserCheck size={16} />} onClick={() => setHandoffOpen(true)}>Quem assume</Button>
           <Button variant="outlined" startIcon={<Filter size={16} />} onClick={() => setFunnelOpen(true)}>Funil do CRM</Button>
           <Button variant="outlined" startIcon={<Scale size={16} />} onClick={() => setRulesOpen(true)}>Regras do MEC</Button>
           <Button variant="contained" color="primary" startIcon={<Plus size={16} />} onClick={() => setCreating(true)}>Novo agente</Button>
@@ -112,6 +119,20 @@ const AiAgents = () => {
       </MainHeader>
       <div className={classes.wrap}>
         <Keys />
+        {handoff && handoff.polos.some((p) => !p.ready) && (
+          <Paper variant="outlined" className={classes.paper} style={{ borderColor: "#d97706" }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+              <AlertTriangle size={20} color="#d97706" style={{ flexShrink: 0, marginTop: 2 }} />
+              <div style={{ flex: 1 }}>
+                <b>{handoff.polos.filter((p) => !p.ready).length} polo(s) sem consultor no comercial</b>
+                <Typography variant="body2" color="textSecondary">
+                  {handoff.polos.filter((p) => !p.ready).map((p) => p.name).join(", ")}. As conversas que o agente passar para eles vão para {handoff.reserve ? `a fila de reserva “${handoff.reserve.name}”` : "ninguém: defina uma fila de reserva"}.
+                </Typography>
+              </div>
+              <Button size="small" variant="outlined" onClick={() => setHandoffOpen(true)}>Ver</Button>
+            </div>
+          </Paper>
+        )}
         {agents && agents.length === 0 && (
           <Paper variant="outlined" className={classes.paper}>
             <Typography variant="h6">Nenhum agente ainda</Typography>

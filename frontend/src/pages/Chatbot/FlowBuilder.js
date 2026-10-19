@@ -123,7 +123,7 @@ const VersionsDialog = ({ open, onClose, flowId, onRestored }) => {
           <div key={v.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: "1px solid rgba(127,140,160,.25)" }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontWeight: 700 }}>Versão {v.version}{v.current ? " · em uso" : ""}</div>
-              <div style={{ fontSize: 12.5, opacity: 0.75 }}>{new Date(v.createdAt).toLocaleString("pt-BR")}{v.note ? ` · ${v.note}` : ""}{v.blocks ? ` · ${v.blocks} blocos` : ""}</div>
+              <div style={{ fontSize: 12.5, opacity: 0.75 }}>{new Date(v.at).toLocaleString("pt-BR")}{v.by ? ` · ${v.by}` : ""}{v.note ? ` · ${v.note}` : ""}{v.blocks ? ` · ${v.blocks} blocos` : ""}</div>
             </div>
             {!v.current && <Button size="small" variant="outlined" onClick={() => restore(v)}>Restaurar</Button>}
           </div>
