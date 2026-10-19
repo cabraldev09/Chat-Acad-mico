@@ -25,9 +25,12 @@ const REASON: Record<HandoffReason, string> = {
 
 const summaryOf = (agent: AiAgent, ticket: Ticket): string => {
   const c = (ticket.aiSlots || {}) as Record<string, string>;
-  const lines = slotsOf(agent)
-    .filter(s => c[s.key])
-    .map(s => `• ${s.label}: ${c[s.key]}`);
+  const known = new Set(slotsOf(agent).map(s => s.key));
+  const lines = [
+    ...slotsOf(agent).filter(s => c[s.key]).map(s => `• ${s.label}: ${c[s.key]}`),
+    // the fields of an AI stage of a flow are the ones of that flow, not of the agent
+    ...Object.entries(c).filter(([k, v]) => !known.has(k) && v).map(([k, v]) => `• ${k}: ${v}`)
+  ];
   return [ticket.aiSummary, lines.length ? lines.join("\n") : null].filter(Boolean).join("\n");
 };
 

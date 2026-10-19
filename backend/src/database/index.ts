@@ -26,6 +26,7 @@ import ChatbotNode from "../models/ChatbotNode";
 import ChatFlow from "../models/ChatFlow";
 import ChatFlowRun from "../models/ChatFlowRun";
 import ChatFlowStat from "../models/ChatFlowStat";
+import ChatFlowVersion from "../models/ChatFlowVersion";
 import AutomationTrigger from "../models/AutomationTrigger";
 import ClientError from "../models/ClientError";
 import PasswordReset from "../models/PasswordReset";
@@ -103,6 +104,7 @@ const models = [
   ChatFlow,
   ChatFlowRun,
   ChatFlowStat,
+  ChatFlowVersion,
   AutomationTrigger,
   ClientError,
   PasswordReset,

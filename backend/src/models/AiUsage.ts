@@ -15,6 +15,13 @@ class AiUsage extends Model<AiUsage> {
   @Column
   ticketId: number;
 
+  // the agent in blocks: the flow and the block (stage) that spent it
+  @Column
+  flowId: number;
+
+  @Column
+  nodeId: string;
+
   @AllowNull(false)
   @Column
   model: string;

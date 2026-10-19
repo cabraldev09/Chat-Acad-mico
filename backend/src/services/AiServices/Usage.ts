@@ -19,11 +19,15 @@ export const logUsage = async (a: {
   model: string;
   kind: "reply" | "summary" | "test";
   usage?: Counts;
+  flowId?: number | null;
+  nodeId?: string | null;
 }): Promise<void> => {
   const u = a.usage || {};
   await AiUsage.create({
     agentId: a.agentId || null,
     ticketId: a.ticketId || null,
+    flowId: a.flowId || null,
+    nodeId: a.nodeId ? String(a.nodeId).slice(0, 40) : null,
     model: a.model,
     kind: a.kind,
     inputTokens: u.input_tokens ?? u.prompt_tokens ?? 0,

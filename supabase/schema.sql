@@ -435,7 +435,9 @@ CREATE TABLE public."AiUsage" (
     "cacheReadTokens" integer DEFAULT 0 NOT NULL,
     "cacheWriteTokens" integer DEFAULT 0 NOT NULL,
     "createdAt" timestamp with time zone NOT NULL,
-    "updatedAt" timestamp with time zone NOT NULL
+    "updatedAt" timestamp with time zone NOT NULL,
+    "flowId" integer,
+    "nodeId" character varying(40)
 );
 
 
@@ -696,6 +698,42 @@ ALTER SEQUENCE public."ChatFlowStats_id_seq" OWNED BY public."ChatFlowStats".id;
 
 
 --
+-- Name: ChatFlowVersions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."ChatFlowVersions" (
+    id integer NOT NULL,
+    "flowId" integer NOT NULL,
+    version integer NOT NULL,
+    graph text NOT NULL,
+    note character varying(200),
+    "publishedBy" integer,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: ChatFlowVersions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."ChatFlowVersions_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: ChatFlowVersions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."ChatFlowVersions_id_seq" OWNED BY public."ChatFlowVersions".id;
+
+
+--
 -- Name: ChatFlows; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -712,7 +750,9 @@ CREATE TABLE public."ChatFlows" (
     "publishedAt" timestamp with time zone,
     "createdBy" integer,
     "createdAt" timestamp with time zone NOT NULL,
-    "updatedAt" timestamp with time zone NOT NULL
+    "updatedAt" timestamp with time zone NOT NULL,
+    kind character varying(10) DEFAULT 'flow'::character varying NOT NULL,
+    "agentId" integer
 );
 
 
@@ -2783,6 +2823,13 @@ ALTER TABLE ONLY public."ChatFlowStats" ALTER COLUMN id SET DEFAULT nextval('pub
 
 
 --
+-- Name: ChatFlowVersions id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."ChatFlowVersions" ALTER COLUMN id SET DEFAULT nextval('public."ChatFlowVersions_id_seq"'::regclass);
+
+
+--
 -- Name: ChatFlows id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -3255,6 +3302,14 @@ ALTER TABLE ONLY public."ChatFlowRuns"
 
 ALTER TABLE ONLY public."ChatFlowStats"
     ADD CONSTRAINT "ChatFlowStats_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: ChatFlowVersions ChatFlowVersions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."ChatFlowVersions"
+    ADD CONSTRAINT "ChatFlowVersions_pkey" PRIMARY KEY (id);
 
 
 --
@@ -3852,6 +3907,13 @@ CREATE INDEX ai_usage_agent_id_created_at ON public."AiUsage" USING btree ("agen
 --
 
 CREATE INDEX automationtriggers_event_idx ON public."AutomationTriggers" USING btree (event, active);
+
+
+--
+-- Name: chat_flow_versions_flow_id_version; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX chat_flow_versions_flow_id_version ON public."ChatFlowVersions" USING btree ("flowId", version);
 
 
 --
@@ -4493,6 +4555,14 @@ ALTER TABLE ONLY public."ChatFlowRuns"
 
 ALTER TABLE ONLY public."ChatFlowStats"
     ADD CONSTRAINT "ChatFlowStats_flowId_fkey" FOREIGN KEY ("flowId") REFERENCES public."ChatFlows"(id) ON DELETE CASCADE;
+
+
+--
+-- Name: ChatFlowVersions ChatFlowVersions_flowId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."ChatFlowVersions"
+    ADD CONSTRAINT "ChatFlowVersions_flowId_fkey" FOREIGN KEY ("flowId") REFERENCES public."ChatFlows"(id) ON UPDATE CASCADE ON DELETE CASCADE;
 
 
 --
@@ -5349,6 +5419,7 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261119000001-contact-personal.js')
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261119000002-retention-messages.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261119000003-sticker-last-message.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261120000001-relationship-department.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261121000001-agent-graphs.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

@@ -20,8 +20,15 @@ import { addActivity, changeStage, pickOwner, upsertLead } from "../CrmServices/
 import ShowTicketService from "../TicketServices/ShowTicketService";
 import UpdateTicketService from "../TicketServices/UpdateTicketService";
 import SendWhatsAppMessage from "../WbotServices/SendWhatsAppMessage";
-import { Effects } from "./Engine";
+import AiAgent from "../../models/AiAgent";
+import { Effects, StageTurn, StageTurnArgs } from "./Engine";
 import { FlowNode } from "./Graph";
+import { cleanStage } from "./StageSpec";
+import { findAgentForTicket, loadHistory, respond } from "../AiServices/RunAiAgent";
+import { HandoffReason, handoffToHuman } from "../AiServices/Handoff";
+import { captureUnknown } from "../AiServices/Learning";
+import { matchFaq } from "../AiServices/Kb";
+import { tokensToday } from "../AiServices/Usage";
 
 // invisible mark: bot messages are told apart from the team's
 const MARK = "‎";
@@ -33,8 +40,26 @@ const LEAD_FIELDS = ["nome", "email", "cidade", "curso", "modalidade", "forma_in
 
 const firstName = (n: string): string => String(n || "").trim().split(/\s+/)[0] || "";
 
+// what the AI is told when it has to open the conversation of a stage (nobody wrote yet)
+const OPENING_HINT = "(A conversa desta etapa está começando. Cumprimente a pessoa em uma frase e comece pelo objetivo da etapa.)";
+const DEFAULT_HANDOFF = "Vou transferir você para um de nossos atendentes. Um momento, por favor.";
+const DEFAULT_UNKNOWN = "Ótima pergunta! Vou confirmar essa informação com a nossa equipe e já te respondo. 🙂";
+const REASON_OF: Record<string, HandoffReason> = { human: "pedido", off: "desconhecido", limit: "limite_turnos" };
+
+export interface FlowContext {
+  flowId?: number;
+  // the AI agent of the flow (kind "agent")
+  agentId?: number | null;
+}
+
 // Effects of a real conversation: it sends, saves and moves things in the CRM.
-export const ticketEffects = (ticket: Ticket, flowName: string): Effects => {
+export const ticketEffects = (ticket: Ticket, flowName: string, flowCtx: FlowContext = {}): Effects => {
+  // the agent a stage talks as: the one of the block, else the one of the flow, else the one that would answer this conversation
+  const agentFor = async (stageAgentId?: number | null): Promise<AiAgent | null> => {
+    const id = stageAgentId || flowCtx.agentId;
+    const own = id ? await AiAgent.findByPk(id) : null;
+    return own && own.active !== false ? own : findAgentForTicket(ticket);
+  };
   const leadOf = async (): Promise<Lead | null> => Lead.findOne({ where: { contactId: ticket.contactId } });
   const collectedOf = (vars: Record<string, any>) => LEAD_FIELDS.filter(k => vars[k]).reduce((o: Record<string, string>, k) => ({ ...o, [k]: String(vars[k]) }), {});
 
@@ -200,6 +225,47 @@ export const ticketEffects = (ticket: Ticket, flowName: string): Effects => {
     who() {
       const name = ticket.contact?.name || "";
       return { name, first: firstName(name) };
+    },
+
+    async aiTurn({ node, vars, input }: StageTurnArgs): Promise<StageTurn> {
+      const stage = cleanStage(node.data);
+      const agent = await agentFor(stage.agentId);
+      // nobody to talk as: the team takes the conversation
+      if (!agent) return { text: "", exit: "human" };
+      if (agent.dailyTokenCap > 0 && (await tokensToday(agent.id)) >= agent.dailyTokenCap) return { text: agent.handoffMessage || DEFAULT_HANDOFF, exit: "limit" };
+      let history = await loadHistory(ticket, 30);
+      const last = history[history.length - 1];
+      if (input !== null && (!last || last.role !== "user")) return { text: "" };
+      if (input === null) history = [...history, { role: "user", content: OPENING_HINT }];
+      const lastText = last && last.role === "user" ? last.content : "";
+      // an FAQ with a ready answer needs no model at all
+      if (input !== null && stage.useKnowledge) {
+        const faq = await matchFaq(agent.id, lastText);
+        if (faq) return { text: faq.content };
+      }
+      const known: Record<string, string> = { ...(ticket.aiSlots || {}) };
+      stage.fields.forEach(f => { if (vars[f.key]) known[f.key] = String(vars[f.key]); });
+      const result = await respond(agent, { ticket, history, summary: ticket.aiSummary, collected: known, stage, flowId: flowCtx.flowId, nodeId: node.id });
+      let text = result.text;
+      if (result.exit === "off") {
+        if (agent.learnFromTeam !== false && lastText) await captureUnknown(agent, ticket, lastText, ticket.contact?.name);
+        if (!text) text = (agent.persona && agent.persona.unknownMessage) || DEFAULT_UNKNOWN;
+      }
+      return { text, exit: result.exit || null, collected: result.collected };
+    },
+
+    async humanHandoff(_node, exit) {
+      const agent = await agentFor(null);
+      await ticket.update({ chatbotNodeId: FLOW_DONE });
+      // a stage that ended by itself already said goodbye; for the others the person is told a colleague continues
+      if (agent && exit !== "off") await this.say(agent.handoffMessage || DEFAULT_HANDOFF);
+      if (agent) await handoffToHuman(ticket.id, agent, REASON_OF[exit] || "pedido");
+      else await ticket.update({ aiActive: false });
+    },
+
+    async startFlow(flowId) {
+      const { startFlowForTicket } = await import("./Runner");
+      return startFlowForTicket(flowId, ticket.id);
     }
   };
 };
@@ -214,9 +280,20 @@ export interface SimSample {
 }
 
 // Effects of the simulator: nothing leaves the system, everything is only written down.
-export const simEffects = (sample: SimSample = {}): { fx: Effects; messages: string[]; actions: string[] } => {
+export interface StageTrace {
+  nodeId: string;
+  // what the AI did in this turn: tools it used, fields it found, the exit it chose, the passages it read and what it cost
+  tools: string[];
+  collected: Record<string, string>;
+  exit: string | null;
+  sources: string[];
+  tokens: { input: number; output: number; cacheRead: number };
+}
+
+export const simEffects = (sample: SimSample = {}, opts: { agent?: AiAgent | null; flowId?: number | null } = {}): { fx: Effects; messages: string[]; actions: string[]; traces: StageTrace[] } => {
   const messages: string[] = [];
   const actions: string[] = [];
+  const traces: StageTrace[] = [];
   const name = sample.name || "Maria";
   const fx: Effects = {
     async listPolos() {
@@ -255,7 +332,27 @@ export const simEffects = (sample: SimSample = {}): { fx: Effects; messages: str
     async handToAi() { actions.push("Passa a conversa para o agente de IA"); },
     async close() { actions.push("Finaliza a conversa"); },
     async webhook(url) { actions.push(`Chama o webhook ${url}`); return true; },
-    who() { return { name, first: firstName(name) }; }
+    who() { return { name, first: firstName(name) }; },
+    // the AI really answers (with the model of the agent), but nothing is sent or saved: the history lives in the state of the simulator
+    async aiTurn({ node, vars, input }: StageTurnArgs): Promise<StageTurn> {
+      const stage = cleanStage(node.data);
+      const agent = opts.agent || null;
+      if (!agent) return { text: "(Simulação: nenhum agente de IA ativo para conversar. Em produção a conversa iria para a equipe.)", exit: "human" };
+      const hist: Array<{ role: "user" | "assistant"; content: string }> = Array.isArray(vars.__hist) ? vars.__hist : [];
+      if (input !== null && input !== "") hist.push({ role: "user", content: input });
+      const history = input === null || !hist.length ? [...hist, { role: "user" as const, content: OPENING_HINT }] : hist;
+      const known: Record<string, string> = {};
+      stage.fields.forEach(f => { if (vars[f.key]) known[f.key] = String(vars[f.key]); });
+      const result = await respond(agent, { ticket: null, history, collected: known, sandbox: true, stage, flowId: opts.flowId, nodeId: node.id });
+      let text = result.text;
+      if (result.exit === "off" && !text) text = (agent.persona && agent.persona.unknownMessage) || DEFAULT_UNKNOWN;
+      if (text) hist.push({ role: "assistant", content: text });
+      vars.__hist = hist.slice(-20);
+      traces.push({ nodeId: node.id, tools: result.tools, collected: result.collected, exit: result.exit || null, sources: result.sources, tokens: result.tokens });
+      return { text, exit: result.exit || null, collected: result.collected };
+    },
+    async humanHandoff(_node, exit) { actions.push(`Transfere para a equipe (${exit === "limit" ? "limite de turnos" : exit === "off" ? "fora do escopo" : "pediu uma pessoa"})`); },
+    async startFlow(flowId) { actions.push(`Inicia o fluxo ${flowId}`); return true; }
   };
-  return { fx, messages, actions };
+  return { fx, messages, actions, traces };
 };

@@ -1,4 +1,5 @@
 // The shape of a flow and the rules a flow must obey before it can talk to people.
+import { FIXED_EXITS, cleanStage } from "./StageSpec";
 
 export interface FlowNode {
   id: string;
@@ -24,10 +25,10 @@ export interface Issue {
 }
 
 // blocks that stop and wait for the person (or for time)
-export const WAITING = ["buttons", "ask", "delay", "polo"];
+export const WAITING = ["buttons", "ask", "delay", "polo", "stage"];
 // blocks that end the conversation inside the flow
-export const TERMINAL = ["end", "ai", "transfer"];
-export const NODE_TYPES = ["start", "message", "buttons", "ask", "polo", "condition", "crm", "delay", "ai", "transfer", "webhook", "random", "goto", "end", "comment"];
+export const TERMINAL = ["end", "ai", "transfer", "flow"];
+export const NODE_TYPES = ["start", "message", "buttons", "ask", "polo", "condition", "crm", "delay", "ai", "stage", "flow", "transfer", "webhook", "random", "goto", "end", "comment"];
 
 export const TITLE: Record<string, string> = {
   start: "Início",
@@ -39,6 +40,8 @@ export const TITLE: Record<string, string> = {
   crm: "Ação no CRM",
   delay: "Espera",
   ai: "Agente de IA",
+  stage: "Etapa com IA",
+  flow: "Chamar fluxo",
   transfer: "Transferir",
   webhook: "Webhook",
   random: "Teste A/B",
@@ -96,6 +99,16 @@ export const exitsOf = (node: FlowNode): Array<{ handle: string; required: boole
         ...(d.rules || []).map((r: any) => ({ handle: String(r.id), required: true, label: `condição “${r.label || "?"}”` })),
         { handle: "else", required: false, label: "saída “senão”" }
       ];
+    case "stage": {
+      const clean = cleanStage(d);
+      return [
+        { handle: "done", required: true, label: "saída “objetivo cumprido”" },
+        { handle: "human", required: false, label: "saída “pediu uma pessoa”" },
+        { handle: "off", required: false, label: "saída “fora do escopo”" },
+        { handle: "limit", required: false, label: "saída “limite de turnos”" },
+        ...clean.outcomes.map(o => ({ handle: o.id, required: true, label: `saída “${o.label || o.id}”` }))
+      ];
+    }
     case "random":
       return (d.branches || []).map((b: any) => ({ handle: String(b.id), required: true, label: `ramo “${b.label || "?"}”` }));
     default:
@@ -103,7 +116,7 @@ export const exitsOf = (node: FlowNode): Array<{ handle: string; required: boole
   }
 };
 
-export const validateGraph = (graph: Graph, ctx: { hasAiAgent?: boolean } = {}): Issue[] => {
+export const validateGraph = (graph: Graph, ctx: { hasAiAgent?: boolean; kind?: string } = {}): Issue[] => {
   const issues: Issue[] = [];
   const err = (text: string, nodeId?: string) => issues.push({ level: "error", text, nodeId });
   const warn = (text: string, nodeId?: string) => issues.push({ level: "warning", text, nodeId });
@@ -149,16 +162,40 @@ export const validateGraph = (graph: Graph, ctx: { hasAiAgent?: boolean } = {}):
     if (n.type === "delay" && !(Number(d.minutes) > 0)) err(`${title}: informe quantos minutos esperar.`, n.id);
     if (n.type === "goto" && !byId.has(String(d.target || ""))) err(`${title}: escolha para qual bloco voltar.`, n.id);
     if (n.type === "random" && (d.branches || []).length < 2) err(`${title}: precisa de pelo menos 2 ramos.`, n.id);
+    if (n.type === "stage") {
+      const raw = d || {};
+      const st = cleanStage(raw);
+      if (!st.objective) err(`${title}: escreva o objetivo da etapa (o que a IA precisa conseguir).`, n.id);
+      const keys = (raw.fields || []).map((f: any) => String(f?.key || f?.label || ""));
+      if ((raw.fields || []).length !== st.fields.length) err(`${title}: cada campo precisa de um nome diferente.`, n.id);
+      st.fields.forEach(f => {
+        if (f.type === "choice" && !(f.options || []).length) err(`${title}: o campo “${f.label}” é de escolha e precisa de opções.`, n.id);
+      });
+      void keys;
+      if ((raw.outcomes || []).length !== st.outcomes.length) err(`${title}: cada saída por intenção precisa de um nome diferente (e não pode ser “done”, “human”, “off” ou “limit”).`, n.id);
+      st.outcomes.forEach(o => {
+        if (!o.label || !o.when) err(`${title}: a saída “${o.label || o.id}” precisa de um nome e de uma descrição de quando usar.`, n.id);
+      });
+      if ((raw.http || []).length !== st.http.length) err(`${title}: cada ferramenta externa precisa de um nome diferente.`, n.id);
+      st.http.forEach(t => {
+        if (!/^https?:\/\//i.test(t.url)) err(`${title}: a ferramenta “${t.name}” precisa de um endereço http ou https.`, n.id);
+        if (!t.description) err(`${title}: explique à IA quando usar a ferramenta “${t.name}”.`, n.id);
+      });
+      if (!ctx.hasAiAgent) warn(`${title}: nenhum agente de IA ativo foi encontrado; a conversa vai para a equipe.`, n.id);
+    }
+    if (n.type === "flow" && !Number(d.flowId)) err(`${title}: escolha o fluxo que deve começar.`, n.id);
     if (n.type === "ai" && !ctx.hasAiAgent) warn("Agente de IA: nenhum agente ativo foi encontrado; a conversa vai para a equipe.", n.id);
     exitsOf(n).forEach(x => {
       if (!graph.edges.some(e => e.source === n.id && handleOf(e) === x.handle)) {
         if (x.required) err(`${title}: ligue a ${x.label} a um próximo passo.`, n.id);
         else if (x.handle === "other" || x.handle === "else") warn(`${title}: a ${x.label} não está ligada; a conversa termina ali.`, n.id);
+        else if (n.type === "stage" && (FIXED_EXITS as readonly string[]).includes(x.handle)) warn(`${title}: a ${x.label} não está ligada; a conversa vai para a equipe.`, n.id);
       }
     });
   });
 
   // reachable from the start
+  if (ctx.kind === "agent" && !graph.nodes.some(n => n.type === "stage")) err("O agente precisa de pelo menos uma Etapa com IA.");
   if (starts.length === 1) {
     const seen = new Set<string>();
     const walk = (id: string) => {

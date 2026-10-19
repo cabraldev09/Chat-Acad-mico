@@ -48,6 +48,15 @@ class ChatFlow extends Model<ChatFlow> {
   @Column
   createdBy: number;
 
+  // flow = the menu and automations of the chatbot; agent = an AI agent built in blocks (see AiAgent)
+  @Default("flow")
+  @Column
+  kind: string;
+
+  // for kind "agent": the AI agent that holds the persona, the model, the knowledge and the limits
+  @Column
+  agentId: number;
+
   @CreatedAt
   createdAt: Date;
 

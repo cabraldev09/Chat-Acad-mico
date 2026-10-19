@@ -1,4 +1,5 @@
 import { FlowNode, Graph, handleOf, nextNodeId } from "./Graph";
+import { cleanStage } from "./StageSpec";
 
 // The engine walks a flow. It knows nothing about WhatsApp or the database: everything it does to the outside world goes
 // through `Effects`. The same engine runs a real conversation (effects that send and save) and the simulator on screen
@@ -21,6 +22,27 @@ export interface Effects {
   // the active polos the person can choose from, and the choice (lead polo + the sales queue of that polo); returns its name
   listPolos(): Promise<PoloOption[]>;
   setPolo(poloId: number): Promise<string>;
+  // one turn of an AI stage: what the AI says, the fields it found out and the exit it chose (null: the stage goes on)
+  aiTurn(args: StageTurnArgs): Promise<StageTurn>;
+  // an exit of a stage that is not connected to anything: the conversation goes to the team (with the reason)
+  humanHandoff(node: FlowNode, exit: string, vars: Record<string, any>): Promise<void>;
+  // starts another published flow on this conversation (the block "Chamar fluxo"); false when it is not published
+  startFlow(flowId: number): Promise<boolean>;
+}
+
+export interface StageTurnArgs {
+  node: FlowNode;
+  vars: Record<string, any>;
+  // what the person wrote (null: the stage is starting and the AI speaks first)
+  input: string | null;
+  // turns the AI already had in this stage
+  turns: number;
+}
+export interface StageTurn {
+  text: string;
+  // done | human | off | limit | the id of an exit by intention; null/undefined = keep talking
+  exit?: string | null;
+  collected?: Record<string, string>;
 }
 
 export interface PoloOption {
@@ -30,6 +52,8 @@ export interface PoloOption {
 }
 
 export interface RunState {
+  // what the person wrote when the run was started by a message: an AI stage answers it right away
+  pending?: string | null;
   // the block waiting for the person (buttons, ask) or the delay block that is counting time
   nodeId: string | null;
   vars: Record<string, any>;
@@ -174,6 +198,45 @@ const ruleHolds = async (rule: any, vars: Record<string, any>, fx: Effects): Pro
   return (rule.all || []).length > 0;
 };
 
+const turnsKey = (nodeId: string): string => `__turns_${nodeId}`;
+
+// One step of an AI stage: the AI talks (or the fixed opening goes out), the fields it found are kept, and an exit moves the flow on.
+const stageStep = async (graph: Graph, node: FlowNode, state: RunState, fx: Effects, input: string | null): Promise<StepResult> => {
+  const st = cleanStage(node.data);
+  const who = fx.who();
+  const turns = Number(state.vars[turnsKey(node.id)] || 0);
+  state.nodeId = node.id;
+  state.tries = 0;
+  let turn: StageTurn;
+  if (turns >= st.maxTurns) turn = { text: "", exit: "limit" };
+  else if (input === null && st.opening) turn = { text: st.opening, exit: null };
+  else {
+    state.vars[turnsKey(node.id)] = turns + 1;
+    turn = await fx.aiTurn({ node, vars: state.vars, input, turns });
+  }
+  for (const [key, value] of Object.entries(turn.collected || {})) {
+    if (value === undefined || value === null || String(value) === "") continue;
+    state.vars[key] = value;
+    // eslint-disable-next-line no-await-in-loop
+    await fx.saveField(key, String(value));
+  }
+  if (turn.text) await fx.say(render(turn.text, state.vars, who));
+  if (!turn.exit) return { status: "waiting", state, path: [] };
+
+  const exit = String(turn.exit);
+  state.vars.__exit = exit;
+  const target = nextNodeId(graph, node.id, exit);
+  if (target) {
+    const step = await advance(graph, target, state, fx);
+    return { ...step, path: [node.id, ...step.path] };
+  }
+  state.nodeId = null;
+  if (exit === "done") return { status: "done", state, path: [node.id] };
+  // an exit that leads nowhere: the team takes the conversation (and knows why)
+  await fx.humanHandoff(node, exit, state.vars);
+  return { status: "handoff", state, path: [node.id] };
+};
+
 // Runs from a block until the flow has to wait (for an answer or for time) or ends.
 export const advance = async (graph: Graph, startId: string | null, state: RunState, fx: Effects): Promise<StepResult> => {
   const byId = new Map(graph.nodes.map(n => [n.id, n]));
@@ -259,6 +322,22 @@ export const advance = async (graph: Graph, startId: string | null, state: RunSt
         // eslint-disable-next-line no-await-in-loop
         await fx.handToAi(node);
         return done("handoff");
+      case "stage": {
+        // the message that started the run is answered by the stage (if a block before it did not consume it)
+        const input = state.pending ?? null;
+        state.pending = null;
+        // eslint-disable-next-line no-await-in-loop
+        const step = await stageStep(graph, node, state, fx, input);
+        return { ...step, path: [...path, ...step.path.filter(id => id !== node.id)] };
+      }
+      case "flow": {
+        // eslint-disable-next-line no-await-in-loop
+        const started = await fx.startFlow(Number(d.flowId));
+        // the flow is not published: the team takes it instead of leaving the person without an answer
+        // eslint-disable-next-line no-await-in-loop
+        if (!started) { await fx.humanHandoff(node, "off", state.vars); return done("handoff"); }
+        return done("done");
+      }
       case "transfer":
         // eslint-disable-next-line no-await-in-loop
         if (d.text) await fx.say(render(d.text, state.vars, who));
@@ -311,6 +390,11 @@ export const resume = async (graph: Graph, state: RunState, input: string, fx: E
   state.vars.__last = input;
 
   if (node.type === "delay") return advance(graph, nextNodeId(graph, node.id), state, fx);
+
+  if (node.type === "stage") {
+    const step = await stageStep(graph, node, state, fx, input);
+    return { ...step, path: [node.id, ...step.path.filter(id => id !== node.id)] };
+  }
 
   if (node.type === "buttons") {
     const options = d.options || [];
