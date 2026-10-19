@@ -248,7 +248,9 @@ const messages = {
       transferTicketModal: {
         title: "Transfer Ticket",
         fieldLabel: "Type to search for users",
-        fieldQueueLabel: "Transfer to queue",
+        fieldQueueLabel: "Transfer to department",
+        fieldPoloLabel: "Polo",
+        choosePolo: "Choose the polo of the department.",
         fieldConnectionLabel: "Transfer to connection",
         fieldQueuePlaceholder: "Please select a queue",
         fieldConnectionPlaceholder: "Please select a connection",
