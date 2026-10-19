@@ -94,6 +94,10 @@ class Ticket extends Model<Ticket> {
   outOfHoursSentAt: Date;
 
   // the handoff of the AI agent to the commercial team of the polo (see CommercialServices/Router)
+  // which server is answering this conversation right now (see FlowServices/Claim)
+  @Column
+  aiClaimAt: Date;
+
   @Column
   handoffAt: Date;
 

@@ -12,6 +12,7 @@ import { startCrmReminders } from "./workers/CrmReminders";
 import { startLeadSlaAlert } from "./workers/LeadSlaAlert";
 import { startHandoffSla } from "./workers/HandoffSla";
 import { startStaleRuns } from "./workers/StaleRuns";
+import { startWhatsappWatchdog } from "./workers/WhatsappWatchdog";
 import { startFollowUpAlert } from "./workers/FollowUpAlert";
 import { startProfilePicSync } from "./workers/ProfilePicSync";
 import { startAckReconciler } from "./workers/AckReconciler";
@@ -29,6 +30,8 @@ initIO(server);
 const boot = async () => {
   await ensureRls();
   await loadAppTz();
+  // keys saved before they were sealed are sealed now (once)
+  import("./helpers/SecretSettings").then(m => m.sealStoredKeys()).then(n => { if (n) logger.info(`API keys sealed at rest: ${n}`); }).catch(err => logger.warn(`Sealing the API keys failed: ${err}`));
   server.listen(process.env.PORT, () => logger.info(`Server started on port: ${process.env.PORT}`));
 // Only one instance may own the WhatsApp sessions and the background workers
 whenLeader(() => {
@@ -40,6 +43,7 @@ whenLeader(() => {
   startLeadSlaAlert();
   startHandoffSla();
   startStaleRuns();
+  startWhatsappWatchdog();
   startFollowUpAlert();
   startProfilePicSync();
   startAckReconciler();

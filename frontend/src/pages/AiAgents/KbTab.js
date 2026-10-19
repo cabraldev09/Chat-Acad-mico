@@ -66,11 +66,11 @@ const TopicPicker = ({ topic, courses, onChange }) => {
 const courseOfTopic = (t) => { const m = String(t || "").match(/^courses\/(\d+)\//); return m ? Number(m[1]) : null; };
 
 // Documents the agent can quote. Only the few passages that match each question are sent to the model.
-const KbTab = ({ agentId }) => {
+const KbTab = ({ agentId, initialMode = 0, initialTopic = "" }) => {
   const classes = useStyles();
   const [docs, setDocs] = useState([]);
-  const [mode, setMode] = useState(0);
-  const [form, setForm] = useState({ title: "", content: "", keywords: "", url: "", shared: false, topic: "" });
+  const [mode, setMode] = useState(initialMode);
+  const [form, setForm] = useState({ title: "", content: "", keywords: "", url: "", shared: false, topic: initialTopic });
   const [courses, setCourses] = useState([]);
   useEffect(() => { api.get("/courses").then(({ data }) => setCourses(Array.isArray(data) ? data : data.courses || [])).catch(() => undefined); }, []);
   const [busy, setBusy] = useState(false);

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { useHistory } from "react-router-dom";
 import { toast } from "react-toastify";
 import { Button, Paper, TextField, Typography, Switch, Tooltip, makeStyles } from "@material-ui/core";
-import { AlertTriangle, Bot, FileText, Filter, Plus, Scale, Settings2, Trash2, UserCheck, Workflow } from "lucide-react";
+import { AlertTriangle, Bot, FileText, Filter, GraduationCap, Plus, Scale, Settings2, Trash2, UserCheck, Workflow } from "lucide-react";
 
 import IconAction from "../../components/IconAction";
 import ConfirmationModal from "../../components/ConfirmationModal";
@@ -169,6 +169,7 @@ const AiAgents = () => {
                   ) : (
                     <Tooltip title="Mostra este agente como blocos, em rascunho. Nada muda para as pessoas até você publicar."><Button size="small" variant="outlined" color="primary" startIcon={<Workflow size={15} />} onClick={() => convert(a)}>Converter em blocos</Button></Tooltip>
                   )}
+                  <Button size="small" variant="outlined" color="primary" startIcon={<GraduationCap size={15} />} onClick={() => history.push(`/ai-agents/${a.id}/melhorar`)}>Melhorar</Button>
                   <Button size="small" variant="outlined" color="primary" startIcon={<Settings2 size={15} />} onClick={() => setEditing(a)}>Configurar</Button>
                   <IconAction title="Remover agente" onClick={() => setRemoving(a)}><Trash2 size={16} /></IconAction>
                 </div>

@@ -8,6 +8,8 @@ import { cleanStage } from "./StageSpec";
 export interface Effects {
   // the text is what the history shows; `choices` lets channels with buttons send them natively
   say(text: string, choices?: { question: string; options: Array<{ id: string; label: string }> }): Promise<void>;
+  // what the AI wrote: sent as short bubbles, one after the other, like a person
+  sayBlocks?(text: string): Promise<void>;
   // the value a condition looks at ("lead.course", "tag", "hours", "channel", "message"...)
   readField(field: string): Promise<string>;
   // an answer to a question: saved on the lead when the field is one of its own
@@ -227,7 +229,7 @@ const stageStep = async (graph: Graph, node: FlowNode, state: RunState, fx: Effe
     // eslint-disable-next-line no-await-in-loop
     await fx.saveField(key, String(value));
   }
-  if (turn.text) await fx.say(render(turn.text, state.vars, who));
+  if (turn.text) await (fx.sayBlocks ? fx.sayBlocks(render(turn.text, state.vars, who)) : fx.say(render(turn.text, state.vars, who)));
   if (!turn.exit) return { status: "waiting", state, path: [] };
 
   const exit = String(turn.exit);

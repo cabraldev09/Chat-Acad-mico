@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { Op, QueryTypes } from "sequelize";
 
 import { getSetting, setSetting } from "../helpers/AppSettings";
+import { getSecretSetting } from "../helpers/SecretSettings";
 import Polo from "../models/Polo";
 import Queue from "../models/Queue";
 import User from "../models/User";
@@ -350,7 +351,7 @@ export const handoffShow = async (_req: Request, res: Response): Promise<Respons
       city: p.city,
       queue: q ? { id: q.id, name: q.name, people } : null,
       ready: people > 0,
-      issue: !q ? "Este polo não tem fila comercial." : people === 0 ? "A fila comercial deste polo não tem consultores." : null
+      issue: !q ? "Este polo não tem fila comercial." : people === 0 ? "A fila comercial deste polo não tem consultores: as conversas ficam na fila do polo e só a gestão é avisada." : null
     };
   });
   return res.json({
@@ -360,7 +361,7 @@ export const handoffShow = async (_req: Request, res: Response): Promise<Respons
       staleDays: Number(await getSetting(KEYS.stale, "7")),
       transcribe: (await getSetting(KEYS.transcribe, "0")) === "1"
     },
-    openaiKey: !!(await getSetting("ai_openai_key", "")),
+    openaiKey: !!(await getSecretSetting("ai_openai_key")),
     reserve: reserve ? { id: reserve.id, name: reserve.name, people: ((reserve as any).users || []).length } : null,
     queues: commercial.map(q => ({ id: q.id, name: q.name, polo: (q as any).polo ? (q as any).polo.name : null, people: ((q as any).users || []).length })),
     polos: rows
@@ -379,4 +380,73 @@ export const handoffSave = async (req: Request, res: Response): Promise<Response
   if (b.staleDays !== undefined) await setSetting(KEYS.stale, num(b.staleDays, 0, 90));
   if (b.transcribe !== undefined) await setSetting(KEYS.transcribe, b.transcribe ? "1" : "0");
   return handoffShow(req, res);
+};
+
+// ------------------------------------------------------------------ "Melhorar o agente": what the base of knowledge still lacks
+
+const TOPIC_LIST: Array<{ topic: string; label: string; hint: string; for: Array<"commercial" | "service"> }> = [
+  { topic: "institutional/platform", label: "Plataforma de estudo", hint: "Como o aluno acessa, o que encontra, em quais aparelhos funciona.", for: ["commercial"] },
+  { topic: "institutional/tutoring", label: "Tutoria", hint: "O que a tutoria faz e quando o aluno fala com ela.", for: ["commercial", "service"] },
+  { topic: "institutional/faculty", label: "Corpo docente", hint: "Titulação e perfil dos professores (só o que a instituição confirma).", for: ["commercial"] },
+  { topic: "institutional/enrollment", label: "Matrícula e documentos", hint: "Documentos necessários e como a matrícula acontece; o que a secretaria resolve.", for: ["commercial", "service"] },
+  { topic: "institutional/mec", label: "Mudanças do MEC", hint: "Explicação aprovada sobre as novas regras de modalidade.", for: ["commercial"] },
+  { topic: "institutional/internship", label: "Estágio remunerado", hint: "Como funciona a busca e a formalização.", for: ["commercial"] },
+  { topic: "institutional/recognition", label: "Reconhecimento do curso", hint: "Texto oficial sobre autorização e reconhecimento.", for: ["commercial"] },
+  { topic: "institutional/analysis", label: "Análise curricular", hint: "Como o aproveitamento de disciplinas é analisado.", for: ["commercial"] }
+];
+
+// the board of improvement of one agent: pending questions of the team, subjects without text, and what to do next
+export const improve = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await AiAgent.findByPk(req.params.id);
+  if (!agent) throw new AppError("ERR_NOT_FOUND", 404);
+  const AiLearning = (await import("../models/AiLearning")).default;
+  const KbDocument = (await import("../models/KbDocument")).default;
+  const flow = await (await import("../models/ChatFlow")).default.findOne({ where: { kind: "agent", agentId: agent.id }, attributes: ["id", "draft"] });
+  const graph = flow ? String(flow.draft || "") : "";
+  const kind: "commercial" | "service" = /"hooks":\s*\[\s*"commercial"/.test(graph) ? "commercial" : "service";
+
+  const docs = await KbDocument.findAll({ where: { agentId: { [Op.or]: [agent.id, null] } } as any, attributes: ["id", "title", "topic", "kind", "source", "updatedAt", "agentId"] });
+  const rows = await AiLearning.findAll({ where: { agentId: agent.id, status: { [Op.in]: ["aguardando_equipe", "para_revisar"] } }, order: [["id", "DESC"]], limit: 300 });
+  const norm = (s: string) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+  const grouped = new Map<string, { question: string; count: number; status: string; ids: number[] }>();
+  rows.forEach(r => {
+    const k = norm(r.question).slice(0, 80);
+    const g = grouped.get(k) || { question: r.question, count: 0, status: r.status, ids: [] };
+    g.count += 1;
+    g.ids.push(r.id);
+    if (r.status === "para_revisar") g.status = "para_revisar";
+    grouped.set(k, g);
+  });
+  const questions = [...grouped.values()].sort((a, b) => b.count - a.count).slice(0, 12);
+
+  const topics = TOPIC_LIST.filter(t => t.for.includes(kind)).map(t => {
+    const own = docs.filter(d => d.topic === t.topic || String(d.topic || "").startsWith(`${t.topic}/`));
+    return { topic: t.topic, label: t.label, hint: t.hint, documents: own.length, ok: own.length > 0 };
+  });
+  const since = new Date(Date.now() - 30 * 86400000);
+  const events: any[] = await sequelize.query(
+    `SELECT "event", COUNT(*) AS n FROM "AgentMetricEvents" WHERE "agentId" = :id AND "createdAt" >= :since AND "event" IN ('unknown','agent_guard','agent_error') GROUP BY 1`,
+    { replacements: { id: agent.id, since }, type: QueryTypes.SELECT }
+  ).catch(() => []);
+  const count = (e: string) => Number(events.find(x => x.event === e)?.n || 0);
+  const courses = await Course.count({ where: { active: true } as any });
+  const withRule = kind === "commercial" ? await CourseRegulation.count({ distinct: true, col: "courseId" }) : 0;
+
+  const next: string[] = [];
+  if (rows.filter(r => r.status === "aguardando_equipe").length) next.push(`Responda as ${grouped.size} pergunta(s) que o agente não soube responder: a resposta vira conhecimento dele.`);
+  if (rows.some(r => r.status === "para_revisar")) next.push("Revise e aprove as respostas que a equipe já deu: o agente aprende com elas.");
+  topics.filter(t => !t.ok).slice(0, 3).forEach(t => next.push(`Envie um texto ou PDF sobre “${t.label}”: hoje o agente diz que vai confirmar.`));
+  if (kind === "commercial" && courses && withRule < courses) next.push(`Cadastre as regras do MEC dos cursos (${withRule} de ${courses} têm regra).`);
+  if (count("agent_guard")) next.push(`${count("agent_guard")} resposta(s) foram barradas por trazerem valor, promessa ou dado sem fonte: coloque o dado certo na base.`);
+
+  return res.json({
+    agent: { id: agent.id, name: agent.name, kind },
+    documents: { total: docs.length, own: docs.filter(d => d.agentId === agent.id).length, faq: docs.filter(d => d.kind === "faq").length, files: docs.filter(d => d.source === "arquivo").length, lastAt: docs.reduce((m, d) => (d.updatedAt > m ? d.updatedAt : m), new Date(0)) },
+    pending: { waiting: rows.filter(r => r.status === "aguardando_equipe").length, toReview: rows.filter(r => r.status === "para_revisar").length },
+    questions,
+    topics,
+    last30days: { unknown: count("unknown"), blocked: count("agent_guard"), errors: count("agent_error") },
+    regulations: kind === "commercial" ? { courses, withRule } : null,
+    next
+  });
 };

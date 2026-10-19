@@ -118,3 +118,25 @@ describe("what the agent may never say", () => {
     ["O curso de Direito tem 10 semestres (5 anos) e é semipresencial. Quer ver a grade?", "Ótima escolha! Me conta em qual cidade você mora?", "Vou chamar um consultor para continuar com você."].forEach(t => expect(unsafeAnswer(t, ""), t).toEqual({ unsafe: false }));
   });
 });
+
+import { SERVICE_KB, SERVICE_PERSONA, SERVICE_TEMPLATE_KEY, serviceGraph } from "../../../src/services/CommercialServices/ServiceTemplate";
+
+describe("the template Atendimento (tutoria e secretaria)", () => {
+  it("has a valid graph with the three destinations and a person as the way out", () => {
+    const g = serviceGraph();
+    const issues = validateGraph(g, { hasAiAgent: true, kind: "agent" });
+    expect(issues.filter(i => i.level === "error")).toEqual([]);
+    const transfers = g.nodes.filter(n => n.type === "transfer").map(n => n.data.to);
+    expect(transfers).toEqual(expect.arrayContaining(["polo_tutoria", "polo_coordenacao", "polo_sales"]));
+    const stage = g.nodes.find(n => n.type === "stage")!;
+    expect(cleanStage(stage.data).outcomes.map(o => o.id)).toEqual(["tutoria", "secretaria", "comercial"]);
+    // no required field: the stage only leaves by a decision of the AI, never because a form was filled
+    expect(cleanStage(stage.data).fields.some(f => f.required)).toBe(false);
+  });
+  it("never answers academic or money matters itself", () => {
+    expect(SERVICE_TEMPLATE_KEY).toBe("atendimento_encaminhamento");
+    expect(SERVICE_PERSONA.forbidden).toMatch(/valores/);
+    expect(SERVICE_KB.length).toBeGreaterThanOrEqual(3);
+    SERVICE_KB.forEach(k => expect(k.content).not.toMatch(/R\$|\d+ ?%/));
+  });
+});

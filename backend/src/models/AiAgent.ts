@@ -15,7 +15,7 @@ import {
   HasMany
 } from "sequelize-typescript";
 
-import { maskSecret } from "../helpers/Secrets";
+import { maskSecret, openSecret, sealSecret } from "../helpers/Secrets";
 
 @Table
 class AiAgent extends Model<AiAgent> {
@@ -36,7 +36,16 @@ class AiAgent extends Model<AiAgent> {
   @Column
   model: string;
 
-  @Column(DataType.TEXT)
+  // stored sealed (see helpers/SecretSettings); the code always reads and writes the plain key
+  @Column({
+    type: DataType.TEXT,
+    get(this: any) {
+      return openSecret(this.getDataValue("apiKey"));
+    },
+    set(this: any, value: string) {
+      this.setDataValue("apiKey", value ? (String(value).startsWith("enc:v1:") ? value : sealSecret(String(value))) : value);
+    }
+  })
   apiKey: string;
 
   @Column(DataType.TEXT)

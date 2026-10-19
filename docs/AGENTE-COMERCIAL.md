@@ -1,10 +1,19 @@
-# Agente comercial de graduação ("Comercial — Graduação")
+# Agente comercial de graduação ("Comercial") e agente de atendimento
 
 Modelo de agente de IA desenhado em blocos (o mesmo quadro do chatbot) que atende leads de graduação, consulta dados acadêmicos reais,
 mantém o CRM sozinho e entrega o lead ao consultor com um resumo. Chave do modelo: `graduacao_comercial_cruzeiro`.
 
+## Os dois modelos
+- **Comercial** (`graduacao_comercial_cruzeiro`): faz toda a qualificação, tira as dúvidas do curso e, na hora da proposta, passa ao consultor do polo, que gera a proposta comercial.
+- **Atendimento** (`atendimento_encaminhamento`): entende o assunto e **redireciona** quem quer a tutoria ou a secretaria (ou o comercial) para a fila do polo; não responde conteúdo acadêmico.
+Mensagens saem **em blocos curtos** (`CommercialServices/Blocks.ts`: até 5 balões, ~300 caracteres, a pergunta sozinha no final), em tom humano e profissional, para não aparecer "Ler mais" no WhatsApp.
+
+## Melhorar o agente
+Agentes de IA → **Melhorar** em cada agente (`/ai-agents/:id/melhorar`): visão geral com o que fazer agora, perguntas sem resposta (a equipe responde e o agente aprende),
+**Enviar conteúdo** (texto, PDF, página da web, resposta pronta) por assunto e **Testar**. Dados: `GET /ai-agents/:id/improve`.
+
 ## Como criar e publicar
-1. Agentes de IA → **Novo agente** → **Modelo por segmento** → Comercial — Graduação. Deixe marcado "Preparar o funil do CRM": o sistema
+1. Agentes de IA → **Novo agente** → **Modelo por segmento** → Comercial. Deixe marcado "Preparar o funil do CRM": o sistema
    reconhece as colunas que já existem e cria só as que faltam (nada é renomeado, movido ou apagado).
 2. O agente nasce **desligado** e o desenho como **rascunho**. Abra os blocos, clique em **Testar** (o simulador mostra o que a IA fez
    em cada turno), **Publique** e, por fim, ligue o agente.
@@ -44,7 +53,8 @@ Toda passagem do agente para uma pessoa (pedido de atendente, hora da proposta, 
 passa por um único serviço, `CommercialServices/Router.ts`:
 1. **Polo**: o do lead; se não houver, o que a cidade informada indica (sem acento, com frase e erro de digitação) e que passa a ser gravado no lead.
 2. **Fila**: a fila comercial do polo; sem equipe, a **fila de reserva** (Agentes de IA → *Quem assume*; padrão: a primeira fila comercial com consultores);
-   sem nenhuma, a conversa fica pendente na fila do polo e a gestão é avisada. Nunca fica sem destino.
+   sem nenhuma, a conversa fica pendente na fila do polo e a gestão é avisada. Nunca fica sem destino. **Polo sem consultor**: a conversa **continua na fila do polo**
+   (não vai para outro polo) e só a gestão é avisada; a fila de reserva vale apenas quando o polo é desconhecido ou não tem fila comercial.
 3. **Consultor**: o dono do lead, se for do polo; senão o rodízio da fila.
 4. **Aviso na hora** (toast + som para o consultor, a fila ou a gestão) e tarefa "Atender lead encaminhado pelo agente de IA"
    (15 min no expediente; no primeiro quarto de hora do próximo expediente quando fora dele). Fora do horário o lead recebe quando a equipe retorna.
@@ -67,3 +77,9 @@ Motivos: `human_request`, `proposal`, `unknown`, `limit_turns`, `limit_tokens`, 
   Histórico em PDF é reconhecido pelo tipo do arquivo (nome com espaço ou legenda funcionam); imagem pede o PDF.
 - Chaves das ferramentas externas (cabeçalhos) nunca voltam inteiras ao navegador, não vão em cópias do fluxo e não acompanham a ferramenta
   para outro endereço.
+
+## Funcionamento seguro (vários servidores, chaves e conexão)
+- **Vários servidores**: a execução do agente é reivindicada no banco (`Tickets.aiClaimAt`, `FlowServices/Claim.ts`, validade de 120 s); duas instâncias nunca respondem a mesma mensagem.
+- **Chaves de API cifradas** (`helpers/SecretSettings.ts`, AES-256-GCM, prefixo `enc:v1:`): a chave do agente e as chaves em Configurações são gravadas cifradas; as antigas são cifradas na subida (`sealStoredKeys`). Exige `SECRET_KEY` estável.
+- **Conexão do WhatsApp**: `workers/WhatsappWatchdog.ts` e o monitoramento em `wwebjs.ts` reabrem sozinhos uma sessão que fica "abrindo" por mais de 4 min ou que para de responder (pulso de 90 s), com tentativas e aviso quando desiste.
+- **Escopo por conexão** (`helpers/ConnectionScope.ts`): grupos e comunidades só aparecem para quem é dono da conexão; conversas privadas de número pessoal de outra pessoa não aparecem (lista, abrir pelo id, Comunidades e Contatos). Administração e coordenação veem tudo.

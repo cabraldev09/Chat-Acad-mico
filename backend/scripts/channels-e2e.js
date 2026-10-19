@@ -197,6 +197,7 @@ const startAnthropicMock = () => {
       const said2 = typeof last.content === "string" ? last.content : "";
       if (/forçar erro do provedor/i.test(said2)) return res.status(500).json({ error: { message: "boom" } });
       if (/pergunta lenta/i.test(said2)) return setTimeout(() => turn("Resposta devagar, mas chegou.", { intent: "other" }), 2500);
+      if (/explique tudo/i.test(said2)) return turn("O curso foi pensado para quem trabalha e estuda ao mesmo tempo, com aulas e atividades na plataforma e liberdade para organizar a sua rotina de estudos.\n\nVocê conta com a tutoria desde o primeiro acesso: ela orienta sobre a plataforma, as disciplinas, as atividades, as provas e os prazos, para você nunca ficar sozinho no processo.\n\nA grade é organizada por semestres, com disciplinas teóricas e momentos de prática, e o estágio, quando existe na matriz, é explicado com calma na hora certa, para você planejar cada etapa sem sustos nem surpresas no caminho.\n\nQuer que eu te mostre a grade do curso?", { intent: "other" });
       if (/é caro/i.test(said2)) return turn("Sai por R$ 299 por mês, ótimo custo!", { intent: "other" });
       if (/quando começam as aulas/i.test(said2)) return turn("As aulas começam em 03/08.", { intent: "other" });
       if (/transferir/i.test(said2)) return turn("Entendi! Com o seu histórico em PDF conseguimos pedir uma análise curricular. Pode me enviar o arquivo?", { intent: "transfer", curso: "Direito", cidade: "Porto Velho", tipo_ingresso: "transfer" });
@@ -413,7 +414,7 @@ const postMeta = (id, payload, secret, badSig) => {
       FRONTEND_URL: "http://localhost:3000", JWT_SECRET: "e2e", JWT_REFRESH_SECRET: "e2e-r", DASHBOARD_CACHE_MS: "0", LOGIN_RATE_MAX: "100",
       TELEGRAM_API_URL: `http://localhost:${TG_PORT}`, GRAPH_API_URL: `http://localhost:${GRAPH_PORT}`,
       SKIP_WHATSAPP_SESSIONS: "1", SKIP_DEFAULT_DATA: "1", LOG_LEVEL: "warn", EFI_API_URL: `http://localhost:${EFI_PORT}`, EFI_BILLET_API_URL: `http://localhost:${BILLET_PORT}`, EFI_POLL_MS: "1500",
-      ANTHROPIC_API_URL: `http://localhost:${AI_PORT}`, OPENAI_API_URL: `http://localhost:${AI_PORT}`, STALE_RUNS_MS: "4000", HANDOFF_SLA_MS: "4000", ALLOW_PRIVATE_URLS: "true"
+      ANTHROPIC_API_URL: `http://localhost:${AI_PORT}`, OPENAI_API_URL: `http://localhost:${AI_PORT}`, STALE_RUNS_MS: "4000", HANDOFF_SLA_MS: "4000", ONBOARDING_SLA_MS: "4000", ALLOW_PRIVATE_URLS: "true"
     };
     execFileSync("npx", ["sequelize", "db:migrate"], { cwd: ROOT, env, stdio: "ignore" });
     execFileSync("npx", ["sequelize", "db:seed:all"], { cwd: ROOT, env, stdio: "ignore" });
@@ -2855,13 +2856,13 @@ const postMeta = (id, payload, secret, badSig) => {
       // the agent of the earlier tests stays quiet while this one talks on the same connection
       await http.put(`/ai-agents/${aiId}`, { active: false }, auth());
       const tpls = await http.get("/ai-agent-templates", auth());
-      assert(tpls.status === 200 && tpls.data.length >= 5 && tpls.data.every(t => t.key && t.stages >= 1), `templates ${tpls.status}`);
+      assert(tpls.status === 200 && tpls.data.length === 2 && tpls.data.every(t => t.key && t.stages >= 1), `templates ${tpls.status}`);
       assert((await http.post("/ai-agents/from-template", { template: "nao-existe" }, auth())).status === 404, "an unknown template");
-      const fromTpl = (await http.post("/ai-agents/from-template", { template: "atendimento-faq", name: "Agente do modelo" }, auth())).data;
+      const fromTpl = (await http.post("/ai-agents/from-template", { template: "atendimento_encaminhamento", name: "Agente do modelo" }, auth())).data;
       const tplFlow = (await http.get(`/flows/${fromTpl.flowId}`, auth())).data;
       assert(tplFlow.kind === "agent" && tplFlow.agentId === fromTpl.agentId && tplFlow.errors === 0, `template flow ${JSON.stringify({ k: tplFlow.kind, e: tplFlow.errors, issues: tplFlow.issues })}`);
       assert(sql(`SELECT active FROM AiAgents WHERE id=${fromTpl.agentId}`) === "0", "an agent from a template starts turned on");
-      assert(Number(sql(`SELECT COUNT(*) FROM KbDocuments WHERE agentId=${fromTpl.agentId} AND kind='faq'`)) >= 1, "the template brought no answers for the knowledge base");
+      assert(Number(sql(`SELECT COUNT(*) FROM KbDocuments WHERE agentId=${fromTpl.agentId}`)) >= 3, "the template brought no texts for the knowledge base");
       assert((await http.get("/flows", auth())).data.every(f => f.kind === "flow"), "agents in the list of flows");
       assert((await http.get("/flows", { params: { kind: "agent" }, ...auth() })).data.some(f => f.id === fromTpl.flowId), "agent not in its list");
 
@@ -2994,7 +2995,7 @@ const postMeta = (id, payload, secret, badSig) => {
       // 1) the template: agent turned off, answers by subject in the knowledge base, the funnel mapped and completed, a valid draft
       const list = (await http.get("/ai-agent-templates", auth())).data;
       const tpl = list.find(t => t.key === "graduacao_comercial_cruzeiro");
-      assert(tpl && tpl.name === "Comercial — Graduação" && tpl.commercial === true, `template listed ${JSON.stringify(tpl)}`);
+      assert(tpl && tpl.name === "Comercial" && tpl.commercial === true, `template listed ${JSON.stringify(tpl)}`);
       const made = await http.post("/ai-agents/from-template", { template: "graduacao_comercial_cruzeiro" }, auth());
       assert(made.status === 201 && made.data.funnel && Array.isArray(made.data.funnel.created), `made ${made.status} ${JSON.stringify(made.data)}`);
       const agentId = made.data.agentId, flowId = made.data.flowId;
@@ -3213,6 +3214,17 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(!out.some(x => /R\$|299/.test(x)), `the price reached the person: ${out}`);
       await waitFor(() => leadStage(K) === stageName("ready_for_proposal"), 8000, "the guarded price goes to the proposal");
       assert(Number(sql(`SELECT COUNT(*) FROM AgentMetricEvents WHERE leadId=${leadId(K)} AND event='agent_guard'`)) >= 1, "the guard was not recorded");
+
+      // Q) a long answer goes out as short bubbles (never a wall of text with "Ler mais"), the question alone at the end
+      const Q = "5511920000215";
+      await qualify(Q, "q");
+      mk = graph.sent.length;
+      await inboundCloud(Q, "wamid.com-q3", "explique tudo sobre o curso");
+      await waitFor(() => texts(mk).some(x => /Quer que eu te mostre a grade/.test(x)), 30000, "the long answer arrived");
+      const bubbles = texts(mk);
+      assert(bubbles.length >= 3 && bubbles.length <= 5, `the answer should be 3 to 5 bubbles, got ${bubbles.length}`);
+      assert(bubbles.every(b => b.length <= 650), `a bubble is too long: ${bubbles.map(b => b.length)}`);
+      assert(/Quer que eu te mostre a grade/.test(bubbles[bubbles.length - 1]) && bubbles[bubbles.length - 1].length < 100, "the question should be alone at the end");
 
       // L) the model states a date nobody gave it: replaced by "I'll confirm", the question goes to the team, the conversation goes on
       const L = "5511920000212";
@@ -4178,6 +4190,74 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(list.every(l => l.ownerId === consultorId || !l.ownerId), "list leaks other owners");
       assert((await http.get(`/leads/${mine.id}`, asUser(tutorToken))).status === 403, "tutor read a sales lead");
     });
+    await test("ambientação: the tutor sees the students waiting in the polo, a tutor can always be chosen, and the administrators are warned after 24 h", async () => {
+      const mk = async (name, email, role) => (await http.post("/users", { name, email, password: "senha123", role }, auth())).data;
+      const tutor = await mk("Tutora Vazia", "tutora@vazia.test", "tutor");
+      const outsider = await mk("Tutor Sem Polo", "tutor@sempolo.test", "tutor");
+      const cons = await mk("Consultor Vazia", "consultor@vazia.test", "consultor");
+      const polo = (await http.post("/polos", { name: "Polo Vazia", code: "VAZ1", state: "RO" }, auth())).data;
+      // the polo has a sales team only: the student waits in the tutoring line
+      await http.put(`/polos/${polo.id}/members`, { members: [{ userId: cons.id, role: "comercial" }] }, auth());
+      const consTok = (await http.post("/auth/login", { email: "consultor@vazia.test", password: "senha123" })).data.token;
+      const lead = await mkLead("Aluno Esperando Tutor", "5511955553301", { ownerId: cons.id });
+      const opened = await http.post(`/leads/${lead.id}/open-ticket`, { whatsappId: cid }, auth());
+      assert(opened.status === 200 || opened.status === 201, `open-ticket ${opened.status}`);
+      const r = await http.post(`/leads/${lead.id}/enroll`, { poloId: polo.id, tutorId: "auto", fee: "paid", whatsappId: cid }, asUser(consTok));
+      assert(r.status === 200, `enroll ${r.status} ${JSON.stringify(r.data).slice(0, 160)}`);
+      assert(sql(`SELECT COALESCE(onboardingTutorId::text,'') FROM Leads WHERE id=${lead.id}`) === "", "nobody should have been picked");
+
+      // a polo with no tutor offers every tutor of the institution, marked as from elsewhere
+      const fallback = (await http.get(`/polos/${polo.id}/tutors`, auth())).data;
+      assert(fallback.some(t => t.id === tutor.id && t.outside) && fallback.some(t => t.id === outsider.id), `fallback tutors ${JSON.stringify(fallback)}`);
+      assert((await http.get("/polos/0/tutors", auth())).data.length >= 2, "a student without polo has no tutor to choose");
+
+      // the tutor is added to the polo: the waiting student shows up for them, and they appear in the choice
+      await http.put(`/polos/${polo.id}/members`, { members: [{ userId: cons.id, role: "comercial" }, { userId: tutor.id, role: "tutoria" }] }, auth());
+      const tutorTok = (await http.post("/auth/login", { email: "tutora@vazia.test", password: "senha123" })).data.token;
+      const seen = (await http.get("/onboarding", asUser(tutorTok))).data;
+      assert(seen.some(l => l.id === lead.id), "the tutor does not see the student waiting in their polo");
+      const outsiderTok = (await http.post("/auth/login", { email: "tutor@sempolo.test", password: "senha123" })).data.token;
+      assert(!(await http.get("/onboarding", asUser(outsiderTok))).data.some(l => l.id === lead.id), "a tutor of another polo sees the student");
+      const chosen = (await http.get(`/polos/${polo.id}/tutors`, auth())).data;
+      assert(chosen.length === 1 && chosen[0].id === tutor.id && !chosen[0].outside, `choice ${JSON.stringify(chosen)}`);
+      const put = await http.put(`/leads/${lead.id}/onboarding`, { tutorId: tutor.id }, auth());
+      assert(put.status === 200, `choose tutor ${put.status} ${JSON.stringify(put.data).slice(0, 160)}`);
+      assert(sql(`SELECT onboardingTutorId FROM Leads WHERE id=${lead.id}`) === String(tutor.id), "the tutor was not saved");
+
+      // over 24 h without the first contact: one task for every administrator, once
+      sql(`UPDATE Leads SET onboardingStatus='pending', onboardingAlertAt=NULL, enrolledAt=NOW() - INTERVAL '2 days' WHERE id=${lead.id}`);
+      await waitFor(() => Number(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${lead.id} AND title LIKE 'Ambientação atrasada%'`)) >= 1, 15000, "late onboarding task for the administrators");
+      const admins = Number(sql(`SELECT COUNT(*) FROM Users WHERE profile='admin' OR role IN ('admin','coordenacao')`));
+      assert(Number(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${lead.id} AND title LIKE 'Ambientação atrasada%'`)) === admins, "one task per administrator expected");
+    });
+    await test("connections: another number's groups, communities and private chats never reach a person who does not own it", async () => {
+      const mkU = async (name, email, role) => (await http.post("/users", { name, email, password: "senha123", role }, auth())).data;
+      const one = await mkU("Dona do Numero", "dona@numero.test", "consultor");
+      const two = await mkU("Outra Pessoa", "outra@numero.test", "consultor");
+      const [t1, t2] = [(await http.post("/auth/login", { email: "dona@numero.test", password: "senha123" })).data.token, (await http.post("/auth/login", { email: "outra@numero.test", password: "senha123" })).data.token];
+      // a registered number owned by the person (inserted straight: connecting for real would open a browser session)
+      const wa = { id: Number(sql(`INSERT INTO Whatsapps (name, status, channel, ownerId, createdAt, updatedAt) VALUES ('Numero da Dona','DISCONNECTED','whatsapp',${one.id},NOW(),NOW()) RETURNING id`).split("\n")[0]) };
+      assert(wa.id, "connection not created");
+      const mkContact = (name, number, isGroup) => sql(`INSERT INTO Contacts (name, number, isGroup, kind, createdAt, updatedAt) VALUES ('${name}','${number}',${isGroup},'${isGroup ? "group" : "person"}',NOW(),NOW()) RETURNING id`).split("\n")[0];
+      const gc = mkContact("Grupo Da Dona", "120363000000000901", true);
+      const pc = mkContact("Conversa Da Dona", "5511955554401", false);
+      const mkTicket = (contact, isGroup) => sql(`INSERT INTO Tickets (status, contactId, whatsappId, isGroup, unreadMessages, isHistorical, createdAt, updatedAt) VALUES ('pending',${contact},${wa.id},${isGroup},0,false,NOW(),NOW()) RETURNING id`).split("\n")[0];
+      const gt = mkTicket(gc, true);
+      const pt = mkTicket(pc, false);
+      const ids = async tok => (await http.get("/tickets", { ...asUser(tok), params: { status: "pending", showAll: "true", queueIds: "[]", groups: "only" } })).data.tickets.map(t => t.id);
+      assert((await ids(t1)).includes(Number(gt)), "the owner does not see the group of their own number");
+      assert(!(await ids(t2)).includes(Number(gt)), "another person sees the group of a number that is not theirs");
+      const priv = async tok => (await http.get("/tickets", { ...asUser(tok), params: { status: "pending", showAll: "true", queueIds: "[]", groups: "exclude" } })).data.tickets.map(t => t.id);
+      assert(!(await priv(t2)).includes(Number(pt)), "another person sees a private chat of a number that is not theirs");
+      assert((await http.get(`/tickets/${gt}`, asUser(t2))).status === 403, "the group opens by id for someone else");
+      assert((await http.get(`/tickets/${gt}`, asUser(t1))).status === 200, "the owner cannot open their group");
+      const comm = async tok => (await http.get("/communities", asUser(tok))).data.communities.flatMap(c => [c.announcement, ...c.groups].filter(Boolean).map(g => g.contactId));
+      sql(`UPDATE Contacts SET communityRole='member' WHERE id=${gc}`);
+      assert(!(await comm(t2)).includes(Number(gc)), "communities leak to another person");
+      const contactsOf = async tok => (await http.get("/contacts", { ...asUser(tok), params: { searchParam: "Grupo Da Dona" } })).data.contacts.map(c => c.id);
+      assert(!(await contactsOf(t2)).includes(Number(gc)), "the group shows in the contacts of another person");
+      assert((await contactsOf(t1)).includes(Number(gc)), "the owner lost the group in their contacts");
+    });
     // ----------------------------------------------- enrollment -> tutor
     await test("Matrícula isenta: the consultant informs it at the confirmation instead of charging; no charge is created; a payment that arrives anyway wins", async () => {
       const mk = async (name, email, role) => (await http.post("/users", { name, email, password: "senha123", role }, auth())).data;
@@ -5114,12 +5194,12 @@ const postMeta = (id, payload, secret, badSig) => {
       await waitFor(() => sql(`SELECT handoffAlerts FROM Tickets WHERE id=${ta}`) === "1", 90000, "the alert for the conversation nobody answered");
       assert(Number(sql(`SELECT COUNT(*) FROM LeadActivities WHERE leadId=${leadOf(a)} AND type='sla' AND body LIKE 'Aguardando atendimento humano%'`)) === 1, "the alert was not written in the history");
 
-      // a polo without a team: the reserve queue (a commercial queue with consultants) takes it, and it says so
+      // a polo without a team: the conversation STAYS in the queue of the polo (pending, nobody assigned) and only the management is warned
       const b = "5511930000002";
       const tb = await handoff(b, "Cidade Beta");
       assert(sql(`SELECT poloId FROM Leads WHERE id=${leadOf(b)}`) === String(beta.id), "the polo without a team was not found");
-      assert(sql(`SELECT queueId FROM Tickets WHERE id=${tb}`) !== betaQueue && sql(`SELECT userId FROM Tickets WHERE id=${tb}`) !== "", "the polo without consultants kept the conversation");
-      assert(Number(sql(`SELECT COUNT(*) FROM TicketEvents WHERE ticketId=${tb} AND type='transfer' AND note LIKE '%fila de reserva%'`)) === 1, "the reserve queue was not mentioned");
+      assert(sql(`SELECT queueId FROM Tickets WHERE id=${tb}`) === betaQueue && sql(`SELECT userId FROM Tickets WHERE id=${tb}`) === "" && sql(`SELECT status FROM Tickets WHERE id=${tb}`) === "pending", "a polo without consultants should keep the conversation, pending, in its own queue");
+      assert(Number(sql(`SELECT COUNT(*) FROM TicketEvents WHERE ticketId=${tb} AND type='transfer' AND note LIKE '%aguardando alguém da fila%'`)) === 1 && Number(sql(`SELECT COUNT(*) FROM TicketEvents WHERE ticketId=${tb} AND note LIKE '%fila de reserva%'`)) === 0, "the routing note is wrong for a polo without a team");
 
       // the screen of the handoff: which polos would really answer, and the reserve queue chosen by the manager
       const h0 = (await http.get("/ai-handoff", auth())).data;

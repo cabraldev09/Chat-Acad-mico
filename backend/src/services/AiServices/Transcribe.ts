@@ -5,6 +5,7 @@ import path from "path";
 
 import { PUBLIC_DIR } from "../../config/paths";
 import { getSetting } from "../../helpers/AppSettings";
+import { getSecretSetting } from "../../helpers/SecretSettings";
 import AiAgent from "../../models/AiAgent";
 import { logger } from "../../utils/logger";
 import { logUsage } from "./Usage";
@@ -16,7 +17,7 @@ const MAX_BYTES = 12 * 1024 * 1024;
 
 export const transcriptionEnabled = async (): Promise<boolean> => (await getSetting("ai_transcribe_audio", "0")) === "1" && !!(await openaiKey());
 
-const openaiKey = async (): Promise<string> => (await getSetting("ai_openai_key", "")) || (await AiAgent.findOne({ where: { provider: "openai" } as any }))?.apiKey || "";
+const openaiKey = async (): Promise<string> => (await getSecretSetting("ai_openai_key")) || (await AiAgent.findOne({ where: { provider: "openai" } as any }))?.apiKey || "";
 
 // the text of the audio (null when it is off, too big, fails or has no speech): the caller then asks the person to write
 export const transcribeAudio = async (mediaUrl: string, agentId?: number | null): Promise<string | null> => {

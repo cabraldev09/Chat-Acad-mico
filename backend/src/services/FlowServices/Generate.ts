@@ -1,7 +1,7 @@
 import axios from "axios";
 
 import AppError from "../../errors/AppError";
-import { getSetting } from "../../helpers/AppSettings";
+import { getSecretSetting } from "../../helpers/SecretSettings";
 import AiAgent from "../../models/AiAgent";
 import LeadStage from "../../models/LeadStage";
 import Polo from "../../models/Polo";
@@ -153,7 +153,7 @@ export const normalizeGenerated = async (raw: any): Promise<{ name: string; entr
 
 export const generateFlow = async (description: string): Promise<{ name: string; entry: any; graph: Graph }> => {
   const agent = await AiAgent.findOne({ where: { provider: "anthropic" } as any, order: [["id", "ASC"]] });
-  const apiKey = (await getSetting("ai_anthropic_key", "")) || agent?.apiKey || "";
+  const apiKey = (await getSecretSetting("ai_anthropic_key")) || agent?.apiKey || "";
   if (!apiKey) throw new AppError("ERR_AI_NO_KEY", 400);
   const [stages, tags, queues] = await Promise.all([LeadStage.findAll(), Tag.findAll(), Queue.findAll()]);
   const context = [

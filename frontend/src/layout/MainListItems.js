@@ -30,6 +30,9 @@ import GraduationCapIcon from "lucide-react/dist/esm/icons/graduation-cap";
 import FileSearchIcon from "lucide-react/dist/esm/icons/file-search";
 import LibraryIcon from "lucide-react/dist/esm/icons/library";
 import BookOpenCheckIcon from "lucide-react/dist/esm/icons/book-open-check";
+import BotIcon from "lucide-react/dist/esm/icons/bot";
+import WorkflowIcon from "lucide-react/dist/esm/icons/workflow";
+import EyeIcon from "lucide-react/dist/esm/icons/eye";
 
 import api from "../services/api";
 import openSocket from "../services/socket-io";
@@ -213,6 +216,17 @@ const MainListItems = (props) => {
     return () => clearTimeout(delayDebounceFn);
   }, [whatsApps, user && user.id]);
 
+  // the same entry for everybody (the managers find it in the group of the automations)
+  const connectionsLink = (
+    <ListItemLink
+      to="/connections"
+      primary={i18n.t("mainDrawer.listItems.connections")}
+      icon={<PlugIcon className="ico" />}
+      collapsed={collapsed}
+      adornment={connectionWarning && <span className={clsx(classes.connectionDot, collapsed && classes.connectionDotCollapsed)} title="Há conexão com problema" />}
+    />
+  );
+
   return (
     <div onClick={drawerClose}>
       {/* the conversations come first: they are the home of the system */}
@@ -231,13 +245,7 @@ const MainListItems = (props) => {
       {/* administration and coordination find these two in Configurações; everyone else keeps them here */}
       {!isManager(user) && (
         <>
-          <ListItemLink
-            to="/connections"
-            primary={i18n.t("mainDrawer.listItems.connections")}
-            icon={<PlugIcon className="ico" />}
-            collapsed={collapsed}
-            adornment={connectionWarning && <span className={clsx(classes.connectionDot, collapsed && classes.connectionDotCollapsed)} />}
-          />
+          {connectionsLink}
           <ListItemLink
             to="/quickAnswers"
             primary={i18n.t("mainDrawer.listItems.quickAnswers")}
@@ -280,6 +288,22 @@ const MainListItems = (props) => {
       {["admin", "coordenacao", "consultor"].includes(user.profile === "admin" ? "admin" : user.role || "consultor") && (
         <ListItemLink to="/afiliados" primary="Afiliados" icon={<Share2Icon className="ico" />} collapsed={collapsed} />
       )}
+      {/* the tools that make the company advance are one click away, not inside Configurações */}
+      {isManager(user) && (
+        <>
+          {!collapsed && <ListSubheader disableSticky className={classes.sectionLabel}>Automação e IA</ListSubheader>}
+          <ListItemLink
+            to="/ai-agents"
+            primary="Agentes de IA"
+            icon={<BotIcon className="ico" />}
+            collapsed={collapsed}
+            adornment={aiReview > 0 && <span className={classes.countBadge} title="Respostas da equipe para você revisar">{aiReview}</span>}
+          />
+          <ListItemLink to="/chatbot" primary="Chatbot e fluxos" icon={<WorkflowIcon className="ico" />} collapsed={collapsed} />
+          {connectionsLink}
+          <ListItemLink to="/monitor" primary="Monitor ao vivo" icon={<EyeIcon className="ico" />} collapsed={collapsed} />
+        </>
+      )}
       <Divider className={classes.divider} />
       <ListItemLink
         to="/schedules"
@@ -306,7 +330,7 @@ const MainListItems = (props) => {
           <Divider className={classes.divider} />
           <ListItemLink
             to="/configuracoes"
-            alsoActive={["/connections", "/quickAnswers", "/users", "/polos", "/queues", "/tags", "/chatbot", "/ai-agents", "/monitor", "/crm/config", "/settings", "/integrations"]}
+            alsoActive={["/quickAnswers", "/users", "/polos", "/queues", "/tags", "/crm/config", "/settings", "/integrations"]}
             primary="Configurações"
             icon={<SlidersIcon className="ico" />}
             collapsed={collapsed}

@@ -5,6 +5,7 @@ import AiAgent from "../../models/AiAgent";
 import Message from "../../models/Message";
 import Ticket from "../../models/Ticket";
 import { getSetting } from "../../helpers/AppSettings";
+import { getSecretSetting } from "../../helpers/SecretSettings";
 import { logger } from "../../utils/logger";
 import ShowTicketService from "../TicketServices/ShowTicketService";
 import { ensureLegacy, matchFaq, searchChunks } from "./Kb";
@@ -14,6 +15,7 @@ import { StageData } from "../FlowServices/StageSpec";
 import { handoffToHuman, HandoffReason } from "./Handoff";
 import { captureUnknown, notifyOwner } from "./Learning";
 import { textOfMessage } from "./Media";
+import { splitIntoBlocks } from "../CommercialServices/Blocks";
 import { todayLine } from "../CommercialServices/Hours";
 
 export const HANDOFF_MARKER = "[HANDOFF]";
@@ -58,7 +60,7 @@ const stageBlock = (stage: StageData): string =>
 
 const STAGE_RULES = [
   "Regras fixas:",
-  "- Responda em português do Brasil, em no máximo 3 frases curtas. Faça uma pergunta por vez.",
+  "- Fale como uma pessoa no WhatsApp: português do Brasil simples, humano e profissional. Escreva em blocos curtos separados por linha em branco (no máximo 3, de 1 ou 2 frases cada), nunca um textão. Faça uma pergunta por vez.",
   "- Nunca invente valores, datas, prazos ou condições. Use as ferramentas e a base de conhecimento para fatos.",
   "- Quando a pessoa informar um dado novo, chame salvar_lead.",
   "- Quando o objetivo da etapa for cumprido, quando a pessoa pedir para falar com uma pessoa ou quando você não souber um fato da instituição, chame escolher_resultado. Nunca chute.",
@@ -88,7 +90,7 @@ const staticPrompt = (agent: AiAgent, stage?: StageData): string => {
     p.forbidden ? `Nunca faça isto:\n${p.forbidden}` : null,
     [
       "Regras fixas:",
-      "- Responda em português do Brasil, em no máximo 3 frases curtas. Faça uma pergunta por vez.",
+      "- Fale como uma pessoa no WhatsApp: português do Brasil simples, humano e profissional. Escreva em blocos curtos separados por linha em branco (no máximo 3, de 1 ou 2 frases cada), nunca um textão. Faça uma pergunta por vez.",
       "- Use as ferramentas para preços, cursos e polos. Nunca invente valores, datas ou condições.",
       "- Nunca diga que a mensalidade é fixa até o fim do curso nem fale em regressão de bolsa: valores e bolsa dependem da proposta oficial feita por um consultor.",
       "- Quando o aluno informar um dado novo (nome, cidade, curso...), chame salvar_lead.",
@@ -122,7 +124,7 @@ const dynamicPrompt = (agent: AiAgent, summary: string | null, collected: Record
 
 export const resolveKey = async (agent: AiAgent): Promise<string> => {
   if (agent.apiKey) return agent.apiKey;
-  return getSetting(`ai_${agent.provider}_key`, "");
+  return getSecretSetting(`ai_${agent.provider}_key`);
 };
 
 const callAnthropic = async (apiKey: string, body: any) => {
@@ -183,7 +185,9 @@ const FINAL_TOOLS = new Set(["registrar_turno", "escolher_resultado", "salvar_le
 // the short identity of the commercial agent and the few rules that cannot be forgotten (every other rule is in the code)
 const COMMERCIAL_RULES = [
   "Regras:",
-  "- Estilo WhatsApp: português do Brasil, humano, no máximo 3 frases curtas e UMA pergunta principal por mensagem.",
+  "- Estilo de WhatsApp humano e profissional, que conecta: português do Brasil simples, como um consultor que conhece quem estuda e trabalha ao mesmo tempo. Reconheça o que a pessoa disse antes de responder.",
+  "- Escreva em BLOCOS CURTOS separados por uma linha em branco: no máximo 3 blocos, cada um com 1 ou 2 frases (até uns 200 caracteres). Nunca um textão. Destaque o essencial com *negrito* (no máximo 2 trechos) e termine com UMA pergunta curta de condução.",
+  "- Sem listas longas, sem frases de manual (“Prezado”, “Informamos que”), sem repetir o que já foi dito: dê o essencial e ofereça aprofundar.",
   "- Antes de perguntar, veja “Já sabemos”: nunca pergunte de novo o que já está lá.",
   "- Dados de curso, grade, estágio, modalidade e MEC vêm SÓ das ferramentas ou dos trechos da base. Se vier nulo ou desconhecido, diga que vai confirmar e registre a dúvida (intent unknown).",
   "- Nunca informe valores, bolsas ou condições financeiras. Nunca prometa aproveitamento de disciplinas nem data de formatura.",
@@ -444,6 +448,9 @@ export const runAiForTicket = async (ticketId: number, say: Say): Promise<void> 
   if (!ticket.aiActive || ticket.userId || ticket.status === "closed") return;
   const agent = await findAgentForTicket(ticket);
   if (!agent) return;
+  // one server at a time answers this conversation
+  const { claimAi, releaseAi } = await import("../FlowServices/Claim");
+  if (!(await claimAi(ticket.id))) return;
 
   try {
     if (agent.dailyTokenCap > 0 && (await tokensToday(agent.id)) >= agent.dailyTokenCap) {
@@ -463,7 +470,7 @@ export const runAiForTicket = async (ticketId: number, say: Say): Promise<void> 
     // an FAQ with a ready answer needs no model at all
     const faq = await matchFaq(agent.id, last.content);
     if (faq) {
-      await say(ticket, faq.content);
+      for (const block of splitIntoBlocks(faq.content)) await say(ticket, block);
       await ticket.update({ aiTurns: (ticket.aiTurns || 0) + 1 });
       return;
     }
@@ -487,7 +494,7 @@ export const runAiForTicket = async (ticketId: number, say: Say): Promise<void> 
       await handoff(ticket, agent, "pedido", say);
       return;
     }
-    if (result.text) await say(ticket, result.text);
+    if (result.text) for (const block of splitIntoBlocks(result.text)) await say(ticket, block);
 
     const turns = (ticket.aiTurns || 0) + 1;
     await ticket.update({ aiTurns: turns });
@@ -507,5 +514,7 @@ export const runAiForTicket = async (ticketId: number, say: Say): Promise<void> 
     const why = /NO_API_KEY/.test(String(err?.message)) ? "a chave de API não está cadastrada" : status === 401 || status === 403 ? "o provedor recusou a chave de API" : status === 429 ? "o limite ou o saldo do provedor acabou" : status >= 500 ? "o provedor de IA está fora do ar" : "erro técnico";
     await notifyOwner(agent, `⚠️ O agente *${agent.name}* não conseguiu responder uma conversa porque ${why}. A conversa foi para a equipe.`).catch(() => undefined);
     await handoff(ticket, agent, "sem_resposta", say, false).catch(() => ticket.update({ aiActive: false }));
+  } finally {
+    await releaseAi(ticket.id);
   }
 };

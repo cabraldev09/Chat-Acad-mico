@@ -11,6 +11,7 @@ import ShowTicketService from "../TicketServices/ShowTicketService";
 import { Effects, RunState, StepResult, advance, firstNode, normalize, resume } from "./Engine";
 import { FlowContext, ticketEffects } from "./Effects";
 import { debounce } from "./Debounce";
+import { claimAi, releaseAi } from "./Claim";
 import { handoffToHuman } from "../AiServices/Handoff";
 import { cleanStage } from "./StageSpec";
 import { Graph, parseGraph } from "./Graph";
@@ -156,6 +157,11 @@ export const resumeStageRun = async (ticketId: number): Promise<void> => {
     return;
   }
   if (graph.nodes.find(n => n.id === run.nodeId)?.type !== "stage") return;
+  // another server is answering this conversation: this burst is answered right after (the turn counts what was already answered)
+  if (!(await claimAi(ticketId))) {
+    debounce(`stage:${ticketId}`, 3, () => resumeStageRun(ticketId));
+    return;
+  }
   await run.update({ resumeAt: null } as any);
   const state = stateOf(run);
   const crmBefore = !!state.vars.__crm;
@@ -170,6 +176,7 @@ export const resumeStageRun = async (ticketId: number): Promise<void> => {
     await failRun(run, ticket, flow, effects, err);
   } finally {
     inflight.delete(ticketId);
+    await releaseAi(ticketId);
   }
 };
 
@@ -189,9 +196,14 @@ export const runAgentGraph = async (ticket: Ticket, agent: AiAgent): Promise<boo
   debounce(`agent-start:${ticket.id}`, agent.waitSeconds ?? 4, async () => {
     const fresh = await ShowTicketService(ticket.id);
     if (!fresh.aiActive || fresh.userId || fresh.status === "closed") return;
-    // already talking (a second burst before the first run was saved)
+    // already talking (a second burst before the first run was saved), here or in another server
     if (await ChatFlowRun.findOne({ where: { ticketId: fresh.id, status: { [Op.in]: ["waiting", "delayed"] } } })) return;
-    await startRun(flow, fresh, undefined, await lastUserText(fresh.id));
+    if (!(await claimAi(fresh.id))) return;
+    try {
+      await startRun(flow, fresh, undefined, await lastUserText(fresh.id));
+    } finally {
+      await releaseAi(fresh.id);
+    }
   });
   return true;
 };

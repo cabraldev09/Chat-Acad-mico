@@ -37,6 +37,7 @@ import { dbPorts, simPorts, SimWorld } from "../CommercialServices/Ports";
 import { commercialAiTurn } from "../CommercialServices/Turn";
 import { HandoffWhy, WHY_OF_EXIT, WHY_TEXT, afterHoursNotice, routeToCommercial } from "../CommercialServices/Router";
 import { burstOf, mediaOfMessages, textOfMessage } from "../AiServices/Media";
+import { splitIntoBlocks } from "../CommercialServices/Blocks";
 import Message from "../../models/Message";
 import TicketEvent from "../../models/TicketEvent";
 import AgentMetricEvent from "../../models/AgentMetricEvent";
@@ -218,6 +219,11 @@ export const ticketEffects = (ticket: Ticket, flowName: string, flowCtx: FlowCon
       return name;
     },
 
+    // what the AI wrote goes out as short bubbles, one after the other (the sender shows "digitando…" and waits like a person)
+    async sayBlocks(text) {
+      for (const block of splitIntoBlocks(text)) await this.say(block);
+    },
+
     async say(text, choices) {
       const send = () => SendWhatsAppMessage({ body: `${MARK}${text}`, ticket, automated: true, choices: choices ? { ...choices, question: `${MARK}${choices.question}` } : undefined });
       try {
@@ -315,11 +321,13 @@ export const ticketEffects = (ticket: Ticket, flowName: string, flowCtx: FlowCon
       await ticket.update({ chatbotNodeId: FLOW_DONE, aiActive: false });
       // the commercial team of the polo: the Router finds the polo, the queue and the consultant (reserve queue and managers when needed),
       // warns them at once and writes down why
-      if (d.to === "polo_sales" || d.to === "chosen_polo_sales") {
+      // in an AI agent, tutoring and secretary go through the Router as well (the polo of the person, a queue with people, a warning)
+      const team = d.to === "polo_tutoria" ? "tutoria" : d.to === "polo_coordenacao" ? "coordenacao" : "comercial";
+      if (d.to === "polo_sales" || d.to === "chosen_polo_sales" || (flowCtx.agentId && (d.to === "polo_tutoria" || d.to === "polo_coordenacao"))) {
         const agent = await agentFor(null);
         // nothing was said about the handoff yet (a limit was reached, a plain transfer block): the lead hears it once
         if (vars.__exit && vars.__spoke !== vars.__exit && !d.text) await this.say((agent && agent.handoffMessage) || DEFAULT_HANDOFF);
-        const routed = await routeToCommercial(ticket, { why: vars.__why || WHY_OF_EXIT[String(vars.__exit || "")] || "other", poloId: d.to === "chosen_polo_sales" && vars.poloId ? Number(vars.poloId) : null, city: vars.city || vars.cidade || null, agentId: flowCtx.agentId || null });
+        const routed = await routeToCommercial(ticket, { team, why: vars.__why || WHY_OF_EXIT[String(vars.__exit || "")] || "other", poloId: d.to === "chosen_polo_sales" && vars.poloId ? Number(vars.poloId) : null, city: vars.city || vars.cidade || null, agentId: flowCtx.agentId || null });
         const notice = afterHoursNotice(routed);
         if (notice) await this.say(notice);
         return;
@@ -330,11 +338,11 @@ export const ticketEffects = (ticket: Ticket, flowName: string, flowCtx: FlowCon
         return;
       }
       let queueId: number | null = d.to === "queue" ? Number(d.queueId) : null;
-      if (d.to === "polo_sales" || d.to === "polo_tutoria" || d.to === "chosen_polo_sales") {
+      if (d.to === "polo_sales" || d.to === "polo_tutoria" || d.to === "chosen_polo_sales" || d.to === "polo_coordenacao") {
         const lead = await leadOf();
         // "chosen": the polo the person picked inside the flow, else the one already on the lead
         const poloId = d.to === "chosen_polo_sales" && vars.poloId ? Number(vars.poloId) : lead?.poloId;
-        const q = poloId ? await Queue.findOne({ where: { poloId, role: d.to === "polo_tutoria" ? "tutoria" : "comercial" } }) : null;
+        const q = poloId ? await Queue.findOne({ where: { poloId, role: d.to === "polo_tutoria" ? "tutoria" : d.to === "polo_coordenacao" ? "coordenacao" : "comercial" } }) : null;
         queueId = q ? q.id : null;
       }
       if (queueId) {
@@ -483,6 +491,7 @@ export const simEffects = (sample: SimSample = {}, opts: { agent?: AiAgent | nul
       return chosen ? chosen.name : "";
     },
     async say(text) { messages.push(text); },
+    async sayBlocks(text) { splitIntoBlocks(text).forEach(b => messages.push(b)); },
     async readField(field) {
       if (field === "hours") return sample.hours || "open";
       if (field === "channel") return sample.channel || "whatsapp";
@@ -507,7 +516,7 @@ export const simEffects = (sample: SimSample = {}, opts: { agent?: AiAgent | nul
     },
     async transfer(node, vars) {
       const to = node.data?.to || "equipe";
-      if (to === "polo_sales" || to === "chosen_polo_sales") {
+      if (to === "polo_sales" || to === "chosen_polo_sales" || to === "polo_tutoria" || to === "polo_coordenacao") {
         // what the Router would do: the polo from the city, the commercial team of that polo, the reserve queue when it is unknown
         const world = vars.__commercial as SimWorld | undefined;
         const city = String((world && world.state.slots.city) || vars.city || (sample.lead || {}).cidade || "");
@@ -516,7 +525,8 @@ export const simEffects = (sample: SimSample = {}, opts: { agent?: AiAgent | nul
         const chosen = to === "chosen_polo_sales" && vars.poloId ? polos.find(p => p.id === Number(vars.poloId)) : undefined;
         const found: { polo?: { id: number; name: string } } = chosen ? { polo: chosen } : city ? matchPolo(polos, city) : {};
         const why = WHY_TEXT[((vars.__why as HandoffWhy) || WHY_OF_EXIT[String(vars.__exit || "")] || "other") as HandoffWhy];
-        actions.push(`Encaminha ao ${found.polo ? `Comercial do polo ${found.polo.name}` : "a fila de reserva (o polo ainda não foi identificado pela cidade)"}: o consultor é avisado na hora e recebe uma tarefa. Motivo: ${why}.`);
+        const teamName = to === "polo_tutoria" ? "Tutoria" : to === "polo_coordenacao" ? "Secretaria" : "Comercial";
+        actions.push(`Encaminha ao ${found.polo ? `${teamName} do polo ${found.polo.name}` : to === "polo_sales" || to === "chosen_polo_sales" ? "a fila de reserva (o polo ainda não foi identificado pela cidade)" : `${teamName} (o polo ainda não foi identificado pela cidade)`}: quem assume é avisado na hora. Motivo: ${why}.`);
         return;
       }
       actions.push(`Transfere a conversa (${to})`);
@@ -567,6 +577,8 @@ export const simEffects = (sample: SimSample = {}, opts: { agent?: AiAgent | nul
       if (text) hist.push({ role: "assistant", content: text });
       vars.__hist = hist.slice(-20);
       traces.push({ nodeId: node.id, tools: result.tools, collected: result.collected, exit: result.exit || null, sources: result.sources, tokens: result.tokens });
+      // the AI already said where the person goes ("vou encaminhar para a tutoria"): the handoff does not say it again
+      if (text && result.exit && !["off", "limit"].includes(result.exit)) vars.__spoke = result.exit;
       return { text, exit: result.exit || null, collected: result.collected };
     },
     async humanHandoff(_node, exit) { actions.push(`Transfere para a equipe (${exit === "limit" ? "limite de turnos" : exit === "off" ? "fora do escopo" : "pediu uma pessoa"})`); },

@@ -25,7 +25,7 @@ import { nextOpening, whenText } from "./Hours";
 //   3. a consultant of the queue (the owner of the lead when he belongs to it, else the queue's own rotation);
 //   4. the ticket moves, the consultant is warned at once (live notice + task) and the lead is told when the team answers.
 // Nothing here talks to the lead: the caller says the message (it knows what was already said).
-export const WHY = ["human_request", "proposal", "unknown", "limit_turns", "limit_tokens", "error", "complaint", "media", "loop", "other"] as const;
+export const WHY = ["human_request", "proposal", "unknown", "limit_turns", "limit_tokens", "error", "complaint", "media", "loop", "tutoring", "secretary", "other"] as const;
 export type HandoffWhy = typeof WHY[number];
 
 export const WHY_TEXT: Record<HandoffWhy, string> = {
@@ -38,11 +38,17 @@ export const WHY_TEXT: Record<HandoffWhy, string> = {
   complaint: "a pessoa demonstrou insatisfação ou falou de pagamento/jurídico",
   media: "a pessoa enviou algo que a IA não consegue ler",
   loop: "a pessoa repetiu o mesmo pedido sem a IA resolver",
+  tutoring: "a pessoa precisa da tutoria (plataforma, atividades, provas, prazos)",
+  secretary: "a pessoa precisa da secretaria (documentos, declarações, histórico, matrícula)",
   other: "o atendimento precisa de uma pessoa"
 };
 
 // what the stage exit of the flow means as a reason
-export const WHY_OF_EXIT: Record<string, HandoffWhy> = { human: "human_request", proposta: "proposal", off: "unknown", limit: "limit_turns" };
+export const WHY_OF_EXIT: Record<string, HandoffWhy> = { human: "human_request", proposta: "proposal", off: "unknown", limit: "limit_turns", tutoria: "tutoring", secretaria: "secretary" };
+
+// the team that takes the conversation: the commercial team (default), the tutoring of the polo, or the secretary (the coordination of the polo)
+export type Team = "comercial" | "tutoria" | "coordenacao";
+const TEAM_LABEL: Record<Team, string> = { comercial: "Comercial", tutoria: "Tutoria", coordenacao: "Secretaria" };
 
 export interface Routed {
   queueId: number | null;
@@ -86,9 +92,20 @@ export const ensurePolo = async (lead: Lead | null, cityHint?: string | null): P
 // ---------------------------------------------------------------- queue
 const withUsers = [{ model: User, as: "users", attributes: ["id", "name"], required: true }];
 
-const pickQueue = async (poloId: number | null): Promise<{ queue: Queue | null; fallback: boolean }> => {
+const pickQueue = async (poloId: number | null, team: Team = "comercial"): Promise<{ queue: Queue | null; fallback: boolean }> => {
+  if (team !== "comercial") {
+    // tutoring and secretary: the queue of the polo; without a polo (or without the queue) any queue of that function that has people
+    if (poloId) {
+      const own = await Queue.findOne({ where: { poloId, role: team }, include: [{ model: User, as: "users", attributes: ["id", "name"], required: false }] });
+      if (own) return { queue: own, fallback: false };
+    }
+    const any = await Queue.findOne({ where: { role: team }, include: withUsers as any, order: [["id", "ASC"]] });
+    return { queue: any || null, fallback: true };
+  }
   if (poloId) {
-    const own = await Queue.findOne({ where: { poloId, role: "comercial" }, include: withUsers as any });
+    // the conversation stays with the polo, even while nobody works there: only the management is warned (the polo's team is not
+    // moved around, and the conversation is not sent to another polo)
+    const own = await Queue.findOne({ where: { poloId, role: "comercial" }, include: [{ model: User, as: "users", attributes: ["id", "name"], required: false }] });
     if (own) return { queue: own, fallback: false };
   }
   const reserveId = Number(await getSetting("crm_fallback_queue", "0")) || 0;
@@ -98,11 +115,6 @@ const pickQueue = async (poloId: number | null): Promise<{ queue: Queue | null; 
   }
   const any = await Queue.findOne({ where: { role: "comercial" }, include: withUsers as any, order: [["id", "ASC"]] });
   if (any) return { queue: any, fallback: true };
-  // no consultant anywhere: at least the queue of the polo (the managers see it) so the conversation is not lost
-  if (poloId) {
-    const bare = await Queue.findOne({ where: { poloId, role: "comercial" } });
-    if (bare) return { queue: bare, fallback: false };
-  }
   return { queue: null, fallback: true };
 };
 
@@ -116,6 +128,8 @@ export interface RouteOptions {
   // the city the agent knows (when the lead has not been saved with it yet)
   city?: string | null;
   agentId?: number | null;
+  // who takes it (default: the commercial team)
+  team?: Team;
 }
 
 export const routeToCommercial = async (ticket: Ticket, opts: RouteOptions): Promise<Routed> => {
@@ -124,7 +138,8 @@ export const routeToCommercial = async (ticket: Ticket, opts: RouteOptions): Pro
   if (chosen && lead && lead.poloId !== chosen.id) await lead.update({ poloId: chosen.id });
   const polo = chosen || (await ensurePolo(lead, opts.city));
 
-  const { queue, fallback } = await pickQueue(polo ? polo.id : null);
+  const team: Team = opts.team || "comercial";
+  const { queue, fallback } = await pickQueue(polo ? polo.id : null, team);
   let user: User | null = null;
   if (queue) {
     const users: User[] = (queue as any).users || [];
@@ -134,7 +149,7 @@ export const routeToCommercial = async (ticket: Ticket, opts: RouteOptions): Pro
   const business = await getBusinessConfig();
   const within = isBusinessNow(business);
   const when = within ? null : whenText(nextOpening(business));
-  const label = polo ? `Comercial do polo ${polo.name}` : queue ? `fila ${queue.name}` : "sem fila";
+  const label = polo ? `${TEAM_LABEL[team]} do polo ${polo.name}` : queue ? `fila ${queue.name}` : "sem fila";
 
   try {
     if (queue) {
@@ -154,6 +169,7 @@ export const routeToCommercial = async (ticket: Ticket, opts: RouteOptions): Pro
     logger.error(`Handoff routing failed: ${err}`);
   }
 
+  const noTeam = !!queue && !user && !fallback;
   // the person who takes it hears about it now (not only when the lead writes again) and gets a task
   try {
     getIO().emit("aiHandoff", {
@@ -166,6 +182,7 @@ export const routeToCommercial = async (ticket: Ticket, opts: RouteOptions): Pro
       why: opts.why,
       reason: WHY_TEXT[opts.why],
       fallback,
+      noTeam,
       noQueue: !queue,
       outside: !within,
       when
@@ -173,7 +190,7 @@ export const routeToCommercial = async (ticket: Ticket, opts: RouteOptions): Pro
     if (lead) {
       const owner = user ? user.id : lead.ownerId || null;
       const key = SLA_KEY(ticket.id);
-      if (!(await LeadReminderLog.findOne({ where: { leadId: lead.id, key } }))) {
+      if (team === "comercial" && !(await LeadReminderLog.findOne({ where: { leadId: lead.id, key } }))) {
         await LeadReminderLog.create({ leadId: lead.id, key } as any);
         // inside the working hours the team has 15 minutes; outside, the first quarter of an hour of the next working day
         const dueAt = within ? new Date(Date.now() + 15 * 60000) : new Date((nextOpening(business) || new Date(Date.now() + 3600000)).getTime() + 15 * 60000);

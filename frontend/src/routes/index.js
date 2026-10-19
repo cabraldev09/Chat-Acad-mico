@@ -39,6 +39,7 @@ const Chatbot = lazy(() => import("../pages/Chatbot/"));
 const FlowBuilder = lazy(() => import("../pages/Chatbot/FlowBuilder"));
 const LegacyChatbot = lazy(() => import("../pages/Chatbot/Legacy"));
 const AiAgents = lazy(() => import("../pages/AiAgents/"));
+const AiAgentImprove = lazy(() => import("../pages/AiAgents/Improve"));
 const Webhooks = lazy(() => import("../pages/Webhooks/"));
 const Reports = lazy(() => import("../pages/Reports/"));
 const LiveMonitor = lazy(() => import("../pages/LiveMonitor/"));
@@ -126,6 +127,7 @@ const Routes = () => {
                 <Route exact path="/chatbot" component={Chatbot} isPrivate managerOnly />
                 <Route exact path="/chatbot/:id" component={FlowBuilder} isPrivate managerOnly />
                 <Route exact path="/ai-agents/blocos/:id" component={FlowBuilder} isPrivate managerOnly />
+                <Route exact path="/ai-agents/:id/melhorar" component={AiAgentImprove} isPrivate managerOnly />
                 <Route exact path="/chatbot-antigo" component={LegacyChatbot} isPrivate managerOnly />
                 <Route exact path="/ai-agents" component={AiAgents} isPrivate managerOnly />
                 <Route exact path="/integrations" component={Webhooks} isPrivate adminOnly />
