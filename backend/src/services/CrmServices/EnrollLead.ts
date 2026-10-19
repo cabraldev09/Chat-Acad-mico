@@ -1,4 +1,6 @@
 import { canTutorPolo } from "../PoloServices/TutorsOfPolo";
+import UserQueue from "../../models/UserQueue";
+import { roleOf } from "../../helpers/Roles";
 import sequelize from "../../database";
 import { Op } from "sequelize";
 
@@ -204,9 +206,34 @@ const enrollLead = async (lead: Lead, actorId: number, input: EnrollInput) => {
 };
 export default enrollLead;
 
+// A tutor who starts (or finishes) a student nobody had taken becomes that student's tutor: the conversation is theirs, open, in their list.
+// Administration and coordination never take it over by accident (the tutor is the one who talks to the student).
+const takeAsTutor = async (lead: Lead, actorId: number): Promise<void> => {
+  if (lead.onboardingTutorId) return;
+  const actor = await User.findByPk(actorId, { attributes: ["id", "name", "role", "profile"] });
+  if (!actor || roleOf(actor) !== "tutor") return;
+  await lead.update({ onboardingTutorId: actor.id });
+  const tickets = lead.contactId ? await Ticket.findAll({ where: { contactId: lead.contactId, segment: "onboarding", status: { [Op.in]: ["open", "pending"] } } }) : [];
+  for (const t of tickets) {
+    // the tutor works the queue of the conversation they now hold
+    // eslint-disable-next-line no-await-in-loop
+    if (t.queueId) await UserQueue.findOrCreate({ where: { userId: actor.id, queueId: t.queueId } });
+    // eslint-disable-next-line no-await-in-loop
+    await t.update({ userId: actor.id, status: "open" });
+    // eslint-disable-next-line no-await-in-loop
+    await TicketEvent.create({ ticketId: t.id, type: "handoff", actorId, toQueueId: t.queueId || null, toUserId: actor.id, note: `${actor.name} assumiu a ambientação do aluno.` });
+    // eslint-disable-next-line no-await-in-loop
+    const fresh = await ShowTicketService(t.id);
+    getIO().to("pending").to(fresh.status).to("notification").emit("ticket", { action: "update", ticket: fresh });
+  }
+  await LeadTask.update({ userId: actor.id } as any, { where: { leadId: lead.id, doneAt: null, title: { [Op.like]: "Ambientar o aluno%" } } as any });
+  await addActivity(lead.id, actorId, "system", `${actor.name} assumiu a ambientação como tutor.`);
+};
+
 // start / done of the onboarding (tutor side). Done schedules the follow-ups of the consultant.
 export const setOnboarding = async (lead: Lead, actorId: number, action: "start" | "done") => {
   if (lead.onboardingStatus === "none") throw new AppError("ERR_ONBOARDING_NOT_STARTED", 400);
+  await takeAsTutor(lead, actorId);
   if (action === "start") {
     if (lead.onboardingStatus === "done") throw new AppError("ERR_ONBOARDING_ALREADY_DONE", 400);
     await lead.update({ onboardingStatus: "started", onboardingStartedAt: lead.onboardingStartedAt || new Date() });
@@ -276,6 +303,8 @@ export const editOnboarding = async (lead: Lead, actorId: number, input: EditOnb
     const tickets = lead.contactId
       ? await Ticket.findAll({ where: { contactId: lead.contactId, segment: "onboarding", status: { [Op.in]: ["open", "pending"] } } })
       : [];
+    // whoever receives the conversation works the queue it is in
+    if (tutor) await UserQueue.findOrCreate({ where: { userId: tutor.id, queueId: queue.id } });
     for (const t of tickets) {
       // eslint-disable-next-line no-await-in-loop
       await t.update({ queueId: queue.id, userId: tutor?.id || null, status: tutor ? "open" : "pending" });
@@ -293,6 +322,7 @@ export const editOnboarding = async (lead: Lead, actorId: number, input: EditOnb
     if (input.status === "done") {
       await setOnboarding(lead, actorId, "done");
     } else if (input.status === "started") {
+      await takeAsTutor(lead, actorId);
       await lead.update({ onboardingStatus: "started", onboardingStartedAt: lead.onboardingStartedAt || new Date(), onboardingDoneAt: null });
       notes.push("Ambientação em andamento");
     } else {

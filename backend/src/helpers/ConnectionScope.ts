@@ -23,7 +23,10 @@ export const connectionScopeOf = async (userId: number | string, role: string | 
 // the ticket where-clause that applies the scope (the person's own conversations always stay)
 export const ticketScopeWhere = (scope: ConnectionScope, userId: number | string): any | null => {
   if (scope.all) return null;
-  const privateOk: any = scope.others.length ? { isGroup: false, [Op.or]: [{ whatsappId: { [Op.is]: null } }, { whatsappId: { [Op.notIn]: scope.others } }] } : { isGroup: false };
+  // the tutoring and support conversations belong to the team's work whichever number they live on; the rule is about sales chats and groups
+  const privateOk: any = scope.others.length
+    ? { isGroup: false, [Op.or]: [{ segment: { [Op.in]: TEAM_SEGMENTS } }, { whatsappId: { [Op.is]: null } }, { whatsappId: { [Op.notIn]: scope.others } }] }
+    : { isGroup: false };
   const groupOk: any = scope.own.length ? { isGroup: true, whatsappId: { [Op.in]: scope.own } } : { id: 0 };
   return { [Op.or]: [{ userId: Number(userId) }, privateOk, groupOk] };
 };
@@ -36,8 +39,11 @@ export const contactScopeWhere = (scope: ConnectionScope): any | null => {
 };
 
 // the same rule for one ticket already loaded
-export const ticketVisibleIn = (scope: ConnectionScope, t: { isGroup: boolean; whatsappId: number | null; userId: number | null }, userId: number | string): boolean => {
+const TEAM_SEGMENTS = ["onboarding", "support"];
+
+export const ticketVisibleIn = (scope: ConnectionScope, t: { isGroup: boolean; whatsappId: number | null; userId: number | null; segment?: string | null }, userId: number | string): boolean => {
   if (scope.all || t.userId === Number(userId)) return true;
   if (t.isGroup) return !!t.whatsappId && scope.own.includes(t.whatsappId);
+  if (t.segment && TEAM_SEGMENTS.includes(t.segment)) return true;
   return !t.whatsappId || !scope.others.includes(t.whatsappId);
 };

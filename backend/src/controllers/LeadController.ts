@@ -789,7 +789,10 @@ export const onboarding = async (req: Request, res: Response): Promise<Response>
   if (!lead) throw new AppError("ERR_LEAD_NOT_FOUND", 404);
   const action = req.body.action === "done" ? "done" : "start";
   const { setOnboarding } = await import("../services/CrmServices/EnrollLead");
-  return res.json(await setOnboarding(lead, uid(req), action));
+  const out = await setOnboarding(lead, uid(req), action);
+  // the conversation of the student, so the tutor goes straight to it
+  const conv = lead.contactId ? await Ticket.findOne({ where: { contactId: lead.contactId, segment: "onboarding" }, attributes: ["id"], order: [["id", "DESC"]] }) : null;
+  return res.json({ ...(out as any).toJSON(), ticketId: conv ? conv.id : null });
 };
 
 // edit a confirmed enrollment: tutor, polo or the step of the onboarding
@@ -815,13 +818,15 @@ export const onboardingList = async (req: Request, res: Response): Promise<Respo
   const tutors = tutorIds.length ? await User.findAll({ where: { id: tutorIds }, attributes: ["id", "name"] }) : [];
   const contactIds = rows.map(r => r.contactId).filter(Boolean);
   const tickets = contactIds.length
-    ? await Ticket.findAll({ where: { contactId: contactIds, segment: "onboarding" }, attributes: ["id", "contactId", "status"], order: [["id", "DESC"]] })
+    ? await Ticket.findAll({ where: { contactId: contactIds, segment: "onboarding" }, attributes: ["id", "contactId", "status", "unreadMessages", "lastMessageAt", "userId"], order: [["id", "DESC"]] })
     : [];
   return res.json(
     rows.map(r => ({
       ...r.toJSON(),
       tutorName: tutors.find(t => t.id === r.onboardingTutorId)?.name || null,
-      ticketId: tickets.find(t => t.contactId === r.contactId)?.id || null
+      ticketId: tickets.find(t => t.contactId === r.contactId)?.id || null,
+      unread: tickets.find(t => t.contactId === r.contactId)?.unreadMessages || 0,
+      lastMessageAt: tickets.find(t => t.contactId === r.contactId)?.lastMessageAt || null
     }))
   );
 };

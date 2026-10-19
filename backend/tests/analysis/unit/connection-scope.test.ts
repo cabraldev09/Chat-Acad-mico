@@ -24,6 +24,13 @@ describe("which conversations a person may see by connection", () => {
     expect(ticketVisibleIn(scope, { isGroup: false, whatsappId: 5, userId: null }, 1)).toBe(true);
   });
 
+  it("tutoring and support conversations are not hidden by the number they live on", () => {
+    expect(ticketVisibleIn(scope, { isGroup: false, whatsappId: 7, userId: null, segment: "onboarding" }, 1)).toBe(true);
+    expect(ticketVisibleIn(scope, { isGroup: false, whatsappId: 7, userId: null, segment: "sales" }, 1)).toBe(false);
+    // groups stay with the owner of the number whatever the segment
+    expect(ticketVisibleIn(scope, { isGroup: true, whatsappId: 7, userId: null, segment: "onboarding" }, 1)).toBe(false);
+  });
+
   it("what is assigned to the person stays visible", () => {
     expect(ticketVisibleIn(scope, { isGroup: false, whatsappId: 7, userId: 1 }, 1)).toBe(true);
   });

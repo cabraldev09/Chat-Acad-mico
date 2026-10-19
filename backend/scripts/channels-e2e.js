@@ -4224,6 +4224,29 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(put.status === 200, `choose tutor ${put.status} ${JSON.stringify(put.data).slice(0, 160)}`);
       assert(sql(`SELECT onboardingTutorId FROM Leads WHERE id=${lead.id}`) === String(tutor.id), "the tutor was not saved");
 
+      // the tutor starts a student nobody had taken: the student and the conversation become theirs and show in their conversations
+      const lead2 = await mkLead("Aluno Que a Tutora Inicia", "5511955553302", { ownerId: cons.id });
+      await http.post(`/leads/${lead2.id}/open-ticket`, { whatsappId: cid }, auth());
+      const r2 = await http.post(`/leads/${lead2.id}/enroll`, { poloId: polo.id, tutorId: "auto", fee: "paid", whatsappId: cid }, asUser(consTok));
+      assert(r2.status === 200, `enroll 2 ${r2.status}`);
+      await http.put(`/leads/${lead2.id}/onboarding`, { tutorId: null }, auth());
+      assert(sql(`SELECT COALESCE(onboardingTutorId::text,'') FROM Leads WHERE id=${lead2.id}`) === "", "the student should be waiting");
+      const started = await http.post(`/leads/${lead2.id}/onboarding`, { action: "start" }, asUser(tutorTok));
+      assert(started.status === 200 && started.data.ticketId, `start ${started.status} ${JSON.stringify(started.data).slice(0, 120)}`);
+      assert(sql(`SELECT onboardingTutorId FROM Leads WHERE id=${lead2.id}`) === String(tutor.id), "starting did not make the tutor the student's tutor");
+      assert(sql(`SELECT CONCAT(status,'|',userId) FROM Tickets WHERE id=${started.data.ticketId}`) === `open|${tutor.id}`, "the conversation did not become the tutor's");
+      const queueOf = sql(`SELECT queueId FROM Tickets WHERE id=${started.data.ticketId}`);
+      const mineList = (await http.get("/tickets", { ...asUser(tutorTok), params: { status: "open", showAll: "false", queueIds: JSON.stringify([Number(queueOf)]) } })).data.tickets;
+      assert(mineList.some(t => t.id === Number(started.data.ticketId)), "the started conversation is not in the tutor's list");
+      assert((await http.get(`/tickets/${started.data.ticketId}`, asUser(tutorTok))).status === 200, "the tutor cannot open the conversation");
+      // the administration starting a student does not take it over
+      const lead3 = await mkLead("Aluno Da Gestao", "5511955553303", { ownerId: cons.id });
+      await http.post(`/leads/${lead3.id}/open-ticket`, { whatsappId: cid }, auth());
+      await http.post(`/leads/${lead3.id}/enroll`, { poloId: polo.id, tutorId: "auto", fee: "paid", whatsappId: cid }, asUser(consTok));
+      await http.put(`/leads/${lead3.id}/onboarding`, { tutorId: null }, auth());
+      await http.post(`/leads/${lead3.id}/onboarding`, { action: "start" }, auth());
+      assert(sql(`SELECT COALESCE(onboardingTutorId::text,'') FROM Leads WHERE id=${lead3.id}`) === "", "an administrator became the tutor");
+
       // over 24 h without the first contact: one task for every administrator, once
       sql(`UPDATE Leads SET onboardingStatus='pending', onboardingAlertAt=NULL, enrolledAt=NOW() - INTERVAL '2 days' WHERE id=${lead.id}`);
       await waitFor(() => Number(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${lead.id} AND title LIKE 'Ambientação atrasada%'`)) >= 1, 15000, "late onboarding task for the administrators");

@@ -3,7 +3,7 @@ import { useHistory } from "react-router-dom";
 import { toast } from "react-toastify";
 import { makeStyles } from "@material-ui/core/styles";
 import { Typography, Chip, CircularProgress, Menu, MenuItem, Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField, ListItemIcon } from "@material-ui/core";
-import { Play, CheckCheck, MessageSquare, MoreVertical, UserCog, Undo2, MoveRight } from "lucide-react";
+import { Play, CheckCheck, MessageSquare, MoreVertical, UserCog, UserCheck, Undo2, MoveRight } from "lucide-react";
 
 import MainContainer from "../../components/MainContainer";
 import MainHeader from "../../components/MainHeader";
@@ -33,8 +33,15 @@ const useStyles = makeStyles((theme) => ({
   name: { fontWeight: 600, fontSize: 14.5, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
   meta: { fontSize: 12.5, color: theme.palette.text.secondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
   late: { color: "#dc2626", fontWeight: 600 },
+  filters: { display: "flex", gap: theme.spacing(1), flexWrap: "wrap", margin: theme.spacing(0, 0, 2) },
   empty: { textAlign: "center", color: theme.palette.text.secondary, fontSize: 13, padding: theme.spacing(3, 1) },
 }));
+
+const FILTERS = {
+  all: () => true,
+  mine: (r, me) => !!me && r.onboardingTutorId === me.id,
+  free: (r) => !r.onboardingTutorId,
+};
 
 const since = (iso) => {
   if (!iso) return "";
@@ -49,12 +56,14 @@ const Onboarding = () => {
   const { user: me } = useContext(AuthContext);
   // the conversation of a student in tutoring is the tutor's (and the coordination's), not the consultant's
   const canOpenChat = !!me && me.role !== "consultor";
+  const isTutor = !!me && (me.role === "tutor" || me.role === "academico");
   const classes = useStyles();
   const history = useHistory();
   const [rows, setRows] = useState(null);
   const [busyId, setBusyId] = useState(null);
   const [menu, setMenu] = useState(null); // { anchor, lead }
   const [tutorFor, setTutorFor] = useState(null); // { lead, tutors, pick }
+  const [filter, setFilter] = useState("all"); // all | mine | free
 
   const load = useCallback(async () => {
     try {
@@ -77,9 +86,11 @@ const Onboarding = () => {
   const act = async (lead, action) => {
     setBusyId(lead.id);
     try {
-      await api.post(`/leads/${lead.id}/onboarding`, { action });
+      const { data } = await api.post(`/leads/${lead.id}/onboarding`, { action });
       toast.success(action === "start" ? "Ambientação iniciada." : "Ambientação concluída. O consultor foi avisado para pedir indicação.");
       await load();
+      // starting takes the student and opens the conversation, so the tutor can greet right away
+      if (action === "start" && canOpenChat && data && data.ticketId) history.push(`/tickets/${data.ticketId}`);
     } catch (err) {
       toastError(err);
     }
@@ -93,6 +104,19 @@ const Onboarding = () => {
       await api.put(`/leads/${lead.id}/onboarding`, body);
       toast.success(ok);
       await load();
+    } catch (err) {
+      toastError(err);
+    }
+    setBusyId(null);
+  };
+  // a student nobody took yet: the tutor takes it and goes to the conversation
+  const take = async (lead) => {
+    setBusyId(lead.id);
+    try {
+      await api.put(`/leads/${lead.id}/onboarding`, { tutorId: me.id });
+      toast.success("Você assumiu este aluno. A conversa está na sua lista.");
+      await load();
+      if (lead.ticketId) history.push(`/tickets/${lead.ticketId}`);
     } catch (err) {
       toastError(err);
     }
@@ -118,9 +142,17 @@ const Onboarding = () => {
       <p className={classes.intro}>
         Alunos com matrícula confirmada. O tutor combina o primeiro acesso à plataforma e marca cada etapa; ao concluir, o consultor recebe lembretes para pedir indicação e oferecer um novo curso.
       </p>
+      <div className={classes.filters}>
+        {[["all", "Todos"], ["mine", "Meus alunos"], ["free", "Sem tutor"]].map(([k, label]) => (
+          <Chip key={k} size="small" clickable label={`${label} (${rows.filter((r) => FILTERS[k](r, me)).length})`} color={filter === k ? "primary" : "default"} onClick={() => setFilter(k)} />
+        ))}
+      </div>
       <div className={classes.board}>
         {COLUMNS.map((col) => {
-          const items = rows.filter((r) => r.onboardingStatus === col.key);
+          // the ones waiting longest come first; the finished ones, the most recent
+          const items = rows
+            .filter((r) => r.onboardingStatus === col.key && FILTERS[filter](r, me))
+            .sort((a, b) => (col.key === "done" ? new Date(b.onboardingDoneAt || 0) - new Date(a.onboardingDoneAt || 0) : new Date(a.enrolledAt || 0) - new Date(b.enrolledAt || 0)));
           return (
             <section key={col.key} className={classes.col}>
               <div className={classes.colHead}>
@@ -141,8 +173,13 @@ const Onboarding = () => {
                           <MessageSquare size={16} />
                         </IconAction>
                       )}
+                      {isTutor && !l.onboardingTutorId && col.key !== "done" && (
+                        <IconAction title="Assumir este aluno" disabled={busyId === l.id} onClick={() => take(l)}>
+                          <UserCheck size={16} />
+                        </IconAction>
+                      )}
                       {col.key === "pending" && (
-                        <IconAction title="Iniciar ambientação" disabled={busyId === l.id} onClick={() => act(l, "start")}>
+                        <IconAction title="Iniciar ambientação (você assume o aluno)" disabled={busyId === l.id} onClick={() => act(l, "start")}>
                           <Play size={16} />
                         </IconAction>
                       )}
@@ -155,6 +192,7 @@ const Onboarding = () => {
                         <MoreVertical size={16} />
                       </IconAction>
                     </div>
+                    {l.unread > 0 && <Chip size="small" color="primary" label={`Aluno respondeu (${l.unread})`} style={{ alignSelf: "flex-start" }} />}
                     <div className={classes.meta}>{l.course ? l.course.name : "Curso não informado"}</div>
                     <div className={classes.meta}>Tutor: {l.tutorName || "aguardando na fila"}{l.owner ? ` · Consultor: ${l.owner.name}` : ""}</div>
                     <div className={`${classes.meta} ${late ? classes.late : ""}`}>
