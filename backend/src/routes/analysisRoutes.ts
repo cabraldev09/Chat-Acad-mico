@@ -48,6 +48,7 @@ r.post("/students/:id/upload", isAuth, rateLimit({ windowMs: 60000, max: 20, key
 r.get("/grades", isAuth, Grades.index);
 r.post("/grades", isAuth, rateLimit({ windowMs: 60000, max: 10, key: req => `gr:${(req as any).user?.id}` }), gradeUpload.array("files", 150), Grades.store);
 r.post("/grades/import-defaults", isAuth, Grades.importDefaults);
+r.post("/grades/refresh", isAuth, Grades.refresh);
 r.get("/grades/:id", isAuth, Grades.show);
 r.get("/grades/:id/file", isAuth, Grades.file);
 r.post("/grades/:id/send", isAuth, Grades.send);

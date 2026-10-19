@@ -38,7 +38,11 @@ describe("the template Comercial — Graduação", () => {
     // faculty and recognition are filled by the team: nothing invented
     expect(titles).not.toContain("institutional/faculty");
     expect(titles).not.toContain("institutional/recognition");
-    COMMERCIAL_KB.forEach(k => expect(k.content).not.toMatch(/Harvard|\d+ ?%/));
+    // no invented percentages: the only ones are the official ones of the Portaria MEC 378/2025 (20, 30, 40)
+    COMMERCIAL_KB.forEach(k => expect(k.content).not.toMatch(/Harvard/));
+    COMMERCIAL_KB.filter(k => k.topic !== "institutional/mec").forEach(k => expect(k.content).not.toMatch(/\d+ ?%/));
+    const mec = COMMERCIAL_KB.find(k => k.topic === "institutional/mec")!;
+    (mec.content.match(/\d+ ?%/g) || []).forEach(p => expect(["20%", "30%", "40%"]).toContain(p.replace(/\s/g, "")));
   });
 });
 

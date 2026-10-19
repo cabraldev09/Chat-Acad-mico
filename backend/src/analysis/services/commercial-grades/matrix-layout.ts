@@ -23,6 +23,8 @@ export interface MatrixLayoutReading {
   totalInternshipHours: number | null;
   totalCourseHours: number | null;
   hasTcc: boolean;
+  /** Soma das disciplinas do tipo "Extensão" (null quando a matriz não tem). */
+  extensionHours: number | null;
   internships: MatrixInternship[];
   tracks: CommercialTrack[];
   /** Quantidade de disciplinas encontradas nos blocos "Série: N". */
@@ -135,11 +137,14 @@ export function readMatrixLayout(pages: ParsedPage[] | undefined): MatrixLayoutR
   if (!courseName && rows.length === 0) return null;
 
   const components = rows.map((row) => ({ ...row, fullName: row.name.sort((a, b) => b.y - a.y).map((part) => part.text).join(" ").replace(/\s+/g, " ").trim() }));
+  // The SIAA type "Estágio" is not reliable: it also marks Ambientação Digital, Plano de Acompanhamento de Carreira, Seminários Temáticos,
+  // Práticas de Ensino and even Atividades de Extensão. What is told to the student as an internship is a component named "Estágio ...".
   const internships = components
-    .filter((row) => /^Est[áa]gio$/i.test(row.type ?? "") || /^EST[ÁA]GIO\b/i.test(row.fullName))
+    .filter((row) => /^EST[ÁA]GIO\b/i.test(row.fullName))
     .map((row) => ({ semester: row.semester, name: row.fullName || "Estágio supervisionado", workload: row.workload && row.workload > 0 ? row.workload : null }))
     .sort((a, b) => a.semester - b.semester);
   const hasTcc = components.some((row) => /^TCC$/i.test(row.type ?? "") || /TRABALHO DE (?:CONCLUS[ÃA]O|CURSO)\b|\bTCC\b/i.test(row.fullName));
+  const extensionTotal = components.filter((row) => /^Extens[ãa]o$/i.test(row.type ?? "")).reduce((sum, row) => sum + (row.workload ?? 0), 0);
   const largestSemester = components.reduce((max, row) => Math.max(max, row.semester), 0);
   const declaredInternships = internships.reduce((sum, row) => sum + (row.workload ?? 0), 0);
 
@@ -148,9 +153,12 @@ export function readMatrixLayout(pages: ParsedPage[] | undefined): MatrixLayoutR
     modality,
     curriculumTerm,
     durationSemesters: largestSemester || minimumTerm,
-    totalInternshipHours: summaryInternship ?? (internships.length && declaredInternships ? declaredInternships : null),
+    // the hours told to the student are those of the internships listed with them (the SIAA summary also counts components typed "Estágio"
+    // that are not internships); without hours in some internship, the summary of the PDF is used
+    totalInternshipHours: internships.length && internships.every((row) => row.workload) && declaredInternships > 0 ? declaredInternships : summaryInternship && summaryInternship > 0 ? summaryInternship : declaredInternships > 0 ? declaredInternships : summaryInternship ?? null,
     totalCourseHours: summaryTotal,
     hasTcc,
+    extensionHours: extensionTotal > 0 ? extensionTotal : null,
     internships,
     tracks: tracksFrom(internships),
     componentCount: components.length,

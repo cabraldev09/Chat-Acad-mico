@@ -1,6 +1,6 @@
-# Rotas da API (420)
+# Rotas da API (426)
 
-Públicas: 32 · logado (qualquer perfil): 241 · gestão: 108 · admin: 31
+Públicas: 32 · logado (qualquer perfil): 243 · gestão: 112 · admin: 31
 
 ## Públicas (sem login)
 
@@ -54,6 +54,7 @@ Públicas: 32 · logado (qualquer perfil): 241 · gestão: 108 · admin: 31
 - POST /students/:id/upload (analysisRoutes.ts)
 - POST /grades (analysisRoutes.ts)
 - POST /grades/import-defaults (analysisRoutes.ts)
+- POST /grades/refresh (analysisRoutes.ts)
 - POST /grades/:id/send (analysisRoutes.ts)
 - DELETE /grades/:id (analysisRoutes.ts)
 - DELETE /logout (authRoutes.ts)
@@ -138,6 +139,7 @@ Públicas: 32 · logado (qualquer perfil): 241 · gestão: 108 · admin: 31
 - POST /leads/:id/activities → canAccessLead
 - POST /leads/:id/tasks → canAccessLead
 - POST /leads/:id/open-ticket → canAccessLead
+- PUT /leads/:id/onboarding/checklist → canAccessLead
 - POST /leads/:id/enroll → canAccessLead
 - POST /leads/:id/onboarding → canAccessLead
 - PUT /leads/:id/onboarding → canAccessLead

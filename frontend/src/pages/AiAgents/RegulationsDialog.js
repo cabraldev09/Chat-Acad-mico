@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { toast } from "react-toastify";
-import { Button, Checkbox, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, MenuItem, TextField, Typography, makeStyles } from "@material-ui/core";
+import { Button, Checkbox, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, MenuItem, Tab, Tabs, TextField, Typography, makeStyles } from "@material-ui/core";
 import { Trash2 } from "lucide-react";
 
 import IconAction from "../../components/IconAction";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
+import MecDefaultsPanel from "./MecDefaultsPanel";
 
 const useStyles = makeStyles((theme) => ({
   row: { display: "flex", alignItems: "center", gap: 8, padding: "8px 0", borderBottom: theme.border.divider },
@@ -29,6 +30,7 @@ const RegulationsDialog = ({ open, onClose }) => {
   const [form, setForm] = useState(null);
   const [busy, setBusy] = useState(false);
   const [q, setQ] = useState("");
+  const [tab, setTab] = useState(0);
 
   const load = useCallback(() => api.get("/course-regulations").then(({ data: d }) => setData(d)).catch(toastError), []);
   useEffect(() => { if (open) { setForm(null); setCourseId(""); load(); } }, [open, load]);
@@ -60,6 +62,13 @@ const RegulationsDialog = ({ open, onClose }) => {
       <DialogContent dividers>
         {!data && <CircularProgress size={22} />}
         {data && !form && (
+          <Tabs value={tab} onChange={(e, v) => setTab(v)} indicatorColor="primary" textColor="primary" style={{ marginBottom: 8 }}>
+            <Tab label="Por curso" />
+            <Tab label="Padrão por área (Portaria 378/2025)" />
+          </Tabs>
+        )}
+        {data && !form && tab === 1 && <MecDefaultsPanel onChanged={load} />}
+        {data && !form && tab === 0 && (
           <>
             <Typography variant="body2" color="textSecondary" gutterBottom>
               O agente só fala de mudança de modalidade, aulas ao vivo, práticas presenciais e percentuais com o que estiver cadastrado aqui para o curso. Sem regra, ele diz que vai confirmar com um consultor.

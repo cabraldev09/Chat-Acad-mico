@@ -2,8 +2,8 @@ import React, { useCallback, useContext, useEffect, useState } from "react";
 import { useHistory } from "react-router-dom";
 import { toast } from "react-toastify";
 import { makeStyles } from "@material-ui/core/styles";
-import { Typography, Chip, CircularProgress, Menu, MenuItem, Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField, ListItemIcon } from "@material-ui/core";
-import { Play, CheckCheck, MessageSquare, MoreVertical, UserCog, UserCheck, Undo2, MoveRight } from "lucide-react";
+import { Typography, Chip, CircularProgress, Menu, MenuItem, Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField, ListItemIcon, Checkbox, FormControlLabel } from "@material-ui/core";
+import { Play, CheckCheck, MessageSquare, MoreVertical, UserCog, UserCheck, Undo2, MoveRight, ListChecks, Send, BarChart3 } from "lucide-react";
 
 import MainContainer from "../../components/MainContainer";
 import MainHeader from "../../components/MainHeader";
@@ -33,15 +33,32 @@ const useStyles = makeStyles((theme) => ({
   name: { fontWeight: 600, fontSize: 14.5, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
   meta: { fontSize: 12.5, color: theme.palette.text.secondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
   late: { color: "#dc2626", fontWeight: 600 },
+  panel: { border: `1px solid ${theme.palette.divider}`, borderRadius: 14, padding: theme.spacing(1.5, 2), margin: theme.spacing(0, 0, 2) },
+  stats: { display: "grid", gap: theme.spacing(1.5), gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", "& div": { display: "flex", flexDirection: "column" }, "& b": { fontSize: 22, lineHeight: 1.2 }, "& span": { fontSize: 12.5, color: theme.palette.text.secondary } },
+  weeks: { display: "flex", alignItems: "flex-end", gap: 8, height: 90, margin: theme.spacing(1.5, 0, 0.5), "& > div": { display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", flex: 1, fontSize: 12 } },
+  bar: { width: "100%", maxWidth: 28, borderRadius: 6, background: theme.palette.primary.main },
+  table: { width: "100%", borderCollapse: "collapse", marginTop: theme.spacing(1.5), fontSize: 13.5, "& th": { textAlign: "left", fontWeight: 600, padding: "6px 8px", borderBottom: `1px solid ${theme.palette.divider}` }, "& td": { padding: "6px 8px", borderBottom: `1px solid ${theme.palette.divider}` } },
   filters: { display: "flex", gap: theme.spacing(1), flexWrap: "wrap", margin: theme.spacing(0, 0, 2) },
   empty: { textAlign: "center", color: theme.palette.text.secondary, fontSize: 13, padding: theme.spacing(3, 1) },
 }));
 
+const SLA_MS = 24 * 36e5;
+const isLate = (r) => r.onboardingStatus === "pending" && r.enrolledAt && Date.now() - new Date(r.enrolledAt).getTime() > SLA_MS;
 const FILTERS = {
   all: () => true,
   mine: (r, me) => !!me && r.onboardingTutorId === me.id,
-  free: (r) => !r.onboardingTutorId,
+  free: (r) => !r.onboardingTutorId && r.onboardingStatus !== "done",
+  late: (r) => !!isLate(r),
+  replied: (r) => r.unread > 0 && r.onboardingStatus !== "done",
 };
+const FILTER_LABELS = [["all", "Todos"], ["mine", "Meus alunos"], ["free", "Sem tutor"], ["late", "Atrasados"], ["replied", "Aluno respondeu"]];
+const STEPS = [
+  { key: "first_access", label: "Primeiro acesso à plataforma" },
+  { key: "ava", label: "Ambiente virtual (AVA) apresentado" },
+  { key: "polo_contacts", label: "Contatos do polo e da tutoria passados" },
+  { key: "documents", label: "Documentos da matrícula conferidos" },
+];
+const hoursText = (h) => (h === null || h === undefined ? "—" : h < 1 ? "menos de 1 h" : h < 48 ? `${String(h).replace(".", ",")} h` : `${Math.round(h / 24)} dias`);
 
 const since = (iso) => {
   if (!iso) return "";
@@ -63,7 +80,12 @@ const Onboarding = () => {
   const [busyId, setBusyId] = useState(null);
   const [menu, setMenu] = useState(null); // { anchor, lead }
   const [tutorFor, setTutorFor] = useState(null); // { lead, tutors, pick }
-  const [filter, setFilter] = useState("all"); // all | mine | free
+  const [filter, setFilter] = useState("all"); // all | mine | free | late | replied
+  const [checklistFor, setChecklistFor] = useState(null); // lead id
+  const [welcomeFor, setWelcomeFor] = useState(null); // { lead, text, blocked }
+  const [stats, setStats] = useState(null);
+  const [showStats, setShowStats] = useState(false);
+  const isManager = !!me && (me.profile === "admin" || me.role === "admin" || me.role === "coordenacao");
 
   const load = useCallback(async () => {
     try {
@@ -109,6 +131,40 @@ const Onboarding = () => {
     }
     setBusyId(null);
   };
+  const toggleStep = async (lead, key, done) => {
+    try {
+      const { data } = await api.put(`/leads/${lead.id}/onboarding/checklist`, { key, done });
+      setRows((rs) => rs.map((r) => (r.id === lead.id ? { ...r, checklist: data.checklist } : r)));
+    } catch (err) { toastError(err); }
+  };
+
+  // the greeting the administration wrote, ready to be edited and sent from the card (taking the student first when nobody has)
+  const openWelcome = async (lead) => {
+    if (!lead.ticketId) { toast.info("Este aluno ainda não tem a conversa de ambientação."); return; }
+    try {
+      const { data } = await api.get(`/tickets/${lead.ticketId}/welcome`);
+      setWelcomeFor({ lead, text: data.text || "", blocked: !data.show });
+    } catch (err) { toastError(err); }
+  };
+  const sendWelcome = async () => {
+    const { lead, text } = welcomeFor;
+    if (!text.trim()) return;
+    setBusyId(lead.id);
+    try {
+      if (isTutor && !lead.onboardingTutorId) await api.put(`/leads/${lead.id}/onboarding`, { tutorId: me.id });
+      await api.post(`/messages/${lead.ticketId}`, { body: text.trim() });
+      if (lead.onboardingStatus === "pending") await api.post(`/leads/${lead.id}/onboarding`, { action: "start" });
+      toast.success("Boas-vindas enviadas.");
+      setWelcomeFor(null);
+      await load();
+    } catch (err) { toastError(err); }
+    setBusyId(null);
+  };
+  useEffect(() => {
+    if (!showStats || stats) return;
+    api.get("/onboarding/stats").then(({ data }) => setStats(data)).catch(toastError);
+  }, [showStats, stats]);
+
   // a student nobody took yet: the tutor takes it and goes to the conversation
   const take = async (lead) => {
     setBusyId(lead.id);
@@ -138,14 +194,48 @@ const Onboarding = () => {
 
   return (
     <MainContainer>
-      <MainHeader><Title>Ambientação</Title></MainHeader>
+      <MainHeader>
+        <Title>Ambientação</Title>
+        {isManager && <Button size="small" variant="outlined" startIcon={<BarChart3 size={15} />} onClick={() => setShowStats((v) => !v)}>{showStats ? "Esconder painel" : "Painel do tutor"}</Button>}
+      </MainHeader>
       <p className={classes.intro}>
         Alunos com matrícula confirmada. O tutor combina o primeiro acesso à plataforma e marca cada etapa; ao concluir, o consultor recebe lembretes para pedir indicação e oferecer um novo curso.
       </p>
+      {showStats && (
+        <div className={classes.panel}>
+          {!stats ? <CircularProgress size={20} /> : (
+            <>
+              <div className={classes.stats}>
+                <div><b>{hoursText(stats.avgFirstContactHours)}</b><span>tempo médio até o primeiro contato (90 dias)</span></div>
+                <div><b>{stats.withinSlaShare === null ? "—" : `${stats.withinSlaShare}%`}</b><span>iniciados dentro de {stats.slaHours} h</span></div>
+                <div><b style={stats.totals.late ? { color: "#dc2626" } : undefined}>{stats.totals.late}</b><span>atrasados agora</span></div>
+                <div><b>{stats.totals.withoutTutor}</b><span>sem tutor</span></div>
+                <div><b>{stats.totals.done}</b><span>concluídos no total</span></div>
+              </div>
+              <div className={classes.weeks}>
+                {stats.weeks.map((w) => (
+                  <div key={w.weekStart} title={`Semana de ${w.weekStart.split("-").reverse().join("/")}: ${w.done} concluído(s)`}>
+                    <div className={classes.bar} style={{ height: 6 + w.done * 10 }} />
+                    <span>{w.done}</span>
+                  </div>
+                ))}
+              </div>
+              <div className={classes.meta}>Alunos ambientados por semana (últimas 8 semanas).</div>
+              {stats.byTutor.length > 0 && (
+                <table className={classes.table}>
+                  <thead><tr><th>Tutor</th><th>Em curso</th><th>Atrasados</th><th>Concluídos (30 dias)</th><th>1º contato</th></tr></thead>
+                  <tbody>{stats.byTutor.map((t) => <tr key={t.tutorId}><td>{t.name}</td><td>{t.active}</td><td style={t.late ? { color: "#dc2626", fontWeight: 600 } : undefined}>{t.late}</td><td>{t.doneLast30}</td><td>{hoursText(t.avgFirstContactHours)}</td></tr>)}</tbody>
+                </table>
+              )}
+            </>
+          )}
+        </div>
+      )}
       <div className={classes.filters}>
-        {[["all", "Todos"], ["mine", "Meus alunos"], ["free", "Sem tutor"]].map(([k, label]) => (
-          <Chip key={k} size="small" clickable label={`${label} (${rows.filter((r) => FILTERS[k](r, me)).length})`} color={filter === k ? "primary" : "default"} onClick={() => setFilter(k)} />
-        ))}
+        {FILTER_LABELS.map(([k, label]) => {
+          const n = rows.filter((r) => FILTERS[k](r, me)).length;
+          return <Chip key={k} size="small" clickable label={`${label} (${n})`} color={filter === k ? "primary" : "default"} style={k === "late" && n > 0 && filter !== k ? { background: "#fee2e2", color: "#b91c1c" } : undefined} onClick={() => setFilter(k)} />;
+        })}
       </div>
       <div className={classes.board}>
         {COLUMNS.map((col) => {
@@ -173,6 +263,14 @@ const Onboarding = () => {
                           <MessageSquare size={16} />
                         </IconAction>
                       )}
+                      {l.ticketId && canOpenChat && col.key !== "done" && (
+                        <IconAction title="Enviar boas-vindas" disabled={busyId === l.id} onClick={() => openWelcome(l)}>
+                          <Send size={16} />
+                        </IconAction>
+                      )}
+                      <IconAction title="Checklist da ambientação" onClick={() => setChecklistFor(l.id)}>
+                        <ListChecks size={16} />
+                      </IconAction>
                       {isTutor && !l.onboardingTutorId && col.key !== "done" && (
                         <IconAction title="Assumir este aluno" disabled={busyId === l.id} onClick={() => take(l)}>
                           <UserCheck size={16} />
@@ -192,6 +290,7 @@ const Onboarding = () => {
                         <MoreVertical size={16} />
                       </IconAction>
                     </div>
+                    {col.key !== "done" && <div className={classes.meta}>Checklist: {STEPS.filter((s) => l.checklist && l.checklist[s.key]).length}/{STEPS.length}</div>}
                     {l.unread > 0 && <Chip size="small" color="primary" label={`Aluno respondeu (${l.unread})`} style={{ alignSelf: "flex-start" }} />}
                     <div className={classes.meta}>{l.course ? l.course.name : "Curso não informado"}</div>
                     <div className={classes.meta}>Tutor: {l.tutorName || "aguardando na fila"}{l.owner ? ` · Consultor: ${l.owner.name}` : ""}</div>
@@ -213,6 +312,43 @@ const Onboarding = () => {
           </MenuItem>
         ))}
       </Menu>
+      <Dialog open={checklistFor !== null} onClose={() => setChecklistFor(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>Checklist da ambientação</DialogTitle>
+        <DialogContent>
+          {(() => {
+            const lead = rows.find((r) => r.id === checklistFor);
+            if (!lead) return null;
+            return (
+              <>
+                <Typography variant="body2" color="textSecondary" gutterBottom>{lead.name}. Marque o que já foi feito; concluir a ambientação continua sendo decisão do tutor.</Typography>
+                {STEPS.map((s) => (
+                  <div key={s.key}>
+                    <FormControlLabel control={<Checkbox color="primary" checked={!!(lead.checklist && lead.checklist[s.key])} onChange={(e) => toggleStep(lead, s.key, e.target.checked)} />} label={s.label} />
+                  </div>
+                ))}
+              </>
+            );
+          })()}
+        </DialogContent>
+        <DialogActions><Button variant="outlined" color="secondary" onClick={() => setChecklistFor(null)}>Fechar</Button></DialogActions>
+      </Dialog>
+      <Dialog open={!!welcomeFor} onClose={() => setWelcomeFor(null)} maxWidth="sm" fullWidth>
+        <DialogTitle>Enviar boas-vindas</DialogTitle>
+        <DialogContent>
+          {welcomeFor && (
+            <>
+              <Typography variant="body2" color="textSecondary" gutterBottom>
+                {welcomeFor.blocked ? "O aluno já respondeu ou a conversa já está em andamento: escreva abaixo o que quiser enviar." : `Texto pronto para ${welcomeFor.lead.name}. Edite se quiser; ao enviar, a ambientação é iniciada e a conversa fica com você.`}
+              </Typography>
+              <TextField fullWidth multiline minRows={4} variant="outlined" value={welcomeFor.text} onChange={(e) => setWelcomeFor({ ...welcomeFor, text: e.target.value })} />
+            </>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button variant="outlined" color="secondary" onClick={() => setWelcomeFor(null)}>Cancelar</Button>
+          <Button variant="contained" color="primary" onClick={sendWelcome} disabled={!welcomeFor || !welcomeFor.text.trim() || busyId === (welcomeFor && welcomeFor.lead.id)}>Enviar</Button>
+        </DialogActions>
+      </Dialog>
       <Dialog open={!!tutorFor} onClose={() => setTutorFor(null)} maxWidth="xs" fullWidth>
         <DialogTitle>Trocar o tutor</DialogTitle>
         <DialogContent>

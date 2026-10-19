@@ -53,7 +53,7 @@ export const eventAllowed = async (user: User, event: string, data: any, rooms: 
       await assertTicketAccess(req, id, "read");
       return true;
     }
-    if (["lead", "payment", "leadAlert", "onboardingAlert", "crmReminder"].includes(event)) {
+    if (["lead", "payment", "leadAlert", "onboardingAlert", "onboardingReminder", "crmReminder"].includes(event)) {
       const id = data.leadId || data.lead?.id;
       if (!id) return manager;
       await assertLead(req, id);

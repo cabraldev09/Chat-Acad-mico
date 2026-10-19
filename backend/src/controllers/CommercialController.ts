@@ -114,6 +114,34 @@ export const regulationSave = async (req: Request, res: Response): Promise<Respo
   return res.json(row);
 };
 
+// the standard by area (Portaria MEC 378/2025): what each area says, the courses in it, and applying it to them
+export const mecDefaultsShow = async (_req: Request, res: Response): Promise<Response> => {
+  const { getAreas, classifyCourses } = await import("../services/CommercialServices/MecDefaults");
+  const [areas, courses] = await Promise.all([getAreas(), classifyCourses()]);
+  return res.json({
+    areas: areas.map(a => ({ ...a, courses: courses.filter(c => c.area === a.id).map(c => ({ id: c.id, name: c.name, hasRule: c.hasRule })) })),
+    withoutRule: courses.filter(c => !c.hasRule).length,
+    total: courses.length
+  });
+};
+
+export const mecDefaultsSave = async (req: Request, res: Response): Promise<Response> => {
+  const { saveArea } = await import("../services/CommercialServices/MecDefaults");
+  try {
+    return res.json(await saveArea(String(req.params.area), req.body || {}));
+  } catch (err) {
+    throw new AppError(String((err as Error).message) === "percent" ? "ERR_PERCENT_INVALID" : "ERR_NOT_FOUND", String((err as Error).message) === "percent" ? 400 : 404);
+  }
+};
+
+// apply the standard: only to the courses without a rule, or (overwrite) to every course of the area/all areas
+export const mecDefaultsApply = async (req: Request, res: Response): Promise<Response> => {
+  const { applyDefaults, syncMecKnowledge } = await import("../services/CommercialServices/MecDefaults");
+  const out = await applyDefaults({ area: req.body?.area ? String(req.body.area) : undefined, overwrite: req.body?.overwrite === true });
+  const docs = await syncMecKnowledge();
+  return res.json({ ...out, agentsUpdated: docs });
+};
+
 export const regulationRemove = async (req: Request, res: Response): Promise<Response> => {
   const row = await CourseRegulation.findByPk(req.params.id);
   if (!row) throw new AppError("ERR_NOT_FOUND", 404);

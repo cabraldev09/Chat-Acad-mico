@@ -80,6 +80,13 @@ export const remove = async (req: Request, res: Response): Promise<Response> => 
   return res.status(204).end();
 };
 
+// reads every stored matrix again with the current reader (the text for the students and the internships are rebuilt)
+export const refresh = async (req: Request, res: Response): Promise<Response> => {
+  mustManage(req);
+  const { refreshGrades } = await import("../analysis/Grades");
+  return res.json(await refreshGrades());
+};
+
 export const importDefaults = async (req: Request, res: Response): Promise<Response> => {
   mustManage(req);
   return res.json(await importDefaultGrades());

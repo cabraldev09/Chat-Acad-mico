@@ -19,6 +19,8 @@ export interface CommercialGradeReading {
   durationSemesters: number | null;
   courseTracks: CommercialTrack[];
   internshipInfo: string | null;
+  /** hours of extension activities of the matrix (only used in the text) */
+  extensionHours?: number | null;
   whatsappSummary: string;
   source: "LOCAL";
   /** only for lato sensu courses */
@@ -60,14 +62,14 @@ function mergeReadings(layout: CommercialGradeReading, text: CommercialGradeRead
   const totalCourseHours = layout.totalCourseHours ?? text.totalCourseHours;
   const hasTcc = layout.hasTcc || text.hasTcc;
   const metadata = normalizeCatalogMetadata({ courseName, durationSemesters: layout.durationSemesters ?? text.durationSemesters });
-  return { ...layout, courseName, modality: layout.modality ?? text.modality, curriculumTerm: layout.curriculumTerm ?? text.curriculumTerm, hasTcc, totalInternshipHours, totalCourseHours, degree: metadata.degree, knowledgeArea: metadata.knowledgeArea, durationSemesters: metadata.durationSemesters, internshipInfo, whatsappSummary: whatsappText({ courseName, hasTcc, totalInternshipHours, totalCourseHours, internshipInfo, certain: false }) };
+  return { ...layout, courseName, modality: layout.modality ?? text.modality, curriculumTerm: layout.curriculumTerm ?? text.curriculumTerm, hasTcc, totalInternshipHours, totalCourseHours, degree: metadata.degree, knowledgeArea: metadata.knowledgeArea, durationSemesters: metadata.durationSemesters, internshipInfo, whatsappSummary: whatsappText({ courseName, hasTcc, totalInternshipHours, totalCourseHours, internshipInfo, certain: false, degree: metadata.degree, durationSemesters: metadata.durationSemesters }) };
 }
 
 function layoutReading(layout: MatrixLayoutReading, filename: string): CommercialGradeReading {
   const courseName = layout.courseName ?? filename.replace(/\.pdf$/i, "").trim();
   const internshipInfo = layout.internships.length ? layout.internships.map(item => `- ${item.semester}º sem.: ${item.name}${item.workload ? ` (${item.workload}h)` : ""}`).join("\n") : null;
   const metadata = normalizeCatalogMetadata({ courseName, durationSemesters: layout.durationSemesters });
-  const reading = { courseName, modality: layout.modality, curriculumTerm: layout.curriculumTerm, hasTcc: layout.hasTcc, totalInternshipHours: layout.totalInternshipHours, totalCourseHours: layout.totalCourseHours, degree: metadata.degree, knowledgeArea: metadata.knowledgeArea, durationSemesters: metadata.durationSemesters, courseTracks: layout.tracks, internshipInfo };
+  const reading = { courseName, modality: layout.modality, curriculumTerm: layout.curriculumTerm, hasTcc: layout.hasTcc, totalInternshipHours: layout.totalInternshipHours, totalCourseHours: layout.totalCourseHours, degree: metadata.degree, knowledgeArea: metadata.knowledgeArea, durationSemesters: metadata.durationSemesters, courseTracks: layout.tracks, internshipInfo , extensionHours: layout.extensionHours };
   return { ...reading, whatsappSummary: whatsappText({ ...reading, certain: false }), source: "LOCAL" };
 }
 
@@ -120,7 +122,7 @@ function localReading(text: string, filename: string): CommercialGradeReading {
   const hasTcc = /\bTCC\b|TRABALHO DE CURSO|TRABALHO DE CONCLUSÃO/i.test(text);
   const internshipInfo = localInternships(text);
   const metadata = normalizeCatalogMetadata({ courseName, durationSemesters: largestSemester(text) });
-  return { courseName, modality: /GRADUAÇÃO\s+EAD/i.test(text) ? "EAD" : null, curriculumTerm: text.match(/(20\d{2}\s*\/\s*[12])/i)?.[1] ?? text.match(/\b(20\d{2}\.[12])\b/)?.[1] ?? null, hasTcc, totalInternshipHours, totalCourseHours, degree: metadata.degree, knowledgeArea: metadata.knowledgeArea, durationSemesters: metadata.durationSemesters, courseTracks: [], internshipInfo, whatsappSummary: whatsappText({ courseName, hasTcc, totalInternshipHours, totalCourseHours, internshipInfo, certain: false }), source: "LOCAL" };
+  return { courseName, modality: /GRADUAÇÃO\s+EAD/i.test(text) ? "EAD" : null, curriculumTerm: text.match(/(20\d{2}\s*\/\s*[12])/i)?.[1] ?? text.match(/\b(20\d{2}\.[12])\b/)?.[1] ?? null, hasTcc, totalInternshipHours, totalCourseHours, degree: metadata.degree, knowledgeArea: metadata.knowledgeArea, durationSemesters: metadata.durationSemesters, courseTracks: [], internshipInfo, whatsappSummary: whatsappText({ courseName, hasTcc, totalInternshipHours, totalCourseHours, internshipInfo, certain: false, degree: metadata.degree, durationSemesters: metadata.durationSemesters }), source: "LOCAL" };
 }
 
 function localInternships(text: string): string | null {
@@ -157,17 +159,49 @@ function titleCase(value: string): string {
   return value.toLocaleLowerCase("pt-BR").replace(/\b\p{L}/gu, char => char.toLocaleUpperCase("pt-BR"));
 }
 
+const SMALL_WORDS = new Set(["de", "da", "do", "das", "dos", "e", "em", "no", "na", "nos", "nas", "para", "a", "o", "ao", "à", "com", "por"]);
+
+/** "ESTÁGIO CURRICULAR SUPERVISIONADO EM EDUCAÇÃO INFANTIL" -> "Estágio Curricular Supervisionado em Educação Infantil" (text already in lower case is kept). */
+export function readableName(value: string | null | undefined): string {
+  const text = String(value ?? "").trim();
+  if (!text) return "";
+  if (text !== text.toLocaleUpperCase("pt-BR")) return text;
+  return text
+    .toLocaleLowerCase("pt-BR")
+    .split(/(\s+)/)
+    .map((word, index) => (/^[ivx]{1,5}$/.test(word) ? word.toLocaleUpperCase("pt-BR") : /^\s+$/.test(word) || (index > 0 && SMALL_WORDS.has(word)) ? word : word.replace(/^(\(?)(\p{L})/u, (_m, open: string, ch: string) => `${open}${ch.toLocaleUpperCase("pt-BR")}`)))
+    .join("");
+}
+
+/** The block is already titled "Estágio supervisionado": "Estágio Curricular Supervisionado em Nutrição Clínica" becomes "Nutrição Clínica". */
+function shortInternship(name: string): string {
+  const full = readableName(name);
+  const rest = full.replace(/^Est[áa]gio(?:\s+Curricular)?(?:\s+Supervisionado)?(?:\s+(?:em|de|do|da|nos|nas|no|na))?\s+/i, "").trim();
+  return rest && rest !== full ? rest.charAt(0).toLocaleUpperCase("pt-BR") + rest.slice(1) : full;
+}
+
+function durationText(semesters: number | null | undefined): string | null {
+  if (!semesters) return null;
+  const years = semesters / 2;
+  return `${semesters} semestres (${Number.isInteger(years) ? years : String(years).replace(".", ",")} anos)`;
+}
+
 /** `certain`: the whole course was read. Without it, only an internship total declared as 0 in the PDF allows saying there is none. */
-function whatsappText(input: { courseName: string | null; hasTcc: boolean; totalInternshipHours: number | null; totalCourseHours: number | null; internshipInfo: string | null; certain: boolean; durationMonths?: number | null }): string {
-  const lines = [`Matriz curricular: ${input.courseName ?? "curso selecionado"}.`];
-  if (input.durationMonths) lines.push(`Duração mínima: ${input.durationMonths} meses.`);
+function whatsappText(input: { courseName: string | null; hasTcc: boolean; totalInternshipHours: number | null; totalCourseHours: number | null; internshipInfo: string | null; certain: boolean; durationMonths?: number | null; degree?: string | null; durationSemesters?: number | null; extensionHours?: number | null }): string {
+  const lines = [`📚 *${readableName(input.courseName) || "Curso selecionado"}*`];
+  const facts = [input.degree, input.durationMonths ? `duração mínima de ${input.durationMonths} meses` : durationText(input.durationSemesters)].filter(Boolean);
+  if (facts.length) lines.push(`🎓 ${facts.join(" · ")}`);
+  if (input.totalCourseHours) lines.push(`⏱️ Carga horária total: ${input.totalCourseHours.toLocaleString("pt-BR")} horas`);
   if (input.internshipInfo) {
-    lines.push("", "Estágios previstos:", input.internshipInfo);
-    if (input.totalInternshipHours) lines.push("", `Ao todo, a matriz prevê ${input.totalInternshipHours.toLocaleString("pt-BR")} horas de estágio durante o curso.`);
+    lines.push("", `🏫 *Estágio supervisionado*${input.totalInternshipHours ? `: ${input.totalInternshipHours.toLocaleString("pt-BR")} horas no total` : ""}`);
+    for (const line of input.internshipInfo.split("\n")) {
+      const m = line.trim().replace(/^[-•]\s*/, "").match(/^(\d+)\s*[ºo°]?\s*sem\.?:\s*(.+?)(?:\s*\((\d+)\s*h\))?\s*$/i);
+      lines.push(m ? `• ${m[1]}º semestre: ${shortInternship(m[2])}${m[3] ? ` (${m[3]} h)` : ""}` : `• ${readableName(line.replace(/^[-•]\s*/, ""))}`);
+    }
   } else if (input.certain || input.totalInternshipHours === 0) {
-    lines.push("", "Uma praticidade deste curso: ele não possui estágio obrigatório, trazendo mais flexibilidade para organizar a rotina de estudos.");
+    lines.push("", "✅ Este curso não possui estágio obrigatório, o que traz mais flexibilidade para organizar a rotina de estudos.");
   }
-  if (input.hasTcc) lines.push("A matriz também prevê TCC / Trabalho de Curso.");
-  if (input.totalCourseHours) lines.push(`Carga horária total: ${input.totalCourseHours.toLocaleString("pt-BR")} horas.`);
+  if (input.hasTcc) lines.push("", "📝 A matriz prevê TCC / Trabalho de Curso.");
+  if (input.extensionHours) lines.push("", `🌐 Atividades de extensão: ${input.extensionHours.toLocaleString("pt-BR")} horas na matriz.`);
   return lines.join("\n");
 }

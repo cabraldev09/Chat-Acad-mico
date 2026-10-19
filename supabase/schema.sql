@@ -1819,7 +1819,8 @@ CREATE TABLE public."Leads" (
     "slaAlertedAt" timestamp with time zone,
     "affiliateId" integer,
     "reenrolledTerm" character varying(10),
-    "reenrolledAt" timestamp with time zone
+    "reenrolledAt" timestamp with time zone,
+    "onboardingChecklist" text
 );
 
 
@@ -5769,6 +5770,7 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261121000001-agent-graphs.js') ON 
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261122000001-commercial-agent.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261123000001-ai-handoff.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261124000001-ai-claim.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261125000001-onboarding-checklist.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

@@ -1983,7 +1983,7 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(all.degrees.includes("Bacharelado") && all.areas.length > 3, "facets");
       // the summary text and the PDF behind the login
       const one = (await http.get(`/grades/${marketing.id}`, auth())).data;
-      assert(/Matriz curricular: CST EM MARKETING/.test(one.whatsappSummary) && /1\.600 horas/.test(one.whatsappSummary), `summary ${one.whatsappSummary}`);
+      assert(/📚 \*Cst em Marketing\*/.test(one.whatsappSummary) && /1\.600 horas/.test(one.whatsappSummary), `summary ${one.whatsappSummary}`);
       const pdfRes = await http.get(`/grades/${marketing.id}/file`, { ...auth(), responseType: "arraybuffer" });
       assert(pdfRes.status === 200 && Buffer.from(pdfRes.data).subarray(0, 5).toString() === "%PDF-" && /pdf/.test(pdfRes.headers["content-type"]), "pdf download");
       assert((await http.get(`/grades/${marketing.id}/file`)).status === 401, "the pdf without login");
@@ -1993,13 +1993,13 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(sent.status === 200, `send ${sent.status} ${JSON.stringify(sent.data)}`);
       const out = tg.sent.slice(before);
       // one message: the PDF with the summary as its description (as when a document is attached with a caption)
-      assert(out.length === 1 && out[0].method === "sendDocument" && /Matriz curricular/.test(String(out[0].body.caption || "")) && /1\.600 horas/.test(String(out[0].body.caption || "")), `sent ${JSON.stringify(out.map(x => [x.method, String(x.body.caption || "").slice(0, 40)]))}`);
+      assert(out.length === 1 && out[0].method === "sendDocument" && /Cst em Marketing/.test(String(out[0].body.caption || "")) && /1\.600 horas/.test(String(out[0].body.caption || "")), `sent ${JSON.stringify(out.map(x => [x.method, String(x.body.caption || "").slice(0, 40)]))}`);
       assert((await http.post(`/grades/${marketing.id}/send`, { ticketId: Number(tgTicket), summary: false, pdf: false }, auth())).status === 400, "nothing to send accepted");
       // the contact can be chosen instead of a conversation: its open conversation is used
       const tgTicketData = (await http.get(`/tickets/${tgTicket}`, auth())).data;
       const before2 = tg.sent.length;
       const byContact = await http.post(`/grades/${marketing.id}/send`, { contactId: tgTicketData.contactId, pdf: false }, auth());
-      assert(byContact.status === 200 && tg.sent.slice(before2).some(x => /Matriz curricular/.test(String(x.body.text || ""))), `send by contact ${byContact.status} ${JSON.stringify(byContact.data)}`);
+      assert(byContact.status === 200 && tg.sent.slice(before2).some(x => /Cst em Marketing/.test(String(x.body.text || ""))), `send by contact ${byContact.status} ${JSON.stringify(byContact.data)}`);
       assert((await http.post(`/grades/${marketing.id}/send`, {}, auth())).status === 400 && (await http.post(`/grades/${marketing.id}/send`, { contactId: 99999999 }, auth())).status === 404, "send without a target");
       // permissions: a consultant reads and sends but does not publish or delete
       const consTk = (await http.post("/auth/login", { email: "outro-an@x.com", password: "senha123" })).data.token;
@@ -4247,11 +4247,60 @@ const postMeta = (id, payload, secret, badSig) => {
       await http.post(`/leads/${lead3.id}/onboarding`, { action: "start" }, auth());
       assert(sql(`SELECT COALESCE(onboardingTutorId::text,'') FROM Leads WHERE id=${lead3.id}`) === "", "an administrator became the tutor");
 
+      // checklist of the onboarding and the numbers for the management
+      const step = await http.put(`/leads/${lead2.id}/onboarding/checklist`, { key: "first_access", done: true }, asUser(tutorTok));
+      assert(step.status === 200 && step.data.checklist.first_access, `checklist ${step.status}`);
+      assert((await http.get("/onboarding", asUser(tutorTok))).data.find(l => l.id === lead2.id).checklist.first_access, "checklist not listed");
+      assert((await http.put(`/leads/${lead2.id}/onboarding/checklist`, { key: "nope", done: true }, asUser(tutorTok))).status === 404, "unknown step accepted");
+      const st = await http.get("/onboarding/stats", auth());
+      assert(st.status === 200 && st.data.weeks.length === 8 && st.data.totals.pending >= 1 && Array.isArray(st.data.byTutor), `stats ${st.status}`);
+      assert((await http.get("/onboarding/stats", asUser(tutorTok))).status === 403, "a tutor read the management panel");
+
       // over 24 h without the first contact: one task for every administrator, once
       sql(`UPDATE Leads SET onboardingStatus='pending', onboardingAlertAt=NULL, enrolledAt=NOW() - INTERVAL '2 days' WHERE id=${lead.id}`);
       await waitFor(() => Number(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${lead.id} AND title LIKE 'Ambientação atrasada%'`)) >= 1, 15000, "late onboarding task for the administrators");
       const admins = Number(sql(`SELECT COUNT(*) FROM Users WHERE profile='admin' OR role IN ('admin','coordenacao')`));
       assert(Number(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${lead.id} AND title LIKE 'Ambientação atrasada%'`)) === admins, "one task per administrator expected");
+    });
+    await test("grades: reading them again rewrites the WhatsApp text of every matrix and lists only real internships", async () => {
+      const r = await http.post("/grades/refresh", {}, auth());
+      assert(r.status === 200 && r.data.checked >= 1 && r.data.failed === 0, `refresh ${r.status} ${JSON.stringify(r.data)}`);
+      const rows = (await http.get("/grades", auth())).data;
+      const list = Array.isArray(rows) ? rows : rows.grades || [];
+      assert(list.length >= 1, "no grades listed");
+      const ped = list.find(g => /^PEDAGOGIA \(LICENCIATURA\)/i.test(g.courseName));
+      if (ped) {
+        const full = (await http.get(`/grades/${ped.id}`, auth())).data;
+        assert(!/Ambienta|Plano de Acompanhamento|Semin/i.test(full.whatsappSummary) && /400 horas no total/.test(full.whatsappSummary), `Pedagogia text ${full.whatsappSummary}`);
+      }
+    });
+    await test("MEC rules: the standard of the Portaria 378/2025 by area is applied to the courses, adjusted once for the whole area, and the agents learn it", async () => {
+      const d = (await http.get("/mec-defaults", auth())).data;
+      assert(d.areas.length === 4 && d.total > 20, `defaults ${JSON.stringify(d).slice(0, 120)}`);
+      const areaOfCourse = name => d.areas.find(a => a.courses.some(c => c.name === name))?.id;
+      assert(areaOfCourse("Enfermagem") === "presencial" || areaOfCourse("Biomedicina") === "saude_eng_agro", "classification");
+      assert(areaOfCourse("Biomedicina") === "saude_eng_agro" && areaOfCourse("Engenharia Civil") === "saude_eng_agro", "health/engineering are 40%");
+      assert(areaOfCourse("Administração") === "livre", "Administração should not be impacted");
+      assert(areaOfCourse("Física") === "educacao_ciencias" || areaOfCourse("Pedagogia") === "educacao_ciencias", "teaching/natural sciences are 30%");
+      // the first start fills the courses without a rule (applying again keeps whatever exists)
+      const first = await http.post("/mec-defaults/apply", {}, auth());
+      assert(first.status === 200 && first.data.created + first.data.skipped === d.total - d.areas.reduce((n, a) => n + 0, 0), `apply ${JSON.stringify(first.data)} total ${d.total}`);
+      const rule = name => sql(`SELECT CONCAT(COALESCE(r.mecImpacted::text,''),'|',COALESCE(r.percentualPresencial::text,'')) FROM CourseRegulations r JOIN Courses c ON c.id=r.courseId WHERE c.name='${name}' AND r.intakeTerm IS NULL LIMIT 1`);
+      assert(rule("Biomedicina") === "1|40.00" || rule("Biomedicina") === "true|40.00", `Biomedicina rule ${rule("Biomedicina")}`);
+      assert(/^(0|false)\|$/.test(rule("Administração")), `Administração rule ${rule("Administração")}`);
+      // the team adjusts the area once and applies it to every course in it
+      const saved = await http.put("/mec-defaults/saude_eng_agro", { ...d.areas.find(a => a.id === "saude_eng_agro"), percentualPresencial: 45 }, auth());
+      assert(saved.status === 200 && Number(saved.data.percentualPresencial) === 45, `save ${saved.status}`);
+      const kept = await http.post("/mec-defaults/apply", { area: "saude_eng_agro" }, auth());
+      assert(kept.status === 200 && kept.data.updated === 0, "applying without overwrite must keep the existing rules");
+      const applied = await http.post("/mec-defaults/apply", { area: "saude_eng_agro", overwrite: true }, auth());
+      assert(applied.status === 200 && applied.data.updated > 5, `apply ${applied.status} ${JSON.stringify(applied.data)}`);
+      assert(/\|45\.00$/.test(rule("Biomedicina")), `Biomedicina after apply ${rule("Biomedicina")}`);
+      assert((await http.put("/mec-defaults/saude_eng_agro", { percentualPresencial: 150 }, auth())).status === 400, "percent above 100 accepted");
+      assert((await http.put("/mec-defaults/saude_eng_agro", { ...saved.data, percentualPresencial: 40 }, auth())).status === 200, "restore");
+      // the commercial agents have the Portaria in their knowledge base
+      assert(Number(sql(`SELECT COUNT(*) FROM KbDocuments WHERE title LIKE 'Portaria MEC 378/2025%'`)) >= 1, "the agents did not learn the Portaria");
+      assert((await http.get("/mec-defaults", asUser(tutorToken))).status === 403, "a tutor read the MEC defaults");
     });
     await test("connections: another number's groups, communities and private chats never reach a person who does not own it", async () => {
       const mkU = async (name, email, role) => (await http.post("/users", { name, email, password: "senha123", role }, auth())).data;

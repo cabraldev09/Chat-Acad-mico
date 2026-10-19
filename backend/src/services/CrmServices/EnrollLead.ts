@@ -230,6 +230,37 @@ const takeAsTutor = async (lead: Lead, actorId: number): Promise<void> => {
   await addActivity(lead.id, actorId, "system", `${actor.name} assumiu a ambientação como tutor.`);
 };
 
+// The steps the tutor ticks while getting the student started. Informational: concluding the onboarding is still the tutor's decision.
+export const CHECKLIST = [
+  { key: "first_access", label: "Primeiro acesso à plataforma" },
+  { key: "ava", label: "Ambiente virtual (AVA) apresentado" },
+  { key: "polo_contacts", label: "Contatos do polo e da tutoria passados" },
+  { key: "documents", label: "Documentos da matrícula conferidos" }
+] as const;
+
+export const parseChecklist = (raw: string | null | undefined): Record<string, string> => {
+  try {
+    const v = JSON.parse(raw || "{}");
+    return v && typeof v === "object" ? v : {};
+  } catch (_) {
+    return {};
+  }
+};
+
+export const setChecklist = async (lead: Lead, actorId: number, key: string, done: boolean) => {
+  if (lead.onboardingStatus === "none") throw new AppError("ERR_ONBOARDING_NOT_STARTED", 400);
+  const step = CHECKLIST.find(c => c.key === key);
+  if (!step) throw new AppError("ERR_NOT_FOUND", 404);
+  const now = parseChecklist(lead.onboardingChecklist);
+  if (done) now[key] = new Date().toISOString();
+  else delete now[key];
+  await lead.update({ onboardingChecklist: JSON.stringify(now) });
+  await addActivity(lead.id, actorId, "system", `Ambientação: "${step.label}" ${done ? "concluído" : "desmarcado"}.`);
+  const out = (await loadLead(lead.id)) as Lead;
+  getIO().emit("lead", { action: "update", lead: out });
+  return { checklist: now };
+};
+
 // start / done of the onboarding (tutor side). Done schedules the follow-ups of the consultant.
 export const setOnboarding = async (lead: Lead, actorId: number, action: "start" | "done") => {
   if (lead.onboardingStatus === "none") throw new AppError("ERR_ONBOARDING_NOT_STARTED", 400);

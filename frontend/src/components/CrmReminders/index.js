@@ -57,6 +57,14 @@ const CrmReminders = () => {
         }
       }
     });
+    // the tutor is reminded a few hours before the limit
+    socket.on("onboardingReminder", (a) => {
+      if (a.tutorId !== user.id) return;
+      toast.info(`⏳ ${a.leadName || "Um aluno"} está perto de ${a.hours} horas sem o primeiro contato. Faltam cerca de ${a.left} h`, {
+        autoClose: 30000,
+        onClick: () => history.push("/ambientacao"),
+      });
+    });
     // a student passed the limit (24 h) without the tutor's first contact: administration and coordination are warned, and so is the tutor
     socket.on("onboardingAlert", (a) => {
       const manager = user.profile === "admin" || user.role === "admin" || user.role === "coordenacao";

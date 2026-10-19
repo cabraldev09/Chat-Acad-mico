@@ -210,3 +210,61 @@ export const importDefaultGradesIfEmpty = async (): Promise<void> => {
   await setSetting("grades_default_seen", JSON.stringify([...done]));
   if (created) logger.info(`default grades: ${created} new course(s) published`);
 };
+
+// The reading of the matrices improves over time (the text told to the students, what counts as an internship): every stored matrix is
+// read again from its own PDF and the facts and the WhatsApp text are brought up to date. Only what the reader derives is rewritten
+// (course name, term, file and history stay).
+export const refreshGrades = async (): Promise<{ checked: number; updated: number; missing: number; failed: number }> => {
+  const rows = await CommercialGrade.findAll({ order: [["id", "ASC"]] });
+  let updated = 0;
+  let missing = 0;
+  let failed = 0;
+  for (const g of rows) {
+    const file = gradePath(g);
+    if (!fs.existsSync(file)) {
+      missing += 1;
+      continue;
+    }
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const reading = await readCommercialGrade(fs.readFileSync(file), g.originalName || g.courseName || "grade.pdf");
+      const next: any = {
+        modality: reading.modality ?? g.modality,
+        curriculumTerm: reading.curriculumTerm ?? g.curriculumTerm,
+        degree: reading.degree || g.degree,
+        knowledgeArea: reading.knowledgeArea || g.knowledgeArea,
+        durationSemesters: reading.durationSemesters ?? g.durationSemesters,
+        courseTracks: JSON.stringify(reading.courseTracks || []),
+        internshipInfo: reading.internshipInfo,
+        hasTcc: reading.hasTcc,
+        totalInternshipHours: reading.totalInternshipHours,
+        totalCourseHours: reading.totalCourseHours,
+        whatsappSummary: reading.whatsappSummary,
+        complete: reading.complete !== false
+      };
+      const changed = (Object.keys(next) as string[]).some(k => String((g as any)[k] ?? "") !== String(next[k] ?? ""));
+      if (changed) {
+        // eslint-disable-next-line no-await-in-loop
+        await g.update(next);
+        updated += 1;
+      }
+    } catch (err) {
+      failed += 1;
+      logger.warn(`grade ${g.id} (${g.courseName}) not read again: ${(err as Error).message}`);
+    }
+  }
+  return { checked: rows.length, updated, missing, failed };
+};
+
+// once per version of the reading, at the start
+export const refreshGradesOnce = async (): Promise<void> => {
+  const VERSION = "2";
+  try {
+    if ((await getSetting("grades_reading_version", "")) === VERSION) return;
+    const r = await refreshGrades();
+    await setSetting("grades_reading_version", VERSION);
+    logger.info(`grades read again: ${r.updated} of ${r.checked} updated, ${r.missing} without file, ${r.failed} failed`);
+  } catch (err) {
+    logger.warn(`grades refresh failed: ${err}`);
+  }
+};

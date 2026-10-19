@@ -194,6 +194,10 @@ class Lead extends Model<Lead> {
   @Column
   onboardingAlertAt: Date;
 
+  // JSON {step: ISO date}: the steps of the onboarding the tutor has ticked
+  @Column(DataType.TEXT)
+  onboardingChecklist: string;
+
   @Column
   indicatedBy: number;
 

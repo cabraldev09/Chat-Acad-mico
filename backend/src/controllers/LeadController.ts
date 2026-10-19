@@ -806,7 +806,71 @@ export const editOnboarding = async (req: Request, res: Response): Promise<Respo
   return res.json(await edit(lead, uid(req), { status, tutorId, poloId: b.poloId ? Number(b.poloId) : undefined }));
 };
 
+export const onboardingChecklist = async (req: Request, res: Response): Promise<Response> => {
+  const lead = await Lead.findByPk(req.params.id);
+  if (!lead) throw new AppError("ERR_LEAD_NOT_FOUND", 404);
+  const { setChecklist } = await import("../services/CrmServices/EnrollLead");
+  return res.json(await setChecklist(lead, uid(req), String(req.body?.key || ""), req.body?.done !== false));
+};
+
+// the numbers of the onboarding for the management: how fast the first contact happens, who is late, how many finish per week, per tutor
+export const onboardingStats = async (_req: Request, res: Response): Promise<Response> => {
+  const slaHours = Math.max(1, Number(await getSetting("onboarding_sla_hours", "24")) || 24);
+  const rows = await Lead.findAll({
+    where: { onboardingStatus: { [Op.ne]: "none" }, enrolledAt: { [Op.ne]: null } } as any,
+    attributes: ["id", "onboardingStatus", "onboardingTutorId", "enrolledAt", "onboardingStartedAt", "onboardingDoneAt"],
+    order: [["enrolledAt", "DESC"]],
+    limit: 5000
+  });
+  const now = Date.now();
+  const H = 3600000;
+  const since90 = now - 90 * 24 * H;
+  const firstContact = (r: Lead): number | null => (r.onboardingStartedAt && r.enrolledAt ? Math.max(0, (+new Date(r.onboardingStartedAt) - +new Date(r.enrolledAt)) / H) : null);
+  const avg = (xs: number[]): number | null => (xs.length ? Math.round((xs.reduce((a, b) => a + b, 0) / xs.length) * 10) / 10 : null);
+  const recent = rows.filter(r => r.enrolledAt && +new Date(r.enrolledAt) >= since90);
+  const pending = rows.filter(r => r.onboardingStatus === "pending");
+  const late = pending.filter(r => now - +new Date(r.enrolledAt) > slaHours * H);
+  const within = recent.map(firstContact).filter((x): x is number => x !== null);
+  // the Monday of each of the last 8 weeks, and how many students finished in it
+  const monday = (t: number): number => {
+    const d = new Date(t);
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    return d.getTime();
+  };
+  const weeks: Array<{ weekStart: string; done: number }> = [];
+  for (let i = 7; i >= 0; i -= 1) {
+    const start = monday(now - i * 7 * 24 * H);
+    const end = start + 7 * 24 * H;
+    weeks.push({ weekStart: new Date(start).toISOString().slice(0, 10), done: rows.filter(r => r.onboardingDoneAt && +new Date(r.onboardingDoneAt) >= start && +new Date(r.onboardingDoneAt) < end).length });
+  }
+  const tutorIds = [...new Set(rows.map(r => r.onboardingTutorId).filter(Boolean))] as number[];
+  const users = tutorIds.length ? await User.findAll({ where: { id: tutorIds }, attributes: ["id", "name"] }) : [];
+  const byTutor = tutorIds
+    .map(id => {
+      const mine = rows.filter(r => r.onboardingTutorId === id);
+      return {
+        tutorId: id,
+        name: users.find(u => u.id === id)?.name || "",
+        active: mine.filter(r => r.onboardingStatus !== "done").length,
+        late: mine.filter(r => r.onboardingStatus === "pending" && now - +new Date(r.enrolledAt) > slaHours * H).length,
+        doneLast30: mine.filter(r => r.onboardingDoneAt && now - +new Date(r.onboardingDoneAt) <= 30 * 24 * H).length,
+        avgFirstContactHours: avg(mine.filter(r => r.enrolledAt && +new Date(r.enrolledAt) >= since90).map(firstContact).filter((x): x is number => x !== null))
+      };
+    })
+    .sort((a, b) => b.active - a.active);
+  return res.json({
+    slaHours,
+    totals: { pending: pending.length, started: rows.filter(r => r.onboardingStatus === "started").length, done: rows.filter(r => r.onboardingStatus === "done").length, late: late.length, withoutTutor: rows.filter(r => !r.onboardingTutorId && r.onboardingStatus !== "done").length },
+    avgFirstContactHours: avg(within),
+    withinSlaShare: within.length ? Math.round((within.filter(h => h <= slaHours).length / within.length) * 100) : null,
+    weeks,
+    byTutor
+  });
+};
+
 export const onboardingList = async (req: Request, res: Response): Promise<Response> => {
+  const { parseChecklist } = await import("../services/CrmServices/EnrollLead");
   const rows = await Lead.findAll({
     where: await withLeadScope(req, { onboardingStatus: { [Op.ne]: "none" } }),
     include: leadInclude as any,
@@ -824,6 +888,8 @@ export const onboardingList = async (req: Request, res: Response): Promise<Respo
     rows.map(r => ({
       ...r.toJSON(),
       tutorName: tutors.find(t => t.id === r.onboardingTutorId)?.name || null,
+      onboardingChecklist: undefined,
+      checklist: parseChecklist(r.onboardingChecklist),
       ticketId: tickets.find(t => t.contactId === r.contactId)?.id || null,
       unread: tickets.find(t => t.contactId === r.contactId)?.unreadMessages || 0,
       lastMessageAt: tickets.find(t => t.contactId === r.contactId)?.lastMessageAt || null

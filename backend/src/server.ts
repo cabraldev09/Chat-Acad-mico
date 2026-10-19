@@ -56,7 +56,10 @@ whenLeader(() => {
   // the polos and goals of the spreadsheet are loaded once, so the goals screen is never empty
   import("./services/GoalServices/SeedPoloGoals").then(({ seedPoloGoals }) => seedPoloGoals()).catch(() => undefined);
   // the commercial matrices that come with the system, read once when the catalog is empty
-  import("./analysis/Grades").then(({ importDefaultGradesIfEmpty }) => importDefaultGradesIfEmpty()).catch(() => undefined);
+  // and every stored matrix is read again once per version of the reader (internships, text told to the students)
+  import("./analysis/Grades").then(async ({ importDefaultGradesIfEmpty, refreshGradesOnce }) => { await importDefaultGradesIfEmpty(); await refreshGradesOnce(); }).catch(() => undefined);
+  // the rules of the MEC (Portaria 378/2025) for the courses that have none, once per version
+  import("./services/CommercialServices/MecDefaults").then(({ seedMecDefaults }) => seedMecDefaults()).catch(() => undefined);
   // every contact already in the system becomes a lead too (idempotent)
   import("./services/CrmServices/LeadCore")
     .then(({ backfillLeads }) => backfillLeads())

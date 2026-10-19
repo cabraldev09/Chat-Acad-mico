@@ -28,3 +28,34 @@ describe.skipIf(files.length === 0)("every commercial matrix is read from its PD
     expect(problems.length).toBeLessThanOrEqual(Math.ceil(files.length * 0.05));
   });
 });
+
+import { readableName } from "../../../src/analysis/services/commercial-grades/reader";
+
+describe("the text told to the student about the grade", () => {
+  it("names read well: capitals, small words and roman numerals", () => {
+    expect(readableName("ESTÁGIO CURRICULAR SUPERVISIONADO EM ARTE III")).toBe("Estágio Curricular Supervisionado em Arte III");
+    expect(readableName("TERAPIA OCUPACIONAL ÁREA VIII")).toBe("Terapia Ocupacional Área VIII");
+    expect(readableName("Letras - Português")).toBe("Letras - Português");
+  });
+
+  it("Pedagogia: only the supervised internships are internships (not Ambientação Digital, Plano de Carreira or Seminários)", async () => {
+    const dir = path.join(__dirname, "../../../data/grades");
+    const r = await readCommercialGrade(readFileSync(path.join(dir, "PEDAGOGIA (LICENCIATURA).PDF")), "PEDAGOGIA (LICENCIATURA).PDF");
+    expect(r.totalInternshipHours).toBe(400);
+    expect(r.whatsappSummary).not.toMatch(/Ambienta|Plano de Acompanhamento|Semin/i);
+    expect(r.whatsappSummary).toMatch(/5º semestre: Educação Infantil \(150 h\)/);
+    expect(r.whatsappSummary).toMatch(/400 horas no total/);
+    expect(r.whatsappSummary).toMatch(/Carga horária total: 3\.200 horas/);
+  });
+
+  it("every shipped matrix fits a PDF caption and lists internships consistent with its total", async () => {
+    const dir = path.join(__dirname, "../../../data/grades");
+    for (const file of readdirSync(dir).filter(f => /\.pdf$/i.test(f))) {
+      // eslint-disable-next-line no-await-in-loop
+      const r = await readCommercialGrade(readFileSync(path.join(dir, file)), file);
+      expect(r.whatsappSummary.length, file).toBeLessThanOrEqual(1000);
+      const hours = [...r.whatsappSummary.matchAll(/\((\d+) h\)/g)].map(m => Number(m[1]));
+      if (r.internshipInfo && hours.length && r.totalInternshipHours) expect(hours.reduce((a, b) => a + b, 0), file).toBe(r.totalInternshipHours);
+    }
+  }, 120000);
+});

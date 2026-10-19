@@ -1,4 +1,5 @@
 import { Graph } from "../FlowServices/Graph";
+import { MEC_DOC } from "./MecDoc";
 import { build } from "../FlowServices/Templates";
 
 // The ready agent "Comercial — Graduação": it welcomes the lead, finds out course, city and kind of entry, presents the course with data
@@ -42,13 +43,7 @@ export const COMMERCIAL_KB: Array<{ title: string; content: string; topic: strin
     content:
       "Você pode buscar oportunidades de estágio remunerado durante a graduação. Quando encontrar uma oportunidade, a tutoria ou o setor responsável orienta sobre a documentação e a formalização. O estágio remunerado não substitui automaticamente o estágio obrigatório do curso."
   },
-  {
-    title: "Mudanças do MEC na modalidade",
-    topic: "institutional/mec",
-    keywords: "mec, semipresencial, mudança, modalidade, regra nacional",
-    content:
-      "Quando o curso for impactado pelas novas regras (confirme com a ferramenta de regra da modalidade), a explicação é: com as mudanças do MEC, esse curso passou para o formato semipresencial; essa alteração faz parte das novas regras nacionais e não é uma mudança exclusiva da Cruzeiro do Sul. Percentuais, aulas ao vivo e práticas presenciais só podem ser citados se vierem da regra do curso."
-  },
+  MEC_DOC,
   {
     title: "Análise curricular",
     topic: "institutional/analysis",
