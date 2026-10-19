@@ -136,6 +136,25 @@ const startAnthropicMock = () => {
     const last = req.body.messages[req.body.messages.length - 1];
     const text = t => res.json({ content: [{ type: "text", text: t }], stop_reason: "end_turn", usage });
     const tool = (name, input) => res.json({ content: [{ type: "tool_use", id: `toolu_${anthropic.requests.length}`, name, input }], stop_reason: "tool_use", usage });
+    // "create the agent with AI": answers through the tool; the first attempt has a stage without goal, the fix comes after the problems are sent back
+    if (Array.isArray(req.body.tools) && req.body.tools.some(t => t.name === "criar_agente")) {
+      const fixes = req.body.messages.filter(m => Array.isArray(m.content) && m.content.some(b => b.type === "tool_result")).length;
+      return res.json({
+        content: [{ type: "tool_use", id: `toolu_gen_${anthropic.requests.length}`, name: "criar_agente", input: {
+          nome: "Agente da Padaria", papel: "Você atende os clientes da Padaria Pão Quente e ajuda a encomendar bolos e salgados.", tom: "Simpático e direto", regras: "Pergunte uma coisa por vez", proibido: "Prometer prazos que não estão na base",
+          mensagem_transferencia: "Vou chamar a atendente.", perguntas_frequentes: [{ pergunta: "Qual o horário?", resposta: "Abrimos das 6h às 19h.", palavras_chave: "horário" }, { pergunta: "Fazem entrega?", resposta: "Entregamos em até 5 km." }],
+          blocos: [
+            { chave: "start", tipo: "start" },
+            { chave: "conversa", tipo: "stage", titulo: "Encomenda", objetivo: fixes ? "Anotar a encomenda: produto, quantidade e data." : "", campos: [{ chave: "produto", rotulo: "Produto", obrigatorio: true }, { chave: "data", rotulo: "Data da retirada", tipo: "date", obrigatorio: true }], saidas: [{ id: "reclamar", rotulo: "Reclamação", quando: "quando a pessoa reclamar de um pedido" }] },
+            { chave: "tarefa", tipo: "crm", acao: "create_task", titulo_tarefa: "Confirmar a encomenda", minutos: 30 },
+            { chave: "fim", tipo: "end", texto: "Encomenda anotada! 🥖" },
+            { chave: "gerente", tipo: "transfer", para: "polo_sales", texto: "Vou chamar a gerente." }
+          ],
+          ligacoes: [{ de: "start", para: "conversa" }, { de: "conversa", para: "tarefa", saida: "done" }, { de: "tarefa", para: "fim" }, { de: "conversa", para: "gerente", saida: "reclamar" }]
+        } }],
+        stop_reason: "tool_use", usage
+      });
+    }
     if (typeof req.body.system === "string" && /desenha fluxos/.test(req.body.system)) {
       return text(JSON.stringify({
         name: "Triagem gerada",
@@ -157,15 +176,29 @@ const startAnthropicMock = () => {
       }));
     }
     if (req.body.max_tokens === 220) return text("O aluno quer saber sobre bolsas e cursos.");
+    const systemText = Array.isArray(req.body.system) ? req.body.system.map(b => b.text).join("\n") : "";
+    const inStage = /Etapa atual: Teste de Etapa/.test(systemText);
     const result = Array.isArray(last.content) && last.content.find(b => b.type === "tool_result");
     if (result) {
       const out = JSON.parse(result.content);
+      if (inStage && out.valor_invalido) return text("Pode me passar o e-mail completo, por favor?");
+      if (inStage && out.dados) return text(`Horários livres: ${out.dados}`);
+      if (inStage && out.ok && /Etapa encerrada/.test(out.aviso || "")) return text("Combinado!");
       if (out.iniciado) return text("Pronto, enviei o menu de cursos para você.");
       if (out.completo) return text("Perfeito, Paulo! Um consultor da equipe continua com você.");
       if (out.cursos) return text(`O curso ${out.cursos[0].nome} tem mensalidade de tabela de R$ ${out.cursos[0].mensalidade_bruta_de_tabela}.`);
       return text("Anotado!");
     }
     const said = typeof last.content === "string" ? last.content : "";
+    if (inStage) {
+      if (/A conversa desta etapa está começando/.test(said)) return text("Olá! Sou o assistente desta etapa. Como posso ajudar?");
+      if (/email ruim/i.test(said)) return tool("salvar_lead", { nome: "Paulo Mendes", email: "paulo" });
+      if (/meu nome é/i.test(said)) return tool("salvar_lead", { nome: "Paulo Mendes", email: "paulo@x.com" });
+      if (/horário/i.test(said)) return tool("http_agenda", { dia: "2026-11-02" });
+      if (/quanto custa/i.test(said)) return tool("escolher_resultado", { resultado: "precos", motivo: "perguntou o valor" });
+      if (/falar com (uma )?pessoa/i.test(said)) return tool("escolher_resultado", { resultado: "humano" });
+      return text("Claro! Qual é o seu nome completo?");
+    }
     const knowledge = (req.body.system[1] && req.body.system[1].text) || "";
     if (/atletas/i.test(said)) return text(knowledge.includes("30% de bolsa") ? "Atletas federados têm 30% de bolsa, mediante comprovação." : "[DESCONHECIDO]");
     if (/menu de cursos/i.test(said)) return tool("fluxo_menu_cursos", {});
@@ -184,6 +217,7 @@ const startGraphMock = () => {
   app.get("/pic.jpg", (q, res) => res.type("image/png").send(PNG));
   app.get("/page.html", (q, res) => res.type("html").send("<html><head><style>x{}</style></head><body><nav>menu</nav><h1>Calendário acadêmico</h1><p>As aulas do segundo semestre começam em 3 de agosto e a rematrícula vai até 20 de julho para todos os cursos de graduação a distância.</p></body></html>"));
   app.post("/hook", (req, res) => { graph.hooks.push(req.body); res.json({ ok: true }); });
+  app.get("/horarios", (req, res) => { graph.hooks.push({ horarios: req.query }); res.json({ livres: ["09:00", "10:30"] }); });
   app.get("/att.png", (q, res) => res.type("image/png").send(PNG));
   app.get("/media/:id", (q, res) => res.type("image/png").send(PNG));
   app.get("/me", (q, res) => res.json({ id: "PAGE1", name: "Mock Page" }));
@@ -2764,6 +2798,143 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.post(`/ai-agents/${aiId}/test`, { messages: [] }, auth())).status === 400, "empty conversation accepted");
       const u = (await http.get(`/ai-agents/${aiId}/usage`, auth())).data;
       assert(u.total.calls >= 5 && u.total.input > 0 && u.cap === 0, `usage ${JSON.stringify(u)}`);
+    });
+    await test("AI agent in blocks: an AI stage collects typed fields, calls an external tool, leaves by intention, hands over to the team; versions and the simulator", async () => {
+      // the agent of the earlier tests stays quiet while this one talks on the same connection
+      await http.put(`/ai-agents/${aiId}`, { active: false }, auth());
+      const tpls = await http.get("/ai-agent-templates", auth());
+      assert(tpls.status === 200 && tpls.data.length >= 5 && tpls.data.every(t => t.key && t.stages >= 1), `templates ${tpls.status}`);
+      assert((await http.post("/ai-agents/from-template", { template: "nao-existe" }, auth())).status === 404, "an unknown template");
+      const fromTpl = (await http.post("/ai-agents/from-template", { template: "atendimento-faq", name: "Agente do modelo" }, auth())).data;
+      const tplFlow = (await http.get(`/flows/${fromTpl.flowId}`, auth())).data;
+      assert(tplFlow.kind === "agent" && tplFlow.agentId === fromTpl.agentId && tplFlow.errors === 0, `template flow ${JSON.stringify({ k: tplFlow.kind, e: tplFlow.errors, issues: tplFlow.issues })}`);
+      assert(sql(`SELECT active FROM AiAgents WHERE id=${fromTpl.agentId}`) === "0", "an agent from a template starts turned on");
+      assert(Number(sql(`SELECT COUNT(*) FROM KbDocuments WHERE agentId=${fromTpl.agentId} AND kind='faq'`)) >= 1, "the template brought no answers for the knowledge base");
+      assert((await http.get("/flows", auth())).data.every(f => f.kind === "flow"), "agents in the list of flows");
+      assert((await http.get("/flows", { params: { kind: "agent" }, ...auth() })).data.some(f => f.id === fromTpl.flowId), "agent not in its list");
+
+      // the agent of this test and its blocks
+      const agent = (await http.post("/ai-agents", { name: "Agente em blocos", provider: "anthropic", model: "claude-haiku-5-5", apiKey: "sk-ant-test", whatsappId: cid, waitSeconds: 0, handoffMessage: "Vou chamar um colega.", persona: { tone: "gentil" } }, auth())).data;
+      const agentGraph = {
+        nodes: [
+          { id: "st", type: "start", data: {} },
+          { id: "s", type: "stage", data: {
+            title: "Teste de Etapa", objective: "Descobrir nome e e-mail e consultar horários.", maxTurns: 10, useKnowledge: false,
+            fields: [{ key: "nome", label: "Nome", type: "text", required: true }, { key: "email", label: "E-mail", type: "email", required: true }],
+            http: [{ name: "agenda", description: "Consulta os horários livres de um dia.", url: `http://localhost:${GRAPH_PORT}/horarios`, method: "GET", params: [{ name: "dia", description: "AAAA-MM-DD", type: "string", required: true }] }],
+            outcomes: [{ id: "precos", label: "Quer preços", when: "quando perguntar quanto custa" }]
+          } },
+          { id: "ok", type: "message", data: { text: "Cadastro concluído, obrigado!" } },
+          { id: "fim", type: "end", data: {} },
+          { id: "val", type: "message", data: { text: "Vou chamar quem fala de valores." } },
+          { id: "fim2", type: "end", data: {} }
+        ],
+        edges: [
+          { id: "e1", source: "st", target: "s" }, { id: "e2", source: "s", sourceHandle: "done", target: "ok" }, { id: "e3", source: "ok", target: "fim" },
+          { id: "e4", source: "s", sourceHandle: "precos", target: "val" }, { id: "e5", source: "val", target: "fim2" }
+        ]
+      };
+      // a block with a problem cannot be published, and the problems say what to fix
+      const bad = (await http.post("/flows", { kind: "agent", agentId: agent.id, name: "Rascunho ruim", graph: { nodes: [{ id: "st", type: "start", data: {} }, { id: "s", type: "stage", data: { objective: "" } }], edges: [{ id: "e", source: "st", target: "s" }] } }, auth())).data;
+      const badPub = await http.post(`/flows/${bad.id}/publish`, {}, auth());
+      assert(badPub.status === 422 && badPub.data.issues.some(i => /objetivo/.test(i.text)), `bad publish ${badPub.status}`);
+      assert((await http.post("/flows", { kind: "agent", name: "Sem agente", graph: agentGraph }, auth())).status === 400, "an agent flow without an agent");
+      const flow = (await http.post("/flows", { kind: "agent", agentId: agent.id, name: "Agente em blocos", graph: agentGraph }, auth())).data;
+      assert(flow.kind === "agent" && flow.errors === 0, `flow ${JSON.stringify(flow.issues)}`);
+
+      // the simulator: the AI really answers (with the mock), nothing is sent, and the trace says what it did
+      const sim1 = (await http.post(`/flows/${flow.id}/simulate`, { restart: true }, auth())).data;
+      assert(sim1.status === "waiting" && sim1.messages.some(m => /assistente desta etapa/.test(m)) && sim1.traces.length === 1, `simulate open ${JSON.stringify(sim1).slice(0, 240)}`);
+      const sim2 = (await http.post(`/flows/${flow.id}/simulate`, { state: sim1.state, input: "meu nome é Paulo" }, auth())).data;
+      assert(sim2.status === "done" && sim2.messages.includes("Cadastro concluído, obrigado!") && sim2.traces[0].tools.includes("salvar_lead") && sim2.traces[0].collected.nome === "Paulo Mendes" && sim2.traces[0].exit === "done" && sim2.state.vars.email === "paulo@x.com", `simulate collect ${JSON.stringify(sim2).slice(0, 300)}`);
+      assert(Number(sql(`SELECT COUNT(*) FROM AiUsage WHERE kind='test' AND flowId=${flow.id}`)) >= 2, "the simulator did not log its usage with the flow");
+
+      // versions: publish, change, publish again, restore the first
+      const pub1 = await http.post(`/flows/${flow.id}/publish`, { note: "primeira" }, auth());
+      assert(pub1.status === 200 && pub1.data.status === "published" && pub1.data.version === 1, `publish ${pub1.status}`);
+      const changed = JSON.parse(JSON.stringify(agentGraph));
+      changed.nodes.find(n => n.id === "ok").data.text = "Tudo certo!";
+      await http.put(`/flows/${flow.id}`, { graph: changed }, auth());
+      assert((await http.post(`/flows/${flow.id}/publish`, { note: "segunda" }, auth())).data.version === 2, "second publication");
+      const vs = (await http.get(`/flows/${flow.id}/versions`, auth())).data;
+      assert(vs.length === 2 && vs[0].version === 2 && vs[0].current === true && vs[1].note === "primeira", `versions ${JSON.stringify(vs)}`);
+      const restored = (await http.post(`/flows/${flow.id}/versions/${vs[1].id}/restore`, {}, auth())).data;
+      assert(restored.graph.nodes.find(n => n.id === "ok").data.text === "Cadastro concluído, obrigado!", "restore did not bring the old blocks back");
+      assert((await http.post(`/flows/${flow.id}/publish`, { note: "volta" }, auth())).data.version === 3, "third publication");
+
+      // a real conversation: the agent in blocks answers on the connection
+      assert((await http.put(`/ai-agents/${agent.id}`, { active: true }, auth())).status === 200, "turn the agent on");
+      const before0 = graph.sent.length;
+      const typed = (from, id, body) => inboundCloud(from, id, body);
+      const cloudTexts = since => graph.sent.slice(since).filter(x => x.path === "/PN1/messages" && x.body && x.body.type === "text" && x.body.text).map(x => x.body.text.body);
+      // 1) a bad e-mail is not kept; the AI asks again; then the fields are complete and the flow follows "done"
+      const a = "5511920000101";
+      await typed(a, "wamid.blk-a1", "oi, quero um cadastro");
+      await waitFor(() => cloudTexts(before0).some(t => /Qual é o seu nome completo/.test(t)), 15000, "the AI stage answers the first message");
+      const runA = () => sql(`SELECT CONCAT(r.status,'|',COALESCE(r.nodeId,'')) FROM ChatFlowRuns r JOIN Tickets t ON t.id=r.ticketId JOIN Contacts c ON c.id=t.contactId WHERE c.number='${a}' AND r.flowId=${flow.id} ORDER BY r.id DESC LIMIT 1`);
+      assert(runA() === "waiting|s", `run after the first message ${runA()}`);
+      let mark = graph.sent.length;
+      await typed(a, "wamid.blk-a2", "meu nome é Paulo, email ruim");
+      await waitFor(() => cloudTexts(mark).some(t => /e-mail completo/.test(t)), 15000, "the AI asks for the e-mail again");
+      assert(runA() === "waiting|s" && !sql(`SELECT aiSlots FROM Tickets WHERE id=${ticketOf(a)}`).includes("paulo\""), "a bad e-mail was kept or the stage ended");
+      mark = graph.sent.length;
+      await typed(a, "wamid.blk-a3", "meu nome é Paulo, o email é paulo@x.com");
+      await waitFor(() => cloudTexts(mark).some(t => /Cadastro concluído, obrigado!/.test(t)), 15000, "the flow follows the exit 'done'");
+      await waitFor(() => /^done/.test(runA()), 8000, "the run ends");
+      assert(sql(`SELECT aiActive FROM Tickets WHERE id=${ticketOf(a)}`) === "0", "the agent would start over at the next message");
+      assert(JSON.parse(sql(`SELECT r.vars FROM ChatFlowRuns r JOIN Tickets t ON t.id=r.ticketId JOIN Contacts c ON c.id=t.contactId WHERE c.number='${a}' AND r.flowId=${flow.id} ORDER BY r.id DESC LIMIT 1`)).email === "paulo@x.com", "the fields were not kept in the run");
+      assert(sql(`SELECT l.name FROM Leads l JOIN Contacts c ON c.id=l.contactId WHERE c.number='${a}'`) === "Paulo Mendes", "the lead did not take the name");
+
+      // 2) an external tool (read) and an exit by intention
+      const b = "5511920000102";
+      mark = graph.sent.length;
+      await typed(b, "wamid.blk-b1", "olá, quero um horário");
+      await waitFor(() => cloudTexts(mark).some(t => /Horários livres:.*09:00/.test(t)), 15000, "the AI used the external tool");
+      assert(graph.hooks.some(h => h.horarios && h.horarios.dia === "2026-11-02"), "the external system was not called");
+      mark = graph.sent.length;
+      await typed(b, "wamid.blk-b2", "e quanto custa?");
+      await waitFor(() => cloudTexts(mark).some(t => /Vou chamar quem fala de valores/.test(t)), 15000, "the exit by intention followed its edge");
+      assert(cloudTexts(mark).some(t => /Combinado!/.test(t)), "the AI did not say goodbye before leaving the stage");
+
+      // 3) the person asks for a human: the exit is not connected, so the team takes the conversation, with the reason
+      const c = "5511920000103";
+      await typed(c, "wamid.blk-c1", "oi");
+      await waitFor(() => cloudTexts(before0).some(t => /Qual é o seu nome completo/.test(t)) && ticketOf(c), 15000, "ticket of the third person");
+      mark = graph.sent.length;
+      await typed(c, "wamid.blk-c2", "quero falar com uma pessoa");
+      await waitFor(() => cloudTexts(mark).some(t => /Vou chamar um colega/.test(t)), 15000, "the handoff message");
+      await waitFor(() => Number(sql(`SELECT COUNT(*) FROM TicketEvents WHERE ticketId=${ticketOf(c)} AND type='handoff'`)) >= 1, 8000, "the handoff event");
+      assert(sql(`SELECT aiActive FROM Tickets WHERE id=${ticketOf(c)}`) === "0", "the AI went on after the handoff");
+
+      // the counters of the blocks and the usage by block
+      const st = (await http.get(`/flows/${flow.id}/stats`, auth())).data;
+      assert(st.started >= 3 && st.nodes.s >= 3 && st.nodes.ok >= 1 && st.handoff >= 1, `stats ${JSON.stringify(st)}`);
+      assert(Number(sql(`SELECT COUNT(*) FROM AiUsage WHERE kind='reply' AND flowId=${flow.id} AND nodeId='s'`)) >= 5, "the usage of the stage was not logged");
+
+      // the agent of today as blocks: a draft that keeps the behaviour (the fields, the flows it could start)
+      const conv = (await http.post(`/ai-agents/${aiId}/convert`, {}, auth())).data;
+      const convFlow = (await http.get(`/flows/${conv.flowId}`, auth())).data;
+      assert(convFlow.kind === "agent" && convFlow.agentId === aiId && convFlow.status === "draft" && convFlow.graph.nodes.some(n => n.type === "stage" && n.data.fields.some(f => f.key === "curso" && f.required)), "the conversion lost the fields");
+      assert((await http.delete(`/ai-agents/${fromTpl.agentId}`, auth())).status === 200 && (await http.get(`/flows/${fromTpl.flowId}`, auth())).status === 404, "deleting the agent kept its blocks");
+
+      // back to how the other tests expect it
+      await http.put(`/ai-agents/${agent.id}`, { active: false }, auth());
+      await http.put(`/ai-agents/${aiId}`, { active: true }, auth());
+    });
+    await test("create the agent with AI: the answer is a structure, the problems go back to the model and it fixes them before the draft is shown", async () => {
+      assert((await http.post("/ai-agents/generate", { description: "curto" }, auth())).status === 400, "a description too short");
+      const before = anthropic.requests.length;
+      const r = await http.post("/ai-agents/generate", { description: "Uma padaria de bairro que vende bolos e salgados e recebe encomendas pelo WhatsApp.", segment: "Alimentação" }, auth());
+      assert(r.status === 201 && r.data.attempts === 2 && r.data.issues.length === 0, `generate ${r.status} ${JSON.stringify(r.data).slice(0, 240)}`);
+      const calls = anthropic.requests.slice(before).filter(x => Array.isArray(x.tools) && x.tools.some(t => t.name === "criar_agente"));
+      assert(calls.length === 2 && calls[0].tool_choice && calls[0].tool_choice.name === "criar_agente", "the model was not forced to answer through the tool");
+      assert(JSON.stringify(calls[1].messages[calls[1].messages.length - 1]).includes("objetivo"), "the problems did not go back to the model");
+      assert(sql(`SELECT active FROM AiAgents WHERE id=${r.data.agentId}`) === "0", "the generated agent started turned on");
+      assert(Number(sql(`SELECT COUNT(*) FROM KbDocuments WHERE agentId=${r.data.agentId} AND kind='faq'`)) === 2, "the answers did not reach the knowledge base");
+      const gen = (await http.get(`/flows/${r.data.flowId}`, auth())).data;
+      assert(gen.kind === "agent" && gen.status === "draft" && gen.errors === 0 && gen.graph.nodes.some(n => n.type === "stage" && n.data.objective && n.data.fields.length === 2 && n.data.outcomes[0].id === "reclamar"), `generated flow ${JSON.stringify(gen.issues)}`);
+      assert(gen.graph.edges.some(e => e.sourceHandle === "reclamar") && gen.graph.edges.some(e => e.sourceHandle === "done"), "the exits were not connected");
+      assert((await http.post(`/flows/${r.data.flowId}/publish`, {}, auth())).status === 200, "the generated agent cannot be published");
     });
     await test("chatbot can ask a question, offer polos and call a webhook", async () => {
       sql("DELETE FROM ChatbotNodes");

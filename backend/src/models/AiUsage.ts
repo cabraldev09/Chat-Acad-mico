@@ -22,6 +22,12 @@ class AiUsage extends Model<AiUsage> {
   @Column
   nodeId: string;
 
+  @Column
+  latencyMs: number;
+
+  @Column
+  leadId: number;
+
   @AllowNull(false)
   @Column
   model: string;

@@ -28,7 +28,9 @@ export interface Issue {
 export const WAITING = ["buttons", "ask", "delay", "polo", "stage"];
 // blocks that end the conversation inside the flow
 export const TERMINAL = ["end", "ai", "transfer", "flow"];
-export const NODE_TYPES = ["start", "message", "buttons", "ask", "polo", "condition", "crm", "delay", "ai", "stage", "flow", "transfer", "webhook", "random", "goto", "end", "comment"];
+export const NODE_TYPES = ["start", "message", "buttons", "ask", "polo", "condition", "crm", "delay", "ai", "stage", "flow", "commercial", "transfer", "webhook", "random", "goto", "end", "comment"];
+// what the block "Estado comercial" can do (see CommercialServices)
+export const COMMERCIAL_OPS = ["ensure_lead", "sync_stage", "task", "note", "handoff_brief", "start_analysis"] as const;
 
 export const TITLE: Record<string, string> = {
   start: "Início",
@@ -42,6 +44,7 @@ export const TITLE: Record<string, string> = {
   ai: "Agente de IA",
   stage: "Etapa com IA",
   flow: "Chamar fluxo",
+  commercial: "Estado comercial",
   transfer: "Transferir",
   webhook: "Webhook",
   random: "Teste A/B",
@@ -77,6 +80,7 @@ export const exitsOf = (node: FlowNode): Array<{ handle: string; required: boole
     case "message":
     case "ask":
     case "crm":
+    case "commercial":
     case "delay":
       return [{ handle: "out", required: true, label: "saída" }];
     case "webhook":
@@ -182,6 +186,11 @@ export const validateGraph = (graph: Graph, ctx: { hasAiAgent?: boolean; kind?: 
         if (!t.description) err(`${title}: explique à IA quando usar a ferramenta “${t.name}”.`, n.id);
       });
       if (!ctx.hasAiAgent) warn(`${title}: nenhum agente de IA ativo foi encontrado; a conversa vai para a equipe.`, n.id);
+    }
+    if (n.type === "commercial") {
+      if (!(COMMERCIAL_OPS as readonly string[]).includes(d.op)) err(`${title}: escolha o que fazer.`, n.id);
+      if (d.op === "sync_stage" && !String(d.stageKey || "").trim()) err(`${title}: escolha a coluna do funil.`, n.id);
+      if (d.op === "task" && !String(d.title || "").trim()) err(`${title}: escreva o título da tarefa.`, n.id);
     }
     if (n.type === "flow" && !Number(d.flowId)) err(`${title}: escolha o fluxo que deve começar.`, n.id);
     if (n.type === "ai" && !ctx.hasAiAgent) warn("Agente de IA: nenhum agente ativo foi encontrado; a conversa vai para a equipe.", n.id);

@@ -19,6 +19,11 @@ import { priceOf, tokensToday } from "../services/AiServices/Usage";
 import { DEFAULT_SLOTS } from "../services/AiServices/Tools";
 import { isUrlSafe, safeRequest } from "../helpers/SafeUrl";
 import { dayBounds, shiftDays } from "../helpers/AppTime";
+import ChatFlow from "../models/ChatFlow";
+import ChatFlowRun from "../models/ChatFlowRun";
+import ChatFlowStat from "../models/ChatFlowStat";
+import { AGENT_TEMPLATES, convertAgent, templateSummary } from "../services/FlowServices/AgentTemplates";
+import { generateAgent } from "../services/FlowServices/GenerateAgent";
 
 const crud = makeCrud(AiAgent, {
   fields: [
@@ -68,7 +73,21 @@ const crud = makeCrud(AiAgent, {
   }
 });
 
-export const { index, show, store, update, remove } = crud;
+export const { index, show, store, update } = crud;
+
+// the agent goes with its blocks (the flows of kind agent that talk as it)
+export const remove = async (req: Request, res: Response): Promise<Response> => {
+  const flows = await ChatFlow.findAll({ where: { agentId: Number(req.params.id) } });
+  for (const f of flows) {
+    // eslint-disable-next-line no-await-in-loop
+    await ChatFlowRun.destroy({ where: { flowId: f.id } });
+    // eslint-disable-next-line no-await-in-loop
+    await ChatFlowStat.destroy({ where: { flowId: f.id } });
+    // eslint-disable-next-line no-await-in-loop
+    await f.destroy();
+  }
+  return crud.remove(req, res);
+};
 
 export const getKeys = async (_req: Request, res: Response): Promise<Response> =>
   res.json({
@@ -85,6 +104,73 @@ export const setKeys = async (req: Request, res: Response): Promise<Response> =>
     await setSetting("ai_openai_key", openai);
   }
   return res.json({ ok: true });
+};
+
+// ------------------------------------------------------------------ agents in blocks
+
+const DEFAULT_MODEL = "claude-haiku-5-5";
+const uid = (req: Request): number => Number(req.user.id);
+
+export const agentTemplates = async (_req: Request, res: Response): Promise<Response> => res.json(AGENT_TEMPLATES.map(templateSummary));
+
+// An agent made from a ready example: the persona, a few answers in the knowledge base and the blocks. It starts turned off (and as
+// a draft): nobody is answered until the team reviews it, publishes it and turns it on.
+interface NewAgent {
+  name: string;
+  persona: { systemPrompt: string; tone: string; rules: string; forbidden: string; handoffMessage: string; unknownMessage: string };
+  faq: Array<{ title: string; content: string; keywords?: string }>;
+  graph: any;
+  description: string;
+}
+
+// the agent (turned off), its answers in the knowledge base and its blocks (a draft)
+const createAgentWithFlow = async (a: NewAgent, userId: number): Promise<{ agentId: number; flowId: number }> => {
+  const agent = await AiAgent.create({
+    name: a.name,
+    provider: "anthropic",
+    model: DEFAULT_MODEL,
+    systemPrompt: a.persona.systemPrompt,
+    handoffMessage: a.persona.handoffMessage,
+    persona: { tone: a.persona.tone, rules: a.persona.rules, forbidden: a.persona.forbidden, unknownMessage: a.persona.unknownMessage },
+    active: false,
+    maxTokens: 350,
+    handoffAfterTurns: 14,
+    waitSeconds: 4,
+    learnFromTeam: true
+  } as any);
+  for (const f of a.faq) {
+    // eslint-disable-next-line no-await-in-loop
+    await addDocument({ title: f.title, content: f.content, kind: "faq", source: "texto", keywords: f.keywords, agentId: agent.id } as any);
+  }
+  const flow = await ChatFlow.create({ name: a.name, kind: "agent", agentId: agent.id, entry: JSON.stringify({ type: "agent", keywords: [] }), draft: JSON.stringify(a.graph), description: a.description, createdBy: userId } as any);
+  return { agentId: agent.id, flowId: flow.id };
+};
+
+export const fromTemplate = async (req: Request, res: Response): Promise<Response> => {
+  const t = AGENT_TEMPLATES.find(x => x.key === req.body?.template);
+  if (!t) throw new AppError("ERR_NOT_FOUND", 404);
+  const name = String(req.body?.name || t.name).trim().slice(0, 80) || t.name;
+  return res.status(201).json(await createAgentWithFlow({ name, persona: t.persona, faq: t.faq, graph: t.graph, description: `Modelo: ${t.name}` }, uid(req)));
+};
+
+// "Criar com IA": a description of the business becomes the agent, its answers and its blocks (checked and fixed by the system before
+// it is shown); it opens as a draft for the team to review
+export const generate = async (req: Request, res: Response): Promise<Response> => {
+  const description = String(req.body?.description || "").trim().slice(0, 3000);
+  if (description.length < 20) throw new AppError("ERR_FIELD_REQUIRED_description", 400);
+  const out = await generateAgent(description, req.body?.segment);
+  const name = String(req.body?.name || out.agent.name).trim().slice(0, 80) || out.agent.name;
+  const made = await createAgentWithFlow({ name, persona: out.agent.persona, faq: out.agent.faq, graph: out.agent.graph, description: "Criado com IA a partir da sua descrição" }, uid(req));
+  return res.status(201).json({ ...made, attempts: out.attempts, issues: out.issues });
+};
+
+// The agent of today as blocks, in a draft (nothing changes for the people talking until it is published)
+export const convert = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await AiAgent.findByPk(req.params.id);
+  if (!agent) throw new AppError("ERR_NOT_FOUND", 404);
+  const graph = await convertAgent(agent);
+  const flow = await ChatFlow.create({ name: `${agent.name} (em blocos)`.slice(0, 80), kind: "agent", agentId: agent.id, entry: JSON.stringify({ type: "agent", keywords: [] }), draft: JSON.stringify(graph), description: "Convertido do agente de prompt único", createdBy: uid(req) } as any);
+  return res.status(201).json({ flowId: flow.id });
 };
 
 // ------------------------------------------------------------------ knowledge base

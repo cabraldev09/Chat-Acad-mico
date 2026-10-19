@@ -329,6 +329,90 @@ ALTER SEQUENCE public."Affiliates_id_seq" OWNED BY public."Affiliates".id;
 
 
 --
+-- Name: AgentMetricEvents; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."AgentMetricEvents" (
+    id integer NOT NULL,
+    "leadId" integer,
+    "agentId" integer,
+    "flowId" integer,
+    event character varying(40) NOT NULL,
+    once boolean DEFAULT true NOT NULL,
+    meta text,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: AgentMetricEvents_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."AgentMetricEvents_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: AgentMetricEvents_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."AgentMetricEvents_id_seq" OWNED BY public."AgentMetricEvents".id;
+
+
+--
+-- Name: AgentTurnLogs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."AgentTurnLogs" (
+    id integer NOT NULL,
+    "agentId" integer,
+    "flowId" integer,
+    "nodeId" character varying(40),
+    "ticketId" integer,
+    "leadId" integer,
+    intent character varying(40),
+    deterministic boolean DEFAULT false NOT NULL,
+    "llmCalls" integer DEFAULT 0 NOT NULL,
+    "toolCalls" integer DEFAULT 0 NOT NULL,
+    "cacheHits" integer DEFAULT 0 NOT NULL,
+    "inputTokens" integer DEFAULT 0 NOT NULL,
+    "outputTokens" integer DEFAULT 0 NOT NULL,
+    "cacheReadTokens" integer DEFAULT 0 NOT NULL,
+    "latencyMs" integer DEFAULT 0 NOT NULL,
+    outcome character varying(40),
+    model character varying(60),
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: AgentTurnLogs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."AgentTurnLogs_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: AgentTurnLogs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."AgentTurnLogs_id_seq" OWNED BY public."AgentTurnLogs".id;
+
+
+--
 -- Name: AiAgents; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -437,7 +521,9 @@ CREATE TABLE public."AiUsage" (
     "createdAt" timestamp with time zone NOT NULL,
     "updatedAt" timestamp with time zone NOT NULL,
     "flowId" integer,
-    "nodeId" character varying(40)
+    "nodeId" character varying(40),
+    "latencyMs" integer,
+    "leadId" integer
 );
 
 
@@ -1070,6 +1156,51 @@ ALTER SEQUENCE public."Contacts_id_seq" OWNED BY public."Contacts".id;
 
 
 --
+-- Name: CourseRegulations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."CourseRegulations" (
+    id integer NOT NULL,
+    "courseId" integer NOT NULL,
+    "intakeTerm" character varying(10),
+    "mecImpacted" boolean,
+    regulation character varying(300),
+    "percentualPresencial" numeric(5,2),
+    "percentualSincrono" numeric(5,2),
+    "teoriaAoVivo" boolean,
+    "praticaPresencial" boolean,
+    "cronogramaPraticasDefinido" boolean,
+    "transitionStatus" character varying(40),
+    "currentDelivery" character varying(40),
+    "futureDelivery" character varying(40),
+    "transitionNote" text,
+    "commercialApprovedText" text,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: CourseRegulations_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."CourseRegulations_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: CourseRegulations_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."CourseRegulations_id_seq" OWNED BY public."CourseRegulations".id;
+
+
+--
 -- Name: Courses; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1366,7 +1497,9 @@ CREATE TABLE public."KbDocuments" (
     content text NOT NULL,
     "agentId" integer,
     "createdAt" timestamp with time zone NOT NULL,
-    "updatedAt" timestamp with time zone NOT NULL
+    "updatedAt" timestamp with time zone NOT NULL,
+    topic character varying(80),
+    "courseId" integer
 );
 
 
@@ -1424,6 +1557,53 @@ CREATE SEQUENCE public."LeadActivities_id_seq"
 --
 
 ALTER SEQUENCE public."LeadActivities_id_seq" OWNED BY public."LeadActivities".id;
+
+
+--
+-- Name: LeadCommercials; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."LeadCommercials" (
+    id integer NOT NULL,
+    "leadId" integer NOT NULL,
+    "agentId" integer,
+    "flowId" integer,
+    slots text DEFAULT '{}'::text NOT NULL,
+    temperature character varying(8) DEFAULT 'cold'::character varying NOT NULL,
+    "commercialScore" integer DEFAULT 0 NOT NULL,
+    "readyForProposal" boolean DEFAULT false NOT NULL,
+    "nextAction" character varying(40),
+    "lastIntent" character varying(40),
+    "followUpReason" character varying(300),
+    "followUpAt" timestamp with time zone,
+    summary text,
+    "stageKey" character varying(40),
+    "lastNoteHash" character varying(40),
+    "lastInboundAt" timestamp with time zone,
+    "lastOutboundAt" timestamp with time zone,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: LeadCommercials_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."LeadCommercials_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: LeadCommercials_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."LeadCommercials_id_seq" OWNED BY public."LeadCommercials".id;
 
 
 --
@@ -2760,6 +2940,20 @@ ALTER TABLE ONLY public."Affiliates" ALTER COLUMN id SET DEFAULT nextval('public
 
 
 --
+-- Name: AgentMetricEvents id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AgentMetricEvents" ALTER COLUMN id SET DEFAULT nextval('public."AgentMetricEvents_id_seq"'::regclass);
+
+
+--
+-- Name: AgentTurnLogs id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AgentTurnLogs" ALTER COLUMN id SET DEFAULT nextval('public."AgentTurnLogs_id_seq"'::regclass);
+
+
+--
 -- Name: AiAgents id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -2886,6 +3080,13 @@ ALTER TABLE ONLY public."Contacts" ALTER COLUMN id SET DEFAULT nextval('public."
 
 
 --
+-- Name: CourseRegulations id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."CourseRegulations" ALTER COLUMN id SET DEFAULT nextval('public."CourseRegulations_id_seq"'::regclass);
+
+
+--
 -- Name: Courses id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -2946,6 +3147,13 @@ ALTER TABLE ONLY public."KbDocuments" ALTER COLUMN id SET DEFAULT nextval('publi
 --
 
 ALTER TABLE ONLY public."LeadActivities" ALTER COLUMN id SET DEFAULT nextval('public."LeadActivities_id_seq"'::regclass);
+
+
+--
+-- Name: LeadCommercials id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."LeadCommercials" ALTER COLUMN id SET DEFAULT nextval('public."LeadCommercials_id_seq"'::regclass);
 
 
 --
@@ -3225,6 +3433,22 @@ ALTER TABLE ONLY public."Affiliates"
 
 
 --
+-- Name: AgentMetricEvents AgentMetricEvents_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AgentMetricEvents"
+    ADD CONSTRAINT "AgentMetricEvents_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: AgentTurnLogs AgentTurnLogs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AgentTurnLogs"
+    ADD CONSTRAINT "AgentTurnLogs_pkey" PRIMARY KEY (id);
+
+
+--
 -- Name: AiAgents AiAgents_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3409,6 +3633,14 @@ ALTER TABLE ONLY public."Contacts"
 
 
 --
+-- Name: CourseRegulations CourseRegulations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."CourseRegulations"
+    ADD CONSTRAINT "CourseRegulations_pkey" PRIMARY KEY (id);
+
+
+--
 -- Name: Courses Courses_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3478,6 +3710,22 @@ ALTER TABLE ONLY public."KbDocuments"
 
 ALTER TABLE ONLY public."LeadActivities"
     ADD CONSTRAINT "LeadActivities_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: LeadCommercials LeadCommercials_leadId_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."LeadCommercials"
+    ADD CONSTRAINT "LeadCommercials_leadId_key" UNIQUE ("leadId");
+
+
+--
+-- Name: LeadCommercials LeadCommercials_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."LeadCommercials"
+    ADD CONSTRAINT "LeadCommercials_pkey" PRIMARY KEY (id);
 
 
 --
@@ -3882,6 +4130,48 @@ CREATE INDEX affiliates_owner_id ON public."Affiliates" USING btree ("ownerId");
 
 
 --
+-- Name: agent_metric_events_agent_id_event_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX agent_metric_events_agent_id_event_created_at ON public."AgentMetricEvents" USING btree ("agentId", event, "createdAt");
+
+
+--
+-- Name: agent_metric_once; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX agent_metric_once ON public."AgentMetricEvents" USING btree ("leadId", event) WHERE ((once = true) AND ("leadId" IS NOT NULL));
+
+
+--
+-- Name: agent_turn_logs_agent_id_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX agent_turn_logs_agent_id_created_at ON public."AgentTurnLogs" USING btree ("agentId", "createdAt");
+
+
+--
+-- Name: agent_turn_logs_flow_id_node_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX agent_turn_logs_flow_id_node_id ON public."AgentTurnLogs" USING btree ("flowId", "nodeId");
+
+
+--
+-- Name: agent_turn_logs_lead_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX agent_turn_logs_lead_id ON public."AgentTurnLogs" USING btree ("leadId");
+
+
+--
+-- Name: agent_turn_logs_ticket_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX agent_turn_logs_ticket_id ON public."AgentTurnLogs" USING btree ("ticketId");
+
+
+--
 -- Name: ai_learnings_agent_id_status; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4015,6 +4305,13 @@ CREATE INDEX contacts_parent_group_idx ON public."Contacts" USING btree ("parent
 
 
 --
+-- Name: course_regulations_course_id_intake_term; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX course_regulations_course_id_intake_term ON public."CourseRegulations" USING btree ("courseId", "intakeTerm");
+
+
+--
 -- Name: curricular_analyses_lead_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4061,6 +4358,27 @@ CREATE INDEX kb_chunks_document_id ON public."KbChunks" USING btree ("documentId
 --
 
 CREATE INDEX kb_chunks_tsv_idx ON public."KbChunks" USING gin (tsv);
+
+
+--
+-- Name: kb_documents_topic; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX kb_documents_topic ON public."KbDocuments" USING btree (topic);
+
+
+--
+-- Name: lead_commercials_ready_for_proposal; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX lead_commercials_ready_for_proposal ON public."LeadCommercials" USING btree ("readyForProposal");
+
+
+--
+-- Name: lead_commercials_temperature; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX lead_commercials_temperature ON public."LeadCommercials" USING btree (temperature);
 
 
 --
@@ -4606,6 +4924,14 @@ ALTER TABLE ONLY public."ContactTags"
 
 
 --
+-- Name: CourseRegulations CourseRegulations_courseId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."CourseRegulations"
+    ADD CONSTRAINT "CourseRegulations_courseId_fkey" FOREIGN KEY ("courseId") REFERENCES public."Courses"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+--
 -- Name: Courses Courses_institutionId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4667,6 +4993,14 @@ ALTER TABLE ONLY public."LeadActivities"
 
 ALTER TABLE ONLY public."LeadActivities"
     ADD CONSTRAINT "LeadActivities_userId_fkey" FOREIGN KEY ("userId") REFERENCES public."Users"(id) ON DELETE SET NULL;
+
+
+--
+-- Name: LeadCommercials LeadCommercials_leadId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."LeadCommercials"
+    ADD CONSTRAINT "LeadCommercials_leadId_fkey" FOREIGN KEY ("leadId") REFERENCES public."Leads"(id) ON UPDATE CASCADE ON DELETE CASCADE;
 
 
 --
@@ -5420,6 +5754,7 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261119000002-retention-messages.js
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261119000003-sticker-last-message.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261120000001-relationship-department.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261121000001-agent-graphs.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261122000001-commercial-agent.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

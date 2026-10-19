@@ -11,6 +11,9 @@ import { addActivity } from "../CrmServices/LeadCore";
 import { norm } from "./Kb";
 import { safeRequest } from "../../helpers/SafeUrl";
 import { StageData, checkField } from "../FlowServices/StageSpec";
+import { ACADEMIC_TOOLS, AcademicCtx, findCourse, runAcademicTool } from "../CommercialServices/Academic";
+import { COMMERCIAL_TOOL_DEFS } from "../CommercialServices/ToolDefs";
+import { Slots, cleanPatch } from "../CommercialServices/Slots";
 
 export interface Slot {
   key: string;
@@ -45,8 +48,11 @@ const EXIT_TOOL = "escolher_resultado";
 
 // the tools of an AI stage: only what the block turned on, its own external tools and the way out
 export const stageToolDefs = (stage: StageData) => {
+  const commercial = stage.hooks.includes("commercial");
   const all = toolDefs({ slots: [], functions: [] } as any);
-  const tools: any[] = all.filter(t => stage.tools.includes(t.name));
+  // the tools of the commercial agent have their own short definitions; the others are the classic ones
+  const tools: any[] = stage.tools.map(n => COMMERCIAL_TOOL_DEFS[n] || all.find(t => t.name === n)).filter(Boolean);
+  if (commercial) tools.push(COMMERCIAL_TOOL_DEFS.registrar_turno);
   if (stage.fields.length) {
     tools.push({
       name: "salvar_lead",
@@ -74,6 +80,8 @@ export const stageToolDefs = (stage: StageData) => {
       }
     })
   );
+  // in a commercial stage the code decides the exits from what the turn registered
+  if (commercial) return tools;
   const exits = ["concluido", "humano", "desconhecido", ...stage.outcomes.map(o => o.id)];
   tools.push({
     name: EXIT_TOOL,
@@ -149,7 +157,30 @@ interface Ctx {
   stage?: StageData;
   exit?: string;
   exitReason?: string;
+  // the commercial agent: what the tools looked up, what the model registered about the turn
+  academic?: AcademicCtx;
+  turn?: Record<string, any>;
 }
+
+const bool = (v: any): boolean | undefined => (v === undefined ? undefined : v === true || v === "true");
+
+// what the model registered about the turn, as slots (the course is looked up so its data comes from the catalogue)
+const registerTurn = async (input: any, ctx: Ctx): Promise<any> => {
+  ctx.turn = { ...(ctx.turn || {}), ...input };
+  const patch: Slots = cleanPatch({
+    entryType: input.tipo_ingresso, leadName: input.nome, email: input.email, city: input.cidade, hasHigherEducation: bool(input.ja_graduado), previousCourse: input.curso_anterior,
+    previousInstitution: input.instituicao_anterior, hasTranscript: bool(input.tem_historico), modalityUnderstood: bool(input.entendeu_modalidade)
+  });
+  if (input.curso && ctx.academic && !ctx.academic.slots.courseId) {
+    const found = await findCourse({ courseName: input.curso }, ctx.academic.slots.courseModality);
+    Object.assign(patch, cleanPatch(found ? { courseId: found.id, offerId: found.id, courseName: found.name, courseModality: found.modality } : { courseName: String(input.curso).slice(0, 120) }));
+  }
+  if (ctx.academic) {
+    ctx.academic.patch = { ...ctx.academic.patch, ...patch };
+    ctx.academic.slots = { ...ctx.academic.slots, ...patch };
+  }
+  return { ok: true };
+};
 
 // an external tool of a stage: the call is made by the system (public addresses only) and the answer goes back to the model as data
 const callHttpTool = async (stage: StageData, name: string, input: any, dryRun: boolean): Promise<any> => {
@@ -234,6 +265,8 @@ export const runTool = async (name: string, input: any, ctx: Ctx): Promise<any> 
     return { ok: true, aviso: "Etapa encerrada. Despeça-se em uma frase curta, se fizer sentido." };
   }
   if (ctx.stage && name.startsWith("http_")) return callHttpTool(ctx.stage, name, input, ctx.dryRun);
+  if (ctx.stage && name === "registrar_turno") return registerTurn(input, ctx);
+  if (ctx.stage && ctx.academic && (ACADEMIC_TOOLS as readonly string[]).includes(name)) return runAcademicTool(name, input, ctx.academic);
   if (name === "salvar_lead") {
     const slots = ctx.stage ? stageSlots(ctx.stage) : slotsOf(ctx.agent);
     const allowed = new Map(slots.map(s => [s.key, s]));
@@ -281,7 +314,7 @@ export const applyToLead = async (ticket: Ticket, c: Record<string, string>): Pr
   if (motivation && !lead.motivation) patch.motivation = motivation;
   const shift = known(CRM_OPTIONS.shifts, c.turno);
   if (shift && !lead.shift) patch.shift = shift;
-  if (c.semestre_transferencia && !lead.entrySemester) {
+  if (c.semestre_transferencia && (!lead.entrySemester || lead.entrySemester === 1)) {
     const n = Number(String(c.semestre_transferencia).replace(/\D/g, ""));
     if (n > 0) patch.entrySemester = n;
   }

@@ -28,6 +28,8 @@ export interface Effects {
   humanHandoff(node: FlowNode, exit: string, vars: Record<string, any>): Promise<void>;
   // starts another published flow on this conversation (the block "Chamar fluxo"); false when it is not published
   startFlow(flowId: number): Promise<boolean>;
+  // the block "Estado comercial": a step of the commercial journey (find the lead, a column of the CRM, a task, the handoff brief...)
+  commercial(node: FlowNode, vars: Record<string, any>): Promise<void>;
 }
 
 export interface StageTurnArgs {
@@ -43,6 +45,8 @@ export interface StageTurn {
   // done | human | off | limit | the id of an exit by intention; null/undefined = keep talking
   exit?: string | null;
   collected?: Record<string, string>;
+  // what the turn did, for the simulator (tools, CRM before/after, tokens...)
+  trace?: any;
 }
 
 export interface PoloOption {
@@ -330,6 +334,11 @@ export const advance = async (graph: Graph, startId: string | null, state: RunSt
         const step = await stageStep(graph, node, state, fx, input);
         return { ...step, path: [...path, ...step.path.filter(id => id !== node.id)] };
       }
+      case "commercial":
+        // eslint-disable-next-line no-await-in-loop
+        await fx.commercial(node, state.vars);
+        current = go();
+        break;
       case "flow": {
         // eslint-disable-next-line no-await-in-loop
         const started = await fx.startFlow(Number(d.flowId));

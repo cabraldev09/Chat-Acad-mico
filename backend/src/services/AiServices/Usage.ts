@@ -21,6 +21,8 @@ export const logUsage = async (a: {
   usage?: Counts;
   flowId?: number | null;
   nodeId?: string | null;
+  latencyMs?: number | null;
+  leadId?: number | null;
 }): Promise<void> => {
   const u = a.usage || {};
   await AiUsage.create({
@@ -28,6 +30,8 @@ export const logUsage = async (a: {
     ticketId: a.ticketId || null,
     flowId: a.flowId || null,
     nodeId: a.nodeId ? String(a.nodeId).slice(0, 40) : null,
+    latencyMs: a.latencyMs ?? null,
+    leadId: a.leadId || null,
     model: a.model,
     kind: a.kind,
     inputTokens: u.input_tokens ?? u.prompt_tokens ?? 0,

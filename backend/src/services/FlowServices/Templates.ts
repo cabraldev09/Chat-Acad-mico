@@ -32,7 +32,7 @@ let counter = 0;
 const uid = (p: string) => `${p}${Date.now().toString(36)}${(counter += 1).toString(36)}`;
 
 // Small builder used by the templates: blocks by key, links by key.
-const build = (spec: { nodes: Array<[string, string, any]>; links: Array<[string, string, string?]> }): Graph => {
+export const build = (spec: { nodes: Array<[string, string, any]>; links: Array<[string, string, string?]> }): Graph => {
   const nodes: FlowNode[] = spec.nodes.map(([key, type, data]) => ({ id: key, type, data }));
   const edges: FlowEdge[] = spec.links.map(([source, target, handle], i) => ({ id: `e${i}`, source, target, sourceHandle: handle || null }));
   return autoLayout({ nodes, edges });

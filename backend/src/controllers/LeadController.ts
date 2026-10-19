@@ -1,3 +1,4 @@
+import { syncNextFollowUp } from "../services/CrmServices/FollowUp";
 import { fire } from "../helpers/Fire";
 import { Request, Response } from "express";
 import { getBusinessConfig, normalizeBusiness, resetBusinessCache, businessMinutes } from "../helpers/BusinessTime";
@@ -270,15 +271,6 @@ export const addNote = async (req: Request, res: Response): Promise<Response> =>
   return res.status(201).json(a);
 };
 
-const syncNextFollowUp = async (leadId: number) => {
-  const next = await LeadTask.findOne({
-    where: { leadId, doneAt: null as any },
-    order: [["dueAt", "ASC"]]
-  });
-  await Lead.update({ nextFollowUpAt: next ? next.dueAt : null }, { where: { id: leadId } });
-  const lead = await loadLead(leadId);
-  if (lead) getIO().emit("lead", { action: "update", lead });
-};
 
 export const leadTasks = async (req: Request, res: Response): Promise<Response> =>
   res.json(

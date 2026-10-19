@@ -1,7 +1,12 @@
 // What the "AI stage" block of a flow holds, and how it is cleaned. The stage is a block where the AI talks with the person
 // until a goal is reached: it asks for the fields, uses the tools it is given and leaves through one exit.
 export const FIELD_TYPES = ["text", "number", "email", "phone", "choice", "date"] as const;
-export const BUILTIN_TOOLS = ["buscar_curso", "listar_polos", "simular_bolsa"] as const;
+export const BUILTIN_TOOLS = [
+  "buscar_curso", "listar_polos", "simular_bolsa", "buscar_regra_modalidade", "buscar_grade", "buscar_estagio", "consultar_conhecimento", "enviar_material",
+  "iniciar_analise_curricular", "consultar_analise_curricular"
+] as const;
+// server-side steps that run after each turn of the stage (see CommercialServices/Hook)
+export const STAGE_HOOKS = ["commercial"] as const;
 // exits every stage has (the three last ones fall back to a handoff to the team when they are not connected)
 export const FIXED_EXITS = ["done", "human", "off", "limit"] as const;
 
@@ -49,6 +54,9 @@ export interface StageData {
   outcomes: StageOutcome[];
   // the AI agent whose persona, model and knowledge this stage uses (empty: the one of the flow, else the one for the ticket)
   agentId?: number | null;
+  // code that runs after each turn (the commercial funnel) and how many turns of the conversation the AI reads
+  hooks: string[];
+  historyTurns: number;
 }
 
 export const slug = (s: any, max = 30): string =>
@@ -112,7 +120,9 @@ export const cleanStage = (raw: any): StageData => {
     useKnowledge: d.useKnowledge !== false,
     maxTurns: Math.min(50, Math.max(1, Math.round(Number(d.maxTurns) || 12))),
     outcomes,
-    agentId: Number(d.agentId) > 0 ? Number(d.agentId) : null
+    agentId: Number(d.agentId) > 0 ? Number(d.agentId) : null,
+    hooks: (Array.isArray(d.hooks) ? d.hooks : []).filter((h: any) => (STAGE_HOOKS as readonly string[]).includes(h)),
+    historyTurns: Math.min(12, Math.max(2, Math.round(Number(d.historyTurns) || 6)))
   };
 };
 

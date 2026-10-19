@@ -2,24 +2,27 @@ import { Op } from "sequelize";
 
 import AiAgent from "../../models/AiAgent";
 import ChatFlow from "../../models/ChatFlow";
+import Message from "../../models/Message";
 import ChatFlowRun from "../../models/ChatFlowRun";
 import ChatFlowStat from "../../models/ChatFlowStat";
 import Ticket from "../../models/Ticket";
 import { logger } from "../../utils/logger";
 import ShowTicketService from "../TicketServices/ShowTicketService";
 import { Effects, RunState, StepResult, advance, firstNode, normalize, resume } from "./Engine";
-import { ticketEffects } from "./Effects";
+import { FlowContext, ticketEffects } from "./Effects";
+import { debounce } from "./Debounce";
+import { cleanStage } from "./StageSpec";
 import { Graph, parseGraph } from "./Graph";
 
 export interface FlowEntry {
-  type: "first_message" | "keyword" | "any" | "manual";
+  type: "first_message" | "keyword" | "any" | "manual" | "agent";
   keywords?: string[];
 }
 
 export const parseEntry = (raw: any): FlowEntry => {
   try {
     const e = typeof raw === "string" ? JSON.parse(raw) : raw;
-    return ["first_message", "keyword", "any", "manual"].includes(e?.type) ? { type: e.type, keywords: Array.isArray(e.keywords) ? e.keywords.map(String) : [] } : { type: "first_message" };
+    return ["first_message", "keyword", "any", "manual", "agent"].includes(e?.type) ? { type: e.type, keywords: Array.isArray(e.keywords) ? e.keywords.map(String) : [] } : { type: "first_message" };
   } catch (err) {
     return { type: "first_message" };
   }
@@ -68,23 +71,102 @@ const stateOf = (run: ChatFlowRun): RunState => {
   return { nodeId: run.nodeId, vars, tries: run.tries || 0 };
 };
 
-// a flow that ended hands the ticket back to the rest of the automation
-const release = async (ticket: Ticket, step: StepResult): Promise<void> => {
-  if (step.status === "done" || step.status === "handoff") await ticket.update({ chatbotNodeId: -1 });
+// a flow that ended hands the ticket back to the rest of the automation; an agent in blocks that ended does not start over at the
+// next message (a person, or another automation, goes on)
+const release = async (ticket: Ticket, step: StepResult, flow?: ChatFlow): Promise<void> => {
+  if (step.status === "done" || step.status === "handoff") await ticket.update({ chatbotNodeId: -1, ...(flow?.kind === "agent" ? { aiActive: false } : {}) });
 };
 
-const startRun = async (flow: ChatFlow, ticket: Ticket, fx?: Effects): Promise<void> => {
+// A run is being advanced (an AI turn can take seconds): a message that arrives meanwhile waits for it instead of touching a run that
+// is not saved yet.
+const inflight = new Set<number>();
+
+const contextOf = (flow: ChatFlow): FlowContext => ({ flowId: flow.id, agentId: flow.agentId });
+
+// how long to wait for more messages of the same burst before an AI stage answers (the setting of the agent that talks)
+const waitOf = async (flow: ChatFlow, nodeId: string | null): Promise<number> => {
+  const node = parseGraph(flow.published).nodes.find(n => n.id === nodeId);
+  const id = (node ? cleanStage(node.data).agentId : null) || flow.agentId;
+  const agent = id ? await AiAgent.findByPk(id) : null;
+  return agent?.waitSeconds ?? 4;
+};
+
+const startRun = async (flow: ChatFlow, ticket: Ticket, fx?: Effects, pending?: string | null): Promise<void> => {
   const graph = parseGraph(flow.published);
   const start = firstNode(graph);
   if (!start) return;
   const run = await ChatFlowRun.create({ flowId: flow.id, ticketId: ticket.id, contactId: ticket.contactId, version: flow.version, status: "waiting", vars: "{}" } as any);
   // while the flow talks, the old menu of the chatbot stays out of it
   await ticket.update({ chatbotNodeId: -1 });
-  const effects = fx || ticketEffects(ticket, flow.name);
-  const step = await advance(graph, start.id, { nodeId: null, vars: {}, tries: 0 }, effects);
-  await save(run, step);
-  await record(flow, step, true, false);
-  await release(ticket, step);
+  const effects = fx || ticketEffects(ticket, flow.name, contextOf(flow));
+  inflight.add(ticket.id);
+  try {
+    const step = await advance(graph, start.id, { nodeId: null, vars: {}, tries: 0, pending: pending ?? null }, effects);
+    await save(run, step);
+    await record(flow, step, true, false);
+    await release(ticket, step, flow);
+  } finally {
+    inflight.delete(ticket.id);
+  }
+};
+
+const lastUserText = async (ticketId: number): Promise<string> => {
+  const m = await Message.findOne({ where: { ticketId, fromMe: false, isDeleted: false }, order: [["createdAt", "DESC"]] });
+  return String(m?.body || "").replace(/‎/g, "");
+};
+
+// The person stopped writing while an AI stage was waiting: the AI answers the whole burst once.
+export const resumeStageRun = async (ticketId: number): Promise<void> => {
+  const run = await ChatFlowRun.findOne({ where: { ticketId, status: "waiting" }, order: [["id", "DESC"]] });
+  if (!run) return;
+  const flow = await ChatFlow.findByPk(run.flowId);
+  const ticket = await ShowTicketService(ticketId).catch(() => null);
+  if (!flow || flow.status !== "published" || !ticket || ticket.status === "closed" || ticket.userId) {
+    await run.update({ status: "done", resumeAt: null });
+    return;
+  }
+  const graph = parseGraph(flow.published);
+  // the run is still being advanced (its first answer is on the way): the burst is answered right after
+  if (inflight.has(ticketId)) {
+    debounce(`stage:${ticketId}`, 1, () => resumeStageRun(ticketId));
+    return;
+  }
+  if (graph.nodes.find(n => n.id === run.nodeId)?.type !== "stage") return;
+  await run.update({ resumeAt: null } as any);
+  const state = stateOf(run);
+  const crmBefore = !!state.vars.__crm;
+  inflight.add(ticketId);
+  try {
+    const step = await resume(graph, state, await lastUserText(ticketId), ticketEffects(ticket, flow.name, contextOf(flow)));
+    await save(run, step);
+    await record(flow, step, false, crmBefore);
+    await release(ticket, step, flow);
+  } finally {
+    inflight.delete(ticketId);
+  }
+};
+
+// a burst that was waiting when the server restarted (the timer is in memory, the deadline is in the database)
+export const resumeStaleStageRuns = async (): Promise<void> => {
+  const stale = await ChatFlowRun.findAll({ where: { status: "waiting", resumeAt: { [Op.lte]: new Date(Date.now() - 20000) } }, limit: 20 });
+  for (const run of stale) {
+    // eslint-disable-next-line no-await-in-loop
+    await resumeStageRun(run.ticketId).catch(err => logger.error(`Stage resume failed: ${err}`));
+  }
+};
+
+// The agent in blocks that talks for this conversation (an AI agent with a published graph), started once the person stopped writing.
+export const runAgentGraph = async (ticket: Ticket, agent: AiAgent): Promise<boolean> => {
+  const flow = await ChatFlow.findOne({ where: { kind: "agent", agentId: agent.id, status: "published" }, order: [["id", "DESC"]] });
+  if (!flow) return false;
+  debounce(`agent-start:${ticket.id}`, agent.waitSeconds ?? 4, async () => {
+    const fresh = await ShowTicketService(ticket.id);
+    if (!fresh.aiActive || fresh.userId || fresh.status === "closed") return;
+    // already talking (a second burst before the first run was saved)
+    if (await ChatFlowRun.findOne({ where: { ticketId: fresh.id, status: { [Op.in]: ["waiting", "delayed"] } } })) return;
+    await startRun(flow, fresh, undefined, await lastUserText(fresh.id));
+  });
+  return true;
 };
 
 const entryMatches = (entry: FlowEntry, body: string, ticketHadRuns: boolean): boolean => {
@@ -108,17 +190,25 @@ export const runFlowForTicket = async (ticket: Ticket, body: string): Promise<bo
         return false;
       }
       const graph = parseGraph(flow.published);
+      // an AI stage waits for the burst of messages to end, then answers once (a run still being advanced answers it right after)
+      if (inflight.has(ticket.id) || graph.nodes.find(n => n.id === active.nodeId)?.type === "stage") {
+        const wait = await waitOf(flow, active.nodeId);
+        await active.update({ resumeAt: new Date(Date.now() + wait * 1000) } as any);
+        debounce(`stage:${ticket.id}`, wait, () => resumeStageRun(ticket.id));
+        return true;
+      }
       const state = stateOf(active);
       const crmBefore = !!state.vars.__crm;
-      const step = await resume(graph, state, body, ticketEffects(ticket, flow.name));
+      const step = await resume(graph, state, body, ticketEffects(ticket, flow.name, contextOf(flow)));
       await save(active, step);
       await record(flow, step, false, crmBefore);
-      await release(ticket, step);
+      await release(ticket, step, flow);
       return true;
     }
 
     const flows = await ChatFlow.findAll({
-      where: { status: "published", whatsappId: { [Op.or]: [ticket.whatsappId, null] } } as any,
+      // an agent in blocks is started by the AI step of the automation, never by the entry of a flow
+      where: { status: "published", kind: { [Op.ne]: "agent" }, whatsappId: { [Op.or]: [ticket.whatsappId, null] } } as any,
       order: [["id", "ASC"]]
     });
     if (!flows.length) return false;
@@ -128,7 +218,7 @@ export const runFlowForTicket = async (ticket: Ticket, body: string): Promise<bo
       flows.find(f => parseEntry(f.entry).type === "keyword" && entryMatches(parseEntry(f.entry), body, ticketHadRuns)) ||
       flows.find(f => ["first_message", "any"].includes(parseEntry(f.entry).type) && entryMatches(parseEntry(f.entry), body, ticketHadRuns));
     if (!matching) return false;
-    await startRun(matching, ticket);
+    await startRun(matching, ticket, undefined, body);
     return true;
   } catch (err) {
     logger.error(`Flow run failed: ${err}`);
@@ -168,13 +258,13 @@ export const resumeDelayedRuns = async (): Promise<void> => {
       const [claimed] = await ChatFlowRun.update({ status: "waiting", resumeAt: null } as any, { where: { id: run.id, status: "delayed" } });
       if (!claimed) continue;
       // eslint-disable-next-line no-await-in-loop
-      const step = await resume(graph, state, "", ticketEffects(ticket, flow.name));
+      const step = await resume(graph, state, "", ticketEffects(ticket, flow.name, contextOf(flow)));
       // eslint-disable-next-line no-await-in-loop
       await save(run, step);
       // eslint-disable-next-line no-await-in-loop
       await record(flow, step, false, !!state.vars.__crm);
       // eslint-disable-next-line no-await-in-loop
-      await release(ticket, step);
+      await release(ticket, step, flow);
     } catch (err) {
       logger.error(`Flow resume failed: ${err}`);
     }

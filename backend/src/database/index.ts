@@ -27,6 +27,10 @@ import ChatFlow from "../models/ChatFlow";
 import ChatFlowRun from "../models/ChatFlowRun";
 import ChatFlowStat from "../models/ChatFlowStat";
 import ChatFlowVersion from "../models/ChatFlowVersion";
+import CourseRegulation from "../models/CourseRegulation";
+import AgentTurnLog from "../models/AgentTurnLog";
+import AgentMetricEvent from "../models/AgentMetricEvent";
+import LeadCommercial from "../models/LeadCommercial";
 import AutomationTrigger from "../models/AutomationTrigger";
 import ClientError from "../models/ClientError";
 import PasswordReset from "../models/PasswordReset";
@@ -105,6 +109,10 @@ const models = [
   ChatFlowRun,
   ChatFlowStat,
   ChatFlowVersion,
+  CourseRegulation,
+  AgentTurnLog,
+  AgentMetricEvent,
+  LeadCommercial,
   AutomationTrigger,
   ClientError,
   PasswordReset,

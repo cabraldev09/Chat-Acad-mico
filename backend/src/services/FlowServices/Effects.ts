@@ -29,6 +29,11 @@ import { HandoffReason, handoffToHuman } from "../AiServices/Handoff";
 import { captureUnknown } from "../AiServices/Learning";
 import { matchFaq } from "../AiServices/Kb";
 import { tokensToday } from "../AiServices/Usage";
+import TicketEvent from "../../models/TicketEvent";
+import { runCommercialBlock } from "../CommercialServices/Block";
+import { blankState, hydrate, loadState, mirror } from "../CommercialServices/Slots";
+import { dbPorts, simPorts, SimWorld } from "../CommercialServices/Ports";
+import { commercialAiTurn } from "../CommercialServices/Turn";
 
 // invisible mark: bot messages are told apart from the team's
 const MARK = "‎";
@@ -54,6 +59,14 @@ export interface FlowContext {
 
 // Effects of a real conversation: it sends, saves and moves things in the CRM.
 export const ticketEffects = (ticket: Ticket, flowName: string, flowCtx: FlowContext = {}): Effects => {
+  // the lead (created when it does not exist yet) and its commercial state, with what the CRM already knows
+  const commercialOf = async (node: FlowNode) => {
+    const lead = await ensureLead({}, node);
+    const state = await hydrate(await loadState(lead.id), lead);
+    state.agentId = flowCtx.agentId || null;
+    state.flowId = flowCtx.flowId || null;
+    return { lead, state, ports: dbPorts(lead, state, { agentId: state.agentId, flowId: state.flowId }) };
+  };
   // the agent a stage talks as: the one of the block, else the one of the flow, else the one that would answer this conversation
   const agentFor = async (stageAgentId?: number | null): Promise<AiAgent | null> => {
     const id = stageAgentId || flowCtx.agentId;
@@ -227,6 +240,19 @@ export const ticketEffects = (ticket: Ticket, flowName: string, flowCtx: FlowCon
       return { name, first: firstName(name) };
     },
 
+    // a step of the commercial journey: the same rules as the turns of the AI, on the real lead
+    async commercial(node, vars) {
+      const { lead, state, ports } = await commercialOf(node);
+      const out = await runCommercialBlock(node, {
+        ports, ticketId: ticket.id, sandbox: false, academic: { ticket, dryRun: false, slots: mirror(state), patch: {}, cacheHits: 0, agentId: flowCtx.agentId || null },
+        writeBrief: async brief => {
+          await TicketEvent.create({ ticketId: ticket.id, type: "handoff", note: brief.slice(0, 4000) } as any);
+          await addActivity(lead.id, null, "note", brief);
+        }
+      });
+      Object.assign(vars, out);
+    },
+
     async aiTurn({ node, vars, input }: StageTurnArgs): Promise<StageTurn> {
       const stage = cleanStage(node.data);
       const agent = await agentFor(stage.agentId);
@@ -237,6 +263,12 @@ export const ticketEffects = (ticket: Ticket, flowName: string, flowCtx: FlowCon
       const last = history[history.length - 1];
       if (input !== null && (!last || last.role !== "user")) return { text: "" };
       if (input === null) history = [...history, { role: "user", content: OPENING_HINT }];
+      // the commercial agent: the state of the lead, the rules and the funnel are code; the model only talks and understands
+      if (stage.hooks.includes("commercial")) {
+        const { lead, ports } = await commercialOf(node);
+        const turn = await commercialAiTurn({ agent, stage, nodeId: node.id, flowId: flowCtx.flowId, ports, ticket, lead, history, input: input === null ? null : last.content, sandbox: false, contactName: ticket.contact?.name });
+        return { text: turn.text, exit: turn.exit, collected: turn.collected };
+      }
       const lastText = last && last.role === "user" ? last.content : "";
       // an FAQ with a ready answer needs no model at all
       if (input !== null && stage.useKnowledge) {
@@ -288,6 +320,8 @@ export interface StageTrace {
   exit: string | null;
   sources: string[];
   tokens: { input: number; output: number; cacheRead: number };
+  // the commercial agent: what the rules did in this turn (intent, slots, funnel before/after, tasks, notes, milestones)
+  commercial?: any;
 }
 
 export const simEffects = (sample: SimSample = {}, opts: { agent?: AiAgent | null; flowId?: number | null } = {}): { fx: Effects; messages: string[]; actions: string[]; traces: StageTrace[] } => {
@@ -295,6 +329,20 @@ export const simEffects = (sample: SimSample = {}, opts: { agent?: AiAgent | nul
   const actions: string[] = [];
   const traces: StageTrace[] = [];
   const name = sample.name || "Maria";
+  // the virtual lead of the simulator: its commercial state travels in the variables of the test, nothing is written
+  const worldOf = (vars: Record<string, any>): SimWorld => {
+    if (!vars.__commercial) {
+      const state = blankState(0);
+      state.slots.leadName = name;
+      state.slots.phone = "(simulado)";
+      Object.entries(sample.lead || {}).forEach(([k, v]) => {
+        const map: Record<string, string> = { nome: "leadName", cidade: "city", curso: "courseName", modalidade: "courseModality", email: "email" };
+        if (v && map[k]) state.slots[map[k]] = v;
+      });
+      vars.__commercial = { state, stageKey: "new_lead", tasks: [], notes: 0, events: [] } as SimWorld;
+    }
+    return vars.__commercial as SimWorld;
+  };
   const fx: Effects = {
     async listPolos() {
       return (sample.polos && sample.polos.length ? sample.polos : [{ id: 1, name: "Polo Porto Velho", city: "Porto Velho" }, { id: 2, name: "Polo Ji-Paraná", city: "Ji-Paraná" }, { id: 3, name: "Polo Vilhena", city: "Vilhena" }]).map(p => ({ id: p.id, name: p.name, city: p.city || "" }));
@@ -333,6 +381,18 @@ export const simEffects = (sample: SimSample = {}, opts: { agent?: AiAgent | nul
     async close() { actions.push("Finaliza a conversa"); },
     async webhook(url) { actions.push(`Chama o webhook ${url}`); return true; },
     who() { return { name, first: firstName(name) }; },
+    async commercial(node, vars) {
+      const world = worldOf(vars);
+      const ports = simPorts(world);
+      const before = world.stageKey;
+      const out = await runCommercialBlock(node, {
+        ports, ticketId: null, sandbox: true, academic: { ticket: null, dryRun: true, slots: mirror(world.state), patch: {}, cacheHits: 0, agentId: opts.agent?.id || null },
+        writeBrief: async brief => { actions.push(`Prepara o resumo para a equipe:\n${brief}`); }
+      });
+      Object.assign(vars, out);
+      ports.audit.forEach(a => actions.push(a.text));
+      traces.push({ nodeId: node.id, tools: [], collected: out, exit: null, sources: [], tokens: { input: 0, output: 0, cacheRead: 0 }, commercial: { block: node.data?.op || null, crm: { before, after: world.stageKey }, audit: ports.audit, state: mirror(world.state) } });
+    },
     // the AI really answers (with the model of the agent), but nothing is sent or saved: the history lives in the state of the simulator
     async aiTurn({ node, vars, input }: StageTurnArgs): Promise<StageTurn> {
       const stage = cleanStage(node.data);
@@ -341,6 +401,20 @@ export const simEffects = (sample: SimSample = {}, opts: { agent?: AiAgent | nul
       const hist: Array<{ role: "user" | "assistant"; content: string }> = Array.isArray(vars.__hist) ? vars.__hist : [];
       if (input !== null && input !== "") hist.push({ role: "user", content: input });
       const history = input === null || !hist.length ? [...hist, { role: "user" as const, content: OPENING_HINT }] : hist;
+      if (stage.hooks.includes("commercial")) {
+        const world = worldOf(vars);
+        const ports = simPorts(world);
+        const before = { stage: world.stageKey, state: mirror(world.state) };
+        const turn = await commercialAiTurn({ agent, stage, nodeId: node.id, flowId: opts.flowId, ports, ticket: null, lead: null, history, input: input === null || input === "" ? null : input, sandbox: true, contactName: name });
+        if (turn.text) hist.push({ role: "assistant", content: turn.text });
+        vars.__hist = hist.slice(-20);
+        ports.audit.forEach(a => actions.push(a.text));
+        traces.push({
+          nodeId: node.id, tools: turn.trace.tools.map(t => t.name), collected: turn.collected || {}, exit: turn.exit || null, sources: turn.trace.knowledge, tokens: turn.trace.tokens,
+          commercial: { ...turn.trace, before, after: { stage: world.stageKey, state: mirror(world.state) }, audit: ports.audit }
+        });
+        return { text: turn.text, exit: turn.exit || null, collected: turn.collected };
+      }
       const known: Record<string, string> = {};
       stage.fields.forEach(f => { if (vars[f.key]) known[f.key] = String(vars[f.key]); });
       const result = await respond(agent, { ticket: null, history, collected: known, sandbox: true, stage, flowId: opts.flowId, nodeId: node.id });

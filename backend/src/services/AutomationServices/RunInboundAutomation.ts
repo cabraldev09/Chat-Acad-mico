@@ -10,6 +10,7 @@ import UpdateTicketService from "../TicketServices/UpdateTicketService";
 import ShowWhatsAppService from "../WhatsappService/ShowWhatsAppService";
 import SendWhatsAppMessage from "../WbotServices/SendWhatsAppMessage";
 import { findAgentForTicket, runAiForTicket } from "../AiServices/RunAiAgent";
+import { runAgentGraph } from "../FlowServices/Runner";
 import { runFlowForTicket } from "../FlowServices/Runner";
 import { addActivity, changeStage } from "../CrmServices/LeadCore";
 import { applyToLead } from "../AiServices/Tools";
@@ -332,6 +333,8 @@ const runAi = async (ticket: Ticket): Promise<boolean> => {
   if (!ticket.aiActive) return false;
   const agent = await findAgentForTicket(ticket);
   if (!agent) return false;
+  // an agent built in blocks (with a published graph) talks through the flow engine; the others keep the single prompt
+  if (await runAgentGraph(ticket, agent)) return true;
   scheduleAi(ticket.id, agent.waitSeconds ?? 4);
   return true;
 };
