@@ -3269,13 +3269,17 @@ const postMeta = (id, payload, secret, badSig) => {
       const poloR = (await http.post("/polos", { name: "Polo Retencao", code: "RET1", state: "RO" }, auth())).data;
       await http.put(`/polos/${poloR.id}/members`, { members: [{ userId: tutorR.id, role: "tutoria" }] }, auth());
       const tutorTok = (await http.post("/auth/login", { email: "tutorr@ret.test", password: "senha123" })).data.token;
+      const coordAc = (await http.post("/auth/login", { email: "coord-a@x.com", password: "senha123" })).data.token;
+      const coordCom = (await http.post("/auth/login", { email: "coord-c@x.com", password: "senha123" })).data.token;
       const labelsOf = leadId => sql(`SELECT COALESCE(STRING_AGG(t.name, ',' ORDER BY t.name), '') FROM LeadTags x JOIN Tags t ON t.id=x.tagId WHERE x.leadId=${leadId}`);
       const said = (contactId, text) => Number(sql(`SELECT COUNT(*) FROM Messages m JOIN Tickets t ON t.id=m.ticketId WHERE t.contactId=${contactId} AND m.fromMe=true AND m.body LIKE '%${text}%'`));
       const ymd = d => new Date(Date.now() + d * 86400000).toLocaleDateString("en-CA", { timeZone: "America/Porto_Velho" });
 
-      // who may look: the management and the tutor; a consultant and the other roles cannot
+      // who may operate it: the maintainer and the academic coordinator; the tutor, a consultant and the other roles cannot
       assert((await http.get("/retention/nps", asUser(bolixConsultantToken))).status === 403, "a consultant read the satisfaction numbers");
-      assert((await http.get("/retention/risk", asUser(tutorTok))).status === 200, "the tutor cannot see their students");
+      assert((await http.get("/retention/risk", asUser(tutorTok))).status === 403, "a tutor opened the retention area");
+      assert((await http.get("/retention/risk", asUser(coordCom))).status === 403, "the commercial coordinator opened the retention area");
+      assert((await http.get("/retention/risk", asUser(coordAc))).status === 200, "the academic coordinator cannot open the retention area");
       assert((await http.put("/retention/config", { nps: { enabled: true } }, asUser(tutorTok))).status === 403, "a tutor changed the settings");
 
       // a student: writes, is enrolled, finishes the onboarding
@@ -3331,7 +3335,8 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(sum.answered === 2 && sum.promoters === 1 && sum.detractors === 1 && sum.nps === 0 && sum.responseRate === 100, `summary ${JSON.stringify(sum)}`);
       assert(sum.comments.some(c => c.comment === "Gostei muito da tutoria" && c.lead === "Ana Pesquisa"), "the reason is not in the summary");
       // the tutor sees the same page (their own students)
-      assert((await http.get("/retention/nps", asUser(tutorTok))).status === 200, "the tutor cannot see the survey");
+      assert((await http.get("/retention/nps", asUser(coordAc))).status === 200, "the academic coordinator cannot see the survey");
+      assert((await http.get("/retention/nps", asUser(tutorTok))).status === 403, "the tutor sees the survey");
       // manual survey
       assert((await http.post(`/retention/nps/send/${carla.leadId}`, {}, auth())).status === 201, "manual survey");
       await waitFor(() => said(carla.contactId, "De 0 a 10") === 1, 12000, "the manual survey");
@@ -3342,7 +3347,7 @@ const postMeta = (id, payload, secret, badSig) => {
       const rc = risk.students.find(x => x.id === carla.leadId);
       assert(rc && rc.days >= 45 && rc.level === "attention" && risk.riskDays === 30, `risk ${JSON.stringify(rc)}`);
       assert(!risk.students.some(x => x.id === ana.leadId), "a student with recent news is at risk");
-      assert((await http.get("/retention/risk", asUser(tutorTok))).data.students.some(x => x.id === carla.leadId), "the tutor does not see their student at risk");
+      assert((await http.get("/retention/risk", asUser(coordAc))).data.students.some(x => x.id === carla.leadId), "the academic coordinator does not see the student at risk");
       await http.post("/retention/run", {}, auth());
       assert(/Risco de evasão/.test(labelsOf(carla.leadId)), "no risk label");
       assert(Number(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${carla.leadId} AND title LIKE 'Retenção:%'`)) === 1, "no retention task");
@@ -3378,7 +3383,8 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(listAfter.done === 1 && listAfter.doneStudents[0].id === ana.leadId && listAfter.rate > 0, `after ${listAfter.done}`);
       assert((await http.post(`/retention/rematricula/${ana.leadId}`, { undo: true }, auth())).status === 200, "undo");
       assert(/Rematrícula pendente/.test(labelsOf(ana.leadId)), "the label did not come back");
-      assert((await http.post(`/retention/rematricula/${beto.leadId}`, {}, asUser(tutorTok))).status === 200, "the tutor marks their own student");
+      assert((await http.post(`/retention/rematricula/${beto.leadId}`, {}, asUser(coordAc))).status === 200, "the academic coordinator marks the re-enrollment");
+      assert((await http.post(`/retention/rematricula/${beto.leadId}`, {}, asUser(tutorTok))).status === 403, "a tutor marked a re-enrollment");
       // a window that closed: the labels go away
       await http.put("/retention/config", { rematricula: { startsAt: ymd(-20), endsAt: ymd(-2) } }, auth());
       assert((await http.get("/retention/rematricula", auth())).data.window === "closed", "the window should be closed");
@@ -4133,6 +4139,7 @@ const postMeta = (id, payload, secret, badSig) => {
       const poloX = (await http.post("/polos", { name: "Polo Envios", code: "ENV1", state: "RO" }, auth())).data;
       await http.put(`/polos/${poloX.id}/members`, { members: [{ userId: tutorX.id, role: "tutoria" }] }, auth());
       const tutorTok = (await http.post("/auth/login", { email: "tutorx@env.test", password: "senha123" })).data.token;
+      const coordAc = (await http.post("/auth/login", { email: "coord-a@x.com", password: "senha123" })).data.token;
       const cons = (await http.post("/auth/login", { email: "consultor@polo.test", password: "senha123" })).data.token;
       const said = (contactId, text) => Number(sql(`SELECT COUNT(*) FROM Messages m JOIN Tickets t ON t.id=m.ticketId WHERE t.contactId=${contactId} AND m.fromMe=true AND m.body LIKE '%${text}%'`));
       let n = 0;
@@ -4159,27 +4166,28 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.post("/retention/preview", { kind: "inventado" }, auth())).status === 400, "invalid kind");
       assert((await http.post("/retention/preview", { kind: "nps" }, asUser(cons))).status === 403, "a consultant previewed");
 
-      // who can be chosen: everyone for the management, only their own students for the tutor
+      // who can be chosen: everyone, for the maintainer and the academic coordinator; the tutor does not operate this area
       const found = (await http.get("/retention/students", { params: { search: "Selecionad" }, ...auth() })).data;
       assert(found.length === 2 && found.every(x => x.polo === "Polo Envios" && x.tutor === "Tutor Envios"), `students ${JSON.stringify(found)}`);
-      const mine = (await http.get("/retention/students", { params: { search: "" }, ...asUser(tutorTok) })).data;
-      assert(mine.length === 2 && !mine.some(x => x.name === "Ana Pesquisa"), "the tutor can choose students that are not theirs");
+      assert((await http.get("/retention/students", { params: { search: "" }, ...asUser(tutorTok) })).status === 403, "a tutor opened the list of students");
+      const mine = (await http.get("/retention/students", { params: { search: "Selecionad" }, ...asUser(coordAc) })).data;
+      assert(mine.length === 2, "the academic coordinator does not see the students");
 
       // a message written by hand to the chosen ones: the student of another tutor is refused
-      assert((await http.post("/retention/send", { kind: "custom", leadIds: [davi.leadId], text: "" }, asUser(tutorTok))).status === 400, "an empty message was sent");
+      assert((await http.post("/retention/send", { kind: "custom", leadIds: [davi.leadId], text: "" }, asUser(coordAc))).status === 400, "an empty message was sent");
       assert((await http.post("/retention/send", { kind: "custom", leadIds: Array.from({ length: 201 }, (_, i) => i + 1), text: "x" }, auth())).status === 400, "more than 200 at once");
       assert((await http.post("/retention/send", { kind: "custom", leadIds: [davi.leadId], text: "x" }, asUser(cons))).status === 403, "a consultant sent");
-      const sent = await http.post("/retention/send", { kind: "custom", leadIds: [davi.leadId, elis.leadId, Number(other)], text: "Oi {{nome}}, passando para saber como vai." }, asUser(tutorTok));
-      assert(sent.status === 200 && sent.data.sent === 2 && sent.data.failed === 1 && sent.data.results.find(r => r.leadId === Number(other)).ok === false, `send ${JSON.stringify(sent.data)}`);
+      assert((await http.post("/retention/send", { kind: "custom", leadIds: [davi.leadId], text: "x" }, asUser(tutorTok))).status === 403, "a tutor sent");
+      const sent = await http.post("/retention/send", { kind: "custom", leadIds: [davi.leadId, elis.leadId], text: "Oi {{nome}}, passando para saber como vai." }, asUser(coordAc));
+      assert(sent.status === 200 && sent.data.sent === 2 && sent.data.failed === 0, `send ${JSON.stringify(sent.data)}`);
       await waitFor(() => said(davi.contactId, "Oi Davi, passando para saber") === 1 && said(elis.contactId, "Oi Elis, passando para saber") === 1, 12000, "the two messages");
-      assert(said(sql(`SELECT contactId FROM Leads WHERE id=${other}`), "passando para saber") === 0, "the student of another tutor got the message");
 
       // the log: what, to whom, by whom
       const log = (await http.get("/retention/log", auth())).data;
       const row = log.rows.find(r => r.lead === "Davi Selecionado" && r.kind === "custom");
-      assert(row && row.body === "Oi Davi, passando para saber como vai." && row.polo === "Polo Envios" && row.tutor === "Tutor Envios" && row.sentBy === "Tutor Envios" && row.status === "sent", `log row ${JSON.stringify(row)}`);
+      assert(row && row.body === "Oi Davi, passando para saber como vai." && row.polo === "Polo Envios" && row.tutor === "Tutor Envios" && row.sentBy === "Coord Acadêmica" && row.status === "sent", `log row ${JSON.stringify(row)}`);
       assert((await http.get("/retention/log", { params: { kind: "custom", search: "Elis" }, ...auth() })).data.rows.every(r => r.lead === "Elis Selecionada"), "log filters");
-      assert(!(await http.get("/retention/log", asUser(tutorTok))).data.rows.some(r => r.lead === "Ana Pesquisa"), "the tutor read the log of someone else's students");
+      assert((await http.get("/retention/log", asUser(tutorTok))).status === 403, "a tutor read the log");
       const lcsv = String((await http.get("/retention/log.csv", auth())).data);
       assert(lcsv.includes("Oi Davi, passando para saber como vai.") && lcsv.startsWith('"Data";"Tipo";"Aluno"'), "log spreadsheet");
 
@@ -4245,8 +4253,8 @@ const postMeta = (id, payload, secret, badSig) => {
       sql(`UPDATE LeadTasks SET doneAt=NOW() WHERE leadId=${davi.leadId} AND title LIKE 'Falar com o aluno que deu nota 4%'`);
       const ops2 = (await http.get("/retention/operations", auth())).data;
       assert(ops2.survey.handled === ops.survey.handled + 1 && ops2.survey.pending === ops.survey.pending - 1 && typeof ops2.survey.avgHandleHours === "number", "the detractor that was attended is not counted as handled");
-      const opsTutor = (await http.get("/retention/operations", asUser(tutorTok))).data;
-      assert(opsTutor.byTutor.every(t => t.name === "Tutor Envios"), "the tutor read the operation of the others");
+      assert((await http.get("/retention/operations", asUser(tutorTok))).status === 403, "a tutor read the operation");
+      assert((await http.get("/retention/operations", asUser(coordAc))).status === 200, "the academic coordinator cannot read the operation");
       const sum = (await http.get("/retention/summary", auth())).data;
       assert(typeof sum.nps.detractorsOpen === "number", "summary without the detractors to attend");
     });
@@ -4263,9 +4271,8 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(crm.status === 200 && crm.data.total === 2 && crm.data.items.every(i => i.kind === "lead" && i.leadId && i.number), `crm ${JSON.stringify(crm.data).slice(0, 240)}`);
       assert((await aud({ source: "crm", poloId, search: "Davi" })).data.items.length === 1, "crm search by name");
       assert((await aud({ source: "crm", enrolled: "no", poloId })).data.total === 0, "crm enrolled=no");
-      // a tutor only reaches their own students, and only from the students and the CRM
-      const tutorCrm = (await aud({ source: "crm" }, tutorTok)).data;
-      assert(tutorCrm.items.length > 0 && tutorCrm.items.every(i => ["Davi Selecionado", "Elis Selecionada"].includes(i.name)), `tutor crm ${JSON.stringify(tutorCrm).slice(0, 200)}`);
+      // a tutor does not operate this area
+      assert((await aud({ source: "crm" }, tutorTok)).status === 403, "a tutor read the audience");
       assert((await aud({ source: "list", listId: 1 }, tutorTok)).status === 403 && (await aud({ source: "contacts" }, tutorTok)).status === 403, "a tutor read the lists or the contacts");
       assert((await aud({ source: "crm" }, cons)).status === 403, "a consultant read the audience");
 
@@ -4303,7 +4310,7 @@ const postMeta = (id, payload, secret, badSig) => {
       await waitFor(() => graph.sent.slice(before).some(x => x.body && String(x.body.to) === visitor && x.body.text && /seguem as informações/.test(x.body.text.body)), 12000, "the message to the visitor");
       const visitRow = (await http.get("/retention/log", { params: { search: "Visitante" }, ...auth() })).data.rows[0];
       assert(visitRow && visitRow.status === "sent" && visitRow.leadId === null && visitRow.phone === visitor && visitRow.kind === "custom", `visit row ${JSON.stringify(visitRow)}`);
-      assert((await http.get("/retention/log", asUser(tutorTok))).data.rows.every(r => r.lead !== "Visitante"), "the tutor read the log of people outside the CRM");
+      assert((await http.get("/retention/log", asUser(tutorTok))).status === 403, "the tutor read the log of people outside the CRM");
 
       // who asked to stop is left out here too
       sql(`UPDATE Contacts SET optOut=true WHERE number='${visitor}'`);
@@ -4326,7 +4333,7 @@ const postMeta = (id, payload, secret, badSig) => {
       const hand = await http.post("/retention/send", { kind: "custom", text: "Oi {{nome}}, ainda dá tempo de se matricular!", leadIds: [prospectLead] }, auth());
       assert(hand.data.sent === 1 && hand.data.failed === 0, `text to a prospect ${JSON.stringify(hand.data).slice(0, 200)}`);
       await waitFor(() => graph.sent.some(x => x.body && String(x.body.to) === prospect && x.body.text && /ainda dá tempo/.test(x.body.text.body)), 12000, "the message to the prospect");
-      assert((await http.post("/retention/send", { kind: "custom", text: "Oi", leadIds: [prospectLead] }, asUser(tutorTok))).data.failed === 1, "a tutor wrote to a lead that is not theirs");
+      assert((await http.post("/retention/send", { kind: "custom", text: "Oi", leadIds: [prospectLead] }, asUser(tutorTok))).status === 403, "a tutor wrote to a lead");
     });
     await test("departamento Relacionamento: o pós-venda sai pelo número da instituição, as respostas caem na fila própria e o robô fica de fora", async () => {
       const relCfg = { phoneNumberId: "PN2", accessToken: "REL-TOKEN", appSecret: "rel-secret", verifyToken: "rel-verify" };
@@ -4416,7 +4423,7 @@ const postMeta = (id, payload, secret, badSig) => {
       const anaTok = (await http.post("/auth/login", { email: "ana@rel.test", password: "senha123" })).data.token;
       assert((await http.get(`/tickets/${ritaTicket}`, asUser(anaTok))).status === 200, "the team cannot open its own conversation");
       assert((await http.get(`/tickets/${ticketOf(rita.from) === String(ritaTicket) ? 1 : ticketOf(rita.from)}`, asUser(anaTok))).status === 403, "the team opened a conversation of another department");
-      assert((await http.get("/retention/summary", asUser(anaTok))).status === 200, "the team cannot see the retention numbers");
+      assert((await http.get("/retention/summary", asUser(anaTok))).status === 403, "the relationship team opened the retention area (it only attends the conversations)");
       assert((await http.put("/retention/config", { relationshipWhatsappId: 0 }, asUser(anaTok))).status === 403, "the team changed the number");
       assert((await http.get("/leads?pageNumber=1", asUser(anaTok))).status !== 500, "leads scope of the team");
 
@@ -4438,9 +4445,11 @@ const postMeta = (id, payload, secret, badSig) => {
     await test("retenção: resumo, planilhas e o tutor vê só a satisfação dos próprios alunos", async () => {
       const tutor = (await http.post("/auth/login", { email: "tutorr@ret.test", password: "senha123" })).data.token;
       const cons = (await http.post("/auth/login", { email: "consultor@polo.test", password: "senha123" })).data.token;
+      const coordAc = (await http.post("/auth/login", { email: "coord-a@x.com", password: "senha123" })).data.token;
       const sum = await http.get("/retention/summary", auth());
       assert(sum.status === 200 && typeof sum.data.risk.total === "number" && typeof sum.data.rematricula.pending === "number" && sum.data.nps.days === 30, `summary ${sum.status} ${JSON.stringify(sum.data).slice(0, 200)}`);
-      assert((await http.get("/retention/summary", asUser(tutor))).status === 200, "the tutor cannot see the summary");
+      assert((await http.get("/retention/summary", asUser(coordAc))).status === 200, "the academic coordinator cannot see the summary");
+      assert((await http.get("/retention/summary", asUser(tutor))).status === 403, "a tutor opened the summary");
       assert((await http.get("/retention/summary", asUser(cons))).status === 403, "a consultant opened the retention summary");
 
       const risk = (await http.get("/retention/risk", auth())).data;
@@ -4455,7 +4464,8 @@ const postMeta = (id, payload, secret, badSig) => {
         assert(r.status === 200 && String(r.headers["content-type"]).startsWith("text/csv"), `${path} ${r.status} ${r.headers["content-type"]}`);
         assert(String(r.data).startsWith(head), `${path} header ${JSON.stringify(String(r.data).slice(0, 60))}`);
         assert((await http.get(path, asUser(cons))).status === 403, `${path} for a consultant`);
-        assert((await http.get(path, asUser(tutor))).status === 200, `${path} for the tutor`);
+        assert((await http.get(path, asUser(tutor))).status === 403, `${path} for the tutor`);
+        assert((await http.get(path, asUser(coordAc))).status === 200, `${path} for the academic coordinator`);
       }
 
       // the satisfaction of a student that the tutor does not follow is not theirs to read
@@ -4463,10 +4473,9 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(other, "no lead of another tutor");
       sql(`INSERT INTO NpsSurveys (leadId, kind, status, score, comment, awaitingComment, sentAt, answeredAt, createdAt, updatedAt) VALUES (${other}, 'd30', 'answered', 2, 'comentario-secreto-de-outro-tutor', false, NOW(), NOW(), NOW(), NOW())`);
       const adminNps = (await http.get("/retention/nps", auth())).data;
-      const tutorNps = (await http.get("/retention/nps", asUser(tutor))).data;
       assert(adminNps.comments.some(c => c.comment === "comentario-secreto-de-outro-tutor"), "the management does not see the answer");
-      assert(!tutorNps.comments.some(c => c.comment === "comentario-secreto-de-outro-tutor") && tutorNps.answered < adminNps.answered, "the tutor read the answer of a student they do not follow");
-      assert(!String((await http.get("/retention/nps.csv", asUser(tutor))).data).includes("comentario-secreto-de-outro-tutor"), "the tutor's spreadsheet leaked the answer");
+      assert((await http.get("/retention/nps", asUser(tutor))).status === 403 && (await http.get("/retention/nps.csv", asUser(tutor))).status === 403, "a tutor read the satisfaction answers");
+      assert((await http.get("/retention/nps", asUser(coordAc))).data.comments.some(c => c.comment === "comentario-secreto-de-outro-tutor"), "the academic coordinator does not see the answers");
       assert(Array.isArray(adminNps.series) && adminNps.series.length >= 1 && adminNps.series[0].week && typeof adminNps.commentsTotal === "number", "series by week");
       adminNps.byKind.forEach(k => assert(Object.prototype.hasOwnProperty.call(k, "nps"), "byKind without nps"));
     });

@@ -1,3 +1,4 @@
+import isRetentionOperator from "../middleware/isRetentionOperator";
 import express from "express";
 import multer from "multer";
 
@@ -238,8 +239,8 @@ r.get("/crm/settings", isAuth, isManager, Lead.getSettings);
 r.put("/crm/settings", isAuth, isManager, Lead.putSettings);
 r.post("/crm/cadences/run", isAuth, isManager, Lead.runCadencesNow);
 r.get("/retention/config", isAuth, Retention.getConfig);
-r.put("/retention/config", isAuth, isManager, Retention.putConfig);
-r.post("/retention/run", isAuth, isManager, Retention.runNow);
+r.put("/retention/config", isAuth, isRetentionOperator, Retention.putConfig);
+r.post("/retention/run", isAuth, isRetentionOperator, Retention.runNow);
 r.get("/retention/summary", isAuth, Retention.summary);
 r.get("/retention/students", isAuth, Retention.students);
 r.get("/retention/audience", isAuth, Retention.audience);

@@ -44,7 +44,7 @@ import QrcodeModal from "../../components/QrcodeModal";
 import { i18n } from "../../translate/i18n";
 import { WhatsAppsContext } from "../../context/WhatsApp/WhatsAppsContext";
 import toastError from "../../errors/toastError";
-import { isManager } from "../../utils/access";
+import { canOperateRetention, isManager } from "../../utils/access";
 
 const useStyles = makeStyles(theme => ({
 	mainPaper: {
@@ -110,9 +110,9 @@ const Connections = () => {
 	// the number the relationship department works from (chosen in Retenção > Configurar)
 	const [relationshipId, setRelationshipId] = useState(0);
 	useEffect(() => {
-		if (!isAdmin) return;
+		if (!canOperateRetention(user)) return;
 		api.get("/retention/config").then(({ data }) => setRelationshipId((data.relationship && data.relationship.whatsappId) || 0)).catch(() => undefined);
-	}, [isAdmin]);
+	}, [user]); // eslint-disable-line react-hooks/exhaustive-deps
 	// progress of "copy the conversations of the phone", by connection
 	const [copying, setCopying] = useState({});
 	useEffect(() => {

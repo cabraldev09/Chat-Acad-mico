@@ -37,6 +37,15 @@ export const SEGMENTS_OF: Record<string, string[]> = {
   admin: ["sales", "postsale", "onboarding", "support", RELATIONSHIP_SEGMENT]
 };
 
+// The retention area (satisfaction survey, students at risk, re-enrollment, messages and the number of the relationship
+// department) belongs to the maintainer (the administrator) and to the academic coordinator. Tutors and the other roles do not
+// operate it: they only attend the conversations.
+export const canOperateRetention = (u: { role?: string; profile?: string; coordArea?: string | null } | undefined): boolean => {
+  if (!u) return false;
+  const role = u.profile === "admin" ? "admin" : u.role;
+  return role === "admin" || (role === "coordenacao" && u.coordArea === "academica");
+};
+
 // users created before roles existed carry only `profile`
 // the administrator profile always wins: it is what the permission checks and the
 // seeded admin user rely on

@@ -3,7 +3,7 @@ import { Request, Response } from "express";
 import AppError from "../errors/AppError";
 import { dayBounds, shiftDays, todayInAppTz } from "../helpers/AppTime";
 import { setSetting } from "../helpers/AppSettings";
-import { isManagerRole, roleOf } from "../helpers/Roles";
+import { canOperateRetention } from "../helpers/Roles";
 import Lead from "../models/Lead";
 import { runCadences } from "../services/CrmServices/Cadences";
 import { GROUP_OPTIONS, NPS_KINDS, npsAnswers, npsSummary, readNpsConfig, sendSurvey } from "../services/CrmServices/Nps";
@@ -23,12 +23,10 @@ import { relationshipConnection, relationshipWhatsappId, setRelationshipWhatsapp
 
 const uid = (req: Request): number => Number(req.user.id);
 
-// The management sees every student; a tutor only the ones they follow; nobody else comes in here.
+// The maintainer (administrator) and the academic coordinator operate the retention area; nobody else comes in here.
 const scopeOf = (req: Request): Scope => {
-  const role = roleOf(req.user);
-  // the relationship team works every student's after-sales: it sees them all
-  if (isManagerRole(role) || role === "relacionamento") return {};
-  if (role === "tutor" || role === "academico") return { tutorId: uid(req) };
+  // the maintainer and the academic coordinator see every student; nobody else comes in here
+  if (canOperateRetention(req.user)) return {};
   throw new AppError("ERR_NO_PERMISSION", 403);
 };
 

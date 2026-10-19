@@ -18,7 +18,7 @@ import MegaphoneIcon from "lucide-react/dist/esm/icons/megaphone";
 import BarChartIcon from "lucide-react/dist/esm/icons/bar-chart-3";
 import KanbanSquareIcon from "lucide-react/dist/esm/icons/kanban-square";
 import LayoutDashboardIcon from "lucide-react/dist/esm/icons/layout-dashboard";
-import { isManager } from "../utils/access";
+import { canOperateRetention, isManager } from "../utils/access";
 import ListTodoIcon from "lucide-react/dist/esm/icons/list-todo";
 import MonitorCheckIcon from "lucide-react/dist/esm/icons/monitor-check";
 import HeartPulseIcon from "lucide-react/dist/esm/icons/heart-pulse";
@@ -257,7 +257,7 @@ const MainListItems = (props) => {
       )}
       <ListItemLink to="/crm/metas-polos" alsoActive={["/crm/metas"]} primary="Metas" icon={<GoalIcon className="ico" />} collapsed={collapsed} />
       <ListItemLink to="/ambientacao" primary="Ambientação" icon={<MonitorCheckIcon className="ico" />} collapsed={collapsed} />
-      {(isManager(user) || user.role === "tutor" || user.role === "relacionamento") && (
+      {canOperateRetention(user) && (
         <ListItemLink to="/crm/retencao" primary="Retenção" icon={<HeartPulseIcon className="ico" />} collapsed={collapsed} />
       )}
       {!collapsed && (

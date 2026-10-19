@@ -1,6 +1,6 @@
 # Rotas da API (402)
 
-Públicas: 32 · logado (qualquer perfil): 237 · gestão: 94 · admin: 31
+Públicas: 32 · logado (qualquer perfil): 239 · gestão: 92 · admin: 31
 
 ## Públicas (sem login)
 
@@ -128,6 +128,8 @@ Públicas: 32 · logado (qualquer perfil): 237 · gestão: 94 · admin: 31
 - DELETE /contact-lists/:id → salesStaff
 - POST /contact-lists/:id/import → salesStaff
 - DELETE /contact-lists/:id/items/:itemId → salesStaff
+- PUT /retention/config → isRetentionOperator
+- POST /retention/run → isRetentionOperator
 - PUT /leads/:id/documents/:docId → canAccessLead
 - POST /leads/:id/documents/remind → canAccessLead
 - PUT /leads/:id → canAccessLead

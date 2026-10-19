@@ -257,7 +257,7 @@ const UserModal = ({ open, onClose, userId }) => {
 										<InputLabel id="coord-area-label">Área de coordenação</InputLabel>
 										<Field as={Select} label="Área de coordenação" name="coordArea" labelId="coord-area-label" id="coord-area">
 											<MenuItem value="comercial">Comercial</MenuItem>
-											<MenuItem value="academica">Acadêmica</MenuItem>
+											<MenuItem value="academica">Acadêmica (opera a Retenção)</MenuItem>
 										</Field>
 									</FormControl>
 								)}
