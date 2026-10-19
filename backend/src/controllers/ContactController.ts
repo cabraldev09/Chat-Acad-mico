@@ -8,6 +8,7 @@ import Tag from "../models/Tag";
 import { Op } from "sequelize";
 import { csvAsText, csvDay, csvBody } from "../helpers/Csv";
 import { roleOf } from "../helpers/Roles";
+import { connectionScopeOf, contactScopeWhere } from "../helpers/ConnectionScope";
 import { RELATIONS, Relation, applyRelation } from "../services/CrmServices/Relation";
 import CreateContactService from "../services/ContactServices/CreateContactService";
 import ShowContactService from "../services/ContactServices/ShowContactService";
@@ -49,7 +50,8 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
 
   const { contacts, count, hasMore } = await ListContactsService({
     searchParam,
-    pageNumber
+    pageNumber,
+    scope: contactScopeWhere(await connectionScopeOf(req.user.id, roleOf(req.user)))
   });
 
   return res.json({ contacts, count, hasMore });
@@ -64,8 +66,9 @@ export const exportCsv = async (req: Request, res: Response): Promise<Response> 
   if (!["admin", "coordenacao", "consultor"].includes(roleOf(req.user))) throw new AppError("ERR_NO_PERMISSION", 403);
   const searchParam = String(req.query.searchParam || "");
   const withGroups = req.query.groups === "1";
+  const groupScope = contactScopeWhere(await connectionScopeOf(req.user.id, roleOf(req.user)));
   const where: any = {
-    [Op.and]: [contactsSearchWhere(searchParam), ...(withGroups ? [] : [{ isGroup: false }, { kind: { [Op.in]: ["person", "business"] } }])]
+    [Op.and]: [contactsSearchWhere(searchParam), ...(groupScope ? [groupScope] : []), ...(withGroups ? [] : [{ isGroup: false }, { kind: { [Op.in]: ["person", "business"] } }])]
   };
 
   const rows: Contact[] = [];

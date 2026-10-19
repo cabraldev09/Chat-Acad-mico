@@ -3,20 +3,27 @@ import { Op } from "sequelize";
 
 import Contact from "../models/Contact";
 import Ticket from "../models/Ticket";
+import { connectionScopeOf } from "../helpers/ConnectionScope";
+import { roleOf } from "../helpers/Roles";
 
 // The "Comunidades" list of WhatsApp Web: each community with its announcements group and the groups inside it.
 // Built from the contacts the number reported (see syncCommunities in the WhatsApp provider); the conversation of each
 // group is the latest one it has, so one click opens it.
-export const index = async (_req: Request, res: Response): Promise<Response> => {
+export const index = async (req: Request, res: Response): Promise<Response> => {
+  // only the communities of the connections the person owns (administration and coordination see all of them)
+  const scope = await connectionScopeOf(req.user.id, roleOf(req.user));
+  const mineIds = scope.all
+    ? null
+    : (await Ticket.findAll({ where: { isGroup: true, whatsappId: { [Op.in]: scope.own.length ? scope.own : [0] } } as any, attributes: ["contactId"], group: ["contactId"], raw: true })).map((t: any) => t.contactId as number);
   const related = await Contact.findAll({
-    where: { isGroup: true, [Op.or]: [{ communityRole: { [Op.ne]: null } }, { kind: "community" }] } as any,
+    where: { isGroup: true, [Op.or]: [{ communityRole: { [Op.ne]: null } }, { kind: "community" }], ...(mineIds ? { id: { [Op.in]: mineIds.length ? mineIds : [0] } } : {}) } as any,
     attributes: ["id", "name", "number", "profilePicUrl", "kind", "communityRole", "communityId", "parentGroupId", "readOnly"],
     order: [["name", "ASC"]]
   });
   const ids = related.map(c => c.id);
   const tickets = ids.length
     ? await Ticket.findAll({
-        where: { contactId: { [Op.in]: ids }, isGroup: true },
+        where: { contactId: { [Op.in]: ids }, isGroup: true, ...(scope.all ? {} : { whatsappId: { [Op.in]: scope.own.length ? scope.own : [0] } }) } as any,
         attributes: ["id", "contactId", "status", "unreadMessages", "lastMessage", "lastMessageAt", "whatsappId"],
         order: [["updatedAt", "DESC"]]
       })

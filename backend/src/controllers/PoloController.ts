@@ -8,6 +8,7 @@ import User from "../models/User";
 import Lead from "../models/Lead";
 import Ticket from "../models/Ticket";
 import { POLO_FUNCTIONS } from "../helpers/Roles";
+import { tutorsOfPolo } from "../services/PoloServices/TutorsOfPolo";
 import syncPoloQueues from "../services/PoloServices/SyncPoloQueues";
 
 const withDetails = [
@@ -20,13 +21,7 @@ const withDetails = [
 ];
 
 // tutors of a polo (names only): any signed-in user may need to pick one when confirming an enrollment
-export const tutors = async (req: Request, res: Response): Promise<Response> => {
-  const rows = await PoloMember.findAll({
-    where: { poloId: req.params.id, role: "tutoria" },
-    include: [{ model: User, as: "user", attributes: ["id", "name"] }]
-  });
-  return res.json(rows.map(r => ({ id: r.user.id, name: r.user.name })));
-};
+export const tutors = async (req: Request, res: Response): Promise<Response> => res.json(await tutorsOfPolo(Number(req.params.id)));
 
 export const index = async (req: Request, res: Response): Promise<Response> => {
   const admin = req.user.role === "admin" || req.user.role === "coordenacao" || req.user.profile === "admin";

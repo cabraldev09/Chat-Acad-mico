@@ -7,6 +7,7 @@ import UserQueue from "../models/UserQueue";
 import Message from "../models/Message";
 import { SEGMENTS_OF, isManagerRole, roleOf } from "../helpers/Roles";
 import { poloIdsOf } from "./scope";
+import { connectionScopeOf, ticketVisibleIn } from "../helpers/ConnectionScope";
 
 const queueIdsOf = async (userId: number): Promise<number[]> => {
   const rows = await UserQueue.findAll({ where: { userId } });
@@ -35,11 +36,13 @@ export const assertTicketAccess = async (
     }
 
     const ticket = await Ticket.findByPk(ticketId, {
-      attributes: ["id", "userId", "queueId", "segment"]
+      attributes: ["id", "userId", "queueId", "segment", "isGroup", "whatsappId"]
     });
     if (!ticket) throw new AppError("ERR_NO_TICKET_FOUND", 404);
 
     const me = Number(req.user.id);
+    // another number's groups and personal chats are not readable, even knowing the id
+    if (!ticketVisibleIn(await connectionScopeOf(me, role), ticket, me)) throw new AppError("ERR_NO_PERMISSION", 403);
     const mine = ticket.userId === me;
     if (!mine && !(SEGMENTS_OF[role] || []).includes(ticket.segment || "sales")) {
       throw new AppError("ERR_NO_PERMISSION", 403);

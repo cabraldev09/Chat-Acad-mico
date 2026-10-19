@@ -101,7 +101,7 @@ const Onboarding = () => {
   const openTutor = async (lead) => {
     setMenu(null);
     let tutors = [];
-    try { if (lead.poloId) tutors = (await api.get(`/polos/${lead.poloId}/tutors`)).data; } catch (err) { toastError(err); }
+    try { tutors = (await api.get(`/polos/${lead.poloId || 0}/tutors`)).data; } catch (err) { toastError(err); }
     setTutorFor({ lead, tutors, pick: lead.onboardingTutorId || 0 });
   };
   const saveTutor = async () => {
@@ -184,9 +184,9 @@ const Onboarding = () => {
               <TextField select fullWidth variant="outlined" size="small" label="Tutor" value={tutorFor.pick} onChange={(e) => setTutorFor({ ...tutorFor, pick: e.target.value })}>
                 <MenuItem value="auto">Escolher pelo rodízio da tutoria</MenuItem>
                 <MenuItem value={0}>Sem tutor (volta para a fila)</MenuItem>
-                {tutorFor.tutors.map((t) => <MenuItem key={t.id} value={t.id}>{t.name}</MenuItem>)}
+                {tutorFor.tutors.map((t) => <MenuItem key={t.id} value={t.id}>{t.name}{t.outside ? " (de outro polo)" : ""}</MenuItem>)}
               </TextField>
-              {tutorFor.tutors.length === 0 && <Typography variant="caption" color="textSecondary">Este polo não tem tutor cadastrado em Polos e equipes.</Typography>}
+              {tutorFor.tutors.length === 0 && <Typography variant="caption" color="textSecondary">Nenhum tutor está cadastrado em Polos e equipes. Cadastre tutores e vincule-os ao polo para escolher aqui.</Typography>}
             </>
           )}
         </DialogContent>

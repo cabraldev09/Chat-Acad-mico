@@ -10,6 +10,7 @@ import Whatsapp from "../../models/Whatsapp";
 import Tag from "../../models/Tag";
 import { portable } from "../../helpers/sqlDialect";
 import { Role, SEGMENTS_OF, isManagerRole } from "../../helpers/Roles";
+import { connectionScopeOf, ticketScopeWhere } from "../../helpers/ConnectionScope";
 
 interface Request {
   searchParam?: string;
@@ -199,6 +200,10 @@ const ListTicketsService = async ({
     if (role !== "coordenacao") scope.push({ [Op.or]: [{ userId: me }, { userId: { [Op.is]: null } }] });
     whereCondition = { [Op.and]: [whereCondition, ...scope] } as any;
   }
+
+  // groups, communities and private chats follow the connection: nobody reads another number's groups or personal chats
+  const byConnection = ticketScopeWhere(await connectionScopeOf(userId, role), userId);
+  if (byConnection) whereCondition = { [Op.and]: [whereCondition, byConnection] } as any;
 
   // pins come first: the ones this person made in the system, and the ones pinned on the phone's WhatsApp
   const pinnedSql = literal(

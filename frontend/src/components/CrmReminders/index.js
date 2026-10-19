@@ -42,9 +42,10 @@ const CrmReminders = () => {
       const manager = user.profile === "admin" || user.role === "admin" || user.role === "coordenacao";
       const mine = h.userId === user.id;
       const myQueue = !h.userId && h.queueId && (user.queues || []).some((q) => q.id === h.queueId);
-      const needsManager = manager && (h.noQueue || h.fallback || !h.userId);
+      const needsManager = manager && (h.noQueue || h.noTeam || h.fallback || !h.userId);
       if (!(mine || myQueue || needsManager)) return;
-      toast.info(`🤝 ${h.name || "Um lead"} chegou do agente de IA${h.poloName ? ` (${h.poloName})` : ""}: ${h.reason}${h.noQueue ? ". Não há fila comercial com consultores: alguém da gestão precisa assumir." : h.fallback ? ". Veio pela fila de reserva." : ""}${h.outside && h.when ? ` A equipe responde ${h.when}.` : ""}`, {
+      const lead = h.name || "Um lead";
+      toast.info(`🤝 ${lead} chegou do agente de IA${h.poloName ? ` (${h.poloName})` : ""}: ${h.reason}${h.noQueue ? ". Não há fila comercial: alguém da gestão precisa assumir." : h.noTeam ? ". O polo não tem consultor: a conversa ficou na fila do polo e alguém da gestão precisa colocar um consultor ou assumir." : h.fallback ? ". Veio pela fila de reserva." : ""}${h.outside && h.when ? ` A equipe responde ${h.when}.` : ""}`, {
         autoClose: 20000,
         onClick: () => history.push(`/tickets/${h.ticketId}`),
       });
@@ -55,6 +56,15 @@ const CrmReminders = () => {
           /* the browser may block sound before the first click */
         }
       }
+    });
+    // a student passed the limit (24 h) without the tutor's first contact: administration and coordination are warned, and so is the tutor
+    socket.on("onboardingAlert", (a) => {
+      const manager = user.profile === "admin" || user.role === "admin" || user.role === "coordenacao";
+      if (!(manager || a.tutorId === user.id)) return;
+      toast.warn(`⏰ ${a.leadName || "Um aluno"} está há mais de ${a.hours} horas sem ser ambientado`, {
+        autoClose: 30000,
+        onClick: () => history.push("/ambientacao"),
+      });
     });
     // nobody answered a conversation handed over by the AI: the consultor, then the managers, are warned (the second time it changes hands)
     socket.on("handoffAlert", (a) => {

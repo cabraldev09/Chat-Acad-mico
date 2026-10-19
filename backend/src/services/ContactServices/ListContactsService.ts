@@ -4,6 +4,8 @@ import Contact from "../../models/Contact";
 interface Request {
   searchParam?: string;
   pageNumber?: string;
+  // the groups the person may see (see ConnectionScope)
+  scope?: any | null;
 }
 
 interface Response {
@@ -28,9 +30,10 @@ export const contactsSearchWhere = (searchParam = "") => ({
 
 const ListContactsService = async ({
   searchParam = "",
-  pageNumber = "1"
+  pageNumber = "1",
+  scope = null
 }: Request): Promise<Response> => {
-  const whereCondition = contactsSearchWhere(searchParam);
+  const whereCondition: any = scope ? { [Op.and]: [contactsSearchWhere(searchParam), scope] } : contactsSearchWhere(searchParam);
   const limit = 20;
   const offset = limit * (+pageNumber - 1);
 

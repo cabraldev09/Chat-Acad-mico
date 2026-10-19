@@ -1,3 +1,4 @@
+import { canTutorPolo } from "../PoloServices/TutorsOfPolo";
 import sequelize from "../../database";
 import { Op } from "sequelize";
 
@@ -61,8 +62,7 @@ const enrollLeadCore = async (lead: Lead, actorId: number, input: EnrollInput) =
   // the tutor: chosen by hand (must work in the polo's tutoring) or picked by the queue rule
   let tutor: User | null = null;
   if (input.tutorId && input.tutorId !== "auto") {
-    const member = await PoloMember.findOne({ where: { poloId: polo.id, userId: Number(input.tutorId), role: "tutoria" } });
-    if (!member) throw new AppError("ERR_USER_NOT_IN_QUEUE", 422);
+    if (!(await canTutorPolo(polo.id, Number(input.tutorId)))) throw new AppError("ERR_USER_NOT_IN_QUEUE", 422);
     tutor = await User.findByPk(Number(input.tutorId));
   } else {
     tutor = await pickUserForQueue(queue, true);
@@ -260,8 +260,7 @@ export const editOnboarding = async (lead: Lead, actorId: number, input: EditOnb
     if (!queue) throw new AppError("ERR_POLO_NO_TUTORING_QUEUE", 400);
     let tutor: User | null = null;
     if (input.tutorId && input.tutorId !== "auto") {
-      const member = await PoloMember.findOne({ where: { poloId: polo.id, userId: Number(input.tutorId), role: "tutoria" } });
-      if (!member) throw new AppError("ERR_USER_NOT_IN_QUEUE", 422);
+      if (!(await canTutorPolo(polo.id, Number(input.tutorId)))) throw new AppError("ERR_USER_NOT_IN_QUEUE", 422);
       tutor = await User.findByPk(Number(input.tutorId));
     } else if (input.tutorId === null) {
       tutor = null; // back to the polo's waiting line
