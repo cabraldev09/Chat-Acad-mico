@@ -1,17 +1,14 @@
 import Lead from "../../models/Lead";
 import LeadStage from "../../models/LeadStage";
 import LeadTask from "../../models/LeadTask";
-import Queue from "../../models/Queue";
 import Ticket from "../../models/Ticket";
 import TicketEvent from "../../models/TicketEvent";
 import AiAgent from "../../models/AiAgent";
 import { addActivity, changeStage } from "../CrmServices/LeadCore";
-import UpdateTicketService from "../TicketServices/UpdateTicketService";
-import ShowTicketService from "../TicketServices/ShowTicketService";
-import AutoAssignTicket from "../AutomationServices/AutoAssignTicket";
 import { logger } from "../../utils/logger";
 import { slotsOf, missingSlots } from "./Tools";
 import { briefIfCommercial } from "../CommercialServices/Brief";
+import { HandoffWhy, Routed, WHY_TEXT, routeToCommercial } from "../CommercialServices/Router";
 
 export type HandoffReason = "pedido" | "limite_turnos" | "limite_tokens" | "qualificado" | "sem_resposta" | "desconhecido";
 
@@ -36,10 +33,15 @@ const summaryOf = (agent: AiAgent, ticket: Ticket): string => {
 };
 
 // Passes the conversation to the team with everything the AI learned, so nobody asks again.
-export const handoffToHuman = async (ticketId: number, agent: AiAgent, reason: HandoffReason, question?: string): Promise<void> => {
+const WHY_OF_REASON: Record<HandoffReason, HandoffWhy> = {
+  pedido: "human_request", limite_turnos: "limit_turns", limite_tokens: "limit_tokens", qualificado: "proposal", sem_resposta: "error", desconhecido: "unknown"
+};
+
+export const handoffToHuman = async (ticketId: number, agent: AiAgent, reason: HandoffReason, question?: string, why?: HandoffWhy): Promise<Routed | null> => {
   const ticket = await Ticket.findByPk(ticketId);
-  if (!ticket) return;
+  if (!ticket) return null;
   await ticket.update({ aiActive: false });
+  const because: HandoffWhy = why || WHY_OF_REASON[reason];
 
   const complete = missingSlots(agent, ticket.aiSlots).length === 0;
   const summary = summaryOf(agent, ticket);
@@ -49,7 +51,7 @@ export const handoffToHuman = async (ticketId: number, agent: AiAgent, reason: H
     ticketId,
     type: "handoff",
     actorId: null,
-    note: `Atendimento com IA encerrado (${REASON[reason]}).${question ? `\nPergunta que ficou sem resposta: “${question}”` : ""}${summary ? `\n${summary}` : ""}`.slice(0, 1000)
+    note: `Atendimento com IA encerrado (${why ? WHY_TEXT[because] : REASON[reason]}).${question ? `\nPergunta que ficou sem resposta: “${question}”` : ""}${summary ? `\n${summary}` : ""}`.slice(0, 1000)
   } as any).catch(err => logger.warn(`handoff note not saved: ${err}`));
 
   const lead = await Lead.findOne({ where: { contactId: ticket.contactId } });
@@ -72,12 +74,6 @@ export const handoffToHuman = async (ticketId: number, agent: AiAgent, reason: H
     }
   }
 
-  // the polo of the student decides who answers: the polo's sales queue, then the queue's own distribution rule
-  if (lead?.poloId) {
-    const queue = await Queue.findOne({ where: { poloId: lead.poloId, role: "comercial" } });
-    if (queue && ticket.queueId !== queue.id) {
-      await UpdateTicketService({ ticketData: { queueId: queue.id }, ticketId }).catch(err => logger.warn(`handoff queue: ${err}`));
-    }
-  }
-  await AutoAssignTicket(await ShowTicketService(ticketId));
+  // who takes it: the commercial team of the lead's polo (reserve queue and managers when there is none), warned at once
+  return routeToCommercial(ticket, { why: because, lead, city: (ticket.aiSlots as any)?.cidade || null, agentId: agent.id });
 };

@@ -137,6 +137,8 @@ r.get("/course-regulations", isAuth, isManager, Commercial.regulationsList);
 r.put("/course-regulations/:courseId", isAuth, isManager, Commercial.regulationSave);
 r.delete("/course-regulations/:id", isAuth, isManager, Commercial.regulationRemove);
 r.get("/ai-agents/:id/commercial-metrics", isAuth, isManager, Commercial.metrics);
+r.get("/ai-handoff", isAuth, isManager, Commercial.handoffShow);
+r.put("/ai-handoff", isAuth, isManager, Commercial.handoffSave);
 r.get("/leads/:id/commercial", isAuth, canAccessLead, Commercial.leadCommercial);
 r.get("/tickets/:ticketId/commercial", isAuth, canReadTicket, Commercial.ticketCommercial);
 r.post("/ai-agents/from-template", isAuth, isManager, Ai.fromTemplate);

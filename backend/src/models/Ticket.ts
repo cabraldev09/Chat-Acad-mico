@@ -93,6 +93,20 @@ class Ticket extends Model<Ticket> {
   @Column
   outOfHoursSentAt: Date;
 
+  // the handoff of the AI agent to the commercial team of the polo (see CommercialServices/Router)
+  @Column
+  handoffAt: Date;
+
+  @Column
+  handoffReason: string;
+
+  @Default(0)
+  @Column
+  handoffAlerts: number;
+
+  @Column
+  handoffAlertedAt: Date;
+
   @CreatedAt
   createdAt: Date;
 

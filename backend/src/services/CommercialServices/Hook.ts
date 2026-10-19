@@ -2,6 +2,7 @@ import { AuditLine, CommercialPorts } from "./Ports";
 import { canAutoMove, confirmsNoInterest, hashOf, nextActionOf, noteOf, scoreOf, targetStageKey, temperatureOf } from "./Rules";
 import { STAGE_SPECS, StageKey } from "./Pipeline";
 import { cleanPatch } from "./Slots";
+import { defaultFollowUp, parseFollowUp, ymdOf } from "./Hours";
 
 // After every turn of the AI the system updates the lead by itself. The model only brought what it understood (the intent, the
 // data the person gave); here the state, the score, the temperature, the next action, the column of the CRM, the tasks, the note and the
@@ -25,6 +26,8 @@ export interface TurnInput {
   // the subjects of the knowledge base the answer came from
   topics?: string[];
   firstContactSent?: boolean;
+  // the person took back the interest in buying ("ainda não vou me matricular")
+  retract?: boolean;
   // the block of the flow where it happened (for the gaps in the knowledge base)
   nodeId?: string | null;
   now?: Date;
@@ -46,11 +49,6 @@ const TOPIC_FLAG: Record<string, string> = {
   "institutional/platform": "platformExplained", "institutional/tutoring": "tutoringExplained", "institutional/faculty": "facultyExplained"
 };
 
-const parseDate = (v?: string | null): Date | null => {
-  if (!v) return null;
-  const d = new Date(v);
-  return Number.isNaN(d.getTime()) ? null : d;
-};
 
 export const commercialTurn = async (ports: CommercialPorts, input: TurnInput): Promise<{ exit: string | null; trace: CommercialTrace }> => {
   const now = input.now || new Date();
@@ -80,6 +78,9 @@ export const commercialTurn = async (ports: CommercialPorts, input: TurnInput): 
   // 2) the intent: what the system recognised wins over the model
   const intent = input.fast || input.intent || null;
   s.lastIntent = intent;
+  // three questions in a row that the base does not answer: a person should take it
+  if (input.replied && (intent === "unknown" || input.unknownQuestion)) s.slots.unknownStreak = Number(s.slots.unknownStreak || 0) + 1;
+  else if (input.replied && intent) s.slots.unknownStreak = 0;
   const seen = new Set(String(s.slots.intentsSeen || "").split(",").filter(Boolean));
   if (intent) seen.add(intent);
   s.slots.intentsSeen = [...seen].join(",");
@@ -88,13 +89,17 @@ export const commercialTurn = async (ports: CommercialPorts, input: TurnInput): 
 
   // 3) the moments that matter
   const wantsProposal = intent === "price" || intent === "enrollment" || intent === "proposal";
+  if (input.retract && !wantsProposal) s.readyForProposal = false;
   if (wantsProposal) s.readyForProposal = true;
   const human = intent === "human";
   const followUp = intent === "follow_up";
   const noInterest = intent === "no_interest" && confirmsNoInterest(input.userText);
+  // the person is back and talking about something else: the old "I'll think about it" no longer applies
+  if (input.replied && intent && intent !== "follow_up" && (s.followUpReason || s.followUpAt)) { s.followUpReason = null; s.followUpAt = null; }
   if (followUp) {
     s.followUpReason = (input.followUp?.reason || "Pediu um tempo para pensar").slice(0, 300);
-    s.followUpAt = parseDate(input.followUp?.at);
+    // the day the person gave (09:00 of Porto Velho); a day that makes no sense never erases the one saved, and "vou pensar" always has a day
+    s.followUpAt = parseFollowUp(input.followUp?.at, now) || s.followUpAt || defaultFollowUp(now);
   }
   if (noInterest) s.followUpReason = (input.followUp?.reason || input.userText || "Sem interesse").slice(0, 300);
 
@@ -117,7 +122,7 @@ export const commercialTurn = async (ports: CommercialPorts, input: TurnInput): 
   // 6) tasks (one per reason) and the note (only when it changed)
   if (s.readyForProposal) await ports.task("proposal:ready", "Gerar e apresentar proposta", new Date(now.getTime() + 60 * 60000), "proposta");
   if (target === "waiting_transcript" || nextActionOf(s) === "wait_transcript") await ports.task("transcript:wait", "Aguardar histórico acadêmico", new Date(now.getTime() + 2 * 86400000), "documentos");
-  if (followUp && s.followUpAt) await ports.task(`follow_up:${s.followUpAt.toISOString().slice(0, 10)}`, `Retomar contato: ${s.followUpReason}`, s.followUpAt, "whatsapp");
+  if (followUp && s.followUpAt) await ports.task(`follow_up:${ymdOf(new Date(s.followUpAt))}`, `Retomar contato: ${s.followUpReason}`, s.followUpAt, "whatsapp");
   const note = s.summary || "";
   if (note && hashOf(note) !== s.lastNoteHash) {
     await ports.note(note);
@@ -146,11 +151,11 @@ export const commercialTurn = async (ports: CommercialPorts, input: TurnInput): 
   else if (noInterest) exit = "sem_interesse";
   else if (s.readyForProposal) exit = "proposta";
   else if (followUp) exit = "follow_up";
-  else if (input.unknownQuestion || intent === "unknown") exit = "off";
+  else if (input.unknownQuestion || intent === "unknown") exit = Number(s.slots.unknownStreak || 0) >= 3 ? "human" : "off";
 
   const changed: Record<string, [any, any]> = {};
   const after: Record<string, any> = { ...s.slots, temperature: s.temperature, commercialScore: s.commercialScore, nextAction: s.nextAction, readyForProposal: s.readyForProposal };
-  Object.keys(after).forEach(k => { if (k !== "intentsSeen" && JSON.stringify(before[k]) !== JSON.stringify(after[k])) changed[k] = [before[k] ?? null, after[k] ?? null]; });
+  Object.keys(after).forEach(k => { if (!["intentsSeen", "crmSeen", "lastBriefHash", "unknownStreak", "audioAsked"].includes(k) && JSON.stringify(before[k]) !== JSON.stringify(after[k])) changed[k] = [before[k] ?? null, after[k] ?? null]; });
   return {
     exit,
     trace: { intent, changed, crmBefore, crmAfter, actions: ports.audit.splice(0), temperature: s.temperature, score: s.commercialScore, nextAction: s.nextAction, readyForProposal: s.readyForProposal }

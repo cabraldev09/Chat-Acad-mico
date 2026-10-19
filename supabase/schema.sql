@@ -2636,7 +2636,11 @@ CREATE TABLE public."Tickets" (
     "lastMessageType" character varying(255),
     "lastMessageAuthor" character varying(255),
     "lastMessageAt" timestamp with time zone,
-    "waPinned" boolean DEFAULT false NOT NULL
+    "waPinned" boolean DEFAULT false NOT NULL,
+    "handoffAt" timestamp with time zone,
+    "handoffReason" character varying(20),
+    "handoffAlerts" integer DEFAULT 0 NOT NULL,
+    "handoffAlertedAt" timestamp with time zone
 );
 
 
@@ -4620,6 +4624,13 @@ CREATE INDEX tickets_contact_idx ON public."Tickets" USING btree ("contactId");
 
 
 --
+-- Name: tickets_handoff_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX tickets_handoff_at ON public."Tickets" USING btree ("handoffAt");
+
+
+--
 -- Name: tickets_last_message_at_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5755,6 +5766,7 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261119000003-sticker-last-message.
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261120000001-relationship-department.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261121000001-agent-graphs.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261122000001-commercial-agent.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261123000001-ai-handoff.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

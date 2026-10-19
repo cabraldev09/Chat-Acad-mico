@@ -1,6 +1,7 @@
 import { CRM_OPTIONS } from "../CrmServices/crmOptions";
 import { Op } from "sequelize";
 
+import Contact from "../../models/Contact";
 import Course from "../../models/Course";
 import Polo from "../../models/Polo";
 import Lead from "../../models/Lead";
@@ -172,9 +173,14 @@ const registerTurn = async (input: any, ctx: Ctx): Promise<any> => {
     entryType: input.tipo_ingresso, leadName: input.nome, email: input.email, city: input.cidade, hasHigherEducation: bool(input.ja_graduado), previousCourse: input.curso_anterior,
     previousInstitution: input.instituicao_anterior, hasTranscript: bool(input.tem_historico), modalityUnderstood: bool(input.entendeu_modalidade)
   });
-  if (input.curso && ctx.academic && !ctx.academic.slots.courseId) {
+  if (input.curso && ctx.academic) {
+    const current = Number(ctx.academic.slots.courseId) || 0;
     const found = await findCourse({ courseName: input.curso }, ctx.academic.slots.courseModality);
-    Object.assign(patch, cleanPatch(found ? { courseId: found.id, offerId: found.id, courseName: found.name, courseModality: found.modality } : { courseName: String(input.curso).slice(0, 120) }));
+    if (found && found.id !== current) {
+      // the person changed the course ("e Enfermagem?"): the new one replaces the old, and what was explained about the old no longer counts
+      Object.assign(patch, cleanPatch({ courseId: found.id, offerId: found.id, courseName: found.name, courseModality: found.modality, courseDurationSemesters: found.semesters, courseDegree: found.level }));
+      if (current) Object.assign(patch, { courseExplained: false, modalityExplained: false, mecExplained: false, internshipExplained: false, gradeSent: false, gradeId: null });
+    } else if (!found && !current) Object.assign(patch, cleanPatch({ courseName: String(input.curso).slice(0, 120) }));
   }
   if (ctx.academic) {
     ctx.academic.patch = { ...ctx.academic.patch, ...patch };
@@ -303,8 +309,12 @@ export const applyToLead = async (ticket: Ticket, c: Record<string, string>): Pr
   const lead = await Lead.findOne({ where: { contactId: ticket.contactId } });
   if (!lead) return null;
   const patch: any = {};
-  // the name the student typed beats the WhatsApp profile name
-  if (c.nome && c.nome !== lead.name) patch.name = c.nome;
+  // the name the student typed beats the WhatsApp profile name, but never a name a person of the team wrote in the CRM
+  if (c.nome && c.nome !== lead.name) {
+    const profile = (await Contact.findByPk(ticket.contactId, { attributes: ["name"] }))?.name || "";
+    const automatic = !lead.name || lead.name === profile || /^\+?\d[\d\s()-]{6,}$/.test(lead.name) || /^(sem nome|visitante|aluno)\b/i.test(lead.name);
+    if (automatic) patch.name = c.nome;
+  }
   if (c.email && !lead.email) patch.email = c.email;
   if (c.cidade && !lead.city) patch.city = c.cidade;
   if (c.modalidade && !lead.modality) patch.modality = c.modalidade;
@@ -326,8 +336,10 @@ export const applyToLead = async (ticket: Ticket, c: Record<string, string>): Pr
     if (course) patch.courseId = course.id;
     else patch.notes = [lead.notes, `Curso citado: ${c.curso}`].filter(Boolean).join("\n");
   }
+  // the polo comes from the city the person told (accents, punctuation and small typos do not matter)
   if (c.cidade && !lead.poloId) {
-    const polo = await Polo.findOne({ where: { active: true, city: like(c.cidade) } as any });
+    const { resolvePolo } = await import("../CommercialServices/Router");
+    const { polo } = await resolvePolo(c.cidade);
     if (polo) patch.poloId = polo.id;
   }
   if (Object.keys(patch).length) {

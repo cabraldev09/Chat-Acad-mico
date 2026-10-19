@@ -1,3 +1,4 @@
+import { isMasked, maskSecret } from "../../helpers/Secrets";
 // The shape of a flow and the rules a flow must obey before it can talk to people.
 import { FIXED_EXITS, cleanStage } from "./StageSpec";
 
@@ -64,6 +65,51 @@ export const parseGraph = (raw: any): Graph => {
     return { nodes: [], edges: [] };
   }
 };
+
+// The key of an external tool (a header with a password) lives in the block, but the browser never receives it whole: it shows ••••1234
+// and, when it comes back unchanged, the saved value stays.
+const hostOf = (url: unknown): string => {
+  try {
+    return new URL(String(url || "")).host.toLowerCase();
+  } catch (e) {
+    return "";
+  }
+};
+
+// a copy of a flow does not carry the keys of the original
+export const stripGraphSecrets = (g: Graph): Graph => ({
+  ...g,
+  nodes: g.nodes.map(n => (n.type === "stage" && Array.isArray(n.data?.http) ? { ...n, data: { ...n.data, http: n.data.http.map((t: any) => (t ? { ...t, headerValue: "" } : t)) } } : n))
+});
+
+export const maskGraphSecrets = (g: Graph): Graph => ({
+  ...g,
+  nodes: g.nodes.map(n =>
+    n.type === "stage" && Array.isArray(n.data?.http)
+      ? { ...n, data: { ...n.data, http: n.data.http.map((t: any) => (t && t.headerValue ? { ...t, headerValue: maskSecret(String(t.headerValue)) } : t)) } }
+      : n
+  )
+});
+
+export const restoreGraphSecrets = (incoming: Graph, stored: Graph): Graph => ({
+  ...incoming,
+  nodes: incoming.nodes.map(n => {
+    if (n.type !== "stage" || !Array.isArray(n.data?.http)) return n;
+    const before = stored.nodes.find(x => x.id === n.id);
+    return {
+      ...n,
+      data: {
+        ...n.data,
+        http: n.data.http.map((t: any) => {
+          if (!t || !isMasked(t.headerValue)) return t;
+          const old = before && Array.isArray(before.data?.http) ? before.data.http.find((o: any) => o && o.name === t.name) : null;
+          // the old value stays only for the same address: a key must not follow the tool to another host. A mask is not a password.
+          return old && old.headerValue && hostOf(old.url) === hostOf(t.url) ? { ...t, headerValue: old.headerValue } : { ...t, headerValue: "" };
+        })
+      }
+    };
+  })
+});
 
 export const handleOf = (e: FlowEdge): string => e.sourceHandle || "out";
 

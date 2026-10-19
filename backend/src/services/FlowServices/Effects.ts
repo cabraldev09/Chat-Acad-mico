@@ -1,4 +1,5 @@
 import axios from "axios";
+import { Op } from "sequelize";
 
 import { isUrlSafe, safeRequest } from "../../helpers/SafeUrl";
 import Contact from "../../models/Contact";
@@ -21,12 +22,12 @@ import ShowTicketService from "../TicketServices/ShowTicketService";
 import UpdateTicketService from "../TicketServices/UpdateTicketService";
 import SendWhatsAppMessage from "../WbotServices/SendWhatsAppMessage";
 import AiAgent from "../../models/AiAgent";
-import { Effects, StageTurn, StageTurnArgs } from "./Engine";
+import { Effects, StageTurn, StageTurnArgs, matchPolo } from "./Engine";
 import { FlowNode } from "./Graph";
 import { cleanStage } from "./StageSpec";
 import { findAgentForTicket, loadHistory, respond } from "../AiServices/RunAiAgent";
 import { HandoffReason, handoffToHuman } from "../AiServices/Handoff";
-import { captureUnknown } from "../AiServices/Learning";
+import { captureUnknown, notifyOwner } from "../AiServices/Learning";
 import { matchFaq } from "../AiServices/Kb";
 import { tokensToday } from "../AiServices/Usage";
 import { saveBrief } from "../CommercialServices/Brief";
@@ -34,11 +35,19 @@ import { runCommercialBlock } from "../CommercialServices/Block";
 import { blankState, hydrate, loadState, mirror } from "../CommercialServices/Slots";
 import { dbPorts, simPorts, SimWorld } from "../CommercialServices/Ports";
 import { commercialAiTurn } from "../CommercialServices/Turn";
+import { HandoffWhy, WHY_OF_EXIT, WHY_TEXT, afterHoursNotice, routeToCommercial } from "../CommercialServices/Router";
+import { burstOf, mediaOfMessages, textOfMessage } from "../AiServices/Media";
+import Message from "../../models/Message";
+import TicketEvent from "../../models/TicketEvent";
+import AgentMetricEvent from "../../models/AgentMetricEvent";
+import { transcribeAudio } from "../AiServices/Transcribe";
 
 // invisible mark: bot messages are told apart from the team's
 const MARK = "‎";
 // the legacy menu of the chatbot must not start once a flow has talked to the ticket
 const FLOW_DONE = -1;
+// messages of one conversation in an hour past which a person takes over
+const MAX_PER_HOUR = 40;
 
 // the answers that fill a field of the lead (the other ones stay only inside the flow)
 const LEAD_FIELDS = ["nome", "email", "cidade", "curso", "modalidade", "forma_ingresso", "semestre_transferencia", "prazo_decisao", "motivacao", "turno"];
@@ -97,6 +106,105 @@ export const ticketEffects = (ticket: Ticket, flowName: string, flowCtx: FlowCon
     return polo.name;
   };
 
+  const turnOnce = async ({ node, vars, input, turns }: StageTurnArgs): Promise<StageTurn> => {
+      const stage = cleanStage(node.data);
+      const agent = await agentFor(stage.agentId);
+      // nobody to talk as: the team takes the conversation
+      if (!agent) return { text: "", exit: "human" };
+      // one person writing without stopping (a bot, a loop, spam) cannot spend the AI of everybody: past the limit a person takes over
+      if (input !== null && (await Message.count({ where: { ticketId: ticket.id, fromMe: false, createdAt: { [Op.gte]: new Date(Date.now() - 3600000) } } as any })) >= MAX_PER_HOUR) {
+        vars.__why = "loop";
+        vars.__spoke = "human";
+        return { text: agent.handoffMessage || DEFAULT_HANDOFF, exit: "human" };
+      }
+      // the commercial agent still answers what needs no model (the opening, a request for a person, a price) when the day's limit is reached
+      const capped = agent.dailyTokenCap > 0 && (await tokensToday(agent.id)) >= agent.dailyTokenCap;
+      if (capped && !stage.hooks.includes("commercial")) {
+        vars.__why = "limit_tokens";
+        vars.__spoke = "limit";
+        return { text: agent.handoffMessage || DEFAULT_HANDOFF, exit: "limit" };
+      }
+      let history = await loadHistory(ticket, 30);
+      if (input === null) history = [...history, { role: "user", content: OPENING_HINT }];
+      else {
+        // The person's newest message is answered unless an earlier turn already answered it. The row of our own reply is saved after the
+        // channel confirms it, so the order of the rows cannot be trusted: the time of the newest message is what counts.
+        const newest = await Message.findOne({ where: { ticketId: ticket.id, fromMe: false, isDeleted: false }, order: [["createdAt", "DESC"]] });
+        if (!newest) return { text: "" };
+        if (vars.__answeredAt && new Date(String(vars.__answeredAt)).getTime() >= new Date(newest.createdAt).getTime()) return { text: "" };
+        if (!history.length || history[history.length - 1].role !== "user") history = [...history, { role: "user", content: textOfMessage(newest) || input }];
+        vars.__answeredAt = new Date(newest.createdAt).toISOString();
+      }
+      const last = history[history.length - 1];
+      // the commercial agent: the state of the lead, the rules and the funnel are code; the model only talks and understands
+      if (stage.hooks.includes("commercial")) {
+        const { lead, ports } = await commercialOf(node);
+        // what the person sent as files: a PDF is the transcript, a voice note is written down (when the company turned it on) or asked in writing
+        const burst = input === null ? [] : await burstOf(ticket.id);
+        const media = mediaOfMessages(burst);
+        let said = input === null ? null : last.content;
+        let audioUnreadable = false;
+        const audios = media.filter(m => m.kind === "audio").slice(0, 3);
+        if (audios.length) {
+          const heard: string[] = [];
+          for (const a of audios) {
+            // eslint-disable-next-line no-await-in-loop
+            const t = await transcribeAudio(a.file, agent.id);
+            if (t) heard.push(t);
+          }
+          if (heard.length === audios.length && said !== null) {
+            let n = 0;
+            said = said.replace(/\[áudio\]/g, () => `[áudio] “${heard[n++] || ""}”`);
+            last.content = said;
+          } else audioUnreadable = true;
+        }
+        const prior = history.filter(h => h.role === "user").slice(0, -1).slice(-4).map(h => h.content);
+        const turn = await commercialAiTurn({ agent, stage, nodeId: node.id, flowId: flowCtx.flowId, ports, ticket, lead, history, input: said, sandbox: false, contactName: ticket.contact?.name, turns, media, priorUserTexts: prior, audioUnreadable, capped });
+        if (turn.why) vars.__why = turn.why;
+        // what the person was told is not said again by the handoff of the exit
+        if (turn.text && turn.exit) vars.__spoke = turn.exit;
+        return { text: turn.text, exit: turn.exit, collected: turn.collected };
+      }
+      const lastText = last && last.role === "user" ? last.content : "";
+      // an FAQ with a ready answer needs no model at all
+      if (input !== null && stage.useKnowledge) {
+        const faq = await matchFaq(agent.id, lastText);
+        if (faq) return { text: faq.content };
+      }
+      const known: Record<string, string> = { ...(ticket.aiSlots || {}) };
+      stage.fields.forEach(f => { if (vars[f.key]) known[f.key] = String(vars[f.key]); });
+      const result = await respond(agent, { ticket, history, summary: ticket.aiSummary, collected: known, stage, flowId: flowCtx.flowId, nodeId: node.id });
+      let text = result.text;
+      if (result.exit === "off") {
+        if (agent.learnFromTeam !== false && lastText) await captureUnknown(agent, ticket, lastText, ticket.contact?.name);
+        if (!text) text = (agent.persona && agent.persona.unknownMessage) || DEFAULT_UNKNOWN;
+      }
+      return { text, exit: result.exit || null, collected: result.collected };
+    };
+
+  // a person (or another automation) took the conversation, or it was closed, while the AI was thinking
+  const humanTookOver = async (): Promise<boolean> => {
+    const fresh = await Ticket.findByPk(ticket.id, { attributes: ["userId", "aiActive", "status"] });
+    return !fresh || !!fresh.userId || fresh.status === "closed" || fresh.aiActive === false;
+  };
+  const isTransient = (err: any): boolean => {
+    const status = Number(err?.response?.status || err?.statusCode || 0);
+    return status === 429 || (status >= 500 && status < 600) || /timeout|ETIMEDOUT|ECONNRESET|ECONNABORTED|EAI_AGAIN|socket hang up/i.test(String(err?.code || err?.message || ""));
+  };
+  // the AI could not answer (twice): the lead is told a person continues, the team gets the conversation, the owner of the agent is told why
+  const failTurn = async (vars: Record<string, any>, err: any): Promise<StageTurn> => {
+    const status = Number(err?.response?.status || 0);
+    const code = String(err?.message || "");
+    const reason = /NO_API_KEY/.test(code) ? "a chave de API não está cadastrada" : status === 401 || status === 403 ? "o provedor recusou a chave de API" : status === 429 ? "o limite ou o saldo do provedor acabou" : status >= 500 ? "o provedor de IA está fora do ar" : "erro técnico";
+    logger.error(`AI turn failed (${reason}): ${code}`);
+    const agent = await agentFor(null);
+    await AgentMetricEvent.create({ leadId: null, agentId: agent ? agent.id : null, flowId: flowCtx.flowId || null, event: "agent_error", once: false, meta: JSON.stringify({ reason, status, code: code.slice(0, 200), ticketId: ticket.id }) } as any).catch(() => undefined);
+    if (agent) await notifyOwner(agent, `⚠️ O agente *${agent.name}* não conseguiu responder uma conversa porque ${reason}. A conversa foi para a equipe.`).catch(() => undefined);
+    vars.__why = "error";
+    vars.__spoke = "human";
+    return { text: (agent && agent.handoffMessage) || DEFAULT_HANDOFF, exit: "human" };
+  };
+
   return {
     async listPolos() {
       const rows = await Polo.findAll({ where: { active: true }, order: [["name", "ASC"]], attributes: ["id", "name", "city"] });
@@ -111,10 +219,18 @@ export const ticketEffects = (ticket: Ticket, flowName: string, flowCtx: FlowCon
     },
 
     async say(text, choices) {
+      const send = () => SendWhatsAppMessage({ body: `${MARK}${text}`, ticket, automated: true, choices: choices ? { ...choices, question: `${MARK}${choices.question}` } : undefined });
       try {
-        await SendWhatsAppMessage({ body: `${MARK}${text}`, ticket, automated: true, choices: choices ? { ...choices, question: `${MARK}${choices.question}` } : undefined });
-      } catch (err) {
-        logger.error(`Flow could not send a message: ${err}`);
+        await send();
+      } catch (first) {
+        // a connection that blinked: once more; if it still fails the team sees it in the conversation (the lead did not get this message)
+        try {
+          await new Promise(r => setTimeout(r, 1500));
+          await send();
+        } catch (err) {
+          logger.error(`Flow could not send a message: ${err}`);
+          await TicketEvent.create({ ticketId: ticket.id, type: "send_failed", actorId: null, note: `O agente de IA não conseguiu enviar uma mensagem: “${String(text).slice(0, 160)}”` } as any).catch(() => undefined);
+        }
       }
     },
 
@@ -195,7 +311,19 @@ export const ticketEffects = (ticket: Ticket, flowName: string, flowCtx: FlowCon
 
     async transfer(node, vars) {
       const d = node.data || {};
-      await ticket.update({ chatbotNodeId: FLOW_DONE });
+      // a transfer is a handoff to people: from here the AI stays quiet in this conversation
+      await ticket.update({ chatbotNodeId: FLOW_DONE, aiActive: false });
+      // the commercial team of the polo: the Router finds the polo, the queue and the consultant (reserve queue and managers when needed),
+      // warns them at once and writes down why
+      if (d.to === "polo_sales" || d.to === "chosen_polo_sales") {
+        const agent = await agentFor(null);
+        // nothing was said about the handoff yet (a limit was reached, a plain transfer block): the lead hears it once
+        if (vars.__exit && vars.__spoke !== vars.__exit && !d.text) await this.say((agent && agent.handoffMessage) || DEFAULT_HANDOFF);
+        const routed = await routeToCommercial(ticket, { why: vars.__why || WHY_OF_EXIT[String(vars.__exit || "")] || "other", poloId: d.to === "chosen_polo_sales" && vars.poloId ? Number(vars.poloId) : null, city: vars.city || vars.cidade || null, agentId: flowCtx.agentId || null });
+        const notice = afterHoursNotice(routed);
+        if (notice) await this.say(notice);
+        return;
+      }
       if (d.to === "user" && d.userId) {
         const user = await User.findByPk(Number(d.userId));
         if (user) await UpdateTicketService({ ticketData: { userId: user.id, status: "open" }, ticketId: ticket.id });
@@ -250,39 +378,33 @@ export const ticketEffects = (ticket: Ticket, flowName: string, flowCtx: FlowCon
       Object.assign(vars, out);
     },
 
-    async aiTurn({ node, vars, input, turns }: StageTurnArgs): Promise<StageTurn> {
-      const stage = cleanStage(node.data);
-      const agent = await agentFor(stage.agentId);
-      // nobody to talk as: the team takes the conversation
-      if (!agent) return { text: "", exit: "human" };
-      if (agent.dailyTokenCap > 0 && (await tokensToday(agent.id)) >= agent.dailyTokenCap) return { text: agent.handoffMessage || DEFAULT_HANDOFF, exit: "limit" };
-      let history = await loadHistory(ticket, 30);
-      const last = history[history.length - 1];
-      if (input !== null && (!last || last.role !== "user")) return { text: "" };
-      if (input === null) history = [...history, { role: "user", content: OPENING_HINT }];
-      // the commercial agent: the state of the lead, the rules and the funnel are code; the model only talks and understands
-      if (stage.hooks.includes("commercial")) {
-        const { lead, ports } = await commercialOf(node);
-        const turn = await commercialAiTurn({ agent, stage, nodeId: node.id, flowId: flowCtx.flowId, ports, ticket, lead, history, input: input === null ? null : last.content, sandbox: false, contactName: ticket.contact?.name, turns });
-        // what the person was told is not said again by the handoff of the exit
-        if (turn.text && turn.exit) vars.__spoke = turn.exit;
-        return { text: turn.text, exit: turn.exit, collected: turn.collected };
+    // The AI never leaves a person without an answer or a destination: a failure is tried once more, then the team takes the conversation
+    // (with the reason), and the owner of the agent is told why. A person who took the conversation while the model was thinking is not
+    // answered over.
+    async aiTurn(args: StageTurnArgs): Promise<StageTurn> {
+      // the message is marked as answered when the turn starts; a turn that failed has not answered it, so the retry must see it as new
+      const answeredBefore = args.vars.__answeredAt;
+      const attempt = async (): Promise<StageTurn> => {
+        const t = await turnOnce(args);
+        if ((t.text || t.exit) && (await humanTookOver())) return { text: "" };
+        return t;
+      };
+      try {
+        return await attempt();
+      } catch (first) {
+        let err: any = first;
+        if (isTransient(first)) {
+          if (answeredBefore === undefined) delete args.vars.__answeredAt;
+          else args.vars.__answeredAt = answeredBefore;
+          await new Promise(r => setTimeout(r, 1500));
+          try {
+            return await attempt();
+          } catch (second) {
+            err = second;
+          }
+        }
+        return failTurn(args.vars, err);
       }
-      const lastText = last && last.role === "user" ? last.content : "";
-      // an FAQ with a ready answer needs no model at all
-      if (input !== null && stage.useKnowledge) {
-        const faq = await matchFaq(agent.id, lastText);
-        if (faq) return { text: faq.content };
-      }
-      const known: Record<string, string> = { ...(ticket.aiSlots || {}) };
-      stage.fields.forEach(f => { if (vars[f.key]) known[f.key] = String(vars[f.key]); });
-      const result = await respond(agent, { ticket, history, summary: ticket.aiSummary, collected: known, stage, flowId: flowCtx.flowId, nodeId: node.id });
-      let text = result.text;
-      if (result.exit === "off") {
-        if (agent.learnFromTeam !== false && lastText) await captureUnknown(agent, ticket, lastText, ticket.contact?.name);
-        if (!text) text = (agent.persona && agent.persona.unknownMessage) || DEFAULT_UNKNOWN;
-      }
-      return { text, exit: result.exit || null, collected: result.collected };
     },
 
     async humanHandoff(_node, exit, vars) {
@@ -290,8 +412,16 @@ export const ticketEffects = (ticket: Ticket, flowName: string, flowCtx: FlowCon
       await ticket.update({ chatbotNodeId: FLOW_DONE });
       // a stage that ended by itself already said goodbye; for the others the person is told a colleague continues
       if (agent && exit !== "off" && vars?.__spoke !== exit) await this.say(agent.handoffMessage || DEFAULT_HANDOFF);
-      if (agent) await handoffToHuman(ticket.id, agent, REASON_OF[exit] || "pedido");
-      else await ticket.update({ aiActive: false });
+      if (agent) {
+        const routed = await handoffToHuman(ticket.id, agent, REASON_OF[exit] || "pedido", undefined, vars?.__why || WHY_OF_EXIT[exit] || "other");
+        const notice = routed ? afterHoursNotice(routed) : null;
+        if (notice) await this.say(notice);
+      } else {
+        await ticket.update({ aiActive: false });
+        const routed = await routeToCommercial(ticket, { why: vars?.__why || WHY_OF_EXIT[exit] || "other" });
+        const notice = afterHoursNotice(routed);
+        if (notice) await this.say(notice);
+      }
     },
 
     async startFlow(flowId) {
@@ -375,7 +505,22 @@ export const simEffects = (sample: SimSample = {}, opts: { agent?: AiAgent | nul
       actions.push(text[d.action] || "Ação no CRM");
       return "simulado";
     },
-    async transfer(node) { actions.push(`Transfere a conversa (${node.data?.to || "equipe"})`); },
+    async transfer(node, vars) {
+      const to = node.data?.to || "equipe";
+      if (to === "polo_sales" || to === "chosen_polo_sales") {
+        // what the Router would do: the polo from the city, the commercial team of that polo, the reserve queue when it is unknown
+        const world = vars.__commercial as SimWorld | undefined;
+        const city = String((world && world.state.slots.city) || vars.city || (sample.lead || {}).cidade || "");
+        const polos = await fx.listPolos();
+        // the polo the person chose inside the flow wins over the one the city points to
+        const chosen = to === "chosen_polo_sales" && vars.poloId ? polos.find(p => p.id === Number(vars.poloId)) : undefined;
+        const found: { polo?: { id: number; name: string } } = chosen ? { polo: chosen } : city ? matchPolo(polos, city) : {};
+        const why = WHY_TEXT[((vars.__why as HandoffWhy) || WHY_OF_EXIT[String(vars.__exit || "")] || "other") as HandoffWhy];
+        actions.push(`Encaminha ao ${found.polo ? `Comercial do polo ${found.polo.name}` : "a fila de reserva (o polo ainda não foi identificado pela cidade)"}: o consultor é avisado na hora e recebe uma tarefa. Motivo: ${why}.`);
+        return;
+      }
+      actions.push(`Transfere a conversa (${to})`);
+    },
     async handToAi() { actions.push("Passa a conversa para o agente de IA"); },
     async close() { actions.push("Finaliza a conversa"); },
     async webhook(url) { actions.push(`Chama o webhook ${url}`); return true; },

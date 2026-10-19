@@ -28,7 +28,7 @@ const goTo = async (ports: CommercialPorts, key: StageKey, reason: string): Prom
 // the slots as flat text for the variables of the flow
 export const varsOf = (ports: CommercialPorts): Record<string, string> => {
   const out: Record<string, string> = {};
-  Object.entries(mirror(ports.state)).forEach(([k, v]) => { if (v !== null && v !== undefined && v !== "" && k !== "intentsSeen") out[k] = String(v); });
+  Object.entries(mirror(ports.state)).forEach(([k, v]) => { if (v !== null && v !== undefined && v !== "" && typeof v !== "object" && !["intentsSeen", "lastBriefHash"].includes(k)) out[k] = String(v); });
   return out;
 };
 

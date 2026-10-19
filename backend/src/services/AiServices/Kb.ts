@@ -133,7 +133,9 @@ export const searchChunks = async (agentId: number, question: string, limit = 4,
     const topicSql = scoped
       ? `AND (${[
           topics.length ? `d.topic IN (:topics) OR ${topics.map((_, i) => `d.topic LIKE :tp${i}`).join(" OR ")}` : null,
-          opts.courseId ? `d."courseId" = :courseId` : null
+          opts.courseId ? `d."courseId" = :courseId` : null,
+          // what the team taught the agent has no subject: it is read by its words, besides the documents of the subject
+          `d.topic IS NULL`
         ].filter(Boolean).join(" OR ")})`
       : "";
     const replacements: any = { q: words.join(" | "), agentId, limit, topics: topics.length ? topics : [""], courseId: opts.courseId || 0 };
@@ -155,7 +157,7 @@ export const searchChunks = async (agentId: number, question: string, limit = 4,
 
   // other databases: count how many words each chunk contains
   const docs = (await KbDocument.findAll({ where: { kind: "doc", agentId: { [Op.or]: [agentId, null] } } as any, attributes: ["id", "title", "topic", "courseId"] })).filter(
-    d => !scoped || topics.some(t => d.topic === t || String(d.topic || "").startsWith(`${t}/`)) || (!!opts.courseId && d.courseId === opts.courseId)
+    d => !scoped || !d.topic || topics.some(t => d.topic === t || String(d.topic || "").startsWith(`${t}/`)) || (!!opts.courseId && d.courseId === opts.courseId)
   );
   const chunks = await KbChunk.findAll({ where: { documentId: docs.map(d => d.id) } });
   return chunks

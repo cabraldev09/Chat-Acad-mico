@@ -218,6 +218,8 @@ const stageStep = async (graph: Graph, node: FlowNode, state: RunState, fx: Effe
   else {
     state.vars[turnsKey(node.id)] = turns + 1;
     turn = await fx.aiTurn({ node, vars: state.vars, input, turns });
+    // a turn that said nothing and decided nothing (a sticker, a message already answered) does not count against the limit
+    if (!turn.text && !turn.exit && !Object.keys(turn.collected || {}).length) state.vars[turnsKey(node.id)] = turns;
   }
   for (const [key, value] of Object.entries(turn.collected || {})) {
     if (value === undefined || value === null || String(value) === "") continue;

@@ -116,19 +116,19 @@ export const commercialGraph = (): Graph =>
           "Duração e formato: buscar_curso. MEC e práticas: buscar_regra_modalidade. Grade: buscar_grade (envie o PDF com enviar_material se pedirem). Estágio e TCC: buscar_estagio ou buscar_grade. Plataforma, tutoria, docentes, reconhecimento e matrícula: consultar_conhecimento. Sem dado, diga que vai confirmar; nunca chute. Após responder, conduza: ofereça a grade, pergunte se ficou claro ou ofereça encaminhar para ver a melhor condição de bolsa com um consultor.",
         tools: ["buscar_curso", "buscar_regra_modalidade", "buscar_grade", "buscar_estagio", "listar_polos", "consultar_conhecimento", "enviar_material", "consultar_analise_curricular"],
         maxTurns: 30,
-        outcomes: [...REASONS, { id: "enviou_historico", label: "Enviou o histórico", when: "quando a mensagem da pessoa for o nome de um arquivo PDF ou imagem que ela enviou como histórico acadêmico" }]
+        outcomes: [...REASONS, { id: "enviou_historico", label: "Enviou o histórico", when: "quando a pessoa enviar o histórico acadêmico em PDF (a mensagem aparece como [arquivo enviado: nome.pdf])" }]
       })],
       ["pedir_historico", "stage", stage({
         title: "Solicitar histórico",
         quiet: true,
         objective: "Explicar que a análise curricular mostra quais disciplinas poderão ser dispensadas e pedir o histórico acadêmico em PDF.",
         instructions:
-          "Diga que, com o histórico, é possível solicitar uma análise curricular para verificar exatamente quais disciplinas poderão ser dispensadas. Nunca prometa aproveitamento. Se a mensagem da pessoa for o nome de um arquivo, ela enviou o histórico.",
+          "Diga que, com o histórico, é possível solicitar uma análise curricular para verificar exatamente quais disciplinas poderão ser dispensadas. Nunca prometa aproveitamento. Se a mensagem da pessoa for [arquivo enviado: nome.pdf], ela enviou o histórico em PDF.",
         tools: ["consultar_analise_curricular"],
         maxTurns: 8,
         outcomes: [
           ...REASONS,
-          { id: "enviou_historico", label: "Enviou o histórico", when: "quando a mensagem da pessoa for o nome de um arquivo PDF ou imagem enviado como histórico acadêmico" },
+          { id: "enviou_historico", label: "Enviou o histórico", when: "quando a pessoa enviar o histórico acadêmico em PDF (a mensagem aparece como [arquivo enviado: nome.pdf])" },
           { id: "sem_historico", label: "Sem histórico agora", when: "quando a pessoa disser que não tem o histórico agora" }
         ]
       })],

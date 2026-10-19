@@ -13,7 +13,7 @@ export const NEXT_ACTIONS = [
   "wait_analysis", "explain_analysis", "answer_objection", "generate_proposal", "follow_up", "human_service", "close_lost"
 ] as const;
 
-type Kind = "string" | "number" | "boolean" | "entry" | "analysis" | "temperature";
+type Kind = "string" | "number" | "boolean" | "entry" | "analysis" | "temperature" | "object";
 // the slots and the kind of each one: what goes in is cleaned by it
 export const SLOT_KINDS: Record<string, Kind> = {
   leadId: "number", leadName: "string", phone: "string", email: "string", city: "string", state: "string", poloId: "number", poloName: "string",
@@ -29,7 +29,9 @@ export const SLOT_KINDS: Record<string, Kind> = {
   leadTemperature: "temperature", commercialScore: "number", readyForProposal: "boolean", crmStage: "string", nextAction: "string",
   followUpReason: "string", commercialSummary: "string", lastIntent: "string", lastInboundAt: "string", lastOutboundAt: "string",
   // the intents already seen (scoring and temperature count each one once)
-  intentsSeen: "string"
+  intentsSeen: "string",
+  // control of the agent itself: questions without an answer in a row, voice notes asked in writing, the last brief written, what the CRM held
+  unknownStreak: "number", audioAsked: "number", lastBriefHash: "string", crmSeen: "object"
 };
 
 export type Slots = Record<string, any>;
@@ -45,6 +47,7 @@ const clean = (kind: Kind, v: any): any => {
     case "entry": return (ENTRY_TYPES as readonly string[]).includes(v) ? v : undefined;
     case "analysis": return (ANALYSIS_STATUS as readonly string[]).includes(v) ? v : undefined;
     case "temperature": return (TEMPERATURES as readonly string[]).includes(v) ? v : undefined;
+    case "object": return v && typeof v === "object" && !Array.isArray(v) ? v : undefined;
     default: return String(v).trim().slice(0, 400);
   }
 };
@@ -76,6 +79,8 @@ export interface CommercialState {
   summary: string | null;
   stageKey: string | null;
   lastNoteHash: string | null;
+  // the slots as they were loaded: saving writes only what this turn changed, so a worker that updated the lead meanwhile is not erased
+  loaded?: Slots;
 }
 
 export const blankState = (leadId: number): CommercialState => ({
@@ -95,7 +100,9 @@ const fromRow = (row: LeadCommercial): CommercialState => ({
 
 export const loadState = async (leadId: number): Promise<CommercialState> => {
   const row = await LeadCommercial.findOne({ where: { leadId } });
-  return row ? fromRow(row) : blankState(leadId);
+  const state = row ? fromRow(row) : blankState(leadId);
+  state.loaded = JSON.parse(JSON.stringify(state.slots));
+  return state;
 };
 
 // the columns the CRM reads are also copied into the slots, so the model and the tools see one picture
@@ -113,8 +120,18 @@ export const saveState = async (s: CommercialState): Promise<void> => {
     lastOutboundAt: s.slots.lastOutboundAt ? new Date(s.slots.lastOutboundAt) : null
   };
   const row = await LeadCommercial.findOne({ where: { leadId: s.leadId } });
-  if (row) await row.update(values);
-  else await LeadCommercial.create({ leadId: s.leadId, ...values } as any);
+  if (row) {
+    // only the slots this turn changed go over what is in the database now (the analysis may have finished meanwhile)
+    if (s.loaded) {
+      const fresh = parse(row.slots);
+      const merged: Slots = { ...fresh };
+      Object.keys(s.slots).forEach(k => { if (JSON.stringify(s.slots[k]) !== JSON.stringify(s.loaded![k])) merged[k] = s.slots[k]; });
+      s.slots = merged;
+      values.slots = JSON.stringify(mirror(s));
+    }
+    await row.update(values);
+  } else await LeadCommercial.create({ leadId: s.leadId, ...values } as any);
+  s.loaded = JSON.parse(JSON.stringify(s.slots));
 };
 
 // the entry type the CRM already knows (the field "forma de ingresso" of the lead)
@@ -133,7 +150,11 @@ export const hydrate = async (state: CommercialState, lead: Lead): Promise<Comme
   const polo = lead.poloId ? await Polo.findByPk(lead.poloId, { attributes: ["id", "name", "city"] }) : null;
   const known = (k: string) => state.slots[k] !== undefined && state.slots[k] !== null && state.slots[k] !== "";
   const patch: Slots = {};
-  const set = (k: string, v: any) => { if (v !== undefined && v !== null && v !== "" && !known(k)) patch[k] = v; };
+  // what the CRM held the last time we looked: a value that changed since then was edited by a person and wins over the conversation
+  const seen: Record<string, any> = state.slots.crmSeen && typeof state.slots.crmSeen === "object" ? state.slots.crmSeen : {};
+  const crm: Record<string, any> = { leadName: lead.name, email: lead.email, city: lead.city, courseId: course ? course.id : null, poloId: polo ? polo.id : null };
+  const edited = (k: string): boolean => crm[k] !== null && crm[k] !== undefined && crm[k] !== "" && seen[k] !== undefined && crm[k] !== seen[k] && crm[k] !== state.slots[k];
+  const set = (k: string, v: any) => { if (v !== undefined && v !== null && v !== "" && (!known(k) || edited(k === "courseName" ? "courseId" : k === "poloName" ? "poloId" : k))) patch[k] = v; };
   set("leadId", lead.id);
   set("leadName", lead.name);
   set("phone", lead.phone);
@@ -141,9 +162,14 @@ export const hydrate = async (state: CommercialState, lead: Lead): Promise<Comme
   set("city", lead.city);
   set("state", lead.state);
   set("intakePeriod", lead.entryTerm);
-  if (course) { set("courseId", course.id); set("offerId", course.id); set("courseName", course.name); set("courseModality", course.modality); set("courseDurationSemesters", course.semesters); set("courseDegree", course.level); }
+  if (course) {
+    const changedCourse = edited("courseId");
+    set("courseId", course.id); set("offerId", course.id); set("courseName", course.name); set("courseModality", course.modality); set("courseDurationSemesters", course.semesters); set("courseDegree", course.level);
+    // another course: what was explained about the old one does not count for the new one
+    if (changedCourse) Object.assign(patch, { courseExplained: false, modalityExplained: false, mecExplained: false, internshipExplained: false, gradeSent: false });
+  }
   if (polo) { set("poloId", polo.id); set("poloName", polo.name); set("city", polo.city); }
   const entry = entryTypeOfAdmission(lead.admissionType);
   if (entry && (!state.slots.entryType || state.slots.entryType === "unknown")) patch.entryType = entry;
-  return { ...state, slots: { ...state.slots, ...cleanPatch(patch) } };
+  return { ...state, slots: { ...state.slots, ...cleanPatch(patch), crmSeen: crm } };
 };

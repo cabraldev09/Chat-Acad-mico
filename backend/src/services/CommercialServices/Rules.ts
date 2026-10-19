@@ -18,7 +18,7 @@ const plain = (s: string): string =>
 
 // ---------------------------------------------------------------- what is obvious needs no model
 const HUMAN = [
-  /(falar|conversar|passar|chamar|trocar|transferir).{0,30}(com )?(uma |um )?(pessoa|atendente|humano|consultor|consultora|vendedor|vendedora|gente de verdade)/,
+  /(falar|conversar|passar|chamar).{0,30}(com )?(uma |um )?(pessoa|atendente|humano|consultor|consultora|vendedor|vendedora|gente de verdade)/,
   /(quero|preciso|prefiro|gostaria de).{0,12}(um |uma )?(atendente|consultor|consultora|humano|pessoa de verdade)/,
   /(me )?(passa|passe|transfere|transfira) (pra|para) (um |uma )?(atendente|consultor|consultora|pessoa)/
 ];
@@ -42,22 +42,58 @@ const NO_INTEREST = [/nao tenho (mais )?interesse/, /\bdesisti\b/, /nao quero (m
 
 export type FastIntent = { intent: "human" | "price" | "enrollment" | "proposal" } | null;
 
+// "não quero falar com atendente", "ainda não quero me matricular": the phrase is there, the meaning is the opposite
+const NEGATION = /\b(nao|nunca|jamais|sem|ainda nao|nem)\b/;
+const hit = (list: RegExp[], t: string): boolean =>
+  list.some(r => {
+    const m = r.exec(t);
+    return !!m && !NEGATION.test(t.slice(Math.max(0, m.index - 22), m.index));
+  });
+
 export const fastIntent = (text: string): FastIntent => {
   const t = plain(text);
   if (!t) return null;
-  if (HUMAN.some(r => r.test(t))) return { intent: "human" };
-  if (ENROLL.some(r => r.test(t))) return { intent: "enrollment" };
-  if (/\bproposta\b/.test(t) && MONEY.some(r => r.test(t))) return { intent: "proposal" };
-  if (MONEY.some(r => r.test(t))) return { intent: "price" };
+  if (hit(HUMAN, t)) return { intent: "human" };
+  if (hit(ENROLL, t)) return { intent: "enrollment" };
+  if (/\bproposta\b/.test(t) && hit(MONEY, t)) return { intent: "proposal" };
+  if (hit(MONEY, t)) return { intent: "price" };
+  return null;
+};
+
+// the person takes back what made the lead "ready for the proposal"
+export const retractsBuying = (text: string): boolean => {
+  const t = plain(text);
+  return /\b(nao (vou|quero) (mais )?(me )?(matricular|fechar|prosseguir)|ainda nao (vou|quero|decidi|fechei)|deixa (pra|para) depois|desisti)\b/.test(t);
+};
+
+// A reason to hand the conversation to a person that needs no model to be seen: an unhappy person, money already paid or a legal
+// word, a wrong number, or the same request for the third time. The reason travels to the team in the handoff.
+const COMPLAINT = /\b(absurdo|pessim[oa]|horrivel|palhacada|vergonha|decepcion\w*|reclam(ar|acao|ando)|procon|processar|processo|advogad\w*|justica|denunci\w*|golpe|enganad\w*|fraude|estorno|reembolso|ja paguei|paguei|comprovante|cancelar (a |minha )?(matricula|inscricao|contrato)|cobranca indevida)\b/;
+const WRONG_NUMBER = /\b(numero errado|nao sou (eu|essa pessoa|ele|ela)|foi engano|engano|nao conheco (voce|vocês)|quem e voce)\b/;
+export const humanReason = (text: string, previousUserTexts: string[] = []): "complaint" | "loop" | "other" | null => {
+  const t = plain(text);
+  if (!t) return null;
+  if (COMPLAINT.test(t)) return "complaint";
+  if (WRONG_NUMBER.test(t)) return "other";
+  // the same sentence again, twice before: the AI is not solving it
+  if (t.length >= 8 && previousUserTexts.map(plain).filter(p => p === t).length >= 2) return "loop";
   return null;
 };
 
 // a message that only says hello or shows interest, with nothing to answer: the opening of the system is enough (no model)
+const GREET_WORDS = /^(oi+|ola+|opa|e ai|eae|bom dia|boa tarde|boa noite|boa madrugada|hello|hi|tudo bem|tudo bom|td bem|tudo certo|blz|beleza)\b[ ,.!]*/;
+const INTEREST_ONLY = /^((eu )?(quero|queria|gostaria de|preciso de|tenho interesse em|me interessei (em|por)))? ?(mais )?(informacao|informacoes|saber mais|conhecer)( (do|dos|sobre o|sobre os) (curso|cursos|valores))?( por favor| pfv)?$|^(tenho interesse|me interessei)( no curso| nos cursos)?$|^vim (pelo|pela|do|da|de|atraves).{0,30}$|^(voltei|estou de volta|to de volta|cheguei|de novo|de volta)( aqui)?$/;
 export const isGreeting = (text: string): boolean => {
-  const t = plain(text);
+  let t = plain(text);
   if (!t || t.length > 70 || t.includes("?")) return false;
-  if (fastIntent(text)) return false;
-  return /^(oi+|ola+|opa|e ai|eae|bom dia|boa tarde|boa noite|hello|hi|tudo bem|tudo bom|quero (mais )?informac|gostaria de (mais )?informac|informac|vim (pelo|pela|do|da|de|atraves)|quero saber mais|tenho interesse|me interessei|quero conhecer|queria conhecer|queria saber mais)/.test(t);
+  if (fastIntent(text) || humanReason(text)) return false;
+  // greetings first ("bom dia, tudo bem?"), then what is left must be nothing or only "I want information": a course or a city is content
+  let guard = 0;
+  while (GREET_WORDS.test(t) && guard < 4) {
+    t = t.replace(GREET_WORDS, "").trim();
+    guard += 1;
+  }
+  return !t || INTEREST_ONLY.test(t);
 };
 
 // The first message of the agent, written by the system (a model would spend tokens to say the same thing every time): it welcomes the

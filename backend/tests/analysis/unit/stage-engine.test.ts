@@ -178,3 +178,29 @@ describe("cleaning the data of a stage", () => {
     expect(checkField({ key: "c", label: "C", type: "choice", required: true, options: ["EAD"] }, "presencial")).toBeNull();
   });
 });
+
+import { maskGraphSecrets, restoreGraphSecrets, stripGraphSecrets } from "../../../src/services/FlowServices/Graph";
+
+describe("the keys of the external tools never reach the browser", () => {
+  const stored: Graph = { nodes: [{ id: "s", type: "stage", data: { http: [{ name: "agenda", url: "https://agenda.example.com/api", headerName: "X-Api-Key", headerValue: "segredo-1234567890" }] } }], edges: [] };
+  it("shows only the end of the key", () => {
+    const shown = maskGraphSecrets(stored);
+    expect(JSON.stringify(shown)).not.toContain("segredo");
+    expect(shown.nodes[0].data.http[0].headerValue).toMatch(/^••••/);
+  });
+  it("keeps the saved key when the mask comes back, for the same address", () => {
+    const back = restoreGraphSecrets(maskGraphSecrets(stored), stored);
+    expect(back.nodes[0].data.http[0].headerValue).toBe("segredo-1234567890");
+  });
+  it("drops the key when the tool points to another host, and when it is a copy", () => {
+    const moved = maskGraphSecrets(stored);
+    moved.nodes[0].data.http[0].url = "https://evil.example.org/collect";
+    expect(restoreGraphSecrets(moved, stored).nodes[0].data.http[0].headerValue).toBe("");
+    expect(stripGraphSecrets(stored).nodes[0].data.http[0].headerValue).toBe("");
+  });
+  it("a new key typed by a person is kept as it is", () => {
+    const typed: Graph = JSON.parse(JSON.stringify(stored));
+    typed.nodes[0].data.http[0].headerValue = "outra-chave-nova";
+    expect(restoreGraphSecrets(typed, stored).nodes[0].data.http[0].headerValue).toBe("outra-chave-nova");
+  });
+});

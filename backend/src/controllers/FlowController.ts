@@ -11,7 +11,7 @@ import AutomationTrigger from "../models/AutomationTrigger";
 import { advance, firstNode, resume, RunState } from "../services/FlowServices/Engine";
 import { simEffects } from "../services/FlowServices/Effects";
 import { generateFlow } from "../services/FlowServices/Generate";
-import { Graph, parseGraph, validateGraph } from "../services/FlowServices/Graph";
+import { Graph, maskGraphSecrets, parseGraph, restoreGraphSecrets, stripGraphSecrets, validateGraph } from "../services/FlowServices/Graph";
 import { flowStats, hasActiveAiAgent, parseEntry } from "../services/FlowServices/Runner";
 import { TEMPLATES, autoLayout, blankGraph, legacyToGraph } from "../services/FlowServices/Templates";
 
@@ -64,7 +64,7 @@ const present = async (flow: ChatFlow, withGraph = false) => {
     errors: issues.filter(i => i.level === "error").length,
     warnings: issues.filter(i => i.level === "warning").length,
     stats: { started: stats.started, crm: stats.crm, done: stats.done, handoff: stats.handoff, waiting: stats.waiting },
-    ...(withGraph ? { graph: draft, issues } : {})
+    ...(withGraph ? { graph: maskGraphSecrets(draft), issues } : {})
   };
 };
 
@@ -117,7 +117,7 @@ export const update = async (req: Request, res: Response): Promise<Response> => 
   if (b.description !== undefined) patch.description = clip(b.description, 200) || null;
   if (b.whatsappId !== undefined) patch.whatsappId = b.whatsappId ? Number(b.whatsappId) : null;
   if (b.entry !== undefined) patch.entry = entryOf(b.entry);
-  if (b.graph !== undefined) patch.draft = JSON.stringify(cleanGraph(b.graph));
+  if (b.graph !== undefined) patch.draft = JSON.stringify(restoreGraphSecrets(cleanGraph(b.graph), parseGraph(flow.draft)));
   await flow.update(patch);
   return res.json(await present(flow, true));
 };
@@ -131,7 +131,7 @@ export const validate = async (req: Request, res: Response): Promise<Response> =
 // the draft becomes what people talk to; a flow with errors never goes live
 export const publish = async (req: Request, res: Response): Promise<Response> => {
   const flow = await load(req.params.id);
-  const graph = cleanGraph(req.body?.graph || flow.draft);
+  const graph = restoreGraphSecrets(cleanGraph(req.body?.graph || flow.draft), parseGraph(flow.draft));
   const issues = validateGraph(graph, { hasAiAgent: await hasActiveAiAgent(), kind: flow.kind });
   if (issues.some(i => i.level === "error")) return res.status(422).json({ error: "ERR_FLOW_HAS_ERRORS", issues });
   await flow.update({ draft: JSON.stringify(graph), published: JSON.stringify(graph), status: "published", version: flow.version + 1, publishedAt: new Date() });
@@ -177,7 +177,7 @@ export const restoreVersion = async (req: Request, res: Response): Promise<Respo
 
 export const duplicate = async (req: Request, res: Response): Promise<Response> => {
   const flow = await load(req.params.id);
-  const copy = await ChatFlow.create({ name: clip(`${flow.name} (cópia)`, 80), kind: flow.kind || "flow", agentId: flow.agentId, description: flow.description, whatsappId: flow.whatsappId, entry: flow.entry, draft: flow.draft, createdBy: uid(req) } as any);
+  const copy = await ChatFlow.create({ name: clip(`${flow.name} (cópia)`, 80), kind: flow.kind || "flow", agentId: flow.agentId, description: flow.description, whatsappId: flow.whatsappId, entry: flow.entry, draft: JSON.stringify(stripGraphSecrets(parseGraph(flow.draft))), createdBy: uid(req) } as any);
   return res.status(201).json(await present(copy, true));
 };
 
@@ -196,7 +196,7 @@ export const stats = async (req: Request, res: Response): Promise<Response> => r
 export const simulate = async (req: Request, res: Response): Promise<Response> => {
   const flow = await load(req.params.id);
   const b = req.body || {};
-  const graph = cleanGraph(b.graph || flow.draft);
+  const graph = restoreGraphSecrets(cleanGraph(b.graph || flow.draft), parseGraph(flow.draft));
   const issues = validateGraph(graph, { hasAiAgent: await hasActiveAiAgent(), kind: flow.kind });
   if (issues.some(i => i.level === "error" && /início/.test(i.text))) return res.status(422).json({ error: "ERR_FLOW_HAS_ERRORS", issues });
   // an AI stage really answers in the simulator (with the model of the agent), without sending or saving anything

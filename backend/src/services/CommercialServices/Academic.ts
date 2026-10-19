@@ -21,6 +21,7 @@ import SendWhatsAppMedia from "../WbotServices/SendWhatsAppMedia";
 import { searchChunks } from "../AiServices/Kb";
 import { cleanPatch, Slots } from "./Slots";
 import { topicsOf } from "./Rules";
+import { matchPolo } from "../FlowServices/Engine";
 
 // The academic data the commercial agent may state, read from the system and returned in the smallest shape that is enough to answer.
 // Nothing here returns a price or a scholarship. What the system does not have comes back as "unknown", never as a guess.
@@ -83,6 +84,31 @@ const termNumber = (t: string | null | undefined): number => {
 };
 
 // ---------------------------------------------------------------- courses
+const distanceOf = (a: string, b: string): number => {
+  const dp = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j += 1) dp[0][j] = j;
+  for (let i = 1; i <= a.length; i += 1) for (let j = 1; j <= b.length; j += 1) dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  return dp[a.length][b.length];
+};
+
+// "administracao", "enfermagen", "pedagogia ead": the database search is accent- and typo-sensitive, this one is not
+const fuzzyCourse = async (name: string): Promise<Course | null> => {
+  const want = plain(name);
+  if (want.length < 4) return null;
+  const all = await Course.findAll({ where: { active: true } as any, attributes: ["id", "name", "modality", "level", "semesters", "monthlyFee", "active"] });
+  const scored = all
+    .map(c => {
+      const n = plain(c.name);
+      const d = distanceOf(want, n);
+      const tolerance = Math.max(1, Math.round(n.length / 6));
+      const score = n === want ? 100 : n.startsWith(want) || want.startsWith(n) ? 70 : n.includes(want) || want.includes(n) ? 55 : d <= tolerance ? 40 - d : 0;
+      return { c, score };
+    })
+    .filter(x => x.score > 0)
+    .sort((x, y) => y.score - x.score);
+  return scored.length ? scored[0].c : null;
+};
+
 export const findCourse = async (input: { courseId?: any; courseName?: any; offerId?: any }, modality?: string | null): Promise<Course | null> => {
   const id = Number(input.offerId || input.courseId) || 0;
   if (id) {
@@ -93,7 +119,7 @@ export const findCourse = async (input: { courseId?: any; courseName?: any; offe
   if (!name) return null;
   const like = isPg() ? { [Op.iLike]: `%${name.replace(/[%_]/g, "")}%` } : { [Op.like]: `%${name.replace(/[%_]/g, "")}%` };
   const found = await Course.findAll({ where: { active: true, name: like } as any, limit: 12 });
-  if (!found.length) return null;
+  if (!found.length) return fuzzyCourse(name);
   const want = plain(name);
   const wantMod = modalityOf(modality);
   const score = (c: Course): number => {
@@ -141,8 +167,13 @@ const semestersText = (n: number | null | undefined): string | null => (n ? `${n
 
 const notFound = { encontrado: false, aviso: "Não achei esse curso no catálogo. Peça o nome de outro jeito ou diga que vai confirmar." };
 
-const courseOf = async (ctx: AcademicCtx, input: any): Promise<Course | null> =>
-  findCourse({ courseId: input.courseId ?? ctx.slots.courseId, courseName: input.courseName ?? input.nome ?? ctx.slots.courseName, offerId: input.offerId ?? ctx.slots.offerId }, input.modalidade || ctx.slots.courseModality);
+// a name given to the tool wins over the course saved in the slots ("e Enfermagem, quanto dura?" is about Enfermagem)
+const courseOf = async (ctx: AcademicCtx, input: any): Promise<Course | null> => {
+  const named = String(input.courseName ?? input.nome ?? "").trim();
+  const explicitId = Number(input.courseId ?? input.offerId) || 0;
+  if (named && !explicitId) return findCourse({ courseName: named }, input.modalidade || ctx.slots.courseModality);
+  return findCourse({ courseId: input.courseId ?? ctx.slots.courseId, courseName: ctx.slots.courseName, offerId: input.offerId ?? ctx.slots.offerId }, input.modalidade || ctx.slots.courseModality);
+};
 
 const remember = (ctx: AcademicCtx, patch: Slots): void => {
   ctx.patch = { ...ctx.patch, ...cleanPatch(patch) };
@@ -244,10 +275,17 @@ export const runAcademicTool = async (name: string, input: any, ctx: AcademicCtx
 
     case "listar_polos": {
       const city = String(input.cidade || ctx.slots.city || "").trim();
-      const like = isPg() ? { [Op.iLike]: `%${city.replace(/[%_]/g, "")}%` } : { [Op.like]: `%${city.replace(/[%_]/g, "")}%` };
-      const polos = await Polo.findAll({ where: { active: true, ...(city ? { city: like } : {}) } as any, order: [["name", "ASC"]], limit: 5, attributes: ["id", "name", "city", "state"] });
-      if (polos.length === 1) remember(ctx, { poloId: polos[0].id, poloName: polos[0].name, city: polos[0].city || city });
-      return { polos: polos.map(p => ({ id: p.id, nome: p.name, cidade: p.city, estado: p.state })), ...(polos.length === 5 ? { aviso: "Mostrando só 5: peça a cidade para filtrar." } : {}) };
+      const all = await Polo.findAll({ where: { active: true }, order: [["name", "ASC"]], attributes: ["id", "name", "city", "state"] });
+      // the city is matched ignoring accents and small typos ("moro em ji parana", "Porto Velho - RO")
+      const found = city ? matchPolo(all.map(p => ({ id: p.id, name: p.name, city: p.city || "" })), city) : {};
+      const ids = found.polo ? [found.polo.id] : found.ambiguous ? found.ambiguous.map(p => p.id) : [];
+      const polos = ids.length ? all.filter(p => ids.includes(p.id)) : all.slice(0, 5);
+      if (found.polo) remember(ctx, { poloId: polos[0].id, poloName: polos[0].name, city: polos[0].city || city });
+      return {
+        polos: polos.map(p => ({ id: p.id, nome: p.name, cidade: p.city, estado: p.state })),
+        ...(city && !ids.length ? { aviso: "Não há polo nessa cidade: mostre que existem estes polos e diga que um consultor indica o mais próximo." } : {}),
+        ...(!city && all.length > 5 ? { aviso: "Mostrando só 5: peça a cidade para filtrar." } : {})
+      };
     }
 
     case "consultar_conhecimento": {
@@ -327,10 +365,11 @@ export const analysisSlots = (row: CurricularAnalysis): Slots => {
 };
 
 const lastTranscript = async (ticket: Ticket): Promise<{ file: string; name: string } | null> => {
-  const rows = await Message.findAll({ where: { ticketId: ticket.id, fromMe: false, mediaType: { [Op.in]: ["document", "image"] } } as any, order: [["createdAt", "DESC"]], limit: 3 });
+  // a PDF is saved with the media type "application": it is found by its extension, not by the type
+  const rows = await Message.findAll({ where: { ticketId: ticket.id, fromMe: false, isDeleted: false, mediaUrl: { [Op.like]: "%.pdf" } } as any, order: [["createdAt", "DESC"]], limit: 3 });
   for (const m of rows) {
     const file = String(m.getDataValue("mediaUrl") || "");
-    if (file && /\.pdf$/i.test(file) && fs.existsSync(path.join(PUBLIC_DIR, path.basename(file)))) return { file: path.basename(file), name: path.basename(file) };
+    if (file && fs.existsSync(path.join(PUBLIC_DIR, path.basename(file)))) return { file: path.basename(file), name: path.basename(file) };
   }
   return null;
 };

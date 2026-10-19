@@ -1,6 +1,11 @@
 import { Request, Response } from "express";
 import { Op, QueryTypes } from "sequelize";
 
+import { getSetting, setSetting } from "../helpers/AppSettings";
+import Polo from "../models/Polo";
+import Queue from "../models/Queue";
+import User from "../models/User";
+
 import sequelize from "../database";
 import AppError from "../errors/AppError";
 import { dayBounds, shiftDays, getAppTz } from "../helpers/AppTime";
@@ -189,6 +194,7 @@ export const FUNNEL_EVENTS: Array<{ event: string; label: string }> = [
   { event: "enrollment_started", label: "Matrícula em andamento" },
   { event: "enrolled", label: "Matriculados" },
   { event: "follow_up", label: "Follow-up" },
+  { event: "no_response", label: "Pararam de responder" },
   { event: "no_interest", label: "Sem interesse" },
   { event: "human_handoff", label: "Pediram uma pessoa" }
 ];
@@ -259,6 +265,28 @@ export const metrics = async (req: Request, res: Response): Promise<Response> =>
   // the cost only when the administrator typed the price of the model (prices are never guessed)
   const price = await priceOf(agent.model);
   const costUsd = price ? Math.round(((input * price.in + output * price.out) / 1e6) * 10000) / 10000 : null;
+  // the handoffs to people: by reason, by polo, how long until a person answered and how many nobody answered
+  const reasons: any[] = await sequelize.query(
+    `SELECT REPLACE("event", 'handoff_', '') AS why, COUNT(*) AS n FROM "AgentMetricEvents"
+      WHERE "agentId" = :agentId AND "event" LIKE 'handoff\\_%' AND "event" <> 'handoff_brief' AND "createdAt" >= :from AND "createdAt" < :to GROUP BY 1 ORDER BY n DESC`,
+    { replacements: rep, type: QueryTypes.SELECT }
+  );
+  const byPolo: any[] = await sequelize.query(
+    `SELECT COALESCE(p."name", 'Sem polo') AS polo, COUNT(*) AS n FROM "AgentMetricEvents" m
+       LEFT JOIN "Polos" p ON p."id" = NULLIF((m."meta"::json->>'polo'), 'null')::int
+      WHERE m."agentId" = :agentId AND m."event" LIKE 'handoff\\_%' AND m."event" <> 'handoff_brief' AND m."createdAt" >= :from AND m."createdAt" < :to GROUP BY 1 ORDER BY n DESC LIMIT 12`,
+    { replacements: rep, type: QueryTypes.SELECT }
+  ).catch(() => []);
+  const waits: any[] = await sequelize.query(
+    `SELECT t."id", t."handoffAt", (SELECT MIN(msg."createdAt") FROM "Messages" msg WHERE msg."ticketId" = t."id" AND msg."fromMe" = true AND msg."createdAt" > t."handoffAt" AND msg."body" NOT LIKE E'\u200e%') AS answered
+       FROM "Tickets" t WHERE t."handoffAt" >= :from AND t."handoffAt" < :to AND t."aiActive" = false LIMIT 500`,
+    { replacements: rep, type: QueryTypes.SELECT }
+  ).catch(() => []);
+  const answeredWaits = waits.filter(w => w.answered).map(w => (new Date(w.answered).getTime() - new Date(w.handoffAt).getTime()) / 60000).sort((a, b) => a - b);
+  const technical = {
+    errors: Number(rows.find(r => r.event === "agent_error")?.total || 0),
+    guards: Number(rows.find(r => r.event === "agent_guard")?.total || 0)
+  };
   const qualified = await perLead("qualified");
   const ready = await perLead("ready_for_proposal");
 
@@ -267,6 +295,15 @@ export const metrics = async (req: Request, res: Response): Promise<Response> =>
     funnel,
     conversion: first ? funnel.slice(1).filter(f => ["qualified", "ready_for_proposal", "enrolled"].includes(f.event)).map(f => ({ event: f.event, label: f.label, rate: Math.round((f.leads / first) * 1000) / 10 })) : [],
     unknownQuestions: unknown,
+    handoffs: {
+      total: reasons.reduce((a, r) => a + Number(r.n), 0),
+      byReason: reasons.map(r => ({ why: r.why, count: Number(r.n) })),
+      byPolo: byPolo.map(r => ({ polo: r.polo, count: Number(r.n) })),
+      answered: answeredWaits.length,
+      unanswered: waits.length - answeredWaits.length,
+      medianMinutes: answeredWaits.length ? Math.round(answeredWaits[Math.floor(answeredWaits.length / 2)]) : null
+    },
+    technical,
     ai: {
       turns,
       conversations,
@@ -291,4 +328,55 @@ export const metrics = async (req: Request, res: Response): Promise<Response> =>
     byNode: byNode.map(n => ({ nodeId: n.nodeId, turns: Number(n.turns), tokens: Number(n.tokens), llmCalls: Number(n.llm) })),
     perDay: perDay.map(d => ({ day: d.day, turns: Number(d.turns), tokens: Number(d.tokens) }))
   });
+};
+
+// ------------------------------------------------------------------ who takes the conversation (the handoff to people)
+
+const KEYS = { fallback: "crm_fallback_queue", sla: "crm_handoff_sla_minutes", stale: "ai_stale_run_days", transcribe: "ai_transcribe_audio" };
+
+// the settings of the handoff and, polo by polo, whether somebody would really answer ("ready to attend")
+export const handoffShow = async (_req: Request, res: Response): Promise<Response> => {
+  const queues = await Queue.findAll({ include: [{ model: User, as: "users", attributes: ["id", "name"], required: false }, { model: Polo, as: "polo", attributes: ["id", "name"], required: false }], order: [["name", "ASC"]] });
+  const polos = await Polo.findAll({ where: { active: true }, order: [["name", "ASC"]], attributes: ["id", "name", "city"] });
+  const commercial = queues.filter(q => q.role === "comercial");
+  const fallbackId = Number(await getSetting(KEYS.fallback, "0")) || 0;
+  const reserve = (fallbackId && queues.find(q => q.id === fallbackId)) || commercial.find(q => ((q as any).users || []).length);
+  const rows = polos.map(p => {
+    const q = commercial.find(x => x.poloId === p.id);
+    const people = q ? ((q as any).users || []).length : 0;
+    return {
+      id: p.id,
+      name: p.name,
+      city: p.city,
+      queue: q ? { id: q.id, name: q.name, people } : null,
+      ready: people > 0,
+      issue: !q ? "Este polo não tem fila comercial." : people === 0 ? "A fila comercial deste polo não tem consultores." : null
+    };
+  });
+  return res.json({
+    settings: {
+      fallbackQueueId: fallbackId || null,
+      slaMinutes: Number(await getSetting(KEYS.sla, "15")),
+      staleDays: Number(await getSetting(KEYS.stale, "7")),
+      transcribe: (await getSetting(KEYS.transcribe, "0")) === "1"
+    },
+    openaiKey: !!(await getSetting("ai_openai_key", "")),
+    reserve: reserve ? { id: reserve.id, name: reserve.name, people: ((reserve as any).users || []).length } : null,
+    queues: commercial.map(q => ({ id: q.id, name: q.name, polo: (q as any).polo ? (q as any).polo.name : null, people: ((q as any).users || []).length })),
+    polos: rows
+  });
+};
+
+export const handoffSave = async (req: Request, res: Response): Promise<Response> => {
+  const b = req.body || {};
+  if (b.fallbackQueueId !== undefined) {
+    const id = Number(b.fallbackQueueId) || 0;
+    if (id && !(await Queue.findByPk(id))) throw new AppError("ERR_NO_QUEUE_FOUND", 404);
+    await setSetting(KEYS.fallback, String(id));
+  }
+  const num = (v: any, min: number, max: number): string => String(Math.min(max, Math.max(min, Math.round(Number(v) || 0))));
+  if (b.slaMinutes !== undefined) await setSetting(KEYS.sla, num(b.slaMinutes, 0, 480));
+  if (b.staleDays !== undefined) await setSetting(KEYS.stale, num(b.staleDays, 0, 90));
+  if (b.transcribe !== undefined) await setSetting(KEYS.transcribe, b.transcribe ? "1" : "0");
+  return handoffShow(req, res);
 };

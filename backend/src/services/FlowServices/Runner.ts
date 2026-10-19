@@ -11,6 +11,7 @@ import ShowTicketService from "../TicketServices/ShowTicketService";
 import { Effects, RunState, StepResult, advance, firstNode, normalize, resume } from "./Engine";
 import { FlowContext, ticketEffects } from "./Effects";
 import { debounce } from "./Debounce";
+import { handoffToHuman } from "../AiServices/Handoff";
 import { cleanStage } from "./StageSpec";
 import { Graph, parseGraph } from "./Graph";
 
@@ -57,7 +58,8 @@ const save = async (run: ChatFlowRun, step: StepResult): Promise<void> => {
     vars: JSON.stringify(step.state.vars),
     tries: step.state.tries,
     status: step.status === "waiting" ? "waiting" : step.status === "delayed" ? "delayed" : step.status === "handoff" ? "handoff" : "done",
-    resumeAt: step.status === "delayed" ? step.resumeAt : null
+    // a message that arrived while the AI was thinking set the time of the next answer: saving the turn must not erase it
+    ...(step.status === "waiting" ? {} : { resumeAt: step.status === "delayed" ? step.resumeAt : null })
   } as any);
 };
 
@@ -113,9 +115,23 @@ const startRun = async (flow: ChatFlow, ticket: Ticket, fx?: Effects, pending?: 
     await save(run, step);
     await record(flow, step, true, false);
     await release(ticket, step, flow);
+  } catch (err) {
+    await failRun(run, ticket, flow, effects, err);
   } finally {
     inflight.delete(ticket.id);
   }
+};
+
+// Something broke while the flow was running (not the AI call, which has its own handling): the run ends, and an agent hands the
+// conversation to the team instead of leaving the person without an answer and without a destination.
+const failRun = async (run: ChatFlowRun, ticket: Ticket, flow: ChatFlow, effects: Effects, err: unknown): Promise<void> => {
+  logger.error(`Flow ${flow.id} failed on ticket ${ticket.id}: ${err}`);
+  await run.update({ status: "done", resumeAt: null } as any).catch(() => undefined);
+  if (flow.kind !== "agent" || !flow.agentId) return;
+  const agent = await AiAgent.findByPk(flow.agentId);
+  if (!agent) return;
+  await effects.say(agent.handoffMessage || "Vou chamar um de nossos atendentes. Um momento, por favor.").catch(() => undefined);
+  await handoffToHuman(ticket.id, agent, "sem_resposta", undefined, "error").catch(e => logger.error(`Handoff after failure failed: ${e}`));
 };
 
 const lastUserText = async (ticketId: number): Promise<string> => {
@@ -144,11 +160,14 @@ export const resumeStageRun = async (ticketId: number): Promise<void> => {
   const state = stateOf(run);
   const crmBefore = !!state.vars.__crm;
   inflight.add(ticketId);
+  const effects = ticketEffects(ticket, flow.name, contextOf(flow));
   try {
-    const step = await resume(graph, state, await lastUserText(ticketId), ticketEffects(ticket, flow.name, contextOf(flow)));
+    const step = await resume(graph, state, await lastUserText(ticketId), effects);
     await save(run, step);
     await record(flow, step, false, crmBefore);
     await release(ticket, step, flow);
+  } catch (err) {
+    await failRun(run, ticket, flow, effects, err);
   } finally {
     inflight.delete(ticketId);
   }

@@ -12,7 +12,9 @@ import { logUsage, tokensToday } from "./Usage";
 import { Slot, missingSlots, runTool, slotsOf, stageSlots, stageToolDefs, toolDefs } from "./Tools";
 import { StageData } from "../FlowServices/StageSpec";
 import { handoffToHuman, HandoffReason } from "./Handoff";
-import { captureUnknown } from "./Learning";
+import { captureUnknown, notifyOwner } from "./Learning";
+import { textOfMessage } from "./Media";
+import { todayLine } from "../CommercialServices/Hours";
 
 export const HANDOFF_MARKER = "[HANDOFF]";
 // the agent found nothing about a fact of the institution: the question is kept for the owner to teach
@@ -152,6 +154,8 @@ export interface AiResult {
   academicPatch?: Record<string, any>;
   // what was read from the knowledge base by subject (before the model answered)
   topics?: string[];
+  // everything the answer may state as a fact: the full result of the tools and the approved passages (for the output guard)
+  evidence: string;
   // every tool call of the turn: what was asked and a short version of what came back (for the trace)
   toolLog: Array<{ name: string; args: any; result: string }>;
 }
@@ -190,6 +194,10 @@ const commercialStatic = (agent: AiAgent, stage: StageData): string =>
   [
     agent.systemPrompt ||
       "Você é um consultor virtual da Cruzeiro do Sul Virtual especializado em graduação. Atenda de forma humana, consultiva, objetiva e comercial. Nunca invente informações acadêmicas, financeiras, institucionais ou regulatórias. Dados objetivos devem vir das ferramentas ou da base aprovada. Conduza naturalmente o lead ao próximo passo e transfira para uma pessoa quando necessário.",
+    // the tone, the rules and the prohibitions written for the agent also reach the model (short: they are part of the cached prefix)
+    agent.persona && agent.persona.tone ? `Tom de voz: ${agent.persona.tone}` : null,
+    agent.persona && agent.persona.rules ? `Regras do atendimento:\n${agent.persona.rules}` : null,
+    agent.persona && agent.persona.forbidden ? `Nunca faça isto:\n${agent.persona.forbidden}` : null,
     stageBlock(stage),
     COMMERCIAL_RULES
   ]
@@ -214,6 +222,7 @@ const commercialDynamic = (slots: Record<string, any>, summary: string | null, p
   if (!slots.city && !slots.poloId) missing.push("cidade");
   if (!slots.entryType || slots.entryType === "unknown") missing.push("tipo de ingresso (primeira graduação, transferência ou segunda graduação)");
   return [
+    todayLine(),
     known.length ? `Já sabemos: ${known.join("; ")}.` : "Ainda não sabemos nada sobre a pessoa.",
     missing.length ? `Falta descobrir: ${missing.join(", ")}.` : null,
     explained.length ? `Já explicado (não repita): ${explained.join(", ")}.` : null,
@@ -247,7 +256,7 @@ export const respond = async (agent: AiAgent, opts: RespondOptions): Promise<AiR
     stage && !stage.useKnowledge
       ? []
       : commercial
-        ? topics.length ? await searchChunks(agent.id, lastUser.content, 3, { topics, courseId: Number(opts.commercial?.slots?.courseId) || null }) : []
+        ? await searchChunks(agent.id, lastUser.content, topics.length ? 3 : 2, { topics, courseId: Number(opts.commercial?.slots?.courseId) || null })
         : await searchChunks(agent.id, `${lastUser.content} ${prevUser ? prevUser.content : ""}`, 4);
   const passages = hits.map(h => (commercial ? h.content.slice(0, 700) : h.content));
   const sources = [...new Set(hits.map(h => h.title))];
@@ -261,6 +270,9 @@ export const respond = async (agent: AiAgent, opts: RespondOptions): Promise<AiR
   let text = "";
   let rounds = 0;
   const toolLog: Array<{ name: string; args: any; result: string }> = [];
+  const evidence: string[] = [...passages];
+  // the commercial agent answers and registers the turn in the same call: a ceiling of 350 can cut the registration in half
+  const budget = commercial ? Math.max(agent.maxTokens || 350, 700) : agent.maxTokens || 350;
   const academic = { ticket: opts.ticket, dryRun: !!opts.sandbox, slots: { ...(opts.commercial?.slots || {}) }, patch: {} as Record<string, any>, cacheHits: 0, agentId: agent.id };
   const staticText = commercial ? commercialStatic(agent, stage as StageData) : staticPrompt(agent, stage);
   const dynamicText = commercial
@@ -269,7 +281,7 @@ export const respond = async (agent: AiAgent, opts: RespondOptions): Promise<AiR
   const usageOf = (usage: any) => ({ agentId: agent.id, ticketId: opts.ticket?.id, model: agent.model, kind, usage, flowId: opts.flowId, nodeId: opts.nodeId, leadId: opts.leadId, latencyMs: Date.now() - started } as any);
   const finish = (ctx: any): AiResult => ({
     text, handoff: !stage && text.includes(HANDOFF_MARKER), unknown: !stage && text.includes(UNKNOWN_MARKER), sources, tools: toolsUsed, collected, tokens,
-    exit: ctx.exit, exitReason: ctx.exitReason, rounds, latencyMs: Date.now() - started, cacheHits: academic.cacheHits, turn: ctx.turn, academicPatch: academic.patch, topics, toolLog
+    exit: ctx.exit, exitReason: ctx.exitReason, rounds, latencyMs: Date.now() - started, cacheHits: academic.cacheHits, turn: ctx.turn, academicPatch: academic.patch, topics, toolLog, evidence: evidence.join("\n")
   });
 
   if (agent.provider === "openai") {
@@ -280,7 +292,7 @@ export const respond = async (agent: AiAgent, opts: RespondOptions): Promise<AiR
       rounds += 1;
       // eslint-disable-next-line no-await-in-loop
       const { data } = await axios.post(`${OPENAI_URL()}/v1/chat/completions`, {
-        model: agent.model, max_completion_tokens: agent.maxTokens || 350, messages,
+        model: agent.model, max_completion_tokens: budget, messages,
         ...(round < MAX_TOOL_ROUNDS && tools.length ? { tools, parallel_tool_calls: false } : {})
       }, { headers: { Authorization: `Bearer ${apiKey}` }, timeout: 60000 });
       const answer = data.choices?.[0]?.message;
@@ -301,6 +313,7 @@ export const respond = async (agent: AiAgent, opts: RespondOptions): Promise<AiR
           out = await runTool(call.function.name, JSON.parse(call.function.arguments || "{}"), ctx);
         } catch (err) { out = { erro: "Não foi possível consultar agora." }; }
         try { toolLog.push({ name: call.function?.name, args: JSON.parse(call.function?.arguments || "{}"), result: JSON.stringify(out).slice(0, 300) }); } catch (e) { /* the log is only for the trace */ }
+        evidence.push(JSON.stringify(out));
         messages.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(out) });
       }
       // the model answered and only wrote down what it understood: that is the turn (no second call)
@@ -322,7 +335,7 @@ export const respond = async (agent: AiAgent, opts: RespondOptions): Promise<AiR
     // eslint-disable-next-line no-await-in-loop
     const data = await callAnthropic(apiKey, {
       model: agent.model,
-      max_tokens: agent.maxTokens || 350,
+      max_tokens: budget,
       system,
       messages,
       // after the last allowed round the model must answer in text
@@ -352,6 +365,7 @@ export const respond = async (agent: AiAgent, opts: RespondOptions): Promise<AiR
         out = { erro: "Não foi possível consultar agora." };
       }
       toolLog.push({ name: call.name, args: call.input, result: JSON.stringify(out).slice(0, 300) });
+      evidence.push(JSON.stringify(out));
       results.push({ type: "tool_result", tool_use_id: call.id, content: JSON.stringify(out) });
     }
     // the model answered and only wrote down what it understood: that is the turn (no second call)
@@ -375,7 +389,9 @@ export const loadHistory = async (ticket: Ticket, limit: number): Promise<ChatTu
   const turns: ChatTurn[] = [];
   for (const m of rows.reverse()) {
     const role = m.fromMe ? "assistant" : "user";
-    const body = String(m.body).replace(/‎/g, "");
+    // a file message is shown by what it is, never by its file name; one message is cut so a pasted wall of text cannot fill the prompt
+    const body = textOfMessage(m).slice(0, 1500);
+    if (!body) continue;
     const last = turns[turns.length - 1];
     if (last && last.role === role) last.content += `\n${body}`;
     else turns.push({ role, content: body });
@@ -486,7 +502,10 @@ export const runAiForTicket = async (ticketId: number, say: Say): Promise<void> 
   } catch (err) {
     const detail = err?.response?.data?.error?.message || err?.message || err;
     logger.error(`AI agent "${agent.name}" failed: ${detail}`);
-    // never go silent: a person takes over
-    await handoff(ticket, agent, "sem_resposta", say, true).catch(() => ticket.update({ aiActive: false }));
+    // never go silent: the person is told a colleague continues, a person takes over and the owner of the agent knows why
+    const status = Number(err?.response?.status || 0);
+    const why = /NO_API_KEY/.test(String(err?.message)) ? "a chave de API não está cadastrada" : status === 401 || status === 403 ? "o provedor recusou a chave de API" : status === 429 ? "o limite ou o saldo do provedor acabou" : status >= 500 ? "o provedor de IA está fora do ar" : "erro técnico";
+    await notifyOwner(agent, `⚠️ O agente *${agent.name}* não conseguiu responder uma conversa porque ${why}. A conversa foi para a equipe.`).catch(() => undefined);
+    await handoff(ticket, agent, "sem_resposta", say, false).catch(() => ticket.update({ aiActive: false }));
   }
 };
