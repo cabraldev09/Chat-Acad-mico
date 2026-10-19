@@ -5,7 +5,7 @@ import ReactFlow, { Background, Controls, MiniMap, ReactFlowProvider, MarkerType
 import "react-flow-renderer/dist/style.css";
 import "react-flow-renderer/dist/theme-default.css";
 import { Button, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Menu, MenuItem, Tab, Tabs, TextField, Tooltip, makeStyles, useMediaQuery, useTheme } from "@material-ui/core";
-import { AlertTriangle, ArrowLeft, BarChart3, CheckCircle2, LayoutTemplate, PanelRight, Play, Plus, Rocket, Save, Settings2, Wand2 } from "lucide-react";
+import { AlertTriangle, ArrowLeft, BarChart3, Bot, CheckCircle2, History, LayoutTemplate, PanelRight, Play, Plus, Rocket, Save, Settings2, Wand2 } from "lucide-react";
 
 import { AuthContext } from "../../context/Auth/AuthContext";
 import { WhatsAppsContext } from "../../context/WhatsApp/WhatsAppsContext";
@@ -14,7 +14,7 @@ import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import Inspector from "./Inspector";
 import Simulator from "./Simulator";
-import { BLOCKS, PALETTE, defaultData, newId, nodeTypes } from "./nodes";
+import { BLOCKS, defaultData, newId, nodeTypes, paletteFor } from "./nodes";
 import { fetchAllUsersPage } from "../../utils/fetchAllUsers";
 
 const useStyles = makeStyles((theme) => ({
@@ -101,6 +101,39 @@ const EntryDialog = ({ open, onClose, flow, onSave, connections }) => {
   );
 };
 
+// the versions that were published: look at any of them and bring it back as the draft
+const VersionsDialog = ({ open, onClose, flowId, onRestored }) => {
+  const [rows, setRows] = useState(null);
+  useEffect(() => {
+    if (!open) return;
+    setRows(null);
+    api.get(`/flows/${flowId}/versions`).then(({ data }) => setRows(data)).catch((e) => { toastError(e); setRows([]); });
+  }, [open, flowId]);
+  const restore = async (v) => {
+    if (!window.confirm(`Trazer a versão ${v.version} de volta como rascunho? O rascunho atual será substituído; nada muda para as pessoas até você publicar.`)) return;
+    try { const { data } = await api.post(`/flows/${flowId}/versions/${v.id}/restore`, {}); toast.success(`Versão ${v.version} restaurada como rascunho.`); onRestored(data); } catch (e) { toastError(e); }
+  };
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+      <DialogTitle>Versões publicadas</DialogTitle>
+      <DialogContent>
+        {!rows && <div style={{ padding: 8 }}>Carregando...</div>}
+        {rows && rows.length === 0 && <div style={{ opacity: 0.75, fontSize: 14 }}>Ainda não há versões. Cada vez que você publica, a versão fica guardada aqui e dá para voltar a ela.</div>}
+        {(rows || []).map((v) => (
+          <div key={v.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: "1px solid rgba(127,140,160,.25)" }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 700 }}>Versão {v.version}{v.current ? " · em uso" : ""}</div>
+              <div style={{ fontSize: 12.5, opacity: 0.75 }}>{new Date(v.createdAt).toLocaleString("pt-BR")}{v.note ? ` · ${v.note}` : ""}{v.blocks ? ` · ${v.blocks} blocos` : ""}</div>
+            </div>
+            {!v.current && <Button size="small" variant="outlined" onClick={() => restore(v)}>Restaurar</Button>}
+          </div>
+        ))}
+      </DialogContent>
+      <DialogActions><Button variant="outlined" color="secondary" onClick={onClose}>Fechar</Button></DialogActions>
+    </Dialog>
+  );
+};
+
 const Builder = () => {
   const classes = useStyles();
   const { id } = useParams();
@@ -119,7 +152,8 @@ const Builder = () => {
   const [showStats, setShowStats] = useState(false);
   const [entryOpen, setEntryOpen] = useState(false);
   const [path, setPath] = useState([]);
-  const [lists, setLists] = useState({ stages: [], tags: [], queues: [], users: [], polos: [] });
+  const [lists, setLists] = useState({ stages: [], tags: [], queues: [], users: [], polos: [], agents: [], flows: [], funnel: {} });
+  const [versionsOpen, setVersionsOpen] = useState(false);
   const wrapper = useRef(null);
   const [rf, setRf] = useState(null);
   const manager = isManager(user);
@@ -138,7 +172,10 @@ const Builder = () => {
   }, []);
 
   useEffect(() => {
-    api.get(`/flows/${id}`).then(({ data }) => apply(data)).catch((e) => { toastError(e); history.replace("/chatbot"); });
+    api.get(`/flows/${id}`).then(({ data }) => apply(data)).catch((e) => { toastError(e); history.replace(history.location.pathname.startsWith("/ai-agents") ? "/ai-agents" : "/chatbot"); });
+    api.get("/ai-agents").then(({ data }) => setLists((l) => ({ ...l, agents: Array.isArray(data) ? data : [] }))).catch(() => undefined);
+    api.get("/flows").then(({ data }) => setLists((l) => ({ ...l, flows: Array.isArray(data) ? data : [] }))).catch(() => undefined);
+    api.get("/crm-funnel").then(({ data }) => setLists((l) => ({ ...l, funnel: data.keys.reduce((o, k) => ({ ...o, [k.key]: (data.stages.find((s) => s.id === k.stageId) || {}).name || "" }), {}) }))).catch(() => undefined);
     api.get("/lead-stages").then(({ data }) => setLists((l) => ({ ...l, stages: data }))).catch(() => undefined);
     api.get("/tags").then(({ data }) => setLists((l) => ({ ...l, tags: Array.isArray(data) ? data : data.tags || [] }))).catch(() => undefined);
     api.get("/queue").then(({ data }) => setLists((l) => ({ ...l, queues: data }))).catch(() => undefined);
@@ -253,7 +290,10 @@ const Builder = () => {
       toast.success("Salvo.");
     } catch (e) { toastError(e); }
   };
-  const back = () => { if (dirty && !window.confirm("Há alterações que não foram salvas. Sair mesmo assim?")) return; history.push("/chatbot"); };
+  const kind = flow ? flow.kind || "flow" : "flow";
+  const palette = paletteFor(kind);
+  const agentOf = flow && flow.agentId ? lists.agents.find((a) => a.id === flow.agentId) : null;
+  const back = () => { if (dirty && !window.confirm("Há alterações que não foram salvas. Sair mesmo assim?")) return; history.push(kind === "agent" ? "/ai-agents" : "/chatbot"); };
 
   if (!flow) return <div style={{ padding: 24 }}>Carregando o fluxo...</div>;
   const sideVisible = !narrow || sideOpen;
@@ -264,17 +304,24 @@ const Builder = () => {
   return (
     <div className={`${classes.page} page-grow`}>
       <div className={classes.bar}>
-        <Tooltip title="Voltar para os fluxos"><IconButton size="small" onClick={back} aria-label="Voltar"><ArrowLeft size={20} /></IconButton></Tooltip>
+        <Tooltip title={kind === "agent" ? "Voltar para os agentes" : "Voltar para os fluxos"}><IconButton size="small" onClick={back} aria-label="Voltar"><ArrowLeft size={20} /></IconButton></Tooltip>
         <TextField size="small" variant="outlined" value={flow.name} onChange={(e) => { setFlow({ ...flow, name: e.target.value }); setDirty(true); }} style={{ flex: "1 1 160px", maxWidth: 260, minWidth: 140 }} inputProps={{ "aria-label": "Nome do fluxo", style: { fontWeight: 700 } }} />
         <span className={classes.chip} style={{ background: flow.status === "published" ? "rgba(22,163,74,.16)" : "rgba(100,116,139,.18)", color: flow.status === "published" ? "#15803d" : "#475569" }}>
           {flow.status === "published" ? `Publicado v${flow.version}` : "Rascunho"}
         </span>
         {flow.status === "published" && (dirty || flow.changed) && <span className={classes.chip} style={{ background: "rgba(217,119,6,.16)", color: "#b45309" }}>Alterações não publicadas</span>}
         <span style={{ flex: 1 }} />
-        <Tooltip title={`Começa: ${ENTRY_LABEL[flow.entry.type]}`}><Button size="small" variant="outlined" startIcon={<Settings2 size={15} />} onClick={() => setEntryOpen(true)}>Quando começa</Button></Tooltip>
+        {kind === "agent" ? (
+          <Tooltip title={agentOf && agentOf.active ? "O agente está ligado e atende com estes blocos depois de publicados." : "O agente está desligado: ligue em Agentes de IA para ele atender."}>
+            <span className={classes.chip} style={{ background: agentOf && agentOf.active ? "rgba(22,163,74,.16)" : "rgba(100,116,139,.18)", color: agentOf && agentOf.active ? "#15803d" : "#475569" }}><Bot size={13} /> {agentOf ? `${agentOf.name} · ${agentOf.active ? "ligado" : "desligado"}` : "Agente"}</span>
+          </Tooltip>
+        ) : (
+          <Tooltip title={`Começa: ${ENTRY_LABEL[flow.entry.type]}`}><Button size="small" variant="outlined" startIcon={<Settings2 size={15} />} onClick={() => setEntryOpen(true)}>Quando começa</Button></Tooltip>
+        )}
+        <Tooltip title="Versões publicadas: ver e restaurar"><Button size="small" variant="outlined" startIcon={<History size={15} />} onClick={() => setVersionsOpen(true)}>Versões</Button></Tooltip>
         <Button size="small" variant="outlined" className={classes.onlyNarrow} startIcon={<Plus size={15} />} onClick={(e) => setBlockMenu(e.currentTarget)}>Bloco</Button>
         <Menu anchorEl={blockMenu} open={Boolean(blockMenu)} onClose={() => setBlockMenu(null)}>
-          {PALETTE.map(([group, types]) => [
+          {palette.map(([group, types]) => [
             <MenuItem key={group} disabled style={{ opacity: 0.7, fontSize: 12, fontWeight: 700, minHeight: 28 }}>{group}</MenuItem>,
             ...types.map((t) => <MenuItem key={t} onClick={() => { setBlockMenu(null); addBlock(t); }}>{BLOCKS[t].title}</MenuItem>),
           ])}
@@ -288,7 +335,7 @@ const Builder = () => {
       </div>
       <div className={classes.body}>
         <div className={classes.palette}>
-          {PALETTE.map(([group, types]) => (
+          {palette.map(([group, types]) => (
             <div key={group}>
               <div className={classes.group}>{group}</div>
               {types.map((t) => {
@@ -321,7 +368,7 @@ const Builder = () => {
             <Tab className={classes.tab} label="Testar" />
           </Tabs>
           <div className={classes.sideBody}>
-            {tab === 0 && <Inspector node={picked} update={updateNode} remove={removeNode} lists={lists} nodes={nodes} />}
+            {tab === 0 && <Inspector node={picked} update={updateNode} remove={removeNode} lists={lists} nodes={nodes} flowId={id} kind={kind} />}
             {tab === 1 && (
               issues.length === 0 ? (
                 <div style={{ padding: 16, display: "flex", gap: 8, alignItems: "center", color: "#15803d", fontSize: 14 }}><CheckCircle2 size={20} /> Tudo certo: o fluxo pode ser publicado.</div>
@@ -332,10 +379,11 @@ const Builder = () => {
                 </div>
               ))
             )}
-            {tab === 2 && <Simulator flowId={id} getGraph={graphNow} onPath={setPath} onClose={() => { setTab(0); setPath([]); }} />}
+            {tab === 2 && <Simulator flowId={id} kind={kind} getGraph={graphNow} onPath={setPath} onClose={() => { setTab(0); setPath([]); }} />}
           </div>
         </div>}
       </div>
+      <VersionsDialog open={versionsOpen} onClose={() => setVersionsOpen(false)} flowId={id} onRestored={(f) => { setVersionsOpen(false); apply(f); setDirty(true); }} />
       <EntryDialog open={entryOpen} onClose={() => setEntryOpen(false)} flow={flow} onSave={saveEntry} connections={connections} />
     </div>
   );

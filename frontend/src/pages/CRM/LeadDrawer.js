@@ -25,6 +25,7 @@ import PaymentTab from "./PaymentTab";
 import DocumentsTab from "./DocumentsTab";
 import NotALead from "./NotALead";
 import { ScoreRing, SourceIcon, ago, isOverdue, burst, initials } from "./shared";
+import AiBrief from "../../components/AiBrief";
 
 const useStyles = makeStyles((theme) => ({
   paper: { width: 500, maxWidth: "100vw", display: "flex", flexDirection: "column", borderLeft: theme.border.divider, animation: "slide-in-left .0s" },
@@ -264,8 +265,11 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab, side = false 
 
           <div className={classes.body}>
             {tab === 0 && (
-              <LeadFields lead={draft} options={options} courses={courses} users={users} tags={tags}
-                onChange={(d) => setDraft({ ...d, __dirty: true })} />
+              <>
+                {lead.commercial && <div style={{ marginBottom: 16 }}><AiBrief leadId={lead.id} /></div>}
+                <LeadFields lead={draft} options={options} courses={courses} users={users} tags={tags}
+                  onChange={(d) => setDraft({ ...d, __dirty: true })} />
+              </>
             )}
 
             {tab === 1 && (

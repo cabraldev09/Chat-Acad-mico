@@ -14,6 +14,7 @@ import UsageTab from "./UsageTab";
 import TestTab from "./TestTab";
 import LearningTab from "./LearningTab";
 import FunctionsTab from "./FunctionsTab";
+import CommercialTab from "./CommercialTab";
 
 const MODELS = { anthropic: "claude-haiku-5-5", openai: "gpt-4o-mini" };
 
@@ -128,6 +129,7 @@ const AgentEditor = ({ open, agent, onClose, onSaved }) => {
           <Tab style={{ minWidth: 0 }} label="Funções" />
           <Tab style={{ minWidth: 0 }} label="Consumo" />
           <Tab style={{ minWidth: 0 }} label="Testar agente" />
+          <Tab style={{ minWidth: 0 }} label="Funil comercial" />
         </Tabs>
       </div>
       <DialogContent dividers className={classes.content}>
@@ -138,7 +140,7 @@ const AgentEditor = ({ open, agent, onClose, onSaved }) => {
               <FormControlLabel style={{ marginTop: 8 }} control={<Switch color="primary" checked={!!v.active} onChange={(e) => set("active", e.target.checked)} />} label={v.active ? "Ativo: responde os alunos" : "Desligado"} />
               <TextField select variant="outlined" margin="dense" label="Provedor" value={v.provider} onChange={(e) => setV({ ...v, provider: e.target.value, model: MODELS[e.target.value] })}>
                 <MenuItem value="anthropic">Anthropic (Claude)</MenuItem>
-                <MenuItem value="openai">OpenAI (sem ferramentas)</MenuItem>
+                <MenuItem value="openai">OpenAI (GPT)</MenuItem>
               </TextField>
               <TextField variant="outlined" margin="dense" label="Modelo" required value={v.model} onChange={(e) => set("model", e.target.value)} helperText="Modelo pequeno gasta menos. Sugestão: claude-haiku-5-5." />
               <TextField variant="outlined" margin="dense" type="password" label="Chave de API própria (opcional)" value={v.apiKey || ""} onChange={(e) => set("apiKey", e.target.value)} helperText="Se ficar vazio, usa a chave padrão da página." />
@@ -212,6 +214,7 @@ const AgentEditor = ({ open, agent, onClose, onSaved }) => {
         {tab === 4 && <FunctionsTab value={v.functions} onChange={(list) => set("functions", list)} />}
         {tab === 5 && locked(<UsageTab agentId={id} model={v.model} />)}
         {tab === 6 && locked(<TestTab agentId={id} />)}
+        {tab === 7 && locked(<CommercialTab agentId={id} />)}
       </DialogContent>
       <DialogActions>
         <Button variant="outlined" color="secondary" onClick={onClose}>Fechar</Button>

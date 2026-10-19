@@ -6,6 +6,7 @@ import { FilePlus2, FileText, KanbanSquare, UserPlus } from "lucide-react";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import { ScoreRing, burst, useCrmOptions } from "../../pages/CRM/shared";
+import AiBrief from "../AiBrief";
 import { lazyPage as lazy } from "../../utils/lazyPage";
 
 // the heavy CRM dialogs load only when someone opens them
@@ -109,6 +110,8 @@ const LeadCard = ({ contactId }) => {
         <Typography className={classes.title}>Lead no CRM</Typography>
         <ScoreRing value={lead.score} />
       </div>
+
+      <AiBrief leadId={lead.id} compact />
 
       <div>
         <div className={classes.label} style={{ marginBottom: 6 }}>Etapa do funil</div>

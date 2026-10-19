@@ -5,7 +5,7 @@ import {
   Button, TextField, MenuItem, InputAdornment, Dialog, DialogTitle, DialogContent, DialogActions,
   Typography, makeStyles, ButtonGroup, Chip, Table, TableHead, TableRow, TableCell, TableBody, Paper,
 } from "@material-ui/core";
-import { MonitorCheck, Search, Plus, Upload, LayoutGrid, List, Calendar, BadgeCheck, Rocket, Hourglass } from "lucide-react";
+import { MonitorCheck, Search, Plus, Upload, LayoutGrid, List, Calendar, BadgeCheck, Rocket, Hourglass, Flame } from "lucide-react";
 import { format, parseISO } from "date-fns";
 
 import MainContainer from "../../components/MainContainer";
@@ -20,6 +20,7 @@ import LeadFields from "./LeadFields";
 import EnrollDialog from "./EnrollDialog";
 import ImportDialog from "./ImportDialog";
 import { useCrmOptions, SourceIcon, ScoreRing, OwnerAvatar, ago, short, isOverdue, burst } from "./shared";
+import { NEXT_LABEL, TEMP_COLOR, TEMP_LABEL } from "../../utils/commercial";
 
 const useStyles = makeStyles((theme) => ({
   filters: { display: "flex", gap: theme.spacing(1), flexWrap: "wrap", marginBottom: theme.spacing(1.5) },
@@ -78,6 +79,13 @@ const LeadCard = ({ lead, onOpen, onDragStart, onDragEnd, dragging }) => {
       <div className={classes.cardFoot}>
         {/* an enrolled student is past "where did it come from" and "wants to enrol": only what still matters is shown */}
         {!lead.wonAt && <span className={classes.chip} title={`Origem: ${lead.source}`}><SourceIcon source={lead.source} size={12} />{lead.source}</span>}
+        {lead.commercial && lead.commercial.temperature && (
+          <span className={classes.chip} style={{ background: `${TEMP_COLOR[lead.commercial.temperature]}22`, color: TEMP_COLOR[lead.commercial.temperature] }}
+            title={`Agente de IA: lead ${(TEMP_LABEL[lead.commercial.temperature] || "").toLowerCase()}, pontuação ${lead.commercial.commercialScore}${lead.commercial.nextAction ? `. Próxima ação: ${NEXT_LABEL[lead.commercial.nextAction] || lead.commercial.nextAction}` : ""}`}>
+            <Flame size={12} />{TEMP_LABEL[lead.commercial.temperature]} · {lead.commercial.commercialScore}
+          </span>
+        )}
+        {lead.commercial && lead.commercial.readyForProposal && !lead.wonAt && <span className={`${classes.chip} ${classes.chipHot}`} title="O agente de IA já levantou tudo: falta a proposta do consultor">Pronto para proposta</span>}
         {lead.affiliate && <span className={`${classes.chip} ${classes.chipHot}`} title={`Indicado pelo afiliado ${lead.affiliate.name}`}>Afiliado: {String(lead.affiliate.name || "").split(" ")[0]}</span>}
         {lead.slaAlertedAt && !lead.firstContactAt && (
           <span className={`${classes.chip} ${classes.chipLate}`} title="Este lead novo passou do tempo de resposta e ainda não foi atendido">

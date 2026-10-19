@@ -4,6 +4,7 @@ import { Plus, Trash2 } from "lucide-react";
 
 import NumberField from "../../components/NumberField";
 import { ACTION_LABEL, BLOCKS, TRANSFER_LABEL, newId } from "./nodes";
+import StageInspector, { CommercialInspector } from "./StageInspector";
 
 const FIELDS = [
   ["nome", "Nome (vai para o cadastro do lead)"], ["email", "E-mail (vai para o cadastro)"], ["cidade", "Cidade (vai para o cadastro)"],
@@ -28,7 +29,7 @@ const VarsHint = () => (
   </Typography>
 );
 
-const Inspector = ({ node, update, remove, lists, nodes }) => {
+const Inspector = ({ node, update, remove, lists, nodes, flowId, kind }) => {
   if (!node) {
     return (
       <div style={{ padding: 16, opacity: 0.75, fontSize: 14, lineHeight: 1.5 }}>
@@ -255,7 +256,24 @@ const Inspector = ({ node, update, remove, lists, nodes }) => {
       {node.type === "end" && (
         <Section>
           {text("Mensagem final (opcional)", 3)}
-          <FormControlLabel control={<Switch color="primary" checked={!!d.close} onChange={(e) => set({ close: e.target.checked })} />} label="Finalizar a conversa" />
+          <FormControlLabel control={<Switch color="primary" checked={!!d.close} onChange={(e) => set({ close: e.target.checked, ...(e.target.checked ? { resume: false } : {}) })} />} label="Finalizar a conversa" />
+          {kind === "agent" && !d.close && (
+            <>
+              <FormControlLabel control={<Switch color="primary" checked={!!d.resume} onChange={(e) => set({ resume: e.target.checked })} />} label="Voltar a atender quando a pessoa escrever" />
+              <Typography variant="caption" color="textSecondary">Ligado, o agente continua ligado nesta conversa: quando a pessoa voltar (amanhã, com o documento…), um novo atendimento começa de onde o lead parou. Desligado, o agente para aqui.</Typography>
+            </>
+          )}
+        </Section>
+      )}
+
+      {node.type === "stage" && <StageInspector d={d} set={set} agents={lists.agents} commercialAgent={false} />}
+      {node.type === "commercial" && <CommercialInspector d={d} set={set} lists={lists} />}
+      {node.type === "flow" && (
+        <Section>
+          <T select label="Fluxo que começa" value={d.flowId || ""} onChange={(e) => set({ flowId: e.target.value ? Number(e.target.value) : null })}>
+            {(lists.flows || []).filter((f) => String(f.id) !== String(flowId)).map((f) => <MenuItem key={f.id} value={f.id}>{f.name}{f.status === "published" ? "" : " (não publicado)"}</MenuItem>)}
+          </T>
+          <Typography variant="caption" color="textSecondary">O outro fluxo assume a conversa e este termina. Se o outro ainda não estiver publicado, a equipe atende a conversa.</Typography>
         </Section>
       )}
 

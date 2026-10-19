@@ -125,6 +125,7 @@ const Routes = () => {
                 <Route exact path="/campaigns" component={Campaigns} isPrivate salesOnly />
                 <Route exact path="/chatbot" component={Chatbot} isPrivate managerOnly />
                 <Route exact path="/chatbot/:id" component={FlowBuilder} isPrivate managerOnly />
+                <Route exact path="/ai-agents/blocos/:id" component={FlowBuilder} isPrivate managerOnly />
                 <Route exact path="/chatbot-antigo" component={LegacyChatbot} isPrivate managerOnly />
                 <Route exact path="/ai-agents" component={AiAgents} isPrivate managerOnly />
                 <Route exact path="/integrations" component={Webhooks} isPrivate adminOnly />
