@@ -20,6 +20,8 @@ export interface SubjectRow {
   sortIndex: number;
   /** false: a lista de dispensadas do resultado unificado não informa a série; o período é só um valor de entrada e não conta como disciplina do período. */
   periodKnown?: boolean;
+  /** O semestre da disciplina na matriz oficial do curso (só para mostrar a grade das dispensadas sem série). */
+  matrixPeriod?: number;
 }
 
 export interface CurriculumTotals {

@@ -29,9 +29,12 @@ export interface MatrixLayoutReading {
   tracks: CommercialTrack[];
   /** Quantidade de disciplinas encontradas nos blocos "Série: N". */
   componentCount: number;
+  /** As disciplinas da matriz, uma por linha (semestre, código, nome completo, carga e tipo). */
+  components: Array<{ semester: number; code: string | null; name: string; workload: number | null; type: string | null }>;
 }
 
 interface Row {
+  code: string | null;
   page: number;
   y: number;
   semester: number;
@@ -116,7 +119,7 @@ export function readMatrixLayout(pages: ParsedPage[] | undefined): MatrixLayoutR
         const type = line.parts.find((part) => COMPONENT_TYPES.test(part.text.trim()))?.text.trim() ?? null;
         const candidates = line.parts.filter((part) => part.x >= NAME_MAX_X && parseMatrixNumber(part.text) !== null && Math.abs(center(part) - workloadCenter) <= 20);
         const nearest = candidates.sort((a, b) => Math.abs(center(a) - workloadCenter) - Math.abs(center(b) - workloadCenter))[0];
-        rows.push({ page: page.page, y: line.y, semester, type, workload: nearest ? Math.round(parseMatrixNumber(nearest.text) ?? 0) : null, name: namePart ? [{ y: line.y, text: namePart.text }] : [] });
+        rows.push({ code: first, page: page.page, y: line.y, semester, type, workload: nearest ? Math.round(parseMatrixNumber(nearest.text) ?? 0) : null, name: namePart ? [{ y: line.y, text: namePart.text }] : [] });
       } else if (line.parts.every((part) => part.x >= NAME_MIN_X && part.x < NAME_MAX_X)) {
         nameLines.push({ page: page.page, y: line.y, text });
       }
@@ -162,6 +165,7 @@ export function readMatrixLayout(pages: ParsedPage[] | undefined): MatrixLayoutR
     internships,
     tracks: tracksFrom(internships),
     componentCount: components.length,
+    components: components.map((row) => ({ semester: row.semester, code: row.code, name: row.fullName, workload: row.workload, type: row.type })),
   };
 }
 

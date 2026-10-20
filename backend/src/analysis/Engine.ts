@@ -35,6 +35,7 @@ import { readHeaderMetadata } from "./services/pipeline/cross-check";
 import { parsePdf, type LocalExtraction } from "./services/pdf/parser";
 import { effectiveRows } from "./services/pdf/table-detector";
 import { VisionFailure, noTextLayer, readWithVision } from "./services/pdf/vision";
+import { reconcileWithMatrix } from "./services/pipeline/reconcile";
 import type { CurriculumExtraction } from "./services/openai/schemas";
 
 // Everything here is local and deterministic: the PDF is read with pdf.js, the numbers come from the academic engine.
@@ -159,6 +160,22 @@ export const readCurricularPdf = async (bytes: Buffer): Promise<CurricularRead> 
     note: n.note
   }));
   const warnings: AnalysisWarningInput[] = [];
+  // a reading made by the AI is checked against the official matrix of the course (names, série, and the semester of each exempted subject)
+  if (local.parserVersion === "vision-1") {
+    try {
+      const { matrixFor } = await import("./services/commercial-grades/matrix-lookup");
+      const matrix = await matrixFor(data.document.course, data.document.modality);
+      if (matrix) {
+        const fixed = reconcileWithMatrix(subjects, matrix);
+        fixed.subjects.forEach((s, i) => { subjects[i] = s as StoredSubject; });
+        warnings.push(...fixed.warnings);
+      } else {
+        warnings.push({ code: "MATRIX_NOT_FOUND", severity: "INFO", source: "PIPELINE", message: "A matriz do curso não está no catálogo de grades: a leitura do PDF não foi conferida com ela." });
+      }
+    } catch (err) {
+      // the check is a help: without it the reading stands as it was made
+    }
+  }
   if (subjects.some(s => !s.period)) {
     warnings.push({ code: "SUBJECT_WITHOUT_PERIOD", severity: "CRITICAL", source: "PIPELINE", message: "Há disciplina sem período (série) legível no PDF. Confira o documento." });
   }

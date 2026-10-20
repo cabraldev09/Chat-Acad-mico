@@ -280,16 +280,16 @@ describe("periodUnit = YEAR (cursos anuais)", () => {
   });
 });
 
-describe("dispensadas sem série (resultado unificado)", () => {
-  it("não aumentam o tamanho do período de ingresso nem a capacidade do semestre", () => {
-    // ingresso no 3º: 3º e 4º com 5 disciplinas pendentes; 1º e 2º com 4 pendentes cada (backlog 8) e 12 dispensadas sem série
-    const subjects = [...makePeriod(1, 4, 0), ...makePeriod(2, 4, 0), ...makePeriod(3, 5, 0), ...makePeriod(4, 5, 0)];
-    const unknown = Array.from({ length: 12 }, (_, i) => ({ ...makeSubject({ period: 3, status: "EXEMPTED", usedSubject: `X${i}` }), periodKnown: false }));
-    const withUnknown = simulateCurriculum({ subjects: [...subjects, ...unknown], entryPeriod: 3, startTerm: "2026.2", rules: rules() });
-    const without = simulateCurriculum({ subjects, entryPeriod: 3, startTerm: "2026.2", rules: rules() });
-    // capacity = disciplines of the period + 3 extras, with or without the exempted ones that have no série
-    expect(withUnknown.semesters[0].maximumCapacity).toBe(8);
-    expect(withUnknown.semesters.map((s) => s.maximumCapacity)).toEqual(without.semesters.map((s) => s.maximumCapacity));
-    expect(withUnknown.semesters.map((s) => s.semesterLoad)).toEqual(without.semesters.map((s) => s.semesterLoad));
+describe("resultado unificado: dispensadas sem série ficam no período de entrada (regra do sistema original)", () => {
+  it("aluno do 5º período com 19 adaptações e 24 dispensadas: conclui em 2028.1 e o máximo do semestre é 38", () => {
+    const pending: Record<number, number> = { 1: 6, 2: 2, 3: 4, 4: 7, 5: 11, 6: 11, 7: 11, 8: 3 };
+    const subjects = Object.entries(pending).flatMap(([p, n]) => makePeriod(Number(p), n, 0));
+    // the list of exempted has no série: the period of entry is the value given to them
+    const exempted = Array.from({ length: 24 }, (_, i) => makeSubject({ period: 5, status: "EXEMPTED", usedSubject: `X${i}` }));
+    const result = simulateCurriculum({ subjects: [...subjects, ...exempted], entryPeriod: 5, startTerm: "2026.2", rules: rules() });
+    expect(result.semesters.map((s) => s.term)).toEqual(["2026.2", "2027.1", "2027.2", "2028.1"]);
+    expect(result.semesters[0].maximumCapacity).toBe(38);
+    expect(result.semesters[0].subjectsFromBacklog).toBe(19);
+    expect(result.semesters[3].remainingBacklog).toBe(0);
   });
 });
