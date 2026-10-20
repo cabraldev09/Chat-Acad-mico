@@ -2898,6 +2898,26 @@ const postMeta = (id, payload, secret, badSig) => {
       // the semester made for this test leaves, so the scenarios of the goals start from an empty system as before
       assert((await http.delete(`/goals/${gid}`, auth())).status < 300, "the test semester was not removed");
     });
+    await test("goals: what was typed as the realized total before the change keeps showing that number (the CRM goes inside it) and the students in course stay", async () => {
+      const made = await http.post("/goals", { kind: "polo", title: "Total teste", startsOn: "2026-05-14", endsOn: "2026-11-16", members: [] }, auth());
+      const gid = made.data.id;
+      const poloId = sql(`SELECT id FROM Polos ORDER BY id LIMIT 1`);
+      const wonStage = sql(`SELECT id FROM LeadStages WHERE type='won' ORDER BY position LIMIT 1`);
+      sql(`INSERT INTO Leads (name, stageId, poloId, wonAt, createdAt, updatedAt) VALUES ('Matriculado Total Teste', ${wonStage}, ${poloId}, '2026-08-10 12:00:00', NOW(), NOW())`);
+      sql(`INSERT INTO GoalPolos (goalId, poloId, target, manualCount, canceled, createdAt, updatedAt) VALUES (${gid}, ${poloId}, 80, 84, 23, '2026-10-01 10:00:00', '2026-10-01 10:00:00')`);
+      sql(`DELETE FROM Settings WHERE key='goal_total_semantics_v1'`);
+      const script = `
+        require("./dist/database");
+        const { migrateGoalTotals } = require("./dist/helpers/GoalTotals");
+        (async () => { const a = await migrateGoalTotals(); const b = await migrateGoalTotals(); console.log(JSON.stringify({ a, b })); process.exit(0); })().catch(e => { console.error(e); process.exit(1); });`;
+      const out = JSON.parse(execFileSync("node", ["-e", script], { cwd: ROOT, env: { ...env, LOG_LEVEL: "error" } }).toString().trim().split("\n").pop());
+      assert(out.a >= 1 && out.b === 0, `migration ran ${JSON.stringify(out)}`);
+      const row = (await http.get("/goals/polos", { params: { goalId: gid }, ...auth() })).data.rows.find(r => r.poloId === Number(poloId));
+      assert(row.done === 84 && row.inCourse === 62 && row.canceled === 22, `row ${JSON.stringify({ done: row.done, inCourse: row.inCourse, canceled: row.canceled })}`);
+      sql(`DELETE FROM GoalPolos WHERE goalId=${gid}`);
+      sql(`DELETE FROM Leads WHERE name='Matriculado Total Teste'`);
+      assert((await http.delete(`/goals/${gid}`, auth())).status < 300, "the test semester was not removed");
+    });
     await test("the agent never answers groups, communities, the team's chats or personal contacts, whatever reaches the automation", async () => {
       const run = body => {
         const script = `

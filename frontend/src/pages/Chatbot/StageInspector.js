@@ -139,7 +139,7 @@ const StageInspector = ({ d, set, agents, commercialAgent }) => {
       <Typography variant="caption" color="textSecondary">A chamada é feita pelo sistema (só endereços públicos). O que volta é lido pela IA como dado, nunca como ordem. No teste, chamadas de envio (POST) não são feitas.</Typography>
 
       <b style={{ fontSize: 13, marginTop: 10 }}>Caminhos de saída</b>
-      <Typography variant="caption" color="textSecondary">“Objetivo cumprido”, “Pediu uma pessoa”, “Fora do escopo” e “Limite de turnos” já existem. Crie outros para decisões como “Quer proposta” ou “Já é aluno”.</Typography>
+      <Typography variant="caption" color="textSecondary">“Objetivo cumprido”, “Pediu uma pessoa”, “Fora do escopo” e “Limite de turnos” já existem. No agente comercial, “Aluno: tutoria” e “Aluno: secretaria” também: quem já é aluno e precisa desses setores vai sozinho para a fila do polo, sem ligar a bolinha. Crie outros para decisões como “Quer proposta” ou “Já é aluno”.</Typography>
       {outcomes.map((o, i) => (
         <div key={`${o.id}${i}`} style={{ border: "1px solid rgba(127,140,160,.3)", borderRadius: 12, padding: 10, marginTop: 6 }}>
           <div style={{ display: "flex", gap: 6, alignItems: "center" }}>

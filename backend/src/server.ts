@@ -64,6 +64,8 @@ whenLeader(() => {
   import("./analysis/Grades").then(async ({ importDefaultGradesIfEmpty, refreshGradesOnce }) => { await importDefaultGradesIfEmpty(); await refreshGradesOnce(); }).catch(() => undefined);
   // the rules of the MEC (Portaria 378/2025) for the courses that have none, once per version
   import("./services/CommercialServices/MecDefaults").then(({ seedMecDefaults }) => seedMecDefaults()).catch(() => undefined);
+  // the goals of the polos: what was typed as "Já realizado" is the total shown (once)
+  import("./helpers/GoalTotals").then(({ migrateGoalTotals }) => migrateGoalTotals()).catch(() => undefined);
   // every contact already in the system becomes a lead too (idempotent)
   import("./services/CrmServices/LeadCore")
     .then(({ backfillLeads }) => backfillLeads())

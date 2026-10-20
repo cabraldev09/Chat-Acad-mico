@@ -168,6 +168,8 @@ const FlowNode = ({ id, type, data, selected }) => {
           <Exit id="done" label="Objetivo cumprido" />
           {(data.outcomes || []).map((o) => <Exit key={o.id} id={String(o.id)} label={o.label || o.id} />)}
           <Exit id="human" label="Pediu uma pessoa" muted />
+          {(data.hooks || []).includes("commercial") && !(data.outcomes || []).some((o) => o.id === "tutoria") && <Exit id="tutoria" label="Aluno: tutoria" muted />}
+          {(data.hooks || []).includes("commercial") && !(data.outcomes || []).some((o) => o.id === "secretaria") && <Exit id="secretaria" label="Aluno: secretaria" muted />}
           <Exit id="off" label="Fora do escopo" muted />
           <Exit id="limit" label="Limite de turnos" muted />
         </>
