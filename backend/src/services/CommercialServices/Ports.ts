@@ -36,6 +36,16 @@ export interface CommercialPorts {
 const TASK_TYPE: Record<string, string> = { proposal: "proposta", transcript: "documentos", follow_up: "whatsapp", human: "ligar" };
 
 // ---------------------------------------------------------------- the real ones
+// why the lead was lost, in the words of the CRM list (the objection that came up decides; without one the person simply gave up)
+export const lostReasonOf = (slots: Record<string, any>): string => {
+  const kinds = String(slots.objectionsSeen || slots.objectionType || "").split(",").filter(Boolean);
+  if (kinds.includes("preco")) return "Preço / mensalidade";
+  if (kinds.includes("concorrente")) return "Escolheu outra instituição";
+  if (kinds.includes("tempo")) return "Horário incompatível";
+  if (kinds.length) return "Outro";
+  return "Desistiu de estudar";
+};
+
 export const dbPorts = (lead: Lead, state: CommercialState, ctx: { agentId?: number | null; flowId?: number | null } = {}): CommercialPorts => {
   const audit: AuditLine[] = [];
   const names = async (): Promise<Map<number, string>> => new Map((await LeadStage.findAll({ attributes: ["id", "name"] })).map(s => [s.id, s.name]));
@@ -57,7 +67,7 @@ export const dbPorts = (lead: Lead, state: CommercialState, ctx: { agentId?: num
         return false;
       }
       try {
-        await changeStage(lead.id, id, null, key === "no_interest" ? { lostReason: "Sem interesse", lostNote: reason.slice(0, 300) } : {});
+        await changeStage(lead.id, id, null, key === "no_interest" ? { lostReason: lostReasonOf(state.slots), lostNote: reason.slice(0, 300) } : {});
         await addActivity(lead.id, null, "system", `Agente de IA moveu o lead para “${STAGE_SPECS[key].name}”: ${reason}`);
         state.stageKey = key;
         audit.push({ kind: "crm", text: `Moveu para “${STAGE_SPECS[key].name}” (${reason})` });

@@ -18,8 +18,33 @@ const useStyles = makeStyles((theme) => ({
 const nf = (n) => Number(n || 0).toLocaleString("pt-BR");
 const WHY = {
   human_request: "Pediram uma pessoa", proposal: "Hora da proposta", qualified: "Qualificado e sem dúvidas", tutoring: "Precisa da tutoria", secretary: "Precisa da secretaria", unknown: "Pergunta sem resposta na base", limit_turns: "Limite de respostas", limit_tokens: "Limite diário de IA",
-  error: "Erro técnico da IA", complaint: "Insatisfação, pagamento ou jurídico", media: "Áudio ou arquivo que a IA não lê", loop: "Repetiu o pedido", other: "Outros",
+  error: "Erro técnico da IA", complaint: "Insatisfação, pagamento ou jurídico", media: "Áudio ou arquivo que a IA não lê", loop: "Repetiu o pedido", objection: "Várias objeções", other: "Outros",
 };
+
+// the funnel of the agent cut by polo or by origin: leads that arrived, qualified, ready for the proposal, enrolled and lost
+const CutTable = ({ rows, first, classes }) => (
+  <div style={{ overflowX: "auto" }}>
+    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5 }}>
+      <thead>
+        <tr style={{ textAlign: "left" }}>
+          {[first, "Chegaram", "Qualificados", "Prontos", "Matriculados", "Perdidos"].map((h, i) => <th key={h} style={{ padding: "6px 8px", fontWeight: 600, textAlign: i ? "right" : "left", whiteSpace: "nowrap" }}>{h}</th>)}
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r) => (
+          <tr key={r.label} style={{ borderTop: "1px solid rgba(127,140,160,.25)" }}>
+            <td style={{ padding: "6px 8px" }}>{r.label}</td>
+            <td style={{ padding: "6px 8px", textAlign: "right" }}>{nf(r.received)}</td>
+            <td style={{ padding: "6px 8px", textAlign: "right" }}>{nf(r.qualified)}{r.qualifiedRate !== null ? <span className={classes.small}> · {r.qualifiedRate}%</span> : null}</td>
+            <td style={{ padding: "6px 8px", textAlign: "right" }}>{nf(r.ready)}</td>
+            <td style={{ padding: "6px 8px", textAlign: "right" }}>{nf(r.enrolled)}</td>
+            <td style={{ padding: "6px 8px", textAlign: "right" }}>{nf(r.lost)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+);
 
 // The journey of the leads of this agent (each lead counts once per step) and what the AI spent to get them there
 const CommercialTab = ({ agentId }) => {
@@ -55,6 +80,12 @@ const CommercialTab = ({ agentId }) => {
         </TextField>
       </div>
 
+      {m.intake && m.intake.created > 0 && (
+        <div className={classes.small} style={{ marginBottom: 12 }}>
+          Neste período entraram <b>{nf(m.intake.created)}</b> leads no sistema e o agente atendeu <b>{nf(m.intake.attended)}</b>
+          {m.intake.created ? ` (${Math.min(100, Math.round((m.intake.attended / m.intake.created) * 100))}%)` : ""}. Os outros entraram por cadastro, formulário ou afiliado e ainda não escreveram.
+        </div>
+      )}
       <div className={classes.title} style={{ marginTop: 0 }}>Funil do atendimento</div>
       {m.funnel[0].leads === 0 && <Typography variant="body2" color="textSecondary">Ainda não chegou nenhum lead por este agente neste período.</Typography>}
       {m.funnel.map((f) => (
@@ -70,6 +101,31 @@ const CommercialTab = ({ agentId }) => {
         <div className={classes.card}><div className={classes.big}>{rate("enrolled") !== undefined ? `${rate("enrolled")}%` : "—"}</div><div className={classes.small}>viraram matrícula</div></div>
         <div className={classes.card}><div className={classes.big}>{nf(m.unknownQuestions)}</div><div className={classes.small}>perguntas sem resposta na base</div></div>
       </div>
+
+      {(m.byPoloFunnel || []).length > 0 && (
+        <>
+          <div className={classes.title}>Por polo</div>
+          <CutTable rows={m.byPoloFunnel} first="Polo" classes={classes} />
+        </>
+      )}
+      {(m.bySourceFunnel || []).length > 0 && (
+        <>
+          <div className={classes.title}>Por origem do lead</div>
+          <CutTable rows={m.bySourceFunnel} first="Origem" classes={classes} />
+        </>
+      )}
+      {(m.lostReasons || []).length > 0 && (
+        <>
+          <div className={classes.title}>Por que perdemos</div>
+          {m.lostReasons.map((r) => (
+            <div key={r.reason} className={classes.step}>
+              <span>{r.reason}</span>
+              <div className={classes.track}><div className={classes.fill} style={{ width: `${Math.round((r.count / m.lostReasons[0].count) * 100)}%`, background: "#64748b" }} /></div>
+              <b style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{nf(r.count)}</b>
+            </div>
+          ))}
+        </>
+      )}
 
       <div className={classes.title}>Uso da IA</div>
       <div className={classes.grid}>

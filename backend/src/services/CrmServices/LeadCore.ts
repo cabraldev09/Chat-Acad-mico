@@ -1,5 +1,6 @@
 import { Op } from "sequelize";
 
+import AgentMetricEvent from "../../models/AgentMetricEvent";
 import Lead from "../../models/Lead";
 import LeadStage from "../../models/LeadStage";
 import LeadActivity from "../../models/LeadActivity";
@@ -244,6 +245,8 @@ export const upsertLead = async (
     await tagAffiliateLead(created);
   }
   await rescore(created);
+  // every lead that enters counts once, whether or not the AI agent ever talked to it (the base to read the conversion against)
+  await AgentMetricEvent.create({ leadId: created.id, agentId: null, event: "lead_created", once: true, meta: JSON.stringify({ source: input.source || null }) } as any).catch(() => undefined);
 
   const lead = (await loadLead(created.id)) as Lead;
   emitLead("create", lead);

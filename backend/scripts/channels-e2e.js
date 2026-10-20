@@ -203,6 +203,7 @@ const startAnthropicMock = () => {
       if (/é caro/i.test(said2)) return turn("Sai por R$ 299 por mês, ótimo custo!", { intent: "other" });
       if (/quando começam as aulas/i.test(said2)) return turn("As aulas começam em 03/08.", { intent: "other" });
       if (/transferir/i.test(said2)) return turn("Entendi! Com o seu histórico em PDF conseguimos pedir uma análise curricular. Pode me enviar o arquivo?", { intent: "transfer", curso: "Direito", cidade: "Porto Velho", tipo_ingresso: "transfer" });
+      if (/não tenho mais interesse/i.test(said2)) return turn("Tudo bem, agradeço o seu tempo! Se mudar de ideia, é só chamar. 😊", { intent: "no_interest", objecao: "achou caro", tipo_objecao: "preco" });
       if (/golpe/i.test(said2)) return turn("Entendo a sua preocupação, é natural querer ter certeza. 😊 Posso te mostrar como funciona o curso?", { intent: "objection", objecao: "medo de golpe", tipo_objecao: "confianca" });
       if (/amanhã às 14/i.test(said2)) return tool("agendar_contato", { dia: new Date(Date.now() + 24 * 3600000).toLocaleDateString("en-CA", { timeZone: "America/Porto_Velho" }), horario: "14:00" });
       if (/começar esta semana/i.test(said2)) return turn("Perfeito, Direito em Porto Velho! Posso te explicar como funciona o curso?", { intent: "other", curso: "Direito", cidade: "Porto Velho", tipo_ingresso: "first_degree", nome: "Paulo Mendes", prazo_decisao: "Decide esta semana", turno: "Noite" });
@@ -243,6 +244,8 @@ const startAnthropicMock = () => {
     if (/falar com (uma )?pessoa/i.test(said)) return text("[HANDOFF]");
     return text("Claro! Posso ajudar com as bolsas. Qual curso você quer?");
   });
+  // a mistake inside the mock itself must show up in the log (it would look like a provider error)
+  app.use((err, req, res, next) => { console.error("[mock anthropic]", err && err.stack); res.status(500).json({ error: { message: String(err && err.message) } }); });
   return new Promise(r => { const s = app.listen(AI_PORT, () => r(s)); });
 };
 
@@ -3373,6 +3376,20 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(texts(markX).filter(x => /Ficou com alguma dúvida|passando só para saber/i.test(x)).length === 1, "a second reminder came too soon");
       await say(X, "wamid.com-x3", "Quanto tempo dura o curso?", t => t.some(x => /Direito:/.test(x)), "X answers");
       assert(JSON.parse(sql(`SELECT slots FROM LeadCommercials WHERE leadId=${leadId(X)}`)).nudges === 0, "the reminders did not start over");
+
+      // Y) a lead who gives up leaves with the REASON the CRM understands (from the objection that came up), and the metrics tell why we lose
+      const Y = "5511920000308";
+      await say(Y, "wamid.com-y1", "oi", t => t.some(x => /assistente virtual/.test(x)), "Y opening");
+      await say(Y, "wamid.com-y2", "Quero Direito em Porto Velho, primeira graduação", t => t.some(x => /Direito em Porto Velho/.test(x)), "Y qualification");
+      await say(Y, "wamid.com-y3", "achei caro, não tenho mais interesse", t => t.some(x => /agradeço o seu tempo/.test(x)), "Y gives up");
+      // (the column may be one the company already had, with its own name: what matters is that it is a "lost" column)
+      await waitFor(() => sql(`SELECT s.type FROM Leads l JOIN LeadStages s ON s.id=l.stageId WHERE l.id=${leadId(Y)}`) === "lost", 10000, "Y goes to a lost column");
+      assert(sql(`SELECT lostReason FROM Leads WHERE id=${leadId(Y)}`) === "Preço / mensalidade", `the lost reason is not the one of the objection: ${sql(`SELECT lostReason FROM Leads WHERE id=${leadId(Y)}`)}`);
+      const m2 = (await http.get(`/ai-agents/${agentId}/commercial-metrics`, auth())).data;
+      assert(m2.intake.created >= m2.intake.attended && m2.intake.attended >= 5, `intake ${JSON.stringify(m2.intake)}`);
+      assert(m2.byPoloFunnel.length >= 1 && m2.bySourceFunnel.length >= 1 && m2.bySourceFunnel.every(r => r.received >= 1), `cuts ${JSON.stringify([m2.byPoloFunnel, m2.bySourceFunnel])}`);
+      assert(m2.lostReasons.some(r => r.reason === "Preço / mensalidade"), `lost reasons ${JSON.stringify(m2.lostReasons)}`);
+      assert(m2.handoffs.byReason.some(r => r.why === "qualified") && m2.handoffs.byReason.some(r => r.why === "objection"), `new reasons ${JSON.stringify(m2.handoffs.byReason)}`);
 
       // T) outside the business hours of the number the agent still answers: the "out of hours" text is only for numbers without an agent
       sql(`UPDATE Whatsapps SET businessHours='{"enabled":true,"days":{}}', outOfHoursMessage='Estamos fechados agora' WHERE id=${cid}`);

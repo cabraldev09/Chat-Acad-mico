@@ -102,3 +102,6 @@ O tutor que inicia ou conclui um aluno sem tutor o assume (a conversa fica abert
 - **Agendar retorno** (`agendar_contato`): o agente combina dia e horário e cria a tarefa "Retornar ao lead no horário combinado" para o consultor do polo.
 - **Resumo ao consultor**: origem/campanha, o que o lead contou, tipos de objeção, últimas falas e o próximo passo sugerido; no CRM, selo e filtro "Prontos para o consultor" (`LeadCommercials.readyForConsultant`).
 - **Retomar quem sumiu** (`workers/AiReactivation.ts`): até 2 lembretes (3 h e 9 h depois), só com a janela de 24 h aberta, em horário comercial, sem opt-out, e só se uma pessoa não assumiu; `ai_reactivation=0` desliga. Áudio é transcrito por padrão quando há chave da OpenAI.
+
+## Medir (aba Resultados da Central)
+Além do funil: quantos leads **entraram** no sistema (evento `lead_created`, por qualquer porta) contra os atendidos pelo agente; funil **por polo** e **por origem** (pelo lead, cada lead uma vez por etapa); **motivo de perda** estruturado na coluna "Sem interesse" (preço, outra instituição, horário, desistência) a partir da objeção que apareceu (`Ports.lostReasonOf`); tempo e pendências de resposta da equipe só das conversas **deste** agente; e "conversas atendidas" por agente.

@@ -403,7 +403,15 @@ export const usage = async (req: Request, res: Response): Promise<Response> => {
        FROM "AiUsage" WHERE "agentId" = :id AND kind <> 'test' AND "createdAt" >= :since GROUP BY 1 ORDER BY 1`,
     { replacements: { tz: process.env.APP_TIMEZONE || "America/Porto_Velho", id: agent.id, since }, type: QueryTypes.SELECT }
   ).catch(() => []);
-  const answered = await Ticket.count({ where: { aiTurns: { [Op.gt]: 0 }, updatedAt: { [Op.gte]: since } } });
+  // the conversations THIS agent answered (a ticket counts once, for the agent whose model calls and turns are in it)
+  const answeredRows: any[] = await sequelize.query(
+    `SELECT COUNT(*) AS n FROM (
+       SELECT "ticketId" FROM "AiUsage" WHERE "agentId" = :id AND "kind" <> 'test' AND "ticketId" IS NOT NULL AND "createdAt" >= :since
+       UNION SELECT "ticketId" FROM "AgentTurnLogs" WHERE "agentId" = :id AND "ticketId" IS NOT NULL AND "createdAt" >= :since
+     ) t`,
+    { replacements: { id: agent.id, since }, type: QueryTypes.SELECT }
+  ).catch(() => []);
+  const answered = Number(answeredRows[0]?.n || 0);
   const price = await priceOf(agent.model);
   const live = rows.filter(r => r.kind !== "test");
   const input = live.reduce((a, r) => a + Number(r.input || 0), 0);

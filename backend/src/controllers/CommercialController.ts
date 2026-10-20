@@ -307,9 +307,13 @@ export const metrics = async (req: Request, res: Response): Promise<Response> =>
       WHERE m."agentId" = :agentId AND m."event" LIKE 'handoff\\_%' AND m."event" <> 'handoff_brief' AND m."createdAt" >= :from AND m."createdAt" < :to GROUP BY 1 ORDER BY n DESC LIMIT 12`,
     { replacements: rep, type: QueryTypes.SELECT }
   ).catch(() => []);
+  // only the conversations THIS agent handed over (the handoff events of the agent name the lead)
   const waits: any[] = await sequelize.query(
     `SELECT t."id", t."handoffAt", (SELECT MIN(msg."createdAt") FROM "Messages" msg WHERE msg."ticketId" = t."id" AND msg."fromMe" = true AND msg."createdAt" > t."handoffAt" AND msg."body" NOT LIKE E'\u200e%') AS answered
-       FROM "Tickets" t WHERE t."handoffAt" >= :from AND t."handoffAt" < :to AND t."aiActive" = false LIMIT 500`,
+       FROM "Tickets" t JOIN "Leads" l ON l."contactId" = t."contactId"
+      WHERE t."handoffAt" >= :from AND t."handoffAt" < :to AND t."aiActive" = false
+        AND l."id" IN (SELECT DISTINCT "leadId" FROM "AgentMetricEvents" WHERE "agentId" = :agentId AND "event" LIKE 'handoff\\_%' AND "event" <> 'handoff_brief' AND "createdAt" >= :from AND "createdAt" < :to)
+      LIMIT 500`,
     { replacements: rep, type: QueryTypes.SELECT }
   ).catch(() => []);
   const answeredWaits = waits.filter(w => w.answered).map(w => (new Date(w.answered).getTime() - new Date(w.handoffAt).getTime()) / 60000).sort((a, b) => a - b);
@@ -320,11 +324,48 @@ export const metrics = async (req: Request, res: Response): Promise<Response> =>
   const qualified = await perLead("qualified");
   const ready = await perLead("ready_for_proposal");
 
+  // the funnel of the agent cut by the polo and by where the lead came from (the lead's own data, each lead once per step)
+  const cut = async (column: string, empty: string) => {
+    const r: any[] = await sequelize.query(
+      `SELECT COALESCE(${column}, :empty) AS label, e."event", COUNT(DISTINCT e."leadId") AS n
+         FROM "AgentMetricEvents" e JOIN "Leads" l ON l."id" = e."leadId" LEFT JOIN "Polos" p ON p."id" = l."poloId"
+        WHERE e."agentId" = :agentId AND e."createdAt" >= :from AND e."createdAt" < :to AND e."event" IN ('lead_received','qualified','ready_for_proposal','enrolled','no_interest')
+        GROUP BY 1, 2`,
+      { replacements: { ...rep, empty }, type: QueryTypes.SELECT }
+    ).catch(() => []);
+    const labels = [...new Set(r.map(x => x.label))];
+    return labels
+      .map(label => {
+        const n = (e: string) => Number(r.find(x => x.label === label && x.event === e)?.n || 0);
+        const received = n("lead_received");
+        return { label, received, qualified: n("qualified"), ready: n("ready_for_proposal"), enrolled: n("enrolled"), lost: n("no_interest"), qualifiedRate: received ? Math.round((n("qualified") / received) * 1000) / 10 : null };
+      })
+      .sort((a, b) => b.received - a.received)
+      .slice(0, 12);
+  };
+  const byPoloFunnel = await cut('p."name"', "Sem polo");
+  const bySourceFunnel = await cut('l."source"', "Sem origem");
+  // all the leads that entered in the period against the ones this agent attended (the real base of the conversion)
+  const intake: any = (await sequelize.query(
+    `SELECT COUNT(*) AS n FROM "AgentMetricEvents" WHERE "event" = 'lead_created' AND "createdAt" >= :from AND "createdAt" < :to`,
+    { replacements: rep, type: QueryTypes.SELECT }
+  ).catch(() => []))[0] || {};
+  const lostReasons: any[] = await sequelize.query(
+    `SELECT COALESCE(l."lostReason", 'Sem motivo') AS reason, COUNT(*) AS n FROM "Leads" l
+      WHERE l."id" IN (SELECT DISTINCT "leadId" FROM "AgentMetricEvents" WHERE "agentId" = :agentId AND "event" = 'no_interest' AND "createdAt" >= :from AND "createdAt" < :to)
+      GROUP BY 1 ORDER BY n DESC`,
+    { replacements: rep, type: QueryTypes.SELECT }
+  ).catch(() => []);
+
   return res.json({
     days,
     funnel,
     conversion: first ? funnel.slice(1).filter(f => ["qualified", "ready_for_proposal", "enrolled"].includes(f.event)).map(f => ({ event: f.event, label: f.label, rate: Math.round((f.leads / first) * 1000) / 10 })) : [],
     unknownQuestions: unknown,
+    intake: { created: Number(intake.n || 0), attended: first },
+    byPoloFunnel,
+    bySourceFunnel,
+    lostReasons: lostReasons.map(r => ({ reason: r.reason, count: Number(r.n) })),
     handoffs: {
       total: reasons.reduce((a, r) => a + Number(r.n), 0),
       byReason: reasons.map(r => ({ why: r.why, count: Number(r.n) })),
