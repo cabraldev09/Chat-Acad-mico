@@ -365,7 +365,7 @@ export const metrics = async (req: Request, res: Response): Promise<Response> =>
 const KEYS = { fallback: "crm_fallback_queue", sla: "crm_handoff_sla_minutes", stale: "ai_stale_run_days", transcribe: "ai_transcribe_audio" };
 
 // the settings of the handoff and, polo by polo, whether somebody would really answer ("ready to attend")
-export const handoffShow = async (_req: Request, res: Response): Promise<Response> => {
+const handoffData = async () => {
   const queues = await Queue.findAll({ include: [{ model: User, as: "users", attributes: ["id", "name"], required: false }, { model: Polo, as: "polo", attributes: ["id", "name"], required: false }], order: [["name", "ASC"]] });
   const polos = await Polo.findAll({ where: { active: true }, order: [["name", "ASC"]], attributes: ["id", "name", "city"] });
   const commercial = queues.filter(q => q.role === "comercial");
@@ -383,7 +383,7 @@ export const handoffShow = async (_req: Request, res: Response): Promise<Respons
       issue: !q ? "Este polo não tem fila comercial." : people === 0 ? "A fila comercial deste polo não tem consultores: as conversas ficam na fila do polo e só a gestão é avisada." : null
     };
   });
-  return res.json({
+  return {
     settings: {
       fallbackQueueId: fallbackId || null,
       slaMinutes: Number(await getSetting(KEYS.sla, "15")),
@@ -394,8 +394,10 @@ export const handoffShow = async (_req: Request, res: Response): Promise<Respons
     reserve: reserve ? { id: reserve.id, name: reserve.name, people: ((reserve as any).users || []).length } : null,
     queues: commercial.map(q => ({ id: q.id, name: q.name, polo: (q as any).polo ? (q as any).polo.name : null, people: ((q as any).users || []).length })),
     polos: rows
-  });
+  };
 };
+
+export const handoffShow = async (_req: Request, res: Response): Promise<Response> => res.json(await handoffData());
 
 export const handoffSave = async (req: Request, res: Response): Promise<Response> => {
   const b = req.body || {};
@@ -424,15 +426,24 @@ const TOPIC_LIST: Array<{ topic: string; label: string; hint: string; for: Array
   { topic: "institutional/analysis", label: "Análise curricular", hint: "Como o aproveitamento de disciplinas é analisado.", for: ["commercial"] }
 ];
 
-// the board of improvement of one agent: pending questions of the team, subjects without text, and what to do next
-export const improve = async (req: Request, res: Response): Promise<Response> => {
-  const agent = await AiAgent.findByPk(req.params.id);
-  if (!agent) throw new AppError("ERR_NOT_FOUND", 404);
+// the kind of an agent comes from its drawing: some block of the flow has the commercial hook (never from the formatting of the JSON)
+const kindOfDraft = (draft: any): "commercial" | "service" => {
+  try {
+    const g = typeof draft === "string" ? JSON.parse(draft) : draft;
+    const nodes: any[] = Array.isArray(g?.nodes) ? g.nodes : [];
+    return nodes.some(n => Array.isArray(n?.data?.hooks) && n.data.hooks.includes("commercial")) ? "commercial" : "service";
+  } catch (_) {
+    return /"hooks":\s*\[\s*"commercial"/.test(String(draft || "")) ? "commercial" : "service";
+  }
+};
+export { kindOfDraft };
+
+// the board of one agent: pending questions of the team, subjects without text, and what to do next
+const improveData = async (agent: AiAgent) => {
   const AiLearning = (await import("../models/AiLearning")).default;
   const KbDocument = (await import("../models/KbDocument")).default;
   const flow = await (await import("../models/ChatFlow")).default.findOne({ where: { kind: "agent", agentId: agent.id }, attributes: ["id", "draft"] });
-  const graph = flow ? String(flow.draft || "") : "";
-  const kind: "commercial" | "service" = /"hooks":\s*\[\s*"commercial"/.test(graph) ? "commercial" : "service";
+  const kind = kindOfDraft(flow ? flow.draft : "");
 
   const docs = await KbDocument.findAll({ where: { agentId: { [Op.or]: [agent.id, null] } } as any, attributes: ["id", "title", "topic", "kind", "source", "updatedAt", "agentId"] });
   const rows = await AiLearning.findAll({ where: { agentId: agent.id, status: { [Op.in]: ["aguardando_equipe", "para_revisar"] } }, order: [["id", "DESC"]], limit: 300 });
@@ -458,24 +469,88 @@ export const improve = async (req: Request, res: Response): Promise<Response> =>
     { replacements: { id: agent.id, since }, type: QueryTypes.SELECT }
   ).catch(() => []);
   const count = (e: string) => Number(events.find(x => x.event === e)?.n || 0);
-  const courses = await Course.count({ where: { active: true } as any });
-  const withRule = kind === "commercial" ? await CourseRegulation.count({ distinct: true, col: "courseId" }) : 0;
+  const activeIds = (await Course.findAll({ where: { active: true } as any, attributes: ["id"] })).map(c => c.id);
+  const courses = activeIds.length;
+  // only courses that are active count (a rule of a course that was removed from the catalogue is not a course with a rule)
+  const withRule = kind === "commercial" && courses ? await CourseRegulation.count({ distinct: true, col: "courseId", where: { courseId: { [Op.in]: activeIds } } as any }) : 0;
+  const waiting = rows.filter(r => r.status === "aguardando_equipe");
+  const waitingGroups = new Set(waiting.map(r => norm(r.question).slice(0, 80))).size;
 
   const next: string[] = [];
-  if (rows.filter(r => r.status === "aguardando_equipe").length) next.push(`Responda as ${grouped.size} pergunta(s) que o agente não soube responder: a resposta vira conhecimento dele.`);
+  if (waiting.length) next.push(`Responda ${waitingGroups === 1 ? "a pergunta" : `as ${waitingGroups} perguntas`} que o agente não soube responder: a resposta vira conhecimento dele.`);
   if (rows.some(r => r.status === "para_revisar")) next.push("Revise e aprove as respostas que a equipe já deu: o agente aprende com elas.");
   topics.filter(t => !t.ok).slice(0, 3).forEach(t => next.push(`Envie um texto ou PDF sobre “${t.label}”: hoje o agente diz que vai confirmar.`));
   if (kind === "commercial" && courses && withRule < courses) next.push(`Cadastre as regras do MEC dos cursos (${withRule} de ${courses} têm regra).`);
   if (count("agent_guard")) next.push(`${count("agent_guard")} resposta(s) foram barradas por trazerem valor, promessa ou dado sem fonte: coloque o dado certo na base.`);
 
-  return res.json({
-    agent: { id: agent.id, name: agent.name, kind },
-    documents: { total: docs.length, own: docs.filter(d => d.agentId === agent.id).length, faq: docs.filter(d => d.kind === "faq").length, files: docs.filter(d => d.source === "arquivo").length, lastAt: docs.reduce((m, d) => (d.updatedAt > m ? d.updatedAt : m), new Date(0)) },
-    pending: { waiting: rows.filter(r => r.status === "aguardando_equipe").length, toReview: rows.filter(r => r.status === "para_revisar").length },
+  return {
+    agent: { id: agent.id, name: agent.name, kind, active: !!agent.active, provider: agent.provider, model: agent.model },
+    flow: flow ? { id: flow.id } : null,
+    documents: { total: docs.length, own: docs.filter(d => d.agentId === agent.id).length, shared: docs.filter(d => !d.agentId).length, faq: docs.filter(d => d.kind === "faq").length, files: docs.filter(d => d.source === "arquivo").length, lastAt: docs.reduce((m, d) => (d.updatedAt > m ? d.updatedAt : m), new Date(0)) },
+    pending: { waiting: waitingGroups, toReview: rows.filter(r => r.status === "para_revisar").length },
     questions,
+    questionsTotal: grouped.size,
     topics,
     last30days: { unknown: count("unknown"), blocked: count("agent_guard"), errors: count("agent_error") },
     regulations: kind === "commercial" ? { courses, withRule } : null,
     next
-  });
+  };
+};
+
+export const improve = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await AiAgent.findByPk(req.params.id);
+  if (!agent) throw new AppError("ERR_NOT_FOUND", 404);
+  return res.json(await improveData(agent));
+};
+
+// THE CENTRAL OF THE AGENT: one call for its first screen. What to do now, the health of the agent (each check names where to fix it), the last
+// seven days in four numbers, and the questions it could not answer.
+export const central = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await AiAgent.findByPk(req.params.id);
+  if (!agent) throw new AppError("ERR_NOT_FOUND", 404);
+  const data = await improveData(agent);
+  const ChatFlow = (await import("../models/ChatFlow")).default;
+  const flow = await ChatFlow.findOne({ where: { kind: "agent", agentId: agent.id }, attributes: ["id", "status", "version"] });
+  const since7 = new Date(Date.now() - 7 * 86400000);
+  const events: any[] = await sequelize.query(
+    `SELECT "event", COUNT(DISTINCT "leadId") AS n FROM "AgentMetricEvents" WHERE "agentId" = :id AND "createdAt" >= :since AND "event" IN ('lead_received','qualified','ready_for_proposal','unknown') GROUP BY 1`,
+    { replacements: { id: agent.id, since: since7 }, type: QueryTypes.SELECT }
+  ).catch(() => []);
+  const handoffs: any[] = await sequelize.query(
+    `SELECT COUNT(*) AS n FROM "AgentMetricEvents" WHERE "agentId" = :id AND "createdAt" >= :since AND "event" LIKE 'handoff\\_%' AND "event" <> 'handoff_brief'`,
+    { replacements: { id: agent.id, since: since7 }, type: QueryTypes.SELECT }
+  ).catch(() => []);
+  const n7 = (e: string) => Number(events.find(x => x.event === e)?.n || 0);
+  const received = n7("lead_received");
+  const week = { conversations: received, qualified: n7("qualified"), qualifiedRate: received ? Math.round((n7("qualified") / received) * 100) : null, readyForProposal: n7("ready_for_proposal"), handedOver: Number(handoffs[0]?.n || 0), unanswered: n7("unknown") };
+
+  const hasKey = !!(agent.apiKey || (await getSecretSetting(agent.provider === "openai" ? "ai_openai_key" : "ai_anthropic_key")));
+  const handoff = await handoffData();
+  const { default: PoloCoverage } = await import("../models/PoloCoverage");
+  const polos = await Polo.findAll({ where: { active: true }, attributes: ["id", "name"] });
+  const covered = new Set((await PoloCoverage.findAll({ attributes: ["poloId"] })).map(c => c.poloId));
+  const noCities = polos.filter(p => !covered.has(p.id));
+  const notReady = handoff.polos.filter(p => !p.ready);
+  const commercial = data.agent.kind === "commercial";
+  const funnel = commercial ? await funnelData() : null;
+  const missingStages = funnel ? funnel.keys.filter(k => !k.stageId).length : 0;
+  const published = !flow || flow.status === "published";
+
+  type Check = { key: string; label: string; ok: boolean; detail: string; fix: string };
+  const health: Check[] = [
+    { key: "active", label: "Agente ligado", ok: !!agent.active, detail: agent.active ? "Atendendo as conversas." : "Desligado: ninguém é atendido por ele.", fix: "ligar" },
+    { key: "key", label: "Chave de IA", ok: hasKey, detail: hasKey ? "Conectada." : "Sem chave de IA: o agente não consegue responder.", fix: "ajustes:chave" },
+    { key: "flow", label: "Roteiro da conversa", ok: published, detail: !flow ? "Modo simples (sem desenho em blocos)." : published ? `Publicado (versão ${flow.version}).` : "Ainda é rascunho: publique para valer.", fix: "roteiro" },
+    ...(commercial
+      ? [
+          { key: "polos", label: "Consultor em cada polo", ok: notReady.length === 0, detail: notReady.length ? `${notReady.length} polo(s) sem consultor: ${notReady.map(p => p.name).join(", ")}.` : "Todos os polos têm quem atenda.", fix: "ajustes:assume" },
+          { key: "cities", label: "Cidades de cada polo", ok: noCities.length === 0, detail: noCities.length ? `${noCities.length} polo(s) sem cidades cadastradas: o agente só acha o polo pela cidade do próprio polo.` : "Todos os polos têm cidades cadastradas.", fix: "polos" },
+          { key: "crm", label: "Etapas do funil no CRM", ok: missingStages === 0, detail: missingStages ? `${missingStages} etapa(s) do agente sem coluna no CRM.` : "Todas as etapas têm coluna.", fix: "ajustes:funil" },
+          { key: "mec", label: "Regras do MEC dos cursos", ok: !data.regulations || data.regulations.withRule >= data.regulations.courses, detail: data.regulations ? `${data.regulations.withRule} de ${data.regulations.courses} cursos com regra.` : "", fix: "ajustes:mec" }
+        ]
+      : []),
+    { key: "errors", label: "Falhas da IA (30 dias)", ok: data.last30days.errors === 0, detail: data.last30days.errors ? `${data.last30days.errors} falha(s): a conversa foi para a equipe. Veja a chave e o saldo do provedor.` : "Nenhuma falha.", fix: "ajustes:chave" }
+  ];
+
+  return res.json({ ...data, flow: flow ? { id: flow.id, status: flow.status, version: flow.version } : null, week, health });
 };

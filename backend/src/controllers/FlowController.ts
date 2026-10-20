@@ -61,6 +61,8 @@ const present = async (flow: ChatFlow, withGraph = false) => {
     // the draft differs from what people are talking to
     changed: flow.status === "published" ? JSON.stringify(draft) !== JSON.stringify(parseGraph(flow.published)) : true,
     blocks: draft.nodes.filter(n => n.type !== "comment").length,
+    // an agent with a block that runs the commercial rules is a commercial agent; any other is an attendance agent
+    agentKind: draft.nodes.some((n: any) => Array.isArray(n?.data?.hooks) && n.data.hooks.includes("commercial")) ? "commercial" : "service",
     errors: issues.filter(i => i.level === "error").length,
     warnings: issues.filter(i => i.level === "warning").length,
     stats: { started: stats.started, crm: stats.crm, done: stats.done, handoff: stats.handoff, waiting: stats.waiting },

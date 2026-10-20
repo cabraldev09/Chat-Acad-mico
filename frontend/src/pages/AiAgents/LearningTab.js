@@ -24,9 +24,9 @@ const FILTERS = [
 ];
 
 // What the agent did not know, and what the team answered. Nothing is learned until the owner approves it.
-const LearningTab = ({ agentId, onCount }) => {
+const LearningTab = ({ agentId, onCount, initialFilter = "para_revisar" }) => {
   const classes = useStyles();
-  const [filter, setFilter] = useState("para_revisar");
+  const [filter, setFilter] = useState(initialFilter);
   const [data, setData] = useState({ counts: {}, rows: [] });
   const [edits, setEdits] = useState({});
   const [faq, setFaq] = useState({});

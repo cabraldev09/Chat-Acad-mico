@@ -1,20 +1,15 @@
 import React, { useEffect, useState } from "react";
 import { toast } from "react-toastify";
 import {
-  Dialog, DialogTitle, DialogContent, DialogActions, Button, Tabs, Tab, TextField, MenuItem, FormControlLabel, Switch,
-  Typography, Checkbox, makeStyles, CircularProgress, Chip, Badge,
+  Dialog, DialogContent, DialogActions, Button, Tabs, Tab, TextField, MenuItem, FormControlLabel, Switch,
+  Typography, Checkbox, makeStyles, CircularProgress, Chip,
 } from "@material-ui/core";
 import { Plus, Trash2, RotateCcw, Bot } from "lucide-react";
 
 import IconAction from "../../components/IconAction";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
-import KbTab from "./KbTab";
-import UsageTab from "./UsageTab";
-import TestTab from "./TestTab";
-import LearningTab from "./LearningTab";
 import FunctionsTab from "./FunctionsTab";
-import CommercialTab from "./CommercialTab";
 
 const MODELS = { anthropic: "claude-haiku-5-5", openai: "gpt-4o-mini" };
 
@@ -38,7 +33,6 @@ const useStyles = makeStyles((theme) => ({
   headTitle: { fontSize: 18, fontWeight: 700, lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
   headSub: { fontSize: 13, color: theme.palette.text.secondary },
   tabsWrap: { padding: theme.spacing(0, 3, 1.5) },
-  locked: { color: theme.palette.text.secondary, fontSize: 14, padding: theme.spacing(4, 2), textAlign: "center" },
 }));
 
 const blank = () => ({
@@ -48,7 +42,9 @@ const blank = () => ({
   maxTokens: 350, dailyTokenCap: 300000, handoffAfterTurns: 14, waitSeconds: 4, slots: null, active: true, queueId: "", whatsappId: "",
 });
 
-const AgentEditor = ({ open, agent, onClose, onSaved }) => {
+// The settings of one agent: how it talks and when it answers, what it finds out about the person, and the flows it can start. What it KNOWS, what it
+// still cannot answer, tests and numbers live in the Central of the agent.
+const AgentEditor = ({ open, agent, initialTab = 0, onClose, onSaved }) => {
   const classes = useStyles();
   const [tab, setTab] = useState(0);
   const [v, setV] = useState(blank());
@@ -56,59 +52,38 @@ const AgentEditor = ({ open, agent, onClose, onSaved }) => {
   const [queues, setQueues] = useState([]);
   const [connections, setConnections] = useState([]);
   const [saving, setSaving] = useState(false);
-  const [toReview, setToReview] = useState(0);
 
   useEffect(() => {
     if (!open) return;
-    setTab(0);
+    setTab(initialTab);
     setId(agent ? agent.id : null);
     setV(agent ? { ...blank(), ...agent, persona: { ...blank().persona, ...(agent.persona || {}) }, queueId: agent.queueId || "", whatsappId: agent.whatsappId || "" } : blank());
     api.get("/queue").then(({ data }) => setQueues(data)).catch(() => {});
     api.get("/whatsapp").then(({ data }) => setConnections(data)).catch(() => {});
-  }, [open, agent]);
+  }, [open, agent, initialTab]);
 
   const set = (k, val) => setV((cur) => ({ ...cur, [k]: val }));
   const setPersona = (k, val) => setV((cur) => ({ ...cur, persona: { ...cur.persona, [k]: val } }));
   const slots = Array.isArray(v.slots) && v.slots.length ? v.slots : DEFAULT_SLOTS;
 
-  // returns the agent id (creating the agent first when it is new); used by the tabs that need an id
-  const save = async (stay) => {
-    if (!v.model.trim()) { toast.warn("Informe o modelo do agente."); setTab(0); return null; }
-    // a new agent without a name gets a provisional one, so the tabs can be used right away
-    const name = v.name.trim() || "Agente de matrículas";
-    if (!v.name.trim()) set("name", name);
+  const save = async () => {
+    if (!v.name.trim()) { toast.warn("Dê um nome ao agente."); setTab(0); return; }
+    if (!v.model.trim()) { toast.warn("Informe o modelo do agente."); setTab(0); return; }
     setSaving(true);
-    let savedId = id;
     try {
-      const payload = { ...v, name, queueId: v.queueId || null, whatsappId: v.whatsappId || null, slots: v.slots };
+      const payload = { ...v, name: v.name.trim(), queueId: v.queueId || null, whatsappId: v.whatsappId || null, slots: v.slots };
       const { data } = id ? await api.put(`/ai-agents/${id}`, payload) : await api.post("/ai-agents", payload);
-      savedId = data.id;
-      if (!id) setId(data.id);
-      if (!stay) toast.success(id ? "Agente salvo." : "Agente criado. Agora adicione a base de conhecimento.");
-      onSaved && onSaved();
-      if (!id && !stay) setTab(1);
+      toast.success(id ? "Agente salvo." : "Agente criado.");
+      onSaved && onSaved(data, !id);
+      onClose();
     } catch (err) {
       toastError(err);
-      savedId = null;
     }
     setSaving(false);
-    return savedId;
-  };
-
-  // new agents are created the first time someone opens a tab that needs one
-  const goTo = async (t) => {
-    if (t > 0 && !id) {
-      const created = await save(true);
-      if (!created) return;
-      toast.success("Agente criado.");
-    }
-    setTab(t);
   };
 
   const updateSlot = (i, patch) => set("slots", slots.map((s, k) => (k === i ? { ...s, ...patch } : s)));
   const addSlot = () => set("slots", [...slots, { key: `campo_${slots.length + 1}`, label: "", required: false }]);
-
-  const locked = (children) => (id ? children : <div className={classes.locked}><CircularProgress size={22} /></div>);
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth scroll="paper">
@@ -121,15 +96,10 @@ const AgentEditor = ({ open, agent, onClose, onSaved }) => {
         <Chip size="small" label={v.active ? "Ativo" : "Desligado"} color={v.active ? "primary" : "default"} />
       </div>
       <div className={classes.tabsWrap}>
-        <Tabs value={tab} onChange={(e, t) => goTo(t)} variant="scrollable" scrollButtons="auto">
-          <Tab style={{ minWidth: 0 }} label="Persona e limites" />
-          <Tab style={{ minWidth: 0 }} label="Base de conhecimento" />
-          <Tab style={{ minWidth: 0 }} label={<Badge color="secondary" badgeContent={toReview} invisible={!toReview} style={{ paddingRight: toReview ? 14 : 0 }}>Aprendizado</Badge>} />
-          <Tab style={{ minWidth: 0 }} label="Qualificação" />
-          <Tab style={{ minWidth: 0 }} label="Funções" />
-          <Tab style={{ minWidth: 0 }} label="Consumo" />
-          <Tab style={{ minWidth: 0 }} label="Testar agente" />
-          <Tab style={{ minWidth: 0 }} label="Funil comercial" />
+        <Tabs value={tab} onChange={(e, t) => setTab(t)} variant="scrollable" scrollButtons="auto">
+          <Tab style={{ minWidth: 0 }} label="Jeito de atender" />
+          <Tab style={{ minWidth: 0 }} label="O que descobrir do cliente" />
+          <Tab style={{ minWidth: 0 }} label="Ações automáticas" />
         </Tabs>
       </div>
       <DialogContent dividers className={classes.content}>
@@ -143,7 +113,7 @@ const AgentEditor = ({ open, agent, onClose, onSaved }) => {
                 <MenuItem value="openai">OpenAI (GPT)</MenuItem>
               </TextField>
               <TextField variant="outlined" margin="dense" label="Modelo" required value={v.model} onChange={(e) => set("model", e.target.value)} helperText="Modelo pequeno gasta menos. Sugestão: claude-haiku-5-5." />
-              <TextField variant="outlined" margin="dense" type="password" label="Chave de API própria (opcional)" value={v.apiKey || ""} onChange={(e) => set("apiKey", e.target.value)} helperText="Se ficar vazio, usa a chave padrão da página." />
+              <TextField variant="outlined" margin="dense" type="password" label="Chave de IA própria (opcional)" value={v.apiKey || ""} onChange={(e) => set("apiKey", e.target.value)} helperText="Se ficar vazio, usa a chave de IA geral." />
               <span />
             </div>
 
@@ -190,9 +160,7 @@ const AgentEditor = ({ open, agent, onClose, onSaved }) => {
             </div>
           </>
         )}
-        {tab === 1 && locked(<KbTab agentId={id} />)}
-        {tab === 2 && locked(<LearningTab agentId={id} onCount={setToReview} />)}
-        {tab === 3 && (
+        {tab === 1 && (
           <>
             <Typography variant="body2" color="textSecondary" gutterBottom>
               O agente conversa até descobrir os campos obrigatórios. Quando todos estiverem preenchidos, o lead é atualizado, a conversa vai para a equipe comercial do polo do aluno com um resumo, e um consultor recebe uma tarefa.
@@ -208,17 +176,14 @@ const AgentEditor = ({ open, agent, onClose, onSaved }) => {
               <Button size="small" variant="outlined" startIcon={<Plus size={15} />} onClick={addSlot} disabled={slots.length >= 10}>Adicionar campo</Button>
               <Button size="small" variant="outlined" startIcon={<RotateCcw size={15} />} onClick={() => set("slots", null)}>Voltar ao padrão</Button>
             </div>
-            <Typography variant="caption" color="textSecondary" display="block" style={{ marginTop: 12 }}>Lembre de salvar na aba Persona e limites depois de mudar os campos.</Typography>
+            <Typography variant="caption" color="textSecondary" display="block" style={{ marginTop: 12 }}>Clique em “Salvar agente” para guardar as mudanças de todas as abas.</Typography>
           </>
         )}
-        {tab === 4 && <FunctionsTab value={v.functions} onChange={(list) => set("functions", list)} />}
-        {tab === 5 && locked(<UsageTab agentId={id} model={v.model} />)}
-        {tab === 6 && locked(<TestTab agentId={id} />)}
-        {tab === 7 && locked(<CommercialTab agentId={id} />)}
+        {tab === 2 && <FunctionsTab value={v.functions} onChange={(list) => set("functions", list)} />}
       </DialogContent>
       <DialogActions>
-        <Button variant="outlined" color="secondary" onClick={onClose}>Fechar</Button>
-        <Button variant="contained" color="primary" onClick={() => save(false)} disabled={saving}>{saving ? <CircularProgress size={18} /> : "Salvar agente"}</Button>
+        <Button onClick={onClose}>Fechar</Button>
+        <Button variant="contained" color="primary" onClick={save} disabled={saving} disableElevation>{saving ? <CircularProgress size={18} /> : "Salvar agente"}</Button>
       </DialogActions>
     </Dialog>
   );

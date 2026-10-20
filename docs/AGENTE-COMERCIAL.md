@@ -8,9 +8,8 @@ mantém o CRM sozinho e entrega o lead ao consultor com um resumo. Chave do mode
 - **Atendimento** (`atendimento_encaminhamento`): entende o assunto e **redireciona** quem quer a tutoria ou a secretaria (ou o comercial) para a fila do polo; não responde conteúdo acadêmico.
 Mensagens saem **em blocos curtos** (`CommercialServices/Blocks.ts`: até 5 balões, ~300 caracteres, a pergunta sozinha no final), em tom humano e profissional, para não aparecer "Ler mais" no WhatsApp.
 
-## Melhorar o agente
-Agentes de IA → **Melhorar** em cada agente (`/ai-agents/:id/melhorar`): visão geral com o que fazer agora, perguntas sem resposta (a equipe responde e o agente aprende),
-**Enviar conteúdo** (texto, PDF, página da web, resposta pronta) por assunto e **Testar**. Dados: `GET /ai-agents/:id/improve`.
+## Central do agente
+Agentes de IA → **Abrir central** (`/ai-agents/:id/central?secao=…`; `/melhorar` redireciona). Cinco seções: **Início** (o que fazer agora, saúde do agente, 4 números de 7 dias, perguntas sem resposta), **Ensinar** (perguntas sem resposta, o que o agente sabe e "Adicionar conhecimento": PDF, texto, página da web, resposta pronta), **Testar**, **Resultados** (funil, entregas por motivo, custos recolhidos) e **Ajustes** (jeito de atender, o que descobrir do cliente, ações automáticas, quem assume, cidades dos polos, etapas do CRM, regras do MEC, chave de IA). Dados: `GET /ai-agents/:id/central` (o `/improve` continua).
 
 ## Como criar e publicar
 1. Agentes de IA → **Novo agente** → **Modelo por segmento** → Comercial. Deixe marcado "Preparar o funil do CRM": o sistema

@@ -3381,6 +3381,20 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(!out.some(x => /Estamos fechados/.test(x)), "the out-of-hours text was sent instead of the agent");
       sql(`UPDATE Whatsapps SET businessHours=NULL, outOfHoursMessage=NULL WHERE id=${cid}`);
 
+      // the Central of the agent: its first screen in one call (kind by the drawing, health with where to fix, the week in numbers)
+      const central = (await http.get(`/ai-agents/${agentId}/central`, auth())).data;
+      assert(central.agent.kind === "commercial" && central.flow && central.flow.id === flowId, `central agent ${JSON.stringify(central.agent)}`);
+      const keysOf = central.health.map(h => h.key);
+      ["active", "key", "flow", "polos", "cities", "crm", "mec", "errors"].forEach(k => assert(keysOf.includes(k), `health lacks ${k}: ${keysOf}`));
+      assert(central.health.every(h => typeof h.ok === "boolean" && h.label && h.fix), "a check without label or where to fix it");
+      assert(central.week.conversations >= 5 && central.week.handedOver >= 3 && typeof central.pending.waiting === "number", `week ${JSON.stringify(central.week)}`);
+      assert((await http.get(`/ai-agents/${agentId}/improve`, auth())).status === 200, "the old address of the improvement board must keep working");
+      await http.post("/users", { name: "Tutor Central", email: "tutor-central@x.com", password: "senha123", role: "tutor" }, auth());
+      const tutorCentral = (await http.post("/auth/login", { email: "tutor-central@x.com", password: "senha123" })).data.token;
+      assert((await http.get(`/ai-agents/${agentId}/central`, asUser(tutorCentral))).status === 403, "a tutor read the Central of the agent");
+      const flowList = (await http.get("/flows", { ...auth(), params: { kind: "agent" } })).data;
+      assert(flowList.find(f => f.id === flowId).agentKind === "commercial", "the list does not say the kind of the agent");
+
       // the old agent and the others are as they were
       await http.put(`/ai-agents/${agentId}`, { active: false }, auth());
       await http.put(`/ai-agents/${aiId}`, { active: true }, auth());

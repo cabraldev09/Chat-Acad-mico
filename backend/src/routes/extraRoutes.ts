@@ -142,6 +142,7 @@ r.put("/mec-defaults/:area", isAuth, isManager, Commercial.mecDefaultsSave);
 r.post("/mec-defaults/apply", isAuth, isManager, Commercial.mecDefaultsApply);
 r.get("/ai-agents/:id/commercial-metrics", isAuth, isManager, Commercial.metrics);
 r.get("/ai-agents/:id/improve", isAuth, isManager, Commercial.improve);
+r.get("/ai-agents/:id/central", isAuth, isManager, Commercial.central);
 r.get("/ai-handoff", isAuth, isManager, Commercial.handoffShow);
 r.put("/ai-handoff", isAuth, isManager, Commercial.handoffSave);
 r.get("/leads/:id/commercial", isAuth, canAccessLead, Commercial.leadCommercial);
