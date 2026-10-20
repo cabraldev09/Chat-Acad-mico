@@ -658,7 +658,7 @@ const PoloGoals = () => {
                   <tbody>
                     {shown.rows.map((r) => (
                       <tr key={r.poloId}>
-                        <td>{r.code || "—"}</td><td style={{ fontWeight: 600 }}>{r.name}</td><td>{r.p.target === null ? "—" : r.p.target}</td><td>{r.p.done}</td><td>{r.p.missing === null ? "—" : r.p.missing}</td>
+                        <td>{r.code || "—"}</td><td style={{ fontWeight: 600 }}>{r.name}</td><td>{r.p.target === null ? "—" : r.p.target}</td><td>{r.p.done}</td><td style={{ color: r.p.missing !== null && r.p.missing <= 0 ? "#15803d" : undefined, fontWeight: r.p.missing !== null && r.p.missing < 0 ? 600 : undefined }} title={r.p.missing !== null && r.p.missing < 0 ? "Acima da meta" : undefined}>{missingLabel(r.p)}</td>
                         <td style={{ background: TONE[r.p.status].soft, fontWeight: 700, color: TONE[r.p.status].bg }}>{pctLabel(r.p.pct)}</td>
                         <td>{perDayLabel(r.p.perDay)}</td>
                         {!month && <><td>{r.inCourse}</td><td>{r.canceled}</td><td>{brDecimal(r.canceledPct)}%</td></>}
@@ -667,7 +667,7 @@ const PoloGoals = () => {
                   </tbody>
                   <tfoot>
                     <tr>
-                      <td /><td style={{ textAlign: "left" }}>TOTAL</td><td>{totals.target}</td><td>{totals.done}</td><td>{totals.missing}</td><td>{pctLabel(totals.pct)}</td><td>{perDayLabel(totals.perDay)}</td>
+                      <td /><td style={{ textAlign: "left" }}>TOTAL</td><td>{totals.target}</td><td>{totals.done}</td><td style={{ color: totals.missing <= 0 ? "#15803d" : undefined }}>{missingLabel(totals)}</td><td>{pctLabel(totals.pct)}</td><td>{perDayLabel(totals.perDay)}</td>
                       {!month && <><td>{totals.inCourse}</td><td>{totals.canceled}</td><td>{brDecimal(totals.canceledPct)}%</td></>}
                     </tr>
                   </tfoot>
