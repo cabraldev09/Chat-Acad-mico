@@ -3364,8 +3364,20 @@ const postMeta = (id, payload, secret, badSig) => {
       await say(R, "wamid.com-r2", "Quero Direito em Porto Velho, primeira graduação", t => t.some(x => /Direito em Porto Velho/.test(x)), "R qualification");
       await say(R, "wamid.com-r3", "Quanto tempo dura o curso?", t => t.some(x => /Direito:/.test(x)), "R course");
       assert(sql(`SELECT COALESCE(handoffReason,'') FROM Tickets WHERE id=${ticketOf(R)}`) === "", "handed over too early: the lead had no answers left to get");
-      out = await say(R, "wamid.com-r4", "E sobre as mudanças do MEC, como fica?", t => t.some(x => /Perfeito, já tenho o que preciso/.test(x)), "R handover");
-      await waitFor(() => sql(`SELECT handoffReason FROM Tickets WHERE id=${ticketOf(R)}`) === "qualified", 10000, "R routed as qualified");
+      // the handover waits while the agent has just asked the person something (they answer first), but not forever: within a few answers it happens
+      let handed = false;
+      let rn = 4;
+      for (const q of ["E sobre as mudanças do MEC, como fica?", "E o estágio, como funciona?", "Entendi, obrigado", "Certo, e agora?", "Pode ser"]) {
+        out = await say(R, `wamid.com-r${rn}`, q, t => t.length > 0, "R answer");
+        rn += 1;
+        try {
+          await waitFor(() => sql(`SELECT handoffReason FROM Tickets WHERE id=${ticketOf(R)}`) === "qualified", 3500, "R routed as qualified");
+          handed = true;
+          break;
+        } catch (e) { /* the agent asked something: the person answers first */ }
+      }
+      assert(handed, "the qualified lead was never handed over");
+      assert(Number(sql(`SELECT COUNT(*) FROM Messages WHERE ticketId=${ticketOf(R)} AND body LIKE '%Prontinho%' AND body LIKE '%consultor do seu polo%'`)) >= 1, "the handover message (warm, with the name and the course) was not sent");
       assert(sql(`SELECT aiActive FROM Tickets WHERE id=${ticketOf(R)}`) === "0", "the AI kept talking after the handover");
       assert(Number(sql(`SELECT COUNT(*) FROM AgentMetricEvents WHERE leadId=${leadId(R)} AND event='handoff_qualified'`)) === 1, "no metric for the qualified handover");
       assert(JSON.parse(sql(`SELECT slots FROM LeadCommercials WHERE leadId=${leadId(R)}`)).readyForConsultant === true, "the lead was not marked ready for the consultant");

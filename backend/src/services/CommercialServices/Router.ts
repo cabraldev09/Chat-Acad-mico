@@ -58,6 +58,21 @@ const TEAM_LABEL: Record<Team, string> = { comercial: "Comercial", tutoria: "Tut
 // what a qualified lead is told when the consultant of the polo takes over (the agent has just answered the last question)
 export const QUALIFIED_MESSAGE = "Perfeito, já tenho o que preciso! Vou passar o seu atendimento para o consultor do seu polo, que continua com você e apresenta a melhor condição. 😊";
 
+// What a qualified lead is told when the consultant takes over: warm and specific (name, course, city), and it asks for the best time, which the
+// consultant reads (the agent is out of the conversation from here).
+export const qualifiedText = async (ticket: Ticket): Promise<string> => {
+  try {
+    const lead = await Lead.findOne({ where: { contactId: ticket.contactId } });
+    const first = String(lead?.name || ticket.contact?.name || "").trim().split(/\s+/)[0];
+    const course = lead?.courseId ? (await Course.findByPk(lead.courseId, { attributes: ["name"] }))?.name : null;
+    const where = String(lead?.city || "").trim();
+    const resume = course ? ` Já anotei que você quer ${course}${where ? ` em ${where}` : ""}.` : "";
+    return `Prontinho${first ? `, ${first}` : ""}! 😊${resume} Agora o consultor do seu polo continua com você: ele apresenta a melhor condição e tira o que faltar. Qual o melhor horário para ele te chamar? Pode responder por aqui mesmo.`;
+  } catch (err) {
+    return QUALIFIED_MESSAGE;
+  }
+};
+
 export interface Routed {
   queueId: number | null;
   queueName: string | null;

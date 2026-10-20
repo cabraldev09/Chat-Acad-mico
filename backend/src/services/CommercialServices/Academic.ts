@@ -3,6 +3,7 @@ import path from "path";
 import { Op } from "sequelize";
 
 import { gradePath } from "../../analysis/Grades";
+import { chooseGrade, gradeCaption } from "./GradeChoice";
 import { createCurricular } from "../../analysis/Store";
 import { PUBLIC_DIR } from "../../config/paths";
 import CommercialGrade from "../../models/CommercialGrade";
@@ -23,6 +24,7 @@ import { isPg } from "../../helpers/sqlDialect";
 import { logger } from "../../utils/logger";
 import { getEntryTerms } from "../CrmServices/LeadCore";
 import SendWhatsAppMedia from "../WbotServices/SendWhatsAppMedia";
+import SendWhatsAppMessage from "../WbotServices/SendWhatsAppMessage";
 import { searchChunks } from "../AiServices/Kb";
 import { resolvePoloFor } from "../PoloServices/ResolvePolo";
 import { cleanPatch, Slots } from "./Slots";
@@ -142,17 +144,8 @@ const intakeOf = async (ctx: AcademicCtx, given?: any): Promise<string | null> =
 
 // the grade of the course for the intake period: the most recent one that is already in effect at the intake, never "the first one found"
 export const pickGrade = async (course: Course, intake: string | null): Promise<{ grade: CommercialGrade | null; current: boolean }> => {
-  const name = plain(course.name);
-  const modality = modalityOf(course.modality);
   const all = await CommercialGrade.findAll({ where: { courseName: { [Op.ne]: "" } } as any });
-  const same = all.filter(g => plain(g.courseName) === name && (!modality || !g.modality || modalityOf(g.modality) === modality));
-  const loose = same.length ? same : all.filter(g => plain(g.courseName).startsWith(name) && (!modality || !g.modality || modalityOf(g.modality) === modality));
-  if (!loose.length) return { grade: null, current: false };
-  const newest = [...loose].sort((a, b) => termNumber(b.curriculumTerm) - termNumber(a.curriculumTerm))[0];
-  if (!intake) return { grade: newest, current: true };
-  const inEffect = loose.filter(g => termNumber(g.curriculumTerm) <= termNumber(intake)).sort((a, b) => termNumber(b.curriculumTerm) - termNumber(a.curriculumTerm));
-  const grade = inEffect[0] || newest;
-  return { grade, current: grade.id === newest.id };
+  return chooseGrade(all, course, intake);
 };
 
 const regulationOf = async (course: Course, intake: string | null): Promise<CourseRegulation | null> => {
@@ -253,7 +246,7 @@ export const runAcademicTool = async (name: string, input: any, ctx: AcademicCtx
         const stages = internshipsOf(grade);
         return {
           gradeId: grade.id, courseId: course.id, version: grade.curriculumTerm, effectiveFrom: grade.curriculumTerm, effectiveTo: null, intakePeriod: intake, current,
-          fileId: grade.id, duration: semestersText(grade.durationSemesters), workload: grade.totalCourseHours ? `${grade.totalCourseHours}h` : null,
+          fileId: grade.id, legendaDoPdf: "A legenda do PDF já lista o estágio supervisionado.", duration: semestersText(grade.durationSemesters), workload: grade.totalCourseHours ? `${grade.totalCourseHours}h` : null,
           semesters: [], internships: stages, tcc: grade.hasTcc ? { exists: true } : null, temArquivo: fs.existsSync(gradePath(grade))
         };
       });
@@ -352,21 +345,33 @@ export const runAcademicTool = async (name: string, input: any, ctx: AcademicCtx
         return { enviado: false, simulado: true, aviso: "No teste o arquivo não é enviado. Diga que está encaminhando a grade." };
       }
       const source = gradePath(grade);
-      if (!fs.existsSync(source)) return { enviado: false, erro: "O PDF desta grade não está disponível. Diga que a equipe envia." };
+      const caption = gradeCaption(grade, internshipsOf(grade));
+      if (!fs.existsSync(source)) {
+        // the file is not on the server: the summary of the matrix (with the internships) still goes, in writing
+        if (caption) {
+          try {
+            await SendWhatsAppMessage({ body: caption, ticket: ctx.ticket, automated: true });
+            remember(ctx, { gradeSent: true, gradeId: grade.id, gradeVersion: grade.curriculumTerm, gradeAsked: true });
+            return { enviado: true, aviso: "O PDF não está disponível agora; mandei o resumo da grade com os estágios em texto. Diga em uma frase que a equipe envia o PDF completo em seguida." };
+          } catch (err) {
+            logger.warn(`Grade summary not sent: ${(err as Error).message}`);
+          }
+        }
+        return { enviado: false, erro: "O PDF desta grade não está disponível. Diga que a equipe envia." };
+      }
       try {
         const copyName = `grade-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.pdf`;
         fs.copyFileSync(source, path.join(PUBLIC_DIR, copyName));
-        const summary = String(grade.whatsappSummary || "").trim();
         const display = `${grade.courseName}.pdf`.replace(/[\\/:*?"<>|]/g, "_");
         await SendWhatsAppMedia({
           media: { filename: copyName, originalname: display, mimetype: "application/pdf", path: path.join(PUBLIC_DIR, copyName) } as Express.Multer.File,
           ticket: ctx.ticket,
-          body: summary && summary.length <= 1000 && !summary.includes("{{") ? summary : "",
+          body: caption,
           displayName: display,
           automated: true
         } as any);
         remember(ctx, { gradeSent: true, gradeId: grade.id, gradeVersion: grade.curriculumTerm, gradeAsked: true });
-        return { enviado: true, aviso: "O PDF já foi enviado. Apenas diga em uma frase que enviou." };
+        return { enviado: true, aviso: "O PDF já foi enviado com os estágios na legenda. Diga em uma frase que enviou e pergunte se ficou alguma dúvida sobre o curso ou o estágio; não repita a lista." };
       } catch (err) {
         logger.warn(`Grade not sent: ${(err as Error).message}`);
         return { enviado: false, erro: "Não consegui enviar o arquivo agora. Diga que a equipe envia em seguida." };

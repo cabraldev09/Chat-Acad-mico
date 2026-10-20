@@ -194,7 +194,8 @@ export const commercialAiTurn = async (d: TurnDeps): Promise<CommercialTurnResul
     userText: lastText, intent, patch: result.academicPatch, tools: result.tools, hadText: !!text, replied: d.input !== null,
     followUp: intent === "follow_up" ? { reason: turn.motivo_retorno || turn.duvida_principal || null, at: turn.retorno_em || null } : null,
     unknownQuestion, objection: turn.objecao || (intent === "objection" ? lastText : null), question: turn.duvida_principal || null, topics: result.topics,
-    firstContactSent: d.input === null && !!text, nodeId: d.nodeId, retract: d.input !== null && retractsBuying(lastText)
+    firstContactSent: d.input === null && !!text, nodeId: d.nodeId, retract: d.input !== null && retractsBuying(lastText),
+    endsWithQuestion: /\?[\s"”')]*$/.test(String(text || "").trim())
   });
 
   // what the person reads is also decided by the rules; what the model wrote is checked against what the tools and the base returned
