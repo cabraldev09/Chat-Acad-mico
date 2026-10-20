@@ -4576,6 +4576,11 @@ const postMeta = (id, payload, secret, badSig) => {
       const contactsOf = async tok => (await http.get("/contacts", { ...asUser(tok), params: { searchParam: "Grupo Da Dona" } })).data.contacts.map(c => c.id);
       assert(!(await contactsOf(t2)).includes(Number(gc)), "the group shows in the contacts of another person");
       assert((await contactsOf(t1)).includes(Number(gc)), "the owner lost the group in their contacts");
+      const mineOf = async tok => (await http.get("/contacts", { ...asUser(tok), params: { searchParam: "Conversa Da Dona" } })).data.contacts.map(c => c.id);
+      assert((await mineOf(t1)).includes(Number(pc)), "the owner of the number lost the contact of their own number");
+      assert(!(await mineOf(t2)).includes(Number(pc)), "a consultant sees in the contacts a person who is not theirs");
+      sql(`UPDATE Tickets SET userId=${two.id} WHERE id=${pt}`);
+      assert((await mineOf(t2)).includes(Number(pc)), "a consultant does not see the contact of a conversation assigned to them");
     });
     // ----------------------------------------------- enrollment -> tutor
     await test("Matrícula isenta: the consultant informs it at the confirmation instead of charging; no charge is created; a payment that arrives anyway wins", async () => {

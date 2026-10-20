@@ -31,11 +31,17 @@ export const ticketScopeWhere = (scope: ConnectionScope, userId: number | string
   return { [Op.or]: [{ userId: Number(userId) }, privateOk, groupOk] };
 };
 
-// contacts: a group (or community) is listed only when the person owns a connection it lives in
-export const contactScopeWhere = (scope: ConnectionScope): any | null => {
+// contacts: management sees the whole list. Everybody else sees THEIR contacts: the ones with a conversation assigned to them, the ones that live in a
+// connection they own and the ones whose lead they own. A group (or community) is listed only when the person owns a connection it lives in.
+export const contactScopeWhere = (scope: ConnectionScope, userId: number | string): any | null => {
   if (scope.all) return null;
+  const me = Number(userId) || 0;
   const ids = (scope.own.length ? scope.own : [0]).map(Number).join(",");
-  return literal(`("Contact"."isGroup" = false OR EXISTS (SELECT 1 FROM "Tickets" gt WHERE gt."contactId" = "Contact"."id" AND gt."whatsappId" IN (${ids})))`);
+  return literal(
+    `(("Contact"."isGroup" = false OR EXISTS (SELECT 1 FROM "Tickets" gt WHERE gt."contactId" = "Contact"."id" AND gt."whatsappId" IN (${ids})))` +
+      ` AND (EXISTS (SELECT 1 FROM "Tickets" ot WHERE ot."contactId" = "Contact"."id" AND (ot."userId" = ${me} OR ot."whatsappId" IN (${ids})))` +
+      ` OR EXISTS (SELECT 1 FROM "Leads" ol WHERE ol."contactId" = "Contact"."id" AND ol."ownerId" = ${me})))`
+  );
 };
 
 // the same rule for one ticket already loaded

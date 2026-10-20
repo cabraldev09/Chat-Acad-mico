@@ -11,7 +11,6 @@ import {
   ENGINE_VERSION,
   isValidTerm,
   simulateCurriculum,
-  suggestStartTerm,
   validateAnalysis,
   type AcademicRules,
   type AnalysisWarningInput,
@@ -35,6 +34,7 @@ import { normalizeExtraction } from "./services/pipeline/normalize";
 import { readHeaderMetadata } from "./services/pipeline/cross-check";
 import { parsePdf, type LocalExtraction } from "./services/pdf/parser";
 import { effectiveRows } from "./services/pdf/table-detector";
+import { noTextLayer, readWithVision } from "./services/pdf/vision";
 import type { CurriculumExtraction } from "./services/openai/schemas";
 
 // Everything here is local and deterministic: the PDF is read with pdf.js, the numbers come from the academic engine.
@@ -118,9 +118,21 @@ export const readCurricularPdf = async (bytes: Buffer): Promise<CurricularRead> 
     throw new AnalysisError("Não foi possível ler o conteúdo do PDF. Envie o arquivo original, com texto selecionável.");
   }
   if (local.pageCount > MAX_PDF_PAGES) throw new AnalysisError(`O PDF tem páginas demais (limite de ${MAX_PDF_PAGES}).`);
-  const data = extractionFromTable(local);
+  let data = extractionFromTable(local);
+  // a printout with no text at all (the letters are drawn as shapes): the model reads the pages, and the result goes through the same checks
+  if (!data && noTextLayer(local)) {
+    const seen = await readWithVision(bytes, local.pageCount);
+    if (seen) {
+      local = seen;
+      data = extractionFromTable(local);
+    }
+  }
   if (!data) {
-    throw new AnalysisError("Não consegui identificar a tabela de disciplinas neste PDF. Envie a análise curricular do SIAA (colunas Disciplina, C.H., Série e Disciplina utilizada).");
+    throw new AnalysisError(
+      noTextLayer(local)
+        ? "Este PDF não tem texto selecionável (as letras foram salvas como imagem) e não consegui lê-lo. Gere o PDF de novo pela impressão da página ou envie o arquivo original."
+        : "Não consegui identificar a tabela de disciplinas neste PDF. Envie a análise curricular do SIAA (colunas Disciplina, C.H., Série e Disciplina utilizada)."
+    );
   }
   const documentId = sha256(bytes).slice(0, 24);
   const normalized = normalizeExtraction(data, documentId, local);
@@ -172,7 +184,9 @@ export interface CurricularResult {
   backlogTotal: number;
 }
 
-export const defaultStartTerm = (): string => suggestStartTerm();
+// the first term the team projects from while nothing else is typed (changed here when the semester moves)
+export const DEFAULT_START_TERM = "2026.2";
+export const defaultStartTerm = (): string => DEFAULT_START_TERM;
 
 // The same chain of the original pipeline after the extraction: totals, inconsistencies, simulation, claims, invariants
 export const computeCurricular = (input: {

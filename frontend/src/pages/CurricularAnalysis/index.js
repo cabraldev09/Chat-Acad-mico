@@ -26,11 +26,8 @@ const ordinal = (n) => `${n}º`;
 const PERIODS = Array.from({ length: 12 }, (_, i) => i + 1);
 const MAX_MB = 20;
 
-const suggestTerm = () => {
-  const now = new Date();
-  const y = now.getFullYear();
-  return now.getMonth() < 6 ? `${y}.2` : `${y + 1}.1`;
-};
+// the term the forecast starts from while nobody types another one (the same in the server)
+const DEFAULT_TERM = "2026.2";
 
 const selectClass = "block h-10 w-full appearance-none whitespace-nowrap rounded-md border border-slate-200 bg-white px-3 pr-10 text-sm font-normal text-slate-800 outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
@@ -71,7 +68,7 @@ const UploadCard = ({ onCreated }) => {
   const [file, setFile] = useState(null);
   const [dragging, setDragging] = useState(false);
   const [entry, setEntry] = useState("");
-  const [term, setTerm] = useState(suggestTerm());
+  const [term, setTerm] = useState(DEFAULT_TERM);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
 
