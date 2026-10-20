@@ -2838,6 +2838,25 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(anthropic.requests.length === calls + 1, "one call expected");
       assert(sql(`SELECT aiActive FROM Tickets WHERE id=${ticketOf("5511910000005")}`) === "0", "ai still active");
     });
+    await test("a person hands a conversation to the AI agent (it answers the last message at once) or takes it back from it", async () => {
+      const t = ticketOf("5511910000005");
+      // somebody took it, then wants the agent to carry on
+      sql(`UPDATE Tickets SET status='open', userId=1, aiActive=0 WHERE id=${t}`);
+      // the person writes while it is with a human: nobody answers it yet
+      await inboundCloud("5511910000005", "wamid.ai-d2", "Quais cursos vocês têm?");
+      await waitFor(() => sql(`SELECT COUNT(*) FROM Messages WHERE ticketId=${t} AND body LIKE 'Quais cursos%'`) === "1", 8000, "the message arrived");
+      const calls = anthropic.requests.length;
+      const r = await http.post(`/tickets/${t}/ai`, { active: true }, auth());
+      assert(r.status === 200 && r.data.aiActive === true, `hand over ${r.status}`);
+      assert(sql(`SELECT CONCAT(status,'|',IFNULL(userId,'null'),'|',CAST(aiActive AS INTEGER)) FROM Tickets WHERE id=${t}`) === "pending|null|1", "the conversation did not go back to the agent without an attendant");
+      await waitFor(() => anthropic.requests.length > calls, 15000, "the agent answered the last message");
+      assert(Number(sql(`SELECT COUNT(*) FROM TicketEvents WHERE ticketId=${t} AND type='handoff' AND note LIKE '%passou a conversa para o agente de IA%'`)) === 1, "the hand over was not written down");
+      // taking it back
+      sql(`UPDATE Tickets SET aiActive=1, status='pending', userId=NULL WHERE id=${t}`);
+      assert((await http.post(`/tickets/${t}/ai`, { active: false }, auth())).data.aiActive === false && sql(`SELECT CAST(aiActive AS INTEGER) FROM Tickets WHERE id=${t}`) === "0", "the agent was not taken off the conversation");
+      // a group is not for the agent, and a consultant cannot move someone else's conversation
+      assert((await http.post(`/tickets/${t}/ai`, { active: true }, { headers: {} })).status === 401, "no login");
+    });
     await test("daily token cap and turn limit stop the AI before it spends more", async () => {
       await http.put(`/ai-agents/${aiId}`, { dailyTokenCap: 10 }, auth());
       let calls = anthropic.requests.length, before = graph.sent.length;

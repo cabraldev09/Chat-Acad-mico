@@ -17,6 +17,10 @@ import Queue from "../models/Queue";
 import TicketPin from "../models/TicketPin";
 import UserQueue from "../models/UserQueue";
 import AppError from "../errors/AppError";
+import ChatFlowRun from "../models/ChatFlowRun";
+import Message from "../models/Message";
+import RunInboundAutomation from "../services/AutomationServices/RunInboundAutomation";
+import { findAgentForTicket } from "../services/AiServices/RunAiAgent";
 import { isManagerRole, roleOf } from "../helpers/Roles";
 import { getAdapter } from "../channels";
 import { whatsappProvider } from "../providers/WhatsApp";
@@ -177,6 +181,38 @@ export const archive = async (req: Request, res: Response): Promise<Response> =>
     .to("notification")
     .emit("ticket", { action: "update", ticket });
   return res.json({ archived });
+};
+
+// The person hands the conversation to the AI agent (it answers the last message at once and goes on from there), or takes it back from it.
+// body: { active: boolean }. The conversation goes to Aguardando without an attendant; whoever accepts it later takes it from the agent.
+export const ai = async (req: Request, res: Response): Promise<Response> => {
+  const ticketId = Number(req.params.ticketId);
+  const active = req.body?.active !== false;
+  let ticket = await ShowTicketService(String(ticketId));
+  if (ticket.isGroup) throw new AppError("ERR_AI_AGENT_NOT_AVAILABLE", 400);
+  const actor = await User.findByPk(Number(req.user.id), { attributes: ["name"] });
+  const emit = async (): Promise<void> => {
+    const fresh = await ShowTicketService(String(ticketId));
+    getIO().to(fresh.status).to(String(fresh.id)).to("notification").emit("ticket", { action: "update", ticket: fresh });
+  };
+  // whatever flow was waiting for an answer is over: the agent starts from the conversation as it is
+  await ChatFlowRun.update({ status: "done" }, { where: { ticketId, status: { [Op.in]: ["waiting", "delayed"] } } as any });
+  if (!active) {
+    await ticket.update({ aiActive: false });
+    await TicketEvent.create({ ticketId, type: "handoff", actorId: Number(req.user.id), note: `${actor?.name || "Alguém"} tirou a conversa do agente de IA.` } as any).catch(() => undefined);
+    await emit();
+    return res.json({ aiActive: false });
+  }
+  if (!(await findAgentForTicket(ticket))) throw new AppError("ERR_AI_AGENT_NOT_AVAILABLE", 400);
+  if (ticket.status !== "pending" || ticket.userId) await UpdateTicketService({ ticketData: { status: "pending", userId: null }, ticketId });
+  ticket = await ShowTicketService(String(ticketId));
+  await ticket.update({ aiActive: true, chatbotNodeId: null, handoffAt: null as any });
+  await TicketEvent.create({ ticketId, type: "handoff", actorId: Number(req.user.id), note: `${actor?.name || "Alguém"} passou a conversa para o agente de IA.` } as any).catch(() => undefined);
+  await emit();
+  const last = await Message.findOne({ where: { ticketId, fromMe: false, isDeleted: false } as any, order: [["createdAt", "DESC"]], attributes: ["body"] });
+  // the agent answers the last thing the person said, as if it had just arrived (never makes this request wait)
+  void RunInboundAutomation({ ticketId, body: String(last?.body || "") });
+  return res.json({ aiActive: true });
 };
 
 // "Mark as unread": the conversation shows the unread badge again until someone opens it

@@ -1,6 +1,6 @@
-# Rotas da API (422)
+# Rotas da API (423)
 
-Públicas: 31 · logado (qualquer perfil): 243 · gestão: 109 · admin: 31
+Públicas: 31 · logado (qualquer perfil): 244 · gestão: 109 · admin: 31
 
 ## Públicas (sem login)
 
@@ -164,6 +164,7 @@ Públicas: 31 · logado (qualquer perfil): 243 · gestão: 109 · admin: 31
 - POST /messages/:messageId/forward → canWriteMessage
 - POST /tickets/:ticketId/phone → canSendTicket, phoneLimiter
 - PUT /tickets/:ticketId/pin → canReadTicket
+- POST /tickets/:ticketId/ai → canWriteTicket
 - PUT /tickets/:ticketId/archive → canWriteTicket
 - PUT /tickets/:ticketId/unread → canWriteTicket
 - POST /tickets/:ticketId/typing → canWriteTicket

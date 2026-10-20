@@ -1,5 +1,5 @@
 import React, { useContext, useEffect, useRef, useState } from "react";
-import { Pin, PinOff, Archive, ArchiveRestore, Bell, BellOff, BellRing, Check, Undo2, CheckCircle2, UserCheck, RotateCcw } from "lucide-react";
+import { Pin, PinOff, Archive, ArchiveRestore, Bell, BellOff, BellRing, Check, Undo2, CheckCircle2, UserCheck, RotateCcw, Bot } from "lucide-react";
 import { toast } from "react-toastify";
 import { useHistory } from "react-router-dom";
 import { makeStyles } from "@material-ui/core/styles";
@@ -205,9 +205,22 @@ const ChatHeader = ({ contact: contactProp, ticket, onOpenInfo, onToggleSearch, 
     setLoading(false);
   };
 
+  // hand the conversation to the AI agent (it answers the last message now) or take it back from it
+  const setAi = async (active) => {
+    setLoading(true);
+    try {
+      await api.post(`/tickets/${ticket.id}/ai`, { active });
+      toast.success(active ? "O agente de IA assumiu a conversa e já vai responder." : "O agente de IA saiu da conversa.");
+      history.push("/tickets");
+    } catch (err) {
+      toastError(err);
+    }
+    setLoading(false);
+  };
+
   // team members' chats work like groups: no queue, so no accept / give back / finish buttons
   const plain = !!ticket.isGroup || !!contact.isStaff;
-  const SHORT = { "Aceitar atendimento": "Aceitar", "Devolver à fila": "Devolver", "Finalizar atendimento": "Finalizar", "Reabrir atendimento": "Reabrir" };
+  const SHORT = { "Agente de IA atende": "Agente", "Aceitar atendimento": "Aceitar", "Devolver à fila": "Devolver", "Finalizar atendimento": "Finalizar", "Reabrir atendimento": "Reabrir" };
   const button = (label, onClick, primary, icon, hint) => (
     <Tooltip title={hint || ""}>
       <span>
@@ -223,7 +236,7 @@ const ChatHeader = ({ contact: contactProp, ticket, onOpenInfo, onToggleSearch, 
     ticket.isHistorical ? "Histórico" : null,
     ticket.isGroup ? "Grupo" : contact.number && !String(contact.number).includes("_") ? `+${contact.number}` : null,
     ticket.queue?.name,
-    ticket.user ? `Atendente: ${ticket.user.name}` : ticket.status === "pending" ? "Aguardando atendimento" : null,
+    ticket.user ? `Atendente: ${ticket.user.name}` : ticket.status === "pending" ? (ticket.aiActive ? "Agente de IA atendendo" : "Aguardando atendimento") : null,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -255,8 +268,11 @@ const ChatHeader = ({ contact: contactProp, ticket, onOpenInfo, onToggleSearch, 
       <div className={classes.actions}>
         {ticket.status === "pending" && !plain &&
           button("Aceitar atendimento", () => setStatus("open", user?.id), true, <UserCheck size={16} />, "Assumir esta conversa: ela passa a ser sua")}
+        {ticket.status === "pending" && !plain && !ticket.aiActive &&
+          button("Agente de IA atende", () => setAi(true), false, <Bot size={16} />, "O agente de IA assume esta conversa e responde agora")}
         {ticket.status === "open" && !plain && (
           <>
+            {button("Agente de IA atende", () => setAi(true), false, <Bot size={16} />, "A conversa deixa de ser sua e o agente de IA assume e responde agora")}
             {button("Devolver à fila", () => setStatus("pending", null), false, <Undo2 size={16} />, "A conversa deixa de ser sua e volta para Aguardando, para outro atendente assumir")}
             {button("Finalizar atendimento", () => setStatus("closed", user?.id), true, <CheckCircle2 size={16} />, "Encerra a conversa. Se o contato escrever de novo, ela reabre")}
           </>
