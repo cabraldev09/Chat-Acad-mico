@@ -3,6 +3,7 @@ import Polo from "../../models/Polo";
 import PoloCoverage from "../../models/PoloCoverage";
 import { logger } from "../../utils/logger";
 import { cityKeyOf, forgetPolos } from "./ResolvePolo";
+import syncPoloQueues from "./SyncPoloQueues";
 
 // The 8 polos of Rondônia and the cities each one serves: every municipality of the state goes to the polo with the shortest driving time
 // (road distances between the cities, measured once; when two polos are about equally far, Porto Velho, the main one, takes it).
@@ -87,9 +88,49 @@ const withVariants = (city: string): string[] => (/ D'Oeste$/.test(city) ? [city
 
 const cityPoloKey = (p: Polo): string => cityKeyOf(p.name);
 
-export const seedPoloCoverage = async (): Promise<void> => {
+// The 8 polos of the institution, with the names the team uses (code from the spreadsheet). Once: a polo with the code gets the name written
+// here, a missing one is created with its queues. Whatever was edited afterwards stays.
+const CANONICAL_POLOS = [
+  { code: "1893", name: "Buritis - Setor 02 - RO" },
+  { code: "1959", name: "Cerejeiras - Jardim Liberdade - RO" },
+  { code: "2027", name: "Alto Alegre dos Parecis - Centro - RO" },
+  { code: "2042", name: "Mirante da Serra - Centro - RO" },
+  { code: "2085", name: "Porto Velho - Centro - RO" },
+  { code: "8251", name: "Chupinguaia - Centro - RO" },
+  { code: "8311", name: "Vilhena - Centro (S-01) - RO" },
+  { code: "8809", name: "Porto Velho (Juscelino Kubitschek) - RO" }
+];
+
+const ensureCanonicalPolos = async (): Promise<void> => {
+  const polos = await Polo.findAll();
+  for (const c of CANONICAL_POLOS) {
+    const key = cityKeyOf(c.name).replace(/ ro$/, "");
+    const existing = polos.find(p => p.code === c.code) || polos.find(p => cityKeyOf(p.name).replace(/ ro$/, "") === key);
+    if (existing) {
+      const patch: Record<string, any> = {};
+      if (existing.name !== c.name) patch.name = c.name;
+      if (!existing.code) patch.code = c.code;
+      if (!existing.state) patch.state = "RO";
+      if (Object.keys(patch).length) await existing.update(patch);
+      continue;
+    }
+    const created = await Polo.create({ name: c.name, code: c.code, state: "RO", active: true } as any);
+    await syncPoloQueues(created);
+    polos.push(created);
+    logger.info(`Polo criado: ${c.name}`);
+  }
+};
+
+// `force` is for the tests, which start from an empty system on purpose
+export const seedPoloCoverage = async (force = false): Promise<void> => {
   try {
-    if ((await getSetting("polo_coverage_ro_seeded", "")) === "1") return;
+    if (process.env.SKIP_DEFAULT_DATA === "1" && !force) return;
+    const canonicalDone = (await getSetting("polos_canonical_v1", "")) === "1";
+    if ((await getSetting("polo_coverage_ro_seeded", "")) === "1" && canonicalDone) return;
+    if (!canonicalDone) {
+      await ensureCanonicalPolos();
+      await setSetting("polos_canonical_v1", "1");
+    }
     const polos = await Polo.findAll();
     const taken = new Set((await PoloCoverage.findAll()).map(c => `${c.cityKey}|${c.state || ""}`));
     const rows: Array<{ poloId: number; city: string; cityKey: string; state: string }> = [];

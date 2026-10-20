@@ -5370,7 +5370,11 @@ const postMeta = (id, payload, secret, badSig) => {
           (async () => { ${body} process.exit(0); })().catch(e => { console.error(e); process.exit(1); });`;
         return execFileSync("node", ["-e", script], { cwd: ROOT, env: { ...env, LOG_LEVEL: "error" } }).toString().trim().split("\n").pop();
       };
-      run(`await require("./dist/services/PoloServices/SeedCoverage").seedPoloCoverage();`);
+      run(`await require("./dist/services/PoloServices/SeedCoverage").seedPoloCoverage(true);`);
+      // the 8 polos exist with the names the team uses (the ones missing are created, with their queues)
+      const names = ["Buritis - Setor 02 - RO", "Cerejeiras - Jardim Liberdade - RO", "Alto Alegre dos Parecis - Centro - RO", "Mirante da Serra - Centro - RO", "Porto Velho - Centro - RO", "Chupinguaia - Centro - RO", "Vilhena - Centro (S-01) - RO", "Porto Velho (Juscelino Kubitschek) - RO"];
+      assert(sql(`SELECT COUNT(DISTINCT name) FROM Polos WHERE name IN (${names.map(n => `'${n}'`).join(",")})`) === "8", "the 8 polos are not all there with the right name");
+      assert(Number(sql(`SELECT COUNT(*) FROM Queues WHERE poloId IN (SELECT id FROM Polos WHERE code = '1959')`)) >= 1, "a created polo has no queues");
       const poloOf = city => sql(`SELECT p.name FROM PoloCoverages c JOIN Polos p ON p.id = c.poloId WHERE c.cityKey = '${city}' AND c.state = 'RO'`);
       assert(/^Mirante da Serra/.test(poloOf("ji parana")) && /^Mirante da Serra/.test(poloOf("jaru")), "Ji-Paraná and Jaru go to Mirante da Serra");
       assert(/^Buritis/.test(poloOf("ariquemes")), "Ariquemes goes to Buritis");
@@ -5382,7 +5386,7 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(sql(`SELECT enrollPoloId FROM Polos WHERE id=${mir.id}`) === String(pvh.id) && sql(`SELECT enrollPoloId FROM Polos WHERE id=${bur.id}`) === String(pvh.id), "Mirante da Serra and Buritis send their students to Porto Velho");
       // running it again changes nothing, and what a person edited stays
       await http.put(`/polos/${mir.id}`, { name: "Mirante da Serra - Centro - RO", state: "RO", enrollPoloId: vil.id }, auth());
-      run(`await require("./dist/services/PoloServices/SeedCoverage").seedPoloCoverage();`);
+      run(`await require("./dist/services/PoloServices/SeedCoverage").seedPoloCoverage(true);`);
       assert(sql(`SELECT enrollPoloId FROM Polos WHERE id=${mir.id}`) === String(vil.id), "an edited destination was overwritten");
 
       // a lead of Mirante da Serra: semipresencial (teaching) enrolls at the released polo, EAD stays at the polo of the city
