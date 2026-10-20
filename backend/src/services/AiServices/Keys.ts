@@ -18,3 +18,9 @@ export const anthropicAccess = async (): Promise<{ apiKey: string; model: string
   const apiKey = (await getSecretSetting("ai_anthropic_key")) || agent?.apiKey || "";
   return { apiKey, model: agent?.model || "claude-sonnet-5-5" };
 };
+
+// the key of OpenAI for the things the system asks by itself (read a PDF without text): the company's key, else the one of the first OpenAI agent
+export const openaiAccess = async (): Promise<{ apiKey: string }> => {
+  const agent = await AiAgent.findOne({ where: { provider: "openai" } as any, order: [["id", "ASC"]] });
+  return { apiKey: (await getSecretSetting("ai_openai_key")) || agent?.apiKey || "" };
+};

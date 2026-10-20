@@ -1,6 +1,6 @@
 import axios from "axios";
 import { logger } from "../../../utils/logger";
-import { anthropicAccess } from "../../../services/AiServices/Keys";
+import { anthropicAccess, openaiAccess } from "../../../services/AiServices/Keys";
 import type { DetectedRow } from "./table-detector";
 import type { LocalExtraction } from "./parser";
 
@@ -10,6 +10,8 @@ import type { LocalExtraction } from "./parser";
 // the document headings are kept as claims, so a row the model missed is flagged by the engine instead of passing silently.
 const ANTHROPIC_URL = () => process.env.ANTHROPIC_API_URL || "https://api.anthropic.com";
 const MODEL = process.env.ANALYSIS_VISION_MODEL || "claude-sonnet-5-5";
+const OPENAI_URL = () => process.env.OPENAI_API_URL || "https://api.openai.com";
+const OPENAI_MODEL = process.env.ANALYSIS_VISION_OPENAI_MODEL || "gpt-4o";
 const TOOL = "registrar_analise";
 
 const SYSTEM =
@@ -60,30 +62,56 @@ const reasonOf = (err: any): string => {
   return "a IA não respondeu a tempo";
 };
 
+// one call to the provider the company has a key for (Anthropic first); gives back what the tool received
+const askModel = async (bytes: Buffer, anthropicKey: string, openaiKey: string): Promise<any> => {
+  const instruction = "Leia o documento e registre todas as disciplinas das duas listas.";
+  if (anthropicKey) {
+    const { data } = await axios.post(
+      `${ANTHROPIC_URL()}/v1/messages`,
+      {
+        model: MODEL,
+        max_tokens: 16000,
+        system: SYSTEM,
+        tools: [SCHEMA],
+        tool_choice: { type: "tool", name: TOOL },
+        messages: [{ role: "user", content: [{ type: "document", source: { type: "base64", media_type: "application/pdf", data: bytes.toString("base64") } }, { type: "text", text: instruction }] }]
+      },
+      { headers: { "x-api-key": anthropicKey, "anthropic-version": "2023-06-01", "content-type": "application/json" }, timeout: 180000, maxBodyLength: Infinity }
+    );
+    return (data?.content || []).find((b: any) => b.type === "tool_use" && b.name === TOOL)?.input;
+  }
+  const { data } = await axios.post(
+    `${OPENAI_URL()}/v1/chat/completions`,
+    {
+      model: OPENAI_MODEL,
+      max_tokens: 16000,
+      temperature: 0,
+      messages: [
+        { role: "system", content: SYSTEM },
+        { role: "user", content: [{ type: "file", file: { filename: "analise.pdf", file_data: `data:application/pdf;base64,${bytes.toString("base64")}` } }, { type: "text", text: instruction }] }
+      ],
+      tools: [{ type: "function", function: { name: TOOL, description: SCHEMA.description, parameters: SCHEMA.input_schema } }],
+      tool_choice: { type: "function", function: { name: TOOL } }
+    },
+    { headers: { Authorization: `Bearer ${openaiKey}`, "content-type": "application/json" }, timeout: 180000, maxBodyLength: Infinity }
+  );
+  const args = data?.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments;
+  return args ? JSON.parse(args) : null;
+};
+
 export const readWithVision = async (bytes: Buffer, pageCount: number): Promise<LocalExtraction | null> => {
-  const { apiKey } = await anthropicAccess();
-  if (!apiKey) {
-    logger.warn("Análise curricular: PDF sem texto e nenhuma chave da Anthropic cadastrada");
-    throw new VisionFailure("não há chave de IA da Anthropic cadastrada (Configurações ou um agente da Anthropic)");
+  const anthropicKey = (await anthropicAccess()).apiKey;
+  const openaiKey = anthropicKey ? "" : (await openaiAccess()).apiKey;
+  if (!anthropicKey && !openaiKey) {
+    logger.warn("Análise curricular: PDF sem texto e nenhuma chave de IA cadastrada");
+    throw new VisionFailure("não há chave de IA cadastrada (Configurações ou um agente de IA)");
   }
   let failure = "";
   let input: any = null;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
       // eslint-disable-next-line no-await-in-loop
-      const { data } = await axios.post(
-        `${ANTHROPIC_URL()}/v1/messages`,
-        {
-          model: MODEL,
-          max_tokens: 16000,
-          system: SYSTEM,
-          tools: [SCHEMA],
-          tool_choice: { type: "tool", name: TOOL },
-          messages: [{ role: "user", content: [{ type: "document", source: { type: "base64", media_type: "application/pdf", data: bytes.toString("base64") } }, { type: "text", text: "Leia o documento e registre todas as disciplinas das duas listas." }] }]
-        },
-        { headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" }, timeout: 180000, maxBodyLength: Infinity }
-      );
-      const got = (data?.content || []).find((b: any) => b.type === "tool_use" && b.name === TOOL)?.input;
+      const got = await askModel(bytes, anthropicKey, openaiKey);
       if (!got || !Array.isArray(got.exempted) || !Array.isArray(got.pending)) continue;
       input = got;
       // the rows must agree with the totals of the headings: one more try when they do not (the engine flags what is left)
