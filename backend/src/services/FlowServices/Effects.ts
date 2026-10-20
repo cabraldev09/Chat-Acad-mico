@@ -42,6 +42,7 @@ import Message from "../../models/Message";
 import TicketEvent from "../../models/TicketEvent";
 import AgentMetricEvent from "../../models/AgentMetricEvent";
 import { transcribeAudio } from "../AiServices/Transcribe";
+import emitTicketUpdate from "../TicketServices/EmitTicketUpdate";
 
 // invisible mark: bot messages are told apart from the team's
 const MARK = "‎";
@@ -355,6 +356,7 @@ export const ticketEffects = (ticket: Ticket, flowName: string, flowCtx: FlowCon
 
     async handToAi() {
       await ticket.update({ chatbotNodeId: FLOW_DONE, aiActive: true });
+      await emitTicketUpdate(ticket.id);
     },
 
     async close() {

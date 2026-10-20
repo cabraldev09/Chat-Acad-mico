@@ -1,4 +1,5 @@
 import { remember } from "../../../helpers/BoundedMap";
+import { watchChatState } from "../../../services/WbotServices/ChatState";
 import { syncChatRead } from "../../../services/MessageServices/SyncReadState";
 import qrCode from "qrcode-terminal";
 import {
@@ -1233,6 +1234,8 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
       clearInitTimer(whatsapp.id);
       logger.info(`Session: ${sessionName} READY (${memoryNote()})`);
       reconnectAttempts.set(whatsapp.id, 0);
+      // "digitando…" of the lead for the team (best effort: see ChatState.ts)
+      watchChatState(wbot, whatsapp.id).catch(() => undefined);
       // heartbeat: a frozen browser does not answer, and then no message would arrive until somebody noticed
       clearHeartbeat(whatsapp.id);
       let missed = 0;

@@ -15,6 +15,7 @@ import { claimAi, releaseAi } from "./Claim";
 import { handoffToHuman } from "../AiServices/Handoff";
 import { cleanStage } from "./StageSpec";
 import { Graph, parseGraph } from "./Graph";
+import emitTicketUpdate from "../TicketServices/EmitTicketUpdate";
 
 export interface FlowEntry {
   type: "first_message" | "keyword" | "any" | "manual" | "agent";
@@ -86,6 +87,8 @@ const release = async (ticket: Ticket, step: StepResult, flow?: ChatFlow): Promi
     keep = !!last && last.type === "end" && last.data?.resume === true && !last.data?.close;
   }
   await ticket.update({ chatbotNodeId: -1, ...(flow?.kind === "agent" && !keep ? { aiActive: false } : {}) });
+  // the agent left the conversation: the chat and the lists drop the "IA atendendo" mark
+  if (flow?.kind === "agent" && !keep) await emitTicketUpdate(ticket.id);
 };
 
 // A run is being advanced (an AI turn can take seconds): a message that arrives meanwhile waits for it instead of touching a run that

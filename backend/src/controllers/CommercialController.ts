@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { Op, QueryTypes } from "sequelize";
+import Whatsapp from "../models/Whatsapp";
 
 import { getSetting, setSetting } from "../helpers/AppSettings";
 import { briefContext } from "../services/CommercialServices/Brief";
@@ -577,6 +578,9 @@ export const central = async (req: Request, res: Response): Promise<Response> =>
   const funnel = commercial ? await funnelData() : null;
   const missingStages = funnel ? funnel.keys.filter(k => !k.stageId).length : 0;
   const published = !flow || flow.status === "published";
+  // a personal number sends every new conversation straight to its owner: the agent only answers there when the number is also an attendance number
+  const served = await Whatsapp.findAll({ where: { ...(agent.whatsappId ? { id: agent.whatsappId } : {}), ownerId: { [Op.ne]: null } } as any, attributes: ["id", "name", "ownerId", "aiFirst"] });
+  const personal = served.filter(w => !w.aiFirst);
 
   type Check = { key: string; label: string; ok: boolean; detail: string; fix: string };
   const health: Check[] = [
@@ -590,6 +594,9 @@ export const central = async (req: Request, res: Response): Promise<Response> =>
           { key: "crm", label: "Etapas do funil no CRM", ok: missingStages === 0, detail: missingStages ? `${missingStages} etapa(s) do agente sem coluna no CRM.` : "Todas as etapas têm coluna.", fix: "ajustes:funil" },
           { key: "mec", label: "Regras do MEC dos cursos", ok: !data.regulations || data.regulations.withRule >= data.regulations.courses, detail: data.regulations ? `${data.regulations.withRule} de ${data.regulations.courses} cursos com regra.` : "", fix: "ajustes:mec" }
         ]
+      : []),
+    ...(personal.length
+      ? [{ key: "personal", label: "Número pessoal", ok: false, detail: `${personal.map(w => `"${w.name}"`).join(", ")}: número pessoal, as conversas novas vão direto para o dono e o agente não responde. Em Conexões, ligue "Agente de IA atende primeiro" no número de atendimento.`, fix: "conexoes" }]
       : []),
     { key: "errors", label: "Falhas da IA (30 dias)", ok: data.last30days.errors === 0, detail: data.last30days.errors ? `${data.last30days.errors} falha(s): a conversa foi para a equipe. Veja a chave e o saldo do provedor.` : "Nenhuma falha.", fix: "ajustes:chave" }
   ];

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useReducer, useContext } from "react";
 import openSocket from "../../services/socket-io";
+import { setTyping } from "../../utils/typingStore";
 
 import { makeStyles } from "@material-ui/core/styles";
 import List from "@material-ui/core/List";
@@ -252,6 +253,9 @@ const reducer = (state, action) => {
 				socket.emit("joinNotification");
 			}
 		});
+
+		// "digitando…" under the name, like WhatsApp
+		socket.on("typing", data => setTyping(data.ticketId, data.from, data.kind, data.ms));
 
 		// the chats pinned (or unpinned) on the phone's WhatsApp: the list follows without a reload
 		socket.on("ticketPins", data => {

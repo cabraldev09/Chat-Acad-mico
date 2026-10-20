@@ -6,6 +6,7 @@ import dispatchWebhook from "../WebhookServices/DispatchWebhook";
 import Whatsapp from "../../models/Whatsapp";
 import { hookTicketCreated } from "../CrmServices/LeadCore";
 import ShowTicketService from "./ShowTicketService";
+import emitTicketUpdate from "./EmitTicketUpdate";
 import { RELATIONSHIP_SEGMENT } from "../../helpers/Roles";
 import { ensureRelationshipQueue, isRelationshipConnection } from "../RelationshipServices/Relationship";
 
@@ -24,6 +25,9 @@ const FindOrCreateTicketService = async (
       whatsappId: whatsappId
     }
   });
+
+  // set when the conversation changes hands or state here: the open chat and the lists are told at the end (a new ticket tells itself)
+  let changed = false;
 
   if (ticket) {
     await ticket.update({ unreadMessages });
@@ -49,6 +53,7 @@ const FindOrCreateTicketService = async (
         closedAt: null,
         ...(wasHistory ? { isHistorical: false, firstResponseAt: null } : {})
       });
+      changed = true;
       if (wasHistory) await Ticket.update({ createdAt: new Date() } as any, { where: { id: ticket.id }, silent: true } as any);
     }
   }
@@ -70,6 +75,7 @@ const FindOrCreateTicketService = async (
         closedAt: null,
         firstResponseAt: null
       });
+      changed = true;
       await Ticket.update({ createdAt: new Date() } as any, { where: { id: history.id }, silent: true } as any);
       ticket = history;
       if (!groupContact) hookTicketCreated(contact, (await Whatsapp.findByPk(whatsappId))?.channel || "whatsapp");
@@ -96,6 +102,7 @@ const FindOrCreateTicketService = async (
         closedAt: null,
         ...(recent ? {} : { firstResponseAt: null })
       });
+      changed = true;
       if (!recent) await Ticket.update({ createdAt: new Date() } as any, { where: { id: ticket.id }, silent: true } as any);
     }
   }
@@ -124,12 +131,15 @@ const FindOrCreateTicketService = async (
 
   // a personal number: the conversation belongs to the person who connected it (the bots stay out).
   // Groups too: nobody "accepts" a group, whoever is in it already took part
-  const connection = await Whatsapp.findByPk(whatsappId, { attributes: ["id", "ownerId"] });
-  if (connection?.ownerId && ticket.status === "pending" && !ticket.userId) {
+  // unless the number also works as an attendance number ("aiFirst"): then the AI agent answers first and the owner follows like everyone else
+  const connection = await Whatsapp.findByPk(whatsappId, { attributes: ["id", "ownerId", "aiFirst"] });
+  if (connection?.ownerId && !connection.aiFirst && ticket.status === "pending" && !ticket.userId) {
     await ticket.update({ status: "open", userId: connection.ownerId });
+    changed = true;
   }
 
   ticket = await ShowTicketService(ticket.id);
+  if (changed) await emitTicketUpdate(ticket.id);
 
   return ticket;
 };

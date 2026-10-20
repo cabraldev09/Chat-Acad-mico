@@ -104,6 +104,11 @@ class Whatsapp extends Model<Whatsapp> {
   @Column
   ownerId: number;
 
+  // a personal number that also works as an attendance number: the AI agent answers first instead of the conversation going to the owner
+  @Default(false)
+  @Column
+  aiFirst: boolean;
+
   @Column
   historyImportedAt: Date;
 

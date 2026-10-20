@@ -19,6 +19,7 @@ import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import { AuthContext } from "../../context/Auth/AuthContext";
 import { isManager } from "../../utils/access";
+import { useTyping, typingText } from "../../utils/typingStore";
 import { wa, dayLabel, clock } from "../chat/chatTheme";
 
 const useStyles = makeStyles((theme) => {
@@ -194,6 +195,8 @@ const TicketListItem = ({ ticket }) => {
   // (the agent may be talking to the lead; whoever wants to step in accepts it)
   const canOpen = ticket.status !== "pending" || !!ticket.isGroup || isManager(user) || !!ticket.queue;
 
+  const typing = useTyping(ticket.id);
+
   const accept = async (e) => {
     e.stopPropagation();
     setLoading(true);
@@ -293,7 +296,9 @@ const TicketListItem = ({ ticket }) => {
                 {ticket.lastMessageAck < 0 ? <AlertCircle size={15} /> : (ticket.lastMessageAck === 0 && Date.now() - new Date(ticket.lastMessageAt || ticket.updatedAt).getTime() < 120000) ? <Clock size={14} /> : ticket.lastMessageAck === 1 ? <Check size={16} /> : <CheckCheck size={16} />}
               </span>
             )}
-            {draft ? (
+            {typing ? (
+              <span style={{ color: "#00a884", fontWeight: 500 }}>{typing.from === "agent" && <Bot size={14} style={{ verticalAlign: -2, marginRight: 4 }} />}{typingText(typing)}</span>
+            ) : draft ? (
               <>
                 <span style={{ color: "#1fa855", fontWeight: 500 }}>Rascunho: </span>
                 {plain(draft)}

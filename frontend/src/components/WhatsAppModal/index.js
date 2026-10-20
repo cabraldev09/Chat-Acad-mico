@@ -1,5 +1,5 @@
 import TimezoneSelect from "../TimezoneSelect";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useContext } from "react";
 import { toast } from "react-toastify";
 
 import { makeStyles } from "@material-ui/core/styles";
@@ -24,6 +24,8 @@ import api from "../../services/api";
 import { i18n } from "../../translate/i18n";
 import toastError from "../../errors/toastError";
 import QueueSelect from "../QueueSelect";
+import { AuthContext } from "../../context/Auth/AuthContext";
+import { isManager } from "../../utils/access";
 
 const useStyles = makeStyles(theme => ({
 	row: { display: "flex", gap: theme.spacing(1), alignItems: "center", flexWrap: "wrap" },
@@ -94,6 +96,7 @@ const Copyable = ({ text }) => {
 
 const WhatsAppModal = ({ open, onClose, whatsAppId }) => {
 	const classes = useStyles();
+	const { user } = useContext(AuthContext);
 	const initialState = {
 		name: "",
 		greetingMessage: "",
@@ -185,6 +188,7 @@ const WhatsAppModal = ({ open, onClose, whatsAppId }) => {
 			outOfHoursMessage: whatsApp.outOfHoursMessage,
 			riskMode: whatsApp.riskMode,
 			groupsMode: whatsApp.groupsMode || "off",
+			...(isManager(user) ? { aiFirst: !!whatsApp.aiFirst } : {}),
 			allowedGroups: allowed,
 			businessHours: JSON.stringify(hours),
 			queueIds: selectedQueueIds,
@@ -246,6 +250,25 @@ const WhatsAppModal = ({ open, onClose, whatsAppId }) => {
 						label={i18n.t("whatsappModal.form.default")}
 					/>
 				</div>
+
+				{!!whatsAppId && !!whatsApp.ownerId && isManager(user) && (
+					<div className={classes.section}>
+						<FormControlLabel
+							control={
+								<Switch
+									color="primary"
+									checked={!!whatsApp.aiFirst}
+									onChange={e => setWhatsApp({ ...whatsApp, aiFirst: e.target.checked })}
+								/>
+							}
+							label="Agente de IA atende primeiro (número de atendimento)"
+						/>
+						<div style={{ fontSize: 12, opacity: 0.75, marginTop: -4 }}>
+							Este é um número pessoal: por padrão, toda conversa nova vai direto para o dono e o agente de IA não responde. Ligado, o agente atende
+							os contatos novos primeiro e o dono acompanha ou assume quando quiser. Ligue só em número usado para atendimento.
+						</div>
+					</div>
+				)}
 
 				<TextField
 					select

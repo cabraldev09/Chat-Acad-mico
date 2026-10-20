@@ -73,6 +73,7 @@ export const health = async (req: Request, res: Response): Promise<Response> => 
         statusSince: w.statusSince,
         ownerId: w.ownerId,
         ownerName: owners.find(o => o.id === w.ownerId)?.name || null,
+        aiFirst: !!w.aiFirst,
         sentToday: t ? Number(t.sent) : 0,
         receivedToday: t ? Number(t.received) : 0,
         lastMessageAt: l ? l.last : null

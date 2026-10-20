@@ -11,6 +11,7 @@ import SendWhatsAppMessage from "../services/WbotServices/SendWhatsAppMessage";
 import ShowWhatsAppService from "../services/WhatsappService/ShowWhatsAppService";
 import formatBody from "../helpers/Mustache";
 import Ticket from "../models/Ticket";
+import Whatsapp from "../models/Whatsapp";
 import TicketEvent from "../models/TicketEvent";
 import User from "../models/User";
 import Queue from "../models/Queue";
@@ -204,15 +205,20 @@ export const ai = async (req: Request, res: Response): Promise<Response> => {
     return res.json({ aiActive: false });
   }
   if (!(await findAgentForTicket(ticket))) throw new AppError("ERR_AI_AGENT_NOT_AVAILABLE", 400);
+  // a personal number sends every conversation back to its owner at the next message: the agent could not keep it
+  const line = await Whatsapp.findByPk(ticket.whatsappId, { attributes: ["id", "ownerId", "aiFirst"] });
+  if (line?.ownerId && !line.aiFirst) throw new AppError("ERR_AI_PERSONAL_NUMBER", 400);
   if (ticket.status !== "pending" || ticket.userId) await UpdateTicketService({ ticketData: { status: "pending", userId: null }, ticketId });
   ticket = await ShowTicketService(String(ticketId));
   await ticket.update({ aiActive: true, chatbotNodeId: null, handoffAt: null as any });
   await TicketEvent.create({ ticketId, type: "handoff", actorId: Number(req.user.id), note: `${actor?.name || "Alguém"} passou a conversa para o agente de IA.` } as any).catch(() => undefined);
   await emit();
-  const last = await Message.findOne({ where: { ticketId, fromMe: false, isDeleted: false } as any, order: [["createdAt", "DESC"]], attributes: ["body"] });
-  // the agent answers the last thing the person said, as if it had just arrived (never makes this request wait)
-  void RunInboundAutomation({ ticketId, body: String(last?.body || "") });
-  return res.json({ aiActive: true });
+  // the agent answers the last thing the person said, as if it had just arrived (never makes this request wait) — but only when nobody answered it
+  // yet: a second click (or a person who already replied) must not make the agent greet and ask everything again
+  const last = await Message.findOne({ where: { ticketId, isDeleted: false } as any, order: [["createdAt", "DESC"]], attributes: ["body", "fromMe"] });
+  const unanswered = !!last && !last.fromMe;
+  if (unanswered) void RunInboundAutomation({ ticketId, body: String(last?.body || "") });
+  return res.json({ aiActive: true, answeredNow: unanswered });
 };
 
 // "Mark as unread": the conversation shows the unread badge again until someone opens it

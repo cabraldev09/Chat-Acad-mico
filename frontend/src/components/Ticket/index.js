@@ -20,6 +20,7 @@ import { ReplyMessageProvider } from "../../context/ReplyingMessage/ReplyingMess
 import toastError from "../../errors/toastError";
 import { wa } from "../chat/chatTheme";
 import { AuthContext } from "../../context/Auth/AuthContext";
+import { setTyping, clearTyping, useTyping } from "../../utils/typingStore";
 
 const useStyles = makeStyles((theme) => {
   const c = wa(theme);
@@ -111,7 +112,7 @@ const Ticket = () => {
   const [ticket, setTicket] = useState({});
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
-  const [contactTyping, setContactTyping] = useState(false);
+  const typing = useTyping(ticketId);
   const [matches, setMatches] = useState(0);
   const [matchIndex, setMatchIndex] = useState(0);
 
@@ -158,13 +159,25 @@ const Ticket = () => {
       }
     });
 
-    // only the web chat reports that the visitor is typing; other channels never send it
-    let typingTimer;
+    // who is typing: the web chat visitor, the lead of a WhatsApp number, or the AI agent (the lists share the same store)
     socket.on("typing", (data) => {
       if (+data.ticketId !== +ticketId) return;
-      setContactTyping(true);
-      clearTimeout(typingTimer);
-      typingTimer = setTimeout(() => setContactTyping(false), 5000);
+      setTyping(data.ticketId, data.from, data.kind, data.ms);
+    });
+
+    // a new message keeps the header honest: when it changed who has the conversation (a person took it, the agent left, it was reopened),
+    // the open chat reads it again instead of waiting for somebody to reload; the person who wrote is not typing anymore
+    socket.on("appMessage", (data) => {
+      if (data.action !== "create" || +data.message?.ticketId !== +ticketId) return;
+      if (!data.message.fromMe) clearTyping(ticketId);
+      const next = data.ticket;
+      if (!next) return;
+      setTicket((prev) => {
+        if (prev.id && (prev.status !== next.status || (prev.userId || null) !== (next.userId || null) || !!prev.aiActive !== !!next.aiActive || (prev.queueId || null) !== (next.queueId || null))) {
+          api.get("/tickets/" + ticketId).then(({ data: fresh }) => setTicket(fresh)).catch(() => undefined);
+        }
+        return prev;
+      });
     });
 
     socket.on("contact", (data) => {
@@ -174,8 +187,7 @@ const Ticket = () => {
     });
 
     return () => {
-      clearTimeout(typingTimer);
-      setContactTyping(false);
+      setTyping(ticketId, null, "idle");
       socket.disconnect();
     };
   }, [ticketId, history]);
@@ -196,7 +208,7 @@ const Ticket = () => {
             ticket={ticket}
             onOpenInfo={() => setDrawerOpen(true)}
             onToggleSearch={() => setSearchOpen((v) => !v)}
-            typing={contactTyping}
+            typing={typing}
           />
         )}
         {searchOpen && (
@@ -230,6 +242,7 @@ const Ticket = () => {
         <ReplyMessageProvider>
           <MessagesList
             ticketId={ticketId}
+            live={(!!ticket.aiActive && !ticket.userId && ticket.status !== "closed") || ticket.status === "pending"}
             isGroup={ticket.isGroup}
             channel={ticket.whatsapp?.channel}
             searchTerm={searchOpen ? searchTerm : ""}

@@ -26,6 +26,7 @@ import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import { AuthContext } from "../../context/Auth/AuthContext";
 import { wa } from "./chatTheme";
+import { typingText } from "../../utils/typingStore";
 import { SOUND_CHOICES, getContactSound, setContactSound, getSoundMode, onSoundPrefsChange } from "../../utils/soundPrefs";
 
 const useStyles = makeStyles((theme) => {
@@ -209,8 +210,8 @@ const ChatHeader = ({ contact: contactProp, ticket, onOpenInfo, onToggleSearch, 
   const setAi = async (active) => {
     setLoading(true);
     try {
-      await api.post(`/tickets/${ticket.id}/ai`, { active });
-      toast.success(active ? "O agente de IA assumiu a conversa e já vai responder." : "O agente de IA saiu da conversa.");
+      const { data } = await api.post(`/tickets/${ticket.id}/ai`, { active });
+      toast.success(!active ? "O agente de IA saiu da conversa." : data && data.answeredNow ? "O agente de IA assumiu a conversa e já vai responder." : "O agente de IA assumiu a conversa. Ele responde a próxima mensagem do cliente (a última já foi respondida).");
       history.push("/tickets");
     } catch (err) {
       toastError(err);
@@ -261,7 +262,7 @@ const ChatHeader = ({ contact: contactProp, ticket, onOpenInfo, onToggleSearch, 
             ))}
           </span>
           <span className={classes.sub}>
-            {typing ? <span style={{ color: "#00a884", fontWeight: 500 }}>digitando…</span> : subtitle}
+            {typing ? <span style={{ color: "#00a884", fontWeight: 500 }}>{typing.from === "agent" && <Bot size={13} style={{ verticalAlign: -2, marginRight: 4 }} />}{typingText(typing)}</span> : subtitle}
           </span>
         </div>
       </div>

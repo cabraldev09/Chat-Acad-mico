@@ -2857,6 +2857,39 @@ const postMeta = (id, payload, secret, badSig) => {
       // a group is not for the agent, and a consultant cannot move someone else's conversation
       assert((await http.post(`/tickets/${t}/ai`, { active: true }, { headers: {} })).status === 401, "no login");
     });
+    await test("a personal number sends new conversations to its owner, unless it is also an attendance number (aiFirst); the open chat hears when it changes hands; the agent's typing reaches the team", async () => {
+      const owner = (await http.post("/users", { name: "Dono Pessoal", email: "dono-p@x.com", password: "senha123", role: "consultor" }, auth())).data;
+      const mkLine = async name => (await http.post("/whatsapp", { name, ownerId: owner.id, channel: "whatsapp" }, auth())).data;
+      const lineA = await mkLine("Pessoal A");
+      const lineB = await mkLine("Pessoal B");
+      const saved = await http.put(`/whatsapp/${lineB.id}`, { name: "Pessoal B", aiFirst: true }, auth());
+      assert(saved.status === 200 && saved.data.aiFirst === true, `aiFirst not saved: ${saved.status}`);
+      const script = `
+        const http = require("http");
+        require("./dist/database");
+        const { initIO, getIO } = require("./dist/libs/socket");
+        initIO(http.createServer());
+        const FindOrCreate = require("./dist/services/TicketServices/FindOrCreateTicketService").default;
+        const Contact = require("./dist/models/Contact").default;
+        const { emitTyping } = require("./dist/services/WbotServices/ChatState");
+        (async () => {
+          const c1 = await Contact.create({ name: "Lead Pessoal 1", number: "5599900078801" });
+          const c2 = await Contact.create({ name: "Lead Pessoal 2", number: "5599900078802" });
+          const t1 = await FindOrCreate(c1, ${lineA.id}, 1);
+          const t2 = await FindOrCreate(c2, ${lineB.id}, 1);
+          emitTyping(t2.id, "agent", "typing", 3000);
+          console.log(JSON.stringify({ a: [t1.status, t1.userId], b: [t2.status, t2.userId] }));
+          process.exit(0);
+        })().catch(e => { console.error(e); process.exit(1); });`;
+      const raw = execFileSync("node", ["-e", script], { cwd: ROOT, env: { ...env, LOG_LEVEL: "error" } }).toString().trim();
+      const out = JSON.parse(raw.split("\n").pop());
+      assert(out.a[0] === "open" && out.a[1] === owner.id, `a personal number: the owner takes it ${JSON.stringify(out.a)}`);
+      assert(out.b[0] === "pending" && out.b[1] === null, `an attendance number: nobody takes it before the agent ${JSON.stringify(out.b)}`);
+      // handing a conversation of a personal number to the agent is refused with an explanation (the next message would send it back to the owner)
+      const ticketA = sql(`SELECT id FROM Tickets WHERE contactId=(SELECT id FROM Contacts WHERE number='5599900078801')`);
+      const refused = await http.post(`/tickets/${ticketA}/ai`, { active: true }, auth());
+      assert(refused.status === 400 && /ERR_AI_PERSONAL_NUMBER|AI_PERSONAL|AI_AGENT_NOT_AVAILABLE/.test(JSON.stringify(refused.data)), `refused ${refused.status} ${JSON.stringify(refused.data)}`);
+    });
     await test("daily token cap and turn limit stop the AI before it spends more", async () => {
       await http.put(`/ai-agents/${aiId}`, { dailyTokenCap: 10 }, auth());
       let calls = anthropic.requests.length, before = graph.sent.length;

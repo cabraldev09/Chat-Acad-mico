@@ -11,6 +11,7 @@ import ShowWhatsAppService from "../WhatsappService/ShowWhatsAppService";
 import SendWhatsAppMessage from "../WbotServices/SendWhatsAppMessage";
 import { findAgentForTicket, runAiForTicket } from "../AiServices/RunAiAgent";
 import { runAgentGraph } from "../FlowServices/Runner";
+import emitTicketUpdate from "../TicketServices/EmitTicketUpdate";
 import { runFlowForTicket } from "../FlowServices/Runner";
 import { addActivity, changeStage } from "../CrmServices/LeadCore";
 import { applyToLead } from "../AiServices/Tools";
@@ -128,6 +129,7 @@ const runNodeAction = async (ticket: Ticket, node: ChatbotNode): Promise<void> =
     }
     case "ai": {
       await ticket.update({ chatbotNodeId: FLOW_DONE, aiActive: true });
+      await emitTicketUpdate(ticket.id);
       if (node.message) await say(ticket, node.message);
       return;
     }

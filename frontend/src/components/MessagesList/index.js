@@ -16,7 +16,8 @@ import Close from "@material-ui/icons/Close";
 import Forward from "@material-ui/icons/Forward";
 import StarBorder from "@material-ui/icons/StarBorder";
 import DeleteOutline from "@material-ui/icons/DeleteOutline";
-import { Check } from "lucide-react";
+import { Check, Bot } from "lucide-react";
+import { useTyping } from "../../utils/typingStore";
 import { Dialog, DialogTitle, DialogContent, DialogActions, Button, Typography } from "@material-ui/core";
 import ForwardDialog from "../chat/ForwardDialog";
 import InsertDriveFile from "@material-ui/icons/InsertDriveFile";
@@ -83,7 +84,11 @@ const useStyles = makeStyles((theme) => {
     pickMarkOn: { backgroundColor: c.accent, borderColor: c.accent },
     listPicking: { overflowX: "hidden", [theme.breakpoints.down("sm")]: { paddingLeft: theme.spacing(5) } },
     pickGo: { backgroundColor: c.accent, color: "#fff", borderRadius: 999, padding: "5px 16px", fontSize: 14, fontWeight: 600, marginLeft: 8, "&:hover": { backgroundColor: c.accent, filter: "brightness(.92)" } },
-    "@global": { "@keyframes pickIn": { from: { opacity: 0, transform: "translateY(-8px)" }, to: { opacity: 1, transform: "none" } } },
+    "@global": {
+      "@keyframes pickIn": { from: { opacity: 0, transform: "translateY(-8px)" }, to: { opacity: 1, transform: "none" } },
+      "@keyframes typingDot": { "0%, 60%, 100%": { transform: "translateY(0)", opacity: 0.45 }, "30%": { transform: "translateY(-5px)", opacity: 1 } },
+      "@keyframes typingIn": { from: { opacity: 0, transform: "translateY(6px) scale(.96)" }, to: { opacity: 1, transform: "none" } },
+    },
     list: {
       flex: 1,
       overflowY: "auto",
@@ -119,6 +124,20 @@ const useStyles = makeStyles((theme) => {
       "& $deleted": { color: c.textSecondary },
     },
     tailed: {},
+    // "digitando…" as WhatsApp draws it today: a small bubble at the end of the conversation with three dots that rise one after the other
+    typingRow: { display: "flex", marginTop: 8 },
+    typingBubble: {
+      display: "inline-flex", alignItems: "center", gap: 5, minHeight: 36, padding: "0 16px", borderRadius: 18, borderBottomLeftRadius: 5, boxShadow: c.shadow,
+      background: c.bubbleIn, border: `1px solid ${dark ? "rgba(255,255,255,.04)" : "rgba(11,20,26,.06)"}`,
+      animation: "typingIn .18s ease-out",
+    },
+    typingBubbleAgent: { background: c.bubbleOutBg, borderBottomLeftRadius: 18, borderBottomRightRadius: 5, border: 0 },
+    typingDot: {
+      width: 8, height: 8, borderRadius: "50%", backgroundColor: c.textSecondary, opacity: 0.55, animation: "typingDot 1.3s infinite ease-in-out",
+      "&:nth-child(2)": { animationDelay: ".18s" }, "&:nth-child(3)": { animationDelay: ".36s" },
+      "@media (prefers-reduced-motion: reduce)": { animation: "none", opacity: 0.7 },
+    },
+    typingBot: { marginRight: 2, color: c.bubbleOutText, opacity: 0.9 },
     sticker: {
       background: "transparent !important", boxShadow: "none !important", border: "0 !important", padding: "0 !important", minWidth: 0,
       "& $media": { margin: 0, overflow: "visible" },
@@ -331,11 +350,14 @@ const fileNameOf = (m) => {
 
 const isOnlyFileName = (m) => !m.body || /^[\p{Extended_Pictographic}\s]*(Imagem|Vídeo|Áudio|Mensagem de voz|Documento|Figurinha|Foto)$/u.test(m.body) || m.body === (m.mediaUrl || "").split("/").pop() || /^\d{10,}\.\w{2,5}$/.test(m.body);
 
-const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex = 0, onMatches }) => {
+const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex = 0, onMatches, live = false }) => {
   const classes = useStyles();
   const [messagesList, dispatch] = useReducer(reducer, []);
   const messagesListRef = useRef([]);
   messagesListRef.current = messagesList;
+  // a conversation the AI agent or nobody has yet is read again more often: a missed live event never keeps the team behind the lead
+  const liveRef = useRef(false);
+  liveRef.current = !!live;
   const [pageNumber, setPageNumber] = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -372,6 +394,7 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
   const [unreadTotal, setUnreadTotal] = useState(0);
   const currentTicketId = useRef(ticketId);
   const listRef = useRef();
+  const typing = useTyping(ticketId);
   const atBottomRef = useRef(true);
   const bubbleRefs = useRef({});
 
@@ -439,7 +462,11 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
     // reactions appear at once (see utils/optimisticReaction): the server answers later
     const onReactions = (e) => dispatch({ type: "SET_REACTIONS", payload: e.detail });
     window.addEventListener("message-reactions", onReactions);
-    const poll = setInterval(() => document.visibilityState === "visible" && resync(), 25000);
+    let tick = 0;
+    const poll = setInterval(() => {
+      tick += 1;
+      if (liveRef.current || (tick % 3 === 0 && document.visibilityState === "visible")) resync();
+    }, 8000);
     const onVisible = () => document.visibilityState === "visible" && resync();
     document.addEventListener("visibilitychange", onVisible);
     socket.on("appMessage", (data) => {
@@ -480,6 +507,11 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
     };
     // the rows change with the messages
   }, [messagesList.length, ticketId]);
+
+  // the bubble appears under the last message: keep it in view when the person is reading the end of the conversation
+  useEffect(() => {
+    if (typing && atBottomRef.current) setTimeout(() => scrollToBottom(true), 30);
+  }, [typing, scrollToBottom]);
 
   const onScroll = (e) => {
     const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
@@ -783,6 +815,16 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
       })()}
       <div ref={listRef} id="messagesList" className={clsx(classes.list, picked && classes.listPicking)} onScroll={onScroll}>
         {messagesList.length > 0 ? items : !loading && <div className={classes.empty}>Nenhuma mensagem ainda. Diga olá!</div>}
+        {typing && (
+          <div className={clsx(classes.typingRow, typing.from === "agent" ? classes.rowOut : classes.rowIn)} aria-live="polite" aria-label={typing.from === "agent" ? "O agente de IA está digitando" : "O contato está digitando"}>
+            <div className={clsx(classes.typingBubble, typing.from === "agent" && classes.typingBubbleAgent)}>
+              {typing.from === "agent" && <Bot size={15} className={classes.typingBot} />}
+              <span className={classes.typingDot} />
+              <span className={classes.typingDot} />
+              <span className={classes.typingDot} />
+            </div>
+          </div>
+        )}
       </div>
       {loading && <CircularProgress size={28} className={classes.loading} />}
       {!atBottom && (

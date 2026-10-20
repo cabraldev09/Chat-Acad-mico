@@ -2,6 +2,7 @@ import { fire } from "../../helpers/Fire";
 import { chatIdOf } from "../../helpers/ChatId";
 import { previewOf } from "../../helpers/MessagePreview";
 import { startsWithBotMark } from "../../helpers/BotMark";
+import { emitTyping } from "./ChatState";
 import AppError from "../../errors/AppError";
 import Message from "../../models/Message";
 import Ticket from "../../models/Ticket";
@@ -89,7 +90,10 @@ const SendWhatsAppMessage = async ({
   // unofficial connection: never reply like a machine
   if (automated && isUnofficial(whatsapp)) {
     await whatsappProvider.sendTyping?.(ticket.whatsappId, chatId);
-    await new Promise(r => setTimeout(r, typingDelay(text)));
+    // the team sees the robot "typing…" too, for as long as the lead sees it
+    const typingMs = typingDelay(text);
+    emitTyping(ticket.id, "agent", "typing", typingMs + 2000);
+    await new Promise(r => setTimeout(r, typingMs));
   }
   await paceSend(whatsapp, automated);
 
@@ -106,6 +110,7 @@ const SendWhatsAppMessage = async ({
     );
 
     recordSendResult(whatsapp, true);
+    if (automated) emitTyping(ticket.id, "agent", "idle", 0);
     await ticket.update({ lastMessage: previewOf(body) });
     // The listener of the connection skips what starts with the robots' invisible mark (it is how a robot's message is told from a person's),
     // so nobody else would ever store it: it is stored here, and shows in the open conversation at once. Saving twice is harmless (same id).

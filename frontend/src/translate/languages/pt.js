@@ -454,6 +454,7 @@ const messages = {
         ERR_CAMPAIGN_NO_LEADS: "Nenhum lead com telefone atende a esses filtros.",
         ERR_REACTION_FAILED: "O canal não aceitou esta reação. Tente outro emoji.",
         ERR_REACTION_EMOJI_UNSUPPORTED: "Este canal não aceita este emoji como reação.",
+        ERR_AI_PERSONAL_NUMBER: "Este é um número pessoal: as conversas dele vão direto para o dono. Em Conexões, ligue \"Agente de IA atende primeiro\" nesse número para o agente atender.",
         ERR_AI_AGENT_NOT_AVAILABLE: "Não há agente de IA ligado para esta conversa (ou ela é um grupo). Ligue um em Agentes de IA e tente de novo.",
         ERR_PIN_LIMIT: "Você pode fixar no máximo 5 conversas. Desafixe uma para fixar outra.",
         ERR_KB_EMPTY: "Escreva ou envie o conteúdo do documento.",

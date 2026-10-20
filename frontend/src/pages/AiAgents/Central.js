@@ -111,6 +111,7 @@ const Central = () => {
     if (how === "ligar") return toggle();
     if (how === "roteiro") return d.flow ? history.push(`/ai-agents/blocos/${d.flow.id}`) : go("ajustes");
     if (how === "polos") return history.push("/polos");
+    if (how === "conexoes") return history.push("/connections");
     const [, item] = how.split(":");
     return setDialog({ name: item || "ajustes", tab: 0 });
   };
