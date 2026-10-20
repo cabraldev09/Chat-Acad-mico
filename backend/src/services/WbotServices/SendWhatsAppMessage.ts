@@ -1,6 +1,7 @@
 import { fire } from "../../helpers/Fire";
 import { chatIdOf } from "../../helpers/ChatId";
 import { previewOf } from "../../helpers/MessagePreview";
+import { startsWithBotMark } from "../../helpers/BotMark";
 import AppError from "../../errors/AppError";
 import Message from "../../models/Message";
 import Ticket from "../../models/Ticket";
@@ -106,6 +107,17 @@ const SendWhatsAppMessage = async ({
 
     recordSendResult(whatsapp, true);
     await ticket.update({ lastMessage: previewOf(body) });
+    // The listener of the connection skips what starts with the robots' invisible mark (it is how a robot's message is told from a person's),
+    // so nobody else would ever store it: it is stored here, and shows in the open conversation at once. Saving twice is harmless (same id).
+    if (automated || startsWithBotMark(text)) {
+      try {
+        await CreateMessageService({
+          messageData: { id: sentMessage.id, ticketId: ticket.id, body: text, fromMe: true, read: true, mediaType: "chat", ack: sentMessage.ack || 0, quotedMsgId: quotedMsg?.id }
+        });
+      } catch (err) {
+        logger.error({ ticketId: ticket.id, err: String((err as any)?.message || err) }, "A mensagem do robô foi enviada, mas não foi gravada na conversa");
+      }
+    }
     if (!automated) fire("message.agent_sent", { ticketId: ticket.id, contactId: ticket.contactId });
     return sentMessage;
   } catch (err) {

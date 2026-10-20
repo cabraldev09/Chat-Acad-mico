@@ -17,6 +17,7 @@ import { pickUserForQueue } from "../AutomationServices/AutoAssignTicket";
 import { syncNextFollowUp } from "../CrmServices/FollowUp";
 import { addActivity } from "../CrmServices/LeadCore";
 import { resolvePoloFor } from "../PoloServices/ResolvePolo";
+import ShowTicketService from "../TicketServices/ShowTicketService";
 import UpdateTicketService from "../TicketServices/UpdateTicketService";
 import { nextOpening, whenText } from "./Hours";
 import { areaOfCourse } from "./MecDefaults";
@@ -244,6 +245,13 @@ export const routeToCommercial = async (ticket: Ticket, opts: RouteOptions): Pro
       await UpdateTicketService({ ticketData: { queueId: queue.id, ...(user ? { userId: user.id, status: "open" } : { status: "pending" }) }, ticketId: ticket.id });
     }
     await Ticket.update({ aiActive: false, chatbotNodeId: -1, handoffAt: new Date(), handoffReason: opts.why, handoffAlerts: 0, handoffAlertedAt: null as any }, { where: { id: ticket.id } });
+    // the open conversation and the list hear that the agent left (the alert "agente atendendo" goes away)
+    try {
+      const fresh = await ShowTicketService(String(ticket.id));
+      getIO().to(fresh.status).to(String(fresh.id)).to("notification").emit("ticket", { action: "update", ticket: fresh });
+    } catch (err) {
+      logger.warn(`Ticket update after the handoff was not sent: ${err}`);
+    }
     await TicketEvent.create({
       ticketId: ticket.id,
       type: "transfer",

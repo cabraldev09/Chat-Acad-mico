@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useContext } from "react";
 import { useParams, useHistory } from "react-router-dom";
 import { toast } from "react-toastify";
 import { makeStyles } from "@material-ui/core";
@@ -6,6 +6,7 @@ import Search from "@material-ui/icons/Search";
 import KeyboardArrowUp from "@material-ui/icons/KeyboardArrowUp";
 import KeyboardArrowDown from "@material-ui/icons/KeyboardArrowDown";
 import Close from "@material-ui/icons/Close";
+import { Bot } from "lucide-react";
 import IconButton from "@material-ui/core/IconButton";
 import InputBase from "@material-ui/core/InputBase";
 
@@ -18,6 +19,7 @@ import api from "../../services/api";
 import { ReplyMessageProvider } from "../../context/ReplyingMessage/ReplyingMessageContext";
 import toastError from "../../errors/toastError";
 import { wa } from "../chat/chatTheme";
+import { AuthContext } from "../../context/Auth/AuthContext";
 
 const useStyles = makeStyles((theme) => {
   const c = wa(theme);
@@ -62,6 +64,37 @@ const WelcomeBanner = ({ ticket }) => {
       <button type="button" onClick={() => window.dispatchEvent(new CustomEvent("fillMessageInput", { detail: { ticketId: ticket.id, text: welcome.text } }))}
         style={{ border: 0, borderRadius: 10, background: "#0B4279", color: "#fff", padding: "8px 14px", fontFamily: "inherit", fontWeight: 600, cursor: "pointer" }}>
         Usar texto de boas-vindas
+      </button>
+    </div>
+  );
+};
+
+// The AI agent is talking to this lead: a bar nobody misses, so the team follows the conversation and steps in when needed.
+const AiBanner = ({ ticket }) => {
+  const { user } = useContext(AuthContext);
+  const [busy, setBusy] = useState(false);
+  if (!ticket.id || !ticket.aiActive || ticket.userId || ticket.status === "closed" || ticket.isGroup || ticket.isHistorical) return null;
+  const take = async () => {
+    setBusy(true);
+    try {
+      await api.put(`/tickets/${ticket.id}`, { status: "open", userId: user?.id });
+      toast.success("Você assumiu a conversa. O agente de IA parou de responder.");
+    } catch (err) {
+      toastError(err);
+    }
+    setBusy(false);
+  };
+  return (
+    <div role="status" style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", padding: "10px 16px", background: "linear-gradient(90deg, #0f766e 0%, #0e7490 100%)", color: "#fff", fontSize: 14 }}>
+      <style>{"@keyframes aiPulse{0%{box-shadow:0 0 0 0 rgba(255,255,255,.7)}70%{box-shadow:0 0 0 10px rgba(255,255,255,0)}100%{box-shadow:0 0 0 0 rgba(255,255,255,0)}}@media (prefers-reduced-motion: reduce){.ai-pulse{animation:none!important}}"}</style>
+      <span className="ai-pulse" style={{ width: 34, height: 34, borderRadius: "50%", background: "rgba(255,255,255,.18)", display: "inline-flex", alignItems: "center", justifyContent: "center", flex: "none", animation: "aiPulse 1.8s infinite" }}>
+        <Bot size={19} />
+      </span>
+      <span style={{ flex: 1, minWidth: 220 }}>
+        <b>O agente de IA está atendendo este lead agora.</b> Acompanhe as respostas aqui. Para assumir, clique em Assumir: o agente para na hora e a conversa passa a ser sua.
+      </span>
+      <button type="button" disabled={busy} onClick={take} style={{ border: 0, borderRadius: 10, background: "#fff", color: "#0f766e", padding: "8px 16px", fontFamily: "inherit", fontWeight: 700, cursor: "pointer" }}>
+        Assumir conversa
       </button>
     </div>
   );
@@ -192,6 +225,7 @@ const Ticket = () => {
             </IconButton>
           </div>
         )}
+        <AiBanner ticket={ticket} />
         <WelcomeBanner ticket={ticket} />
         <ReplyMessageProvider>
           <MessagesList
