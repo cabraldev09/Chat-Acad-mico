@@ -280,16 +280,25 @@ describe("periodUnit = YEAR (cursos anuais)", () => {
   });
 });
 
-describe("resultado unificado: dispensadas sem série ficam no período de entrada (regra do sistema original)", () => {
-  it("aluno do 5º período com 19 adaptações e 24 dispensadas: conclui em 2028.1 e o máximo do semestre é 38", () => {
-    const pending: Record<number, number> = { 1: 6, 2: 2, 3: 4, 4: 7, 5: 11, 6: 11, 7: 11, 8: 3 };
-    const subjects = Object.entries(pending).flatMap(([p, n]) => makePeriod(Number(p), n, 0));
-    // the list of exempted has no série: the period of entry is the value given to them
-    const exempted = Array.from({ length: 24 }, (_, i) => makeSubject({ period: 5, status: "EXEMPTED", usedSubject: `X${i}` }));
-    const result = simulateCurriculum({ subjects: [...subjects, ...exempted], entryPeriod: 5, startTerm: "2026.2", rules: rules() });
-    expect(result.semesters.map((s) => s.term)).toEqual(["2026.2", "2027.1", "2027.2", "2028.1"]);
-    expect(result.semesters[0].maximumCapacity).toBe(38);
-    expect(result.semesters[0].subjectsFromBacklog).toBe(19);
-    expect(result.semesters[3].remainingBacklog).toBe(0);
+describe("adaptações distribuídas pelas vagas de cada período (docs/ACADEMIC_RULES §3)", () => {
+  const pending: Record<number, number> = { 1: 6, 2: 2, 3: 4, 4: 7, 5: 11, 6: 11, 7: 11, 8: 3 };
+  const exempted: Record<number, number> = { 1: 3, 2: 7, 3: 5, 4: 4, 8: 5 };
+  const build = (placed: boolean) => [
+    ...Object.entries(pending).flatMap(([p, n]) => makePeriod(Number(p), n, 0)),
+    ...Object.entries(exempted).flatMap(([p, n]) =>
+      Array.from({ length: n }, (_, i) => ({ ...makeSubject({ period: placed ? Number(p) : 5, status: "EXEMPTED", usedSubject: `X${p}${i}` }), periodKnown: placed }))
+    ),
+  ];
+  it("aluno do 5º período com 19 adaptações: 3 + 3 + 3 + 8 vagas e um semestre adicional para as 2 restantes", () => {
+    const result = simulateCurriculum({ subjects: build(true), entryPeriod: 5, startTerm: "2026.2", rules: rules() });
+    expect(result.semesters.map((s) => s.subjectsFromBacklog)).toEqual([3, 3, 3, 8, 2]);
+    expect(result.semesters.map((s) => s.maximumCapacity)).toEqual([14, 14, 14, 11, 11]);
+    expect(result.semesters[result.semesters.length - 1].remainingBacklog).toBe(0);
+    expect(result.semesters[result.semesters.length - 1].term).toBe("2028.2");
+  });
+  it("dispensadas que nenhuma série ou matriz colocou não abrem vagas no período de ingresso", () => {
+    const result = simulateCurriculum({ subjects: build(false), entryPeriod: 5, startTerm: "2026.2", rules: rules() });
+    expect(result.semesters[0].maximumCapacity).toBe(14);
+    expect(result.semesters[0].subjectsFromBacklog).toBe(3);
   });
 });

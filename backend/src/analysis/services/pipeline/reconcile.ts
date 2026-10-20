@@ -125,8 +125,10 @@ export const reconcileWithMatrix = <T extends ReconcilableSubject>(subjects: T[]
         next.period = m.semester;
       }
     } else if (s.periodKnown === false) {
-      // the exempted list of the unified result has no série: the matrix tells where each one belongs (only to show the grade; the forecast keeps the rule of the original)
+      // the exempted list of the unified result has no série: the matrix tells where each one belongs, and the vacancy it opens is for that period
       next.matrixPeriod = m.semester;
+      next.period = m.semester;
+      next.periodKnown = true;
     }
     return next;
   });

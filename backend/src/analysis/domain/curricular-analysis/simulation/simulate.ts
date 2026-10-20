@@ -104,7 +104,9 @@ export interface SimulateCurriculumInput {
  */
 export function simulateCurriculum(input: SimulateCurriculumInput): SimulationResult {
   const { subjects, entryPeriod, rules } = input;
-  const grouped = groupSubjectsByPeriod(subjects);
+  // an exempted subject whose série the document does not tell (and the matrix of the course did not place) belongs to no period: the vacancy that an
+  // exemption opens is only for its own period (docs: "não transferir esse bônus a outros períodos"), so it must not be counted in the period of entry
+  const grouped = groupSubjectsByPeriod(subjects.filter((s) => s.periodKnown !== false));
   const periods = [...grouped.keys()];
   const lastPeriod = periods.length ? Math.max(...periods) : entryPeriod - 1;
 

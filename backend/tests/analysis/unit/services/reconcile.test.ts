@@ -24,7 +24,9 @@ describe("a leitura da IA é conferida com a matriz oficial do curso", () => {
   it("a dispensada sem série recebe o semestre da matriz só para mostrar", () => {
     const r = reconcileWithMatrix([row("LINGUA PORTUGUESA", 5, "LÍNGUA PORTUGUESA", false), row("PSICOLOGIA DA EDUCAÇAO", 5, "PSICOLOGIA DA EDUCAÇÃO", false)], matrix);
     expect(r.subjects.map((s) => s.matrixPeriod)).toEqual([8, 8]);
-    expect(r.subjects.map((s) => s.period)).toEqual([5, 5]);
+    // the vacancy an exemption opens is for its own period: the matrix places it there
+    expect(r.subjects.map((s) => s.period)).toEqual([8, 8]);
+    expect(r.subjects.every((x) => x.periodKnown === true)).toBe(true);
   });
   it("uma dispensada com numeral errado fica com a disciplina que ninguém levou", () => {
     const r = reconcileWithMatrix([row("QUÍMICA ORGÂNICA II", 5, "X", false), row("QUÍMICA ORGÂNICA II", 5, "Y", false)], matrix);
