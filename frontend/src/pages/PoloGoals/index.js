@@ -315,7 +315,7 @@ const PoloDialog = ({ open, onClose, row, data, onSaved }) => {
       <DialogContent dividers>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
           <NumberField fullWidth variant="outlined" size="small" nullable label="Meta do semestre" InputLabelProps={{ shrink: true }} value={f.target} onChange={changeTarget} />
-          <NumberField fullWidth variant="outlined" size="small" label="Já realizado (fora do CRM)" InputLabelProps={{ shrink: true }} value={f.manual} onChange={(v) => setF({ ...f, manual: v })} />
+          <NumberField fullWidth variant="outlined" size="small" label="Já realizado" helperText={`${row.auto || 0} no CRM`} InputLabelProps={{ shrink: true }} value={(row.auto || 0) + (f.manual || 0)} onChange={(v) => setF({ ...f, manual: Math.max(0, (v || 0) - (row.auto || 0)) })} />
           <NumberField fullWidth variant="outlined" size="small" label="Alunos em curso" InputLabelProps={{ shrink: true }} value={Math.max(0, (row.auto || 0) + (f.manual || 0) - (f.canceled || 0))}
             onChange={(v) => setF({ ...f, canceled: Math.max(0, (row.auto || 0) + (f.manual || 0) - (v || 0)) })} />
         </div>
@@ -379,12 +379,12 @@ const EditDialog = ({ open, onClose, data, onSaved }) => {
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth scroll="paper">
       <DialogTitle>Metas de todos os polos</DialogTitle>
       <DialogContent dividers>
-        <div className={`${classes.editRow} ${classes.hint}`} style={{ fontWeight: 600 }}><span>Polo</span><span>Meta</span><span title="Matrículas que não estão no CRM">Já realizado</span><span title="Quem está estudando hoje. Os cancelados saem sozinhos: matrículas menos alunos em curso.">Alunos em curso</span><span /></div>
+        <div className={`${classes.editRow} ${classes.hint}`} style={{ fontWeight: 600 }}><span>Polo</span><span>Meta</span><span title="Total de matrículas do polo no semestre: as do CRM já estão incluídas">Já realizado</span><span title="Quem está estudando hoje. Os cancelados saem sozinhos: matrículas menos alunos em curso.">Alunos em curso</span><span /></div>
         {rows.map((r, i) => (
           <div className={classes.editRow} key={r.poloId}>
             <div><div style={{ fontWeight: 600, fontSize: 14 }}>{r.name}</div><div className={classes.hint}>{r.code ? `Código ${r.code} · ` : ""}{r.auto} no CRM · {r.canceled || 0} cancelados (automático)</div></div>
             <NumberField size="small" variant="outlined" nullable value={r.target} onChange={(v) => set(i, { target: v })} />
-            <NumberField size="small" variant="outlined" value={r.manual} onChange={(v) => set(i, { manual: v })} />
+            <NumberField size="small" variant="outlined" value={(r.auto || 0) + (r.manual || 0)} onChange={(v) => set(i, { manual: Math.max(0, (v || 0) - (r.auto || 0)) })} />
             <NumberField size="small" variant="outlined" value={Math.max(0, (r.auto || 0) + (r.manual || 0) - (r.canceled || 0))} onChange={(v) => set(i, { canceled: Math.max(0, (r.auto || 0) + (r.manual || 0) - (v || 0)) })} />
             <Button size="small" aria-label="Tirar polo" style={{ minWidth: 0 }} onClick={() => setRows((rs) => rs.filter((_, k) => k !== i))}><Trash2 size={16} /></Button>
           </div>
@@ -396,7 +396,7 @@ const EditDialog = ({ open, onClose, data, onSaved }) => {
           </TextField>
         )}
         <div className={classes.hint} style={{ marginTop: 12 }}>
-          Para ajustar a meta de um mês, use o lápis no cartão do polo. As matrículas do CRM entram sozinhas; “Já realizado” soma o que está fora do CRM. Informe quantos alunos estão em curso: o número de cancelados é calculado (matrículas menos alunos em curso) e cada nova matrícula do CRM aumenta os alunos em curso.
+          Para ajustar a meta de um mês, use o lápis no cartão do polo. As matrículas do CRM entram sozinhas; “Já realizado” é o total de matrículas do polo (as que o CRM já conta entram nele). Informe quantos alunos estão em curso: o número de cancelados é calculado (matrículas menos alunos em curso) e cada nova matrícula do CRM aumenta os alunos em curso.
         </div>
       </DialogContent>
       <DialogActions>
