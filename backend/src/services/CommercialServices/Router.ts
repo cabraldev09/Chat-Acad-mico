@@ -25,12 +25,13 @@ import { nextOpening, whenText } from "./Hours";
 //   3. a consultant of the queue (the owner of the lead when he belongs to it, else the queue's own rotation);
 //   4. the ticket moves, the consultant is warned at once (live notice + task) and the lead is told when the team answers.
 // Nothing here talks to the lead: the caller says the message (it knows what was already said).
-export const WHY = ["human_request", "proposal", "qualified", "unknown", "limit_turns", "limit_tokens", "error", "complaint", "media", "loop", "tutoring", "secretary", "other"] as const;
+export const WHY = ["human_request", "proposal", "qualified", "objection", "unknown", "limit_turns", "limit_tokens", "error", "complaint", "media", "loop", "tutoring", "secretary", "other"] as const;
 export type HandoffWhy = typeof WHY[number];
 
 export const WHY_TEXT: Record<HandoffWhy, string> = {
   human_request: "a pessoa pediu para falar com alguém",
   proposal: "a pessoa quer valores, bolsa ou matrícula: é a hora da proposta",
+  objection: "a pessoa levantou várias objeções: o consultor conduz a conversa daqui",
   qualified: "a pessoa está qualificada (curso, cidade e ingresso definidos) e o agente já tirou as dúvidas",
   unknown: "a pergunta não está na base de conhecimento",
   limit_turns: "a conversa passou do limite de respostas automáticas",

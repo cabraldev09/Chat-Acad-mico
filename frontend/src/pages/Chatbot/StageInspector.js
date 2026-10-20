@@ -28,6 +28,7 @@ export const TOOLS = [
   ["enviar_material", "Enviar a grade em PDF", "Manda o PDF da grade no WhatsApp da pessoa."],
   ["iniciar_analise_curricular", "Iniciar análise curricular", "Usa o histórico em PDF que a pessoa enviou."],
   ["consultar_analise_curricular", "Resultado da análise curricular", "Semestre de ingresso, disciplinas dispensadas e restantes."],
+  ["agendar_contato", "Agendar retorno do consultor", "Combina com a pessoa o dia e o horário em que o consultor do polo entra em contato e cria a tarefa para ele."],
   ["simular_bolsa", "Simular bolsa", "Valores de tabela. Não use no agente comercial: valor e bolsa são sempre de um consultor."],
 ];
 

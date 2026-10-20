@@ -191,6 +191,7 @@ const startAnthropicMock = () => {
       if (result) {
         const out = JSON.parse(result.content);
         if (out.duracaoTexto !== undefined) return turn(`${out.nome}: ${out.duracaoTexto}, formato ${out.modalidade}. Quer ver a grade?`, { intent: "course_duration" });
+        if (out.agendado) return turn(out.texto_confirmacao, { intent: "other", melhor_horario: "amanhã às 14h" });
         if (out.polos !== undefined) return turn(out.polo_definido ? `Você é atendido pelo ${out.polos[0].nome}.` : `AVISO: ${out.aviso}`, { intent: "other" });
         if (out.modalidadeAtual !== undefined) return turn(`Regra: ${out.regulacaoAplicavel || "sem regra cadastrada"}; práticas presenciais: ${out.praticaPresencial}; cronograma definido: ${out.cronogramaPraticasDefinido}.`, { intent: "mec" });
         return turn("Anotado!", { intent: "other" });
@@ -202,6 +203,9 @@ const startAnthropicMock = () => {
       if (/é caro/i.test(said2)) return turn("Sai por R$ 299 por mês, ótimo custo!", { intent: "other" });
       if (/quando começam as aulas/i.test(said2)) return turn("As aulas começam em 03/08.", { intent: "other" });
       if (/transferir/i.test(said2)) return turn("Entendi! Com o seu histórico em PDF conseguimos pedir uma análise curricular. Pode me enviar o arquivo?", { intent: "transfer", curso: "Direito", cidade: "Porto Velho", tipo_ingresso: "transfer" });
+      if (/golpe/i.test(said2)) return turn("Entendo a sua preocupação, é natural querer ter certeza. 😊 Posso te mostrar como funciona o curso?", { intent: "objection", objecao: "medo de golpe", tipo_objecao: "confianca" });
+      if (/amanhã às 14/i.test(said2)) return tool("agendar_contato", { dia: new Date(Date.now() + 24 * 3600000).toLocaleDateString("en-CA", { timeZone: "America/Porto_Velho" }), horario: "14:00" });
+      if (/começar esta semana/i.test(said2)) return turn("Perfeito, Direito em Porto Velho! Posso te explicar como funciona o curso?", { intent: "other", curso: "Direito", cidade: "Porto Velho", tipo_ingresso: "first_degree", nome: "Paulo Mendes", prazo_decisao: "Decide esta semana", turno: "Noite" });
       if (/moro em (.+)/i.test(said2)) return tool("listar_polos", { cidade: said2.match(/moro em ([^,.!?]+)/i)[1].trim() });
       if (/Direito em Porto Velho/i.test(said2)) return turn("Perfeito, Direito em Porto Velho! Posso te explicar como funciona o curso?", { intent: "other", curso: "Direito", cidade: "Porto Velho", tipo_ingresso: "first_degree", nome: "Paulo Mendes" });
       if (/dura|tempo/i.test(said2)) return tool("buscar_curso", { courseName: "Direito" });
@@ -416,7 +420,7 @@ const postMeta = (id, payload, secret, badSig) => {
       FRONTEND_URL: "http://localhost:3000", JWT_SECRET: "e2e", JWT_REFRESH_SECRET: "e2e-r", DASHBOARD_CACHE_MS: "0", LOGIN_RATE_MAX: "100",
       TELEGRAM_API_URL: `http://localhost:${TG_PORT}`, GRAPH_API_URL: `http://localhost:${GRAPH_PORT}`,
       SKIP_WHATSAPP_SESSIONS: "1", SKIP_DEFAULT_DATA: "1", LOG_LEVEL: "warn", EFI_API_URL: `http://localhost:${EFI_PORT}`, EFI_BILLET_API_URL: `http://localhost:${BILLET_PORT}`, EFI_POLL_MS: "1500",
-      ANTHROPIC_API_URL: `http://localhost:${AI_PORT}`, OPENAI_API_URL: `http://localhost:${AI_PORT}`, STALE_RUNS_MS: "4000", HANDOFF_SLA_MS: "4000", ONBOARDING_SLA_MS: "4000", ALLOW_PRIVATE_URLS: "true"
+      ANTHROPIC_API_URL: `http://localhost:${AI_PORT}`, OPENAI_API_URL: `http://localhost:${AI_PORT}`, STALE_RUNS_MS: "4000", HANDOFF_SLA_MS: "4000", ONBOARDING_SLA_MS: "4000", REACTIVATION_MS: "3000", ALLOW_PRIVATE_URLS: "true"
     };
     execFileSync("npx", ["sequelize", "db:migrate"], { cwd: ROOT, env, stdio: "ignore" });
     execFileSync("npx", ["sequelize", "db:seed:all"], { cwd: ROOT, env, stdio: "ignore" });
@@ -3332,6 +3336,43 @@ const postMeta = (id, payload, secret, badSig) => {
       const U = "5511920000303";
       out = await say(U, "wamid.com-s2", "moro em Cidade Que Nao Existe", t => t.some(x => /AVISO: .*estado/.test(x)), "U no polo: the state is asked");
       assert(sql(`SELECT COALESCE(poloId::text,'') FROM Leads WHERE id=${leadId(U)}`) === "", "a polo was guessed for a city nobody serves");
+
+      // V) objections: the agent answers them (with the guide of the base) and a person takes over after the third; "é golpe?" is a doubt, not a complaint
+      const V = "5511920000305";
+      await say(V, "wamid.com-v1", "oi", t => t.some(x => /assistente virtual/.test(x)), "V opening");
+      await say(V, "wamid.com-v2", "Quero Direito em Porto Velho, primeira graduação", t => t.some(x => /Direito em Porto Velho/.test(x)), "V qualification");
+      await say(V, "wamid.com-v3", "e se for golpe?", t => t.some(x => /natural querer ter certeza/.test(x)), "V first objection answered by the agent");
+      assert(sql(`SELECT COALESCE(handoffReason,'') FROM Tickets WHERE id=${ticketOf(V)}`) === "", "'é golpe?' was taken as a complaint");
+      await say(V, "wamid.com-v4", "parece golpe isso", t => t.some(x => /natural querer ter certeza/.test(x)), "V second objection");
+      await say(V, "wamid.com-v5", "tenho medo de golpe mesmo", t => t.length > 0, "V third objection");
+      await waitFor(() => sql(`SELECT handoffReason FROM Tickets WHERE id=${ticketOf(V)}`) === "objection", 10000, "V handed over after the third objection");
+      const slotsV = JSON.parse(sql(`SELECT slots FROM LeadCommercials WHERE leadId=${leadId(V)}`));
+      assert(slotsV.objectionCount === 3 && /confianca/.test(slotsV.objectionsSeen || ""), `objection slots ${JSON.stringify([slotsV.objectionCount, slotsV.objectionsSeen])}`);
+
+      // W) what the lead says about the moment is saved (CRM fields and score), the agent schedules the consultant's call, and the brief carries it all
+      const W = "5511920000306";
+      await say(W, "wamid.com-w1", "oi", t => t.some(x => /assistente virtual/.test(x)), "W opening");
+      await say(W, "wamid.com-w2", "Quero Direito em Porto Velho, primeira graduação, quero começar esta semana", t => t.some(x => /Direito em Porto Velho/.test(x)), "W qualification");
+      await waitFor(() => sql(`SELECT CONCAT(COALESCE(decisionTimeline,''),'|',COALESCE(shift,'')) FROM Leads WHERE id=${leadId(W)}`) === "Decide esta semana|Noite", 10000, "W CRM fields filled");
+      assert(sql(`SELECT temperature FROM LeadCommercials WHERE leadId=${leadId(W)}`) === "hot", "who decides this week should be hot");
+      out = await say(W, "wamid.com-w3", "pode ser amanhã às 14h?", t => t.some(x => /Combinado! O consultor do seu polo entra em contato/.test(x)), "W the call is scheduled");
+      assert(Number(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${leadId(W)} AND type='ligar' AND title LIKE 'Retornar ao lead no horário combinado%'`)) === 1, "no task for the consultant's call");
+      await say(W, "wamid.com-w4", "quero falar com uma pessoa", t => t.some(x => /consultor/.test(x)), "W asks for a person");
+      await waitFor(() => Number(sql(`SELECT COUNT(*) FROM TicketEvents WHERE ticketId=${ticketOf(W)} AND type='handoff' AND note LIKE '%Pretende decidir: Decide esta semana%' AND note LIKE '%Melhor horário para falar:%' AND note LIKE '%O que o lead disse por último%' AND note LIKE '%Próximo passo sugerido ao consultor%'`)) >= 1, 10000, "W the brief carries what the lead told");
+
+      // X) a lead who stops answering gets a gentle reminder (twice at most, spaced), only inside the service window, and the count starts over when they write
+      const X = "5511920000307";
+      await say(X, "wamid.com-x1", "oi", t => t.some(x => /assistente virtual/.test(x)), "X opening");
+      await say(X, "wamid.com-x2", "Quero Direito em Porto Velho, primeira graduação", t => t.some(x => /Direito em Porto Velho/.test(x)), "X qualification");
+      await waitFor(() => runOf(X) === "waiting|apresentar", 8000, "X waits");
+      const markX = graph.sent.length;
+      sql(`UPDATE LeadCommercials SET slots = (slots::jsonb || jsonb_build_object('lastInboundAt', to_char((now() - interval '4 hours') AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'), 'lastOutboundAt', to_char((now() - interval '3 hours 50 minutes') AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')))::text, lastInboundAt = now() - interval '4 hours', lastOutboundAt = now() - interval '3 hours 50 minutes' WHERE leadId=${leadId(X)}`);
+      await waitFor(() => texts(markX).some(x => /Ficou com alguma dúvida sobre Direito/.test(x)), 30000, "X the first reminder");
+      assert(JSON.parse(sql(`SELECT slots FROM LeadCommercials WHERE leadId=${leadId(X)}`)).nudges === 1, "the reminder was not counted");
+      await new Promise(r => setTimeout(r, 9000));
+      assert(texts(markX).filter(x => /Ficou com alguma dúvida|passando só para saber/i.test(x)).length === 1, "a second reminder came too soon");
+      await say(X, "wamid.com-x3", "Quanto tempo dura o curso?", t => t.some(x => /Direito:/.test(x)), "X answers");
+      assert(JSON.parse(sql(`SELECT slots FROM LeadCommercials WHERE leadId=${leadId(X)}`)).nudges === 0, "the reminders did not start over");
 
       // T) outside the business hours of the number the agent still answers: the "out of hours" text is only for numbers without an agent
       sql(`UPDATE Whatsapps SET businessHours='{"enabled":true,"days":{}}', outOfHoursMessage='Estamos fechados agora' WHERE id=${cid}`);

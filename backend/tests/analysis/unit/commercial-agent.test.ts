@@ -144,3 +144,65 @@ describe("the template Atendimento (tutoria e secretaria)", () => {
     SERVICE_KB.forEach(k => expect(k.content).not.toMatch(/R\$|\d+ ?%/));
   });
 });
+
+import { briefOf, suggestedStepOf, scoreOf, temperatureOf, topicsOf } from "../../../src/services/CommercialServices/Rules";
+import { nudgeText } from "../../../src/services/CommercialServices/Nudges";
+import { defaultSlots } from "../../../src/services/CommercialServices/Slots";
+
+describe("a doubt about trust is a conversation, not a complaint", () => {
+  it("'é golpe?' goes to the agent; having been scammed goes to a person", () => {
+    expect(humanReason("isso é golpe?", [])).toBeNull();
+    expect(humanReason("tenho medo de ser golpe", [])).toBeNull();
+    expect(humanReason("eu levei um golpe dessa faculdade", [])).toBe("complaint");
+    expect(humanReason("isso é uma fraude", [])).toBe("complaint");
+  });
+
+  it("the guide of objections comes with a turn that has one", () => {
+    expect(topicsOf("acho caro e tenho medo de golpe")).toContain("institutional/objection");
+    expect(topicsOf("moro longe do polo")).not.toContain("institutional/objection");
+  });
+});
+
+describe("what the lead says about the moment weighs on the score and the temperature", () => {
+  const base = { ...defaultSlots(), courseName: "Direito", city: "Porto Velho", entryType: "first_degree", lastInboundAt: "2026-01-01" };
+
+  it("who wants to start now scores more than who is only researching, and is hot", () => {
+    const now = scoreOf({ ...base, decisionTimeline: "Quer matricular agora" }, false).score;
+    const researching = scoreOf({ ...base, decisionTimeline: "Pesquisando, sem prazo" }, false).score;
+    expect(now).toBeGreaterThan(researching);
+    expect(temperatureOf({ ...base, decisionTimeline: "Decide esta semana" }, false)).toBe("hot");
+    expect(temperatureOf({ ...base, decisionTimeline: "Pesquisando, sem prazo" }, false)).not.toBe("hot");
+  });
+});
+
+describe("the brief the consultant reads", () => {
+  const state: any = { leadId: 1, agentId: 1, flowId: 1, temperature: "hot", commercialScore: 70, readyForProposal: false, nextAction: "answer_objection", lastIntent: "objection", followUpReason: null, followUpAt: null, summary: null, stageKey: null, lastNoteHash: null,
+    slots: { ...defaultSlots(), leadName: "Paulo", courseName: "Direito", city: "Vilhena", entryType: "first_degree", decisionTimeline: "Decide esta semana", shift: "Noite", bestTime: "2030-05-06 14:00", objectionsSeen: "preco,confianca", readyForConsultant: true } };
+
+  it("brings the origin, what the lead told, the objections, the last words and the next step", () => {
+    const text = briefOf(state, { source: "Site · campanha Vestibular", lastMessages: ["e se eu não conseguir pagar?"] });
+    expect(text).toMatch(/PRONTO PARA O CONSULTOR/);
+    expect(text).toMatch(/Origem: Site · campanha Vestibular/);
+    expect(text).toMatch(/Pretende decidir: Decide esta semana/);
+    expect(text).toMatch(/Turno: Noite/);
+    expect(text).toMatch(/Melhor horário para falar: 2030-05-06 14:00/);
+    expect(text).toMatch(/Tipos de objeção: preço, confiança/);
+    expect(text).toMatch(/“e se eu não conseguir pagar\?”/);
+    expect(text).toMatch(/Próximo passo sugerido ao consultor:\nFalar com o lead em 06\/05 às 14:00/);
+  });
+
+  it("without a day, the suggestion follows the moment", () => {
+    expect(suggestedStepOf({ ...state, slots: { ...state.slots, bestTime: null, objectionsSeen: "" } })).toMatch(/Chamar o lead, confirmar o interesse em Direito/);
+    expect(suggestedStepOf({ ...state, readyForProposal: true })).toMatch(/gerar a proposta de Direito/);
+  });
+});
+
+describe("reminders to a lead who went silent", () => {
+  it("two short, friendly texts that never talk money", () => {
+    const one = nudgeText(0, "Paulo", "Direito");
+    const two = nudgeText(1, "Paulo", "Direito");
+    expect(one).toMatch(/Oi, Paulo!/);
+    expect(two).toMatch(/consultor do seu polo/);
+    [one, two].forEach(t => expect(t).not.toMatch(/R\$|\d+ ?%|bolsa|desconto|valor/i));
+  });
+});

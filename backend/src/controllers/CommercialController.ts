@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { Op, QueryTypes } from "sequelize";
 
 import { getSetting, setSetting } from "../helpers/AppSettings";
+import { briefContext } from "../services/CommercialServices/Brief";
 import { getSecretSetting } from "../helpers/SecretSettings";
 import Polo from "../models/Polo";
 import Queue from "../models/Queue";
@@ -188,7 +189,7 @@ const commercialOf = async (leadId: number) => {
     entryType: slots.entryType || "unknown",
     analysisStatus: slots.analysisStatus || "not_applicable",
     slots,
-    brief: briefOf(state, { stageName }),
+    brief: briefOf(state, { stageName, ...(await briefContext(null, lead)) }),
     handoff,
     events: events.map(e => ({ event: e.event, at: e.createdAt })),
     turns: turns.map(t => ({ id: t.id, intent: t.intent, deterministic: t.deterministic, llmCalls: t.llmCalls, toolCalls: t.toolCalls, tokens: t.inputTokens + t.outputTokens, outcome: t.outcome, at: t.createdAt }))
@@ -387,7 +388,7 @@ export const handoffShow = async (_req: Request, res: Response): Promise<Respons
       fallbackQueueId: fallbackId || null,
       slaMinutes: Number(await getSetting(KEYS.sla, "15")),
       staleDays: Number(await getSetting(KEYS.stale, "7")),
-      transcribe: (await getSetting(KEYS.transcribe, "0")) === "1"
+      transcribe: (await getSetting(KEYS.transcribe, "1")) !== "0"
     },
     openaiKey: !!(await getSecretSetting("ai_openai_key")),
     reserve: reserve ? { id: reserve.id, name: reserve.name, people: ((reserve as any).users || []).length } : null,

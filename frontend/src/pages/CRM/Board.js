@@ -86,6 +86,7 @@ const LeadCard = ({ lead, onOpen, onDragStart, onDragEnd, dragging }) => {
           </span>
         )}
         {lead.commercial && lead.commercial.readyForProposal && !lead.wonAt && <span className={`${classes.chip} ${classes.chipHot}`} title="O agente de IA já levantou tudo: falta a proposta do consultor">Pronto para proposta</span>}
+        {lead.commercial && lead.commercial.readyForConsultant && !lead.commercial.readyForProposal && !lead.wonAt && <span className={`${classes.chip} ${classes.chipHot}`} title="Qualificado pelo agente de IA, com as dúvidas respondidas: o consultor pode chamar">Pronto para o consultor</span>}
         {lead.affiliate && <span className={`${classes.chip} ${classes.chipHot}`} title={`Indicado pelo afiliado ${lead.affiliate.name}`}>Afiliado: {String(lead.affiliate.name || "").split(" ")[0]}</span>}
         {lead.slaAlertedAt && !lead.firstContactAt && (
           <span className={`${classes.chip} ${classes.chipLate}`} title="Este lead novo passou do tempo de resposta e ainda não foi atendido">
@@ -146,7 +147,7 @@ const Board = () => {
   const location = useLocation();
   const ctx = useCrmOptions();
   const [view, setView] = useState("board");
-  const [filters, setFilters] = useState({ search: "", ownerId: "", courseId: "", source: "", affiliate: "", tagId: new URLSearchParams(location.search).get("tagId") || "", followUp: new URLSearchParams(location.search).get("followUp") || "" });
+  const [filters, setFilters] = useState({ search: "", ownerId: "", courseId: "", source: "", affiliate: "", tagId: new URLSearchParams(location.search).get("tagId") || "", ready: "", followUp: new URLSearchParams(location.search).get("followUp") || "" });
   const [board, setBoard] = useState(null);
   const [list, setList] = useState({ leads: [], count: 0 });
   const [openId, setOpenId] = useState(Number(new URLSearchParams(location.search).get("lead")) || null);
@@ -272,6 +273,10 @@ const Board = () => {
         <TextField select size="small" variant="outlined" label="Etiqueta" value={filters.tagId} onChange={(e) => setFilters({ ...filters, tagId: e.target.value })} style={{ minWidth: 150 }}>
           <MenuItem value="">Todas</MenuItem>
           {ctx.tags.map((t) => (<MenuItem key={t.id} value={String(t.id)}>{t.name}</MenuItem>))}
+        </TextField>
+        <TextField select size="small" variant="outlined" label="Agente de IA" value={filters.ready} onChange={(e) => setFilters({ ...filters, ready: e.target.value })} style={{ minWidth: 190 }}>
+          <MenuItem value="">Todos</MenuItem>
+          <MenuItem value="consultant">Prontos para o consultor</MenuItem>
         </TextField>
         <TextField select size="small" variant="outlined" label="Retorno" value={filters.followUp} onChange={(e) => setFilters({ ...filters, followUp: e.target.value })} style={{ minWidth: 140 }}>
           <MenuItem value="">Todos</MenuItem>

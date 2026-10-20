@@ -35,6 +35,10 @@ class LeadCommercial extends Model<LeadCommercial> {
   @Column
   readyForProposal: boolean;
 
+  // qualified and out of questions: the consultant of the polo can take the lead (the board shows it and sorts by it)
+  @Column
+  readyForConsultant: boolean;
+
   @Column
   nextAction: string;
 

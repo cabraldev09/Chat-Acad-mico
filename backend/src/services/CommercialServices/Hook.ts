@@ -1,5 +1,5 @@
 import { AuditLine, CommercialPorts } from "./Ports";
-import { canAutoMove, confirmsNoInterest, hashOf, isQualified, nextActionOf, noteOf, readyForConsultantOf, scoreOf, targetStageKey, temperatureOf } from "./Rules";
+import { OBJECTION_LIMIT, canAutoMove, confirmsNoInterest, hashOf, isQualified, nextActionOf, noteOf, readyForConsultantOf, scoreOf, targetStageKey, temperatureOf } from "./Rules";
 import { STAGE_SPECS, StageKey } from "./Pipeline";
 import { cleanPatch } from "./Slots";
 import { defaultFollowUp, parseFollowUp, ymdOf } from "./Hours";
@@ -69,7 +69,18 @@ export const commercialTurn = async (ports: CommercialPorts, input: TurnInput): 
   }
   if (input.replied) s.slots.lastInboundAt = now.toISOString();
   if (input.hadText) s.slots.lastOutboundAt = now.toISOString();
-  if (input.objection) s.slots.mainObjection = String(input.objection).slice(0, 200);
+  if (input.objection) {
+    s.slots.mainObjection = String(input.objection).slice(0, 200);
+    // each objection counts once per message; the kinds that came up are kept for the consultant
+    if (input.replied) {
+      s.slots.objectionCount = Number(s.slots.objectionCount || 0) + 1;
+      const kinds = new Set(String(s.slots.objectionsSeen || "").split(",").filter(Boolean));
+      if (s.slots.objectionType) kinds.add(String(s.slots.objectionType));
+      s.slots.objectionsSeen = [...kinds].join(",");
+    }
+  }
+  // the person wrote back: the silence reminders start over
+  if (input.replied) s.slots.nudges = 0;
   if (input.question) s.slots.mainQuestion = String(input.question).slice(0, 200);
   if (input.unknownQuestion) s.slots.unknownQuestion = String(input.unknownQuestion).slice(0, 300);
   if (s.slots.hasTranscript && s.slots.analysisStatus === "not_applicable") s.slots.analysisStatus = "waiting_document";
@@ -157,8 +168,12 @@ export const commercialTurn = async (ports: CommercialPorts, input: TurnInput): 
   else if (followUp) exit = "follow_up";
   else if (input.unknownQuestion || intent === "unknown") exit = Number(s.slots.unknownStreak || 0) >= 3 ? "human" : "off";
   // qualified and out of questions: a person of the polo takes it, ready (the brief says what the lead wants)
+  else if (Number(s.slots.objectionCount || 0) >= OBJECTION_LIMIT && input.objection) exit = "human";
   else if (s.slots.readyForConsultant && input.replied) exit = "human";
-  const why = exit === "human" && !human && s.slots.readyForConsultant && !input.unknownQuestion && intent !== "unknown" ? "qualified" : undefined;
+  const why =
+    exit === "human" && !human && !input.unknownQuestion && intent !== "unknown"
+      ? Number(s.slots.objectionCount || 0) >= OBJECTION_LIMIT && input.objection ? "objection" : s.slots.readyForConsultant ? "qualified" : undefined
+      : undefined;
 
   const changed: Record<string, [any, any]> = {};
   const after: Record<string, any> = { ...s.slots, temperature: s.temperature, commercialScore: s.commercialScore, nextAction: s.nextAction, readyForProposal: s.readyForProposal };

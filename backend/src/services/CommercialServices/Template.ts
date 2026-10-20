@@ -45,6 +45,21 @@ export const COMMERCIAL_KB: Array<{ title: string; content: string; topic: strin
   },
   MEC_DOC,
   {
+    title: "Como tratar objeções",
+    topic: "institutional/objection",
+    keywords: "objeção, caro, tempo, confiança, golpe, concorrente, outra faculdade, família, distância, ead, dúvida",
+    content: [
+      "Guia para conduzir quem hesita. Reconheça o sentimento em uma frase, responda com o que a base e as ferramentas trazem e volte a conduzir para o próximo passo. Nunca cite valores, descontos ou bolsas, nunca critique outra instituição e nunca prometa resultado.",
+      "- Preço ou \"é caro\": entenda a preocupação e explique que a melhor condição depende da situação da pessoa e do polo; quem apresenta é o consultor do polo. Ofereça encaminhar.",
+      "- Falta de tempo: o estudo é organizado na plataforma, com a tutoria acompanhando desde o primeiro acesso (use o texto aprovado da tutoria); pergunte qual turno ou rotina funciona melhor.",
+      "- Confiança, golpe ou reconhecimento: use somente o texto aprovado da base; se não houver, diga que o consultor confirma os documentos oficiais da instituição.",
+      "- Outra instituição: não compare nem critique; mostre o que este curso oferece (ferramentas) e convide a comparar a proposta com o consultor.",
+      "- Família ou decisão em conjunto: ofereça uma conversa com o consultor em um horário em que a família possa participar.",
+      "- Distância ou deslocamento: mostre o polo mais perto (listar_polos) e como funciona o estudo na plataforma.",
+      "- Dúvida sobre EAD ou semipresencial: explique como se estuda com a plataforma e a tutoria; regras de modalidade só com buscar_regra_modalidade."
+    ].join("\n")
+  },
+  {
     title: "Análise curricular",
     topic: "institutional/analysis",
     keywords: "análise curricular, histórico, aproveitamento, dispensa, transferência, segunda graduação",
@@ -108,8 +123,8 @@ export const commercialGraph = (): Graph =>
         quiet: true,
         objective: "Tirar as dúvidas do curso e tratar objeções até a pessoa querer avançar para a proposta.",
         instructions:
-          "Duração e formato: buscar_curso. MEC e práticas: buscar_regra_modalidade. Grade: buscar_grade (envie o PDF com enviar_material se pedirem). Estágio e TCC: buscar_estagio ou buscar_grade. Plataforma, tutoria, docentes, reconhecimento e matrícula: consultar_conhecimento. Sem dado, diga que vai confirmar; nunca chute. Após responder, conduza: ofereça a grade, pergunte se ficou claro ou ofereça encaminhar para ver a melhor condição de bolsa com um consultor.",
-        tools: ["buscar_curso", "buscar_regra_modalidade", "buscar_grade", "buscar_estagio", "listar_polos", "consultar_conhecimento", "enviar_material", "consultar_analise_curricular"],
+          "Duração e formato: buscar_curso. MEC e práticas: buscar_regra_modalidade. Grade: buscar_grade (envie o PDF com enviar_material se pedirem). Estágio e TCC: buscar_estagio ou buscar_grade. Plataforma, tutoria, docentes, reconhecimento e matrícula: consultar_conhecimento. Sem dado, diga que vai confirmar; nunca chute. Após responder, conduza: ofereça a grade, pergunte se ficou claro ou ofereça encaminhar para ver a melhor condição de bolsa com um consultor. Se a pessoa disser um dia e horário para falar com o consultor, use agendar_contato e confirme com o texto devolvido.",
+        tools: ["buscar_curso", "buscar_regra_modalidade", "buscar_grade", "buscar_estagio", "listar_polos", "consultar_conhecimento", "enviar_material", "consultar_analise_curricular", "agendar_contato"],
         maxTurns: 30,
         outcomes: [...REASONS, { id: "enviou_historico", label: "Enviou o histórico", when: "quando a pessoa enviar o histórico acadêmico em PDF (a mensagem aparece como [arquivo enviado: nome.pdf])" }]
       })],

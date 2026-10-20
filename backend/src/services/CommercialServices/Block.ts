@@ -1,4 +1,6 @@
+import Lead from "../../models/Lead";
 import { FlowNode } from "../FlowServices/Graph";
+import { briefContext } from "./Brief";
 import { AcademicCtx, runAcademicTool } from "./Academic";
 import { commercialTurn } from "./Hook";
 import { CommercialPorts } from "./Ports";
@@ -65,7 +67,8 @@ export const runCommercialBlock = async (node: FlowNode, d: BlockDeps): Promise<
     }
     case "handoff_brief": {
       s.summary = noteOf(s);
-      const brief = briefOf(s, { stageName: await ports.stageName(await ports.stageKeyNow()) });
+      const ctx = d.sandbox ? { source: null, lastMessages: [] as string[] } : await briefContext(d.ticketId || null, await Lead.findByPk(s.leadId));
+      const brief = briefOf(s, { stageName: await ports.stageName(await ports.stageKeyNow()), ...ctx });
       if (d.writeBrief) await d.writeBrief(brief);
       ports.audit.push({ kind: "note", text: "Preparou o resumo para o consultor" });
       await ports.event("handoff_brief");

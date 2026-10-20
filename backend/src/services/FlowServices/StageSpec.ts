@@ -3,7 +3,7 @@
 export const FIELD_TYPES = ["text", "number", "email", "phone", "choice", "date"] as const;
 export const BUILTIN_TOOLS = [
   "buscar_curso", "listar_polos", "simular_bolsa", "buscar_regra_modalidade", "buscar_grade", "buscar_estagio", "consultar_conhecimento", "enviar_material",
-  "iniciar_analise_curricular", "consultar_analise_curricular"
+  "iniciar_analise_curricular", "consultar_analise_curricular", "agendar_contato"
 ] as const;
 // server-side steps that run after each turn of the stage (see CommercialServices/Hook)
 export const STAGE_HOOKS = ["commercial"] as const;

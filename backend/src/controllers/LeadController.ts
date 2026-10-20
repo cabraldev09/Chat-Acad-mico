@@ -79,19 +79,20 @@ const buildWhere = (q: any) => {
   return where;
 };
 
-const withTag = (tagId?: string) =>
-  tagId
-    ? (leadInclude as any[]).map(i =>
-        i.as === "tags" ? { ...i, required: true, where: { id: tagId } } : i
-      )
-    : (leadInclude as any[]);
+// the includes of the lists: a label narrows to the leads that have it; "ready=consultant" to the ones the AI agent qualified and left ready
+const withTag = (tagId?: string, ready?: string) =>
+  (leadInclude as any[]).map(i => {
+    if (tagId && i.as === "tags") return { ...i, required: true, where: { id: tagId } };
+    if (ready === "consultant" && i.as === "commercial") return { ...i, required: true, where: { readyForConsultant: true } };
+    return i;
+  });
 
 export const index = async (req: Request, res: Response): Promise<Response> => {
   const limit = Math.min(Number(req.query.limit) || 50, 500);
   const offset = Number(req.query.offset) || 0;
   const { rows, count } = await Lead.findAndCountAll({
     where: await withLeadScope(req, buildWhere(req.query)),
-    include: withTag(req.query.tagId as string),
+    include: withTag(req.query.tagId as string, req.query.ready as string),
     // one column of the board is ordered by score first: the next page ("Carregar mais") must follow the same order,
     // or leads repeat and others are skipped
     order: req.query.stageId ? [["score", "DESC"], ["updatedAt", "DESC"]] : [["updatedAt", "DESC"]],
@@ -105,7 +106,7 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
 export const board = async (req: Request, res: Response): Promise<Response> => {
   const stages = await LeadStage.findAll({ order: [["position", "ASC"]] });
   const where = await withLeadScope(req, buildWhere({ ...req.query, stageId: undefined }));
-  const include = withTag(req.query.tagId as string);
+  const include = withTag(req.query.tagId as string, req.query.ready as string);
   const perStage = Math.min(Number(req.query.perStage) || 30, 100);
 
   const out = await Promise.all(

@@ -16,6 +16,10 @@ const plain = (s: string): string =>
     .replace(/\s+/g, " ")
     .trim();
 
+export const OBJECTION_TYPES = ["preco", "tempo", "confianca", "concorrente", "familia", "distancia", "duvida_ead", "outra"] as const;
+// after this many objections in the same conversation a person takes over (the agent has tried; the consultant closes)
+export const OBJECTION_LIMIT = 3;
+
 // ---------------------------------------------------------------- what is obvious needs no model
 const HUMAN = [
   /(falar|conversar|passar|chamar).{0,30}(com )?(uma |um )?(pessoa|atendente|humano|consultor|consultora|vendedor|vendedora|gente de verdade)/,
@@ -68,7 +72,7 @@ export const retractsBuying = (text: string): boolean => {
 
 // A reason to hand the conversation to a person that needs no model to be seen: an unhappy person, money already paid or a legal
 // word, a wrong number, or the same request for the third time. The reason travels to the team in the handoff.
-const COMPLAINT = /\b(absurdo|pessim[oa]|horrivel|palhacada|vergonha|decepcion\w*|reclam(ar|acao|ando)|procon|processar|processo|advogad\w*|justica|denunci\w*|golpe|enganad\w*|fraude|estorno|reembolso|ja paguei|paguei|comprovante|cancelar (a |minha )?(matricula|inscricao|contrato)|cobranca indevida)\b/;
+const COMPLAINT = /\b(absurdo|pessim[oa]|horrivel|palhacada|vergonha|decepcion\w*|reclam(ar|acao|ando)|procon|processar|processo|advogad\w*|justica|denunci\w*|(levei|sofri|vitima de|aplicaram|caí em|cai em)( um)? golpe|enganad\w*|fraude|estorno|reembolso|ja paguei|paguei|comprovante|cancelar (a |minha )?(matricula|inscricao|contrato)|cobranca indevida)\b/;
 const WRONG_NUMBER = /\b(numero errado|nao sou (eu|essa pessoa|ele|ela)|foi engano|engano|nao conheco (voce|vocês)|quem e voce)\b/;
 export const humanReason = (text: string, previousUserTexts: string[] = []): "complaint" | "loop" | "other" | null => {
   const t = plain(text);
@@ -144,6 +148,8 @@ export const topicsOf = (text: string): string[] => {
   if (/\b(mec|portaria|decreto|diretriz|semipresencial|100% ?ead|presencial)\b/.test(t)) topics.push("institutional/mec");
   if (/(reconhec|autorizad|nota do mec|credenciad|valido|validade do diploma|diploma)/.test(t)) topics.push("institutional/recognition");
   if (/(matricula|documentos?|inscricao|como (faco|funciona) (pra|para) (me )?matricular)/.test(t)) topics.push("institutional/enrollment");
+  // the doubts that hold a person back: the guidance of the base for them comes with the turn
+  if (/(\bcaro\b|sem dinheiro|nao (tenho|consigo)|muito (caro|longe|dificil)|medo|golpe|confiavel|desconfi|outra (faculdade|instituicao)|concorrente|minha familia|meu marido|minha esposa|nao sei se|ead (funciona|vale)|faculdade a distancia)/.test(t)) topics.push("institutional/objection");
   return topics;
 };
 
@@ -163,7 +169,13 @@ export interface TurnFacts {
   noInterest?: boolean;
 }
 
-const POINTS: Record<string, number> = { replied: 5, course: 10, entry: 10, city: 5, curriculum: 5, internship: 5, modality: 5, price: 20, enrollment: 30, proposal: 30 };
+const POINTS: Record<string, number> = {
+  replied: 5, course: 10, entry: 10, city: 5, curriculum: 5, internship: 5, modality: 5, price: 20, enrollment: 30, proposal: 30,
+  timeline_now: 15, timeline_week: 10, timeline_month: 5, shift: 2, motivation: 3, besttime: 3
+};
+// how soon the person says they will decide (the CRM lists them from the most ready)
+const TIMELINE_POINTS = ["timeline_now", "timeline_week", "timeline_month"];
+const readyTimeline = (slots: Slots): boolean => /agora|esta semana/i.test(String(slots.decisionTimeline || ""));
 
 // the points of each fact count once: the ledger is kept in the slots
 export const scoreOf = (slots: Slots, ready: boolean, intent?: string | null): { score: number; ledger: string[] } => {
@@ -179,6 +191,14 @@ export const scoreOf = (slots: Slots, ready: boolean, intent?: string | null): {
   if (intent === "price") award("price");
   if (intent === "enrollment") award("enrollment");
   if (intent === "proposal" || ready) award("proposal");
+  const t = String(slots.decisionTimeline || "").toLowerCase();
+  if (t) {
+    const i = t.includes("agora") ? 0 : t.includes("semana") ? 1 : t.includes("m\u00eas") ? 2 : -1;
+    if (i >= 0) award(TIMELINE_POINTS[i]);
+  }
+  if (slots.shift) award("shift");
+  if (slots.motivation) award("motivation");
+  if (slots.bestTime) award("besttime");
   let score = 0;
   ledger.forEach(k => { if (k.startsWith("pts:")) score += POINTS[k.slice(4)] || 0; });
   return { score: Math.min(100, score), ledger: [...ledger] };
@@ -186,7 +206,7 @@ export const scoreOf = (slots: Slots, ready: boolean, intent?: string | null): {
 
 export const temperatureOf = (slots: Slots, ready: boolean): "cold" | "warm" | "hot" => {
   const seen = seenOf(slots);
-  if (ready || HOT_INTENTS.some(i => seen.includes(i))) return "hot";
+  if (ready || readyTimeline(slots) || HOT_INTENTS.some(i => seen.includes(i))) return "hot";
   if (INFO_INTENTS.some(i => seen.includes(i)) || slots.courseId || slots.gradeSent || slots.courseExplained) return "warm";
   return "cold";
 };
@@ -309,17 +329,41 @@ export const hashOf = (text: string): string => {
   return (h >>> 0).toString(36);
 };
 
-export const briefOf = (s: CommercialState, extra: { stageName?: string | null } = {}): string => {
+const OBJECTION_LABEL: Record<string, string> = {
+  preco: "preço", tempo: "falta de tempo", confianca: "confiança", concorrente: "outra instituição", familia: "decisão com a família", distancia: "distância", duvida_ead: "dúvida sobre EAD", outra: "outra"
+};
+
+// What the consultant should do first (no model): the lead's own words about the moment come before the agent's guess.
+export const suggestedStepOf = (s: CommercialState): string => {
+  const x = s.slots;
+  const course = x.courseName || "o curso";
+  if (s.readyForProposal) return `Apresentar a melhor condição e gerar a proposta de ${course}.`;
+  const kinds = String(x.objectionsSeen || "").split(",").filter(Boolean).map(k => OBJECTION_LABEL[k] || k);
+  if (x.bestTime) return `Falar com o lead ${/^\d{4}-\d{2}-\d{2}/.test(String(x.bestTime)) ? `em ${String(x.bestTime).slice(8, 10)}/${String(x.bestTime).slice(5, 7)} às ${String(x.bestTime).slice(11, 16)}` : `(${x.bestTime})`}, retomando ${course}${kinds.length ? ` e tratando a objeção de ${kinds.join(", ")}` : ""}.`;
+  if (kinds.length) return `Tratar com empatia a objeção de ${kinds.join(", ")} antes de falar de valores.`;
+  if (x.readyForConsultant) return `Chamar o lead, confirmar o interesse em ${course} e apresentar a melhor condição do polo.`;
+  return s.nextAction ? NEXT_LABEL[s.nextAction] || s.nextAction : "Retomar a conversa.";
+};
+
+export const briefOf = (s: CommercialState, extra: { stageName?: string | null; source?: string | null; lastMessages?: string[] } = {}): string => {
   const x = s.slots;
   const line = (label: string, value: any) => `${label}:\n${value === undefined || value === null || value === "" ? "Não informado" : value}`;
+  const optional = (label: string, value: any) => (value === undefined || value === null || value === "" ? null : `${label}: ${value}`);
   return [
-    s.readyForProposal ? "LEAD PRONTO PARA PROPOSTA" : "RESUMO DO ATENDIMENTO COM IA",
+    s.readyForProposal ? "LEAD PRONTO PARA PROPOSTA" : x.readyForConsultant ? "LEAD QUALIFICADO, PRONTO PARA O CONSULTOR" : "RESUMO DO ATENDIMENTO COM IA",
     "",
     `Nome: ${x.leadName || "Não informado"}`,
     `Telefone: ${x.phone || "Não informado"}`,
     `Cidade: ${x.city || "Não informada"}`,
     `Curso: ${x.courseName || "Não definido"}`,
     `Polo: ${x.poloName || "Não definido"}`,
+    optional("Origem", extra.source),
+    optional("Pretende decidir", x.decisionTimeline),
+    optional("Turno", x.shift),
+    optional("Motivação", x.motivation),
+    optional("Trabalha e estuda", x.worksAndStudies === undefined || x.worksAndStudies === null ? null : yesNo(x.worksAndStudies)),
+    optional("Como pretende pagar", x.financing),
+    optional("Melhor horário para falar", x.bestTime),
     "",
     line("Ingresso", ENTRY_LABEL[x.entryType || "unknown"]),
     line("Duração", x.courseDurationText || (x.courseDurationSemesters ? `${x.courseDurationSemesters} semestres` : null)),
@@ -333,6 +377,7 @@ export const briefOf = (s: CommercialState, extra: { stageName?: string | null }
       ? line("Análise curricular", [x.analysisStatus, x.semesterEntry ? `ingresso no ${x.semesterEntry}º semestre` : null, x.estimatedCompletion ? `previsão ${x.estimatedCompletion}` : null].filter(Boolean).join(" · "))
       : null,
     line("Objeção principal", x.mainObjection),
+    optional("Tipos de objeção", String(x.objectionsSeen || "").split(",").filter(Boolean).map(k => OBJECTION_LABEL[k] || k).join(", ")),
     line("Dúvida principal", x.mainQuestion),
     x.unknownQuestion ? line("Pergunta sem resposta na base", x.unknownQuestion) : null,
     "",
@@ -340,6 +385,8 @@ export const briefOf = (s: CommercialState, extra: { stageName?: string | null }
     line("Score", s.commercialScore),
     line("Última intenção", intentLabel(s.lastIntent)),
     line("Próxima ação", s.nextAction ? NEXT_LABEL[s.nextAction] || s.nextAction : null),
+    line("Próximo passo sugerido ao consultor", suggestedStepOf(s)),
+    extra.lastMessages && extra.lastMessages.length ? `\nO que o lead disse por último:\n${extra.lastMessages.map(m => `“${m}”`).join("\n")}` : null,
     extra.stageName ? line("Coluna do CRM", extra.stageName) : null,
     s.summary ? `\nResumo:\n${s.summary}` : null
   ]

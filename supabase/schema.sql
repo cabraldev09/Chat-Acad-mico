@@ -1582,7 +1582,8 @@ CREATE TABLE public."LeadCommercials" (
     "lastInboundAt" timestamp with time zone,
     "lastOutboundAt" timestamp with time zone,
     "createdAt" timestamp with time zone NOT NULL,
-    "updatedAt" timestamp with time zone NOT NULL
+    "updatedAt" timestamp with time zone NOT NULL,
+    "readyForConsultant" boolean DEFAULT false NOT NULL
 );
 
 
@@ -4438,6 +4439,13 @@ CREATE INDEX kb_documents_topic ON public."KbDocuments" USING btree (topic);
 
 
 --
+-- Name: lead_commercials_ready_for_consultant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX lead_commercials_ready_for_consultant ON public."LeadCommercials" USING btree ("readyForConsultant");
+
+
+--
 -- Name: lead_commercials_ready_for_proposal; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5844,6 +5852,7 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261123000001-ai-handoff.js') ON CO
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261124000001-ai-claim.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261125000001-onboarding-checklist.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261126000001-polo-coverage.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261126000002-lead-commercial-ready.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

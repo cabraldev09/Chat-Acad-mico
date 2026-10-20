@@ -29,7 +29,7 @@ export const leadInclude = [
   { model: User, as: "owner", attributes: ["id", "name"] },
   { model: Affiliate, as: "affiliate", attributes: ["id", "name"] },
   { model: Contact, as: "contact", attributes: ["id", "name", "number", "profilePicUrl", "channel"] },
-  { model: LeadCommercial, as: "commercial", required: false, attributes: ["temperature", "commercialScore", "readyForProposal", "nextAction", "lastIntent", "followUpReason", "followUpAt", "stageKey", "lastInboundAt", "lastOutboundAt"] },
+  { model: LeadCommercial, as: "commercial", required: false, attributes: ["temperature", "commercialScore", "readyForProposal", "readyForConsultant", "nextAction", "lastIntent", "followUpReason", "followUpAt", "stageKey", "lastInboundAt", "lastOutboundAt"] },
   { model: Tag, as: "tags", attributes: ["id", "name", "color"], through: { attributes: [] } },
   // only paid enrollment fees: lets cards show a "taxa paga" badge
   { model: Payment, as: "payments", attributes: ["id", "paidAt"], required: false, where: { status: "paid" } }

@@ -12,6 +12,7 @@ import { startCrmReminders } from "./workers/CrmReminders";
 import { startLeadSlaAlert } from "./workers/LeadSlaAlert";
 import { startHandoffSla } from "./workers/HandoffSla";
 import { startStaleRuns } from "./workers/StaleRuns";
+import { startAiReactivation } from "./workers/AiReactivation";
 import { startWhatsappWatchdog } from "./workers/WhatsappWatchdog";
 import { startFollowUpAlert } from "./workers/FollowUpAlert";
 import { startProfilePicSync } from "./workers/ProfilePicSync";
@@ -43,6 +44,7 @@ whenLeader(() => {
   startLeadSlaAlert();
   startHandoffSla();
   startStaleRuns();
+  startAiReactivation();
   startWhatsappWatchdog();
   startFollowUpAlert();
   startProfilePicSync();

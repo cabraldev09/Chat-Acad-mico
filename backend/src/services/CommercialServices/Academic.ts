@@ -10,6 +10,11 @@ import Course from "../../models/Course";
 import CourseRegulation from "../../models/CourseRegulation";
 import CurricularAnalysis from "../../models/CurricularAnalysis";
 import Lead from "../../models/Lead";
+import LeadReminderLog from "../../models/LeadReminderLog";
+import LeadTask from "../../models/LeadTask";
+import { dayBounds } from "../../helpers/AppTime";
+import { syncNextFollowUp } from "../CrmServices/FollowUp";
+import { whenText } from "./Hours";
 import Message from "../../models/Message";
 import Polo from "../../models/Polo";
 import Ticket from "../../models/Ticket";
@@ -38,7 +43,7 @@ export interface AcademicCtx {
 
 export const ACADEMIC_TOOLS = [
   "buscar_curso", "buscar_regra_modalidade", "buscar_grade", "buscar_estagio", "listar_polos", "consultar_conhecimento", "enviar_material",
-  "iniciar_analise_curricular", "consultar_analise_curricular"
+  "iniciar_analise_curricular", "consultar_analise_curricular", "agendar_contato"
 ] as const;
 
 // ---------------------------------------------------------------- small cache (a new version of the data invalidates it by itself)
@@ -302,6 +307,33 @@ export const runAcademicTool = async (name: string, input: any, ctx: AcademicCtx
         };
       }
       return { polos: list(all), polo_definido: false, aviso: "Peça a cidade (e o estado, se precisar) para achar o polo certo." };
+    }
+
+    case "agendar_contato": {
+      // the day and the hour the person gave: the consultant of the polo gets a task for that moment (the lead is not told a time nobody keeps)
+      const ymd = String(input.dia || "").match(/^(\d{4}-\d{2}-\d{2})/)?.[1];
+      if (!ymd) return { erro: "Informe o dia no formato AAAA-MM-DD." };
+      const word = String(input.horario || "").toLowerCase();
+      const hhmm = word.match(/^(\d{1,2})[:h](\d{2})?/);
+      const minutes = hhmm ? Math.min(23, Number(hhmm[1])) * 60 + Number(hhmm[2] || 0) : /manh/.test(word) ? 9 * 60 : /tarde/.test(word) ? 14 * 60 : /noite/.test(word) ? 19 * 60 : 9 * 60;
+      const at = new Date(dayBounds(ymd).start.getTime() + minutes * 60000);
+      const now = Date.now();
+      if (Number.isNaN(at.getTime()) || at.getTime() < now + 30 * 60000) return { erro: "Esse horário já passou ou está muito perto: peça outro dia ou horário." };
+      if (at.getTime() > now + 30 * 86400000) return { erro: "Só combino retornos dentro de 30 dias." };
+      const quando = `${whenText(at)}`;
+      remember(ctx, { bestTime: `${ymd} ${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}` });
+      if (!ctx.dryRun && ctx.ticket) {
+        const lead = await Lead.findOne({ where: { contactId: ctx.ticket.contactId } });
+        if (lead) {
+          const key = `callback:${ymd}`;
+          if (!(await LeadReminderLog.findOne({ where: { leadId: lead.id, key } }))) {
+            await LeadReminderLog.create({ leadId: lead.id, key } as any);
+            await LeadTask.create({ leadId: lead.id, userId: lead.ownerId || null, type: "ligar", title: `Retornar ao lead no horário combinado (${quando})${input.observacao ? `: ${String(input.observacao).slice(0, 80)}` : ""}`, dueAt: at } as any);
+            await syncNextFollowUp(lead.id);
+          }
+        }
+      }
+      return { agendado: true, quando, texto_confirmacao: `Combinado! O consultor do seu polo entra em contato ${quando}. Se precisar mudar, é só me avisar por aqui. 😊`, aviso: "Confirme com o texto_confirmacao; não prometa outro horário." };
     }
 
     case "consultar_conhecimento": {

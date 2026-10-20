@@ -26,12 +26,15 @@ export const SLOT_KINDS: Record<string, Kind> = {
   platformExplained: "boolean", tutoringExplained: "boolean", facultyExplained: "boolean",
   analysisStatus: "analysis", analysisId: "number", analysisExplained: "boolean", semesterEntry: "number", subjectsWaived: "number", subjectsRemaining: "number", adaptations: "string", estimatedCompletion: "string",
   mainQuestion: "string", mainObjection: "string", unknownQuestion: "string",
+  // what the screening found out beyond the basics (all optional, asked lightly, never as an interrogation)
+  shift: "string", decisionTimeline: "string", motivation: "string", bestTime: "string", worksAndStudies: "boolean", financing: "string",
+  objectionType: "string", objectionCount: "number", objectionsSeen: "string",
   leadTemperature: "temperature", commercialScore: "number", readyForProposal: "boolean", crmStage: "string", nextAction: "string",
   followUpReason: "string", commercialSummary: "string", lastIntent: "string", lastInboundAt: "string", lastOutboundAt: "string",
   // the intents already seen (scoring and temperature count each one once)
   intentsSeen: "string",
   // control of the agent itself: questions without an answer in a row, voice notes asked in writing, the last brief written, what the CRM held
-  unknownStreak: "number", audioAsked: "number", qualifiedReplies: "number", readyForConsultant: "boolean", lastBriefHash: "string", crmSeen: "object"
+  unknownStreak: "number", audioAsked: "number", qualifiedReplies: "number", readyForConsultant: "boolean", nudges: "number", nudgeAt: "string", lastBriefHash: "string", crmSeen: "object"
 };
 
 export type Slots = Record<string, any>;
@@ -114,7 +117,7 @@ export const mirror = (s: CommercialState): Slots => ({
 
 export const saveState = async (s: CommercialState): Promise<void> => {
   const values: any = {
-    agentId: s.agentId, flowId: s.flowId, slots: JSON.stringify(mirror(s)), temperature: s.temperature, commercialScore: s.commercialScore, readyForProposal: s.readyForProposal,
+    agentId: s.agentId, flowId: s.flowId, slots: JSON.stringify(mirror(s)), temperature: s.temperature, commercialScore: s.commercialScore, readyForProposal: s.readyForProposal, readyForConsultant: !!s.slots.readyForConsultant,
     nextAction: s.nextAction, lastIntent: s.lastIntent, followUpReason: s.followUpReason ? s.followUpReason.slice(0, 300) : null, followUpAt: s.followUpAt,
     summary: s.summary, stageKey: s.stageKey, lastNoteHash: s.lastNoteHash, lastInboundAt: s.slots.lastInboundAt ? new Date(s.slots.lastInboundAt) : null,
     lastOutboundAt: s.slots.lastOutboundAt ? new Date(s.slots.lastOutboundAt) : null

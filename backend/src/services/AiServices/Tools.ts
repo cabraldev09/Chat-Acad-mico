@@ -172,7 +172,9 @@ const registerTurn = async (input: any, ctx: Ctx): Promise<any> => {
   ctx.turn = { ...(ctx.turn || {}), ...input };
   const patch: Slots = cleanPatch({
     entryType: input.tipo_ingresso, leadName: input.nome, email: input.email, city: input.cidade, state: input.estado ? stateOf(String(input.estado)) || String(input.estado).slice(0, 40) : undefined, hasHigherEducation: bool(input.ja_graduado), previousCourse: input.curso_anterior,
-    previousInstitution: input.instituicao_anterior, hasTranscript: bool(input.tem_historico), modalityUnderstood: bool(input.entendeu_modalidade)
+    previousInstitution: input.instituicao_anterior, hasTranscript: bool(input.tem_historico), modalityUnderstood: bool(input.entendeu_modalidade),
+    shift: input.turno, decisionTimeline: input.prazo_decisao, motivation: input.motivacao, bestTime: input.melhor_horario, worksAndStudies: bool(input.trabalha), financing: input.financiamento,
+    objectionType: input.tipo_objecao
   });
   if (input.curso && ctx.academic) {
     const current = Number(ctx.academic.slots.courseId) || 0;
@@ -328,6 +330,8 @@ export const applyToLead = async (ticket: Ticket, c: Record<string, string>): Pr
   if (motivation && !lead.motivation) patch.motivation = motivation;
   const shift = known(CRM_OPTIONS.shifts, c.turno);
   if (shift && !lead.shift) patch.shift = shift;
+  const financing = known(CRM_OPTIONS.financing, c.financiamento);
+  if (financing && !lead.financing) patch.financing = financing;
   if (c.semestre_transferencia && (!lead.entrySemester || lead.entrySemester === 1)) {
     const n = Number(String(c.semestre_transferencia).replace(/\D/g, ""));
     if (n > 0) patch.entrySemester = n;

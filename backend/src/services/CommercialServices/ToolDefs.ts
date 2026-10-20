@@ -1,4 +1,5 @@
-import { INTENTS } from "./Rules";
+import { CRM_OPTIONS } from "../CrmServices/crmOptions";
+import { INTENTS, OBJECTION_TYPES } from "./Rules";
 
 // The tools of the commercial agent, as the model sees them: short names, short descriptions, small schemas (every word of this is
 // paid in every call that offers the tool).
@@ -43,6 +44,11 @@ export const COMMERCIAL_TOOL_DEFS: Record<string, { name: string; description: s
     description: "Envia o PDF da grade curricular para o lead no WhatsApp. Use buscar_grade antes para obter o gradeId.",
     input_schema: { type: "object", required: ["gradeId"], properties: { gradeId: { type: "number" } } }
   },
+  agendar_contato: {
+    name: "agendar_contato",
+    description: "Combina o dia e o horário em que o consultor do polo vai falar com a pessoa. Use só depois de a pessoa dizer um dia/horário que serve (ou pedir o retorno). A confirmação sai pronta no resultado.",
+    input_schema: { type: "object", required: ["dia"], properties: { dia: { type: "string", description: "AAAA-MM-DD" }, horario: { type: "string", description: "HH:MM, ou manha, tarde ou noite" }, observacao: { type: "string" } } }
+  },
   iniciar_analise_curricular: {
     name: "iniciar_analise_curricular",
     description: "Inicia a análise curricular com o histórico em PDF que o lead enviou. Só para transferência ou segunda graduação.",
@@ -74,6 +80,13 @@ export const COMMERCIAL_TOOL_DEFS: Record<string, { name: string; description: s
         entendeu_modalidade: { type: "boolean" },
         duvida_principal: { type: "string" },
         objecao: { type: "string" },
+        tipo_objecao: { type: "string", enum: [...OBJECTION_TYPES], description: "o tipo da objeção, quando houver" },
+        prazo_decisao: { type: "string", enum: CRM_OPTIONS.decisionTimelines, description: "para quando a pessoa pretende começar, se disse" },
+        turno: { type: "string", enum: CRM_OPTIONS.shifts, description: "o turno preferido, se disse" },
+        motivacao: { type: "string", enum: CRM_OPTIONS.motivations, description: "o que motiva a pessoa, se disse" },
+        melhor_horario: { type: "string", description: "o melhor dia/horário para o consultor falar com a pessoa, nas palavras dela" },
+        trabalha: { type: "boolean", description: "a pessoa trabalha enquanto estuda" },
+        financiamento: { type: "string", enum: CRM_OPTIONS.financing, description: "como pretende pagar, se disse (não pergunte valores)" },
         pergunta_sem_resposta: { type: "string", description: "o fato que você não achou na base nem nas ferramentas" },
         retorno_em: { type: "string", description: "AAAA-MM-DD, se a pessoa disse quando volta" },
         motivo_retorno: { type: "string" }

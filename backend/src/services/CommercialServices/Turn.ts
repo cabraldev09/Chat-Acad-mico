@@ -22,7 +22,7 @@ import { mirror } from "./Slots";
 //   3. whatever the model understood goes through the rules (state, funnel, tasks, notes) and the exit of the stage is decided there.
 export const FIXED = {
   human: "Claro! Vou chamar um consultor para continuar com você. Um momento, por favor.",
-  proposal: "Perfeito. Vou encaminhar seu atendimento para o consultor verificar a melhor condição de bolsa disponível e montar sua proposta certinha.",
+  proposal: "Ótima pergunta! 😊 Valores e bolsas dependem da sua situação e do seu polo, então quem apresenta a melhor condição é o consultor do seu polo. Vou encaminhar o seu atendimento agora para ele montar a proposta certinha. Se tiver um melhor horário para ele te chamar, é só avisar por aqui.",
   unknown: "Essa informação eu prefiro confirmar para não te passar nada incorreto. Vou encaminhar para o consultor verificar certinho para você."
 };
 
@@ -200,7 +200,8 @@ export const commercialAiTurn = async (d: TurnDeps): Promise<CommercialTurnResul
   // what the person reads is also decided by the rules; what the model wrote is checked against what the tools and the base returned
   const guard = unsafeAnswer(text, `${result.evidence}\n${lastText}`);
   const moneyLike = guard.unsafe && (guard.kind === "price" || guard.kind === "percent" || guard.kind === "free");
-  if (hook.exit === "human") text = d.agent.handoffMessage || FIXED.human;
+  // a qualified lead keeps the answer to the last question; the handover message follows it (the flow says it)
+  if (hook.exit === "human" && hook.why !== "qualified") text = d.agent.handoffMessage || FIXED.human;
   else if (hook.exit === "proposta" || moneyLike) {
     // a price was asked (the model did not notice) or the answer carries a value: the proposal is for a person
     text = FIXED.proposal;
@@ -249,6 +250,10 @@ const syncLead = async (d: TurnDeps, changed: Record<string, [any, any]>): Promi
   if (changed.email && s.email) c.email = String(s.email);
   if (changed.city && s.city) c.cidade = String(s.city);
   if (changed.state && s.state) c.estado = String(s.state);
+  if (changed.shift && s.shift) c.turno = String(s.shift);
+  if (changed.decisionTimeline && s.decisionTimeline) c.prazo_decisao = String(s.decisionTimeline);
+  if (changed.motivation && s.motivation) c.motivacao = String(s.motivation);
+  if (changed.financing && s.financing) c.financiamento = String(s.financing);
   if (changed.courseName && s.courseName) c.curso = String(s.courseName);
   if (changed.courseModality && s.courseModality) c.modalidade = String(s.courseModality);
   if (changed.entryType && s.entryType === "transfer") c.forma_ingresso = "Transferência externa";

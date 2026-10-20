@@ -10,12 +10,13 @@ import AiAgent from "../../models/AiAgent";
 import { logger } from "../../utils/logger";
 import { logUsage } from "./Usage";
 
-// Voice notes are common in Brazil. When the company turned it on (Setting `ai_transcribe_audio` = "1") and the OpenAI key is connected,
-// the audio is written down with the same key the agents already use, so the AI answers what the person said instead of a file name.
+// Voice notes are common in Brazil. When the OpenAI key is connected the audio is written down with the same key the agents already use, so the
+// AI answers what the person said instead of a file name. It is ON by default with a key; the company can turn it off (Setting
+// `ai_transcribe_audio` = "0").
 const OPENAI_URL = (): string => process.env.OPENAI_API_URL || "https://api.openai.com";
 const MAX_BYTES = 12 * 1024 * 1024;
 
-export const transcriptionEnabled = async (): Promise<boolean> => (await getSetting("ai_transcribe_audio", "0")) === "1" && !!(await openaiKey());
+export const transcriptionEnabled = async (): Promise<boolean> => (await getSetting("ai_transcribe_audio", "1")) !== "0" && !!(await openaiKey());
 
 const openaiKey = async (): Promise<string> => (await getSecretSetting("ai_openai_key")) || (await AiAgent.findOne({ where: { provider: "openai" } as any }))?.apiKey || "";
 
