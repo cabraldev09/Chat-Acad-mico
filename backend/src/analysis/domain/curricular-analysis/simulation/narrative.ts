@@ -56,7 +56,6 @@ export function buildProjectionNarrative(input: NarrativeInput): ProjectionNarra
     const range = input.backlogPeriodRange ? ` (do ${input.backlogPeriodRange.from}º ao ${input.backlogPeriodRange.to}º semestre)` : "";
     headerLines.push(`⚠️ Total de ${input.backlogTotal} matéria(s) a adaptar${range}`);
   }
-  headerLines.push(`⚠️ Máximo ${input.maximumCapacity} matérias por semestre`);
   headerLines.push(`Semestres previstos: *${input.semesters.length}*`);
 
   const lastIndex = input.semesters.length - 1;

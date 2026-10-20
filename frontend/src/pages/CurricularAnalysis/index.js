@@ -403,8 +403,7 @@ const Stat = ({ label, value, tone }) => (
 
 const SemesterCard = ({ s, byId }) => {
   const [open, setOpen] = useState(false);
-  const full = s.semesterLoad >= s.maximumCapacity;
-  const cap = Math.max(1, s.maximumCapacity);
+  const total = Math.max(1, s.semesterLoad);
   const SubjectList = ({ title, ids, accent }) => (
     <div>
       <div className={cn("mb-1.5 text-xs font-semibold uppercase tracking-wider", accent ? "text-brand-cyan-700" : "text-muted-foreground")}>{title} ({ids.length})</div>
@@ -419,13 +418,13 @@ const SemesterCard = ({ s, byId }) => {
         <div className="min-w-[110px]"><div className="text-xl font-semibold tracking-tight">{s.term}</div><div className="text-xs text-muted-foreground">{s.isAdditional ? "Semestre adicional" : `${s.periodNumber}º período`}</div></div>
         <Stat label="Regulares" value={s.regularSubjectsToTake} />
         <Stat label="Adaptações" value={s.subjectsFromBacklog} tone="text-brand-cyan-700" />
-        <Stat label="Total" value={`${s.semesterLoad} / ${s.maximumCapacity}`} tone={full ? "text-brand-navy" : undefined} />
+        <Stat label="Total" value={s.semesterLoad} tone="text-brand-navy" />
         <Stat label="Pendências restantes" value={s.remainingBacklog} tone={s.remainingBacklog ? "text-status-danger" : "text-status-success"} />
         <div className="ml-auto"><Button variant="ghost" size="sm" onClick={() => setOpen((o) => !o)}>{open ? "Ocultar disciplinas" : "Ver disciplinas"}</Button></div>
       </div>
       <div className="h-1.5 w-full bg-muted">
-        <div className="h-full bg-brand-navy transition-all" style={{ width: `${Math.min(100, (s.regularSubjectsToTake / cap) * 100)}%` }} />
-        <div className="-mt-1.5 h-1.5 bg-brand-cyan transition-all" style={{ marginLeft: `${Math.min(100, (s.regularSubjectsToTake / cap) * 100)}%`, width: `${Math.min(100, (s.subjectsFromBacklog / cap) * 100)}%` }} />
+        <div className="h-full bg-brand-navy transition-all" style={{ width: `${Math.min(100, (s.regularSubjectsToTake / total) * 100)}%` }} />
+        <div className="-mt-1.5 h-1.5 bg-brand-cyan transition-all" style={{ marginLeft: `${Math.min(100, (s.regularSubjectsToTake / total) * 100)}%`, width: `${Math.min(100, (s.subjectsFromBacklog / total) * 100)}%` }} />
       </div>
       {open && (
         <div className="grid gap-4 border-t px-5 py-4 md:grid-cols-2">

@@ -225,7 +225,7 @@ describe("buildProjectionNarrative", () => {
       remainingBacklog: sim.remainingBacklogIds.length,
     });
     expect(n.headerLines).toContain("⚠️ Total de 15 matéria(s) a adaptar (do 1º ao 3º semestre)");
-    expect(n.headerLines).toContain("⚠️ Máximo 11 matérias por semestre");
+    expect(n.headerLines.some((l) => /Máximo/.test(l))).toBe(false);
     expect(n.bulletLines[0]).toBe("• *2026.2:* 4º semestre + 5 adaptações (11 matérias)");
     expect(n.bulletLines[3]).toBe("• *2028.1:* 7º semestre + 3 adaptações (11 matérias)");
     expect(n.bulletLines[4]).toBe("• *2028.2:* 8º semestre + última adaptação (9 matérias) e conclusão");
