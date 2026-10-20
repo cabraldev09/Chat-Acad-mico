@@ -35,9 +35,11 @@ describe("the template Comercial — Graduação", () => {
   it("only seeds the texts that the institution dictated", () => {
     const titles = COMMERCIAL_KB.map(k => k.topic);
     expect(titles).toEqual(expect.arrayContaining(["institutional/tutoring", "institutional/platform", "institutional/internship", "institutional/mec"]));
-    // faculty and recognition are filled by the team: nothing invented
-    expect(titles).not.toContain("institutional/faculty");
-    expect(titles).not.toContain("institutional/recognition");
+    // faculty, enrollment documents and recognition were dictated by the institution: only what it said (masters and doctors, the maximum MEC grade)
+    expect(titles).toEqual(expect.arrayContaining(["institutional/faculty", "institutional/enrollment", "institutional/recognition"]));
+    const faculty = COMMERCIAL_KB.find(k => k.topic === "institutional/faculty")!;
+    expect(faculty.content).toMatch(/mestres e doutores/);
+    expect(COMMERCIAL_KB.find(k => k.topic === "institutional/recognition")!.content).toMatch(/nota máxima/);
     // no invented percentages: the only ones are the official ones of the Portaria MEC 378/2025 (20, 30, 40)
     COMMERCIAL_KB.forEach(k => expect(k.content).not.toMatch(/Harvard/));
     COMMERCIAL_KB.filter(k => k.topic !== "institutional/mec").forEach(k => expect(k.content).not.toMatch(/\d+ ?%/));

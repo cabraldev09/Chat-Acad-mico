@@ -3013,7 +3013,9 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(sql(`SELECT active FROM AiAgents WHERE id=${agentId}`) === "0", "the commercial agent started turned on");
       const topics = sql(`SELECT string_agg(topic, ',') FROM KbDocuments WHERE agentId=${agentId}`);
       ["institutional/tutoring", "institutional/platform", "institutional/internship", "institutional/mec"].forEach(t => assert(topics.includes(t), `the knowledge base lacks ${t}: ${topics}`));
-      assert(!topics.includes("institutional/faculty") && !topics.includes("institutional/recognition"), "texts nobody approved were invented");
+      // faculty, enrollment documents and recognition are the texts the institution dictated (masters and doctors, the maximum MEC grade)
+      ["institutional/faculty", "institutional/enrollment", "institutional/recognition"].forEach(t => assert(topics.includes(t), `the knowledge base lacks ${t}: ${topics}`));
+      assert(/mestres e doutores/.test(sql(`SELECT content FROM KbDocuments WHERE agentId=${agentId} AND topic='institutional/faculty'`)), "the faculty text is not the dictated one");
       const fun = (await http.get("/crm-funnel", auth())).data;
       assert(fun.keys.length === 15 && fun.keys.every(k => k.stageId), `funnel not complete: ${fun.keys.filter(k => !k.stageId).map(k => k.key)}`);
       assert(new Set(fun.keys.map(k => k.stageId)).size === 15, "two steps share a column");

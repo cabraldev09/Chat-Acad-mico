@@ -1,5 +1,6 @@
 import { Graph } from "../FlowServices/Graph";
 import { MEC_DOC } from "./MecDoc";
+import { INSTITUTION_DOCS } from "./InstitutionDocs";
 import { build } from "../FlowServices/Templates";
 
 // The ready agent "Comercial — Graduação": it welcomes the lead, finds out course, city and kind of entry, presents the course with data
@@ -44,6 +45,7 @@ export const COMMERCIAL_KB: Array<{ title: string; content: string; topic: strin
       "Você pode buscar oportunidades de estágio remunerado durante a graduação. Quando encontrar uma oportunidade, a tutoria ou o setor responsável orienta sobre a documentação e a formalização. O estágio remunerado não substitui automaticamente o estágio obrigatório do curso."
   },
   MEC_DOC,
+  ...INSTITUTION_DOCS,
   {
     title: "Como tratar objeções",
     topic: "institutional/objection",

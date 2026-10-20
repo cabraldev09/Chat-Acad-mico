@@ -570,7 +570,8 @@ export const central = async (req: Request, res: Response): Promise<Response> =>
   const { default: PoloCoverage } = await import("../models/PoloCoverage");
   const polos = await Polo.findAll({ where: { active: true }, attributes: ["id", "name"] });
   const covered = new Set((await PoloCoverage.findAll({ attributes: ["poloId"] })).map(c => c.poloId));
-  const noCities = polos.filter(p => !covered.has(p.id));
+  // a polo is found by the city written on it too (two polos in the same city share it): it only lacks cities when it has neither
+  const noCities = polos.filter(p => !covered.has(p.id) && !String(p.city || "").trim());
   const notReady = handoff.polos.filter(p => !p.ready);
   const commercial = data.agent.kind === "commercial";
   const funnel = commercial ? await funnelData() : null;

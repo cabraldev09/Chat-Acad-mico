@@ -1,3 +1,4 @@
+import { Op } from "sequelize";
 import { getSetting, setSetting } from "../../helpers/AppSettings";
 import ChatFlow from "../../models/ChatFlow";
 import CommercialGrade from "../../models/CommercialGrade";
@@ -5,7 +6,8 @@ import Course from "../../models/Course";
 import CourseRegulation from "../../models/CourseRegulation";
 import KbDocument from "../../models/KbDocument";
 import { logger } from "../../utils/logger";
-import { addDocument } from "../AiServices/Kb";
+import { addDocument, indexDocument } from "../AiServices/Kb";
+import { INSTITUTION_DOCS } from "./InstitutionDocs";
 import { MEC_DOC, MEC_DOC_TITLE } from "./MecDoc";
 import { AreaId, areaOf, plain } from "./MecAreas";
 
@@ -112,7 +114,7 @@ const BASE: AreaRule[] = [
 export const EDITABLE = ["mecImpacted", "percentualPresencial", "percentualSincrono", "teoriaAoVivo", "praticaPresencial", "cronogramaPraticasDefinido", "transitionNote", "commercialApprovedText"] as const;
 const SETTING = "mec_area_defaults";
 const SEEN = "mec_defaults_seen";
-const VERSION = "378-2025-v1";
+const VERSION = "378-2025-v2";
 
 export const getAreas = async (): Promise<AreaRule[]> => {
   let saved: Record<string, any> = {};
@@ -248,12 +250,29 @@ export const syncMecKnowledge = async (): Promise<number> => {
   const agents = [...new Set(flows.filter(f => f.agentId && /"hooks":\s*\[\s*"commercial"/.test(String(f.draft || ""))).map(f => f.agentId as number))];
   let added = 0;
   for (const agentId of agents) {
+    // the Portaria belongs to the system: it is added, and rewritten when the text changed
     // eslint-disable-next-line no-await-in-loop
-    const has = await KbDocument.findOne({ where: { agentId, title: MEC_DOC_TITLE } as any, attributes: ["id"] });
-    if (has) continue;
-    // eslint-disable-next-line no-await-in-loop
-    await addDocument({ ...MEC_DOC, kind: "doc", source: "texto", agentId } as any);
-    added += 1;
+    const has = await KbDocument.findOne({ where: { agentId, title: MEC_DOC_TITLE } as any });
+    if (!has) {
+      // eslint-disable-next-line no-await-in-loop
+      await addDocument({ ...MEC_DOC, kind: "doc", source: "texto", agentId } as any);
+      added += 1;
+    } else if (has.content !== MEC_DOC.content) {
+      // eslint-disable-next-line no-await-in-loop
+      await has.update({ content: MEC_DOC.content, keywords: MEC_DOC.keywords });
+      // eslint-disable-next-line no-await-in-loop
+      await indexDocument(has);
+      added += 1;
+    }
+    // what the institution confirmed (faculty, enrollment documents, recognition): only where the team has not written that topic yet
+    for (const doc of INSTITUTION_DOCS) {
+      // eslint-disable-next-line no-await-in-loop
+      const own = await KbDocument.findOne({ where: { agentId, topic: { [Op.like]: `${doc.topic}%` } } as any, attributes: ["id"] });
+      if (own) continue;
+      // eslint-disable-next-line no-await-in-loop
+      await addDocument({ ...doc, kind: "doc", source: "texto", agentId } as any);
+      added += 1;
+    }
   }
   return added;
 };
