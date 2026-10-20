@@ -35,6 +35,20 @@ export const INSTITUTION_DOCS: Array<{ title: string; topic: string; keywords: s
       "Nos cursos com estágio supervisionado obrigatório, a carga e os semestres vêm da matriz do curso (a legenda da grade enviada já lista). Durante essa fase e em todo o curso, a tutoria acompanha o aluno: orienta sobre a documentação, os prazos e as atividades do estágio, além de plataforma, atividades e provas. Explique isso de forma curta, sem inventar horários de atendimento, nomes de tutores ou locais de estágio: para esses detalhes, o consultor ou a tutoria do polo confirmam."
   },
   {
+    title: "O que a tutoria atende",
+    topic: "institutional/support-tutoring",
+    keywords: "tutoria, tutor, plataforma, ambiente virtual, atividade, prova, prazo, disciplina, nota, acesso, senha, primeiro acesso",
+    content:
+      "A tutoria acompanha o aluno durante o curso: primeiro acesso e uso da plataforma, disciplinas, organização da grade, atividades, provas, prazos, dúvidas de conteúdo e orientações acadêmicas do dia a dia. Quem já é aluno e tem uma dúvida de estudo ou de acesso é encaminhado para a tutoria do polo (o sistema faz o encaminhamento). Não resolva você mesmo problemas de acesso, nota ou prazo."
+  },
+  {
+    title: "O que a secretaria atende",
+    topic: "institutional/support-secretary",
+    keywords: "secretaria, documento, declaração, histórico escolar, certificado, diploma, trancamento, cancelamento, rematrícula, segunda via",
+    content:
+      "A secretaria cuida da parte documental de quem já é aluno: declarações, histórico escolar, certificados, diploma, segunda via de documentos, rematrícula, trancamento e cancelamento. Quem precisa de um documento ou de uma solicitação formal é encaminhado para a secretaria do polo (o sistema faz o encaminhamento). Não prometa prazo nem resultado da solicitação."
+  },
+  {
     title: "Reconhecimento e avaliação do MEC",
     topic: "institutional/recognition",
     keywords: "mec, reconhecimento, nota, avaliação, conceito, autorizado, reconhecido, diploma válido",

@@ -14,7 +14,7 @@ import { commercialTurn, CommercialTrace } from "./Hook";
 import { CommercialPorts } from "./Ports";
 import { matchFaq } from "../AiServices/Kb";
 import { unsafeAnswer } from "./Guards";
-import { ENTRY_LABEL, fastIntent, hasBolsaData, humanReason, isGreeting, needsBolsaData, openingText, retractsBuying, stageFieldsDone, topicsOf } from "./Rules";
+import { ENTRY_LABEL, fastIntent, hasBolsaData, humanReason, isGreeting, needsBolsaData, openingText, retractsBuying, stageFieldsDone, supportIntent, topicsOf } from "./Rules";
 import { BOLSA_ASKS, bolsaDataFrom, bolsaRequestFor } from "./BolsaData";
 import { stripGradeAnnouncement } from "./GradeChoice";
 import { studentFacts } from "./StudentFacts";
@@ -27,6 +27,9 @@ import { mirror } from "./Slots";
 export const FIXED = {
   human: "Claro! Vou chamar um consultor para continuar com você. Um momento, por favor.",
   proposal: "Ótima pergunta! Valores e bolsas dependem da sua situação e do seu polo, então quem apresenta a melhor condição é o consultor do seu polo. Vou encaminhar o seu atendimento agora para ele montar a proposta certinha. Se tiver um melhor horário para ele te chamar, é só avisar por aqui.",
+  tutoring: "Entendi! Vou chamar a tutoria do seu polo para te ajudar com isso. Um momento, por favor.",
+  secretary: "Entendi! Vou chamar a secretaria do seu polo para cuidar disso. Um momento, por favor.",
+  askCity: "Para chamar a equipe do seu polo, em qual cidade você estuda ou mora?",
   unknown: "Essa informação eu prefiro confirmar para não te passar nada incorreto. Vou encaminhar para o consultor verificar certinho para você."
 };
 
@@ -206,6 +209,17 @@ export const commercialAiTurn = async (d: TurnDeps): Promise<CommercialTurnResul
     return { text, exit: hook.exit, collected: flat(hook.trace.changed), trace: { ...base, deterministic: true, intent: fast.intent, commercial: hook.trace, entry: ENTRY_LABEL[state.slots.entryType || "unknown"], latencyMs } };
   }
 
+  // a student who needs the tutoring or the secretary: the team of the polo takes it, without a sales talk (and without a model)
+  const support = d.input === null ? null : supportIntent(lastText, !!state.slots.enrolledStudent);
+  if (support) {
+    const hook = await commercialTurn(d.ports, { userText: lastText, fast: support, tools: [], hadText: true, replied: true, retract: false, nodeId: d.nodeId, hasPolo: !!d.lead?.poloId });
+    const text = hook.exit ? FIXED[support] : FIXED.askCity;
+    const latencyMs = Date.now() - started;
+    await log({ intent: support, deterministic: true, llmCalls: 0, toolCalls: 0, cacheHits: 0, tokens: base.tokens, outcome: hook.exit, latencyMs });
+    if (d.lead && !d.sandbox) await syncLead(d, hook.trace.changed);
+    return { text, exit: hook.exit, ...(hook.why ? { why: hook.why } : {}), collected: flat(hook.trace.changed), trace: { ...base, deterministic: true, intent: support, commercial: hook.trace, entry: ENTRY_LABEL[state.slots.entryType || "unknown"], latencyMs } };
+  }
+
   // an FAQ with a ready answer (the team's or one the agent learned) needs no model
   if (d.input !== null && d.stage.useKnowledge && wrote) {
     const faq = await matchFaq(d.agent.id, lastText);
@@ -240,7 +254,7 @@ export const commercialAiTurn = async (d: TurnDeps): Promise<CommercialTurnResul
     userText: lastText, intent, patch: patchOut, tools: result.tools, hadText: !!text, replied: d.input !== null,
     followUp: intent === "follow_up" ? { reason: turn.motivo_retorno || turn.duvida_principal || null, at: turn.retorno_em || null } : null,
     unknownQuestion, objection: turn.objecao || (intent === "objection" ? lastText : null), question: turn.duvida_principal || null, topics: result.topics,
-    firstContactSent: d.input === null && !!text, nodeId: d.nodeId, retract: d.input !== null && retractsBuying(lastText),
+    firstContactSent: d.input === null && !!text, nodeId: d.nodeId, retract: d.input !== null && retractsBuying(lastText), hasPolo: !!d.lead?.poloId,
     endsWithQuestion: /\?[\s"”')]*$/.test(String(text || "").trim())
   });
 
@@ -249,6 +263,8 @@ export const commercialAiTurn = async (d: TurnDeps): Promise<CommercialTurnResul
   const moneyLike = guard.unsafe && (guard.kind === "price" || guard.kind === "percent" || guard.kind === "free");
   // a qualified lead keeps the answer to the last question; the handover message follows it (the flow says it)
   if (hook.exit === "human" && hook.why !== "qualified") text = d.agent.handoffMessage || FIXED.human;
+  else if (hook.exit === "tutoria" || hook.exit === "secretaria") text = hook.exit === "secretaria" ? FIXED.secretary : FIXED.tutoring;
+  else if (hook.ask === "city") text = FIXED.askCity;
   else if (hook.exit === "proposta" || moneyLike) {
     // a price was asked (the model did not notice) or the answer carries a value: the proposal is for a person
     text = FIXED.proposal;

@@ -5,7 +5,6 @@ import { Graph } from "./Graph";
 import { build } from "./Templates";
 import { slug } from "./StageSpec";
 import { COMMERCIAL_KB, COMMERCIAL_PERSONA, COMMERCIAL_TEMPLATE_KEY, commercialGraph } from "../CommercialServices/Template";
-import { SERVICE_KB, SERVICE_PERSONA, SERVICE_TEMPLATE_KEY, serviceGraph } from "../CommercialServices/ServiceTemplate";
 
 // Ready agents by segment: the persona, a few answers for the knowledge base and the blocks (stages, exits, CRM actions).
 // "Criar com IA" starts from a description; these start from a good example that the team edits.
@@ -32,23 +31,13 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
   {
     key: COMMERCIAL_TEMPLATE_KEY,
     name: "Comercial",
-    description: "Faz toda a qualificação do lead, tira as dúvidas do curso (duração, grade, estágio, plataforma, tutoria) e, na hora da proposta, passa para um consultor do polo gerar a proposta comercial.",
+    description: "Faz toda a qualificação do lead, tira as dúvidas do curso (duração, grade, estágio, plataforma, tutoria) e, na hora da proposta, passa para um consultor do polo gerar a proposta comercial. Também atende quem já é aluno: entende o assunto e chama a tutoria ou a secretaria do polo.",
     segment: "Comercial",
     persona: COMMERCIAL_PERSONA,
     faq: [],
     kb: COMMERCIAL_KB,
     commercial: true,
     graph: commercialGraph()
-  },
-  {
-    key: SERVICE_TEMPLATE_KEY,
-    name: "Atendimento",
-    description: "Recebe quem quer falar com a tutoria ou com a secretaria, entende o assunto em poucas perguntas e encaminha para o setor certo do polo. Quem quer se matricular vai para o comercial.",
-    segment: "Atendimento",
-    persona: SERVICE_PERSONA,
-    faq: [],
-    kb: SERVICE_KB,
-    graph: serviceGraph()
   }
 ];
 

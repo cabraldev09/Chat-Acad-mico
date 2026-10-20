@@ -2986,9 +2986,9 @@ const postMeta = (id, payload, secret, badSig) => {
       // the agent of the earlier tests stays quiet while this one talks on the same connection
       await http.put(`/ai-agents/${aiId}`, { active: false }, auth());
       const tpls = await http.get("/ai-agent-templates", auth());
-      assert(tpls.status === 200 && tpls.data.length === 2 && tpls.data.every(t => t.key && t.stages >= 1), `templates ${tpls.status}`);
+      assert(tpls.status === 200 && tpls.data.length === 1 && tpls.data.every(t => t.key && t.stages >= 1), `templates ${tpls.status}`);
       assert((await http.post("/ai-agents/from-template", { template: "nao-existe" }, auth())).status === 404, "an unknown template");
-      const fromTpl = (await http.post("/ai-agents/from-template", { template: "atendimento_encaminhamento", name: "Agente do modelo" }, auth())).data;
+      const fromTpl = (await http.post("/ai-agents/from-template", { template: "graduacao_comercial_cruzeiro", name: "Agente do modelo" }, auth())).data;
       const tplFlow = (await http.get(`/flows/${fromTpl.flowId}`, auth())).data;
       assert(tplFlow.kind === "agent" && tplFlow.agentId === fromTpl.agentId && tplFlow.errors === 0, `template flow ${JSON.stringify({ k: tplFlow.kind, e: tplFlow.errors, issues: tplFlow.issues })}`);
       assert(sql(`SELECT active FROM AiAgents WHERE id=${fromTpl.agentId}`) === "0", "an agent from a template starts turned on");

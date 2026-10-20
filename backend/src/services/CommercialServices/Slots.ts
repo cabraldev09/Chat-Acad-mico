@@ -37,6 +37,8 @@ export const SLOT_KINDS: Record<string, Kind> = {
   // the data the consultant needs to simulate the scholarship: the full name, whether a valid CPF arrived (the CPF itself lives only in the lead) and how many times it was asked
   fullName: "string", cpfGiven: "boolean", bolsaDataAsked: "number",
   // a contact who is already a student: for whom is the question, and what they already know
+  // a student who needs the tutoring or the secretary: what was asked, whether the city was asked (once) before the team of the polo is called
+  supportNeed: "string", supportCityAsked: "number", supportKind: "string",
   enrolledChecked: "boolean", enrolledStudent: "boolean", enrolledCourse: "string", studentSemipresencial: "boolean", forWhom: "string",
   unknownStreak: "number", audioAsked: "number", qualifiedReplies: "number", readyForConsultant: "boolean", nudges: "number", nudgeAt: "string", lastBriefHash: "string", crmSeen: "object"
 };

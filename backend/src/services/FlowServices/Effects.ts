@@ -585,7 +585,7 @@ export const simEffects = (sample: SimSample = {}, opts: { agent?: AiAgent | nul
       if (text && result.exit && !["off", "limit"].includes(result.exit)) vars.__spoke = result.exit;
       return { text, exit: result.exit || null, collected: result.collected };
     },
-    async humanHandoff(_node, exit) { actions.push(`Transfere para a equipe (${exit === "limit" ? "limite de turnos" : exit === "off" ? "fora do escopo" : "pediu uma pessoa"})`); },
+    async humanHandoff(_node, exit) { actions.push(`Transfere para ${exit === "tutoria" ? "a tutoria do polo" : exit === "secretaria" ? "a secretaria do polo" : "a equipe"} (${exit === "limit" ? "limite de turnos" : exit === "off" ? "fora do escopo" : exit === "tutoria" ? "precisa da tutoria" : exit === "secretaria" ? "precisa da secretaria" : "pediu uma pessoa"})`); },
     async startFlow(flowId) { actions.push(`Inicia o fluxo ${flowId}`); return true; }
   };
   return { fx, messages, actions, traces };

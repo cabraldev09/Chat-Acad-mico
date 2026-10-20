@@ -125,25 +125,34 @@ describe("what the agent may never say", () => {
   });
 });
 
-import { SERVICE_KB, SERVICE_PERSONA, SERVICE_TEMPLATE_KEY, serviceGraph } from "../../../src/services/CommercialServices/ServiceTemplate";
+import { supportIntent } from "../../../src/services/CommercialServices/Rules";
+import { INSTITUTION_DOCS } from "../../../src/services/CommercialServices/InstitutionDocs";
 
-describe("the template Atendimento (tutoria e secretaria)", () => {
-  it("has a valid graph with the three destinations and a person as the way out", () => {
-    const g = serviceGraph();
-    const issues = validateGraph(g, { hasAiAgent: true, kind: "agent" });
-    expect(issues.filter(i => i.level === "error")).toEqual([]);
-    const transfers = g.nodes.filter(n => n.type === "transfer").map(n => n.data.to);
-    expect(transfers).toEqual(expect.arrayContaining(["polo_tutoria", "polo_coordenacao", "polo_sales"]));
-    const stage = g.nodes.find(n => n.type === "stage")!;
-    expect(cleanStage(stage.data).outcomes.map(o => o.id)).toEqual(["tutoria", "secretaria", "comercial"]);
-    // no required field: the stage only leaves by a decision of the AI, never because a form was filled
-    expect(cleanStage(stage.data).fields.some(f => f.required)).toBe(false);
+describe("the commercial agent also takes the tutoring and the secretary to the team of the polo", () => {
+  it("knows what each sector takes care of (the former Atendimento agent is part of it)", () => {
+    expect(INSTITUTION_DOCS.map(d => d.topic)).toEqual(expect.arrayContaining(["institutional/support-tutoring", "institutional/support-secretary"]));
+    INSTITUTION_DOCS.forEach(k => expect(k.content).not.toMatch(/R\$|\d+ ?%/));
   });
-  it("never answers academic or money matters itself", () => {
-    expect(SERVICE_TEMPLATE_KEY).toBe("atendimento_encaminhamento");
-    expect(SERVICE_PERSONA.forbidden).toMatch(/valores/);
-    expect(SERVICE_KB.length).toBeGreaterThanOrEqual(3);
-    SERVICE_KB.forEach(k => expect(k.content).not.toMatch(/R\$|\d+ ?%/));
+  it("recognises a request for a sector without a model", () => {
+    expect(supportIntent("Preciso de uma declaração de matrícula", false)).toBe("secretary");
+    expect(supportIntent("quero falar com a secretaria", false)).toBe("secretary");
+    expect(supportIntent("preciso trancar minha matrícula", false)).toBe("secretary");
+    expect(supportIntent("não consigo acessar a plataforma", false)).toBe("tutoring");
+    expect(supportIntent("esqueci minha senha", false)).toBe("tutoring");
+    expect(supportIntent("quero falar com a tutoria", false)).toBe("tutoring");
+  });
+  it("the loose words only count for who already studies", () => {
+    expect(supportIntent("minha prova não abriu", false)).toBeNull();
+    expect(supportIntent("minha prova não abriu", true)).toBe("tutoring");
+    expect(supportIntent("quero meu diploma", false)).toBeNull();
+    expect(supportIntent("preciso do meu histórico", true)).toBe("secretary");
+  });
+  it("a prospect asking how the tutoring works, or denying, is still a sales conversation", () => {
+    expect(supportIntent("como funciona a tutoria?", false)).toBeNull();
+    expect(supportIntent("como funciona a tutoria?", true)).toBeNull();
+    expect(supportIntent("quais documentos para a matrícula?", false)).toBeNull();
+    expect(supportIntent("não quero falar com a secretaria", false)).toBeNull();
+    expect(supportIntent("oi", true)).toBeNull();
   });
 });
 
@@ -206,5 +215,54 @@ describe("reminders to a lead who went silent", () => {
     expect(one).toMatch(/Oi, Paulo!/);
     expect(two).toMatch(/consultor do seu polo/);
     [one, two].forEach(t => expect(t).not.toMatch(/R\$|\d+ ?%|bolsa|desconto|valor/i));
+  });
+});
+
+import { commercialTurn } from "../../../src/services/CommercialServices/Hook";
+
+const fakePorts = (slots: Record<string, any> = {}): any => ({
+  state: { leadId: 1, agentId: 1, flowId: null, slots: { ...defaultSlots(), ...slots }, temperature: "cold", commercialScore: 0, readyForProposal: false, nextAction: null, lastIntent: null, followUpReason: null, followUpAt: null, summary: null, stageKey: null, lastNoteHash: null },
+  audit: [],
+  stageKeyNow: async () => null,
+  moveStage: async () => false,
+  markContact: async () => undefined,
+  task: async () => true,
+  note: async () => true,
+  event: async () => undefined,
+  save: async () => undefined,
+  stageName: async () => null
+});
+
+describe("the hook sends a student to the right team, asking the city once", () => {
+  it("with the polo known the exit is the sector and the reason says which", async () => {
+    const tutoring = await commercialTurn(fakePorts({ city: "Vilhena" }), { userText: "não consigo acessar a plataforma", fast: "tutoring", tools: [], hadText: true, replied: true });
+    expect(tutoring.exit).toBe("tutoria");
+    expect(tutoring.why).toBe("tutoring");
+    const secretary = await commercialTurn(fakePorts(), { userText: "preciso de uma declaração", fast: "secretary", tools: [], hadText: true, replied: true, hasPolo: true });
+    expect(secretary.exit).toBe("secretaria");
+    expect(secretary.why).toBe("secretary");
+  });
+  it("without a polo it asks the city, and goes on once it was asked (answered or not)", async () => {
+    const ports = fakePorts();
+    const first = await commercialTurn(ports, { userText: "preciso de uma declaração", fast: "secretary", tools: [], hadText: true, replied: true });
+    expect(first.exit).toBeNull();
+    expect(first.ask).toBe("city");
+    const answered = await commercialTurn(ports, { userText: "Cerejeiras", intent: "other", patch: { city: "Cerejeiras" }, tools: [], hadText: true, replied: true });
+    expect(answered.exit).toBe("secretaria");
+    expect(ports.state.slots.supportNeed).toBeUndefined();
+    const silent = fakePorts();
+    await commercialTurn(silent, { userText: "minha prova não abriu", fast: "tutoring", tools: [], hadText: true, replied: true });
+    const again = await commercialTurn(silent, { userText: "ok", intent: "other", tools: [], hadText: true, replied: true });
+    expect(again.exit).toBe("tutoria");
+  });
+  it("a student who changes the subject to money is a sales conversation again", async () => {
+    const ports = fakePorts();
+    await commercialTurn(ports, { userText: "preciso de uma declaração", fast: "secretary", tools: [], hadText: true, replied: true });
+    const price = await commercialTurn(ports, { userText: "quanto custa outro curso?", fast: "price", tools: [], hadText: true, replied: true });
+    expect(price.exit).toBe("proposta");
+  });
+  it("a person asked for wins over the sector", async () => {
+    const r = await commercialTurn(fakePorts({ city: "Vilhena" }), { userText: "quero falar com uma pessoa", fast: "human", tools: [], hadText: true, replied: true });
+    expect(r.exit).toBe("human");
   });
 });

@@ -6,7 +6,7 @@ import { BOLSA_ASKS } from "./BolsaData";
 // handoff brief are computed here.
 export const INTENTS = [
   "greeting", "course_duration", "course_modality", "mec", "curriculum", "internship", "paid_internship", "tcc", "platform", "tutoring", "faculty",
-  "recognition", "transfer", "second_degree", "analysis", "price", "enrollment", "proposal", "human", "follow_up", "no_interest", "objection", "unknown", "other"
+  "recognition", "transfer", "second_degree", "analysis", "price", "enrollment", "proposal", "human", "follow_up", "no_interest", "objection", "unknown", "support_tutoring", "support_secretary", "other"
 ] as const;
 
 const plain = (s: string): string =>
@@ -47,6 +47,7 @@ const NO_INTEREST = [/nao tenho (mais )?interesse/, /\bdesisti\b/, /nao quero (m
 
 export type FastIntent = { intent: "human" | "price" | "enrollment" | "proposal" } | null;
 
+
 // "não quero falar com atendente", "ainda não quero me matricular": the phrase is there, the meaning is the opposite
 const NEGATION = /\b(nao|nunca|jamais|sem|ainda nao|nem)\b/;
 const hit = (list: RegExp[], t: string): boolean =>
@@ -62,6 +63,44 @@ export const fastIntent = (text: string): FastIntent => {
   if (hit(ENROLL, t)) return { intent: "enrollment" };
   if (/\bproposta\b/.test(t) && hit(MONEY, t)) return { intent: "proposal" };
   if (hit(MONEY, t)) return { intent: "price" };
+  return null;
+};
+
+// A student who needs a sector is not a lead: tutoring (platform, access, activities, exams, deadlines) and secretary (declarations, transcript, diploma,
+// lock or cancel the enrollment) are the team of the polo. What is clear in the words needs no model. A prospect asking "how does the tutoring work?" is
+// still a sales question; the loose words (activity, exam, grade...) only count for who is already a student and speaks of their own.
+const SECRETARY = [
+  /\b(falar|conversar|chamar|passar|ligar).{0,25}(com )?(a )?secretaria\b/,
+  /\bdeclaracao (de )?(matricula|vinculo|escolaridade|conclusao|frequencia|estudante|cursando)\b/,
+  /\bhistorico escolar\b/,
+  /\b(segunda via|2a via|2 via)\b/,
+  /\bcertificado de conclusao\b/,
+  /\b(trancar|trancamento|cancelar|cancelamento)\b.{0,20}\b(matricula|curso|disciplina)\b/,
+  /\brematricula\b/
+];
+const TUTORING = [
+  /\b(falar|conversar|chamar|passar|ligar).{0,25}(com )?(a |o )?(tutoria|tutor|tutora)\b/,
+  /\bmeu tutor\b|\bminha tutora\b/,
+  /\b(nao consigo|nao estou conseguindo|problema (para|pra|ao)|erro (para|pra|ao)).{0,25}\b(acessar|entrar|logar)\b/,
+  /\b(esqueci|perdi|redefinir|recuperar|trocar).{0,15}\bsenha\b/
+];
+const SECRETARY_STUDENT = [
+  /\b(preciso|quero|queria|gostaria|solicit\w+|pedir|emitir|tirar|baixar)\b.{0,30}\b(declaracao|historico|certificado|diploma|documento|documentos)\b/,
+  /\b(meu|meus|minha|minhas)\b.{0,20}\b(diploma|certificado|declaracao|historico|documentos?)\b/
+];
+const TUTORING_STUDENT = [
+  /\b(meu|meus|minha|minhas)\b.{0,25}\b(nota|notas|atividade|atividades|prova|provas|prazo|prazos|plataforma|acesso|disciplina|disciplinas|trabalho|trabalhos|estagio|tcc|login)\b/,
+  /\b(nao consigo|nao estou conseguindo|nao abre|nao carrega|nao aparece|nao liberou)\b.{0,30}\b(plataforma|ambiente|atividade|prova|nota|aula|disciplina)\b/,
+  /\b(duvida|ajuda|problema)\b.{0,25}\b(atividade|prova|nota|prazo|plataforma|disciplina|trabalho)\b/
+];
+
+export const supportIntent = (text: string, student: boolean): "tutoring" | "secretary" | null => {
+  const t = plain(text);
+  if (!t) return null;
+  if (hit(SECRETARY, t)) return "secretary";
+  if (hit(TUTORING, t)) return "tutoring";
+  if (student && hit(SECRETARY_STUDENT, t)) return "secretary";
+  if (student && hit(TUTORING_STUDENT, t)) return "tutoring";
   return null;
 };
 
@@ -108,8 +147,12 @@ export const openingText = (slots: Slots, first: string, returning: boolean): st
   const hasCourse = !!(slots.courseName || slots.courseId);
   const hasCity = !!(slots.city || slots.poloId);
   const hasEntry = !!slots.entryType && slots.entryType !== "unknown";
+  // a contact who is already a student is asked what is needed (the agent also takes the tutoring and the secretary to the team of the polo)
+  if (slots.enrolledStudent && !returning) {
+    return `Olá${name}! Aqui é o assistente virtual da Cruzeiro do Sul Virtual.${slots.enrolledCourse ? ` Vi que você já estuda ${slots.enrolledCourse}.` : ""} Como posso te ajudar hoje? Se for sobre plataforma, atividades ou provas, chamo a tutoria; se for documento ou declaração, a secretaria.`;
+  }
   const ask = !hasCourse
-    ? "Qual curso você tem interesse?"
+    ? "Qual curso você tem interesse? Se você já é aluno e precisa da tutoria ou da secretaria, é só me dizer."
     : !hasCity
       ? "Em qual cidade você mora? Assim eu já te mostro o polo mais perto."
       : !hasEntry

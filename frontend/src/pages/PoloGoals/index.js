@@ -58,6 +58,8 @@ const dm = (iso) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
 const shortName = (n) => String(n || "").replace(/\s*-\s*RO$/i, "");
 const pctLabel = (p) => (p === null || p === undefined ? "—" : `${brDecimal(p)}%`);
 const perDayLabel = (v) => (v === null || v === undefined ? "—" : brDecimal(v));
+// the table (like the company spreadsheet) shows the real sign: a polo above its target has a negative "Faltam" and a negative pace
+const signedPerDay = (missing, days, fallback) => (missing === null || missing === undefined || !days ? perDayLabel(fallback) : brDecimal(missing / days));
 const missingLabel = (r) => (r.missing === null || r.missing === undefined ? "—" : r.missing < 0 ? `+${Math.abs(r.missing)}` : r.missing);
 const evenSplit = (total, n) => { const base = Math.floor(total / n); const extra = total - base * n; return Array.from({ length: n }, (_, i) => base + (i < extra ? 1 : 0)); };
 const sameArray = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
@@ -658,16 +660,16 @@ const PoloGoals = () => {
                   <tbody>
                     {shown.rows.map((r) => (
                       <tr key={r.poloId}>
-                        <td>{r.code || "—"}</td><td style={{ fontWeight: 600 }}>{r.name}</td><td>{r.p.target === null ? "—" : r.p.target}</td><td>{r.p.done}</td><td style={{ color: r.p.missing !== null && r.p.missing <= 0 ? "#15803d" : undefined, fontWeight: r.p.missing !== null && r.p.missing < 0 ? 600 : undefined }} title={r.p.missing !== null && r.p.missing < 0 ? "Acima da meta" : undefined}>{missingLabel(r.p)}</td>
+                        <td>{r.code || "—"}</td><td style={{ fontWeight: 600 }}>{r.name}</td><td>{r.p.target === null ? "—" : r.p.target}</td><td>{r.p.done}</td><td style={{ color: r.p.missing !== null && r.p.missing <= 0 ? "#15803d" : undefined, fontWeight: r.p.missing !== null && r.p.missing < 0 ? 600 : undefined }} title={r.p.missing !== null && r.p.missing < 0 ? "Acima da meta" : undefined}>{r.p.missing === null ? "—" : r.p.missing}</td>
                         <td style={{ background: TONE[r.p.status].soft, fontWeight: 700, color: TONE[r.p.status].bg }}>{pctLabel(r.p.pct)}</td>
-                        <td>{perDayLabel(r.p.perDay)}</td>
+                        <td>{signedPerDay(r.p.missing, totals.daysLeft, r.p.perDay)}</td>
                         {!month && <><td>{r.inCourse}</td><td>{r.canceled}</td><td>{brDecimal(r.canceledPct)}%</td></>}
                       </tr>
                     ))}
                   </tbody>
                   <tfoot>
                     <tr>
-                      <td /><td style={{ textAlign: "left" }}>TOTAL</td><td>{totals.target}</td><td>{totals.done}</td><td style={{ color: totals.missing <= 0 ? "#15803d" : undefined }}>{missingLabel(totals)}</td><td>{pctLabel(totals.pct)}</td><td>{perDayLabel(totals.perDay)}</td>
+                      <td /><td style={{ textAlign: "left" }}>TOTAL</td><td>{totals.target}</td><td>{totals.done}</td><td style={{ color: totals.missing <= 0 ? "#15803d" : undefined }}>{totals.missing}</td><td>{pctLabel(totals.pct)}</td><td>{signedPerDay(totals.missing, totals.daysLeft, totals.perDay)}</td>
                       {!month && <><td>{totals.inCourse}</td><td>{totals.canceled}</td><td>{brDecimal(totals.canceledPct)}%</td></>}
                     </tr>
                   </tfoot>

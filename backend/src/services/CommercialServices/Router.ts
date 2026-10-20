@@ -249,7 +249,8 @@ export const routeToCommercial = async (ticket: Ticket, opts: RouteOptions): Pro
     if (settled.practice) semipresencial = { enrollPolo: settled.polo.name, cityPolo: settled.practice.name };
   }
 
-  const team: Team = opts.team || "comercial";
+  // the reason says who takes it: a student who needs the tutoring or the secretary goes to those queues of the polo, not to sales
+  const team: Team = opts.team || (opts.why === "tutoring" ? "tutoria" : opts.why === "secretary" ? "coordenacao" : "comercial");
   const { queue, fallback } = await pickQueue(polo ? polo.id : null, team);
   let user: User | null = null;
   if (queue) {

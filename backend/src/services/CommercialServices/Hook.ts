@@ -11,7 +11,7 @@ export interface TurnInput {
   userText: string;
   intent?: string | null;
   // the system itself recognised the intent (a request for a person, a price): no model was called
-  fast?: "human" | "price" | "enrollment" | "proposal" | null;
+  fast?: "human" | "price" | "enrollment" | "proposal" | "tutoring" | "secretary" | null;
   // slots the model (registrar_turno) or a tool found
   patch?: Record<string, any>;
   tools: string[];
@@ -26,6 +26,8 @@ export interface TurnInput {
   // the subjects of the knowledge base the answer came from
   topics?: string[];
   firstContactSent?: boolean;
+  // the lead already has a polo (the team of the tutoring or of the secretary is found by it)
+  hasPolo?: boolean;
   // the answer of this turn ends with a question: the person has something to answer before anyone takes over
   endsWithQuestion?: boolean;
   // the person took back the interest in buying ("ainda não vou me matricular")
@@ -52,7 +54,7 @@ const TOPIC_FLAG: Record<string, string> = {
 };
 
 
-export const commercialTurn = async (ports: CommercialPorts, input: TurnInput): Promise<{ exit: string | null; why?: string; trace: CommercialTrace }> => {
+export const commercialTurn = async (ports: CommercialPorts, input: TurnInput): Promise<{ exit: string | null; why?: string; ask?: "city"; trace: CommercialTrace }> => {
   const now = input.now || new Date();
   const s = ports.state;
   const before: Record<string, any> = { ...s.slots, temperature: s.temperature, commercialScore: s.commercialScore, nextAction: s.nextAction, readyForProposal: s.readyForProposal };
@@ -89,7 +91,8 @@ export const commercialTurn = async (ports: CommercialPorts, input: TurnInput): 
   if ((s.slots.entryType === "transfer" || s.slots.entryType === "second_degree") && !s.slots.hasTranscript && s.slots.analysisStatus === "not_applicable") s.slots.analysisStatus = "waiting_document";
 
   // 2) the intent: what the system recognised wins over the model
-  const intent = input.fast || input.intent || null;
+  // (a student who needs the team of the polo is "support_*": "tutoring" alone is a prospect asking how the tutoring works)
+  const intent = input.fast === "tutoring" ? "support_tutoring" : input.fast === "secretary" ? "support_secretary" : input.fast || input.intent || null;
   s.lastIntent = intent;
   // three questions in a row that the base does not answer: a person should take it
   if (input.replied && (intent === "unknown" || input.unknownQuestion)) s.slots.unknownStreak = Number(s.slots.unknownStreak || 0) + 1;
@@ -109,6 +112,27 @@ export const commercialTurn = async (ports: CommercialPorts, input: TurnInput): 
   if (input.retract && !wantsProposal) s.readyForProposal = false;
   if (wantsProposal) s.readyForProposal = true;
   const human = intent === "human";
+  // a student who needs the tutoring or the secretary: the team of the polo takes it (not the sales team). The city is asked once when the polo is not known
+  let supportExit: string | null = null;
+  let ask: "city" | undefined;
+  if (input.replied) {
+    if (intent === "support_tutoring") s.slots.supportNeed = "tutoring";
+    else if (intent === "support_secretary") s.slots.supportNeed = "secretary";
+    else if (intent && (wantsProposal || human || intent === "no_interest" || intent === "follow_up" || intent === "price")) { delete s.slots.supportNeed; delete s.slots.supportCityAsked; }
+  }
+  const need = String(s.slots.supportNeed || "");
+  if (need && !human) {
+    const knowsWhere = !!(s.slots.city || s.slots.poloId || input.hasPolo);
+    if (knowsWhere || Number(s.slots.supportCityAsked || 0) >= 1) {
+      supportExit = need === "secretary" ? "secretaria" : "tutoria";
+      s.slots.supportKind = need;
+      delete s.slots.supportNeed;
+      delete s.slots.supportCityAsked;
+    } else if (input.replied) {
+      ask = "city";
+      s.slots.supportCityAsked = 1;
+    }
+  }
   const followUp = intent === "follow_up";
   const noInterest = intent === "no_interest" && confirmsNoInterest(input.userText);
   // the person is back and talking about something else: the old "I'll think about it" no longer applies
@@ -165,6 +189,8 @@ export const commercialTurn = async (ports: CommercialPorts, input: TurnInput): 
   // 8) the way out of the stage, when there is a reason for it
   let exit: string | null = null;
   if (human) exit = "human";
+  else if (supportExit) exit = supportExit;
+  else if (ask) exit = null;
   else if (noInterest) exit = "sem_interesse";
   else if (s.readyForProposal) exit = "proposta";
   else if (followUp) exit = "follow_up";
@@ -175,6 +201,7 @@ export const commercialTurn = async (ports: CommercialPorts, input: TurnInput): 
   // message that asks the person something (unless the conversation already went on for two more answers)
   else if (s.slots.readyForConsultant && input.replied && !(intent === "curriculum" && !s.slots.gradeSent) && (!input.endsWithQuestion || Number(s.slots.qualifiedReplies || 0) >= (ports.qualifyAfter || 2) + 2)) exit = "human";
   const why =
+    supportExit ? (supportExit === "secretaria" ? "secretary" : "tutoring") :
     exit === "human" && !human && !input.unknownQuestion && intent !== "unknown"
       ? Number(s.slots.objectionCount || 0) >= OBJECTION_LIMIT && input.objection ? "objection" : s.slots.readyForConsultant ? "qualified" : undefined
       : undefined;
@@ -185,6 +212,7 @@ export const commercialTurn = async (ports: CommercialPorts, input: TurnInput): 
   return {
     exit,
     ...(why ? { why } : {}),
+    ...(ask ? { ask } : {}),
     trace: { intent, changed, crmBefore, crmAfter, actions: ports.audit.splice(0), temperature: s.temperature, score: s.commercialScore, nextAction: s.nextAction, readyForProposal: s.readyForProposal }
   };
 };

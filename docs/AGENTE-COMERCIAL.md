@@ -3,9 +3,8 @@
 Modelo de agente de IA desenhado em blocos (o mesmo quadro do chatbot) que atende leads de graduação, consulta dados acadêmicos reais,
 mantém o CRM sozinho e entrega o lead ao consultor com um resumo. Chave do modelo: `graduacao_comercial_cruzeiro`.
 
-## Os dois modelos
-- **Comercial** (`graduacao_comercial_cruzeiro`): faz toda a qualificação, tira as dúvidas do curso e, na hora da proposta, passa ao consultor do polo, que gera a proposta comercial.
-- **Atendimento** (`atendimento_encaminhamento`): entende o assunto e **redireciona** quem quer a tutoria ou a secretaria (ou o comercial) para a fila do polo; não responde conteúdo acadêmico.
+## Um só agente
+- **Comercial** (`graduacao_comercial_cruzeiro`): faz toda a qualificação, tira as dúvidas do curso e, na hora da proposta, passa ao consultor do polo, que gera a proposta comercial. **Também é a porta de entrada de quem já é aluno**: quando a pessoa precisa da **tutoria** (acesso, plataforma, atividades, provas, prazos) ou da **secretaria** (declarações, histórico, certificado, diploma, rematrícula, trancamento), o agente não vende nada: pergunta a cidade (uma vez, se o polo não é conhecido) e chama a fila de tutoria ou de secretaria **do polo** (`Router.routeToCommercial`, motivo `tutoring`/`secretary`). O reconhecimento é do sistema (`Rules.supportIntent`, sem modelo) e do modelo (intents `support_tutoring`/`support_secretary`). O modelo "Atendimento" deixou de existir; um agente que já tenha sido criado a partir dele continua funcionando e pode ser apagado na lista de agentes.
 Mensagens saem **em blocos curtos** (`CommercialServices/Blocks.ts`: até 5 balões, ~300 caracteres, a pergunta sozinha no final), em tom humano e profissional, para não aparecer "Ler mais" no WhatsApp.
 
 ## Central do agente
