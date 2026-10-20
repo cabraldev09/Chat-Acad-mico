@@ -10,7 +10,7 @@ import Menu from "@material-ui/core/Menu";
 import MenuItem from "@material-ui/core/MenuItem";
 import ListItemIcon from "@material-ui/core/ListItemIcon";
 import ListItemText from "@material-ui/core/ListItemText";
-import { Pin, PinOff, Archive, ArchiveRestore, ChevronDown, BellOff, BellRing, MailOpen, Check, CheckCheck, Clock, AlertCircle, Camera, Video, Mic, FileText, MapPin, Contact, Sticker } from "lucide-react";
+import { Pin, PinOff, Archive, ArchiveRestore, ChevronDown, BellOff, BellRing, MailOpen, Check, CheckCheck, Clock, AlertCircle, Camera, Video, Mic, FileText, MapPin, Contact, Sticker, Bot } from "lucide-react";
 import { getDraft } from "../../utils/drafts";
 import { getContactSound, onSoundPrefsChange } from "../../utils/soundPrefs";
 
@@ -18,6 +18,7 @@ import ChannelIcon from "../ChannelIcon";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import { AuthContext } from "../../context/Auth/AuthContext";
+import { isManager } from "../../utils/access";
 import { wa, dayLabel, clock } from "../chat/chatTheme";
 
 const useStyles = makeStyles((theme) => {
@@ -189,6 +190,10 @@ const TicketListItem = ({ ticket }) => {
     []
   );
 
+  // a waiting conversation can be read before it is accepted: always by the administration, and by the team when it already sits in a polo's queue
+  // (the agent may be talking to the lead; whoever wants to step in accepts it)
+  const canOpen = ticket.status !== "pending" || !!ticket.isGroup || isManager(user) || !!ticket.queue;
+
   const accept = async (e) => {
     e.stopPropagation();
     setLoading(true);
@@ -249,9 +254,9 @@ const TicketListItem = ({ ticket }) => {
       tabIndex={0}
       data-ticket-id={ticket.id}
       className={clsx(classes.row, selected && classes.selected, ticket.status === "closed" && classes.closed)}
-      onClick={() => (ticket.status !== "pending" || ticket.isGroup) && history.push(`/tickets/${ticket.id}`)}
+      onClick={() => canOpen && history.push(`/tickets/${ticket.id}`)}
       onKeyDown={(e) => {
-        if (e.key === "Enter" && (ticket.status !== "pending" || ticket.isGroup)) history.push(`/tickets/${ticket.id}`);
+        if (e.key === "Enter" && canOpen) history.push(`/tickets/${ticket.id}`);
         // arrow keys walk the list like WhatsApp Web (only rows that are on screen: other tabs stay mounted, hidden)
         if (e.key === "ArrowDown" || e.key === "ArrowUp") {
           const rows = Array.from(document.querySelectorAll("[data-ticket-id]")).filter((el) => el.offsetParent !== null);
@@ -316,6 +321,11 @@ const TicketListItem = ({ ticket }) => {
           {ticket.pinned && (
             <Tooltip arrow title="Fixada no topo">
               <span className={classes.pin}><Pin size={14} /></span>
+            </Tooltip>
+          )}
+          {ticket.status === "pending" && !ticket.isGroup && ticket.aiActive && (
+            <Tooltip arrow title="O agente de IA está atendendo. Abra para acompanhar e aceite para assumir.">
+              <span className={classes.pin} style={{ color: "#0f766e" }}><Bot size={15} /></span>
             </Tooltip>
           )}
           {ticket.status === "pending" && !ticket.isGroup ? (

@@ -162,7 +162,7 @@ const useStyles = makeStyles((theme) => {
 
 const isImage = (f) => f && f.type && f.type.startsWith("image/");
 
-const MessageInput = ({ ticketStatus, historical, isGroup, contactName, channel, readOnly }) => {
+const MessageInput = ({ ticketStatus, aiActive, historical, isGroup, contactName, channel, readOnly }) => {
   const classes = useStyles();
   const emojiDark = useTheme().palette.type === "dark";
   const { ticketId } = useParams();
@@ -453,7 +453,9 @@ const MessageInput = ({ ticketStatus, historical, isGroup, contactName, channel,
       <div className={classes.wrap}>
         <div className={classes.blocked}>
           {ticketStatus === "pending"
-            ? "Aceite a conversa para responder."
+            ? aiActive
+              ? "O agente de IA está atendendo esta conversa. Clique em Aceitar para assumir e responder você mesmo."
+              : "Aceite a conversa para responder."
             : historical
             ? "Esta conversa é do histórico do WhatsApp. Clique em Reabrir atendimento para voltar a responder."
             : ticketStatus === "closed"
