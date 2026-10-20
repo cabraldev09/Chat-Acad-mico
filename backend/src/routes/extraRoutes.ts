@@ -3,6 +3,7 @@ import express from "express";
 import multer from "multer";
 
 import isAuth from "../middleware/isAuth";
+import { canAccessContact } from "../middleware/canAccessContact";
 import { cached } from "../middleware/refCache";
 import { crmReport } from "../controllers/ReportController";
 import * as Preferences from "../controllers/PreferencesController";
@@ -109,8 +110,8 @@ r.post("/tags", isAuth, isManager, Tag.store);
 r.put("/tags/:id", isAuth, isManager, Tag.update);
 r.delete("/tags/:id", isAuth, isManager, Tag.remove);
 r.put("/tickets/:ticketId/tags", isAuth, canWriteTicket, Tag.setTicketTags);
-r.get("/contacts/:contactId/tags", isAuth, Tag.contactTags);
-r.put("/contacts/:contactId/tags", isAuth, Tag.setContactTags);
+r.get("/contacts/:contactId/tags", isAuth, canAccessContact, Tag.contactTags);
+r.put("/contacts/:contactId/tags", isAuth, canAccessContact, Tag.setContactTags);
 
 // webhooks / api tokens (admin)
 r.get("/webhooks-config/events", isAuth, isAdmin, Webhook.events);

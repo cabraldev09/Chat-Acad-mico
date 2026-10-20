@@ -8,7 +8,7 @@ export const getSecretSetting = async (key: string, fallback = ""): Promise<stri
 
 export const setSecretSetting = async (key: string, value: string): Promise<void> => setSetting(key, value ? sealSecret(value) : "");
 
-const SEALED_SETTINGS = ["ai_anthropic_key", "ai_openai_key"];
+export const SEALED_SETTINGS = ["ai_anthropic_key", "ai_openai_key"];
 
 // at start: keys saved in plain text become sealed ones (once); the same for the key of each AI agent
 export const sealStoredKeys = async (): Promise<number> => {

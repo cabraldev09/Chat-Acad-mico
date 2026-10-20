@@ -52,11 +52,14 @@ app.get("/health", async (_req: Request, res: Response) => {
 });
 
 // brute-force / abuse protection on the unauthenticated entry points
+// login: only WRONG answers count, per person (IP + e-mail: 10 in 15 min) and per network (60), so a polo behind one address is not locked out
+// by a colleague's typo and a right password is never refused
+const loginPerAccount = rateLimit({ windowMs: 15 * 60 * 1000, max: Number(process.env.LOGIN_RATE_MAX) || 10, failuresOnly: true, key: req => `${req.ip}|${String(req.body?.email || "").trim().toLowerCase()}` });
+const loginPerNetwork = rateLimit({ windowMs: 15 * 60 * 1000, max: (Number(process.env.LOGIN_RATE_MAX) || 10) * 6, failuresOnly: true });
 const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: Number(process.env.LOGIN_RATE_MAX) || 20 });
 const publicLimiter = rateLimit({ windowMs: 60 * 1000, max: 120 });
 const webhookLimiter = rateLimit({ windowMs: 60 * 1000, max: 600 });
-app.use("/auth/login", loginLimiter);
-app.use("/auth/signup", loginLimiter);
+app.use("/auth/login", express.json({ limit: "20kb" }), loginPerNetwork, loginPerAccount);
 // recovery by e-mail: few tries per address and per network (the service also limits each person per hour)
 app.use("/auth/forgot", rateLimit({ windowMs: 15 * 60 * 1000, max: 6 }));
 app.use("/auth/reset", rateLimit({ windowMs: 15 * 60 * 1000, max: 20 }));
@@ -90,7 +93,8 @@ app.use(
   })
 );
 app.use(cookieParser());
-app.use(express.json());
+// 2 MB: flow drawings and proposal snapshots are larger than the 100 KB default
+app.use(express.json({ limit: "2mb" }));
 
 app.use(
   "/public",
@@ -115,6 +119,14 @@ app.use(async (err: Error, req: Request, res: Response, _: NextFunction) => {
   if (err instanceof AppError) {
     logger.warn(err);
     return res.status(err.statusCode).json({ error: err.message, ...(err.data ? { data: err.data } : {}) });
+  }
+
+  // the request itself was refused by a parser: tell the person what to do (not a server error, nothing for Sentry)
+  const kind = (err as any)?.type;
+  if (kind === "entity.too.large") return res.status(413).json({ error: "ERR_PAYLOAD_TOO_LARGE" });
+  if (kind === "entity.parse.failed") return res.status(400).json({ error: "ERR_INVALID_JSON" });
+  if (err.name === "MulterError") {
+    return (err as any).code === "LIMIT_FILE_SIZE" ? res.status(413).json({ error: "ERR_FILE_TOO_LARGE" }) : res.status(400).json({ error: "ERR_UPLOAD" });
   }
 
   // a value that is not valid for its column (for example text where a number is expected) is the caller's

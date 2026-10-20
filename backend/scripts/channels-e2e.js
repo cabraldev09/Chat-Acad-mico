@@ -1394,9 +1394,10 @@ const postMeta = (id, payload, secret, badSig) => {
     // ------------------------------------------------ hardening / transfer / safety
     console.log("\nSegurança, transferência de setor e proteção da API não oficial");
     let agentToken, agentId, qA, qB;
-    await test("public signup is closed by default", async () => {
+    await test("there is no public sign-up: nobody creates an account by the login routes", async () => {
       const r = await http.post("/auth/signup", { name: "Intruso", email: "intruso@x.com", password: "123456", profile: "admin" });
-      assert(r.status === 403, `signup answered ${r.status}`);
+      assert(r.status === 404 || r.status === 401, `signup answered ${r.status}`);
+      assert(sql(`SELECT COUNT(*) FROM Users WHERE email='intruso@x.com'`) === "0", "an account was created");
       assert(sql(`SELECT COUNT(*) FROM Users WHERE email='intruso@x.com'`) === "0", "user was created");
     });
     await test("an agent can log in but cannot change settings, queues, users or delete data", async () => {
@@ -4189,6 +4190,16 @@ const postMeta = (id, payload, secret, badSig) => {
       const list = (await http.get("/leads", asUser(consultorToken))).data.leads;
       assert(list.every(l => l.ownerId === consultorId || !l.ownerId), "list leaks other owners");
       assert((await http.get(`/leads/${mine.id}`, asUser(tutorToken))).status === 403, "tutor read a sales lead");
+      // the contact of a lead follows the same scope: nobody reads or changes the contact of somebody else's lead
+      const otherContact = sql(`SELECT contactId FROM Leads WHERE id=${other.id}`);
+      const mineContact = sql(`SELECT contactId FROM Leads WHERE id=${mine.id}`);
+      if (otherContact && mineContact) {
+        assert((await http.get(`/contacts/${otherContact}`, asUser(consultorToken))).status === 403, "a consultant read the contact of somebody else's lead");
+        assert((await http.put(`/contacts/${otherContact}`, { name: "Trocado" }, asUser(consultorToken))).status === 403, "a consultant changed the contact of somebody else's lead");
+        assert((await http.put(`/contacts/${otherContact}/tags`, { tagIds: [] }, asUser(consultorToken))).status === 403, "a consultant changed the labels of somebody else's contact");
+        assert((await http.get(`/contacts/${mineContact}`, asUser(consultorToken))).status === 200, "a consultant cannot read the contact of their own lead");
+        assert((await http.get(`/contacts/${otherContact}`, auth())).status === 200, "the administrator cannot read a contact");
+      }
     });
     await test("ambientação: the tutor sees the students waiting in the polo, a tutor can always be chosen, and the administrators are warned after 24 h", async () => {
       const mk = async (name, email, role) => (await http.post("/users", { name, email, password: "senha123", role }, auth())).data;
@@ -5290,6 +5301,18 @@ const postMeta = (id, payload, secret, badSig) => {
         limited = (await http.post("/auth/login", { email: "naoexiste@x.com", password: "errada" })).status === 429;
       }
       assert(limited, "no 429 after 120 wrong logins");
+      // only the wrong answers count: the right password still works for another person while that account is blocked
+      const ok = await http.post("/auth/login", { email: "admin@whaticket.com", password: "admin" });
+      assert(ok.status === 200, `a right login was refused after other people's wrong ones: ${ok.status}`);
+      // the e-mail does not distinguish capitals
+      const caps = await http.post("/auth/login", { email: "ADMIN@Whaticket.com", password: "admin" });
+      assert(caps.status === 200, `login with capitals ${caps.status}`);
+    });
+    await test("bad requests are answered as such, not as server errors", async () => {
+      const bad = await http.post("/auth/login", "{not json", { headers: { "content-type": "application/json" } });
+      assert(bad.status === 400 && bad.data.error === "ERR_INVALID_JSON", `malformed json ${bad.status} ${JSON.stringify(bad.data)}`);
+      const big = await http.post("/tickets", { contactId: 1, junk: "x".repeat(3 * 1024 * 1024) }, auth());
+      assert(big.status === 413 && big.data.error === "ERR_PAYLOAD_TOO_LARGE", `payload ${big.status} ${JSON.stringify(big.data)}`);
     });
   } catch (e) {
     results.push([false, `harness: ${e.stack || e.message}`]);

@@ -18,7 +18,7 @@ Por que a API não pode ficar no Supabase: as Edge Functions do Supabase são fu
 2. **Criar as tabelas** (escolha uma):
    - recomendado: no backend, com `DATABASE_URL` e `DB_SSL=true` no `.env`, rode `npm run db:migrate`;
    - alternativa: cole `supabase/schema.sql` no *SQL Editor* do Supabase (cria tudo, liga a segurança por linha e marca as migrations como aplicadas).
-3. **Usuário administrador**: `npx sequelize db:seed:all` cria `admin@whaticket.com` / `admin`. **Troque a senha no primeiro acesso.**
+3. **Usuário administrador**: o start roda `scripts/bootstrap-production.js`, que cria o administrador com `ADMIN_EMAIL`/`ADMIN_PASSWORD` (sem elas, com uma senha aleatória mostrada uma única vez no log). Uma senha trocada na tela nunca é desfeita por um deploy; `ADMIN_RESET=true` redefine só em caso de acesso perdido.
 4. **API**: suba o backend no host escolhido com as variáveis do `backend/.env.example` (`DATABASE_URL`, `DB_SSL=true`, `JWT_SECRET`, `JWT_REFRESH_SECRET`, `BACKEND_URL`, `FRONTEND_URL`, `APP_TIMEZONE`, `TRUST_PROXY=1`) e **um volume persistente** montado em `backend/.wwebjs_auth` (e `backend/public`). **Uma única réplica.**
 5. **Vercel**: importe `frontend/`, defina `VITE_BACKEND_URL` (URL da API) e faça o deploy.
 6. **Domínio**: aponte `app.seudominio.com.br` para a Vercel e `api.seudominio.com.br` para o host da API (HTTPS nos dois). Ajuste `FRONTEND_URL=https://app.seudominio.com.br` e `BACKEND_URL=https://api.seudominio.com.br` na API. Como front e API ficam em domínios diferentes, o cookie de renovação do login usa `SameSite=None; Secure` automaticamente quando `BACKEND_URL` começa com `https://` (ou `COOKIE_CROSS_SITE=true`).
@@ -116,5 +116,5 @@ No serviço do repositório no Railway (o `Dockerfile` e o `railway.toml` na rai
 | `NODE_ENV` | `production` |
 
 3. **Uma única réplica** (`numReplicas = 1`). Durante o deploy o Railway pode manter a versão antiga ligada por alguns segundos: a trava de instância única impede que as duas abram o WhatsApp ao mesmo tempo.
-4. **Banco novo**: o próprio start roda `sequelize db:migrate`. Depois, uma vez, no terminal do Railway (`railway run`): `npx sequelize db:seed:all` (cria o admin) e troque a senha.
+4. **Banco novo**: o próprio start roda `sequelize db:migrate`. O administrador é criado pelo `scripts/bootstrap-production.js` (veja o passo 3 acima).
 5. **Vercel**: projeto com *Root Directory* `frontend`, `VITE_BACKEND_URL=https://sua-api/`.

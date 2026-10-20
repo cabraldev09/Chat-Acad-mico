@@ -1,5 +1,6 @@
 import { joinRelationshipQueue, leaveRelationshipQueue } from "../RelationshipServices/Relationship";
 import * as Yup from "yup";
+import { col, fn, where } from "sequelize";
 
 import AppError from "../../errors/AppError";
 import { normalizePhone } from "../../helpers/Phone";
@@ -74,9 +75,15 @@ const UpdateUserService = async ({
     throw new AppError("ERR_LAST_ADMIN", 400);
   }
 
+  const cleanEmail = email === undefined ? undefined : String(email).trim().toLowerCase();
+  if (cleanEmail && cleanEmail !== String(user.email).toLowerCase()) {
+    const taken = await User.findOne({ where: where(fn("LOWER", col("email")), cleanEmail), attributes: ["id"] });
+    if (taken && taken.id !== user.id) throw new AppError("ERR_USER_EMAIL_EXISTS", 409);
+  }
+
   await user.update({
     tokenVersion: user.tokenVersion + 1,
-    email,
+    email: cleanEmail,
     password,
     profile: finalRole ? (finalRole === "admin" ? "admin" : "user") : profile,
     role: finalRole,

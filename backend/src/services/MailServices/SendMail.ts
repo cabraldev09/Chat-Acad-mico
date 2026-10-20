@@ -7,7 +7,7 @@ import { logger } from "../../utils/logger";
 import { logoAttachments } from "./Logo";
 
 // The e-mail account the system sends from (password recovery). Everything is set by the administration on the
-// Configurações screen; the defaults are the company Gmail account, which needs an "app password" typed there.
+// Configurações screen (the server, the account and its "app password"); nothing is preset for the account itself.
 export interface MailConfig {
   host: string;
   port: number;
@@ -17,7 +17,7 @@ export interface MailConfig {
   fromName: string;
 }
 
-export const DEFAULT_MAIL = { host: "smtp.gmail.com", port: 465, secure: true, user: "cruzeirogpt@gmail.com", fromName: "Cruzeiro do Sul Virtual" };
+export const DEFAULT_MAIL = { host: "smtp.gmail.com", port: 465, secure: true, user: "", fromName: "Cruzeiro do Sul Virtual" };
 
 export const readMailConfig = async (): Promise<MailConfig> => {
   const port = Number(await getSetting("mail_port", String(DEFAULT_MAIL.port))) || DEFAULT_MAIL.port;
@@ -33,7 +33,10 @@ export const readMailConfig = async (): Promise<MailConfig> => {
   };
 };
 
-export const mailConfigured = async (): Promise<boolean> => !!(await readMailConfig()).pass;
+export const mailConfigured = async (): Promise<boolean> => {
+  const c = await readMailConfig();
+  return !!(c.pass && c.user);
+};
 
 export interface Mail {
   to: string;

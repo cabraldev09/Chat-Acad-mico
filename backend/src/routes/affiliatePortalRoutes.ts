@@ -22,17 +22,16 @@ import { sendFile } from "../controllers/AffiliateMaterialController";
 import path from "path";
 import fs from "fs";
 import { mimeFromName } from "../helpers/MimeFromName";
+import { makeThrottle } from "../helpers/RateWindow";
 
 // Public portal of an affiliate: the link itself (an unguessable token) is the access. It never shows prices.
 const router = express.Router();
 
-const hits = new Map<string, number[]>();
+const limiters = new Map<string, (key: string) => boolean>();
 const throttled = (key: string, max: number, windowMs: number): boolean => {
-  const now = Date.now();
-  const recent = (hits.get(key) || []).filter(t => now - t < windowMs);
-  recent.push(now);
-  hits.set(key, recent);
-  return recent.length > max;
+  const id = `${max}:${windowMs}`;
+  if (!limiters.has(id)) limiters.set(id, makeThrottle(max, windowMs));
+  return (limiters.get(id) as (key: string) => boolean)(key);
 };
 
 declare global {

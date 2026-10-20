@@ -10,19 +10,14 @@ import { notifyReferral } from "../services/AffiliateServices/ReferralNotice";
 import { CRM_OPTIONS } from "../services/CrmServices/crmOptions";
 import { renderLeadPage } from "../helpers/LeadPage";
 import path from "path";
+import { makeThrottle } from "../helpers/RateWindow";
 
 // Public lead capture form (embed with an <iframe>) and its JSON endpoint.
 const router = express.Router();
 
 const DEFAULT_TITLE = "Quero conhecer a instituição";
-const hits = new Map<string, number[]>();
-const throttled = (key: string): boolean => {
-  const now = Date.now();
-  const recent = (hits.get(key) || []).filter(t => now - t < 600000);
-  recent.push(now);
-  hits.set(key, recent);
-  return recent.length > 8; // 8 submissions / 10 min per IP
-};
+// 8 submissions / 10 min per IP
+const throttled = makeThrottle(8, 600000);
 
 const validToken = async (token: string): Promise<boolean> => {
   const stored = await getSetting("crm_form_token", "");

@@ -1,5 +1,6 @@
 import { joinRelationshipQueue } from "../RelationshipServices/Relationship";
 import * as Yup from "yup";
+import { col, fn, where } from "sequelize";
 
 import AppError from "../../errors/AppError";
 import { normalizePhone } from "../../helpers/Phone";
@@ -48,7 +49,7 @@ const CreateUserService = async ({
         async value => {
           if (!value) return false;
           const emailExists = await User.findOne({
-            where: { email: value }
+            where: where(fn("LOWER", col("email")), value.trim().toLowerCase())
           });
           return !emailExists;
         }
@@ -70,7 +71,7 @@ const CreateUserService = async ({
 
   const user = await User.create(
     {
-      email,
+      email: String(email).trim().toLowerCase(),
       password,
       name,
       profile: finalRole === "admin" ? "admin" : "user",

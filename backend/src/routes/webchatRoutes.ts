@@ -16,22 +16,19 @@ import HandleChannelMessage from "../services/InboundServices/HandleChannelMessa
 import fs from "fs";
 import { getIO } from "../libs/socket";
 import { isAgentTyping } from "../services/ChannelServices/TypingState";
+import { makeThrottle } from "../helpers/RateWindow";
+import { remember } from "../helpers/TtlCache";
 
 const upload = multer({ ...uploadConfig, limits: { fileSize: 15 * 1024 * 1024 } });
 const router = express.Router();
 
-// naive per-visitor throttle: 30 messages / minute
-const hits = new Map<string, number[]>();
-const throttled = (key: string): boolean => {
-  const now = Date.now();
-  const recent = (hits.get(key) || []).filter(t => now - t < 60000);
-  recent.push(now);
-  hits.set(key, recent);
-  return recent.length > 30;
-};
+// per-visitor throttle (30 messages / minute) and, before anything is read from a stranger, per IP (60 requests / minute)
+const throttled = makeThrottle(30, 60000);
+const ipThrottled = makeThrottle(60, 60000);
 
+// the list of web chats changes rarely and every poll of every widget asks for it: a few seconds in memory
 const findByToken = async (token: string): Promise<Whatsapp | null> => {
-  const all = await Whatsapp.findAll({ where: { channel: "webchat" } });
+  const all = await remember("webchat:connections", 15000, () => Whatsapp.findAll({ where: { channel: "webchat" } }));
   return all.find(w => getConfig(w).token === token) || null;
 };
 
@@ -49,17 +46,37 @@ router.get("/:token/config", async (req: Request, res: Response) => {
   return res.json({ title: c.title, color: c.color, welcome: c.welcome });
 });
 
+// a file is written to disk before the form is read, so the token and the IP are checked BEFORE the upload; and every early answer after
+// it removes the file (a stranger cannot fill the disk with requests that are then refused)
+const drop = (file?: Express.Multer.File): void => {
+  if (file) fs.unlink(file.path, () => undefined);
+};
+
 router.post(
   "/:token/messages",
+  async (req: Request, res: Response, next) => {
+    if (!(await findByToken(req.params.token))) return res.status(404).json({ error: "not found" });
+    if (ipThrottled(`ip:${req.ip}`)) return res.status(429).json({ error: "slow down" });
+    return next();
+  },
   upload.single("file"),
   async (req: Request, res: Response) => {
-    const whatsapp = await findByToken(req.params.token);
-    if (!whatsapp) return res.status(404).json({ error: "not found" });
-    const { visitorId, body, name } = req.body;
-    if (!VISITOR.test(visitorId || "")) return res.status(400).json({ error: "visitorId" });
-    if (throttled(`${req.ip}:${visitorId}`)) return res.status(429).json({ error: "slow down" });
-
     const file = req.file;
+    const whatsapp = await findByToken(req.params.token);
+    if (!whatsapp) {
+      drop(file);
+      return res.status(404).json({ error: "not found" });
+    }
+    const { visitorId, body, name } = req.body;
+    if (!VISITOR.test(visitorId || "")) {
+      drop(file);
+      return res.status(400).json({ error: "visitorId" });
+    }
+    if (throttled(`${req.ip}:${visitorId}`)) {
+      drop(file);
+      return res.status(429).json({ error: "slow down" });
+    }
+
     const text = String(body || "").slice(0, 4000);
     if (!text && !file) return res.status(400).json({ error: "empty" });
 
@@ -134,8 +151,10 @@ router.post("/:token/typing", async (req: Request, res: Response) => {
   if (!VISITOR.test(visitorId)) return res.status(400).json({ error: "visitorId" });
   const key = `${req.ip}:${visitorId}`;
   if (Date.now() - (typingHits.get(key) || 0) < 2000) return res.json({ ok: true });
+  typingHits.delete(key);
   typingHits.set(key, Date.now());
-  if (typingHits.size > 5000) typingHits.clear();
+  // oldest first (insertion order): never wipe everybody's throttle at once
+  if (typingHits.size > 5000) for (const k of [...typingHits.keys()].slice(0, 500)) typingHits.delete(k);
   const contact = await Contact.findOne({ where: { number: `${WEBCHAT_PREFIX}${visitorId}` } });
   if (contact) {
     const ticket = await Ticket.findOne({

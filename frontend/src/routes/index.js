@@ -3,7 +3,6 @@ import { BrowserRouter, Redirect, Switch, useLocation } from "react-router-dom";
 import { ToastContainer } from "react-toastify";
 
 import LoggedInLayout from "../layout";
-import Signup from "../pages/Signup/";
 import Login from "../pages/Login/";
 import ForgotPassword from "../pages/ForgotPassword/";
 import ResetPassword from "../pages/ResetPassword/";
@@ -97,7 +96,6 @@ const Routes = () => {
         <ThemeProvider>
           <Switch>
             <Route exact path="/login" component={Login} />
-            <Route exact path="/signup" component={Signup} />
             <Route exact path="/esqueci-a-senha" component={ForgotPassword} publicPage />
             <Route exact path="/redefinir-senha/:token" component={ResetPassword} publicPage />
             <Route exact path="/afiliado/:token" component={AffiliatePortalPage} publicPage />

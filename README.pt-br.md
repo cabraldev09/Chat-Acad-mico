@@ -199,7 +199,7 @@ Abra o frontend, entre com a conta criada pelo seed, vá em **Conexões**, crie 
 conexão de WhatsApp e leia o QR Code. A partir daí toda mensagem recebida por aquele número
 aparece na lista de tickets.
 
-**Credenciais padrão:** `admin@whaticket.com` / `admin`. Troque imediatamente.
+**Administrador:** criado por `scripts/bootstrap-production.js` (veja `ADMIN_EMAIL`/`ADMIN_PASSWORD`); sem elas, a senha aparece uma única vez no log.
 
 <details>
 <summary><b>Serviços Docker opcionais</b></summary>

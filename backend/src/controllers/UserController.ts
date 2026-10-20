@@ -1,7 +1,6 @@
 import { Request, Response } from "express";
 import { getIO } from "../libs/socket";
 
-import CheckSettingsHelper from "../helpers/CheckSettings";
 import AppError from "../errors/AppError";
 import User from "../models/User";
 import { roleOf } from "../helpers/Roles";
@@ -45,32 +44,12 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
 
 export const store = async (req: Request, res: Response): Promise<Response> => {
   const { email, password, name, profile, role, queueIds, whatsappId, coordArea, phone } = req.body;
-  const isSignup = req.url === "/signup";
+  // people are created by the administration only (there is no public sign-up)
+  assertMayManage(req, { role, profile });
 
-  if (isSignup) {
-    // self-registration is opt-in: only an explicit "enabled" opens it
-    const setting = await CheckSettingsHelper("userCreation").catch(() => "");
-    if (setting !== "enabled") {
-      throw new AppError("ERR_USER_CREATION_DISABLED", 403);
-    }
-  } else {
-    assertMayManage(req, { role, profile });
-  }
+  const user = await CreateUserService({ email, password, name, profile, role, queueIds, whatsappId, coordArea, phone });
 
-  // a public signup can never choose its own role, sectors or connection
-  const user = await CreateUserService({
-    email,
-    password,
-    name,
-    profile: isSignup ? "user" : profile,
-    role: isSignup ? "consultor" : role,
-    queueIds: isSignup ? [] : queueIds,
-    whatsappId: isSignup ? undefined : whatsappId,
-    coordArea: isSignup ? undefined : coordArea,
-    phone: isSignup ? undefined : phone
-  });
-
-  if (!isSignup) notify(user.email, staffWelcomeMail(user.name, ROLE_LABEL[String(role || "")] || "Equipe", user.email, `${frontBase()}/login`), "staff welcome");
+  notify(user.email, staffWelcomeMail(user.name, ROLE_LABEL[String(role || "")] || "Equipe", user.email, `${frontBase()}/login`), "staff welcome");
 
   const io = getIO();
   io.emit("user", {

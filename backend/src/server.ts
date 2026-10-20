@@ -70,6 +70,8 @@ whenLeader(() => {
 boot().catch(err => { logger.fatal({ err }, "Startup checks failed"); process.exit(1); });
 gracefulShutdown(server);
 
-// Exit after an uncaught failure: continuing could serve partially corrupted state.
+// Exit after an uncaught exception: continuing could serve partially corrupted state.
 process.on("uncaughtException", err => { logger.fatal({ err }, "Uncaught exception"); process.exit(1); });
-process.on("unhandledRejection", err => { logger.fatal({ err }, "Unhandled rejection"); process.exit(1); });
+// a promise nobody waited for that failed must not take every WhatsApp session down (they take minutes to come back): it is logged
+// loudly and the process keeps running
+process.on("unhandledRejection", err => { logger.error({ err }, "Unhandled rejection"); });

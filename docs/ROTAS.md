@@ -1,6 +1,6 @@
-# Rotas da API (426)
+# Rotas da API (425)
 
-Públicas: 32 · logado (qualquer perfil): 243 · gestão: 112 · admin: 31
+Públicas: 31 · logado (qualquer perfil): 243 · gestão: 112 · admin: 31
 
 ## Públicas (sem login)
 
@@ -12,7 +12,6 @@ Públicas: 32 · logado (qualquer perfil): 243 · gestão: 112 · admin: 31
 - GET /portal/versions/:id (analysisRoutes.ts)
 - POST /portal/upload (analysisRoutes.ts)
 - PUT /portal/password (analysisRoutes.ts)
-- POST /signup (authRoutes.ts)
 - POST /login (authRoutes.ts)
 - POST /forgot (authRoutes.ts)
 - GET /reset/:token (authRoutes.ts)
@@ -61,14 +60,8 @@ Públicas: 32 · logado (qualquer perfil): 243 · gestão: 112 · admin: 31
 - POST /contacts/import (contactRoutes.ts)
 - POST /contacts (contactRoutes.ts)
 - POST /contact (contactRoutes.ts)
-- PUT /contacts/:contactId (contactRoutes.ts)
-- PUT /contacts/:contactId/no-reply (contactRoutes.ts)
-- PUT /contacts/:contactId/staff (contactRoutes.ts)
-- PUT /contacts/:contactId/relation (contactRoutes.ts)
-- PUT /contacts/:contactId/community (contactRoutes.ts)
 - POST /uploads (extraRoutes.ts)
 - PUT /me/phone (extraRoutes.ts)
-- PUT /contacts/:contactId/tags (extraRoutes.ts)
 - POST /schedules (extraRoutes.ts)
 - PUT /schedules/:id (extraRoutes.ts)
 - POST /schedules/:id/cancel (extraRoutes.ts)
@@ -97,6 +90,11 @@ Públicas: 32 · logado (qualquer perfil): 243 · gestão: 112 · admin: 31
 
 ## Alteram dados com checagem de escopo
 
+- PUT /contacts/:contactId → canAccessContact
+- PUT /contacts/:contactId/no-reply → canAccessContact
+- PUT /contacts/:contactId/staff → canAccessContact
+- PUT /contacts/:contactId/relation → canAccessContact
+- PUT /contacts/:contactId/community → canAccessContact
 - POST /affiliates → affiliateStaff
 - PUT /affiliates/:id → affiliateStaff, canAccessAffiliate
 - POST /affiliates/:id/rotate-token → affiliateStaff, canAccessAffiliate
@@ -114,6 +112,7 @@ Públicas: 32 · logado (qualquer perfil): 243 · gestão: 112 · admin: 31
 - DELETE /affiliate-campaigns/:id → affiliateStaff
 - POST /affiliate-campaigns/:id/release → affiliateStaff
 - PUT /tickets/:ticketId/tags → canWriteTicket
+- PUT /contacts/:contactId/tags → canAccessContact
 - POST /campaigns → salesStaff
 - PUT /campaigns/:id → salesStaff
 - DELETE /campaigns/:id → salesStaff

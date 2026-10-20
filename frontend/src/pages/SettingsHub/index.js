@@ -140,11 +140,6 @@ const Geral = ({ values, save, admin }) => {
       </Card>
       {admin && (
         <>
-          <Card title="Acesso" sub="Quem pode entrar no sistema.">
-            <FormControlLabel control={<Switch color="primary" checked={values.userCreation === "enabled"} onChange={(e) => save("userCreation", e.target.checked ? "enabled" : "disabled")} />}
-              label={values.userCreation === "enabled" ? "Cadastro público: ligado" : "Cadastro público: desligado"} />
-            <div className={classes.hint}>{values.userCreation === "enabled" ? "Qualquer pessoa com o endereço consegue criar uma conta. Mantenha desligado e crie os usuários em Usuários." : "Só o administrador cria usuários. É o recomendado."}</div>
-          </Card>
           <Card title="Integração" sub="Token usado pelas integrações externas (API). Trate como uma senha.">
             <div className={classes.row}>
               <TextField style={{ flex: "1 1 260px" }} variant="outlined" size="small" label="Token da API" value={token} type={show ? "text" : "password"} InputProps={{ readOnly: true }} />

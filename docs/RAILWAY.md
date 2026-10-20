@@ -45,7 +45,7 @@ a cada deploy (e o número pede QR Code de novo).
 
 ## 5. Primeiro acesso
 Depois do deploy ficar verde (`/health` responde `{"ok":true}`), no terminal do serviço:
-`npx sequelize db:seed:all` — cria o administrador (`admin@whaticket.com` / `admin`). **Troque a senha na hora.**
+`node scripts/bootstrap-production.js` — cria o administrador (e-mail e senha de `ADMIN_EMAIL`/`ADMIN_PASSWORD`; sem elas, uma senha aleatória aparece uma única vez no log). O start já roda esse script sozinho.
 
 ## Erros comuns
 | Sintoma | Causa e solução |

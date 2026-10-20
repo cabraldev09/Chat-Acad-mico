@@ -9,10 +9,13 @@ import { sessionUser } from "../helpers/SessionUser";
 import { isManagerRole } from "../helpers/Roles";
 import { maskConfig } from "../helpers/Secrets";
 import { assertTicketAccess } from "../middleware/canAccessTicket";
-import { assertLead, withLeadScope } from "../middleware/scope";
+import { assertLead } from "../middleware/scope";
+import { hasContactAccess } from "../middleware/canAccessContact";
 import Ticket from "../models/Ticket";
 import Lead from "../models/Lead";
 import Schedule from "../models/Schedule";
+import UserQueue from "../models/UserQueue";
+import { remember } from "../helpers/TtlCache";
 import Affiliate from "../models/Affiliate";
 import AffiliateBonus from "../models/AffiliateBonus";
 import AppError from "../errors/AppError";
@@ -32,15 +35,10 @@ export const disconnectUser = (userId: number): void => {
   });
 };
 
-const contactAllowed = async (req: Request, contactId: number): Promise<boolean> => {
-  if (isManagerRole(req.user.role)) return true;
-  if (await Lead.findOne({ where: await withLeadScope(req, { contactId }), attributes: ["id"] })) return true;
-  const tickets = await Ticket.findAll({ where: { contactId }, attributes: ["id"] });
-  for (const ticket of tickets) {
-    try { await assertTicketAccess(req, ticket.id, "read"); return true; } catch (_) { /* another segment */ }
-  }
-  return false;
-};
+const contactAllowed = (req: Request, contactId: number): Promise<boolean> => hasContactAccess(req, contactId);
+
+const inQueue = async (userId: number | string, queueId: number | string): Promise<boolean> =>
+  !!(await UserQueue.findOne({ where: { userId: Number(userId), queueId: Number(queueId) }, attributes: ["userId"] }));
 
 // All server events, including chained .to(...), pass through this authorization gate.
 export const eventAllowed = async (user: User, event: string, data: any, rooms: string[] = []): Promise<boolean> => {
@@ -59,6 +57,14 @@ export const eventAllowed = async (user: User, event: string, data: any, rooms: 
       await assertLead(req, id);
       return true;
     }
+    // the conversation the AI agent handed over, and the alert that nobody answered it: the person it was given to, the management and, while
+    // it waits in a queue with nobody assigned, the consultors of that queue (the commercial team of the polo)
+    if (event === "aiHandoff" || event === "handoffAlert") {
+      if (manager || Number(data.userId) === Number(user.id)) return true;
+      return !data.userId && !!data.queueId && user.role === "consultor" && (await inQueue(user.id, data.queueId));
+    }
+    // the dissatisfied student of the survey: the tutor and the consultant of that student, and the management
+    if (event === "npsAlert") return manager || Number(data.tutorId) === Number(user.id) || Number(data.ownerId) === Number(user.id);
     if (event === "contact") return contactAllowed(req, Number(data.contact?.id || data.contactId));
     if (["whatsapp", "whatsappSession", "whatsappAlert", "safety", "historyImport"].includes(event)) {
       const item = data.session || data.whatsapp || data;
@@ -89,7 +95,8 @@ export const eventAllowed = async (user: User, event: string, data: any, rooms: 
     if (["campaign", "contactList"].includes(event)) return manager || user.role === "consultor";
     // ids of the conversations pinned on the phone of a number: the lists of everyone who sees that number follow them
     if (["tag", "queue", "quickAnswer", "course", "leadStage", "polo", "ticketPins"].includes(event)) return true;
-    return user.profile === "admin";
+    // the rest (lists of settings screens, institution, templates...) are for the administration and the coordination
+    return manager;
   } catch (_) { return false; }
 };
 
@@ -100,7 +107,9 @@ const send = async (event: string, payload: any, rooms: string[]): Promise<void>
   await Promise.all(Array.from(io.sockets.sockets.values()).map(async socket => {
     if (rooms.length && !rooms.some(room => socket.rooms.has(room))) return;
     const token = socket.data.token;
-    if (!checks.has(token)) checks.set(token, sessionUser(token));
+    // the permissions are read from the database, but not once per event per person: a few seconds are enough (a revoked session
+    // is also cut by disconnectUser)
+    if (!checks.has(token)) checks.set(token, remember(`su:${token.slice(-24)}`, 10000, () => sessionUser(token)));
     try {
       const user = await checks.get(token) as User;
       if (!(await eventAllowed(user, event, data, rooms))) {

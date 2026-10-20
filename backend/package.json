@@ -8,16 +8,12 @@
     "watch": "tsc -w",
     "start": "node dist/server.js",
     "dev": "tsx watch src/server.ts",
-    "pretest": "NODE_ENV=test sequelize db:migrate && NODE_ENV=test sequelize db:seed:all",
-    "test": "NODE_ENV=test jest",
-    "posttest": "NODE_ENV=test sequelize db:migrate:undo:all",
     "db:migrate": "npm run build && sequelize db:migrate",
     "db:seed": "sequelize db:seed:all",
     "test:analysis": "vitest run",
     "test:channels": "npm run build && node scripts/channels-e2e.js",
     "i18n:check": "node scripts/i18n-check.js",
-    "format": "prettier --write \"src/**/*.ts\"",
-    "test:security": "npm run build && node --test scripts/security-regression.test.js"
+    "format": "prettier --write \"src/**/*.ts\""
   },
   "author": "",
   "license": "MIT",

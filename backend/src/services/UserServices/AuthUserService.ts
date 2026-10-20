@@ -1,3 +1,4 @@
+import { col, fn, where } from "sequelize";
 import User from "../../models/User";
 import AppError from "../../errors/AppError";
 import {
@@ -30,8 +31,9 @@ const AuthUserService = async ({
   email,
   password
 }: Request): Promise<Response> => {
+  // the e-mail is compared without caring about capitals ("Maria@x.com" and "maria@x.com" are the same person)
   const user = await User.findOne({
-    where: { email },
+    where: where(fn("LOWER", col("User.email")), String(email || "").trim().toLowerCase()),
     include: ["queues"]
   });
 
