@@ -208,17 +208,26 @@ const textFor = (goal, rows, totals, heading, rangeLabel) => {
 
 // the dates, the title and the working-day rule of a period (a semester)
 const PeriodDialog = ({ open, onClose, goal, onSaved }) => {
-  const [f, setF] = useState({ title: "", startsOn: "", endsOn: "", workDays: 5 });
+  const [f, setF] = useState({ title: "", startsOn: "", endsOn: "", workDays: 5, extra: "" });
   const [saving, setSaving] = useState(false);
+  // what the calendar of the period looks like: the working days and the days taken out (holidays, and the days the company adds)
+  const [cal, setCal] = useState(null);
   useEffect(() => {
     if (!open) return;
-    if (goal) setF({ title: goal.title || "", startsOn: goal.startsOn, endsOn: goal.endsOn, workDays: goal.workDays });
+    if (goal) setF({ title: goal.title || "", startsOn: goal.startsOn, endsOn: goal.endsOn, workDays: goal.workDays, extra: (goal.extraHolidays || []).map((d) => d.split("-").reverse().join("/")).join("\n") });
     else {
       const y = new Date().getFullYear();
       const second = new Date().getMonth() >= 6;
-      setF({ title: `Graduação ${second ? 2 : 1}º semestre de ${y}`, startsOn: `${y}-${second ? "07" : "01"}-01`, endsOn: `${y}-${second ? "12-31" : "06-30"}`, workDays: 5 });
+      setF({ title: `Graduação ${second ? 2 : 1}º semestre de ${y}`, startsOn: `${y}-${second ? "07" : "01"}-01`, endsOn: `${y}-${second ? "12-31" : "06-30"}`, workDays: 5, extra: "" });
     }
   }, [open, goal]);
+  useEffect(() => {
+    if (!open || !f.startsOn || !f.endsOn || f.startsOn > f.endsOn) { setCal(null); return undefined; }
+    const timer = setTimeout(() => {
+      api.get("/goals/calendar", { params: { from: f.startsOn, to: f.endsOn, workDays: f.workDays, extra: f.extra } }).then(({ data }) => setCal(data)).catch(() => setCal(null));
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [open, f.startsOn, f.endsOn, f.workDays, f.extra]);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const save = async () => {
     setSaving(true);
@@ -226,11 +235,11 @@ const PeriodDialog = ({ open, onClose, goal, onSaved }) => {
       let id;
       if (goal) {
         await api.put(`/goals/${goal.id}`, { title: f.title, startsOn: f.startsOn, endsOn: f.endsOn });
-        await api.put(`/goals/${goal.id}/polos`, { workDays: f.workDays });
+        await api.put(`/goals/${goal.id}/polos`, { workDays: f.workDays, extraHolidays: f.extra });
         id = goal.id;
       } else {
         const { data } = await api.post("/goals", { kind: "polo", title: f.title, startsOn: f.startsOn, endsOn: f.endsOn, members: [] });
-        await api.put(`/goals/${data.id}/polos`, { workDays: f.workDays });
+        await api.put(`/goals/${data.id}/polos`, { workDays: f.workDays, extraHolidays: f.extra });
         id = data.id;
       }
       toast.success(goal ? "Período atualizado." : "Semestre criado.");
@@ -248,6 +257,18 @@ const PeriodDialog = ({ open, onClose, goal, onSaved }) => {
         <TextField select fullWidth variant="outlined" margin="dense" label="Dias úteis" value={f.workDays} onChange={(e) => setF({ ...f, workDays: Number(e.target.value) })}>
           {WORK_DAYS.map(([v, l]) => <MenuItem key={v} value={v}>{l}</MenuItem>)}
         </TextField>
+        <TextField fullWidth multiline minRows={2} variant="outlined" margin="dense" label="Outros dias sem expediente" value={f.extra} onChange={set("extra")} InputLabelProps={{ shrink: true }}
+          placeholder={"29/05/2026\n05/06/2026"} helperText="Um dia por linha (feriado da cidade, recesso). Os feriados nacionais e de Rondônia já entram na conta." />
+        {cal && (
+          <div style={{ marginTop: 8, padding: "10px 12px", borderRadius: 10, background: "rgba(11,66,121,.07)", fontSize: 13.5 }}>
+            <b>{cal.total} dias úteis</b> neste período{cal.holidays && cal.holidays.length ? `, fora ${cal.holidays.length} dia${cal.holidays.length === 1 ? "" : "s"} sem expediente:` : "."}
+            {cal.holidays && cal.holidays.length > 0 && (
+              <div style={{ marginTop: 4, fontSize: 12.5, opacity: 0.85, lineHeight: 1.5 }}>
+                {cal.holidays.map((h) => `${h.date.slice(8, 10)}/${h.date.slice(5, 7)} ${h.name}`).join(" · ")}
+              </div>
+            )}
+          </div>
+        )}
         <div style={{ fontSize: 12.5, opacity: 0.75, marginTop: 8 }}>A meta de cada polo vale para o período todo e é distribuída pelos meses dele. Se você trocar os meses do período, a distribuição mensal volta a ser igual para todos.</div>
       </DialogContent>
       <DialogActions>
@@ -293,8 +314,10 @@ const PoloDialog = ({ open, onClose, row, data, onSaved }) => {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
           <NumberField fullWidth variant="outlined" size="small" nullable label="Meta do semestre" InputLabelProps={{ shrink: true }} value={f.target} onChange={changeTarget} />
           <NumberField fullWidth variant="outlined" size="small" label="Já realizado (fora do CRM)" InputLabelProps={{ shrink: true }} value={f.manual} onChange={(v) => setF({ ...f, manual: v })} />
-          <NumberField fullWidth variant="outlined" size="small" label="Cancelados ou transferidos" InputLabelProps={{ shrink: true }} value={f.canceled} onChange={(v) => setF({ ...f, canceled: v })} />
+          <NumberField fullWidth variant="outlined" size="small" label="Alunos em curso" InputLabelProps={{ shrink: true }} value={Math.max(0, (row.auto || 0) + (f.manual || 0) - (f.canceled || 0))}
+            onChange={(v) => setF({ ...f, canceled: Math.max(0, (row.auto || 0) + (f.manual || 0) - (v || 0)) })} />
         </div>
+        <div className={classes.hint} style={{ marginTop: 6 }}>Cancelados: {f.canceled || 0} (automático: matrículas menos alunos em curso).</div>
         <div className={classes.hint} style={{ marginTop: 6 }}>No CRM este polo tem {row.auto} matrícula{row.auto === 1 ? "" : "s"} no período; elas entram sozinhas e somam ao que você informar.</div>
 
         <div style={{ display: "flex", alignItems: "center", marginTop: 16 }}>
@@ -321,7 +344,8 @@ const PoloDialog = ({ open, onClose, row, data, onSaved }) => {
   );
 };
 
-// every polo at once: targets, what they already have and cancellations
+// every polo at once: targets, the enrollments outside the CRM and the students in course today. The cancellations are not typed: they are what is left
+// when the students in course are taken from the enrollments, and stay saved so that every new enrollment of the CRM raises the students in course
 const EditDialog = ({ open, onClose, data, onSaved }) => {
   const classes = useStyles();
   const [rows, setRows] = useState([]);
@@ -353,13 +377,13 @@ const EditDialog = ({ open, onClose, data, onSaved }) => {
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth scroll="paper">
       <DialogTitle>Metas de todos os polos</DialogTitle>
       <DialogContent dividers>
-        <div className={`${classes.editRow} ${classes.hint}`} style={{ fontWeight: 600 }}><span>Polo</span><span>Meta</span><span title="Matrículas que não estão no CRM">Já realizado</span><span>Cancelados</span><span /></div>
+        <div className={`${classes.editRow} ${classes.hint}`} style={{ fontWeight: 600 }}><span>Polo</span><span>Meta</span><span title="Matrículas que não estão no CRM">Já realizado</span><span title="Quem está estudando hoje. Os cancelados saem sozinhos: matrículas menos alunos em curso.">Alunos em curso</span><span /></div>
         {rows.map((r, i) => (
           <div className={classes.editRow} key={r.poloId}>
-            <div><div style={{ fontWeight: 600, fontSize: 14 }}>{r.name}</div><div className={classes.hint}>{r.code ? `Código ${r.code} · ` : ""}{r.auto} no CRM</div></div>
+            <div><div style={{ fontWeight: 600, fontSize: 14 }}>{r.name}</div><div className={classes.hint}>{r.code ? `Código ${r.code} · ` : ""}{r.auto} no CRM · {r.canceled || 0} cancelados (automático)</div></div>
             <NumberField size="small" variant="outlined" nullable value={r.target} onChange={(v) => set(i, { target: v })} />
             <NumberField size="small" variant="outlined" value={r.manual} onChange={(v) => set(i, { manual: v })} />
-            <NumberField size="small" variant="outlined" value={r.canceled} onChange={(v) => set(i, { canceled: v })} />
+            <NumberField size="small" variant="outlined" value={Math.max(0, (r.auto || 0) + (r.manual || 0) - (r.canceled || 0))} onChange={(v) => set(i, { canceled: Math.max(0, (r.auto || 0) + (r.manual || 0) - (v || 0)) })} />
             <Button size="small" aria-label="Tirar polo" style={{ minWidth: 0 }} onClick={() => setRows((rs) => rs.filter((_, k) => k !== i))}><Trash2 size={16} /></Button>
           </div>
         ))}
@@ -370,7 +394,7 @@ const EditDialog = ({ open, onClose, data, onSaved }) => {
           </TextField>
         )}
         <div className={classes.hint} style={{ marginTop: 12 }}>
-          Para ajustar a meta de um mês, use o lápis no cartão do polo. As matrículas do CRM entram sozinhas; “Já realizado” soma o que está fora do CRM.
+          Para ajustar a meta de um mês, use o lápis no cartão do polo. As matrículas do CRM entram sozinhas; “Já realizado” soma o que está fora do CRM. Informe quantos alunos estão em curso: o número de cancelados é calculado (matrículas menos alunos em curso) e cada nova matrícula do CRM aumenta os alunos em curso.
         </div>
       </DialogContent>
       <DialogActions>
@@ -543,7 +567,7 @@ const PoloGoals = () => {
                   {totals.pct !== null && ` · ${totals.pct >= pace ? `${brDecimal(totals.pct - pace, 0)} pontos à frente do ritmo` : `${brDecimal(pace - totals.pct, 0)} pontos atrás do ritmo`}`}
                 </div>
                 <div className={classes.facts}>
-                  <span className={classes.fact}><span className={classes.factN}>{daysLeft}</span>dias úteis restantes</span>
+                  <span className={classes.fact} title="Sem fins de semana, feriados nacionais e de Rondônia e os dias sem expediente do período"><span className={classes.factN}>{daysLeft}</span>dias úteis restantes</span>
                   <span className={classes.fact}><span className={classes.factN}>{perDayLabel(totals.perDay)}</span>matrículas por dia</span>
                   {month ? (
                     <span className={classes.fact}><span className={classes.factN}>{data.totals.done}<span style={{ fontSize: 12, fontWeight: 500 }}> / {data.totals.target}</span></span>no semestre</span>

@@ -2881,6 +2881,23 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(out.slots.modalityExplained && out.slots.mecExplained && out.slots.platformExplained && out.slots.tutoringExplained, "a semipresencial student would hear the same explanations again");
       assert(out.slots.cpfGiven === true && out.slots.fullName === "Aluna Maria Souza" && out.hasBolsa === true && out.needs === false, `the data the CRM already has were asked again ${JSON.stringify(out)}`);
     });
+    await test("the goals calendar takes weekends, national and Rondônia holidays and the days the company adds out of the working days", async () => {
+      const made = await http.post("/goals", { kind: "polo", title: "Calendário teste", startsOn: "2026-05-14", endsOn: "2026-11-16", members: [] }, auth());
+      assert(made.status === 201, `goal ${made.status}`);
+      const gid = made.data.id;
+      let board = (await http.get("/goals/polos", { params: { goalId: gid }, ...auth() })).data;
+      assert(board.goal.daysTotal === 128, `working days ${board.goal.daysTotal}`);
+      assert(board.goal.holidays.length === 6 && board.goal.holidays.some(h => h.date === "2026-06-18" && /Evangélico/.test(h.name)) && board.goal.holidays.some(h => h.date === "2026-06-04" && /Corpus/.test(h.name)), `holidays ${JSON.stringify(board.goal.holidays)}`);
+      // the company adds a day (written as people write it) and it leaves the count
+      board = (await http.put(`/goals/${gid}/polos`, { workDays: 5, extraHolidays: "29/05/2026\n2026-06-05" }, auth())).data;
+      assert(board.goal.daysTotal === 126 && board.goal.extraHolidays.join(",") === "2026-05-29,2026-06-05", `with extra days ${board.goal.daysTotal} ${JSON.stringify(board.goal.extraHolidays)}`);
+      // the preview used by the dialog before saving
+      const pre = (await http.get("/goals/calendar", { params: { from: "2026-05-14", to: "2026-11-16", workDays: 6, extra: "" }, ...auth() })).data;
+      assert(pre.total === 155 && pre.workDays === 6, `preview ${JSON.stringify(pre)}`);
+      assert((await http.get("/goals/calendar", { params: { from: "2026-05-14", to: "2026-11-16" } })).status === 401, "calendar without login");
+      // the semester made for this test leaves, so the scenarios of the goals start from an empty system as before
+      assert((await http.delete(`/goals/${gid}`, auth())).status < 300, "the test semester was not removed");
+    });
     await test("the agent never answers groups, communities, the team's chats or personal contacts, whatever reaches the automation", async () => {
       const run = body => {
         const script = `
@@ -5498,11 +5515,12 @@ const postMeta = (id, payload, secret, badSig) => {
       const poloOf = city => sql(`SELECT p.name FROM PoloCoverages c JOIN Polos p ON p.id = c.poloId WHERE c.cityKey = '${city}' AND c.state = 'RO'`);
       assert(/^Mirante da Serra/.test(poloOf("ji parana")) && /^Mirante da Serra/.test(poloOf("jaru")), "Ji-Paraná and Jaru go to Mirante da Serra");
       assert(/^Buritis/.test(poloOf("ariquemes")), "Ariquemes goes to Buritis");
-      assert(/^Porto Velho - Centro/.test(poloOf("nova mamore")) && /^Porto Velho - Centro/.test(poloOf("guajara mirim")), "the towns around Porto Velho go to its main polo (a city a test already placed stays where it is)");
+      assert(/^Porto Velho - Centro/.test(poloOf("cujubim")) && /^Porto Velho \(Juscelino/.test(poloOf("nova mamore")) && /^Porto Velho \(Juscelino/.test(poloOf("guajara mirim")), "Porto Velho Centro keeps the north and JK gets the west (a city a test already placed stays where it is)");
+      assert(/^Vilhena/.test(poloOf("pimenta bueno")) && /^Vilhena/.test(poloOf("cabixi")) && /^Vilhena/.test(poloOf("espigao d oeste")), "Vilhena gets cities of its own");
       assert(poloOf("porto velho") === "", "Porto Velho itself is not forced onto one of the two polos");
       assert(sql(`SELECT COUNT(*) FROM Polos WHERE id IN (${pvh.id}, ${pvh2.id}, ${vil.id}, ${mir.id}, ${bur.id}) AND (city IS NULL OR city = '')`) === "0", "a polo kept an empty city");
       // only Porto Velho and Vilhena enroll semipresencial; the others point to the nearest of them
-      assert(sql(`SELECT enrollsSemipresencial::int FROM Polos WHERE id=${pvh.id}`) === "1" && sql(`SELECT enrollsSemipresencial::int FROM Polos WHERE id=${pvh2.id}`) === "1" && sql(`SELECT enrollsSemipresencial::int FROM Polos WHERE id=${vil.id}`) === "1", "the released polos");
+      assert(sql(`SELECT enrollsSemipresencial::int FROM Polos WHERE id=${pvh.id}`) === "1" && sql(`SELECT enrollsSemipresencial::int FROM Polos WHERE id=${pvh2.id}`) === "0" && sql(`SELECT enrollPoloId FROM Polos WHERE id=${pvh2.id}`) === String(pvh.id) && sql(`SELECT enrollsSemipresencial::int FROM Polos WHERE id=${vil.id}`) === "1", "the released polos");
       assert(sql(`SELECT enrollPoloId FROM Polos WHERE id=${mir.id}`) === String(pvh.id) && sql(`SELECT enrollPoloId FROM Polos WHERE id=${bur.id}`) === String(pvh.id), "Mirante da Serra and Buritis send their students to Porto Velho");
       // running it again changes nothing, and what a person edited stays
       await http.put(`/polos/${mir.id}`, { name: "Mirante da Serra - Centro - RO", state: "RO", enrollPoloId: vil.id }, auth());

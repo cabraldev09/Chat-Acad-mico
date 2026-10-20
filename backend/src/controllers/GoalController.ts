@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import { countWorkDays as countDays, holidaysBetween, parseExtraDays } from "../helpers/WorkCalendar";
 import { Op } from "sequelize";
 
 import AppError from "../errors/AppError";
@@ -189,22 +190,9 @@ export const repeat = async (req: Request, res: Response): Promise<Response> => 
 // A polo has a target for the whole period (a semester) and a target for each month of it. Done = enrollments counted from
 // the CRM (Leads.wonAt of the polo) + what the administration typed (a total for the period and/or adjustments of a month).
 
-const dayOk = (iso: string, workDays: number): boolean => {
-  const dow = new Date(`${iso}T12:00:00Z`).getUTCDay(); // 0 = Sunday
-  return workDays >= 7 ? true : workDays === 6 ? dow !== 0 : dow !== 0 && dow !== 6;
-};
-
-// working days from `from` to `to`, both included
-const countWorkDays = (from: string, to: string, workDays: number): number => {
-  let n = 0;
-  const cur = new Date(`${from}T12:00:00Z`);
-  const end = new Date(`${to}T12:00:00Z`);
-  for (let i = 0; cur <= end && i < 800; i += 1) {
-    if (dayOk(cur.toISOString().slice(0, 10), workDays)) n += 1;
-    cur.setUTCDate(cur.getUTCDate() + 1);
-  }
-  return n;
-};
+// working days from `from` to `to`, both included: weekends, the national and Rondônia holidays and the days the company added do not count
+// (see helpers/WorkCalendar)
+const extraOf = (goal: { extraHolidays?: string | null }): string[] => parseExtraDays(parseJson(goal.extraHolidays, []));
 
 // "2026-07" ... "2026-12" between the two dates
 export const monthsOf = (startsOn: string, endsOn: string): string[] => {
@@ -262,6 +250,8 @@ export const buildPoloBoard = async (goalIdWanted = 0, monthWanted = ""): Promis
     periods.find(g => g.startsOn <= today && g.endsOn >= today) ||
     periods[0];
   const wd = goal.workDays || 5;
+  const extra = extraOf(goal);
+  const countWorkDays = (a: string, b: string, w: number): number => countDays(a, b, w, extra);
   const months = monthsOf(goal.startsOn, goal.endsOn);
   const monthKey = months.includes(monthWanted) ? monthWanted : null;
 
@@ -383,7 +373,7 @@ export const buildPoloBoard = async (goalIdWanted = 0, monthWanted = ""): Promis
   });
   return {
     periods: periods.map(g => ({ id: g.id, title: g.title, startsOn: g.startsOn, endsOn: g.endsOn })),
-    goal: { id: goal.id, title: goal.title, startsOn: goal.startsOn, endsOn: goal.endsOn, workDays: wd, daysLeft, daysTotal, elapsed },
+    goal: { id: goal.id, title: goal.title, startsOn: goal.startsOn, endsOn: goal.endsOn, workDays: wd, daysLeft, daysTotal, elapsed, extraHolidays: extra, holidays: wd >= 7 ? [] : holidaysBetween(goal.startsOn, goal.endsOn, extra) },
     months,
     month: monthKey,
     rows,
@@ -417,6 +407,16 @@ const poloLine = (goalId: number, months: string[], r: any) => {
   };
 };
 
+// what the calendar of a period looks like before it is saved: how many working days and which days are taken out
+export const calendar = async (req: Request, res: Response): Promise<Response> => {
+  const from = String(req.query.from || "");
+  const to = String(req.query.to || "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || from > to) return res.json({ workDays: 0, total: 0, holidays: [] });
+  const wd = Number(req.query.workDays) === 6 || Number(req.query.workDays) === 7 ? Number(req.query.workDays) : 5;
+  const extra = parseExtraDays(String(req.query.extra || ""));
+  return res.json({ workDays: wd, total: countDays(from, to, wd, extra), holidays: wd >= 7 ? [] : holidaysBetween(from, to, extra) });
+};
+
 // administration: the working-day rule and the lines of the polos (all of them at once)
 export const updatePolos = async (req: Request, res: Response): Promise<Response> => {
   const goal = await load(req.params.id);
@@ -424,6 +424,10 @@ export const updatePolos = async (req: Request, res: Response): Promise<Response
   if (b.workDays !== undefined) {
     const wd = Number(b.workDays);
     await goal.update({ workDays: wd === 6 || wd === 7 ? wd : 5 });
+  }
+  if (b.extraHolidays !== undefined) {
+    const days = parseExtraDays(b.extraHolidays);
+    await goal.update({ extraHolidays: days.length ? JSON.stringify(days) : null });
   }
   if (Array.isArray(b.rows)) {
     const months = monthsOf(goal.startsOn, goal.endsOn);

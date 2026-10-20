@@ -358,6 +358,7 @@ r.delete("/me/efi", isAuth, Payment.clearMyEfi);
 // team enrollment goals (administration and coordination)
 // the whole team follows the polos; only managers change the numbers
 r.get("/goals/polos", isAuth, Goal.poloBoard);
+r.get("/goals/calendar", isAuth, isManager, Goal.calendar);
 r.put("/goals/:id/polos", isAuth, isManager, Goal.updatePolos);
 r.put("/goals/:id/polos/:poloId", isAuth, isManager, Goal.updatePolo);
 r.post("/goals/:id/polos/import", isAuth, isManager, Goal.importPoloGoals);

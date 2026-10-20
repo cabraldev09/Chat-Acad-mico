@@ -80,7 +80,7 @@ const COVERAGE: Record<string, string[]> = {
 
 // Semipresencial courses (health, engineering, teaching) are enrolled only at Porto Velho and Vilhena; the other polos send their students to the
 // nearest of them by road (Porto Velho: Buritis 5 h, Mirante da Serra 6.5 h; Vilhena: Cerejeiras 2 h, Chupinguaia 2.4 h, Alto Alegre 4.8 h).
-const ENROLLS = ["porto velho", "vilhena"];
+// (Porto Velho JK does not offer semipresencial: it sends its students to Porto Velho Centro)
 const SENDS_TO: Record<string, string> = { buritis: "porto velho", "mirante da serra": "porto velho", cerejeiras: "vilhena", chupinguaia: "vilhena", "alto alegre dos parecis": "vilhena" };
 
 // "Alta Floresta D'Oeste" is also written "do Oeste"
@@ -121,12 +121,50 @@ const ensureCanonicalPolos = async (): Promise<void> => {
   }
 };
 
+// Vilhena and Porto Velho JK came out of the nearest-polo split with no city of their own (Alto Alegre dos Parecis and Porto Velho Centro hold the long
+// corridors of the BR-364 and BR-425). The south of the corridor goes to Vilhena (a polo that offers semipresencial) and the west of Porto Velho to JK.
+const REBALANCE: Array<{ polo: (key: string) => boolean; cities: string[] }> = [
+  { polo: key => key.startsWith("vilhena"), cities: ["Pimenta Bueno", "Primavera de Rondônia", "Cabixi", "Espigão D'Oeste"] },
+  { polo: key => key.startsWith("porto velho") && !/\bcentro\b/.test(key), cities: ["Guajará-Mirim", "Nova Mamoré"] }
+];
+
+const rebalanceCoverage = async (): Promise<void> => {
+  const polos = await Polo.findAll();
+  let moved = 0;
+  for (const rule of REBALANCE) {
+    const target = polos.find(p => rule.polo(cityKeyOf(p.name)));
+    if (!target) continue;
+    for (const city of rule.cities.flatMap(withVariants)) {
+      const cityKey = cityKeyOf(city);
+      const row = await PoloCoverage.findOne({ where: { cityKey, state: "RO" } });
+      if (!row) await PoloCoverage.create({ poloId: target.id, city, cityKey, state: "RO" } as any);
+      else if (row.poloId !== target.id) await row.update({ poloId: target.id });
+      else continue;
+      moved += 1;
+    }
+  }
+  // Porto Velho JK does not offer semipresencial: its students enroll at Porto Velho Centro (never undoes what somebody set)
+  const main = polos.find(p => /^porto velho/.test(cityKeyOf(p.name)) && /\bcentro\b/.test(cityKeyOf(p.name)));
+  for (const p of polos) {
+    if (main && p.id !== main.id && /^porto velho/.test(cityKeyOf(p.name)) && p.enrollsSemipresencial && !p.enrollPoloId) await p.update({ enrollsSemipresencial: false, enrollPoloId: main.id });
+  }
+  forgetPolos();
+  logger.info(`Cidades de Vilhena e de Porto Velho JK cadastradas: ${moved}`);
+};
+
 // `force` is for the tests, which start from an empty system on purpose
 export const seedPoloCoverage = async (force = false): Promise<void> => {
   try {
     if (process.env.SKIP_DEFAULT_DATA === "1" && !force) return;
     const canonicalDone = (await getSetting("polos_canonical_v1", "")) === "1";
-    if ((await getSetting("polo_coverage_ro_seeded", "")) === "1" && canonicalDone) return;
+    const firstDone = (await getSetting("polo_coverage_ro_seeded", "")) === "1";
+    const secondDone = (await getSetting("polo_coverage_ro_v2", "")) === "1";
+    if (firstDone && canonicalDone && secondDone) return;
+    if (firstDone && canonicalDone) {
+      await rebalanceCoverage();
+      await setSetting("polo_coverage_ro_v2", "1");
+      return;
+    }
     if (!canonicalDone) {
       await ensureCanonicalPolos();
       await setSetting("polos_canonical_v1", "1");
@@ -162,13 +200,14 @@ export const seedPoloCoverage = async (force = false): Promise<void> => {
       const mine = polos.filter(p => startsWith(p, home));
       return home === "porto velho" ? mine.find(p => /\bcentro\b/.test(cityPoloKey(p))) || mine[0] : mine[0];
     };
+    const releases = (p: Polo): boolean => startsWith(p, "vilhena") || (startsWith(p, "porto velho") && /\bcentro\b/.test(cityPoloKey(p)));
     for (const p of polos) {
-      if (ENROLLS.some(h => startsWith(p, h))) {
+      if (releases(p)) {
         if (!p.enrollsSemipresencial) await p.update({ enrollsSemipresencial: true });
         continue;
       }
-      const home = Object.keys(SENDS_TO).find(h => startsWith(p, h));
-      const target = home ? mainOf(SENDS_TO[home]) : undefined;
+      const home = startsWith(p, "porto velho") ? "porto velho" : Object.keys(SENDS_TO).find(h => startsWith(p, h));
+      const target = home ? mainOf(SENDS_TO[home] || home) : undefined;
       if (target && !p.enrollPoloId) await p.update({ enrollPoloId: target.id });
     }
     forgetPolos();
@@ -176,6 +215,9 @@ export const seedPoloCoverage = async (force = false): Promise<void> => {
     if (matched) {
       await setSetting("polo_coverage_ro_seeded", "1");
       logger.info(`Cidades dos polos de Rondônia cadastradas: ${rows.length}`);
+      // a new installation gets the second pass right away
+      await rebalanceCoverage();
+      await setSetting("polo_coverage_ro_v2", "1");
     }
   } catch (err) {
     logger.warn(`Cidades dos polos de Rondônia não cadastradas: ${err}`);

@@ -31,6 +31,10 @@ class Goal extends Model<Goal> {
   @Column
   workDays: number;
 
+  // days without work added by the company, on top of the national and Rondônia holidays: a JSON list of YYYY-MM-DD
+  @Column(DataType.TEXT)
+  extraHolidays: string;
+
   // team = monthly goals of the consultants · polo = semester goals of the polos
   @Default("team")
   @Column

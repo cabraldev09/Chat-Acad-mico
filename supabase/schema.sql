@@ -1389,7 +1389,8 @@ CREATE TABLE public."Goals" (
     "createdAt" timestamp with time zone NOT NULL,
     "updatedAt" timestamp with time zone NOT NULL,
     "workDays" integer DEFAULT 5 NOT NULL,
-    kind character varying(255) DEFAULT 'team'::character varying NOT NULL
+    kind character varying(255) DEFAULT 'team'::character varying NOT NULL,
+    "extraHolidays" text
 );
 
 
@@ -5911,6 +5912,7 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261127000001-indexes.js') ON CONFL
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261127000002-polo-coverage-rondonia.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261127000002-polo-enrollment.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261128000001-whatsapp-ai-first.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261129000001-goal-extra-holidays.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.
