@@ -114,7 +114,7 @@ const BASE: AreaRule[] = [
 export const EDITABLE = ["mecImpacted", "percentualPresencial", "percentualSincrono", "teoriaAoVivo", "praticaPresencial", "cronogramaPraticasDefinido", "transitionNote", "commercialApprovedText"] as const;
 const SETTING = "mec_area_defaults";
 const SEEN = "mec_defaults_seen";
-const VERSION = "378-2025-v2";
+const VERSION = "378-2025-v3";
 
 export const getAreas = async (): Promise<AreaRule[]> => {
   let saved: Record<string, any> = {};
