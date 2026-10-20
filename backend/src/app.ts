@@ -38,13 +38,10 @@ app.use(securityHeaders);
 app.get("/health", async (_req: Request, res: Response) => {
   try {
     await sequelize.query("SELECT 1");
-    // version: the commit Railway is running, so a deploy can be checked from outside
-    // pool: connections open / in use / requests waiting for one (a growing "waiting" means the pool is too small)
-    const pool: any = (sequelize as any).connectionManager?.pool;
+    // version: the commit that is running, so a deploy can be checked from outside (nothing else about the server is told to an anonymous caller)
     res.json({
       ok: true,
-      version: String(process.env.RAILWAY_GIT_COMMIT_SHA || "").slice(0, 7) || undefined,
-      pool: pool ? { size: pool.size, using: pool.using, waiting: pool.waiting, max: pool.maxSize } : undefined
+      version: String(process.env.GIT_SHA || process.env.RAILWAY_GIT_COMMIT_SHA || "").slice(0, 7) || undefined
     });
   } catch (e) {
     res.status(503).json({ ok: false });
@@ -104,9 +101,13 @@ app.use(
     // names are unique per file, so browsers can keep pictures, voice notes and PDFs instead of fetching them again
     maxAge: "7d",
     setHeaders: (res, filePath) => {
-      // never let an uploaded html/svg/js run in the app's origin
-      if (/\.(html?|svg|xml|js|mjs)$/i.test(filePath)) {
+      // an uploaded file never runs in the origin of the API (it could use the session of whoever opens it): only pictures, sounds, videos and PDFs open
+      // inside the browser; any other type (html, xhtml, svg, svgz, xml, js...) is a download
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      if (!/\.(jpe?g|png|gif|webp|avif|bmp|ico|mp3|ogg|oga|opus|m4a|aac|wav|mp4|webm|mov|3gp|pdf)$/i.test(filePath)) {
         res.setHeader("Content-Disposition", "attachment");
+      } else if (!/\.pdf$/i.test(filePath)) {
+        res.setHeader("Content-Security-Policy", "default-src 'none'; sandbox");
       }
     }
   })
@@ -150,7 +151,9 @@ app.use(async (err: Error, req: Request, res: Response, _: NextFunction) => {
 
   // one line that names the request, so a 500 on the screen can be found in the log
   Sentry.captureException(err);
-  logger.error({ request: `${req.method} ${req.originalUrl}`, message: err.message, err });
+  // never the whole object: a database error carries the SQL and its parameters (names, phones, CPF of the request)
+  const parent: any = (err as any).parent;
+  logger.error({ request: `${req.method} ${req.originalUrl}`, message: err.message, name: err.name, dbCode: parent?.code, stack: err.stack });
   return res.status(500).json({ error: "Internal server error" });
 });
 

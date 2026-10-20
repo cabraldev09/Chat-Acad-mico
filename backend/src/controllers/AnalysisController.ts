@@ -1,3 +1,4 @@
+import { isEmail } from "../helpers/Email";
 import { Request, Response } from "express";
 import { Op, WhereOptions } from "sequelize";
 
@@ -345,7 +346,7 @@ export const studentUpdate = async (req: Request, res: Response): Promise<Respon
   if (b.courseName !== undefined) patch.courseName = b.courseName ? String(b.courseName).slice(0, 200) : null;
   if (b.email !== undefined) {
     const email = b.email ? String(b.email).trim().toLowerCase() : null;
-    if (email && !/^\S+@\S+\.\S+$/.test(email)) throw new AppError("E-mail inválido.", 400);
+    if (email && !isEmail(email)) throw new AppError("E-mail inválido.", 400);
     if (email && email !== s.email && (await Student.findOne({ where: { email } }))) throw new AppError("Já existe um aluno com este e-mail.", 409);
     patch.email = email;
     // another address means another person may be reading: the old sessions stop

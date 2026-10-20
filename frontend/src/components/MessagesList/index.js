@@ -722,7 +722,7 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
           )}
         >
           {!m.isDeleted && (
-            <IconButton
+            <IconButton aria-label="Mostrar mais"
               size="small"
               className={classes.chevron}
               onClick={(e) => {
@@ -797,7 +797,7 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
         return (
           <>
             <div className={classes.pickBar}>
-              <IconButton size="small" onClick={() => setPicked(null)} aria-label="Cancelar seleção" title="Cancelar (Esc)"><Close /></IconButton>
+              <IconButton aria-label="Fechar" size="small" onClick={() => setPicked(null)} aria-label="Cancelar seleção" title="Cancelar (Esc)"><Close /></IconButton>
               <span className={classes.pickCount}>{picked.length} {picked.length === 1 ? "selecionada" : "selecionadas"}</span>
               <IconButton size="small" disabled={!picked.length} title={allStarred ? "Desfavoritar" : "Favoritar"}
                 onClick={async () => {
@@ -845,7 +845,7 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
       </div>
       {loading && <CircularProgress size={28} className={classes.loading} />}
       {!atBottom && (
-        <IconButton className={classes.fab} onClick={() => scrollToBottom(true)} aria-label="Ir para o fim">
+        <IconButton aria-label="Mostrar mais" className={classes.fab} onClick={() => scrollToBottom(true)} aria-label="Ir para o fim">
           {newCount > 0 && <span className={classes.fabBadge}>{newCount}</span>}
           <KeyboardArrowDown />
         </IconButton>

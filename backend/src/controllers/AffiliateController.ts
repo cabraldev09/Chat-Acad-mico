@@ -1,3 +1,4 @@
+import { csvCell } from "../helpers/Csv";
 import { tagAffiliateLead } from "../services/AffiliateServices/AffiliateLane";
 import { Request, Response } from "express";
 import { Op } from "sequelize";
@@ -386,7 +387,7 @@ export const exportBonuses = async (req: Request, res: Response): Promise<void> 
     ],
     order: [["createdAt", "ASC"]]
   });
-  const esc = (v: any) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const esc = (v: any) => csvCell(v);
   const label: any = { pending: "Pendente", approved: "Aprovado", paid: "Pago", cancelled: "Cancelado" };
   const lines = [["Afiliado", "Tipo da chave", "Chave Pix", "Indicado", "Valor", "Situação", "Motivo", "Data", "Comprovante"].map(esc).join(";")];
   rows.forEach(r => {

@@ -1275,7 +1275,8 @@ CREATE TABLE public."CurricularAnalyses" (
     "enrollmentReanalysisAt" timestamp with time zone,
     "followUpDueAt" timestamp with time zone,
     "followUpNotifiedAt" timestamp with time zone,
-    "followUpNotificationCount" integer DEFAULT 0 NOT NULL
+    "followUpNotificationCount" integer DEFAULT 0 NOT NULL,
+    "poloId" integer
 );
 
 
@@ -2337,7 +2338,8 @@ CREATE TABLE public."QuickAnswers" (
     shortcut text NOT NULL,
     message text NOT NULL,
     "createdAt" timestamp with time zone NOT NULL,
-    "updatedAt" timestamp with time zone NOT NULL
+    "updatedAt" timestamp with time zone NOT NULL,
+    "userId" integer
 );
 
 
@@ -5913,6 +5915,8 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261127000002-polo-coverage-rondoni
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261127000002-polo-enrollment.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261128000001-whatsapp-ai-first.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261129000001-goal-extra-holidays.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261130000001-analysis-polo.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261201000001-quick-answer-owner.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

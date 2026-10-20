@@ -1,3 +1,4 @@
+import { safeEqual } from "../helpers/SafeEqual";
 import { Request, Response } from "express";
 import fs from "fs";
 import path from "path";
@@ -172,7 +173,7 @@ export const send = async (req: Request, res: Response): Promise<Response> => {
 
 // ------------------------------------------------------------------- webhook
 export const efiWebhook = async (req: Request, res: Response): Promise<Response> => {
-  if (req.params.secret !== (await getSetting("efi_webhook_secret", ""))) return res.sendStatus(404);
+  if (!safeEqual(req.params.secret, await getSetting("efi_webhook_secret", ""))) return res.sendStatus(404);
   res.sendStatus(200); // Efí retries on slow answers; process after acknowledging
 
   const items: any[] = Array.isArray(req.body?.pix) ? req.body.pix : [];
@@ -194,7 +195,7 @@ export const efiWebhook = async (req: Request, res: Response): Promise<Response>
 // Efí Cobranças (boleto/Bolix) posts `notification=<token>`; the token only says "something changed":
 // the charges it names are re-read from Efí before anything is marked as paid
 export const efiBilletWebhook = async (req: Request, res: Response): Promise<Response> => {
-  if (req.params.secret !== (await getSetting("efi_webhook_secret", ""))) return res.sendStatus(404);
+  if (!safeEqual(req.params.secret, await getSetting("efi_webhook_secret", ""))) return res.sendStatus(404);
   res.sendStatus(200);
   try {
     const token = String(req.body?.notification || "");

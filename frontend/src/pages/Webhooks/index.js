@@ -111,7 +111,7 @@ const ApiTokens = () => {
               <TableCell>{t.token}</TableCell>
               <TableCell>{t.lastUsedAt ? format(parseISO(t.lastUsedAt), "dd/MM/yy HH:mm") : "—"}</TableCell>
               <TableCell align="right">
-                <IconButton size="small" onClick={() => remove(t.id)}><DeleteOutline /></IconButton>
+                <IconButton aria-label="Excluir" size="small" onClick={() => remove(t.id)}><DeleteOutline /></IconButton>
               </TableCell>
             </TableRow>
           ))}

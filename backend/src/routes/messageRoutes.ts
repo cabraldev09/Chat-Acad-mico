@@ -8,7 +8,8 @@ import * as MessageController from "../controllers/MessageController";
 
 const messageRoutes = Router();
 
-const upload = multer(uploadConfig);
+// a document sent by the team: up to 64 MB, at most 10 files at once
+const upload = multer({ ...uploadConfig, limits: { fileSize: 64 * 1024 * 1024, files: 10 } });
 
 // before the routes with a :ticketId, which would take "forward-batch" for an id
 messageRoutes.post("/messages/forward-batch", isAuth, MessageController.forwardMany);

@@ -24,6 +24,12 @@ export const hasContactAccess = async (req: Request, contactId: number): Promise
   return false;
 };
 
+// A contact nobody works yet (no conversation and no lead): anyone who can create conversations may start the first one (a brand new contact)
+export const contactIsFree = async (contactId: number): Promise<boolean> =>
+  (await Ticket.count({ where: { contactId } })) === 0 && (await Lead.count({ where: { contactId } })) === 0;
+
+export const hasContactAccessOrFree = async (req: Request, contactId: number): Promise<boolean> => (await hasContactAccess(req, contactId)) || (await contactIsFree(contactId));
+
 export const canAccessContact = async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
   const id = Number(req.params.contactId);
   if (!Number.isInteger(id) || id <= 0) throw new AppError("ERR_NO_CONTACT_FOUND", 404);

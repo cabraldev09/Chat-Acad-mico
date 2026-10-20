@@ -232,7 +232,7 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
   return (
     <Dialog fullScreen open onClose={() => onClose()} classes={{ paper: classes.paper }}>
       <div className={classes.top}>
-        <IconButton onClick={() => onClose()} aria-label="Fechar"><X /></IconButton>
+        <IconButton aria-label="Fechar" onClick={() => onClose()} aria-label="Fechar"><X /></IconButton>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div className={classes.title}>Proposta de bolsa{saved ? ` #${saved.id}` : ""}</div>
           <Typography variant="body2" color="textSecondary" noWrap>{lead.name}{institution ? ` · ${institution.name}` : ""}{lead.affiliate ? ` · indicado pelo afiliado ${lead.affiliate.name}` : ""}</Typography>
@@ -380,7 +380,7 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
                         onChange={(e) => { e && e.persist && e.persist(); return (setF((p) => ({ ...p, schedule: p.schedule.map((x, j) => (j === i ? { ...x, from: e.target.value } : x)) }))); }} />
                       <TextField variant="outlined" margin="dense" label="% por semestre" value={s.pct} disabled={!!locked} style={{ flex: 1 }}
                         onChange={(e) => { e && e.persist && e.persist(); return (setF((p) => ({ ...p, schedule: p.schedule.map((x, j) => (j === i ? { ...x, pct: e.target.value } : x)) }))); }} />
-                      <IconButton size="small" disabled={!!locked} onClick={() => setF((p) => ({ ...p, schedule: p.schedule.filter((_, j) => j !== i) }))}><Trash2 size={16} /></IconButton>
+                      <IconButton aria-label="Excluir" size="small" disabled={!!locked} onClick={() => setF((p) => ({ ...p, schedule: p.schedule.filter((_, j) => j !== i) }))}><Trash2 size={16} /></IconButton>
                     </div>
                   ))}
                   <Button size="small" startIcon={<Plus size={14} />} disabled={!!locked} onClick={() => setF((p) => ({ ...p, schedule: [...p.schedule, { from: "", pct: "" }] }))}>Adicionar degrau</Button>

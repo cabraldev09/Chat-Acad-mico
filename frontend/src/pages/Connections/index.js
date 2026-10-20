@@ -486,14 +486,14 @@ const Connections = () => {
 											<TableCell align="center">
 												{canManage(whatsApp) && (
 													<>
-														<IconButton
+														<IconButton aria-label="Editar"
 															size="small"
 															onClick={() => handleEditWhatsApp(whatsApp)}
 														>
 															<Edit />
 														</IconButton>
 
-														<IconButton
+														<IconButton aria-label="Excluir"
 															size="small"
 															onClick={e => {
 																handleOpenConfirmationModal("delete", whatsApp.id);

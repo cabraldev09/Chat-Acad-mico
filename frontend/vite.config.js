@@ -71,7 +71,7 @@ export default defineConfig({
   },
   build: {
     outDir: "build",
-    sourcemap: true,
+    sourcemap: false,  // the maps would publish the source of the whole screen (about 17 MB)
     rollupOptions: {
       output: {
         // keep this split as it is: separating react / jss / clsx from material-ui creates a circular chunk and the

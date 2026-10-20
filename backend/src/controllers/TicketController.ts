@@ -1,3 +1,4 @@
+import { hasContactAccessOrFree } from "../middleware/canAccessContact";
 import { chatIdOf } from "../helpers/ChatId";
 import { Request, Response } from "express";
 import { getIO } from "../libs/socket";
@@ -131,7 +132,12 @@ export const welcome = async (req: Request, res: Response): Promise<Response> =>
 };
 
 export const store = async (req: Request, res: Response): Promise<Response> => {
-  const { contactId, status, userId }: TicketData = req.body;
+  const { contactId, status }: TicketData = req.body;
+  // the conversation is opened for the person who asks, never for somebody else (managers may assign it); and only on a contact the person may reach
+  const asked = Number((req.body as any).userId);
+  const userId = isManagerRole(roleOf(req.user)) && Number.isInteger(asked) && asked > 0 ? asked : Number(req.user.id);
+  if (!Number.isInteger(Number(contactId)) || Number(contactId) <= 0) throw new AppError("ERR_NO_CONTACT_FOUND", 404);
+  if (!(await hasContactAccessOrFree(req, Number(contactId)))) throw new AppError("ERR_NO_PERMISSION", 403);
 
   const ticket = await CreateTicketService({ contactId, status, userId });
 

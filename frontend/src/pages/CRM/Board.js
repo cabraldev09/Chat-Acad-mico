@@ -3,9 +3,9 @@ import { useHistory, useLocation } from "react-router-dom";
 import { toast } from "react-toastify";
 import {
   Button, TextField, MenuItem, InputAdornment, Dialog, DialogTitle, DialogContent, DialogActions,
-  Typography, makeStyles, ButtonGroup, Chip, Table, TableHead, TableRow, TableCell, TableBody, Paper,
+  Typography, makeStyles, ButtonGroup, Chip, Table, TableHead, TableRow, TableCell, TableBody, Paper, Menu, IconButton,
 } from "@material-ui/core";
-import { MonitorCheck, Search, Plus, Upload, LayoutGrid, List, Calendar, BadgeCheck, Rocket, Hourglass, Flame } from "lucide-react";
+import { MonitorCheck, Search, Plus, Upload, LayoutGrid, List, Calendar, BadgeCheck, Rocket, Hourglass, Flame, MoreHorizontal } from "lucide-react";
 import { format, parseISO } from "date-fns";
 
 import MainContainer from "../../components/MainContainer";
@@ -58,17 +58,37 @@ const useStyles = makeStyles((theme) => ({
   chipPaid: { background: "rgba(22,163,74,.14)", color: "#15803d" },
   more: { fontSize: 12.5, color: theme.palette.text.secondary, textAlign: "center", cursor: "pointer", padding: 4, "&:hover": { color: theme.palette.text.primary } },
   empty: { fontSize: 12.5, color: theme.palette.text.secondary, textAlign: "center", padding: theme.spacing(2, 1), border: `1px dashed ${theme.palette.divider}`, borderRadius: 10 },
+  // while a card is dragged every stage is one drop away, whatever the scroll of the board (a stage far above or below the card)
+  dropBar: {
+    gridColumn: "1 / -1", position: "sticky", top: 0, zIndex: 5, display: "flex", alignItems: "center", gap: theme.spacing(0.75), flexWrap: "wrap",
+    padding: theme.spacing(0.75, 1), borderRadius: 12, background: theme.palette.type === "dark" ? "#0f1d33" : "#ffffff",
+    border: `1px solid ${theme.palette.accent.main}`, boxShadow: "0 10px 24px -14px rgba(11,66,121,.55)", animation: "pop-in .2s var(--ease-out) both",
+  },
+  dropLabel: { fontSize: 12, fontWeight: 600, color: theme.palette.text.secondary, marginRight: 4 },
+  dropChip: {
+    display: "inline-flex", alignItems: "center", gap: 6, borderRadius: 999, padding: "5px 12px", fontSize: 12.5, fontWeight: 600, cursor: "copy",
+    border: "1px solid transparent", background: theme.palette.action.selected, transition: "transform .12s, box-shadow .12s, border-color .12s",
+  },
+  dropChipOver: { transform: "scale(1.06)", borderColor: theme.palette.accent.main, boxShadow: `0 0 0 3px ${theme.palette.accent.main}30` },
+  cardMenu: { marginRight: -6, marginTop: -4, padding: 4, color: theme.palette.text.secondary },
   tableWrap: { flex: 1, overflowY: "auto", overflowX: "hidden", ...theme.scrollbarStyles },
 }));
 
-const LeadCard = ({ lead, onOpen, onDragStart, onDragEnd, dragging }) => {
+const LeadCard = ({ lead, onOpen, onDragStart, onDragEnd, dragging, onMenu }) => {
   const classes = useStyles();
   return (
-    <div className={`${classes.card} ${dragging ? classes.cardDragging : ""}`} draggable onClick={() => onOpen(lead.id)}
+    <div className={`${classes.card} ${dragging ? classes.cardDragging : ""}`} draggable role="button" tabIndex={0} aria-label={`Abrir o lead ${lead.name}`}
+      onClick={() => onOpen(lead.id)} onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onOpen(lead.id); } }}
       onDragStart={(e) => { e.dataTransfer.setData("text/plain", String(lead.id)); e.dataTransfer.effectAllowed = "move"; onDragStart(lead); }} onDragEnd={onDragEnd}>
       <div className={classes.cardTop}>
         <div className={classes.cardName}>{lead.name}</div>
         <ScoreRing value={lead.score} />
+        {onMenu && (
+          <IconButton size="small" className={classes.cardMenu} aria-label="Mover para outra etapa" title="Mover para outra etapa"
+            onClick={(e) => { e.stopPropagation(); onMenu(lead, e.currentTarget); }} onDragStart={(e) => e.preventDefault()} draggable={false}>
+            <MoreHorizontal size={16} />
+          </IconButton>
+        )}
       </div>
       {lead.course && <div className={classes.cardCourse}>{lead.course.name}{lead.course.modality ? ` · ${lead.course.modality}` : ""}</div>}
       {lead.tags && lead.tags.length > 0 && (
@@ -153,6 +173,9 @@ const Board = () => {
   const [openId, setOpenId] = useState(Number(new URLSearchParams(location.search).get("lead")) || null);
   const [drag, setDrag] = useState(null);
   const [over, setOver] = useState(null);
+  const [moveMenu, setMoveMenu] = useState(null);
+  const boardRef = useRef(null);
+  const pointer = useRef({ x: 0, y: 0 });
   const [newOpen, setNewOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [lostFor, setLostFor] = useState(null);
@@ -204,12 +227,8 @@ const Board = () => {
     load();
   };
 
-  const onDrop = (e, stage) => {
-    e.preventDefault();
-    setOver(null);
-    const id = Number(e.dataTransfer.getData("text/plain")) || (drag && drag.id);
-    setDrag(null);
-    if (!id) return;
+  const dropOn = (id, stage, e) => {
+    if (!id || !board) return;
     const current = board.find((s) => s.leads.some((l) => l.id === id));
     if (current && current.id === stage.id) return;
     if (stage.type === "lost") setLostFor({ id, stage });
@@ -219,6 +238,37 @@ const Board = () => {
       if (lead) setEnrollFor(lead);
     } else moveLead(id, stage, e);
   };
+
+  const onDrop = (e, stage) => {
+    e.preventDefault();
+    setOver(null);
+    const id = Number(e.dataTransfer.getData("text/plain")) || (drag && drag.id);
+    setDrag(null);
+    dropOn(id, stage, e);
+  };
+
+  // While a card is dragged the browser does not scroll the board (nor the column) when the stage of destination is out of sight: the board scrolls by
+  // itself when the pointer is near its top or bottom edge, and so does the column under the pointer.
+  useEffect(() => {
+    if (!drag) return undefined;
+    let raf = 0;
+    const EDGE = 90;
+    const MAX = 22;
+    const speedOf = (rect, y) => (y < rect.top + EDGE ? -MAX * Math.min(1, (rect.top + EDGE - y) / EDGE) : y > rect.bottom - EDGE ? MAX * Math.min(1, (y - (rect.bottom - EDGE)) / EDGE) : 0);
+    const onMove = (ev) => { pointer.current = { x: ev.clientX, y: ev.clientY }; };
+    const tick = () => {
+      const { x, y } = pointer.current;
+      const under = document.elementFromPoint(x, y);
+      const col = under && under.closest ? under.closest("[data-colbody]") : null;
+      if (col) { const v = speedOf(col.getBoundingClientRect(), y); if (v) col.scrollTop += v; }
+      const board = boardRef.current;
+      if (board) { const v = speedOf(board.getBoundingClientRect(), y); if (v) board.scrollTop += v; }
+      raf = requestAnimationFrame(tick);
+    };
+    document.addEventListener("dragover", onMove);
+    raf = requestAnimationFrame(tick);
+    return () => { document.removeEventListener("dragover", onMove); cancelAnimationFrame(raf); };
+  }, [drag]);
 
   const loadMore = async (stage) => {
     const { data } = await api.get("/leads", { params: { ...params(), stageId: stage.id, offset: stage.leads.length, limit: 30 } });
@@ -232,6 +282,19 @@ const Board = () => {
       {enrollFor && <EnrollDialog open lead={enrollFor} onClose={() => setEnrollFor(null)} onDone={() => load()} />}
       <LostDialog open={!!lostFor} reasons={ctx.options.lostReasons} onClose={() => setLostFor(null)}
         onConfirm={(reason, note) => { const f = lostFor; setLostFor(null); moveLead(f.id, f.stage, null, { lostReason: reason, lostNote: note }); }} />
+      {/* every stage one click away (keyboard and touch): the same rules as a drop (enrollment asks for the confirmation, lost asks for the reason) */}
+      <Menu anchorEl={moveMenu && moveMenu.el} open={!!moveMenu} onClose={() => setMoveMenu(null)} getContentAnchorEl={null}
+        anchorOrigin={{ vertical: "bottom", horizontal: "right" }} transformOrigin={{ vertical: "top", horizontal: "right" }}>
+        <Typography variant="caption" color="textSecondary" style={{ display: "block", padding: "4px 16px 6px" }}>Mover para</Typography>
+        {(board || []).map((stage) => {
+          const here = moveMenu && board.some((x) => x.id === stage.id && x.leads.some((l) => l.id === moveMenu.lead.id));
+          return (
+            <MenuItem key={stage.id} dense disabled={!!here} onClick={(e) => { const lead = moveMenu.lead; setMoveMenu(null); dropOn(lead.id, stage, e); }}>
+              <span className={classes.dot} style={{ background: stage.color, marginRight: 10 }} />{stage.name}
+            </MenuItem>
+          );
+        })}
+      </Menu>
       <NewLeadDialog open={newOpen} onClose={() => setNewOpen(false)} ctx={ctx} onCreated={(id) => { setOpenId(id); load(); }} />
       <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} onDone={load} />
       <LeadDrawer leadId={openId} ctx={ctx} onClose={() => { setOpenId(null); if (location.search) history.replace("/crm"); }} onChanged={load} />
@@ -286,7 +349,20 @@ const Board = () => {
       </div>
 
       {view === "board" ? (
-        <div className={classes.board}>
+        <div className={classes.board} ref={boardRef}>
+          {drag && board && (
+            <div className={classes.dropBar} role="group" aria-label="Soltar o lead em uma etapa">
+              <span className={classes.dropLabel}>Soltar em:</span>
+              {board.map((stage) => (
+                <span key={stage.id} className={`${classes.dropChip} ${over === `bar-${stage.id}` ? classes.dropChipOver : ""}`}
+                  onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); if (over !== `bar-${stage.id}`) setOver(`bar-${stage.id}`); }}
+                  onDragLeave={() => setOver((o) => (o === `bar-${stage.id}` ? null : o))}
+                  onDrop={(e) => { e.preventDefault(); e.stopPropagation(); onDrop(e, stage); }}>
+                  <span className={classes.dot} style={{ background: stage.color }} />{stage.name}
+                </span>
+              ))}
+            </div>
+          )}
           {(board || []).map((stage) => (
             <div key={stage.id} className={`${classes.col} ${over === stage.id ? classes.colOver : ""}`}
               onDragOver={(e) => { e.preventDefault(); if (over !== stage.id) setOver(stage.id); }}
@@ -297,9 +373,9 @@ const Board = () => {
                 <span className={classes.colName} title={stage.name}>{stage.name}</span>
                 <span className={classes.count}>{stage.count}</span>
               </div>
-              <div className={classes.colBody}>
+              <div className={classes.colBody} data-colbody="1">
                 {stage.leads.map((l) => (
-                  <LeadCard key={l.id} lead={l} onOpen={setOpenId} dragging={drag && drag.id === l.id}
+                  <LeadCard key={l.id} lead={l} onOpen={setOpenId} dragging={drag && drag.id === l.id} onMenu={(lead, el) => setMoveMenu({ lead, el })}
                     onDragStart={setDrag} onDragEnd={() => { setDrag(null); setOver(null); }} />
                 ))}
                 {stage.count === 0 && <div className={classes.empty}>Arraste um lead para cá</div>}

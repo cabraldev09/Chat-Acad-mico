@@ -147,32 +147,3 @@ export const overview = async (req: Request, res: Response): Promise<Response> =
 };
 
 // Real time monitor: everything currently open or waiting
-export const live = async (_req: Request, res: Response): Promise<Response> => {
-  const tickets = await q(
-    `SELECT t.id, t.status, t.lastMessage, t.unreadMessages, t.updatedAt, t.createdAt,
-            c.name AS contactName, c.number AS contactNumber, c.profilePicUrl,
-            u.id AS userId, u.name AS userName,
-            qu.name AS queueName, qu.color AS queueColor,
-            w.name AS connectionName, w.channel AS channel,
-            ${diffSeconds('t.updatedAt', nowSql())} AS idleSeconds,
-            ${diffSeconds('t.createdAt', nowSql())} AS ageSeconds
-     FROM Tickets t
-     JOIN Contacts c ON c.id = t.contactId
-     LEFT JOIN Users u ON u.id = t.userId
-     LEFT JOIN Queues qu ON qu.id = t.queueId
-     LEFT JOIN Whatsapps w ON w.id = t.whatsappId
-     WHERE t.status IN ('open', 'pending') AND t.isHistorical = false AND c.isStaff = false AND c.isPersonal = false AND c.kind <> 'channel'
-     ORDER BY t.status = 'pending' DESC, t.updatedAt ASC
-     LIMIT 300`,
-    {}
-  );
-  const connections = await q(
-    `SELECT id, name, channel, status FROM Whatsapps ORDER BY id`,
-    {}
-  );
-  return res.json({
-    tickets: tickets.map((t: any) => ({ ...t, profilePicUrl: publicPicUrl(t.profilePicUrl) })),
-    connections,
-    now: new Date()
-  });
-};

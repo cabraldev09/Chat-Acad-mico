@@ -16,6 +16,7 @@ import {
   BelongsTo
 } from "sequelize-typescript";
 import { hash, compare } from "bcryptjs";
+import { PASSWORD_COST } from "../helpers/Passwords";
 import Ticket from "./Ticket";
 import Queue from "./Queue";
 import UserQueue from "./UserQueue";
@@ -92,7 +93,7 @@ class User extends Model<User> {
   @BeforeCreate
   static hashPassword = async (instance: User): Promise<void> => {
     if (instance.password) {
-      instance.passwordHash = await hash(instance.password, 8);
+      instance.passwordHash = await hash(instance.password, PASSWORD_COST);
     }
   };
 

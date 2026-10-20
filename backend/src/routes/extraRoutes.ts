@@ -232,7 +232,6 @@ r.delete("/contact-lists/:id/items/:itemId", isAuth, salesStaff, Campaign.remove
 
 // stats & live monitor
 r.get("/stats/overview", isAuth, Stats.overview);
-r.get("/stats/live", isAuth, isManager, Stats.live);
 
 // channels
 r.get("/channels", isAuth, Channel.index);

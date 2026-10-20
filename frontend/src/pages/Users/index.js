@@ -284,14 +284,14 @@ const Users = () => {
                   <TableCell align="center">
                     {canChange(user) && (
                       <>
-                        <IconButton
+                        <IconButton aria-label="Editar"
                           size="small"
                           onClick={() => handleEditUser(user)}
                         >
                           <EditIcon />
                         </IconButton>
 
-                        <IconButton
+                        <IconButton aria-label="Excluir"
                           size="small"
                           onClick={(e) => {
                             setConfirmModalOpen(true);

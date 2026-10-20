@@ -2929,6 +2929,90 @@ const postMeta = (id, payload, secret, badSig) => {
       sql(`DELETE FROM Leads WHERE name='Matriculado Total Teste'`);
       assert((await http.delete(`/goals/${gid}`, auth())).status < 300, "the test semester was not removed");
     });
+    await test("an administrator deletes a lead from the CRM; a consultant cannot; a student (enrolled) is never deleted", async () => {
+      const mkU = async (name, email, role) => (await http.post("/users", { name, email, password: "senha123", role }, auth())).data;
+      await mkU("Consultor Sem Exclusao", "semexclusao@lead.test", "consultor");
+      const tok = (await http.post("/auth/login", { email: "semexclusao@lead.test", password: "senha123" })).data.token;
+      const lead = await mkLead("Lead Para Excluir", "5511933330001");
+      assert((await http.delete(`/leads/${lead.id}`, asUser(tok))).status === 403, "a consultant deleted a lead");
+      const student = await mkLead("Aluno Que Fica", "5511933330002");
+      sql(`UPDATE Leads SET enrolledAt=NOW() WHERE id=${student.id}`);
+      const blocked = await http.delete(`/leads/${student.id}`, auth());
+      assert(blocked.status === 400 && /ENROLLED/.test(JSON.stringify(blocked.data)), `an enrolled lead was deleted ${blocked.status}`);
+      assert((await http.delete(`/leads/${lead.id}`, auth())).status === 200, "the administrator could not delete the lead");
+      assert(sql(`SELECT COUNT(*) FROM Leads WHERE id=${lead.id}`) === "0" && sql(`SELECT COUNT(*) FROM Leads WHERE id=${student.id}`) === "1", "deleted the wrong lead");
+      assert((await http.delete(`/leads/${lead.id}`, auth())).status === 404, "the lead was deleted twice");
+    });
+    await test("security: a media filename sent by a stranger never leaves the public folder nor becomes a page; uploaded pages are downloads; hostile e-mail text does not freeze the server", async () => {
+      const run = body => {
+        const script = `
+          require("./dist/database");
+          const fs = require("fs"), path = require("path");
+          const { PUBLIC_DIR } = require("./dist/config/paths");
+          const { saveMediaFile } = require("./dist/handlers/handleWhatsappEvents");
+          const { saveMediaBuffer } = require("./dist/services/InboundServices/HandleChannelMessage");
+          (async () => {
+            const out = {};
+            const data = Buffer.from("PWNED").toString("base64");
+            out.a = await saveMediaFile({ filename: "../../dist/zz-pwned.js", mimetype: "application/javascript", data });
+            out.b = await saveMediaBuffer({ filename: "../../../zz-pwned2.html", mimetype: "text/html", data: Buffer.from("<script>alert(1)</script>") });
+            out.c = await saveMediaFile({ filename: "page.xhtml", mimetype: "application/xhtml+xml", data });
+            out.dir = PUBLIC_DIR;
+            out.existsA = fs.existsSync(path.join(PUBLIC_DIR, out.a));
+            out.existsB = fs.existsSync(path.join(PUBLIC_DIR, out.b));
+            out.escaped = fs.existsSync(path.resolve(PUBLIC_DIR, "../dist/zz-pwned.js")) || fs.existsSync(path.resolve(PUBLIC_DIR, "../../zz-pwned2.html"));
+            fs.writeFileSync(path.join(PUBLIC_DIR, "e2e-page.xhtml"), "<html/>");
+            fs.writeFileSync(path.join(PUBLIC_DIR, "e2e-pic.png"), "x");
+            console.log(JSON.stringify(out));
+            process.exit(0);
+          })().catch(e => { console.error(e); process.exit(1); });`;
+        return JSON.parse(execFileSync("node", ["-e", script], { cwd: ROOT, env: { ...env, LOG_LEVEL: "error" } }).toString().trim().split("\n").pop());
+      };
+      const out = run();
+      assert(!/[\\/]/.test(out.a) && !/[\\/]/.test(out.b) && !/[\\/]/.test(out.c), `the stored name kept a folder ${JSON.stringify(out)}`);
+      assert(!/\.(js|html?|xhtml)$/i.test(out.a) && !/\.(js|html?|xhtml)$/i.test(out.b) && !/\.(js|html?|xhtml)$/i.test(out.c), `a page or script extension was kept ${JSON.stringify(out)}`);
+      assert(out.existsA && out.existsB && !out.escaped, "the file was written outside of the public folder");
+      // what is opened in the browser: a picture stays inline and sandboxed; anything else is a download
+      const page = await http.get("/public/e2e-page.xhtml", { responseType: "text" });
+      assert(page.status === 200 && /attachment/.test(String(page.headers["content-disposition"] || "")) && page.headers["x-content-type-options"] === "nosniff", `xhtml was served inline ${JSON.stringify(page.headers)}`);
+      const pic = await http.get("/public/e2e-pic.png");
+      assert(pic.status === 200 && !/attachment/.test(String(pic.headers["content-disposition"] || "")) && /sandbox/.test(String(pic.headers["content-security-policy"] || "")), "a picture lost its inline display or its sandbox");
+      // a hostile text where an e-mail is expected is answered at once
+      const started = Date.now();
+      const hostile = await http.post("/auth/forgot", { email: `a@${".".repeat(60000)} b` });
+      assert(Date.now() - started < 1500 && hostile.status < 500, `the e-mail check froze the server (${Date.now() - started} ms, ${hostile.status})`);
+      assert(!JSON.stringify((await http.get("/health")).data).includes("pool"), "/health tells the pool to anyone");
+    });
+    await test("security: a conversation is opened for the person who asks; quick answers, lead tasks and passwords follow the owner", async () => {
+      const mkU = async (name, email, role) => (await http.post("/users", { name, email, password: "senha1234", role }, auth())).data;
+      const u1 = await mkU("Segura Um", "segura1@sec.test", "consultor");
+      const u2 = await mkU("Segura Dois", "segura2@sec.test", "consultor");
+      const t1 = (await http.post("/auth/login", { email: "segura1@sec.test", password: "senha1234" })).data.token;
+      const t2 = (await http.post("/auth/login", { email: "segura2@sec.test", password: "senha1234" })).data.token;
+      // a password of 7 characters is refused when an account is made
+      assert((await http.post("/users", { name: "Senha Curta", email: "curta@sec.test", password: "1234567", role: "consultor" }, auth())).status === 400, "a short password was accepted");
+      // a quick answer belongs to who made it
+      const qa = await http.post("/quickAnswers", { shortcut: "/seg", message: "Resposta da Segura Um" }, asUser(t1));
+      assert(qa.status === 200 && qa.data.id, `quick answer ${qa.status}`);
+      assert((await http.put(`/quickAnswers/${qa.data.id}`, { message: "trocada" }, asUser(t2))).status === 403, "another person changed a quick answer");
+      assert((await http.delete(`/quickAnswers/${qa.data.id}`, asUser(t2))).status === 403, "another person deleted a quick answer");
+      assert((await http.put(`/quickAnswers/${qa.data.id}`, { message: "minha" }, asUser(t1))).status === 200, "the owner could not change their quick answer");
+      assert((await http.delete(`/quickAnswers/${qa.data.id}`, auth())).status === 200, "the administrator could not delete a quick answer");
+      // a task of another lead is not reached through the lead of the route
+      const l1 = await mkLead("Lead Tarefa Um", "5511977776601", { ownerId: u1.id });
+      const l2 = await mkLead("Lead Tarefa Dois", "5511977776602", { ownerId: u2.id });
+      const task = (await http.post(`/leads/${l2.id}/tasks`, { title: "Ligar", type: "ligar", dueAt: new Date(Date.now() + 3600000).toISOString() }, auth())).data;
+      const taskId = task.id || (task.task && task.task.id);
+      assert(taskId, `task not created ${JSON.stringify(task).slice(0, 120)}`);
+      const viaMine = await http.delete(`/leads/${l1.id}/tasks/${taskId}`, asUser(t1));
+      assert(viaMine.status === 404, `a task of another lead was deleted through my lead (${viaMine.status} ${JSON.stringify(viaMine.data).slice(0, 100)}; lead ${JSON.stringify(l1).slice(0, 200)}; u1 ${JSON.stringify(u1).slice(0, 120)}; task ${taskId} of lead ${task.leadId})`);
+      assert((await http.put(`/leads/${l1.id}/tasks/${taskId}`, { title: "x" }, asUser(t1))).status === 404, "a task of another lead was changed through my lead");
+      // the conversation is opened for who asks, whatever the body says
+      // a contact nobody works yet (the number is not checked against WhatsApp here)
+      const fresh = { id: Number(sql(`INSERT INTO Contacts (name, number, isGroup, kind, createdAt, updatedAt) VALUES ('Contato Novo Seguranca','5511977776609',false,'person',NOW(),NOW()) RETURNING id`).split("\n")[0]) };
+      const opened = await http.post("/tickets", { contactId: fresh.id, status: "open", userId: 1 }, asUser(t1));
+      assert(opened.status === 200 && Number(opened.data.userId) === u1.id, `the ticket was opened for somebody else ${opened.status} ${JSON.stringify(opened.data).slice(0, 160)}`);
+    });
     await test("the agent never answers groups, communities, the team's chats or personal contacts, whatever reaches the automation", async () => {
       const run = body => {
         const script = `

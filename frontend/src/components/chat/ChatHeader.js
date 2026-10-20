@@ -244,7 +244,7 @@ const ChatHeader = ({ contact: contactProp, ticket, onOpenInfo, onToggleSearch, 
 
   return (
     <div className={classes.bar} ref={barRef}>
-      <IconButton className={classes.back} onClick={() => history.push("/tickets")}>
+      <IconButton aria-label="Voltar" className={classes.back} onClick={() => history.push("/tickets")}>
         <ArrowBack />
       </IconButton>
       <div className={classes.who} onClick={onOpenInfo} role="button" tabIndex={0}>
@@ -385,7 +385,7 @@ const ChatHeader = ({ contact: contactProp, ticket, onOpenInfo, onToggleSearch, 
         )}
         {ticket.status === "open" && (
           <>
-            <IconButton className={classes.icon} onClick={(e) => setMenuEl(e.currentTarget)}>
+            <IconButton aria-label="Mais opções" className={classes.icon} onClick={(e) => setMenuEl(e.currentTarget)}>
               <MoreVert />
             </IconButton>
             <TicketOptionsMenu ticket={ticket} anchorEl={menuEl} menuOpen={Boolean(menuEl)} handleClose={() => setMenuEl(null)} />

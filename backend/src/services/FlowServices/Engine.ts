@@ -1,3 +1,4 @@
+import { isEmail } from "../../helpers/Email";
 import { FlowNode, Graph, handleOf, nextNodeId } from "./Graph";
 import { cleanStage } from "./StageSpec";
 
@@ -171,7 +172,7 @@ export const matchPolo = (polos: PoloOption[], answer: string): { polo?: PoloOpt
 
 const validators: Record<string, (v: string) => string | null> = {
   text: v => (v.trim() ? v.trim().slice(0, 200) : null),
-  email: v => (/^\S+@\S+\.\S+$/.test(v.trim()) ? v.trim().toLowerCase().slice(0, 120) : null),
+  email: v => (isEmail(v) ? v.trim().toLowerCase().slice(0, 120) : null),
   phone: v => (v.replace(/\D/g, "").length >= 10 ? v.replace(/\D/g, "").slice(0, 15) : null),
   number: v => (/\d/.test(v) ? v.replace(/\D/g, "").slice(0, 12) : null)
 };

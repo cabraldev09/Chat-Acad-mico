@@ -20,6 +20,7 @@ import toastError from "../../errors/toastError";
 import openSocket from "../../services/socket-io";
 import { WhatsAppBrand } from "../../icons/brands";
 import LeadFields from "./LeadFields";
+import ConfirmationModal from "../../components/ConfirmationModal";
 import ProposalStudio from "./ProposalStudio";
 import PaymentTab from "./PaymentTab";
 import DocumentsTab from "./DocumentsTab";
@@ -90,6 +91,7 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab, side = false 
   const classes = useStyles();
   const history = useHistory();
   const { user: me } = useContext(AuthContext);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const { options, courses, stages, users, tags } = ctx;
   // sending a proposal to the affiliate: the management, or the consultant who owns the lead (the server refuses the others)
   const canSendToAffiliate = (l) => !!me && (isManager(me) || (me.role === "consultor" && l && l.ownerId === me.id));
@@ -251,7 +253,17 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab, side = false 
                 </>
               )}
               {!lead.enrolledAt && <NotALead lead={lead} onDone={() => { changed(); onClose(); }} />}
-            </div>
+              {!lead.enrolledAt && !lead.wonAt && me && isManager(me) && (
+                <Button size="small" variant="outlined" startIcon={<Trash2 size={15} />} onClick={() => setDeleteOpen(true)} style={{ color: "#dc2626", borderColor: "rgba(220,38,38,.4)" }}
+                  title="Apaga o lead do CRM (a conversa e o contato continuam)">Excluir lead</Button>
+              )}
+              <ConfirmationModal title="Excluir este lead?" open={deleteOpen} onClose={() => setDeleteOpen(false)}
+                onConfirm={async () => {
+                  setDeleteOpen(false);
+                  try { await api.delete(`/leads/${lead.id}`); toast.success(`${lead.name} foi excluído do CRM.`); changed(); onClose(); } catch (err) { toastError(err); }
+                }}>
+                {`${lead.name} será apagado do CRM com o histórico, as tarefas e as propostas. A conversa e o contato continuam. Isso não pode ser desfeito.`}
+              </ConfirmationModal>            </div>
           </div>
 
           <Tabs value={tab} onChange={(e, v) => setTab(v)} variant="scrollable" scrollButtons="auto" style={{ margin: "12px 20px 0" }}>
@@ -323,7 +335,7 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab, side = false 
                           {TASK_LABEL[t.type]} · {format(parseISO(t.dueAt), "dd/MM HH:mm")}{t.user ? ` · ${t.user.name}` : ""}
                         </div>
                       </div>
-                      <IconButton size="small" onClick={async () => { await api.delete(`/leads/${lead.id}/tasks/${t.id}`); changed(); }}><Trash2 size={16} /></IconButton>
+                      <IconButton aria-label="Excluir" size="small" onClick={async () => { await api.delete(`/leads/${lead.id}/tasks/${t.id}`); changed(); }}><Trash2 size={16} /></IconButton>
                     </div>
                   ))}
                 </div>

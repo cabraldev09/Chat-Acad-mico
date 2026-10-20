@@ -19,7 +19,13 @@ import { isAgentTyping } from "../services/ChannelServices/TypingState";
 import { makeThrottle } from "../helpers/RateWindow";
 import { remember } from "../helpers/TtlCache";
 
-const upload = multer({ ...uploadConfig, limits: { fileSize: 15 * 1024 * 1024 } });
+// a visitor of the site is anonymous: only what a person sends in a conversation (pictures, sounds, PDF, office files, text), a few files, never a page or a script
+const VISITOR_FILES = /^(image\/(jpeg|png|gif|webp)|audio\/(ogg|mpeg|mp4|aac|wav|webm)|video\/(mp4|webm|quicktime)|application\/(pdf|msword|vnd\.ms-excel|vnd\.ms-powerpoint|vnd\.openxmlformats-officedocument\.[a-z.]+|zip)|text\/(plain|csv))$/i;
+const upload = multer({
+  ...uploadConfig,
+  limits: { fileSize: 15 * 1024 * 1024, files: 3 },
+  fileFilter: (_req, file, cb) => cb(null, VISITOR_FILES.test(String(file.mimetype || "").split(";")[0].trim()))
+});
 const router = express.Router();
 
 // per-visitor throttle (30 messages / minute) and, before anything is read from a stranger, per IP (60 requests / minute)

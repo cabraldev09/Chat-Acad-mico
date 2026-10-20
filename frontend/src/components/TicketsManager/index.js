@@ -9,7 +9,6 @@ import Tooltip from "@material-ui/core/Tooltip";
 import Menu from "@material-ui/core/Menu";
 import MenuItem from "@material-ui/core/MenuItem";
 import Switch from "@material-ui/core/Switch";
-import Select from "@material-ui/core/Select";
 import ListItemIcon from "@material-ui/core/ListItemIcon";
 import ListItemText from "@material-ui/core/ListItemText";
 import AddIcon from "@material-ui/icons/Add";
@@ -17,6 +16,7 @@ import MoreVert from "@material-ui/icons/MoreVert";
 import ClearIcon from "@material-ui/icons/Clear";
 import ArrowBack from "@material-ui/icons/ArrowBack";
 import FilterList from "@material-ui/icons/FilterList";
+import { Archive, CheckCircle2, Clock3, Inbox, Layers, MailOpen, MessageCircle, Users } from "lucide-react";
 import Keyboard from "@material-ui/icons/Keyboard";
 
 import NewTicketModal from "../NewTicketModal";
@@ -25,7 +25,7 @@ import CommunitiesList from "../CommunitiesList";
 import { AuthContext } from "../../context/Auth/AuthContext";
 import api from "../../services/api";
 import openSocket from "../../services/socket-io";
-import TicketsQueueSelect from "../TicketsQueueSelect";
+import ConversationFilters, { ActiveFilters, FiltersButton, useFilterSummary } from "./ConversationFilters";
 import { isManager } from "../../utils/access";
 import { fetchAllUsers } from "../../pages/Affiliates/shared";
 import { wa, getChatAccent, setChatAccent } from "../chat/chatTheme";
@@ -72,25 +72,28 @@ const useStyles = makeStyles((theme) => {
       flexWrap: "wrap",
       padding: theme.spacing(0, 1.5, 1),
     },
+    chipIcon: { flex: "none", opacity: 0.85 },
     chip: {
       flex: "none",
       display: "inline-flex",
       alignItems: "center",
       gap: 6,
-      height: 28,
-      padding: theme.spacing(0, 1.25),
+      height: 30,
+      padding: theme.spacing(0, 1.4),
       borderRadius: 999,
-      border: "none",
+      border: "1px solid transparent",
       cursor: "pointer",
       fontSize: 13,
       fontWeight: 500,
       fontFamily: "inherit",
       backgroundColor: c.chipBg,
       color: c.chipText,
-      transition: "background-color .15s, color .15s",
+      transition: "background-color .15s, color .15s, box-shadow .15s, transform .1s",
       "&:hover": { backgroundColor: c.selected },
+      "&:active": { transform: "scale(.97)" },
+      "&:focus-visible": { outline: `2px solid ${c.accent}`, outlineOffset: 2 },
     },
-    chipOn: { backgroundColor: c.chipOn, color: c.chipOnText, "&:hover": { backgroundColor: c.chipOn } },
+    chipOn: { backgroundColor: c.chipOn, color: c.chipOnText, fontWeight: 600, boxShadow: "0 3px 10px -4px rgba(11,20,26,.35)", "&:hover": { backgroundColor: c.chipOn } },
     chipCount: {
       minWidth: 18,
       padding: "0 5px",
@@ -137,7 +140,7 @@ const TicketsManager = () => {
   const [newTicketModalOpen, setNewTicketModalOpen] = useState(false);
   const [showAllTickets, setShowAllTickets] = useState(false);
   const [menuEl, setMenuEl] = useState(null);
-  const [showFilters, setShowFilters] = useState(false);
+  const [filtersEl, setFiltersEl] = useState(null);
   const [tags, setTags] = useState([]);
   const [tagId, setTagId] = useState("");
   const searchTimeout = useRef();
@@ -155,6 +158,14 @@ const TicketsManager = () => {
   const [attendants, setAttendants] = useState([]);
   const [connections, setConnections] = useState([]);
   const scope = { allQueues: manager && !queueTouched, attendantId, connectionId };
+  const filterSummary = useFilterSummary({ manager, queueTouched, selectedQueueIds, userQueues: user?.queues, attendantId, connectionId, tagId, attendants, connections, tags });
+  const clearOneFilter = (key) => {
+    if (key === "queues") { setQueueTouched(false); setSelectedQueueIds(userQueueIds); }
+    if (key === "attendant") setAttendantId("");
+    if (key === "connection") setConnectionId("");
+    if (key === "tag") setTagId("");
+  };
+  const clearAllFilters = () => { clearOneFilter("queues"); setAttendantId(""); setConnectionId(""); setTagId(""); };
   useEffect(() => {
     if (!manager) return;
     fetchAllUsers().then(setAttendants).catch(() => undefined);
@@ -232,20 +243,26 @@ const TicketsManager = () => {
   const communityUnread = (communities || []).reduce((n, c) => n + (c.unread || 0), 0);
 
   const searching = searchParam.length > 0;
-  const chip = (key, label, count) => (
+  const ICONS = { open: MessageCircle, pending: Clock3, unread: MailOpen, groups: Users, communities: Layers, everything: Inbox };
+  const chip = (key, label, count) => {
+    const Icon = ICONS[key];
+    return (
     <button
       key={key}
       type="button"
       className={clsx(classes.chip, filter === key && !searching && classes.chipOn)}
+      aria-pressed={filter === key && !searching}
       onClick={() => {
         clearSearch();
         setFilter(key);
       }}
     >
+      {Icon && <Icon size={14} className={classes.chipIcon} />}
       {label}
       {count > 0 && <span className={classes.chipCount}>{count > 99 ? "99+" : count}</span>}
     </button>
-  );
+    );
+  };
 
   return (
     <div className={classes.wrapper}>
@@ -258,12 +275,8 @@ const TicketsManager = () => {
             <AddIcon />
           </IconButton>
         </Tooltip>
-        <Tooltip title="Filtrar por fila">
-          <IconButton className={classes.iconBtn} onClick={() => setShowFilters((v) => !v)}>
-            <FilterList />
-          </IconButton>
-        </Tooltip>
-        <IconButton className={classes.iconBtn} onClick={(e) => setMenuEl(e.currentTarget)}>
+        <FiltersButton count={filterSummary.length} onClick={(e) => setFiltersEl(e.currentTarget)} className={classes.iconBtn} />
+        <IconButton aria-label="Mais opções" className={classes.iconBtn} onClick={(e) => setMenuEl(e.currentTarget)}>
           <MoreVert />
         </IconButton>
         <Menu anchorEl={menuEl} open={Boolean(menuEl)} onClose={() => setMenuEl(null)} getContentAnchorEl={null}
@@ -274,9 +287,9 @@ const TicketsManager = () => {
               <Switch size="small" color="primary" className={classes.menuSwitch} checked={showAllTickets} />
             </MenuItem>
           )}
-          <MenuItem onClick={() => { setShowFilters((v) => !v); setMenuEl(null); }}>
+          <MenuItem onClick={(e) => { setMenuEl(null); setFiltersEl(document.querySelector("[aria-haspopup='dialog'][title='Filtros']") || e.currentTarget); }}>
             <ListItemIcon style={{ minWidth: 32 }}><FilterList fontSize="small" /></ListItemIcon>
-            <ListItemText primary="Filtrar por fila" />
+            <ListItemText primary="Filtros" />
           </MenuItem>
           <MenuItem onClick={() => { setMenuEl(null); setChatAccent(getChatAccent() === "blue" ? "green" : "blue"); }}>
             <ListItemIcon style={{ minWidth: 32 }}>
@@ -294,7 +307,7 @@ const TicketsManager = () => {
       <div className={classes.searchWrap}>
         <div className={classes.search}>
           {searching || searchText ? (
-            <IconButton size="small" onClick={clearSearch} style={{ padding: 2 }}>
+            <IconButton aria-label="Voltar" size="small" onClick={clearSearch} style={{ padding: 2 }}>
               <ArrowBack style={{ fontSize: 20 }} />
             </IconButton>
           ) : (
@@ -307,57 +320,21 @@ const TicketsManager = () => {
             onChange={handleSearch}
           />
           {searchText && (
-            <IconButton size="small" onClick={clearSearch} style={{ padding: 2 }}>
+            <IconButton aria-label="Limpar" size="small" onClick={clearSearch} style={{ padding: 2 }}>
               <ClearIcon style={{ fontSize: 18 }} />
             </IconButton>
           )}
         </div>
       </div>
 
-      {showFilters && (
-        <div className={classes.filters}>
-          <TicketsQueueSelect
-            style={{ flex: 1 }}
-            selectedQueueIds={selectedQueueIds} {...scope}
-            userQueues={user?.queues}
-            onChange={(values) => { setQueueTouched(true); setSelectedQueueIds(values); }}
-          />
-          {manager && (
-            <>
-              <Select displayEmpty value={attendantId} onChange={(e) => setAttendantId(e.target.value)} style={{ minWidth: 130 }}
-                renderValue={(v) => { const u = attendants.find((x) => x.id === v); return u ? u.name : "Todos os atendentes"; }}>
-                <MenuItem value="">Todos os atendentes</MenuItem>
-                {attendants.map((u) => <MenuItem key={u.id} value={u.id}>{u.name}</MenuItem>)}
-              </Select>
-              <Select displayEmpty value={connectionId} onChange={(e) => setConnectionId(e.target.value)} style={{ minWidth: 130 }}
-                renderValue={(v) => { const c = connections.find((x) => x.id === v); return c ? c.name : "Todas as conexões"; }}>
-                <MenuItem value="">Todas as conexões</MenuItem>
-                {connections.map((c) => <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>)}
-              </Select>
-            </>
-          )}
-          {tags.length > 0 && (
-            <Select
-              displayEmpty
-              value={tagId}
-              onChange={(e) => setTagId(e.target.value)}
-              style={{ minWidth: 130 }}
-              renderValue={(v) => {
-                const t = tags.find((x) => x.id === v);
-                return t ? t.name : "Todas as etiquetas";
-              }}
-            >
-              <MenuItem value="">Todas as etiquetas</MenuItem>
-              {tags.map((t) => (
-                <MenuItem key={t.id} value={t.id}>
-                  <span style={{ width: 10, height: 10, borderRadius: "50%", background: t.color, marginRight: 8, flex: "none" }} />
-                  {t.name}
-                </MenuItem>
-              ))}
-            </Select>
-          )}
-        </div>
-      )}
+      <ActiveFilters items={filterSummary} onRemove={clearOneFilter} onClear={clearAllFilters} />
+      <ConversationFilters
+        anchorEl={filtersEl} onClose={() => setFiltersEl(null)} onClear={clearAllFilters} active={filterSummary.length > 0}
+        userQueues={user?.queues} selectedQueueIds={selectedQueueIds} onQueues={(values) => { setQueueTouched(true); setSelectedQueueIds(values); }}
+        queueTouched={queueTouched} onAllQueues={() => clearOneFilter("queues")} manager={manager}
+        attendants={attendants} attendantId={attendantId} setAttendantId={setAttendantId} connections={connections} connectionId={connectionId} setConnectionId={setConnectionId}
+        tags={tags} tagId={tagId} setTagId={setTagId} isAdmin={isAdmin} showAllTickets={showAllTickets} setShowAllTickets={setShowAllTickets}
+      />
 
       {!searching && (
         <div className={classes.chips}>
@@ -373,6 +350,7 @@ const TicketsManager = () => {
             className={clsx(classes.chip, (filter === "closed" || filter === "archived") && !searching && classes.chipOn)}
             onClick={(e) => setMoreEl(e.currentTarget)}
           >
+            {filter === "closed" ? <CheckCircle2 size={14} className={classes.chipIcon} /> : filter === "archived" ? <Archive size={14} className={classes.chipIcon} /> : null}
             {filter === "closed" ? "Resolvidas" : filter === "archived" ? "Arquivadas" : "Mais"} ▾
           </button>
           <Menu anchorEl={moreEl} open={Boolean(moreEl)} onClose={() => setMoreEl(null)} getContentAnchorEl={null}

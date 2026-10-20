@@ -1,3 +1,4 @@
+import { isEmail } from "../../helpers/Email";
 // What the "AI stage" block of a flow holds, and how it is cleaned. The stage is a block where the AI talks with the person
 // until a goal is reached: it asks for the fields, uses the tools it is given and leaves through one exit.
 export const FIELD_TYPES = ["text", "number", "email", "phone", "choice", "date"] as const;
@@ -143,7 +144,7 @@ export const checkField = (f: StageField, raw: any): string | null => {
   const v = String(raw ?? "").trim();
   if (!v) return null;
   switch (f.type) {
-    case "email": return /^\S+@\S+\.\S+$/.test(v) ? v.toLowerCase().slice(0, 120) : null;
+    case "email": return isEmail(v) ? v.toLowerCase().slice(0, 120) : null;
     case "phone": return v.replace(/\D/g, "").length >= 10 ? v.replace(/\D/g, "").slice(0, 15) : null;
     case "number": return /\d/.test(v) ? v.replace(/[^\d.,-]/g, "").slice(0, 20) : null;
     case "date": return /\d/.test(v) ? v.slice(0, 40) : null;

@@ -81,7 +81,7 @@ const Copyable = ({ text }) => {
 	return (
 		<div className={classes.code}>
 			<span>{text}</span>
-			<IconButton
+			<IconButton aria-label="Copiar"
 				size="small"
 				onClick={() => {
 					navigator.clipboard?.writeText(text);

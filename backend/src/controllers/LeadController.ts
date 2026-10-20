@@ -1,3 +1,4 @@
+import { hasContactAccessOrFree } from "../middleware/canAccessContact";
 import { syncNextFollowUp } from "../services/CrmServices/FollowUp";
 import { fire } from "../helpers/Fire";
 import { Request, Response } from "express";
@@ -9,6 +10,8 @@ import { Op } from "sequelize";
 import { randomBytes } from "crypto";
 
 import Lead from "../models/Lead";
+import { logger } from "../utils/logger";
+import Payment from "../models/Payment";
 import LeadStage from "../models/LeadStage";
 import LeadActivity from "../models/LeadActivity";
 import LeadTask from "../models/LeadTask";
@@ -63,11 +66,12 @@ const buildWhere = (q: any) => {
   if (q.affiliate === "any") where.affiliateId = { [Op.ne]: null };
   else if (q.affiliate) where.affiliateId = Number(q.affiliate);
   if (q.search) {
-    const s = `%${String(q.search).trim()}%`;
+    // "maria" finds "Maria"; a "%" or "_" typed by the person is a character, not a wildcard
+    const s = `%${String(q.search).trim().replace(/[\\%_]/g, "\\$&")}%`;
     const digits = String(q.search).replace(/\D/g, "");
     where[Op.or] = [
-      { name: { [Op.like]: s } },
-      { email: { [Op.like]: s } },
+      { name: { [Op.iLike]: s } },
+      { email: { [Op.iLike]: s } },
       ...(digits.length >= 4 ? [{ phone: { [Op.like]: `%${digits}%` } }] : [])
     ];
   }
@@ -148,9 +152,13 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
     throw new AppError("ERR_LEAD_NEEDS_PHONE_OR_EMAIL");
   }
   if (b.cpf && !isValidCpf(b.cpf)) throw new AppError("ERR_CPF_INVALID");
+  // only the fields of the form: a lead is never tied to a contact, an affiliate or a consent date by the body of a request
+  const allowed: Record<string, any> = {};
+  [...FIELDS, "shift", "channel", "tagIds", "stageId"].forEach(f => { if (b[f] !== undefined) allowed[f] = b[f]; });
+  if (isAdminReq(req) && b.affiliateId) allowed.affiliateId = b.affiliateId;
   const { lead, created } = await upsertLead(
     {
-      ...b,
+      ...allowed,
       source: b.source || "Outro",
       // a consultant's own new lead is theirs unless they say otherwise
       ownerId: b.ownerId === undefined ? (reqRole(req) === "consultor" ? uid(req) : undefined) : b.ownerId || null
@@ -204,6 +212,11 @@ export const update = async (req: Request, res: Response): Promise<Response> => 
 export const remove = async (req: Request, res: Response): Promise<Response> => {
   const lead = await Lead.findByPk(req.params.id);
   if (!lead) throw new AppError("ERR_LEAD_NOT_FOUND", 404);
+  // a student, or a lead with a paid charge, carries money and history that must stay
+  if (lead.enrolledAt || lead.wonAt) throw new AppError("ERR_LEAD_DELETE_ENROLLED", 400);
+  const paid = await Payment.count({ where: { leadId: lead.id, status: "paid" } as any });
+  if (paid > 0) throw new AppError("ERR_LEAD_DELETE_PAID", 400);
+  logger.warn(`Lead excluído por ${req.user.id}: #${lead.id} "${String(lead.name || "").slice(0, 60)}" (etapa ${lead.stageId})`);
   await lead.destroy();
   getIO().emit("lead", { action: "delete", leadId: Number(req.params.id) });
   return res.json({ message: "deleted" });
@@ -302,7 +315,7 @@ export const addTask = async (req: Request, res: Response): Promise<Response> =>
 };
 
 export const updateTask = async (req: Request, res: Response): Promise<Response> => {
-  const task = await LeadTask.findByPk(req.params.taskId);
+  const task = await LeadTask.findOne({ where: { id: req.params.taskId, leadId: req.params.id } });
   if (!task) throw new AppError("ERR_NOT_FOUND", 404);
   const { title, dueAt, type, userId } = req.body;
   await task.update({
@@ -316,7 +329,7 @@ export const updateTask = async (req: Request, res: Response): Promise<Response>
 };
 
 export const completeTask = async (req: Request, res: Response): Promise<Response> => {
-  const task = await LeadTask.findByPk(req.params.taskId);
+  const task = await LeadTask.findOne({ where: { id: req.params.taskId, leadId: req.params.id } });
   if (!task) throw new AppError("ERR_NOT_FOUND", 404);
   await task.update({ doneAt: task.doneAt ? null : new Date() });
   if (task.doneAt) await addActivity(task.leadId, uid(req), "task", `Tarefa concluída: ${task.title}`);
@@ -325,7 +338,7 @@ export const completeTask = async (req: Request, res: Response): Promise<Respons
 };
 
 export const removeTask = async (req: Request, res: Response): Promise<Response> => {
-  const task = await LeadTask.findByPk(req.params.taskId);
+  const task = await LeadTask.findOne({ where: { id: req.params.taskId, leadId: req.params.id } });
   if (!task) throw new AppError("ERR_NOT_FOUND", 404);
   await task.destroy();
   await syncNextFollowUp(task.leadId);
@@ -366,6 +379,7 @@ export const byContact = async (req: Request, res: Response): Promise<Response> 
 export const fromContact = async (req: Request, res: Response): Promise<Response> => {
   const contact = await Contact.findByPk(req.params.contactId);
   if (!contact) throw new AppError("ERR_NO_CONTACT_FOUND", 404);
+  if (!(await hasContactAccessOrFree(req, contact.id))) throw new AppError("ERR_NO_PERMISSION", 403);
   const { channelSource } = await import("../services/CrmServices/crmOptions");
   const whatsapp = req.body.whatsappId ? await Whatsapp.findByPk(req.body.whatsappId) : null;
   const channel = whatsapp?.channel || contact.channel || "whatsapp";

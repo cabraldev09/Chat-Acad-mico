@@ -87,7 +87,7 @@ const ContactDrawer = ({ open, handleDrawerClose, contact: contactProp, loading 
 	return (
 		<aside className={classes.panel}>
 			<div className={classes.header}>
-				<IconButton onClick={handleDrawerClose}>
+				<IconButton aria-label="Fechar" onClick={handleDrawerClose}>
 					<CloseIcon />
 				</IconButton>
 				{i18n.t("contactDrawer.header")}

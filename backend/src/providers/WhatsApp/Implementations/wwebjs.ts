@@ -627,6 +627,10 @@ const closeClient = async (id: number): Promise<void> => {
   clients.delete(id);
   if (c) await Promise.race([c.destroy().catch(() => undefined), new Promise(r => setTimeout(r, 15000))]);
 };
+// the API is stopping (a new version, a restart): every WhatsApp Web closes properly, so the profile of the browser is not left half written
+export const closeAllWwebjsClients = async (): Promise<void> => {
+  await Promise.all([...clients.keys()].map(id => closeClient(id).catch(() => undefined)));
+};
 const withTimeout = <T>(p: Promise<T>, ms: number): Promise<T> => Promise.race([p, new Promise<T>((_, rej) => setTimeout(() => rej(new Error("timeout")), ms))]);
 
 // the browser of this number is gone or stuck: close it and open it again, slowing down (and finally asking a person) when it keeps failing

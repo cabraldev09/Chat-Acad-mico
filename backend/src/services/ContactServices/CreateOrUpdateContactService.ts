@@ -105,17 +105,27 @@ const CreateOrUpdateContactService = async ({
     return contactByLid;
   }
 
-  const created = await Contact.create({
-    name,
-    // people known only by WhatsApp's internal id have no phone number yet
-    number: number || (null as any),
-    lid,
-    profilePicUrl,
-    email,
-    isGroup,
-    extraInfo: extraInfo as any,
-    ...communityFields
-  });
+  let created: Contact;
+  try {
+    created = await Contact.create({
+      name,
+      // people known only by WhatsApp's internal id have no phone number yet
+      number: number || (null as any),
+      lid,
+      profilePicUrl,
+      email,
+      isGroup,
+      extraInfo: extraInfo as any,
+      ...communityFields
+    });
+  } catch (err) {
+    // two events of the same new person arrived together: the other one made the contact a moment ago, and this message must not be lost
+    if ((err as any)?.name === "SequelizeUniqueConstraintError") {
+      const already = (number ? await Contact.findOne({ where: { number } }) : null) || (lid ? await Contact.findOne({ where: { lid } }) : null);
+      if (already) return already;
+    }
+    throw err;
+  }
 
   emitContact("create", created);
   fire("contact.created", { contactId: created.id });

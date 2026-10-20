@@ -457,12 +457,12 @@ const CrudPage = ({
                   <TableCell align="center">
                     {rowActions && rowActions(row, load)}
                     {canEdit(row) && (
-                      <IconButton size="small" onClick={() => openEdit(row)}>
+                      <IconButton aria-label="Editar" size="small" onClick={() => openEdit(row)}>
                         <Edit />
                       </IconButton>
                     )}
                     {canDelete(row) && (
-                      <IconButton size="small" onClick={() => setDeleting(row)}>
+                      <IconButton aria-label="Excluir" size="small" onClick={() => setDeleting(row)}>
                         <DeleteOutline />
                       </IconButton>
                     )}

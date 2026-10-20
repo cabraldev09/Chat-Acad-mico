@@ -1,3 +1,4 @@
+import { burnPasswordTime } from "../helpers/Passwords";
 import { compare, hash } from "bcryptjs";
 import { NextFunction, Request, Response } from "express";
 import { sign, verify } from "jsonwebtoken";
@@ -58,7 +59,7 @@ export const login = async (req: Request, res: Response): Promise<Response> => {
   // the same error for a wrong login, a wrong password, a blocked or a not yet activated account
   const bad = new AppError("RGM, e-mail ou senha incorretos.", 401);
   if (!student || !student.passwordHash || !student.activatedAt || student.blockedAt) {
-    await compare(password, "$2a$08$invalidinvalidinvalidinvalidinvalidinvalidinvalidinvalidi").catch(() => false);
+    await burnPasswordTime(password);
     throw bad;
   }
   if (!(await compare(password, student.passwordHash))) throw bad;

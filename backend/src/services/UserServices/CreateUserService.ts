@@ -1,3 +1,4 @@
+import { MIN_PASSWORD } from "../../helpers/Passwords";
 import { joinRelationshipQueue } from "../RelationshipServices/Relationship";
 import * as Yup from "yup";
 import { col, fn, where } from "sequelize";
@@ -54,7 +55,7 @@ const CreateUserService = async ({
           return !emailExists;
         }
       ),
-    password: Yup.string().required().min(5)
+    password: Yup.string().required().min(MIN_PASSWORD, "ERR_PASSWORD_SHORT")
   });
 
   try {

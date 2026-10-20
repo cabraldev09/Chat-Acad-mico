@@ -15,8 +15,18 @@ services:
       # o VPS tem memória de sobra: o limite pequeno do Dockerfile é para planos de 1 GB
       NODE_OPTIONS: "--max-old-space-size=1536"
       WHATSAPP_PROVIDER: wwebjs
+      # a versão que está no ar (o /health devolve): deploy.sh/update.sh exportam GIT_SHA
+      GIT_SHA: ${GIT_SHA:-}
     # o Chromium (WhatsApp Web) trava com o /dev/shm padrão de 64 MB
     shm_size: "1gb"
+    # contêiner endurecido: sem privilégios extras, só o que o entrypoint precisa para entregar o volume ao usuário "node" e baixar os privilégios;
+    # a memória tem teto (o Chromium não derruba o servidor inteiro) e o desligamento espera os números do WhatsApp fecharem
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETUID, SETGID, DAC_OVERRIDE, FOWNER]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 8g
+    pids_limit: 2048
+    stop_grace_period: 60s
     volumes:
       - data:/data
     expose:

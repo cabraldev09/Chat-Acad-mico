@@ -7,6 +7,7 @@ import {
 } from "../../helpers/CreateTokens";
 import { SerializeUser } from "../../helpers/SerializeUser";
 import Queue from "../../models/Queue";
+import { burnPasswordTime, needsRehash } from "../../helpers/Passwords";
 
 interface SerializedUser {
   id: number;
@@ -38,11 +39,18 @@ const AuthUserService = async ({
   });
 
   if (!user) {
+    // the same work as a real login: the time of the answer does not tell whether the address has an account
+    await burnPasswordTime(password);
     throw new AppError("ERR_INVALID_CREDENTIALS", 401);
   }
 
   if (!(await user.checkPassword(password))) {
     throw new AppError("ERR_INVALID_CREDENTIALS", 401);
+  }
+
+  // an old, cheap hash is replaced by a strong one now that the password is known
+  if (needsRehash(user.getDataValue("passwordHash"))) {
+    await user.update({ password }).catch(() => undefined);
   }
 
   const token = createAccessToken(user);

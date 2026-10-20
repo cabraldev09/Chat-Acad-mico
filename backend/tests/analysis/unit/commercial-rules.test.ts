@@ -118,3 +118,20 @@ describe("slots", () => {
     expect(p).toEqual({ courseId: 12, entryType: "transfer", gradeSent: true, leadTemperature: "hot", city: "Ji-Paraná" });
   });
 });
+
+import { gradeRequest } from "../../../src/services/CommercialServices/Rules";
+describe("the request for the grade is recognised without a model", () => {
+  it("finds the course in the sentence", () => {
+    expect(gradeRequest("me envia a grade de pedagogia por favor")).toEqual({ course: "pedagogia" });
+    expect(gradeRequest("Quero ver a grade do curso de Enfermagem")).toEqual({ course: "enfermagem" });
+    expect(gradeRequest("manda a matriz curricular de Administração")).toEqual({ course: "administracao" });
+  });
+  it("asks nothing when the course is not in the sentence", () => {
+    expect(gradeRequest("pode me enviar a grade?")).toEqual({ course: null });
+  });
+  it("a question about how it works, the price or any other subject is not the request", () => {
+    expect(gradeRequest("como funciona a grade do curso?")).toBeNull();
+    expect(gradeRequest("qual o valor da mensalidade")).toBeNull();
+    expect(gradeRequest("oi, tudo bem?")).toBeNull();
+  });
+});

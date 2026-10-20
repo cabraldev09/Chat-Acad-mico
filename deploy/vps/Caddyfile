@@ -1,5 +1,18 @@
 # HTTPS com certificado gratuito (Let's Encrypt), renovado sozinho. WebSocket (Socket.IO) funciona sem ajuste.
 {$API_DOMAIN} {
 	encode gzip
+
+	# nenhum pedido passa de 100 MB (o maior arquivo aceito pela API é 64 MB); o resto é recusado na porta de entrada
+	request_body {
+		max_size 100MB
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		# não conta qual programa responde
+		-Server
+	}
+
 	reverse_proxy api:8080
 }

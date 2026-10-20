@@ -104,6 +104,19 @@ export const supportIntent = (text: string, student: boolean): "tutoring" | "sec
   return null;
 };
 
+// "me envia a grade de pedagogia", "quero ver a matriz curricular": the grade is sent by the system, not left to the model to remember the tool
+const GRADE_ASK = /\b(grade|matriz( curricular)?|curriculo|disciplinas do curso)\b/;
+const GRADE_VERB = /\b(envia|enviar|envie|manda|mandar|mande|passa|passar|quero|queria|gostaria|posso ver|pode me|tem a|ver a|me mostra|mostrar|cadê|cade|preciso)\b/;
+export const gradeRequest = (text: string): { course: string | null } | null => {
+  const t = plain(text);
+  if (!t || t.length > 160 || !GRADE_ASK.test(t) || !GRADE_VERB.test(t)) return null;
+  // a question about how the grade works, or the price, is not the request for the file
+  if (/\b(como funciona|o que e|o que significa|quanto|valor|mensalidade)\b/.test(t) && !/\b(envia|manda|mande|envie|quero ver|me mostra)\b/.test(t)) return null;
+  const m = t.match(/\b(?:grade|matriz(?: curricular)?|curriculo|disciplinas)\s+(?:curricular\s+)?(?:do curso\s+)?(?:de|do|da|dos|das)\s+(?:curso\s+(?:de|do|da)\s+)?([a-z ]{4,60})/);
+  const course = m ? m[1].replace(/\b(por favor|pfv|pf|pra mim|para mim|ai|aqui|agora|de novo|novamente|obrigado|obrigada)\b.*$/, "").replace(/\s+/g, " ").trim() : "";
+  return { course: course.length >= 4 ? course : null };
+};
+
 // the person takes back what made the lead "ready for the proposal"
 export const retractsBuying = (text: string): boolean => {
   const t = plain(text);

@@ -231,7 +231,6 @@ const REGISTRY = [
   { to: "/chatbot", icon: Workflow, title: "Chatbot e fluxos", what: "opções no menu do bot", key: "chatbot" },
   { to: "/ai-agents", icon: Bot, title: "Agentes de IA", what: "agentes", key: "agents" },
   { to: "/crm/config", icon: GraduationCap, title: "Funil, cursos e propostas", what: "etapas do funil", key: "stages" },
-  { to: "/monitor", icon: Eye, title: "Monitor ao vivo", what: "conversas em andamento", key: null },
   { to: "/integrations", icon: KeyRound, title: "API e webhooks", what: "tokens e avisos", key: null, admin: true },
 ];
 

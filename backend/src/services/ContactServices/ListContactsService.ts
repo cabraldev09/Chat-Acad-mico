@@ -15,18 +15,16 @@ interface Response {
 }
 
 // the search of the contacts screen (name or number); the spreadsheet of contacts uses the same one
-export const contactsSearchWhere = (searchParam = "") => ({
-  [Op.or]: [
-    {
-      name: Sequelize.where(
-        Sequelize.fn("LOWER", Sequelize.col("name")),
-        "LIKE",
-        `%${searchParam.toLowerCase().trim()}%`
-      )
-    },
-    { number: { [Op.like]: `%${searchParam.toLowerCase().trim()}%` } }
-  ]
-});
+export const contactsSearchWhere = (searchParam = "") => {
+  // a "%" or "_" typed in the search is a character, not a wildcard
+  const like = `%${searchParam.toLowerCase().trim().replace(/[\\%_]/g, "\\$&")}%`;
+  return {
+    [Op.or]: [
+      { name: Sequelize.where(Sequelize.fn("LOWER", Sequelize.col("name")), "LIKE", like) },
+      { number: { [Op.like]: like } }
+    ]
+  };
+};
 
 const ListContactsService = async ({
   searchParam = "",

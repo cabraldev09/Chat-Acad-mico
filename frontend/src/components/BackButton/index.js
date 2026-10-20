@@ -9,7 +9,7 @@ import { isManager } from "../../utils/access";
 // Pages that sit one level below another (the setup screens under Configurações, the flow editor under its list):
 // they get a way back. The main screens of the menu do not need one.
 const CHILD_PAGES = [
-  "/connections", "/quickAnswers", "/users", "/polos", "/queues", "/tags", "/chatbot", "/chatbot-antigo", "/ai-agents", "/monitor",
+  "/connections", "/quickAnswers", "/users", "/polos", "/queues", "/tags", "/chatbot", "/chatbot-antigo", "/ai-agents",
   "/crm/config", "/settings", "/integrations",
 ];
 

@@ -1,3 +1,4 @@
+import { insideFolder, safeStoredName } from "../../helpers/SafeFile";
 import { isLocalPic } from "../../helpers/PicUrl";
 import { join } from "path";
 import { writeFile } from "fs";
@@ -45,16 +46,10 @@ const extensionFor = (mimetype: string): string => {
 };
 
 export const saveMediaBuffer = async (media: InboundMedia): Promise<string> => {
-  let filename: string;
-  if (media.filename && media.filename.includes(".")) {
-    const parts = media.filename.split(".");
-    const ext = parts.pop();
-    filename = `${parts.join(".")}.${randomSuffix()}.${ext}`;
-  } else {
-    filename = `${randomSuffix()}.${extensionFor(media.mimetype)}`;
-  }
+  // the name comes from the sender: it never decides where the file goes nor what kind of file it is (helpers/SafeFile.ts)
+  const filename = safeStoredName(media.filename, media.mimetype);
   await writeFileAsync(
-    join(PUBLIC_DIR, filename),
+    insideFolder(PUBLIC_DIR, filename),
     media.data
   );
   return filename;

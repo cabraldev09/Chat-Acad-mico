@@ -495,7 +495,7 @@ const MessageInput = ({ ticketStatus, aiActive, historical, isGroup, contactName
               {replyingMessage.body}
             </div>
           </div>
-          <IconButton className={classes.icon} onClick={() => setReplyingMessage(null)}>
+          <IconButton aria-label="Fechar" className={classes.icon} onClick={() => setReplyingMessage(null)}>
             <Close />
           </IconButton>
         </div>
@@ -521,7 +521,7 @@ const MessageInput = ({ ticketStatus, aiActive, historical, isGroup, contactName
       <div className={classes.bar}>
         {recording ? (
           <div className={classes.recorder}>
-            <IconButton className={classes.icon} onClick={cancelAudio} disabled={loading}>
+            <IconButton aria-label="Excluir" className={classes.icon} onClick={cancelAudio} disabled={loading}>
               <DeleteOutline />
             </IconButton>
             <div className={classes.rec}>
@@ -534,7 +534,7 @@ const MessageInput = ({ ticketStatus, aiActive, historical, isGroup, contactName
           </div>
         ) : (
           <>
-            <IconButton className={classes.icon} onClick={() => setShowEmoji((v) => !v)} disabled={loading}>
+            <IconButton aria-label="Emojis" className={classes.icon} onClick={() => setShowEmoji((v) => !v)} disabled={loading}>
               <Mood />
             </IconButton>
             {showEmoji && (
@@ -546,7 +546,7 @@ const MessageInput = ({ ticketStatus, aiActive, historical, isGroup, contactName
                 </ClickAwayListener>
               </div>
             )}
-            <IconButton
+            <IconButton aria-label="Adicionar"
               className={clsx(classes.icon, attachEl && classes.iconOn)}
               onClick={(e) => setAttachEl(e.currentTarget)}
               disabled={loading}
@@ -610,7 +610,7 @@ const MessageInput = ({ ticketStatus, aiActive, historical, isGroup, contactName
                 {loading ? <CircularProgress size={20} color="inherit" /> : <Send />}
               </IconButton>
             ) : (
-              <IconButton className={clsx(classes.icon, classes.mic)} onClick={startRecording} disabled={loading} style={{ width: 44, height: 44 }}>
+              <IconButton aria-label="Gravar áudio" className={clsx(classes.icon, classes.mic)} onClick={startRecording} disabled={loading} style={{ width: 44, height: 44 }}>
                 <Mic />
               </IconButton>
             )}

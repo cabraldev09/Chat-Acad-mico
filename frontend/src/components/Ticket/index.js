@@ -226,13 +226,13 @@ const Ticket = () => {
               onKeyDown={(e) => e.key === "Enter" && step(e.shiftKey ? -1 : 1)}
             />
             <span className={classes.count}>{searchTerm ? (matches ? `${matchIndex + 1} de ${matches}` : "Nenhuma") : ""}</span>
-            <IconButton size="small" onClick={() => step(-1)} disabled={!matches}>
+            <IconButton aria-label="Mostrar menos" size="small" onClick={() => step(-1)} disabled={!matches}>
               <KeyboardArrowUp />
             </IconButton>
-            <IconButton size="small" onClick={() => step(1)} disabled={!matches}>
+            <IconButton aria-label="Mostrar mais" size="small" onClick={() => step(1)} disabled={!matches}>
               <KeyboardArrowDown />
             </IconButton>
-            <IconButton size="small" onClick={() => { setSearchOpen(false); setSearchTerm(""); }}>
+            <IconButton aria-label="Fechar" size="small" onClick={() => { setSearchOpen(false); setSearchTerm(""); }}>
               <Close />
             </IconButton>
           </div>

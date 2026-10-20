@@ -217,7 +217,7 @@ const ContactModal = ({ open, onClose, contactId, initialValues, onSave }) => {
 															margin="dense"
 															className={classes.textField}
 														/>
-														<IconButton
+														<IconButton aria-label="Excluir"
 															size="small"
 															onClick={() => remove(index)}
 														>

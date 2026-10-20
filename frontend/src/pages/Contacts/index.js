@@ -379,13 +379,13 @@ const Contacts = () => {
                   </TableCell>
                   <TableCell align="center">
                     {!contact.isGroup && <RelationMenu contact={contact} />}
-                    <IconButton
+                    <IconButton aria-label="Abrir no WhatsApp"
                       size="small"
                       onClick={() => handleSaveTicket(contact.id)}
                     >
                       <WhatsAppIcon />
                     </IconButton>
-                    <IconButton
+                    <IconButton aria-label="Editar"
                       size="small"
                       onClick={() => hadleEditContact(contact.id)}
                     >
@@ -395,7 +395,7 @@ const Contacts = () => {
                       role={accessLevel(user)}
                       perform="contacts-page:deleteContact"
                       yes={() => (
-                        <IconButton
+                        <IconButton aria-label="Excluir"
                           size="small"
                           onClick={(e) => {
                             setConfirmOpen(true);

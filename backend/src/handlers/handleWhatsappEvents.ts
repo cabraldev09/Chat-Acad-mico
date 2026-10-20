@@ -1,3 +1,4 @@
+import { insideFolder, safeStoredName } from "../helpers/SafeFile";
 import { parseVcards, registerAffiliateReferrals } from "../services/AffiliateServices/ReferralFromContact";
 import { join } from "path";
 import { promisify } from "util";
@@ -89,23 +90,12 @@ const processLocationMessage = (
 };
 
 export const saveMediaFile = async (mediaPayload: MediaPayload): Promise<string> => {
-  const randomId = makeRandomId(5);
-  const { filename: originalFilename } = mediaPayload;
-
-  let filename: string;
-  if (!originalFilename) {
-    const [extension] = mediaPayload.mimetype.split("/")[1].split(";");
-    filename = `${randomId}-${new Date().getTime()}.${extension}`;
-  } else {
-    const baseName = originalFilename.split(".").slice(0, -1).join(".");
-    const extension = originalFilename.split(".").slice(-1)[0];
-    // the tilde marks the unique part, so the screen can show the real name of the file without guessing
-    filename = `${baseName}~${randomId}.${extension}`;
-  }
+  // the name comes from the sender: it never decides where the file goes nor what kind of file it is (helpers/SafeFile.ts)
+  const filename = safeStoredName(mediaPayload.filename, mediaPayload.mimetype);
 
   try {
     await writeFileAsync(
-      join(PUBLIC_DIR, filename),
+      insideFolder(PUBLIC_DIR, filename),
       mediaPayload.data,
       "base64"
     );

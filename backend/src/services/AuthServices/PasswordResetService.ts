@@ -1,3 +1,4 @@
+import { isEmail } from "../../helpers/Email";
 import crypto from "crypto";
 import { Op, fn, col, where } from "sequelize";
 
@@ -20,7 +21,7 @@ const hashOf = (token: string): string => crypto.createHash("sha256").update(tok
 // form cannot be used to find out who has an account); the e-mail goes out in the background.
 export const requestReset = async (emailRaw: string, ip: string): Promise<void> => {
   const email = String(emailRaw || "").trim().toLowerCase();
-  if (!/^\S+@\S+\.\S+$/.test(email)) return;
+  if (!isEmail(email)) return;
   const user = await User.findOne({ where: where(fn("lower", col("email")), email) });
   if (!user) return;
   if (!(await mailConfigured())) {

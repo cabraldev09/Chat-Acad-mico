@@ -1,3 +1,4 @@
+import { isEmail } from "../helpers/Email";
 import { Request, Response } from "express";
 
 import AppError from "../errors/AppError";
@@ -22,7 +23,7 @@ export const update = async (req: Request, res: Response): Promise<Response> => 
   const user = String(b.user ?? "").trim();
   const port = Number(b.port);
   if (b.host !== undefined && !/^[a-z0-9.-]+$/i.test(host)) throw new AppError("ERR_MAIL_HOST_INVALID", 400);
-  if (b.user !== undefined && !/^\S+@\S+\.\S+$/.test(user)) throw new AppError("ERR_MAIL_USER_INVALID", 400);
+  if (b.user !== undefined && !isEmail(user)) throw new AppError("ERR_MAIL_USER_INVALID", 400);
   if (b.port !== undefined && !(port > 0 && port < 65536)) throw new AppError("ERR_MAIL_PORT_INVALID", 400);
   if (b.host !== undefined) await setSetting("mail_host", host);
   if (b.user !== undefined) await setSetting("mail_user", user);

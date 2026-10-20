@@ -1,3 +1,4 @@
+import { MIN_PASSWORD } from "../../helpers/Passwords";
 import { joinRelationshipQueue, leaveRelationshipQueue } from "../RelationshipServices/Relationship";
 import * as Yup from "yup";
 import { col, fn, where } from "sequelize";
@@ -44,7 +45,7 @@ const UpdateUserService = async ({
     name: Yup.string().min(2),
     email: Yup.string().email(),
     profile: Yup.string(),
-    password: Yup.string()
+    password: Yup.string().min(MIN_PASSWORD, "ERR_PASSWORD_SHORT")
   });
 
   const {

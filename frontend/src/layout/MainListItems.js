@@ -32,7 +32,6 @@ import LibraryIcon from "lucide-react/dist/esm/icons/library";
 import BookOpenCheckIcon from "lucide-react/dist/esm/icons/book-open-check";
 import BotIcon from "lucide-react/dist/esm/icons/bot";
 import WorkflowIcon from "lucide-react/dist/esm/icons/workflow";
-import EyeIcon from "lucide-react/dist/esm/icons/eye";
 
 import api from "../services/api";
 import openSocket from "../services/socket-io";
@@ -306,7 +305,6 @@ const MainListItems = (props) => {
           />
           <ListItemLink to="/chatbot" primary="Chatbot e fluxos" icon={<WorkflowIcon className="ico" />} collapsed={collapsed} />
           {connectionsLink}
-          <ListItemLink to="/monitor" primary="Monitor ao vivo" icon={<EyeIcon className="ico" />} collapsed={collapsed} />
         </>
       )}
       <Divider className={classes.divider} />

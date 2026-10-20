@@ -1,3 +1,4 @@
+import { isEmail } from "../../helpers/Email";
 import { isRelationshipConnection } from "../RelationshipServices/Relationship";
 import { subHours } from "date-fns";
 
@@ -21,8 +22,7 @@ import Polo from "../../models/Polo";
 import Queue from "../../models/Queue";
 import Tag from "../../models/Tag";
 import LeadTag from "../../models/LeadTag";
-import { isUrlSafe, safeRequest } from "../../helpers/SafeUrl";
-import axios from "axios";
+import { safeRequest } from "../../helpers/SafeUrl";
 import AutoAssignTicket from "./AutoAssignTicket";
 import { isWithinBusinessHours } from "./BusinessHours";
 import { Op } from "sequelize";
@@ -172,9 +172,9 @@ const runNodeAction = async (ticket: Ticket, node: ChatbotNode): Promise<void> =
     }
     case "webhook": {
       // sends what the bot knows to another system (only public https/http addresses)
-      if (node.field && (await isUrlSafe(node.field))) {
-        await axios
-          .post(node.field, { ticketId: ticket.id, contactId: ticket.contactId, collected: ticket.aiSlots || {} }, { timeout: 5000 })
+      if (node.field) {
+        // safeRequest checks the address again when it connects and does not follow redirects (a public address that redirects or re-resolves to an internal one is refused)
+        await safeRequest({ method: "POST", url: node.field, data: { ticketId: ticket.id, contactId: ticket.contactId, collected: ticket.aiSlots || {} }, timeout: 5000 })
           .catch(err => logger.warn(`chatbot webhook failed: ${err.message}`));
       }
       if (node.message) await say(ticket, node.message);
@@ -228,7 +228,7 @@ const runChatbot = async (
     if (waiting?.action === "ask") {
       const field = waiting.field || "nome";
       const value = body.trim().slice(0, 200);
-      if (field === "email" && !/^\S+@\S+\.\S+$/.test(value)) {
+      if (field === "email" && !isEmail(value)) {
         await say(ticket, "Não consegui entender o e-mail. Pode digitar de novo?");
         return true;
       }

@@ -74,7 +74,21 @@ whenLeader(() => {
 });
 };
 boot().catch(err => { logger.fatal({ err }, "Startup checks failed"); process.exit(1); });
-gracefulShutdown(server);
+gracefulShutdown(server, {
+  // Docker waits 60 s (stop_grace_period) before it kills the container
+  timeout: 55000,
+  onShutdown: async () => {
+    try {
+      if (String(process.env.WHATSAPP_PROVIDER || "wwebjs") === "wwebjs") {
+        const { closeAllWwebjsClients } = await import("./providers/WhatsApp/Implementations/wwebjs");
+        await closeAllWwebjsClients();
+      }
+      logger.info("WhatsApp sessions closed for the shutdown");
+    } catch (err) {
+      logger.warn(`Shutdown: the sessions did not close cleanly (${err})`);
+    }
+  }
+});
 
 // Exit after an uncaught exception: continuing could serve partially corrupted state.
 process.on("uncaughtException", err => { logger.fatal({ err }, "Uncaught exception"); process.exit(1); });

@@ -122,9 +122,9 @@ const CropDialog = ({ file, open, onClose, onApply }) => {
         </div>
         <div className={classes.row}>
           <span className={classes.label}>Girar</span>
-          <IconButton size="small" onClick={() => setRotation((r) => (r - 90) % 360)} aria-label="Girar para a esquerda"><RotateLeft /></IconButton>
+          <IconButton aria-label="Girar para a esquerda" size="small" onClick={() => setRotation((r) => (r - 90) % 360)} aria-label="Girar para a esquerda"><RotateLeft /></IconButton>
           <Slider value={rotation} min={-180} max={180} step={1} onChange={(_, v) => setRotation(v)} aria-label="Ângulo" />
-          <IconButton size="small" onClick={() => setRotation((r) => (r + 90) % 360)} aria-label="Girar para a direita"><RotateRight /></IconButton>
+          <IconButton aria-label="Girar para a direita" size="small" onClick={() => setRotation((r) => (r + 90) % 360)} aria-label="Girar para a direita"><RotateRight /></IconButton>
         </div>
       </div>
       <div className={classes.actions}>

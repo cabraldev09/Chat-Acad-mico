@@ -1,3 +1,4 @@
+import { isEmail } from "../helpers/Email";
 import crypto from "crypto";
 import { getAppTz } from "../helpers/AppTime";
 import { Op } from "sequelize";
@@ -472,7 +473,7 @@ export const createStudent = async (input: { rgm: string; name: string; email?: 
   if (!rgm || !/^[A-Za-z0-9.\-/]+$/.test(rgm)) throw new AppError("Informe o RGM do aluno (só letras, números e traços).", 400);
   if (!name) throw new AppError("Informe o nome do aluno.", 400);
   const email = input.email ? String(input.email).trim().toLowerCase() : null;
-  if (email && !/^\S+@\S+\.\S+$/.test(email)) throw new AppError("E-mail inválido.", 400);
+  if (email && !isEmail(email)) throw new AppError("E-mail inválido.", 400);
   if (await Student.findOne({ where: { rgm } })) throw new AppError("Já existe um aluno com este RGM.", 409);
   if (email && (await Student.findOne({ where: { email } }))) throw new AppError("Já existe um aluno com este e-mail.", 409);
   return Student.create({ rgm, name, email, phone: input.phone || null, courseName: input.courseName || null, poloId: input.poloId || null, responsibleUserId: input.responsibleUserId || null, leadId: input.leadId || null } as any);

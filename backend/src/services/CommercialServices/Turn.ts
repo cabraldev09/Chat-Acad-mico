@@ -14,7 +14,8 @@ import { commercialTurn, CommercialTrace } from "./Hook";
 import { CommercialPorts } from "./Ports";
 import { matchFaq } from "../AiServices/Kb";
 import { unsafeAnswer } from "./Guards";
-import { ENTRY_LABEL, fastIntent, hasBolsaData, humanReason, isGreeting, needsBolsaData, openingText, retractsBuying, stageFieldsDone, supportIntent, topicsOf } from "./Rules";
+import { ENTRY_LABEL, fastIntent, hasBolsaData, humanReason, isGreeting, needsBolsaData, openingText, retractsBuying, stageFieldsDone, supportIntent, topicsOf, gradeRequest } from "./Rules";
+import { AcademicCtx, findCourse, runAcademicTool } from "./Academic";
 import { BOLSA_ASKS, bolsaDataFrom, bolsaRequestFor } from "./BolsaData";
 import { stripGradeAnnouncement } from "./GradeChoice";
 import { studentFacts } from "./StudentFacts";
@@ -218,6 +219,38 @@ export const commercialAiTurn = async (d: TurnDeps): Promise<CommercialTurnResul
     await log({ intent: support, deterministic: true, llmCalls: 0, toolCalls: 0, cacheHits: 0, tokens: base.tokens, outcome: hook.exit, latencyMs });
     if (d.lead && !d.sandbox) await syncLead(d, hook.trace.changed);
     return { text, exit: hook.exit, ...(hook.why ? { why: hook.why } : {}), collected: flat(hook.trace.changed), trace: { ...base, deterministic: true, intent: support, commercial: hook.trace, entry: ENTRY_LABEL[state.slots.entryType || "unknown"], latencyMs } };
+  }
+
+  // the grade asked for: the system finds it and sends the PDF itself (a model that only says it will send, and never calls the tool, leaves the person without the file)
+  const gradeAsk = d.input === null || d.sandbox || !d.ticket || !wrote ? null : gradeRequest(lastText);
+  if (gradeAsk) {
+    const ctx: AcademicCtx = { ticket: d.ticket, dryRun: false, slots: { ...state.slots }, patch: {}, cacheHits: 0, agentId: d.agent.id };
+    try {
+      const named = gradeAsk.course ? await findCourse({ courseName: gradeAsk.course }) : null;
+      const course = named || (ctx.slots.courseId || ctx.slots.courseName ? await findCourse({ courseId: ctx.slots.courseId, courseName: ctx.slots.courseName }) : null);
+      const again = /\b(de novo|novamente|outra vez|reenvia|reenviar)\b/i.test(lastText);
+      if (course && !(ctx.slots.gradeSent && Number(ctx.slots.courseId) === course.id && !again)) {
+        const found = await runAcademicTool("buscar_grade", { courseId: course.id }, ctx);
+        const sent = found && found.gradeId ? await runAcademicTool("enviar_material", { gradeId: found.gradeId }, ctx) : null;
+        if (sent && sent.enviado) {
+          let text = String(sent.texto_estagio_tutoria || "").trim() || "Qualquer dúvida sobre o estágio ou a rotina do curso, é só me falar.";
+          let patchOut: Record<string, any> = { ...ctx.patch, courseId: course.id, courseName: course.name, gradeAsked: true, internshipExplained: true, tutoringExplained: true };
+          const probe = { ...state.slots, ...patchOut };
+          // the full name and the CPF for the scholarship (same rule as after any answer)
+          if (needsBolsaData(probe)) {
+            text = `${text}\n\n${bolsaRequestFor({ name: !probe.fullName, cpf: !probe.cpfGiven })}`.trim();
+            patchOut = { ...patchOut, bolsaDataAsked: Number(probe.bolsaDataAsked || 0) + 1 };
+          }
+          const hook = await commercialTurn(d.ports, { userText: lastText, intent: "curriculum", patch: patchOut, tools: ["buscar_grade", "enviar_material"], hadText: true, replied: true, nodeId: d.nodeId, hasPolo: !!d.lead?.poloId, endsWithQuestion: /\?[\s"”')]*$/.test(text) });
+          const latencyMs = Date.now() - started;
+          await log({ intent: "curriculum", deterministic: true, llmCalls: 0, toolCalls: 2, cacheHits: 0, tokens: base.tokens, outcome: hook.exit, latencyMs });
+          if (d.lead) await syncLead(d, hook.trace.changed);
+          return { text, exit: hook.exit, ...(hook.why ? { why: hook.why } : {}), collected: flat(hook.trace.changed), trace: { ...base, deterministic: true, intent: "curriculum", commercial: hook.trace, entry: ENTRY_LABEL[state.slots.entryType || "unknown"], latencyMs } };
+        }
+      }
+    } catch (err) {
+      // the model answers as before when the system could not send it
+    }
   }
 
   // an FAQ with a ready answer (the team's or one the agent learned) needs no model

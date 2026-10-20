@@ -1,3 +1,4 @@
+import { csvCell } from "../helpers/Csv";
 import { getAppTz } from "../helpers/AppTime";
 import { Request, Response } from "express";
 import { Op } from "sequelize";
@@ -140,7 +141,7 @@ export const settle = async (req: Request, res: Response): Promise<Response> => 
 export const exportCsv = async (req: Request, res: Response): Promise<void> => {
   const { rows } = await fetchRows(req);
   const label: Record<string, string> = { received: "Recebida", owed: "A receber", waiting: "Aguardando pagamento", cancelled: "Cancelada" };
-  const esc = (v: any) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const esc = (v: any) => csvCell(v);
   const money = (n: number) => n.toFixed(2).replace(".", ",");
   const day = (d: any) => (d ? new Date(d).toLocaleDateString("pt-BR", { timeZone: getAppTz() }) : "");
   const lines = [["Consultor", "Aluno", "Taxa", "Percentual", "Comissão", "Situação", "Via carteira Efí", "Criada em", "Paga em", "Repassada em", "Observação"].map(esc).join(";")];

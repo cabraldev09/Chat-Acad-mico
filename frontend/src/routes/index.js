@@ -23,6 +23,7 @@ const Students = lazy(() => import("../pages/Students"));
 const PortalHome = lazy(() => import("../pages/Portal"));
 const PortalLogin = lazy(() => import("../pages/Portal").then((m) => ({ default: m.PortalLogin })));
 const PortalActivate = lazy(() => import("../pages/Portal").then((m) => ({ default: m.PortalActivate })));
+const NotFound = lazy(() => import("../pages/NotFound/"));
 const Tickets = lazy(() => import("../pages/Tickets/"));
 const Connections = lazy(() => import("../pages/Connections/"));
 const Polos = lazy(() => import("../pages/Polos"));
@@ -41,7 +42,6 @@ const AiAgents = lazy(() => import("../pages/AiAgents/"));
 const AiAgentCentral = lazy(() => import("../pages/AiAgents/Central"));
 const Webhooks = lazy(() => import("../pages/Webhooks/"));
 const Reports = lazy(() => import("../pages/Reports/"));
-const LiveMonitor = lazy(() => import("../pages/LiveMonitor/"));
 const CrmBoard = lazy(() => import("../pages/CRM/Board"));
 const CrmPanel = lazy(() => import("../pages/CRM/Panel"));
 const CrmTasks = lazy(() => import("../pages/CRM/Tasks"));
@@ -107,6 +107,7 @@ const Routes = () => {
               <LoggedInLayout>
                 <Guarded>
                 <Suspense fallback={<BackdropLoading />}>
+                <Switch>
                 {/* the conversations are the home of the system */}
                 <Route exact path="/" component={() => <Redirect to="/tickets" />} isPrivate />
                 <Route exact path="/tickets/:ticketId?" component={Tickets} isPrivate />
@@ -132,7 +133,6 @@ const Routes = () => {
                 <Route exact path="/ai-agents" component={AiAgents} isPrivate managerOnly />
                 <Route exact path="/integrations" component={Webhooks} isPrivate adminOnly />
                 <Route exact path="/reports" component={Reports} isPrivate />
-                <Route exact path="/monitor" component={LiveMonitor} isPrivate managerOnly />
                 <Route exact path="/crm" component={CrmBoard} isPrivate />
                 <Route exact path="/crm/painel" component={CrmPanel} isPrivate />
                 <Route exact path="/crm/tarefas" component={CrmTasks} isPrivate />
@@ -147,6 +147,9 @@ const Routes = () => {
                 <Route exact path="/analise-academica/:id?" component={AcademicAnalysis} isPrivate academicOnly />
                 <Route exact path="/alunos" component={Students} isPrivate academicOnly />
                 <Route exact path="/crm/config" component={CrmSettings} isPrivate managerOnly />
+                {/* any other address: a page that says so (before, an empty screen) */}
+                <Route component={NotFound} isPrivate />
+                </Switch>
                 </Suspense>
                 </Guarded>
               </LoggedInLayout>

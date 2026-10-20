@@ -6,14 +6,19 @@ import ContactListItem from "../../models/ContactListItem";
 // The recipients of a campaign are copied from its list the first time it starts (or is scheduled to start), so editing the
 // list later does not change a campaign that already began.
 export const ensureShippings = async (campaign: Campaign): Promise<number> => {
-  const existing = await CampaignShipping.count({ where: { campaignId: campaign.id } });
-  if (existing) return existing;
-  const items = await ContactListItem.findAll({ where: { contactListId: campaign.contactListId } });
-  if (!items.length) throw new AppError("ERR_CAMPAIGN_EMPTY_LIST");
-  await CampaignShipping.bulkCreate(
-    items.map(i => ({ campaignId: campaign.id, name: i.name, number: i.number, status: "pending" }))
-  );
-  return items.length;
+  // a lock per campaign, held until the copy is saved: a second request (double click, the scheduler) waits and finds the recipients already there
+  return (CampaignShipping.sequelize as any).transaction(async (transaction: any) => {
+    await (CampaignShipping.sequelize as any).query("SELECT pg_advisory_xact_lock(:key)", { replacements: { key: 7400000000 + Number(campaign.id) }, transaction });
+    const existing = await CampaignShipping.count({ where: { campaignId: campaign.id }, transaction });
+    if (existing) return existing;
+    const items = await ContactListItem.findAll({ where: { contactListId: campaign.contactListId }, transaction });
+    if (!items.length) throw new AppError("ERR_CAMPAIGN_EMPTY_LIST");
+    await CampaignShipping.bulkCreate(
+      items.map(i => ({ campaignId: campaign.id, name: i.name, number: i.number, status: "pending" })),
+      { transaction }
+    );
+    return items.length;
+  });
 };
 
 // What a person reads in the report instead of an internal code.
