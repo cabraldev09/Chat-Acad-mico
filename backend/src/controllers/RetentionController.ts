@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 
 import AppError from "../errors/AppError";
-import { dayBounds, shiftDays, todayInAppTz } from "../helpers/AppTime";
+import { dayBounds, shiftDays, todayInAppTz, getAppTz } from "../helpers/AppTime";
 import { setSetting } from "../helpers/AppSettings";
 import { canOperateRetention } from "../helpers/Roles";
 import Lead from "../models/Lead";
@@ -38,9 +38,15 @@ const leadOf = async (req: Request): Promise<Lead> => {
   return lead;
 };
 
+// the academic term of today (first semester until June, second from July) when the team has not typed one
+const currentTerm = (): string => {
+  const d = new Date();
+  return `${d.getFullYear()}/${d.getMonth() < 6 ? 1 : 2}`;
+};
+
 const period = (q: any) => {
   const today = todayInAppTz();
-  const from = /^\d{4}-\d{2}-\d{2}$/.test(String(q.from || "")) ? String(q.from) : shiftDays(dayBounds(today).start, -89).toLocaleDateString("en-CA", { timeZone: "America/Porto_Velho" });
+  const from = /^\d{4}-\d{2}-\d{2}$/.test(String(q.from || "")) ? String(q.from) : shiftDays(dayBounds(today).start, -89).toLocaleDateString("en-CA", { timeZone: getAppTz() });
   const to = /^\d{4}-\d{2}-\d{2}$/.test(String(q.to || "")) ? String(q.to) : today;
   return { from, to, start: dayBounds(from).start, end: dayBounds(to).end };
 };
@@ -148,7 +154,7 @@ export const preview = async (req: Request, res: Response): Promise<Response> =>
   const kind = String(req.body?.kind);
   if (!KINDS.includes(kind)) throw new AppError("ERR_INVALID_PARAMETER", 400);
   const [n, r] = await Promise.all([readNpsConfig(), readRetentionConfig()]);
-  const extra: Record<string, string> = { periodo: r.rematricula.term || "2026/2" };
+  const extra: Record<string, string> = { periodo: r.rematricula.term || currentTerm() };
   const template = kind === "nps" ? n.question : kind === "risk" ? r.riskMessage : kind === "remat" ? r.rematricula.message : String(req.body?.text || "").trim();
   const ids: number[] = (Array.isArray(req.body?.leadIds) ? req.body.leadIds : []).map(Number).filter(Boolean).slice(0, 5);
   const leads = ids.length ? await Lead.findAll({ where: { id: ids }, attributes: ["id", "name", "onboardingTutorId"] }) : [];

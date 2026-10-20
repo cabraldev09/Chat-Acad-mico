@@ -18,9 +18,8 @@ import AiLearning from "../models/AiLearning";
 import { approve, discard } from "../services/AiServices/Learning";
 import { respond } from "../services/AiServices/RunAiAgent";
 import { priceOf, tokensToday } from "../services/AiServices/Usage";
-import { DEFAULT_SLOTS } from "../services/AiServices/Tools";
 import { isUrlSafe, safeRequest } from "../helpers/SafeUrl";
-import { dayBounds, shiftDays } from "../helpers/AppTime";
+import { dayBounds, shiftDays, getAppTz } from "../helpers/AppTime";
 import ChatFlow from "../models/ChatFlow";
 import ChatFlowRun from "../models/ChatFlowRun";
 import ChatFlowStat from "../models/ChatFlowStat";
@@ -401,7 +400,7 @@ export const usage = async (req: Request, res: Response): Promise<Response> => {
   const perDay: any[] = await sequelize.query(
     `SELECT TO_CHAR("createdAt" AT TIME ZONE :tz, 'YYYY-MM-DD') AS day, SUM("inputTokens") AS input, SUM("outputTokens") AS output, COUNT(*) AS calls
        FROM "AiUsage" WHERE "agentId" = :id AND kind <> 'test' AND "createdAt" >= :since GROUP BY 1 ORDER BY 1`,
-    { replacements: { tz: process.env.APP_TIMEZONE || "America/Porto_Velho", id: agent.id, since }, type: QueryTypes.SELECT }
+    { replacements: { tz: getAppTz(), id: agent.id, since }, type: QueryTypes.SELECT }
   ).catch(() => []);
   // the conversations THIS agent answered (a ticket counts once, for the agent whose model calls and turns are in it)
   const answeredRows: any[] = await sequelize.query(
@@ -428,7 +427,6 @@ export const usage = async (req: Request, res: Response): Promise<Response> => {
   });
 };
 
-export const defaults = async (_req: Request, res: Response): Promise<Response> => res.json({ slots: DEFAULT_SLOTS, model: "claude-haiku-5-5" });
 
 // ------------------------------------------------------------------ learning (review what the agent should learn)
 

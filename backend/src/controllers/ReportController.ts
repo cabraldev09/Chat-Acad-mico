@@ -50,7 +50,8 @@ const csvCell = (value: unknown, kind: string): string => {
 // Report by consultant or by polo, for the chosen period. JSON for the screen, CSV (opens in Excel) to download.
 export const crmReport = async (req: Request, res: Response): Promise<Response> => {
   const groupBy = req.query.groupBy === "polo" ? "polo" : "owner";
-  if (reqRole(req) === "tutor" || reqRole(req) === "academico") throw new AppError("ERR_NO_PERMISSION", 403);
+  // the sales numbers belong to the sales side and the management: tutoring, the academic team and relationship stay out
+  if (!["admin", "coordenacao", "consultor"].includes(reqRole(req))) throw new AppError("ERR_NO_PERMISSION", 403);
 
   const to = dayBounds(req.query.to ? String(req.query.to) : undefined).end;
   const from = req.query.from ? dayBounds(String(req.query.from)).start : dayBounds(shiftDays(new Date(), -29)).start;

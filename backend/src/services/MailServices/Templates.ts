@@ -8,6 +8,7 @@ export interface MailBody {
   html: string;
 }
 
+import { getAppTz } from "../../helpers/AppTime";
 import { LOGO_CID } from "./Logo";
 
 const BRAND = "Cruzeiro do Sul Virtual";
@@ -107,7 +108,7 @@ const build = (subject: string, l: Layout): MailBody => {
   return { subject, text, html };
 };
 
-const when = (d: Date): string => new Intl.DateTimeFormat("pt-BR", { dateStyle: "long", timeStyle: "short", timeZone: "America/Porto_Velho" }).format(d);
+const when = (d: Date): string => new Intl.DateTimeFormat("pt-BR", { dateStyle: "long", timeStyle: "short", timeZone: getAppTz() }).format(d);
 
 // ------------------------------------------------------------------ team (people who use the system)
 

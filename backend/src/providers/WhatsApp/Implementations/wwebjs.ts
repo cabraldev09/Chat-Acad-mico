@@ -1,3 +1,4 @@
+import { remember } from "../../../helpers/BoundedMap";
 import { syncChatRead } from "../../../services/MessageServices/SyncReadState";
 import qrCode from "qrcode-terminal";
 import {
@@ -134,7 +135,7 @@ const getProfilePic = async (
       new Promise<undefined>(resolve => setTimeout(resolve, 1500))
     ]);
     if (url !== undefined) {
-      picCache.set(key, { url: url || undefined, at: Date.now() });
+      remember(picCache, key, { url: url || undefined, at: Date.now() });
     }
     return url || undefined;
   } catch (err) {
@@ -165,7 +166,7 @@ const resolvePhones = async (
       batch.forEach((id, k) => {
         const digits = onlyDigits(found?.[k]?.pn);
         const phone = isPhoneNumber(digits) ? digits : "";
-        phoneOfLid.set(id, phone);
+        remember(phoneOfLid, id, phone);
         out.set(id, phone);
       });
     } catch (err) {
@@ -312,7 +313,7 @@ const syncChatState = async (wbot: Session, whatsappId: number): Promise<void> =
     if (!contact) continue;
     const last = photoTried.get(`${whatsappId}:${k}`) || 0;
     if (Date.now() - last < 6 * 3600 * 1000) continue;
-    photoTried.set(`${whatsappId}:${k}`, Date.now());
+    remember(photoTried, `${whatsappId}:${k}`, Date.now());
     asked += 1;
     try {
       // eslint-disable-next-line no-await-in-loop

@@ -1,11 +1,6 @@
 import { messages as portugueseMessages } from "./pt";
-import { messages as englishMessages } from "./en";
-import { messages as spanishMessages } from "./es";
 
-const messages = {
-	...portugueseMessages,
-	...englishMessages,
-	...spanishMessages,
-};
+// The whole product is in Brazilian Portuguese.
+const messages = { ...portugueseMessages };
 
 export { messages };

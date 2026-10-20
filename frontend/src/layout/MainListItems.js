@@ -257,8 +257,13 @@ const MainListItems = (props) => {
       {!collapsed && (
         <ListSubheader disableSticky className={classes.sectionLabel}>CRM</ListSubheader>
       )}
-      <ListItemLink to="/crm" primary="Funil de captação" icon={<KanbanSquareIcon className="ico" />} collapsed={collapsed} />
-      <ListItemLink to="/crm/painel" primary="Painel do CRM" icon={<LayoutDashboardIcon className="ico" />} collapsed={collapsed} />
+      {/* the funnel and its panel are the sales pipeline: for tutoring and the academic team they would always be empty */}
+      {!["tutor", "academico"].includes(user.profile === "admin" ? "admin" : user.role) && (
+        <>
+          <ListItemLink to="/crm" primary="Funil de captação" icon={<KanbanSquareIcon className="ico" />} collapsed={collapsed} />
+          <ListItemLink to="/crm/painel" primary="Painel do CRM" icon={<LayoutDashboardIcon className="ico" />} collapsed={collapsed} />
+        </>
+      )}
       <ListItemLink to="/crm/tarefas" primary="Tarefas" icon={<ListTodoIcon className="ico" />} collapsed={collapsed} />
       {["admin", "coordenacao", "consultor"].includes(user.profile === "admin" ? "admin" : user.role || "consultor") && (
         <ListItemLink to="/crm/comissoes" primary="Comissões" icon={<WalletIcon className="ico" />} collapsed={collapsed} />

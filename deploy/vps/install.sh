@@ -48,11 +48,11 @@ else
   IP=$(curl -4 -fsS https://ifconfig.me || true)
   DEFAULT_DOMAIN="${IP//./-}.sslip.io"
   # se o registro DNS "api" já aponta para este servidor, usa o endereço definitivo
-  PREFERRED="${PREFERRED_DOMAIN:-api.cruzeirodosulvirtual.xyz}"
-  if [ -n "$IP" ] && [ "$(getent ahostsv4 "$PREFERRED" 2>/dev/null | awk 'NR==1{print $1}')" = "$IP" ]; then DEFAULT_DOMAIN="$PREFERRED"; fi
+  PREFERRED="${PREFERRED_DOMAIN:-}"
+  if [ -n "$PREFERRED" ] && [ -n "$IP" ] && [ "$(getent ahostsv4 "$PREFERRED" 2>/dev/null | awk 'NR==1{print $1}')" = "$IP" ]; then DEFAULT_DOMAIN="$PREFERRED"; fi
   echo "Responda as perguntas. Enter aceita o valor entre colchetes."
   read -r -p "Endereço da API [$DEFAULT_DOMAIN]: " API_DOMAIN; API_DOMAIN=${API_DOMAIN:-$DEFAULT_DOMAIN}
-  read -r -p "Endereço do site na Vercel [https://chat-acad-mico.vercel.app]: " FRONT; FRONT=${FRONT:-https://chat-acad-mico.vercel.app}
+  read -r -p "Endereço do site [https://www.cruzeirodosulvirtual.app.br]: " FRONT; FRONT=${FRONT:-https://www.cruzeirodosulvirtual.app.br}
   echo "Cole a conexão do banco (Supabase → Connect → Session pooler). Não aparece na tela enquanto você cola."
   read -r -s -p "DATABASE_URL: " DB_URL; echo
   [ -n "$DB_URL" ] || { echo "A DATABASE_URL é obrigatória."; exit 1; }

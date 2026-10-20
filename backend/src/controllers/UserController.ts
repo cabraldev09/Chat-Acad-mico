@@ -66,7 +66,8 @@ export const show = async (req: Request, res: Response): Promise<Response> => {
   const user = await ShowUserService(userId);
 
   // the form shows the effective role: an administrator is "admin" even when the stored role was left at the default
-  return res.status(200).json({ ...user.toJSON(), role: roleOf(user) });
+  const { tokenVersion, ...safe } = user.toJSON() as any;
+  return res.status(200).json({ ...safe, role: roleOf(user) });
 };
 
 export const update = async (

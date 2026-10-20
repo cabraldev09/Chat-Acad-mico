@@ -1,3 +1,4 @@
+import { getAppTz } from "../helpers/AppTime";
 import * as Yup from "yup";
 import { Request, Response } from "express";
 import { getIO } from "../libs/socket";
@@ -105,7 +106,7 @@ export const exportCsv = async (req: Request, res: Response): Promise<Response> 
     ])
   );
   res.setHeader("Content-Type", "text/csv; charset=utf-8");
-  res.setHeader("Content-Disposition", `attachment; filename="contatos-${new Date().toLocaleDateString("en-CA", { timeZone: "America/Porto_Velho" })}.csv"`);
+  res.setHeader("Content-Disposition", `attachment; filename="contatos-${new Date().toLocaleDateString("en-CA", { timeZone: getAppTz() })}.csv"`);
   return res.send(body);
 };
 

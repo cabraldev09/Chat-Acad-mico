@@ -1,3 +1,4 @@
+import { getAppTz } from "../../helpers/AppTime";
 import { ProposalParams, ProposalResult } from "./calc";
 
 // The text a consultant sends on WhatsApp together with the PDF: a few short
@@ -37,7 +38,7 @@ export const buildProposalMessages = (i: Input): MessageBlock[] => {
   const first = (i.leadName || "").trim().split(" ")[0] || "";
   const vars = { nome: first, curso: i.courseName };
   const when = i.generatedAt || new Date();
-  const today = when.toLocaleDateString("pt-BR", { timeZone: "America/Porto_Velho" });
+  const today = when.toLocaleDateString("pt-BR", { timeZone: getAppTz() });
 
   const intro = fill(
     i.intro && i.intro.trim()

@@ -76,7 +76,12 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
   let queueIds: number[] = [];
 
   if (queueIdsStringified) {
-    queueIds = JSON.parse(queueIdsStringified);
+    try {
+      const parsed = JSON.parse(queueIdsStringified);
+      queueIds = Array.isArray(parsed) ? parsed.map(Number).filter(Number.isFinite) : [];
+    } catch (_) {
+      queueIds = [];
+    }
   }
 
   // the browser tells which sectors to list: never beyond the ones the person belongs to

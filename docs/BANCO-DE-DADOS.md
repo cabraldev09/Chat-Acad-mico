@@ -92,9 +92,9 @@ O que *pode* derrubar ou prejudicar um chip e como o sistema evita:
 
 **Importante, sem promessa falsa:** o WhatsApp por QR Code usa uma API **não oficial**. Nenhum sistema consegue garantir que um chip nunca será bloqueado, e este projeto **não tenta esconder** o uso nem burlar a detecção do WhatsApp — só reduz comportamentos de robô. Para disparos em volume e contato frio, a única opção sem risco é a **WhatsApp Cloud API oficial** (número da empresa com templates aprovados). Use o QR Code só para atendimento receptivo, com um chip que você aceite arriscar.
 
-## Railway (API) — variáveis e volume
+## Variáveis e volume da API (host com Docker)
 
-No serviço do repositório no Railway (o `Dockerfile` e o `railway.toml` na raiz já configuram build, migrations e health check):
+A produção atual roda na VPS (veja `docs/VPS-CONTABO.md`). Em qualquer outro host com Docker, o `Dockerfile` da raiz já faz build, migrations e health check:
 
 1. **Volume**: *Settings → Volumes → New Volume*, montar em `/data`. Sem ele a sessão do WhatsApp e os arquivos se perdem a cada deploy (e o chip pede novo QR Code).
 2. **Variáveis** (aba *Variables*):

@@ -3666,14 +3666,6 @@ ALTER TABLE ONLY public."Contacts"
 
 
 --
--- Name: Contacts Contacts_number_key1; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public."Contacts"
-    ADD CONSTRAINT "Contacts_number_key1" UNIQUE (number);
-
-
---
 -- Name: Contacts Contacts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4271,6 +4263,13 @@ CREATE INDEX automationtriggers_event_idx ON public."AutomationTriggers" USING b
 
 
 --
+-- Name: campaign_shippings_campaign_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX campaign_shippings_campaign_status ON public."CampaignShippings" USING btree ("campaignId", status);
+
+
+--
 -- Name: chat_flow_versions_flow_id_version; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4338,6 +4337,13 @@ CREATE UNIQUE INDEX commercial_grades_content_hash ON public."CommercialGrades" 
 --
 
 CREATE INDEX commercial_grades_course_name ON public."CommercialGrades" USING btree ("courseName");
+
+
+--
+-- Name: contact_list_items_list; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX contact_list_items_list ON public."ContactListItems" USING btree ("contactListId");
 
 
 --
@@ -4439,6 +4445,13 @@ CREATE INDEX kb_documents_topic ON public."KbDocuments" USING btree (topic);
 
 
 --
+-- Name: lead_activities_lead; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX lead_activities_lead ON public."LeadActivities" USING btree ("leadId");
+
+
+--
 -- Name: lead_commercials_ready_for_consultant; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4471,6 +4484,20 @@ CREATE UNIQUE INDEX lead_documents_lead_id_name ON public."LeadDocuments" USING 
 --
 
 CREATE INDEX lead_reminder_logs_lead_id_key_created_at ON public."LeadReminderLogs" USING btree ("leadId", key, "createdAt");
+
+
+--
+-- Name: lead_tasks_lead; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX lead_tasks_lead ON public."LeadTasks" USING btree ("leadId");
+
+
+--
+-- Name: lead_tasks_user_open; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX lead_tasks_user_open ON public."LeadTasks" USING btree ("userId", "doneAt", "dueAt");
 
 
 --
@@ -4653,6 +4680,13 @@ CREATE INDEX retention_messages_lead_id_kind ON public."RetentionMessages" USING
 --
 
 CREATE INDEX retention_messages_whatsapp_id_created_at ON public."RetentionMessages" USING btree ("whatsappId", "createdAt");
+
+
+--
+-- Name: schedules_status_send; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX schedules_status_send ON public."Schedules" USING btree (status, "sendAt");
 
 
 --
@@ -5853,6 +5887,7 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261124000001-ai-claim.js') ON CONF
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261125000001-onboarding-checklist.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261126000001-polo-coverage.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261126000002-lead-commercial-ready.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261127000001-indexes.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

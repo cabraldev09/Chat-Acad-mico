@@ -2646,7 +2646,8 @@ const postMeta = (id, payload, secret, badSig) => {
       const msg = (id, ticket, body, fromMe, ago) => sql(`INSERT INTO Messages (id, ticketId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('${id}', ${ticket}, '${body}', ${fromMe}, true, 'chat', 0, NOW() - INTERVAL '${ago}', NOW())`);
       msg("dash-c-1", customer, "oi", false, "1 minute");
       msg("dash-c-2", customer, "tudo bem?", true, "30 seconds");
-      msg("dash-old", customer, "ontem", false, "30 hours");
+      // yesterday at noon in the company's time zone (a fixed "30 hours ago" lands two days back before 06:00)
+      sql(`INSERT INTO Messages (id, ticketId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('dash-old', ${customer}, 'ontem', false, true, 'chat', 0, (date_trunc('day', NOW() AT TIME ZONE 'America/Porto_Velho') - INTERVAL '12 hours') AT TIME ZONE 'America/Porto_Velho', NOW())`);
       msg("dash-m-1", mateTicket, "papo interno", false, "1 minute");
       msg("dash-g-1", grp, "mensagem de grupo", false, "1 minute");
       const after = (await http.get("/dashboard", auth())).data;
@@ -3867,52 +3868,6 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(/Documentos pendentes/.test(names("LeadTags", "leadId", lead.id)), "the label did not come back");
       // a consultant who does not own the lead cannot touch its documents
       assert((await http.get(`/leads/${lead.id}/documents`, asUser(bolixConsultantToken))).status === 403, "another consultant read the documents");
-    });
-    await test("cost per source: the investment is recorded by month, source and campaign; the cost per lead and per enrollment come from it", async () => {
-      const month = new Date().toLocaleDateString("en-CA", { timeZone: "America/Porto_Velho" }).slice(0, 7);
-      // only the management reaches it
-      assert((await http.get("/marketing/cac", asUser(bolixConsultantToken))).status === 403, "a consultant read the cost report");
-      assert((await http.post("/marketing/spend", { month, source: "Google", amount: "100" }, asUser(bolixConsultantToken))).status === 403, "a consultant recorded spending");
-      // invalid values are refused
-      assert((await http.post("/marketing/spend", { month: "2026-13", source: "Google", amount: "100" }, auth())).status === 400, "a bad month was accepted");
-      assert((await http.post("/marketing/spend", { month, source: "", amount: "100" }, auth())).status === 400, "a spending without a source was accepted");
-      assert((await http.post("/marketing/spend", { month, source: "Google", amount: "-5" }, auth())).status === 400, "a negative amount was accepted");
-
-      // leads of two sources; one of them enrolled
-      const mk = async (name, phone, source, extra = {}) => (await http.post("/leads", { name, phone, source, ...extra }, auth())).data.lead;
-      const g1 = await mk("Lead Google 1", "5511955579401", "Google", { utmCampaign: "vestibular-2030" });
-      await mk("Lead Google 2", "5511955579402", "Google", { utmCampaign: "vestibular-2030" });
-      await mk("Lead Google 3", "5511955579403", "Google");
-      await mk("Lead Insta 1", "5511955579404", "Instagram");
-      const wonId = sql(`SELECT id FROM LeadStages WHERE type='won' ORDER BY position LIMIT 1`);
-      assert((await http.put(`/leads/${g1.id}/stage`, { stageId: Number(wonId) }, auth())).status === 200, "enrol the lead");
-
-      const spend = await http.post("/marketing/spend", { month, source: "Google", campaign: "vestibular-2030", amount: "300,50" }, auth());
-      assert(spend.status === 201 && spend.data.amount === 300.5, `spend ${spend.status} ${JSON.stringify(spend.data)}`);
-      await http.post("/marketing/spend", { month, source: "Google", amount: "99.50" }, auth());
-      await http.post("/marketing/spend", { month, source: "Instagram", amount: "50" }, auth());
-      const edited = await http.put(`/marketing/spend/${spend.data.id}`, { amount: "400" }, auth());
-      assert(edited.status === 200 && edited.data.amount === 400 && edited.data.campaign === "vestibular-2030", `edit ${edited.status} ${JSON.stringify(edited.data)}`);
-
-      const r = (await http.get("/marketing/cac", auth())).data;
-      const g = r.bySource.find(x => x.name === "Google");
-      const i = r.bySource.find(x => x.name === "Instagram");
-      assert(g && g.leads >= 3 && g.enrolled >= 1 && g.spent === 499.5, `google ${JSON.stringify(g)}`);
-      assert(g.cac === Math.round((499.5 / g.enrolled) * 100) / 100 && g.costPerLead === Math.round((499.5 / g.leads) * 100) / 100, `google ratios ${JSON.stringify(g)}`);
-      // spending without any enrollment shows no cost per enrollment (it would be infinite)
-      assert(i && i.spent === 50 && i.enrolled === 0 && i.cac === null && i.costPerLead !== null, `instagram ${JSON.stringify(i)}`);
-      assert(r.total.spent >= 549.5 && r.total.cac !== null, `total ${JSON.stringify(r.total)}`);
-      const camp = r.byCampaign.find(x => x.name === "vestibular-2030");
-      assert(camp && camp.leads === 2 && camp.enrolled === 1 && camp.spent === 400 && camp.cac === 400, `campaign ${JSON.stringify(camp)}`);
-      assert(r.sources.includes("Google") && r.sources.includes("Instagram"), "sources list");
-
-      // a period without those months does not count the spending
-      const old = (await http.get("/marketing/cac", { params: { from: "2020-01-01", to: "2020-02-01" }, ...auth() })).data;
-      assert(old.total.spent === 0 && old.total.leads === 0, `old period ${JSON.stringify(old.total)}`);
-      const list = (await http.get("/marketing/spend", auth())).data;
-      assert(list.length >= 3, "the spending was not listed");
-      assert((await http.delete(`/marketing/spend/${spend.data.id}`, auth())).status === 200, "delete");
-      assert((await http.delete(`/marketing/spend/${spend.data.id}`, auth())).status === 404, "deleted twice");
     });
     await test("retention: the satisfaction survey (NPS) by WhatsApp, the students at risk of dropping out and the re-enrollment window", async () => {
       const mkUser = async (name, email, role) => (await http.post("/users", { name, email, password: "senha123", role }, auth())).data;
@@ -5343,26 +5298,6 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(csv.includes("Amigo ou pessoal"), "the spreadsheet does not tell who the friend is");
       // marking someone is for whoever can reach the contact list
       assert((await http.put(`/contacts/${contactId}/relation`, { relation: "customer" }, asUser(cons))).status === 200, "a consultant cannot take the mark off");
-    });
-    await test("custo por origem: por canal de divulgação, mês a mês, repetir por vários meses e nenhum custo inventado", async () => {
-      const get = async (from, to) => (await http.get("/marketing/cac", { params: { from, to }, ...auth() })).data;
-      const r0 = await get("2019-01-01", "2019-03-31");
-      assert(r0.monthly.length === 3 && r0.monthly.every(m => m.cac === null && m.costPerLead === null && m.spent === 0), `empty months ${JSON.stringify(r0.monthly)}`);
-      assert(r0.total.costPerLead === null && r0.total.cac === null, "a cost appeared with nothing invested");
-      assert(r0.channels.some(c => c.name === "Google Ads" && c.trackable) && r0.channels.some(c => c.name === "Panfletos e outdoor" && !c.trackable), "channel catalogue");
-
-      const rep = await http.post("/marketing/spend", { month: "2019-01", source: "Panfletos e outdoor", amount: "100", repeat: 3 }, auth());
-      assert(rep.status === 201 && rep.data.created === 3, `repeat ${rep.status} ${JSON.stringify(rep.data)}`);
-      await http.post("/marketing/spend", { month: "2019-02", source: "Google Ads", amount: "50" }, auth());
-      const r1 = await get("2019-01-01", "2019-03-31");
-      assert(r1.monthly.map(m => m.spent).join() === "100,150,100", `months ${JSON.stringify(r1.monthly.map(m => m.spent))}`);
-      const flyers = r1.byChannel.find(c => c.name === "Panfletos e outdoor");
-      assert(flyers && flyers.spent === 300 && flyers.share === 85.7 && flyers.trackable === false && flyers.leads === null && flyers.cac === null, `flyers ${JSON.stringify(flyers)}`);
-      const ads = r1.byChannel.find(c => c.name === "Google Ads");
-      assert(ads && ads.trackable === true && ads.sources.join() === "Google" && ads.leads === 0 && ads.cac === null, `google ads ${JSON.stringify(ads)}`);
-      assert(r1.total.spent === 350, `total ${JSON.stringify(r1.total)}`);
-      // the year before the spending shows nothing
-      assert((await get("2018-01-01", "2018-02-28")).total.spent === 0, "spending leaked into another period");
     });
     await test("handoff to the commercial team of the polo: the city finds the polo, a polo without a team uses the reserve queue, the consultant is warned and gets a task, and nobody answering raises an alert", async () => {
       // the single-prompt agent answers on this connection (the other agents are off)

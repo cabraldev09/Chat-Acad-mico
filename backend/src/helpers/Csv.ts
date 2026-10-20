@@ -1,3 +1,4 @@
+import { getAppTz } from "./AppTime";
 import { Response } from "express";
 
 // CSV for Brazilian spreadsheets: ";" between columns, "\r\n" between lines, a BOM so Excel reads the accents, every cell
@@ -35,5 +36,5 @@ export const sendCsv = (res: Response, filename: string, header: string[], rows:
 };
 
 // day as dd/mm/aaaa in the company timezone
-export const csvDay = (d: Date | string | null | undefined, tz = "America/Porto_Velho"): string =>
+export const csvDay = (d: Date | string | null | undefined, tz = getAppTz()): string =>
   d ? new Date(d).toLocaleDateString("pt-BR", { timeZone: tz }) : "";
