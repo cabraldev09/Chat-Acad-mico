@@ -4,9 +4,9 @@
 # The frontend is deployed separately (Vercel, root directory "frontend").
 FROM node:22-bookworm-slim
 
-# git: whatsapp-web.js is installed from GitHub; chromium: WhatsApp Web + PDF
+# git: whatsapp-web.js is installed from GitHub; chromium: WhatsApp Web + PDF; poppler: draws the pages of a PDF with no text so the AI can read them
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      git ca-certificates chromium ffmpeg fonts-liberation fonts-noto-color-emoji dumb-init \
+      git ca-certificates chromium ffmpeg poppler-utils fonts-liberation fonts-noto-color-emoji dumb-init \
     && rm -rf /var/lib/apt/lists/*
 
 ENV CHROME_BIN=/usr/bin/chromium \

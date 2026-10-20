@@ -1,4 +1,9 @@
 import axios from "axios";
+import { execFile } from "child_process";
+import { promises as fs } from "fs";
+import os from "os";
+import path from "path";
+import { promisify } from "util";
 import { logger } from "../../../utils/logger";
 import { anthropicAccess, openaiAccess } from "../../../services/AiServices/Keys";
 import type { DetectedRow } from "./table-detector";
@@ -16,7 +21,7 @@ const TOOL = "registrar_analise";
 
 const SYSTEM =
   "Você lê o PDF de uma análise curricular (resultado de matrícula unificada: transferência ou 2ª graduação) e devolve os dados chamando a ferramenta. " +
-  "Copie os nomes das disciplinas exatamente como estão escritos, sem corrigir nem traduzir. Não invente linhas e não pule nenhuma: o PDF tem duas listas, " +
+  "Copie os nomes das disciplinas exatamente como estão escritos, sem corrigir nem traduzir. NUNCA complete a lista com disciplinas que você supõe existir na grade: registre só o que está impresso, na ordem do documento, e não pule nenhuma. O PDF tem duas listas, " +
   "“Disciplinas dispensadas” (colunas Disciplina Dispensada, C.H., Usada na Dispensa, Situação) e “Disciplinas a cursar” (colunas Disciplina, Série, C.H., Tipo, Situação). " +
   "Nomes que quebram em duas linhas são um só nome. C.H. é um número de horas (0h é 0). Série é o número antes do º. " +
   "Informe também os totais escritos nos títulos das listas (ex.: “DISPENSADAS — 24”) e o semestre de entrada do cabeçalho.";
@@ -62,10 +67,32 @@ const reasonOf = (err: any): string => {
   return "a IA não respondeu a tempo";
 };
 
+const sh = promisify(execFile);
+
+// The pages as pictures (poppler): the model reads them like a person would, much more reliably than a file with no text
+const renderPages = async (bytes: Buffer): Promise<Buffer[] | null> => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "analise-"));
+  try {
+    await fs.writeFile(path.join(dir, "in.pdf"), bytes);
+    await sh("pdftoppm", ["-r", "130", "-png", path.join(dir, "in.pdf"), path.join(dir, "p")], { timeout: 60000 });
+    const files = (await fs.readdir(dir)).filter(f => /^p-\d+\.png$/.test(f)).sort();
+    if (!files.length) return null;
+    return await Promise.all(files.map(f => fs.readFile(path.join(dir, f))));
+  } catch (err) {
+    logger.warn(`Análise curricular: as páginas não foram desenhadas (${String((err as any)?.message || err).slice(0, 120)}); o PDF vai inteiro`);
+    return null;
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true }).catch(() => undefined);
+  }
+};
+
 // one call to the provider the company has a key for (Anthropic first); gives back what the tool received
-const askModel = async (bytes: Buffer, anthropicKey: string, openaiKey: string): Promise<any> => {
-  const instruction = "Leia o documento e registre todas as disciplinas das duas listas.";
+const askModel = async (bytes: Buffer, pages: Buffer[] | null, anthropicKey: string, openaiKey: string, hint: string): Promise<any> => {
+  const instruction = `Leia o documento e registre todas as disciplinas das duas listas.${hint ? ` ${hint}` : ""}`;
   if (anthropicKey) {
+    const parts: any[] = pages
+      ? pages.map(p => ({ type: "image", source: { type: "base64", media_type: "image/png", data: p.toString("base64") } }))
+      : [{ type: "document", source: { type: "base64", media_type: "application/pdf", data: bytes.toString("base64") } }];
     const { data } = await axios.post(
       `${ANTHROPIC_URL()}/v1/messages`,
       {
@@ -74,22 +101,22 @@ const askModel = async (bytes: Buffer, anthropicKey: string, openaiKey: string):
         system: SYSTEM,
         tools: [SCHEMA],
         tool_choice: { type: "tool", name: TOOL },
-        messages: [{ role: "user", content: [{ type: "document", source: { type: "base64", media_type: "application/pdf", data: bytes.toString("base64") } }, { type: "text", text: instruction }] }]
+        messages: [{ role: "user", content: [...parts, { type: "text", text: instruction }] }]
       },
       { headers: { "x-api-key": anthropicKey, "anthropic-version": "2023-06-01", "content-type": "application/json" }, timeout: 180000, maxBodyLength: Infinity }
     );
     return (data?.content || []).find((b: any) => b.type === "tool_use" && b.name === TOOL)?.input;
   }
+  const parts: any[] = pages
+    ? pages.map(p => ({ type: "image_url", image_url: { url: `data:image/png;base64,${p.toString("base64")}`, detail: "high" } }))
+    : [{ type: "file", file: { filename: "analise.pdf", file_data: `data:application/pdf;base64,${bytes.toString("base64")}` } }];
   const { data } = await axios.post(
     `${OPENAI_URL()}/v1/chat/completions`,
     {
       model: OPENAI_MODEL,
       max_tokens: 16000,
       temperature: 0,
-      messages: [
-        { role: "system", content: SYSTEM },
-        { role: "user", content: [{ type: "file", file: { filename: "analise.pdf", file_data: `data:application/pdf;base64,${bytes.toString("base64")}` } }, { type: "text", text: instruction }] }
-      ],
+      messages: [{ role: "system", content: SYSTEM }, { role: "user", content: [...parts, { type: "text", text: instruction }] }],
       tools: [{ type: "function", function: { name: TOOL, description: SCHEMA.description, parameters: SCHEMA.input_schema } }],
       tool_choice: { type: "function", function: { name: TOOL } }
     },
@@ -108,25 +135,32 @@ export const readWithVision = async (bytes: Buffer, pageCount: number): Promise<
   }
   let failure = "";
   let input: any = null;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
+  let hint = "";
+  const pages = pageCount <= 12 ? await renderPages(bytes) : null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
       // eslint-disable-next-line no-await-in-loop
-      const got = await askModel(bytes, anthropicKey, openaiKey);
+      const got = await askModel(bytes, pages, anthropicKey, openaiKey, hint);
       if (!got || !Array.isArray(got.exempted) || !Array.isArray(got.pending)) continue;
       input = got;
-      // the rows must agree with the totals of the headings: one more try when they do not (the engine flags what is left)
-      const off = (got.exemptedTotal && got.exemptedTotal !== got.exempted.length) || (got.pendingTotal && got.pendingTotal !== got.pending.length);
-      if (!off) break;
+      // the rows must agree with the totals written in the headings: otherwise the model is told and tries again
+      const wantE = Number(got.exemptedTotal) || 0;
+      const wantP = Number(got.pendingTotal) || 0;
+      const offE = wantE > 0 && wantE !== got.exempted.length;
+      const offP = wantP > 0 && wantP !== got.pending.length;
+      if (!offE && !offP) { failure = ""; break; }
+      failure = `a leitura não bateu com os totais do documento (${got.exempted.length} de ${wantE} dispensadas e ${got.pending.length} de ${wantP} a cursar)`;
+      hint = `Na tentativa anterior você registrou ${got.exempted.length} dispensadas e ${got.pending.length} a cursar, mas os títulos do documento dizem ${wantE} e ${wantP}. Releia as páginas com atenção, sem omitir nem inventar linhas.`;
     } catch (err) {
       failure = reasonOf(err);
     }
   }
+  // a reading that never agreed with the totals of the document is not used: a wrong forecast is worse than none
+  if (failure) throw new VisionFailure(failure);
   if (!input) {
-    if (failure) throw new VisionFailure(failure);
     logger.warn("Análise curricular: a IA não devolveu as disciplinas do PDF sem texto");
-    return null;
+    throw new VisionFailure("a IA não devolveu as disciplinas");
   }
-
   const entry = Number(input.entryPeriod) >= 1 && Number(input.entryPeriod) <= 20 ? Number(input.entryPeriod) : 1;
   const rows: DetectedRow[] = [];
   (input.exempted as any[]).forEach((r, i) => {

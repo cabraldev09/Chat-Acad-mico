@@ -6,6 +6,7 @@ import { getPublicUrl } from "../helpers/PublicUrl";
 import { isManagerRole, roleOf } from "../helpers/Roles";
 import AcademicAnalysis from "../models/AcademicAnalysis";
 import CurricularAnalysis from "../models/CurricularAnalysis";
+import Polo from "../models/Polo";
 import Student from "../models/Student";
 import User from "../models/User";
 import {
@@ -65,6 +66,15 @@ const num = (v: unknown): number | null => {
 
 // ------------------------------------------------------------------ rules
 
+
+// the name of the polo of each analysis (the view carries the id)
+const withPolo = async <T extends { poloId: number | null }>(views: T[]): Promise<Array<T & { poloName: string | null }>> => {
+  const ids = [...new Set(views.map(v => v.poloId).filter(Boolean))] as number[];
+  const names = new Map((ids.length ? await Polo.findAll({ where: { id: ids }, attributes: ["id", "name"] }) : []).map(p => [p.id, p.name]));
+  return views.map(v => ({ ...v, poloName: v.poloId ? names.get(v.poloId) || null : null }));
+};
+const viewOf = async (row: CurricularAnalysis, withSubjects = true): Promise<any> => (await withPolo([curricularView(row, withSubjects)]))[0];
+
 export const rulesShow = async (_req: Request, res: Response): Promise<Response> => res.json(await getRules());
 export const rulesSave = async (req: Request, res: Response): Promise<Response> => res.json(await saveRules(req.body));
 
@@ -89,23 +99,29 @@ export const curricularIndex = async (req: Request, res: Response): Promise<Resp
   if (num(req.query.leadId)) and.push({ leadId: num(req.query.leadId) });
   if (num(req.query.contactId)) and.push({ contactId: num(req.query.contactId) });
   const rows = await CurricularAnalysis.findAll({ where: and.length ? { [Op.and]: and } : where, order: [["createdAt", "DESC"]], limit: 100 });
-  return res.json(rows.map(r => curricularView(r, false)));
+  return res.json(await withPolo(rows.map(r => curricularView(r, false))));
 };
 
 export const curricularStore = async (req: Request, res: Response): Promise<Response> => {
   const { bytes, name } = fileOf(req);
   const b = req.body || {};
+  // the consultant says who the analysis is for (before the PDF is read: reading may cost)
+  const candidate = String(b.candidateName || "").replace(/\s+/g, " ").trim();
+  if (candidate.length < 3) throw new AppError("Informe o nome do aluno.", 400);
+  const polo = num(b.poloId) ? await Polo.findByPk(num(b.poloId) as number) : null;
+  if (!polo || polo.active === false) throw new AppError("Informe o polo do aluno.", 400);
   const row = await createCurricular(me(req), bytes, name, {
+    poloId: polo.id,
     entryPeriod: num(b.entryPeriod),
     startTerm: b.startTerm ? String(b.startTerm).trim() : undefined,
     leadId: num(b.leadId),
     contactId: num(b.contactId),
-    candidateName: b.candidateName
+    candidateName: candidate
   });
-  return res.status(201).json(curricularView(row));
+  return res.status(201).json(await viewOf(row));
 };
 
-export const curricularShow = async (req: Request, res: Response): Promise<Response> => res.json(curricularView(await loadCurricular(req)));
+export const curricularShow = async (req: Request, res: Response): Promise<Response> => res.json(await viewOf(await loadCurricular(req)));
 
 export const curricularUpdate = async (req: Request, res: Response): Promise<Response> => {
   const row = await loadCurricular(req);
@@ -115,16 +131,17 @@ export const curricularUpdate = async (req: Request, res: Response): Promise<Res
     startTerm: b.startTerm === undefined ? undefined : String(b.startTerm).trim(),
     leadId: b.leadId === undefined ? undefined : num(b.leadId),
     contactId: b.contactId === undefined ? undefined : num(b.contactId),
+    poloId: b.poloId === undefined ? undefined : num(b.poloId),
     candidateName: b.candidateName
   });
-  return res.json(curricularView(out));
+  return res.json(await viewOf(out));
 };
 
 export const curricularSubject = async (req: Request, res: Response): Promise<Response> => {
   const row = await loadCurricular(req);
   const b = req.body || {};
   const out = await correctCurricularSubject(row, String(req.params.subjectId), { status: b.status, period: b.period === undefined ? undefined : Number(b.period), workload: b.workload === undefined ? undefined : Number(b.workload) });
-  return res.json(curricularView(out));
+  return res.json(await viewOf(out));
 };
 
 // ------------------------------------------------------------------ the 24-hour return and the commercial proposal
@@ -133,7 +150,7 @@ export const curricularEnrollment = async (req: Request, res: Response): Promise
   const row = await loadCurricular(req);
   const b = req.body || {};
   const out = await setEnrollment(row, me(req), { status: b.status, note: b.note, reanalysis: b.reanalysis === true });
-  return res.json(curricularView(out));
+  return res.json(await viewOf(out));
 };
 
 // returns waiting for an answer: the owner sees theirs, the management sees everyone's and the cases without enrollment for too long

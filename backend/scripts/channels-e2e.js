@@ -1701,14 +1701,22 @@ const postMeta = (id, payload, secret, badSig) => {
     });
     await test("curricular analysis: the PDF becomes the entry forecast, the entry period and a corrected line recompute it", async () => {
       const sample = fs.readFileSync(path.join(__dirname, "fixtures", "sample-analise.pdf"));
+      // the analysis is for a student of a polo
+      const polo = (await http.post("/polos", { name: "Polo da Análise", code: "ANL1", state: "RO" }, auth())).data;
+      assert(polo.id, "polo not created");
       const send = (extra = {}, name = "analise.pdf", bytes = sample, who = token) => {
         const f = new FormData();
         f.append("file", bytes, { filename: name, contentType: "application/pdf" });
-        Object.entries(extra).forEach(([k, v]) => f.append(k, String(v)));
+        const full = { candidateName: "Aluno Teste Completo", poloId: polo.id, ...extra };
+        Object.entries(full).filter(([, v]) => v !== null).forEach(([k, v]) => f.append(k, String(v)));
         return http.post("/analysis/curricular", f, { headers: { ...f.getHeaders(), Authorization: `Bearer ${who}` } });
       };
       const made = await send({ entryPeriod: 2, startTerm: "2026.2", candidateName: "Candidato Teste" });
       assert(made.status === 201, `create ${made.status} ${JSON.stringify(made.data).slice(0, 200)}`);
+      // the consultant must say who the analysis is for: the name and the polo
+      assert((await send({ candidateName: "" })).status === 400, "an analysis without the name of the student was accepted");
+      assert((await send({ poloId: "" })).status === 400 && (await send({ poloId: 99999 })).status === 400, "an analysis without a valid polo was accepted");
+      assert(made.data.poloId === polo.id && made.data.poloName, `polo of the analysis ${JSON.stringify([made.data.poloId, made.data.poloName])}`);
       const a = made.data;
       assert(a.subjects.length > 5 && a.entryPeriod === 2 && a.entryPeriodSource === "USER" && a.status === "COMPLETED", `fields ${JSON.stringify([a.subjects.length, a.entryPeriod, a.entryPeriodSource, a.status])}`);
       assert(a.result.totals.total === a.subjects.length && a.result.totals.exempted + a.result.totals.pending + a.result.totals.review === a.result.totals.total, "totals do not add up");
@@ -1875,6 +1883,7 @@ const postMeta = (id, payload, secret, badSig) => {
         f.append("entryPeriod", "2");
         f.append("startTerm", "2026.2");
         f.append("candidateName", name);
+        f.append("poloId", sql(`SELECT id FROM Polos WHERE code='ANL1'`));
         const r = await http.post("/analysis/curricular", f, { headers: { ...f.getHeaders(), Authorization: `Bearer ${who}` } });
         assert(r.status === 201, `create ${r.status} ${JSON.stringify(r.data).slice(0, 200)}`);
         return r.data;
@@ -1930,6 +1939,8 @@ const postMeta = (id, payload, secret, badSig) => {
       if (grp) assert((await http.post(`/analysis/curricular/${mine.id}/send-proposal`, { contactId: Number(grp) }, auth())).status === 400, "the proposal went to a group");
       assert((await http.post(`/analysis/curricular/${mine.id}/send-proposal`, { contactId: 99999999 }, auth())).status === 404, "sent to a contact that does not exist");
       assert((await http.post(`/analysis/curricular/${mine.id}/send-proposal`, { contactId: tgContact }, asUser(owner))).status === 403, "another consultant sent someone else's proposal");
+      // the polos of the later scenarios start as before
+      assert((await http.delete(`/polos/${sql("SELECT id FROM Polos WHERE code='ANL1'")}`, auth())).status < 300, "the analysis polo was not removed");
     });
 
     await test("no route answers 500 to a malformed or unknown id (each route with a :param, three bad values, as the administrator)", async () => {

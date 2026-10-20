@@ -23,6 +23,10 @@ class CurricularAnalysis extends Model<CurricularAnalysis> {
   @Column
   candidateName: string;
 
+  // the polo of the student (informed by the consultant)
+  @Column
+  poloId: number;
+
   @Column
   originalName: string;
 

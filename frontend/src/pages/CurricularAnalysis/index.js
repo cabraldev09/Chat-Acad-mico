@@ -70,6 +70,8 @@ const UploadCard = ({ onCreated }) => {
   const [entry, setEntry] = useState("");
   const [term, setTerm] = useState(DEFAULT_TERM);
   const [name, setName] = useState("");
+  const [poloId, setPoloId] = useState("");
+  const [polos, setPolos] = useState([]);
   const [busy, setBusy] = useState(false);
 
   const choose = (candidate) => {
@@ -78,8 +80,11 @@ const UploadCard = ({ onCreated }) => {
     if (candidate.size > MAX_MB * 1024 * 1024) { toast.error(`O arquivo excede ${MAX_MB} MB.`); return; }
     setFile(candidate);
   };
+  useEffect(() => { api.get("/polos").then(({ data }) => setPolos((Array.isArray(data) ? data : []).filter((p) => p.active !== false))).catch(() => {}); }, []);
   const send = async () => {
     if (!file || busy) return;
+    if (name.trim().length < 3) { toast.error("Informe o nome do aluno."); return; }
+    if (!poloId) { toast.error("Escolha o polo do aluno."); return; }
     if (!/^\d{4}\.[12]$/.test(term)) { toast.error("Informe o primeiro semestre no formato 2026.2."); return; }
     setBusy(true);
     try {
@@ -87,7 +92,8 @@ const UploadCard = ({ onCreated }) => {
       form.append("file", file);
       if (entry) form.append("entryPeriod", entry);
       form.append("startTerm", term);
-      if (name.trim()) form.append("candidateName", name.trim());
+      form.append("candidateName", name.trim());
+      form.append("poloId", poloId);
       const { data } = await api.post("/analysis/curricular", form);
       toast.success("Análise pronta.");
       onCreated(data);
@@ -110,9 +116,12 @@ const UploadCard = ({ onCreated }) => {
         <strong className="mt-3 max-w-full break-all text-base">{file ? file.name : "Envie o PDF da análise curricular"}</strong>
         <span className="mt-1 text-sm text-muted-foreground">{busy ? "Lendo a grade e calculando a previsão…" : file ? `${(file.size / 1024 / 1024).toFixed(2)} MB · clique para trocar` : `Arraste o documento para cá ou selecione um arquivo · até ${MAX_MB} MB`}</span>
       </div>
-      <div className="grid gap-3 sm:grid-cols-3">
-        <label className="block text-xs font-semibold text-slate-600">Nome do candidato (opcional)
-          <Input value={name} onChange={(e) => setName(e.target.value)} className="mt-1.5 h-10 bg-white" />
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <label className="block text-xs font-semibold text-slate-600">Nome do aluno
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nome completo" className="mt-1.5 h-10 bg-white" />
+        </label>
+        <label className="block text-xs font-semibold text-slate-600">Polo do aluno
+          <span className="mt-1.5 block"><Select value={poloId} onChange={(e) => setPoloId(e.target.value)}><option value="">Escolha o polo</option>{polos.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</Select></span>
         </label>
         <label className="block text-xs font-semibold text-slate-600">Período de ingresso
           <span className="mt-1.5 block"><Select value={entry} onChange={(e) => setEntry(e.target.value)}><option value="">Usar o do PDF</option>{PERIODS.map((n) => <option key={n} value={n}>{n}º período</option>)}</Select></span>
@@ -170,7 +179,7 @@ const List = () => {
           <Card className="overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full min-w-[48rem] text-left text-sm">
-                <thead><tr className="border-b text-xs text-muted-foreground"><th className="px-4 py-3 font-medium">Candidato</th><th className="px-4 py-3 font-medium">Curso</th><th className="px-4 py-3 font-medium">Ingresso</th><th className="px-4 py-3 font-medium">Previsão</th><th className="px-4 py-3 font-medium">Verificação</th><th className="px-4 py-3 font-medium">Retorno</th><th className="px-4 py-3 font-medium">Data</th></tr></thead>
+                <thead><tr className="border-b text-xs text-muted-foreground"><th className="px-4 py-3 font-medium">Aluno</th><th className="px-4 py-3 font-medium">Polo</th><th className="px-4 py-3 font-medium">Curso</th><th className="px-4 py-3 font-medium">Ingresso</th><th className="px-4 py-3 font-medium">Previsão</th><th className="px-4 py-3 font-medium">Verificação</th><th className="px-4 py-3 font-medium">Retorno</th><th className="px-4 py-3 font-medium">Data</th></tr></thead>
                 <tbody>
                   {rows.filter((r) => !onlyDue || (r.enrollment && r.enrollment.due)).map((r) => {
                     const sim = r.result && r.result.simulation;
@@ -178,7 +187,8 @@ const List = () => {
                     const rel = r.result && RELIABILITY[r.result.reliability];
                     return (
                       <tr key={r.id} onClick={() => history.push(`/analise-curricular/${r.id}`)} className="cursor-pointer border-b last:border-0 hover:bg-muted/50">
-                        <td className="px-4 py-3 font-medium text-slate-900">{r.candidateName || "Candidato sem nome"}</td>
+                        <td className="px-4 py-3 font-medium text-slate-900">{r.candidateName || "Aluno sem nome"}</td>
+                        <td className="px-4 py-3 text-slate-600">{r.poloName || "—"}</td>
                         <td className="px-4 py-3 text-slate-600">{r.courseName || r.originalName}</td>
                         <td className="px-4 py-3">{r.entryPeriod ? ordinal(r.entryPeriod) : <span className="text-status-warning">Pendente</span>}</td>
                         <td className="px-4 py-3 font-semibold text-brand-navy">{sim && sim.estimatedCompletionTerm ? sim.estimatedCompletionTerm : "—"}</td>
@@ -503,6 +513,7 @@ const Detail = ({ id }) => {
             title={a.candidateName || a.courseName || "Análise curricular"}
             description={<>
               {a.candidateName && a.courseName && <span className="block font-medium text-foreground">{a.courseName}{a.modality ? ` · ${a.modality}` : ""}</span>}
+              {a.poloName && <span className="block">Polo: {a.poloName}</span>}
               {(a.matrixLabel || a.campus) && <span className="block">{[a.matrixLabel, a.campus].filter(Boolean).join(" · ")}</span>}
               {a.originalName && <span className="break-all">{a.originalName}</span>} · enviado em {formatDay(a.createdAt)}
             </>}

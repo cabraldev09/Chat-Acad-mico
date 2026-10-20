@@ -104,6 +104,7 @@ export const curricularView = (row: CurricularAnalysis, withSubjects = true) => 
   leadId: row.leadId,
   contactId: row.contactId,
   candidateName: row.candidateName,
+  poloId: row.poloId || null,
   originalName: row.originalName,
   pageCount: row.pageCount,
   status: row.status,
@@ -165,7 +166,7 @@ export const createCurricular = async (
   userId: number,
   bytes: Buffer,
   filename: string,
-  opts: { entryPeriod?: number | null; startTerm?: string; leadId?: number | null; contactId?: number | null; candidateName?: string | null }
+  opts: { entryPeriod?: number | null; startTerm?: string; leadId?: number | null; contactId?: number | null; candidateName?: string | null; poloId?: number | null }
 ): Promise<CurricularAnalysis> => {
   await checkPdf(bytes);
   let read;
@@ -182,6 +183,7 @@ export const createCurricular = async (
     leadId: opts.leadId || null,
     contactId: opts.contactId || null,
     candidateName: opts.candidateName ? String(opts.candidateName).slice(0, 160) : null,
+    poloId: opts.poloId || null,
     originalName: filename.slice(0, 255),
     fileHash: sha256(bytes),
     pageCount: read.pageCount,
@@ -206,7 +208,7 @@ export const createCurricular = async (
 
 export const updateCurricular = async (
   row: CurricularAnalysis,
-  patch: { entryPeriod?: number | null; startTerm?: string; leadId?: number | null; contactId?: number | null; candidateName?: string | null }
+  patch: { entryPeriod?: number | null; startTerm?: string; leadId?: number | null; contactId?: number | null; poloId?: number | null; candidateName?: string | null }
 ): Promise<CurricularAnalysis> => {
   if (patch.entryPeriod !== undefined && patch.entryPeriod !== null) {
     const n = Number(patch.entryPeriod);
@@ -214,6 +216,7 @@ export const updateCurricular = async (
   }
   if (patch.leadId !== undefined) await row.update({ leadId: patch.leadId || null });
   if (patch.contactId !== undefined) await row.update({ contactId: patch.contactId || null });
+  if (patch.poloId !== undefined) await row.update({ poloId: patch.poloId || null });
   if (patch.candidateName !== undefined) await row.update({ candidateName: patch.candidateName ? String(patch.candidateName).slice(0, 160) : null });
   const changesForecast = patch.entryPeriod !== undefined || patch.startTerm !== undefined;
   if (changesForecast) {
