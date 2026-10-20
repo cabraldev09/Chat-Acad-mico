@@ -1,5 +1,5 @@
 import { AuditLine, CommercialPorts } from "./Ports";
-import { canAutoMove, confirmsNoInterest, hashOf, nextActionOf, noteOf, scoreOf, targetStageKey, temperatureOf } from "./Rules";
+import { canAutoMove, confirmsNoInterest, hashOf, isQualified, nextActionOf, noteOf, readyForConsultantOf, scoreOf, targetStageKey, temperatureOf } from "./Rules";
 import { STAGE_SPECS, StageKey } from "./Pipeline";
 import { cleanPatch } from "./Slots";
 import { defaultFollowUp, parseFollowUp, ymdOf } from "./Hours";
@@ -50,7 +50,7 @@ const TOPIC_FLAG: Record<string, string> = {
 };
 
 
-export const commercialTurn = async (ports: CommercialPorts, input: TurnInput): Promise<{ exit: string | null; trace: CommercialTrace }> => {
+export const commercialTurn = async (ports: CommercialPorts, input: TurnInput): Promise<{ exit: string | null; why?: string; trace: CommercialTrace }> => {
   const now = input.now || new Date();
   const s = ports.state;
   const before: Record<string, any> = { ...s.slots, temperature: s.temperature, commercialScore: s.commercialScore, nextAction: s.nextAction, readyForProposal: s.readyForProposal };
@@ -86,6 +86,10 @@ export const commercialTurn = async (ports: CommercialPorts, input: TurnInput): 
   s.slots.intentsSeen = [...seen].join(",");
   if (intent === "curriculum") s.slots.gradeAsked = true;
   if (intent === "paid_internship") s.slots.internshipExplained = s.slots.internshipExplained || input.hadText;
+
+  // a qualified lead who keeps talking is counted: after a couple of answers the consultant of the polo takes over (see readyForConsultantOf)
+  if (input.replied && isQualified(s.slots)) s.slots.qualifiedReplies = Number(s.slots.qualifiedReplies || 0) + 1;
+  s.slots.readyForConsultant = readyForConsultantOf(s.slots, Number(s.slots.qualifiedReplies || 0), ports.qualifyAfter);
 
   // 3) the moments that matter
   const wantsProposal = intent === "price" || intent === "enrollment" || intent === "proposal";
@@ -152,12 +156,16 @@ export const commercialTurn = async (ports: CommercialPorts, input: TurnInput): 
   else if (s.readyForProposal) exit = "proposta";
   else if (followUp) exit = "follow_up";
   else if (input.unknownQuestion || intent === "unknown") exit = Number(s.slots.unknownStreak || 0) >= 3 ? "human" : "off";
+  // qualified and out of questions: a person of the polo takes it, ready (the brief says what the lead wants)
+  else if (s.slots.readyForConsultant && input.replied) exit = "human";
+  const why = exit === "human" && !human && s.slots.readyForConsultant && !input.unknownQuestion && intent !== "unknown" ? "qualified" : undefined;
 
   const changed: Record<string, [any, any]> = {};
   const after: Record<string, any> = { ...s.slots, temperature: s.temperature, commercialScore: s.commercialScore, nextAction: s.nextAction, readyForProposal: s.readyForProposal };
   Object.keys(after).forEach(k => { if (!["intentsSeen", "crmSeen", "lastBriefHash", "unknownStreak", "audioAsked"].includes(k) && JSON.stringify(before[k]) !== JSON.stringify(after[k])) changed[k] = [before[k] ?? null, after[k] ?? null]; });
   return {
     exit,
+    ...(why ? { why } : {}),
     trace: { intent, changed, crmBefore, crmAfter, actions: ports.audit.splice(0), temperature: s.temperature, score: s.commercialScore, nextAction: s.nextAction, readyForProposal: s.readyForProposal }
   };
 };

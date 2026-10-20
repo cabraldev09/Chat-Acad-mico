@@ -191,6 +191,7 @@ const startAnthropicMock = () => {
       if (result) {
         const out = JSON.parse(result.content);
         if (out.duracaoTexto !== undefined) return turn(`${out.nome}: ${out.duracaoTexto}, formato ${out.modalidade}. Quer ver a grade?`, { intent: "course_duration" });
+        if (out.polos !== undefined) return turn(out.polo_definido ? `Você é atendido pelo ${out.polos[0].nome}.` : `AVISO: ${out.aviso}`, { intent: "other" });
         if (out.modalidadeAtual !== undefined) return turn(`Regra: ${out.regulacaoAplicavel || "sem regra cadastrada"}; práticas presenciais: ${out.praticaPresencial}; cronograma definido: ${out.cronogramaPraticasDefinido}.`, { intent: "mec" });
         return turn("Anotado!", { intent: "other" });
       }
@@ -201,6 +202,7 @@ const startAnthropicMock = () => {
       if (/é caro/i.test(said2)) return turn("Sai por R$ 299 por mês, ótimo custo!", { intent: "other" });
       if (/quando começam as aulas/i.test(said2)) return turn("As aulas começam em 03/08.", { intent: "other" });
       if (/transferir/i.test(said2)) return turn("Entendi! Com o seu histórico em PDF conseguimos pedir uma análise curricular. Pode me enviar o arquivo?", { intent: "transfer", curso: "Direito", cidade: "Porto Velho", tipo_ingresso: "transfer" });
+      if (/moro em (.+)/i.test(said2)) return tool("listar_polos", { cidade: said2.match(/moro em ([^,.!?]+)/i)[1].trim() });
       if (/Direito em Porto Velho/i.test(said2)) return turn("Perfeito, Direito em Porto Velho! Posso te explicar como funciona o curso?", { intent: "other", curso: "Direito", cidade: "Porto Velho", tipo_ingresso: "first_degree", nome: "Paulo Mendes" });
       if (/dura|tempo/i.test(said2)) return tool("buscar_curso", { courseName: "Direito" });
       if (/mec/i.test(said2)) return tool("buscar_regra_modalidade", { courseName: "Direito" });
@@ -3033,6 +3035,9 @@ const postMeta = (id, payload, secret, badSig) => {
       await http.put(`/ai-agents/${agentId}`, { active: true, whatsappId: cid, apiKey: "sk-ant-test", waitSeconds: 0, provider: "anthropic", model: "claude-haiku-5-5" }, auth());
       assert((await http.post(`/flows/${flowId}/publish`, {}, auth())).status === 200, "publish the commercial flow");
       const texts = since => graph.sent.slice(since).filter(x => x.path === "/PN1/messages" && x.body && x.body.type === "text" && x.body.text).map(x => x.body.text.body);
+      // the rule "a qualified lead goes to the consultant after a few answers" has its own scenario (R): the others keep talking
+      const setQualified = n => { sql(`DELETE FROM Settings WHERE key='ai_qualified_replies'`); sql(`INSERT INTO Settings (key, value, createdAt, updatedAt) VALUES ('ai_qualified_replies', '${n}', now(), now())`); };
+      setQualified(99);
       const leadStage = number => sql(`SELECT s.name FROM Leads l JOIN LeadStages s ON s.id=l.stageId JOIN Contacts c ON c.id=l.contactId WHERE c.number='${number}'`);
       const leadId = number => sql(`SELECT l.id FROM Leads l JOIN Contacts c ON c.id=l.contactId WHERE c.number='${number}'`);
       const runOf = number => sql(`SELECT CONCAT(r.status,'|',COALESCE(r.nodeId,'')) FROM ChatFlowRuns r JOIN Tickets t ON t.id=r.ticketId JOIN Contacts c ON c.id=t.contactId WHERE c.number='${number}' AND r.flowId=${flowId} ORDER BY r.id DESC LIMIT 1`);
@@ -3289,6 +3294,51 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(m.unknownQuestions >= 1, "unknown question not counted");
       assert(m.handoffs && m.handoffs.total >= 5 && m.handoffs.byReason.some(r => r.why === "complaint") && m.handoffs.byReason.some(r => r.why === "proposal"), `handoffs ${JSON.stringify(m.handoffs)}`);
       assert(m.technical.errors >= 1 && m.technical.guards >= 2, `technical ${JSON.stringify(m.technical)}`);
+
+      // R) a qualified lead who has had its questions answered goes to the consultant, ready, with a message that says so
+      setQualified(2);
+      const R = "5511920000301";
+      await say(R, "wamid.com-r1", "oi", t => t.some(x => /assistente virtual/.test(x)), "R opening");
+      await say(R, "wamid.com-r2", "Quero Direito em Porto Velho, primeira graduação", t => t.some(x => /Direito em Porto Velho/.test(x)), "R qualification");
+      await say(R, "wamid.com-r3", "Quanto tempo dura o curso?", t => t.some(x => /Direito:/.test(x)), "R course");
+      assert(sql(`SELECT COALESCE(handoffReason,'') FROM Tickets WHERE id=${ticketOf(R)}`) === "", "handed over too early: the lead had no answers left to get");
+      out = await say(R, "wamid.com-r4", "E sobre as mudanças do MEC, como fica?", t => t.some(x => /Perfeito, já tenho o que preciso/.test(x)), "R handover");
+      await waitFor(() => sql(`SELECT handoffReason FROM Tickets WHERE id=${ticketOf(R)}`) === "qualified", 10000, "R routed as qualified");
+      assert(sql(`SELECT aiActive FROM Tickets WHERE id=${ticketOf(R)}`) === "0", "the AI kept talking after the handover");
+      assert(Number(sql(`SELECT COUNT(*) FROM AgentMetricEvents WHERE leadId=${leadId(R)} AND event='handoff_qualified'`)) === 1, "no metric for the qualified handover");
+      assert(JSON.parse(sql(`SELECT slots FROM LeadCommercials WHERE leadId=${leadId(R)}`)).readyForConsultant === true, "the lead was not marked ready for the consultant");
+      setQualified(99);
+
+      // S) the lead says the city (a town the polo serves, written with a typo): the polo is found, the conversation goes to that polo's queue
+      //    with a consultant of the polo as owner, and the agent keeps talking; a city nobody serves is asked about, never guessed
+      const consS = (await http.post("/users", { name: "Consultor Cobertura", email: "cobertura-cons@x.com", password: "senha123", role: "consultor" }, auth())).data;
+      const poloS = (await http.post("/polos", { name: "Polo Cobertura", code: "COB", city: "Cidade Cobertura", state: "RO" }, auth())).data;
+      await http.put(`/polos/${poloS.id}/members`, { members: [{ userId: consS.id, role: "comercial" }] }, auth());
+      const cov = await http.put(`/polos/${poloS.id}/coverage`, { cities: ["Candeias do Jamari - RO", "Itapuã do Oeste"] }, auth());
+      assert(cov.status === 200 && cov.data.length === 2, `coverage ${cov.status} ${JSON.stringify(cov.data)}`);
+      const clash = await http.put(`/polos/${poloS.id + 0}/coverage`, { cities: ["Candeias do Jamari"] }, auth());
+      assert(clash.status === 200, "the same polo may keep its own city");
+      const other = (await http.post("/polos", { name: "Polo Outro", code: "OUT", city: "Cidade Outro", state: "RO" }, auth())).data;
+      const dupCity = await http.put(`/polos/${other.id}/coverage`, { cities: ["candeias do jamari"] }, auth());
+      assert(dupCity.status === 409 && dupCity.data.error === "ERR_POLO_COVERAGE_DUPLICATED", `a city of another polo was accepted: ${dupCity.status} ${JSON.stringify(dupCity.data)}`);
+      const S = "5511920000302";
+      out = await say(S, "wamid.com-s1", "moro em Candeias do Jamari - RO", t => t.some(x => /Você é atendido pelo Polo Cobertura/.test(x)), "S polo found by coverage");
+      await waitFor(() => sql(`SELECT poloId FROM Leads WHERE id=${leadId(S)}`) === String(poloS.id), 10000, "S polo saved on the lead");
+      const queueS = sql(`SELECT id FROM Queues WHERE poloId=${poloS.id} AND role='comercial'`);
+      await waitFor(() => sql(`SELECT queueId FROM Tickets WHERE id=${ticketOf(S)}`) === queueS, 10000, "S conversation moved to the polo queue");
+      assert(sql(`SELECT ownerId FROM Leads WHERE id=${leadId(S)}`) === String(consS.id), "the owner of the lead is not a consultant of the polo");
+      assert(sql(`SELECT aiActive FROM Tickets WHERE id=${ticketOf(S)}`) === "1" && sql(`SELECT COALESCE(userId::text,'') FROM Tickets WHERE id=${ticketOf(S)}`) === "", "early routing must not take the conversation from the agent");
+      assert(JSON.parse(sql(`SELECT slots FROM LeadCommercials WHERE leadId=${leadId(S)}`)).city !== "Cidade Cobertura", "the city of the lead was overwritten by the polo's city");
+      const U = "5511920000303";
+      out = await say(U, "wamid.com-s2", "moro em Cidade Que Nao Existe", t => t.some(x => /AVISO: .*estado/.test(x)), "U no polo: the state is asked");
+      assert(sql(`SELECT COALESCE(poloId::text,'') FROM Leads WHERE id=${leadId(U)}`) === "", "a polo was guessed for a city nobody serves");
+
+      // T) outside the business hours of the number the agent still answers: the "out of hours" text is only for numbers without an agent
+      sql(`UPDATE Whatsapps SET businessHours='{"enabled":true,"days":{}}', outOfHoursMessage='Estamos fechados agora' WHERE id=${cid}`);
+      const T = "5511920000304";
+      out = await say(T, "wamid.com-t1", "oi", t => t.some(x => /assistente virtual/.test(x)), "T the agent answers outside the business hours");
+      assert(!out.some(x => /Estamos fechados/.test(x)), "the out-of-hours text was sent instead of the agent");
+      sql(`UPDATE Whatsapps SET businessHours=NULL, outOfHoursMessage=NULL WHERE id=${cid}`);
 
       // the old agent and the others are as they were
       await http.put(`/ai-agents/${agentId}`, { active: false }, auth());
@@ -5282,7 +5332,7 @@ const postMeta = (id, payload, secret, badSig) => {
       const tb = await handoff(b, "Cidade Beta");
       assert(sql(`SELECT poloId FROM Leads WHERE id=${leadOf(b)}`) === String(beta.id), "the polo without a team was not found");
       assert(sql(`SELECT queueId FROM Tickets WHERE id=${tb}`) === betaQueue && sql(`SELECT userId FROM Tickets WHERE id=${tb}`) === "" && sql(`SELECT status FROM Tickets WHERE id=${tb}`) === "pending", "a polo without consultants should keep the conversation, pending, in its own queue");
-      assert(Number(sql(`SELECT COUNT(*) FROM TicketEvents WHERE ticketId=${tb} AND type='transfer' AND note LIKE '%aguardando alguém da fila%'`)) === 1 && Number(sql(`SELECT COUNT(*) FROM TicketEvents WHERE ticketId=${tb} AND note LIKE '%fila de reserva%'`)) === 0, "the routing note is wrong for a polo without a team");
+      assert(Number(sql(`SELECT COUNT(*) FROM TicketEvents WHERE ticketId=${tb} AND type='transfer' AND note LIKE '%aguardando alguém da fila%'`)) === 1 && Number(sql(`SELECT COUNT(*) FROM TicketEvents WHERE ticketId=${tb} AND note LIKE '%fila central%'`)) === 0, "the routing note is wrong for a polo without a team");
 
       // the screen of the handoff: which polos would really answer, and the reserve queue chosen by the manager
       const h0 = (await http.get("/ai-handoff", auth())).data;

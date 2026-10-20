@@ -64,6 +64,7 @@ export const COMMERCIAL_TOOL_DEFS: Record<string, { name: string; description: s
         tipo_ingresso: { type: "string", enum: ["first_degree", "transfer", "second_degree"] },
         curso: { type: "string" },
         cidade: { type: "string" },
+        estado: { type: "string", description: "a sigla ou o nome do estado, quando a pessoa disser (ex.: RO)" },
         nome: { type: "string" },
         email: { type: "string" },
         ja_graduado: { type: "boolean" },

@@ -16,7 +16,7 @@ export const NEXT_ACTIONS = [
 type Kind = "string" | "number" | "boolean" | "entry" | "analysis" | "temperature" | "object";
 // the slots and the kind of each one: what goes in is cleaned by it
 export const SLOT_KINDS: Record<string, Kind> = {
-  leadId: "number", leadName: "string", phone: "string", email: "string", city: "string", state: "string", poloId: "number", poloName: "string",
+  leadId: "number", leadName: "string", phone: "string", email: "string", city: "string", state: "string", poloId: "number", poloName: "string", poloStatus: "string",
   courseId: "number", courseName: "string", offerId: "number", intakePeriod: "string",
   entryType: "entry", hasHigherEducation: "boolean", previousCourse: "string", previousInstitution: "string", hasTranscript: "boolean",
   courseDegree: "string", courseDurationSemesters: "number", courseDurationText: "string", courseModality: "string",
@@ -31,7 +31,7 @@ export const SLOT_KINDS: Record<string, Kind> = {
   // the intents already seen (scoring and temperature count each one once)
   intentsSeen: "string",
   // control of the agent itself: questions without an answer in a row, voice notes asked in writing, the last brief written, what the CRM held
-  unknownStreak: "number", audioAsked: "number", lastBriefHash: "string", crmSeen: "object"
+  unknownStreak: "number", audioAsked: "number", qualifiedReplies: "number", readyForConsultant: "boolean", lastBriefHash: "string", crmSeen: "object"
 };
 
 export type Slots = Record<string, any>;

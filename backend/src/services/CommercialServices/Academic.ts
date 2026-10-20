@@ -19,9 +19,9 @@ import { logger } from "../../utils/logger";
 import { getEntryTerms } from "../CrmServices/LeadCore";
 import SendWhatsAppMedia from "../WbotServices/SendWhatsAppMedia";
 import { searchChunks } from "../AiServices/Kb";
+import { resolvePoloFor } from "../PoloServices/ResolvePolo";
 import { cleanPatch, Slots } from "./Slots";
 import { topicsOf } from "./Rules";
-import { matchPolo } from "../FlowServices/Engine";
 
 // The academic data the commercial agent may state, read from the system and returned in the smallest shape that is enough to answer.
 // Nothing here returns a price or a scholarship. What the system does not have comes back as "unknown", never as a guess.
@@ -275,17 +275,33 @@ export const runAcademicTool = async (name: string, input: any, ctx: AcademicCtx
 
     case "listar_polos": {
       const city = String(input.cidade || ctx.slots.city || "").trim();
+      const stateText = String(input.estado || ctx.slots.state || "").trim();
       const all = await Polo.findAll({ where: { active: true }, order: [["name", "ASC"]], attributes: ["id", "name", "city", "state"] });
-      // the city is matched ignoring accents and small typos ("moro em ji parana", "Porto Velho - RO")
-      const found = city ? matchPolo(all.map(p => ({ id: p.id, name: p.name, city: p.city || "" })), city) : {};
-      const ids = found.polo ? [found.polo.id] : found.ambiguous ? found.ambiguous.map(p => p.id) : [];
-      const polos = ids.length ? all.filter(p => ids.includes(p.id)) : all.slice(0, 5);
-      if (found.polo) remember(ctx, { poloId: polos[0].id, poloName: polos[0].name, city: polos[0].city || city });
-      return {
-        polos: polos.map(p => ({ id: p.id, nome: p.name, cidade: p.city, estado: p.state })),
-        ...(city && !ids.length ? { aviso: "Não há polo nessa cidade: mostre que existem estes polos e diga que um consultor indica o mais próximo." } : {}),
-        ...(!city && all.length > 5 ? { aviso: "Mostrando só 5: peça a cidade para filtrar." } : {})
-      };
+      // the cities each polo serves, ignoring accents, punctuation and small typos ("moro em ji parana", "Porto Velho - RO"); a state alone
+      // points to the polos of that state
+      const r = city || stateText ? await resolvePoloFor(city, stateText) : null;
+      const list = (xs: Array<{ id: number; name: string; city: string | null; state: string | null }>) => xs.map(p => ({ id: p.id, nome: p.name, cidade: p.city, estado: p.state }));
+      if (r && r.status === "found" && r.polo) {
+        // the polo is the lead's; the city stays as the lead said it (a town near the polo is not the polo's city)
+        remember(ctx, { poloId: r.polo.id, poloName: r.polo.name, poloStatus: "found", ...(r.state ? { state: r.state } : {}), ...(!ctx.slots.city && city ? { city } : {}) });
+        return { polos: list([r.polo]), polo_definido: true, aviso: "Polo definido: confirme à pessoa que ela é atendida por este polo e siga a conversa." };
+      }
+      if (r && r.status === "ambiguous") {
+        remember(ctx, { poloStatus: "ambiguous", ...(r.state ? { state: r.state } : {}) });
+        return { polos: list(r.candidates), polo_definido: false, aviso: "Mais de um polo serve. Pergunte em UMA frase qual destes é o mais perto da pessoa (cite só estes nomes) e chame esta ferramenta de novo com a resposta." };
+      }
+      if (r && (city || stateText)) {
+        remember(ctx, { poloStatus: "none", ...(r.state ? { state: r.state } : {}) });
+        const askState = !ctx.slots.state && !r.state;
+        return {
+          polos: list(all),
+          polo_definido: false,
+          aviso: askState
+            ? "Nenhum polo cobre essa cidade. Pergunte em UMA frase em qual estado a pessoa mora e chame esta ferramenta de novo com o estado. Não invente polo."
+            : "Nenhum polo atende essa região. Diga com naturalidade que a equipe central acompanha o atendimento (ensino a distância e retorno por consultor) e continue a qualificação. Não invente polo nem cidade."
+        };
+      }
+      return { polos: list(all), polo_definido: false, aviso: "Peça a cidade (e o estado, se precisar) para achar o polo certo." };
     }
 
     case "consultar_conhecimento": {

@@ -50,7 +50,7 @@ const HandoffDialog = ({ open, onClose }) => {
         {d && v && (
           <>
             <Typography variant="body2" color="textSecondary" gutterBottom>
-              Quando o agente passa a conversa para uma pessoa, o sistema acha o polo pela cidade, escolhe um consultor do comercial daquele polo, avisa na hora e cria uma tarefa. Se o polo não tem equipe, usa a fila de reserva.
+              Quando o agente passa a conversa para uma pessoa, o sistema acha o polo pela cidade, escolhe um consultor do comercial daquele polo, avisa na hora e cria uma tarefa. Se o polo não tem equipe, a conversa continua na fila do polo e só a gestão é avisada. Lead de cidade que nenhum polo atende (ou só EAD) vai para a fila central.
             </Typography>
 
             <div className={classes.title}>Pronto para atender</div>
@@ -66,13 +66,13 @@ const HandoffDialog = ({ open, onClose }) => {
             ))}
             {notReady.length > 0 && (
               <Typography variant="body2" style={{ marginTop: 8 }}>
-                {notReady.length} polo(s) sem equipe comercial: as conversas deles vão para {d.reserve ? `a fila de reserva “${d.reserve.name}”` : "ninguém (cadastre uma fila de reserva abaixo ou consultores nesses polos)"}.
+                {notReady.length} polo(s) sem equipe comercial: as conversas deles ficam na fila do próprio polo e a gestão é avisada. Cadastre consultores nesses polos. Quem não tem polo vai para {d.reserve ? `a fila central “${d.reserve.name}”` : "a primeira fila comercial com consultores (escolha uma fila central abaixo)"}.
               </Typography>
             )}
 
-            <div className={classes.title}>Fila de reserva</div>
+            <div className={classes.title}>Fila central</div>
             <TextField select fullWidth size="small" variant="outlined" value={v.fallbackQueueId || ""} onChange={(e) => setV({ ...v, fallbackQueueId: e.target.value || null })} InputLabelProps={{ shrink: true }} SelectProps={{ displayEmpty: true }}
-              helperText="Recebe a conversa quando o polo do lead não tem consultores, ou quando o polo não pôde ser descoberto.">
+              helperText="Recebe a conversa do lead cuja cidade nenhum polo atende (ou que quer só EAD) e quando o polo não pôde ser descoberto.">
               <MenuItem value="">Automática: a primeira fila comercial que tem consultores</MenuItem>
               {d.queues.map((q) => <MenuItem key={q.id} value={q.id}>{q.name}{q.polo ? ` · ${q.polo}` : ""} ({q.people})</MenuItem>)}
             </TextField>

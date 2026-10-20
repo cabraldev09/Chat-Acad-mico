@@ -193,6 +193,20 @@ export const temperatureOf = (slots: Slots, ready: boolean): "cold" | "warm" | "
 
 const needsTranscript = (slots: Slots): boolean => slots.entryType === "transfer" || slots.entryType === "second_degree";
 
+// qualified: course, city (or polo) and kind of entry are known and the course was presented
+export const isQualified = (slots: Slots): boolean =>
+  !!(slots.courseId || slots.courseName) && !!(slots.city || slots.poloId) && !!slots.entryType && slots.entryType !== "unknown" && !!slots.courseExplained;
+
+// How many answers a qualified lead gets from the agent before the consultant of the polo takes over: the questions of the lead are answered
+// first (a lead who asks for the price or a person is handed over at once, whatever this says). A transfer or second-degree lead waits for the
+// result of the curricular analysis to be explained.
+export const QUALIFIED_REPLIES = 2;
+export const readyForConsultantOf = (slots: Slots, replies: number, after: number = QUALIFIED_REPLIES): boolean => {
+  if (!after || !isQualified(slots)) return false;
+  const analysisDone = !needsTranscript(slots) || (slots.analysisStatus === "completed" && !!slots.analysisExplained);
+  return analysisDone && replies >= after;
+};
+
 export const nextActionOf = (s: CommercialState, facts: { human?: boolean; lost?: boolean } = {}): string => {
   const slots = s.slots;
   if (facts.lost) return "close_lost";
@@ -228,7 +242,7 @@ export const targetStageKey = (s: CommercialState, facts: TurnFacts & { human?: 
   if (facts.followUp) return "follow_up";
   if (slots.analysisStatus === "completed") return "analysis_done";
   if (slots.analysisStatus === "requested" || slots.analysisStatus === "in_progress") return "curricular_analysis";
-  const qualified = !!(slots.courseId || slots.courseName) && !!(slots.city || slots.poloId) && !!slots.entryType && slots.entryType !== "unknown" && !!slots.courseExplained;
+  const qualified = isQualified(slots);
   if (qualified && needsTranscript(slots) && !slots.hasTranscript) return "waiting_transcript";
   if (qualified) return "qualified";
   if (facts.replied || slots.lastInboundAt) return "in_service";

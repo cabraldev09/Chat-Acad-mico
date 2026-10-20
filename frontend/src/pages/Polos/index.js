@@ -54,15 +54,19 @@ const useStyles = makeStyles((theme) => ({
 
 const PoloForm = ({ open, polo, onClose, onSaved }) => {
   const [v, setV] = useState({ code: "", name: "", city: "", state: "", active: true });
+  const [cities, setCities] = useState("");
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     setV(polo ? { code: polo.code || "", name: polo.name || "", city: polo.city || "", state: polo.state || "", active: !!polo.active } : { code: "", name: "", city: "", state: "RO", active: true });
+    setCities("");
+    // the other cities this polo serves (the agent sends a lead of those cities to this polo's commercial team)
+    if (polo && open) api.get(`/polos/${polo.id}/coverage`).then(({ data }) => setCities(data.map((r) => `${r.city}${r.state ? ` - ${r.state}` : ""}`).join("\n"))).catch(() => undefined);
   }, [polo, open]);
   const save = async () => {
     setBusy(true);
     try {
-      if (polo) await api.put(`/polos/${polo.id}`, v);
-      else await api.post("/polos", v);
+      const { data: saved } = polo ? await api.put(`/polos/${polo.id}`, v) : await api.post("/polos", v);
+      await api.put(`/polos/${saved.id}/coverage`, { cities: cities.split("\n").map((l) => l.trim()).filter(Boolean) });
       toast.success(polo ? "Polo atualizado." : "Polo criado, com as filas de cada função.");
       onSaved();
       onClose();
@@ -72,7 +76,7 @@ const PoloForm = ({ open, polo, onClose, onSaved }) => {
     setBusy(false);
   };
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
       <DialogTitle>{polo ? "Editar polo" : "Novo polo"}</DialogTitle>
       <DialogContent>
         <TextField fullWidth variant="outlined" margin="dense" label="Código do polo" value={v.code} onChange={(e) => setV({ ...v, code: e.target.value })} helperText="Ex.: 2085 (opcional)" />
@@ -83,6 +87,9 @@ const PoloForm = ({ open, polo, onClose, onSaved }) => {
             {UFS.map((u) => (<MenuItem key={u} value={u}>{u}</MenuItem>))}
           </TextField>
         </div>
+        <TextField fullWidth multiline minRows={4} variant="outlined" margin="dense" label="Cidades atendidas por este polo" value={cities} onChange={(e) => setCities(e.target.value)}
+          InputLabelProps={{ shrink: true }} placeholder={"Candeias do Jamari\nItapuã do Oeste - RO"}
+          helperText="Uma cidade por linha (a cidade do polo já conta). Quando a pessoa disser uma dessas cidades, o atendimento vai para a equipe comercial deste polo. Uma cidade só pode estar em um polo." />
         <FormControlLabel
           control={<Switch color="primary" checked={v.active} onChange={(e) => setV({ ...v, active: e.target.checked })} />}
           label={<span>Polo ativo <b style={{ fontSize: 12, color: v.active ? "#15803d" : "#64748b" }}>{v.active ? "• ligado" : "• desligado"}</b></span>}

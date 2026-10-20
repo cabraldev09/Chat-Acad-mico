@@ -18,6 +18,8 @@ export interface AuditLine {
 
 export interface CommercialPorts {
   state: CommercialState;
+  // after how many answers a qualified lead goes to the consultant of the polo (Setting ai_qualified_replies; 0 = never by this rule)
+  qualifyAfter?: number;
   stageKeyNow(): Promise<StageKey | null>;
   moveStage(key: StageKey, reason: string): Promise<boolean>;
   // the first message of the system to the person, and the person's message

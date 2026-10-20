@@ -35,7 +35,7 @@ import { runCommercialBlock } from "../CommercialServices/Block";
 import { blankState, hydrate, loadState, mirror } from "../CommercialServices/Slots";
 import { dbPorts, simPorts, SimWorld } from "../CommercialServices/Ports";
 import { commercialAiTurn } from "../CommercialServices/Turn";
-import { HandoffWhy, WHY_OF_EXIT, WHY_TEXT, afterHoursNotice, routeToCommercial } from "../CommercialServices/Router";
+import { HandoffWhy, QUALIFIED_MESSAGE, WHY_OF_EXIT, WHY_TEXT, afterHoursNotice, routeToCommercial } from "../CommercialServices/Router";
 import { burstOf, mediaOfMessages, textOfMessage } from "../AiServices/Media";
 import { splitIntoBlocks } from "../CommercialServices/Blocks";
 import Message from "../../models/Message";
@@ -325,8 +325,10 @@ export const ticketEffects = (ticket: Ticket, flowName: string, flowCtx: FlowCon
       const team = d.to === "polo_tutoria" ? "tutoria" : d.to === "polo_coordenacao" ? "coordenacao" : "comercial";
       if (d.to === "polo_sales" || d.to === "chosen_polo_sales" || (flowCtx.agentId && (d.to === "polo_tutoria" || d.to === "polo_coordenacao"))) {
         const agent = await agentFor(null);
-        // nothing was said about the handoff yet (a limit was reached, a plain transfer block): the lead hears it once
-        if (vars.__exit && vars.__spoke !== vars.__exit && !d.text) await this.say((agent && agent.handoffMessage) || DEFAULT_HANDOFF);
+        // nothing was said about the handoff yet (a limit was reached, a plain transfer block): the lead hears it once; a qualified lead is
+        // always told that the consultant of the polo continues (the agent's own answer was about the last question)
+        if (vars.__why === "qualified") await this.say(QUALIFIED_MESSAGE);
+        else if (vars.__exit && vars.__spoke !== vars.__exit && !d.text) await this.say((agent && agent.handoffMessage) || DEFAULT_HANDOFF);
         const routed = await routeToCommercial(ticket, { team, why: vars.__why || WHY_OF_EXIT[String(vars.__exit || "")] || "other", poloId: d.to === "chosen_polo_sales" && vars.poloId ? Number(vars.poloId) : null, city: vars.city || vars.cidade || null, agentId: flowCtx.agentId || null });
         const notice = afterHoursNotice(routed);
         if (notice) await this.say(notice);

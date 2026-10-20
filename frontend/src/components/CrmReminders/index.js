@@ -45,7 +45,7 @@ const CrmReminders = () => {
       const needsManager = manager && (h.noQueue || h.noTeam || h.fallback || !h.userId);
       if (!(mine || myQueue || needsManager)) return;
       const lead = h.name || "Um lead";
-      toast.info(`🤝 ${lead} chegou do agente de IA${h.poloName ? ` (${h.poloName})` : ""}: ${h.reason}${h.noQueue ? ". Não há fila comercial: alguém da gestão precisa assumir." : h.noTeam ? ". O polo não tem consultor: a conversa ficou na fila do polo e alguém da gestão precisa colocar um consultor ou assumir." : h.fallback ? ". Veio pela fila de reserva." : ""}${h.outside && h.when ? ` A equipe responde ${h.when}.` : ""}`, {
+      toast.info(`🤝 ${lead} chegou do agente de IA${h.poloName ? ` (${h.poloName})` : ""}: ${h.reason}${h.noQueue ? ". Não há fila comercial: alguém da gestão precisa assumir." : h.noTeam ? ". O polo não tem consultor: a conversa ficou na fila do polo e alguém da gestão precisa colocar um consultor ou assumir." : h.fallback ? ". Veio pela fila central." : ""}${h.outside && h.when ? ` A equipe responde ${h.when}.` : ""}`, {
         autoClose: 20000,
         onClick: () => history.push(`/tickets/${h.ticketId}`),
       });

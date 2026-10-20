@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 
+import { Op } from "sequelize";
 import AppError from "../errors/AppError";
 import Polo from "../models/Polo";
 import PoloMember from "../models/PoloMember";
@@ -9,6 +10,8 @@ import Lead from "../models/Lead";
 import Ticket from "../models/Ticket";
 import { POLO_FUNCTIONS } from "../helpers/Roles";
 import { tutorsOfPolo } from "../services/PoloServices/TutorsOfPolo";
+import PoloCoverage from "../models/PoloCoverage";
+import { cityKeyOf, forgetPolos, stateOf } from "../services/PoloServices/ResolvePolo";
 import syncPoloQueues from "../services/PoloServices/SyncPoloQueues";
 
 const withDetails = [
@@ -69,7 +72,43 @@ export const update = async (req: Request, res: Response): Promise<Response> => 
   }
   await polo.update(data);
   await syncPoloQueues(polo);
+  forgetPolos();
   return res.json(await reload(polo.id));
+};
+
+// the cities the polo serves (the ones the agent matches a lead's city to)
+export const coverage = async (req: Request, res: Response): Promise<Response> => {
+  const rows = await PoloCoverage.findAll({ where: { poloId: Number(req.params.id) }, order: [["city", "ASC"]] });
+  return res.json(rows.map(r => ({ id: r.id, city: r.city, state: r.state })));
+};
+
+// body: { cities: ["Candeias do Jamari - RO", { city: "Itapuã do Oeste", state: "RO" }] } — replaces the whole list of the polo. A city belongs to
+// one polo (per state): one already used by another polo is refused, naming it.
+export const setCoverage = async (req: Request, res: Response): Promise<Response> => {
+  const polo = await Polo.findByPk(req.params.id);
+  if (!polo) throw new AppError("ERR_NO_POLO_FOUND", 404);
+  const list: any[] = Array.isArray(req.body.cities) ? req.body.cities.slice(0, 500) : [];
+  const rows = new Map<string, { poloId: number; city: string; cityKey: string; state: string | null }>();
+  for (const item of list) {
+    const raw = typeof item === "string" ? item : String(item?.city || "");
+    const typed = typeof item === "string" ? null : item?.state ? String(item.state).trim().toUpperCase() : null;
+    const city = raw.replace(/\s*[-,/]\s*[A-Za-z]{2}\s*$/, "").trim().slice(0, 120);
+    const state = typed || stateOf(raw) || polo.state || null;
+    const cityKey = cityKeyOf(city);
+    if (cityKey.length < 2) continue;
+    if (state && !/^[A-Z]{2}$/.test(state)) throw new AppError("ERR_POLO_STATE_INVALID", 400);
+    rows.set(`${cityKey}|${state || ""}`, { poloId: polo.id, city, cityKey, state });
+  }
+  const mine = [...rows.values()];
+  if (mine.length) {
+    const taken = await PoloCoverage.findAll({ where: { cityKey: mine.map(r => r.cityKey), poloId: { [Op.ne]: polo.id } } as any, include: [{ model: Polo, as: "polo", attributes: ["name"] }] });
+    const clash = taken.find(t => rows.has(`${t.cityKey}|${t.state || ""}`));
+    if (clash) throw new AppError("ERR_POLO_COVERAGE_DUPLICATED", 409, { city: clash.city, polo: clash.polo?.name || "" });
+  }
+  await PoloCoverage.destroy({ where: { poloId: polo.id } });
+  if (mine.length) await PoloCoverage.bulkCreate(mine as any);
+  forgetPolos();
+  return coverage(req, res);
 };
 
 export const remove = async (req: Request, res: Response): Promise<Response> => {
@@ -81,7 +120,9 @@ export const remove = async (req: Request, res: Response): Promise<Response> => 
   if (leads || tickets) throw new AppError("ERR_POLO_IN_USE", 409);
   await PoloMember.destroy({ where: { poloId: polo.id } });
   await Queue.destroy({ where: { poloId: polo.id } });
+  await PoloCoverage.destroy({ where: { poloId: polo.id } });
   await polo.destroy();
+  forgetPolos();
   return res.json({ message: "deleted" });
 };
 

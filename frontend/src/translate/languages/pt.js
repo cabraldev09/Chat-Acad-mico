@@ -501,6 +501,7 @@ const messages = {
         ERR_AI_BAD_ANSWER: "A IA devolveu um desenho que não consegui entender. Descreva de outro jeito e tente de novo.",
         ERR_ONBOARDING_TUTOR_ONLY: "Esta é a conversa do tutor com o aluno. Quem responde é o tutor; para assumir, transfira a conversa para você.",
         ERR_COMMUNITY_NOT_GROUP: "Só grupos do WhatsApp podem ser marcados como comunidade.",
+        ERR_POLO_COVERAGE_DUPLICATED: "Essa cidade já está no atendimento de outro polo. Tire-a de lá antes de colocá-la neste.",
         ERR_USER_EMAIL_EXISTS: "Já existe outra pessoa com este e-mail.",
         ERR_LAST_ADMIN: "O sistema precisa de pelo menos um administrador. Promova outra pessoa antes de mudar este acesso.",
         ERR_GOAL_PERIOD: "Informe as datas do período: o início não pode ser depois do fim.",

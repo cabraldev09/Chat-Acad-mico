@@ -52,9 +52,9 @@ O painel **Funil comercial** mostra chamadas, ferramentas, cache, respostas sem 
 Toda passagem do agente para uma pessoa (pedido de atendente, hora da proposta, pergunta sem resposta, reclamação, erro da IA, limites)
 passa por um único serviço, `CommercialServices/Router.ts`:
 1. **Polo**: o do lead; se não houver, o que a cidade informada indica (sem acento, com frase e erro de digitação) e que passa a ser gravado no lead.
-2. **Fila**: a fila comercial do polo; sem equipe, a **fila de reserva** (Agentes de IA → *Quem assume*; padrão: a primeira fila comercial com consultores);
+2. **Fila**: a fila comercial do polo; sem equipe, a **fila central** (Agentes de IA → *Quem assume*; padrão: a primeira fila comercial com consultores);
    sem nenhuma, a conversa fica pendente na fila do polo e a gestão é avisada. Nunca fica sem destino. **Polo sem consultor**: a conversa **continua na fila do polo**
-   (não vai para outro polo) e só a gestão é avisada; a fila de reserva vale apenas quando o polo é desconhecido ou não tem fila comercial.
+   (não vai para outro polo) e só a gestão é avisada; a fila central vale apenas quando o polo é desconhecido ou não tem fila comercial.
 3. **Consultor**: o dono do lead, se for do polo; senão o rodízio da fila.
 4. **Aviso na hora** (toast + som para o consultor, a fila ou a gestão) e tarefa "Atender lead encaminhado pelo agente de IA"
    (15 min no expediente; no primeiro quarto de hora do próximo expediente quando fora dele). Fora do horário o lead recebe quando a equipe retorna.
@@ -90,3 +90,9 @@ Motivos: `human_request`, `proposal`, `unknown`, `limit_turns`, `limit_tokens`, 
 
 ## Área do tutor (Ambientação)
 O tutor que inicia ou conclui um aluno sem tutor o assume (a conversa fica aberta no nome dele); filtros, "aluno respondeu", checklist (primeiro acesso, AVA, contatos do polo, documentos), boas-vindas pelo card, lembrete ao tutor antes das 24 h, aviso e tarefa aos administradores após 24 h e painel de gestão (`GET /onboarding/stats`).
+
+## Atender todos os leads e entregar ao polo certo
+- **Qualquer hora**: com um agente de IA ativo no número, ele atende também fora do expediente (o texto de "fora do horário" fica só para números sem agente); a entrega informa quando a equipe responde e cria a tarefa do próximo expediente (`Router.ts`).
+- **Cidades de cada polo** (Polos → editar → "Cidades atendidas"; tabela `PoloCoverages`): `PoloServices/ResolvePolo.ts` é o único lugar que decide o polo (cobertura, cidade do polo, só estado, erro de digitação). Cidade em mais de um polo → o agente pergunta qual é o mais perto; cidade que nenhum polo atende → pergunta o estado; sem polo no estado (ou só EAD) → **fila central** (*Quem assume*).
+- **Roteamento cedo**: assim que o polo é descoberto a conversa já fica na fila comercial do polo e o dono do lead vira um consultor dele (`Router.assignToPolo`); o agente continua conversando.
+- **Pronto para o consultor**: lead qualificado (curso, cidade/polo, ingresso, curso apresentado; transferência espera a análise ser explicada) é entregue depois de `ai_qualified_replies` respostas (padrão 2; 0 desliga), com a mensagem "já tenho o que preciso" e o motivo `qualified`.

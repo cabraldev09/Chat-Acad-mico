@@ -1,6 +1,8 @@
+import { getSetting } from "../../helpers/AppSettings";
 import AgentTurnLog from "../../models/AgentTurnLog";
 import AiAgent from "../../models/AiAgent";
 import Lead from "../../models/Lead";
+import Polo from "../../models/Polo";
 import Ticket from "../../models/Ticket";
 import { applyToLead } from "../AiServices/Tools";
 import { captureUnknown } from "../AiServices/Learning";
@@ -87,6 +89,9 @@ export const commercialAiTurn = async (d: TurnDeps): Promise<CommercialTurnResul
   const started = Date.now();
   const lastText = d.input === null ? "" : d.input;
   const state = d.ports.state;
+  // the company's rule for handing a qualified lead to the consultant (Setting ai_qualified_replies, default 2 answers; 0 turns it off)
+  const qualifiedSetting = Number(await getSetting("ai_qualified_replies", "2"));
+  d.ports.qualifyAfter = Number.isFinite(qualifiedSetting) && qualifiedSetting >= 0 ? qualifiedSetting : 2;
   const base = { userText: lastText, tools: [] as any[], knowledge: [] as string[], llmCalls: 0, cacheHits: 0, tokens: { input: 0, output: 0, cacheRead: 0 } };
 
   const log = async (r: { intent: string | null; deterministic: boolean; llmCalls: number; toolCalls: number; cacheHits: number; tokens: { input: number; output: number; cacheRead: number }; outcome: string | null; latencyMs: number }) => {
@@ -226,7 +231,7 @@ export const commercialAiTurn = async (d: TurnDeps): Promise<CommercialTurnResul
   return {
     text,
     exit: hook.exit,
-    ...(hook.exit === "human" && Number(state.slots.unknownStreak || 0) >= 3 ? { why: "loop" } : {}),
+    ...(hook.exit === "human" && Number(state.slots.unknownStreak || 0) >= 3 ? { why: "loop" } : hook.why ? { why: hook.why } : {}),
     collected: flat(hook.trace.changed),
     trace: {
       ...base, userText: lastText, deterministic: false, intent, tools: result.toolLog, knowledge: result.sources, commercial: hook.trace, entry: ENTRY_LABEL[state.slots.entryType || "unknown"],
@@ -243,6 +248,7 @@ const syncLead = async (d: TurnDeps, changed: Record<string, [any, any]>): Promi
   if (changed.leadName && s.leadName) c.nome = String(s.leadName);
   if (changed.email && s.email) c.email = String(s.email);
   if (changed.city && s.city) c.cidade = String(s.city);
+  if (changed.state && s.state) c.estado = String(s.state);
   if (changed.courseName && s.courseName) c.curso = String(s.courseName);
   if (changed.courseModality && s.courseModality) c.modalidade = String(s.courseModality);
   if (changed.entryType && s.entryType === "transfer") c.forma_ingresso = "Transferência externa";
@@ -250,5 +256,13 @@ const syncLead = async (d: TurnDeps, changed: Record<string, [any, any]>): Promi
   if (changed.semesterEntry && s.semesterEntry) c.semestre_transferencia = String(s.semesterEntry);
   if (Object.keys(c).length) await applyToLead(d.ticket, { ...(d.ticket.aiSlots || {}), ...c });
   // the polo the tools found (or the city pointed to) belongs to the lead, so the handoff goes to that polo's commercial team
-  if (s.poloId && d.lead && !d.lead.poloId) await Lead.update({ poloId: Number(s.poloId) }, { where: { id: d.lead.id, poloId: null as any } }).catch(() => undefined);
+  if (s.poloId && d.lead && !d.lead.poloId) {
+    await Lead.update({ poloId: Number(s.poloId) }, { where: { id: d.lead.id, poloId: null as any } }).catch(() => undefined);
+    // and the conversation moves to that polo's commercial queue, with a consultant of the polo as owner
+    const polo = await Polo.findByPk(Number(s.poloId));
+    if (polo) {
+      const { assignToPolo } = await import("./Router");
+      await assignToPolo(d.ticket, await Lead.findByPk(d.lead.id), polo);
+    }
+  }
 };

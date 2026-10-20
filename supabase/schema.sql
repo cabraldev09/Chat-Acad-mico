@@ -2047,6 +2047,41 @@ ALTER SEQUENCE public."Payments_id_seq" OWNED BY public."Payments".id;
 
 
 --
+-- Name: PoloCoverages; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."PoloCoverages" (
+    id integer NOT NULL,
+    "poloId" integer NOT NULL,
+    city character varying(255) NOT NULL,
+    "cityKey" character varying(255) NOT NULL,
+    state character varying(2),
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: PoloCoverages_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."PoloCoverages_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: PoloCoverages_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."PoloCoverages_id_seq" OWNED BY public."PoloCoverages".id;
+
+
+--
 -- Name: PoloMembers; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3226,6 +3261,13 @@ ALTER TABLE ONLY public."Payments" ALTER COLUMN id SET DEFAULT nextval('public."
 
 
 --
+-- Name: PoloCoverages id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."PoloCoverages" ALTER COLUMN id SET DEFAULT nextval('public."PoloCoverages_id_seq"'::regclass);
+
+
+--
 -- Name: PoloMembers id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -3831,6 +3873,14 @@ ALTER TABLE ONLY public."Payments"
 
 
 --
+-- Name: PoloCoverages PoloCoverages_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."PoloCoverages"
+    ADD CONSTRAINT "PoloCoverages_pkey" PRIMARY KEY (id);
+
+
+--
 -- Name: PoloMembers PoloMembers_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4084,6 +4134,20 @@ ALTER TABLE ONLY public."Whatsapps"
 
 ALTER TABLE ONLY public."WppKeys"
     ADD CONSTRAINT "WppKeys_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: PoloCoverages_city_state; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX "PoloCoverages_city_state" ON public."PoloCoverages" USING btree ("cityKey", COALESCE(state, ''::character varying));
+
+
+--
+-- Name: PoloCoverages_poloId; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX "PoloCoverages_poloId" ON public."PoloCoverages" USING btree ("poloId");
 
 
 --
@@ -5177,6 +5241,14 @@ ALTER TABLE ONLY public."Payments"
 
 
 --
+-- Name: PoloCoverages PoloCoverages_poloId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."PoloCoverages"
+    ADD CONSTRAINT "PoloCoverages_poloId_fkey" FOREIGN KEY ("poloId") REFERENCES public."Polos"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+--
 -- Name: PoloMembers PoloMembers_poloId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5771,6 +5843,7 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261122000001-commercial-agent.js')
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261123000001-ai-handoff.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261124000001-ai-claim.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261125000001-onboarding-checklist.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261126000001-polo-coverage.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

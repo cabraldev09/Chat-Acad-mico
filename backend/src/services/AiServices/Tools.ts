@@ -1,4 +1,5 @@
 import { CRM_OPTIONS } from "../CrmServices/crmOptions";
+import { stateOf } from "../PoloServices/ResolvePolo";
 import { Op } from "sequelize";
 
 import Contact from "../../models/Contact";
@@ -170,7 +171,7 @@ const bool = (v: any): boolean | undefined => (v === undefined ? undefined : v =
 const registerTurn = async (input: any, ctx: Ctx): Promise<any> => {
   ctx.turn = { ...(ctx.turn || {}), ...input };
   const patch: Slots = cleanPatch({
-    entryType: input.tipo_ingresso, leadName: input.nome, email: input.email, city: input.cidade, hasHigherEducation: bool(input.ja_graduado), previousCourse: input.curso_anterior,
+    entryType: input.tipo_ingresso, leadName: input.nome, email: input.email, city: input.cidade, state: input.estado ? stateOf(String(input.estado)) || String(input.estado).slice(0, 40) : undefined, hasHigherEducation: bool(input.ja_graduado), previousCourse: input.curso_anterior,
     previousInstitution: input.instituicao_anterior, hasTranscript: bool(input.tem_historico), modalityUnderstood: bool(input.entendeu_modalidade)
   });
   if (input.curso && ctx.academic) {
@@ -336,15 +337,25 @@ export const applyToLead = async (ticket: Ticket, c: Record<string, string>): Pr
     if (course) patch.courseId = course.id;
     else patch.notes = [lead.notes, `Curso citado: ${c.curso}`].filter(Boolean).join("\n");
   }
-  // the polo comes from the city the person told (accents, punctuation and small typos do not matter)
-  if (c.cidade && !lead.poloId) {
+  if (c.estado && !lead.state) patch.state = String(c.estado).slice(0, 40);
+  // the polo comes from the city the person told (the cities each polo serves; accents, punctuation and small typos do not matter)
+  let newPolo: Polo | null = null;
+  if ((c.cidade || c.estado) && !lead.poloId) {
     const { resolvePolo } = await import("../CommercialServices/Router");
-    const { polo } = await resolvePolo(c.cidade);
-    if (polo) patch.poloId = polo.id;
+    const { polo } = await resolvePolo(c.cidade || lead.city, c.estado || lead.state);
+    if (polo) {
+      patch.poloId = polo.id;
+      newPolo = polo;
+    }
   }
   if (Object.keys(patch).length) {
     await lead.update(patch);
     await addActivity(lead.id, null, "system", `Dados informados no atendimento com IA: ${Object.keys(patch).join(", ")}`);
+  }
+  // the polo is known: the conversation and the lead go to that polo's commercial team right away
+  if (newPolo) {
+    const { assignToPolo } = await import("../CommercialServices/Router");
+    await assignToPolo(ticket, lead, newPolo);
   }
   return lead;
 };

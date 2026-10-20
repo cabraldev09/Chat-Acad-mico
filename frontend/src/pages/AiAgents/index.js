@@ -126,7 +126,7 @@ const AiAgents = () => {
               <div style={{ flex: 1 }}>
                 <b>{handoff.polos.filter((p) => !p.ready).length} polo(s) sem consultor no comercial</b>
                 <Typography variant="body2" color="textSecondary">
-                  {handoff.polos.filter((p) => !p.ready).map((p) => p.name).join(", ")}. As conversas que o agente passar para eles vão para {handoff.reserve ? `a fila de reserva “${handoff.reserve.name}”` : "ninguém: defina uma fila de reserva"}.
+                  {handoff.polos.filter((p) => !p.ready).map((p) => p.name).join(", ")}. As conversas que o agente passar para eles vão para {handoff.reserve ? `a fila central “${handoff.reserve.name}”` : "ninguém: defina uma fila central"}.
                 </Typography>
               </div>
               <Button size="small" variant="outlined" onClick={() => setHandoffOpen(true)}>Ver</Button>

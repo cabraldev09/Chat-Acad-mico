@@ -396,6 +396,12 @@ const RunInboundAutomation = async ({ ticketId, body }: Input): Promise<void> =>
     const whatsapp = await ShowWhatsAppService(ticket.whatsappId);
 
     if (!isWithinBusinessHours(whatsapp)) {
+      // an AI agent answers at any hour: the lead is qualified at night and the handover says when the team answers (Router: next opening,
+      // task for the first quarter of an hour). The "out of hours" text is only for numbers with no agent.
+      if (ticket.aiActive && (await findAgentForTicket(ticket))) {
+        await runAi(ticket);
+        return;
+      }
       const recently =
         ticket.outOfHoursSentAt && ticket.outOfHoursSentAt > subHours(new Date(), 6);
       if (whatsapp.outOfHoursMessage && !recently) {

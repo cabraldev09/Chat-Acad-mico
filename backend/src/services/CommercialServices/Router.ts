@@ -15,7 +15,7 @@ import { logger } from "../../utils/logger";
 import { pickUserForQueue } from "../AutomationServices/AutoAssignTicket";
 import { syncNextFollowUp } from "../CrmServices/FollowUp";
 import { addActivity } from "../CrmServices/LeadCore";
-import { matchPolo } from "../FlowServices/Engine";
+import { resolvePoloFor } from "../PoloServices/ResolvePolo";
 import UpdateTicketService from "../TicketServices/UpdateTicketService";
 import { nextOpening, whenText } from "./Hours";
 
@@ -25,12 +25,13 @@ import { nextOpening, whenText } from "./Hours";
 //   3. a consultant of the queue (the owner of the lead when he belongs to it, else the queue's own rotation);
 //   4. the ticket moves, the consultant is warned at once (live notice + task) and the lead is told when the team answers.
 // Nothing here talks to the lead: the caller says the message (it knows what was already said).
-export const WHY = ["human_request", "proposal", "unknown", "limit_turns", "limit_tokens", "error", "complaint", "media", "loop", "tutoring", "secretary", "other"] as const;
+export const WHY = ["human_request", "proposal", "qualified", "unknown", "limit_turns", "limit_tokens", "error", "complaint", "media", "loop", "tutoring", "secretary", "other"] as const;
 export type HandoffWhy = typeof WHY[number];
 
 export const WHY_TEXT: Record<HandoffWhy, string> = {
   human_request: "a pessoa pediu para falar com alguém",
   proposal: "a pessoa quer valores, bolsa ou matrícula: é a hora da proposta",
+  qualified: "a pessoa está qualificada (curso, cidade e ingresso definidos) e o agente já tirou as dúvidas",
   unknown: "a pergunta não está na base de conhecimento",
   limit_turns: "a conversa passou do limite de respostas automáticas",
   limit_tokens: "o limite diário de uso da IA foi atingido",
@@ -50,6 +51,9 @@ export const WHY_OF_EXIT: Record<string, HandoffWhy> = { human: "human_request",
 export type Team = "comercial" | "tutoria" | "coordenacao";
 const TEAM_LABEL: Record<Team, string> = { comercial: "Comercial", tutoria: "Tutoria", coordenacao: "Secretaria" };
 
+// what a qualified lead is told when the consultant of the polo takes over (the agent has just answered the last question)
+export const QUALIFIED_MESSAGE = "Perfeito, já tenho o que preciso! Vou passar o seu atendimento para o consultor do seu polo, que continua com você e apresenta a melhor condição. 😊";
+
 export interface Routed {
   queueId: number | null;
   queueName: string | null;
@@ -65,13 +69,9 @@ export interface Routed {
 }
 
 // ---------------------------------------------------------------- polo
-export const resolvePolo = async (city?: string | null): Promise<{ polo: Polo | null; ambiguous: boolean }> => {
-  const text = String(city || "").trim();
-  if (!text) return { polo: null, ambiguous: false };
-  const polos = await Polo.findAll({ where: { active: true }, order: [["name", "ASC"]] });
-  const found = matchPolo(polos.map(p => ({ id: p.id, name: p.name, city: p.city || "" })), text);
-  if (found.polo) return { polo: polos.find(p => p.id === found.polo!.id) || null, ambiguous: false };
-  return { polo: null, ambiguous: !!found.ambiguous };
+export const resolvePolo = async (city?: string | null, state?: string | null): Promise<{ polo: Polo | null; ambiguous: boolean; candidates: Polo[] }> => {
+  const r = await resolvePoloFor(city, state);
+  return { polo: r.polo, ambiguous: r.status === "ambiguous", candidates: r.candidates };
 };
 
 // the polo of the lead: the one already saved, else the one the city points to (saved, so everything after knows it)
@@ -116,6 +116,34 @@ const pickQueue = async (poloId: number | null, team: Team = "comercial"): Promi
   const any = await Queue.findOne({ where: { role: "comercial" }, include: withUsers as any, order: [["id", "ASC"]] });
   if (any) return { queue: any, fallback: true };
   return { queue: null, fallback: true };
+};
+
+// As soon as the lead's polo is known the conversation already sits in that polo's commercial queue and the lead already has a consultant of
+// that polo as owner (so the tasks and the handover go to the right person); the AI keeps talking. Nothing is said to the lead and nobody is
+// alerted: the live notice is for the handover itself. A conversation a person already took, or a polo with no commercial queue, is left alone.
+export const assignToPolo = async (ticket: Ticket, lead: Lead | null, polo: Polo): Promise<void> => {
+  try {
+    if (ticket.userId) return;
+    const { queue, fallback } = await pickQueue(polo.id, "comercial");
+    if (!queue || fallback) return;
+    if (ticket.queueId !== queue.id) {
+      await UpdateTicketService({ ticketData: { queueId: queue.id }, ticketId: ticket.id });
+      await TicketEvent.create({ ticketId: ticket.id, type: "transfer", actorId: null, fromQueueId: ticket.queueId || null, toQueueId: queue.id, toUserId: null, note: `Polo definido pelo atendimento com IA: a conversa ficou na fila comercial do polo ${polo.name}.` } as any);
+    }
+    if (lead) {
+      const users: User[] = (queue as any).users || [];
+      const mine = !!lead.ownerId && users.some(u => u.id === lead.ownerId);
+      if (!mine && users.length) {
+        const owner = await pickUserForQueue(queue, true);
+        if (owner) {
+          await lead.update({ ownerId: owner.id });
+          await addActivity(lead.id, null, "system", `Polo ${polo.name} definido pela cidade informada. Responsável: ${owner.name}.`).catch(() => undefined);
+        }
+      }
+    }
+  } catch (err) {
+    logger.warn(`Early routing to the polo failed: ${err}`);
+  }
 };
 
 const SLA_KEY = (ticketId: number): string => `handoff:${ticketId}`;
@@ -163,7 +191,7 @@ export const routeToCommercial = async (ticket: Ticket, opts: RouteOptions): Pro
       fromQueueId: ticket.queueId || null,
       toQueueId: queue ? queue.id : null,
       toUserId: user ? user.id : null,
-      note: `Agente de IA → ${label}${user ? ` (${user.name})` : queue ? " (aguardando alguém da fila)" : ""}${fallback && queue ? " · fila de reserva" : ""}. Motivo: ${WHY_TEXT[opts.why]}.`.slice(0, 480)
+      note: `Agente de IA → ${label}${user ? ` (${user.name})` : queue ? " (aguardando alguém da fila)" : ""}${fallback && queue ? " · fila central" : ""}. Motivo: ${WHY_TEXT[opts.why]}.`.slice(0, 480)
     } as any);
   } catch (err) {
     logger.error(`Handoff routing failed: ${err}`);

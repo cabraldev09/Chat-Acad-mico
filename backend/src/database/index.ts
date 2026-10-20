@@ -58,6 +58,7 @@ import AiUsage from "../models/AiUsage";
 import AiLearning from "../models/AiLearning";
 import Polo from "../models/Polo";
 import PoloMember from "../models/PoloMember";
+import PoloCoverage from "../models/PoloCoverage";
 import Goal from "../models/Goal";
 import GoalMember from "../models/GoalMember";
 import GoalPolo from "../models/GoalPolo";
@@ -140,6 +141,7 @@ const models = [
   AiLearning,
   Polo,
   PoloMember,
+  PoloCoverage,
   Goal,
   GoalMember,
   GoalPolo,

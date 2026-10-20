@@ -244,6 +244,8 @@ r.get("/channels/:whatsappId/groups", isAuth, canManageWhatsapp, Channel.groups)
 // polos (branches) and the team of each one
 r.get("/polos", isAuth, cached(), PoloCtl.index);
 r.get("/polos/:id/tutors", isAuth, PoloCtl.tutors);
+r.get("/polos/:id/coverage", isAuth, isManager, PoloCtl.coverage);
+r.put("/polos/:id/coverage", isAuth, isManager, PoloCtl.setCoverage);
 r.post("/polos", isAuth, isManager, PoloCtl.store);
 r.post("/polos/import", isAuth, isManager, PoloCtl.importPolos);
 r.put("/polos/:id", isAuth, isManager, PoloCtl.update);
