@@ -249,6 +249,8 @@ export const handleMessage = async (
           ticketId: ticket.id,
           body: processedMessage.body
         });
+      } else {
+        logger.info(`Automação do ticket ${ticket.id}: não rodou (${optedOut ? "a pessoa pediu para não receber mensagens" : `a conversa está com o atendente ${ticket.userId}`})`);
       }
     }
   } catch (err) {
