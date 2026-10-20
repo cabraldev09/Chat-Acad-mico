@@ -329,12 +329,25 @@ const scheduleAi = (ticketId: number, waitSeconds: number): void => {
   );
 };
 
+// Why the robot stayed quiet (or started), one line per message: "o robô não respondeu" is answered by the log, not by guessing
+const trace = (ticket: Ticket, what: string): void => logger.info(`Automação do ticket ${ticket.id}: ${what}`);
+
 const runAi = async (ticket: Ticket): Promise<boolean> => {
-  if (!ticket.aiActive) return false;
+  if (!ticket.aiActive) {
+    trace(ticket, "agente de IA não entra: a conversa já saiu do agente (aiActive desligado, por exemplo depois de uma transferência)");
+    return false;
+  }
   const agent = await findAgentForTicket(ticket);
-  if (!agent) return false;
+  if (!agent) {
+    trace(ticket, `agente de IA não entra: nenhum agente ligado serve esta conversa (fila ${ticket.queueId || "—"}, conexão ${ticket.whatsappId})`);
+    return false;
+  }
   // an agent built in blocks (with a published graph) talks through the flow engine; the others keep the single prompt
-  if (await runAgentGraph(ticket, agent)) return true;
+  if (await runAgentGraph(ticket, agent)) {
+    trace(ticket, `agente "${agent.name}" (roteiro em blocos) vai responder em ${agent.waitSeconds ?? 4}s`);
+    return true;
+  }
+  trace(ticket, `agente "${agent.name}" sem roteiro publicado: responde pelo modo simples em ${agent.waitSeconds ?? 4}s`);
   scheduleAi(ticket.id, agent.waitSeconds ?? 4);
   return true;
 };
@@ -387,15 +400,23 @@ interface Input {
 const RunInboundAutomation = async ({ ticketId, body }: Input): Promise<void> => {
   try {
     const ticket = await ShowTicketService(ticketId);
-    if (ticket.isGroup || ticket.status === "closed" || ticket.userId) return;
+    if (ticket.isGroup) return;
+    if (ticket.status === "closed" || ticket.userId) {
+      trace(ticket, ticket.userId ? `ninguém do automático responde: a conversa está com o atendente ${ticket.userId}` : "conversa fechada");
+      return;
+    }
     // the institution's own number belongs to the relationship team: no flow, chatbot, AI agent, greeting or queue menu answers
     // there (the satisfaction survey is read by the system and everything else waits in the queue for a person)
-    if (await isRelationshipConnection(ticket.whatsappId)) return;
+    if (await isRelationshipConnection(ticket.whatsappId)) {
+      trace(ticket, `conexão ${ticket.whatsappId} é o número da instituição (Relacionamento): nenhum robô responde nela`);
+      return;
+    }
     if (ticket.botReminderAt) await ticket.update({ botReminderAt: null });
 
     const whatsapp = await ShowWhatsAppService(ticket.whatsappId);
 
     if (!isWithinBusinessHours(whatsapp)) {
+      trace(ticket, "fora do horário da conexão");
       // an AI agent answers at any hour: the lead is qualified at night and the handover says when the team answers (Router: next opening,
       // task for the first quarter of an hour). The "out of hours" text is only for numbers with no agent.
       if (ticket.aiActive && (await findAgentForTicket(ticket))) {
@@ -412,8 +433,14 @@ const RunInboundAutomation = async ({ ticketId, body }: Input): Promise<void> =>
     }
 
     // the visual flows come first; the old menu and the AI agent only answer when no flow took the message
-    if (await runFlowForTicket(ticket, body)) return;
-    if (await runChatbot(ticket, body, whatsapp.greetingMessage)) return;
+    if (await runFlowForTicket(ticket, body)) {
+      trace(ticket, "um fluxo do Chatbot e fluxos respondeu antes do agente de IA");
+      return;
+    }
+    if (await runChatbot(ticket, body, whatsapp.greetingMessage)) {
+      trace(ticket, "o chatbot antigo respondeu antes do agente de IA");
+      return;
+    }
     if (await runAi(ticket)) return;
     await runClassicQueueMenu(ticket, body, ticket.whatsappId);
   } catch (err) {

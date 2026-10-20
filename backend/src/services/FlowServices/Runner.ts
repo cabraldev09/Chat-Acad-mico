@@ -195,11 +195,21 @@ export const runAgentGraph = async (ticket: Ticket, agent: AiAgent): Promise<boo
   if (!flow) return false;
   debounce(`agent-start:${ticket.id}`, agent.waitSeconds ?? 4, async () => {
     const fresh = await ShowTicketService(ticket.id);
-    if (!fresh.aiActive || fresh.userId || fresh.status === "closed") return;
+    if (!fresh.aiActive || fresh.userId || fresh.status === "closed") {
+      logger.info(`Agente ${agent.name} no ticket ${ticket.id}: não começou (aiActive ${fresh.aiActive}, atendente ${fresh.userId || "nenhum"}, status ${fresh.status})`);
+      return;
+    }
     // already talking (a second burst before the first run was saved), here or in another server
-    if (await ChatFlowRun.findOne({ where: { ticketId: fresh.id, status: { [Op.in]: ["waiting", "delayed"] } } })) return;
-    if (!(await claimAi(fresh.id))) return;
+    if (await ChatFlowRun.findOne({ where: { ticketId: fresh.id, status: { [Op.in]: ["waiting", "delayed"] } } })) {
+      logger.info(`Agente ${agent.name} no ticket ${ticket.id}: já há uma conversa em andamento neste ticket`);
+      return;
+    }
+    if (!(await claimAi(fresh.id))) {
+      logger.info(`Agente ${agent.name} no ticket ${ticket.id}: outra instância já está respondendo`);
+      return;
+    }
     try {
+      logger.info(`Agente ${agent.name} no ticket ${ticket.id}: começando o roteiro`);
       await startRun(flow, fresh, undefined, await lastUserText(fresh.id));
     } finally {
       await releaseAi(fresh.id);
