@@ -87,6 +87,7 @@ export const COMMERCIAL_TOOL_DEFS: Record<string, { name: string; description: s
         melhor_horario: { type: "string", description: "o melhor dia/horário para o consultor falar com a pessoa, nas palavras dela" },
         trabalha: { type: "boolean", description: "a pessoa trabalha enquanto estuda" },
         financiamento: { type: "string", enum: CRM_OPTIONS.financing, description: "como pretende pagar, se disse (não pergunte valores)" },
+        para_quem: { type: "string", enum: ["eu", "amigo_ou_parente"], description: "só quando a pessoa já é aluna: a pergunta sobre o curso é para ela mesma ou para um amigo ou parente" },
         pergunta_sem_resposta: { type: "string", description: "o fato que você não achou na base nem nas ferramentas" },
         retorno_em: { type: "string", description: "AAAA-MM-DD, se a pessoa disse quando volta" },
         motivo_retorno: { type: "string" }

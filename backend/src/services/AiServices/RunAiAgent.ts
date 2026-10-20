@@ -1,3 +1,4 @@
+import { robotMayTalk } from "../../helpers/AgentScope";
 import axios from "axios";
 import { Op } from "sequelize";
 
@@ -61,7 +62,7 @@ const stageBlock = (stage: StageData): string =>
 const STAGE_RULES = [
   "Regras fixas:",
   "- Fale como uma pessoa no WhatsApp: português do Brasil simples, humano e profissional. Escreva em blocos curtos separados por linha em branco (no máximo 2, de 1 ou 2 frases cada), nunca um textão. Faça uma pergunta por vez.",
-  "- Conecte-se com a pessoa: cumprimente só na primeira mensagem da conversa (nunca recomece com \"Oi, fulano!\" depois disso), chame pelo primeiro nome de vez em quando e não em toda mensagem, reconheça o que ela disse com uma frase sincera (\"que bonito querer ser pedagoga\") e, uma vez, pergunte o que a motivou ou qual o objetivo dela (carreira, família, tempo para estudar) e use a resposta depois. Evite frases de robô (\"Perfeito, já tenho o que preciso\") e perguntas genéricas (\"mais alguma dúvida?\").",
+  "- Conecte-se com a pessoa: cumprimente só na primeira mensagem da conversa (nunca recomece com \"Oi, fulano!\" depois disso), chame pelo primeiro nome de vez em quando e não em toda mensagem, reconheça o que ela disse com uma frase sincera (\"que bonito querer ser pedagoga\") e, uma vez, pergunte o que a motivou ou qual o objetivo dela (carreira, família, tempo para estudar) e use a resposta depois. Evite frases de robô (\"Perfeito, já tenho o que preciso\") e perguntas genéricas (\"mais alguma dúvida?\"). Use pouquíssimo emoji: no máximo um por mensagem e só quando for natural; na dúvida, nenhum.",
   "- Responda primeiro o que foi perguntado e só depois faça UMA pergunta que avance a conversa. Não repita o que já disse. Nunca faça uma pergunta e se despeça ou passe para a equipe na mesma mensagem.",
   "- Se pedirem a grade, a matriz ou o estágio: chame buscar_grade e enviar_material na hora (o PDF vai com uma legenda que já lista os estágios). Depois diga em uma frase que enviou e pergunte se ficou alguma dúvida sobre o curso ou o estágio. Nunca diga que não consegue acessar a grade sem ter chamado a ferramenta; se ela falhar, diga que a equipe envia em seguida.",
   "- Nunca invente valores, datas, prazos ou condições. Use as ferramentas e a base de conhecimento para fatos.",
@@ -189,7 +190,12 @@ const FINAL_TOOLS = new Set(["registrar_turno", "escolher_resultado", "salvar_le
 const COMMERCIAL_RULES = [
   "Regras:",
   "- Estilo de WhatsApp humano e profissional, que conecta: português do Brasil simples, como um consultor que conhece quem estuda e trabalha ao mesmo tempo. Reconheça o que a pessoa disse antes de responder.",
-  "- Escreva em BLOCOS CURTOS separados por uma linha em branco: no máximo 3 blocos, cada um com 1 ou 2 frases (até uns 200 caracteres). Nunca um textão. Destaque o essencial com *negrito* (no máximo 2 trechos) e termine com UMA pergunta curta de condução.",
+  "- Escreva em BLOCOS CURTOS separados por uma linha em branco: no máximo 2 blocos, cada um com 1 ou 2 frases (até uns 200 caracteres). Nunca um textão. Destaque o essencial com *negrito* (no máximo 2 trechos) e termine com UMA pergunta curta de condução, a não ser que uma ferramenta diga para não perguntar.",
+  "- Conecte-se com a pessoa: cumprimente só na primeira mensagem da conversa (nunca recomece com “Oi, fulano!”), use o primeiro nome de vez em quando, reconheça o que ela disse com uma frase sincera e, uma vez, pergunte o que a motivou a escolher o curso ou qual o objetivo dela (carreira, família, tempo para estudar) e use a resposta depois. Sem frases de robô e sem a pergunta genérica “mais alguma dúvida?”.",
+  "- Use pouquíssimo emoji: no máximo um por mensagem e só quando for natural; na dúvida, nenhum.",
+  "- Se pedirem a grade, a matriz ou o estágio: chame buscar_grade e enviar_material na hora. NÃO diga que enviou, encaminhou ou anexou a grade: a pessoa já a vê. Escreva só o texto_estagio_tutoria que a ferramenta devolve (como funciona o estágio e o acompanhamento dos tutores). Nunca diga que não consegue acessar a grade sem ter chamado a ferramenta; se ela falhar, diga que a equipe envia.",
+  "- Se “Já sabemos” mostrar que a pessoa já é aluna: responda e apresente TUDO o que ela pediu sobre o curso e, na primeira resposta, pergunte de forma natural se é para ela mesma ou para um amigo ou parente (registre em para_quem). Se for para outra pessoa, peça o nome e o WhatsApp dela para o consultor falar com ela. Como aluna de curso semipresencial, ela já conhece como funciona o semipresencial, a plataforma e a tutoria: NÃO explique isso de novo; vá direto ao que o curso pedido tem de próprio (duração, grade, estágio) e só diga o que for diferente do curso dela.",
+  "- Não repita o que já foi explicado (veja o que já foi explicado em “Já sabemos”); avance para o próximo passo.",
   "- Sem listas longas, sem frases de manual (“Prezado”, “Informamos que”), sem repetir o que já foi dito: dê o essencial e ofereça aprofundar.",
   "- Antes de perguntar, veja “Já sabemos”: nunca pergunte de novo o que já está lá.",
   "- Dados de curso, grade, estágio, modalidade e MEC vêm SÓ das ferramentas ou dos trechos da base. Se vier nulo ou desconhecido, diga que vai confirmar e registre a dúvida (intent unknown).",
@@ -216,6 +222,7 @@ const commercialStatic = (agent: AiAgent, stage: StageData): string =>
 const KNOWN: Array<[string, string]> = [
   ["leadName", "nome"], ["courseName", "curso"], ["city", "cidade"], ["poloName", "polo"], ["entryType", "ingresso"], ["courseDegree", "grau"], ["courseDurationText", "duração"],
   ["courseModality", "modalidade"], ["intakePeriod", "ingresso em"], ["analysisStatus", "análise curricular"],
+  ["enrolledCourse", "já é aluno(a) de"], ["forWhom", "a pergunta sobre o curso é para"], ["fullName", "nome completo"],
   ["decisionTimeline", "pretende decidir"], ["shift", "turno"], ["bestTime", "melhor horário para falar"], ["motivation", "motivação"]
 ];
 const EXPLAINED: Array<[string, string]> = [
@@ -451,7 +458,7 @@ const handoff = async (ticket: Ticket, agent: AiAgent, reason: HandoffReason, sa
 // Called once the person stopped writing (see RunInboundAutomation): answers the whole burst with one reply.
 export const runAiForTicket = async (ticketId: number, say: Say): Promise<void> => {
   const ticket = await ShowTicketService(ticketId);
-  if (!ticket.aiActive || ticket.userId || ticket.status === "closed") return;
+  if (!ticket.aiActive || ticket.userId || ticket.status === "closed" || !robotMayTalk(ticket)) return;
   const agent = await findAgentForTicket(ticket);
   if (!agent) return;
   // one server at a time answers this conversation
@@ -490,7 +497,7 @@ export const runAiForTicket = async (ticketId: number, say: Say): Promise<void> 
 
     if (result.unknown) {
       // tell the student the team will confirm, keep the question for the owner and let a person take over
-      await say(ticket, (agent.persona && agent.persona.unknownMessage) || "Ótima pergunta! Vou confirmar essa informação com a nossa equipe e já te respondo. 🙂");
+      await say(ticket, (agent.persona && agent.persona.unknownMessage) || "Ótima pergunta! Vou confirmar essa informação com a nossa equipe e já te respondo.");
       await ticket.update({ aiTurns: (ticket.aiTurns || 0) + 1 });
       if (agent.learnFromTeam !== false) await captureUnknown(agent, ticket, last.content, ticket.contact?.name);
       await handoffToHuman(ticket.id, agent, "desconhecido", last.content);

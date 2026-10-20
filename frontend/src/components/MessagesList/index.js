@@ -395,6 +395,8 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
   const currentTicketId = useRef(ticketId);
   const listRef = useRef();
   const typing = useTyping(ticketId);
+  // the live connection is down: the screen keeps reading the conversation by itself, and says so
+  const [rtDown, setRtDown] = useState(false);
   const atBottomRef = useRef(true);
   const bubbleRefs = useRef({});
 
@@ -454,11 +456,21 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
       }
     };
     let first = true;
+    // the server confirms the room; if it does not, try again a few times (otherwise this conversation would never get live messages)
+    const join = (attempt = 0) => {
+      socket.emit("joinChatBox", ticketId, (ack) => {
+        if (ack && ack.ok) return;
+        if (attempt < 3) setTimeout(() => join(attempt + 1), 1500 * (attempt + 1));
+      });
+    };
     socket.on("connect", () => {
-      socket.emit("joinChatBox", ticketId);
+      setRtDown(false);
+      join();
       if (!first) resync();
       first = false;
     });
+    socket.on("disconnect", () => setRtDown(true));
+    socket.on("connect_error", () => setRtDown(true));
     // reactions appear at once (see utils/optimisticReaction): the server answers later
     const onReactions = (e) => dispatch({ type: "SET_REACTIONS", payload: e.detail });
     window.addEventListener("message-reactions", onReactions);
@@ -815,6 +827,11 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
       })()}
       <div ref={listRef} id="messagesList" className={clsx(classes.list, picked && classes.listPicking)} onScroll={onScroll}>
         {messagesList.length > 0 ? items : !loading && <div className={classes.empty}>Nenhuma mensagem ainda. Diga olá!</div>}
+        {rtDown && (
+          <div role="status" style={{ alignSelf: "center", margin: "8px 0", padding: "4px 12px", borderRadius: 999, fontSize: 12, background: "rgba(237,108,2,.15)", color: "#b45309" }}>
+            Sem conexão em tempo real. Atualizando a cada 8 segundos.
+          </div>
+        )}
         {typing && (
           <div className={clsx(classes.typingRow, typing.from === "agent" ? classes.rowOut : classes.rowIn)} aria-live="polite" aria-label={typing.from === "agent" ? "O agente de IA está digitando" : "O contato está digitando"}>
             <div className={clsx(classes.typingBubble, typing.from === "agent" && classes.typingBubbleAgent)}>

@@ -39,13 +39,22 @@ describe("a qualified lead goes to the consultant after a couple of answers", ()
     expect(isQualified({ ...slots, city: null, poloId: 3 })).toBe(true);
   });
 
-  it("needs the answers first", () => {
-    expect(readyForConsultantOf(slots, 1)).toBe(false);
-    expect(readyForConsultantOf(slots, 2)).toBe(true);
+  it("needs the answers first, and the full name and CPF for the scholarship (or the asks used up)", () => {
+    const withData = { ...slots, fullName: "Paulo Souza Lima", cpfGiven: true };
+    expect(readyForConsultantOf(withData, 1)).toBe(false);
+    expect(readyForConsultantOf(withData, 2)).toBe(true);
+    // not yet asked, or asked once: it waits; asked twice: it goes on without them
+    expect(readyForConsultantOf(slots, 2)).toBe(false);
+    expect(readyForConsultantOf({ ...slots, bolsaDataAsked: 1 }, 2)).toBe(false);
+    expect(readyForConsultantOf({ ...slots, bolsaDataAsked: 2 }, 2)).toBe(true);
+    // never forever: a few more answers and the consultant takes it
+    expect(readyForConsultantOf(slots, 5)).toBe(true);
+    // a question for someone else: the data would be of another person
+    expect(readyForConsultantOf({ ...slots, forWhom: "amigo ou parente" }, 2)).toBe(true);
   });
 
   it("a transfer lead waits for the analysis to be explained", () => {
-    const transfer = { ...slots, entryType: "transfer" };
+    const transfer = { ...slots, entryType: "transfer", bolsaDataAsked: 2 };
     expect(readyForConsultantOf(transfer, 5)).toBe(false);
     expect(readyForConsultantOf({ ...transfer, analysisStatus: "completed", analysisExplained: true }, 5)).toBe(true);
   });

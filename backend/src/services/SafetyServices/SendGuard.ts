@@ -18,7 +18,7 @@ import { startOfTodayApp } from "../../helpers/AppTime";
 export const BOT_MARK = "‎";
 
 const MIN_GAP_MS = 1500; // between any two sends on one connection
-const MIN_GAP_AUTOMATED_MS = 3000;
+const MIN_GAP_AUTOMATED_MS = 1800;
 const MAX_PER_MINUTE = 20;
 const MAX_WAIT_MS = 25000; // longer than this and we refuse instead of queueing
 const BREAKER_THRESHOLD = 5; // consecutive failures
@@ -66,9 +66,9 @@ export const paceSend = async (
   }
 };
 
-// How long a person would take to type this (1.5s to 6s)
+// How long a person would take to type this (1s to 3.5s): the lead just wrote and is waiting, so the "typing…" is short
 export const typingDelay = (text: string): number =>
-  Math.min(6000, 1500 + text.length * 25) + rand(0, 800);
+  Math.min(3000, 1000 + text.length * 15) + rand(0, 500);
 
 // ------------------------------------------------------------- limits
 

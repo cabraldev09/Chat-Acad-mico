@@ -5,6 +5,7 @@ import ChatbotNode from "../../models/ChatbotNode";
 import Ticket from "../../models/Ticket";
 import User from "../../models/User";
 import { logger } from "../../utils/logger";
+import { robotMayTalk } from "../../helpers/AgentScope";
 import ShowTicketService from "../TicketServices/ShowTicketService";
 import UpdateTicketService from "../TicketServices/UpdateTicketService";
 import ShowWhatsAppService from "../WhatsappService/ShowWhatsAppService";
@@ -402,7 +403,8 @@ interface Input {
 const RunInboundAutomation = async ({ ticketId, body }: Input): Promise<void> => {
   try {
     const ticket = await ShowTicketService(ticketId);
-    if (ticket.isGroup) return;
+    // groups, communities, channels, the team's chats and personal contacts: no robot answers there, ever
+    if (!robotMayTalk(ticket)) return;
     if (ticket.status === "closed" || ticket.userId) {
       trace(ticket, ticket.userId ? `ninguém do automático responde: a conversa está com o atendente ${ticket.userId}` : "conversa fechada");
       return;

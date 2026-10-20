@@ -145,6 +145,7 @@ export const handleMessage = async (
   contextPayload: WhatsappContextPayload,
   mediaPayload?: MediaPayload
 ): Promise<void> => {
+  const arrivedAt = Date.now();
   try {
     // groups only become conversations when the connection allows them
     if (contextPayload.groupContact) {
@@ -241,6 +242,15 @@ export const handleMessage = async (
     await CreateMessageService({ messageData });
 
     await processVcardMessage(processedMessage, contextPayload.groupContact ? undefined : contact.number);
+
+    // where a delay is born: WhatsApp (the connection received it late) or here (it took long to store)
+    {
+      const wppLag = arrivedAt - Number(processedMessage.timestamp) * 1000;
+      const stored = Date.now() - arrivedAt;
+      if (!processedMessage.fromMe && (wppLag > 4000 || stored > 2000)) {
+        logger.info(`Mensagem do ticket ${ticket.id}: chegou ${Math.round(wppLag / 100) / 10} s depois de enviada pelo WhatsApp; gravada em ${stored} ms`);
+      }
+    }
 
     if (!contextPayload.groupContact && !processedMessage.fromMe) {
       const optedOut = await processOptOut(ticket.id, processedMessage.body);

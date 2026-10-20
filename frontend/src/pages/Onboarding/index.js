@@ -198,6 +198,7 @@ const Onboarding = () => {
         <Title>Ambientação</Title>
         {isManager && <Button size="small" variant="outlined" startIcon={<BarChart3 size={15} />} onClick={() => setShowStats((v) => !v)}>{showStats ? "Esconder painel" : "Painel do tutor"}</Button>}
       </MainHeader>
+      <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
       <p className={classes.intro}>
         Alunos com matrícula confirmada. O tutor combina o primeiro acesso à plataforma e marca cada etapa; ao concluir, o consultor recebe lembretes para pedir indicação e oferecer um novo curso.
       </p>
@@ -370,6 +371,7 @@ const Onboarding = () => {
         </DialogActions>
       </Dialog>
       <Typography variant="caption" color="textSecondary">O sistema avisa quando um aluno passa de 24 horas sem o primeiro contato do tutor.</Typography>
+      </div>
     </MainContainer>
   );
 };

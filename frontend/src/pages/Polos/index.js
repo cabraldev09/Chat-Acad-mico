@@ -35,7 +35,7 @@ const DISTRIBUTION = [
 ];
 
 const useStyles = makeStyles((theme) => ({
-  grid: { display: "grid", gap: theme.spacing(2), gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", padding: theme.spacing(0.5, 0, 3) },
+  grid: { display: "grid", gap: theme.spacing(2), gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", alignContent: "start", padding: theme.spacing(0.5, 0, 3), flex: 1, minHeight: 0, overflowY: "auto" },
   card: { borderRadius: 16, border: `1px solid ${theme.palette.divider}`, backgroundColor: theme.palette.background.paper, padding: theme.spacing(2.25), display: "flex", flexDirection: "column", gap: theme.spacing(1.25) },
   head: { display: "flex", alignItems: "flex-start", gap: theme.spacing(1) },
   name: { fontSize: 17, fontWeight: 700, letterSpacing: "-0.01em" },

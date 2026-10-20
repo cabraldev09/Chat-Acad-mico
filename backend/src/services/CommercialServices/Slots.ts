@@ -34,6 +34,10 @@ export const SLOT_KINDS: Record<string, Kind> = {
   // the intents already seen (scoring and temperature count each one once)
   intentsSeen: "string",
   // control of the agent itself: questions without an answer in a row, voice notes asked in writing, the last brief written, what the CRM held
+  // the data the consultant needs to simulate the scholarship: the full name, whether a valid CPF arrived (the CPF itself lives only in the lead) and how many times it was asked
+  fullName: "string", cpfGiven: "boolean", bolsaDataAsked: "number",
+  // a contact who is already a student: for whom is the question, and what they already know
+  enrolledChecked: "boolean", enrolledStudent: "boolean", enrolledCourse: "string", studentSemipresencial: "boolean", forWhom: "string",
   unknownStreak: "number", audioAsked: "number", qualifiedReplies: "number", readyForConsultant: "boolean", nudges: "number", nudgeAt: "string", lastBriefHash: "string", crmSeen: "object"
 };
 

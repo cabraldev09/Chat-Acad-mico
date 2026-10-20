@@ -2,6 +2,7 @@ import { fire } from "../../helpers/Fire";
 import { chatIdOf } from "../../helpers/ChatId";
 import { previewOf } from "../../helpers/MessagePreview";
 import { startsWithBotMark } from "../../helpers/BotMark";
+import { limitEmojis } from "../../helpers/Emoji";
 import { emitTyping } from "./ChatState";
 import AppError from "../../errors/AppError";
 import Message from "../../models/Message";
@@ -45,7 +46,7 @@ const SendWhatsAppMessage = async ({
   if (channel !== "whatsapp") {
     const whatsapp = await Whatsapp.findByPk(ticket.whatsappId);
     if (!whatsapp) throw new AppError("ERR_NO_WAPP_FOUND", 404);
-    const text = formatBody(body, ticket.contact);
+    const text = automated ? limitEmojis(formatBody(body, ticket.contact), 1) : formatBody(body, ticket.contact);
     try {
       const adapter = getAdapter(channel);
       const sent =
@@ -85,8 +86,10 @@ const SendWhatsAppMessage = async ({
 
   const whatsapp = await Whatsapp.findByPk(ticket.whatsappId);
   if (!whatsapp) throw new AppError("ERR_NO_WAPP_FOUND", 404);
-  const text = formatBody(body, ticket.contact);
+  const text = automated ? limitEmojis(formatBody(body, ticket.contact), 1) : formatBody(body, ticket.contact);
 
+  const t0 = Date.now();
+  let typedMs = 0;
   // unofficial connection: never reply like a machine
   if (automated && isUnofficial(whatsapp)) {
     await whatsappProvider.sendTyping?.(ticket.whatsappId, chatId);
@@ -94,8 +97,11 @@ const SendWhatsAppMessage = async ({
     const typingMs = typingDelay(text);
     emitTyping(ticket.id, "agent", "typing", typingMs + 2000);
     await new Promise(r => setTimeout(r, typingMs));
+    typedMs = Date.now() - t0;
   }
+  const t1 = Date.now();
   await paceSend(whatsapp, automated);
+  const paceMs = Date.now() - t1;
 
   try {
     const sentMessage = await whatsappProvider.sendMessage(
@@ -110,7 +116,11 @@ const SendWhatsAppMessage = async ({
     );
 
     recordSendResult(whatsapp, true);
-    if (automated) emitTyping(ticket.id, "agent", "idle", 0);
+    if (automated) {
+      emitTyping(ticket.id, "agent", "idle", 0);
+      const total = Date.now() - t0;
+      if (total > 4000) logger.info(`Envio automático do ticket ${ticket.id}: ${total} ms no total (digitando ${typedMs} ms, ritmo de envio ${paceMs} ms, WhatsApp ${total - typedMs - paceMs} ms)`);
+    }
     await ticket.update({ lastMessage: previewOf(body) });
     // The listener of the connection skips what starts with the robots' invisible mark (it is how a robot's message is told from a person's),
     // so nobody else would ever store it: it is stored here, and shows in the open conversation at once. Saving twice is harmless (same id).

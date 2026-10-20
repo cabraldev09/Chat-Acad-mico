@@ -1,4 +1,5 @@
 import { CommercialState, Slots } from "./Slots";
+import { BOLSA_ASKS } from "./BolsaData";
 
 // The commercial rules, written as plain functions: the same input always gives the same answer, no model involved. The AI only
 // understands what the person said (the intent); the temperature, the score, the next action, the funnel column, the notes and the
@@ -116,9 +117,9 @@ export const openingText = (slots: Slots, first: string, returning: boolean): st
         : "Em que posso te ajudar agora?";
   const course = hasCourse ? String(slots.courseName || "") : "";
   if (returning) {
-    return `Oi${name}! Que bom falar com você de novo. 😊${course ? ` Da última vez conversamos sobre ${course}.` : ""} ${hasCourse && hasCity && hasEntry ? "Em que posso te ajudar agora?" : ask}`;
+    return `Oi${name}! Que bom falar com você de novo.${course ? ` Da última vez conversamos sobre ${course}.` : ""} ${hasCourse && hasCity && hasEntry ? "Em que posso te ajudar agora?" : ask}`;
   }
-  return `Olá${name}! 👋 Aqui é o assistente virtual da Cruzeiro do Sul Virtual.${course ? ` Vi que você tem interesse em ${course}.` : ""} ${ask}`;
+  return `Olá${name}! Aqui é o assistente virtual da Cruzeiro do Sul Virtual.${course ? ` Vi que você tem interesse em ${course}.` : ""} ${ask}`;
 };
 
 // the fields a stage asks for are filled when each one has a value in the state of the lead
@@ -221,10 +222,18 @@ export const isQualified = (slots: Slots): boolean =>
 // first (a lead who asks for the price or a person is handed over at once, whatever this says). A transfer or second-degree lead waits for the
 // result of the curricular analysis to be explained.
 export const QUALIFIED_REPLIES = 2;
+
+// the consultant simulates the scholarship with the full name and the CPF: once the lead is qualified (or got the grade) they are asked, up to
+// BOLSA_ASKS times, and the handover waits for them (or for the asks to be used)
+export const hasBolsaData = (slots: Slots): boolean => !!slots.fullName && !!slots.cpfGiven;
+// (not when the question is for someone else: the data would be of another person, the consultant handles it)
+export const needsBolsaData = (slots: Slots): boolean => (isQualified(slots) || !!slots.gradeSent) && !hasBolsaData(slots) && slots.forWhom !== "amigo ou parente" && Number(slots.bolsaDataAsked || 0) < BOLSA_ASKS;
+
 export const readyForConsultantOf = (slots: Slots, replies: number, after: number = QUALIFIED_REPLIES): boolean => {
   if (!after || !isQualified(slots)) return false;
   const analysisDone = !needsTranscript(slots) || (slots.analysisStatus === "completed" && !!slots.analysisExplained);
-  return analysisDone && replies >= after;
+  // never wait forever for the data: a few more answers and the consultant takes it anyway
+  return analysisDone && replies >= after && (!needsBolsaData(slots) || replies >= after + 3);
 };
 
 export const nextActionOf = (s: CommercialState, facts: { human?: boolean; lost?: boolean } = {}): string => {
@@ -372,7 +381,9 @@ export const briefOf = (s: CommercialState, extra: { stageName?: string | null; 
     line("Modalidade", x.courseModality),
     line("MEC explicado", x.mecImpacted === false ? "Não se aplica" : yesNo(x.mecExplained)),
     line("Modalidade explicada", yesNo(x.modalityExplained)),
+    x.enrolledStudent ? line("Já é aluno", `Sim${x.enrolledCourse ? `, de ${x.enrolledCourse}` : ""}${x.forWhom ? ` · a pergunta é para: ${x.forWhom}` : " · para quem é a pergunta: ainda não perguntado"}`) : null,
     line("Grade enviada", yesNo(x.gradeSent)),
+    line("Dados para simular a bolsa", hasBolsaData(x) ? "Nome completo e CPF informados (o CPF está no cadastro do lead)" : Number(x.bolsaDataAsked || 0) ? "Pedidos, ainda não enviados" : "Ainda não pedidos"),
     line("Estágio", x.internshipExplained ? x.internshipSummary || "Explicado" : "Não explicado"),
     line("Tutoria", x.tutoringExplained ? "Explicada" : "Não explicada"),
     x.analysisStatus && x.analysisStatus !== "not_applicable"

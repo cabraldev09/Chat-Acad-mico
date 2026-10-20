@@ -3,7 +3,7 @@ import path from "path";
 import { Op } from "sequelize";
 
 import { gradePath } from "../../analysis/Grades";
-import { chooseGrade, gradeCaption } from "./GradeChoice";
+import { chooseGrade, gradeCaption, internshipPitch } from "./GradeChoice";
 import { createCurricular } from "../../analysis/Store";
 import { PUBLIC_DIR } from "../../config/paths";
 import CommercialGrade from "../../models/CommercialGrade";
@@ -352,7 +352,7 @@ export const runAcademicTool = async (name: string, input: any, ctx: AcademicCtx
           try {
             await SendWhatsAppMessage({ body: caption, ticket: ctx.ticket, automated: true });
             remember(ctx, { gradeSent: true, gradeId: grade.id, gradeVersion: grade.curriculumTerm, gradeAsked: true });
-            return { enviado: true, aviso: "O PDF não está disponível agora; mandei o resumo da grade com os estágios em texto. Diga em uma frase que a equipe envia o PDF completo em seguida." };
+            return { enviado: true, texto_estagio_tutoria: internshipPitch(grade, internshipsOf(grade)), aviso: "O PDF não está disponível agora; mandei o resumo da grade com os estágios em texto. Não comente o envio. Use o texto_estagio_tutoria como está; só se perguntarem do arquivo, diga que a equipe envia o PDF completo em seguida. Não faça pergunta nesta mensagem." };
           } catch (err) {
             logger.warn(`Grade summary not sent: ${(err as Error).message}`);
           }
@@ -371,7 +371,7 @@ export const runAcademicTool = async (name: string, input: any, ctx: AcademicCtx
           automated: true
         } as any);
         remember(ctx, { gradeSent: true, gradeId: grade.id, gradeVersion: grade.curriculumTerm, gradeAsked: true });
-        return { enviado: true, aviso: "O PDF já foi enviado com os estágios na legenda. Diga em uma frase que enviou e pergunte se ficou alguma dúvida sobre o curso ou o estágio; não repita a lista." };
+        return { enviado: true, texto_estagio_tutoria: internshipPitch(grade, internshipsOf(grade)), aviso: "O PDF foi entregue com os estágios na legenda. NÃO diga que enviou, encaminhou ou anexou a grade (a pessoa já a vê). Escreva apenas o texto_estagio_tutoria, em até 2 blocos curtos, sem repetir a lista da legenda e sem fazer pergunta: o sistema pergunta o que falta em seguida." };
       } catch (err) {
         logger.warn(`Grade not sent: ${(err as Error).message}`);
         return { enviado: false, erro: "Não consegui enviar o arquivo agora. Diga que a equipe envia em seguida." };

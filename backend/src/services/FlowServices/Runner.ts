@@ -1,3 +1,4 @@
+import { robotMayTalk } from "../../helpers/AgentScope";
 import { Op } from "sequelize";
 
 import AiAgent from "../../models/AiAgent";
@@ -198,7 +199,7 @@ export const runAgentGraph = async (ticket: Ticket, agent: AiAgent): Promise<boo
   if (!flow) return false;
   debounce(`agent-start:${ticket.id}`, agent.waitSeconds ?? 4, async () => {
     const fresh = await ShowTicketService(ticket.id);
-    if (!fresh.aiActive || fresh.userId || fresh.status === "closed") {
+    if (!fresh.aiActive || fresh.userId || fresh.status === "closed" || !robotMayTalk(fresh)) {
       logger.info(`Agente ${agent.name} no ticket ${ticket.id}: não começou (aiActive ${fresh.aiActive}, atendente ${fresh.userId || "nenhum"}, status ${fresh.status})`);
       return;
     }

@@ -59,7 +59,7 @@ const firstName = (n: string): string => String(n || "").trim().split(/\s+/)[0] 
 // what the AI is told when it has to open the conversation of a stage (nobody wrote yet)
 const OPENING_HINT = "(A conversa desta etapa está começando. Cumprimente a pessoa em uma frase e comece pelo objetivo da etapa.)";
 const DEFAULT_HANDOFF = "Vou transferir você para um de nossos atendentes. Um momento, por favor.";
-const DEFAULT_UNKNOWN = "Ótima pergunta! Vou confirmar essa informação com a nossa equipe e já te respondo. 🙂";
+const DEFAULT_UNKNOWN = "Ótima pergunta! Vou confirmar essa informação com a nossa equipe e já te respondo.";
 const REASON_OF: Record<string, HandoffReason> = { human: "pedido", off: "desconhecido", limit: "limite_turnos" };
 
 export interface FlowContext {

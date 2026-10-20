@@ -56,18 +56,22 @@ export type Team = "comercial" | "tutoria" | "coordenacao";
 const TEAM_LABEL: Record<Team, string> = { comercial: "Comercial", tutoria: "Tutoria", coordenacao: "Secretaria" };
 
 // what a qualified lead is told when the consultant of the polo takes over (the agent has just answered the last question)
-export const QUALIFIED_MESSAGE = "Perfeito, já tenho o que preciso! Vou passar o seu atendimento para o consultor do seu polo, que continua com você e apresenta a melhor condição. 😊";
+export const QUALIFIED_MESSAGE = "Perfeito, já tenho o que preciso! Vou passar o seu atendimento para o consultor do seu polo, que continua com você e apresenta a melhor condição.";
 
 // What a qualified lead is told when the consultant takes over: warm and specific (name, course, city), and it asks for the best time, which the
 // consultant reads (the agent is out of the conversation from here).
 export const qualifiedText = async (ticket: Ticket): Promise<string> => {
   try {
     const lead = await Lead.findOne({ where: { contactId: ticket.contactId } });
-    const first = String(lead?.name || ticket.contact?.name || "").trim().split(/\s+/)[0];
-    const course = lead?.courseId ? (await Course.findByPk(lead.courseId, { attributes: ["name"] }))?.name : null;
-    const where = String(lead?.city || "").trim();
+    // what the person said in THIS conversation comes first (the CRM may still carry the course of an older contact)
+    const { loadState } = await import("./Slots");
+    const slots = lead ? (await loadState(lead.id)).slots : ({} as Record<string, any>);
+    const first = String(slots.fullName || slots.leadName || lead?.name || ticket.contact?.name || "").trim().split(/\s+/)[0];
+    const course = String(slots.courseName || "") || (lead?.courseId ? (await Course.findByPk(lead.courseId, { attributes: ["name"] }))?.name : null) || "";
+    const where = String(slots.city || lead?.city || "").trim();
     const resume = course ? ` Já anotei que você quer ${course}${where ? ` em ${where}` : ""}.` : "";
-    return `Prontinho${first ? `, ${first}` : ""}! 😊${resume} Agora o consultor do seu polo continua com você: ele apresenta a melhor condição e tira o que faltar. Qual o melhor horário para ele te chamar? Pode responder por aqui mesmo.`;
+    const bolsa = slots.cpf || lead?.cpf ? " e simular a bolsa que você pode ter" : "";
+    return `Prontinho${first ? `, ${first}` : ""}!${resume} Agora o consultor do seu polo continua com você${bolsa}: ele apresenta a melhor condição e tira o que faltar. Qual o melhor horário para ele te chamar? Pode responder por aqui mesmo.`;
   } catch (err) {
     return QUALIFIED_MESSAGE;
   }
@@ -125,7 +129,10 @@ export const isSemipresencialCourse = async (courseId: number | null | undefined
 
 // the polo where this lead enrolls, given the polo of its city
 export const enrollmentPoloFor = async (lead: Lead | null, cityPolo: Polo): Promise<{ polo: Polo; cityPolo: Polo | null }> => {
-  if (!lead || cityPolo.enrollsSemipresencial || !(await isSemipresencialCourse(lead.courseId))) return { polo: cityPolo, cityPolo: null };
+  if (!lead || cityPolo.enrollsSemipresencial) return { polo: cityPolo, cityPolo: null };
+  const { loadState } = await import("./Slots");
+  const talked = Number((await loadState(lead.id)).slots.courseId) || null;
+  if (!(await isSemipresencialCourse(talked || lead.courseId))) return { polo: cityPolo, cityPolo: null };
   const mapped = cityPolo.enrollPoloId ? await Polo.findByPk(cityPolo.enrollPoloId) : null;
   const target = mapped && mapped.active !== false && mapped.enrollsSemipresencial ? mapped : await Polo.findOne({ where: { enrollsSemipresencial: true, active: true }, order: [["id", "ASC"]] });
   return target ? { polo: target, cityPolo } : { polo: cityPolo, cityPolo: null };
@@ -335,7 +342,7 @@ export const afterHoursNotice = (r: Routed): string | null => {
   const parts: string[] = [];
   // no promise about the practical classes: they are being worked out
   if (r.semipresencial) parts.push(`Como esse curso é semipresencial, a matrícula é feita no polo de ${poloLabel(r.semipresencial.enrollPolo)}. Estamos trabalhando para que as aulas práticas aconteçam no polo mais perto de você, e o consultor te explica como fica no seu caso.`);
-  if (!r.within && r.whenText) parts.push(`Nossa equipe retorna ${r.whenText}. Pode deixar sua mensagem aqui que ela já fica para o consultor. 😊`);
+  if (!r.within && r.whenText) parts.push(`Nossa equipe retorna ${r.whenText}. Pode deixar sua mensagem aqui que ela já fica para o consultor.`);
   return parts.length ? parts.join(" ") : null;
 };
 

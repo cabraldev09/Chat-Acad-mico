@@ -28,6 +28,13 @@ export const INSTITUTION_DOCS: Array<{ title: string; topic: string; keywords: s
     ].join("\n")
   },
   {
+    title: "Estágio supervisionado e tutoria",
+    topic: "institutional/supervised-internship",
+    keywords: "estágio supervisionado, estágio obrigatório, tutoria, tutores, acompanhamento, documentação do estágio",
+    content:
+      "Nos cursos com estágio supervisionado obrigatório, a carga e os semestres vêm da matriz do curso (a legenda da grade enviada já lista). Durante essa fase e em todo o curso, a tutoria acompanha o aluno: orienta sobre a documentação, os prazos e as atividades do estágio, além de plataforma, atividades e provas. Explique isso de forma curta, sem inventar horários de atendimento, nomes de tutores ou locais de estágio: para esses detalhes, o consultor ou a tutoria do polo confirmam."
+  },
+  {
     title: "Reconhecimento e avaliação do MEC",
     topic: "institutional/recognition",
     keywords: "mec, reconhecimento, nota, avaliação, conceito, autorizado, reconhecido, diploma válido",

@@ -2857,6 +2857,56 @@ const postMeta = (id, payload, secret, badSig) => {
       // a group is not for the agent, and a consultant cannot move someone else's conversation
       assert((await http.post(`/tickets/${t}/ai`, { active: true }, { headers: {} })).status === 401, "no login");
     });
+    await test("a contact who is already a student is recognised: what a semipresencial student lives is not explained again, and the polo of enrollment follows the course talked about", async () => {
+      const wonStage = sql(`SELECT id FROM LeadStages WHERE type='won' ORDER BY position LIMIT 1`);
+      const semi = (await http.post("/courses", { name: "Biomedicina Aluno Teste", modality: "Semipresencial", category: "Graduação - Cruzeiro", semesters: 8, monthlyFee: 500, active: true }, auth())).data;
+      const lead = sql(`INSERT INTO Leads (name, stageId, courseId, cpf, createdAt, updatedAt) VALUES ('Aluna Maria Souza', ${wonStage}, ${semi.id}, '39053344705', NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const script = `
+        const http = require("http");
+        require("./dist/database");
+        const { initIO } = require("./dist/libs/socket");
+        initIO(http.createServer());
+        const Lead = require("./dist/models/Lead").default;
+        const { studentFacts } = require("./dist/services/CommercialServices/StudentFacts");
+        const { hasBolsaData, needsBolsaData } = require("./dist/services/CommercialServices/Rules");
+        (async () => {
+          const slots = {};
+          await studentFacts(await Lead.findByPk(${lead}), slots);
+          console.log(JSON.stringify({ slots, hasBolsa: hasBolsaData(slots), needs: needsBolsaData({ ...slots, courseName: "Pedagogia", city: "Ji-Paraná", entryType: "first_degree", courseExplained: true, gradeSent: true }) }));
+          process.exit(0);
+        })().catch(e => { console.error(e); process.exit(1); });`;
+      const raw = execFileSync("node", ["-e", script], { cwd: ROOT, env: { ...env, LOG_LEVEL: "error" } }).toString().trim();
+      const out = JSON.parse(raw.split("\n").pop());
+      assert(out.slots.enrolledStudent === true && out.slots.enrolledCourse === "Biomedicina Aluno Teste" && out.slots.studentSemipresencial === true, `student not recognised ${JSON.stringify(out.slots)}`);
+      assert(out.slots.modalityExplained && out.slots.mecExplained && out.slots.platformExplained && out.slots.tutoringExplained, "a semipresencial student would hear the same explanations again");
+      assert(out.slots.cpfGiven === true && out.slots.fullName === "Aluna Maria Souza" && out.hasBolsa === true && out.needs === false, `the data the CRM already has were asked again ${JSON.stringify(out)}`);
+    });
+    await test("the agent never answers groups, communities, the team's chats or personal contacts, whatever reaches the automation", async () => {
+      const run = body => {
+        const script = `
+          const http = require("http");
+          require("./dist/database");
+          const { initIO } = require("./dist/libs/socket");
+          initIO(http.createServer());
+          const RunInboundAutomation = require("./dist/services/AutomationServices/RunInboundAutomation").default;
+          (async () => { ${body} process.exit(0); })().catch(e => { console.error(e); process.exit(1); });`;
+        return execFileSync("node", ["-e", script], { cwd: ROOT, env: { ...env, LOG_LEVEL: "error" } }).toString().trim();
+      };
+      const calls = anthropic.requests.length, before = graph.sent.length;
+      const ids = [];
+      for (const [i, kind] of [["g", "group"], ["c", "community"], ["s", "staff"], ["p", "personal"]].entries()) {
+        const number = `5599900079${i}00`;
+        const flags = { group: "isGroup=true", community: "isGroup=true", staff: "isStaff=true", personal: "isPersonal=true" }[kind[1]];
+        sql(`INSERT INTO Contacts (name, number, email, isGroup, isStaff, isPersonal, kind, createdAt, updatedAt) VALUES ('Contato ${kind[1]}', '${number}', '', ${kind[1] === "group" || kind[1] === "community"}, ${kind[1] === "staff"}, ${kind[1] === "personal"}, '${kind[1] === "community" ? "community" : "contact"}', NOW(), NOW())`);
+        const t = sql(`INSERT INTO Tickets (status, contactId, whatsappId, isGroup, aiActive, unreadMessages, createdAt, updatedAt) VALUES ('pending', (SELECT id FROM Contacts WHERE number='${number}'), ${cid}, ${kind[1] === "group" || kind[1] === "community"}, true, 1, NOW(), NOW()) RETURNING id`).split("\n")[0];
+        ids.push(t);
+        run(`await RunInboundAutomation({ ticketId: ${t}, body: "Quero saber sobre os cursos" });`);
+      }
+      await new Promise(r => setTimeout(r, 7000));
+      assert(anthropic.requests.length === calls, `the model was called for a chat where robots stay out (${anthropic.requests.length - calls})`);
+      assert(graph.sent.length === before, "a robot sent a message to a group, community, team chat or personal contact");
+      assert(ids.every(t => sql(`SELECT CAST(aiActive AS INTEGER) FROM Tickets WHERE id=${t}`) === "1" && sql(`SELECT COALESCE(userId,0) FROM Tickets WHERE id=${t}`) === "0"), "the conversation was touched");
+    });
     await test("a personal number sends new conversations to its owner, unless it is also an attendance number (aiFirst); the open chat hears when it changes hands; the agent's typing reaches the team", async () => {
       const owner = (await http.post("/users", { name: "Dono Pessoal", email: "dono-p@x.com", password: "senha123", role: "consultor" }, auth())).data;
       const mkLine = async name => (await http.post("/whatsapp", { name, ownerId: owner.id, channel: "whatsapp" }, auth())).data;
@@ -3367,7 +3417,7 @@ const postMeta = (id, payload, secret, badSig) => {
       // the handover waits while the agent has just asked the person something (they answer first), but not forever: within a few answers it happens
       let handed = false;
       let rn = 4;
-      for (const q of ["E sobre as mudanças do MEC, como fica?", "E o estágio, como funciona?", "Entendi, obrigado", "Certo, e agora?", "Pode ser"]) {
+      for (const q of ["E sobre as mudanças do MEC, como fica?", "Paulo Souza Lima, CPF 862.883.667-57", "Entendi, obrigado", "Certo, e agora?", "Pode ser"]) {
         out = await say(R, `wamid.com-r${rn}`, q, t => t.length > 0, "R answer");
         rn += 1;
         try {
@@ -3378,6 +3428,12 @@ const postMeta = (id, payload, secret, badSig) => {
       }
       assert(handed, "the qualified lead was never handed over");
       assert(Number(sql(`SELECT COUNT(*) FROM Messages WHERE ticketId=${ticketOf(R)} AND body LIKE '%Prontinho%' AND body LIKE '%consultor do seu polo%'`)) >= 1, "the handover message (warm, with the name and the course) was not sent");
+      // the full name and the CPF were asked for the scholarship, read from the answer, kept in the lead and never left in the conversation state
+      assert(Number(sql(`SELECT COUNT(*) FROM Messages WHERE ticketId=${ticketOf(R)} AND fromMe=true AND body LIKE '%nome completo e CPF%'`)) >= 1, "the system never asked for the full name and the CPF");
+      assert(sql(`SELECT cpf FROM Leads WHERE id=${leadId(R)}`) === "86288366757", "the CPF was not saved in the lead");
+      assert(!/86288366757|862\.883\.667/.test(sql(`SELECT slots FROM LeadCommercials WHERE leadId=${leadId(R)}`)), "the CPF leaked into the state of the conversation");
+      assert(JSON.parse(sql(`SELECT slots FROM LeadCommercials WHERE leadId=${leadId(R)}`)).fullName === "Paulo Souza Lima", "the full name was not kept");
+      assert(Number(sql(`SELECT COUNT(*) FROM Messages WHERE ticketId=${ticketOf(R)} AND fromMe=true AND body LIKE '%simular a bolsa%' AND body LIKE '%Prontinho%'`)) >= 1, "the handover did not say the consultant will simulate the scholarship");
       assert(sql(`SELECT aiActive FROM Tickets WHERE id=${ticketOf(R)}`) === "0", "the AI kept talking after the handover");
       assert(Number(sql(`SELECT COUNT(*) FROM AgentMetricEvents WHERE leadId=${leadId(R)} AND event='handoff_qualified'`)) === 1, "no metric for the qualified handover");
       assert(JSON.parse(sql(`SELECT slots FROM LeadCommercials WHERE leadId=${leadId(R)}`)).readyForConsultant === true, "the lead was not marked ready for the consultant");

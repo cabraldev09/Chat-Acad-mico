@@ -6,6 +6,7 @@ import Contact from "../../models/Contact";
 import Course from "../../models/Course";
 import Polo from "../../models/Polo";
 import Lead from "../../models/Lead";
+import LeadStage from "../../models/LeadStage";
 import Ticket from "../../models/Ticket";
 import AiAgent from "../../models/AiAgent";
 import { isPg } from "../../helpers/sqlDialect";
@@ -174,7 +175,8 @@ const registerTurn = async (input: any, ctx: Ctx): Promise<any> => {
     entryType: input.tipo_ingresso, leadName: input.nome, email: input.email, city: input.cidade, state: input.estado ? stateOf(String(input.estado)) || String(input.estado).slice(0, 40) : undefined, hasHigherEducation: bool(input.ja_graduado), previousCourse: input.curso_anterior,
     previousInstitution: input.instituicao_anterior, hasTranscript: bool(input.tem_historico), modalityUnderstood: bool(input.entendeu_modalidade),
     shift: input.turno, decisionTimeline: input.prazo_decisao, motivation: input.motivacao, bestTime: input.melhor_horario, worksAndStudies: bool(input.trabalha), financing: input.financiamento,
-    objectionType: input.tipo_objecao
+    objectionType: input.tipo_objecao,
+    forWhom: input.para_quem === "eu" ? "ela mesma" : input.para_quem === "amigo_ou_parente" ? "amigo ou parente" : undefined
   });
   if (input.curso && ctx.academic) {
     const current = Number(ctx.academic.slots.courseId) || 0;
@@ -308,7 +310,8 @@ export const runTool = async (name: string, input: any, ctx: Ctx): Promise<any> 
 };
 
 // Copies what was collected to the lead, only into fields that are still empty.
-export const applyToLead = async (ticket: Ticket, c: Record<string, string>): Promise<Lead | null> => {
+// `allowCourseChange`: the person just chose another course in this conversation (the caller knows it changed in this turn)
+export const applyToLead = async (ticket: Ticket, c: Record<string, string>, opts: { allowCourseChange?: boolean } = {}): Promise<Lead | null> => {
   const lead = await Lead.findOne({ where: { contactId: ticket.contactId } });
   if (!lead) return null;
   const patch: any = {};
@@ -340,6 +343,17 @@ export const applyToLead = async (ticket: Ticket, c: Record<string, string>): Pr
     const [course] = await findCourses(c.curso, 1);
     if (course) patch.courseId = course.id;
     else patch.notes = [lead.notes, `Curso citado: ${c.curso}`].filter(Boolean).join("\n");
+  } else if (c.curso && lead.courseId && opts.allowCourseChange) {
+    // the lead talks about another course now: the CRM follows the conversation (a lead already enrolled keeps its course)
+    const [course] = await findCourses(c.curso, 1);
+    if (course && course.id !== lead.courseId) {
+      const stage = lead.stageId ? await LeadStage.findByPk(lead.stageId, { attributes: ["type"] }) : null;
+      if (!stage || stage.type !== "won") {
+        const before = await Course.findByPk(lead.courseId, { attributes: ["name"] });
+        patch.courseId = course.id;
+        await addActivity(lead.id, null, "system", `Curso alterado na conversa: ${before?.name || "—"} → ${course.name}`).catch(() => undefined);
+      }
+    }
   }
   if (c.estado && !lead.state) patch.state = String(c.estado).slice(0, 40);
   // the polo comes from the city the person told (the cities each polo serves; accents, punctuation and small typos do not matter)

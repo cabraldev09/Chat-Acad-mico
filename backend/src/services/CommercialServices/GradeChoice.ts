@@ -67,3 +67,27 @@ export const gradeCaption = (grade: { courseName: string; whatsappSummary?: stri
   }
   return out.join("\n").trim();
 };
+
+// What the agent says right after the grade: how the internship works and that the tutors follow the student. Only facts of the matrix and of the
+// knowledge base (the tutoring guides on documents, deadlines and activities).
+export const internshipPitch = (grade: { totalInternshipHours?: number | null }, internships: Array<{ semester: number; discipline: string; hours: number | null }>): string => {
+  const tutoring = "A tutoria acompanha você durante todo o curso: orienta sobre plataforma, atividades, provas e prazos";
+  if (!internships.length && !(grade.totalInternshipHours || 0)) {
+    return `Este curso não tem estágio obrigatório na matriz. ${tutoring}.`;
+  }
+  const hours = grade.totalInternshipHours || internships.reduce((t, x) => t + (x.hours || 0), 0);
+  const first = [...internships].sort((a, b) => a.semester - b.semester)[0];
+  const where = internships.length ? ` (${internships.map(x => x.discipline).join(", ")})` : "";
+  return `O estágio supervisionado soma ${hours ? `${hours} horas` : "uma carga obrigatória"}${first ? `, a partir do ${first.semester}º semestre` : ""}${where}. Nessa fase a tutoria acompanha você de perto: orienta sobre a documentação, os prazos e as atividades do estágio, e segue com você até o fim do curso.`;
+};
+
+// The person already sees the PDF arrive: the agent must not announce it. Whole sentences that say "I sent / I will send the grade" are dropped.
+const ANNOUNCE = /(?:^|(?<=[.!?\n]))[^.!?\n]*\b(?:(?:j[aá] )?(?:enviei|encaminhei|mandei|anexei)|vou (?:te )?(?:enviar|encaminhar|mandar|anexar)|estou (?:te )?(?:enviando|encaminhando|mandando)|segue (?:a|o|em anexo)|em anexo)\b[^.!?\n]*\b(?:grade|matriz|pdf|arquivo|curricular)\b[^.!?\n]*[.!?]?|(?:^|(?<=[.!?\n]))[^.!?\n]*\b(?:grade|matriz|pdf)\b[^.!?\n]*\b(?:j[aá] foi enviad[oa]|foi enviad[oa]|j[aá] est[aá] (?:no|em) (?:seu|anexo)|enviad[oa] (?:acima|com))\b[^.!?\n]*[.!?]?/gi;
+
+export const stripGradeAnnouncement = (text: string): string =>
+  String(text || "")
+    .replace(ANNOUNCE, "")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/^[ \t]+/gm, "")
+    .trim();

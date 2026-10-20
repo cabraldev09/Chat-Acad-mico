@@ -118,7 +118,19 @@ const CreateMessageService = async ({
     }
   }
 
-  await dispatchWebhook(message.fromMe ? "message.sent" : "message.received", {
+  // the screens hear about the message first: nobody waits for the webhook queue to see what arrived
+  const io = getIO();
+  io.to(message.ticketId.toString())
+    .to(message.ticket.status)
+    .to("notification")
+    .emit("appMessage", {
+      action: "create",
+      message,
+      ticket: message.ticket,
+      contact: message.ticket.contact
+    });
+
+  dispatchWebhook(message.fromMe ? "message.sent" : "message.received", {
     messageId: message.id,
     ticketId: message.ticketId,
     body: message.body,
@@ -131,18 +143,7 @@ const CreateMessageService = async ({
       number: message.ticket.contact.number
     },
     channel: message.ticket.whatsapp?.channel
-  });
-
-  const io = getIO();
-  io.to(message.ticketId.toString())
-    .to(message.ticket.status)
-    .to("notification")
-    .emit("appMessage", {
-      action: "create",
-      message,
-      ticket: message.ticket,
-      contact: message.ticket.contact
-    });
+  }).catch(() => undefined);
 
   return message;
 };

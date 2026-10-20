@@ -67,6 +67,7 @@ const Affiliates = () => {
   return (
     <MainContainer>
       <MainHeader><Title>Afiliados</Title></MainHeader>
+      <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
       <SupportPhone />
       <Paper variant="outlined" style={{ marginBottom: 12 }}>
         <Tabs value={tab} onChange={(e, v) => { setTab(v); history.replace(`/afiliados?aba=${tabs[v][0]}`); }} variant="scrollable" scrollButtons="auto" indicatorColor="primary" textColor="primary">
@@ -75,6 +76,7 @@ const Affiliates = () => {
       </Paper>
       <div className={`${classes.page} page-enter`} key={current[0]}>
         <SectionBoundary name={current[0]} resetKey={tab}><Current /></SectionBoundary>
+      </div>
       </div>
     </MainContainer>
   );
