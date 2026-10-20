@@ -1,4 +1,5 @@
 import axios from "axios";
+import { logger } from "../../../utils/logger";
 import { anthropicAccess } from "../../../services/AiServices/Keys";
 import type { DetectedRow } from "./table-detector";
 import type { LocalExtraction } from "./parser";
@@ -46,9 +47,26 @@ const BOX = { x: 0, y: 0, w: 0, h: 0 };
 
 export const noTextLayer = (local: LocalExtraction): boolean => local.pageCount > 0 && local.textByPage.every(t => !String(t || "").trim());
 
+// why the model could not read it, in words the person can act on (the technical reason also goes to the log)
+export class VisionFailure extends Error {}
+
+const reasonOf = (err: any): string => {
+  const status = Number(err?.response?.status || 0);
+  const detail = String(err?.response?.data?.error?.message || err?.message || "").slice(0, 200);
+  logger.warn(`Análise curricular: leitura do PDF sem texto falhou (${status || "sem resposta"}): ${detail}`);
+  if (status === 401 || status === 403) return "a chave de IA foi recusada pelo provedor";
+  if (status === 429) return "o limite ou o saldo da IA acabou";
+  if (status === 404 || status === 400) return `o provedor recusou o pedido (${detail || status})`;
+  return "a IA não respondeu a tempo";
+};
+
 export const readWithVision = async (bytes: Buffer, pageCount: number): Promise<LocalExtraction | null> => {
   const { apiKey } = await anthropicAccess();
-  if (!apiKey) return null;
+  if (!apiKey) {
+    logger.warn("Análise curricular: PDF sem texto e nenhuma chave da Anthropic cadastrada");
+    throw new VisionFailure("não há chave de IA da Anthropic cadastrada (Configurações ou um agente da Anthropic)");
+  }
+  let failure = "";
   let input: any = null;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
@@ -72,10 +90,14 @@ export const readWithVision = async (bytes: Buffer, pageCount: number): Promise<
       const off = (got.exemptedTotal && got.exemptedTotal !== got.exempted.length) || (got.pendingTotal && got.pendingTotal !== got.pending.length);
       if (!off) break;
     } catch (err) {
-      // keep what the first try gave
+      failure = reasonOf(err);
     }
   }
-  if (!input) return null;
+  if (!input) {
+    if (failure) throw new VisionFailure(failure);
+    logger.warn("Análise curricular: a IA não devolveu as disciplinas do PDF sem texto");
+    return null;
+  }
 
   const entry = Number(input.entryPeriod) >= 1 && Number(input.entryPeriod) <= 20 ? Number(input.entryPeriod) : 1;
   const rows: DetectedRow[] = [];

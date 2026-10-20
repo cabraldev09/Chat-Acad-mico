@@ -34,7 +34,7 @@ import { normalizeExtraction } from "./services/pipeline/normalize";
 import { readHeaderMetadata } from "./services/pipeline/cross-check";
 import { parsePdf, type LocalExtraction } from "./services/pdf/parser";
 import { effectiveRows } from "./services/pdf/table-detector";
-import { noTextLayer, readWithVision } from "./services/pdf/vision";
+import { VisionFailure, noTextLayer, readWithVision } from "./services/pdf/vision";
 import type { CurriculumExtraction } from "./services/openai/schemas";
 
 // Everything here is local and deterministic: the PDF is read with pdf.js, the numbers come from the academic engine.
@@ -121,7 +121,13 @@ export const readCurricularPdf = async (bytes: Buffer): Promise<CurricularRead> 
   let data = extractionFromTable(local);
   // a printout with no text at all (the letters are drawn as shapes): the model reads the pages, and the result goes through the same checks
   if (!data && noTextLayer(local)) {
-    const seen = await readWithVision(bytes, local.pageCount);
+    let seen: LocalExtraction | null = null;
+    try {
+      seen = await readWithVision(bytes, local.pageCount);
+    } catch (err) {
+      if (err instanceof VisionFailure) throw new AnalysisError(`Este PDF não tem texto selecionável e não consegui lê-lo: ${err.message}.`);
+      throw err;
+    }
     if (seen) {
       local = seen;
       data = extractionFromTable(local);
