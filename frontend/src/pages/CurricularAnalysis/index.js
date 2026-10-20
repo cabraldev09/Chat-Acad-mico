@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useHistory, useParams } from "react-router-dom";
 import { toast } from "react-toastify";
-import { ArrowDown, Check, ChevronDown, ClipboardCopy, HelpCircle, Search, SlidersHorizontal, Trash2, X } from "lucide-react";
+import { ArrowDown, Check, ChevronDown, ClipboardCopy, HelpCircle, Loader2, Search, SlidersHorizontal, Trash2, X } from "lucide-react";
 
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
@@ -28,6 +28,28 @@ const MAX_MB = 20;
 
 // the term the forecast starts from while nobody types another one (the same in the server)
 const DEFAULT_TERM = "2026.2";
+
+// seconds since the reading started (the loading element says how long it has been and what is going on)
+const useElapsed = (on) => {
+  const [sec, setSec] = useState(0);
+  useEffect(() => {
+    if (!on) { setSec(0); return undefined; }
+    const t = setInterval(() => setSec((x) => x + 1), 1000);
+    return () => clearInterval(t);
+  }, [on]);
+  return sec;
+};
+
+const Reading = ({ sec }) => (
+  <span className="mt-2 flex w-full max-w-md flex-col items-center gap-2" role="status" aria-live="polite">
+    <span className="inline-flex items-center gap-2 text-sm font-medium text-brand-navy">
+      <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+      {sec < 4 ? "Enviando o PDF…" : sec < 45 ? "Lendo a grade e calculando a previsão…" : "Ainda lendo: PDF sem texto leva mais tempo…"}
+      <span className="tabular-nums text-muted-foreground">{sec}s</span>
+    </span>
+    <span className="h-1.5 w-full overflow-hidden rounded-full bg-brand-navy-50"><span className="block h-full w-1/3 animate-pulse rounded-full bg-brand-navy" style={{ marginLeft: `${Math.min(66, sec * 2)}%`, transition: "margin-left 1s linear" }} /></span>
+  </span>
+);
 
 const selectClass = "block h-10 w-full appearance-none whitespace-nowrap rounded-md border border-slate-200 bg-white px-3 pr-10 text-sm font-normal text-slate-800 outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
@@ -73,6 +95,7 @@ const UploadCard = ({ onCreated }) => {
   const [poloId, setPoloId] = useState("");
   const [polos, setPolos] = useState([]);
   const [busy, setBusy] = useState(false);
+  const sec = useElapsed(busy);
 
   const choose = (candidate) => {
     if (!candidate || busy) return;
@@ -114,7 +137,8 @@ const UploadCard = ({ onCreated }) => {
         <input ref={inputRef} type="file" accept="application/pdf,.pdf" className="hidden" onChange={(e) => { if (e.target.files.length === 1) choose(e.target.files[0]); }} />
         <span className="rounded-lg border bg-brand-navy-50 px-3 py-1 text-xs font-bold tracking-[0.16em] text-brand-navy">PDF</span>
         <strong className="mt-3 max-w-full break-all text-base">{file ? file.name : "Envie o PDF da análise curricular"}</strong>
-        <span className="mt-1 text-sm text-muted-foreground">{busy ? "Lendo a grade e calculando a previsão…" : file ? `${(file.size / 1024 / 1024).toFixed(2)} MB · clique para trocar` : `Arraste o documento para cá ou selecione um arquivo · até ${MAX_MB} MB`}</span>
+        {busy && <Reading sec={sec} />}
+        {!busy && <span className="mt-1 text-sm text-muted-foreground">{file ? `${(file.size / 1024 / 1024).toFixed(2)} MB · clique para trocar` : `Arraste o documento para cá ou selecione um arquivo · até ${MAX_MB} MB`}</span>}
       </div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <label className="block text-xs font-semibold text-slate-600">Nome do aluno

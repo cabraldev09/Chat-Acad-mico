@@ -1,4 +1,5 @@
 import axios from "axios";
+import { createHash } from "crypto";
 import { execFile } from "child_process";
 import { promises as fs } from "fs";
 import os from "os";
@@ -55,6 +56,10 @@ const BOX = { x: 0, y: 0, w: 0, h: 0 };
 export const noTextLayer = (local: LocalExtraction): boolean => local.pageCount > 0 && local.textByPage.every(t => !String(t || "").trim());
 
 // why the model could not read it, in words the person can act on (the technical reason also goes to the log)
+// the same file read again within the hour is not paid for twice
+const READ_CACHE = new Map<string, { at: number; input: any }>();
+const READ_CACHE_MS = 3600000;
+
 export class VisionFailure extends Error {}
 
 const reasonOf = (err: any): string => {
@@ -136,24 +141,43 @@ export const readWithVision = async (bytes: Buffer, pageCount: number): Promise<
   let failure = "";
   let input: any = null;
   let hint = "";
-  const pages = pageCount <= 12 ? await renderPages(bytes) : null;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    try {
-      // eslint-disable-next-line no-await-in-loop
-      const got = await askModel(bytes, pages, anthropicKey, openaiKey, hint);
-      if (!got || !Array.isArray(got.exempted) || !Array.isArray(got.pending)) continue;
-      input = got;
-      // the rows must agree with the totals written in the headings: otherwise the model is told and tries again
-      const wantE = Number(got.exemptedTotal) || 0;
-      const wantP = Number(got.pendingTotal) || 0;
-      const offE = wantE > 0 && wantE !== got.exempted.length;
-      const offP = wantP > 0 && wantP !== got.pending.length;
-      if (!offE && !offP) { failure = ""; break; }
-      failure = `a leitura não bateu com os totais do documento (${got.exempted.length} de ${wantE} dispensadas e ${got.pending.length} de ${wantP} a cursar)`;
-      hint = `Na tentativa anterior você registrou ${got.exempted.length} dispensadas e ${got.pending.length} a cursar, mas os títulos do documento dizem ${wantE} e ${wantP}. Releia as páginas com atenção, sem omitir nem inventar linhas.`;
-    } catch (err) {
-      failure = reasonOf(err);
+  const key = createHash("sha256").update(bytes).digest("hex");
+  const cached = READ_CACHE.get(key);
+  if (cached && Date.now() - cached.at < READ_CACHE_MS) {
+    input = cached.input;
+  } else {
+    const pages = pageCount <= 12 ? await renderPages(bytes) : null;
+    // every page is read at the same time (a few seconds each, instead of one long answer for the whole document)
+    const readAll = async (extra: string): Promise<any> => {
+      if (!pages) return askModel(bytes, null, anthropicKey, openaiKey, extra);
+      const got = await Promise.all(pages.map((p, i) => askModel(bytes, [p], anthropicKey, openaiKey, `Esta é a página ${i + 1} de ${pages.length}: registre só as linhas desta página (ela pode ter só uma das listas, ou nenhuma). ${extra}`.trim())));
+      const some = <T>(pick: (g: any) => T | undefined | null): T | undefined => got.map(g => (g ? pick(g) : undefined)).find(v => v !== undefined && v !== null && (v as any) !== "" && (v as any) !== 0) as T | undefined;
+      return {
+        course: some(g => g.course), campus: some(g => g.campus), entryPeriod: some(g => g.entryPeriod),
+        exemptedTotal: some(g => g.exemptedTotal), pendingTotal: some(g => g.pendingTotal),
+        exempted: got.flatMap(g => (g && Array.isArray(g.exempted) ? g.exempted : [])),
+        pending: got.flatMap(g => (g && Array.isArray(g.pending) ? g.pending : []))
+      };
+    };
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        const got = await readAll(hint);
+        if (!got || !Array.isArray(got.exempted) || !Array.isArray(got.pending)) continue;
+        input = got;
+        // the rows must agree with the totals written in the headings: otherwise the model is told and tries again
+        const wantE = Number(got.exemptedTotal) || 0;
+        const wantP = Number(got.pendingTotal) || 0;
+        const offE = wantE > 0 && wantE !== got.exempted.length;
+        const offP = wantP > 0 && wantP !== got.pending.length;
+        if (!offE && !offP) { failure = ""; break; }
+        failure = `a leitura não bateu com os totais do documento (${got.exempted.length} de ${wantE} dispensadas e ${got.pending.length} de ${wantP} a cursar)`;
+        hint = `Na tentativa anterior o total foi ${got.exempted.length} dispensadas e ${got.pending.length} a cursar, mas os títulos do documento dizem ${wantE} e ${wantP}. Releia com atenção, sem omitir nem inventar linhas.`;
+      } catch (err) {
+        failure = reasonOf(err);
+      }
     }
+    if (!failure && input) READ_CACHE.set(key, { at: Date.now(), input });
   }
   // a reading that never agreed with the totals of the document is not used: a wrong forecast is worse than none
   if (failure) throw new VisionFailure(failure);
