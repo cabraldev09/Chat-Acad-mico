@@ -279,3 +279,17 @@ describe("periodUnit = YEAR (cursos anuais)", () => {
     expect(n.conclusionLine).toContain("calendário projetado");
   });
 });
+
+describe("dispensadas sem série (resultado unificado)", () => {
+  it("não aumentam o tamanho do período de ingresso nem a capacidade do semestre", () => {
+    // ingresso no 3º: 3º e 4º com 5 disciplinas pendentes; 1º e 2º com 4 pendentes cada (backlog 8) e 12 dispensadas sem série
+    const subjects = [...makePeriod(1, 4, 0), ...makePeriod(2, 4, 0), ...makePeriod(3, 5, 0), ...makePeriod(4, 5, 0)];
+    const unknown = Array.from({ length: 12 }, (_, i) => ({ ...makeSubject({ period: 3, status: "EXEMPTED", usedSubject: `X${i}` }), periodKnown: false }));
+    const withUnknown = simulateCurriculum({ subjects: [...subjects, ...unknown], entryPeriod: 3, startTerm: "2026.2", rules: rules() });
+    const without = simulateCurriculum({ subjects, entryPeriod: 3, startTerm: "2026.2", rules: rules() });
+    // capacity = disciplines of the period + 3 extras, with or without the exempted ones that have no série
+    expect(withUnknown.semesters[0].maximumCapacity).toBe(8);
+    expect(withUnknown.semesters.map((s) => s.maximumCapacity)).toEqual(without.semesters.map((s) => s.maximumCapacity));
+    expect(withUnknown.semesters.map((s) => s.semesterLoad)).toEqual(without.semesters.map((s) => s.semesterLoad));
+  });
+});

@@ -268,10 +268,38 @@ const SummaryCards = ({ a }) => {
   );
 };
 
-const GradeByPeriod = ({ subjects, entryPeriod }) => {
+// the list of exempted subjects of the unified result does not tell their série: they are shown apart, not inside the period of entry
+const noSerie = (s) => s.periodKnown === false;
+
+const SubjectList = ({ list }) => (
+  <ul className="divide-y">
+    {list.map((s) => (
+      <li key={s.id} className="flex items-start gap-3 px-4 py-2.5">
+        <div className="mt-0.5"><StatusIcon status={s.status} /></div>
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-medium leading-tight">{s.name}</div>
+          <div className="text-xs text-muted-foreground">{STATUS_LABEL[s.status]} · {s.workload}h{s.usedSubject && <> · Utilizada: <span className="text-foreground">{s.usedSubject}</span></>}</div>
+        </div>
+      </li>
+    ))}
+  </ul>
+);
+
+const GradeByPeriod = ({ subjects: all, entryPeriod }) => {
+  const subjects = all.filter((s) => !noSerie(s));
+  const apart = all.filter(noSerie);
   const periods = [...new Set(subjects.map((s) => s.period))].sort((a, b) => a - b);
   return (
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      {apart.length > 0 && (
+        <div className="rounded-xl border bg-card shadow-sm">
+          <div className="flex items-center justify-between border-b px-4 py-2.5">
+            <div className="font-semibold">DISPENSADAS</div>
+            <div className="text-xs text-muted-foreground">{apart.length} sem série no PDF</div>
+          </div>
+          <SubjectList list={apart} />
+        </div>
+      )}
       {periods.map((p) => {
         const list = subjects.filter((s) => s.period === p);
         const exempted = list.filter((s) => s.status === "EXEMPTED").length;
@@ -287,17 +315,7 @@ const GradeByPeriod = ({ subjects, entryPeriod }) => {
                 {isBefore && <span className="ml-2 rounded bg-status-neutral-bg px-1.5 py-0.5">anterior</span>}
               </div>
             </div>
-            <ul className="divide-y">
-              {list.map((s) => (
-                <li key={s.id} className="flex items-start gap-3 px-4 py-2.5">
-                  <div className="mt-0.5"><StatusIcon status={s.status} /></div>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm font-medium leading-tight">{s.name}</div>
-                    <div className="text-xs text-muted-foreground">{STATUS_LABEL[s.status]} · {s.workload}h{s.usedSubject && <> · Utilizada: <span className="text-foreground">{s.usedSubject}</span></>}</div>
-                  </div>
-                </li>
-              ))}
-            </ul>
+            <SubjectList list={list} />
           </div>
         );
       })}
@@ -309,8 +327,8 @@ const GradeTable = ({ subjects, onStatus }) => {
   const [filter, setFilter] = useState("ALL");
   const [period, setPeriod] = useState("ALL");
   const [q, setQ] = useState("");
-  const periods = [...new Set(subjects.map((s) => s.period))].sort((a, b) => a - b);
-  const rows = subjects.filter((s) => (filter === "ALL" || s.status === filter) && (period === "ALL" || String(s.period) === period) && (!q.trim() || String(s.name || "").toLowerCase().includes(q.trim().toLowerCase())));
+  const periods = [...new Set(subjects.filter((s) => !noSerie(s)).map((s) => s.period))].sort((a, b) => a - b);
+  const rows = subjects.filter((s) => (filter === "ALL" || s.status === filter) && (period === "ALL" || (period === "none" ? noSerie(s) : !noSerie(s) && String(s.period) === period)) && (!q.trim() || String(s.name || "").toLowerCase().includes(q.trim().toLowerCase())));
   const FILTERS = [["ALL", "Todas"], ["EXEMPTED", "Dispensadas"], ["PENDING", "Pendentes"], ["REVIEW", "Revisar"]];
   return (
     <div className="space-y-3">
@@ -323,7 +341,7 @@ const GradeTable = ({ subjects, onStatus }) => {
           ))}
         </div>
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
-          <Select value={period} onChange={(e) => setPeriod(e.target.value)} className="w-40"><option value="ALL">Todos os períodos</option>{periods.map((p) => <option key={p} value={p}>{p}º período</option>)}</Select>
+          <Select value={period} onChange={(e) => setPeriod(e.target.value)} className="w-40"><option value="ALL">Todos os períodos</option>{periods.map((p) => <option key={p} value={p}>{p}º período</option>)}{subjects.some(noSerie) && <option value="none">Dispensadas sem série</option>}</Select>
           <span className="relative block w-full sm:w-56"><Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar disciplina" className="h-10 bg-white pl-9" /></span>
         </div>
       </div>

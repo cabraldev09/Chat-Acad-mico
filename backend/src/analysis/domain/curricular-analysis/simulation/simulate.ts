@@ -104,7 +104,9 @@ export interface SimulateCurriculumInput {
  */
 export function simulateCurriculum(input: SimulateCurriculumInput): SimulationResult {
   const { subjects, entryPeriod, rules } = input;
-  const grouped = groupSubjectsByPeriod(subjects);
+  // the exempted subjects whose série the document does not tell (unified result) are in no period: counting them in the period of entry
+  // would inflate its size, and with it the capacity of the semester (period + extras)
+  const grouped = groupSubjectsByPeriod(subjects.filter((s) => s.periodKnown !== false));
   const periods = [...grouped.keys()];
   const lastPeriod = periods.length ? Math.max(...periods) : entryPeriod - 1;
 

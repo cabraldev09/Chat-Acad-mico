@@ -18,6 +18,8 @@ export interface SubjectRow {
   sourceRow: number;
   /** Ordem original no documento. */
   sortIndex: number;
+  /** false: a lista de dispensadas do resultado unificado não informa a série; o período é só um valor de entrada e não conta como disciplina do período. */
+  periodKnown?: boolean;
 }
 
 export interface CurriculumTotals {

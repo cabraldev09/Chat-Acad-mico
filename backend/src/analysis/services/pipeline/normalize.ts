@@ -18,6 +18,7 @@ export interface NormalizedSubject {
   bbox: { page: number; x: number; y: number; w: number; h: number; pageWidth: number; pageHeight: number } | null;
   note: string | null;
   sortIndex: number;
+  periodKnown: boolean;
 }
 
 function cleanName(s: string): string {
@@ -131,6 +132,7 @@ export function normalizeExtraction(
       bbox: findBoundingBox(local, s, name, code),
       note: confirmedUnifiedExemption ? null : s.note,
       sortIndex: index,
+      periodKnown: !confirmedUnifiedExemption,
     };
   });
 }

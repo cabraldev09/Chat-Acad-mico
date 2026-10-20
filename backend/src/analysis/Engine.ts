@@ -154,6 +154,7 @@ export const readCurricularPdf = async (bytes: Buffer): Promise<CurricularRead> 
     sourcePage: n.sourcePage,
     sourceRow: n.sourceRow,
     sortIndex: n.sortIndex,
+    periodKnown: n.periodKnown,
     bbox: n.bbox,
     note: n.note
   }));
