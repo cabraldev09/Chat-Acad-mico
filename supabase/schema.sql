@@ -1821,7 +1821,8 @@ CREATE TABLE public."Leads" (
     "affiliateId" integer,
     "reenrolledTerm" character varying(10),
     "reenrolledAt" timestamp with time zone,
-    "onboardingChecklist" text
+    "onboardingChecklist" text,
+    "practicePoloId" integer
 );
 
 
@@ -2128,7 +2129,9 @@ CREATE TABLE public."Polos" (
     state character varying(2),
     active boolean DEFAULT true NOT NULL,
     "createdAt" timestamp with time zone NOT NULL,
-    "updatedAt" timestamp with time zone NOT NULL
+    "updatedAt" timestamp with time zone NOT NULL,
+    "enrollsSemipresencial" boolean DEFAULT false NOT NULL,
+    "enrollPoloId" integer
 );
 
 
@@ -5211,6 +5214,14 @@ ALTER TABLE ONLY public."Leads"
 
 
 --
+-- Name: Leads Leads_practicePoloId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."Leads"
+    ADD CONSTRAINT "Leads_practicePoloId_fkey" FOREIGN KEY ("practicePoloId") REFERENCES public."Polos"(id) ON UPDATE CASCADE ON DELETE SET NULL;
+
+
+--
 -- Name: Leads Leads_stageId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5304,6 +5315,14 @@ ALTER TABLE ONLY public."PoloMembers"
 
 ALTER TABLE ONLY public."PoloMembers"
     ADD CONSTRAINT "PoloMembers_userId_fkey" FOREIGN KEY ("userId") REFERENCES public."Users"(id) ON DELETE CASCADE;
+
+
+--
+-- Name: Polos Polos_enrollPoloId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."Polos"
+    ADD CONSTRAINT "Polos_enrollPoloId_fkey" FOREIGN KEY ("enrollPoloId") REFERENCES public."Polos"(id) ON UPDATE CASCADE ON DELETE SET NULL;
 
 
 --
@@ -5888,6 +5907,8 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261125000001-onboarding-checklist.
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261126000001-polo-coverage.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261126000002-lead-commercial-ready.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261127000001-indexes.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261127000002-polo-coverage-rondonia.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261127000002-polo-enrollment.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

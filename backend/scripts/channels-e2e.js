@@ -5352,6 +5352,56 @@ const postMeta = (id, payload, secret, badSig) => {
       const tc = await handoff(c, null);
       assert(sql(`SELECT queueId FROM Tickets WHERE id=${tc}`) === alfaQueue && sql(`SELECT userId FROM Tickets WHERE id=${tc}`) === String(cons.id), "a lead without a polo did not land on the reserve queue chosen by the manager");
     });
+    await test("the polos of Rondônia come with their cities (nearest polo) and semipresencial courses enroll only at the released polos", async () => {
+      const mk = async (code, name) => (await http.post("/polos", { code, name, state: "RO" }, auth())).data;
+      const pvh = await mk("7001", "Porto Velho - Centro - RO");
+      const pvh2 = await mk("7002", "Porto Velho (Juscelino Kubitschek) - RO");
+      const vil = await mk("7003", "Vilhena - Centro (S-01) - RO");
+      const mir = await mk("7004", "Mirante da Serra - Centro - RO");
+      const bur = await mk("7005", "Buritis - Setor 02 - RO");
+      const run = body => {
+        const script = `
+          const http = require("http");
+          require("./dist/database");
+          const { initIO } = require("./dist/libs/socket");
+          initIO(http.createServer());
+          (async () => { ${body} process.exit(0); })().catch(e => { console.error(e); process.exit(1); });`;
+        return execFileSync("node", ["-e", script], { cwd: ROOT, env: { ...env, LOG_LEVEL: "error" } }).toString().trim().split("\n").pop();
+      };
+      run(`await require("./dist/services/PoloServices/SeedCoverage").seedPoloCoverage();`);
+      const poloOf = city => sql(`SELECT p.name FROM PoloCoverages c JOIN Polos p ON p.id = c.poloId WHERE c.cityKey = '${city}' AND c.state = 'RO'`);
+      assert(/^Mirante da Serra/.test(poloOf("ji parana")) && /^Mirante da Serra/.test(poloOf("jaru")), "Ji-Paraná and Jaru go to Mirante da Serra");
+      assert(/^Buritis/.test(poloOf("ariquemes")), "Ariquemes goes to Buritis");
+      assert(/^Porto Velho - Centro/.test(poloOf("nova mamore")) && /^Porto Velho - Centro/.test(poloOf("guajara mirim")), "the towns around Porto Velho go to its main polo (a city a test already placed stays where it is)");
+      assert(poloOf("porto velho") === "", "Porto Velho itself is not forced onto one of the two polos");
+      assert(sql(`SELECT COUNT(*) FROM Polos WHERE id IN (${pvh.id}, ${pvh2.id}, ${vil.id}, ${mir.id}, ${bur.id}) AND (city IS NULL OR city = '')`) === "0", "a polo kept an empty city");
+      // only Porto Velho and Vilhena enroll semipresencial; the others point to the nearest of them
+      assert(sql(`SELECT enrollsSemipresencial::int FROM Polos WHERE id=${pvh.id}`) === "1" && sql(`SELECT enrollsSemipresencial::int FROM Polos WHERE id=${pvh2.id}`) === "1" && sql(`SELECT enrollsSemipresencial::int FROM Polos WHERE id=${vil.id}`) === "1", "the released polos");
+      assert(sql(`SELECT enrollPoloId FROM Polos WHERE id=${mir.id}`) === String(pvh.id) && sql(`SELECT enrollPoloId FROM Polos WHERE id=${bur.id}`) === String(pvh.id), "Mirante da Serra and Buritis send their students to Porto Velho");
+      // running it again changes nothing, and what a person edited stays
+      await http.put(`/polos/${mir.id}`, { name: "Mirante da Serra - Centro - RO", state: "RO", enrollPoloId: vil.id }, auth());
+      run(`await require("./dist/services/PoloServices/SeedCoverage").seedPoloCoverage();`);
+      assert(sql(`SELECT enrollPoloId FROM Polos WHERE id=${mir.id}`) === String(vil.id), "an edited destination was overwritten");
+
+      // a lead of Mirante da Serra: semipresencial (teaching) enrolls at the released polo, EAD stays at the polo of the city
+      const ped = (await http.post("/courses", { name: "Pedagogia Semipresencial Teste", modality: "Semipresencial", category: "Graduação - Cruzeiro", semesters: 8, monthlyFee: 500, active: true }, auth())).data;
+      const adm = (await http.post("/courses", { name: "Administracao Polo Teste", modality: "EAD", category: "Graduação - Cruzeiro", semesters: 8, monthlyFee: 500, active: true }, auth())).data;
+      const stageId = sql(`SELECT id FROM LeadStages ORDER BY position LIMIT 1`);
+      const lead = (name, course) => sql(`INSERT INTO Leads (name, stageId, courseId, createdAt, updatedAt) VALUES ('${name}', ${stageId}, ${course}, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const l1 = lead("Aluna Semi", ped.id);
+      const l2 = lead("Aluno EAD", adm.id);
+      const out = JSON.parse(run(`
+        const Lead = require("./dist/models/Lead").default; const Polo = require("./dist/models/Polo").default;
+        const { enrollmentPoloFor } = require("./dist/services/CommercialServices/Router");
+        const city = await Polo.findByPk(${mir.id});
+        const a = await enrollmentPoloFor(await Lead.findByPk(${l1}), city);
+        const b = await enrollmentPoloFor(await Lead.findByPk(${l2}), city);
+        const c = await enrollmentPoloFor(await Lead.findByPk(${l1}), await Polo.findByPk(${vil.id}));
+        console.log(JSON.stringify({ a: [a.polo.id, a.cityPolo && a.cityPolo.id], b: [b.polo.id, b.cityPolo && b.cityPolo.id], c: [c.polo.id, c.cityPolo && c.cityPolo.id] }));`));
+      assert(out.a[0] === vil.id && out.a[1] === mir.id, `semipresencial lead of Mirante da Serra: ${JSON.stringify(out.a)}`);
+      assert(out.b[0] === mir.id && out.b[1] === null, `EAD lead stays at the polo of the city: ${JSON.stringify(out.b)}`);
+      assert(out.c[0] === vil.id && out.c[1] === null, `a lead already in a released polo stays: ${JSON.stringify(out.c)}`);
+    });
     await test("login is rate limited", async () => {
       let limited = false;
       for (let i = 0; i < 120 && !limited; i += 1) {

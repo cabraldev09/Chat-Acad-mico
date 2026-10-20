@@ -6,6 +6,7 @@ import TicketEvent from "../../models/TicketEvent";
 import { logger } from "../../utils/logger";
 import { addActivity } from "../CrmServices/LeadCore";
 import Message from "../../models/Message";
+import Polo from "../../models/Polo";
 import { briefOf, hashOf } from "./Rules";
 import { CommercialState, loadState, saveState } from "./Slots";
 
@@ -23,7 +24,7 @@ export const saveBrief = async (ticketId: number, lead: Lead, state: CommercialS
 };
 
 // what the consultant also wants to see: where the lead came from and the last things the lead wrote (short, in their own words)
-export const briefContext = async (ticketId: number | null, lead: Lead | null): Promise<{ source: string | null; lastMessages: string[] }> => {
+export const briefContext = async (ticketId: number | null, lead: Lead | null): Promise<{ source: string | null; lastMessages: string[]; enrollPolo: string | null; cityPolo: string | null }> => {
   const source = lead ? [lead.source, lead.utmCampaign ? `campanha ${lead.utmCampaign}` : null].filter(Boolean).join(" · ") || null : null;
   let lastMessages: string[] = [];
   if (ticketId) {
@@ -34,7 +35,15 @@ export const briefContext = async (ticketId: number | null, lead: Lead | null): 
       .map(b => (b.length > 140 ? `${b.slice(0, 137)}...` : b))
       .reverse();
   }
-  return { source, lastMessages };
+  // semipresencial course: where the student enrolls and the polo of the city
+  let enrollPolo: string | null = null;
+  let cityPolo: string | null = null;
+  if (lead?.practicePoloId && lead.poloId) {
+    const [e, c] = await Promise.all([Polo.findByPk(lead.poloId, { attributes: ["name"] }), Polo.findByPk(lead.practicePoloId, { attributes: ["name"] })]);
+    enrollPolo = e?.name || null;
+    cityPolo = c?.name || null;
+  }
+  return { source, lastMessages, enrollPolo, cityPolo };
 };
 
 // For the exits that go to the team without a block of handoff in the flow: when the lead has a commercial state, the brief goes too.

@@ -360,6 +360,10 @@ export const applyToLead = async (ticket: Ticket, c: Record<string, string>): Pr
   if (newPolo) {
     const { assignToPolo } = await import("../CommercialServices/Router");
     await assignToPolo(ticket, lead, newPolo);
+  } else if (patch.courseId) {
+    // the course came after the city: a semipresencial course may enroll at another polo
+    const { refreshEnrollmentPolo } = await import("../CommercialServices/Router");
+    await refreshEnrollmentPolo(ticket, lead);
   }
   return lead;
 };

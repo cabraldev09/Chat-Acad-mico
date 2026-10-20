@@ -47,7 +47,9 @@ const clean = (b: any) => {
     code: b.code ? String(b.code).trim() : null,
     city: b.city ? String(b.city).trim() : null,
     state,
-    active: b.active === undefined ? true : Boolean(b.active)
+    active: b.active === undefined ? true : Boolean(b.active),
+    enrollsSemipresencial: Boolean(b.enrollsSemipresencial),
+    enrollPoloId: Number(b.enrollPoloId) || null
   };
 };
 
@@ -70,7 +72,9 @@ export const update = async (req: Request, res: Response): Promise<Response> => 
   if (data.code && data.code !== polo.code && (await Polo.findOne({ where: { code: data.code } }))) {
     throw new AppError("ERR_POLO_CODE_DUPLICATED", 409);
   }
+  if (data.enrollPoloId === polo.id) data.enrollPoloId = null;
   await polo.update(data);
+  forgetPolos();
   await syncPoloQueues(polo);
   forgetPolos();
   return res.json(await reload(polo.id));

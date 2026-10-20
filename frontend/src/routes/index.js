@@ -126,7 +126,8 @@ const Routes = () => {
                 <Route exact path="/chatbot/:id" component={FlowBuilder} isPrivate managerOnly />
                 <Route exact path="/ai-agents/blocos/:id" component={FlowBuilder} isPrivate managerOnly />
                 <Route exact path="/ai-agents/:id/central" component={AiAgentCentral} isPrivate managerOnly />
-                <Redirect exact from="/ai-agents/:id/melhorar" to="/ai-agents/:id/central?secao=ensinar" />
+                {/* the old address of the improvement board: inside the layout every Route renders on its own, so the redirect needs its own path */}
+                <Route exact path="/ai-agents/:id/melhorar" component={({ match }) => <Redirect to={`/ai-agents/${match.params.id}/central?secao=ensinar`} />} isPrivate managerOnly />
                 <Route exact path="/chatbot-antigo" component={LegacyChatbot} isPrivate managerOnly />
                 <Route exact path="/ai-agents" component={AiAgents} isPrivate managerOnly />
                 <Route exact path="/integrations" component={Webhooks} isPrivate adminOnly />

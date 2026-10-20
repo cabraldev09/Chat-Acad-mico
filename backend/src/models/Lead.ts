@@ -224,6 +224,11 @@ class Lead extends Model<Lead> {
   @BelongsTo(() => Polo)
   polo: Polo;
 
+  // semipresencial course: `poloId` is where the student enrolls and this is the polo of the city, where the practical classes are meant to happen
+  @AllowNull(true)
+  @Column
+  practicePoloId: number;
+
   @ForeignKey(() => Contact)
   @Column
   contactId: number;

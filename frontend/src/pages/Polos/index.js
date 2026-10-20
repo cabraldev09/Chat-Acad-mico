@@ -52,12 +52,12 @@ const useStyles = makeStyles((theme) => ({
   dot: { width: 10, height: 10, borderRadius: "50%", flex: "none" },
 }));
 
-const PoloForm = ({ open, polo, onClose, onSaved }) => {
-  const [v, setV] = useState({ code: "", name: "", city: "", state: "", active: true });
+const PoloForm = ({ open, polo, polos, onClose, onSaved }) => {
+  const [v, setV] = useState({ code: "", name: "", city: "", state: "", active: true, enrollsSemipresencial: false, enrollPoloId: "" });
   const [cities, setCities] = useState("");
   const [busy, setBusy] = useState(false);
   useEffect(() => {
-    setV(polo ? { code: polo.code || "", name: polo.name || "", city: polo.city || "", state: polo.state || "", active: !!polo.active } : { code: "", name: "", city: "", state: "RO", active: true });
+    setV(polo ? { code: polo.code || "", name: polo.name || "", city: polo.city || "", state: polo.state || "", active: !!polo.active, enrollsSemipresencial: !!polo.enrollsSemipresencial, enrollPoloId: polo.enrollPoloId || "" } : { code: "", name: "", city: "", state: "RO", active: true, enrollsSemipresencial: false, enrollPoloId: "" });
     setCities("");
     // the other cities this polo serves (the agent sends a lead of those cities to this polo's commercial team)
     if (polo && open) api.get(`/polos/${polo.id}/coverage`).then(({ data }) => setCities(data.map((r) => `${r.city}${r.state ? ` - ${r.state}` : ""}`).join("\n"))).catch(() => undefined);
@@ -94,6 +94,17 @@ const PoloForm = ({ open, polo, onClose, onSaved }) => {
           control={<Switch color="primary" checked={v.active} onChange={(e) => setV({ ...v, active: e.target.checked })} />}
           label={<span>Polo ativo <b style={{ fontSize: 12, color: v.active ? "#15803d" : "#64748b" }}>{v.active ? "• ligado" : "• desligado"}</b></span>}
         />
+        <FormControlLabel
+          control={<Switch color="primary" checked={v.enrollsSemipresencial} onChange={(e) => setV({ ...v, enrollsSemipresencial: e.target.checked, enrollPoloId: e.target.checked ? "" : v.enrollPoloId })} />}
+          label={<span>Matricula cursos semipresenciais <b style={{ fontSize: 12, color: v.enrollsSemipresencial ? "#15803d" : "#64748b" }}>{v.enrollsSemipresencial ? "• liberado" : "• não liberado"}</b></span>}
+        />
+        {!v.enrollsSemipresencial && (
+          <TextField select fullWidth variant="outlined" margin="dense" label="Quem se matricula em curso semipresencial vai para" value={v.enrollPoloId} onChange={(e) => setV({ ...v, enrollPoloId: e.target.value })}
+            helperText="Saúde, engenharias e licenciaturas só se matriculam nos polos liberados. Escolha o polo liberado mais perto: a conversa vai para a equipe dele, e este polo fica anotado como o das aulas práticas.">
+            <MenuItem value="">Nenhum (usa o primeiro polo liberado)</MenuItem>
+            {(polos || []).filter((p) => p.enrollsSemipresencial && (!polo || p.id !== polo.id)).map((p) => (<MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>))}
+          </TextField>
+        )}
         {!polo && <Typography variant="caption" color="textSecondary" display="block">Ao salvar, o sistema cria as filas Comercial, Tutoria, Acadêmico e Coordenação deste polo.</Typography>}
       </DialogContent>
       <DialogActions>
@@ -227,7 +238,7 @@ const Polos = () => {
       <ConfirmationModal title={`Excluir o polo ${removing ? removing.name : ""}?`} open={!!removing} onClose={() => setRemoving(null)} onConfirm={remove}>
         As filas do polo também serão excluídas. Polos com leads ou conversas só podem ser desativados.
       </ConfirmationModal>
-      <PoloForm open={form.open} polo={form.polo} onClose={() => setForm({ open: false, polo: null })} onSaved={load} />
+      <PoloForm open={form.open} polo={form.polo} polos={polos} onClose={() => setForm({ open: false, polo: null })} onSaved={load} />
       <TeamDialog open={team.open} polo={team.polo} users={users} onClose={() => setTeam({ open: false, polo: null })} onSaved={load} />
       <ImportWizard
         open={importOpen}
@@ -270,6 +281,11 @@ const Polos = () => {
                   {p.active ? "Ativo" : "Inativo"}
                 </span>
               </div>
+              {(p.enrollsSemipresencial || p.enrollPoloId) && (
+                <div className={classes.meta} style={{ marginBottom: 6 }}>
+                  {p.enrollsSemipresencial ? "Matricula cursos semipresenciais" : `Semipresencial: matrícula em ${(polos.find((x) => x.id === p.enrollPoloId) || {}).name || "outro polo"}`}
+                </div>
+              )}
               <div>
                 {FUNCTIONS.map((f) => {
                   const list = (p.members || []).filter((m) => m.role === f.key);

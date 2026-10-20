@@ -195,6 +195,12 @@ export interface CourseArea {
   hasRule: boolean;
 }
 
+// the area of one course (the degree comes from its commercial grade)
+export const areaOfCourse = async (course: { name: string; modality?: string | null }): Promise<AreaId> => {
+  const degrees = await degreeMap();
+  return areaOf(course.name, degrees.get(plain(course.name)) || null, course.modality || null);
+};
+
 export const classifyCourses = async (): Promise<CourseArea[]> => {
   const [courses, degrees, rules] = await Promise.all([
     Course.findAll({ where: { active: true } as any, attributes: ["id", "name", "modality"], order: [["name", "ASC"]] }),

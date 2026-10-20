@@ -2,6 +2,7 @@ import { getSetting } from "../../helpers/AppSettings";
 import { getBusinessConfig, isBusinessNow } from "../../helpers/BusinessTime";
 import { getIO } from "../../libs/socket";
 import AgentMetricEvent from "../../models/AgentMetricEvent";
+import Course from "../../models/Course";
 import Lead from "../../models/Lead";
 import LeadCommercial from "../../models/LeadCommercial";
 import LeadReminderLog from "../../models/LeadReminderLog";
@@ -18,6 +19,7 @@ import { addActivity } from "../CrmServices/LeadCore";
 import { resolvePoloFor } from "../PoloServices/ResolvePolo";
 import UpdateTicketService from "../TicketServices/UpdateTicketService";
 import { nextOpening, whenText } from "./Hours";
+import { areaOfCourse } from "./MecDefaults";
 
 // WHO TAKES THE CONVERSATION when the AI agent hands it over. One place decides it, in this order, and always writes down what it did:
 //   1. the polo of the lead (the city the person told is matched to the polos, ignoring accents and typos);
@@ -67,6 +69,8 @@ export interface Routed {
   // inside the working hours of the company; when not, `whenText` says when the team answers
   within: boolean;
   whenText: string | null;
+  // semipresencial course whose student lives where it cannot be enrolled: where the enrollment is, and the polo of the city
+  semipresencial?: { enrollPolo: string; cityPolo: string } | null;
 }
 
 // ---------------------------------------------------------------- polo
@@ -88,6 +92,53 @@ export const ensurePolo = async (lead: Lead | null, cityHint?: string | null): P
     await addActivity(lead.id, null, "system", `Polo definido pela cidade informada: ${polo.name}`).catch(() => undefined);
   }
   return polo;
+};
+
+// ---------------------------------------------------------------- semipresencial enrollment
+// Health, engineering and teaching courses are semipresencial, and they are enrolled only at the polos released for it. A lead from another
+// polo's city enrolls at the nearest released one (Polo.enrollPoloId); the city's polo stays on the lead as the place of the practical classes.
+const SEMIPRESENCIAL_AREAS = ["saude_eng_agro", "educacao_ciencias"];
+
+export const isSemipresencialCourse = async (courseId: number | null | undefined): Promise<boolean> => {
+  if (!courseId) return false;
+  const course = await Course.findByPk(courseId, { attributes: ["id", "name", "modality"] });
+  if (!course) return false;
+  if (/semi/i.test(String(course.modality || ""))) return true;
+  return SEMIPRESENCIAL_AREAS.includes(await areaOfCourse(course));
+};
+
+// the polo where this lead enrolls, given the polo of its city
+export const enrollmentPoloFor = async (lead: Lead | null, cityPolo: Polo): Promise<{ polo: Polo; cityPolo: Polo | null }> => {
+  if (!lead || cityPolo.enrollsSemipresencial || !(await isSemipresencialCourse(lead.courseId))) return { polo: cityPolo, cityPolo: null };
+  const mapped = cityPolo.enrollPoloId ? await Polo.findByPk(cityPolo.enrollPoloId) : null;
+  const target = mapped && mapped.active !== false && mapped.enrollsSemipresencial ? mapped : await Polo.findOne({ where: { enrollsSemipresencial: true, active: true }, order: [["id", "ASC"]] });
+  return target ? { polo: target, cityPolo } : { polo: cityPolo, cityPolo: null };
+};
+
+// the polo of the city of a lead that already has one saved (poloId is the enrollment polo when the course is semipresencial)
+const cityPoloOf = async (lead: Lead): Promise<Polo | null> => {
+  const id = lead.practicePoloId || lead.poloId;
+  return id ? Polo.findByPk(id) : null;
+};
+
+// saves where the lead enrolls and where its city is, and says so on the lead's history; returns the polo that takes the conversation
+const settlePolo = async (lead: Lead | null, cityPolo: Polo): Promise<{ polo: Polo; practice: Polo | null }> => {
+  const r = await enrollmentPoloFor(lead, cityPolo);
+  if (lead) {
+    const practiceId = r.cityPolo ? r.cityPolo.id : null;
+    if (lead.poloId !== r.polo.id || (lead.practicePoloId || null) !== practiceId) {
+      await lead.update({ poloId: r.polo.id, practicePoloId: practiceId });
+      if (r.cityPolo) await addActivity(lead.id, null, "system", `Curso semipresencial: a matrícula é no polo ${r.polo.name}. O polo da cidade é ${r.cityPolo.name} (aulas práticas em viabilização).`).catch(() => undefined);
+    }
+  }
+  return { polo: r.polo, practice: r.cityPolo };
+};
+
+// the lead's course became known after the polo: the enrollment polo may change now
+export const refreshEnrollmentPolo = async (ticket: Ticket, lead: Lead | null): Promise<void> => {
+  if (!lead || !lead.courseId) return;
+  const city = await cityPoloOf(lead);
+  if (city) await assignToPolo(ticket, lead, city);
 };
 
 // ---------------------------------------------------------------- queue
@@ -122,9 +173,10 @@ const pickQueue = async (poloId: number | null, team: Team = "comercial"): Promi
 // As soon as the lead's polo is known the conversation already sits in that polo's commercial queue and the lead already has a consultant of
 // that polo as owner (so the tasks and the handover go to the right person); the AI keeps talking. Nothing is said to the lead and nobody is
 // alerted: the live notice is for the handover itself. A conversation a person already took, or a polo with no commercial queue, is left alone.
-export const assignToPolo = async (ticket: Ticket, lead: Lead | null, polo: Polo): Promise<void> => {
+export const assignToPolo = async (ticket: Ticket, lead: Lead | null, cityPolo: Polo): Promise<void> => {
   try {
     if (ticket.userId) return;
+    const { polo } = await settlePolo(lead, cityPolo);
     const { queue, fallback } = await pickQueue(polo.id, "comercial");
     if (!queue || fallback) return;
     if (ticket.queueId !== queue.id) {
@@ -165,7 +217,14 @@ export const routeToCommercial = async (ticket: Ticket, opts: RouteOptions): Pro
   const lead = opts.lead !== undefined ? opts.lead : await Lead.findOne({ where: { contactId: ticket.contactId } });
   const chosen = opts.poloId ? await Polo.findByPk(opts.poloId) : null;
   if (chosen && lead && lead.poloId !== chosen.id) await lead.update({ poloId: chosen.id });
-  const polo = chosen || (await ensurePolo(lead, opts.city));
+  let polo = chosen || (await ensurePolo(lead, opts.city));
+  // semipresencial course: the enrollment is at a released polo (a polo a person chose inside a flow is respected)
+  let semipresencial: Routed["semipresencial"] = null;
+  if (polo && !chosen && lead) {
+    const settled = await settlePolo(lead, (await cityPoloOf(lead)) || polo);
+    polo = settled.polo;
+    if (settled.practice) semipresencial = { enrollPolo: settled.polo.name, cityPolo: settled.practice.name };
+  }
 
   const team: Team = opts.team || "comercial";
   const { queue, fallback } = await pickQueue(polo ? polo.id : null, team);
@@ -243,10 +302,20 @@ export const routeToCommercial = async (ticket: Ticket, opts: RouteOptions): Pro
     poloName: polo ? polo.name : null,
     fallback,
     within,
-    whenText: when
+    whenText: when,
+    semipresencial
   };
 };
 
 // What the lead is told after the handoff when it happened outside the working hours (said once, by the caller)
-export const afterHoursNotice = (r: Routed): string | null => (!r.within && r.whenText ? `Nossa equipe retorna ${r.whenText}. Pode deixar sua mensagem aqui que ela já fica para o consultor. 😊` : null);
+export const afterHoursNotice = (r: Routed): string | null => {
+  const parts: string[] = [];
+  // no promise about the practical classes: they are being worked out
+  if (r.semipresencial) parts.push(`Como esse curso é semipresencial, a matrícula é feita no polo de ${poloLabel(r.semipresencial.enrollPolo)}. Estamos trabalhando para que as aulas práticas aconteçam no polo mais perto de você, e o consultor te explica como fica no seu caso.`);
+  if (!r.within && r.whenText) parts.push(`Nossa equipe retorna ${r.whenText}. Pode deixar sua mensagem aqui que ela já fica para o consultor. 😊`);
+  return parts.length ? parts.join(" ") : null;
+};
+
+// "Porto Velho - Centro - RO" is said "Porto Velho"
+const poloLabel = (name: string): string => String(name || "").replace(/\s*[-(].*$/, "").trim() || name;
 

@@ -345,7 +345,7 @@ export const suggestedStepOf = (s: CommercialState): string => {
   return s.nextAction ? NEXT_LABEL[s.nextAction] || s.nextAction : "Retomar a conversa.";
 };
 
-export const briefOf = (s: CommercialState, extra: { stageName?: string | null; source?: string | null; lastMessages?: string[] } = {}): string => {
+export const briefOf = (s: CommercialState, extra: { stageName?: string | null; source?: string | null; lastMessages?: string[]; enrollPolo?: string | null; cityPolo?: string | null } = {}): string => {
   const x = s.slots;
   const line = (label: string, value: any) => `${label}:\n${value === undefined || value === null || value === "" ? "Não informado" : value}`;
   const optional = (label: string, value: any) => (value === undefined || value === null || value === "" ? null : `${label}: ${value}`);
@@ -356,7 +356,9 @@ export const briefOf = (s: CommercialState, extra: { stageName?: string | null; 
     `Telefone: ${x.phone || "Não informado"}`,
     `Cidade: ${x.city || "Não informada"}`,
     `Curso: ${x.courseName || "Não definido"}`,
-    `Polo: ${x.poloName || "Não definido"}`,
+    // semipresencial course: the enrollment is at a released polo and the city's polo is where the practical classes are meant to happen
+    extra.enrollPolo ? `Polo de matrícula (curso semipresencial): ${extra.enrollPolo}` : `Polo: ${x.poloName || "Não definido"}`,
+    extra.enrollPolo && extra.cityPolo ? `Polo da cidade, aulas práticas em viabilização (sem data nem promessa): ${extra.cityPolo}` : null,
     optional("Origem", extra.source),
     optional("Pretende decidir", x.decisionTimeline),
     optional("Turno", x.shift),

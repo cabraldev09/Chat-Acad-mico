@@ -38,6 +38,16 @@ class Polo extends Model<Polo> {
   @Column
   active: boolean;
 
+  // released to enroll the semipresencial courses (health, engineering, teaching)
+  @Default(false)
+  @Column
+  enrollsSemipresencial: boolean;
+
+  // where the students of this polo enroll in a semipresencial course (the nearest released polo)
+  @AllowNull(true)
+  @Column
+  enrollPoloId: number;
+
   @CreatedAt
   createdAt: Date;
 
