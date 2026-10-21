@@ -3,7 +3,7 @@ import path from "path";
 import { Op } from "sequelize";
 
 import { gradePath } from "../../analysis/Grades";
-import { chooseGrade, gradeCaption, internshipPitch } from "./GradeChoice";
+import { ChooseOptions, chooseGrade, gradeCaption, internshipPitch } from "./GradeChoice";
 import { createCurricular } from "../../analysis/Store";
 import { PUBLIC_DIR } from "../../config/paths";
 import CommercialGrade from "../../models/CommercialGrade";
@@ -143,10 +143,13 @@ const intakeOf = async (ctx: AcademicCtx, given?: any): Promise<string | null> =
 };
 
 // the grade of the course for the intake period: the most recent one that is already in effect at the intake, never "the first one found"
-export const pickGrade = async (course: Course, intake: string | null): Promise<{ grade: CommercialGrade | null; current: boolean }> => {
-  const all = await CommercialGrade.findAll({ where: { courseName: { [Op.ne]: "" } } as any });
-  return chooseGrade(all, course, intake);
+export const pickGrade = async (course: Course, intake: string | null, opts: ChooseOptions = {}): Promise<{ grade: CommercialGrade | null; current: boolean }> => {
+  const all = await CommercialGrade.findAll({ where: { courseName: { [Op.ne]: "" } } as any, order: [["id", "ASC"]] });
+  return chooseGrade(all, course, intake, opts);
 };
+
+// a second degree takes the matrix made for graduates when there is one; the words of the person ("licenciatura") tell two matrices of the same name apart
+const gradeOptsOf = (ctx: AcademicCtx): ChooseOptions => ({ egress: ctx.slots.entryType === "second_degree", hint: String(ctx.slots.courseName || "") });
 
 const regulationOf = async (course: Course, intake: string | null): Promise<CourseRegulation | null> => {
   const rows = await CourseRegulation.findAll({ where: { courseId: course.id } });
@@ -186,8 +189,8 @@ export const runAcademicTool = async (name: string, input: any, ctx: AcademicCtx
       const course = await courseOf(ctx, input);
       if (!course) return notFound;
       const intake = await intakeOf(ctx, input.intakePeriod);
-      const view = await cached(ctx, `curso:${course.id}:${intake}`, async () => {
-        const { grade } = await pickGrade(course, intake);
+      const view = await cached(ctx, `curso:${course.id}:${intake}:${ctx.slots.entryType === "second_degree" ? "g" : ""}`, async () => {
+        const { grade } = await pickGrade(course, intake, gradeOptsOf(ctx));
         const reg = await regulationOf(course, intake);
         const semesters = grade?.durationSemesters || course.semesters || null;
         return {
@@ -240,8 +243,8 @@ export const runAcademicTool = async (name: string, input: any, ctx: AcademicCtx
       const course = await courseOf(ctx, input);
       if (!course) return notFound;
       const intake = await intakeOf(ctx, input.intakePeriod);
-      const view = await cached(ctx, `grade:${course.id}:${intake}`, async () => {
-        const { grade, current } = await pickGrade(course, intake);
+      const view = await cached(ctx, `grade:${course.id}:${intake}:${ctx.slots.entryType === "second_degree" ? "g" : ""}`, async () => {
+        const { grade, current } = await pickGrade(course, intake, gradeOptsOf(ctx));
         if (!grade) return { encontrada: false, aviso: "Não há grade cadastrada para este curso e período. Diga que vai encaminhar a grade pela equipe." };
         const stages = internshipsOf(grade);
         return {
@@ -251,6 +254,10 @@ export const runAcademicTool = async (name: string, input: any, ctx: AcademicCtx
         };
       });
       if (view.gradeId) remember(ctx, { gradeId: view.gradeId, gradeVersion: view.version, hasTcc: !!view.tcc, hasInternship: (view.internships || []).length > 0, gradeAsked: true });
+      // no matrix for this course on file: the system, not the promise of the model, asks a person to send it (the task is created with the turn)
+      else if (view.encontrada === false) remember(ctx, { gradeUnavailable: true });
+      // the matrix is registered but its PDF is not on the server (volume recreated): same
+      if (view.gradeId && view.temArquivo === false && !ctx.dryRun) remember(ctx, { gradeFileMissing: true });
       return view;
     }
 
@@ -259,7 +266,7 @@ export const runAcademicTool = async (name: string, input: any, ctx: AcademicCtx
       if (!course) return notFound;
       const intake = await intakeOf(ctx, input.intakePeriod);
       const view = await cached(ctx, `estagio:${course.id}:${intake}:${input.gradeId || ""}`, async () => {
-        const grade = input.gradeId ? await CommercialGrade.findByPk(Number(input.gradeId)) : (await pickGrade(course, intake)).grade;
+        const grade = input.gradeId ? await CommercialGrade.findByPk(Number(input.gradeId)) : (await pickGrade(course, intake, gradeOptsOf(ctx))).grade;
         if (!grade) return { encontrado: false, aviso: "Sem grade cadastrada: não afirme nada sobre estágio. Diga que vai confirmar." };
         const stages = internshipsOf(grade);
         return { mandatory: (grade.totalInternshipHours || 0) > 0 || stages.length > 0, totalHours: grade.totalInternshipHours || stages.reduce((t, s) => t + (s.hours || 0), 0) || 0, stages };
@@ -339,42 +346,58 @@ export const runAcademicTool = async (name: string, input: any, ctx: AcademicCtx
 
     case "enviar_material": {
       const grade = await CommercialGrade.findByPk(Number(input.gradeId || ctx.slots.gradeId) || 0);
-      if (!grade) return { enviado: false, erro: "Grade não encontrada. Use buscar_grade antes." };
+      if (!grade) {
+        remember(ctx, { gradeUnavailable: true });
+        return { enviado: false, falhou: true, erro: "Grade não encontrada no sistema. A equipe foi avisada para enviar; diga isso em uma frase." };
+      }
       if (ctx.dryRun || !ctx.ticket) {
         remember(ctx, { gradeSent: true, gradeId: grade.id, gradeVersion: grade.curriculumTerm, gradeAsked: true });
-        return { enviado: false, simulado: true, aviso: "No teste o arquivo não é enviado. Diga que está encaminhando a grade." };
+        return { enviado: false, simulado: true, texto_estagio_tutoria: internshipPitch(grade, internshipsOf(grade)), aviso: "No teste o arquivo não é enviado. Diga que está encaminhando a grade." };
       }
       const source = gradePath(grade);
       const caption = gradeCaption(grade, internshipsOf(grade));
       if (!fs.existsSync(source)) {
-        // the file is not on the server: the summary of the matrix (with the internships) still goes, in writing
+        // the file is not on the server: the summary of the matrix (with the internships) still goes, in writing, and a person is asked to send the PDF.
+        // The grade is NOT marked as sent: the lead was not given the file.
+        logger.warn(`Grade file missing on disk (grade ${grade.id}, ${grade.courseName})`);
+        remember(ctx, { gradeUnavailable: true, gradeId: grade.id, gradeVersion: grade.curriculumTerm, gradeAsked: true });
         if (caption) {
           try {
             await SendWhatsAppMessage({ body: caption, ticket: ctx.ticket, automated: true });
-            remember(ctx, { gradeSent: true, gradeId: grade.id, gradeVersion: grade.curriculumTerm, gradeAsked: true });
-            return { enviado: true, texto_estagio_tutoria: internshipPitch(grade, internshipsOf(grade)), aviso: "O PDF não está disponível agora; mandei o resumo da grade com os estágios em texto. Não comente o envio. Use o texto_estagio_tutoria como está; só se perguntarem do arquivo, diga que a equipe envia o PDF completo em seguida. Não faça pergunta nesta mensagem." };
+            return { enviado: false, parcial: true, texto_estagio_tutoria: internshipPitch(grade, internshipsOf(grade)), aviso: "O PDF não está disponível agora; mandei o resumo da grade com os estágios em texto e avisei a equipe para enviar o PDF completo. Diga isso em uma frase, sem prometer horário. Não faça pergunta nesta mensagem." };
           } catch (err) {
             logger.warn(`Grade summary not sent: ${(err as Error).message}`);
           }
         }
-        return { enviado: false, erro: "O PDF desta grade não está disponível. Diga que a equipe envia." };
+        return { enviado: false, falhou: true, erro: "O PDF desta grade não está disponível. A equipe foi avisada para enviar; diga isso em uma frase." };
       }
-      try {
+      const sendOnce = async (): Promise<void> => {
         const copyName = `grade-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.pdf`;
         fs.copyFileSync(source, path.join(PUBLIC_DIR, copyName));
         const display = `${grade.courseName}.pdf`.replace(/[\\/:*?"<>|]/g, "_");
         await SendWhatsAppMedia({
           media: { filename: copyName, originalname: display, mimetype: "application/pdf", path: path.join(PUBLIC_DIR, copyName) } as Express.Multer.File,
-          ticket: ctx.ticket,
+          ticket: ctx.ticket as Ticket,
           body: caption,
           displayName: display,
           automated: true
         } as any);
-        remember(ctx, { gradeSent: true, gradeId: grade.id, gradeVersion: grade.curriculumTerm, gradeAsked: true });
+      };
+      try {
+        try {
+          await sendOnce();
+        } catch (first) {
+          // one more try after a breath (a connection that blinked, the send pace of the number)
+          logger.warn(`Grade not sent, trying again: ${(first as Error).message}`);
+          await new Promise(resolve => setTimeout(resolve, 2500));
+          await sendOnce();
+        }
+        remember(ctx, { gradeSent: true, gradeId: grade.id, gradeVersion: grade.curriculumTerm, gradeAsked: true, gradeUnavailable: false, pendingOffer: null });
         return { enviado: true, texto_estagio_tutoria: internshipPitch(grade, internshipsOf(grade)), aviso: "O PDF foi entregue com os estágios na legenda. NÃO diga que enviou, encaminhou ou anexou a grade (a pessoa já a vê). Escreva apenas o texto_estagio_tutoria, em até 2 blocos curtos, sem repetir a lista da legenda e sem fazer pergunta: o sistema pergunta o que falta em seguida." };
       } catch (err) {
         logger.warn(`Grade not sent: ${(err as Error).message}`);
-        return { enviado: false, erro: "Não consegui enviar o arquivo agora. Diga que a equipe envia em seguida." };
+        remember(ctx, { gradeUnavailable: true, gradeId: grade.id, gradeAsked: true });
+        return { enviado: false, falhou: true, erro: "Não consegui enviar o arquivo agora. A equipe foi avisada e envia em seguida; diga isso em uma frase." };
       }
     }
 

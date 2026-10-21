@@ -114,9 +114,9 @@ export const commercialGraph = (): Graph =>
         quiet: true,
         objective: "Apresentar o curso (duração, formato e como se estuda) e conduzir para o próximo passo.",
         instructions:
-          "Use buscar_curso antes de falar de duração ou formato; o formato vem da oferta real, nunca do nome do curso. Se o curso for impactado pelo MEC, use buscar_regra_modalidade. Termine perguntando se a pessoa quer ver a grade ou se tem alguma dúvida.",
+          "Use buscar_curso antes de falar de duração ou formato; o formato vem da oferta real, nunca do nome do curso. Se o curso for impactado pelo MEC, use buscar_regra_modalidade. Termine perguntando, com estas palavras, \"Quer que eu te envie a grade curricular de <curso>?\" (o sistema envia o PDF quando a pessoa aceita; se ela já pediu a grade, chame buscar_grade e enviar_material).",
         fields: [{ key: "courseExplained", label: "Curso apresentado", type: "text", required: true }],
-        tools: ["buscar_curso", "buscar_regra_modalidade", "listar_polos"],
+        tools: ["buscar_curso", "buscar_regra_modalidade", "listar_polos", "buscar_grade", "enviar_material"],
         maxTurns: 6,
         outcomes: REASONS
       })],
@@ -210,3 +210,23 @@ export const commercialGraph = (): Graph =>
       ["pedir_historico", "crm_perdido", "sem_interesse"], ["resultado", "crm_perdido", "sem_interesse"], ["crm_perdido", "fim_perdido"]
     ]
   });
+
+// An agent created from this model keeps the blocks it had when it was made. The instructions and the tools of the stages are brought up to date here
+// (the layout, the titles, the fields, the exits and every block the team added stay as they are); the result is a draft, nobody is answered differently
+// until it is published.
+const REFRESHED_STAGES = ["qualificar", "apresentar", "orientar", "pedir_historico", "resultado"];
+export const refreshStages = (graph: Graph): { graph: Graph; changed: string[] } => {
+  const fresh = commercialGraph();
+  const changed: string[] = [];
+  const nodes = graph.nodes.map(n => {
+    const source = fresh.nodes.find(f => f.id === n.id);
+    if (!source || n.type !== "stage" || !REFRESHED_STAGES.includes(n.id)) return n;
+    const have: string[] = Array.isArray(n.data?.tools) ? n.data.tools : [];
+    const tools = [...new Set([...have, ...(source.data.tools || [])])];
+    const same = n.data?.instructions === source.data.instructions && tools.length === have.length;
+    if (same) return n;
+    changed.push(n.id);
+    return { ...n, data: { ...n.data, instructions: source.data.instructions, tools } };
+  });
+  return { graph: { ...graph, nodes }, changed };
+};

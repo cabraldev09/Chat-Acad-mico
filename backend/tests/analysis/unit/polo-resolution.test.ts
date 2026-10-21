@@ -30,7 +30,7 @@ describe("state and city keys", () => {
 });
 
 describe("a qualified lead goes to the consultant after a couple of answers", () => {
-  const slots = { courseName: "Pedagogia", city: "Vilhena", entryType: "first_degree", courseExplained: true };
+  const slots = { courseName: "Pedagogia", city: "Vilhena", entryType: "first_degree", courseExplained: true, gradeSent: true };
 
   it("qualified = course, city, kind of entry and the course presented", () => {
     expect(isQualified(slots)).toBe(true);

@@ -58,7 +58,8 @@ export const chunkText = (text: string): string[] => {
 interface NewDoc {
   title: string;
   content: string;
-  kind?: "doc" | "faq";
+  // "process": the script and the rules written by the team; the commercial agent reads them whole, as instructions (see processText)
+  kind?: "doc" | "faq" | "process";
   source?: "texto" | "arquivo" | "url" | "aprendido";
   keywords?: string | null;
   agentId?: number | null;
@@ -67,8 +68,28 @@ interface NewDoc {
   courseId?: number | null;
 }
 
+// The documents of kind "process" (script, rules, step by step written by the team) are not searched by similarity: the agent follows them whole.
+const PROCESS_PER_DOC = 3000;
+const PROCESS_TOTAL = 6000;
+const processMemo = new Map<number, { at: number; text: string }>();
+export const processText = async (agentId: number): Promise<string> => {
+  const hit = processMemo.get(agentId);
+  if (hit && Date.now() - hit.at < 30000) return hit.text;
+  const docs = await KbDocument.findAll({ where: { kind: "process", agentId: { [Op.or]: [agentId, null] } } as any, order: [["id", "ASC"]], attributes: ["title", "content"] });
+  let text = "";
+  for (const d of docs) {
+    const part = `### ${d.title}\n${String(d.content || "").trim().slice(0, PROCESS_PER_DOC)}`;
+    if ((text + part).length > PROCESS_TOTAL) break;
+    text = text ? `${text}\n\n${part}` : part;
+  }
+  processMemo.set(agentId, { at: Date.now(), text });
+  return text;
+};
+
 export const indexDocument = async (doc: KbDocument): Promise<number> => {
   await KbChunk.destroy({ where: { documentId: doc.id } });
+  processMemo.clear();
+  if (doc.kind === "process") return 0;
   // FAQ answers stay whole: they are sent as they are
   const pieces = doc.kind === "faq" ? [doc.title + "\n" + doc.content] : chunkText(`${doc.title}\n\n${doc.content}`);
   await KbChunk.bulkCreate(
@@ -135,7 +156,9 @@ export const searchChunks = async (agentId: number, question: string, limit = 4,
           topics.length ? `d.topic IN (:topics) OR ${topics.map((_, i) => `d.topic LIKE :tp${i}`).join(" OR ")}` : null,
           opts.courseId ? `d."courseId" = :courseId` : null,
           // what the team taught the agent has no subject: it is read by its words, besides the documents of the subject
-          `d.topic IS NULL`
+          `d.topic IS NULL`,
+          // the institution's own subjects (analysis, supervised internship, support...) are found by their words whatever the subject of the question
+          words.length ? `d.topic LIKE 'institutional/%'` : null
         ].filter(Boolean).join(" OR ")})`
       : "";
     const replacements: any = { q: words.join(" | "), agentId, limit, topics: topics.length ? topics : [""], courseId: opts.courseId || 0 };
@@ -157,7 +180,7 @@ export const searchChunks = async (agentId: number, question: string, limit = 4,
 
   // other databases: count how many words each chunk contains
   const docs = (await KbDocument.findAll({ where: { kind: "doc", agentId: { [Op.or]: [agentId, null] } } as any, attributes: ["id", "title", "topic", "courseId"] })).filter(
-    d => !scoped || !d.topic || topics.some(t => d.topic === t || String(d.topic || "").startsWith(`${t}/`)) || (!!opts.courseId && d.courseId === opts.courseId)
+    d => !scoped || !d.topic || String(d.topic).startsWith("institutional/") || topics.some(t => d.topic === t || String(d.topic || "").startsWith(`${t}/`)) || (!!opts.courseId && d.courseId === opts.courseId)
   );
   const chunks = await KbChunk.findAll({ where: { documentId: docs.map(d => d.id) } });
   return chunks

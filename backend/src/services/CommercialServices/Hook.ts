@@ -3,6 +3,7 @@ import { OBJECTION_LIMIT, canAutoMove, confirmsNoInterest, hashOf, isQualified, 
 import { STAGE_SPECS, StageKey } from "./Pipeline";
 import { cleanPatch } from "./Slots";
 import { defaultFollowUp, parseFollowUp, ymdOf } from "./Hours";
+import { gradeFollowUp, gradeResolved } from "./Journey";
 
 // After every turn of the AI the system updates the lead by itself. The model only brought what it understood (the intent, the
 // data the person gave); here the state, the score, the temperature, the next action, the column of the CRM, the tasks, the note and the
@@ -164,6 +165,8 @@ export const commercialTurn = async (ports: CommercialPorts, input: TurnInput): 
   if (s.readyForProposal) await ports.task("proposal:ready", "Gerar e apresentar proposta", new Date(now.getTime() + 60 * 60000), "proposta");
   if (target === "waiting_transcript" || nextActionOf(s) === "wait_transcript") await ports.task("transcript:wait", "Aguardar histórico acadêmico", new Date(now.getTime() + 2 * 86400000), "documentos");
   if (followUp && s.followUpAt) await ports.task(`follow_up:${ymdOf(new Date(s.followUpAt))}`, `Retomar contato: ${s.followUpReason}`, s.followUpAt, "whatsapp");
+  // the grade that could not go out is a task for a person (once per course); the one that went out is a milestone
+  await gradeFollowUp(ports, before, s.slots, now);
   const note = s.summary || "";
   if (note && hashOf(note) !== s.lastNoteHash) {
     await ports.note(note);
@@ -199,7 +202,7 @@ export const commercialTurn = async (ports: CommercialPorts, input: TurnInput): 
   else if (Number(s.slots.objectionCount || 0) >= OBJECTION_LIMIT && input.objection) exit = "human";
   // a qualified lead is handed to the consultant when nothing is left hanging: not while a grade was asked and not sent, and not in the same
   // message that asks the person something (unless the conversation already went on for two more answers)
-  else if (s.slots.readyForConsultant && input.replied && !(intent === "curriculum" && !s.slots.gradeSent) && (!input.endsWithQuestion || Number(s.slots.qualifiedReplies || 0) >= (ports.qualifyAfter || 2) + 2)) exit = "human";
+  else if (s.slots.readyForConsultant && input.replied && !(intent === "curriculum" && !gradeResolved(s.slots)) && (!input.endsWithQuestion || Number(s.slots.qualifiedReplies || 0) >= (ports.qualifyAfter || 2) + 2)) exit = "human";
   const why =
     supportExit ? (supportExit === "secretaria" ? "secretary" : "tutoring") :
     exit === "human" && !human && !input.unknownQuestion && intent !== "unknown"

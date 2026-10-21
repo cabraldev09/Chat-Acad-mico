@@ -14,12 +14,14 @@ import { commercialTurn, CommercialTrace } from "./Hook";
 import { CommercialPorts } from "./Ports";
 import { matchFaq } from "../AiServices/Kb";
 import { unsafeAnswer } from "./Guards";
-import { ENTRY_LABEL, fastIntent, hasBolsaData, humanReason, isGreeting, needsBolsaData, openingText, retractsBuying, stageFieldsDone, supportIntent, topicsOf, gradeRequest } from "./Rules";
-import { AcademicCtx, findCourse, runAcademicTool } from "./Academic";
+import { ENTRY_LABEL, fastIntent, hashOf, hasBolsaData, humanReason, isGreeting, needsBolsaData, openingText, retractsBuying, stageFieldsDone, supportIntent, topicsOf, gradeRequest } from "./Rules";
 import { BOLSA_ASKS, bolsaDataFrom, bolsaRequestFor } from "./BolsaData";
 import { stripGradeAnnouncement } from "./GradeChoice";
 import { studentFacts } from "./StudentFacts";
-import { mirror } from "./Slots";
+import { cleanPatch, mirror } from "./Slots";
+import { logger } from "../../utils/logger";
+import { acceptsOffer, declinesOffer, gradeFollowUp, gradeResolved, offersGrade } from "./Journey";
+import { deliverGrade } from "./GradeDelivery";
 
 // One turn of the commercial agent, the same in the real conversation and in the simulator (only the ports and the history change):
 //   1. what is obvious (a request for a person, a price) is answered by the system, without the model;
@@ -31,7 +33,9 @@ export const FIXED = {
   tutoring: "Entendi! Vou chamar a tutoria do seu polo para te ajudar com isso. Um momento, por favor.",
   secretary: "Entendi! Vou chamar a secretaria do seu polo para cuidar disso. Um momento, por favor.",
   askCity: "Para chamar a equipe do seu polo, em qual cidade você estuda ou mora?",
-  unknown: "Essa informação eu prefiro confirmar para não te passar nada incorreto. Vou encaminhar para o consultor verificar certinho para você."
+  unknown: "Essa informação eu prefiro confirmar para não te passar nada incorreto. Vou encaminhar para o consultor verificar certinho para você.",
+  // the answer was held back by the guard: the question is registered for the team (and a task is created), so this is not an empty promise
+  guarded: "Essa informação eu prefiro confirmar para não te passar nada incorreto. Deixei a sua dúvida registrada para o consultor do seu polo te responder."
 };
 
 // the person is back after a while (the conversation did not stop an hour ago)
@@ -221,35 +225,37 @@ export const commercialAiTurn = async (d: TurnDeps): Promise<CommercialTurnResul
     return { text, exit: hook.exit, ...(hook.why ? { why: hook.why } : {}), collected: flat(hook.trace.changed), trace: { ...base, deterministic: true, intent: support, commercial: hook.trace, entry: ENTRY_LABEL[state.slots.entryType || "unknown"], latencyMs } };
   }
 
-  // the grade asked for: the system finds it and sends the PDF itself (a model that only says it will send, and never calls the tool, leaves the person without the file)
-  const gradeAsk = d.input === null || d.sandbox || !d.ticket || !wrote ? null : gradeRequest(lastText);
+  // the grade asked for (or accepted: "sim" to "quer receber a grade?"): the system finds it and sends the PDF itself (a model that only says it will send, and never
+  // calls the tool, leaves the person without the file). If it cannot go, the lead is told the truth and a task asks a person to send it.
+  const offerWaiting = state.slots.pendingOffer === "grade" && !gradeResolved(state.slots);
+  if (d.input !== null && wrote && offerWaiting && declinesOffer(lastText)) {
+    state.slots.gradeDeclined = true;
+    state.slots.pendingOffer = null;
+  }
+  const accepted = d.input !== null && wrote && offerWaiting && acceptsOffer(lastText);
+  const gradeAsk = d.input === null || !wrote ? null : accepted ? { course: null } : gradeRequest(lastText);
   if (gradeAsk) {
-    const ctx: AcademicCtx = { ticket: d.ticket, dryRun: false, slots: { ...state.slots }, patch: {}, cacheHits: 0, agentId: d.agent.id };
     try {
-      const named = gradeAsk.course ? await findCourse({ courseName: gradeAsk.course }) : null;
-      const course = named || (ctx.slots.courseId || ctx.slots.courseName ? await findCourse({ courseId: ctx.slots.courseId, courseName: ctx.slots.courseName }) : null);
       const again = /\b(de novo|novamente|outra vez|reenvia|reenviar)\b/i.test(lastText);
-      if (course && !(ctx.slots.gradeSent && Number(ctx.slots.courseId) === course.id && !again)) {
-        const found = await runAcademicTool("buscar_grade", { courseId: course.id }, ctx);
-        const sent = found && found.gradeId ? await runAcademicTool("enviar_material", { gradeId: found.gradeId }, ctx) : null;
-        if (sent && sent.enviado) {
-          let text = String(sent.texto_estagio_tutoria || "").trim() || "Qualquer dúvida sobre o estágio ou a rotina do curso, é só me falar.";
-          let patchOut: Record<string, any> = { ...ctx.patch, courseId: course.id, courseName: course.name, gradeAsked: true, internshipExplained: true, tutoringExplained: true };
-          const probe = { ...state.slots, ...patchOut };
-          // the full name and the CPF for the scholarship (same rule as after any answer)
-          if (needsBolsaData(probe)) {
-            text = `${text}\n\n${bolsaRequestFor({ name: !probe.fullName, cpf: !probe.cpfGiven })}`.trim();
-            patchOut = { ...patchOut, bolsaDataAsked: Number(probe.bolsaDataAsked || 0) + 1 };
-          }
-          const hook = await commercialTurn(d.ports, { userText: lastText, intent: "curriculum", patch: patchOut, tools: ["buscar_grade", "enviar_material"], hadText: true, replied: true, nodeId: d.nodeId, hasPolo: !!d.lead?.poloId, endsWithQuestion: /\?[\s"”')]*$/.test(text) });
-          const latencyMs = Date.now() - started;
-          await log({ intent: "curriculum", deterministic: true, llmCalls: 0, toolCalls: 2, cacheHits: 0, tokens: base.tokens, outcome: hook.exit, latencyMs });
-          if (d.lead) await syncLead(d, hook.trace.changed);
-          return { text, exit: hook.exit, ...(hook.why ? { why: hook.why } : {}), collected: flat(hook.trace.changed), trace: { ...base, deterministic: true, intent: "curriculum", commercial: hook.trace, entry: ENTRY_LABEL[state.slots.entryType || "unknown"], latencyMs } };
+      const delivery = await deliverGrade({ ticket: d.ticket, sandbox: d.sandbox, agentId: d.agent.id }, state.slots, gradeAsk.course, again);
+      if (delivery) {
+        let text = delivery.text;
+        let patchOut: Record<string, any> = { ...delivery.patch };
+        const probe = { ...state.slots, ...patchOut };
+        // the full name and the CPF for the scholarship (same rule as after any answer)
+        if (delivery.sent && needsBolsaData(probe)) {
+          text = `${text}\n\n${bolsaRequestFor({ name: !probe.fullName, cpf: !probe.cpfGiven })}`.trim();
+          patchOut = { ...patchOut, bolsaDataAsked: Number(probe.bolsaDataAsked || 0) + 1 };
         }
+        const hook = await commercialTurn(d.ports, { userText: lastText, intent: "curriculum", patch: patchOut, tools: delivery.tools, hadText: true, replied: true, nodeId: d.nodeId, hasPolo: !!d.lead?.poloId, endsWithQuestion: /\?[\s"”')]*$/.test(text) });
+        const latencyMs = Date.now() - started;
+        await log({ intent: "curriculum", deterministic: true, llmCalls: 0, toolCalls: delivery.tools.length, cacheHits: 0, tokens: base.tokens, outcome: hook.exit, latencyMs });
+        if (d.lead && !d.sandbox) await syncLead(d, hook.trace.changed);
+        return { text, exit: hook.exit, ...(hook.why ? { why: hook.why } : {}), collected: flat(hook.trace.changed), trace: { ...base, deterministic: true, intent: "curriculum", commercial: hook.trace, entry: ENTRY_LABEL[state.slots.entryType || "unknown"], latencyMs } };
       }
     } catch (err) {
-      // the model answers as before when the system could not send it
+      // never silent: the model answers as before, and the failure is in the log of the server
+      logger.warn(`Grade delivery failed for ticket ${d.ticket?.id || "-"}: ${(err as Error).message}`);
     }
   }
 
@@ -309,8 +315,10 @@ export const commercialAiTurn = async (d: TurnDeps): Promise<CommercialTurnResul
   } else if (hook.exit === "off" && !text) text = FIXED.unknown;
   else if (guard.unsafe) {
     // a promise or a fact that no tool or approved text backs: the agent says it will confirm, and the question is kept for the team
-    text = FIXED.unknown;
-    if (d.ticket && !d.sandbox && d.agent.learnFromTeam !== false) await captureUnknown(d.agent, d.ticket, unknownQuestion || lastText, d.contactName || undefined).catch(() => undefined);
+    text = FIXED.guarded;
+    if (d.ticket && !d.sandbox && d.agent.learnFromTeam !== false) await captureUnknown(d.agent, d.ticket, unknownQuestion || lastText, d.contactName || undefined).catch(err => logger.warn(`Unknown question not captured: ${(err as Error).message}`));
+    // the question reaches a person even when the agent does not learn from the team
+    if (!d.sandbox) await d.ports.task(`guard:${hashOf(unknownQuestion || lastText)}`, `Responder a dúvida do lead: ${(unknownQuestion || lastText).slice(0, 100)}`, new Date(Date.now() + 2 * 3600000), "whatsapp");
   }
   if (guard.unsafe) await d.ports.event("agent_guard", { kind: guard.kind, token: guard.token || null }, false);
   // no reason from the rules to leave: the stage ends by itself when what it asks for is known, or by the exit the model chose
@@ -320,6 +328,27 @@ export const commercialAiTurn = async (d: TurnDeps): Promise<CommercialTurnResul
   }
   if (hook.exit === "off" && d.ticket && !d.sandbox && d.agent.learnFromTeam !== false && unknownQuestion) {
     await captureUnknown(d.agent, d.ticket, unknownQuestion, d.contactName || undefined).catch(() => undefined);
+  }
+  // The consultant takes a qualified lead: the grade goes first (the PDF, or a task when it cannot go), so nobody arrives at the consultant without it
+  if (hook.exit === "human" && hook.why === "qualified" && !gradeResolved(state.slots)) {
+    try {
+      const before = { ...state.slots };
+      const delivery = await deliverGrade({ ticket: d.ticket, sandbox: d.sandbox, agentId: d.agent.id }, state.slots, null);
+      if (delivery) {
+        Object.assign(state.slots, cleanPatch(delivery.patch));
+        await gradeFollowUp(d.ports, before, state.slots, new Date());
+        await d.ports.save();
+        text = `${String(text || "").trim()}\n\n${delivery.text}`.trim();
+      }
+    } catch (err) {
+      logger.warn(`Grade before the handoff failed for ticket ${d.ticket?.id || "-"}: ${(err as Error).message}`);
+    }
+  }
+  // the agent closed the message offering the grade: the next short "yes" is the answer to it
+  const offering = hook.exit === null && !gradeResolved(state.slots) && offersGrade(text);
+  if ((offering ? "grade" : null) !== (state.slots.pendingOffer || null)) {
+    state.slots.pendingOffer = offering ? "grade" : null;
+    await d.ports.save();
   }
   if (d.lead && !d.sandbox) await syncLead(d, hook.trace.changed);
 

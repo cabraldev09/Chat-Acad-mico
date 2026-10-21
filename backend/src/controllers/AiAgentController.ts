@@ -27,6 +27,8 @@ import { AGENT_TEMPLATES, convertAgent, templateSummary } from "../services/Flow
 import { generateAgent } from "../services/FlowServices/GenerateAgent";
 import { defaultProvider } from "../services/AiServices/Keys";
 import { ensurePipeline } from "../services/CommercialServices/Pipeline";
+import { refreshStages } from "../services/CommercialServices/Template";
+import { parseGraph } from "../services/FlowServices/Graph";
 
 const crud = makeCrud(AiAgent, {
   fields: [
@@ -167,6 +169,24 @@ export const fromTemplate = async (req: Request, res: Response): Promise<Respons
   return res.status(201).json(await createAgentWithFlow({ name, persona: t.persona, faq: t.faq, kb: t.kb, graph: t.graph, description: `Modelo: ${t.name}`, funnel }, uid(req)));
 };
 
+// An agent made from the commercial model before an improvement of the model gets the new instructions and tools in its draft (the team publishes when ready)
+export const refreshTemplate = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await AiAgent.findByPk(req.params.id);
+  if (!agent) throw new AppError("ERR_NOT_FOUND", 404);
+  const flows = await ChatFlow.findAll({ where: { agentId: agent.id, kind: "agent" } });
+  const out: Array<{ flowId: number; changed: string[] }> = [];
+  for (const flow of flows) {
+    const graph = parseGraph(flow.draft);
+    if (!graph.nodes.some((n: any) => Array.isArray(n?.data?.hooks) && n.data.hooks.includes("commercial"))) continue;
+    const refreshed = refreshStages(graph);
+    // eslint-disable-next-line no-await-in-loop
+    if (refreshed.changed.length) await flow.update({ draft: JSON.stringify(refreshed.graph) } as any);
+    out.push({ flowId: flow.id, changed: refreshed.changed });
+  }
+  if (!out.length) throw new AppError("ERR_NOT_FOUND", 404);
+  return res.json({ flows: out });
+};
+
 // "Criar com IA": a description of the business becomes the agent, its answers and its blocks (checked and fixed by the system before
 // it is shown); it opens as a draft for the team to review
 export const generate = async (req: Request, res: Response): Promise<Response> => {
@@ -243,7 +263,7 @@ export const kbAdd = async (req: Request, res: Response): Promise<Response> => {
   const doc = await addDocument({
     title,
     content: text.slice(0, 200000),
-    kind: kind === "faq" ? "faq" : "doc",
+    kind: kind === "faq" ? "faq" : kind === "process" ? "process" : "doc",
     keywords,
     topic: topicOf(topic),
     courseId: await courseOf(courseId),

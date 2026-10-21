@@ -1,5 +1,6 @@
 import { CommercialState, Slots } from "./Slots";
 import { BOLSA_ASKS } from "./BolsaData";
+import { gradeResolved } from "./Journey";
 
 // The commercial rules, written as plain functions: the same input always gives the same answer, no model involved. The AI only
 // understands what the person said (the intent); the temperature, the score, the next action, the funnel column, the notes and the
@@ -32,7 +33,11 @@ const MONEY = [
   /\b(qual (e )?o? ?valor|qual (e )?o? ?preco|valor da mensalidade|valores|preco|precos|mensalidade|parcela|parcelas)\b/,
   /\bquanto (custa|fica|pago|vai custar|sai|cobram|e o curso|e a mensalidade)\b/,
   /\b(tem|ha|existe|consigo|posso ter) (alguma )?(bolsa|desconto)\b/,
-  /\b(bolsa|desconto|promocao|condicao especial|forma de pagamento|formas de pagamento)\b/,
+  /\b(desconto|promocao|condicao especial|forma de pagamento|formas de pagamento)\b/,
+  // "bolsa" alone is not a request (a lead who "já tem bolsa na outra faculdade" is not asking for one): it counts as a question about getting one
+  /\b(quero|queria|preciso|gostaria de|como (funciona|consigo|ganho|faco)|qual|quais|quanto|valor d[ea]|percentual d[ea]|porcentagem d[ea]|sobre)\b.{0,18}\bbolsas?\b/,
+  /\bbolsas? (de|do|da) (\d+|estudo|desconto)\b/,
+  /\bbolsas?\b.{0,12}\b(disponivel|disponiveis|tem|existe|para mim|pra mim)\b/,
   /\b(me )?(manda|envia|passa|faz|gera|quero|queria|gostaria d[ea]|preciso d[ea]) (a |uma |sua )?proposta\b/,
   /\bquero saber quanto\b/
 ];
@@ -72,12 +77,14 @@ export const fastIntent = (text: string): FastIntent => {
 const SECRETARY = [
   /\b(falar|conversar|chamar|passar|ligar).{0,25}(com )?(a )?secretaria\b/,
   /\bdeclaracao (de )?(matricula|vinculo|escolaridade|conclusao|frequencia|estudante|cursando)\b/,
-  /\bhistorico escolar\b/,
   /\b(segunda via|2a via|2 via)\b/,
-  /\bcertificado de conclusao\b/,
   /\b(trancar|trancamento|cancelar|cancelamento)\b.{0,20}\b(matricula|curso|disciplina)\b/,
   /\brematricula\b/
 ];
+// the transcript and the certificate of a lead who is moving here are the input of the curricular analysis, not a request to the secretary
+const SECRETARY_DOCS = [/\bhistorico escolar\b/, /\bcertificado de conclusao\b/];
+// "quero cancelar o curso na outra faculdade e me transferir": the one cancelled is the other school's
+const OTHER_SCHOOL = /\b(outra|antiga|anterior|atual)\b.{0,25}\b(faculdade|instituicao|universidade|curso)\b|\b(faculdade|instituicao|universidade)\b.{0,25}\b(onde|que) (estudo|estudava|cursei|curso)\b|\b(me |vou )?transferir\b|\btransferencia\b/;
 const TUTORING = [
   /\b(falar|conversar|chamar|passar|ligar).{0,25}(com )?(a |o )?(tutoria|tutor|tutora)\b/,
   /\bmeu tutor\b|\bminha tutora\b/,
@@ -97,22 +104,27 @@ const TUTORING_STUDENT = [
 export const supportIntent = (text: string, student: boolean): "tutoring" | "secretary" | null => {
   const t = plain(text);
   if (!t) return null;
-  if (hit(SECRETARY, t)) return "secretary";
+  const cancelOfOther = OTHER_SCHOOL.test(t);
+  if (hit(SECRETARY.filter(r => !(cancelOfOther && /trancar/.test(r.source))), t)) return "secretary";
   if (hit(TUTORING, t)) return "tutoring";
-  if (student && hit(SECRETARY_STUDENT, t)) return "secretary";
+  if (student && (hit(SECRETARY_DOCS, t) || hit(SECRETARY_STUDENT, t))) return "secretary";
   if (student && hit(TUTORING_STUDENT, t)) return "tutoring";
   return null;
 };
 
-// "me envia a grade de pedagogia", "quero ver a matriz curricular": the grade is sent by the system, not left to the model to remember the tool
-const GRADE_ASK = /\b(grade|matriz( curricular)?|curriculo|disciplinas do curso)\b/;
-const GRADE_VERB = /\b(envia|enviar|envie|manda|mandar|mande|passa|passar|quero|queria|gostaria|posso ver|pode me|tem a|ver a|me mostra|mostrar|cadê|cade|preciso)\b/;
+// "me envia a grade de pedagogia", "qual a grade de enfermagem?", "quais as matérias do curso?": the grade is sent by the system, not left to the model to remember the tool
+const GRADE_ASK = /\b(grade|matriz( curricular)?|curriculo|ementa|disciplinas do curso|materias do curso|quais (sao )?as (materias|disciplinas)|que (materias|disciplinas))\b/;
+const GRADE_VERB = /\b(envia|enviar|envie|manda|mandar|mande|passa|passar|quero|queria|gostaria|posso ver|pode me|tem a|tem uma|ver a|me mostra|mostrar|me da|me de|cade|preciso|qual|quais|conhecer|saber)\b/;
+// "já vi a grade", "não quero a grade": nothing to send
+const GRADE_DONE = /\b(ja (recebi|vi|tenho|li|olhei)|recebi a|nao (quero|preciso)|dispenso|sem grade)\b/;
 export const gradeRequest = (text: string): { course: string | null } | null => {
   const t = plain(text);
-  if (!t || t.length > 160 || !GRADE_ASK.test(t) || !GRADE_VERB.test(t)) return null;
-  // a question about how the grade works, or the price, is not the request for the file
-  if (/\b(como funciona|o que e|o que significa|quanto|valor|mensalidade)\b/.test(t) && !/\b(envia|manda|mande|envie|quero ver|me mostra)\b/.test(t)) return null;
-  const m = t.match(/\b(?:grade|matriz(?: curricular)?|curriculo|disciplinas)\s+(?:curricular\s+)?(?:do curso\s+)?(?:de|do|da|dos|das)\s+(?:curso\s+(?:de|do|da)\s+)?([a-z ]{4,60})/);
+  if (!t || t.length > 160 || !GRADE_ASK.test(t) || GRADE_DONE.test(t)) return null;
+  // a short sentence about the grade, a question or a verb of asking is the request ("grade de pedagogia"); a long statement is not
+  if (!(GRADE_VERB.test(t) || t.includes("?") || t.length <= 60)) return null;
+  // a question about how the grade works, how hard it is, or the price, is not the request for the file
+  if (/\b(como funciona|o que e|o que significa|quanto|valor|mensalidade|dificil|pesad\w*|puxad\w*)\b/.test(t) && !/\b(envia|manda|mande|envie|quero ver|me mostra)\b/.test(t)) return null;
+  const m = t.match(/\b(?:grade|matriz(?: curricular)?|curriculo|disciplinas|materias|ementa)\s+(?:curricular\s+)?(?:do curso\s+)?(?:de|do|da|dos|das)\s+(?:curso\s+(?:de|do|da)\s+)?([a-z ]{4,60})/);
   const course = m ? m[1].replace(/\b(por favor|pfv|pf|pra mim|para mim|ai|aqui|agora|de novo|novamente|obrigado|obrigada)\b.*$/, "").replace(/\s+/g, " ").trim() : "";
   return { course: course.length >= 4 ? course : null };
 };
@@ -125,12 +137,14 @@ export const retractsBuying = (text: string): boolean => {
 
 // A reason to hand the conversation to a person that needs no model to be seen: an unhappy person, money already paid or a legal
 // word, a wrong number, or the same request for the third time. The reason travels to the team in the handoff.
-const COMPLAINT = /\b(absurdo|pessim[oa]|horrivel|palhacada|vergonha|decepcion\w*|reclam(ar|acao|ando)|procon|processar|processo|advogad\w*|justica|denunci\w*|(levei|sofri|vitima de|aplicaram|caí em|cai em)( um)? golpe|enganad\w*|fraude|estorno|reembolso|ja paguei|paguei|comprovante|cancelar (a |minha )?(matricula|inscricao|contrato)|cobranca indevida)\b/;
+const COMPLAINT = /\b(absurdo|pessim[oa]|horrivel|palhacada|vergonha|decepcion\w*|reclam(ar|acao|ando)|procon|processar|processo (judicial|na justica|contra)|advogad\w*|justica|denunci\w*|(levei|sofri|vitima de|aplicaram|caí em|cai em)( um)? golpe|enganad\w*|fraude|estorno|reembolso|ja paguei|paguei (o |a |um |uma )?(boleto|matricula|mensalidade|taxa|pix|duas vezes)|comprovante (de )?(pagamento|deposito|pix|transferencia)|cobranca indevida)\b/;
+// cancelling the enrollment here is a person's matter; cancelling the one at the other school (a lead moving over) is not a complaint
+const CANCEL_HERE = /\bcancelar (a |minha )?(matricula|inscricao|contrato)\b/;
 const WRONG_NUMBER = /\b(numero errado|nao sou (eu|essa pessoa|ele|ela)|foi engano|engano|nao conheco (voce|vocês)|quem e voce)\b/;
 export const humanReason = (text: string, previousUserTexts: string[] = []): "complaint" | "loop" | "other" | null => {
   const t = plain(text);
   if (!t) return null;
-  if (COMPLAINT.test(t)) return "complaint";
+  if (COMPLAINT.test(t) || (CANCEL_HERE.test(t) && !OTHER_SCHOOL.test(t))) return "complaint";
   if (WRONG_NUMBER.test(t)) return "other";
   // the same sentence again, twice before: the AI is not solving it
   if (t.length >= 8 && previousUserTexts.map(plain).filter(p => p === t).length >= 2) return "loop";
@@ -288,8 +302,8 @@ export const needsBolsaData = (slots: Slots): boolean => (isQualified(slots) || 
 export const readyForConsultantOf = (slots: Slots, replies: number, after: number = QUALIFIED_REPLIES): boolean => {
   if (!after || !isQualified(slots)) return false;
   const analysisDone = !needsTranscript(slots) || (slots.analysisStatus === "completed" && !!slots.analysisExplained);
-  // never wait forever for the data: a few more answers and the consultant takes it anyway
-  return analysisDone && replies >= after && (!needsBolsaData(slots) || replies >= after + 3);
+  // never wait forever for the data or the grade: a few more answers and the consultant takes it anyway (the grade is then sent by the system)
+  return analysisDone && replies >= after && (!needsBolsaData(slots) || replies >= after + 3) && (gradeResolved(slots) || replies >= after + 3);
 };
 
 export const nextActionOf = (s: CommercialState, facts: { human?: boolean; lost?: boolean } = {}): string => {
@@ -306,7 +320,7 @@ export const nextActionOf = (s: CommercialState, facts: { human?: boolean; lost?
   if (!slots.entryType || slots.entryType === "unknown") return "identify_entry_type";
   if (!slots.courseExplained) return "present_course";
   if (!slots.modalityExplained || (slots.mecImpacted && !slots.mecExplained)) return "explain_modality";
-  if (slots.gradeAsked && !slots.gradeSent) return "send_curriculum";
+  if (!gradeResolved(slots)) return "send_curriculum";
   return "answer_objection";
 };
 

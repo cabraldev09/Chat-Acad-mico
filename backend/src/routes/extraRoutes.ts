@@ -148,6 +148,7 @@ r.get("/tickets/:ticketId/commercial", isAuth, canReadTicket, Commercial.ticketC
 r.post("/ai-agents/from-template", isAuth, isManager, Ai.fromTemplate);
 r.post("/ai-agents/generate", isAuth, isManager, Ai.generate);
 r.post("/ai-agents/:id/convert", isAuth, isManager, Ai.convert);
+r.post("/ai-agents/:id/refresh-template", isAuth, isManager, Ai.refreshTemplate);
 r.get("/ai-agents/:id/kb", isAuth, isManager, Ai.kbList);
 r.post("/ai-agents/:id/kb", isAuth, isManager, Ai.kbAdd);
 r.post("/ai-agents/:id/kb/upload", isAuth, isManager, kbUpload.single("file"), Ai.kbUpload);
