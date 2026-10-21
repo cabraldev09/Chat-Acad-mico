@@ -32,7 +32,7 @@ Cada achado abaixo diz o que foi corrigido (✔), o que está só no repositóri
 3. ○ **Rotação do refresh token** com detecção de reuso e limite de tentativas por conta (hoje por IP+e-mail).
 4. ○ **Coordenação = administração** (decisão da empresa): separar os segredos (tokens de API, webhooks, chaves de IA, Efí, e-mail) só para administrador, ou aceitar e registrar.
 5. ○ **Trilha de auditoria** (quem exportou, viu CPF, mudou configuração, criou token, excluiu lead) e política de retenção/anonimização (LGPD).
-6. ○ Dependências: `nodemailer` 6 → 10 (2 avisos altos no `npm audit`), `whatsapp-web.js` por `https` em vez de `git+ssh`, Dependabot e `npm audit` no CI.
+6. ○ Dependências: `nodemailer` já está no 10.1.7; `whatsapp-web.js` passou a `git+https`, o Dependabot e o `npm audit` (sem bloquear) entraram no CI. Segue a conferir o resultado do `npm audit`.
 7. ○ Observabilidade: definir `SENTRY_DSN`, monitor externo em `/health`, alerta de disco/memória/certificado (precisa de contas suas).
 8. ○ Domínio próprio no lugar de `sslip.io` (limite compartilhado do Let's Encrypt); cópia externa do backup (Backblaze B2 / Cloudflare R2: precisa de conta).
 

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { toast } from "react-toastify";
 import { Check, Copy } from "lucide-react";
 
@@ -42,4 +42,33 @@ export const CopyButton = ({ text, label = "Copiar mensagem", ok, className = "c
       {done ? "Copiado" : label}
     </button>
   );
+};
+
+// A window over the page (the referral form, the QR Code): the focus goes inside when it opens, stays inside while Tab is pressed, Esc closes it and the
+// focus goes back to the button that opened it.
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([tabindex="-1"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+export const useDialogFocus = (onClose) => {
+  const ref = useRef(null);
+  useEffect(() => {
+    const opener = document.activeElement;
+    const node = ref.current;
+    const first = node && node.querySelector(FOCUSABLE);
+    if (first) first.focus();
+    const onKey = (e) => {
+      if (e.key === "Escape") { e.stopPropagation(); onClose(); return; }
+      if (e.key !== "Tab" || !node) return;
+      const items = [...node.querySelectorAll(FOCUSABLE)].filter((el) => el.offsetParent !== null);
+      if (!items.length) return;
+      const a = items[0];
+      const z = items[items.length - 1];
+      if (e.shiftKey && document.activeElement === a) { e.preventDefault(); z.focus(); }
+      else if (!e.shiftKey && document.activeElement === z) { e.preventDefault(); a.focus(); }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      if (opener && typeof opener.focus === "function") opener.focus();
+    };
+  }, [onClose]);
+  return ref;
 };

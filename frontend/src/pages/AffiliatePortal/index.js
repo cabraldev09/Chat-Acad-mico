@@ -9,7 +9,7 @@ import {
 import { getBackendUrl } from "../../config";
 import logo from "../../assets/logo-cruzeiro-color.svg";
 import BrandStar from "../../components/BrandStar";
-import { CopyButton } from "./shared";
+import { CopyButton, useDialogFocus } from "./shared";
 import PromoPanel, { Messages } from "./PromoPanel";
 import ArtLibrary from "./ArtLibrary";
 import { Funnel, HeroCard, ShareBar } from "./HomeParts";
@@ -53,6 +53,9 @@ const daysLeft = (end) => {
   return d === 0 ? "termina hoje" : d === 1 ? "termina amanhã" : `termina em ${d} dias`;
 };
 
+// the video player of another site runs in a closed box: it plays, but cannot reach this page or navigate it
+const EMBED_SANDBOX = "allow-scripts allow-same-origin allow-presentation";
+
 const isImage = (m) => m.hasFile && /^image\//.test(m.mimeType || "");
 
 const ReferralSheet = ({ token, courses, presetCourse, onClose, onDone }) => {
@@ -60,11 +63,7 @@ const ReferralSheet = ({ token, courses, presetCourse, onClose, onDone }) => {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    const onKey = (e) => e.key === "Escape" && onClose();
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  const dialog = useDialogFocus(onClose);
 
   const set = (k) => (e) => { e && e.persist && e.persist(); return (setForm((f) => ({ ...f, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value }))); };
 
@@ -88,15 +87,15 @@ const ReferralSheet = ({ token, courses, presetCourse, onClose, onDone }) => {
 
   return (
     <div className="ca-overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()} role="presentation">
-      <form className="ca-sheet" onSubmit={submit} role="dialog" aria-modal="true" aria-labelledby="ca-ind-title">
+      <form className="ca-sheet" onSubmit={submit} role="dialog" aria-modal="true" aria-labelledby="ca-ind-title" ref={dialog}>
         <h2 id="ca-ind-title">Indicar alguém</h2>
         <p className="ca-help">Seu consultor entra em contato com a pessoa e você acompanha o andamento aqui.</p>
         {error && <div className="ca-error" role="alert">{error}</div>}
         <label className="ca-field">Nome de quem você indica
-          <input value={form.name} onChange={set("name")} required minLength={2} autoComplete="off" autoFocus />
+          <input value={form.name} onChange={set("name")} required minLength={2} autoComplete="name" />
         </label>
         <label className="ca-field">WhatsApp com DDD (obrigatório)
-          <input value={form.phone} onChange={set("phone")} required inputMode="tel" type="tel" minLength={10} maxLength={20} placeholder="(69) 99999-0000" autoComplete="off" />
+          <input value={form.phone} onChange={set("phone")} required inputMode="tel" type="tel" minLength={10} maxLength={20} placeholder="(00) 00000-0000" autoComplete="off" />
         </label>
         <label className="ca-field">Curso de interesse (se souber)
           <select value={form.courseId} onChange={set("courseId")}>
@@ -135,7 +134,7 @@ const MaterialCard = ({ token, m, onCopied }) => {
         <span className="ca-kind"><kind.Icon size={12} /> {kind.label}</span>
         {isImage(m) && <img src={`${fileUrl}?preview=1`} alt={m.title} loading="lazy" />}
         {isVideoFile && <video src={`${fileUrl}?preview=1`} controls preload="metadata" />}
-        {!isImage(m) && !isVideoFile && embed && <iframe src={embed} title={m.title} loading="lazy" allowFullScreen />}
+        {!isImage(m) && !isVideoFile && embed && <iframe src={embed} title={m.title} loading="lazy" sandbox={EMBED_SANDBOX} referrerPolicy="strict-origin-when-cross-origin" allow="fullscreen; picture-in-picture" allowFullScreen />}
         {!isImage(m) && !isVideoFile && !embed && <kind.Icon size={44} strokeWidth={1.4} />}
       </div>
       <div className="ca-body">
@@ -167,6 +166,8 @@ function youtubeEmbed(url) {
 }
 
 const PAGES = ["home", "materials", "campaigns", "learn", "referrals"];
+// the address of a page: each one is a real link (opens in a new tab, can be shared, shows where it goes)
+const hrefOf = (page, key) => `#${page === "collection" ? "colecao" : page}${key ? `-${key}` : ""}`;
 const readHash = () => {
   const h = String(window.location.hash || "").replace(/^#\/?/, "");
   if (h.startsWith("colecao-")) return { page: "collection", key: h.slice(8) };
@@ -187,11 +188,10 @@ const AffiliatePortal = ({ match }) => {
   const [sheet, setSheet] = useState(null);
 
   const go = useCallback((page, key) => {
-    window.location.hash = key ? `${page === "collection" ? "colecao" : page}-${key}` : page;
-    window.scrollTo({ top: 0 });
+    window.location.hash = hrefOf(page, key).slice(1);
   }, []);
   useEffect(() => {
-    const onHash = () => setRoute(readHash());
+    const onHash = () => { setRoute(readHash()); window.scrollTo({ top: 0 }); };
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
@@ -210,6 +210,16 @@ const AffiliatePortal = ({ match }) => {
   }, [token]);
   useEffect(() => { load(); }, [load]);
   useEffect(() => { if (data) document.title = `${data.title} · ${data.affiliate.firstName}`; }, [data]);
+  // the page is private by its link: no search engine keeps it, and the tab has a name even before the data arrives
+  useEffect(() => {
+    const before = document.title;
+    document.title = "Central do Afiliado · Cruzeiro do Sul Virtual";
+    const meta = document.createElement("meta");
+    meta.name = "robots";
+    meta.content = "noindex,nofollow";
+    document.head.appendChild(meta);
+    return () => { document.head.removeChild(meta); document.title = before; };
+  }, []);
 
   const copied = (id) => { http.post(`/affiliate-portal/${token}/materials/${id}/copied`).catch(() => undefined); };
 
@@ -233,7 +243,7 @@ const AffiliatePortal = ({ match }) => {
 
   if (state === "loading") {
     return (
-      <div className="ca-root"><div className="ca-wrap" style={{ paddingTop: 80 }}>
+      <div className="ca-root"><div className="ca-wrap" style={{ paddingTop: 80 }} role="status" aria-live="polite" aria-label="Carregando a sua central">
         <div className="ca-skel" style={{ height: 40, width: 220 }} /><div className="ca-skel" style={{ height: 220, marginTop: 24 }} />
       </div></div>
     );
@@ -269,7 +279,7 @@ const AffiliatePortal = ({ match }) => {
     const cover = coverOf(k);
     const count = (byCollection[k] || []).length;
     return (
-      <button key={k} type="button" className="ca-collection" onClick={() => go("collection", k)}>
+      <a key={k} href={hrefOf("collection", k)} className="ca-collection">
         <div className="ca-cover">
           {cover ? <img src={`${API}/affiliate-portal/${token}/files/${cover.id}?preview=1`} alt="" loading="lazy" /> : <div className="words">{c.name.toUpperCase()}<br /><em>EM DESTAQUE.</em></div>}
           <span>{c.tag}</span>
@@ -279,7 +289,7 @@ const AffiliatePortal = ({ match }) => {
           <p>{c.about}</p>
           <small>{count} {count === 1 ? "material" : "materiais"}</small>
         </div>
-      </button>
+      </a>
     );
   };
 
@@ -330,7 +340,7 @@ const AffiliatePortal = ({ match }) => {
 
         <div className="ca-section-head">
           <div><span className="ca-over">Materiais da equipe</span><h2 className="ca-h2">Escolha uma coleção.</h2></div>
-          <button type="button" className="ca-text-link" onClick={() => go("materials")}>Ver todos os materiais <ArrowRight size={16} /></button>
+          <a className="ca-text-link" href={hrefOf("materials")}>Ver todos os materiais <ArrowRight size={16} /></a>
         </div>
         {shown.length ? (
           <div className="ca-collections">{shown.map((k) => CollectionTile({ k }))}</div>
@@ -343,9 +353,9 @@ const AffiliatePortal = ({ match }) => {
             <div className="ca-section-head"><div><span className="ca-over">Comece com confiança</span><h2 className="ca-h2">Veja como funciona.</h2></div></div>
             <div className="ca-videos">
               {data.videos.map((v) => (
-                <button key={v.key} type="button" className="ca-film" onClick={() => go("video", v.key)}>
+                <a key={v.key} href={hrefOf("video", v.key)} className="ca-film">
                   <i><Play size={18} /></i><span><strong>{v.title}</strong><small>Vídeo · YouTube</small></span>
-                </button>
+                </a>
               ))}
             </div>
           </>
@@ -426,13 +436,13 @@ const AffiliatePortal = ({ match }) => {
   const CollectionPage = ({ k }) => {
     const c = COLLECTIONS[k];
     const list = byCollection[k] || [];
-    if (!c) return <div className="ca-empty"><strong>Coleção não encontrada</strong><button type="button" className="ca-text-link" onClick={() => go("materials")}>Voltar aos materiais</button></div>;
+    if (!c) return <div className="ca-empty"><strong>Coleção não encontrada</strong><a className="ca-text-link" href={hrefOf("materials")}>Voltar aos materiais</a></div>;
     const arts = list.filter((m) => isImage(m));
     const texts = list.filter((m) => m.copyText);
     const others = list.filter((m) => !isImage(m) && !m.copyText);
     return (
       <>
-        <button type="button" className="ca-back" onClick={() => go("materials")}><ArrowLeft size={16} /> Todas as coleções</button>
+        <a className="ca-back" href={hrefOf("materials")}><ArrowLeft size={16} /> Todas as coleções</a>
         <span className="ca-over">Coleção de divulgação</span>
         <h1 className="ca-h1" style={{ fontSize: "clamp(34px, 5vw, 54px)" }}>{c.name}</h1>
         <p className="ca-lead">{c.line} {c.about}</p>
@@ -494,10 +504,10 @@ const AffiliatePortal = ({ match }) => {
       <>
         {playing ? (
           <>
-            <button type="button" className="ca-back" onClick={() => go("learn")}><ArrowLeft size={16} /> Orientações</button>
+            <a className="ca-back" href={hrefOf("learn")}><ArrowLeft size={16} /> Orientações</a>
             <h1 className="ca-h2">{playing.title}</h1>
             <div style={{ marginTop: 18 }}>
-              {playing.embed ? <iframe className="ca-player" src={playing.embed} title={playing.title} allowFullScreen /> : <a className="ca-btn is-primary" href={playing.url} target="_blank" rel="noopener noreferrer"><ExternalLink size={16} /> Abrir vídeo</a>}
+              {playing.embed ? <iframe className="ca-player" src={playing.embed} title={playing.title} sandbox={EMBED_SANDBOX} referrerPolicy="strict-origin-when-cross-origin" allow="fullscreen; picture-in-picture" allowFullScreen /> : <a className="ca-btn is-primary" href={playing.url} target="_blank" rel="noopener noreferrer"><ExternalLink size={16} /> Abrir vídeo</a>}
             </div>
           </>
         ) : (
@@ -506,7 +516,7 @@ const AffiliatePortal = ({ match }) => {
             <h1 className="ca-h1" style={{ fontSize: "clamp(34px, 5vw, 54px)" }}>Seu caminho<br />mais claro.</h1>
             {data.videos.length > 0 && (
               <div className="ca-videos" style={{ marginTop: 28 }}>
-                {data.videos.map((v) => <button key={v.key} type="button" className="ca-film" onClick={() => go("video", v.key)}><i><Play size={18} /></i><span><strong>{v.title}</strong><small>Vídeo · YouTube</small></span></button>)}
+                {data.videos.map((v) => <a key={v.key} href={hrefOf("video", v.key)} className="ca-film"><i><Play size={18} /></i><span><strong>{v.title}</strong><small>Vídeo · YouTube</small></span></a>)}
               </div>
             )}
             <div className="ca-section-head" style={{ marginTop: 44 }}><h2 className="ca-h2">Perguntas frequentes</h2></div>
@@ -559,14 +569,15 @@ const AffiliatePortal = ({ match }) => {
 
   return (
     <div className="ca-root">
+      <a className="ca-skip" href="#conteudo" onClick={(e) => { e.preventDefault(); const m = document.getElementById("conteudo"); if (m) m.focus(); }}>Ir para o conteúdo</a>
       <header className="ca-top">
         <div className="ca-wrap">
-          <button type="button" className="ca-brand" onClick={() => go("home")} aria-label="Cruzeiro do Sul Virtual, início">
-            <img src={logo} alt="Cruzeiro do Sul Virtual" draggable={false} />
-            <small>{String(data.title || "Central do Afiliado").toUpperCase()}</small>
-          </button>
+          <a className="ca-brand" href={hrefOf("home")} aria-label={`Cruzeiro do Sul Virtual, ${data.title || "Central do Afiliado"}, início`}>
+            <img src={logo} alt="" draggable={false} />
+            <small>{data.title || "Central do Afiliado"}</small>
+          </a>
           <nav className="ca-nav" aria-label="Menu principal">
-            {NAV.map(([key, label]) => <button key={key} type="button" aria-current={page === key ? "page" : undefined} onClick={() => go(key)}>{label}</button>)}
+            {NAV.map(([key, label]) => <a key={key} href={hrefOf(key)} aria-current={page === key ? "page" : undefined}>{label}</a>)}
           </nav>
           <div className="ca-top-actions">
             <button type="button" className="ca-btn is-primary" onClick={() => setSheet({})}><UserPlus size={16} /><span>Indicar alguém</span></button>
@@ -574,7 +585,7 @@ const AffiliatePortal = ({ match }) => {
         </div>
       </header>
 
-      <main className="ca-wrap ca-page" key={`${route.page}-${route.key}`}>
+      <main id="conteudo" tabIndex={-1} className="ca-wrap ca-page" key={`${route.page}-${route.key}`}>
         {route.page === "home" && Home()}
         {route.page === "materials" && Materials()}
         {route.page === "collection" && CollectionPage({ k: route.key })}
@@ -584,7 +595,7 @@ const AffiliatePortal = ({ match }) => {
       </main>
 
       <nav className="ca-bottom" aria-label="Navegação no celular">
-        {NAV.map(([key, label, Icon]) => <button key={key} type="button" aria-current={page === key ? "page" : undefined} onClick={() => go(key)}><Icon size={20} />{label}</button>)}
+        {NAV.map(([key, label, Icon]) => <a key={key} href={hrefOf(key)} aria-current={page === key ? "page" : undefined}><Icon size={22} aria-hidden="true" />{label}</a>)}
       </nav>
 
       {sheet && (

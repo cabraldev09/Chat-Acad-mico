@@ -3,7 +3,7 @@ import QRCode from "qrcode.react";
 import { Download, MessageCircle, QrCode, Share2, X } from "lucide-react";
 
 import NumberTicker from "../../components/NumberTicker";
-import { CopyButton } from "./shared";
+import { CopyButton, useDialogFocus } from "./shared";
 import { ArtCanvas } from "./ArtMaker";
 import { PHRASES } from "./promoContent";
 
@@ -12,11 +12,7 @@ const brl = (n) => Number(n || 0).toLocaleString("pt-BR", { style: "currency", c
 // the QR Code of her link, big, with a button to save it as an image
 const QrSheet = ({ link, nome, onClose }) => {
   const box = useRef(null);
-  useEffect(() => {
-    const onKey = (e) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  const dialog = useDialogFocus(onClose);
   const save = () => {
     const canvas = box.current && box.current.querySelector("canvas");
     if (!canvas) return;
@@ -29,10 +25,10 @@ const QrSheet = ({ link, nome, onClose }) => {
   };
   return (
     <div className="ca-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="ca-sheet ca-qr" role="dialog" aria-modal="true" aria-label="QR Code do seu link">
+      <div className="ca-sheet ca-qr" role="dialog" aria-modal="true" aria-label="QR Code do seu link" ref={dialog}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <h2>Seu QR Code</h2>
-          <button type="button" className="ca-btn is-ghost" onClick={onClose} aria-label="Fechar" autoFocus><X size={16} /></button>
+          <button type="button" className="ca-btn is-ghost" onClick={onClose} aria-label="Fechar"><X size={16} /></button>
         </div>
         <p className="ca-help">Quem apontar a câmera do celular abre o seu link de indicação{nome ? `, ${nome}` : ""}. Imprima, coloque no seu story ou mostre na tela.</p>
         <div className="ca-qr-box" ref={box}>
