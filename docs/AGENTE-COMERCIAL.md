@@ -104,3 +104,24 @@ O tutor que inicia ou conclui um aluno sem tutor o assume (a conversa fica abert
 
 ## Medir (aba Resultados da Central)
 Além do funil: quantos leads **entraram** no sistema (evento `lead_created`, por qualquer porta) contra os atendidos pelo agente; funil **por polo** e **por origem** (pelo lead, cada lead uma vez por etapa); **motivo de perda** estruturado na coluna "Sem interesse" (preço, outra instituição, horário, desistência) a partir da objeção que apareceu (`Ports.lostReasonOf`); tempo e pendências de resposta da equipe só das conversas **deste** agente; e "conversas atendidas" por agente.
+
+## Roteiro do agente (o que impede que ele se perca)
+O caminho de todo lead é o mesmo e vive no estado do lead (`CommercialServices/Journey.ts`, funções puras): **qualificar** (curso, cidade, ingresso) → **apresentar o curso** → **oferecer e enviar a grade** → (transferência ou 2ª graduação: **histórico em PDF → análise curricular → explicar o resultado**) → **entrega ao consultor do polo**. O próximo passo obrigatório entra no prompt a cada turno ("Próximo passo obrigatório: …") e define a "próxima ação" do CRM.
+- **O lead só vai ao consultor com a grade resolvida**: enviada, indisponível (e então existe uma tarefa para a equipe enviar) ou recusada. Se o lead conversar além do limite sem aceitar a grade, o sistema a envia na saída (`ai_qualified_replies` + 3 respostas).
+- **Oferta e aceite curto**: ao fechar a mensagem oferecendo a grade, o agente grava a oferta; o "sim", "pode mandar", "quero" seguinte dispara o envio **pelo sistema**, sem depender do modelo. "Não", "agora não" marca como recusada.
+- **Pedido da grade** é reconhecido sem modelo em frases como "qual a grade de Pedagogia?", "grade de enfermagem", "quais as matérias do curso?", "me envia a ementa". Perguntas sobre como a grade funciona ou quanto custa não são pedido de arquivo.
+
+## Grade: envio e falhas
+`GradeDelivery.ts` busca a matriz (`GradeChoice.ts`: nome canônico sem "CST em"/"2.0"/parênteses; matriz para egressos só em 2ª graduação ou curso "2.0"; entre bacharelado e licenciatura vale a palavra do lead, senão licenciatura; sempre a mesma) e envia o PDF com o resumo do estágio. **`gradeSent` só fica verdadeiro quando o PDF saiu** (uma nova tentativa depois de 2,5 s). Sem matriz, sem arquivo ou falha de envio: o lead ouve a verdade ("já avisei o consultor do seu polo para te enviar o PDF"), `gradeUnavailable` fica ligado, nasce **uma tarefa por curso** ("Enviar a grade de X ao lead") e os marcos `grade_failed`/`grade_sent` alimentam a Central. O teste da Central (simulador) também percorre o envio, sem enviar nada.
+
+## Desvios que não dependem do modelo, sem falso positivo
+Reclamação, secretaria, tutoria e proposta são reconhecidos por regras (`Rules.ts`). Frases de quem quer se **transferir** ("como é o processo de transferência?", "tenho o histórico escolar", "vou enviar o comprovante de residência", "cancelar o curso na outra faculdade") **não** viram reclamação nem secretaria: histórico escolar e certificado só contam para quem já é aluno, "comprovante" só como comprovante de pagamento e "bolsa" só quando é pergunta sobre bolsa.
+
+## Retomar quem sumiu
+`workers/AiReactivation.ts` (a cada 10 min): até 2 lembretes (3 h e 9 h), só com a janela de 24 h aberta, em horário comercial, sem opt-out e com o agente ainda no comando (o agente esperando, ou o roteiro terminado em bloco que continua quando o lead volta). Não lembra quem perdeu o interesse, quem está com uma pessoa, quem está pronto para proposta ou tem follow-up marcado. **O lembrete traz o passo pendente** ("Quer que eu te envie a grade de X?", "preciso do histórico em PDF") e, se oferecer a grade, o "sim" seguinte a envia. Um envio que falha para um lead não trava os demais (cada lead tem o seu `try`).
+
+## Base de conhecimento como regra
+Na aba Ensinar → **Roteiro / processo** a equipe escreve o passo a passo e as regras do atendimento (documentos `kind = process`, até 6.000 caracteres no total). Eles entram **inteiros** no prompt, como instrução a seguir, abaixo das regras de segurança do código (nunca valores, bolsas nem fatos sem fonte). Os demais documentos continuam sendo consulta de fatos: agora 4 trechos de 900 caracteres, buscados pela pergunta + a mensagem anterior + o curso da conversa (então "sim" ainda acha o assunto), e documentos `institutional/*` (análise curricular, estágio supervisionado, tutoria/secretaria) deixaram de ser escondidos depois que o lead informa o curso.
+
+## Agentes criados antes das melhorias
+O desenho do agente fica no rascunho do fluxo. **Atualizar agente** (Central → aviso "Roteiro atualizado", `POST /ai-agents/:id/refresh-template`) traz as instruções e ferramentas novas das etapas para o rascunho sem mexer em blocos, títulos, campos nem saídas da equipe. Depois é só publicar.

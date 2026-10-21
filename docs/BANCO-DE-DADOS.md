@@ -5,7 +5,7 @@
 | Peça | Onde | Observação |
 |---|---|---|
 | Telas (React) | **Vercel** | só arquivos estáticos; aponta para a API por `VITE_BACKEND_URL` |
-| Banco de dados | **Supabase (PostgreSQL)** | é o único banco; 43 tabelas |
+| Banco de dados | **Supabase (PostgreSQL)** | é o único banco; 76 tabelas (`supabase/schema.sql`) |
 | Arquivos enviados (mídia, PDFs, logos) | pasta `backend/public` no host da API (hoje) → Supabase Storage (próxima etapa) | |
 | **API Node (Express + socket.io + workers)** | **um host com processo ligado 24 h** (Railway, Fly.io, Render ou VPS) | **não roda dentro do Supabase** |
 | Sessões do WhatsApp (QR Code) | **disco do host da API** (`backend/.wwebjs_auth` ou `.zapo_auth`) | **não ficam no banco**; precisam de volume persistente |
@@ -35,7 +35,7 @@ Por que a API não pode ficar no Supabase: as Edge Functions do Supabase são fu
 ## Mapa das tabelas
 
 **Atendimento**
-- `Users` (equipe; `profile` admin/user), `Queues` (setores/filas), `UserQueues` (quem está em qual fila), `Whatsapps` (conexões/canais: WhatsApp QR, Cloud API, Telegram, Messenger, Instagram, chat web), `WhatsappQueues` (filas de cada conexão).
+- `Users` (equipe; o papel está em `role`: admin, coordenação, consultor, tutor…), `Queues` (setores/filas), `UserQueues` (quem está em qual fila), `Whatsapps` (conexões/canais: WhatsApp QR, Cloud API, Telegram, Messenger, Instagram, chat web), `WhatsappQueues` (filas de cada conexão).
 - `Contacts`, `ContactCustomFields`, `Tickets` (cada conversa; guarda fila, atendente, status), `Messages`, `TicketEvents` (histórico de transferências/atribuições), `Tags`, `TicketTags`, `ContactTags`, `QuickAnswers`, `Schedules` (mensagens agendadas).
 - Automação: `ChatbotNodes` (fluxo de menus), `AiAgents` (agentes de IA), `Campaigns`, `CampaignShippings` (um registro por destinatário), `ContactLists`, `ContactListItems`.
 - Conversas: `TicketPins` (fixadas, uma por pessoa); `Tickets.archivedAt` (arquivadas).
@@ -118,3 +118,11 @@ A produção atual roda na VPS (veja `docs/VPS-CONTABO.md`). Em qualquer outro h
 3. **Uma única réplica** (`numReplicas = 1`). Durante o deploy o Railway pode manter a versão antiga ligada por alguns segundos: a trava de instância única impede que as duas abram o WhatsApp ao mesmo tempo.
 4. **Banco novo**: o próprio start roda `sequelize db:migrate`. O administrador é criado pelo `scripts/bootstrap-production.js` (veja o passo 3 acima).
 5. **Vercel**: projeto com *Root Directory* `frontend`, `VITE_BACKEND_URL=https://sua-api/`.
+
+## Tabelas que o mapa acima não detalha
+
+- **Afiliados**: `Affiliates` (refCode e portalToken), `AffiliateClicks` (um clique por pessoa por dia, sem guardar IP), `AffiliateBonuses`, `AffiliateCampaigns`, `AffiliateMaterials`, `AffiliateAudiences`.
+- **Agente de IA e fluxos**: `ChatFlows`, `ChatFlowVersions`, `ChatFlowRuns` (a execução de cada conversa), `ChatFlowStats`, `AgentMetricEvents` (marcos do funil), `AgentTurnLogs` (um registro por turno), `AiUsages` (tokens), `AiLearnings`, `KbDocuments` e `KbChunks` (base de conhecimento; `kind` = doc, faq ou **process**, o roteiro que o agente segue), `LeadCommercials` (estado do lead no agente: slots, temperatura, próxima ação).
+- **Grades e análise**: `CommercialGrades` (matrizes), `CurricularAnalyses`, `AcademicAnalyses`, `CourseRegulations`, `Students`, `StudentTokens`.
+- **Outros**: `Goals`, `GoalMembers`, `GoalPolos`, `NpsSurveys`, `RetentionMessages`, `LeadDocuments`, `ClientErrors`, `PasswordResets`, `WebhookDeliveries`, `AutomationTriggers`, `MarketingSpends`, `PoloCoverages`.
+- Índices de busca por parte do texto (`pg_trgm`) em `Leads` e `Contacts` (migração `20261202000001-search-trigram`, melhor esforço).

@@ -2,6 +2,7 @@ import Course from "../../models/Course";
 import Lead from "../../models/Lead";
 import LeadCommercial from "../../models/LeadCommercial";
 import Polo from "../../models/Polo";
+import { COURSE_CHANGE_RESET } from "./Journey";
 
 // Everything the commercial agent knows about a lead, kept in one place and never asked again. The state lives in the database
 // (not in the conversation): a lead that comes back tomorrow goes on from where it stopped.
@@ -22,6 +23,8 @@ export const SLOT_KINDS: Record<string, Kind> = {
   courseDegree: "string", courseDurationSemesters: "number", courseDurationText: "string", courseModality: "string",
   courseExplained: "boolean", mecImpacted: "boolean", mecExplained: "boolean", modalityExplained: "boolean", modalityUnderstood: "boolean",
   gradeId: "number", gradeVersion: "string", gradeSent: "boolean", gradeAsked: "boolean",
+  // the grade could not be delivered (no matrix or no file: a person was asked to send it), the person said no to it, and the offer waiting for a short "yes"
+  gradeUnavailable: "boolean", gradeFileMissing: "boolean", gradeDeclined: "boolean", pendingOffer: "string",
   hasInternship: "boolean", internshipExplained: "boolean", internshipSummary: "string", hasTcc: "boolean", tccExplained: "boolean",
   platformExplained: "boolean", tutoringExplained: "boolean", facultyExplained: "boolean",
   analysisStatus: "analysis", analysisId: "number", analysisExplained: "boolean", semesterEntry: "number", subjectsWaived: "number", subjectsRemaining: "number", adaptations: "string", estimatedCompletion: "string",
@@ -135,6 +138,8 @@ export const saveState = async (s: CommercialState): Promise<void> => {
       const fresh = parse(row.slots);
       const merged: Slots = { ...fresh };
       Object.keys(s.slots).forEach(k => { if (JSON.stringify(s.slots[k]) !== JSON.stringify(s.loaded![k])) merged[k] = s.slots[k]; });
+      // a slot this turn removed ("delete s.slots.supportNeed") stays removed: without this the old value came back from the database
+      Object.keys(s.loaded).forEach(k => { if (!(k in s.slots)) delete merged[k]; });
       s.slots = merged;
       values.slots = JSON.stringify(mirror(s));
     }
@@ -175,7 +180,7 @@ export const hydrate = async (state: CommercialState, lead: Lead): Promise<Comme
     const changedCourse = edited("courseId");
     set("courseId", course.id); set("offerId", course.id); set("courseName", course.name); set("courseModality", course.modality); set("courseDurationSemesters", course.semesters); set("courseDegree", course.level);
     // another course: what was explained about the old one does not count for the new one
-    if (changedCourse) Object.assign(patch, { courseExplained: false, modalityExplained: false, mecExplained: false, internshipExplained: false, gradeSent: false });
+    if (changedCourse) Object.assign(patch, COURSE_CHANGE_RESET);
   }
   if (polo) { set("poloId", polo.id); set("poloName", polo.name); set("city", polo.city); }
   const entry = entryTypeOfAdmission(lead.admissionType);

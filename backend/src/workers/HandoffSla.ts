@@ -13,6 +13,7 @@ import { pickUserForQueue } from "../services/AutomationServices/AutoAssignTicke
 import { addActivity } from "../services/CrmServices/LeadCore";
 import UpdateTicketService from "../services/TicketServices/UpdateTicketService";
 import { logger } from "../utils/logger";
+import { guardedInterval } from "./guardedInterval";
 
 const MARK = "‎";
 
@@ -80,7 +81,7 @@ const tick = async (): Promise<void> => {
 };
 
 export const startHandoffSla = (): void => {
-  setInterval(tick, Number(process.env.HANDOFF_SLA_MS) || 60000);
+  guardedInterval("HandoffSla", tick, Number(process.env.HANDOFF_SLA_MS) || 60000);
 };
 
 export { tick as runHandoffSlaOnce };

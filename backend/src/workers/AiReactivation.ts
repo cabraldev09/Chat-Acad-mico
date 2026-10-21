@@ -17,6 +17,8 @@ import SendWhatsAppMessage from "../services/WbotServices/SendWhatsAppMessage";
 import ShowTicketService from "../services/TicketServices/ShowTicketService";
 import { logger } from "../utils/logger";
 import { firstName, nudgeText } from "../services/CommercialServices/Nudges";
+import { nextStep } from "../services/CommercialServices/Journey";
+import { guardedInterval } from "./guardedInterval";
 
 // A lead the AI agent was talking to who stops answering gets up to TWO gentle reminders, only while the WhatsApp service window is still open
 // (24 hours after the lead's last message: free text is allowed), during the company's working hours, never to someone who asked to stop, and
@@ -37,15 +39,26 @@ const tick = async (): Promise<void> => {
         lastInboundAt: { [Op.between]: [new Date(now - WINDOW_LIMIT_MS), new Date(now - FIRST_AFTER_MS)] },
         readyForProposal: false,
         readyForConsultant: false,
-        followUpAt: { [Op.is]: null }
+        followUpAt: { [Op.is]: null },
+        // a lost lead and one a person is already handling are not nudged
+        [Op.and]: [
+          { [Op.or]: [{ nextAction: { [Op.is]: null } }, { nextAction: { [Op.notIn]: ["close_lost", "generate_proposal", "human_service"] } }] },
+          { [Op.or]: [{ stageKey: { [Op.is]: null } }, { stageKey: { [Op.notIn]: ["no_interest", "lost", "human_service", "proposal", "enrollment_in_progress", "enrolled"] } }] }
+        ]
       } as any,
+      // the oldest first (their window closes soonest); one lead that fails never keeps the others waiting
+      order: [["lastInboundAt", "ASC"]],
       limit: 100
     });
     for (const row of rows) {
       // the agent spoke last (the lead did not answer)
       if (!row.lastOutboundAt || new Date(row.lastOutboundAt).getTime() <= new Date(row.lastInboundAt).getTime()) continue;
-      // eslint-disable-next-line no-await-in-loop
-      await remind(row, now);
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        await remind(row, now);
+      } catch (err) {
+        logger.warn(`AI reactivation of lead ${row.leadId} failed: ${(err as Error).message}`);
+      }
     }
   } catch (err) {
     logger.warn(`AI reactivation tick failed: ${err}`);
@@ -63,8 +76,10 @@ const remind = async (row: LeadCommercial, now: number): Promise<void> => {
   if (!lead || !lead.contactId) return;
   const ticket = await Ticket.findOne({ where: { contactId: lead.contactId, status: { [Op.ne]: "closed" }, isGroup: false, aiActive: true, userId: { [Op.is]: null } } as any, order: [["id", "DESC"]] });
   if (!ticket) return;
-  // the agent is still waiting for this lead in a conversation (not a flow that ended)
-  if (!(await ChatFlowRun.findOne({ where: { ticketId: ticket.id, status: "waiting" }, attributes: ["id"] }))) return;
+  // The agent is still in charge of this conversation: it waits for the lead in a block, or its script ended in a block that goes on when the lead
+  // comes back (waiting for the transcript or for the analysis, concluded). A run that was cancelled or failed is not resumed by a reminder.
+  const lastRun = await ChatFlowRun.findOne({ where: { ticketId: ticket.id }, order: [["id", "DESC"]], attributes: ["id", "status"] });
+  if (!lastRun || !["waiting", "done"].includes(String(lastRun.status))) return;
 
   const contact = await Contact.findByPk(ticket.contactId);
   const whatsapp = await Whatsapp.findByPk(ticket.whatsappId);
@@ -77,8 +92,12 @@ const remind = async (row: LeadCommercial, now: number): Promise<void> => {
       // opted out, window closed, daily limit or a number that never talked in safe mode: no reminder (the consultant's task remains)
       return;
     }
-    const text = nudgeText(nudges, firstName(state.slots.leadName || lead.name), state.slots.courseName);
+    // the reminder brings the step the conversation owes the lead (the grade, the transcript), not only "any doubt?"
+    const step = nextStep(state.slots).key;
+    const text = nudgeText(nudges, firstName(state.slots.leadName || lead.name), state.slots.courseName, step);
     await SendWhatsAppMessage({ body: `${MARK}${text}`, ticket: await ShowTicketService(ticket.id), automated: true });
+    // the reminder offered the grade: the lead's "sim" is the answer to it
+    if (step === "offer_grade" || step === "answer_offer") state.slots.pendingOffer = "grade";
     state.slots.nudges = nudges + 1;
     state.slots.nudgeAt = new Date().toISOString();
     await saveState(state);
@@ -90,7 +109,7 @@ const remind = async (row: LeadCommercial, now: number): Promise<void> => {
 };
 
 export const startAiReactivation = (): void => {
-  setInterval(tick, Number(process.env.REACTIVATION_MS) || 10 * 60000).unref?.();
+  guardedInterval("AiReactivation", tick, Number(process.env.REACTIVATION_MS) || 10 * 60000).unref?.();
 };
 
 export { tick as runAiReactivationOnce };

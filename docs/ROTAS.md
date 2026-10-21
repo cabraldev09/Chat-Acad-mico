@@ -1,8 +1,16 @@
-# Rotas da API (423)
+# Rotas da API (435)
+
+> Os caminhos abaixo estão sem o prefixo de montagem do `app.ts`: `/auth` (login, forgot, reset, refresh_token), `/public/courses` (página de curso), `/webhooks` (Meta e Efí), `/leadform` e `/r` (captação), `/affiliate-portal` (Central do Afiliado), `/p` (proposta pública), `/portal` (portal do aluno, **token de aluno**, não são públicas de verdade). `isAdmin` e `isManager` hoje são o mesmo controle (coordenação = administração).
+
 
 Públicas: 31 · logado (qualquer perfil): 244 · gestão: 109 · admin: 31
 
 ## Públicas (sem login)
+
+- GET /r/:code · POST /r/:code/submit (leadFormRoutes.ts): landing e captação do link do afiliado; registra o clique
+- GET /leadform/_logo.svg · /_logo-light.png · /_og.jpg · /_aluna.webp (imagens da landing)
+- GET /affiliate-portal/:token · POST /affiliate-portal/:token/materials/:id/copied · GET /affiliate-portal/:token/files/:id · GET /affiliate-portal/:token/campaigns/:id/cover · POST /affiliate-portal/:token/referrals (affiliatePortalRoutes.ts): a Central do Afiliado, o token de 48 caracteres é o acesso
+- POST /client-errors (5 rotas de erros do navegador)
 
 - POST /portal/login (analysisRoutes.ts)
 - GET /portal/token/:token (analysisRoutes.ts)

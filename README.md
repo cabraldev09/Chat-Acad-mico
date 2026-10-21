@@ -14,7 +14,7 @@ com recursos de plano pago construídos do zero: canais extras, chatbot, IA, cam
 | Horário de atendimento e mensagem fora do horário | Conexões → editar |
 | Etiquetas e mensagens agendadas | Etiquetas / Agendamentos |
 | Campanhas em massa (listas, CSV, variáveis, intervalos, relatório) | Campanhas |
-| Estatísticas e monitor ao vivo | Estatísticas / Monitor ao vivo |
+| Estatísticas | Estatísticas |
 | API com tokens e webhooks de saída assinados (HMAC) | API & Webhooks |
 
 ## CRM de captação (ensino superior)
@@ -70,7 +70,7 @@ cobranças abertas (funciona em localhost, sem URL pública). Nenhum aviso é ac
 confirmar, o lead avança de etapa (configurável), a equipe é avisada e o evento `payment.paid` sai nos webhooks.
 
 Configuração (admin): Configurar CRM → Pagamentos (Efí): ambiente, Client ID/Secret, chave PIX e o certificado `.p12`
-(guardado em `backend/secrets/`, fora do Git). O CPF não aparece em listas e só a ficha detalhada o exibe.
+(guardado no volume persistente, em `$UPLOAD_DIR/../secrets`, fora do Git; o envio do arquivo é a rota `POST /payments/efi/certificate`). O CPF não aparece em listas e só a ficha detalhada o exibe.
 
 ## Banco de dados e publicação
 
@@ -79,7 +79,7 @@ O banco é **PostgreSQL** (local ou **Supabase**); tudo é gravado em UTC e exib
 ## Segurança e proteção contra bloqueio
 
 **Acesso**
-- O cadastro público (`/auth/signup`) vem **desligado**; só o administrador cria usuários. Quem se cadastra sozinho (se você ligar a opção) nunca escolhe perfil nem setores.
+- Não há cadastro público: só o administrador cria usuários, e cada um recebe o perfil e os setores que ele escolher.
 - Criar/editar/excluir usuários, setores, conexões e sessões é só do administrador. Excluir ticket ou contato também.
 - Atendente só abre conversas dos **seus setores** (ou suas); só responde/transfere as **suas** ou as ainda sem dono. Administrador vê tudo.
 - Login, formulário de captação, web chat, link da proposta e webhooks têm limite de requisições (429). Arquivos enviados recebem nome aleatório e HTML/SVG nunca executa na origem do app.
@@ -104,7 +104,7 @@ Para contatos frios e disparos em volume, use a **WhatsApp Cloud API** (oficial,
 ## Testes
 
 `npm --prefix backend run test:channels` sobe o backend com um banco descartável e servidores falsos do Telegram e da Graph API
-da Meta, e verifica canais, assinatura de webhooks, mídia, chatbot, CRM e campanhas com modelo (68 verificações, incluindo a conferência célula a célula das propostas de referência e o fluxo PIX contra uma Efí simulada).
+da Meta, e verifica canais, assinatura de webhooks, mídia, chatbot, CRM e campanhas com modelo (mais de 180 verificações, incluindo a conferência célula a célula das propostas de referência e o fluxo PIX contra uma Efí simulada).
 
 ## Rodando localmente (macOS)
 
@@ -142,3 +142,17 @@ React 16 + Material-UI v4 com tema próprio (Catalina Blue `#0B4279`, Cerulean `
 ## Licença
 
 MIT, herdada do projeto original.
+
+## Documentação
+
+| Documento | O que tem |
+|---|---|
+| [`docs/AGENTE-COMERCIAL.md`](docs/AGENTE-COMERCIAL.md) | O agente comercial: roteiro por etapas, envio da grade, retomada, base de conhecimento como regra, repasse ao polo |
+| [`docs/IA-E-CONVERSAS.md`](docs/IA-E-CONVERSAS.md) | Agentes de IA, gasto, aprendizado, chatbot e conversas |
+| [`docs/AFILIADOS-SITE.md`](docs/AFILIADOS-SITE.md) | O site público dos afiliados: landing `/r/CÓDIGO`, Central do Afiliado, página de curso, rastreio e bônus |
+| [`docs/ROTAS.md`](docs/ROTAS.md) | Rotas da API por perfil |
+| [`docs/BANCO-DE-DADOS.md`](docs/BANCO-DE-DADOS.md) | Mapa das tabelas, Supabase e Vercel |
+| [`docs/VERIFICACOES.md`](docs/VERIFICACOES.md) | Como conferir que tudo funciona (testes, ponta a ponta, telas) |
+| [`docs/VPS-CONTABO.md`](docs/VPS-CONTABO.md) | Servidor, deploy e backup |
+| [`docs/RUNBOOK.md`](docs/RUNBOOK.md) | O que fazer quando algo falha: deploy, volta, restauração, "o agente não fez X" |
+| [`docs/AUDITORIA-2026-10.md`](docs/AUDITORIA-2026-10.md) | Auditoria de segurança e qualidade e o que segue aberto |

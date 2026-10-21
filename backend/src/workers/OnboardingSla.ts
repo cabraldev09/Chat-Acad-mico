@@ -8,6 +8,7 @@ import { getIO } from "../libs/socket";
 import { logger } from "../utils/logger";
 import { addActivity } from "../services/CrmServices/LeadCore";
 import LeadReminderLog from "../models/LeadReminderLog";
+import { guardedInterval } from "./guardedInterval";
 
 // A student waiting for the tutor longer than the SLA (setting onboarding_sla_hours, default 24h)
 // raises one alert to the tutor, and one task plus a live notice to every administrator and coordinator (so nobody misses it even when
@@ -60,5 +61,5 @@ const tick = async (): Promise<void> => {
 };
 
 export const startOnboardingSla = (): void => {
-  setInterval(tick, Number(process.env.ONBOARDING_SLA_MS) || 10 * 60 * 1000);
+  guardedInterval("OnboardingSla", tick, Number(process.env.ONBOARDING_SLA_MS) || 10 * 60 * 1000);
 };

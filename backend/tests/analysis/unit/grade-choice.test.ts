@@ -48,3 +48,39 @@ describe("the text under the PDF", () => {
     expect(out.endsWith("encher a legenda")).toBe(true);
   });
 });
+
+import { canonicalName } from "../../../src/services/CommercialServices/GradeChoice";
+describe("the name of the course on the matrix", () => {
+  it("is the same course with or without CST, articles and the degree in parentheses", () => {
+    expect(canonicalName("CST EM ANÁLISE E DESENVOLVIMENTO DE SISTEMAS")).toBe(canonicalName("Análise e desenvolvimento de sistemas"));
+    expect(canonicalName("CST EM COMPUTAÇÃO EM NUVEM")).toBe(canonicalName("Computação nuvem"));
+    expect(canonicalName("PEDAGOGIA (LICENCIATURA)")).toBe("pedagogia");
+    expect(canonicalName("CIÊNCIAS CONTÁBEIS (PARA BACH ADM, ECON, ATUARIAIS")).toBe("ciencias contabeis");
+  });
+
+  it("finds the matrix whose file name differs from the catalogue", () => {
+    const all = [grade(1, "CST EM CIÊNCIA DE DADOS", "EAD", "2026.2"), grade(2, "CST EM CRIMINOLOGIA", "EAD", "2026.2")];
+    expect(chooseGrade(all, { name: "Ciencia de dados" }, null).grade?.id).toBe(1);
+    expect(chooseGrade(all, { name: "Criminologia" }, null).grade?.id).toBe(2);
+  });
+
+  it("takes the first degree, not the matrix made for graduates, unless it is a second degree", () => {
+    const all = [grade(1, "ADMINISTRAÇÃO (BACH P EGRESSO CONTAB GESTAO GTI SEG TR)", "EAD", "2026.2"), grade(2, "ADMINISTRAÇÃO (BACHARELADO)", "EAD", "2026.2")];
+    expect(chooseGrade(all, { name: "Administração" }, null).grade?.id).toBe(2);
+    expect(chooseGrade(all, { name: "Administração" }, null, { egress: true }).grade?.id).toBe(1);
+  });
+
+  it("a course 2.0 uses only a matrix for graduates (never the 8-semester one)", () => {
+    const first = [grade(2, "ADMINISTRAÇÃO (BACHARELADO)", "EAD", "2026.2")];
+    expect(chooseGrade(first, { name: "Administração 2.0" }, null).grade).toBeNull();
+    const both = [...first, grade(1, "ADMINISTRAÇÃO (BACH P EGRESSO CONTAB GESTAO GTI SEG TR)", "EAD", "2026.2")];
+    expect(chooseGrade(both, { name: "Administração 2.0" }, null).grade?.id).toBe(1);
+  });
+
+  it("two matrices of the same name: the words of the person decide, else the teaching degree, always the same one", () => {
+    const all = [grade(5, "MATEMÁTICA (BACHARELADO)", "EAD", "2026.2"), grade(3, "MATEMÁTICA (LICENCIATURA)", "EAD", "2026.2"), grade(4, "MATEMÁTICA (LIC. EM FÍSICA E QUÍMICA)", "EAD", "2026.2")];
+    expect(chooseGrade(all, { name: "Matemática" }, null).grade?.id).toBe(3);
+    expect(chooseGrade(all, { name: "Matemática" }, null, { hint: "bacharelado em matemática" }).grade?.id).toBe(5);
+    expect(chooseGrade([...all].reverse(), { name: "Matemática" }, null).grade?.id).toBe(3);
+  });
+});

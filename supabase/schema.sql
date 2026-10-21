@@ -5917,6 +5917,13 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261128000001-whatsapp-ai-first.js'
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261129000001-goal-extra-holidays.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261130000001-analysis-polo.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261201000001-quick-answer-owner.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261202000001-search-trigram.js') ON CONFLICT DO NOTHING;
+
+-- Índices de busca por parte do texto (pg_trgm), melhor esforço
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE INDEX IF NOT EXISTS "leads_name_trgm" ON "Leads" USING gin ("name" gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS "leads_email_trgm" ON "Leads" USING gin ("email" gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS "contacts_name_trgm" ON "Contacts" USING gin ("name" gin_trgm_ops);
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

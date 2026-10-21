@@ -3,8 +3,8 @@ import { Op } from "sequelize";
 import Ticket from "../../models/Ticket";
 
 // The AI answers a conversation from one place at a time, even with several servers: the one that writes the mark first is the one that
-// talks. The mark expires (default 2 minutes) so a server that died while answering never blocks the conversation.
-export const claimAi = async (ticketId: number, ttlSeconds = 120): Promise<boolean> => {
+// talks. The mark expires (default 4 minutes: a turn with four model calls and a PDF can pass two) so a server that died while answering never blocks the conversation.
+export const claimAi = async (ticketId: number, ttlSeconds = 240): Promise<boolean> => {
   const cutoff = new Date(Date.now() - ttlSeconds * 1000);
   // `silent`: the conversation keeps its place in the list (updatedAt is not touched)
   const [changed] = await Ticket.update({ aiClaimAt: new Date() } as any, { where: { id: ticketId, [Op.or]: [{ aiClaimAt: null }, { aiClaimAt: { [Op.lt]: cutoff } }] } as any, silent: true } as any);

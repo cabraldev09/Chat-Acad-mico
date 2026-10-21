@@ -17,6 +17,7 @@ import { StageData, checkField } from "../FlowServices/StageSpec";
 import { ACADEMIC_TOOLS, AcademicCtx, findCourse, runAcademicTool } from "../CommercialServices/Academic";
 import { COMMERCIAL_TOOL_DEFS } from "../CommercialServices/ToolDefs";
 import { Slots, cleanPatch } from "../CommercialServices/Slots";
+import { COURSE_CHANGE_RESET } from "../CommercialServices/Journey";
 
 export interface Slot {
   key: string;
@@ -184,7 +185,7 @@ const registerTurn = async (input: any, ctx: Ctx): Promise<any> => {
     if (found && found.id !== current) {
       // the person changed the course ("e Enfermagem?"): the new one replaces the old, and what was explained about the old no longer counts
       Object.assign(patch, cleanPatch({ courseId: found.id, offerId: found.id, courseName: found.name, courseModality: found.modality, courseDurationSemesters: found.semesters, courseDegree: found.level }));
-      if (current) Object.assign(patch, { courseExplained: false, modalityExplained: false, mecExplained: false, internshipExplained: false, gradeSent: false, gradeId: null });
+      if (current) Object.assign(patch, COURSE_CHANGE_RESET);
     } else if (!found && !current) Object.assign(patch, cleanPatch({ courseName: String(input.curso).slice(0, 120) }));
   }
   if (ctx.academic) {

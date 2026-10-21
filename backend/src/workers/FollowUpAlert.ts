@@ -9,6 +9,7 @@ import { businessDaysBetween } from "../analysis/Store";
 import { frontBase, notify } from "../services/MailServices/Notify";
 import { followUpMail } from "../services/MailServices/Templates";
 import { logger } from "../utils/logger";
+import { guardedInterval } from "./guardedInterval";
 
 // The result of the commercial service (enrolled or not) is asked 24 hours after the analysis is delivered. What is still
 // unanswered is charged again on the business days, once in the morning and once in the afternoon, a limited number of
@@ -93,5 +94,5 @@ const tick = async (): Promise<void> => {
 };
 
 export const startFollowUpAlert = (): void => {
-  setInterval(tick, 10 * 60000);
+  guardedInterval("FollowUpAlert", tick, 10 * 60000);
 };

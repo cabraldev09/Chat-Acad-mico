@@ -8,9 +8,10 @@ import { hookTicketCreated } from "../CrmServices/LeadCore";
 import ShowTicketService from "./ShowTicketService";
 import emitTicketUpdate from "./EmitTicketUpdate";
 import { RELATIONSHIP_SEGMENT } from "../../helpers/Roles";
+import { withKeyLock } from "../../helpers/KeyedLock";
 import { ensureRelationshipQueue, isRelationshipConnection } from "../RelationshipServices/Relationship";
 
-const FindOrCreateTicketService = async (
+const findOrCreate = async (
   contact: Contact,
   whatsappId: number,
   unreadMessages: number,
@@ -143,5 +144,9 @@ const FindOrCreateTicketService = async (
 
   return ticket;
 };
+
+// One conversation per person and connection: the messages of the same person that arrive together are handled one at a time
+const FindOrCreateTicketService = (contact: Contact, whatsappId: number, unreadMessages: number, groupContact?: Contact): Promise<Ticket> =>
+  withKeyLock(`ticket:${groupContact ? groupContact.id : contact.id}:${whatsappId}`, () => findOrCreate(contact, whatsappId, unreadMessages, groupContact));
 
 export default FindOrCreateTicketService;

@@ -16,6 +16,27 @@ import { cleanReadingText, readCommercialGrade, type CommercialGradeReading } fr
 export const GRADE_MAX_BYTES = 8 * 1024 * 1024;
 const GRADES_DIR = path.join(PUBLIC_DIR, "grades");
 
+// "2026.2" → 20262: the order of the terms
+const termNumber = (t: string | null | undefined): number => {
+  const m = String(t || "").match(/(20\d{2})\D*([123])?/);
+  return m ? Number(m[1]) * 10 + Number(m[2] || 0) : 0;
+};
+
+// The text ready to copy and send to the candidate on WhatsApp, as written and kept up to date in the curricular analysis system, by the hash of the PDF
+// (backend/data/grades/summaries.json). A matrix whose PDF is one of those uses that text; any other is summarized by the reader of this system.
+let shippedTexts: Record<string, string> | null = null;
+export const readyTextFor = (contentHash: string | null | undefined): string | null => {
+  if (!shippedTexts) {
+    try {
+      shippedTexts = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "..", "data", "grades", "summaries.json"), "utf8"));
+    } catch (e) {
+      shippedTexts = {};
+    }
+  }
+  const text = contentHash ? (shippedTexts as Record<string, string>)[contentHash] : null;
+  return text && String(text).trim() ? String(text) : null;
+};
+
 const fingerprint = (value: Buffer | string): string => createHash("sha256").update(value).digest("hex");
 const norm = (value: string | null | undefined): string => (value ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim().toUpperCase();
 
@@ -69,8 +90,8 @@ const messageOf = (reading: CommercialGradeReading, updated: boolean): { message
  * Reads the PDF and publishes the matrix. With `upsert` (batch upload and the first import) the same PDF is "unchanged" and
  * a matrix of the same course and modality (even with another term) is updated instead of refused.
  */
-export const publishGrade = async (input: { bytes: Buffer; filename: string; userId: number | null; upsert?: boolean; degreeHint?: string }): Promise<PublishResult> => {
-  const { bytes, filename, userId, upsert, degreeHint } = input;
+export const publishGrade = async (input: { bytes: Buffer; filename: string; userId: number | null; upsert?: boolean; degreeHint?: string; onlyIfNewer?: boolean }): Promise<PublishResult> => {
+  const { bytes, filename, userId, upsert, degreeHint, onlyIfNewer } = input;
   if (bytes.length === 0) throw new AppError("O arquivo está vazio.", 400);
   if (bytes.length > GRADE_MAX_BYTES) throw new AppError(`O PDF excede o limite de ${Math.round(GRADE_MAX_BYTES / 1024 / 1024)} MB.`, 413);
   if (bytes.subarray(0, 5).toString("latin1") !== "%PDF-") throw new AppError("O arquivo não é um PDF válido.", 400);
@@ -84,6 +105,8 @@ export const publishGrade = async (input: { bytes: Buffer; filename: string; use
 
   const reading = await readCommercialGrade(bytes, filename);
   if (degreeHint && !reading.degree) reading.degree = degreeHint;
+  const readyText = readyTextFor(contentHash);
+  if (readyText) reading.whatsappSummary = readyText;
   const courseName = reading.courseName || cleanReadingText(filename.replace(/\.pdf$/i, ""), 180) || "Grade sem nome";
   const catalogKey = fingerprint(`${norm(courseName)}|${norm(reading.modality)}|${norm(reading.curriculumTerm)}`);
 
@@ -93,6 +116,10 @@ export const publishGrade = async (input: { bytes: Buffer; filename: string; use
     const candidates = await CommercialGrade.findAll({ where: { courseName: { [Op.iLike]: courseName } }, order: [["updatedAt", "DESC"]] });
     const sameModality = candidates.filter(c => norm(c.modality) === norm(reading.modality));
     previous = sameModality.find(c => norm(c.curriculumTerm) === norm(reading.curriculumTerm)) ?? sameModality[0] ?? null;
+    // the matrices that ship with the system never replace one the team put there with a newer term
+    if (onlyIfNewer && previous && termNumber(reading.curriculumTerm) < termNumber(previous.curriculumTerm)) {
+      return { id: previous.id, action: "unchanged", warning: false, courseName: previous.courseName, message: `“${previous.courseName}” já tem uma vigência mais nova (${previous.curriculumTerm}).` };
+    }
   }
   const sameMatrix = await CommercialGrade.findOne({ where: { catalogKey, ...(previous ? { id: { [Op.ne]: previous.id } } : {}) } as any });
   if (sameMatrix) throw new AppError(`Já existe uma matriz de “${sameMatrix.courseName}”${sameMatrix.curriculumTerm ? ` (${sameMatrix.curriculumTerm})` : ""}. Exclua a versão anterior antes de ${previous ? "atualizar" : "publicar outra"}.`, 409);
@@ -192,14 +219,17 @@ export const importDefaultGradesIfEmpty = async (): Promise<void> => {
   try { seen = JSON.parse(await getSetting("grades_default_seen", "[]")); } catch (e) { seen = []; }
   const done = new Set(seen);
   let created = 0;
+  let updated = 0;
   for (const { file, hint } of files) {
     const bytes = fs.readFileSync(file);
     const hash = createHash("sha256").update(bytes).digest("hex");
     if (done.has(hash)) continue;
     try {
       // eslint-disable-next-line no-await-in-loop
-      const r = await publishGrade({ bytes, filename: path.basename(file), userId: null, upsert: false, degreeHint: hint });
+      // a file this system never offered before is a new version of the matrix: it updates the one on file (unless the team put a newer term)
+      const r = await publishGrade({ bytes, filename: path.basename(file), userId: null, upsert: true, degreeHint: hint, onlyIfNewer: true });
       if (r.action === "created") created += 1;
+      if (r.action === "updated") updated += 1;
       done.add(hash);
     } catch (err) {
       // "this course already has a matrix": nothing to do, and not asked again
@@ -208,7 +238,7 @@ export const importDefaultGradesIfEmpty = async (): Promise<void> => {
     }
   }
   await setSetting("grades_default_seen", JSON.stringify([...done]));
-  if (created) logger.info(`default grades: ${created} new course(s) published`);
+  if (created || updated) logger.info(`default grades: ${created} new course(s) published, ${updated} updated`);
 };
 
 // The reading of the matrices improves over time (the text told to the students, what counts as an internship): every stored matrix is
@@ -239,7 +269,7 @@ export const refreshGrades = async (): Promise<{ checked: number; updated: numbe
         hasTcc: reading.hasTcc,
         totalInternshipHours: reading.totalInternshipHours,
         totalCourseHours: reading.totalCourseHours,
-        whatsappSummary: reading.whatsappSummary,
+        whatsappSummary: readyTextFor(g.contentHash) || reading.whatsappSummary,
         complete: reading.complete !== false
       };
       const changed = (Object.keys(next) as string[]).some(k => String((g as any)[k] ?? "") !== String(next[k] ?? ""));
@@ -258,7 +288,7 @@ export const refreshGrades = async (): Promise<{ checked: number; updated: numbe
 
 // once per version of the reading, at the start
 export const refreshGradesOnce = async (): Promise<void> => {
-  const VERSION = "2";
+  const VERSION = "3";
   try {
     if ((await getSetting("grades_reading_version", "")) === VERSION) return;
     const r = await refreshGrades();
@@ -267,4 +297,34 @@ export const refreshGradesOnce = async (): Promise<void> => {
   } catch (err) {
     logger.warn(`grades refresh failed: ${err}`);
   }
+};
+
+// The catalog says there is a matrix but its PDF is gone from the disk (the volume was recreated, a restore without the files): the agent would "send" nothing.
+// The file is put back from the copy that ships with the system when the hash matches; the rest is listed for the team.
+export const restoreMissingGradeFiles = async (): Promise<{ restored: number; missing: Array<{ id: number; courseName: string }> }> => {
+  const rows = await CommercialGrade.findAll({ attributes: ["id", "courseName", "fileName", "contentHash"] });
+  const lost = rows.filter(g => !fs.existsSync(gradePath(g)));
+  if (!lost.length) return { restored: 0, missing: [] };
+  const root = path.join(__dirname, "..", "..", "data", "grades");
+  const shipped = new Map<string, string>();
+  if (fs.existsSync(root)) {
+    for (const name of fs.readdirSync(root)) {
+      if (!/\.pdf$/i.test(name)) continue;
+      const file = path.join(root, name);
+      shipped.set(fingerprint(fs.readFileSync(file)), file);
+    }
+  }
+  let restored = 0;
+  const missing: Array<{ id: number; courseName: string }> = [];
+  for (const g of lost) {
+    const source = g.contentHash ? shipped.get(g.contentHash) : undefined;
+    if (source) {
+      fs.mkdirSync(GRADES_DIR, { recursive: true });
+      fs.copyFileSync(source, gradePath(g));
+      restored += 1;
+    } else missing.push({ id: g.id, courseName: g.courseName });
+  }
+  if (restored) logger.info(`default grades: ${restored} PDF file(s) put back on the disk`);
+  if (missing.length) logger.warn(`grades without a PDF on the disk: ${missing.map(m => m.courseName).join(", ").slice(0, 400)}`);
+  return { restored, missing };
 };

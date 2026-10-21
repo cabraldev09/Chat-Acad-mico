@@ -10,6 +10,7 @@ import { dbPorts } from "../services/CommercialServices/Ports";
 import { canAutoMove } from "../services/CommercialServices/Rules";
 import { hydrate, loadState } from "../services/CommercialServices/Slots";
 import { logger } from "../utils/logger";
+import { guardedInterval } from "./guardedInterval";
 
 // An AI agent conversation that nobody continues does not stay open forever: after a few days (Setting `ai_stale_run_days`, default 7)
 // the run is closed. If the lead was still being attended by the agent it goes to "Sem resposta" with a task to retake the contact; when
@@ -52,7 +53,7 @@ const tick = async (): Promise<void> => {
 };
 
 export const startStaleRuns = (): void => {
-  setInterval(tick, Number(process.env.STALE_RUNS_MS) || 10 * 60000);
+  guardedInterval("StaleRuns", tick, Number(process.env.STALE_RUNS_MS) || 10 * 60000);
 };
 
 export { tick as runStaleRunsOnce };

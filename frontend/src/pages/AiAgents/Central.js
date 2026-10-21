@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useHistory, useLocation, useParams } from "react-router-dom";
+import { toast } from "react-toastify";
 import { Button, CircularProgress, Menu, MenuItem, Switch, makeStyles } from "@material-ui/core";
 import {
   AlertTriangle, ArrowLeft, BarChart3, BookOpen, CheckCircle2, ChevronDown, ChevronRight, FileText, FileUp, Filter, Globe, HelpCircle, Home, Key, MapPin, MessageSquare,
@@ -106,11 +107,24 @@ const Central = () => {
   const teachAbout = (mode, topic = "") => { setKb((k) => ({ mode, topic, n: k.n + 1 })); go("ensinar", { teach: "conteudo" }); setAddMenu(null); };
   const closeDialog = () => { setDialog({ name: null, tab: 0 }); load(); };
 
+  // an agent made before the improvements of the model gets the new instructions of the stages in its draft (publishing is up to the team)
+  const refreshTemplate = async () => {
+    try {
+      const { data } = await api.post(`/ai-agents/${agentId}/refresh-template`);
+      const changed = data.flows.reduce((n, f) => n + f.changed.length, 0);
+      toast.success(changed ? `Rascunho atualizado em ${changed} etapa(s). Abra o roteiro e publique.` : "O roteiro já está na versão atual.");
+      load();
+    } catch (e) { toastError(e); }
+  };
+
   // each check of the health says where it is fixed
   const fix = (how) => {
     if (how === "ligar") return toggle();
     if (how === "roteiro") return d.flow ? history.push(`/ai-agents/blocos/${d.flow.id}`) : go("ajustes");
     if (how === "polos") return history.push("/polos");
+    if (how === "grades") return history.push("/grades");
+    if (how === "conversas") return history.push("/tickets");
+    if (how === "atualizar-modelo") return refreshTemplate();
     if (how === "conexoes") return history.push("/connections");
     const [, item] = how.split(":");
     return setDialog({ name: item || "ajustes", tab: 0 });

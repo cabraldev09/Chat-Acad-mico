@@ -318,7 +318,7 @@ const markPaidCore = async (
   // when the maintainer only pays affiliates after the fee is paid
   if (lead.affiliateId) {
     const { recordBonus } = await import("../AffiliateServices/Bonus");
-    await recordBonus(lead.id, "fee_paid").catch(() => null);
+    await recordBonus(lead.id, "fee_paid").catch(err => logger.error(`Affiliate bonus (fee_paid) of lead ${lead.id} was not recorded: ${err}`));
   }
 
   // "Taxa pendente" becomes "Taxa paga" right now, on the lead, the contact and the conversations

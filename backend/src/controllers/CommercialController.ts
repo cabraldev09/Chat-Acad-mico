@@ -22,7 +22,13 @@ import Lead from "../models/Lead";
 import LeadStage from "../models/LeadStage";
 import Ticket from "../models/Ticket";
 import TicketEvent from "../models/TicketEvent";
-import { priceOf } from "../services/AiServices/Usage";
+import fs from "fs";
+import { priceOf, tokensToday } from "../services/AiServices/Usage";
+import CommercialGrade from "../models/CommercialGrade";
+import { gradePath } from "../analysis/Grades";
+import { chooseGrade } from "../services/CommercialServices/GradeChoice";
+import { refreshStages } from "../services/CommercialServices/Template";
+import { parseGraph } from "../services/FlowServices/Graph";
 import { ensurePipeline, effectiveMap, saveMap, STAGE_KEYS, STAGE_SPECS, StageKey } from "../services/CommercialServices/Pipeline";
 import { briefOf } from "../services/CommercialServices/Rules";
 import { loadState } from "../services/CommercialServices/Slots";
@@ -582,6 +588,32 @@ export const central = async (req: Request, res: Response): Promise<Response> =>
   const served = await Whatsapp.findAll({ where: { ...(agent.whatsappId ? { id: agent.whatsappId } : {}), ownerId: { [Op.ne]: null } } as any, attributes: ["id", "name", "ownerId", "aiFirst"] });
   const personal = served.filter(w => !w.aiFirst);
 
+  // what makes the agent "not send the grade" or "not follow the script" is seen here, not discovered by a lead
+  let gradeCheck: any = null;
+  let handedOver: any = null;
+  let tokenCheck: any = null;
+  let outdated: string[] = [];
+  if (commercial) {
+    try {
+      const [courses, grades] = await Promise.all([Course.findAll({ where: { active: true } as any, attributes: ["id", "name", "modality"], order: [["name", "ASC"]] }), CommercialGrade.findAll({ attributes: ["id", "courseName", "modality", "curriculumTerm", "fileName"] })]);
+      const noGrade = courses.filter(c => !chooseGrade(grades as any[], c, null).grade).map(c => c.name);
+      const noFile = grades.filter(g => !fs.existsSync(gradePath(g))).map(g => g.courseName);
+      gradeCheck = { courses: courses.length, noGrade, noFile };
+    } catch (err) {
+      gradeCheck = null;
+    }
+    const waiting: any[] = await sequelize.query(
+      `SELECT COUNT(*) AS n FROM "Tickets" WHERE "handoffAt" IS NOT NULL AND "handoffAt" >= :since AND "status" <> 'closed' AND "handoffAlerts" >= 1`,
+      { replacements: { since: new Date(Date.now() - 72 * 3600000) }, type: QueryTypes.SELECT }
+    ).catch(() => []);
+    handedOver = Number(waiting[0]?.n || 0);
+    if (agent.dailyTokenCap > 0) tokenCheck = { used: await tokensToday(agent.id).catch(() => 0), cap: agent.dailyTokenCap };
+    if (flow) {
+      const row = await ChatFlow.findByPk(flow.id, { attributes: ["draft", "published"] });
+      outdated = row ? refreshStages(parseGraph(row.draft)).changed : [];
+    }
+  }
+
   type Check = { key: string; label: string; ok: boolean; detail: string; fix: string };
   const health: Check[] = [
     { key: "active", label: "Agente ligado", ok: !!agent.active, detail: agent.active ? "Atendendo as conversas." : "Desligado: ninguém é atendido por ele.", fix: "ligar" },
@@ -589,6 +621,18 @@ export const central = async (req: Request, res: Response): Promise<Response> =>
     { key: "flow", label: "Roteiro da conversa", ok: published, detail: !flow ? "Modo simples (sem desenho em blocos)." : published ? `Publicado (versão ${flow.version}).` : "Ainda é rascunho: publique para valer.", fix: "roteiro" },
     ...(commercial
       ? [
+          ...(gradeCheck
+            ? [
+                { key: "grades", label: "Grades dos cursos", ok: gradeCheck.noGrade.length === 0 && gradeCheck.noFile.length === 0, detail: gradeCheck.noGrade.length || gradeCheck.noFile.length ? `${gradeCheck.noGrade.length} curso(s) sem grade${gradeCheck.noGrade.length ? ` (${gradeCheck.noGrade.slice(0, 6).join(", ")}${gradeCheck.noGrade.length > 6 ? "…" : ""})` : ""}; ${gradeCheck.noFile.length} grade(s) cadastrada(s) sem o PDF no servidor${gradeCheck.noFile.length ? ` (${gradeCheck.noFile.slice(0, 4).join(", ")})` : ""}. Nesses cursos o agente não consegue enviar o PDF: ele avisa o lead e cria uma tarefa para o consultor.` : `Os ${gradeCheck.courses} cursos ativos têm grade e PDF.`, fix: "grades" }
+              ]
+            : []),
+          ...(handedOver !== null
+            ? [{ key: "handover", label: "Leads entregues sem resposta", ok: handedOver === 0, detail: handedOver ? `${handedOver} conversa(s) entregue(s) ao consultor ainda sem resposta (já passaram do prazo pelo menos uma vez).` : "Nenhuma conversa entregue está esperando além do prazo.", fix: "conversas" }]
+            : []),
+          ...(tokenCheck
+            ? [{ key: "tokens", label: "Limite diário de IA", ok: tokenCheck.used < tokenCheck.cap * 0.8, detail: `${tokenCheck.used.toLocaleString("pt-BR")} de ${tokenCheck.cap.toLocaleString("pt-BR")} tokens hoje.${tokenCheck.used >= tokenCheck.cap ? " O limite acabou: as conversas novas vão para a equipe até amanhã." : ""}`, fix: "ajustes:limites" }]
+            : []),
+          { key: "template", label: "Roteiro atualizado", ok: outdated.length === 0, detail: outdated.length ? `As etapas ${outdated.join(", ")} usam instruções de uma versão antiga do modelo (a oferta da grade, por exemplo). Use "Atualizar agente" e publique.` : "As etapas estão na versão atual do modelo.", fix: "atualizar-modelo" },
           { key: "polos", label: "Consultor em cada polo", ok: notReady.length === 0, detail: notReady.length ? `${notReady.length} polo(s) sem consultor: ${notReady.map(p => p.name).join(", ")}.` : "Todos os polos têm quem atenda.", fix: "ajustes:assume" },
           { key: "cities", label: "Cidades de cada polo", ok: noCities.length === 0, detail: noCities.length ? `${noCities.length} polo(s) sem cidades cadastradas: o agente só acha o polo pela cidade do próprio polo.` : "Todos os polos têm cidades cadastradas.", fix: "polos" },
           { key: "crm", label: "Etapas do funil no CRM", ok: missingStages === 0, detail: missingStages ? `${missingStages} etapa(s) do agente sem coluna no CRM.` : "Todas as etapas têm coluna.", fix: "ajustes:funil" },

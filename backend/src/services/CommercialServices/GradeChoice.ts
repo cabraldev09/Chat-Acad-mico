@@ -29,19 +29,75 @@ interface GradeLike {
   curriculumTerm?: string | null;
 }
 
+// ---------------------------------------------------------------- the name of the course on the matrix
+const STOP = new Set(["em", "de", "da", "do", "das", "dos", "e", "para", "a", "o", "na", "no"]);
+const is20 = (name: string): boolean => /\b2\.0\b/.test(String(name || ""));
+
+// "CST EM ANÁLISE E DESENVOLVIMENTO DE SISTEMAS" and "Análise e desenvolvimento de sistemas", "Computação em nuvem" and "Computação nuvem": the same course.
+// The "(LICENCIATURA)" of the file and the "2.0" of the catalogue are not part of the name.
+export const canonicalName = (name: string): string =>
+  plain(name)
+    .replace(/\s*\(.*$/, "")
+    .replace(/\b2\.0\b/, "")
+    .replace(/^(cst|curso superior de tecnologia|tecnologia|bacharelado|licenciatura)( em| de)?\s+/, "")
+    .split(" ")
+    .filter(w => w && !STOP.has(w))
+    .join(" ");
+
+type Variant = "egress" | "licenciatura" | "bacharelado" | "other";
+// the matrix of a graduate ("para egressos", "licenciados em…") is another one from the first degree of the same name
+const variantOf = (courseName: string): Variant => {
+  const inside = plain(courseName).match(/\(([^)]*)\)?$/);
+  const t = inside ? inside[1] : "";
+  if (/egress|licenciad|\bpara bach|\blic\.? em\b|\bp egresso/.test(t)) return "egress";
+  if (/licenciatura/.test(t)) return "licenciatura";
+  if (/bacharel/.test(t)) return "bacharelado";
+  return "other";
+};
+
+export interface ChooseOptions {
+  // a second degree (a graduate) takes the matrix made for graduates when there is one
+  egress?: boolean;
+  // words the person used ("licenciatura", "bacharelado") to tell two matrices of the same name apart
+  hint?: string | null;
+}
+
 // The course of the catalogue is "Pedagogia" (Semipresencial) while the matrix on file may be "PEDAGOGIA (LICENCIATURA)" (EAD): the name decides,
 // and the modality is only a preference. A matrix of another modality is better than "no grade", the agent says how the course is offered.
-export const chooseGrade = <G extends GradeLike>(all: G[], course: { name: string; modality?: string | null }, intake: string | null): { grade: G | null; current: boolean } => {
+// Courses "2.0" (4 semesters, for graduates) only use a matrix made for graduates: the one of the first degree would be the wrong course.
+export const chooseGrade = <G extends GradeLike>(all: G[], course: { name: string; modality?: string | null }, intake: string | null, opts: ChooseOptions = {}): { grade: G | null; current: boolean } => {
   const name = plain(course.name);
   const modality = modalityOf(course.modality);
-  const named = all.filter(g => g.courseName && (plain(g.courseName) === name || plain(g.courseName).replace(/\s*\(.*\)\s*$/, "") === name));
-  const loose = named.length ? named : all.filter(g => g.courseName && plain(g.courseName).startsWith(name));
+  const exact = all.filter(g => g.courseName && plain(g.courseName) === name);
+  const want = canonicalName(course.name);
+  let loose: G[] = exact.length ? exact : want ? all.filter(g => g.courseName && canonicalName(g.courseName) === want) : [];
+  if (!loose.length && want.length >= 5) loose = all.filter(g => g.courseName && canonicalName(g.courseName).startsWith(want));
   if (!loose.length) return { grade: null, current: false };
+
+  if (!exact.length) {
+    const wantsEgress = is20(course.name) || !!opts.egress;
+    const egress = loose.filter(g => variantOf(g.courseName) === "egress");
+    const first = loose.filter(g => variantOf(g.courseName) !== "egress");
+    if (is20(course.name)) {
+      if (!egress.length) return { grade: null, current: false };
+      loose = egress;
+    } else if (wantsEgress && egress.length) loose = egress;
+    else if (first.length) loose = first;
+    // two matrices of the same name: the words of the person decide; without them the teaching degree (the semipresencial catalogue is made of them)
+    const hint = plain(opts.hint || "");
+    const wanted: Variant | null = /licenciatura/.test(hint) ? "licenciatura" : /bacharel/.test(hint) ? "bacharelado" : null;
+    const byHint = wanted ? loose.filter(g => variantOf(g.courseName) === wanted) : [];
+    if (byHint.length) loose = byHint;
+    else if (!wanted && loose.some(g => variantOf(g.courseName) === "licenciatura") && loose.some(g => variantOf(g.courseName) === "bacharelado")) loose = loose.filter(g => variantOf(g.courseName) !== "bacharelado");
+  }
+
   const sameModality = loose.filter(g => !modality || !g.modality || modalityOf(g.modality) === modality);
   const pool = sameModality.length ? sameModality : loose;
-  const newest = [...pool].sort((a, b) => termNumber(b.curriculumTerm) - termNumber(a.curriculumTerm))[0];
+  // stable: the newest term, then the lowest id (the same lead always gets the same file)
+  const byNewest = (a: G, b: G) => termNumber(b.curriculumTerm) - termNumber(a.curriculumTerm) || a.id - b.id;
+  const newest = [...pool].sort(byNewest)[0];
   if (!intake) return { grade: newest, current: true };
-  const inEffect = pool.filter(g => termNumber(g.curriculumTerm) <= termNumber(intake)).sort((a, b) => termNumber(b.curriculumTerm) - termNumber(a.curriculumTerm));
+  const inEffect = pool.filter(g => termNumber(g.curriculumTerm) <= termNumber(intake)).sort(byNewest);
   const grade = inEffect[0] || newest;
   return { grade, current: grade.id === newest.id };
 };

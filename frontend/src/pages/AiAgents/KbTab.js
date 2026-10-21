@@ -110,6 +110,7 @@ const KbTab = ({ agentId, initialMode = 0, initialTopic = "" }) => {
 
   const addText = () => run(() => api.post(`/ai-agents/${agentId}/kb`, { title: form.title, content: form.content, shared: form.shared, ...subject() }), "Documento adicionado.");
   const addFaq = () => run(() => api.post(`/ai-agents/${agentId}/kb`, { kind: "faq", title: form.title, content: form.content, keywords: form.keywords, shared: form.shared }), "Pergunta frequente adicionada.");
+  const addProcess = () => run(() => api.post(`/ai-agents/${agentId}/kb`, { kind: "process", title: form.title, content: form.content, shared: form.shared }), "Roteiro adicionado: o agente passa a segui-lo.");
   const addUrl = () => run(() => api.post(`/ai-agents/${agentId}/kb/url`, { url: form.url, title: form.title, shared: form.shared, ...subject() }), "Página lida e adicionada.");
   const addFile = (file) => run(() => {
     const data = new FormData();
@@ -133,7 +134,7 @@ const KbTab = ({ agentId, initialMode = 0, initialTopic = "" }) => {
             <TextField fullWidth variant="outlined" margin="dense" label={editing.kind === "faq" ? "Pergunta" : "Título"} value={editing.title} onChange={(e) => setEditing({ ...editing, title: e.target.value })} />
             <TextField fullWidth multiline rows={12} variant="outlined" margin="dense" label={editing.kind === "faq" ? "Resposta" : "Conteúdo"} value={editing.content} onChange={(e) => setEditing({ ...editing, content: e.target.value })} />
             {editing.kind === "faq" && <TextField fullWidth variant="outlined" margin="dense" label="Outras formas de perguntar (separe por vírgula)" value={editing.keywords || ""} onChange={(e) => setEditing({ ...editing, keywords: e.target.value })} />}
-            {editing.kind !== "faq" && <TopicPicker topic={editing.topic} courses={courses} onChange={(t) => setEditing({ ...editing, topic: t })} />}
+            {editing.kind !== "faq" && editing.kind !== "process" && <TopicPicker topic={editing.topic} courses={courses} onChange={(t) => setEditing({ ...editing, topic: t })} />}
           </DialogContent>
         )}
         <DialogActions>
@@ -160,9 +161,11 @@ const KbTab = ({ agentId, initialMode = 0, initialTopic = "" }) => {
           <Tab label="Pergunta frequente" />
           <Tab label="Enviar arquivo" />
           <Tab label="Página da web" />
+          <Tab label="Roteiro / processo" />
         </Tabs>
         <TextField fullWidth variant="outlined" margin="dense" label={mode === 1 ? "Pergunta" : "Título"} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
-        {mode === 0 && <TextField fullWidth multiline rows={6} variant="outlined" margin="dense" label="Conteúdo" value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} />}
+        {(mode === 0 || mode === 4) && <TextField fullWidth multiline rows={mode === 4 ? 10 : 6} variant="outlined" margin="dense" label={mode === 4 ? "Roteiro, passo a passo e regras" : "Conteúdo"} value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })}
+          helperText={mode === 4 ? "O agente segue este texto como instrução em toda conversa (até 6.000 caracteres no total). Escreva o que fazer e em que ordem; valores, bolsas e datas continuam só pelo que o sistema devolve." : undefined} />}
         {mode === 1 && (
           <>
             <TextField fullWidth multiline rows={3} variant="outlined" margin="dense" label="Resposta" value={form.content} onChange={(e) => setForm({ ...form, content: e.target.value })} />
@@ -171,7 +174,7 @@ const KbTab = ({ agentId, initialMode = 0, initialTopic = "" }) => {
           </>
         )}
         {mode === 3 && <TextField fullWidth variant="outlined" margin="dense" label="Endereço da página (https://…)" value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} helperText="Só endereços públicos. O texto da página é lido uma vez; para atualizar, adicione de novo." />}
-        {mode !== 1 && <TopicPicker topic={form.topic} courses={courses} onChange={(t) => setForm({ ...form, topic: t })} />}
+        {mode !== 1 && mode !== 4 && <TopicPicker topic={form.topic} courses={courses} onChange={(t) => setForm({ ...form, topic: t })} />}
         {mode === 2 && <Typography className={classes.intro} style={{ margin: "8px 0" }}>Formatos aceitos: PDF, Word (.docx), .txt, .md, .csv e .html. Até 8 MB.</Typography>}
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginTop: 4 }}>
           <FormControlLabel control={<Switch color="primary" checked={form.shared} onChange={(e) => setForm({ ...form, shared: e.target.checked })} />} label={form.shared ? "Todos os agentes usam" : "Só este agente usa"} />
@@ -182,7 +185,7 @@ const KbTab = ({ agentId, initialMode = 0, initialTopic = "" }) => {
               <input hidden type="file" accept=".pdf,.docx,.txt,.md,.csv,.html,.htm" onChange={(e) => { if (e.target.files[0]) addFile(e.target.files[0]); e.target.value = ""; }} />
             </Button>
           ) : (
-            <Button variant="contained" color="primary" disabled={busy || !form.title.trim() || (mode === 3 ? !form.url.trim() : !form.content.trim())} onClick={[addText, addFaq, null, addUrl][mode]}>
+            <Button variant="contained" color="primary" disabled={busy || !form.title.trim() || (mode === 3 ? !form.url.trim() : !form.content.trim())} onClick={[addText, addFaq, null, addUrl, addProcess][mode]}>
               Adicionar
             </Button>
           )}
@@ -198,8 +201,8 @@ const KbTab = ({ agentId, initialMode = 0, initialTopic = "" }) => {
           <div key={d.id} className={classes.doc}>
             <span className={classes.docIcon}>{d.kind === "faq" ? <HelpCircle size={18} /> : d.source === "url" ? <Link2 size={18} /> : <FileText size={18} />}</span>
             <span className={classes.docTitle} title={d.title}>{d.title}</span>
-            <Chip size="small" label={d.kind === "faq" ? "Pergunta frequente" : SOURCE[d.source] || d.source} />
-            {d.kind !== "faq" && <Chip size="small" variant="outlined" label={`${d.chunks} ${d.chunks === 1 ? "trecho" : "trechos"}`} />}
+            <Chip size="small" label={d.kind === "faq" ? "Pergunta frequente" : d.kind === "process" ? "Roteiro (o agente segue)" : SOURCE[d.source] || d.source} color={d.kind === "process" ? "primary" : "default"} />
+            {d.kind !== "faq" && d.kind !== "process" && <Chip size="small" variant="outlined" label={`${d.chunks} ${d.chunks === 1 ? "trecho" : "trechos"}`} />}
             {d.topic && <Chip size="small" color="secondary" variant="outlined" label={topicLabel(d.topic, courses)} />}
             {d.shared && <Chip size="small" color="primary" variant="outlined" label="Todos os agentes" />}
             {d.source !== "arquivo" && d.source !== "url" && <IconAction title="Editar documento" onClick={() => openEdit(d)}><Pencil size={16} /></IconAction>}
