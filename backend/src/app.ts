@@ -21,6 +21,7 @@ import proposalPublicRoutes from "./routes/proposalPublicRoutes";
 import efiWebhookRoutes from "./routes/efiWebhookRoutes";
 import securityHeaders from "./middleware/securityHeaders";
 import rateLimit from "./middleware/rateLimit";
+import { isLeader } from "./helpers/SingleInstance";
 
 Sentry.init({ dsn: process.env.SENTRY_DSN });
 
@@ -41,6 +42,8 @@ app.get("/health", async (_req: Request, res: Response) => {
     // version: the commit that is running, so a deploy can be checked from outside (nothing else about the server is told to an anonymous caller)
     res.json({
       ok: true,
+      // false on the instance that did not get the leader lock (the workers do not run there)
+      leader: isLeader(),
       version: String(process.env.GIT_SHA || process.env.RAILWAY_GIT_COMMIT_SHA || "").slice(0, 7) || undefined
     });
   } catch (e) {

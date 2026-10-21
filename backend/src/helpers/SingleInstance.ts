@@ -29,9 +29,14 @@ const connect = async (): Promise<any> => {
   return client;
 };
 
+// whether this instance runs the workers (the health check says it, so a server that never became the leader is seen from outside)
+let leader = false;
+export const isLeader = (): boolean => leader;
+
 export const whenLeader = (start: () => void): void => {
   const cfg = require("../config/database");
   if (cfg.dialect !== "postgres" || process.env.SINGLE_INSTANCE_LOCK === "false") {
+    leader = true;
     start();
     return;
   }
@@ -49,6 +54,7 @@ export const whenLeader = (start: () => void): void => {
           logger.error("Leader lock connection ended, exiting so the supervisor restarts us cleanly");
           process.exit(1);
         });
+        leader = true;
         start();
         return;
       }

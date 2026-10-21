@@ -4,6 +4,7 @@ import LeadTask from "../models/LeadTask";
 import Lead from "../models/Lead";
 import { getIO } from "../libs/socket";
 import { logger } from "../utils/logger";
+import { guardedInterval } from "./guardedInterval";
 
 // Pushes a socket notification for every follow-up task that just became due
 const tick = async (): Promise<void> => {
@@ -31,5 +32,5 @@ const tick = async (): Promise<void> => {
 };
 
 export const startCrmReminders = (): void => {
-  setInterval(tick, 30000);
+  guardedInterval("CrmReminders", tick, 30000);
 };

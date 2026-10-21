@@ -56,16 +56,16 @@ whenLeader(() => {
   startFlowRunner();
   startCadences();
   // the polos and goals of the spreadsheet are loaded once, so the goals screen is never empty
-  import("./services/GoalServices/SeedPoloGoals").then(({ seedPoloGoals }) => seedPoloGoals()).catch(() => undefined)
+  import("./services/GoalServices/SeedPoloGoals").then(({ seedPoloGoals }) => seedPoloGoals()).catch(err => logger.warn(`Polo goals seed failed: ${err}`))
     // the cities come after the polos exist
-    .then(() => import("./services/PoloServices/SeedCoverage")).then(({ seedPoloCoverage }) => seedPoloCoverage()).catch(() => undefined);
+    .then(() => import("./services/PoloServices/SeedCoverage")).then(({ seedPoloCoverage }) => seedPoloCoverage()).catch(err => logger.warn(`Polo coverage seed failed: ${err}`));
   // the commercial matrices that come with the system, read once when the catalog is empty
   // and every stored matrix is read again once per version of the reader (internships, text told to the students)
-  import("./analysis/Grades").then(async ({ importDefaultGradesIfEmpty, refreshGradesOnce }) => { await importDefaultGradesIfEmpty(); await refreshGradesOnce(); }).catch(() => undefined);
+  import("./analysis/Grades").then(async ({ importDefaultGradesIfEmpty, refreshGradesOnce, restoreMissingGradeFiles }) => { await restoreMissingGradeFiles(); await importDefaultGradesIfEmpty(); await refreshGradesOnce(); }).catch(err => logger.warn(`Default grades were not loaded: ${err}`));
   // the rules of the MEC (Portaria 378/2025) for the courses that have none, once per version
-  import("./services/CommercialServices/MecDefaults").then(({ seedMecDefaults }) => seedMecDefaults()).catch(() => undefined);
+  import("./services/CommercialServices/MecDefaults").then(({ seedMecDefaults }) => seedMecDefaults()).catch(err => logger.warn(`MEC defaults seed failed: ${err}`));
   // the goals of the polos: what was typed as "Já realizado" is the total shown (once)
-  import("./helpers/GoalTotals").then(({ migrateGoalTotals }) => migrateGoalTotals()).catch(() => undefined);
+  import("./helpers/GoalTotals").then(({ migrateGoalTotals }) => migrateGoalTotals()).catch(err => logger.warn(`Goal totals migration failed: ${err}`));
   // every contact already in the system becomes a lead too (idempotent)
   import("./services/CrmServices/LeadCore")
     .then(({ backfillLeads }) => backfillLeads())

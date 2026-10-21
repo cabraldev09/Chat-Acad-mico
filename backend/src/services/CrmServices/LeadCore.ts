@@ -303,7 +303,7 @@ export const changeStage = async (
   // affiliates earn on the enrolment, however the card got to "Matriculado"; undoing it cancels what was not paid
   if (lead.affiliateId) {
     const { recordBonus, cancelPendingBonus } = await import("../AffiliateServices/Bonus");
-    if (to.type === "won") await recordBonus(lead.id, "enrolled").catch(() => null);
+    if (to.type === "won") await recordBonus(lead.id, "enrolled").catch(err => logger.error(`Affiliate bonus (enrolled) of lead ${lead.id} was not recorded: ${err}`));
     else if (from?.type === "won") await cancelPendingBonus(lead.id).catch(() => null);
   }
 

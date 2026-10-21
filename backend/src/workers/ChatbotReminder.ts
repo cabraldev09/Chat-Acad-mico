@@ -4,6 +4,7 @@ import Ticket from "../models/Ticket";
 import { getSetting } from "../helpers/AppSettings";
 import { remindWaiting } from "../services/AutomationServices/RunInboundAutomation";
 import { logger } from "../utils/logger";
+import { guardedInterval } from "./guardedInterval";
 
 // One gentle nudge for people who stopped answering the bot's menu or question.
 // Setting chatbot_reminder_minutes (default 30; 0 turns it off).
@@ -31,5 +32,5 @@ const tick = async (): Promise<void> => {
 };
 
 export const startChatbotReminder = (): void => {
-  setInterval(tick, 5 * 60 * 1000);
+  guardedInterval("ChatbotReminder", tick, 5 * 60 * 1000);
 };

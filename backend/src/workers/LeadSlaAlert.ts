@@ -9,6 +9,7 @@ import { getSetting } from "../helpers/AppSettings";
 import { getBusinessConfig, isBusinessNow, businessMinutes } from "../helpers/BusinessTime";
 import { addActivity } from "../services/CrmServices/LeadCore";
 import { logger } from "../utils/logger";
+import { guardedInterval } from "./guardedInterval";
 
 // A new lead nobody has answered after X minutes (counted only inside working hours) raises one alert:
 // a note in the lead's history and a live notice for the owner and the managers.
@@ -77,7 +78,7 @@ const tick = async (): Promise<void> => {
 };
 
 export const startLeadSlaAlert = (): void => {
-  setInterval(tick, 60000);
+  guardedInterval("LeadSlaAlert", tick, 60000);
 };
 
 export { tick as runLeadSlaAlertOnce };

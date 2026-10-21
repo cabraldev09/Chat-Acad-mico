@@ -18,6 +18,7 @@ import ShowTicketService from "../services/TicketServices/ShowTicketService";
 import { logger } from "../utils/logger";
 import { firstName, nudgeText } from "../services/CommercialServices/Nudges";
 import { nextStep } from "../services/CommercialServices/Journey";
+import { guardedInterval } from "./guardedInterval";
 
 // A lead the AI agent was talking to who stops answering gets up to TWO gentle reminders, only while the WhatsApp service window is still open
 // (24 hours after the lead's last message: free text is allowed), during the company's working hours, never to someone who asked to stop, and
@@ -108,7 +109,7 @@ const remind = async (row: LeadCommercial, now: number): Promise<void> => {
 };
 
 export const startAiReactivation = (): void => {
-  setInterval(tick, Number(process.env.REACTIVATION_MS) || 10 * 60000).unref?.();
+  guardedInterval("AiReactivation", tick, Number(process.env.REACTIVATION_MS) || 10 * 60000).unref?.();
 };
 
 export { tick as runAiReactivationOnce };
