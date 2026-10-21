@@ -22,6 +22,21 @@ const termNumber = (t: string | null | undefined): number => {
   return m ? Number(m[1]) * 10 + Number(m[2] || 0) : 0;
 };
 
+// The text ready to copy and send to the candidate on WhatsApp, as written and kept up to date in the curricular analysis system, by the hash of the PDF
+// (backend/data/grades/summaries.json). A matrix whose PDF is one of those uses that text; any other is summarized by the reader of this system.
+let shippedTexts: Record<string, string> | null = null;
+export const readyTextFor = (contentHash: string | null | undefined): string | null => {
+  if (!shippedTexts) {
+    try {
+      shippedTexts = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "..", "data", "grades", "summaries.json"), "utf8"));
+    } catch (e) {
+      shippedTexts = {};
+    }
+  }
+  const text = contentHash ? (shippedTexts as Record<string, string>)[contentHash] : null;
+  return text && String(text).trim() ? String(text) : null;
+};
+
 const fingerprint = (value: Buffer | string): string => createHash("sha256").update(value).digest("hex");
 const norm = (value: string | null | undefined): string => (value ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim().toUpperCase();
 
@@ -90,6 +105,8 @@ export const publishGrade = async (input: { bytes: Buffer; filename: string; use
 
   const reading = await readCommercialGrade(bytes, filename);
   if (degreeHint && !reading.degree) reading.degree = degreeHint;
+  const readyText = readyTextFor(contentHash);
+  if (readyText) reading.whatsappSummary = readyText;
   const courseName = reading.courseName || cleanReadingText(filename.replace(/\.pdf$/i, ""), 180) || "Grade sem nome";
   const catalogKey = fingerprint(`${norm(courseName)}|${norm(reading.modality)}|${norm(reading.curriculumTerm)}`);
 
@@ -252,7 +269,7 @@ export const refreshGrades = async (): Promise<{ checked: number; updated: numbe
         hasTcc: reading.hasTcc,
         totalInternshipHours: reading.totalInternshipHours,
         totalCourseHours: reading.totalCourseHours,
-        whatsappSummary: reading.whatsappSummary,
+        whatsappSummary: readyTextFor(g.contentHash) || reading.whatsappSummary,
         complete: reading.complete !== false
       };
       const changed = (Object.keys(next) as string[]).some(k => String((g as any)[k] ?? "") !== String(next[k] ?? ""));
@@ -271,7 +288,7 @@ export const refreshGrades = async (): Promise<{ checked: number; updated: numbe
 
 // once per version of the reading, at the start
 export const refreshGradesOnce = async (): Promise<void> => {
-  const VERSION = "2";
+  const VERSION = "3";
   try {
     if ((await getSetting("grades_reading_version", "")) === VERSION) return;
     const r = await refreshGrades();

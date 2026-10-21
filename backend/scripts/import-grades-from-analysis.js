@@ -34,8 +34,19 @@ const safeName = s => String(s || "grade").replace(/[\\/:*?"<>|]+/g, " ").replac
 (async () => {
   const res = await fetch(`${url}/rest/v1/CommercialGrade?select=courseName,modality,curriculumTerm,storageKey,originalName,updatedAt&order=courseName.asc`, { headers });
   if (!res.ok) throw new Error(`Lista das grades: ${res.status} ${await res.text()}`);
-  const rows = await res.json();
-  console.log(`${rows.length} grades no sistema de análise.`);
+  const all = await res.json();
+  console.log(`${all.length} grades no sistema de análise.`);
+
+  // A matrix is the file named as the SIAA names it ("CURSO (GRAU).PDF"). Anything else that was uploaded there by mistake (a student's transcript, an ID) is
+  // personal data and never comes here. Two rows with the same file name are two versions of one matrix: the most recently updated one wins.
+  const PERSONAL = /hist[oó]rico escolar|historico_escolar|boletim|diploma|certid[aã]o|\brg\b|\bcpf\b|identidade|comprovante/i;
+  const latest = new Map();
+  for (const r of all.sort((a, b) => String(a.updatedAt || "").localeCompare(String(b.updatedAt || "")))) {
+    if (PERSONAL.test(r.originalName || "")) { console.log(`ignorada (documento pessoal, não é matriz): ${r.originalName}`); continue; }
+    latest.set(keyOf(String(r.originalName || r.courseName).replace(/\.pdf$/i, "")), r);
+  }
+  const rows = [...latest.values()];
+  console.log(`${rows.length} matrizes depois de tirar documentos pessoais e versões repetidas.`);
 
   fs.mkdirSync(target, { recursive: true });
   // the files already here, by name and by content
@@ -56,9 +67,9 @@ const safeName = s => String(s || "grade").replace(/[\\/:*?"<>|]+/g, " ").replac
       if (bytes.subarray(0, 5).toString("latin1") !== "%PDF-") throw new Error("não é um PDF");
       const hash = sha(bytes);
       if (hashes.has(hash)) { out.iguais += 1; continue; }
-      const existing = have.get(keyOf(r.courseName));
+      const existing = have.get(keyOf(String(r.originalName || r.courseName).replace(/\.pdf$/i, "")));
       if (existing && onlyNew) { out.iguais += 1; continue; }
-      const name = existing || `${safeName(r.courseName)}.pdf`;
+      const name = existing || `${safeName(String(r.originalName || r.courseName).replace(/\.pdf$/i, ""))}.pdf`;
       console.log(`${existing ? "atualiza" : "nova    "}  ${r.courseName}  (vigência ${r.curriculumTerm || "?"})`);
       if (!dry) fs.writeFileSync(path.join(target, name), bytes);
       if (existing) out.atualizadas += 1; else out.novas += 1;
