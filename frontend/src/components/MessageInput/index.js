@@ -32,6 +32,7 @@ import { AuthContext } from "../../context/Auth/AuthContext";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 import toastError from "../../errors/toastError";
 import { wa } from "../chat/chatTheme";
+import { isManager } from "../../utils/access";
 import { getDraft, setDraft } from "../../utils/drafts";
 
 const MIC_ERRORS = {
@@ -162,7 +163,10 @@ const useStyles = makeStyles((theme) => {
 
 const isImage = (f) => f && f.type && f.type.startsWith("image/");
 
-const MessageInput = ({ ticketStatus, aiActive, historical, isGroup, contactName, channel, readOnly }) => {
+// one key per send: if the same request is repeated (double click, retry after a timeout) the server sends it only once
+const newKey = () => (window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+
+const MessageInput = ({ ticketStatus, aiActive, historical, isGroup, contactName, channel, readOnly, ticketUserId, ticketUserName }) => {
   const classes = useStyles();
   const emojiDark = useTheme().palette.type === "dark";
   const { ticketId } = useParams();
@@ -198,7 +202,11 @@ const MessageInput = ({ ticketStatus, aiActive, historical, isGroup, contactName
   const { user } = useContext(AuthContext);
   const [signMessage, setSignMessage] = useLocalStorage("signOption", true);
   // groups and conversations from the phone's history are written in directly: the first message opens them
-  const open = ticketStatus === "open" || !!isGroup || !!historical;
+  // Whoever sends the first message of a conversation nobody attends (waiting, or with the AI agent) becomes its attendant: the server decides it
+  // in the same write as the send. A conversation that belongs to someone else is read-only here: it is transferred or taken over on purpose.
+  const mine = !ticketUserId || ticketUserId === user?.id;
+  const open = ((ticketStatus === "open" || ticketStatus === "pending") && mine) || !!isGroup || !!historical;
+  const takesOnSend = ticketStatus === "pending" && !ticketUserId && !isGroup && !historical;
 
   useEffect(() => {
     inputRef.current && inputRef.current.focus();
@@ -318,7 +326,7 @@ const MessageInput = ({ ticketStatus, aiActive, historical, isGroup, contactName
     if (inputRef.current) inputRef.current.focus();
     sendQueue.current = sendQueue.current.then(async () => {
       try {
-        await api.post(`/messages/${ticketId}`, { read: 1, fromMe: true, mediaUrl: "", body, quotedMsg: quoted });
+        await api.post(`/messages/${ticketId}`, { read: 1, fromMe: true, mediaUrl: "", body, quotedMsg: quoted, clientKey: newKey() });
       } catch (err) {
         toastError(err);
         // what was typed comes back, unless something new is already being typed
@@ -337,6 +345,7 @@ const MessageInput = ({ ticketStatus, aiActive, historical, isGroup, contactName
         // the caption travels with each file (documents keep their own name)
         formData.append("body", captions[i] || "");
       });
+      formData.append("clientKey", newKey());
       await api.post(`/messages/${ticketId}`, formData);
       clearMedias();
     } catch (err) {
@@ -401,6 +410,7 @@ const MessageInput = ({ ticketStatus, aiActive, historical, isGroup, contactName
         formData.append("medias", result.blob, `audio-${Date.now()}.${extensionOf(result.type)}`);
         formData.append("body", "");
         formData.append("fromMe", true);
+        formData.append("clientKey", newKey());
         await api.post(`/messages/${ticketId}`, formData);
       }
     } catch (err) {
@@ -452,7 +462,9 @@ const MessageInput = ({ ticketStatus, aiActive, historical, isGroup, contactName
     return (
       <div className={classes.wrap}>
         <div className={classes.blocked}>
-          {ticketStatus === "pending"
+          {ticketUserId && ticketUserId !== user?.id && ticketStatus !== "closed"
+            ? `Esta conversa está com ${ticketUserName || "outro atendente"}. Você acompanha as mensagens, mas só quem atende responde. Peça a transferência${isManager(user) ? " ou use Assumir conversa no topo" : ""}.`
+            : ticketStatus === "pending"
             ? aiActive
               ? "O agente de IA está atendendo esta conversa. Clique em Aceitar para assumir e responder você mesmo."
               : "Aceite a conversa para responder."
@@ -574,7 +586,7 @@ const MessageInput = ({ ticketStatus, aiActive, historical, isGroup, contactName
                   if (el) inputRef.current = el;
                 }}
                 className={classes.input}
-                placeholder="Digite uma mensagem"
+                placeholder={takesOnSend ? "Ao enviar, a conversa passa a ser sua" : "Digite uma mensagem"}
                 multiline
                 maxRows={6}
                 value={inputMessage}

@@ -20,6 +20,7 @@ import { mimeFromName } from "../../helpers/MimeFromName";
 import { whatsappProvider } from "../../providers/WhatsApp";
 import { getAdapter } from "../../channels";
 import { assertTicketAccess } from "../../middleware/canAccessTicket";
+import ActivateForSending from "../TicketServices/ActivateForSending";
 import ShowTicketService from "../TicketServices/ShowTicketService";
 import SendWhatsAppMessage from "../WbotServices/SendWhatsAppMessage";
 import SendWhatsAppMedia from "../WbotServices/SendWhatsAppMedia";
@@ -178,8 +179,11 @@ export const forwardMessage = async (req: Request, id: string, ticketIds: number
     // eslint-disable-next-line no-await-in-loop
     await assertTicketAccess(req, ticketId, "send");
     // eslint-disable-next-line no-await-in-loop
-    const ticket = await ShowTicketService(ticketId);
+    let ticket = await ShowTicketService(ticketId);
     if (ticket.status === "closed") throw new AppError("ERR_FORWARD_CLOSED_TICKET", 400);
+    // forwarding is a person writing in that conversation: it becomes theirs if nobody had it, and it is refused if somebody else has it
+    // eslint-disable-next-line no-await-in-loop
+    ticket = await ActivateForSending(ticket, Number(req.user.id));
     if (source && rawMedia) {
       // SendWhatsAppMedia consumes the file it sends: hand it a copy
       const copyName = `fwd-${Date.now()}-${Math.random().toString(36).slice(2, 7)}${path.extname(rawMedia)}`;
@@ -257,7 +261,9 @@ export const forwardBatch = async (req: Request, messageIds: string[], ticketIds
     try { getIO().to(`user:${userId}`).emit("forwardProgress", progress); } catch (e) { /* no socket: nobody to tell */ }
   };
 
-  const sendOne = async (message: Message, ticket: Ticket): Promise<void> => {
+  const sendOne = async (message: Message, target: Ticket): Promise<void> => {
+    // the same rule as any message a person sends: the first one claims a conversation nobody attends, a conversation of someone else refuses
+    const ticket = await ActivateForSending(target, userId);
     const rawMedia = message.getDataValue("mediaUrl") as string | null;
     if (rawMedia) {
       // SendWhatsAppMedia consumes the file it sends: hand it a copy

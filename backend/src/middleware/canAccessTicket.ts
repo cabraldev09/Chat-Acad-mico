@@ -30,8 +30,11 @@ export const assertTicketAccess = async (
       // assigned to them (the tutor is the one who talks to the student: nobody answers "as the tutor" by accident)
       // ("send" = a message goes out; changing the conversation, e.g. transferring it, stays allowed)
       if (mode !== "send") return;
-      const t = await Ticket.findByPk(ticketId, { attributes: ["id", "userId", "segment"] });
+      const t = await Ticket.findByPk(ticketId, { attributes: ["id", "userId", "segment", "isGroup"] });
       if (t && t.segment === "onboarding" && t.userId !== Number(req.user.id)) throw new AppError("ERR_ONBOARDING_TUTOR_ONLY", 403);
+      // seeing everything is not owning everything: a conversation that belongs to another attendant is not answered "over" them.
+      // The management transfers it or takes it over explicitly (POST /tickets/:id/take); groups have no single attendant.
+      if (t && !t.isGroup && t.userId && t.userId !== Number(req.user.id)) throw new AppError("ERR_TICKET_OWNED_BY_OTHER", 403);
       return;
     }
 

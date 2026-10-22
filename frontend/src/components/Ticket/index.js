@@ -78,7 +78,7 @@ const AiBanner = ({ ticket }) => {
   const take = async () => {
     setBusy(true);
     try {
-      await api.put(`/tickets/${ticket.id}`, { status: "open", userId: user?.id });
+      await api.post(`/tickets/${ticket.id}/claim`);
       toast.success("Você assumiu a conversa. O agente de IA parou de responder.");
     } catch (err) {
       toastError(err);
@@ -180,6 +180,13 @@ const Ticket = () => {
       });
     });
 
+    // a message this person wrote that the channel did not accept (the conversation is theirs already; the text is not lost on screen)
+    socket.on("outboundMessage", (data) => {
+      if (data.action === "failed" && +data.ticketId === +ticketId) {
+        toast.error(data.error === "ownership_changed" ? "A conversa mudou de atendente antes do envio. A mensagem não foi enviada." : "Uma mensagem não foi enviada. Confira a conversa e tente de novo.", { toastId: `out-${data.id}` });
+      }
+    });
+
     socket.on("contact", (data) => {
       if (data.action === "update") {
         setContact((prev) => (prev.id === data.contact?.id ? { ...prev, ...data.contact } : prev));
@@ -249,7 +256,7 @@ const Ticket = () => {
             matchIndex={matchIndex}
             onMatches={setMatches}
           />
-          <MessageInput channel={ticket.whatsapp?.channel || "whatsapp"} ticketStatus={ticket.status} aiActive={!!ticket.aiActive} historical={!!ticket.isHistorical} isGroup={!!ticket.isGroup || !!contact.isStaff} readOnly={!!contact.readOnly} contactName={contact.name} />
+          <MessageInput channel={ticket.whatsapp?.channel || "whatsapp"} ticketStatus={ticket.status} ticketUserId={ticket.userId || null} ticketUserName={ticket.user?.name || ""} aiActive={!!ticket.aiActive} historical={!!ticket.isHistorical} isGroup={!!ticket.isGroup || !!contact.isStaff} readOnly={!!contact.readOnly} contactName={contact.name} />
         </ReplyMessageProvider>
       </div>
       <ContactDrawer open={drawerOpen} handleDrawerClose={() => setDrawerOpen(false)} contact={contact} loading={loading} />

@@ -51,6 +51,7 @@ import ProposalTemplate from "../models/ProposalTemplate";
 import Proposal from "../models/Proposal";
 import Payment from "../models/Payment";
 import TicketEvent from "../models/TicketEvent";
+import OutboundMessage from "../models/OutboundMessage";
 import TicketPin from "../models/TicketPin";
 import KbDocument from "../models/KbDocument";
 import KbChunk from "../models/KbChunk";
@@ -134,6 +135,7 @@ const models = [
   Proposal,
   Payment,
   TicketEvent,
+  OutboundMessage,
   TicketPin,
   KbDocument,
   KbChunk,

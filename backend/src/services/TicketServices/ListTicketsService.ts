@@ -5,6 +5,7 @@ import Ticket from "../../models/Ticket";
 import Contact from "../../models/Contact";
 import sequelize from "../../database";
 import Queue from "../../models/Queue";
+import User from "../../models/User";
 import ShowUserService from "../UserServices/ShowUserService";
 import Whatsapp from "../../models/Whatsapp";
 import Tag from "../../models/Tag";
@@ -78,6 +79,13 @@ const ListTicketsService = async ({
       attributes: ["id", "name", "number", "profilePicUrl", "channel", "isStaff", "isPersonal", "kind", "parentGroupId", "readOnly"],
       // the search filters on the contact's name and number, so the count query must join it too
       required: !!searchParam
+    },
+    {
+      // who is attending: the list shows the attendant's label, also after a reload (not only on live updates)
+      model: User,
+      as: "user",
+      attributes: ["id", "name"],
+      required: false
     },
     {
       model: Queue,

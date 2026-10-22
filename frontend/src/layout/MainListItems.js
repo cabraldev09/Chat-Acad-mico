@@ -25,6 +25,7 @@ import HeartPulseIcon from "lucide-react/dist/esm/icons/heart-pulse";
 import Share2Icon from "lucide-react/dist/esm/icons/share-2";
 import WalletIcon from "lucide-react/dist/esm/icons/wallet";
 import GoalIcon from "lucide-react/dist/esm/icons/goal";
+import GaugeIcon from "lucide-react/dist/esm/icons/gauge";
 import SlidersIcon from "lucide-react/dist/esm/icons/sliders-horizontal";
 import GraduationCapIcon from "lucide-react/dist/esm/icons/graduation-cap";
 import FileSearchIcon from "lucide-react/dist/esm/icons/file-search";
@@ -321,6 +322,9 @@ const MainListItems = (props) => {
           icon={<MegaphoneIcon className="ico" />}
           collapsed={collapsed}
         />
+      )}
+      {isManager(user) && (
+        <ListItemLink to="/gestao-comercial" primary="Gestão Comercial" icon={<GaugeIcon className="ico" />} collapsed={collapsed} />
       )}
       <ListItemLink
         to="/reports"

@@ -7,6 +7,8 @@ Rode tudo isto antes de enviar ao GitHub e de atualizar a VPS. Qualquer falha im
 | Tipos do backend | `npm run build` | `backend` |
 | Testes de unidade (motor de análise, proposta, e-mails) | `npx vitest run` | `backend` |
 | Testes de ponta a ponta (API inteira com WhatsApp/Telegram/Efí simulados) | `NODE_ENV=test CHROME_BIN="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" CHROME_ARGS="--no-sandbox --disable-setuid-sandbox" LOGIN_RATE_MAX=100 node scripts/channels-e2e.js` | `backend` |
+| Responsabilidade pela conversa (visualizar não assume; enviar atribui de forma atômica; ninguém toma a conversa de outro; IA silenciada; concorrência e idempotência) | `NODE_ENV=test npm run test:assign` | `backend` |
+| Estatísticas e Centro de Gestão Comercial (mesmos números nas duas telas, permissões, tempo real) | `NODE_ENV=test npm run test:analytics` | `backend` |
 | Textos em português e códigos de erro traduzidos | `node scripts/i18n-check.js` | `backend` |
 | Esquema do banco (depois de criar uma migração) | `node scripts/build-schema.js` | `backend` |
 | Auditoria de rotas por perfil | `node scripts/audit-routes.js` | `backend` |
@@ -46,6 +48,7 @@ A cada envio para `main` e a cada pull request:
 |---|---|
 | `verificar` | `tsc`, textos em português, auditoria de rotas, testes de unidade, build do frontend, verificador de leitura tardia de evento e variáveis inexistentes (ESLint `no-undef`) |
 | `api-ponta-a-ponta` | `channels-e2e.js`: a API inteira contra WhatsApp/Telegram/Efí simulados, num banco descartável (Postgres 16) |
+| `api-ponta-a-ponta` (2º passo) | `assign-e2e.js`: atribuição, envio humano, concorrência, outbox e tempo real da responsabilidade pela conversa |
 | `telas` | sobe a API e o build de produção do frontend e roda `smoke-pages.js` como administrador, coordenação, consultor e tutor, digitando nos formulários; falha se alguma tela cair, der erro de script ou 5xx |
 
 Quando um trabalho falha, o relatório da varredura e o fim do registro da API aparecem no final do trabalho `telas`.

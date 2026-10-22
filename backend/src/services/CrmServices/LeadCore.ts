@@ -1,3 +1,4 @@
+import { touchAnalytics } from "../AnalyticsServices/Realtime";
 import { Op } from "sequelize";
 
 import AgentMetricEvent from "../../models/AgentMetricEvent";
@@ -47,14 +48,18 @@ export const addActivity = async (
   type: string,
   body: string,
   meta?: unknown
-): Promise<LeadActivity> =>
-  LeadActivity.create({
+): Promise<LeadActivity> => {
+  const activity = await LeadActivity.create({
     leadId,
     userId: userId || null,
     type,
     body,
     meta: meta ? JSON.stringify(meta) : null
   });
+  // a person's work on a lead (or an enrollment) changes their numbers on every open screen
+  touchAnalytics(userId);
+  return activity;
+};
 
 // The open columns of the regular funnel, in order. The column of the people an affiliate referred is not one of them: it
 // comes before all the others only to hold those people until the first contact, so "the first column" of an ordinary

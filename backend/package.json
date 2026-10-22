@@ -13,7 +13,9 @@
     "test:analysis": "vitest run",
     "test:channels": "npm run build && node scripts/channels-e2e.js",
     "i18n:check": "node scripts/i18n-check.js",
-    "format": "prettier --write \"src/**/*.ts\""
+    "format": "prettier --write \"src/**/*.ts\"",
+    "test:assign": "npm run build && node scripts/assign-e2e.js",
+    "test:analytics": "npm run build && node scripts/analytics-e2e.js"
   },
   "author": "",
   "license": "MIT",
@@ -91,6 +93,7 @@
     "factory-girl": "^5.0.4",
     "faker": "^5.1.0",
     "prettier": "^3.0.0",
+    "socket.io-client": "^4.8.1",
     "supertest": "7.3.1",
     "tsx": "^4.20.0",
     "typescript": "~5.4",

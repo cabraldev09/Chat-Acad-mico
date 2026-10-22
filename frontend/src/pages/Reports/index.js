@@ -13,6 +13,7 @@ import api from "../../services/api";
 import Management from "./Management";
 import ManagerView from "./ManagerView";
 import MyDay from "./MyDay";
+import MyStats from "./MyStats";
 import { Insights } from "./shared";
 import { isManager } from "../../utils/access";
 import { fillDays } from "../../utils/chartDays";
@@ -123,7 +124,7 @@ const STATUS = {
 };
 const TABS = [["geral", "Visão geral", MessagesSquare], ["equipe", "Equipe", Users], ["canais", "Canais e filas", CalendarDays]];
 
-const Reports = () => {
+const ReportsClassic = () => {
   const classes = useStyles();
   const history = useHistory();
   const { user } = useContext(AuthContext);
@@ -521,6 +522,14 @@ const Reports = () => {
       )}
     </div>
   );
+};
+
+// Estatísticas: the consultant gets the self-management center (only their own numbers); the management has its own place
+// (Centro de Gestão Comercial, same numbers); the other roles keep the classic screen.
+const Reports = () => {
+  const { user } = useContext(AuthContext);
+  const consultant = user && user.profile !== "admin" && (user.role === "consultor" || !user.role);
+  return consultant ? <MyStats /> : <ReportsClassic />;
 };
 
 export default Reports;

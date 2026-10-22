@@ -44,17 +44,22 @@ const FindOrCreateTicketService = async (
 
     if (ticket) {
       const wasHistory = ticket.isHistorical;
-      await ticket.update({
-        status: "pending",
-        userId: null,
-        unreadMessages,
-        chatbotNodeId: null,
-        aiActive: true,
-        closedAt: null,
-        ...(wasHistory ? { isHistorical: false, firstResponseAt: null } : {})
-      });
+      // only a closed (or copied) conversation comes back to the queue: one a person took in the meantime keeps its attendant
+      const [reopened] = await Ticket.update(
+        {
+          status: "pending",
+          userId: null,
+          unreadMessages,
+          chatbotNodeId: null,
+          aiActive: true,
+          closedAt: null,
+          ...(wasHistory ? { isHistorical: false, firstResponseAt: null } : {})
+        } as any,
+        { where: { id: ticket.id, [Op.or]: [{ status: "closed" }, { isHistorical: true }] } as any }
+      );
+      await ticket.reload();
       changed = true;
-      if (wasHistory) await Ticket.update({ createdAt: new Date() } as any, { where: { id: ticket.id }, silent: true } as any);
+      if (reopened && wasHistory) await Ticket.update({ createdAt: new Date() } as any, { where: { id: ticket.id }, silent: true } as any);
     }
   }
 
@@ -93,17 +98,22 @@ const FindOrCreateTicketService = async (
 
     if (ticket) {
       const recent = new Date(ticket.updatedAt).getTime() > Date.now() - 2 * 3600 * 1000;
-      await ticket.update({
-        status: "pending",
-        userId: null,
-        unreadMessages,
-        chatbotNodeId: null,
-        aiActive: true,
-        closedAt: null,
-        ...(recent ? {} : { firstResponseAt: null })
-      });
+      // conditional on "still closed": a person who accepted it a moment ago is not sent back to Aguardando, and the robot is not switched on again
+      const [reopened] = await Ticket.update(
+        {
+          status: "pending",
+          userId: null,
+          unreadMessages,
+          chatbotNodeId: null,
+          aiActive: true,
+          closedAt: null,
+          ...(recent ? {} : { firstResponseAt: null })
+        } as any,
+        { where: { id: ticket.id, status: "closed" } as any }
+      );
+      await ticket.reload();
       changed = true;
-      if (!recent) await Ticket.update({ createdAt: new Date() } as any, { where: { id: ticket.id }, silent: true } as any);
+      if (reopened && !recent) await Ticket.update({ createdAt: new Date() } as any, { where: { id: ticket.id }, silent: true } as any);
     }
   }
 

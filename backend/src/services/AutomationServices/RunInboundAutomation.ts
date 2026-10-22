@@ -26,6 +26,7 @@ import { safeRequest } from "../../helpers/SafeUrl";
 import AutoAssignTicket from "./AutoAssignTicket";
 import { isWithinBusinessHours } from "./BusinessHours";
 import { Op } from "sequelize";
+import { humanHasTicket } from "../../helpers/HumanOwnership";
 
 // Bot messages carry an invisible mark so they can be told apart from agent
 // messages (same convention the queue greeting already used).
@@ -33,6 +34,11 @@ const MARK = "‎";
 
 const say = async (ticket: Ticket, body: string): Promise<void> => {
   try {
+    // a person may have taken the conversation while the robot was thinking: the robot never talks after that
+    if (await humanHasTicket(ticket.id)) {
+      logger.info(`Automação do ticket ${ticket.id}: resposta descartada, um atendente assumiu a conversa`);
+      return;
+    }
     await SendWhatsAppMessage({ body: `${MARK}${body}`, ticket, automated: true });
   } catch (err) {
     logger.error(`Automation could not send message: ${err}`);
@@ -308,6 +314,12 @@ const runChatbot = async (
 // The person may write several short messages in a row: wait until they stop, then answer once.
 const aiTimers = new Map<number, NodeJS.Timeout>();
 const aiRunning = new Set<number>();
+
+export const cancelAiTimer = (ticketId: number): void => {
+  const timer = aiTimers.get(ticketId);
+  if (timer) clearTimeout(timer);
+  aiTimers.delete(ticketId);
+};
 
 const scheduleAi = (ticketId: number, waitSeconds: number): void => {
   const previous = aiTimers.get(ticketId);
