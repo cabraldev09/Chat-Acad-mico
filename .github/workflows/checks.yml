@@ -84,9 +84,11 @@ jobs:
         working-directory: backend
         run: node scripts/channels-e2e.js
       - name: Responsabilidade pela conversa (visualizar, atribuir, enviar, concorrência)
+        if: ${{ !cancelled() }}
         working-directory: backend
         run: node scripts/assign-e2e.js
       - name: Estatísticas e Gestão Comercial (mesma fonte, permissões, tempo real)
+        if: ${{ !cancelled() }}
         working-directory: backend
         run: node scripts/analytics-e2e.js
 
