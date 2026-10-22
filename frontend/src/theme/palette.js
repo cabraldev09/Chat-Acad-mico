@@ -23,9 +23,10 @@ const palette = {
     error: { main: "#dc2626" },
     warning: { main: "#d97706" },
     text: { primary: "#0b1a2e", secondary: "#64748b" },
-    divider: "#e2e8f0",
+    divider: "#d3dce9",
     background: {
-      default: "#f6f8fb",
+      // a tinted blue-grey page: white cards stand out from it (it used to be #f6f8fb, almost the same white as the cards)
+      default: "#e6ecf5",
       paper: "#ffffff",
       chat: "#f1f5f9",
     },

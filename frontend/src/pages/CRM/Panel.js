@@ -19,7 +19,8 @@ import { AuthContext } from "../../context/Auth/AuthContext";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import { downloadFile } from "../../utils/saveBlob";
-import { useCrmOptions, SourceIcon, ago } from "./shared";
+import { useCrmOptions, SourceIcon, StagePill, ago } from "./shared";
+import { tint } from "../../utils/color";
 import NotALead from "./NotALead";
 
 const useStyles = makeStyles((theme) => {
@@ -112,10 +113,11 @@ const Spark = ({ data, color }) => (
   </div>
 );
 
-const SectionHead = ({ title, hint }) => {
+const SectionHead = ({ title, hint, color = "#0693E3" }) => {
   const c = useStyles();
   return (
     <div className={c.sectionHead}>
+      <span style={{ width: 5, height: 20, borderRadius: 3, background: color, alignSelf: "center", flex: "none" }} />
       <span className={c.sectionTitle}>{title}</span>
       {hint && <span className={c.sectionHint}>{hint}</span>}
     </div>
@@ -236,15 +238,15 @@ const Panel = () => {
       {d && (
         <div className={classes.scroll}>
          <div className={`${classes.content} ${loading ? classes.contentBusy : ""}`} aria-busy={loading}>
-          <SectionHead title="Pontos de atenção" hint="Situação de agora, não muda com o período escolhido" />
+          <SectionHead color="#d97706" title="Pontos de atenção" hint="Situação de agora, não muda com o período escolhido" />
           <div className={classes.alerts}>
             {alerts.map(([Icon, label, value, fg, bg, to2]) => (
-              <GlowCard key={label} className={classes.alert} role="button" tabIndex={0} onClick={() => history.push(to2)}
+              <GlowCard key={label} tone={fg} className={classes.alert} role="button" tabIndex={0} onClick={() => history.push(to2)}
                 onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); history.push(to2); } }}>
                 <span className={classes.alertIcon} style={{ background: bg, color: fg }}><Icon size={18} /></span>
                 <div>
                   <div className={classes.label}>{label}</div>
-                  <div style={{ fontSize: 24, fontWeight: 700, color: value ? fg : undefined, fontVariantNumeric: "tabular-nums" }}><NumberTicker value={value || 0} /></div>
+                  <div style={{ fontSize: 24, fontWeight: 700, color: value ? fg : "#94a3b8", fontVariantNumeric: "tabular-nums" }}><NumberTicker value={value || 0} /></div>
                 </div>
               </GlowCard>
             ))}
@@ -252,12 +254,12 @@ const Panel = () => {
 
           {d.triage && d.triage.length > 0 && (
             <>
-              <SectionHead title="Novos para conferir" hint="Quem escreveu e ninguém atendeu ainda. Amigo ou da equipe? Tire do funil para não contar como lead." />
+              <SectionHead color="#6366f1" title="Novos para conferir" hint="Quem escreveu e ninguém atendeu ainda. Amigo ou da equipe? Tire do funil para não contar como lead." />
               <GlowCard className={classes.card}>
                 {d.triage.map((t) => (
                   <div key={t.id} className={classes.triageRow}>
                     <div style={{ flex: 1, minWidth: 180 }}>
-                      <div style={{ fontWeight: 600 }}>{t.name}</div>
+                      <div style={{ fontWeight: 600, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>{t.name}<StagePill stage={{ name: "Novo · sem atendimento", color: "#d97706" }} size="sm" solid={false} /></div>
                       <div className={classes.label} style={{ fontSize: 12.5 }}>
                         <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}><SourceIcon source={t.source} />{t.source}</span>
                         {t.phone ? ` · ${t.phone}` : ""} · chegou {ago(t.createdAt)}
@@ -274,44 +276,44 @@ const Panel = () => {
             </>
           )}
 
-          <SectionHead title="Resultados do período" hint="Dos leads que entraram entre as datas escolhidas, quantos já se matricularam. A seta compara com o período anterior." />
+          <SectionHead color="#16a34a" title="Resultados do período" hint="Dos leads que entraram entre as datas escolhidas, quantos já se matricularam. A seta compara com o período anterior." />
           <GlowCard style={{ padding: 0, overflow: "hidden" }}>
             <div className={classes.band}>
-              <div className={classes.cell}>
+              <div className={classes.cell} style={{ borderTop: `4px solid ${"#0693E3"}`, background: tint("#0693E3", 0.07) }}>
                 <div className={classes.label}>Leads captados</div>
-                <div className={classes.cellVal}><NumberTicker value={d.kpi.leads} /></div>
+                <div className={classes.cellVal} style={{ color: "#0693E3" }}><NumberTicker value={d.kpi.leads} /></div>
                 <div style={{ marginTop: 4 }}><Delta now={d.kpi.leads} before={prev && prev.leads} /></div>
                 <Spark data={sparkLeads} color="#0693E3" />
                 <div className={classes.label} style={{ fontSize: 12 }}>{d.kpi.open} em andamento</div>
               </div>
-              <div className={classes.cell}>
+              <div className={classes.cell} style={{ borderTop: `4px solid ${GREEN}`, background: tint(GREEN, 0.07) }}>
                 <div className={classes.label}>Matrículas</div>
-                <div className={classes.cellVal}><NumberTicker value={d.kpi.won} /></div>
+                <div className={classes.cellVal} style={{ color: GREEN }}><NumberTicker value={d.kpi.won} /></div>
                 <div style={{ marginTop: 4 }}><Delta now={d.kpi.won} before={prev && prev.won} /></div>
                 <Spark data={sparkWon} color={GREEN} />
                 <div className={classes.label} style={{ fontSize: 12 }}>{d.kpi.lost} perdidos · {wonInPeriod} confirmadas no período</div>
               </div>
-              <div className={classes.cell}>
+              <div className={classes.cell} style={{ borderTop: `4px solid ${"#8b5cf6"}`, background: tint("#8b5cf6", 0.07) }}>
                 <div className={classes.label}>Conversão</div>
-                <div className={classes.cellVal}>{`${d.kpi.conversion.toFixed(1).replace(".", ",")}%`}</div>
+                <div className={classes.cellVal} style={{ color: "#8b5cf6" }}>{`${d.kpi.conversion.toFixed(1).replace(".", ",")}%`}</div>
                 <div style={{ marginTop: 4 }}><Delta now={d.kpi.conversion} before={prev && prev.conversion} points /></div>
                 <div className={classes.label} style={{ fontSize: 12, marginTop: 8 }}>lead → matrícula</div>
               </div>
-              <div className={classes.cell}>
+              <div className={classes.cell} style={{ borderTop: `4px solid ${AMBER}`, background: tint(AMBER, 0.07) }}>
                 <div className={classes.label}>Tempo até o 1º contato</div>
                 <div className={classes.cellVal} style={{ color: contactTone(d.kpi.avgFirstContactMin) }}>{mins(d.kpi.avgFirstContactMin)}</div>
                 <div className={classes.label} style={{ fontSize: 12, marginTop: 8 }}>{d.kpi.businessHours ? "média, só horário comercial" : "média"} · ideal até 15 min</div>
               </div>
-              <div className={classes.cell} style={{ borderRight: 0 }}>
+              <div className={classes.cell} style={{ borderRight: 0, borderTop: `4px solid ${"#14b8a6"}`, background: tint("#14b8a6", 0.07) }}>
                 <div className={classes.label}>Tempo até a matrícula</div>
-                <div className={classes.cellVal}>{d.kpi.avgDaysToEnroll === null ? "—" : `${Number(d.kpi.avgDaysToEnroll).toFixed(1).replace(".", ",")} dias`}</div>
+                <div className={classes.cellVal} style={{ color: "#14b8a6" }}>{d.kpi.avgDaysToEnroll === null ? "—" : `${Number(d.kpi.avgDaysToEnroll).toFixed(1).replace(".", ",")} dias`}</div>
                 <div className={classes.label} style={{ fontSize: 12, marginTop: 8 }}>média</div>
               </div>
             </div>
           </GlowCard>
 
           <div className={classes.grid} style={{ marginTop: 16 }}>
-            <GlowCard className={classes.card} style={span(7)}>
+            <GlowCard tone={"#0693E3"} className={classes.card} style={span(7)}>
               <Typography variant="subtitle2" gutterBottom>Funil de matrícula</Typography>
               <Typography variant="caption" color="textSecondary" display="block" style={{ marginBottom: 8 }}>
                 Leads que estão em cada etapa ou já passaram dela (a porcentagem é em relação à etapa anterior). Os perdidos ficam à parte.
@@ -337,7 +339,7 @@ const Panel = () => {
               </div>
             </GlowCard>
 
-            <GlowCard className={classes.card} style={span(5)}>
+            <GlowCard tone={"#dc2626"} className={classes.card} style={span(5)}>
               <Typography variant="subtitle2" gutterBottom>Motivos de perda</Typography>
               {d.lostReasons.length === 0 ? <Typography color="textSecondary" variant="body2">Nenhuma perda no período.</Typography> : (
                 <div className={classes.chart}>
@@ -353,7 +355,7 @@ const Panel = () => {
               )}
             </GlowCard>
 
-            <GlowCard className={classes.card} style={span(12)}>
+            <GlowCard tone={"#16a34a"} className={classes.card} style={span(12)}>
               <Typography variant="subtitle2" gutterBottom>Leads captados e matrículas confirmadas por dia</Typography>
               <div className={classes.chart}>
                 <ResponsiveContainer>
@@ -371,7 +373,7 @@ const Panel = () => {
               </div>
             </GlowCard>
 
-            <GlowCard className={classes.card} style={span(6)}>
+            <GlowCard tone={"#8b5cf6"} className={classes.card} style={span(6)}>
               <Typography variant="subtitle2" gutterBottom>Origem dos leads</Typography>
               <Table size="small">
                 <TableHead><TableRow><TableCell>Origem</TableCell><TableCell align="right">Leads</TableCell><TableCell align="right">Matrículas</TableCell><TableCell align="right" style={{ minWidth: 110 }}>Conversão</TableCell></TableRow></TableHead>
@@ -392,7 +394,7 @@ const Panel = () => {
               </Table>
             </GlowCard>
 
-            <GlowCard className={classes.card} style={span(6)}>
+            <GlowCard tone={"#14b8a6"} className={classes.card} style={span(6)}>
               <Typography variant="subtitle2" gutterBottom>Cursos mais procurados</Typography>
               <div className={classes.chart}>
                 <ResponsiveContainer>
@@ -406,7 +408,7 @@ const Panel = () => {
               </div>
             </GlowCard>
 
-            <GlowCard className={classes.card} style={span(12)}>
+            <GlowCard tone={"#0B4279"} className={classes.card} style={span(12)}>
               <Typography variant="subtitle2" gutterBottom>Desempenho dos consultores</Typography>
               <Table size="small">
                 <TableHead><TableRow><TableCell>Consultor</TableCell><TableCell align="right">Leads</TableCell><TableCell align="right">Em andamento</TableCell><TableCell align="right">Matrículas</TableCell><TableCell align="right">Conversão</TableCell><TableCell align="right">1º contato (média)</TableCell><TableCell align="right">Sem 1º contato agora</TableCell></TableRow></TableHead>

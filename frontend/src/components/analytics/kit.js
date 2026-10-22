@@ -6,6 +6,7 @@ import { Info } from "lucide-react";
 import api from "../../services/api";
 import openSocket from "../../services/socket-io";
 import toastError from "../../errors/toastError";
+import { tint } from "../../utils/color";
 
 // Shared by the management center and the consultant's own screen: same tokens, same cards, same period filter, same live refresh.
 // Nothing here computes a number: every figure comes from /analytics (one service, one set of definitions).
@@ -21,8 +22,8 @@ export const useKit = makeStyles((theme) => {
     head: { display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: theme.spacing(2.5) },
     h1: { fontSize: 24, fontWeight: 800, letterSpacing: "-0.02em", margin: 0 },
     lead: { fontSize: 14, color: theme.palette.text.secondary, marginTop: 4, maxWidth: 720 },
-    panel: { background: dark ? "#0f1826" : "#ffffff", border: `1px solid ${line}`, borderRadius: 16, padding: theme.spacing(2.25), minWidth: 0 },
-    hero: { background: `linear-gradient(120deg, ${BRAND.blue} 0%, #0a5aa8 60%, ${BRAND.cerulean} 140%)`, color: "#fff", borderRadius: 20, padding: theme.spacing(3), minWidth: 0 },
+    panel: { background: dark ? "#0f1826" : "#ffffff", border: `1px solid ${dark ? line : "#d3dce9"}`, borderRadius: 16, padding: theme.spacing(2.25), minWidth: 0, boxShadow: dark ? "none" : "0 1px 2px rgba(11,66,121,.08), 0 8px 20px -10px rgba(11,66,121,.2)" },
+    hero: { background: `linear-gradient(120deg, ${BRAND.blue} 0%, #0a5aa8 60%, ${BRAND.cerulean} 140%)`, color: "#fff", borderRadius: 20, padding: theme.spacing(3), minWidth: 0, boxShadow: "0 12px 30px -14px rgba(11,66,121,.7)" },
     h2: { fontSize: 14.5, fontWeight: 700, margin: 0, display: "flex", alignItems: "center", gap: 8, letterSpacing: "-0.01em" },
     sub: { fontSize: 12.5, color: theme.palette.text.secondary, marginTop: 2 },
     grid: { display: "grid", gap: theme.spacing(2), gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))" },
@@ -31,7 +32,7 @@ export const useKit = makeStyles((theme) => {
     kpiLabel: { fontSize: 12.5, color: theme.palette.text.secondary, display: "flex", alignItems: "center", gap: 6 },
     kpiValue: { fontSize: 28, fontWeight: 800, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums", lineHeight: 1.15, marginTop: 6 },
     kpiHint: { fontSize: 12, color: theme.palette.text.secondary, marginTop: 2 },
-    chips: { display: "inline-flex", gap: 4, padding: 4, borderRadius: 999, background: soft, border: `1px solid ${line}`, flexWrap: "wrap" },
+    chips: { display: "inline-flex", gap: 4, padding: 4, borderRadius: 999, background: dark ? soft : "#fff", border: `1px solid ${dark ? line : "#c9d5e5"}`, flexWrap: "wrap", boxShadow: dark ? "none" : "0 1px 2px rgba(11,66,121,.08)" },
     chip: { border: 0, borderRadius: 999, padding: "6px 14px", fontFamily: "inherit", fontSize: 13, fontWeight: 600, cursor: "pointer", background: "transparent", color: theme.palette.text.secondary, "&:hover": { color: theme.palette.text.primary } },
     chipOn: { background: BRAND.blue, color: "#fff !important" },
     table: { width: "100%", borderCollapse: "collapse", fontSize: 14, "& th": { textAlign: "left", fontSize: 12, color: theme.palette.text.secondary, fontWeight: 600, padding: "8px 10px", borderBottom: `1px solid ${line}`, whiteSpace: "nowrap" }, "& td": { padding: "10px", borderBottom: `1px solid ${line}`, verticalAlign: "middle" }, "& .r": { textAlign: "right", fontVariantNumeric: "tabular-nums" }, "& tbody tr": { cursor: "pointer" }, "& tbody tr:hover": { background: soft } },
@@ -47,6 +48,12 @@ export const useKit = makeStyles((theme) => {
 });
 
 // what each indicator means, in one sentence, shown under the number (the ⓘ has the complete definition from the server)
+export const KPI_COLOR = {
+  messagesSent: "#0693E3", attendances: "#0B4279", reactivated: "#14b8a6", leadsWorked: "#8b5cf6", pendingReply: "#d97706",
+  inProgress: "#0693E3", tasksOpen: "#6366f1", tasksOverdue: "#dc2626", tasksDone: "#16a34a", followUpsDue: "#f97316",
+  proposalsSent: "#8b5cf6", proposalsViewed: "#14b8a6", enrollments: "#16a34a", conversion: "#8b5cf6",
+};
+
 export const SHORT = {
   messagesSent: "Mensagens que pessoas digitaram e enviaram pelo sistema. Não conta IA, robôs nem abrir uma conversa.",
   attendances: "Conversas de clientes diferentes em que houve ao menos uma mensagem humana no período.",
@@ -135,12 +142,12 @@ export const Kpi = ({ k, value, def, hint, tone }) => {
   const c = useKit();
   const unit = def && def.unit;
   return (
-    <div className={c.kpi} data-kpi={k}>
+    <div className={c.kpi} data-kpi={k} style={{ boxShadow: `inset 4px 0 0 ${tone || KPI_COLOR[k] || "#0693E3"}, 0 1px 2px rgba(11,66,121,.08), 0 6px 16px -8px rgba(11,66,121,.18)`, backgroundImage: `linear-gradient(135deg, ${tint(tone || KPI_COLOR[k] || "#0693E3", 0.1)} 0%, transparent 62%)` }}>
       <div className={c.kpiLabel}>
         <span>{(def && def.label) || k}</span>
         {def && <span title={def.description} style={{ display: "inline-flex", opacity: 0.55 }}><Info size={13} /></span>}
       </div>
-      <div className={c.kpiValue} style={tone ? { color: tone } : undefined}>{fmt(value, unit)}</div>
+      <div className={c.kpiValue} style={{ color: tone || KPI_COLOR[k] }}>{fmt(value, unit)}</div>
       {hint || SHORT[k] ? <div className={c.kpiHint}>{hint || SHORT[k]}</div> : null}
     </div>
   );
