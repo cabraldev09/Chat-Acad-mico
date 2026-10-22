@@ -3,7 +3,7 @@ import { useHistory } from "react-router-dom";
 import { format, parseISO } from "date-fns";
 import { CalendarCheck2, Clock3, MessageCircle, Phone, Target } from "lucide-react";
 
-import { HistoryChart, Kpi, PeriodPicker, PresenceDot, PRESENCE, Progress, fmt, num, periodParams, useAnalytics, useDefinitions, useKit } from "../../components/analytics/kit";
+import { BlockTitle, HistoryChart, Kpi, PeriodPicker, PresenceDot, PRESENCE, Progress, fmt, num, periodParams, useAnalytics, useDefinitions, useKit } from "../../components/analytics/kit";
 
 const when = (v) => { try { return format(parseISO(v), "dd/MM HH:mm"); } catch (e) { return ""; } };
 
@@ -38,6 +38,7 @@ const MyStats = () => {
       <div className={c.hero} style={{ marginBottom: 16 }}>
         <div style={{ fontSize: 13, opacity: 0.85 }}><PresenceDot state={data.presence.state} />{presence.label}{data.presence.scheduleToday.length ? ` · meu horário hoje: ${data.presence.scheduleToday.map((s) => `${s.start}–${s.end}`).join(", ")}` : " · sem horário programado hoje"}</div>
         <div style={{ fontSize: 15, fontWeight: 700, marginTop: 10 }}>Minha produção hoje</div>
+        <div style={{ fontSize: 12.5, opacity: 0.85, marginTop: 2 }}>O que você fez desde a meia-noite: mensagens enviadas por você, conversas atendidas, leads trabalhados e matrículas. Quando há meta diária, a barra mostra o quanto falta.</div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 18, marginTop: 8 }}>
           {[["Mensagens enviadas", t.messagesSent, targets.dailyMessages], ["Atendimentos", t.attendances, targets.dailyAttendances], ["Leads trabalhados", t.leadsWorked, 0], ["Matrículas", t.enrollments, 0]].map(([label, value, target]) => (
             <div key={label} data-hero={label}>
@@ -57,7 +58,7 @@ const MyStats = () => {
 
       <div className={c.cols}>
         <div className={c.panel}>
-          <h2 className={c.h2}><Clock3 size={16} /> Responder agora <b>({num(m.pendingReply)})</b></h2>
+          <BlockTitle icon={<Clock3 size={16} />} title={`Responder agora (${num(m.pendingReply)})`} help="Conversas suas em que o cliente falou por último. As mais antigas aparecem primeiro. Clique para abrir e responder." />
           <div style={{ marginTop: 8 }}>
             {data.focus.conversations.length === 0 && <div className={c.sub}>Ninguém esperando resposta sua.</div>}
             {data.focus.conversations.map((v) => (
@@ -68,7 +69,7 @@ const MyStats = () => {
           </div>
         </div>
         <div className={c.panel}>
-          <h2 className={c.h2}><CalendarCheck2 size={16} /> Tarefas para hoje <b>({num(m.tasksOpen)} abertas)</b></h2>
+          <BlockTitle icon={<CalendarCheck2 size={16} />} title={`Tarefas para hoje (${num(m.tasksOpen)} abertas)`} help="Contatos que você combinou com seus leads e que vencem hoje ou já venceram. Clique para abrir o lead e conclua pela tela de tarefas." />
           <div style={{ marginTop: 8 }}>
             {data.focus.tasks.length === 0 && <div className={c.sub}>Nenhuma tarefa para hoje.</div>}
             {data.focus.tasks.map((k) => (
@@ -81,7 +82,7 @@ const MyStats = () => {
           </div>
         </div>
         <div className={c.panel}>
-          <h2 className={c.h2}><Phone size={16} /> Follow-ups de hoje <b>({num(m.followUpsDue)})</b></h2>
+          <BlockTitle icon={<Phone size={16} />} title={`Follow-ups de hoje (${num(m.followUpsDue)})`} help="Leads seus com o próximo contato marcado para hoje ou antes. Retome a conversa para não esfriar o lead." />
           <div style={{ marginTop: 8 }}>
             {data.focus.followUps.length === 0 && <div className={c.sub}>Nenhum follow-up vencendo.</div>}
             {data.focus.followUps.map((l) => (
@@ -94,11 +95,11 @@ const MyStats = () => {
 
       <div className={c.cols} style={{ marginTop: 16 }}>
         <div className={c.panel}>
-          <h2 className={c.h2}>Minha evolução</h2>
+          <BlockTitle title="Minha evolução" help="Suas mensagens, atendimentos e matrículas dia a dia no período escolhido em cima da página." />
           <HistoryChart series={data.series} />
         </div>
         <div className={c.panel}>
-          <h2 className={c.h2}><Target size={16} /> Minhas metas</h2>
+          <BlockTitle icon={<Target size={16} />} title="Minhas metas" help="Quantas matrículas você já fez e quantas faltam em cada meta ativa, com o ritmo por dia para chegar lá." />
           {data.goals.length === 0 && <div className={c.sub} style={{ marginTop: 8 }}>Você ainda não está em nenhuma meta ativa.</div>}
           {data.goals.map((g) => (
             <div key={g.id} style={{ margin: "12px 0" }}>

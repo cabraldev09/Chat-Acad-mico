@@ -46,6 +46,24 @@ export const useKit = makeStyles((theme) => {
   };
 });
 
+// what each indicator means, in one sentence, shown under the number (the ⓘ has the complete definition from the server)
+export const SHORT = {
+  messagesSent: "Mensagens que pessoas digitaram e enviaram pelo sistema. Não conta IA, robôs nem abrir uma conversa.",
+  attendances: "Conversas de clientes diferentes em que houve ao menos uma mensagem humana no período.",
+  reactivated: "Conversas retomadas por uma pessoa depois de 7 dias ou mais sem nenhuma mensagem.",
+  leadsWorked: "Leads em que alguém registrou anotação, mudou a etapa, fez contato ou enviou mensagem.",
+  pendingReply: "Conversas abertas em que o cliente falou por último e ainda espera resposta.",
+  inProgress: "Conversas com status Atendendo que estão com a pessoa.",
+  tasksOpen: "Tarefas combinadas com leads que ainda não foram concluídas.",
+  tasksOverdue: "Tarefas abertas cujo prazo já passou. Clique em Alertas para ver quais são.",
+  tasksDone: "Tarefas concluídas no período.",
+  followUpsDue: "Leads com o próximo contato marcado para hoje ou antes.",
+  proposalsSent: "Propostas enviadas ao candidato no período.",
+  proposalsViewed: "Propostas que o candidato abriu no período.",
+  enrollments: "Matrículas confirmadas no período. É a mesma regra das Metas.",
+  conversion: "Matrículas divididas pelos leads trabalhados no período.",
+};
+
 export const num = (v) => Number(v || 0).toLocaleString("pt-BR");
 export const fmt = (v, unit) => (v === null || v === undefined ? "—" : unit === "percent" ? `${String(v).replace(".", ",")}%` : num(v));
 
@@ -123,7 +141,18 @@ export const Kpi = ({ k, value, def, hint, tone }) => {
         {def && <span title={def.description} style={{ display: "inline-flex", opacity: 0.55 }}><Info size={13} /></span>}
       </div>
       <div className={c.kpiValue} style={tone ? { color: tone } : undefined}>{fmt(value, unit)}</div>
-      {hint ? <div className={c.kpiHint}>{hint}</div> : null}
+      {hint || SHORT[k] ? <div className={c.kpiHint}>{hint || SHORT[k]}</div> : null}
+    </div>
+  );
+};
+
+// the title of a block with one line saying what it shows
+export const BlockTitle = ({ icon, title, help }) => {
+  const c = useKit();
+  return (
+    <div style={{ marginBottom: 6 }}>
+      <h2 className={c.h2}>{icon}{title}</h2>
+      {help ? <div className={c.sub}>{help}</div> : null}
     </div>
   );
 };

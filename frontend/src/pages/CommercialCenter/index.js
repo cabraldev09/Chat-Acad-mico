@@ -5,10 +5,19 @@ import { AlertTriangle, Download, Gauge, Settings2, Target, Users } from "lucide
 
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
-import { BRAND, CompareBars, HistoryChart, Kpi, PeriodPicker, PresenceDot, PRESENCE, Progress, fmt, num, periodParams, useAnalytics, useDefinitions, useKit } from "../../components/analytics/kit";
+import { BRAND, BlockTitle, CompareBars, HistoryChart, Kpi, PeriodPicker, PresenceDot, PRESENCE, Progress, fmt, num, periodParams, useAnalytics, useDefinitions, useKit } from "../../components/analytics/kit";
 
 const DAYS = [["1", "Seg"], ["2", "Ter"], ["3", "Qua"], ["4", "Qui"], ["5", "Sex"], ["6", "Sáb"], ["0", "Dom"]];
 const LEVEL = { high: "#dc2626", medium: "#d97706", low: "#0693E3" };
+const TAB_HELP = {
+  geral: "Resumo da equipe no período escolhido: totais, quem está trabalhando agora e o que precisa da sua atenção.",
+  consultores: "Compare cada consultor lado a lado. Clique em um nome para ver a evolução, as metas e as tarefas dele.",
+  polos: "Os mesmos números somados por polo, para comparar o desempenho de cada unidade.",
+  config: "Defina horários de trabalho, metas diárias e a regra de inatividade. Vale para esta tela e para a de cada consultor.",
+};
+// where a click on an alert takes the manager (the task screen opens already filtered on that person)
+const alertLink = (a) => (a.code === "tasks_overdue" ? `/crm/tarefas?scope=all&status=overdue&userId=${a.userId}` : a.link);
+
 const COLS = [["messagesSent", "Mensagens"], ["attendances", "Atend."], ["leadsWorked", "Leads"], ["reactivated", "Reativ."], ["pendingReply", "Pendentes"], ["enrollments", "Matrículas"], ["conversion", "Conv."], ["tasksOverdue", "Atrasadas"]];
 
 const ConfigPanel = ({ config, consultants, onSaved }) => {
@@ -36,20 +45,19 @@ const ConfigPanel = ({ config, consultants, onSaved }) => {
   };
   return (
     <div className={c.panel}>
-      <h2 className={c.h2}><Settings2 size={16} /> Horários, metas e regras de produtividade</h2>
-      <div className={c.sub}>O que está aqui vale para os dois ambientes: o painel de gestão e a tela de Estatísticas de cada consultor.</div>
+      <BlockTitle icon={<Settings2 size={16} />} title="Horários, metas e regras de produtividade" help="O que está aqui vale para os dois ambientes: este painel de gestão e a tela de Estatísticas de cada consultor." />
       <div className={c.grid} style={{ marginTop: 16 }}>
-        <label className={c.sub}>Considerar ausente após (min sem atividade)
+        <label className={c.sub}>Considerar parado após (minutos sem atividade). Quem está no horário de trabalho e passa desse tempo sem enviar mensagem, mexer em lead ou concluir tarefa aparece como "No horário, sem atividade".
           <input type="number" min={1} max={240} className={c.input} style={{ width: "100%", marginTop: 4 }} value={form.activeWindowMinutes} onChange={(e) => setForm({ ...form, activeWindowMinutes: e.target.value })} />
         </label>
-        <label className={c.sub}>Meta diária de mensagens (0 = sem meta)
+        <label className={c.sub}>Meta diária de mensagens enviadas. Aparece na tela do consultor e gera alerta quando ele está no horário e abaixo da meta (0 = sem meta).
           <input type="number" min={0} className={c.input} style={{ width: "100%", marginTop: 4 }} value={form.dailyMessagesTarget} onChange={(e) => setForm({ ...form, dailyMessagesTarget: e.target.value })} />
         </label>
-        <label className={c.sub}>Meta diária de atendimentos (0 = sem meta)
+        <label className={c.sub}>Meta diária de atendimentos (conversas diferentes atendidas por dia). Aparece na tela do consultor (0 = sem meta).
           <input type="number" min={0} className={c.input} style={{ width: "100%", marginTop: 4 }} value={form.dailyAttendancesTarget} onChange={(e) => setForm({ ...form, dailyAttendancesTarget: e.target.value })} />
         </label>
       </div>
-      <h3 className={c.h2} style={{ marginTop: 22 }}>Horário de trabalho por consultor</h3>
+      <div style={{ marginTop: 22 }}><BlockTitle title="Horário de trabalho por consultor" help="Preencha início e fim de cada dia em que a pessoa trabalha. Deixe em branco os dias de folga. O horário serve para dizer quem está no expediente e quem está parado." /></div>
       <div className={c.scroll}>
         <table className={c.table} style={{ minWidth: 760 }}>
           <thead><tr><th>Consultor</th>{DAYS.map(([, d]) => <th key={d}>{d}</th>)}</tr></thead>
@@ -92,11 +100,11 @@ const Detail = ({ userId, period, defs, onClose }) => {
       <div className={c.grid} style={{ marginTop: 14 }}>
         {["messagesSent", "attendances", "leadsWorked", "enrollments", "conversion", "pendingReply", "proposalsSent", "tasksOverdue"].map((k) => <Kpi key={k} k={k} value={m[k]} def={defs[k]} />)}
       </div>
-      <h3 className={c.h2} style={{ marginTop: 18 }}>Evolução</h3>
+      <div style={{ marginTop: 18 }}><BlockTitle title="Evolução" help="Mensagens, atendimentos e matrículas de cada dia do período escolhido." /></div>
       <HistoryChart series={data.series} />
       {data.goals.length > 0 && (
         <>
-          <h3 className={c.h2} style={{ marginTop: 14 }}><Target size={15} /> Metas</h3>
+          <div style={{ marginTop: 14 }}><BlockTitle icon={<Target size={15} />} title="Metas" help="Matrículas feitas e a meta da pessoa nas metas ativas (Metas no menu)." /></div>
           {data.goals.map((g) => (
             <div key={g.id} style={{ margin: "8px 0" }}>
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}><span>{g.title}</span><b>{num(g.mine.done)} / {num(g.mine.target)}</b></div>
@@ -107,7 +115,7 @@ const Detail = ({ userId, period, defs, onClose }) => {
       )}
       {data.focus.tasks.length > 0 && (
         <>
-          <h3 className={c.h2} style={{ marginTop: 14 }}>Tarefas que pedem atenção</h3>
+          <div style={{ marginTop: 14 }}><BlockTitle title="Tarefas que pedem atenção" help="As tarefas que vencem hoje ou já venceram. Clique para abrir o lead." /></div>
           {data.focus.tasks.slice(0, 4).map((t) => (
             <button key={t.id} type="button" className={c.row} onClick={() => history.push(t.link)}><span style={{ flex: 1 }}>{t.title}{t.leadName ? ` · ${t.leadName}` : ""}</span><b style={{ color: t.overdue ? "#dc2626" : undefined }}>{t.overdue ? "atrasada" : "hoje"}</b></button>
           ))}
@@ -162,6 +170,7 @@ const CommercialCenter = () => {
         ))}
       </div>
 
+      <div className={c.sub} style={{ margin: "-6px 0 16px" }}>{TAB_HELP[tab]}</div>
       {loading && !data && <div className={c.sub}>Carregando…</div>}
       {data && tab === "geral" && (
         <div style={{ display: "grid", gap: 16 }}>
@@ -170,8 +179,7 @@ const CommercialCenter = () => {
           </div>
           <div className={c.cols}>
             <div className={c.panel}>
-              <h2 className={c.h2}><Users size={16} /> Presença agora</h2>
-              <div className={c.sub}>Atividade real (mensagens, leads, tarefas) cruzada com o horário configurado.</div>
+              <BlockTitle icon={<Users size={16} />} title="Presença agora" help="Quem está trabalhando neste momento. Cruza a atividade real (mensagens, leads, tarefas dos últimos minutos) com o horário de trabalho configurado. Ativo = fez algo há pouco; No horário, sem atividade = deveria estar trabalhando e não fez nada; Fora do horário = fora do expediente." />
               <div style={{ marginTop: 10 }}>
                 {Object.keys(PRESENCE).map((k) => (
                   <div key={k} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", fontSize: 14 }}><span><PresenceDot state={k} />{PRESENCE[k].label}</span><b>{presence[k] || 0}</b></div>
@@ -179,11 +187,11 @@ const CommercialCenter = () => {
               </div>
             </div>
             <div className={c.panel}>
-              <h2 className={c.h2}><AlertTriangle size={16} /> Alertas e oportunidades</h2>
+              <BlockTitle icon={<AlertTriangle size={16} />} title="Alertas e oportunidades" help="O que pede atenção agora: tarefas atrasadas, conversas esperando resposta, gente parada no horário de trabalho e leads sem matrícula. Clique para ver o detalhe: as tarefas abrem já filtradas na pessoa." />
               <div style={{ marginTop: 8 }}>
                 {data.alerts.length === 0 && <div className={c.sub}>Nada pedindo atenção agora.</div>}
                 {data.alerts.slice(0, 8).map((a, i) => (
-                  <button key={`${a.userId}-${a.code}-${i}`} type="button" className={c.row} onClick={() => { if (a.code === "idle_on_schedule" || a.code.startsWith("below")) { setSelected(a.userId); setTab("consultores"); } else history.push(a.link); }}>
+                  <button key={`${a.userId}-${a.code}-${i}`} type="button" className={c.row} onClick={() => { if (a.code === "idle_on_schedule" || a.code.startsWith("below")) { setSelected(a.userId); setTab("consultores"); } else history.push(alertLink(a)); }}>
                     <span style={{ width: 8, height: 8, borderRadius: "50%", background: LEVEL[a.level], flex: "none" }} />
                     <span style={{ flex: 1 }}><b>{a.name}</b> · {a.text}</span>
                   </button>
@@ -192,7 +200,7 @@ const CommercialCenter = () => {
             </div>
           </div>
           <div className={c.panel}>
-            <h2 className={c.h2}><Gauge size={16} /> Produção por consultor</h2>
+            <BlockTitle icon={<Gauge size={16} />} title="Produção por consultor" help="Barras com mensagens enviadas, atendimentos e matrículas de cada consultor no período. Passe o mouse para ver os números." />
             <CompareBars data={ranked.map((b) => ({ name: b.user.name.split(" ")[0], messagesSent: b.metrics.messagesSent, attendances: b.metrics.attendances, enrollments: b.metrics.enrollments }))} keys={[["messagesSent", "Mensagens", BRAND.cerulean], ["attendances", "Atendimentos", BRAND.blue], ["enrollments", "Matrículas", "#16a34a"]]} />
           </div>
         </div>
@@ -201,6 +209,7 @@ const CommercialCenter = () => {
       {data && tab === "consultores" && (
         <div className={c.cols} style={{ gridTemplateColumns: selected ? "minmax(0,1.4fr) minmax(0,1fr)" : "1fr" }}>
           <div className={c.panel}>
+            <BlockTitle title="Consultores lado a lado" help="Mensagens: enviadas por pessoas. Atend.: conversas diferentes atendidas. Leads: leads trabalhados. Reativ.: contatos retomados após 7 dias parados. Pendentes: conversas esperando resposta. Conv.: matrículas ÷ leads trabalhados. Atrasadas: tarefas vencidas. Passe o mouse no título da coluna para ler a definição completa." />
             <div className={c.scroll}>
               <table className={c.table} style={{ minWidth: 820 }}>
                 <thead><tr><th>Consultor</th><th>Presença</th>{COLS.map(([k, l]) => <th key={k} className="r" title={defs[k] && defs[k].description}>{l}</th>)}</tr></thead>
@@ -227,6 +236,7 @@ const CommercialCenter = () => {
           {data.polos.length > 0 && (
             <>
               <div className={c.panel}>
+                <BlockTitle title="Comparação entre polos" help="Os números dos consultores de cada polo, somados. Um consultor entra no polo em que está cadastrado como membro." />
                 <CompareBars data={data.polos.map((p) => ({ name: p.name, messagesSent: p.totals.messagesSent, leadsWorked: p.totals.leadsWorked, enrollments: p.totals.enrollments }))} keys={[["messagesSent", "Mensagens", BRAND.cerulean], ["leadsWorked", "Leads trabalhados", BRAND.blue], ["enrollments", "Matrículas", "#16a34a"]]} />
               </div>
               <div className={c.panel + " " + c.scroll}>

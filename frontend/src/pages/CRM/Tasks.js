@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Paper, Tabs, Tab, Checkbox, Typography, makeStyles, FormControlLabel, Switch } from "@material-ui/core";
-import { useHistory } from "react-router-dom";
+import { useHistory, useLocation } from "react-router-dom";
 import { format, parseISO } from "date-fns";
 
 import MainContainer from "../../components/MainContainer";
@@ -27,14 +27,21 @@ const Tasks = () => {
   const classes = useStyles();
   const history = useHistory();
   const { user } = React.useContext(AuthContext);
-  const [tab, setTab] = useState(0);
-  const [all, setAll] = useState(false);
+  const location = useLocation();
+  // the management center links here ("tarefas atrasadas do Helton"): scope, status and person come from the address
+  const query = new URLSearchParams(location.search);
+  const personId = Number(query.get("userId")) || null;
+  const [tab, setTab] = useState(Math.max(0, TABS.findIndex(([k]) => k === query.get("status"))));
+  const [all, setAll] = useState(query.get("scope") === "all" || !!personId);
   const [rows, setRows] = useState([]);
+  const [onlyPerson, setOnlyPerson] = useState(personId);
 
   const load = useCallback(() => {
     api.get("/lead-tasks", { params: { status: TABS[tab][0], scope: all ? "all" : "mine" } })
       .then(({ data }) => setRows(data)).catch(toastError);
   }, [tab, all]);
+  const shown = onlyPerson ? rows.filter((t) => t.user && t.user.id === onlyPerson) : rows;
+  const personName = onlyPerson ? ((rows.find((t) => t.user && t.user.id === onlyPerson) || {}).user || {}).name : "";
   useEffect(() => { load(); }, [load]);
 
   const toggle = async (t) => {
@@ -53,13 +60,24 @@ const Tasks = () => {
       <Paper variant="outlined" style={{ marginBottom: 8 }}>
         <Tabs value={tab} onChange={(e, v) => setTab(v)}>{TABS.map(([k, l]) => (<Tab key={k} label={l} />))}</Tabs>
       </Paper>
+      {onlyPerson ? (
+        <Paper variant="outlined" style={{ marginBottom: 8, padding: "8px 14px", display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+          <span style={{ fontSize: 14 }}>Mostrando só as tarefas de <b>{personName || "esta pessoa"}</b>, como pedido no Centro de Gestão Comercial.</span>
+          <span style={{ flex: 1 }} />
+          <button type="button" onClick={() => setOnlyPerson(null)} style={{ border: "1px solid rgba(148,163,184,.4)", background: "transparent", color: "inherit", borderRadius: 8, padding: "5px 12px", cursor: "pointer", fontFamily: "inherit" }}>Mostrar de todos</button>
+        </Paper>
+      ) : (
+        <Paper variant="outlined" style={{ marginBottom: 8, padding: "8px 14px", fontSize: 13, opacity: 0.85 }}>
+          Tarefas são os próximos contatos combinados com cada lead (ligar, mandar WhatsApp, enviar proposta). <b>Atrasadas</b>: o prazo já passou. <b>Hoje</b>: vencem hoje. <b>Todas abertas</b>: ainda não concluídas. Marque a caixa quando concluir.
+        </Paper>
+      )}
       <Paper variant="outlined" className={classes.list}>
-        {rows.length === 0 && (
+        {shown.length === 0 && (
           <Typography align="center" color="textSecondary" style={{ padding: 40 }}>
             {tab === 3 ? "Nenhuma tarefa concluída ainda." : "Tudo em dia por aqui. Agende o próximo contato direto na ficha do lead."}
           </Typography>
         )}
-        {rows.map((t) => (
+        {shown.map((t) => (
           <div key={t.id} className={classes.row}>
             <Checkbox color="primary" checked={!!t.doneAt} onChange={() => toggle(t)} />
             <div style={{ flex: 1, minWidth: 0, cursor: "pointer" }} onClick={() => history.push(`/crm?lead=${t.leadId}`)}>
