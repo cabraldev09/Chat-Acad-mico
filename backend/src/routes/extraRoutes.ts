@@ -38,6 +38,7 @@ import * as Goal from "../controllers/GoalController";
 import * as Flow from "../controllers/FlowController";
 import * as Trigger from "../controllers/TriggerController";
 import * as DashboardMgmt from "../controllers/DashboardManagementController";
+import * as Analytics from "../controllers/AnalyticsController";
 import * as AffMat from "../controllers/AffiliateMaterialController";
 import { affiliateUpload } from "../config/affiliateUpload";
 import { affiliateStaff, canAccessAffiliate } from "../helpers/Affiliates";
@@ -90,6 +91,15 @@ r.put("/affiliate-campaigns/:id", isAuth, affiliateStaff, affiliateUpload.single
 r.delete("/affiliate-campaigns/:id", isAuth, affiliateStaff, AffMat.removeCampaign);
 r.get("/affiliate-campaigns/:id/cover", isAuth, affiliateStaff, AffMat.campaignCover);
 r.post("/affiliate-campaigns/:id/release", isAuth, affiliateStaff, AffMat.releaseTo("campaign"));
+
+// commercial analytics: one service computes everything; the personal route never reads whose numbers from the request
+r.get("/analytics/definitions", isAuth, Analytics.definitions);
+r.get("/analytics/me", isAuth, Analytics.me);
+r.get("/analytics/team", isAuth, isManager, Analytics.team);
+r.get("/analytics/team/export.csv", isAuth, isManager, Analytics.exportTeam);
+r.get("/analytics/config", isAuth, isManager, Analytics.getAnalyticsConfig);
+r.put("/analytics/config", isAuth, isManager, Analytics.putAnalyticsConfig);
+r.get("/analytics/consultant/:userId", isAuth, Analytics.consultant);
 
 r.get("/dashboard/management", isAuth, DashboardMgmt.management);
 r.get("/dashboard/manager", isAuth, DashboardMgmt.managerOverview);

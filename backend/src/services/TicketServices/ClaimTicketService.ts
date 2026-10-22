@@ -4,6 +4,7 @@ import sequelize from "../../database";
 import AppError from "../../errors/AppError";
 import { afterCommit } from "../../helpers/TransactionContext";
 import { fire } from "../../helpers/Fire";
+import { touchAnalytics } from "../AnalyticsServices/Realtime";
 import { logger } from "../../utils/logger";
 import { getIO } from "../../libs/socket";
 import ChatFlowRun from "../../models/ChatFlowRun";
@@ -53,6 +54,8 @@ const notify = async (ticketId: number, oldStatus: string, previousUserId: numbe
   if (ticket.status !== oldStatus || previousUserId !== userId) {
     io.to(oldStatus).emit("ticket", { action: "delete", ticketId });
   }
+  touchAnalytics(userId);
+  touchAnalytics(previousUserId);
   io.to(ticket.status).to("notification").to(String(ticketId)).to(`user:${userId}`).emit("ticket", { action: "update", ticket });
   await dispatchWebhook("ticket.updated", {
     ticketId,

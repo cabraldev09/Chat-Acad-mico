@@ -42,6 +42,7 @@ const AiAgents = lazy(() => import("../pages/AiAgents/"));
 const AiAgentCentral = lazy(() => import("../pages/AiAgents/Central"));
 const Webhooks = lazy(() => import("../pages/Webhooks/"));
 const Reports = lazy(() => import("../pages/Reports/"));
+const CommercialCenter = lazy(() => import("../pages/CommercialCenter/"));
 const CrmBoard = lazy(() => import("../pages/CRM/Board"));
 const CrmPanel = lazy(() => import("../pages/CRM/Panel"));
 const CrmTasks = lazy(() => import("../pages/CRM/Tasks"));
@@ -133,6 +134,7 @@ const Routes = () => {
                 <Route exact path="/ai-agents" component={AiAgents} isPrivate managerOnly />
                 <Route exact path="/integrations" component={Webhooks} isPrivate adminOnly />
                 <Route exact path="/reports" component={Reports} isPrivate />
+                <Route exact path="/gestao-comercial" component={CommercialCenter} isPrivate managerOnly />
                 <Route exact path="/crm" component={CrmBoard} isPrivate />
                 <Route exact path="/crm/painel" component={CrmPanel} isPrivate />
                 <Route exact path="/crm/tarefas" component={CrmTasks} isPrivate />

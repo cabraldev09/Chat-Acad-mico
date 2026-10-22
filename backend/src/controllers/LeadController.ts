@@ -1,3 +1,4 @@
+import { touchAnalytics } from "../services/AnalyticsServices/Realtime";
 import { hasContactAccessOrFree } from "../middleware/canAccessContact";
 import { syncNextFollowUp } from "../services/CrmServices/FollowUp";
 import { fire } from "../helpers/Fire";
@@ -310,6 +311,7 @@ export const addTask = async (req: Request, res: Response): Promise<Response> =>
     userId: userId || lead.ownerId || uid(req)
   } as any);
   await addActivity(lead.id, uid(req), "task", `Tarefa criada: ${title}`);
+  touchAnalytics(task.userId);
   await syncNextFollowUp(lead.id);
   return res.status(201).json(task);
 };
@@ -332,6 +334,7 @@ export const completeTask = async (req: Request, res: Response): Promise<Respons
   const task = await LeadTask.findOne({ where: { id: req.params.taskId, leadId: req.params.id } });
   if (!task) throw new AppError("ERR_NOT_FOUND", 404);
   await task.update({ doneAt: task.doneAt ? null : new Date() });
+  touchAnalytics(task.userId);
   if (task.doneAt) await addActivity(task.leadId, uid(req), "task", `Tarefa concluída: ${task.title}`);
   await syncNextFollowUp(task.leadId);
   return res.json(task);

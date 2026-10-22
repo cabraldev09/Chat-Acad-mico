@@ -1930,6 +1930,8 @@ const postMeta = (id, payload, secret, badSig) => {
       // sent to a contact chosen on the screen (its open conversation), and the analysis is linked to it
       const mine = await make(token, "Candidata Proposta");
       const tgContact = (await http.get(`/tickets/${tgTicket}`, auth())).data.contactId;
+      // the management writes in a conversation of an attendant only after taking it over on purpose
+      assert((await http.post(`/tickets/${tgTicket}/take`, {}, auth())).status === 200, "take over");
       const before = tg.sent.length;
       const ok = await http.post(`/analysis/curricular/${mine.id}/send-proposal`, { contactId: tgContact }, auth());
       assert(ok.status === 200 && tg.sent.slice(before).some(x => x.method === "sendMessage" && /aproveitamento curricular/.test(String(x.body.text || "")) && /Candidata Proposta/.test(String(x.body.text || ""))), `send ${ok.status} ${JSON.stringify(ok.data)} ${JSON.stringify(tg.sent.slice(before).map(x => x.method))}`);
@@ -2009,6 +2011,7 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(pdfRes.status === 200 && Buffer.from(pdfRes.data).subarray(0, 5).toString() === "%PDF-" && /pdf/.test(pdfRes.headers["content-type"]), "pdf download");
       assert((await http.get(`/grades/${marketing.id}/file`)).status === 401, "the pdf without login");
       // send into a conversation: summary text and the PDF
+      assert((await http.post(`/tickets/${tgTicket}/take`, {}, auth())).status === 200, "take over");
       const before = tg.sent.length;
       const sent = await http.post(`/grades/${marketing.id}/send`, { ticketId: Number(tgTicket) }, auth());
       assert(sent.status === 200, `send ${sent.status} ${JSON.stringify(sent.data)}`);
@@ -5016,7 +5019,7 @@ const postMeta = (id, payload, secret, badSig) => {
       const tgContactId = (await http.get(`/tickets/${tgTicket}`, auth())).data.contactId;
       sql(`UPDATE Whatsapps SET ownerId = ${consId} WHERE id = ${tgId}`);
       const when = new Date(Date.now() + 3600000).toISOString();
-      const own = await http.post("/schedules", { body: "lembrete", sendAt: when, contactId: tgContactId, ticketId: Number(tgTicket), whatsappId: Number(tgId) }, as);
+      const own = await http.post("/schedules", { body: "lembrete", sendAt: when, contactId: tgContactId, whatsappId: Number(tgId) }, as);
       assert(own.status === 200 || own.status === 201, `coordinator cannot use someone else's number ${own.status} ${JSON.stringify(own.data).slice(0, 120)}`);
       const other = (await http.post("/auth/login", { email: "outro-an@x.com", password: "senha123" })).data.token;
       assert((await http.post("/schedules", { body: "x", sendAt: when, contactId: tgContactId, whatsappId: Number(tgId) }, asUser(other))).status === 403, "a consultant used another person's number");

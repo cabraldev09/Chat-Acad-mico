@@ -1,3 +1,4 @@
+import { touchAnalytics } from "../services/AnalyticsServices/Realtime";
 import { assertLead } from "../middleware/scope";
 import { Request, Response } from "express";
 import { PUBLIC_DIR } from "../config/paths";
@@ -392,6 +393,7 @@ export const send = async (req: Request, res: Response): Promise<Response> => {
   }
 
   await p.update({ status: "sent", sentAt: new Date() });
+  touchAnalytics(p.createdBy);
   await addActivity(lead.id, uid(req), "whatsapp", `Proposta #${p.id} enviada ao candidato (${p.courseName})`);
   void markMilestone(lead.id, "proposal_sent");
   await lead.update({ lastContactAt: new Date(), ...(lead.firstContactAt ? {} : { firstContactAt: new Date() }) });

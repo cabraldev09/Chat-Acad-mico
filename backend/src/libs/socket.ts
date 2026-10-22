@@ -91,6 +91,14 @@ export const eventAllowed = async (user: User, event: string, data: any, rooms: 
     if (event === "settings") return manager;
     // progress of what a person forwarded: only they hear it (the room "user:<id>" already limits the delivery)
     if (event === "forwardProgress" || event === "outboundMessage") return true;
+    // "numbers changed" signal: the person themselves and whoever may see that consultant (no numbers travel in it)
+    if (event === "analytics") {
+      const target = Number(data.userId);
+      if (target === Number(user.id)) return true;
+      if (!manager) return false;
+      const { canSeeConsultant } = await import("../services/AnalyticsServices/AnalyticsService");
+      return canSeeConsultant(user, target);
+    }
     if (["aiLearning", "flow", "automationTrigger"].includes(event)) return manager;
     if (["campaign", "contactList"].includes(event)) return manager || user.role === "consultor";
     // ids of the conversations pinned on the phone of a number: the lists of everyone who sees that number follow them

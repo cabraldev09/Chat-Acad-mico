@@ -14,7 +14,8 @@
     "test:channels": "npm run build && node scripts/channels-e2e.js",
     "i18n:check": "node scripts/i18n-check.js",
     "format": "prettier --write \"src/**/*.ts\"",
-    "test:assign": "npm run build && node scripts/assign-e2e.js"
+    "test:assign": "npm run build && node scripts/assign-e2e.js",
+    "test:analytics": "npm run build && node scripts/analytics-e2e.js"
   },
   "author": "",
   "license": "MIT",

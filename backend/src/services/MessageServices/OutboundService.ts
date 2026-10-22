@@ -12,6 +12,7 @@ import ActivateForSending from "../TicketServices/ActivateForSending";
 import ShowTicketService from "../TicketServices/ShowTicketService";
 import SendWhatsAppMedia from "../WbotServices/SendWhatsAppMedia";
 import SendWhatsAppMessage from "../WbotServices/SendWhatsAppMessage";
+import { touchAnalytics } from "../AnalyticsServices/Realtime";
 import { hookHumanReply } from "../CrmServices/LeadCore";
 
 const MAX_ATTEMPTS = 3;
@@ -110,7 +111,8 @@ export const processOutbound = async (id: number): Promise<void> => {
       const sent = await SendWhatsAppMessage({ body: payload.body, ticket, quotedMsg: quotedMsg || undefined });
       providerId = sent?.id;
     }
-    await row.update({ status: "sent", providerMsgId: providerId || null, lockedAt: null, error: null });
+    await row.update({ status: "sent", sentAt: new Date(), providerMsgId: providerId || null, lockedAt: null, error: null });
+    touchAnalytics(row.userId);
     hookHumanReply(ticket.contactId, row.userId);
   } catch (err) {
     const reason = String((err as any)?.message || err);

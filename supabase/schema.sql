@@ -1969,7 +1969,8 @@ CREATE TABLE public."OutboundMessages" (
     "providerMsgId" character varying(255),
     error text,
     "createdAt" timestamp with time zone NOT NULL,
-    "updatedAt" timestamp with time zone NOT NULL
+    "updatedAt" timestamp with time zone NOT NULL,
+    "sentAt" timestamp with time zone
 );
 
 
@@ -4683,6 +4684,13 @@ CREATE UNIQUE INDEX outbound_messages_ticket_client_key ON public."OutboundMessa
 
 
 --
+-- Name: outbound_messages_user_sent; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX outbound_messages_user_sent ON public."OutboundMessages" USING btree ("userId", "sentAt");
+
+
+--
 -- Name: password_resets_token_hash; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6003,6 +6011,7 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261129000001-goal-extra-holidays.j
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261130000001-analysis-polo.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261201000001-quick-answer-owner.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261202000001-outbound-messages.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261203000001-outbound-sent-at.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

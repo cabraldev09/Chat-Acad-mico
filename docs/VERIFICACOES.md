@@ -8,6 +8,7 @@ Rode tudo isto antes de enviar ao GitHub e de atualizar a VPS. Qualquer falha im
 | Testes de unidade (motor de análise, proposta, e-mails) | `npx vitest run` | `backend` |
 | Testes de ponta a ponta (API inteira com WhatsApp/Telegram/Efí simulados) | `NODE_ENV=test CHROME_BIN="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" CHROME_ARGS="--no-sandbox --disable-setuid-sandbox" LOGIN_RATE_MAX=100 node scripts/channels-e2e.js` | `backend` |
 | Responsabilidade pela conversa (visualizar não assume; enviar atribui de forma atômica; ninguém toma a conversa de outro; IA silenciada; concorrência e idempotência) | `NODE_ENV=test npm run test:assign` | `backend` |
+| Estatísticas e Centro de Gestão Comercial (mesmos números nas duas telas, permissões, tempo real) | `NODE_ENV=test npm run test:analytics` | `backend` |
 | Textos em português e códigos de erro traduzidos | `node scripts/i18n-check.js` | `backend` |
 | Esquema do banco (depois de criar uma migração) | `node scripts/build-schema.js` | `backend` |
 | Auditoria de rotas por perfil | `node scripts/audit-routes.js` | `backend` |

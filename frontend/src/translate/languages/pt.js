@@ -646,6 +646,7 @@ const messages = {
         ERR_TICKET_OWNED_BY_OTHER: "Esta conversa é de outro atendente. Peça a transferência ou, se for da gestão, assuma a conversa.",
         ERR_TICKET_CLOSED: "Esta conversa está finalizada. Reabra o atendimento para responder.",
         ERR_FORBIDDEN_CLIENT_KEY: "Este envio já foi registrado por outra pessoa.",
+        ERR_PERIOD_TOO_LONG: "O período escolhido é longo demais. Use no máximo 12 meses.",
         ERR_NO_USER_FOUND: "Nenhum usuário encontrado com este ID.",
         ERR_NO_WAPP_FOUND: "Nenhum WhatsApp encontrado com este ID.",
         ERR_CREATING_MESSAGE: "Erro ao criar mensagem no banco de dados.",

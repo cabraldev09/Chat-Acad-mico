@@ -47,6 +47,10 @@ class OutboundMessage extends Model<OutboundMessage> {
   @Column
   providerMsgId: string;
 
+  // when it really left: the analytics count what a person sent from here
+  @Column(DataType.DATE)
+  sentAt: Date;
+
   @Column(DataType.TEXT)
   error: string;
 

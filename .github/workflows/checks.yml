@@ -86,6 +86,9 @@ jobs:
       - name: Responsabilidade pela conversa (visualizar, atribuir, enviar, concorrência)
         working-directory: backend
         run: node scripts/assign-e2e.js
+      - name: Estatísticas e Gestão Comercial (mesma fonte, permissões, tempo real)
+        working-directory: backend
+        run: node scripts/analytics-e2e.js
 
   # todas as telas, como administrador, coordenação, consultor e tutor, digitando nos formulários
   telas:
