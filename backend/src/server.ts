@@ -20,6 +20,7 @@ import { startAckReconciler } from "./workers/AckReconciler";
 import { startPaymentPoller } from "./workers/PaymentPoller";
 import { startOnboardingSla } from "./workers/OnboardingSla";
 import { startChatbotReminder } from "./workers/ChatbotReminder";
+import { startOutboundWorker } from "./workers/OutboundWorker";
 import { startFlowRunner } from "./workers/FlowRunner";
 import { startCadences } from "./workers/Cadences";
 import { loadAppTz } from "./helpers/AppTime";
@@ -54,6 +55,7 @@ whenLeader(() => {
   startOnboardingSla();
   startChatbotReminder();
   startFlowRunner();
+  startOutboundWorker();
   startCadences();
   // the polos and goals of the spreadsheet are loaded once, so the goals screen is never empty
   import("./services/GoalServices/SeedPoloGoals").then(({ seedPoloGoals }) => seedPoloGoals()).catch(() => undefined)

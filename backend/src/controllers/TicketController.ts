@@ -8,6 +8,7 @@ import DeleteTicketService from "../services/TicketServices/DeleteTicketService"
 import ListTicketsService from "../services/TicketServices/ListTicketsService";
 import ShowTicketService from "../services/TicketServices/ShowTicketService";
 import UpdateTicketService from "../services/TicketServices/UpdateTicketService";
+import ClaimTicketService from "../services/TicketServices/ClaimTicketService";
 import SendWhatsAppMessage from "../services/WbotServices/SendWhatsAppMessage";
 import ShowWhatsAppService from "../services/WhatsappService/ShowWhatsAppService";
 import formatBody from "../helpers/Mustache";
@@ -373,4 +374,18 @@ export const groupInfo = async (req: Request, res: Response): Promise<Response> 
     .sort((a, b) => Number(b.isAdmin) - Number(a.isAdmin) || String(a.name || a.number || "").localeCompare(String(b.name || b.number || "")));
 
   return res.json({ name: info.name, description: info.description, createdAt: info.createdAt, participants });
+};
+
+// "Aceitar" / "Assumir conversa": the person becomes the attendant, decided in one locked write. A conversation that already has another attendant answers 409
+// (ERR_TICKET_ALREADY_ASSIGNED, with who has it); it is never taken by accepting.
+export const claim = async (req: Request, res: Response): Promise<Response> => {
+  const { ticket } = await ClaimTicketService({ ticketId: Number(req.params.ticketId), userId: Number(req.user.id), reason: "accept", allowReopen: true });
+  return res.json(ticket);
+};
+
+// The management takes a conversation from its attendant on purpose (leaves a "takeover" event with who took it from whom).
+export const take = async (req: Request, res: Response): Promise<Response> => {
+  if (!isManagerRole(roleOf(req.user))) throw new AppError("ERR_NO_PERMISSION", 403);
+  const { ticket } = await ClaimTicketService({ ticketId: Number(req.params.ticketId), userId: Number(req.user.id), reason: "takeover", force: true, allowReopen: true });
+  return res.json(ticket);
 };

@@ -201,7 +201,7 @@ const TicketListItem = ({ ticket }) => {
     e.stopPropagation();
     setLoading(true);
     try {
-      await api.put(`/tickets/${ticket.id}`, { status: "open", userId: user?.id });
+      await api.post(`/tickets/${ticket.id}/claim`);
       history.push(`/tickets/${ticket.id}`);
     } catch (err) {
       toastError(err);

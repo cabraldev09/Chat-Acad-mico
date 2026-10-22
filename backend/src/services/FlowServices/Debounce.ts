@@ -27,3 +27,13 @@ export const debounce = (key: string, waitSeconds: number, job: () => Promise<vo
     }, Math.min(15, Math.max(0, waitSeconds)) * 1000)
   );
 };
+
+// A person took the conversation: nothing scheduled for the robot may fire any more
+export const cancelDebounce = (keyPrefix: string): void => {
+  timers.forEach((timer, key) => {
+    if (key === keyPrefix || key.endsWith(`:${keyPrefix}`)) {
+      clearTimeout(timer);
+      timers.delete(key);
+    }
+  });
+};

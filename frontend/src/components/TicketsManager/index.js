@@ -226,6 +226,29 @@ const TicketsManager = () => {
     };
   }, [selectedQueueIds, scope.allQueues, attendantId, connectionId]);
 
+  // "Atendendo" and "Aguardando" counters come from the server (the size of the whole list, not of the pages already loaded) and are asked
+  // again whenever a conversation changes hands, so taking a conversation moves the numbers at once, with no reload
+  useEffect(() => {
+    let timer;
+    const refresh = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        const base = { groups: "exclude", countOnly: "true", queueIds: JSON.stringify(selectedQueueIds), allQueues: scope.allQueues ? "true" : undefined, attendantId: attendantId || undefined, connectionId: connectionId || undefined, tagId: tagId || undefined };
+        api.get("/tickets", { params: { ...base, status: "open", showAll: showAllTickets ? "true" : undefined } }).then(({ data }) => setOpenCount(data.count || 0)).catch(() => undefined);
+        api.get("/tickets", { params: { ...base, status: "pending" } }).then(({ data }) => setPendingCount(data.count || 0)).catch(() => undefined);
+      }, 400);
+    };
+    refresh();
+    const socket = openSocket("notification");
+    socket.on("connect", () => socket.emit("joinNotification"));
+    socket.on("ticket", refresh);
+    socket.on("appMessage", refresh);
+    return () => {
+      clearTimeout(timer);
+      socket.disconnect();
+    };
+  }, [selectedQueueIds, scope.allQueues, attendantId, connectionId, tagId, showAllTickets]);
+
   // the communities of the connected numbers (WhatsApp Web's "Comunidades"): the list and the unread total for the chip
   const [communities, setCommunities] = useState(null);
   useEffect(() => {
@@ -369,10 +392,10 @@ const TicketsManager = () => {
             {/* both live lists stay mounted so counters and sockets keep updating */}
             <div style={{ display: filter === "open" ? "flex" : "none", flex: 1, minHeight: 0 }}>
               <TicketsList tagId={tagId} status="open" groups="exclude" showAll={showAllTickets} selectedQueueIds={selectedQueueIds} {...scope}
-                updateCount={(v) => setOpenCount(v)} />
+                 />
             </div>
             <div style={{ display: filter === "pending" ? "flex" : "none", flex: 1, minHeight: 0 }}>
-              <TicketsList tagId={tagId} status="pending" groups="exclude" selectedQueueIds={selectedQueueIds} {...scope} updateCount={(v) => setPendingCount(v)} />
+              <TicketsList tagId={tagId} status="pending" groups="exclude" selectedQueueIds={selectedQueueIds} {...scope} />
             </div>
             {filter === "groups" && (
               <TicketsList tagId={tagId} groups="only" everything showAll={true} selectedQueueIds={selectedQueueIds} {...scope} />

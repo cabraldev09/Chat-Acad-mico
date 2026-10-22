@@ -83,6 +83,9 @@ jobs:
       - name: Testes de ponta a ponta
         working-directory: backend
         run: node scripts/channels-e2e.js
+      - name: Responsabilidade pela conversa (visualizar, atribuir, enviar, concorrência)
+        working-directory: backend
+        run: node scripts/assign-e2e.js
 
   # todas as telas, como administrador, coordenação, consultor e tutor, digitando nos formulários
   telas:

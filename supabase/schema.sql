@@ -8,8 +8,8 @@
 --
 
 
--- Dumped from database version 16.15 (Homebrew)
--- Dumped by pg_dump version 16.15 (Homebrew)
+-- Dumped from database version 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)
+-- Dumped by pg_dump version 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -1953,6 +1953,47 @@ ALTER SEQUENCE public."NpsSurveys_id_seq" OWNED BY public."NpsSurveys".id;
 
 
 --
+-- Name: OutboundMessages; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."OutboundMessages" (
+    id integer NOT NULL,
+    "ticketId" integer NOT NULL,
+    "userId" integer NOT NULL,
+    "clientKey" character varying(255) NOT NULL,
+    payload json NOT NULL,
+    status character varying(255) DEFAULT 'pending'::character varying NOT NULL,
+    attempts integer DEFAULT 0 NOT NULL,
+    "nextAttemptAt" timestamp with time zone,
+    "lockedAt" timestamp with time zone,
+    "providerMsgId" character varying(255),
+    error text,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: OutboundMessages_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."OutboundMessages_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: OutboundMessages_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."OutboundMessages_id_seq" OWNED BY public."OutboundMessages".id;
+
+
+--
 -- Name: PasswordResets; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3255,6 +3296,13 @@ ALTER TABLE ONLY public."NpsSurveys" ALTER COLUMN id SET DEFAULT nextval('public
 
 
 --
+-- Name: OutboundMessages id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."OutboundMessages" ALTER COLUMN id SET DEFAULT nextval('public."OutboundMessages_id_seq"'::regclass);
+
+
+--
 -- Name: PasswordResets id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -3846,6 +3894,14 @@ ALTER TABLE ONLY public."Messages"
 
 ALTER TABLE ONLY public."NpsSurveys"
     ADD CONSTRAINT "NpsSurveys_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: OutboundMessages OutboundMessages_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."OutboundMessages"
+    ADD CONSTRAINT "OutboundMessages_pkey" PRIMARY KEY (id);
 
 
 --
@@ -4613,6 +4669,20 @@ CREATE INDEX nps_surveys_lead_id_kind ON public."NpsSurveys" USING btree ("leadI
 
 
 --
+-- Name: outbound_messages_status_next; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX outbound_messages_status_next ON public."OutboundMessages" USING btree (status, "nextAttemptAt");
+
+
+--
+-- Name: outbound_messages_ticket_client_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX outbound_messages_ticket_client_key ON public."OutboundMessages" USING btree ("ticketId", "clientKey");
+
+
+--
 -- Name: password_resets_token_hash; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5266,6 +5336,22 @@ ALTER TABLE ONLY public."NpsSurveys"
 
 
 --
+-- Name: OutboundMessages OutboundMessages_ticketId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."OutboundMessages"
+    ADD CONSTRAINT "OutboundMessages_ticketId_fkey" FOREIGN KEY ("ticketId") REFERENCES public."Tickets"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+--
+-- Name: OutboundMessages OutboundMessages_userId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."OutboundMessages"
+    ADD CONSTRAINT "OutboundMessages_userId_fkey" FOREIGN KEY ("userId") REFERENCES public."Users"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+--
 -- Name: PasswordResets PasswordResets_userId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5911,12 +5997,12 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261125000001-onboarding-checklist.
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261126000001-polo-coverage.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261126000002-lead-commercial-ready.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261127000001-indexes.js') ON CONFLICT DO NOTHING;
-INSERT INTO "SequelizeMeta" (name) VALUES ('20261127000002-polo-coverage-rondonia.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261127000002-polo-enrollment.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261128000001-whatsapp-ai-first.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261129000001-goal-extra-holidays.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261130000001-analysis-polo.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261201000001-quick-answer-owner.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261202000001-outbound-messages.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

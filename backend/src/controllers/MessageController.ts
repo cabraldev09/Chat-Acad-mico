@@ -5,19 +5,18 @@ import { getIO } from "../libs/socket";
 import { Op } from "sequelize";
 import AppError from "../errors/AppError";
 import ActivateForSending from "../services/TicketServices/ActivateForSending";
+import { enqueueOutbound, processOutbound } from "../services/MessageServices/OutboundService";
 import CreateMessageService from "../services/MessageServices/CreateMessageService";
 import { whatsappProvider } from "../providers/WhatsApp";
 import { chatIdOf } from "../helpers/ChatId";
 import Contact from "../models/Contact";
 import { previewOf } from "../helpers/MessagePreview";
 import Message from "../models/Message";
+import { logger } from "../utils/logger";
 
 import ListMessagesService from "../services/MessageServices/ListMessagesService";
 import ShowTicketService from "../services/TicketServices/ShowTicketService";
 import DeleteWhatsAppMessage, { EditWhatsAppMessage } from "../services/WbotServices/DeleteWhatsAppMessage";
-import SendWhatsAppMedia from "../services/WbotServices/SendWhatsAppMedia";
-import SendWhatsAppMessage from "../services/WbotServices/SendWhatsAppMessage";
-import { hookHumanReply } from "../services/CrmServices/LeadCore";
 import { toggleStar, reactToMessage, forwardMessage, forwardBatch, loadMessageMedia } from "../services/MessageServices/MessageActions";
 
 type IndexQuery = {
@@ -42,37 +41,36 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
   });
 
   // opening the conversation marks it read; scrolling back through older pages must not repeat that
-  if (!silent && (!pageNumber || Number(pageNumber) <= 1)) SetTicketMessagesAsRead(ticket);
+  if (!silent && (!pageNumber || Number(pageNumber) <= 1)) SetTicketMessagesAsRead(ticket, Number(req.user.id));
 
   return res.json({ count, messages, ticket, hasMore });
 };
 
+// A person sends: in ONE locked write the sender becomes the attendant (or the send is refused when the conversation is somebody
+// else's) and the intention to send is stored. The WhatsApp call is made right after by the outbound worker, once per clientKey.
 export const store = async (req: Request, res: Response): Promise<Response> => {
   const { ticketId } = req.params;
-  const { body, quotedMsg }: MessageData = req.body;
-  const medias = req.files as Express.Multer.File[];
+  const { body, quotedMsg, clientKey }: MessageData & { clientKey?: string } = req.body;
+  const medias = req.files as Express.Multer.File[] | undefined;
+  // one caption per file (the form sends "body" once per media, in order)
+  const captions: string[] = ([] as string[]).concat(req.body.body || []);
 
-  const ticket = await ShowTicketService(ticketId);
-  await ActivateForSending(ticket, Number(req.user.id));
+  const { row, duplicate } = await enqueueOutbound({
+    ticketId: Number(ticketId),
+    userId: Number(req.user.id),
+    clientKey,
+    body: medias ? undefined : body,
+    quotedMsgId: quotedMsg?.id,
+    medias: medias
+      ? medias.map((m, i) => ({ path: m.path, filename: m.filename, originalname: m.originalname, mimetype: m.mimetype, size: m.size, caption: (captions[i] || "").trim() }))
+      : undefined
+  });
 
-  SetTicketMessagesAsRead(ticket);
-
-  if (medias) {
-    // one caption per file (the form sends "body" once per media, in order)
-    const captions: string[] = ([] as string[]).concat(req.body.body || []);
-    // sequential: keeps the order the agent chose and paces unofficial connections
-    for (const [i, media] of medias.entries()) {
-      const caption = (captions[i] || "").trim();
-      // eslint-disable-next-line no-await-in-loop
-      await SendWhatsAppMedia({ media, ticket, body: caption || undefined });
-    }
-  } else {
-    await SendWhatsAppMessage({ body, ticket, quotedMsg });
-  }
-
-  hookHumanReply(ticket.contactId, Number(req.user.id));
-
-  return res.send();
+  // the call to the channel is made right after the commit (never inside the transaction) and answered here, like before: 200 when it left,
+  // 202 when it stays queued for another attempt (the worker keeps trying and reports a final failure on the screen). A repeated key sends nothing.
+  if (!duplicate) await processOutbound(row.id).catch(err => logger.error(`Outbound ${row.id}: ${err}`));
+  await row.reload();
+  return res.status(row.status === "sent" ? 200 : 202).json({ id: row.id, clientKey: row.clientKey, status: row.status, duplicate });
 };
 
 export const remove = async (
@@ -165,8 +163,9 @@ export const loadMedia = async (req: Request, res: Response): Promise<Response> 
 
 // Sends a poll (WhatsApp only). The phone does not report polls back as messages, so the system keeps its own line.
 export const sendPoll = async (req: Request, res: Response): Promise<Response> => {
-  const ticket = await ShowTicketService(req.params.ticketId);
-  await ActivateForSending(ticket, Number(req.user.id));
+  let ticket = await ShowTicketService(req.params.ticketId);
+  if ((ticket.whatsapp?.channel || "whatsapp") !== "whatsapp" || !whatsappProvider.sendPoll) throw new AppError("ERR_POLL_UNSUPPORTED", 400);
+  ticket = await ActivateForSending(ticket, Number(req.user.id));
   if ((ticket.whatsapp?.channel || "whatsapp") !== "whatsapp" || !whatsappProvider.sendPoll) throw new AppError("ERR_POLL_UNSUPPORTED", 400);
   const title = String(req.body.title || "").trim().slice(0, 140);
   const options: string[] = (Array.isArray(req.body.options) ? req.body.options : [])
@@ -192,9 +191,9 @@ export const sendPoll = async (req: Request, res: Response): Promise<Response> =
 // Sends a contact card. The card is built here from the contact record and the message is stored at once (the screen
 // does not wait for the phone to report it back), without the human-like pause meant for bulk sending.
 export const sendContact = async (req: Request, res: Response): Promise<Response> => {
-  const ticket = await ShowTicketService(req.params.ticketId);
-  await ActivateForSending(ticket, Number(req.user.id));
+  let ticket = await ShowTicketService(req.params.ticketId);
   if ((ticket.whatsapp?.channel || "whatsapp") !== "whatsapp") throw new AppError("ERR_CONTACT_CARD_UNSUPPORTED", 400);
+  ticket = await ActivateForSending(ticket, Number(req.user.id));
   const contact = await Contact.findByPk(Number(req.body.contactId), { attributes: ["id", "name", "number", "isGroup"] });
   if (!contact || contact.isGroup || !contact.number || !/^\d{8,15}$/.test(contact.number)) throw new AppError("ERR_NO_CONTACT_FOUND", 404);
 

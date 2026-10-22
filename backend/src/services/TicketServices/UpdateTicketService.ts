@@ -6,6 +6,8 @@ import Queue from "../../models/Queue";
 import User from "../../models/User";
 import TicketEvent from "../../models/TicketEvent";
 import AppError from "../../errors/AppError";
+import sequelize from "../../database";
+import ClaimTicketService from "./ClaimTicketService";
 import { logger } from "../../utils/logger";
 import dispatchWebhook from "../WebhookServices/DispatchWebhook";
 import SendWhatsAppMessage from "../WbotServices/SendWhatsAppMessage";
@@ -51,7 +53,6 @@ const UpdateTicketService = async ({
   const manual = actorId !== undefined;
 
   const ticket = await ShowTicketService(ticketId);
-  await SetTicketMessagesAsRead(ticket);
 
   if (status !== undefined && !VALID_STATUS.includes(status)) {
     throw new AppError("ERR_INVALID_TICKET_STATUS", 400);
@@ -59,6 +60,14 @@ const UpdateTicketService = async ({
 
   const previousQueueId = ticket.queueId;
   const previousUserId = ticket.userId;
+
+  // "Aceitar" / "Assumir": the person puts themselves as the attendant. That is a claim, decided in one locked write (a conversation
+  // that already has another attendant is refused, never taken: only a manager's explicit takeover moves it, see TicketController.take)
+  if (manual && userId === actorId && status !== "closed" && status !== "pending" && queueId === undefined && !ticketData.whatsappId) {
+    const claimed = await ClaimTicketService({ ticketId: ticket.id, userId: actorId as number, reason: "accept", allowReopen: true });
+    if (claimed.changed) await SetTicketMessagesAsRead(claimed.ticket);
+    return { ticket: claimed.ticket, oldStatus: ticket.status, oldUserId: ticket.user?.id };
+  }
 
   const targetQueue = queueId ? await Queue.findByPk(queueId) : null;
   if (queueId && !targetQueue) throw new AppError("ERR_NO_QUEUE_FOUND", 404);
@@ -106,10 +115,13 @@ const UpdateTicketService = async ({
     await CheckContactOpenTickets(ticket.contact.id, ticket.whatsappId);
   }
 
-  await ticket.update({
-    status,
-    queueId,
-    userId
+  // the change was decided on what was read above: it only applies if the attendant is still the same one
+  await sequelize.transaction(async transaction => {
+    const locked = await Ticket.findByPk(ticket.id, { attributes: ["id", "userId"], transaction, lock: transaction.LOCK.UPDATE });
+    if ((locked?.userId || null) !== (previousUserId || null)) {
+      throw new AppError("ERR_TICKET_ALREADY_ASSIGNED", 409, { ticketId: ticket.id, userId: locked?.userId || null });
+    }
+    await ticket.update({ status, queueId, userId }, { transaction });
   });
 
   // the triggers hear about what changed (never waits, never fails this update)
@@ -150,6 +162,9 @@ const UpdateTicketService = async ({
   }
 
   await ticket.reload();
+
+  // whoever ends up as the attendant of the conversation has read it; a transfer to somebody else leaves it unread for them
+  if (manual && ticket.userId === actorId) await SetTicketMessagesAsRead(ticket);
 
   const io = getIO();
 

@@ -21,6 +21,7 @@ import { addActivity, changeStage, pickOwner, upsertLead } from "../CrmServices/
 import ShowTicketService from "../TicketServices/ShowTicketService";
 import UpdateTicketService from "../TicketServices/UpdateTicketService";
 import SendWhatsAppMessage from "../WbotServices/SendWhatsAppMessage";
+import { humanHasTicket } from "../../helpers/HumanOwnership";
 import AiAgent from "../../models/AiAgent";
 import { Effects, StageTurn, StageTurnArgs, matchPolo } from "./Engine";
 import { FlowNode } from "./Graph";
@@ -226,6 +227,8 @@ export const ticketEffects = (ticket: Ticket, flowName: string, flowCtx: FlowCon
     },
 
     async say(text, choices) {
+      // a person took the conversation while the flow was thinking: nothing from the robot goes out after that
+      if (await humanHasTicket(ticket.id)) return;
       const send = () => SendWhatsAppMessage({ body: `${MARK}${text}`, ticket, automated: true, choices: choices ? { ...choices, question: `${MARK}${choices.question}` } : undefined });
       try {
         await send();

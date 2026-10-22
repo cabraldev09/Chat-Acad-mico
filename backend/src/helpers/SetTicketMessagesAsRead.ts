@@ -5,7 +5,11 @@ import Ticket from "../models/Ticket";
 import { logger } from "../utils/logger";
 import { whatsappProvider } from "../providers/WhatsApp";
 
-const SetTicketMessagesAsRead = async (ticket: Ticket): Promise<void> => {
+// Reading is not taking: only the attendant's own opening (viewerId) marks the conversation as read and tells the contact it was seen.
+// Someone who only looks (a supervisor, a colleague, anyone while the AI or nobody is attending) leaves everything as it was.
+// Without a viewerId the caller already knows the reader is the attendant (the sender of a message).
+const SetTicketMessagesAsRead = async (ticket: Ticket, viewerId?: number): Promise<void> => {
+  if (viewerId !== undefined && !ticket.isGroup && ticket.userId !== viewerId) return;
   await Message.update(
     { read: true },
     {

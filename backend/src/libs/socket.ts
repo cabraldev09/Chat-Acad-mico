@@ -90,7 +90,7 @@ export const eventAllowed = async (user: User, event: string, data: any, rooms: 
     // Settings may contain API credentials. Other users refetch their permitted subset over HTTP.
     if (event === "settings") return manager;
     // progress of what a person forwarded: only they hear it (the room "user:<id>" already limits the delivery)
-    if (event === "forwardProgress") return true;
+    if (event === "forwardProgress" || event === "outboundMessage") return true;
     if (["aiLearning", "flow", "automationTrigger"].includes(event)) return manager;
     if (["campaign", "contactList"].includes(event)) return manager || user.role === "consultor";
     // ids of the conversations pinned on the phone of a number: the lists of everyone who sees that number follow them
@@ -111,6 +111,13 @@ const send = async (event: string, payload: any, rooms: string[]): Promise<void>
     // is also cut by disconnectUser)
     if (!checks.has(token)) checks.set(token, remember(`su:${token.slice(-24)}`, 10000, () => sessionUser(token)));
     try {
+      // "this conversation left that list" carries only an id: everyone who holds the list is told, even someone who may no longer
+      // open the conversation (the new attendant's colleagues): otherwise it would stay in their Aguardando until they reloaded
+      if (event === "ticket" && data.action === "delete" && data.ticketId && !data.ticket) {
+        socket.data.visibleTickets?.delete(String(data.ticketId));
+        socket.emit(event, data);
+        return;
+      }
       const user = await checks.get(token) as User;
       if (!(await eventAllowed(user, event, data, rooms))) {
         const id = data.ticket?.id || data.ticketId;

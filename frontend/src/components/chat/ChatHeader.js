@@ -22,6 +22,7 @@ import ChannelIcon from "../ChannelIcon";
 import TicketOptionsMenu from "../TicketOptionsMenu";
 import TicketTagsDialog from "../TicketTagsDialog";
 import ScheduleMessageDialog from "../ScheduleMessageDialog";
+import { isManager } from "../../utils/access";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import { AuthContext } from "../../context/Auth/AuthContext";
@@ -181,10 +182,25 @@ const ChatHeader = ({ contact: contactProp, ticket, onOpenInfo, onToggleSearch, 
     }
   };
 
+  // the management takes a conversation from its attendant on purpose (it is registered who took it from whom)
+  const takeOver = async () => {
+    if (!window.confirm(`Assumir esta conversa de ${ticket.user?.name || "outro atendente"}? Ela passa a ser sua e ${ticket.user?.name || "o atendente"} deixa de responder.`)) return;
+    setLoading(true);
+    try {
+      await api.post(`/tickets/${ticket.id}/take`);
+      toast.success("Você assumiu a conversa.");
+    } catch (err) {
+      toastError(err);
+    }
+    setLoading(false);
+  };
+
   const setStatus = async (status, userId) => {
     setLoading(true);
     try {
-      await api.put(`/tickets/${ticket.id}`, { status, userId: userId || null });
+      // taking the conversation is a claim decided by the server (it refuses when someone else already has it); the rest is a plain update
+      if (status === "open" && userId) await api.post(`/tickets/${ticket.id}/claim`);
+      else await api.put(`/tickets/${ticket.id}`, { status, userId: userId || null });
       toast.success(
         {
           open: ticket.status === "closed" ? "Atendimento reaberto. A conversa voltou para você." : "Você assumiu o atendimento.",
@@ -271,6 +287,8 @@ const ChatHeader = ({ contact: contactProp, ticket, onOpenInfo, onToggleSearch, 
           button("Aceitar atendimento", () => setStatus("open", user?.id), true, <UserCheck size={16} />, "Assumir esta conversa: ela passa a ser sua")}
         {ticket.status === "pending" && !plain && !ticket.aiActive &&
           button("Agente de IA atende", () => setAi(true), false, <Bot size={16} />, "O agente de IA assume esta conversa e responde agora")}
+        {ticket.status === "open" && !plain && ticket.userId && ticket.userId !== user?.id && isManager(user) &&
+          button("Assumir conversa", takeOver, true, <UserCheck size={16} />, `Tira a conversa de ${ticket.user?.name || "outro atendente"}: ela passa a ser sua`)}
         {ticket.status === "open" && !plain && (
           <>
             {button("Agente de IA atende", () => setAi(true), false, <Bot size={16} />, "A conversa deixa de ser sua e o agente de IA assume e responde agora")}

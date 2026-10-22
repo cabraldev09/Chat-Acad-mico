@@ -31,6 +31,8 @@ ticketRoutes.get(
 ticketRoutes.post("/tickets", isAuth, TicketController.store);
 
 ticketRoutes.put("/tickets/:ticketId/pin", isAuth, canReadTicket, TicketController.pin);
+ticketRoutes.post("/tickets/:ticketId/claim", isAuth, canWriteTicket, TicketController.claim);
+ticketRoutes.post("/tickets/:ticketId/take", isAuth, canReadTicket, TicketController.take);
 ticketRoutes.post("/tickets/:ticketId/ai", isAuth, canWriteTicket, TicketController.ai);
 ticketRoutes.put("/tickets/:ticketId/archive", isAuth, canWriteTicket, TicketController.archive);
 ticketRoutes.put("/tickets/:ticketId/unread", isAuth, canWriteTicket, TicketController.markUnread);
