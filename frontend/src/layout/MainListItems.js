@@ -268,7 +268,7 @@ const MainListItems = (props) => {
       {!["tutor", "academico"].includes(user.profile === "admin" ? "admin" : user.role) && (
         <>
           <ListItemLink to="/crm" primary="Funil de captação" icon={<KanbanSquareIcon className="ico" />} collapsed={collapsed} />
-          <ListItemLink to="/crm/painel" primary="Painel do CRM" icon={<LayoutDashboardIcon className="ico" />} collapsed={collapsed} />
+          <ListItemLink to="/crm/painel" primary="Painel do CRM" icon={<LayoutDashboardIcon className="ico" />} collapsed={collapsed} adornment={myTasks.triage > 0 && <span className={classes.countBadge} style={myTasks.triageLate > 0 ? { background: "#dc2626", color: "#fff" } : undefined} title="Leads novos para conferir até o fim do dia">{myTasks.triage}</span>} />
         </>
       )}
       {!isManager(user) && <ListItemLink to="/crm/tarefas" primary="Tarefas" icon={<ListTodoIcon className="ico" />} collapsed={collapsed} adornment={tasksBadge} />}
