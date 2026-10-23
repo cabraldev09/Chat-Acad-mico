@@ -1,0 +1,2 @@
+# Chave pública do servidor (ed25519). Não é segredo: serve só para o GitHub ter certeza de que está falando com a VPS certa.
+209.145.48.49 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINwLvahJknPtVWnAW+Cf9qGGgcSZ4Ttszs89HKkqt1of
