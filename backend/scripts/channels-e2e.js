@@ -499,7 +499,8 @@ const postMeta = (id, payload, secret, badSig) => {
       tg.updates.push({ update_id: 6, message: { message_id: 21, chat: { id: 5552, type: "private" }, from: { first_name: "Beto" }, text: "1" } });
       await waitFor(() => tg.sent.some(s => s.body.text && s.body.text.includes("Encaminhando para Admissão")), 10000, "queue reply");
       const t = ticketOf("tg_5552");
-      assert(sql(`SELECT queueId FROM Tickets WHERE id=${t}`) === String(q), "ticket queue not set");
+      // the reply leaves a moment before the queue is written: wait for it instead of reading at once
+      await waitFor(() => sql(`SELECT queueId FROM Tickets WHERE id=${t}`) === String(q), 5000, "ticket queue set");
     });
 
     // ------------------------------------------------- Messenger / Instagram

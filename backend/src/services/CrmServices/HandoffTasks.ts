@@ -2,6 +2,8 @@ import { QueryTypes } from "sequelize";
 
 import sequelize from "../../database";
 import { portable } from "../../helpers/sqlDialect";
+import { logger } from "../../utils/logger";
+import { touchAnalytics } from "../AnalyticsServices/Realtime";
 
 // An open task of a lead belongs to whoever ANSWERS that lead now (the owner of its open conversation, or the lead's owner while nobody has it),
 // not to whoever was picked when the task was created: when the conversation or the lead changes hands, its open tasks move with it.
@@ -26,4 +28,45 @@ export const syncHandoffTasks = async (contactId?: number, previousUserId?: numb
     }
   }
   return moved;
+};
+
+// A consultant who never connected a WhatsApp cannot work the leads the system gave them: their open tasks (the ones the system created for the lead's owner,
+// not the ones someone gave them on purpose) go to whoever answers the lead's conversation, and when nobody does they stay WITHOUT an owner,
+// where the management sees them and hands them out (instead of hiding behind a person who cannot act).
+export const releaseUnreachableTasks = async (): Promise<{ moved: number; released: number }> => {
+  const found = (await sequelize.query(
+    portable(`
+    SELECT k.id, k.leadId, k.userId, t.userId AS answerer
+    FROM LeadTasks k
+    JOIN Leads l ON l.id = k.leadId
+    JOIN Users u ON u.id = k.userId AND u.profile <> 'admin' AND (u.role = 'consultor' OR u.role IS NULL OR u.role = '')
+    LEFT JOIN Tickets t ON t.id = (SELECT t2.id FROM Tickets t2 WHERE t2.contactId = l.contactId AND t2.status <> 'closed' ORDER BY t2.id DESC LIMIT 1)
+    WHERE k.doneAt IS NULL AND k.userId = l.ownerId
+      AND NOT EXISTS (SELECT 1 FROM Whatsapps w WHERE w.channel = 'whatsapp' AND w.ownerId = k.userId)`),
+    { type: QueryTypes.SELECT }
+  )) as any[];
+  let moved = 0;
+  let released = 0;
+  const touched = new Set<number>();
+  for (const r of found) {
+    touched.add(Number(r.userId));
+    const answerer = r.answerer ? Number(r.answerer) : null;
+    if (answerer && answerer !== Number(r.userId)) {
+      await sequelize.query(`UPDATE "LeadTasks" SET "userId" = :to, "updatedAt" = NOW() WHERE id = :id`, { replacements: { to: answerer, id: r.id } });
+      moved += 1;
+      touched.add(answerer);
+    } else if (!answerer) {
+      await sequelize.query(`UPDATE "LeadTasks" SET "userId" = NULL, "updatedAt" = NOW() WHERE id = :id`, { replacements: { id: r.id } });
+      released += 1;
+    }
+  }
+  touched.forEach(id => touchAnalytics(id));
+  return { moved, released };
+};
+
+export const startTaskSweep = (): void => {
+  const run = () => releaseUnreachableTasks().catch(err => logger.warn(`task sweep failed: ${err}`));
+  const every = Number(process.env.TASK_SWEEP_MS) || 30 * 60 * 1000;
+  setTimeout(run, Math.min(60 * 1000, every));
+  setInterval(run, every);
 };

@@ -12,6 +12,8 @@ import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import { AuthContext } from "../../context/Auth/AuthContext";
 import { isOverdue, StagePill } from "./shared";
+import { fetchAllUsers } from "../../utils/fetchAllUsers";
+import { isManager } from "../../utils/access";
 
 const useStyles = makeStyles((theme) => ({
   list: { flex: 1, overflowY: "auto", overflowX: "hidden", marginTop: theme.spacing(1.5), ...theme.scrollbarStyles },
@@ -31,18 +33,30 @@ const Tasks = () => {
   const location = useLocation();
   // the management center links here ("tarefas atrasadas do Helton"): scope, status and person come from the address
   const query = new URLSearchParams(location.search);
-  const personId = Number(query.get("userId")) || null;
+  // userId=0 is "nobody in charge": the tasks of someone who cannot work them, waiting for the management to hand them out
+  const rawPerson = query.get("userId");
+  const personId = rawPerson === "0" ? 0 : Number(rawPerson) || null;
   const [tab, setTab] = useState(Math.max(0, TABS.findIndex(([k]) => k === query.get("status"))));
-  const [all, setAll] = useState(query.get("scope") === "all" || !!personId);
+  const [all, setAll] = useState(query.get("scope") === "all" || personId !== null);
   const [rows, setRows] = useState([]);
   const [onlyPerson, setOnlyPerson] = useState(personId);
+  const [team, setTeam] = useState([]);
+  useEffect(() => { if (isManager(user)) fetchAllUsers().then((list) => setTeam(list || [])).catch(() => undefined); }, [user]);
 
   const load = useCallback(() => {
-    api.get("/lead-tasks", { params: { status: TABS[tab][0], scope: all ? "all" : "mine", userId: onlyPerson || undefined } })
+    api.get("/lead-tasks", { params: { status: TABS[tab][0], scope: all ? "all" : "mine", userId: onlyPerson === null ? undefined : onlyPerson } })
       .then(({ data }) => setRows(data)).catch(toastError);
   }, [tab, all, onlyPerson]);
-  const shown = onlyPerson ? rows.filter((t) => t.user && t.user.id === onlyPerson) : rows;
+  const shown = onlyPerson === null ? rows : onlyPerson === 0 ? rows.filter((t) => !t.user) : rows.filter((t) => t.user && t.user.id === onlyPerson);
   const personName = onlyPerson ? ((rows.find((t) => t.user && t.user.id === onlyPerson) || {}).user || {}).name : "";
+  const assign = async (t, userId) => {
+    if (!userId) return;
+    try {
+      await api.put(`/leads/${t.leadId}/tasks/${t.id}`, { userId: Number(userId) });
+      load();
+      window.dispatchEvent(new Event("tasks:changed"));
+    } catch (err) { toastError(err); }
+  };
   useEffect(() => { load(); }, [load]);
 
   const toggle = async (t) => {
@@ -63,9 +77,9 @@ const Tasks = () => {
       <Paper variant="outlined" style={{ marginBottom: 8 }}>
         <Tabs value={tab} onChange={(e, v) => setTab(v)}>{TABS.map(([k, l]) => (<Tab key={k} label={l} />))}</Tabs>
       </Paper>
-      {onlyPerson ? (
+      {onlyPerson !== null ? (
         <Paper variant="outlined" style={{ marginBottom: 8, padding: "8px 14px", display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-          <span style={{ fontSize: 14 }}>Mostrando só as tarefas de <b>{personName || "esta pessoa"}</b>, como pedido no Centro de Gestão Comercial.</span>
+          <span style={{ fontSize: 14 }}>{onlyPerson === 0 ? <>Mostrando as tarefas <b>sem responsável</b>: eram de alguém que não pode atender (sem WhatsApp) e nenhuma conversa do lead está com outra pessoa. Escolha quem assume cada uma.</> : <>Mostrando só as tarefas de <b>{personName || "esta pessoa"}</b>, como pedido no Centro de Gestão Comercial.</>}</span>
           <span style={{ flex: 1 }} />
           <button type="button" onClick={() => setOnlyPerson(null)} style={{ border: "1px solid rgba(148,163,184,.4)", background: "transparent", color: "inherit", borderRadius: 8, padding: "5px 12px", cursor: "pointer", fontFamily: "inherit" }}>Mostrar de todos</button>
         </Paper>
@@ -92,6 +106,13 @@ const Tasks = () => {
               {format(parseISO(t.dueAt), "dd/MM HH:mm")}
             </span>
             {all && t.user && <span style={{ fontSize: 12.5, opacity: 0.7, minWidth: 80 }}>{t.user.name}</span>}
+            {all && !t.user && isManager(user) && (
+              <select aria-label="Atribuir a" defaultValue="" onChange={(e) => assign(t, e.target.value)} style={{ fontSize: 13, padding: "4px 6px", borderRadius: 8, border: "1px solid rgba(148,163,184,.5)", background: "transparent", color: "inherit", maxWidth: 160 }}>
+                <option value="">Atribuir a…</option>
+                {team.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
+            )}
+            {all && !t.user && !isManager(user) && <span style={{ fontSize: 12.5, opacity: 0.7 }}>Sem responsável</span>}
           </div>
         ))}
       </Paper>

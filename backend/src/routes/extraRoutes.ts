@@ -333,6 +333,7 @@ r.get("/leads/:id/tasks", isAuth, canAccessLead, Lead.leadTasks);
 r.post("/leads/:id/tasks", isAuth, canAccessLead, Lead.addTask);
 r.post("/leads/:id/open-ticket", isAuth, canAccessLead, Lead.openTicket);
 r.get("/lead-tasks", isAuth, Lead.tasksIndex);
+r.post("/lead-tasks/release-unreachable", isAuth, isManager, Lead.releaseUnreachable);
 r.get("/onboarding", isAuth, Lead.onboardingList);
 r.get("/onboarding/stats", isAuth, isManager, Lead.onboardingStats);
 r.put("/leads/:id/onboarding/checklist", isAuth, canAccessLead, Lead.onboardingChecklist);

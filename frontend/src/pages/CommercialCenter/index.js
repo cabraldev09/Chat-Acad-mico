@@ -510,6 +510,16 @@ const CommercialCenter = () => {
       {loading && !data && <div className={c.sub}>Carregando…</div>}
       {data && tab === "geral" && (
         <div style={{ display: "grid", gap: 16 }}>
+          {data.unassigned && data.unassigned.open > 0 && (
+            <div role="status" style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", padding: "12px 16px", borderRadius: 14, background: "rgba(217,119,6,.12)", border: "1px solid rgba(217,119,6,.35)" }}>
+              <AlertTriangle size={18} style={{ color: "#d97706", flex: "none" }} />
+              <span style={{ flex: 1, minWidth: 220, fontSize: 14 }}>
+                <b>{data.unassigned.open} {data.unassigned.open === 1 ? "tarefa sem responsável" : "tarefas sem responsável"}</b>
+                {data.unassigned.overdue > 0 ? ` (${data.unassigned.overdue} atrasada${data.unassigned.overdue === 1 ? "" : "s"})` : ""}: eram de quem não conectou o WhatsApp e nenhuma conversa do lead está com outra pessoa.
+              </span>
+              <button type="button" className={c.btnPrimary} onClick={() => history.push("/crm/tarefas?scope=all&status=open&userId=0")}>Distribuir</button>
+            </div>
+          )}
           <div className={c.grid4}>
             {["messagesSent", "attendances", "leadsWorked", "firstContactMinutes", "pendingReply", "enrollments", "conversion", "tasksOverdue"].map((k) => <Kpi key={k} k={k} value={data.totals[k]} def={defs[k]} tone={k === "tasksOverdue" && data.totals[k] > 0 ? "#dc2626" : undefined} />)}
           </div>

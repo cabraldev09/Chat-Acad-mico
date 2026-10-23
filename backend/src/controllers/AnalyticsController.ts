@@ -5,7 +5,7 @@ import { isManagerRole, roleOf } from "../helpers/Roles";
 import { KPI_DEFINITIONS } from "../services/AnalyticsServices/definitions";
 import { focusFor } from "../services/AnalyticsServices/Focus";
 import {
-  alertsOf, bundlesFor, byPolo, canSeeConsultant, getConfig, resolvePeriod, saveConfig, totalsOf, visibleConsultantIds
+  alertsOf, bundlesFor, byPolo, canSeeConsultant, getConfig, resolvePeriod, saveConfig, totalsOf, unassignedTasks, visibleConsultantIds
 } from "../services/AnalyticsServices/AnalyticsService";
 
 const period = (req: Request) => {
@@ -47,6 +47,7 @@ export const team = async (req: Request, res: Response): Promise<Response> => {
     totals: totalsOf(bundles),
     polos: await byPolo(bundles),
     alerts: alertsOf(bundles, config),
+    unassigned: await unassignedTasks(),
     config
   });
 };

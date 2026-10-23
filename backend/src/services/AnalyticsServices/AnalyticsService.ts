@@ -104,6 +104,12 @@ const nowInTz = (now: Date): { dow: string; hhmm: string } => {
 };
 
 // ---------------------------------------------------------------- who counts as a consultant, and who may see whom
+// open tasks that have nobody in charge (the person they were with cannot work them): the management hands them out
+export const unassignedTasks = async (): Promise<{ open: number; overdue: number }> => {
+  const [r] = await rows(`SELECT COUNT(*) AS n, COALESCE(SUM(CASE WHEN dueAt < :now THEN 1 ELSE 0 END), 0) AS late FROM LeadTasks WHERE userId IS NULL AND doneAt IS NULL`, { now: new Date() });
+  return { open: Number(r?.n || 0), overdue: Number(r?.late || 0) };
+};
+
 export const consultantWhere = `u.profile <> 'admin' AND (u.role = 'consultor' OR u.role IS NULL OR u.role = '')`;
 
 // Consultants the requester may see: administration sees all; coordination sees the consultants of its polos (all, when it has no polo yet).
