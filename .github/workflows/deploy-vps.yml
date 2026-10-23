@@ -1,0 +1,48 @@
+name: Atualizar a VPS
+
+# A cada mudança do servidor na main, entra na VPS por SSH e roda o update.sh. A VPS não precisa guardar nenhuma senha do GitHub:
+# o repositório é privado, então o fetch usa o token que o próprio GitHub cria para esta execução e que expira ao terminar.
+# Segredos (Settings > Secrets and variables > Actions): VPS_SSH_KEY (chave privada só para deploy) e VPS_KNOWN_HOSTS (saída de `ssh-keyscan -t ed25519 209.145.48.49`).
+on:
+  push:
+    branches: [main]
+    paths: ["backend/**", "deploy/**", "Dockerfile", "docker-entrypoint.sh"]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-vps
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      VPS_HOST: 209.145.48.49
+    steps:
+      - name: Confere os segredos
+        env:
+          KEY: ${{ secrets.VPS_SSH_KEY }}
+          HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          [ -n "$KEY" ] && [ -n "$HOSTS" ] || { echo "::error::Faltam os segredos VPS_SSH_KEY e VPS_KNOWN_HOSTS (veja docs/VPS-CONTABO.md)"; exit 1; }
+      - name: Prepara o SSH
+        env:
+          KEY: ${{ secrets.VPS_SSH_KEY }}
+          HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$HOSTS" > ~/.ssh/known_hosts
+      - name: Atualiza a VPS
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes -o ConnectTimeout=20 root@"$VPS_HOST" "GH_TOKEN='$GH_TOKEN' REPO='$REPO' bash -s" <<'REMOTE'
+          set -euo pipefail
+          cd /opt/chat-academico
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git"
+          trap 'git remote set-url origin "https://github.com/${REPO}.git"' EXIT
+          ./deploy/vps/update.sh --force
+          curl -fsS http://localhost:8080/health
+          REMOTE
