@@ -407,7 +407,12 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
       // the lead's conversation is open with João (a tickets links to its lead by the contact)
       const convB = mkTicket({ owner: ids.joao, status: "open" });
       sql(`UPDATE Leads SET contactId = ${convB.contactId} WHERE id = ${leadB.id}`);
+      // a task the system made for the handoff follows whoever answers the lead, even when it sits with someone who is not the lead's owner
+      const leadC = (await http.post("/leads", { name: "Lead do encaminhamento", phone: "5569999990046", ownerId: ids.joao }, as(admin))).data.lead;
+      const taskC = (await http.post(`/leads/${leadC.id}/tasks`, { title: "Atender lead encaminhado pelo agente de IA", userId: ids.gabrielli, dueAt: new Date(Date.now() - 3600000).toISOString() }, as(admin))).data;
+      assert(Number(sql(`SELECT userId FROM LeadTasks WHERE id = ${taskC.id}`).split("\n")[0]) === ids.gabrielli, "the task did not start with the person it was given to");
       const sweep = await http.post("/lead-tasks/release-unreachable", {}, as(admin));
+      assert(Number(sql(`SELECT userId FROM LeadTasks WHERE id = ${taskC.id}`).split("\n")[0]) === ids.joao, "the handoff task did not follow the lead's owner")
       assert(sweep.status === 200 && sweep.data.released >= 1 && sweep.data.moved >= 1, `sweep ${sweep.status} ${JSON.stringify(sweep.data)}`);
       assert(sql(`SELECT COALESCE(CAST(userId AS TEXT), 'null') FROM LeadTasks WHERE id = ${taskA.id}`).split("\n")[0] === "null", "the task of a lead nobody answers kept its owner");
       assert(Number(sql(`SELECT userId FROM LeadTasks WHERE id = ${taskB.id}`).split("\n")[0]) === ids.joao, "the task did not go to whoever answers the lead");

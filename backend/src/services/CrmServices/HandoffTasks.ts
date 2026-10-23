@@ -9,14 +9,17 @@ import { touchAnalytics } from "../AnalyticsServices/Realtime";
 // not to whoever was picked when the task was created: when the conversation or the lead changes hands, its open tasks move with it.
 // A task given on purpose to a third person (not the lead's owner, not the previous one) stays where it was put.
 // The conversation is linked to the lead by the CONTACT (tickets do not carry the lead id).
+// the tasks the system itself creates for a lead (the robot's handoff, the first days of a new student) always belong to whoever answers the lead
+const SYSTEM_TASK = `(k.title LIKE 'Atender lead encaminhado%' OR k.title LIKE 'Ambientar o aluno%')`;
+
 export const syncHandoffTasks = async (contactId?: number, previousUserId?: number | null): Promise<number> => {
   const rows = (await sequelize.query(
     portable(`
     SELECT k.id, k.userId, COALESCE(t.userId, l.ownerId) AS owner
     FROM LeadTasks k JOIN Leads l ON l.id = k.leadId
     LEFT JOIN Tickets t ON t.id = (SELECT t2.id FROM Tickets t2 WHERE t2.contactId = l.contactId AND t2.status <> 'closed' ORDER BY t2.id DESC LIMIT 1)
-    WHERE k.doneAt IS NULL AND (:contactId IS NULL OR l.contactId = :contactId)
-      AND (k.userId IS NULL OR k.userId = l.ownerId OR k.userId = :previous)`),
+    WHERE k.doneAt IS NULL AND (k.userId IS NOT NULL OR :contactId IS NOT NULL) AND (:contactId IS NULL OR l.contactId = :contactId)
+      AND (${SYSTEM_TASK} OR (:contactId IS NOT NULL AND k.userId IS NULL) OR k.userId = l.ownerId OR k.userId = :previous)`),
     { replacements: { contactId: contactId || null, previous: previousUserId || 0 }, type: QueryTypes.SELECT }
   )) as any[];
   let moved = 0;
@@ -36,12 +39,12 @@ export const syncHandoffTasks = async (contactId?: number, previousUserId?: numb
 export const releaseUnreachableTasks = async (): Promise<{ moved: number; released: number }> => {
   const found = (await sequelize.query(
     portable(`
-    SELECT k.id, k.leadId, k.userId, t.userId AS answerer
+    SELECT k.id, k.leadId, k.userId, COALESCE(t.userId, CASE WHEN l.ownerId <> k.userId THEN l.ownerId END) AS answerer
     FROM LeadTasks k
     JOIN Leads l ON l.id = k.leadId
     JOIN Users u ON u.id = k.userId AND u.profile <> 'admin' AND (u.role = 'consultor' OR u.role IS NULL OR u.role = '')
     LEFT JOIN Tickets t ON t.id = (SELECT t2.id FROM Tickets t2 WHERE t2.contactId = l.contactId AND t2.status <> 'closed' ORDER BY t2.id DESC LIMIT 1)
-    WHERE k.doneAt IS NULL AND k.userId = l.ownerId
+    WHERE k.doneAt IS NULL AND (k.userId = l.ownerId OR ${SYSTEM_TASK})
       AND NOT EXISTS (SELECT 1 FROM Whatsapps w WHERE w.channel = 'whatsapp' AND w.ownerId = k.userId)`),
     { type: QueryTypes.SELECT }
   )) as any[];
@@ -65,7 +68,7 @@ export const releaseUnreachableTasks = async (): Promise<{ moved: number; releas
 };
 
 export const startTaskSweep = (): void => {
-  const run = () => releaseUnreachableTasks().catch(err => logger.warn(`task sweep failed: ${err}`));
+  const run = () => Promise.all([syncHandoffTasks(), releaseUnreachableTasks()]).catch(err => logger.warn(`task sweep failed: ${err}`));
   const every = Number(process.env.TASK_SWEEP_MS) || 30 * 60 * 1000;
   setTimeout(run, Math.min(60 * 1000, every));
   setInterval(run, every);
