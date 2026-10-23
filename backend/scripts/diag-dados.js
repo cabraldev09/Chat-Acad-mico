@@ -1,5 +1,5 @@
 // Read-only: who is "responsible" for each new lead and open task, and why (lead owner, conversation owner, WhatsApp connection owner).
-const sequelize = require("/app/dist/database").default;
+const sequelize = require("/app/backend/dist/database").default;
 const q = async (title, sql) => {
   const [rows] = await sequelize.query(sql);
   console.log("== " + title + " ==");
