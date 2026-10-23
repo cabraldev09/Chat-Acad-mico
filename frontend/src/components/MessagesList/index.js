@@ -317,7 +317,14 @@ const reducer = (state, action) => {
   if (action.type === "ADD_MESSAGE") {
     const i = state.findIndex((m) => m.id === action.payload.id);
     if (i !== -1) state[i] = action.payload;
-    else state.push(action.payload);
+    else {
+      // the real copy of something typed here: the local one (same text, sent by us) goes away
+      if (action.payload.fromMe) {
+        const local = state.findIndex((m) => m.pending && m.body === action.payload.body);
+        if (local !== -1) state.splice(local, 1);
+      }
+      state.push(action.payload);
+    }
     return [...state];
   }
   if (action.type === "UPDATE_MESSAGE") {
@@ -332,6 +339,12 @@ const reducer = (state, action) => {
     next[i] = { ...state[i], reactions: action.payload.reactions };
     return next;
   }
+  // a message just typed shows at once (clock), and gives way to the real one when the server stores it
+  if (action.type === "ADD_LOCAL") {
+    if (state.some((m) => m.id === action.payload.id)) return state;
+    return [...state, action.payload];
+  }
+  if (action.type === "DROP_LOCAL") return state.filter((m) => m.id !== action.payload);
   if (action.type === "RESET") return [];
   return state;
 };
@@ -377,7 +390,7 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
   const lastPick = useRef(null);
   // a click picks or unpicks one; with Shift it takes the whole stretch since the last click
   const togglePick = (id, range = false) => setPicked((p) => {
-    const ids = messagesListRef.current.filter((m) => !m.isDeleted).map((m) => m.id);
+    const ids = messagesListRef.current.filter((m) => !m.isDeleted && !m.pending).map((m) => m.id);
     const from = ids.indexOf(lastPick.current);
     const to = ids.indexOf(id);
     lastPick.current = id;
@@ -482,6 +495,16 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
     // reactions appear at once (see utils/optimisticReaction): the server answers later
     const onReactions = (e) => dispatch({ type: "SET_REACTIONS", payload: e.detail });
     window.addEventListener("message-reactions", onReactions);
+    // what is typed in the box appears here at once; if the send fails it goes away (the box gets the text back)
+    const onLocal = (e) => {
+      const d = e.detail || {};
+      if (String(d.ticketId) !== String(ticketId)) return;
+      dispatch({ type: "ADD_LOCAL", payload: { id: `local-${d.key}`, body: d.body, fromMe: true, ack: 0, read: true, pending: true, isDeleted: false, mediaType: "chat", createdAt: new Date().toISOString(), quotedMsg: d.quotedMsg || null } });
+      setTimeout(() => scrollToBottom(true), 30);
+    };
+    const onLocalDrop = (e) => dispatch({ type: "DROP_LOCAL", payload: `local-${(e.detail || {}).key}` });
+    window.addEventListener("pending-message", onLocal);
+    window.addEventListener("pending-message-drop", onLocalDrop);
     let tick = 0;
     const poll = setInterval(() => {
       tick += 1;
@@ -500,6 +523,8 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
     return () => {
       clearInterval(poll);
       window.removeEventListener("message-reactions", onReactions);
+      window.removeEventListener("pending-message", onLocal);
+      window.removeEventListener("pending-message-drop", onLocalDrop);
       document.removeEventListener("visibilitychange", onVisible);
       socket.disconnect();
     };
@@ -707,7 +732,7 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
         className={clsx(classes.row, classes.rowHover, mine ? classes.rowOut : classes.rowIn, newSender && classes.rowFirst, picked && !m.isDeleted && classes.pickRow, picked && picked.includes(m.id) && classes.pickRowOn)}
         onClick={picked && !m.isDeleted ? (e) => togglePick(m.id, e.shiftKey) : undefined}
       >
-        {mine && !picked && !m.isDeleted && (REACTIONS[channel] || REACTIONS.whatsapp).length > 0 && (
+        {mine && !picked && !m.isDeleted && !m.pending && (REACTIONS[channel] || REACTIONS.whatsapp).length > 0 && (
           <ReactionBar message={m} channel={channel} className={classes.reactBtn} />
         )}
         {picked && !m.isDeleted && (
@@ -729,7 +754,7 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
             isActive && classes.matchActive
           )}
         >
-          {!m.isDeleted && (
+          {!m.isDeleted && !m.pending && (
             <IconButton aria-label="Mostrar mais"
               size="small"
               className={classes.chevron}

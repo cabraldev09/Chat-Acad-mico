@@ -1,7 +1,6 @@
 import { fire } from "../../helpers/Fire";
 import { chatIdOf } from "../../helpers/ChatId";
 import { previewOf } from "../../helpers/MessagePreview";
-import { startsWithBotMark } from "../../helpers/BotMark";
 import { limitEmojis } from "../../helpers/Emoji";
 import { emitTyping } from "./ChatState";
 import AppError from "../../errors/AppError";
@@ -122,9 +121,10 @@ const SendWhatsAppMessage = async ({
       if (total > 4000) logger.info(`Envio automático do ticket ${ticket.id}: ${total} ms no total (digitando ${typedMs} ms, ritmo de envio ${paceMs} ms, WhatsApp ${total - typedMs - paceMs} ms)`);
     }
     await ticket.update({ lastMessage: previewOf(body) });
-    // The listener of the connection skips what starts with the robots' invisible mark (it is how a robot's message is told from a person's),
-    // so nobody else would ever store it: it is stored here, and shows in the open conversation at once. Saving twice is harmless (same id).
-    if (automated || startsWithBotMark(text)) {
+    // The message is stored here, right after WhatsApp accepted it, so it shows in the open conversation at once (the connection's own report of it
+    // comes later, through a slower path). The listener skips what starts with the robots' invisible mark, so for those this is the only copy.
+    // Saving twice is harmless (same id).
+    {
       try {
         await CreateMessageService({
           messageData: { id: sentMessage.id, ticketId: ticket.id, body: text, fromMe: true, read: true, mediaType: "chat", ack: sentMessage.ack || 0, quotedMsgId: quotedMsg?.id }
