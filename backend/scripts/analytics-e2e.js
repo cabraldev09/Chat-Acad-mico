@@ -274,14 +274,20 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
     // ------------------------------------------------------------ configuration
     console.log("\nConfiguração");
     await test("the management sets schedules and targets; presence and alerts follow; invalid values are refused or clamped", async () => {
-      const today = String(new Date().getDay());
       const all = [{ start: "00:00", end: "23:59" }];
-      const r = await http.put("/analytics/config", { activeWindowMinutes: 15, dailyMessagesTarget: 50, dailyAttendancesTarget: 10, schedules: { [ids.joao]: { [today]: all }, [ids.laura]: { [today]: all }, x: { 9: [{ start: "99:00", end: "10:00" }] } } }, as(admin));
+      // every weekday: "today" depends on the zone of the app, not on the one of this machine
+      const week = Object.fromEntries([0, 1, 2, 3, 4, 5, 6].map(d => [String(d), all]));
+      // João has a connected number; Laura never connected one (a real alert, and no "idle" alert for a person that cannot receive anything)
+      sql(`INSERT INTO Whatsapps (name, status, channel, ownerId, isDefault, createdAt, updatedAt) VALUES ('Número do João', 'CONNECTED', 'whatsapp', ${ids.joao}, false, NOW(), NOW())`);
+      const r = await http.put("/analytics/config", { activeWindowMinutes: 15, dailyMessagesTarget: 50, dailyAttendancesTarget: 10, schedules: { [ids.joao]: week, [ids.laura]: week, x: { 9: [{ start: "99:00", end: "10:00" }] } } }, as(admin));
       assert(r.status === 200 && r.data.dailyMessagesTarget === 50 && !r.data.schedules.x, `config ${r.status} ${JSON.stringify(r.data)}`);
       const team = (await A(admin, "/analytics/team?range=today")).data;
       const joao_ = team.consultants.find(c => c.user.id === ids.joao), laura_ = team.consultants.find(c => c.user.id === ids.laura);
       assert(joao_.presence.state === "active" && joao_.presence.onSchedule, `joão presence ${JSON.stringify(joao_.presence)}`);
       assert(laura_.presence.onSchedule, "laura schedule");
+      assert(joao_.presence.whatsapp.state === "connected" && laura_.presence.whatsapp.state === "none", `whatsapp state ${JSON.stringify([joao_.presence.whatsapp, laura_.presence.whatsapp])}`);
+      assert(team.alerts.some(a => a.userId === ids.laura && a.code === "whatsapp_none"), "alert of the missing number is missing");
+      assert(!team.alerts.some(a => a.userId === ids.laura && (a.code === "idle_on_schedule" || a.code === "below_messages_target")), "activity alert for a person without a number");
       assert(team.alerts.some(a => a.userId === ids.joao && a.code === "tasks_overdue"), "overdue alert missing");
       assert(team.alerts.some(a => a.userId === ids.joao && a.code === "below_messages_target"), "target alert missing");
       const mine = (await A(joao, "/analytics/me?range=today")).data;

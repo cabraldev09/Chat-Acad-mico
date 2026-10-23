@@ -222,6 +222,8 @@ export interface Presence {
   onSchedule: boolean;
   lastActivityAt: string | null;
   scheduleToday: Array<{ start: string; end: string }>;
+  // the number of the person: without it nothing they type or receive goes through, so "no activity" has a real reason
+  whatsapp: { state: "connected" | "offline" | "none"; name: string | null; since: string | null };
 }
 
 export const computePresence = async (userIds: number[], config: AnalyticsConfig, now: Date = new Date()): Promise<Map<number, Presence>> => {
@@ -235,6 +237,14 @@ export const computePresence = async (userIds: number[], config: AnalyticsConfig
      ) x GROUP BY userId`,
     { ids: userIds, since: new Date(now.getTime() - 3 * 86400000) }
   );
+  const numbers = await rows(`SELECT ownerId, name, status, statusSince FROM Whatsapps WHERE channel = 'whatsapp' AND ownerId IN (:ids)`, { ids: userIds });
+  const whatsappOf = (id: number): Presence["whatsapp"] => {
+    const mine = numbers.filter(n => Number(n.ownerId) === id);
+    if (!mine.length) return { state: "none", name: null, since: null };
+    const up = mine.find(n => n.status === "CONNECTED");
+    const n = up || mine[0];
+    return { state: up ? "connected" : "offline", name: n.name, since: n.statusSince ? new Date(n.statusSince).toISOString() : null };
+  };
   const { dow, hhmm } = nowInTz(now);
   for (const id of userIds) {
     const slots = config.schedules[String(id)]?.[dow] || [];
@@ -242,7 +252,7 @@ export const computePresence = async (userIds: number[], config: AnalyticsConfig
     const at = last.find(r => Number(r.userId) === id)?.at;
     const lastAt = at ? new Date(at) : null;
     const recent = !!lastAt && now.getTime() - lastAt.getTime() <= config.activeWindowMinutes * 60000;
-    out.set(id, { state: recent ? "active" : onSchedule ? "idle" : "off", onSchedule, lastActivityAt: lastAt ? lastAt.toISOString() : null, scheduleToday: slots });
+    out.set(id, { state: recent ? "active" : onSchedule ? "idle" : "off", onSchedule, lastActivityAt: lastAt ? lastAt.toISOString() : null, scheduleToday: slots, whatsapp: whatsappOf(id) });
   }
   return out;
 };
@@ -303,10 +313,14 @@ export const alertsOf = (bundles: ConsultantBundle[], config: AnalyticsConfig): 
   const alerts: Alert[] = [];
   for (const b of bundles) {
     const { metrics: m, presence: p, user } = b;
+    // the real cause first: no connected number means nothing reaches the person, whatever the other numbers say
+    const noNumber = p.whatsapp.state !== "connected";
+    if (p.whatsapp.state === "none") alerts.push({ level: "high", userId: user.id, name: user.name, code: "whatsapp_none", text: "ainda não conectou o WhatsApp: não recebe nem envia mensagens", link: "/connections" });
+    else if (p.whatsapp.state === "offline") alerts.push({ level: "high", userId: user.id, name: user.name, code: "whatsapp_offline", text: `WhatsApp desconectado${p.whatsapp.since ? ` desde ${new Date(p.whatsapp.since).toLocaleString("pt-BR", { timeZone: getAppTz(), day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}` : ""}: as mensagens não chegam`, link: "/connections" });
     if (m.tasksOverdue > 0) alerts.push({ level: m.tasksOverdue >= 5 ? "high" : "medium", userId: user.id, name: user.name, code: "tasks_overdue", text: `${m.tasksOverdue} tarefa(s) atrasada(s)`, link: `/crm/tarefas?scope=all` });
     if (m.pendingReply >= 5) alerts.push({ level: "high", userId: user.id, name: user.name, code: "pending_reply", text: `${m.pendingReply} conversas esperando resposta`, link: `/tickets` });
-    if (p.onSchedule && p.state === "idle") alerts.push({ level: "medium", userId: user.id, name: user.name, code: "idle_on_schedule", text: `No horário de trabalho, sem atividade há mais de ${config.activeWindowMinutes} min`, link: `/gestao-comercial` });
-    if (config.dailyMessagesTarget > 0 && m.messagesSent < config.dailyMessagesTarget && p.onSchedule) alerts.push({ level: "low", userId: user.id, name: user.name, code: "below_messages_target", text: `${m.messagesSent} de ${config.dailyMessagesTarget} mensagens da meta diária`, link: `/gestao-comercial` });
+    if (!noNumber && p.onSchedule && p.state === "idle") alerts.push({ level: "medium", userId: user.id, name: user.name, code: "idle_on_schedule", text: `No horário de trabalho, sem atividade há mais de ${config.activeWindowMinutes} min`, link: `/gestao-comercial` });
+    if (!noNumber && config.dailyMessagesTarget > 0 && m.messagesSent < config.dailyMessagesTarget && p.onSchedule) alerts.push({ level: "low", userId: user.id, name: user.name, code: "below_messages_target", text: `${m.messagesSent} de ${config.dailyMessagesTarget} mensagens da meta diária`, link: `/gestao-comercial` });
     if (m.followUpsDue >= 5) alerts.push({ level: "medium", userId: user.id, name: user.name, code: "followups_due", text: `${m.followUpsDue} follow-ups para hoje`, link: `/crm/painel` });
     if (m.leadsWorked >= 10 && m.enrollments === 0) alerts.push({ level: "low", userId: user.id, name: user.name, code: "no_conversion", text: `${m.leadsWorked} leads trabalhados e nenhuma matrícula no período`, link: `/crm/painel` });
   }

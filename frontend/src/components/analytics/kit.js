@@ -15,22 +15,22 @@ export const BRAND = { blue: "#0B4279", cerulean: "#0693E3", gorse: "#FEF84C" };
 
 export const useKit = makeStyles((theme) => {
   const dark = theme.palette.type === "dark";
-  const line = dark ? "rgba(255,255,255,.09)" : "#e3e9f1";
+  const line = dark ? "rgba(255,255,255,.09)" : "#cfd9e8";
   const soft = dark ? "rgba(255,255,255,.04)" : "#f6f8fb";
   return {
     page: { padding: theme.spacing(2.5), maxWidth: 1480, margin: "0 auto", [theme.breakpoints.down("xs")]: { padding: theme.spacing(1.5) } },
     head: { display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: theme.spacing(2.5) },
     h1: { fontSize: 24, fontWeight: 800, letterSpacing: "-0.02em", margin: 0 },
     lead: { fontSize: 14, color: theme.palette.text.secondary, marginTop: 4, maxWidth: 720 },
-    panel: { background: dark ? "#0f1826" : "#ffffff", border: `1px solid ${line}`, borderRadius: 14, padding: theme.spacing(2.25), minWidth: 0, boxShadow: "none" },
+    panel: { background: dark ? "#0f1826" : "#ffffff", border: `1px solid ${line}`, borderRadius: 14, padding: theme.spacing(2.25), minWidth: 0, boxShadow: dark ? "none" : "0 1px 2px rgba(11,66,121,.06)" },
     hero: { background: dark ? "#0f1c31" : "#ffffff", border: `1px solid ${line}`, borderRadius: 14, padding: theme.spacing(3), minWidth: 0 },
     h2: { fontSize: 14.5, fontWeight: 700, margin: 0, display: "flex", alignItems: "center", gap: 8, letterSpacing: "-0.01em" },
     sub: { fontSize: 12.5, color: theme.palette.text.secondary, marginTop: 2 },
     grid: { display: "grid", gap: theme.spacing(2), gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))" },
     cols: { display: "grid", gap: theme.spacing(2), gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", alignItems: "start" },
-    kpi: { background: dark ? "#0f1826" : "#fff", border: `1px solid ${line}`, borderRadius: 14, padding: "14px 16px", minWidth: 0, position: "relative" },
+    kpi: { background: dark ? "#0f1826" : "#fff", border: `1px solid ${line}`, borderRadius: 14, padding: "14px 16px", minWidth: 0, position: "relative", boxShadow: dark ? "none" : "0 1px 2px rgba(11,66,121,.06)" },
     kpiLabel: { fontSize: 12.5, color: theme.palette.text.secondary, display: "flex", alignItems: "center", gap: 6 },
-    kpiValue: { fontSize: 28, fontWeight: 800, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums", lineHeight: 1.15, marginTop: 6 },
+    kpiValue: { fontSize: 30, fontWeight: 800, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums", lineHeight: 1.15, marginTop: 6 },
     kpiHint: { fontSize: 12, color: theme.palette.text.secondary, marginTop: 2 },
     chips: { display: "inline-flex", gap: 4, padding: 4, borderRadius: 999, background: dark ? soft : "#fff", border: `1px solid ${line}`, flexWrap: "wrap" },
     chip: { border: 0, borderRadius: 999, padding: "6px 14px", fontFamily: "inherit", fontSize: 13, fontWeight: 600, cursor: "pointer", background: "transparent", color: theme.palette.text.secondary, "&:hover": { color: theme.palette.text.primary } },
@@ -145,10 +145,10 @@ export const Kpi = ({ k, value, def, hint, tone }) => {
     <div className={c.kpi} data-kpi={k}>
       <div className={c.kpiLabel}>
         <span>{(def && def.label) || k}</span>
-        {def && <span title={def.description} style={{ display: "inline-flex", opacity: 0.55 }}><Info size={13} /></span>}
+        <span title={SHORT[k] || (def && def.description) || ""} style={{ display: "inline-flex", opacity: 0.55, cursor: "help" }}><Info size={13} /></span>
       </div>
       <div className={c.kpiValue} style={{ color: tone || KPI_COLOR[k] }}>{fmt(value, unit)}</div>
-      {hint || SHORT[k] ? <div className={c.kpiHint}>{hint || SHORT[k]}</div> : null}
+      {hint ? <div className={c.kpiHint}>{hint}</div> : null}
     </div>
   );
 };
