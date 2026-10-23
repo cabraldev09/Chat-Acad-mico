@@ -38,9 +38,9 @@ const Tasks = () => {
   const [onlyPerson, setOnlyPerson] = useState(personId);
 
   const load = useCallback(() => {
-    api.get("/lead-tasks", { params: { status: TABS[tab][0], scope: all ? "all" : "mine" } })
+    api.get("/lead-tasks", { params: { status: TABS[tab][0], scope: all ? "all" : "mine", userId: onlyPerson || undefined } })
       .then(({ data }) => setRows(data)).catch(toastError);
-  }, [tab, all]);
+  }, [tab, all, onlyPerson]);
   const shown = onlyPerson ? rows.filter((t) => t.user && t.user.id === onlyPerson) : rows;
   const personName = onlyPerson ? ((rows.find((t) => t.user && t.user.id === onlyPerson) || {}).user || {}).name : "";
   useEffect(() => { load(); }, [load]);

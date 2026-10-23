@@ -1,3 +1,4 @@
+import { Op } from "sequelize";
 import { getIO } from "../../libs/socket";
 import Message from "../../models/Message";
 import Ticket from "../../models/Ticket";
@@ -88,15 +89,19 @@ const CreateMessageService = async ({
     lastMessageAt: message.createdAt || new Date(),
     lastMessageAuthor: message.ticket.isGroup && !message.fromMe ? (message.contact?.name || null) : null
   };
-  await Ticket.update(
+  // only a message newer than the one shown becomes "the last": one that arrives late (catch-up, history) never takes a chat back in time
+  const at = lastState.lastMessageAt as Date;
+  const [newest] = await Ticket.update(
     { ...lastState, lastMessageAck: message.ack || 0 } as any,
-    { where: { id: message.ticketId }, silent: true } as any
+    { where: { id: message.ticketId, [Op.or]: [{ lastMessageAt: null }, { lastMessageAt: { [Op.lte]: at } }, { lastMessageId: message.id }] }, silent: true } as any
   );
   // the event below carries this ticket to the list, so it must already hold the new last message
-  message.ticket.set(
-    { ...lastState, lastMessageAck: message.ack || 0 } as any,
-    { raw: true } as any
-  );
+  if (newest) {
+    message.ticket.set(
+      { ...lastState, lastMessageAck: message.ack || 0 } as any,
+      { raw: true } as any
+    );
+  }
 
   // what the team answers after the AI handed a question over becomes a lesson for the owner to review
   if (message.fromMe && message.ticket.userId && !message.ticket.isGroup && message.mediaType === "chat") {

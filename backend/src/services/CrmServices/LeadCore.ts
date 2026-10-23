@@ -1,5 +1,6 @@
 import { touchAnalytics } from "../AnalyticsServices/Realtime";
-import { Op } from "sequelize";
+import { Op, QueryTypes } from "sequelize";
+import sequelize from "../../database";
 
 import AgentMetricEvent from "../../models/AgentMetricEvent";
 import Lead from "../../models/Lead";
@@ -85,11 +86,18 @@ export const pickOwner = async (): Promise<number | null> => {
   } catch (e) {
     ids = [];
   }
-  const users = await User.findAll({
+  let users = await User.findAll({
     where: ids.length ? { id: { [Op.in]: ids } } : {},
     attributes: ["id"],
     order: [["id", "ASC"]]
   });
+  // nobody picked on purpose: the round goes to those who HAVE a WhatsApp number (a lead given to someone who cannot answer just waits)
+  if (!ids.length && users.length) {
+    const withNumber = (await sequelize.query(`SELECT DISTINCT "ownerId" FROM "Whatsapps" WHERE channel = 'whatsapp' AND "ownerId" IS NOT NULL`, { type: QueryTypes.SELECT })) as any[];
+    const have = new Set(withNumber.map(r => Number(r.ownerId)));
+    const connected = users.filter(u => have.has(u.id));
+    if (connected.length) users = connected;
+  }
   if (!users.length) return null;
   const last = Number(await getSetting("crm_rr_last", "0"));
   const next = users.find(u => u.id > last) || users[0];

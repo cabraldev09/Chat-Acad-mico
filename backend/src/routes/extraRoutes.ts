@@ -269,6 +269,8 @@ r.post("/polos", isAuth, isManager, PoloCtl.store);
 r.post("/polos/import", isAuth, isManager, PoloCtl.importPolos);
 r.put("/polos/:id", isAuth, isManager, PoloCtl.update);
 r.put("/polos/:id/members", isAuth, isManager, PoloCtl.setMembers);
+r.post("/polos/:id/members/:userId", isAuth, isManager, PoloCtl.addMember);
+r.delete("/polos/:id/members/:userId", isAuth, isManager, PoloCtl.removeMember);
 r.delete("/polos/:id", isAuth, isManager, PoloCtl.remove);
 
 // ------------------------------------------------------------------- CRM

@@ -20,6 +20,7 @@ import { resolvePoloFor } from "../PoloServices/ResolvePolo";
 import ShowTicketService from "../TicketServices/ShowTicketService";
 import UpdateTicketService from "../TicketServices/UpdateTicketService";
 import { nextOpening, whenText } from "./Hours";
+import { syncHandoffTasks } from "../CrmServices/HandoffTasks";
 import { areaOfCourse } from "./MecDefaults";
 
 // WHO TAKES THE CONVERSATION when the AI agent hands it over. One place decides it, in this order, and always writes down what it did:
@@ -212,7 +213,9 @@ export const assignToPolo = async (ticket: Ticket, lead: Lead | null, cityPolo: 
       if (!mine && users.length) {
         const owner = await pickUserForQueue(queue, true);
         if (owner) {
+          const before = lead.ownerId;
           await lead.update({ ownerId: owner.id });
+          await syncHandoffTasks(lead.contactId, before).catch(() => undefined);
           await addActivity(lead.id, null, "system", `Polo ${polo.name} definido pela cidade informada. Responsável: ${owner.name}.`).catch(() => undefined);
         }
       }

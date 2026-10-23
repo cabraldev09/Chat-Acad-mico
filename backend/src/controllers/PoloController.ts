@@ -157,6 +157,32 @@ export const setMembers = async (req: Request, res: Response): Promise<Response>
   return res.json(await reload(polo.id));
 };
 
+// POST /polos/:id/members/:userId  { role }  — puts ONE person in the team of the polo (keeps the rest)
+export const addMember = async (req: Request, res: Response): Promise<Response> => {
+  const polo = await Polo.findByPk(req.params.id);
+  if (!polo) throw new AppError("ERR_NO_POLO_FOUND", 404);
+  const userId = Number(req.params.userId);
+  const role = req.body.role || "comercial";
+  if (!userId || !(POLO_FUNCTIONS as readonly string[]).includes(role)) throw new AppError("ERR_POLO_MEMBER_INVALID", 400);
+  if (!(await User.count({ where: { id: userId } }))) throw new AppError("ERR_NO_USER_FOUND", 404);
+  await PoloMember.findOrCreate({ where: { poloId: polo.id, userId, role }, defaults: { poloId: polo.id, userId, role } as any });
+  await syncPoloQueues(polo);
+  return res.json(await reload(polo.id));
+};
+
+// DELETE /polos/:id/members/:userId?role=  — takes ONE person out of the team (every function, or only the one in ?role)
+export const removeMember = async (req: Request, res: Response): Promise<Response> => {
+  const polo = await Polo.findByPk(req.params.id);
+  if (!polo) throw new AppError("ERR_NO_POLO_FOUND", 404);
+  const userId = Number(req.params.userId);
+  if (!userId) throw new AppError("ERR_POLO_MEMBER_INVALID", 400);
+  const where: any = { poloId: polo.id, userId };
+  if (req.query.role) where.role = String(req.query.role);
+  await PoloMember.destroy({ where });
+  await syncPoloQueues(polo);
+  return res.json(await reload(polo.id));
+};
+
 // body: { items: [{ code, name, city, state }], dryRun }
 export const importPolos = async (req: Request, res: Response): Promise<Response> => {
   const items: any[] = Array.isArray(req.body.items) ? req.body.items.slice(0, 1000) : [];

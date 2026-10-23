@@ -227,7 +227,10 @@ export const handleMessage = async (
       lastMessageText = processedMessage.body || mediaPayload?.filename || "";
     }
 
-    await ticket.update({ lastMessage: previewOf(lastMessageText, processedMessage.type) });
+    // a message older than the one shown (catch-up, history) must not rewrite the preview
+    if (!late || !ticket.lastMessageAt || sentAt >= new Date(ticket.lastMessageAt).getTime()) {
+      await ticket.update({ lastMessage: previewOf(lastMessageText, processedMessage.type) });
+    }
 
     await CreateMessageService({ messageData });
 

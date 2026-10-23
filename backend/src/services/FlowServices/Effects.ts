@@ -45,6 +45,7 @@ import TicketEvent from "../../models/TicketEvent";
 import AgentMetricEvent from "../../models/AgentMetricEvent";
 import { transcribeAudio } from "../AiServices/Transcribe";
 import emitTicketUpdate from "../TicketServices/EmitTicketUpdate";
+import { syncHandoffTasks } from "../CrmServices/HandoffTasks";
 
 // invisible mark: bot messages are told apart from the team's
 const MARK = "‎";
@@ -303,7 +304,11 @@ export const ticketEffects = (ticket: Ticket, flowName: string, flowCtx: FlowCon
           return "";
         case "set_owner": {
           const ownerId = d.userId ? Number(d.userId) : await pickOwner();
-          if (ownerId) await lead.update({ ownerId });
+          if (ownerId) {
+            const before = lead.ownerId;
+            await lead.update({ ownerId });
+            await syncHandoffTasks(lead.contactId, before).catch(() => undefined);
+          }
           return "";
         }
         case "set_polo": {

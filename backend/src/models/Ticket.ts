@@ -58,6 +58,10 @@ class Ticket extends Model<Ticket> {
   @Column
   waPinned: boolean;
 
+  // the last activity of this chat as WhatsApp shows it (the list is ordered like the phone's)
+  @Column(DataType.DATE(6))
+  waChatTimestamp: Date;
+
   @Column
   closedAt: Date;
 

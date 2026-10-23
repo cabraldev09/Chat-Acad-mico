@@ -51,6 +51,7 @@ import {
 } from "../services/CrmServices/LeadCore";
 import dispatchWebhook from "../services/WebhookServices/DispatchWebhook";
 import makeCrud from "./crudFactory";
+import { syncHandoffTasks } from "../services/CrmServices/HandoffTasks";
 
 const uid = (req: Request) => Number(req.user.id);
 
@@ -191,7 +192,10 @@ export const update = async (req: Request, res: Response): Promise<Response> => 
   if (patch.name === null) throw new AppError("ERR_FIELD_REQUIRED_name");
 
   const ownerChanged = patch.ownerId !== undefined && patch.ownerId !== lead.ownerId;
+  const previousOwner = lead.ownerId;
   await lead.update(patch);
+  // the open tasks follow whoever answers the lead now
+  if (ownerChanged) await syncHandoffTasks(lead.contactId, previousOwner).catch(() => undefined);
   if (Array.isArray(req.body.tagIds)) {
     const nextTags: number[] = req.body.tagIds.map(Number);
     const beforeTags = ((await (lead as any).$get("tags", { attributes: ["id"], joinTableAttributes: [] })) as any[]).map(t => t.id);
@@ -352,6 +356,8 @@ export const tasksIndex = async (req: Request, res: Response): Promise<Response>
   const { scope = "mine", status = "open" } = req.query as any;
   const where: any = {};
   if (scope === "mine" || !isAdminReq(req)) where.userId = uid(req);
+  // a manager looking at one person's tasks: the person is filtered here (a filter on the screen came after the 300-row limit)
+  else if (Number((req.query as any).userId)) where.userId = Number((req.query as any).userId);
   const now = new Date();
   const { start, end } = dayBounds();
   if (status === "done") where.doneAt = { [Op.not]: null };
