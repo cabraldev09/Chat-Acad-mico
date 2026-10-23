@@ -33,6 +33,10 @@ jobs:
           install -m 700 -d ~/.ssh
           printf '%s\n' "$KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
           printf '%s\n' "$HOSTS" > ~/.ssh/known_hosts
+          # diagnóstico (só chaves PÚBLICAS do servidor: tipo e começo)
+          echo "linhas no VPS_KNOWN_HOSTS: $(grep -c . ~/.ssh/known_hosts)"
+          awk '{print "  ->", substr($1,1,22), $2, substr($3,1,14)}' ~/.ssh/known_hosts
+          ssh-keygen -F "$VPS_HOST" -f ~/.ssh/known_hosts >/dev/null && echo "known_hosts reconhece $VPS_HOST" || echo "known_hosts NÃO reconhece $VPS_HOST"
       - name: Atualiza a VPS
         env:
           GH_TOKEN: ${{ github.token }}
