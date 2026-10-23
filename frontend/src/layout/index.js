@@ -22,6 +22,7 @@ import { AuthContext } from "../context/Auth/AuthContext";
 import BackdropLoading from "../components/BackdropLoading";
 import CrmReminders from "../components/CrmReminders";
 import ConnectionAlert from "../components/ConnectionAlert";
+import TaskAlert from "../components/TaskAlert";
 import { i18n } from "../translate/i18n";
 import { useThemeContext } from "../context/DarkMode";
 import BrandLogo from "../components/BrandLogo";
@@ -205,6 +206,7 @@ const LoggedInLayout = ({ children }) => {
         <div key={location.pathname.split("/")[1]} className={clsx("page-enter", /^\/(chatbot|ai-agents\/blocos)\/\d+/.test(location.pathname) && "page-fill")}>
           <div className={classes.appBarSpacer} />
           <ConnectionAlert />
+          <TaskAlert />
           {children ? children : null}
         </div>
       </main>

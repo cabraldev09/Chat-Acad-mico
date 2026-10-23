@@ -254,12 +254,12 @@ const Panel = () => {
 
           {d.triage && d.triage.length > 0 && (
             <>
-              <SectionHead color="#6366f1" title="Novos para conferir" hint="Quem escreveu e ninguém atendeu ainda. Amigo ou da equipe? Tire do funil para não contar como lead." />
+              <SectionHead color="#6366f1" title="Novos para conferir" hint="Os seus leads novos que ninguém atendeu ainda. Cada consultor confere os seus no mesmo dia, antes do dia fechar: se for amigo ou da equipe, tire do funil para não contar como lead." />
               <GlowCard className={classes.card}>
                 {d.triage.map((t) => (
                   <div key={t.id} className={classes.triageRow}>
                     <div style={{ flex: 1, minWidth: 180 }}>
-                      <div style={{ fontWeight: 600, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>{t.name}<StagePill stage={{ name: "Novo · sem atendimento", color: "#d97706" }} size="sm" solid={false} /></div>
+                      <div style={{ fontWeight: 600, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>{t.name}{t.ownerName && <span className={classes.label} style={{ fontSize: 12 }}>· {t.ownerName}</span>}{t.late && <StagePill stage={{ name: "Passou do dia", color: "#dc2626" }} size="sm" solid={false} />}<StagePill stage={{ name: "Novo · sem atendimento", color: "#d97706" }} size="sm" solid={false} /></div>
                       <div className={classes.label} style={{ fontSize: 12.5 }}>
                         <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}><SourceIcon source={t.source} />{t.source}</span>
                         {t.phone ? ` · ${t.phone}` : ""} · chegou {ago(t.createdAt)}

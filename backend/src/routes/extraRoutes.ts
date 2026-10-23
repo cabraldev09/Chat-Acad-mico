@@ -264,6 +264,7 @@ r.delete("/polos/:id", isAuth, isManager, PoloCtl.remove);
 r.get("/crm/options", isAuth, cached(), Lead.options);
 r.get("/crm/board", isAuth, Lead.board);
 r.get("/crm/metrics", isAuth, Lead.metrics);
+r.get("/crm/triage", isAuth, Lead.triageList);
 r.get("/crm/report", isAuth, crmReport);
 r.get("/me/preferences", isAuth, Preferences.show);
 r.put("/me/preferences", isAuth, Preferences.update);

@@ -632,6 +632,28 @@ export const putSettings = async (req: Request, res: Response): Promise<Response
   return getSettings(req, res);
 };
 
+// ------------------------------------------------------------------ triage ("novos para conferir")
+// New people nobody answered yet, each one to its OWNER: a consultant only sees (and answers for) their own; the management sees everybody or one person
+// (?ownerId=). "late" = it arrived on a previous day: the check is due the same day, before the day closes.
+export const triageList = async (req: Request, res: Response): Promise<Response> => {
+  const sequelize = (await import("../database")).default;
+  const { QueryTypes } = await import("sequelize");
+  const ownerId = reqRole(req) === "consultor" ? Number(req.user.id) : req.query.ownerId ? Number(req.query.ownerId) : null;
+  const todayStart = dayBounds(undefined).start;
+  const rows = (await sequelize.query(
+    portable(`
+    SELECT l.id, l.name, l.phone, l.source, l.createdAt, l.ownerId AS ownerId, u.name AS ownerName
+    FROM Leads l JOIN LeadStages s ON s.id = l.stageId LEFT JOIN Users u ON u.id = l.ownerId
+    WHERE s.type = 'open' AND l.firstContactAt IS NULL AND l.enrolledAt IS NULL AND l.isHistorical = false
+      AND (:ownerId IS NULL OR l.ownerId = :ownerId)
+    ORDER BY l.createdAt ASC LIMIT 200`),
+    { replacements: { ownerId }, type: QueryTypes.SELECT }
+  )) as any[];
+  const items = rows.map(r => ({ ...r, late: new Date(r.createdAt) < todayStart }));
+  const late = items.filter(i => i.late).length;
+  return res.json({ items, late, today: items.length - late, total: items.length });
+};
+
 // ------------------------------------------------------------------ metrics
 export const metrics = async (req: Request, res: Response): Promise<Response> => {
   const sequelize = (await import("../database")).default;
@@ -708,9 +730,10 @@ export const metrics = async (req: Request, res: Response): Promise<Response> =>
 
   // new people waiting for the first contact: the team confirms who is a lead (or marks a friend / team member)
   const triage = await q(`
-    SELECT l.id, l.name, l.phone, l.source, l.createdAt FROM Leads l JOIN LeadStages s ON s.id = l.stageId
+    SELECT l.id, l.name, l.phone, l.source, l.createdAt, l.ownerId AS ownerId, u.name AS ownerName FROM Leads l JOIN LeadStages s ON s.id = l.stageId
+    LEFT JOIN Users u ON u.id = l.ownerId
     WHERE s.type = 'open' AND l.firstContactAt IS NULL AND l.enrolledAt IS NULL ${f}
-    ORDER BY l.createdAt DESC LIMIT 8`);
+    ORDER BY l.createdAt ASC LIMIT 30`);
 
   // the same count for the period right before this one, to show the change
   const span = to.getTime() - from.getTime();
@@ -766,7 +789,7 @@ export const metrics = async (req: Request, res: Response): Promise<Response> =>
       return { ...r, leads: Number(r.leads), won: Number(r.won), open: Number(r.open), avgFirstContactMin: k ? k.s / k.n : null, waiting: w ? Number(w.total) : 0 };
     }),
     previous: { leads: Number(prev?.leads) || 0, won: Number(prev?.won) || 0, conversion: Number(prev?.leads) ? (Number(prev.won) / Number(prev.leads)) * 100 : 0 },
-    triage: triage.map(r => ({ id: r.id, name: r.name, phone: r.phone, source: r.source, createdAt: r.createdAt })),
+    triage: triage.map(r => ({ id: r.id, name: r.name, phone: r.phone, source: r.source, createdAt: r.createdAt, ownerId: r.ownerId, ownerName: r.ownerName, late: new Date(r.createdAt) < dayBounds(undefined).start })),
     lostReasons: lostReasons.map(r => ({ ...r, total: Number(r.total) })),
     created: created.map(r => ({ day: r.day, total: Number(r.total) })),
     wonDaily: wonDaily.map(r => ({ day: r.day, total: Number(r.total) })),

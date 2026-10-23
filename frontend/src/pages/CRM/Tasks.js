@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Paper, Tabs, Tab, Checkbox, Typography, makeStyles, FormControlLabel, Switch } from "@material-ui/core";
 import { useHistory, useLocation } from "react-router-dom";
+import { ArrowLeft } from "lucide-react";
 import { format, parseISO } from "date-fns";
 
 import MainContainer from "../../components/MainContainer";
@@ -47,11 +48,13 @@ const Tasks = () => {
   const toggle = async (t) => {
     await api.post(`/leads/${t.leadId}/tasks/${t.id}/toggle`);
     load();
+    try { window.dispatchEvent(new Event("tasks:changed")); } catch (e) { /* old browser */ }
   };
 
   return (
     <MainContainer>
       <MainHeader>
+        <button type="button" onClick={() => (history.length > 1 ? history.goBack() : history.push(user && (user.profile === "admin" || user.role === "coordenacao") ? "/gestao-comercial" : "/tickets"))} aria-label="Voltar" style={{ display: "inline-flex", alignItems: "center", gap: 6, border: 0, background: "transparent", color: "inherit", cursor: "pointer", fontFamily: "inherit", fontSize: 14, padding: "6px 8px 6px 0" }}><ArrowLeft size={18} />Voltar</button>
         <Title>Tarefas de acompanhamento</Title>
         <MainHeaderButtonsWrapper>
           <FormControlLabel control={<Switch color="primary" checked={all} onChange={(e) => setAll(e.target.checked)} />} label="Mostrar de todos" />
