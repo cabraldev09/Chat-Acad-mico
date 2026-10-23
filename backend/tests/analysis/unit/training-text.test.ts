@@ -88,5 +88,6 @@ describe("what a file teaches", () => {
     expect(d.instructions).toContain("Só avance quando: o curso e a cidade estiverem claros");
     expect(d.fields.map((f: any) => f.label)).toEqual(["curso", "cidade"]);
     expect(d.fields.every((f: any) => f.required)).toBe(true);
+    expect(d.steps).toEqual(["Dizer, no seu jeito: Que bom ter você aqui!", "Perguntar: Qual curso te interessa?", "Descobrir: curso", "Descobrir: cidade", "Confirmar antes de avançar: o curso e a cidade estiverem claros"]);
   });
 });

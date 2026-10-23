@@ -51,6 +51,9 @@ const stageBlock = (stage: StageData): string =>
     `Etapa atual: ${stage.title || "Atendimento"}`,
     `Objetivo desta etapa: ${stage.objective}`,
     stage.instructions ? `Instruções da etapa:\n${stage.instructions}` : null,
+    stage.steps && stage.steps.length
+      ? `Passos desta etapa (cumpra TODOS, um de cada vez, NESTA ORDEM, sem pular nenhum; só conclua a etapa depois do último):\n${stage.steps.map((x, i) => `${i + 1}. ${x}`).join("\n")}`
+      : null,
     stage.fields.length
       ? `Dados a descobrir nesta etapa (um por vez, no meio da conversa):\n${stage.fields
           .map(f => `- ${f.label} (${f.required ? "obrigatório" : "opcional"}${f.type !== "text" ? `, ${f.type}` : ""}${f.options && f.options.length ? `: ${f.options.join(" / ")}` : ""})${f.ask ? ` — ${f.ask}` : ""}`)
