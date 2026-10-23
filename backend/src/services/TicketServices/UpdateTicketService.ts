@@ -14,6 +14,7 @@ import SendWhatsAppMessage from "../WbotServices/SendWhatsAppMessage";
 import ShowWhatsAppService from "../WhatsappService/ShowWhatsAppService";
 import ShowTicketService from "./ShowTicketService";
 import { fire } from "../../helpers/Fire";
+import { syncHandoffTasks } from "../CrmServices/HandoffTasks";
 
 interface TicketData {
   status?: string;
@@ -126,6 +127,7 @@ const UpdateTicketService = async ({
 
   // the triggers hear about what changed (never waits, never fails this update)
   if (status && status !== oldStatus) fire(status === "closed" ? "ticket.closed" : status === "open" ? "ticket.opened" : "ticket.pending", { ticketId: ticket.id, contactId: ticket.contactId });
+  if (userChanged) syncHandoffTasks(ticket.contactId).catch(() => undefined);
   if (userChanged && userId) fire("ticket.assigned", { ticketId: ticket.id, contactId: ticket.contactId, userId });
 
   if (status === "closed" && oldStatus !== "closed") {

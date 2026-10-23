@@ -645,7 +645,7 @@ export const triageList = async (req: Request, res: Response): Promise<Response>
     portable(`
     SELECT l.id, l.name, l.phone, l.source, l.createdAt, COALESCE(t.userId, l.ownerId) AS ownerId, u.name AS ownerName
     FROM Leads l JOIN LeadStages s ON s.id = l.stageId
-    LEFT JOIN Tickets t ON t.id = (SELECT t2.id FROM Tickets t2 WHERE t2.leadId = l.id AND t2.status <> 'closed' ORDER BY t2.id DESC LIMIT 1)
+    LEFT JOIN Tickets t ON t.id = (SELECT t2.id FROM Tickets t2 WHERE t2.contactId = l.contactId AND t2.status <> 'closed' ORDER BY t2.id DESC LIMIT 1)
     LEFT JOIN Users u ON u.id = COALESCE(t.userId, l.ownerId)
     WHERE s.type = 'open' AND l.firstContactAt IS NULL AND l.enrolledAt IS NULL AND l.isHistorical = false
       AND (:ownerId IS NULL OR COALESCE(t.userId, l.ownerId) = :ownerId)
@@ -667,7 +667,8 @@ export const metrics = async (req: Request, res: Response): Promise<Response> =>
   const ownerId = reqRole(req) === "consultor" ? Number(req.user.id) : req.query.ownerId ? Number(req.query.ownerId) : null;
   const courseId = req.query.courseId ? Number(req.query.courseId) : null;
   const rep = { from, to, ownerId, courseId, feeTag: FEE_PENDING_TAG.name, docsTag: DOCS_PENDING_LABEL.name };
-  const f = `AND l.isHistorical = false AND (:ownerId IS NULL OR l.ownerId = :ownerId) AND (:courseId IS NULL OR l.courseId = :courseId)`;
+  // "of a person" = the lead that person ANSWERS (owner of its open conversation, or of the lead while nobody has it): the same rule of the list of new leads
+  const f = `AND l.isHistorical = false AND (:ownerId IS NULL OR COALESCE((SELECT t9.userId FROM Tickets t9 WHERE t9.contactId = l.contactId AND t9.status <> 'closed' ORDER BY t9.id DESC LIMIT 1), l.ownerId) = :ownerId) AND (:courseId IS NULL OR l.courseId = :courseId)`;
   const lane = await affiliateStageId();
   const q = async (sql: string): Promise<any[]> =>
     (await sequelize.query(portable(sql), { replacements: rep, type: QueryTypes.SELECT })) as any[];

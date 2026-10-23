@@ -26,4 +26,4 @@ jobs:
       - name: Consulta
         run: |
           scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes backend/scripts/diag-dados.js root@"$VPS_HOST":/tmp/diag-dados.js
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@"$VPS_HOST" 'docker cp /tmp/diag-dados.js chat-academico-api-1:/app/diag-dados.js && docker exec chat-academico-api-1 node /app/diag-dados.js; docker exec chat-academico-api-1 rm -f /app/diag-dados.js'
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@"$VPS_HOST" 'docker cp /tmp/diag-dados.js chat-academico-api-1:/app/backend/diag-dados.js && docker exec chat-academico-api-1 node /app/backend/diag-dados.js; docker exec chat-academico-api-1 rm -f /app/backend/diag-dados.js'

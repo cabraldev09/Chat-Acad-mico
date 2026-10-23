@@ -1,9 +1,11 @@
 import React, { useContext, useEffect, useMemo, useState } from "react";
 import { useHistory } from "react-router-dom";
 import { toast } from "react-toastify";
-import { AlertTriangle, Wifi, WifiOff, BarChart3, CalendarClock, Download, Gauge, HeartPulse, ListTodo, Megaphone, MonitorCheck, Settings2, Target, Users } from "lucide-react";
+import { AlertTriangle, Wifi, WifiOff, BarChart3, CalendarClock, Download, Gauge, HeartPulse, ListTodo, Megaphone, MonitorCheck, Settings2, Target, Users, X } from "lucide-react";
 
 import Tooltip from "@material-ui/core/Tooltip";
+import Drawer from "@material-ui/core/Drawer";
+import Button from "@material-ui/core/Button";
 import { AuthContext } from "../../context/Auth/AuthContext";
 import { canOperateRetention } from "../../utils/access";
 import { onColor, tint } from "../../utils/color";
@@ -91,44 +93,124 @@ const ConfigPanel = ({ config, consultants, onSaved }) => {
   );
 };
 
+const Stat = ({ label, value, tone }) => (
+  <div style={{ display: "grid", gap: 2 }}>
+    <span style={{ fontSize: 11.5, opacity: 0.75 }}>{label}</span>
+    <b style={{ fontSize: 14, color: tone }}>{value}</b>
+  </div>
+);
+
+// the detail of one person opens in a wide panel on the side, over the list: who they are, how they are right now and what they did in the period
 const Detail = ({ userId, period, defs, onClose }) => {
   const c = useKit();
   const history = useHistory();
   const { data } = useAnalytics(`/analytics/consultant/${userId}`, period);
-  if (!data) return <div className={c.panel}><div className={c.sub}>Carregando…</div></div>;
-  const m = data.metrics;
-  return (
-    <div className={c.panel}>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-        <h2 className={c.h2}><PresenceDot state={data.presence.state} />{data.user.name}</h2>
-        <button type="button" className={c.btn} onClick={onClose}>Fechar</button>
-      </div>
-      <div className={c.sub}>{PRESENCE[data.presence.state].label}{data.presence.scheduleToday.length ? ` · hoje ${data.presence.scheduleToday.map((s) => `${s.start}–${s.end}`).join(", ")}` : " · sem horário cadastrado para hoje"}</div>
-      <div className={c.grid4} style={{ marginTop: 14 }}>
-        {["messagesSent", "attendances", "leadsWorked", "firstContactMinutes", "enrollments", "conversion", "pendingReply", "tasksOverdue"].map((k) => <Kpi key={k} k={k} value={m[k]} def={defs[k]} />)}
-      </div>
-      <div style={{ marginTop: 18 }}><BlockTitle title="Evolução" help="Mensagens, atendimentos e matrículas de cada dia do período escolhido." /></div>
-      <HistoryChart series={data.series} />
-      {data.goals.length > 0 && (
-        <>
-          <div style={{ marginTop: 14 }}><BlockTitle icon={<Target size={15} />} title="Metas" help="Matrículas feitas e a meta da pessoa nas metas ativas (Metas no menu)." /></div>
-          {data.goals.map((g) => (
-            <div key={g.id} style={{ margin: "8px 0" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}><span>{g.title}</span><b>{num(g.mine.done)} / {num(g.mine.target)}</b></div>
-              <Progress value={g.mine.done} max={g.mine.target || 0} />
+  const body = (() => {
+    if (!data) return <div style={{ display: "grid", gap: 14 }}>{[0, 1, 2].map((i) => <div key={i} className="ui-skeleton" style={{ height: i === 0 ? 120 : 90, borderRadius: 16 }} />)}</div>;
+    const m = data.metrics;
+    const p = data.presence;
+    const wa = WA[p.whatsapp.state];
+    const down = p.whatsapp.state !== "connected";
+    const slots = p.scheduleToday.length ? p.scheduleToday.map((s) => `${s.start}–${s.end}`).join(", ") : "";
+    const firstHint = m.firstContactSamples ? `${m.firstContactSamples} ${m.firstContactSamples === 1 ? "lead atendido por ele" : "leads atendidos por ele"}` : down ? "Sem WhatsApp conectado" : "Nenhum lead contatado por ele no período";
+    return (
+      <div style={{ display: "grid", gap: 18 }}>
+        <div className="ui-card" style={{ padding: 18, display: "grid", gap: 14 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            <span style={{ position: "relative", width: 56, height: 56, flex: "none" }}>
+              <span style={{ width: 56, height: 56, borderRadius: "50%", display: "grid", placeItems: "center", fontSize: 19, fontWeight: 800, background: BRAND.blue, color: "#fff" }}>{initials(data.user.name)}</span>
+              <span style={{ position: "absolute", right: 0, bottom: 0, width: 15, height: 15, borderRadius: "50%", background: p.online ? "#16a34a" : "#94a3b8", border: "3px solid var(--ui-surface, #fff)" }} />
+            </span>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, letterSpacing: "-0.02em" }}>{data.user.name}</h2>
+              <div className={c.sub}>{PRESENCE[p.state].label}</div>
             </div>
-          ))}
-        </>
-      )}
-      {data.focus.tasks.length > 0 && (
-        <>
-          <div style={{ marginTop: 14 }}><BlockTitle title="Tarefas que pedem atenção" help="As tarefas que vencem hoje ou já venceram. Clique para abrir o lead." /></div>
-          {data.focus.tasks.slice(0, 4).map((t) => (
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 14, paddingTop: 14, borderTop: "1px solid var(--ui-border, rgba(127,140,160,.25))" }}>
+            <Stat label="Acesso" value={p.online ? "Online agora" : p.lastSeenAt ? `Acessou ${dayTime(p.lastSeenAt)}` : "Sem registro ainda"} tone={p.online ? "#16a34a" : undefined} />
+            <Stat label="Última ação" value={p.lastActivityAt ? `${since(p.lastActivityAt)} (${dayTime(p.lastActivityAt)})` : "Nenhuma no período"} />
+            <Stat label="Horário de hoje" value={slots ? `${slots}${p.onSchedule ? " · no horário" : " · fora do horário"}` : "Não cadastrado"} />
+            <Stat label="WhatsApp" value={down ? (p.whatsapp.state === "none" ? "Não conectou" : "Desconectado") : `Conectado${p.whatsapp.name ? ` · ${p.whatsapp.name}` : ""}`} tone={wa.color} />
+          </div>
+        </div>
+        <div>
+          <BlockTitle title="Números do período" help="Os mesmos números da tela pessoal da pessoa. Passe o mouse em cada cartão para ler o que ele conta." />
+          <div className={c.grid4} style={{ marginTop: 10 }}>
+            {["messagesSent", "attendances", "leadsWorked", "firstContactMinutes", "enrollments", "conversion", "pendingReply", "tasksOverdue"].map((k) => <Kpi key={k} k={k} value={m[k]} def={defs[k]} hint={k === "firstContactMinutes" ? firstHint : undefined} tone={k === "tasksOverdue" && m[k] > 0 ? "#dc2626" : undefined} />)}
+          </div>
+        </div>
+        <div className="ui-card" style={{ padding: 18 }}>
+          <BlockTitle title="Evolução" help="Mensagens, atendimentos e matrículas de cada dia do período escolhido." />
+          <HistoryChart series={data.series} height={220} />
+        </div>
+        {data.goals.length > 0 && (
+          <div className="ui-card" style={{ padding: 18 }}>
+            <BlockTitle icon={<Target size={15} />} title="Metas" help="Matrículas feitas e a meta da pessoa nas metas ativas (Metas no menu)." />
+            {data.goals.map((g) => (
+              <div key={g.id} style={{ margin: "10px 0" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}><span>{g.title}</span><b>{num(g.mine.done)} / {num(g.mine.target)}</b></div>
+                <Progress value={g.mine.done} max={g.mine.target || 0} />
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="ui-card" style={{ padding: 18 }}>
+          <BlockTitle title="Tarefas da pessoa" help="As tarefas dela que vencem hoje ou já venceram: só leads que ela atende. Clique para abrir o lead." />
+          {data.focus.tasks.length === 0 && <div className={c.sub} style={{ padding: "10px 0" }}>Nenhuma tarefa vencendo hoje nem atrasada.</div>}
+          {data.focus.tasks.slice(0, 6).map((t) => (
             <button key={t.id} type="button" className={c.row} onClick={() => history.push(t.link)}><span style={{ flex: 1 }}>{t.title}{t.leadName ? ` · ${t.leadName}` : ""}</span><b style={{ color: t.overdue ? "#dc2626" : undefined }}>{t.overdue ? "atrasada" : "hoje"}</b></button>
           ))}
-        </>
-      )}
+          {m.tasksOverdue > 0 && <Button size="small" style={{ marginTop: 6 }} onClick={() => history.push(`/crm/tarefas?scope=all&status=overdue&userId=${userId}`)}>Ver as {m.tasksOverdue} atrasadas</Button>}
+        </div>
+      </div>
+    );
+  })();
+  return (
+    <Drawer anchor="right" open onClose={onClose} PaperProps={{ style: { width: "min(820px, 100vw)", background: "var(--ui-bg, #f4f7fb)" } }}>
+      <div style={{ padding: "14px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 2, background: BRAND.blue, color: "#fff" }}>
+        <b style={{ fontSize: 15 }}>Detalhes do consultor</b>
+        <button type="button" aria-label="Fechar" onClick={onClose} style={{ border: 0, background: "rgba(255,255,255,.14)", color: "#fff", borderRadius: 10, width: 34, height: 34, cursor: "pointer", display: "grid", placeItems: "center" }}><X size={18} /></button>
+      </div>
+      <div style={{ padding: 20 }}>{body}</div>
+    </Drawer>
+  );
+};
+
+// one person as a card: who, how they are now and the four numbers that matter (all cards have the same height)
+const ConsultantCard = ({ b, active, onOpen }) => {
+  const p = b.presence;
+  const m = b.metrics;
+  const wa = WA[p.whatsapp.state];
+  const down = p.whatsapp.state !== "connected";
+  const cell = (label, value, tone) => (
+    <div style={{ display: "grid", gap: 2, minWidth: 0 }}>
+      <span style={{ fontSize: 11.5, opacity: 0.72 }}>{label}</span>
+      <b style={{ fontSize: 19, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.02em", color: tone }}>{value}</b>
     </div>
+  );
+  return (
+    <button type="button" onClick={onOpen} className="ui-card ui-lift" style={{ textAlign: "left", font: "inherit", color: "inherit", cursor: "pointer", padding: 16, display: "grid", gap: 14, alignContent: "start", borderColor: active ? BRAND.cerulean : undefined }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <span style={{ position: "relative", width: 44, height: 44, flex: "none" }}>
+          <span style={{ width: 44, height: 44, borderRadius: "50%", display: "grid", placeItems: "center", fontSize: 15, fontWeight: 800, background: "rgba(11,66,121,.1)", color: BRAND.blue }}>{initials(b.user.name)}</span>
+          <span style={{ position: "absolute", right: -1, bottom: -1, width: 12, height: 12, borderRadius: "50%", background: p.online ? "#16a34a" : "#94a3b8", border: "2px solid var(--ui-surface, #fff)" }} />
+        </span>
+        <span style={{ minWidth: 0, flex: 1 }}>
+          <b style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 15 }}>{b.user.name}</b>
+          <span style={{ display: "block", fontSize: 12.5, opacity: 0.75 }}>{p.online ? "Online agora" : p.lastSeenAt ? `Acessou ${dayTime(p.lastSeenAt)}` : "Sem registro de acesso"}</span>
+        </span>
+      </div>
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 600, color: wa.color }}>
+        {down ? <WifiOff size={14} /> : <Wifi size={14} />}{down ? (p.whatsapp.state === "none" ? "Não conectou o WhatsApp" : "WhatsApp desconectado") : "WhatsApp conectado"}
+      </span>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 8, paddingTop: 12, borderTop: "1px solid var(--ui-border, rgba(127,140,160,.25))" }}>
+        {cell("Mensagens", num(m.messagesSent))}
+        {cell("Leads", num(m.leadsWorked))}
+        {cell("Matrículas", num(m.enrollments))}
+        {cell("1º contato", fmt(m.firstContactMinutes, "minutes"))}
+      </div>
+      {m.tasksOverdue > 0 && <span style={{ fontSize: 12.5, fontWeight: 700, color: "#dc2626" }}>{m.tasksOverdue} {m.tasksOverdue === 1 ? "tarefa atrasada" : "tarefas atrasadas"}</span>}
+    </button>
   );
 };
 
@@ -381,17 +463,21 @@ const CommercialCenter = () => {
       )}
 
       {data && tab === "consultores" && (
-        <div className={c.cols} style={{ gridTemplateColumns: selected ? "minmax(0,1.4fr) minmax(0,1fr)" : "1fr" }}>
+        <div style={{ display: "grid", gap: 16 }}>
+          <div className="ui-stagger" style={{ display: "grid", gap: 14, gridTemplateColumns: "repeat(auto-fill, minmax(290px, 1fr))" }}>
+            {ranked.map((b) => <ConsultantCard key={b.user.id} b={b} active={selected === b.user.id} onOpen={() => setSelected(b.user.id)} />)}
+            {ranked.length === 0 && <div className={c.panel}><div className={c.sub}>Nenhum consultor cadastrado.</div></div>}
+          </div>
           <div className={c.panel}>
-            <BlockTitle title="Consultores lado a lado" help="Mensagens: enviadas por pessoas. Atend.: conversas diferentes atendidas. Leads: leads trabalhados. Reativ.: contatos retomados após 7 dias parados. Pendentes: conversas esperando resposta. Conv.: matrículas ÷ leads trabalhados. Atrasadas: tarefas vencidas. Passe o mouse no título da coluna para ler a definição completa." />
+            <BlockTitle title="Consultores lado a lado" help="Mensagens: enviadas por pessoas. Atend.: conversas diferentes atendidas. Leads: leads trabalhados. Reativ.: contatos retomados após 7 dias parados. 1º contato: tempo médio, em horário comercial, até a PESSOA responder um lead novo. Pendentes: conversas esperando resposta. Conv.: matrículas ÷ leads trabalhados. Atrasadas: tarefas vencidas. Passe o mouse no título da coluna para ler a definição completa." />
             <div className={c.scroll}>
-              <table className={c.table} style={{ minWidth: 820 }}>
+              <table className={c.table} style={{ minWidth: 900 }}>
                 <thead><tr><th>Consultor</th><th>Presença</th>{COLS.map(([k, l]) => <th key={k} className="r" title={defs[k] && defs[k].description}>{l}</th>)}</tr></thead>
                 <tbody>
                   {ranked.map((b) => (
                     <tr key={b.user.id} onClick={() => setSelected(b.user.id)} style={selected === b.user.id ? { background: "rgba(6,147,227,.1)" } : undefined}>
-                      <td><b>{b.user.name}</b></td>
-                      <td><PresenceDot state={b.presence.state} />{PRESENCE[b.presence.state].label}</td>
+                      <td style={{ whiteSpace: "nowrap" }}><b>{b.user.name}</b></td>
+                      <td style={{ whiteSpace: "nowrap" }}><PresenceDot state={b.presence.state} />{PRESENCE[b.presence.state].label}</td>
                       {COLS.map(([k]) => <td key={k} className="r" style={k === "tasksOverdue" && b.metrics[k] > 0 ? { color: "#dc2626", fontWeight: 700 } : undefined}>{fmt(b.metrics[k], k === "conversion" ? "percent" : k === "firstContactMinutes" ? "minutes" : "count")}</td>)}
                     </tr>
                   ))}
@@ -400,9 +486,9 @@ const CommercialCenter = () => {
               </table>
             </div>
           </div>
-          {selected && <Detail userId={selected} period={params} defs={defs} onClose={() => setSelected(null)} />}
         </div>
       )}
+      {selected && <Detail userId={selected} period={params} defs={defs} onClose={() => setSelected(null)} />}
 
       {data && tab === "polos" && (
         <div style={{ display: "grid", gap: 16 }}>

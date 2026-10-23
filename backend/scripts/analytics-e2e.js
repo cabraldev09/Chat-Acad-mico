@@ -277,8 +277,8 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
       const stage = sql(`SELECT id FROM LeadStages WHERE type='open' ORDER BY id LIMIT 1`).split("\n")[0];
       assert(stage, "no open stage in the seed");
       const t = mkTicket({ owner: ids.joao });
-      const leadId = sql(`INSERT INTO Leads (name, phone, source, stageId, ownerId, isHistorical, createdAt, updatedAt) VALUES ('Lead do Pedro', '5569000000001', 'WhatsApp', ${stage}, ${ids.laura}, false, NOW() - INTERVAL '2 days', NOW()) RETURNING id`).split("\n")[0];
-      sql(`UPDATE Tickets SET leadId=${leadId} WHERE id=${t.ticketId}`);
+      const leadId = sql(`INSERT INTO Leads (name, phone, source, stageId, ownerId, contactId, isHistorical, createdAt, updatedAt) VALUES ('Lead do Pedro', '5569000000001', 'WhatsApp', ${stage}, ${ids.laura}, ${t.contactId}, false, NOW() - INTERVAL '2 days', NOW()) RETURNING id`).split("\n")[0];
+      // like in production: the ticket does NOT carry the lead id, the conversation is linked to the lead by the contact
       const mineJoao = (await A(joao, "/crm/triage")).data;
       assert(mineJoao.items.some(i => i.id === Number(leadId)), "the lead of the conversation of João is not in João's list");
       assert(mineJoao.items.find(i => i.id === Number(leadId)).late === true, "a lead of two days ago must be late");
@@ -288,6 +288,29 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
       assert(team.items.some(i => i.id === Number(leadId) && i.ownerId === ids.joao), "the management does not see the lead with its responsible");
       const only = (await A(admin, `/crm/triage?ownerId=${ids.laura}`)).data;
       assert(!only.items.some(i => i.id === Number(leadId)), "the filter by consultant ignored the responsible");
+    });
+
+    await test("the AI handoff task follows the conversation: it moves to whoever answers it, and is not listed for the one the robot picked first", async () => {
+      const stage = sql(`SELECT id FROM LeadStages WHERE type='open' ORDER BY id LIMIT 1`).split("\n")[0];
+      const t = mkTicket({ owner: ids.laura });
+      const leadId = sql(`INSERT INTO Leads (name, phone, source, stageId, ownerId, contactId, isHistorical, createdAt, updatedAt) VALUES ('Lead tarefa', '5569000000002', 'WhatsApp', ${stage}, ${ids.laura}, ${t.contactId}, false, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const taskId = sql(`INSERT INTO LeadTasks (leadId, userId, type, title, dueAt, createdAt, updatedAt) VALUES (${leadId}, ${ids.laura}, 'whatsapp', 'Atender lead encaminhado pelo agente de IA', NOW() - INTERVAL '1 hour', NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const before = (await A(laura, `/analytics/me?range=today`)).data.metrics.tasksOverdue;
+      // the conversation is transferred to João: the task goes with it
+      const put = await http.put(`/tickets/${t.ticketId}`, { status: "open", userId: ids.joao }, as(admin));
+      assert(put.status === 200, `transfer failed: ${put.status}`);
+      await new Promise(r => setTimeout(r, 600));
+      assert(sql(`SELECT userId FROM LeadTasks WHERE id=${taskId}`) === String(ids.joao), "the task did not move to who answers the conversation");
+      const after = (await A(laura, `/analytics/me?range=today`)).data.metrics.tasksOverdue;
+      assert(after === before - 1, `the person the robot picked first still has the task (${before} -> ${after})`);
+    });
+
+    await test("the first-contact time counts only a HUMAN contact: a lead only the robot touched is not an average", async () => {
+      const stage = sql(`SELECT id FROM LeadStages WHERE type='open' ORDER BY id LIMIT 1`).split("\n")[0];
+      const t = mkTicket({ owner: ids.gabrielli });
+      sql(`INSERT INTO Leads (name, phone, source, stageId, ownerId, contactId, isHistorical, firstContactAt, createdAt, updatedAt) VALUES ('Lead so robo', '5569000000003', 'WhatsApp', ${stage}, ${ids.gabrielli}, ${t.contactId}, false, NOW(), NOW() - INTERVAL '3 minutes', NOW())`);
+      const m = (await A(admin, `/analytics/consultant/${ids.gabrielli}?range=today`)).data.metrics;
+      assert(m.firstContactMinutes === null, `the robot's contact became the person's average: ${m.firstContactMinutes}`);
     });
 
     // ------------------------------------------------------------ configuration
