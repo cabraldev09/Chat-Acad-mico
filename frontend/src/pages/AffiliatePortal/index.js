@@ -12,7 +12,8 @@ import BrandStar from "../../components/BrandStar";
 import { CopyButton } from "./shared";
 import PromoPanel, { Messages } from "./PromoPanel";
 import ArtLibrary from "./ArtLibrary";
-import { Funnel, HeroCard, ShareBar } from "./HomeParts";
+import { Funnel, ShareBar } from "./HomeParts";
+import heroStudent from "../../assets/brand/aluna.webp";
 import "./central.css";
 
 // Public page of one affiliate: no login, no cookies. The token in the address is the access. It never shows prices.
@@ -298,7 +299,7 @@ const AffiliatePortal = ({ match }) => {
             </div>
             {owner && <p className="ha-owner"><span>{String(owner.name || "?").charAt(0).toUpperCase()}</span>Seu consultor <strong>{owner.name}</strong></p>}
           </div>
-          <div className="ha-art"><HeroCard nome={affiliate.firstName} link={data.referralUrl} /></div>
+          <img className="ha-bg" src={heroStudent} alt="" aria-hidden="true" />
         </section>
 
         <nav className="ha-quick" aria-label="Atalhos">
