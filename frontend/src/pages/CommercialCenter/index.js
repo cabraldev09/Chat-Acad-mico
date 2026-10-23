@@ -9,7 +9,6 @@ import Drawer from "@material-ui/core/Drawer";
 import Button from "@material-ui/core/Button";
 import Popover from "@material-ui/core/Popover";
 import { AuthContext } from "../../context/Auth/AuthContext";
-import { canOperateRetention } from "../../utils/access";
 import { onColor, tint } from "../../utils/color";
 
 import api from "../../services/api";
@@ -23,7 +22,6 @@ const TAB_HELP = {
   geral: "Resumo da equipe no período escolhido: totais, quem está trabalhando agora e o que precisa da sua atenção.",
   consultores: "Uma lista só: WhatsApp, polos e números de cada consultor. Vincule a polos aqui mesmo e clique no nome para ver a evolução, as metas e as tarefas.",
   polos: "Os números somados por polo e quem está em cada equipe. Para vincular alguém, use a aba Consultores.",
-  ferramentas: "Tudo o que a gestão comercial usa no dia a dia, num só lugar: tarefas, retenção, ambientação, agendamentos, campanhas e estatísticas.",
   config: "Defina horários de trabalho, metas diárias e a regra de inatividade. Vale para esta tela e para a de cada consultor.",
 };
 // where a click on an alert takes the manager (the task screen opens already filtered on that person)
@@ -178,35 +176,6 @@ const Detail = ({ userId, period, defs, onClose }) => {
     </Drawer>
   );
 };
-
-const TOOLS = [
-  { to: "/crm/tarefas", label: "Tarefas de acompanhamento", text: "O que cada pessoa precisa fazer hoje e o que está atrasado.", icon: ListTodo, color: "#0693E3" },
-  { to: "/crm/retencao", label: "Retenção", text: "Alunos em risco de sair e o contato para segurá-los.", icon: HeartPulse, color: "#dc2626", needs: "retention" },
-  { to: "/ambientacao", label: "Ambientação", text: "Acompanhe os alunos novos nos primeiros dias de curso.", icon: MonitorCheck, color: "#0d9488" },
-  { to: "/schedules", label: "Agendamentos", text: "Mensagens programadas para sair no dia e hora certos.", icon: CalendarClock, color: "#7c3aed" },
-  { to: "/campaigns", label: "Campanhas", text: "Envios em massa para listas de contatos.", icon: Megaphone, color: "#ea580c" },
-  { to: "/reports", label: "Estatísticas", text: "Os números individuais de cada consultor e o progresso dos polos.", icon: BarChart3, color: "#16a34a" },
-];
-
-const Tools = () => {
-  const history = useHistory();
-  const { user } = useContext(AuthContext);
-  return (
-    <div style={{ display: "grid", gap: 14, gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))" }}>
-      {TOOLS.filter((t) => t.needs !== "retention" || canOperateRetention(user)).map((t) => {
-        const Icon = t.icon;
-        return (
-          <button key={t.to} type="button" onClick={() => history.push(t.to)} style={{ textAlign: "left", cursor: "pointer", font: "inherit", color: "inherit", padding: 18, borderRadius: 14, border: "1px solid rgba(127,140,160,.22)", background: "transparent", display: "flex", flexDirection: "column", gap: 8 }}>
-            <span style={{ width: 40, height: 40, borderRadius: 12, display: "grid", placeItems: "center", background: tint(t.color, 0.16), color: t.color }}><Icon size={20} /></span>
-            <b style={{ fontSize: 15.5 }}>{t.label}</b>
-            <span style={{ fontSize: 13, opacity: 0.75 }}>{t.text}</span>
-          </button>
-        );
-      })}
-    </div>
-  );
-};
-
 
 const WA = {
   connected: { label: "WhatsApp conectado", color: "#16a34a" },
@@ -632,7 +601,7 @@ const CommercialCenter = () => {
           </div>
         </div>
         <div role="tablist" style={{ display: "flex", gap: 4, marginTop: 14, overflowX: "auto" }}>
-          {[["geral", "Visão geral"], ["consultores", "Consultores"], ["polos", "Polos"], ["ferramentas", "Ferramentas"], ["config", "Configuração"]].map(([k, label]) => (
+          {[["geral", "Visão geral"], ["consultores", "Consultores"], ["polos", "Polos"], ["config", "Configuração"]].map(([k, label]) => (
             <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setTab(k)} style={{ border: 0, background: "transparent", color: "#fff", opacity: tab === k ? 1 : 0.7, fontFamily: "inherit", fontSize: 14, fontWeight: 600, padding: "10px 16px", cursor: "pointer", borderBottom: `3px solid ${tab === k ? BRAND.gorse : "transparent"}`, whiteSpace: "nowrap" }}>{label}</button>
           ))}
         </div>
@@ -669,7 +638,6 @@ const CommercialCenter = () => {
 
       {data && tab === "polos" && <PoloBoard data={data} polos={polos} history={history} setTab={setTab} />}
 
-      {tab === "ferramentas" && <Tools />}
       {data && tab === "config" && config && <ConfigPanel config={config} consultants={data.consultants} onSaved={setConfig} />}
     </div>
   );
