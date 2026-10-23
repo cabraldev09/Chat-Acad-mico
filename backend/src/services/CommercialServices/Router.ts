@@ -19,6 +19,7 @@ import { addActivity } from "../CrmServices/LeadCore";
 import { resolvePoloFor } from "../PoloServices/ResolvePolo";
 import ShowTicketService from "../TicketServices/ShowTicketService";
 import UpdateTicketService from "../TicketServices/UpdateTicketService";
+import Whatsapp from "../../models/Whatsapp";
 import { nextOpening, whenText } from "./Hours";
 import { syncHandoffTasks } from "../CrmServices/HandoffTasks";
 import { areaOfCourse } from "./MecDefaults";
@@ -258,7 +259,12 @@ export const routeToCommercial = async (ticket: Ticket, opts: RouteOptions): Pro
   let user: User | null = null;
   if (queue) {
     const users: User[] = (queue as any).users || [];
-    user = (lead?.ownerId && users.find(u => u.id === lead.ownerId)) || (users.length ? await pickUserForQueue(queue, true) : null);
+    const ownerOfLead = lead?.ownerId ? users.find(u => u.id === lead.ownerId) : null;
+    // the lead's owner keeps the conversation only when they have a WhatsApp number to answer from
+    const owners = new Set((await Whatsapp.findAll({ where: { ownerId: users.map(u => u.id), channel: "whatsapp" } as any, attributes: ["ownerId"] })).map(w => Number(w.ownerId)));
+    // ...unless nobody of the queue has a number (then the lead's owner is as good as anyone)
+    const keepOwner = !!ownerOfLead && (owners.has(ownerOfLead.id) || owners.size === 0);
+    user = (keepOwner && ownerOfLead) || (users.length ? await pickUserForQueue(queue, true) : null);
   }
 
   const business = await getBusinessConfig();

@@ -321,6 +321,8 @@ export const loadMessageMedia = async (id: string): Promise<Message> => {
   if ((ticket.whatsapp?.channel || "whatsapp") !== "whatsapp" || !whatsappProvider.downloadMessageMedia) {
     throw new AppError("ERR_MEDIA_NOT_AVAILABLE", 400);
   }
+  // WhatsApp keeps a file on its servers for a limited time (about two months): an older one cannot be downloaded any more, whoever tries
+  if (Date.now() - new Date(message.createdAt).getTime() > 60 * 86400000) throw new AppError("ERR_MEDIA_EXPIRED", 410);
   const chatId = chatIdOf(ticket.contact, ticket.isGroup);
   const media = await whatsappProvider
     .downloadMessageMedia(ticket.whatsappId, chatId, message.id, message.fromMe)

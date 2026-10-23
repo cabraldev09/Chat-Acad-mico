@@ -2,7 +2,6 @@ import { QueryTypes } from "sequelize";
 
 import sequelize from "../../database";
 import { portable } from "../../helpers/sqlDialect";
-import { logger } from "../../utils/logger";
 import { touchAnalytics } from "../AnalyticsServices/Realtime";
 
 // An open task of a lead belongs to whoever ANSWERS that lead now (the owner of its open conversation, or the lead's owner while nobody has it),
@@ -65,11 +64,4 @@ export const releaseUnreachableTasks = async (): Promise<{ moved: number; releas
   }
   touched.forEach(id => touchAnalytics(id));
   return { moved, released };
-};
-
-export const startTaskSweep = (): void => {
-  const run = () => Promise.all([syncHandoffTasks(), releaseUnreachableTasks()]).catch(err => logger.warn(`task sweep failed: ${err}`));
-  const every = Number(process.env.TASK_SWEEP_MS) || 30 * 60 * 1000;
-  setTimeout(run, Math.min(60 * 1000, every));
-  setInterval(run, every);
 };

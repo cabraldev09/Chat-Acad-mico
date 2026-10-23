@@ -326,10 +326,18 @@ const MessageInput = ({ ticketStatus, aiActive, historical, isGroup, contactName
     setShowEmoji(false);
     setReplyingMessage(null);
     if (inputRef.current) inputRef.current.focus();
+    // the bubble shows in the conversation right now (with the clock); the real one replaces it when the server stores the message
+    const key = newKey();
+    try { window.dispatchEvent(new CustomEvent("pending-message", { detail: { ticketId, key, body, quotedMsg: quoted } })); } catch (e) { /* old browser */ }
     sendQueue.current = sendQueue.current.then(async () => {
       try {
-        await api.post(`/messages/${ticketId}`, { read: 1, fromMe: true, mediaUrl: "", body, quotedMsg: quoted, clientKey: newKey() });
+        const res = await api.post(`/messages/${ticketId}`, { read: 1, fromMe: true, mediaUrl: "", body, quotedMsg: quoted, clientKey: key });
+        // sent (200): the real bubble is already there; queued (202): the local one waits for it, for at most a minute
+        const drop = () => { try { window.dispatchEvent(new CustomEvent("pending-message-drop", { detail: { key } })); } catch (e3) { /* old browser */ } };
+        if (res && res.status === 200) drop();
+        else setTimeout(drop, 60000);
       } catch (err) {
+        try { window.dispatchEvent(new CustomEvent("pending-message-drop", { detail: { key } })); } catch (e2) { /* old browser */ }
         toastError(err);
         // what was typed comes back, unless something new is already being typed
         setInputMessage((current) => (current ? current : text));

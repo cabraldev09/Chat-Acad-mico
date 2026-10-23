@@ -411,9 +411,14 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
       const leadC = (await http.post("/leads", { name: "Lead do encaminhamento", phone: "5569999990046", ownerId: ids.joao }, as(admin))).data.lead;
       const taskC = (await http.post(`/leads/${leadC.id}/tasks`, { title: "Atender lead encaminhado pelo agente de IA", userId: ids.gabrielli, dueAt: new Date(Date.now() - 3600000).toISOString() }, as(admin))).data;
       assert(Number(sql(`SELECT userId FROM LeadTasks WHERE id = ${taskC.id}`).split("\n")[0]) === ids.gabrielli, "the task did not start with the person it was given to");
+      // a conversation with someone who cannot answer (no WhatsApp number) goes to a colleague of the same queue who has one; their tasks follow
+      const stuckConv = mkTicket({ owner: noPhone, status: "open" });
+      sql(`INSERT INTO UserQueues (userId, queueId, createdAt, updatedAt) VALUES (${noPhone}, ${queueId}, NOW(), NOW()) ON CONFLICT DO NOTHING`);
       const sweep = await http.post("/lead-tasks/release-unreachable", {}, as(admin));
       assert(Number(sql(`SELECT userId FROM LeadTasks WHERE id = ${taskC.id}`).split("\n")[0]) === ids.joao, "the handoff task did not follow the lead's owner")
-      assert(sweep.status === 200 && sweep.data.released >= 1 && sweep.data.moved >= 1, `sweep ${sweep.status} ${JSON.stringify(sweep.data)}`);
+      assert(sweep.status === 200 && sweep.data.released >= 1 && sweep.data.aligned + sweep.data.moved >= 1, `sweep ${sweep.status} ${JSON.stringify(sweep.data)}`);
+      assert(sweep.data.redistributed >= 1, `the conversation of a person without a number was not handed on: ${JSON.stringify(sweep.data)}`);
+      assert(row(stuckConv.ticketId).userId === ids.joao, `the conversation went to ${row(stuckConv.ticketId).userId}, not to the colleague with a number`);
       assert(sql(`SELECT COALESCE(CAST(userId AS TEXT), 'null') FROM LeadTasks WHERE id = ${taskA.id}`).split("\n")[0] === "null", "the task of a lead nobody answers kept its owner");
       assert(Number(sql(`SELECT userId FROM LeadTasks WHERE id = ${taskB.id}`).split("\n")[0]) === ids.joao, "the task did not go to whoever answers the lead");
       const unassigned = (await A(admin, "/analytics/team?range=today")).data.unassigned;

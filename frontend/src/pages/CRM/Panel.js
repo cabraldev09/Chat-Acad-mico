@@ -22,6 +22,7 @@ import { downloadFile } from "../../utils/saveBlob";
 import { useCrmOptions, SourceIcon, StagePill, ago } from "./shared";
 import { tint } from "../../utils/color";
 import NotALead from "./NotALead";
+import "../../styles/dash.css";
 
 const useStyles = makeStyles((theme) => {
   const dark = theme.palette.type === "dark";
@@ -53,8 +54,8 @@ const useStyles = makeStyles((theme) => {
     alertIcon: { width: 36, height: 36, borderRadius: 10, display: "grid", placeItems: "center", flex: "none" },
     triageRow: { display: "flex", alignItems: "center", gap: 12, padding: "9px 0", borderTop: `1px solid ${line}`, flexWrap: "wrap", "&:first-of-type": { borderTop: 0 } },
     band: { display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", [theme.breakpoints.down("md")]: { gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }, [theme.breakpoints.down("xs")]: { gridTemplateColumns: "1fr" } },
-    cell: { padding: theme.spacing(2), borderRight: `1px solid ${line}`, borderBottom: `1px solid ${line}`, minWidth: 0 },
-    cellVal: { fontSize: 32, fontWeight: 700, letterSpacing: "-0.03em", lineHeight: 1.15, marginTop: 4, fontVariantNumeric: "tabular-nums" },
+    cell: { padding: theme.spacing(2), borderRight: `1px solid ${line}`, borderBottom: `1px solid ${line}`, minWidth: 0, position: "relative", transition: "background-color .25s ease", "&:hover": { background: "color-mix(in srgb, var(--dash-accent, #0693e3) 7%, transparent)" } },
+    cellVal: { fontSize: 34, fontWeight: 800, letterSpacing: "-0.03em", lineHeight: 1.15, marginTop: 4, fontVariantNumeric: "tabular-nums" },
     delta: { display: "inline-flex", alignItems: "center", gap: 2, fontSize: 12, fontWeight: 700, padding: "1px 7px", borderRadius: 999 },
     grid: { display: "grid", gap: theme.spacing(1.5), gridTemplateColumns: "repeat(12, 1fr)" },
     card: { padding: theme.spacing(2) },
@@ -243,7 +244,7 @@ const Panel = () => {
         </GlowCard>
       )}
       {d && (
-        <div className={classes.scroll}>
+        <div className={`${classes.scroll} dash-scope`}>
          <div className={`${classes.content} ${loading ? classes.contentBusy : ""}`} aria-busy={loading}>
           {(triage.total > 0 || (isManager && triageScope === "all")) && (
             <>

@@ -49,7 +49,8 @@ const tick = async (): Promise<void> => {
       // eslint-disable-next-line no-await-in-loop
       const firstWaiting = (
         await Message.findOne({
-          where: { ticketId: ticket.id, fromMe: false, ...(lastReply ? { createdAt: { [Op.gt]: lastReply } } : {}) },
+          // only the last 48 h count: a message from weeks ago, still unanswered, is not "a lead that just wrote"
+          where: { ticketId: ticket.id, fromMe: false, createdAt: { [Op.gt]: lastReply && new Date(lastReply) > new Date(now.getTime() - 48 * 3600000) ? lastReply : new Date(now.getTime() - 48 * 3600000) } },
           order: [["createdAt", "ASC"]],
           attributes: ["createdAt"]
         })

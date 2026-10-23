@@ -51,7 +51,8 @@ import {
 } from "../services/CrmServices/LeadCore";
 import dispatchWebhook from "../services/WebhookServices/DispatchWebhook";
 import makeCrud from "./crudFactory";
-import { releaseUnreachableTasks, syncHandoffTasks } from "../services/CrmServices/HandoffTasks";
+import { syncHandoffTasks } from "../services/CrmServices/HandoffTasks";
+import { runTaskSweep } from "../workers/TaskSweep";
 
 const uid = (req: Request) => Number(req.user.id);
 
@@ -353,7 +354,7 @@ export const removeTask = async (req: Request, res: Response): Promise<Response>
 };
 
 // hands the open tasks of people without a WhatsApp to whoever answers the lead (the rest become "sem responsavel"); the same sweep runs on its own every 30 minutes
-export const releaseUnreachable = async (_req: Request, res: Response): Promise<Response> => res.json({ ...(await releaseUnreachableTasks()), aligned: await syncHandoffTasks() });
+export const releaseUnreachable = async (_req: Request, res: Response): Promise<Response> => res.json(await runTaskSweep());
 
 export const tasksIndex = async (req: Request, res: Response): Promise<Response> => {
   const { scope = "mine", status = "open" } = req.query as any;

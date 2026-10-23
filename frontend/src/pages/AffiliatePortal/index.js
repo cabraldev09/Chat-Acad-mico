@@ -12,7 +12,8 @@ import BrandStar from "../../components/BrandStar";
 import { CopyButton } from "./shared";
 import PromoPanel, { Messages } from "./PromoPanel";
 import ArtLibrary from "./ArtLibrary";
-import { Funnel, HeroCard, ShareBar } from "./HomeParts";
+import { Funnel, ShareBar } from "./HomeParts";
+import heroStudent from "../../assets/brand/aluna.webp";
 import "./central.css";
 
 // Public page of one affiliate: no login, no cookies. The token in the address is the access. It never shows prices.
@@ -287,22 +288,33 @@ const AffiliatePortal = ({ match }) => {
     const camp = data.campaigns[0];
     return (
       <>
-        <div className="ca-hero">
-          <div>
-            <span className="ca-over">Olá, {affiliate.firstName}</span>
-            <h1 className="ca-h1">Sua indicação.<br /><em>Um novo futuro.</em></h1>
-            <p className="ca-lead">{data.message}</p>
-            <div className="ca-hero-actions">
-              <button type="button" className="ca-btn is-primary" onClick={() => go("materials")}>Encontrar meus materiais <ArrowUpRight size={16} /></button>
-              <button type="button" className="ca-btn" onClick={() => setSheet({})}><UserPlus size={16} /> Indicar alguém</button>
+        <section className="ha-hero" aria-label="Início">
+          <div className="ha-copy">
+            <span className="ha-eyebrow"><i>{String(affiliate.firstName || "?").charAt(0).toUpperCase()}</i> Olá, {affiliate.firstName}</span>
+            <h1 className="ha-title">Sua indicação.<br /><em>Um novo futuro.</em></h1>
+            <p className="ha-lead">{data.message || "Tudo o que você precisa para indicar: materiais, cursos e campanhas."}</p>
+            <div className="ha-actions">
+              <button type="button" className="ha-btn is-main" onClick={() => go("materials")}>Encontrar meus materiais <ArrowUpRight size={18} /></button>
+              <button type="button" className="ha-btn is-glass" onClick={() => setSheet({})}><UserPlus size={18} /> Indicar alguém</button>
             </div>
-            {owner && <p className="ca-help" style={{ marginTop: 18, color: "var(--muted)" }}>Seu consultor: <strong style={{ color: "var(--ink)" }}>{owner.name}</strong></p>}
+            {owner && <p className="ha-owner"><span>{String(owner.name || "?").charAt(0).toUpperCase()}</span>Seu consultor <strong>{owner.name}</strong></p>}
           </div>
-          <HeroCard nome={affiliate.firstName} link={data.referralUrl} />
-        </div>
+          <img className="ha-bg" src={heroStudent} alt="" aria-hidden="true" />
+        </section>
+
+        <Funnel stats={stats} />
+
+        <nav className="ha-quick" aria-label="Atalhos">
+          {[["materials", "Materiais", "Artes, textos e vídeos prontos", Folders, "sky"], ["campaigns", "Campanhas", "O que está valendo agora", Megaphone, "gold"], ["learn", "Orientações", "Como indicar e ganhar", HelpCircle, "green"], ["referrals", "Indicações", "Acompanhe quem você trouxe", Users, "violet"]].map(([k, title, text, Icon, tone]) => (
+            <button key={k} type="button" className={`ha-tile is-${tone}`} onClick={() => go(k)}>
+              <span className="ha-tile-icon"><Icon size={22} /></span>
+              <span className="ha-tile-text"><strong>{title}</strong><small>{text}</small></span>
+              <ArrowRight size={16} className="ha-tile-go" />
+            </button>
+          ))}
+        </nav>
 
         <ShareBar link={data.referralUrl} nome={affiliate.firstName} />
-        <Funnel stats={stats} />
         {!affiliate.pixKey && <p className="ca-notice">Falta cadastrar a sua chave Pix para receber as bonificações. Peça ao seu consultor{owner ? `, ${owner.name}` : ""}.</p>}
 
         <PromoPanel nome={affiliate.firstName} link={data.referralUrl} groups={data.courses} />

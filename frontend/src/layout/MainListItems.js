@@ -271,13 +271,13 @@ const MainListItems = (props) => {
           <ListItemLink to="/crm/painel" primary="Painel do CRM" icon={<LayoutDashboardIcon className="ico" />} collapsed={collapsed} adornment={myTasks.triage > 0 && <span className={classes.countBadge} style={myTasks.triageLate > 0 ? { background: "#dc2626", color: "#fff" } : undefined} title="Leads novos para conferir até o fim do dia">{myTasks.triage}</span>} />
         </>
       )}
-      {!isManager(user) && <ListItemLink to="/crm/tarefas" primary="Tarefas" icon={<ListTodoIcon className="ico" />} collapsed={collapsed} adornment={tasksBadge} />}
+      {<ListItemLink to="/crm/tarefas" primary="Tarefas" icon={<ListTodoIcon className="ico" />} collapsed={collapsed} adornment={tasksBadge} />}
       {["admin", "coordenacao", "consultor"].includes(user.profile === "admin" ? "admin" : user.role || "consultor") && (
         <ListItemLink to="/crm/comissoes" primary="Comissões" icon={<WalletIcon className="ico" />} collapsed={collapsed} />
       )}
       <ListItemLink to="/crm/metas-polos" alsoActive={["/crm/metas"]} primary="Metas" icon={<GoalIcon className="ico" />} collapsed={collapsed} />
-      {!isManager(user) && <ListItemLink to="/ambientacao" primary="Ambientação" icon={<MonitorCheckIcon className="ico" />} collapsed={collapsed} />}
-      {!isManager(user) && canOperateRetention(user) && (
+      {<ListItemLink to="/ambientacao" primary="Ambientação" icon={<MonitorCheckIcon className="ico" />} collapsed={collapsed} />}
+      {canOperateRetention(user) && (
         <ListItemLink to="/crm/retencao" primary="Retenção" icon={<HeartPulseIcon className="ico" />} collapsed={collapsed} />
       )}
       {!collapsed && (
@@ -316,15 +316,13 @@ const MainListItems = (props) => {
         </>
       )}
       <Divider className={classes.divider} />
-      {!isManager(user) && (
-        <ListItemLink
-          to="/schedules"
-          primary="Agendamentos"
-          icon={<CalendarClockIcon className="ico" />}
-          collapsed={collapsed}
-        />
-      )}
-      {!isManager(user) && ["admin", "coordenacao", "consultor"].includes(user.profile === "admin" ? "admin" : user.role || "consultor") && (
+      <ListItemLink
+        to="/schedules"
+        primary="Agendamentos"
+        icon={<CalendarClockIcon className="ico" />}
+        collapsed={collapsed}
+      />
+      {["admin", "coordenacao", "consultor"].includes(user.profile === "admin" ? "admin" : user.role || "consultor") && (
         <ListItemLink
           to="/campaigns"
           primary="Campanhas"
@@ -333,16 +331,14 @@ const MainListItems = (props) => {
         />
       )}
       {isManager(user) && (
-        <ListItemLink to="/gestao-comercial" alsoActive={["/crm/tarefas", "/crm/retencao", "/ambientacao", "/schedules", "/campaigns", "/reports"]} primary="Gestão Comercial" icon={<GaugeIcon className="ico" />} collapsed={collapsed} adornment={tasksBadge} />
+        <ListItemLink to="/gestao-comercial" primary="Gestão Comercial" icon={<GaugeIcon className="ico" />} collapsed={collapsed} adornment={tasksBadge} />
       )}
-      {!isManager(user) && (
-        <ListItemLink
-          to="/reports"
-          primary="Estatísticas"
-          icon={<BarChartIcon className="ico" />}
-          collapsed={collapsed}
-        />
-      )}
+      <ListItemLink
+        to="/reports"
+        primary="Estatísticas"
+        icon={<BarChartIcon className="ico" />}
+        collapsed={collapsed}
+      />
       {isManager(user) && (
         <>
           <Divider className={classes.divider} />

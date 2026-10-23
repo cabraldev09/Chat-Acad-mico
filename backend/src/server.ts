@@ -19,7 +19,7 @@ import { startProfilePicSync } from "./workers/ProfilePicSync";
 import { startAckReconciler } from "./workers/AckReconciler";
 import { startPaymentPoller } from "./workers/PaymentPoller";
 import { startOnboardingSla } from "./workers/OnboardingSla";
-import { startTaskSweep } from "./services/CrmServices/HandoffTasks";
+import { startTaskSweep } from "./workers/TaskSweep";
 import { startChatbotReminder } from "./workers/ChatbotReminder";
 import { startOutboundWorker } from "./workers/OutboundWorker";
 import { startFlowRunner } from "./workers/FlowRunner";

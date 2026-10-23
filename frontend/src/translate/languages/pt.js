@@ -571,6 +571,7 @@ const messages = {
         ERR_POLL_UNSUPPORTED: "Enquetes só podem ser enviadas em conversas de WhatsApp.",
         ERR_POLL_INVALID: "A enquete precisa de uma pergunta e de 2 a 12 opções diferentes.",
         ERR_STAFF_GROUP: "Grupos não podem ser marcados como da equipe. Marque as pessoas, uma a uma, na lista de participantes.",
+        ERR_MEDIA_EXPIRED: "Este arquivo é antigo: o WhatsApp só guarda os arquivos por cerca de dois meses e ele já saiu dos servidores. Peça para a pessoa enviar de novo.",
         ERR_MEDIA_NOT_AVAILABLE: "Não foi possível baixar este arquivo do celular. Ele pode ter sido apagado ou a conexão está fora do ar.",
         ERR_USER_NOT_FOUND: "Usuário não encontrado.",
         ERR_INTERNAL_SERVER_ERROR: "Erro interno. Tente de novo em instantes.",

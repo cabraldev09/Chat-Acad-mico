@@ -429,6 +429,21 @@ const convertToMessagePayload = async (
   };
 };
 
+// Why a file did not come down: the stage WhatsApp Web gives the message (REUPLOADING = waiting for the phone to send it again, ERROR_* = the file is gone from their servers...)
+const whyNoMedia = async (msg: any): Promise<string> => {
+  try {
+    const info = await msg.client.pupPage.evaluate((id: string) => {
+      const { Msg } = (window as any).require("WAWebCollections");
+      const m = Msg.get(id);
+      if (!m) return { missing: true };
+      return { stage: m.mediaData && m.mediaData.mediaStage, type: m.type, directPath: !!m.directPath, size: m.size, hasWWebJS: !!(window as any).WWebJS && !!(window as any).WWebJS.resolveMediaBlob };
+    }, msg.id._serialized);
+    return JSON.stringify(info);
+  } catch (err) {
+    return `sem leitura (${(err as Error).message})`;
+  }
+};
+
 const convertToMediaPayload = async (
   msg: WbotMessage
 ): Promise<MediaPayload | undefined> => {
@@ -440,14 +455,18 @@ const convertToMediaPayload = async (
   for (let attempt = 0; attempt < 2 && !media; attempt += 1) {
     try {
       // eslint-disable-next-line no-await-in-loop
-      media = await msg.downloadMedia();
+      // WhatsApp Web can hang on a file for minutes (the browser only gives up after 3): after 25 s the message is stored without it and the file is tried again later
+      media = await withTimeout(msg.downloadMedia(), 25000);
     } catch (err) {
       logger.warn(`Media download failed (${msg.type}): ${err}`);
     }
     // eslint-disable-next-line no-await-in-loop
     if (!media && attempt === 0) await new Promise(r => setTimeout(r, 2500));
   }
-  if (!media) return undefined;
+  if (!media) {
+    logger.warn(`Media not downloaded (${msg.type}, ${msg.id.id}): ${await whyNoMedia(msg)}`);
+    return undefined;
+  }
 
   return {
     filename: media.filename || "",
@@ -1264,9 +1283,21 @@ const downloadMessageMedia = async (
   fromMe: boolean
 ): Promise<{ filename: string; mimetype: string; data: string; isGif?: boolean } | null> => {
   const message = await findMessage(getWbot(sessionId), chatId, messageId, fromMe);
-  if (!message || !message.hasMedia) return null;
-  const media = await message.downloadMedia();
-  if (!media) return null;
+  if (!message || !message.hasMedia) {
+    logger.warn(`Media on demand (${messageId}): ${!message ? "the message was not found on the phone's WhatsApp" : "the message carries no file"}`);
+    return null;
+  }
+  let media: any = null;
+  try {
+    media = await withTimeout(message.downloadMedia(), 90000);
+  } catch (err) {
+    logger.warn(`Media on demand (${messageId}) failed: ${(err as Error).message}`);
+    return null;
+  }
+  if (!media) {
+    logger.warn(`Media on demand (${messageId}) came back empty: ${await whyNoMedia(message)}`);
+    return null;
+  }
   return { filename: media.filename || "", mimetype: media.mimetype, data: media.data, isGif: !!(message as any)._data?.isGif };
 };
 

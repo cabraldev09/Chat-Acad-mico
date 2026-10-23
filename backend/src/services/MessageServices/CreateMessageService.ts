@@ -30,8 +30,11 @@ const CreateMessageService = async ({
   messageData
 }: Request): Promise<Message> => {
   // the same message is processed more than once (media upload + create); a later pass must not lower the ticks
+  // (a message the system stores right after sending, and then again when the connection reports it, is the same message: the second pass changes the screens, not the counters, lessons and webhooks)
+  let already = false;
   if (messageData.id) {
     const current = await Message.findByPk(messageData.id, { attributes: ["id", "ack"] });
+    already = !!current;
     if (current && (current.ack || 0) > (messageData.ack || 0)) {
       messageData.ack = current.ack;
     }
@@ -104,7 +107,7 @@ const CreateMessageService = async ({
   }
 
   // what the team answers after the AI handed a question over becomes a lesson for the owner to review
-  if (message.fromMe && message.ticket.userId && !message.ticket.isGroup && message.mediaType === "chat") {
+  if (!already && message.fromMe && message.ticket.userId && !message.ticket.isGroup && message.mediaType === "chat") {
     captureTeamReply(message.ticket, message.body).catch(() => undefined);
   }
 
@@ -118,7 +121,7 @@ const CreateMessageService = async ({
       hookInbound(message.ticket.contactId, message.ticket.whatsapp?.channel);
       // a bare number from 0 to 10 answers the satisfaction survey that was sent to this person
       if (message.mediaType === "chat") captureNpsAnswer(message.ticket.contactId, message.body, message.ticket.whatsappId).catch(() => undefined);
-    } else if (message.ticket.userId) {
+    } else if (message.ticket.userId && !already) {
       hookHumanReply(message.ticket.contactId, message.ticket.userId);
     }
   }
@@ -135,6 +138,7 @@ const CreateMessageService = async ({
       contact: message.ticket.contact
     });
 
+  if (already && message.fromMe) return message;
   dispatchWebhook(message.fromMe ? "message.sent" : "message.received", {
     messageId: message.id,
     ticketId: message.ticketId,

@@ -31,4 +31,4 @@ EXPOSE 8080
 ENTRYPOINT ["dumb-init", "--", "/usr/local/bin/docker-entrypoint.sh"]
 # "exec": the server replaces the shell, so it receives the stop signal (SIGTERM) and closes the WhatsApp browsers cleanly. Without it the shell kept the signal, Docker killed the
 # server after 60 s, and every restart lost the WhatsApp logins (a new QR Code for each number).
-CMD ["sh", "-c", "mkdir -p \"${UPLOAD_DIR:-public}\" && node scripts/db-preflight.js && npx sequelize db:migrate && node scripts/bootstrap-production.js && exec node dist/server.js"]
+CMD ["sh", "-c", "mkdir -p \"${UPLOAD_DIR:-public}\" && node scripts/db-preflight.js && node_modules/.bin/sequelize db:migrate && node scripts/bootstrap-production.js && exec node dist/server.js"]

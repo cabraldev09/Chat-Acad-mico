@@ -1,4 +1,4 @@
-import { useContext, useEffect } from "react";
+import React, { useContext, useEffect } from "react";
 import { useHistory } from "react-router-dom";
 import { toast } from "react-toastify";
 import openSocket from "../../services/socket-io";
@@ -6,6 +6,35 @@ import { AuthContext } from "../../context/Auth/AuthContext";
 import { burst } from "../../pages/CRM/shared";
 import alertSound from "../../assets/sound.mp3";
 import { getSoundMode } from "../../utils/soundPrefs";
+
+// "62215 min" says nothing: 45 min, 2 h 10 min, 3 days
+const howLong = (minutes) => {
+  const m = Math.max(0, Math.round(Number(minutes) || 0));
+  if (m < 60) return `${m} min`;
+  if (m < 1440) return m % 60 ? `${Math.floor(m / 60)} h ${m % 60} min` : `${Math.floor(m / 60)} h`;
+  const d = Math.floor(m / 1440);
+  return `${d} ${d === 1 ? "dia" : "dias"}`;
+};
+
+// a contact saved only by its number shows the number the way people read it: +55 69 99366-7971
+const prettyName = (name) => {
+  const digits = String(name || "").replace(/\D/g, "");
+  if (!name || String(name).replace(/[\d\s+()-]/g, "").length > 0) return name || "Um lead";
+  if (/^55\d{10,11}$/.test(digits)) {
+    const rest = digits.slice(4);
+    return `+55 ${digits.slice(2, 4)} ${rest.slice(0, rest.length - 4)}-${rest.slice(-4)}`;
+  }
+  return `+${digits}`;
+};
+
+// a title and one short line, instead of one long sentence
+const AlertToast = ({ title, line, detail }) => (
+  <div>
+    <div style={{ fontWeight: 700 }}>{title}</div>
+    <div style={{ marginTop: 2 }}>{line}</div>
+    {detail ? <div style={{ marginTop: 2, fontSize: 12.5, opacity: 0.75 }}>{detail}</div> : null}
+  </div>
+);
 
 // Toast when one of my follow-up tasks becomes due
 const CrmReminders = () => {
@@ -25,7 +54,7 @@ const CrmReminders = () => {
     socket.on("leadAlert", (a) => {
       const manager = user.profile === "admin" || user.role === "admin" || user.role === "coordenacao";
       if (!(a.ownerId === user.id || manager)) return;
-      toast.warn(`⚠️ ${a.name} está sem resposta há ${a.minutes} min`, {
+      toast.warn(<AlertToast title="Lead sem resposta" line={<><b>{prettyName(a.name)}</b> espera há {howLong(a.minutes)}</>} detail={a.ownerId === user.id ? "É seu: toque para abrir" : "Toque para abrir o lead"} />, {
         autoClose: 20000,
         onClick: () => history.push(`/crm?lead=${a.leadId}`),
       });
