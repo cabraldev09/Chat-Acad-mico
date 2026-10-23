@@ -308,7 +308,7 @@ const Panel = () => {
                     <span className={classes.alertIcon} style={{ background: bg, color: fg }}><Icon size={18} /></span>
                     <div>
                       <div className={classes.label}>{label}</div>
-                      <div style={{ fontSize: 24, fontWeight: 700, color: fg, fontVariantNumeric: "tabular-nums" }}><NumberTicker value={value || 0} /></div>
+                      <div style={{ fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}><NumberTicker value={value || 0} /></div>
                     </div>
                   </GlowCard>
                 ))}
@@ -323,21 +323,21 @@ const Panel = () => {
             <div className={classes.band}>
               <div className={classes.cell}>
                 <div className={classes.label}>Leads captados</div>
-                <div className={classes.cellVal} style={{ color: "#0693E3" }}><NumberTicker value={d.kpi.leads} /></div>
+                <div className={classes.cellVal}><NumberTicker value={d.kpi.leads} /></div>
                 <div style={{ marginTop: 4 }}><Delta now={d.kpi.leads} before={prev && prev.leads} /></div>
                 <Spark data={sparkLeads} color="#0693E3" />
                 <div className={classes.label} style={{ fontSize: 12 }}>{d.kpi.open} em andamento</div>
               </div>
               <div className={classes.cell}>
                 <div className={classes.label}>Matrículas</div>
-                <div className={classes.cellVal} style={{ color: GREEN }}><NumberTicker value={d.kpi.won} /></div>
+                <div className={classes.cellVal}><NumberTicker value={d.kpi.won} /></div>
                 <div style={{ marginTop: 4 }}><Delta now={d.kpi.won} before={prev && prev.won} /></div>
                 <Spark data={sparkWon} color={GREEN} />
                 <div className={classes.label} style={{ fontSize: 12 }}>{d.kpi.lost} perdidos · {wonInPeriod} confirmadas no período</div>
               </div>
               <div className={classes.cell}>
                 <div className={classes.label}>Conversão</div>
-                <div className={classes.cellVal} style={{ color: "#8b5cf6" }}>{`${d.kpi.conversion.toFixed(1).replace(".", ",")}%`}</div>
+                <div className={classes.cellVal}>{`${d.kpi.conversion.toFixed(1).replace(".", ",")}%`}</div>
                 <div style={{ marginTop: 4 }}><Delta now={d.kpi.conversion} before={prev && prev.conversion} points /></div>
                 <div className={classes.label} style={{ fontSize: 12, marginTop: 8 }}>lead → matrícula</div>
               </div>
@@ -346,9 +346,9 @@ const Panel = () => {
                 <div className={classes.cellVal} style={{ color: contactTone(d.kpi.avgFirstContactMin) }}>{mins(d.kpi.avgFirstContactMin)}</div>
                 <div className={classes.label} style={{ fontSize: 12, marginTop: 8 }}>{d.kpi.businessHours ? "média, só horário comercial" : "média"} · ideal até 15 min</div>
               </div>
-              <div className={classes.cell} style={{ borderRight: 0, borderTop: `2px solid ${"#14b8a6"}` }}>
+              <div className={classes.cell} style={{ borderRight: 0 }}>
                 <div className={classes.label}>Tempo até a matrícula</div>
-                <div className={classes.cellVal} style={{ color: "#14b8a6" }}>{d.kpi.avgDaysToEnroll === null ? "—" : `${Number(d.kpi.avgDaysToEnroll).toFixed(1).replace(".", ",")} dias`}</div>
+                <div className={classes.cellVal}>{d.kpi.avgDaysToEnroll === null ? "—" : `${Number(d.kpi.avgDaysToEnroll).toFixed(1).replace(".", ",")} dias`}</div>
                 <div className={classes.label} style={{ fontSize: 12, marginTop: 8 }}>média</div>
               </div>
             </div>
@@ -369,7 +369,7 @@ const Panel = () => {
               {reached.map((f, i) => (
                 <div key={f.id} className={classes.funnelRow}>
                   <span>{f.name}</span>
-                  <div><div className={classes.bar} style={{ width: `${(f.reached / maxFunnel) * 100}%`, background: f.color }} /></div>
+                  <div><div className={classes.bar} style={{ width: `${(f.reached / maxFunnel) * 100}%`, background: f.type === "won" ? GREEN : "#0693E3", opacity: f.type === "won" ? 1 : 0.35 + 0.65 * (f.reached / maxFunnel) }} /></div>
                   <span style={{ textAlign: "right", fontWeight: 600 }}>
                     {f.reached}
                     {i > 0 && reached[i - 1].reached ? <span style={{ opacity: 0.55, fontWeight: 400, fontSize: 11.5 }}> {pct(f.reached, reached[i - 1].reached)}</span> : null}

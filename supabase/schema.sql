@@ -2780,7 +2780,8 @@ CREATE TABLE public."Users" (
     "efiPayeeCode" character varying(255),
     preferences text,
     "coordArea" character varying(255),
-    phone character varying(255)
+    phone character varying(255),
+    "lastSeenAt" timestamp with time zone
 );
 
 
@@ -6012,6 +6013,7 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261130000001-analysis-polo.js') ON
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261201000001-quick-answer-owner.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261202000001-outbound-messages.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261203000001-outbound-sent-at.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261204000001-user-last-seen.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

@@ -50,7 +50,7 @@ const MyStats = () => {
         </div>
       </div>
 
-      <div className={c.grid} style={{ marginBottom: 16 }}>
+      <div className={c.grid5} style={{ marginBottom: 16 }}>
         {["messagesSent", "attendances", "leadsWorked", "reactivated", "pendingReply", "followUpsDue", "proposalsSent", "enrollments", "conversion", "tasksOverdue"].map((k) => (
           <Kpi key={k} k={k} value={m[k]} def={defs[k]} tone={k === "tasksOverdue" && m[k] > 0 ? "#dc2626" : undefined} />
         ))}

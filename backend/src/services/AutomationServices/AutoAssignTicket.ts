@@ -1,6 +1,7 @@
 import { Op } from "sequelize";
 
 import Queue from "../../models/Queue";
+import Whatsapp from "../../models/Whatsapp";
 import Ticket from "../../models/Ticket";
 import User from "../../models/User";
 import { getSetting, setSetting } from "../../helpers/AppSettings";
@@ -14,8 +15,14 @@ export const pickUserForQueue = async (queue: Queue, force = false): Promise<Use
   const mode = !queue.autoAssign || queue.autoAssign === "none" ? (force ? "least" : "none") : queue.autoAssign;
   if (mode === "none") return null;
 
-  const users = [...(queue.users || [])].sort((a, b) => a.id - b.id);
-  if (!users.length) return null;
+  const all = [...(queue.users || [])].sort((a, b) => a.id - b.id);
+  if (!all.length) return null;
+  // somebody who never connected a WhatsApp cannot answer: when at least one colleague of the queue can, the lead goes to them
+  const connected = new Set(
+    (await Whatsapp.findAll({ where: { ownerId: all.map(u => u.id), channel: "whatsapp", status: "CONNECTED" } as any, attributes: ["ownerId"] })).map(w => Number(w.ownerId))
+  );
+  const reachable = all.filter(u => connected.has(u.id));
+  const users = reachable.length ? reachable : all;
 
   if (mode === "least") {
     const counts = await Promise.all(

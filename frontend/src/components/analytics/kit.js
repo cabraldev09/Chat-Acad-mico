@@ -29,7 +29,9 @@ export const useKit = makeStyles((theme) => {
     grid: { display: "grid", gap: theme.spacing(2), gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))" },
     cols: { display: "grid", gap: theme.spacing(2), gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", alignItems: "start" },
     kpi: { background: dark ? "#0f1826" : "#fff", border: `1px solid ${line}`, borderRadius: 14, padding: "14px 16px", minWidth: 0, position: "relative", boxShadow: dark ? "none" : "0 1px 2px rgba(11,66,121,.06)" },
-    kpiLabel: { fontSize: 12.5, color: theme.palette.text.secondary, display: "flex", alignItems: "center", gap: 6 },
+    kpiLabel: { fontSize: 12.5, color: theme.palette.text.secondary, display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 6, minHeight: 34 },
+    grid4: { display: "grid", gap: theme.spacing(2), gridTemplateColumns: "repeat(4, minmax(0, 1fr))", [theme.breakpoints.down("sm")]: { gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }, [theme.breakpoints.down("xs")]: { gridTemplateColumns: "1fr" } },
+    grid5: { display: "grid", gap: theme.spacing(2), gridTemplateColumns: "repeat(5, minmax(0, 1fr))", [theme.breakpoints.down("md")]: { gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }, [theme.breakpoints.down("xs")]: { gridTemplateColumns: "1fr" } },
     kpiValue: { fontSize: 30, fontWeight: 800, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums", lineHeight: 1.15, marginTop: 6 },
     kpiHint: { fontSize: 12, color: theme.palette.text.secondary, marginTop: 2 },
     chips: { display: "inline-flex", gap: 4, padding: 4, borderRadius: 999, background: dark ? soft : "#fff", border: `1px solid ${line}`, flexWrap: "wrap" },
@@ -147,7 +149,7 @@ export const Kpi = ({ k, value, def, hint, tone }) => {
         <span>{(def && def.label) || k}</span>
         <span title={SHORT[k] || (def && def.description) || ""} style={{ display: "inline-flex", opacity: 0.55, cursor: "help" }}><Info size={13} /></span>
       </div>
-      <div className={c.kpiValue} style={{ color: tone || KPI_COLOR[k] }}>{fmt(value, unit)}</div>
+      <div className={c.kpiValue} style={tone ? { color: tone } : undefined}>{fmt(value, unit)}</div>
       {hint ? <div className={c.kpiHint}>{hint}</div> : null}
     </div>
   );

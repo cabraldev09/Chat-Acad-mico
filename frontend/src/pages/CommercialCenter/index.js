@@ -103,7 +103,7 @@ const Detail = ({ userId, period, defs, onClose }) => {
         <button type="button" className={c.btn} onClick={onClose}>Fechar</button>
       </div>
       <div className={c.sub}>{PRESENCE[data.presence.state].label}{data.presence.scheduleToday.length ? ` · hoje ${data.presence.scheduleToday.map((s) => `${s.start}–${s.end}`).join(", ")}` : " · sem horário cadastrado para hoje"}</div>
-      <div className={c.grid} style={{ marginTop: 14 }}>
+      <div className={c.grid4} style={{ marginTop: 14 }}>
         {["messagesSent", "attendances", "leadsWorked", "enrollments", "conversion", "pendingReply", "proposalsSent", "tasksOverdue"].map((k) => <Kpi key={k} k={k} value={m[k]} def={defs[k]} />)}
       </div>
       <div style={{ marginTop: 18 }}><BlockTitle title="Evolução" help="Mensagens, atendimentos e matrículas de cada dia do período escolhido." /></div>
@@ -172,42 +172,53 @@ const since = (iso) => {
   return min < 1 ? "agora" : min < 60 ? `há ${min} min` : min < 1440 ? `há ${Math.floor(min / 60)} h` : `há ${Math.floor(min / 1440)} d`;
 };
 
-// who is working now: one line per person, the ones that need attention first (the number is dead, then idle, then active, then off)
+// "Equipe agora": who is online right now, when each one last used the system, the schedule of today and whether the WhatsApp works.
+// The people that need attention come first (no number, then idle in working hours, then online, then the rest).
+const dayTime = (iso) => {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const today = new Date();
+  const same = d.toDateString() === today.toDateString();
+  const hm = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  return same ? `hoje ${hm}` : `${d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })} ${hm}`;
+};
+
 const Team = ({ consultants, onOpen }) => {
   const c = useKit();
-  const rank = (b) => (b.presence.whatsapp.state !== "connected" ? 0 : b.presence.state === "idle" ? 1 : b.presence.state === "active" ? 2 : 3);
+  const rank = (b) => (b.presence.whatsapp.state !== "connected" ? 0 : b.presence.state === "idle" ? 1 : b.presence.online ? 2 : 3);
   const list = [...consultants].sort((a, b) => rank(a) - rank(b) || a.user.name.localeCompare(b.user.name));
-  const count = (k) => consultants.filter((b) => b.presence.state === k && b.presence.whatsapp.state === "connected").length;
+  const online = consultants.filter((b) => b.presence.online).length;
   const noNumber = consultants.filter((b) => b.presence.whatsapp.state !== "connected").length;
-  const chips = [["active", "Ativos", "#16a34a", count("active")], ["idle", "Parados no horário", "#d97706", count("idle")], ["off", "Fora do horário", "#94a3b8", count("off")], ["wa", "Sem WhatsApp", "#dc2626", noNumber]];
   return (
     <div className={c.panel}>
-      <BlockTitle icon={<Users size={16} />} title="Equipe agora" />
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "4px 0 12px" }}>
-        {chips.map(([k, label, color, n]) => (
-          <span key={k} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 10px", borderRadius: 999, fontSize: 12.5, fontWeight: 600, background: tint(color, 0.14), color: n || k === "off" ? "inherit" : undefined }}>
-            <span style={{ width: 8, height: 8, borderRadius: "50%", background: color }} />{label} <b>{n}</b>
-          </span>
-        ))}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+        <BlockTitle icon={<Users size={16} />} title="Equipe agora" />
+        <span className={c.sub}><b style={{ color: "#16a34a" }}>{online}</b> online · <b style={{ color: noNumber ? "#dc2626" : undefined }}>{noNumber}</b> sem WhatsApp</span>
       </div>
       {list.length === 0 && <div className={c.sub}>Nenhum consultor cadastrado.</div>}
       {list.map((b) => {
-        const wa = WA[b.presence.whatsapp.state];
-        const down = b.presence.whatsapp.state !== "connected";
-        const st = down ? { label: wa.label, color: wa.color } : PRESENCE[b.presence.state];
+        const p = b.presence;
+        const wa = WA[p.whatsapp.state];
+        const down = p.whatsapp.state !== "connected";
+        const slots = p.scheduleToday.length ? p.scheduleToday.map((s) => `${s.start}–${s.end}`).join(", ") : "";
         return (
-          <button key={b.user.id} type="button" onClick={() => onOpen(b.user.id)} className={c.row} style={{ padding: "10px 0" }}>
-            <span style={{ width: 36, height: 36, borderRadius: "50%", display: "grid", placeItems: "center", flex: "none", fontSize: 12.5, fontWeight: 700, background: tint(st.color, 0.16), color: st.color, boxShadow: `0 0 0 2px ${st.color}` }}>{initials(b.user.name)}</span>
+          <button key={b.user.id} type="button" onClick={() => onOpen(b.user.id)} className={c.row} style={{ padding: "12px 0", alignItems: "flex-start" }}>
+            <span style={{ position: "relative", width: 38, height: 38, flex: "none" }}>
+              <span style={{ width: 38, height: 38, borderRadius: "50%", display: "grid", placeItems: "center", fontSize: 13, fontWeight: 700, background: "rgba(11,66,121,.1)", color: BRAND.blue }}>{initials(b.user.name)}</span>
+              <span title={p.online ? "Online agora" : "Offline"} style={{ position: "absolute", right: -1, bottom: -1, width: 11, height: 11, borderRadius: "50%", background: p.online ? "#16a34a" : "#94a3b8", border: "2px solid #fff" }} />
+            </span>
             <span style={{ flex: 1, minWidth: 0 }}>
               <b style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.user.name}</b>
               <span className={c.sub} style={{ display: "block", marginTop: 0 }}>
-                {down
-                  ? `${wa.label}${b.presence.whatsapp.since && b.presence.whatsapp.state === "offline" ? ` ${since(b.presence.whatsapp.since)}` : ""}`
-                  : `${PRESENCE[b.presence.state].label}${b.presence.lastActivityAt ? ` · última ação ${since(b.presence.lastActivityAt)}` : ""}`}
+                {p.online ? <b style={{ color: "#16a34a" }}>Online agora</b> : p.lastSeenAt ? `Acessou ${dayTime(p.lastSeenAt)}` : "Nunca acessou"}
+                {p.lastActivityAt ? ` · última ação ${since(p.lastActivityAt)}` : ""}
+              </span>
+              <span className={c.sub} style={{ display: "block", marginTop: 0 }}>
+                {slots ? `Hoje ${slots}${p.onSchedule ? " · no horário" : " · fora do horário"}` : "Sem horário cadastrado para hoje"}
               </span>
             </span>
-            <span title={wa.label} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 600, color: wa.color, flex: "none" }}>
-              {down ? <WifiOff size={14} /> : <Wifi size={14} />}{down ? "Sem número" : "Conectado"}
+            <span title={wa.label} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 600, color: wa.color, flex: "none", paddingTop: 2 }}>
+              {down ? <WifiOff size={14} /> : <Wifi size={14} />}{down ? (p.whatsapp.state === "none" ? "Sem número" : "Desconectado") : "Conectado"}
             </span>
           </button>
         );
@@ -292,7 +303,7 @@ const CommercialCenter = () => {
       {loading && !data && <div className={c.sub}>Carregando…</div>}
       {data && tab === "geral" && (
         <div style={{ display: "grid", gap: 16 }}>
-          <div className={c.grid}>
+          <div className={c.grid4}>
             {["messagesSent", "attendances", "leadsWorked", "reactivated", "pendingReply", "enrollments", "conversion", "tasksOverdue"].map((k) => <Kpi key={k} k={k} value={data.totals[k]} def={defs[k]} tone={k === "tasksOverdue" && data.totals[k] > 0 ? "#dc2626" : undefined} />)}
           </div>
           <div className={c.cols}>
@@ -302,7 +313,7 @@ const CommercialCenter = () => {
               <div style={{ marginTop: 8 }}>
                 {data.alerts.length === 0 && <div className={c.sub}>Nada pedindo atenção agora.</div>}
                 {data.alerts.slice(0, 8).map((a, i) => (
-                  <button key={`${a.userId}-${a.code}-${i}`} type="button" className={c.row} onClick={() => { if (a.code === "tasks_overdue") history.push(alertLink(a)); else if (a.code.startsWith("whatsapp")) history.push("/connections"); else { setSelected(a.userId); setTab("consultores"); } }}>
+                  <button key={`${a.userId}-${a.code}-${i}`} type="button" className={c.row} onClick={() => { if (a.code === "tasks_overdue") history.push(alertLink(a)); else if (a.code === "whatsapp_offline") history.push("/connections"); else { setSelected(a.userId); setTab("consultores"); } }}>
                     <span style={{ width: 8, height: 8, borderRadius: "50%", background: LEVEL[a.level], flex: "none" }} />
                     <span style={{ flex: 1 }}><b>{a.name}</b> · {a.text}</span>
                   </button>

@@ -45,6 +45,9 @@ class User extends Model<User> {
   @Column
   tokenVersion: number;
 
+  @Column(DataType.DATE)
+  lastSeenAt: Date;
+
   // JSON with the person's own preferences (notification sound, ...)
   @Column(DataType.TEXT)
   preferences: string;

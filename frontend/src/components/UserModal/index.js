@@ -74,8 +74,13 @@ const UserSchema = Yup.object().shape({
 	email: Yup.string().email("Digite um e-mail válido.").required("Informe o e-mail."),
 });
 
+const DAYS = [[1, "Seg"], [2, "Ter"], [3, "Qua"], [4, "Qui"], [5, "Sex"], [6, "Sáb"], [0, "Dom"]];
+const DEFAULT_WORK = { start: "08:00", end: "17:00", days: [1, 2, 3, 4, 5] };
+
 const UserModal = ({ open, onClose, userId }) => {
 	const classes = useStyles();
+	// the working hours (used by the management center: who is "in working hours", late alerts): set when the person is created and editable later
+	const [work, setWork] = useState(DEFAULT_WORK);
 
 	const initialState = {
 		name: "",
@@ -114,6 +119,28 @@ const UserModal = ({ open, onClose, userId }) => {
 		fetchUser();
 	}, [userId, open]);
 
+	useEffect(() => {
+		if (!open) return;
+		if (!userId) { setWork(DEFAULT_WORK); return; }
+		api.get("/analytics/config").then(({ data }) => {
+			const mine = (data.schedules || {})[userId] || {};
+			const days = Object.keys(mine).filter((d) => (mine[d] || []).length).map(Number);
+			if (!days.length) { setWork({ ...DEFAULT_WORK, days: [] }); return; }
+			const first = mine[days[0]][0];
+			setWork({ start: first.start, end: first.end, days });
+		}).catch(() => setWork(DEFAULT_WORK));
+	}, [userId, open]);
+
+	// writes the hours of the person in the shared configuration (the same one of the management center)
+	const saveWork = async (id) => {
+		const { data: cfg } = await api.get("/analytics/config");
+		const schedules = { ...(cfg.schedules || {}) };
+		const mine = {};
+		work.days.forEach((d) => { if (work.start && work.end) mine[d] = [{ start: work.start, end: work.end }]; });
+		if (Object.keys(mine).length) schedules[id] = mine; else delete schedules[id];
+		await api.put("/analytics/config", { ...cfg, schedules });
+	};
+
 	const handleClose = () => {
 		onClose();
 		setUser(initialState);
@@ -122,12 +149,17 @@ const UserModal = ({ open, onClose, userId }) => {
 	const handleSaveUser = async values => {
 		const userData = { ...values, whatsappId, queueIds: selectedQueueIds };
 		try {
+			let savedId = userId;
 			if (userId) {
 				await api.put(`/users/${userId}`, userData);
 			} else {
-				await api.post("/users", userData);
+				const { data } = await api.post("/users", userData);
+				savedId = data && data.id;
 			}
 			toast.success(i18n.t("userModal.success"));
+			if (savedId && values.role === "consultor") {
+				try { await saveWork(savedId); } catch (e) { toast.warn("O usuário foi salvo, mas o horário de trabalho não. Defina em Gestão Comercial > Configuração."); }
+			}
 		} catch (err) {
 			toastError(err);
 		}
@@ -291,6 +323,22 @@ const UserModal = ({ open, onClose, userId }) => {
 										</FormControl>
 									)}
 								/>
+								{values.role === "consultor" && (
+									<div style={{ marginTop: 14 }}>
+										<div style={{ fontSize: 13, fontWeight: 700, marginBottom: 2 }}>Horário de trabalho</div>
+										<div style={{ fontSize: 12, opacity: 0.7, marginBottom: 8 }}>Define quando a pessoa deve estar atendendo. Dá para mudar depois, aqui ou em Gestão Comercial.</div>
+										<div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+											{DAYS.map(([d, label]) => (
+												<Button key={d} size="small" variant={work.days.includes(d) ? "contained" : "outlined"} color="primary" disableElevation style={{ minWidth: 44 }}
+													onClick={() => setWork((w) => ({ ...w, days: w.days.includes(d) ? w.days.filter((x) => x !== d) : [...w.days, d] }))}>{label}</Button>
+											))}
+										</div>
+										<div style={{ display: "flex", gap: 8 }}>
+											<TextField label="Início" type="time" variant="outlined" margin="dense" InputLabelProps={{ shrink: true }} value={work.start} onChange={(e) => setWork((w) => ({ ...w, start: e.target.value }))} />
+											<TextField label="Fim" type="time" variant="outlined" margin="dense" InputLabelProps={{ shrink: true }} value={work.end} onChange={(e) => setWork((w) => ({ ...w, end: e.target.value }))} />
+										</div>
+									</div>
+								)}
 							</DialogContent>
 							<DialogActions>
 								<Button

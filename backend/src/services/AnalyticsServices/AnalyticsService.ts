@@ -224,6 +224,9 @@ export interface Presence {
   scheduleToday: Array<{ start: string; end: string }>;
   // the number of the person: without it nothing they type or receive goes through, so "no activity" has a real reason
   whatsapp: { state: "connected" | "offline" | "none"; name: string | null; since: string | null };
+  // using the system right now (a request in the last 5 minutes) and the last time it was used
+  online: boolean;
+  lastSeenAt: string | null;
 }
 
 export const computePresence = async (userIds: number[], config: AnalyticsConfig, now: Date = new Date()): Promise<Map<number, Presence>> => {
@@ -245,14 +248,17 @@ export const computePresence = async (userIds: number[], config: AnalyticsConfig
     const n = up || mine[0];
     return { state: up ? "connected" : "offline", name: n.name, since: n.statusSince ? new Date(n.statusSince).toISOString() : null };
   };
+  const seenRows = await rows(`SELECT id, lastSeenAt FROM Users WHERE id IN (:ids)`, { ids: userIds });
   const { dow, hhmm } = nowInTz(now);
   for (const id of userIds) {
+    const seenRaw = seenRows.find(r => Number(r.id) === id)?.lastSeenAt;
+    const seenAt = seenRaw ? new Date(seenRaw) : null;
     const slots = config.schedules[String(id)]?.[dow] || [];
     const onSchedule = slots.some(s => s.start <= hhmm && hhmm < s.end);
     const at = last.find(r => Number(r.userId) === id)?.at;
     const lastAt = at ? new Date(at) : null;
     const recent = !!lastAt && now.getTime() - lastAt.getTime() <= config.activeWindowMinutes * 60000;
-    out.set(id, { state: recent ? "active" : onSchedule ? "idle" : "off", onSchedule, lastActivityAt: lastAt ? lastAt.toISOString() : null, scheduleToday: slots, whatsapp: whatsappOf(id) });
+    out.set(id, { state: recent ? "active" : onSchedule ? "idle" : "off", onSchedule, lastActivityAt: lastAt ? lastAt.toISOString() : null, scheduleToday: slots, whatsapp: whatsappOf(id), online: !!seenAt && now.getTime() - seenAt.getTime() <= 5 * 60000, lastSeenAt: seenAt ? seenAt.toISOString() : null });
   }
   return out;
 };
@@ -315,8 +321,13 @@ export const alertsOf = (bundles: ConsultantBundle[], config: AnalyticsConfig): 
     const { metrics: m, presence: p, user } = b;
     // the real cause first: no connected number means nothing reaches the person, whatever the other numbers say
     const noNumber = p.whatsapp.state !== "connected";
-    if (p.whatsapp.state === "none") alerts.push({ level: "high", userId: user.id, name: user.name, code: "whatsapp_none", text: "ainda não conectou o WhatsApp: não recebe nem envia mensagens", link: "/connections" });
-    else if (p.whatsapp.state === "offline") alerts.push({ level: "high", userId: user.id, name: user.name, code: "whatsapp_offline", text: `WhatsApp desconectado${p.whatsapp.since ? ` desde ${new Date(p.whatsapp.since).toLocaleString("pt-BR", { timeZone: getAppTz(), day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}` : ""}: as mensagens não chegam`, link: "/connections" });
+    if (p.whatsapp.state === "none") {
+      // one honest line (the late tasks and waiting conversations of someone who cannot work are a consequence, not their activity)
+      const stuck = m.tasksOverdue > 0 ? ` · ${m.tasksOverdue} tarefa(s) paradas com ele` : "";
+      alerts.push({ level: "high", userId: user.id, name: user.name, code: "whatsapp_none", text: `ainda não conectou o WhatsApp: não recebe nem envia mensagens${stuck}`, link: "/connections" });
+      continue;
+    }
+    if (p.whatsapp.state === "offline") alerts.push({ level: "high", userId: user.id, name: user.name, code: "whatsapp_offline", text: `WhatsApp desconectado${p.whatsapp.since ? ` desde ${new Date(p.whatsapp.since).toLocaleString("pt-BR", { timeZone: getAppTz(), day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}` : ""}: as mensagens não chegam`, link: "/connections" });
     if (m.tasksOverdue > 0) alerts.push({ level: m.tasksOverdue >= 5 ? "high" : "medium", userId: user.id, name: user.name, code: "tasks_overdue", text: `${m.tasksOverdue} tarefa(s) atrasada(s)`, link: `/crm/tarefas?scope=all` });
     if (m.pendingReply >= 5) alerts.push({ level: "high", userId: user.id, name: user.name, code: "pending_reply", text: `${m.pendingReply} conversas esperando resposta`, link: `/tickets` });
     if (!noNumber && p.onSchedule && p.state === "idle") alerts.push({ level: "medium", userId: user.id, name: user.name, code: "idle_on_schedule", text: `No horário de trabalho, sem atividade há mais de ${config.activeWindowMinutes} min`, link: `/gestao-comercial` });
