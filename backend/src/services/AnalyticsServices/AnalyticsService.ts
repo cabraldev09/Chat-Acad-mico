@@ -110,7 +110,8 @@ export const unassignedTasks = async (): Promise<{ open: number; overdue: number
   return { open: Number(r?.n || 0), overdue: Number(r?.late || 0) };
 };
 
-export const consultantWhere = `u.profile <> 'admin' AND (u.role = 'consultor' OR u.role IS NULL OR u.role = '')`;
+// An administrator who owns a WhatsApp number answers customers like any consultant, so he is on the list too.
+export const consultantWhere = `((u.profile <> 'admin' AND (u.role = 'consultor' OR u.role IS NULL OR u.role = '')) OR EXISTS (SELECT 1 FROM Whatsapps ow WHERE ow.channel = 'whatsapp' AND ow.ownerId = u.id))`;
 
 // Consultants the requester may see: administration sees all; coordination sees the consultants of its polos (all, when it has no polo yet).
 // A consultant sees nobody here: their own numbers come from /analytics/me.
