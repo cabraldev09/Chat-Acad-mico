@@ -442,6 +442,33 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
       assert(!team2.consultants.find(b => b.user.id === ids.gabrielli).user.poloIds.includes(Number(polo2)), "the link stayed after removing");
     });
 
+    await test("ambientação: a consultant sees only the students THEY sent and cannot run the tutor's steps; a ticked task stays registered with who ticked it", async () => {
+      const mine = (await http.post("/leads", { name: "Aluno do João", phone: "5569999990081", ownerId: ids.joao }, as(admin))).data.lead;
+      const theirs = (await http.post("/leads", { name: "Aluno da Gabrielli", phone: "5569999990082", ownerId: ids.gabrielli }, as(admin))).data.lead;
+      sql(`UPDATE Leads SET enrolledAt = NOW(), onboardingStatus = 'pending' WHERE id IN (${mine.id}, ${theirs.id})`);
+      const seen = (await http.get("/onboarding", as(joao))).data;
+      assert(seen.some(l => l.id === mine.id), "João does not see his own student");
+      assert(!seen.some(l => l.id === theirs.id), "João sees a student another consultant sent");
+      const all = (await http.get("/onboarding", as(admin))).data;
+      assert(all.some(l => l.id === mine.id) && all.some(l => l.id === theirs.id), "the management must see everyone");
+      assert((await http.post(`/leads/${mine.id}/onboarding`, { action: "start" }, as(joao))).status === 403, "a consultant started the ambientação");
+      assert((await http.put(`/leads/${mine.id}/onboarding`, { tutorId: null }, as(joao))).status === 403, "a consultant changed the tutor");
+      // tasks: the one ticked stays in "done", latest first, with who ticked it; unticking brings it back
+      const t1 = (await http.post(`/leads/${mine.id}/tasks`, { title: "Primeira", dueAt: new Date(Date.now() + 3600000).toISOString() }, as(joao))).data;
+      const t2 = (await http.post(`/leads/${mine.id}/tasks`, { title: "Segunda", dueAt: new Date(Date.now() + 7200000).toISOString() }, as(joao))).data;
+      assert((await http.post(`/leads/${mine.id}/tasks/${t1.id}/toggle`, {}, as(joao))).status === 200, "tick 1");
+      await sleep(30);
+      assert((await http.post(`/leads/${mine.id}/tasks/${t2.id}/toggle`, {}, as(joao))).status === 200, "tick 2");
+      const done = (await http.get("/lead-tasks?status=done&scope=mine", as(joao))).data;
+      const idx = id => done.findIndex(t => t.id === id);
+      assert(idx(t1.id) >= 0 && idx(t2.id) >= 0 && idx(t2.id) < idx(t1.id), "the done tasks are not listed latest first");
+      assert(done.find(t => t.id === t2.id).doneBy && done.find(t => t.id === t2.id).doneBy.id === ids.joao, "who ticked is not registered");
+      const open = (await http.get("/lead-tasks?status=open&scope=mine", as(joao))).data;
+      assert(!open.some(t => t.id === t1.id), "a done task is still open");
+      assert((await http.post(`/leads/${mine.id}/tasks/${t1.id}/toggle`, {}, as(joao))).status === 200, "untick");
+      assert((await http.get("/lead-tasks?status=open&scope=mine", as(joao))).data.some(t => t.id === t1.id), "an unticked task did not come back");
+    });
+
     await test("a student can enroll again: each enrollment counts for the consultant, the first stays, and the list shows all of them", async () => {
       const before = (await A(joao, "/analytics/me?range=today")).data.metrics.enrollments;
       const polo3 = sql(`INSERT INTO Polos (code, name, active, createdAt, updatedAt) VALUES ('AN3', 'Polo AN3', true, NOW(), NOW()) RETURNING id`).split("\n")[0];

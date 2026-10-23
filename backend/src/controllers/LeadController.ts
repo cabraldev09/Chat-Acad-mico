@@ -17,6 +17,7 @@ import LeadStage from "../models/LeadStage";
 import LeadActivity from "../models/LeadActivity";
 import LeadTask from "../models/LeadTask";
 import LeadEnrollment from "../models/LeadEnrollment";
+import { notifyTaskAssigned } from "../services/CrmServices/TaskNotify";
 import Polo from "../models/Polo";
 import Institution from "../models/Institution";
 import Course from "../models/Course";
@@ -320,6 +321,7 @@ export const addTask = async (req: Request, res: Response): Promise<Response> =>
   await addActivity(lead.id, uid(req), "task", `Tarefa criada: ${title}`);
   touchAnalytics(task.userId);
   await syncNextFollowUp(lead.id);
+  void notifyTaskAssigned(task, uid(req));
   return res.status(201).json(task);
 };
 
@@ -327,6 +329,7 @@ export const updateTask = async (req: Request, res: Response): Promise<Response>
   const task = await LeadTask.findOne({ where: { id: req.params.taskId, leadId: req.params.id } });
   if (!task) throw new AppError("ERR_NOT_FOUND", 404);
   const { title, dueAt, type, userId } = req.body;
+  const was = task.userId;
   await task.update({
     ...(title ? { title } : {}),
     ...(type ? { type } : {}),
@@ -334,13 +337,14 @@ export const updateTask = async (req: Request, res: Response): Promise<Response>
     ...(dueAt ? { dueAt: new Date(dueAt), notifiedAt: null } : {})
   });
   await syncNextFollowUp(task.leadId);
+  if (userId && Number(userId) !== Number(was)) void notifyTaskAssigned(task, uid(req));
   return res.json(task);
 };
 
 export const completeTask = async (req: Request, res: Response): Promise<Response> => {
   const task = await LeadTask.findOne({ where: { id: req.params.taskId, leadId: req.params.id } });
   if (!task) throw new AppError("ERR_NOT_FOUND", 404);
-  await task.update({ doneAt: task.doneAt ? null : new Date() });
+  await task.update(task.doneAt ? { doneAt: null, doneById: null } : { doneAt: new Date(), doneById: uid(req) });
   touchAnalytics(task.userId);
   if (task.doneAt) await addActivity(task.leadId, uid(req), "task", `Tarefa concluída: ${task.title}`);
   await syncNextFollowUp(task.leadId);
@@ -375,9 +379,11 @@ export const tasksIndex = async (req: Request, res: Response): Promise<Response>
     where,
     include: [
       { model: Lead, as: "lead", attributes: ["id", "name", "phone", "stageId"], include: [{ model: LeadStage, as: "stage", attributes: ["name", "color"] }] },
-      { model: User, as: "user", attributes: ["id", "name"] }
+      { model: User, as: "user", attributes: ["id", "name"] },
+      { model: User, as: "doneBy", attributes: ["id", "name"], required: false }
     ],
-    order: [["dueAt", "ASC"]],
+    // the ones already done show the latest first (they stay registered); the open ones by due date
+    order: status === "done" ? [["doneAt", "DESC"]] : [["dueAt", "ASC"]],
     limit: 300
   });
   return res.json(rows);
@@ -861,6 +867,8 @@ export const enrollments = async (req: Request, res: Response): Promise<Response
 };
 
 export const onboarding = async (req: Request, res: Response): Promise<Response> => {
+  // the consultant sold the enrollment; the ambientação itself is the tutor's work
+  if (reqRole(req) === "consultor") throw new AppError("ERR_NO_PERMISSION", 403);
   const lead = await Lead.findByPk(req.params.id);
   if (!lead) throw new AppError("ERR_LEAD_NOT_FOUND", 404);
   const action = req.body.action === "done" ? "done" : "start";
@@ -873,6 +881,8 @@ export const onboarding = async (req: Request, res: Response): Promise<Response>
 
 // edit a confirmed enrollment: tutor, polo or the step of the onboarding
 export const editOnboarding = async (req: Request, res: Response): Promise<Response> => {
+  // the consultant sold the enrollment; the ambientação itself is the tutor's work
+  if (reqRole(req) === "consultor") throw new AppError("ERR_NO_PERMISSION", 403);
   const lead = await Lead.findByPk(req.params.id);
   if (!lead) throw new AppError("ERR_LEAD_NOT_FOUND", 404);
   const { editOnboarding: edit } = await import("../services/CrmServices/EnrollLead");
@@ -883,6 +893,8 @@ export const editOnboarding = async (req: Request, res: Response): Promise<Respo
 };
 
 export const onboardingChecklist = async (req: Request, res: Response): Promise<Response> => {
+  // the consultant sold the enrollment; the ambientação itself is the tutor's work
+  if (reqRole(req) === "consultor") throw new AppError("ERR_NO_PERMISSION", 403);
   const lead = await Lead.findByPk(req.params.id);
   if (!lead) throw new AppError("ERR_LEAD_NOT_FOUND", 404);
   const { setChecklist } = await import("../services/CrmServices/EnrollLead");
@@ -945,10 +957,18 @@ export const onboardingStats = async (_req: Request, res: Response): Promise<Res
   });
 };
 
+// how many students wait for the first contact of the person (the badge of the menu)
+export const onboardingPending = async (req: Request, res: Response): Promise<Response> => {
+  const mine = reqRole(req) === "consultor" ? { ownerId: uid(req) } : reqRole(req) === "tutor" ? { onboardingTutorId: uid(req) } : {};
+  const total = await Lead.count({ where: await withLeadScope(req, { onboardingStatus: "pending", ...mine }) });
+  return res.json({ pending: total });
+};
+
 export const onboardingList = async (req: Request, res: Response): Promise<Response> => {
   const { parseChecklist } = await import("../services/CrmServices/EnrollLead");
   const rows = await Lead.findAll({
-    where: await withLeadScope(req, { onboardingStatus: { [Op.ne]: "none" } }),
+    // a consultant sees only the students THEY sent to the ambientação; tutors see theirs (and the polo's queue), the management everyone
+    where: await withLeadScope(req, { onboardingStatus: { [Op.ne]: "none" }, ...(reqRole(req) === "consultor" ? { ownerId: uid(req) } : {}) }),
     include: leadInclude as any,
     order: [["enrolledAt", "DESC"]],
     limit: 300

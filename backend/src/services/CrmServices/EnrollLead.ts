@@ -30,6 +30,7 @@ import UpdateTicketService from "../TicketServices/UpdateTicketService";
 import dispatchWebhook from "../WebhookServices/DispatchWebhook";
 import { addActivity, changeStage, loadLead, resolveLeadTarget } from "./LeadCore";
 import { markMilestone } from "../CommercialServices/Milestones";
+import { notifyOnboarding, notifyTaskAssigned } from "./TaskNotify";
 
 export interface EnrollInput {
   poloId: number;
@@ -161,14 +162,16 @@ const enrollLeadCore = async (lead: Lead, actorId: number, input: EnrollInput) =
 
   // 4) the tutor's task
   if (tutor) {
-    await LeadTask.create({
+    const tutorTask = await LeadTask.create({
       leadId: lead.id,
       userId: tutor.id,
       type: "outro",
       title: "Ambientar o aluno na plataforma (1º acesso, AVA e contatos do polo)",
       dueAt: new Date(Date.now() + 4 * 3600000)
     } as any);
+    void notifyTaskAssigned(tutorTask, actorId);
   }
+  void notifyOnboarding(lead, "assigned", polo.name);
 
 
   await addActivity(
@@ -224,13 +227,15 @@ const enrollAdditional = async (lead: Lead, actorId: number, input: EnrollInput)
   } as any);
   const total = 1 + (await LeadEnrollment.count({ where: { leadId: lead.id } }));
   const label = courseName ? ` em ${courseName}` : "";
-  await LeadTask.create({
+  const extraTask = await LeadTask.create({
     leadId: lead.id,
     userId: tutor?.id || null,
     type: "outro",
     title: `Ambientar o aluno na nova matrícula${label}`,
     dueAt: new Date(Date.now() + 4 * 3600000)
   } as any);
+  void notifyTaskAssigned(extraTask, actorId);
+  if (tutor) void notifyOnboarding({ id: lead.id, name: lead.name, onboardingTutorId: tutor.id, ownerId: null } as any, "assigned", polo.name);
   await addActivity(lead.id, actorId, "system", `Nova matrícula (${total}ª)${label}. Polo ${polo.name}; tutor: ${tutor ? tutor.name : "aguardando"}.${input.note ? ` Obs.: ${input.note}` : ""}`);
   const out = (await loadLead(lead.id)) as Lead;
   getIO().emit("lead", { action: "update", lead: out });
@@ -355,6 +360,7 @@ export const setOnboarding = async (lead: Lead, actorId: number, action: "start"
       ] as any);
     }
     await dispatchWebhook("onboarding.done", { leadId: lead.id, lead: lead.name, tutorId: lead.onboardingTutorId });
+    void notifyOnboarding(lead, "done");
   }
   const out = (await loadLead(lead.id)) as Lead;
   getIO().emit("lead", { action: "update", lead: out });
@@ -415,6 +421,7 @@ export const editOnboarding = async (lead: Lead, actorId: number, input: EditOnb
       const fresh = await ShowTicketService(t.id);
       getIO().to(fresh.status).to("notification").emit("ticket", { action: "update", ticket: fresh });
     }
+    if (tutor && tutor.id !== previousTutorId) void notifyOnboarding({ id: lead.id, name: lead.name, onboardingTutorId: tutor.id, ownerId: null } as any, "tutor", polo.name);
     // open tutor task goes with the new tutor
     if (tutor) await LeadTask.update({ userId: tutor.id } as any, { where: { leadId: lead.id, userId: previousTutorId || tutor.id, doneAt: null, title: { [Op.like]: "Ambientar o aluno%" } } as any });
   }

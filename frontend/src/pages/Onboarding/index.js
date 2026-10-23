@@ -46,7 +46,8 @@ const SLA_MS = 24 * 36e5;
 const isLate = (r) => r.onboardingStatus === "pending" && r.enrolledAt && Date.now() - new Date(r.enrolledAt).getTime() > SLA_MS;
 const FILTERS = {
   all: () => true,
-  mine: (r, me) => !!me && r.onboardingTutorId === me.id,
+  // for the tutor: the students assigned to them; for the consultant: the students they sent
+  mine: (r, me) => !!me && (me.role === "consultor" && me.profile !== "admin" ? r.ownerId === me.id : r.onboardingTutorId === me.id),
   free: (r) => !r.onboardingTutorId && r.onboardingStatus !== "done",
   late: (r) => !!isLate(r),
   replied: (r) => r.unread > 0 && r.onboardingStatus !== "done",
@@ -74,6 +75,8 @@ const Onboarding = () => {
   // the conversation of a student in tutoring is the tutor's (and the coordination's), not the consultant's
   const canOpenChat = !!me && me.role !== "consultor";
   const isTutor = !!me && (me.role === "tutor" || me.role === "academico");
+  // the consultant follows the students THEY sent; starting, finishing and changing the tutor is the tutor's work
+  const readOnly = !!me && me.role === "consultor" && me.profile !== "admin";
   const classes = useStyles();
   const history = useHistory();
   const [rows, setRows] = useState(null);
@@ -269,27 +272,31 @@ const Onboarding = () => {
                           <Send size={16} />
                         </IconAction>
                       )}
-                      <IconAction title="Checklist da ambientação" onClick={() => setChecklistFor(l.id)}>
-                        <ListChecks size={16} />
-                      </IconAction>
+                      {!readOnly && (
+                        <IconAction title="Checklist da ambientação" onClick={() => setChecklistFor(l.id)}>
+                          <ListChecks size={16} />
+                        </IconAction>
+                      )}
                       {isTutor && !l.onboardingTutorId && col.key !== "done" && (
                         <IconAction title="Assumir este aluno" disabled={busyId === l.id} onClick={() => take(l)}>
                           <UserCheck size={16} />
                         </IconAction>
                       )}
-                      {col.key === "pending" && (
+                      {!readOnly && col.key === "pending" && (
                         <IconAction title="Iniciar ambientação (você assume o aluno)" disabled={busyId === l.id} onClick={() => act(l, "start")}>
                           <Play size={16} />
                         </IconAction>
                       )}
-                      {col.key !== "done" && (
+                      {!readOnly && col.key !== "done" && (
                         <IconAction title="Concluir ambientação" disabled={busyId === l.id} onClick={() => act(l, "done")}>
                           <CheckCheck size={16} />
                         </IconAction>
                       )}
-                      <IconAction title="Editar" disabled={busyId === l.id} onClick={(e) => setMenu({ anchor: e.currentTarget, lead: l })}>
-                        <MoreVertical size={16} />
-                      </IconAction>
+                      {!readOnly && (
+                        <IconAction title="Editar" disabled={busyId === l.id} onClick={(e) => setMenu({ anchor: e.currentTarget, lead: l })}>
+                          <MoreVertical size={16} />
+                        </IconAction>
+                      )}
                     </div>
                     {col.key !== "done" && <div className={classes.meta}>Checklist: {STEPS.filter((s) => l.checklist && l.checklist[s.key]).length}/{STEPS.length}</div>}
                     {l.unread > 0 && <Chip size="small" color="primary" label={`Aluno respondeu (${l.unread})`} style={{ alignSelf: "flex-start" }} />}
