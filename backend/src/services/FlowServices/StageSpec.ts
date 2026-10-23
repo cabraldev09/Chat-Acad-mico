@@ -60,6 +60,8 @@ export interface StageData {
   historyTurns: number;
   // the stage does not speak when the conversation reaches it (the last block already said what was needed): it waits for the person
   quiet: boolean;
+  // the checklist of the stage: everything that must be done, in this order, before the stage ends
+  steps?: string[];
 }
 
 export const slug = (s: any, max = 30): string =>
@@ -135,7 +137,8 @@ export const cleanStage = (raw: any): StageData => {
     agentId: Number(d.agentId) > 0 ? Number(d.agentId) : null,
     hooks: (Array.isArray(d.hooks) ? d.hooks : []).filter((h: any) => (STAGE_HOOKS as readonly string[]).includes(h)),
     historyTurns: Math.min(12, Math.max(2, Math.round(Number(d.historyTurns) || 6))),
-    quiet: !!d.quiet
+    quiet: !!d.quiet,
+    steps: (Array.isArray(d.steps) ? d.steps : []).map((x: any) => clip(x, 240)).filter(Boolean).slice(0, 12)
   };
 };
 

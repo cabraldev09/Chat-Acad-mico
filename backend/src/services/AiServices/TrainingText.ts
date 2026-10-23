@@ -147,6 +147,13 @@ export const stageOfStep = (s: TrainStep, index: number): Record<string, any> =>
     s.advanceWhen ? `Só avance quando: ${s.advanceWhen}` : null
   ].filter(Boolean).join("\n"),
   fields: s.collect.map((label, i) => ({ key: `dado_${index + 1}_${i + 1}`, label, type: "text", required: true, ask: s.ask || undefined })),
+  // the checklist: what to say, what to ask, what to find out and the condition to move on, each one a step that has to be done in order
+  steps: [
+    s.say ? `Dizer, no seu jeito: ${s.say}` : null,
+    s.ask ? `Perguntar: ${s.ask}` : null,
+    ...s.collect.map(c => `Descobrir: ${c}`),
+    s.advanceWhen ? `Confirmar antes de avançar: ${s.advanceWhen}` : null
+  ].filter(Boolean),
   useKnowledge: true,
   maxTurns: 10
 });
