@@ -1220,6 +1220,8 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
       } catch (err) {
         logger.error(err, "Error on whatsapp authenticated event");
       }
+      // the login was accepted: from here only the "ready" timer (minutes, a long history sits at 99%) may restart the session; the 4-minute start timer used to kill it in the middle of the load
+      clearInitTimer(whatsapp.id);
       clearReadyTimer(whatsapp.id);
       readyTimers.set(
         whatsapp.id,
