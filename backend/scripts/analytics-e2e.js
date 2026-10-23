@@ -287,6 +287,9 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
       assert(laura_.presence.onSchedule, "laura schedule");
       assert(joao_.presence.whatsapp.state === "connected" && laura_.presence.whatsapp.state === "none", `whatsapp state ${JSON.stringify([joao_.presence.whatsapp, laura_.presence.whatsapp])}`);
       assert(team.alerts.some(a => a.userId === ids.laura && a.code === "whatsapp_none"), "alert of the missing number is missing");
+      // who uses the system now: João just made authenticated requests
+      assert(joao_.presence.online === true && !!joao_.presence.lastSeenAt, `joão online ${JSON.stringify([joao_.presence.online, joao_.presence.lastSeenAt])}`);
+      assert(team.alerts.filter(a => a.userId === ids.laura).length === 1, "a person without a number must have a single alert");
       assert(!team.alerts.some(a => a.userId === ids.laura && (a.code === "idle_on_schedule" || a.code === "below_messages_target")), "activity alert for a person without a number");
       assert(team.alerts.some(a => a.userId === ids.joao && a.code === "tasks_overdue"), "overdue alert missing");
       assert(team.alerts.some(a => a.userId === ids.joao && a.code === "below_messages_target"), "target alert missing");
