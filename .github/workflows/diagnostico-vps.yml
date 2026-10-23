@@ -32,6 +32,9 @@ jobs:
           echo "== contêineres =="; docker ps --format '{{.Names}} {{.Status}}'
           echo "== .env: caminhos das sessões (só os nomes e valores de caminho) =="; grep -E '^(WWEBJS_AUTH_PATH|UPLOAD_DIR|WHATSAPP_PROVIDER|WHATSAPP_MAX_QR)=' deploy/vps/.env || echo "(nenhum)"
           echo "== dentro do contêiner: variáveis =="; docker exec chat-academico-api-1 sh -c 'echo WWEBJS_AUTH_PATH=$WWEBJS_AUTH_PATH; id; ls -ld /data /data/wwebjs 2>&1; echo; ls -la /data/wwebjs 2>&1 | head -20; echo; for d in /data/wwebjs/session-*; do echo "$d: $(ls $d 2>/dev/null | head -5 | tr "\n" " ") | Default: $(ls $d/Default 2>/dev/null | wc -l) arquivos"; done' 2>&1
+          echo "== backups das sessões e do banco (/opt/backups) =="; ls -la --time-style=long-iso /opt/backups 2>&1 | tail -20
+          echo "== o que há dentro do backup de dados mais recente (só as pastas das sessões) =="; f=$(ls -1t /opt/backups/dados-*.tar.gz 2>/dev/null | head -1); echo "arquivo: $f"; [ -n "$f" ] && tar tzf "$f" 2>/dev/null | grep -E "^(\./)?wwebjs/session-bd_[0-9]+/?$" | head -10
+          echo "== conexões no banco (id, nome, estado) =="; docker exec chat-academico-api-1 node -e "const {Client}=require('pg');" >/dev/null 2>&1; docker logs --since 6h chat-academico-api-1 2>&1 | grep -E "Starting WhatsApp session" | cut -c1-200 | tail -4
           echo "== disco =="; df -h / /var/lib/docker 2>/dev/null | head -5; docker system df 2>/dev/null | head -6
           echo "== memória =="; free -m | head -3
           echo "== sessões do WhatsApp nos logs (últimas 80 linhas relevantes) =="; docker logs --since 3h chat-academico-api-1 2>&1 | grep -i -E "Session[: ]|session-|AUTHENTICATED|READY|QR|auth_failure|Disconnected|disconnect|watchdog|heartbeat|não abriu|não ficou pronta|TIMEOUT|status estava desatualizado|corrigido" | cut -c1-260 | tail -80
