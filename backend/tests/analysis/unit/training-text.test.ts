@@ -58,3 +58,35 @@ describe("reading what the model proposed", () => {
     expect(parseProposals("Oi, tudo bem?")).toEqual({ reply: "Oi, tudo bem?", proposed: [] });
   });
 });
+
+import { exampleText, mergeResults, normalizeResult, stageOfStep } from "../../../src/services/AiServices/TrainingText";
+
+describe("what a file teaches", () => {
+  const step = { title: "Descobrir o curso", objective: "Saber qual curso a pessoa quer", say: "Que bom ter você aqui!", ask: "Qual curso te interessa?", collect: ["curso", "cidade"], advanceWhen: "o curso e a cidade estiverem claros" };
+
+  it("keeps only known, well-sized things and accepts the Portuguese names the model sometimes uses", () => {
+    const r = normalizeResult({ estilo: ["Fala curto"], etapas: [{ titulo: "Abertura", objetivo: "Cumprimentar" }, { titulo: "" }], conhecimento: [{ titulo: "Duração", conteudo: "4 anos" }, { titulo: "x" }], exemplos: [{ cliente: "oi", resposta: "olá" }] });
+    expect(r.style).toEqual(["Fala curto"]);
+    expect(r.steps).toHaveLength(1);
+    expect(r.steps[0].title).toBe("Abertura");
+    expect(r.knowledge).toEqual([{ title: "Duração", content: "4 anos" }]);
+    expect(exampleText(r.examples[0])).toBe("Cliente: oi\nResposta: olá");
+  });
+
+  it("joins the pieces of a long file without repeating, steps in the order they appeared", () => {
+    const a = normalizeResult({ style: ["Fala curto"], steps: [step] });
+    const b = normalizeResult({ style: ["fala curto!"], steps: [step, { ...step, title: "Enviar a grade" }] });
+    const m = mergeResults([a, b]);
+    expect(m.style).toHaveLength(1);
+    expect(m.steps.map(s => s.title)).toEqual(["Descobrir o curso", "Enviar a grade"]);
+  });
+
+  it("turns a step into the block of the Roteiro: what to say, ask and when to move on, with the data as required fields", () => {
+    const d = stageOfStep(step, 0);
+    expect(d.title).toBe("1. Descobrir o curso");
+    expect(d.instructions).toContain("O que dizer: Que bom ter você aqui!");
+    expect(d.instructions).toContain("Só avance quando: o curso e a cidade estiverem claros");
+    expect(d.fields.map((f: any) => f.label)).toEqual(["curso", "cidade"]);
+    expect(d.fields.every((f: any) => f.required)).toBe(true);
+  });
+});
