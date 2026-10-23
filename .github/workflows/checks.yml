@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
 
+# a new push to the same pull request replaces the run that is still going (nobody waits for an old commit)
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   # the browser is only needed at runtime (inside the Docker image), not to check the code
   PUPPETEER_SKIP_DOWNLOAD: "true"
@@ -52,8 +57,20 @@ jobs:
           --rule 'react/jsx-uses-react:error' src
 
   # a API inteira (WhatsApp/Telegram/Efí simulados) num banco descartável
+  # three independent suites, run side by side (each in its own job and database), so the wait is the longest one, not the sum
   api-ponta-a-ponta:
+    name: api-ponta-a-ponta (${{ matrix.nome }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - nome: canais e conversas
+            script: channels-e2e.js
+          - nome: responsabilidade pela conversa
+            script: assign-e2e.js
+          - nome: estatísticas e gestão comercial
+            script: analytics-e2e.js
     services:
       postgres:
         image: postgres:16
@@ -80,17 +97,9 @@ jobs:
         run: |
           npm install --legacy-peer-deps --no-audit --no-fund
           npm run build
-      - name: Testes de ponta a ponta
+      - name: Testes de ponta a ponta (${{ matrix.nome }})
         working-directory: backend
-        run: node scripts/channels-e2e.js
-      - name: Responsabilidade pela conversa (visualizar, atribuir, enviar, concorrência)
-        if: ${{ !cancelled() }}
-        working-directory: backend
-        run: node scripts/assign-e2e.js
-      - name: Estatísticas e Gestão Comercial (mesma fonte, permissões, tempo real)
-        if: ${{ !cancelled() }}
-        working-directory: backend
-        run: node scripts/analytics-e2e.js
+        run: node scripts/${{ matrix.script }}
 
   # todas as telas, como administrador, coordenação, consultor e tutor, digitando nos formulários
   telas:
