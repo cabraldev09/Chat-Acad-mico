@@ -95,7 +95,7 @@ Configurar uma vez (no Mac):
 ssh-keygen -t ed25519 -f ~/.ssh/deploy_chat_academico -N "" -C "github-deploy"      # chave só para isso
 ssh -i ~/.ssh/contabo_chat_academico root@209.145.48.49 "cat >> ~/.ssh/authorized_keys" < ~/.ssh/deploy_chat_academico.pub
 cat ~/.ssh/deploy_chat_academico | pbcopy                    # cola em: GitHub > Settings > Secrets and variables > Actions > VPS_SSH_KEY
-ssh-keyscan -t ed25519 209.145.48.49 | pbcopy                # cola em: VPS_KNOWN_HOSTS
+# a identidade pública do servidor já está em deploy/vps/known_hosts (o workflow confere com a que o servidor mostra)
 ```
 
 Depois, em **Actions > Atualizar a VPS > Run workflow** dá para atualizar quando quiser.
