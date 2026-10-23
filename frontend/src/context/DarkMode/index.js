@@ -8,18 +8,28 @@ import createAppTheme from "../../theme";
 const ThemeContext = createContext();
 
 export const ThemeProvider = ({ children }) => {
-  // dark is the default; the choice of the person is remembered
-  const [darkMode, setDarkMode] = useState(() => {
-    try { return window.localStorage.getItem("theme") !== "light"; } catch (e) { return true; }
-  });
+  // follows the computer (dark / light) until the person chooses with the button; then the choice is remembered
+  const saved = () => { try { const v = window.localStorage.getItem("theme"); return v === "dark" || v === "light" ? v : null; } catch (e) { return null; } };
+  const system = () => { try { return window.matchMedia("(prefers-color-scheme: dark)").matches; } catch (e) { return false; } };
+  const [darkMode, setDarkMode] = useState(() => (saved() ? saved() === "dark" : system()));
+
+  useEffect(() => {
+    let query;
+    try { query = window.matchMedia("(prefers-color-scheme: dark)"); } catch (e) { return undefined; }
+    const onChange = (e) => { if (!saved()) setDarkMode(e.matches); };
+    if (query.addEventListener) query.addEventListener("change", onChange); else query.addListener(onChange);
+    return () => { if (query.removeEventListener) query.removeEventListener("change", onChange); else query.removeListener(onChange); };
+  }, []);
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", darkMode ? "dark" : "light");
-    try { window.localStorage.setItem("theme", darkMode ? "dark" : "light"); } catch (e) { /* private window */ }
   }, [darkMode]);
 
   const toggleTheme = () => {
-    setDarkMode((prevMode) => !prevMode);
+    setDarkMode((prevMode) => {
+      try { window.localStorage.setItem("theme", prevMode ? "light" : "dark"); } catch (e) { /* private window */ }
+      return !prevMode;
+    });
   };
 
   const theme = useMemo(

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { useHistory } from "react-router-dom";
 import { toast } from "react-toastify";
 import { Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Menu, MenuItem, TextField, Tooltip, makeStyles } from "@material-ui/core";
-import { AlertTriangle, Copy, FileInput, History, MoreVertical, Plus, Sparkles, Trash2, Workflow } from "lucide-react";
+import { AlertTriangle, Copy, FileInput, History, MoreVertical, Plus, MessageSquare, Trash2, Workflow } from "lucide-react";
 
 import MainContainer from "../../components/MainContainer";
 import MainHeader from "../../components/MainHeader";
@@ -20,7 +20,7 @@ const useStyles = makeStyles((theme) => ({
   tabOn: { background: theme.palette.primary.main, color: "#fff", boxShadow: "0 4px 12px rgba(6,147,227,.4)" },
   intro: { color: theme.palette.text.secondary, fontSize: 14, maxWidth: 760, marginBottom: theme.spacing(2) },
   grid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: theme.spacing(1.5) },
-  card: { background: theme.palette.cards.background, border: theme.border.divider, borderLeft: "3px solid #0693E3", borderRadius: 16, padding: theme.spacing(2), cursor: "pointer", transition: "transform .15s, box-shadow .15s, border-color .15s", "&:hover": { transform: "translateY(-2px)", boxShadow: "0 8px 22px rgba(11,66,121,.14)", borderColor: theme.palette.primary.main } },
+  card: { background: theme.palette.cards.background, border: theme.border.divider, borderRadius: 14, padding: theme.spacing(2), cursor: "pointer", transition: "transform .15s, box-shadow .15s, border-color .15s", "&:hover": { transform: "translateY(-2px)", borderColor: theme.palette.primary.main } },
   chip: { display: "inline-flex", alignItems: "center", gap: 5, borderRadius: 999, padding: "2px 9px", fontSize: 12, fontWeight: 700 },
   nums: { display: "flex", gap: 18, marginTop: 14, paddingTop: 12, borderTop: theme.border.divider },
   num: { fontSize: 20, fontWeight: 700, letterSpacing: "-0.02em", lineHeight: 1.1, fontVariantNumeric: "tabular-nums" },
@@ -69,7 +69,7 @@ const NewFlow = ({ open, onClose, onCreated }) => {
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
       <DialogTitle>Novo fluxo</DialogTitle>
       <DialogContent>
-        {choice("ai", <Sparkles size={20} color="#db2777" />, "Descrever e a IA cria", "Conte como o atendimento deve ser. A IA desenha os botões, as perguntas e o envio ao CRM, e você confere no quadro antes de publicar.")}
+        {choice("ai", <MessageSquare size={20} color="#0693E3" />, "Descrever e a IA cria", "Conte como o atendimento deve ser. A IA desenha os botões, as perguntas e o envio ao CRM, e você confere no quadro antes de publicar.")}
         {mode === "ai" && (
           <div style={{ marginBottom: 12 }}>
             <TextField fullWidth multiline rows={4} variant="outlined" size="small" label="Como deve ser o atendimento?" value={description} onChange={(e) => setDescription(e.target.value)} InputLabelProps={{ shrink: true }} />
@@ -143,7 +143,7 @@ const Chatbot = () => {
                 <Workflow size={36} style={{ opacity: 0.6 }} />
                 <div style={{ fontWeight: 700, margin: "8px 0 4px" }}>Nenhum fluxo ainda</div>
                 <div style={{ marginBottom: 12 }}>Crie o primeiro descrevendo o atendimento para a IA, ou comece de um modelo.</div>
-                <Button variant="contained" color="primary" startIcon={<Sparkles size={16} />} onClick={() => setOpen(true)}>Criar o primeiro fluxo</Button>
+                <Button variant="contained" color="primary" startIcon={<Plus size={16} />} onClick={() => setOpen(true)}>Criar o primeiro fluxo</Button>
               </div>
             )}
             <div className={classes.grid}>

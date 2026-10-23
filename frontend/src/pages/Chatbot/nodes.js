@@ -1,7 +1,7 @@
 import React, { useEffect } from "react";
 import { Handle, Position, useUpdateNodeInternals } from "react-flow-renderer";
 import {
-  Bot, CornerDownRight, Database, Flag, GitBranch, ListChecks, MapPin, MessageSquare, Play, Shuffle, Sparkles, StickyNote, TextCursorInput, Timer, TrendingUp, UserCog, Webhook, Workflow,
+  Bot, CornerDownRight, Database, Flag, GitBranch, ListChecks, MapPin, MessageSquare, Play, Shuffle, Target, StickyNote, TextCursorInput, Timer, TrendingUp, UserCog, Webhook, Workflow,
 } from "lucide-react";
 
 // The blocks of a flow: what each one is called, how it looks and what it starts with.
@@ -15,7 +15,7 @@ export const BLOCKS = {
   crm: { title: "Ação no CRM", icon: Database, color: "#16a34a", hint: "Envia ao CRM, muda de etapa, etiqueta, tarefa…" },
   delay: { title: "Espera", icon: Timer, color: "#64748b", hint: "Espera um tempo e continua." },
   ai: { title: "Agente de IA", icon: Bot, color: "#db2777", hint: "Passa a conversa para o agente de IA." },
-  stage: { title: "Etapa com IA", icon: Sparkles, color: "#be185d", hint: "A IA conversa até cumprir um objetivo: pergunta o que falta, usa ferramentas e sai pelo caminho certo." },
+  stage: { title: "Etapa com IA", icon: Target, color: "#be185d", hint: "A IA conversa até cumprir um objetivo: pergunta o que falta, usa ferramentas e sai pelo caminho certo." },
   commercial: { title: "Estado comercial", icon: TrendingUp, color: "#0f766e", hint: "Um passo da jornada comercial: coluna do funil, tarefa, nota, resumo para o consultor ou análise curricular." },
   flow: { title: "Chamar fluxo", icon: Workflow, color: "#6d28d9", hint: "Começa outro fluxo publicado nesta mesma conversa." },
   transfer: { title: "Transferir", icon: UserCog, color: "#ea580c", hint: "Passa para uma fila, atendente ou tutoria." },

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { useHistory } from "react-router-dom";
 import { toast } from "react-toastify";
 import { Button, Menu, MenuItem, Switch, Tooltip, makeStyles } from "@material-ui/core";
-import { AlertTriangle, ChevronDown, ChevronRight, Filter, GraduationCap, Headphones, Key, Plus, Scale, Sparkles, Trash2, UserCheck, Workflow } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronRight, Filter, GraduationCap, Headphones, Key, Plus, Scale, Trash2, UserCheck, Workflow } from "lucide-react";
 
 import IconAction from "../../components/IconAction";
 import ConfirmationModal from "../../components/ConfirmationModal";
@@ -24,10 +24,10 @@ const useStyles = makeStyles((theme) => ({
   banner: { display: "flex", gap: 12, alignItems: "center", padding: theme.spacing(1.5, 2), borderRadius: 16, border: "1px solid rgba(217,119,6,.45)", background: "rgba(217,119,6,.08)" },
   hint: { fontSize: 13, color: theme.palette.text.secondary },
   cards: { display: "grid", gap: theme.spacing(2), gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))" },
-  agent: { display: "flex", flexDirection: "column", gap: theme.spacing(1.25), padding: theme.spacing(2.25), borderRadius: 22, border: `1px solid ${theme.palette.divider}`, background: theme.palette.cards.background, transition: "box-shadow .15s, transform .15s, border-color .15s", "&:hover": { boxShadow: "0 14px 32px rgba(15,23,42,.1)", transform: "translateY(-2px)", borderColor: theme.palette.primary.light } },
+  agent: { display: "flex", flexDirection: "column", gap: theme.spacing(1.25), padding: theme.spacing(2.25), borderRadius: 14, border: `1px solid ${theme.palette.divider}`, background: theme.palette.cards.background, transition: "box-shadow .15s, transform .15s, border-color .15s", "&:hover": { boxShadow: "0 14px 32px rgba(15,23,42,.1)", transform: "translateY(-2px)", borderColor: theme.palette.primary.light } },
   head: { display: "flex", alignItems: "center", gap: 12 },
-  icon: { width: 46, height: 46, borderRadius: 14, display: "grid", placeItems: "center", flex: "none", color: "#fff", background: "linear-gradient(135deg, #0B4279 0%, #0693E3 100%)" },
-  iconOff: { background: "linear-gradient(135deg, #64748b 0%, #94a3b8 100%)" },
+  icon: { width: 46, height: 46, borderRadius: 12, display: "grid", placeItems: "center", flex: "none", background: theme.palette.action.selected, color: theme.palette.primary.main },
+  iconOff: { background: theme.palette.action.hover, color: theme.palette.text.secondary },
   name: { fontSize: 17, fontWeight: 700, letterSpacing: "-0.01em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
   chips: { display: "flex", gap: 6, flexWrap: "wrap" },
   chip: { display: "inline-flex", alignItems: "center", gap: 5, borderRadius: 999, padding: "3px 10px", fontSize: 12, fontWeight: 600, background: theme.palette.action.hover, color: theme.palette.text.secondary },
@@ -122,7 +122,7 @@ const AiAgents = () => {
             <p className={classes.hint} style={{ maxWidth: 520, margin: "8px auto 16px" }}>
               O agente responde os leads sozinho, usa o que você ensinou a ele, descobre o que falta e passa a conversa para a equipe do polo certo com um resumo pronto.
             </p>
-            <Button variant="contained" color="primary" disableElevation startIcon={<Sparkles size={16} />} onClick={() => setCreating(true)} style={{ borderRadius: 12 }}>Criar o primeiro agente</Button>
+            <Button variant="contained" color="primary" disableElevation startIcon={<Plus size={16} />} onClick={() => setCreating(true)} style={{ borderRadius: 12 }}>Criar o primeiro agente</Button>
           </div>
         )}
 
@@ -132,7 +132,7 @@ const AiAgents = () => {
             const kind = KINDS[kindOf(a)];
             const Icon = kind.icon;
             return (
-              <div key={a.id} className={classes.agent} style={{ borderLeft: `3px solid ${!a.active ? "#64748b" : kindOf(a) === "commercial" ? "#0693E3" : "#0d9488"}`, opacity: a.active ? 1 : 0.85 }}>
+              <div key={a.id} className={classes.agent} style={{ opacity: a.active ? 1 : 0.8 }}>
                 <div className={classes.head}>
                   <span className={`${classes.icon} ${a.active ? "" : classes.iconOff}`}><Icon size={22} /></span>
                   <div style={{ flex: 1, minWidth: 0 }}>

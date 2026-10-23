@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Button, CircularProgress, Dialog, DialogActions, DialogContent, Switch, TextField, makeStyles } from "@material-ui/core";
-import { Check, ChevronDown, GraduationCap, Headphones, Info, Pencil, Sparkles, Workflow, X } from "lucide-react";
+import { Check, ChevronDown, GraduationCap, Headphones, Info, Pencil, Bot, MessageSquare, Workflow, X } from "lucide-react";
 
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
@@ -44,7 +44,7 @@ const EXAMPLES = [
 
 const TABS = [
   { key: "template", label: "Modelo pronto", icon: Workflow },
-  { key: "ai", label: "Descrever para a IA", icon: Sparkles },
+  { key: "ai", label: "Descrever para a IA", icon: MessageSquare },
   { key: "manual", label: "Do zero", icon: Pencil },
 ];
 
@@ -89,7 +89,7 @@ const NewAgentDialog = ({ open, onClose, onCreated, onManual }) => {
   return (
     <Dialog open={open} onClose={busy ? undefined : onClose} maxWidth="sm" fullWidth scroll="paper" PaperProps={{ className: classes.paper }}>
       <div className={classes.head}>
-        <span className={classes.headIcon}><Sparkles size={22} /></span>
+        <span className={classes.headIcon}><Bot size={22} /></span>
         <div>
           <div className={classes.title}>Novo agente de IA</div>
           <div className={classes.sub}>Escolha como começar. Você revisa tudo antes de ligar.</div>
@@ -176,7 +176,7 @@ const NewAgentDialog = ({ open, onClose, onCreated, onManual }) => {
           <div className={classes.actions}>
             <Button onClick={onClose} disabled={busy}>Cancelar</Button>
             <Button variant="contained" color="primary" onClick={create} disabled={disabled} disableElevation style={{ borderRadius: 12, paddingLeft: 20, paddingRight: 20 }}
-              startIcon={busy ? <CircularProgress size={16} color="inherit" /> : mode === "ai" ? <Sparkles size={16} /> : undefined}>{label}</Button>
+              startIcon={busy ? <CircularProgress size={16} color="inherit" /> : mode === "ai" ? <MessageSquare size={16} /> : undefined}>{label}</Button>
           </div>
         </div>
       </DialogActions>

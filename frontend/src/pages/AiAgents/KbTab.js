@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { toast } from "react-toastify";
 import { Button, TextField, Typography, Chip, Tabs, Tab, FormControlLabel, Switch, Dialog, DialogTitle, DialogContent, DialogActions, InputAdornment, MenuItem, makeStyles } from "@material-ui/core";
-import { Trash2, FileText, HelpCircle, Link2, Upload, Pencil, Search, Sparkles } from "lucide-react";
+import { Trash2, FileText, HelpCircle, Link2, Upload, Pencil, Search } from "lucide-react";
 
 import IconAction from "../../components/IconAction";
 import ConfirmationModal from "../../components/ConfirmationModal";
@@ -146,7 +146,7 @@ const KbTab = ({ agentId, initialMode = 0, initialTopic = "" }) => {
         <Typography className={classes.intro} style={{ marginBottom: 8 }}>Veja quais trechos o agente leria para responder. Se nenhum aparecer, falta conteúdo sobre esse assunto.</Typography>
         <div style={{ display: "flex", gap: 8 }}>
           <TextField fullWidth size="small" variant="outlined" placeholder="Ex.: Como funciona a bolsa para transferência?" value={probe.question} onChange={(e) => setProbe({ question: e.target.value, hits: null })} onKeyDown={(e) => e.key === "Enter" && probe.question.trim() && runProbe()} />
-          <Button variant="outlined" color="primary" style={{ whiteSpace: "nowrap", flex: "none" }} startIcon={<Sparkles size={15} />} disabled={!probe.question.trim()} onClick={runProbe}>Ver trechos</Button>
+          <Button variant="outlined" color="primary" style={{ whiteSpace: "nowrap", flex: "none" }} startIcon={<Search size={15} />} disabled={!probe.question.trim()} onClick={runProbe}>Ver trechos</Button>
         </div>
         {probe.hits && probe.hits.length === 0 && <Typography variant="body2" color="error" style={{ marginTop: 8 }}>Nenhum trecho encontrado. O agente diria que não sabe e avisaria a equipe.</Typography>}
         {(probe.hits || []).map((h, i) => (<div key={i} className={classes.hit}><div className={classes.hitTitle}>{h.title}</div>{h.content.length > 400 ? `${h.content.slice(0, 400)}…` : h.content}</div>))}

@@ -147,7 +147,7 @@ const Tools = () => {
       {TOOLS.filter((t) => t.needs !== "retention" || canOperateRetention(user)).map((t) => {
         const Icon = t.icon;
         return (
-          <button key={t.to} type="button" onClick={() => history.push(t.to)} style={{ textAlign: "left", cursor: "pointer", font: "inherit", color: "inherit", padding: 18, borderRadius: 18, border: "1px solid rgba(127,140,160,.25)", borderLeft: `3px solid ${t.color}`, background: "transparent", display: "flex", flexDirection: "column", gap: 8 }}>
+          <button key={t.to} type="button" onClick={() => history.push(t.to)} style={{ textAlign: "left", cursor: "pointer", font: "inherit", color: "inherit", padding: 18, borderRadius: 14, border: "1px solid rgba(127,140,160,.22)", background: "transparent", display: "flex", flexDirection: "column", gap: 8 }}>
             <span style={{ width: 40, height: 40, borderRadius: 12, display: "grid", placeItems: "center", background: tint(t.color, 0.16), color: t.color }}><Icon size={20} /></span>
             <b style={{ fontSize: 15.5 }}>{t.label}</b>
             <span style={{ fontSize: 13, opacity: 0.75 }}>{t.text}</span>
