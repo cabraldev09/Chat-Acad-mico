@@ -52,7 +52,7 @@ const useStyles = makeStyles((theme) => {
     },
     alertIcon: { width: 36, height: 36, borderRadius: 10, display: "grid", placeItems: "center", flex: "none" },
     triageRow: { display: "flex", alignItems: "center", gap: 12, padding: "9px 0", borderTop: `1px solid ${line}`, flexWrap: "wrap", "&:first-of-type": { borderTop: 0 } },
-    band: { display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", [theme.breakpoints.down("md")]: { gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }, [theme.breakpoints.down("xs")]: { gridTemplateColumns: "1fr" } },
+    band: { display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", [theme.breakpoints.down("md")]: { gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }, [theme.breakpoints.down("xs")]: { gridTemplateColumns: "1fr" } },
     cell: { padding: theme.spacing(2), borderRight: `1px solid ${line}`, borderBottom: `1px solid ${line}`, minWidth: 0 },
     cellVal: { fontSize: 32, fontWeight: 700, letterSpacing: "-0.03em", lineHeight: 1.15, marginTop: 4, fontVariantNumeric: "tabular-nums" },
     delta: { display: "inline-flex", alignItems: "center", gap: 2, fontSize: 12, fontWeight: 700, padding: "1px 7px", borderRadius: 999 },
@@ -68,13 +68,6 @@ const useStyles = makeStyles((theme) => {
 });
 
 const span = (n) => ({ gridColumn: `span ${n}`, minWidth: 0 });
-const mins = (m) => {
-  if (m === null || m === undefined) return "—";
-  if (m < 1) return "menos de 1 min";
-  if (m < 60) return `${Math.round(m)} min`;
-  if (m < 1440) return `${(m / 60).toFixed(1).replace(".", ",")} h`;
-  return `${(m / 1440).toFixed(1).replace(".", ",")} d`;
-};
 const pct = (a, b) => (b ? `${((a / b) * 100).toFixed(1).replace(".", ",")}%` : "—");
 const PIE = ["#0B4279", "#0693E3", "#FEF84C", "#6366f1", "#f97316", "#14b8a6", "#ec4899", "#64748b", "#84cc16"];
 const GREEN = "#16a34a";
@@ -82,7 +75,6 @@ const AMBER = "#d97706";
 const RED = "#dc2626";
 
 // first contact: green up to 15 min, amber up to an hour, red beyond
-const contactTone = (m) => (m === null || m === undefined ? undefined : m <= 15 ? GREEN : m <= 60 ? AMBER : RED);
 
 // the change against the period right before: arrow and percentage (points for a rate)
 const Delta = ({ now, before, points = false, goodWhenDown = false }) => {
@@ -341,11 +333,6 @@ const Panel = () => {
                 <div style={{ marginTop: 4 }}><Delta now={d.kpi.conversion} before={prev && prev.conversion} points /></div>
                 <div className={classes.label} style={{ fontSize: 12, marginTop: 8 }}>lead → matrícula</div>
               </div>
-              <div className={classes.cell}>
-                <div className={classes.label}>Tempo até o 1º contato</div>
-                <div className={classes.cellVal} style={{ color: contactTone(d.kpi.avgFirstContactMin) }}>{mins(d.kpi.avgFirstContactMin)}</div>
-                <div className={classes.label} style={{ fontSize: 12, marginTop: 8 }}>{d.kpi.businessHours ? "média, só horário comercial" : "média"} · ideal até 15 min</div>
-              </div>
               <div className={classes.cell} style={{ borderRight: 0 }}>
                 <div className={classes.label}>Tempo até a matrícula</div>
                 <div className={classes.cellVal}>{d.kpi.avgDaysToEnroll === null ? "—" : `${Number(d.kpi.avgDaysToEnroll).toFixed(1).replace(".", ",")} dias`}</div>
@@ -453,13 +440,12 @@ const Panel = () => {
             <GlowCard tone={"#0B4279"} className={classes.card} style={span(12)}>
               <Typography variant="subtitle2" gutterBottom>Desempenho dos consultores</Typography>
               <Table size="small">
-                <TableHead><TableRow><TableCell>Consultor</TableCell><TableCell align="right">Leads</TableCell><TableCell align="right">Em andamento</TableCell><TableCell align="right">Matrículas</TableCell><TableCell align="right">Conversão</TableCell><TableCell align="right">1º contato (média)</TableCell><TableCell align="right">Sem 1º contato agora</TableCell></TableRow></TableHead>
+                <TableHead><TableRow><TableCell>Consultor</TableCell><TableCell align="right">Leads</TableCell><TableCell align="right">Em andamento</TableCell><TableCell align="right">Matrículas</TableCell><TableCell align="right">Conversão</TableCell><TableCell align="right">Sem 1º contato agora</TableCell></TableRow></TableHead>
                 <TableBody>
                   {d.byOwner.map((o) => (
                     <TableRow key={o.name}>
                       <TableCell>{o.name}</TableCell><TableCell align="right">{o.leads}</TableCell><TableCell align="right">{o.open}</TableCell>
                       <TableCell align="right"><b>{o.won}</b></TableCell><TableCell align="right">{pct(o.won, o.leads)}</TableCell>
-                      <TableCell align="right" style={{ color: contactTone(o.avgFirstContactMin), fontWeight: 600 }}>{mins(o.avgFirstContactMin)}</TableCell>
                       <TableCell align="right" style={{ color: o.waiting ? RED : undefined, fontWeight: o.waiting ? 700 : 400 }}>{o.waiting || 0}</TableCell>
                     </TableRow>
                   ))}

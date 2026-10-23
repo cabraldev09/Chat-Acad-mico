@@ -271,6 +271,25 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
       assert(/João Vitor/.test(csv) && !/Gabrielli/.test(csv) && !/Laura/.test(csv), "the export leaked another polo");
     });
 
+    // ------------------------------------------------------------ new leads to check: the responsible is who answers the conversation
+    console.log("\nNovos para conferir");
+    await test("a new lead goes to who ANSWERS the conversation (open ticket), not only to the owner of the lead; the management sees everybody", async () => {
+      const stage = sql(`SELECT id FROM LeadStages WHERE type='open' ORDER BY id LIMIT 1`).split("\n")[0];
+      assert(stage, "no open stage in the seed");
+      const t = mkTicket({ owner: ids.joao });
+      const leadId = sql(`INSERT INTO Leads (name, phone, source, stageId, ownerId, isHistorical, createdAt, updatedAt) VALUES ('Lead do Pedro', '5569000000001', 'WhatsApp', ${stage}, ${ids.laura}, false, NOW() - INTERVAL '2 days', NOW()) RETURNING id`).split("\n")[0];
+      sql(`UPDATE Tickets SET leadId=${leadId} WHERE id=${t.ticketId}`);
+      const mineJoao = (await A(joao, "/crm/triage")).data;
+      assert(mineJoao.items.some(i => i.id === Number(leadId)), "the lead of the conversation of João is not in João's list");
+      assert(mineJoao.items.find(i => i.id === Number(leadId)).late === true, "a lead of two days ago must be late");
+      const mineLaura = (await A(laura, "/crm/triage")).data;
+      assert(!mineLaura.items.some(i => i.id === Number(leadId)), "the owner of the lead, who does not answer it, still sees it as hers");
+      const team = (await A(admin, `/crm/triage`)).data;
+      assert(team.items.some(i => i.id === Number(leadId) && i.ownerId === ids.joao), "the management does not see the lead with its responsible");
+      const only = (await A(admin, `/crm/triage?ownerId=${ids.laura}`)).data;
+      assert(!only.items.some(i => i.id === Number(leadId)), "the filter by consultant ignored the responsible");
+    });
+
     // ------------------------------------------------------------ configuration
     console.log("\nConfiguração");
     await test("the management sets schedules and targets; presence and alerts follow; invalid values are refused or clamped", async () => {
