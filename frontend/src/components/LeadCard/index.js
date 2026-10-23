@@ -6,6 +6,7 @@ import { FilePlus2, FileText, KanbanSquare, UserPlus } from "lucide-react";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import { ScoreRing, burst, useCrmOptions } from "../../pages/CRM/shared";
+import { onColor, tint } from "../../utils/color";
 import AiBrief from "../AiBrief";
 import { lazyPage as lazy } from "../../utils/lazyPage";
 
@@ -117,7 +118,9 @@ const LeadCard = ({ contactId }) => {
         <div className={classes.label} style={{ marginBottom: 6 }}>Etapa do funil</div>
         <div className={classes.stages}>
           {stages.map((s) => (
-            <button key={s.id} type="button" disabled={busy} className={`${classes.stage} ${s.id === lead.stageId ? classes.stageOn : ""}`} onClick={(e) => pick(s, e)}>{s.name}</button>
+            <button key={s.id} type="button" disabled={busy} className={classes.stage} onClick={(e) => pick(s, e)}
+              style={s.id === lead.stageId ? { background: s.color, borderColor: s.color, color: onColor(s.color) } : { borderColor: tint(s.color, 0.55), background: tint(s.color, 0.1) }}
+              title={s.id === lead.stageId ? "Etapa atual do lead" : `Mover para ${s.name}`}>{s.name}</button>
           ))}
         </div>
       </div>

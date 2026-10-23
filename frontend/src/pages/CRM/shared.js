@@ -11,6 +11,7 @@ import {
   WhatsAppBrand, InstagramBrand, FacebookBrand, TelegramBrand,
 } from "../../icons/brands";
 import { fetchAllUsersPage } from "../../utils/fetchAllUsers";
+import { onColor, tint } from "../../utils/color";
 
 export const useCrmOptions = () => {
   const [options, setOptions] = useState({});
@@ -119,4 +120,25 @@ export const burst = (x, y) => {
       { duration: 900 + Math.random() * 500, easing: "cubic-bezier(.22,1,.36,1)" }
     ).onfinish = () => el.remove();
   }
+};
+
+// Where a lead is in the funnel, by colour: the same pill everywhere (board, file, tasks, lists, chat). A "lost" stage is struck lighter, a "won" one is solid.
+export const StagePill = ({ stage, size = "md", solid = true, style }) => {
+  if (!stage) return null;
+  const color = stage.color || "#64748b";
+  const small = size === "sm";
+  return (
+    <span
+      title={`Etapa do funil: ${stage.name}`}
+      style={{
+        display: "inline-flex", alignItems: "center", gap: 6, whiteSpace: "nowrap", fontWeight: 700, borderRadius: 999,
+        fontSize: small ? 11 : 12.5, padding: small ? "1px 8px" : "3px 11px",
+        background: solid ? color : tint(color, 0.16), color: solid ? onColor(color) : color,
+        border: solid ? "none" : `1px solid ${tint(color, 0.45)}`, ...style,
+      }}
+    >
+      <span style={{ width: 7, height: 7, borderRadius: "50%", background: solid ? onColor(color) : color, opacity: solid ? 0.85 : 1, flex: "none" }} />
+      {stage.name}
+    </span>
+  );
 };

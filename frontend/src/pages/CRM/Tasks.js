@@ -10,7 +10,7 @@ import Title from "../../components/Title";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import { AuthContext } from "../../context/Auth/AuthContext";
-import { isOverdue } from "./shared";
+import { isOverdue, StagePill } from "./shared";
 
 const useStyles = makeStyles((theme) => ({
   list: { flex: 1, overflowY: "auto", overflowX: "hidden", marginTop: theme.spacing(1.5), ...theme.scrollbarStyles },
@@ -82,7 +82,7 @@ const Tasks = () => {
             <Checkbox color="primary" checked={!!t.doneAt} onChange={() => toggle(t)} />
             <div style={{ flex: 1, minWidth: 0, cursor: "pointer" }} onClick={() => history.push(`/crm?lead=${t.leadId}`)}>
               <div style={{ fontWeight: 500, textDecoration: t.doneAt ? "line-through" : "none" }}>{t.title}</div>
-              <div style={{ fontSize: 12.5, opacity: 0.75 }}>{t.lead ? t.lead.name : ""}{t.lead && t.lead.stage ? ` · ${t.lead.stage.name}` : ""}</div>
+              <div style={{ fontSize: 12.5, opacity: 0.85, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>{t.lead ? t.lead.name : ""}{t.lead && t.lead.stage ? <StagePill stage={t.lead.stage} size="sm" /> : null}</div>
             </div>
             <span style={{ fontSize: 12.5, opacity: 0.75 }}>{TYPES[t.type]}</span>
             <span style={{ fontSize: 13, minWidth: 110, textAlign: "right", color: !t.doneAt && isOverdue(t.dueAt) ? "#dc2626" : undefined, fontWeight: !t.doneAt && isOverdue(t.dueAt) ? 600 : 400 }}>

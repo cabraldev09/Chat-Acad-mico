@@ -25,7 +25,8 @@ import ProposalStudio from "./ProposalStudio";
 import PaymentTab from "./PaymentTab";
 import DocumentsTab from "./DocumentsTab";
 import NotALead from "./NotALead";
-import { ScoreRing, SourceIcon, ago, isOverdue, burst, initials } from "./shared";
+import { ScoreRing, SourceIcon, StagePill, ago, isOverdue, burst, initials } from "./shared";
+import { onColor, tint } from "../../utils/color";
 import AiBrief from "../../components/AiBrief";
 
 const useStyles = makeStyles((theme) => ({
@@ -230,11 +231,17 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab, side = false 
             <div className={classes.stepper}>
               {lead.stage.type === "open" ? openStages.map((s, i) => (
                 <button type="button" key={s.id} onClick={() => move(s)}
-                  className={`${classes.step} ${i < currentIdx ? classes.stepDone : ""} ${i === currentIdx ? classes.stepNow : ""}`}>
+                  className={classes.step}
+                  style={i === currentIdx
+                    ? { background: s.color, color: onColor(s.color), borderColor: s.color, fontWeight: 700, boxShadow: `0 4px 12px -4px ${tint(s.color, 0.7)}` }
+                    : i < currentIdx
+                      ? { background: tint(s.color, 0.2), color: "inherit", borderColor: tint(s.color, 0.5) }
+                      : { borderColor: tint(s.color, 0.45) }}
+                  title={i === currentIdx ? "Etapa atual do lead" : i < currentIdx ? "Etapa já passada" : "Próxima etapa: clique para mover"}>
                   {s.name}
                 </button>
               )) : (
-                <button type="button" className={classes.step} style={{ background: lead.stage.color, color: "#fff", borderColor: lead.stage.color }}
+                <button type="button" className={classes.step} style={{ background: lead.stage.color, color: onColor(lead.stage.color), borderColor: lead.stage.color }}
                   onClick={() => move(openStages[0])} title="Reabrir lead">
                   {lead.stage.name}{lead.lostReason ? ` · ${lead.lostReason}` : ""} (reabrir)
                 </button>

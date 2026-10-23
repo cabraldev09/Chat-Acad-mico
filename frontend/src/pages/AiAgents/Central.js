@@ -19,14 +19,17 @@ import LearningTab from "./LearningTab";
 import RegulationsDialog from "./RegulationsDialog";
 import TestTab from "./TestTab";
 import UsageTab from "./UsageTab";
+import { onColor, tint } from "../../utils/color";
 
 const SECTIONS = [
-  { key: "inicio", label: "Início", icon: Home },
-  { key: "ensinar", label: "Ensinar", icon: BookOpen },
-  { key: "testar", label: "Testar", icon: PlayCircle },
-  { key: "resultados", label: "Resultados", icon: BarChart3 },
-  { key: "ajustes", label: "Ajustes", icon: Settings2 },
+  { key: "inicio", label: "Início", icon: Home, color: "#0693E3" },
+  { key: "ensinar", label: "Ensinar", icon: BookOpen, color: "#7c3aed" },
+  { key: "testar", label: "Testar", icon: PlayCircle, color: "#0d9488" },
+  { key: "resultados", label: "Resultados", icon: BarChart3, color: "#ea580c" },
+  { key: "ajustes", label: "Ajustes", icon: Settings2, color: "#475569" },
 ];
+
+const SETTING_COLORS = { jeito: "#0693E3", descobrir: "#7c3aed", acoes: "#0d9488", roteiro: "#4f46e5", assume: "#ea580c", polos: "#db2777", funil: "#16a34a", mec: "#b45309", chave: "#475569" };
 
 const useStyles = makeStyles((theme) => ({
   page: { flex: 1, overflowY: "auto", overflowX: "hidden", ...theme.scrollbarStyles, paddingBottom: theme.spacing(4) },
@@ -38,18 +41,18 @@ const useStyles = makeStyles((theme) => ({
   heroRight: { marginLeft: "auto", display: "flex", alignItems: "center", gap: theme.spacing(1.5), flexWrap: "wrap" },
   pill: { display: "inline-flex", alignItems: "center", gap: 6, borderRadius: 999, padding: "4px 12px", fontSize: 12.5, fontWeight: 700, background: "rgba(255,255,255,.18)" },
   heroBtn: { color: "#fff", borderColor: "rgba(255,255,255,.55)", borderRadius: 12, textTransform: "none", fontWeight: 600, "&:hover": { background: "rgba(255,255,255,.12)", borderColor: "#fff" } },
-  nav: { display: "flex", gap: 4, padding: 4, borderRadius: 16, background: theme.palette.action.hover, marginBottom: theme.spacing(2.5), overflowX: "auto" },
-  navBtn: { flex: 1, minWidth: 108, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, border: 0, borderRadius: 12, padding: "10px 12px", cursor: "pointer", fontFamily: "inherit", fontSize: 14, fontWeight: 600, color: theme.palette.text.secondary, background: "transparent", whiteSpace: "nowrap", transition: "background .15s, color .15s, box-shadow .15s", "&:hover": { color: theme.palette.text.primary }, "&[data-on=true]": { background: theme.palette.background.paper, color: theme.palette.primary.main, boxShadow: "0 1px 5px rgba(15,23,42,.14)" }, "&:focus-visible": { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: 2 } },
+  nav: { display: "flex", gap: 6, padding: 6, borderRadius: 18, background: "rgba(11,66,121,.09)", border: "1px solid rgba(11,66,121,.12)", marginBottom: theme.spacing(2.5), overflowX: "auto" },
+  navBtn: { flex: 1, minWidth: 108, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, border: 0, borderRadius: 12, padding: "10px 12px", cursor: "pointer", fontFamily: "inherit", fontSize: 14, fontWeight: 600, color: theme.palette.text.secondary, background: "transparent", whiteSpace: "nowrap", transition: "background .15s, color .15s, box-shadow .15s", "&:hover": { color: theme.palette.text.primary }, "&[data-on=true]": { boxShadow: "0 6px 16px rgba(15,23,42,.22)" }, "&:focus-visible": { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: 2 } },
   badge: { minWidth: 20, height: 20, borderRadius: 10, padding: "0 6px", display: "inline-grid", placeItems: "center", fontSize: 11.5, fontWeight: 700, color: "#fff", background: "#ea580c" },
   stats: { display: "grid", gap: theme.spacing(1.5), gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", marginBottom: theme.spacing(2.5) },
-  stat: { padding: theme.spacing(2), borderRadius: 18, border: `1px solid ${theme.palette.divider}`, background: theme.palette.background.paper },
+  stat: { padding: theme.spacing(2), borderRadius: 18, border: "1px solid transparent", boxShadow: "0 2px 10px rgba(15,23,42,.06)" },
   statNum: { fontSize: 30, fontWeight: 700, letterSpacing: "-0.02em", lineHeight: 1.1, fontVariantNumeric: "tabular-nums" },
   statLabel: { fontSize: 13, color: theme.palette.text.secondary, marginTop: 4 },
   cols: { display: "grid", gap: theme.spacing(2), gridTemplateColumns: "minmax(0, 1.25fr) minmax(0, 1fr)", alignItems: "start", [theme.breakpoints.down("sm")]: { gridTemplateColumns: "1fr" } },
-  panel: { padding: theme.spacing(2.25), borderRadius: 20, border: `1px solid ${theme.palette.divider}`, background: theme.palette.background.paper, marginBottom: theme.spacing(2) },
+  panel: { padding: theme.spacing(2.25), borderRadius: 20, border: "1px solid rgba(11,66,121,.14)", borderTop: "4px solid #0693E3", background: theme.palette.background.paper, boxShadow: "0 4px 16px rgba(15,23,42,.07)", marginBottom: theme.spacing(2) },
   panelTitle: { fontSize: 16, fontWeight: 700, marginBottom: theme.spacing(1.25) },
   hint: { fontSize: 13, color: theme.palette.text.secondary },
-  todo: { display: "flex", alignItems: "center", gap: 12, width: "100%", textAlign: "left", border: `1px solid ${theme.palette.divider}`, borderRadius: 14, padding: theme.spacing(1.25, 1.5), marginBottom: theme.spacing(1), background: "transparent", cursor: "pointer", fontFamily: "inherit", color: "inherit", transition: "border-color .15s, background .15s, transform .15s", "&:hover": { borderColor: theme.palette.primary.main, background: "rgba(6,147,227,.05)", transform: "translateX(2px)" }, "&:focus-visible": { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: 2 } },
+  todo: { display: "flex", alignItems: "center", gap: 12, width: "100%", textAlign: "left", border: "1px solid rgba(217,119,6,.35)", borderLeft: "5px solid #d97706", borderRadius: 14, padding: theme.spacing(1.25, 1.5), marginBottom: theme.spacing(1), background: "rgba(217,119,6,.07)", cursor: "pointer", fontFamily: "inherit", color: "inherit", transition: "border-color .15s, background .15s, transform .15s", "&:hover": { background: "rgba(217,119,6,.14)", transform: "translateX(2px)" }, "&:focus-visible": { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: 2 } },
   todoIcon: { width: 34, height: 34, borderRadius: 11, display: "grid", placeItems: "center", flex: "none", background: "rgba(217,119,6,.14)", color: "#d97706" },
   allGood: { display: "flex", alignItems: "center", gap: 12, padding: theme.spacing(1.75), borderRadius: 14, background: "rgba(22,163,74,.1)", color: "#15803d", fontWeight: 600 },
   check: { display: "flex", alignItems: "flex-start", gap: 10, padding: theme.spacing(1, 0), borderBottom: `1px solid ${theme.palette.divider}`, "&:last-child": { borderBottom: 0 } },
@@ -58,12 +61,12 @@ const useStyles = makeStyles((theme) => ({
   link: { border: 0, background: "none", color: theme.palette.primary.main, fontFamily: "inherit", fontWeight: 600, fontSize: 12.5, cursor: "pointer", padding: 0, marginTop: 2 },
   question: { display: "flex", alignItems: "center", gap: 10, padding: theme.spacing(1, 0), borderBottom: `1px solid ${theme.palette.divider}`, "&:last-child": { borderBottom: 0 } },
   sub: { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: theme.spacing(2) },
-  subBtn: { display: "inline-flex", alignItems: "center", gap: 8, border: `1px solid ${theme.palette.divider}`, borderRadius: 999, padding: "7px 14px", background: "transparent", fontFamily: "inherit", fontSize: 13.5, fontWeight: 600, color: theme.palette.text.secondary, cursor: "pointer", "&[data-on=true]": { background: theme.palette.primary.main, borderColor: theme.palette.primary.main, color: "#fff" } },
+  subBtn: { display: "inline-flex", alignItems: "center", gap: 8, border: "1px solid rgba(124,58,237,.35)", borderRadius: 999, padding: "7px 14px", background: "rgba(124,58,237,.08)", fontFamily: "inherit", fontSize: 13.5, fontWeight: 600, color: theme.palette.text.secondary, cursor: "pointer", "&[data-on=true]": { background: "#7c3aed", borderColor: "#7c3aed", color: "#fff", boxShadow: "0 4px 12px rgba(124,58,237,.35)" } },
   topics: { display: "flex", flexWrap: "wrap", gap: 8, marginBottom: theme.spacing(2) },
-  topic: { display: "inline-flex", alignItems: "center", gap: 6, borderRadius: 999, padding: "5px 12px", fontSize: 12.5, fontWeight: 600, border: `1px solid ${theme.palette.divider}`, background: "transparent", cursor: "pointer", fontFamily: "inherit", color: theme.palette.text.primary, "&:hover": { borderColor: theme.palette.primary.main } },
+  topic: { display: "inline-flex", alignItems: "center", gap: 6, borderRadius: 999, padding: "5px 12px", fontSize: 12.5, fontWeight: 600, border: "1px solid rgba(124,58,237,.3)", background: "rgba(124,58,237,.07)", cursor: "pointer", fontFamily: "inherit", color: theme.palette.text.primary, "&:hover": { borderColor: "#7c3aed", background: "rgba(124,58,237,.14)" } },
   settings: { display: "grid", gap: theme.spacing(1.5), gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))" },
-  setting: { display: "flex", flexDirection: "column", gap: 6, textAlign: "left", padding: theme.spacing(2), borderRadius: 18, border: `1px solid ${theme.palette.divider}`, background: theme.palette.background.paper, cursor: "pointer", fontFamily: "inherit", color: "inherit", transition: "transform .15s, border-color .15s, box-shadow .15s", "&:hover": { transform: "translateY(-2px)", borderColor: theme.palette.primary.light, boxShadow: "0 10px 24px rgba(15,23,42,.08)" }, "&:focus-visible": { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: 2 } },
-  settingIcon: { width: 40, height: 40, borderRadius: 12, display: "grid", placeItems: "center", background: "rgba(6,147,227,.12)", color: theme.palette.primary.main, marginBottom: 2 },
+  setting: { display: "flex", flexDirection: "column", gap: 6, textAlign: "left", padding: theme.spacing(2), borderRadius: 18, border: "1px solid transparent", boxShadow: "0 2px 10px rgba(15,23,42,.06)", cursor: "pointer", fontFamily: "inherit", color: "inherit", transition: "transform .15s, border-color .15s, box-shadow .15s", "&:hover": { transform: "translateY(-2px)", borderColor: theme.palette.primary.light, boxShadow: "0 10px 24px rgba(15,23,42,.08)" }, "&:focus-visible": { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: 2 } },
+  settingIcon: { width: 40, height: 40, borderRadius: 12, display: "grid", placeItems: "center", marginBottom: 2 },
   settingName: { fontSize: 15.5, fontWeight: 700 },
   more: { display: "flex", alignItems: "center", gap: 8, width: "100%", border: `1px solid ${theme.palette.divider}`, borderRadius: 14, padding: theme.spacing(1.25, 1.75), background: "transparent", fontFamily: "inherit", fontSize: 14, fontWeight: 600, color: "inherit", cursor: "pointer", marginTop: theme.spacing(2) },
 }));
@@ -128,7 +131,7 @@ const Central = () => {
   ];
   const waiting = d.questions.filter((q) => q.status !== "para_revisar").slice(0, 4);
 
-  const stat = (num, label, color) => (<div className={classes.stat}><div className={classes.statNum} style={color ? { color } : undefined}>{num}</div><div className={classes.statLabel}>{label}</div></div>);
+  const stat = (num, label, color = "#0693E3") => (<div className={classes.stat} style={{ background: tint(color, 0.13), borderTop: `4px solid ${color}` }}><div className={classes.statNum} style={{ color }}>{num}</div><div className={classes.statLabel}>{label}</div></div>);
 
   const settings = [
     { key: "jeito", icon: MessageSquare, name: "Jeito de atender", text: "Tom de voz, regras, o que dizer quando não souber, limites de gasto e quando o agente atende.", run: () => setDialog({ name: "editor", tab: 0 }) },
@@ -178,7 +181,7 @@ const Central = () => {
             const Icon = s.icon;
             const count = s.key === "ensinar" ? d.pending.waiting + d.pending.toReview : 0;
             return (
-              <button key={s.key} type="button" role="tab" aria-selected={section === s.key} className={classes.navBtn} data-on={section === s.key} onClick={() => go(s.key)}>
+              <button key={s.key} type="button" role="tab" aria-selected={section === s.key} className={classes.navBtn} data-on={section === s.key} onClick={() => go(s.key)} style={section === s.key ? { background: s.color, color: onColor(s.color) } : { color: s.color }}>
                 <Icon size={17} />{s.label}{count > 0 && <span className={classes.badge}>{count}</span>}
               </button>
             );
@@ -188,10 +191,10 @@ const Central = () => {
         {section === "inicio" && (
           <>
             <div className={classes.stats}>
-              {stat(d.week.conversations, "conversas nos últimos 7 dias")}
-              {stat(d.week.qualifiedRate === null ? "—" : `${d.week.qualifiedRate}%`, "chegaram a qualificados")}
-              {stat(d.week.handedOver, "passaram para a equipe")}
-              {stat(d.week.unanswered, "perguntas sem resposta", d.week.unanswered ? "#d97706" : undefined)}
+              {stat(d.week.conversations, "conversas nos últimos 7 dias", "#0693E3")}
+              {stat(d.week.qualifiedRate === null ? "—" : `${d.week.qualifiedRate}%`, "chegaram a qualificados", "#16a34a")}
+              {stat(d.week.handedOver, "passaram para a equipe", "#7c3aed")}
+              {stat(d.week.unanswered, "perguntas sem resposta", d.week.unanswered ? "#d97706" : "#64748b")}
             </div>
             <div className={classes.cols}>
               <div>
@@ -286,9 +289,10 @@ const Central = () => {
           <div className={classes.settings}>
             {settings.map((s) => {
               const Icon = s.icon;
+              const c = SETTING_COLORS[s.key] || "#0693E3";
               return (
-                <button key={s.key} type="button" className={classes.setting} onClick={s.run}>
-                  <span className={classes.settingIcon}><Icon size={20} /></span>
+                <button key={s.key} type="button" className={classes.setting} onClick={s.run} style={{ background: tint(c, 0.1), borderTop: `4px solid ${c}` }}>
+                  <span className={classes.settingIcon} style={{ background: c, color: onColor(c) }}><Icon size={20} /></span>
                   <span className={classes.settingName}>{s.name}</span>
                   <span className={classes.hint}>{s.text}</span>
                 </button>

@@ -19,13 +19,14 @@ import LeadDrawer, { LostDialog } from "./LeadDrawer";
 import LeadFields from "./LeadFields";
 import EnrollDialog from "./EnrollDialog";
 import ImportDialog from "./ImportDialog";
-import { useCrmOptions, SourceIcon, ScoreRing, OwnerAvatar, ago, short, isOverdue, burst } from "./shared";
+import { useCrmOptions, SourceIcon, ScoreRing, OwnerAvatar, StagePill, ago, short, isOverdue, burst } from "./shared";
+import { onColor, tint } from "../../utils/color";
 import { NEXT_LABEL, TEMP_COLOR, TEMP_LABEL } from "../../utils/commercial";
 
 const useStyles = makeStyles((theme) => ({
   filters: { display: "flex", gap: theme.spacing(1), flexWrap: "wrap", marginBottom: theme.spacing(1.5) },
   board: {
-    display: "grid", gap: theme.spacing(1.5), alignItems: "start", flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden",
+    display: "grid", gap: theme.spacing(1.5), alignItems: "stretch", gridAutoRows: "min-content", flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden",
     gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", paddingBottom: theme.spacing(2), ...theme.scrollbarStyles,
   },
   col: {
@@ -60,7 +61,8 @@ const useStyles = makeStyles((theme) => ({
   empty: { fontSize: 12.5, color: theme.palette.text.secondary, textAlign: "center", padding: theme.spacing(2, 1), border: `1px dashed ${theme.palette.divider}`, borderRadius: 10 },
   // while a card is dragged every stage is one drop away, whatever the scroll of the board (a stage far above or below the card)
   dropBar: {
-    gridColumn: "1 / -1", position: "sticky", top: 0, zIndex: 5, display: "flex", alignItems: "center", gap: theme.spacing(0.75), flexWrap: "wrap",
+    gridColumn: "1 / -1", position: "sticky", top: 0, zIndex: 5, height: 0, overflow: "visible" },
+  dropBarIn: { display: "flex", alignItems: "center", gap: theme.spacing(0.75), flexWrap: "wrap",
     padding: theme.spacing(0.75, 1), borderRadius: 12, background: theme.palette.type === "dark" ? "#0f1d33" : "#ffffff",
     border: `1px solid ${theme.palette.accent.main}`, boxShadow: "0 10px 24px -14px rgba(11,66,121,.55)", animation: "pop-in .2s var(--ease-out) both",
   },
@@ -74,12 +76,13 @@ const useStyles = makeStyles((theme) => ({
   tableWrap: { flex: 1, overflowY: "auto", overflowX: "hidden", ...theme.scrollbarStyles },
 }));
 
-const LeadCard = ({ lead, onOpen, onDragStart, onDragEnd, dragging, onMenu }) => {
+const LeadCard = ({ lead, stage, onOpen, onDragStart, onDragEnd, dragging, onMenu }) => {
   const classes = useStyles();
+  const color = (stage && stage.color) || (lead.stage && lead.stage.color) || null;
   return (
-    <div className={`${classes.card} ${dragging ? classes.cardDragging : ""}`} draggable role="button" tabIndex={0} aria-label={`Abrir o lead ${lead.name}`}
+    <div className={`${classes.card} ${dragging ? classes.cardDragging : ""}`} style={color ? { borderLeft: `5px solid ${color}`, backgroundImage: `linear-gradient(135deg, ${tint(color, 0.1)} 0%, transparent 55%)` } : undefined} draggable role="button" tabIndex={0} aria-label={`Abrir o lead ${lead.name}`}
       onClick={() => onOpen(lead.id)} onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onOpen(lead.id); } }}
-      onDragStart={(e) => { e.dataTransfer.setData("text/plain", String(lead.id)); e.dataTransfer.effectAllowed = "move"; onDragStart(lead); }} onDragEnd={onDragEnd}>
+      onDragStart={(e) => { e.dataTransfer.setData("text/plain", String(lead.id)); e.dataTransfer.effectAllowed = "move"; setTimeout(() => onDragStart(lead), 0); }} onDragEnd={onDragEnd}>
       <div className={classes.cardTop}>
         <div className={classes.cardName}>{lead.name}</div>
         <ScoreRing value={lead.score} />
@@ -351,7 +354,7 @@ const Board = () => {
       {view === "board" ? (
         <div className={classes.board} ref={boardRef}>
           {drag && board && (
-            <div className={classes.dropBar} role="group" aria-label="Soltar o lead em uma etapa">
+            <div className={classes.dropBar}><div className={classes.dropBarIn} role="group" aria-label="Soltar o lead em uma etapa">
               <span className={classes.dropLabel}>Soltar em:</span>
               {board.map((stage) => (
                 <span key={stage.id} className={`${classes.dropChip} ${over === `bar-${stage.id}` ? classes.dropChipOver : ""}`}
@@ -361,21 +364,21 @@ const Board = () => {
                   <span className={classes.dot} style={{ background: stage.color }} />{stage.name}
                 </span>
               ))}
-            </div>
+            </div></div>
           )}
           {(board || []).map((stage) => (
-            <div key={stage.id} className={`${classes.col} ${over === stage.id ? classes.colOver : ""}`}
+            <div key={stage.id} className={`${classes.col} ${over === stage.id ? classes.colOver : ""}`} style={over === stage.id ? undefined : { background: tint(stage.color, 0.14), borderTop: `4px solid ${stage.color}` }}
               onDragOver={(e) => { e.preventDefault(); if (over !== stage.id) setOver(stage.id); }}
               onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setOver(null); }}
               onDrop={(e) => onDrop(e, stage)}>
               <div className={classes.colHead}>
                 <span className={classes.dot} style={{ background: stage.color }} />
                 <span className={classes.colName} title={stage.name}>{stage.name}</span>
-                <span className={classes.count}>{stage.count}</span>
+                <span className={classes.count} style={{ background: stage.color, color: onColor(stage.color), borderColor: stage.color }}>{stage.count}</span>
               </div>
               <div className={classes.colBody} data-colbody="1">
                 {stage.leads.map((l) => (
-                  <LeadCard key={l.id} lead={l} onOpen={setOpenId} dragging={drag && drag.id === l.id} onMenu={(lead, el) => setMoveMenu({ lead, el })}
+                  <LeadCard key={l.id} lead={l} stage={stage} onOpen={setOpenId} dragging={drag && drag.id === l.id} onMenu={(lead, el) => setMoveMenu({ lead, el })}
                     onDragStart={setDrag} onDragEnd={() => { setDrag(null); setOver(null); }} />
                 ))}
                 {stage.count === 0 && <div className={classes.empty}>Arraste um lead para cá</div>}
@@ -400,7 +403,7 @@ const Board = () => {
                 <TableRow key={l.id} hover style={{ cursor: "pointer" }} onClick={() => setOpenId(l.id)}>
                   <TableCell><b>{l.name}</b><div style={{ fontSize: 12, opacity: 0.7 }}>{l.phone || l.email}</div></TableCell>
                   <TableCell>{l.course ? l.course.name : "—"}</TableCell>
-                  <TableCell><Chip size="small" label={l.stage.name} style={{ background: l.stage.color, color: "#fff" }} /></TableCell>
+                  <TableCell><StagePill stage={l.stage} /></TableCell>
                   <TableCell><span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}><SourceIcon source={l.source} />{l.source}</span></TableCell>
                   <TableCell>{l.owner ? l.owner.name : <i>sem responsável</i>}</TableCell>
                   <TableCell align="center"><ScoreRing value={l.score} size={28} /></TableCell>

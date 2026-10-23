@@ -1,7 +1,11 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useContext, useEffect, useMemo, useState } from "react";
 import { useHistory } from "react-router-dom";
 import { toast } from "react-toastify";
-import { AlertTriangle, Download, Gauge, Settings2, Target, Users } from "lucide-react";
+import { AlertTriangle, BarChart3, CalendarClock, Download, Gauge, HeartPulse, ListTodo, Megaphone, MonitorCheck, Settings2, Target, Users } from "lucide-react";
+
+import { AuthContext } from "../../context/Auth/AuthContext";
+import { canOperateRetention } from "../../utils/access";
+import { onColor, tint } from "../../utils/color";
 
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
@@ -13,6 +17,7 @@ const TAB_HELP = {
   geral: "Resumo da equipe no período escolhido: totais, quem está trabalhando agora e o que precisa da sua atenção.",
   consultores: "Compare cada consultor lado a lado. Clique em um nome para ver a evolução, as metas e as tarefas dele.",
   polos: "Os mesmos números somados por polo, para comparar o desempenho de cada unidade.",
+  ferramentas: "Tudo o que a gestão comercial usa no dia a dia, num só lugar: tarefas, retenção, ambientação, agendamentos, campanhas e estatísticas.",
   config: "Defina horários de trabalho, metas diárias e a regra de inatividade. Vale para esta tela e para a de cada consultor.",
 };
 // where a click on an alert takes the manager (the task screen opens already filtered on that person)
@@ -125,6 +130,34 @@ const Detail = ({ userId, period, defs, onClose }) => {
   );
 };
 
+const TOOLS = [
+  { to: "/crm/tarefas", label: "Tarefas de acompanhamento", text: "O que cada pessoa precisa fazer hoje e o que está atrasado.", icon: ListTodo, color: "#0693E3" },
+  { to: "/crm/retencao", label: "Retenção", text: "Alunos em risco de sair e o contato para segurá-los.", icon: HeartPulse, color: "#dc2626", needs: "retention" },
+  { to: "/ambientacao", label: "Ambientação", text: "Acompanhe os alunos novos nos primeiros dias de curso.", icon: MonitorCheck, color: "#0d9488" },
+  { to: "/schedules", label: "Agendamentos", text: "Mensagens programadas para sair no dia e hora certos.", icon: CalendarClock, color: "#7c3aed" },
+  { to: "/campaigns", label: "Campanhas", text: "Envios em massa para listas de contatos.", icon: Megaphone, color: "#ea580c" },
+  { to: "/reports", label: "Estatísticas", text: "Os números individuais de cada consultor e o progresso dos polos.", icon: BarChart3, color: "#16a34a" },
+];
+
+const Tools = () => {
+  const history = useHistory();
+  const { user } = useContext(AuthContext);
+  return (
+    <div style={{ display: "grid", gap: 14, gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))" }}>
+      {TOOLS.filter((t) => t.needs !== "retention" || canOperateRetention(user)).map((t) => {
+        const Icon = t.icon;
+        return (
+          <button key={t.to} type="button" onClick={() => history.push(t.to)} style={{ textAlign: "left", cursor: "pointer", font: "inherit", color: "inherit", padding: 18, borderRadius: 18, border: "1px solid transparent", borderTop: `4px solid ${t.color}`, background: tint(t.color, 0.1), display: "flex", flexDirection: "column", gap: 8, boxShadow: "0 2px 10px rgba(15,23,42,.06)" }}>
+            <span style={{ width: 40, height: 40, borderRadius: 12, display: "grid", placeItems: "center", background: t.color, color: onColor(t.color) }}><Icon size={20} /></span>
+            <b style={{ fontSize: 15.5 }}>{t.label}</b>
+            <span style={{ fontSize: 13, opacity: 0.75 }}>{t.text}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+};
+
 const CommercialCenter = () => {
   const c = useKit();
   const history = useHistory();
@@ -165,7 +198,7 @@ const CommercialCenter = () => {
       </div>
 
       <div className={c.chips} role="tablist" style={{ marginBottom: 18 }}>
-        {[["geral", "Visão geral"], ["consultores", "Consultores"], ["polos", "Polos"], ["config", "Configuração"]].map(([k, label]) => (
+        {[["geral", "Visão geral"], ["consultores", "Consultores"], ["polos", "Polos"], ["ferramentas", "Ferramentas"], ["config", "Configuração"]].map(([k, label]) => (
           <button key={k} type="button" role="tab" aria-selected={tab === k} className={`${c.chip} ${tab === k ? c.chipOn : ""}`} onClick={() => setTab(k)}>{label}</button>
         ))}
       </div>
@@ -250,6 +283,7 @@ const CommercialCenter = () => {
         </div>
       )}
 
+      {tab === "ferramentas" && <Tools />}
       {data && tab === "config" && config && <ConfigPanel config={config} consultants={data.consultants} onSaved={setConfig} />}
     </div>
   );

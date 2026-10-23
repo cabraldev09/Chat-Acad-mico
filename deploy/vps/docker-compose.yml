@@ -15,6 +15,9 @@ services:
       # o VPS tem memória de sobra: o limite pequeno do Dockerfile é para planos de 1 GB
       NODE_OPTIONS: "--max-old-space-size=1536"
       WHATSAPP_PROVIDER: wwebjs
+      # as sessões do WhatsApp ficam SEMPRE no volume: sem isso o QR Code é pedido de novo a cada atualização
+      WWEBJS_AUTH_PATH: ${WWEBJS_AUTH_PATH:-/data/wwebjs}
+      UPLOAD_DIR: ${UPLOAD_DIR:-/data/public}
       # a versão que está no ar (o /health devolve): deploy.sh/update.sh exportam GIT_SHA
       GIT_SHA: ${GIT_SHA:-}
     # o Chromium (WhatsApp Web) trava com o /dev/shm padrão de 64 MB
