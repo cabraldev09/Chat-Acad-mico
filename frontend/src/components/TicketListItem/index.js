@@ -1,3 +1,4 @@
+import { looksLikeFileName } from "../../utils/mediaLabel";
 import React, { useState, useEffect, useRef, useContext } from "react";
 import { useHistory, useParams } from "react-router-dom";
 import clsx from "clsx";
@@ -149,10 +150,10 @@ const useStyles = makeStyles((theme) => {
 // markdown markers and the invisible bot mark would look odd in a one-line preview
 // WhatsApp previews media with an icon and a short label instead of a file name
 const KIND = {
-  image: [Camera, "Foto"],
+  image: [Camera, "Imagem"],
   video: [Video, "Vídeo"],
   audio: [Mic, "Áudio"],
-  ptt: [Mic, "Mensagem de voz"],
+  ptt: [Mic, "Áudio"],
   document: [FileText, ""],
   location: [MapPin, "Localização"],
   vcard: [Contact, "Contato"],
@@ -248,7 +249,7 @@ const TicketListItem = ({ ticket }) => {
   // a contact card shows the person's name, never the card's raw text
   const cardName = /^\s*BEGIN:VCARD/i.test(ticket.lastMessage || "") ? ((/(?:^|\n)FN[^:\n]*:([^\n\r]+)/i.exec(ticket.lastMessage) || [])[1] || "Contato").trim() : null;
   const kindOf = KIND[cardName ? "vcard" : ticket.lastMessageType] || [];
-  const previewText = cardName || (ticket.lastMessageType === "vcard" ? String(ticket.lastMessage || "").replace(/^👤\s*/, "") : null) || plain(ticket.lastMessage) || kindOf[1] || "";
+  const previewText = cardName || (ticket.lastMessageType === "vcard" ? String(ticket.lastMessage || "").replace(/^👤\s*/, "") : null) || (kindOf[1] && (looksLikeFileName(ticket.lastMessage) || /^[\p{Extended_Pictographic}\s]*(Foto|Imagem|Áudio|Mensagem de voz|Vídeo|Figurinha)$/u.test(plain(ticket.lastMessage))) ? kindOf[1] : plain(ticket.lastMessage)) || kindOf[1] || "";
   const [KindIcon, kindLabel] = KIND[cardName ? "vcard" : ticket.lastMessageType] || [];
 
   return (

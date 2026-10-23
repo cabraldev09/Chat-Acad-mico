@@ -1,3 +1,4 @@
+import { shownText } from "../../utils/mediaLabel";
 import React, { useState, useEffect, useContext, useRef } from "react";
 import { useParams } from "react-router-dom";
 import { toast } from "react-toastify";
@@ -504,7 +505,7 @@ const MessageInput = ({ ticketStatus, aiActive, historical, isGroup, contactName
               <span className={classes.replyName} style={replyingMessage.fromMe ? { color: "#53bdeb" } : undefined}>
                 {replyingMessage.fromMe ? "Você" : replyingMessage.contact?.name || "Contato"}
               </span>
-              {replyingMessage.body}
+              {shownText(replyingMessage.body, replyingMessage.mediaType, replyingMessage.mediaUrl)}
             </div>
           </div>
           <IconButton aria-label="Fechar" className={classes.icon} onClick={() => setReplyingMessage(null)}>

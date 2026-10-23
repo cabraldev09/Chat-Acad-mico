@@ -1,3 +1,4 @@
+import { shownText } from "../../utils/mediaLabel";
 import React, { useState, useRef, useEffect, useContext } from "react";
 import { useHistory } from "react-router-dom";
 import { format } from "date-fns";
@@ -235,7 +236,7 @@ const NotificationsPopOver = () => {
 			const notification = new Notification(
 				`${i18n.t("tickets.notification.message")} ${contact.name}`,
 				{
-					body: `${message.body} - ${format(new Date(), "HH:mm")}`,
+					body: `${shownText(message.body, message.mediaType, message.mediaUrl)} - ${format(new Date(), "HH:mm")}`,
 					icon: contact.profilePicUrl,
 					tag: ticket.id,
 					renotify: true,

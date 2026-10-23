@@ -1,3 +1,4 @@
+import { bodyOfMedia } from "../../helpers/MediaLabel";
 import { Op } from "sequelize";
 import { fire } from "../../helpers/Fire";
 import { chatIdOf } from "../../helpers/ChatId";
@@ -93,8 +94,9 @@ const announceReaction = async (message: Message, emoji: string, sender: string)
       who = person ? person.name : null;
     }
     const raw = previewOf(String(message.body || ""), message.mediaType);
-    const labels: Record<string, string> = { image: "📷 Foto", video: "🎥 Vídeo", audio: "🎤 Áudio", document: "📄 Documento" };
-    const snippet = (message.mediaUrl && labels[message.mediaType] && (!raw || raw === message.mediaUrl) ? labels[message.mediaType] : raw).replace(/\s+/g, " ").slice(0, 40);
+    const labels: Record<string, string> = { document: "📄 Documento" };
+    const named = message.mediaUrl && ["image", "video", "audio"].includes(message.mediaType) ? bodyOfMedia(raw, message.mediaType, message.mediaUrl) : null;
+    const snippet = (named || (message.mediaUrl && labels[message.mediaType] && (!raw || raw === message.mediaUrl) ? labels[message.mediaType] : raw)).replace(/\s+/g, " ").slice(0, 40);
     await Ticket.update(
       {
         lastMessage: `Reagiu com ${emoji} a “${snippet}”`,
@@ -334,7 +336,7 @@ export const loadMessageMedia = async (id: string): Promise<Message> => {
     mediaType: kind === "application" ? "document" : kind,
     isGif: !!media.isGif,
     // the label placed by the history copy gives way to the file name
-    body: !message.body || label ? media.filename || filename : message.body
+    body: kind === "application" ? (!message.body || label ? media.filename || filename : message.body) : bodyOfMedia(label ? "" : message.body, kind, filename, media.filename, media.mimetype)
   });
   broadcast(message);
   return (await loadFull(id)) as Message;
