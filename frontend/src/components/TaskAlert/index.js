@@ -48,9 +48,9 @@ const TaskAlert = () => {
     <div role="alert" style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 16px", fontSize: 14, borderBottom: `1px solid ${late ? "#fecaca" : "#bfdbfe"}`, background: late ? "#fef2f2" : "#eff6ff", color: late ? "#991b1b" : "#1e3a8a" }}>
       <AlarmClock size={18} style={{ flexShrink: 0 }} />
       <span style={{ flex: 1, lineHeight: 1.4 }}>
-        {late && <><b>{overdue} {overdue === 1 ? "tarefa atrasada" : "tarefas atrasadas"}</b>{today > 0 ? " e " : "."}</>}
+        {overdue > 0 && <><b>{overdue} {overdue === 1 ? "tarefa atrasada" : "tarefas atrasadas"}</b>{today > 0 || triage > 0 ? (today > 0 && triage > 0 ? ", " : " e ") : "."}</>}
         {today > 0 && <><b>{today} {today === 1 ? "tarefa" : "tarefas"} para hoje</b>{triage > 0 ? " e " : "."}</>}
-        {triage > 0 && <><b>{triage} {triage === 1 ? "lead novo" : "leads novos"} para conferir</b>{triageLate > 0 ? ` (${triageLate} de dias anteriores)` : ""}.</>}
+        {triage > 0 && <>{" "}<b>{triage} {triage === 1 ? "lead novo" : "leads novos"} para conferir</b>{triageLate > 0 ? ` (${triageLate} de dias anteriores)` : ""}.</>}
         {" "}{triage > 0 ? `Informe se é lead ainda hoje${evening ? ", antes do dia fechar" : ""}.` : "Contatos combinados com os leads."}
       </span>
       <button type="button" onClick={() => history.push(overdue + today > 0 ? (overdue > 0 ? "/crm/tarefas?status=overdue" : "/crm/tarefas?status=today") : "/crm/painel")} style={{ border: 0, background: late ? "#991b1b" : "#1e3a8a", color: "#fff", borderRadius: 8, padding: "6px 12px", fontWeight: 600, cursor: "pointer", flexShrink: 0 }}>{overdue + today > 0 ? "Ver tarefas" : "Conferir leads"}</button>
