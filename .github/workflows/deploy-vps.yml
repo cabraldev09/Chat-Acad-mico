@@ -30,7 +30,10 @@ jobs:
           KEY: ${{ secrets.VPS_SSH_KEY }}
         run: |
           install -m 700 -d ~/.ssh
-          printf '%s\n' "$KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
+          # aceita o segredo com ou sem as linhas BEGIN/END (copiar só o miolo é um erro comum): refaz o formato certo
+          body=$(printf '%s' "$KEY" | grep -v '^-----' | tr -d ' \r\n\t')
+          { echo "-----BEGIN OPENSSH PRIVATE KEY-----"; printf '%s' "$body" | fold -w 70; echo; echo "-----END OPENSSH PRIVATE KEY-----"; } > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
           # diagnóstico da chave de deploy (nunca imprime a chave: só a primeira linha, o tamanho e a impressão digital pública)
           echo "chave de deploy: $(wc -l < ~/.ssh/deploy_key) linhas; primeira linha: $(head -1 ~/.ssh/deploy_key | cut -c1-40)"
           ssh-keygen -y -f ~/.ssh/deploy_key > /tmp/deploy.pub 2>/dev/null && ssh-keygen -lf /tmp/deploy.pub || { echo "::error::O segredo VPS_SSH_KEY não é uma chave privada válida (deve começar por -----BEGIN OPENSSH PRIVATE KEY----- e terminar por -----END OPENSSH PRIVATE KEY-----)."; exit 1; }
