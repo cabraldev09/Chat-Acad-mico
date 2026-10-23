@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useHistory } from "react-router-dom";
 import { toast } from "react-toastify";
 import { Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, TextField, Typography, makeStyles } from "@material-ui/core";
-import { CheckCheck, MessageCircle, NotebookPen, Send, User } from "lucide-react";
+import { CheckCheck, MessageCircle, StickyNote, Send, User } from "lucide-react";
 
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
@@ -144,7 +144,7 @@ const Today = ({ onChanged }) => {
           <div className={classes.actions}>
             {i.ticketId && <Button size="small" variant="outlined" startIcon={<MessageCircle size={14} />} onClick={() => history.push(`/tickets/${i.ticketId}`)}>Conversa</Button>}
             <Button size="small" variant="outlined" startIcon={<Send size={14} />} onClick={() => startWriting(i)}>Mensagem</Button>
-            <Button size="small" variant="contained" color="primary" disableElevation startIcon={<NotebookPen size={14} />} onClick={() => setContact({ item: i, outcome: "respondeu", note: "", snoozeDays: 3 })}>Registrar contato</Button>
+            <Button size="small" variant="contained" color="primary" disableElevation startIcon={<StickyNote size={14} />} onClick={() => setContact({ item: i, outcome: "respondeu", note: "", snoozeDays: 3 })}>Registrar contato</Button>
             <Button size="small" startIcon={<User size={14} />} onClick={() => history.push(`/crm?lead=${i.leadId}`)}>Ficha</Button>
           </div>
         </div>
