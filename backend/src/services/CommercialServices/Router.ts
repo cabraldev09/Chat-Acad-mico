@@ -261,8 +261,10 @@ export const routeToCommercial = async (ticket: Ticket, opts: RouteOptions): Pro
     const users: User[] = (queue as any).users || [];
     const ownerOfLead = lead?.ownerId ? users.find(u => u.id === lead.ownerId) : null;
     // the lead's owner keeps the conversation only when they have a WhatsApp number to answer from
-    const ownerHasNumber = ownerOfLead ? (await Whatsapp.count({ where: { ownerId: ownerOfLead.id, channel: "whatsapp" } as any })) > 0 : false;
-    user = (ownerHasNumber && ownerOfLead) || (users.length ? await pickUserForQueue(queue, true) : null);
+    const owners = new Set((await Whatsapp.findAll({ where: { ownerId: users.map(u => u.id), channel: "whatsapp" } as any, attributes: ["ownerId"] })).map(w => Number(w.ownerId)));
+    // ...unless nobody of the queue has a number (then the lead's owner is as good as anyone)
+    const keepOwner = !!ownerOfLead && (owners.has(ownerOfLead.id) || owners.size === 0);
+    user = (keepOwner && ownerOfLead) || (users.length ? await pickUserForQueue(queue, true) : null);
   }
 
   const business = await getBusinessConfig();
