@@ -167,7 +167,7 @@ export const computeMetrics = async (userIds: number[], period: Period, now: Dat
   // leads worked: a real activity of the person on the lead, or a message of the person in the lead's conversation
   const worked = await rows(
     `SELECT DISTINCT a.userId, a.leadId FROM LeadActivities a WHERE a.userId IN (:ids) AND a.createdAt BETWEEN :from AND :to AND a.type NOT IN ('system', 'reopened')
-     UNION SELECT DISTINCT o.userId, t.leadId FROM OutboundMessages o JOIN Tickets t ON t.id = o.ticketId WHERE o.status = 'sent' AND o.userId IN (:ids) AND o.sentAt BETWEEN :from AND :to AND t.leadId IS NOT NULL AND ${VALID_TICKET}`,
+     UNION SELECT DISTINCT o.userId, wl.id FROM OutboundMessages o JOIN Tickets t ON t.id = o.ticketId JOIN Leads wl ON wl.contactId = t.contactId WHERE o.status = 'sent' AND o.userId IN (:ids) AND o.sentAt BETWEEN :from AND :to AND ${VALID_TICKET}`,
     rep
   );
   worked.forEach(r => { const m = out.get(Number(r.userId)); if (m) m.leadsWorked += 1; });
@@ -190,19 +190,28 @@ export const computeMetrics = async (userIds: number[], period: Period, now: Dat
   (await rows(`SELECT createdBy AS userId, COUNT(*) AS n FROM Proposals WHERE createdBy IN (:ids) AND viewedAt BETWEEN :from AND :to GROUP BY createdBy`, rep)).forEach(r => set(r, "proposalsViewed"));
   (await rows(`SELECT ownerId AS userId, COUNT(*) AS n FROM Leads WHERE ownerId IN (:ids) AND wonAt BETWEEN :from AND :to AND isHistorical = false GROUP BY ownerId`, rep)).forEach(r => set(r, "enrollments"));
 
-  // time to the first contact: leads created in the period, by whoever answers them (the owner of the conversation, or of the lead while nobody has it)
+  // time to the first contact: leads created in the period, by whoever answers them (the owner of the open conversation, or of the lead while nobody has it).
+  // Only a HUMAN contact counts: the first message the person sent in the conversation (or the first thing they logged on the lead), never the robot's greeting.
   const business = await getBusinessConfig();
   const contacted = await rows(
-    `SELECT COALESCE(t.userId, l.ownerId) AS userId, l.createdAt AS c, l.firstContactAt AS f FROM Leads l
-     LEFT JOIN Tickets t ON t.id = (SELECT t2.id FROM Tickets t2 WHERE t2.leadId = l.id ORDER BY t2.id DESC LIMIT 1)
-     WHERE l.firstContactAt IS NOT NULL AND l.isHistorical = false AND l.createdAt BETWEEN :from AND :to AND COALESCE(t.userId, l.ownerId) IN (:ids) LIMIT 20000`,
+    `SELECT r.userId, r.c,
+       (SELECT MIN(x.at) FROM (
+          SELECT o.sentAt AS at FROM OutboundMessages o JOIN Tickets tt ON tt.id = o.ticketId WHERE tt.contactId = r.contactId AND o.userId = r.userId AND o.status = 'sent'
+          UNION ALL SELECT a.createdAt AS at FROM LeadActivities a WHERE a.leadId = r.id AND a.userId = r.userId AND a.type NOT IN ('system', 'reopened', 'note')
+       ) x) AS f
+     FROM (
+       SELECT l.id, l.contactId, l.createdAt AS c, COALESCE(t.userId, l.ownerId) AS userId FROM Leads l
+       LEFT JOIN Tickets t ON t.id = (SELECT t2.id FROM Tickets t2 WHERE t2.contactId = l.contactId AND t2.status <> 'closed' ORDER BY t2.id DESC LIMIT 1)
+       WHERE l.isHistorical = false AND l.createdAt BETWEEN :from AND :to
+     ) r WHERE r.userId IN (:ids) LIMIT 20000`,
     rep
   );
   const acc = new Map<number, { sum: number; n: number }>();
   contacted.forEach(r => {
+    if (!r.f) return;
     const id = Number(r.userId);
     const cur = acc.get(id) || { sum: 0, n: 0 };
-    cur.sum += businessMinutes(business, new Date(r.c), new Date(r.f));
+    cur.sum += businessMinutes(business, new Date(r.c), new Date(Math.max(+new Date(r.f), +new Date(r.c))));
     cur.n += 1;
     acc.set(id, cur);
   });
