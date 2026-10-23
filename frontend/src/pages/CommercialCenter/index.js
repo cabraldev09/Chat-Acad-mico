@@ -1,7 +1,7 @@
 import React, { useContext, useEffect, useMemo, useState } from "react";
 import { useHistory } from "react-router-dom";
 import { toast } from "react-toastify";
-import { AlertTriangle, BarChart3, CalendarClock, Download, Gauge, HeartPulse, ListTodo, Megaphone, MonitorCheck, Settings2, Target, Users } from "lucide-react";
+import { AlertTriangle, Wifi, WifiOff, BarChart3, CalendarClock, Download, Gauge, HeartPulse, ListTodo, Megaphone, MonitorCheck, Settings2, Target, Users } from "lucide-react";
 
 import { AuthContext } from "../../context/Auth/AuthContext";
 import { canOperateRetention } from "../../utils/access";
@@ -159,6 +159,91 @@ const Tools = () => {
   );
 };
 
+
+const WA = {
+  connected: { label: "WhatsApp conectado", color: "#16a34a" },
+  offline: { label: "WhatsApp desconectado", color: "#dc2626" },
+  none: { label: "Não conectou o WhatsApp", color: "#dc2626" },
+};
+const initials = (name) => String(name || "?").split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join("");
+const since = (iso) => {
+  if (!iso) return "";
+  const min = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+  return min < 1 ? "agora" : min < 60 ? `há ${min} min` : min < 1440 ? `há ${Math.floor(min / 60)} h` : `há ${Math.floor(min / 1440)} d`;
+};
+
+// who is working now: one line per person, the ones that need attention first (the number is dead, then idle, then active, then off)
+const Team = ({ consultants, onOpen }) => {
+  const c = useKit();
+  const rank = (b) => (b.presence.whatsapp.state !== "connected" ? 0 : b.presence.state === "idle" ? 1 : b.presence.state === "active" ? 2 : 3);
+  const list = [...consultants].sort((a, b) => rank(a) - rank(b) || a.user.name.localeCompare(b.user.name));
+  const count = (k) => consultants.filter((b) => b.presence.state === k && b.presence.whatsapp.state === "connected").length;
+  const noNumber = consultants.filter((b) => b.presence.whatsapp.state !== "connected").length;
+  const chips = [["active", "Ativos", "#16a34a", count("active")], ["idle", "Parados no horário", "#d97706", count("idle")], ["off", "Fora do horário", "#94a3b8", count("off")], ["wa", "Sem WhatsApp", "#dc2626", noNumber]];
+  return (
+    <div className={c.panel}>
+      <BlockTitle icon={<Users size={16} />} title="Equipe agora" />
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "4px 0 12px" }}>
+        {chips.map(([k, label, color, n]) => (
+          <span key={k} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 10px", borderRadius: 999, fontSize: 12.5, fontWeight: 600, background: tint(color, 0.14), color: n || k === "off" ? "inherit" : undefined }}>
+            <span style={{ width: 8, height: 8, borderRadius: "50%", background: color }} />{label} <b>{n}</b>
+          </span>
+        ))}
+      </div>
+      {list.length === 0 && <div className={c.sub}>Nenhum consultor cadastrado.</div>}
+      {list.map((b) => {
+        const wa = WA[b.presence.whatsapp.state];
+        const down = b.presence.whatsapp.state !== "connected";
+        const st = down ? { label: wa.label, color: wa.color } : PRESENCE[b.presence.state];
+        return (
+          <button key={b.user.id} type="button" onClick={() => onOpen(b.user.id)} className={c.row} style={{ padding: "10px 0" }}>
+            <span style={{ width: 36, height: 36, borderRadius: "50%", display: "grid", placeItems: "center", flex: "none", fontSize: 12.5, fontWeight: 700, background: tint(st.color, 0.16), color: st.color, boxShadow: `0 0 0 2px ${st.color}` }}>{initials(b.user.name)}</span>
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <b style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.user.name}</b>
+              <span className={c.sub} style={{ display: "block", marginTop: 0 }}>
+                {down
+                  ? `${wa.label}${b.presence.whatsapp.since && b.presence.whatsapp.state === "offline" ? ` ${since(b.presence.whatsapp.since)}` : ""}`
+                  : `${PRESENCE[b.presence.state].label}${b.presence.lastActivityAt ? ` · última ação ${since(b.presence.lastActivityAt)}` : ""}`}
+              </span>
+            </span>
+            <span title={wa.label} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 600, color: wa.color, flex: "none" }}>
+              {down ? <WifiOff size={14} /> : <Wifi size={14} />}{down ? "Sem número" : "Conectado"}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+};
+
+// production per consultant: one block with three bars each (the longest bar of each kind is the reference), ranked by enrollments
+const Production = ({ ranked }) => {
+  const c = useKit();
+  const kinds = [["messagesSent", "Mensagens", BRAND.cerulean], ["attendances", "Atendimentos", BRAND.blue], ["enrollments", "Matrículas", "#16a34a"]];
+  const max = Object.fromEntries(kinds.map(([k]) => [k, Math.max(1, ...ranked.map((b) => b.metrics[k] || 0))]));
+  const any = ranked.some((b) => kinds.some(([k]) => b.metrics[k] > 0));
+  return (
+    <div className={c.panel}>
+      <BlockTitle icon={<Gauge size={16} />} title="Produção por consultor" />
+      {!any && <div className={c.sub} style={{ padding: "18px 0" }}>Ainda sem produção neste período. Quando alguém enviar mensagens, atender conversas ou matricular, as barras aparecem aqui.</div>}
+      {any && ranked.map((b) => (
+        <div key={b.user.id} style={{ display: "grid", gridTemplateColumns: "minmax(110px, 170px) 1fr", gap: 12, alignItems: "center", padding: "10px 0", borderTop: `1px solid rgba(127,140,160,.25)` }}>
+          <b style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.user.name}</b>
+          <div style={{ display: "grid", gap: 5 }}>
+            {kinds.map(([k, label, color]) => (
+              <div key={k} style={{ display: "grid", gridTemplateColumns: "88px 1fr 34px", alignItems: "center", gap: 8, fontSize: 12 }}>
+                <span className={c.sub} style={{ marginTop: 0 }}>{label}</span>
+                <Progress value={b.metrics[k] || 0} max={max[k]} color={color} />
+                <b style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{num(b.metrics[k])}</b>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
+
 const CommercialCenter = () => {
   const c = useKit();
   const history = useHistory();
@@ -183,28 +268,27 @@ const CommercialCenter = () => {
   };
 
   const ranked = useMemo(() => (data ? [...data.consultants].sort((a, b) => b.metrics.enrollments - a.metrics.enrollments || b.metrics.messagesSent - a.metrics.messagesSent) : []), [data]);
-  const presence = data ? data.consultants.reduce((acc, b) => ({ ...acc, [b.presence.state]: (acc[b.presence.state] || 0) + 1 }), {}) : {};
 
   return (
     <div className={c.page}>
-      <div className={c.head}>
-        <div>
-          <h1 className={c.h1}>Centro de Gestão Comercial</h1>
-          <div className={c.lead}>Produtividade, presença e resultados dos consultores sob sua gestão. Os números são os mesmos que cada consultor vê em Estatísticas.</div>
+      <div style={{ background: BRAND.blue, color: "#fff", borderRadius: 18, padding: "20px 24px 0", marginBottom: 18 }}>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+          <div>
+            <h1 className={c.h1} style={{ color: "#fff" }}>Gestão Comercial</h1>
+            <div style={{ fontSize: 13.5, opacity: 0.8, marginTop: 4 }}>{TAB_HELP[tab]}</div>
+          </div>
+          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            <PeriodPicker value={period} onChange={setPeriod} />
+            <button type="button" onClick={exportCsv} style={{ border: "1px solid rgba(255,255,255,.4)", background: "transparent", color: "#fff", borderRadius: 10, padding: "7px 14px", fontFamily: "inherit", fontSize: 13, fontWeight: 600, cursor: "pointer" }}><Download size={14} style={{ verticalAlign: -2 }} /> Exportar</button>
+          </div>
         </div>
-        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-          <PeriodPicker value={period} onChange={setPeriod} />
-          <button type="button" className={c.btn} onClick={exportCsv}><Download size={14} style={{ verticalAlign: -2 }} /> Exportar</button>
+        <div role="tablist" style={{ display: "flex", gap: 4, marginTop: 14, overflowX: "auto" }}>
+          {[["geral", "Visão geral"], ["consultores", "Consultores"], ["polos", "Polos"], ["ferramentas", "Ferramentas"], ["config", "Configuração"]].map(([k, label]) => (
+            <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setTab(k)} style={{ border: 0, background: "transparent", color: "#fff", opacity: tab === k ? 1 : 0.7, fontFamily: "inherit", fontSize: 14, fontWeight: 600, padding: "10px 16px", cursor: "pointer", borderBottom: `3px solid ${tab === k ? BRAND.gorse : "transparent"}`, whiteSpace: "nowrap" }}>{label}</button>
+          ))}
         </div>
       </div>
 
-      <div className={c.chips} role="tablist" style={{ marginBottom: 18 }}>
-        {[["geral", "Visão geral"], ["consultores", "Consultores"], ["polos", "Polos"], ["ferramentas", "Ferramentas"], ["config", "Configuração"]].map(([k, label]) => (
-          <button key={k} type="button" role="tab" aria-selected={tab === k} className={`${c.chip} ${tab === k ? c.chipOn : ""}`} onClick={() => setTab(k)}>{label}</button>
-        ))}
-      </div>
-
-      <div className={c.sub} style={{ margin: "-6px 0 16px" }}>{TAB_HELP[tab]}</div>
       {loading && !data && <div className={c.sub}>Carregando…</div>}
       {data && tab === "geral" && (
         <div style={{ display: "grid", gap: 16 }}>
@@ -212,20 +296,13 @@ const CommercialCenter = () => {
             {["messagesSent", "attendances", "leadsWorked", "reactivated", "pendingReply", "enrollments", "conversion", "tasksOverdue"].map((k) => <Kpi key={k} k={k} value={data.totals[k]} def={defs[k]} tone={k === "tasksOverdue" && data.totals[k] > 0 ? "#dc2626" : undefined} />)}
           </div>
           <div className={c.cols}>
+            <Team consultants={data.consultants} onOpen={(id) => { setSelected(id); setTab("consultores"); }} />
             <div className={c.panel}>
-              <BlockTitle icon={<Users size={16} />} title="Presença agora" help="Quem está trabalhando neste momento. Cruza a atividade real (mensagens, leads, tarefas dos últimos minutos) com o horário de trabalho configurado. Ativo = fez algo há pouco; No horário, sem atividade = deveria estar trabalhando e não fez nada; Fora do horário = fora do expediente." />
-              <div style={{ marginTop: 10 }}>
-                {Object.keys(PRESENCE).map((k) => (
-                  <div key={k} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", fontSize: 14 }}><span><PresenceDot state={k} />{PRESENCE[k].label}</span><b>{presence[k] || 0}</b></div>
-                ))}
-              </div>
-            </div>
-            <div className={c.panel}>
-              <BlockTitle icon={<AlertTriangle size={16} />} title="Alertas e oportunidades" help="O que pede atenção agora: tarefas atrasadas, conversas esperando resposta, gente parada no horário de trabalho e leads sem matrícula. Clique para ver o detalhe: as tarefas abrem já filtradas na pessoa." />
+              <BlockTitle icon={<AlertTriangle size={16} />} title="Alertas e oportunidades" help="Calculados agora com os dados reais de cada consultor." />
               <div style={{ marginTop: 8 }}>
                 {data.alerts.length === 0 && <div className={c.sub}>Nada pedindo atenção agora.</div>}
                 {data.alerts.slice(0, 8).map((a, i) => (
-                  <button key={`${a.userId}-${a.code}-${i}`} type="button" className={c.row} onClick={() => { if (a.code === "tasks_overdue") history.push(alertLink(a)); else { setSelected(a.userId); setTab("consultores"); } }}>
+                  <button key={`${a.userId}-${a.code}-${i}`} type="button" className={c.row} onClick={() => { if (a.code === "tasks_overdue") history.push(alertLink(a)); else if (a.code.startsWith("whatsapp")) history.push("/connections"); else { setSelected(a.userId); setTab("consultores"); } }}>
                     <span style={{ width: 8, height: 8, borderRadius: "50%", background: LEVEL[a.level], flex: "none" }} />
                     <span style={{ flex: 1 }}><b>{a.name}</b> · {a.text}</span>
                   </button>
@@ -233,10 +310,7 @@ const CommercialCenter = () => {
               </div>
             </div>
           </div>
-          <div className={c.panel}>
-            <BlockTitle icon={<Gauge size={16} />} title="Produção por consultor" help="Barras com mensagens enviadas, atendimentos e matrículas de cada consultor no período. Passe o mouse para ver os números." />
-            <CompareBars data={ranked.map((b) => ({ name: b.user.name.split(" ")[0], messagesSent: b.metrics.messagesSent, attendances: b.metrics.attendances, enrollments: b.metrics.enrollments }))} keys={[["messagesSent", "Mensagens", BRAND.cerulean], ["attendances", "Atendimentos", BRAND.blue], ["enrollments", "Matrículas", "#16a34a"]]} />
-          </div>
+          <Production ranked={ranked} />
         </div>
       )}
 

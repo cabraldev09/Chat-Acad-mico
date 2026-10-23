@@ -30,7 +30,7 @@ const useStyles = makeStyles((theme) => ({
     gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", paddingBottom: theme.spacing(2), ...theme.scrollbarStyles,
   },
   col: {
-    background: theme.palette.type === "dark" ? "#0a1424" : "#eef1f6", borderRadius: 14, padding: theme.spacing(1),
+    background: theme.palette.type === "dark" ? "#0a1424" : "#dce5f1", borderRadius: 14, padding: theme.spacing(1),
     display: "flex", flexDirection: "column", gap: theme.spacing(1), border: "1px solid transparent",
     transition: "border-color .15s, background .15s, box-shadow .2s",
   },
