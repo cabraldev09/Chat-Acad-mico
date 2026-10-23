@@ -13,6 +13,10 @@ const q = async (title, sql) => {
     LEFT JOIN "Tickets" t ON t.id = (SELECT t2.id FROM "Tickets" t2 WHERE t2."leadId" = l.id ORDER BY t2.id DESC LIMIT 1)
     LEFT JOIN "Whatsapps" w ON w.id = t."whatsappId"
     WHERE s.type = 'open' AND l."firstContactAt" IS NULL AND l."enrolledAt" IS NULL AND l."isHistorical" = false ORDER BY l."createdAt" LIMIT 40`);
+  await q("conversas dos leads novos (por telefone do contato)", `SELECT l.id AS lead, l.name, l."ownerId" AS lead_owner, c.id AS contact, t.id AS ticket, t.status, t."userId" AS t_user, t."whatsappId" AS t_wa, w."ownerId" AS wa_owner, t."leadId" AS t_lead
+    FROM "Leads" l JOIN "LeadStages" s ON s.id = l."stageId" JOIN "Contacts" c ON c.number = regexp_replace(COALESCE(l.phone,''), '\\D', '', 'g')
+    JOIN "Tickets" t ON t."contactId" = c.id LEFT JOIN "Whatsapps" w ON w.id = t."whatsappId"
+    WHERE s.type = 'open' AND l."firstContactAt" IS NULL AND l."enrolledAt" IS NULL AND l."isHistorical" = false ORDER BY l.id, t.id LIMIT 60`);
   await q("tarefas em aberto vencidas", `SELECT k.id, k.title, k."userId" AS task_user, l.name AS lead, l."ownerId" AS lead_owner, t.status AS t_status, t."userId" AS t_user, w."ownerId" AS wa_owner
     FROM "LeadTasks" k LEFT JOIN "Leads" l ON l.id = k."leadId"
     LEFT JOIN "Tickets" t ON t.id = (SELECT t2.id FROM "Tickets" t2 WHERE t2."leadId" = l.id ORDER BY t2.id DESC LIMIT 1)
