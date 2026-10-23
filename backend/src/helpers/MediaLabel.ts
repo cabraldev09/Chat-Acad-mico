@@ -26,3 +26,6 @@ export const bodyOfMedia = (caption: string | null | undefined, mediaType: strin
   const label = MEDIA_LABELS[kindOf(mediaType, mediaUrl, mimetype)];
   return label || String(fileName || mediaUrl || text || "");
 };
+
+// the text is only one of the labels above (or one of the older ones): there is no caption
+export const isMediaLabel = (text?: string | null): boolean => /^[\p{Extended_Pictographic}\s]*(Imagem|Foto|Vídeo|Áudio|Mensagem de voz|Figurinha)$/u.test(String(text || "").replace(/‎/g, "").trim());

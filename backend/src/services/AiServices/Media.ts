@@ -1,3 +1,4 @@
+import { isMediaLabel } from "../../helpers/MediaLabel";
 import path from "path";
 
 import { Op } from "sequelize";
@@ -38,7 +39,7 @@ export const textOfMessage = (m: Message): string => {
   if (!kind) return body;
   const name = path.basename(file.split("?")[0]);
   // no caption: the body is only the name of the file
-  const caption = !body || body === name || path.basename(body) === name ? "" : body;
+  const caption = !body || body === name || path.basename(body) === name || isMediaLabel(body) ? "" : body;
   return [caption, markerOf(kind, name)].filter(Boolean).join(" ");
 };
 

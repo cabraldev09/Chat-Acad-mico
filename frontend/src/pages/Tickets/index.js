@@ -15,12 +15,12 @@ const useStyles = makeStyles((theme) => {
   return {
     root: {
       display: "flex",
-      height: `calc(100% - ${theme.sizing.appBar}px)`,
+      height: `calc(100% - ${theme.sizing.appBar}px - var(--alerts-h, 0px))`,
       overflow: "hidden",
       backgroundColor: c.panelAlt,
       [theme.breakpoints.up("md")]: {
         margin: theme.spacing(1.5),
-        height: `calc(100% - ${theme.sizing.appBar}px - ${theme.spacing(3)}px)`,
+        height: `calc(100% - ${theme.sizing.appBar}px - ${theme.spacing(3)}px - var(--alerts-h, 0px))`,
         borderRadius: 14,
         border: `1px solid ${c.divider}`,
         boxShadow: theme.palette.type === "dark" ? "none" : "0 1px 3px rgba(11,20,26,.08)",
