@@ -535,7 +535,7 @@ const PoloBoard = ({ data, polos, history, setTab }) => {
                   <div className="dash-team">{team.map((b) => <span key={b.user.id}><i>{(b.user.name || "?").charAt(0).toUpperCase()}</i>{b.user.name.split(" ")[0]}</span>)}</div>
                 </>
               ) : (
-                <button type="button" className={c.btn} onClick={() => setTab("consultores")}>Vincular consultores</button>
+                <button type="button" className={`${c.btn} dash-link`} onClick={() => setTab("consultores")}>Vincular consultores</button>
               )}
             </article>
           );

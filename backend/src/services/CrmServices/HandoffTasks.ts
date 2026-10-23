@@ -53,11 +53,12 @@ export const releaseUnreachableTasks = async (): Promise<{ moved: number; releas
   for (const r of found) {
     touched.add(Number(r.userId));
     const answerer = r.answerer ? Number(r.answerer) : null;
+    // the conversation is still with the same person who cannot act (nobody with a number could take it): the task waits without an owner, where the management sees it
     if (answerer && answerer !== Number(r.userId)) {
       await sequelize.query(`UPDATE "LeadTasks" SET "userId" = :to, "updatedAt" = NOW() WHERE id = :id`, { replacements: { to: answerer, id: r.id } });
       moved += 1;
       touched.add(answerer);
-    } else if (!answerer) {
+    } else {
       await sequelize.query(`UPDATE "LeadTasks" SET "userId" = NULL, "updatedAt" = NOW() WHERE id = :id`, { replacements: { id: r.id } });
       released += 1;
     }
