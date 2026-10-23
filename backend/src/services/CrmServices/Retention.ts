@@ -92,7 +92,7 @@ export const riskStudents = async (scope: Scope = {}, limit = 200) => {
 
 // labels the students at risk (and takes it off those who wrote again), one task for the tutor per silence
 export const runRiskScan = async (): Promise<number> => {
-  const { students } = await riskStudents({}, 100);
+  const { students } = await riskStudents({}, 2000);
   const atRisk = new Set(students.map(s => s.id));
   let marked = 0;
   for (const s of students) {

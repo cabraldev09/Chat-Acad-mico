@@ -7,6 +7,7 @@ import makeCrud from "./crudFactory";
 import axios from "axios";
 import { Op, fn, col, QueryTypes } from "sequelize";
 import sequelize from "../database";
+import { aiError } from "../services/AiServices/Provider";
 import AppError from "../errors/AppError";
 import KbDocument from "../models/KbDocument";
 import KbChunk from "../models/KbChunk";
@@ -16,7 +17,7 @@ import Course from "../models/Course";
 import { addDocument, indexDocument, ensureLegacy, searchChunks } from "../services/AiServices/Kb";
 import AiLearning from "../models/AiLearning";
 import AiRule from "../models/AiRule";
-import { KINDS, RuleKind, coachTurn, fromConversation, invalidateTraining } from "../services/AiServices/Training";
+import { KINDS, RuleKind, askModel, coachTurn, fromConversation, invalidateTraining } from "../services/AiServices/Training";
 import { exampleText, normalizeResult, stageOfStep } from "../services/AiServices/TrainingText";
 import { ExportedChat, looksLikeWhatsAppExport, maskPii, parseWhatsAppExport, toTranscript } from "../services/AiServices/ChatExport";
 import { analyze as analyzeFile, planOf } from "../services/AiServices/TrainAnalyze";
@@ -391,8 +392,7 @@ export const test = async (req: Request, res: Response): Promise<Response> => {
       tokens: result.tokens
     });
   } catch (err) {
-    if (err.message === "ERR_AI_NO_API_KEY") throw new AppError("ERR_AI_NO_API_KEY");
-    throw new AppError("ERR_AI_FAILED", 502);
+    throw aiError(err, "teste", agent.model);
   }
 };
 
@@ -508,10 +508,7 @@ const asTurns = (raw: any): Array<{ role: "user" | "assistant"; content: string 
     .filter((m: any) => m && ["user", "assistant"].includes(m.role) && String(m.content || "").trim())
     .map((m: any) => ({ role: m.role, content: String(m.content).slice(0, 2000) }));
 
-const aiFailure = (err: any): AppError => {
-  if (err && err.message === "ERR_AI_NO_API_KEY") return new AppError("ERR_AI_NO_API_KEY");
-  return new AppError("ERR_AI_FAILED", 502);
-};
+const aiFailure = (err: any, where = "treino", model?: string): AppError => aiError(err, where, model);
 
 export const ruleList = async (req: Request, res: Response): Promise<Response> => {
   const agent = await loadAgent(req.params.id);
@@ -581,6 +578,18 @@ export const coach = async (req: Request, res: Response): Promise<Response> => {
     return res.json(await coachTurn(agent, messages));
   } catch (err) {
     throw aiFailure(err);
+  }
+};
+
+// "Testar conexão": one tiny call with the saved provider, model and key; the answer says what is wrong when something is
+export const ping = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await loadAgent(req.params.id);
+  try {
+    const started = Date.now();
+    await askModel(agent, "Responda apenas: ok", [{ role: "user", content: "ok?" }], 20);
+    return res.json({ ok: true, provider: agent.provider, model: agent.model, ms: Date.now() - started });
+  } catch (err) {
+    throw aiFailure(err, "conexão", agent.model);
   }
 };
 

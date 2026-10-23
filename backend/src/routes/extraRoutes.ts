@@ -180,6 +180,7 @@ r.post("/ai-agents/:id/rules/bulk", isAuth, isManager, Ai.ruleBulk);
 r.put("/ai-rules/:id", isAuth, isManager, Ai.ruleUpdate);
 r.delete("/ai-rules/:id", isAuth, isManager, Ai.ruleRemove);
 r.post("/ai-agents/:id/coach", isAuth, isManager, Ai.coach);
+r.post("/ai-agents/:id/ping", isAuth, isManager, Ai.ping);
 r.post("/ai-agents/:id/train/upload", isAuth, isManager, trainUpload.single("file"), Ai.trainUpload);
 r.post("/ai-agents/:id/train/analyze", isAuth, isManager, Ai.trainAnalyze);
 r.post("/ai-agents/:id/train/apply", isAuth, isManager, Ai.trainApply);
