@@ -140,6 +140,11 @@ const Panel = () => {
   const [failed, setFailed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [exportEl, setExportEl] = useState(null);
+  // "new leads to check": mine by default; the management can look at the whole team (or at the consultant picked in the filter)
+  const isManager = !!me && (me.profile === "admin" || me.role === "coordenacao");
+  const [triageScope, setTriageScope] = useState("mine");
+  const [triage, setTriage] = useState({ items: [], total: 0, late: 0 });
+  const [triageAll, setTriageAll] = useState(false);
 
   // quick periods; the one that matches the dates on screen is marked
   const presets = useMemo(() => {
@@ -158,6 +163,13 @@ const Panel = () => {
     setExportEl(null);
     await downloadFile("/crm/report", { from, to, groupBy, format: "csv" }, `relatorio-${groupBy === "polo" ? "polos" : "consultores"}-${from}-a-${to}.csv`);
   };
+
+  const loadTriage = useCallback(() => {
+    if (!me) return;
+    const who = triageScope === "mine" || !isManager ? me.id : ownerId || undefined;
+    api.get("/crm/triage", { params: { ownerId: who } }).then(({ data }) => setTriage(data)).catch(() => undefined);
+  }, [me, triageScope, ownerId, isManager]);
+  useEffect(() => { loadTriage(); }, [loadTriage]);
 
   const ticket = useRef(0);
   const load = useCallback(() => {
@@ -191,9 +203,9 @@ const Panel = () => {
   const sparkLeads = series.map((r) => ({ v: r.leads || 0 }));
   const sparkWon = series.map((r) => ({ v: r.matriculas || 0 }));
   const prev = d?.previous;
-  const reload = () => { load(); };
+  const reload = () => { load(); loadTriage(); };
 
-  const alerts = d ? [
+  const allAlerts = d ? [
     [Hourglass, "Aguardando 1º contato", d.attention.waitingFirstContact, AMBER, "rgba(217,119,6,.14)", "/crm"],
     [AlertTriangle, "Tarefas atrasadas", d.attention.overdueTasks, RED, "rgba(220,38,38,.12)", "/crm/tarefas"],
     [Flame, "Leads esfriando (+3 dias)", d.attention.stale, "#0693E3", "rgba(6,147,227,.12)", "/crm?followUp=overdue"],
@@ -201,6 +213,9 @@ const Panel = () => {
     [CircleDollarSign, "Taxa de matrícula pendente", d.attention.feePending, "#E5484D", "rgba(229,72,77,.12)", d.attention.feeTagId ? `/crm?tagId=${d.attention.feeTagId}` : "/crm"],
     [FileWarning, "Documentos pendentes", d.attention.docsPending, "#b45309", "rgba(245,158,11,.16)", d.attention.docsTagId ? `/crm?tagId=${d.attention.docsTagId}` : "/crm"],
   ] : [];
+  // only what needs attention, by urgency (an empty counter is not information)
+  const alerts = allAlerts.filter((a) => Number(a[2]) > 0);
+
 
   return (
     <MainContainer>
@@ -238,28 +253,34 @@ const Panel = () => {
       {d && (
         <div className={classes.scroll}>
          <div className={`${classes.content} ${loading ? classes.contentBusy : ""}`} aria-busy={loading}>
-          <SectionHead color="#d97706" title="Pontos de atenção" hint="Situação de agora, não muda com o período escolhido" />
-          <div className={classes.alerts}>
-            {alerts.map(([Icon, label, value, fg, bg, to2]) => (
-              <GlowCard key={label} tone={fg} className={classes.alert} role="button" tabIndex={0} onClick={() => history.push(to2)}
-                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); history.push(to2); } }}>
-                <span className={classes.alertIcon} style={{ background: bg, color: fg }}><Icon size={18} /></span>
-                <div>
-                  <div className={classes.label}>{label}</div>
-                  <div style={{ fontSize: 24, fontWeight: 700, color: value ? fg : "#94a3b8", fontVariantNumeric: "tabular-nums" }}><NumberTicker value={value || 0} /></div>
-                </div>
-              </GlowCard>
-            ))}
-          </div>
-
-          {d.triage && d.triage.length > 0 && (
+          {(triage.total > 0 || (isManager && triageScope === "all")) && (
             <>
-              <SectionHead color="#6366f1" title="Novos para conferir" hint="Os seus leads novos que ninguém atendeu ainda. Cada consultor confere os seus no mesmo dia, antes do dia fechar: se for amigo ou da equipe, tire do funil para não contar como lead." />
+              <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginTop: 8 }}>
+                <div style={{ flex: 1, minWidth: 260 }}>
+                  <SectionHead color="#6366f1" title={triage.total > 0 ? `Novos para conferir · ${triage.total}` : "Novos para conferir"} hint={triageScope === "mine" || !isManager ? "Seus leads novos que ninguém atendeu. Confira no mesmo dia, antes do dia fechar." : "Leads novos sem atendimento de toda a equipe."} />
+                </div>
+                {isManager && (
+                  <div className={classes.chips} role="group" aria-label="De quem">
+                    {[["mine", "Meus"], ["all", "Equipe"]].map(([k, label]) => (
+                      <button key={k} type="button" className={`${classes.chip} ${triageScope === k ? classes.chipOn : ""}`} onClick={() => setTriageScope(k)}>{label}</button>
+                    ))}
+                  </div>
+                )}
+              </div>
               <GlowCard className={classes.card}>
-                {d.triage.map((t) => (
+                {triage.late > 0 && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", marginBottom: 8, borderRadius: 10, background: "rgba(220,38,38,.1)", color: "#b91c1c", fontSize: 13.5, fontWeight: 600 }}>
+                    <AlertTriangle size={16} />{triage.late} {triage.late === 1 ? "chegou" : "chegaram"} em dias anteriores e já {triage.late === 1 ? "passou" : "passaram"} do prazo de conferir.
+                  </div>
+                )}
+                {(triageAll ? triage.items : triage.items.slice(0, 6)).map((t) => (
                   <div key={t.id} className={classes.triageRow}>
                     <div style={{ flex: 1, minWidth: 180 }}>
-                      <div style={{ fontWeight: 600, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>{t.name}{t.ownerName && <span className={classes.label} style={{ fontSize: 12 }}>· {t.ownerName}</span>}{t.late && <StagePill stage={{ name: "Passou do dia", color: "#dc2626" }} size="sm" solid={false} />}<StagePill stage={{ name: "Novo · sem atendimento", color: "#d97706" }} size="sm" solid={false} /></div>
+                      <div style={{ fontWeight: 600, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                        {t.name}
+                        {t.late ? <StagePill stage={{ name: "Passou do dia", color: "#dc2626" }} size="sm" solid={false} /> : <StagePill stage={{ name: "Chegou hoje", color: "#d97706" }} size="sm" solid={false} />}
+                        {triageScope === "all" && isManager && t.ownerName && <span className={classes.label} style={{ fontSize: 12 }}>· {t.ownerName}</span>}
+                      </div>
                       <div className={classes.label} style={{ fontSize: 12.5 }}>
                         <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}><SourceIcon source={t.source} />{t.source}</span>
                         {t.phone ? ` · ${t.phone}` : ""} · chegou {ago(t.createdAt)}
@@ -269,11 +290,32 @@ const Panel = () => {
                     <NotALead lead={t} compact onDone={reload} />
                   </div>
                 ))}
-                {d.attention.waitingFirstContact > d.triage.length && (
-                  <Button size="small" style={{ marginTop: 8 }} onClick={() => history.push("/crm")}>Ver os {d.attention.waitingFirstContact} que aguardam no funil</Button>
+                {triage.items.length > 6 && (
+                  <Button size="small" style={{ marginTop: 8 }} onClick={() => setTriageAll((v) => !v)}>{triageAll ? "Mostrar menos" : `Ver todos (${triage.items.length})`}</Button>
                 )}
+                {triage.total === 0 && <Typography className={classes.label}>Nada para conferir. Tudo em dia.</Typography>}
               </GlowCard>
             </>
+          )}
+
+          {alerts.length > 0 ? (
+            <>
+              <SectionHead color="#d97706" title="Pontos de atenção" hint="Situação de agora, não muda com o período escolhido" />
+              <div className={classes.alerts}>
+                {alerts.map(([Icon, label, value, fg, bg, to2]) => (
+                  <GlowCard key={label} tone={fg} className={classes.alert} role="button" tabIndex={0} onClick={() => history.push(to2)}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); history.push(to2); } }}>
+                    <span className={classes.alertIcon} style={{ background: bg, color: fg }}><Icon size={18} /></span>
+                    <div>
+                      <div className={classes.label}>{label}</div>
+                      <div style={{ fontSize: 24, fontWeight: 700, color: fg, fontVariantNumeric: "tabular-nums" }}><NumberTicker value={value || 0} /></div>
+                    </div>
+                  </GlowCard>
+                ))}
+              </div>
+            </>
+          ) : (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderRadius: 12, background: "rgba(22,163,74,.1)", color: "#15803d", fontWeight: 600 }}>Nenhum ponto de atenção agora.</div>
           )}
 
           <SectionHead color="#16a34a" title="Resultados do período" hint="Dos leads que entraram entre as datas escolhidas, quantos já se matricularam. A seta compara com o período anterior." />
