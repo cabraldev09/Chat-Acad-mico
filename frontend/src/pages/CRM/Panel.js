@@ -295,7 +295,7 @@ const Panel = () => {
               <SectionHead color="#d97706" title="Pontos de atenção" hint="Situação de agora, não muda com o período escolhido" />
               <div className={classes.alerts}>
                 {alerts.map(([Icon, label, value, fg, bg, to2]) => (
-                  <GlowCard key={label} tone={fg} className={classes.alert} role="button" tabIndex={0} onClick={() => history.push(to2)}
+                  <GlowCard key={label} lift tone={fg} className={classes.alert} role="button" tabIndex={0} onClick={() => history.push(to2)}
                     onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); history.push(to2); } }}>
                     <span className={classes.alertIcon} style={{ background: bg, color: fg }}><Icon size={18} /></span>
                     <div>
