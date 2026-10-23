@@ -11,6 +11,13 @@ import {
   MessageSendOptions
 } from "whatsapp-web.js";
 import { Poll } from "whatsapp-web.js";
+// the last steps of the start of whatsapp-web.js, used by the repair of a page that never said "ready" (see healInjection)
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { LoadUtils } = require("whatsapp-web.js/src/util/Injected/Utils");
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const ClientInfo = require("whatsapp-web.js/src/structures/ClientInfo");
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const InterfaceController = require("whatsapp-web.js/src/util/InterfaceController");
 import { applyReaction } from "../../../services/MessageServices/MessageActions";
 import { WWEBJS_AUTH_DIR } from "../../../config/paths";
 import fs from "fs";
@@ -702,26 +709,49 @@ export const sessionHealth = async (): Promise<SessionHealth[]> => {
     // eslint-disable-next-line no-await-in-loop
     const state = await withTimeout(wbot.getState() as Promise<string>, 15000).catch(() => null);
     // eslint-disable-next-line no-await-in-loop
-    const injected = await withTimeout(wbot.pupPage!.evaluate(() => !!((window as any).WWebJS && (window as any).Store)), 15000).catch(() => null);
+    const injected = await withTimeout(wbot.pupPage!.evaluate(() => typeof (window as any).WWebJS !== "undefined"), 15000).catch(() => null);
     out.push({ id, registered: sessions.some(s => s.id === id), ready: readySeen.has(id), state: state ? String(state) : null, injected });
+    // connected but never "ready": the repair runs (it logs each step)
+    if (state === "CONNECTED" && !readySeen.has(id) && !initTimers.has(id) && !retrying.has(id)) healInjection(id, wbot).catch(() => undefined);
   }
   return out;
 };
 
-// A page that says CONNECTED but never had its helpers injected cannot read or send anything: the injection is run again (once every 10 minutes per number).
+// A page that says CONNECTED but whose "ready" never came cannot read or send anything: the events are not attached. The last steps of the start of
+// whatsapp-web.js are done here one by one (each one logged with its error), so the log says which one breaks and the session still comes up when it can.
+// Once every 4 minutes per number.
 const healInjection = async (id: number, wbot: Session): Promise<void> => {
-  if (readySeen.has(id) || Date.now() - (healTried.get(id) || 0) < 10 * 60000) return;
+  if (readySeen.has(id) || Date.now() - (healTried.get(id) || 0) < 4 * 60000) return;
   healTried.set(id, Date.now());
-  try {
-    const injected = await withTimeout(wbot.pupPage!.evaluate(() => !!((window as any).WWebJS && (window as any).Store)), 15000);
-    if (injected) {
-      logger.info(`Session ${id}: a página está conectada e com os recursos carregados, mas o evento "ready" não veio; seguindo sem ele`);
-      return;
+  const page = wbot.pupPage!;
+  const step = async (name: string, fn: () => Promise<unknown>): Promise<void> => {
+    try {
+      await withTimeout(fn(), 60000);
+      logger.info(`Session ${id}: [reparo] ${name}: ok`);
+    } catch (err) {
+      logger.error(`Session ${id}: [reparo] ${name}: falhou: ${String((err as Error)?.message || err).slice(0, 300)}`);
+      throw err;
     }
-    logger.warn(`Session ${id}: a página está conectada mas sem os recursos do whatsapp-web.js; rodando a injeção de novo`);
-    await withTimeout((wbot as any).inject(), 120000);
+  };
+  try {
+    const hasUtils = await withTimeout(page.evaluate(() => typeof (window as any).WWebJS !== "undefined"), 15000);
+    if (!hasUtils) await step("carregar utilitários", () => page.evaluate(LoadUtils));
+    await step("dados da conta", async () => {
+      const data = await page.evaluate(() => {
+        const w = window as any;
+        const me = w.require("WAWebUserPrefsMeUser");
+        return { ...w.require("WAWebConnModel").Conn.serialize(), wid: (me.getMaybeMePnUser && me.getMaybeMePnUser()) || (me.getMaybeMeLidUser && me.getMaybeMeLidUser()) || (me.getMeUser && me.getMeUser()) };
+      });
+      (wbot as any).info = new ClientInfo(wbot as any, data);
+    });
+    await step("interface", async () => { (wbot as any).interface = new InterfaceController(wbot as any); });
+    await step("eventos de mensagem", () => (wbot as any).attachEventListeners());
+    logger.warn(`Session ${id}: a página estava conectada sem o "ready"; os recursos foram carregados à mão e o "ready" foi disparado`);
+    (wbot as any).emit("ready");
   } catch (err) {
-    logger.error(`Session ${id}: a injeção de novo falhou: ${(err as Error).message}`);
+    // what the page offers instead, to know what changed in WhatsApp Web
+    const keys = await withTimeout(page.evaluate(() => { const w = window as any; try { return { me: Object.keys(w.require("WAWebUserPrefsMeUser") || {}).slice(0, 40), wwebjs: typeof w.WWebJS, version: w.Debug && w.Debug.VERSION }; } catch (e) { return { erro: String(e) }; } }), 15000).catch(() => null);
+    logger.error(`Session ${id}: o reparo não terminou: ${JSON.stringify(keys)}`);
   }
 };
 
