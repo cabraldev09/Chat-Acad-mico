@@ -22,14 +22,7 @@ import TestTab from "./TestTab";
 import TrainTab from "./TrainTab";
 import UsageTab from "./UsageTab";
 
-const SECTIONS = [
-  ["inicio", "Início"],
-  ["treinar", "Treinar"],
-  ["conhecimento", "Conhecimento"],
-  ["testar", "Testar"],
-  ["resultados", "Resultados"],
-  ["ajustes", "Ajustes"],
-];
+const SECTIONS = ["inicio", "treinar", "conhecimento", "testar", "resultados", "ajustes"];
 // the old addresses keep working
 const ALIAS = { ensinar: "conhecimento" };
 

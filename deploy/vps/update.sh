@@ -16,6 +16,12 @@ else
   flock -n 9 || exit 0
 fi
 
+# the database copy of EVERY hour (the messages of the system live there): a night copy alone can lose a whole day. The cron line is kept by this script, so the
+# servers already installed get it on the next update too.
+HOURLY=/etc/cron.d/chat-academico-backup-hora
+HOURLY_LINE='17 * * * * root BACKUP_ONLY=db /opt/chat-academico/deploy/vps/backup.sh >> /var/log/chat-academico-backup.log 2>&1'
+if [ ! -f "$HOURLY" ] || [ "$(cat "$HOURLY")" != "$HOURLY_LINE" ]; then echo "$HOURLY_LINE" > "$HOURLY"; chmod 644 "$HOURLY"; fi
+
 # Updating restarts the API for about a minute, so the automatic update waits for the quiet hours (22h to 6h in
 # Porto Velho). "update.sh --force" updates right away.
 if [ "${1:-}" != "--force" ]; then

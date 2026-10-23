@@ -532,50 +532,73 @@ const markMessageChanged = async (messageId: string, patch: { isDeleted?: boolea
   getIO().to(String(found.ticketId)).emit("appMessage", { action: "update", message });
 };
 
-const syncUnreadMessages = async (wbot: Session, whatsappId: number) => {
+// One run at a time per number. `syncedAt` is when the last run STARTED: everything older was already looked at, so the next run (every few minutes) only
+// needs what came after it, and the first run after a (re)connection starts from the newest message that was stored.
+const syncing = new Set<number>();
+const syncedAt = new Map<number, number>();
+const SYNC_MARGIN_S = 120;
+
+const syncUnreadMessages = async (wbot: Session, whatsappId: number, opts: { periodic?: boolean } = {}) => {
+  if (syncing.has(whatsappId)) return;
+  syncing.add(whatsappId);
+  const startedAt = Date.now();
   try {
-    const last = await Message.findOne({
-      attributes: ["createdAt"],
-      include: [
-        {
-          model: Ticket,
-          as: "ticket",
-          attributes: [],
-          where: { whatsappId },
-          required: true
-        }
-      ],
-      order: [["createdAt", "DESC"]]
-    });
+    let sinceSeconds: number | null = null;
+    const previous = syncedAt.get(whatsappId);
+    if (previous) sinceSeconds = Math.floor(previous / 1000) - SYNC_MARGIN_S;
+    else {
+      const last = await Message.findOne({
+        attributes: ["createdAt"],
+        include: [{ model: Ticket, as: "ticket", attributes: [], where: { whatsappId }, required: true }],
+        order: [["createdAt", "DESC"]]
+      });
+      if (last) sinceSeconds = Math.floor(last.createdAt.getTime() / 1000) - 5;
+    }
     const observedAt = new Date();
-    const allChats = await wbot.getChats();
+    const allChats = await withTimeout(wbot.getChats(), 180000);
     for (const chat of allChats) {
       if (chat.unreadCount === 0) await syncChatRead(whatsappId, chat.id._serialized, observedAt);
     }
-    if (!last) return;
-    const sinceSeconds = Math.floor(last.createdAt.getTime() / 1000) - 5;
-
+    // a first connection imports nothing here (the history has its own, silent import)
+    if (sinceSeconds === null) {
+      syncedAt.set(whatsappId, startedAt);
+      return;
+    }
+    const since = sinceSeconds;
     const chats = allChats
-      .filter(chat => (chat.timestamp || 0) >= sinceSeconds && !chat.id._serialized.includes("@broadcast"))
+      .filter(chat => (chat.timestamp || 0) >= since && !chat.id._serialized.includes("@broadcast"))
       .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0))
       .slice(-300);
+    if (!opts.periodic || chats.length) logger.info(`Session ${whatsappId}: ${opts.periodic ? "conferindo" : "recuperando"} mensagens de ${chats.length} conversas desde ${new Date(since * 1000).toISOString()}`);
 
     /* eslint-disable no-restricted-syntax */
     /* eslint-disable no-await-in-loop */
     let caught = 0;
+    let failed = 0;
     for (const chat of chats) {
-      const recent = await chat.fetchMessages({ limit: 100 });
-      for (const msg of recent) {
-        if (msg.timestamp < sinceSeconds || !shouldHandleMessage(msg)) continue;
-        if (await Message.findByPk(msg.id.id, { attributes: ["id"] })) continue;
-        const { messagePayload, contactPayload, contextPayload, mediaPayload } = await getMessageData(msg, wbot);
-        await handleMessage(messagePayload, contactPayload, contextPayload, mediaPayload);
-        caught += 1;
+      // one chat that fails (a deleted group, a slow page) never stops the others
+      try {
+        const recent = await withTimeout(chat.fetchMessages({ limit: opts.periodic ? 40 : 100 }), 45000);
+        for (const msg of recent) {
+          if (msg.timestamp < since || !shouldHandleMessage(msg)) continue;
+          if (await Message.findByPk(msg.id.id, { attributes: ["id"] })) continue;
+          const { messagePayload, contactPayload, contextPayload, mediaPayload } = await getMessageData(msg, wbot);
+          await handleMessage(messagePayload, contactPayload, contextPayload, mediaPayload);
+          caught += 1;
+        }
+      } catch (err) {
+        failed += 1;
+        logger.warn(`Session ${whatsappId}: não consegui conferir uma conversa (${(err as Error).message})`);
       }
     }
-    if (caught) logger.info(`Session ${whatsappId}: caught up ${caught} messages from the time it was offline`);
+    // only a run that looked at everything moves the mark forward; with failures the next one starts from the same point
+    if (!failed) syncedAt.set(whatsappId, startedAt);
+    if (caught || failed || !opts.periodic) logger.info(`Session ${whatsappId}: recuperadas ${caught} mensagens do tempo em que ficou fora${failed ? ` (${failed} conversas não conferidas, tento de novo)` : ""} em ${Math.round((Date.now() - startedAt) / 1000)}s`);
+    if (caught) getIO().emit("whatsappSync", { whatsappId, caught });
   } catch (err) {
     logger.error(err, "Error syncing messages after reconnecting");
+  } finally {
+    syncing.delete(whatsappId);
   }
 };
 
@@ -619,6 +642,7 @@ const heartbeats = new Map<number, NodeJS.Timeout>();
 // the sessions whose "ready" event came (the page finished injecting): the others are checked by the watchdog
 const readySeen = new Set<number>();
 const healTried = new Map<number, number>();
+const readyNudges = new Map<number, NodeJS.Timeout>();
 const retrying = new Set<number>();
 const clearInitTimer = (id: number) => {
   const t = initTimers.get(id);
@@ -637,6 +661,7 @@ const closeClient = async (id: number): Promise<void> => {
   const c = clients.get(id);
   clients.delete(id);
   readySeen.delete(id);
+  syncedAt.delete(id);
   if (c) await Promise.race([c.destroy().catch(() => undefined), new Promise(r => setTimeout(r, 15000))]);
 };
 // the API is stopping (a new version, a restart): every WhatsApp Web closes properly, so the profile of the browser is not left half written
@@ -1303,6 +1328,16 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
       // the login was accepted: from here only the "ready" timer (minutes, a long history sits at 99%) may restart the session; the 4-minute start timer used to kill it in the middle of the load
       clearInitTimer(whatsapp.id);
       clearReadyTimer(whatsapp.id);
+      // when the page is connected but the library never says "ready", finish the start by hand after 60 s (the watchdog only comes every 3 minutes)
+      const nudgeOld = readyNudges.get(whatsapp.id);
+      if (nudgeOld) clearTimeout(nudgeOld);
+      readyNudges.set(whatsapp.id, setTimeout(() => {
+        readyNudges.delete(whatsapp.id);
+        if (!readySeen.has(whatsapp.id) && clients.get(whatsapp.id) === wbot) {
+          healTried.delete(whatsapp.id);
+          healInjection(whatsapp.id, wbot).catch(() => undefined);
+        }
+      }, 60000));
       readyTimers.set(
         whatsapp.id,
         setTimeout(async () => {
@@ -1405,7 +1440,13 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
         }
 
         wbot.sendPresenceAvailable();
-        await syncUnreadMessages(wbot, whatsapp.id);
+        // the catch-up runs in the background (it can take minutes on a big number): the rest of the start does not wait for it
+        syncUnreadMessages(wbot, whatsapp.id).catch(() => undefined);
+        // and every 5 minutes a light check brings what the live events may have missed (a throttled page, a dropped event)
+        const catchUp = setInterval(() => {
+          if (clients.get(whatsapp.id) !== wbot) { clearInterval(catchUp); return; }
+          syncUnreadMessages(wbot, whatsapp.id, { periodic: true }).catch(() => undefined);
+        }, 5 * 60 * 1000);
         if (firstConnection) afterFirstConnection(whatsapp);
         // the communities of this number, a little after WhatsApp Web finished loading and then every 15 minutes
         scheduleCommunitySync(wbot, whatsapp.id, 30000);
