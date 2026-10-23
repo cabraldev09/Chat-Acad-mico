@@ -1,3 +1,4 @@
+import { bodyOfMedia } from "../../helpers/MediaLabel";
 import { chatIdOf } from "../../helpers/ChatId";
 import fs from "fs";
 import path from "path";
@@ -54,7 +55,7 @@ const SendWhatsAppMedia = async ({
         messageData: {
           id: sent.id,
           ticketId: ticket.id,
-          body: caption || media.originalname || media.filename,
+          body: bodyOfMedia(caption, media.mimetype.split("/")[0], path.basename(outgoing.path), media.originalname || media.filename, media.mimetype),
           fromMe: true,
           read: true,
           mediaType: media.mimetype.split("/")[0],
@@ -63,7 +64,7 @@ const SendWhatsAppMedia = async ({
         }
       });
       await ticket.update({
-        lastMessage: caption || media.originalname || media.filename
+        lastMessage: bodyOfMedia(caption, media.mimetype.split("/")[0], path.basename(outgoing.path), media.originalname || media.filename, media.mimetype)
       });
       return {
         id: sent.id,
@@ -128,7 +129,7 @@ const SendWhatsAppMedia = async ({
       throw sendErr;
     }
 
-    await ticket.update({ lastMessage: body || (asVoice ? "Mensagem de voz" : media.filename) });
+    await ticket.update({ lastMessage: bodyOfMedia(body, asVoice ? "audio" : media.mimetype.split("/")[0], media.filename, media.originalname || media.filename, media.mimetype) });
 
     fs.rmSync(media.path, { force: true });
     if (converted) fs.rmSync(converted, { force: true });

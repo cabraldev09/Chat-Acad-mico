@@ -942,7 +942,7 @@ const HISTORY_LABELS: Record<string, string> = {
   image: "📷 Imagem",
   video: "🎥 Vídeo",
   audio: "🎤 Áudio",
-  ptt: "🎤 Mensagem de voz",
+  ptt: "🎤 Áudio",
   document: "📄 Documento",
   sticker: "Figurinha",
   location: "📍 Localização",

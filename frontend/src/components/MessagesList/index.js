@@ -1,3 +1,4 @@
+import { looksLikeFileName, shownText } from "../../utils/mediaLabel";
 import React, { useState, useEffect, useReducer, useRef, useCallback } from "react";
 import clsx from "clsx";
 import { makeStyles } from "@material-ui/core";
@@ -348,7 +349,7 @@ const fileNameOf = (m) => {
   return bodyIsName ? m.body : fromUrl || "arquivo";
 };
 
-const isOnlyFileName = (m) => !m.body || /^[\p{Extended_Pictographic}\s]*(Imagem|Vídeo|Áudio|Mensagem de voz|Documento|Figurinha|Foto)$/u.test(m.body) || m.body === (m.mediaUrl || "").split("/").pop() || /^\d{10,}\.\w{2,5}$/.test(m.body);
+const isOnlyFileName = (m) => !m.body || looksLikeFileName(m.body, m.mediaUrl) || /^[\p{Extended_Pictographic}\s]*(Imagem|Vídeo|Áudio|Mensagem de voz|Documento|Figurinha|Foto)$/u.test(m.body) || m.body === (m.mediaUrl || "").split("/").pop() || /^\d{10,}\.\w{2,5}$/.test(m.body);
 
 const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex = 0, onMatches, live = false }) => {
   const classes = useStyles();
@@ -656,7 +657,7 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
         <span className={classes.quoteName} style={m.quotedMsg?.fromMe ? { color: "#53bdeb" } : undefined}>
           {m.quotedMsg?.fromMe ? "Você" : m.quotedMsg?.contact?.name || "Contato"}
         </span>
-        {m.quotedMsg?.body}
+        {shownText(m.quotedMsg?.body, m.quotedMsg?.mediaType, m.quotedMsg?.mediaUrl)}
       </div>
     </div>
   );

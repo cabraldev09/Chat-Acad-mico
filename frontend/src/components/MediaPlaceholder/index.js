@@ -24,7 +24,7 @@ const guess = (m) => {
 };
 
 const ICON = { image: Camera, video: Film, audio: Mic, document: FileText };
-const NAME = { image: "Foto", video: "Vídeo", audio: "Mensagem de voz", document: "Documento" };
+const NAME = { image: "Imagem", video: "Vídeo", audio: "Áudio", document: "Documento" };
 
 const useStyles = makeStyles(() => ({
   box: {

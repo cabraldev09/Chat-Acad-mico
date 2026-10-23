@@ -1,3 +1,4 @@
+import { bodyOfMedia } from "../../helpers/MediaLabel";
 import { insideFolder, safeStoredName } from "../../helpers/SafeFile";
 import { isLocalPic } from "../../helpers/PicUrl";
 import { join } from "path";
@@ -127,8 +128,9 @@ const HandleChannelMessage = async (
     if (input.media) {
       const filename = await saveMediaBuffer(input.media);
       messageData.mediaUrl = filename;
-      messageData.body = input.body || filename;
       messageData.mediaType = input.media.mimetype.split("/")[0];
+      // no caption: the list, the toasts and the chat say "📷 Imagem" / "🎤 Áudio" / "🎥 Vídeo" / "Figurinha", never the name of the file
+      messageData.body = bodyOfMedia(input.body, messageData.mediaType, filename, filename, input.media.mimetype);
     }
 
     await ticket.update({ lastMessage: messageData.body });

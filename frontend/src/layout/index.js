@@ -1,4 +1,4 @@
-import React, { useState, useContext, useEffect } from "react";
+import React, { useState, useContext, useEffect, useRef } from "react";
 import clsx from "clsx";
 import {
   makeStyles,
@@ -133,6 +133,18 @@ const LoggedInLayout = ({ children }) => {
     noSsr: true,
   });
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const alertsRef = useRef(null);
+  const [alertsH, setAlertsH] = useState(0);
+  useEffect(() => {
+    const el = alertsRef.current;
+    if (!el) return undefined;
+    const measure = () => setAlertsH(Math.round(el.getBoundingClientRect().height));
+    measure();
+    if (typeof ResizeObserver === "undefined") return undefined;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   const { user } = useContext(AuthContext);
   const { darkMode, toggleTheme } = useThemeContext();
   const location = useLocation();
@@ -203,10 +215,13 @@ const LoggedInLayout = ({ children }) => {
       </AppBar>
       <CrmReminders />
       <main className={classes.content}>
-        <div key={location.pathname.split("/")[1]} className={clsx("page-enter", /^\/(chatbot|ai-agents\/blocos)\/\d+/.test(location.pathname) && "page-fill")}>
+        <div key={location.pathname.split("/")[1]} className={clsx("page-enter", /^\/(chatbot|ai-agents\/blocos)\/\d+/.test(location.pathname) && "page-fill")} style={{ "--alerts-h": `${alertsH}px` }}>
           <div className={classes.appBarSpacer} />
-          <ConnectionAlert />
-          <TaskAlert />
+          {/* the notices of the top take room: the screens below subtract it (var(--alerts-h)) so nothing ends up under the fold, like the box where the message is typed */}
+          <div ref={alertsRef}>
+            <ConnectionAlert />
+            <TaskAlert />
+          </div>
           {children ? children : null}
         </div>
       </main>

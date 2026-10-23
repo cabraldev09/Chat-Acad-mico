@@ -6084,6 +6084,7 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261203000001-outbound-sent-at.js')
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261204000001-user-last-seen.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261205000001-handoff-tasks-follow-conversation.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261205000002-ai-rules.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261205000003-media-names-to-labels.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.
