@@ -31,6 +31,9 @@ jobs:
         run: |
           install -m 700 -d ~/.ssh
           printf '%s\n' "$KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
+          # diagnóstico da chave de deploy (nunca imprime a chave: só a primeira linha, o tamanho e a impressão digital pública)
+          echo "chave de deploy: $(wc -l < ~/.ssh/deploy_key) linhas; primeira linha: $(head -1 ~/.ssh/deploy_key | cut -c1-40)"
+          ssh-keygen -y -f ~/.ssh/deploy_key > /tmp/deploy.pub 2>/dev/null && ssh-keygen -lf /tmp/deploy.pub || { echo "::error::O segredo VPS_SSH_KEY não é uma chave privada válida (deve começar por -----BEGIN OPENSSH PRIVATE KEY----- e terminar por -----END OPENSSH PRIVATE KEY-----)."; exit 1; }
           grep -v '^#' deploy/vps/known_hosts > ~/.ssh/known_hosts
           # a chave guardada no repositório precisa ser a mesma que o servidor mostra agora
           want=$(awk '{print $3}' ~/.ssh/known_hosts)
