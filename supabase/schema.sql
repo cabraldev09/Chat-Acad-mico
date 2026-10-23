@@ -505,6 +505,44 @@ ALTER SEQUENCE public."AiLearnings_id_seq" OWNED BY public."AiLearnings".id;
 
 
 --
+-- Name: AiRules; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."AiRules" (
+    id integer NOT NULL,
+    "agentId" integer NOT NULL,
+    kind character varying(255) DEFAULT 'regra'::character varying NOT NULL,
+    text text NOT NULL,
+    "position" integer DEFAULT 0 NOT NULL,
+    active boolean DEFAULT true NOT NULL,
+    source character varying(255) DEFAULT 'treino'::character varying NOT NULL,
+    "createdBy" integer,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: AiRules_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."AiRules_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: AiRules_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."AiRules_id_seq" OWNED BY public."AiRules".id;
+
+
+--
 -- Name: AiUsage; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3060,6 +3098,13 @@ ALTER TABLE ONLY public."AiLearnings" ALTER COLUMN id SET DEFAULT nextval('publi
 
 
 --
+-- Name: AiRules id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AiRules" ALTER COLUMN id SET DEFAULT nextval('public."AiRules_id_seq"'::regclass);
+
+
+--
 -- Name: AiUsage id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -3568,6 +3613,14 @@ ALTER TABLE ONLY public."AiAgents"
 
 ALTER TABLE ONLY public."AiLearnings"
     ADD CONSTRAINT "AiLearnings_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: AiRules AiRules_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AiRules"
+    ADD CONSTRAINT "AiRules_pkey" PRIMARY KEY (id);
 
 
 --
@@ -4314,6 +4367,13 @@ CREATE INDEX ai_learnings_ticket_id ON public."AiLearnings" USING btree ("ticket
 
 
 --
+-- Name: ai_rules_agent_id_active_kind; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ai_rules_agent_id_active_kind ON public."AiRules" USING btree ("agentId", active, kind);
+
+
+--
 -- Name: ai_usage_agent_id_created_at; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5022,6 +5082,14 @@ ALTER TABLE ONLY public."AiAgents"
 
 ALTER TABLE ONLY public."AiLearnings"
     ADD CONSTRAINT "AiLearnings_agentId_fkey" FOREIGN KEY ("agentId") REFERENCES public."AiAgents"(id) ON DELETE CASCADE;
+
+
+--
+-- Name: AiRules AiRules_agentId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AiRules"
+    ADD CONSTRAINT "AiRules_agentId_fkey" FOREIGN KEY ("agentId") REFERENCES public."AiAgents"(id) ON DELETE CASCADE;
 
 
 --
@@ -6014,6 +6082,8 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261201000001-quick-answer-owner.js
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261202000001-outbound-messages.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261203000001-outbound-sent-at.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261204000001-user-last-seen.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261205000001-handoff-tasks-follow-conversation.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261205000002-ai-rules.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

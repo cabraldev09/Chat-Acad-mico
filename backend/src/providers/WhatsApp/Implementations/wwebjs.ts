@@ -695,14 +695,26 @@ export const reconcileStatuses = async (): Promise<void> => {
     try {
       if (initTimers.has(id) || retrying.has(id)) continue;
       const row = await Whatsapp.findByPk(id);
-      if (!row || row.status === "CONNECTED") continue;
+      const registered = sessions.some(s => s.id === id);
+      if (!row || (row.status === "CONNECTED" && registered)) continue;
       // eslint-disable-next-line no-await-in-loop
       const state = await withTimeout(wbot.getState(), 15000).catch(() => null);
       if (state !== "CONNECTED") continue;
-      // eslint-disable-next-line no-await-in-loop
-      await row.update({ status: "CONNECTED", qrcode: "" });
-      logger.warn(`Session ${row.name}: o WhatsApp Web está conectado, mas o status do banco estava desatualizado; corrigido`);
-      getIO().emit("whatsappSession", { action: "update", session: row });
+      // the page is connected but the "ready" event never came: the session is alive, so it is registered like a ready one.
+      // Without this the watchdog saw "connected but no session here" and opened a SECOND browser on the same profile, which failed and restarted everything.
+      if (!registered) {
+        wbot.id = id;
+        sessions.push(wbot);
+      }
+      clearReadyTimer(id);
+      clearInitTimer(id);
+      reconnectAttempts.set(id, 0);
+      if (row.status !== "CONNECTED") {
+        // eslint-disable-next-line no-await-in-loop
+        await row.update({ status: "CONNECTED", qrcode: "" });
+        logger.warn(`Session ${row.name}: o WhatsApp Web está conectado, mas o status do banco estava desatualizado; corrigido`);
+        getIO().emit("whatsappSession", { action: "update", session: row });
+      }
     } catch (err) {
       logger.warn(`reconcile of session ${id} failed: ${err}`);
     }

@@ -15,6 +15,15 @@ import Ticket from "../models/Ticket";
 import Course from "../models/Course";
 import { addDocument, indexDocument, ensureLegacy, searchChunks } from "../services/AiServices/Kb";
 import AiLearning from "../models/AiLearning";
+import AiRule from "../models/AiRule";
+import { KINDS, RuleKind, coachTurn, fromConversation, invalidateTraining } from "../services/AiServices/Training";
+import { exampleText, normalizeResult, stageOfStep } from "../services/AiServices/TrainingText";
+import { ExportedChat, looksLikeWhatsAppExport, maskPii, parseWhatsAppExport, toTranscript } from "../services/AiServices/ChatExport";
+import { analyze as analyzeFile, planOf } from "../services/AiServices/TrainAnalyze";
+import { cleanStage } from "../services/FlowServices/StageSpec";
+import { build as buildGraph } from "../services/FlowServices/Templates";
+import JSZip from "jszip";
+import crypto from "crypto";
 import { approve, discard } from "../services/AiServices/Learning";
 import { respond } from "../services/AiServices/RunAiAgent";
 import { priceOf, tokensToday } from "../services/AiServices/Usage";
@@ -490,4 +499,213 @@ export const learningTeach = async (req: Request, res: Response): Promise<Respon
   if (!question || !answer) throw new AppError("ERR_LEARNING_EMPTY");
   const row = await AiLearning.create({ agentId: agent.id, question: question.slice(0, 1000), suggestedAnswer: answer, status: "para_revisar", answerSource: "dono" } as any);
   return res.status(201).json(await approve(row, { asFaq: !!req.body?.asFaq, shared: !!req.body?.shared }));
+};
+
+// ------------------------------------------------------------------ the trainer: what the owner taught the agent
+
+const asTurns = (raw: any): Array<{ role: "user" | "assistant"; content: string }> =>
+  (Array.isArray(raw) ? raw : [])
+    .filter((m: any) => m && ["user", "assistant"].includes(m.role) && String(m.content || "").trim())
+    .map((m: any) => ({ role: m.role, content: String(m.content).slice(0, 2000) }));
+
+const aiFailure = (err: any): AppError => {
+  if (err && err.message === "ERR_AI_NO_API_KEY") return new AppError("ERR_AI_NO_API_KEY");
+  return new AppError("ERR_AI_FAILED", 502);
+};
+
+export const ruleList = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await loadAgent(req.params.id);
+  const rows = await AiRule.findAll({ where: { agentId: agent.id }, order: [["position", "ASC"], ["id", "ASC"]] });
+  return res.json(rows);
+};
+
+const cleanKind = (k: any): RuleKind => (KINDS.includes(k) ? k : "regra");
+
+export const ruleCreate = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await loadAgent(req.params.id);
+  const text = String(req.body?.text || "").trim();
+  if (text.length < 3) throw new AppError("ERR_RULE_EMPTY");
+  const last = await AiRule.max("position", { where: { agentId: agent.id } });
+  const row = await AiRule.create({ agentId: agent.id, kind: cleanKind(req.body?.kind), text: text.slice(0, 1200), position: Number(last || 0) + 1, source: String(req.body?.source || "treino").slice(0, 20), createdBy: Number(req.user.id) } as any);
+  invalidateTraining(agent.id);
+  return res.status(201).json(row);
+};
+
+export const ruleBulk = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await loadAgent(req.params.id);
+  const items = (Array.isArray(req.body?.items) ? req.body.items : []).slice(0, 60);
+  let position = Number((await AiRule.max("position", { where: { agentId: agent.id } })) || 0);
+  const made: AiRule[] = [];
+  for (const it of items) {
+    const text = String(it?.text || "").trim();
+    if (text.length < 3) continue;
+    position += 1;
+    // eslint-disable-next-line no-await-in-loop
+    made.push(await AiRule.create({ agentId: agent.id, kind: cleanKind(it.kind), text: text.slice(0, 1200), position, source: String(req.body?.source || "treino").slice(0, 20), createdBy: Number(req.user.id) } as any));
+  }
+  invalidateTraining(agent.id);
+  return res.status(201).json(made);
+};
+
+export const ruleUpdate = async (req: Request, res: Response): Promise<Response> => {
+  const row = await AiRule.findByPk(req.params.id);
+  if (!row) throw new AppError("ERR_NOT_FOUND", 404);
+  const patch: any = {};
+  if (req.body?.text !== undefined) {
+    const text = String(req.body.text).trim();
+    if (text.length < 3) throw new AppError("ERR_RULE_EMPTY");
+    patch.text = text.slice(0, 1200);
+  }
+  if (req.body?.kind !== undefined) patch.kind = cleanKind(req.body.kind);
+  if (req.body?.active !== undefined) patch.active = !!req.body.active;
+  if (req.body?.position !== undefined) patch.position = Number(req.body.position) || 0;
+  await row.update(patch);
+  invalidateTraining(row.agentId);
+  return res.json(row);
+};
+
+export const ruleRemove = async (req: Request, res: Response): Promise<Response> => {
+  const row = await AiRule.findByPk(req.params.id);
+  if (!row) throw new AppError("ERR_NOT_FOUND", 404);
+  await row.destroy();
+  invalidateTraining(row.agentId);
+  return res.json({ message: "deleted" });
+};
+
+// The owner talks to the agent to teach it: the agent answers and proposes what it understood; nothing is saved until the owner accepts.
+export const coach = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await loadAgent(req.params.id);
+  const messages = asTurns(req.body?.messages);
+  if (!messages.length || messages[messages.length - 1].role !== "user") throw new AppError("ERR_AI_NO_HISTORY");
+  try {
+    return res.json(await coachTurn(agent, messages));
+  } catch (err) {
+    throw aiFailure(err);
+  }
+};
+
+// A tester conversation turned into proposed lessons, for the owner to review.
+export const trainFromConversation = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await loadAgent(req.params.id);
+  const messages = asTurns(req.body?.messages);
+  if (messages.length < 2) throw new AppError("ERR_AI_NO_HISTORY");
+  try {
+    return res.json({ proposed: await fromConversation(agent, messages) });
+  } catch (err) {
+    throw aiFailure(err);
+  }
+};
+
+// ------------------------------------------------------------------ learning from a file (PDF, document, conversation exported from WhatsApp)
+
+interface Upload {
+  agentId: number;
+  kind: "whatsapp" | "document";
+  text: string;
+  chat?: ExportedChat;
+  at: number;
+}
+const uploads = new Map<string, Upload>();
+const UPLOAD_TTL = 20 * 60000;
+const sweepUploads = (): void => {
+  const now = Date.now();
+  uploads.forEach((u, k) => {
+    if (now - u.at > UPLOAD_TTL) uploads.delete(k);
+  });
+  // never more than a handful in memory
+  [...uploads.keys()].slice(0, Math.max(0, uploads.size - 20)).forEach(k => uploads.delete(k));
+};
+
+// the text inside a .zip of WhatsApp (the conversation is the .txt; photos and audios are ignored)
+const textOfZip = async (buffer: Buffer): Promise<string> => {
+  const zip = await JSZip.loadAsync(buffer);
+  const names = Object.keys(zip.files).filter(n => !zip.files[n].dir && /\.txt$/i.test(n) && !/^__MACOSX\//.test(n));
+  if (!names.length) throw new AppError("ERR_TRAIN_ZIP_EMPTY");
+  names.sort((a, b) => (/_chat\.txt$/i.test(b) ? 1 : 0) - (/_chat\.txt$/i.test(a) ? 1 : 0) || a.length - b.length);
+  return zip.files[names[0]].async("string");
+};
+
+export const trainUpload = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await loadAgent(req.params.id);
+  const file = (req as any).file as Express.Multer.File | undefined;
+  if (!file) throw new AppError("ERR_KB_EMPTY");
+  let text = "";
+  try {
+    text = /\.zip$/i.test(file.originalname) ? await textOfZip(file.buffer) : await textOfFile(file);
+  } catch (err) {
+    if (err instanceof AppError) throw err;
+    throw new AppError("ERR_KB_FILE_READ");
+  }
+  text = text.trim().slice(0, 1500000);
+  if (!text) throw new AppError("ERR_KB_FILE_READ");
+  sweepUploads();
+  const token = crypto.randomBytes(12).toString("hex");
+  const chat = looksLikeWhatsAppExport(text) ? parseWhatsAppExport(text) : undefined;
+  const kind = chat ? "whatsapp" : "document";
+  uploads.set(token, { agentId: agent.id, kind, text, chat, at: Date.now() });
+  const body = chat ? toTranscript(chat, chat.participants[0]?.name || "") : text;
+  return res.json({
+    token,
+    kind,
+    name: file.originalname,
+    chars: text.length,
+    messages: chat ? chat.messages.length : 0,
+    participants: chat ? chat.participants.slice(0, 12) : [],
+    suggested: chat && chat.participants[0] ? chat.participants[0].name : null,
+    plan: planOf(body)
+  });
+};
+
+export const trainAnalyze = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await loadAgent(req.params.id);
+  const up = uploads.get(String(req.body?.token || ""));
+  if (!up || up.agentId !== agent.id) throw new AppError("ERR_TRAIN_EXPIRED", 410);
+  let body = up.text;
+  if (up.kind === "whatsapp" && up.chat) {
+    const attendant = String(req.body?.attendant || "");
+    if (!up.chat.participants.some(p => p.name === attendant)) throw new AppError("ERR_TRAIN_ATTENDANT");
+    body = toTranscript(up.chat, attendant);
+  } else {
+    body = maskPii(body);
+  }
+  try {
+    return res.json({ kind: up.kind, ...(await analyzeFile(agent, up.kind, body)) });
+  } catch (err) {
+    throw aiFailure(err);
+  }
+};
+
+// what the owner approved: style and examples become lessons, facts go to the knowledge base, the steps become a draft of the Roteiro (nothing is published)
+export const trainApply = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await loadAgent(req.params.id);
+  const clean = normalizeResult(req.body);
+  const rules: Array<{ kind: RuleKind; text: string }> = [
+    ...clean.style.map(text => ({ kind: "estilo" as RuleKind, text })),
+    ...clean.examples.map(e => ({ kind: "exemplo" as RuleKind, text: exampleText(e) })),
+    ...(Array.isArray(req.body?.rules) ? req.body.rules : []).map((t: any) => ({ kind: "regra" as RuleKind, text: String(t || "").trim().slice(0, 1200) })).filter((r: { text: string }) => r.text.length >= 3)
+  ];
+  let position = Number((await AiRule.max("position", { where: { agentId: agent.id } })) || 0);
+  for (const r of rules) {
+    position += 1;
+    // eslint-disable-next-line no-await-in-loop
+    await AiRule.create({ agentId: agent.id, kind: r.kind, text: r.text, position, source: "arquivo", createdBy: Number(req.user.id) } as any);
+  }
+  invalidateTraining(agent.id);
+  for (const k of clean.knowledge) {
+    // eslint-disable-next-line no-await-in-loop
+    await addDocument({ agentId: agent.id, title: k.title, content: k.content, kind: "doc", source: "aprendido" } as any);
+  }
+  let flowId: number | null = null;
+  if (clean.steps.length) {
+    const nodes: Array<[string, string, any]> = [["start", "start", {}]];
+    const links: Array<[string, string, string?]> = [["start", "e1"]];
+    clean.steps.forEach((s, i) => {
+      nodes.push([`e${i + 1}`, "stage", cleanStage(stageOfStep(s, i))]);
+      links.push([`e${i + 1}`, i + 1 < clean.steps.length ? `e${i + 2}` : "consultor", "done"]);
+    });
+    nodes.push(["consultor", "transfer", { to: "polo_sales" }]);
+    const flow = await ChatFlow.create({ name: `${agent.name} (roteiro aprendido)`.slice(0, 80), kind: "agent", agentId: agent.id, entry: JSON.stringify({ type: "agent", keywords: [] }), draft: JSON.stringify(buildGraph({ nodes, links })), description: "Etapas aprendidas de um arquivo: revise e publique", createdBy: Number(req.user.id) } as any);
+    flowId = flow.id;
+  }
+  return res.status(201).json({ rules: rules.length, knowledge: clean.knowledge.length, steps: clean.steps.length, flowId });
 };

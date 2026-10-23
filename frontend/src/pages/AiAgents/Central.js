@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useHistory, useLocation, useParams } from "react-router-dom";
-import { Button, CircularProgress, Menu, MenuItem, Switch, makeStyles } from "@material-ui/core";
+import { Button, Menu, MenuItem, Switch, makeStyles } from "@material-ui/core";
 import {
-  AlertTriangle, ArrowLeft, BarChart3, BookOpen, CheckCircle2, ChevronDown, ChevronRight, FileText, FileUp, Filter, Globe, HelpCircle, Home, Key, MapPin, MessageSquare,
-  PlayCircle, Plus, Scale, Settings2, ListChecks, Bot, UserCheck, Workflow,
+  AlertTriangle, ArrowLeft, BarChart3, CheckCircle2, ChevronDown, ChevronRight, FileText, FileUp, Filter, Globe, HelpCircle, Key, MapPin, MessageSquare,
+  Plus, Scale, ListChecks, Bot, UserCheck, Workflow,
 } from "lucide-react";
 
 import MainContainer from "../../components/MainContainer";
+import { PageHeader, Section, Segmented, SkeletonCards, StatCard } from "../../components/ui";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import AgentEditor from "./AgentEditor";
@@ -18,54 +19,42 @@ import KeysDialog from "./KeysDialog";
 import LearningTab from "./LearningTab";
 import RegulationsDialog from "./RegulationsDialog";
 import TestTab from "./TestTab";
+import TrainTab from "./TrainTab";
 import UsageTab from "./UsageTab";
 
 const SECTIONS = [
-  { key: "inicio", label: "Início", icon: Home, color: "#0693E3" },
-  { key: "ensinar", label: "Ensinar", icon: BookOpen, color: "#7c3aed" },
-  { key: "testar", label: "Testar", icon: PlayCircle, color: "#0d9488" },
-  { key: "resultados", label: "Resultados", icon: BarChart3, color: "#ea580c" },
-  { key: "ajustes", label: "Ajustes", icon: Settings2, color: "#475569" },
+  ["inicio", "Início"],
+  ["treinar", "Treinar"],
+  ["conhecimento", "Conhecimento"],
+  ["testar", "Testar"],
+  ["resultados", "Resultados"],
+  ["ajustes", "Ajustes"],
 ];
+// the old addresses keep working
+const ALIAS = { ensinar: "conhecimento" };
 
 const useStyles = makeStyles((theme) => ({
-  page: { flex: 1, overflowY: "auto", overflowX: "hidden", ...theme.scrollbarStyles, paddingBottom: theme.spacing(4) },
+  page: { flex: 1, overflowY: "auto", overflowX: "hidden", ...theme.scrollbarStyles, padding: theme.spacing(0.5, 0.5, 4) },
   back: { display: "inline-flex", alignItems: "center", gap: 6, border: 0, background: "none", cursor: "pointer", color: theme.palette.text.secondary, fontFamily: "inherit", fontSize: 13.5, padding: "4px 2px", marginBottom: theme.spacing(1), "&:hover": { color: theme.palette.primary.main } },
-  hero: { display: "flex", alignItems: "center", gap: theme.spacing(2), flexWrap: "wrap", padding: theme.spacing(2.25, 2.5), borderRadius: 16, background: theme.palette.background.paper, border: `1px solid ${theme.palette.divider}`, marginBottom: theme.spacing(2) },
-  heroIcon: { width: 44, height: 44, borderRadius: 12, display: "grid", placeItems: "center", background: theme.palette.action.selected, color: theme.palette.primary.main, flex: "none" },
-  heroName: { fontSize: 20, fontWeight: 650, letterSpacing: "-0.01em", lineHeight: 1.2 },
-  heroSub: { fontSize: 13, color: theme.palette.text.secondary, marginTop: 2 },
-  heroRight: { marginLeft: "auto", display: "flex", alignItems: "center", gap: theme.spacing(1.5), flexWrap: "wrap" },
-  pill: { display: "inline-flex", alignItems: "center", gap: 6, borderRadius: 999, padding: "4px 12px", fontSize: 12.5, fontWeight: 600, background: theme.palette.action.selected, color: theme.palette.text.primary },
-  heroBtn: { borderRadius: 10, textTransform: "none", fontWeight: 600 },
-  nav: { display: "flex", gap: 2, borderBottom: `1px solid ${theme.palette.divider}`, marginBottom: theme.spacing(2.5), overflowX: "auto" },
-  navBtn: { display: "flex", alignItems: "center", gap: 8, border: 0, borderBottom: "2px solid transparent", marginBottom: -1, padding: "10px 14px", cursor: "pointer", fontFamily: "inherit", fontSize: 14, fontWeight: 600, color: theme.palette.text.secondary, background: "transparent", whiteSpace: "nowrap", transition: "color .15s, border-color .15s", "&:hover": { color: theme.palette.text.primary }, "&[data-on=true]": { color: theme.palette.primary.main, borderBottomColor: theme.palette.primary.main }, "&:focus-visible": { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: -2 } },
-  badge: { minWidth: 20, height: 20, borderRadius: 10, padding: "0 6px", display: "inline-grid", placeItems: "center", fontSize: 11.5, fontWeight: 700, color: "#fff", background: "#ea580c" },
-  stats: { display: "grid", gap: theme.spacing(1.5), gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", marginBottom: theme.spacing(2.5) },
-  stat: { padding: theme.spacing(2), borderRadius: 14, border: `1px solid ${theme.palette.divider}`, background: theme.palette.background.paper },
-  statNum: { fontSize: 28, fontWeight: 650, letterSpacing: "-0.02em", lineHeight: 1.1, fontVariantNumeric: "tabular-nums" },
-  statLabel: { fontSize: 13, color: theme.palette.text.secondary, marginTop: 4 },
+  pill: { display: "inline-flex", alignItems: "center", gap: 6, borderRadius: 999, padding: "5px 12px", fontSize: 12.5, fontWeight: 600, background: "var(--ui-surface)", border: "1px solid var(--ui-border)" },
   cols: { display: "grid", gap: theme.spacing(2), gridTemplateColumns: "minmax(0, 1.25fr) minmax(0, 1fr)", alignItems: "start", [theme.breakpoints.down("sm")]: { gridTemplateColumns: "1fr" } },
-  panel: { padding: theme.spacing(2.25), borderRadius: 14, border: `1px solid ${theme.palette.divider}`, background: theme.palette.background.paper, marginBottom: theme.spacing(2) },
-  panelTitle: { fontSize: 16, fontWeight: 700, marginBottom: theme.spacing(1.25) },
+  stats: { display: "grid", gap: theme.spacing(1.5), gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", marginBottom: theme.spacing(2) },
   hint: { fontSize: 13, color: theme.palette.text.secondary },
-  todo: { display: "flex", alignItems: "center", gap: 12, width: "100%", textAlign: "left", border: `1px solid ${theme.palette.divider}`, borderRadius: 12, padding: theme.spacing(1.25, 1.5), marginBottom: theme.spacing(1), background: "transparent", cursor: "pointer", fontFamily: "inherit", color: "inherit", transition: "border-color .15s, background .15s", "&:hover": { borderColor: theme.palette.primary.main, background: theme.palette.action.hover }, "&:focus-visible": { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: 2 } },
+  todo: { display: "flex", alignItems: "center", gap: 12, width: "100%", textAlign: "left", border: "1px solid var(--ui-border)", borderRadius: 14, padding: theme.spacing(1.25, 1.5), marginBottom: theme.spacing(1), background: "transparent", cursor: "pointer", fontFamily: "inherit", color: "inherit", transition: "border-color .18s, background .18s, transform .18s, box-shadow .18s", "&:hover": { borderColor: theme.palette.primary.main, background: theme.palette.action.hover, transform: "translateY(-1px)", boxShadow: "var(--ui-shadow-2)" }, "&:focus-visible": { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: 2 } },
   todoIcon: { width: 34, height: 34, borderRadius: 11, display: "grid", placeItems: "center", flex: "none", background: "rgba(217,119,6,.14)", color: "#d97706" },
   allGood: { display: "flex", alignItems: "center", gap: 12, padding: theme.spacing(1.75), borderRadius: 14, background: "rgba(22,163,74,.1)", color: "#15803d", fontWeight: 600 },
-  check: { display: "flex", alignItems: "flex-start", gap: 10, padding: theme.spacing(1, 0), borderBottom: `1px solid ${theme.palette.divider}`, "&:last-child": { borderBottom: 0 } },
-  ok: { color: "#16a34a", flex: "none", marginTop: 1 },
-  warn: { color: "#d97706", flex: "none", marginTop: 1 },
-  link: { border: 0, background: "none", color: theme.palette.primary.main, fontFamily: "inherit", fontWeight: 600, fontSize: 12.5, cursor: "pointer", padding: 0, marginTop: 2 },
-  question: { display: "flex", alignItems: "center", gap: 10, padding: theme.spacing(1, 0), borderBottom: `1px solid ${theme.palette.divider}`, "&:last-child": { borderBottom: 0 } },
-  sub: { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: theme.spacing(2) },
-  subBtn: { display: "inline-flex", alignItems: "center", gap: 8, border: `1px solid ${theme.palette.divider}`, borderRadius: 999, padding: "6px 14px", background: "transparent", fontFamily: "inherit", fontSize: 13.5, fontWeight: 600, color: theme.palette.text.secondary, cursor: "pointer", "&[data-on=true]": { background: theme.palette.primary.main, borderColor: theme.palette.primary.main, color: theme.palette.primary.contrastText } },
+  check: { display: "flex", alignItems: "center", gap: 10, padding: theme.spacing(1, 0), borderBottom: "1px solid var(--ui-border)", "&:last-child": { borderBottom: 0 } },
+  ok: { color: "#16a34a", flex: "none" },
+  warn: { color: "#d97706", flex: "none" },
+  link: { border: 0, background: "none", color: theme.palette.primary.main, fontFamily: "inherit", fontWeight: 600, fontSize: 12.5, cursor: "pointer", padding: 0 },
+  question: { display: "flex", alignItems: "center", gap: 10, padding: theme.spacing(1, 0), borderBottom: "1px solid var(--ui-border)", "&:last-child": { borderBottom: 0 } },
   topics: { display: "flex", flexWrap: "wrap", gap: 8, marginBottom: theme.spacing(2) },
-  topic: { display: "inline-flex", alignItems: "center", gap: 6, borderRadius: 999, padding: "5px 12px", fontSize: 12.5, fontWeight: 600, border: `1px solid ${theme.palette.divider}`, background: "transparent", cursor: "pointer", fontFamily: "inherit", color: theme.palette.text.primary, "&:hover": { borderColor: theme.palette.primary.main } },
+  topic: { display: "inline-flex", alignItems: "center", gap: 6, borderRadius: 999, padding: "5px 12px", fontSize: 12.5, fontWeight: 600, border: "1px solid var(--ui-border)", background: "var(--ui-surface)", cursor: "pointer", fontFamily: "inherit", color: theme.palette.text.primary, transition: "border-color .18s", "&:hover": { borderColor: theme.palette.primary.main } },
   settings: { display: "grid", gap: theme.spacing(1.5), gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))" },
-  setting: { display: "flex", flexDirection: "column", gap: 6, textAlign: "left", padding: theme.spacing(2), borderRadius: 14, border: `1px solid ${theme.palette.divider}`, background: theme.palette.background.paper, cursor: "pointer", fontFamily: "inherit", color: "inherit", transition: "border-color .15s, background .15s", "&:hover": { borderColor: theme.palette.primary.main }, "&:focus-visible": { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: 2 } },
-  settingIcon: { width: 36, height: 36, borderRadius: 10, display: "grid", placeItems: "center", marginBottom: 2, background: theme.palette.action.selected, color: theme.palette.primary.main },
+  setting: { display: "flex", flexDirection: "column", gap: 6, textAlign: "left", padding: theme.spacing(2), fontFamily: "inherit", color: "inherit", cursor: "pointer" },
+  settingIcon: { width: 38, height: 38, borderRadius: 11, display: "grid", placeItems: "center", marginBottom: 2, background: "rgba(6,147,227,.12)", color: theme.palette.primary.main },
   settingName: { fontSize: 15.5, fontWeight: 700 },
-  more: { display: "flex", alignItems: "center", gap: 8, width: "100%", border: `1px solid ${theme.palette.divider}`, borderRadius: 14, padding: theme.spacing(1.25, 1.75), background: "transparent", fontFamily: "inherit", fontSize: 14, fontWeight: 600, color: "inherit", cursor: "pointer", marginTop: theme.spacing(2) },
+  more: { display: "flex", alignItems: "center", gap: 8, width: "100%", border: "1px solid var(--ui-border)", borderRadius: 14, padding: theme.spacing(1.25, 1.75), background: "var(--ui-surface)", fontFamily: "inherit", fontSize: 14, fontWeight: 600, color: "inherit", cursor: "pointer", marginTop: theme.spacing(2) },
 }));
 
 // THE CENTRAL OF THE AGENT. One place, five short sections: what to do now (Início), what it knows and cannot answer (Ensinar), a test conversation
@@ -85,11 +74,12 @@ const Central = () => {
   const [dialog, setDialog] = useState({ name: null, tab: 0 });
 
   const section = useMemo(() => {
-    const s = new URLSearchParams(location.search).get("secao");
-    return SECTIONS.some((x) => x.key === s) ? s : "inicio";
+    const raw = new URLSearchParams(location.search).get("secao");
+    const s = ALIAS[raw] || raw;
+    return SECTIONS.includes(s) ? s : "inicio";
   }, [location.search]);
   const go = useCallback((key, extra = {}) => {
-    history.replace(`/ai-agents/${agentId}/central?secao=${key}`);
+    history.replace(`/ai-agents/${agentId}/central?secao=${ALIAS[key] || key}`);
     if (extra.teach) setTeach(extra.teach);
   }, [history, agentId]);
 
@@ -103,7 +93,7 @@ const Central = () => {
   const toggle = async () => {
     try { await api.put(`/ai-agents/${agentId}`, { active: !d.agent.active }); load(); } catch (e) { toastError(e); }
   };
-  const teachAbout = (mode, topic = "") => { setKb((k) => ({ mode, topic, n: k.n + 1 })); go("ensinar", { teach: "conteudo" }); setAddMenu(null); };
+  const teachAbout = (mode, topic = "") => { setKb((k) => ({ mode, topic, n: k.n + 1 })); go("conhecimento", { teach: "conteudo" }); setAddMenu(null); };
   const closeDialog = () => { setDialog({ name: null, tab: 0 }); load(); };
 
   // each check of the health says where it is fixed
@@ -116,19 +106,17 @@ const Central = () => {
     return setDialog({ name: item || "ajustes", tab: 0 });
   };
 
-  if (!d) return <MainContainer><div style={{ padding: 32 }}><CircularProgress size={26} /></div></MainContainer>;
+  if (!d) return <MainContainer><div className={classes.page}><div className="ui-skeleton" style={{ height: 84, borderRadius: 16, marginBottom: 16 }} /><SkeletonCards n={4} height={96} /></div></MainContainer>;
 
   const commercial = d.agent.kind === "commercial";
   const failing = d.health.filter((h) => !h.ok);
   const todo = [
     ...failing.map((h) => ({ key: `h-${h.key}`, title: h.label, text: h.detail, run: () => fix(h.fix) })),
-    ...(d.pending.waiting ? [{ key: "waiting", title: `${d.pending.waiting} pergunta${d.pending.waiting === 1 ? "" : "s"} sem resposta`, text: "O agente não soube responder. A sua resposta vira conhecimento dele.", run: () => go("ensinar", { teach: "perguntas" }) }] : []),
-    ...(d.pending.toReview ? [{ key: "review", title: `${d.pending.toReview} resposta${d.pending.toReview === 1 ? "" : "s"} da equipe para aprovar`, text: "A equipe já respondeu. Aprove para o agente aprender.", run: () => go("ensinar", { teach: "perguntas" }) }] : []),
+    ...(d.pending.waiting ? [{ key: "waiting", title: `${d.pending.waiting} pergunta${d.pending.waiting === 1 ? "" : "s"} sem resposta`, text: "O agente não soube responder. A sua resposta vira conhecimento dele.", run: () => go("conhecimento", { teach: "perguntas" }) }] : []),
+    ...(d.pending.toReview ? [{ key: "review", title: `${d.pending.toReview} resposta${d.pending.toReview === 1 ? "" : "s"} da equipe para aprovar`, text: "A equipe já respondeu. Aprove para o agente aprender.", run: () => go("conhecimento", { teach: "perguntas" }) }] : []),
     ...d.topics.filter((t) => !t.ok).slice(0, 3).map((t) => ({ key: `t-${t.topic}`, title: `Ensinar sobre ${t.label}`, text: "Hoje o agente diz que vai confirmar. Envie um texto ou PDF.", run: () => teachAbout(0, t.topic) })),
   ];
   const waiting = d.questions.filter((q) => q.status !== "para_revisar").slice(0, 4);
-
-  const stat = (num, label, color) => (<div className={classes.stat} ><div className={classes.statNum} style={color ? { color } : undefined}>{num}</div><div className={classes.statLabel}>{label}</div></div>);
 
   const settings = [
     { key: "jeito", icon: MessageSquare, name: "Jeito de atender", text: "Tom de voz, regras, o que dizer quando não souber, limites de gasto e quando o agente atende.", run: () => setDialog({ name: "editor", tab: 0 }) },
@@ -144,6 +132,10 @@ const Central = () => {
     { key: "chave", icon: Key, name: "Chave de IA", text: "A chave usada pelo agente para responder (Claude ou GPT).", run: () => setDialog({ name: "chave" }) },
   ];
 
+  const tabLabels = { inicio: "Início", treinar: "Treinar", conhecimento: "Conhecimento", testar: "Testar", resultados: "Resultados", ajustes: "Ajustes" };
+  const tabs = SECTIONS.map((k) => [k, tabLabels[k], k === "conhecimento" ? d.pending.waiting + d.pending.toReview : 0]);
+  const readyPct = d.health.length ? Math.round(((d.health.length - failing.length) / d.health.length) * 100) : 100;
+
   return (
     <MainContainer>
       <AgentEditor open={dialog.name === "editor"} agent={agent} initialTab={dialog.tab} onClose={closeDialog} onSaved={load} />
@@ -155,48 +147,38 @@ const Central = () => {
       <div className={classes.page}>
         <button type="button" className={classes.back} onClick={() => history.push("/ai-agents")}><ArrowLeft size={16} />Agentes de IA</button>
 
-        <div className={classes.hero}>
-          <span className={classes.heroIcon}><Bot size={24} /></span>
-          <div>
-            <div className={classes.heroName}>{d.agent.name}</div>
-            <div className={classes.heroSub}>{commercial ? "Agente comercial" : "Agente de atendimento"} · {d.agent.provider === "openai" ? "GPT" : "Claude"}</div>
-          </div>
-          <div className={classes.heroRight}>
-            <span className={classes.pill}>
-              {failing.length === 0 && d.agent.active ? <CheckCircle2 size={15} /> : <AlertTriangle size={15} />}
-              {failing.length === 0 ? "Tudo certo" : `${failing.length} ponto${failing.length === 1 ? "" : "s"} de atenção`}
-            </span>
-            <label style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 13.5, fontWeight: 600 }}>
-              <Switch checked={!!d.agent.active} onChange={toggle} color="primary" inputProps={{ "aria-label": "Ligar ou desligar o agente" }} />{d.agent.active ? "Ligado" : "Desligado"}
-            </label>
-            {d.flow && <Button variant="outlined" className={classes.heroBtn} startIcon={<Workflow size={16} />} onClick={() => history.push(`/ai-agents/blocos/${d.flow.id}`)}>Roteiro</Button>}
-          </div>
-        </div>
+        <PageHeader
+          title={<span style={{ display: "inline-flex", alignItems: "center", gap: 12 }}><span style={{ width: 44, height: 44, borderRadius: 14, display: "grid", placeItems: "center", background: "rgba(6,147,227,.14)", color: "#0693e3" }}><Bot size={24} /></span>{d.agent.name}</span>}
+          subtitle={`${commercial ? "Agente comercial" : "Agente de atendimento"} · ${d.agent.provider === "openai" ? "GPT" : "Claude"}`}
+          actions={(
+            <>
+              <span className={classes.pill}>
+                {failing.length === 0 && d.agent.active ? <CheckCircle2 size={15} className={classes.ok} /> : <AlertTriangle size={15} className={classes.warn} />}
+                {failing.length === 0 ? "Tudo certo" : `${failing.length} ponto${failing.length === 1 ? "" : "s"} de atenção`}
+              </span>
+              <label className={classes.pill} style={{ cursor: "pointer", paddingRight: 8 }}>
+                {d.agent.active ? "Ligado" : "Desligado"}
+                <Switch size="small" checked={!!d.agent.active} onChange={toggle} color="primary" inputProps={{ "aria-label": "Ligar ou desligar o agente" }} />
+              </label>
+              {d.flow && <Button variant="outlined" startIcon={<Workflow size={16} />} onClick={() => history.push(`/ai-agents/blocos/${d.flow.id}`)} style={{ borderRadius: 12, textTransform: "none", fontWeight: 600 }}>Roteiro</Button>}
+            </>
+          )}
+        />
 
-        <div className={classes.nav} role="tablist">
-          {SECTIONS.map((s) => {
-            const Icon = s.icon;
-            const count = s.key === "ensinar" ? d.pending.waiting + d.pending.toReview : 0;
-            return (
-              <button key={s.key} type="button" role="tab" aria-selected={section === s.key} className={classes.navBtn} data-on={section === s.key} onClick={() => go(s.key)}>
-                <Icon size={17} />{s.label}{count > 0 && <span className={classes.badge}>{count}</span>}
-              </button>
-            );
-          })}
-        </div>
+        <div style={{ marginBottom: 20, overflowX: "auto" }}><Segmented items={tabs} value={section} onChange={(k) => go(k)} label="Seções do agente" /></div>
 
         {section === "inicio" && (
           <>
-            <div className={classes.stats}>
-              {stat(d.week.conversations, "conversas nos últimos 7 dias")}
-              {stat(d.week.qualifiedRate === null ? "—" : `${d.week.qualifiedRate}%`, "chegaram a qualificados")}
-              {stat(d.week.handedOver, "passaram para a equipe")}
-              {stat(d.week.unanswered, "perguntas sem resposta", d.week.unanswered ? "#d97706" : undefined)}
+            <div className={`${classes.stats} ui-stagger`}>
+              <StatCard label="conversas nos últimos 7 dias" value={d.week.conversations} />
+              <StatCard label="chegaram a qualificados" value={d.week.qualifiedRate === null ? "—" : `${d.week.qualifiedRate}%`} />
+              <StatCard label="passaram para a equipe" value={d.week.handedOver} />
+              <StatCard label="perguntas sem resposta" value={d.week.unanswered} tone={d.week.unanswered ? "#d97706" : undefined} onClick={d.week.unanswered ? () => go("conhecimento", { teach: "perguntas" }) : undefined} />
+              <StatCard label="pronto para atender" value={`${readyPct}%`} hint={failing.length ? `${failing.length} a resolver` : "tudo em dia"} tone={readyPct === 100 ? "#16a34a" : undefined} />
             </div>
             <div className={classes.cols}>
-              <div>
-                <div className={classes.panel}>
-                  <div className={classes.panelTitle}>O que fazer agora</div>
+              <div style={{ display: "grid", gap: 16 }}>
+                <Section title="O que fazer agora" hint="O mais importante primeiro.">
                   {todo.length === 0 ? (
                     <div className={classes.allGood}><CheckCircle2 size={20} />Tudo em dia. O agente tem o que precisa para atender.</div>
                   ) : todo.map((t) => (
@@ -206,39 +188,48 @@ const Central = () => {
                       <ChevronRight size={18} style={{ opacity: 0.5, flex: "none" }} />
                     </button>
                   ))}
-                </div>
+                </Section>
+                <Section title="Treine o agente" hint="O jeito mais rápido de deixar ele igual ao seu melhor atendente.">
+                  <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}>
+                    <button type="button" className="ui-card ui-lift ui-press" onClick={() => go("treinar")} style={{ padding: 14, textAlign: "left", font: "inherit", color: "inherit", display: "grid", gap: 4 }}>
+                      <MessageSquare size={20} style={{ color: "#0693e3" }} /><b>Conversar e ensinar</b><span className={classes.hint}>Dê ordens e veja ele responder.</span>
+                    </button>
+                    <button type="button" className="ui-card ui-lift ui-press" onClick={() => go("treinar")} style={{ padding: 14, textAlign: "left", font: "inherit", color: "inherit", display: "grid", gap: 4 }}>
+                      <FileUp size={20} style={{ color: "#7c3aed" }} /><b>Enviar PDF ou conversa</b><span className={classes.hint}>Aprende o estilo e o passo a passo.</span>
+                    </button>
+                  </div>
+                </Section>
                 {waiting.length > 0 && (
-                  <div className={classes.panel}>
-                    <div className={classes.panelTitle}>Perguntas que o agente não soube responder</div>
+                  <Section title="Perguntas que o agente não soube responder">
                     {waiting.map((q) => (
                       <div key={q.question} className={classes.question}>
                         <HelpCircle size={18} style={{ opacity: 0.6, flex: "none" }} />
                         <div style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere", fontSize: 14 }}>{q.question}{q.count > 1 && <div className={classes.hint}>perguntada {q.count} vezes</div>}</div>
-                        <Button size="small" variant="outlined" onClick={() => go("ensinar", { teach: "perguntas" })} style={{ borderRadius: 10 }}>Responder</Button>
+                        <Button size="small" variant="outlined" onClick={() => go("conhecimento", { teach: "perguntas" })} style={{ borderRadius: 10 }}>Responder</Button>
                       </div>
                     ))}
-                  </div>
+                  </Section>
                 )}
               </div>
-              <div className={classes.panel}>
-                <div className={classes.panelTitle}>Saúde do agente</div>
+              <Section title="Saúde do agente" hint="Tudo o que precisa estar certo para ele atender sozinho.">
                 {d.health.map((h) => (
-                  <div key={h.key} className={classes.check} style={{ alignItems: "center" }}>
+                  <div key={h.key} className={classes.check}>
                     {h.ok ? <CheckCircle2 size={18} className={classes.ok} /> : <AlertTriangle size={18} className={classes.warn} />}
                     <div style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 600 }}>{h.label}</div>
-                    {h.ok ? <span className={classes.hint}>Ok</span> : <button type="button" className={classes.link} style={{ marginTop: 0 }} onClick={() => fix(h.fix)}>Resolver</button>}
+                    {h.ok ? <span className={classes.hint}>Ok</span> : <button type="button" className={classes.link} onClick={() => fix(h.fix)}>Resolver</button>}
                   </div>
                 ))}
-              </div>
+              </Section>
             </div>
           </>
         )}
 
-        {section === "ensinar" && (
+        {section === "treinar" && <TrainTab agentId={agentId} goRoteiro={(flowId) => history.push(`/ai-agents/blocos/${flowId}`)} />}
+
+        {section === "conhecimento" && (
           <>
-            <div className={classes.sub}>
-              <button type="button" className={classes.subBtn} data-on={teach === "perguntas"} onClick={() => setTeach("perguntas")}>Perguntas sem resposta{d.pending.waiting + d.pending.toReview > 0 && <span className={classes.badge}>{d.pending.waiting + d.pending.toReview}</span>}</button>
-              <button type="button" className={classes.subBtn} data-on={teach === "conteudo"} onClick={() => setTeach("conteudo")}>O que o agente sabe</button>
+            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 16 }}>
+              <Segmented items={[["perguntas", "Perguntas sem resposta", d.pending.waiting + d.pending.toReview], ["conteudo", "O que o agente sabe"]]} value={teach} onChange={setTeach} label="Conhecimento" />
               <span style={{ flex: 1 }} />
               <Button variant="contained" color="primary" disableElevation startIcon={<Plus size={16} />} endIcon={<ChevronDown size={16} />} onClick={(e) => setAddMenu(e.currentTarget)} style={{ borderRadius: 12 }}>Adicionar conhecimento</Button>
               <Menu anchorEl={addMenu} open={!!addMenu} onClose={() => setAddMenu(null)} getContentAnchorEl={null} anchorOrigin={{ vertical: "bottom", horizontal: "right" }} transformOrigin={{ vertical: "top", horizontal: "right" }}>
@@ -251,7 +242,7 @@ const Central = () => {
             {teach === "perguntas" && <LearningTab agentId={agentId} onCount={() => undefined} initialFilter={d.pending.waiting && !d.pending.toReview ? "aguardando_equipe" : "para_revisar"} />}
             {teach === "conteudo" && (
               <>
-                <div className={classes.panelTitle}>Assuntos que o agente conhece</div>
+                <div style={{ fontWeight: 700, marginBottom: 10 }}>Assuntos que o agente conhece</div>
                 <div className={classes.topics}>
                   {d.topics.map((t) => (
                     <button key={t.topic} type="button" className={classes.topic} onClick={() => teachAbout(0, t.topic)} title={t.hint}>
@@ -266,10 +257,9 @@ const Central = () => {
         )}
 
         {section === "testar" && (
-          <>
-            <p className={classes.hint} style={{ marginTop: 0 }}>Converse como se fosse um lead. Nada é enviado a ninguém e nenhum lead é criado.</p>
+          <Section title="Testar o agente" hint="Converse como se fosse um lead. Nada é enviado a ninguém e nenhum lead é criado. Gostou da conversa? Salve como treino.">
             <TestTab agentId={agentId} />
-          </>
+          </Section>
         )}
 
         {section === "resultados" && (
@@ -283,11 +273,11 @@ const Central = () => {
         )}
 
         {section === "ajustes" && (
-          <div className={classes.settings}>
+          <div className={`${classes.settings} ui-stagger`}>
             {settings.map((s) => {
               const Icon = s.icon;
-                            return (
-                <button key={s.key} type="button" className={classes.setting} onClick={s.run} >
+              return (
+                <button key={s.key} type="button" className={`ui-card ui-lift ui-press ${classes.setting}`} onClick={s.run}>
                   <span className={classes.settingIcon}><Icon size={20} /></span>
                   <span className={classes.settingName}>{s.name}</span>
                   <span className={classes.hint}>{s.text}</span>

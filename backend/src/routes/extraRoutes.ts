@@ -45,6 +45,7 @@ import { affiliateStaff, canAccessAffiliate } from "../helpers/Affiliates";
 
 const upload = multer({ ...uploadConfig, limits: { fileSize: 30 * 1024 * 1024 } });
 const certUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 1024 * 1024 } });
+const trainUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
 const kbUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024 } });
 const r = express.Router();
 
@@ -173,6 +174,16 @@ r.get("/ai-learnings/pending", isAuth, isManager, Ai.learningPending);
 r.put("/ai-learnings/:id", isAuth, isManager, Ai.learningUpdate);
 r.post("/ai-learnings/:id/approve", isAuth, isManager, Ai.learningApprove);
 r.post("/ai-learnings/:id/discard", isAuth, isManager, Ai.learningDiscard);
+r.get("/ai-agents/:id/rules", isAuth, isManager, Ai.ruleList);
+r.post("/ai-agents/:id/rules", isAuth, isManager, Ai.ruleCreate);
+r.post("/ai-agents/:id/rules/bulk", isAuth, isManager, Ai.ruleBulk);
+r.put("/ai-rules/:id", isAuth, isManager, Ai.ruleUpdate);
+r.delete("/ai-rules/:id", isAuth, isManager, Ai.ruleRemove);
+r.post("/ai-agents/:id/coach", isAuth, isManager, Ai.coach);
+r.post("/ai-agents/:id/train/upload", isAuth, isManager, trainUpload.single("file"), Ai.trainUpload);
+r.post("/ai-agents/:id/train/analyze", isAuth, isManager, Ai.trainAnalyze);
+r.post("/ai-agents/:id/train/apply", isAuth, isManager, Ai.trainApply);
+r.post("/ai-agents/:id/train/from-conversation", isAuth, isManager, Ai.trainFromConversation);
 r.get("/ai-agents/:id/usage", isAuth, isManager, Ai.usage);
 r.get("/ai-settings", isAuth, isAdmin, Ai.getKeys);
 r.put("/ai-settings", isAuth, isAdmin, Ai.setKeys);

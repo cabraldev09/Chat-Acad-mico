@@ -57,6 +57,7 @@ import KbDocument from "../models/KbDocument";
 import KbChunk from "../models/KbChunk";
 import AiUsage from "../models/AiUsage";
 import AiLearning from "../models/AiLearning";
+import AiRule from "../models/AiRule";
 import Polo from "../models/Polo";
 import PoloMember from "../models/PoloMember";
 import PoloCoverage from "../models/PoloCoverage";
@@ -141,6 +142,7 @@ const models = [
   KbChunk,
   AiUsage,
   AiLearning,
+  AiRule,
   Polo,
   PoloMember,
   PoloCoverage,

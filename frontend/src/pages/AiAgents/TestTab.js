@@ -1,13 +1,14 @@
 import React, { useRef, useState, useEffect } from "react";
-import { Button, TextField, Typography, makeStyles } from "@material-ui/core";
-import { Send, RotateCcw, GraduationCap } from "lucide-react";
+import { Button, Dialog, DialogActions, DialogContent, DialogTitle, TextField, Typography, makeStyles } from "@material-ui/core";
+import { Send, RotateCcw, GraduationCap, Save } from "lucide-react";
 import { toast } from "react-toastify";
 
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
+import { ProposalList } from "./TrainTab";
 
 const useStyles = makeStyles((theme) => ({
-  chat: { borderRadius: 14, padding: theme.spacing(1.5), height: 340, overflowY: "auto", display: "flex", flexDirection: "column", gap: 6, background: theme.palette.type === "dark" ? "#0b141a" : "#efeae2", ...theme.scrollbarStyles },
+  chat: { borderRadius: 16, padding: theme.spacing(1.5), height: 380, overflowY: "auto", display: "flex", flexDirection: "column", gap: 6, background: theme.palette.type === "dark" ? "#0b141a" : "#efeae2", ...theme.scrollbarStyles },
   me: { alignSelf: "flex-end", maxWidth: "80%", padding: "6px 10px", borderRadius: "10px 10px 2px 10px", background: theme.palette.type === "dark" ? "#005c4b" : "#d9fdd3", fontSize: 14, whiteSpace: "pre-wrap" },
   bot: { alignSelf: "flex-start", maxWidth: "80%", padding: "6px 10px", borderRadius: "10px 10px 10px 2px", background: theme.palette.type === "dark" ? "#202c33" : "#fff", fontSize: 14, whiteSpace: "pre-wrap" },
   meta: { alignSelf: "flex-start", fontSize: 11.5, color: theme.palette.text.secondary, margin: "0 4px" },
@@ -26,6 +27,26 @@ const TestTab = ({ agentId }) => {
   const end = useRef();
   const [teaching, setTeaching] = useState(null);
   const [lesson, setLesson] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [proposed, setProposed] = useState(null);
+  // the whole conversation turned into lessons: the owner reviews before anything is saved
+  const toTraining = async () => {
+    setSaving(true);
+    try {
+      const { data } = await api.post(`/ai-agents/${agentId}/train/from-conversation`, { messages: turns.map(({ role, content }) => ({ role, content })) });
+      if (!data.proposed || !data.proposed.length) toast.info("Não encontrei nada novo para o agente aprender nesta conversa.");
+      else setProposed(data.proposed.map((p) => ({ ...p, keep: true })));
+    } catch (err) { toastError(err); }
+    setSaving(false);
+  };
+  const saveTraining = async () => {
+    const items = proposed.filter((p) => p.keep !== false);
+    try {
+      if (items.length) await api.post(`/ai-agents/${agentId}/rules/bulk`, { items, source: "conversa" });
+      toast.success(items.length ? "Gravado: o agente vai seguir em todas as respostas." : "Nada foi gravado.");
+      setProposed(null);
+    } catch (err) { toastError(err); }
+  };
   const teach = async (t) => {
     try {
       await api.post(`/ai-agents/${agentId}/learnings`, { question: t.question, answer: lesson });
@@ -89,7 +110,19 @@ const TestTab = ({ agentId }) => {
         <TextField fullWidth variant="outlined" size="small" placeholder="Mensagem do aluno" value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && send()} disabled={busy} />
         <Button variant="contained" color="primary" onClick={send} disabled={busy || !text.trim()} startIcon={<Send size={16} />}>Enviar</Button>
         <Button variant="outlined" onClick={() => { setTurns([]); setCollected({}); }} startIcon={<RotateCcw size={16} />}>Recomeçar</Button>
+        <Button variant="outlined" color="primary" onClick={toTraining} disabled={saving || turns.length < 2} startIcon={<Save size={16} />}>Salvar como treino</Button>
       </div>
+      <Dialog open={!!proposed} onClose={() => setProposed(null)} fullWidth maxWidth="sm">
+        <DialogTitle>O que o agente deve aprender desta conversa</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="textSecondary" style={{ marginBottom: 12 }}>Marque o que vale. O que for gravado passa a valer em todas as respostas.</Typography>
+          {proposed && <ProposalList items={proposed} onChange={setProposed} />}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setProposed(null)}>Cancelar</Button>
+          <Button variant="contained" color="primary" disableElevation onClick={saveTraining}>Gravar</Button>
+        </DialogActions>
+      </Dialog>
     </div>
   );
 };
