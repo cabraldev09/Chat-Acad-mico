@@ -46,6 +46,7 @@ import Lead from "../models/Lead";
 import LeadActivity from "../models/LeadActivity";
 import LeadTask from "../models/LeadTask";
 import LeadEnrollment from "../models/LeadEnrollment";
+import RetentionContact from "../models/RetentionContact";
 import LeadTag from "../models/LeadTag";
 import Institution from "../models/Institution";
 import ProposalTemplate from "../models/ProposalTemplate";
@@ -132,6 +133,7 @@ const models = [
   LeadActivity,
   LeadTask,
   LeadEnrollment,
+  RetentionContact,
   LeadTag,
   Institution,
   ProposalTemplate,

@@ -8,7 +8,7 @@ import { AuthContext } from "../../context/Auth/AuthContext";
 // My follow-up tasks that are late or due today. One count for the whole app: the strip on top, the badge of the menu.
 export const useMyTasks = () => {
   const { user } = useContext(AuthContext);
-  const [counts, setCounts] = useState({ overdue: 0, today: 0, triage: 0, triageLate: 0 });
+  const [counts, setCounts] = useState({ overdue: 0, today: 0, triage: 0, triageLate: 0, onboarding: 0 });
   const load = useCallback(() => {
     if (!user || !user.id) return;
     Promise.all([
@@ -16,7 +16,9 @@ export const useMyTasks = () => {
       api.get("/lead-tasks", { params: { status: "today", scope: "mine" } }),
       // my new leads nobody answered yet: each consultant checks their own before the day closes (the screen of the CRM is not for tutors)
       api.get("/crm/triage", { params: { ownerId: user.id } }).then(({ data }) => data).catch(() => ({ total: 0, late: 0 })),
-    ]).then(([a, b, t]) => setCounts({ overdue: (a.data || []).length, today: (b.data || []).length, triage: t.total || 0, triageLate: t.late || 0 })).catch(() => undefined);
+      // students of mine waiting for the ambientação (tutor: the ones to start; consultant: the ones I sent that have not started)
+      api.get("/onboarding/pending").then(({ data }) => data.pending || 0).catch(() => 0),
+    ]).then(([a, b, t, o]) => setCounts({ overdue: (a.data || []).length, today: (b.data || []).length, triage: t.total || 0, triageLate: t.late || 0, onboarding: o })).catch(() => undefined);
   }, [user]);
   useEffect(() => {
     load();

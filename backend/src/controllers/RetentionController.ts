@@ -19,6 +19,7 @@ import SendToContact from "../services/ChannelServices/SendToContact";
 import { assertCanSend, logRetention } from "../services/CrmServices/RetentionLog";
 import { Scope, markReenrolled, readRetentionConfig, rematriculaList, riskStudents, sendRetentionMessage } from "../services/CrmServices/Retention";
 import { csvAsText, csvDay, sendCsv } from "../helpers/Csv";
+import { OUTCOMES, registerContact, todayList } from "../services/CrmServices/RetentionToday";
 import { relationshipConnection, relationshipWhatsappId, setRelationshipWhatsappId } from "../services/RelationshipServices/Relationship";
 
 const uid = (req: Request): number => Number(req.user.id);
@@ -100,8 +101,18 @@ export const riskCsv = async (req: Request, res: Response): Promise<Response> =>
 
 export const riskMessage = async (req: Request, res: Response): Promise<Response> => {
   const lead = await leadOf(req);
-  await sendRetentionMessage(lead, uid(req));
+  // the message may be edited before sending; without text the retention message of the settings goes
+  await sendRetentionMessage(lead, uid(req), req.body && typeof req.body.message === "string" ? req.body.message : undefined);
   return res.json({ ok: true });
+};
+
+// ------------------------------------------------------------------ who to contact today
+export const today = async (req: Request, res: Response): Promise<Response> => res.json({ ...(await todayList(scopeOf(req))), outcomes: OUTCOMES });
+
+export const contact = async (req: Request, res: Response): Promise<Response> => {
+  const lead = await leadOf(req);
+  const row = await registerContact(lead, uid(req), { outcome: String(req.body.outcome || ""), note: req.body.note, snoozeDays: req.body.snoozeDays === undefined || req.body.snoozeDays === "" ? undefined : Number(req.body.snoozeDays) });
+  return res.status(201).json({ id: row.id });
 };
 
 // ------------------------------------------------------------------ re-enrollment
