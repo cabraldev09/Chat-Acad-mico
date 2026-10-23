@@ -19,6 +19,7 @@ import { addActivity } from "../CrmServices/LeadCore";
 import { resolvePoloFor } from "../PoloServices/ResolvePolo";
 import ShowTicketService from "../TicketServices/ShowTicketService";
 import UpdateTicketService from "../TicketServices/UpdateTicketService";
+import Whatsapp from "../../models/Whatsapp";
 import { nextOpening, whenText } from "./Hours";
 import { syncHandoffTasks } from "../CrmServices/HandoffTasks";
 import { areaOfCourse } from "./MecDefaults";
@@ -258,7 +259,10 @@ export const routeToCommercial = async (ticket: Ticket, opts: RouteOptions): Pro
   let user: User | null = null;
   if (queue) {
     const users: User[] = (queue as any).users || [];
-    user = (lead?.ownerId && users.find(u => u.id === lead.ownerId)) || (users.length ? await pickUserForQueue(queue, true) : null);
+    const ownerOfLead = lead?.ownerId ? users.find(u => u.id === lead.ownerId) : null;
+    // the lead's owner keeps the conversation only when they have a WhatsApp number to answer from
+    const ownerHasNumber = ownerOfLead ? (await Whatsapp.count({ where: { ownerId: ownerOfLead.id, channel: "whatsapp" } as any })) > 0 : false;
+    user = (ownerHasNumber && ownerOfLead) || (users.length ? await pickUserForQueue(queue, true) : null);
   }
 
   const business = await getBusinessConfig();

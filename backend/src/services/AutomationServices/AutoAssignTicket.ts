@@ -1,4 +1,6 @@
-import { Op } from "sequelize";
+import { Op, QueryTypes } from "sequelize";
+import sequelize from "../../database";
+import { portable } from "../../helpers/sqlDialect";
 
 import Queue from "../../models/Queue";
 import Whatsapp from "../../models/Whatsapp";
@@ -18,11 +20,13 @@ export const pickUserForQueue = async (queue: Queue, force = false): Promise<Use
   const all = [...(queue.users || [])].sort((a, b) => a.id - b.id);
   if (!all.length) return null;
   // somebody who never connected a WhatsApp cannot answer: when at least one colleague of the queue can, the lead goes to them
-  const connected = new Set(
-    (await Whatsapp.findAll({ where: { ownerId: all.map(u => u.id), channel: "whatsapp", status: "CONNECTED" } as any, attributes: ["ownerId"] })).map(w => Number(w.ownerId))
-  );
+  // the order of preference: a number connected now, then someone who owns a number (it may be reconnecting after a restart), and only then everybody
+  const numbers = await Whatsapp.findAll({ where: { ownerId: all.map(u => u.id), channel: "whatsapp" } as any, attributes: ["ownerId", "status"] });
+  const connected = new Set(numbers.filter(w => w.status === "CONNECTED").map(w => Number(w.ownerId)));
+  const owners = new Set(numbers.map(w => Number(w.ownerId)));
   const reachable = all.filter(u => connected.has(u.id));
-  const users = reachable.length ? reachable : all;
+  const withNumber = all.filter(u => owners.has(u.id));
+  const users = reachable.length ? reachable : withNumber.length ? withNumber : all;
 
   if (mode === "least") {
     const counts = await Promise.all(
@@ -63,6 +67,47 @@ const AutoAssignTicket = async (ticket: Ticket): Promise<boolean> => {
     logger.error(`Auto-assign failed: ${err}`);
     return false;
   }
+};
+
+// Conversations sitting with someone who never connected a WhatsApp (they cannot receive or answer) go to a colleague of the same queue who can.
+// A conversation the person already answered in the last week stays with them. Their open tasks follow (UpdateTicketService realigns them).
+export const redistributeUnreachableTickets = async (): Promise<number> => {
+  const stuck = (await sequelize.query(
+    portable(`
+    SELECT t.id FROM Tickets t
+    JOIN Users u ON u.id = t.userId AND u.profile <> 'admin' AND (u.role = 'consultor' OR u.role IS NULL OR u.role = '')
+    WHERE t.status IN ('open', 'pending') AND t.isGroup = false AND t.isHistorical = false AND t.queueId IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM Whatsapps w WHERE w.channel = 'whatsapp' AND w.ownerId = t.userId)
+      AND NOT EXISTS (SELECT 1 FROM OutboundMessages o WHERE o.ticketId = t.id AND o.userId = t.userId AND o.status = 'sent' AND o.sentAt > :since)
+    ORDER BY t.id LIMIT 50`),
+    { replacements: { since: new Date(Date.now() - 7 * 86400000) }, type: QueryTypes.SELECT }
+  )) as any[];
+  let moved = 0;
+  for (const row of stuck) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const ticket = await Ticket.findByPk(row.id);
+      if (!ticket || !ticket.queueId) continue;
+      // eslint-disable-next-line no-await-in-loop
+      const queue = await Queue.findByPk(ticket.queueId, { include: [{ model: User, as: "users", attributes: ["id", "name"] }] });
+      if (!queue) continue;
+      const others = ((queue as any).users || []).filter((u: User) => u.id !== ticket.userId);
+      // eslint-disable-next-line no-await-in-loop
+      const chosen = others.length ? await pickUserForQueue({ id: queue.id, autoAssign: "roundrobin", users: others } as any, true) : null;
+      if (!chosen) continue;
+      const hasNumber = (await Whatsapp.count({ where: { ownerId: chosen.id, channel: "whatsapp" } as any })) > 0; // eslint-disable-line no-await-in-loop
+      if (!hasNumber) continue;
+      const from = ticket.userId;
+      // eslint-disable-next-line no-await-in-loop
+      await UpdateTicketService({ ticketData: { userId: chosen.id, status: ticket.status === "pending" ? "pending" : "open" }, ticketId: ticket.id });
+      // eslint-disable-next-line no-await-in-loop
+      await TicketEvent.create({ ticketId: ticket.id, type: "transfer", actorId: null, fromUserId: from, toUserId: chosen.id, note: "A conversa estava com quem ainda não conectou o WhatsApp e passou para um colega que atende." } as any);
+      moved += 1;
+    } catch (err) {
+      logger.warn(`redistribute ticket ${row.id} failed: ${err}`);
+    }
+  }
+  return moved;
 };
 
 export default AutoAssignTicket;
