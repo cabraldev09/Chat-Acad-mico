@@ -441,6 +441,26 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
       const team2 = (await A(admin, "/analytics/team?range=today")).data;
       assert(!team2.consultants.find(b => b.user.id === ids.gabrielli).user.poloIds.includes(Number(polo2)), "the link stayed after removing");
     });
+
+    await test("a student can enroll again: each enrollment counts for the consultant, the first stays, and the list shows all of them", async () => {
+      const before = (await A(joao, "/analytics/me?range=today")).data.metrics.enrollments;
+      const polo3 = sql(`INSERT INTO Polos (code, name, active, createdAt, updatedAt) VALUES ('AN3', 'Polo AN3', true, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const lead = (await http.post("/leads", { name: "Aluna de duas matrículas", phone: "5569999990077", ownerId: ids.joao }, as(admin))).data.lead;
+      // the first enrollment (here by moving to the won stage: this environment has no WhatsApp channel for the tutor's chat)
+      assert((await http.put(`/leads/${lead.id}/stage`, { stageId: stageWon.id }, as(admin))).status === 200, "first enrollment");
+      sql(`UPDATE Leads SET enrolledAt = NOW(), poloId = ${polo3} WHERE id = ${lead.id}`);
+      assert((await http.post(`/leads/${lead.id}/enroll`, { poloId: Number(polo3), additional: true }, as(joao))).status !== 500, "a consultant enrolling again must not crash");
+      sql(`DELETE FROM LeadEnrollments WHERE leadId = ${lead.id}`);
+      const second = await http.post(`/leads/${lead.id}/enroll`, { poloId: Number(polo3), additional: true, courseName: "Pedagogia", fee: "exempt" }, as(admin));
+      assert(second.status === 200 && second.data.enrollment && second.data.number === 2, `second enrollment ${second.status} ${JSON.stringify(second.data).slice(0, 300)}`);
+      const third = await http.post(`/leads/${lead.id}/enroll`, { poloId: Number(polo3), additional: true, courseName: "Administração" }, as(admin));
+      assert(third.status === 200 && third.data.number === 3, "third enrollment");
+      const list = (await http.get(`/leads/${lead.id}/enrollments`, as(admin))).data;
+      assert(list.length === 3 && list[1].courseName === "Pedagogia" && list[2].courseName === "Administração", `list ${JSON.stringify(list)}`);
+      const after = (await A(joao, "/analytics/me?range=today")).data.metrics.enrollments;
+      assert(after === before + 3, `the three enrollments counted ${after - before}`);
+      assert((await http.post(`/leads/${lead.id + 9999}/enroll`, { poloId: Number(polo3), additional: true }, as(admin))).status === 404, "unknown lead");
+    });
   } catch (err) {
     results.push([false, `setup -> ${err.stack || err.message}`]);
     console.log(`  ✗ setup\n      ${err.stack || err.message}`);

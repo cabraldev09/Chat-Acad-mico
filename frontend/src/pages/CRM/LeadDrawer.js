@@ -23,6 +23,7 @@ import LeadFields from "./LeadFields";
 import ConfirmationModal from "../../components/ConfirmationModal";
 import ProposalStudio from "./ProposalStudio";
 import PaymentTab from "./PaymentTab";
+import EnrollmentsList from "./EnrollmentsList";
 import DocumentsTab from "./DocumentsTab";
 import NotALead from "./NotALead";
 import { ScoreRing, SourceIcon, StagePill, ago, isOverdue, burst, initials } from "./shared";
@@ -104,6 +105,7 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab, side = false 
   const [note, setNote] = useState({ type: "note", body: "" });
   const [task, setTask] = useState({ title: "", type: "ligar", dueAt: "" });
   const [enrollOpen, setEnrollOpen] = useState(false);
+  const [againOpen, setAgainOpen] = useState(false);
   const [lostOpen, setLostOpen] = useState(false);
   const [proposals, setProposals] = useState([]);
   const [studio, setStudio] = useState(null); // { id } | {}
@@ -209,6 +211,7 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab, side = false 
       ) : (
         <>
           <EnrollDialog open={enrollOpen} lead={lead} onClose={() => setEnrollOpen(false)} onDone={() => { changed(); }} />
+          {againOpen && <EnrollDialog open additional lead={lead} onClose={() => setAgainOpen(false)} onDone={() => { setAgainOpen(false); changed(); }} />}
           <LostDialog open={lostOpen} reasons={options.lostReasons} onClose={() => setLostOpen(false)}
             onConfirm={(reason, n) => { setLostOpen(false); move(lost, null, { lostReason: reason, lostNote: n }); }} />
           <div className={classes.head}>
@@ -258,6 +261,10 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab, side = false 
                   <Button size="small" variant="outlined" startIcon={<Trophy size={16} />} onClick={(e) => won && move(won, e)} style={{ color: "#16a34a", borderColor: "rgba(22,163,74,.5)" }}>Matriculado</Button>
                   <Button size="small" variant="outlined" startIcon={<ThumbsDown size={16} />} onClick={() => setLostOpen(true)} style={{ color: "#dc2626", borderColor: "rgba(220,38,38,.4)" }}>Perdido</Button>
                 </>
+              )}
+              {lead.enrolledAt && (
+                <Button size="small" variant="outlined" startIcon={<Trophy size={16} />} onClick={() => setAgainOpen(true)} style={{ color: "#16a34a", borderColor: "rgba(22,163,74,.5)" }}
+                  title="O aluno já é matriculado: registra mais uma matrícula (outro curso) que conta de novo para você e para o polo">Nova matrícula</Button>
               )}
               {!lead.enrolledAt && <NotALead lead={lead} onDone={() => { changed(); onClose(); }} />}
               {!lead.enrolledAt && !lead.wonAt && me && isManager(me) && (
@@ -348,6 +355,7 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab, side = false 
                 </div>
               </>
             )}
+            {tab === 4 && lead.enrolledAt && <EnrollmentsList leadId={lead.id} version={acts.length} />}
             {tab === 4 && <PaymentTab lead={lead} acts={acts} onChanged={changed} onEditSummary={() => setTab(0)} />}
             {tab === 5 && <DocumentsTab lead={lead} onChanged={changed} />}
 

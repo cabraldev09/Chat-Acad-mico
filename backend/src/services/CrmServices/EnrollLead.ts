@@ -10,6 +10,9 @@ import { getIO } from "../../libs/socket";
 import Lead from "../../models/Lead";
 import LeadStage from "../../models/LeadStage";
 import LeadTask from "../../models/LeadTask";
+import LeadEnrollment from "../../models/LeadEnrollment";
+import Course from "../../models/Course";
+import { touchAnalytics } from "../AnalyticsServices/Realtime";
 import Polo from "../../models/Polo";
 import PoloMember from "../../models/PoloMember";
 import Queue from "../../models/Queue";
@@ -38,6 +41,10 @@ export interface EnrollInput {
   // ignored: kept only so older screens that still send it do not break
   introMessage?: string | null;
   whatsappId?: number | null; // connection of the tutoring chat (default: the sales conversation's)
+  // another enrollment of a student who is already enrolled (another course): it counts again and the tutor gets a new task
+  additional?: boolean;
+  courseId?: number | null;
+  courseName?: string | null;
 }
 
 // Confirms the enrollment and hands the student to the polo's tutoring team:
@@ -176,7 +183,70 @@ const enrollLeadCore = async (lead: Lead, actorId: number, input: EnrollInput) =
   return { lead: out, ticketId: ticket.id, tutor: tutor ? { id: tutor.id, name: tutor.name } : null, warnings };
 };
 
+
+// A student who is already enrolled enrolls again (another course, maybe another polo): the first enrollment stays as it is, this one is
+// recorded on its own, counts for the consultant who owns the lead and for the polo, and the tutor receives a task for it.
+const enrollAdditional = async (lead: Lead, actorId: number, input: EnrollInput) => {
+  const warnings: string[] = [];
+  const polo = await Polo.findByPk(input.poloId);
+  if (!polo) throw new AppError("ERR_NO_POLO_FOUND", 404);
+  let queue = await Queue.findOne({ where: { poloId: polo.id, role: "tutoria" }, include: [{ model: User, as: "users", attributes: ["id", "name"] }] });
+  if (!queue) {
+    await syncPoloQueues(polo);
+    queue = await Queue.findOne({ where: { poloId: polo.id, role: "tutoria" }, include: [{ model: User, as: "users", attributes: ["id", "name"] }] });
+  }
+  if (!queue) throw new AppError("ERR_POLO_NO_TUTORING_QUEUE", 400);
+  let tutor: User | null = null;
+  if (input.tutorId && input.tutorId !== "auto") {
+    if (!(await canTutorPolo(polo.id, Number(input.tutorId)))) throw new AppError("ERR_USER_NOT_IN_QUEUE", 422);
+    tutor = await User.findByPk(Number(input.tutorId));
+  } else {
+    tutor = await pickUserForQueue(queue, true);
+    if (!tutor) warnings.push("O polo não tem tutor cadastrado: a tarefa da ambientação ficou sem responsável.");
+  }
+  let courseName = input.courseName ? String(input.courseName).slice(0, 200) : null;
+  let courseId: number | null = input.courseId ? Number(input.courseId) : null;
+  if (courseId) {
+    const course = await Course.findByPk(courseId);
+    if (course) courseName = courseName || course.name;
+    else courseId = null;
+  }
+  const row = await LeadEnrollment.create({
+    leadId: lead.id,
+    ownerId: lead.ownerId || null,
+    poloId: polo.id,
+    tutorId: tutor?.id || null,
+    actorId,
+    courseId,
+    courseName,
+    note: input.note ? String(input.note).slice(0, 1000) : null,
+    enrolledAt: new Date()
+  } as any);
+  const total = 1 + (await LeadEnrollment.count({ where: { leadId: lead.id } }));
+  const label = courseName ? ` em ${courseName}` : "";
+  await LeadTask.create({
+    leadId: lead.id,
+    userId: tutor?.id || null,
+    type: "outro",
+    title: `Ambientar o aluno na nova matrícula${label}`,
+    dueAt: new Date(Date.now() + 4 * 3600000)
+  } as any);
+  await addActivity(lead.id, actorId, "system", `Nova matrícula (${total}ª)${label}. Polo ${polo.name}; tutor: ${tutor ? tutor.name : "aguardando"}.${input.note ? ` Obs.: ${input.note}` : ""}`);
+  const out = (await loadLead(lead.id)) as Lead;
+  getIO().emit("lead", { action: "update", lead: out });
+  if (lead.ownerId) touchAnalytics(lead.ownerId);
+  await dispatchWebhook("lead.enrolled", { leadId: lead.id, lead: lead.name, poloId: polo.id, tutorId: tutor?.id || null, additional: true, enrollmentId: row.id, course: courseName });
+  const ticket = await Ticket.findOne({ where: { leadId: lead.id, segment: "onboarding" }, order: [["id", "DESC"]], attributes: ["id"] });
+  return { lead: out, ticketId: ticket ? ticket.id : null, tutor: tutor ? { id: tutor.id, name: tutor.name } : null, warnings, repeated: false, enrollment: row, number: total };
+};
+
 const enrollLead = async (lead: Lead, actorId: number, input: EnrollInput) => {
+  if (input.additional) {
+    const current = await Lead.findByPk(lead.id);
+    if (!current) throw new AppError("ERR_LEAD_NOT_FOUND", 404);
+    if (!current.enrolledAt) throw new AppError("ERR_LEAD_NOT_ENROLLED_YET", 400);
+    return enrollAdditional(current, actorId, input);
+  }
   const result = await sequelize.transaction(async transaction => {
     const locked = await Lead.findByPk(lead.id, { transaction, lock: transaction.LOCK.UPDATE });
     if (!locked) throw new AppError("ERR_LEAD_NOT_FOUND", 404);

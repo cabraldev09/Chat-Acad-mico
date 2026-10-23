@@ -110,7 +110,8 @@ export const unassignedTasks = async (): Promise<{ open: number; overdue: number
   return { open: Number(r?.n || 0), overdue: Number(r?.late || 0) };
 };
 
-export const consultantWhere = `u.profile <> 'admin' AND (u.role = 'consultor' OR u.role IS NULL OR u.role = '')`;
+// An administrator who owns a WhatsApp number or works leads sells like any consultant, so they are on the list too.
+export const consultantWhere = `((u.profile <> 'admin' AND (u.role = 'consultor' OR u.role IS NULL OR u.role = '')) OR (u.profile = 'admin' AND (EXISTS (SELECT 1 FROM Whatsapps ow WHERE ow.channel = 'whatsapp' AND ow.ownerId = u.id) OR EXISTS (SELECT 1 FROM Leads ol WHERE ol.ownerId = u.id AND ol.isHistorical = false))))`;
 
 // Consultants the requester may see: administration sees all; coordination sees the consultants of its polos (all, when it has no polo yet).
 // A consultant sees nobody here: their own numbers come from /analytics/me.
@@ -194,7 +195,7 @@ export const computeMetrics = async (userIds: number[], period: Period, now: Dat
   // proposals and enrollments (the same wonAt rule as the goals)
   (await rows(`SELECT createdBy AS userId, COUNT(*) AS n FROM Proposals WHERE createdBy IN (:ids) AND sentAt BETWEEN :from AND :to GROUP BY createdBy`, rep)).forEach(r => set(r, "proposalsSent"));
   (await rows(`SELECT createdBy AS userId, COUNT(*) AS n FROM Proposals WHERE createdBy IN (:ids) AND viewedAt BETWEEN :from AND :to GROUP BY createdBy`, rep)).forEach(r => set(r, "proposalsViewed"));
-  (await rows(`SELECT ownerId AS userId, COUNT(*) AS n FROM Leads WHERE ownerId IN (:ids) AND wonAt BETWEEN :from AND :to AND isHistorical = false GROUP BY ownerId`, rep)).forEach(r => set(r, "enrollments"));
+  (await rows(`SELECT userId, COUNT(*) AS n FROM (SELECT ownerId AS userId FROM Leads WHERE ownerId IN (:ids) AND wonAt BETWEEN :from AND :to AND isHistorical = false UNION ALL SELECT ownerId AS userId FROM LeadEnrollments WHERE ownerId IN (:ids) AND enrolledAt BETWEEN :from AND :to) w GROUP BY userId`, rep)).forEach(r => set(r, "enrollments"));
 
   // time to the first contact: leads created in the period, by whoever answers them (the owner of the open conversation, or of the lead while nobody has it).
   // Only a HUMAN contact counts: the first message the person sent in the conversation (or the first thing they logged on the lead), never the robot's greeting.
@@ -239,7 +240,7 @@ export const computeSeries = async (userIds: number[], period: Period): Promise<
      WHERE o.status = 'sent' AND o.userId IN (:ids) AND o.sentAt BETWEEN :from AND :to AND ${VALID_TICKET} GROUP BY o.userId, day`,
     rep
   );
-  const won = await rows(`SELECT ownerId AS userId, ${dayOf("wonAt")} AS day, COUNT(*) AS n FROM Leads WHERE ownerId IN (:ids) AND wonAt BETWEEN :from AND :to AND isHistorical = false GROUP BY ownerId, day`, rep);
+  const won = await rows(`SELECT userId, day, COUNT(*) AS n FROM (SELECT ownerId AS userId, ${dayOf("wonAt")} AS day FROM Leads WHERE ownerId IN (:ids) AND wonAt BETWEEN :from AND :to AND isHistorical = false UNION ALL SELECT ownerId AS userId, ${dayOf("enrolledAt")} AS day FROM LeadEnrollments WHERE ownerId IN (:ids) AND enrolledAt BETWEEN :from AND :to) w GROUP BY userId, day`, rep);
   const days: string[] = [];
   for (let d = dayBounds(period.from).start; d.getTime() <= period.end.getTime(); d = shiftDays(d, 1)) days.push(iso(d));
   for (const id of userIds) {
@@ -364,7 +365,7 @@ export const alertsOf = (bundles: ConsultantBundle[], config: AnalyticsConfig): 
     const noNumber = p.whatsapp.state !== "connected";
     if (p.whatsapp.state === "none") {
       // one honest line (the late tasks and waiting conversations of someone who cannot work are a consequence, not their activity)
-      const stuck = m.tasksOverdue > 0 ? ` · ${m.tasksOverdue} tarefa(s) atrasada(s) dos leads dele` : "";
+      const stuck = m.tasksOverdue > 0 ? ` · ${m.tasksOverdue} tarefa(s) atrasada(s) com ele (a distribuição automática passa para quem atende)` : "";
       alerts.push({ level: "high", userId: user.id, name: user.name, code: "whatsapp_none", text: `ainda não conectou o WhatsApp: não recebe nem envia mensagens${stuck}`, link: "/connections" });
       continue;
     }
