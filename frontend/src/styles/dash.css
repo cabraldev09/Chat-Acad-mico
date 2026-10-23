@@ -1,0 +1,74 @@
+/* ---------- dashboards: glass, glow and motion (Gestão Comercial, Painel do CRM, Estatísticas) ----------
+   Everything lives under .dash-scope, so no other screen changes. Motion stops with "reduce motion". */
+@keyframes dash-rise { from { opacity: 0; transform: translateY(14px) scale(.985); } to { opacity: 1; transform: none; } }
+@keyframes dash-sheen { from { transform: translateX(-120%); } to { transform: translateX(220%); } }
+@keyframes dash-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes dash-ring { from { stroke-dashoffset: var(--ring-len, 163); } }
+@keyframes dash-pulse { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--tone, #22d3ee) 45%, transparent); } 50% { box-shadow: 0 0 0 7px transparent; } }
+@keyframes dash-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+
+.dash-scope { --dash-accent: #0693e3; --dash-accent-2: #22d3ee; --dash-glass: linear-gradient(155deg, #ffffff 0%, #f3f8ff 100%); --dash-line: #d7e3f2; --dash-glow: rgba(6, 147, 227, .22); position: relative; }
+:root[data-theme="dark"] .dash-scope { --dash-accent: #22d3ee; --dash-accent-2: #2dd4bf; --dash-glass: linear-gradient(155deg, rgba(34, 211, 238, .09) 0%, rgba(13, 28, 44, .78) 38%, rgba(8, 17, 28, .88) 100%); --dash-line: rgba(94, 234, 212, .16); --dash-glow: rgba(34, 211, 238, .28); }
+
+/* the page behind: a soft aurora, so the glass has something to refract */
+.dash-scope::before { content: ""; position: absolute; inset: -40px -20px auto -20px; height: 420px; z-index: 0; pointer-events: none; background: radial-gradient(520px 260px at 12% 0%, color-mix(in srgb, var(--dash-accent) 16%, transparent), transparent 70%), radial-gradient(480px 240px at 88% 6%, color-mix(in srgb, var(--dash-accent-2) 12%, transparent), transparent 70%); }
+.dash-scope > * { position: relative; z-index: 1; }
+
+/* every card: glass, a thin lit edge, rise on entry, glow under the pointer */
+.dash-scope .ui-card, .dash-scope .glow-card, .dash-scope .dash-card {
+  background: var(--dash-glass); border: 1px solid var(--dash-line); border-radius: 20px;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, .5) inset, 0 18px 40px -26px var(--dash-glow);
+  backdrop-filter: blur(14px) saturate(150%); -webkit-backdrop-filter: blur(14px) saturate(150%);
+  animation: dash-rise .55s cubic-bezier(.22, 1, .36, 1) both; transition: transform .25s ease, box-shadow .25s ease, border-color .25s ease; position: relative; overflow: hidden;
+}
+:root[data-theme="dark"] .dash-scope .ui-card, :root[data-theme="dark"] .dash-scope .glow-card, :root[data-theme="dark"] .dash-scope .dash-card { box-shadow: 0 1px 0 rgba(255, 255, 255, .06) inset, 0 24px 48px -28px rgba(0, 0, 0, .9); }
+.dash-scope .ui-card:hover, .dash-scope .glow-card:hover, .dash-scope .dash-card:hover { border-color: color-mix(in srgb, var(--dash-accent) 55%, var(--dash-line)); box-shadow: 0 1px 0 rgba(255, 255, 255, .5) inset, 0 24px 52px -24px var(--dash-glow), 0 0 0 1px color-mix(in srgb, var(--dash-accent) 20%, transparent); }
+/* a light sweeps across the card when the pointer arrives */
+.dash-scope .dash-card::after { content: ""; position: absolute; inset: 0; width: 38%; pointer-events: none; background: linear-gradient(100deg, transparent, rgba(255, 255, 255, .16), transparent); transform: translateX(-120%); }
+.dash-scope .dash-card:hover::after { animation: dash-sheen 1.1s ease; }
+
+/* children of a grid enter one after the other */
+.dash-scope .dash-stagger > * { animation: dash-rise .6s cubic-bezier(.22, 1, .36, 1) both; }
+.dash-scope .dash-stagger > *:nth-child(2) { animation-delay: .06s; } .dash-scope .dash-stagger > *:nth-child(3) { animation-delay: .12s; } .dash-scope .dash-stagger > *:nth-child(4) { animation-delay: .18s; }
+.dash-scope .dash-stagger > *:nth-child(5) { animation-delay: .24s; } .dash-scope .dash-stagger > *:nth-child(6) { animation-delay: .3s; } .dash-scope .dash-stagger > *:nth-child(n+7) { animation-delay: .36s; }
+
+/* numbers */
+.dash-kpi-card { --tone: var(--dash-accent); }
+.dash-kpi-card::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 3px; background: linear-gradient(90deg, var(--tone), transparent 85%); transform-origin: left; animation: dash-grow .9s cubic-bezier(.22, 1, .36, 1) both; }
+.dash-kpi-glow { position: absolute; right: -30px; top: -30px; width: 120px; height: 120px; border-radius: 50%; background: radial-gradient(closest-side, color-mix(in srgb, var(--tone) 28%, transparent), transparent); pointer-events: none; }
+.dash-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--tone, #22d3ee); animation: dash-pulse 2s ease-in-out infinite; }
+
+/* charts: glow on the series, a glass tooltip */
+.dash-scope .recharts-bar-rectangle path, .dash-scope .recharts-area-curve { filter: drop-shadow(0 0 6px color-mix(in srgb, var(--dash-accent) 38%, transparent)); }
+.dash-scope .recharts-default-tooltip { background: rgba(255, 255, 255, .82) !important; backdrop-filter: blur(12px); border: 1px solid var(--dash-line) !important; border-radius: 14px !important; box-shadow: 0 18px 40px -20px rgba(8, 40, 82, .5); }
+:root[data-theme="dark"] .dash-scope .recharts-default-tooltip { background: rgba(7, 17, 28, .82) !important; color: #e6f6ff; border-color: rgba(34, 211, 238, .3) !important; }
+.dash-scope .recharts-cartesian-grid line { stroke-dasharray: 3 5; stroke: color-mix(in srgb, var(--dash-accent) 16%, transparent); }
+
+/* ranking race: bars that grow */
+.dash-race { display: grid; gap: 14px; }
+.dash-race-row { display: grid; grid-template-columns: minmax(110px, 190px) 1fr auto; gap: 14px; align-items: center; font-size: 14px; }
+.dash-race-track { height: 14px; border-radius: 999px; background: color-mix(in srgb, var(--dash-accent) 10%, transparent); overflow: hidden; }
+.dash-race-fill { height: 100%; border-radius: 999px; transform-origin: left; background: linear-gradient(90deg, var(--dash-accent), var(--dash-accent-2)); box-shadow: 0 0 14px -2px var(--dash-accent); animation: dash-grow 1s cubic-bezier(.22, 1, .36, 1) both; }
+
+/* polo card */
+.dash-polo { padding: 18px; display: grid; gap: 14px; }
+.dash-polo-head { display: flex; align-items: center; gap: 14px; }
+.dash-ring { width: 64px; height: 64px; flex: none; position: relative; }
+.dash-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.dash-ring circle { fill: none; stroke-width: 7; stroke-linecap: round; }
+.dash-ring .bg { stroke: color-mix(in srgb, var(--dash-accent) 14%, transparent); }
+.dash-ring .fg { stroke: var(--dash-accent); stroke-dasharray: var(--ring-len, 163); animation: dash-ring 1.2s cubic-bezier(.22, 1, .36, 1) both; filter: drop-shadow(0 0 5px var(--dash-accent)); }
+.dash-ring b { position: absolute; inset: 0; display: grid; place-items: center; font-size: 14px; font-weight: 750; }
+.dash-polo-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.dash-polo-stats div { padding: 10px; border-radius: 14px; background: color-mix(in srgb, var(--dash-accent) 7%, transparent); }
+.dash-polo-stats small { display: block; font-size: 11.5px; opacity: .7; }
+.dash-polo-stats b { font-size: 20px; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.dash-team { display: flex; flex-wrap: wrap; gap: 6px; }
+.dash-team span { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 3px; border-radius: 999px; font-size: 12.5px; background: color-mix(in srgb, var(--dash-accent) 9%, transparent); }
+.dash-team i { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-style: normal; font-size: 10.5px; font-weight: 800; color: #fff; background: linear-gradient(135deg, var(--dash-accent), var(--dash-accent-2)); }
+
+@media (prefers-reduced-motion: reduce) {
+  .dash-scope .ui-card, .dash-scope .glow-card, .dash-scope .dash-card, .dash-scope .dash-stagger > *, .dash-kpi-card::before, .dash-race-fill, .dash-ring .fg, .dash-dot { animation: none !important; }
+  .dash-scope .dash-card:hover::after { animation: none; }
+}
+@media (max-width: 640px) { .dash-race-row { grid-template-columns: 1fr auto; } .dash-race-track { grid-column: 1 / -1; order: 3; } }

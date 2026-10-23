@@ -26,7 +26,7 @@ const MyStats = () => {
   const go = (link) => history.push(link);
 
   return (
-    <div className={c.page}>
+    <div className={`${c.page} dash-scope`}>
       <div className={c.head}>
         <div>
           <h1 className={c.h1}>Minhas estatísticas</h1>

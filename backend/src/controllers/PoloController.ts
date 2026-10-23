@@ -1,3 +1,4 @@
+import { logger } from "../utils/logger";
 import { Request, Response } from "express";
 
 import { Op } from "sequelize";
@@ -166,8 +167,9 @@ export const addMember = async (req: Request, res: Response): Promise<Response> 
   if (!userId || !(POLO_FUNCTIONS as readonly string[]).includes(role)) throw new AppError("ERR_POLO_MEMBER_INVALID", 400);
   if (!(await User.count({ where: { id: userId } }))) throw new AppError("ERR_NO_USER_FOUND", 404);
   await PoloMember.findOrCreate({ where: { poloId: polo.id, userId, role }, defaults: { poloId: polo.id, userId, role } as any });
-  await syncPoloQueues(polo);
-  return res.json(await reload(polo.id));
+  // the answer goes right away; the queues of the polo are rebuilt in the background (the screen does not wait for them)
+  syncPoloQueues(polo).catch(err => logger.warn(`polo ${polo.id} queues: ${err}`));
+  return res.json({ ok: true, poloId: polo.id, userId, role });
 };
 
 // DELETE /polos/:id/members/:userId?role=  — takes ONE person out of the team (every function, or only the one in ?role)
@@ -179,8 +181,8 @@ export const removeMember = async (req: Request, res: Response): Promise<Respons
   const where: any = { poloId: polo.id, userId };
   if (req.query.role) where.role = String(req.query.role);
   await PoloMember.destroy({ where });
-  await syncPoloQueues(polo);
-  return res.json(await reload(polo.id));
+  syncPoloQueues(polo).catch(err => logger.warn(`polo ${polo.id} queues: ${err}`));
+  return res.json({ ok: true, poloId: polo.id, userId });
 };
 
 // body: { items: [{ code, name, city, state }], dryRun }

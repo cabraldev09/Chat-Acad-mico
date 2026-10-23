@@ -1,7 +1,8 @@
 import React, { useContext, useEffect, useMemo, useState } from "react";
 import { useHistory } from "react-router-dom";
 import { toast } from "react-toastify";
-import { AlertTriangle, Wifi, WifiOff, BarChart3, CalendarClock, Check, ChevronDown, ChevronUp, Download, HeartPulse, ListTodo, Megaphone, MapPin, MonitorCheck, Plus, Search, Settings2, Target, Users, X } from "lucide-react";
+import { Area, Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip as ChartTip, XAxis, YAxis } from "recharts";
+import { AlertTriangle, Wifi, WifiOff, BarChart3, CalendarClock, Check, ChevronDown, ChevronUp, Download, HeartPulse, ListTodo, Megaphone, MapPin, MonitorCheck, Plus, Search, Gauge, Settings2, Target, Users, X } from "lucide-react";
 
 import Tooltip from "@material-ui/core/Tooltip";
 import Drawer from "@material-ui/core/Drawer";
@@ -13,6 +14,7 @@ import { onColor, tint } from "../../utils/color";
 
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
+import NumberTicker from "../../components/NumberTicker";
 import { BRAND, BlockTitle, CompareBars, HistoryChart, Kpi, PeriodPicker, PresenceDot, PRESENCE, Progress, fmt, num, periodParams, useAnalytics, useDefinitions, useKit } from "../../components/analytics/kit";
 
 const DAYS = [["1", "Seg"], ["2", "Ter"], ["3", "Qua"], ["4", "Qui"], ["5", "Sex"], ["6", "Sáb"], ["0", "Dom"]];
@@ -342,14 +344,22 @@ const Alerts = ({ alerts, onOpen, history }) => {
 const PoloCell = ({ b, polos, onChanged }) => {
   const [anchor, setAnchor] = useState(null);
   const [busy, setBusy] = useState(null);
-  const mine = new Set(b.user.poloIds || []);
+  // the screen answers at once (the check appears right away); the server confirms in the background and the choice goes back if it refuses
+  const [ids, setIds] = useState(b.user.poloIds || []);
+  useEffect(() => setIds(b.user.poloIds || []), [b.user.poloIds]);
+  const mine = new Set(ids);
   const toggle = async (polo) => {
+    const had = mine.has(polo.id);
+    setIds((cur) => (had ? cur.filter((x) => x !== polo.id) : [...cur, polo.id]));
     setBusy(polo.id);
     try {
-      if (mine.has(polo.id)) await api.delete(`/polos/${polo.id}/members/${b.user.id}`);
+      if (had) await api.delete(`/polos/${polo.id}/members/${b.user.id}`);
       else await api.post(`/polos/${polo.id}/members/${b.user.id}`, { role: "comercial" });
-      await onChanged();
-    } catch (err) { toastError(err); }
+      onChanged();
+    } catch (err) {
+      setIds((cur) => (had ? [...cur, polo.id] : cur.filter((x) => x !== polo.id)));
+      toastError(err);
+    }
     setBusy(null);
   };
   const chips = polos.filter((p) => mine.has(p.id));
@@ -459,6 +469,127 @@ const ConsultantsTable = ({ ranked, totals, polos, defs, selected, onSelect, onC
   );
 };
 
+// the team in one picture: bars of messages per person, a line of attendances, and what changed (like a trading board)
+const TeamPulse = ({ consultants }) => {
+  const c = useKit();
+  const rows = [...consultants].sort((a, b) => b.metrics.messagesSent - a.metrics.messagesSent).slice(0, 10).map((b) => ({ name: b.user.name.split(" ")[0], mensagens: b.metrics.messagesSent, atendimentos: b.metrics.attendances, matriculas: b.metrics.enrollments }));
+  const any = rows.some((r) => r.mensagens || r.atendimentos || r.matriculas);
+  return (
+    <div className={`${c.panel} dash-card`}>
+      <BlockTitle icon={<Gauge size={16} />} title="Produção da equipe" help="Mensagens enviadas (barras), atendimentos (linha) e matrículas (pontos) de cada consultor no período." />
+      {!any ? <div className={c.sub} style={{ padding: "26px 0" }}>Ainda sem produção neste período. Quando alguém enviar mensagens ou atender, o gráfico acende aqui.</div> : (
+        <div style={{ width: "100%", height: 280, marginTop: 8 }}>
+          <ResponsiveContainer>
+            <ComposedChart data={rows} margin={{ top: 10, right: 12, left: -14, bottom: 0 }}>
+              <defs>
+                <linearGradient id="tp-bar" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#22d3ee" stopOpacity={0.9} /><stop offset="100%" stopColor="#0693e3" stopOpacity={0.15} /></linearGradient>
+                <linearGradient id="tp-area" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#facc15" stopOpacity={0.35} /><stop offset="100%" stopColor="#facc15" stopOpacity={0} /></linearGradient>
+              </defs>
+              <CartesianGrid vertical={false} />
+              <XAxis dataKey="name" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} interval={0} />
+              <YAxis allowDecimals={false} tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
+              <ChartTip cursor={{ fill: "rgba(34,211,238,.07)" }} />
+              <Bar dataKey="mensagens" name="Mensagens" fill="url(#tp-bar)" stroke="#22d3ee" strokeWidth={1.2} radius={[10, 10, 2, 2]} animationDuration={1000} />
+              <Area type="monotone" dataKey="atendimentos" name="Atendimentos" stroke="#facc15" strokeWidth={2.6} fill="url(#tp-area)" animationDuration={1400} />
+              <Line type="monotone" dataKey="matriculas" name="Matrículas" stroke="#4ade80" strokeWidth={0} dot={{ r: 5, fill: "#4ade80", stroke: "#052e16", strokeWidth: 2 }} animationDuration={1600} />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ring that fills (the conversion of a polo)
+const Ring = ({ value }) => {
+  const r = 26;
+  const len = 2 * Math.PI * r;
+  const v = Math.max(0, Math.min(100, Number(value) || 0));
+  return (
+    <span className="dash-ring" style={{ "--ring-len": len }}>
+      <svg viewBox="0 0 64 64"><circle className="bg" cx="32" cy="32" r={r} /><circle className="fg" cx="32" cy="32" r={r} style={{ strokeDashoffset: len * (1 - v / 100) }} /></svg>
+      <b>{value === null || value === undefined ? "—" : `${Math.round(v)}%`}</b>
+    </span>
+  );
+};
+
+const PoloBoard = ({ data, polos, history, setTab }) => {
+  const c = useKit();
+  const byId = new Map(data.polos.map((p) => [p.poloId, p]));
+  // every polo of the system appears, with or without team
+  const all = polos.map((p) => ({ poloId: p.id, name: p.name, city: p.city, state: p.state, consultants: (byId.get(p.id) || {}).consultants || 0, totals: (byId.get(p.id) || {}).totals || { messagesSent: 0, leadsWorked: 0, enrollments: 0, conversion: null } }));
+  data.polos.forEach((p) => { if (!all.some((x) => x.poloId === p.poloId)) all.push(p); });
+  const ranked = [...all].sort((a, b) => (b.totals.enrollments || 0) - (a.totals.enrollments || 0) || (b.totals.messagesSent || 0) - (a.totals.messagesSent || 0));
+  const withTeam = ranked.filter((p) => p.consultants > 0);
+  const maxE = Math.max(1, ...withTeam.map((p) => p.totals.enrollments || 0));
+  const maxM = Math.max(1, ...withTeam.map((p) => p.totals.messagesSent || 0));
+  const sum = (k) => withTeam.reduce((s, p) => s + Number(p.totals[k] || 0), 0);
+  return (
+    <div style={{ display: "grid", gap: 16 }}>
+      <div className={`${c.grid4} dash-stagger`}>
+        {[["Polos com equipe", withTeam.length, "#22d3ee"], ["Consultores vinculados", withTeam.reduce((s, p) => s + p.consultants, 0), "#818cf8"], ["Mensagens no período", sum("messagesSent"), "#0693e3"], ["Matrículas no período", sum("enrollments"), "#4ade80"]].map(([label, value, tone]) => (
+          <div key={label} className={`${c.kpi} dash-card`} style={{ "--tone": tone }}>
+            <div className={c.kpiLabel}><span>{label}</span></div>
+            <div className={c.kpiValue}><NumberTicker value={value} format={(n) => num(n)} /></div>
+          </div>
+        ))}
+      </div>
+
+      {withTeam.length > 0 && (
+        <div className={`${c.cols} `} style={{ gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))" }}>
+          <div className={`${c.panel} dash-card`}>
+            <BlockTitle icon={<Gauge size={16} />} title="Corrida de matrículas" help="Quem está na frente no período. A barra cresce em relação ao melhor polo." />
+            <div className="dash-race" style={{ marginTop: 14 }}>
+              {withTeam.slice(0, 8).map((p, i) => (
+                <div key={p.poloId} className="dash-race-row">
+                  <span style={{ fontWeight: 650, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><span style={{ opacity: 0.5, marginRight: 8 }}>{i + 1}</span>{p.name}</span>
+                  <span className="dash-race-track"><span className="dash-race-fill" style={{ display: "block", width: `${Math.max(3, ((p.totals.enrollments || 0) / maxE) * 100)}%`, animationDelay: `${i * 90}ms` }} /></span>
+                  <b style={{ fontVariantNumeric: "tabular-nums" }}>{num(p.totals.enrollments)}</b>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className={`${c.panel} dash-card`}>
+            <BlockTitle title="Mensagens, leads e matrículas por polo" help="Os números dos consultores de cada polo, somados." />
+            <CompareBars data={withTeam.slice(0, 8).map((p) => ({ name: p.name.split(" - ")[0].slice(0, 14), messagesSent: p.totals.messagesSent, leadsWorked: p.totals.leadsWorked, enrollments: p.totals.enrollments }))} keys={[["messagesSent", "Mensagens", "#22d3ee"], ["leadsWorked", "Leads trabalhados", "#818cf8"], ["enrollments", "Matrículas", "#4ade80"]]} />
+          </div>
+        </div>
+      )}
+
+      <div className="dash-stagger" style={{ display: "grid", gap: 16, gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))" }}>
+        {ranked.map((p) => {
+          const team = data.consultants.filter((b) => (b.user.poloIds || []).includes(p.poloId));
+          return (
+            <article key={p.poloId} className={`${c.panel} dash-card dash-polo`} style={{ opacity: p.consultants ? 1 : 0.8 }}>
+              <div className="dash-polo-head">
+                <Ring value={p.totals.conversion} />
+                <div style={{ minWidth: 0 }}>
+                  <b style={{ display: "block", fontSize: 16, letterSpacing: "-0.01em", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={p.name}>{p.name}</b>
+                  <span className={c.sub}>{p.consultants ? `${p.consultants} ${p.consultants === 1 ? "consultor" : "consultores"} · conversão` : "Sem equipe ainda"}</span>
+                </div>
+              </div>
+              {p.consultants > 0 ? (
+                <>
+                  <div className="dash-polo-stats">
+                    <div><small>Mensagens</small><b><NumberTicker value={p.totals.messagesSent || 0} format={(n) => num(n)} /></b></div>
+                    <div><small>Leads</small><b><NumberTicker value={p.totals.leadsWorked || 0} format={(n) => num(n)} /></b></div>
+                    <div><small>Matrículas</small><b><NumberTicker value={p.totals.enrollments || 0} format={(n) => num(n)} /></b></div>
+                  </div>
+                  <Progress value={p.totals.messagesSent || 0} max={maxM} color="linear-gradient(90deg, #22d3ee, #0693e3)" />
+                  <div className="dash-team">{team.map((b) => <span key={b.user.id}><i>{(b.user.name || "?").charAt(0).toUpperCase()}</i>{b.user.name.split(" ")[0]}</span>)}</div>
+                </>
+              ) : (
+                <button type="button" className={c.btn} onClick={() => setTab("consultores")}>Vincular consultores</button>
+              )}
+            </article>
+          );
+        })}
+      </div>
+      <div><button type="button" className={c.btn} onClick={() => history.push("/polos")}>Gerenciar polos e funções (tutoria, coordenação)</button></div>
+    </div>
+  );
+};
+
 const CommercialCenter = () => {
   const c = useKit();
   const history = useHistory();
@@ -488,8 +619,8 @@ const CommercialCenter = () => {
   const ranked = useMemo(() => (data ? [...data.consultants].sort((a, b) => b.metrics.enrollments - a.metrics.enrollments || b.metrics.messagesSent - a.metrics.messagesSent) : []), [data]);
 
   return (
-    <div className={c.page}>
-      <div style={{ background: BRAND.blue, color: "#fff", borderRadius: 18, padding: "20px 24px 0", marginBottom: 18 }}>
+    <div className={`${c.page} dash-scope`}>
+      <div style={{ background: "linear-gradient(135deg, #0a3a6d 0%, #0b4279 55%, #0d5aa0 100%)", color: "#fff", borderRadius: 24, padding: "22px 26px 0", marginBottom: 18, boxShadow: "0 30px 60px -34px rgba(8,40,82,.9), inset 0 1px 0 rgba(255,255,255,.14)", position: "relative", overflow: "hidden" }}>
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
           <div>
             <h1 className={c.h1} style={{ color: "#fff" }}>Gestão Comercial</h1>
@@ -520,9 +651,10 @@ const CommercialCenter = () => {
               <button type="button" className={c.btnPrimary} onClick={() => history.push("/crm/tarefas?scope=all&status=open&userId=0")}>Distribuir</button>
             </div>
           )}
-          <div className={c.grid4}>
+          <div className={`${c.grid4} dash-stagger`}>
             {["messagesSent", "attendances", "leadsWorked", "firstContactMinutes", "pendingReply", "enrollments", "conversion", "tasksOverdue"].map((k) => <Kpi key={k} k={k} value={data.totals[k]} def={defs[k]} tone={k === "tasksOverdue" && data.totals[k] > 0 ? "#dc2626" : undefined} />)}
           </div>
+          <TeamPulse consultants={data.consultants} />
           <div className={c.cols}>
             <Team consultants={data.consultants} onOpen={(id) => { setSelected(id); setTab("consultores"); }} />
             <Alerts alerts={data.alerts} onOpen={(id) => { setSelected(id); setTab("consultores"); }} history={history} />
@@ -535,37 +667,7 @@ const CommercialCenter = () => {
       )}
       {selected && <Detail userId={selected} period={params} defs={defs} onClose={() => setSelected(null)} />}
 
-      {data && tab === "polos" && (
-        <div style={{ display: "grid", gap: 16 }}>
-          {data.polos.length === 0 && (
-            <div className={c.panel}>
-              <div className={c.sub}>Nenhum consultor vinculado a polo ainda. Abra a aba Consultores e use o botão "Vincular" na linha de cada pessoa.</div>
-              <button type="button" className={c.btnPrimary} style={{ marginTop: 12 }} onClick={() => setTab("consultores")}>Ir para Consultores</button>
-            </div>
-          )}
-          {data.polos.length > 0 && (
-            <>
-              <div className={c.panel}>
-                <BlockTitle title="Comparação entre polos" help="Os números dos consultores de cada polo, somados. Um consultor entra no polo em que está cadastrado como membro." />
-                <CompareBars data={data.polos.map((p) => ({ name: p.name, messagesSent: p.totals.messagesSent, leadsWorked: p.totals.leadsWorked, enrollments: p.totals.enrollments }))} keys={[["messagesSent", "Mensagens", BRAND.cerulean], ["leadsWorked", "Leads trabalhados", BRAND.blue], ["enrollments", "Matrículas", "#16a34a"]]} />
-              </div>
-              <div className={c.panel + " " + c.scroll}>
-                <table className={c.table} style={{ minWidth: 640 }}>
-                  <thead><tr><th>Polo</th><th>Equipe</th><th className="r">Mensagens</th><th className="r">Leads</th><th className="r">Matrículas</th><th className="r">Conversão</th></tr></thead>
-                  <tbody>{data.polos.map((p) => (
-                    <tr key={p.poloId} style={{ cursor: "default" }}>
-                      <td><b>{p.name}</b></td>
-                      <td>{data.consultants.filter((b) => (b.user.poloIds || []).includes(p.poloId)).map((b) => b.user.name.split(" ")[0]).join(", ") || "—"}</td>
-                      <td className="r">{num(p.totals.messagesSent)}</td><td className="r">{num(p.totals.leadsWorked)}</td><td className="r">{num(p.totals.enrollments)}</td><td className="r">{fmt(p.totals.conversion, "percent")}</td>
-                    </tr>
-                  ))}</tbody>
-                </table>
-              </div>
-              <div><button type="button" className={c.btn} onClick={() => history.push("/polos")}>Gerenciar polos e funções (tutoria, coordenação)</button></div>
-            </>
-          )}
-        </div>
-      )}
+      {data && tab === "polos" && <PoloBoard data={data} polos={polos} history={history} setTab={setTab} />}
 
       {tab === "ferramentas" && <Tools />}
       {data && tab === "config" && config && <ConfigPanel config={config} consultants={data.consultants} onSaved={setConfig} />}
