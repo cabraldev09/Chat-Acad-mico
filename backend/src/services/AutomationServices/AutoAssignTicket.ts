@@ -70,7 +70,7 @@ const AutoAssignTicket = async (ticket: Ticket): Promise<boolean> => {
 };
 
 // Conversations sitting with someone who never connected a WhatsApp (they cannot receive or answer) go to a colleague of the same queue who can.
-// A conversation the person already answered in the last week stays with them. Their open tasks follow (UpdateTicketService realigns them).
+// Whoever has no number of their own cannot hold a conversation, even one they touched recently: it goes to a colleague who can answer. Their open tasks follow (UpdateTicketService realigns them).
 export const redistributeUnreachableTickets = async (): Promise<number> => {
   const stuck = (await sequelize.query(
     portable(`
@@ -78,9 +78,8 @@ export const redistributeUnreachableTickets = async (): Promise<number> => {
     JOIN Users u ON u.id = t.userId AND u.profile <> 'admin' AND (u.role = 'consultor' OR u.role IS NULL OR u.role = '')
     WHERE t.status IN ('open', 'pending') AND t.isGroup = false AND t.isHistorical = false AND t.queueId IS NOT NULL
       AND NOT EXISTS (SELECT 1 FROM Whatsapps w WHERE w.channel = 'whatsapp' AND w.ownerId = t.userId)
-      AND NOT EXISTS (SELECT 1 FROM OutboundMessages o WHERE o.ticketId = t.id AND o.userId = t.userId AND o.status = 'sent' AND o.sentAt > :since)
     ORDER BY t.id LIMIT 50`),
-    { replacements: { since: new Date(Date.now() - 7 * 86400000) }, type: QueryTypes.SELECT }
+    { type: QueryTypes.SELECT }
   )) as any[];
   let moved = 0;
   for (const row of stuck) {

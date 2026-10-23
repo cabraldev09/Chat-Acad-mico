@@ -72,3 +72,30 @@
   .dash-scope .dash-card:hover::after { animation: none; }
 }
 @media (max-width: 640px) { .dash-race-row { grid-template-columns: 1fr auto; } .dash-race-track { grid-column: 1 / -1; order: 3; } }
+
+/* light palette: tinted surfaces instead of white, three tones in the numbers, a colored edge on each polo */
+:root:not([data-theme="dark"]) .dash-scope { --dash-glass: linear-gradient(160deg, #eef4fc 0%, #dde9f7 100%); --dash-line: #c3d6ec; --dash-glow: rgba(11, 66, 121, .3); }
+:root:not([data-theme="dark"]) .dash-scope::before { background: radial-gradient(560px 280px at 10% 0%, rgba(6, 147, 227, .2), transparent 70%), radial-gradient(520px 260px at 90% 4%, rgba(124, 92, 255, .14), transparent 70%); }
+:root:not([data-theme="dark"]) .dash-scope .ui-card, :root:not([data-theme="dark"]) .dash-scope .glow-card, :root:not([data-theme="dark"]) .dash-scope .dash-card { box-shadow: 0 1px 0 rgba(255, 255, 255, .7) inset, 0 16px 34px -24px rgba(11, 66, 121, .45); }
+.dash-polo::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 3px; background: linear-gradient(90deg, var(--dash-accent), var(--dash-accent-2) 60%, transparent); }
+.dash-polo-stats div { --t: #0693e3; background: color-mix(in srgb, var(--t) 13%, transparent); }
+.dash-polo-stats div:nth-child(2) { --t: #7c5cff; } .dash-polo-stats div:nth-child(3) { --t: #16a34a; }
+.dash-polo-stats b { color: color-mix(in srgb, var(--t) 78%, var(--ink, #0a2540)); }
+:root[data-theme="dark"] .dash-polo-stats b { color: color-mix(in srgb, var(--t) 70%, #fff); }
+.dash-polo .dash-link { width: 100%; border: 1px dashed color-mix(in srgb, var(--dash-accent) 55%, transparent); background: color-mix(in srgb, var(--dash-accent) 9%, transparent); color: var(--dash-accent); font-weight: 650; border-radius: 14px; padding: 10px; }
+.dash-polo .dash-link:hover { background: color-mix(in srgb, var(--dash-accent) 16%, transparent); }
+:root:not([data-theme="dark"]) .dash-polo .dash-link { color: #0b4279; }
+
+/* calmer surfaces: flat panels with a hairline edge, no blur, no sheen, no glow; motion is only the entry, the growing bars and the numbers */
+.dash-scope::before { display: none; }
+.dash-scope .ui-card, .dash-scope .glow-card, .dash-scope .dash-card { backdrop-filter: none; -webkit-backdrop-filter: none; border-radius: 16px; background: #f6f9fd; box-shadow: none; }
+:root[data-theme="dark"] .dash-scope .ui-card, :root[data-theme="dark"] .dash-scope .glow-card, :root[data-theme="dark"] .dash-scope .dash-card { background: rgba(255, 255, 255, .035); box-shadow: none; }
+.dash-scope .ui-card:hover, .dash-scope .glow-card:hover, .dash-scope .dash-card:hover { box-shadow: none; border-color: color-mix(in srgb, var(--dash-accent) 40%, var(--dash-line)); }
+.dash-scope .dash-card::after { display: none; }
+.dash-scope .recharts-bar-rectangle path, .dash-scope .recharts-area-curve { filter: none; }
+.dash-ring .fg { filter: none; }
+.dash-race-fill { box-shadow: none; }
+.dash-polo::before { display: none; }
+.dash-polo-stats div { background: color-mix(in srgb, var(--t) 8%, transparent); }
+:root:not([data-theme="dark"]) .dash-scope { --dash-glass: #f6f9fd; }
+:root[data-theme="dark"] .dash-scope { --dash-glass: rgba(255, 255, 255, .035); }

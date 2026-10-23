@@ -490,7 +490,6 @@ const PoloBoard = ({ data, polos, history, setTab }) => {
   data.polos.forEach((p) => { if (!all.some((x) => x.poloId === p.poloId)) all.push(p); });
   const ranked = [...all].sort((a, b) => (b.totals.enrollments || 0) - (a.totals.enrollments || 0) || (b.totals.messagesSent || 0) - (a.totals.messagesSent || 0));
   const withTeam = ranked.filter((p) => p.consultants > 0);
-  const maxE = Math.max(1, ...withTeam.map((p) => p.totals.enrollments || 0));
   const maxM = Math.max(1, ...withTeam.map((p) => p.totals.messagesSent || 0));
   const sum = (k) => withTeam.reduce((s, p) => s + Number(p.totals[k] || 0), 0);
   return (
@@ -505,19 +504,7 @@ const PoloBoard = ({ data, polos, history, setTab }) => {
       </div>
 
       {withTeam.length > 0 && (
-        <div className={`${c.cols} `} style={{ gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))" }}>
-          <div className={`${c.panel} dash-card`}>
-            <BlockTitle icon={<Gauge size={16} />} title="Corrida de matrículas" help="Quem está na frente no período. A barra cresce em relação ao melhor polo." />
-            <div className="dash-race" style={{ marginTop: 14 }}>
-              {withTeam.slice(0, 8).map((p, i) => (
-                <div key={p.poloId} className="dash-race-row">
-                  <span style={{ fontWeight: 650, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><span style={{ opacity: 0.5, marginRight: 8 }}>{i + 1}</span>{p.name}</span>
-                  <span className="dash-race-track"><span className="dash-race-fill" style={{ display: "block", width: `${Math.max(3, ((p.totals.enrollments || 0) / maxE) * 100)}%`, animationDelay: `${i * 90}ms` }} /></span>
-                  <b style={{ fontVariantNumeric: "tabular-nums" }}>{num(p.totals.enrollments)}</b>
-                </div>
-              ))}
-            </div>
-          </div>
+        <div className={`${c.cols} `} style={{ gridTemplateColumns: "1fr" }}>
           <div className={`${c.panel} dash-card`}>
             <BlockTitle title="Mensagens, leads e matrículas por polo" help="Os números dos consultores de cada polo, somados." />
             <CompareBars data={withTeam.slice(0, 8).map((p) => ({ name: p.name.split(" - ")[0].slice(0, 14), messagesSent: p.totals.messagesSent, leadsWorked: p.totals.leadsWorked, enrollments: p.totals.enrollments }))} keys={[["messagesSent", "Mensagens", "#22d3ee"], ["leadsWorked", "Leads trabalhados", "#818cf8"], ["enrollments", "Matrículas", "#4ade80"]]} />
@@ -548,7 +535,7 @@ const PoloBoard = ({ data, polos, history, setTab }) => {
                   <div className="dash-team">{team.map((b) => <span key={b.user.id}><i>{(b.user.name || "?").charAt(0).toUpperCase()}</i>{b.user.name.split(" ")[0]}</span>)}</div>
                 </>
               ) : (
-                <button type="button" className={c.btn} onClick={() => setTab("consultores")}>Vincular consultores</button>
+                <button type="button" className={`${c.btn} dash-link`} onClick={() => setTab("consultores")}>Vincular consultores</button>
               )}
             </article>
           );
