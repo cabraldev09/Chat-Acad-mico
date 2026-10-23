@@ -33,7 +33,8 @@ import User from "../../../models/User";
 import Contact from "../../../models/Contact";
 import Message from "../../../models/Message";
 import Ticket from "../../../models/Ticket";
-import { Op } from "sequelize";
+import { Op, QueryTypes } from "sequelize";
+import sequelize from "../../../database";
 import { logger } from "../../../utils/logger";
 import { WhatsappProvider } from "../whatsappProvider";
 import {
@@ -282,6 +283,37 @@ const syncCommunities = async (wbot: Session): Promise<number> => {
 // What the phone shows, the list shows the same: the chats pinned at the top, and the pictures of the chats that have
 // none yet. Reads the chats once (it is a local read inside WhatsApp Web) and only writes what changed.
 const photoTried = new Map<string, number>();
+const syncChatTimes = async (chats: any[], whatsappId: number, key: (isGroup: boolean, number: string) => string): Promise<void> => {
+  const times = new Map<string, number>();
+  for (const c of chats) {
+    const seconds = Number(c.timestamp) || 0;
+    if (c.id?.user && seconds > 0 && !c.isNewsletter) times.set(key(!!c.isGroup, String(c.id.user)), seconds * 1000);
+  }
+  if (!times.size) return;
+  const numbers = [...new Set([...times.keys()].map(k => k.slice(2)))];
+  const byContact = new Map<number, number>();
+  for (let i = 0; i < numbers.length; i += 500) {
+    // eslint-disable-next-line no-await-in-loop
+    const contacts = await Contact.findAll({ where: { number: { [Op.in]: numbers.slice(i, i + 500) } }, attributes: ["id", "number", "isGroup"] });
+    contacts.forEach(ct => { const t = times.get(key(!!ct.isGroup, String(ct.number))); if (t) byContact.set(ct.id, t); });
+  }
+  if (!byContact.size) return;
+  const ids = [...byContact.keys()];
+  const tickets: Ticket[] = [];
+  for (let i = 0; i < ids.length; i += 500) {
+    // eslint-disable-next-line no-await-in-loop
+    tickets.push(...(await Ticket.findAll({ where: { whatsappId, isHistorical: false, contactId: { [Op.in]: ids.slice(i, i + 500) } }, attributes: ["id", "contactId", "waChatTimestamp"] })));
+  }
+  let changed = 0;
+  for (const t of tickets) {
+    const at = byContact.get(t.contactId) as number;
+    if (t.waChatTimestamp && Math.abs(new Date(t.waChatTimestamp).getTime() - at) < 1000) continue;
+    // eslint-disable-next-line no-await-in-loop
+    await Ticket.update({ waChatTimestamp: new Date(at) } as any, { where: { id: t.id }, silent: true } as any);
+    changed += 1;
+  }
+  if (changed) getIO().emit("ticketsReorder", { whatsappId });
+};
 const syncChatState = async (wbot: Session, whatsappId: number): Promise<void> => {
   const chats: any[] = await wbot.getChats();
   const key = (isGroup: boolean, number: string) => `${isGroup ? "g" : "p"}:${number}`;
@@ -304,6 +336,9 @@ const syncChatState = async (wbot: Session, whatsappId: number): Promise<void> =
   if (turnOn.length) await Ticket.update({ waPinned: true }, { where: { id: { [Op.in]: turnOn } } });
   if (turnOff.length) await Ticket.update({ waPinned: false }, { where: { id: { [Op.in]: turnOff } } });
   if (turnOn.length || turnOff.length) getIO().emit("ticketPins", { whatsappId, pinned: turnOn, unpinned: turnOff });
+
+  // the time WhatsApp gives each chat: the list is ordered like the phone's (only what differs is written)
+  await syncChatTimes(chats, whatsappId, key).catch(err => logger.warn(`chat times (${whatsappId}) failed: ${err}`));
 
   // pictures: the most recent chats first, a few per round, and a chat without a picture is not asked again for hours
   const recent = [...chats].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)).slice(0, 120).filter(c => c.id?.user);
@@ -378,12 +413,13 @@ const convertToMessagePayload = async (
 
   const quotedMsgId = await verifyQuotedMessage(processedMsg);
 
+  const labelled = msg.type === "poll_creation" || msg.type === "multi_vcard";
   return {
     id: processedMsg.id.id,
-    body: processedMsg.body,
+    body: labelled ? `${HISTORY_LABELS[msg.type]}${(msg as any).pollName ? `: ${(msg as any).pollName}` : ""}` : processedMsg.body,
     fromMe: processedMsg.fromMe,
     hasMedia: processedMsg.hasMedia,
-    type: mapMessageType(processedMsg.type),
+    type: labelled ? "chat" : mapMessageType(processedMsg.type),
     timestamp: processedMsg.timestamp,
     from: processedMsg.from,
     to: processedMsg.to,
@@ -440,14 +476,17 @@ const shouldHandleMessage = (msg: WbotMessage): boolean => {
       msg.type === "document" ||
       msg.type === "vcard" ||
       msg.type === "sticker" ||
-      msg.type === "location"
+      msg.type === "location" ||
+      // a poll and a list of contacts reach the screen as a short label, like in the imported history
+      msg.type === "poll_creation" ||
+      msg.type === "multi_vcard"
     )
   ) {
     return false;
   }
 
-  // Check for Unicode direction mark
-  if (/\u200e/.test(msg.body[0])) return false;
+  // Check for Unicode direction mark (the mark of the robot's own messages); a message with no text (a file alone) is not a mark
+  if (msg.body && /\u200e/.test(msg.body[0])) return false;
 
   // Additional validation for messages from me
   if (msg.fromMe) {
@@ -537,6 +576,8 @@ const markMessageChanged = async (messageId: string, patch: { isDeleted?: boolea
 const syncing = new Set<number>();
 const syncedAt = new Map<number, number>();
 const SYNC_MARGIN_S = 120;
+// per number: the chat time (and chat) already looked at because WhatsApp was ahead of the stored messages
+const gapChecked = new Map<number, Map<string, number>>();
 
 const syncUnreadMessages = async (wbot: Session, whatsappId: number, opts: { periodic?: boolean } = {}) => {
   if (syncing.has(whatsappId)) return;
@@ -565,10 +606,32 @@ const syncUnreadMessages = async (wbot: Session, whatsappId: number, opts: { per
       return;
     }
     const since = sinceSeconds;
+    // besides the time window: every chat where WhatsApp is ahead of what we hold (its last activity is newer than the newest message stored for it)
+    // is looked at, whatever the window says. Each chat time is looked at once (a last event we do not store, like a call, would otherwise repeat forever).
+    const stored = (await sequelize.query(
+      `SELECT t."contactId", MAX(m."createdAt") AS last FROM "Messages" m JOIN "Tickets" t ON t.id = m."ticketId" WHERE t."whatsappId" = :whatsappId GROUP BY t."contactId"`,
+      { replacements: { whatsappId }, type: QueryTypes.SELECT }
+    )) as any[];
+    const lastOf = new Map<number, number>(stored.map(r => [Number(r.contactId), new Date(r.last).getTime()]));
+    const numbersOf = allChats.map(c => String(c.id?.user || "")).filter(Boolean);
+    const known = new Map<string, number>();
+    for (let i = 0; i < numbersOf.length; i += 500) {
+      // eslint-disable-next-line no-await-in-loop
+      const cs = await Contact.findAll({ where: { number: { [Op.in]: numbersOf.slice(i, i + 500) } }, attributes: ["id", "number", "isGroup"] });
+      cs.forEach(c => known.set(`${c.isGroup ? "g" : "p"}:${c.number}`, c.id));
+    }
+    const checked = (gapChecked.get(whatsappId) || new Map<string, number>());
+    gapChecked.set(whatsappId, checked);
+    const behind = (chat: any): boolean => {
+      const t = (chat.timestamp || 0) * 1000;
+      if (!t || checked.get(chat.id._serialized) === chat.timestamp) return false;
+      const cid = known.get(`${chat.isGroup ? "g" : "p"}:${chat.id.user}`);
+      return !cid || !lastOf.has(cid) || t > (lastOf.get(cid) as number) + 5000;
+    };
     const chats = allChats
-      .filter(chat => (chat.timestamp || 0) >= since && !chat.id._serialized.includes("@broadcast"))
+      .filter(chat => !chat.id._serialized.includes("@broadcast") && !chat.id._serialized.endsWith("@newsletter") && ((chat.timestamp || 0) >= since || behind(chat)))
       .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0))
-      .slice(-300);
+      .slice(-1000);
     if (!opts.periodic || chats.length) logger.info(`Session ${whatsappId}: ${opts.periodic ? "conferindo" : "recuperando"} mensagens de ${chats.length} conversas desde ${new Date(since * 1000).toISOString()}`);
 
     /* eslint-disable no-restricted-syntax */
@@ -578,14 +641,17 @@ const syncUnreadMessages = async (wbot: Session, whatsappId: number, opts: { per
     for (const chat of chats) {
       // one chat that fails (a deleted group, a slow page) never stops the others
       try {
-        const recent = await withTimeout(chat.fetchMessages({ limit: opts.periodic ? 40 : 100 }), 45000);
+        const gap = behind(chat) && (chat.timestamp || 0) < since;
+        const recent = await withTimeout(chat.fetchMessages({ limit: gap ? 60 : opts.periodic ? 40 : 100 }), 45000);
         for (const msg of recent) {
-          if (msg.timestamp < since || !shouldHandleMessage(msg)) continue;
+          // a chat found behind is read to the end of what was fetched; a chat inside the window only from the mark
+          if ((!gap && msg.timestamp < since) || !shouldHandleMessage(msg)) continue;
           if (await Message.findByPk(msg.id.id, { attributes: ["id"] })) continue;
           const { messagePayload, contactPayload, contextPayload, mediaPayload } = await getMessageData(msg, wbot);
           await handleMessage(messagePayload, contactPayload, contextPayload, mediaPayload);
           caught += 1;
         }
+        checked.set(chat.id._serialized, chat.timestamp);
       } catch (err) {
         failed += 1;
         logger.warn(`Session ${whatsappId}: não consegui conferir uma conversa (${(err as Error).message})`);

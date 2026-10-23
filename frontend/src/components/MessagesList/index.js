@@ -47,14 +47,13 @@ const useStyles = makeStyles((theme) => {
     position: "relative",
     maxWidth: "min(68%, 600px)",
     minWidth: 84,
-    padding: "7px 11px 8px 12px",
-    borderRadius: 18,
+    padding: "6px 7px 8px 9px",
+    borderRadius: 8,
     background: bg,
     color,
     boxShadow: c.shadow,
-    fontSize: 14.5,
-    lineHeight: "20px",
-    letterSpacing: "-0.003em",
+    fontSize: 14.2,
+    lineHeight: "19px",
     wordBreak: "break-word",
     // the conversation shares the screen with the list on tablets: the bubble may use more of what is left
     [theme.breakpoints.down("sm")]: { maxWidth: "80%" },
@@ -102,13 +101,12 @@ const useStyles = makeStyles((theme) => {
       ...theme.scrollbarStyles,
       [theme.breakpoints.up("md")]: { padding: theme.spacing(1.5, 7, 1) },
     },
-    row: { display: "flex", marginTop: 4 },
+    row: { display: "flex", marginTop: 2 },
     rowIn: { justifyContent: "flex-start" },
     rowOut: { justifyContent: "flex-end" },
-    rowFirst: { marginTop: 12 },
+    rowFirst: { marginTop: 10 },
     bubbleIn: {
       ...bubble(c.bubbleIn, c.text),
-      border: `1px solid ${dark ? "rgba(255,255,255,.04)" : "rgba(11,20,26,.06)"}`,
     },
     bubbleOut: {
       ...bubble(c.bubbleOutBg, c.bubbleOutText),
@@ -124,7 +122,10 @@ const useStyles = makeStyles((theme) => {
       "& $doc": { backgroundColor: dark ? "rgba(0,0,0,.18)" : "rgba(11,20,26,.06)" },
       "& $deleted": { color: c.textSecondary },
     },
-    tailed: {},
+    // the little tail of the last bubble of a sequence, as in the WhatsApp app
+    tailed: {
+      "&::before": { content: '""', position: "absolute", top: 0, width: 8, height: 13 },
+    },
     // "digitando…" as WhatsApp draws it today: a small bubble at the end of the conversation with three dots that rise one after the other
     typingRow: { display: "flex", marginTop: 8 },
     typingBubble: {
@@ -151,8 +152,14 @@ const useStyles = makeStyles((theme) => {
       "&:hover": { transform: "scale(1.1)", color: c.accent },
     },
     rowHover: { "&:hover $reactBtn, & $reactBtn:focus-visible": { opacity: 1 } },
-    tailedIn: { borderBottomLeftRadius: 5 },
-    tailedOut: { borderBottomRightRadius: 5 },
+    tailedIn: {
+      borderTopLeftRadius: 0,
+      "&::before": { left: -8, background: c.bubbleIn, clipPath: "polygon(100% 0, 0 0, 100% 100%)" },
+    },
+    tailedOut: {
+      borderTopRightRadius: 0,
+      "&::before": { right: -8, background: c.bubbleOutBg, clipPath: "polygon(0 0, 100% 0, 0 100%)" },
+    },
     match: { outline: `2px solid ${dark ? "#667781" : "#ffd279"}`, outlineOffset: 1 },
     matchActive: { outline: `3px solid ${c.accent}`, outlineOffset: 1 },
     sender: { fontSize: 13, fontWeight: 600, color: c.sender, marginBottom: 1 },
@@ -208,7 +215,7 @@ const useStyles = makeStyles((theme) => {
       textShadow: "0 0 3px rgba(0,0,0,.7)",
       zIndex: 1,
     },
-    ack: { fontSize: 16, color: c.time },
+    ack: { fontSize: 16, color: c.time, marginLeft: 1 },
     ackRead: { fontSize: 16, color: c.tick },
     media: { margin: "-2px -3px 4px -4px", position: "relative", borderRadius: 6, overflow: "hidden", lineHeight: 0 },
     video: { display: "block", maxWidth: "100%", width: 320, height: "auto", maxHeight: 420, borderRadius: 6, background: "#000" },
@@ -242,7 +249,7 @@ const useStyles = makeStyles((theme) => {
       zIndex: 2,
     },
     withReactions: { marginBottom: 14 },
-    day: { alignSelf: "center", margin: "14px 0 8px", padding: "4px 14px", borderRadius: 999, fontSize: 12, fontWeight: 600, letterSpacing: ".01em", color: c.textSecondary, backgroundColor: c.chatChip, backdropFilter: "blur(6px)", boxShadow: c.shadow },
+    day: { alignSelf: "center", margin: "12px 0 8px", padding: "5px 12px", borderRadius: 8, fontSize: 12.5, fontWeight: 400, color: c.textSecondary, backgroundColor: c.chatChip, boxShadow: c.shadow },
     unreadDivider: {
       alignSelf: "center",
       margin: "14px 0 8px",
@@ -714,8 +721,8 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
           }}
           className={clsx(
             mine ? classes.bubbleOut : classes.bubbleIn,
-            isLast && !isSticker && classes.tailed,
-            isLast && !isSticker && (mine ? classes.tailedOut : classes.tailedIn),
+            newSender && !isSticker && classes.tailed,
+            newSender && !isSticker && (mine ? classes.tailedOut : classes.tailedIn),
             isSticker && classes.sticker,
             rx.length > 0 && classes.withReactions,
             isMatch && classes.match,

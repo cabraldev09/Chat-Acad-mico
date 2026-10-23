@@ -104,6 +104,12 @@ const nowInTz = (now: Date): { dow: string; hhmm: string } => {
 };
 
 // ---------------------------------------------------------------- who counts as a consultant, and who may see whom
+// open tasks that have nobody in charge (the person they were with cannot work them): the management hands them out
+export const unassignedTasks = async (): Promise<{ open: number; overdue: number }> => {
+  const [r] = await rows(`SELECT COUNT(*) AS n, COALESCE(SUM(CASE WHEN dueAt < :now THEN 1 ELSE 0 END), 0) AS late FROM LeadTasks WHERE userId IS NULL AND doneAt IS NULL`, { now: new Date() });
+  return { open: Number(r?.n || 0), overdue: Number(r?.late || 0) };
+};
+
 export const consultantWhere = `u.profile <> 'admin' AND (u.role = 'consultor' OR u.role IS NULL OR u.role = '')`;
 
 // Consultants the requester may see: administration sees all; coordination sees the consultants of its polos (all, when it has no polo yet).
@@ -296,7 +302,7 @@ export const computePresence = async (userIds: number[], config: AnalyticsConfig
 
 // ---------------------------------------------------------------- one bundle per person (identical for the manager and for the person)
 export interface ConsultantBundle {
-  user: { id: number; name: string };
+  user: { id: number; name: string; poloIds: number[] };
   metrics: Metrics;
   presence: Presence;
   goals: any[];
@@ -307,15 +313,16 @@ export const bundlesFor = async (userIds: number[], period: Period, opts: { goal
   if (!userIds.length) return [];
   const now = new Date();
   const config = await getConfig();
-  const [metrics, series, presence, users] = await Promise.all([
+  const [metrics, series, presence, users, members] = await Promise.all([
     computeMetrics(userIds, period, now),
     computeSeries(userIds, period),
     computePresence(userIds, config, now),
-    User.findAll({ where: { id: userIds }, attributes: ["id", "name"] })
+    User.findAll({ where: { id: userIds }, attributes: ["id", "name"] }),
+    PoloMember.findAll({ where: { userId: userIds }, attributes: ["poloId", "userId"] })
   ]);
   const goals = opts.goals === false ? new Map<number, any[]>() : new Map<number, any[]>(await Promise.all(userIds.map(async id => [id, await progressForUser(id).catch(() => [])] as [number, any[]])));
   return userIds.map(id => ({
-    user: { id, name: users.find(u => u.id === id)?.name || `#${id}` },
+    user: { id, name: users.find(u => u.id === id)?.name || `#${id}`, poloIds: [...new Set(members.filter(m => m.userId === id).map(m => m.poloId))] },
     metrics: metrics.get(id) as Metrics,
     presence: presence.get(id) as Presence,
     goals: goals.get(id) || [],
@@ -357,7 +364,7 @@ export const alertsOf = (bundles: ConsultantBundle[], config: AnalyticsConfig): 
     const noNumber = p.whatsapp.state !== "connected";
     if (p.whatsapp.state === "none") {
       // one honest line (the late tasks and waiting conversations of someone who cannot work are a consequence, not their activity)
-      const stuck = m.tasksOverdue > 0 ? ` · ${m.tasksOverdue} tarefa(s) paradas com ele` : "";
+      const stuck = m.tasksOverdue > 0 ? ` · ${m.tasksOverdue} tarefa(s) atrasada(s) dos leads dele` : "";
       alerts.push({ level: "high", userId: user.id, name: user.name, code: "whatsapp_none", text: `ainda não conectou o WhatsApp: não recebe nem envia mensagens${stuck}`, link: "/connections" });
       continue;
     }

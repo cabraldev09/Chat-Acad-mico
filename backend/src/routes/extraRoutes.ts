@@ -269,6 +269,8 @@ r.post("/polos", isAuth, isManager, PoloCtl.store);
 r.post("/polos/import", isAuth, isManager, PoloCtl.importPolos);
 r.put("/polos/:id", isAuth, isManager, PoloCtl.update);
 r.put("/polos/:id/members", isAuth, isManager, PoloCtl.setMembers);
+r.post("/polos/:id/members/:userId", isAuth, isManager, PoloCtl.addMember);
+r.delete("/polos/:id/members/:userId", isAuth, isManager, PoloCtl.removeMember);
 r.delete("/polos/:id", isAuth, isManager, PoloCtl.remove);
 
 // ------------------------------------------------------------------- CRM
@@ -331,6 +333,7 @@ r.get("/leads/:id/tasks", isAuth, canAccessLead, Lead.leadTasks);
 r.post("/leads/:id/tasks", isAuth, canAccessLead, Lead.addTask);
 r.post("/leads/:id/open-ticket", isAuth, canAccessLead, Lead.openTicket);
 r.get("/lead-tasks", isAuth, Lead.tasksIndex);
+r.post("/lead-tasks/release-unreachable", isAuth, isManager, Lead.releaseUnreachable);
 r.get("/onboarding", isAuth, Lead.onboardingList);
 r.get("/onboarding/stats", isAuth, isManager, Lead.onboardingStats);
 r.put("/leads/:id/onboarding/checklist", isAuth, canAccessLead, Lead.onboardingChecklist);

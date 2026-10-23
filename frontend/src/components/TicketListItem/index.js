@@ -65,7 +65,7 @@ const useStyles = makeStyles((theme) => {
       borderBottom: `1px solid ${c.divider}`,
     },
     line: { display: "flex", alignItems: "center", gap: theme.spacing(1), minWidth: 0 },
-    name: { flex: 1, minWidth: 0, fontSize: 16, color: c.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+    name: { flex: 1, minWidth: 0, fontSize: 17, color: c.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
     time: { flex: "none", fontSize: 12, color: c.textSecondary },
     timeUnread: { color: c.badge, fontWeight: 600 },
     preview: {

@@ -48,7 +48,7 @@ const useStyles = makeStyles((theme) => {
       gap: theme.spacing(0.5),
       padding: theme.spacing(1.25, 1.5, 0.5, 2),
     },
-    title: { flex: 1, fontSize: 22, fontWeight: 700, letterSpacing: "-0.02em", color: c.text },
+    title: { flex: 1, fontSize: 22, fontWeight: 600, color: c.text },
     iconBtn: { color: c.textSecondary, "&:hover": { backgroundColor: c.hover } },
     searchWrap: { flex: "none", padding: theme.spacing(0.5, 1.5, 1) },
     search: {
@@ -56,8 +56,8 @@ const useStyles = makeStyles((theme) => {
       alignItems: "center",
       gap: theme.spacing(1.5),
       height: 38,
-      padding: theme.spacing(0, 1.5),
-      borderRadius: 10,
+      padding: theme.spacing(0, 1.75),
+      borderRadius: 20,
       backgroundColor: c.panelAlt,
       border: "1px solid transparent",
       transition: "border-color .15s, background-color .15s",
@@ -93,7 +93,7 @@ const useStyles = makeStyles((theme) => {
       "&:active": { transform: "scale(.97)" },
       "&:focus-visible": { outline: `2px solid ${c.accent}`, outlineOffset: 2 },
     },
-    chipOn: { backgroundColor: c.chipOn, color: c.chipOnText, fontWeight: 600, boxShadow: "0 3px 10px -4px rgba(11,20,26,.35)", "&:hover": { backgroundColor: c.chipOn } },
+    chipOn: { backgroundColor: c.chipOn, color: c.chipOnText, fontWeight: 600, "&:hover": { backgroundColor: c.chipOn } },
     chipCount: {
       minWidth: 18,
       padding: "0 5px",

@@ -384,6 +384,53 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
       assert(!forGabrielli.seen.some(p => p.userId === ids.joao), "Gabrielli heard João's activity");
       [forJoao, forAdmin, forGabrielli, forCoord].forEach(x => x.socket.close());
     });
+    await test("an open task follows whoever answers the lead, and a person is linked to a polo from the management screen", async () => {
+      const lead3 = (await http.post("/leads", { name: "Lead que troca de dono", phone: "5569999990033", ownerId: ids.joao }, as(admin))).data.lead;
+      const task = (await http.post(`/leads/${lead3.id}/tasks`, { title: "Ligar de volta", dueAt: new Date(Date.now() - 3600000).toISOString() }, as(admin))).data;
+      assert(Number(sql(`SELECT userId FROM LeadTasks WHERE id = ${task.id}`).split("\n")[0]) === ids.joao, "the task did not start with the owner");
+      const done = await http.put(`/leads/${lead3.id}`, { ownerId: ids.gabrielli }, as(admin));
+      assert(done.status === 200, `owner change ${done.status}`);
+      assert(Number(sql(`SELECT userId FROM LeadTasks WHERE id = ${task.id}`).split("\n")[0]) === ids.gabrielli, "the task stayed with the previous owner");
+      // a task given on purpose to a third person stays
+      const given = (await http.post(`/leads/${lead3.id}/tasks`, { title: "Do coordenador", userId: ids.coord, dueAt: new Date(Date.now() - 3600000).toISOString() }, as(admin))).data;
+      await http.put(`/leads/${lead3.id}`, { ownerId: ids.joao }, as(admin));
+      assert(Number(sql(`SELECT userId FROM LeadTasks WHERE id = ${given.id}`).split("\n")[0]) === ids.coord, "a task given to someone else moved");
+
+      // a consultant who never connected a WhatsApp: the tasks the system gave them go to whoever answers the lead, or to nobody (and show on the management screen)
+      const mk = await http.post("/users", { name: "Sem Numero", email: "semnumero@x.com", password: "senha123", role: "consultor", profile: "user", queueIds: [queueId] }, as(admin));
+      assert(mk.status === 200, `create user ${mk.status}`);
+      const noPhone = Number(sql(`SELECT id FROM Users WHERE email = 'semnumero@x.com'`).split("\n")[0]);
+      const leadA = (await http.post("/leads", { name: "Lead sem atendente", phone: "5569999990044", ownerId: noPhone }, as(admin))).data.lead;
+      const taskA = (await http.post(`/leads/${leadA.id}/tasks`, { title: "Sem ninguém", dueAt: new Date(Date.now() - 3600000).toISOString() }, as(admin))).data;
+      const leadB = (await http.post("/leads", { name: "Lead atendido por outro", phone: "5569999990045", ownerId: noPhone }, as(admin))).data.lead;
+      const taskB = (await http.post(`/leads/${leadB.id}/tasks`, { title: "Quem atende assume", dueAt: new Date(Date.now() - 3600000).toISOString() }, as(admin))).data;
+      // the lead's conversation is open with João (a tickets links to its lead by the contact)
+      const convB = mkTicket({ owner: ids.joao, status: "open" });
+      sql(`UPDATE Leads SET contactId = ${convB.contactId} WHERE id = ${leadB.id}`);
+      const sweep = await http.post("/lead-tasks/release-unreachable", {}, as(admin));
+      assert(sweep.status === 200 && sweep.data.released >= 1 && sweep.data.moved >= 1, `sweep ${sweep.status} ${JSON.stringify(sweep.data)}`);
+      assert(sql(`SELECT COALESCE(CAST(userId AS TEXT), 'null') FROM LeadTasks WHERE id = ${taskA.id}`).split("\n")[0] === "null", "the task of a lead nobody answers kept its owner");
+      assert(Number(sql(`SELECT userId FROM LeadTasks WHERE id = ${taskB.id}`).split("\n")[0]) === ids.joao, "the task did not go to whoever answers the lead");
+      const unassigned = (await A(admin, "/analytics/team?range=today")).data.unassigned;
+      assert(unassigned && unassigned.open >= 1 && unassigned.overdue >= 1, `unassigned ${JSON.stringify(unassigned)}`);
+      assert((await http.post("/lead-tasks/release-unreachable", {}, as(joao))).status === 403, "a consultant ran the sweep");
+      const listed = (await http.get("/lead-tasks?scope=all&status=overdue&userId=0", as(admin))).data;
+      assert(listed.some(t => t.id === taskA.id) && !listed.some(t => t.id === taskB.id), "the list of tasks without owner is wrong");
+
+      const polo2 = sql(`INSERT INTO Polos (code, name, active, createdAt, updatedAt) VALUES ('AN2', 'Polo AN2', true, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const add = await http.post(`/polos/${polo2}/members/${ids.gabrielli}`, { role: "comercial" }, as(admin));
+      assert(add.status === 200, `link ${add.status}`);
+      const team = (await A(admin, "/analytics/team?range=today")).data;
+      const g = team.consultants.find(b => b.user.id === ids.gabrielli);
+      assert(g && g.user.poloIds.includes(Number(polo2)), "the polo does not show on the consultant");
+      assert((await http.post(`/polos/${polo2}/members/${ids.gabrielli}`, { role: "comercial" }, as(admin))).status === 200, "linking twice must be harmless");
+      assert((await http.post(`/polos/${polo2}/members/${ids.gabrielli}`, { role: "xx" }, as(admin))).status === 400, "an invalid function was accepted");
+      assert((await http.post(`/polos/${polo2}/members/${ids.gabrielli}`, { role: "comercial" }, as(joao))).status === 403, "a consultant linked someone to a polo");
+      const del = await http.delete(`/polos/${polo2}/members/${ids.gabrielli}`, as(admin));
+      assert(del.status === 200, `unlink ${del.status}`);
+      const team2 = (await A(admin, "/analytics/team?range=today")).data;
+      assert(!team2.consultants.find(b => b.user.id === ids.gabrielli).user.poloIds.includes(Number(polo2)), "the link stayed after removing");
+    });
   } catch (err) {
     results.push([false, `setup -> ${err.stack || err.message}`]);
     console.log(`  ✗ setup\n      ${err.stack || err.message}`);

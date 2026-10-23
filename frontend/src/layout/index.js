@@ -135,6 +135,8 @@ const LoggedInLayout = ({ children }) => {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const alertsRef = useRef(null);
   const [alertsH, setAlertsH] = useState(0);
+  // the notices only exist once the session has loaded (before that a loading screen is returned and the ref is empty)
+  const sessionLoading = useContext(AuthContext).loading;
   useEffect(() => {
     const el = alertsRef.current;
     if (!el) return undefined;
@@ -144,7 +146,7 @@ const LoggedInLayout = ({ children }) => {
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [sessionLoading]);
   const { user } = useContext(AuthContext);
   const { darkMode, toggleTheme } = useThemeContext();
   const location = useLocation();

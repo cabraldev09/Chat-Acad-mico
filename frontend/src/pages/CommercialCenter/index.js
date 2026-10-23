@@ -1,11 +1,12 @@
 import React, { useContext, useEffect, useMemo, useState } from "react";
 import { useHistory } from "react-router-dom";
 import { toast } from "react-toastify";
-import { AlertTriangle, Wifi, WifiOff, BarChart3, CalendarClock, Download, Gauge, HeartPulse, ListTodo, Megaphone, MonitorCheck, Settings2, Target, Users, X } from "lucide-react";
+import { AlertTriangle, Wifi, WifiOff, BarChart3, CalendarClock, Check, ChevronDown, ChevronUp, Download, HeartPulse, ListTodo, Megaphone, MapPin, MonitorCheck, Plus, Search, Settings2, Target, Users, X } from "lucide-react";
 
 import Tooltip from "@material-ui/core/Tooltip";
 import Drawer from "@material-ui/core/Drawer";
 import Button from "@material-ui/core/Button";
+import Popover from "@material-ui/core/Popover";
 import { AuthContext } from "../../context/Auth/AuthContext";
 import { canOperateRetention } from "../../utils/access";
 import { onColor, tint } from "../../utils/color";
@@ -18,8 +19,8 @@ const DAYS = [["1", "Seg"], ["2", "Ter"], ["3", "Qua"], ["4", "Qui"], ["5", "Sex
 const LEVEL = { high: "#dc2626", medium: "#d97706", low: "#0693E3" };
 const TAB_HELP = {
   geral: "Resumo da equipe no período escolhido: totais, quem está trabalhando agora e o que precisa da sua atenção.",
-  consultores: "Compare cada consultor lado a lado. Clique em um nome para ver a evolução, as metas e as tarefas dele.",
-  polos: "Os mesmos números somados por polo, para comparar o desempenho de cada unidade.",
+  consultores: "Uma lista só: WhatsApp, polos e números de cada consultor. Vincule a polos aqui mesmo e clique no nome para ver a evolução, as metas e as tarefas.",
+  polos: "Os números somados por polo e quem está em cada equipe. Para vincular alguém, use a aba Consultores.",
   ferramentas: "Tudo o que a gestão comercial usa no dia a dia, num só lugar: tarefas, retenção, ambientação, agendamentos, campanhas e estatísticas.",
   config: "Defina horários de trabalho, metas diárias e a regra de inatividade. Vale para esta tela e para a de cada consultor.",
 };
@@ -176,44 +177,6 @@ const Detail = ({ userId, period, defs, onClose }) => {
   );
 };
 
-// one person as a card: who, how they are now and the four numbers that matter (all cards have the same height)
-const ConsultantCard = ({ b, active, onOpen }) => {
-  const p = b.presence;
-  const m = b.metrics;
-  const wa = WA[p.whatsapp.state];
-  const down = p.whatsapp.state !== "connected";
-  const cell = (label, value, tone) => (
-    <div style={{ display: "grid", gap: 2, minWidth: 0 }}>
-      <span style={{ fontSize: 11.5, opacity: 0.72 }}>{label}</span>
-      <b style={{ fontSize: 19, fontVariantNumeric: "tabular-nums", letterSpacing: "-0.02em", color: tone }}>{value}</b>
-    </div>
-  );
-  return (
-    <button type="button" onClick={onOpen} className="ui-card ui-lift" style={{ textAlign: "left", font: "inherit", color: "inherit", cursor: "pointer", padding: 16, display: "grid", gap: 14, alignContent: "start", borderColor: active ? BRAND.cerulean : undefined }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <span style={{ position: "relative", width: 44, height: 44, flex: "none" }}>
-          <span style={{ width: 44, height: 44, borderRadius: "50%", display: "grid", placeItems: "center", fontSize: 15, fontWeight: 800, background: "rgba(11,66,121,.1)", color: BRAND.blue }}>{initials(b.user.name)}</span>
-          <span style={{ position: "absolute", right: -1, bottom: -1, width: 12, height: 12, borderRadius: "50%", background: p.online ? "#16a34a" : "#94a3b8", border: "2px solid var(--ui-surface, #fff)" }} />
-        </span>
-        <span style={{ minWidth: 0, flex: 1 }}>
-          <b style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 15 }}>{b.user.name}</b>
-          <span style={{ display: "block", fontSize: 12.5, opacity: 0.75 }}>{p.online ? "Online agora" : p.lastSeenAt ? `Acessou ${dayTime(p.lastSeenAt)}` : "Sem registro de acesso"}</span>
-        </span>
-      </div>
-      <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 600, color: wa.color }}>
-        {down ? <WifiOff size={14} /> : <Wifi size={14} />}{down ? (p.whatsapp.state === "none" ? "Não conectou o WhatsApp" : "WhatsApp desconectado") : "WhatsApp conectado"}
-      </span>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 8, paddingTop: 12, borderTop: "1px solid var(--ui-border, rgba(127,140,160,.25))" }}>
-        {cell("Mensagens", num(m.messagesSent))}
-        {cell("Leads", num(m.leadsWorked))}
-        {cell("Matrículas", num(m.enrollments))}
-        {cell("1º contato", fmt(m.firstContactMinutes, "minutes"))}
-      </div>
-      {m.tasksOverdue > 0 && <span style={{ fontSize: 12.5, fontWeight: 700, color: "#dc2626" }}>{m.tasksOverdue} {m.tasksOverdue === 1 ? "tarefa atrasada" : "tarefas atrasadas"}</span>}
-    </button>
-  );
-};
-
 const TOOLS = [
   { to: "/crm/tarefas", label: "Tarefas de acompanhamento", text: "O que cada pessoa precisa fazer hoje e o que está atrasado.", icon: ListTodo, color: "#0693E3" },
   { to: "/crm/retencao", label: "Retenção", text: "Alunos em risco de sair e o contato para segurá-los.", icon: HeartPulse, color: "#dc2626", needs: "retention" },
@@ -310,34 +273,6 @@ const Team = ({ consultants, onOpen }) => {
   );
 };
 
-// production per consultant: one block with three bars each (the longest bar of each kind is the reference), ranked by enrollments
-const Production = ({ ranked }) => {
-  const c = useKit();
-  const kinds = [["messagesSent", "Mensagens", BRAND.cerulean], ["attendances", "Atendimentos", BRAND.blue], ["enrollments", "Matrículas", "#16a34a"]];
-  const max = Object.fromEntries(kinds.map(([k]) => [k, Math.max(1, ...ranked.map((b) => b.metrics[k] || 0))]));
-  const any = ranked.some((b) => kinds.some(([k]) => b.metrics[k] > 0));
-  return (
-    <div className={c.panel}>
-      <BlockTitle icon={<Gauge size={16} />} title="Produção por consultor" />
-      {!any && <div className={c.sub} style={{ padding: "18px 0" }}>Ainda sem produção neste período. Quando alguém enviar mensagens, atender conversas ou matricular, as barras aparecem aqui.</div>}
-      {any && ranked.map((b) => (
-        <div key={b.user.id} style={{ display: "grid", gridTemplateColumns: "minmax(110px, 170px) 1fr", gap: 12, alignItems: "center", padding: "10px 0", borderTop: `1px solid rgba(127,140,160,.25)` }}>
-          <b style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.user.name}</b>
-          <div style={{ display: "grid", gap: 5 }}>
-            {kinds.map(([k, label, color]) => (
-              <div key={k} style={{ display: "grid", gridTemplateColumns: "88px 1fr 34px", alignItems: "center", gap: 8, fontSize: 12 }}>
-                <span className={c.sub} style={{ marginTop: 0 }}>{label}</span>
-                <Progress value={b.metrics[k] || 0} max={max[k]} color={color} />
-                <b style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{num(b.metrics[k])}</b>
-              </div>
-            ))}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-};
-
 // What needs attention, ONE LINE PER PERSON: the worst problem first (a number that is down explains the rest), the other facts as small chips.
 // Everything explains itself at once when the pointer touches it.
 const WHY = {
@@ -403,6 +338,127 @@ const Alerts = ({ alerts, onOpen, history }) => {
   );
 };
 
+// the polos of a person, as chips, and a small menu to link or unlink them right here (the person can be in more than one polo)
+const PoloCell = ({ b, polos, onChanged }) => {
+  const [anchor, setAnchor] = useState(null);
+  const [busy, setBusy] = useState(null);
+  const mine = new Set(b.user.poloIds || []);
+  const toggle = async (polo) => {
+    setBusy(polo.id);
+    try {
+      if (mine.has(polo.id)) await api.delete(`/polos/${polo.id}/members/${b.user.id}`);
+      else await api.post(`/polos/${polo.id}/members/${b.user.id}`, { role: "comercial" });
+      await onChanged();
+    } catch (err) { toastError(err); }
+    setBusy(null);
+  };
+  const chips = polos.filter((p) => mine.has(p.id));
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", minWidth: 150 }} onClick={(e) => e.stopPropagation()}>
+      {chips.map((p) => <span key={p.id} title={p.name} style={{ maxWidth: 150, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12, fontWeight: 600, padding: "2px 9px", borderRadius: 999, background: "rgba(6,147,227,.12)", color: BRAND.blue }}>{p.name}</span>)}
+      <button type="button" aria-label={`Vincular ${b.user.name} a polos`} onClick={(e) => setAnchor(e.currentTarget)} style={{ display: "inline-flex", alignItems: "center", gap: 3, border: "1px dashed rgba(127,140,160,.6)", background: "transparent", color: "inherit", borderRadius: 999, padding: "2px 9px", fontFamily: "inherit", fontSize: 12, fontWeight: 600, cursor: "pointer", opacity: chips.length ? 0.7 : 1 }}>
+        {chips.length ? <Plus size={12} /> : <><MapPin size={12} /> Vincular</>}
+      </button>
+      <Popover open={!!anchor} anchorEl={anchor} onClose={() => setAnchor(null)} anchorOrigin={{ vertical: "bottom", horizontal: "left" }} transformOrigin={{ vertical: "top", horizontal: "left" }}>
+        <div style={{ padding: 8, minWidth: 240, maxHeight: 340, overflowY: "auto" }}>
+          <div style={{ padding: "6px 10px", fontSize: 12, opacity: 0.7 }}>Polos de {b.user.name}</div>
+          {polos.length === 0 && <div style={{ padding: "8px 10px", fontSize: 13 }}>Nenhum polo cadastrado ainda.</div>}
+          {polos.map((p) => (
+            <button key={p.id} type="button" disabled={busy === p.id} onClick={() => toggle(p)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, border: 0, background: "transparent", color: "inherit", padding: "8px 10px", borderRadius: 8, fontFamily: "inherit", fontSize: 14, textAlign: "left", cursor: "pointer" }}>
+              <span style={{ width: 18, height: 18, borderRadius: 5, display: "grid", placeItems: "center", border: `2px solid ${mine.has(p.id) ? BRAND.cerulean : "rgba(127,140,160,.7)"}`, background: mine.has(p.id) ? BRAND.cerulean : "transparent", color: "#fff", flex: "none" }}>{mine.has(p.id) && <Check size={12} strokeWidth={3} />}</span>
+              <span style={{ flex: 1, minWidth: 0 }}>{p.name}{p.city ? <span style={{ opacity: 0.6 }}> · {p.city}{p.state ? `/${p.state}` : ""}</span> : null}</span>
+            </button>
+          ))}
+        </div>
+      </Popover>
+    </div>
+  );
+};
+
+const WaCell = ({ p }) => {
+  const wa = WA[p.whatsapp.state];
+  const down = p.whatsapp.state !== "connected";
+  return (
+    <span title={wa.label + (p.whatsapp.name ? ` · ${p.whatsapp.name}` : "")} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12.5, fontWeight: 600, color: wa.color, whiteSpace: "nowrap" }}>
+      {down ? <WifiOff size={14} /> : <Wifi size={14} />}{down ? (p.whatsapp.state === "none" ? "Sem número" : "Desconectado") : "Conectado"}
+    </span>
+  );
+};
+
+const ConsultantsTable = ({ ranked, totals, polos, defs, selected, onSelect, onChanged }) => {
+  const c = useKit();
+  const [sort, setSort] = useState({ key: "enrollments", dir: -1 });
+  const [q, setQ] = useState("");
+  const [poloFilter, setPoloFilter] = useState("");
+  const [waFilter, setWaFilter] = useState("");
+  const rows = useMemo(() => {
+    const term = q.trim().toLowerCase();
+    const list = ranked.filter((b) => (!term || b.user.name.toLowerCase().includes(term))
+      && (!poloFilter || (poloFilter === "none" ? !(b.user.poloIds || []).length : (b.user.poloIds || []).includes(Number(poloFilter))))
+      && (!waFilter || (waFilter === "down" ? b.presence.whatsapp.state !== "connected" : b.presence.whatsapp.state === "connected")));
+    const val = (b) => (sort.key === "name" ? b.user.name.toLowerCase() : b.metrics[sort.key] === null || b.metrics[sort.key] === undefined ? -1 : b.metrics[sort.key]);
+    return [...list].sort((a, b2) => (val(a) < val(b2) ? -1 : val(a) > val(b2) ? 1 : 0) * sort.dir);
+  }, [ranked, q, poloFilter, waFilter, sort]);
+  const head = (key, label, right) => (
+    <th key={key} className={right ? "r" : undefined} title={defs[key] && defs[key].description} onClick={() => setSort((s) => ({ key, dir: s.key === key ? -s.dir : key === "name" ? 1 : -1 }))} style={{ cursor: "pointer", whiteSpace: "nowrap" }}>
+      {label}{sort.key === key ? (sort.dir === 1 ? <ChevronUp size={12} style={{ verticalAlign: -1, marginLeft: 3 }} /> : <ChevronDown size={12} style={{ verticalAlign: -1, marginLeft: 3 }} />) : null}
+    </th>
+  );
+  const fmtOf = (k) => (k === "conversion" ? "percent" : k === "firstContactMinutes" ? "minutes" : "count");
+  return (
+    <div className={c.panel}>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "0 10px", height: 34, borderRadius: 10, border: "1px solid rgba(127,140,160,.35)", minWidth: 200, flex: "1 1 200px", maxWidth: 320 }}>
+          <Search size={15} style={{ opacity: 0.6 }} />
+          <input aria-label="Buscar consultor" placeholder="Buscar consultor" value={q} onChange={(e) => setQ(e.target.value)} style={{ border: 0, outline: "none", background: "transparent", color: "inherit", font: "inherit", fontSize: 13.5, width: "100%" }} />
+        </label>
+        <select aria-label="Filtrar por polo" className={c.input} value={poloFilter} onChange={(e) => setPoloFilter(e.target.value)} style={{ height: 34 }}>
+          <option value="">Todos os polos</option>
+          <option value="none">Sem polo</option>
+          {polos.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+        <select aria-label="Filtrar por WhatsApp" className={c.input} value={waFilter} onChange={(e) => setWaFilter(e.target.value)} style={{ height: 34 }}>
+          <option value="">WhatsApp: todos</option>
+          <option value="down">Sem WhatsApp conectado</option>
+          <option value="up">Com WhatsApp conectado</option>
+        </select>
+        <span className={c.sub} style={{ marginLeft: "auto" }}>{rows.length} de {ranked.length} consultores</span>
+      </div>
+      <div className={c.scroll}>
+        <table className={c.table} style={{ minWidth: 1040 }}>
+          <thead><tr>{head("name", "Consultor")}<th>WhatsApp</th><th>Polos</th>{COLS.map(([k, l]) => head(k, l, true))}</tr></thead>
+          <tbody>
+            {rows.map((b) => {
+              const p = b.presence;
+              return (
+                <tr key={b.user.id} onClick={() => onSelect(b.user.id)} style={selected === b.user.id ? { background: "rgba(6,147,227,.1)" } : undefined}>
+                  <td style={{ whiteSpace: "nowrap" }}>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+                      <span style={{ position: "relative", width: 34, height: 34, flex: "none" }}>
+                        <span style={{ width: 34, height: 34, borderRadius: "50%", display: "grid", placeItems: "center", fontSize: 12, fontWeight: 800, background: "rgba(11,66,121,.1)", color: BRAND.blue }}>{initials(b.user.name)}</span>
+                        <span title={p.online ? "Online agora" : "Offline"} style={{ position: "absolute", right: -1, bottom: -1, width: 10, height: 10, borderRadius: "50%", background: p.online ? "#16a34a" : "#94a3b8", border: "2px solid var(--ui-surface, #fff)" }} />
+                      </span>
+                      <span style={{ display: "grid" }}>
+                        <b>{b.user.name}</b>
+                        <span className={c.sub} style={{ marginTop: 0 }}><PresenceDot state={p.state} />{PRESENCE[p.state].label}</span>
+                      </span>
+                    </span>
+                  </td>
+                  <td><WaCell p={p} /></td>
+                  <td><PoloCell b={b} polos={polos} onChanged={onChanged} /></td>
+                  {COLS.map(([k]) => <td key={k} className="r" style={k === "tasksOverdue" && b.metrics[k] > 0 ? { color: "#dc2626", fontWeight: 700 } : undefined}>{fmt(b.metrics[k], fmtOf(k))}</td>)}
+                </tr>
+              );
+            })}
+            {rows.length === 0 && <tr style={{ cursor: "default" }}><td colSpan={3 + COLS.length} className={c.sub}>Nenhum consultor com esses filtros.</td></tr>}
+            <tr style={{ cursor: "default", fontWeight: 700 }}><td>Total</td><td /><td />{COLS.map(([k]) => <td key={k} className="r">{fmt(totals[k], fmtOf(k))}</td>)}</tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+
 const CommercialCenter = () => {
   const c = useKit();
   const history = useHistory();
@@ -413,8 +469,11 @@ const CommercialCenter = () => {
   const [config, setConfig] = useState(null);
   const params = useMemo(() => periodParams(period), [period]);
   const ready = period.range !== "custom" || (period.from && period.to);
-  const { data, loading } = useAnalytics("/analytics/team", params, !!ready);
+  const { data, loading, reload } = useAnalytics("/analytics/team", params, !!ready);
   useEffect(() => { if (data) setConfig(data.config); }, [data]);
+  // the polos that exist, to link people to them without leaving this screen
+  const [polos, setPolos] = useState([]);
+  useEffect(() => { api.get("/polos").then(({ data: list }) => setPolos(Array.isArray(list) ? list.filter((p) => p.active !== false) : [])).catch(() => undefined); }, []);
 
   const exportCsv = async () => {
     try {
@@ -451,6 +510,16 @@ const CommercialCenter = () => {
       {loading && !data && <div className={c.sub}>Carregando…</div>}
       {data && tab === "geral" && (
         <div style={{ display: "grid", gap: 16 }}>
+          {data.unassigned && data.unassigned.open > 0 && (
+            <div role="status" style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", padding: "12px 16px", borderRadius: 14, background: "rgba(217,119,6,.12)", border: "1px solid rgba(217,119,6,.35)" }}>
+              <AlertTriangle size={18} style={{ color: "#d97706", flex: "none" }} />
+              <span style={{ flex: 1, minWidth: 220, fontSize: 14 }}>
+                <b>{data.unassigned.open} {data.unassigned.open === 1 ? "tarefa sem responsável" : "tarefas sem responsável"}</b>
+                {data.unassigned.overdue > 0 ? ` (${data.unassigned.overdue} atrasada${data.unassigned.overdue === 1 ? "" : "s"})` : ""}: eram de quem não conectou o WhatsApp e nenhuma conversa do lead está com outra pessoa.
+              </span>
+              <button type="button" className={c.btnPrimary} onClick={() => history.push("/crm/tarefas?scope=all&status=open&userId=0")}>Distribuir</button>
+            </div>
+          )}
           <div className={c.grid4}>
             {["messagesSent", "attendances", "leadsWorked", "firstContactMinutes", "pendingReply", "enrollments", "conversion", "tasksOverdue"].map((k) => <Kpi key={k} k={k} value={data.totals[k]} def={defs[k]} tone={k === "tasksOverdue" && data.totals[k] > 0 ? "#dc2626" : undefined} />)}
           </div>
@@ -458,41 +527,22 @@ const CommercialCenter = () => {
             <Team consultants={data.consultants} onOpen={(id) => { setSelected(id); setTab("consultores"); }} />
             <Alerts alerts={data.alerts} onOpen={(id) => { setSelected(id); setTab("consultores"); }} history={history} />
           </div>
-          <Production ranked={ranked} />
         </div>
       )}
 
       {data && tab === "consultores" && (
-        <div style={{ display: "grid", gap: 16 }}>
-          <div className="ui-stagger" style={{ display: "grid", gap: 14, gridTemplateColumns: "repeat(auto-fill, minmax(290px, 1fr))" }}>
-            {ranked.map((b) => <ConsultantCard key={b.user.id} b={b} active={selected === b.user.id} onOpen={() => setSelected(b.user.id)} />)}
-            {ranked.length === 0 && <div className={c.panel}><div className={c.sub}>Nenhum consultor cadastrado.</div></div>}
-          </div>
-          <div className={c.panel}>
-            <BlockTitle title="Consultores lado a lado" help="Mensagens: enviadas por pessoas. Atend.: conversas diferentes atendidas. Leads: leads trabalhados. Reativ.: contatos retomados após 7 dias parados. 1º contato: tempo médio, em horário comercial, até a PESSOA responder um lead novo. Pendentes: conversas esperando resposta. Conv.: matrículas ÷ leads trabalhados. Atrasadas: tarefas vencidas. Passe o mouse no título da coluna para ler a definição completa." />
-            <div className={c.scroll}>
-              <table className={c.table} style={{ minWidth: 900 }}>
-                <thead><tr><th>Consultor</th><th>Presença</th>{COLS.map(([k, l]) => <th key={k} className="r" title={defs[k] && defs[k].description}>{l}</th>)}</tr></thead>
-                <tbody>
-                  {ranked.map((b) => (
-                    <tr key={b.user.id} onClick={() => setSelected(b.user.id)} style={selected === b.user.id ? { background: "rgba(6,147,227,.1)" } : undefined}>
-                      <td style={{ whiteSpace: "nowrap" }}><b>{b.user.name}</b></td>
-                      <td style={{ whiteSpace: "nowrap" }}><PresenceDot state={b.presence.state} />{PRESENCE[b.presence.state].label}</td>
-                      {COLS.map(([k]) => <td key={k} className="r" style={k === "tasksOverdue" && b.metrics[k] > 0 ? { color: "#dc2626", fontWeight: 700 } : undefined}>{fmt(b.metrics[k], k === "conversion" ? "percent" : k === "firstContactMinutes" ? "minutes" : "count")}</td>)}
-                    </tr>
-                  ))}
-                  <tr style={{ cursor: "default", fontWeight: 700 }}><td>Total</td><td />{COLS.map(([k]) => <td key={k} className="r">{fmt(data.totals[k], k === "conversion" ? "percent" : k === "firstContactMinutes" ? "minutes" : "count")}</td>)}</tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
+        <ConsultantsTable ranked={ranked} totals={data.totals} polos={polos} defs={defs} selected={selected} onSelect={setSelected} onChanged={reload} />
       )}
       {selected && <Detail userId={selected} period={params} defs={defs} onClose={() => setSelected(null)} />}
 
       {data && tab === "polos" && (
         <div style={{ display: "grid", gap: 16 }}>
-          {data.polos.length === 0 && <div className={c.panel}><div className={c.sub}>Nenhum consultor vinculado a polo ainda. Vincule os consultores aos polos em Configurações.</div></div>}
+          {data.polos.length === 0 && (
+            <div className={c.panel}>
+              <div className={c.sub}>Nenhum consultor vinculado a polo ainda. Abra a aba Consultores e use o botão "Vincular" na linha de cada pessoa.</div>
+              <button type="button" className={c.btnPrimary} style={{ marginTop: 12 }} onClick={() => setTab("consultores")}>Ir para Consultores</button>
+            </div>
+          )}
           {data.polos.length > 0 && (
             <>
               <div className={c.panel}>
@@ -501,10 +551,17 @@ const CommercialCenter = () => {
               </div>
               <div className={c.panel + " " + c.scroll}>
                 <table className={c.table} style={{ minWidth: 640 }}>
-                  <thead><tr><th>Polo</th><th className="r">Consultores</th><th className="r">Mensagens</th><th className="r">Leads</th><th className="r">Matrículas</th><th className="r">Conversão</th></tr></thead>
-                  <tbody>{data.polos.map((p) => <tr key={p.poloId} style={{ cursor: "default" }}><td><b>{p.name}</b></td><td className="r">{p.consultants}</td><td className="r">{num(p.totals.messagesSent)}</td><td className="r">{num(p.totals.leadsWorked)}</td><td className="r">{num(p.totals.enrollments)}</td><td className="r">{fmt(p.totals.conversion, "percent")}</td></tr>)}</tbody>
+                  <thead><tr><th>Polo</th><th>Equipe</th><th className="r">Mensagens</th><th className="r">Leads</th><th className="r">Matrículas</th><th className="r">Conversão</th></tr></thead>
+                  <tbody>{data.polos.map((p) => (
+                    <tr key={p.poloId} style={{ cursor: "default" }}>
+                      <td><b>{p.name}</b></td>
+                      <td>{data.consultants.filter((b) => (b.user.poloIds || []).includes(p.poloId)).map((b) => b.user.name.split(" ")[0]).join(", ") || "—"}</td>
+                      <td className="r">{num(p.totals.messagesSent)}</td><td className="r">{num(p.totals.leadsWorked)}</td><td className="r">{num(p.totals.enrollments)}</td><td className="r">{fmt(p.totals.conversion, "percent")}</td>
+                    </tr>
+                  ))}</tbody>
                 </table>
               </div>
+              <div><button type="button" className={c.btn} onClick={() => history.push("/polos")}>Gerenciar polos e funções (tutoria, coordenação)</button></div>
             </>
           )}
         </div>

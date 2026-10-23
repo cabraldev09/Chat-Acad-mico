@@ -256,7 +256,8 @@ const ListTicketsService = async ({
     limit,
     offset,
     attributes: { include: [[pinnedSql, "pinned"]] },
-    order: [[pinnedSql, "DESC"], [literal('COALESCE("Ticket"."lastMessageAt", "Ticket"."updatedAt")'), "DESC"]]
+    // the order of the phone: the chat time WhatsApp gives (or our last message, when it is newer or the channel has none); the id settles a tie so pages never repeat a chat
+    order: [[pinnedSql, "DESC"], [literal('GREATEST(COALESCE("Ticket"."waChatTimestamp", to_timestamp(0)), COALESCE("Ticket"."lastMessageAt", "Ticket"."updatedAt"))'), "DESC"], ["id", "DESC"]]
   });
 
   const hasMore = count > offset + tickets.length;
