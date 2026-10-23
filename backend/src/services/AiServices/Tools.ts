@@ -17,6 +17,7 @@ import { StageData, checkField } from "../FlowServices/StageSpec";
 import { ACADEMIC_TOOLS, AcademicCtx, findCourse, runAcademicTool } from "../CommercialServices/Academic";
 import { COMMERCIAL_TOOL_DEFS } from "../CommercialServices/ToolDefs";
 import { Slots, cleanPatch } from "../CommercialServices/Slots";
+import { lockExit, markSteps, pendingSteps, pendingText, stepsOf } from "../FlowServices/StepLock";
 
 export interface Slot {
   key: string;
@@ -48,6 +49,7 @@ export const missingSlots = (agent: AiAgent, collected: Record<string, string> |
 export const stageSlots = (stage: StageData): Slot[] => stage.fields.map(f => ({ key: f.key, label: f.label, required: f.required, type: f.type, options: f.options, ask: f.ask }));
 
 const EXIT_TOOL = "escolher_resultado";
+export const STEP_TOOL = "passo_concluido";
 
 // the tools of an AI stage: only what the block turned on, its own external tools and the way out
 export const stageToolDefs = (stage: StageData) => {
@@ -84,6 +86,14 @@ export const stageToolDefs = (stage: StageData) => {
       }
     })
   );
+  // the checklist: the AI marks each step as it is done, and the stage only ends when all are
+  if (stepsOf(stage).length) {
+    tools.push({
+      name: STEP_TOOL,
+      description: "Marca os passos desta etapa que você JÁ cumpriu (use os números da lista de passos). Chame assim que cumprir um passo. Devolve os que faltam.",
+      input_schema: { type: "object", properties: { passos: { type: "array", items: { type: "number" }, description: "Números dos passos cumpridos, ex.: [1, 2]" } }, required: ["passos"] }
+    });
+  }
   // in a commercial stage the code decides the exits from what the turn registered
   if (commercial) return tools;
   const exits = ["concluido", "humano", "desconhecido", ...stage.outcomes.map(o => o.id)];
@@ -164,6 +174,8 @@ interface Ctx {
   // the commercial agent: what the tools looked up, what the model registered about the turn
   academic?: AcademicCtx;
   turn?: Record<string, any>;
+  // the checklist of the stage: the steps (1-based) done so far, including the ones the model marks in this turn
+  stepsDone?: number[];
 }
 
 const bool = (v: any): boolean | undefined => (v === undefined ? undefined : v === true || v === "true");
@@ -270,6 +282,9 @@ export const runTool = async (name: string, input: any, ctx: Ctx): Promise<any> 
   if (ctx.stage && name === EXIT_TOOL) {
     const chosen = String(input.resultado || "");
     const outcome = ctx.stage.outcomes.find(o => o.id === chosen);
+    // the stage cannot end while a step of its checklist is pending: the AI keeps going in the same turn
+    const lock = lockExit(ctx.stage, ctx.stepsDone || [], chosen === "concluido" ? "done" : null);
+    if (lock.held) return { erro: `Ainda não dá para concluir: faltam estes passos, cumpra-os na ordem e chame ${STEP_TOOL}: ${pendingText(ctx.stage, lock.pending)}` };
     if (chosen === "concluido") ctx.exit = "done";
     else if (chosen === "humano") ctx.exit = "human";
     else if (chosen === "desconhecido") ctx.exit = "off";
@@ -277,6 +292,11 @@ export const runTool = async (name: string, input: any, ctx: Ctx): Promise<any> 
     else return { erro: "Resultado inválido." };
     ctx.exitReason = String(input.motivo || "").slice(0, 200);
     return { ok: true, aviso: "Etapa encerrada. Despeça-se em uma frase curta, se fizer sentido." };
+  }
+  if (ctx.stage && name === STEP_TOOL) {
+    ctx.stepsDone = markSteps(ctx.stage, ctx.stepsDone || [], Array.isArray(input.passos) ? input.passos : [input.passos]);
+    const pending = pendingSteps(ctx.stage, ctx.stepsDone);
+    return { concluidos: ctx.stepsDone, faltando: pending.map(n => `${n}. ${stepsOf(ctx.stage as StageData)[n - 1]}`), completo: pending.length === 0 };
   }
   if (ctx.stage && name.startsWith("http_")) return callHttpTool(ctx.stage, name, input, ctx.dryRun);
   if (ctx.stage && name === "registrar_turno") return registerTurn(input, ctx);
@@ -303,7 +323,7 @@ export const runTool = async (name: string, input: any, ctx: Ctx): Promise<any> 
     }
     const missing = missingSlots(ctx.agent, ctx.collected, slots);
     // every required field is known: the stage reaches its goal
-    if (ctx.stage && !missing.length && slots.some(s => s.required) && !ctx.exit) ctx.exit = "done";
+    if (ctx.stage && !missing.length && slots.some(s => s.required) && !ctx.exit && !lockExit(ctx.stage, ctx.stepsDone || [], "done").held) ctx.exit = "done";
     return { salvo: saved, ...(rejected.length ? { valor_invalido: rejected, aviso: "Peça o dado de novo, no formato certo." } : {}), faltando: missing.map(s => s.label), completo: missing.length === 0 };
   }
   return { erro: "Ferramenta desconhecida." };

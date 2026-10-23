@@ -3,7 +3,7 @@ import path from "path";
 
 import { WWEBJS_AUTH_DIR } from "../config/paths";
 import Whatsapp from "../models/Whatsapp";
-import { reconcileStatuses, sessionWatch } from "../providers/WhatsApp/Implementations/wwebjs";
+import { reconcileStatuses, sessionHealth, sessionWatch } from "../providers/WhatsApp/Implementations/wwebjs";
 import { StartWhatsAppSession } from "../services/WbotServices/StartWhatsAppSession";
 import { logger } from "../utils/logger";
 
@@ -32,6 +32,8 @@ const tick = async (): Promise<void> => {
     if (process.env.SKIP_WHATSAPP_SESSIONS) return;
     // first of all: a number that is really connected must never show as fallen (this also runs during the grace time after a restart)
     await reconcileStatuses();
+    // one line per number: registered / ready / state / injected (the proof that a number can really read and send)
+    sessionHealth().then(list => list.forEach(h => logger.info(`WhatsApp health: sessão ${h.id} registered=${h.registered} ready=${h.ready} state=${h.state} injected=${h.injected}`))).catch(() => undefined);
     if (Date.now() - bootAt < GRACE_MS) return;
     const rows = await Whatsapp.findAll({ where: { channel: "whatsapp" } as any });
     const now = Date.now();

@@ -1,6 +1,7 @@
 import { isEmail } from "../../helpers/Email";
 import { FlowNode, Graph, handleOf, nextNodeId } from "./Graph";
 import { cleanStage } from "./StageSpec";
+import { doneSteps, lockExit, markSteps, pendingSteps, pendingText, stepsKey } from "./StepLock";
 
 // The engine walks a flow. It knows nothing about WhatsApp or the database: everything it does to the outside world goes
 // through `Effects`. The same engine runs a real conversation (effects that send and save) and the simulator on screen
@@ -48,6 +49,10 @@ export interface StageTurn {
   // done | human | off | limit | the id of an exit by intention; null/undefined = keep talking
   exit?: string | null;
   collected?: Record<string, string>;
+  // why the conversation goes to a person, when the turn decided it ("qualified", "loop"...)
+  why?: string;
+  // the steps of the checklist of the stage that are done (1-based): the lock lets the stage end only when all are
+  stepsDone?: number[];
   // what the turn did, for the simulator (tools, CRM before/after, tokens...)
   trace?: any;
 }
@@ -229,6 +234,21 @@ const stageStep = async (graph: Graph, node: FlowNode, state: RunState, fx: Effe
     state.vars[key] = value;
     // eslint-disable-next-line no-await-in-loop
     await fx.saveField(key, String(value));
+  }
+  // the checklist of the stage: what the AI marked as done is kept in the run, and the stage cannot end on the happy path while a step is pending
+  if (turn.stepsDone) state.vars[stepsKey(node.id)] = markSteps(st, doneSteps(state.vars, node.id), turn.stepsDone);
+  if (turn.exit) {
+    const lock = lockExit(st, doneSteps(state.vars, node.id), turn.exit, turn.why);
+    if (lock.held) {
+      // the end is refused: the stage goes on, and the next turn is told what is missing
+      state.vars.__stepsHeld = pendingText(st, lock.pending);
+      turn = { ...turn, exit: null };
+    }
+  }
+  if (turn.exit && st.steps && st.steps.length) {
+    // a way out that is not the happy path (limit of turns, a person asked, no interest...) with steps still pending: the team is told what was left
+    const pending = pendingSteps(st, doneSteps(state.vars, node.id));
+    if (pending.length) state.vars.__stepsMissing = pendingText(st, pending);
   }
   if (turn.text) await (fx.sayBlocks ? fx.sayBlocks(render(turn.text, state.vars, who)) : fx.say(render(turn.text, state.vars, who)));
   if (!turn.exit) return { status: "waiting", state, path: [] };
