@@ -11,6 +11,7 @@ import PoloMember from "../../models/PoloMember";
 import Polo from "../../models/Polo";
 import { progressForUser } from "../../controllers/GoalController";
 import { KPI_KEYS } from "./definitions";
+import { businessMinutes, getBusinessConfig } from "../../helpers/BusinessTime";
 
 // ONE place computes every indicator of a consultant. The management center and the consultant's own screen both call
 // computeMetrics(), with the same period, so the same person, period and rules always give the same numbers.
@@ -138,11 +139,14 @@ export interface Metrics {
   proposalsViewed: number;
   enrollments: number;
   conversion: number | null;
+  // average minutes (working hours only) from the creation of the lead to its first contact, and how many leads it is made of (for the weighted total)
+  firstContactMinutes: number | null;
+  firstContactSamples: number;
 }
 
 const blank = (userId: number): Metrics => ({
   userId, messagesSent: 0, attendances: 0, reactivated: 0, leadsWorked: 0, pendingReply: 0, inProgress: 0, tasksOpen: 0, tasksOverdue: 0,
-  tasksDone: 0, followUpsDue: 0, proposalsSent: 0, proposalsViewed: 0, enrollments: 0, conversion: null
+  tasksDone: 0, followUpsDue: 0, proposalsSent: 0, proposalsViewed: 0, enrollments: 0, conversion: null, firstContactMinutes: null, firstContactSamples: 0
 });
 
 export const computeMetrics = async (userIds: number[], period: Period, now: Date = new Date()): Promise<Map<number, Metrics>> => {
@@ -185,6 +189,24 @@ export const computeMetrics = async (userIds: number[], period: Period, now: Dat
   (await rows(`SELECT createdBy AS userId, COUNT(*) AS n FROM Proposals WHERE createdBy IN (:ids) AND sentAt BETWEEN :from AND :to GROUP BY createdBy`, rep)).forEach(r => set(r, "proposalsSent"));
   (await rows(`SELECT createdBy AS userId, COUNT(*) AS n FROM Proposals WHERE createdBy IN (:ids) AND viewedAt BETWEEN :from AND :to GROUP BY createdBy`, rep)).forEach(r => set(r, "proposalsViewed"));
   (await rows(`SELECT ownerId AS userId, COUNT(*) AS n FROM Leads WHERE ownerId IN (:ids) AND wonAt BETWEEN :from AND :to AND isHistorical = false GROUP BY ownerId`, rep)).forEach(r => set(r, "enrollments"));
+
+  // time to the first contact: leads created in the period, by whoever answers them (the owner of the conversation, or of the lead while nobody has it)
+  const business = await getBusinessConfig();
+  const contacted = await rows(
+    `SELECT COALESCE(t.userId, l.ownerId) AS userId, l.createdAt AS c, l.firstContactAt AS f FROM Leads l
+     LEFT JOIN Tickets t ON t.id = (SELECT t2.id FROM Tickets t2 WHERE t2.leadId = l.id ORDER BY t2.id DESC LIMIT 1)
+     WHERE l.firstContactAt IS NOT NULL AND l.isHistorical = false AND l.createdAt BETWEEN :from AND :to AND COALESCE(t.userId, l.ownerId) IN (:ids) LIMIT 20000`,
+    rep
+  );
+  const acc = new Map<number, { sum: number; n: number }>();
+  contacted.forEach(r => {
+    const id = Number(r.userId);
+    const cur = acc.get(id) || { sum: 0, n: 0 };
+    cur.sum += businessMinutes(business, new Date(r.c), new Date(r.f));
+    cur.n += 1;
+    acc.set(id, cur);
+  });
+  acc.forEach((v, id) => { const m = out.get(id); if (m) { m.firstContactMinutes = Math.round(v.sum / v.n); m.firstContactSamples = v.n; } });
 
   out.forEach(m => { m.conversion = m.leadsWorked > 0 ? Math.round((m.enrollments / m.leadsWorked) * 1000) / 10 : null; });
   return out;
@@ -293,11 +315,14 @@ export const bundlesFor = async (userIds: number[], period: Period, opts: { goal
 };
 
 // ---------------------------------------------------------------- manager views: totals, polos and alerts, all derived from the bundles
-const SUM_KEYS = KPI_KEYS.filter(k => k !== "conversion");
+const SUM_KEYS = KPI_KEYS.filter(k => k !== "conversion" && k !== "firstContactMinutes");
 
 export const totalsOf = (bundles: ConsultantBundle[]): Record<string, number | null> => {
   const total: Record<string, number | null> = {};
   SUM_KEYS.forEach(k => { total[k] = bundles.reduce((s, b) => s + Number((b.metrics as any)[k] || 0), 0); });
+  // the average of the team is weighted by the number of leads of each person
+  const samples = bundles.reduce((s, b) => s + (b.metrics.firstContactMinutes === null ? 0 : b.metrics.firstContactSamples), 0);
+  total.firstContactMinutes = samples > 0 ? Math.round(bundles.reduce((s, b) => s + (b.metrics.firstContactMinutes === null ? 0 : b.metrics.firstContactMinutes * b.metrics.firstContactSamples), 0) / samples) : null;
   total.conversion = (total.leadsWorked as number) > 0 ? Math.round(((total.enrollments as number) / (total.leadsWorked as number)) * 1000) / 10 : null;
   return total;
 };

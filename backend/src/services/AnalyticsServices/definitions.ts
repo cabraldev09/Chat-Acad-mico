@@ -23,6 +23,7 @@ export const KPI_DEFINITIONS: KpiDefinition[] = [
   { key: "proposalsSent", label: "Propostas enviadas", unit: "count", kind: "period", description: "Propostas criadas pela pessoa e enviadas no período." },
   { key: "proposalsViewed", label: "Propostas vistas", unit: "count", kind: "period", description: "Propostas da pessoa abertas pelo lead no período." },
   { key: "enrollments", label: "Matrículas confirmadas", unit: "count", kind: "period", description: "Leads da pessoa que passaram para matriculado (wonAt) no período. É a mesma regra das Metas." },
+  { key: "firstContactMinutes", label: "Tempo até o 1º contato", unit: "minutes", kind: "period", description: "Média, só em horário comercial, entre o cadastro do lead e o primeiro contato, dos leads do período que a pessoa atende. Ideal: até 15 minutos." },
   { key: "conversion", label: "Taxa de conversão", unit: "percent", kind: "period", description: "Matrículas confirmadas ÷ leads trabalhados no período." }
 ];
 

@@ -634,7 +634,8 @@ export const putSettings = async (req: Request, res: Response): Promise<Response
 
 // ------------------------------------------------------------------ triage ("novos para conferir")
 // New people nobody answered yet, each one to its OWNER: a consultant only sees (and answers for) their own; the management sees everybody or one person
-// (?ownerId=). "late" = it arrived on a previous day: the check is due the same day, before the day closes.
+// (?ownerId=). The one responsible is who ANSWERS the conversation (the owner of its open ticket), or the owner of the lead when nobody has it yet:
+// a lead of the administrator that Pedro is attending is Pedro's to check. "late" = it arrived on a previous day: the check is due the same day, before the day closes.
 export const triageList = async (req: Request, res: Response): Promise<Response> => {
   const sequelize = (await import("../database")).default;
   const { QueryTypes } = await import("sequelize");
@@ -642,10 +643,12 @@ export const triageList = async (req: Request, res: Response): Promise<Response>
   const todayStart = dayBounds(undefined).start;
   const rows = (await sequelize.query(
     portable(`
-    SELECT l.id, l.name, l.phone, l.source, l.createdAt, l.ownerId AS ownerId, u.name AS ownerName
-    FROM Leads l JOIN LeadStages s ON s.id = l.stageId LEFT JOIN Users u ON u.id = l.ownerId
+    SELECT l.id, l.name, l.phone, l.source, l.createdAt, COALESCE(t.userId, l.ownerId) AS ownerId, u.name AS ownerName
+    FROM Leads l JOIN LeadStages s ON s.id = l.stageId
+    LEFT JOIN Tickets t ON t.id = (SELECT t2.id FROM Tickets t2 WHERE t2.leadId = l.id AND t2.status <> 'closed' ORDER BY t2.id DESC LIMIT 1)
+    LEFT JOIN Users u ON u.id = COALESCE(t.userId, l.ownerId)
     WHERE s.type = 'open' AND l.firstContactAt IS NULL AND l.enrolledAt IS NULL AND l.isHistorical = false
-      AND (:ownerId IS NULL OR l.ownerId = :ownerId)
+      AND (:ownerId IS NULL OR COALESCE(t.userId, l.ownerId) = :ownerId)
     ORDER BY l.createdAt ASC LIMIT 200`),
     { replacements: { ownerId }, type: QueryTypes.SELECT }
   )) as any[];

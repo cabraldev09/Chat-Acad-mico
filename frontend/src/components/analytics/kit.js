@@ -71,10 +71,13 @@ export const SHORT = {
   proposalsViewed: "Propostas que o candidato abriu no período.",
   enrollments: "Matrículas confirmadas no período. É a mesma regra das Metas.",
   conversion: "Matrículas divididas pelos leads trabalhados no período.",
+  firstContactMinutes: "Média, só em horário comercial, entre o cadastro do lead e o primeiro contato. Ideal: até 15 minutos.",
 };
 
 export const num = (v) => Number(v || 0).toLocaleString("pt-BR");
-export const fmt = (v, unit) => (v === null || v === undefined ? "—" : unit === "percent" ? `${String(v).replace(".", ",")}%` : num(v));
+// minutes become "12 min", "3 h 20 min" or "2 d": a number that is read at a glance
+export const minutesText = (v) => (v < 60 ? `${Math.round(v)} min` : v < 1440 ? `${Math.floor(v / 60)} h${Math.round(v % 60) ? ` ${Math.round(v % 60)} min` : ""}` : `${Math.round((v / 1440) * 10) / 10} d`.replace(".", ","));
+export const fmt = (v, unit) => (v === null || v === undefined ? "—" : unit === "percent" ? `${String(v).replace(".", ",")}%` : unit === "minutes" ? minutesText(v) : num(v));
 
 // one signal from the server (no numbers inside) makes the screen read the numbers again, through the same API that applies the permissions
 export const useAnalytics = (path, params, enabled = true) => {
