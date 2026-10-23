@@ -1,7 +1,30 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import { fileURLToPath } from "node:url";
 import iconMap from "./src/icons/map.js";
+
+// Every `lucide-react` import (named, or one icon file) is served by the Phosphor duotone shim (src/icons/phosphor-shim.js): one place changes all the icons.
+const phosphorForLucide = () => {
+  const SHIM = fileURLToPath(new URL("./src/icons/phosphor-shim.js", import.meta.url));
+  return {
+    name: "phosphor-for-lucide",
+    enforce: "pre",
+    resolveId(id) {
+      if (id === "lucide-react") return SHIM;
+      const m = id.match(/^lucide-react\/dist\/esm\/icons\/([a-z0-9-]+)$/);
+      if (m) return `\0lucide-one:${m[1].split("-").map((w) => w[0].toUpperCase() + w.slice(1)).join("")}`;
+      return null;
+    },
+    load(id) {
+      if (id.startsWith("\0lucide-one:")) {
+        const name = id.slice("\0lucide-one:".length);
+        return `import { ${name} } from "${SHIM.replace(/\\/g, "/")}";\nexport default ${name};`;
+      }
+      return null;
+    },
+  };
+};
 
 // Serve every `@material-ui/icons/<Name>` import (and the barrel) from Lucide.
 const lucideForMaterialIcons = () => {
@@ -57,6 +80,7 @@ const versionFile = () => ({
 
 export default defineConfig({
   plugins: [
+    phosphorForLucide(),
     versionFile(),
     // the screens ported from the original analysis system use its Tailwind classes (see src/styles/orig.css)
     tailwindcss(),
