@@ -302,6 +302,8 @@ const AffiliatePortal = ({ match }) => {
           <img className="ha-bg" src={heroStudent} alt="" aria-hidden="true" />
         </section>
 
+        <Funnel stats={stats} />
+
         <nav className="ha-quick" aria-label="Atalhos">
           {[["materials", "Materiais", "Artes, textos e vídeos prontos", Folders, "sky"], ["campaigns", "Campanhas", "O que está valendo agora", Megaphone, "gold"], ["learn", "Orientações", "Como indicar e ganhar", HelpCircle, "green"], ["referrals", "Indicações", "Acompanhe quem você trouxe", Users, "violet"]].map(([k, title, text, Icon, tone]) => (
             <button key={k} type="button" className={`ha-tile is-${tone}`} onClick={() => go(k)}>
@@ -313,7 +315,6 @@ const AffiliatePortal = ({ match }) => {
         </nav>
 
         <ShareBar link={data.referralUrl} nome={affiliate.firstName} />
-        <Funnel stats={stats} />
         {!affiliate.pixKey && <p className="ca-notice">Falta cadastrar a sua chave Pix para receber as bonificações. Peça ao seu consultor{owner ? `, ${owner.name}` : ""}.</p>}
 
         <PromoPanel nome={affiliate.firstName} link={data.referralUrl} groups={data.courses} />

@@ -70,34 +70,33 @@ export const ShareBar = ({ link, nome }) => {
 
 const pct = (part, whole) => (whole > 0 && part <= whole ? Math.round((part / whole) * 100) : null);
 
-// the path of a referral as four equal cards: opened the link, referred, enrolled, and what she earns; every card says what it counts and compares with the step before
+// her numbers in one clean strip right under the title: opened the link, referred, enrolled, and what she earns
 export const Funnel = ({ stats }) => {
   const clicks = stats.clicks || null;
   const opened = clicks ? clicks.unique : 0;
-  const cards = [
-    { key: "opened", Icon: Eye, tone: "sky", value: opened, label: opened === 1 ? "pessoa abriu o link" : "pessoas abriram o link", note: clicks && clicks.last7 ? `${clicks.last7} ${clicks.last7 === 1 ? "abertura" : "aberturas"} nos últimos 7 dias` : "Nos últimos 7 dias: nenhuma", bar: null },
-    { key: "referred", Icon: UserPlus, tone: "blue", value: stats.referrals, label: stats.referrals === 1 ? "pessoa indicada" : "pessoas indicadas", note: opened && stats.referrals ? `${pct(stats.referrals, opened) ?? "—"}% de quem abriu` : "Indique quem você conhece", bar: opened ? pct(stats.referrals, opened) : null },
-    { key: "enrolled", Icon: GraduationCap, tone: "green", value: stats.enrolled, label: stats.enrolled === 1 ? "matrícula" : "matrículas", note: stats.referrals ? `${stats.conversion}% das indicações` : "Cada matrícula gera bonificação", bar: stats.referrals ? stats.conversion : null },
+  const items = [
+    { key: "opened", Icon: Eye, tone: "sky", value: opened, label: "abriram o link", note: clicks && clicks.last7 ? `${clicks.last7} nos últimos 7 dias` : "" },
+    { key: "referred", Icon: UserPlus, tone: "blue", value: stats.referrals, label: stats.referrals === 1 ? "indicada" : "indicadas", note: opened && stats.referrals ? `${pct(stats.referrals, opened) ?? "—"}% de quem abriu` : "" },
+    { key: "enrolled", Icon: GraduationCap, tone: "green", value: stats.enrolled, label: stats.enrolled === 1 ? "matrícula" : "matrículas", note: stats.referrals ? `${stats.conversion}% das indicações` : "" },
   ];
   const empty = (!clicks || clicks.total === 0) && stats.referrals === 0;
   return (
-    <section className="ca-kpis" aria-label="Sua produção">
-      {cards.map(({ key, Icon, tone, value, label, note, bar }) => (
-        <article key={key} className={`ca-kpi is-${tone}`}>
-          <span className="ca-kpi-icon"><Icon size={20} /></span>
-          <b className="ca-kpi-value"><NumberTicker value={value} /></b>
-          <span className="ca-kpi-label">{label}</span>
-          <small>{note}</small>
-          {bar !== null && <i className="ca-kpi-bar"><i style={{ width: `${Math.min(100, Math.max(4, bar))}%` }} /></i>}
-        </article>
-      ))}
-      <article className="ca-kpi is-gold">
-        <span className="ca-kpi-icon"><Wallet size={20} /></span>
-        <b className="ca-kpi-value"><NumberTicker value={stats.bonusPending} format={brl} /></b>
-        <span className="ca-kpi-label">a receber</span>
-        <small>Já recebido: <strong>{brl(stats.bonusPaid)}</strong></small>
-      </article>
-      {empty && <p className="ca-funnel-empty">Seu link ainda não foi usado. Copie uma mensagem pronta logo abaixo e envie para quem pode se interessar: cada pessoa que abrir o link aparece aqui.</p>}
+    <section className="ha-stats" aria-label="Sua produção">
+      <dl>
+        {items.map(({ key, Icon, tone, value, label, note }) => (
+          <div key={key} className={`ha-stat is-${tone}`}>
+            <dt><Icon size={15} /> {label}</dt>
+            <dd><NumberTicker value={value} /></dd>
+            {note && <small>{note}</small>}
+          </div>
+        ))}
+        <div className="ha-stat is-gold">
+          <dt><Wallet size={15} /> a receber</dt>
+          <dd><NumberTicker value={stats.bonusPending} format={brl} /></dd>
+          <small>Já recebido: {brl(stats.bonusPaid)}</small>
+        </div>
+      </dl>
+      {empty && <p className="ha-stats-empty">Seu link ainda não foi usado: copie uma mensagem pronta mais abaixo e envie. Cada pessoa que abrir o link aparece aqui.</p>}
     </section>
   );
 };
