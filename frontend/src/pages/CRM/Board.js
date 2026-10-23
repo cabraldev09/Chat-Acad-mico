@@ -20,7 +20,7 @@ import LeadFields from "./LeadFields";
 import EnrollDialog from "./EnrollDialog";
 import ImportDialog from "./ImportDialog";
 import { useCrmOptions, SourceIcon, ScoreRing, OwnerAvatar, StagePill, ago, short, isOverdue, burst } from "./shared";
-import { onColor, tint } from "../../utils/color";
+import { tint } from "../../utils/color";
 import { NEXT_LABEL, TEMP_COLOR, TEMP_LABEL } from "../../utils/commercial";
 
 const useStyles = makeStyles((theme) => ({
@@ -30,7 +30,7 @@ const useStyles = makeStyles((theme) => ({
     gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", paddingBottom: theme.spacing(2), ...theme.scrollbarStyles,
   },
   col: {
-    background: theme.palette.type === "dark" ? "#0a1322" : "#eef2f7", borderRadius: 14, padding: theme.spacing(1),
+    background: theme.palette.type === "dark" ? "#0f1520" : "#e8ecf2", borderRadius: 14, padding: theme.spacing(1),
     display: "flex", flexDirection: "column", gap: theme.spacing(1), border: "1px solid transparent",
     transition: "border-color .15s, background .15s, box-shadow .2s",
   },
@@ -80,7 +80,7 @@ const LeadCard = ({ lead, stage, onOpen, onDragStart, onDragEnd, dragging, onMen
   const classes = useStyles();
   const color = (stage && stage.color) || (lead.stage && lead.stage.color) || null;
   return (
-    <div className={`${classes.card} ${dragging ? classes.cardDragging : ""}`} style={color ? { borderLeft: `5px solid ${color}`, backgroundImage: `linear-gradient(135deg, ${tint(color, 0.1)} 0%, transparent 55%)` } : undefined} draggable role="button" tabIndex={0} aria-label={`Abrir o lead ${lead.name}`}
+    <div className={`${classes.card} ${dragging ? classes.cardDragging : ""}`} style={color ? { borderLeft: `3px solid ${color}` } : undefined} draggable role="button" tabIndex={0} aria-label={`Abrir o lead ${lead.name}`}
       onClick={() => onOpen(lead.id)} onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onOpen(lead.id); } }}
       onDragStart={(e) => { e.dataTransfer.setData("text/plain", String(lead.id)); e.dataTransfer.effectAllowed = "move"; setTimeout(() => onDragStart(lead), 0); }} onDragEnd={onDragEnd}>
       <div className={classes.cardTop}>
@@ -367,14 +367,14 @@ const Board = () => {
             </div></div>
           )}
           {(board || []).map((stage) => (
-            <div key={stage.id} className={`${classes.col} ${over === stage.id ? classes.colOver : ""}`} style={over === stage.id ? undefined : { background: tint(stage.color, 0.14), borderTop: `4px solid ${stage.color}` }}
+            <div key={stage.id} className={`${classes.col} ${over === stage.id ? classes.colOver : ""}`} style={over === stage.id ? undefined : { borderTop: `2px solid ${tint(stage.color, 0.7)}` }}
               onDragOver={(e) => { e.preventDefault(); if (over !== stage.id) setOver(stage.id); }}
               onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setOver(null); }}
               onDrop={(e) => onDrop(e, stage)}>
               <div className={classes.colHead}>
                 <span className={classes.dot} style={{ background: stage.color }} />
                 <span className={classes.colName} title={stage.name}>{stage.name}</span>
-                <span className={classes.count} style={{ background: stage.color, color: onColor(stage.color), borderColor: stage.color }}>{stage.count}</span>
+                <span className={classes.count} style={{ color: stage.color, borderColor: tint(stage.color, 0.5) }}>{stage.count}</span>
               </div>
               <div className={classes.colBody} data-colbody="1">
                 {stage.leads.map((l) => (

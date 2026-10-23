@@ -8,10 +8,14 @@ import createAppTheme from "../../theme";
 const ThemeContext = createContext();
 
 export const ThemeProvider = ({ children }) => {
-  const [darkMode, setDarkMode] = useState(false);
+  // dark is the default; the choice of the person is remembered
+  const [darkMode, setDarkMode] = useState(() => {
+    try { return window.localStorage.getItem("theme") !== "light"; } catch (e) { return true; }
+  });
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", darkMode ? "dark" : "light");
+    try { window.localStorage.setItem("theme", darkMode ? "dark" : "light"); } catch (e) { /* private window */ }
   }, [darkMode]);
 
   const toggleTheme = () => {
