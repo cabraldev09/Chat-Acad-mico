@@ -438,3 +438,25 @@
   .ha-stat:nth-child(3)::before { display: none; }
   .ha-stat:nth-child(n+3) { border-top: 1px solid var(--line); }
 }
+
+/* less boxes: numbers, shortcuts and the link sit straight on the page (hairlines, no cards, no heavy shadow); nothing overlaps the hero */
+.ca-root .ha-stats { margin: 30px 0 0; padding: 0; background: none; border: 0; border-radius: 0; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
+.ca-root .ha-stats dl { border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+.ca-root .ha-stat { padding: 8px 24px 14px; }
+.ca-root .ha-stat:first-child { padding-left: 4px; }
+.ca-root .ha-stats-empty { padding: 12px 4px 0; border-top: 0; }
+.ca-root .ha-quick { gap: 0; margin-top: 8px; }
+.ca-root .ha-tile { border: 0; border-radius: 18px; background: transparent; box-shadow: none; min-height: 84px; padding: 14px 12px; }
+.ca-root .ha-tile:hover { transform: none; background: color-mix(in srgb, var(--tone) 9%, transparent); }
+.ca-root .ha-tile-icon { box-shadow: none; }
+.ca-root .ca-link { background: none; border: 0; border-radius: 0; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; padding: 14px 4px 6px; margin-top: 4px; border-top: 1px solid var(--line); }
+.ca-root .ca-link:hover { box-shadow: none; }
+.ca-root .ca-notice { background: none; border: 0; border-left: 3px solid var(--gorse); border-radius: 0; padding: 4px 12px; margin: 14px 4px 0; color: var(--muted); }
+.ca-root .ha-hero { box-shadow: 0 24px 50px -34px rgba(8, 40, 82, .55), inset 0 1px 0 rgba(255, 255, 255, .14); }
+@media (max-width: 860px) {
+  .ca-root .ha-stats { margin-top: 22px; }
+  .ca-root .ha-stat { padding: 8px 14px 12px; }
+  .ca-root .ha-stat:nth-child(odd) { padding-left: 4px; }
+  .ca-root .ha-quick { gap: 2px; }
+  .ca-root .ha-stat:nth-child(n+3) { border-top: 0; }
+}
