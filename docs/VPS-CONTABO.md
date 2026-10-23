@@ -83,3 +83,19 @@ docker run --rm -v chat-academico-data:/data -v /opt/backups:/backup alpine \
   sh -c "cd /data && tar xzf /backup/dados-AAAA-MM-DD.tar.gz"
 docker compose start api
 ```
+
+## Atualização automática pelo GitHub (repositório privado)
+
+Com o repositório privado, a VPS não consegue buscar o código sozinha. O arquivo `.github/workflows/deploy-vps.yml` resolve sem guardar senha na VPS:
+a cada mudança em `backend/`, `deploy/` ou no Dockerfile que entra na `main`, o GitHub entra por SSH e roda `update.sh --force`, usando um token que ele mesmo cria e que expira ao fim da execução.
+
+Configurar uma vez (no Mac):
+
+```bash
+ssh-keygen -t ed25519 -f ~/.ssh/deploy_chat_academico -N "" -C "github-deploy"      # chave só para isso
+ssh -i ~/.ssh/contabo_chat_academico root@209.145.48.49 "cat >> ~/.ssh/authorized_keys" < ~/.ssh/deploy_chat_academico.pub
+cat ~/.ssh/deploy_chat_academico | pbcopy                    # cola em: GitHub > Settings > Secrets and variables > Actions > VPS_SSH_KEY
+ssh-keyscan -t ed25519 209.145.48.49 | pbcopy                # cola em: VPS_KNOWN_HOSTS
+```
+
+Depois, em **Actions > Atualizar a VPS > Run workflow** dá para atualizar quando quiser.
