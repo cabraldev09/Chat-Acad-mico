@@ -19,6 +19,7 @@ import BarChartIcon from "lucide-react/dist/esm/icons/bar-chart-3";
 import KanbanSquareIcon from "lucide-react/dist/esm/icons/kanban-square";
 import LayoutDashboardIcon from "lucide-react/dist/esm/icons/layout-dashboard";
 import { canOperateRetention, isManager } from "../utils/access";
+import { useMyTasks } from "../components/TaskAlert";
 import ListTodoIcon from "lucide-react/dist/esm/icons/list-todo";
 import MonitorCheckIcon from "lucide-react/dist/esm/icons/monitor-check";
 import HeartPulseIcon from "lucide-react/dist/esm/icons/heart-pulse";
@@ -166,6 +167,7 @@ const MainListItems = (props) => {
   const [connectionWarning, setConnectionWarning] = useState(false);
   const [aiReview, setAiReview] = useState(0);
   const [followUps, setFollowUps] = useState(0);
+  const myTasks = useMyTasks();
 
   // curricular analyses whose 24-hour return is waiting for an answer (mine; the management sees all)
   useEffect(() => {
@@ -227,6 +229,11 @@ const MainListItems = (props) => {
     />
   );
 
+  // my late tasks (red) or, when none is late, the ones for today: visible without opening anything
+  const tasksBadge = (myTasks.overdue + myTasks.today > 0) && (
+    <span className={classes.countBadge} style={myTasks.overdue > 0 ? { background: "#dc2626", color: "#fff" } : undefined} title={`${myTasks.overdue} atrasada(s) · ${myTasks.today} para hoje`}>{myTasks.overdue > 0 ? myTasks.overdue : myTasks.today}</span>
+  );
+
   return (
     <div onClick={drawerClose}>
       {/* the conversations come first: they are the home of the system */}
@@ -264,7 +271,7 @@ const MainListItems = (props) => {
           <ListItemLink to="/crm/painel" primary="Painel do CRM" icon={<LayoutDashboardIcon className="ico" />} collapsed={collapsed} />
         </>
       )}
-      {!isManager(user) && <ListItemLink to="/crm/tarefas" primary="Tarefas" icon={<ListTodoIcon className="ico" />} collapsed={collapsed} />}
+      {!isManager(user) && <ListItemLink to="/crm/tarefas" primary="Tarefas" icon={<ListTodoIcon className="ico" />} collapsed={collapsed} adornment={tasksBadge} />}
       {["admin", "coordenacao", "consultor"].includes(user.profile === "admin" ? "admin" : user.role || "consultor") && (
         <ListItemLink to="/crm/comissoes" primary="Comissões" icon={<WalletIcon className="ico" />} collapsed={collapsed} />
       )}
@@ -326,7 +333,7 @@ const MainListItems = (props) => {
         />
       )}
       {isManager(user) && (
-        <ListItemLink to="/gestao-comercial" alsoActive={["/crm/tarefas", "/crm/retencao", "/ambientacao", "/schedules", "/campaigns", "/reports"]} primary="Gestão Comercial" icon={<GaugeIcon className="ico" />} collapsed={collapsed} />
+        <ListItemLink to="/gestao-comercial" alsoActive={["/crm/tarefas", "/crm/retencao", "/ambientacao", "/schedules", "/campaigns", "/reports"]} primary="Gestão Comercial" icon={<GaugeIcon className="ico" />} collapsed={collapsed} adornment={tasksBadge} />
       )}
       {!isManager(user) && (
         <ListItemLink
