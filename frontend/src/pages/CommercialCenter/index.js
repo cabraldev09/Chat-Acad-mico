@@ -21,7 +21,8 @@ const TAB_HELP = {
   config: "Defina horários de trabalho, metas diárias e a regra de inatividade. Vale para esta tela e para a de cada consultor.",
 };
 // where a click on an alert takes the manager (the task screen opens already filtered on that person)
-const alertLink = (a) => (a.code === "tasks_overdue" ? `/crm/tarefas?scope=all&status=overdue&userId=${a.userId}` : a.link);
+// only the overdue tasks have a screen filtered on the person; every other alert opens that person's detail here (the generic links were MY inbox / MY panel)
+const alertLink = (a) => `/crm/tarefas?scope=all&status=overdue&userId=${a.userId}`;
 
 const COLS = [["messagesSent", "Mensagens"], ["attendances", "Atend."], ["leadsWorked", "Leads"], ["reactivated", "Reativ."], ["pendingReply", "Pendentes"], ["enrollments", "Matrículas"], ["conversion", "Conv."], ["tasksOverdue", "Atrasadas"]];
 
@@ -147,7 +148,7 @@ const Tools = () => {
       {TOOLS.filter((t) => t.needs !== "retention" || canOperateRetention(user)).map((t) => {
         const Icon = t.icon;
         return (
-          <button key={t.to} type="button" onClick={() => history.push(t.to)} style={{ textAlign: "left", cursor: "pointer", font: "inherit", color: "inherit", padding: 18, borderRadius: 18, border: "1px solid rgba(127,140,160,.25)", borderLeft: `3px solid ${t.color}`, background: "transparent", display: "flex", flexDirection: "column", gap: 8 }}>
+          <button key={t.to} type="button" onClick={() => history.push(t.to)} style={{ textAlign: "left", cursor: "pointer", font: "inherit", color: "inherit", padding: 18, borderRadius: 14, border: "1px solid rgba(127,140,160,.22)", background: "transparent", display: "flex", flexDirection: "column", gap: 8 }}>
             <span style={{ width: 40, height: 40, borderRadius: 12, display: "grid", placeItems: "center", background: tint(t.color, 0.16), color: t.color }}><Icon size={20} /></span>
             <b style={{ fontSize: 15.5 }}>{t.label}</b>
             <span style={{ fontSize: 13, opacity: 0.75 }}>{t.text}</span>
@@ -224,7 +225,7 @@ const CommercialCenter = () => {
               <div style={{ marginTop: 8 }}>
                 {data.alerts.length === 0 && <div className={c.sub}>Nada pedindo atenção agora.</div>}
                 {data.alerts.slice(0, 8).map((a, i) => (
-                  <button key={`${a.userId}-${a.code}-${i}`} type="button" className={c.row} onClick={() => { if (a.code === "idle_on_schedule" || a.code.startsWith("below")) { setSelected(a.userId); setTab("consultores"); } else history.push(alertLink(a)); }}>
+                  <button key={`${a.userId}-${a.code}-${i}`} type="button" className={c.row} onClick={() => { if (a.code === "tasks_overdue") history.push(alertLink(a)); else { setSelected(a.userId); setTab("consultores"); } }}>
                     <span style={{ width: 8, height: 8, borderRadius: "50%", background: LEVEL[a.level], flex: "none" }} />
                     <span style={{ flex: 1 }}><b>{a.name}</b> · {a.text}</span>
                   </button>

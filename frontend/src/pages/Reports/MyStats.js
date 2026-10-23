@@ -44,7 +44,7 @@ const MyStats = () => {
             <div key={label} data-hero={label}>
               <div style={{ fontSize: 34, fontWeight: 800, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums" }}>{num(value)}{target > 0 ? <span style={{ fontSize: 15, opacity: 0.8 }}> / {num(target)}</span> : null}</div>
               <div style={{ fontSize: 12.5, opacity: 0.85 }}>{label}</div>
-              {target > 0 && <div style={{ marginTop: 6 }}><Progress value={value} max={target} color="#FEF84C" /></div>}
+              {target > 0 && <div style={{ marginTop: 6 }}><Progress value={value} max={target} color="#0693E3" /></div>}
             </div>
           ))}
         </div>
