@@ -9,7 +9,12 @@
 set -euo pipefail
 cd /opt/chat-academico
 exec 9>/var/lock/chat-academico-update.lock
-flock -n 9 || exit 0
+# the automatic run (cron) just leaves when another update is running; a forced one (deploy by GitHub) WAITS its turn and never reports "ok" without having updated
+if [ "${1:-}" = "--force" ]; then
+  flock -w 900 9 || { echo "ERRO: outra atualização segurou o bloqueio por mais de 15 minutos"; exit 1; }
+else
+  flock -n 9 || exit 0
+fi
 
 # Updating restarts the API for about a minute, so the automatic update waits for the quiet hours (22h to 6h in
 # Porto Velho). "update.sh --force" updates right away.
@@ -26,6 +31,11 @@ if [ "$LOCAL" = "$REMOTE" ] && [ "${1:-}" != "--force" ]; then exit 0; fi
 if [ "${1:-}" != "--force" ] && [ -f .failed-commit ] && [ "$(cat .failed-commit)" = "$REMOTE" ]; then exit 0; fi
 
 log() { echo "$(date '+%F %T') $*"; }
+# GitHub's deploy asks for "this commit": when the version in the air already is it (the cron got there first), nothing is restarted
+if [ "${WANT_SHA:-}" != "" ] && [ "$(docker exec chat-academico-api-1 printenv GIT_SHA 2>/dev/null | cut -c1-7)" = "${WANT_SHA:0:7}" ] && [ "$(docker inspect -f '{{.State.Health.Status}}' chat-academico-api-1 2>/dev/null)" = "healthy" ]; then
+  log "a versão ${WANT_SHA:0:7} já está no ar e saudável: nada a fazer"
+  exit 0
+fi
 log "atualizando ${LOCAL:0:7} -> ${REMOTE:0:7}"
 
 # 1) a migration in the new commit: a fresh dump of the database first (a failure is logged, and the update goes on only when a recent dump exists)

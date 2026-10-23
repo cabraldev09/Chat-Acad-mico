@@ -32,6 +32,8 @@ export interface TurnInput {
   endsWithQuestion?: boolean;
   // the person took back the interest in buying ("ainda não vou me matricular")
   retract?: boolean;
+  // a step of the checklist of the stage is still pending: the happy-path exits (proposal, qualified handover) wait for it
+  stepsPending?: boolean;
   // the block of the flow where it happened (for the gaps in the knowledge base)
   nodeId?: string | null;
   now?: Date;
@@ -192,14 +194,14 @@ export const commercialTurn = async (ports: CommercialPorts, input: TurnInput): 
   else if (supportExit) exit = supportExit;
   else if (ask) exit = null;
   else if (noInterest) exit = "sem_interesse";
-  else if (s.readyForProposal) exit = "proposta";
+  else if (s.readyForProposal && !input.stepsPending) exit = "proposta";
   else if (followUp) exit = "follow_up";
   else if (input.unknownQuestion || intent === "unknown") exit = Number(s.slots.unknownStreak || 0) >= 3 ? "human" : "off";
   // qualified and out of questions: a person of the polo takes it, ready (the brief says what the lead wants)
   else if (Number(s.slots.objectionCount || 0) >= OBJECTION_LIMIT && input.objection) exit = "human";
   // a qualified lead is handed to the consultant when nothing is left hanging: not while a grade was asked and not sent, and not in the same
   // message that asks the person something (unless the conversation already went on for two more answers)
-  else if (s.slots.readyForConsultant && input.replied && !(intent === "curriculum" && !s.slots.gradeSent) && (!input.endsWithQuestion || Number(s.slots.qualifiedReplies || 0) >= (ports.qualifyAfter || 2) + 2)) exit = "human";
+  else if (s.slots.readyForConsultant && !input.stepsPending && input.replied && !(intent === "curriculum" && !s.slots.gradeSent) && (!input.endsWithQuestion || Number(s.slots.qualifiedReplies || 0) >= (ports.qualifyAfter || 2) + 2)) exit = "human";
   const why =
     supportExit ? (supportExit === "secretaria" ? "secretary" : "tutoring") :
     exit === "human" && !human && !input.unknownQuestion && intent !== "unknown"

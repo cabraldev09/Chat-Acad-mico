@@ -26,6 +26,7 @@ import AiAgent from "../../models/AiAgent";
 import { Effects, StageTurn, StageTurnArgs, matchPolo } from "./Engine";
 import { FlowNode } from "./Graph";
 import { cleanStage } from "./StageSpec";
+import { stepsOf, takeSteps } from "./StepLock";
 import { findAgentForTicket, loadHistory, respond } from "../AiServices/RunAiAgent";
 import { HandoffReason, handoffToHuman } from "../AiServices/Handoff";
 import { captureUnknown, notifyOwner } from "../AiServices/Learning";
@@ -111,6 +112,7 @@ export const ticketEffects = (ticket: Ticket, flowName: string, flowCtx: FlowCon
 
   const turnOnce = async ({ node, vars, input, turns }: StageTurnArgs): Promise<StageTurn> => {
       const stage = cleanStage(node.data);
+      const steps = takeSteps(vars, node.id);
       const agent = await agentFor(stage.agentId);
       // nobody to talk as: the team takes the conversation
       if (!agent) return { text: "", exit: "human" };
@@ -162,11 +164,11 @@ export const ticketEffects = (ticket: Ticket, flowName: string, flowCtx: FlowCon
           } else audioUnreadable = true;
         }
         const prior = history.filter(h => h.role === "user").slice(0, -1).slice(-4).map(h => h.content);
-        const turn = await commercialAiTurn({ agent, stage, nodeId: node.id, flowId: flowCtx.flowId, ports, ticket, lead, history, input: said, sandbox: false, contactName: ticket.contact?.name, turns, media, priorUserTexts: prior, audioUnreadable, capped });
+        const turn = await commercialAiTurn({ agent, stage, nodeId: node.id, flowId: flowCtx.flowId, ports, ticket, lead, history, input: said, sandbox: false, contactName: ticket.contact?.name, turns, media, priorUserTexts: prior, audioUnreadable, capped, ...steps });
         if (turn.why) vars.__why = turn.why;
         // what the person was told is not said again by the handoff of the exit
         if (turn.text && turn.exit) vars.__spoke = turn.exit;
-        return { text: turn.text, exit: turn.exit, collected: turn.collected };
+        return { text: turn.text, exit: turn.exit, collected: turn.collected, why: turn.why, stepsDone: turn.stepsDone };
       }
       const lastText = last && last.role === "user" ? last.content : "";
       // an FAQ with a ready answer needs no model at all
@@ -176,13 +178,13 @@ export const ticketEffects = (ticket: Ticket, flowName: string, flowCtx: FlowCon
       }
       const known: Record<string, string> = { ...(ticket.aiSlots || {}) };
       stage.fields.forEach(f => { if (vars[f.key]) known[f.key] = String(vars[f.key]); });
-      const result = await respond(agent, { ticket, history, summary: ticket.aiSummary, collected: known, stage, flowId: flowCtx.flowId, nodeId: node.id });
+      const result = await respond(agent, { ticket, history, summary: ticket.aiSummary, collected: known, stage, flowId: flowCtx.flowId, nodeId: node.id, ...steps });
       let text = result.text;
       if (result.exit === "off") {
         if (agent.learnFromTeam !== false && lastText) await captureUnknown(agent, ticket, lastText, ticket.contact?.name);
         if (!text) text = (agent.persona && agent.persona.unknownMessage) || DEFAULT_UNKNOWN;
       }
-      return { text, exit: result.exit || null, collected: result.collected };
+      return { text, exit: result.exit || null, collected: result.collected, stepsDone: result.stepsDone };
     };
 
   // a person (or another automation) took the conversation, or it was closed, while the AI was thinking
@@ -425,6 +427,11 @@ export const ticketEffects = (ticket: Ticket, flowName: string, flowCtx: FlowCon
     async humanHandoff(_node, exit, vars) {
       const agent = await agentFor(null);
       await ticket.update({ chatbotNodeId: FLOW_DONE });
+      // the stage ended by another way out with steps of its checklist still pending: the team is told what was left
+      if (vars?.__stepsMissing) {
+        const lead = await Lead.findOne({ where: { contactId: ticket.contactId }, attributes: ["id"] });
+        if (lead) await addActivity(lead.id, null, "system", `O agente encerrou a etapa sem cumprir: ${String(vars.__stepsMissing)}`.slice(0, 480)).catch(() => undefined);
+      }
       // a stage that ended by itself already said goodbye; for the others the person is told a colleague continues
       if (agent && exit !== "off" && vars?.__spoke !== exit) await this.say(agent.handoffMessage || DEFAULT_HANDOFF);
       if (agent) {
@@ -466,6 +473,8 @@ export interface StageTrace {
   tokens: { input: number; output: number; cacheRead: number };
   // the commercial agent: what the rules did in this turn (intent, slots, funnel before/after, tasks, notes, milestones)
   commercial?: any;
+  // the checklist of the stage: how many steps it has and which are done
+  steps?: { total: number; done: number[] };
 }
 
 export const simEffects = (sample: SimSample = {}, opts: { agent?: AiAgent | null; flowId?: number | null } = {}): { fx: Effects; messages: string[]; actions: string[]; traces: StageTrace[] } => {
@@ -557,6 +566,7 @@ export const simEffects = (sample: SimSample = {}, opts: { agent?: AiAgent | nul
     // the AI really answers (with the model of the agent), but nothing is sent or saved: the history lives in the state of the simulator
     async aiTurn({ node, vars, input, turns }: StageTurnArgs): Promise<StageTurn> {
       const stage = cleanStage(node.data);
+      const steps = takeSteps(vars, node.id);
       const agent = opts.agent || null;
       if (!agent) return { text: "(Simulação: nenhum agente de IA ativo para conversar. Em produção a conversa iria para a equipe.)", exit: "human" };
       const hist: Array<{ role: "user" | "assistant"; content: string }> = Array.isArray(vars.__hist) ? vars.__hist : [];
@@ -566,7 +576,7 @@ export const simEffects = (sample: SimSample = {}, opts: { agent?: AiAgent | nul
         const world = worldOf(vars);
         const ports = simPorts(world);
         const before = { stage: world.stageKey, state: mirror(world.state) };
-        const turn = await commercialAiTurn({ agent, stage, nodeId: node.id, flowId: opts.flowId, ports, ticket: null, lead: null, history, input: input === null || input === "" ? null : input, sandbox: true, contactName: name, turns });
+        const turn = await commercialAiTurn({ agent, stage, nodeId: node.id, flowId: opts.flowId, ports, ticket: null, lead: null, history, input: input === null || input === "" ? null : input, sandbox: true, contactName: name, turns, ...steps });
         if (turn.text) hist.push({ role: "assistant", content: turn.text });
         vars.__hist = hist.slice(-20);
         ports.audit.forEach(a => actions.push(a.text));
@@ -574,19 +584,19 @@ export const simEffects = (sample: SimSample = {}, opts: { agent?: AiAgent | nul
           nodeId: node.id, tools: turn.trace.tools.map(t => t.name), collected: turn.collected || {}, exit: turn.exit || null, sources: turn.trace.knowledge, tokens: turn.trace.tokens,
           commercial: { ...turn.trace, before, after: { stage: world.stageKey, state: mirror(world.state) }, audit: ports.audit }
         });
-        return { text: turn.text, exit: turn.exit || null, collected: turn.collected };
+        return { text: turn.text, exit: turn.exit || null, collected: turn.collected, why: turn.why, stepsDone: turn.stepsDone };
       }
       const known: Record<string, string> = {};
       stage.fields.forEach(f => { if (vars[f.key]) known[f.key] = String(vars[f.key]); });
-      const result = await respond(agent, { ticket: null, history, collected: known, sandbox: true, stage, flowId: opts.flowId, nodeId: node.id });
+      const result = await respond(agent, { ticket: null, history, collected: known, sandbox: true, stage, flowId: opts.flowId, nodeId: node.id, ...steps });
       let text = result.text;
       if (result.exit === "off" && !text) text = (agent.persona && agent.persona.unknownMessage) || DEFAULT_UNKNOWN;
       if (text) hist.push({ role: "assistant", content: text });
       vars.__hist = hist.slice(-20);
-      traces.push({ nodeId: node.id, tools: result.tools, collected: result.collected, exit: result.exit || null, sources: result.sources, tokens: result.tokens });
+      traces.push({ nodeId: node.id, tools: result.tools, collected: result.collected, exit: result.exit || null, sources: result.sources, tokens: result.tokens, steps: { total: stepsOf(stage).length, done: result.stepsDone || [] } });
       // the AI already said where the person goes ("vou encaminhar para a tutoria"): the handoff does not say it again
       if (text && result.exit && !["off", "limit"].includes(result.exit)) vars.__spoke = result.exit;
-      return { text, exit: result.exit || null, collected: result.collected };
+      return { text, exit: result.exit || null, collected: result.collected, stepsDone: result.stepsDone };
     },
     async humanHandoff(_node, exit) { actions.push(`Transfere para ${exit === "tutoria" ? "a tutoria do polo" : exit === "secretaria" ? "a secretaria do polo" : "a equipe"} (${exit === "limit" ? "limite de turnos" : exit === "off" ? "fora do escopo" : exit === "tutoria" ? "precisa da tutoria" : exit === "secretaria" ? "precisa da secretaria" : "pediu uma pessoa"})`); },
     async startFlow(flowId) { actions.push(`Inicia o fluxo ${flowId}`); return true; }

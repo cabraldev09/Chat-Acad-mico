@@ -20,6 +20,7 @@ import { BOLSA_ASKS, bolsaDataFrom, bolsaRequestFor } from "./BolsaData";
 import { stripGradeAnnouncement } from "./GradeChoice";
 import { studentFacts } from "./StudentFacts";
 import { mirror } from "./Slots";
+import { pendingSteps } from "../FlowServices/StepLock";
 
 // One turn of the commercial agent, the same in the real conversation and in the simulator (only the ports and the history change):
 //   1. what is obvious (a request for a person, a price) is answered by the system, without the model;
@@ -61,6 +62,9 @@ export interface TurnDeps {
   audioUnreadable?: boolean;
   // the daily limit of tokens was reached: only the answers that need no model are still given
   capped?: boolean;
+  // the checklist of the stage: the steps (1-based) already done in this run, and what the lock refused to end in the last turn
+  stepsDone?: number[];
+  stepsHeld?: string;
 }
 
 export interface MediaItem {
@@ -265,8 +269,10 @@ export const commercialAiTurn = async (d: TurnDeps): Promise<CommercialTurnResul
   // 2) the model, once
   const result = await respond(d.agent, {
     ticket: d.ticket, history: d.history, summary: state.summary, collected: null, sandbox: d.sandbox, stage: d.stage, flowId: d.flowId, nodeId: d.nodeId,
-    commercial: { slots: mirror(state) }, topics: topicsOf(lastText), leadId: state.leadId || null
+    commercial: { slots: mirror(state) }, topics: topicsOf(lastText), leadId: state.leadId || null, stepsDone: d.stepsDone, stepsHeld: d.stepsHeld
   });
+  const stepsDone = result.stepsDone || d.stepsDone || [];
+  const stepsPending = pendingSteps(d.stage, stepsDone).length > 0;
   const turn = result.turn || {};
   const intent = d.input === null ? null : String(turn.intent || "other");
   const unknownQuestion = turn.pergunta_sem_resposta ? String(turn.pergunta_sem_resposta) : intent === "unknown" ? lastText : null;
@@ -288,7 +294,7 @@ export const commercialAiTurn = async (d: TurnDeps): Promise<CommercialTurnResul
     followUp: intent === "follow_up" ? { reason: turn.motivo_retorno || turn.duvida_principal || null, at: turn.retorno_em || null } : null,
     unknownQuestion, objection: turn.objecao || (intent === "objection" ? lastText : null), question: turn.duvida_principal || null, topics: result.topics,
     firstContactSent: d.input === null && !!text, nodeId: d.nodeId, retract: d.input !== null && retractsBuying(lastText), hasPolo: !!d.lead?.poloId,
-    endsWithQuestion: /\?[\s"”')]*$/.test(String(text || "").trim())
+    endsWithQuestion: /\?[\s"”')]*$/.test(String(text || "").trim()), stepsPending
   });
 
   // what the person reads is also decided by the rules; what the model wrote is checked against what the tools and the base returned
@@ -316,7 +322,7 @@ export const commercialAiTurn = async (d: TurnDeps): Promise<CommercialTurnResul
   // no reason from the rules to leave: the stage ends by itself when what it asks for is known, or by the exit the model chose
   if (!hook.exit) {
     if (result.exit) hook.exit = result.exit;
-    else if (stageFieldsDone(d.stage.fields, state.slots)) hook.exit = "done";
+    else if (stageFieldsDone(d.stage.fields, state.slots) && !stepsPending) hook.exit = "done";
   }
   if (hook.exit === "off" && d.ticket && !d.sandbox && d.agent.learnFromTeam !== false && unknownQuestion) {
     await captureUnknown(d.agent, d.ticket, unknownQuestion, d.contactName || undefined).catch(() => undefined);
@@ -330,6 +336,7 @@ export const commercialAiTurn = async (d: TurnDeps): Promise<CommercialTurnResul
     exit: hook.exit,
     ...(hook.exit === "human" && Number(state.slots.unknownStreak || 0) >= 3 ? { why: "loop" } : hook.why ? { why: hook.why } : {}),
     collected: flat(hook.trace.changed),
+    stepsDone,
     trace: {
       ...base, userText: lastText, deterministic: false, intent, tools: result.toolLog, knowledge: result.sources, commercial: hook.trace, entry: ENTRY_LABEL[state.slots.entryType || "unknown"],
       llmCalls: result.rounds, cacheHits: result.cacheHits, tokens: result.tokens, latencyMs

@@ -139,7 +139,8 @@ jobs:
           npm run build
           psql -h localhost -U postgres -c "CREATE DATABASE telas"
           npx sequelize db:migrate
-          npx sequelize db:seed:all
+          # the known administrator of the tests is only created when NODE_ENV is "test" (a real installation never gets it)
+          NODE_ENV=test npx sequelize db:seed:all
           nohup node dist/server.js > /tmp/api.log 2>&1 &
           for i in $(seq 1 60); do curl -fs http://localhost:8080/health && break; sleep 2; done
       - name: Frontend (build de produção) no ar

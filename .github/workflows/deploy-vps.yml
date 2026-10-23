@@ -46,14 +46,16 @@ jobs:
       - name: Atualiza a VPS
         env:
           GH_TOKEN: ${{ github.token }}
+          WANT_SHA: ${{ github.sha }}
           REPO: ${{ github.repository }}
         run: |
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes -o ConnectTimeout=20 root@"$VPS_HOST" "GH_TOKEN='$GH_TOKEN' REPO='$REPO' bash -s" <<'REMOTE'
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes -o ConnectTimeout=20 root@"$VPS_HOST" "GH_TOKEN='$GH_TOKEN' REPO='$REPO' WANT_SHA='$WANT_SHA' bash -s" <<'REMOTE'
           set -euo pipefail
           cd /opt/chat-academico
           git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git"
           trap 'git remote set-url origin "https://github.com/${REPO}.git"' EXIT
           ./deploy/vps/update.sh --force
           # a porta 8080 só existe dentro do contêiner (o Caddy é quem fala com ela): o teste final entra nele
-          docker exec chat-academico-api-1 node -e "require('http').get('http://localhost:'+(process.env.PORT||8080)+'/health',r=>{let b='';r.on('data',d=>b+=d);r.on('end',()=>{console.log(r.statusCode,b);process.exit(r.statusCode===200?0:1)})}).on('error',e=>{console.log(e.message);process.exit(1)})"
+          # e a versão que responde TEM de ser a deste commit (o deploy nunca diz "ok" sem ter atualizado)
+          docker exec chat-academico-api-1 node -e "const want=process.argv[1].slice(0,7);require('http').get('http://localhost:'+(process.env.PORT||8080)+'/health',r=>{let b='';r.on('data',d=>b+=d);r.on('end',()=>{console.log(r.statusCode,b);let v='';try{v=JSON.parse(b).version||''}catch(e){}process.exit(r.statusCode===200&&v===want?0:1)})}).on('error',e=>{console.log(e.message);process.exit(1)})" "$WANT_SHA"
           REMOTE

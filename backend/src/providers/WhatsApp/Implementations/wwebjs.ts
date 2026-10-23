@@ -609,6 +609,9 @@ const INIT_TIMEOUT_MS = Number(process.env.WHATSAPP_INIT_TIMEOUT_MS) || 4 * 60 *
 const HEARTBEAT_MS = Number(process.env.WHATSAPP_HEARTBEAT_MS) || 90 * 1000;
 const initTimers = new Map<number, NodeJS.Timeout>();
 const heartbeats = new Map<number, NodeJS.Timeout>();
+// the sessions whose "ready" event came (the page finished injecting): the others are checked by the watchdog
+const readySeen = new Set<number>();
+const healTried = new Map<number, number>();
 const retrying = new Set<number>();
 const clearInitTimer = (id: number) => {
   const t = initTimers.get(id);
@@ -626,6 +629,7 @@ const closeClient = async (id: number): Promise<void> => {
   clearReadyTimer(id);
   const c = clients.get(id);
   clients.delete(id);
+  readySeen.delete(id);
   if (c) await Promise.race([c.destroy().catch(() => undefined), new Promise(r => setTimeout(r, 15000))]);
 };
 // the API is stopping (a new version, a restart): every WhatsApp Web closes properly, so the profile of the browser is not left half written
@@ -689,6 +693,38 @@ const markAlive = (whatsappId: number): void => {
     .catch(() => undefined);
 };
 
+// What the page of each number looks like from inside: registered for sending, "ready" seen, the state WhatsApp Web reports and whether the helpers of
+// whatsapp-web.js are injected in the page (without them nothing can be read or sent, even when the page says CONNECTED). Logged by the watchdog.
+export interface SessionHealth { id: number; registered: boolean; ready: boolean; state: string | null; injected: boolean | null }
+export const sessionHealth = async (): Promise<SessionHealth[]> => {
+  const out: SessionHealth[] = [];
+  for (const [id, wbot] of clients) {
+    // eslint-disable-next-line no-await-in-loop
+    const state = await withTimeout(wbot.getState() as Promise<string>, 15000).catch(() => null);
+    // eslint-disable-next-line no-await-in-loop
+    const injected = await withTimeout(wbot.pupPage!.evaluate(() => !!((window as any).WWebJS && (window as any).Store)), 15000).catch(() => null);
+    out.push({ id, registered: sessions.some(s => s.id === id), ready: readySeen.has(id), state: state ? String(state) : null, injected });
+  }
+  return out;
+};
+
+// A page that says CONNECTED but never had its helpers injected cannot read or send anything: the injection is run again (once every 10 minutes per number).
+const healInjection = async (id: number, wbot: Session): Promise<void> => {
+  if (readySeen.has(id) || Date.now() - (healTried.get(id) || 0) < 10 * 60000) return;
+  healTried.set(id, Date.now());
+  try {
+    const injected = await withTimeout(wbot.pupPage!.evaluate(() => !!((window as any).WWebJS && (window as any).Store)), 15000);
+    if (injected) {
+      logger.info(`Session ${id}: a página está conectada e com os recursos carregados, mas o evento "ready" não veio; seguindo sem ele`);
+      return;
+    }
+    logger.warn(`Session ${id}: a página está conectada mas sem os recursos do whatsapp-web.js; rodando a injeção de novo`);
+    await withTimeout((wbot as any).inject(), 120000);
+  } catch (err) {
+    logger.error(`Session ${id}: a injeção de novo falhou: ${(err as Error).message}`);
+  }
+};
+
 // The watchdog asks the page itself (not the database) whether it is connected, and corrects the status when WhatsApp Web says CONNECTED.
 export const reconcileStatuses = async (): Promise<void> => {
   for (const [id, wbot] of clients) {
@@ -709,6 +745,8 @@ export const reconcileStatuses = async (): Promise<void> => {
       clearReadyTimer(id);
       clearInitTimer(id);
       reconnectAttempts.set(id, 0);
+      // eslint-disable-next-line no-await-in-loop
+      await healInjection(id, wbot);
       if (row.status !== "CONNECTED") {
         // eslint-disable-next-line no-await-in-loop
         await row.update({ status: "CONNECTED", qrcode: "" });
@@ -1288,6 +1326,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
     });
 
     wbot.on("ready", async () => {
+      readySeen.add(whatsapp.id);
       clearReadyTimer(whatsapp.id);
       clearInitTimer(whatsapp.id);
       logger.info(`Session: ${sessionName} READY (${memoryNote()})`);
