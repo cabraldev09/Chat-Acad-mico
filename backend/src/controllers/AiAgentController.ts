@@ -15,6 +15,8 @@ import Ticket from "../models/Ticket";
 import Course from "../models/Course";
 import { addDocument, indexDocument, ensureLegacy, searchChunks } from "../services/AiServices/Kb";
 import AiLearning from "../models/AiLearning";
+import AiRule from "../models/AiRule";
+import { KINDS, RuleKind, coachTurn, fromConversation, invalidateTraining } from "../services/AiServices/Training";
 import { approve, discard } from "../services/AiServices/Learning";
 import { respond } from "../services/AiServices/RunAiAgent";
 import { priceOf, tokensToday } from "../services/AiServices/Usage";
@@ -490,4 +492,99 @@ export const learningTeach = async (req: Request, res: Response): Promise<Respon
   if (!question || !answer) throw new AppError("ERR_LEARNING_EMPTY");
   const row = await AiLearning.create({ agentId: agent.id, question: question.slice(0, 1000), suggestedAnswer: answer, status: "para_revisar", answerSource: "dono" } as any);
   return res.status(201).json(await approve(row, { asFaq: !!req.body?.asFaq, shared: !!req.body?.shared }));
+};
+
+// ------------------------------------------------------------------ the trainer: what the owner taught the agent
+
+const asTurns = (raw: any): Array<{ role: "user" | "assistant"; content: string }> =>
+  (Array.isArray(raw) ? raw : [])
+    .filter((m: any) => m && ["user", "assistant"].includes(m.role) && String(m.content || "").trim())
+    .map((m: any) => ({ role: m.role, content: String(m.content).slice(0, 2000) }));
+
+const aiFailure = (err: any): AppError => {
+  if (err && err.message === "ERR_AI_NO_API_KEY") return new AppError("ERR_AI_NO_API_KEY");
+  return new AppError("ERR_AI_FAILED", 502);
+};
+
+export const ruleList = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await loadAgent(req.params.id);
+  const rows = await AiRule.findAll({ where: { agentId: agent.id }, order: [["position", "ASC"], ["id", "ASC"]] });
+  return res.json(rows);
+};
+
+const cleanKind = (k: any): RuleKind => (KINDS.includes(k) ? k : "regra");
+
+export const ruleCreate = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await loadAgent(req.params.id);
+  const text = String(req.body?.text || "").trim();
+  if (text.length < 3) throw new AppError("ERR_RULE_EMPTY");
+  const last = await AiRule.max("position", { where: { agentId: agent.id } });
+  const row = await AiRule.create({ agentId: agent.id, kind: cleanKind(req.body?.kind), text: text.slice(0, 1200), position: Number(last || 0) + 1, source: String(req.body?.source || "treino").slice(0, 20), createdBy: Number(req.user.id) } as any);
+  invalidateTraining(agent.id);
+  return res.status(201).json(row);
+};
+
+export const ruleBulk = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await loadAgent(req.params.id);
+  const items = (Array.isArray(req.body?.items) ? req.body.items : []).slice(0, 60);
+  let position = Number((await AiRule.max("position", { where: { agentId: agent.id } })) || 0);
+  const made: AiRule[] = [];
+  for (const it of items) {
+    const text = String(it?.text || "").trim();
+    if (text.length < 3) continue;
+    position += 1;
+    // eslint-disable-next-line no-await-in-loop
+    made.push(await AiRule.create({ agentId: agent.id, kind: cleanKind(it.kind), text: text.slice(0, 1200), position, source: String(req.body?.source || "treino").slice(0, 20), createdBy: Number(req.user.id) } as any));
+  }
+  invalidateTraining(agent.id);
+  return res.status(201).json(made);
+};
+
+export const ruleUpdate = async (req: Request, res: Response): Promise<Response> => {
+  const row = await AiRule.findByPk(req.params.id);
+  if (!row) throw new AppError("ERR_NOT_FOUND", 404);
+  const patch: any = {};
+  if (req.body?.text !== undefined) {
+    const text = String(req.body.text).trim();
+    if (text.length < 3) throw new AppError("ERR_RULE_EMPTY");
+    patch.text = text.slice(0, 1200);
+  }
+  if (req.body?.kind !== undefined) patch.kind = cleanKind(req.body.kind);
+  if (req.body?.active !== undefined) patch.active = !!req.body.active;
+  if (req.body?.position !== undefined) patch.position = Number(req.body.position) || 0;
+  await row.update(patch);
+  invalidateTraining(row.agentId);
+  return res.json(row);
+};
+
+export const ruleRemove = async (req: Request, res: Response): Promise<Response> => {
+  const row = await AiRule.findByPk(req.params.id);
+  if (!row) throw new AppError("ERR_NOT_FOUND", 404);
+  await row.destroy();
+  invalidateTraining(row.agentId);
+  return res.json({ message: "deleted" });
+};
+
+// The owner talks to the agent to teach it: the agent answers and proposes what it understood; nothing is saved until the owner accepts.
+export const coach = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await loadAgent(req.params.id);
+  const messages = asTurns(req.body?.messages);
+  if (!messages.length || messages[messages.length - 1].role !== "user") throw new AppError("ERR_AI_NO_HISTORY");
+  try {
+    return res.json(await coachTurn(agent, messages));
+  } catch (err) {
+    throw aiFailure(err);
+  }
+};
+
+// A tester conversation turned into proposed lessons, for the owner to review.
+export const trainFromConversation = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await loadAgent(req.params.id);
+  const messages = asTurns(req.body?.messages);
+  if (messages.length < 2) throw new AppError("ERR_AI_NO_HISTORY");
+  try {
+    return res.json({ proposed: await fromConversation(agent, messages) });
+  } catch (err) {
+    throw aiFailure(err);
+  }
 };
