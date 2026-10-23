@@ -28,6 +28,7 @@ const q = async (title, sql) => {
   await q("mensagens enviadas pelo sistema (OutboundMessages, 6 h)", `SELECT status, COUNT(*) AS n, MAX("createdAt") AS ultima FROM "OutboundMessages" WHERE "createdAt" > now() - interval '6 hours' GROUP BY 1`);
   await q("últimas enviadas com erro", `SELECT id, "ticketId", status, left(COALESCE(error,''), 160) AS erro, "createdAt" FROM "OutboundMessages" WHERE status <> 'sent' AND "createdAt" > now() - interval '6 hours' ORDER BY id DESC LIMIT 8`);
   await q("erros de tela (ClientErrors, 6 h)", `SELECT route, code, left(message, 200) AS mensagem, count(*) AS n, max("createdAt") AS ultima FROM "ClientErrors" WHERE "createdAt" > now() - interval '6 hours' GROUP BY 1,2,3 ORDER BY n DESC LIMIT 15`);
+  await q("mensagens por hora e conexão (últimas 20 h, hora UTC)", `SELECT t."whatsappId" AS wa, to_char(date_trunc('hour', m."createdAt"), 'DD HH24"h"') AS hora, COUNT(*) FILTER (WHERE m."fromMe" = false) AS recebidas, COUNT(*) FILTER (WHERE m."fromMe" = true) AS enviadas FROM "Messages" m JOIN "Tickets" t ON t.id = m."ticketId" WHERE m."createdAt" > now() - interval '20 hours' GROUP BY 1, date_trunc('hour', m."createdAt") ORDER BY 1, date_trunc('hour', m."createdAt")`);
   await q("conexões (estado agora)", `SELECT id, name, status, "statusSince", "connectedSince" FROM "Whatsapps" ORDER BY id`);
   process.exit(0);
 })().catch(e => { console.error(e.message); process.exit(1); });
