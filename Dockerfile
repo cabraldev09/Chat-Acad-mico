@@ -29,4 +29,6 @@ COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 EXPOSE 8080
 # the entrypoint hands the volume to the "node" user and starts the CMD without root privileges
 ENTRYPOINT ["dumb-init", "--", "/usr/local/bin/docker-entrypoint.sh"]
-CMD ["sh", "-c", "mkdir -p \"${UPLOAD_DIR:-public}\" && node scripts/db-preflight.js && npx sequelize db:migrate && node scripts/bootstrap-production.js && node dist/server.js"]
+# "exec": the server replaces the shell, so it receives the stop signal (SIGTERM) and closes the WhatsApp browsers cleanly. Without it the shell kept the signal, Docker killed the
+# server after 60 s, and every restart lost the WhatsApp logins (a new QR Code for each number).
+CMD ["sh", "-c", "mkdir -p \"${UPLOAD_DIR:-public}\" && node scripts/db-preflight.js && npx sequelize db:migrate && node scripts/bootstrap-production.js && exec node dist/server.js"]
