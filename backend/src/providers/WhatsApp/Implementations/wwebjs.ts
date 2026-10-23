@@ -589,7 +589,8 @@ const RECONNECT_MAX_ATTEMPTS = 6;
 
 // After the QR Code is read, WhatsApp Web must finish loading ("ready"). When it never does (little memory
 // for Chromium, or a WhatsApp Web update) the screen would stay on "QR CODE" forever: this timer says so and retries.
-const READY_TIMEOUT_MS = 150000;
+// a number with a long history takes minutes to load WhatsApp Web (it sits at 99% for a while): giving up early restarts the browser and the load begins again
+const READY_TIMEOUT_MS = Number(process.env.WHATSAPP_READY_TIMEOUT_MS) || 10 * 60 * 1000;
 const readyTimers = new Map<number, NodeJS.Timeout>();
 const clearReadyTimer = (whatsappId: number) => {
   const t = readyTimers.get(whatsappId);
@@ -1225,7 +1226,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
         setTimeout(async () => {
           readyTimers.delete(whatsapp.id);
           logger.error(
-            `Session: ${sessionName} não ficou pronta em ${READY_TIMEOUT_MS / 1000}s depois de ler o QR Code (${memoryNote()}). ` +
+            `Session: ${sessionName} não ficou pronta em ${READY_TIMEOUT_MS / 1000}s depois de autenticar (${memoryNote()}). ` +
               "Causas comuns: pouca memória no servidor para o Chromium, ou o WhatsApp Web mudou. Reiniciando a sessão."
           );
           try {

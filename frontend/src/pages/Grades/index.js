@@ -1,6 +1,6 @@
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "react-toastify";
-import { Briefcase, ChevronDown, ClipboardCopy, Download, FileText, Filter, GraduationCap, Route, Search, Send, ShieldCheck, SlidersHorizontal, Trash2, X } from "lucide-react";
+import { Briefcase, ChevronDown, ClipboardCopy, Download, FileText, Filter, GraduationCap, Route, Search, Send, SlidersHorizontal, Trash2, UploadCloud, X } from "lucide-react";
 
 import { AuthContext } from "../../context/Auth/AuthContext";
 import { isManager } from "../../utils/access";
@@ -144,6 +144,7 @@ const Grades = () => {
   const [sendFor, setSendFor] = useState(null);
   const [delFor, setDelFor] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [dragging, setDragging] = useState(false);
   const fileInput = useRef(null);
   const timer = useRef(null);
 
@@ -173,15 +174,6 @@ const Grades = () => {
     setBusy(false);
     if (fileInput.current) fileInput.current.value = "";
   };
-  const importDefaults = async () => {
-    setBusy(true);
-    try {
-      const { data: r } = await api.post("/grades/import-defaults", {});
-      toast.success(`Grades padrão: ${r.created} nova(s), ${r.updated} atualizada(s), ${r.unchanged} sem mudança.`);
-      load();
-    } catch (e) { toastError(e); }
-    setBusy(false);
-  };
   const remove = async () => {
     try { await api.delete(`/grades/${delFor.id}`); toast.success("Grade excluída."); setDelFor(null); load(); } catch (e) { toastError(e); }
   };
@@ -201,17 +193,20 @@ const Grades = () => {
       </div>
 
       {manager && (
-        <Card className="mb-6 shadow-sm">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base"><ShieldCheck className="size-4 text-brand-cyan-700" /> Anexar uma matriz curricular</CardTitle>
-            <p className="text-sm text-muted-foreground">Envie o PDF da matriz (vários de uma vez, se quiser). O sistema lê grau, área, duração, estágios e TCC e confere com o documento.</p>
-          </CardHeader>
-          <CardContent className="flex flex-wrap items-center gap-2">
-            <input ref={fileInput} type="file" accept="application/pdf,.pdf" multiple className="hidden" onChange={(e) => upload(e.target.files)} />
-            <Button className="h-9 px-3" disabled={busy} onClick={() => fileInput.current && fileInput.current.click()}>{busy ? "Lendo os PDFs…" : "Enviar grades (PDF)"}</Button>
-            <Button variant="outline" className="h-9 px-3" disabled={busy} onClick={importDefaults}>Importar grades padrão</Button>
-          </CardContent>
-        </Card>
+        <div
+          role="button" tabIndex={0} aria-label="Selecionar ou arrastar os PDFs das matrizes curriculares" aria-busy={busy}
+          onClick={() => { if (!busy && fileInput.current) fileInput.current.click(); }}
+          onKeyDown={(e) => { if (!busy && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); if (fileInput.current) fileInput.current.click(); } }}
+          onDragOver={(e) => { e.preventDefault(); if (!busy) setDragging(true); }} onDragLeave={() => setDragging(false)}
+          onDrop={(e) => { e.preventDefault(); setDragging(false); if (!busy) upload(e.dataTransfer.files); }}
+          className={cn("mb-6 flex min-h-44 cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed p-6 text-center shadow-inner transition duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-cyan focus-visible:ring-offset-2 sm:p-8", dragging ? "scale-[1.01] border-brand-cyan bg-gradient-to-br from-brand-cyan-50 to-white" : "border-slate-300 bg-gradient-to-br from-white via-slate-50 to-cyan-50/70 hover:border-brand-cyan/70 hover:from-white hover:to-cyan-50", busy && "cursor-wait opacity-80")}
+        >
+          <input ref={fileInput} type="file" accept="application/pdf,.pdf" multiple className="hidden" onChange={(e) => upload(e.target.files)} />
+          <span className={cn("grid size-12 place-items-center rounded-2xl border bg-white text-brand-navy shadow-sm transition", dragging && "-translate-y-1 border-brand-cyan text-brand-cyan-700")}><UploadCloud className="size-6" aria-hidden="true" /></span>
+          <strong className="mt-3 text-base">{busy ? "Lendo os PDFs…" : dragging ? "Solte para enviar" : "Anexar matrizes curriculares"}</strong>
+          <span className="mt-1 max-w-xl text-sm text-muted-foreground">{busy ? "O sistema lê grau, área, duração, estágios e TCC e confere com o documento." : "Arraste os PDFs para cá ou clique para selecionar (vários de uma vez, se quiser). O sistema lê grau, área, duração, estágios e TCC e confere com o documento."}</span>
+          {!busy && <span className="mt-3 rounded-lg border bg-white px-3 py-1 text-xs font-bold tracking-[0.16em] text-brand-navy">PDF</span>}
+        </div>
       )}
 
       <div className="relative mb-4">
@@ -236,7 +231,7 @@ const Grades = () => {
       {!data ? <p className="text-sm text-muted-foreground">Carregando…</p> : (
         <div className="grid items-start gap-4 md:grid-cols-2 xl:grid-cols-3">
           {visible.length === 0 ? (
-            <Card className="md:col-span-2 xl:col-span-3"><CardContent className="py-12 text-center text-sm text-muted-foreground">{manager && !search && !active ? "Nenhuma grade ainda. Envie os PDFs das matrizes ou use “Importar grades padrão”." : "Nenhuma grade corresponde aos filtros selecionados."}</CardContent></Card>
+            <Card className="md:col-span-2 xl:col-span-3"><CardContent className="py-12 text-center text-sm text-muted-foreground">{manager && !search && !active ? "Nenhuma grade ainda. Arraste os PDFs das matrizes para a área acima." : "Nenhuma grade corresponde aos filtros selecionados."}</CardContent></Card>
           ) : visible.map((g) => <GradeCard key={g.id} g={g} manager={manager} onSend={setSendFor} onDelete={setDelFor} />)}
         </div>
       )}
