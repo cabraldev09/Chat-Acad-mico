@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import QRCode from "qrcode.react";
-import { Download, MessageCircle, QrCode, Share2, X } from "lucide-react";
+import { Download, Eye, GraduationCap, MessageCircle, QrCode, Share2, UserPlus, Wallet, X } from "lucide-react";
 
 import NumberTicker from "../../components/NumberTicker";
 import { CopyButton } from "./shared";
@@ -68,32 +68,35 @@ export const ShareBar = ({ link, nome }) => {
   );
 };
 
-const pct = (part, whole) => (whole > 0 && part <= whole ? `${Math.round((part / whole) * 100)}%` : null);
+const pct = (part, whole) => (whole > 0 && part <= whole ? Math.round((part / whole) * 100) : null);
 
-// the path of a referral: opened the link, referred, enrolled; and what is owed and received
+// the path of a referral as four equal cards: opened the link, referred, enrolled, and what she earns; every card says what it counts and compares with the step before
 export const Funnel = ({ stats }) => {
   const clicks = stats.clicks || null;
-  const steps = [
-    ...(clicks ? [{ key: "opened", label: clicks.unique === 1 ? "pessoa abriu o link" : "pessoas abriram o link", value: clicks.unique, note: clicks.last7 ? `${clicks.last7} ${clicks.last7 === 1 ? "abertura" : "aberturas"} nos últimos 7 dias` : "" }] : []),
-    { key: "referred", label: stats.referrals === 1 ? "pessoa indicada" : "pessoas indicadas", value: stats.referrals, note: clicks && stats.referrals > 0 && pct(stats.referrals, clicks.unique) ? `${pct(stats.referrals, clicks.unique)} de quem abriu` : "" },
-    { key: "enrolled", label: stats.enrolled === 1 ? "matrícula" : "matrículas", value: stats.enrolled, note: stats.referrals ? `${stats.conversion}% das indicações` : "" },
+  const opened = clicks ? clicks.unique : 0;
+  const cards = [
+    { key: "opened", Icon: Eye, tone: "sky", value: opened, label: opened === 1 ? "pessoa abriu o link" : "pessoas abriram o link", note: clicks && clicks.last7 ? `${clicks.last7} ${clicks.last7 === 1 ? "abertura" : "aberturas"} nos últimos 7 dias` : "Nos últimos 7 dias: nenhuma", bar: null },
+    { key: "referred", Icon: UserPlus, tone: "blue", value: stats.referrals, label: stats.referrals === 1 ? "pessoa indicada" : "pessoas indicadas", note: opened && stats.referrals ? `${pct(stats.referrals, opened) ?? "—"}% de quem abriu` : "Indique quem você conhece", bar: opened ? pct(stats.referrals, opened) : null },
+    { key: "enrolled", Icon: GraduationCap, tone: "green", value: stats.enrolled, label: stats.enrolled === 1 ? "matrícula" : "matrículas", note: stats.referrals ? `${stats.conversion}% das indicações` : "Cada matrícula gera bonificação", bar: stats.referrals ? stats.conversion : null },
   ];
   const empty = (!clicks || clicks.total === 0) && stats.referrals === 0;
   return (
-    <section className="ca-funnel" aria-label="Sua produção">
-      <ol className="ca-steps">
-        {steps.map((s, i) => (
-          <li key={s.key} className="ca-step" style={{ "--n": steps.length - i }}>
-            <b><NumberTicker value={s.value} /></b>
-            <span>{s.label}</span>
-            {s.note && <small>{s.note}</small>}
-          </li>
-        ))}
-      </ol>
-      <div className="ca-money">
-        <div><b><NumberTicker value={stats.bonusPending} format={brl} /></b><span>a receber</span></div>
-        <div><b><NumberTicker value={stats.bonusPaid} format={brl} /></b><span>já recebido</span></div>
-      </div>
+    <section className="ca-kpis" aria-label="Sua produção">
+      {cards.map(({ key, Icon, tone, value, label, note, bar }) => (
+        <article key={key} className={`ca-kpi is-${tone}`}>
+          <span className="ca-kpi-icon"><Icon size={20} /></span>
+          <b className="ca-kpi-value"><NumberTicker value={value} /></b>
+          <span className="ca-kpi-label">{label}</span>
+          <small>{note}</small>
+          {bar !== null && <i className="ca-kpi-bar"><i style={{ width: `${Math.min(100, Math.max(4, bar))}%` }} /></i>}
+        </article>
+      ))}
+      <article className="ca-kpi is-gold">
+        <span className="ca-kpi-icon"><Wallet size={20} /></span>
+        <b className="ca-kpi-value"><NumberTicker value={stats.bonusPending} format={brl} /></b>
+        <span className="ca-kpi-label">a receber</span>
+        <small>Já recebido: <strong>{brl(stats.bonusPaid)}</strong></small>
+      </article>
       {empty && <p className="ca-funnel-empty">Seu link ainda não foi usado. Copie uma mensagem pronta logo abaixo e envie para quem pode se interessar: cada pessoa que abrir o link aparece aqui.</p>}
     </section>
   );
