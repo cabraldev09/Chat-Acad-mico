@@ -279,32 +279,32 @@ const Panel = () => {
           <SectionHead color="#16a34a" title="Resultados do período" hint="Dos leads que entraram entre as datas escolhidas, quantos já se matricularam. A seta compara com o período anterior." />
           <GlowCard style={{ padding: 0, overflow: "hidden" }}>
             <div className={classes.band}>
-              <div className={classes.cell} style={{ borderTop: `4px solid ${"#0693E3"}`, background: tint("#0693E3", 0.07) }}>
+              <div className={classes.cell} style={{ borderTop: `2px solid ${"#0693E3"}` }}>
                 <div className={classes.label}>Leads captados</div>
                 <div className={classes.cellVal} style={{ color: "#0693E3" }}><NumberTicker value={d.kpi.leads} /></div>
                 <div style={{ marginTop: 4 }}><Delta now={d.kpi.leads} before={prev && prev.leads} /></div>
                 <Spark data={sparkLeads} color="#0693E3" />
                 <div className={classes.label} style={{ fontSize: 12 }}>{d.kpi.open} em andamento</div>
               </div>
-              <div className={classes.cell} style={{ borderTop: `4px solid ${GREEN}`, background: tint(GREEN, 0.07) }}>
+              <div className={classes.cell} style={{ borderTop: `2px solid ${GREEN}` }}>
                 <div className={classes.label}>Matrículas</div>
                 <div className={classes.cellVal} style={{ color: GREEN }}><NumberTicker value={d.kpi.won} /></div>
                 <div style={{ marginTop: 4 }}><Delta now={d.kpi.won} before={prev && prev.won} /></div>
                 <Spark data={sparkWon} color={GREEN} />
                 <div className={classes.label} style={{ fontSize: 12 }}>{d.kpi.lost} perdidos · {wonInPeriod} confirmadas no período</div>
               </div>
-              <div className={classes.cell} style={{ borderTop: `4px solid ${"#8b5cf6"}`, background: tint("#8b5cf6", 0.07) }}>
+              <div className={classes.cell} style={{ borderTop: `2px solid ${"#8b5cf6"}` }}>
                 <div className={classes.label}>Conversão</div>
                 <div className={classes.cellVal} style={{ color: "#8b5cf6" }}>{`${d.kpi.conversion.toFixed(1).replace(".", ",")}%`}</div>
                 <div style={{ marginTop: 4 }}><Delta now={d.kpi.conversion} before={prev && prev.conversion} points /></div>
                 <div className={classes.label} style={{ fontSize: 12, marginTop: 8 }}>lead → matrícula</div>
               </div>
-              <div className={classes.cell} style={{ borderTop: `4px solid ${AMBER}`, background: tint(AMBER, 0.07) }}>
+              <div className={classes.cell} style={{ borderTop: `2px solid ${AMBER}` }}>
                 <div className={classes.label}>Tempo até o 1º contato</div>
                 <div className={classes.cellVal} style={{ color: contactTone(d.kpi.avgFirstContactMin) }}>{mins(d.kpi.avgFirstContactMin)}</div>
                 <div className={classes.label} style={{ fontSize: 12, marginTop: 8 }}>{d.kpi.businessHours ? "média, só horário comercial" : "média"} · ideal até 15 min</div>
               </div>
-              <div className={classes.cell} style={{ borderRight: 0, borderTop: `4px solid ${"#14b8a6"}`, background: tint("#14b8a6", 0.07) }}>
+              <div className={classes.cell} style={{ borderRight: 0, borderTop: `2px solid ${"#14b8a6"}` }}>
                 <div className={classes.label}>Tempo até a matrícula</div>
                 <div className={classes.cellVal} style={{ color: "#14b8a6" }}>{d.kpi.avgDaysToEnroll === null ? "—" : `${Number(d.kpi.avgDaysToEnroll).toFixed(1).replace(".", ",")} dias`}</div>
                 <div className={classes.label} style={{ fontSize: 12, marginTop: 8 }}>média</div>

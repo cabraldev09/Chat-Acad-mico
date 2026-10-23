@@ -15,12 +15,12 @@ import Triggers from "./Triggers";
 
 const useStyles = makeStyles((theme) => ({
   body: { flex: 1, overflowY: "auto", overflowX: "hidden", ...theme.scrollbarStyles, paddingBottom: theme.spacing(3) },
-  tabs: { display: "inline-flex", gap: 4, padding: 4, borderRadius: 14, background: "rgba(11,66,121,.1)", border: "1px solid rgba(11,66,121,.14)", marginBottom: theme.spacing(2) },
+  tabs: { display: "inline-flex", gap: 4, padding: 4, borderRadius: 14, background: theme.palette.action.hover, marginBottom: theme.spacing(2) },
   tab: { border: 0, background: "transparent", color: theme.palette.text.secondary, borderRadius: 10, padding: "7px 16px", cursor: "pointer", fontFamily: "inherit", fontSize: 13.5, fontWeight: 600 },
   tabOn: { background: theme.palette.primary.main, color: "#fff", boxShadow: "0 4px 12px rgba(6,147,227,.4)" },
   intro: { color: theme.palette.text.secondary, fontSize: 14, maxWidth: 760, marginBottom: theme.spacing(2) },
   grid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: theme.spacing(1.5) },
-  card: { background: "rgba(6,147,227,.06)", border: "1px solid rgba(11,66,121,.16)", borderTop: "4px solid #0693E3", boxShadow: "0 4px 14px rgba(15,23,42,.07)", borderRadius: 16, padding: theme.spacing(2), cursor: "pointer", transition: "transform .15s, box-shadow .15s, border-color .15s", "&:hover": { transform: "translateY(-2px)", boxShadow: "0 8px 22px rgba(11,66,121,.14)", borderColor: theme.palette.primary.main } },
+  card: { background: theme.palette.cards.background, border: theme.border.divider, borderLeft: "3px solid #0693E3", borderRadius: 16, padding: theme.spacing(2), cursor: "pointer", transition: "transform .15s, box-shadow .15s, border-color .15s", "&:hover": { transform: "translateY(-2px)", boxShadow: "0 8px 22px rgba(11,66,121,.14)", borderColor: theme.palette.primary.main } },
   chip: { display: "inline-flex", alignItems: "center", gap: 5, borderRadius: 999, padding: "2px 9px", fontSize: 12, fontWeight: 700 },
   nums: { display: "flex", gap: 18, marginTop: 14, paddingTop: 12, borderTop: theme.border.divider },
   num: { fontSize: 20, fontWeight: 700, letterSpacing: "-0.02em", lineHeight: 1.1, fontVariantNumeric: "tabular-nums" },

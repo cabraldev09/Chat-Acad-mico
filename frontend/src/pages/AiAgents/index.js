@@ -24,7 +24,7 @@ const useStyles = makeStyles((theme) => ({
   banner: { display: "flex", gap: 12, alignItems: "center", padding: theme.spacing(1.5, 2), borderRadius: 16, border: "1px solid rgba(217,119,6,.45)", background: "rgba(217,119,6,.08)" },
   hint: { fontSize: 13, color: theme.palette.text.secondary },
   cards: { display: "grid", gap: theme.spacing(2), gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))" },
-  agent: { display: "flex", flexDirection: "column", gap: theme.spacing(1.25), padding: theme.spacing(2.25), borderRadius: 22, border: "1px solid rgba(11,66,121,.14)", boxShadow: "0 4px 16px rgba(15,23,42,.07)", transition: "box-shadow .15s, transform .15s, border-color .15s", "&:hover": { boxShadow: "0 14px 32px rgba(15,23,42,.1)", transform: "translateY(-2px)", borderColor: theme.palette.primary.light } },
+  agent: { display: "flex", flexDirection: "column", gap: theme.spacing(1.25), padding: theme.spacing(2.25), borderRadius: 22, border: `1px solid ${theme.palette.divider}`, background: theme.palette.cards.background, transition: "box-shadow .15s, transform .15s, border-color .15s", "&:hover": { boxShadow: "0 14px 32px rgba(15,23,42,.1)", transform: "translateY(-2px)", borderColor: theme.palette.primary.light } },
   head: { display: "flex", alignItems: "center", gap: 12 },
   icon: { width: 46, height: 46, borderRadius: 14, display: "grid", placeItems: "center", flex: "none", color: "#fff", background: "linear-gradient(135deg, #0B4279 0%, #0693E3 100%)" },
   iconOff: { background: "linear-gradient(135deg, #64748b 0%, #94a3b8 100%)" },
@@ -132,7 +132,7 @@ const AiAgents = () => {
             const kind = KINDS[kindOf(a)];
             const Icon = kind.icon;
             return (
-              <div key={a.id} className={classes.agent} style={{ borderTop: `5px solid ${!a.active ? "#94a3b8" : kindOf(a) === "commercial" ? "#0693E3" : "#0d9488"}`, background: a.active ? (kindOf(a) === "commercial" ? "rgba(6,147,227,.07)" : "rgba(13,148,136,.07)") : "rgba(100,116,139,.08)" }}>
+              <div key={a.id} className={classes.agent} style={{ borderLeft: `3px solid ${!a.active ? "#64748b" : kindOf(a) === "commercial" ? "#0693E3" : "#0d9488"}`, opacity: a.active ? 1 : 0.85 }}>
                 <div className={classes.head}>
                   <span className={`${classes.icon} ${a.active ? "" : classes.iconOff}`}><Icon size={22} /></span>
                   <div style={{ flex: 1, minWidth: 0 }}>

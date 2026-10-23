@@ -147,8 +147,8 @@ const Tools = () => {
       {TOOLS.filter((t) => t.needs !== "retention" || canOperateRetention(user)).map((t) => {
         const Icon = t.icon;
         return (
-          <button key={t.to} type="button" onClick={() => history.push(t.to)} style={{ textAlign: "left", cursor: "pointer", font: "inherit", color: "inherit", padding: 18, borderRadius: 18, border: "1px solid transparent", borderTop: `4px solid ${t.color}`, background: tint(t.color, 0.1), display: "flex", flexDirection: "column", gap: 8, boxShadow: "0 2px 10px rgba(15,23,42,.06)" }}>
-            <span style={{ width: 40, height: 40, borderRadius: 12, display: "grid", placeItems: "center", background: t.color, color: onColor(t.color) }}><Icon size={20} /></span>
+          <button key={t.to} type="button" onClick={() => history.push(t.to)} style={{ textAlign: "left", cursor: "pointer", font: "inherit", color: "inherit", padding: 18, borderRadius: 18, border: "1px solid rgba(127,140,160,.25)", borderLeft: `3px solid ${t.color}`, background: "transparent", display: "flex", flexDirection: "column", gap: 8 }}>
+            <span style={{ width: 40, height: 40, borderRadius: 12, display: "grid", placeItems: "center", background: tint(t.color, 0.16), color: t.color }}><Icon size={20} /></span>
             <b style={{ fontSize: 15.5 }}>{t.label}</b>
             <span style={{ fontSize: 13, opacity: 0.75 }}>{t.text}</span>
           </button>
