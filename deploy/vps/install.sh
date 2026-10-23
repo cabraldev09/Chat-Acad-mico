@@ -93,6 +93,7 @@ say "7/7 Atualização automática e backup"
 cat > /etc/cron.d/chat-academico <<CRON
 */5 * * * * root /opt/chat-academico/deploy/vps/update.sh >> /var/log/chat-academico-update.log 2>&1
 0 3 * * * root /opt/chat-academico/deploy/vps/backup.sh >> /var/log/chat-academico-backup.log 2>&1
+17 * * * * root BACKUP_ONLY=db /opt/chat-academico/deploy/vps/backup.sh >> /var/log/chat-academico-backup.log 2>&1
 CRON
 chmod 644 /etc/cron.d/chat-academico
 

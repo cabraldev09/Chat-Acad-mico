@@ -54,7 +54,7 @@ Entre no sistema → **Conexões → Conectar meu WhatsApp**. Se o WhatsApp avis
 ## O que fica automático
 
 - **Atualização**: a cada 5 minutos o servidor confere o GitHub e, se houver versão nova, reconstrói e reinicia sozinho (`/var/log/chat-academico-update.log`).
-- **Backup**: todo dia às 3h salva as sessões do WhatsApp e os arquivos em `/opt/backups` (guarda os 7 mais recentes).
+- **Backup**: todo dia às 3h salva as sessões do WhatsApp e os arquivos em `/opt/backups` (guarda os mais recentes) e, **a cada hora**, uma cópia do banco de dados (onde ficam todas as mensagens).
 - **HTTPS**: certificado gratuito, renovado sozinho.
 - **Reinício**: se o servidor reiniciar, tudo volta sozinho.
 
