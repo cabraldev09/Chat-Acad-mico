@@ -455,7 +455,8 @@ const convertToMediaPayload = async (
   for (let attempt = 0; attempt < 2 && !media; attempt += 1) {
     try {
       // eslint-disable-next-line no-await-in-loop
-      media = await msg.downloadMedia();
+      // WhatsApp Web can hang on a file for minutes (the browser only gives up after 3): after 25 s the message is stored without it and the file is tried again later
+      media = await withTimeout(msg.downloadMedia(), 25000);
     } catch (err) {
       logger.warn(`Media download failed (${msg.type}): ${err}`);
     }
@@ -1288,7 +1289,7 @@ const downloadMessageMedia = async (
   }
   let media: any = null;
   try {
-    media = await message.downloadMedia();
+    media = await withTimeout(message.downloadMedia(), 90000);
   } catch (err) {
     logger.warn(`Media on demand (${messageId}) failed: ${(err as Error).message}`);
     return null;
