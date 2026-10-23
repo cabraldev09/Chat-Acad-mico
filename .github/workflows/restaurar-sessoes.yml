@@ -1,0 +1,88 @@
+name: Restaurar sessões do WhatsApp (de um backup)
+
+# Devolve as pastas de login do WhatsApp (wwebjs) de um backup diário da VPS, para as conexões voltarem sem ler o QR Code.
+# Duas etapas: com `executar = nao` só confere o backup (nada é alterado); com `executar = sim` para a API, guarda as pastas atuais
+# como `session-bd_N.antes-<data>` (dá para desfazer), extrai só as pastas pedidas do backup e liga a API de novo.
+# O login restaurado só vale se o WhatsApp ainda não o desfez: se pedir QR de novo, a pasta antiga é que foi invalidada.
+on:
+  workflow_dispatch:
+    inputs:
+      backup:
+        description: "Arquivo em /opt/backups (ex.: dados-2026-10-21-030001.tar.gz)"
+        required: true
+        default: "dados-2026-10-21-030001.tar.gz"
+      sessoes:
+        description: "Pastas a restaurar, separadas por espaço (ex.: bd_2 bd_5)"
+        required: true
+        default: "bd_2 bd_5"
+      executar:
+        description: "nao = só conferir; sim = restaurar de verdade"
+        required: true
+        default: "nao"
+        type: choice
+        options: ["nao", "sim"]
+
+concurrency:
+  group: deploy-vps
+  cancel-in-progress: false
+
+jobs:
+  restaurar:
+    runs-on: ubuntu-latest
+    env:
+      VPS_HOST: 209.145.48.49
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepara o SSH e confere a identidade do servidor
+        env:
+          KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          install -m 700 -d ~/.ssh
+          body=$(printf '%s' "$KEY" | grep -v '^-----' | tr -d ' \r\n\t')
+          { echo "-----BEGIN OPENSSH PRIVATE KEY-----"; printf '%s' "$body" | fold -w 70; echo; echo "-----END OPENSSH PRIVATE KEY-----"; } > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          grep -v '^#' deploy/vps/known_hosts > ~/.ssh/known_hosts
+          want=$(awk '{print $3}' ~/.ssh/known_hosts)
+          seen=$(ssh-keyscan -T 15 -t ed25519 "$VPS_HOST" 2>/dev/null | awk '{print $3}')
+          [ -n "$seen" ] && [ "$seen" = "$want" ] || { echo "::error::A chave do servidor não confere"; exit 1; }
+      - name: Confere e restaura
+        env:
+          BACKUP: ${{ inputs.backup }}
+          SESSOES: ${{ inputs.sessoes }}
+          EXECUTAR: ${{ inputs.executar }}
+        run: |
+          # só nomes simples: nada de caminho nem de caracteres especiais vindos do formulário
+          case "$BACKUP" in *[!A-Za-z0-9._-]*|"") echo "::error::nome de backup inválido"; exit 1;; esac
+          for s in $SESSOES; do case "$s" in bd_[0-9]*) ;; *) echo "::error::sessão inválida: $s"; exit 1;; esac; done
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes -o ConnectTimeout=20 root@"$VPS_HOST" "BACKUP='$BACKUP' SESSOES='$SESSOES' EXECUTAR='$EXECUTAR' bash -s" <<'REMOTE'
+          set -euo pipefail
+          F="/opt/backups/$BACKUP"
+          [ -f "$F" ] || { echo "backup não encontrado: $F"; ls -1 /opt/backups; exit 1; }
+          echo "== backup: $F ($(du -h "$F" | cut -f1)), de $(date -r "$F" '+%F %T') =="
+          VOL=$(docker volume inspect chat-academico-data -f '{{ .Mountpoint }}')
+          echo "volume: $VOL"
+          LIST=$(tar tzf "$F" | grep -E '^(\./)?wwebjs/session-bd_[0-9]+/$' || true)
+          echo "pastas de sessão dentro do backup:"; echo "$LIST"
+          for s in $SESSOES; do
+            echo "$LIST" | grep -q "session-$s/" || { echo "o backup NÃO tem session-$s"; exit 1; }
+            echo "atual:    $(ls -ld --time-style=long-iso "$VOL/wwebjs/session-$s" | awk '{print $6, $7}')  ($(ls "$VOL/wwebjs/session-$s/Default" 2>/dev/null | wc -l) arquivos em Default)"
+          done
+          if [ "$EXECUTAR" != "sim" ]; then echo "== simulação: nada foi alterado =="; exit 0; fi
+          cd /opt/chat-academico/deploy/vps
+          TS=$(date +%Y%m%d-%H%M%S)
+          echo "== parando a API (desligamento limpo) =="; docker compose stop api
+          for s in $SESSOES; do
+            mv "$VOL/wwebjs/session-$s" "$VOL/wwebjs/session-$s.antes-$TS"
+            echo "guardada a pasta atual como session-$s.antes-$TS"
+          done
+          ARGS=""; for s in $SESSOES; do ARGS="$ARGS ./wwebjs/session-$s"; done
+          tar xzf "$F" -C "$VOL" $ARGS
+          chown -R --reference="$VOL/wwebjs" $(for s in $SESSOES; do echo "$VOL/wwebjs/session-$s"; done)
+          for s in $SESSOES; do rm -f "$VOL/wwebjs/session-$s"/Singleton*; echo "restaurada session-$s: $(ls "$VOL/wwebjs/session-$s/Default" | wc -l) arquivos em Default"; done
+          echo "== ligando a API =="; docker compose start api
+          for i in $(seq 1 60); do
+            st=$(docker inspect -f '{{.State.Health.Status}}' chat-academico-api-1 2>/dev/null || echo starting)
+            [ "$st" = "healthy" ] && break; sleep 5
+          done
+          echo "API: $st"
+          REMOTE
