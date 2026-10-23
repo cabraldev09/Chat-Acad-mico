@@ -18,24 +18,27 @@ const useStyles = makeStyles((theme) => ({
 }));
 
 // "Confirmar matrícula": picks the polo and tutor, settles the enrollment fee and hands the student over.
-const EnrollDialog = ({ open, lead, onClose, onDone }) => {
+// "additional": the student is already enrolled and enrolls again (another course): it counts again and the tutor gets a new task.
+const EnrollDialog = ({ open, lead, onClose, onDone, additional = false }) => {
   const classes = useStyles();
   const [polos, setPolos] = useState([]);
   const [tutors, setTutors] = useState([]);
   const [busy, setBusy] = useState(false);
   const [detail, setDetail] = useState(null);
-  const [v, setV] = useState({ poloId: "", tutorId: "auto", fee: "paid", feeDueDate: "", note: "" });
+  const [courses, setCourses] = useState([]);
+  const [v, setV] = useState({ poloId: "", tutorId: "auto", fee: "paid", feeDueDate: "", note: "", courseId: "" });
 
   useEffect(() => {
     if (!open) return;
-    setV({ poloId: lead.poloId || "", tutorId: "auto", fee: "paid", feeDueDate: "", note: "" });
+    setV({ poloId: lead.poloId || "", tutorId: "auto", fee: "paid", feeDueDate: "", note: "", courseId: "" });
+    if (additional) api.get("/courses").then(({ data }) => setCourses(data.filter((c) => c.active))).catch(() => undefined);
     api.get("/polos").then(({ data }) => setPolos(data.filter((p) => p.active))).catch(toastError);
     // the board card is a summary: the CPF and polo come from the full record
     api.get(`/leads/${lead.id}`).then(({ data }) => {
       setDetail(data);
       if (data.poloId) setV((cur) => ({ ...cur, poloId: cur.poloId || data.poloId }));
     }).catch(() => setDetail(null));
-  }, [open, lead]);
+  }, [open, lead, additional]);
 
   useEffect(() => {
     if (!v.poloId) { setTutors([]); return; }
@@ -43,8 +46,8 @@ const EnrollDialog = ({ open, lead, onClose, onDone }) => {
   }, [v.poloId]);
 
   const first = (lead.name || "").split(" ")[0];
-  const needsCpf = (v.fee === "now" || v.fee === "later") && !(detail && detail.cpf);
-  const invalid = !v.poloId || (v.fee === "later" && !v.feeDueDate) || needsCpf;
+  const needsCpf = !additional && (v.fee === "now" || v.fee === "later") && !(detail && detail.cpf);
+  const invalid = !v.poloId || (additional && !v.courseId) || (v.fee === "later" && !v.feeDueDate) || needsCpf;
 
   const confirm = async () => {
     setBusy(true);
@@ -52,11 +55,13 @@ const EnrollDialog = ({ open, lead, onClose, onDone }) => {
       const { data } = await api.post(`/leads/${lead.id}/enroll`, {
         poloId: v.poloId,
         tutorId: v.tutorId,
-        fee: v.fee,
+        fee: additional ? undefined : v.fee,
         feeDueDate: v.feeDueDate || null,
-        note: v.note
+        note: v.note,
+        additional: additional || undefined,
+        courseId: additional ? v.courseId : undefined
       });
-      toast.success(data.tutor ? `Matrícula confirmada. Tutor: ${data.tutor.name}.` : "Matrícula confirmada. Aguardando um tutor na fila.");
+      toast.success(additional ? `Nova matrícula registrada (${data.number}ª). ${data.tutor ? `Tutor: ${data.tutor.name}.` : "Aguardando um tutor."}` : data.tutor ? `Matrícula confirmada. Tutor: ${data.tutor.name}.` : "Matrícula confirmada. Aguardando um tutor na fila.");
       (data.warnings || []).forEach((w) => toast.warn(w));
       onDone && onDone(data);
       onClose();
@@ -72,12 +77,21 @@ const EnrollDialog = ({ open, lead, onClose, onDone }) => {
         <div className={classes.head}>
           <span className={classes.badge}><GraduationCap size={22} /></span>
           <div>
-            Confirmar matrícula
+            {additional ? "Nova matrícula" : "Confirmar matrícula"}
             <Typography variant="body2" color="textSecondary">{lead.name}</Typography>
           </div>
         </div>
       </DialogTitle>
       <DialogContent>
+        {additional && (
+          <>
+            <div className={classes.section}>Curso desta matrícula</div>
+            <TextField select fullWidth variant="outlined" margin="dense" label="Curso" value={v.courseId} onChange={(e) => setV({ ...v, courseId: e.target.value })}
+              helperText="O aluno continua com a primeira matrícula; esta conta como mais uma para você e para o polo.">
+              {courses.map((c) => (<MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>))}
+            </TextField>
+          </>
+        )}
         <div className={classes.section}>Quem vai ambientar o aluno</div>
         <TextField select fullWidth variant="outlined" margin="dense" label="Polo" value={v.poloId} onChange={(e) => setV({ ...v, poloId: e.target.value, tutorId: "auto" })}
           helperText={polos.length ? "O aluno vai para a fila de tutoria deste polo." : "Cadastre os polos em Polos e equipes."}>
@@ -89,8 +103,8 @@ const EnrollDialog = ({ open, lead, onClose, onDone }) => {
           {tutors.map((t) => (<MenuItem key={t.id} value={t.id}>{t.name}</MenuItem>))}
         </TextField>
 
-        <div className={classes.section}>Taxa de matrícula</div>
-        <div className={classes.feeBox}>
+        {!additional && <div className={classes.section}>Taxa de matrícula</div>}
+        {!additional && <div className={classes.feeBox}>
           <RadioGroup value={v.fee} onChange={(e) => setV({ ...v, fee: e.target.value })}>
             <FormControlLabel value="paid" control={<Radio color="primary" />} label="Já foi paga (ou será tratada fora do sistema)" />
             <FormControlLabel value="now" control={<Radio color="primary" />} label="Gerar a cobrança agora (boleto com Pix)" />
@@ -103,7 +117,7 @@ const EnrollDialog = ({ open, lead, onClose, onDone }) => {
               helperText="Você recebe um aviso para enviar o boleto alguns dias antes do vencimento." />
           )}
           {needsCpf && <div className={classes.hint} style={{ color: "#dc2626" }}>Informe o CPF na ficha do lead para gerar a cobrança.</div>}
-        </div>
+        </div>}
 
         <div className={classes.section}>Passagem de bastão</div>
         <TextField fullWidth multiline rows={2} variant="outlined" margin="dense" label="Observação para o tutor (opcional)" value={v.note} onChange={(e) => setV({ ...v, note: e.target.value })}
@@ -113,7 +127,7 @@ const EnrollDialog = ({ open, lead, onClose, onDone }) => {
       <DialogActions>
         <Button variant="outlined" color="secondary" onClick={onClose} disabled={busy}>Cancelar</Button>
         <Button variant="contained" color="primary" onClick={confirm} disabled={busy || invalid}>
-          {busy ? <CircularProgress size={18} /> : "Confirmar matrícula"}
+          {busy ? <CircularProgress size={18} /> : additional ? "Registrar nova matrícula" : "Confirmar matrícula"}
         </Button>
       </DialogActions>
     </Dialog>

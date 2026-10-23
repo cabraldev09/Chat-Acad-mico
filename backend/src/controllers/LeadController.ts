@@ -16,6 +16,8 @@ import Payment from "../models/Payment";
 import LeadStage from "../models/LeadStage";
 import LeadActivity from "../models/LeadActivity";
 import LeadTask from "../models/LeadTask";
+import LeadEnrollment from "../models/LeadEnrollment";
+import Polo from "../models/Polo";
 import Institution from "../models/Institution";
 import Course from "../models/Course";
 import User from "../models/User";
@@ -835,9 +837,27 @@ export const enroll = async (req: Request, res: Response): Promise<Response> => 
       fee: req.body.fee,
       feeDueDate: req.body.feeDueDate,
       introMessage: req.body.introMessage,
-      whatsappId: req.body.whatsappId ? Number(req.body.whatsappId) : null
+      whatsappId: req.body.whatsappId ? Number(req.body.whatsappId) : null,
+      additional: req.body.additional === true,
+      courseId: req.body.courseId ? Number(req.body.courseId) : null,
+      courseName: req.body.courseName || null
     })
   );
+};
+
+// every enrollment of the student: the first (on the lead) and the ones after it
+export const enrollments = async (req: Request, res: Response): Promise<Response> => {
+  const lead = await Lead.findByPk(req.params.id, { include: [{ model: Course, as: "course", attributes: ["id", "name"] }] });
+  if (!lead) throw new AppError("ERR_LEAD_NOT_FOUND", 404);
+  const extra = await LeadEnrollment.findAll({ where: { leadId: lead.id }, order: [["enrolledAt", "ASC"], ["id", "ASC"]] });
+  const poloIds = Array.from(new Set([lead.poloId, ...extra.map(e => e.poloId)].filter(Boolean) as number[]));
+  const polos = poloIds.length ? await Polo.findAll({ where: { id: poloIds }, attributes: ["id", "name"] }) : [];
+  const name = (id: number | null) => polos.find(p => p.id === id)?.name || null;
+  const list = [
+    ...(lead.enrolledAt ? [{ id: null, number: 1, courseName: (lead as any).course?.name || null, poloName: name(lead.poloId), enrolledAt: lead.enrolledAt }] : []),
+    ...extra.map((e, i) => ({ id: e.id, number: (lead.enrolledAt ? 2 : 1) + i, courseName: e.courseName, poloName: name(e.poloId), enrolledAt: e.enrolledAt }))
+  ];
+  return res.json(list);
 };
 
 export const onboarding = async (req: Request, res: Response): Promise<Response> => {

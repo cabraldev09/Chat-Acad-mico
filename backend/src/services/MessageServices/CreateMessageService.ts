@@ -39,6 +39,8 @@ const CreateMessageService = async ({
       messageData.ack = current.ack;
     }
   }
+  // a reply to a message that is not in our history (older than what was synced) would break the insert and lose the reply itself: it is saved without the quote
+  if (messageData.quotedMsgId && !(await Message.count({ where: { id: messageData.quotedMsgId } }))) messageData.quotedMsgId = undefined;
   await Message.upsert(messageData);
 
   const message = await Message.findByPk(messageData.id, {

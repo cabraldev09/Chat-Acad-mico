@@ -338,6 +338,7 @@ r.get("/onboarding", isAuth, Lead.onboardingList);
 r.get("/onboarding/stats", isAuth, isManager, Lead.onboardingStats);
 r.put("/leads/:id/onboarding/checklist", isAuth, canAccessLead, Lead.onboardingChecklist);
 r.post("/leads/:id/enroll", isAuth, canAccessLead, Lead.enroll);
+r.get("/leads/:id/enrollments", isAuth, canAccessLead, Lead.enrollments);
 r.post("/leads/:id/onboarding", isAuth, canAccessLead, Lead.onboarding);
 r.put("/leads/:id/onboarding", isAuth, canAccessLead, Lead.editOnboarding);
 r.put("/leads/:id/tasks/:taskId", isAuth, canAccessLead, Lead.updateTask);

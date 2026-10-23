@@ -8,6 +8,7 @@ import GoalMember from "../models/GoalMember";
 import GoalPolo from "../models/GoalPolo";
 import Polo from "../models/Polo";
 import Lead from "../models/Lead";
+import LeadEnrollment from "../models/LeadEnrollment";
 import { dayBounds, getAppTz } from "../helpers/AppTime";
 
 // Team enrollment goals (administration and coordination). Each line counts, by itself, the enrollments (Leads.wonAt) of
@@ -37,7 +38,7 @@ const present = async (goal: Goal) => {
         where: { ownerId: allUserIds, isHistorical: false, wonAt: { [Op.gte]: start, [Op.lte]: end } as any },
         attributes: ["ownerId"],
         raw: true
-      })) as any[])
+      })) as any[]).concat((await LeadEnrollment.findAll({ where: { ownerId: allUserIds, enrolledAt: { [Op.gte]: start, [Op.lte]: end } as any }, attributes: ["ownerId"], raw: true })) as any[])
     : [];
   const perUser = new Map<number, number>();
   rows.forEach(r => perUser.set(r.ownerId, (perUser.get(r.ownerId) || 0) + 1));
@@ -257,15 +258,17 @@ export const buildPoloBoard = async (goalIdWanted = 0, monthWanted = ""): Promis
 
   const start = dayBounds(goal.startsOn).start;
   const end = dayBounds(goal.endsOn).end;
-  const [polos, saved, wonRows] = await Promise.all([
+  const [polos, saved, wonLeads, wonExtra] = await Promise.all([
     Polo.findAll({ where: { active: true }, order: [["name", "ASC"]] }),
     GoalPolo.findAll({ where: { goalId: goal.id } }),
     Lead.findAll({
       where: { isHistorical: false, poloId: { [Op.ne]: null } as any, wonAt: { [Op.gte]: start, [Op.lte]: end } as any },
       attributes: ["poloId", "wonAt"],
       raw: true
-    }) as unknown as Promise<any[]>
+    }) as unknown as Promise<any[]>,
+    LeadEnrollment.findAll({ where: { poloId: { [Op.ne]: null } as any, enrolledAt: { [Op.gte]: start, [Op.lte]: end } as any }, attributes: ["poloId", "enrolledAt"], raw: true }) as unknown as Promise<any[]>
   ]);
+  const wonRows = wonLeads.concat(wonExtra.map(r => ({ poloId: r.poloId, wonAt: r.enrolledAt })));
   // enrollments of each polo by month (in the company timezone)
   const wonBy = new Map<number, Record<string, number>>();
   const fmt = new Intl.DateTimeFormat("en-CA", { timeZone: tz });
@@ -494,7 +497,7 @@ export const applyPoloImport = async (goal: Goal, items: any[], dryRun: boolean)
       }
       // eslint-disable-next-line no-await-in-loop
       const previous = await GoalPolo.findOne({ where: { goalId: goal.id, poloId: polo.id } });
-      const inCrm = await Lead.count({ where: { isHistorical: false, poloId: polo.id, wonAt: { [Op.gte]: startAt, [Op.lte]: endAt } as any } });
+      const inCrm = (await Lead.count({ where: { isHistorical: false, poloId: polo.id, wonAt: { [Op.gte]: startAt, [Op.lte]: endAt } as any } })) + (await LeadEnrollment.count({ where: { poloId: polo.id, enrolledAt: { [Op.gte]: startAt, [Op.lte]: endAt } as any } }));
       const row = poloLine(goal.id, months, { poloId: polo.id, target, manual: Math.max(0, (int(it.done) || 0) - inCrm), canceled: int(it.canceled) || 0, manualMonthly: parseJson(previous?.manualMonthly, {}) });
       if (previous) await previous.update(row as any);
       else await GoalPolo.create(row as any);

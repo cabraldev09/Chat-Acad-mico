@@ -103,7 +103,7 @@ const rowsP = q(
   );
 const closedP = q(`SELECT COUNT(*) AS n FROM Tickets t WHERE t.closedAt BETWEEN :from AND :to AND ${base} ${scope}`, rep);
 const enrolledP = q(
-    `SELECT COUNT(*) AS n FROM Leads l WHERE l.isHistorical = false AND l.wonAt BETWEEN :from AND :to ${leadScope}`,
+    `SELECT (SELECT COUNT(*) FROM Leads l WHERE l.isHistorical = false AND l.wonAt BETWEEN :from AND :to ${leadScope}) + (SELECT COUNT(*) FROM LeadEnrollments e JOIN Leads l ON l.id = e.leadId WHERE e.enrolledAt BETWEEN :from AND :to ${leadScope}) AS n`,
     rep
   );
 const prevP = q(

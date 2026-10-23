@@ -67,7 +67,7 @@ const buildManagement = async (p: ReturnType<typeof period>): Promise<any> => {
        WHERE t.status IN ('open', 'pending') AND t.archivedAt IS NULL AND ${BASE}`,
       rep
     ),
-    q(`SELECT l.ownerId, l.poloId, COUNT(*) AS n FROM Leads l WHERE l.isHistorical = false AND l.wonAt BETWEEN :from AND :to GROUP BY l.ownerId, l.poloId`, rep),
+    q(`SELECT ownerId, poloId, COUNT(*) AS n FROM (SELECT l.ownerId, l.poloId FROM Leads l WHERE l.isHistorical = false AND l.wonAt BETWEEN :from AND :to UNION ALL SELECT e.ownerId, e.poloId FROM LeadEnrollments e WHERE e.enrolledAt BETWEEN :from AND :to) w GROUP BY ownerId, poloId`, rep),
     q(`SELECT id, name, role, profile FROM Users`, {}),
     q(`SELECT id, name FROM Polos`, {})
   ]);

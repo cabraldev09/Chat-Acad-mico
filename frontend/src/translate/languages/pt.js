@@ -485,6 +485,7 @@ const messages = {
         ERR_PASSWORD_SHORT: "A senha precisa ter pelo menos 8 caracteres.",
         ERR_LEAD_DELETE_ENROLLED: "Este lead já é um aluno matriculado: não pode ser excluído. Use “Não é um lead” se ele não deve aparecer no funil.",
         ERR_LEAD_DELETE_PAID: "Este lead tem cobrança paga: não pode ser excluído.",
+        ERR_LEAD_NOT_ENROLLED_YET: "Este lead ainda não foi matriculado: confirme a primeira matrícula antes de fazer outra.",
         ERR_LEAD_ENROLLED_RELATION: "Este lead já é um aluno matriculado: não dá para marcá-lo como amigo ou equipe.",
         ERR_CAMPAIGN_SCHEDULE_PAST: "A data de início já passou. Escolha uma data futura ou deixe vazio para iniciar manualmente.",
         ERR_CAMPAIGN_LIST_IN_USE: "Esta lista é usada por campanhas. Apague ou troque a lista nessas campanhas antes de apagá-la.",
