@@ -129,6 +129,23 @@ const processVcardMessage = async (
   }
 };
 
+// Tries to bring a missing file again at 30 s, 2 min and 8 min (stops at the first success or when the message is gone)
+const retryMediaLater = (messageId: string): void => {
+  [30000, 120000, 480000].forEach((wait, n) => {
+    setTimeout(async () => {
+      try {
+        const found = await Message.findByPk(messageId, { attributes: ["id", "mediaUrl"] });
+        if (!found || found.getDataValue("mediaUrl")) return;
+        const { loadMessageMedia } = await import("../services/MessageServices/MessageActions");
+        await loadMessageMedia(messageId);
+        logger.info(`Media ${messageId} arrived on retry ${n + 1}`);
+      } catch (err) {
+        logger.warn(`Media ${messageId}: retry ${n + 1} did not work (${(err as Error).message})`);
+      }
+    }, wait);
+  });
+};
+
 export const handleMessage = async (
   messagePayload: MessagePayload,
   contactPayload: ContactPayload,
@@ -233,6 +250,8 @@ export const handleMessage = async (
     }
 
     await CreateMessageService({ messageData });
+    // a file that did not come down now (the phone may still be sending it, or WhatsApp is slow) is tried again a few times in the background
+    if (processedMessage.hasMedia && !mediaPayload) retryMediaLater(processedMessage.id);
 
     await processVcardMessage(processedMessage, contextPayload.groupContact ? undefined : contact.number);
 

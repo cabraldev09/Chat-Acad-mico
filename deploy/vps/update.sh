@@ -70,7 +70,7 @@ if ! docker compose up -d --build; then
 fi
 
 # 3) healthy, or back to the previous version
-for i in $(seq 1 72); do
+for i in $(seq 1 180); do
   STATUS=$(docker inspect -f '{{.State.Health.Status}}' chat-academico-api-1 2>/dev/null || echo "starting")
   if [ "$STATUS" = "healthy" ]; then
     docker image prune -f >/dev/null
@@ -78,7 +78,7 @@ for i in $(seq 1 72); do
     log "pronto (${GIT_SHA})"
     exit 0
   fi
-  sleep 5
+  sleep 2
 done
 
 log "ERRO: a API não ficou saudável em 6 minutos; voltando para ${LOCAL:0:7}"

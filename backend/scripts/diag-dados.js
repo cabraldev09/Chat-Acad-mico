@@ -22,6 +22,14 @@ const q = async (title, sql) => {
     LEFT JOIN "Tickets" t ON t.id = (SELECT t2.id FROM "Tickets" t2 WHERE t2."leadId" = l.id ORDER BY t2.id DESC LIMIT 1)
     LEFT JOIN "Whatsapps" w ON w.id = t."whatsappId"
     WHERE k."doneAt" IS NULL AND k."dueAt" < now() ORDER BY k."dueAt" LIMIT 40`);
+  await q("tarefas vencidas, com a conversa aberta do contato", `SELECT k.id, k.title, k."userId" AS task_user, l.name AS lead, l."ownerId" AS lead_owner, t.id AS ticket, t.status AS t_status, t."userId" AS t_user, t."whatsappId" AS t_wa
+    FROM "LeadTasks" k JOIN "Leads" l ON l.id = k."leadId"
+    LEFT JOIN "Tickets" t ON t.id = (SELECT t2.id FROM "Tickets" t2 WHERE t2."contactId" = l."contactId" AND t2.status <> 'closed' ORDER BY t2.id DESC LIMIT 1)
+    WHERE k."doneAt" IS NULL AND k."dueAt" < now() ORDER BY k."dueAt" LIMIT 40`);
+  await q("conversas abertas com quem não tem WhatsApp", `SELECT u.id AS user_id, u.name, t.status, COUNT(*) AS n FROM "Tickets" t JOIN "Users" u ON u.id = t."userId"
+    WHERE t.status IN ('open','pending') AND t."isGroup" = false AND t."isHistorical" = false AND NOT EXISTS (SELECT 1 FROM "Whatsapps" w WHERE w.channel = 'whatsapp' AND w."ownerId" = u.id) GROUP BY 1,2,3 ORDER BY n DESC`);
+  await q("mídias sem arquivo (24 h)", `SELECT t."whatsappId" AS wa, m."mediaType", COUNT(*) AS n, MAX(m."createdAt") AS ultima FROM "Messages" m JOIN "Tickets" t ON t.id = m."ticketId"
+    WHERE m."createdAt" > now() - interval '24 hours' AND m."mediaType" IS NOT NULL AND m."mediaType" <> 'chat' AND (m."mediaUrl" IS NULL OR m."mediaUrl" = '') GROUP BY 1,2 ORDER BY n DESC`);
   await q("1º contato (últimos 30 dias) por responsável", `SELECT COALESCE(t."userId", l."ownerId") AS resp, COUNT(*) AS n FROM "Leads" l LEFT JOIN "Tickets" t ON t.id = (SELECT t2.id FROM "Tickets" t2 WHERE t2."leadId" = l.id ORDER BY t2.id DESC LIMIT 1)
     WHERE l."firstContactAt" IS NOT NULL AND l."createdAt" > now() - interval '30 days' GROUP BY 1`);
   await q("mensagens recebidas por conexão (últimas 6 h)", `SELECT t."whatsappId" AS wa, COUNT(*) AS n, MAX(m."createdAt") AS ultima FROM "Messages" m JOIN "Tickets" t ON t.id = m."ticketId" WHERE m."fromMe" = false AND m."createdAt" > now() - interval '6 hours' GROUP BY 1`);
