@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { makeStyles } from "@material-ui/core/styles";
+import MuiTooltip from "@material-ui/core/Tooltip";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Info } from "lucide-react";
 
@@ -146,15 +147,19 @@ export const periodParams = (p) => (p.range === "custom" ? { range: "custom", fr
 export const Kpi = ({ k, value, def, hint, tone }) => {
   const c = useKit();
   const unit = def && def.unit;
+  // the explanation appears at once when the pointer touches the card (no waiting for the browser's own tooltip)
+  const help = SHORT[k] || (def && def.description) || "";
   return (
-    <div className={c.kpi} data-kpi={k}>
-      <div className={c.kpiLabel}>
-        <span>{(def && def.label) || k}</span>
-        <span title={SHORT[k] || (def && def.description) || ""} style={{ display: "inline-flex", opacity: 0.55, cursor: "help" }}><Info size={13} /></span>
+    <MuiTooltip title={help} enterDelay={0} leaveDelay={0} placement="top" arrow disableHoverListener={!help}>
+      <div className={c.kpi} data-kpi={k} style={{ cursor: help ? "help" : undefined }}>
+        <div className={c.kpiLabel}>
+          <span>{(def && def.label) || k}</span>
+          <span style={{ display: "inline-flex", opacity: 0.55 }}><Info size={13} /></span>
+        </div>
+        <div className={c.kpiValue} style={tone ? { color: tone } : undefined}>{fmt(value, unit)}</div>
+        {hint ? <div className={c.kpiHint}>{hint}</div> : null}
       </div>
-      <div className={c.kpiValue} style={tone ? { color: tone } : undefined}>{fmt(value, unit)}</div>
-      {hint ? <div className={c.kpiHint}>{hint}</div> : null}
-    </div>
+    </MuiTooltip>
   );
 };
 

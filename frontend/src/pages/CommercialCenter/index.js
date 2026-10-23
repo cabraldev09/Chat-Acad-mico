@@ -3,6 +3,7 @@ import { useHistory } from "react-router-dom";
 import { toast } from "react-toastify";
 import { AlertTriangle, Wifi, WifiOff, BarChart3, CalendarClock, Download, Gauge, HeartPulse, ListTodo, Megaphone, MonitorCheck, Settings2, Target, Users } from "lucide-react";
 
+import Tooltip from "@material-ui/core/Tooltip";
 import { AuthContext } from "../../context/Auth/AuthContext";
 import { canOperateRetention } from "../../utils/access";
 import { onColor, tint } from "../../utils/color";
@@ -210,8 +211,8 @@ const Team = ({ consultants, onOpen }) => {
             <span style={{ flex: 1, minWidth: 0 }}>
               <b style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.user.name}</b>
               <span className={c.sub} style={{ display: "block", marginTop: 0 }}>
-                {p.online ? <b style={{ color: "#16a34a" }}>Online agora</b> : p.lastSeenAt ? `Acessou ${dayTime(p.lastSeenAt)}` : "Nunca acessou"}
-                {p.lastActivityAt ? ` · última ação ${since(p.lastActivityAt)}` : ""}
+                {p.online ? <b style={{ color: "#16a34a" }}>Online agora</b> : p.lastSeenAt ? `Acessou ${dayTime(p.lastSeenAt)}` : p.lastActivityAt ? `Última atividade ${dayTime(p.lastActivityAt)}` : "Sem registro de acesso ainda"}
+                {p.lastActivityAt && (p.online || p.lastSeenAt) ? ` · última ação ${since(p.lastActivityAt)}` : ""}
               </span>
               <span className={c.sub} style={{ display: "block", marginTop: 0 }}>
                 {slots ? `Hoje ${slots}${p.onSchedule ? " · no horário" : " · fora do horário"}` : "Sem horário cadastrado para hoje"}
@@ -251,6 +252,71 @@ const Production = ({ ranked }) => {
           </div>
         </div>
       ))}
+    </div>
+  );
+};
+
+// What needs attention, ONE LINE PER PERSON: the worst problem first (a number that is down explains the rest), the other facts as small chips.
+// Everything explains itself at once when the pointer touches it.
+const WHY = {
+  whatsapp_none: "A pessoa nunca conectou um WhatsApp: não recebe nem envia mensagens. As conversas e tarefas dela ficam paradas.",
+  whatsapp_offline: "O WhatsApp da pessoa está desconectado: as mensagens dos clientes não chegam até ele ser reconectado.",
+  tasks_overdue: "Tarefas de acompanhamento cujo prazo já passou. Clique para ver quais são.",
+  pending_reply: "Conversas abertas em que o cliente foi o último a falar e ainda espera resposta.",
+  idle_on_schedule: "No horário de trabalho, sem enviar mensagem, mexer em lead ou concluir tarefa há um tempo.",
+  below_messages_target: "Mensagens enviadas hoje abaixo da meta diária, dentro do horário de trabalho.",
+  followups_due: "Leads com o próximo contato marcado para hoje ou antes.",
+  no_conversion: "Leads trabalhados no período sem nenhuma matrícula confirmada.",
+};
+const RANK = { high: 0, medium: 1, low: 2 };
+
+const Alerts = ({ alerts, onOpen, history }) => {
+  const c = useKit();
+  const people = [];
+  alerts.forEach((a) => {
+    let g = people.find((x) => x.userId === a.userId);
+    if (!g) { g = { userId: a.userId, name: a.name, items: [] }; people.push(g); }
+    g.items.push(a);
+  });
+  people.forEach((g) => g.items.sort((x, y) => RANK[x.level] - RANK[y.level]));
+  people.sort((x, y) => RANK[x.items[0].level] - RANK[y.items[0].level] || y.items.length - x.items.length);
+  const open = (a) => {
+    if (a.code === "tasks_overdue") history.push(`/crm/tarefas?scope=all&status=overdue&userId=${a.userId}`);
+    else if (a.code === "whatsapp_offline") history.push("/connections");
+    else onOpen(a.userId);
+  };
+  return (
+    <div className={c.panel}>
+      <BlockTitle icon={<AlertTriangle size={16} />} title="Alertas e oportunidades" help="Uma linha por pessoa, com o problema mais grave primeiro." />
+      <div style={{ marginTop: 8 }}>
+        {people.length === 0 && <div className={c.sub} style={{ padding: "14px 0" }}>Nada pedindo atenção agora. Tudo em dia.</div>}
+        {people.slice(0, 6).map((g) => {
+          const [head, ...rest] = g.items;
+          return (
+            <div key={g.userId} style={{ display: "flex", gap: 12, padding: "12px 0", borderTop: `1px solid rgba(127,140,160,.22)`, alignItems: "flex-start" }}>
+              <span style={{ width: 4, alignSelf: "stretch", borderRadius: 4, background: LEVEL[head.level], flex: "none" }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline" }}>
+                  <b style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{g.name}</b>
+                  <button type="button" className={c.btn} style={{ padding: "3px 10px", fontSize: 12 }} onClick={() => onOpen(g.userId)}>Ver detalhe</button>
+                </div>
+                <Tooltip title={WHY[head.code] || ""} enterDelay={0} placement="top" arrow>
+                  <button type="button" onClick={() => open(head)} style={{ display: "block", textAlign: "left", border: 0, background: "none", font: "inherit", color: "inherit", padding: 0, marginTop: 2, cursor: "pointer", lineHeight: 1.4 }}>{head.text}</button>
+                </Tooltip>
+                {rest.length > 0 && (
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+                    {rest.map((a) => (
+                      <Tooltip key={a.code} title={WHY[a.code] || ""} enterDelay={0} placement="top" arrow>
+                        <button type="button" onClick={() => open(a)} style={{ border: 0, cursor: "pointer", font: "inherit", fontSize: 12, fontWeight: 600, padding: "3px 10px", borderRadius: 999, background: `${LEVEL[a.level]}1f`, color: "inherit" }}>{a.text}</button>
+                      </Tooltip>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 };
@@ -308,18 +374,7 @@ const CommercialCenter = () => {
           </div>
           <div className={c.cols}>
             <Team consultants={data.consultants} onOpen={(id) => { setSelected(id); setTab("consultores"); }} />
-            <div className={c.panel}>
-              <BlockTitle icon={<AlertTriangle size={16} />} title="Alertas e oportunidades" help="Calculados agora com os dados reais de cada consultor." />
-              <div style={{ marginTop: 8 }}>
-                {data.alerts.length === 0 && <div className={c.sub}>Nada pedindo atenção agora.</div>}
-                {data.alerts.slice(0, 8).map((a, i) => (
-                  <button key={`${a.userId}-${a.code}-${i}`} type="button" className={c.row} onClick={() => { if (a.code === "tasks_overdue") history.push(alertLink(a)); else if (a.code === "whatsapp_offline") history.push("/connections"); else { setSelected(a.userId); setTab("consultores"); } }}>
-                    <span style={{ width: 8, height: 8, borderRadius: "50%", background: LEVEL[a.level], flex: "none" }} />
-                    <span style={{ flex: 1 }}><b>{a.name}</b> · {a.text}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
+            <Alerts alerts={data.alerts} onOpen={(id) => { setSelected(id); setTab("consultores"); }} history={history} />
           </div>
           <Production ranked={ranked} />
         </div>
