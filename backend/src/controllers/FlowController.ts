@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 
+import { aiError } from "../services/AiServices/Provider";
 import AppError from "../errors/AppError";
 import ChatFlow from "../models/ChatFlow";
 import ChatFlowRun from "../models/ChatFlowRun";
@@ -216,8 +217,7 @@ export const simulate = async (req: Request, res: Response): Promise<Response> =
   } catch (err) {
     if (err instanceof AppError) throw err;
     // the provider refused (no key, no balance): the screen says so instead of a blank error
-    const code = String(err?.message || "");
-    throw new AppError(code === "ERR_AI_NO_API_KEY" ? "ERR_AI_NO_API_KEY" : "ERR_AI_FAILED", code === "ERR_AI_NO_API_KEY" ? 400 : 502);
+    throw aiError(err, "simulação");
   }
   return res.json({ messages, actions, traces, status: step.status, state: step.state, path: step.path, resumeAfterMinutes: step.resumeAt ? Math.round((step.resumeAt.getTime() - Date.now()) / 60000) : null });
 };

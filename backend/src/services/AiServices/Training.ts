@@ -4,6 +4,7 @@ import AiAgent from "../../models/AiAgent";
 import AiRule from "../../models/AiRule";
 import { getSecretSetting } from "../../helpers/SecretSettings";
 import { logUsage } from "./Usage";
+import { withRetry } from "./Provider";
 import { KINDS, Proposal, RuleKind, formatTraining, parseProposals } from "./TrainingText";
 
 export { KINDS, MAX_EXAMPLES, MAX_RULES, formatTraining, parseJson, parseProposals } from "./TrainingText";
@@ -36,19 +37,19 @@ export const askModel = async (agent: AiAgent, system: string, messages: Array<{
   const apiKey = agent.apiKey || (await getSecretSetting(`ai_${agent.provider}_key`));
   if (!apiKey) throw new Error("ERR_AI_NO_API_KEY");
   if (agent.provider === "openai") {
-    const { data } = await axios.post(
+    const data = await withRetry(async compat => (await axios.post(
       `${OPENAI_URL()}/v1/chat/completions`,
-      { model: agent.model, max_completion_tokens: maxTokens, messages: [{ role: "system", content: system }, ...messages] },
+      { model: agent.model, ...(compat ? { max_tokens: maxTokens } : { max_completion_tokens: maxTokens }), messages: [{ role: "system", content: system }, ...messages] },
       { headers: { Authorization: `Bearer ${apiKey}` }, timeout: 90000 }
-    );
+    )).data);
     await logUsage({ agentId: agent.id, model: agent.model, kind: "test", usage: data.usage });
     return String(data.choices?.[0]?.message?.content || "").trim();
   }
-  const { data } = await axios.post(
+  const data = await withRetry(async () => (await axios.post(
     `${ANTHROPIC_URL()}/v1/messages`,
     { model: agent.model, max_tokens: maxTokens, system, messages },
     { headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" }, timeout: 90000 }
-  );
+  )).data);
   await logUsage({ agentId: agent.id, model: agent.model, kind: "test", usage: data.usage });
   return (data.content || []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("").trim();
 };

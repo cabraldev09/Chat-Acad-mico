@@ -19,8 +19,10 @@ const byStatus = {
 const toastError = err => {
 	const errorMsg = err?.response?.data?.message || err?.response?.data?.error;
 	if (errorMsg) {
+		const detail = err?.response?.data?.data?.detail;
 		if (i18n.exists(`backendErrors.${errorMsg}`)) {
-			toast.error(i18n.t(`backendErrors.${errorMsg}`), { toastId: errorMsg });
+			// the real reason the server gives (for example why the AI provider refused) goes under the title
+			toast.error(detail ? `${i18n.t(`backendErrors.${errorMsg}`)} ${detail}` : i18n.t(`backendErrors.${errorMsg}`), { toastId: detail ? `${errorMsg}:${detail}` : errorMsg, autoClose: detail ? 9000 : undefined });
 		} else if (/^ERR_FIELD_REQUIRED_/.test(String(errorMsg))) {
 			toast.error("Preencha todos os campos obrigatórios.", { toastId: errorMsg });
 		} else if (/^ERR_[A-Z0-9_]+$/.test(String(errorMsg))) {

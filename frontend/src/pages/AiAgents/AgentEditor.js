@@ -52,6 +52,7 @@ const AgentEditor = ({ open, agent, initialTab = 0, onClose, onSaved }) => {
   const [queues, setQueues] = useState([]);
   const [connections, setConnections] = useState([]);
   const [saving, setSaving] = useState(false);
+  const [pinging, setPinging] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -112,8 +113,11 @@ const AgentEditor = ({ open, agent, initialTab = 0, onClose, onSaved }) => {
                 <MenuItem value="anthropic">Anthropic (Claude)</MenuItem>
                 <MenuItem value="openai">OpenAI (GPT)</MenuItem>
               </TextField>
-              <TextField variant="outlined" margin="dense" label="Modelo" required value={v.model} onChange={(e) => set("model", e.target.value)} helperText="Modelo pequeno gasta menos. Sugestão: claude-haiku-5-5." />
-              <TextField variant="outlined" margin="dense" type="password" label="Chave de IA própria (opcional)" value={v.apiKey || ""} onChange={(e) => set("apiKey", e.target.value)} helperText="Se ficar vazio, usa a chave de IA geral." />
+              <TextField variant="outlined" margin="dense" label="Modelo" required value={v.model} onChange={(e) => set("model", e.target.value)} helperText={v.provider === "openai" ? "Modelo pequeno gasta menos. Sugestão: gpt-4o-mini. O nome precisa existir na sua conta da OpenAI." : "Modelo pequeno gasta menos. Sugestão: claude-haiku-5-5."} />
+              <TextField variant="outlined" margin="dense" type="password" label="Chave de IA própria (opcional)" value={v.apiKey || ""} onChange={(e) => set("apiKey", e.target.value)} helperText={v.apiKey ? "Esta chave vale só para este agente. Se trocou de provedor, use uma chave do provedor novo ou apague esta." : "Se ficar vazio, usa a chave de IA geral."} />
+              {agent && agent.id && (
+                <Button variant="outlined" size="small" disabled={pinging} onClick={async () => { setPinging(true); try { const { data } = await api.post(`/ai-agents/${agent.id}/ping`); toast.success(`Conexão ok: ${data.model} respondeu em ${(data.ms / 1000).toFixed(1)} s.`); } catch (err) { toastError(err); } setPinging(false); }}>{pinging ? "Testando..." : "Testar conexão (usa o que está salvo)"}</Button>
+              )}
               <span />
             </div>
 
