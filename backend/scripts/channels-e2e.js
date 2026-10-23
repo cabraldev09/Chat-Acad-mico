@@ -2198,7 +2198,9 @@ const postMeta = (id, payload, secret, badSig) => {
       const t = (await http.get(`/tickets/${ticketId}`, auth())).data;
       assert(t.status !== "closed" && t.isHistorical === false, `ticket after reactivation: ${t.status} ${t.isHistorical}`);
       assert(!(await ids({ historical: "true" })).includes(String(ticketId)), "reactivated ticket still in the history view");
-      const msgs = (await http.get(`/messages/${ticketId}`, auth())).data.messages.map(m => m.body);
+      // the ticket comes back to life a moment before the new message is written: wait for it
+      let msgs = [];
+      await waitFor(async () => { msgs = (await http.get(`/messages/${ticketId}`, auth())).data.messages.map(m => m.body); return msgs.includes("voltei a escrever"); }, 8000, "the new message in the thread").catch(() => undefined);
       assert(msgs.includes("mensagem antiga") && msgs.includes("voltei a escrever"), `thread lost: ${msgs}`);
       assert(sql(`SELECT COUNT(*) FROM Tickets WHERE contactId=${contactId}`) === "1", "a second ticket was created instead of reusing the history one");
     });
