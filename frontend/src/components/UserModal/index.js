@@ -334,8 +334,8 @@ const UserModal = ({ open, onClose, userId }) => {
 											))}
 										</div>
 										<div style={{ display: "flex", gap: 8 }}>
-											<TextField label="Início" type="time" variant="outlined" margin="dense" InputLabelProps={{ shrink: true }} value={work.start} onChange={(e) => setWork((w) => ({ ...w, start: e.target.value }))} />
-											<TextField label="Fim" type="time" variant="outlined" margin="dense" InputLabelProps={{ shrink: true }} value={work.end} onChange={(e) => setWork((w) => ({ ...w, end: e.target.value }))} />
+											<TextField label="Início" type="time" variant="outlined" margin="dense" InputLabelProps={{ shrink: true }} value={work.start} onChange={(e) => { const v = e.target.value; setWork((w) => ({ ...w, start: v })); }} />
+											<TextField label="Fim" type="time" variant="outlined" margin="dense" InputLabelProps={{ shrink: true }} value={work.end} onChange={(e) => { const v = e.target.value; setWork((w) => ({ ...w, end: v })); }} />
 										</div>
 									</div>
 								)}
