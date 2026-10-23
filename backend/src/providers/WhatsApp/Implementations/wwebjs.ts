@@ -669,6 +669,45 @@ export const sessionWatch = (whatsappId: number): { hasClient: boolean; live: bo
   initializing: initTimers.has(whatsappId) || retrying.has(whatsappId) || readyTimers.has(whatsappId)
 });
 
+// A number that is delivering messages is connected, whatever the status in the database says. The status can lag behind (a "ready" that never fired after a
+// restart, an old "qrcode" event, a change_state of WhatsApp Web) and then the alert "a conexão caiu" contradicts the messages that keep arriving in real time.
+// Any event of the page proves it is alive, so the status is put right (at most once a minute per number) and the screens are told.
+const aliveAt = new Map<number, number>();
+const markAlive = (whatsappId: number): void => {
+  const now = Date.now();
+  if (now - (aliveAt.get(whatsappId) || 0) < 60000) return;
+  aliveAt.set(whatsappId, now);
+  Whatsapp.update({ status: "CONNECTED", qrcode: "" }, { where: { id: whatsappId, status: { [Op.ne]: "CONNECTED" } } })
+    .then(async ([changed]) => {
+      if (!changed) return;
+      const row = await Whatsapp.findByPk(whatsappId);
+      if (!row) return;
+      logger.warn(`Session ${row.name}: recebendo mensagens, mas o status estava desatualizado; marcada como conectada`);
+      getIO().emit("whatsappSession", { action: "update", session: row });
+    })
+    .catch(() => undefined);
+};
+
+// The watchdog asks the page itself (not the database) whether it is connected, and corrects the status when WhatsApp Web says CONNECTED.
+export const reconcileStatuses = async (): Promise<void> => {
+  for (const [id, wbot] of clients) {
+    try {
+      if (initTimers.has(id) || retrying.has(id)) continue;
+      const row = await Whatsapp.findByPk(id);
+      if (!row || row.status === "CONNECTED") continue;
+      // eslint-disable-next-line no-await-in-loop
+      const state = await withTimeout(wbot.getState(), 15000).catch(() => null);
+      if (state !== "CONNECTED") continue;
+      // eslint-disable-next-line no-await-in-loop
+      await row.update({ status: "CONNECTED", qrcode: "" });
+      logger.warn(`Session ${row.name}: o WhatsApp Web está conectado, mas o status do banco estava desatualizado; corrigido`);
+      getIO().emit("whatsappSession", { action: "update", session: row });
+    } catch (err) {
+      logger.warn(`reconcile of session ${id} failed: ${err}`);
+    }
+  }
+};
+
 const sendMessage = async (
   sessionId: number,
   to: string,
@@ -1356,6 +1395,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
     });
 
     wbot.on("message_create", async msg => {
+      markAlive(whatsapp.id);
       if (!shouldHandleMessage(msg)) return;
 
       try {

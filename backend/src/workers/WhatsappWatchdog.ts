@@ -3,7 +3,7 @@ import path from "path";
 
 import { WWEBJS_AUTH_DIR } from "../config/paths";
 import Whatsapp from "../models/Whatsapp";
-import { sessionWatch } from "../providers/WhatsApp/Implementations/wwebjs";
+import { reconcileStatuses, sessionWatch } from "../providers/WhatsApp/Implementations/wwebjs";
 import { StartWhatsAppSession } from "../services/WbotServices/StartWhatsAppSession";
 import { logger } from "../utils/logger";
 
@@ -29,7 +29,10 @@ const hasLogin = (id: number): boolean => {
 
 const tick = async (): Promise<void> => {
   try {
-    if (process.env.SKIP_WHATSAPP_SESSIONS || Date.now() - bootAt < GRACE_MS) return;
+    if (process.env.SKIP_WHATSAPP_SESSIONS) return;
+    // first of all: a number that is really connected must never show as fallen (this also runs during the grace time after a restart)
+    await reconcileStatuses();
+    if (Date.now() - bootAt < GRACE_MS) return;
     const rows = await Whatsapp.findAll({ where: { channel: "whatsapp" } as any });
     const now = Date.now();
     for (const w of rows) {
@@ -53,6 +56,8 @@ const tick = async (): Promise<void> => {
 
 export const startWhatsappWatchdog = (): void => {
   setInterval(tick, Number(process.env.WHATSAPP_WATCHDOG_MS) || 3 * 60000);
+  // right after the server starts the sessions come back one by one: look once early, so a recovered number does not show as fallen for minutes
+  setTimeout(() => reconcileStatuses().catch(() => undefined), 45000);
 };
 
 export { tick as runWhatsappWatchdogOnce };
