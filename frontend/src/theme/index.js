@@ -201,6 +201,8 @@ const createAppTheme = (type) => {
           border: `1px solid ${colors.divider}`,
           backgroundColor: colors.cards.background,
           borderRadius: borderRadius.medium,
+          boxShadow: "var(--ui-shadow-1)",
+          transition: "box-shadow .2s var(--ease-out), border-color .2s var(--ease-out), transform .2s var(--ease-out)",
           "&$rounded": { borderRadius: borderRadius.medium },
         },
       },
@@ -278,6 +280,7 @@ const createAppTheme = (type) => {
       },
       MuiTableRow: {
         root: {
+          transition: "background-color .15s var(--ease-out)",
           "&:last-child td": { borderBottom: 0 },
         },
         hover: { "&:hover": { backgroundColor: colors.action.hover } },

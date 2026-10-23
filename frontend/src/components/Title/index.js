@@ -8,7 +8,7 @@ export default function Title(props) {
 	return (
 		<div style={{ display: "flex", alignItems: "center", marginRight: 16, minWidth: 0 }}>
 			<BackButton />
-			<Typography variant="h5" color="textPrimary" style={{ fontWeight: 600 }}>
+			<Typography variant="h5" color="textPrimary" style={{ fontWeight: 800, fontSize: 26, letterSpacing: "-0.02em", lineHeight: 1.15 }}>
 				{props.children}
 			</Typography>
 		</div>

@@ -1,0 +1,49 @@
+/* ---------- the shared look of the new screens: depth, lift, staggered entrance ---------- */
+:root {
+  --ui-border: #cfd9e8;
+  --ui-surface: #ffffff;
+  --ui-shadow-1: 0 1px 2px rgba(11, 66, 121, 0.06), 0 1px 1px rgba(11, 66, 121, 0.04);
+  --ui-shadow-2: 0 8px 22px -10px rgba(11, 66, 121, 0.28), 0 2px 6px rgba(11, 66, 121, 0.06);
+  --ui-shadow-3: 0 22px 48px -18px rgba(11, 66, 121, 0.38), 0 6px 14px rgba(11, 66, 121, 0.08);
+  --ui-t: 0.2s var(--ease-out);
+}
+:root[data-theme="dark"] {
+  --ui-border: #1b2a42;
+  --ui-surface: #0c1627;
+  --ui-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --ui-shadow-2: 0 10px 26px -12px rgba(0, 0, 0, 0.7), 0 2px 6px rgba(0, 0, 0, 0.35);
+  --ui-shadow-3: 0 26px 54px -20px rgba(0, 0, 0, 0.85), 0 6px 14px rgba(0, 0, 0, 0.4);
+}
+
+/* a card: a thin border and a soft shadow; with .ui-lift it rises a little under the pointer */
+.ui-card { background: var(--ui-surface); border: 1px solid var(--ui-border); border-radius: 16px; box-shadow: var(--ui-shadow-1); transition: transform var(--ui-t), box-shadow var(--ui-t), border-color var(--ui-t); }
+.ui-lift:hover { transform: translateY(-2px); box-shadow: var(--ui-shadow-2); border-color: color-mix(in srgb, var(--brand-cerulean) 35%, var(--ui-border)); }
+.ui-lift:active { transform: translateY(0); box-shadow: var(--ui-shadow-1); }
+.ui-press { cursor: pointer; }
+.ui-press:focus-visible { outline: 2px solid var(--brand-cerulean); outline-offset: 2px; }
+
+/* the children of .ui-stagger come in one after the other (the delay grows with the position) */
+.ui-stagger > * { animation: page-in 0.42s var(--ease-out) both; }
+.ui-stagger > *:nth-child(1) { animation-delay: 0ms; }
+.ui-stagger > *:nth-child(2) { animation-delay: 45ms; }
+.ui-stagger > *:nth-child(3) { animation-delay: 90ms; }
+.ui-stagger > *:nth-child(4) { animation-delay: 135ms; }
+.ui-stagger > *:nth-child(5) { animation-delay: 180ms; }
+.ui-stagger > *:nth-child(6) { animation-delay: 225ms; }
+.ui-stagger > *:nth-child(7) { animation-delay: 270ms; }
+.ui-stagger > *:nth-child(n+8) { animation-delay: 310ms; }
+
+/* loading: a block that shimmers where the content will be */
+.ui-skeleton { border-radius: 10px; background: linear-gradient(90deg, rgba(127, 140, 160, 0.14) 25%, rgba(127, 140, 160, 0.28) 37%, rgba(127, 140, 160, 0.14) 63%); background-size: 200% 100%; animation: shimmer 1.4s ease-in-out infinite; }
+
+/* the pill tabs: the active one slides (the indicator is positioned by the component) */
+.ui-seg { position: relative; display: inline-flex; gap: 2px; padding: 4px; border-radius: 999px; background: color-mix(in srgb, var(--ui-border) 55%, transparent); }
+.ui-seg-btn { position: relative; z-index: 1; border: 0; background: transparent; font: inherit; font-size: 13.5px; font-weight: 600; padding: 7px 16px; border-radius: 999px; cursor: pointer; color: inherit; opacity: 0.7; transition: opacity var(--ui-t), color var(--ui-t); white-space: nowrap; }
+.ui-seg-btn:hover { opacity: 1; }
+.ui-seg-btn[aria-selected="true"] { opacity: 1; }
+.ui-seg-ind { position: absolute; z-index: 0; top: 4px; bottom: 4px; border-radius: 999px; background: var(--ui-surface); box-shadow: var(--ui-shadow-2); transition: left 0.28s var(--ease-out), width 0.28s var(--ease-out); }
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-stagger > * { animation: none; }
+  .ui-lift:hover { transform: none; }
+}

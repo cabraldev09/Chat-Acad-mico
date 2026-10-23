@@ -4,6 +4,7 @@ import CssBaseline from "@material-ui/core/CssBaseline";
 
 import App from "./App";
 import "./styles/app.css";
+import "./styles/ui.css";
 import { installModernToast } from "./utils/modernToast";
 import { installAutoTitles } from "./utils/autoTitles";
 import { installChunkRecovery } from "./utils/lazyPage";

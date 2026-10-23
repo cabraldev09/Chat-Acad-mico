@@ -32,7 +32,7 @@ export const useStyles = makeStyles((theme) => ({
   body: { flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", paddingBottom: theme.spacing(2), ...theme.scrollbarStyles },
   kpis: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: theme.spacing(1.5), marginBottom: theme.spacing(2) },
   kpi: { padding: theme.spacing(1.5, 2), animation: "page-in .45s var(--ease-out) both" },
-  kpiValue: { fontSize: 26, fontWeight: 700, letterSpacing: "-0.03em", lineHeight: 1.15 },
+  kpiValue: { fontSize: 30, fontWeight: 800, letterSpacing: "-0.03em", lineHeight: 1.15 },
   kpiLabel: { fontSize: 12.5, color: theme.palette.text.secondary, marginTop: 2 },
   toolbar: { display: "flex", gap: theme.spacing(1), alignItems: "center", flexWrap: "wrap", marginBottom: theme.spacing(1.5) },
   grow: { flex: 1, minWidth: 180 },

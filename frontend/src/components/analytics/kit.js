@@ -28,7 +28,7 @@ export const useKit = makeStyles((theme) => {
     sub: { fontSize: 12.5, color: theme.palette.text.secondary, marginTop: 2 },
     grid: { display: "grid", gap: theme.spacing(2), gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))" },
     cols: { display: "grid", gap: theme.spacing(2), gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", alignItems: "start" },
-    kpi: { background: dark ? "#0f1826" : "#fff", border: `1px solid ${line}`, borderRadius: 14, padding: "14px 16px", minWidth: 0, position: "relative", boxShadow: dark ? "none" : "0 1px 2px rgba(11,66,121,.06)" },
+    kpi: { background: dark ? "#0f1826" : "#fff", border: `1px solid ${line}`, borderRadius: 14, padding: "14px 16px", minWidth: 0, position: "relative", boxShadow: dark ? "none" : "0 1px 2px rgba(11,66,121,.06)", transition: "transform .2s var(--ease-out), box-shadow .2s var(--ease-out)", "&:hover": { transform: "translateY(-2px)", boxShadow: dark ? "0 10px 26px -12px rgba(0,0,0,.7)" : "0 10px 24px -12px rgba(11,66,121,.3)" } },
     kpiLabel: { fontSize: 12.5, color: theme.palette.text.secondary, display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 6, minHeight: 34 },
     grid4: { display: "grid", gap: theme.spacing(2), gridTemplateColumns: "repeat(4, minmax(0, 1fr))", [theme.breakpoints.down("sm")]: { gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }, [theme.breakpoints.down("xs")]: { gridTemplateColumns: "1fr" } },
     grid5: { display: "grid", gap: theme.spacing(2), gridTemplateColumns: "repeat(5, minmax(0, 1fr))", [theme.breakpoints.down("md")]: { gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }, [theme.breakpoints.down("xs")]: { gridTemplateColumns: "1fr" } },
