@@ -86,7 +86,9 @@ export const eventAllowed = async (user: User, event: string, data: any, rooms: 
     if (event === "user") return manager || user.profile === "admin" || Number(data.user?.id || data.userId) === Number(user.id);
     if (event === "contactsImport") return Number(data.userId) === Number(user.id);
     // the return of a curricular analysis is for its owner (the management reads it on the screen)
-    if (event === "followUp") return Number(data.userId) === Number(user.id);
+    if (event === "followUp" || event === "taskAssigned" || event === "onboardingAssigned") return Number(data.userId) === Number(user.id);
+    // a student entered the risk of dropping out: the tutor, the consultant of the student and the management
+    if (event === "riskAlert") return manager || Number(data.tutorId) === Number(user.id) || Number(data.ownerId) === Number(user.id);
     // Settings may contain API credentials. Other users refetch their permitted subset over HTTP.
     if (event === "settings") return manager;
     // progress of what a person forwarded: only they hear it (the room "user:<id>" already limits the delivery)

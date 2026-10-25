@@ -1,3 +1,4 @@
+import { getIO } from "../../libs/socket";
 import { QueryTypes } from "sequelize";
 
 import sequelize from "../../database";
@@ -109,6 +110,7 @@ export const runRiskScan = async (): Promise<number> => {
       }
       // eslint-disable-next-line no-await-in-loop
       await addActivity(lead.id, null, "system", `Risco de evasão: ${s.days} dias sem notícias do aluno.`);
+      try { getIO().emit("riskAlert", { leadId: lead.id, leadName: lead.name, days: s.days, tutorId: lead.onboardingTutorId || null, ownerId: lead.ownerId || null }); } catch (err) { /* only a notice */ }
     }
   }
   // the ones who came back: the label goes away

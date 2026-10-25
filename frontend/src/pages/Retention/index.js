@@ -10,6 +10,7 @@ import openSocket from "../../services/socket-io";
 import WhatsPreview, { fillSample } from "./Preview";
 import Envios, { Composer } from "./Envios";
 import Operacao from "./Operacao";
+import Today from "./Today";
 import MainContainer from "../../components/MainContainer";
 import MainHeader from "../../components/MainHeader";
 import Title from "../../components/Title";
@@ -454,7 +455,7 @@ const Retention = () => {
   const classes = useStyles();
   const { user } = useContext(AuthContext);
   const manager = isManager(user);
-  const [tab, setTab] = useState("nps");
+  const [tab, setTab] = useState("hoje");
   const [summary, setSummary] = useState(null);
   const [compose, setCompose] = useState(false);
   const [serverOld, setServerOld] = useState(false);
@@ -513,6 +514,7 @@ const Retention = () => {
             </div>
           )}
           <Tabs value={tab} onChange={(e, v) => setTab(v)} indicatorColor="primary" textColor="primary" variant="scrollable" scrollButtons="auto" style={{ marginBottom: 16 }}>
+            <Tab value="hoje" label={<span>Hoje{summary && (r.total + open) > 0 ? <span className={classes.badge}>{r.total + open}</span> : null}</span>} />
             <Tab value="nps" label={<span>Satisfação (NPS){open > 0 ? <span className={classes.badge}>{open}</span> : null}</span>} />
             <Tab value="risk" label={<span>Risco de evasão{r && r.total > 0 ? <span className={classes.badge}>{r.total}</span> : null}</span>} />
             <Tab value="remat" label={<span>Rematrícula{m && m.pending > 0 && m.window === "open" ? <span className={classes.badge}>{m.pending}</span> : null}</span>} />
@@ -520,6 +522,7 @@ const Retention = () => {
             <Tab value="operacao" label="Operação" />
             {manager && <Tab value="config" label="Configurar" />}
           </Tabs>
+          {tab === "hoje" && <Today onChanged={loadSummary} />}
           {tab === "nps" && <Nps manager={manager} />}
           {tab === "risk" && <Risk manager={manager} onChanged={loadSummary} />}
           {tab === "remat" && <Rematricula manager={manager} onChanged={loadSummary} />}

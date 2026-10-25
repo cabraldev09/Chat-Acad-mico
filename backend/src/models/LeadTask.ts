@@ -44,6 +44,14 @@ class LeadTask extends Model<LeadTask> {
   @Column
   notifiedAt: Date;
 
+  // who ticked it
+  @ForeignKey(() => User)
+  @Column
+  doneById: number;
+
+  @BelongsTo(() => User, "doneById")
+  doneBy: User;
+
   @ForeignKey(() => Lead)
   @Column
   leadId: number;
@@ -55,7 +63,7 @@ class LeadTask extends Model<LeadTask> {
   @Column
   userId: number;
 
-  @BelongsTo(() => User)
+  @BelongsTo(() => User, "userId")
   user: User;
 
   @CreatedAt

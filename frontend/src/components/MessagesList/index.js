@@ -830,7 +830,7 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
         return (
           <>
             <div className={classes.pickBar}>
-              <IconButton aria-label="Fechar" size="small" onClick={() => setPicked(null)} aria-label="Cancelar seleção" title="Cancelar (Esc)"><Close /></IconButton>
+              <IconButton size="small" onClick={() => setPicked(null)} aria-label="Cancelar seleção" title="Cancelar (Esc)"><Close /></IconButton>
               <span className={classes.pickCount}>{picked.length} {picked.length === 1 ? "selecionada" : "selecionadas"}</span>
               <IconButton size="small" disabled={!picked.length} title={allStarred ? "Desfavoritar" : "Favoritar"}
                 onClick={async () => {

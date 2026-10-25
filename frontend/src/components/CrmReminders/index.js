@@ -137,6 +137,40 @@ const CrmReminders = () => {
         onClick: () => history.push(`/crm?lead=${d.leadId}`),
       });
     });
+    // a task was given to me (a colleague, the system, a student sent to my ambientação): I hear it now and the lists refresh
+    const ding = () => {
+      try { new Audio(alertSound).play().catch(() => {}); } catch (e) { /* the browser may block sound before the first click */ }
+    };
+    socket.on("taskAssigned", (t) => {
+      if (t.userId !== user.id) return;
+      window.dispatchEvent(new CustomEvent("tasks:changed", { detail: { remote: true } }));
+      toast.info(<AlertToast title="Nova tarefa para você" line={<>{t.title}{t.leadName ? <> — <b>{prettyName(t.leadName)}</b></> : null}</>} detail={t.by ? `Enviada por ${t.by}` : "Toque para abrir as tarefas"} />, {
+        autoClose: 15000,
+        onClick: () => history.push("/crm/tarefas?status=today"),
+      });
+      ding();
+    });
+    // a student was sent to the ambientação (the tutor receives it; the consultant who sold it sees where it went and when it ends)
+    socket.on("onboardingAssigned", (a) => {
+      if (a.userId !== user.id) return;
+      window.dispatchEvent(new CustomEvent("tasks:changed", { detail: { remote: true } }));
+      const mineAsTutor = a.tutorId === user.id;
+      const title = a.kind === "done" ? "Ambientação concluída" : mineAsTutor ? "Aluno novo para ambientar" : "Seu aluno foi para a ambientação";
+      toast.info(<AlertToast title={title} line={<><b>{prettyName(a.leadName)}</b>{a.poloName ? ` · ${a.poloName}` : ""}</>} detail="Toque para abrir a ambientação" />, {
+        autoClose: 15000,
+        onClick: () => history.push("/ambientacao"),
+      });
+      if (mineAsTutor) ding();
+    });
+    // a student entered the risk of dropping out
+    socket.on("riskAlert", (a) => {
+      const manager = user.profile === "admin" || user.role === "admin" || user.role === "coordenacao";
+      if (!(manager || a.tutorId === user.id || a.ownerId === user.id)) return;
+      toast.warn(<AlertToast title="Aluno em risco de evasão" line={<><b>{prettyName(a.leadName)}</b> está há {a.days} dias sem notícias</>} detail="Toque para abrir a Retenção" />, {
+        autoClose: 20000,
+        onClick: () => history.push("/crm/retencao"),
+      });
+    });
     return () => socket.disconnect();
   }, [user, history]);
   return null;

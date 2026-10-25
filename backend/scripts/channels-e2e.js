@@ -4223,6 +4223,15 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.post(`/retention/risk/${carla.leadId}/message`, {}, auth())).status === 200, "retention message");
       await waitFor(() => said(carla.contactId, "Faz um tempo que não temos notícias") === 1, 12000, "the retention message");
       assert((await http.post(`/retention/risk/${ana.leadId}/message`, {}, asUser(bolixConsultantToken))).status === 403, "a consultant sent the retention message");
+      // who to contact today: the student at risk is on the list (with the reason), the edited message goes out, and registering the contact takes them off
+      const todayRes = await http.get("/retention/today", auth());
+      const todayItem = todayRes.data.items.find(x => x.leadId === carla.leadId);
+      assert(todayRes.status === 200 && todayItem && todayItem.reasons.some(r => r.kind === "risk") && todayItem.priority >= 45, `today ${JSON.stringify(todayItem)}`);
+      assert((await http.get("/retention/today", asUser(bolixConsultantToken))).status === 403, "a consultant opened the list of today");
+      assert((await http.post(`/retention/contact/${carla.leadId}`, { outcome: "inventado" }, auth())).status === 400, "an invalid outcome was accepted");
+      assert((await http.post(`/retention/contact/${carla.leadId}`, { outcome: "respondeu", note: "Falei por telefone", snoozeDays: 5 }, auth())).status === 201, "contact not registered");
+      assert(!(await http.get("/retention/today", auth())).data.items.some(x => x.leadId === carla.leadId), "a student contacted today stayed on the list");
+      assert(Number(sql(`SELECT COUNT(*) FROM RetentionContacts WHERE leadId=${carla.leadId} AND outcome='respondeu'`)) === 1, "the contact is not registered");
       // the student writes again: the label goes away
       sql(`UPDATE Leads SET lastInboundAt=NOW() WHERE id=${carla.leadId}`);
       await http.post("/retention/run", {}, auth());
