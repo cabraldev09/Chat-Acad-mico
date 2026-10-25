@@ -17,6 +17,8 @@ import Course from "../models/Course";
 import { addDocument, indexDocument, ensureLegacy, searchChunks } from "../services/AiServices/Kb";
 import AiLearning from "../models/AiLearning";
 import AiRule from "../models/AiRule";
+import AiEvalCase from "../models/AiEvalCase";
+import { cleanExpect, cleanMessages, runCase } from "../services/AiServices/Eval";
 import { KINDS, RuleKind, askModel, coachTurn, fromConversation, invalidateTraining } from "../services/AiServices/Training";
 import { exampleText, normalizeResult, stageOfStep } from "../services/AiServices/TrainingText";
 import { ExportedChat, looksLikeWhatsAppExport, maskPii, parseWhatsAppExport, toTranscript } from "../services/AiServices/ChatExport";
@@ -717,4 +719,60 @@ export const trainApply = async (req: Request, res: Response): Promise<Response>
     flowId = flow.id;
   }
   return res.status(201).json({ rules: rules.length, knowledge: clean.knowledge.length, steps: clean.steps.length, flowId });
+};
+
+// ------------------------------------------------------------------ test cases (conversations the agent must handle well)
+const caseView = (c: AiEvalCase) => {
+  const parse = (v: string | null, fallback: any) => {
+    try { return v ? JSON.parse(v) : fallback; } catch (e) { return fallback; }
+  };
+  return {
+    id: c.id, name: c.name, messages: parse(c.messages, []), expect: parse(c.expect, {}),
+    lastStatus: c.lastStatus || null, lastText: c.lastText || null, lastReasons: parse(c.lastReasons, []), lastRunAt: c.lastRunAt || null
+  };
+};
+
+export const evalList = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await loadAgent(req.params.id);
+  const rows = await AiEvalCase.findAll({ where: { agentId: agent.id }, order: [["id", "ASC"]] });
+  return res.json(rows.map(caseView));
+};
+
+export const evalCreate = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await loadAgent(req.params.id);
+  const messages = cleanMessages(req.body?.messages);
+  if (!messages.length) throw new AppError("ERR_AI_NO_HISTORY");
+  if ((await AiEvalCase.count({ where: { agentId: agent.id } })) >= 40) throw new AppError("ERR_AI_CASE_LIMIT");
+  const expect = cleanExpect(req.body?.expect);
+  if (!expect.mustContain.length && !expect.mustNotContain.length && !expect.outcome) throw new AppError("ERR_AI_CASE_EMPTY");
+  const name = String(req.body?.name || "").trim().slice(0, 160) || messages[messages.length - 1].content.slice(0, 60);
+  const row = await AiEvalCase.create({ agentId: agent.id, name, messages: JSON.stringify(messages), expect: JSON.stringify(expect), createdBy: Number(req.user.id) } as any);
+  return res.status(201).json(caseView(row));
+};
+
+export const evalRemove = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await loadAgent(req.params.id);
+  await AiEvalCase.destroy({ where: { id: req.params.caseId, agentId: agent.id } });
+  return res.json({ ok: true });
+};
+
+// runs the saved cases one after the other (one case when `caseId` is given); each verdict is kept for the list
+export const evalRun = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await loadAgent(req.params.id);
+  const where: any = { agentId: agent.id };
+  if (req.body?.caseId) where.id = Number(req.body.caseId);
+  const rows = await AiEvalCase.findAll({ where, order: [["id", "ASC"]], limit: 20 });
+  const out: any[] = [];
+  try {
+    for (const row of rows) {
+      // eslint-disable-next-line no-await-in-loop
+      const r = await runCase(agent, row);
+      // eslint-disable-next-line no-await-in-loop
+      await row.update({ lastStatus: r.status, lastText: r.text.slice(0, 2000), lastReasons: JSON.stringify(r.reasons), lastRunAt: new Date() });
+      out.push(caseView(row));
+    }
+  } catch (err) {
+    throw aiError(err, "casos de teste", agent.model);
+  }
+  return res.json({ passed: out.filter(c => c.lastStatus === "pass").length, failed: out.filter(c => c.lastStatus === "fail").length, cases: out });
 };

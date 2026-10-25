@@ -181,6 +181,11 @@ const startAnthropicMock = () => {
         ]
       }));
     }
+    // the rewrite of an answer that stated a fact with no source: the first agent obeys, the stubborn one invents another value
+    if (typeof req.body.system === "string" && /Você revisa respostas/.test(req.body.system)) {
+      anthropic.guardCalls = (anthropic.guardCalls || 0) + 1;
+      return text(/biblioteca/.test(String(last.content)) ? "Fica em R$ 36,00 por semestre." : "Vou confirmar esse valor com a equipe e já te retorno.");
+    }
     if (req.body.max_tokens === 220) return text("O aluno quer saber sobre bolsas e cursos.");
     const systemText = Array.isArray(req.body.system) ? req.body.system.map(b => b.text).join("\n") : "";
     const inStage = /Etapa atual: Teste de Etapa/.test(systemText);
@@ -238,6 +243,9 @@ const startAnthropicMock = () => {
     }
     const knowledge = (req.body.system[1] && req.body.system[1].text) || "";
     if (/atletas/i.test(said)) return text(knowledge.includes("30% de bolsa") ? "Atletas federados têm 30% de bolsa, mediante comprovação." : "[DESCONHECIDO]");
+    if (/taxa de laboratório/i.test(said)) return text("A taxa de laboratório é de R$ 480,00 por semestre.");
+    if (/taxa de biblioteca/i.test(said)) return text("A taxa de biblioteca é de R$ 35,00.");
+    if (/quanto é a bolsa de transferência/i.test(said)) return text("A bolsa de transferência é de 40% na primeira mensalidade, conforme a análise do histórico.");
     if (/menu de cursos/i.test(said)) return tool("fluxo_menu_cursos", {});
     if (/valor do curso/i.test(said)) return tool("buscar_curso", { nome: "Direit" });
     if (/meu nome é/i.test(said)) return tool("salvar_lead", { nome: "Paulo Mendes", cidade: "Ji-Paraná", curso: "Direito" });
@@ -565,11 +573,14 @@ const postMeta = (id, payload, secret, badSig) => {
         assert(fs.existsSync(path.join(ROOT, "public", f)), "file missing");
       });
       await test("echo and duplicate deliveries are ignored", async () => {
-        const n = msgCount(ticket);
+        // only what came in is counted: a greeting the system sends on its own may land in the conversation meanwhile
+        const received = () => Number(sql(`SELECT COUNT(*) FROM Messages WHERE ticketId=${ticket} AND fromMe=0`));
+        const n = received();
         await postMeta(id, { object, entry: [{ messaging: [{ sender: { id: "PAGE1" }, message: { mid: `m_${channel}_echo`, is_echo: true, text: "eco" } }] }] }, cfg.appSecret);
         await postMeta(id, event(`m_${channel}_1`, { text: "Oi, vi o anúncio" }), cfg.appSecret);
         await sleep(1500);
-        assert(msgCount(ticket) === n, "echo/duplicate stored");
+        assert(received() === n, "echo/duplicate stored");
+        assert(Number(sql(`SELECT COUNT(*) FROM Messages WHERE ticketId=${ticket} AND body='eco'`)) === 0, "the echo was stored");
       });
       await test("typing and reactions go out through the channel, and the contact's reaction comes in", async () => {
         const before = graph.sent.length;
@@ -2944,6 +2955,42 @@ const postMeta = (id, payload, secret, badSig) => {
       await inboundCloud("5511910000001", "wamid.ai-faq1", "Qual o endereço do polo?");
       await waitFor(() => sentTexts(before).some(t => t.includes("Rua das Flores")), 12000, "faq answer");
       assert(anthropic.requests.length === calls, "the model was called for an FAQ");
+    });
+    await test("an amount or date with no source is rewritten once; if it persists the team confirms it; a value from the base goes through", async () => {
+      const g0 = anthropic.guardCalls || 0;
+      let before = graph.sent.length;
+      await inboundCloud("5511910000031", "wamid.ai-g1", "qual a taxa de laboratório?");
+      await waitFor(() => sentTexts(before).some(t => t.includes("confirmar esse valor")), 15000, "rewritten answer");
+      assert(!sentAny(before).some(t => t.includes("480")), "the invented amount reached the person");
+      assert((anthropic.guardCalls || 0) === g0 + 1, "one rewrite expected");
+
+      before = graph.sent.length;
+      await inboundCloud("5511910000032", "wamid.ai-g2", "qual a taxa de biblioteca?");
+      await waitFor(() => sentTexts(before).some(t => /confirmar essa informação/i.test(t)), 15000, "team confirms");
+      assert(!sentAny(before).some(t => /\b(35|36)\b/.test(t)), "an amount with no source reached the person");
+      assert((anthropic.guardCalls || 0) === g0 + 2, "the stubborn answer is rewritten only once");
+
+      before = graph.sent.length;
+      await inboundCloud("5511910000033", "wamid.ai-g3", "quanto é a bolsa de transferência?");
+      await waitFor(() => sentTexts(before).some(t => t.includes("40% na primeira mensalidade")), 15000, "sourced value");
+      assert((anthropic.guardCalls || 0) === g0 + 2, "a value that is in the base must not be rewritten");
+    });
+    await test("test cases: save a conversation with what the answer must say, run them, see which fail", async () => {
+      const msgs = [{ role: "user", content: "qual a taxa de laboratório?" }];
+      const empty = await http.post(`/ai-agents/${aiId}/cases`, { name: "vazio", messages: msgs, expect: {} }, auth());
+      assert(empty.status === 400, `a case that checks nothing was accepted: ${empty.status}`);
+      const ok = await http.post(`/ai-agents/${aiId}/cases`, { name: "Taxa sem fonte vai para a equipe", messages: msgs, expect: { mustContain: ["confirmar esse valor | vou confirmar"], mustNotContain: ["480"], outcome: "answer" } }, auth());
+      assert(ok.status === 201, `create ${ok.status} ${JSON.stringify(ok.data)}`);
+      const bad = await http.post(`/ai-agents/${aiId}/cases`, { name: "Espera gratuita", messages: [...msgs, { role: "assistant", content: "x" }], expect: { mustContain: ["gratuita"], outcome: "handoff" } }, auth());
+      assert(bad.status === 201 && bad.data.messages.length === 1, "the case must end with the person's message");
+      const run = await http.post(`/ai-agents/${aiId}/cases/run`, {}, auth());
+      assert(run.status === 200 && run.data.passed === 1 && run.data.failed === 1, `run ${run.status} ${JSON.stringify(run.data).slice(0, 300)}`);
+      const failed = run.data.cases.find(c => c.id === bad.data.id);
+      assert(failed.lastStatus === "fail" && failed.lastReasons.length === 2, `reasons ${JSON.stringify(failed.lastReasons)}`);
+      const list = (await http.get(`/ai-agents/${aiId}/cases`, auth())).data;
+      assert(list.find(c => c.id === ok.data.id).lastStatus === "pass", "the verdict is kept");
+      assert((await http.delete(`/ai-agents/${aiId}/cases/${bad.data.id}`, auth())).status === 200, "delete");
+      assert((await http.get(`/ai-agents/${aiId}/cases`, auth())).data.length === 1, "case not removed");
     });
     await test("short messages in a row get one answer, with a small prompt, caching, tools and only the relevant passages", async () => {
       await http.put(`/ai-agents/${aiId}`, { waitSeconds: 4 }, auth());

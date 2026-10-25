@@ -50,3 +50,25 @@ export const unsafeAnswer = (text: string, evidence: string): { unsafe: boolean;
   }
   return { unsafe: false };
 };
+
+// The agents that are not the commercial one may talk about values (a tool or the base gave them), but not invent them: an amount, a
+// percentage, a date or an hour in the answer must be in what the tools and the base returned in this turn, or in what the person wrote.
+const AMOUNT = /r\$\s*\d[\d.,]*/g;
+export const unsupportedFact = (text: string, evidence: string): string | null => {
+  const t = plain(text);
+  if (!t.trim()) return null;
+  const source = plain(evidence).replace(/\s+/g, "");
+  const digits = source.replace(/\D/g, "");
+  // an amount is compared by its digits without the cents and the separators (the tools say 1299.00, the answer says R$ 1.299)
+  for (const m of t.match(AMOUNT) || []) {
+    const n = m.replace(/[^\d.,]/g, "").replace(/[.,]$/, "").replace(/[.,]\d{2}$/, "").replace(/[.,]/g, "");
+    if (n && !digits.includes(n)) return m.trim();
+  }
+  for (const re of NEEDS_SOURCE) {
+    for (const m of t.match(re) || []) {
+      const needle = m.includes("%") ? m.replace(/[^\d.,]/g, "") : m.replace(/\s+/g, "");
+      if (needle && !source.includes(needle)) return m.trim();
+    }
+  }
+  return null;
+};

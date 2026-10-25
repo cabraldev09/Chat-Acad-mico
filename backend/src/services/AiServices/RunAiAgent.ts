@@ -11,6 +11,7 @@ import { logger } from "../../utils/logger";
 import ShowTicketService from "../TicketServices/ShowTicketService";
 import { ensureLegacy, matchFaq, searchChunks } from "./Kb";
 import { logUsage, tokensToday } from "./Usage";
+import { withRetry } from "./Provider";
 import { Slot, missingSlots, runTool, slotsOf, stageSlots, stageToolDefs, toolDefs } from "./Tools";
 import { StageData } from "../FlowServices/StageSpec";
 import { pendingSteps, pendingText, stepsOf } from "../FlowServices/StepLock";
@@ -19,6 +20,8 @@ import { captureUnknown, notifyOwner } from "./Learning";
 import { trainingBlock } from "./Training";
 import { textOfMessage } from "./Media";
 import { splitIntoBlocks } from "../CommercialServices/Blocks";
+import { unsupportedFact } from "../CommercialServices/Guards";
+import { forChannel } from "../../helpers/ChannelText";
 import { todayLine } from "../CommercialServices/Hours";
 
 export const HANDOFF_MARKER = "[HANDOFF]";
@@ -153,12 +156,26 @@ export const resolveKey = async (agent: AiAgent): Promise<string> => {
   return getSecretSetting(`ai_${agent.provider}_key`);
 };
 
-const callAnthropic = async (apiKey: string, body: any) => {
-  const { data } = await axios.post(`${ANTHROPIC_URL()}/v1/messages`, body, {
-    headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-    timeout: 60000
+// a provider that is busy (429 without a balance problem, 5xx, a dropped connection) is asked again twice before the turn fails
+const callAnthropic = (apiKey: string, body: any) =>
+  withRetry(async () => {
+    const { data } = await axios.post(`${ANTHROPIC_URL()}/v1/messages`, body, {
+      headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+      timeout: 60000
+    });
+    return data;
   });
-  return data;
+
+// one plain answer, no tools (the rewrite of a guarded answer, the summary): the same provider as the agent
+const askOnce = async (agent: AiAgent, apiKey: string, system: string, user: string, maxTokens: number): Promise<{ text: string; usage: any }> => {
+  if (agent.provider === "openai") {
+    const data: any = await withRetry(async compat => (await axios.post(`${OPENAI_URL()}/v1/chat/completions`, {
+      model: agent.model, [compat ? "max_tokens" : "max_completion_tokens"]: maxTokens, messages: [{ role: "system", content: system }, { role: "user", content: user }]
+    }, { headers: { Authorization: `Bearer ${apiKey}` }, timeout: 60000 })).data);
+    return { text: String(data.choices?.[0]?.message?.content || "").trim(), usage: data.usage };
+  }
+  const data = await callAnthropic(apiKey, { model: agent.model, max_tokens: maxTokens, system, messages: [{ role: "user", content: user }] });
+  return { text: (data.content || []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("").trim(), usage: data.usage };
 };
 
 export interface AiResult {
@@ -282,7 +299,7 @@ const commercialDynamic = (slots: Record<string, any>, summary: string | null, p
 };
 
 // One answer: retrieval → prompt → model (with tools) → text. Both the live inbox and the tester use it.
-export const respond = async (agent: AiAgent, opts: RespondOptions): Promise<AiResult> => {
+const respondOnce = async (agent: AiAgent, opts: RespondOptions): Promise<AiResult> => {
   const started = Date.now();
   const apiKey = await resolveKey(agent);
   if (!apiKey) throw new Error("ERR_AI_NO_API_KEY");
@@ -322,18 +339,20 @@ export const respond = async (agent: AiAgent, opts: RespondOptions): Promise<AiR
   const budget = commercial ? Math.max(agent.maxTokens || 350, 700) : agent.maxTokens || 350;
   const academic = { ticket: opts.ticket, dryRun: !!opts.sandbox, slots: { ...(opts.commercial?.slots || {}) }, patch: {} as Record<string, any>, cacheHits: 0, agentId: agent.id };
   const training = await trainingBlock(agent.id);
+  const channel: string | null = (opts.ticket as any)?.whatsapp?.channel || null;
   const staticText = commercial ? commercialStatic(agent, stage as StageData, training) : staticPrompt(agent, stage, training);
   const progress = stage ? stepsProgress(stage, opts.stepsDone || [], opts.stepsHeld) : "";
   const dynamicText = [
     commercial
       ? commercialDynamic(opts.commercial?.slots || {}, opts.summary || null, passages, stage as StageData)
       : dynamicPrompt(agent, opts.summary || null, collected, passages, slots, stage),
-    progress
+    progress,
+    channel === "instagram" || channel === "messenger" ? "Canal: mensagem direta do Instagram/Messenger. Não use *negrito*, _itálico_ nem listas com símbolos; escreva texto simples, em blocos curtos." : null
   ].filter(Boolean).join("\n\n");
   const usageOf = (usage: any) => ({ agentId: agent.id, ticketId: opts.ticket?.id, model: agent.model, kind, usage, flowId: opts.flowId, nodeId: opts.nodeId, leadId: opts.leadId, latencyMs: Date.now() - started } as any);
   const finish = (ctx: any): AiResult => ({
     stepsDone: ctx.stepsDone,
-    text, handoff: !stage && text.includes(HANDOFF_MARKER), unknown: !stage && text.includes(UNKNOWN_MARKER), sources, tools: toolsUsed, collected, tokens,
+    text: forChannel(text, channel), handoff: !stage && text.includes(HANDOFF_MARKER), unknown: !stage && text.includes(UNKNOWN_MARKER), sources, tools: toolsUsed, collected, tokens,
     exit: ctx.exit, exitReason: ctx.exitReason, rounds, latencyMs: Date.now() - started, cacheHits: academic.cacheHits, turn: ctx.turn, academicPatch: academic.patch, topics, toolLog, evidence: evidence.join("\n")
   });
 
@@ -344,10 +363,10 @@ export const respond = async (agent: AiAgent, opts: RespondOptions): Promise<AiR
     for (let round = 0; round <= MAX_TOOL_ROUNDS; round += 1) {
       rounds += 1;
       // eslint-disable-next-line no-await-in-loop
-      const { data } = await axios.post(`${OPENAI_URL()}/v1/chat/completions`, {
-        model: agent.model, max_completion_tokens: budget, messages,
+      const data: any = await withRetry(async compat => (await axios.post(`${OPENAI_URL()}/v1/chat/completions`, {
+        model: agent.model, [compat ? "max_tokens" : "max_completion_tokens"]: budget, messages,
         ...(round < MAX_TOOL_ROUNDS && tools.length ? { tools, parallel_tool_calls: false } : {})
-      }, { headers: { Authorization: `Bearer ${apiKey}` }, timeout: 60000 });
+      }, { headers: { Authorization: `Bearer ${apiKey}` }, timeout: 60000 })).data);
       const answer = data.choices?.[0]?.message;
       text = String(answer?.content || "").trim() || text;
       tokens.input += data.usage?.prompt_tokens || 0;
@@ -431,6 +450,34 @@ export const respond = async (agent: AiAgent, opts: RespondOptions): Promise<AiR
   return finish(ctx);
 };
 
+// The answer of an agent that is not the commercial one (that one has its own rules) is checked before it is sent: an amount, a percentage, a
+// date or an hour that no tool, no passage of the base and nothing the person wrote supports is asked to be rewritten once; if it is still
+// there, the question goes to the team instead of an invented fact reaching the person.
+export const respond = async (agent: AiAgent, opts: RespondOptions): Promise<AiResult> => {
+  const result = await respondOnce(agent, opts);
+  if (!result.text || (opts.stage && opts.stage.hooks.includes("commercial"))) return result;
+  const evidence = `${result.evidence}\n${opts.summary || ""}\n${opts.history.filter(t => t.role === "user").map(t => t.content).join("\n")}`;
+  const bad = unsupportedFact(result.text.replace(HANDOFF_MARKER, "").replace(UNKNOWN_MARKER, ""), evidence);
+  if (!bad) return result;
+  logger.warn(`AI guard: "${bad}" in the answer of "${agent.name}" has no source; asking for a rewrite`);
+  try {
+    const apiKey = await resolveKey(agent);
+    const fixed = await askOnce(
+      agent, apiKey,
+      "Você revisa respostas de um atendimento no WhatsApp. Reescreva a resposta mantendo o tom, o idioma e os blocos curtos separados por linha em branco.",
+      `Resposta original:\n${result.text}\n\nO dado "${bad}" não aparece nas ferramentas nem na base de conhecimento, então não pode ser dito. Reescreva sem esse dado: diga que vai confirmar com a equipe e conduza para o próximo passo. Responda só com o texto reescrito.`,
+      Math.max(agent.maxTokens || 350, 350)
+    );
+    await logUsage({ agentId: agent.id, ticketId: opts.ticket?.id, model: agent.model, kind: opts.sandbox ? "test" : "reply", usage: fixed.usage, flowId: opts.flowId, nodeId: opts.nodeId, leadId: opts.leadId } as any);
+    if (fixed.text && !unsupportedFact(fixed.text, evidence)) return { ...result, text: fixed.text };
+  } catch (err) {
+    logger.warn(`AI guard rewrite failed: ${err}`);
+  }
+  // still unsupported: the team confirms it (an AI stage leaves by the "off" exit, the plain agent by the unknown marker)
+  if (opts.stage) return { ...result, text: "", exit: "off", exitReason: `Dado sem fonte na resposta: ${bad}`, unknown: false };
+  return { ...result, text: UNKNOWN_MARKER, unknown: true, handoff: false };
+};
+
 // ---------------------------------------------------------------- live conversation
 
 export const loadHistory = async (ticket: Ticket, limit: number): Promise<ChatTurn[]> => {
@@ -457,23 +504,13 @@ export const loadHistory = async (ticket: Ticket, limit: number): Promise<ChatTu
 const refreshSummary = async (agent: AiAgent, ticket: Ticket): Promise<void> => {
   try {
     const apiKey = await resolveKey(agent);
-    if (!apiKey || agent.provider !== "anthropic") return;
+    if (!apiKey) return;
     const history = await loadHistory(ticket, 24);
     if (history.length < 4) return;
     const transcript = history.map(t => `${t.role === "user" ? "Aluno" : "Atendente"}: ${t.content}`).join("\n").slice(0, 6000);
-    const data = await callAnthropic(apiKey, {
-      model: agent.model,
-      max_tokens: 220,
-      messages: [
-        {
-          role: "user",
-          content: `Resuma em até 5 linhas, em português, o que o aluno quer e o que já foi combinado. Só fatos, sem enfeite.\n\n${transcript}`
-        }
-      ]
-    });
-    await logUsage({ agentId: agent.id, ticketId: ticket.id, model: agent.model, kind: "summary", usage: data.usage });
-    const summary = (data.content || []).filter((b: any) => b.type === "text").map((b: any) => b.text).join("").trim();
-    if (summary) await ticket.update({ aiSummary: summary });
+    const out = await askOnce(agent, apiKey, "Você resume conversas de atendimento.", `Resuma em até 5 linhas, em português, o que o aluno quer e o que já foi combinado. Só fatos, sem enfeite.\n\n${transcript}`, 220);
+    await logUsage({ agentId: agent.id, ticketId: ticket.id, model: agent.model, kind: "summary", usage: out.usage });
+    if (out.text) await ticket.update({ aiSummary: out.text });
   } catch (err) {
     logger.warn(`AI summary not updated: ${err}`);
   }

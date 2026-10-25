@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect } from "react";
-import { Button, Dialog, DialogActions, DialogContent, DialogTitle, TextField, Typography, makeStyles } from "@material-ui/core";
-import { Send, RotateCcw, GraduationCap, Save } from "lucide-react";
+import { Button, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, TextField, Typography, makeStyles } from "@material-ui/core";
+import { Send, RotateCcw, GraduationCap, Save, ListChecks, Play, Trash2, CheckCircle2, XCircle } from "lucide-react";
 import { toast } from "react-toastify";
 
 import api from "../../services/api";
@@ -17,6 +17,57 @@ const useStyles = makeStyles((theme) => ({
 
 const TOOL = { buscar_curso: "consultou o catálogo de cursos", listar_polos: "consultou os polos", simular_bolsa: "simulou a bolsa", salvar_lead: "guardou dados do aluno" };
 
+
+const OUTCOMES = [["", "Qualquer um"], ["answer", "Responder ao aluno"], ["handoff", "Passar para uma pessoa"], ["unknown", "Confirmar com a equipe"]];
+
+// Conversations the agent must handle well: saved from the tester, run again after every change to the agent
+const CasesPanel = ({ agentId, refreshKey }) => {
+  const [cases, setCases] = useState([]);
+  const [running, setRunning] = useState(false);
+  const load = React.useCallback(async () => {
+    try { setCases((await api.get(`/ai-agents/${agentId}/cases`)).data); } catch (err) { toastError(err); }
+  }, [agentId]);
+  useEffect(() => { load(); }, [load, refreshKey]);
+  const run = async (caseId) => {
+    setRunning(true);
+    try {
+      const { data } = await api.post(`/ai-agents/${agentId}/cases/run`, caseId ? { caseId } : {});
+      setCases((prev) => prev.map((c) => data.cases.find((d) => d.id === c.id) || c));
+      if (!caseId) toast[data.failed ? "warning" : "success"](data.failed ? `${data.failed} caso(s) falharam, ${data.passed} passaram.` : `Todos os ${data.passed} casos passaram.`);
+    } catch (err) { toastError(err); }
+    setRunning(false);
+  };
+  const remove = async (id) => {
+    try { await api.delete(`/ai-agents/${agentId}/cases/${id}`); setCases((prev) => prev.filter((c) => c.id !== id)); } catch (err) { toastError(err); }
+  };
+  if (!cases.length) return null;
+  const failing = cases.filter((c) => c.lastStatus === "fail").length;
+  return (
+    <div style={{ marginTop: 20 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+        <ListChecks size={18} />
+        <Typography variant="subtitle1" style={{ fontWeight: 700, flex: 1 }}>Casos de teste ({cases.length})</Typography>
+        <Button variant="outlined" color="primary" size="small" startIcon={<Play size={14} />} disabled={running} onClick={() => run()}>{running ? "Rodando…" : "Rodar todos"}</Button>
+      </div>
+      <Typography variant="caption" color="textSecondary" display="block" style={{ marginBottom: 8 }}>
+        São conversas que o agente precisa responder bem. Rode depois de mudar as regras, a base ou o treino: {failing ? `${failing} está falhando agora.` : "se algo quebrar, aparece aqui."}
+      </Typography>
+      {cases.map((c) => (
+        <div key={c.id} style={{ display: "flex", gap: 8, alignItems: "flex-start", padding: "8px 0", borderTop: "1px solid rgba(128,128,128,.2)" }}>
+          {c.lastStatus === "pass" ? <CheckCircle2 size={18} color="#16a34a" style={{ flex: "none", marginTop: 2 }} aria-label="Passou" /> : c.lastStatus === "fail" ? <XCircle size={18} color="#dc2626" style={{ flex: "none", marginTop: 2 }} aria-label="Falhou" /> : <span style={{ width: 18, flex: "none" }} />}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 600, fontSize: 14 }}>{c.name}</div>
+            {c.lastReasons && c.lastReasons.length > 0 && c.lastReasons.map((r, i) => <div key={i} style={{ fontSize: 12.5, color: "#dc2626" }}>{r}</div>)}
+            {c.lastText && <div style={{ fontSize: 12.5, opacity: 0.75, whiteSpace: "pre-wrap" }}>Última resposta: {c.lastText}</div>}
+          </div>
+          <Button size="small" disabled={running} onClick={() => run(c.id)}>Rodar</Button>
+          <Button size="small" aria-label="Apagar caso" onClick={() => remove(c.id)}><Trash2 size={16} /></Button>
+        </div>
+      ))}
+    </div>
+  );
+};
+
 // Talks to the agent exactly like a student would, without sending anything on WhatsApp or changing any record.
 const TestTab = ({ agentId }) => {
   const classes = useStyles();
@@ -29,6 +80,26 @@ const TestTab = ({ agentId }) => {
   const [lesson, setLesson] = useState("");
   const [saving, setSaving] = useState(false);
   const [proposed, setProposed] = useState(null);
+  // the conversation turned into a test case
+  const [caseDraft, setCaseDraft] = useState(null);
+  const [casesKey, setCasesKey] = useState(0);
+  const openCase = () => {
+    let end = turns.length;
+    while (end > 0 && turns[end - 1].role !== "user") end -= 1;
+    const reply = turns[end] && turns[end].role === "assistant" ? turns[end].content : "";
+    setCaseDraft({ name: turns[end - 1].content.slice(0, 60), messages: turns.slice(0, end).map(({ role, content }) => ({ role, content })), reply, mustContain: "", mustNotContain: "", outcome: "" });
+  };
+  const saveCase = async () => {
+    try {
+      await api.post(`/ai-agents/${agentId}/cases`, {
+        name: caseDraft.name, messages: caseDraft.messages,
+        expect: { mustContain: caseDraft.mustContain.split("\n"), mustNotContain: caseDraft.mustNotContain.split("\n"), outcome: caseDraft.outcome || undefined }
+      });
+      toast.success("Caso salvo. Rode os casos depois de mudar o agente.");
+      setCaseDraft(null);
+      setCasesKey((k) => k + 1);
+    } catch (err) { toastError(err); }
+  };
   // the whole conversation turned into lessons: the owner reviews before anything is saved
   const toTraining = async () => {
     setSaving(true);
@@ -111,7 +182,32 @@ const TestTab = ({ agentId }) => {
         <Button variant="contained" color="primary" onClick={send} disabled={busy || !text.trim()} startIcon={<Send size={16} />}>Enviar</Button>
         <Button variant="outlined" onClick={() => { setTurns([]); setCollected({}); }} startIcon={<RotateCcw size={16} />}>Recomeçar</Button>
         <Button variant="outlined" color="primary" onClick={toTraining} disabled={saving || turns.length < 2} startIcon={<Save size={16} />}>Salvar como treino</Button>
+        <Button variant="outlined" onClick={openCase} disabled={!turns.some((t) => t.role === "user")} startIcon={<ListChecks size={16} />}>Salvar como caso</Button>
       </div>
+      <CasesPanel agentId={agentId} refreshKey={casesKey} />
+      <Dialog open={!!caseDraft} onClose={() => setCaseDraft(null)} fullWidth maxWidth="sm">
+        <DialogTitle>Salvar esta conversa como caso de teste</DialogTitle>
+        <DialogContent>
+          {caseDraft && (
+            <>
+              <Typography variant="body2" color="textSecondary" gutterBottom>
+                O caso guarda a conversa até a última mensagem do aluno. Depois, “Rodar casos” confere se a resposta do agente ainda tem o que você espera.
+              </Typography>
+              {caseDraft.reply && <Typography variant="caption" color="textSecondary" display="block" style={{ whiteSpace: "pre-wrap", marginBottom: 8 }}>Resposta de agora: {caseDraft.reply}</Typography>}
+              <TextField fullWidth variant="outlined" margin="dense" label="Nome do caso" value={caseDraft.name} onChange={(e) => setCaseDraft({ ...caseDraft, name: e.target.value })} />
+              <TextField fullWidth multiline rows={2} variant="outlined" margin="dense" label="A resposta deve conter (uma frase por linha)" helperText="Use | para aceitar alternativas: 40% | quarenta por cento" value={caseDraft.mustContain} onChange={(e) => setCaseDraft({ ...caseDraft, mustContain: e.target.value })} />
+              <TextField fullWidth multiline rows={2} variant="outlined" margin="dense" label="A resposta não pode conter (uma frase por linha)" value={caseDraft.mustNotContain} onChange={(e) => setCaseDraft({ ...caseDraft, mustNotContain: e.target.value })} />
+              <TextField select fullWidth variant="outlined" margin="dense" label="O agente deve" value={caseDraft.outcome} onChange={(e) => setCaseDraft({ ...caseDraft, outcome: e.target.value })}>
+                {OUTCOMES.map(([v, l]) => <MenuItem key={v} value={v}>{l}</MenuItem>)}
+              </TextField>
+            </>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCaseDraft(null)}>Cancelar</Button>
+          <Button variant="contained" color="primary" disableElevation onClick={saveCase} disabled={!caseDraft || (!caseDraft.mustContain.trim() && !caseDraft.mustNotContain.trim() && !caseDraft.outcome)}>Salvar caso</Button>
+        </DialogActions>
+      </Dialog>
       <Dialog open={!!proposed} onClose={() => setProposed(null)} fullWidth maxWidth="sm">
         <DialogTitle>O que o agente deve aprender desta conversa</DialogTitle>
         <DialogContent>
