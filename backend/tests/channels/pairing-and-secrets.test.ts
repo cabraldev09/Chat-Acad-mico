@@ -58,3 +58,32 @@ describe("the state that goes to Instagram and comes back", () => {
     expect(readState("")).toBeNull();
   });
 });
+
+import { forChannel } from "../../src/helpers/ChannelText";
+import { unsupportedFact } from "../../src/services/CommercialServices/Guards";
+
+describe("text for the channel", () => {
+  it("takes the WhatsApp marks out for Instagram and Messenger and leaves WhatsApp alone", () => {
+    expect(forChannel("O curso é *100% online* e _flexível_.", "instagram")).toBe("O curso é 100% online e flexível.");
+    expect(forChannel("Veja *isto*", "messenger")).toBe("Veja isto");
+    expect(forChannel("O curso é *100% online*", "whatsapp")).toBe("O curso é *100% online*");
+    expect(forChannel("2 * 3 = 6", "instagram")).toBe("2 * 3 = 6");
+  });
+});
+
+describe("facts an agent may say", () => {
+  const evidence = "Mensalidade 1299.00. Bolsa de 40% na primeira mensalidade. Atendimento das 8h às 18h. Matrícula até 20/07.";
+  it("lets through what the tools or the base returned, even written another way", () => {
+    expect(unsupportedFact("A mensalidade é R$ 1.299,00 com bolsa de 40%.", evidence)).toBeNull();
+    expect(unsupportedFact("Atendemos das 8h às 18h e a matrícula vai até 20/07.", evidence)).toBeNull();
+  });
+  it("flags an amount, a percentage, a date or an hour with no source", () => {
+    expect(unsupportedFact("A taxa é R$ 480,00.", evidence)).toMatch(/480/);
+    expect(unsupportedFact("Você ganha 70% de desconto.", evidence)).toMatch(/70/);
+    expect(unsupportedFact("As aulas começam em 03/08.", evidence)).toMatch(/03\/08/);
+    expect(unsupportedFact("Falamos às 22h.", evidence)).toMatch(/22h/);
+  });
+  it("accepts what the person wrote themselves when it is part of the evidence", () => {
+    expect(unsupportedFact("Combinado, amanhã às 14h.", `${evidence}\namanhã às 14h`)).toBeNull();
+  });
+});
