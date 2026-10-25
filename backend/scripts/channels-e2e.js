@@ -3294,6 +3294,17 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.post(`/ai-agents/${aiId}/test`, { messages: [] }, auth())).status === 400, "empty conversation accepted");
       const u = (await http.get(`/ai-agents/${aiId}/usage`, auth())).data;
       assert(u.total.calls >= 5 && u.total.input > 0 && u.cap === 0, `usage ${JSON.stringify(u)}`);
+      assert(u.costUsd === null && u.total.cacheShare === 0, "no price typed: the cost is not guessed");
+      // the cached part of the prompt is charged at its own rate: reading costs a tenth of the input price, writing 25% more
+      sql(`INSERT INTO Settings ("key", value, createdAt, updatedAt) VALUES ('ai_price_claude-haiku-5-5', '1000000,0', NOW(), NOW())`);
+      const before = Number((await http.get(`/ai-agents/${aiId}/usage`, auth())).data.costUsd);
+      sql(`INSERT INTO AiUsage (agentId, model, kind, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, createdAt, updatedAt) VALUES (${aiId}, 'claude-haiku-5-5', 'reply', 0, 0, 1000000, 1000000, NOW(), NOW())`);
+      const after = (await http.get(`/ai-agents/${aiId}/usage`, auth())).data;
+      sql(`DELETE FROM Settings WHERE "key"='ai_price_claude-haiku-5-5'`);
+      sql(`DELETE FROM AiUsage WHERE agentId=${aiId} AND cacheReadTokens=1000000`);
+      // 1,000,000 cache tokens read at 10% + 1,000,000 written at 125% of US$ 1,000,000 per million = 1,350,000
+      assert(Math.round(Number(after.costUsd) - before) === 1350000, `cache cost ${before} -> ${after.costUsd}`);
+      assert(after.total.cacheShare > 0, "cache share of the prompt");
     });
     await test("AI agent in blocks: an AI stage collects typed fields, calls an external tool, leaves by intention, hands over to the team; versions and the simulator", async () => {
       // the agent of the earlier tests stays quiet while this one talks on the same connection
