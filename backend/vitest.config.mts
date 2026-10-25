@@ -6,7 +6,7 @@ const root = path.resolve(import.meta.dirname, "src/analysis");
 export default defineConfig({
   test: {
     environment: "node",
-    include: ["tests/analysis/**/*.test.ts"],
+    include: ["tests/analysis/**/*.test.ts", "tests/channels/**/*.test.ts"],
     fileParallelism: false,
     setupFiles: ["tests/analysis/setup.ts"],
   },

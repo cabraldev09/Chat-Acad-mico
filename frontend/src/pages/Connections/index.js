@@ -39,6 +39,7 @@ import ResponsiveTable from "../../components/ResponsiveTable";
 import api from "../../services/api";
 import WhatsAppModal from "../../components/WhatsAppModal";
 import MyNumberDialog from "./MyNumberDialog";
+import InstagramDialog from "./InstagramDialog";
 import ConfirmationModal from "../../components/ConfirmationModal";
 import QrcodeModal from "../../components/QrcodeModal";
 import { i18n } from "../../translate/i18n";
@@ -105,7 +106,27 @@ const Connections = () => {
 	const { user } = useContext(AuthContext);
 	const isAdmin = isManager(user);
 	// administrators manage everything; anyone else manages the number they connected themselves
-	const canManage = w => isAdmin || (w.ownerId && user && w.ownerId === user.id && (!w.channel || w.channel === "whatsapp"));
+	const canManage = w => isAdmin || (w.ownerId && user && w.ownerId === user.id && (!w.channel || w.channel === "whatsapp" || w.channel === "instagram"));
+	// an Instagram connected by the login (not by pasted keys): when its access expires, the person enters again
+	const igLogin = w => {
+		if (!w || w.channel !== "instagram") return null;
+		try {
+			const c = JSON.parse(w.config || "{}");
+			return c.mode === "oauth" ? c : null;
+		} catch (e) {
+			return null;
+		}
+	};
+	const [igDialog, setIgDialog] = useState({ open: false, whatsApp: null });
+	// back from the Instagram login: the result comes in the address
+	useEffect(() => {
+		const q = new URLSearchParams(window.location.search);
+		const r = q.get("instagram");
+		if (!r) return;
+		if (r === "ok") toast.success("Instagram conectado. As conversas do Direct já chegam aqui.");
+		else toast.error(q.get("motivo") || "Não foi possível conectar o Instagram.");
+		window.history.replaceState({}, "", window.location.pathname);
+	}, []);
 	const [myDialog, setMyDialog] = useState({ open: false, whatsApp: null });
 	// the number the relationship department works from (chosen in Retenção > Configurar)
 	const [relationshipId, setRelationshipId] = useState(0);
@@ -258,7 +279,12 @@ const Connections = () => {
 						{i18n.t("connections.buttons.qrcode")}
 					</Button>
 				)}
-				{whatsApp.status === "DISCONNECTED" && (
+				{whatsApp.status === "DISCONNECTED" && igLogin(whatsApp) && (
+					<Button size="small" variant="contained" color="primary" onClick={() => setIgDialog({ open: true, whatsApp })}>
+						Entrar de novo
+					</Button>
+				)}
+				{whatsApp.status === "DISCONNECTED" && !igLogin(whatsApp) && (
 					<>
 						<Button
 							size="small"
@@ -381,14 +407,24 @@ const Connections = () => {
 				onClose={() => setMyDialog({ open: false, whatsApp: null })}
 				onCreated={w => handleOpenQrModal(w)}
 			/>
+			<InstagramDialog
+				open={igDialog.open}
+				whatsApp={igDialog.whatsApp}
+				canConfigure={isAdmin}
+				onClose={() => setIgDialog({ open: false, whatsApp: null })}
+			/>
 			<WhatsAppModal
 				open={whatsAppModalOpen}
 				onClose={handleCloseWhatsAppModal}
 				whatsAppId={!qrModalOpen && selectedWhatsApp?.id}
+				onCreated={w => handleOpenQrModal(w)}
 			/>
 			<MainHeader>
 				<Title>{i18n.t("connections.title")}</Title>
 				<MainHeaderButtonsWrapper>
+					<Button variant="outlined" color="primary" onClick={() => setIgDialog({ open: true, whatsApp: null })} style={{ marginRight: 8 }}>
+						Conectar Instagram
+					</Button>
 					{isAdmin ? (
 						<Button
 							variant="contained"
@@ -448,6 +484,9 @@ const Connections = () => {
 													<ChannelIcon channel={whatsApp.channel} />
 													{whatsApp.name}
 												</span>
+												{igLogin(whatsApp) && igLogin(whatsApp).username && (
+													<div style={{ fontSize: 12, opacity: 0.65 }}>@{igLogin(whatsApp).username} · entrou com o Instagram</div>
+												)}
 												{isAdmin && whatsApp.owner && (
 													<div style={{ fontSize: 12, opacity: 0.65 }}>Número de {whatsApp.owner.name}</div>
 												)}

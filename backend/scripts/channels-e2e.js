@@ -89,7 +89,7 @@ const waitFor = async (fn, ms = 12000, label = "condition") => {
 
 // ----------------------------------------------------------------- mocks
 const tg = { updates: [], sent: [], offset: 0, n: 100 };
-const graph = { sent: [], media: [], n: 0, hooks: [] };
+const graph = { sent: [], media: [], n: 0, hooks: [], igRevoked: false, igRefreshes: 0 };
 const efi = { charges: {}, calls: [], webhook: null, authOk: 0 };
 const EFI_PORT = 9103;
 const BILLET_PORT = 9104;
@@ -264,6 +264,32 @@ const startGraphMock = () => {
     if (q.params.id.startsWith("MEDIASTK")) return res.type("image/webp").send(Buffer.from("RIFF\0\0\0\0WEBP"));
     return res.type("image/png").send(PNG);
   });
+  // Instagram API with Instagram Login: token exchange, profile, webhook subscription, Send API and token renewal
+  app.post("/ig/oauth/access_token", express.urlencoded({ extended: false }), (req, res) => {
+    if (req.body.client_id !== "17841999" || req.body.client_secret !== "ig-app-secret" || req.body.code !== "CODE-OK") return res.status(400).json({ error_message: "Invalid authorization code" });
+    return res.json({ access_token: "SHORT-TOKEN", user_id: 17841400 });
+  });
+  app.get("/ig/access_token", (req, res) => {
+    if (req.query.grant_type !== "ig_exchange_token" || req.query.access_token !== "SHORT-TOKEN") return res.status(400).json({ error: { message: "bad exchange" } });
+    return res.json({ access_token: "LONG-TOKEN", expires_in: 5184000 });
+  });
+  app.get("/ig/refresh_access_token", (req, res) => {
+    graph.igRefreshes += 1;
+    return res.json({ access_token: "LONG-TOKEN-2", expires_in: 5184000 });
+  });
+  app.get("/ig/me", (req, res) => {
+    if (graph.igRevoked || !String(req.query.access_token || "").startsWith("LONG-TOKEN")) return res.status(400).json({ error: { message: "Error validating access token", code: 190 } });
+    return res.json({ user_id: "17841400", username: "escola_mock", account_type: "BUSINESS" });
+  });
+  app.post("/ig/:id/subscribed_apps", (req, res) => { graph.hooks.push({ subscribed: req.params.id, fields: req.query.subscribed_fields }); res.json({ success: true }); });
+  app.post("/ig/me/messages", (req, res) => {
+    if (!String(req.query.access_token || "").startsWith("LONG-TOKEN")) return res.status(400).json({ error: { message: "bad token", code: 190 } });
+    if (String(req.body.recipient && req.body.recipient.id).startsWith("IGWINDOW")) return res.status(400).json({ error: { message: "This message is sent outside of allowed window.", code: 10, error_subcode: 2534022 } });
+    graph.n += 1;
+    graph.sent.push({ path: "/ig/me/messages", body: req.body, token: req.query.access_token });
+    return res.json({ recipient_id: "x", message_id: `m_ig_login_${graph.n}` });
+  });
+  app.get("/ig/:id", (req, res) => res.json({ name: "Joana Souza", username: "joana", profile_pic: `http://localhost:${GRAPH_PORT}/pic.jpg` }));
   app.get("/me", (q, res) => res.json({ id: "PAGE1", name: "Mock Page" }));
   app.get("/:id", (req, res) => {
     const { id } = req.params;
@@ -421,7 +447,7 @@ const postMeta = (id, payload, secret, badSig) => {
       ...process.env, DATABASE_URL: "", DATABASE_URL_POOL: "", DB_SSL: "false", NODE_ENV: "test", DB_NAME: DB, DB_HOST: "localhost", DB_USER: PGUSER, DB_PASS: "", DB_PORT: "5432", DB_DIALECT: "postgres",
       PORT: String(PORT), PROXY_PORT: String(PORT), BACKEND_URL: "http://localhost", PUBLIC_URL: API,
       FRONTEND_URL: "http://localhost:3000", JWT_SECRET: "e2e", JWT_REFRESH_SECRET: "e2e-r", DASHBOARD_CACHE_MS: "0", LOGIN_RATE_MAX: "100",
-      TELEGRAM_API_URL: `http://localhost:${TG_PORT}`, GRAPH_API_URL: `http://localhost:${GRAPH_PORT}`,
+      TELEGRAM_API_URL: `http://localhost:${TG_PORT}`, GRAPH_API_URL: `http://localhost:${GRAPH_PORT}`, INSTAGRAM_TOKEN_URL: `http://localhost:${GRAPH_PORT}/ig/oauth/access_token`, INSTAGRAM_GRAPH_URL: `http://localhost:${GRAPH_PORT}/ig`, CHANNEL_TOKEN_REFRESH_MS: "2500", CHANNEL_TOKEN_FIRST_MS: "1500",
       SKIP_WHATSAPP_SESSIONS: "1", SKIP_DEFAULT_DATA: "1", LOG_LEVEL: "warn", EFI_API_URL: `http://localhost:${EFI_PORT}`, EFI_BILLET_API_URL: `http://localhost:${BILLET_PORT}`, EFI_POLL_MS: "1500",
       ANTHROPIC_API_URL: `http://localhost:${AI_PORT}`, OPENAI_API_URL: `http://localhost:${AI_PORT}`, STALE_RUNS_MS: "4000", HANDOFF_SLA_MS: "4000", ONBOARDING_SLA_MS: "4000", REACTIVATION_MS: "3000", ALLOW_PRIVATE_URLS: "true"
     };
@@ -586,6 +612,125 @@ const postMeta = (id, payload, secret, badSig) => {
         assert(graph.sent.slice(before).some(x => x.files === 1), "no multipart attachment");
       });
     }
+    // ------------------------------------------------- Instagram login (official OAuth)
+    console.log("\nInstagram login");
+    let igState, igConnId, igTicket;
+    const appWebhook = (payload, secret, badSig) => {
+      const body = JSON.stringify(payload);
+      return http.post("/webhooks/meta", body, { headers: { "Content-Type": "application/json", ...(secret ? { "X-Hub-Signature-256": badSig || sign(secret, body) } : {}) } });
+    };
+    await test("without the Meta app registered, the login is refused with a clear reason", async () => {
+      const st = (await http.get("/channels/instagram/status", auth())).data;
+      assert(st.configured === false, "app should not be configured yet");
+      const r = await http.get("/channels/instagram/authorize", auth());
+      assert(r.status === 400 && /ERR_META_APP_NOT_CONFIGURED/.test(JSON.stringify(r.data)), `authorize -> ${r.status} ${JSON.stringify(r.data)}`);
+    });
+    await test("the manager registers the Meta app once: secret sealed, verify token generated", async () => {
+      const bad = await http.put("/channels/instagram/app", { appId: "abc", appSecret: "x" }, auth());
+      assert(bad.status === 400, `invalid id -> ${bad.status}`);
+      const r = await http.put("/channels/instagram/app", { appId: "17841999", appSecret: "ig-app-secret" }, auth());
+      assert(r.status === 200 && r.data.configured === true, `put -> ${r.status}`);
+      assert(!JSON.stringify(r.data).includes("ig-app-secret"), "secret shown back");
+      assert(r.data.verifyToken && r.data.redirectUri.endsWith("/oauth/instagram/callback") && r.data.webhookUrl.endsWith("/webhooks/meta"), "urls / verify token");
+      assert(sql(`SELECT value FROM Settings WHERE "key"='meta_app_secret'`).startsWith("enc:v1:"), "app secret stored in clear");
+      assert(sql(`SELECT value FROM Settings WHERE "key"='meta_verify_token'`).startsWith("enc:v1:"), "verify token stored in clear");
+      const again = await http.put("/channels/instagram/app", { appId: "17841999", appSecret: r.data.appSecret }, auth());
+      assert(again.data.verifyToken === r.data.verifyToken, "verify token changed on a second save");
+    });
+    await test("authorize returns the Instagram login URL with a signed state", async () => {
+      const r = await http.get("/channels/instagram/authorize", auth());
+      assert(r.status === 200, `status ${r.status}`);
+      const u = new URL(r.data.url);
+      assert(u.searchParams.get("client_id") === "17841999" && u.searchParams.get("redirect_uri").endsWith("/oauth/instagram/callback"), "client / redirect");
+      assert(u.searchParams.get("scope").includes("instagram_business_manage_messages"), "scope");
+      igState = u.searchParams.get("state");
+      assert(igState && igState.includes("."), "state");
+    });
+    await test("callback refuses a forged or missing state and a refused login", async () => {
+      for (const q of [{ code: "CODE-OK", state: "forjado.assinatura" }, { code: "CODE-OK" }, { error: "access_denied", error_description: "negado", state: igState }]) {
+        const r = await http.get("/oauth/instagram/callback", { params: q, maxRedirects: 0 });
+        assert(r.status === 302 && /instagram=erro/.test(r.headers.location), `callback ${JSON.stringify(q)} -> ${r.status} ${r.headers.location}`);
+      }
+      assert(Number(sql(`SELECT COUNT(*) FROM Whatsapps WHERE channel='instagram' AND config LIKE '%oauth%'`)) === 0, "a connection was created without a valid login");
+    });
+    await test("callback exchanges the code, keeps a long-lived token sealed and creates the connection", async () => {
+      const r = await http.get("/oauth/instagram/callback", { params: { code: "CODE-OK", state: igState }, maxRedirects: 0 });
+      assert(r.status === 302 && /instagram=ok/.test(r.headers.location), `callback -> ${r.status} ${r.headers.location}`);
+      igConnId = Number(await waitFor(() => sql(`SELECT id FROM Whatsapps WHERE channel='instagram' AND config LIKE '%escola_mock%'`), 8000, "instagram connection"));
+      const row = JSON.parse(sql(`SELECT config FROM Whatsapps WHERE id=${igConnId}`));
+      assert(row.mode === "oauth" && row.igUserId === "17841400" && row.username === "escola_mock", `config ${JSON.stringify(row)}`);
+      assert(row.accessToken.startsWith("enc:v1:") && !row.accessToken.includes("LONG-TOKEN"), "token stored in clear");
+      assert(new Date(row.tokenExpiresAt).getTime() > Date.now() + 50 * 86400000, "token should last about 60 days");
+      assert(graph.hooks.some(h => h.subscribed === "17841400" && /messages/.test(h.fields)), "webhook subscription not requested");
+      const w = (await http.get(`/whatsapp/${igConnId}`, auth())).data;
+      assert(w.status === "CONNECTED" && w.session === "@escola_mock", `status ${w.status} session ${w.session}`);
+      assert(!JSON.stringify(w.config).includes("LONG-TOKEN"), "token leaked to the browser");
+    });
+    await test("logging in again with the same account updates the connection instead of duplicating it", async () => {
+      const a = new URL((await http.get("/channels/instagram/authorize", auth())).data.url).searchParams.get("state");
+      await http.get("/oauth/instagram/callback", { params: { code: "CODE-OK", state: a }, maxRedirects: 0 });
+      assert(Number(sql(`SELECT COUNT(*) FROM Whatsapps WHERE channel='instagram' AND config LIKE '%escola_mock%'`)) === 1, "duplicated connection");
+    });
+    await test("app webhook: verification handshake uses the generated token", async () => {
+      const vt = (await http.get("/channels/instagram/app", auth())).data.verifyToken;
+      const ok = await http.get("/webhooks/meta", { params: { "hub.mode": "subscribe", "hub.verify_token": vt, "hub.challenge": "777" } });
+      assert(ok.status === 200 && String(ok.data) === "777", `ok=${ok.status}`);
+      const bad = await http.get("/webhooks/meta", { params: { "hub.mode": "subscribe", "hub.verify_token": "nope", "hub.challenge": "1" } });
+      assert(bad.status === 403, `bad=${bad.status}`);
+    });
+    const igEvent = (sender, mid, text, account = "17841400") => ({ object: "instagram", entry: [{ id: account, time: Date.now(), messaging: [{ sender: { id: sender }, recipient: { id: account }, message: { mid, text } }] }] });
+    await test("app webhook: forged signature is refused, signed message reaches the right connection", async () => {
+      const forged = await appWebhook(igEvent("IGSIDLOGIN1", "m_igl_x", "x"), "ig-app-secret", "sha256=" + "0".repeat(64));
+      assert(forged.status === 401, `forged -> ${forged.status}`);
+      assert((await appWebhook(igEvent("IGSIDLOGIN1", "m_igl_y", "y"))).status === 401, "unsigned delivery accepted");
+      assert(!ticketOf("ig_IGSIDLOGIN1"), "forged webhook created a ticket");
+      const r = await appWebhook(igEvent("IGSIDLOGIN1", "m_igl_1", "Oi, vi o anúncio no Instagram"), "ig-app-secret");
+      assert(r.status === 200, `signed -> ${r.status}`);
+      igTicket = await waitFor(() => ticketOf("ig_IGSIDLOGIN1"), 8000, "instagram ticket");
+      assert(sql(`SELECT whatsappId FROM Tickets WHERE id=${igTicket}`) === String(igConnId), "ticket on the wrong connection");
+      assert(sql(`SELECT name FROM Contacts WHERE number='ig_IGSIDLOGIN1'`) === "Joana Souza", "profile name");
+    });
+    await test("app webhook: an account that is not connected here is ignored", async () => {
+      await appWebhook(igEvent("IGSIDLOGIN2", "m_igl_2", "oi", "99999999"), "ig-app-secret");
+      await new Promise(r => setTimeout(r, 800));
+      assert(!ticketOf("ig_IGSIDLOGIN2"), "message of an unknown account created a ticket");
+    });
+    await test("reply goes to graph.instagram.com with the long-lived token", async () => {
+      const before = graph.sent.length;
+      const r = await http.post(`/messages/${igTicket}`, { body: "Olá Joana!" }, auth());
+      assert(r.status === 200, `status ${r.status} ${JSON.stringify(r.data)}`);
+      const s = graph.sent.slice(before).find(x => x.path === "/ig/me/messages");
+      assert(s && s.body.recipient.id === "IGSIDLOGIN1" && s.token === "LONG-TOKEN" && s.body.message.text.includes("Olá Joana"), "payload");
+    });
+    await test("a reply after the 24 h window gets a clear error", async () => {
+      await appWebhook(igEvent("IGWINDOW1", "m_igl_3", "oi"), "ig-app-secret");
+      const t = await waitFor(() => ticketOf("ig_IGWINDOW1"), 8000, "window ticket");
+      const r = await http.post(`/messages/${t}`, { body: "resposta tardia" }, auth());
+      assert(r.status === 200 || r.status === 202, `late reply -> ${r.status} ${JSON.stringify(r.data)}`);
+      await waitFor(() => sql(`SELECT status FROM OutboundMessages WHERE ticketId=${t} ORDER BY id DESC LIMIT 1`) === "failed", 12000, "late reply failed");
+      assert(sql(`SELECT error FROM OutboundMessages WHERE ticketId=${t} ORDER BY id DESC LIMIT 1`) === "ERR_REPLY_WINDOW_CLOSED", "the reason should be the closed window, not a generic failure");
+      assert(Number(sql(`SELECT attempts FROM OutboundMessages WHERE ticketId=${t} ORDER BY id DESC LIMIT 1`)) === 1, "a closed window must not be retried");
+    });
+    await test("the worker renews a token that is about to expire and keeps it sealed", async () => {
+      const cfg = JSON.parse(sql(`SELECT config FROM Whatsapps WHERE id=${igConnId}`));
+      cfg.tokenExpiresAt = new Date(Date.now() + 3 * 86400000).toISOString();
+      psql(DB, `UPDATE "Whatsapps" SET config = '${JSON.stringify(cfg).replace(/'/g, "''")}' WHERE id=${igConnId}`);
+      await waitFor(() => graph.igRefreshes > 0, 12000, "token renewal");
+      const row = await waitFor(() => { const c = JSON.parse(sql(`SELECT config FROM Whatsapps WHERE id=${igConnId}`)); return new Date(c.tokenExpiresAt).getTime() > Date.now() + 50 * 86400000 ? c : null; }, 8000, "new expiry saved");
+      assert(row.accessToken.startsWith("enc:v1:") && !row.accessToken.includes("LONG-TOKEN-2"), "renewed token stored in clear");
+    });
+    await test("when Instagram revokes the access the connection shows as disconnected, and recovers when it answers again", async () => {
+      graph.igRevoked = true;
+      await waitFor(() => sql(`SELECT status FROM Whatsapps WHERE id=${igConnId}`) === "DISCONNECTED", 12000, "disconnected after revocation");
+      graph.igRevoked = false;
+      await waitFor(() => sql(`SELECT status FROM Whatsapps WHERE id=${igConnId}`) === "CONNECTED", 12000, "connected again");
+    });
+    await test("channel secrets are sealed at rest (pasted keys too)", async () => {
+      const row = JSON.parse(sql(`SELECT config FROM Whatsapps WHERE channel='telegram' LIMIT 1`));
+      assert(row.botToken.startsWith("enc:v1:"), "telegram bot token stored in clear");
+      const m = JSON.parse(sql(`SELECT config FROM Whatsapps WHERE channel='messenger' LIMIT 1`));
+      assert(m.accessToken.startsWith("enc:v1:") && m.appSecret.startsWith("enc:v1:"), "messenger secrets stored in clear");
+    });
     await test("webhook without App Secret configured is refused", async () => {
       const id = await createConnection("sem segredo", "messenger", { accessToken: "T" });
       const r = await postMeta(id, { object: "page", entry: [] });

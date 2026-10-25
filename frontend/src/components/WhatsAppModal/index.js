@@ -94,7 +94,7 @@ const Copyable = ({ text }) => {
 	);
 };
 
-const WhatsAppModal = ({ open, onClose, whatsAppId }) => {
+const WhatsAppModal = ({ open, onClose, whatsAppId, onCreated }) => {
 	const classes = useStyles();
 	const { user } = useContext(AuthContext);
 	const initialState = {
@@ -106,6 +106,7 @@ const WhatsAppModal = ({ open, onClose, whatsAppId }) => {
 		channel: "whatsapp",
 	};
 	const [whatsApp, setWhatsApp] = useState(initialState);
+	const [pairingPhone, setPairingPhone] = useState("");
 	const [config, setConfig] = useState({});
 	const [hours, setHours] = useState(defaultHours());
 	const [selectedQueueIds, setSelectedQueueIds] = useState([]);
@@ -158,6 +159,7 @@ const WhatsAppModal = ({ open, onClose, whatsAppId }) => {
 		setHours(defaultHours());
 		setSelectedQueueIds([]);
 		setInfo(null);
+		setPairingPhone("");
 		setSafety(null);
 		setGroupList(null);
 		setAllowed([]);
@@ -197,14 +199,18 @@ const WhatsAppModal = ({ open, onClose, whatsAppId }) => {
 		if (whatsApp.channel !== "whatsapp") payload.config = JSON.stringify(config);
 
 		setSaving(true);
+		let createdNow = null;
 		try {
 			if (whatsAppId) {
 				await api.put(`/whatsapp/${whatsAppId}`, payload);
 			} else {
-				await api.post("/whatsapp", payload);
+				const { data: created } = await api.post("/whatsapp", { ...payload, ...(pairingPhone.replace(/\D/g, "") ? { pairingPhone } : {}) });
+				createdNow = created;
 			}
 			toast.success(i18n.t("whatsappModal.success"));
 			handleClose();
+			// a new WhatsApp number: the window with the QR Code (or the pairing code) opens at once
+			if (createdNow && createdNow.channel === "whatsapp" && onCreated) onCreated(createdNow);
 		} catch (err) {
 			toastError(err);
 		} finally {
@@ -288,6 +294,19 @@ const WhatsAppModal = ({ open, onClose, whatsAppId }) => {
 						<MenuItem key={c.type} value={c.type}>{c.label}</MenuItem>
 					))}
 				</TextField>
+
+				{!whatsAppId && (whatsApp.channel || "whatsapp") === "whatsapp" && (
+					<TextField
+						label="Número para conectar com código (opcional)"
+						value={pairingPhone}
+						onChange={e => setPairingPhone(e.target.value)}
+						variant="outlined"
+						margin="dense"
+						fullWidth
+						placeholder="69 99999-9999"
+						helperText="Preencha para conectar com um código de 8 letras digitado no celular, sem ler QR Code."
+					/>
+				)}
 
 				{(whatsApp.channel || "whatsapp") === "whatsapp" && (
 					<div className={classes.section}>

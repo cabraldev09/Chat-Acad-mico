@@ -8,20 +8,21 @@ export const maskSecret = (value?: string | null): string | null | undefined => 
   return `${MASK}${value.slice(-4)}`;
 };
 
-const SECRET_CONFIG_KEYS = [
+export const SECRET_CONFIG_KEYS = [
   "accessToken",
   "appSecret",
   "botToken",
-  "verifyToken"
+  "verifyToken",
+  "refreshToken"
 ];
 
-// Config JSON of a channel connection, with credentials masked for display
+// Config JSON of a channel connection, with credentials masked for display (the sealed value is opened first, so the last 4 characters shown are the real ones)
 export const maskConfig = (config?: string | null): string | null | undefined => {
   if (!config) return config;
   try {
     const parsed = JSON.parse(config);
     SECRET_CONFIG_KEYS.forEach(key => {
-      if (parsed[key]) parsed[key] = maskSecret(parsed[key]);
+      if (parsed[key]) parsed[key] = maskSecret(openSecret(String(parsed[key])));
     });
     return JSON.stringify(parsed);
   } catch (e) {
@@ -46,7 +47,7 @@ export const mergeConfig = (oldConfig: string | null | undefined, newConfig: str
   Object.keys(previous).forEach(key => {
     if (next[key] === undefined) next[key] = previous[key];
   });
-  return JSON.stringify(next);
+  return sealConfig(JSON.stringify(next)) as string;
 };
 
 // ------------------------------------------------------------------ secrets kept in the database
@@ -78,4 +79,29 @@ export const openSecret = (stored: string): string => {
     // sealed with another server secret: unreadable, the administrator types it again
     return "";
   }
+};
+
+// The credentials of a channel connection are stored sealed (AES-256-GCM): a copy of the database alone does not reveal them. Values written
+// before sealing existed are read as they are and sealed the next time the connection is saved.
+export const sealConfig = (config?: string | null): string | undefined => {
+  if (!config) return config === null ? undefined : config;
+  try {
+    const parsed = JSON.parse(config);
+    SECRET_CONFIG_KEYS.forEach(key => {
+      const value = parsed[key];
+      if (typeof value === "string" && value && !isMasked(value) && !value.startsWith(SEAL_PREFIX)) parsed[key] = sealSecret(value);
+    });
+    return JSON.stringify(parsed);
+  } catch (e) {
+    return config;
+  }
+};
+
+// the same config with every credential opened (what the channel code uses to talk to the provider)
+export const openConfig = (config: Record<string, any>): Record<string, any> => {
+  const out = { ...config };
+  SECRET_CONFIG_KEYS.forEach(key => {
+    if (typeof out[key] === "string" && out[key]) out[key] = openSecret(out[key]);
+  });
+  return out;
 };

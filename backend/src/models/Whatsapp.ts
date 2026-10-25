@@ -99,6 +99,10 @@ class Whatsapp extends Model<Whatsapp> {
   @Column
   connectedSince: Date;
 
+  // the number typed to connect with the pairing code (digits with country code); empty = QR Code
+  @Column
+  pairingPhone: string;
+
   // who connected this number: its conversations go to that person (null = shared, managed by the administrator)
   @ForeignKey(() => User)
   @Column

@@ -20,6 +20,7 @@ import {
   externalIdOf,
   mediaKindOf
 } from "./types";
+import { IG_GRAPH } from "../helpers/MetaApp";
 
 // Unversioned by default so Meta serves the app's default API version (pinned
 // versions expire). Set META_GRAPH_VERSION=vNN.0 to pin, GRAPH_API_URL to override.
@@ -38,6 +39,16 @@ const MESSENGER_REACTIONS: Record<string, string> = {
   "👍": "like", "👎": "dislike", "❤️": "love", "❤": "love", "😂": "smile", "😮": "wow", "😢": "sad", "😡": "angry"
 };
 
+// An Instagram connection made by the login (mode "oauth") talks to graph.instagram.com with its own long-lived token; one pasted by hand
+// (or Messenger) keeps using the Facebook Graph.
+const baseOf = (type: string, whatsapp: Whatsapp): string => (type === "instagram" && getConfig(whatsapp).mode === "oauth" ? IG_GRAPH : GRAPH);
+
+// Instagram and Messenger only let the page answer within 24 h of the person's last message
+const isWindowClosed = (err: any): boolean => {
+  const e = err?.response?.data?.error;
+  return !!e && (e.error_subcode === 2534022 || e.error_subcode === 2018278 || /outside of allowed window|allowed window/i.test(String(e.message || "")));
+};
+
 const socialAdapter = (type: "messenger" | "instagram", prefix: string): ChannelAdapter => ({
   type,
   prefix,
@@ -49,10 +60,10 @@ const socialAdapter = (type: "messenger" | "instagram", prefix: string): Channel
       return;
     }
     try {
-      const { data } = await axios.get(`${GRAPH}/me`, {
-        params: { access_token: accessToken, fields: "id,name" }
+      const { data } = await axios.get(`${baseOf(type, whatsapp)}/me`, {
+        params: { access_token: accessToken, fields: baseOf(type, whatsapp) === IG_GRAPH ? "user_id,username" : "id,name" }
       });
-      await whatsapp.update({ session: data.name || data.id });
+      await whatsapp.update({ session: data.username ? `@${data.username}` : data.name || data.id });
       await setChannelStatus(whatsapp, "CONNECTED");
     } catch (err) {
       logger.error(`${type} start failed: ${err?.response?.data?.error?.message || err}`);
@@ -67,7 +78,7 @@ const socialAdapter = (type: "messenger" | "instagram", prefix: string): Channel
   async sendTyping(whatsapp, contact: Contact) {
     const { accessToken } = getConfig(whatsapp);
     await axios.post(
-      `${GRAPH}/me/messages`,
+      `${baseOf(type, whatsapp)}/me/messages`,
       { recipient: { id: externalIdOf(contact, prefix) }, sender_action: "typing_on" },
       { params: { access_token: accessToken }, timeout: 8000 }
     );
@@ -78,7 +89,7 @@ const socialAdapter = (type: "messenger" | "instagram", prefix: string): Channel
     const reaction = type === "instagram" ? (emoji === "❤️" || emoji === "❤" ? "love" : "") : MESSENGER_REACTIONS[emoji] || "";
     if (emoji && !reaction) throw new AppError("ERR_REACTION_EMOJI_UNSUPPORTED", 400);
     await axios.post(
-      `${GRAPH}/me/messages`,
+      `${baseOf(type, whatsapp)}/me/messages`,
       {
         recipient: { id: externalIdOf(contact, prefix) },
         sender_action: emoji ? "react" : "unreact",
@@ -91,7 +102,7 @@ const socialAdapter = (type: "messenger" | "instagram", prefix: string): Channel
   async sendText(whatsapp, contact: Contact, body) {
     const { accessToken } = getConfig(whatsapp);
     const { data } = await axios.post(
-      `${GRAPH}/me/messages`,
+      `${baseOf(type, whatsapp)}/me/messages`,
       {
         recipient: { id: externalIdOf(contact, prefix) },
         message: { text: body },
@@ -106,7 +117,7 @@ const socialAdapter = (type: "messenger" | "instagram", prefix: string): Channel
   async sendChoices(whatsapp, contact: Contact, question, options) {
     const { accessToken } = getConfig(whatsapp);
     const { data } = await axios.post(
-      `${GRAPH}/me/messages`,
+      `${baseOf(type, whatsapp)}/me/messages`,
       {
         recipient: { id: externalIdOf(contact, prefix) },
         message: {
@@ -137,14 +148,14 @@ const socialAdapter = (type: "messenger" | "instagram", prefix: string): Channel
       filename: media.filename,
       contentType: media.mimetype
     });
-    const { data } = await axios.post(`${GRAPH}/me/messages`, form, {
+    const { data } = await axios.post(`${baseOf(type, whatsapp)}/me/messages`, form, {
       params: { access_token: accessToken },
       headers: form.getHeaders(),
       maxBodyLength: Infinity
     });
     if (caption) {
       await axios.post(
-        `${GRAPH}/me/messages`,
+        `${baseOf(type, whatsapp)}/me/messages`,
         {
           recipient: { id: externalIdOf(contact, prefix) },
           message: { text: caption },
@@ -157,8 +168,27 @@ const socialAdapter = (type: "messenger" | "instagram", prefix: string): Channel
   }
 });
 
-export const messenger = socialAdapter("messenger", "fb_");
-export const instagram = socialAdapter("instagram", "ig_");
+// a send refused because the 24 h window is closed becomes a clear message instead of a generic failure
+const withWindowError = (adapter: ChannelAdapter): ChannelAdapter => {
+  const wrap = <T extends (...args: any[]) => Promise<any>>(fn: T): T =>
+    (async (...args: any[]) => {
+      try {
+        return await fn(...args);
+      } catch (err) {
+        if (isWindowClosed(err)) throw new AppError("ERR_REPLY_WINDOW_CLOSED", 400);
+        throw err;
+      }
+    }) as T;
+  return {
+    ...adapter,
+    sendText: wrap(adapter.sendText),
+    sendMedia: wrap(adapter.sendMedia),
+    ...(adapter.sendChoices ? { sendChoices: wrap(adapter.sendChoices) } : {})
+  };
+};
+
+export const messenger = withWindowError(socialAdapter("messenger", "fb_"));
+export const instagram = withWindowError(socialAdapter("instagram", "ig_"));
 
 // ---------------------------------------------------------------------------
 // WhatsApp Cloud API
@@ -328,13 +358,13 @@ const processSocial = async (whatsapp: Whatsapp, entry: any, type: ChannelType) 
     let name = senderId;
     let pic: string | undefined;
     try {
-      const { data } = await axios.get(`${GRAPH}/${senderId}`, {
+      const { data } = await axios.get(`${baseOf(type, whatsapp)}/${senderId}`, {
         params: {
           access_token: config.accessToken,
-          fields: type === "instagram" ? "name,profile_pic" : "name,profile_pic"
+          fields: type === "instagram" && config.mode === "oauth" ? "name,username,profile_pic" : "name,profile_pic"
         }
       });
-      name = data.name || senderId;
+      name = data.name || (data.username ? `@${data.username}` : senderId);
       pic = data.profile_pic;
     } catch (e) {
       // profile lookup is best effort

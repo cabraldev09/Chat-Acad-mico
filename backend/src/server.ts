@@ -14,6 +14,7 @@ import { startHandoffSla } from "./workers/HandoffSla";
 import { startStaleRuns } from "./workers/StaleRuns";
 import { startAiReactivation } from "./workers/AiReactivation";
 import { startWhatsappWatchdog } from "./workers/WhatsappWatchdog";
+import { startChannelTokenRefresh } from "./workers/ChannelTokenRefresh";
 import { startFollowUpAlert } from "./workers/FollowUpAlert";
 import { startProfilePicSync } from "./workers/ProfilePicSync";
 import { startAckReconciler } from "./workers/AckReconciler";
@@ -48,6 +49,7 @@ whenLeader(() => {
   startStaleRuns();
   startAiReactivation();
   startWhatsappWatchdog();
+  startChannelTokenRefresh();
   startFollowUpAlert();
   startProfilePicSync();
   startAckReconciler();

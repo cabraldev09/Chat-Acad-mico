@@ -1,3 +1,4 @@
+import { sealConfig } from "../../helpers/Secrets";
 import * as Yup from "yup";
 
 import AppError from "../../errors/AppError";
@@ -88,7 +89,7 @@ const CreateWhatsAppService = async ({
       farewellMessage,
       isDefault,
       channel,
-      config,
+      config: sealConfig(config),
       businessHours,
       outOfHoursMessage,
       ownerId

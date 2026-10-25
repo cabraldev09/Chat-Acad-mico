@@ -14,6 +14,7 @@ import routes from "./routes";
 import { logger } from "./utils/logger";
 import webchatRoutes from "./routes/webchatRoutes";
 import metaWebhookRoutes from "./routes/metaWebhookRoutes";
+import * as ChannelOAuth from "./controllers/ChannelOAuthController";
 import leadFormRoutes, { referralRouter } from "./routes/leadFormRoutes";
 import courseLandingRoutes from "./routes/courseLandingRoutes";
 import affiliatePortalRoutes from "./routes/affiliatePortalRoutes";
@@ -70,6 +71,8 @@ app.use("/r", publicLimiter, cors({ origin: true }), referralRouter);
 app.use("/public/courses", publicLimiter, cors({ origin: true }), courseLandingRoutes);
 app.use("/affiliate-portal", publicLimiter, cors({ origin: true }), affiliatePortalRoutes);
 app.use("/p", publicLimiter, proposalPublicRoutes);
+// where Instagram sends the person back after the login (signed state; no cookie needed)
+app.use("/oauth/instagram/callback", publicLimiter, (req, res, next) => ChannelOAuth.callback(req, res).catch(next));
 app.use(
   "/webhooks",
   webhookLimiter,
