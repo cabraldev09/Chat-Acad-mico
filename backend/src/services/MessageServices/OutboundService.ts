@@ -116,7 +116,8 @@ export const processOutbound = async (id: number): Promise<void> => {
     hookHumanReply(ticket.contactId, row.userId);
   } catch (err) {
     const reason = String((err as any)?.message || err);
-    if (row.attempts < MAX_ATTEMPTS) {
+    // a refusal that will not change by trying again (the channel's reply window is closed) is reported at once
+    if (reason !== "ERR_REPLY_WINDOW_CLOSED" && row.attempts < MAX_ATTEMPTS) {
       // the call failed before WhatsApp accepted it: try again soon
       await row.update({ status: "pending", lockedAt: null, error: reason.slice(0, 1000), nextAttemptAt: new Date(Date.now() + 5000 * row.attempts) });
     } else {

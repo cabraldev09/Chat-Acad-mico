@@ -137,6 +137,8 @@ const SendWhatsAppMedia = async ({
     return sentMessage;
   } catch (err) {
     logger.error({ info: "Could not send the media", err: String(err) });
+    // the channel said why (for example the 24 h window of Instagram is closed): the person is told, instead of a generic failure
+    if (err instanceof AppError && err.message === "ERR_REPLY_WINDOW_CLOSED") throw err;
     throw new AppError("ERR_SENDING_WAPP_MSG");
   }
 };

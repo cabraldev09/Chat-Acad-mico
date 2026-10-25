@@ -1,3 +1,4 @@
+import { openConfig } from "../helpers/Secrets";
 import Whatsapp from "../models/Whatsapp";
 import Contact from "../models/Contact";
 
@@ -59,7 +60,8 @@ export interface ChannelAdapter {
 
 export const getConfig = (whatsapp: Whatsapp): Record<string, any> => {
   try {
-    return whatsapp.config ? JSON.parse(whatsapp.config) : {};
+    // the credentials are stored sealed: the channel code always sees them opened
+    return whatsapp.config ? openConfig(JSON.parse(whatsapp.config)) : {};
   } catch (e) {
     return {};
   }

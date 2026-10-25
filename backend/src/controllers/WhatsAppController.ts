@@ -1,3 +1,4 @@
+import { normalizePairingPhone } from "../helpers/PairingPhone";
 import { Request, Response } from "express";
 import { getIO } from "../libs/socket";
 import { StartWhatsAppSession } from "../services/WbotServices/StartWhatsAppSession";
@@ -152,6 +153,13 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
         : null;
       if (!current || current.ownerId !== ownerId) await owner.update({ whatsappId: whatsapp.id });
     }
+  }
+
+  // connecting with the pairing code: the number is typed here and the code appears instead of the QR Code
+  if (req.body.pairingPhone) {
+    const phone = normalizePairingPhone(req.body.pairingPhone);
+    if (!phone) throw new AppError("ERR_INVALID_PHONE", 400);
+    await whatsapp.update({ pairingPhone: phone });
   }
 
   StartWhatsAppSession(whatsapp);

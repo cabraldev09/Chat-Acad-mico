@@ -1356,6 +1356,8 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
 
     const wbot: Session = new Client({
       authStrategy: new LocalAuth({ clientId: `bd_${whatsapp.id}`, dataPath: WWEBJS_AUTH_DIR }),
+      // a number typed by the person: WhatsApp gives a code to type on the phone instead of the QR Code to read
+      ...(whatsapp.pairingPhone ? { pairWithPhoneNumber: { phoneNumber: whatsapp.pairingPhone, showNotification: true, intervalMs: 150000 } } : {}),
       puppeteer: {
         // headless: false, // TODO make sure chromium closes on session disconnection / delete
         executablePath: process.env.CHROME_BIN || undefined,
@@ -1412,6 +1414,18 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
         action: "update",
         session: whatsapp
       });
+    });
+
+    // the pairing code (8 characters): the same screen of the QR Code shows it; the phone types it in WhatsApp → Aparelhos conectados
+    wbot.on("code", async (code: string) => {
+      clearInitTimer(whatsapp.id);
+      logger.info(`Session: ${sessionName} código de pareamento gerado`);
+      await whatsapp.update({ qrcode: `code:${code}`, status: "qrcode", retries: 0 });
+      if (sessions.findIndex(s => s.id === whatsapp.id) === -1) {
+        wbot.id = whatsapp.id;
+        sessions.push(wbot);
+      }
+      io.emit("whatsappSession", { action: "update", session: whatsapp });
     });
 
     wbot.on("authenticated", async () => {

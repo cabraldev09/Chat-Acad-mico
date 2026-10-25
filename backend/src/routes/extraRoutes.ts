@@ -27,6 +27,7 @@ import * as Campaign from "../controllers/CampaignController";
 import * as Stats from "../controllers/StatsController";
 import * as Dashboard from "../controllers/DashboardController";
 import * as Channel from "../controllers/ChannelController";
+import * as ChannelOAuth from "../controllers/ChannelOAuthController";
 import * as Lead from "../controllers/LeadController";
 import * as Proposal from "../controllers/ProposalController";
 import * as Retention from "../controllers/RetentionController";
@@ -257,6 +258,11 @@ r.get("/stats/overview", isAuth, Stats.overview);
 
 // channels
 r.get("/channels", isAuth, Channel.index);
+// Instagram login: the app of Meta is set once (managers); anyone signed in connects their own account
+r.get("/channels/instagram/status", isAuth, ChannelOAuth.status);
+r.get("/channels/instagram/authorize", isAuth, ChannelOAuth.authorize);
+r.get("/channels/instagram/app", isAuth, isManager, ChannelOAuth.getApp);
+r.put("/channels/instagram/app", isAuth, isManager, ChannelOAuth.putApp);
 r.get("/channels/:whatsappId/info", isAuth, isManager, Channel.info);
 r.get("/channels/:whatsappId/safety", isAuth, Channel.safety);
 r.get("/channels/:whatsappId/groups", isAuth, canManageWhatsapp, Channel.groups);

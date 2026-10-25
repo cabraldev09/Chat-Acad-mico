@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import QRCode from "qrcode.react";
-import { Dialog, DialogContent, Paper, Typography, CircularProgress, Button } from "@material-ui/core";
+import { Dialog, DialogContent, Paper, Typography, CircularProgress, Button, TextField } from "@material-ui/core";
 
 import openSocket from "../../services/socket-io";
 import toastError from "../../errors/toastError";
@@ -13,6 +13,8 @@ const QrcodeModal = ({ open, onClose, whatsAppId }) => {
 	const [qrCode, setQrCode] = useState("");
 	const [waited, setWaited] = useState(0);
 	const [retrying, setRetrying] = useState(false);
+	const [askPhone, setAskPhone] = useState(false);
+	const [phone, setPhone] = useState("");
 	const closed = useRef(false);
 
 	useEffect(() => {
@@ -58,6 +60,23 @@ const QrcodeModal = ({ open, onClose, whatsAppId }) => {
 		};
 	}, [whatsAppId, onClose]);
 
+	// switches this connection to the pairing code (a number typed on the phone) or back to the QR Code
+	const switchWay = async (pairingPhone) => {
+		setRetrying(true);
+		try {
+			await api.put(`/whatsappsession/${whatsAppId}`, { pairingPhone });
+			setQrCode("");
+			setWaited(0);
+			setAskPhone(false);
+		} catch (err) {
+			toastError(err);
+		}
+		setRetrying(false);
+	};
+
+	const isCode = qrCode.startsWith("code:");
+	const code = isCode ? qrCode.slice(5) : "";
+
 	const retry = async () => {
 		setRetrying(true);
 		try {
@@ -76,12 +95,30 @@ const QrcodeModal = ({ open, onClose, whatsAppId }) => {
 					<Typography color="primary" gutterBottom>
 						{i18n.t("qrCode.message")}
 					</Typography>
-					{qrCode ? (
+					{qrCode && isCode ? (
+						<>
+							<div style={{ fontSize: 40, fontWeight: 800, letterSpacing: "0.12em", fontVariantNumeric: "tabular-nums", margin: "10px 0 6px" }} aria-label={`Código de pareamento ${code.split("").join(" ")}`}>
+								{code.slice(0, 4)}-{code.slice(4)}
+							</div>
+							<Typography variant="body2" style={{ maxWidth: 340, margin: "0 auto" }}>
+								No celular, abra o WhatsApp → Aparelhos conectados → Conectar um aparelho → <b>Conectar com número de telefone</b> e digite este código.
+							</Typography>
+							<Button size="small" style={{ marginTop: 10 }} onClick={() => switchWay("")} disabled={retrying}>Prefiro ler o QR Code</Button>
+						</>
+					) : qrCode ? (
 						<>
 							<QRCode value={qrCode} size={256} />
 							<Typography variant="caption" color="textSecondary" display="block" style={{ marginTop: 8 }}>
 								O código se renova sozinho a cada poucos segundos. No celular: WhatsApp → Aparelhos conectados → Conectar um aparelho.
 							</Typography>
+							{!askPhone ? (
+								<Button size="small" style={{ marginTop: 6 }} onClick={() => setAskPhone(true)}>Sem outro celular para ler? Conectar com código</Button>
+							) : (
+								<div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "center", marginTop: 8 }}>
+									<TextField size="small" variant="outlined" label="Número com DDD" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="69 99999-9999" autoFocus />
+									<Button variant="contained" color="primary" size="small" disabled={retrying || phone.replace(/\D/g, "").length < 10} onClick={() => switchWay(phone)}>Gerar código</Button>
+								</div>
+							)}
 						</>
 					) : (
 						<div style={{ padding: "24px 0" }}>

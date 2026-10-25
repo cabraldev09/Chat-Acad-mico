@@ -18,6 +18,7 @@ import ChatHeader from "../chat/ChatHeader";
 import api from "../../services/api";
 import { ReplyMessageProvider } from "../../context/ReplyingMessage/ReplyingMessageContext";
 import toastError from "../../errors/toastError";
+import { i18n } from "../../translate/i18n";
 import { wa } from "../chat/chatTheme";
 import { AuthContext } from "../../context/Auth/AuthContext";
 import { setTyping, clearTyping, useTyping } from "../../utils/typingStore";
@@ -183,7 +184,7 @@ const Ticket = () => {
     // a message this person wrote that the channel did not accept (the conversation is theirs already; the text is not lost on screen)
     socket.on("outboundMessage", (data) => {
       if (data.action === "failed" && +data.ticketId === +ticketId) {
-        toast.error(data.error === "ownership_changed" ? "A conversa mudou de atendente antes do envio. A mensagem não foi enviada." : "Uma mensagem não foi enviada. Confira a conversa e tente de novo.", { toastId: `out-${data.id}` });
+        toast.error(data.error === "ownership_changed" ? "A conversa mudou de atendente antes do envio. A mensagem não foi enviada." : data.error === "ERR_REPLY_WINDOW_CLOSED" ? i18n.t("backendErrors.ERR_REPLY_WINDOW_CLOSED") : "Uma mensagem não foi enviada. Confira a conversa e tente de novo.", { toastId: `out-${data.id}` });
       }
     });
 

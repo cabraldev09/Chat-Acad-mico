@@ -77,6 +77,8 @@ const SendWhatsAppMessage = async ({
         to: ""
       };
     } catch (err) {
+      // the channel said why (for example the 24 h window of Instagram is closed): the person is told, instead of a generic failure
+      if (err instanceof AppError && err.message === "ERR_REPLY_WINDOW_CLOSED") throw err;
       throw new AppError("ERR_SENDING_WAPP_MSG");
     }
   }
@@ -138,6 +140,8 @@ const SendWhatsAppMessage = async ({
   } catch (err) {
     recordSendResult(whatsapp, false);
     logger.error({ ticketId: ticket.id, whatsappId: whatsapp.id, chatId, err: String((err as any)?.message || err) }, "WhatsApp send failed");
+    // the channel said why (for example the 24 h window of Instagram is closed): the person is told, instead of a generic failure
+    if (err instanceof AppError && err.message === "ERR_REPLY_WINDOW_CLOSED") throw err;
     throw new AppError("ERR_SENDING_WAPP_MSG");
   }
 };
