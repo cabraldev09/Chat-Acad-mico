@@ -550,7 +550,7 @@ const MessageInput = ({ ticketStatus, aiActive, historical, isGroup, contactName
               <span className={classes.recDot} />
               <RecordingTimer />
             </div>
-            <IconButton className={classes.send} onClick={sendAudio} disabled={loading}>
+            <IconButton className={classes.send} aria-label="Enviar áudio" onClick={sendAudio} disabled={loading}>
               {loading ? <CircularProgress size={20} color="inherit" /> : <Send />}
             </IconButton>
           </div>
@@ -628,7 +628,7 @@ const MessageInput = ({ ticketStatus, aiActive, historical, isGroup, contactName
               />
             </div>
             {inputMessage.trim() ? (
-              <IconButton className={classes.send} onClick={handleSend} disabled={loading}>
+              <IconButton className={classes.send} aria-label="Enviar mensagem" onClick={handleSend} disabled={loading}>
                 {loading ? <CircularProgress size={20} color="inherit" /> : <Send />}
               </IconButton>
             ) : (

@@ -1,5 +1,6 @@
 import React, { useCallback, useContext, useEffect, useState } from "react";
 import { useHistory, useLocation } from "react-router-dom";
+import { useTheme } from "@material-ui/core/styles";
 import { AlarmClock, X } from "lucide-react";
 
 import api from "../../services/api";
@@ -34,6 +35,7 @@ export const useMyTasks = () => {
 const TaskAlert = () => {
   const history = useHistory();
   const location = useLocation();
+  const dark = useTheme().palette.type === "dark";
   const { overdue, today, triage, triageLate } = useMyTasks();
   const total = overdue + today + triage;
   const [hiddenAt, setHiddenAt] = useState(() => {
@@ -47,7 +49,7 @@ const TaskAlert = () => {
     try { sessionStorage.setItem("taskAlertHidden", String(total)); } catch (e) { /* it just comes back */ }
   };
   return (
-    <div role="alert" style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 16px", fontSize: 14, borderBottom: `1px solid ${late ? "#fecaca" : "#bfdbfe"}`, background: late ? "#fef2f2" : "#eff6ff", color: late ? "#991b1b" : "#1e3a8a" }}>
+    <div role="alert" style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 16px", fontSize: 14, borderBottom: `1px solid ${dark ? (late ? "rgba(248,113,113,.35)" : "rgba(96,165,250,.35)") : late ? "#fecaca" : "#bfdbfe"}`, background: dark ? (late ? "rgba(220,38,38,.16)" : "rgba(59,130,246,.16)") : late ? "#fef2f2" : "#eff6ff", color: dark ? (late ? "#fecaca" : "#bfdbfe") : late ? "#991b1b" : "#1e3a8a" }}>
       <AlarmClock size={18} style={{ flexShrink: 0 }} />
       <span style={{ flex: 1, lineHeight: 1.4 }}>
         {overdue > 0 && <><b>{overdue} {overdue === 1 ? "tarefa atrasada" : "tarefas atrasadas"}</b>{today > 0 || triage > 0 ? (today > 0 && triage > 0 ? ", " : " e ") : "."}</>}
@@ -55,7 +57,7 @@ const TaskAlert = () => {
         {triage > 0 && <>{" "}<b>{triage} {triage === 1 ? "lead novo" : "leads novos"} para conferir</b>{triageLate > 0 ? ` (${triageLate} de dias anteriores)` : ""}.</>}
         {" "}{triage > 0 ? `Informe se é lead ainda hoje${evening ? ", antes do dia fechar" : ""}.` : "Contatos combinados com os leads."}
       </span>
-      <button type="button" onClick={() => history.push(overdue + today > 0 ? (overdue > 0 ? "/crm/tarefas?status=overdue" : "/crm/tarefas?status=today") : "/crm/painel")} style={{ border: 0, background: late ? "#991b1b" : "#1e3a8a", color: "#fff", borderRadius: 8, padding: "6px 12px", fontWeight: 600, cursor: "pointer", flexShrink: 0 }}>{overdue + today > 0 ? "Ver tarefas" : "Conferir leads"}</button>
+      <button type="button" onClick={() => history.push(overdue + today > 0 ? (overdue > 0 ? "/crm/tarefas?status=overdue" : "/crm/tarefas?status=today") : "/crm/painel")} style={{ border: 0, background: dark ? (late ? "#dc2626" : "#2563eb") : late ? "#991b1b" : "#1e3a8a", color: "#fff", borderRadius: 8, padding: "6px 12px", fontWeight: 600, cursor: "pointer", flexShrink: 0 }}>{overdue + today > 0 ? "Ver tarefas" : "Conferir leads"}</button>
       <button type="button" aria-label="Dispensar o aviso" onClick={hide} style={{ border: 0, background: "transparent", color: "inherit", cursor: "pointer", display: "flex" }}><X size={18} /></button>
     </div>
   );

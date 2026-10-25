@@ -216,6 +216,8 @@ const createAppTheme = (type) => {
           border: `1px solid ${colors.divider}`,
           boxShadow: shadows[24],
           backgroundImage: "none",
+          // on a phone the dialog uses the whole width (the form fields were being squeezed by the default margins)
+          [base.breakpoints.down("xs")]: { margin: 12, width: "calc(100% - 24px)", maxWidth: "calc(100% - 24px)", maxHeight: "calc(100% - 24px)" },
         },
       },
       MuiBackdrop: {
@@ -225,13 +227,13 @@ const createAppTheme = (type) => {
         },
       },
       MuiDialogTitle: {
-        root: { padding: "22px 24px 6px" },
+        root: { padding: "22px 24px 6px", [base.breakpoints.down("xs")]: { padding: "18px 16px 4px" } },
       },
       MuiTypography: {
         h6: { fontSize: "1.05rem" },
       },
       MuiDialogContent: {
-        root: { padding: "12px 24px 8px" },
+        root: { padding: "12px 24px 8px", [base.breakpoints.down("xs")]: { padding: "10px 16px 8px" } },
         dividers: {
           padding: "12px 24px",
           borderTop: "none",
@@ -239,7 +241,7 @@ const createAppTheme = (type) => {
         },
       },
       MuiDialogActions: {
-        root: { padding: "16px 24px 20px", gap: 8 },
+        root: { padding: "16px 24px 20px", gap: 8, flexWrap: "wrap", [base.breakpoints.down("xs")]: { padding: "12px 16px 16px" } },
         spacing: { "& > :not(:first-child)": { marginLeft: 0 } },
       },
 

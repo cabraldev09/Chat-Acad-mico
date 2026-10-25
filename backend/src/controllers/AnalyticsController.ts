@@ -4,6 +4,7 @@ import AppError from "../errors/AppError";
 import { isManagerRole, roleOf } from "../helpers/Roles";
 import { KPI_DEFINITIONS } from "../services/AnalyticsServices/definitions";
 import { focusFor } from "../services/AnalyticsServices/Focus";
+import { remember } from "../helpers/TtlCache";
 import {
   alertsOf, bundlesFor, byPolo, canSeeConsultant, getConfig, resolvePeriod, saveConfig, totalsOf, unassignedTasks, visibleConsultantIds
 } from "../services/AnalyticsServices/AnalyticsService";
@@ -38,18 +39,22 @@ export const consultant = async (req: Request, res: Response): Promise<Response>
 export const team = async (req: Request, res: Response): Promise<Response> => {
   if (!isManagerRole(roleOf(req.user))) throw new AppError("ERR_NO_PERMISSION", 403);
   const p = resolvePeriod(req.query);
-  const ids = await visibleConsultantIds(req.user);
-  const bundles = await bundlesFor(ids, p);
-  const config = await getConfig();
-  return res.json({
-    period: period(req),
-    consultants: bundles,
-    totals: totalsOf(bundles),
-    polos: await byPolo(bundles),
-    alerts: alertsOf(bundles, config),
-    unassigned: await unassignedTasks(),
-    config
-  });
+  // the screen asks again on every tab change and on every reconnection: a few seconds of memory spares the database the whole count
+  const key = `analytics-team:${req.user.id}:${p.from}:${p.to}`;
+  return res.json(await remember(key, Number(process.env.DASHBOARD_CACHE_MS ?? 10000), async () => {
+    const ids = await visibleConsultantIds(req.user);
+    const bundles = await bundlesFor(ids, p);
+    const config = await getConfig();
+    return {
+      period: period(req),
+      consultants: bundles,
+      totals: totalsOf(bundles),
+      polos: await byPolo(bundles),
+      alerts: alertsOf(bundles, config),
+      unassigned: await unassignedTasks(),
+      config
+    };
+  }));
 };
 
 export const getAnalyticsConfig = async (_req: Request, res: Response): Promise<Response> => res.json(await getConfig());

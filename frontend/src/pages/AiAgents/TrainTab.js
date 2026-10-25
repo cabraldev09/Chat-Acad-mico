@@ -266,7 +266,7 @@ const FileLearn = ({ agentId, onApplied, goRoteiro }) => {
           onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
           onDragLeave={() => setDragging(false)}
           onDrop={(e) => { e.preventDefault(); setDragging(false); upload(e.dataTransfer.files && e.dataTransfer.files[0]); }}
-          style={{ border: `2px dashed ${dragging ? "#0693e3" : "var(--ui-border)"}`, background: dragging ? "rgba(6,147,227,.08)" : "transparent", borderRadius: 16, padding: "28px 16px", textAlign: "center", cursor: "pointer", transition: "all .18s ease", display: "grid", gap: 6, justifyItems: "center" }}
+          style={{ border: `2px dashed ${dragging ? "#0693e3" : "var(--ui-border)"}`, background: dragging ? "rgba(6,147,227,.08)" : "transparent", borderRadius: 16, padding: "28px 16px", textAlign: "center", cursor: "pointer", transition: "border-color .18s ease, background-color .18s ease", display: "grid", gap: 6, justifyItems: "center" }}
         >
           <input ref={input} type="file" accept={ACCEPT} hidden onChange={(e) => { const f = e.target.files && e.target.files[0]; e.target.value = ""; upload(f); }} />
           {step === "uploading" ? <CircularProgress size={26} /> : <span style={{ width: 46, height: 46, borderRadius: 14, display: "grid", placeItems: "center", background: "rgba(6,147,227,.14)", color: "#0693e3" }}><UploadCloud size={24} /></span>}

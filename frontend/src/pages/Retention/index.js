@@ -24,7 +24,7 @@ const useStyles = makeStyles((theme) => {
   const line = theme.palette.type === "dark" ? "rgba(255,255,255,.09)" : "#e3e9f1";
   return {
     body: { flex: 1, overflowY: "auto", overflowX: "hidden", ...theme.scrollbarStyles, paddingBottom: theme.spacing(4) },
-    wrap: { maxWidth: 980, margin: "0 auto" },
+    wrap: { maxWidth: 1180 },
     card: { background: theme.palette.cards.background, border: `1px solid ${line}`, borderRadius: 16, padding: theme.spacing(2.25), marginBottom: theme.spacing(2) },
     hint: { fontSize: 13, color: theme.palette.text.secondary },
     row: { display: "flex", gap: theme.spacing(1.25), flexWrap: "wrap", alignItems: "center" },
