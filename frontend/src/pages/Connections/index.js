@@ -31,7 +31,6 @@ import {
 
 import MainContainer from "../../components/MainContainer";
 import MainHeader from "../../components/MainHeader";
-import MainHeaderButtonsWrapper from "../../components/MainHeaderButtonsWrapper";
 import Title from "../../components/Title";
 import TableRowSkeleton from "../../components/TableRowSkeleton";
 import ResponsiveTable from "../../components/ResponsiveTable";
@@ -48,6 +47,15 @@ import toastError from "../../errors/toastError";
 import { canOperateRetention, isManager } from "../../utils/access";
 
 const useStyles = makeStyles(theme => ({
+	tiles: { display: "grid", gap: theme.spacing(1.5), gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", padding: theme.spacing(0, 2, 1.5) },
+	tile: {
+		display: "flex", alignItems: "center", gap: theme.spacing(1.5), textAlign: "left", cursor: "pointer", font: "inherit", color: "inherit",
+		padding: theme.spacing(1.5, 2), borderRadius: 14, border: `1px solid ${theme.palette.divider}`, background: theme.palette.background.paper,
+		transition: "border-color .18s ease, box-shadow .18s ease",
+		"&:hover": { borderColor: theme.palette.primary.main, boxShadow: "0 4px 14px rgba(15,23,42,.08)" },
+		"&:focus-visible": { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: 2 },
+	},
+	tileText: { display: "flex", flexDirection: "column", gap: 2, minWidth: 0, "& b": { fontSize: 15 }, "& small": { fontSize: 12.5, color: theme.palette.text.secondary, lineHeight: 1.35 } },
 	mainPaper: {
 		flex: 1,
 		padding: theme.spacing(1),
@@ -421,29 +429,23 @@ const Connections = () => {
 			/>
 			<MainHeader>
 				<Title>{i18n.t("connections.title")}</Title>
-				<MainHeaderButtonsWrapper>
-					<Button variant="outlined" color="primary" onClick={() => setIgDialog({ open: true, whatsApp: null })} style={{ marginRight: 8 }}>
-						Conectar Instagram
-					</Button>
-					{isAdmin ? (
-						<Button
-							variant="contained"
-							color="primary"
-							onClick={handleOpenWhatsAppModal}
-						>
-							{i18n.t("connections.buttons.add")}
-						</Button>
-					) : (
-						<Button
-							variant="contained"
-							color="primary"
-							onClick={() => setMyDialog({ open: true, whatsApp: null })}
-						>
-							Conectar meu WhatsApp
-						</Button>
-					)}
-				</MainHeaderButtonsWrapper>
 			</MainHeader>
+			<div className={classes.tiles} role="group" aria-label="Conectar um canal">
+				<button type="button" className={classes.tile} onClick={() => (isAdmin ? handleOpenWhatsAppModal() : setMyDialog({ open: true, whatsApp: null }))}>
+					<ChannelIcon channel="whatsapp" size={30} />
+					<span className={classes.tileText}><b>{isAdmin ? "Adicionar WhatsApp" : "Conectar meu WhatsApp"}</b><small>Leia o QR Code ou digite um código no celular</small></span>
+				</button>
+				<button type="button" className={classes.tile} onClick={() => setIgDialog({ open: true, whatsApp: null })}>
+					<ChannelIcon channel="instagram" size={30} />
+					<span className={classes.tileText}><b>Conectar Instagram</b><small>Entre com a conta profissional e pronto</small></span>
+				</button>
+				{isAdmin && (
+					<button type="button" className={classes.tile} onClick={handleOpenWhatsAppModal}>
+						<ChannelIcon channel="webchat" size={30} />
+						<span className={classes.tileText}><b>Outros canais</b><small>Messenger, Telegram, WhatsApp Cloud API e chat do site</small></span>
+					</button>
+				)}
+			</div>
 			<Typography variant="caption" color="textSecondary" component="div" style={{ padding: "0 16px 10px" }}>
 				Dica: o WhatsApp desconecta os aparelhos vinculados quando o celular fica cerca de 14 dias sem internet. Abra o WhatsApp no celular pelo menos uma vez por semana. Se desconectar, as mensagens que já chegaram continuam guardadas aqui, e as que chegaram enquanto estava desconectado são recuperadas depois que você ler o QR Code de novo.
 			</Typography>
