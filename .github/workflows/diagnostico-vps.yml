@@ -22,7 +22,7 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           grep -v '^#' deploy/vps/known_hosts > ~/.ssh/known_hosts
           want=$(awk '{print $3}' ~/.ssh/known_hosts)
-          seen=$(ssh-keyscan -T 15 -t ed25519 "$VPS_HOST" 2>/dev/null | awk '{print $3}')
+          seen=$(ssh-keyscan -T 15 -t ed25519 "$VPS_HOST" 2>/dev/null | awk '$2=="ssh-ed25519"{print $3}')
           [ -n "$seen" ] && [ "$seen" = "$want" ] || { echo "::error::A chave do servidor não confere"; exit 1; }
       - name: Lê a VPS
         run: |
