@@ -38,8 +38,8 @@
 .dash-kpi-glow { position: absolute; right: -30px; top: -30px; width: 120px; height: 120px; border-radius: 50%; background: radial-gradient(closest-side, color-mix(in srgb, var(--tone) 28%, transparent), transparent); pointer-events: none; }
 .dash-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--tone, #22d3ee); animation: dash-pulse 2s ease-in-out infinite; }
 
-/* charts: glow on the series, a glass tooltip */
-.dash-scope .recharts-bar-rectangle path, .dash-scope .recharts-area-curve { filter: drop-shadow(0 0 6px color-mix(in srgb, var(--dash-accent) 38%, transparent)); }
+/* charts: a glass tooltip */
+/* (no glow on the series: the shapes are flat and one colour per meaning) */
 .dash-scope .recharts-default-tooltip { background: rgba(255, 255, 255, .82) !important; backdrop-filter: blur(12px); border: 1px solid var(--dash-line) !important; border-radius: 14px !important; box-shadow: 0 18px 40px -20px rgba(8, 40, 82, .5); }
 :root[data-theme="dark"] .dash-scope .recharts-default-tooltip { background: rgba(7, 17, 28, .82) !important; color: #e6f6ff; border-color: rgba(34, 211, 238, .3) !important; }
 .dash-scope .recharts-cartesian-grid line { stroke-dasharray: 3 5; stroke: color-mix(in srgb, var(--dash-accent) 16%, transparent); }
