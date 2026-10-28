@@ -2,9 +2,6 @@ import { fillDays } from "../../utils/chartDays";
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useHistory } from "react-router-dom";
 import { Typography, TextField, MenuItem, makeStyles, Table, TableHead, TableRow, TableCell, TableBody, Button, Menu } from "@material-ui/core";
-import {
-  ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar, Cell, PieChart, Pie, Legend,
-} from "recharts";
 import { AlertTriangle, Hourglass, UserX, Flame, Download, CircleDollarSign, FileWarning, Sprout, RefreshCw, ArrowUpRight, ArrowDownRight, Minus } from "lucide-react";
 import { format, subDays, startOfMonth } from "date-fns";
 
@@ -20,6 +17,7 @@ import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import { downloadFile } from "../../utils/saveBlob";
 import { useCrmOptions, SourceIcon, StagePill, ago } from "./shared";
+import { COLORS, ChartLegend, DailyChart, FunnelBars, RankBars, SplitBar, Trend } from "./panelCharts";
 import { tint } from "../../utils/color";
 import NotALead from "./NotALead";
 import "../../styles/dash.css";
@@ -58,7 +56,11 @@ const useStyles = makeStyles((theme) => {
     cellVal: { fontSize: 34, fontWeight: 800, letterSpacing: "-0.03em", lineHeight: 1.15, marginTop: 4, fontVariantNumeric: "tabular-nums" },
     delta: { display: "inline-flex", alignItems: "center", gap: 2, fontSize: 12, fontWeight: 700, padding: "1px 7px", borderRadius: 999 },
     grid: { display: "grid", gap: theme.spacing(1.5), gridTemplateColumns: "repeat(12, 1fr)" },
-    card: { padding: theme.spacing(2) },
+    card: { padding: theme.spacing(2), minWidth: 0 },
+    // the cards sit side by side on a wide screen and one under the other on a phone or a narrow window
+    col12: { gridColumn: "span 12" },
+    col7: { gridColumn: "span 7", [theme.breakpoints.down("sm")]: { gridColumn: "span 12" } },
+    col5: { gridColumn: "span 5", [theme.breakpoints.down("sm")]: { gridColumn: "span 12" } },
     chart: { height: 250 },
     funnelRow: { display: "grid", gridTemplateColumns: "150px 1fr 90px", alignItems: "center", gap: 10, padding: "5px 0", fontSize: 13.5 },
     bar: { height: 22, borderRadius: 6, transition: "width 1s cubic-bezier(.2,.8,.2,1)", minWidth: 4 },
@@ -68,9 +70,7 @@ const useStyles = makeStyles((theme) => {
   };
 });
 
-const span = (n) => ({ gridColumn: `span ${n}`, minWidth: 0 });
 const pct = (a, b) => (b ? `${((a / b) * 100).toFixed(1).replace(".", ",")}%` : "—");
-const PIE = ["#0B4279", "#0693E3", "#FEF84C", "#6366f1", "#f97316", "#14b8a6", "#ec4899", "#64748b", "#84cc16"];
 const GREEN = "#16a34a";
 const AMBER = "#d97706";
 const RED = "#dc2626";
@@ -88,23 +88,13 @@ const Delta = ({ now, before, points = false, goodWhenDown = false }) => {
   const good = goodWhenDown ? down : up;
   const bad = goodWhenDown ? up : down;
   const color = good ? GREEN : bad ? RED : "#64748b";
-  const text = !before && !points ? "novo" : `${diff > 0 ? "+" : ""}${Math.abs(diff) >= 10 ? Math.round(diff) : diff.toFixed(1).replace(".", ",")}${points ? " p.p." : "%"}`;
+  const text = !before && !points ? "novo" : !points && Math.abs(diff) > 999 ? `${diff > 0 ? "mais de +999" : "-999"}%` : `${diff > 0 ? "+" : ""}${Math.abs(diff) >= 10 ? Math.round(diff) : diff.toFixed(1).replace(".", ",")}${points ? " p.p." : "%"}`;
   return (
     <span className={c.delta} style={{ background: `${color}22`, color }} title="Em relação ao período anterior de mesma duração">
       {up ? <ArrowUpRight size={12} /> : down ? <ArrowDownRight size={12} /> : <Minus size={12} />} {text}
     </span>
   );
 };
-
-const Spark = ({ data, color }) => (
-  <div style={{ height: 34, marginTop: 6 }} aria-hidden="true">
-    <ResponsiveContainer>
-      <AreaChart data={data} margin={{ top: 2, right: 0, left: 0, bottom: 0 }}>
-        <Area type="monotone" dataKey="v" stroke={color} strokeWidth={1.8} fill={color} fillOpacity={0.14} animationDuration={1100} animationEasing="ease-out" />
-      </AreaChart>
-    </ResponsiveContainer>
-  </div>
-);
 
 const SectionHead = ({ title, hint, color = "#0693E3" }) => {
   const c = useStyles();
@@ -193,8 +183,31 @@ const Panel = () => {
   const lostTotal = d ? d.funnel.filter((f) => f.type === "lost").reduce((a, x) => a + x.total, 0) : 0;
   const maxFunnel = Math.max(1, ...reached.map((f) => f.reached));
   const wonInPeriod = (d?.wonDaily || []).reduce((a, r) => a + Number(r.total || 0), 0);
-  const sparkLeads = series.map((r) => ({ v: r.leads || 0 }));
-  const sparkWon = series.map((r) => ({ v: r.matriculas || 0 }));
+  const full = (r) => (r.key ? r.key.split("-").reverse().join("/") : r.day);
+  const sparkLeads = series.map((r) => ({ v: r.leads || 0, day: r.day, full: full(r) }));
+  const sparkWon = series.map((r) => ({ v: r.matriculas || 0, day: r.day, full: full(r) }));
+  // conversion as the period goes on: enrollments so far over the leads so far
+  let accLeads = 0;
+  let accWon = 0;
+  const sparkConv = series.map((r) => {
+    accLeads += r.leads || 0;
+    accWon += r.matriculas || 0;
+    return { v: accLeads ? Math.round((accWon / accLeads) * 1000) / 10 : 0, day: r.day, full: full(r) };
+  });
+  const lostRows = (d?.lostReasons || []).slice(0, 6).map((r) => ({ key: r.name, name: r.name, value: Number(r.total), bar: lostTotal ? (Number(r.total) / Math.max(1, Number(d.lostReasons[0].total))) * 100 : 0, note: pct(Number(r.total), lostTotal), color: COLORS.lost }));
+  const lostOthers = (d?.lostReasons || []).slice(6).reduce((a, r) => a + Number(r.total), 0);
+  if (lostOthers > 0) lostRows.push({ key: "outros", name: "Outros motivos", value: lostOthers, bar: (lostOthers / Math.max(1, Number(d.lostReasons[0].total))) * 100, note: pct(lostOthers, lostTotal), color: COLORS.muted });
+  const maxSource = Math.max(1, ...(d?.bySource || []).map((s2) => Number(s2.leads)));
+  const sourceRows = (d?.bySource || []).map((s2) => ({ key: s2.name, name: s2.name, icon: <SourceIcon source={s2.name} />, value: Number(s2.leads), bar: (Number(s2.leads) / maxSource) * 100, note: `${s2.won} matr. · ${pct(s2.won, s2.leads)}`, color: COLORS.leads }));
+  const maxCourse = Math.max(1, ...(d?.byCourse || []).map((c2) => Number(c2.leads)));
+  const courseRows = (d?.byCourse || []).slice(0, 8).map((c2) => ({ key: c2.name, name: c2.name, value: Number(c2.leads), bar: (Number(c2.leads) / maxCourse) * 100, note: `${c2.won} matr.`, color: COLORS.brand }));
+  const [ownerSort, setOwnerSort] = useState({ key: "won", dir: -1 });
+  const ownersSorted = [...(d?.byOwner || [])].sort((a, b) => {
+    const val = (o) => (ownerSort.key === "conv" ? (o.leads ? o.won / o.leads : 0) : Number(o[ownerSort.key] || 0));
+    return (val(a) - val(b)) * ownerSort.dir || String(a.name).localeCompare(String(b.name));
+  });
+  const maxOwnerLeads = Math.max(1, ...(d?.byOwner || []).map((o) => Number(o.leads)));
+  const sortBy = (key) => setOwnerSort((cur) => (cur.key === key ? { key, dir: -cur.dir } : { key, dir: -1 }));
   const prev = d?.previous;
   const reload = () => { load(); loadTriage(); };
 
@@ -318,35 +331,50 @@ const Panel = () => {
                 <div className={classes.label}>Leads captados</div>
                 <div className={classes.cellVal}><NumberTicker value={d.kpi.leads} /></div>
                 <div style={{ marginTop: 4 }}><Delta now={d.kpi.leads} before={prev && prev.leads} /></div>
-                <Spark data={sparkLeads} color="#0693E3" />
-                <div className={classes.label} style={{ fontSize: 12 }}>{d.kpi.open} em andamento</div>
+                <Trend data={sparkLeads} color={COLORS.leads} name="Leads" label="Leads captados por dia" />
+                <div className={classes.label} style={{ fontSize: 12, marginTop: 6 }}>{d.kpi.open} em andamento agora</div>
               </div>
               <div className={classes.cell}>
                 <div className={classes.label}>Matrículas</div>
                 <div className={classes.cellVal}><NumberTicker value={d.kpi.won} /></div>
                 <div style={{ marginTop: 4 }}><Delta now={d.kpi.won} before={prev && prev.won} /></div>
-                <Spark data={sparkWon} color={GREEN} />
-                <div className={classes.label} style={{ fontSize: 12 }}>{d.kpi.lost} perdidos · {wonInPeriod} confirmadas no período</div>
+                <Trend data={sparkWon} color={COLORS.won} kind="bar" name="Matrículas" label="Matrículas confirmadas por dia" />
+                <div className={classes.label} style={{ fontSize: 12, marginTop: 6 }}>{wonInPeriod} confirmadas no período</div>
               </div>
               <div className={classes.cell}>
                 <div className={classes.label}>Conversão</div>
                 <div className={classes.cellVal}>{`${d.kpi.conversion.toFixed(1).replace(".", ",")}%`}</div>
                 <div style={{ marginTop: 4 }}><Delta now={d.kpi.conversion} before={prev && prev.conversion} points /></div>
-                <div className={classes.label} style={{ fontSize: 12, marginTop: 8 }}>lead → matrícula</div>
+                <Trend data={sparkConv} color={COLORS.brand} name="Conversão acumulada" unit="percent" label="Conversão acumulada ao longo do período" />
+                <div className={classes.label} style={{ fontSize: 12, marginTop: 6 }}>lead → matrícula, acumulada no período</div>
               </div>
               <div className={classes.cell} style={{ borderRight: 0 }}>
                 <div className={classes.label}>Tempo até a matrícula</div>
                 <div className={classes.cellVal}>{d.kpi.avgDaysToEnroll === null ? "—" : `${Number(d.kpi.avgDaysToEnroll).toFixed(1).replace(".", ",")} dias`}</div>
-                <div className={classes.label} style={{ fontSize: 12, marginTop: 8 }}>média</div>
+                <div className={classes.label} style={{ fontSize: 12, marginTop: 4 }}>média, da entrada do lead à matrícula</div>
+                <div style={{ marginTop: 18 }}>
+                  <SplitBar parts={[{ label: "Em andamento", value: Number(d.kpi.open), color: COLORS.leads }, { label: "Matriculados", value: Number(d.kpi.won), color: COLORS.won }, { label: "Perdidos", value: Number(d.kpi.lost), color: COLORS.lost }]} />
+                </div>
               </div>
             </div>
           </GlowCard>
 
           <div className={classes.grid} style={{ marginTop: 16 }}>
-            <GlowCard tone={"#0693E3"} className={classes.card} style={span(7)}>
+            <GlowCard className={`${classes.card} ${classes.col12}`}>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap", justifyContent: "space-between" }}>
+                <div>
+                  <Typography variant="subtitle2">Leads captados e matrículas por dia</Typography>
+                  <Typography variant="caption" color="textSecondary" display="block" style={{ marginBottom: 8 }}>Cada dia do período, mesmo os sem movimento.</Typography>
+                </div>
+                <ChartLegend items={[[COLORS.leads, "Leads captados"], [COLORS.won, "Matrículas"], [COLORS.brand, "Média de 7 dias (leads)", true]]} />
+              </div>
+              <DailyChart series={series} />
+            </GlowCard>
+
+            <GlowCard className={`${classes.card} ${classes.col7}`}>
               <Typography variant="subtitle2" gutterBottom>Funil de matrícula</Typography>
-              <Typography variant="caption" color="textSecondary" display="block" style={{ marginBottom: 8 }}>
-                Leads que estão em cada etapa ou já passaram dela (a porcentagem é em relação à etapa anterior). Os perdidos ficam à parte.
+              <Typography variant="caption" color="textSecondary" display="block" style={{ marginBottom: 12 }}>
+                Leads que estão em cada etapa ou já passaram dela; ao lado de cada barra, a parte da etapa anterior que chegou até ali.
               </Typography>
               {lane && lane.total > 0 && (
                 <div className={classes.lane} role="button" tabIndex={0} onClick={() => history.push("/crm")}
@@ -354,104 +382,69 @@ const Panel = () => {
                   <Sprout size={15} /> <b>{lane.total}</b> indicação{lane.total > 1 ? "ões" : ""} de afiliados aguardando o 1º contato (já contam em "Leads captados")
                 </div>
               )}
-              {reached.map((f, i) => (
-                <div key={f.id} className={classes.funnelRow}>
-                  <span>{f.name}</span>
-                  <div><div className={classes.bar} style={{ width: `${(f.reached / maxFunnel) * 100}%`, background: f.type === "won" ? GREEN : "#0693E3", opacity: f.type === "won" ? 1 : 0.35 + 0.65 * (f.reached / maxFunnel) }} /></div>
-                  <span style={{ textAlign: "right", fontWeight: 600 }}>
-                    {f.reached}
-                    {i > 0 && reached[i - 1].reached ? <span style={{ opacity: 0.55, fontWeight: 400, fontSize: 11.5 }}> {pct(f.reached, reached[i - 1].reached)}</span> : null}
-                  </span>
-                </div>
-              ))}
-              <div className={classes.funnelRow} style={{ opacity: 0.8 }}>
-                <span>Perdidos</span><div /><span style={{ textAlign: "right", fontWeight: 600 }}>{lostTotal}</span>
+              <FunnelBars steps={reached} />
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12, paddingTop: 10, borderTop: "1px solid rgba(100,116,139,.2)", fontSize: 13.5 }}>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><span style={{ width: 8, height: 8, borderRadius: 2, background: COLORS.lost }} />Perdidos (ficam fora do funil)</span>
+                <b style={{ fontVariantNumeric: "tabular-nums" }}>{lostTotal} <span style={{ fontWeight: 500, opacity: 0.65, fontSize: 12 }}>{pct(lostTotal, d.kpi.leads)} dos leads</span></b>
               </div>
             </GlowCard>
 
-            <GlowCard tone={"#dc2626"} className={classes.card} style={span(5)}>
+            <GlowCard className={`${classes.card} ${classes.col5}`}>
               <Typography variant="subtitle2" gutterBottom>Motivos de perda</Typography>
-              {d.lostReasons.length === 0 ? <Typography color="textSecondary" variant="body2">Nenhuma perda no período.</Typography> : (
-                <div className={classes.chart}>
-                  <ResponsiveContainer>
-                    <PieChart>
-                      <Pie data={d.lostReasons} dataKey="total" nameKey="name" innerRadius={48} outerRadius={80} paddingAngle={2} animationDuration={1000} animationEasing="ease-out">
-                        {d.lostReasons.map((r, i) => (<Cell key={r.name} fill={PIE[i % PIE.length]} />))}
-                      </Pie>
-                      <Tooltip /><Legend />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-              )}
+              <Typography variant="caption" color="textSecondary" display="block" style={{ marginBottom: 12 }}>O que mais derruba os leads do período.</Typography>
+              <RankBars rows={lostRows} empty="Nenhuma perda no período." />
             </GlowCard>
 
-            <GlowCard tone={"#16a34a"} className={classes.card} style={span(12)}>
-              <Typography variant="subtitle2" gutterBottom>Leads captados e matrículas confirmadas por dia</Typography>
-              <div className={classes.chart}>
-                <ResponsiveContainer>
-                  <AreaChart data={series}>
-                    <defs>
-                      <linearGradient id="gLeads" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#0693E3" stopOpacity={0.35} /><stop offset="100%" stopColor="#0693E3" stopOpacity={0} /></linearGradient>
-                      <linearGradient id="gWon" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#16a34a" stopOpacity={0.35} /><stop offset="100%" stopColor="#16a34a" stopOpacity={0} /></linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                    <XAxis dataKey="day" interval="preserveStartEnd" minTickGap={18} /><YAxis allowDecimals={false} /><Tooltip /><Legend />
-                    <Area type="monotone" dataKey="leads" name="Leads" stroke="#0693E3" strokeWidth={2} fill="url(#gLeads)" animationDuration={1200} animationEasing="ease-out" />
-                    <Area type="monotone" dataKey="matriculas" name="Matrículas" stroke="#16a34a" strokeWidth={2} fill="url(#gWon)" animationDuration={1200} animationEasing="ease-out" />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-            </GlowCard>
-
-            <GlowCard tone={"#8b5cf6"} className={classes.card} style={span(6)}>
+            <GlowCard className={`${classes.card} ${classes.col5}`}>
               <Typography variant="subtitle2" gutterBottom>Origem dos leads</Typography>
-              <Table size="small">
-                <TableHead><TableRow><TableCell>Origem</TableCell><TableCell align="right">Leads</TableCell><TableCell align="right">Matrículas</TableCell><TableCell align="right" style={{ minWidth: 110 }}>Conversão</TableCell></TableRow></TableHead>
-                <TableBody>
-                  {d.bySource.map((s) => (
-                    <TableRow key={s.name}>
-                      <TableCell><span style={{ display: "inline-flex", gap: 8, alignItems: "center" }}><SourceIcon source={s.name} />{s.name}</span></TableCell>
-                      <TableCell align="right">{s.leads}</TableCell><TableCell align="right">{s.won}</TableCell>
-                      <TableCell align="right">
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "flex-end" }}>
-                          <div className={classes.miniBar} style={{ width: 50 }}><div style={{ width: `${Math.min(100, s.leads ? (s.won / s.leads) * 100 * 4 : 0)}%`, height: "100%", background: GREEN }} /></div>
-                          <span style={{ minWidth: 44 }}>{pct(s.won, s.leads)}</span>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+              <Typography variant="caption" color="textSecondary" display="block" style={{ marginBottom: 12 }}>Quantos leads e quantas matrículas vieram de cada canal.</Typography>
+              <RankBars rows={sourceRows} />
             </GlowCard>
 
-            <GlowCard tone={"#14b8a6"} className={classes.card} style={span(6)}>
+            <GlowCard className={`${classes.card} ${classes.col7}`}>
               <Typography variant="subtitle2" gutterBottom>Cursos mais procurados</Typography>
-              <div className={classes.chart}>
-                <ResponsiveContainer>
-                  <BarChart data={d.byCourse} layout="vertical" margin={{ left: 10 }}>
-                    <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                    <XAxis type="number" allowDecimals={false} /><YAxis type="category" dataKey="name" width={120} /><Tooltip /><Legend />
-                    <Bar dataKey="leads" name="Leads" fill="#0693E3" radius={[0, 6, 6, 0]} animationDuration={1000} animationEasing="ease-out" />
-                    <Bar dataKey="won" name="Matrículas" fill="#0B4279" radius={[0, 6, 6, 0]} animationDuration={1000} animationEasing="ease-out" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
+              <Typography variant="caption" color="textSecondary" display="block" style={{ marginBottom: 12 }}>Leads por curso (os 8 primeiros) e as matrículas de cada um.</Typography>
+              <RankBars rows={courseRows} />
             </GlowCard>
 
-            <GlowCard tone={"#0B4279"} className={classes.card} style={span(12)}>
+            <GlowCard className={`${classes.card} ${classes.col12}`}>
               <Typography variant="subtitle2" gutterBottom>Desempenho dos consultores</Typography>
-              <Table size="small">
-                <TableHead><TableRow><TableCell>Consultor</TableCell><TableCell align="right">Leads</TableCell><TableCell align="right">Em andamento</TableCell><TableCell align="right">Matrículas</TableCell><TableCell align="right">Conversão</TableCell><TableCell align="right">Sem 1º contato agora</TableCell></TableRow></TableHead>
-                <TableBody>
-                  {d.byOwner.map((o) => (
-                    <TableRow key={o.name}>
-                      <TableCell>{o.name}</TableCell><TableCell align="right">{o.leads}</TableCell><TableCell align="right">{o.open}</TableCell>
-                      <TableCell align="right"><b>{o.won}</b></TableCell><TableCell align="right">{pct(o.won, o.leads)}</TableCell>
-                      <TableCell align="right" style={{ color: o.waiting ? RED : undefined, fontWeight: o.waiting ? 700 : 400 }}>{o.waiting || 0}</TableCell>
+              <div style={{ overflowX: "auto" }}>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Consultor</TableCell>
+                      {[["leads", "Leads"], ["open", "Em andamento"], ["won", "Matrículas"], ["conv", "Conversão"], ["waiting", "Sem 1º contato agora"]].map(([k, label]) => (
+                        <TableCell key={k} align="right" sortDirection={ownerSort.key === k ? (ownerSort.dir > 0 ? "asc" : "desc") : false}>
+                          <button type="button" onClick={() => sortBy(k)} style={{ border: 0, background: "transparent", cursor: "pointer", font: "inherit", color: "inherit", fontWeight: 600, padding: 0 }} aria-label={`Ordenar por ${label}`}>
+                            {label}{ownerSort.key === k ? (ownerSort.dir > 0 ? " ↑" : " ↓") : ""}
+                          </button>
+                        </TableCell>
+                      ))}
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHead>
+                  <TableBody>
+                    {ownersSorted.map((o) => (
+                      <TableRow key={o.name} hover>
+                        <TableCell>
+                          <div style={{ fontWeight: 600 }}>{o.name}</div>
+                          <div className={classes.miniBar} style={{ marginTop: 4, width: 120 }}><div style={{ width: `${(Number(o.leads) / maxOwnerLeads) * 100}%`, height: "100%", background: COLORS.leads, opacity: 0.7 }} /></div>
+                        </TableCell>
+                        <TableCell align="right" style={{ fontVariantNumeric: "tabular-nums" }}>{o.leads}</TableCell>
+                        <TableCell align="right" style={{ fontVariantNumeric: "tabular-nums" }}>{o.open}</TableCell>
+                        <TableCell align="right" style={{ fontVariantNumeric: "tabular-nums" }}><b>{o.won}</b></TableCell>
+                        <TableCell align="right" style={{ fontVariantNumeric: "tabular-nums" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "flex-end" }}>
+                            <div className={classes.miniBar} style={{ width: 56 }}><div style={{ width: `${Math.min(100, o.leads ? (o.won / o.leads) * 100 * 4 : 0)}%`, height: "100%", background: COLORS.won }} /></div>
+                            <span style={{ minWidth: 44 }}>{pct(o.won, o.leads)}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell align="right" style={{ color: o.waiting ? RED : undefined, fontWeight: o.waiting ? 700 : 400, fontVariantNumeric: "tabular-nums" }}>{o.waiting || 0}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             </GlowCard>
           </div>
          </div>

@@ -117,6 +117,21 @@ export const gradeRequest = (text: string): { course: string | null } | null => 
   return { course: course.length >= 4 ? course : null };
 };
 
+// A course the person names ("o curso de Direito", "graduação em Enfermagem"): the name, so the system can check it against the courses it offers.
+// Words that are not a course (tutoring, internship, the way of studying) are never taken for one.
+const COURSE_NOUN = /\b(?:cursos?|graduacao|faculdade|bacharelado|licenciatura|tecnologo|curso superior)\s+(?:de|em|do|da|dos|das)\s+([a-z][a-z ]{2,50})/;
+const COURSE_STOP = /\b(quanto|qual|quais|valor|custa|custo|mensalidade|preco|na|no|nas|nos|em|que|ai|pra|para|por|voces|vcs|se|tem|e|mas|ou|com|dura|duracao|como|quando|onde|tambem|mesmo|ainda|ja|nao|sim)\b/;
+const NOT_A_COURSE = /^(ead|distancia|semipresencial|presencial|tutoria|estagio|estagios|verao|ferias|inverno|extensao|idiomas|ingles|espanhol|reforco|preparacao|aperfeicoamento|especializacao|pos|pos graduacao|mba|mestrado|doutorado|atualizacao|formacao)$/;
+export const courseMention = (text: string): string | null => {
+  const t = plain(text);
+  if (!t || t.length > 200) return null;
+  const m = t.match(COURSE_NOUN);
+  if (!m) return null;
+  const name = m[1].split(COURSE_STOP)[0].replace(/\s+/g, " ").trim();
+  if (name.length < 4 || NOT_A_COURSE.test(name)) return null;
+  return name;
+};
+
 // the person takes back what made the lead "ready for the proposal"
 export const retractsBuying = (text: string): boolean => {
   const t = plain(text);
@@ -155,14 +170,24 @@ export const isGreeting = (text: string): boolean => {
 
 // The first message of the agent, written by the system (a model would spend tokens to say the same thing every time): it welcomes the
 // person, mentions what is already known and asks only the next thing that is missing.
-export const openingText = (slots: Slots, first: string, returning: boolean): string => {
+// How the agent presents itself: always in the first answer of a conversation, whatever the person wrote. The owner can give the assistant a name
+// (persona.assistantName); without one it is "o assistente virtual".
+export const INTRO_SEEN = /\b(assistente virtual|aqui e (a|o) |eu sou (a|o) |meu nome e)\b/;
+export const introText = (persona: { assistantName?: string } | null | undefined, first: string, institution = "Cruzeiro do Sul Virtual"): string => {
+  const name = first ? `, ${first}` : "";
+  const who = String(persona?.assistantName || "").trim();
+  return who ? `Olá${name}! Eu sou ${/^(a|o) /i.test(who) ? who : `a ${who}`}, assistente virtual da ${institution}.` : `Olá${name}! Eu sou o assistente virtual da ${institution}.`;
+};
+export const alreadyIntroduces = (text: string): boolean => INTRO_SEEN.test(plain(text));
+
+export const openingText = (slots: Slots, first: string, returning: boolean, persona?: { assistantName?: string } | null): string => {
   const name = first ? `, ${first}` : "";
   const hasCourse = !!(slots.courseName || slots.courseId);
   const hasCity = !!(slots.city || slots.poloId);
   const hasEntry = !!slots.entryType && slots.entryType !== "unknown";
   // a contact who is already a student is asked what is needed (the agent also takes the tutoring and the secretary to the team of the polo)
   if (slots.enrolledStudent && !returning) {
-    return `Olá${name}! Aqui é o assistente virtual da Cruzeiro do Sul Virtual.${slots.enrolledCourse ? ` Vi que você já estuda ${slots.enrolledCourse}.` : ""} Como posso te ajudar hoje? Se for sobre plataforma, atividades ou provas, chamo a tutoria; se for documento ou declaração, a secretaria.`;
+    return `${introText(persona, first)}${slots.enrolledCourse ? ` Vi que você já estuda ${slots.enrolledCourse}.` : ""} Como posso te ajudar hoje? Se for sobre plataforma, atividades ou provas, chamo a tutoria; se for documento ou declaração, a secretaria.`;
   }
   const ask = !hasCourse
     ? "Qual curso você tem interesse? Se você já é aluno e precisa da tutoria ou da secretaria, é só me dizer."
@@ -175,7 +200,7 @@ export const openingText = (slots: Slots, first: string, returning: boolean): st
   if (returning) {
     return `Oi${name}! Que bom falar com você de novo.${course ? ` Da última vez conversamos sobre ${course}.` : ""} ${hasCourse && hasCity && hasEntry ? "Em que posso te ajudar agora?" : ask}`;
   }
-  return `Olá${name}! Aqui é o assistente virtual da Cruzeiro do Sul Virtual.${course ? ` Vi que você tem interesse em ${course}.` : ""} ${ask}`;
+  return `${introText(persona, first)}${course ? ` Vi que você tem interesse em ${course}.` : ""} ${ask}`;
 };
 
 // the fields a stage asks for are filled when each one has a value in the state of the lead

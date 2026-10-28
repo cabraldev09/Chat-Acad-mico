@@ -25,7 +25,7 @@ export const SLOT_KINDS: Record<string, Kind> = {
   hasInternship: "boolean", internshipExplained: "boolean", internshipSummary: "string", hasTcc: "boolean", tccExplained: "boolean",
   platformExplained: "boolean", tutoringExplained: "boolean", facultyExplained: "boolean",
   analysisStatus: "analysis", analysisId: "number", analysisExplained: "boolean", semesterEntry: "number", subjectsWaived: "number", subjectsRemaining: "number", adaptations: "string", estimatedCompletion: "string",
-  mainQuestion: "string", mainObjection: "string", unknownQuestion: "string",
+  mainQuestion: "string", mainObjection: "string", unknownQuestion: "string", unofferedCourse: "string",
   // what the screening found out beyond the basics (all optional, asked lightly, never as an interrogation)
   shift: "string", decisionTimeline: "string", motivation: "string", bestTime: "string", worksAndStudies: "boolean", financing: "string",
   objectionType: "string", objectionCount: "number", objectionsSeen: "string",

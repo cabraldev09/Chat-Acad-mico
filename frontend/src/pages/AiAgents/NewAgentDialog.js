@@ -43,10 +43,24 @@ const EXAMPLES = [
 ];
 
 const TABS = [
-  { key: "template", label: "Modelo pronto", icon: Workflow },
+  { key: "quick", label: "Agente comercial", icon: GraduationCap },
+  { key: "template", label: "Outro modelo", icon: Workflow },
   { key: "ai", label: "Descrever para a IA", icon: MessageSquare },
   { key: "manual", label: "Do zero", icon: Pencil },
 ];
+
+const TONES = [
+  { key: "acolhedor", label: "Acolhedor", text: "Acolhedor e próximo, como um consultor que conhece quem estuda e trabalha ao mesmo tempo" },
+  { key: "objetivo", label: "Objetivo", text: "Objetivo e direto, respostas curtas e claras, sem rodeios" },
+  { key: "formal", label: "Formal", text: "Formal e cordial, linguagem profissional" },
+];
+const READY = [
+  "Só fala dos cursos cadastrados no sistema (se pedirem outro, avisa que não oferece)",
+  "Se apresenta na primeira mensagem de toda conversa",
+  "Envia a grade curricular do curso do lead",
+  "Passa para o consultor do polo quando o lead está pronto",
+];
+const introPreview = (who) => { const n = who.trim(); return n ? `Olá! Eu sou ${/^(a|o) /i.test(n) ? n : `a ${n}`}, assistente virtual da Cruzeiro do Sul Virtual.` : "Olá! Eu sou o assistente virtual da Cruzeiro do Sul Virtual."; };
 
 const iconOf = (t) => (/comercial/i.test(t.key + t.name) ? GraduationCap : /atendimento|encaminh/i.test(t.key + t.name) ? Headphones : Workflow);
 
@@ -61,15 +75,19 @@ const NewAgentDialog = ({ open, onClose, onCreated, onManual }) => {
   const [description, setDescription] = useState("");
   const [funnel, setFunnel] = useState(true);
   const [funnelInfo, setFunnelInfo] = useState(false);
+  const [assistantName, setAssistantName] = useState("");
+  const [tone, setTone] = useState(TONES[0].text);
+  const [others, setOthers] = useState(false);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (!open) return;
-    setMode("template"); setName(""); setDescription(""); setFunnel(true); setFunnelInfo(false);
-    api.get("/ai-agent-templates").then(({ data }) => { setTemplates(data); setTemplate(data[0] ? data[0].key : ""); }).catch(() => undefined);
+    setMode("quick"); setName(""); setDescription(""); setFunnel(true); setFunnelInfo(false); setAssistantName(""); setTone(TONES[0].text); setOthers(false);
+    api.get("/ai-agent-templates").then(({ data }) => { setTemplates(data); const c = data.find((t) => t.commercial) || data[0]; setTemplate(c ? c.key : ""); }).catch(() => undefined);
   }, [open]);
 
   const chosen = templates.find((t) => t.key === template);
+  const commercial = templates.find((t) => t.commercial) || null;
 
   const create = async () => {
     if (mode === "manual") { onManual(); return; }
@@ -77,14 +95,17 @@ const NewAgentDialog = ({ open, onClose, onCreated, onManual }) => {
     try {
       const { data } = mode === "ai"
         ? await api.post("/ai-agents/generate", { description, name: name || undefined })
-        : await api.post("/ai-agents/from-template", { template, name: name || undefined, createFunnel: chosen && chosen.commercial ? funnel : undefined });
+        : mode === "quick"
+          ? await api.post("/ai-agents/from-template", { template: commercial ? commercial.key : template, name: name || undefined, assistantName: assistantName.trim() || undefined, tone, createFunnel: funnel })
+          : await api.post("/ai-agents/from-template", { template, name: name || undefined, createFunnel: chosen && chosen.commercial ? funnel : undefined });
       onCreated(data);
     } catch (e) { toastError(e); }
     setBusy(false);
   };
 
   const label = busy ? (mode === "ai" ? "A IA está desenhando…" : "Criando…") : mode === "ai" ? "Criar com IA" : mode === "manual" ? "Continuar" : "Criar agente";
-  const disabled = busy || (mode === "ai" && description.trim().length < 20) || (mode === "template" && !template);
+  const disabled = busy || (mode === "ai" && description.trim().length < 20) || (mode === "template" && !template) || (mode === "quick" && !commercial);
+  const preview = introPreview(assistantName);
 
   return (
     <Dialog open={open} onClose={busy ? undefined : onClose} maxWidth="sm" fullWidth scroll="paper" PaperProps={{ className: classes.paper }}>
@@ -98,6 +119,37 @@ const NewAgentDialog = ({ open, onClose, onCreated, onManual }) => {
       </div>
 
       <DialogContent className={classes.body}>
+        {mode === "quick" && (
+          <>
+            <p className={classes.lead}>Um agente comercial completo, pronto para atender quem chega. Você só escolhe como ele se apresenta.</p>
+            <TextField fullWidth variant="outlined" size="small" label="Como ele se apresenta (opcional)" placeholder="Ex.: Bia" value={assistantName} onChange={(e) => setAssistantName(e.target.value)} InputLabelProps={{ shrink: true }} helperText={`Primeira mensagem: “${preview}”`} />
+            <div className={classes.rowSub} style={{ margin: "14px 0 6px" }}>Tom de voz</div>
+            <div className={classes.chips} style={{ marginTop: 0 }} role="group" aria-label="Tom de voz">
+              {TONES.map((t) => <button key={t.key} type="button" className={classes.chip} style={tone === t.text ? { borderColor: "#0693E3", background: "rgba(6,147,227,.1)", fontWeight: 700 } : undefined} aria-pressed={tone === t.text} onClick={() => setTone(t.text)}>{t.label}</button>)}
+            </div>
+            <ul style={{ listStyle: "none", margin: "16px 0 0", padding: 0, display: "grid", gap: 6, fontSize: 13.5 }}>
+              {READY.map((x) => <li key={x} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}><Check size={15} style={{ color: "#16a34a", flex: "none", marginTop: 3 }} />{x}</li>)}
+            </ul>
+            <div className={classes.row}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className={classes.rowTitle}>Preparar as colunas do CRM</div>
+                <div className={classes.rowSub}>O agente move o lead sozinho entre as etapas do funil; só cria as colunas que faltam.</div>
+              </div>
+              <Switch color="primary" checked={funnel} onChange={(e) => setFunnel(e.target.checked)} inputProps={{ "aria-label": "Preparar as colunas do CRM" }} />
+            </div>
+            <button type="button" className={classes.more} onClick={() => setOthers((v) => !v)} aria-expanded={others}>
+              Outras formas de criar<ChevronDown size={14} style={{ transform: others ? "rotate(180deg)" : "none", transition: "transform .15s" }} />
+            </button>
+            {others && (
+              <div className={classes.chips}>
+                <button type="button" className={classes.chip} onClick={() => setMode("ai")}>Descrever para a IA</button>
+                <button type="button" className={classes.chip} onClick={() => setMode("template")}>Outro modelo pronto</button>
+                <button type="button" className={classes.chip} onClick={() => setMode("manual")}>Do zero</button>
+              </div>
+            )}
+          </>
+        )}
+        {mode !== "quick" && (
         <div className={classes.tabs} role="tablist">
           {TABS.map((t) => {
             const Icon = t.icon;
@@ -108,6 +160,7 @@ const NewAgentDialog = ({ open, onClose, onCreated, onManual }) => {
             );
           })}
         </div>
+        )}
 
         {mode === "template" && (
           <>
@@ -171,7 +224,7 @@ const NewAgentDialog = ({ open, onClose, onCreated, onManual }) => {
 
       <DialogActions style={{ padding: "8px 24px 20px" }}>
         <div className={classes.foot}>
-          {mode !== "manual" && <TextField fullWidth variant="outlined" size="small" label="Nome do agente (opcional)" value={name} onChange={(e) => setName(e.target.value)} InputLabelProps={{ shrink: true }} />}
+          {mode !== "manual" && <TextField fullWidth variant="outlined" size="small" label={mode === "quick" ? "Nome do agente (opcional)" : "Nome do agente (opcional)"} value={name} onChange={(e) => setName(e.target.value)} InputLabelProps={{ shrink: true }} />}
           <div className={classes.safe}><Info size={15} style={{ flex: "none", marginTop: 1 }} />O agente nasce desligado e em edição: ninguém é atendido até você revisar, testar, publicar e ligar.</div>
           <div className={classes.actions}>
             <Button onClick={onClose} disabled={busy}>Cancelar</Button>

@@ -87,3 +87,32 @@ describe("facts an agent may say", () => {
     expect(unsupportedFact("Combinado, amanhã às 14h.", `${evidence}\namanhã às 14h`)).toBeNull();
   });
 });
+
+import { alreadyIntroduces, courseMention, introText } from "../../src/services/CommercialServices/Rules";
+
+describe("a course the person names", () => {
+  it("finds the name after 'curso de', 'graduação em' and the like", () => {
+    expect(courseMention("Quero saber o valor do curso de Direito")).toBe("direito");
+    expect(courseMention("Vocês têm graduação em Engenharia Civil? quanto custa")).toBe("engenharia civil");
+    expect(courseMention("tenho interesse no curso de Ciências Contábeis na modalidade EAD")).toBe("ciencias contabeis");
+  });
+  it("does not take other things for a course", () => {
+    expect(courseMention("como funciona o curso de tutoria?")).toBeNull();
+    expect(courseMention("queria um curso de ead")).toBeNull();
+    expect(courseMention("oi, bom dia")).toBeNull();
+    expect(courseMention("quero fazer pedagogia")).toBeNull();
+  });
+});
+
+describe("how the agent presents itself", () => {
+  it("says who it is, with or without the person's name and with the name the owner gave", () => {
+    expect(introText(null, "")).toBe("Olá! Eu sou o assistente virtual da Cruzeiro do Sul Virtual.");
+    expect(introText(null, "Ana")).toBe("Olá, Ana! Eu sou o assistente virtual da Cruzeiro do Sul Virtual.");
+    expect(introText({ assistantName: "Bia" }, "Ana")).toBe("Olá, Ana! Eu sou a Bia, assistente virtual da Cruzeiro do Sul Virtual.");
+  });
+  it("recognises an answer that already presents itself", () => {
+    expect(alreadyIntroduces("Olá, Ana! Eu sou o assistente virtual da Cruzeiro do Sul Virtual. Qual curso?")).toBe(true);
+    expect(alreadyIntroduces("Aqui é a Bia da Cruzeiro")).toBe(true);
+    expect(alreadyIntroduces("O curso dura 8 semestres.")).toBe(false);
+  });
+});

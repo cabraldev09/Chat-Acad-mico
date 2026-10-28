@@ -43,6 +43,8 @@ const useStyles = makeStyles((theme) => ({
   question: { display: "flex", alignItems: "center", gap: 10, padding: theme.spacing(1, 0), borderBottom: "1px solid var(--ui-border)", "&:last-child": { borderBottom: 0 } },
   topics: { display: "flex", flexWrap: "wrap", gap: 8, marginBottom: theme.spacing(2) },
   topic: { display: "inline-flex", alignItems: "center", gap: 6, borderRadius: 999, padding: "5px 12px", fontSize: 12.5, fontWeight: 600, border: "1px solid var(--ui-border)", background: "var(--ui-surface)", cursor: "pointer", fontFamily: "inherit", color: theme.palette.text.primary, transition: "border-color .18s", "&:hover": { borderColor: theme.palette.primary.main } },
+  arow: { display: "flex", alignItems: "center", gap: 12, width: "100%", textAlign: "left", border: "1px solid var(--ui-border)", borderRadius: 14, padding: theme.spacing(1.25, 1.5), marginBottom: 8, background: "var(--ui-surface)", fontFamily: "inherit", color: "inherit", cursor: "pointer" },
+  introBox: { padding: theme.spacing(1.5, 2), borderRadius: 14, background: "rgba(6,147,227,.08)", border: "1px solid rgba(6,147,227,.25)", fontSize: 14.5, fontWeight: 600 },
   settings: { display: "grid", gap: theme.spacing(1.5), gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))" },
   setting: { display: "flex", flexDirection: "column", gap: 6, textAlign: "left", padding: theme.spacing(2), fontFamily: "inherit", color: "inherit", cursor: "pointer" },
   settingIcon: { width: 38, height: 38, borderRadius: 11, display: "grid", placeItems: "center", marginBottom: 2, background: "rgba(6,147,227,.12)", color: theme.palette.primary.main },
@@ -64,6 +66,7 @@ const Central = () => {
   const [teach, setTeach] = useState("perguntas");
   const [addMenu, setAddMenu] = useState(null);
   const [costs, setCosts] = useState(false);
+  const [adv, setAdv] = useState(false);
   const [dialog, setDialog] = useState({ name: null, tab: 0 });
 
   const section = useMemo(() => {
@@ -95,6 +98,7 @@ const Central = () => {
     if (how === "roteiro") return d.flow ? history.push(`/ai-agents/blocos/${d.flow.id}`) : go("ajustes");
     if (how === "polos") return history.push("/polos");
     if (how === "conexoes") return history.push("/connections");
+    if (how === "grades") return history.push("/grades");
     const [, item] = how.split(":");
     return setDialog({ name: item || "ajustes", tab: 0 });
   };
@@ -251,7 +255,7 @@ const Central = () => {
 
         {section === "testar" && (
           <Section title="Testar o agente" hint="Converse como se fosse um lead. Nada é enviado a ninguém e nenhum lead é criado. Gostou da conversa? Salve como treino.">
-            <TestTab agentId={agentId} />
+            <TestTab agentId={agentId} flowId={d.flow ? d.flow.id : null} commercial={commercial} />
           </Section>
         )}
 
@@ -265,20 +269,53 @@ const Central = () => {
           </>
         )}
 
-        {section === "ajustes" && (
-          <div className={`${classes.settings} ui-stagger`}>
-            {settings.map((s) => {
-              const Icon = s.icon;
-              return (
-                <button key={s.key} type="button" className={`ui-card ui-lift ui-press ${classes.setting}`} onClick={s.run}>
-                  <span className={classes.settingIcon}><Icon size={20} /></span>
-                  <span className={classes.settingName}>{s.name}</span>
-                  <span className={classes.hint}>{s.text}</span>
-                </button>
-              );
-            })}
-          </div>
-        )}
+        {section === "ajustes" && (() => {
+          const persona = (agent && agent.persona) || {};
+          const who = String(persona.assistantName || "").trim();
+          const intro = who ? `Olá! Eu sou ${/^(a|o) /i.test(who) ? who : `a ${who}`}, assistente virtual da Cruzeiro do Sul Virtual.` : "Olá! Eu sou o assistente virtual da Cruzeiro do Sul Virtual.";
+          const courses = d.courses || { total: 0, names: [], withoutGrade: [] };
+          const row = (key, Icon, name, text, run) => (
+            <button key={key} type="button" className={classes.arow} onClick={run}>
+              <span className={classes.settingIcon} style={{ margin: 0 }}><Icon size={18} /></span>
+              <span style={{ flex: 1, minWidth: 0 }}><b style={{ fontSize: 14.5 }}>{name}</b><div className={classes.hint}>{text}</div></span>
+              <ChevronRight size={18} style={{ opacity: 0.5, flex: "none" }} />
+            </button>
+          );
+          const advanced = settings.filter((x) => ["descobrir", "acoes", "roteiro", "chave"].includes(x.key));
+          return (
+            <div style={{ display: "grid", gap: 16 }}>
+              <Section title="Como o agente fala" hint="É a primeira coisa que o lead vê.">
+                <div className={classes.introBox}>“{intro}”</div>
+                <div className={classes.hint} style={{ margin: "8px 0 12px" }}>{persona.tone ? `Tom: ${persona.tone}` : "Defina o tom de voz, as regras e o que dizer quando o agente não souber."}</div>
+                <Button variant="outlined" onClick={() => setDialog({ name: "editor", tab: 0 })} style={{ borderRadius: 12, textTransform: "none", fontWeight: 600 }}>Editar o jeito de atender</Button>
+              </Section>
+
+              {commercial && (
+                <Section title="O que ele oferece" hint="Vem do cadastro de cursos do sistema: o agente só fala destes e envia a grade de cada um.">
+                  <div className={classes.stats} style={{ marginBottom: 12 }}>
+                    <StatCard label="cursos oferecidos" value={courses.total} />
+                    <StatCard label="com grade para enviar" value={courses.total - courses.withoutGrade.length} tone={courses.withoutGrade.length ? "#d97706" : "#16a34a"} />
+                  </div>
+                  {courses.names.length > 0 && <div className={classes.topics}>{courses.names.slice(0, 10).map((n) => <span key={n} className={classes.topic}>{n}</span>)}{courses.names.length > 10 && <span className={classes.hint}>e mais {courses.names.length - 10}</span>}</div>}
+                  {courses.withoutGrade.length > 0 && <div className={classes.hint} style={{ color: "#b45309", marginBottom: 8 }}>Sem grade cadastrada: {courses.withoutGrade.slice(0, 6).join(", ")}{courses.withoutGrade.length > 6 ? "…" : ""}. O agente não consegue enviar a grade desses cursos.</div>}
+                  {row("grades", FileText, "Cursos e grades", "Cadastre ou atualize os cursos oferecidos e as grades curriculares.", () => history.push("/grades"))}
+                  {row("mec", Scale, "Regras do MEC", "Como cada curso é oferecido, pela Portaria 378/2025.", () => setDialog({ name: "mec" }))}
+                </Section>
+              )}
+
+              <Section title="Quando passa para a equipe" hint="Quem continua a conversa e onde o lead aparece no CRM.">
+                {row("assume", UserCheck, "Quem assume a conversa", "Consultor de cada polo, fila central, prazos de resposta e áudios.", () => setDialog({ name: "assume" }))}
+                {commercial && row("polos", MapPin, "Cidades de cada polo", "O agente usa as cidades para achar o polo do lead.", () => history.push("/polos"))}
+                {commercial && row("funil", Filter, "Etapas do CRM", "Qual coluna do CRM cada etapa do agente usa.", () => setDialog({ name: "funil" }))}
+              </Section>
+
+              <button type="button" className={classes.more} onClick={() => setAdv((v) => !v)} aria-expanded={adv}>
+                <Key size={18} />Avançado: chave de IA, o que descobrir, ações e roteiro<span style={{ flex: 1 }} /><ChevronDown size={18} style={{ transform: adv ? "rotate(180deg)" : "none", transition: "transform .15s" }} />
+              </button>
+              {adv && <div style={{ display: "grid", gap: 4 }}>{advanced.map((x) => row(x.key, x.icon, x.name, x.text, x.run))}</div>}
+            </div>
+          );
+        })()}
       </div>
     </MainContainer>
   );

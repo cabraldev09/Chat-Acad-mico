@@ -132,7 +132,7 @@ export const agentTemplates = async (_req: Request, res: Response): Promise<Resp
 // a draft): nobody is answered until the team reviews it, publishes it and turns it on.
 interface NewAgent {
   name: string;
-  persona: { systemPrompt: string; tone: string; rules: string; forbidden: string; handoffMessage: string; unknownMessage: string };
+  persona: { systemPrompt: string; tone: string; rules: string; forbidden: string; handoffMessage: string; unknownMessage: string; assistantName?: string };
   faq: Array<{ title: string; content: string; keywords?: string }>;
   graph: any;
   description: string;
@@ -150,7 +150,7 @@ const createAgentWithFlow = async (a: NewAgent, userId: number): Promise<{ agent
     model: access.model || DEFAULT_MODEL,
     systemPrompt: a.persona.systemPrompt,
     handoffMessage: a.persona.handoffMessage,
-    persona: { tone: a.persona.tone, rules: a.persona.rules, forbidden: a.persona.forbidden, unknownMessage: a.persona.unknownMessage },
+    persona: { tone: a.persona.tone, rules: a.persona.rules, forbidden: a.persona.forbidden, unknownMessage: a.persona.unknownMessage, ...(a.persona.assistantName ? { assistantName: a.persona.assistantName } : {}) },
     active: false,
     maxTokens: 350,
     handoffAfterTurns: 14,
@@ -176,7 +176,11 @@ export const fromTemplate = async (req: Request, res: Response): Promise<Respons
   const name = String(req.body?.name || t.name).trim().slice(0, 80) || t.name;
   // the funnel of the commercial agent is mapped and completed unless the person unchecked it
   const funnel = !!t.commercial && req.body?.createFunnel !== false;
-  return res.status(201).json(await createAgentWithFlow({ name, persona: t.persona, faq: t.faq, kb: t.kb, graph: t.graph, description: `Modelo: ${t.name}`, funnel }, uid(req)));
+  // the name the assistant presents itself with (optional) and the tone chosen on the screen of creation
+  const assistantName = String(req.body?.assistantName || "").trim().slice(0, 40);
+  const tone = String(req.body?.tone || "").trim().slice(0, 200);
+  const persona = { ...(t.persona as any), ...(assistantName ? { assistantName } : {}), ...(tone ? { tone } : {}) };
+  return res.status(201).json(await createAgentWithFlow({ name, persona, faq: t.faq, kb: t.kb, graph: t.graph, description: `Modelo: ${t.name}`, funnel }, uid(req)));
 };
 
 // "Criar com IA": a description of the business becomes the agent, its answers and its blocks (checked and fixed by the system before

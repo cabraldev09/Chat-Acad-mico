@@ -14,8 +14,9 @@ import { commercialTurn, CommercialTrace } from "./Hook";
 import { CommercialPorts } from "./Ports";
 import { matchFaq } from "../AiServices/Kb";
 import { unsafeAnswer } from "./Guards";
-import { ENTRY_LABEL, fastIntent, hasBolsaData, humanReason, isGreeting, needsBolsaData, openingText, retractsBuying, stageFieldsDone, supportIntent, topicsOf, gradeRequest } from "./Rules";
-import { AcademicCtx, findCourse, runAcademicTool } from "./Academic";
+import { ENTRY_LABEL, alreadyIntroduces, courseMention, fastIntent, hasBolsaData, humanReason, introText, isGreeting, needsBolsaData, openingText, retractsBuying, stageFieldsDone, supportIntent, topicsOf, gradeRequest } from "./Rules";
+import { AcademicCtx, closestOffered, findCourse, joinNames, offeredCourses, runAcademicTool, sendGradeFor } from "./Academic";
+import { addActivity } from "../CrmServices/LeadCore";
 import { BOLSA_ASKS, bolsaDataFrom, bolsaRequestFor } from "./BolsaData";
 import { stripGradeAnnouncement } from "./GradeChoice";
 import { studentFacts } from "./StudentFacts";
@@ -97,7 +98,7 @@ const flat = (changed: Record<string, [any, any]>): Record<string, string> => {
   return out;
 };
 
-export const commercialAiTurn = async (d: TurnDeps): Promise<CommercialTurnResult> => {
+const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult> => {
   const started = Date.now();
   const lastText = d.input === null ? "" : d.input;
   const state = d.ports.state;
@@ -183,12 +184,23 @@ export const commercialAiTurn = async (d: TurnDeps): Promise<CommercialTurnResul
   const fresh = !state.slots.lastOutboundAt || returningSince(state.slots.lastOutboundAt);
   if (fresh && !d.turns && (d.input === null || isGreeting(lastText))) {
     const first = String(state.slots.leadName || d.contactName || "").trim().split(/\s+/)[0] || "";
-    const text = openingText(state.slots, first, !!state.slots.lastOutboundAt);
+    const text = openingText(state.slots, first, !!state.slots.lastOutboundAt, d.agent.persona);
     const hook = await commercialTurn(d.ports, { userText: lastText, intent: d.input === null ? null : "greeting", tools: [], hadText: true, replied: d.input !== null, firstContactSent: true, nodeId: d.nodeId });
     const latencyMs = Date.now() - started;
     await log({ intent: "greeting", deterministic: true, llmCalls: 0, toolCalls: 0, cacheHits: 0, tokens: base.tokens, outcome: null, latencyMs });
     if (d.lead && !d.sandbox) await syncLead(d, hook.trace.changed);
     return { text, exit: null, collected: flat(hook.trace.changed), trace: { ...base, deterministic: true, intent: "greeting", commercial: hook.trace, entry: ENTRY_LABEL[state.slots.entryType || "unknown"], latencyMs } };
+  }
+
+  // a course that is not in the catalogue of the system is not offered: said at once, with the ones that are (the model never gets to talk about it)
+  const named = d.input !== null && wrote ? courseMention(lastText) : null;
+  if (named && !(await findCourse({ courseName: named }))) {
+    const list = await offeredCourses();
+    if (list.length) {
+      const pretty = named.replace(/\b([a-z])/g, m => m.toUpperCase());
+      const text = `Hoje a gente não oferece o curso de ${pretty}. Os cursos que oferecemos incluem ${joinNames(closestOffered(list, named, 6).map(c => c.name))}${list.length > 6 ? " e outros" : ""}. Algum deles te interessa?`;
+      return answered(text, null, "other", { patch: { unofferedCourse: pretty } });
+    }
   }
 
   // the transcript arrives (a PDF among what the person just sent): the stage that asked for it goes on without the model
@@ -230,14 +242,13 @@ export const commercialAiTurn = async (d: TurnDeps): Promise<CommercialTurnResul
   if (gradeAsk) {
     const ctx: AcademicCtx = { ticket: d.ticket, dryRun: false, slots: { ...state.slots }, patch: {}, cacheHits: 0, agentId: d.agent.id };
     try {
-      const named = gradeAsk.course ? await findCourse({ courseName: gradeAsk.course }) : null;
-      const course = named || (ctx.slots.courseId || ctx.slots.courseName ? await findCourse({ courseId: ctx.slots.courseId, courseName: ctx.slots.courseName }) : null);
+      const named2 = gradeAsk.course ? await findCourse({ courseName: gradeAsk.course }) : null;
+      const course = named2 || (ctx.slots.courseId || ctx.slots.courseName ? await findCourse({ courseId: ctx.slots.courseId, courseName: ctx.slots.courseName }) : null);
       const again = /\b(de novo|novamente|outra vez|reenvia|reenviar)\b/i.test(lastText);
       if (course && !(ctx.slots.gradeSent && Number(ctx.slots.courseId) === course.id && !again)) {
-        const found = await runAcademicTool("buscar_grade", { courseId: course.id }, ctx);
-        const sent = found && found.gradeId ? await runAcademicTool("enviar_material", { gradeId: found.gradeId }, ctx) : null;
-        if (sent && sent.enviado) {
-          let text = String(sent.texto_estagio_tutoria || "").trim() || "Qualquer dúvida sobre o estágio ou a rotina do curso, é só me falar.";
+        const sent = await sendGradeFor(course, ctx);
+        if (sent.sent) {
+          let text = sent.text || "Qualquer dúvida sobre o estágio ou a rotina do curso, é só me falar.";
           let patchOut: Record<string, any> = { ...ctx.patch, courseId: course.id, courseName: course.name, gradeAsked: true, internshipExplained: true, tutoringExplained: true };
           const probe = { ...state.slots, ...patchOut };
           // the full name and the CPF for the scholarship (same rule as after any answer)
@@ -289,8 +300,41 @@ export const commercialAiTurn = async (d: TurnDeps): Promise<CommercialTurnResul
     text = `${String(text || "").trim()}\n\n${bolsaRequestFor({ name: !probe.fullName, cpf: !probe.cpfGiven })}`.trim();
     patchOut = { ...patchOut, bolsaDataAsked: Number(probe.bolsaDataAsked || 0) + 1 };
   }
+  // The grade goes to every person who has a course, even if nobody asked for it and the model did not call the tool: it is part of the process.
+  // (Not to someone who is already a student; once per course, the slot is cleared when the course changes.)
+  let toolsOut = result.tools;
+  const courseNow = patchOut.courseId || state.slots.courseId || patchOut.courseName || state.slots.courseName;
+  if (d.input !== null && wrote && courseNow && !(patchOut.gradeSent ?? state.slots.gradeSent) && !state.slots.enrolledStudent && !result.tools.includes("enviar_material") && !result.exit) {
+    try {
+      const course = await findCourse({ courseId: patchOut.courseId || state.slots.courseId, courseName: patchOut.courseName || state.slots.courseName });
+      if (course) {
+        const live = !d.sandbox && !!d.ticket;
+        const mk = (dryRun: boolean): AcademicCtx => ({ ticket: d.ticket, dryRun, slots: { ...state.slots, ...patchOut, courseId: course.id }, patch: {}, cacheHits: 0, agentId: d.agent.id });
+        // checked now (the file exists?), sent after the answer: the person reads the presentation and the answer first, then receives the file
+        const ctx = mk(true);
+        const g = await sendGradeFor(course, ctx);
+        if (live && g.simulated) {
+          const leadId = d.lead?.id;
+          setTimeout(() => {
+            sendGradeFor(course, mk(false)).catch(async () => {
+              if (leadId) await addActivity(leadId, null, "system", `Não consegui enviar a grade do curso ${course.name}. Envie manualmente.`).catch(() => undefined);
+            });
+          }, 3500).unref?.();
+        }
+        if (g.sent || g.simulated) {
+          patchOut = { ...patchOut, ...ctx.patch, courseId: course.id, courseName: course.name, gradeAsked: true, gradeSent: true, internshipExplained: true, tutoringExplained: true };
+          toolsOut = [...result.tools, "buscar_grade", "enviar_material"];
+          if ((g.sent || (live && g.simulated)) && g.text && g.text.length <= 450 && !/est[aá]gio/i.test(text)) text = `${String(text || "").trim()}\n\n${g.text}`.trim();
+        } else if (g.missing && d.lead && !d.sandbox) {
+          await addActivity(d.lead.id, null, "system", `A grade do curso ${course.name} não está cadastrada: o agente não pôde enviá-la. Envie manualmente e cadastre a grade em Grades.`).catch(() => undefined);
+        }
+      }
+    } catch (err) {
+      // the answer goes without the file; the person can ask for it and the team sees it in the health of the agent
+    }
+  }
   const hook = await commercialTurn(d.ports, {
-    userText: lastText, intent, patch: patchOut, tools: result.tools, hadText: !!text, replied: d.input !== null,
+    userText: lastText, intent, patch: patchOut, tools: toolsOut, hadText: !!text, replied: d.input !== null,
     followUp: intent === "follow_up" ? { reason: turn.motivo_retorno || turn.duvida_principal || null, at: turn.retorno_em || null } : null,
     unknownQuestion, objection: turn.objecao || (intent === "objection" ? lastText : null), question: turn.duvida_principal || null, topics: result.topics,
     firstContactSent: d.input === null && !!text, nodeId: d.nodeId, retract: d.input !== null && retractsBuying(lastText), hasPolo: !!d.lead?.poloId,
@@ -373,4 +417,17 @@ const syncLead = async (d: TurnDeps, changed: Record<string, [any, any]>): Promi
       await assignToPolo(d.ticket, await Lead.findByPk(d.lead.id), polo);
     }
   }
+};
+
+// The agent always presents itself in the first answer of a conversation, whatever the person wrote (a question, a price, a course): the opening
+// that answers a greeting already does it; every other first answer gets the presentation in front.
+export const commercialAiTurn = async (d: TurnDeps): Promise<CommercialTurnResult> => {
+  const slots = d.ports.state.slots;
+  const first = d.input !== null && !d.turns && !slots.lastOutboundAt;
+  const out = await commercialAiTurnInner(d);
+  if (first && out.text && out.text.trim() && !alreadyIntroduces(out.text)) {
+    const name = String(slots.leadName || d.contactName || "").trim().split(/\s+/)[0] || "";
+    out.text = `${introText(d.agent.persona, name)}\n\n${out.text.trim()}`;
+  }
+  return out;
 };
