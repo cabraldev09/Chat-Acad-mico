@@ -26,6 +26,8 @@ import { priceOf } from "../services/AiServices/Usage";
 import { ensurePipeline, effectiveMap, saveMap, STAGE_KEYS, STAGE_SPECS, StageKey } from "../services/CommercialServices/Pipeline";
 import { briefOf } from "../services/CommercialServices/Rules";
 import { loadState } from "../services/CommercialServices/Slots";
+import CommercialGrade from "../models/CommercialGrade";
+import { chooseGrade } from "../services/CommercialServices/GradeChoice";
 
 // ------------------------------------------------------------------ the funnel of the commercial agent
 
@@ -582,6 +584,11 @@ export const central = async (req: Request, res: Response): Promise<Response> =>
   const served = await Whatsapp.findAll({ where: { ...(agent.whatsappId ? { id: agent.whatsappId } : {}), ownerId: { [Op.ne]: null } } as any, attributes: ["id", "name", "ownerId", "aiFirst"] });
   const personal = served.filter(w => !w.aiFirst);
 
+  // the courses of the catalogue and the grade each one has: the agent sends the grade of the course of every lead, so one without it is a gap
+  const catalogue = await Course.findAll({ where: { active: true } as any, attributes: ["id", "name", "modality"], order: [["name", "ASC"]] });
+  const grades = await CommercialGrade.findAll({ attributes: ["id", "courseName", "modality", "curriculumTerm"] });
+  const withoutGrade = catalogue.filter(c => !chooseGrade(grades as any[], c, null).grade).map(c => c.name);
+
   type Check = { key: string; label: string; ok: boolean; detail: string; fix: string };
   const health: Check[] = [
     { key: "active", label: "Agente ligado", ok: !!agent.active, detail: agent.active ? "Atendendo as conversas." : "Desligado: ninguém é atendido por ele.", fix: "ligar" },
@@ -591,6 +598,7 @@ export const central = async (req: Request, res: Response): Promise<Response> =>
       ? [
           { key: "polos", label: "Consultor em cada polo", ok: notReady.length === 0, detail: notReady.length ? `${notReady.length} polo(s) sem consultor: ${notReady.map(p => p.name).join(", ")}.` : "Todos os polos têm quem atenda.", fix: "ajustes:assume" },
           { key: "cities", label: "Cidades de cada polo", ok: noCities.length === 0, detail: noCities.length ? `${noCities.length} polo(s) sem cidades cadastradas: o agente só acha o polo pela cidade do próprio polo.` : "Todos os polos têm cidades cadastradas.", fix: "polos" },
+          { key: "grades", label: "Grade de cada curso oferecido", ok: withoutGrade.length === 0, detail: withoutGrade.length ? `${withoutGrade.length} de ${catalogue.length} curso(s) sem grade (o agente não consegue enviar): ${withoutGrade.slice(0, 6).join(", ")}${withoutGrade.length > 6 ? "…" : ""}.` : `Os ${catalogue.length} cursos oferecidos têm grade.`, fix: "grades" },
           { key: "crm", label: "Etapas do funil no CRM", ok: missingStages === 0, detail: missingStages ? `${missingStages} etapa(s) do agente sem coluna no CRM.` : "Todas as etapas têm coluna.", fix: "ajustes:funil" },
           { key: "mec", label: "Regras do MEC dos cursos", ok: !data.regulations || data.regulations.withRule >= data.regulations.courses, detail: data.regulations ? `${data.regulations.withRule} de ${data.regulations.courses} cursos com regra.` : "", fix: "ajustes:mec" }
         ]
@@ -601,5 +609,5 @@ export const central = async (req: Request, res: Response): Promise<Response> =>
     { key: "errors", label: "Falhas da IA (30 dias)", ok: data.last30days.errors === 0, detail: data.last30days.errors ? `${data.last30days.errors} falha(s): a conversa foi para a equipe. Veja a chave e o saldo do provedor.` : "Nenhuma falha.", fix: "ajustes:chave" }
   ];
 
-  return res.json({ ...data, flow: flow ? { id: flow.id, status: flow.status, version: flow.version } : null, week, health });
+  return res.json({ ...data, flow: flow ? { id: flow.id, status: flow.status, version: flow.version } : null, week, health, courses: { total: catalogue.length, names: catalogue.map(c => c.name), withoutGrade } });
 };

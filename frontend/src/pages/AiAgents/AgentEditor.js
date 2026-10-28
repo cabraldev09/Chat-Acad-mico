@@ -47,6 +47,7 @@ const blank = () => ({
 const AgentEditor = ({ open, agent, initialTab = 0, onClose, onSaved }) => {
   const classes = useStyles();
   const [tab, setTab] = useState(0);
+  const [advanced, setAdvanced] = useState(false);
   const [v, setV] = useState(blank());
   const [id, setId] = useState(null);
   const [queues, setQueues] = useState([]);
@@ -57,6 +58,7 @@ const AgentEditor = ({ open, agent, initialTab = 0, onClose, onSaved }) => {
   useEffect(() => {
     if (!open) return;
     setTab(initialTab);
+    setAdvanced(initialTab > 0);
     setId(agent ? agent.id : null);
     setV(agent ? { ...blank(), ...agent, persona: { ...blank().persona, ...(agent.persona || {}) }, queueId: agent.queueId || "", whatsappId: agent.whatsappId || "" } : blank());
     api.get("/queue").then(({ data }) => setQueues(data)).catch(() => {});
@@ -96,19 +98,49 @@ const AgentEditor = ({ open, agent, initialTab = 0, onClose, onSaved }) => {
         </div>
         <Chip size="small" label={v.active ? "Ativo" : "Desligado"} color={v.active ? "primary" : "default"} />
       </div>
-      <div className={classes.tabsWrap}>
-        <Tabs value={tab} onChange={(e, t) => setTab(t)} variant="scrollable" scrollButtons="auto">
-          <Tab style={{ minWidth: 0 }} label="Jeito de atender" />
-          <Tab style={{ minWidth: 0 }} label="O que descobrir do cliente" />
-          <Tab style={{ minWidth: 0 }} label="Ações automáticas" />
-        </Tabs>
-      </div>
+      {advanced && (
+        <div className={classes.tabsWrap}>
+          <Tabs value={tab} onChange={(e, t) => setTab(t)} variant="scrollable" scrollButtons="auto">
+            <Tab style={{ minWidth: 0 }} label="Atendimento" />
+            <Tab style={{ minWidth: 0 }} label="O que descobrir do cliente" />
+            <Tab style={{ minWidth: 0 }} label="Ações automáticas" />
+          </Tabs>
+        </div>
+      )}
       <DialogContent dividers className={classes.content}>
         {tab === 0 && (
           <>
             <div className={classes.grid}>
               <TextField variant="outlined" margin="dense" label="Nome do agente" required value={v.name} onChange={(e) => set("name", e.target.value)} />
               <FormControlLabel style={{ marginTop: 8 }} control={<Switch color="primary" checked={!!v.active} onChange={(e) => set("active", e.target.checked)} />} label={v.active ? "Ativo: responde os alunos" : "Desligado"} />
+              <span />
+            </div>
+
+            <div className={classes.section}>Como ele se apresenta</div>
+            <TextField fullWidth variant="outlined" margin="dense" label="Nome do assistente (opcional)" placeholder="Ex.: Bia" value={v.persona.assistantName || ""} onChange={(e) => setPersona("assistantName", e.target.value)}
+              helperText={`Na primeira mensagem de toda conversa: “${(() => { const n = String(v.persona.assistantName || "").trim(); return n ? `Olá! Eu sou ${/^(a|o) /i.test(n) ? n : `a ${n}`}, assistente virtual da Cruzeiro do Sul Virtual.` : "Olá! Eu sou o assistente virtual da Cruzeiro do Sul Virtual."; })()}”`} />
+
+            <div className={classes.section}>Como o agente fala</div>
+            <TextField fullWidth variant="outlined" margin="dense" label="Tom de voz" value={v.persona.tone || ""} onChange={(e) => setPersona("tone", e.target.value)} />
+            <TextField fullWidth variant="outlined" margin="dense" label="Mensagem ao passar para a equipe" value={v.handoffMessage || ""} onChange={(e) => set("handoffMessage", e.target.value)} />
+            <Typography variant="caption" color="textSecondary" display="block" style={{ marginTop: 10 }}>
+              {v.active ? "O agente está ligado: responde os alunos assim que você salvar." : "O agente está desligado. Ligue acima para ele começar a atender."} Os cursos e as grades vêm do cadastro do sistema.
+            </Typography>
+
+            <button type="button" onClick={() => setAdvanced((x) => !x)} aria-expanded={advanced} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", border: "1px solid rgba(100,116,139,.3)", borderRadius: 12, padding: "10px 14px", margin: "18px 0 4px", background: "transparent", color: "inherit", fontFamily: "inherit", fontWeight: 600, cursor: "pointer" }}>
+              {advanced ? "Esconder configurações avançadas" : "Configurações avançadas"} <span style={{ fontWeight: 400, opacity: 0.7, fontSize: 12.5 }}>{advanced ? "" : "instruções detalhadas, modelo, chave, avisos, o que descobrir e ações"}</span>
+            </button>
+            {advanced && (
+              <>
+            <div className={classes.section}>Instruções detalhadas</div>
+            <TextField fullWidth multiline rows={3} variant="outlined" margin="dense" label="Quem é o agente" value={v.systemPrompt || ""} onChange={(e) => set("systemPrompt", e.target.value)} />
+            <div className={classes.grid}>
+              <TextField multiline rows={4} variant="outlined" margin="dense" label="Regras do atendimento (uma por linha)" value={v.persona.rules || ""} onChange={(e) => setPersona("rules", e.target.value)} />
+              <TextField multiline rows={4} variant="outlined" margin="dense" label="Nunca fazer (uma por linha)" value={v.persona.forbidden || ""} onChange={(e) => setPersona("forbidden", e.target.value)} />
+            </div>
+
+            <div className={classes.section}>Modelo de IA</div>
+            <div className={classes.grid}>
               <TextField select variant="outlined" margin="dense" label="Provedor" value={v.provider} onChange={(e) => setV({ ...v, provider: e.target.value, model: MODELS[e.target.value] })}>
                 <MenuItem value="anthropic">Anthropic (Claude)</MenuItem>
                 <MenuItem value="openai">OpenAI (GPT)</MenuItem>
@@ -121,14 +153,6 @@ const AgentEditor = ({ open, agent, initialTab = 0, onClose, onSaved }) => {
               <span />
             </div>
 
-            <div className={classes.section}>Como o agente fala</div>
-            <TextField fullWidth multiline rows={3} variant="outlined" margin="dense" label="Quem é o agente" value={v.systemPrompt || ""} onChange={(e) => set("systemPrompt", e.target.value)} />
-            <TextField fullWidth variant="outlined" margin="dense" label="Tom de voz" value={v.persona.tone || ""} onChange={(e) => setPersona("tone", e.target.value)} />
-            <div className={classes.grid}>
-              <TextField multiline rows={4} variant="outlined" margin="dense" label="Regras do atendimento (uma por linha)" value={v.persona.rules || ""} onChange={(e) => setPersona("rules", e.target.value)} />
-              <TextField multiline rows={4} variant="outlined" margin="dense" label="Nunca fazer (uma por linha)" value={v.persona.forbidden || ""} onChange={(e) => setPersona("forbidden", e.target.value)} />
-            </div>
-            <TextField fullWidth variant="outlined" margin="dense" label="Mensagem ao passar para a equipe" value={v.handoffMessage || ""} onChange={(e) => set("handoffMessage", e.target.value)} />
 
             <div className={classes.section}>Aprender e avisar você</div>
             <FormControlLabel control={<Switch color="primary" checked={v.learnFromTeam !== false} onChange={(e) => set("learnFromTeam", e.target.checked)} />}
@@ -162,6 +186,8 @@ const AgentEditor = ({ open, agent, initialTab = 0, onClose, onSaved }) => {
               <TextField type="number" variant="outlined" margin="dense" label="Passar para a equipe após quantas respostas" value={v.handoffAfterTurns} onChange={(e) => set("handoffAfterTurns", Number(e.target.value))} />
               <TextField type="number" variant="outlined" margin="dense" label="Limite diário de tokens (0 = sem limite)" value={v.dailyTokenCap} onChange={(e) => set("dailyTokenCap", Number(e.target.value))} helperText="Ao atingir, o agente passa as conversas para a equipe." />
             </div>
+              </>
+            )}
           </>
         )}
         {tab === 1 && (

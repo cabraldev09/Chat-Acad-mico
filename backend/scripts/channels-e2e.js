@@ -2903,7 +2903,8 @@ const postMeta = (id, payload, secret, badSig) => {
       const r = await postMeta(conn.data.id, cloudEvent([{ from: "5511900011122", id: "wamid.owner1", type: "text", text: { body: "Oi, quero informações" } }]), cfg.appSecret);
       assert(r.status === 200, `webhook ${r.status}`);
       const t = await waitFor(() => ticketOf("5511900011122"), 8000, "ticket");
-      assert(sql(`SELECT CONCAT(status,'|',userId) FROM Tickets WHERE id=${t}`) === `open|${owner.data.id}`, "ticket should be open and assigned to the owner");
+      // the ticket is created first and handed to its owner a moment later
+      await waitFor(() => sql(`SELECT CONCAT(status,'|',userId) FROM Tickets WHERE id=${t}`) === `open|${owner.data.id}`, 8000, "ticket should be open and assigned to the owner");
     });
     await test("typing on Telegram goes out as a chat action", async () => {
       const a = ticketOf("tg_5551");
@@ -3692,6 +3693,32 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(!out.some(x => /03\/08/.test(x)), `an invented date reached the person: ${out}`);
       await waitFor(() => Number(sql(`SELECT COUNT(*) FROM AiLearnings WHERE ticketId=${ticketOf(L)}`)) >= 1, 8000, "the unanswered question goes to the team");
       assert(runOf(L) === "waiting|apresentar", `the conversation should go on: ${runOf(L)}`);
+
+      // R) the first message already asks about a course the institution does not offer: it presents itself, says it is not offered and lists the ones that are, without the model
+      const NOFF = "5511920000230";
+      llm = anthropic.requests.length;
+      out = await say(NOFF, "wamid.com-noff1", "Quero saber o valor do curso de Medicina", t => t.some(x => /não oferece o curso de Medicina/.test(x)), "a course that is not offered");
+      assert(out.some(x => /assistente virtual/.test(x)), `the agent did not present itself: ${out}`);
+      assert(out.some(x => /Os cursos que oferecemos incluem [A-ZÁÉÍÓÚÂÊÔÃÇ]/.test(x)), `the offered courses were not listed: ${out}`);
+      assert(!out.some(x => /R\$|mensalidade/.test(x)), "a price was given for a course that is not offered");
+      assert(anthropic.requests.length === llm, "the model should not be called for a course that is not offered");
+      assert(sql(`SELECT slots FROM LeadCommercials WHERE leadId=${leadId(NOFF)}`).includes("Medicina"), "the course that is not offered is kept on the lead");
+
+      // S) the first message is a question (not a greeting): the answer starts with the presentation, and the next one does not repeat it;
+      // a lead with a course gets its grade even if nobody asked: the system sends it (here the PDF is not on the server, so its summary goes in writing)
+      if (sql(`SELECT COUNT(*) FROM CommercialGrades WHERE courseName='Direito'`) === "0") sql(`INSERT INTO CommercialGrades (courseName, modality, curriculumTerm, courseTracks, internshipInfo, hasTcc, totalInternshipHours, whatsappSummary, complete, contentHash, catalogKey, fileName, createdAt, updatedAt) VALUES ('Direito', 'EAD', '2026/1', '[]', '', false, 0, 'GRADE-AUTO do curso de Direito', true, 'h-e2e-auto', 'direito-e2e-auto', 'direito-e2e-auto.pdf', now(), now())`);
+      const gradeTexts = () => graph.sent.filter(x => x.body && x.body.type === "text" && /GRADE-AUTO/.test(x.body.text.body)).length;
+      const FIRSTQ = "5511920000231";
+      const g0 = gradeTexts();
+      out = await say(FIRSTQ, "wamid.com-fq1", "Quanto tempo dura o curso de Direito?", t => t.length > 0, "answer to a first question");
+      assert(/assistente virtual/.test(out[0]), `the first answer must present the agent: ${out}`);
+      await waitFor(() => gradeTexts() === g0 + 1, 20000, "the grade is sent without being asked");
+      await waitFor(() => JSON.parse(sql(`SELECT slots FROM LeadCommercials WHERE leadId=${leadId(FIRSTQ)}`)).gradeSent === true, 8000, "gradeSent saved");
+      const FQ2 = graph.sent.length;
+      await inboundCloud(FIRSTQ, "wamid.com-fq2", "Quero Direito em Porto Velho");
+      await waitFor(() => texts(FQ2).some(x => /Direito em Porto Velho/.test(x)), 20000, "second answer");
+      assert(!texts(FQ2).some(x => /assistente virtual/.test(x)), "the presentation was repeated");
+      assert(gradeTexts() === g0 + 1, "the grade was sent twice");
 
       // M) the provider fails twice: the person is told a colleague continues, the conversation goes to the team with the reason, the failure is counted
       const M = "5511920000213";

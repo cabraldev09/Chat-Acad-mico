@@ -12,10 +12,10 @@ const useStyles = makeStyles((theme) => ({
   me: { alignSelf: "flex-end", maxWidth: "80%", padding: "6px 10px", borderRadius: "10px 10px 2px 10px", background: theme.palette.type === "dark" ? "#005c4b" : "#d9fdd3", fontSize: 14, whiteSpace: "pre-wrap" },
   bot: { alignSelf: "flex-start", maxWidth: "80%", padding: "6px 10px", borderRadius: "10px 10px 10px 2px", background: theme.palette.type === "dark" ? "#202c33" : "#fff", fontSize: 14, whiteSpace: "pre-wrap" },
   meta: { alignSelf: "flex-start", fontSize: 11.5, color: theme.palette.text.secondary, margin: "0 4px" },
-  row: { display: "flex", gap: theme.spacing(1), marginTop: theme.spacing(1.25), alignItems: "flex-start" },
+  row: { display: "flex", flexWrap: "wrap", gap: theme.spacing(1), marginTop: theme.spacing(1.25), alignItems: "center", "& .MuiButton-root": { whiteSpace: "nowrap", flex: "none" } },
 }));
 
-const TOOL = { buscar_curso: "consultou o catálogo de cursos", listar_polos: "consultou os polos", simular_bolsa: "simulou a bolsa", salvar_lead: "guardou dados do aluno" };
+const TOOL = { buscar_curso: "consultou o catálogo de cursos", listar_polos: "consultou os polos", simular_bolsa: "simulou a bolsa", salvar_lead: "guardou dados do aluno", buscar_grade: "buscou a grade", enviar_material: "enviaria a grade em PDF (no teste não é enviada)", registrar_turno: "registrou o turno" };
 
 
 const OUTCOMES = [["", "Qualquer um"], ["answer", "Responder ao aluno"], ["handoff", "Passar para uma pessoa"], ["unknown", "Confirmar com a equipe"]];
@@ -69,12 +69,15 @@ const CasesPanel = ({ agentId, refreshKey }) => {
 };
 
 // Talks to the agent exactly like a student would, without sending anything on WhatsApp or changing any record.
-const TestTab = ({ agentId }) => {
+const TestTab = ({ agentId, flowId, commercial }) => {
   const classes = useStyles();
   const [turns, setTurns] = useState([]);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [collected, setCollected] = useState({});
+  // the commercial agent is tested with the same engine that answers the leads (presentation, courses of the system, grade, handoff); the rest with the simple tester
+  const real = !!flowId && !!commercial;
+  const [sim, setSim] = useState(null);
   const end = useRef();
   const [teaching, setTeaching] = useState(null);
   const [lesson, setLesson] = useState("");
@@ -135,9 +138,23 @@ const TestTab = ({ agentId }) => {
     setText("");
     setBusy(true);
     try {
-      const { data } = await api.post(`/ai-agents/${agentId}/test`, { messages: next.map(({ role, content: c }) => ({ role, content: c })), collected });
-      setCollected(data.collected || {});
-      setTurns([...next, { role: "assistant", content: data.text || "(sem resposta)", question: content, sources: data.sources || [], meta: `${(data.tools || []).map((t) => TOOL[t] || t).join(", ")}${data.tools?.length ? " · " : ""}${data.tokens.input + data.tokens.output} tokens` }]);
+      if (real) {
+        const { data } = await api.post(`/flows/${flowId}/simulate`, { state: sim, input: content, restart: !sim, sample: {} });
+        setSim(data.state);
+        const bubbles = (data.messages || []).map((m) => (typeof m === "string" ? m : (m && m.text) || "")).filter(Boolean);
+        const tools = [...new Set((data.traces || []).flatMap((t) => (t.tools || []).map((x) => (x && x.name) || x)))].map((t) => TOOL[t] || t);
+        const tokens = (data.traces || []).reduce((a, t) => a + ((t.tokens && (t.tokens.input + t.tokens.output)) || 0), 0);
+        const ended = data.status === "handoff" ? "a conversa passaria para a equipe" : data.status === "done" ? "fim do fluxo" : "";
+        const meta = [tools.join(", "), tokens ? `${tokens} tokens` : "sem chamar o modelo", ended].filter(Boolean).join(" · ");
+        const shown = bubbles.length ? bubbles : ["(sem resposta)"];
+        setTurns([...next, ...shown.map((b, i) => ({ role: "assistant", content: b, question: content, sources: [], meta: i === shown.length - 1 ? meta : "" }))]);
+        const slots = (data.state && data.state.vars && data.state.vars.__commercial && data.state.vars.__commercial.state && data.state.vars.__commercial.state.slots) || {};
+        setCollected(Object.fromEntries([["nome", slots.leadName], ["curso", slots.courseName], ["cidade", slots.city], ["ingresso", slots.entryType && slots.entryType !== "unknown" ? slots.entryType : ""], ["curso pedido que não oferecemos", slots.unofferedCourse]].filter(([, v]) => v)));
+      } else {
+        const { data } = await api.post(`/ai-agents/${agentId}/test`, { messages: next.map(({ role, content: c }) => ({ role, content: c })), collected });
+        setCollected(data.collected || {});
+        setTurns([...next, { role: "assistant", content: data.text || "(sem resposta)", question: content, sources: data.sources || [], meta: `${(data.tools || []).map((t) => TOOL[t] || t).join(", ")}${data.tools?.length ? " · " : ""}${data.tokens.input + data.tokens.output} tokens` }]);
+      }
     } catch (err) {
       toastError(err);
       setTurns(turns);
@@ -148,11 +165,11 @@ const TestTab = ({ agentId }) => {
 
   return (
     <div>
-      <Typography variant="body2" color="textSecondary" style={{ marginBottom: 8 }}>
-        Converse como se fosse um aluno. Nada é enviado por WhatsApp e nenhum cadastro é alterado. O uso entra no consumo, mas não conta no limite diário.
+      <Typography variant="caption" color="textSecondary" display="block" style={{ marginBottom: 8 }}>
+        O uso entra no consumo, mas não conta no limite diário.
       </Typography>
       <div className={classes.chat} ref={end}>
-        {turns.length === 0 && <span className={classes.meta}>Escreva a primeira mensagem do aluno, por exemplo: “Quero saber o valor do curso de Direito”.</span>}
+        {turns.length === 0 && <span className={classes.meta}>Escreva a primeira mensagem do aluno, por exemplo: “Oi, quero saber sobre o curso de Pedagogia”.</span>}
         {turns.map((t, i) => (
           <React.Fragment key={i}>
             <div className={t.role === "user" ? classes.me : classes.bot}>{t.content}</div>
@@ -178,9 +195,9 @@ const TestTab = ({ agentId }) => {
         </Typography>
       )}
       <div className={classes.row}>
-        <TextField fullWidth variant="outlined" size="small" placeholder="Mensagem do aluno" value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && send()} disabled={busy} />
+        <TextField variant="outlined" size="small" placeholder="Mensagem do aluno" style={{ flex: "1 1 260px", minWidth: 200 }} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && send()} disabled={busy} />
         <Button variant="contained" color="primary" onClick={send} disabled={busy || !text.trim()} startIcon={<Send size={16} />}>Enviar</Button>
-        <Button variant="outlined" onClick={() => { setTurns([]); setCollected({}); }} startIcon={<RotateCcw size={16} />}>Recomeçar</Button>
+        <Button variant="outlined" onClick={() => { setTurns([]); setCollected({}); setSim(null); }} startIcon={<RotateCcw size={16} />}>Recomeçar</Button>
         <Button variant="outlined" color="primary" onClick={toTraining} disabled={saving || turns.length < 2} startIcon={<Save size={16} />}>Salvar como treino</Button>
         <Button variant="outlined" onClick={openCase} disabled={!turns.some((t) => t.role === "user")} startIcon={<ListChecks size={16} />}>Salvar como caso</Button>
       </div>

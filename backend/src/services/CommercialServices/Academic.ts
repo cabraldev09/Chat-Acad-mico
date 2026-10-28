@@ -68,6 +68,37 @@ const cached = async <T>(ctx: AcademicCtx, key: string, fn: () => Promise<T>): P
 };
 export const clearAcademicCache = (): void => memo.clear();
 
+// The courses the institution offers: the active ones of the catalogue of the system. The agent talks about these and only these.
+export interface OfferedCourse { id: number; name: string; level: string | null; modality: string | null }
+export const offeredCourses = async (): Promise<OfferedCourse[]> => {
+  const stamp = await stampOf();
+  const hit = memo.get("offered");
+  if (hit && hit.stamp === stamp) return hit.value as OfferedCourse[];
+  const rows = await Course.findAll({ where: { active: true } as any, attributes: ["id", "name", "level", "modality"], order: [["name", "ASC"]], limit: 300 });
+  const value = rows.map(c => ({ id: c.id, name: String(c.name || "").trim(), level: c.level || null, modality: c.modality || null })).filter(c => c.name);
+  memo.set("offered", { stamp, value });
+  return value;
+};
+
+const words = (s: string): string[] => plain(s).split(" ").filter(w => w.length >= 4);
+
+// the offered courses that look the most like a name that is not offered (a shared word first), then the others, a few only
+export const closestOffered = (list: OfferedCourse[], wanted: string, limit = 6): OfferedCourse[] => {
+  // one per family ("Administração", "Administração Pública" count once), so a long catalogue is not read from "A" only
+  const seen = new Set<string>();
+  const unique = list.filter(c => { const k = words(c.name)[0] || c.name; if (seen.has(k)) return false; seen.add(k); return true; });
+  const w = new Set(words(wanted));
+  const shared = unique.filter(c => words(c.name).some(x => w.has(x)));
+  const rest = unique.filter(c => !shared.includes(c));
+  const room = Math.max(0, limit - shared.length);
+  const step = rest.length > room && room ? rest.length / room : 1;
+  const spread = room ? Array.from({ length: Math.min(room, rest.length) }, (_, i) => rest[Math.floor(i * step)]) : [];
+  return [...shared, ...spread].slice(0, limit);
+};
+
+// "A, B e C"
+export const joinNames = (names: string[]): string => (names.length <= 1 ? names.join("") : `${names.slice(0, -1).join(", ")} e ${names[names.length - 1]}`);
+
 const plain = (s: string): string =>
   String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase().replace(/[^A-Z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
 
@@ -98,6 +129,9 @@ const distanceOf = (a: string, b: string): number => {
   return dp[a.length][b.length];
 };
 
+// "medicina" is not inside "biomedicina": a name has to start a word of the course
+const startsAWord = (n: string, want: string): boolean => (` ${n}`).includes(` ${want}`);
+
 // "administracao", "enfermagen", "pedagogia ead": the database search is accent- and typo-sensitive, this one is not
 const fuzzyCourse = async (name: string): Promise<Course | null> => {
   const want = plain(name);
@@ -108,7 +142,7 @@ const fuzzyCourse = async (name: string): Promise<Course | null> => {
       const n = plain(c.name);
       const d = distanceOf(want, n);
       const tolerance = Math.max(1, Math.round(n.length / 6));
-      const score = n === want ? 100 : n.startsWith(want) || want.startsWith(n) ? 70 : n.includes(want) || want.includes(n) ? 55 : d <= tolerance ? 40 - d : 0;
+      const score = n === want ? 100 : n.startsWith(want) || want.startsWith(n) ? 70 : startsAWord(n, want) || want.includes(n) ? 55 : d <= tolerance ? 40 - d : 0;
       return { c, score };
     })
     .filter(x => x.score > 0)
@@ -125,9 +159,9 @@ export const findCourse = async (input: { courseId?: any; courseName?: any; offe
   const name = String(input.courseName || "").trim();
   if (!name) return null;
   const like = isPg() ? { [Op.iLike]: `%${name.replace(/[%_]/g, "")}%` } : { [Op.like]: `%${name.replace(/[%_]/g, "")}%` };
-  const found = await Course.findAll({ where: { active: true, name: like } as any, limit: 12 });
-  if (!found.length) return fuzzyCourse(name);
   const want = plain(name);
+  const found = (await Course.findAll({ where: { active: true, name: like } as any, limit: 12 })).filter(c => startsAWord(plain(c.name), want));
+  if (!found.length) return fuzzyCourse(name);
   const wantMod = modalityOf(modality);
   const score = (c: Course): number => {
     const n = plain(c.name);
@@ -163,7 +197,7 @@ const internshipsOf = (g: CommercialGrade | null): Array<{ semester: number; dis
 
 const semestersText = (n: number | null | undefined): string | null => (n ? `${n} semestres (${n % 2 === 0 ? `${n / 2} anos` : `${Math.round((n / 2) * 10) / 10} anos`})` : null);
 
-const notFound = { encontrado: false, aviso: "Não achei esse curso no catálogo. Peça o nome de outro jeito ou diga que vai confirmar." };
+const notFound = { encontrado: false, aviso: "Esse curso NÃO está no catálogo: a instituição não o oferece. Diga isso com clareza, sem falar de valor, duração ou grade dele, e ofereça os cursos que oferecemos (use as opções ou a lista do prompt)." };
 
 // a name given to the tool wins over the course saved in the slots ("e Enfermagem, quanto dura?" is about Enfermagem)
 const courseOf = async (ctx: AcademicCtx, input: any): Promise<Course | null> => {
@@ -184,7 +218,7 @@ export const runAcademicTool = async (name: string, input: any, ctx: AcademicCtx
   switch (name) {
     case "buscar_curso": {
       const course = await courseOf(ctx, input);
-      if (!course) return notFound;
+      if (!course) return { ...notFound, opcoes: closestOffered(await offeredCourses(), String(input.courseName ?? input.nome ?? ""), 6).map(c => c.name) };
       const intake = await intakeOf(ctx, input.intakePeriod);
       const view = await cached(ctx, `curso:${course.id}:${intake}`, async () => {
         const { grade } = await pickGrade(course, intake);
@@ -468,4 +502,15 @@ const readAnalysis = async (ctx: AcademicCtx): Promise<any> => {
     adaptacoes: patch.adaptations || null, previsaoConclusao: patch.estimatedCompletion || null,
     aviso: "Explique de forma simples. A previsão é só uma estimativa; nunca garanta data de conclusão."
   };
+};
+
+// The grade of a course found and sent to the person (the PDF with the internships in its caption), the same way the model would do with its tools,
+// but decided by the system. `sent` is true when the file (or its summary in writing) went; `simulated` in the tester; `missing` when the course
+// has no grade registered, so the team can be told.
+export const sendGradeFor = async (course: Course, ctx: AcademicCtx): Promise<{ sent: boolean; simulated: boolean; missing: boolean; text: string }> => {
+  const found = await runAcademicTool("buscar_grade", { courseId: course.id }, ctx);
+  if (!found || !found.gradeId) return { sent: false, simulated: false, missing: true, text: "" };
+  const out = await runAcademicTool("enviar_material", { gradeId: found.gradeId }, ctx);
+  if (out && out.simulado) return { sent: false, simulated: true, missing: false, text: String(out.texto_estagio_tutoria || "").trim() };
+  return { sent: !!(out && out.enviado), simulated: false, missing: false, text: String((out && out.texto_estagio_tutoria) || "").trim() };
 };
