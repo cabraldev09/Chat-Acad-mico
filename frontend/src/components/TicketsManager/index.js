@@ -294,7 +294,7 @@ const TicketsManager = () => {
       <div className={classes.top}>
         <div className={classes.title}>Conversas</div>
         <Tooltip title="Nova conversa">
-          <IconButton className={classes.iconBtn} onClick={() => setNewTicketModalOpen(true)}>
+          <IconButton className={classes.iconBtn} aria-label="Nova conversa" onClick={() => setNewTicketModalOpen(true)}>
             <AddIcon />
           </IconButton>
         </Tooltip>

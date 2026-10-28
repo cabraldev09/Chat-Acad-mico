@@ -23,12 +23,18 @@ const COLUMNS = [
 const useStyles = makeStyles((theme) => ({
   intro: { color: theme.palette.text.secondary, fontSize: 14, margin: theme.spacing(0, 0, 2) },
   board: { display: "grid", gap: theme.spacing(2), gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", alignItems: "start", paddingBottom: theme.spacing(3) },
-  col: { borderRadius: 16, border: `1px solid ${theme.palette.divider}`, backgroundColor: theme.palette.background.paper, padding: theme.spacing(1.5), minWidth: 0 },
+  col: { borderRadius: 16, border: `1px solid ${theme.palette.divider}`, backgroundColor: theme.palette.type === "dark" ? "rgba(255,255,255,.04)" : "rgba(15,23,42,.035)", padding: theme.spacing(1.5), minWidth: 0 },
   colHead: { display: "flex", alignItems: "center", gap: theme.spacing(1), padding: theme.spacing(0.5, 0.5, 0.25) },
   dot: { width: 10, height: 10, borderRadius: "50%", flex: "none" },
   colTitle: { fontWeight: 700, fontSize: 15, flex: 1 },
   colHint: { fontSize: 12.5, color: theme.palette.text.secondary, padding: theme.spacing(0, 0.5, 1.25) },
-  card: { borderRadius: 12, border: `1px solid ${theme.palette.divider}`, padding: theme.spacing(1.25, 1.5), marginTop: theme.spacing(1), display: "flex", flexDirection: "column", gap: 4 },
+  card: { borderRadius: 12, border: `1px solid ${theme.palette.divider}`, backgroundColor: theme.palette.background.paper, padding: theme.spacing(1.25, 1.5), marginTop: theme.spacing(1), display: "flex", flexDirection: "column", gap: 4, transition: "box-shadow .15s, border-color .15s", "&:hover": { boxShadow: "0 4px 14px rgba(15,23,42,.08)", borderColor: theme.palette.type === "dark" ? "rgba(255,255,255,.25)" : "rgba(15,23,42,.2)" } },
+  cardLate: { borderLeft: "3px solid #dc2626" },
+  avatar: { width: 28, height: 28, borderRadius: "50%", flex: "none", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12.5, fontWeight: 700, color: theme.palette.text.primary, background: theme.palette.type === "dark" ? "rgba(255,255,255,.12)" : "rgba(15,23,42,.08)" },
+  segs: { display: "flex", alignItems: "center", gap: 4 },
+  seg: { flex: 1, height: 4, borderRadius: 2, background: theme.palette.type === "dark" ? "rgba(255,255,255,.14)" : "rgba(15,23,42,.1)" },
+  segOn: { background: "#16a34a" },
+  lateChip: { alignSelf: "flex-start", fontSize: 11.5, fontWeight: 700, padding: "1px 8px", borderRadius: 999, background: "rgba(220,38,38,.12)", color: theme.palette.type === "dark" ? "#fca5a5" : "#b91c1c" },
   row: { display: "flex", alignItems: "center", gap: theme.spacing(0.5) },
   name: { fontWeight: 600, fontSize: 14.5, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
   meta: { fontSize: 12.5, color: theme.palette.text.secondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
@@ -259,8 +265,9 @@ const Onboarding = () => {
               {items.map((l) => {
                 const late = col.key === "pending" && l.enrolledAt && Date.now() - new Date(l.enrolledAt).getTime() > 24 * 36e5;
                 return (
-                  <div key={l.id} className={classes.card}>
+                  <div key={l.id} className={`${classes.card} ${late ? classes.cardLate : ""}`}>
                     <div className={classes.row}>
+                      <span className={classes.avatar} aria-hidden="true">{String(l.name || "?").trim().charAt(0).toUpperCase()}</span>
                       <span className={classes.name} title={l.name}>{l.name}</span>
                       {l.ticketId && canOpenChat && (
                         <IconAction title="Abrir a conversa" onClick={() => history.push(`/tickets/${l.ticketId}`)}>
@@ -298,13 +305,22 @@ const Onboarding = () => {
                         </IconAction>
                       )}
                     </div>
-                    {col.key !== "done" && <div className={classes.meta}>Checklist: {STEPS.filter((s) => l.checklist && l.checklist[s.key]).length}/{STEPS.length}</div>}
+                    {col.key !== "done" && (() => {
+                      const done = STEPS.filter((s) => l.checklist && l.checklist[s.key]).length;
+                      return (
+                        <div className={classes.segs} title={`Checklist: ${done} de ${STEPS.length}`}>
+                          {STEPS.map((s, i) => <span key={s.key} className={`${classes.seg} ${i < done ? classes.segOn : ""}`} />)}
+                          <span className={classes.meta} style={{ marginLeft: 4 }}>{done}/{STEPS.length}</span>
+                        </div>
+                      );
+                    })()}
                     {l.unread > 0 && <Chip size="small" color="primary" label={`Aluno respondeu (${l.unread})`} style={{ alignSelf: "flex-start" }} />}
                     <div className={classes.meta}>{l.course ? l.course.name : "Curso não informado"}</div>
                     <div className={classes.meta}>Tutor: {l.tutorName || "aguardando na fila"}{l.owner ? ` · Consultor: ${l.owner.name}` : ""}</div>
-                    <div className={`${classes.meta} ${late ? classes.late : ""}`}>
-                      {col.key === "done" ? `Concluída ${since(l.onboardingDoneAt)}` : `Matriculado ${since(l.enrolledAt)}${late ? " · prazo vencido" : ""}`}
+                    <div className={classes.meta}>
+                      {col.key === "done" ? `Concluída ${since(l.onboardingDoneAt)}` : `Matriculado ${since(l.enrolledAt)}`}
                     </div>
+                    {late && <span className={classes.lateChip}>Prazo de 24 h vencido</span>}
                   </div>
                 );
               })}

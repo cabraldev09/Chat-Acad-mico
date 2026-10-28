@@ -64,7 +64,7 @@ const UsageTab = ({ agentId, model }) => {
       )}
       <Typography variant="body2" color="textSecondary" style={{ marginTop: 16 }}>
         {u.costUsd !== null ? `Custo estimado no período: US$ ${u.costUsd.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}. ` : "Informe o preço do modelo abaixo para ver o custo em dólares. "}
-        O cache do prompt fixo reduz o custo das chamadas seguintes: {nf(u.total.cacheRead)} tokens foram lidos do cache.
+        O cache do prompt fixo reduz o custo das chamadas seguintes: {nf(u.total.cacheRead)} tokens foram lidos do cache ({u.total.cacheShare || 0}% do que foi enviado ao modelo); o custo já considera esse desconto.
       </Typography>
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 12 }}>
         <TextField size="small" variant="outlined" label="Preço de entrada (US$ por milhão de tokens)" value={price.in} onChange={(e) => setPrice({ ...price, in: e.target.value })} style={{ minWidth: 260 }} />

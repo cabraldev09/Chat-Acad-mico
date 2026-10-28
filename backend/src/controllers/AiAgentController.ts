@@ -403,7 +403,7 @@ export const usage = async (req: Request, res: Response): Promise<Response> => {
   const days = Math.min(30, Math.max(1, Number(req.query.days) || 7));
   const since = shiftDays(dayBounds().start, -(days - 1));
   const rows: any[] = await AiUsage.findAll({
-    attributes: ["model", "kind", [fn("SUM", col("inputTokens")), "input"], [fn("SUM", col("outputTokens")), "output"], [fn("SUM", col("cacheReadTokens")), "cacheRead"], [fn("COUNT", col("id")), "calls"]],
+    attributes: ["model", "kind", [fn("SUM", col("inputTokens")), "input"], [fn("SUM", col("outputTokens")), "output"], [fn("SUM", col("cacheReadTokens")), "cacheRead"], [fn("SUM", col("cacheWriteTokens")), "cacheWrite"], [fn("COUNT", col("id")), "calls"]],
     where: { agentId: agent.id, createdAt: { [Op.gte]: since } },
     group: ["model", "kind"],
     raw: true
@@ -426,15 +426,20 @@ export const usage = async (req: Request, res: Response): Promise<Response> => {
   const live = rows.filter(r => r.kind !== "test");
   const input = live.reduce((a, r) => a + Number(r.input || 0), 0);
   const output = live.reduce((a, r) => a + Number(r.output || 0), 0);
+  const cacheRead = live.reduce((a, r) => a + Number(r.cacheRead || 0), 0);
+  const cacheWrite = live.reduce((a, r) => a + Number(r.cacheWrite || 0), 0);
+  // what the provider charges for the cached part of the prompt, as a share of the normal input price (Claude: reading 10%, writing 125%; GPT: reading 50%)
+  const [readX, writeX] = agent.provider === "openai" ? [0.5, 1] : [0.1, 1.25];
+  const promptTotal = input + cacheRead + cacheWrite;
   return res.json({
     days,
     today: await tokensToday(agent.id),
     cap: agent.dailyTokenCap,
-    total: { input, output, cacheRead: live.reduce((a, r) => a + Number(r.cacheRead || 0), 0), calls: live.reduce((a, r) => a + Number(r.calls || 0), 0) },
+    total: { input, output, cacheRead, cacheWrite, cacheShare: promptTotal > 0 ? Math.round((cacheRead / promptTotal) * 100) : 0, calls: live.reduce((a, r) => a + Number(r.calls || 0), 0) },
     conversations: answered,
     perDay: perDay.map(d => ({ day: d.day, input: Number(d.input), output: Number(d.output), calls: Number(d.calls) })),
     // only when the administrator typed the price of this model in Settings
-    costUsd: price ? Math.round(((input * price.in + output * price.out) / 1e6) * 100) / 100 : null
+    costUsd: price ? Math.round(((input * price.in + cacheRead * price.in * readX + cacheWrite * price.in * writeX + output * price.out) / 1e6) * 100) / 100 : null
   });
 };
 

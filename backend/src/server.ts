@@ -15,6 +15,7 @@ import { startStaleRuns } from "./workers/StaleRuns";
 import { startAiReactivation } from "./workers/AiReactivation";
 import { startWhatsappWatchdog } from "./workers/WhatsappWatchdog";
 import { startChannelTokenRefresh } from "./workers/ChannelTokenRefresh";
+import { startDataRetention } from "./workers/DataRetention";
 import { startFollowUpAlert } from "./workers/FollowUpAlert";
 import { startProfilePicSync } from "./workers/ProfilePicSync";
 import { startAckReconciler } from "./workers/AckReconciler";
@@ -50,6 +51,7 @@ whenLeader(() => {
   startAiReactivation();
   startWhatsappWatchdog();
   startChannelTokenRefresh();
+  startDataRetention();
   startFollowUpAlert();
   startProfilePicSync();
   startAckReconciler();

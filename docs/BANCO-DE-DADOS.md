@@ -24,6 +24,14 @@ Por que a API não pode ficar no Supabase: as Edge Functions do Supabase são fu
 6. **Domínio**: aponte `app.seudominio.com.br` para a Vercel e `api.seudominio.com.br` para o host da API (HTTPS nos dois). Ajuste `FRONTEND_URL=https://app.seudominio.com.br` e `BACKEND_URL=https://api.seudominio.com.br` na API. Como front e API ficam em domínios diferentes, o cookie de renovação do login usa `SameSite=None; Secure` automaticamente quando `BACKEND_URL` começa com `https://` (ou `COOKIE_CROSS_SITE=true`).
 7. **Webhooks** (Meta, Efí): usam `https://api.seudominio.com.br/webhooks/...`.
 
+## Backup, teste de restauração e limpeza
+
+- **Backup**: `deploy/vps/backup.sh` (cron noturno) guarda o banco (`pg_dump`) e os arquivos do volume em `/opt/backups`, opcionalmente criptografados e copiados para fora do servidor.
+- **Teste de restauração**: `deploy/vps/restore-check.sh` restaura o dump mais novo em um Postgres descartável, confere as tabelas e as contagens (usuários, contatos, mensagens, leads) e apaga tudo no fim. Não toca no banco real. Rode depois de mexer no backup e deixe no cron uma vez por mês (a linha está no cabeçalho do script): backup que nunca foi restaurado não é backup.
+- **Restaurar de verdade** (desastre): pare a API (`docker compose stop api`), crie um banco vazio, `pg_restore --no-owner --no-acl -d <banco> <arquivo.dump>` (descriptografe antes com `openssl enc -d -aes-256-cbc -pbkdf2` se o arquivo termina em `.enc`), aponte `DATABASE_URL` para ele e suba a API: as migrações pendentes rodam sozinhas.
+- **Limpeza noturna** (`workers/DataRetention.ts`, entre 3 h e 5 h, em lotes): só tabelas que apenas crescem: envios já entregues da fila (120 dias), registros de turnos do agente (180), consumo de IA (400), erros do navegador (60), lembretes enviados (90) e redefinições de senha usadas ou vencidas (30). Conversas, mensagens, leads, tarefas, matrículas e o histórico de atividades nunca são apagados.
+- **Índices** das consultas por período e por dono (`20261207000007-hot-path-indexes`): criados sem travar a tabela (`CONCURRENTLY`).
+
 ## Segurança do banco
 
 - O Supabase publica as tabelas do schema `public` por uma API REST (chave `anon`). Aqui **todas as tabelas ficam com Row Level Security ligado e sem política**, e as funções `anon`/`authenticated` perdem os privilégios: só o backend (conexão direta com a senha do banco) lê e grava. O backend reaplica isso a cada inicialização, inclusive para tabelas futuras.

@@ -11,6 +11,8 @@ interface Counts {
   cache_creation_input_tokens?: number;
   prompt_tokens?: number;
   completion_tokens?: number;
+  // GPT counts the cached part inside prompt_tokens
+  prompt_tokens_details?: { cached_tokens?: number };
 }
 
 export const logUsage = async (a: {
@@ -25,6 +27,7 @@ export const logUsage = async (a: {
   leadId?: number | null;
 }): Promise<void> => {
   const u = a.usage || {};
+  const gptCached = u.prompt_tokens_details?.cached_tokens ?? 0;
   await AiUsage.create({
     agentId: a.agentId || null,
     ticketId: a.ticketId || null,
@@ -34,9 +37,10 @@ export const logUsage = async (a: {
     leadId: a.leadId || null,
     model: a.model,
     kind: a.kind,
-    inputTokens: u.input_tokens ?? u.prompt_tokens ?? 0,
+    // Claude reports what was NOT read from the cache as input; GPT includes it, so it is taken out to keep both on the same footing
+    inputTokens: u.input_tokens ?? Math.max(0, (u.prompt_tokens ?? 0) - gptCached),
     outputTokens: u.output_tokens ?? u.completion_tokens ?? 0,
-    cacheReadTokens: u.cache_read_input_tokens ?? 0,
+    cacheReadTokens: u.cache_read_input_tokens ?? gptCached,
     cacheWriteTokens: u.cache_creation_input_tokens ?? 0
   } as any).catch(() => undefined);
 };

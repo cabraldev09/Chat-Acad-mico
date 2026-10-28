@@ -299,7 +299,7 @@ const ChatHeader = ({ contact: contactProp, ticket, onOpenInfo, onToggleSearch, 
         {ticket.status === "closed" && !plain &&
           button("Reabrir atendimento", () => setStatus("open", user?.id), true, <RotateCcw size={16} />, "Traz a conversa de volta para você")}
         <Tooltip title="Pesquisar na conversa">
-          <IconButton className={classes.icon} onClick={onToggleSearch}>
+          <IconButton className={classes.icon} aria-label="Buscar na conversa" onClick={onToggleSearch}>
             <Search />
           </IconButton>
         </Tooltip>
@@ -308,12 +308,12 @@ const ChatHeader = ({ contact: contactProp, ticket, onOpenInfo, onToggleSearch, 
             {!compact && (
               <>
             <Tooltip title="Etiquetas">
-              <IconButton className={classes.icon} onClick={() => setTagsOpen(true)}>
+              <IconButton className={classes.icon} aria-label="Etiquetas" onClick={() => setTagsOpen(true)}>
                 <LocalOfferOutlined />
               </IconButton>
             </Tooltip>
             <Tooltip title="Agendar mensagem">
-              <IconButton className={classes.icon} onClick={() => setScheduleOpen(true)}>
+              <IconButton className={classes.icon} aria-label="Agendar mensagem" onClick={() => setScheduleOpen(true)}>
                 <ScheduleIcon />
               </IconButton>
             </Tooltip>

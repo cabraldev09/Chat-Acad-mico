@@ -247,13 +247,21 @@ async function sweepRole(browser, name, def) {
   const { token: portalToken, courseId } = await seed(auth);
   const browser = await puppeteer.launch({ executablePath: chromePath(), headless: true, args: ["--no-sandbox", "--disable-setuid-sandbox"] });
   const all = [];
-  for (const [name, def] of Object.entries(ROLES)) {
-    if (wanted.length && !wanted.includes(name)) continue;
-    process.stdout.write(`> ${name}... `);
-    const issues = await sweepRole(browser, name, def);
-    console.log(`${issues.length} finding(s)`);
-    all.push(...issues);
-  }
+  // the roles are independent (each one has its own browser context and session): they are swept at the same time, which is most of the
+  // waiting of this check (every screen waits a moment to settle); SWEEP_PARALLEL=1 goes back to one after the other
+  const roles = Object.entries(ROLES).filter(([name]) => !wanted.length || wanted.includes(name));
+  const lanes = process.env.SWEEP_PARALLEL === "1" ? 1 : Math.max(1, Number(process.env.SWEEP_PARALLEL) || roles.length);
+  const results = new Map();
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(lanes, roles.length) }, async () => {
+    while (next < roles.length) {
+      const [name, def] = roles[next++];
+      const issues = await sweepRole(browser, name, def);
+      console.log(`> ${name}... ${issues.length} finding(s)`);
+      results.set(name, issues);
+    }
+  }));
+  roles.forEach(([name]) => all.push(...(results.get(name) || [])));
   if (!wanted.length || wanted.includes("portal")) {
     process.stdout.write("> portal (público)... ");
     if (!portalToken) { console.log("no affiliate to open"); all.push({ role: "portal", route: "/afiliado", kind: "script", text: "could not create the affiliate of the sweep" }); }

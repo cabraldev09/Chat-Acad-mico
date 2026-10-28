@@ -195,7 +195,7 @@ const LoggedInLayout = ({ children }) => {
         <Toolbar variant="dense" className={classes.toolbar}>
           <IconButton
             edge="start"
-            aria-label="open drawer"
+            aria-label="Abrir ou fechar o menu"
             onClick={() => setDrawerOpen(!drawerOpen)}
             className={classes.menuButton}
           >

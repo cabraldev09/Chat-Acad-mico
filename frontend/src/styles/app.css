@@ -3,6 +3,9 @@
 :where(.ico-small) { font-size: 1.125rem; }
 :where(.ico-large) { font-size: 2rem; }
 
+/* ---------- touch: no double-tap delay on controls ---------- */
+a, button, [role="button"], input, select, textarea, label { touch-action: manipulation; }
+
 /* ---------- no sideways scrolling anywhere ---------- */
 html, body, #root { max-width: 100vw; overflow-x: hidden; overscroll-behavior-x: none; }
 main { overflow-x: hidden !important; overscroll-behavior-x: none; }

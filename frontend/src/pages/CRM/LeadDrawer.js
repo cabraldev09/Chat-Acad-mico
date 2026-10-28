@@ -33,7 +33,7 @@ import AiBrief from "../../components/AiBrief";
 const useStyles = makeStyles((theme) => ({
   paper: { width: 500, maxWidth: "100vw", display: "flex", flexDirection: "column", borderLeft: theme.border.divider, animation: "slide-in-left .0s" },
   // beside the conversation: it does not block the chat, so the consultant can copy from it and paste here
-  paperSide: { width: "min(500px, 38vw)", minWidth: 380, top: 56, height: "calc(100% - 56px)", boxShadow: "-8px 0 24px -12px rgba(0,0,0,.25)" },
+  paperSide: { width: "min(500px, 38vw)", minWidth: "min(380px, 100vw)", top: 56, height: "calc(100% - 56px)", boxShadow: "-8px 0 24px -12px rgba(0,0,0,.25)" },
   head: { padding: theme.spacing(2.5, 2.5, 1.5), borderBottom: theme.border.divider },
   titleRow: { display: "flex", alignItems: "center", gap: theme.spacing(1.5) },
   avatar: { width: 44, height: 44, borderRadius: 12, background: "#0B4279", color: "#fff", display: "grid", placeItems: "center", fontWeight: 600, flex: "none" },
@@ -43,7 +43,7 @@ const useStyles = makeStyles((theme) => ({
   step: {
     border: theme.border.divider, borderRadius: 999, padding: "3px 11px", fontSize: 12.5, fontWeight: 500, cursor: "pointer",
     background: "transparent", color: theme.palette.text.secondary, fontFamily: "inherit",
-    transition: "all .2s var(--ease-out)", "&:hover": { borderColor: theme.palette.accent.main, color: theme.palette.text.primary },
+    transition: "border-color .2s var(--ease-out), color .2s var(--ease-out), background-color .2s var(--ease-out)", "&:hover": { borderColor: theme.palette.accent.main, color: theme.palette.text.primary },
   },
   stepDone: { background: theme.palette.action.selected, color: theme.palette.text.primary },
   stepNow: { background: "#0B4279", color: "#fff", borderColor: "#0B4279", boxShadow: "0 4px 12px -4px rgba(11,66,121,.6)" },

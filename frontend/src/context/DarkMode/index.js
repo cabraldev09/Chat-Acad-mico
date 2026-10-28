@@ -23,6 +23,10 @@ export const ThemeProvider = ({ children }) => {
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", darkMode ? "dark" : "light");
+    // native controls (scrollbars, selects, date pickers) and the browser bar follow the theme
+    document.documentElement.style.colorScheme = darkMode ? "dark" : "light";
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute("content", darkMode ? "#070d17" : "#0B4279");
   }, [darkMode]);
 
   const toggleTheme = () => {
