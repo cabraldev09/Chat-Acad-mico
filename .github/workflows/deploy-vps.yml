@@ -40,7 +40,7 @@ jobs:
           grep -v '^#' deploy/vps/known_hosts > ~/.ssh/known_hosts
           # a chave guardada no repositório precisa ser a mesma que o servidor mostra agora
           want=$(awk '{print $3}' ~/.ssh/known_hosts)
-          seen=$(ssh-keyscan -T 15 -t ed25519 "$VPS_HOST" 2>/dev/null | awk '{print $3}')
+          seen=$(ssh-keyscan -T 15 -t ed25519 "$VPS_HOST" 2>/dev/null | awk '$2=="ssh-ed25519"{print $3}')
           echo "chave guardada: ${want:0:30}…  chave vista agora: ${seen:0:30}…"
           [ -n "$seen" ] && [ "$seen" = "$want" ] || { echo "::error::A chave do servidor não confere com deploy/vps/known_hosts. Chave vista agora: $seen"; exit 1; }
       - name: Atualiza a VPS
