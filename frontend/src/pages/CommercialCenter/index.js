@@ -576,20 +576,20 @@ const CommercialCenter = () => {
 
   return (
     <div className={`${c.page} dash-scope`}>
-      <div style={{ marginBottom: 18 }}>
+      <div style={{ background: "linear-gradient(135deg, #0a3a6d 0%, #0b4279 55%, #0d5aa0 100%)", color: "#fff", borderRadius: 24, padding: "22px 26px 0", marginBottom: 18, boxShadow: "0 30px 60px -34px rgba(8,40,82,.9), inset 0 1px 0 rgba(255,255,255,.14)", position: "relative", overflow: "hidden" }}>
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
           <div>
-            <h1 className={c.h1}>Gestão Comercial</h1>
-            <div className={c.lead}>{TAB_HELP[tab]}</div>
+            <h1 className={c.h1} style={{ color: "#fff" }}>Gestão Comercial</h1>
+            <div style={{ fontSize: 13.5, opacity: 0.8, marginTop: 4 }}>{TAB_HELP[tab]}</div>
           </div>
           <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
             <PeriodPicker value={period} onChange={setPeriod} />
-            <button type="button" onClick={exportCsv}  className={c.btn} ><Download size={14} style={{ verticalAlign: -2 }} /> Exportar</button>
+            <button type="button" onClick={exportCsv} style={{ border: "1px solid rgba(255,255,255,.4)", background: "transparent", color: "#fff", borderRadius: 10, padding: "7px 14px", fontFamily: "inherit", fontSize: 13, fontWeight: 600, cursor: "pointer" }}><Download size={14} style={{ verticalAlign: -2 }} /> Exportar</button>
           </div>
         </div>
-        <div role="tablist" style={{ display: "flex", gap: 4, marginTop: 14, overflowX: "auto", borderBottom: "1px solid var(--dash-line, #c9d5e6)" }}>
+        <div role="tablist" style={{ display: "flex", gap: 4, marginTop: 14, overflowX: "auto" }}>
           {[["geral", "Visão geral"], ["consultores", "Consultores"], ["polos", "Polos"], ["config", "Configuração"]].map(([k, label]) => (
-            <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setTab(k)} style={{ border: 0, borderBottom: `2px solid ${tab === k ? "#0693E3" : "transparent"}`, marginBottom: -1, background: "transparent", color: "inherit", opacity: tab === k ? 1 : 0.65, fontFamily: "inherit", fontSize: 14, fontWeight: 600, padding: "8px 14px", cursor: "pointer", whiteSpace: "nowrap" }}>{label}</button>
+            <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setTab(k)} style={{ border: 0, background: "transparent", color: "#fff", opacity: tab === k ? 1 : 0.7, fontFamily: "inherit", fontSize: 14, fontWeight: 600, padding: "10px 16px", cursor: "pointer", borderBottom: `3px solid ${tab === k ? BRAND.gorse : "transparent"}`, whiteSpace: "nowrap" }}>{label}</button>
           ))}
         </div>
       </div>
