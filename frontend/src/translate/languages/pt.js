@@ -590,6 +590,7 @@ const messages = {
         ERR_BONUS_ALREADY_PAID: "Esta bonificação já foi paga e não pode mais ser alterada.",
         ERR_INVALID_AMOUNT: "Valor inválido. Use um número maior ou igual a zero.",
         ERR_INVALID_PHONE: "WhatsApp inválido. Informe com DDD.",
+        ERR_NO_REVISION: "Essa versão do agente não existe mais.",
         ERR_AI_CASE_LIMIT: "Você já tem 40 casos de teste neste agente. Apague algum para salvar outro.",
         ERR_AI_CASE_EMPTY: "Diga o que a resposta deve conter, o que não pode conter ou o que o agente deve fazer.",
         ERR_META_APP_ID: "O ID do app do Instagram tem só números (copie em developers.facebook.com > seu app > Instagram > Configuração da API com login do Instagram).",

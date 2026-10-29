@@ -28,6 +28,7 @@ import { FlowNode } from "./Graph";
 import { cleanStage } from "./StageSpec";
 import { stepsOf, takeSteps } from "./StepLock";
 import { findAgentForTicket, loadHistory, respond } from "../AiServices/RunAiAgent";
+import { signed, styleOf } from "../AiServices/Style";
 import { HandoffReason, handoffToHuman } from "../AiServices/Handoff";
 import { captureUnknown, notifyOwner } from "../AiServices/Learning";
 import { matchFaq } from "../AiServices/Kb";
@@ -86,6 +87,12 @@ export const ticketEffects = (ticket: Ticket, flowName: string, flowCtx: FlowCon
     const id = stageAgentId || flowCtx.agentId;
     const own = id ? await AiAgent.findByPk(id) : null;
     return own && own.active !== false ? own : findAgentForTicket(ticket);
+  };
+  // the switches of the agent ("Como o agente fala"): the signature opens the answer and "one message" turns the bubbles off
+  const withStyle = async (t: StageTurn, node: FlowNode): Promise<StageTurn> => {
+    const agent = await agentFor(cleanStage(node.data).agentId);
+    if (!agent) return t;
+    return { ...t, text: signed(t.text, agent), single: !styleOf(agent).splitMessages };
   };
   const leadOf = async (): Promise<Lead | null> => Lead.findOne({ where: { contactId: ticket.contactId } });
   const collectedOf = (vars: Record<string, any>) => LEAD_FIELDS.filter(k => vars[k]).reduce((o: Record<string, string>, k) => ({ ...o, [k]: String(vars[k]) }), {});
@@ -409,7 +416,7 @@ export const ticketEffects = (ticket: Ticket, flowName: string, flowCtx: FlowCon
       const attempt = async (): Promise<StageTurn> => {
         const t = await turnOnce(args);
         if ((t.text || t.exit) && (await humanTookOver())) return { text: "" };
-        return t;
+        return t.text ? await withStyle(t, args.node) : t;
       };
       try {
         return await attempt();

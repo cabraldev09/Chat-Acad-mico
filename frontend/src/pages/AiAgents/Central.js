@@ -3,7 +3,7 @@ import { useHistory, useLocation, useParams } from "react-router-dom";
 import { Button, Menu, MenuItem, Switch, makeStyles } from "@material-ui/core";
 import {
   AlertTriangle, ArrowLeft, BarChart3, CheckCircle2, ChevronDown, ChevronRight, FileText, FileUp, Filter, Globe, HelpCircle, Key, MapPin, MessageSquare,
-  Plus, Scale, ListChecks, Bot, UserCheck, Workflow,
+  Plus, Scale, ListChecks, Bot, UserCheck, Workflow, History,
 } from "lucide-react";
 
 import MainContainer from "../../components/MainContainer";
@@ -16,6 +16,7 @@ import FunnelDialog from "./FunnelDialog";
 import HandoffDialog from "./HandoffDialog";
 import KbTab from "./KbTab";
 import KeysDialog from "./KeysDialog";
+import HistoryDialog from "./HistoryDialog";
 import LearningTab from "./LearningTab";
 import RegulationsDialog from "./RegulationsDialog";
 import TestTab from "./TestTab";
@@ -126,6 +127,7 @@ const Central = () => {
       { key: "funil", icon: Filter, name: "Etapas do CRM", text: "Qual coluna do CRM cada etapa do agente usa.", run: () => setDialog({ name: "funil" }) },
       { key: "mec", icon: Scale, name: "Regras do MEC", text: "Como cada curso é oferecido, pela Portaria 378/2025, com ajuste por área ou curso.", run: () => setDialog({ name: "mec" }) },
     ] : []),
+    { key: "historico", icon: History, name: "Histórico de alterações", text: "O que mudou no agente, quem mudou e quando. Dá para voltar a uma versão anterior.", run: () => setDialog({ name: "history" }) },
     { key: "chave", icon: Key, name: "Chave de IA", text: "A chave usada pelo agente para responder (Claude ou GPT).", run: () => setDialog({ name: "chave" }) },
   ];
 
@@ -140,6 +142,7 @@ const Central = () => {
       <FunnelDialog open={dialog.name === "funil"} onClose={closeDialog} />
       <RegulationsDialog open={dialog.name === "mec"} onClose={closeDialog} />
       <KeysDialog open={dialog.name === "chave"} onClose={closeDialog} onSaved={load} />
+      <HistoryDialog open={dialog.name === "history"} agentId={agent && agent.id} onClose={closeDialog} onRestored={load} />
 
       <div className={classes.page}>
         <button type="button" className={classes.back} onClick={() => history.push("/ai-agents")}><ArrowLeft size={16} />Agentes de IA</button>
@@ -281,7 +284,7 @@ const Central = () => {
               <ChevronRight size={18} style={{ opacity: 0.5, flex: "none" }} />
             </button>
           );
-          const advanced = settings.filter((x) => ["descobrir", "acoes", "roteiro", "chave"].includes(x.key));
+          const advanced = settings.filter((x) => ["descobrir", "acoes", "roteiro", "historico", "chave"].includes(x.key));
           return (
             <div style={{ display: "grid", gap: 16 }}>
               <Section title="Como o agente fala" hint="É a primeira coisa que o lead vê.">

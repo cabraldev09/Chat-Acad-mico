@@ -6,6 +6,7 @@ import TicketEvent from "../../models/TicketEvent";
 import AiAgent from "../../models/AiAgent";
 import { addActivity, changeStage } from "../CrmServices/LeadCore";
 import { logger } from "../../utils/logger";
+import dispatchWebhook from "../WebhookServices/DispatchWebhook";
 import { slotsOf, missingSlots } from "./Tools";
 import { briefIfCommercial } from "../CommercialServices/Brief";
 import { HandoffWhy, Routed, WHY_TEXT, routeToCommercial } from "../CommercialServices/Router";
@@ -42,6 +43,8 @@ export const handoffToHuman = async (ticketId: number, agent: AiAgent, reason: H
   if (!ticket) return null;
   await ticket.update({ aiActive: false });
   const because: HandoffWhy = why || WHY_OF_REASON[reason];
+  // the integrations are told that the agent handed over (and why), so a CRM or a dashboard outside can follow
+  await dispatchWebhook("ai.handoff", { ticketId, contactId: ticket.contactId, agentId: agent.id, agent: agent.name, reason, why: because, question: question || null }).catch(err => logger.warn(`ai.handoff webhook not queued: ${err}`));
 
   const complete = missingSlots(agent, ticket.aiSlots).length === 0;
   const summary = summaryOf(agent, ticket);

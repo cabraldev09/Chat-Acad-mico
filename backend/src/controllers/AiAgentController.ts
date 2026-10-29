@@ -18,6 +18,10 @@ import { addDocument, indexDocument, ensureLegacy, searchChunks } from "../servi
 import AiLearning from "../models/AiLearning";
 import AiRule from "../models/AiRule";
 import AiEvalCase from "../models/AiEvalCase";
+import User from "../models/User";
+import { logger } from "../utils/logger";
+import AiAgentRevision from "../models/AiAgentRevision";
+import { changedLabels, recordRevision, restoreRevision, snapshotOf } from "../services/AiServices/Revisions";
 import { cleanExpect, cleanMessages, runCase } from "../services/AiServices/Eval";
 import { KINDS, RuleKind, askModel, coachTurn, fromConversation, invalidateTraining } from "../services/AiServices/Training";
 import { exampleText, normalizeResult, stageOfStep } from "../services/AiServices/TrainingText";
@@ -65,7 +69,9 @@ const crud = makeCrud(AiAgent, {
     "learnFromTeam"
   ],
   required: ["name", "model"],
-  beforeSave: data => {
+  beforeSave: (data, req, existing) => {
+    // how the agent stands before this save: the history keeps what the save changed (written in afterSave, before the answer goes out)
+    if (existing) (req as any).agentBefore = snapshotOf(existing);
     if (isMasked(data.apiKey)) delete data.apiKey;
     if (data.reviewNumber !== undefined) {
       const digits = String(data.reviewNumber || "").replace(/\D/g, "");
@@ -85,6 +91,10 @@ const crud = makeCrud(AiAgent, {
       if (data[k] === "" || data[k] === 0) data[k] = null;
     });
     return data;
+  },
+  afterSave: async (row, req, created) => {
+    const before = (req as any).agentBefore;
+    if (!created && before) await recordRevision(row.id, before, snapshotOf(row), Number(req.user?.id) || null).catch(err => logger.warn(`agent history not saved: ${err}`));
   }
 });
 
@@ -784,4 +794,23 @@ export const evalRun = async (req: Request, res: Response): Promise<Response> =>
     throw aiError(err, "casos de teste", agent.model);
   }
   return res.json({ passed: out.filter(c => c.lastStatus === "pass").length, failed: out.filter(c => c.lastStatus === "fail").length, cases: out });
+};
+
+// ------------------------------------------------------------------ history of changes (see what changed and put an earlier version back)
+export const historyList = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await loadAgent(req.params.id);
+  const rows = await AiAgentRevision.findAll({ where: { agentId: agent.id }, order: [["id", "DESC"]], limit: 40 });
+  const users = await User.findAll({ where: { id: rows.map(r => r.userId).filter(Boolean) as number[] }, attributes: ["id", "name"] });
+  const nameOf = new Map(users.map(u => [u.id, u.name]));
+  const current = snapshotOf(agent);
+  return res.json(rows.map(r => {
+    const snap = JSON.parse(r.snapshot);
+    return { id: r.id, at: r.createdAt, by: r.userId ? nameOf.get(r.userId) || "Usuário removido" : null, note: r.note, changed: JSON.parse(r.fields || "[]"), isCurrent: changedLabels(current, snap).length === 0 };
+  }));
+};
+
+export const historyRestore = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await loadAgent(req.params.id);
+  await restoreRevision(agent, Number(req.params.revisionId), Number(req.user.id));
+  return res.json({ ok: true });
 };

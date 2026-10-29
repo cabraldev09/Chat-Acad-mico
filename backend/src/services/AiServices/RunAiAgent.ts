@@ -20,6 +20,7 @@ import { captureUnknown, notifyOwner } from "./Learning";
 import { trainingBlock } from "./Training";
 import { textOfMessage } from "./Media";
 import { splitIntoBlocks } from "../CommercialServices/Blocks";
+import { signed, styleOf, styleRules } from "./Style";
 import { unsupportedFact } from "../CommercialServices/Guards";
 import { forChannel } from "../../helpers/ChannelText";
 import { offeredCourses } from "../CommercialServices/Academic";
@@ -104,6 +105,7 @@ const staticPrompt = (agent: AiAgent, stage?: StageData, training = ""): string 
       p.tone ? `Tom de voz: ${p.tone}` : null,
       p.rules ? `Regras do atendimento:\n${p.rules}` : null,
       p.forbidden ? `Nunca faça isto:\n${p.forbidden}` : null,
+      styleRules(agent),
       stageBlock(stage),
       training || null,
       STAGE_RULES
@@ -117,6 +119,7 @@ const staticPrompt = (agent: AiAgent, stage?: StageData, training = ""): string 
     p.tone ? `Tom de voz: ${p.tone}` : null,
     p.rules ? `Regras do atendimento:\n${p.rules}` : null,
     p.forbidden ? `Nunca faça isto:\n${p.forbidden}` : null,
+    styleRules(agent),
     training || null,
     [
       "Regras fixas:",
@@ -273,6 +276,7 @@ const commercialStatic = (agent: AiAgent, stage: StageData, training = "", catal
     agent.persona && agent.persona.tone ? `Tom de voz: ${agent.persona.tone}` : null,
     agent.persona && agent.persona.rules ? `Regras do atendimento:\n${agent.persona.rules}` : null,
     agent.persona && agent.persona.forbidden ? `Nunca faça isto:\n${agent.persona.forbidden}` : null,
+    styleRules(agent),
     stageBlock(stage),
     catalog || null,
     training || null,
@@ -596,7 +600,11 @@ export const runAiForTicket = async (ticketId: number, say: Say): Promise<void> 
       await handoff(ticket, agent, "pedido", say);
       return;
     }
-    if (result.text) for (const block of splitIntoBlocks(result.text)) await say(ticket, block);
+    if (result.text) {
+      const out = signed(result.text, agent);
+      if (styleOf(agent).splitMessages) for (const block of splitIntoBlocks(out)) await say(ticket, block);
+      else await say(ticket, out);
+    }
 
     const turns = (ticket.aiTurns || 0) + 1;
     await ticket.update({ aiTurns: turns });

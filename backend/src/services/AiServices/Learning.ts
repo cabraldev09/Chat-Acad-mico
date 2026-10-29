@@ -8,6 +8,7 @@ import { logger } from "../../utils/logger";
 import SendToContact from "../ChannelServices/SendToContact";
 import { resolveOutboundContact } from "../ChannelServices/ResolveOutboundContact";
 import { addDocument } from "./Kb";
+import dispatchWebhook from "../WebhookServices/DispatchWebhook";
 
 const reviewUrl = () => `${(process.env.FRONTEND_URL || "").replace(/\/$/, "")}/ai-agents`;
 
@@ -46,6 +47,7 @@ export const captureUnknown = async (agent: AiAgent, ticket: Ticket, question: s
     status: "aguardando_equipe"
   } as any);
   emit(agent.id);
+  await dispatchWebhook("ai.unknown_question", { ticketId: ticket.id, contactId: ticket.contactId, agentId: agent.id, agent: agent.name, question: row.question }).catch(err => logger.warn(`ai.unknown_question webhook not queued: ${err}`));
   await notifyOwner(
     agent,
     `🤖 *${agent.name}* não soube responder${contactName ? ` uma pergunta de ${contactName}` : " uma pergunta"}:\n\n“${row.question}”\n\nA equipe já foi avisada. Quando responderem, eu envio a resposta para você revisar.`

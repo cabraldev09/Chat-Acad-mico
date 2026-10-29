@@ -116,3 +116,28 @@ describe("how the agent presents itself", () => {
     expect(alreadyIntroduces("O curso dura 8 semestres.")).toBe(false);
   });
 });
+
+describe("style of the agent and its history", () => {
+  it("styleOf keeps the old behaviour when nothing is set and reads the four switches", async () => {
+    const { styleOf, styleRules, signed } = await import("../../src/services/AiServices/Style");
+    const none: any = { persona: {}, name: "Comercial" };
+    expect(styleOf(none)).toEqual({ emoji: null, limitSubjects: true, splitMessages: true, signMessages: false });
+    expect(styleRules(none)).toMatch(/apenas de assuntos da instituição/);
+    const on: any = { persona: { emoji: true, limitSubjects: false, splitMessages: false, signMessages: true, assistantName: "Bia" }, name: "Comercial" };
+    expect(styleOf(on)).toEqual({ emoji: true, limitSubjects: false, splitMessages: false, signMessages: true });
+    expect(styleRules(on)).toMatch(/Pode usar emojis/);
+    expect(styleRules(on)).not.toMatch(/apenas de assuntos/);
+    expect(signed("Olá!", on)).toBe("*Bia:*\nOlá!");
+    expect(signed("Olá!", none)).toBe("Olá!");
+    expect(styleRules({ persona: { emoji: false, limitSubjects: false } } as any)).toMatch(/Não use emojis/);
+  });
+
+  it("the history names what changed and ignores what is the same", async () => {
+    const { changedLabels, snapshotOf } = await import("../../src/services/AiServices/Revisions");
+    const a = snapshotOf({ name: "A", systemPrompt: "x", persona: { tone: "t" }, apiKey: "secret", active: true });
+    const b = snapshotOf({ name: "A", systemPrompt: "y", persona: { tone: "t" }, apiKey: "other", active: false });
+    expect(changedLabels(a, b)).toEqual(["Quem é o agente"]);
+    expect(Object.keys(a)).not.toContain("apiKey");
+    expect(changedLabels(a, a)).toEqual([]);
+  });
+});
