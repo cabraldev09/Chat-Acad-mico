@@ -212,6 +212,13 @@ export const openingText = (slots: Slots, first: string, returning: boolean, per
         ? "Você vai começar a primeira graduação ou já cursou (ou cursa) outra faculdade?"
         : "Em que posso te ajudar agora?";
   const course = hasCourse ? String(slots.courseName || "") : "";
+  // a bare "oi": nothing is known about what the person needs, so the answer is short, in three lines, and asks the one thing that tells the two paths apart
+  const customGreeting = persona && persona.commercial ? cleanCommercial(persona.commercial).greeting : "";
+  if (!returning && !hasCourse && !hasCity && !hasEntry && !customGreeting) {
+    const who = String(persona?.assistantName || "").trim() || DEFAULT_ASSISTANT;
+    const smile = (persona as any)?.emoji === false ? "" : " 😊";
+    return `Olá! Tudo bem?${smile}\n\nSou ${/^(a|o) /i.test(who) ? who : `a ${who}`}, assistente virtual da Cruzeiro do Sul Virtual.\n\nVocê deseja conhecer nossos cursos e fazer sua matrícula ou já é aluno e precisa falar com a tutoria?`;
+  }
   if (returning) {
     return `Oi${name}! Que bom falar com você de novo.${course ? ` Da última vez conversamos sobre ${course}.` : ""} ${hasCourse && hasCity && hasEntry ? "Em que posso te ajudar agora?" : ask}`;
   }

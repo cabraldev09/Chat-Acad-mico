@@ -227,7 +227,7 @@ const Central = () => {
           </>
         )}
 
-        {section === "treinar" && <TrainTab agentId={agentId} goRoteiro={(flowId) => history.push(`/ai-agents/blocos/${flowId}`)} />}
+        {section === "treinar" && <TrainTab agentId={agentId} flowId={d.flow ? d.flow.id : null} commercial={commercial} goRoteiro={(flowId) => history.push(`/ai-agents/blocos/${flowId}`)} />}
 
         {section === "conhecimento" && (
           <>

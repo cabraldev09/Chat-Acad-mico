@@ -50,6 +50,9 @@ const Learned = ({ agentId, version, onChanged }) => {
   const [edit, setEdit] = useState(null);
   const [draft, setDraft] = useState("");
   const [newText, setNewText] = useState("");
+  const [newKind, setNewKind] = useState("regra");
+  const [filter, setFilter] = useState("todas");
+  const [q, setQ] = useState("");
 
   const load = useCallback(() => {
     api.get(`/ai-agents/${agentId}/rules`).then(({ data }) => setRules(data)).catch(toastError);
@@ -66,20 +69,35 @@ const Learned = ({ agentId, version, onChanged }) => {
   const add = async () => {
     const text = newText.trim();
     if (!text) return;
-    try { await api.post(`/ai-agents/${agentId}/rules`, { kind: "regra", text }); setNewText(""); load(); onChanged && onChanged(); } catch (e) { toastError(e); }
+    try { await api.post(`/ai-agents/${agentId}/rules`, { kind: newKind, text }); setNewText(""); load(); onChanged && onChanged(); } catch (e) { toastError(e); }
   };
+  const count = (k) => (rules || []).filter((r) => (k === "todas" ? true : k === "desligadas" ? !r.active : r.kind === k)).length;
+  const shown = (rules || []).filter((r) => (filter === "todas" ? true : filter === "desligadas" ? !r.active : r.kind === filter) && (!q.trim() || r.text.toLowerCase().includes(q.trim().toLowerCase())));
+  const activeCount = (rules || []).filter((r) => r.active).length;
 
   return (
-    <Section title="O que o agente aprendeu" hint="Tudo isto vale em todas as respostas. Desligue ou apague o que não serve mais.">
-      <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-        <TextField fullWidth size="small" variant="outlined" placeholder="Escrever uma regra direto (ex.: Nunca fale preço antes de saber o curso)" value={newText} onChange={(e) => setNewText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} />
+    <Section title="O que o agente aprendeu" hint={rules ? `${activeCount} valendo agora em todas as respostas. O que você gravar, editar ou desligar vale na próxima mensagem.` : "Tudo isto vale em todas as respostas."}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+        <TextField select size="small" variant="outlined" value={newKind} onChange={(e) => setNewKind(e.target.value)} SelectProps={{ native: true }} inputProps={{ "aria-label": "Tipo" }} style={{ width: 130 }}>
+          {Object.entries(KIND).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+        </TextField>
+        <TextField fullWidth size="small" variant="outlined" placeholder={newKind === "exemplo" ? "Cliente: ...  Resposta: ..." : newKind === "estilo" ? "Ex.: Fale de forma acolhedora e curta" : "Ex.: Nunca fale preço antes de saber o curso"} value={newText} onChange={(e) => setNewText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} />
         <Button variant="contained" color="primary" disableElevation disabled={!newText.trim()} onClick={add} style={{ borderRadius: 10, whiteSpace: "nowrap" }}>Adicionar</Button>
       </div>
+      {rules && rules.length > 4 && (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
+          {[["todas", "Todas"], ...Object.entries(KIND).map(([k, v]) => [k, v.label]), ["desligadas", "Desligadas"]].map(([k, label]) => count(k) > 0 || k === "todas" ? (
+            <button key={k} type="button" onClick={() => setFilter(k)} className="ui-press" style={{ border: "1px solid var(--ui-border)", borderRadius: 999, padding: "3px 10px", font: "inherit", fontSize: 12.5, cursor: "pointer", color: "inherit", background: filter === k ? "var(--ui-border)" : "transparent", fontWeight: filter === k ? 700 : 500 }}>{label} · {count(k)}</button>
+          ) : null)}
+          <TextField size="small" variant="outlined" placeholder="Buscar" value={q} onChange={(e) => setQ(e.target.value)} style={{ marginLeft: "auto", width: 140 }} />
+        </div>
+      )}
       {!rules && <div className="ui-skeleton" style={{ height: 120 }} />}
       {rules && rules.length === 0 && <EmptyState icon={<GraduationCap size={22} />} title="Ainda não aprendeu nada" text="Converse com o agente ao lado ou envie um arquivo: o que ele entender aparece aqui para você confirmar." />}
       {rules && rules.length > 0 && (
         <div style={{ display: "grid", gap: 8, maxHeight: 480, overflowY: "auto" }}>
-          {rules.map((r) => {
+          {shown.length === 0 && <div style={{ fontSize: 13, opacity: 0.65, padding: "8px 2px" }}>Nenhum ensinamento nesse filtro.</div>}
+          {shown.map((r) => {
             const k = kindOf(r.kind);
             const Icon = k.icon;
             return (
@@ -88,10 +106,12 @@ const Learned = ({ agentId, version, onChanged }) => {
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div style={{ fontSize: 11.5, fontWeight: 700, color: k.color, textTransform: "uppercase", letterSpacing: ".06em" }}>{k.label}{r.source === "arquivo" ? " · de um arquivo" : ""}</div>
                   {edit === r.id ? (
-                    <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
-                      <TextField fullWidth multiline size="small" variant="outlined" value={draft} onChange={(e) => setDraft(e.target.value)} />
-                      <Button size="small" variant="contained" color="primary" disableElevation disabled={draft.trim().length < 3} onClick={async () => { await patch(r, { text: draft }); setEdit(null); }}>Salvar</Button>
-                      <Button size="small" onClick={() => setEdit(null)}>Cancelar</Button>
+                    <div style={{ display: "grid", gap: 6, marginTop: 4 }}>
+                      <TextField fullWidth multiline autoFocus size="small" variant="outlined" value={draft} onChange={(e) => setDraft(e.target.value)} />
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <Button size="small" variant="contained" color="primary" disableElevation disabled={draft.trim().length < 3} onClick={async () => { await patch(r, { text: draft }); setEdit(null); }}>Salvar</Button>
+                        <Button size="small" onClick={() => setEdit(null)}>Cancelar</Button>
+                      </div>
                     </div>
                   ) : (
                     <div style={{ fontSize: 14, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{r.text}</div>
@@ -147,10 +167,10 @@ const Coach = ({ agentId, onSaved }) => {
     } catch (err) { toastError(err); }
   };
 
-  const ideas = ["Simule um cliente perguntando o valor do curso de Pedagogia", "Nunca fale preço antes de saber o curso e a cidade", "Fale sempre curto, no máximo duas frases por mensagem"];
+  const ideas = ["Simule um cliente perguntando o valor do curso de Pedagogia", "Nunca fale preço antes de saber o curso e a cidade", "Fale sempre curto, no máximo duas frases por mensagem", "Quando o cliente disser que vai pensar, pergunte o que o preocupa"];
 
   return (
-    <Section title="Converse com o agente para ensinar" hint="Dê ordens como falaria com um funcionário novo. O que ele entender aparece para você gravar.">
+    <Section title="Converse com o agente para ensinar" hint="Dê ordens como falaria com um funcionário novo. O que ele entender aparece para você gravar e já vale na próxima resposta. As mensagens fixas do sistema (abertura, fila e transferência) mudam em Ajustes.">
       <div ref={end} style={{ height: 380, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8, padding: 12, borderRadius: 14, background: "color-mix(in srgb, var(--ui-border) 35%, transparent)" }}>
         {turns.length === 0 && (
           <div style={{ margin: "auto", textAlign: "center", maxWidth: 380, display: "grid", gap: 10 }}>
@@ -183,6 +203,77 @@ const Coach = ({ agentId, onSaved }) => {
         <Button variant="contained" color="primary" disableElevation onClick={() => send()} disabled={busy || !text.trim()} startIcon={<Send size={16} />} style={{ borderRadius: 10 }}>Enviar</Button>
         <Button variant="outlined" onClick={() => setTurns([])} disabled={!turns.length} startIcon={<RotateCcw size={16} />} style={{ borderRadius: 10 }}>Recomeçar</Button>
       </div>
+    </Section>
+  );
+};
+
+// ---------------------------------------------------------------- the effect, at once: the same customer message, answered again after every change
+const SCENARIOS = ["Quanto tempo dura o curso de Pedagogia?", "Quanto custa?", "Quero me matricular", "É online?"];
+
+const LivePreview = ({ agentId, flowId, commercial, version }) => {
+  const [message, setMessage] = useState(SCENARIOS[0]);
+  const [now, setNow] = useState(null);
+  const [before, setBefore] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const last = useRef(0);
+  const nowRef = useRef(null);
+
+  const run = useCallback(async (text) => {
+    const content = String(text || "").trim();
+    if (!content) return;
+    setBusy(true);
+    try {
+      let answer;
+      if (flowId && commercial) {
+        const { data } = await api.post(`/flows/${flowId}/simulate`, { state: null, input: content, restart: true, sample: {} });
+        answer = (data.messages || []).map((m) => (typeof m === "string" ? m : (m && m.text) || "")).filter(Boolean);
+      } else {
+        const { data } = await api.post(`/ai-agents/${agentId}/test`, { messages: [{ role: "user", content }], collected: {} });
+        answer = [data.text || ""];
+      }
+      setBefore(nowRef.current && nowRef.current.message === content ? nowRef.current.answer : null);
+      nowRef.current = { message: content, answer };
+      setNow(nowRef.current);
+    } catch (err) { toastError(err); }
+    setBusy(false);
+  }, [agentId, flowId, commercial]);
+
+  // every lesson saved, edited or switched changes the answer: it is asked again, and the one before stays for comparison
+  useEffect(() => {
+    if (!version || version === last.current) return undefined;
+    last.current = version;
+    const t = setTimeout(() => run(message), 500);
+    return () => clearTimeout(t);
+  }, [version]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const same = before && now && before.join("\n") === now.answer.join("\n");
+  return (
+    <Section title="Veja o efeito agora" hint="Escolha uma mensagem de cliente. A cada ensinamento gravado ou alterado, o agente responde de novo e você compara com a resposta de antes. Nada é enviado a ninguém.">
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+        {SCENARIOS.map((sc) => (
+          <button key={sc} type="button" onClick={() => { setMessage(sc); run(sc); }} className="ui-press" style={{ border: "1px solid var(--ui-border)", borderRadius: 999, padding: "3px 10px", font: "inherit", fontSize: 12.5, cursor: "pointer", color: "inherit", background: message === sc ? "var(--ui-border)" : "transparent" }}>{sc}</button>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+        <TextField fullWidth size="small" variant="outlined" placeholder="Mensagem do cliente" value={message} onChange={(e) => setMessage(e.target.value)} onKeyDown={(e) => e.key === "Enter" && !busy && run(message)} />
+        <Button variant="contained" color="primary" disableElevation disabled={busy || !message.trim()} onClick={() => run(message)} style={{ borderRadius: 10, whiteSpace: "nowrap" }}>{busy ? "Respondendo…" : "Testar agora"}</Button>
+      </div>
+      {now && (
+        <div style={{ display: "grid", gap: 12, gridTemplateColumns: before && !same ? "repeat(auto-fit, minmax(260px, 1fr))" : "1fr" }}>
+          {before && !same && (
+            <div style={{ display: "grid", gap: 6, alignContent: "start" }}>
+              <b style={{ fontSize: 12, opacity: 0.65, textTransform: "uppercase", letterSpacing: ".06em" }}>Antes</b>
+              {before.map((b, i) => <div key={i} style={{ ...bubble(false), maxWidth: "100%", opacity: 0.7 }}>{b}</div>)}
+            </div>
+          )}
+          <div style={{ display: "grid", gap: 6, alignContent: "start" }}>
+            <b style={{ fontSize: 12, opacity: 0.65, textTransform: "uppercase", letterSpacing: ".06em" }}>{before && !same ? "Agora" : "Resposta atual"}</b>
+            {now.answer.length ? now.answer.map((b, i) => <div key={i} style={{ ...bubble(false), maxWidth: "100%" }}>{b}</div>) : <div style={{ fontSize: 13, opacity: 0.65 }}>(sem resposta)</div>}
+            {same && <span style={{ fontSize: 12.5, opacity: 0.65 }}>A resposta não mudou com o último ensinamento. Se esperava diferença, reescreva a regra de forma mais direta.</span>}
+          </div>
+        </div>
+      )}
+      {!now && !busy && <div style={{ fontSize: 13, opacity: 0.65 }}>Ainda não testou. Escolha uma mensagem acima.</div>}
     </Section>
   );
 };
@@ -341,7 +432,7 @@ const FileLearn = ({ agentId, onApplied, goRoteiro }) => {
   );
 };
 
-const TrainTab = ({ agentId, goRoteiro }) => {
+const TrainTab = ({ agentId, goRoteiro, flowId, commercial }) => {
   const [version, setVersion] = useState(0);
   const bump = () => setVersion((v) => v + 1);
   return (
@@ -350,6 +441,7 @@ const TrainTab = ({ agentId, goRoteiro }) => {
         <Coach agentId={agentId} onSaved={bump} />
         <Learned agentId={agentId} version={version} onChanged={bump} />
       </div>
+      <LivePreview agentId={agentId} flowId={flowId} commercial={commercial} version={version} />
       <FileLearn agentId={agentId} onApplied={bump} goRoteiro={goRoteiro} />
     </div>
   );
