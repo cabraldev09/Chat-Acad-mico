@@ -3516,7 +3516,7 @@ const postMeta = (id, payload, secret, badSig) => {
       const say = async (from, id, body, until, label) => {
         const mark = graph.sent.length;
         await inboundCloud(from, id, body);
-        await waitFor(() => until(texts(mark)), 20000, label);
+        try { await waitFor(() => until(texts(mark)), 20000, label); } catch (err) { err.message += ` | sent to everyone meanwhile: ${JSON.stringify(graph.sent.slice(mark).filter(x => x.body && x.body.text).map(x => [x.body.to, x.body.text.body && x.body.text.body.slice(0, 120)]))}`; throw err; }
         // the row of the reply is created after the channel answers: the next message must come after it
         // only what went to this person counts: another conversation may still be sending
         const toThem = () => graph.sent.slice(mark).filter(x => x.path === "/PN1/messages" && x.body && x.body.type === "text" && x.body.text && x.body.to === from).length;

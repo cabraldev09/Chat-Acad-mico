@@ -73,6 +73,15 @@ const inPage = (Page) => (props) => (
 );
 const PortalLoginPage = inPage(PortalLogin);
 const CoursePageRoute = inPage(CoursePage);
+// the public site of the product (landing, privacy, terms, data deletion): no login, its own look
+const SiteLandingLazy = lazy(() => import("../pages/Site/Landing"));
+const SitePrivacyLazy = lazy(() => import("../pages/Site/Legal").then((m) => ({ default: m.Privacy })));
+const SiteTermsLazy = lazy(() => import("../pages/Site/Legal").then((m) => ({ default: m.Terms })));
+const SiteDeletionLazy = lazy(() => import("../pages/Site/Legal").then((m) => ({ default: m.DataDeletion })));
+const SiteLanding = inPage(SiteLandingLazy);
+const SitePrivacy = inPage(SitePrivacyLazy);
+const SiteTerms = inPage(SiteTermsLazy);
+const SiteDeletion = inPage(SiteDeletionLazy);
 const PortalActivatePage = inPage(PortalActivate);
 const PortalHomePage = inPage(PortalHome);
 
@@ -101,6 +110,10 @@ const Routes = () => {
             <Route exact path="/redefinir-senha/:token" component={ResetPassword} publicPage />
             <Route exact path="/afiliado/:token" component={AffiliatePortalPage} publicPage />
             <Route exact path="/curso/:slug" component={CoursePageRoute} publicPage />
+            <Route exact path="/site" component={SiteLanding} publicPage />
+            <Route exact path="/privacidade" component={SitePrivacy} publicPage />
+            <Route exact path="/termos" component={SiteTerms} publicPage />
+            <Route exact path="/exclusao-de-dados" component={SiteDeletion} publicPage />
             <Route exact path="/portal/login" component={PortalLoginPage} publicPage />
             <Route exact path="/portal/ativar/:token" component={PortalActivatePage} publicPage />
             <Route exact path="/portal" component={PortalHomePage} publicPage />
