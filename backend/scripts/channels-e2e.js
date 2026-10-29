@@ -3813,7 +3813,7 @@ const postMeta = (id, payload, secret, badSig) => {
       // "Sou de Cidade Estela": the city is recognised in the words from the polos of the system (the model only writes the answer)
       const Q10 = "5511920000249";
       await say(Q10, "wamid.qs-10", "Sou de Cidade Estela", t => t.length > 0, "a statement of the city");
-      await waitFor(() => slotsOfNumber(Q10).city === "Cidade Estela", 15000, "the city was recognised in the words");
+      try { await waitFor(() => slotsOfNumber(Q10).city === "Cidade Estela", 15000, "the city was recognised in the words"); } catch (err) { err.message += ` | slots: ${sql(`SELECT slots FROM LeadCommercials WHERE leadId=${leadId(Q10) || 0}`)} | lead: ${leadId(Q10)} | polos: ${sql(`SELECT string_agg(CONCAT(name,':',city,':',active), ' ; ') FROM Polos`)}`; throw err; }
 
       // Z) the formats and the rules of the MEC: national, institutional and not confirmed come apart; the classes (turmas) the team confirms move items out of "not confirmed"
       await http.post("/courses", { name: "Pedagogia Social", modality: "SEMIPRESENCIAL", category: "Graduação - Cruzeiro", semesters: 8, monthlyFee: 400, active: true }, auth());
