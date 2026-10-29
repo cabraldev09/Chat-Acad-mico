@@ -2,6 +2,7 @@ import Polo from "../../models/Polo";
 import Queue from "../../models/Queue";
 import User from "../../models/User";
 import { offeredCourses } from "./Academic";
+import { logger } from "../../utils/logger";
 
 // What a message says about the course and the city, found by looking at the real catalogue and the real polos (no model): "Quero fazer Pedagogia",
 // "Quanto custa Criminologia?" and "Sou de Buritis" fill the course and the city at once, so a price question handed to the consultant already carries them.
@@ -17,6 +18,12 @@ const polos = async (): Promise<Array<{ name: string; city: string }>> => {
   polosCache = { at: Date.now(), list: rows.map(p => ({ name: p.name, city: String(p.city || "") })) };
   return polosCache.list;
 };
+// a polo created, edited or removed is seen by the next message, not five seconds later
+const dropPolosCache = (): void => { polosCache = null; };
+Polo.addHook("afterSave", dropPolosCache);
+Polo.addHook("afterDestroy", dropPolosCache);
+Polo.addHook("afterBulkUpdate", dropPolosCache);
+Polo.addHook("afterBulkDestroy", dropPolosCache);
 
 export const detectFromText = async (text: string): Promise<Record<string, any>> => {
   const t = plain(text);
@@ -31,7 +38,9 @@ export const detectFromText = async (text: string): Promise<Record<string, any>>
     if (top.c.id) out.courseId = top.c.id;
   }
   // a city of a polo named in the message
-  const cities = (await polos().catch(() => [])).map(p => ({ p, n: plain(p.city) })).filter(x => x.n && hasWords(t, x.n));
+  const list = await polos().catch((err: any) => { logger.warn(`detect: polos not read: ${err?.message}`); return []; });
+  const cities = list.map(p => ({ p, n: plain(p.city) })).filter(x => x.n && hasWords(t, x.n));
+  if (!cities.length && / cidade /.test(` ${t} `)) logger.warn(`detect: no city in "${t}" among ${JSON.stringify(list)}`);
   const uniq = [...new Set(cities.map(x => x.n))];
   if (uniq.length === 1) out.city = cities[0].p.city;
   return out;
