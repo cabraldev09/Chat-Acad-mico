@@ -17,6 +17,8 @@ import HandoffDialog from "./HandoffDialog";
 import KbTab from "./KbTab";
 import KeysDialog from "./KeysDialog";
 import HistoryDialog from "./HistoryDialog";
+import CommercialSettings from "./CommercialSettings";
+import QualityPanel from "./QualityPanel";
 import LearningTab from "./LearningTab";
 import RegulationsDialog from "./RegulationsDialog";
 import TestTab from "./TestTab";
@@ -142,6 +144,7 @@ const Central = () => {
       <FunnelDialog open={dialog.name === "funil"} onClose={closeDialog} />
       <RegulationsDialog open={dialog.name === "mec"} onClose={closeDialog} />
       <KeysDialog open={dialog.name === "chave"} onClose={closeDialog} onSaved={load} />
+      <CommercialSettings open={dialog.name === "atendimento"} agent={agent} onClose={closeDialog} onSaved={load} onOpenAssign={() => setDialog({ name: "assume" })} />
       <HistoryDialog open={dialog.name === "history"} agentId={agent && agent.id} onClose={closeDialog} onRestored={load} />
 
       <div className={classes.page}>
@@ -224,7 +227,7 @@ const Central = () => {
           </>
         )}
 
-        {section === "treinar" && <TrainTab agentId={agentId} goRoteiro={(flowId) => history.push(`/ai-agents/blocos/${flowId}`)} />}
+        {section === "treinar" && <TrainTab agentId={agentId} flowId={d.flow ? d.flow.id : null} commercial={commercial} goRoteiro={(flowId) => history.push(`/ai-agents/blocos/${flowId}`)} />}
 
         {section === "conhecimento" && (
           <>
@@ -264,6 +267,7 @@ const Central = () => {
 
         {section === "resultados" && (
           <>
+            {commercial && <QualityPanel agentId={agentId} />}
             {commercial ? <CommercialTab agentId={agentId} /> : <p className={classes.hint}>Os números de funil são do agente comercial. Veja abaixo o uso da IA por este agente.</p>}
             <button type="button" className={classes.more} onClick={() => setCosts((v) => !v)} aria-expanded={costs}>
               <BarChart3 size={18} />Custos e uso da IA<span style={{ flex: 1 }} /><ChevronDown size={18} style={{ transform: costs ? "rotate(180deg)" : "none", transition: "transform .15s" }} />
@@ -275,7 +279,8 @@ const Central = () => {
         {section === "ajustes" && (() => {
           const persona = (agent && agent.persona) || {};
           const who = String(persona.assistantName || "").trim();
-          const intro = who ? `Olá! Eu sou ${/^(a|o) /i.test(who) ? who : `a ${who}`}, assistente virtual da Cruzeiro do Sul Virtual.` : "Olá! Eu sou o assistente virtual da Cruzeiro do Sul Virtual.";
+          const name = who || "Estela";
+          const intro = (persona.commercial && persona.commercial.greeting) ? persona.commercial.greeting.replace(/\{\{\s*nome\s*\}\}/gi, "Maria").replace(/\{\{\s*assistente\s*\}\}/gi, name) : `Olá! Eu sou ${/^(a|o) /i.test(name) ? name : `a ${name}`}, assistente virtual da Cruzeiro do Sul Virtual.`;
           const courses = d.courses || { total: 0, names: [], withoutGrade: [] };
           const row = (key, Icon, name, text, run) => (
             <button key={key} type="button" className={classes.arow} onClick={run}>
@@ -291,6 +296,7 @@ const Central = () => {
                 <div className={classes.introBox}>“{intro}”</div>
                 <div className={classes.hint} style={{ margin: "8px 0 12px" }}>{persona.tone ? `Tom: ${persona.tone}` : "Defina o tom de voz, as regras e o que dizer quando o agente não souber."}</div>
                 <Button variant="outlined" onClick={() => setDialog({ name: "editor", tab: 0 })} style={{ borderRadius: 12, textTransform: "none", fontWeight: 600 }}>Editar o jeito de atender</Button>
+                {commercial && <div style={{ marginTop: 12 }}>{row("atendimento", Bot, "Atendimento comercial", "Saudação, o que perguntar, quando o lead está qualificado, quando transferir e as mensagens da transferência.", () => setDialog({ name: "atendimento" }))}</div>}
               </Section>
 
               {commercial && (

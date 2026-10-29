@@ -9,6 +9,8 @@ import { PUBLIC_DIR } from "../../config/paths";
 import CommercialGrade from "../../models/CommercialGrade";
 import Course from "../../models/Course";
 import CourseRegulation from "../../models/CourseRegulation";
+import CourseCohort from "../../models/CourseCohort";
+import RegulatoryNorm from "../../models/RegulatoryNorm";
 import CurricularAnalysis from "../../models/CurricularAnalysis";
 import Lead from "../../models/Lead";
 import LeadReminderLog from "../../models/LeadReminderLog";
@@ -28,6 +30,9 @@ import SendWhatsAppMessage from "../WbotServices/SendWhatsAppMessage";
 import { searchChunks } from "../AiServices/Kb";
 import { resolvePoloFor } from "../PoloServices/ResolvePolo";
 import { cleanPatch, Slots } from "./Slots";
+import { areaOfCourse } from "./MecDefaults";
+import { explainCourse } from "./MecKnowledge";
+import { cohortFor } from "./Norms";
 import { topicsOf } from "./Rules";
 
 // The academic data the commercial agent may state, read from the system and returned in the smallest shape that is enough to answer.
@@ -51,8 +56,8 @@ export const ACADEMIC_TOOLS = [
 // ---------------------------------------------------------------- small cache (a new version of the data invalidates it by itself)
 const memo = new Map<string, { stamp: string; value: any }>();
 const stampOf = async (): Promise<string> => {
-  const [c, g, r] = await Promise.all([Course.max("updatedAt"), CommercialGrade.max("updatedAt"), CourseRegulation.max("updatedAt")]);
-  return [c, g, r].map(d => (d ? new Date(d as any).getTime() : 0)).join("-");
+  const [c, g, r, k, n] = await Promise.all([Course.max("updatedAt"), CommercialGrade.max("updatedAt"), CourseRegulation.max("updatedAt"), CourseCohort.max("updatedAt"), RegulatoryNorm.max("updatedAt")]);
+  return [c, g, r, k, n].map(d => (d ? new Date(d as any).getTime() : 0)).join("-");
 };
 const cached = async <T>(ctx: AcademicCtx, key: string, fn: () => Promise<T>): Promise<T> => {
   const stamp = await stampOf();
@@ -235,7 +240,8 @@ export const runAcademicTool = async (name: string, input: any, ctx: AcademicCtx
           mecImpactado: reg && reg.mecImpacted !== null && reg.mecImpacted !== undefined ? reg.mecImpacted : null,
           gradeAtualId: grade ? grade.id : null,
           temEstagio: grade ? (grade.totalInternshipHours || 0) > 0 : null,
-          temTcc: grade ? !!grade.hasTcc : null
+          temTcc: grade ? !!grade.hasTcc : null,
+          modalidadeAviso: "Se a pessoa perguntar se o curso é online, EaD, semipresencial ou presencial, ou como funcionam as aulas, chame buscar_regra_modalidade e explique em até 3 frases (regra nacional, o que a instituição confirmou e o que ainda não foi divulgado). Nunca responda só com a modalidade."
         };
       });
       remember(ctx, {
@@ -249,21 +255,38 @@ export const runAcademicTool = async (name: string, input: any, ctx: AcademicCtx
       const course = await courseOf(ctx, input);
       if (!course) return notFound;
       const intake = await intakeOf(ctx, input.intakePeriod);
-      const view = await cached(ctx, `regra:${course.id}:${intake}`, async () => {
+      const poloId = Number(ctx.slots.poloId) || null;
+      const view = await cached(ctx, `regra:${course.id}:${intake}:${poloId || ""}`, async () => {
         const r = await regulationOf(course, intake);
+        const area = await areaOfCourse(course);
+        const cohort = await cohortFor(course.id, intake, poloId);
+        const num = (v: any) => (v === null || v === undefined ? null : Number(v));
+        const explicacao = explainCourse({
+          area,
+          catalogModality: modalityOf(course.modality),
+          rule: r ? {
+            mecImpacted: r.mecImpacted ?? null, percentualPresencial: num(r.percentualPresencial), percentualSincrono: num(r.percentualSincrono), teoriaAoVivo: r.teoriaAoVivo ?? null,
+            praticaPresencial: r.praticaPresencial ?? null, cronogramaPraticasDefinido: r.cronogramaPraticasDefinido ?? null, transitionStatus: r.transitionStatus || null,
+            currentDelivery: r.currentDelivery || null, futureDelivery: r.futureDelivery || null, transitionNote: r.transitionNote || null, commercialApprovedText: r.commercialApprovedText || null
+          } : null,
+          cohort
+        });
+        // a norm that was amended (or never checked against the official source) is said so, so the agent does not quote it as settled
+        const norms = await RegulatoryNorm.findAll({ attributes: ["number", "status", "reviewedAt"] });
+        const aviso = norms.filter(n => n.status !== "vigente").map(n => `${n.number}: situação ${n.status}. Afirme só o que está confirmado e diga que o consultor confirma o restante.`);
         if (!r) {
           return {
             modalidadeAtual: modalityOf(course.modality), regulacaoAplicavel: null, mecImpactado: null, percentualPresencial: null, percentualSincrono: null, teoriaAoVivo: null,
             praticaPresencial: null, cronogramaPraticasDefinido: null, transitionStatus: null, currentDeliveryDuringTransition: null, futureDelivery: null, transitionNote: null,
-            commercialApprovedText: null, aviso: "Não há regra cadastrada para este curso: não afirme nada sobre MEC, aulas ao vivo ou práticas. Diga que vai confirmar."
+            commercialApprovedText: null, explicacao, normasComAlteracao: aviso,
+            aviso: "Não há regra institucional cadastrada para este curso: use só a regra nacional de explicacao.nacional e diga que o consultor confirma como o curso funciona na prática."
           };
         }
-        const num = (v: any) => (v === null || v === undefined ? null : Number(v));
         return {
           modalidadeAtual: modalityOf(r.currentDelivery) || modalityOf(course.modality), regulacaoAplicavel: r.regulation || null, mecImpactado: r.mecImpacted ?? null,
           percentualPresencial: num(r.percentualPresencial), percentualSincrono: num(r.percentualSincrono), teoriaAoVivo: r.teoriaAoVivo ?? null, praticaPresencial: r.praticaPresencial ?? null,
           cronogramaPraticasDefinido: r.cronogramaPraticasDefinido ?? null, transitionStatus: r.transitionStatus || null, currentDeliveryDuringTransition: r.currentDelivery || null,
-          futureDelivery: r.futureDelivery || null, transitionNote: r.transitionNote || null, commercialApprovedText: r.commercialApprovedText || null
+          futureDelivery: r.futureDelivery || null, transitionNote: r.transitionNote || null, commercialApprovedText: r.commercialApprovedText || null, explicacao, normasComAlteracao: aviso
         };
       });
       remember(ctx, { courseId: course.id, courseName: course.name, mecImpacted: view.mecImpactado, courseModality: view.modalidadeAtual });

@@ -43,6 +43,7 @@ import { AGENT_TEMPLATES, convertAgent, templateSummary } from "../services/Flow
 import { generateAgent } from "../services/FlowServices/GenerateAgent";
 import { defaultProvider } from "../services/AiServices/Keys";
 import { ensurePipeline } from "../services/CommercialServices/Pipeline";
+import { cleanCommercial } from "../services/CommercialServices/Config";
 
 const crud = makeCrud(AiAgent, {
   fields: [
@@ -73,6 +74,8 @@ const crud = makeCrud(AiAgent, {
     // how the agent stands before this save: the history keeps what the save changed (written in afterSave, before the answer goes out)
     if (existing) (req as any).agentBefore = snapshotOf(existing);
     if (isMasked(data.apiKey)) delete data.apiKey;
+    // what the administrator adjusted for the commercial attendance: only known keys, each cleaned
+    if (data.persona && typeof data.persona === "object" && data.persona.commercial !== undefined) data.persona = { ...data.persona, commercial: cleanCommercial(data.persona.commercial) };
     if (data.reviewNumber !== undefined) {
       const digits = String(data.reviewNumber || "").replace(/\D/g, "");
       if (digits && (digits.length < 10 || digits.length > 15)) throw new AppError("ERR_REVIEW_NUMBER_INVALID");
@@ -177,6 +180,8 @@ const createAgentWithFlow = async (a: NewAgent, userId: number): Promise<{ agent
   }
   const flow = await ChatFlow.create({ name: a.name, kind: "agent", agentId: agent.id, entry: JSON.stringify({ type: "agent", keywords: [] }), draft: JSON.stringify(a.graph), description: a.description, createdBy: userId } as any);
   const funnel = a.funnel ? await ensurePipeline({ create: true }) : undefined;
+  // the commercial agent also learns the national norms of the register (their status included)
+  if ((a.kb || []).some(k => k.topic === "institutional/mec")) await (await import("../services/CommercialServices/MecDefaults")).syncMecKnowledge().catch(err => logger.warn(`norms not taught to the new agent: ${err}`));
   return { agentId: agent.id, flowId: flow.id, ...(funnel ? { funnel: { created: funnel.created, missing: funnel.missing } } : {}) };
 };
 

@@ -40,11 +40,10 @@ describe("the template Comercial — Graduação", () => {
     const faculty = COMMERCIAL_KB.find(k => k.topic === "institutional/faculty")!;
     expect(faculty.content).toMatch(/mestres e doutores/);
     expect(COMMERCIAL_KB.find(k => k.topic === "institutional/recognition")!.content).toMatch(/nota máxima/);
-    // no invented percentages: the only ones are the official ones of the Portaria MEC 378/2025 (20, 30, 40)
+    // no invented percentages: the only ones are the official ones of the MEC norms of 2025 (10, 20, 30, 40, 70), only in the texts about them
     COMMERCIAL_KB.forEach(k => expect(k.content).not.toMatch(/Harvard/));
-    COMMERCIAL_KB.filter(k => k.topic !== "institutional/mec").forEach(k => expect(k.content).not.toMatch(/\d+ ?%/));
-    const mec = COMMERCIAL_KB.find(k => k.topic === "institutional/mec")!;
-    (mec.content.match(/\d+ ?%/g) || []).forEach(p => expect(["20%", "30%", "40%"]).toContain(p.replace(/\s/g, "")));
+    COMMERCIAL_KB.filter(k => !/^institutional\/mec/.test(k.topic)).forEach(k => expect(k.content).not.toMatch(/\d+ ?%/));
+    COMMERCIAL_KB.filter(k => /^institutional\/mec/.test(k.topic)).forEach(k => (k.content.match(/\d+ ?%/g) || []).forEach(p => expect(["10%", "20%", "30%", "40%", "70%"]).toContain(p.replace(/\s/g, ""))));
   });
 });
 
@@ -55,7 +54,9 @@ describe("the opening is written by the system", () => {
   });
 
   it("asks only the next thing that is missing and never what is known", () => {
-    expect(openingText({}, "Maria", false)).toMatch(/Qual curso/);
+    expect(openingText({}, "Maria", false)).toBe("Olá! Tudo bem? 😊\n\nSou a Estela, assistente virtual da Cruzeiro do Sul Virtual.\n\nVocê deseja conhecer nossos cursos e fazer sua matrícula ou já é aluno e precisa falar com a tutoria?");
+    expect(openingText({}, "", false, { assistantName: "Bia", emoji: false } as any)).toMatch(/^Olá! Tudo bem\?\n\nSou a Bia,/);
+    expect(openingText({ city: "Porto Velho" }, "Maria", false)).toMatch(/Qual curso/);
     expect(openingText({ courseName: "Administração" }, "Maria", false)).toMatch(/Vi que você tem interesse em Administração/);
     expect(openingText({ courseName: "Administração" }, "Maria", false)).toMatch(/cidade/);
     expect(openingText({ courseName: "Administração", city: "Porto Velho" }, "Maria", false)).toMatch(/primeira graduação/);

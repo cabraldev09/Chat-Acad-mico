@@ -20,7 +20,9 @@ import { captureUnknown, notifyOwner } from "./Learning";
 import { trainingBlock } from "./Training";
 import { textOfMessage } from "./Media";
 import { splitIntoBlocks } from "../CommercialServices/Blocks";
-import { signed, styleOf, styleRules } from "./Style";
+import { MEC_CORE_BLOCK } from "../CommercialServices/MecKnowledge";
+import { askRules, signed, styleOf, styleRules } from "./Style";
+import AgentMetricEvent from "../../models/AgentMetricEvent";
 import { unsupportedFact } from "../CommercialServices/Guards";
 import { forChannel } from "../../helpers/ChannelText";
 import { offeredCourses } from "../CommercialServices/Academic";
@@ -238,9 +240,14 @@ const FINAL_TOOLS = new Set(["registrar_turno", "escolher_resultado", "salvar_le
 const COMMERCIAL_RULES = [
   "Regras:",
   "- Estilo de WhatsApp humano e profissional, que conecta: português do Brasil simples, como um consultor que conhece quem estuda e trabalha ao mesmo tempo. Reconheça o que a pessoa disse antes de responder.",
-  "- Escreva em BLOCOS CURTOS separados por uma linha em branco: no máximo 2 blocos, cada um com 1 ou 2 frases (até uns 200 caracteres). Nunca um textão. Destaque o essencial com *negrito* (no máximo 2 trechos) e termine com UMA pergunta curta de condução, a não ser que uma ferramenta diga para não perguntar.",
+  "- Escreva em no máximo 2 blocos separados por uma linha em branco; o primeiro traz a resposta completa em até 3 frases (até uns 300 caracteres) e o segundo, se houver, é só a pergunta de condução. Nunca quebre uma ideia em várias mensagens curtas e nunca faça um textão. Destaque o essencial com *negrito* (no máximo 2 trechos) e termine com UMA pergunta curta de condução, a não ser que uma ferramenta diga para não perguntar.",
+  "- Formato do WhatsApp, sem Markdown: negrito com UM asterisco de cada lado (*assim*), nunca **assim**; sem #, sem títulos, sem tabelas, sem crases e sem links entre colchetes (escreva o endereço puro). Para lista use \"- \" no começo da linha.",
+  "- Pergunta sobre como o curso funciona (é online? EaD? semipresencial? tem aula presencial? precisa ir ao polo? como são as aulas e as provas?): chame buscar_regra_modalidade e responda em até 3 frases com as três partes que ela devolve em explicacao: o que a regra nacional exige, o que a instituição já confirmou para este curso e o que ainda não foi divulgado (o consultor confirma). Nunca responda só \"é online\" ou \"é semipresencial\"; nunca diga que um curso novo é 100% on-line; nunca transforme percentuais em número de aulas por semana ou por mês; nunca invente dias, locais, datas ou quantidade de encontros.",
   "- Conecte-se com a pessoa: cumprimente só na primeira mensagem da conversa (nunca recomece com “Oi, fulano!”), use o primeiro nome de vez em quando, reconheça o que ela disse com uma frase sincera e, uma vez, pergunte o que a motivou a escolher o curso ou qual o objetivo dela (carreira, família, tempo para estudar) e use a resposta depois. Sem frases de robô e sem a pergunta genérica “mais alguma dúvida?”.",
   "- Use pouquíssimo emoji: no máximo um por mensagem e só quando for natural; na dúvida, nenhum.",
+  "- Você é uma assistente virtual: nunca diga nem sugira que é uma pessoa de verdade. Respostas curtas, de 1 a 3 frases no total, e UMA só pergunta principal por vez.",
+  "- Descubra o que a pessoa quer (graduação, pós-graduação, curso técnico, segunda graduação, transferência, informações de matrícula, aluno ou assunto administrativo) pelo que ela escreve, sem oferecer menu numerado. Se ela já disse o curso, a cidade ou o que quer, reconheça na hora e não pergunte de novo.",
+  "- Quem pede matrícula, link de inscrição, proposta, negociação de valores ou uma pessoa não deve ser mantido numa conversa longa: diga que vai encaminhar ao consultor (intent enrollment, proposal, price ou human). Nunca prometa bolsa, desconto, vaga, prazo ou reconhecimento de curso sem confirmação.",
   "- Se pedirem a grade, a matriz ou o estágio: chame buscar_grade e enviar_material na hora. NÃO diga que enviou, encaminhou ou anexou a grade: a pessoa já a vê. Escreva só o texto_estagio_tutoria que a ferramenta devolve (como funciona o estágio e o acompanhamento dos tutores). Nunca diga que não consegue acessar a grade sem ter chamado a ferramenta; se ela falhar, diga que a equipe envia.",
   "- Se “Já sabemos” mostrar que a pessoa já é aluna: responda e apresente TUDO o que ela pediu sobre o curso e, na primeira resposta, pergunte de forma natural se é para ela mesma ou para um amigo ou parente (registre em para_quem). Se for para outra pessoa, peça o nome e o WhatsApp dela para o consultor falar com ela. Como aluna de curso semipresencial, ela já conhece como funciona o semipresencial, a plataforma e a tutoria: NÃO explique isso de novo; vá direto ao que o curso pedido tem de próprio (duração, grade, estágio) e só diga o que for diferente do curso dela.",
   "- Não repita o que já foi explicado (veja o que já foi explicado em “Já sabemos”); avance para o próximo passo.",
@@ -277,9 +284,11 @@ const commercialStatic = (agent: AiAgent, stage: StageData, training = "", catal
     agent.persona && agent.persona.rules ? `Regras do atendimento:\n${agent.persona.rules}` : null,
     agent.persona && agent.persona.forbidden ? `Nunca faça isto:\n${agent.persona.forbidden}` : null,
     styleRules(agent),
+    askRules(agent),
     stageBlock(stage),
     catalog || null,
     training || null,
+    MEC_CORE_BLOCK,
     COMMERCIAL_RULES
   ]
     .filter(Boolean)
@@ -369,6 +378,11 @@ const respondOnce = async (agent: AiAgent, opts: RespondOptions): Promise<AiResu
     progress,
     channel === "instagram" || channel === "messenger" ? "Canal: mensagem direta do Instagram/Messenger. Não use *negrito*, _itálico_ nem listas com símbolos; escreva texto simples, em blocos curtos." : null
   ].filter(Boolean).join("\n\n");
+  // a tool that failed is counted (the quality panel shows how often), never in the tester
+  const toolFailed = async (name: string, err: unknown): Promise<void> => {
+    if (opts.sandbox) return;
+    await AgentMetricEvent.create({ leadId: opts.leadId || null, agentId: agent.id, flowId: opts.flowId || null, event: "tool_error", once: false, meta: JSON.stringify({ tool: name, error: String(err).slice(0, 200) }) } as any).catch(() => undefined);
+  };
   const usageOf = (usage: any) => ({ agentId: agent.id, ticketId: opts.ticket?.id, model: agent.model, kind, usage, flowId: opts.flowId, nodeId: opts.nodeId, leadId: opts.leadId, latencyMs: Date.now() - started } as any);
   const finish = (ctx: any): AiResult => ({
     stepsDone: ctx.stepsDone,
@@ -403,7 +417,7 @@ const respondOnce = async (agent: AiAgent, opts: RespondOptions): Promise<AiResu
           toolsUsed.push(call.function.name);
           // eslint-disable-next-line no-await-in-loop
           out = await runTool(call.function.name, JSON.parse(call.function.arguments || "{}"), ctx);
-        } catch (err) { out = { erro: "Não foi possível consultar agora." }; }
+        } catch (err) { await toolFailed(String(call.function?.name || "?"), err); out = { erro: "Não foi possível consultar agora." }; }
         try { toolLog.push({ name: call.function?.name, args: JSON.parse(call.function?.arguments || "{}"), result: JSON.stringify(out).slice(0, 300) }); } catch (e) { /* the log is only for the trace */ }
         evidence.push(JSON.stringify(out));
         messages.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(out) });
@@ -454,6 +468,7 @@ const respondOnce = async (agent: AiAgent, opts: RespondOptions): Promise<AiResu
         out = await runTool(call.name, call.input, ctx);
       } catch (err) {
         logger.warn(`AI tool ${call.name} failed: ${err}`);
+        await toolFailed(String(call.name), err);
         out = { erro: "Não foi possível consultar agora." };
       }
       toolLog.push({ name: call.name, args: call.input, result: JSON.stringify(out).slice(0, 300) });

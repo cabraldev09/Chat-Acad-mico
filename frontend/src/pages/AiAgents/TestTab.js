@@ -6,11 +6,13 @@ import { toast } from "react-toastify";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import { ProposalList } from "./TrainTab";
+import RunInspector from "./RunInspector";
 
 const useStyles = makeStyles((theme) => ({
   chat: { borderRadius: 16, padding: theme.spacing(1.5), height: 380, overflowY: "auto", display: "flex", flexDirection: "column", gap: 6, background: theme.palette.type === "dark" ? "#0b141a" : "#efeae2", ...theme.scrollbarStyles },
   me: { alignSelf: "flex-end", maxWidth: "80%", padding: "6px 10px", borderRadius: "10px 10px 2px 10px", background: theme.palette.type === "dark" ? "#005c4b" : "#d9fdd3", fontSize: 14, whiteSpace: "pre-wrap" },
   bot: { alignSelf: "flex-start", maxWidth: "80%", padding: "6px 10px", borderRadius: "10px 10px 10px 2px", background: theme.palette.type === "dark" ? "#202c33" : "#fff", fontSize: 14, whiteSpace: "pre-wrap" },
+  split: { display: "grid", gap: theme.spacing(2), gridTemplateColumns: "minmax(0, 1fr) minmax(300px, 430px)", alignItems: "start", [theme.breakpoints.down("md")]: { gridTemplateColumns: "1fr" } },
   meta: { alignSelf: "flex-start", fontSize: 11.5, color: theme.palette.text.secondary, margin: "0 4px" },
   row: { display: "flex", flexWrap: "wrap", gap: theme.spacing(1), marginTop: theme.spacing(1.25), alignItems: "center", "& .MuiButton-root": { whiteSpace: "nowrap", flex: "none" } },
 }));
@@ -78,6 +80,8 @@ const TestTab = ({ agentId, flowId, commercial }) => {
   // the commercial agent is tested with the same engine that answers the leads (presentation, courses of the system, grade, handoff); the rest with the simple tester
   const real = !!flowId && !!commercial;
   const [sim, setSim] = useState(null);
+  // what the engine decided at each message (the panel beside the chat): only filled when the test runs on the real engine
+  const [steps, setSteps] = useState([]);
   const end = useRef();
   const [teaching, setTeaching] = useState(null);
   const [lesson, setLesson] = useState("");
@@ -141,6 +145,13 @@ const TestTab = ({ agentId, flowId, commercial }) => {
       if (real) {
         const { data } = await api.post(`/flows/${flowId}/simulate`, { state: sim, input: content, restart: !sim, sample: {} });
         setSim(data.state);
+        const last = (data.traces || [])[(data.traces || []).length - 1] || {};
+        setSteps((cur) => [...cur, {
+          input: content, commercial: last.commercial || null, exitWhy: (last.commercial && last.commercial.exitWhy) || null, status: data.status,
+          tools: [...new Set((data.traces || []).flatMap((t) => (t.tools || []).map((x) => (x && x.name) || x)))].map((x) => TOOL[x] || x),
+          actions: data.actions || [], replies: (data.messages || []).length, tokens: (data.traces || []).reduce((a, t) => a + ((t.tokens && (t.tokens.input + t.tokens.output)) || 0), 0),
+          route: (data.routes || [])[(data.routes || []).length - 1] || null,
+        }]);
         const bubbles = (data.messages || []).map((m) => (typeof m === "string" ? m : (m && m.text) || "")).filter(Boolean);
         const tools = [...new Set((data.traces || []).flatMap((t) => (t.tools || []).map((x) => (x && x.name) || x)))].map((t) => TOOL[t] || t);
         const tokens = (data.traces || []).reduce((a, t) => a + ((t.tokens && (t.tokens.input + t.tokens.output)) || 0), 0);
@@ -157,6 +168,7 @@ const TestTab = ({ agentId, flowId, commercial }) => {
       }
     } catch (err) {
       toastError(err);
+      if (real) setSteps((cur) => [...cur, { input: content, error: (err && err.response && err.response.data && (err.response.data.error || err.response.data.message)) || (err && err.message) || "Falha ao simular", tools: [], actions: [], replies: 0, tokens: 0 }]);
       setTurns(turns);
       setText(content);
     }
@@ -168,6 +180,8 @@ const TestTab = ({ agentId, flowId, commercial }) => {
       <Typography variant="caption" color="textSecondary" display="block" style={{ marginBottom: 8 }}>
         O uso entra no consumo, mas não conta no limite diário.
       </Typography>
+      <div className={real ? classes.split : undefined}>
+      <div style={{ minWidth: 0 }}>
       <div className={classes.chat} ref={end}>
         {turns.length === 0 && <span className={classes.meta}>Escreva a primeira mensagem do aluno, por exemplo: “Oi, quero saber sobre o curso de Pedagogia”.</span>}
         {turns.map((t, i) => (
@@ -197,9 +211,12 @@ const TestTab = ({ agentId, flowId, commercial }) => {
       <div className={classes.row}>
         <TextField variant="outlined" size="small" placeholder="Mensagem do aluno" style={{ flex: "1 1 260px", minWidth: 200 }} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && send()} disabled={busy} />
         <Button variant="contained" color="primary" onClick={send} disabled={busy || !text.trim()} startIcon={<Send size={16} />}>Enviar</Button>
-        <Button variant="outlined" onClick={() => { setTurns([]); setCollected({}); setSim(null); }} startIcon={<RotateCcw size={16} />}>Recomeçar</Button>
+        <Button variant="outlined" onClick={() => { setTurns([]); setCollected({}); setSim(null); setSteps([]); }} startIcon={<RotateCcw size={16} />}>Recomeçar</Button>
         <Button variant="outlined" color="primary" onClick={toTraining} disabled={saving || turns.length < 2} startIcon={<Save size={16} />}>Salvar como treino</Button>
         <Button variant="outlined" onClick={openCase} disabled={!turns.some((t) => t.role === "user")} startIcon={<ListChecks size={16} />}>Salvar como caso</Button>
+      </div>
+      </div>
+      {real && <RunInspector steps={steps} state={sim} />}
       </div>
       <CasesPanel agentId={agentId} refreshKey={casesKey} />
       <Dialog open={!!caseDraft} onClose={() => setCaseDraft(null)} fullWidth maxWidth="sm">

@@ -267,6 +267,15 @@ export interface Presence {
   lastSeenAt: string | null;
 }
 
+// Who of these people is inside their working hours right now (the schedules the manager set). null when nobody has a schedule at all: then the hours say nothing.
+export const onScheduleNow = async (userIds: number[], now: Date = new Date()): Promise<Set<number> | null> => {
+  const cfg = await getConfig();
+  const anyone = userIds.some(id => Object.values(cfg.schedules[String(id)] || {}).some(day => day.length));
+  if (!anyone) return null;
+  const { dow, hhmm } = nowInTz(now);
+  return new Set(userIds.filter(id => (cfg.schedules[String(id)]?.[dow] || []).some(s => s.start <= hhmm && hhmm < s.end)));
+};
+
 export const computePresence = async (userIds: number[], config: AnalyticsConfig, now: Date = new Date()): Promise<Map<number, Presence>> => {
   const out = new Map<number, Presence>();
   if (!userIds.length) return out;

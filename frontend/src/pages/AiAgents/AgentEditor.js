@@ -119,8 +119,8 @@ const AgentEditor = ({ open, agent, initialTab = 0, onClose, onSaved }) => {
             </div>
 
             <div className={classes.section}>Como ele se apresenta</div>
-            <TextField fullWidth variant="outlined" margin="dense" label="Nome do assistente (opcional)" placeholder="Ex.: Bia" value={v.persona.assistantName || ""} onChange={(e) => setPersona("assistantName", e.target.value)}
-              helperText={`Na primeira mensagem de toda conversa: “${(() => { const n = String(v.persona.assistantName || "").trim(); return n ? `Olá! Eu sou ${/^(a|o) /i.test(n) ? n : `a ${n}`}, assistente virtual da Cruzeiro do Sul Virtual.` : "Olá! Eu sou o assistente virtual da Cruzeiro do Sul Virtual."; })()}”`} />
+            <TextField fullWidth variant="outlined" margin="dense" label="Nome do assistente" placeholder="Estela" value={v.persona.assistantName || ""} onChange={(e) => setPersona("assistantName", e.target.value)}
+              helperText={`Na primeira mensagem de toda conversa: “${(() => { const n = String(v.persona.assistantName || "").trim(); const who = n || "Estela"; return `Olá! Eu sou ${/^(a|o) /i.test(who) ? who : `a ${who}`}, assistente virtual da Cruzeiro do Sul Virtual.`; })()}”`} />
 
             <div className={classes.section}>Como o agente fala</div>
             <TextField fullWidth variant="outlined" margin="dense" label="Tom de voz" value={v.persona.tone || ""} onChange={(e) => setPersona("tone", e.target.value)} />

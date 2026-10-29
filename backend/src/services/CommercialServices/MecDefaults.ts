@@ -9,6 +9,9 @@ import { logger } from "../../utils/logger";
 import { addDocument, indexDocument } from "../AiServices/Kb";
 import { INSTITUTION_DOCS } from "./InstitutionDocs";
 import { MEC_DOC, MEC_DOC_TITLE } from "./MecDoc";
+import { EXPLAIN_DOCS } from "./MecKnowledge";
+import RegulatoryNorm from "../../models/RegulatoryNorm";
+import { normDocContent, seedNorms } from "./Norms";
 import { AreaId, areaOf, plain } from "./MecAreas";
 
 export { AreaId, areaOf };
@@ -40,7 +43,7 @@ export interface AreaRule {
   commercialApprovedText: string | null;
 }
 
-const SEMI_NOTE = "O cronograma e a quantidade de encontros presenciais ainda não foram definidos pela instituição: só serão informados quando houver data oficial.";
+const SEMI_NOTE = "O cronograma e a quantidade de encontros presenciais ainda não foram definidos pela instituição: só serão informados quando houver data oficial. Os percentuais são mínimos da carga horária total, não um número de aulas por semana.";
 
 const BASE: AreaRule[] = [
   {
@@ -57,7 +60,7 @@ const BASE: AreaRule[] = [
     currentDelivery: null,
     futureDelivery: "Presencial",
     transitionNote: "A Portaria determina que estes cursos sejam ofertados exclusivamente no formato presencial (com pelo menos 70% da carga horária presencial; Medicina, integralmente presencial).",
-    commercialApprovedText: "Pelas novas regras nacionais do MEC, este curso deve ser ofertado no formato presencial. Para saber como funciona na sua cidade, um consultor confirma com você."
+    commercialApprovedText: "Pelas regras nacionais do MEC de 2025 (Decreto nº 12.456 e Portaria nº 378), este curso só pode ser ofertado no formato presencial, com pelo menos 70% da carga horária em atividades presenciais. Como funciona na sua cidade e quando começam as aulas, o consultor confirma com você."
   },
   {
     id: "saude_eng_agro",
@@ -74,7 +77,7 @@ const BASE: AreaRule[] = [
     futureDelivery: "Semipresencial",
     transitionNote: `Cursos de bacharelado e tecnologia destas áreas passam a ser semipresenciais, com pelo menos 40% de atividades presenciais. ${SEMI_NOTE}`,
     commercialApprovedText:
-      "Com as mudanças do MEC, este curso passa a ser semipresencial. A parte teórica continua on-line, com aulas ao vivo, e há uma parte prática presencial, com no mínimo 40% da carga horária. A organização dos encontros presenciais ainda não foi definida; assim que for, a tutoria avisa com antecedência."
+      "Pelas regras nacionais do MEC de 2025 (Decreto nº 12.456 e Portaria nº 378), este curso não pode ser totalmente a distância: é semipresencial, que combina estudos digitais, aulas ao vivo com professores e atividades presenciais, com no mínimo 40% da carga horária presencial e mais 20% presencial ou ao vivo mediado. Como os encontros serão organizados em cada turma segue o projeto pedagógico e as orientações da instituição; o que ainda não foi divulgado, o consultor confirma."
   },
   {
     id: "educacao_ciencias",
@@ -91,7 +94,7 @@ const BASE: AreaRule[] = [
     futureDelivery: "Semipresencial",
     transitionNote: `Cursos de licenciatura (e de bacharelado/tecnologia em Educação, Ciências Naturais, Matemática e Estatística) passam a ser semipresenciais, com pelo menos 30% de atividades presenciais. ${SEMI_NOTE}`,
     commercialApprovedText:
-      "Com as mudanças do MEC, este curso passa a ser semipresencial. A parte teórica continua on-line, com aulas ao vivo, e há uma parte presencial, com no mínimo 30% da carga horária. A organização dos encontros presenciais ainda não foi definida; assim que for, a tutoria avisa com antecedência."
+      "Pelas regras nacionais do MEC de 2025 (Decreto nº 12.456 e Portaria nº 378), licenciaturas e cursos desta área não podem mais ser ofertados a distância (EaD): este curso é semipresencial, que combina estudos digitais, atividades acompanhadas por professores e uma parte presencial, com no mínimo 30% da carga horária presencial e mais 20% presencial ou ao vivo mediado. Como os encontros serão organizados em cada turma segue o projeto pedagógico e as orientações da instituição; o que ainda não foi divulgado, o consultor confirma."
   },
   {
     id: "livre",
@@ -107,14 +110,17 @@ const BASE: AreaRule[] = [
     currentDelivery: null,
     futureDelivery: null,
     transitionNote: "Curso não citado na Portaria: segue nos formatos permitidos, sem mudança de modalidade por causa da nova regra.",
-    commercialApprovedText: "Este curso não foi alterado pelas novas regras de modalidade do MEC e segue no formato atual."
+    commercialApprovedText: "Este curso não está entre os que a Portaria nº 378 restringe e pode ser ofertado em qualquer formato permitido. Em qualquer formato valem os mínimos nacionais: até o curso a distância tem uma parte presencial e avaliações presenciais. Como funciona o curso que você escolheu, o consultor confirma."
   }
 ];
+
+// the texts the system wrote before the new explanation: a rule that still has one of them (nobody edited it) gets the new text
+const PREVIOUS_TEXTS: string[] = ["Pelas novas regras nacionais do MEC, este curso deve ser ofertado no formato presencial. Para saber como funciona na sua cidade, um consultor confirma com você.", "Com as mudanças do MEC, este curso passa a ser semipresencial. A parte teórica continua on-line, com aulas ao vivo, e há uma parte prática presencial, com no mínimo 40% da carga horária. A organização dos encontros presenciais ainda não foi definida; assim que for, a tutoria avisa com antecedência.", "Com as mudanças do MEC, este curso passa a ser semipresencial. A parte teórica continua on-line, com aulas ao vivo, e há uma parte presencial, com no mínimo 30% da carga horária. A organização dos encontros presenciais ainda não foi definida; assim que for, a tutoria avisa com antecedência.", "Este curso não foi alterado pelas novas regras de modalidade do MEC e segue no formato atual."];
 
 export const EDITABLE = ["mecImpacted", "percentualPresencial", "percentualSincrono", "teoriaAoVivo", "praticaPresencial", "cronogramaPraticasDefinido", "transitionNote", "commercialApprovedText"] as const;
 const SETTING = "mec_area_defaults";
 const SEEN = "mec_defaults_seen";
-const VERSION = "378-2025-v4";
+const VERSION = "mec-2025-v5";
 
 export const getAreas = async (): Promise<AreaRule[]> => {
   let saved: Record<string, any> = {};
@@ -245,7 +251,20 @@ export const applyDefaults = async (opts: { area?: string; overwrite?: boolean }
 };
 
 // ------------------------------------------------------------------ the same information in the knowledge base of the commercial agents
+const upsertSystemDoc = async (agentId: number, doc: { title: string; topic: string; keywords: string; content: string }): Promise<boolean> => {
+  const has = await KbDocument.findOne({ where: { agentId, topic: doc.topic } as any });
+  if (!has) {
+    await addDocument({ ...doc, kind: "doc", source: "texto", agentId } as any);
+    return true;
+  }
+  if (has.content === doc.content && has.title === doc.title) return false;
+  await has.update({ content: doc.content, keywords: doc.keywords, title: doc.title });
+  await indexDocument(has);
+  return true;
+};
+
 export const syncMecKnowledge = async (): Promise<number> => {
+  await seedNorms();
   const flows = await ChatFlow.findAll({ where: { kind: "agent" } as any, attributes: ["agentId", "draft"] });
   const agents = [...new Set(flows.filter(f => f.agentId && /"hooks":\s*\[\s*"commercial"/.test(String(f.draft || ""))).map(f => f.agentId as number))];
   let added = 0;
@@ -264,6 +283,16 @@ export const syncMecKnowledge = async (): Promise<number> => {
       await indexDocument(has);
       added += 1;
     }
+    // the national norms (from the register, with their status) and the guide of how to explain them: they belong to the system, so they are rewritten when they change
+    // eslint-disable-next-line no-await-in-loop
+    for (const norm of await RegulatoryNorm.findAll({ order: [["id", "ASC"]] })) {
+      // eslint-disable-next-line no-await-in-loop
+      if (await upsertSystemDoc(agentId, { title: norm.title, topic: `mec/norm/${norm.key}`, keywords: `${norm.number}, ${norm.kind}, mec, decreto, portaria, norma, modalidade, ead, semipresencial`, content: normDocContent(norm) })) added += 1;
+    }
+    for (const doc of EXPLAIN_DOCS) {
+      // eslint-disable-next-line no-await-in-loop
+      if (await upsertSystemDoc(agentId, doc)) added += 1;
+    }
     // what the institution confirmed (faculty, enrollment documents, recognition): only where the team has not written that topic yet
     for (const doc of INSTITUTION_DOCS) {
       // eslint-disable-next-line no-await-in-loop
@@ -277,9 +306,28 @@ export const syncMecKnowledge = async (): Promise<number> => {
   return added;
 };
 
+// a rule that still has the text the system wrote before (nobody edited it) gets the new explanation of its area
+export const refreshSystemTexts = async (): Promise<number> => {
+  const areas = await getAreas();
+  const list = await classifyCourses();
+  let n = 0;
+  for (const c of list) {
+    const rule = areas.find(a => a.id === c.area);
+    if (!rule) continue;
+    // eslint-disable-next-line no-await-in-loop
+    const row = await CourseRegulation.findOne({ where: { courseId: c.id, intakeTerm: null as any } });
+    if (!row || !row.commercialApprovedText || !PREVIOUS_TEXTS.includes(row.commercialApprovedText)) continue;
+    // eslint-disable-next-line no-await-in-loop
+    await row.update({ commercialApprovedText: rule.commercialApprovedText, transitionNote: rule.transitionNote } as any);
+    n += 1;
+  }
+  return n;
+};
+
 // once per version at boot: courses without a rule get the standard of their area and the commercial agents learn the Portaria
 export const seedMecDefaults = async (attempt = 0): Promise<void> => {
   try {
+    await seedNorms();
     if ((await getSetting(SEEN, "")) === VERSION) return;
     // the catalogue of courses may still be loading at the first start: try again a few times
     if (!(await Course.count())) {
@@ -287,9 +335,10 @@ export const seedMecDefaults = async (attempt = 0): Promise<void> => {
       return;
     }
     const r = await applyDefaults({ overwrite: false });
+    const refreshed = await refreshSystemTexts();
     const docs = await syncMecKnowledge();
     await setSetting(SEEN, VERSION);
-    logger.info(`MEC standard applied: ${r.created} rules created, ${r.skipped} kept; ${docs} agent(s) learned the Portaria`);
+    logger.info(`MEC standard applied: ${r.created} rules created, ${r.skipped} kept, ${refreshed} texts renewed; ${docs} knowledge entries written`);
   } catch (err) {
     logger.warn(`MEC standard failed: ${err}`);
   }

@@ -106,8 +106,11 @@ describe("a course the person names", () => {
 
 describe("how the agent presents itself", () => {
   it("says who it is, with or without the person's name and with the name the owner gave", () => {
-    expect(introText(null, "")).toBe("Olá! Eu sou o assistente virtual da Cruzeiro do Sul Virtual.");
-    expect(introText(null, "Ana")).toBe("Olá, Ana! Eu sou o assistente virtual da Cruzeiro do Sul Virtual.");
+    expect(introText(null, "")).toBe("Olá! Eu sou a Estela, assistente virtual da Cruzeiro do Sul Virtual.");
+    expect(introText(null, "Ana")).toBe("Olá, Ana! Eu sou a Estela, assistente virtual da Cruzeiro do Sul Virtual.");
+    // the administrator writes the greeting; it still says it is a virtual assistant
+    expect(introText({ assistantName: "Bia", commercial: { greeting: "Oi, {{nome}}! Que bom ter você aqui." } }, "Ana")).toBe("Oi, Ana! Que bom ter você aqui. Sou a Bia, assistente virtual da Cruzeiro do Sul Virtual.");
+    expect(introText({ commercial: { greeting: "Oi, {{nome}}! Aqui é a {{assistente}}, assistente virtual." } }, "Ana")).toBe("Oi, Ana! Aqui é a Estela, assistente virtual.");
     expect(introText({ assistantName: "Bia" }, "Ana")).toBe("Olá, Ana! Eu sou a Bia, assistente virtual da Cruzeiro do Sul Virtual.");
   });
   it("recognises an answer that already presents itself", () => {
@@ -139,5 +142,87 @@ describe("style of the agent and its history", () => {
     expect(changedLabels(a, b)).toEqual(["Quem é o agente"]);
     expect(Object.keys(a)).not.toContain("apiKey");
     expect(changedLabels(a, a)).toEqual([]);
+  });
+});
+
+describe("what the person wants and what makes a lead qualified", () => {
+  it("reads the kind of interest from the words, with no menu", async () => {
+    const { interestOf } = await import("../../src/services/CommercialServices/Rules");
+    const cases: Array<[string, string | null]> = [
+      ["Oi", null],
+      ["Quero fazer Pedagogia", "graduacao"],
+      ["Quanto custa Criminologia?", null],
+      ["Quero me matricular hoje", "matricula"],
+      ["Já sou aluno", "aluno"],
+      ["Meu boleto está errado", "administrativo"],
+      ["É minha segunda graduação", "segunda_graduacao"],
+      ["Quero transferir de faculdade", "transferencia"],
+      ["Tem pós-graduação em direito do trabalho?", "pos_graduacao"],
+      ["Quero transferir meu curso para cá", "transferencia"],
+      ["Vocês têm curso técnico em enfermagem?", "tecnico"],
+      ["Quero a grade curricular", null]
+    ];
+    for (const [text, kind] of cases) expect([text, interestOf(text, {})]).toEqual([text, kind]);
+    expect(interestOf("", { enrolledStudent: true })).toBe("aluno");
+  });
+
+  it("qualifies by what the administrator requires, and always needs the course", async () => {
+    const { isQualified, missingOf } = await import("../../src/services/CommercialServices/Rules");
+    const slots = { courseName: "Pedagogia", courseExplained: true } as any;
+    expect(isQualified(slots)).toBe(false);
+    expect(missingOf(slots)).toEqual(["Cidade ou polo", "Tipo de ingresso"]);
+    expect(isQualified(slots, ["course", "explained"])).toBe(true);
+    expect(isQualified({}, [])).toBe(false);
+    expect(isQualified({ courseName: "Pedagogia" } as any, [])).toBe(true);
+  });
+
+  it("cleans the configuration of the administrator", async () => {
+    const { cleanCommercial, DEFAULT_COMMERCIAL } = await import("../../src/services/CommercialServices/Config");
+    expect(cleanCommercial(null)).toEqual(DEFAULT_COMMERCIAL);
+    const c = cleanCommercial({ hotHandoff: "hot", maxClarifications: 99, qualifyAfter: "3", qualifyRequires: ["course", "xx"], ask: { name: false }, messages: { queued: "  Na fila  " } });
+    expect(c.hotHandoff).toBe("hot");
+    expect(c.maxClarifications).toBe(3);
+    expect(c.qualifyAfter).toBe(3);
+    expect(c.qualifyRequires).toEqual(["course"]);
+    expect(c.ask.name).toBe(false);
+    expect(c.ask.city).toBe(true);
+    expect(c.messages.queued).toBe("Na fila");
+  });
+});
+
+describe("the scenarios of the attendance that need no model", () => {
+  // what the system recognises by itself in each message (null: the model, with its tools, takes it)
+  const table: Array<[string, { fast: string | null; support: string | null; interest: string | null; mention: string | null }]> = [
+    ["Oi", { fast: null, support: null, interest: null, mention: null }],
+    ["Quero fazer Pedagogia", { fast: null, support: null, interest: "graduacao", mention: null }],
+    ["Quanto custa Criminologia?", { fast: "price", support: null, interest: null, mention: null }],
+    ["Quero me matricular hoje", { fast: "enrollment", support: null, interest: "matricula", mention: null }],
+    ["Já sou aluno", { fast: null, support: null, interest: "aluno", mention: null }],
+    ["Quero falar com João", { fast: null, support: null, interest: null, mention: "João" }],
+    ["É minha segunda graduação", { fast: null, support: null, interest: "segunda_graduacao", mention: null }],
+    ["Preciso de atendimento humano", { fast: "human", support: null, interest: null, mention: null }],
+    ["Já conversei com Gabrielli", { fast: null, support: null, interest: null, mention: "Gabrielli" }],
+    ["Quero a grade curricular", { fast: null, support: null, interest: null, mention: null }],
+    ["Essa mensalidade cabe no meu orçamento?", { fast: "price", support: null, interest: null, mention: null }],
+    ["Vocês têm bolsa?", { fast: "price", support: null, interest: null, mention: null }],
+    ["Meu boleto está errado", { fast: null, support: "secretary", interest: "administrativo", mention: null }],
+    ["Não quero falar com atendente", { fast: null, support: null, interest: null, mention: null }],
+  ];
+  it.each(table)("%s", async (text, want) => {
+    const R = await import("../../src/services/CommercialServices/Rules");
+    const fast = R.fastIntent(text);
+    expect({ fast: fast ? fast.intent : null, support: R.supportIntent(text, false), interest: R.interestOf(text, {}), mention: (R.consultantMention(text) || { name: null }).name }).toEqual(want);
+  });
+
+  it("a request for the grade is recognised without naming the course", async () => {
+    const { gradeRequest } = await import("../../src/services/CommercialServices/Rules");
+    expect(gradeRequest("Quero a grade curricular")).toEqual({ course: null });
+  });
+
+  it("remembers whether the lead had talked to a consultant before", async () => {
+    const { consultantMention } = await import("../../src/services/CommercialServices/Rules");
+    expect(consultantMention("Já conversei com a Gabrielli")).toEqual({ name: "Gabrielli", previous: true });
+    expect(consultantMention("Fui atendida pelo Carlos ontem")).toEqual({ name: "Carlos", previous: true });
+    expect(consultantMention("Quero falar com um consultor")).toBeNull();
   });
 });

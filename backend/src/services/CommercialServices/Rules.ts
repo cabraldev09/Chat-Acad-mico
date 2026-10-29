@@ -1,3 +1,4 @@
+import { cleanCommercial, fillGreeting } from "./Config";
 import { CommercialState, Slots } from "./Slots";
 import { BOLSA_ASKS } from "./BolsaData";
 
@@ -25,7 +26,10 @@ export const OBJECTION_LIMIT = 3;
 const HUMAN = [
   /(falar|conversar|passar|chamar).{0,30}(com )?(uma |um )?(pessoa|atendente|humano|consultor|consultora|vendedor|vendedora|gente de verdade)/,
   /(quero|preciso|prefiro|gostaria de).{0,12}(um |uma )?(atendente|consultor|consultora|humano|pessoa de verdade)/,
-  /(me )?(passa|passe|transfere|transfira) (pra|para) (um |uma )?(atendente|consultor|consultora|pessoa)/
+  /(me )?(passa|passe|transfere|transfira) (pra|para) (um |uma )?(atendente|consultor|consultora|pessoa)/,
+  /\b(atendimento|atendente|suporte|ajuda) humano\b/,
+  /(falar|conversar|chamar|passar).{0,20}(com )?(alguem|algum)\b/,
+  /\bhumano\b/
 ];
 // a price, a scholarship, an enrollment or a proposal: the moment of the human proposal (the agent never gives a number)
 const MONEY = [
@@ -76,7 +80,11 @@ const SECRETARY = [
   /\b(segunda via|2a via|2 via)\b/,
   /\bcertificado de conclusao\b/,
   /\b(trancar|trancamento|cancelar|cancelamento)\b.{0,20}\b(matricula|curso|disciplina)\b/,
-  /\brematricula\b/
+  /\brematricula\b/,
+  // money matters of who already studies: the boleto, a charge, a payment that went wrong (the secretary of the polo takes it, the sales team does not)
+  /\b(meu|minha|o|a|esse|essa) (boleto|mensalidade|cobranca|pagamento|fatura|parcela)\b.{0,30}\b(errad\w*|atrasad\w*|duplicad\w*|vencid\w*|diferente|nao (chegou|veio|recebi|consigo|abre)|com problema)\b/,
+  /\b(boleto|cobranca|pagamento|fatura)\b.{0,20}\b(errad\w*|duplicad\w*|indevid\w*|com problema)\b/,
+  /\b(segunda via|2a via).{0,15}\b(boleto|fatura)\b/
 ];
 const TUTORING = [
   /\b(falar|conversar|chamar|passar|ligar).{0,25}(com )?(a |o )?(tutoria|tutor|tutora)\b/,
@@ -173,14 +181,21 @@ export const isGreeting = (text: string): boolean => {
 // How the agent presents itself: always in the first answer of a conversation, whatever the person wrote. The owner can give the assistant a name
 // (persona.assistantName); without one it is "o assistente virtual".
 export const INTRO_SEEN = /\b(assistente virtual|aqui e (a|o) |eu sou (a|o) |meu nome e)\b/;
-export const introText = (persona: { assistantName?: string } | null | undefined, first: string, institution = "Cruzeiro do Sul Virtual"): string => {
+export const DEFAULT_ASSISTANT = "Estela";
+export const introText = (persona: { assistantName?: string; commercial?: any } | null | undefined, first: string, institution = "Cruzeiro do Sul Virtual"): string => {
   const name = first ? `, ${first}` : "";
-  const who = String(persona?.assistantName || "").trim();
-  return who ? `Olá${name}! Eu sou ${/^(a|o) /i.test(who) ? who : `a ${who}`}, assistente virtual da ${institution}.` : `Olá${name}! Eu sou o assistente virtual da ${institution}.`;
+  const who = String(persona?.assistantName || "").trim() || DEFAULT_ASSISTANT;
+  // the administrator may write the greeting ({{nome}}, {{assistente}}); it still has to say that this is a virtual assistant
+  const custom = persona && persona.commercial ? cleanCommercial(persona.commercial).greeting : "";
+  if (custom) {
+    const text = fillGreeting(custom, first || "", who).replace(/\s{2,}/g, " ").trim();
+    return alreadyIntroduces(text) ? text : `${text} Sou ${/^(a|o) /i.test(who) ? who : `a ${who}`}, assistente virtual da ${institution}.`;
+  }
+  return `Olá${name}! Eu sou ${/^(a|o) /i.test(who) ? who : `a ${who}`}, assistente virtual da ${institution}.`;
 };
 export const alreadyIntroduces = (text: string): boolean => INTRO_SEEN.test(plain(text));
 
-export const openingText = (slots: Slots, first: string, returning: boolean, persona?: { assistantName?: string } | null): string => {
+export const openingText = (slots: Slots, first: string, returning: boolean, persona?: { assistantName?: string; commercial?: any } | null): string => {
   const name = first ? `, ${first}` : "";
   const hasCourse = !!(slots.courseName || slots.courseId);
   const hasCity = !!(slots.city || slots.poloId);
@@ -197,6 +212,13 @@ export const openingText = (slots: Slots, first: string, returning: boolean, per
         ? "Você vai começar a primeira graduação ou já cursou (ou cursa) outra faculdade?"
         : "Em que posso te ajudar agora?";
   const course = hasCourse ? String(slots.courseName || "") : "";
+  // a bare "oi": nothing is known about what the person needs, so the answer is short, in three lines, and asks the one thing that tells the two paths apart
+  const customGreeting = persona && persona.commercial ? cleanCommercial(persona.commercial).greeting : "";
+  if (!returning && !hasCourse && !hasCity && !hasEntry && !customGreeting) {
+    const who = String(persona?.assistantName || "").trim() || DEFAULT_ASSISTANT;
+    const smile = (persona as any)?.emoji === false ? "" : " 😊";
+    return `Olá! Tudo bem?${smile}\n\nSou ${/^(a|o) /i.test(who) ? who : `a ${who}`}, assistente virtual da Cruzeiro do Sul Virtual.\n\nVocê deseja conhecer nossos cursos e fazer sua matrícula ou já é aluno e precisa falar com a tutoria?`;
+  }
   if (returning) {
     return `Oi${name}! Que bom falar com você de novo.${course ? ` Da última vez conversamos sobre ${course}.` : ""} ${hasCourse && hasCity && hasEntry ? "Em que posso te ajudar agora?" : ask}`;
   }
@@ -296,8 +318,26 @@ export const temperatureOf = (slots: Slots, ready: boolean): "cold" | "warm" | "
 const needsTranscript = (slots: Slots): boolean => slots.entryType === "transfer" || slots.entryType === "second_degree";
 
 // qualified: course, city (or polo) and kind of entry are known and the course was presented
-export const isQualified = (slots: Slots): boolean =>
-  !!(slots.courseId || slots.courseName) && !!(slots.city || slots.poloId) && !!slots.entryType && slots.entryType !== "unknown" && !!slots.courseExplained;
+export const isQualified = (slots: Slots, requires: readonly string[] = ["course", "city", "entry", "explained"]): boolean => {
+  const has: Record<string, boolean> = {
+    course: !!(slots.courseId || slots.courseName),
+    city: !!(slots.city || slots.poloId),
+    entry: !!slots.entryType && slots.entryType !== "unknown",
+    explained: !!slots.courseExplained
+  };
+  // an empty list would qualify everybody on the first message: at least the course is always needed
+  const need = requires.length ? requires : ["course"];
+  return need.every(k => has[k] !== false);
+};
+
+// what is still missing to qualify, in the words of the administrator's screen
+export const missingOf = (slots: Slots, requires: readonly string[] = ["course", "city", "entry", "explained"]): string[] => {
+  const label: Record<string, string> = { course: "Curso", city: "Cidade ou polo", entry: "Tipo de ingresso", explained: "Curso apresentado" };
+  const has: Record<string, boolean> = {
+    course: !!(slots.courseId || slots.courseName), city: !!(slots.city || slots.poloId), entry: !!slots.entryType && slots.entryType !== "unknown", explained: !!slots.courseExplained
+  };
+  return (requires.length ? requires : ["course"]).filter(k => has[k] === false).map(k => label[k] || k);
+};
 
 // How many answers a qualified lead gets from the agent before the consultant of the polo takes over: the questions of the lead are answered
 // first (a lead who asks for the price or a person is handed over at once, whatever this says). A transfer or second-degree lead waits for the
@@ -310,8 +350,8 @@ export const hasBolsaData = (slots: Slots): boolean => !!slots.fullName && !!slo
 // (not when the question is for someone else: the data would be of another person, the consultant handles it)
 export const needsBolsaData = (slots: Slots): boolean => (isQualified(slots) || !!slots.gradeSent) && !hasBolsaData(slots) && slots.forWhom !== "amigo ou parente" && Number(slots.bolsaDataAsked || 0) < BOLSA_ASKS;
 
-export const readyForConsultantOf = (slots: Slots, replies: number, after: number = QUALIFIED_REPLIES): boolean => {
-  if (!after || !isQualified(slots)) return false;
+export const readyForConsultantOf = (slots: Slots, replies: number, after: number = QUALIFIED_REPLIES, requires?: readonly string[]): boolean => {
+  if (!after || !isQualified(slots, requires)) return false;
   const analysisDone = !needsTranscript(slots) || (slots.analysisStatus === "completed" && !!slots.analysisExplained);
   // never wait forever for the data: a few more answers and the consultant takes it anyway
   return analysisDone && replies >= after && (!needsBolsaData(slots) || replies >= after + 3);
@@ -333,6 +373,46 @@ export const nextActionOf = (s: CommercialState, facts: { human?: boolean; lost?
   if (!slots.modalityExplained || (slots.mecImpacted && !slots.mecExplained)) return "explain_modality";
   if (slots.gradeAsked && !slots.gradeSent) return "send_curriculum";
   return "answer_objection";
+};
+
+
+// A person names the consultant they want or already talked to: "Quero falar com João", "Já conversei com a Gabrielli", "fui atendida pelo Carlos".
+// Read from the original text (the name starts with a capital letter); the caller finds the consultant among the people of the team.
+const NOT_A_NAME = /^(voce|voces|vcs|alguem|algum|uma|um|o|a|os|as|pessoa|atendente|consultor|consultora|humano|secretaria|tutoria|tutor|tutora|vendedor|vendedora|equipe|time|gente|gerente|coordenador|coordenadora|setor|departamento|financeiro)$/;
+export const consultantMention = (text: string): { name: string; previous: boolean } | null => {
+  const raw = String(text || "");
+  const m = /\b(falar|conversar|ser atendid[oa]|atendimento|falei|conversei|fui atendid[oa]|atendid[oa]|atendeu|falando)\b(?: [a-zà-ú]+){0,3}? (?:com|pel[oa]|por)(?: o| a| o consultor| a consultora| o atendente| a atendente)? ([A-ZÁÉÍÓÚÂÊÔÃÕÇ][a-zà-úç]{2,})/.exec(raw);
+  if (!m) return null;
+  const name = m[2];
+  if (NOT_A_NAME.test(plain(name))) return null;
+  return { name, previous: /\b(falei|conversei|fui atendid\w*|atendeu|ja (falei|conversei|fui))\b/.test(plain(raw)) };
+};
+
+// ---------------------------------------------------------------- what the person wants (dynamic, read from what they write)
+// The kind of interest is never chosen from a menu: it comes from the words of the conversation and is revised at every message.
+export const INTEREST_KINDS = ["graduacao", "pos_graduacao", "tecnico", "segunda_graduacao", "transferencia", "matricula", "aluno", "administrativo", "outros"] as const;
+export const INTEREST_LABEL: Record<string, string> = {
+  graduacao: "Graduação", pos_graduacao: "Pós-graduação", tecnico: "Curso técnico", segunda_graduacao: "Segunda graduação", transferencia: "Transferência",
+  matricula: "Informações sobre matrícula", aluno: "Aluno existente", administrativo: "Assunto administrativo", outros: "Outros"
+};
+const INTEREST_RULES: Array<[string, RegExp]> = [
+  ["administrativo", /\b(boleto|segunda via|2a via|declaracao|historico escolar|certificado|diploma|trancar|trancamento|cancelar (a )?matricula|cancelamento|reembolso|nota fiscal|mensalidade (atrasada|errada|em atraso)|negociar divida|estorno|carteirinha|comprovante de matricula)\b/],
+  // a transfer says "meu curso" too: it is read before the student
+  ["transferencia", /\b(transferir|transferencia|trocar de faculdade|mudar de faculdade|vim de outra (faculdade|instituicao)|aproveitar (as )?(disciplinas|materias))\b/],
+  ["aluno", /\b(ja sou (aluno|aluna|estudante)|sou (aluno|aluna) (ai |ai da |da )?|minha (aula|nota|prova|tutoria|plataforma|disciplina)|meu (curso|polo|tutor|ava|login|acesso)|estudo ai|estudo ai na)\b/],
+  ["segunda_graduacao", /\b(segunda (graduacao|faculdade|licenciatura)|2[ao]? ?graduacao|ja tenho (uma )?(graduacao|faculdade|diploma|curso superior)|outra graduacao|ja sou (formado|formada|graduado|graduada))\b/],
+  ["pos_graduacao", /\b(pos[- ]?graduacao|especializacao|\bmba\b|mestrado|doutorado|lato sensu|stricto sensu)\b/],
+  ["tecnico", /\b(curso tecnico|tecnico em|ensino tecnico|\btecnico\b)\b/],
+  ["matricula", /\b(me matricular|matricula|inscricao|me inscrever|como (faco|eh|e) pra (entrar|ingressar|estudar)|vestibular|processo seletivo|documentos? (para|pra) (a )?matricula)\b/],
+  ["graduacao", /\b(graduacao|faculdade|bacharelado|licenciatura|curso superior|me graduar|fazer (um )?curso|quero estudar|quero fazer)\b/]
+];
+export const interestOf = (text: string, slots: Slots = {}): string | null => {
+  const t = plain(text);
+  if (!t) return slots.enrolledStudent ? "aluno" : null;
+  const hit = INTEREST_RULES.find(([, re]) => re.test(t));
+  if (hit) return hit[0];
+  if (courseMention(text)) return "graduacao";
+  return null;
 };
 
 // ---------------------------------------------------------------- the funnel
@@ -457,6 +537,8 @@ export const briefOf = (s: CommercialState, extra: { stageName?: string | null; 
     optional("Como pretende pagar", x.financing),
     optional("Melhor horário para falar", x.bestTime),
     "",
+    line("Interesse", INTEREST_LABEL[x.interestKind || ""] || null),
+    x.preferredConsultantName ? line("Consultor pedido pelo lead", x.preferredConsultantName) : null,
     line("Ingresso", ENTRY_LABEL[x.entryType || "unknown"]),
     line("Duração", x.courseDurationText || (x.courseDurationSemesters ? `${x.courseDurationSemesters} semestres` : null)),
     line("Modalidade", x.courseModality),

@@ -28,6 +28,8 @@ import ChatFlowRun from "../models/ChatFlowRun";
 import ChatFlowStat from "../models/ChatFlowStat";
 import ChatFlowVersion from "../models/ChatFlowVersion";
 import CourseRegulation from "../models/CourseRegulation";
+import CourseCohort from "../models/CourseCohort";
+import RegulatoryNorm from "../models/RegulatoryNorm";
 import AgentTurnLog from "../models/AgentTurnLog";
 import AgentMetricEvent from "../models/AgentMetricEvent";
 import LeadCommercial from "../models/LeadCommercial";
@@ -117,6 +119,8 @@ const models = [
   ChatFlowStat,
   ChatFlowVersion,
   CourseRegulation,
+  CourseCohort,
+  RegulatoryNorm,
   AgentTurnLog,
   AgentMetricEvent,
   LeadCommercial,

@@ -8,6 +8,7 @@ import { syncNextFollowUp } from "../CrmServices/FollowUp";
 import { addActivity, changeStage } from "../CrmServices/LeadCore";
 import { OFFICIAL_ONLY, StageKey, STAGE_SPECS, effectiveMap, keyOfStage } from "./Pipeline";
 import { CommercialState, mirror, saveState } from "./Slots";
+import { CommercialConfig } from "./Config";
 
 // What the commercial rules need from the outside world. The real ports write to the CRM; the ports of the simulator only write
 // down what would be done (the lead of the simulator does not exist), so a test shows the funnel moving without touching data.
@@ -20,6 +21,10 @@ export interface CommercialPorts {
   state: CommercialState;
   // after how many answers a qualified lead goes to the consultant of the polo (Setting ai_qualified_replies; 0 = never by this rule)
   qualifyAfter?: number;
+  // what the administrator adjusted for this agent (what makes a lead qualified, when a hot lead is handed over, how many unclear messages...)
+  config?: CommercialConfig;
+  // what the words of a message say about the course and the city, from the real catalogue and polos (no model)
+  detect?: (text: string) => Promise<Record<string, any>>;
   stageKeyNow(): Promise<StageKey | null>;
   moveStage(key: StageKey, reason: string): Promise<boolean>;
   // the first message of the system to the person, and the person's message
