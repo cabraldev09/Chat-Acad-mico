@@ -397,8 +397,9 @@ export const INTEREST_LABEL: Record<string, string> = {
 };
 const INTEREST_RULES: Array<[string, RegExp]> = [
   ["administrativo", /\b(boleto|segunda via|2a via|declaracao|historico escolar|certificado|diploma|trancar|trancamento|cancelar (a )?matricula|cancelamento|reembolso|nota fiscal|mensalidade (atrasada|errada|em atraso)|negociar divida|estorno|carteirinha|comprovante de matricula)\b/],
-  ["aluno", /\b(ja sou (aluno|aluna|estudante)|sou (aluno|aluna) (ai |ai da |da )?|minha (aula|nota|prova|tutoria|plataforma|disciplina)|meu (curso|polo|tutor|ava|login|acesso)|estudo ai|estudo ai na)\b/],
+  // a transfer says "meu curso" too: it is read before the student
   ["transferencia", /\b(transferir|transferencia|trocar de faculdade|mudar de faculdade|vim de outra (faculdade|instituicao)|aproveitar (as )?(disciplinas|materias))\b/],
+  ["aluno", /\b(ja sou (aluno|aluna|estudante)|sou (aluno|aluna) (ai |ai da |da )?|minha (aula|nota|prova|tutoria|plataforma|disciplina)|meu (curso|polo|tutor|ava|login|acesso)|estudo ai|estudo ai na)\b/],
   ["segunda_graduacao", /\b(segunda (graduacao|faculdade|licenciatura)|2[ao]? ?graduacao|ja tenho (uma )?(graduacao|faculdade|diploma|curso superior)|outra graduacao|ja sou (formado|formada|graduado|graduada))\b/],
   ["pos_graduacao", /\b(pos[- ]?graduacao|especializacao|\bmba\b|mestrado|doutorado|lato sensu|stricto sensu)\b/],
   ["tecnico", /\b(curso tecnico|tecnico em|ensino tecnico|\btecnico\b)\b/],

@@ -158,6 +158,7 @@ describe("what the person wants and what makes a lead qualified", () => {
       ["É minha segunda graduação", "segunda_graduacao"],
       ["Quero transferir de faculdade", "transferencia"],
       ["Tem pós-graduação em direito do trabalho?", "pos_graduacao"],
+      ["Quero transferir meu curso para cá", "transferencia"],
       ["Vocês têm curso técnico em enfermagem?", "tecnico"],
       ["Quero a grade curricular", null]
     ];
