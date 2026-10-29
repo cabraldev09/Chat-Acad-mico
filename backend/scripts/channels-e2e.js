@@ -3746,6 +3746,8 @@ const postMeta = (id, payload, secret, badSig) => {
       const poloEst = (await http.post("/polos", { name: "Polo Estela", code: "EST", city: "Cidade Estela", state: "RO" }, auth())).data;
       await http.put(`/polos/${poloEst.id}/members`, { members: [{ userId: gab.id, role: "comercial" }] }, auth());
       const poloFila = (await http.post("/polos", { name: "Polo Fila", code: "FIL", city: "Cidade Fila", state: "RO" }, auth())).data;
+      // a polo whose commercial queue exists but nobody works in: the lead stays there and hears that it waits
+      sql(`INSERT INTO Queues (name, color, poloId, role, createdAt, updatedAt) VALUES ('Comercial Polo Fila', '#888888', ${poloFila.id}, 'comercial', now(), now())`);
       const slotsOfNumber = number => JSON.parse(sql(`SELECT slots FROM LeadCommercials WHERE leadId=${leadId(number)}`) || "{}");
       const handoffOf = number => sql(`SELECT handoffReason FROM Tickets WHERE id=${ticketOf(number)}`);
       const withLead = async (number, city) => { assert([200, 201].includes((await http.post("/leads", { name: `Pessoa ${number.slice(-3)}`, phone: number, city }, auth())).status), "lead"); };
