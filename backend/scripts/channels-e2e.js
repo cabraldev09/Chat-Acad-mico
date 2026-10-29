@@ -215,7 +215,7 @@ const startAnthropicMock = () => {
       if (/moro em (.+)/i.test(said2)) return tool("listar_polos", { cidade: said2.match(/moro em ([^,.!?]+)/i)[1].trim() });
       if (/Direito em Porto Velho/i.test(said2)) return turn("Perfeito, Direito em Porto Velho! Posso te explicar como funciona o curso?", { intent: "other", curso: "Direito", cidade: "Porto Velho", tipo_ingresso: "first_degree", nome: "Paulo Mendes" });
       if (/dura|tempo/i.test(said2)) return tool("buscar_curso", { courseName: "Direito" });
-      if (/formato da pedagogia/i.test(said2)) return tool("buscar_regra_modalidade", { courseName: "Pedagogia" });
+      if (/formato da pedagogia social/i.test(said2)) return tool("buscar_regra_modalidade", { courseName: "Pedagogia Social" });
       if (/texto com markdown/i.test(said2)) return turn("**Pedagogia** tem 8 semestres.\n\n### Como funciona\nVeja [a grade](https://exemplo.com/g.pdf) e a tabela:\n| Item | Valor |\n|---|---|\n| Duração | 8 semestres |", { intent: "other" });
       if (/mec/i.test(said2)) return tool("buscar_regra_modalidade", { courseName: "Direito" });
       if (/nasa/i.test(said2)) return turn("Essa informação eu prefiro confirmar com a equipe para não te passar nada incorreto.", { intent: "unknown", pergunta_sem_resposta: "convênio com a Nasa" });
@@ -3813,9 +3813,9 @@ const postMeta = (id, payload, secret, badSig) => {
       await waitFor(() => slotsOfNumber(Q10).city === "Cidade Estela", 15000, "the city was recognised in the words");
 
       // Z) the formats and the rules of the MEC: national, institutional and not confirmed come apart; the classes (turmas) the team confirms move items out of "not confirmed"
-      await http.post("/courses", { name: "Pedagogia", modality: "SEMIPRESENCIAL", category: "Graduação - Cruzeiro", semesters: 8, monthlyFee: 400, active: true }, auth());
+      await http.post("/courses", { name: "Pedagogia Social", modality: "SEMIPRESENCIAL", category: "Graduação - Cruzeiro", semesters: 8, monthlyFee: 400, active: true }, auth());
       await http.post("/mec-defaults/apply", {}, auth());
-      const pedId = Number(sql(`SELECT id FROM Courses WHERE name='Pedagogia' ORDER BY id DESC LIMIT 1`));
+      const pedId = Number(sql(`SELECT id FROM Courses WHERE name='Pedagogia Social' ORDER BY id DESC LIMIT 1`));
       assert(Number(sql(`SELECT COUNT(*) FROM CourseRegulations WHERE courseId=${pedId}`)) === 1, "the standard of the area was not applied to the new course");
       assert(/não podem mais ser ofertados a distância/.test(sql(`SELECT commercialApprovedText FROM CourseRegulations WHERE courseId=${pedId}`)), "the text of the licenciaturas does not explain why it is not EaD");
       const norms = (await http.get("/regulatory-norms", auth())).data;
@@ -3825,25 +3825,25 @@ const postMeta = (id, payload, secret, badSig) => {
 
       const Z1 = "5511920000250";
       await withLead(Z1, "Cidade Estela");
-      out = await say(Z1, "wamid.mec-1", "Qual o formato da Pedagogia? É online?", t => t.some(x => /NACIONAL:/.test(x)), "the explanation of the format");
+      out = await say(Z1, "wamid.mec-1", "Qual o formato da Pedagogia Social? É online?", t => t.some(x => /AINDA NÃO:/.test(x)), "the explanation of the format");
       const z1 = out.join(" ");
       assert(/Licenciaturas não podem ser ofertadas a distância/.test(z1) && /30%/.test(z1), `the national rule is missing: ${z1}`);
       assert(/AINDA NÃO:.*quantidade de encontros presenciais/.test(z1) && /local das atividades/.test(z1), `what is not confirmed was not separated: ${z1}`);
       assert(!/calendário previsto/i.test(z1.split("AINDA NÃO:")[0]), "a class nobody published was told");
 
       // a draft is for the team: only the published class reaches the lead
-      const cohort = (await http.post("/course-cohorts", { courseId: pedId, label: "Pedagogia 2026/2", expectedCalendar: "Encontros presenciais um sábado por mês.", activityLocation: "Polo de Porto Velho", contractedModality: "SEMIPRESENCIAL", transitionRegime: "semipresencial_transicao", syncRules: "Aulas ao vivo às quartas à noite.", published: false }, auth())).data;
+      const cohort = (await http.post("/course-cohorts", { courseId: pedId, label: "Pedagogia Social 2026/2", expectedCalendar: "Encontros presenciais um sábado por mês.", activityLocation: "Polo de Porto Velho", contractedModality: "SEMIPRESENCIAL", transitionRegime: "semipresencial_transicao", syncRules: "Aulas ao vivo às quartas à noite.", published: false }, auth())).data;
       assert(cohort.id && cohort.published === false, "cohort not created");
       assert((await http.post("/course-cohorts", { courseId: pedId, label: "" }, auth()).catch(e => e.response)).status === 400, "a class without a name was accepted");
       assert((await http.post("/course-cohorts", { courseId: pedId, label: "x", contractedModality: "HIBRIDO" }, auth()).catch(e => e.response)).status === 400, "an invalid modality was accepted");
       const Z2 = "5511920000251";
       await withLead(Z2, "Cidade Estela");
-      out = await say(Z2, "wamid.mec-2", "Qual o formato da Pedagogia?", t => t.some(x => /NACIONAL:/.test(x)), "draft class not told");
+      out = await say(Z2, "wamid.mec-2", "Qual o formato da Pedagogia Social?", t => t.some(x => /AINDA NÃO:/.test(x)), "draft class not told");
       assert(!/sábado por mês/.test(out.join(" ")), `a draft class reached the lead: ${out}`);
       assert((await http.put(`/course-cohorts/${cohort.id}`, { published: true }, auth())).status === 200, "publish the class");
       const Z3 = "5511920000252";
       await withLead(Z3, "Cidade Estela");
-      out = await say(Z3, "wamid.mec-3", "Qual o formato da Pedagogia?", t => t.some(x => /NACIONAL:/.test(x)), "published class told");
+      out = await say(Z3, "wamid.mec-3", "Qual o formato da Pedagogia Social?", t => t.some(x => /AINDA NÃO:/.test(x)), "published class told");
       const z3 = out.join(" ");
       assert(/Encontros presenciais um sábado por mês/.test(z3) && /Polo de Porto Velho/.test(z3) && /Aulas ao vivo às quartas/.test(z3), `the confirmed items did not reach the answer: ${z3}`);
       assert(/AINDA NÃO:.*início das atividades presenciais/.test(z3) && !/AINDA NÃO:[^.]*calendário previsto/i.test(z3), `the items still unknown must stay unknown: ${z3}`);
@@ -3861,7 +3861,7 @@ const postMeta = (id, payload, secret, badSig) => {
       // what the model writes in Markdown never reaches WhatsApp as symbols
       const Z4 = "5511920000253";
       await withLead(Z4, "Cidade Estela");
-      out = await say(Z4, "wamid.mec-4", "texto com markdown", t => t.some(x => /Pedagogia/.test(x)), "markdown answer");
+      out = await say(Z4, "wamid.mec-4", "texto com markdown", t => t.some(x => /Duração - 8 semestres/.test(x)), "markdown answer");
       const z4 = out.join("\n");
       assert(/\*Pedagogia\* tem 8 semestres/.test(z4) && !/\*\*|###|\]\(|\|---/.test(z4), `markdown reached the person: ${z4}`);
       assert(/a grade: https:\/\/exemplo.com\/g.pdf/.test(z4) && /Duração - 8 semestres/.test(z4), `the link or the table was not turned into text: ${z4}`);
