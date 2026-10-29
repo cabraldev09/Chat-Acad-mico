@@ -84,7 +84,7 @@ const Feature = ({ rev, title, text, items, img, alt }) => (
       <p>{text}</p>
       <ul className="sl-ul">{items.map((i) => <li key={i}>{i}</li>)}</ul>
     </div>
-    <div className="sl-shot" style={{ margin: 0 }}><img src={img} alt={alt} loading="lazy" /></div>
+    <div className="sl-shot" style={{ margin: 0 }}><img src={img} alt={alt} /></div>
   </div>
 );
 
