@@ -3527,7 +3527,7 @@ const postMeta = (id, payload, secret, badSig) => {
       // A) a lead from the first "oi" to the handoff for the proposal
       const A = "5511920000201";
       let llm = anthropic.requests.length;
-      let out = await say(A, "wamid.com-a1", "oi", t => t.some(x => /assistente virtual da Cruzeiro do Sul Virtual/.test(x)), "the opening");
+      let out = await say(A, "wamid.com-a1", "oi", t => t.some(x => /conhecer nossos cursos/.test(x)), "the opening");
       assert(/conhecer nossos cursos/.test(out.join(" ")) && anthropic.requests.length === llm, "the opening should be written by the system, without the model");
       await waitFor(() => runOf(A) === "waiting|qualificar", 8000, "waits at the first stage");
       // the person wrote first, so the lead is already "in service" (the first contact is still recorded as a milestone)
@@ -3753,7 +3753,8 @@ const postMeta = (id, payload, secret, badSig) => {
 
       // "Oi": a short presentation by the default assistant (Estela) and the next question, no model
       const Q1 = "5511920000240";
-      out = await say(Q1, "wamid.qs-1", "Oi", t => t.some(x => /Estela, assistente virtual/.test(x)), "greeting by Estela");
+      out = await say(Q1, "wamid.qs-1", "Oi", t => t.some(x => /conhecer nossos cursos/.test(x)), "greeting by Estela");
+      assert(/Estela, assistente virtual/.test(out.join(" ")), `the greeting does not present Estela: ${out}`);
       assert(/conhecer nossos cursos/.test(out.join(" ")), `the greeting did not lead to the next question: ${out}`);
 
       // "Quanto custa Criminologia?": the course is recognised in the words, the price goes to the consultant with the course already in the brief
