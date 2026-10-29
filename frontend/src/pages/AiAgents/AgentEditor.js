@@ -10,6 +10,7 @@ import IconAction from "../../components/IconAction";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import FunctionsTab from "./FunctionsTab";
+import HistoryDialog from "./HistoryDialog";
 
 const MODELS = { anthropic: "claude-haiku-5-5", openai: "gpt-4o-mini" };
 
@@ -48,6 +49,7 @@ const AgentEditor = ({ open, agent, initialTab = 0, onClose, onSaved }) => {
   const classes = useStyles();
   const [tab, setTab] = useState(0);
   const [advanced, setAdvanced] = useState(false);
+  const [history, setHistory] = useState(false);
   const [v, setV] = useState(blank());
   const [id, setId] = useState(null);
   const [queues, setQueues] = useState([]);
@@ -123,6 +125,16 @@ const AgentEditor = ({ open, agent, initialTab = 0, onClose, onSaved }) => {
             <div className={classes.section}>Como o agente fala</div>
             <TextField fullWidth variant="outlined" margin="dense" label="Tom de voz" value={v.persona.tone || ""} onChange={(e) => setPersona("tone", e.target.value)} />
             <TextField fullWidth variant="outlined" margin="dense" label="Mensagem ao passar para a equipe" value={v.handoffMessage || ""} onChange={(e) => set("handoffMessage", e.target.value)} />
+            <div className={classes.grid} style={{ marginTop: 6 }}>
+              {[
+                ["emoji", "Usar emojis nas respostas", v.persona.emoji === true],
+                ["splitMessages", "Dividir respostas longas em mensagens curtas", v.persona.splitMessages !== false],
+                ["limitSubjects", "Falar só de assuntos da instituição", v.persona.limitSubjects !== false],
+                ["signMessages", "Assinar com o nome do assistente", v.persona.signMessages === true],
+              ].map(([key, label, on]) => (
+                <FormControlLabel key={key} control={<Switch color="primary" checked={on} onChange={(e) => setPersona(key, e.target.checked)} />} label={label} />
+              ))}
+            </div>
             <Typography variant="caption" color="textSecondary" display="block" style={{ marginTop: 10 }}>
               {v.active ? "O agente está ligado: responde os alunos assim que você salvar." : "O agente está desligado. Ligue acima para ele começar a atender."} Os cursos e as grades vêm do cadastro do sistema.
             </Typography>
@@ -212,9 +224,11 @@ const AgentEditor = ({ open, agent, initialTab = 0, onClose, onSaved }) => {
         {tab === 2 && <FunctionsTab value={v.functions} onChange={(list) => set("functions", list)} />}
       </DialogContent>
       <DialogActions>
+        {id && <Button onClick={() => setHistory(true)} style={{ marginRight: "auto" }}>Histórico de alterações</Button>}
         <Button onClick={onClose}>Fechar</Button>
         <Button variant="contained" color="primary" onClick={save} disabled={saving} disableElevation>{saving ? <CircularProgress size={18} /> : "Salvar agente"}</Button>
       </DialogActions>
+      {id && <HistoryDialog open={history} agentId={id} onClose={() => setHistory(false)} onRestored={() => { setHistory(false); onClose(); }} />}
     </Dialog>
   );
 };

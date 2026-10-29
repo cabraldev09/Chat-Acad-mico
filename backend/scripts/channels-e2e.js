@@ -3485,6 +3485,20 @@ const postMeta = (id, payload, secret, badSig) => {
       const reg = await http.put(`/course-regulations/${direitoId}`, { mecImpacted: true, regulation: "Portaria de teste", teoriaAoVivo: true, praticaPresencial: true, cronogramaPraticasDefinido: false, commercialApprovedText: "Texto aprovado." }, auth());
       assert(reg.status === 200 && (await http.get("/course-regulations", auth())).data.rules.some(r => r.courseId === direitoId && r.courseName === "Direito"), "regulation not saved");
 
+      // 2b) the history of the agent: every save is kept, what changed is named, an earlier version comes back; the integrations can hear the handoffs
+      const agentNow = (await http.get(`/ai-agents/${agentId}`, auth())).data;
+      const toneBefore = (agentNow.persona || {}).tone;
+      assert((await http.put(`/ai-agents/${agentId}`, { persona: { ...(agentNow.persona || {}), tone: "Tom de teste do histórico", emoji: true } }, auth())).status === 200, "save the agent");
+      let hist = (await http.get(`/ai-agents/${agentId}/history`, auth())).data;
+      assert(hist.length >= 2 && hist[0].changed.includes("Como fala (tom, regras, estilo)") && hist[0].isCurrent === true, `history ${JSON.stringify(hist.slice(0, 2))}`);
+      assert(hist[hist.length - 1].changed.length === 0 && /antes da primeira/.test(hist[hist.length - 1].note), "the first revision keeps how it was before");
+      assert((await http.post(`/ai-agents/${agentId}/history/${hist[hist.length - 1].id}/restore`, {}, auth())).status === 200, "restore");
+      const restored = (await http.get(`/ai-agents/${agentId}`, auth())).data;
+      assert((restored.persona || {}).tone === toneBefore && (restored.persona || {}).emoji === undefined, `the earlier version did not come back ${JSON.stringify(restored.persona)}`);
+      hist = (await http.get(`/ai-agents/${agentId}/history`, auth())).data;
+      assert(hist[0].note && /Restaurado/.test(hist[0].note), "the restore is in the history too");
+      assert((await http.get("/webhooks-config/events", auth())).data.includes("ai.handoff"), "the AI events are offered to the integrations");
+
       // 3) a real conversation: the agent on, the flow published
       await http.put(`/ai-agents/${agentId}`, { active: true, whatsappId: cid, apiKey: "sk-ant-test", waitSeconds: 0, provider: "anthropic", model: "claude-haiku-5-5" }, auth());
       assert((await http.post(`/flows/${flowId}/publish`, {}, auth())).status === 200, "publish the commercial flow");

@@ -168,6 +168,8 @@ r.get("/ai-agents/:id/kb/:docId", isAuth, isManager, Ai.kbShow);
 r.put("/ai-agents/:id/kb/:docId", isAuth, isManager, Ai.kbUpdate);
 r.delete("/ai-agents/:id/kb/:docId", isAuth, isManager, Ai.kbRemove);
 r.post("/ai-agents/:id/test", isAuth, isManager, Ai.test);
+r.get("/ai-agents/:id/history", isAuth, isManager, Ai.historyList);
+r.post("/ai-agents/:id/history/:revisionId/restore", isAuth, isManager, Ai.historyRestore);
 r.get("/ai-agents/:id/cases", isAuth, isManager, Ai.evalList);
 r.post("/ai-agents/:id/cases", isAuth, isManager, Ai.evalCreate);
 r.post("/ai-agents/:id/cases/run", isAuth, isManager, Ai.evalRun);

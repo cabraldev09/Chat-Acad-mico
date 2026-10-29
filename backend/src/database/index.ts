@@ -61,6 +61,7 @@ import AiUsage from "../models/AiUsage";
 import AiLearning from "../models/AiLearning";
 import AiRule from "../models/AiRule";
 import AiEvalCase from "../models/AiEvalCase";
+import AiAgentRevision from "../models/AiAgentRevision";
 import Polo from "../models/Polo";
 import PoloMember from "../models/PoloMember";
 import PoloCoverage from "../models/PoloCoverage";
@@ -149,6 +150,7 @@ const models = [
   AiLearning,
   AiRule,
   AiEvalCase,
+  AiAgentRevision,
   Polo,
   PoloMember,
   PoloCoverage,
