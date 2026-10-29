@@ -180,6 +180,8 @@ const createAgentWithFlow = async (a: NewAgent, userId: number): Promise<{ agent
   }
   const flow = await ChatFlow.create({ name: a.name, kind: "agent", agentId: agent.id, entry: JSON.stringify({ type: "agent", keywords: [] }), draft: JSON.stringify(a.graph), description: a.description, createdBy: userId } as any);
   const funnel = a.funnel ? await ensurePipeline({ create: true }) : undefined;
+  // the commercial agent also learns the national norms of the register (their status included)
+  if ((a.kb || []).some(k => k.topic === "institutional/mec")) await (await import("../services/CommercialServices/MecDefaults")).syncMecKnowledge().catch(err => logger.warn(`norms not taught to the new agent: ${err}`));
   return { agentId: agent.id, flowId: flow.id, ...(funnel ? { funnel: { created: funnel.created, missing: funnel.missing } } : {}) };
 };
 

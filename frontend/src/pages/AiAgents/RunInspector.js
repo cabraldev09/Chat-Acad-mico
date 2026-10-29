@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Chip, makeStyles } from "@material-ui/core";
-import { AlertTriangle, CheckCircle2, ChevronDown, Flag, MessageSquare, Route, Sparkles, UserCheck, Wrench } from "lucide-react";
+import { AlertTriangle, Bot, CheckCircle2, ChevronDown, Flag, MessageSquare, Route, UserCheck, Settings2 } from "lucide-react";
 
 // What the agent decided at each message of the test: everything on this panel comes from the runtime of the simulator
 // (the same engine that answers the leads), nothing here is written by hand. A thing that was not decided yet shows "ainda não".
@@ -132,10 +132,10 @@ const Turn = ({ step, n, open, onToggle }) => {
         <div>
           {error && <div className={classes.step} style={{ color: "#dc2626" }}><AlertTriangle size={15} /><span><b>Erro:</b> {error}</span></div>}
           {(t && t.reasons ? t.reasons : []).map((r, i) => (
-            <div key={i} className={classes.step}><Sparkles size={15} /><span>{r}</span></div>
+            <div key={i} className={classes.step}><Bot size={15} /><span>{r}</span></div>
           ))}
           {step.tools && step.tools.length > 0 && (
-            <div className={classes.step}><Wrench size={15} /><span><b>Ferramentas:</b> {step.tools.join(", ")}</span></div>
+            <div className={classes.step}><Settings2 size={15} /><span><b>Ferramentas:</b> {step.tools.join(", ")}</span></div>
           )}
           {changed.map(([k, [from, to]]) => (
             <div key={k} className={classes.step}><CheckCircle2 size={15} /><span><b>{SLOT_LABEL[k] || k}:</b> {from === null || from === undefined || from === "" ? "—" : String(from)} → {to === null || to === undefined || to === "" ? "—" : String(to)}</span></div>

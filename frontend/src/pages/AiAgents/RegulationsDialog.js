@@ -7,6 +7,8 @@ import IconAction from "../../components/IconAction";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import MecDefaultsPanel from "./MecDefaultsPanel";
+import CohortsPanel from "./CohortsPanel";
+import NormsPanel from "./NormsPanel";
 
 const useStyles = makeStyles((theme) => ({
   row: { display: "flex", alignItems: "center", gap: 8, padding: "8px 0", borderBottom: theme.border.divider },
@@ -62,12 +64,16 @@ const RegulationsDialog = ({ open, onClose }) => {
       <DialogContent dividers>
         {!data && <CircularProgress size={22} />}
         {data && !form && (
-          <Tabs value={tab} onChange={(e, v) => setTab(v)} indicatorColor="primary" textColor="primary" style={{ marginBottom: 8 }}>
+          <Tabs value={tab} onChange={(e, v) => setTab(v)} indicatorColor="primary" textColor="primary" variant="scrollable" scrollButtons="auto" style={{ marginBottom: 8 }}>
             <Tab label="Por curso" />
             <Tab label="Padrão por área (Portaria 378/2025)" />
+            <Tab label="Turmas" />
+            <Tab label="Normas do MEC" />
           </Tabs>
         )}
         {data && !form && tab === 1 && <MecDefaultsPanel onChanged={load} />}
+        {data && !form && tab === 2 && <CohortsPanel />}
+        {data && !form && tab === 3 && <NormsPanel />}
         {data && !form && tab === 0 && (
           <>
             <Typography variant="body2" color="textSecondary" gutterBottom>

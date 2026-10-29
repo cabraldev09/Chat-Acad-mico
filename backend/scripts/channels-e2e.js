@@ -198,7 +198,7 @@ const startAnthropicMock = () => {
         if (out.duracaoTexto !== undefined) return turn(`${out.nome}: ${out.duracaoTexto}, formato ${out.modalidade}. Quer ver a grade?`, { intent: "course_duration" });
         if (out.agendado) return turn(out.texto_confirmacao, { intent: "other", melhor_horario: "amanhã às 14h" });
         if (out.polos !== undefined) return turn(out.polo_definido ? `Você é atendido pelo ${out.polos[0].nome}.` : `AVISO: ${out.aviso}`, { intent: "other" });
-        if (out.modalidadeAtual !== undefined) return turn(`Regra: ${out.regulacaoAplicavel || "sem regra cadastrada"}; práticas presenciais: ${out.praticaPresencial}; cronograma definido: ${out.cronogramaPraticasDefinido}.`, { intent: "mec" });
+        if (out.modalidadeAtual !== undefined) return turn(`Regra: ${out.regulacaoAplicavel || "sem regra cadastrada"}; práticas presenciais: ${out.praticaPresencial}; cronograma definido: ${out.cronogramaPraticasDefinido}.${out.explicacao ? ` NACIONAL: ${out.explicacao.nacional.regra} CONFIRMADO: ${out.explicacao.institucional.confirmado.join(" ")} AINDA NÃO: ${out.explicacao.naoConfirmado.join("; ")}.` : ""}`, { intent: "mec" });
         return turn("Anotado!", { intent: "other" });
       }
       const said2 = typeof last.content === "string" ? last.content : "";
@@ -215,6 +215,8 @@ const startAnthropicMock = () => {
       if (/moro em (.+)/i.test(said2)) return tool("listar_polos", { cidade: said2.match(/moro em ([^,.!?]+)/i)[1].trim() });
       if (/Direito em Porto Velho/i.test(said2)) return turn("Perfeito, Direito em Porto Velho! Posso te explicar como funciona o curso?", { intent: "other", curso: "Direito", cidade: "Porto Velho", tipo_ingresso: "first_degree", nome: "Paulo Mendes" });
       if (/dura|tempo/i.test(said2)) return tool("buscar_curso", { courseName: "Direito" });
+      if (/formato da pedagogia/i.test(said2)) return tool("buscar_regra_modalidade", { courseName: "Pedagogia" });
+      if (/texto com markdown/i.test(said2)) return turn("**Pedagogia** tem 8 semestres.\n\n### Como funciona\nVeja [a grade](https://exemplo.com/g.pdf) e a tabela:\n| Item | Valor |\n|---|---|\n| Duração | 8 semestres |", { intent: "other" });
       if (/mec/i.test(said2)) return tool("buscar_regra_modalidade", { courseName: "Direito" });
       if (/nasa/i.test(said2)) return turn("Essa informação eu prefiro confirmar com a equipe para não te passar nada incorreto.", { intent: "unknown", pergunta_sem_resposta: "convênio com a Nasa" });
       if (/vou pensar/i.test(said2)) return turn("Combinado! Fico no aguardo. 😊", { intent: "follow_up", retorno_em: "2026-12-01", motivo_retorno: "vai conversar com a família" });
@@ -3416,7 +3418,9 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(sql(`SELECT aiActive FROM Tickets WHERE id=${ticketOf(c)}`) === "0", "the AI went on after the handoff");
 
       // the counters of the blocks and the usage by block
-      const st = (await http.get(`/flows/${flow.id}/stats`, auth())).data;
+      // (the run is closed as "handoff" after the lead is told it waits in the queue: give it a moment)
+      let st = (await http.get(`/flows/${flow.id}/stats`, auth())).data;
+      for (let i = 0; i < 16 && !(st.handoff >= 1); i += 1) { await new Promise(r => setTimeout(r, 500)); st = (await http.get(`/flows/${flow.id}/stats`, auth())).data; }
       assert(st.started >= 3 && st.nodes.s >= 3 && st.nodes.ok >= 1 && st.handoff >= 1, `stats ${JSON.stringify(st)}`);
       assert(Number(sql(`SELECT COUNT(*) FROM AiUsage WHERE kind='reply' AND flowId=${flow.id} AND nodeId='s'`)) >= 5, "the usage of the stage was not logged");
 
@@ -3514,7 +3518,9 @@ const postMeta = (id, payload, secret, badSig) => {
         await inboundCloud(from, id, body);
         await waitFor(() => until(texts(mark)), 20000, label);
         // the row of the reply is created after the channel answers: the next message must come after it
-        await waitFor(() => Number(sql(`SELECT COUNT(*) FROM Messages m JOIN Tickets t ON t.id=m.ticketId JOIN Contacts c ON c.id=t.contactId WHERE c.number='${from}' AND m.fromMe=true`)) >= texts(mark).length, 8000, "replies stored");
+        // only what went to this person counts: another conversation may still be sending
+        const toThem = () => graph.sent.slice(mark).filter(x => x.path === "/PN1/messages" && x.body && x.body.type === "text" && x.body.text && x.body.to === from).length;
+        await waitFor(() => Number(sql(`SELECT COUNT(*) FROM Messages m JOIN Tickets t ON t.id=m.ticketId JOIN Contacts c ON c.id=t.contactId WHERE c.number='${from}' AND m.fromMe=true`)) >= toThem(), 8000, "replies stored");
         return texts(mark);
       };
 
@@ -3805,6 +3811,60 @@ const postMeta = (id, payload, secret, badSig) => {
       const Q10 = "5511920000249";
       await say(Q10, "wamid.qs-10", "Sou de Cidade Estela", t => t.length > 0, "a statement of the city");
       await waitFor(() => slotsOfNumber(Q10).city === "Cidade Estela", 15000, "the city was recognised in the words");
+
+      // Z) the formats and the rules of the MEC: national, institutional and not confirmed come apart; the classes (turmas) the team confirms move items out of "not confirmed"
+      await http.post("/courses", { name: "Pedagogia", modality: "SEMIPRESENCIAL", category: "Graduação - Cruzeiro", semesters: 8, monthlyFee: 400, active: true }, auth());
+      await http.post("/mec-defaults/apply", {}, auth());
+      const pedId = Number(sql(`SELECT id FROM Courses WHERE name='Pedagogia' ORDER BY id DESC LIMIT 1`));
+      assert(Number(sql(`SELECT COUNT(*) FROM CourseRegulations WHERE courseId=${pedId}`)) === 1, "the standard of the area was not applied to the new course");
+      assert(/não podem mais ser ofertados a distância/.test(sql(`SELECT commercialApprovedText FROM CourseRegulations WHERE courseId=${pedId}`)), "the text of the licenciaturas does not explain why it is not EaD");
+      const norms = (await http.get("/regulatory-norms", auth())).data;
+      assert(norms.norms.length >= 4 && ["decreto-12456-2025", "portaria-378-2025", "portaria-381-2025", "portaria-506-2025"].every(k => norms.norms.some(n => n.key === k)), `norms: ${JSON.stringify(norms.norms.map(n => n.key))}`);
+      assert(norms.norms.every(n => n.stale === true), "a norm nobody checked should ask to be checked");
+      assert(Number(sql(`SELECT COUNT(*) FROM KbDocuments WHERE agentId=${agentId} AND topic LIKE 'mec/norm/%'`)) === 4 && Number(sql(`SELECT COUNT(*) FROM KbDocuments WHERE agentId=${agentId} AND topic IN ('institutional/mec-formats','institutional/mec-licenciaturas','institutional/mec-transition')`)) === 3, "the agent did not learn the norms and the guide of how to explain them");
+
+      const Z1 = "5511920000250";
+      await withLead(Z1, "Cidade Estela");
+      out = await say(Z1, "wamid.mec-1", "Qual o formato da Pedagogia? É online?", t => t.some(x => /NACIONAL:/.test(x)), "the explanation of the format");
+      const z1 = out.join(" ");
+      assert(/Licenciaturas não podem ser ofertadas a distância/.test(z1) && /30%/.test(z1), `the national rule is missing: ${z1}`);
+      assert(/AINDA NÃO:.*quantidade de encontros presenciais/.test(z1) && /local das atividades/.test(z1), `what is not confirmed was not separated: ${z1}`);
+      assert(!/calendário previsto/i.test(z1.split("AINDA NÃO:")[0]), "a class nobody published was told");
+
+      // a draft is for the team: only the published class reaches the lead
+      const cohort = (await http.post("/course-cohorts", { courseId: pedId, label: "Pedagogia 2026/2", expectedCalendar: "Encontros presenciais um sábado por mês.", activityLocation: "Polo de Porto Velho", contractedModality: "SEMIPRESENCIAL", transitionRegime: "semipresencial_transicao", syncRules: "Aulas ao vivo às quartas à noite.", published: false }, auth())).data;
+      assert(cohort.id && cohort.published === false, "cohort not created");
+      assert((await http.post("/course-cohorts", { courseId: pedId, label: "" }, auth()).catch(e => e.response)).status === 400, "a class without a name was accepted");
+      assert((await http.post("/course-cohorts", { courseId: pedId, label: "x", contractedModality: "HIBRIDO" }, auth()).catch(e => e.response)).status === 400, "an invalid modality was accepted");
+      const Z2 = "5511920000251";
+      await withLead(Z2, "Cidade Estela");
+      out = await say(Z2, "wamid.mec-2", "Qual o formato da Pedagogia?", t => t.some(x => /NACIONAL:/.test(x)), "draft class not told");
+      assert(!/sábado por mês/.test(out.join(" ")), `a draft class reached the lead: ${out}`);
+      assert((await http.put(`/course-cohorts/${cohort.id}`, { published: true }, auth())).status === 200, "publish the class");
+      const Z3 = "5511920000252";
+      await withLead(Z3, "Cidade Estela");
+      out = await say(Z3, "wamid.mec-3", "Qual o formato da Pedagogia?", t => t.some(x => /NACIONAL:/.test(x)), "published class told");
+      const z3 = out.join(" ");
+      assert(/Encontros presenciais um sábado por mês/.test(z3) && /Polo de Porto Velho/.test(z3) && /Aulas ao vivo às quartas/.test(z3), `the confirmed items did not reach the answer: ${z3}`);
+      assert(/AINDA NÃO:.*início das atividades presenciais/.test(z3) && !/AINDA NÃO:[^.]*calendário previsto/i.test(z3), `the items still unknown must stay unknown: ${z3}`);
+
+      // an amended norm is told to the agents with its status, and the check is recorded
+      const n378 = norms.norms.find(n => n.key === "portaria-378-2025");
+      assert((await http.put(`/regulatory-norms/${n378.id}`, { status: "alterada", amendments: "Portaria de teste alterou o art. 8º." }, auth())).status === 200, "amend the norm");
+      await waitFor(() => /ALTERADA/.test(sql(`SELECT content FROM KbDocuments WHERE agentId=${agentId} AND topic='mec/norm/portaria-378-2025'`)), 15000, "the amended norm reached the agent");
+      assert(/Portaria de teste alterou/.test(sql(`SELECT content FROM KbDocuments WHERE agentId=${agentId} AND topic='mec/norm/portaria-378-2025'`)), "the amendment text did not reach the agent");
+      const after = (await http.get("/regulatory-norms", auth())).data.norms.find(n => n.key === "portaria-378-2025");
+      assert(after.status === "alterada" && after.reviewedAt && after.stale === false, "the check was not recorded");
+      await http.put(`/regulatory-norms/${n378.id}`, { status: "vigente", amendments: "" }, auth());
+      await waitFor(() => !/ALTERADA/.test(sql(`SELECT content FROM KbDocuments WHERE agentId=${agentId} AND topic='mec/norm/portaria-378-2025'`)), 15000, "back to vigente");
+
+      // what the model writes in Markdown never reaches WhatsApp as symbols
+      const Z4 = "5511920000253";
+      await withLead(Z4, "Cidade Estela");
+      out = await say(Z4, "wamid.mec-4", "texto com markdown", t => t.some(x => /Pedagogia/.test(x)), "markdown answer");
+      const z4 = out.join("\n");
+      assert(/\*Pedagogia\* tem 8 semestres/.test(z4) && !/\*\*|###|\]\(|\|---/.test(z4), `markdown reached the person: ${z4}`);
+      assert(/a grade: https:\/\/exemplo.com\/g.pdf/.test(z4) && /Duração - 8 semestres/.test(z4), `the link or the table was not turned into text: ${z4}`);
 
       // M) the provider fails twice: the person is told a colleague continues, the conversation goes to the team with the reason, the failure is counted
       const M = "5511920000213";

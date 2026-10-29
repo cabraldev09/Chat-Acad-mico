@@ -631,7 +631,12 @@ const improveData = async (agent: AiAgent) => {
   const waiting = rows.filter(r => r.status === "aguardando_equipe");
   const waitingGroups = new Set(waiting.map(r => norm(r.question).slice(0, 80))).size;
 
+  // the national norms the agent relies on: someone has to check them against the official source from time to time
+  const normRows = kind === "commercial" ? await (await import("../services/CommercialServices/Norms")).normsList().catch(() => []) : [];
+  const normsStale = normRows.filter((n: any) => n.stale).length;
+
   const next: string[] = [];
+  if (kind === "commercial" && normsStale) next.push(`Confira as normas do MEC na fonte oficial (${normsStale} de ${normRows.length} sem conferência recente) e registre se houve alteração.`);
   if (waiting.length) next.push(`Responda ${waitingGroups === 1 ? "a pergunta" : `as ${waitingGroups} perguntas`} que o agente não soube responder: a resposta vira conhecimento dele.`);
   if (rows.some(r => r.status === "para_revisar")) next.push("Revise e aprove as respostas que a equipe já deu: o agente aprende com elas.");
   topics.filter(t => !t.ok).slice(0, 3).forEach(t => next.push(`Envie um texto ou PDF sobre “${t.label}”: hoje o agente diz que vai confirmar.`));
@@ -648,6 +653,7 @@ const improveData = async (agent: AiAgent) => {
     topics,
     last30days: { unknown: count("unknown"), blocked: count("agent_guard"), errors: count("agent_error") },
     regulations: kind === "commercial" ? { courses, withRule } : null,
+    norms: kind === "commercial" ? { total: normRows.length, stale: normsStale } : null,
     next
   };
 };

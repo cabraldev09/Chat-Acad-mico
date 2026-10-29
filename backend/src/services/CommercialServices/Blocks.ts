@@ -1,8 +1,10 @@
+import { toWhatsapp } from "../../helpers/ChannelText";
+
 // A person on WhatsApp writes in short bubbles, one idea each, and never sends a wall of text that the app cuts with "Ler mais".
 // The AI is asked to write that way; this makes it true whatever the model does: an answer is split into bubbles of a few lines that are
 // sent one after the other (the sender already shows "digitando…" and waits like a person would).
 export const BLOCK_MAX = 300; // a bubble never goes past this (WhatsApp folds a long message behind "Ler mais")
-export const BLOCK_SOFT = 170; // two short paragraphs are kept in one bubble only while they fit in this
+export const BLOCK_SOFT = 240; // short paragraphs share a bubble while they fit in this (an idea is never torn into one-line bubbles)
 export const BLOCKS_MAX = 5; // more bubbles than this feel like spam
 
 // sentences of a long paragraph (the accented capitals and the *bold* marks also start a sentence)
@@ -37,7 +39,7 @@ const hardCut = (text: string, limit: number): string[] => {
 };
 
 export const splitIntoBlocks = (raw: string): string[] => {
-  const text = String(raw || "").replace(/\r/g, "").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+  const text = toWhatsapp(String(raw || "")).replace(/\r/g, "").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
   if (!text) return [];
   if (text.length <= BLOCK_SOFT && !text.includes("\n\n")) return [text];
 

@@ -16,7 +16,7 @@ export const COMMERCIAL_TOOL_DEFS: Record<string, { name: string; description: s
   },
   buscar_regra_modalidade: {
     name: "buscar_regra_modalidade",
-    description: "Regra da modalidade do curso (mudanças do MEC): se é impactado, aulas ao vivo, práticas presenciais, cronograma, texto aprovado. Use antes de explicar MEC ou práticas.",
+    description: "Como o curso funciona (modalidade e mudanças do MEC), em três partes separadas em explicacao: nacional (o que a lei exige), institucional (o que a instituição confirmou para o curso e a turma) e naoConfirmado (o que ainda não foi divulgado). Use SEMPRE antes de responder se o curso é online, EaD, semipresencial ou presencial, e antes de explicar MEC, práticas ou aulas presenciais.",
     input_schema: { type: "object", properties: { ...course } }
   },
   buscar_grade: {

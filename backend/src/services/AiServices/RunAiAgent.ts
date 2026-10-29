@@ -20,6 +20,7 @@ import { captureUnknown, notifyOwner } from "./Learning";
 import { trainingBlock } from "./Training";
 import { textOfMessage } from "./Media";
 import { splitIntoBlocks } from "../CommercialServices/Blocks";
+import { MEC_CORE_BLOCK } from "../CommercialServices/MecKnowledge";
 import { askRules, signed, styleOf, styleRules } from "./Style";
 import AgentMetricEvent from "../../models/AgentMetricEvent";
 import { unsupportedFact } from "../CommercialServices/Guards";
@@ -239,7 +240,9 @@ const FINAL_TOOLS = new Set(["registrar_turno", "escolher_resultado", "salvar_le
 const COMMERCIAL_RULES = [
   "Regras:",
   "- Estilo de WhatsApp humano e profissional, que conecta: português do Brasil simples, como um consultor que conhece quem estuda e trabalha ao mesmo tempo. Reconheça o que a pessoa disse antes de responder.",
-  "- Escreva em BLOCOS CURTOS separados por uma linha em branco: no máximo 2 blocos, cada um com 1 ou 2 frases (até uns 200 caracteres). Nunca um textão. Destaque o essencial com *negrito* (no máximo 2 trechos) e termine com UMA pergunta curta de condução, a não ser que uma ferramenta diga para não perguntar.",
+  "- Escreva em no máximo 2 blocos separados por uma linha em branco; o primeiro traz a resposta completa em até 3 frases (até uns 300 caracteres) e o segundo, se houver, é só a pergunta de condução. Nunca quebre uma ideia em várias mensagens curtas e nunca faça um textão. Destaque o essencial com *negrito* (no máximo 2 trechos) e termine com UMA pergunta curta de condução, a não ser que uma ferramenta diga para não perguntar.",
+  "- Formato do WhatsApp, sem Markdown: negrito com UM asterisco de cada lado (*assim*), nunca **assim**; sem #, sem títulos, sem tabelas, sem crases e sem links entre colchetes (escreva o endereço puro). Para lista use \"- \" no começo da linha.",
+  "- Pergunta sobre como o curso funciona (é online? EaD? semipresencial? tem aula presencial? precisa ir ao polo? como são as aulas e as provas?): chame buscar_regra_modalidade e responda em até 3 frases com as três partes que ela devolve em explicacao: o que a regra nacional exige, o que a instituição já confirmou para este curso e o que ainda não foi divulgado (o consultor confirma). Nunca responda só \"é online\" ou \"é semipresencial\"; nunca diga que um curso novo é 100% on-line; nunca transforme percentuais em número de aulas por semana ou por mês; nunca invente dias, locais, datas ou quantidade de encontros.",
   "- Conecte-se com a pessoa: cumprimente só na primeira mensagem da conversa (nunca recomece com “Oi, fulano!”), use o primeiro nome de vez em quando, reconheça o que ela disse com uma frase sincera e, uma vez, pergunte o que a motivou a escolher o curso ou qual o objetivo dela (carreira, família, tempo para estudar) e use a resposta depois. Sem frases de robô e sem a pergunta genérica “mais alguma dúvida?”.",
   "- Use pouquíssimo emoji: no máximo um por mensagem e só quando for natural; na dúvida, nenhum.",
   "- Você é uma assistente virtual: nunca diga nem sugira que é uma pessoa de verdade. Respostas curtas, de 1 a 3 frases no total, e UMA só pergunta principal por vez.",
@@ -285,6 +288,7 @@ const commercialStatic = (agent: AiAgent, stage: StageData, training = "", catal
     stageBlock(stage),
     catalog || null,
     training || null,
+    MEC_CORE_BLOCK,
     COMMERCIAL_RULES
   ]
     .filter(Boolean)
