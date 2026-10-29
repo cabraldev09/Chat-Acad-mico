@@ -3,6 +3,7 @@ import { useHistory } from "react-router-dom";
 import { toast } from "react-toastify";
 import { makeStyles } from "@material-ui/core/styles";
 import { Typography, Chip, CircularProgress, Menu, MenuItem, Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField, ListItemIcon, Checkbox, FormControlLabel } from "@material-ui/core";
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Play, CheckCheck, MessageSquare, MoreVertical, UserCog, UserCheck, Undo2, MoveRight, ListChecks, Send, BarChart3 } from "lucide-react";
 
 import MainContainer from "../../components/MainContainer";
@@ -23,7 +24,7 @@ const COLUMNS = [
 const useStyles = makeStyles((theme) => ({
   intro: { color: theme.palette.text.secondary, fontSize: 14, margin: theme.spacing(0, 0, 2) },
   board: { display: "grid", gap: theme.spacing(2), gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", alignItems: "start", paddingBottom: theme.spacing(3) },
-  col: { borderRadius: 16, border: `1px solid ${theme.palette.divider}`, backgroundColor: theme.palette.type === "dark" ? "rgba(255,255,255,.04)" : "rgba(15,23,42,.035)", padding: theme.spacing(1.5), minWidth: 0 },
+  col: { borderRadius: 18, border: `1px solid ${theme.palette.divider}`, backgroundColor: theme.palette.type === "dark" ? "rgba(255,255,255,.04)" : "#d9e2ef", padding: theme.spacing(1.5), minWidth: 0 },
   colHead: { display: "flex", alignItems: "center", gap: theme.spacing(1), padding: theme.spacing(0.5, 0.5, 0.25) },
   dot: { width: 10, height: 10, borderRadius: "50%", flex: "none" },
   colTitle: { fontWeight: 700, fontSize: 15, flex: 1 },
@@ -39,8 +40,14 @@ const useStyles = makeStyles((theme) => ({
   name: { fontWeight: 600, fontSize: 14.5, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
   meta: { fontSize: 12.5, color: theme.palette.text.secondary, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
   late: { color: "#dc2626", fontWeight: 600 },
-  panel: { border: `1px solid ${theme.palette.divider}`, borderRadius: 14, padding: theme.spacing(1.5, 2), margin: theme.spacing(0, 0, 2) },
-  stats: { display: "grid", gap: theme.spacing(1.5), gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", "& div": { display: "flex", flexDirection: "column" }, "& b": { fontSize: 22, lineHeight: 1.2 }, "& span": { fontSize: 12.5, color: theme.palette.text.secondary } },
+  panel: { display: "grid", gap: theme.spacing(2), margin: theme.spacing(0, 0, 2) },
+  kpi: { border: `1px solid ${theme.palette.divider}`, borderRadius: 12, padding: theme.spacing(1.5, 2), background: theme.palette.background.paper, boxShadow: "0 1px 2px rgba(11,66,121,.06)" },
+  kpiL: { fontSize: 12.5, color: theme.palette.text.secondary, display: "block" },
+  kpiN: { display: "block", fontSize: 28, fontWeight: 700, letterSpacing: "-0.03em", lineHeight: 1.15, fontVariantNumeric: "tabular-nums" },
+  box: { border: `1px solid ${theme.palette.divider}`, borderRadius: 16, padding: theme.spacing(2), background: theme.palette.background.paper, boxShadow: "0 1px 2px rgba(11,66,121,.06)" },
+  next: { fontSize: 12.5, display: "flex", alignItems: "center", gap: 6, color: theme.palette.text.secondary },
+  actions: { display: "flex", alignItems: "center", gap: 4, marginTop: 6, flexWrap: "wrap" },
+  stats: { display: "grid", gap: theme.spacing(1.5), gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", },
   weeks: { display: "flex", alignItems: "flex-end", gap: 8, height: 90, margin: theme.spacing(1.5, 0, 0.5), "& > div": { display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", flex: 1, fontSize: 12 } },
   bar: { width: "100%", maxWidth: 28, borderRadius: 6, background: theme.palette.primary.main },
   table: { width: "100%", borderCollapse: "collapse", marginTop: theme.spacing(1.5), fontSize: 13.5, "& th": { textAlign: "left", fontWeight: 600, padding: "6px 8px", borderBottom: `1px solid ${theme.palette.divider}` }, "& td": { padding: "6px 8px", borderBottom: `1px solid ${theme.palette.divider}` } },
@@ -93,8 +100,9 @@ const Onboarding = () => {
   const [checklistFor, setChecklistFor] = useState(null); // lead id
   const [welcomeFor, setWelcomeFor] = useState(null); // { lead, text, blocked }
   const [stats, setStats] = useState(null);
-  const [showStats, setShowStats] = useState(false);
+  const [showStats, setShowStats] = useState(null); // null: follows the profile (open for the coordination)
   const isManager = !!me && (me.profile === "admin" || me.role === "admin" || me.role === "coordenacao");
+  const statsOpen = showStats === null ? isManager : showStats;
 
   const load = useCallback(async () => {
     try {
@@ -170,9 +178,9 @@ const Onboarding = () => {
     setBusyId(null);
   };
   useEffect(() => {
-    if (!showStats || stats) return;
+    if (!statsOpen || stats) return;
     api.get("/onboarding/stats").then(({ data }) => setStats(data)).catch(toastError);
-  }, [showStats, stats]);
+  }, [statsOpen, stats]);
 
   // a student nobody took yet: the tutor takes it and goes to the conversation
   const take = async (lead) => {
@@ -205,37 +213,53 @@ const Onboarding = () => {
     <MainContainer>
       <MainHeader>
         <Title>Ambientação</Title>
-        {isManager && <Button size="small" variant="outlined" startIcon={<BarChart3 size={15} />} onClick={() => setShowStats((v) => !v)}>{showStats ? "Esconder painel" : "Painel do tutor"}</Button>}
+        {isManager && <Button size="small" variant="outlined" startIcon={<BarChart3 size={15} />} onClick={() => setShowStats(!statsOpen)}>{statsOpen ? "Esconder painel" : "Mostrar painel"}</Button>}
       </MainHeader>
       <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
       <p className={classes.intro}>
-        Alunos com matrícula confirmada. O tutor combina o primeiro acesso à plataforma e marca cada etapa; ao concluir, o consultor recebe lembretes para pedir indicação e oferecer um novo curso.
+        Alunos com matrícula confirmada. O tutor combina o primeiro acesso, marca cada etapa do checklist e conclui; o consultor então recebe lembretes para pedir indicação e oferecer um novo curso.
       </p>
-      {showStats && (
+      {statsOpen && (
         <div className={classes.panel}>
           {!stats ? <CircularProgress size={20} /> : (
             <>
               <div className={classes.stats}>
-                <div><b>{hoursText(stats.avgFirstContactHours)}</b><span>tempo médio até o primeiro contato (90 dias)</span></div>
-                <div><b>{stats.withinSlaShare === null ? "—" : `${stats.withinSlaShare}%`}</b><span>iniciados dentro de {stats.slaHours} h</span></div>
-                <div><b style={stats.totals.late ? { color: "#dc2626" } : undefined}>{stats.totals.late}</b><span>atrasados agora</span></div>
-                <div><b>{stats.totals.withoutTutor}</b><span>sem tutor</span></div>
-                <div><b>{stats.totals.done}</b><span>concluídos no total</span></div>
-              </div>
-              <div className={classes.weeks}>
-                {stats.weeks.map((w) => (
-                  <div key={w.weekStart} title={`Semana de ${w.weekStart.split("-").reverse().join("/")}: ${w.done} concluído(s)`}>
-                    <div className={classes.bar} style={{ height: 6 + w.done * 10 }} />
-                    <span>{w.done}</span>
+                {[
+                  [hoursText(stats.avgFirstContactHours), "tempo médio até o primeiro contato (90 dias)", "#0693E3"],
+                  [stats.withinSlaShare === null ? "—" : `${stats.withinSlaShare}%`, `iniciados dentro de ${stats.slaHours} h`, "#16a34a"],
+                  [stats.totals.late, "atrasados agora", stats.totals.late ? "#dc2626" : "#94a3b8"],
+                  [stats.totals.withoutTutor, "sem tutor", stats.totals.withoutTutor ? "#d97706" : "#94a3b8"],
+                  [stats.totals.done, "concluídos no total", "#0B4279"],
+                ].map(([n, label, tone]) => (
+                  <div key={label} className={classes.kpi} style={{ "--tone": tone }}>
+                    <span className={classes.kpiN} style={tone === "#dc2626" ? { color: tone } : undefined}>{n}</span>
+                    <span className={classes.kpiL}>{label}</span>
                   </div>
                 ))}
               </div>
-              <div className={classes.meta}>Alunos ambientados por semana (últimas 8 semanas).</div>
+              <div className={classes.box}>
+                <Typography style={{ fontWeight: 600 }}>Alunos ambientados por semana</Typography>
+                <div className={classes.meta} style={{ whiteSpace: "normal" }}>Concluídos nas últimas 8 semanas.</div>
+                <div style={{ height: 150, marginTop: 8 }} role="img" aria-label={`Ambientações concluídas por semana: ${stats.weeks.map((w) => w.done).join(", ")}`}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={stats.weeks.map((w) => ({ ...w, label: w.weekStart.split("-").reverse().slice(0, 2).join("/") }))} margin={{ top: 14, right: 4, left: -22, bottom: 0 }}>
+                      <CartesianGrid vertical={false} strokeDasharray="3 5" />
+                      <XAxis dataKey="label" tickLine={false} axisLine={false} fontSize={12} />
+                      <YAxis allowDecimals={false} tickLine={false} axisLine={false} fontSize={12} />
+                      <Tooltip cursor={{ fill: "rgba(6,147,227,.08)" }} formatter={(v) => [`${v} concluído(s)`, ""]} labelFormatter={(l) => `Semana de ${l}`} separator="" />
+                      <Bar dataKey="done" fill="#0693E3" radius={[6, 6, 0, 0]} maxBarSize={34} label={{ position: "top", fontSize: 12, fill: "#64748b" }} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
               {stats.byTutor.length > 0 && (
-                <table className={classes.table}>
-                  <thead><tr><th>Tutor</th><th>Em curso</th><th>Atrasados</th><th>Concluídos (30 dias)</th><th>1º contato</th></tr></thead>
-                  <tbody>{stats.byTutor.map((t) => <tr key={t.tutorId}><td>{t.name}</td><td>{t.active}</td><td style={t.late ? { color: "#dc2626", fontWeight: 600 } : undefined}>{t.late}</td><td>{t.doneLast30}</td><td>{hoursText(t.avgFirstContactHours)}</td></tr>)}</tbody>
-                </table>
+                <div className={classes.box}>
+                  <Typography style={{ fontWeight: 600 }}>Por tutor</Typography>
+                  <table className={classes.table}>
+                    <thead><tr><th>Tutor</th><th>Em curso</th><th>Atrasados</th><th>Concluídos (30 dias)</th><th>1º contato</th></tr></thead>
+                    <tbody>{stats.byTutor.map((t) => <tr key={t.tutorId}><td>{t.name}</td><td>{t.active}</td><td style={t.late ? { color: "#dc2626", fontWeight: 600 } : undefined}>{t.late}</td><td>{t.doneLast30}</td><td>{hoursText(t.avgFirstContactHours)}</td></tr>)}</tbody>
+                  </table>
+                </div>
               )}
             </>
           )}
@@ -254,7 +278,7 @@ const Onboarding = () => {
             .filter((r) => r.onboardingStatus === col.key && FILTERS[filter](r, me))
             .sort((a, b) => (col.key === "done" ? new Date(b.onboardingDoneAt || 0) - new Date(a.onboardingDoneAt || 0) : new Date(a.enrolledAt || 0) - new Date(b.enrolledAt || 0)));
           return (
-            <section key={col.key} className={classes.col}>
+            <section key={col.key} className={classes.col} style={{ "--col": col.color }}>
               <div className={classes.colHead}>
                 <span className={classes.dot} style={{ background: col.color }} />
                 <span className={classes.colTitle}>{col.title}</span>
@@ -289,16 +313,6 @@ const Onboarding = () => {
                           <UserCheck size={16} />
                         </IconAction>
                       )}
-                      {!readOnly && col.key === "pending" && (
-                        <IconAction title="Iniciar ambientação (você assume o aluno)" disabled={busyId === l.id} onClick={() => act(l, "start")}>
-                          <Play size={16} />
-                        </IconAction>
-                      )}
-                      {!readOnly && col.key !== "done" && (
-                        <IconAction title="Concluir ambientação" disabled={busyId === l.id} onClick={() => act(l, "done")}>
-                          <CheckCheck size={16} />
-                        </IconAction>
-                      )}
                       {!readOnly && (
                         <IconAction title="Editar" disabled={busyId === l.id} onClick={(e) => setMenu({ anchor: e.currentTarget, lead: l })}>
                           <MoreVertical size={16} />
@@ -314,6 +328,10 @@ const Onboarding = () => {
                         </div>
                       );
                     })()}
+                    {col.key !== "done" && (() => {
+                      const nextStep = STEPS.find((st) => !(l.checklist && l.checklist[st.key]));
+                      return nextStep ? <div className={classes.next}>Próxima etapa: <b style={{ fontWeight: 600 }}>{nextStep.label}</b></div> : <div className={classes.next} style={{ color: "#15803d" }}>Checklist completo: pode concluir.</div>;
+                    })()}
                     {l.unread > 0 && <Chip size="small" color="primary" label={`Aluno respondeu (${l.unread})`} style={{ alignSelf: "flex-start" }} />}
                     <div className={classes.meta}>{l.course ? l.course.name : "Curso não informado"}</div>
                     <div className={classes.meta}>Tutor: {l.tutorName || "aguardando na fila"}{l.owner ? ` · Consultor: ${l.owner.name}` : ""}</div>
@@ -321,6 +339,14 @@ const Onboarding = () => {
                       {col.key === "done" ? `Concluída ${since(l.onboardingDoneAt)}` : `Matriculado ${since(l.enrolledAt)}`}
                     </div>
                     {late && <span className={classes.lateChip}>Prazo de 24 h vencido</span>}
+                    {!readOnly && col.key !== "done" && (
+                      <div className={classes.actions}>
+                        {col.key === "pending" && (
+                          <Button size="small" variant="contained" color="primary" disableElevation startIcon={<Play size={14} />} disabled={busyId === l.id} onClick={() => act(l, "start")}>Iniciar</Button>
+                        )}
+                        <Button size="small" variant={col.key === "pending" ? "outlined" : "contained"} color="primary" disableElevation startIcon={<CheckCheck size={14} />} disabled={busyId === l.id} onClick={() => act(l, "done")}>Concluir</Button>
+                      </div>
+                    )}
                   </div>
                 );
               })}

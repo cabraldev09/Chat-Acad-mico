@@ -30,7 +30,7 @@ const useStyles = makeStyles((theme) => ({
     gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", paddingBottom: theme.spacing(2), ...theme.scrollbarStyles,
   },
   col: {
-    background: theme.palette.type === "dark" ? "#0a1424" : "#dce5f1", borderRadius: 14, padding: theme.spacing(1),
+    background: theme.palette.type === "dark" ? "#0a1424" : "#d9e2ef", borderRadius: 14, padding: theme.spacing(1),
     display: "flex", flexDirection: "column", gap: theme.spacing(1), border: "1px solid transparent",
     transition: "border-color .15s, background .15s, box-shadow .2s",
   },
@@ -367,7 +367,7 @@ const Board = () => {
             </div></div>
           )}
           {(board || []).map((stage) => (
-            <div key={stage.id} className={`${classes.col} ${over === stage.id ? classes.colOver : ""}`} 
+            <div key={stage.id} className={`${classes.col} ${over === stage.id ? classes.colOver : ""}`} style={{ "--stage": stage.color }}
               onDragOver={(e) => { e.preventDefault(); if (over !== stage.id) setOver(stage.id); }}
               onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setOver(null); }}
               onDrop={(e) => onDrop(e, stage)}>

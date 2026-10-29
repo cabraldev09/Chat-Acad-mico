@@ -216,9 +216,14 @@ const createAppTheme = (type) => {
           border: `1px solid ${colors.divider}`,
           boxShadow: shadows[24],
           backgroundImage: "none",
+          // not a white sheet: the dialog is a tinted surface, the fields inside stay white and stand out
+          backgroundColor: isDark ? colors.background.paper : "#f2f6fb",
           // on a phone the dialog uses the whole width (the form fields were being squeezed by the default margins)
           [base.breakpoints.down("xs")]: { margin: 12, width: "calc(100% - 24px)", maxWidth: "calc(100% - 24px)", maxHeight: "calc(100% - 24px)" },
         },
+      },
+      MuiDrawer: {
+        paper: { backgroundColor: isDark ? colors.background.paper : "#f2f6fb", backgroundImage: "none" },
       },
       MuiBackdrop: {
         root: {
@@ -227,13 +232,13 @@ const createAppTheme = (type) => {
         },
       },
       MuiDialogTitle: {
-        root: { padding: "22px 24px 6px", [base.breakpoints.down("xs")]: { padding: "18px 16px 4px" } },
+        root: { padding: "20px 24px 14px", borderBottom: `1px solid ${colors.divider}`, [base.breakpoints.down("xs")]: { padding: "16px 16px 12px" } },
       },
       MuiTypography: {
         h6: { fontSize: "1.05rem" },
       },
       MuiDialogContent: {
-        root: { padding: "12px 24px 8px", [base.breakpoints.down("xs")]: { padding: "10px 16px 8px" } },
+        root: { padding: "16px 24px 8px", [base.breakpoints.down("xs")]: { padding: "12px 16px 8px" } },
         dividers: {
           padding: "12px 24px",
           borderTop: "none",

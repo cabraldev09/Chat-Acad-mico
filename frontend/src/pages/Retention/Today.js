@@ -15,6 +15,7 @@ const useStyles = makeStyles((theme) => {
   const line = theme.palette.type === "dark" ? "rgba(255,255,255,.09)" : "#dbe5f1";
   const soft = theme.palette.type === "dark" ? "rgba(255,255,255,.04)" : "#f4f7fb";
   return {
+    sheet: { background: theme.palette.cards.background, border: `1px solid ${theme.palette.type === "dark" ? "rgba(255,255,255,.09)" : "#c9d6e8"}`, borderRadius: 18, padding: theme.spacing(2.25), boxShadow: "0 1px 2px rgba(11,66,121,.07)" },
     top: { display: "flex", alignItems: "flex-end", gap: theme.spacing(3), flexWrap: "wrap", marginBottom: theme.spacing(2) },
     total: { fontSize: 44, fontWeight: 750, letterSpacing: "-0.04em", lineHeight: 1, fontVariantNumeric: "tabular-nums" },
     sub: { fontSize: 13, color: theme.palette.text.secondary },
@@ -101,7 +102,7 @@ const Today = ({ onChanged }) => {
 
   if (!data) return <Typography className={classes.empty}>{failed ? "Não foi possível carregar a lista. Atualize a página." : <CircularProgress size={22} />}</Typography>;
   return (
-    <div>
+    <div className={classes.sheet}>
       <div className={classes.top}>
         <div>
           <div className={classes.total}>{data.total}</div>

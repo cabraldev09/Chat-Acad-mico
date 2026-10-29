@@ -133,6 +133,24 @@ export const Composer = ({ open, onClose, onSent, manager, initialIds = [] }) =>
     return () => { live = false; clearTimeout(t); };
   }, [open, query, source, listId]);
 
+  // the saved text of the survey / of the retention message, edited right here (it is the same text the automatic routine uses)
+  const [rev, setRev] = useState(0);
+  const [saved, setSaved] = useState("");
+  const [draft, setDraft] = useState("");
+  const [savingText, setSavingText] = useState(false);
+  useEffect(() => {
+    if (!open || kind === "custom") return;
+    api.get("/retention/config").then(({ data }) => { const t = kind === "nps" ? data.nps.question : data.risk.message; setSaved(t || ""); setDraft(t || ""); }).catch(() => undefined);
+  }, [open, kind]);
+  const saveText = async () => {
+    setSavingText(true);
+    try {
+      await api.put("/retention/config", kind === "nps" ? { nps: { question: draft } } : { risk: { message: draft } });
+      setSaved(draft); setRev((x) => x + 1); toast.success("Texto salvo. As próximas mensagens já saem com ele.");
+    } catch (e) { toastError(e); }
+    setSavingText(false);
+  };
+
   // the message as it will arrive, for the first chosen people
   useEffect(() => {
     if (!open) return undefined;
@@ -141,7 +159,7 @@ export const Composer = ({ open, onClose, onSent, manager, initialIds = [] }) =>
         .then(({ data }) => setPreview(data)).catch(() => setPreview(null));
     }, 250);
     return () => clearTimeout(t);
-  }, [open, kind, text, picked]);
+  }, [open, kind, text, picked, rev]);
 
   const add = (items) => {
     const have = new Set(picked.map((x) => x.key));
@@ -217,13 +235,22 @@ export const Composer = ({ open, onClose, onSent, manager, initialIds = [] }) =>
             <div style={{ display: "grid", gap: 14, alignContent: "start" }}>
               <TextField select size="small" variant="outlined" label="O que enviar" value={kind} onChange={(e) => changeKind(e.target.value)}>
                 <MenuItem value="nps">Pesquisa de satisfação (nota de 0 a 10)</MenuItem>
-                <MenuItem value="risk">Mensagem de retenção (a das configurações)</MenuItem>
+                <MenuItem value="risk">Mensagem de retenção (texto padrão, editável aqui)</MenuItem>
                 <MenuItem value="custom">Escrever uma mensagem agora</MenuItem>
               </TextField>
               {kind === "custom" && (
                 <TextField multiline rows={4} size="small" variant="outlined" label="Mensagem (use {{nome}} para o primeiro nome)" value={text} onChange={(e) => setText(e.target.value)} inputProps={{ maxLength: 1000 }} />
               )}
-              {kind !== "custom" && <Typography className={classes.hint}>O texto vem das configurações{manager ? " (aba Configurar)" : ""}. Esta mensagem vai só para alunos matriculados. Para falar com quem ainda não se matriculou, escolha “Escrever uma mensagem agora”.</Typography>}
+              {kind !== "custom" && manager && (
+                <div style={{ display: "grid", gap: 8 }}>
+                  <TextField multiline rows={4} size="small" variant="outlined" label={kind === "nps" ? "Pergunta da pesquisa (use {{nome}})" : "Mensagem de retenção (use {{nome}})"} value={draft} onChange={(e) => setDraft(e.target.value)} inputProps={{ maxLength: 1000 }} />
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                    <Button size="small" variant="outlined" disabled={savingText || draft === saved || !draft.trim()} onClick={saveText}>{savingText ? "Salvando..." : "Salvar texto"}</Button>
+                    <Typography className={classes.hint} style={{ flex: 1, minWidth: 200 }}>{draft !== saved ? "Salve para a prévia e o envio usarem este texto." : "É o texto padrão: vale também para o envio automático."}</Typography>
+                  </div>
+                </div>
+              )}
+              {kind !== "custom" && <Typography className={classes.hint}>Esta mensagem vai só para alunos matriculados. Para falar com quem ainda não se matriculou, escolha “Escrever uma mensagem agora”.</Typography>}
 
               <div>
                 <Typography variant="subtitle2" gutterBottom>De onde vêm as pessoas</Typography>

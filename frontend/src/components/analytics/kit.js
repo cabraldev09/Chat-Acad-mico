@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { makeStyles } from "@material-ui/core/styles";
 import MuiTooltip from "@material-ui/core/Tooltip";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { Info } from "lucide-react";
+import { CalendarClock, CheckCheck, Clock, Eye, FileText, Flag, Inbox, MessageSquare, Send, Target, TrendingUp, AlertTriangle, ListTodo, UserCheck, Users, Zap } from "lucide-react";
 
 import api from "../../services/api";
 import openSocket from "../../services/socket-io";
@@ -25,17 +25,18 @@ export const useKit = makeStyles((theme) => {
     head: { display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: theme.spacing(2.5) },
     h1: { fontSize: 24, fontWeight: 800, letterSpacing: "-0.02em", margin: 0 },
     lead: { fontSize: 14, color: theme.palette.text.secondary, marginTop: 4, maxWidth: 720 },
-    panel: { background: "var(--dash-glass, #fff)", border: "1px solid var(--dash-line, #d7e3f2)", borderRadius: 20, padding: theme.spacing(2.5), minWidth: 0, position: "relative", overflow: "hidden", backdropFilter: "blur(14px) saturate(150%)", boxShadow: dark ? "0 1px 0 rgba(255,255,255,.06) inset, 0 24px 48px -28px rgba(0,0,0,.9)" : "0 1px 0 rgba(255,255,255,.6) inset, 0 18px 40px -26px var(--dash-glow, rgba(6,147,227,.22))", animation: "dash-rise .55s cubic-bezier(.22,1,.36,1) both", transition: "border-color .25s ease, box-shadow .25s ease", "&:hover": { borderColor: "color-mix(in srgb, var(--dash-accent, #0693e3) 50%, var(--dash-line, #d7e3f2))" } },
+    panel: { background: dark ? "var(--dash-glass)" : "#ffffff", border: "1px solid var(--dash-line, #c9d5e6)", borderRadius: 14, padding: theme.spacing(2.5), minWidth: 0, position: "relative", overflow: "hidden", boxShadow: dark ? "none" : "0 1px 2px rgba(11,66,121,.06)" },
     hero: { background: dark ? "#0f1c31" : "#ffffff", border: `1px solid ${line}`, borderRadius: 14, padding: theme.spacing(3), minWidth: 0 },
     h2: { fontSize: 14.5, fontWeight: 700, margin: 0, display: "flex", alignItems: "center", gap: 8, letterSpacing: "-0.01em" },
     sub: { fontSize: 12.5, color: theme.palette.text.secondary, marginTop: 2 },
     grid: { display: "grid", gap: theme.spacing(2), gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))" },
     cols: { display: "grid", gap: theme.spacing(2), gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", alignItems: "start" },
-    kpi: { background: dark ? "rgba(255,255,255,.035)" : "#f6f9fd", border: "1px solid var(--dash-line, #d7e3f2)", borderRadius: 14, padding: "18px 18px 14px", minWidth: 0, position: "relative", overflow: "hidden", animation: "dash-rise .5s cubic-bezier(.22,1,.36,1) both", transition: "border-color .2s ease, background .2s ease", "&:hover": { borderColor: "var(--tone, #0693e3)" }, "&::before": { content: '""', position: "absolute", left: 18, top: 0, width: 26, height: 3, borderRadius: "0 0 3px 3px", background: "var(--tone, #0693e3)", transformOrigin: "left", animation: "dash-grow .7s cubic-bezier(.22,1,.36,1) both" } },
-    kpiLabel: { fontSize: 12.5, color: theme.palette.text.secondary, display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 6, minHeight: 34 },
+    kpi: { background: dark ? "rgba(255,255,255,.035)" : "#ffffff", border: "1px solid var(--dash-line, #c9d5e6)", borderRadius: 12, padding: "14px 16px 12px", minWidth: 0, position: "relative", overflow: "hidden", boxShadow: dark ? "none" : "0 1px 2px rgba(11,66,121,.06)" },
+    kpiIcon: { display: "inline-flex", alignItems: "center", justifyContent: "center", flex: "none", color: theme.palette.text.secondary, opacity: 0.8 },
+    kpiLabel: { fontSize: 13, fontWeight: 500, color: theme.palette.text.secondary, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, minHeight: 24 },
     grid4: { display: "grid", gap: theme.spacing(2), gridTemplateColumns: "repeat(4, minmax(0, 1fr))", [theme.breakpoints.down("sm")]: { gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }, [theme.breakpoints.down("xs")]: { gridTemplateColumns: "1fr" } },
     grid5: { display: "grid", gap: theme.spacing(2), gridTemplateColumns: "repeat(5, minmax(0, 1fr))", [theme.breakpoints.down("md")]: { gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }, [theme.breakpoints.down("xs")]: { gridTemplateColumns: "1fr" } },
-    kpiValue: { fontSize: 34, fontWeight: 800, letterSpacing: "-0.04em", fontVariantNumeric: "tabular-nums", lineHeight: 1.1, marginTop: 8, position: "relative", zIndex: 1 },
+    kpiValue: { fontSize: 32, fontWeight: 700, letterSpacing: "-0.04em", fontVariantNumeric: "tabular-nums", lineHeight: 1.1, marginTop: 6, position: "relative", zIndex: 1 },
     kpiHint: { fontSize: 12, color: theme.palette.text.secondary, marginTop: 2 },
     chips: { display: "inline-flex", gap: 4, padding: 4, borderRadius: 999, background: dark ? soft : "#fff", border: `1px solid ${line}`, flexWrap: "wrap" },
     chip: { border: 0, borderRadius: 999, padding: "6px 14px", fontFamily: "inherit", fontSize: 13, fontWeight: 600, cursor: "pointer", background: "transparent", color: theme.palette.text.secondary, "&:hover": { color: theme.palette.text.primary } },
@@ -57,6 +58,13 @@ export const KPI_COLOR = {
   messagesSent: "#0693E3", attendances: "#0B4279", reactivated: "#14b8a6", leadsWorked: "#8b5cf6", pendingReply: "#d97706",
   inProgress: "#0693E3", tasksOpen: "#6366f1", tasksOverdue: "#dc2626", tasksDone: "#16a34a", followUpsDue: "#f97316",
   proposalsSent: "#8b5cf6", proposalsViewed: "#14b8a6", enrollments: "#16a34a", conversion: "#8b5cf6",
+};
+
+// one icon per indicator: read the card before reading the label
+export const KPI_ICON = {
+  messagesSent: Send, attendances: MessageSquare, reactivated: Zap, leadsWorked: Users, pendingReply: Inbox, inProgress: Clock,
+  tasksOpen: ListTodo, tasksOverdue: AlertTriangle, tasksDone: CheckCheck, followUpsDue: CalendarClock, proposalsSent: FileText,
+  proposalsViewed: Eye, enrollments: UserCheck, conversion: TrendingUp, firstContactMinutes: Clock,
 };
 
 export const SHORT = {
@@ -156,7 +164,7 @@ export const Kpi = ({ k, value, def, hint, tone }) => {
       <div className={c.kpi} data-kpi={k} style={{ cursor: help ? "help" : undefined, "--tone": tone || KPI_COLOR[k] || "#0693E3" }}>
         <div className={c.kpiLabel}>
           <span>{(def && def.label) || k}</span>
-          <span style={{ display: "inline-flex", opacity: 0.55 }}><Info size={13} /></span>
+          <span className={c.kpiIcon} aria-hidden="true">{(() => { const I = KPI_ICON[k] || Target; return <I size={17} />; })()}</span>
         </div>
         <div className={c.kpiValue} style={tone ? { color: tone } : undefined}>
           {typeof value === "number" && unit !== "percent" && unit !== "minutes" ? <NumberTicker value={value} format={(n) => num(n)} /> : fmt(value, unit)}

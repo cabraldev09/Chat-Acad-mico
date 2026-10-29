@@ -23,9 +23,9 @@ const palette = {
     error: { main: "#dc2626" },
     warning: { main: "#d97706" },
     text: { primary: "#0b1a2e", secondary: "#64748b" },
-    divider: "#cfd9e8",
+    divider: "#c3d0e3",
     background: {
-      default: "#e9eff7",
+      default: "#e2e9f4",
       paper: "#ffffff",
       chat: "#f1f5f9",
     },
