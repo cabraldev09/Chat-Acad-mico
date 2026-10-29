@@ -43,6 +43,7 @@ import { AGENT_TEMPLATES, convertAgent, templateSummary } from "../services/Flow
 import { generateAgent } from "../services/FlowServices/GenerateAgent";
 import { defaultProvider } from "../services/AiServices/Keys";
 import { ensurePipeline } from "../services/CommercialServices/Pipeline";
+import { cleanCommercial } from "../services/CommercialServices/Config";
 
 const crud = makeCrud(AiAgent, {
   fields: [
@@ -73,6 +74,8 @@ const crud = makeCrud(AiAgent, {
     // how the agent stands before this save: the history keeps what the save changed (written in afterSave, before the answer goes out)
     if (existing) (req as any).agentBefore = snapshotOf(existing);
     if (isMasked(data.apiKey)) delete data.apiKey;
+    // what the administrator adjusted for the commercial attendance: only known keys, each cleaned
+    if (data.persona && typeof data.persona === "object" && data.persona.commercial !== undefined) data.persona = { ...data.persona, commercial: cleanCommercial(data.persona.commercial) };
     if (data.reviewNumber !== undefined) {
       const digits = String(data.reviewNumber || "").replace(/\D/g, "");
       if (digits && (digits.length < 10 || digits.length > 15)) throw new AppError("ERR_REVIEW_NUMBER_INVALID");

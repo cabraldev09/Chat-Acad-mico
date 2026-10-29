@@ -1,3 +1,4 @@
+import { onScheduleNow } from "../AnalyticsServices/AnalyticsService";
 import { Op, QueryTypes } from "sequelize";
 import sequelize from "../../database";
 import { portable } from "../../helpers/sqlDialect";
@@ -13,7 +14,8 @@ import TicketEvent from "../../models/TicketEvent";
 
 // Queue.autoAssign: "none" | "roundrobin" | "least" (fewest open tickets)
 // Picks the next agent of a queue; `force` ignores "none" (used when someone must be chosen anyway)
-export const pickUserForQueue = async (queue: Queue, force = false): Promise<User | null> => {
+// dryRun: only says who would be chosen (the rotation does not move), for the tester of the agent
+export const pickUserForQueue = async (queue: Queue, force = false, dryRun = false): Promise<User | null> => {
   const mode = !queue.autoAssign || queue.autoAssign === "none" ? (force ? "least" : "none") : queue.autoAssign;
   if (mode === "none") return null;
 
@@ -26,7 +28,11 @@ export const pickUserForQueue = async (queue: Queue, force = false): Promise<Use
   const owners = new Set(numbers.map(w => Number(w.ownerId)));
   const reachable = all.filter(u => connected.has(u.id));
   const withNumber = all.filter(u => owners.has(u.id));
-  const users = reachable.length ? reachable : withNumber.length ? withNumber : all;
+  const pool = reachable.length ? reachable : withNumber.length ? withNumber : all;
+  // inside the working hours the manager set: those on duty now come first (when nobody is, or nobody has a schedule, the pool stays as it is)
+  const duty = await onScheduleNow(pool.map(u => u.id)).catch(() => null);
+  const onDuty = duty ? pool.filter(u => duty.has(u.id)) : [];
+  const users = onDuty.length ? onDuty : pool;
 
   if (mode === "least") {
     const counts = await Promise.all(
@@ -37,7 +43,7 @@ export const pickUserForQueue = async (queue: Queue, force = false): Promise<Use
   const key = `autoAssign_last_${queue.id}`;
   const last = Number(await getSetting(key, "0"));
   const chosen = users.find(u => u.id > last) || users[0];
-  await setSetting(key, String(chosen.id));
+  if (!dryRun) await setSetting(key, String(chosen.id));
   return chosen;
 };
 

@@ -3734,6 +3734,78 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(!texts(FQ2).some(x => /assistente virtual/.test(x)), "the presentation was repeated");
       assert(gradeTexts() === g0 + 1, "the grade was sent twice");
 
+      // Q) the scenarios of the attendance, in the layer that needs no model: what is recognised at once and where each conversation goes
+      const critId = (await http.post("/courses", { name: "Criminologia", modality: "EAD", category: "Graduação - Cruzeiro", semesters: 8, monthlyFee: 500, active: true }, auth())).data.id;
+      const gab = (await http.post("/users", { name: "Gabrielli Estela", email: "gab-est@x.com", password: "senha123", role: "consultor" }, auth())).data;
+      const poloEst = (await http.post("/polos", { name: "Polo Estela", code: "EST", city: "Cidade Estela", state: "RO" }, auth())).data;
+      await http.put(`/polos/${poloEst.id}/members`, { members: [{ userId: gab.id, role: "comercial" }] }, auth());
+      const poloFila = (await http.post("/polos", { name: "Polo Fila", code: "FIL", city: "Cidade Fila", state: "RO" }, auth())).data;
+      const slotsOfNumber = number => JSON.parse(sql(`SELECT slots FROM LeadCommercials WHERE leadId=${leadId(number)}`) || "{}");
+      const handoffOf = number => sql(`SELECT handoffReason FROM Tickets WHERE id=${ticketOf(number)}`);
+      const withLead = async (number, city) => { assert([200, 201].includes((await http.post("/leads", { name: `Pessoa ${number.slice(-3)}`, phone: number, city }, auth())).status), "lead"); };
+      const llm0 = anthropic.requests.length;
+
+      // "Oi": a short presentation by the default assistant (Estela) and the next question, no model
+      const Q1 = "5511920000240";
+      out = await say(Q1, "wamid.qs-1", "Oi", t => t.some(x => /Estela, assistente virtual/.test(x)), "greeting by Estela");
+      assert(/Qual curso/.test(out.join(" ")), `the greeting did not lead to the next question: ${out}`);
+
+      // "Quanto custa Criminologia?": the course is recognised in the words, the price goes to the consultant with the course already in the brief
+      const Q2 = "5511920000241";
+      out = await say(Q2, "wamid.qs-2", "Quanto custa Criminologia?", t => t.some(x => /consultor/.test(x)), "price handed to the consultant");
+      assert(out.some(x => /Estela, assistente virtual/.test(x)), `no presentation before the answer: ${out}`);
+      assert(!out.some(x => /R\$|mensalidade de/.test(x)), "a price was given");
+      await waitFor(() => slotsOfNumber(Q2).courseName === "Criminologia" && handoffOf(Q2) === "proposal", 15000, "the course recognised and the handoff routed");
+      assert(Number(sql(`SELECT COUNT(*) FROM TicketEvents WHERE ticketId=${ticketOf(Q2)} AND type='handoff' AND note LIKE '%Curso:%Criminologia%'`)) >= 1, "the brief does not carry the course");
+
+      // "Quero me matricular hoje": straight to the consultant, even with nothing else known
+      const Q3 = "5511920000242";
+      await say(Q3, "wamid.qs-3", "Quero me matricular hoje", t => t.some(x => /consultor/.test(x)), "enrollment handed over");
+      await waitFor(() => handoffOf(Q3) === "proposal" && sql(`SELECT aiActive FROM Tickets WHERE id=${ticketOf(Q3)}`) === "0", 15000, "the AI is out after the handoff");
+
+      // "Já sou aluno": the system asks which team (tutoring or secretary) instead of selling
+      const Q4 = "5511920000243";
+      out = await say(Q4, "wamid.qs-4", "Já sou aluno", t => t.some(x => /tutoria/.test(x) && /secretaria/.test(x)), "a student is asked which team");
+      assert(slotsOfNumber(Q4).interestKind === "aluno", "the kind of interest was not kept");
+
+      // "Meu boleto está errado": an administrative matter of a student goes to the secretary, not to sales
+      const Q5 = "5511920000244";
+      await withLead(Q5, "Cidade Estela");
+      await say(Q5, "wamid.qs-5", "Meu boleto está errado", t => t.some(x => /secretaria/.test(x)), "the boleto goes to the secretary");
+      await waitFor(() => handoffOf(Q5) === "secretary", 15000, "routed as secretary");
+      assert(slotsOfNumber(Q5).interestKind === "administrativo", "administrative interest not kept");
+
+      // "Já conversei com a Gabrielli": the conversation goes to her when she is on the team of the polo
+      const Q6 = "5511920000245";
+      await withLead(Q6, "Cidade Estela");
+      await say(Q6, "wamid.qs-6", "Já conversei com a Gabrielli", t => t.some(x => /priorizando Gabrielli/.test(x)), "the named consultant is prioritised");
+      await waitFor(() => sql(`SELECT userId FROM Tickets WHERE id=${ticketOf(Q6)}`) === String(gab.id), 15000, "assigned to the consultant the lead named");
+      assert(Number(sql(`SELECT COUNT(*) FROM TicketEvents WHERE ticketId=${ticketOf(Q6)} AND type='transfer' AND note LIKE '%Consultor pedido pelo lead%'`)) === 1, "the routing does not say why");
+
+      // "Quero falar com João": nobody called João on the team: it still goes to the team of the polo and the brief says what was asked
+      const Q7 = "5511920000246";
+      await withLead(Q7, "Cidade Estela");
+      await say(Q7, "wamid.qs-7", "Quero falar com João", t => t.some(x => /equipe do seu polo/.test(x)), "a person was asked for");
+      await waitFor(() => handoffOf(Q7) === "human_request" && sql(`SELECT userId FROM Tickets WHERE id=${ticketOf(Q7)}`) === String(gab.id), 15000, "routed to the team of the polo");
+      assert(slotsOfNumber(Q7).preferredConsultantName && /João/.test(slotsOfNumber(Q7).preferredConsultantName), "the name that was asked for was lost");
+
+      // "Preciso de atendimento humano": a person, with the data incomplete
+      const Q8 = "5511920000247";
+      await say(Q8, "wamid.qs-8", "Preciso de atendimento humano", t => t.some(x => /consultor/.test(x)), "a human was asked for");
+      await waitFor(() => handoffOf(Q8) === "human_request", 15000, "human handoff routed");
+
+      // a polo nobody works at: the lead hears that it waits in the queue (or when the team returns), never that someone took it
+      const Q9 = "5511920000248";
+      await withLead(Q9, "Cidade Fila");
+      out = await say(Q9, "wamid.qs-9", "Quero falar com uma pessoa", t => t.some(x => /fila|retorna/.test(x)), "the queue is said");
+      assert(!out.some(x => /assumiu|já está com/.test(x)), `the lead was told someone took it: ${out}`);
+      assert(anthropic.requests.length === llm0, "the model was called in the scenarios that need none");
+
+      // "Sou de Cidade Estela": the city is recognised in the words from the polos of the system (the model only writes the answer)
+      const Q10 = "5511920000249";
+      await say(Q10, "wamid.qs-10", "Sou de Cidade Estela", t => t.length > 0, "a statement of the city");
+      await waitFor(() => slotsOfNumber(Q10).city === "Cidade Estela", 15000, "the city was recognised in the words");
+
       // M) the provider fails twice: the person is told a colleague continues, the conversation goes to the team with the reason, the failure is counted
       const M = "5511920000213";
       await qualify(M, "m");
@@ -3809,13 +3881,13 @@ const postMeta = (id, payload, secret, badSig) => {
         } catch (e) { /* the agent asked something: the person answers first */ }
       }
       assert(handed, "the qualified lead was never handed over");
-      assert(Number(sql(`SELECT COUNT(*) FROM Messages WHERE ticketId=${ticketOf(R)} AND body LIKE '%Prontinho%' AND body LIKE '%consultor do seu polo%'`)) >= 1, "the handover message (warm, with the name and the course) was not sent");
+      assert(Number(sql(`SELECT COUNT(*) FROM Messages WHERE ticketId=${ticketOf(R)} AND body LIKE '%Perfeito%' AND body LIKE '%consultor do nosso polo%'`)) >= 1, "the handover message (warm, with the name and the course) was not sent");
       // the full name and the CPF were asked for the scholarship, read from the answer, kept in the lead and never left in the conversation state
       assert(Number(sql(`SELECT COUNT(*) FROM Messages WHERE ticketId=${ticketOf(R)} AND fromMe=true AND body LIKE '%nome completo e CPF%'`)) >= 1, "the system never asked for the full name and the CPF");
       assert(sql(`SELECT cpf FROM Leads WHERE id=${leadId(R)}`) === "86288366757", "the CPF was not saved in the lead");
       assert(!/86288366757|862\.883\.667/.test(sql(`SELECT slots FROM LeadCommercials WHERE leadId=${leadId(R)}`)), "the CPF leaked into the state of the conversation");
       assert(JSON.parse(sql(`SELECT slots FROM LeadCommercials WHERE leadId=${leadId(R)}`)).fullName === "Paulo Souza Lima", "the full name was not kept");
-      assert(Number(sql(`SELECT COUNT(*) FROM Messages WHERE ticketId=${ticketOf(R)} AND fromMe=true AND body LIKE '%simular a bolsa%' AND body LIKE '%Prontinho%'`)) >= 1, "the handover did not say the consultant will simulate the scholarship");
+      assert(Number(sql(`SELECT COUNT(*) FROM Messages WHERE ticketId=${ticketOf(R)} AND fromMe=true AND body LIKE '%simular a bolsa%' AND body LIKE '%Perfeito%'`)) >= 1, "the handover did not say the consultant will simulate the scholarship");
       assert(sql(`SELECT aiActive FROM Tickets WHERE id=${ticketOf(R)}`) === "0", "the AI kept talking after the handover");
       assert(Number(sql(`SELECT COUNT(*) FROM AgentMetricEvents WHERE leadId=${leadId(R)} AND event='handoff_qualified'`)) === 1, "no metric for the qualified handover");
       assert(JSON.parse(sql(`SELECT slots FROM LeadCommercials WHERE leadId=${leadId(R)}`)).readyForConsultant === true, "the lead was not marked ready for the consultant");

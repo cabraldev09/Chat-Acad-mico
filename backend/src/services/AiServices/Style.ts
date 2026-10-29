@@ -37,3 +37,13 @@ export const signed = (text: string, agent: Pick<AiAgent, "persona" | "name">): 
   if (!s.signMessages || !name || !String(text || "").trim()) return text;
   return `*${name}:*\n${String(text).trim()}`;
 };
+
+// What the administrator turned off in "what the agent may ask" (commercial attendance): the model is told not to ask it, ever
+const ASK_LABEL: Record<string, string> = {
+  name: "o nome da pessoa", course: "o curso de interesse", city: "a cidade ou o polo", entry: "se é a primeira graduação ou se já tem formação anterior", modality: "a modalidade desejada", mainQuestion: "a principal dúvida"
+};
+export const askRules = (agent: Pick<AiAgent, "persona"> | null | undefined): string | null => {
+  const ask: Record<string, boolean> = (agent && (agent.persona as any) && (agent.persona as any).commercial && (agent.persona as any).commercial.ask) || {};
+  const off = Object.keys(ASK_LABEL).filter(k => ask[k] === false).map(k => ASK_LABEL[k]);
+  return off.length ? `Perguntas que a equipe NÃO quer que você faça (só use se a pessoa disser por conta própria): ${off.join("; ")}.` : null;
+};

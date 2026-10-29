@@ -20,6 +20,7 @@ import Course from "../models/Course";
 import CourseRegulation from "../models/CourseRegulation";
 import Lead from "../models/Lead";
 import LeadStage from "../models/LeadStage";
+import Message from "../models/Message";
 import Ticket from "../models/Ticket";
 import TicketEvent from "../models/TicketEvent";
 import { priceOf } from "../services/AiServices/Usage";
@@ -401,6 +402,116 @@ export const metrics = async (req: Request, res: Response): Promise<Response> =>
     },
     byNode: byNode.map(n => ({ nodeId: n.nodeId, turns: Number(n.turns), tokens: Number(n.tokens), llmCalls: Number(n.llm) })),
     perDay: perDay.map(d => ({ day: d.day, turns: Number(d.turns), tokens: Number(d.tokens) }))
+  });
+};
+
+// ------------------------------------------------------------------ quality of the attendance
+// Only what the system recorded: a number that cannot be measured comes back as null (and `n` says how many cases it rests on), never an estimate.
+const median = (xs: number[]): number | null => {
+  if (!xs.length) return null;
+  const a = [...xs].sort((x, y) => x - y);
+  return a[Math.floor((a.length - 1) / 2)];
+};
+const percentile = (xs: number[], p: number): number | null => {
+  if (!xs.length) return null;
+  const a = [...xs].sort((x, y) => x - y);
+  return a[Math.min(a.length - 1, Math.ceil(a.length * p) - 1)];
+};
+const JSONof = (v: any): any => { try { return v ? JSON.parse(v) : {}; } catch (e) { return {}; } };
+
+export const quality = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await AiAgent.findByPk(req.params.id);
+  if (!agent) throw new AppError("ERR_NOT_FOUND", 404);
+  const { from, to, days } = range(req);
+  const inRange = { [Op.gte]: from, [Op.lt]: to };
+  const events: any[] = await AgentMetricEvent.findAll({ where: { agentId: agent.id, createdAt: inRange }, attributes: ["leadId", "event", "meta", "createdAt"], raw: true });
+  const turns: any[] = await AgentTurnLog.findAll({ where: { agentId: agent.id, createdAt: inRange }, attributes: ["ticketId", "leadId", "createdAt"], raw: true });
+  const leadsOf = (pred: (e: any) => boolean): Set<number> => new Set(events.filter(e => e.leadId && pred(e)).map(e => Number(e.leadId)));
+  const isHandoff = (e: any): boolean => /^handoff_/.test(e.event) && e.event !== "handoff_brief" && e.event !== "handoff_routing_failed";
+
+  const started = leadsOf(e => e.event === "contact_started");
+  const qualified = leadsOf(e => e.event === "qualified");
+  const handed = leadsOf(isHandoff);
+  const asked = leadsOf(e => e.event === "handoff_human_request");
+
+  // time from the first contact to the handoff, lead by lead (only leads with both moments recorded)
+  const firstAt = new Map<number, number>();
+  const handAt = new Map<number, number>();
+  events.forEach(e => {
+    if (!e.leadId) return;
+    const t = new Date(e.createdAt).getTime();
+    const id = Number(e.leadId);
+    if ((e.event === "contact_started" || e.event === "replied") && (!firstAt.has(id) || t < firstAt.get(id)!)) firstAt.set(id, t);
+    if (isHandoff(e) && (!handAt.has(id) || t < handAt.get(id)!)) handAt.set(id, t);
+  });
+  const minutes: number[] = [];
+  handAt.forEach((t, id) => { const f = firstAt.get(id); if (f !== undefined && t >= f) minutes.push(Math.round(((t - f) / 60000) * 10) / 10); });
+
+  // by department (the queue that received the conversation)
+  const queues = new Map((await Queue.findAll({ attributes: ["id", "name", "role"] })).map(q => [q.id, q]));
+  const byDept = new Map<string, number>();
+  events.filter(isHandoff).forEach(e => {
+    const m = JSONof(e.meta);
+    const q = m.queue ? queues.get(Number(m.queue)) : null;
+    const label = q ? `${q.name}` : "Sem fila";
+    byDept.set(label, (byDept.get(label) || 0) + 1);
+  });
+
+  // what the agent could not confirm (the questions that went to the team)
+  const unknowns = events.filter(e => e.event === "unknown");
+  const topQuestions = new Map<string, number>();
+  unknowns.forEach(e => { const q = String(JSONof(e.meta).question || "").trim(); if (q) topQuestions.set(q, (topQuestions.get(q) || 0) + 1); });
+
+  // errors
+  const toolErrors = events.filter(e => e.event === "tool_error");
+  const byTool = new Map<string, number>();
+  toolErrors.forEach(e => { const t = String(JSONof(e.meta).tool || "?"); byTool.set(t, (byTool.get(t) || 0) + 1); });
+
+  // handoffs nobody followed up: no message of the team after the handoff (30 minutes of margin)
+  const ticketIds = [...new Set(turns.map(t => Number(t.ticketId)).filter(Boolean))];
+  let withoutFollowUp = 0;
+  let handoffTickets = 0;
+  let repeated = 0;
+  let repeatedConversations = 0;
+  if (ticketIds.length) {
+    const tickets = await Ticket.findAll({ where: { id: ticketIds, handoffAt: inRange }, attributes: ["id", "handoffAt", "userId", "status"] });
+    handoffTickets = tickets.length;
+    const margin = Date.now() - 30 * 60000;
+    for (const t of tickets) {
+      if (new Date(t.handoffAt).getTime() > margin) continue;
+      // eslint-disable-next-line no-await-in-loop
+      const after = await Message.count({ where: { ticketId: t.id, fromMe: true, createdAt: { [Op.gt]: new Date(new Date(t.handoffAt).getTime() + 2 * 60000) } } });
+      if (!after) withoutFollowUp += 1;
+    }
+    // repetitive messages: the same text (15+ characters) sent twice or more in a conversation
+    const sent: any[] = await Message.findAll({ where: { ticketId: ticketIds, fromMe: true, createdAt: inRange, isDeleted: false } as any, attributes: ["ticketId", "body"], raw: true });
+    const seen = new Map<string, number>();
+    sent.forEach(m => {
+      const body = String(m.body || "").replace(/\s+/g, " ").trim().toLowerCase();
+      if (body.length < 15) return;
+      const k = `${m.ticketId}|${body}`;
+      seen.set(k, (seen.get(k) || 0) + 1);
+    });
+    const hit = new Set<string>();
+    seen.forEach((n, k) => { if (n > 1) { repeated += n - 1; hit.add(k.split("|")[0]); } });
+    repeatedConversations = hit.size;
+  }
+
+  return res.json({
+    days,
+    agent: { id: agent.id, name: agent.name },
+    conversations: ticketIds.length,
+    contactsStarted: started.size,
+    qualified: qualified.size,
+    transferred: handed.size,
+    humanRequests: asked.size,
+    timeToHandoff: { n: minutes.length, medianMinutes: median(minutes), p90Minutes: percentile(minutes, 0.9) },
+    missingInfo: { questions: unknowns.length, topQuestions: [...topQuestions.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([question, count]) => ({ question, count })) },
+    transferErrors: { routingFailed: events.filter(e => e.event === "handoff_routing_failed").length, handoffErrors: events.filter(e => e.event === "handoff_error").length, providerErrors: events.filter(e => e.event === "agent_error").length },
+    byDepartment: [...byDept.entries()].sort((a, b) => b[1] - a[1]).map(([name, count]) => ({ name, count })),
+    withoutFollowUp: { handoffs: handoffTickets, withoutTeamMessage: withoutFollowUp },
+    repetitive: { messages: repeated, conversations: repeatedConversations },
+    toolFailures: { total: toolErrors.length, byTool: [...byTool.entries()].sort((a, b) => b[1] - a[1]).map(([tool, count]) => ({ tool, count })) }
   });
 };
 

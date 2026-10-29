@@ -14,7 +14,9 @@ import { commercialTurn, CommercialTrace } from "./Hook";
 import { CommercialPorts } from "./Ports";
 import { matchFaq } from "../AiServices/Kb";
 import { unsafeAnswer } from "./Guards";
-import { ENTRY_LABEL, alreadyIntroduces, courseMention, fastIntent, hasBolsaData, humanReason, introText, isGreeting, needsBolsaData, openingText, retractsBuying, stageFieldsDone, supportIntent, topicsOf, gradeRequest } from "./Rules";
+import { ENTRY_LABEL, alreadyIntroduces, consultantMention, courseMention, fastIntent, interestOf, hasBolsaData, humanReason, introText, isGreeting, needsBolsaData, openingText, retractsBuying, stageFieldsDone, supportIntent, topicsOf, gradeRequest } from "./Rules";
+import { configOf } from "./Config";
+import { detectFromText, findConsultantByName } from "./Detect";
 import { AcademicCtx, closestOffered, findCourse, joinNames, offeredCourses, runAcademicTool, sendGradeFor } from "./Academic";
 import { addActivity } from "../CrmServices/LeadCore";
 import { BOLSA_ASKS, bolsaDataFrom, bolsaRequestFor } from "./BolsaData";
@@ -104,7 +106,9 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
   const state = d.ports.state;
   // the company's rule for handing a qualified lead to the consultant (Setting ai_qualified_replies, default 2 answers; 0 turns it off)
   const qualifiedSetting = Number(await getSetting("ai_qualified_replies", "2"));
-  d.ports.qualifyAfter = Number.isFinite(qualifiedSetting) && qualifiedSetting >= 0 ? qualifiedSetting : 2;
+  d.ports.config = configOf(d.agent);
+  d.ports.detect = detectFromText;
+  d.ports.qualifyAfter = d.ports.config.qualifyAfter !== null ? d.ports.config.qualifyAfter : Number.isFinite(qualifiedSetting) && qualifiedSetting >= 0 ? qualifiedSetting : 2;
   const base = { userText: lastText, tools: [] as any[], knowledge: [] as string[], llmCalls: 0, cacheHits: 0, tokens: { input: 0, output: 0, cacheRead: 0 } };
   // a contact who is already a student is recognised before anything is explained
   if (d.lead && !d.sandbox) await studentFacts(d.lead, state.slots);
@@ -133,7 +137,7 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
   const media = d.media || [];
   const wrote = lastText.replace(/\[[^\]]*\]/g, "").trim().length > 0;
   if (d.input !== null && !wrote && media.length && media.every(m => m.kind === "sticker")) {
-    return { text: "", exit: null, collected: {}, trace: { ...base, deterministic: true, intent: "other", commercial: { intent: "other", changed: {}, crmBefore: null, crmAfter: null, actions: [], temperature: state.temperature, score: state.commercialScore, nextAction: state.nextAction, readyForProposal: state.readyForProposal }, entry: ENTRY_LABEL[state.slots.entryType || "unknown"], latencyMs: Date.now() - started } };
+    return { text: "", exit: null, collected: {}, trace: { ...base, deterministic: true, intent: "other", commercial: { intent: "other", changed: {}, crmBefore: null, crmAfter: null, actions: [], temperature: state.temperature, score: state.commercialScore, nextAction: state.nextAction, readyForProposal: state.readyForProposal, reasons: ["Figurinha: sem resposta, nada a decidir."], missing: [], exitWhy: null }, entry: ENTRY_LABEL[state.slots.entryType || "unknown"], latencyMs: Date.now() - started } };
   }
   if (d.audioUnreadable && !wrote) {
     const asked = Number(state.slots.audioAsked || 0);
@@ -149,6 +153,21 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
   // a reason that needs a person (an unhappy person, a payment, a wrong number, the same request again): no model, straight to the team
   const reason = d.input === null ? null : humanReason(lastText, d.priorUserTexts || []);
   if (reason) return answered(d.agent.handoffMessage || FIXED.human, "human", "human", { fast: "human" }, reason);
+
+  // a person names the consultant they want or already talked to ("Quero falar com João", "Já conversei com a Gabrielli"): the handoff goes to the team
+  // of the polo, with that person first when they belong to it (the Router decides; nobody is promised before it confirms)
+  const mention = d.input === null ? null : consultantMention(lastText);
+  if (mention) {
+    const person = await findConsultantByName(mention.name).catch(() => null);
+    const patch = person ? { preferredConsultantId: person.id, preferredConsultantName: person.name } : { preferredConsultantName: `${mention.name} (não encontrado entre os consultores)` };
+    const text = `Entendi! Vou encaminhar seu atendimento para a equipe do seu polo${person ? `, priorizando ${person.name.split(" ")[0]}` : ""}. Um momento, por favor.`;
+    return answered(text, "human", "human", { fast: "human", patch }, "human_request");
+  }
+
+  // "Já sou aluno": the person is not a prospect; the system asks which team they need (tutoring or secretary) instead of selling
+  if (d.input !== null && wrote && interestOf(lastText, {}) === "aluno" && !supportIntent(lastText, true) && !fastIntent(lastText) && !state.slots.supportNeed && !state.slots.enrolledStudent) {
+    return answered("Entendi! Para te direcionar para a equipe certa: é sobre plataforma, atividades ou provas (tutoria), ou sobre documentos, boletos e declarações (secretaria)?", null, "other", { patch: { enrolledStudent: true, interestKind: "aluno" } });
+  }
 
   // the full name and the CPF asked for the scholarship: read here, answered by the system (the CPF never goes to the model, the log or the brief)
   if (d.input !== null && wrote && Number(state.slots.bolsaDataAsked || 0) > 0 && !hasBolsaData(state.slots)) {
@@ -314,8 +333,12 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
         const ctx = mk(true);
         const g = await sendGradeFor(course, ctx);
         if (live && g.simulated) {
+          const ticket = d.ticket!;
           const leadId = d.lead?.id;
-          setTimeout(() => {
+          setTimeout(async () => {
+            // the person may have been handed to the team meanwhile: then nothing is sent by the AI
+            const fresh = await Ticket.findByPk(ticket.id, { attributes: ["id", "aiActive", "userId", "status"] }).catch(() => null);
+            if (fresh && (fresh.aiActive === false || fresh.userId || fresh.status === "closed")) return;
             sendGradeFor(course, mk(false)).catch(async () => {
               if (leadId) await addActivity(leadId, null, "system", `Não consegui enviar a grade do curso ${course.name}. Envie manualmente.`).catch(() => undefined);
             });

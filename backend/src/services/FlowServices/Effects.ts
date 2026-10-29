@@ -29,6 +29,7 @@ import { cleanStage } from "./StageSpec";
 import { stepsOf, takeSteps } from "./StepLock";
 import { findAgentForTicket, loadHistory, respond } from "../AiServices/RunAiAgent";
 import { signed, styleOf } from "../AiServices/Style";
+import { configOf } from "../CommercialServices/Config";
 import { HandoffReason, handoffToHuman } from "../AiServices/Handoff";
 import { captureUnknown, notifyOwner } from "../AiServices/Learning";
 import { matchFaq } from "../AiServices/Kb";
@@ -38,7 +39,7 @@ import { runCommercialBlock } from "../CommercialServices/Block";
 import { blankState, hydrate, loadState, mirror } from "../CommercialServices/Slots";
 import { dbPorts, simPorts, SimWorld } from "../CommercialServices/Ports";
 import { commercialAiTurn } from "../CommercialServices/Turn";
-import { HandoffWhy, WHY_OF_EXIT, WHY_TEXT, afterHoursNotice, qualifiedText, routeToCommercial } from "../CommercialServices/Router";
+import { HandoffWhy, RoutePreview, Team, WHY_OF_EXIT, WHY_TEXT, afterHandoffNotice, previewRoute, qualifiedText, routeToCommercial } from "../CommercialServices/Router";
 import { burstOf, mediaOfMessages, textOfMessage } from "../AiServices/Media";
 import { splitIntoBlocks } from "../CommercialServices/Blocks";
 import Message from "../../models/Message";
@@ -343,12 +344,14 @@ export const ticketEffects = (ticket: Ticket, flowName: string, flowCtx: FlowCon
       const team = d.to === "polo_tutoria" ? "tutoria" : d.to === "polo_coordenacao" ? "coordenacao" : "comercial";
       if (d.to === "polo_sales" || d.to === "chosen_polo_sales" || (flowCtx.agentId && (d.to === "polo_tutoria" || d.to === "polo_coordenacao"))) {
         const agent = await agentFor(null);
+        const cfg = configOf(agent);
         // nothing was said about the handoff yet (a limit was reached, a plain transfer block): the lead hears it once; a qualified lead is
         // always told that the consultant of the polo continues (the agent's own answer was about the last question)
         if (vars.__why === "qualified") await this.say(await qualifiedText(ticket));
         else if (vars.__exit && vars.__spoke !== vars.__exit && !d.text) await this.say((agent && agent.handoffMessage) || DEFAULT_HANDOFF);
-        const routed = await routeToCommercial(ticket, { team, why: vars.__why || WHY_OF_EXIT[String(vars.__exit || "")] || "other", poloId: d.to === "chosen_polo_sales" && vars.poloId ? Number(vars.poloId) : null, city: vars.city || vars.cidade || null, agentId: flowCtx.agentId || null });
-        const notice = afterHoursNotice(routed);
+        const wanted = Number(((await leadOf()) ? (await loadState((await leadOf())!.id)).slots.preferredConsultantId : 0) || 0) || null;
+        const routed = await routeToCommercial(ticket, { keepOwner: cfg.keepOwner, preferredUserId: wanted, team, why: vars.__why || WHY_OF_EXIT[String(vars.__exit || "")] || "other", poloId: d.to === "chosen_polo_sales" && vars.poloId ? Number(vars.poloId) : null, city: vars.city || vars.cidade || null, agentId: flowCtx.agentId || null });
+        const notice = afterHandoffNotice(routed, cfg.messages);
         if (notice) await this.say(notice);
         return;
       }
@@ -448,12 +451,12 @@ export const ticketEffects = (ticket: Ticket, flowName: string, flowCtx: FlowCon
       if (agent && exit !== "off" && vars?.__spoke !== exit) await this.say(agent.handoffMessage || DEFAULT_HANDOFF);
       if (agent) {
         const routed = await handoffToHuman(ticket.id, agent, REASON_OF[exit] || "pedido", undefined, vars?.__why || WHY_OF_EXIT[exit] || "other");
-        const notice = routed ? afterHoursNotice(routed) : null;
+        const notice = routed ? afterHandoffNotice(routed, configOf(agent).messages) : null;
         if (notice) await this.say(notice);
       } else {
         await ticket.update({ aiActive: false });
         const routed = await routeToCommercial(ticket, { why: vars?.__why || WHY_OF_EXIT[exit] || "other" });
-        const notice = afterHoursNotice(routed);
+        const notice = afterHandoffNotice(routed, null);
         if (notice) await this.say(notice);
       }
     },
@@ -489,8 +492,10 @@ export interface StageTrace {
   steps?: { total: number; done: number[] };
 }
 
-export const simEffects = (sample: SimSample = {}, opts: { agent?: AiAgent | null; flowId?: number | null } = {}): { fx: Effects; messages: string[]; actions: string[]; traces: StageTrace[] } => {
+export const simEffects = (sample: SimSample = {}, opts: { agent?: AiAgent | null; flowId?: number | null } = {}): { fx: Effects; messages: string[]; actions: string[]; traces: StageTrace[]; routes: RoutePreview[] } => {
   const messages: string[] = [];
+  // who would take the conversation (real polos, queues and consultants; nothing is written and nobody is warned)
+  const routes: RoutePreview[] = [];
   const actions: string[] = [];
   const traces: StageTrace[] = [];
   const name = sample.name || "Maria";
@@ -548,6 +553,12 @@ export const simEffects = (sample: SimSample = {}, opts: { agent?: AiAgent | nul
         // what the Router would do: the polo from the city, the commercial team of that polo, the reserve queue when it is unknown
         const world = vars.__commercial as SimWorld | undefined;
         const city = String((world && world.state.slots.city) || vars.city || (sample.lead || {}).cidade || "");
+        // the agent is real: show who would take it, with the real polos, queues and consultants (nothing is written)
+        if (opts.agent && to !== "chosen_polo_sales") {
+          const cfg = configOf(opts.agent);
+          const teamOf: Team = to === "polo_tutoria" ? "tutoria" : to === "polo_coordenacao" ? "coordenacao" : "comercial";
+          routes.push(await previewRoute({ city, team: teamOf, keepOwner: cfg.keepOwner, hot: world ? world.state.temperature === "hot" : false, preferredUserId: world ? Number(world.state.slots.preferredConsultantId) || null : null, preferredName: world && world.state.slots.preferredConsultantName ? String(world.state.slots.preferredConsultantName) : null, messages: cfg.messages }));
+        }
         const polos = await fx.listPolos();
         // the polo the person chose inside the flow wins over the one the city points to
         const chosen = to === "chosen_polo_sales" && vars.poloId ? polos.find(p => p.id === Number(vars.poloId)) : undefined;
@@ -613,5 +624,5 @@ export const simEffects = (sample: SimSample = {}, opts: { agent?: AiAgent | nul
     async humanHandoff(_node, exit) { actions.push(`Transfere para ${exit === "tutoria" ? "a tutoria do polo" : exit === "secretaria" ? "a secretaria do polo" : "a equipe"} (${exit === "limit" ? "limite de turnos" : exit === "off" ? "fora do escopo" : exit === "tutoria" ? "precisa da tutoria" : exit === "secretaria" ? "precisa da secretaria" : "pediu uma pessoa"})`); },
     async startFlow(flowId) { actions.push(`Inicia o fluxo ${flowId}`); return true; }
   };
-  return { fx, messages, actions, traces };
+  return { fx, messages, actions, traces, routes };
 };

@@ -58,7 +58,7 @@ export type Team = "comercial" | "tutoria" | "coordenacao";
 const TEAM_LABEL: Record<Team, string> = { comercial: "Comercial", tutoria: "Tutoria", coordenacao: "Secretaria" };
 
 // what a qualified lead is told when the consultant of the polo takes over (the agent has just answered the last question)
-export const QUALIFIED_MESSAGE = "Perfeito, já tenho o que preciso! Vou passar o seu atendimento para o consultor do seu polo, que continua com você e apresenta a melhor condição.";
+export const QUALIFIED_MESSAGE = "Perfeito! Já organizei suas informações e vou encaminhar seu atendimento para um consultor do nosso polo, que vai continuar com você por aqui.";
 
 // What a qualified lead is told when the consultant takes over: warm and specific (name, course, city), and it asks for the best time, which the
 // consultant reads (the agent is out of the conversation from here).
@@ -71,9 +71,8 @@ export const qualifiedText = async (ticket: Ticket): Promise<string> => {
     const first = String(slots.fullName || slots.leadName || lead?.name || ticket.contact?.name || "").trim().split(/\s+/)[0];
     const course = String(slots.courseName || "") || (lead?.courseId ? (await Course.findByPk(lead.courseId, { attributes: ["name"] }))?.name : null) || "";
     const where = String(slots.city || lead?.city || "").trim();
-    const resume = course ? ` Já anotei que você quer ${course}${where ? ` em ${where}` : ""}.` : "";
     const bolsa = slots.cpf || lead?.cpf ? " e simular a bolsa que você pode ter" : "";
-    return `Prontinho${first ? `, ${first}` : ""}!${resume} Agora o consultor do seu polo continua com você${bolsa}: ele apresenta a melhor condição e tira o que faltar. Qual o melhor horário para ele te chamar? Pode responder por aqui mesmo.`;
+    return `Perfeito${first ? `, ${first}` : ""}! Já organizei suas informações${course ? ` (${course}${where ? ` em ${where}` : ""})` : ""} e vou encaminhar seu atendimento para um consultor do nosso polo, que vai continuar com você por aqui${bolsa}.`;
   } catch (err) {
     return QUALIFIED_MESSAGE;
   }
@@ -93,6 +92,8 @@ export interface Routed {
   whenText: string | null;
   // semipresencial course whose student lives where it cannot be enrolled: where the enrollment is, and the polo of the city
   semipresencial?: { enrollPolo: string; cityPolo: string } | null;
+  // registered when a hot lead waits (no consultant free, or outside the working hours)
+  priority?: string | null;
 }
 
 // ---------------------------------------------------------------- polo
@@ -238,6 +239,10 @@ export interface RouteOptions {
   agentId?: number | null;
   // who takes it (default: the commercial team)
   team?: Team;
+  // the lead keeps the consultant who already served them when that person is on the team (default: yes)
+  keepOwner?: boolean;
+  // the consultant the lead asked for by name: chosen only when they are on the team that receives the conversation (never outside its scope)
+  preferredUserId?: number | null;
 }
 
 export const routeToCommercial = async (ticket: Ticket, opts: RouteOptions): Promise<Routed> => {
@@ -257,20 +262,24 @@ export const routeToCommercial = async (ticket: Ticket, opts: RouteOptions): Pro
   const team: Team = opts.team || (opts.why === "tutoring" ? "tutoria" : opts.why === "secretary" ? "coordenacao" : "comercial");
   const { queue, fallback } = await pickQueue(polo ? polo.id : null, team);
   let user: User | null = null;
+  let viaPreferred = false;
   if (queue) {
     const users: User[] = (queue as any).users || [];
-    const ownerOfLead = lead?.ownerId ? users.find(u => u.id === lead.ownerId) : null;
+    const ownerOfLead = lead?.ownerId && opts.keepOwner !== false ? users.find(u => u.id === lead.ownerId) : null;
     // the lead's owner keeps the conversation only when they have a WhatsApp number to answer from
     const owners = new Set((await Whatsapp.findAll({ where: { ownerId: users.map(u => u.id), channel: "whatsapp" } as any, attributes: ["ownerId"] })).map(w => Number(w.ownerId)));
     // ...unless nobody of the queue has a number (then the lead's owner is as good as anyone)
     const keepOwner = !!ownerOfLead && (owners.has(ownerOfLead.id) || owners.size === 0);
-    user = (keepOwner && ownerOfLead) || (users.length ? await pickUserForQueue(queue, true) : null);
+    const preferred = opts.preferredUserId ? users.find(u => u.id === opts.preferredUserId) || null : null;
+    viaPreferred = !!preferred;
+    user = preferred || (keepOwner && ownerOfLead) || (users.length ? await pickUserForQueue(queue, true) : null);
   }
 
   const business = await getBusinessConfig();
   const within = isBusinessNow(business);
   const when = within ? null : whenText(nextOpening(business));
   const label = polo ? `${TEAM_LABEL[team]} do polo ${polo.name}` : queue ? `fila ${queue.name}` : "sem fila";
+  let priority: string | null = null;
 
   try {
     if (queue) {
@@ -284,6 +293,9 @@ export const routeToCommercial = async (ticket: Ticket, opts: RouteOptions): Pro
     } catch (err) {
       logger.warn(`Ticket update after the handoff was not sent: ${err}`);
     }
+    // a hot lead waiting in a queue (or outside the working hours) is registered with priority, so whoever opens the queue sees who comes first
+    const hot = lead ? (await LeadCommercial.findOne({ where: { leadId: lead.id }, attributes: ["temperature"] }))?.temperature === "hot" : false;
+    priority = hot && (!user || !within) ? "alta" : null;
     await TicketEvent.create({
       ticketId: ticket.id,
       type: "transfer",
@@ -291,10 +303,11 @@ export const routeToCommercial = async (ticket: Ticket, opts: RouteOptions): Pro
       fromQueueId: ticket.queueId || null,
       toQueueId: queue ? queue.id : null,
       toUserId: user ? user.id : null,
-      note: `Agente de IA → ${label}${user ? ` (${user.name})` : queue ? " (aguardando alguém da fila)" : ""}${fallback && queue ? " · fila central" : ""}. Motivo: ${WHY_TEXT[opts.why]}.`.slice(0, 480)
+      note: `Agente de IA → ${label}${user ? ` (${user.name})` : queue ? " (aguardando alguém da fila)" : ""}${fallback && queue ? " · fila central" : ""}. Motivo: ${WHY_TEXT[opts.why]}.${viaPreferred ? " Consultor pedido pelo lead." : ""}${priority ? ` Prioridade ${priority} (lead quente).` : ""}`.slice(0, 480)
     } as any);
   } catch (err) {
     logger.error(`Handoff routing failed: ${err}`);
+    if (lead) await AgentMetricEvent.create({ leadId: lead.id, agentId: opts.agentId || null, flowId: null, event: "handoff_routing_failed", once: false, meta: JSON.stringify({ error: String(err).slice(0, 200) }) } as any).catch(() => undefined);
   }
 
   const noTeam = !!queue && !user && !fallback;
@@ -325,7 +338,7 @@ export const routeToCommercial = async (ticket: Ticket, opts: RouteOptions): Pro
         await LeadTask.create({ leadId: lead.id, userId: owner, type: "whatsapp", title: "Atender lead encaminhado pelo agente de IA", dueAt } as any);
         await syncNextFollowUp(lead.id);
       }
-      await addActivity(lead.id, null, "system", `Encaminhado pelo agente de IA ao ${label}${user ? ` (${user.name})` : ""}. Motivo: ${WHY_TEXT[opts.why]}.`).catch(() => undefined);
+      await addActivity(lead.id, null, "system", `Encaminhado pelo agente de IA ao ${label}${user ? ` (${user.name})` : ""}. Motivo: ${WHY_TEXT[opts.why]}.${priority ? ` Prioridade ${priority} (lead quente).` : ""}`).catch(() => undefined);
       const state = await LeadCommercial.findOne({ where: { leadId: lead.id }, attributes: ["agentId", "flowId"] });
       await AgentMetricEvent.create({ leadId: lead.id, agentId: opts.agentId || state?.agentId || null, flowId: state?.flowId || null, event: `handoff_${opts.why}`, once: false, meta: JSON.stringify({ polo: polo ? polo.id : null, queue: queue ? queue.id : null, user: user ? user.id : null, fallback }) } as any).catch(() => undefined);
     }
@@ -343,7 +356,8 @@ export const routeToCommercial = async (ticket: Ticket, opts: RouteOptions): Pro
     fallback,
     within,
     whenText: when,
-    semipresencial
+    semipresencial,
+    priority
   };
 };
 
@@ -356,6 +370,76 @@ export const afterHoursNotice = (r: Routed): string | null => {
   return parts.length ? parts.join(" ") : null;
 };
 
+// The one thing said after the handoff: the semipresencial rule, the working hours, or that the lead waits in the queue (never "a consultant took it" before
+// the backend confirmed who did). The administrator can write the queue and the after-hours messages; {{quando}} and {{polo}} are filled in.
+export const afterHandoffNotice = (r: Routed, messages?: { queued?: string; afterHours?: string } | null): string | null => {
+  const fill = (t: string): string => t.replace(/\{\{\s*quando\s*\}\}/gi, r.whenText || "").replace(/\{\{\s*polo\s*\}\}/gi, r.poloName ? poloLabel(r.poloName) : "nosso polo");
+  const base = afterHoursNotice(r);
+  if (!r.within) return messages && messages.afterHours ? fill(messages.afterHours) : base;
+  if (!r.userId && r.queueId) {
+    const queued = messages && messages.queued ? fill(messages.queued) : `Seu atendimento já está na fila ${r.poloName ? `do polo ${poloLabel(r.poloName)}` : "da nossa equipe"}. Assim que um consultor estiver disponível, ele continua com você por aqui.`;
+    return [base, queued].filter(Boolean).join(" ");
+  }
+  return base;
+};
+
 // "Porto Velho - Centro - RO" is said "Porto Velho"
 const poloLabel = (name: string): string => String(name || "").replace(/\s*[-(].*$/, "").trim() || name;
 
+
+// ---------------------------------------------------------------- what would happen (the tester): the same choices, nothing written
+export interface RoutePreview {
+  team: string;
+  polo: string | null;
+  poloReason: string;
+  queue: string | null;
+  queueReason: string;
+  consultant: string | null;
+  consultantReason: string;
+  within: boolean;
+  whenText: string | null;
+  priority: string | null;
+  // what the lead would read after the handoff
+  notice: string | null;
+}
+
+export const previewRoute = async (opts: { city?: string | null; team?: Team; keepOwner?: boolean; hot?: boolean; ownerId?: number | null; preferredUserId?: number | null; preferredName?: string | null; messages?: { queued?: string; afterHours?: string } | null }): Promise<RoutePreview> => {
+  const team: Team = opts.team || "comercial";
+  const { polo, ambiguous } = opts.city ? await resolvePolo(opts.city) : { polo: null as Polo | null, ambiguous: false };
+  const { queue, fallback } = await pickQueue(polo ? polo.id : null, team);
+  const users: User[] = queue ? (queue as any).users || [] : [];
+  let consultant: User | null = null;
+  let consultantReason = "Nenhuma fila para receber a conversa: a gestão é avisada.";
+  if (queue) {
+    const owner = opts.ownerId && opts.keepOwner !== false ? users.find(u => u.id === opts.ownerId) : null;
+    const wanted = opts.preferredUserId ? users.find(u => u.id === opts.preferredUserId) : null;
+    if (wanted) { consultant = wanted; consultantReason = "Consultor pedido pelo lead, e ele faz parte da equipe que recebe a conversa."; }
+    else if (owner) { consultant = owner; consultantReason = "Continuidade: o lead já é atendido por este consultor, que faz parte da equipe."; }
+    else if (users.length) {
+      consultant = await pickUserForQueue(queue, true, true);
+      const askedNote = opts.preferredName ? ` O lead pediu ${opts.preferredName}, mas essa pessoa não faz parte da equipe que recebe (fora do escopo permitido).` : "";
+      const mode = !queue.autoAssign || queue.autoAssign === "none" ? "least" : queue.autoAssign;
+      consultantReason = consultant ? (mode === "round_robin" || mode === "roundrobin" ? "Revezamento da fila, entre quem tem WhatsApp conectado." : "Quem tem menos conversas abertas na fila, entre quem tem WhatsApp conectado.") + askedNote : "Ninguém disponível: a conversa fica na fila.";
+    } else consultantReason = "A fila não tem consultores: a conversa fica aguardando.";
+  }
+  const business = await getBusinessConfig();
+  const within = isBusinessNow(business);
+  const when = within ? null : whenText(nextOpening(business));
+  const routed: Routed = {
+    queueId: queue ? queue.id : null, queueName: queue ? queue.name : null, userId: consultant ? consultant.id : null, userName: consultant ? consultant.name : null,
+    poloId: polo ? polo.id : null, poloName: polo ? polo.name : null, fallback, within, whenText: when, semipresencial: null
+  };
+  return {
+    team: TEAM_LABEL[team],
+    polo: polo ? polo.name : null,
+    poloReason: polo ? `Cidade informada: ${opts.city}.` : opts.city ? (ambiguous ? `A cidade “${opts.city}” combina com mais de um polo: o agente pergunta qual.` : `Nenhum polo atende “${opts.city}”: fila de reserva.`) : "Cidade ainda não informada: fila de reserva.",
+    queue: queue ? queue.name : null,
+    queueReason: queue ? (fallback ? "Fila de reserva (o polo não tem equipe comercial própria ou não foi identificado)." : `Equipe ${TEAM_LABEL[team].toLowerCase()} do polo.`) : "Nenhuma fila configurada.",
+    consultant: consultant ? consultant.name : null,
+    consultantReason,
+    within,
+    whenText: when,
+    priority: opts.hot && (!consultant || !within) ? "alta" : null,
+    notice: afterHandoffNotice(routed, opts.messages || null)
+  };
+};

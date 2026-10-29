@@ -1,5 +1,5 @@
 import { AuditLine, CommercialPorts } from "./Ports";
-import { OBJECTION_LIMIT, canAutoMove, confirmsNoInterest, hashOf, isQualified, nextActionOf, noteOf, readyForConsultantOf, scoreOf, targetStageKey, temperatureOf } from "./Rules";
+import { OBJECTION_LIMIT, canAutoMove, confirmsNoInterest, hashOf, intentLabel, interestOf, INTEREST_LABEL, isQualified, missingOf, nextActionOf, noteOf, readyForConsultantOf, scoreOf, targetStageKey, temperatureOf } from "./Rules";
 import { STAGE_SPECS, StageKey } from "./Pipeline";
 import { cleanPatch } from "./Slots";
 import { defaultFollowUp, parseFollowUp, ymdOf } from "./Hours";
@@ -49,6 +49,14 @@ export interface CommercialTrace {
   score: number;
   nextAction: string | null;
   readyForProposal: boolean;
+  // why each thing happened, in plain words (the timeline of the tester reads this)
+  reasons: string[];
+  // the column of the CRM now, by name
+  stageName?: string | null;
+  // what is still missing for the lead to be qualified
+  missing: string[];
+  // the way out of the stage chosen in this turn and why (null: the conversation goes on)
+  exitWhy: string | null;
 }
 
 const TOPIC_FLAG: Record<string, string> = {
@@ -59,13 +67,30 @@ const TOPIC_FLAG: Record<string, string> = {
 export const commercialTurn = async (ports: CommercialPorts, input: TurnInput): Promise<{ exit: string | null; why?: string; ask?: "city"; trace: CommercialTrace }> => {
   const now = input.now || new Date();
   const s = ports.state;
+  const reasons: string[] = [];
   const before: Record<string, any> = { ...s.slots, temperature: s.temperature, commercialScore: s.commercialScore, nextAction: s.nextAction, readyForProposal: s.readyForProposal };
   const crmBefore = await ports.stageKeyNow();
 
   // 1) what was found out
-  const patch = cleanPatch(input.patch);
+  // the catalogue and the polos recognise the course and the city in the words of the person; what the model brings explicitly wins
+  const auto = input.replied && ports.detect ? cleanPatch(await ports.detect(input.userText).catch(() => ({}))) : {};
+  Object.entries(auto).forEach(([k, v]) => {
+    if (v && JSON.stringify(s.slots[k]) !== JSON.stringify(v) && (k === "courseName" || k === "city")) reasons.push(k === "courseName" ? `Curso reconhecido na mensagem: ${v}.` : `Cidade reconhecida na mensagem: ${v}.`);
+  });
+  const patch = { ...auto, ...cleanPatch(input.patch) };
   s.slots = { ...s.slots, ...patch };
   const used = new Set(input.tools);
+  // what the person wants, read from their words and revised at each message (a person who said "quero me matricular" and later asks about the grade is still a prospect)
+  if (input.replied) {
+    const kind = interestOf(input.userText, s.slots);
+    if (kind && kind !== s.slots.interestKind) {
+      reasons.push(`Interesse identificado: ${INTEREST_LABEL[kind]}.`);
+      s.slots.interestKind = kind;
+    }
+    if (!s.slots.interestKind && !kind && (s.slots.courseId || s.slots.courseName)) { s.slots.interestKind = "graduacao"; reasons.push(`Interesse identificado: ${INTEREST_LABEL.graduacao} (curso informado).`); }
+    if (kind === "transferencia" && (!s.slots.entryType || s.slots.entryType === "unknown")) s.slots.entryType = "transfer";
+    if (kind === "segunda_graduacao" && (!s.slots.entryType || s.slots.entryType === "unknown")) s.slots.entryType = "second_degree";
+  }
   if (input.hadText) {
     if (used.has("buscar_curso")) s.slots.courseExplained = true;
     if (used.has("buscar_regra_modalidade")) { s.slots.modalityExplained = true; if (s.slots.mecImpacted) s.slots.mecExplained = true; }
@@ -96,6 +121,7 @@ export const commercialTurn = async (ports: CommercialPorts, input: TurnInput): 
   // (a student who needs the team of the polo is "support_*": "tutoring" alone is a prospect asking how the tutoring works)
   const intent = input.fast === "tutoring" ? "support_tutoring" : input.fast === "secretary" ? "support_secretary" : input.fast || input.intent || null;
   s.lastIntent = intent;
+  if (intent) reasons.push(input.fast ? `Intenção reconhecida pelo sistema: ${intentLabel(intent)} (resposta sem modelo de IA).` : `Intenção entendida pelo modelo: ${intentLabel(intent)}.`);
   // three questions in a row that the base does not answer: a person should take it
   if (input.replied && (intent === "unknown" || input.unknownQuestion)) s.slots.unknownStreak = Number(s.slots.unknownStreak || 0) + 1;
   else if (input.replied && intent) s.slots.unknownStreak = 0;
@@ -106,8 +132,9 @@ export const commercialTurn = async (ports: CommercialPorts, input: TurnInput): 
   if (intent === "paid_internship") s.slots.internshipExplained = s.slots.internshipExplained || input.hadText;
 
   // a qualified lead who keeps talking is counted: after a couple of answers the consultant of the polo takes over (see readyForConsultantOf)
-  if (input.replied && isQualified(s.slots)) s.slots.qualifiedReplies = Number(s.slots.qualifiedReplies || 0) + 1;
-  s.slots.readyForConsultant = readyForConsultantOf(s.slots, Number(s.slots.qualifiedReplies || 0), ports.qualifyAfter);
+  const requires = ports.config ? ports.config.qualifyRequires : undefined;
+  if (input.replied && isQualified(s.slots, requires)) s.slots.qualifiedReplies = Number(s.slots.qualifiedReplies || 0) + 1;
+  s.slots.readyForConsultant = readyForConsultantOf(s.slots, Number(s.slots.qualifiedReplies || 0), ports.qualifyAfter, requires);
 
   // 3) the moments that matter
   const wantsProposal = intent === "price" || intent === "enrollment" || intent === "proposal";
@@ -151,6 +178,12 @@ export const commercialTurn = async (ports: CommercialPorts, input: TurnInput): 
   s.slots.intentsSeen = [...new Set([...(String(s.slots.intentsSeen || "").split(",").filter(Boolean)), ...ledger])].join(",");
   s.commercialScore = score;
   s.temperature = temperatureOf(s.slots, s.readyForProposal);
+  // the administrator chose to hand over any lead that turned hot, without waiting for the price or the enrollment to be asked
+  if (!s.readyForProposal && ports.config && ports.config.hotHandoff === "hot" && input.replied && s.temperature === "hot" && !human && !noInterest) {
+    s.readyForProposal = true;
+    reasons.push("Lead quente: a configuração manda encaminhar assim que esquenta.");
+    s.nextAction = nextActionOf(s, { human, lost: noInterest });
+  }
   s.nextAction = nextActionOf(s, { human, lost: noInterest });
   s.summary = noteOf(s);
 
@@ -160,6 +193,7 @@ export const commercialTurn = async (ports: CommercialPorts, input: TurnInput): 
   let moved = false;
   if (target && canAutoMove(crmBefore, target)) moved = await ports.moveStage(target as StageKey, STAGE_SPECS[target as StageKey] ? `${intent || "andamento do atendimento"}` : "andamento do atendimento");
   const crmAfter = moved ? (target as StageKey) : crmBefore;
+  if (moved) reasons.push(`CRM: o lead foi para a coluna ${crmAfter} (${intent ? intentLabel(intent) : "andamento do atendimento"}).`);
   if (crmAfter) s.stageKey = crmAfter;
 
   // 6) tasks (one per reason) and the note (only when it changed)
@@ -190,18 +224,24 @@ export const commercialTurn = async (ports: CommercialPorts, input: TurnInput): 
 
   // 8) the way out of the stage, when there is a reason for it
   let exit: string | null = null;
-  if (human) exit = "human";
-  else if (supportExit) exit = supportExit;
+  let exitWhy: string | null = null;
+  if (human) { exit = "human"; exitWhy = "A pessoa pediu para falar com alguém da equipe."; }
+  else if (supportExit) { exit = supportExit; exitWhy = supportExit === "secretaria" ? "Aluno que precisa da secretaria do polo." : "Aluno que precisa da tutoria do polo."; }
   else if (ask) exit = null;
-  else if (noInterest) exit = "sem_interesse";
-  else if (s.readyForProposal && !input.stepsPending) exit = "proposta";
-  else if (followUp) exit = "follow_up";
-  else if (input.unknownQuestion || intent === "unknown") exit = Number(s.slots.unknownStreak || 0) >= 3 ? "human" : "off";
+  else if (noInterest) { exit = "sem_interesse"; exitWhy = "A pessoa confirmou que não tem interesse."; }
+  else if (s.readyForProposal && !input.stepsPending) { exit = "proposta"; exitWhy = intent === "price" ? "Pediu valores: quem apresenta as condições é o consultor." : intent === "enrollment" ? "Quer se matricular: o consultor conduz a matrícula." : intent === "proposal" ? "Pediu proposta ou link de inscrição." : "Lead quente: encaminhado ao consultor."; }
+  else if (followUp) { exit = "follow_up"; exitWhy = "Pediu um tempo: o retorno ficou agendado."; }
+  else if (input.unknownQuestion || intent === "unknown") {
+    const limit = ports.config ? ports.config.maxClarifications : 3;
+    exit = Number(s.slots.unknownStreak || 0) >= limit ? "human" : "off";
+    exitWhy = exit === "human" ? `${limit} mensagens seguidas sem resposta confirmada: uma pessoa assume.` : "Informação não confirmada na base: o agente avisa que vai confirmar e a pergunta vai para a equipe.";
+  }
   // qualified and out of questions: a person of the polo takes it, ready (the brief says what the lead wants)
-  else if (Number(s.slots.objectionCount || 0) >= OBJECTION_LIMIT && input.objection) exit = "human";
+  else if (Number(s.slots.objectionCount || 0) >= OBJECTION_LIMIT && input.objection) { exit = "human"; exitWhy = "Objeções repetidas: um consultor assume a negociação."; }
   // a qualified lead is handed to the consultant when nothing is left hanging: not while a grade was asked and not sent, and not in the same
   // message that asks the person something (unless the conversation already went on for two more answers)
-  else if (s.slots.readyForConsultant && !input.stepsPending && input.replied && !(intent === "curriculum" && !s.slots.gradeSent) && (!input.endsWithQuestion || Number(s.slots.qualifiedReplies || 0) >= (ports.qualifyAfter || 2) + 2)) exit = "human";
+  else if (s.slots.readyForConsultant && !input.stepsPending && input.replied && !(intent === "curriculum" && !s.slots.gradeSent) && (!input.endsWithQuestion || Number(s.slots.qualifiedReplies || 0) >= (ports.qualifyAfter || 2) + 2)) { exit = "human"; exitWhy = "Lead qualificado: todos os dados necessários estão no cadastro."; }
+  if (exitWhy) reasons.push(`Transferência: ${exitWhy}`);
   const why =
     supportExit ? (supportExit === "secretaria" ? "secretary" : "tutoring") :
     exit === "human" && !human && !input.unknownQuestion && intent !== "unknown"
@@ -215,6 +255,6 @@ export const commercialTurn = async (ports: CommercialPorts, input: TurnInput): 
     exit,
     ...(why ? { why } : {}),
     ...(ask ? { ask } : {}),
-    trace: { intent, changed, crmBefore, crmAfter, actions: ports.audit.splice(0), temperature: s.temperature, score: s.commercialScore, nextAction: s.nextAction, readyForProposal: s.readyForProposal }
+    trace: { intent, changed, crmBefore, crmAfter, actions: ports.audit.splice(0), temperature: s.temperature, score: s.commercialScore, nextAction: s.nextAction, readyForProposal: s.readyForProposal, reasons, missing: missingOf(s.slots, ports.config ? ports.config.qualifyRequires : undefined), exitWhy, stageName: crmAfter ? await ports.stageName(crmAfter) : null }
   };
 };

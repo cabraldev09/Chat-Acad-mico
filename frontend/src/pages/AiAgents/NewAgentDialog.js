@@ -60,7 +60,7 @@ const READY = [
   "Envia a grade curricular do curso do lead",
   "Passa para o consultor do polo quando o lead está pronto",
 ];
-const introPreview = (who) => { const n = who.trim(); return n ? `Olá! Eu sou ${/^(a|o) /i.test(n) ? n : `a ${n}`}, assistente virtual da Cruzeiro do Sul Virtual.` : "Olá! Eu sou o assistente virtual da Cruzeiro do Sul Virtual."; };
+const introPreview = (who) => { const n = who.trim() || "Estela"; return `Olá! Eu sou ${/^(a|o) /i.test(n) ? n : `a ${n}`}, assistente virtual da Cruzeiro do Sul Virtual.`; };
 
 const iconOf = (t) => (/comercial/i.test(t.key + t.name) ? GraduationCap : /atendimento|encaminh/i.test(t.key + t.name) ? Headphones : Workflow);
 
@@ -122,7 +122,7 @@ const NewAgentDialog = ({ open, onClose, onCreated, onManual }) => {
         {mode === "quick" && (
           <>
             <p className={classes.lead}>Um agente comercial completo, pronto para atender quem chega. Você só escolhe como ele se apresenta.</p>
-            <TextField fullWidth variant="outlined" size="small" label="Como ele se apresenta (opcional)" placeholder="Ex.: Bia" value={assistantName} onChange={(e) => setAssistantName(e.target.value)} InputLabelProps={{ shrink: true }} helperText={`Primeira mensagem: “${preview}”`} />
+            <TextField fullWidth variant="outlined" size="small" label="Nome do assistente" placeholder="Estela" value={assistantName} onChange={(e) => setAssistantName(e.target.value)} InputLabelProps={{ shrink: true }} helperText={`Primeira mensagem: “${preview}”`} />
             <div className={classes.rowSub} style={{ margin: "14px 0 6px" }}>Tom de voz</div>
             <div className={classes.chips} style={{ marginTop: 0 }} role="group" aria-label="Tom de voz">
               {TONES.map((t) => <button key={t.key} type="button" className={classes.chip} style={tone === t.text ? { borderColor: "#0693E3", background: "rgba(6,147,227,.1)", fontWeight: 700 } : undefined} aria-pressed={tone === t.text} onClick={() => setTone(t.text)}>{t.label}</button>)}

@@ -203,7 +203,7 @@ export const simulate = async (req: Request, res: Response): Promise<Response> =
   const issues = validateGraph(graph, { hasAiAgent: await hasActiveAiAgent(), kind: flow.kind });
   if (issues.some(i => i.level === "error" && /início/.test(i.text))) return res.status(422).json({ error: "ERR_FLOW_HAS_ERRORS", issues });
   // an AI stage really answers in the simulator (with the model of the agent), without sending or saving anything
-  const { fx, messages, actions, traces } = simEffects(b.sample || {}, { agent: await agentFor(flow), flowId: flow.id });
+  const { fx, messages, actions, traces, routes } = simEffects(b.sample || {}, { agent: await agentFor(flow), flowId: flow.id });
   let step;
   try {
     if (b.state && b.state.nodeId && !b.restart) {
@@ -219,7 +219,7 @@ export const simulate = async (req: Request, res: Response): Promise<Response> =
     // the provider refused (no key, no balance): the screen says so instead of a blank error
     throw aiError(err, "simulação");
   }
-  return res.json({ messages, actions, traces, status: step.status, state: step.state, path: step.path, resumeAfterMinutes: step.resumeAt ? Math.round((step.resumeAt.getTime() - Date.now()) / 60000) : null });
+  return res.json({ messages, actions, traces, routes, status: step.status, state: step.state, path: step.path, resumeAfterMinutes: step.resumeAt ? Math.round((step.resumeAt.getTime() - Date.now()) / 60000) : null });
 };
 
 // the old menu of the chatbot, shown as a flow (a draft: nothing changes for the people talking to the bot)
