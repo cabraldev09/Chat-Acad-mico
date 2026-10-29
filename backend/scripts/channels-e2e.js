@@ -402,7 +402,7 @@ const test = async (name, fn) => {
   const from = global.__backendLog ? global.__backendLog().length : 0;
   try { await fn(); results.push([true, name]); console.log(`  ✓ ${name}`); }
   catch (e) {
-    results.push([false, `${name} -> ${e.message}`]); console.log(`  ✗ ${name}\n      ${e.message}`);
+    results.push([false, `${name} -> ${e.message}`]); console.log(`  ✗ ${name}\n      ${e.message}${/hang up|ECONN/.test(String(e.message)) ? `\n      ${String(e.stack).split("\n").slice(1, 7).join("\n      ")}` : ""}`);
     // what the server complained about while this check ran (without the noise of the login tests)
     if (process.env.E2E_DEBUG) {
       try {
