@@ -101,3 +101,22 @@ describe("the explanation of one course", () => {
     expect(e.nacional.regra).toMatch(/Não podem ser ofertados totalmente a distância/);
   });
 });
+
+import { afterHandoffNotice } from "../../src/services/CommercialServices/Notice";
+
+describe("what the lead reads after the handoff", () => {
+  const base = { queueId: 5, queueName: "Comercial Polo Fila", userId: null, userName: null, poloId: 5, poloName: "Polo Fila - Centro - RO", fallback: false, within: true, whenText: null, semipresencial: null, priority: null };
+  it("a queue nobody is working in is said as a queue, never as if someone took it", () => {
+    const t = afterHandoffNotice(base as any, null)!;
+    expect(t).toMatch(/na fila do polo Polo Fila/);
+    expect(t).not.toMatch(/assumiu|já está com/);
+  });
+  it("when a consultant took it, nothing more is said", () => {
+    expect(afterHandoffNotice({ ...base, userId: 9, userName: "Ana" } as any, null)).toBeNull();
+  });
+  it("outside the working hours the lead is told when the team returns, and the administrator's text wins", () => {
+    expect(afterHandoffNotice({ ...base, within: false, whenText: "amanhã às 8h" } as any, null)).toMatch(/retorna amanhã às 8h/);
+    expect(afterHandoffNotice({ ...base, within: false, whenText: "amanhã às 8h" } as any, { afterHours: "Voltamos {{quando}} no polo {{polo}}." })).toBe("Voltamos amanhã às 8h no polo Polo Fila.");
+    expect(afterHandoffNotice(base as any, { queued: "Você está na fila de {{polo}}." })).toBe("Você está na fila de Polo Fila.");
+  });
+});

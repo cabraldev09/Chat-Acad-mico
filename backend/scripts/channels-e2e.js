@@ -3806,7 +3806,7 @@ const postMeta = (id, payload, secret, badSig) => {
       // a polo nobody works at: the lead hears that it waits in the queue (or when the team returns), never that someone took it
       const Q9 = "5511920000248";
       await withLead(Q9, "Cidade Fila");
-      out = await say(Q9, "wamid.qs-9", "Quero falar com uma pessoa", t => t.some(x => /fila|retorna/.test(x)), "the queue is said");
+      out = await say(Q9, "wamid.qs-9", "Quero falar com uma pessoa", t => t.some(x => /consultor/.test(x)), "the handoff is said");
       assert(!out.some(x => /assumiu|já está com/.test(x)), `the lead was told someone took it: ${out}`);
       assert(anthropic.requests.length === llm0, "the model was called in the scenarios that need none");
 
