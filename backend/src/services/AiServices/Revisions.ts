@@ -18,7 +18,8 @@ export const TRACKED: Array<[string, string]> = [
   ["waitSeconds", "Espera antes de responder"],
   ["learnFromTeam", "Aprender com a equipe"],
   ["queueId", "Fila"],
-  ["whatsappId", "Conexão"]
+  ["whatsappId", "Conexão"],
+  ["whatsappIds", "Conexões"]
 ];
 
 const KEYS = TRACKED.map(([k]) => k);

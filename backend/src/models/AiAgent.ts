@@ -113,6 +113,10 @@ class AiAgent extends Model<AiAgent> {
   @Column
   whatsappId: number;
 
+  // the connections the agent answers on (a list: the same agent on the QR number and on the Cloud API number); empty means all of them
+  @Column(DataType.JSON)
+  whatsappIds: number[] | null;
+
   toJSON(): any {
     const data: any = super.toJSON();
     data.apiKey = maskSecret(data.apiKey);

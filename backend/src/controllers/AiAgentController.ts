@@ -44,6 +44,7 @@ import { generateAgent } from "../services/FlowServices/GenerateAgent";
 import { defaultProvider } from "../services/AiServices/Keys";
 import { ensurePipeline } from "../services/CommercialServices/Pipeline";
 import { cleanCommercial } from "../services/CommercialServices/Config";
+import { cleanConnectionIds } from "../helpers/AgentConnections";
 
 const crud = makeCrud(AiAgent, {
   fields: [
@@ -58,6 +59,7 @@ const crud = makeCrud(AiAgent, {
     "active",
     "queueId",
     "whatsappId",
+    "whatsappIds",
     "persona",
     "maxTokens",
     "dailyTokenCap",
@@ -93,6 +95,11 @@ const crud = makeCrud(AiAgent, {
     ["queueId", "whatsappId", "reviewWhatsappId"].forEach(k => {
       if (data[k] === "" || data[k] === 0) data[k] = null;
     });
+    // the connections come as a list; the single one it had before moves into it, so the list is the only place to look
+    if (data.whatsappIds !== undefined) {
+      data.whatsappIds = cleanConnectionIds(data.whatsappIds);
+      data.whatsappId = null;
+    }
     return data;
   },
   afterSave: async (row, req, created) => {
