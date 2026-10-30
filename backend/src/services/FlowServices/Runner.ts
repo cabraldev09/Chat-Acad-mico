@@ -118,6 +118,9 @@ const startRun = async (flow: ChatFlow, ticket: Ticket, fx?: Effects, pending?: 
   inflight.add(ticket.id);
   try {
     const step = await advance(graph, start.id, { nodeId: null, vars: {}, tries: 0, pending: pending ?? null }, effects);
+    if (flow.kind !== "agent") {
+      noteAutomation(ticket.id, `o fluxo "${flow.name}" (nº ${flow.id}, ${flow.whatsappId ? `da conexão ${flow.whatsappId}` : "de todas as conexões"}, entrada "${parseEntry(flow.entry).type}") começou e ${step.status === "done" ? "terminou" : step.status === "waiting" ? "ficou esperando a resposta da pessoa" : step.status === "handoff" ? "passou para a equipe" : "ficou em espera"} passando por ${step.path.length} bloco(s)`);
+    }
     await save(run, step);
     await record(flow, step, true, false);
     await release(ticket, step, flow);
@@ -248,6 +251,7 @@ export const runFlowForTicket = async (ticket: Ticket, body: string): Promise<bo
         return false;
       }
       const graph = parseGraph(flow.published);
+      noteAutomation(ticket.id, `o fluxo "${flow.name}" (nº ${flow.id}) já estava em andamento nesta conversa, esperando no bloco "${active.nodeId || "início"}", e recebeu a mensagem`);
       // an AI stage waits for the burst of messages to end, then answers once (a run still being advanced answers it right after)
       if (inflight.has(ticket.id) || graph.nodes.find(n => n.id === active.nodeId)?.type === "stage") {
         const wait = await waitOf(flow, active.nodeId);
