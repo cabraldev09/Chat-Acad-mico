@@ -21,7 +21,7 @@ describe("conexões de um agente de IA", () => {
   });
 });
 
-import { describeCloudBody, lastWebhook, noteWebhook } from "../../src/channels/WebhookLog";
+import { describeCloudBody, lastWebhook, lastWebhookCheck, noteWebhook } from "../../src/channels/WebhookLog";
 
 describe("o que a Meta mandou por último para a conexão", () => {
   it("conta mensagens e avisos de entrega de uma chamada da API oficial", () => {
@@ -37,5 +37,31 @@ describe("o que a Meta mandou por último para a conexão", () => {
     noteWebhook(991, "assinatura_invalida", "o App Secret não confere");
     expect(lastWebhook(991)?.outcome).toBe("assinatura_invalida");
     expect(lastWebhook(992)).toBeNull();
+  });
+
+  it("uma verificação do endereço não esconde a última mensagem recebida", () => {
+    noteWebhook(993, "recebido", "1 mensagem", 1);
+    noteWebhook(993, "verificacao_recusada", "o Verify Token é diferente");
+    expect(lastWebhook(993)?.outcome).toBe("recebido");
+    expect(lastWebhookCheck(993)?.outcome).toBe("verificacao_recusada");
+  });
+});
+
+import { automationTrace, noteAutomation } from "../../src/services/AutomationServices/AutomationTrace";
+
+describe("o que o robô decidiu em cada conversa", () => {
+  it("guarda as últimas linhas de cada conversa e esquece as mais antigas", () => {
+    for (let i = 1; i <= 20; i++) noteAutomation(7001, `linha ${i}`);
+    const lines = automationTrace(7001);
+    expect(lines).toHaveLength(14);
+    expect(lines[0].text).toBe("linha 7");
+    expect(lines[13].text).toBe("linha 20");
+    expect(automationTrace(7002)).toEqual([]);
+  });
+
+  it("guarda só as conversas mais recentes", () => {
+    for (let id = 8000; id < 8250; id++) noteAutomation(id, "x");
+    expect(automationTrace(8000)).toEqual([]);
+    expect(automationTrace(8249)).toHaveLength(1);
   });
 });

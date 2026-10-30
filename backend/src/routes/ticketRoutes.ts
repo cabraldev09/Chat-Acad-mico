@@ -19,6 +19,8 @@ ticketRoutes.get("/tickets/:ticketId", isAuth, canReadTicket, TicketController.s
 
 ticketRoutes.get("/tickets/:ticketId/welcome", isAuth, canReadTicket, TicketController.welcome);
 
+ticketRoutes.get("/tickets/:ticketId/automation", isAuth, canReadTicket, TicketController.automation);
+
 ticketRoutes.get("/tickets/:ticketId/group", isAuth, canReadTicket, TicketController.groupInfo);
 
 ticketRoutes.get(

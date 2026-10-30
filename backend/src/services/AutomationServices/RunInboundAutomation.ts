@@ -13,6 +13,7 @@ import ShowWhatsAppService from "../WhatsappService/ShowWhatsAppService";
 import SendWhatsAppMessage from "../WbotServices/SendWhatsAppMessage";
 import { findAgentForTicket, runAiForTicket } from "../AiServices/RunAiAgent";
 import { runAgentGraph } from "../FlowServices/Runner";
+import { noteAutomation } from "./AutomationTrace";
 import emitTicketUpdate from "../TicketServices/EmitTicketUpdate";
 import { runFlowForTicket } from "../FlowServices/Runner";
 import { addActivity, changeStage } from "../CrmServices/LeadCore";
@@ -337,6 +338,7 @@ const scheduleAi = (ticketId: number, waitSeconds: number): void => {
         await runAiForTicket(ticketId, say);
       } catch (err) {
         logger.error(`AI run failed: ${err}`);
+        noteAutomation(ticketId, `o agente de IA falhou: ${(err as any)?.message || err}`);
       } finally {
         aiRunning.delete(ticketId);
       }
@@ -345,7 +347,10 @@ const scheduleAi = (ticketId: number, waitSeconds: number): void => {
 };
 
 // Why the robot stayed quiet (or started), one line per message: "o robô não respondeu" is answered by the log, not by guessing
-const trace = (ticket: Ticket, what: string): void => logger.info(`Automação do ticket ${ticket.id}: ${what}`);
+const trace = (ticket: Ticket, what: string): void => {
+  logger.info(`Automação do ticket ${ticket.id}: ${what}`);
+  noteAutomation(ticket.id, what);
+};
 
 const runAi = async (ticket: Ticket): Promise<boolean> => {
   if (!ticket.aiActive) {
@@ -416,7 +421,14 @@ const RunInboundAutomation = async ({ ticketId, body }: Input): Promise<void> =>
   try {
     const ticket = await ShowTicketService(ticketId);
     // groups, communities, channels, the team's chats and personal contacts: no robot answers there, ever
-    if (!robotMayTalk(ticket)) return;
+    if (!robotMayTalk(ticket)) {
+      const c = (ticket as any).contact;
+      trace(
+        ticket,
+        `nenhum robô responde aqui: ${ticket.isGroup ? "é um grupo" : c?.isStaff ? "o contato está marcado como Equipe" : c?.isPersonal ? "o contato está marcado como Amigo ou pessoal" : "o contato é de um tipo que o robô não atende"}. Em Contatos, mude a relação para Cliente para o agente responder`
+      );
+      return;
+    }
     if (ticket.status === "closed" || ticket.userId) {
       trace(ticket, ticket.userId ? `ninguém do automático responde: a conversa está com o atendente ${ticket.userId}` : "conversa fechada");
       return;

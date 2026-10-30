@@ -75,7 +75,18 @@ const WelcomeBanner = ({ ticket }) => {
 const AiBanner = ({ ticket }) => {
   const { user } = useContext(AuthContext);
   const [busy, setBusy] = useState(false);
+  // what the robot decided in this conversation (started, did not start and why, failed and why)
+  const [why, setWhy] = useState(null);
   if (!ticket.id || !ticket.aiActive || ticket.userId || ticket.status === "closed" || ticket.isGroup || ticket.isHistorical) return null;
+  const showWhy = async () => {
+    if (why) { setWhy(null); return; }
+    try {
+      const { data } = await api.get(`/tickets/${ticket.id}/automation`);
+      setWhy({ lines: data.lines || [] });
+    } catch (err) {
+      toastError(err);
+    }
+  };
   const take = async () => {
     setBusy(true);
     try {
@@ -98,6 +109,16 @@ const AiBanner = ({ ticket }) => {
       <button type="button" disabled={busy} onClick={take} style={{ border: 0, borderRadius: 10, background: "#fff", color: "#0f766e", padding: "8px 16px", fontFamily: "inherit", fontWeight: 700, cursor: "pointer" }}>
         Assumir conversa
       </button>
+      <button type="button" onClick={showWhy} style={{ border: "1px solid rgba(255,255,255,.6)", borderRadius: 10, background: "transparent", color: "#fff", padding: "7px 14px", fontFamily: "inherit", fontWeight: 600, cursor: "pointer" }}>
+        {why ? "Esconder o que o robô fez" : "Ver o que o robô fez"}
+      </button>
+      {why && (
+        <div style={{ flexBasis: "100%", background: "rgba(0,0,0,.22)", borderRadius: 10, padding: "8px 12px", fontSize: 13 }}>
+          {why.lines.length ? why.lines.map((l, i) => (
+            <div key={i}>{new Date(l.at).toLocaleTimeString("pt-BR", { timeZone: "America/Porto_Velho" })} · {l.text}</div>
+          )) : <div>O servidor ainda não registrou nada para esta conversa (isso acontece logo depois de ele reiniciar). Mande outra mensagem e abra de novo.</div>}
+        </div>
+      )}
     </div>
   );
 };
