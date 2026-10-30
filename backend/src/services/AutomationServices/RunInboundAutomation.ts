@@ -11,7 +11,7 @@ import ShowTicketService from "../TicketServices/ShowTicketService";
 import UpdateTicketService from "../TicketServices/UpdateTicketService";
 import ShowWhatsAppService from "../WhatsappService/ShowWhatsAppService";
 import SendWhatsAppMessage from "../WbotServices/SendWhatsAppMessage";
-import { findAgentForTicket, runAiForTicket } from "../AiServices/RunAiAgent";
+import { findAgentForTicket, findDedicatedAgent, runAiForTicket } from "../AiServices/RunAiAgent";
 import { runAgentGraph } from "../FlowServices/Runner";
 import { noteAutomation } from "./AutomationTrace";
 import emitTicketUpdate from "../TicketServices/EmitTicketUpdate";
@@ -461,11 +461,15 @@ const RunInboundAutomation = async ({ ticketId, body }: Input): Promise<void> =>
     }
 
     // the visual flows come first; the old menu and the AI agent only answer when no flow took the message
-    if (await runFlowForTicket(ticket, body)) {
+    // an agent given to this connection (or queue) answers first: only a flow with a keyword (the person asked for it) or one already in
+    // progress goes ahead of it, and the old menu stays out
+    const dedicated = ticket.aiActive ? await findDedicatedAgent(ticket) : null;
+    if (dedicated) trace(ticket, `o agente "${dedicated.name}" foi escolhido para esta conexão: fluxos que começam em qualquer mensagem e o menu antigo ficam de fora`);
+    if (await runFlowForTicket(ticket, body, { keywordOnly: !!dedicated })) {
       trace(ticket, "um fluxo do Chatbot e fluxos respondeu antes do agente de IA");
       return;
     }
-    if (await runChatbot(ticket, body, whatsapp.greetingMessage)) {
+    if (!dedicated && (await runChatbot(ticket, body, whatsapp.greetingMessage))) {
       trace(ticket, "o chatbot antigo respondeu antes do agente de IA");
       return;
     }

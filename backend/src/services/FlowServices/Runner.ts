@@ -239,13 +239,20 @@ const entryMatches = (entry: FlowEntry, body: string, ticketHadRuns: boolean): b
 };
 
 // Returns true when a flow took the message (the rest of the automation must stay quiet).
-export const runFlowForTicket = async (ticket: Ticket, body: string): Promise<boolean> => {
+export const runFlowForTicket = async (ticket: Ticket, body: string, opts: { keywordOnly?: boolean } = {}): Promise<boolean> => {
   try {
     const active = await ChatFlowRun.findOne({ where: { ticketId: ticket.id, status: { [Op.in]: ["waiting", "delayed"] } }, order: [["id", "DESC"]] });
     if (active) {
+      const flow = await ChatFlow.findByPk(active.flowId);
+      // the agent of this connection goes first: a flow that began on any message (not a keyword) and is still hanging does not hold the
+      // conversation, otherwise the agent never answers a chat that a generic flow touched before
+      if (opts.keywordOnly && flow && flow.kind !== "agent" && parseEntry(flow.entry).type !== "keyword") {
+        await active.update({ status: "done", resumeAt: null } as any);
+        noteAutomation(ticket.id, `o fluxo "${flow.name}" (nº ${flow.id}) estava parado nesta conversa e foi encerrado para o agente de IA da conexão responder`);
+        return false;
+      }
       // the person writes while a delay counts time: nothing to answer yet
       if (active.status === "delayed") return true;
-      const flow = await ChatFlow.findByPk(active.flowId);
       if (!flow || flow.status !== "published") {
         await active.update({ status: "done" });
         return false;
@@ -278,7 +285,7 @@ export const runFlowForTicket = async (ticket: Ticket, body: string): Promise<bo
     // a keyword beats the first-message flow
     const matching =
       flows.find(f => parseEntry(f.entry).type === "keyword" && entryMatches(parseEntry(f.entry), body, ticketHadRuns)) ||
-      flows.find(f => ["first_message", "any"].includes(parseEntry(f.entry).type) && entryMatches(parseEntry(f.entry), body, ticketHadRuns));
+      (opts.keywordOnly ? undefined : flows.find(f => ["first_message", "any"].includes(parseEntry(f.entry).type) && entryMatches(parseEntry(f.entry), body, ticketHadRuns)));
     if (!matching) return false;
     await startRun(matching, ticket, undefined, body);
     return true;
