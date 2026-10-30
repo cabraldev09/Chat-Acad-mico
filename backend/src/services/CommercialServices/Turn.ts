@@ -14,7 +14,7 @@ import { commercialTurn, CommercialTrace } from "./Hook";
 import { CommercialPorts } from "./Ports";
 import { matchFaq } from "../AiServices/Kb";
 import { unsafeAnswer } from "./Guards";
-import { ENTRY_LABEL, alreadyIntroduces, consultantMention, courseMention, entryOf, fastIntent, interestOf, hasBolsaData, humanReason, introText, isGreeting, needsBolsaData, modalityExplained, modalityTextOf, needsModalityExplanation, nextQuestionOf, openingText, retractsBuying, stageFieldsDone, supportIntent, topicsOf, gradeRequest, withoutClosingQuestion } from "./Rules";
+import { ENTRY_LABEL, alreadyIntroduces, consultantMention, courseMention, entryOf, fastIntent, interestOf, hasBolsaData, humanReason, introText, isGreeting, needsBolsaData, modalityExplained, modalityTextOf, needsModalityExplanation, nextQuestionOf, openingText, readyForConsultantOf, retractsBuying, stageFieldsDone, supportIntent, topicsOf, gradeRequest, withoutClosingQuestion } from "./Rules";
 import { configOf } from "./Config";
 import { detectFromText, findConsultantByName } from "./Detect";
 import { AcademicCtx, closestOffered, findCourse, joinNames, offeredCourses, runAcademicTool, sendGradeFor } from "./Academic";
@@ -412,15 +412,22 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
   // a qualified lead goes to the consultant now: the answer does not end asking something nobody will read
   if (hook.exit === "human" && hook.why === "qualified") text = withoutClosingQuestion(text);
   // a semipresencial course is never handed over before the format and the rule of the MEC were explained: once course, city and kind of entry
-  // are known, the system explains it itself (from the rule registered for the course), so the process does not depend on the model calling the tool
-  const basicsKnown = !!(state.slots.courseId || state.slots.courseName) && !!(state.slots.city || state.slots.poloId) && !!state.slots.entryType && state.slots.entryType !== "unknown";
-  if (!hook.exit && d.input !== null && basicsKnown && !state.slots.enrolledStudent && needsModalityExplanation(state.slots) && !modalityExplained(state.slots)) {
+  // are known and the lead is due for the consultant, the system explains it itself (from the rule registered for the course), so the process does not depend on the model calling the tool
+  // (when the lead would go to the consultant now, if not for this: earlier it would only interrupt the conversation)
+  const dueForConsultant = readyForConsultantOf({ ...state.slots, modalityExplained: true }, Number(state.slots.qualifiedReplies || 0), d.ports.qualifyAfter, d.ports.config ? d.ports.config.qualifyRequires : undefined);
+  if (!hook.exit && d.input !== null && dueForConsultant && !state.slots.enrolledStudent && needsModalityExplanation(state.slots) && !modalityExplained(state.slots)) {
     try {
       const ctx: AcademicCtx = { ticket: d.ticket, dryRun: d.sandbox || !d.ticket, slots: { ...state.slots }, patch: {}, cacheHits: 0, agentId: d.agent.id };
       const view = await runAcademicTool("buscar_regra_modalidade", { courseId: state.slots.courseId, courseName: state.slots.courseName }, ctx);
       const explanation = modalityTextOf(String(state.slots.courseName || "o curso"), view);
       if (explanation) {
-        text = `${String(text || "").trim()}\n\n${explanation}`.trim();
+        // the answer already ends asking something: the explanation goes before that question, which stays alone at the end
+        const parts = String(text || "").trim().split(/\n{2,}/).filter(Boolean);
+        const last = parts[parts.length - 1] || "";
+        if (parts.length && /\?[\s"”')]*$/.test(last)) {
+          const body = explanation.replace(/\n\nFicou claro como funciona\?$/, "");
+          text = [...parts.slice(0, -1), body, last].join("\n\n");
+        } else text = `${String(text || "").trim()}\n\n${explanation}`.trim();
         state.slots.modalityExplained = true;
         if (state.slots.mecImpacted) state.slots.mecExplained = true;
         await d.ports.event("modality_explained", { course: state.slots.courseName || null }, true).catch(() => undefined);
