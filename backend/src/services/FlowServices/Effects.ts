@@ -36,7 +36,7 @@ import { matchFaq } from "../AiServices/Kb";
 import { tokensToday } from "../AiServices/Usage";
 import { saveBrief } from "../CommercialServices/Brief";
 import { runCommercialBlock } from "../CommercialServices/Block";
-import { blankState, hydrate, loadState, mirror } from "../CommercialServices/Slots";
+import { blankState, hydrate, loadState, mirror, startConversation } from "../CommercialServices/Slots";
 import { dbPorts, simPorts, SimWorld } from "../CommercialServices/Ports";
 import { commercialAiTurn } from "../CommercialServices/Turn";
 import { HandoffWhy, RoutePreview, Team, WHY_OF_EXIT, WHY_TEXT, afterHandoffNotice, previewRoute, qualifiedText, routeToCommercial } from "../CommercialServices/Router";
@@ -81,6 +81,7 @@ export const ticketEffects = (ticket: Ticket, flowName: string, flowCtx: FlowCon
     const lead = await ensureLead({}, node);
     noteAutomation(ticket.id, `o agente usa o lead nº ${lead.id} do CRM, "${lead.name}" (o nome e os dados que ele cita vêm dali)`);
     const state = await hydrate(await loadState(lead.id), lead);
+    if (startConversation(state, ticket.id)) noteAutomation(ticket.id, "conversa nova: o andamento da conversa anterior (prontidão, contadores, objeções) foi zerado; o curso, a cidade e o ingresso do lead continuam");
     state.agentId = flowCtx.agentId || null;
     state.flowId = flowCtx.flowId || null;
     return { lead, state, ports: dbPorts(lead, state, { agentId: state.agentId, flowId: state.flowId }) };

@@ -204,13 +204,7 @@ export const openingText = (slots: Slots, first: string, returning: boolean, per
   if (slots.enrolledStudent && !returning) {
     return `${introText(persona, first)}${slots.enrolledCourse ? ` Vi que você já estuda ${slots.enrolledCourse}.` : ""} Como posso te ajudar hoje? Se for sobre plataforma, atividades ou provas, chamo a tutoria; se for documento ou declaração, a secretaria.`;
   }
-  const ask = !hasCourse
-    ? "Qual curso você tem interesse? Se você já é aluno e precisa da tutoria ou da secretaria, é só me dizer."
-    : !hasCity
-      ? "Em qual cidade você mora? Assim eu já te mostro o polo mais perto."
-      : !hasEntry
-        ? "Você vai começar a primeira graduação ou já cursou (ou cursa) outra faculdade?"
-        : "Em que posso te ajudar agora?";
+  const ask = nextQuestionOf(slots) || "Em que posso te ajudar agora?";
   const course = hasCourse ? String(slots.courseName || "") : "";
   // a bare "oi": nothing is known about what the person needs, so the answer is short, in three lines, and asks the one thing that tells the two paths apart
   const customGreeting = persona && persona.commercial ? cleanCommercial(persona.commercial).greeting : "";
@@ -223,6 +217,40 @@ export const openingText = (slots: Slots, first: string, returning: boolean, per
     return `Oi${name}! Que bom falar com você de novo.${course ? ` Da última vez conversamos sobre ${course}.` : ""} ${hasCourse && hasCity && hasEntry ? "Em que posso te ajudar agora?" : ask}`;
   }
   return `${introText(persona, first)}${course ? ` Vi que você tem interesse em ${course}.` : ""} ${ask}`;
+};
+
+// The next question of the commercial process, always in the same order (course, city, kind of entry), only for what is still unknown and what
+// the administrator lets the agent ask: the system asks it when the model did not, so a lead is never left without the next step.
+export const QUESTIONS = {
+  course: "Qual curso você tem interesse? Se você já é aluno e precisa da tutoria ou da secretaria, é só me dizer.",
+  city: "Em qual cidade você mora? Assim eu já te mostro o polo mais perto.",
+  entry: "Você vai começar a primeira graduação ou já cursou (ou cursa) outra faculdade?"
+};
+export const nextQuestionOf = (slots: Slots, ask: { course?: boolean; city?: boolean; entry?: boolean } = {}, only?: string[]): string | null => {
+  const wanted = (k: string) => ask[k as "course"] !== false && (!only || only.includes(k));
+  if (!(slots.courseName || slots.courseId) && wanted("course")) return QUESTIONS.course;
+  if (!(slots.city || slots.poloId) && wanted("city")) return QUESTIONS.city;
+  if ((!slots.entryType || slots.entryType === "unknown") && wanted("entry")) return QUESTIONS.entry;
+  return null;
+};
+
+// the kind of entry said in the person's words: the first degree is never left to the model ("nunca fiz faculdade", "terminei o ensino médio")
+const FIRST_DEGREE = /\b(primeira (graduacao|faculdade|vez na faculdade)|nunca (fiz|cursei|comecei) (uma )?(faculdade|graduacao|curso superior)|(terminei|conclui|acabei|estou terminando|to terminando|vou terminar|terminando) o (ensino medio|medio|terceiro ano|3o ano|3 ano)|(so|apenas) (tenho )?o (ensino )?medio|nao tenho (faculdade|graduacao|curso superior|ensino superior)|nao fiz (faculdade|graduacao))\b|^(a |e a |vai ser a |sera a )?primeira( mesmo)?$/;
+export const entryOf = (text: string): "first_degree" | "transfer" | "second_degree" | null => {
+  const t = plain(text);
+  if (!t) return null;
+  const kind = interestOf(text);
+  if (kind === "transferencia") return "transfer";
+  if (kind === "segunda_graduacao") return "second_degree";
+  return FIRST_DEGREE.test(t) ? "first_degree" : null;
+};
+
+// the handover of a qualified lead does not leave a question hanging: the last sentences that only ask something are dropped (the handover
+// message that follows says what happens next)
+export const withoutClosingQuestion = (text: string): string => {
+  const parts = String(text || "").trim().split(/(?<=[.!?])\s+/);
+  while (parts.length && /\?[\s"”')]*$/.test(parts[parts.length - 1])) parts.pop();
+  return parts.join(" ").trim();
 };
 
 // the fields a stage asks for are filled when each one has a value in the state of the lead
@@ -345,10 +373,10 @@ export const missingOf = (slots: Slots, requires: readonly string[] = ["course",
 export const QUALIFIED_REPLIES = 2;
 
 // the consultant simulates the scholarship with the full name and the CPF: once the lead is qualified (or got the grade) they are asked, up to
-// BOLSA_ASKS times, and the handover waits for them (or for the asks to be used)
+// BOLSA_ASKS times, and the handover waits for them (or for the asks to be used); never before the lead is qualified (the process goes in order)
 export const hasBolsaData = (slots: Slots): boolean => !!slots.fullName && !!slots.cpfGiven;
 // (not when the question is for someone else: the data would be of another person, the consultant handles it)
-export const needsBolsaData = (slots: Slots): boolean => (isQualified(slots) || !!slots.gradeSent) && !hasBolsaData(slots) && slots.forWhom !== "amigo ou parente" && Number(slots.bolsaDataAsked || 0) < BOLSA_ASKS;
+export const needsBolsaData = (slots: Slots): boolean => isQualified(slots) && !hasBolsaData(slots) && slots.forWhom !== "amigo ou parente" && Number(slots.bolsaDataAsked || 0) < BOLSA_ASKS;
 
 export const readyForConsultantOf = (slots: Slots, replies: number, after: number = QUALIFIED_REPLIES, requires?: readonly string[]): boolean => {
   if (!after || !isQualified(slots, requires)) return false;
