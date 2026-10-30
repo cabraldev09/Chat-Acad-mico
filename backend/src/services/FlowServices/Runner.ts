@@ -157,6 +157,7 @@ export const resumeStageRun = async (ticketId: number): Promise<void> => {
   const ticket = await ShowTicketService(ticketId).catch(() => null);
   if (!flow || flow.status !== "published" || !ticket || ticket.status === "closed" || ticket.userId) {
     await run.update({ status: "done", resumeAt: null });
+    noteAutomation(ticketId, `a etapa de IA não respondeu e o roteiro foi encerrado: ${!flow || flow.status !== "published" ? "o roteiro não está publicado" : !ticket ? "a conversa não existe" : ticket.status === "closed" ? "a conversa está fechada" : "um atendente assumiu a conversa"}`);
     return;
   }
   const graph = parseGraph(flow.published);
@@ -165,7 +166,10 @@ export const resumeStageRun = async (ticketId: number): Promise<void> => {
     debounce(`stage:${ticketId}`, 1, () => resumeStageRun(ticketId));
     return;
   }
-  if (graph.nodes.find(n => n.id === run.nodeId)?.type !== "stage") return;
+  if (graph.nodes.find(n => n.id === run.nodeId)?.type !== "stage") {
+    noteAutomation(ticketId, `a etapa de IA não respondeu: o roteiro está parado no bloco "${run.nodeId}", que não é uma etapa de IA (o roteiro publicado mudou?)`);
+    return;
+  }
   // another server is answering this conversation: this burst is answered right after (the turn counts what was already answered)
   if (!(await claimAi(ticketId))) {
     debounce(`stage:${ticketId}`, 3, () => resumeStageRun(ticketId));
@@ -177,7 +181,9 @@ export const resumeStageRun = async (ticketId: number): Promise<void> => {
   inflight.add(ticketId);
   const effects = ticketEffects(ticket, flow.name, contextOf(flow));
   try {
+    noteAutomation(ticketId, `a etapa de IA "${run.nodeId}" do roteiro "${flow.name}" está respondendo`);
     const step = await resume(graph, state, await lastUserText(ticketId), effects);
+    noteAutomation(ticketId, `a etapa de IA terminou a vez: ${step.status === "waiting" ? "espera a próxima mensagem" : step.status === "handoff" ? "passou a conversa para a equipe" : step.status === "done" ? "o roteiro terminou" : "o roteiro ficou em espera"}`);
     await save(run, step);
     await record(flow, step, false, crmBefore);
     await release(ticket, step, flow);
