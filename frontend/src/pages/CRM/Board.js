@@ -111,6 +111,17 @@ const LeadCard = ({ lead, stage, onOpen, onDragStart, onDragEnd, dragging, onMen
         {lead.commercial && lead.commercial.readyForProposal && !lead.wonAt && <span className={`${classes.chip} ${classes.chipHot}`} title="O agente de IA já levantou tudo: falta a proposta do consultor">Pronto para proposta</span>}
         {lead.commercial && lead.commercial.readyForConsultant && !lead.commercial.readyForProposal && !lead.wonAt && <span className={`${classes.chip} ${classes.chipHot}`} title="Qualificado pelo agente de IA, com as dúvidas respondidas: o consultor pode chamar">Pronto para o consultor</span>}
         {lead.affiliate && <span className={`${classes.chip} ${classes.chipHot}`} title={`Indicado pelo afiliado ${lead.affiliate.name}`}>Afiliado: {String(lead.affiliate.name || "").split(" ")[0]}</span>}
+        {(() => {
+          // a lead of an open stage without contact for days is going cold (the same rule as "Leads esfriando" of the Painel): the card says it
+          if (!stage || stage.type !== "open" || lead.wonAt) return null;
+          const days = Math.floor((Date.now() - new Date(lead.lastContactAt || lead.createdAt).getTime()) / 86400000);
+          if (!(days >= 3)) return null;
+          return (
+            <span className={`${classes.chip} ${days >= 7 ? classes.chipLate : ""}`} style={days >= 7 ? undefined : { background: "rgba(217,119,6,.14)", color: "#b45309" }} title={`Sem contato há ${days} dias: retome a conversa`}>
+              <Hourglass size={12} />Parado há {days} dias
+            </span>
+          );
+        })()}
         {lead.slaAlertedAt && !lead.firstContactAt && (
           <span className={`${classes.chip} ${classes.chipLate}`} title="Este lead novo passou do tempo de resposta e ainda não foi atendido">
             <Hourglass size={12} />Sem resposta

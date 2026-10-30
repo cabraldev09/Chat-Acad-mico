@@ -240,6 +240,29 @@ export const markUnread = async (req: Request, res: Response): Promise<Response>
   return res.json({ unreadMessages: ticket.unreadMessages });
 };
 
+// "Marcar todas como lidas" in the Não lidas view: the conversations this person sees there (a manager: the ones of the attendant or the connection
+// chosen in the filters; anyone else: their own) stop counting as unread. Nothing is sent to the contact (it is not the attendant reading).
+export const readAll = async (req: Request, res: Response): Promise<Response> => {
+  const manager = isManagerRole(roleOf(req.user));
+  const where: any = { unreadMessages: { [Op.gt]: 0 } };
+  if (!manager) where.userId = Number(req.user.id);
+  else {
+    if (Number(req.body?.attendantId)) where.userId = Number(req.body.attendantId);
+    if (Number(req.body?.connectionId)) where.whatsappId = Number(req.body.connectionId);
+  }
+  if (req.body?.groups === "only") where.isGroup = true;
+  else if (req.body?.groups === "exclude") where.isGroup = false;
+  const tickets = await Ticket.findAll({ where, attributes: ["id", "status"], limit: 5000 });
+  const ids = tickets.map(t => t.id);
+  if (ids.length) {
+    await Message.update({ read: true }, { where: { ticketId: { [Op.in]: ids }, read: false } as any });
+    await Ticket.update({ unreadMessages: 0 } as any, { where: { id: { [Op.in]: ids } }, silent: true } as any);
+    const io = getIO();
+    tickets.forEach(t => io.to(t.status).to("notification").emit("ticket", { action: "updateUnread", ticketId: t.id }));
+  }
+  return res.json({ count: ids.length });
+};
+
 // The agent started typing: tell the contact where the channel allows it
 const typingSent = new Map<number, number>();
 export const typing = async (req: Request, res: Response): Promise<Response> => {

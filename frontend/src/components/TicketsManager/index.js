@@ -23,7 +23,9 @@ import NewTicketModal from "../NewTicketModal";
 import TicketsList from "../TicketsList";
 import CommunitiesList from "../CommunitiesList";
 import { AuthContext } from "../../context/Auth/AuthContext";
+import { toast } from "react-toastify";
 import api from "../../services/api";
+import toastError from "../../errors/toastError";
 import openSocket from "../../services/socket-io";
 import ConversationFilters, { ActiveFilters, FiltersButton, useFilterSummary } from "./ConversationFilters";
 import { isManager } from "../../utils/access";
@@ -73,6 +75,14 @@ const useStyles = makeStyles((theme) => {
       padding: theme.spacing(0, 1.5, 1),
     },
     chipIcon: { flex: "none", opacity: 0.85 },
+    // the row under the tabs: whose conversations "Atendendo" shows, and "mark all as read" in "Não lidas"
+    subRow: { flex: "none", display: "flex", alignItems: "center", gap: 6, padding: theme.spacing(0, 1.5, 1), fontSize: 12.5, color: c.textSecondary },
+    seg: {
+      height: 26, padding: "0 10px", borderRadius: 999, border: `1px solid ${c.divider || "rgba(0,0,0,.12)"}`, background: "transparent", color: c.text,
+      cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, "&:focus-visible": { outline: `2px solid ${c.accent}`, outlineOffset: 2 },
+    },
+    segOn: { backgroundColor: c.chipOn, color: c.chipOnText, borderColor: "transparent", fontWeight: 600 },
+    subLink: { marginLeft: "auto", border: 0, background: "none", color: c.accent, cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 600, padding: 0 },
     chip: {
       flex: "none",
       display: "inline-flex",
@@ -172,10 +182,25 @@ const TicketsManager = () => {
     api.get("/whatsapp").then(({ data }) => setConnections(data)).catch(() => undefined);
   }, [manager]);
 
-  useEffect(() => {
-    if (isAdmin) setShowAllTickets(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // "Atendendo" opens on the person's own conversations; "Da equipe" (managers) shows everybody's, each with who attends it
+  const [readingAll, setReadingAll] = useState(false);
+  const readAll = async () => {
+    setReadingAll(true);
+    try {
+      const { data } = await api.put("/tickets/read-all", { groups: "exclude", attendantId: attendantId || undefined, connectionId: connectionId || undefined });
+      setDmUnread(0);
+      toast.success(data.count ? `${data.count} conversa${data.count === 1 ? "" : "s"} marcada${data.count === 1 ? "" : "s"} como lida${data.count === 1 ? "" : "s"}.` : "Nenhuma conversa não lida.");
+    } catch (err) {
+      toastError(err);
+    } finally {
+      setReadingAll(false);
+    }
+  };
+  // choosing a connection shows everything of that number: the attendant filter would hide the conversations of its owner
+  const chooseConnection = (id) => {
+    setConnectionId(id);
+    if (id) setAttendantId("");
+  };
 
   useEffect(() => () => clearTimeout(searchTimeout.current), []);
 
@@ -355,7 +380,7 @@ const TicketsManager = () => {
         anchorEl={filtersEl} onClose={() => setFiltersEl(null)} onClear={clearAllFilters} active={filterSummary.length > 0}
         userQueues={user?.queues} selectedQueueIds={selectedQueueIds} onQueues={(values) => { setQueueTouched(true); setSelectedQueueIds(values); }}
         queueTouched={queueTouched} onAllQueues={() => clearOneFilter("queues")} manager={manager}
-        attendants={attendants} attendantId={attendantId} setAttendantId={setAttendantId} connections={connections} connectionId={connectionId} setConnectionId={setConnectionId}
+        attendants={attendants} attendantId={attendantId} setAttendantId={setAttendantId} connections={connections} connectionId={connectionId} setConnectionId={chooseConnection}
         tags={tags} tagId={tagId} setTagId={setTagId} isAdmin={isAdmin} showAllTickets={showAllTickets} setShowAllTickets={setShowAllTickets}
       />
 
@@ -381,6 +406,19 @@ const TicketsManager = () => {
             <MenuItem selected={filter === "closed"} onClick={() => { setMoreEl(null); clearSearch(); setFilter("closed"); }}>Resolvidas</MenuItem>
             <MenuItem selected={filter === "archived"} onClick={() => { setMoreEl(null); clearSearch(); setFilter("archived"); }}>Arquivadas</MenuItem>
           </Menu>
+        </div>
+      )}
+
+      {!searching && filter === "open" && isAdmin && (
+        <div className={classes.subRow} role="group" aria-label="De quem são as conversas">
+          <button type="button" className={clsx(classes.seg, !showAllTickets && classes.segOn)} aria-pressed={!showAllTickets} onClick={() => setShowAllTickets(false)}>Minhas</button>
+          <button type="button" className={clsx(classes.seg, showAllTickets && classes.segOn)} aria-pressed={showAllTickets} onClick={() => setShowAllTickets(true)}>Da equipe</button>
+        </div>
+      )}
+      {!searching && filter === "unread" && dmUnread > 0 && (
+        <div className={classes.subRow}>
+          <span>{dmUnread} não lida{dmUnread === 1 ? "" : "s"}</span>
+          <button type="button" className={classes.subLink} onClick={readAll} disabled={readingAll}>{readingAll ? "Marcando…" : "Marcar todas como lidas"}</button>
         </div>
       )}
 

@@ -15,6 +15,8 @@ ticketRoutes.post("/tickets/:ticketId/phone", isAuth, canSendTicket, phoneLimite
 
 ticketRoutes.get("/tickets", isAuth, TicketController.index);
 
+ticketRoutes.put("/tickets/read-all", isAuth, TicketController.readAll);
+
 ticketRoutes.get("/tickets/:ticketId", isAuth, canReadTicket, TicketController.show);
 
 ticketRoutes.get("/tickets/:ticketId/welcome", isAuth, canReadTicket, TicketController.welcome);

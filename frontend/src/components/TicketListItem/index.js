@@ -11,7 +11,7 @@ import Menu from "@material-ui/core/Menu";
 import MenuItem from "@material-ui/core/MenuItem";
 import ListItemIcon from "@material-ui/core/ListItemIcon";
 import ListItemText from "@material-ui/core/ListItemText";
-import { Pin, PinOff, Archive, ArchiveRestore, ChevronDown, BellOff, BellRing, MailOpen, Check, CheckCheck, Clock, AlertCircle, Camera, Video, Mic, FileText, MapPin, Contact, Sticker, Bot } from "lucide-react";
+import { Pin, PinOff, Archive, ArchiveRestore, ChevronDown, BellOff, BellRing, MailOpen, Check, CheckCheck, Clock, AlertCircle, Camera, Video, Mic, FileText, MapPin, Contact, Sticker, Bot, User as UserRound } from "lucide-react";
 import { getDraft } from "../../utils/drafts";
 import { getContactSound, onSoundPrefsChange } from "../../utils/soundPrefs";
 
@@ -365,7 +365,15 @@ const TicketListItem = ({ ticket }) => {
             <span className={classes.dot} style={{ backgroundColor: ticket.queue?.color || "#9aa4ab" }} />
           </Tooltip>
           {ticket.queue?.name && <span className={classes.pill}>{ticket.queue.name}</span>}
-          {ticket.user?.name && <span className={classes.pill}>{ticket.user.name.split(" ")[0]}</span>}
+          {ticket.user?.name ? (
+            <Tooltip arrow title={`Atendente: ${ticket.user.name}`}>
+              <span className={classes.pill} style={{ display: "inline-flex", alignItems: "center", gap: 3 }}><UserRound size={11} />{ticket.user.name.split(" ")[0]}</span>
+            </Tooltip>
+          ) : !ticket.isGroup && ticket.aiActive ? (
+            <Tooltip arrow title="Quem atende: o agente de IA">
+              <span className={classes.pill} style={{ display: "inline-flex", alignItems: "center", gap: 3, color: "#0f766e" }}><Bot size={11} />IA</span>
+            </Tooltip>
+          ) : null}
           {(ticket.tags || []).slice(0, 2).map((t) => (
             <span key={t.id} title={t.name} className={classes.pill} style={{ backgroundColor: t.color, color: "#fff" }}>
               {t.name}

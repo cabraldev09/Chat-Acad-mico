@@ -30,7 +30,7 @@ import { areaOfCourse } from "./MecDefaults";
 //   3. a consultant of the queue (the owner of the lead when he belongs to it, else the queue's own rotation);
 //   4. the ticket moves, the consultant is warned at once (live notice + task) and the lead is told when the team answers.
 // Nothing here talks to the lead: the caller says the message (it knows what was already said).
-export const WHY = ["human_request", "proposal", "qualified", "objection", "unknown", "limit_turns", "limit_tokens", "error", "complaint", "media", "loop", "tutoring", "secretary", "other"] as const;
+export const WHY = ["human_request", "proposal", "qualified", "objection", "unknown", "limit_turns", "limit_tokens", "error", "complaint", "media", "loop", "tutoring", "secretary", "no_reply", "other"] as const;
 export type HandoffWhy = typeof WHY[number];
 
 export const WHY_TEXT: Record<HandoffWhy, string> = {
@@ -47,6 +47,7 @@ export const WHY_TEXT: Record<HandoffWhy, string> = {
   loop: "a pessoa repetiu o mesmo pedido sem a IA resolver",
   tutoring: "a pessoa precisa da tutoria (plataforma, atividades, provas, prazos)",
   secretary: "a pessoa precisa da secretaria (documentos, declarações, histórico, matrícula)",
+  no_reply: "a pessoa parou de responder depois dos lembretes: o consultor chama",
   other: "o atendimento precisa de uma pessoa"
 };
 
