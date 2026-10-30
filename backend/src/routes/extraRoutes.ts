@@ -182,6 +182,8 @@ r.post("/ai-agents/:id/history/:revisionId/restore", isAuth, isManager, Ai.histo
 r.get("/ai-agents/:id/cases", isAuth, isManager, Ai.evalList);
 r.post("/ai-agents/:id/cases", isAuth, isManager, Ai.evalCreate);
 r.post("/ai-agents/:id/cases/run", isAuth, isManager, Ai.evalRun);
+r.get("/ai-agents/:id/process-eval", isAuth, isManager, Ai.processEval);
+r.post("/ai-agents/:id/process-eval/run", isAuth, isManager, Ai.processEvalRun);
 r.delete("/ai-agents/:id/cases/:caseId", isAuth, isManager, Ai.evalRemove);
 r.post("/ai-agents/:id/kb-search", isAuth, isManager, Ai.kbSearch);
 r.get("/ai-agents/:id/learnings", isAuth, isManager, Ai.learningList);

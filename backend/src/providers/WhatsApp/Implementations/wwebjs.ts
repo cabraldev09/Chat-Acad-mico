@@ -780,6 +780,8 @@ const retryLater = async (whatsappId: number, reason: string): Promise<void> => 
   } finally {
     retrying.delete(whatsappId);
   }
+  // a session opened meanwhile (the QR Code button, the person reconnecting) is not replaced by this retry
+  if (clients.has(whatsappId)) return;
   const fresh = await Whatsapp.findByPk(whatsappId);
   if (fresh) init(fresh);
 };
@@ -1341,7 +1343,21 @@ const clearStaleBrowserLocks = (whatsappId: number): void => {
   });
 };
 
-const init = async (whatsapp: Whatsapp): Promise<void> => {
+// Two starts of the same number at once (a retry and the QR Code button, a reconnect and the watchdog) would open two browsers on the same
+// login folder: the QR Code read by the phone authenticates both and WhatsApp logs the device out right away. One start at a time per number.
+const starting = new Map<number, Promise<void>>();
+const init = (whatsapp: Whatsapp): Promise<void> => {
+  const running = starting.get(whatsapp.id);
+  if (running) return running;
+  const p = initOnce(whatsapp).finally(() => {
+    if (starting.get(whatsapp.id) === p) starting.delete(whatsapp.id);
+  });
+  starting.set(whatsapp.id, p);
+  return p;
+};
+
+const initOnce = async (whatsapp: Whatsapp): Promise<void> => {
+  let created: Session | null = null;
   try {
     // a browser that was left behind (stuck, or from a session that never got to "ready") is closed before a new one opens
     await closeClient(whatsapp.id);
@@ -1386,6 +1402,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
     });
 
     clients.set(whatsapp.id, wbot);
+    created = wbot;
     // the page must show the QR Code or become ready: a browser that does neither in a few minutes is stuck
     initTimers.set(
       whatsapp.id,
@@ -1471,6 +1488,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
             io.emit("whatsappSession", { action: "update", session: whatsapp });
             return;
           }
+          if (clients.get(whatsapp.id) !== wbot) return;
           init(whatsapp);
         }, READY_TIMEOUT_MS)
       );
@@ -1592,6 +1610,12 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
     });
 
     wbot.on("disconnected", async reason => {
+      // a browser that was already replaced (closed by a new start) says nothing about the session: restarting from it would open a second
+      // browser on the same login, and WhatsApp logs out a device that shows up twice
+      if (clients.get(whatsapp.id) !== wbot) {
+        logger.info(`Session ${sessionName}: disconnected from a browser already replaced (${reason}), ignored`);
+        return;
+      }
       clearReadyTimer(whatsapp.id);
       clearHeartbeat(whatsapp.id);
       logger.info(`Disconnected session: ${sessionName}, reason: ${reason}`);
@@ -1624,6 +1648,8 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
 
         await new Promise(r => setTimeout(r, delay));
 
+        // someone opened the session again meanwhile (the QR Code button, the watchdog): that one stays
+        if (clients.get(whatsapp.id) !== wbot) return;
         init(whatsapp);
       } catch (err) {
         logger.error(err, "Error on whatsapp disconnected event");
@@ -1740,6 +1766,8 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
 
     await wbot.initialize();
   } catch (err) {
+    // this browser was closed on purpose by a newer start: that one carries on, nothing to retry here
+    if (created && clients.get(whatsapp.id) !== created) return;
     logger.error(err, "Error on whatsapp session");
     // the screen must not stay on "QR CODE" when the browser could not even start: say so, and try again by itself
     try {

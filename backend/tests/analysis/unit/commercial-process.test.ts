@@ -95,3 +95,39 @@ describe("a new conversation starts the progress over, the lead stays", () => {
     expect(old.slots.qualifiedReplies).toBe(4);
   });
 });
+
+import { cityCandidateOf, isQualified, missingOf, modalityTextOf, needsModalityExplanation, readyForConsultantOf } from "../../../src/services/CommercialServices/Rules";
+
+describe("semipresencial: format and the MEC rule before the consultant", () => {
+  const base = { courseName: "Enfermagem", city: "Porto Velho", entryType: "first_degree", courseExplained: true };
+  it("a semipresencial course does not go to the consultant until the format was explained (the funnel column is not held)", () => {
+    expect(needsModalityExplanation({ ...base, courseModality: "Semipresencial" })).toBe(true);
+    expect(isQualified({ ...base, courseModality: "Semipresencial" })).toBe(true);
+    expect(readyForConsultantOf({ ...base, courseModality: "Semipresencial", bolsaDataAsked: 2 }, 5)).toBe(false);
+    expect(missingOf({ ...base, courseModality: "Semipresencial" })).toContain("Formato e regra do MEC explicados");
+    expect(readyForConsultantOf({ ...base, courseModality: "Semipresencial", modalityExplained: true, bolsaDataAsked: 2 }, 5)).toBe(true);
+    expect(readyForConsultantOf({ ...base, courseModality: "EAD", bolsaDataAsked: 2 }, 5)).toBe(true);
+    expect(readyForConsultantOf({ ...base, courseModality: "EAD", mecImpacted: true, bolsaDataAsked: 2 }, 5)).toBe(false);
+  });
+
+  it("the explanation comes from the rule, says what the consultant confirms and asks if it is clear", () => {
+    const text = modalityTextOf("Enfermagem", { explicacao: { nacional: { regra: "Cursos desta área podem ser semipresenciais, com pelo menos 40% presencial." }, institucional: { confirmado: ["Há atividades práticas presenciais previstas."] }, naoConfirmado: ["dias"] } })!;
+    expect(text).toMatch(/Pela regra do MEC, cursos desta área/);
+    expect(text).toMatch(/atividades práticas presenciais/);
+    expect(text).toMatch(/o consultor confirma/);
+    expect(text).toMatch(/\?$/);
+    expect(modalityTextOf("X", {})).toBeNull();
+  });
+});
+
+describe("the town in the person's words", () => {
+  it("after moro em / sou de, or a short answer that is only a name", () => {
+    expect(cityCandidateOf("moro em Candeias do Jamari", false)).toBe("Candeias do Jamari");
+    expect(cityCandidateOf("Sou de Itapuã do Oeste, quero Direito", true)).toBe("Itapuã do Oeste");
+    expect(cityCandidateOf("Ji-Paraná", false)).toBe("Ji-Paraná");
+    expect(cityCandidateOf("sim", false)).toBeNull();
+    expect(cityCandidateOf("quanto custa?", false)).toBeNull();
+    expect(cityCandidateOf("Direito", true)).toBeNull();
+    expect(cityCandidateOf("quero fazer uma faculdade de direito à noite", false)).toBeNull();
+  });
+});

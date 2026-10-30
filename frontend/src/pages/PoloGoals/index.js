@@ -145,7 +145,7 @@ const Ring = ({ pct, size = 150, caption = "da meta" }) => {
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label={`${pctLabel(pct)} ${caption}`}>
       <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,.16)" strokeWidth="12" />
       <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#FEF84C" strokeWidth="12" strokeLinecap="round" strokeDasharray={`${(v / 100) * c} ${c}`} transform={`rotate(-90 ${size / 2} ${size / 2})`} style={{ transition: "stroke-dasharray .8s cubic-bezier(.2,.8,.2,1)" }} />
-      <text x="50%" y="48%" textAnchor="middle" fill="#fff" style={{ fontSize: 30, fontWeight: 700, letterSpacing: "-0.03em" }}>{pct === null || pct === undefined ? "—" : `${Math.round(pct)}%`}</text>
+      <text x="50%" y="48%" textAnchor="middle" fill="#fff" style={{ fontSize: 26, fontWeight: 700, letterSpacing: "-0.03em" }}>{pct === null || pct === undefined ? "—" : `${brDecimal(pct)}%`}</text>
       <text x="50%" y="63%" textAnchor="middle" fill="rgba(255,255,255,.75)" style={{ fontSize: 12 }}>{caption}</text>
     </svg>
   );
@@ -289,7 +289,7 @@ const PoloDialog = ({ open, onClose, row, data, onSaved }) => {
   const months = (data && data.months) || [];
   useEffect(() => {
     if (!open || !row) return;
-    setF({ target: row.target, manual: row.manual, canceled: row.canceled, monthly: [...row.monthly], adjust: months.map((m) => row.manualMonthly[m] || 0) });
+    setF({ target: row.target, manual: row.manual, canceled: row.canceled, monthly: [...row.monthly], adjust: months.map((m) => row.manualMonthly[m] || 0), inCourse: row.inCourse });
   }, [open, row]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!f || !row) return null;
   const sum = f.monthly.reduce((t, v) => t + v, 0);
@@ -303,7 +303,9 @@ const PoloDialog = ({ open, onClose, row, data, onSaved }) => {
     try {
       const manualMonthly = {};
       months.forEach((m, i) => { if (f.adjust[i]) manualMonthly[m] = f.adjust[i]; });
-      await api.put(`/goals/${data.goal.id}/polos/${row.poloId}`, { target: f.target, manual: f.manual, canceled: f.canceled, monthly: f.target === null ? null : f.monthly, manualMonthly });
+      // what is typed stays: the cancelled are the total minus the students in course typed
+      const total = (row.auto || 0) + (f.manual || 0) + f.adjust.reduce((t, n) => t + (Number(n) || 0), 0);
+      await api.put(`/goals/${data.goal.id}/polos/${row.poloId}`, { target: f.target, manual: f.manual, canceled: Math.max(0, total - (f.inCourse || 0)), monthly: f.target === null ? null : f.monthly, manualMonthly });
       toast.success("Meta do polo atualizada.");
       onSaved();
     } catch (e) { toastError(e); }
@@ -316,10 +318,10 @@ const PoloDialog = ({ open, onClose, row, data, onSaved }) => {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
           <NumberField fullWidth variant="outlined" size="small" nullable label="Meta do semestre" InputLabelProps={{ shrink: true }} value={f.target} onChange={changeTarget} />
           <NumberField fullWidth variant="outlined" size="small" label="Já realizado" helperText={`${row.auto || 0} no CRM`} InputLabelProps={{ shrink: true }} value={(row.auto || 0) + (f.manual || 0)} onChange={(v) => setF({ ...f, manual: Math.max(0, (v || 0) - (row.auto || 0)) })} />
-          <NumberField fullWidth variant="outlined" size="small" label="Alunos em curso" InputLabelProps={{ shrink: true }} value={Math.max(0, (row.auto || 0) + (f.manual || 0) - (f.canceled || 0))}
-            onChange={(v) => setF({ ...f, canceled: Math.max(0, (row.auto || 0) + (f.manual || 0) - (v || 0)) })} />
+          <NumberField fullWidth variant="outlined" size="small" label="Alunos em curso" InputLabelProps={{ shrink: true }} value={f.inCourse || 0}
+            onChange={(v) => setF({ ...f, inCourse: v || 0 })} />
         </div>
-        <div className={classes.hint} style={{ marginTop: 6 }}>Cancelados: {f.canceled || 0} (automático: matrículas menos alunos em curso).</div>
+        <div className={classes.hint} style={{ marginTop: 6 }}>Cancelados: {Math.max(0, (row.auto || 0) + (f.manual || 0) + (f.adjust || []).reduce((t, n) => t + (Number(n) || 0), 0) - (f.inCourse || 0))} (automático: matrículas menos alunos em curso).{row.updatedAt ? ` Atualizado em ${new Date(row.updatedAt).toLocaleDateString("pt-BR")}${row.updatedBy ? ` por ${String(row.updatedBy).split(" ")[0]}` : ""}.` : ""}</div>
         <div className={classes.hint} style={{ marginTop: 6 }}>No CRM este polo tem {row.auto} matrícula{row.auto === 1 ? "" : "s"} no período; elas entram sozinhas e somam ao que você informar.</div>
 
         <div style={{ display: "flex", alignItems: "center", marginTop: 16 }}>
@@ -355,7 +357,8 @@ const EditDialog = ({ open, onClose, data, onSaved }) => {
   const [add, setAdd] = useState("");
   useEffect(() => {
     if (!open || !data) return;
-    setRows((data.rows || []).map((r) => ({ poloId: r.poloId, name: r.name, code: r.code, target: r.target, manual: r.manual, canceled: r.canceled, auto: r.auto, monthly: r.monthly, manualMonthly: r.manualMonthly, oldTarget: r.target })));
+    // "Já realizado" and "Alunos em curso" are what the person types and stay exactly so (one never moves the other); what is stored is derived when saving
+    setRows((data.rows || []).map((r) => ({ poloId: r.poloId, name: r.name, code: r.code, target: r.target, manual: r.manual, canceled: r.canceled, auto: r.auto, monthly: r.monthly, manualMonthly: r.manualMonthly, oldTarget: r.target, done: r.done, inCourse: r.inCourse, monthAdjust: (r.adjust || 0) - (r.manual || 0), updatedAt: r.updatedAt, updatedBy: r.updatedBy })));
     setAdd("");
   }, [open, data]);
   const set = (i, patch) => setRows((rs) => rs.map((r, k) => (k === i ? { ...r, ...patch } : r)));
@@ -365,7 +368,7 @@ const EditDialog = ({ open, onClose, data, onSaved }) => {
     try {
       await api.put(`/goals/${data.goal.id}/polos`, {
         rows: rows.map((r) => ({
-          poloId: r.poloId, target: r.target, manual: r.manual, canceled: r.canceled, manualMonthly: r.manualMonthly,
+          poloId: r.poloId, target: r.target, manual: Math.max(0, (r.done || 0) - (r.auto || 0) - (r.monthAdjust || 0)), canceled: Math.max(0, (r.done || 0) - (r.inCourse || 0)), manualMonthly: r.manualMonthly,
           // a changed target is spread again over the months; an untouched one keeps its monthly targets
           monthly: r.target === r.oldTarget ? r.monthly : undefined,
         })),
@@ -382,16 +385,16 @@ const EditDialog = ({ open, onClose, data, onSaved }) => {
         <div className={`${classes.editRow} ${classes.hint}`} style={{ fontWeight: 600 }}><span>Polo</span><span>Meta</span><span title="Total de matrículas do polo no semestre: as do CRM já estão incluídas">Já realizado</span><span title="Quem está estudando hoje. Os cancelados saem sozinhos: matrículas menos alunos em curso.">Alunos em curso</span><span /></div>
         {rows.map((r, i) => (
           <div className={classes.editRow} key={r.poloId}>
-            <div><div style={{ fontWeight: 600, fontSize: 14 }}>{r.name}</div><div className={classes.hint}>{r.code ? `Código ${r.code} · ` : ""}{r.auto} no CRM · {r.canceled || 0} cancelados (automático)</div></div>
+            <div><div style={{ fontWeight: 600, fontSize: 14 }}>{r.name}</div><div className={classes.hint}>{r.code ? `Código ${r.code} · ` : ""}{r.auto} no CRM · {Math.max(0, (r.done || 0) - (r.inCourse || 0))} cancelados (automático){r.updatedAt ? ` · atualizado em ${new Date(r.updatedAt).toLocaleDateString("pt-BR")}${r.updatedBy ? ` por ${String(r.updatedBy).split(" ")[0]}` : ""}` : ""}</div></div>
             <NumberField size="small" variant="outlined" nullable value={r.target} onChange={(v) => set(i, { target: v })} />
-            <NumberField size="small" variant="outlined" value={(r.auto || 0) + (r.manual || 0)} onChange={(v) => set(i, { manual: Math.max(0, (v || 0) - (r.auto || 0)) })} />
-            <NumberField size="small" variant="outlined" value={Math.max(0, (r.auto || 0) + (r.manual || 0) - (r.canceled || 0))} onChange={(v) => set(i, { canceled: Math.max(0, (r.auto || 0) + (r.manual || 0) - (v || 0)) })} />
+            <NumberField size="small" variant="outlined" value={r.done || 0} onChange={(v) => set(i, { done: v || 0 })} />
+            <NumberField size="small" variant="outlined" value={r.inCourse || 0} onChange={(v) => set(i, { inCourse: v || 0 })} />
             <Button size="small" aria-label="Tirar polo" style={{ minWidth: 0 }} onClick={() => setRows((rs) => rs.filter((_, k) => k !== i))}><Trash2 size={16} /></Button>
           </div>
         ))}
         {free.length > 0 && (
           <TextField select size="small" variant="outlined" label="Adicionar polo" value={add} style={{ minWidth: 260, marginTop: 14 }}
-            onChange={(e) => { const p = free.find((x) => x.id === Number(e.target.value)); if (p) setRows((rs) => [...rs, { poloId: p.id, name: p.name, code: p.code, target: null, manual: 0, canceled: 0, auto: 0, monthly: [], manualMonthly: {}, oldTarget: null }]); setAdd(""); }}>
+            onChange={(e) => { const p = free.find((x) => x.id === Number(e.target.value)); if (p) setRows((rs) => [...rs, { poloId: p.id, name: p.name, code: p.code, target: null, manual: 0, canceled: 0, auto: 0, monthly: [], manualMonthly: {}, oldTarget: null, done: 0, inCourse: 0, monthAdjust: 0 }]); setAdd(""); }}>
             {free.map((p) => <MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>)}
           </TextField>
         )}

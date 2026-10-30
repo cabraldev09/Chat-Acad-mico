@@ -23,6 +23,10 @@ ticketRoutes.get("/tickets/:ticketId/welcome", isAuth, canReadTicket, TicketCont
 
 ticketRoutes.get("/tickets/:ticketId/automation", isAuth, canReadTicket, TicketController.automation);
 
+ticketRoutes.get("/tickets/:ticketId/ai-summary", isAuth, canReadTicket, TicketController.aiSummary);
+
+ticketRoutes.post("/tickets/:ticketId/suggest-reply", isAuth, canSendTicket, TicketController.suggestReply);
+
 ticketRoutes.get("/tickets/:ticketId/group", isAuth, canReadTicket, TicketController.groupInfo);
 
 ticketRoutes.get(

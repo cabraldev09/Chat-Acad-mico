@@ -22,6 +22,7 @@ import QualityPanel from "./QualityPanel";
 import LearningTab from "./LearningTab";
 import RegulationsDialog from "./RegulationsDialog";
 import AttendsPanel from "./AttendsPanel";
+import ProcessEvalPanel from "./ProcessEvalPanel";
 import TestTab from "./TestTab";
 import TrainTab from "./TrainTab";
 import UsageTab from "./UsageTab";
@@ -224,6 +225,7 @@ const Central = () => {
                   </div>
                 ))}
               </Section>
+              {commercial && <ProcessEvalPanel agentId={agentId} />}
             </div>
           </>
         )}

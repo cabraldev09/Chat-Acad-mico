@@ -3980,6 +3980,16 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(Number(sql(`SELECT COUNT(*) FROM Messages WHERE ticketId=${ticketOf(R)} AND fromMe=true AND body LIKE '%simular a bolsa%' AND body LIKE '%Perfeito%'`)) >= 1, "the handover did not say the consultant will simulate the scholarship");
       assert(sql(`SELECT aiActive FROM Tickets WHERE id=${ticketOf(R)}`) === "0", "the AI kept talking after the handover");
       assert(Number(sql(`SELECT COUNT(*) FROM AgentMetricEvents WHERE leadId=${leadId(R)} AND event='handoff_qualified'`)) === 1, "no metric for the qualified handover");
+      // the consultant who receives it reads five lines of what the agent learned, and why it came
+      const sum = (await http.get(`/tickets/${ticketOf(R)}/ai-summary`, auth())).data;
+      assert(sum.lines.length === 5 && /Direito/.test(sum.lines[0]) && /Próximo passo/.test(sum.lines[4]) && sum.why, `summary for the consultant ${JSON.stringify(sum)}`);
+      // the weekly check of the process runs the script with scripted leads (nothing is sent) and keeps the report
+      const sentBeforeEval = graph.sent.length;
+      const pe = (await http.post(`/ai-agents/${agentId}/process-eval/run`, {}, auth())).data.report;
+      assert(pe && pe.results.length >= 4 && pe.results.every(r => Array.isArray(r.transcript) && r.transcript.length > 0), `process eval ${JSON.stringify(pe).slice(0, 400)}`);
+      assert(pe.results.find(r => /Abertura/.test(r.name)).ok, `the opening case failed: ${JSON.stringify(pe.results[0])}`);
+      assert(graph.sent.length === sentBeforeEval, "the evaluation sent a message to someone");
+      assert((await http.get(`/ai-agents/${agentId}/process-eval`, auth())).data.report.at === pe.at, "the report was not kept");
       assert(JSON.parse(sql(`SELECT slots FROM LeadCommercials WHERE leadId=${leadId(R)}`)).readyForConsultant === true, "the lead was not marked ready for the consultant");
       setQualified(99);
 
@@ -5503,6 +5513,10 @@ const postMeta = (id, payload, secret, badSig) => {
       const row = seen.data.rows.find(r => r.poloId === polo.id);
       assert(row && row.auto === 1 && row.manual === 2 && row.done === 3 && row.target === 10 && row.missing === 7 && row.canceled === 1 && row.inCourse === 2, `row ${JSON.stringify(row)}`);
       assert(seen.data.goal.daysLeft === 11 && row.perDay === 0.64 && row.status === "warn", `pace ${seen.data.goal.daysLeft} ${row.perDay} ${row.status}`);
+      // what was typed is registered with who saved it; saving the same numbers again does not rewrite the line
+      assert(row.updatedBy && row.updatedAt, `who saved the line: ${JSON.stringify({ by: row.updatedBy, at: row.updatedAt })}`);
+      const resaved = (await http.put(`/goals/${goal.id}/polos`, { rows: [{ poloId: polo.id, target: 10, manual: 2, canceled: 1 }] }, auth())).data.rows.find(r => r.poloId === polo.id);
+      assert(resaved.updatedAt === row.updatedAt && resaved.done === 3 && resaved.inCourse === 2, `the same numbers rewrote the line ${JSON.stringify({ before: row.updatedAt, after: resaved.updatedAt })}`);
       assert(seen.data.totals.target === 10 && seen.data.totals.done === 3 && seen.data.totals.pct === 30 && seen.data.totals.inCourse === 2, `totals ${JSON.stringify(seen.data.totals)}`);
       // the target is for the whole period and spread over its months
       assert(row.monthly.length === seen.data.months.length && row.monthly.reduce((t, n) => t + n, 0) === 10, `monthly ${JSON.stringify(row.monthly)}`);

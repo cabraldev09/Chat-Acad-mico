@@ -468,6 +468,8 @@ const messages = {
         ERR_KB_URL: "Endereço não permitido. Use um endereço público começando com http:// ou https://.",
         ERR_KB_URL_FETCH: "Não foi possível ler essa página. Confira o endereço ou cole o texto.",
         ERR_AI_NO_API_KEY: "Falta a chave de API. Informe-a no agente ou na página Agentes de IA.",
+        ERR_AI_NO_AGENT: "Nenhum agente de IA ligado atende esta conversa.",
+        ERR_AI_SUGGEST_FAILED: "O agente de IA não conseguiu sugerir uma resposta agora. Tente de novo.",
         ERR_AI_NO_HISTORY: "Escreva uma mensagem do aluno para o agente responder.",
         ERR_AI_FAILED: "O provedor de IA não respondeu. Confira a chave, o modelo e tente de novo.",
         ERR_NOT_FOUND: "Não encontramos este registro. Ele pode ter sido removido.",
