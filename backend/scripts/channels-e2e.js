@@ -4022,19 +4022,28 @@ const postMeta = (id, payload, secret, badSig) => {
       await say(W, "wamid.com-w4", "quero falar com uma pessoa", t => t.some(x => /consultor/.test(x)), "W asks for a person");
       await waitFor(() => Number(sql(`SELECT COUNT(*) FROM TicketEvents WHERE ticketId=${ticketOf(W)} AND type='handoff' AND note LIKE '%Pretende decidir: Decide esta semana%' AND note LIKE '%Melhor horário para falar:%' AND note LIKE '%O que o lead disse por último%' AND note LIKE '%Próximo passo sugerido ao consultor%'`)) >= 1, 10000, "W the brief carries what the lead told");
 
-      // X) a lead who stops answering gets a gentle reminder (twice at most, spaced), only inside the service window, and the count starts over when they write
+      // X) a lead who stops answering gets "tá por aí?" first, the next reminders spaced (hours), only inside the service window, and the count starts over when they write
       const X = "5511920000307";
       await say(X, "wamid.com-x1", "oi", t => t.some(x => /assistente virtual/.test(x)), "X opening");
       await say(X, "wamid.com-x2", "Quero Direito em Porto Velho, primeira graduação", t => t.some(x => /Direito em Porto Velho/.test(x)), "X qualification");
       await waitFor(() => runOf(X) === "waiting|apresentar", 8000, "X waits");
       const markX = graph.sent.length;
       sql(`UPDATE LeadCommercials SET slots = (slots::jsonb || jsonb_build_object('lastInboundAt', to_char((now() - interval '4 hours') AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'), 'lastOutboundAt', to_char((now() - interval '3 hours 50 minutes') AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')))::text, lastInboundAt = now() - interval '4 hours', lastOutboundAt = now() - interval '3 hours 50 minutes' WHERE leadId=${leadId(X)}`);
-      await waitFor(() => texts(markX).some(x => /Ficou com alguma dúvida sobre Direito/.test(x)), 30000, "X the first reminder");
+      await waitFor(() => texts(markX).some(x => /Tá por aí\?/.test(x)), 30000, "X the first reminder");
       assert(JSON.parse(sql(`SELECT slots FROM LeadCommercials WHERE leadId=${leadId(X)}`)).nudges === 1, "the reminder was not counted");
       await new Promise(r => setTimeout(r, 9000));
-      assert(texts(markX).filter(x => /Ficou com alguma dúvida|passando só para saber/i.test(x)).length === 1, "a second reminder came too soon");
+      assert(texts(markX).filter(x => /Tá por aí|Ficou com alguma dúvida|passando só para saber/i.test(x)).length === 1, "a second reminder came too soon");
       await say(X, "wamid.com-x3", "Quanto tempo dura o curso?", t => t.some(x => /Direito:/.test(x)), "X answers");
       assert(JSON.parse(sql(`SELECT slots FROM LeadCommercials WHERE leadId=${leadId(X)}`)).nudges === 0, "the reminders did not start over");
+
+      // X2) every reminder went out and the lead, who already said the course, still does not answer: the consultant of the polo calls
+      const X2 = "5511920000317";
+      await say(X2, "wamid.com-x21", "oi", t => t.some(x => /assistente virtual/.test(x)), "X2 opening");
+      await say(X2, "wamid.com-x22", "Quero Direito em Porto Velho, primeira graduação", t => t.some(x => /Direito em Porto Velho/.test(x)), "X2 qualification");
+      await waitFor(() => runOf(X2).startsWith("waiting|"), 8000, "X2 waits");
+      sql(`UPDATE LeadCommercials SET slots = (slots::jsonb || jsonb_build_object('nudges', 3, 'nudgeAt', to_char((now() - interval '3 hours') AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'), 'lastOutboundAt', to_char((now() - interval '15 hours') AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')))::text, lastInboundAt = now() - interval '16 hours', lastOutboundAt = now() - interval '15 hours' WHERE leadId=${leadId(X2)}`);
+      await waitFor(() => sql(`SELECT COALESCE(handoffReason,'') FROM Tickets WHERE id=${ticketOf(X2)}`) === "no_reply", 30000, "X2 handed to the consultant for not answering");
+      assert(sql(`SELECT aiActive FROM Tickets WHERE id=${ticketOf(X2)}`) === "0", "the AI kept the conversation after the reminders");
 
       // Y) a lead who gives up leaves with the REASON the CRM understands (from the objection that came up), and the metrics tell why we lose
       const Y = "5511920000308";

@@ -158,7 +158,7 @@ describe("the commercial agent also takes the tutoring and the secretary to the 
 });
 
 import { briefOf, suggestedStepOf, scoreOf, temperatureOf, topicsOf } from "../../../src/services/CommercialServices/Rules";
-import { nudgeText } from "../../../src/services/CommercialServices/Nudges";
+import { nudgeDue, nudgeText } from "../../../src/services/CommercialServices/Nudges";
 import { defaultSlots } from "../../../src/services/CommercialServices/Slots";
 
 describe("a doubt about trust is a conversation, not a complaint", () => {
@@ -210,12 +210,26 @@ describe("the brief the consultant reads", () => {
 });
 
 describe("reminders to a lead who went silent", () => {
-  it("two short, friendly texts that never talk money", () => {
+  it("three short, friendly texts that never talk money", () => {
     const one = nudgeText(0, "Paulo", "Direito");
     const two = nudgeText(1, "Paulo", "Direito");
-    expect(one).toMatch(/Oi, Paulo!/);
-    expect(two).toMatch(/consultor do seu polo/);
-    [one, two].forEach(t => expect(t).not.toMatch(/R\$|\d+ ?%|bolsa|desconto|valor/i));
+    const three = nudgeText(2, "Paulo", "Direito");
+    expect(one).toBe("Oi, Paulo! Tá por aí? 😊");
+    expect(two).toMatch(/Ficou com alguma dúvida sobre Direito/);
+    expect(three).toMatch(/consultor do seu polo/);
+    [one, two, three].forEach(t => expect(t).not.toMatch(/R\$|\d+ ?%|bolsa|desconto|valor/i));
+  });
+
+  it("the first after 10 minutes (any hour), the others after 3 and 9 hours in the working hours, never a fourth", () => {
+    const t0 = 1_000_000_000_000;
+    expect(nudgeDue(0, t0, t0 + 9 * 60000)).toBe(false);
+    expect(nudgeDue(0, t0, t0 + 10 * 60000, { businessNow: false })).toBe(true);
+    expect(nudgeDue(0, t0, t0 + 5 * 60000, { firstMinutes: 5 })).toBe(true);
+    expect(nudgeDue(1, t0, t0 + 2 * 3600000)).toBe(false);
+    expect(nudgeDue(1, t0, t0 + 3 * 3600000)).toBe(true);
+    expect(nudgeDue(1, t0, t0 + 3 * 3600000, { businessNow: false })).toBe(false);
+    expect(nudgeDue(2, t0, t0 + 9 * 3600000)).toBe(true);
+    expect(nudgeDue(3, t0, t0 + 99 * 3600000)).toBe(false);
   });
 });
 

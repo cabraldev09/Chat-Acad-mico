@@ -17,7 +17,7 @@ const useStyles = makeStyles((theme) => ({
 
 const nf = (n) => Number(n || 0).toLocaleString("pt-BR");
 const WHY = {
-  human_request: "Pediram uma pessoa", proposal: "Hora da proposta", qualified: "Qualificado e sem dúvidas", tutoring: "Precisa da tutoria", secretary: "Precisa da secretaria", unknown: "Pergunta sem resposta na base", limit_turns: "Limite de respostas", limit_tokens: "Limite diário de IA",
+  human_request: "Pediram uma pessoa", proposal: "Hora da proposta", qualified: "Qualificado e sem dúvidas", tutoring: "Precisa da tutoria", secretary: "Precisa da secretaria", unknown: "Pergunta sem resposta na base", limit_turns: "Limite de respostas", limit_tokens: "Limite diário de IA", no_reply: "Parou de responder",
   error: "Erro técnico da IA", complaint: "Insatisfação, pagamento ou jurídico", media: "Áudio ou arquivo que a IA não lê", loop: "Repetiu o pedido", objection: "Várias objeções", other: "Outros",
 };
 
