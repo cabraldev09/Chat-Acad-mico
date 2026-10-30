@@ -56,6 +56,7 @@ const useStyles = makeStyles((theme) => ({
     },
   },
   navItemCollapsed: {
+    position: "relative",
     justifyContent: "center",
     padding: theme.spacing(1, 1),
   },
@@ -100,10 +101,16 @@ const useStyles = makeStyles((theme) => ({
     backgroundColor: "#FEF84C",
     flexShrink: 0,
   },
-  connectionDotCollapsed: {
+  connectionDotCollapsed: {},
+  // with the menu closed the number (or the dot) sits on the corner of the icon: the icons stay in one column, in order
+  collapsedAdornment: {
     position: "absolute",
-    top: 8,
-    right: 12,
+    top: 2,
+    right: 2,
+    transform: "scale(.82)",
+    transformOrigin: "top right",
+    pointerEvents: "none",
+    display: "flex",
   },
   divider: {
     margin: theme.spacing(1.25, 0.5),
@@ -153,7 +160,7 @@ function ListItemLink(props) {
             classes={{ root: classes.navTextRoot, primary: classes.navText }}
           />
         )}
-        {adornment}
+        {adornment ? collapsed ? <span className={classes.collapsedAdornment}>{adornment}</span> : adornment : null}
       </ListItem>
     </li>
   );

@@ -101,6 +101,15 @@ export const ActiveFilters = ({ items, onRemove, onClear }) => {
   );
 };
 
+// the state of a connection, in the words of the screen (the list of a connection shows its conversations even while it is down)
+const connectionState = (status) => {
+  const s = String(status || "").toUpperCase();
+  if (s === "CONNECTED") return { label: "Conectado", color: "#16a34a" };
+  if (s === "QRCODE") return { label: "Aguardando QR", color: "#d97706" };
+  if (s === "OPENING" || s === "PAIRING") return { label: "Abrindo", color: "#d97706" };
+  return { label: "Desconectado", color: "#dc2626" };
+};
+
 const FiltersPanel = ({
   onClose, onClear, active, userQueues, selectedQueueIds, onQueues, queueTouched, onAllQueues, manager, attendants, attendantId, setAttendantId,
   connections, connectionId, setConnectionId, tags, tagId, setTagId, isAdmin, showAllTickets, setShowAllTickets,
@@ -158,9 +167,14 @@ const FiltersPanel = ({
             <div className={classes.label}>Conexão</div>
             <div className={classes.chips}>
               <button type="button" className={clsx(classes.chip, !connectionId && classes.chipOn)} onClick={() => setConnectionId("")} aria-pressed={!connectionId}>Todas</button>
-              {connections.map((x) => (
-                <button key={x.id} type="button" className={clsx(classes.chip, connectionId === x.id && classes.chipOn)} onClick={() => setConnectionId(connectionId === x.id ? "" : x.id)} aria-pressed={connectionId === x.id}>{x.name}</button>
-              ))}
+              {connections.map((x) => {
+                const st = connectionState(x.status);
+                return (
+                  <button key={x.id} type="button" title={`${x.name}: ${st.label}`} className={clsx(classes.chip, connectionId === x.id && classes.chipOn)} onClick={() => setConnectionId(connectionId === x.id ? "" : x.id)} aria-pressed={connectionId === x.id}>
+                    <span className={classes.dot} style={{ background: st.color }} />{x.name}<span style={{ opacity: 0.7, fontSize: 11.5 }}>· {st.label}</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}

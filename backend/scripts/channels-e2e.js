@@ -795,6 +795,14 @@ const postMeta = (id, payload, secret, badSig) => {
       await postMeta(cid, cloudEvent([], { statuses: [{ id: outId, status: "read", recipient_id: "5511988887777" }] }), cloudCfg.appSecret);
       await waitFor(() => sql(`SELECT ack FROM Messages WHERE id='${outId}'`) === "3", 6000, "ack=3");
     });
+    await test("\"Marcar todas como lidas\": the unread conversations of the view stop counting, by connection", async () => {
+      sql(`UPDATE Tickets SET unreadMessages=3 WHERE id=${cticket}`);
+      const r = await http.put("/tickets/read-all", { groups: "exclude", connectionId: cid }, auth());
+      assert(r.status === 200 && r.data.count >= 1, `read-all ${r.status} ${JSON.stringify(r.data)}`);
+      assert(sql(`SELECT unreadMessages FROM Tickets WHERE id=${cticket}`) === "0", "the conversation still counts as unread");
+      const count = (await http.get("/tickets", { params: { withUnreadMessages: "true", groups: "exclude", showAll: "true", countOnly: "true", connectionId: cid }, ...auth() })).data.count;
+      assert(count === 0, `unread left on the connection: ${count}`);
+    });
     await test("a message Meta accepted and then could not deliver shows the failure in the conversation", async () => {
       assert((await http.post(`/messages/${cticket}`, { body: "Mensagem que não chega" }, auth())).status === 200, "send");
       const id = sql(`SELECT id FROM Messages WHERE ticketId=${cticket} AND fromMe=1 ORDER BY createdAt DESC LIMIT 1`);
