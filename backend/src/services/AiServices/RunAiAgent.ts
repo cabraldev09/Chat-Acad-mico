@@ -25,6 +25,7 @@ import { askRules, signed, styleOf, styleRules } from "./Style";
 import AgentMetricEvent from "../../models/AgentMetricEvent";
 import { unsupportedFact } from "../CommercialServices/Guards";
 import { forChannel } from "../../helpers/ChannelText";
+import { connectionsOf } from "../../helpers/AgentConnections";
 import { offeredCourses } from "../CommercialServices/Academic";
 import { todayLine } from "../CommercialServices/Hours";
 
@@ -42,8 +43,8 @@ export const findAgentForTicket = async (ticket: Ticket): Promise<AiAgent | null
   const agents = await AiAgent.findAll({ where: { active: true }, order: [["id", "ASC"]] });
   // most specific match first: queue, then connection, then global
   const byQueue = agents.find(a => a.queueId && ticket.queueId && a.queueId === ticket.queueId);
-  const byConn = agents.find(a => !a.queueId && a.whatsappId && a.whatsappId === ticket.whatsappId);
-  const global = agents.find(a => !a.queueId && !a.whatsappId);
+  const byConn = agents.find(a => !a.queueId && connectionsOf(a).includes(ticket.whatsappId));
+  const global = agents.find(a => !a.queueId && !connectionsOf(a).length);
   return byQueue || byConn || global || null;
 };
 

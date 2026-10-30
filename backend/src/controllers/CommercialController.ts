@@ -29,6 +29,7 @@ import { briefOf } from "../services/CommercialServices/Rules";
 import { loadState } from "../services/CommercialServices/Slots";
 import CommercialGrade from "../models/CommercialGrade";
 import { chooseGrade } from "../services/CommercialServices/GradeChoice";
+import { connectionsOf } from "../helpers/AgentConnections";
 
 // ------------------------------------------------------------------ the funnel of the commercial agent
 
@@ -698,7 +699,8 @@ export const central = async (req: Request, res: Response): Promise<Response> =>
   const missingStages = funnel ? funnel.keys.filter(k => !k.stageId).length : 0;
   const published = !flow || flow.status === "published";
   // a personal number sends every new conversation straight to its owner: the agent only answers there when the number is also an attendance number
-  const served = await Whatsapp.findAll({ where: { ...(agent.whatsappId ? { id: agent.whatsappId } : {}), ownerId: { [Op.ne]: null } } as any, attributes: ["id", "name", "ownerId", "aiFirst"] });
+  const servedIds = connectionsOf(agent);
+  const served = await Whatsapp.findAll({ where: { ...(servedIds.length ? { id: { [Op.in]: servedIds } } : {}), ownerId: { [Op.ne]: null } } as any, attributes: ["id", "name", "ownerId", "aiFirst"] });
   const personal = served.filter(w => !w.aiFirst);
 
   // the courses of the catalogue and the grade each one has: the agent sends the grade of the course of every lead, so one without it is a gap

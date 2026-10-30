@@ -146,7 +146,7 @@ const AiAgents = () => {
                   <span className={classes.chip}>{f ? kind.label : "Modo simples"}</span>
                   {f && <span className={classes.chip} style={f.status === "published" ? undefined : { background: "rgba(217,119,6,.14)", color: "#b45309" }}>{f.status === "published" ? `Publicado v${f.version}${f.changed ? " · com mudanças" : ""}` : "Em edição"}</span>}
                 </div>
-                <div className={classes.hint}>Atende: {a.queueId ? "uma fila" : a.whatsappId ? "uma conexão" : "todas as conversas sem atendente"}</div>
+                <div className={classes.hint}>Atende: {a.queueId ? "uma fila" : ((a.whatsappIds || []).length || a.whatsappId) ? `${new Set([...(a.whatsappIds || []), a.whatsappId].filter(Boolean)).size === 1 ? "uma conexão" : `${new Set([...(a.whatsappIds || []), a.whatsappId].filter(Boolean)).size} conexões`}` : "todas as conversas sem atendente"}</div>
                 <div className={classes.go}>
                   <Button variant="contained" color="primary" disableElevation endIcon={<ChevronRight size={16} />} onClick={() => history.push(`/ai-agents/${a.id}/central`)} style={{ borderRadius: 12, flex: 1 }}>Abrir central</Button>
                   {f ? (

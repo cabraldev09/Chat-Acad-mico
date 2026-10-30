@@ -40,7 +40,7 @@ const blank = () => ({
   name: "", provider: "anthropic", model: MODELS.anthropic, apiKey: "", systemPrompt: "Você é a assistente virtual de matrículas da instituição. Seja acolhedora, objetiva e responda em português.",
   persona: { tone: "Acolhedor, direto e respeitoso. Trate o aluno pelo primeiro nome.", rules: "Faça uma pergunta por vez.\nSempre convide o aluno a falar com um consultor para a proposta.", forbidden: "Prometer mensalidade fixa até o fim do curso.\nPrometer desconto ou bolsa sem a proposta oficial.\nPedir CPF ou dados de pagamento." },
   handoffMessage: "Vou chamar um consultor da nossa equipe para continuar com você. Um momento, por favor.",
-  maxTokens: 350, dailyTokenCap: 300000, handoffAfterTurns: 14, waitSeconds: 4, slots: null, active: true, queueId: "", whatsappId: "",
+  maxTokens: 350, dailyTokenCap: 300000, handoffAfterTurns: 14, waitSeconds: 4, slots: null, active: true, queueId: "", whatsappId: "", whatsappIds: [],
 });
 
 // The settings of one agent: how it talks and when it answers, what it finds out about the person, and the flows it can start. What it KNOWS, what it
@@ -62,7 +62,7 @@ const AgentEditor = ({ open, agent, initialTab = 0, onClose, onSaved }) => {
     setTab(initialTab);
     setAdvanced(initialTab > 0);
     setId(agent ? agent.id : null);
-    setV(agent ? { ...blank(), ...agent, persona: { ...blank().persona, ...(agent.persona || {}) }, queueId: agent.queueId || "", whatsappId: agent.whatsappId || "" } : blank());
+    setV(agent ? { ...blank(), ...agent, persona: { ...blank().persona, ...(agent.persona || {}) }, queueId: agent.queueId || "", whatsappId: "", whatsappIds: [...new Set([agent.whatsappId, ...(Array.isArray(agent.whatsappIds) ? agent.whatsappIds : [])].filter(Boolean).map(Number))] } : blank());
     api.get("/queue").then(({ data }) => setQueues(data)).catch(() => {});
     api.get("/whatsapp").then(({ data }) => setConnections(data)).catch(() => {});
   }, [open, agent, initialTab]);
@@ -76,7 +76,7 @@ const AgentEditor = ({ open, agent, initialTab = 0, onClose, onSaved }) => {
     if (!v.model.trim()) { toast.warn("Informe o modelo do agente."); setTab(0); return; }
     setSaving(true);
     try {
-      const payload = { ...v, name: v.name.trim(), queueId: v.queueId || null, whatsappId: v.whatsappId || null, slots: v.slots };
+      const payload = { ...v, name: v.name.trim(), queueId: v.queueId || null, whatsappId: null, whatsappIds: Array.isArray(v.whatsappIds) ? v.whatsappIds : [], slots: v.slots };
       const { data } = id ? await api.put(`/ai-agents/${id}`, payload) : await api.post("/ai-agents", payload);
       toast.success(id ? "Agente salvo." : "Agente criado.");
       onSaved && onSaved(data, !id);
@@ -185,9 +185,10 @@ const AgentEditor = ({ open, agent, initialTab = 0, onClose, onSaved }) => {
                 <MenuItem value="">Todas as filas</MenuItem>
                 {queues.map((q) => (<MenuItem key={q.id} value={q.id}>{q.name}</MenuItem>))}
               </TextField>
-              <TextField select variant="outlined" margin="dense" label="Conexão" value={v.whatsappId} onChange={(e) => set("whatsappId", e.target.value)} InputLabelProps={{ shrink: true }} SelectProps={{ displayEmpty: true }}>
-                <MenuItem value="">Todas as conexões</MenuItem>
-                {connections.map((c) => (<MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>))}
+              <TextField select variant="outlined" margin="dense" label="Conexões" value={v.whatsappIds || []} onChange={(e) => set("whatsappIds", e.target.value)} InputLabelProps={{ shrink: true }}
+                helperText="Marque todas em que este agente atende (por exemplo o número do QR Code e o da API oficial). Sem nenhuma marcada, atende as que não têm outro agente."
+                SelectProps={{ multiple: true, displayEmpty: true, renderValue: (sel) => (sel.length ? connections.filter((c) => sel.includes(c.id)).map((c) => c.name).join(", ") || `${sel.length} conexão(ões)` : "Todas as conexões") }}>
+                {connections.map((c) => (<MenuItem key={c.id} value={c.id}><Checkbox color="primary" size="small" checked={(v.whatsappIds || []).includes(c.id)} />{c.name}</MenuItem>))}
               </TextField>
             </div>
 
