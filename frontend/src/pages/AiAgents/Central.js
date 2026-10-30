@@ -21,6 +21,7 @@ import CommercialSettings from "./CommercialSettings";
 import QualityPanel from "./QualityPanel";
 import LearningTab from "./LearningTab";
 import RegulationsDialog from "./RegulationsDialog";
+import AttendsPanel from "./AttendsPanel";
 import TestTab from "./TestTab";
 import TrainTab from "./TrainTab";
 import UsageTab from "./UsageTab";
@@ -292,6 +293,7 @@ const Central = () => {
           const advanced = settings.filter((x) => ["descobrir", "acoes", "roteiro", "historico", "chave"].includes(x.key));
           return (
             <div style={{ display: "grid", gap: 16 }}>
+              <AttendsPanel agentId={agentId} agent={agent} active={d.agent.active} flow={d.flow} onToggle={toggle} onOpenFlow={() => d.flow && history.push(`/ai-agents/blocos/${d.flow.id}`)} onChanged={load} />
               <Section title="Como o agente fala" hint="É a primeira coisa que o lead vê.">
                 <div className={classes.introBox}>“{intro}”</div>
                 <div className={classes.hint} style={{ margin: "8px 0 12px" }}>{persona.tone ? `Tom: ${persona.tone}` : "Defina o tom de voz, as regras e o que dizer quando o agente não souber."}</div>

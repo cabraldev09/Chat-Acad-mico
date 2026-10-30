@@ -110,6 +110,9 @@ const WhatsAppModal = ({ open, onClose, whatsAppId, onCreated }) => {
 	const [config, setConfig] = useState({});
 	const [hours, setHours] = useState(defaultHours());
 	const [selectedQueueIds, setSelectedQueueIds] = useState([]);
+	// the AI agent that answers on this connection (the same agent can serve several connections)
+	const [agents, setAgents] = useState([]);
+	const [agentId, setAgentId] = useState("");
 	const [channels, setChannels] = useState([]);
 	const [info, setInfo] = useState(null);
 	const [safety, setSafety] = useState(null);
@@ -122,6 +125,33 @@ const WhatsAppModal = ({ open, onClose, whatsAppId, onCreated }) => {
 		if (!open) return;
 		api.get("/channels").then(({ data }) => setChannels(data)).catch(() => {});
 	}, [open]);
+
+	const agentConnections = a => [...new Set([a.whatsappId, ...(a.whatsappIds || [])].filter(Boolean).map(Number))];
+	useEffect(() => {
+		if (!open) return;
+		api
+			.get("/ai-agents")
+			.then(({ data }) => {
+				const list = Array.isArray(data) ? data : [];
+				setAgents(list);
+				const mine = whatsAppId ? list.find(a => agentConnections(a).includes(Number(whatsAppId))) : null;
+				setAgentId(mine ? mine.id : "");
+			})
+			.catch(() => setAgents([]));
+	}, [open, whatsAppId]);
+
+	// the chosen agent gets this connection in its list, and the others lose it
+	const syncAgent = async connectionId => {
+		for (const a of agents) {
+			const ids = agentConnections(a);
+			const has = ids.includes(Number(connectionId));
+			const want = a.id === agentId;
+			if (has !== want) {
+				// eslint-disable-next-line no-await-in-loop
+				await api.put(`/ai-agents/${a.id}`, { whatsappIds: want ? [...ids, Number(connectionId)] : ids.filter(x => x !== Number(connectionId)), whatsappId: null });
+			}
+		}
+	};
 
 	useEffect(() => {
 		if (!open || !whatsAppId) return;
@@ -158,6 +188,7 @@ const WhatsAppModal = ({ open, onClose, whatsAppId, onCreated }) => {
 		setConfig({});
 		setHours(defaultHours());
 		setSelectedQueueIds([]);
+		setAgentId("");
 		setInfo(null);
 		setPairingPhone("");
 		setSafety(null);
@@ -206,6 +237,13 @@ const WhatsAppModal = ({ open, onClose, whatsAppId, onCreated }) => {
 			} else {
 				const { data: created } = await api.post("/whatsapp", { ...payload, ...(pairingPhone.replace(/\D/g, "") ? { pairingPhone } : {}) });
 				createdNow = created;
+			}
+			if (agents.length) {
+				try {
+					await syncAgent(whatsAppId || (createdNow && createdNow.id));
+				} catch (err) {
+					toast.warn("A conexão foi salva, mas não deu para ligar o agente de IA a ela. Faça em Agentes de IA → Ajustes.");
+				}
 			}
 			toast.success(i18n.t("whatsappModal.success"));
 			handleClose();
@@ -469,6 +507,32 @@ const WhatsAppModal = ({ open, onClose, whatsAppId, onCreated }) => {
 					selectedQueueIds={selectedQueueIds}
 					onChange={selectedIds => setSelectedQueueIds(selectedIds)}
 				/>
+				{agents.length > 0 && (
+					<TextField
+						select
+						fullWidth
+						variant="outlined"
+						margin="dense"
+						label="Agente de IA que atende esta conexão"
+						value={agentId}
+						onChange={e => setAgentId(e.target.value)}
+						InputLabelProps={{ shrink: true }}
+						SelectProps={{ displayEmpty: true }}
+						helperText={
+							agentId && agents.find(a => a.id === agentId) && !agentConnections(agents.find(a => a.id === agentId)).length
+								? "Este agente hoje atende todas as conexões sem outro agente. Ao escolher aqui, ele passa a atender só as conexões marcadas."
+								: "O mesmo agente pode atender várias conexões. O agente precisa estar ligado (Agentes de IA → Ajustes)."
+						}
+					>
+						<MenuItem value="">Nenhum agente específico</MenuItem>
+						{agents.map(a => (
+							<MenuItem key={a.id} value={a.id}>
+								{a.name}
+								{a.active ? "" : " (desligado)"}
+							</MenuItem>
+						))}
+					</TextField>
+				)}
 
 				<div className={classes.section}>
 					<FormControlLabel
