@@ -40,7 +40,9 @@ export const SLOT_KINDS: Record<string, Kind> = {
   // a student who needs the tutoring or the secretary: what was asked, whether the city was asked (once) before the team of the polo is called
   supportNeed: "string", supportCityAsked: "number", supportKind: "string",
   enrolledChecked: "boolean", enrolledStudent: "boolean", enrolledCourse: "string", studentSemipresencial: "boolean", forWhom: "string",
-  unknownStreak: "number", audioAsked: "number", qualifiedReplies: "number", readyForConsultant: "boolean", nudges: "number", nudgeAt: "string", lastBriefHash: "string", crmSeen: "object"
+  unknownStreak: "number", audioAsked: "number", qualifiedReplies: "number", readyForConsultant: "boolean", nudges: "number", nudgeAt: "string", lastBriefHash: "string", crmSeen: "object",
+  // the conversation (ticket) this progress belongs to
+  conversationTicketId: "number"
 };
 
 export type Slots = Record<string, any>;
@@ -181,4 +183,25 @@ export const hydrate = async (state: CommercialState, lead: Lead): Promise<Comme
   const entry = entryTypeOfAdmission(lead.admissionType);
   if (entry && (!state.slots.entryType || state.slots.entryType === "unknown")) patch.entryType = entry;
   return { ...state, slots: { ...state.slots, ...cleanPatch(patch), crmSeen: crm } };
+};
+
+// What belongs to one conversation and not to the lead: how ready the lead was, the counters of answers, objections, doubts and asks. A new
+// conversation (another ticket, or the person back after a day) starts them over, so nobody is handed over on the first message because of what
+// happened weeks ago; what the lead is (course, city, polo, kind of entry, name) stays.
+const CONVERSATION_SLOTS: Slots = {
+  qualifiedReplies: 0, readyForConsultant: false, objectionCount: 0, unknownStreak: 0, audioAsked: 0, supportCityAsked: 0, supportNeed: null, nudges: 0, nudgeAt: null
+};
+export const startConversation = (state: CommercialState, ticketId: number, now = Date.now()): boolean => {
+  const s = state.slots;
+  const previous = s.conversationTicketId;
+  const away = s.lastInboundAt ? now - new Date(String(s.lastInboundAt)).getTime() > 24 * 3600000 : false;
+  if (previous === ticketId && !away) return false;
+  s.conversationTicketId = ticketId;
+  // the first time the state meets a conversation (older states have no mark) nothing is cleared: it may be the conversation going on
+  if (previous === undefined || previous === null) return false;
+  Object.assign(s, CONVERSATION_SLOTS);
+  if (!(s.fullName && s.cpfGiven)) s.bolsaDataAsked = 0;
+  state.readyForProposal = false;
+  s.readyForProposal = false;
+  return true;
 };

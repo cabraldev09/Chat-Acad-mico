@@ -3751,6 +3751,14 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(!texts(FQ2).some(x => /assistente virtual/.test(x)), "the presentation was repeated");
       assert(gradeTexts() === g0 + 1, "the grade was sent twice");
 
+      // OI2) a second "oi" after the opening: the system answers short, without presenting itself again, and asks the next step (no model)
+      const OI2 = "5511920000232";
+      await say(OI2, "wamid.com-oi1", "oi", t => t.some(x => /conhecer nossos cursos/.test(x)), "OI2 opening");
+      const llmOi = anthropic.requests.length;
+      out = await say(OI2, "wamid.com-oi2", "oi", t => t.some(x => /Estou por aqui/.test(x)), "OI2 second hello");
+      assert(out.some(x => /Qual curso você tem interesse/.test(x)) && !out.some(x => /assistente virtual/.test(x)), `the second hello presented again or asked nothing: ${out}`);
+      assert(anthropic.requests.length === llmOi, "the second hello went to the model");
+
       // Q) the scenarios of the attendance, in the layer that needs no model: what is recognised at once and where each conversation goes
       const critId = (await http.post("/courses", { name: "Criminologia", modality: "EAD", category: "Graduação - Cruzeiro", semesters: 8, monthlyFee: 500, active: true }, auth())).data.id;
       const gab = (await http.post("/users", { name: "Gabrielli Estela", email: "gab-est@x.com", password: "senha123", role: "consultor" }, auth())).data;
@@ -4047,6 +4055,8 @@ const postMeta = (id, payload, secret, badSig) => {
       const T = "5511920000304";
       out = await say(T, "wamid.com-t1", "oi", t => t.some(x => /assistente virtual/.test(x)), "T the agent answers outside the business hours");
       assert(!out.some(x => /Estamos fechados/.test(x)), "the out-of-hours text was sent instead of the agent");
+      // and the conversation goes on at night: the next message is answered by the stage too (not only the first one)
+      out = await say(T, "wamid.com-t2", "oi", t => t.some(x => /Estou por aqui/.test(x)), "T the second message outside the business hours is answered");
       sql(`UPDATE Whatsapps SET businessHours=NULL, outOfHoursMessage=NULL WHERE id=${cid}`);
 
       // the Central of the agent: its first screen in one call (kind by the drawing, health with where to fix, the week in numbers)

@@ -448,6 +448,11 @@ const RunInboundAutomation = async ({ ticketId, body }: Input): Promise<void> =>
       // an AI agent answers at any hour: the lead is qualified at night and the handover says when the team answers (Router: next opening,
       // task for the first quarter of an hour). The "out of hours" text is only for numbers with no agent.
       if (ticket.aiActive && (await findAgentForTicket(ticket))) {
+        // a conversation of the agent already going on is answered by its stage (not only the first message of the night)
+        if (await runFlowForTicket(ticket, body, { keywordOnly: true })) {
+          trace(ticket, "fora do horário: o roteiro em andamento respondeu");
+          return;
+        }
         await runAi(ticket);
         return;
       }

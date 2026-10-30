@@ -14,7 +14,7 @@ import { commercialTurn, CommercialTrace } from "./Hook";
 import { CommercialPorts } from "./Ports";
 import { matchFaq } from "../AiServices/Kb";
 import { unsafeAnswer } from "./Guards";
-import { ENTRY_LABEL, alreadyIntroduces, consultantMention, courseMention, fastIntent, interestOf, hasBolsaData, humanReason, introText, isGreeting, needsBolsaData, openingText, retractsBuying, stageFieldsDone, supportIntent, topicsOf, gradeRequest } from "./Rules";
+import { ENTRY_LABEL, alreadyIntroduces, consultantMention, courseMention, entryOf, fastIntent, interestOf, hasBolsaData, humanReason, introText, isGreeting, needsBolsaData, nextQuestionOf, openingText, retractsBuying, stageFieldsDone, supportIntent, topicsOf, gradeRequest, withoutClosingQuestion } from "./Rules";
 import { configOf } from "./Config";
 import { detectFromText, findConsultantByName } from "./Detect";
 import { AcademicCtx, closestOffered, findCourse, joinNames, offeredCourses, runAcademicTool, sendGradeFor } from "./Academic";
@@ -211,6 +211,20 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
     return { text, exit: null, collected: flat(hook.trace.changed), trace: { ...base, deterministic: true, intent: "greeting", commercial: hook.trace, entry: ENTRY_LABEL[state.slots.entryType || "unknown"], latencyMs } };
   }
 
+  // the person says hello again (or only "quero saber mais") after the opening: the system answers short, without presenting itself again, and
+  // asks the next step of the process; a stage that starts without a message in a conversation already going on does the same (no model, no
+  // "cumprimente" to a person already greeted)
+  const stageNeeds = d.stage.fields.filter(f => f.required).map(f => (f.key === "courseName" ? "course" : f.key === "entryType" ? "entry" : f.key));
+  if (!fresh && !media.length && d.input !== null && isGreeting(lastText)) {
+    const smile = (d.agent.persona as any)?.emoji === false ? "" : " 😊";
+    const next = state.slots.enrolledStudent ? null : nextQuestionOf(state.slots, d.ports.config ? d.ports.config.ask : {});
+    return answered(`Oi! Estou por aqui${smile}\n\n${next || "Em que posso te ajudar?"}`, null, "greeting", { intent: "greeting" });
+  }
+  if (!fresh && d.input === null && !state.slots.enrolledStudent) {
+    const next = nextQuestionOf(state.slots, d.ports.config ? d.ports.config.ask : {}, stageNeeds);
+    if (next) return answered(next, null, "greeting", {});
+  }
+
   // a course that is not in the catalogue of the system is not offered: said at once, with the ones that are (the model never gets to talk about it)
   const named = d.input !== null && wrote ? courseMention(lastText) : null;
   if (named && !(await findCourse({ courseName: named }))) {
@@ -268,7 +282,7 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
         const sent = await sendGradeFor(course, ctx);
         if (sent.sent) {
           let text = sent.text || "Qualquer dúvida sobre o estágio ou a rotina do curso, é só me falar.";
-          let patchOut: Record<string, any> = { ...ctx.patch, courseId: course.id, courseName: course.name, gradeAsked: true, internshipExplained: true, tutoringExplained: true };
+          let patchOut: Record<string, any> = { ...ctx.patch, courseId: course.id, courseName: course.name, gradeAsked: true, courseExplained: true, internshipExplained: true, tutoringExplained: true };
           const probe = { ...state.slots, ...patchOut };
           // the full name and the CPF for the scholarship (same rule as after any answer)
           if (needsBolsaData(probe)) {
@@ -314,6 +328,10 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
   // after the grade (or once the lead is qualified) the consultant needs the full name and the CPF to simulate the scholarship: the system asks, once the
   // answer of the model has no question of its own (or after a few answers anyway)
   let patchOut: Record<string, any> = { ...(result.academicPatch || {}) };
+  // the kind of entry said in the person's words ("nunca fiz faculdade", "primeira") is kept even when the model did not register it; it goes
+  // through the rules like any other finding, so the flow sees it too (the transcript step of a transfer)
+  const said = d.input !== null && wrote && (!state.slots.entryType || state.slots.entryType === "unknown") && !turn.tipo_ingresso ? entryOf(lastText) : null;
+  if (said && !patchOut.entryType) patchOut.entryType = said;
   const probe = { ...state.slots, ...patchOut };
   if (d.input !== null && !d.sandbox && needsBolsaData(probe) && (!/\?[\s"”')]*$/.test(String(text || "").trim()) || Number(probe.qualifiedReplies || 0) >= (d.ports.qualifyAfter || 2) + 1)) {
     text = `${String(text || "").trim()}\n\n${bolsaRequestFor({ name: !probe.fullName, cpf: !probe.cpfGiven })}`.trim();
@@ -345,7 +363,7 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
           }, 3500).unref?.();
         }
         if (g.sent || g.simulated) {
-          patchOut = { ...patchOut, ...ctx.patch, courseId: course.id, courseName: course.name, gradeAsked: true, gradeSent: true, internshipExplained: true, tutoringExplained: true };
+          patchOut = { ...patchOut, ...ctx.patch, courseId: course.id, courseName: course.name, gradeAsked: true, gradeSent: true, courseExplained: true, internshipExplained: true, tutoringExplained: true };
           toolsOut = [...result.tools, "buscar_grade", "enviar_material"];
           if ((g.sent || (live && g.simulated)) && g.text && g.text.length <= 450 && !/est[aá]gio/i.test(text)) text = `${String(text || "").trim()}\n\n${g.text}`.trim();
         } else if (g.missing && d.lead && !d.sandbox) {
@@ -390,6 +408,13 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
   if (!hook.exit) {
     if (result.exit) hook.exit = result.exit;
     else if (stageFieldsDone(d.stage.fields, state.slots) && !stepsPending) hook.exit = "done";
+  }
+  // a qualified lead goes to the consultant now: the answer does not end asking something nobody will read
+  if (hook.exit === "human" && hook.why === "qualified") text = withoutClosingQuestion(text);
+  // the stage goes on and the answer asks nothing: the system asks the next thing the stage needs (course, city, kind of entry), once
+  if (!hook.exit && d.input !== null && text && !/\?/.test(text) && !state.slots.enrolledStudent) {
+    const next = nextQuestionOf(state.slots, d.ports.config ? d.ports.config.ask : {}, stageNeeds);
+    if (next) text = `${String(text).trim()}\n\n${next}`;
   }
   if (hook.exit === "off" && d.ticket && !d.sandbox && d.agent.learnFromTeam !== false && unknownQuestion) {
     await captureUnknown(d.agent, d.ticket, unknownQuestion, d.contactName || undefined).catch(() => undefined);
