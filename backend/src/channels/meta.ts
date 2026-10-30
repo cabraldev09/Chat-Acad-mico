@@ -22,6 +22,7 @@ import {
 } from "./types";
 import { IG_GRAPH } from "../helpers/MetaApp";
 import { noteWebhook } from "./WebhookLog";
+import { sendToRecipient } from "./CloudRecipient";
 
 // Unversioned by default so Meta serves the app's default API version (pinned
 // versions expire). Set META_GRAPH_VERSION=vNN.0 to pin, GRAPH_API_URL to override.
@@ -30,6 +31,17 @@ const GRAPH =
   `https://graph.facebook.com${
     process.env.META_GRAPH_VERSION ? `/${process.env.META_GRAPH_VERSION}` : ""
   }`;
+
+// Everything the Cloud API sends goes through here (a Brazilian mobile refused without the 9 is tried with it, see CloudRecipient)
+export const cloudSend = async (whatsapp: Whatsapp, contact: Contact, payload: Record<string, any>): Promise<any> => {
+  const { accessToken, phoneNumberId } = getConfig(whatsapp);
+  const { data } = await sendToRecipient(
+    contact.number,
+    to => axios.post(`${GRAPH}/${phoneNumberId}/messages`, { messaging_product: "whatsapp", to, ...payload }, { headers: { Authorization: `Bearer ${accessToken}` } }),
+    to => logger.info(`WhatsApp Cloud: ${contact.number} fora da lista permitida, enviando para ${to}`)
+  );
+  return data;
+};
 
 // ---------------------------------------------------------------------------
 // Messenger + Instagram (same Send API shape, different ids)
@@ -227,74 +239,42 @@ export const whatsappCloud: ChannelAdapter = {
   },
 
   async sendText(whatsapp, contact: Contact, body) {
-    const { accessToken, phoneNumberId } = getConfig(whatsapp);
-    const { data } = await axios.post(
-      `${GRAPH}/${phoneNumberId}/messages`,
-      {
-        messaging_product: "whatsapp",
-        to: contact.number,
-        type: "text",
-        text: { body, preview_url: false }
-      },
-      { headers: { Authorization: `Bearer ${accessToken}` } }
-    );
+    const data = await cloudSend(whatsapp, contact, { type: "text", text: { body, preview_url: false } });
     return { id: data.messages[0].id };
   },
 
   // WhatsApp Cloud: up to 3 reply buttons, or a list for 4 to 10 options (see helpers/Interactive for the rules of Meta). More than
   // 10 options cannot be sent as buttons: they go as a numbered text, which the flow understands too.
   async sendChoices(whatsapp, contact: Contact, question, options) {
-    const { accessToken, phoneNumberId } = getConfig(whatsapp);
     const interactive = buildInteractive(question, options);
     if (!interactive) {
       const menu = options.map((o, i) => `*${i + 1}* - ${o.label}`).join("\n");
       return this.sendText(whatsapp, contact, `${question}\n\n${menu}`);
     }
-    const { data } = await axios.post(
-      `${GRAPH}/${phoneNumberId}/messages`,
-      { messaging_product: "whatsapp", to: contact.number, type: "interactive", interactive },
-      { headers: { Authorization: `Bearer ${accessToken}` } }
-    );
+    const data = await cloudSend(whatsapp, contact, { type: "interactive", interactive });
     return { id: data.messages[0].id };
   },
 
   async sendReaction(whatsapp, contact: Contact, messageId, emoji) {
-    const { accessToken, phoneNumberId } = getConfig(whatsapp);
-    await axios.post(
-      `${GRAPH}/${phoneNumberId}/messages`,
-      {
-        messaging_product: "whatsapp",
-        to: contact.number,
-        type: "reaction",
-        reaction: { message_id: messageId, emoji }
-      },
-      { headers: { Authorization: `Bearer ${accessToken}` } }
-    );
+    await cloudSend(whatsapp, contact, { type: "reaction", reaction: { message_id: messageId, emoji } });
   },
 
   async sendTemplate(whatsapp, contact: Contact, template) {
-    const { accessToken, phoneNumberId } = getConfig(whatsapp);
-    const { data } = await axios.post(
-      `${GRAPH}/${phoneNumberId}/messages`,
-      {
-        messaging_product: "whatsapp",
-        to: contact.number,
-        type: "template",
-        template: {
-          name: template.name,
-          language: { code: template.language || "pt_BR" },
-          components: template.params.length
-            ? [
-                {
-                  type: "body",
-                  parameters: template.params.map(text => ({ type: "text", text }))
-                }
-              ]
-            : []
-        }
-      },
-      { headers: { Authorization: `Bearer ${accessToken}` } }
-    );
+    const data = await cloudSend(whatsapp, contact, {
+      type: "template",
+      template: {
+        name: template.name,
+        language: { code: template.language || "pt_BR" },
+        components: template.params.length
+          ? [
+              {
+                type: "body",
+                parameters: template.params.map(text => ({ type: "text", text }))
+              }
+            ]
+          : []
+      }
+    });
     return { id: data.messages[0].id };
   },
 
@@ -317,11 +297,7 @@ export const whatsappCloud: ChannelAdapter = {
     const payload: any = { id: upload.data.id };
     if (caption && type !== "audio") payload.caption = caption;
     if (type === "document") payload.filename = media.filename;
-    const { data } = await axios.post(
-      `${GRAPH}/${phoneNumberId}/messages`,
-      { messaging_product: "whatsapp", to: contact.number, type, [type]: payload },
-      { headers }
-    );
+    const data = await cloudSend(whatsapp, contact, { type, [type]: payload });
     return { id: data.messages[0].id };
   }
 };

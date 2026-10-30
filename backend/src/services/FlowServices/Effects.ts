@@ -48,6 +48,7 @@ import AgentMetricEvent from "../../models/AgentMetricEvent";
 import { transcribeAudio } from "../AiServices/Transcribe";
 import emitTicketUpdate from "../TicketServices/EmitTicketUpdate";
 import { syncHandoffTasks } from "../CrmServices/HandoffTasks";
+import { noteAutomation } from "../AutomationServices/AutomationTrace";
 
 // invisible mark: bot messages are told apart from the team's
 const MARK = "‎";
@@ -211,6 +212,7 @@ export const ticketEffects = (ticket: Ticket, flowName: string, flowCtx: FlowCon
     const code = String(err?.message || "");
     const reason = /NO_API_KEY/.test(code) ? "a chave de API não está cadastrada" : status === 401 || status === 403 ? "o provedor recusou a chave de API" : status === 429 ? "o limite ou o saldo do provedor acabou" : status >= 500 ? "o provedor de IA está fora do ar" : "erro técnico";
     logger.error(`AI turn failed (${reason}): ${code}`);
+    noteAutomation(ticket.id, `a IA não conseguiu responder (${reason}); a conversa vai para a equipe`);
     const agent = await agentFor(null);
     await AgentMetricEvent.create({ leadId: null, agentId: agent ? agent.id : null, flowId: flowCtx.flowId || null, event: "agent_error", once: false, meta: JSON.stringify({ reason, status, code: code.slice(0, 200), ticketId: ticket.id }) } as any).catch(() => undefined);
     if (agent) await notifyOwner(agent, `⚠️ O agente *${agent.name}* não conseguiu responder uma conversa porque ${reason}. A conversa foi para a equipe.`).catch(() => undefined);
@@ -250,6 +252,8 @@ export const ticketEffects = (ticket: Ticket, flowName: string, flowCtx: FlowCon
           await send();
         } catch (err) {
           logger.error(`Flow could not send a message: ${err}`);
+          const meta = (err as any)?.response?.data?.error;
+          noteAutomation(ticket.id, `a resposta não saiu pelo WhatsApp: ${meta ? `${meta.message || "erro"} (código ${meta.code}${meta.error_data?.details ? `, ${meta.error_data.details}` : ""})` : (err as any)?.message || err}`);
           await TicketEvent.create({ ticketId: ticket.id, type: "send_failed", actorId: null, note: `O agente de IA não conseguiu enviar uma mensagem: “${String(text).slice(0, 160)}”` } as any).catch(() => undefined);
         }
       }
