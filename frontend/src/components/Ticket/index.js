@@ -123,6 +123,78 @@ const AiBanner = ({ ticket }) => {
   );
 };
 
+// The conversation a person took from the agent: the five lines of what the agent learned (what the lead wants, how warm, objections, doubt,
+// next step) and "Sugerir resposta", the next answer written by the agent for the consultant to read, send or edit
+const HandoffPanel = ({ ticket }) => {
+  const [summary, setSummary] = useState(null);
+  const [open, setOpen] = useState(true);
+  const [suggestion, setSuggestion] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const show = !!ticket.id && !ticket.aiActive && !!ticket.userId && ticket.status === "open" && !ticket.isGroup && !ticket.isHistorical;
+  useEffect(() => {
+    setSummary(null);
+    setSuggestion(null);
+    if (!show) return;
+    api.get(`/tickets/${ticket.id}/ai-summary`).then(({ data }) => setSummary(data)).catch(() => setSummary({ lines: [] }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ticket.id, show]);
+  if (!show) return null;
+  const suggest = async () => {
+    setBusy(true);
+    try {
+      const { data } = await api.post(`/tickets/${ticket.id}/suggest-reply`);
+      if (data.text) setSuggestion(data.text);
+      else toast.info(data.note || "Sem sugestão agora.");
+    } catch (err) {
+      toastError(err);
+    }
+    setBusy(false);
+  };
+  const send = async () => {
+    setBusy(true);
+    try {
+      await api.post(`/messages/${ticket.id}`, { body: suggestion });
+      setSuggestion(null);
+    } catch (err) {
+      toastError(err);
+    }
+    setBusy(false);
+  };
+  const edit = () => {
+    window.dispatchEvent(new CustomEvent("fillMessageInput", { detail: { ticketId: ticket.id, text: suggestion } }));
+    setSuggestion(null);
+  };
+  const lines = (summary && summary.lines) || [];
+  const btn = { border: 0, borderRadius: 8, padding: "6px 12px", fontFamily: "inherit", fontWeight: 600, cursor: "pointer", fontSize: 13 };
+  return (
+    <div style={{ padding: "8px 14px", background: "rgba(15,118,110,.08)", borderBottom: "1px solid rgba(15,118,110,.18)", fontSize: 13 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <Bot size={16} color="#0f766e" />
+        <b style={{ color: "#0f766e" }}>{lines.length ? "Resumo do agente de IA" : "Agente de IA"}</b>
+        {summary && summary.why && <span style={{ opacity: 0.75 }}>· veio para você porque {summary.why}</span>}
+        <span style={{ flex: 1 }} />
+        {lines.length > 0 && <button type="button" onClick={() => setOpen((v) => !v)} style={{ ...btn, background: "transparent", color: "#0f766e" }}>{open ? "Esconder" : "Ver resumo"}</button>}
+        <button type="button" disabled={busy} onClick={suggest} style={{ ...btn, background: "#0f766e", color: "#fff" }}>{busy && !suggestion ? "Escrevendo…" : "Sugerir resposta"}</button>
+      </div>
+      {open && lines.length > 0 && (
+        <ul style={{ margin: "6px 0 0", paddingLeft: 26, lineHeight: 1.5 }}>
+          {lines.map((l, i) => <li key={i}>{l}</li>)}
+        </ul>
+      )}
+      {suggestion && (
+        <div style={{ marginTop: 8, background: "rgba(255,255,255,.7)", borderRadius: 10, padding: "8px 10px" }}>
+          <div style={{ whiteSpace: "pre-wrap", marginBottom: 8 }}>{suggestion}</div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button type="button" disabled={busy} onClick={send} style={{ ...btn, background: "#0f766e", color: "#fff" }}>Enviar</button>
+            <button type="button" onClick={edit} style={{ ...btn, background: "transparent", color: "#0f766e", border: "1px solid #0f766e" }}>Editar antes</button>
+            <button type="button" onClick={() => setSuggestion(null)} style={{ ...btn, background: "transparent", color: "inherit" }}>Descartar</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const Ticket = () => {
   const { ticketId } = useParams();
   const history = useHistory();
@@ -267,6 +339,7 @@ const Ticket = () => {
           </div>
         )}
         <AiBanner ticket={ticket} />
+        <HandoffPanel ticket={ticket} />
         <WelcomeBanner ticket={ticket} />
         <ReplyMessageProvider>
           <MessagesList

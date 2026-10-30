@@ -14,7 +14,7 @@ import { commercialTurn, CommercialTrace } from "./Hook";
 import { CommercialPorts } from "./Ports";
 import { matchFaq } from "../AiServices/Kb";
 import { unsafeAnswer } from "./Guards";
-import { ENTRY_LABEL, alreadyIntroduces, consultantMention, courseMention, entryOf, fastIntent, interestOf, hasBolsaData, humanReason, introText, isGreeting, needsBolsaData, nextQuestionOf, openingText, retractsBuying, stageFieldsDone, supportIntent, topicsOf, gradeRequest, withoutClosingQuestion } from "./Rules";
+import { ENTRY_LABEL, alreadyIntroduces, consultantMention, courseMention, entryOf, fastIntent, interestOf, hasBolsaData, humanReason, introText, isGreeting, needsBolsaData, modalityExplained, modalityTextOf, needsModalityExplanation, nextQuestionOf, openingText, retractsBuying, stageFieldsDone, supportIntent, topicsOf, gradeRequest, withoutClosingQuestion } from "./Rules";
 import { configOf } from "./Config";
 import { detectFromText, findConsultantByName } from "./Detect";
 import { AcademicCtx, closestOffered, findCourse, joinNames, offeredCourses, runAcademicTool, sendGradeFor } from "./Academic";
@@ -411,6 +411,24 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
   }
   // a qualified lead goes to the consultant now: the answer does not end asking something nobody will read
   if (hook.exit === "human" && hook.why === "qualified") text = withoutClosingQuestion(text);
+  // a semipresencial course is never handed over before the format and the rule of the MEC were explained: once course, city and kind of entry
+  // are known, the system explains it itself (from the rule registered for the course), so the process does not depend on the model calling the tool
+  const basicsKnown = !!(state.slots.courseId || state.slots.courseName) && !!(state.slots.city || state.slots.poloId) && !!state.slots.entryType && state.slots.entryType !== "unknown";
+  if (!hook.exit && d.input !== null && basicsKnown && !state.slots.enrolledStudent && needsModalityExplanation(state.slots) && !modalityExplained(state.slots)) {
+    try {
+      const ctx: AcademicCtx = { ticket: d.ticket, dryRun: d.sandbox || !d.ticket, slots: { ...state.slots }, patch: {}, cacheHits: 0, agentId: d.agent.id };
+      const view = await runAcademicTool("buscar_regra_modalidade", { courseId: state.slots.courseId, courseName: state.slots.courseName }, ctx);
+      const explanation = modalityTextOf(String(state.slots.courseName || "o curso"), view);
+      if (explanation) {
+        text = `${String(text || "").trim()}\n\n${explanation}`.trim();
+        state.slots.modalityExplained = true;
+        if (state.slots.mecImpacted) state.slots.mecExplained = true;
+        await d.ports.event("modality_explained", { course: state.slots.courseName || null }, true).catch(() => undefined);
+      }
+    } catch (err) {
+      // without the rule the model still explains it (buscar_regra_modalidade); the handover keeps waiting for it
+    }
+  }
   // the stage goes on and the answer asks nothing: the system asks the next thing the stage needs (course, city, kind of entry), once
   if (!hook.exit && d.input !== null && text && !/\?/.test(text) && !state.slots.enrolledStudent) {
     const next = nextQuestionOf(state.slots, d.ports.config ? d.ports.config.ask : {}, stageNeeds);

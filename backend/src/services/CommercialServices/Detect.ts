@@ -3,6 +3,8 @@ import Queue from "../../models/Queue";
 import User from "../../models/User";
 import { offeredCourses } from "./Academic";
 import { logger } from "../../utils/logger";
+import { resolvePoloFor } from "../PoloServices/ResolvePolo";
+import { cityCandidateOf } from "./Rules";
 
 // What a message says about the course and the city, found by looking at the real catalogue and the real polos (no model): "Quero fazer Pedagogia",
 // "Quanto custa Criminologia?" and "Sou de Buritis" fill the course and the city at once, so a price question handed to the consultant already carries them.
@@ -43,6 +45,15 @@ export const detectFromText = async (text: string): Promise<Record<string, any>>
   if (!cities.length && / cidade /.test(` ${t} `)) logger.warn(`detect: no city in "${t}" among ${JSON.stringify(list)}`);
   const uniq = [...new Set(cities.map(x => x.n))];
   if (uniq.length === 1) out.city = cities[0].p.city;
+  // not the city of a polo: a town one of the polos serves ("moro em Candeias", "sou de Itapuã", or just the name of the town as the answer),
+  // matched like the tool does (accents, typos, the state), so the polo of the lead does not depend on the model calling listar_polos
+  if (!out.city) {
+    const said = cityCandidateOf(text, !!out.courseName);
+    if (said) {
+      const r = await resolvePoloFor(said, null).catch(() => null);
+      if (r && r.status === "found" && r.polo) Object.assign(out, { city: said, poloId: r.polo.id, poloName: r.polo.name, poloStatus: "found", ...(r.state ? { state: r.state } : {}) });
+    }
+  }
   return out;
 };
 

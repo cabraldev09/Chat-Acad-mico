@@ -13,6 +13,7 @@ import { startLeadSlaAlert } from "./workers/LeadSlaAlert";
 import { startHandoffSla } from "./workers/HandoffSla";
 import { startStaleRuns } from "./workers/StaleRuns";
 import { startAiReactivation } from "./workers/AiReactivation";
+import { startProcessEval } from "./services/AiServices/ProcessEval";
 import { startWhatsappWatchdog } from "./workers/WhatsappWatchdog";
 import { startChannelTokenRefresh } from "./workers/ChannelTokenRefresh";
 import { startDataRetention } from "./workers/DataRetention";
@@ -49,6 +50,7 @@ whenLeader(() => {
   startHandoffSla();
   startStaleRuns();
   startAiReactivation();
+  startProcessEval();
   startWhatsappWatchdog();
   startChannelTokenRefresh();
   startDataRetention();

@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import AiAgent from "../models/AiAgent";
+import { lastProcessEval, runProcessEval } from "../services/AiServices/ProcessEval";
 import { getSetting, setSetting } from "../helpers/AppSettings";
 import { getSecretSetting, setSecretSetting } from "../helpers/SecretSettings";
 import { isMasked, maskSecret } from "../helpers/Secrets";
@@ -788,6 +789,17 @@ export const evalRemove = async (req: Request, res: Response): Promise<Response>
 };
 
 // runs the saved cases one after the other (one case when `caseId` is given); each verdict is kept for the list
+// the weekly check of the commercial process with the real model: the last report, and "Rodar agora"
+export const processEval = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await loadAgent(req.params.id);
+  return res.json({ report: await lastProcessEval(agent.id) });
+};
+
+export const processEvalRun = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await loadAgent(req.params.id);
+  return res.json({ report: await runProcessEval(agent) });
+};
+
 export const evalRun = async (req: Request, res: Response): Promise<Response> => {
   const agent = await loadAgent(req.params.id);
   const where: any = { agentId: agent.id };

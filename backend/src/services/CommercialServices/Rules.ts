@@ -345,7 +345,13 @@ export const temperatureOf = (slots: Slots, ready: boolean): "cold" | "warm" | "
 
 const needsTranscript = (slots: Slots): boolean => slots.entryType === "transfer" || slots.entryType === "second_degree";
 
-// qualified: course, city (or polo) and kind of entry are known and the course was presented
+// A semipresencial course (or one the MEC rules changed) cannot be handed over before the person heard how it works: the format, the share of
+// presential and live activities and what the class still has to confirm. Not something the administrator can turn off.
+export const needsModalityExplanation = (slots: Slots): boolean => /semi/i.test(String(slots.courseModality || "")) || slots.mecImpacted === true;
+export const modalityExplained = (slots: Slots): boolean => !!(slots.modalityExplained || slots.mecExplained);
+
+// qualified: course, city (or polo) and kind of entry are known and the course was presented (and, for a semipresencial course, the format
+// and the rule of the MEC were explained)
 export const isQualified = (slots: Slots, requires: readonly string[] = ["course", "city", "entry", "explained"]): boolean => {
   const has: Record<string, boolean> = {
     course: !!(slots.courseId || slots.courseName),
@@ -355,7 +361,22 @@ export const isQualified = (slots: Slots, requires: readonly string[] = ["course
   };
   // an empty list would qualify everybody on the first message: at least the course is always needed
   const need = requires.length ? requires : ["course"];
-  return need.every(k => has[k] !== false);
+  return need.every(k => has[k] !== false) && (!needsModalityExplanation(slots) || modalityExplained(slots));
+};
+
+// the explanation of the format of a semipresencial course, written by the system from the rule of the MEC and what the institution confirmed
+// (the result of the tool buscar_regra_modalidade): nothing invented, what is not confirmed goes to the consultant
+export const modalityTextOf = (courseName: string, view: any): string | null => {
+  const e = view && view.explicacao;
+  if (!e) return null;
+  const parts: string[] = [`Sobre como funciona ${courseName}:`];
+  if (e.nacional && e.nacional.regra) parts.push(`Pela regra do MEC, ${String(e.nacional.regra).replace(/^./, (c: string) => c.toLowerCase())}`);
+  const confirmed: string[] = (e.institucional && e.institucional.confirmado) || [];
+  if (view.commercialApprovedText) parts.push(String(view.commercialApprovedText));
+  else if (confirmed.length) parts.push(confirmed.join(" "));
+  if ((e.naoConfirmado || []).length) parts.push("Os detalhes que ainda dependem da sua turma (como dias e locais das atividades presenciais) o consultor confirma com você.");
+  parts.push("Ficou claro como funciona?");
+  return parts.join("\n\n");
 };
 
 // what is still missing to qualify, in the words of the administrator's screen
@@ -364,7 +385,9 @@ export const missingOf = (slots: Slots, requires: readonly string[] = ["course",
   const has: Record<string, boolean> = {
     course: !!(slots.courseId || slots.courseName), city: !!(slots.city || slots.poloId), entry: !!slots.entryType && slots.entryType !== "unknown", explained: !!slots.courseExplained
   };
-  return (requires.length ? requires : ["course"]).filter(k => has[k] === false).map(k => label[k] || k);
+  const out = (requires.length ? requires : ["course"]).filter(k => has[k] === false).map(k => label[k] || k);
+  if (needsModalityExplanation(slots) && !modalityExplained(slots)) out.push("Formato e regra do MEC explicados");
+  return out;
 };
 
 // How many answers a qualified lead gets from the agent before the consultant of the polo takes over: the questions of the lead are answered
@@ -596,4 +619,16 @@ export const briefOf = (s: CommercialState, extra: { stageName?: string | null; 
   ]
     .filter(v => v !== null)
     .join("\n");
+};
+
+// what in a message can be the name of a town: after "moro em", "sou de", "cidade de"..., or a short answer that is only a name
+const CITY_AFTER = /\b(?:moro|resido|vivo|sou|estou|fico|morando|cidade)\s+(?:em|de|no|na|perto de|aqui em|e)?\s*([a-zà-ú' -]{3,40}?)(?=[,.!?;]|\s+e\s|\s+mas\s|\s+e$|$)/i;
+export const cityCandidateOf = (text: string, hasCourse: boolean): string | null => {
+  const raw = String(text || "").trim();
+  const m = raw.match(CITY_AFTER);
+  if (m && m[1] && plain(m[1]).length >= 3) return m[1].trim();
+  const t = plain(raw);
+  // a short answer that is only a name ("Candeias do Jamari", "ji parana"): not a course, not a number, not a question
+  if (!hasCourse && t.length >= 4 && t.length <= 30 && t.split(" ").length <= 4 && !/\d/.test(t) && !raw.includes("?") && !/^(sim|nao|ok|oi|ola|obrigad[oa]|beleza|certo|isso|claro|pode ser|tudo bem|bom dia|boa tarde|boa noite)\b/.test(t)) return raw.replace(/[.!]+$/, "");
+  return null;
 };

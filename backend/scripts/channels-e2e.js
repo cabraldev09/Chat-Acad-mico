@@ -3980,6 +3980,16 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(Number(sql(`SELECT COUNT(*) FROM Messages WHERE ticketId=${ticketOf(R)} AND fromMe=true AND body LIKE '%simular a bolsa%' AND body LIKE '%Perfeito%'`)) >= 1, "the handover did not say the consultant will simulate the scholarship");
       assert(sql(`SELECT aiActive FROM Tickets WHERE id=${ticketOf(R)}`) === "0", "the AI kept talking after the handover");
       assert(Number(sql(`SELECT COUNT(*) FROM AgentMetricEvents WHERE leadId=${leadId(R)} AND event='handoff_qualified'`)) === 1, "no metric for the qualified handover");
+      // the consultant who receives it reads five lines of what the agent learned, and why it came
+      const sum = (await http.get(`/tickets/${ticketOf(R)}/ai-summary`, auth())).data;
+      assert(sum.lines.length === 5 && /Direito/.test(sum.lines[0]) && /Próximo passo/.test(sum.lines[4]) && sum.why, `summary for the consultant ${JSON.stringify(sum)}`);
+      // the weekly check of the process runs the script with scripted leads (nothing is sent) and keeps the report
+      const sentBeforeEval = graph.sent.length;
+      const pe = (await http.post(`/ai-agents/${agentId}/process-eval/run`, {}, auth())).data.report;
+      assert(pe && pe.results.length >= 4 && pe.results.every(r => Array.isArray(r.transcript) && r.transcript.length > 0), `process eval ${JSON.stringify(pe).slice(0, 400)}`);
+      assert(pe.results.find(r => /Abertura/.test(r.name)).ok, `the opening case failed: ${JSON.stringify(pe.results[0])}`);
+      assert(graph.sent.length === sentBeforeEval, "the evaluation sent a message to someone");
+      assert((await http.get(`/ai-agents/${agentId}/process-eval`, auth())).data.report.at === pe.at, "the report was not kept");
       assert(JSON.parse(sql(`SELECT slots FROM LeadCommercials WHERE leadId=${leadId(R)}`)).readyForConsultant === true, "the lead was not marked ready for the consultant");
       setQualified(99);
 

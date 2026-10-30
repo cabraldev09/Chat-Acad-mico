@@ -23,7 +23,11 @@ import AppError from "../errors/AppError";
 import ChatFlowRun from "../models/ChatFlowRun";
 import Message from "../models/Message";
 import RunInboundAutomation from "../services/AutomationServices/RunInboundAutomation";
-import { findAgentForTicket } from "../services/AiServices/RunAiAgent";
+import { findAgentForTicket, loadHistory, respond } from "../services/AiServices/RunAiAgent";
+import Lead from "../models/Lead";
+import { loadState } from "../services/CommercialServices/Slots";
+import { ENTRY_LABEL, INTEREST_LABEL, briefOf, suggestedStepOf } from "../services/CommercialServices/Rules";
+import { HandoffWhy, WHY_TEXT } from "../services/CommercialServices/Router";
 import { isManagerRole, roleOf } from "../helpers/Roles";
 import { getAdapter } from "../channels";
 import { whatsappProvider } from "../providers/WhatsApp";
@@ -238,6 +242,48 @@ export const markUnread = async (req: Request, res: Response): Promise<Response>
     .to("notification")
     .emit("ticket", { action: "update", ticket });
   return res.json({ unreadMessages: ticket.unreadMessages });
+};
+
+// What the consultant reads when a conversation of the agent reaches them: five lines (what the lead wants, the kind of entry and how warm, the
+// objections, the main doubt, the next step) and why it was handed over, from the state the agent kept. Nothing when the agent never talked.
+export const aiSummary = async (req: Request, res: Response): Promise<Response> => {
+  const ticket = await Ticket.findByPk(req.params.ticketId, { attributes: ["id", "contactId", "handoffReason", "aiActive"] });
+  if (!ticket) throw new AppError("ERR_NO_TICKET_FOUND", 404);
+  const lead = ticket.contactId ? await Lead.findOne({ where: { contactId: ticket.contactId }, attributes: ["id", "name"] }) : null;
+  if (!lead) return res.json({ lines: [] });
+  const state = await loadState(lead.id);
+  const x = state.slots;
+  if (!state.agentId && !x.lastOutboundAt) return res.json({ lines: [] });
+  const want = [x.interestKind ? INTEREST_LABEL[x.interestKind] || x.interestKind : null, x.courseName, x.poloName || x.city].filter(Boolean).join(" · ");
+  const objections = [x.mainObjection, ...String(x.objectionsSeen || "").split(",").filter(Boolean)].filter(Boolean);
+  const lines = [
+    `Quer: ${want || "ainda não disse"}`,
+    `Ingresso: ${ENTRY_LABEL[x.entryType || "unknown"]} · Temperatura: ${({ cold: "fria", warm: "morna", hot: "quente" } as any)[state.temperature] || state.temperature} (${state.commercialScore})`,
+    `Objeções: ${objections.length ? [...new Set(objections)].join(", ") : "nenhuma"}`,
+    `Dúvida principal: ${x.mainQuestion || x.unknownQuestion || "nenhuma registrada"}`,
+    `Próximo passo: ${suggestedStepOf(state)}`
+  ];
+  return res.json({ lines, why: ticket.handoffReason ? WHY_TEXT[ticket.handoffReason as HandoffWhy] || ticket.handoffReason : null });
+};
+
+// "Sugerir resposta": the agent writes the next answer of a conversation a person took, from the history and what it knows of the lead; the
+// consultant reads, edits and sends it (nothing goes out from here, nothing is saved)
+export const suggestReply = async (req: Request, res: Response): Promise<Response> => {
+  const ticket = await ShowTicketService(req.params.ticketId);
+  const agent = await findAgentForTicket(ticket);
+  if (!agent) throw new AppError("ERR_AI_NO_AGENT", 400);
+  const history = await loadHistory(ticket, 30);
+  if (!history.length || history[history.length - 1].role !== "user") return res.json({ text: "", note: "A última mensagem é sua: espere a pessoa responder." });
+  const lead = await Lead.findOne({ where: { contactId: ticket.contactId }, attributes: ["id"] });
+  const state = lead ? await loadState(lead.id) : null;
+  const summary = state ? briefOf(state) : null;
+  try {
+    const result = await respond(agent, { ticket: null, history, summary, collected: null, sandbox: true });
+    if (result.handoff || result.unknown || !result.text) return res.json({ text: "", note: "O agente não sabe responder isso com segurança: responda você." });
+    return res.json({ text: result.text.replace(/\[(HANDOFF|DESCONHECIDO)\]/g, "").trim() });
+  } catch (err) {
+    throw new AppError("ERR_AI_SUGGEST_FAILED", 502);
+  }
 };
 
 // "Marcar todas como lidas" in the Não lidas view: the conversations this person sees there (a manager: the ones of the attendant or the connection
