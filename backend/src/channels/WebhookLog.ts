@@ -8,13 +8,18 @@ export interface WebhookNote {
   messages: number;
 }
 
-const notes = new Map<number, WebhookNote>();
+// the deliveries (what the Meta sends when someone writes) and the checks of the address (the handshake of the Meta, or anyone opening the URL) are kept
+// apart, so a check never hides the last delivery
+const deliveries = new Map<number, WebhookNote>();
+const checks = new Map<number, WebhookNote>();
 
 export const noteWebhook = (whatsappId: number, outcome: WebhookNote["outcome"], detail?: string, messages = 0): void => {
-  notes.set(Number(whatsappId), { at: Date.now(), outcome, detail, messages });
+  const target = outcome === "verificacao_ok" || outcome === "verificacao_recusada" ? checks : deliveries;
+  target.set(Number(whatsappId), { at: Date.now(), outcome, detail, messages });
 };
 
-export const lastWebhook = (whatsappId: number): WebhookNote | null => notes.get(Number(whatsappId)) || null;
+export const lastWebhook = (whatsappId: number): WebhookNote | null => deliveries.get(Number(whatsappId)) || null;
+export const lastWebhookCheck = (whatsappId: number): WebhookNote | null => checks.get(Number(whatsappId)) || null;
 
 // "1 mensagem", "2 mensagens e 1 aviso de entrega": what a delivery of the Cloud API carries
 export const describeCloudBody = (body: any): { text: string; messages: number } => {

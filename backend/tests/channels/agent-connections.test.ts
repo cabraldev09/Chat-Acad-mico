@@ -21,7 +21,7 @@ describe("conexões de um agente de IA", () => {
   });
 });
 
-import { describeCloudBody, lastWebhook, noteWebhook } from "../../src/channels/WebhookLog";
+import { describeCloudBody, lastWebhook, lastWebhookCheck, noteWebhook } from "../../src/channels/WebhookLog";
 
 describe("o que a Meta mandou por último para a conexão", () => {
   it("conta mensagens e avisos de entrega de uma chamada da API oficial", () => {
@@ -37,5 +37,12 @@ describe("o que a Meta mandou por último para a conexão", () => {
     noteWebhook(991, "assinatura_invalida", "o App Secret não confere");
     expect(lastWebhook(991)?.outcome).toBe("assinatura_invalida");
     expect(lastWebhook(992)).toBeNull();
+  });
+
+  it("uma verificação do endereço não esconde a última mensagem recebida", () => {
+    noteWebhook(993, "recebido", "1 mensagem", 1);
+    noteWebhook(993, "verificacao_recusada", "o Verify Token é diferente");
+    expect(lastWebhook(993)?.outcome).toBe("recebido");
+    expect(lastWebhookCheck(993)?.outcome).toBe("verificacao_recusada");
   });
 });

@@ -5,7 +5,7 @@ import { getConfig } from "../channels/types";
 import { whatsappProvider } from "../providers/WhatsApp";
 import { getPublicUrl } from "../helpers/PublicUrl";
 import { getSafetyStatus } from "../services/SafetyServices/SendGuard";
-import { lastWebhook } from "../channels/WebhookLog";
+import { lastWebhook, lastWebhookCheck } from "../channels/WebhookLog";
 
 // Field definitions drive the connection form in the frontend
 const CHANNELS = [
@@ -74,6 +74,7 @@ export const info = async (req: Request, res: Response): Promise<Response> => {
     out.webhookUrl = `${publicUrl}/webhooks/meta/${whatsapp.id}`;
     // the last time the Meta called this connection and what became of it (empty until it calls after the server started)
     out.webhook = lastWebhook(whatsapp.id);
+    out.webhookCheck = lastWebhookCheck(whatsapp.id);
   }
   if (whatsapp.channel === "webchat") {
     const { token } = getConfig(whatsapp);
