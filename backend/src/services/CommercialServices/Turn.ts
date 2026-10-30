@@ -310,12 +310,6 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
   // the day's limit was reached: the model is not called, a person takes over
   if (d.capped) return answered(d.agent.handoffMessage || FIXED.human, "limit", "other", {}, "limit_tokens");
 
-  // the kind of entry said in the person's words is known before the model talks ("nunca fiz faculdade", "primeira"): never left to it
-  if (d.input !== null && wrote && (!state.slots.entryType || state.slots.entryType === "unknown")) {
-    const entry = entryOf(lastText);
-    if (entry) state.slots.entryType = entry;
-  }
-
   // 2) the model, once
   const result = await respond(d.agent, {
     ticket: d.ticket, history: d.history, summary: state.summary, collected: null, sandbox: d.sandbox, stage: d.stage, flowId: d.flowId, nodeId: d.nodeId,
@@ -334,6 +328,10 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
   // after the grade (or once the lead is qualified) the consultant needs the full name and the CPF to simulate the scholarship: the system asks, once the
   // answer of the model has no question of its own (or after a few answers anyway)
   let patchOut: Record<string, any> = { ...(result.academicPatch || {}) };
+  // the kind of entry said in the person's words ("nunca fiz faculdade", "primeira") is kept even when the model did not register it; it goes
+  // through the rules like any other finding, so the flow sees it too (the transcript step of a transfer)
+  const said = d.input !== null && wrote && (!state.slots.entryType || state.slots.entryType === "unknown") && !turn.tipo_ingresso ? entryOf(lastText) : null;
+  if (said && !patchOut.entryType) patchOut.entryType = said;
   const probe = { ...state.slots, ...patchOut };
   if (d.input !== null && !d.sandbox && needsBolsaData(probe) && (!/\?[\s"”')]*$/.test(String(text || "").trim()) || Number(probe.qualifiedReplies || 0) >= (d.ports.qualifyAfter || 2) + 1)) {
     text = `${String(text || "").trim()}\n\n${bolsaRequestFor({ name: !probe.fullName, cpf: !probe.cpfGiven })}`.trim();
