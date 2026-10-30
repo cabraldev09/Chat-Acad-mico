@@ -10,7 +10,7 @@ import { getPublicUrl } from "../helpers/PublicUrl";
 import { buildInteractive } from "../helpers/Interactive";
 import { setChannelStatus } from "../services/ChannelServices/ChannelStatus";
 import HandleChannelMessage from "../services/InboundServices/HandleChannelMessage";
-import { handleAckByExternalId } from "../services/InboundServices/HandleAck";
+import { handleAckByExternalId, handleSendFailure } from "../services/InboundServices/HandleAck";
 import { applyReaction } from "../services/MessageServices/MessageActions";
 import {
   ChannelAdapter,
@@ -22,7 +22,9 @@ import {
 } from "./types";
 import { IG_GRAPH } from "../helpers/MetaApp";
 import { noteWebhook } from "./WebhookLog";
-import { sendToRecipient } from "./CloudRecipient";
+import { aliasMessage, failureOf, messageIdOf, rememberRecipient, sendToRecipient } from "./CloudRecipient";
+import { noteAutomation } from "../services/AutomationServices/AutomationTrace";
+import Ticket from "../models/Ticket";
 
 // Unversioned by default so Meta serves the app's default API version (pinned
 // versions expire). Set META_GRAPH_VERSION=vNN.0 to pin, GRAPH_API_URL to override.
@@ -382,6 +384,24 @@ const processSocial = async (whatsapp: Whatsapp, entry: any, type: ChannelType) 
   }
 };
 
+// Meta accepted a message and then could not deliver it: the conversation shows the failure and why; a Brazilian mobile refused
+// without the 9 (the test number and its allowed list) gets the same text again with the 9, and the next messages go that way.
+const cloudFailed = async (whatsapp: Whatsapp, st: any): Promise<void> => {
+  const { code, text, retryTo } = failureOf(st);
+  const message = await handleSendFailure(messageIdOf(st.id));
+  if (!message) return;
+  noteAutomation(message.ticketId, `a Meta não entregou a mensagem: ${text} (código ${code || "?"})${retryTo ? `; enviando de novo para ${retryTo}` : ""}`);
+  if (!retryTo || message.mediaType !== "chat" || !message.body) return;
+  const ticket = await Ticket.findByPk(message.ticketId, { include: ["contact"] });
+  if (!ticket?.contact) return;
+  rememberRecipient(ticket.contact.number, retryTo);
+  const data = await cloudSend(whatsapp, ticket.contact, { type: "text", text: { body: message.body, preview_url: false } });
+  const newId = data?.messages?.[0]?.id;
+  if (newId) aliasMessage(newId, message.id);
+  await message.update({ ack: 1 });
+  noteAutomation(message.ticketId, `a mensagem foi enviada de novo para ${retryTo}`);
+};
+
 const processCloud = async (whatsapp: Whatsapp, entry: any) => {
   const config = getConfig(whatsapp);
   const headers = { Authorization: `Bearer ${config.accessToken}` };
@@ -394,8 +414,12 @@ const processCloud = async (whatsapp: Whatsapp, entry: any) => {
     }
 
     for (const st of value.statuses || []) {
+      if (st.status === "failed") {
+        await cloudFailed(whatsapp, st).catch(err => logger.error(`Cloud API failed status: ${err}`));
+        continue;
+      }
       const ack = ({ sent: 1, delivered: 2, read: 3 } as Record<string, number>)[st.status];
-      if (ack) await handleAckByExternalId(st.id, ack);
+      if (ack) await handleAckByExternalId(messageIdOf(st.id), ack);
     }
 
     for (const m of value.messages || []) {
