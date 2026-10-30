@@ -79,6 +79,7 @@ export const ticketEffects = (ticket: Ticket, flowName: string, flowCtx: FlowCon
   // the lead (created when it does not exist yet) and its commercial state, with what the CRM already knows
   const commercialOf = async (node: FlowNode) => {
     const lead = await ensureLead({}, node);
+    noteAutomation(ticket.id, `o agente usa o lead nº ${lead.id} do CRM, "${lead.name}" (o nome e os dados que ele cita vêm dali)`);
     const state = await hydrate(await loadState(lead.id), lead);
     state.agentId = flowCtx.agentId || null;
     state.flowId = flowCtx.flowId || null;

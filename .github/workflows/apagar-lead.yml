@@ -1,0 +1,41 @@
+name: Apagar um lead de teste (por número e nome)
+
+# Apaga os leads de um número cujo nome começa com o nome informado, como o administrador faz no CRM (nunca aluno, matrícula ganha ou
+# lead com pagamento), e encerra os roteiros em andamento desse contato.
+on:
+  workflow_dispatch:
+    inputs:
+      numero:
+        description: "Número com DDI e DDD (ex.: 5569992283812)"
+        required: true
+      nome:
+        description: "Começo do nome do lead (ex.: Oziana)"
+        required: true
+
+jobs:
+  apagar:
+    runs-on: ubuntu-latest
+    env:
+      VPS_HOST: 209.145.48.49
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepara o SSH e confere a identidade do servidor
+        env:
+          KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          install -m 700 -d ~/.ssh
+          body=$(printf '%s' "$KEY" | grep -v '^-----' | tr -d ' \r\n\t')
+          { echo "-----BEGIN OPENSSH PRIVATE KEY-----"; printf '%s' "$body" | fold -w 70; echo; echo "-----END OPENSSH PRIVATE KEY-----"; } > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          grep -v '^#' deploy/vps/known_hosts > ~/.ssh/known_hosts
+          want=$(awk '{print $3}' ~/.ssh/known_hosts)
+          seen=$(ssh-keyscan -T 15 -t ed25519 "$VPS_HOST" 2>/dev/null | awk '$2=="ssh-ed25519"{print $3}')
+          [ -n "$seen" ] && [ "$seen" = "$want" ] || { echo "::error::A chave do servidor não confere"; exit 1; }
+      - name: Apaga
+        env:
+          NUMERO: ${{ inputs.numero }}
+          NOME: ${{ inputs.nome }}
+        run: |
+          case "$NUMERO$NOME" in *"'"*|*'"'*|*'$'*|*'`'*|*';'*) echo "::error::caracteres inválidos"; exit 1;; esac
+          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes backend/scripts/apagar-lead.js root@"$VPS_HOST":/tmp/apagar-lead.js
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@"$VPS_HOST" "docker cp /tmp/apagar-lead.js chat-academico-api-1:/app/backend/apagar-lead.js && docker exec -e NUMERO='$NUMERO' -e NOME='$NOME' chat-academico-api-1 node /app/backend/apagar-lead.js; s=\$?; docker exec chat-academico-api-1 rm -f /app/backend/apagar-lead.js; exit \$s"

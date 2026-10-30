@@ -795,6 +795,14 @@ const postMeta = (id, payload, secret, badSig) => {
       await postMeta(cid, cloudEvent([], { statuses: [{ id: outId, status: "read", recipient_id: "5511988887777" }] }), cloudCfg.appSecret);
       await waitFor(() => sql(`SELECT ack FROM Messages WHERE id='${outId}'`) === "3", 6000, "ack=3");
     });
+    await test("a message Meta accepted and then could not deliver shows the failure in the conversation", async () => {
+      assert((await http.post(`/messages/${cticket}`, { body: "Mensagem que não chega" }, auth())).status === 200, "send");
+      const id = sql(`SELECT id FROM Messages WHERE ticketId=${cticket} AND fromMe=1 ORDER BY createdAt DESC LIMIT 1`);
+      await postMeta(cid, cloudEvent([], { statuses: [{ id, status: "failed", recipient_id: "5511988887777", errors: [{ code: 131047, title: "Re-engagement message" }] }] }), cloudCfg.appSecret);
+      await waitFor(() => sql(`SELECT ack FROM Messages WHERE id='${id}'`) === "-1", 6000, "ack=-1");
+      const why = (await http.get(`/tickets/${cticket}/automation`, auth())).data;
+      assert(JSON.stringify(why).includes("131047"), `the failure is not in the conversation trace: ${JSON.stringify(why).slice(0, 300)}`);
+    });
     await test("agent media is uploaded then sent by id", async () => {
       const form = new FormData();
       form.append("medias", PNG, { filename: "b.png", contentType: "image/png" });
