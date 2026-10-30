@@ -27,6 +27,21 @@ import QueueSelect from "../QueueSelect";
 import { AuthContext } from "../../context/Auth/AuthContext";
 import { isManager } from "../../utils/access";
 
+const WEBHOOK_OUTCOME = {
+	recebido: "chegou ao sistema",
+	assinatura_invalida: "recusada",
+	sem_app_secret: "recusada",
+	numero_diferente: "ignorada",
+	verificacao_ok: "verificação aceita",
+	verificacao_recusada: "verificação recusada",
+};
+// the last time the Meta called this connection and what became of it, in words
+const webhookLine = w => {
+	if (!w) return "Nenhuma chamada da Meta chegou aqui desde que o servidor ligou. Se você já mandou uma mensagem, a Meta não está enviando: confira o campo messages do webhook e se o app está publicado.";
+	const when = new Date(w.at).toLocaleString("pt-BR", { timeZone: "America/Porto_Velho" });
+	return `${when}: ${WEBHOOK_OUTCOME[w.outcome] || w.outcome}${w.detail ? ` (${w.detail})` : ""}.`;
+};
+
 const useStyles = makeStyles(theme => ({
 	row: { display: "flex", gap: theme.spacing(1), alignItems: "center", flexWrap: "wrap" },
 	section: { marginTop: theme.spacing(2) },
@@ -469,6 +484,13 @@ const WhatsAppModal = ({ open, onClose, whatsAppId, onCreated }) => {
 							A Meta exige HTTPS público. Em localhost use um túnel (ex.: cloudflared) e defina PUBLIC_URL no backend/.env.
 							Atualmente: {info.publicUrl}
 						</Typography>
+						<Typography variant="subtitle2" style={{ marginTop: 12 }}>Última chamada da Meta</Typography>
+						<Typography variant="body2">{webhookLine(info.webhook)}</Typography>
+						{whatsAppId && (
+							<Button size="small" style={{ marginTop: 4 }} onClick={() => api.get(`/channels/${whatsAppId}/info`).then(({ data: i }) => setInfo(i)).catch(() => {})}>
+								Atualizar
+							</Button>
+						)}
 					</div>
 				)}
 				{info && info.snippet && (

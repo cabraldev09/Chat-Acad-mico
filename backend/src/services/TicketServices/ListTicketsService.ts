@@ -230,11 +230,21 @@ const ListTicketsService = async ({
       role === "admin"
         ? null
         : (await Whatsapp.findAll({ where: { ownerId: Number(userId) }, attributes: ["id"] })).map(w => w.id);
+    // the connection and the attendant chosen in the filters also narrow the history (a copied chat has no attendant)
+    const filterConnection = manager && Number(connectionId) ? Number(connectionId) : null;
+    const filterAttendant = manager && Number(attendantId) ? Number(attendantId) : null;
+    const historyConnection: any =
+      filterConnection !== null
+        ? { whatsappId: owned === null || owned.includes(filterConnection) ? filterConnection : { [Op.in]: [0] } }
+        : owned === null
+          ? {}
+          : { whatsappId: { [Op.in]: owned.length ? owned : [0] } };
     const history: any = {
       isHistorical: true,
       // a copied chat with nothing in it (only WhatsApp system lines) is noise; empty groups stay, they are listed on purpose
       [Op.or]: [{ isGroup: true }, { lastMessageId: { [Op.ne]: null } }],
-      ...(owned === null ? {} : { whatsappId: { [Op.in]: owned.length ? owned : [0] } }),
+      ...historyConnection,
+      ...(filterAttendant !== null ? { userId: filterAttendant } : {}),
       // the Grupos / private-only views apply to the history as well
       ...(groups === "only" ? { isGroup: true } : groups === "exclude" ? { isGroup: false } : {})
     };

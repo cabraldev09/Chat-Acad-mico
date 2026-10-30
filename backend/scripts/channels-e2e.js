@@ -562,6 +562,9 @@ const postMeta = (id, payload, secret, badSig) => {
         const forged = await postMeta(id, event(`m_${channel}_y`, { text: "y" }), cfg.appSecret, "sha256=" + "0".repeat(64));
         assert(forged.status === 401, `forged -> ${forged.status}`);
         assert(!ticketOf(`${prefix}${idp}1`), "forged webhook created a ticket");
+        // the connection tells what the Meta did last: here, a call whose signature was refused
+        const shown = (await http.get(`/channels/${id}/info`, auth())).data;
+        assert(shown.webhook && shown.webhook.outcome === "assinatura_invalida", `the last webhook was not noted: ${JSON.stringify(shown.webhook)}`);
       });
       await test("signed message creates contact with profile name and ticket", async () => {
         const r = await postMeta(id, event(`m_${channel}_1`, { text: "Oi, vi o anúncio" }), cfg.appSecret);

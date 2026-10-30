@@ -6,6 +6,7 @@ import { getConfig } from "../channels/types";
 import { processMetaWebhook } from "../channels/meta";
 import { logger } from "../utils/logger";
 import { getMetaApp } from "../helpers/MetaApp";
+import { describeCloudBody, noteWebhook } from "../channels/WebhookLog";
 
 const router = express.Router();
 
@@ -57,8 +58,10 @@ router.get("/meta/:whatsappId", async (req: Request, res: Response) => {
     verifyToken &&
     req.query["hub.verify_token"] === verifyToken
   ) {
+    noteWebhook(whatsapp.id, "verificacao_ok");
     return res.status(200).send(String(req.query["hub.challenge"]));
   }
+  noteWebhook(whatsapp.id, "verificacao_recusada", "o Verify Token da Meta é diferente do salvo na conexão");
   return res.sendStatus(403);
 });
 
@@ -70,6 +73,7 @@ router.post("/meta/:whatsappId", async (req: Request, res: Response) => {
   if (!appSecret) {
     // unsigned deliveries could be forged by anyone who finds the URL
     logger.warn(`Meta webhook for connection ${whatsapp.id} rejected: App Secret not set`);
+    noteWebhook(whatsapp.id, "sem_app_secret", "a conexão não tem App Secret salvo");
     return res.sendStatus(403);
   }
 
@@ -84,10 +88,13 @@ router.post("/meta/:whatsappId", async (req: Request, res: Response) => {
       timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
     if (!ok) {
       logger.warn(`Meta webhook signature mismatch for connection ${whatsapp.id}`);
+      noteWebhook(whatsapp.id, "assinatura_invalida", "o App Secret da conexão não é o do app da Meta");
       return res.sendStatus(401);
     }
   }
 
+  const seen = describeCloudBody(req.body);
+  noteWebhook(whatsapp.id, "recebido", seen.text, seen.messages);
   // acknowledge fast; Meta retries on slow responses
   res.sendStatus(200);
   processMetaWebhook(whatsapp, req.body).catch(err =>
