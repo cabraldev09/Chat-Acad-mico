@@ -350,8 +350,8 @@ const needsTranscript = (slots: Slots): boolean => slots.entryType === "transfer
 export const needsModalityExplanation = (slots: Slots): boolean => /semi/i.test(String(slots.courseModality || "")) || slots.mecImpacted === true;
 export const modalityExplained = (slots: Slots): boolean => !!(slots.modalityExplained || slots.mecExplained);
 
-// qualified: course, city (or polo) and kind of entry are known and the course was presented (and, for a semipresencial course, the format
-// and the rule of the MEC were explained)
+// qualified: course, city (or polo) and kind of entry are known and the course was presented (the column of the funnel follows this; the
+// handover to the consultant also waits for the format of a semipresencial course, see readyForConsultantOf)
 export const isQualified = (slots: Slots, requires: readonly string[] = ["course", "city", "entry", "explained"]): boolean => {
   const has: Record<string, boolean> = {
     course: !!(slots.courseId || slots.courseName),
@@ -361,7 +361,7 @@ export const isQualified = (slots: Slots, requires: readonly string[] = ["course
   };
   // an empty list would qualify everybody on the first message: at least the course is always needed
   const need = requires.length ? requires : ["course"];
-  return need.every(k => has[k] !== false) && (!needsModalityExplanation(slots) || modalityExplained(slots));
+  return need.every(k => has[k] !== false);
 };
 
 // the explanation of the format of a semipresencial course, written by the system from the rule of the MEC and what the institution confirmed
@@ -403,6 +403,8 @@ export const needsBolsaData = (slots: Slots): boolean => isQualified(slots) && !
 
 export const readyForConsultantOf = (slots: Slots, replies: number, after: number = QUALIFIED_REPLIES, requires?: readonly string[]): boolean => {
   if (!after || !isQualified(slots, requires)) return false;
+  // a semipresencial course goes to the consultant only after the format and the rule of the MEC were explained
+  if (needsModalityExplanation(slots) && !modalityExplained(slots)) return false;
   const analysisDone = !needsTranscript(slots) || (slots.analysisStatus === "completed" && !!slots.analysisExplained);
   // never wait forever for the data: a few more answers and the consultant takes it anyway
   return analysisDone && replies >= after && (!needsBolsaData(slots) || replies >= after + 3);

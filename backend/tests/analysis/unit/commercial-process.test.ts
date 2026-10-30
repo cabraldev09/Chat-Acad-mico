@@ -96,17 +96,18 @@ describe("a new conversation starts the progress over, the lead stays", () => {
   });
 });
 
-import { cityCandidateOf, isQualified, missingOf, modalityTextOf, needsModalityExplanation } from "../../../src/services/CommercialServices/Rules";
+import { cityCandidateOf, isQualified, missingOf, modalityTextOf, needsModalityExplanation, readyForConsultantOf } from "../../../src/services/CommercialServices/Rules";
 
 describe("semipresencial: format and the MEC rule before the consultant", () => {
   const base = { courseName: "Enfermagem", city: "Porto Velho", entryType: "first_degree", courseExplained: true };
-  it("a semipresencial course is not qualified until the format was explained", () => {
+  it("a semipresencial course does not go to the consultant until the format was explained (the funnel column is not held)", () => {
     expect(needsModalityExplanation({ ...base, courseModality: "Semipresencial" })).toBe(true);
-    expect(isQualified({ ...base, courseModality: "Semipresencial" })).toBe(false);
+    expect(isQualified({ ...base, courseModality: "Semipresencial" })).toBe(true);
+    expect(readyForConsultantOf({ ...base, courseModality: "Semipresencial", bolsaDataAsked: 2 }, 5)).toBe(false);
     expect(missingOf({ ...base, courseModality: "Semipresencial" })).toContain("Formato e regra do MEC explicados");
-    expect(isQualified({ ...base, courseModality: "Semipresencial", modalityExplained: true })).toBe(true);
-    expect(isQualified({ ...base, courseModality: "EAD" })).toBe(true);
-    expect(isQualified({ ...base, courseModality: "EAD", mecImpacted: true })).toBe(false);
+    expect(readyForConsultantOf({ ...base, courseModality: "Semipresencial", modalityExplained: true, bolsaDataAsked: 2 }, 5)).toBe(true);
+    expect(readyForConsultantOf({ ...base, courseModality: "EAD", bolsaDataAsked: 2 }, 5)).toBe(true);
+    expect(readyForConsultantOf({ ...base, courseModality: "EAD", mecImpacted: true, bolsaDataAsked: 2 }, 5)).toBe(false);
   });
 
   it("the explanation comes from the rule, says what the consultant confirms and asks if it is clear", () => {
