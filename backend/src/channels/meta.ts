@@ -21,6 +21,7 @@ import {
   mediaKindOf
 } from "./types";
 import { IG_GRAPH } from "../helpers/MetaApp";
+import { noteWebhook } from "./WebhookLog";
 
 // Unversioned by default so Meta serves the app's default API version (pinned
 // versions expire). Set META_GRAPH_VERSION=vNN.0 to pin, GRAPH_API_URL to override.
@@ -411,7 +412,10 @@ const processCloud = async (whatsapp: Whatsapp, entry: any) => {
 
   for (const change of entry.changes || []) {
     const value = change.value || {};
-    if (value.metadata?.phone_number_id !== config.phoneNumberId) continue;
+    if (value.metadata?.phone_number_id !== config.phoneNumberId) {
+      noteWebhook(whatsapp.id, "numero_diferente", `a Meta mandou o número ${value.metadata?.phone_number_id || "?"} e a conexão tem ${config.phoneNumberId || "nenhum"}`);
+      continue;
+    }
 
     for (const st of value.statuses || []) {
       const ack = ({ sent: 1, delivered: 2, read: 3 } as Record<string, number>)[st.status];

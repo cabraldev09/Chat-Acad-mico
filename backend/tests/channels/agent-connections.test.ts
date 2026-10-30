@@ -20,3 +20,22 @@ describe("conexões de um agente de IA", () => {
     expect(cleanConnectionIds(undefined)).toEqual([]);
   });
 });
+
+import { describeCloudBody, lastWebhook, noteWebhook } from "../../src/channels/WebhookLog";
+
+describe("o que a Meta mandou por último para a conexão", () => {
+  it("conta mensagens e avisos de entrega de uma chamada da API oficial", () => {
+    const body = { entry: [{ changes: [{ value: { messages: [{ id: "a" }], statuses: [{ id: "b" }, { id: "c" }] } }] }] };
+    expect(describeCloudBody(body)).toEqual({ text: "1 mensagem e 2 avisos de entrega", messages: 1 });
+    expect(describeCloudBody({ entry: [] })).toEqual({ text: "sem mensagens", messages: 0 });
+    expect(describeCloudBody(undefined).messages).toBe(0);
+  });
+
+  it("guarda o resultado da última chamada por conexão", () => {
+    expect(lastWebhook(991)).toBeNull();
+    noteWebhook(991, "recebido", "1 mensagem", 1);
+    noteWebhook(991, "assinatura_invalida", "o App Secret não confere");
+    expect(lastWebhook(991)?.outcome).toBe("assinatura_invalida");
+    expect(lastWebhook(992)).toBeNull();
+  });
+});
