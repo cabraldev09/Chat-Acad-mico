@@ -7,6 +7,7 @@ import Goal from "../models/Goal";
 import GoalMember from "../models/GoalMember";
 import GoalPolo from "../models/GoalPolo";
 import Polo from "../models/Polo";
+import User from "../models/User";
 import Lead from "../models/Lead";
 import LeadEnrollment from "../models/LeadEnrollment";
 import { dayBounds, getAppTz } from "../helpers/AppTime";
@@ -234,8 +235,9 @@ const statusOf = (pct: number | null): "great" | "good" | "warn" | "low" | "none
   pct === null ? "none" : pct >= 100 ? "great" : pct >= 60 ? "good" : pct >= 30 ? "warn" : "low";
 
 const pctOf = (done: number, target: number | null): number | null => (target ? Math.round((done / target) * 10000) / 100 : null);
+// the same as the spreadsheet of the administration: missing / working days left, negative when the polo is above the target
 const perDayOf = (missing: number | null, daysLeft: number): number | null =>
-  missing === null ? null : missing <= 0 ? 0 : daysLeft ? Math.round((missing / daysLeft) * 100) / 100 : null;
+  missing === null ? null : daysLeft ? Math.round((missing / daysLeft) * 100) / 100 : missing <= 0 ? 0 : null;
 
 // The board of the polos: target, done and pace of each one in the current period. Used by the Metas screen and by the
 // manager's overview (Estatísticas), so both always show the same numbers.
@@ -279,6 +281,8 @@ export const buildPoloBoard = async (goalIdWanted = 0, monthWanted = ""): Promis
     wonBy.set(r.poloId, bucket);
   });
   const line = new Map(saved.map(g => [g.poloId, g]));
+  const editorIds = [...new Set(saved.map(g => g.updatedById).filter(Boolean))];
+  const editors = new Map((editorIds.length ? await User.findAll({ where: { id: editorIds }, attributes: ["id", "name"] }) : []).map(u => [u.id, u.name]));
 
   const from = today > goal.startsOn ? today : goal.startsOn;
   const daysLeft = goal.endsOn < today ? 0 : countWorkDays(from, goal.endsOn, wd);
@@ -341,6 +345,8 @@ export const buildPoloBoard = async (goalIdWanted = 0, monthWanted = ""): Promis
         monthly,
         monthlyCustom,
         manualMonthly,
+        updatedAt: g ? g.updatedAt : null,
+        updatedBy: g && g.updatedById ? editors.get(g.updatedById) || null : null,
         months: byMonth,
         month: monthKey ? byMonth[months.indexOf(monthKey)] : null
       };
@@ -435,9 +441,20 @@ export const updatePolos = async (req: Request, res: Response): Promise<Response
   if (Array.isArray(b.rows)) {
     const months = monthsOf(goal.startsOn, goal.endsOn);
     const valid = new Set((await Polo.findAll({ attributes: ["id"] })).map(p => p.id));
-    await GoalPolo.destroy({ where: { goalId: goal.id } });
+    // each line keeps what was typed; only the lines that changed are written (with who did it), the ones taken out are removed
     const rows = b.rows.map((r: any) => poloLine(goal.id, months, r)).filter((r: any) => valid.has(r.poloId));
-    if (rows.length) await GoalPolo.bulkCreate(rows as any);
+    const previous = await GoalPolo.findAll({ where: { goalId: goal.id } });
+    const byPolo = new Map(previous.map(g => [g.poloId, g]));
+    const keep = new Set(rows.map((r: any) => r.poloId));
+    await GoalPolo.destroy({ where: { goalId: goal.id, poloId: { [Op.notIn]: keep.size ? [...keep] : [0] } } as any });
+    for (const row of rows) {
+      const old = byPolo.get(row.poloId);
+      const same = old && ["target", "manualCount", "canceled", "monthly", "manualMonthly"].every(k => String((old as any)[k] ?? "") === String((row as any)[k] ?? ""));
+      // eslint-disable-next-line no-await-in-loop
+      if (old && !same) await old.update({ ...row, updatedById: Number(req.user.id) } as any);
+      // eslint-disable-next-line no-await-in-loop
+      else if (!old) await GoalPolo.create({ ...row, updatedById: Number(req.user.id) } as any);
+    }
   }
   req.query.goalId = String(goal.id);
   return poloBoard(req, res);
@@ -460,7 +477,7 @@ export const updatePolo = async (req: Request, res: Response): Promise<Response>
     manualMonthly: body.manualMonthly !== undefined ? body.manualMonthly : parseJson(previous?.manualMonthly, {}),
     poloId
   };
-  const row = poloLine(goal.id, months, merged);
+  const row = { ...poloLine(goal.id, months, merged), updatedById: Number(req.user.id) };
   if (previous) await previous.update(row as any);
   else await GoalPolo.create(row as any);
   req.query.goalId = String(goal.id);

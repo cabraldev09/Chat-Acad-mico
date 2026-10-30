@@ -5513,6 +5513,10 @@ const postMeta = (id, payload, secret, badSig) => {
       const row = seen.data.rows.find(r => r.poloId === polo.id);
       assert(row && row.auto === 1 && row.manual === 2 && row.done === 3 && row.target === 10 && row.missing === 7 && row.canceled === 1 && row.inCourse === 2, `row ${JSON.stringify(row)}`);
       assert(seen.data.goal.daysLeft === 11 && row.perDay === 0.64 && row.status === "warn", `pace ${seen.data.goal.daysLeft} ${row.perDay} ${row.status}`);
+      // what was typed is registered with who saved it; saving the same numbers again does not rewrite the line
+      assert(row.updatedBy && row.updatedAt, `who saved the line: ${JSON.stringify({ by: row.updatedBy, at: row.updatedAt })}`);
+      const resaved = (await http.put(`/goals/${goal.id}/polos`, { rows: [{ poloId: polo.id, target: 10, manual: 2, canceled: 1 }] }, auth())).data.rows.find(r => r.poloId === polo.id);
+      assert(resaved.updatedAt === row.updatedAt && resaved.done === 3 && resaved.inCourse === 2, `the same numbers rewrote the line ${JSON.stringify({ before: row.updatedAt, after: resaved.updatedAt })}`);
       assert(seen.data.totals.target === 10 && seen.data.totals.done === 3 && seen.data.totals.pct === 30 && seen.data.totals.inCourse === 2, `totals ${JSON.stringify(seen.data.totals)}`);
       // the target is for the whole period and spread over its months
       assert(row.monthly.length === seen.data.months.length && row.monthly.reduce((t, n) => t + n, 0) === 10, `monthly ${JSON.stringify(row.monthly)}`);
