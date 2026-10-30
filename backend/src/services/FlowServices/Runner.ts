@@ -17,6 +17,7 @@ import { handoffToHuman } from "../AiServices/Handoff";
 import { cleanStage } from "./StageSpec";
 import { Graph, parseGraph } from "./Graph";
 import emitTicketUpdate from "../TicketServices/EmitTicketUpdate";
+import { noteAutomation } from "../AutomationServices/AutomationTrace";
 
 export interface FlowEntry {
   type: "first_message" | "keyword" | "any" | "manual" | "agent";
@@ -131,6 +132,7 @@ const startRun = async (flow: ChatFlow, ticket: Ticket, fx?: Effects, pending?: 
 // conversation to the team instead of leaving the person without an answer and without a destination.
 const failRun = async (run: ChatFlowRun, ticket: Ticket, flow: ChatFlow, effects: Effects, err: unknown): Promise<void> => {
   logger.error(`Flow ${flow.id} failed on ticket ${ticket.id}: ${err}`);
+  noteAutomation(ticket.id, `o roteiro "${flow.name}" parou por um erro: ${(err as any)?.response?.data?.error?.message || (err as any)?.message || err}`);
   await run.update({ status: "done", resumeAt: null } as any).catch(() => undefined);
   if (flow.kind !== "agent" || !flow.agentId) return;
   const agent = await AiAgent.findByPk(flow.agentId);
@@ -201,11 +203,13 @@ export const runAgentGraph = async (ticket: Ticket, agent: AiAgent): Promise<boo
     const fresh = await ShowTicketService(ticket.id);
     if (!fresh.aiActive || fresh.userId || fresh.status === "closed" || !robotMayTalk(fresh)) {
       logger.info(`Agente ${agent.name} no ticket ${ticket.id}: não começou (aiActive ${fresh.aiActive}, atendente ${fresh.userId || "nenhum"}, status ${fresh.status})`);
+      noteAutomation(ticket.id, `o agente "${agent.name}" não começou: a conversa já não está com o agente (aiActive ${fresh.aiActive ? "ligado" : "desligado"}, atendente ${fresh.userId || "nenhum"}, status ${fresh.status})`);
       return;
     }
     // already talking (a second burst before the first run was saved), here or in another server
     if (await ChatFlowRun.findOne({ where: { ticketId: fresh.id, status: { [Op.in]: ["waiting", "delayed"] } } })) {
       logger.info(`Agente ${agent.name} no ticket ${ticket.id}: já há uma conversa em andamento neste ticket`);
+      noteAutomation(ticket.id, `o agente "${agent.name}" não começou de novo: já há uma conversa do roteiro em andamento nesta conversa`);
       return;
     }
     if (!(await claimAi(fresh.id))) {
@@ -214,6 +218,7 @@ export const runAgentGraph = async (ticket: Ticket, agent: AiAgent): Promise<boo
     }
     try {
       logger.info(`Agente ${agent.name} no ticket ${ticket.id}: começando o roteiro`);
+      noteAutomation(ticket.id, `o agente "${agent.name}" começou o roteiro da conversa`);
       await startRun(flow, fresh, undefined, await lastUserText(fresh.id));
     } finally {
       await releaseAi(fresh.id);

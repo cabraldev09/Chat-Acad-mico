@@ -1,4 +1,5 @@
 import { robotMayTalk } from "../../helpers/AgentScope";
+import { noteAutomation } from "../AutomationServices/AutomationTrace";
 import axios from "axios";
 import { Op } from "sequelize";
 
@@ -635,6 +636,7 @@ export const runAiForTicket = async (ticketId: number, say: Say): Promise<void> 
   } catch (err) {
     const detail = err?.response?.data?.error?.message || err?.message || err;
     logger.error(`AI agent "${agent.name}" failed: ${detail}`);
+    noteAutomation(ticketId, `o agente "${agent.name}" não conseguiu responder: ${detail}`);
     // never go silent: the person is told a colleague continues, a person takes over and the owner of the agent knows why
     const status = Number(err?.response?.status || 0);
     const why = /NO_API_KEY/.test(String(err?.message)) ? "a chave de API não está cadastrada" : status === 401 || status === 403 ? "o provedor recusou a chave de API" : status === 429 ? "o limite ou o saldo do provedor acabou" : status >= 500 ? "o provedor de IA está fora do ar" : "erro técnico";

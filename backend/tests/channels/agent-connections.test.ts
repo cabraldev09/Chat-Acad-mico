@@ -46,3 +46,22 @@ describe("o que a Meta mandou por último para a conexão", () => {
     expect(lastWebhookCheck(993)?.outcome).toBe("verificacao_recusada");
   });
 });
+
+import { automationTrace, noteAutomation } from "../../src/services/AutomationServices/AutomationTrace";
+
+describe("o que o robô decidiu em cada conversa", () => {
+  it("guarda as últimas linhas de cada conversa e esquece as mais antigas", () => {
+    for (let i = 1; i <= 20; i++) noteAutomation(7001, `linha ${i}`);
+    const lines = automationTrace(7001);
+    expect(lines).toHaveLength(14);
+    expect(lines[0].text).toBe("linha 7");
+    expect(lines[13].text).toBe("linha 20");
+    expect(automationTrace(7002)).toEqual([]);
+  });
+
+  it("guarda só as conversas mais recentes", () => {
+    for (let id = 8000; id < 8250; id++) noteAutomation(id, "x");
+    expect(automationTrace(8000)).toEqual([]);
+    expect(automationTrace(8249)).toHaveLength(1);
+  });
+});
