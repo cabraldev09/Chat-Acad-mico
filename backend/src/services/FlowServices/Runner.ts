@@ -118,6 +118,9 @@ const startRun = async (flow: ChatFlow, ticket: Ticket, fx?: Effects, pending?: 
   inflight.add(ticket.id);
   try {
     const step = await advance(graph, start.id, { nodeId: null, vars: {}, tries: 0, pending: pending ?? null }, effects);
+    if (flow.kind !== "agent") {
+      noteAutomation(ticket.id, `o fluxo "${flow.name}" (nº ${flow.id}, ${flow.whatsappId ? `da conexão ${flow.whatsappId}` : "de todas as conexões"}, entrada "${parseEntry(flow.entry).type}") começou e ${step.status === "done" ? "terminou" : step.status === "waiting" ? "ficou esperando a resposta da pessoa" : step.status === "handoff" ? "passou para a equipe" : "ficou em espera"} passando por ${step.path.length} bloco(s)`);
+    }
     await save(run, step);
     await record(flow, step, true, false);
     await release(ticket, step, flow);
@@ -236,18 +239,26 @@ const entryMatches = (entry: FlowEntry, body: string, ticketHadRuns: boolean): b
 };
 
 // Returns true when a flow took the message (the rest of the automation must stay quiet).
-export const runFlowForTicket = async (ticket: Ticket, body: string): Promise<boolean> => {
+export const runFlowForTicket = async (ticket: Ticket, body: string, opts: { keywordOnly?: boolean } = {}): Promise<boolean> => {
   try {
     const active = await ChatFlowRun.findOne({ where: { ticketId: ticket.id, status: { [Op.in]: ["waiting", "delayed"] } }, order: [["id", "DESC"]] });
     if (active) {
+      const flow = await ChatFlow.findByPk(active.flowId);
+      // the agent of this connection goes first: a flow that began on any message (not a keyword) and is still hanging does not hold the
+      // conversation, otherwise the agent never answers a chat that a generic flow touched before
+      if (opts.keywordOnly && flow && flow.kind !== "agent" && parseEntry(flow.entry).type !== "keyword") {
+        await active.update({ status: "done", resumeAt: null } as any);
+        noteAutomation(ticket.id, `o fluxo "${flow.name}" (nº ${flow.id}) estava parado nesta conversa e foi encerrado para o agente de IA da conexão responder`);
+        return false;
+      }
       // the person writes while a delay counts time: nothing to answer yet
       if (active.status === "delayed") return true;
-      const flow = await ChatFlow.findByPk(active.flowId);
       if (!flow || flow.status !== "published") {
         await active.update({ status: "done" });
         return false;
       }
       const graph = parseGraph(flow.published);
+      noteAutomation(ticket.id, `o fluxo "${flow.name}" (nº ${flow.id}) já estava em andamento nesta conversa, esperando no bloco "${active.nodeId || "início"}", e recebeu a mensagem`);
       // an AI stage waits for the burst of messages to end, then answers once (a run still being advanced answers it right after)
       if (inflight.has(ticket.id) || graph.nodes.find(n => n.id === active.nodeId)?.type === "stage") {
         const wait = await waitOf(flow, active.nodeId);
@@ -274,7 +285,7 @@ export const runFlowForTicket = async (ticket: Ticket, body: string): Promise<bo
     // a keyword beats the first-message flow
     const matching =
       flows.find(f => parseEntry(f.entry).type === "keyword" && entryMatches(parseEntry(f.entry), body, ticketHadRuns)) ||
-      flows.find(f => ["first_message", "any"].includes(parseEntry(f.entry).type) && entryMatches(parseEntry(f.entry), body, ticketHadRuns));
+      (opts.keywordOnly ? undefined : flows.find(f => ["first_message", "any"].includes(parseEntry(f.entry).type) && entryMatches(parseEntry(f.entry), body, ticketHadRuns)));
     if (!matching) return false;
     await startRun(matching, ticket, undefined, body);
     return true;

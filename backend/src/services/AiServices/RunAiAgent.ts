@@ -49,6 +49,17 @@ export const findAgentForTicket = async (ticket: Ticket): Promise<AiAgent | null
   return byQueue || byConn || global || null;
 };
 
+// An agent that was given this queue or this connection on purpose (not the one that serves everything nobody else serves): the person who
+// set it up expects it to answer first, ahead of the flows that start on any message and of the old menu.
+export const findDedicatedAgent = async (ticket: Ticket): Promise<AiAgent | null> => {
+  const agents = await AiAgent.findAll({ where: { active: true }, order: [["id", "ASC"]] });
+  return (
+    agents.find(a => a.queueId && ticket.queueId && a.queueId === ticket.queueId) ||
+    agents.find(a => !a.queueId && connectionsOf(a).includes(ticket.whatsappId)) ||
+    null
+  );
+};
+
 export interface ChatTurn {
   role: "user" | "assistant";
   content: string;

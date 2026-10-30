@@ -4059,6 +4059,8 @@ const postMeta = (id, payload, secret, badSig) => {
       await http.put(`/ai-agents/${agentId}`, { active: false }, auth());
       await http.put(`/ai-agents/${aiId}`, { active: true }, auth());
     });
+    // the agent of this connection answers before the flows that start on any message, so the flow tests below run with it off
+    await http.put(`/ai-agents/${aiId}`, { active: false }, auth());
     await test("chatbot can ask a question, offer polos and call a webhook", async () => {
       sql("DELETE FROM ChatbotNodes");
       const root = (await http.post("/chatbot-nodes", { title: "Quero me matricular", action: "ask", message: "Qual o seu nome completo?", field: "nome", position: 1 }, auth())).data;
@@ -4815,6 +4817,7 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(tg.sent.slice(tbefore).some(x => x.method === "answerCallbackQuery"), "the tap was not acknowledged");
       await http.post(`/flows/${tgFlow}/unpublish`, {}, auth());
     });
+    await http.put(`/ai-agents/${aiId}`, { active: true }, auth());
     await test("AI functions: the agent starts a published flow by itself and the flow takes over", async () => {
       const flow = (await http.post("/flows", { name: "Menu de cursos", entry: { type: "manual" }, graph: { nodes: [
         { id: "s", type: "start", data: {} }, { id: "m", type: "message", data: { text: "Menu de cursos do fluxo: Administração, Direito e Pedagogia." } }, { id: "e", type: "end", data: {} }],
