@@ -64,7 +64,7 @@ const TOPIC_FLAG: Record<string, string> = {
 };
 
 
-export const commercialTurn = async (ports: CommercialPorts, input: TurnInput): Promise<{ exit: string | null; why?: string; ask?: "city"; trace: CommercialTrace }> => {
+export const commercialTurn = async (ports: CommercialPorts, input: TurnInput): Promise<{ exit: string | null; why?: string; ask?: "city"; unknownHeld?: boolean; trace: CommercialTrace }> => {
   const now = input.now || new Date();
   const s = ports.state;
   const reasons: string[] = [];
@@ -223,6 +223,10 @@ export const commercialTurn = async (ports: CommercialPorts, input: TurnInput): 
   await ports.save();
 
   // 8) the way out of the stage, when there is a reason for it
+  const unknownAsked = !!(input.unknownQuestion || intent === "unknown");
+  const unknownLimit = ports.config ? ports.config.maxClarifications : 3;
+  const unknownHeld = unknownAsked && Number(s.slots.unknownStreak || 0) < unknownLimit;
+  if (unknownHeld) reasons.push(`Pergunta sem resposta confirmada (${Number(s.slots.unknownStreak || 0)} de ${unknownLimit}): anotada para o consultor; a conversa continua.`);
   let exit: string | null = null;
   let exitWhy: string | null = null;
   if (human) { exit = "human"; exitWhy = "A pessoa pediu para falar com alguém da equipe."; }
@@ -231,10 +235,11 @@ export const commercialTurn = async (ports: CommercialPorts, input: TurnInput): 
   else if (noInterest) { exit = "sem_interesse"; exitWhy = "A pessoa confirmou que não tem interesse."; }
   else if (s.readyForProposal && !input.stepsPending) { exit = "proposta"; exitWhy = intent === "price" ? "Pediu valores: quem apresenta as condições é o consultor." : intent === "enrollment" ? "Quer se matricular: o consultor conduz a matrícula." : intent === "proposal" ? "Pediu proposta ou link de inscrição." : "Lead quente: encaminhado ao consultor."; }
   else if (followUp) { exit = "follow_up"; exitWhy = "Pediu um tempo: o retorno ficou agendado."; }
-  else if (input.unknownQuestion || intent === "unknown") {
-    const limit = ports.config ? ports.config.maxClarifications : 3;
-    exit = Number(s.slots.unknownStreak || 0) >= limit ? "human" : "off";
-    exitWhy = exit === "human" ? `${limit} mensagens seguidas sem resposta confirmada: uma pessoa assume.` : "Informação não confirmada na base: o agente avisa que vai confirmar e a pergunta vai para a equipe.";
+  // a question the base does not answer: the agent says it will confirm, the question is noted for the consultant and the conversation goes on
+  // (the process continues); only after the "tentativas de esclarecimento" of the administrator in a row does a person take over
+  else if (unknownAsked && !unknownHeld) {
+    exit = "human";
+    exitWhy = `${unknownLimit} mensagens seguidas sem resposta confirmada: uma pessoa assume.`;
   }
   // qualified and out of questions: a person of the polo takes it, ready (the brief says what the lead wants)
   else if (Number(s.slots.objectionCount || 0) >= OBJECTION_LIMIT && input.objection) { exit = "human"; exitWhy = "Objeções repetidas: um consultor assume a negociação."; }
@@ -244,7 +249,7 @@ export const commercialTurn = async (ports: CommercialPorts, input: TurnInput): 
   if (exitWhy) reasons.push(`Transferência: ${exitWhy}`);
   const why =
     supportExit ? (supportExit === "secretaria" ? "secretary" : "tutoring") :
-    exit === "human" && !human && !input.unknownQuestion && intent !== "unknown"
+    exit === "human" && !human && (!unknownAsked || unknownHeld)
       ? Number(s.slots.objectionCount || 0) >= OBJECTION_LIMIT && input.objection ? "objection" : s.slots.readyForConsultant ? "qualified" : undefined
       : undefined;
 
@@ -255,6 +260,7 @@ export const commercialTurn = async (ports: CommercialPorts, input: TurnInput): 
     exit,
     ...(why ? { why } : {}),
     ...(ask ? { ask } : {}),
+    ...(unknownHeld ? { unknownHeld } : {}),
     trace: { intent, changed, crmBefore, crmAfter, actions: ports.audit.splice(0), temperature: s.temperature, score: s.commercialScore, nextAction: s.nextAction, readyForProposal: s.readyForProposal, reasons, missing: missingOf(s.slots, ports.config ? ports.config.qualifyRequires : undefined), exitWhy, stageName: crmAfter ? await ports.stageName(crmAfter) : null }
   };
 };

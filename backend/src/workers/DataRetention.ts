@@ -19,6 +19,8 @@ export const RULES: Rule[] = [
   { table: "OutboundMessages", where: `status = 'sent' AND "sentAt" < NOW() - INTERVAL '{days} days'`, days: 120 },
   { table: "AgentTurnLogs", where: `"createdAt" < NOW() - INTERVAL '{days} days'`, days: 180 },
   { table: "AiUsage", where: `"createdAt" < NOW() - INTERVAL '{days} days'`, days: 400 },
+  // "Ver o que o robô fez": what the automation decided, for the conversations of the last months
+  { table: "AutomationTraces", where: `"createdAt" < NOW() - INTERVAL '{days} days'`, days: 90 },
   { table: "ClientErrors", where: `"createdAt" < NOW() - INTERVAL '{days} days'`, days: 60 },
   { table: "LeadReminderLogs", where: `"createdAt" < NOW() - INTERVAL '{days} days'`, days: 90 },
   { table: "PasswordResets", where: `("usedAt" IS NOT NULL OR "expiresAt" < NOW()) AND "createdAt" < NOW() - INTERVAL '{days} days'`, days: 30 }

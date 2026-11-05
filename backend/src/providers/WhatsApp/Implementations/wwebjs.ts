@@ -23,6 +23,7 @@ import { WWEBJS_AUTH_DIR } from "../../../config/paths";
 import fs from "fs";
 import path from "path";
 import { onDisconnected } from "../../../services/SafetyServices/SendGuard";
+import { disconnectNote, isLogoutReason, qrIsStale, setAsideLoginIn } from "../SessionNotes";
 import { getIO } from "../../../libs/socket";
 import Whatsapp from "../../../models/Whatsapp";
 import AppError from "../../../errors/AppError";
@@ -741,6 +742,8 @@ const clearHeartbeat = (id: number) => {
 };
 const closeClient = async (id: number): Promise<void> => {
   clearInitTimer(id);
+  clearQrWatcher(id);
+  lastQrAt.delete(id);
   clearHeartbeat(id);
   clearReadyTimer(id);
   const c = clients.get(id);
@@ -767,14 +770,14 @@ const retryLater = async (whatsappId: number, reason: string): Promise<void> => 
     reconnectAttempts.set(whatsappId, attempt);
     if (attempt > RECONNECT_MAX_ATTEMPTS) {
       logger.error(`Session ${row.name}: giving up after ${attempt - 1} attempts (${reason})`);
-      await row.update({ status: "DISCONNECTED", qrcode: "" });
+      await row.update({ status: "DISCONNECTED", qrcode: "", statusNote: `Parou de tentar depois de ${attempt - 1} tentativas (${reason}). Clique em QR CODE para abrir de novo.` });
       getIO().emit("whatsappSession", { action: "update", session: row });
       getIO().emit("whatsappAlert", { whatsappId, name: row.name, ownerId: row.ownerId, reason });
       return;
     }
     const delay = Math.min(2000 * 2 ** (attempt - 1), 60000);
     logger.warn(`Session ${row.name}: ${reason}. Opening again in ${delay / 1000}s (attempt ${attempt})`);
-    await row.update({ status: "OPENING" });
+    await row.update({ status: "OPENING", statusNote: `${reason[0].toUpperCase()}${reason.slice(1)}; abrindo de novo (tentativa ${attempt}).` });
     getIO().emit("whatsappSession", { action: "update", session: row });
     await new Promise(r => setTimeout(r, delay));
   } finally {
@@ -1343,6 +1346,20 @@ const clearStaleBrowserLocks = (whatsappId: number): void => {
   });
 };
 
+const setAsideLogin = (whatsappId: number, why: string): boolean => setAsideLoginIn(WWEBJS_AUTH_DIR, whatsappId, why, (m: string) => logger.warn(m));
+// numbers logged out by WhatsApp: their saved login is put aside before the next start
+const loggedOut = new Set<number>();
+
+// A QR Code that stops renewing (the page lost its connection to WhatsApp and stays on "abrindo") can no longer be read: the phone keeps "loading"
+// and never connects, while the screen still shows it. A QR Code (or a pairing code, every 150 s) older than this opens the page again.
+const lastQrAt = new Map<number, number>();
+const qrWatchers = new Map<number, NodeJS.Timeout>();
+const clearQrWatcher = (id: number) => {
+  const t = qrWatchers.get(id);
+  if (t) clearInterval(t);
+  qrWatchers.delete(id);
+};
+
 // Two starts of the same number at once (a retry and the QR Code button, a reconnect and the watchdog) would open two browsers on the same
 // login folder: the QR Code read by the phone authenticates both and WhatsApp logs the device out right away. One start at a time per number.
 const starting = new Map<number, Promise<void>>();
@@ -1362,6 +1379,8 @@ const initOnce = async (whatsapp: Whatsapp): Promise<void> => {
     // a browser that was left behind (stuck, or from a session that never got to "ready") is closed before a new one opens
     await closeClient(whatsapp.id);
     removeSession(whatsapp.id);
+    // WhatsApp logged this device out: its saved login would only keep the page on "abrindo"
+    if (loggedOut.delete(whatsapp.id)) setAsideLogin(whatsapp.id, "o WhatsApp desconectou este aparelho");
 
     const io = getIO();
     const sessionName = whatsapp.name;
@@ -1409,17 +1428,34 @@ const initOnce = async (whatsapp: Whatsapp): Promise<void> => {
       setTimeout(() => {
         initTimers.delete(whatsapp.id);
         logger.error(`Session: ${sessionName} não abriu em ${INIT_TIMEOUT_MS / 1000}s (${memoryNote()})`);
-        whatsapp.update({ status: "TIMEOUT" }).then(() => getIO().emit("whatsappSession", { action: "update", session: whatsapp })).catch(() => undefined);
+        whatsapp.update({ status: "TIMEOUT", statusNote: "A página do WhatsApp não abriu no servidor; abrindo de novo." }).then(() => getIO().emit("whatsappSession", { action: "update", session: whatsapp })).catch(() => undefined);
         retryLater(whatsapp.id, "a página do WhatsApp não carregou").catch(err => logger.error(err, "retry after a stuck start failed"));
       }, INIT_TIMEOUT_MS)
     );
+
+    // the QR Code on the screen must keep renewing until it is read: one that stopped is dead, so the page is opened again
+    const watchQr = () => {
+      if (qrWatchers.has(whatsapp.id)) return;
+      const timer: NodeJS.Timeout = setInterval(() => {
+          // this browser was replaced: only its own timer stops (the new one has its own)
+          if (clients.get(whatsapp.id) !== wbot) { clearInterval(timer); if (qrWatchers.get(whatsapp.id) === timer) qrWatchers.delete(whatsapp.id); return; }
+          const stale = qrIsStale({ lastQrAt: lastQrAt.get(whatsapp.id), ready: readySeen.has(whatsapp.id), authenticated: readyTimers.has(whatsapp.id) || readyNudges.has(whatsapp.id), now: Date.now() });
+          if (!stale || retrying.has(whatsapp.id)) return;
+          clearQrWatcher(whatsapp.id);
+          logger.warn(`Session: ${sessionName} o QR Code parou de se renovar há ${Math.round((Date.now() - (lastQrAt.get(whatsapp.id) || 0)) / 60000)} min; abrindo a página de novo`);
+          retryLater(whatsapp.id, "o QR Code parou de se renovar (a página do WhatsApp ficou parada)").catch(err => logger.error(err, "retry after a stale QR failed"));
+        }, 30000);
+      qrWatchers.set(whatsapp.id, timer);
+    };
 
     wbot.on("qr", async qr => {
       // waiting for someone to read the QR Code is normal: nothing is stuck
       clearInitTimer(whatsapp.id);
       logger.info("Session:", sessionName);
       qrCode.generate(qr, { small: true });
-      await whatsapp.update({ qrcode: qr, status: "qrcode", retries: 0 });
+      lastQrAt.set(whatsapp.id, Date.now());
+      watchQr();
+      await whatsapp.update({ qrcode: qr, status: "qrcode", retries: 0, statusNote: "Aguardando a leitura do QR Code no celular (WhatsApp → Aparelhos conectados)." });
 
       const sessionIndex = sessions.findIndex(s => s.id === whatsapp.id);
       if (sessionIndex === -1) {
@@ -1437,7 +1473,9 @@ const initOnce = async (whatsapp: Whatsapp): Promise<void> => {
     wbot.on("code", async (code: string) => {
       clearInitTimer(whatsapp.id);
       logger.info(`Session: ${sessionName} código de pareamento gerado`);
-      await whatsapp.update({ qrcode: `code:${code}`, status: "qrcode", retries: 0 });
+      lastQrAt.set(whatsapp.id, Date.now());
+      watchQr();
+      await whatsapp.update({ qrcode: `code:${code}`, status: "qrcode", retries: 0, statusNote: "Aguardando o código no celular (WhatsApp → Aparelhos conectados → Conectar com número)." });
       if (sessions.findIndex(s => s.id === whatsapp.id) === -1) {
         wbot.id = whatsapp.id;
         sessions.push(wbot);
@@ -1448,7 +1486,8 @@ const initOnce = async (whatsapp: Whatsapp): Promise<void> => {
     wbot.on("authenticated", async () => {
       logger.info(`Session: ${sessionName} AUTHENTICATED (QR Code lido, carregando o WhatsApp Web; ${memoryNote()})`);
       try {
-        await whatsapp.update({ status: "OPENING", qrcode: "" });
+        clearQrWatcher(whatsapp.id);
+        await whatsapp.update({ status: "OPENING", qrcode: "", statusNote: "QR Code lido; carregando as conversas do WhatsApp Web (pode levar alguns minutos)." });
         io.emit("whatsappSession", { action: "update", session: whatsapp });
       } catch (err) {
         logger.error(err, "Error on whatsapp authenticated event");
@@ -1475,7 +1514,7 @@ const initOnce = async (whatsapp: Whatsapp): Promise<void> => {
               "Causas comuns: pouca memória no servidor para o Chromium, ou o WhatsApp Web mudou. Reiniciando a sessão."
           );
           try {
-            await whatsapp.update({ status: "TIMEOUT" });
+            await whatsapp.update({ status: "TIMEOUT", statusNote: "O QR Code foi lido, mas o WhatsApp Web não terminou de carregar; abrindo de novo." });
             io.emit("whatsappSession", { action: "update", session: whatsapp });
             await wbot.destroy().catch(() => undefined);
           } catch (err) {
@@ -1510,7 +1549,8 @@ const initOnce = async (whatsapp: Whatsapp): Promise<void> => {
 
       await whatsapp.update({
         status: "DISCONNECTED",
-        retries: whatsapp.retries + 1
+        retries: whatsapp.retries + 1,
+        statusNote: "O WhatsApp recusou o login salvo. Clique em QR CODE e leia o código de novo."
       });
 
       io.emit("whatsappSession", {
@@ -1521,6 +1561,7 @@ const initOnce = async (whatsapp: Whatsapp): Promise<void> => {
 
     wbot.on("ready", async () => {
       readySeen.add(whatsapp.id);
+      clearQrWatcher(whatsapp.id);
       clearReadyTimer(whatsapp.id);
       clearInitTimer(whatsapp.id);
       logger.info(`Session: ${sessionName} READY (${memoryNote()})`);
@@ -1554,6 +1595,7 @@ const initOnce = async (whatsapp: Whatsapp): Promise<void> => {
           status: "CONNECTED",
           qrcode: "",
           retries: 0,
+          statusNote: "",
           ...(whatsapp.connectedSince ? {} : { connectedSince: new Date() })
         });
 
@@ -1619,8 +1661,9 @@ const initOnce = async (whatsapp: Whatsapp): Promise<void> => {
       clearReadyTimer(whatsapp.id);
       clearHeartbeat(whatsapp.id);
       logger.info(`Disconnected session: ${sessionName}, reason: ${reason}`);
+      if (isLogoutReason(String(reason))) loggedOut.add(whatsapp.id);
       try {
-        await whatsapp.update({ status: "OPENING", session: "" });
+        await whatsapp.update({ status: "OPENING", session: "", statusNote: disconnectNote(String(reason)) });
 
         io.emit("whatsappSession", {
           action: "update",
@@ -1635,7 +1678,7 @@ const initOnce = async (whatsapp: Whatsapp): Promise<void> => {
         reconnectAttempts.set(whatsapp.id, attempt);
         if (attempt > RECONNECT_MAX_ATTEMPTS) {
           logger.error(`Session ${sessionName}: giving up after ${attempt - 1} reconnect attempts`);
-          await whatsapp.update({ status: "DISCONNECTED", qrcode: "" });
+          await whatsapp.update({ status: "DISCONNECTED", qrcode: "", statusNote: `${disconnectNote(String(reason))} Parou de tentar sozinho depois de ${attempt - 1} tentativas.` });
           io.emit("whatsappSession", { action: "update", session: whatsapp });
           // WhatsApp also unlinks linked devices when the phone stays offline for about 14 days
           io.emit("whatsappAlert", { whatsappId: whatsapp.id, name: whatsapp.name, ownerId: whatsapp.ownerId, reason: String(reason) });
@@ -1771,7 +1814,7 @@ const initOnce = async (whatsapp: Whatsapp): Promise<void> => {
     logger.error(err, "Error on whatsapp session");
     // the screen must not stay on "QR CODE" when the browser could not even start: say so, and try again by itself
     try {
-      await whatsapp.update({ status: "DISCONNECTED", qrcode: "" });
+      await whatsapp.update({ status: "DISCONNECTED", qrcode: "", statusNote: "O navegador do servidor não conseguiu abrir o WhatsApp Web; tentando de novo." });
       getIO().emit("whatsappSession", { action: "update", session: whatsapp });
     } catch (e) {
       logger.error(e, "Error saving the failed session status");
@@ -1788,7 +1831,11 @@ const removeSessionFully = (whatsappId: number): void => {
 };
 
 export const WhatsappWebJsProvider: WhatsappProvider = {
-  init,
+  // a start asked from outside (the QR CODE button, the server starting, the watchdog) gets the full count of automatic retries again
+  init: (whatsapp: Whatsapp) => {
+    reconnectAttempts.set(whatsapp.id, 0);
+    return init(whatsapp);
+  },
   removeSession: removeSessionFully,
   logout,
   sendMessage,

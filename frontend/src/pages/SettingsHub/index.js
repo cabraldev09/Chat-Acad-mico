@@ -182,6 +182,18 @@ const Atendimento = ({ values, save, crm }) => {
         </TextField>
         <div className={classes.hint}>Os menus e fluxos em si ficam em <Link to="/chatbot">Chatbot e fluxos</Link>.</div>
       </Card>
+      <Card title="Agente de IA: lead que parou de responder" sub="O agente manda “Tá por aí?” depois deste tempo de silêncio (a qualquer hora) e mais dois lembretes, de 3 h e 9 h, no horário comercial.">
+        <div className={classes.row}>
+          <TextField select variant="outlined" size="small" label="Lembretes do agente" value={String(values.ai_reactivation ?? "1") === "0" ? "0" : "1"} onChange={(e) => save("ai_reactivation", e.target.value)} style={{ maxWidth: 260 }} InputLabelProps={{ shrink: true }}>
+            <MenuItem value="1">Ligados</MenuItem>
+            <MenuItem value="0">Desligados</MenuItem>
+          </TextField>
+          <TextField select variant="outlined" size="small" label="Primeiro lembrete após" value={Number(values.ai_reactivation_minutes ?? 10)} onChange={(e) => save("ai_reactivation_minutes", e.target.value)} style={{ maxWidth: 260 }} InputLabelProps={{ shrink: true }} disabled={String(values.ai_reactivation ?? "1") === "0"} inputProps={{ "data-testid": "ai-reactivation-minutes" }}>
+            {[5, 10, 15, 20, 30, 60].map((m) => (<MenuItem key={m} value={m}>{m} minutos</MenuItem>))}
+          </TextField>
+        </div>
+        <div className={classes.hint}>Quem já disse o curso e continua sem responder 2 horas depois do último lembrete vai para o consultor do polo.</div>
+      </Card>
     </>
   );
 };

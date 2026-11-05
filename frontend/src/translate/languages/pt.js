@@ -554,6 +554,7 @@ const messages = {
         ERR_NO_QUICK_ANSWERS_FOUND: "Resposta rápida não encontrada.",
         ERR_RATE_LIMITED: "Envio em ritmo alto demais para proteger o número. Aguarde alguns segundos.",
         ERR_INVALID_TIMEZONE: "Fuso horário inválido. Escolha um da lista.",
+        ERR_INVALID_SETTING: "Valor inválido para esta configuração.",
         ERR_INVALID_ROLE: "Função inválida para este usuário.",
         ERR_TICKET_NO_WHATSAPP: "Esta conversa não tem conexão ativa. Escolha uma conexão e tente de novo.",
         ERR_INVALID_RISK_MODE: "Modo de proteção inválido. Use seguro ou flexível.",

@@ -463,6 +463,6 @@ export const take = async (req: Request, res: Response): Promise<Response> => {
 export const automation = async (req: Request, res: Response): Promise<Response> => {
   const ticket = await Ticket.findByPk(req.params.ticketId, { attributes: ["id", "aiActive", "userId", "status", "queueId", "whatsappId"] });
   if (!ticket) throw new AppError("ERR_NO_TICKET_FOUND", 404);
-  const { automationTrace } = await import("../services/AutomationServices/AutomationTrace");
-  return res.json({ aiActive: !!ticket.aiActive, userId: ticket.userId || null, status: ticket.status, lines: automationTrace(ticket.id) });
+  const { storedAutomationTrace } = await import("../services/AutomationServices/AutomationTrace");
+  return res.json({ aiActive: !!ticket.aiActive, userId: ticket.userId || null, status: ticket.status, lines: await storedAutomationTrace(ticket.id) });
 };

@@ -501,6 +501,11 @@ const Connections = () => {
 												data-label={i18n.t("connections.table.status")}
 											>
 												{renderStatusToolTips(whatsApp)}
+												{whatsApp.statusNote && whatsApp.status !== "CONNECTED" && (
+													<div data-testid={`status-note-${whatsApp.id}`} style={{ fontSize: 12, opacity: 0.75, marginTop: 4, maxWidth: 240, marginLeft: "auto", marginRight: "auto", lineHeight: 1.35 }}>
+														{whatsApp.statusNote}
+													</div>
+												)}
 											</TableCell>
 											<TableCell
 												align="center"
