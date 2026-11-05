@@ -1,6 +1,8 @@
 import React, { useContext, useEffect, useState } from "react";
 import { useHistory } from "react-router-dom";
-import { PlugZap, X } from "lucide-react";
+import { PlugZap } from "lucide-react";
+
+import { Notice } from "../Notices";
 
 import { WhatsAppsContext } from "../../context/WhatsApp/WhatsAppsContext";
 import { AuthContext } from "../../context/Auth/AuthContext";
@@ -37,17 +39,18 @@ const ConnectionAlert = () => {
     try { sessionStorage.setItem("connAlertHidden", JSON.stringify(next)); } catch (e) { /* the alert just comes back */ }
   };
 
+  const single = first.w.status === "qrcode" || first.w.status === "PAIRING"
+    ? "Abra Conexões e leia o QR Code com o celular (WhatsApp → Aparelhos conectados)."
+    : "O sistema tenta reabrir sozinho; se continuar, toque em Reconectar.";
+  const title = down.length === 1
+    ? `A conexão ${first.w.name} ${WHAT[first.w.status]} há ${since(first.minutes)}. ${single} Enquanto estiver assim, as mensagens desse número não chegam.`
+    : `${down.length} conexões com problema: ${down.map((d) => `${d.w.name} (${since(d.minutes)})`).join(", ")}. Enquanto estiverem assim, as mensagens desses números não chegam.`;
   return (
-    <div role="alert" style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 16px", background: "#fff4e5", color: "#7a3e00", borderBottom: "1px solid #ffd8a8", fontSize: 14 }}>
-      <PlugZap size={18} style={{ flexShrink: 0 }} />
-      <span style={{ flex: 1, lineHeight: 1.4 }}>
-        {down.length === 1
-          ? <>A conexão <b>{first.w.name}</b> {WHAT[first.w.status]} há {since(first.minutes)}. {first.w.status === "qrcode" || first.w.status === "PAIRING" ? "Abra Conexões e leia o QR Code com o celular (WhatsApp → Aparelhos conectados)." : "O sistema tenta reabrir sozinho; se continuar, toque em Reconectar."} Enquanto estiver assim, as mensagens desse número não chegam.</>
-          : <><b>{down.length} conexões</b> com problema: {down.map((d) => `${d.w.name} (${since(d.minutes)})`).join(", ")}. Enquanto estiverem assim, as mensagens desses números não chegam.</>}
-      </span>
-      <button type="button" onClick={() => history.push("/connections")} style={{ border: 0, background: "#7a3e00", color: "#fff", borderRadius: 8, padding: "6px 12px", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Reconectar</button>
-      <button type="button" aria-label="Dispensar o aviso" onClick={hide} style={{ border: 0, background: "transparent", color: "inherit", cursor: "pointer", display: "flex" }}><X size={18} /></button>
-    </div>
+    <Notice tone="warn" icon={PlugZap} title={title} action="Reconectar" onAction={() => history.push("/connections")} onClose={hide}>
+      {down.length === 1
+        ? <><b>{first.w.name}</b> {WHAT[first.w.status]} há {since(first.minutes)}. {single} As mensagens desse número não chegam enquanto isso.</>
+        : <><b>{down.length} conexões</b> com problema: {down.map((d) => `${d.w.name} (${since(d.minutes)})`).join(", ")}. As mensagens desses números não chegam.</>}
+    </Notice>
   );
 };
 
