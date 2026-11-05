@@ -3917,6 +3917,8 @@ const postMeta = (id, payload, secret, badSig) => {
       // O) a conversation nobody continues is closed after a while: the lead goes to "Sem resposta" with a task, once
       sql(`UPDATE ChatFlowRuns SET updatedAt = now() - interval '10 days' WHERE ticketId=${ticketOf(L)} AND status='waiting'`);
       await waitFor(() => /^done/.test(runOf(L)) && leadStage(L) === stageName("no_response"), 40000, "the stopped conversation was closed");
+      // the worker moves the column first and creates the task right after: wait for it instead of looking in between
+      await waitFor(() => Number(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${leadId(L)} AND title LIKE 'Retomar contato: o lead parou%'`)) >= 1, 8000, "the task for the lead that stopped answering");
       assert(Number(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${leadId(L)} AND title LIKE 'Retomar contato: o lead parou%'`)) === 1, "no task for the lead that stopped answering");
 
       // P) the keys of the external tools never come back to the browser, stay when saved again, and do not follow a tool to another host
