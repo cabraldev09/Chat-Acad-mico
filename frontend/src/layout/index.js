@@ -23,6 +23,7 @@ import BackdropLoading from "../components/BackdropLoading";
 import CrmReminders from "../components/CrmReminders";
 import ConnectionAlert from "../components/ConnectionAlert";
 import TaskAlert from "../components/TaskAlert";
+import { Notices } from "../components/Notices";
 import { i18n } from "../translate/i18n";
 import { useThemeContext } from "../context/DarkMode";
 import BrandLogo from "../components/BrandLogo";
@@ -221,8 +222,10 @@ const LoggedInLayout = ({ children }) => {
           <div className={classes.appBarSpacer} />
           {/* the notices of the top take room: the screens below subtract it (var(--alerts-h)) so nothing ends up under the fold, like the box where the message is typed */}
           <div ref={alertsRef}>
-            <ConnectionAlert />
-            <TaskAlert />
+            <Notices>
+              <ConnectionAlert />
+              <TaskAlert />
+            </Notices>
           </div>
           {children ? children : null}
         </div>

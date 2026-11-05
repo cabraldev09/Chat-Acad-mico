@@ -1,13 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { makeStyles } from "@material-ui/core/styles";
 import MuiTooltip from "@material-ui/core/Tooltip";
-import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { BarsChart, TimeChart } from "../charts";
 import { CalendarClock, CheckCheck, Clock, Eye, FileText, Flag, Inbox, MessageSquare, Send, Target, TrendingUp, AlertTriangle, ListTodo, UserCheck, Users, Zap } from "lucide-react";
 
 import api from "../../services/api";
 import openSocket from "../../services/socket-io";
 import toastError from "../../errors/toastError";
-import { tint } from "../../utils/color";
 import NumberTicker from "../NumberTicker";
 import "../../styles/dash.css";
 
@@ -16,42 +15,37 @@ import "../../styles/dash.css";
 
 export const BRAND = { blue: "#0B4279", cerulean: "#0693E3", gorse: "#FEF84C" };
 
-export const useKit = makeStyles((theme) => {
-  const dark = theme.palette.type === "dark";
-  const line = dark ? "rgba(255,255,255,.09)" : "#cfd9e8";
-  const soft = dark ? "rgba(255,255,255,.04)" : "#f6f8fb";
-  return {
-    page: { padding: theme.spacing(2.5), maxWidth: 1480, margin: "0 auto", [theme.breakpoints.down("xs")]: { padding: theme.spacing(1.5) } },
-    head: { display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: theme.spacing(2.5) },
-    h1: { fontSize: 24, fontWeight: 800, letterSpacing: "-0.02em", margin: 0 },
-    lead: { fontSize: 14, color: theme.palette.text.secondary, marginTop: 4, maxWidth: 720 },
-    panel: { background: dark ? "var(--dash-glass)" : "#ffffff", border: "1px solid var(--dash-line, #c9d5e6)", borderRadius: 14, padding: theme.spacing(2.5), minWidth: 0, position: "relative", overflow: "hidden", boxShadow: dark ? "none" : "0 1px 2px rgba(11,66,121,.06)" },
-    hero: { background: dark ? "#0f1c31" : "#ffffff", border: `1px solid ${line}`, borderRadius: 14, padding: theme.spacing(3), minWidth: 0 },
-    h2: { fontSize: 14.5, fontWeight: 700, margin: 0, display: "flex", alignItems: "center", gap: 8, letterSpacing: "-0.01em" },
-    sub: { fontSize: 12.5, color: theme.palette.text.secondary, marginTop: 2 },
-    grid: { display: "grid", gap: theme.spacing(2), gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))" },
-    cols: { display: "grid", gap: theme.spacing(2), gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", alignItems: "start" },
-    kpi: { background: dark ? "rgba(255,255,255,.035)" : "#ffffff", border: "1px solid var(--dash-line, #c9d5e6)", borderRadius: 12, padding: "14px 16px 12px", minWidth: 0, position: "relative", overflow: "hidden", boxShadow: dark ? "none" : "0 1px 2px rgba(11,66,121,.06)" },
-    kpiIcon: { display: "inline-flex", alignItems: "center", justifyContent: "center", flex: "none", color: theme.palette.text.secondary, opacity: 0.8 },
-    kpiLabel: { fontSize: 13, fontWeight: 500, color: theme.palette.text.secondary, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, minHeight: 24 },
-    grid4: { display: "grid", gap: theme.spacing(2), gridTemplateColumns: "repeat(4, minmax(0, 1fr))", [theme.breakpoints.down("sm")]: { gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }, [theme.breakpoints.down("xs")]: { gridTemplateColumns: "1fr" } },
-    grid5: { display: "grid", gap: theme.spacing(2), gridTemplateColumns: "repeat(5, minmax(0, 1fr))", [theme.breakpoints.down("md")]: { gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }, [theme.breakpoints.down("xs")]: { gridTemplateColumns: "1fr" } },
-    kpiValue: { fontSize: 32, fontWeight: 700, letterSpacing: "-0.04em", fontVariantNumeric: "tabular-nums", lineHeight: 1.1, marginTop: 6, position: "relative", zIndex: 1 },
-    kpiHint: { fontSize: 12, color: theme.palette.text.secondary, marginTop: 2 },
-    chips: { display: "inline-flex", gap: 4, padding: 4, borderRadius: 999, background: dark ? soft : "#fff", border: `1px solid ${line}`, flexWrap: "wrap" },
-    chip: { border: 0, borderRadius: 999, padding: "6px 14px", fontFamily: "inherit", fontSize: 13, fontWeight: 600, cursor: "pointer", background: "transparent", color: theme.palette.text.secondary, "&:hover": { color: theme.palette.text.primary } },
-    chipOn: { background: BRAND.blue, color: "#fff !important" },
-    table: { width: "100%", borderCollapse: "collapse", fontSize: 14, "& th": { textAlign: "left", fontSize: 12, color: theme.palette.text.secondary, fontWeight: 600, padding: "8px 10px", borderBottom: `1px solid ${line}`, whiteSpace: "nowrap" }, "& td": { padding: "10px", borderBottom: `1px solid ${line}`, verticalAlign: "middle" }, "& .r": { textAlign: "right", fontVariantNumeric: "tabular-nums" }, "& tbody tr": { cursor: "pointer" }, "& tbody tr:hover": { background: soft } },
-    scroll: { overflowX: "auto" },
-    bar: { height: 8, borderRadius: 999, background: soft, overflow: "hidden" },
-    fill: { height: "100%", borderRadius: 999, background: BRAND.cerulean, transition: "width .5s cubic-bezier(.2,.8,.2,1)" },
-    btn: { border: `1px solid ${line}`, background: "transparent", color: "inherit", borderRadius: 10, padding: "7px 14px", fontFamily: "inherit", fontSize: 13, fontWeight: 600, cursor: "pointer", "&:hover": { background: soft } },
-    btnPrimary: { border: 0, background: BRAND.blue, color: "#fff", borderRadius: 10, padding: "8px 16px", fontFamily: "inherit", fontSize: 13, fontWeight: 700, cursor: "pointer", "&:disabled": { opacity: 0.6, cursor: "default" } },
-    row: { display: "flex", alignItems: "center", gap: 10, width: "100%", border: 0, background: "transparent", color: "inherit", fontFamily: "inherit", fontSize: 14, padding: "8px 0", borderTop: `1px solid ${line}`, textAlign: "left", cursor: "pointer", "&:first-of-type": { borderTop: 0 } },
-    input: { border: `1px solid ${line}`, background: "transparent", color: "inherit", borderRadius: 8, padding: "6px 8px", fontFamily: "inherit", fontSize: 13, minWidth: 0 },
-    live: { display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: theme.palette.text.secondary },
-  };
-});
+export const useKit = makeStyles((theme) => ({
+  page: { padding: theme.spacing(3), maxWidth: 1480, margin: "0 auto", [theme.breakpoints.down("xs")]: { padding: theme.spacing(1.5) } },
+  head: { display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: theme.spacing(2.5) },
+  h1: { fontSize: 22, fontWeight: 700, letterSpacing: "-0.02em", margin: 0 },
+  lead: { fontSize: 13.5, color: "var(--text-2)", marginTop: 4, maxWidth: 720 },
+  panel: { background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "var(--radius-card)", padding: theme.spacing(2.25, 2.5), minWidth: 0, position: "relative", boxShadow: "var(--shadow-card)" },
+  hero: { background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "var(--radius-card)", padding: theme.spacing(3), minWidth: 0 },
+  h2: { fontSize: 14, fontWeight: 650, margin: 0, display: "flex", alignItems: "center", gap: 8, letterSpacing: "-0.01em" },
+  sub: { fontSize: 12.5, color: "var(--text-2)", marginTop: 3 },
+  grid: { display: "grid", gap: theme.spacing(1.5), gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))" },
+  cols: { display: "grid", gap: theme.spacing(2), gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", alignItems: "start" },
+  kpi: { background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "var(--radius-card)", padding: "14px 16px", minWidth: 0, position: "relative", boxShadow: "var(--shadow-card)", transition: "border-color .15s ease", "&:hover": { borderColor: "var(--line-strong)" } },
+  kpiIcon: { display: "inline-flex", alignItems: "center", justifyContent: "center", flex: "none", width: 28, height: 28, borderRadius: 8, color: "var(--tone, var(--text-2))", background: "color-mix(in srgb, var(--tone, #64748b) 12%, transparent)" },
+  kpiLabel: { fontSize: 12.5, fontWeight: 550, color: "var(--text-2)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, minHeight: 28 },
+  grid4: { display: "grid", gap: theme.spacing(1.5), gridTemplateColumns: "repeat(4, minmax(0, 1fr))", [theme.breakpoints.down("sm")]: { gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }, [theme.breakpoints.down("xs")]: { gridTemplateColumns: "1fr" } },
+  grid5: { display: "grid", gap: theme.spacing(1.5), gridTemplateColumns: "repeat(5, minmax(0, 1fr))", [theme.breakpoints.down("md")]: { gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }, [theme.breakpoints.down("xs")]: { gridTemplateColumns: "1fr" } },
+  kpiValue: { fontSize: 28, fontWeight: 700, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums", lineHeight: 1.15, marginTop: 6 },
+  kpiHint: { fontSize: 12, color: "var(--text-2)", marginTop: 4 },
+  chips: { display: "inline-flex", gap: 2, padding: 3, borderRadius: 10, background: "var(--surface-2)", border: "1px solid var(--line)", flexWrap: "wrap" },
+  chip: { border: 0, borderRadius: 7, padding: "5px 12px", fontFamily: "inherit", fontSize: 13, fontWeight: 550, cursor: "pointer", background: "transparent", color: "var(--text-2)", "&:hover": { color: "var(--text-1)" } },
+  chipOn: { background: "var(--surface)", color: "var(--text-1) !important", boxShadow: "0 1px 2px rgba(15,23,42,.08), 0 0 0 1px var(--line)" },
+  table: { width: "100%", borderCollapse: "collapse", fontSize: 13.5, "& th": { textAlign: "left", fontSize: 12, color: "var(--text-2)", fontWeight: 550, padding: "8px 10px", borderBottom: "1px solid var(--line)", whiteSpace: "nowrap" }, "& td": { padding: "10px", borderBottom: "1px solid var(--line)", verticalAlign: "middle" }, "& .r": { textAlign: "right", fontVariantNumeric: "tabular-nums" }, "& tbody tr": { cursor: "pointer" }, "& tbody tr:hover": { background: "var(--surface-2)" } },
+  scroll: { overflowX: "auto" },
+  bar: { height: 6, borderRadius: 999, background: "var(--track)", overflow: "hidden" },
+  fill: { height: "100%", borderRadius: 999, background: "var(--c-leads)", transition: "width .5s cubic-bezier(.2,.8,.2,1)" },
+  btn: { border: "1px solid var(--line)", background: "var(--surface)", color: "inherit", borderRadius: "var(--radius-ctl)", padding: "6px 12px", fontFamily: "inherit", fontSize: 13, fontWeight: 550, cursor: "pointer", "&:hover": { background: "var(--surface-2)", borderColor: "var(--line-strong)" } },
+  btnPrimary: { border: 0, background: "var(--c-brand)", color: "#fff", borderRadius: "var(--radius-ctl)", padding: "7px 14px", fontFamily: "inherit", fontSize: 13, fontWeight: 600, cursor: "pointer", "&:disabled": { opacity: 0.6, cursor: "default" } },
+  row: { display: "flex", alignItems: "center", gap: 10, width: "100%", border: 0, background: "transparent", color: "inherit", fontFamily: "inherit", fontSize: 13.5, padding: "8px 0", borderTop: "1px solid var(--line)", textAlign: "left", cursor: "pointer", "&:first-of-type": { borderTop: 0 } },
+  input: { border: "1px solid var(--line)", background: "var(--surface)", color: "inherit", borderRadius: "var(--radius-ctl)", padding: "5px 8px", fontFamily: "inherit", fontSize: 13, minWidth: 0 },
+  live: { display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text-2)" },
+}));
 
 // what each indicator means, in one sentence, shown under the number (the ⓘ has the complete definition from the server)
 export const KPI_COLOR = {
@@ -198,50 +192,15 @@ export const PresenceDot = ({ state }) => {
 };
 
 const short = (d) => (d ? `${d.slice(8, 10)}/${d.slice(5, 7)}` : "");
+const full = (d) => (d ? `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}` : "");
 
-const glowId = (k) => `dg-${k}`;
-const Defs = ({ items }) => (
-  <defs>
-    {items.map(([k, color]) => (
-      <linearGradient key={k} id={glowId(k)} x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stopColor={color} stopOpacity={0.55} />
-        <stop offset="100%" stopColor={color} stopOpacity={0.02} />
-      </linearGradient>
-    ))}
-  </defs>
-);
-
+// the production of the team over the days: the same flat chart of the whole system (components/charts)
 export const HistoryChart = ({ series, height = 200 }) => (
-  <div style={{ width: "100%", height }}>
-    <ResponsiveContainer>
-      <AreaChart data={(series || []).map((s) => ({ ...s, label: short(s.day) }))} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
-        <Defs items={[["m", BRAND.cerulean], ["a", "#6366f1"], ["e", "#16a34a"]]} />
-        <CartesianGrid vertical={false} />
-        <XAxis dataKey="label" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
-        <YAxis allowDecimals={false} tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
-        <Tooltip />
-        <Area type="monotone" dataKey="messagesSent" name="Mensagens" stroke={BRAND.cerulean} strokeWidth={2.4} fill={`url(#${glowId("m")})`} animationDuration={1100} animationEasing="ease-out" />
-        <Area type="monotone" dataKey="attendances" name="Atendimentos" stroke="#6366f1" strokeWidth={2.4} fill={`url(#${glowId("a")})`} animationDuration={1300} animationEasing="ease-out" />
-        <Area type="monotone" dataKey="enrollments" name="Matrículas" stroke="#16a34a" strokeWidth={2.4} fill={`url(#${glowId("e")})`} animationDuration={1500} animationEasing="ease-out" />
-      </AreaChart>
-    </ResponsiveContainer>
-  </div>
+  <TimeChart data={(series || []).map((s) => ({ ...s, label: short(s.day) }))} height={height} title={(p) => full(p.day)}
+    series={[{ key: "messagesSent", name: "Mensagens", color: "leads", kind: "area" }, { key: "attendances", name: "Atendimentos", color: "violet", kind: "line" }, { key: "enrollments", name: "Matrículas", color: "won", kind: "line" }]} />
 );
 
-export const CompareBars = ({ data, keys, height = 240 }) => (
-  <div style={{ width: "100%", height }}>
-    <ResponsiveContainer>
-      <BarChart data={data} margin={{ top: 8, right: 8, left: -18, bottom: 0 }} barGap={6}>
-        <Defs items={keys.map(([key, , color]) => [key, color])} />
-        <CartesianGrid vertical={false} />
-        <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} axisLine={false} tickLine={false} />
-        <YAxis allowDecimals={false} tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
-        <Tooltip cursor={{ fill: "rgba(34,211,238,.08)" }} />
-        {keys.map(([key, name, color], i) => <Bar key={key} dataKey={key} name={name} fill={`url(#${glowId(key)})`} stroke={color} strokeWidth={1.4} radius={[8, 8, 2, 2]} animationDuration={900 + i * 250} animationEasing="ease-out" />)}
-      </BarChart>
-    </ResponsiveContainer>
-  </div>
-);
+export const CompareBars = ({ data, keys, height = 240 }) => <BarsChart data={data} keys={keys} height={height} />;
 
 export const Progress = ({ value, max, color }) => {
   const c = useKit();
