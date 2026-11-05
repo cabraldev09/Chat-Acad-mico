@@ -7,13 +7,10 @@ import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import { ProposalList } from "./TrainTab";
 import RunInspector from "./RunInspector";
+import { Typing, useSimChat } from "../../components/chat/SimChat";
 
 const useStyles = makeStyles((theme) => ({
-  chat: { borderRadius: 16, padding: theme.spacing(1.5), height: 380, overflowY: "auto", display: "flex", flexDirection: "column", gap: 6, background: theme.palette.type === "dark" ? "#0b141a" : "#efeae2", ...theme.scrollbarStyles },
-  me: { alignSelf: "flex-end", maxWidth: "80%", padding: "6px 10px", borderRadius: "10px 10px 2px 10px", background: theme.palette.type === "dark" ? "#005c4b" : "#d9fdd3", fontSize: 14, whiteSpace: "pre-wrap" },
-  bot: { alignSelf: "flex-start", maxWidth: "80%", padding: "6px 10px", borderRadius: "10px 10px 10px 2px", background: theme.palette.type === "dark" ? "#202c33" : "#fff", fontSize: 14, whiteSpace: "pre-wrap" },
   split: { display: "grid", gap: theme.spacing(2), gridTemplateColumns: "minmax(0, 1fr) minmax(300px, 430px)", alignItems: "start", [theme.breakpoints.down("md")]: { gridTemplateColumns: "1fr" } },
-  meta: { alignSelf: "flex-start", fontSize: 11.5, color: theme.palette.text.secondary, margin: "0 4px" },
   row: { display: "flex", flexWrap: "wrap", gap: theme.spacing(1), marginTop: theme.spacing(1.25), alignItems: "center", "& .MuiButton-root": { whiteSpace: "nowrap", flex: "none" } },
 }));
 
@@ -73,6 +70,7 @@ const CasesPanel = ({ agentId, refreshKey }) => {
 // Talks to the agent exactly like a student would, without sending anything on WhatsApp or changing any record.
 const TestTab = ({ agentId, flowId, commercial }) => {
   const classes = useStyles();
+  const chat = useSimChat();
   const [turns, setTurns] = useState([]);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -182,16 +180,16 @@ const TestTab = ({ agentId, flowId, commercial }) => {
       </Typography>
       <div className={real ? classes.split : undefined}>
       <div style={{ minWidth: 0 }}>
-      <div className={classes.chat} ref={end}>
-        {turns.length === 0 && <span className={classes.meta}>Escreva a primeira mensagem do aluno, por exemplo: “Oi, quero saber sobre o curso de Pedagogia”.</span>}
+      <div className={chat.chat} ref={end} style={{ height: 420 }}>
+        {turns.length === 0 && <span className={chat.sys}>Escreva a primeira mensagem do aluno, por exemplo: “Oi, quero saber sobre o curso de Pedagogia”.</span>}
         {turns.map((t, i) => (
           <React.Fragment key={i}>
-            <div className={t.role === "user" ? classes.me : classes.bot}>{t.content}</div>
-            {t.meta && <span className={classes.meta}>{t.meta}{t.sources && t.sources.length ? ` · baseado em: ${t.sources.join(", ")}` : ""}</span>}
+            <div className={t.role === "user" ? chat.me : chat.bot}>{t.content}</div>
+            {t.meta && <span className={chat.meta}>{t.meta}{t.sources && t.sources.length ? ` · baseado em: ${t.sources.join(", ")}` : ""}</span>}
             {t.role === "assistant" && (
               teaching === i ? (
                 <div style={{ alignSelf: "stretch", display: "flex", gap: 6 }}>
-                  <TextField fullWidth multiline rows={2} size="small" variant="outlined" placeholder="Escreva a resposta certa" value={lesson} onChange={(e) => setLesson(e.target.value)} style={{ background: "rgba(255,255,255,.6)", borderRadius: 4 }} />
+                  <TextField fullWidth multiline rows={2} size="small" variant="outlined" placeholder="Escreva a resposta certa" value={lesson} onChange={(e) => setLesson(e.target.value)} style={{ background: "var(--surface)", borderRadius: 4 }} />
                   <Button variant="contained" color="primary" size="small" disabled={!lesson.trim()} onClick={() => teach(t)}>Ensinar</Button>
                   <Button size="small" onClick={() => setTeaching(null)}>Cancelar</Button>
                 </div>
@@ -201,7 +199,7 @@ const TestTab = ({ agentId, flowId, commercial }) => {
             )}
           </React.Fragment>
         ))}
-        {busy && <span className={classes.meta}>digitando…</span>}
+        {busy && <Typing />}
       </div>
       {Object.keys(collected).length > 0 && (
         <Typography variant="caption" color="textSecondary" display="block" style={{ marginTop: 6 }}>

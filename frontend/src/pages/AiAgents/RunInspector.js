@@ -33,11 +33,11 @@ const SHOWN_SLOTS = ["leadName", "courseName", "city", "poloName", "entryType", 
 
 const useStyles = makeStyles((theme) => {
   const dark = theme.palette.type === "dark";
-  const line = dark ? "rgba(255,255,255,.1)" : "#cfd9e8";
+  const line = "var(--line)";
   return {
     root: { display: "grid", gap: theme.spacing(1.5), alignContent: "start", minWidth: 0 },
-    card: { border: `1px solid ${line}`, borderRadius: 12, padding: theme.spacing(1.5, 1.75), background: theme.palette.cards.background, minWidth: 0 },
-    h: { fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".05em", color: theme.palette.text.secondary, margin: 0, marginBottom: 8 },
+    card: { border: `1px solid ${line}`, borderRadius: "var(--radius-card)", padding: theme.spacing(1.5, 1.75), background: "var(--surface)", boxShadow: "var(--shadow-card)", minWidth: 0 },
+    h: { fontSize: 12, fontWeight: 650, textTransform: "uppercase", letterSpacing: ".05em", color: "var(--text-2)", margin: 0, marginBottom: 8 },
     kv: { display: "grid", gridTemplateColumns: "118px 1fr", gap: "4px 10px", fontSize: 13.5, "& dt": { color: theme.palette.text.secondary, margin: 0 }, "& dd": { margin: 0, minWidth: 0, wordBreak: "break-word" } },
     why: { fontSize: 12.5, color: theme.palette.text.secondary, display: "block" },
     rail: { position: "relative", paddingLeft: 22, "&::before": { content: '""', position: "absolute", left: 7, top: 6, bottom: 6, width: 2, background: line, borderRadius: 2 } },
