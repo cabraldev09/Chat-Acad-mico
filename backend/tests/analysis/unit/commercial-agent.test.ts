@@ -281,3 +281,39 @@ describe("the hook sends a student to the right team, asking the city once", () 
     expect(r.exit).toBe("human");
   });
 });
+
+describe("a question the base does not answer", () => {
+  it("is noted for the consultant and the conversation goes on, until the tries of the administrator run out", async () => {
+    const ports = fakePorts({ courseName: "Direito", city: "Porto Velho" });
+    ports.config = { maxClarifications: 3 };
+    const first = await commercialTurn(ports, { userText: "vocês têm convênio com a Nasa?", intent: "unknown", unknownQuestion: "convênio com a Nasa", tools: [], hadText: true, replied: true });
+    expect(first.exit).toBeNull();
+    expect(first.unknownHeld).toBe(true);
+    const second = await commercialTurn(ports, { userText: "e com a Nasa mesmo?", intent: "unknown", unknownQuestion: "convênio com a Nasa", tools: [], hadText: true, replied: true });
+    expect(second.exit).toBeNull();
+    const third = await commercialTurn(ports, { userText: "Nasa?", intent: "unknown", unknownQuestion: "convênio com a Nasa", tools: [], hadText: true, replied: true });
+    expect(third.exit).toBe("human");
+    expect(third.unknownHeld).toBeUndefined();
+  });
+
+  it("an answer in between starts the count again; with one try a person takes it at once", async () => {
+    const ports = fakePorts({ courseName: "Direito" });
+    ports.config = { maxClarifications: 2 };
+    await commercialTurn(ports, { userText: "Nasa?", intent: "unknown", tools: [], hadText: true, replied: true });
+    await commercialTurn(ports, { userText: "Porto Velho", intent: "other", patch: { city: "Porto Velho" }, tools: [], hadText: true, replied: true });
+    expect((await commercialTurn(ports, { userText: "Nasa?", intent: "unknown", tools: [], hadText: true, replied: true })).exit).toBeNull();
+    const once = fakePorts();
+    once.config = { maxClarifications: 1 };
+    expect((await commercialTurn(once, { userText: "Nasa?", intent: "unknown", tools: [], hadText: true, replied: true })).exit).toBe("human");
+  });
+});
+
+import { interestOf } from "../../../src/services/CommercialServices/Rules";
+
+describe("\"sou aluno\" alone is an existing student", () => {
+  it("with or without more words; a student of another school or of the high school is not", () => {
+    for (const t of ["sou aluno", "Sou aluna", "eu sou aluno da cruzeiro", "já sou aluno", "sou aluno, preciso de ajuda"]) expect(interestOf(t), t).toBe("aluno");
+    expect(interestOf("sou aluno de outra faculdade")).not.toBe("aluno");
+    expect(interestOf("sou aluno do ensino médio")).not.toBe("aluno");
+  });
+});

@@ -317,12 +317,12 @@ const PoloDialog = ({ open, onClose, row, data, onSaved }) => {
       <DialogContent dividers>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
           <NumberField fullWidth variant="outlined" size="small" nullable label="Meta do semestre" InputLabelProps={{ shrink: true }} value={f.target} onChange={changeTarget} />
-          <NumberField fullWidth variant="outlined" size="small" label="Já realizado" helperText={`${row.auto || 0} no CRM`} InputLabelProps={{ shrink: true }} value={(row.auto || 0) + (f.manual || 0)} onChange={(v) => setF({ ...f, manual: Math.max(0, (v || 0) - (row.auto || 0)) })} />
+          <NumberField fullWidth variant="outlined" size="small" label="Já realizado" helperText={`${row.auto || 0} no CRM`} InputLabelProps={{ shrink: true }} value={(row.auto || 0) + (f.manual || 0)} onChange={(v) => setF({ ...f, manual: (v || 0) - (row.auto || 0) })} />
           <NumberField fullWidth variant="outlined" size="small" label="Alunos em curso" InputLabelProps={{ shrink: true }} value={f.inCourse || 0}
             onChange={(v) => setF({ ...f, inCourse: v || 0 })} />
         </div>
         <div className={classes.hint} style={{ marginTop: 6 }}>Cancelados: {Math.max(0, (row.auto || 0) + (f.manual || 0) + (f.adjust || []).reduce((t, n) => t + (Number(n) || 0), 0) - (f.inCourse || 0))} (automático: matrículas menos alunos em curso).{row.updatedAt ? ` Atualizado em ${new Date(row.updatedAt).toLocaleDateString("pt-BR")}${row.updatedBy ? ` por ${String(row.updatedBy).split(" ")[0]}` : ""}.` : ""}</div>
-        <div className={classes.hint} style={{ marginTop: 6 }}>No CRM este polo tem {row.auto} matrícula{row.auto === 1 ? "" : "s"} no período; elas entram sozinhas e somam ao que você informar.</div>
+        <div className={classes.hint} style={{ marginTop: 6 }}>No CRM este polo tem {row.auto} matrícula{row.auto === 1 ? "" : "s"} no período; o total fica exatamente o que você digitar em Já realizado{(f.manual || 0) < 0 ? ` (${-(f.manual || 0)} a menos que o CRM, correção registrada)` : ""}.</div>
 
         <div style={{ display: "flex", alignItems: "center", marginTop: 16 }}>
           <div style={{ fontWeight: 700, flex: 1 }}>Meta de cada mês</div>
@@ -368,7 +368,7 @@ const EditDialog = ({ open, onClose, data, onSaved }) => {
     try {
       await api.put(`/goals/${data.goal.id}/polos`, {
         rows: rows.map((r) => ({
-          poloId: r.poloId, target: r.target, manual: Math.max(0, (r.done || 0) - (r.auto || 0) - (r.monthAdjust || 0)), canceled: Math.max(0, (r.done || 0) - (r.inCourse || 0)), manualMonthly: r.manualMonthly,
+          poloId: r.poloId, target: r.target, manual: (r.done || 0) - (r.auto || 0) - (r.monthAdjust || 0), canceled: Math.max(0, (r.done || 0) - (r.inCourse || 0)), manualMonthly: r.manualMonthly,
           // a changed target is spread again over the months; an untouched one keeps its monthly targets
           monthly: r.target === r.oldTarget ? r.monthly : undefined,
         })),

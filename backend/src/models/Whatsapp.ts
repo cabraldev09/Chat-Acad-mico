@@ -48,6 +48,10 @@ class Whatsapp extends Model<Whatsapp> {
   @Column(DataType.DATE)
   statusSince: Date;
 
+  // why the connection is in this state, in words for the screen of Conexões ("o WhatsApp do celular desconectou este aparelho", ...)
+  @Column(DataType.TEXT)
+  statusNote: string;
+
   @BeforeCreate
   static startState(instance: Whatsapp): void {
     instance.statusSince = new Date();

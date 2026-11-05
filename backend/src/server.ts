@@ -30,12 +30,16 @@ import { startCadences } from "./workers/Cadences";
 import { loadAppTz } from "./helpers/AppTime";
 import { whenLeader } from "./helpers/SingleInstance";
 import { ensureRls } from "./helpers/EnsureRls";
+import sequelize from "./database";
+import { persistAutomationTraces } from "./services/AutomationServices/AutomationTrace";
 
 const server = createServer(app);
 initIO(server);
 const boot = async () => {
   await ensureRls();
   await loadAppTz();
+  // "Ver o que o robô fez" is saved in the database too (it survives a restart)
+  persistAutomationTraces(sequelize);
   // keys saved before they were sealed are sealed now (once)
   import("./helpers/SecretSettings").then(m => m.sealStoredKeys()).then(n => { if (n) logger.info(`API keys sealed at rest: ${n}`); }).catch(err => logger.warn(`Sealing the API keys failed: ${err}`));
   server.listen(process.env.PORT, () => logger.info(`Server started on port: ${process.env.PORT}`));

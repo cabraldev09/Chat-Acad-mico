@@ -2497,6 +2497,10 @@ const postMeta = (id, payload, secret, badSig) => {
       const allSettings = await http.get("/settings", as);
       assert(allSettings.status === 200 && allSettings.data.length > 0, "coordinator cannot read every setting");
       assert((await http.put("/settings/appTimezone", { value: "America/Porto_Velho" }, as)).status === 200, "coordinator cannot change a setting");
+      // the time of the first reminder of the AI agent ("Tá por aí?"), from the screen of Configurações
+      assert((await http.put("/settings/ai_reactivation_minutes", { value: "10" }, as)).status === 200, "the first reminder of the agent cannot be set");
+      assert((await http.put("/settings/ai_reactivation_minutes", { value: "0" }, as)).status === 400, "a first reminder of 0 minutes was accepted");
+      assert((await http.put("/settings/ai_reactivation", { value: "talvez" }, as)).status === 400, "an invalid on/off of the reminders was accepted");
       assert((await http.delete(`/leads/${lead.id}`, as)).status === 200, "coordinator cannot delete a lead");
       // a consultant still cannot manage anybody
       const cons = (await http.post("/auth/login", { email: "do-coord@x.com", password: "senha123" })).data.token;
@@ -3611,7 +3615,15 @@ const postMeta = (id, payload, secret, badSig) => {
       await waitFor(() => Number(sql(`SELECT COUNT(*) FROM AiLearnings WHERE ticketId=${ticketOf(C)}`)) === 1, 8000, "the gap goes to the knowledge base of the team");
       assert(sql(`SELECT question FROM AiLearnings WHERE ticketId=${ticketOf(C)}`).length > 5, "question not kept");
       await waitFor(() => Number(sql(`SELECT COUNT(*) FROM AgentMetricEvents WHERE leadId=${leadId(C)} AND event='unknown'`)) >= 1, 8000, "unknown milestone");
-      assert(Number(sql(`SELECT COUNT(*) FROM TicketEvents WHERE ticketId=${ticketOf(C)} AND type='handoff'`)) >= 1, "the team did not receive the conversation");
+      // one question without an answer does not end the attendance: the conversation goes on, and a person takes it after the tries of the
+      // administrator (3 by default) or when the lead is ready for the consultant
+      const handoffsOfC = () => Number(sql(`SELECT COUNT(*) FROM TicketEvents WHERE ticketId=${ticketOf(C)} AND type='handoff'`));
+      assert(handoffsOfC() === 0, "the first question without an answer handed the conversation over");
+      for (const [id, body] of [["wamid.com-c4", "E o convênio com a Nasa?"], ["wamid.com-c5", "Nasa, então?"]]) {
+        if (handoffsOfC() >= 1) break;
+        await say(C, id, body, t => t.some(x => /confirmar com a equipe|consultor/.test(x)), `unknown again (${id})`);
+      }
+      await waitFor(() => handoffsOfC() >= 1, 8000, "the team did not receive the conversation");
 
       // D) "vou pensar": follow-up with a task on the date; coming back days later resumes without asking again
       const D = "5511920000204";
@@ -5520,6 +5532,10 @@ const postMeta = (id, payload, secret, badSig) => {
       const resaved = (await http.put(`/goals/${goal.id}/polos`, { rows: [{ poloId: polo.id, target: 10, manual: 2, canceled: 1 }] }, auth())).data.rows.find(r => r.poloId === polo.id);
       assert(resaved.updatedAt === row.updatedAt && resaved.done === 3 && resaved.inCourse === 2, `the same numbers rewrote the line ${JSON.stringify({ before: row.updatedAt, after: resaved.updatedAt })}`);
       assert(seen.data.totals.target === 10 && seen.data.totals.done === 3 && seen.data.totals.pct === 30 && seen.data.totals.inCourse === 2, `totals ${JSON.stringify(seen.data.totals)}`);
+      // the real total is lower than what the CRM counts (the spreadsheet says 0 with 1 in the CRM): what was typed stays, as a correction
+      const lower = (await http.put(`/goals/${goal.id}/polos`, { rows: [{ poloId: polo.id, target: 10, manual: -1, canceled: 0 }] }, auth())).data.rows.find(r => r.poloId === polo.id);
+      assert(lower.done === 0 && lower.manual === -1 && lower.inCourse === 0 && lower.missing === 10, `a total lower than the CRM was not kept ${JSON.stringify([lower.done, lower.manual, lower.inCourse])}`);
+      await http.put(`/goals/${goal.id}/polos`, { rows: [{ poloId: polo.id, target: 10, manual: 2, canceled: 1 }] }, auth());
       // the target is for the whole period and spread over its months
       assert(row.monthly.length === seen.data.months.length && row.monthly.reduce((t, n) => t + n, 0) === 10, `monthly ${JSON.stringify(row.monthly)}`);
       assert(!JSON.stringify(seen.data).includes("leadsPerDay"), "leads per day is gone");

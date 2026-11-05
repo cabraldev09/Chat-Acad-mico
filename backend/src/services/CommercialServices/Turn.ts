@@ -35,7 +35,9 @@ export const FIXED = {
   tutoring: "Entendi! Vou chamar a tutoria do seu polo para te ajudar com isso. Um momento, por favor.",
   secretary: "Entendi! Vou chamar a secretaria do seu polo para cuidar disso. Um momento, por favor.",
   askCity: "Para chamar a equipe do seu polo, em qual cidade você estuda ou mora?",
-  unknown: "Essa informação eu prefiro confirmar para não te passar nada incorreto. Vou encaminhar para o consultor verificar certinho para você."
+  unknown: "Essa informação eu prefiro confirmar para não te passar nada incorreto. Vou encaminhar para o consultor verificar certinho para você.",
+  // the conversation goes on: the question waits for the consultant, who sees it in the summary
+  unknownHeld: "Essa informação eu prefiro confirmar com a equipe para não te passar nada incorreto. Já anotei a sua pergunta para o consultor te responder."
 };
 
 // the person is back after a while (the conversation did not stop an hour ago)
@@ -398,6 +400,8 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
       hook.trace = { ...hook.trace, ...again.trace, actions: [...hook.trace.actions, ...again.trace.actions] };
     }
   } else if (hook.exit === "off" && !text) text = FIXED.unknown;
+  // nothing confirmed in the base: never a guess; the next question of the process follows (below)
+  else if (hook.unknownHeld && (!hook.exit || hook.why === "qualified")) text = FIXED.unknownHeld;
   else if (guard.unsafe) {
     // a promise or a fact that no tool or approved text backs: the agent says it will confirm, and the question is kept for the team
     text = FIXED.unknown;
@@ -441,7 +445,7 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
     const next = nextQuestionOf(state.slots, d.ports.config ? d.ports.config.ask : {}, stageNeeds);
     if (next) text = `${String(text).trim()}\n\n${next}`;
   }
-  if (hook.exit === "off" && d.ticket && !d.sandbox && d.agent.learnFromTeam !== false && unknownQuestion) {
+  if ((hook.exit === "off" || hook.unknownHeld) && d.ticket && !d.sandbox && d.agent.learnFromTeam !== false && unknownQuestion) {
     await captureUnknown(d.agent, d.ticket, unknownQuestion, d.contactName || undefined).catch(() => undefined);
   }
   if (d.lead && !d.sandbox) await syncLead(d, hook.trace.changed);
