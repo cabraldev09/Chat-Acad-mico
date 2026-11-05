@@ -6,6 +6,7 @@ import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import { INTENT_LABEL, NEXT_LABEL, SLOT_LABEL, TEMP_COLOR, TEMP_LABEL, slotValue } from "../../utils/commercial";
 import { FUNNEL_KEYS } from "./nodes";
+import { Typing, useSimChat } from "../../components/chat/SimChat";
 
 // the simulator talks to the DRAFT: nothing is sent to anyone and nothing is saved in the CRM
 const OPTION = /^\*(\d+)\* - (.+)$/;
@@ -37,14 +38,14 @@ const Trace = ({ t }) => {
   const tokens = t.tokens || { input: 0, output: 0, cacheRead: 0 };
   const fromSystem = c && c.deterministic;
   return (
-    <div style={{ alignSelf: "stretch", background: "rgba(11,66,121,.07)", border: "1px solid rgba(11,66,121,.18)", borderRadius: 10, fontSize: 12.5 }}>
+    <div style={{ alignSelf: "stretch", background: "var(--surface)", color: "var(--text-1)", border: "1px solid var(--line)", borderRadius: 10, fontSize: 12.5 }}>
       <button type="button" onClick={() => setOpen(!open)} style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", border: 0, background: "transparent", cursor: "pointer", padding: "6px 10px", fontFamily: "inherit", fontSize: 12.5, fontWeight: 700, color: "#0B4279", textAlign: "left" }}>
         {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         <span style={{ flex: 1 }}>{c && c.block ? "O que este passo fez" : fromSystem ? "Respondido pelo sistema, sem IA" : "O que a IA fez neste turno"}</span>
         {turn && turn.intent && <span style={{ fontWeight: 600, opacity: 0.8 }}>{INTENT_LABEL[turn.intent] || turn.intent}</span>}
       </button>
       {open && (
-        <div style={{ padding: "2px 10px 10px", color: "#111b21" }}>
+        <div style={{ padding: "2px 10px 10px", color: "var(--text-1)" }}>
           {c && c.userText ? <Row label="Mensagem">{c.userText}</Row> : null}
           {turn && <Row label="Entendeu">{INTENT_LABEL[turn.intent] || turn.intent || "—"}{c.entry ? ` · ${c.entry}` : ""}</Row>}
           {!c?.block && <Row label="IA">{fromSystem ? "Nenhuma chamada (o sistema respondeu sozinho)" : `${(c && c.llmCalls) || (tokens.input || tokens.output ? 1 : 0)} chamada(s) · entrada ${tokens.input} · saída ${tokens.output}${tokens.cacheRead ? ` · lida do cache ${tokens.cacheRead}` : ""}${c && c.latencyMs ? ` · ${c.latencyMs} ms` : ""}`}</Row>}
@@ -85,7 +86,7 @@ const World = ({ world }) => {
   const x = s.slots || {};
   const shown = ["leadName", "courseName", "city", "entryType", "courseExplained", "gradeSent", "analysisStatus"].filter((k) => x[k] !== undefined && x[k] !== null && x[k] !== "");
   return (
-    <div style={{ margin: "0 14px 8px", border: "1px solid rgba(127,140,160,.3)", borderRadius: 10, fontSize: 12.5 }}>
+    <div style={{ margin: "0 14px 8px", border: "1px solid var(--line)", background: "var(--surface-2)", borderRadius: 10, fontSize: 12.5 }}>
       <button type="button" onClick={() => setOpen(!open)} style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", border: 0, background: "transparent", cursor: "pointer", padding: "6px 10px", fontFamily: "inherit", fontSize: 12.5, fontWeight: 700, textAlign: "left", color: "inherit" }}>
         {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}<span style={{ flex: 1 }}>Lead do teste</span>
         <span style={{ color: TEMP_COLOR[s.temperature], fontWeight: 700 }}>{TEMP_LABEL[s.temperature] || ""}</span><span style={{ opacity: 0.7 }}>{s.commercialScore || 0} pts</span>
@@ -104,6 +105,7 @@ const World = ({ world }) => {
 };
 
 const Simulator = ({ flowId, kind, getGraph, onPath, onClose }) => {
+  const chat = useSimChat();
   const [log, setLog] = useState([]); // { who: "bot" | "me" | "act" | "trace", text, options? }
   const [world, setWorld] = useState(null);
   const [usage, setUsage] = useState({ calls: 0, input: 0, output: 0 });
@@ -155,7 +157,7 @@ const Simulator = ({ flowId, kind, getGraph, onPath, onClose }) => {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      <div style={{ display: "flex", alignItems: "center", padding: "10px 14px", gap: 8, borderBottom: "1px solid rgba(127,140,160,.25)" }}>
+      <div style={{ display: "flex", alignItems: "center", padding: "10px 14px", gap: 8, borderBottom: "1px solid var(--line)" }}>
         <b style={{ flex: 1 }}>{kind === "agent" ? "Testar o agente" : "Testar o fluxo"}</b>
         <IconButton size="small" aria-label="Recomeçar" onClick={restart}><RotateCcw size={17} /></IconButton>
         <IconButton size="small" aria-label="Fechar o teste" onClick={onClose}><X size={18} /></IconButton>
@@ -168,19 +170,19 @@ const Simulator = ({ flowId, kind, getGraph, onPath, onClose }) => {
         </TextField>
       </div>
       <World world={world} />
-      <div style={{ flex: 1, overflowY: "auto", padding: 14, background: "#efeae2", display: "flex", flexDirection: "column", gap: 8 }}>
+      <div className={chat.chat} style={{ flex: 1, borderRadius: 0, border: 0, padding: 14, gap: 8 }}>
         {log.map((m, i) => m.who === "trace" ? (
           <Trace key={i} t={m.t} />
         ) : m.who === "act" ? (
-          <div key={i} style={{ alignSelf: "center", fontSize: 12, background: "rgba(11,66,121,.12)", color: "#0B4279", borderRadius: 999, padding: "3px 12px", textAlign: "center" }}>{m.text}</div>
+          <div key={i} className={chat.sys}>{m.text}</div>
         ) : (
           <div key={i} style={{ alignSelf: m.who === "me" ? "flex-end" : "flex-start", maxWidth: "88%" }}>
-            <div style={{ background: m.who === "me" ? "#d9fdd3" : "#fff", color: "#111b21", borderRadius: 10, padding: "7px 10px", fontSize: 14, whiteSpace: "pre-wrap", boxShadow: "0 1px 1px rgba(0,0,0,.12)" }}>{m.who === "me" ? m.text : m.body}</div>
+            <div className={m.who === "me" ? chat.me : chat.bot} style={{ maxWidth: "100%" }}>{m.who === "me" ? m.text : m.body}</div>
             {m.options && m.options.length > 0 && i === log.indexOf(last) && status === "waiting" && (
               <div style={{ display: "grid", gap: 4, marginTop: 4 }}>
                 {m.options.map((o) => (
                   <button key={o.n} type="button" disabled={busy} onClick={() => send(o.n, o.label)}
-                    style={{ border: 0, background: "#fff", color: "#0B4279", fontWeight: 600, fontFamily: "inherit", fontSize: 13.5, padding: "8px 10px", borderRadius: 10, cursor: "pointer", boxShadow: "0 1px 1px rgba(0,0,0,.12)" }}>
+                    className={chat.option}>
                     {o.label}
                   </button>
                 ))}
@@ -188,10 +190,11 @@ const Simulator = ({ flowId, kind, getGraph, onPath, onClose }) => {
             )}
           </div>
         ))}
+        {busy && <Typing />}
         {status === "delayed" && <Button size="small" variant="outlined" onClick={() => step({ input: "" })}>Continuar depois da espera</Button>}
         <div ref={end} />
       </div>
-      <div style={{ display: "flex", gap: 6, padding: 10, borderTop: "1px solid rgba(127,140,160,.25)" }}>
+      <div style={{ display: "flex", gap: 6, padding: 10, borderTop: "1px solid var(--line)" }}>
         <TextField fullWidth size="small" variant="outlined" placeholder={status === "waiting" ? "Responda como a pessoa" : "O fluxo terminou"} disabled={status !== "waiting" || busy}
           value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") send(); }} />
         <IconButton color="primary" aria-label="Enviar" disabled={status !== "waiting" || busy || !input.trim()} onClick={() => send()}><Send size={18} /></IconButton>

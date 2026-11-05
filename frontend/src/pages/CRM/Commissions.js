@@ -30,7 +30,7 @@ const RANGES = [["month", "Este mês"], ["30", "Últimos 30 dias"], ["90", "Últ
 
 const useStyles = makeStyles((theme) => {
   const dark = theme.palette.type === "dark";
-  const line = dark ? "rgba(255,255,255,.09)" : "#e3e9f1";
+  const line = "var(--line)";
   return {
     body: { flex: 1, overflowY: "auto", overflowX: "hidden", ...theme.scrollbarStyles, paddingBottom: theme.spacing(4) },
     wrap: { maxWidth: 920, margin: "0 auto" },
@@ -51,7 +51,7 @@ const useStyles = makeStyles((theme) => {
     tab: { border: 0, background: "transparent", color: theme.palette.text.secondary, padding: "6px 14px", borderRadius: 9, fontFamily: "inherit", fontSize: 13.5, fontWeight: 600, cursor: "pointer" },
     tabOn: { background: theme.palette.primary.main, color: "#fff" },
     statement: { background: theme.palette.cards.background, border: `1px solid ${line}`, borderRadius: 16, overflow: "hidden" },
-    dayHead: { display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "10px 18px", background: dark ? "rgba(255,255,255,.04)" : "#f4f7fb", borderTop: `1px solid ${line}`, fontSize: 12.5, fontWeight: 700, color: theme.palette.text.secondary, "&:first-child": { borderTop: 0 } },
+    dayHead: { display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "10px 18px", background: "var(--surface-2)", borderTop: `1px solid ${line}`, fontSize: 12.5, fontWeight: 700, color: theme.palette.text.secondary, "&:first-child": { borderTop: 0 } },
     entry: { display: "grid", gridTemplateColumns: "40px 1fr auto", gap: 14, alignItems: "center", padding: "12px 18px", borderTop: `1px solid ${line}` },
     icon: { width: 38, height: 38, borderRadius: "50%", display: "grid", placeItems: "center" },
     title: { fontWeight: 600, fontSize: 14.5, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },

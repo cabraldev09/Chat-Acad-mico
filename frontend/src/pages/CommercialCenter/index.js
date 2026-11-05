@@ -1,7 +1,7 @@
 import React, { useContext, useEffect, useMemo, useState } from "react";
 import { useHistory } from "react-router-dom";
 import { toast } from "react-toastify";
-import { Area, Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip as ChartTip, XAxis, YAxis } from "recharts";
+import { TimeChart } from "../../components/charts";
 import { AlertTriangle, Wifi, WifiOff, BarChart3, CalendarClock, Check, ChevronDown, ChevronUp, Download, HeartPulse, ListTodo, Megaphone, MapPin, MonitorCheck, Plus, Search, Gauge, Settings2, Target, Users, X } from "lucide-react";
 
 import Tooltip from "@material-ui/core/Tooltip";
@@ -447,22 +447,9 @@ const TeamPulse = ({ consultants }) => {
     <div className={`${c.panel} dash-card`}>
       <BlockTitle icon={<Gauge size={16} />} title="Produção da equipe" help="Mensagens enviadas (barras), atendimentos (linha) e matrículas (pontos) de cada consultor no período." />
       {!any ? <div className={c.sub} style={{ padding: "26px 0" }}>Ainda sem produção neste período. Quando alguém enviar mensagens ou atender, o gráfico acende aqui.</div> : (
-        <div style={{ width: "100%", height: 280, marginTop: 8 }}>
-          <ResponsiveContainer>
-            <ComposedChart data={rows} margin={{ top: 10, right: 12, left: -14, bottom: 0 }}>
-              <defs>
-                <linearGradient id="tp-bar" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#22d3ee" stopOpacity={0.9} /><stop offset="100%" stopColor="#0693e3" stopOpacity={0.15} /></linearGradient>
-                <linearGradient id="tp-area" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#facc15" stopOpacity={0.35} /><stop offset="100%" stopColor="#facc15" stopOpacity={0} /></linearGradient>
-              </defs>
-              <CartesianGrid vertical={false} />
-              <XAxis dataKey="name" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} interval={0} />
-              <YAxis allowDecimals={false} tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
-              <ChartTip cursor={{ fill: "rgba(34,211,238,.07)" }} />
-              <Bar dataKey="mensagens" name="Mensagens" fill="url(#tp-bar)" stroke="#22d3ee" strokeWidth={1.2} radius={[10, 10, 2, 2]} animationDuration={1000} />
-              <Area type="monotone" dataKey="atendimentos" name="Atendimentos" stroke="#facc15" strokeWidth={2.6} fill="url(#tp-area)" animationDuration={1400} />
-              <Line type="monotone" dataKey="matriculas" name="Matrículas" stroke="#4ade80" strokeWidth={0} dot={{ r: 5, fill: "#4ade80", stroke: "#052e16", strokeWidth: 2 }} animationDuration={1600} />
-            </ComposedChart>
-          </ResponsiveContainer>
+        <div style={{ marginTop: 12 }}>
+          <TimeChart data={rows} xKey="name" interval={0} height={280} label="Produção da equipe por consultor" title={(p) => p.name}
+            series={[{ key: "mensagens", name: "Mensagens", color: "leads", kind: "bar" }, { key: "atendimentos", name: "Atendimentos", color: "violet", kind: "line" }, { key: "matriculas", name: "Matrículas", color: "won", kind: "line" }]} />
         </div>
       )}
     </div>
@@ -531,7 +518,7 @@ const PoloBoard = ({ data, polos, history, setTab }) => {
                     <div><small>Leads</small><b><NumberTicker value={p.totals.leadsWorked || 0} format={(n) => num(n)} /></b></div>
                     <div><small>Matrículas</small><b><NumberTicker value={p.totals.enrollments || 0} format={(n) => num(n)} /></b></div>
                   </div>
-                  <Progress value={p.totals.messagesSent || 0} max={maxM} color="linear-gradient(90deg, #22d3ee, #0693e3)" />
+                  <Progress value={p.totals.messagesSent || 0} max={maxM} color="var(--c-leads)" />
                   <div className="dash-team">{team.map((b) => <span key={b.user.id}><i>{(b.user.name || "?").charAt(0).toUpperCase()}</i>{b.user.name.split(" ")[0]}</span>)}</div>
                 </>
               ) : (

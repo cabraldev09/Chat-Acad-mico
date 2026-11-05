@@ -1,5 +1,6 @@
 import React from "react";
 import { Bar, BarChart, CartesianGrid, Cell, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { useChartTheme } from "../../components/charts";
 import { Building2, Gauge, MapPin, Users } from "lucide-react";
 
 import { Insights, SlaBar, hm, useShared } from "./shared";
@@ -15,6 +16,7 @@ const Kpi = ({ label, value, note, tone }) => (
 // Management: every department, attendant and polo side by side, with response times that do not lie (median, P90, share on time)
 const Management = ({ data, sla }) => {
   const c = useShared();
+  const ct = useChartTheme();
   if (!data) return <div className={c.panel} style={{ opacity: 0.6 }}>Carregando a visão de gestão...</div>;
   const t = data.total;
   const delta = t.reply.median !== null && t.previousMedian ? Math.round(((t.reply.median - t.previousMedian) / t.previousMedian) * 100) : null;
@@ -39,13 +41,13 @@ const Management = ({ data, sla }) => {
         <div style={{ height: 220, marginTop: 10 }}>
           <ResponsiveContainer>
             <BarChart data={hours} margin={{ top: 6, right: 4, left: -14, bottom: 0 }}>
-              <CartesianGrid vertical={false} strokeDasharray="3 3" opacity={0.35} />
-              <XAxis dataKey="name" tickLine={false} axisLine={false} fontSize={12} />
-              <YAxis tickLine={false} axisLine={false} fontSize={12} unit=" min" />
-              <Tooltip cursor={{ fill: "rgba(127,127,127,.08)" }} formatter={(v, n, p) => [hm(v), `Mediana (${p.payload.count} respostas)`]} />
-              <ReferenceLine y={sla} stroke="#d97706" strokeDasharray="4 4" />
-              <Bar dataKey="median" radius={[5, 5, 0, 0]}>
-                {hours.map((h) => <Cell key={h.hour} fill={h.median > sla * 2 ? "#dc2626" : h.median > sla ? "#d97706" : "#0693E3"} />)}
+              <CartesianGrid vertical={false} stroke={ct.grid} strokeDasharray="3 4" />
+              <XAxis dataKey="name" tickLine={false} axisLine={false} tick={{ fontSize: 11.5, fill: ct.axis }} tickMargin={8} />
+              <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 11.5, fill: ct.axis }} unit=" min" />
+              <Tooltip cursor={{ fill: ct.cursor }} formatter={(v, n, p) => [hm(v), `Mediana (${p.payload.count} respostas)`]} contentStyle={{ background: "var(--surface)", border: "1px solid var(--line-strong)", borderRadius: 10, fontSize: 12.5 }} />
+              <ReferenceLine y={sla} stroke={ct.c.warn} strokeDasharray="4 4" />
+              <Bar dataKey="median" radius={[3, 3, 0, 0]} maxBarSize={24} isAnimationActive={false}>
+                {hours.map((h) => <Cell key={h.hour} fill={h.median > sla * 2 ? ct.c.lost : h.median > sla ? ct.c.warn : ct.c.leads} />)}
               </Bar>
             </BarChart>
           </ResponsiveContainer>

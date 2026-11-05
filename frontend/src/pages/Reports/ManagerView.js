@@ -1,7 +1,7 @@
 import React from "react";
 import { useHistory } from "react-router-dom";
 import { makeStyles } from "@material-ui/core/styles";
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { BarsChart } from "../../components/charts";
 import { ArrowUpRight, CheckCircle2, RefreshCw, Target, AlertTriangle } from "lucide-react";
 
 import { hm, useShared } from "./shared";
@@ -12,8 +12,8 @@ import { hm, useShared } from "./shared";
 //   3. Período              four numbers and one chart for the days chosen at the top
 const useStyles = makeStyles((theme) => {
   const dark = theme.palette.type === "dark";
-  const line = dark ? "rgba(255,255,255,.09)" : "#e3e9f1";
-  const soft = dark ? "rgba(255,255,255,.05)" : "#f1f4f8";
+  const line = "var(--line)";
+  const soft = "var(--surface-2)";
   return {
     section: { display: "grid", gap: theme.spacing(1.5), minWidth: 0 },
     head: { display: "flex", alignItems: "baseline", gap: theme.spacing(1.5), flexWrap: "wrap" },
@@ -22,26 +22,26 @@ const useStyles = makeStyles((theme) => {
     alerts: { display: "grid", gap: theme.spacing(1.25), gridTemplateColumns: "repeat(auto-fill, minmax(230px, 1fr))" },
     alert: {
       display: "flex", alignItems: "center", gap: 12, textAlign: "left", cursor: "pointer", fontFamily: "inherit", color: "inherit",
-      background: dark ? "#0f1826" : "#ffffff", border: `1px solid ${line}`, borderLeftWidth: 4, borderRadius: 14, padding: "12px 14px",
-      transition: "border-color .15s, transform .15s", "&:hover": { transform: "translateY(-1px)" },
+      background: "var(--surface)", border: `1px solid ${line}`, borderRadius: "var(--radius-card)", padding: "12px 14px", boxShadow: "var(--shadow-card)",
+      transition: "border-color .15s", "&:hover": { borderColor: "var(--line-strong)" },
       "&:focus-visible": { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: 2 },
     },
-    alertN: { fontSize: 28, fontWeight: 700, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums", minWidth: 40 },
+    alertN: { fontSize: 24, fontWeight: 700, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums", minWidth: 40 },
     alertL: { fontSize: 13.5, lineHeight: 1.3, flex: 1 },
-    good: { display: "flex", gap: 10, alignItems: "center", fontSize: 14.5, background: dark ? "#0f1826" : "#ffffff", border: `1px solid ${line}`, borderRadius: 14, padding: "14px 16px" },
+    good: { display: "flex", gap: 10, alignItems: "center", fontSize: 14.5, background: "var(--surface)", border: `1px solid ${line}`, borderRadius: "var(--radius-card)", padding: "14px 16px" },
     polos: { display: "grid", gap: theme.spacing(1.5), gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))" },
     polo: {
       display: "grid", gap: 10, textAlign: "left", cursor: "pointer", fontFamily: "inherit", color: "inherit",
-      background: dark ? "#0f1826" : "#ffffff", border: `1px solid ${line}`, borderRadius: 16, padding: theme.spacing(2),
-      "&:hover": { borderColor: theme.palette.primary.main },
+      background: "var(--surface)", border: `1px solid ${line}`, borderRadius: "var(--radius-card)", padding: theme.spacing(2), boxShadow: "var(--shadow-card)",
+      transition: "border-color .15s", "&:hover": { borderColor: "var(--line-strong)" },
       "&:focus-visible": { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: 2 },
     },
     poloTop: { display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8 },
     poloName: { fontWeight: 700, fontSize: 15, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
     poloNum: { fontSize: 24, fontWeight: 700, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums" },
-    track: { position: "relative", height: 10, borderRadius: 999, background: soft },
+    track: { position: "relative", height: 6, borderRadius: 999, background: "var(--track)" },
     fill: { height: "100%", borderRadius: 999, transition: "width 1s cubic-bezier(.2,.8,.2,1)" },
-    mark: { position: "absolute", top: -4, bottom: -4, width: 2, borderRadius: 2, background: dark ? "#e2e8f0" : "#0b1a2e" },
+    mark: { position: "absolute", top: -4, bottom: -4, width: 2, borderRadius: 2, background: "var(--text-1)", opacity: 0.55 },
     line: { fontSize: 13, color: theme.palette.text.secondary, display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" },
     badges: { display: "flex", gap: 6, flexWrap: "wrap" },
     badge: { fontSize: 11.5, fontWeight: 700, padding: "2px 8px", borderRadius: 999, background: "rgba(245,158,11,.16)", color: dark ? "#fbbf24" : "#b45309" },
@@ -208,16 +208,8 @@ const ManagerView = ({ data, error, onRetry, periodName }) => {
             <div className={c.cell}><span>Respondidas no prazo ({data.slaMinutes} min)</span><b>{per.withinSlaPct === null ? "—" : `${per.withinSlaPct}%`}</b></div>
           </div>
           {daily.length > 1 && (
-            <div style={{ height: 190, marginTop: 14 }}>
-              <ResponsiveContainer>
-                <BarChart data={daily} margin={{ top: 6, right: 4, left: -24, bottom: 0 }}>
-                  <CartesianGrid vertical={false} strokeDasharray="3 3" opacity={0.35} />
-                  <XAxis dataKey="name" tickLine={false} axisLine={false} fontSize={12} interval="preserveStartEnd" minTickGap={16} />
-                  <YAxis allowDecimals={false} tickLine={false} axisLine={false} fontSize={12} />
-                  <Tooltip cursor={{ fill: "rgba(127,127,127,.08)" }} formatter={(v) => [v, "Atendimentos"]} />
-                  <Bar dataKey="total" fill="#0693E3" radius={[4, 4, 0, 0]} animationDuration={1000} animationEasing="ease-out" />
-                </BarChart>
-              </ResponsiveContainer>
+            <div style={{ marginTop: 14 }}>
+              <BarsChart data={daily} keys={[["total", "Atendimentos", "leads"]]} height={190} />
             </div>
           )}
         </div>

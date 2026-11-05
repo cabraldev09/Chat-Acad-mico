@@ -3,7 +3,8 @@ import { useHistory } from "react-router-dom";
 import { toast } from "react-toastify";
 import { MenuItem, TextField } from "@material-ui/core";
 import { makeStyles } from "@material-ui/core/styles";
-import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { BarsChart, ChartLegend, ChartTooltip, Donut, RankBars, useChartTheme } from "../../components/charts";
 import { BellOff, CalendarDays, CheckCircle2, ChevronLeft, ChevronRight, Clock3, GraduationCap, MailOpen, MessageCircle, MessagesSquare, Reply, Timer, Users } from "lucide-react";
 
 import { CHANNELS } from "../../components/ChannelIcon";
@@ -28,24 +29,24 @@ import { fetchAllUsersPage } from "../../utils/fetchAllUsers";
 //   Canais       where the conversations come from: channel, queue and tag (managers)
 // The period (day, 7 days, 30 days or a chosen date) is set once at the top and applies to every tab.
 const useStyles = makeStyles((theme) => {
-  const dark = theme.palette.type === "dark";
-  const line = dark ? "rgba(255,255,255,.09)" : "#e3e9f1";
-  const card = dark ? "#0f1826" : "#ffffff";
-  const soft = dark ? "rgba(255,255,255,.04)" : "#f6f8fb";
+  // the tokens of styles/ui.css: the same surfaces and borders as every other screen
+  const line = "var(--line)";
+  const card = "var(--surface)";
+  const soft = "var(--surface-2)";
   return {
     page: { padding: theme.spacing(3), maxWidth: 1280, margin: "0 auto", height: "auto" },
     top: { display: "flex", alignItems: "flex-end", flexWrap: "wrap", gap: theme.spacing(2), marginBottom: theme.spacing(2.5) },
-    hello: { fontSize: 28, fontWeight: 700, letterSpacing: "-0.03em", lineHeight: 1.1, margin: 0 },
+    hello: { fontSize: 22, fontWeight: 700, letterSpacing: "-0.02em", lineHeight: 1.2, margin: 0 },
     sub: { color: theme.palette.text.secondary, fontSize: 14, marginTop: 4 },
     controls: { marginLeft: "auto", display: "flex", gap: theme.spacing(1), flexWrap: "wrap", alignItems: "center" },
-    seg: { display: "inline-flex", padding: 3, borderRadius: 12, background: soft, border: `1px solid ${line}` },
+    seg: { display: "inline-flex", gap: 2, padding: 3, borderRadius: 10, background: soft, border: `1px solid ${line}` },
     segBtn: {
-      border: 0, background: "transparent", cursor: "pointer", fontFamily: "inherit", fontSize: 13.5, fontWeight: 600, color: theme.palette.text.secondary,
-      padding: "6px 14px", borderRadius: 9, transition: "background-color .15s, color .15s", display: "inline-flex", alignItems: "center", gap: 6,
+      border: 0, background: "transparent", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 550, color: theme.palette.text.secondary,
+      padding: "5px 12px", borderRadius: 7, transition: "background-color .15s, color .15s", display: "inline-flex", alignItems: "center", gap: 6,
       "&:hover": { color: theme.palette.text.primary },
     },
-    segOn: { background: card, color: theme.palette.text.primary, boxShadow: dark ? "none" : "0 1px 3px rgba(11,26,46,.12)" },
-    datebox: { display: "inline-flex", alignItems: "center", gap: 2, border: `1px solid ${line}`, borderRadius: 12, padding: "3px 6px", background: card },
+    segOn: { background: card, color: theme.palette.text.primary, boxShadow: "0 1px 2px rgba(15,23,42,.08), 0 0 0 1px var(--line)" },
+    datebox: { display: "inline-flex", alignItems: "center", gap: 2, border: `1px solid ${line}`, borderRadius: 10, padding: "3px 6px", background: card },
     iconBtn: {
       border: 0, background: "transparent", cursor: "pointer", color: theme.palette.text.primary, width: 30, height: 30, borderRadius: 8, display: "grid", placeItems: "center",
       "&:hover": { background: soft }, "&[disabled]": { opacity: 0.3, cursor: "default" },
@@ -53,10 +54,10 @@ const useStyles = makeStyles((theme) => {
     dateInput: { border: 0, background: "transparent", color: "inherit", fontFamily: "inherit", fontSize: 13.5, fontWeight: 600, cursor: "pointer", colorScheme: theme.palette.type },
     layout: { display: "grid", gap: theme.spacing(2.5), gridTemplateColumns: "minmax(0, 1fr) 340px", alignItems: "start", [theme.breakpoints.down("md")]: { gridTemplateColumns: "1fr" } },
     stack: { display: "grid", gap: theme.spacing(2.5), minWidth: 0 },
-    panel: { background: card, border: `1px solid ${line}`, borderRadius: 16, padding: theme.spacing(2.25) },
-    panelTitle: { fontSize: 14.5, fontWeight: 700, margin: 0, letterSpacing: "-0.01em", display: "flex", alignItems: "center", gap: 8 },
+    panel: { background: card, border: `1px solid ${line}`, borderRadius: "var(--radius-card)", padding: theme.spacing(2.25, 2.5), boxShadow: "var(--shadow-card)", minWidth: 0 },
+    panelTitle: { fontSize: 14, fontWeight: 650, margin: 0, letterSpacing: "-0.01em", display: "flex", alignItems: "center", gap: 8 },
     panelSub: { fontSize: 12.5, color: theme.palette.text.secondary, marginTop: 2 },
-    band: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", background: card, border: `1px solid ${line}`, borderRadius: 16, overflow: "hidden", [theme.breakpoints.down("sm")]: { gridTemplateColumns: "repeat(2, 1fr)" } },
+    band: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", background: card, border: `1px solid ${line}`, borderRadius: "var(--radius-card)", overflow: "hidden", [theme.breakpoints.down("sm")]: { gridTemplateColumns: "repeat(2, 1fr)" } },
     cell: { padding: theme.spacing(2, 2.25), borderRight: `1px solid ${line}`, [theme.breakpoints.down("sm")]: { borderBottom: `1px solid ${line}` }, "&:last-child": { borderRight: 0 } },
     cellLabel: { fontSize: 12.5, color: theme.palette.text.secondary, display: "flex", alignItems: "center", gap: 6, fontWeight: 500 },
     cellValue: { fontSize: 30, fontWeight: 700, letterSpacing: "-0.035em", lineHeight: 1.1, marginTop: 8, fontVariantNumeric: "tabular-nums" },
@@ -124,8 +125,16 @@ const STATUS = {
 };
 const TABS = [["geral", "Visão geral", MessagesSquare], ["equipe", "Equipe", Users], ["canais", "Canais e filas", CalendarDays]];
 
+// a list of { name, total, color } as ranked bars (biggest first, the bar relative to the biggest)
+const rankOf = (list) => {
+  const rows = (list || []).map((x) => ({ name: x.name, value: Number(x.total) || 0, color: x.color })).sort((a, b) => b.value - a.value);
+  const max = Math.max(1, ...rows.map((r) => r.value));
+  return rows.map((r) => ({ key: r.name, name: r.name, value: r.value, bar: (r.value / max) * 100, color: r.color }));
+};
+
 const ReportsClassic = () => {
   const classes = useStyles();
+  const ct = useChartTheme();
   const history = useHistory();
   const { user } = useContext(AuthContext);
   const manager = isManager(user);
@@ -326,33 +335,16 @@ const ReportsClassic = () => {
                   <h2 className={classes.panelTitle}>Por canal</h2>
                   <div className={classes.panelSub}>De onde vieram as conversas do período.</div>
                   {channelData.length === 0 ? <div className={classes.empty}>Nenhuma conversa no período.</div> : (
-                    <div className={classes.chartBox}>
-                      <ResponsiveContainer>
-                        <PieChart>
-                          <Pie data={channelData} dataKey="value" nameKey="name" innerRadius={55} outerRadius={90} paddingAngle={2}>
-                            {channelData.map((c) => (<Cell key={c.name} fill={c.color} />))}
-                          </Pie>
-                          <Tooltip />
-                          <Legend />
-                        </PieChart>
-                      </ResponsiveContainer>
+                    <div style={{ marginTop: 14 }}>
+                      <Donut parts={channelData.map((c) => ({ label: c.name, value: c.value, color: c.color }))} centerLabel="conversas" />
                     </div>
                   )}
                 </div>
                 <div className={classes.panel}>
                   <h2 className={classes.panelTitle}>Por fila</h2>
-                  <div className={classes.chartBox}>
-                    <ResponsiveContainer>
-                      <BarChart data={overview.perQueue.map((q) => ({ ...q, total: Number(q.total) }))} margin={{ top: 6, right: 4, left: -22, bottom: 0 }}>
-                        <CartesianGrid vertical={false} strokeDasharray="3 3" opacity={0.35} />
-                        <XAxis dataKey="name" tickLine={false} axisLine={false} fontSize={12} />
-                        <YAxis allowDecimals={false} tickLine={false} axisLine={false} fontSize={12} />
-                        <Tooltip cursor={{ fill: "rgba(127,127,127,.08)" }} />
-                        <Bar dataKey="total" name="Atendimentos" radius={[5, 5, 0, 0]}>
-                          {overview.perQueue.map((q) => (<Cell key={q.name} fill={q.color} />))}
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
+                  <div className={classes.panelSub}>Atendimentos de cada fila no período.</div>
+                  <div style={{ marginTop: 14 }}>
+                    <RankBars rows={rankOf(overview.perQueue)} empty="Nenhum atendimento no período." />
                   </div>
                 </div>
               </div>
@@ -361,18 +353,8 @@ const ReportsClassic = () => {
                 {overview.perTag.length === 0 ? (
                   <div className={classes.empty}>Nenhum atendimento etiquetado no período.</div>
                 ) : (
-                  <div className={classes.chartBox}>
-                    <ResponsiveContainer>
-                      <BarChart data={overview.perTag.map((t) => ({ ...t, total: Number(t.total) }))} layout="vertical" margin={{ top: 6, right: 12, left: 10, bottom: 0 }}>
-                        <CartesianGrid horizontal={false} strokeDasharray="3 3" opacity={0.35} />
-                        <XAxis type="number" allowDecimals={false} tickLine={false} axisLine={false} fontSize={12} />
-                        <YAxis type="category" dataKey="name" width={110} tickLine={false} axisLine={false} fontSize={12} />
-                        <Tooltip cursor={{ fill: "rgba(127,127,127,.08)" }} />
-                        <Bar dataKey="total" name="Atendimentos" radius={[0, 5, 5, 0]}>
-                          {overview.perTag.map((t) => (<Cell key={t.name} fill={t.color} />))}
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
+                  <div style={{ marginTop: 14 }}>
+                    <RankBars rows={rankOf(overview.perTag)} />
                   </div>
                 )}
               </div>
@@ -444,42 +426,26 @@ const ReportsClassic = () => {
               <div className={classes.panel}>
                 <h2 className={classes.panelTitle}>Atendimentos por dia</h2>
                 <div className={classes.panelSub}>Novos e finalizados. Clique numa barra para ver o dia.</div>
-                <div className={classes.legend}>
-                  <span><span className={classes.dot} style={{ background: "#0693E3" }} />Novos</span>
-                  <span><span className={classes.dot} style={{ background: "#0B4279" }} />Finalizados</span>
-                </div>
-                <div className={classes.chartBox}>
+                <div style={{ marginTop: 12 }}><ChartLegend items={[["leads", "Novos"], ["muted", "Finalizados"]]} /></div>
+                <div className={classes.chartBox} style={{ marginTop: 4 }}>
                   <ResponsiveContainer>
-                    <BarChart data={series} margin={{ top: 6, right: 4, left: -24, bottom: 0 }} barGap={2}>
-                      <CartesianGrid vertical={false} strokeDasharray="3 3" opacity={0.35} />
-                      <XAxis dataKey="day" tickLine={false} axisLine={false} fontSize={12} interval="preserveStartEnd" minTickGap={16} />
-                      <YAxis allowDecimals={false} tickLine={false} axisLine={false} fontSize={12} />
-                      <Tooltip cursor={{ fill: "rgba(127,127,127,.08)" }} formatter={(v, n) => [v, n === "created" ? "Novos" : "Finalizados"]} />
-                      <Bar dataKey="created" radius={[4, 4, 0, 0]} style={{ cursor: "pointer" }} onClick={(d) => { if (d) { setDays(1); setDate(d.key >= today ? "" : d.key); } }}>
-                        {series.map((s) => <Cell key={s.key} fill={s.key === shown ? "#0B4279" : "#0693E3"} />)}
+                    <BarChart data={series} margin={{ top: 6, right: 4, left: -24, bottom: 0 }} barGap={2} barCategoryGap="22%">
+                      <CartesianGrid vertical={false} stroke={ct.grid} strokeDasharray="3 4" />
+                      <XAxis dataKey="day" tickLine={false} axisLine={false} tick={{ fontSize: 11.5, fill: ct.axis }} tickMargin={8} interval="preserveStartEnd" minTickGap={16} />
+                      <YAxis allowDecimals={false} tickLine={false} axisLine={false} tick={{ fontSize: 11.5, fill: ct.axis }} />
+                      <Tooltip cursor={{ fill: ct.cursor }} content={<ChartTooltip />} />
+                      <Bar dataKey="created" name="Novos" radius={[3, 3, 0, 0]} maxBarSize={22} style={{ cursor: "pointer" }} onClick={(d) => { if (d) { setDays(1); setDate(d.key >= today ? "" : d.key); } }} isAnimationActive={false}>
+                        {series.map((s) => <Cell key={s.key} fill={s.key === shown ? ct.c.brand : ct.c.leads} />)}
                       </Bar>
-                      <Bar dataKey="closed" fill="#9cc9ec" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="closed" name="Finalizados" fill={ct.c.muted} fillOpacity={0.45} radius={[3, 3, 0, 0]} maxBarSize={22} isAnimationActive={false} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
               </div>
               <div className={classes.panel}>
                 <h2 className={classes.panelTitle}>Mensagens por hora</h2>
-                <div className={classes.legend}>
-                  <span><span className={classes.dot} style={{ background: "#0693E3" }} />Recebidas</span>
-                  <span><span className={classes.dot} style={{ background: "#0B4279" }} />Enviadas</span>
-                </div>
-                <div className={classes.chartBox}>
-                  <ResponsiveContainer>
-                    <BarChart data={hourData} margin={{ top: 6, right: 4, left: -22, bottom: 0 }} barGap={2}>
-                      <CartesianGrid vertical={false} strokeDasharray="3 3" opacity={0.35} />
-                      <XAxis dataKey="name" tickLine={false} axisLine={false} fontSize={12} interval={2} />
-                      <YAxis allowDecimals={false} tickLine={false} axisLine={false} fontSize={12} />
-                      <Tooltip cursor={{ fill: "rgba(127,127,127,.08)" }} formatter={(v, n) => [v, n === "received" ? "Recebidas" : "Enviadas"]} />
-                      <Bar dataKey="received" fill="#0693E3" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="sent" fill="#0B4279" radius={[4, 4, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
+                <div style={{ marginTop: 12 }}>
+                  <BarsChart data={hourData} keys={[["received", "Recebidas", "leads"], ["sent", "Enviadas", "brand"]]} height={230} />
                 </div>
               </div>
             </div>
