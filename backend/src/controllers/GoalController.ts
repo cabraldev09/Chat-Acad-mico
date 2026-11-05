@@ -409,7 +409,9 @@ const poloLine = (goalId: number, months: string[], r: any) => {
     goalId,
     poloId: Number(r.poloId),
     target,
-    manualCount: int(r.manual) || 0,
+    // what the administration typed minus what the CRM counts: negative when the CRM counts more than the real total (an enrollment
+    // counted twice, a lead won in the wrong polo), so the total of the polo is always exactly what was typed
+    manualCount: int(r.manual, -1000000) || 0,
     canceled: int(r.canceled) || 0,
     monthly: monthly ? JSON.stringify(monthly) : null,
     manualMonthly: Object.keys(manualMonthly).length ? JSON.stringify(manualMonthly) : null
@@ -515,7 +517,7 @@ export const applyPoloImport = async (goal: Goal, items: any[], dryRun: boolean)
       // eslint-disable-next-line no-await-in-loop
       const previous = await GoalPolo.findOne({ where: { goalId: goal.id, poloId: polo.id } });
       const inCrm = (await Lead.count({ where: { isHistorical: false, poloId: polo.id, wonAt: { [Op.gte]: startAt, [Op.lte]: endAt } as any } })) + (await LeadEnrollment.count({ where: { poloId: polo.id, enrolledAt: { [Op.gte]: startAt, [Op.lte]: endAt } as any } }));
-      const row = poloLine(goal.id, months, { poloId: polo.id, target, manual: Math.max(0, (int(it.done) || 0) - inCrm), canceled: int(it.canceled) || 0, manualMonthly: parseJson(previous?.manualMonthly, {}) });
+      const row = poloLine(goal.id, months, { poloId: polo.id, target, manual: (int(it.done) || 0) - inCrm, canceled: int(it.canceled) || 0, manualMonthly: parseJson(previous?.manualMonthly, {}) });
       if (previous) await previous.update(row as any);
       else await GoalPolo.create(row as any);
     }

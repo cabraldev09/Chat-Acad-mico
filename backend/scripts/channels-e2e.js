@@ -5532,6 +5532,10 @@ const postMeta = (id, payload, secret, badSig) => {
       const resaved = (await http.put(`/goals/${goal.id}/polos`, { rows: [{ poloId: polo.id, target: 10, manual: 2, canceled: 1 }] }, auth())).data.rows.find(r => r.poloId === polo.id);
       assert(resaved.updatedAt === row.updatedAt && resaved.done === 3 && resaved.inCourse === 2, `the same numbers rewrote the line ${JSON.stringify({ before: row.updatedAt, after: resaved.updatedAt })}`);
       assert(seen.data.totals.target === 10 && seen.data.totals.done === 3 && seen.data.totals.pct === 30 && seen.data.totals.inCourse === 2, `totals ${JSON.stringify(seen.data.totals)}`);
+      // the real total is lower than what the CRM counts (the spreadsheet says 0 with 1 in the CRM): what was typed stays, as a correction
+      const lower = (await http.put(`/goals/${goal.id}/polos`, { rows: [{ poloId: polo.id, target: 10, manual: -1, canceled: 0 }] }, auth())).data.rows.find(r => r.poloId === polo.id);
+      assert(lower.done === 0 && lower.manual === -1 && lower.inCourse === 0 && lower.missing === 10, `a total lower than the CRM was not kept ${JSON.stringify([lower.done, lower.manual, lower.inCourse])}`);
+      await http.put(`/goals/${goal.id}/polos`, { rows: [{ poloId: polo.id, target: 10, manual: 2, canceled: 1 }] }, auth());
       // the target is for the whole period and spread over its months
       assert(row.monthly.length === seen.data.months.length && row.monthly.reduce((t, n) => t + n, 0) === 10, `monthly ${JSON.stringify(row.monthly)}`);
       assert(!JSON.stringify(seen.data).includes("leadsPerDay"), "leads per day is gone");
