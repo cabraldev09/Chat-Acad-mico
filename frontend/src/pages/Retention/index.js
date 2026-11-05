@@ -3,6 +3,7 @@ import { useHistory } from "react-router-dom";
 import { toast } from "react-toastify";
 import { Button, Checkbox, FormControlLabel, LinearProgress, MenuItem, Switch, Tab, Tabs, TextField, Typography, makeStyles } from "@material-ui/core";
 import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { useChartTheme } from "../../components/charts";
 import { Download, MessageSquare, Play, RefreshCw, Send, User } from "lucide-react";
 
 import ConfirmationModal from "../../components/ConfirmationModal";
@@ -22,16 +23,16 @@ import api from "../../services/api";
 import toastError from "../../errors/toastError";
 
 const useStyles = makeStyles((theme) => {
-  const line = theme.palette.type === "dark" ? "rgba(255,255,255,.09)" : "#c9d6e8";
+  const line = "var(--line)";
   return {
     body: { flex: 1, overflowY: "auto", overflowX: "hidden", ...theme.scrollbarStyles, paddingBottom: theme.spacing(4) },
     wrap: { maxWidth: 1180 },
-    card: { background: theme.palette.cards.background, border: `1px solid ${line}`, borderRadius: 16, padding: theme.spacing(2.25), marginBottom: theme.spacing(2) },
+    card: { background: "var(--surface)", border: `1px solid ${line}`, borderRadius: "var(--radius-card)", padding: theme.spacing(2.25, 2.5), marginBottom: theme.spacing(2), boxShadow: "var(--shadow-card)" },
     hint: { fontSize: 13, color: theme.palette.text.secondary },
     row: { display: "flex", gap: theme.spacing(1.25), flexWrap: "wrap", alignItems: "center" },
     kpis: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: theme.spacing(1.5), marginBottom: theme.spacing(2) },
-    kpi: { border: `1px solid ${line}`, borderRadius: 14, padding: theme.spacing(1.5, 2), background: theme.palette.type === "dark" ? theme.palette.cards.background : theme.palette.cards.background, boxShadow: "0 1px 2px rgba(11,66,121,.06)" },
-    big: { fontSize: 30, fontWeight: 700, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums" },
+    kpi: { border: `1px solid ${line}`, borderRadius: "var(--radius-card)", padding: theme.spacing(1.75, 2), background: "var(--surface)", boxShadow: "var(--shadow-card)" },
+    big: { fontSize: 28, fontWeight: 700, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums" },
     item: { display: "flex", alignItems: "center", gap: 10, padding: "9px 0", borderTop: `1px solid ${line}`, flexWrap: "wrap" },
     chip: { fontSize: 12, fontWeight: 700, padding: "2px 9px", borderRadius: 999 },
     bar: { display: "flex", height: 12, borderRadius: 8, overflow: "hidden", margin: "8px 0" },
@@ -39,8 +40,8 @@ const useStyles = makeStyles((theme) => {
     strip: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: theme.spacing(1.5), marginBottom: theme.spacing(2) },
     stripCard: {
       textAlign: "left", cursor: "pointer", fontFamily: "inherit", color: "inherit", background: theme.palette.type === "dark" ? theme.palette.cards.background : theme.palette.cards.background, border: `1px solid ${line}`, boxShadow: "0 1px 2px rgba(11,66,121,.07)",
-      borderLeftWidth: 4, borderRadius: 14, padding: theme.spacing(1.5, 2),
-      "&:hover": { borderColor: theme.palette.primary.main }, "&:focus-visible": { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: 2 },
+      borderRadius: "var(--radius-card)", padding: theme.spacing(1.75, 2),
+      transition: "border-color .15s ease", "&:hover": { borderColor: "var(--line-strong)" }, "&:focus-visible": { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: 2 },
     },
     toolbar: { display: "flex", gap: theme.spacing(1.25), flexWrap: "wrap", alignItems: "center", marginBottom: theme.spacing(1.5) },
     badge: { marginLeft: 6, fontSize: 11.5, fontWeight: 700, padding: "1px 7px", borderRadius: 999, background: "rgba(220,38,38,.14)", color: "#dc2626" },
@@ -153,6 +154,7 @@ const TabAdjust = ({ Block, title, hint, defaultOpen, manager }) => {
 
 const Nps = ({ manager }) => {
   const classes = useStyles();
+  const ct = useChartTheme();
   const [range, setRange] = useState("90");
   const period = useMemo(() => {
     const day = (t) => t.toLocaleDateString("en-CA", { timeZone: "America/Porto_Velho" });
@@ -204,12 +206,12 @@ const Nps = ({ manager }) => {
           <div style={{ height: 200, marginTop: 8 }}>
             <ResponsiveContainer>
               <LineChart data={series} margin={{ top: 8, right: 12, left: -18, bottom: 0 }}>
-                <CartesianGrid vertical={false} strokeDasharray="3 3" opacity={0.35} />
-                <XAxis dataKey="label" tickLine={false} axisLine={false} fontSize={12} />
-                <YAxis domain={[-100, 100]} tickLine={false} axisLine={false} fontSize={12} />
-                <ReferenceLine y={0} stroke="currentColor" opacity={0.3} />
-                <Tooltip formatter={(v, n, item) => [`${v} (${item.payload.answered} respostas)`, "NPS"]} labelFormatter={(l) => `Semana de ${l}`} />
-                <Line type="monotone" dataKey="nps" stroke="#0693E3" strokeWidth={2} dot={{ r: 3 }} connectNulls />
+                <CartesianGrid vertical={false} stroke={ct.grid} strokeDasharray="3 4" />
+                <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 11.5, fill: ct.axis }} tickMargin={8} />
+                <YAxis domain={[-100, 100]} tickLine={false} axisLine={false} tick={{ fontSize: 11.5, fill: ct.axis }} />
+                <ReferenceLine y={0} stroke={ct.axis} strokeOpacity={0.5} />
+                <Tooltip formatter={(v, n, item) => [`${v} (${item.payload.answered} respostas)`, "NPS"]} labelFormatter={(l) => `Semana de ${l}`} contentStyle={{ background: "var(--surface)", border: "1px solid var(--line-strong)", borderRadius: 10, fontSize: 12.5 }} />
+                <Line type="monotone" dataKey="nps" stroke={ct.c.leads} strokeWidth={1.75} dot={{ r: 2.5, strokeWidth: 0, fill: ct.c.leads }} activeDot={{ r: 4, strokeWidth: 0 }} connectNulls isAnimationActive={false} />
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -425,8 +427,8 @@ const Retention = () => {
           {summary && (
             <div className={classes.strip}>
               {cards.map(([target, label, value, sub, color]) => (
-                <button key={label} type="button" className={classes.stripCard} style={{ borderLeftColor: color }} onClick={() => setTab(target)}>
-                  <div className={classes.hint}>{label}</div>
+                <button key={label} type="button" className={classes.stripCard} onClick={() => setTab(target)}>
+                  <div className={classes.hint} style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ width: 8, height: 8, borderRadius: 2, background: color, flex: "none" }} />{label}</div>
                   <div className={classes.big} style={{ color }}>{value}</div>
                   <div className={classes.hint}>{sub}</div>
                 </button>

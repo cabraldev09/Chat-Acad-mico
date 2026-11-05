@@ -184,11 +184,11 @@ export const Trend = ({ data, color, kind = "area", height = 56, name = "Total",
 
 // A chart over time with several series (area, line or bars), a legend that turns them off and the same tooltip.
 // series: [{ key, name, color, kind: "area" | "line" | "bar", dashed }]
-export const TimeChart = ({ data, xKey = "label", series, height = 260, title, unit, legend = true, label }) => {
+export const TimeChart = ({ data, xKey = "label", series, height = 260, title, unit, legend = true, label, interval }) => {
   const t = useChartTheme();
   const [hidden, toggle] = useToggle();
   const rows = data || [];
-  const every = Math.max(0, Math.ceil(rows.length / 8) - 1);
+  const every = interval !== undefined ? interval : Math.max(0, Math.ceil(rows.length / 8) - 1);
   const anyBar = series.some((s) => s.kind === "bar");
   return (
     <div>

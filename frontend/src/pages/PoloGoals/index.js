@@ -99,24 +99,24 @@ const useStyles = makeStyles((theme) => ({
   monthOn: { background: theme.palette.primary.main, color: "#fff", borderColor: theme.palette.primary.main, "&:hover": { background: theme.palette.primary.main } },
   monthBar: { height: 4, borderRadius: 4, marginTop: 6, background: "rgba(127,140,160,.3)", overflow: "hidden" },
   hero: {
-    display: "grid", gridTemplateColumns: "auto minmax(0,1fr)", gap: theme.spacing(3), alignItems: "center", color: "#fff", borderRadius: 20, padding: theme.spacing(3),
-    background: "radial-gradient(120% 140% at 0% 0%, #0f5aa8 0%, #0B4279 45%, #082f57 100%)", boxShadow: "0 14px 34px rgba(11,66,121,.28)", marginBottom: theme.spacing(2),
+    display: "grid", gridTemplateColumns: "auto minmax(0,1fr)", gap: theme.spacing(3), alignItems: "center", color: "var(--text-1)", borderRadius: "var(--radius-card)", padding: theme.spacing(2.5, 3),
+    background: "var(--surface)", border: "1px solid var(--line)", boxShadow: "var(--shadow-card)", marginBottom: theme.spacing(2),
     [theme.breakpoints.down("xs")]: { gridTemplateColumns: "1fr", justifyItems: "center", textAlign: "center" },
   },
   heroNum: { fontSize: 44, fontWeight: 700, letterSpacing: "-0.04em", lineHeight: 1, fontVariantNumeric: "tabular-nums" },
-  heroSub: { opacity: 0.8, fontSize: 14, marginTop: 4 },
+  heroSub: { color: "var(--text-2)", fontSize: 13.5, marginTop: 4 },
   facts: { display: "flex", gap: 8, flexWrap: "wrap", marginTop: 14, [theme.breakpoints.down("xs")]: { justifyContent: "center" } },
-  fact: { background: "rgba(255,255,255,.12)", borderRadius: 12, padding: "7px 12px", fontSize: 13, lineHeight: 1.25 },
-  factN: { fontWeight: 700, fontSize: 16, fontVariantNumeric: "tabular-nums", display: "block" },
+  fact: { background: "var(--surface-2)", border: "1px solid var(--line)", borderRadius: "var(--radius-ctl)", padding: "7px 12px", fontSize: 12.5, lineHeight: 1.25, color: "var(--text-2)" },
+  factN: { fontWeight: 700, fontSize: 16, fontVariantNumeric: "tabular-nums", display: "block", color: "var(--text-1)" },
   toolbar: { display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: theme.spacing(1.5) },
   seg: { display: "inline-flex", border: theme.border.divider, borderRadius: 10, overflow: "hidden" },
   segBtn: { border: 0, background: "transparent", color: "inherit", padding: "6px 12px", fontFamily: "inherit", fontSize: 13, fontWeight: 600, cursor: "pointer", display: "inline-flex", gap: 6, alignItems: "center" },
   segOn: { background: theme.palette.primary.main, color: "#fff" },
   grid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: theme.spacing(1.5) },
-  card: { background: theme.palette.cards.background, border: theme.border.divider, borderRadius: 16, padding: theme.spacing(2), position: "relative", overflow: "hidden" },
+  card: { background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "var(--radius-card)", padding: theme.spacing(2), position: "relative", overflow: "hidden", boxShadow: "var(--shadow-card)", transition: "border-color .15s ease", "&:hover": { borderColor: "var(--line-strong)" } },
   rank: { width: 26, height: 26, borderRadius: 8, display: "inline-grid", placeItems: "center", fontSize: 12.5, fontWeight: 700, background: theme.palette.action.selected, flexShrink: 0 },
   badge: { borderRadius: 999, padding: "3px 10px", fontSize: 13, fontWeight: 700, fontVariantNumeric: "tabular-nums", color: "#fff", whiteSpace: "nowrap" },
-  track: { height: 10, borderRadius: 999, background: theme.palette.action.selected, position: "relative", marginTop: 14, marginBottom: 12 },
+  track: { height: 6, borderRadius: 999, background: "var(--track)", position: "relative", marginTop: 14, marginBottom: 12 },
   fill: { height: "100%", borderRadius: 999, transition: "width .7s cubic-bezier(.2,.8,.2,1)" },
   tick: { position: "absolute", top: -4, bottom: -4, width: 2, background: theme.palette.text.primary, opacity: 0.55, borderRadius: 2 },
   nums: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 },
@@ -127,8 +127,8 @@ const useStyles = makeStyles((theme) => ({
   stripCol: { flex: 1, textAlign: "center", fontSize: 10.5, color: theme.palette.text.secondary, cursor: "pointer", border: 0, background: "transparent", padding: 0, fontFamily: "inherit" },
   stripNum: { fontSize: 12.5, fontWeight: 700, lineHeight: "16px", marginBottom: 2, color: theme.palette.text.primary, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" },
   stripBar: { height: 26, borderRadius: 5, background: theme.palette.action.selected, position: "relative", overflow: "hidden", marginBottom: 3 },
-  tableWrap: { overflowX: "auto", background: theme.palette.cards.background, border: theme.border.divider, borderRadius: 16 },
-  table: { borderCollapse: "collapse", width: "100%", minWidth: 860, fontSize: 13.5, fontVariantNumeric: "tabular-nums", "& th": { background: "#4a90d9", color: "#fff", fontWeight: 600, padding: "10px 12px", textAlign: "center", whiteSpace: "nowrap" }, "& td": { padding: "9px 12px", textAlign: "center", borderBottom: theme.border.divider }, "& td:nth-child(2), & th:nth-child(2)": { textAlign: "left" }, "& tfoot td": { fontWeight: 700, background: theme.palette.action.hover } },
+  tableWrap: { overflowX: "auto", background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "var(--radius-card)" },
+  table: { borderCollapse: "collapse", width: "100%", minWidth: 860, fontSize: 13.5, fontVariantNumeric: "tabular-nums", "& th": { background: "var(--surface-2)", color: "var(--text-2)", fontSize: 12.5, fontWeight: 600, padding: "10px 12px", textAlign: "center", whiteSpace: "nowrap", borderBottom: "1px solid var(--line)" }, "& td": { padding: "9px 12px", textAlign: "center", borderBottom: theme.border.divider }, "& td:nth-child(2), & th:nth-child(2)": { textAlign: "left" }, "& tfoot td": { fontWeight: 700, background: theme.palette.action.hover } },
   hint: { fontSize: 12.5, color: theme.palette.text.secondary },
   empty: { textAlign: "center", color: theme.palette.text.secondary, padding: theme.spacing(6, 2) },
   editRow: { display: "grid", gridTemplateColumns: "minmax(160px,1.6fr) 92px 92px 92px 36px", gap: 8, alignItems: "center", padding: "6px 0", borderBottom: theme.border.divider, [theme.breakpoints.down("xs")]: { gridTemplateColumns: "1fr 1fr 1fr 36px" } },
@@ -143,10 +143,10 @@ const Ring = ({ pct, size = 150, caption = "da meta" }) => {
   const v = Math.min(100, pct || 0);
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label={`${pctLabel(pct)} ${caption}`}>
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,.16)" strokeWidth="12" />
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#FEF84C" strokeWidth="12" strokeLinecap="round" strokeDasharray={`${(v / 100) * c} ${c}`} transform={`rotate(-90 ${size / 2} ${size / 2})`} style={{ transition: "stroke-dasharray .8s cubic-bezier(.2,.8,.2,1)" }} />
-      <text x="50%" y="48%" textAnchor="middle" fill="#fff" style={{ fontSize: 26, fontWeight: 700, letterSpacing: "-0.03em" }}>{pct === null || pct === undefined ? "—" : `${brDecimal(pct)}%`}</text>
-      <text x="50%" y="63%" textAnchor="middle" fill="rgba(255,255,255,.75)" style={{ fontSize: 12 }}>{caption}</text>
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--track)" strokeWidth="10" />
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--c-leads)" strokeWidth="10" strokeLinecap="round" strokeDasharray={`${(v / 100) * c} ${c}`} transform={`rotate(-90 ${size / 2} ${size / 2})`} style={{ transition: "stroke-dasharray .8s cubic-bezier(.2,.8,.2,1)" }} />
+      <text x="50%" y="48%" textAnchor="middle" fill="var(--text-1)" style={{ fontSize: 26, fontWeight: 700, letterSpacing: "-0.03em" }}>{pct === null || pct === undefined ? "—" : `${brDecimal(pct)}%`}</text>
+      <text x="50%" y="63%" textAnchor="middle" fill="var(--text-2)" style={{ fontSize: 12 }}>{caption}</text>
     </svg>
   );
 };

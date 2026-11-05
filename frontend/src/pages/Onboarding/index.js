@@ -3,7 +3,7 @@ import { useHistory } from "react-router-dom";
 import { toast } from "react-toastify";
 import { makeStyles } from "@material-ui/core/styles";
 import { Typography, Chip, CircularProgress, Menu, MenuItem, Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField, ListItemIcon, Checkbox, FormControlLabel } from "@material-ui/core";
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { BarsChart } from "../../components/charts";
 import { Play, CheckCheck, MessageSquare, MoreVertical, UserCog, UserCheck, Undo2, MoveRight, ListChecks, Send, BarChart3 } from "lucide-react";
 
 import MainContainer from "../../components/MainContainer";
@@ -24,7 +24,7 @@ const COLUMNS = [
 const useStyles = makeStyles((theme) => ({
   intro: { color: theme.palette.text.secondary, fontSize: 14, margin: theme.spacing(0, 0, 2) },
   board: { display: "grid", gap: theme.spacing(2), gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", alignItems: "start", paddingBottom: theme.spacing(3) },
-  col: { borderRadius: 18, border: `1px solid ${theme.palette.divider}`, backgroundColor: theme.palette.type === "dark" ? "rgba(255,255,255,.04)" : "#d9e2ef", padding: theme.spacing(1.5), minWidth: 0 },
+  col: { borderRadius: "var(--radius-card)", border: "1px solid var(--line)", backgroundColor: "var(--surface-2)", padding: theme.spacing(1.5), minWidth: 0 },
   colHead: { display: "flex", alignItems: "center", gap: theme.spacing(1), padding: theme.spacing(0.5, 0.5, 0.25) },
   dot: { width: 10, height: 10, borderRadius: "50%", flex: "none" },
   colTitle: { fontWeight: 700, fontSize: 15, flex: 1 },
@@ -44,7 +44,7 @@ const useStyles = makeStyles((theme) => ({
   kpi: { border: `1px solid ${theme.palette.divider}`, borderRadius: 12, padding: theme.spacing(1.5, 2), background: theme.palette.background.paper, boxShadow: "0 1px 2px rgba(11,66,121,.06)" },
   kpiL: { fontSize: 12.5, color: theme.palette.text.secondary, display: "block" },
   kpiN: { display: "block", fontSize: 28, fontWeight: 700, letterSpacing: "-0.03em", lineHeight: 1.15, fontVariantNumeric: "tabular-nums" },
-  box: { border: `1px solid ${theme.palette.divider}`, borderRadius: 16, padding: theme.spacing(2), background: theme.palette.background.paper, boxShadow: "0 1px 2px rgba(11,66,121,.06)" },
+  box: { border: "1px solid var(--line)", borderRadius: "var(--radius-card)", padding: theme.spacing(2, 2.25), background: "var(--surface)", boxShadow: "var(--shadow-card)" },
   next: { fontSize: 12.5, display: "flex", alignItems: "center", gap: 6, color: theme.palette.text.secondary },
   actions: { display: "flex", alignItems: "center", gap: 4, marginTop: 6, flexWrap: "wrap" },
   stats: { display: "grid", gap: theme.spacing(1.5), gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", },
@@ -240,16 +240,8 @@ const Onboarding = () => {
               <div className={classes.box}>
                 <Typography style={{ fontWeight: 600 }}>Alunos ambientados por semana</Typography>
                 <div className={classes.meta} style={{ whiteSpace: "normal" }}>Concluídos nas últimas 8 semanas.</div>
-                <div style={{ height: 150, marginTop: 8 }} role="img" aria-label={`Ambientações concluídas por semana: ${stats.weeks.map((w) => w.done).join(", ")}`}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={stats.weeks.map((w) => ({ ...w, label: w.weekStart.split("-").reverse().slice(0, 2).join("/") }))} margin={{ top: 14, right: 4, left: -22, bottom: 0 }}>
-                      <CartesianGrid vertical={false} strokeDasharray="3 5" />
-                      <XAxis dataKey="label" tickLine={false} axisLine={false} fontSize={12} />
-                      <YAxis allowDecimals={false} tickLine={false} axisLine={false} fontSize={12} />
-                      <Tooltip cursor={{ fill: "rgba(6,147,227,.08)" }} formatter={(v) => [`${v} concluído(s)`, ""]} labelFormatter={(l) => `Semana de ${l}`} separator="" />
-                      <Bar dataKey="done" fill="#0693E3" radius={[6, 6, 0, 0]} maxBarSize={34} label={{ position: "top", fontSize: 12, fill: "#64748b" }} />
-                    </BarChart>
-                  </ResponsiveContainer>
+                <div style={{ marginTop: 10 }} role="img" aria-label={`Ambientações concluídas por semana: ${stats.weeks.map((w) => w.done).join(", ")}`}>
+                  <BarsChart data={stats.weeks.map((w) => ({ ...w, label: `Semana de ${w.weekStart.split("-").reverse().slice(0, 2).join("/")}`, short: w.weekStart.split("-").reverse().slice(0, 2).join("/") }))} xKey="short" keys={[["done", "Concluídos", "won"]]} height={160} />
                 </div>
               </div>
               {stats.byTutor.length > 0 && (

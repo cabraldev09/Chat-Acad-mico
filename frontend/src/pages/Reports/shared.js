@@ -14,10 +14,10 @@ export const hm = (min) => {
 
 export const useShared = makeStyles((theme) => {
   const dark = theme.palette.type === "dark";
-  const line = dark ? "rgba(255,255,255,.09)" : "#e3e9f1";
-  const soft = dark ? "rgba(255,255,255,.04)" : "#f6f8fb";
+  const line = "var(--line)";
+  const soft = "var(--surface-2)";
   return {
-    panel: { background: dark ? "#0f1826" : "#ffffff", border: `1px solid ${line}`, borderRadius: 16, padding: theme.spacing(2.25) },
+    panel: { background: "var(--surface)", border: `1px solid ${line}`, borderRadius: "var(--radius-card)", padding: theme.spacing(2.25, 2.5), boxShadow: "var(--shadow-card)", minWidth: 0 },
     title: { fontSize: 14.5, fontWeight: 700, margin: 0, letterSpacing: "-0.01em", display: "flex", alignItems: "center", gap: 8 },
     sub: { fontSize: 12.5, color: theme.palette.text.secondary, marginTop: 2 },
     stack: { display: "grid", gap: theme.spacing(2.5), minWidth: 0 },

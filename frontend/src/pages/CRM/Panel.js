@@ -23,9 +23,8 @@ import NotALead from "./NotALead";
 import "../../styles/dash.css";
 
 const useStyles = makeStyles((theme) => {
-  const dark = theme.palette.type === "dark";
-  const line = dark ? "rgba(255,255,255,.09)" : "#e3e9f1";
-  const soft = dark ? "rgba(255,255,255,.05)" : "#f1f4f8";
+  const line = "var(--line)";
+  const soft = "var(--surface-2)";
   return {
     scroll: { flex: 1, overflowY: "auto", overflowX: "hidden", padding: theme.spacing(1, 1, 3), ...theme.scrollbarStyles },
     // changing a filter: the numbers dim and settle back instead of jumping (nothing moves, so the page keeps its place)
@@ -35,14 +34,14 @@ const useStyles = makeStyles((theme) => {
     },
     contentBusy: { opacity: 0.55, transform: "translateY(3px)", filter: "saturate(.75)", pointerEvents: "none" },
     label: { fontSize: 13, color: theme.palette.text.secondary, fontWeight: 500 },
-    chips: { display: "inline-flex", gap: 4, padding: 3, borderRadius: 12, background: soft, border: `1px solid ${line}` },
+    chips: { display: "inline-flex", gap: 2, padding: 3, borderRadius: 10, background: soft, border: `1px solid ${line}` },
     chip: {
-      border: 0, background: "transparent", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, color: theme.palette.text.secondary, padding: "5px 12px", borderRadius: 9,
+      border: 0, background: "transparent", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 550, color: theme.palette.text.secondary, padding: "5px 12px", borderRadius: 7,
       "&:hover": { color: theme.palette.text.primary },
     },
-    chipOn: { background: dark ? "#0f1826" : "#ffffff", color: theme.palette.text.primary, boxShadow: dark ? "none" : "0 1px 3px rgba(11,26,46,.12)" },
-    sectionHead: { display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", margin: theme.spacing(2.5, 0, 1) },
-    sectionTitle: { fontSize: 16, fontWeight: 700, letterSpacing: "-0.01em" },
+    chipOn: { background: "var(--surface)", color: theme.palette.text.primary, boxShadow: "0 1px 2px rgba(15,23,42,.08), 0 0 0 1px var(--line)" },
+    sectionHead: { display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", margin: theme.spacing(3, 0, 1.25) },
+    sectionTitle: { fontSize: 15, fontWeight: 650, letterSpacing: "-0.01em" },
     sectionHint: { fontSize: 12.5, color: theme.palette.text.secondary },
     alerts: { display: "grid", gap: theme.spacing(1.25), gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))" },
     alert: {
@@ -53,7 +52,7 @@ const useStyles = makeStyles((theme) => {
     triageRow: { display: "flex", alignItems: "center", gap: 12, padding: "9px 0", borderTop: `1px solid ${line}`, flexWrap: "wrap", "&:first-of-type": { borderTop: 0 } },
     band: { display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", [theme.breakpoints.down("md")]: { gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }, [theme.breakpoints.down("xs")]: { gridTemplateColumns: "1fr" } },
     cell: { padding: theme.spacing(2), borderRight: `1px solid ${line}`, borderBottom: `1px solid ${line}`, minWidth: 0, position: "relative", transition: "background-color .25s ease", "&:hover": { background: "color-mix(in srgb, var(--dash-accent, #0693e3) 7%, transparent)" } },
-    cellVal: { fontSize: 34, fontWeight: 800, letterSpacing: "-0.03em", lineHeight: 1.15, marginTop: 4, fontVariantNumeric: "tabular-nums" },
+    cellVal: { fontSize: 28, fontWeight: 700, letterSpacing: "-0.03em", lineHeight: 1.15, marginTop: 4, fontVariantNumeric: "tabular-nums" },
     delta: { display: "inline-flex", alignItems: "center", gap: 2, fontSize: 12, fontWeight: 700, padding: "1px 7px", borderRadius: 999 },
     grid: { display: "grid", gap: theme.spacing(1.5), gridTemplateColumns: "repeat(12, 1fr)" },
     card: { padding: theme.spacing(2), minWidth: 0 },
@@ -96,11 +95,10 @@ const Delta = ({ now, before, points = false, goodWhenDown = false }) => {
   );
 };
 
-const SectionHead = ({ title, hint, color = "#0693E3" }) => {
+const SectionHead = ({ title, hint }) => {
   const c = useStyles();
   return (
     <div className={c.sectionHead}>
-      <span style={{ width: 5, height: 20, borderRadius: 3, background: color, alignSelf: "center", flex: "none" }} />
       <span className={c.sectionTitle}>{title}</span>
       {hint && <span className={c.sectionHint}>{hint}</span>}
     </div>
@@ -275,7 +273,7 @@ const Panel = () => {
               </div>
               <GlowCard className={classes.card}>
                 {triage.late > 0 && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", marginBottom: 8, borderRadius: 10, background: "rgba(220,38,38,.1)", color: "#b91c1c", fontSize: 13.5, fontWeight: 600 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", marginBottom: 8, borderRadius: 8, background: "color-mix(in srgb, var(--c-lost) 9%, transparent)", border: "1px solid color-mix(in srgb, var(--c-lost) 22%, transparent)", color: "var(--c-lost)", fontSize: 13, fontWeight: 600 }}>
                     <AlertTriangle size={16} />{triage.late} {triage.late === 1 ? "chegou" : "chegaram"} em dias anteriores e já {triage.late === 1 ? "passou" : "passaram"} do prazo de conferir.
                   </div>
                 )}

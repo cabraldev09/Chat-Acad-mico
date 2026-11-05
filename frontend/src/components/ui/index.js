@@ -7,8 +7,8 @@ import NumberTicker from "../NumberTicker";
 export const PageHeader = ({ title, subtitle, actions, children }) => (
   <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 20 }}>
     <div style={{ minWidth: 0 }}>
-      <h1 style={{ margin: 0, fontSize: 26, fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1.15 }}>{title}</h1>
-      {subtitle ? <div style={{ marginTop: 4, fontSize: 14, opacity: 0.7, maxWidth: 720 }}>{subtitle}</div> : null}
+      <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, letterSpacing: "-0.02em", lineHeight: 1.2 }}>{title}</h1>
+      {subtitle ? <div style={{ marginTop: 4, fontSize: 13.5, color: "var(--text-2)", maxWidth: 720 }}>{subtitle}</div> : null}
       {children}
     </div>
     {actions ? <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>{actions}</div> : null}
@@ -17,12 +17,12 @@ export const PageHeader = ({ title, subtitle, actions, children }) => (
 
 // ---- Section: a titled block (a card) with an optional action; `flat` leaves the card out
 export const Section = ({ title, hint, icon, action, flat, children, style }) => (
-  <section className={flat ? undefined : "ui-card"} style={{ padding: flat ? 0 : 20, minWidth: 0, ...style }}>
+  <section className={flat ? undefined : "ui-card"} style={{ padding: flat ? 0 : "18px 20px", minWidth: 0, ...style }}>
     {(title || action) && (
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
         <div style={{ minWidth: 0 }}>
-          <h2 style={{ margin: 0, fontSize: 15.5, fontWeight: 700, display: "flex", alignItems: "center", gap: 8, letterSpacing: "-0.01em" }}>{icon}{title}</h2>
-          {hint ? <div style={{ marginTop: 3, fontSize: 12.5, opacity: 0.65 }}>{hint}</div> : null}
+          <h2 style={{ margin: 0, fontSize: 14, fontWeight: 650, display: "flex", alignItems: "center", gap: 8, letterSpacing: "-0.01em" }}>{icon}{title}</h2>
+          {hint ? <div style={{ marginTop: 3, fontSize: 12.5, color: "var(--text-2)" }}>{hint}</div> : null}
         </div>
         {action}
       </div>
@@ -38,18 +38,18 @@ export const StatCard = ({ label, value, unit, delta, hint, icon, tone, onClick,
   return (
     <Tag type={onClick ? "button" : undefined} onClick={onClick} className={`ui-card ui-lift${onClick ? " ui-press" : ""}`}
       style={{ padding: "16px 18px", textAlign: "left", font: "inherit", color: "inherit", display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8, fontSize: 12.5, opacity: 0.75, minHeight: 34 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, fontSize: 12.5, fontWeight: 550, color: "var(--text-2)", minHeight: 28 }}>
         <span>{label}</span>
-        {icon ? <span style={{ opacity: 0.8, display: "inline-flex" }}>{icon}</span> : null}
+        {icon ? <span style={{ display: "inline-grid", placeItems: "center", width: 28, height: 28, borderRadius: 8, background: "var(--surface-2)", border: "1px solid var(--line)", color: "var(--text-2)" }}>{icon}</span> : null}
       </div>
-      <div style={{ fontSize: 30, fontWeight: 800, letterSpacing: "-0.03em", lineHeight: 1.1, fontVariantNumeric: "tabular-nums", color: tone || undefined }}>
+      <div style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-0.03em", lineHeight: 1.15, fontVariantNumeric: "tabular-nums", color: tone || undefined }}>
         {typeof value === "number" && !format ? <NumberTicker value={value} /> : format ? format(value) : value}
         {unit ? <span style={{ fontSize: 14, fontWeight: 600, opacity: 0.6, marginLeft: 4 }}>{unit}</span> : null}
       </div>
       {(delta !== undefined && delta !== null) || hint ? (
         <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, opacity: 0.85 }}>
           {typeof delta === "number" ? (
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 2, fontWeight: 700, padding: "1px 7px", borderRadius: 999, background: up ? "rgba(22,163,74,.14)" : delta < 0 ? "rgba(220,38,38,.12)" : "rgba(127,140,160,.18)", color: up ? "#15803d" : delta < 0 ? "#b91c1c" : "inherit" }}>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 2, fontWeight: 700, padding: "1px 7px", borderRadius: 999, background: up ? "color-mix(in srgb, var(--c-won) 14%, transparent)" : delta < 0 ? "color-mix(in srgb, var(--c-lost) 14%, transparent)" : "var(--track)", color: up ? "var(--c-won)" : delta < 0 ? "var(--c-lost)" : "inherit" }}>
               {up ? <ArrowUpRight size={12} /> : delta < 0 ? <ArrowDownRight size={12} /> : <Minus size={12} />}{Math.abs(delta)}%
             </span>
           ) : null}
@@ -63,9 +63,9 @@ export const StatCard = ({ label, value, unit, delta, hint, icon, tone, onClick,
 // ---- EmptyState: when there is nothing to show, say why and what to do
 export const EmptyState = ({ icon, title, text, action }) => (
   <div style={{ textAlign: "center", padding: "32px 16px", display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
-    {icon ? <div style={{ width: 48, height: 48, borderRadius: 14, display: "grid", placeItems: "center", background: "rgba(6,147,227,.12)", color: "#0693e3" }}>{icon}</div> : null}
-    <div style={{ fontWeight: 700 }}>{title}</div>
-    {text ? <div style={{ fontSize: 13, opacity: 0.7, maxWidth: 420 }}>{text}</div> : null}
+    {icon ? <div style={{ width: 44, height: 44, borderRadius: 12, display: "grid", placeItems: "center", background: "var(--surface-2)", border: "1px solid var(--line)", color: "var(--text-2)" }}>{icon}</div> : null}
+    <div style={{ fontWeight: 650, fontSize: 14.5 }}>{title}</div>
+    {text ? <div style={{ fontSize: 13, color: "var(--text-2)", maxWidth: 420 }}>{text}</div> : null}
     {action}
   </div>
 );
@@ -91,7 +91,7 @@ export const Segmented = ({ items, value, onChange, label = "Seções" }) => {
       <span className="ui-seg-ind" style={{ left: ind.left, width: ind.width }} />
       {items.map(([k, text, count]) => (
         <button key={k} ref={(el) => { refs.current[k] = el; }} type="button" role="tab" aria-selected={value === k} className="ui-seg-btn" onClick={() => onChange(k)}>
-          {text}{count ? <span style={{ marginLeft: 6, fontSize: 11.5, fontWeight: 700, padding: "1px 7px", borderRadius: 999, background: "rgba(6,147,227,.16)", color: "#0693e3" }}>{count}</span> : null}
+          {text}{count ? <span style={{ marginLeft: 6, fontSize: 11.5, fontWeight: 700, padding: "1px 7px", borderRadius: 999, background: "color-mix(in srgb, var(--c-leads) 16%, transparent)", color: "var(--c-leads)" }}>{count}</span> : null}
         </button>
       ))}
     </div>

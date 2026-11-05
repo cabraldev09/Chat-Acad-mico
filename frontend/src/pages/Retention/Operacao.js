@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { MenuItem, TextField, Typography, makeStyles } from "@material-ui/core";
-import { Bar, CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { TimeChart } from "../../components/charts";
 
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
@@ -68,18 +68,8 @@ const Operacao = () => {
       <div className={classes.card}>
         <Typography style={{ fontWeight: 600 }}>Envios e respostas por dia</Typography>
         {days.length < 2 ? <Typography className={classes.hint} style={{ marginTop: 6 }}>O gráfico aparece quando houver envios em pelo menos dois dias.</Typography> : (
-          <div style={{ height: 220, marginTop: 8 }}>
-            <ResponsiveContainer>
-              <ComposedChart data={days} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
-                <CartesianGrid vertical={false} strokeDasharray="3 3" opacity={0.35} />
-                <XAxis dataKey="label" tickLine={false} axisLine={false} fontSize={12} />
-                <YAxis allowDecimals={false} tickLine={false} axisLine={false} fontSize={12} />
-                <Tooltip />
-                <Legend />
-                <Bar dataKey="sent" name="Enviadas" fill="#0693E3" radius={[4, 4, 0, 0]} animationDuration={1000} animationEasing="ease-out" />
-                <Line type="monotone" dataKey="answered" name="Respostas da pesquisa" stroke="#16a34a" strokeWidth={2} dot={{ r: 3 }} animationDuration={1100} animationEasing="ease-out" />
-              </ComposedChart>
-            </ResponsiveContainer>
+          <div style={{ marginTop: 10 }}>
+            <TimeChart data={days} xKey="label" height={220} series={[{ key: "sent", name: "Enviadas", color: "leads", kind: "bar" }, { key: "answered", name: "Respostas da pesquisa", color: "won", kind: "line" }]} />
           </div>
         )}
       </div>
