@@ -795,6 +795,23 @@ const postMeta = (id, payload, secret, badSig) => {
       await postMeta(cid, cloudEvent([], { statuses: [{ id: outId, status: "read", recipient_id: "5511988887777" }] }), cloudCfg.appSecret);
       await waitFor(() => sql(`SELECT ack FROM Messages WHERE id='${outId}'`) === "3", 6000, "ack=3");
     });
+    await test("official number → tutoring: the conversation continues on the tutor's own WhatsApp, with the tutor; consultants are picked without a personal number", async () => {
+      const pol = (await http.post("/polos", { name: "Polo Oficial", code: "OF1", city: "Cacoal", state: "RO" }, auth())).data;
+      const tq = pol.queues.find(q => q.role === "tutoria");
+      const tut = (await http.post("/users", { name: "Tutora Oficial", email: "tutora-oficial@polo.test", password: "senha123", role: "tutor" }, auth())).data;
+      assert((await http.put(`/polos/${pol.id}/members`, { members: [{ userId: tut.id, role: "tutoria" }] }, auth())).status === 200, "members");
+      const own = sql(`INSERT INTO Whatsapps (name, status, channel, isDefault, ownerId, createdAt, updatedAt) VALUES ('WhatsApp da Tutora', 'CONNECTED', 'whatsapp', false, ${tut.id}, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const from = "5511977776666";
+      const ev = { object: "whatsapp_business_account", entry: [{ id: "WABA", changes: [{ field: "messages", value: { messaging_product: "whatsapp", metadata: { phone_number_id: "PN1" }, contacts: [{ wa_id: from, profile: { name: "Aluna Oficial" } }], messages: [{ from, id: "wamid.tut1", type: "text", text: { body: "Sou aluna e não consigo entrar na plataforma" } }] } }] }] };
+      assert((await postMeta(cid, ev, cloudCfg.appSecret)).status === 200, "inbound");
+      const t = await waitFor(() => ticketOf(from), 8000, "ticket of the official number");
+      assert(sql(`SELECT whatsappId FROM Tickets WHERE id=${t}`) === String(cid), "the conversation should start on the official number");
+      const r = await http.put(`/tickets/${t}`, { queueId: tq.id, status: "pending", userId: null }, auth());
+      assert(r.status === 200, `transfer ${r.status} ${JSON.stringify(r.data)}`);
+      const row = sql(`SELECT whatsappId || '|' || COALESCE(userId::text, '-') || '|' || status FROM Tickets WHERE id=${t}`);
+      assert(row === `${own}|${tut.id}|open`, `the conversation did not move to the tutor's number: ${row}`);
+      assert(Number(sql(`SELECT COUNT(*) FROM TicketEvents WHERE ticketId=${t} AND note LIKE '%WhatsApp de Tutora Oficial%'`)) >= 1, "the move was not written down");
+    });
     await test("\"Marcar todas como lidas\": the unread conversations of the view stop counting, by connection", async () => {
       sql(`UPDATE Tickets SET unreadMessages=3 WHERE id=${cticket}`);
       const r = await http.put("/tickets/read-all", { groups: "exclude", connectionId: cid }, auth());

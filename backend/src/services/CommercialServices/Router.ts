@@ -23,6 +23,7 @@ import Whatsapp from "../../models/Whatsapp";
 import { nextOpening, whenText } from "./Hours";
 import { syncHandoffTasks } from "../CrmServices/HandoffTasks";
 import { areaOfCourse } from "./MecDefaults";
+import { tutorMoveFor } from "../TicketServices/TutorNumber";
 
 // WHO TAKES THE CONVERSATION when the AI agent hands it over. One place decides it, in this order, and always writes down what it did:
 //   1. the polo of the lead (the city the person told is matched to the polos, ignoring accents and typos);
@@ -95,6 +96,8 @@ export interface Routed {
   semipresencial?: { enrollPolo: string; cityPolo: string } | null;
   // registered when a hot lead waits (no consultant free, or outside the working hours)
   priority?: string | null;
+  // the conversation is on the official number and goes to a tutor: it continues on the tutor's own WhatsApp (moved after the notice is said)
+  moveTo?: { whatsappId: number; whatsappName: string; tutorId: number; tutorName: string } | null;
 }
 
 // ---------------------------------------------------------------- polo
@@ -264,17 +267,22 @@ export const routeToCommercial = async (ticket: Ticket, opts: RouteOptions): Pro
   const { queue, fallback } = await pickQueue(polo ? polo.id : null, team);
   let user: User | null = null;
   let viaPreferred = false;
+  // the official number is shared: the consultants answer on it inside the system, so their personal numbers do not count in the choice
+  const official = ticket.whatsappId ? (await Whatsapp.findByPk(ticket.whatsappId, { attributes: ["channel"] }))?.channel === "whatsapp_cloud" : false;
   if (queue) {
     const users: User[] = (queue as any).users || [];
     const ownerOfLead = lead?.ownerId && opts.keepOwner !== false ? users.find(u => u.id === lead.ownerId) : null;
     // the lead's owner keeps the conversation only when they have a WhatsApp number to answer from
     const owners = new Set((await Whatsapp.findAll({ where: { ownerId: users.map(u => u.id), channel: "whatsapp" } as any, attributes: ["ownerId"] })).map(w => Number(w.ownerId)));
     // ...unless nobody of the queue has a number (then the lead's owner is as good as anyone)
-    const keepOwner = !!ownerOfLead && (owners.has(ownerOfLead.id) || owners.size === 0);
+    const keepOwner = !!ownerOfLead && (official || owners.has(ownerOfLead.id) || owners.size === 0);
     const preferred = opts.preferredUserId ? users.find(u => u.id === opts.preferredUserId) || null : null;
     viaPreferred = !!preferred;
-    user = preferred || (keepOwner && ownerOfLead) || (users.length ? await pickUserForQueue(queue, true) : null);
+    user = preferred || (keepOwner && ownerOfLead) || (users.length ? await pickUserForQueue(queue, true, false, official && team !== "tutoria") : null);
   }
+  // a student of the official number sent to the tutoring: the tutor continues on their own WhatsApp
+  const move = official && team === "tutoria" && user ? await tutorMoveFor(ticket, user.id) : null;
+  const moveTo = move && user ? { ...move, tutorId: user.id, tutorName: user.name } : null;
 
   const business = await getBusinessConfig();
   const within = isBusinessNow(business);
@@ -358,7 +366,8 @@ export const routeToCommercial = async (ticket: Ticket, opts: RouteOptions): Pro
     within,
     whenText: when,
     semipresencial,
-    priority
+    priority,
+    moveTo
   };
 };
 

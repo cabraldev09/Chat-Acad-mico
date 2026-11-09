@@ -7,6 +7,8 @@ import CreateTicketService from "../services/TicketServices/CreateTicketService"
 import DeleteTicketService from "../services/TicketServices/DeleteTicketService";
 import ListTicketsService from "../services/TicketServices/ListTicketsService";
 import ShowTicketService from "../services/TicketServices/ShowTicketService";
+import { pickUserForQueue } from "../services/AutomationServices/AutoAssignTicket";
+import { moveToTutorNumber, tutorMoveFor } from "../services/TicketServices/TutorNumber";
 import UpdateTicketService from "../services/TicketServices/UpdateTicketService";
 import ClaimTicketService from "../services/TicketServices/ClaimTicketService";
 import SendWhatsAppMessage from "../services/WbotServices/SendWhatsAppMessage";
@@ -342,13 +344,26 @@ export const update = async (
 
   const { note, notifyClient, ...changes } = ticketData;
 
-  const { ticket } = await UpdateTicketService({
+  let { ticket } = await UpdateTicketService({
     ticketData: changes,
     ticketId,
     actorId: Number(req.user.id),
     note,
     notifyClient: Boolean(notifyClient)
   });
+
+  // a conversation of the official number transferred to the tutoring continues on the tutor's own WhatsApp (the tutors do not use the official number)
+  if (changes.queueId && ticket.status !== "closed") {
+    const queue = await Queue.findByPk(changes.queueId, { include: [{ model: User, as: "users", attributes: ["id", "name"] }] });
+    if (queue && queue.role === "tutoria") {
+      const tutorId = ticket.userId || (await pickUserForQueue(queue, true))?.id || null;
+      const move = tutorId ? await tutorMoveFor(ticket, tutorId) : null;
+      if (move && tutorId) {
+        const moved = await moveToTutorNumber(ticket.id, move.whatsappId, tutorId, Number(req.user.id), queue.id);
+        if (moved) ticket = await ShowTicketService(String(moved.id));
+      }
+    }
+  }
 
   if (ticket.status === "closed") {
     const whatsapp = await ShowWhatsAppService(ticket.whatsappId);

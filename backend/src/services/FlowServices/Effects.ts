@@ -1,4 +1,5 @@
 import axios from "axios";
+import { moveToTutorNumber } from "../TicketServices/TutorNumber";
 import { Op } from "sequelize";
 
 import { isUrlSafe, safeRequest } from "../../helpers/SafeUrl";
@@ -200,6 +201,15 @@ export const ticketEffects = (ticket: Ticket, flowName: string, flowCtx: FlowCon
     };
 
   // a person (or another automation) took the conversation, or it was closed, while the AI was thinking
+  // the official number handed a student to a tutor: after the notice (said on the official number) the conversation moves to the tutor's WhatsApp
+  const moveIfTutor = async (routed: { moveTo?: { whatsappId: number; tutorId: number } | null; queueId?: number | null } | null): Promise<void> => {
+    if (!routed || !routed.moveTo) return;
+    try {
+      await moveToTutorNumber(ticket.id, routed.moveTo.whatsappId, routed.moveTo.tutorId, null, routed.queueId || null);
+    } catch (err) {
+      logger.warn(`Move of ticket ${ticket.id} to the tutor's number failed: ${err}`);
+    }
+  };
   const humanTookOver = async (): Promise<boolean> => {
     const fresh = await Ticket.findByPk(ticket.id, { attributes: ["userId", "aiActive", "status"] });
     return !fresh || !!fresh.userId || fresh.status === "closed" || fresh.aiActive === false;
@@ -359,6 +369,7 @@ export const ticketEffects = (ticket: Ticket, flowName: string, flowCtx: FlowCon
         const routed = await routeToCommercial(ticket, { keepOwner: cfg.keepOwner, preferredUserId: wanted, team, why: vars.__why || WHY_OF_EXIT[String(vars.__exit || "")] || "other", poloId: d.to === "chosen_polo_sales" && vars.poloId ? Number(vars.poloId) : null, city: vars.city || vars.cidade || null, agentId: flowCtx.agentId || null });
         const notice = afterHandoffNotice(routed, cfg.messages);
         if (notice) await this.say(notice);
+        await moveIfTutor(routed);
         return;
       }
       if (d.to === "user" && d.userId) {
@@ -459,11 +470,13 @@ export const ticketEffects = (ticket: Ticket, flowName: string, flowCtx: FlowCon
         const routed = await handoffToHuman(ticket.id, agent, REASON_OF[exit] || "pedido", undefined, vars?.__why || WHY_OF_EXIT[exit] || "other");
         const notice = routed ? afterHandoffNotice(routed, configOf(agent).messages) : null;
         if (notice) await this.say(notice);
+        await moveIfTutor(routed);
       } else {
         await ticket.update({ aiActive: false });
         const routed = await routeToCommercial(ticket, { why: vars?.__why || WHY_OF_EXIT[exit] || "other" });
         const notice = afterHandoffNotice(routed, null);
         if (notice) await this.say(notice);
+        await moveIfTutor(routed);
       }
     },
 
