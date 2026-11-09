@@ -806,11 +806,30 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await postMeta(cid, ev, cloudCfg.appSecret)).status === 200, "inbound");
       const t = await waitFor(() => ticketOf(from), 8000, "ticket of the official number");
       assert(sql(`SELECT whatsappId FROM Tickets WHERE id=${t}`) === String(cid), "the conversation should start on the official number");
+      // the official number is shared: a consultant of the polo only sees there what is given to them or waits in their queue (never what the AI still attends)
+      const cq = pol.queues.find(q => q.role === "comercial");
+      const cons = (await http.post("/users", { name: "Consultora Oficial", email: "consultora-oficial@polo.test", password: "senha123", role: "consultor" }, auth())).data;
+      const cons2 = (await http.post("/users", { name: "Consultor Outro", email: "consultor-outro@polo.test", password: "senha123", role: "consultor" }, auth())).data;
+      assert((await http.put(`/polos/${pol.id}/members`, { members: [{ userId: tut.id, role: "tutoria" }, { userId: cons.id, role: "comercial" }] }, auth())).status === 200, "members with the consultant");
+      const tokOf = async (email) => (await http.post("/auth/login", { email, password: "senha123" })).data.token;
+      const seen = async (tok) => (await http.get("/tickets", { params: { showAll: "true", queueIds: JSON.stringify([cq.id]) }, ...asUser(tok) })).data.tickets.map(x => String(x.id));
+      sql(`UPDATE Tickets SET aiActive=true, userId=NULL, queueId=NULL, status='pending' WHERE id=${t}`);
+      const ct = await tokOf("consultora-oficial@polo.test");
+      const ot = await tokOf("consultor-outro@polo.test");
+      assert(!(await seen(ct)).includes(String(t)), "a consultant sees a conversation the AI is still attending on the official number");
+      sql(`UPDATE Tickets SET aiActive=false, queueId=${cq.id} WHERE id=${t}`);
+      assert((await seen(ct)).includes(String(t)), "the consultant of the polo does not see the conversation waiting in her queue");
+      assert(!(await seen(ot)).includes(String(t)), "a consultant outside the polo sees the conversation of the official number");
+      sql(`UPDATE Tickets SET userId=${cons.id}, status='open' WHERE id=${t}`);
+      assert((await seen(ct)).includes(String(t)) && !(await seen(ot)).includes(String(t)), "the assigned conversation must be only hers");
+      sql(`UPDATE Tickets SET userId=NULL, status='pending', queueId=NULL WHERE id=${t}`);
       const r = await http.put(`/tickets/${t}`, { queueId: tq.id, status: "pending", userId: null }, auth());
       assert(r.status === 200, `transfer ${r.status} ${JSON.stringify(r.data)}`);
       const row = sql(`SELECT whatsappId || '|' || COALESCE(userId::text, '-') || '|' || status FROM Tickets WHERE id=${t}`);
       assert(row === `${own}|${tut.id}|open`, `the conversation did not move to the tutor's number: ${row}`);
       assert(Number(sql(`SELECT COUNT(*) FROM TicketEvents WHERE ticketId=${t} AND note LIKE '%WhatsApp de Tutora Oficial%'`)) >= 1, "the move was not written down");
+      // the team of this polo would take the new conversations of the scenarios that follow: it is undone
+      await http.put(`/polos/${pol.id}/members`, { members: [] }, auth());
     });
     await test("\"Marcar todas como lidas\": the unread conversations of the view stop counting, by connection", async () => {
       sql(`UPDATE Tickets SET unreadMessages=3 WHERE id=${cticket}`);

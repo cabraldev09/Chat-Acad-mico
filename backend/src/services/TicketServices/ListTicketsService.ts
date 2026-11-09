@@ -9,6 +9,7 @@ import User from "../../models/User";
 import ShowUserService from "../UserServices/ShowUserService";
 import Whatsapp from "../../models/Whatsapp";
 import Tag from "../../models/Tag";
+import UserQueue from "../../models/UserQueue";
 import { portable } from "../../helpers/sqlDialect";
 import { Role, SEGMENTS_OF, isManagerRole } from "../../helpers/Roles";
 import { connectionScopeOf, ticketScopeWhere } from "../../helpers/ConnectionScope";
@@ -206,6 +207,20 @@ const ListTicketsService = async ({
     if (segments.includes("sales")) bySegment.push({ segment: { [Op.is]: null } });
     const scope: any[] = [{ [Op.or]: bySegment }];
     if (role !== "coordenacao") scope.push({ [Op.or]: [{ userId: me }, { userId: { [Op.is]: null } }] });
+    // the official number (WhatsApp Cloud API) is shared by the whole team: there each person only sees the conversations given to them and the
+    // ones waiting in a queue of theirs (the polo's), never the ones the AI is still attending nor a colleague's
+    const official = (await Whatsapp.findAll({ where: { channel: "whatsapp_cloud" } as any, attributes: ["id"] })).map(w => w.id);
+    if (official.length) {
+      const mine = (await UserQueue.findAll({ where: { userId: me }, attributes: ["queueId"] })).map(q => q.queueId);
+      scope.push({
+        [Op.or]: [
+          { whatsappId: { [Op.notIn]: official } },
+          { whatsappId: { [Op.is]: null } },
+          { userId: me },
+          { userId: { [Op.is]: null }, aiActive: { [Op.not]: true }, queueId: { [Op.in]: mine.length ? mine : [0] } }
+        ]
+      });
+    }
     whereCondition = { [Op.and]: [whereCondition, ...scope] } as any;
   }
 
