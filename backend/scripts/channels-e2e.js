@@ -828,6 +828,8 @@ const postMeta = (id, payload, secret, badSig) => {
       const row = sql(`SELECT whatsappId || '|' || COALESCE(userId::text, '-') || '|' || status FROM Tickets WHERE id=${t}`);
       assert(row === `${own}|${tut.id}|open`, `the conversation did not move to the tutor's number: ${row}`);
       assert(Number(sql(`SELECT COUNT(*) FROM TicketEvents WHERE ticketId=${t} AND note LIKE '%WhatsApp de Tutora Oficial%'`)) >= 1, "the move was not written down");
+      // the team of this polo would take the new conversations of the scenarios that follow: it is undone
+      await http.put(`/polos/${pol.id}/members`, { members: [] }, auth());
     });
     await test("\"Marcar todas como lidas\": the unread conversations of the view stop counting, by connection", async () => {
       sql(`UPDATE Tickets SET unreadMessages=3 WHERE id=${cticket}`);
