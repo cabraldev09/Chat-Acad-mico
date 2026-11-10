@@ -231,6 +231,14 @@ test('scholarship tool is disabled by default and cannot use an invented percent
   };
   for (const model of ['Polo', 'Lead', 'Ticket', 'AiAgent']) mocks[`../../models/${model}`] = {};
   const tools = isolated('services/AiServices/Tools.js', mocks);
+  const stage = { hooks: ['commercial'], tools: [], fields: [], http: [], steps: [], outcomes: [{ id: 'sem_historico', when: 'a pessoa não tem o histórico' }] };
+  const exit = tools.stageToolDefs(stage).find(t => t.name === 'escolher_resultado');
+  assert.deepEqual(exit.input_schema.properties.resultado.enum, ['sem_historico']);
+  const stageContext = { agent: { persona: {} }, stage, dryRun: true, collected: {} };
+  await tools.runTool('escolher_resultado', { resultado: 'sem_historico' }, stageContext);
+  assert.equal(stageContext.exit, 'sem_historico');
+  assert.ok((await tools.runTool('simular_bolsa', { percentual_bolsa: 90 }, stageContext)).erro);
+
   const agent = { persona: {} };
   const ctx = { agent, ticket: null, dryRun: true, collected: {}, userText: 'Tenho interesse.' };
   assert.equal(tools.toolDefs(agent).some(t => t.name === 'simular_bolsa'), false);

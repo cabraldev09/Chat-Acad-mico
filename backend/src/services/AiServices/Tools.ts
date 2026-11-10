@@ -96,8 +96,15 @@ export const stageToolDefs = (stage: StageData) => {
       input_schema: { type: "object", properties: { passos: { type: "array", items: { type: "number" }, description: "Números dos passos cumpridos, ex.: [1, 2]" } }, required: ["passos"] }
     });
   }
-  // in a commercial stage the code decides the exits from what the turn registered
-  if (commercial) return tools;
+  // Commercial rules decide the normal progression. Custom exits configured by the administrator remain available.
+  if (commercial) {
+    if (stage.outcomes.length) tools.push({
+      name: EXIT_TOOL,
+      description: `Escolha uma saída personalizada somente quando sua condição acontecer: ${stage.outcomes.map(o => `${o.id}: ${o.when}`).join("; ")}`,
+      input_schema: { type: "object", properties: { resultado: { type: "string", enum: stage.outcomes.map(o => o.id) }, motivo: { type: "string" } }, required: ["resultado"] }
+    });
+    return tools;
+  }
   const exits = ["concluido", "humano", "desconhecido", ...stage.outcomes.map(o => o.id)];
   tools.push({
     name: EXIT_TOOL,
