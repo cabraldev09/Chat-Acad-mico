@@ -2,7 +2,7 @@ import AiAgent from "../../models/AiAgent";
 
 // The four simple switches of "Como o agente fala" (kept in the persona of the agent). Nothing set = how the agent always behaved.
 export interface Style {
-  emoji: boolean | null; // true: may use emojis; false: none; null: the default (almost none)
+  emoji: boolean | null; // true: may use emojis; false or null (the default): none
   limitSubjects: boolean; // only the institution's subjects
   splitMessages: boolean; // long answers go out as short messages
   signMessages: boolean; // the name of the assistant opens the answer

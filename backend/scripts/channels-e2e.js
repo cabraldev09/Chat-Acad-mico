@@ -216,6 +216,7 @@ const startAnthropicMock = () => {
       if (/Direito em Porto Velho/i.test(said2)) return turn("Perfeito, Direito em Porto Velho! Posso te explicar como funciona o curso?", { intent: "other", curso: "Direito", cidade: "Porto Velho", tipo_ingresso: "first_degree", nome: "Paulo Mendes" });
       if (/dura|tempo/i.test(said2)) return tool("buscar_curso", { courseName: "Direito" });
       if (/formato da pedagogia social/i.test(said2)) return tool("buscar_regra_modalidade", { courseName: "Pedagogia Social" });
+      if (/^quero fazer o curso de biomedicina$/i.test(said2.trim())) return turn("Biomedicina é uma ótima escolha.", { intent: "other", curso: "Biomedicina" });
       if (/texto com markdown/i.test(said2)) return turn("**Pedagogia** tem 8 semestres.\n\n### Como funciona\nVeja [a grade](https://exemplo.com/g.pdf) e a tabela:\n| Item | Valor |\n|---|---|\n| Duração | 8 semestres |", { intent: "other" });
       if (/mec/i.test(said2)) return tool("buscar_regra_modalidade", { courseName: "Direito" });
       if (/nasa/i.test(said2)) return turn("Essa informação eu prefiro confirmar com a equipe para não te passar nada incorreto.", { intent: "unknown", pergunta_sem_resposta: "convênio com a Nasa" });
@@ -2220,7 +2221,7 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(all.degrees.includes("Bacharelado") && all.areas.length > 3, "facets");
       // the summary text and the PDF behind the login
       const one = (await http.get(`/grades/${marketing.id}`, auth())).data;
-      assert(/📚 \*Cst em Marketing\*/.test(one.whatsappSummary) && /1\.600 horas/.test(one.whatsappSummary), `summary ${one.whatsappSummary}`);
+      assert(/^\*Matriz curricular: Cst em Marketing/.test(one.whatsappSummary) && /1\.600 horas/.test(one.whatsappSummary) && !/\p{Extended_Pictographic}/u.test(one.whatsappSummary), `summary ${one.whatsappSummary}`);
       const pdfRes = await http.get(`/grades/${marketing.id}/file`, { ...auth(), responseType: "arraybuffer" });
       assert(pdfRes.status === 200 && Buffer.from(pdfRes.data).subarray(0, 5).toString() === "%PDF-" && /pdf/.test(pdfRes.headers["content-type"]), "pdf download");
       assert((await http.get(`/grades/${marketing.id}/file`)).status === 401, "the pdf without login");
@@ -3586,15 +3587,15 @@ const postMeta = (id, payload, secret, badSig) => {
       // A) a lead from the first "oi" to the handoff for the proposal
       const A = "5511920000201";
       let llm = anthropic.requests.length;
-      let out = await say(A, "wamid.com-a1", "oi", t => t.some(x => /conhecer nossos cursos/.test(x)), "the opening");
-      assert(/conhecer nossos cursos/.test(out.join(" ")) && anthropic.requests.length === llm, "the opening should be written by the system, without the model");
+      let out = await say(A, "wamid.com-a1", "oi", t => t.some(x => /primeira graduação/.test(x)), "the opening");
+      assert(/primeira graduação/.test(out.join(" ")) && anthropic.requests.length === llm, "the opening should be written by the system, without the model");
       await waitFor(() => runOf(A) === "waiting|qualificar", 8000, "waits at the first stage");
       // the person wrote first, so the lead is already "in service" (the first contact is still recorded as a milestone)
       assert(leadStage(A) === stageName("in_service"), `after the opening: ${leadStage(A)}`);
       assert(Number(sql(`SELECT COUNT(*) FROM LeadCommercials WHERE leadId=${leadId(A)}`)) === 1, "no commercial state for the lead");
       assert(sql(`SELECT deterministic FROM AgentTurnLogs WHERE leadId=${leadId(A)} ORDER BY id LIMIT 1`) === "1", "the opening was not logged as a turn without the model");
 
-      out = await say(A, "wamid.com-a2", "Quero Direito em Porto Velho, primeira graduação", t => t.some(x => /Direito em Porto Velho/.test(x)), "qualification");
+      out = await say(A, "wamid.com-a2", "Quero Direito em Porto Velho, primeira graduação", t => t.some(x => /Direito em Porto Velho|Até aqui você compreendeu/.test(x)), "qualification");
       await waitFor(() => runOf(A) === "waiting|apresentar", 8000, "goes to the presentation of the course");
       const slotsA = () => JSON.parse(sql(`SELECT slots FROM LeadCommercials WHERE leadId=${leadId(A)}`));
       assert(slotsA().courseName === "Direito" && slotsA().city === "Porto Velho" && slotsA().entryType === "first_degree", `slots ${JSON.stringify(slotsA())}`);
@@ -3608,7 +3609,11 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(leadStage(A) === stageName("qualified"), `after presenting the course: ${leadStage(A)}`);
       assert(slotsA().courseExplained === true && slotsA().courseDurationSemesters === 10 && slotsA().courseModality === "SEMIPRESENCIAL", `slots from the tool ${JSON.stringify(slotsA())}`);
 
-      out = await say(A, "wamid.com-a4", "E sobre as mudanças do MEC, como fica?", t => t.some(x => /Portaria de teste/.test(x)), "the rule of the course");
+      // the question about the format is answered by the system from the rule of the course (the text of the team for it), without the model
+      llm = anthropic.requests.length;
+      out = await say(A, "wamid.com-a4m", "E sobre as mudanças do MEC, como fica?", t => t.some(x => /Até aqui você compreendeu\?/.test(x)), "the format told by the system");
+      assert(/Texto aprovado\./.test(out.join(" ")) && !/vou confirmar/i.test(out.join(" ")) && anthropic.requests.length === llm, `the format was not told from the rule: ${out}`);
+      out = await say(A, "wamid.com-a4", "E o MEC, o que diz sobre esse curso?", t => t.some(x => /Portaria de teste/.test(x)), "the rule of the course");
       assert(/práticas presenciais: true/.test(out.join(" ")) && /cronograma definido: false/.test(out.join(" ")), "the rule of the course was not read from the data");
       const sysOfMec = anthropic.requests.filter(r => /Em TODA resposta/.test(JSON.stringify(r.system))).slice(-2)[0].system.map(b => b.text).join("\n");
       assert(/mudanças do MEC/.test(sysOfMec) && /Já explicado/.test(sysOfMec), "the passage of the subject (MEC) or what was already explained did not reach the prompt");
@@ -3646,7 +3651,7 @@ const postMeta = (id, payload, secret, badSig) => {
       // C) a question the base does not answer: safe answer, gap recorded for the team, the team takes over
       const C = "5511920000203";
       await say(C, "wamid.com-c1", "oi", t => t.some(x => /assistente virtual/.test(x)), "opening of C");
-      await say(C, "wamid.com-c2", "Quero Direito em Porto Velho", t => t.some(x => /Direito em Porto Velho/.test(x)), "qualification of C");
+      await say(C, "wamid.com-c2", "Quero Direito em Porto Velho", t => t.some(x => /Direito em Porto Velho|Até aqui você compreendeu/.test(x)), "qualification of C");
       out = await say(C, "wamid.com-c3", "Vocês têm convênio com a Nasa?", t => t.some(x => /confirmar com a equipe/.test(x)), "safe answer");
       await waitFor(() => Number(sql(`SELECT COUNT(*) FROM AiLearnings WHERE ticketId=${ticketOf(C)}`)) === 1, 8000, "the gap goes to the knowledge base of the team");
       assert(sql(`SELECT question FROM AiLearnings WHERE ticketId=${ticketOf(C)}`).length > 5, "question not kept");
@@ -3664,7 +3669,7 @@ const postMeta = (id, payload, secret, badSig) => {
       // D) "vou pensar": follow-up with a task on the date; coming back days later resumes without asking again
       const D = "5511920000204";
       await say(D, "wamid.com-d1", "oi", t => t.some(x => /assistente virtual/.test(x)), "opening of D");
-      await say(D, "wamid.com-d2", "Quero Direito em Porto Velho", t => t.some(x => /Direito em Porto Velho/.test(x)), "qualification of D");
+      await say(D, "wamid.com-d2", "Quero Direito em Porto Velho", t => t.some(x => /Direito em Porto Velho|Até aqui você compreendeu/.test(x)), "qualification of D");
       await say(D, "wamid.com-d3", "quanto tempo dura?", t => t.some(x => /Direito:/.test(x)), "course of D");
       await say(D, "wamid.com-d4", "Vou pensar e volto depois", t => t.some(x => /Combinado/.test(x)), "follow-up");
       await waitFor(() => leadStage(D) === stageName("follow_up") && /^done/.test(runOf(D)), 8000, "column 'Follow-up' and the run ended");
@@ -3700,7 +3705,7 @@ const postMeta = (id, payload, secret, badSig) => {
       // G) a greeting that already carries the answers is not only a greeting: the model reads it and nothing is asked twice
       const G = "5511920000207";
       llm = anthropic.requests.length;
-      out = await say(G, "wamid.com-g1", "Bom dia, quero Direito em Porto Velho, primeira graduação", t => t.some(x => /Direito em Porto Velho/.test(x)), "greeting with content");
+      out = await say(G, "wamid.com-g1", "Bom dia, quero Direito em Porto Velho, primeira graduação", t => t.some(x => /Direito em Porto Velho|Até aqui você compreendeu/.test(x)), "greeting with content");
       assert(anthropic.requests.length > llm && !out.some(x => /Qual curso você tem interesse/.test(x)), "the course and the city were asked again");
       assert(JSON.parse(sql(`SELECT slots FROM LeadCommercials WHERE leadId=${leadId(G)}`)).courseName === "Direito", "the course in the greeting was lost");
 
@@ -3752,7 +3757,7 @@ const postMeta = (id, payload, secret, badSig) => {
       // K) the model writes a price: it never reaches the person, the lead goes to the proposal
       const qualify = async (number, tag) => {
         await say(number, `wamid.com-${tag}1`, "oi", t => t.some(x => /assistente virtual/.test(x)), `opening ${tag}`);
-        await say(number, `wamid.com-${tag}2`, "Quero Direito em Porto Velho", t => t.some(x => /Direito em Porto Velho/.test(x)), `qualification ${tag}`);
+        await say(number, `wamid.com-${tag}2`, "Quero Direito em Porto Velho", t => t.some(x => /Direito em Porto Velho|Até aqui você compreendeu/.test(x)), `qualification ${tag}`);
         await waitFor(() => runOf(number) === "waiting|apresentar", 8000, `waits at the presentation ${tag}`);
       };
       const K = "5511920000211";
@@ -3779,7 +3784,8 @@ const postMeta = (id, payload, secret, badSig) => {
       out = await say(L, "wamid.com-l3", "Quando começam as aulas?", t => t.some(x => /confirmar/.test(x)), "fact guard");
       assert(!out.some(x => /03\/08/.test(x)), `an invented date reached the person: ${out}`);
       await waitFor(() => Number(sql(`SELECT COUNT(*) FROM AiLearnings WHERE ticketId=${ticketOf(L)}`)) >= 1, 8000, "the unanswered question goes to the team");
-      assert(runOf(L) === "waiting|apresentar", `the conversation should go on: ${runOf(L)}`);
+      // (the course was already presented by the system, so the conversation may be in the guidance stage)
+      assert(/^waiting\|(apresentar|orientar)$/.test(runOf(L)), `the conversation should go on: ${runOf(L)}`);
 
       // R) the first message already asks about a course the institution does not offer: it presents itself, says it is not offered and lists the ones that are, without the model
       const NOFF = "5511920000230";
@@ -3794,25 +3800,34 @@ const postMeta = (id, payload, secret, badSig) => {
       // S) the first message is a question (not a greeting): the answer starts with the presentation, and the next one does not repeat it;
       // a lead with a course gets its grade even if nobody asked: the system sends it (here the PDF is not on the server, so its summary goes in writing)
       if (sql(`SELECT COUNT(*) FROM CommercialGrades WHERE courseName='Direito'`) === "0") sql(`INSERT INTO CommercialGrades (courseName, modality, curriculumTerm, courseTracks, internshipInfo, hasTcc, totalInternshipHours, whatsappSummary, complete, contentHash, catalogKey, fileName, createdAt, updatedAt) VALUES ('Direito', 'EAD', '2026/1', '[]', '', false, 0, 'GRADE-AUTO do curso de Direito', true, 'h-e2e-auto', 'direito-e2e-auto', 'direito-e2e-auto.pdf', now(), now())`);
-      const gradeTexts = () => graph.sent.filter(x => x.body && x.body.type === "text" && /GRADE-AUTO/.test(x.body.text.body)).length;
+      // (the summary is rebuilt from the matrix, not the text saved with it; in the order of the team, the grade comes after the format)
+      const gradeTexts = () => graph.sent.filter(x => x.body && x.body.type === "text" && /Matriz curricular: Direito/.test(x.body.text.body)).length;
       const FIRSTQ = "5511920000231";
       const g0 = gradeTexts();
       out = await say(FIRSTQ, "wamid.com-fq1", "Quanto tempo dura o curso de Direito?", t => t.length > 0, "answer to a first question");
       assert(/assistente virtual/.test(out[0]), `the first answer must present the agent: ${out}`);
-      await waitFor(() => gradeTexts() === g0 + 1, 20000, "the grade is sent without being asked");
-      await waitFor(() => JSON.parse(sql(`SELECT slots FROM LeadCommercials WHERE leadId=${leadId(FIRSTQ)}`)).gradeSent === true, 8000, "gradeSent saved");
       const FQ2 = graph.sent.length;
       await inboundCloud(FIRSTQ, "wamid.com-fq2", "Quero Direito em Porto Velho");
-      await waitFor(() => texts(FQ2).some(x => /Direito em Porto Velho/.test(x)), 20000, "second answer");
+      await waitFor(() => texts(FQ2).some(x => /Direito em Porto Velho|Até aqui você compreendeu/.test(x)), 20000, "second answer");
       assert(!texts(FQ2).some(x => /assistente virtual/.test(x)), "the presentation was repeated");
+      assert(gradeTexts() === g0, "the grade went before the format was explained");
+      // the course was already told (the duration came from the tool), so the first "pode continuar" answers "Posso te explicar como funciona o
+      // curso?" with the format; the next one brings the grade
+      out = await say(FIRSTQ, "wamid.com-fq3", "Sim, pode continuar", t => t.some(x => /Até aqui você compreendeu\?/.test(x)), "the format comes first");
+      assert(gradeTexts() === g0, "the grade went together with the format");
+      const FQ4 = graph.sent.length;
+      await inboundCloud(FIRSTQ, "wamid.com-fq4", "Sim, pode continuar");
+      await waitFor(() => gradeTexts() === g0 + 1, 20000, "the grade is sent after the format, without being asked");
+      await waitFor(() => texts(FQ4).some(x => /Você tem alguma dúvida sobre o curso ou o formato\?/.test(x)), 20000, "the doubts are asked after the grade");
+      await waitFor(() => JSON.parse(sql(`SELECT slots FROM LeadCommercials WHERE leadId=${leadId(FIRSTQ)}`)).gradeSent === true, 8000, "gradeSent saved");
       assert(gradeTexts() === g0 + 1, "the grade was sent twice");
 
       // OI2) a second "oi" after the opening: the system answers short, without presenting itself again, and asks the next step (no model)
       const OI2 = "5511920000232";
-      await say(OI2, "wamid.com-oi1", "oi", t => t.some(x => /conhecer nossos cursos/.test(x)), "OI2 opening");
+      await say(OI2, "wamid.com-oi1", "oi", t => t.some(x => /primeira graduação/.test(x)), "OI2 opening");
       const llmOi = anthropic.requests.length;
       out = await say(OI2, "wamid.com-oi2", "oi", t => t.some(x => /Estou por aqui/.test(x)), "OI2 second hello");
-      assert(out.some(x => /Qual curso você tem interesse/.test(x)) && !out.some(x => /assistente virtual/.test(x)), `the second hello presented again or asked nothing: ${out}`);
+      assert(out.some(x => /primeira graduação/.test(x)) && !out.some(x => /assistente virtual/.test(x)), `the second hello presented again or asked nothing: ${out}`);
       assert(anthropic.requests.length === llmOi, "the second hello went to the model");
 
       // Q) the scenarios of the attendance, in the layer that needs no model: what is recognised at once and where each conversation goes
@@ -3830,9 +3845,9 @@ const postMeta = (id, payload, secret, badSig) => {
 
       // "Oi": a short presentation by the default assistant (Estela) and the next question, no model
       const Q1 = "5511920000240";
-      out = await say(Q1, "wamid.qs-1", "Oi", t => t.some(x => /conhecer nossos cursos/.test(x)), "greeting by Estela");
+      out = await say(Q1, "wamid.qs-1", "Oi", t => t.some(x => /primeira graduação/.test(x)), "greeting by Estela");
       assert(/Estela, assistente virtual/.test(out.join(" ")), `the greeting does not present Estela: ${out}`);
-      assert(/conhecer nossos cursos/.test(out.join(" ")), `the greeting did not lead to the next question: ${out}`);
+      assert(/primeira graduação/.test(out.join(" ")), `the greeting did not lead to the next question: ${out}`);
 
       // "Quanto custa Criminologia?": the course is recognised in the words, the price goes to the consultant with the course already in the brief
       const Q2 = "5511920000241";
@@ -3926,6 +3941,52 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(/Encontros presenciais um sábado por mês/.test(z3) && /Polo de Porto Velho/.test(z3) && /Aulas ao vivo às quartas/.test(z3), `the confirmed items did not reach the answer: ${z3}`);
       assert(/AINDA NÃO:.*início das atividades presenciais/.test(z3) && !/AINDA NÃO:[^.]*calendário previsto/i.test(z3), `the items still unknown must stay unknown: ${z3}`);
 
+      // MA) the process of the team, as in the conversation with Maíra: first degree first, the course, the city; the course presented (bridge,
+      // duration, format with the share of the course, "Até aqui você compreendeu?"); "pode continuar": grade, tutoring and internship; "não tenho
+      // dúvidas": name and CPF; with them, the consultant of the polo for the proposal. No emoji, and the model only where the person says something new.
+      // (the catalogue that comes with the system may already have the course: the share of the course is set on every "Biomedicina")
+      if (sql(`SELECT COUNT(*) FROM Courses WHERE name='Biomedicina'`) === "0") await http.post("/courses", { name: "Biomedicina", modality: "SEMIPRESENCIAL", category: "Graduação - Cruzeiro", semesters: 8, monthlyFee: 500, active: true }, auth());
+      sql(`UPDATE Courses SET semesters=8, active=true WHERE name='Biomedicina'`);
+      await http.post("/mec-defaults/apply", {}, auth());
+      for (const bioId of sql(`SELECT id FROM Courses WHERE name='Biomedicina' ORDER BY id`).split("\n").filter(Boolean)) {
+        // eslint-disable-next-line no-await-in-loop
+        assert((await http.put(`/course-regulations/${bioId}`, { mecImpacted: true, percentualPresencial: 30, percentualSincrono: 20, teoriaAoVivo: true, praticaPresencial: true, cronogramaPraticasDefinido: false }, auth())).status === 200, "the share of Biomedicina");
+      }
+      // (a newer matrix than the one that comes with the system, without a modality and without a file: it is the one chosen, and its summary goes in writing)
+      sql(`INSERT INTO CommercialGrades (courseName, modality, curriculumTerm, courseTracks, internshipInfo, hasTcc, totalInternshipHours, totalCourseHours, degree, durationSemesters, whatsappSummary, complete, contentHash, catalogKey, fileName, createdAt, updatedAt) VALUES ('BIOMEDICINA (BACHARELADO)', NULL, '2027/1', '[]', E'6º sem.: ESTÁGIO CURRICULAR SUPERVISIONADO EM BIOMEDICINA I (320h)\\n7º sem.: ESTÁGIO CURRICULAR SUPERVISIONADO EM BIOMEDICINA II (320h)', true, 640, 3200, 'Bacharelado', 8, '📚 resumo antigo com emoji', true, 'h-e2e-bio', 'bio-e2e', 'bio-e2e-sem-arquivo.pdf', now(), now())`);
+      const emoji = /\p{Extended_Pictographic}/u;
+      const MA = "5511920000260";
+      const llmMa = anthropic.requests.length;
+      out = await say(MA, "wamid.ma-1", "Oi", t => t.some(x => /primeira graduação/.test(x)), "MA opening");
+      assert(/Essa seria a sua \*primeira graduação\*/.test(out.join(" ")) && !emoji.test(out.join(" ")), `MA opening: ${out}`);
+      out = await say(MA, "wamid.ma-2", "Sim, é a minha primeira graduação", t => t.some(x => /Qual curso/.test(x)), "MA course asked");
+      assert(slotsOfNumber(MA).entryType === "first_degree" && anthropic.requests.length === llmMa, "MA the first degree was not kept by the system");
+      out = await say(MA, "wamid.ma-3", "Quero fazer o curso de Biomedicina", t => t.some(x => /Você reside em qual cidade\?/.test(x)), "MA city asked");
+      const gradesBefore = graph.sent.filter(x => x.body && x.body.type === "text" && /Matriz curricular: Biomedicina/.test(x.body.text.body)).length;
+      out = await say(MA, "wamid.ma-4", "Sou de Cidade Estela", t => t.some(x => /Até aqui você compreendeu\?/.test(x)), "MA course presented");
+      const ma4 = out.join("\n");
+      assert(/vou te enviar as informações certinhas sobre o curso/.test(ma4) && /\*Biomedicina\* tem duração de \*8 semestres\*, ou seja, aproximadamente \*4 anos\*/.test(ma4), `MA bridge and duration: ${ma4}`);
+      assert(/Hoje, o curso funciona no formato EAD/.test(ma4) && /maio de 2027/.test(ma4) && /30% de carga prática presencial, em laboratório/.test(ma4) && /ainda não foi definida/.test(ma4), `MA format: ${ma4}`);
+      assert(!emoji.test(ma4) && !/vou confirmar/i.test(ma4), `MA emoji or "vou confirmar": ${ma4}`);
+      assert(graph.sent.filter(x => x.body && x.body.type === "text" && /Matriz curricular: Biomedicina/.test(x.body.text.body)).length === gradesBefore, "MA the grade went before the format");
+      const llmMa2 = anthropic.requests.length;
+      out = await say(MA, "wamid.ma-5", "Sim, pode continuar", t => t.some(x => /Você tem alguma dúvida sobre o curso ou o formato\?/.test(x)), "MA grade, tutoring and internship");
+      const ma5 = out.join("\n");
+      assert(/\*Matriz curricular: Biomedicina \(Bacharelado\)\*/.test(ma5) && /Estágios previstos:/.test(ma5) && /6º semestre: Biomedicina I \(320 h\)/.test(ma5) && /Ao todo, a matriz prevê 640 horas/.test(ma5), `MA caption: ${ma5}`);
+      assert(/Sobre a tutoria, esse é um diferencial importante/.test(ma5) && /começa no 6º semestre e soma 640 horas/.test(ma5) && /convênios com órgãos públicos/.test(ma5), `MA tutoring and internship: ${ma5}`);
+      assert(!emoji.test(ma5) && !/ESTÁGIO CURRICULAR/.test(ma5.replace(/\*Matriz[\s\S]*?Ao todo[^\n]*/, "")), `MA emoji or capitals: ${ma5}`);
+      out = await say(MA, "wamid.ma-6", "Não tenho dúvidas, pode prosseguir", t => t.some(x => /nome completo e CPF para eu simular as bolsas disponíveis/.test(x)), "MA name and CPF asked");
+      assert(/Caso não tenha, pode me informar o seu nome completo e CPF/.test(out[out.length - 1]), `MA bolsa: ${out}`);
+      out = await say(MA, "wamid.ma-7", "CPF: 529.829.821-45\nMAIRA DA SILVA BATISTA", t => t.some(x => /montar a sua proposta/.test(x)), "MA to the consultant");
+      await waitFor(() => handoffOf(MA) === "proposal" && sql(`SELECT aiActive FROM Tickets WHERE id=${ticketOf(MA)}`) === "0", 15000, "MA handed to the consultant for the proposal");
+      assert(slotsOfNumber(MA).fullName === "Maira da Silva Batista" && slotsOfNumber(MA).cpfGiven === true, `MA data: ${JSON.stringify(slotsOfNumber(MA)).slice(0, 300)}`);
+      assert(anthropic.requests.length === llmMa2, "MA the model was called where the process needs none");
+      // the standard of the area comes back (the test of the MEC rules reads it)
+      for (const bioId of sql(`SELECT id FROM Courses WHERE name='Biomedicina' ORDER BY id`).split("\n").filter(Boolean)) {
+        // eslint-disable-next-line no-await-in-loop
+        await http.put(`/course-regulations/${bioId}`, { mecImpacted: true, percentualPresencial: 40, percentualSincrono: 20, teoriaAoVivo: true, praticaPresencial: true, cronogramaPraticasDefinido: false }, auth());
+      }
+
       // an amended norm is told to the agents with its status, and the check is recorded
       const n378 = norms.norms.find(n => n.key === "portaria-378-2025");
       assert((await http.put(`/regulatory-norms/${n378.id}`, { status: "alterada", amendments: "Portaria de teste alterou o art. 8º." }, auth())).status === 200, "amend the norm");
@@ -4005,29 +4066,29 @@ const postMeta = (id, payload, secret, badSig) => {
       setQualified(2);
       const R = "5511920000301";
       await say(R, "wamid.com-r1", "oi", t => t.some(x => /assistente virtual/.test(x)), "R opening");
-      await say(R, "wamid.com-r2", "Quero Direito em Porto Velho, primeira graduação", t => t.some(x => /Direito em Porto Velho/.test(x)), "R qualification");
+      await say(R, "wamid.com-r2", "Quero Direito em Porto Velho, primeira graduação", t => t.some(x => /Direito em Porto Velho|Até aqui você compreendeu/.test(x)), "R qualification");
       await say(R, "wamid.com-r3", "Quanto tempo dura o curso?", t => t.some(x => /Direito:/.test(x)), "R course");
       assert(sql(`SELECT COALESCE(handoffReason,'') FROM Tickets WHERE id=${ticketOf(R)}`) === "", "handed over too early: the lead had no answers left to get");
       // the handover waits while the agent has just asked the person something (they answer first), but not forever: within a few answers it happens
       let handed = false;
       let rn = 4;
-      for (const q of ["E sobre as mudanças do MEC, como fica?", "Paulo Souza Lima, CPF 862.883.667-57", "Entendi, obrigado", "Certo, e agora?", "Pode ser"]) {
+      for (const q of ["E sobre as mudanças do MEC, como fica?", "Entendi, obrigado", "Paulo Souza Lima, CPF 862.883.667-57", "Certo, e agora?", "Pode ser"]) {
         out = await say(R, `wamid.com-r${rn}`, q, t => t.length > 0, "R answer");
         rn += 1;
         try {
-          await waitFor(() => sql(`SELECT handoffReason FROM Tickets WHERE id=${ticketOf(R)}`) === "qualified", 3500, "R routed as qualified");
+          await waitFor(() => /^(qualified|proposal)$/.test(sql(`SELECT handoffReason FROM Tickets WHERE id=${ticketOf(R)}`)), 3500, "R routed to the consultant");
           handed = true;
           break;
         } catch (e) { /* the agent asked something: the person answers first */ }
       }
       assert(handed, "the qualified lead was never handed over");
-      assert(Number(sql(`SELECT COUNT(*) FROM Messages WHERE ticketId=${ticketOf(R)} AND body LIKE '%Perfeito%' AND body LIKE '%consultor do nosso polo%'`)) >= 1, "the handover message (warm, with the name and the course) was not sent");
+      assert(Number(sql(`SELECT COUNT(*) FROM Messages WHERE ticketId=${ticketOf(R)} AND body LIKE '%consultor%' AND (body LIKE '%Perfeito%' OR body LIKE '%simular as bolsas%')`)) >= 1, "the handover message (warm, saying the consultant takes it from here) was not sent");
       // the full name and the CPF were asked for the scholarship, read from the answer, kept in the lead and never left in the conversation state
-      assert(Number(sql(`SELECT COUNT(*) FROM Messages WHERE ticketId=${ticketOf(R)} AND fromMe=true AND body LIKE '%nome completo e CPF%'`)) >= 1, "the system never asked for the full name and the CPF");
+      assert(Number(sql(`SELECT COUNT(*) FROM Messages WHERE ticketId=${ticketOf(R)} AND fromMe=true AND (body LIKE '%nome completo e CPF%' OR body LIKE '%Anotei os seus dados%')`)) >= 1, "the system neither asked for the full name and the CPF nor took them when they came");
       assert(sql(`SELECT cpf FROM Leads WHERE id=${leadId(R)}`) === "86288366757", "the CPF was not saved in the lead");
       assert(!/86288366757|862\.883\.667/.test(sql(`SELECT slots FROM LeadCommercials WHERE leadId=${leadId(R)}`)), "the CPF leaked into the state of the conversation");
       assert(JSON.parse(sql(`SELECT slots FROM LeadCommercials WHERE leadId=${leadId(R)}`)).fullName === "Paulo Souza Lima", "the full name was not kept");
-      assert(Number(sql(`SELECT COUNT(*) FROM Messages WHERE ticketId=${ticketOf(R)} AND fromMe=true AND body LIKE '%simular a bolsa%' AND body LIKE '%Perfeito%'`)) >= 1, "the handover did not say the consultant will simulate the scholarship");
+      assert(Number(sql(`SELECT COUNT(*) FROM Messages WHERE ticketId=${ticketOf(R)} AND fromMe=true AND (body LIKE '%simular a bolsa%' OR body LIKE '%simular as bolsas%')`)) >= 1, "the handover did not say the consultant will simulate the scholarship");
       assert(sql(`SELECT aiActive FROM Tickets WHERE id=${ticketOf(R)}`) === "0", "the AI kept talking after the handover");
       assert(Number(sql(`SELECT COUNT(*) FROM AgentMetricEvents WHERE leadId=${leadId(R)} AND event='handoff_qualified'`)) === 1, "no metric for the qualified handover");
       // the consultant who receives it reads five lines of what the agent learned, and why it came
@@ -4070,7 +4131,7 @@ const postMeta = (id, payload, secret, badSig) => {
       // V) objections: the agent answers them (with the guide of the base) and a person takes over after the third; "é golpe?" is a doubt, not a complaint
       const V = "5511920000305";
       await say(V, "wamid.com-v1", "oi", t => t.some(x => /assistente virtual/.test(x)), "V opening");
-      await say(V, "wamid.com-v2", "Quero Direito em Porto Velho, primeira graduação", t => t.some(x => /Direito em Porto Velho/.test(x)), "V qualification");
+      await say(V, "wamid.com-v2", "Quero Direito em Porto Velho, primeira graduação", t => t.some(x => /Direito em Porto Velho|Até aqui você compreendeu/.test(x)), "V qualification");
       await say(V, "wamid.com-v3", "e se for golpe?", t => t.some(x => /natural querer ter certeza/.test(x)), "V first objection answered by the agent");
       assert(sql(`SELECT COALESCE(handoffReason,'') FROM Tickets WHERE id=${ticketOf(V)}`) === "", "'é golpe?' was taken as a complaint");
       await say(V, "wamid.com-v4", "parece golpe isso", t => t.some(x => /natural querer ter certeza/.test(x)), "V second objection");
@@ -4082,7 +4143,7 @@ const postMeta = (id, payload, secret, badSig) => {
       // W) what the lead says about the moment is saved (CRM fields and score), the agent schedules the consultant's call, and the brief carries it all
       const W = "5511920000306";
       await say(W, "wamid.com-w1", "oi", t => t.some(x => /assistente virtual/.test(x)), "W opening");
-      await say(W, "wamid.com-w2", "Quero Direito em Porto Velho, primeira graduação, quero começar esta semana", t => t.some(x => /Direito em Porto Velho/.test(x)), "W qualification");
+      await say(W, "wamid.com-w2", "Quero Direito em Porto Velho, primeira graduação, quero começar esta semana", t => t.some(x => /Direito em Porto Velho|Até aqui você compreendeu/.test(x)), "W qualification");
       await waitFor(() => sql(`SELECT CONCAT(COALESCE(decisionTimeline,''),'|',COALESCE(shift,'')) FROM Leads WHERE id=${leadId(W)}`) === "Decide esta semana|Noite", 10000, "W CRM fields filled");
       assert(sql(`SELECT temperature FROM LeadCommercials WHERE leadId=${leadId(W)}`) === "hot", "who decides this week should be hot");
       out = await say(W, "wamid.com-w3", "pode ser amanhã às 14h?", t => t.some(x => /Combinado! O consultor do seu polo entra em contato/.test(x)), "W the call is scheduled");
@@ -4093,7 +4154,7 @@ const postMeta = (id, payload, secret, badSig) => {
       // X) a lead who stops answering gets "tá por aí?" first, the next reminders spaced (hours), only inside the service window, and the count starts over when they write
       const X = "5511920000307";
       await say(X, "wamid.com-x1", "oi", t => t.some(x => /assistente virtual/.test(x)), "X opening");
-      await say(X, "wamid.com-x2", "Quero Direito em Porto Velho, primeira graduação", t => t.some(x => /Direito em Porto Velho/.test(x)), "X qualification");
+      await say(X, "wamid.com-x2", "Quero Direito em Porto Velho, primeira graduação", t => t.some(x => /Direito em Porto Velho|Até aqui você compreendeu/.test(x)), "X qualification");
       await waitFor(() => runOf(X) === "waiting|apresentar", 8000, "X waits");
       const markX = graph.sent.length;
       sql(`UPDATE LeadCommercials SET slots = (slots::jsonb || jsonb_build_object('lastInboundAt', to_char((now() - interval '4 hours') AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'), 'lastOutboundAt', to_char((now() - interval '3 hours 50 minutes') AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')))::text, lastInboundAt = now() - interval '4 hours', lastOutboundAt = now() - interval '3 hours 50 minutes' WHERE leadId=${leadId(X)}`);
@@ -4107,7 +4168,7 @@ const postMeta = (id, payload, secret, badSig) => {
       // X2) every reminder went out and the lead, who already said the course, still does not answer: the consultant of the polo calls
       const X2 = "5511920000317";
       await say(X2, "wamid.com-x21", "oi", t => t.some(x => /assistente virtual/.test(x)), "X2 opening");
-      await say(X2, "wamid.com-x22", "Quero Direito em Porto Velho, primeira graduação", t => t.some(x => /Direito em Porto Velho/.test(x)), "X2 qualification");
+      await say(X2, "wamid.com-x22", "Quero Direito em Porto Velho, primeira graduação", t => t.some(x => /Direito em Porto Velho|Até aqui você compreendeu/.test(x)), "X2 qualification");
       await waitFor(() => runOf(X2).startsWith("waiting|"), 8000, "X2 waits");
       sql(`UPDATE LeadCommercials SET slots = (slots::jsonb || jsonb_build_object('nudges', 3, 'nudgeAt', to_char((now() - interval '3 hours') AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'), 'lastOutboundAt', to_char((now() - interval '15 hours') AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')))::text, lastInboundAt = now() - interval '16 hours', lastOutboundAt = now() - interval '15 hours' WHERE leadId=${leadId(X2)}`);
       await waitFor(() => sql(`SELECT COALESCE(handoffReason,'') FROM Tickets WHERE id=${ticketOf(X2)}`) === "no_reply", 30000, "X2 handed to the consultant for not answering");
@@ -4116,7 +4177,7 @@ const postMeta = (id, payload, secret, badSig) => {
       // Y) a lead who gives up leaves with the REASON the CRM understands (from the objection that came up), and the metrics tell why we lose
       const Y = "5511920000308";
       await say(Y, "wamid.com-y1", "oi", t => t.some(x => /assistente virtual/.test(x)), "Y opening");
-      await say(Y, "wamid.com-y2", "Quero Direito em Porto Velho, primeira graduação", t => t.some(x => /Direito em Porto Velho/.test(x)), "Y qualification");
+      await say(Y, "wamid.com-y2", "Quero Direito em Porto Velho, primeira graduação", t => t.some(x => /Direito em Porto Velho|Até aqui você compreendeu/.test(x)), "Y qualification");
       await say(Y, "wamid.com-y3", "achei caro, não tenho mais interesse", t => t.some(x => /agradeço o seu tempo/.test(x)), "Y gives up");
       // (the column may be one the company already had, with its own name: what matters is that it is a "lost" column)
       await waitFor(() => sql(`SELECT s.type FROM Leads l JOIN LeadStages s ON s.id=l.stageId WHERE l.id=${leadId(Y)}`) === "lost", 10000, "Y goes to a lost column");
@@ -5110,7 +5171,7 @@ const postMeta = (id, payload, secret, badSig) => {
       const ped = list.find(g => /^PEDAGOGIA \(LICENCIATURA\)/i.test(g.courseName));
       if (ped) {
         const full = (await http.get(`/grades/${ped.id}`, auth())).data;
-        assert(!/Ambienta|Plano de Acompanhamento|Semin/i.test(full.whatsappSummary) && /400 horas no total/.test(full.whatsappSummary), `Pedagogia text ${full.whatsappSummary}`);
+        assert(!/Ambienta|Plano de Acompanhamento|Semin/i.test(full.whatsappSummary) && /Ao todo, a matriz prevê 400 horas de estágio/.test(full.whatsappSummary), `Pedagogia text ${full.whatsappSummary}`);
       }
     });
     await test("MEC rules: the standard of the Portaria 378/2025 by area is applied to the courses, adjusted once for the whole area, and the agents learn it", async () => {

@@ -14,7 +14,7 @@ import { commercialTurn, CommercialTrace } from "./Hook";
 import { CommercialPorts } from "./Ports";
 import { matchFaq } from "../AiServices/Kb";
 import { unsafeAnswer } from "./Guards";
-import { ENTRY_LABEL, alreadyIntroduces, consultantMention, courseMention, entryOf, fastIntent, interestOf, hasBolsaData, humanReason, introText, isGreeting, needsBolsaData, modalityExplained, modalityTextOf, needsModalityExplanation, nextQuestionOf, openingText, readyForConsultantOf, retractsBuying, stageFieldsDone, supportIntent, topicsOf, gradeRequest, withoutClosingQuestion } from "./Rules";
+import { DOUBTS_QUESTION, ENTRY_LABEL, PRESENT_BRIDGE, durationLine, alreadyIntroduces, entryAnswer, isQualified, modalityQuestion, proceeds, consultantMention, courseMention, entryOf, fastIntent, interestOf, hasBolsaData, humanReason, introText, isGreeting, needsBolsaData, modalityExplained, modalityTextOf, needsModalityExplanation, nextQuestionOf, openingText, readyForConsultantOf, retractsBuying, stageFieldsDone, supportIntent, topicsOf, gradeRequest, withoutClosingQuestion } from "./Rules";
 import { configOf } from "./Config";
 import { detectFromText, findConsultantByName } from "./Detect";
 import { AcademicCtx, closestOffered, findCourse, joinNames, offeredCourses, runAcademicTool, sendGradeFor } from "./Academic";
@@ -37,7 +37,9 @@ export const FIXED = {
   askCity: "Para chamar a equipe do seu polo, em qual cidade você estuda ou mora?",
   unknown: "Essa informação eu prefiro confirmar para não te passar nada incorreto. Vou encaminhar para o consultor verificar certinho para você.",
   // the conversation goes on: the question waits for the consultant, who sees it in the summary
-  unknownHeld: "Essa informação eu prefiro confirmar com a equipe para não te passar nada incorreto. Já anotei a sua pergunta para o consultor te responder."
+  unknownHeld: "Essa informação eu prefiro confirmar com a equipe para não te passar nada incorreto. Já anotei a sua pergunta para o consultor te responder.",
+  // the doubts are over and the data for the scholarship is in: the consultant of the polo simulates the scholarships and makes the proposal
+  toProposal: "Vou encaminhar o seu atendimento para o consultor do seu polo, que vai simular as bolsas disponíveis e montar a sua proposta. Um momento, por favor."
 };
 
 // the person is back after a while (the conversation did not stop an hour ago)
@@ -172,9 +174,12 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
   }
 
   // the full name and the CPF asked for the scholarship: read here, answered by the system (the CPF never goes to the model, the log or the brief)
-  if (d.input !== null && wrote && Number(state.slots.bolsaDataAsked || 0) > 0 && !hasBolsaData(state.slots)) {
-    const given = bolsaDataFrom(lastText);
-    if (given.cpf || given.fullName || given.invalidCpf) {
+  // (read when it was asked, and also when the person offers a valid CPF on their own: it is the data the consultant needs, asked or not)
+  const bolsaAsked = Number(state.slots.bolsaDataAsked || 0) > 0;
+  const bolsaGiven = d.input !== null && wrote && !hasBolsaData(state.slots) ? bolsaDataFrom(lastText) : null;
+  if (bolsaGiven && (bolsaAsked ? bolsaGiven.cpf || bolsaGiven.fullName || bolsaGiven.invalidCpf : !!bolsaGiven.cpf)) {
+    const given = bolsaGiven;
+    {
       const patch: Record<string, any> = {};
       if (given.fullName) patch.fullName = given.fullName;
       if (given.cpf) patch.cpfGiven = true;
@@ -188,13 +193,16 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
       const complete = !missing.name && !missing.cpf;
       patch.bolsaDataAsked = complete || asked >= BOLSA_ASKS ? asked : asked + 1;
       const first = String(after.fullName || state.slots.leadName || d.contactName || "").trim().split(/\s+/)[0];
-      const text = given.invalidCpf && !given.cpf
+      let text = given.invalidCpf && !given.cpf
         ? "Esse CPF não parece válido. Confere os 11 números e me envia de novo, por favor?"
         : complete
-          ? `Obrigado${first ? `, ${first}` : ""}. Anotei seus dados para o consultor simular a bolsa.`
+          ? `Obrigado${first ? `, ${first}` : ""}. Anotei os seus dados.`
           : asked >= BOLSA_ASKS ? `Obrigado${first ? `, ${first}` : ""}. Anotei o que você enviou.` : bolsaRequestFor(missing);
       // same way out as an answer of the model: when this completes a qualified lead, the Router hears why (the warm handover message follows this text)
-      const hook = await commercialTurn(d.ports, { userText: lastText.replace(/\d/g, "•"), intent: "other", patch, tools: [], hadText: true, replied: true, nodeId: d.nodeId });
+      // name and CPF complete and the lead qualified: the consultant simulates the scholarships and makes the proposal now (the conversation does not stop here)
+      const toProposal = bolsaAsked && complete && isQualified(after) && !(needsModalityExplanation(after) && !modalityExplained(after));
+      const hook = await commercialTurn(d.ports, { userText: lastText.replace(/\d/g, "•"), intent: toProposal ? "proposal" : "other", ...(toProposal ? { fast: "proposal" } : {}), patch, tools: [], hadText: true, replied: true, nodeId: d.nodeId });
+      if (toProposal && hook.exit) text = `${text}\n\n${FIXED.toProposal}`;
       await log({ intent: "other", deterministic: true, llmCalls: 0, toolCalls: 0, cacheHits: 0, tokens: base.tokens, outcome: hook.exit, latencyMs: Date.now() - started });
       if (d.lead && !d.sandbox) await syncLead(d, hook.trace.changed);
       return { text, exit: hook.exit, ...(hook.why ? { why: hook.why } : {}), collected: flat(hook.trace.changed), trace: { ...base, deterministic: true, intent: "other", commercial: hook.trace, entry: ENTRY_LABEL[state.slots.entryType || "unknown"], latencyMs: Date.now() - started } };
@@ -218,13 +226,61 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
   // "cumprimente" to a person already greeted)
   const stageNeeds = d.stage.fields.filter(f => f.required).map(f => (f.key === "courseName" ? "course" : f.key === "entryType" ? "entry" : f.key));
   if (!fresh && !media.length && d.input !== null && isGreeting(lastText)) {
-    const smile = (d.agent.persona as any)?.emoji === false ? "" : " 😊";
+    const smile = (d.agent.persona as any)?.emoji === true ? " 😊" : "";
     const next = state.slots.enrolledStudent ? null : nextQuestionOf(state.slots, d.ports.config ? d.ports.config.ask : {});
     return answered(`Oi! Estou por aqui${smile}\n\n${next || "Em que posso te ajudar?"}`, null, "greeting", { intent: "greeting" });
   }
   if (!fresh && d.input === null && !state.slots.enrolledStudent) {
     const next = nextQuestionOf(state.slots, d.ports.config ? d.ports.config.ask : {}, stageNeeds);
     if (next) return answered(next, null, "greeting", {});
+  }
+
+  const ask = d.ports.config ? d.ports.config.ask : {};
+  const lastBot = [...(d.history || [])].reverse().find(h => h.role === "assistant")?.content || "";
+
+  // the short answer to "essa será a sua primeira graduação?" ("sim", "a primeira"): kept by the system, which asks the next thing at once
+  const entryNow = d.input !== null && wrote && (!state.slots.entryType || state.slots.entryType === "unknown") ? entryAnswer(lastText, lastBot) : null;
+  // (only when the message is just that answer: "Quero Direito em Porto Velho, primeira graduação" says more, and goes the usual way)
+  const saysMore = entryNow ? await detectFromText(lastText).then(x => !!(x.courseName || x.city || x.poloId)).catch(() => true) : true;
+  if (entryNow === "first_degree" && !saysMore && !courseMention(lastText) && !/\?/.test(lastText) && lastText.trim().length <= 60) {
+    const next = nextQuestionOf({ ...state.slots, entryType: entryNow }, ask, stageNeeds);
+    if (next) return answered(next, null, "other", { patch: { entryType: entryNow }, endsWithQuestion: true });
+    const shown = await presentCourse(d, { ...state.slots, entryType: entryNow });
+    if (shown) return answered(shown.text, null, "course_modality", { intent: "course_modality", patch: { entryType: entryNow, ...shown.patch }, endsWithQuestion: true });
+  }
+
+  // "não tenho dúvidas, pode prosseguir": the process goes on by itself (next question, the format, the data for the scholarship, the consultant)
+  if (d.input !== null && wrote && !media.length && proceeds(lastText) && !state.slots.enrolledStudent) {
+    const slots = state.slots;
+    const next = nextQuestionOf(slots, ask, stageNeeds);
+    if (next) return answered(next, null, "other", { endsWithQuestion: true });
+    if (needsModalityExplanation(slots) && !modalityExplained(slots)) {
+      const explained = await explainModality(d, slots.courseId, slots.courseName);
+      if (explained) return answered(explained.text, null, "course_modality", { intent: "course_modality", patch: explained.patch, endsWithQuestion: true });
+    }
+    // the grade comes before the scholarship (with the tutoring and the internship), then the doubts of the person
+    if (!slots.gradeSent && (slots.courseId || slots.courseName) && d.ticket) {
+      try {
+        const course = await findCourse({ courseId: slots.courseId, courseName: slots.courseName });
+        if (course) {
+          const ctx: AcademicCtx = { ticket: d.ticket, dryRun: d.sandbox, slots: { ...slots }, patch: {}, cacheHits: 0, agentId: d.agent.id };
+          const g = await sendGradeFor(course, ctx);
+          if (g.sent || g.simulated) {
+            const text = `${g.text || ""}\n\n${DOUBTS_QUESTION}`.trim();
+            return answered(text, null, "curriculum", { intent: "curriculum", patch: { ...ctx.patch, courseId: course.id, courseName: course.name, gradeAsked: true, gradeSent: true, courseExplained: true, internshipExplained: true, tutoringExplained: true }, tools: ["buscar_grade", "enviar_material"], endsWithQuestion: true });
+          }
+        }
+      } catch (err) {
+        // without the grade the process goes on to the scholarship
+      }
+    }
+    if (needsBolsaData(slots)) {
+      const text = `Caso não tenha, ${bolsaRequestFor({ name: !slots.fullName, cpf: !slots.cpfGiven }).replace(/^./, c => c.toLowerCase())}`.replace(/^Caso não tenha, falta só/, "Falta só");
+      return answered(text, null, "other", { patch: { bolsaDataAsked: Number(slots.bolsaDataAsked || 0) + 1, courseExplained: true }, endsWithQuestion: true });
+    }
+    if (isQualified({ ...slots, courseExplained: true })) {
+      return answered(FIXED.toProposal, null, "proposal", { fast: "proposal", patch: { courseExplained: true } }, "qualified");
+    }
   }
 
   // a course that is not in the catalogue of the system is not offered: said at once, with the ones that are (the model never gets to talk about it)
@@ -290,6 +346,9 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
           if (needsBolsaData(probe)) {
             text = `${text}\n\n${bolsaRequestFor({ name: !probe.fullName, cpf: !probe.cpfGiven })}`.trim();
             patchOut = { ...patchOut, bolsaDataAsked: Number(probe.bolsaDataAsked || 0) + 1 };
+          } else if (!probe.enrolledStudent) {
+            // the conversation never stops at the grade: the next thing the process needs, or the doubts of the person
+            text = `${text}\n\n${nextQuestionOf(probe, ask, stageNeeds) || DOUBTS_QUESTION}`.trim();
           }
           const hook = await commercialTurn(d.ports, { userText: lastText, intent: "curriculum", patch: patchOut, tools: ["buscar_grade", "enviar_material"], hadText: true, replied: true, nodeId: d.nodeId, hasPolo: !!d.lead?.poloId, endsWithQuestion: /\?[\s"”')]*$/.test(text) });
           const latencyMs = Date.now() - started;
@@ -301,6 +360,13 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
     } catch (err) {
       // the model answers as before when the system could not send it
     }
+  }
+
+  // "É 100% EAD?", "tem aula presencial?": the system explains the format of the course from its rule, in the words of the team (never "vou confirmar")
+  if (d.input !== null && wrote && !media.length && modalityQuestion(lastText) && !state.slots.enrolledStudent) {
+    const named3 = courseMention(lastText);
+    const explained = await explainModality(d, named3 ? null : state.slots.courseId, named3 || state.slots.courseName);
+    if (explained) return answered(explained.text, null, "course_modality", { intent: "course_modality", patch: explained.patch, endsWithQuestion: true });
   }
 
   // an FAQ with a ready answer (the team's or one the agent learned) needs no model
@@ -332,7 +398,7 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
   let patchOut: Record<string, any> = { ...(result.academicPatch || {}) };
   // the kind of entry said in the person's words ("nunca fiz faculdade", "primeira") is kept even when the model did not register it; it goes
   // through the rules like any other finding, so the flow sees it too (the transcript step of a transfer)
-  const said = d.input !== null && wrote && (!state.slots.entryType || state.slots.entryType === "unknown") && !turn.tipo_ingresso ? entryOf(lastText) : null;
+  const said = d.input !== null && wrote && (!state.slots.entryType || state.slots.entryType === "unknown") && !turn.tipo_ingresso ? entryAnswer(lastText, lastBot) : null;
   if (said && !patchOut.entryType) patchOut.entryType = said;
   const probe = { ...state.slots, ...patchOut };
   if (d.input !== null && !d.sandbox && needsBolsaData(probe) && (!/\?[\s"”')]*$/.test(String(text || "").trim()) || Number(probe.qualifiedReplies || 0) >= (d.ports.qualifyAfter || 2) + 1)) {
@@ -343,7 +409,10 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
   // (Not to someone who is already a student; once per course, the slot is cleared when the course changes.)
   let toolsOut = result.tools;
   const courseNow = patchOut.courseId || state.slots.courseId || patchOut.courseName || state.slots.courseName;
-  if (d.input !== null && wrote && courseNow && !(patchOut.gradeSent ?? state.slots.gradeSent) && !state.slots.enrolledStudent && !result.tools.includes("enviar_material") && !result.exit) {
+  // (in the order of the team: after the format was explained; a transfer or a second degree gets it at once)
+  const entryNowOut = patchOut.entryType || state.slots.entryType;
+  const formatFirst = entryNowOut !== "transfer" && entryNowOut !== "second_degree" && !modalityExplained({ ...state.slots, ...patchOut });
+  if (d.input !== null && wrote && courseNow && !formatFirst && !(patchOut.gradeSent ?? state.slots.gradeSent) && !state.slots.enrolledStudent && !result.tools.includes("enviar_material") && !result.exit) {
     try {
       const course = await findCourse({ courseId: patchOut.courseId || state.slots.courseId, courseName: patchOut.courseName || state.slots.courseName });
       if (course) {
@@ -367,7 +436,7 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
         if (g.sent || g.simulated) {
           patchOut = { ...patchOut, ...ctx.patch, courseId: course.id, courseName: course.name, gradeAsked: true, gradeSent: true, courseExplained: true, internshipExplained: true, tutoringExplained: true };
           toolsOut = [...result.tools, "buscar_grade", "enviar_material"];
-          if ((g.sent || (live && g.simulated)) && g.text && g.text.length <= 450 && !/est[aá]gio/i.test(text)) text = `${String(text || "").trim()}\n\n${g.text}`.trim();
+          if ((g.sent || (live && g.simulated)) && g.text && g.text.length <= 800 && !/est[aá]gio/i.test(text)) text = `${String(text || "").trim()}\n\n${g.text}`.trim();
         } else if (g.missing && d.lead && !d.sandbox) {
           await addActivity(d.lead.id, null, "system", `A grade do curso ${course.name} não está cadastrada: o agente não pôde enviá-la. Envie manualmente e cadastre a grade em Grades.`).catch(() => undefined);
         }
@@ -440,6 +509,15 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
       // without the rule the model still explains it (buscar_regra_modalidade); the handover keeps waiting for it
     }
   }
+  // the answer that completes course, city and first degree: the team presents the course (bridge, duration, format) instead of the model
+  if ((!hook.exit || hook.exit === "done") && d.input !== null && !state.slots.enrolledStudent && !state.slots.courseExplained && !modalityExplained(state.slots) && !nextQuestionOf(state.slots, d.ports.config ? d.ports.config.ask : {})) {
+    const shown = await presentCourse(d, state.slots);
+    if (shown) {
+      text = shown.text;
+      Object.assign(state.slots, shown.patch);
+      await d.ports.save().catch(() => undefined);
+    }
+  }
   // the stage goes on and the answer asks nothing: the system asks the next thing the stage needs (course, city, kind of entry), once
   if (!hook.exit && d.input !== null && text && !/\?/.test(text) && !state.slots.enrolledStudent) {
     const next = nextQuestionOf(state.slots, d.ports.config ? d.ports.config.ask : {}, stageNeeds);
@@ -463,6 +541,41 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
       llmCalls: result.rounds, cacheHits: result.cacheHits, tokens: result.tokens, latencyMs
     }
   };
+};
+
+// The presentation of the course for a first degree, as the team does it: the bridge, the duration and the format, ending "Até aqui você compreendeu?".
+// A transfer or a second degree goes to the transcript first (the stages of the flow), so it is not presented here.
+const presentCourse = async (d: TurnDeps, slots: Record<string, any>): Promise<{ text: string; patch: Record<string, any> } | null> => {
+  if (slots.entryType !== "first_degree" || !(slots.courseId || slots.courseName) || !(slots.city || slots.poloId)) return null;
+  const explained = await explainModality(d, slots.courseId, slots.courseName);
+  if (!explained) return null;
+  let duration: string | null = null;
+  try {
+    const ctx: AcademicCtx = { ticket: d.ticket, dryRun: true, slots: { ...slots }, patch: {}, cacheHits: 0, agentId: d.agent.id };
+    const view = await runAcademicTool("buscar_curso", { courseId: slots.courseId || undefined, courseName: slots.courseName || undefined }, ctx);
+    if (view && view.nome) duration = durationLine(String(view.nome), view.duracaoSemestres);
+    explained.patch = { ...ctx.patch, ...explained.patch };
+  } catch (err) {
+    // without the duration the format still goes
+  }
+  return { text: [PRESENT_BRIDGE, duration, explained.text].filter(Boolean).join("\n\n"), patch: explained.patch };
+};
+
+// the explanation of the format of a course, from its rule (buscar_regra_modalidade), with what it marks as done; null when the course is unknown
+const explainModality = async (d: TurnDeps, courseId: any, courseName: any): Promise<{ text: string; patch: Record<string, any> } | null> => {
+  if (!courseId && !courseName) return null;
+  try {
+    const ctx: AcademicCtx = { ticket: d.ticket, dryRun: d.sandbox || !d.ticket, slots: { ...d.ports.state.slots }, patch: {}, cacheHits: 0, agentId: d.agent.id };
+    const view = await runAcademicTool("buscar_regra_modalidade", { courseId: courseId || undefined, courseName: courseName || undefined }, ctx);
+    if (!view || view.erro || !view.explicacao) return null;
+    const name = String(ctx.patch.courseName || courseName || "o curso");
+    const text = modalityTextOf(name, view);
+    if (!text) return null;
+    await d.ports.event("modality_explained", { course: name }, true).catch(() => undefined);
+    return { text, patch: { ...ctx.patch, modalityExplained: true, courseExplained: true, ...(view.mecImpactado ? { mecExplained: true } : {}) } };
+  } catch (err) {
+    return null;
+  }
 };
 
 // what the conversation found out goes to the CRM fields that exist (only into empty fields: a person's data is not overwritten)

@@ -8,7 +8,7 @@ import AppError from "../errors/AppError";
 import { getSetting, setSetting } from "../helpers/AppSettings";
 import CommercialGrade from "../models/CommercialGrade";
 import { logger } from "../utils/logger";
-import { cleanReadingText, readCommercialGrade, type CommercialGradeReading } from "./services/commercial-grades/reader";
+import { cleanReadingText, gradeSummaryOf, readCommercialGrade, type CommercialGradeReading } from "./services/commercial-grades/reader";
 
 // The catalog of commercial matrices. Reading is local (columns of the SIAA PDF); the same matrix is kept once: the
 // same PDF is recognized by its hash and a new version of the same course and modality replaces the old one.
@@ -56,7 +56,7 @@ export const gradeView = (g: CommercialGrade, withSummary = false) => ({
   sizeBytes: g.sizeBytes,
   updatedAt: g.updatedAt,
   createdAt: g.createdAt,
-  ...(withSummary ? { whatsappSummary: g.whatsappSummary } : {})
+  ...(withSummary ? { whatsappSummary: gradeSummaryOf(g) } : {})
 });
 
 const messageOf = (reading: CommercialGradeReading, updated: boolean): { message: string; warning: boolean } => {

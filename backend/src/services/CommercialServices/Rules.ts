@@ -210,27 +210,28 @@ export const openingText = (slots: Slots, first: string, returning: boolean, per
   const customGreeting = persona && persona.commercial ? cleanCommercial(persona.commercial).greeting : "";
   if (!returning && !hasCourse && !hasCity && !hasEntry && !customGreeting) {
     const who = String(persona?.assistantName || "").trim() || DEFAULT_ASSISTANT;
-    const smile = (persona as any)?.emoji === false ? "" : " 😊";
-    return `Olá! Tudo bem?${smile}\n\nSou ${/^(a|o) /i.test(who) ? who : `a ${who}`}, assistente virtual da Cruzeiro do Sul Virtual.\n\nVocê deseja conhecer nossos cursos e fazer sua matrícula ou já é aluno e precisa falar com a tutoria?`;
+    return `Olá! Tudo bem?\n\nSou ${/^(a|o) /i.test(who) ? who : `a ${who}`}, assistente virtual da Cruzeiro do Sul Virtual.\n\nEssa seria a sua *primeira graduação* ou você já tem alguma faculdade concluída? Se você já é aluno e precisa da tutoria, é só me dizer.`;
   }
   if (returning) {
     return `Oi${name}! Que bom falar com você de novo.${course ? ` Da última vez conversamos sobre ${course}.` : ""} ${hasCourse && hasCity && hasEntry ? "Em que posso te ajudar agora?" : ask}`;
   }
-  return `${introText(persona, first)}${course ? ` Vi que você tem interesse em ${course}.` : ""} ${ask}`;
+  // the lead came with a course (a form, an ad): the team opens with the scholarship, then asks the first degree
+  return `${introText(persona, first)}${course ? `\n\nRecebi o seu interesse em cursar *${course}* e quero te ajudar a verificar a melhor bolsa disponível para você.\n\n` : " "}${ask}`;
 };
 
 // The next question of the commercial process, always in the same order (course, city, kind of entry), only for what is still unknown and what
 // the administrator lets the agent ask: the system asks it when the model did not, so a lead is never left without the next step.
 export const QUESTIONS = {
+  entry: "Essa seria a sua *primeira graduação* ou você já tem alguma faculdade concluída?",
   course: "Qual curso você tem interesse? Se você já é aluno e precisa da tutoria ou da secretaria, é só me dizer.",
-  city: "Em qual cidade você mora? Assim eu já te mostro o polo mais perto.",
-  entry: "Você vai começar a primeira graduação ou já cursou (ou cursa) outra faculdade?"
+  city: "Você reside em qual cidade?"
 };
 export const nextQuestionOf = (slots: Slots, ask: { course?: boolean; city?: boolean; entry?: boolean } = {}, only?: string[]): string | null => {
   const wanted = (k: string) => ask[k as "course"] !== false && (!only || only.includes(k));
+  // first of all, whether it is the first degree (a transfer or a second degree goes another way: the transcript and the analysis)
+  if ((!slots.entryType || slots.entryType === "unknown") && wanted("entry")) return QUESTIONS.entry;
   if (!(slots.courseName || slots.courseId) && wanted("course")) return QUESTIONS.course;
   if (!(slots.city || slots.poloId) && wanted("city")) return QUESTIONS.city;
-  if ((!slots.entryType || slots.entryType === "unknown") && wanted("entry")) return QUESTIONS.entry;
   return null;
 };
 
@@ -243,6 +244,19 @@ export const entryOf = (text: string): "first_degree" | "transfer" | "second_deg
   if (kind === "transferencia") return "transfer";
   if (kind === "segunda_graduacao") return "second_degree";
   return FIRST_DEGREE.test(t) ? "first_degree" : null;
+};
+
+// the short answer to the question of the first degree ("sim", "isso, a primeira", "não, já sou formada"): read with the question it answers
+export const entryAnswer = (text: string, lastQuestion: string): "first_degree" | "transfer" | "second_degree" | null => {
+  const said = entryOf(text);
+  if (said) return said;
+  const q = plain(lastQuestion);
+  const t = plain(text).replace(/[.!]+$/, "");
+  if (!t || t.length > 60 || !/primeira graduacao/.test(q)) return null;
+  if (/^(sim|isso|exato|exatamente|e sim|sera sim|vai ser|sim,? (e|sera|vai ser) (a )?primeira|(e |sera |vai ser )?(a )?primeira( graduacao| faculdade| vez)?( sim)?|nunca fiz)\b/.test(t)) return "first_degree";
+  if (/\b(ja (sou )?formad[oa]|ja (tenho|fiz|conclui|terminei) (uma )?(graduacao|faculdade|curso superior))\b/.test(t)) return "second_degree";
+  if (/\b(comecei|estou cursando|to cursando|curso|cursava|tranquei|parei)\b/.test(t) && /\b(outra|faculdade|curso|graduacao)\b/.test(t)) return "transfer";
+  return null;
 };
 
 // the handover of a qualified lead does not leave a question hanging: the last sentences that only ask something are dropped (the handover
@@ -364,19 +378,78 @@ export const isQualified = (slots: Slots, requires: readonly string[] = ["course
   return need.every(k => has[k] !== false);
 };
 
-// the explanation of the format of a semipresencial course, written by the system from the rule of the MEC and what the institution confirmed
-// (the result of the tool buscar_regra_modalidade): nothing invented, what is not confirmed goes to the consultant
+// The explanation of the format of a course, written by the system in the words the team uses (today, what the MEC changes until May 2027, what
+// is still open), from the rule registered for the course (the result of the tool buscar_regra_modalidade). A text the team wrote for the course
+// replaces it. Nothing invented: what the class has not confirmed is said as not defined yet.
+const AREA_SUBJECT: Record<string, string> = { educacao_ciencias: "as licenciaturas", saude_eng_agro: "os cursos da área da saúde, engenharias e agrárias" };
+const dateBr = (iso: string): string => String(iso).split("-").reverse().join("/");
+export const MODALITY_CHECK = "Até aqui você compreendeu?";
 export const modalityTextOf = (courseName: string, view: any): string | null => {
   const e = view && view.explicacao;
   if (!e) return null;
-  const parts: string[] = [`Sobre como funciona ${courseName}:`];
-  if (e.nacional && e.nacional.regra) parts.push(`Pela regra do MEC, ${String(e.nacional.regra).replace(/^./, (c: string) => c.toLowerCase())}`);
-  const confirmed: string[] = (e.institucional && e.institucional.confirmado) || [];
-  if (view.commercialApprovedText) parts.push(String(view.commercialApprovedText));
-  else if (confirmed.length) parts.push(confirmed.join(" "));
-  if ((e.naoConfirmado || []).length) parts.push("Os detalhes que ainda dependem da sua turma (como dias e locais das atividades presenciais) o consultor confirma com você.");
-  parts.push("Ficou claro como funciona?");
-  return parts.join("\n\n");
+  const custom = String(view.commercialApprovedText || "").trim();
+  if (custom) return `${custom}\n\n${MODALITY_CHECK}`;
+  const area = String(e.area || view.area || "");
+  const impacted = view.mecImpactado === true || /semi/i.test(String(view.modalidadeAtual || "")) || area === "educacao_ciencias" || area === "saude_eng_agro";
+  const today = String(view.currentDeliveryDuringTransition || "").trim();
+  const parts: string[] = [
+    today && !/^(ead|semipresencial|presencial|a dist[aâ]ncia)$/i.test(today)
+      ? `Hoje, ${today.replace(/^./, (c: string) => c.toLowerCase()).replace(/\.?$/, ".")}`
+      : "Hoje, o curso funciona no formato EAD: aulas, atividades, provas e acompanhamento acontecem pela plataforma, com flexibilidade para você estudar de onde estiver."
+  ];
+  if (area === "presencial") {
+    return ["Pelas regras do MEC, este curso só pode ser ofertado no formato presencial, com pelo menos 70% da carga horária em atividades presenciais. Como funciona na sua cidade, o consultor confirma com você.", MODALITY_CHECK].join("\n\n");
+  }
+  if (!impacted) {
+    parts.push("Com as adequações do MEC, os cursos a distância também passam a ter uma pequena parte de atividades presenciais e avaliações presenciais. Como isso será organizado na sua turma, o consultor confirma com você.");
+    return [...parts, MODALITY_CHECK].join("\n\n");
+  }
+  const p = view.percentualPresencial !== null && view.percentualPresencial !== undefined && Number.isFinite(Number(view.percentualPresencial)) ? Number(view.percentualPresencial) : null;
+  const live = view.teoriaAoVivo === false ? "" : "a parte teórica será realizada ao vivo, com professor e turma, e ";
+  const load = p ? `${p}% de carga ${area === "saude_eng_agro" ? "prática presencial, em laboratório" : "horária presencial"}` : "uma parte de atividades presenciais";
+  parts.push(`Com as mudanças do MEC, ${AREA_SUBJECT[area] || "cursos como este"} estão passando por adequações. A partir do prazo de adaptação, previsto até maio de 2027, o formato deverá mudar: ${live}o curso também passará a ter ${load}.`);
+  parts.push("A instituição está buscando viabilizar essa parte prática da forma mais acessível possível para o aluno, seja na própria cidade ou no polo mais próximo.");
+  const t = e.turma || null;
+  const clean = (v: any) => String(v).trim().replace(/\.$/, "");
+  const known: string[] = [];
+  if (t && t.presencialStart) known.push(`- As atividades presenciais começam em ${dateBr(t.presencialStart)}`);
+  if (t && t.expectedCalendar) known.push(`- Calendário previsto: ${clean(t.expectedCalendar)}`);
+  if (t && t.practiceSchedule && t.practiceDefined !== false) known.push(`- Cronograma das práticas: ${clean(t.practiceSchedule)}`);
+  if (t && t.syncRules) known.push(`- Aulas ao vivo: ${clean(t.syncRules)}`);
+  if (t && t.activityLocation) known.push(`- Local das atividades presenciais: ${clean(t.activityLocation)}`);
+  parts.push(known.length
+    ? `O que já está confirmado para a sua turma:\n${known.join("\n")}\n\nOs demais detalhes o consultor confirma com você.`
+    : "A quantidade exata de aulas presenciais ainda não foi definida, então prefiro te passar essa informação com responsabilidade, sem afirmar algo que ainda está em construção. Pode ser semanal, mensal ou concentrada em determinados períodos do semestre.");
+  return [...parts, MODALITY_CHECK].join("\n\n");
+};
+
+// "É 100% EAD?", "é online?", "tem aula presencial?", "precisa ir ao polo?": a question about the format, answered by the system from the rule of the course
+const MODALITY_ASK = /\b(100 ?% (ead|online|on line|a distancia|digital)|(e|eh|sera|vai ser|funciona) (todo |totalmente |tudo )?(ead|online|on line|a distancia|semipresencial|semi presencial|presencial)|(tem|terei|vou ter|precisa ter|e preciso ter|havera) (aula|aulas|encontro|encontros|atividade|atividades|prova|provas|pratica|praticas) presencia(l|is)|(preciso|precisa|tenho que|vou ter que|terei que) (ir|ir ate|comparecer|frequentar) (ao|no|o|a) (polo|faculdade|presencial)|como (funciona|funcionam|sao|e) (o curso|as aulas|a modalidade|o formato|o semipresencial|o ead)|qual (e )?(a modalidade|o formato)|mudanca(s)? do mec|novas regras do mec|semipresencial)\b/;
+export const modalityQuestion = (text: string): boolean => {
+  const t = plain(text);
+  if (!t || t.length > 220) return false;
+  if (/\b(quanto|valor|mensalidade|preco|bolsa|desconto)\b/.test(t)) return false;
+  return MODALITY_ASK.test(t);
+};
+
+// The person says the doubts are over and the process may go on ("não tenho dúvidas, pode prosseguir", "entendi, pode continuar", "tudo certo"):
+// the system takes the next step itself (next question, the format, the data for the scholarship, the consultant).
+const PROCEEDS = /^((sim|entendi|compreendi|ok|okay|certo|beleza|blz|perfeito|otimo|tudo certo|tudo bem|ta bom|ta certo|entendido|ficou claro|claro|isso|show|top|legal)[ ,.!]*)*((nao tenho (mais )?(nenhuma )?duvidas?|sem duvidas?|nenhuma duvida|nao,? (tenho )?nenhuma|tudo claro|ficou (tudo )?claro|entendi tudo|compreendi tudo|pode (prosseguir|continuar|seguir|dar continuidade)|podemos (prosseguir|continuar|seguir)|vamos (prosseguir|continuar|seguir)|pode (me )?(passar|mandar) (as bolsas|a proposta)|nao,? obrigad[oa])[ ,.!]*)+$/;
+export const proceeds = (text: string): boolean => {
+  const t = plain(text);
+  return !!t && t.length <= 120 && !t.includes("?") && PROCEEDS.test(t);
+};
+
+// the question asked once the process has nothing else to find out: the doubts of the person come first, then the scholarship
+export const DOUBTS_QUESTION = "Você tem alguma dúvida sobre o curso ou o formato?";
+
+// once the course, the city and the first degree are known, the team presents the course: a bridge, the duration, then the format (modalityTextOf)
+export const PRESENT_BRIDGE = "Perfeito, vou te enviar as informações certinhas sobre o curso e também te explicar como ficaram as mudanças do MEC. Assim você entende direitinho o formato, o que mudou e como funciona para iniciar sua graduação com segurança.";
+export const durationLine = (courseName: string, semesters: number | null | undefined): string | null => {
+  const n = Number(semesters || 0);
+  if (!n) return null;
+  const years = n / 2;
+  return `O curso de *${courseName}* tem duração de *${n} semestres*, ou seja, aproximadamente *${Number.isInteger(years) ? years : String(years).replace(".", ",")} anos*.`;
 };
 
 // what is still missing to qualify, in the words of the administrator's screen
