@@ -1027,13 +1027,14 @@ const postMeta = (id, payload, secret, badSig) => {
       const c = (await http.post("/campaigns", { name: "Sequência", steps, contactListId: list.id, whatsappId: cid, intervalMin: 0, intervalMax: 0, batchSize: 50, batchPause: 1 }, auth())).data;
       assert(c.message.startsWith("Oi {{name}}") && !c.templateName, "first step should mirror message");
       const before = graph.sent.length;
+      const sequenceTexts = () => graph.sent.slice(before).filter(x => x.body?.type === "text" && x.body.to === "5511955554444").map(x => x.body.text.body).filter(t => /^Oi Paula Dias!/.test(t) || steps.slice(1).some(step => step.body === t));
       assert((await http.post(`/campaigns/${c.id}/start`, {}, auth())).status === 200, "start");
       try {
-        await waitFor(() => graph.sent.slice(before).filter(x => x.body && x.body.type === "text").length >= 3, 30000, "three messages");
+        await waitFor(() => sequenceTexts().length >= 3, 30000, "three messages");
       } catch (e) {
         throw new Error(`${e.message}; shipping=${sql(`SELECT status||'|'||stepsDone||'|'||COALESCE(error,'') FROM CampaignShippings WHERE campaignId=${c.id}`)} campaign=${sql(`SELECT status||'|'||COALESCE(pauseReason,'') FROM Campaigns WHERE id=${c.id}`)} sent=${JSON.stringify(graph.sent.slice(before).map(x => x.body && x.body.type))}`);
       }
-      const texts = graph.sent.slice(before).filter(x => x.body && x.body.type === "text").map(x => x.body.text.body);
+      const texts = sequenceTexts();
 
       assert(/^Oi Paula Dias! Tudo (bem|certo)\?$/.test(texts[0]), `first: ${texts[0]}`);
       assert(texts[1] === steps[1].body && texts[2] === steps[2].body, `order: ${JSON.stringify(texts)}`);
