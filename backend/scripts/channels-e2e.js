@@ -3944,10 +3944,14 @@ const postMeta = (id, payload, secret, badSig) => {
       // MA) the process of the team, as in the conversation with Maíra: first degree first, the course, the city; the course presented (bridge,
       // duration, format with the share of the course, "Até aqui você compreendeu?"); "pode continuar": grade, tutoring and internship; "não tenho
       // dúvidas": name and CPF; with them, the consultant of the polo for the proposal. No emoji, and the model only where the person says something new.
-      await http.post("/courses", { name: "Biomedicina", modality: "SEMIPRESENCIAL", category: "Graduação - Cruzeiro", semesters: 8, monthlyFee: 500, active: true }, auth());
+      // (the catalogue that comes with the system may already have the course: the share of the course is set on every "Biomedicina")
+      if (sql(`SELECT COUNT(*) FROM Courses WHERE name='Biomedicina'`) === "0") await http.post("/courses", { name: "Biomedicina", modality: "SEMIPRESENCIAL", category: "Graduação - Cruzeiro", semesters: 8, monthlyFee: 500, active: true }, auth());
+      sql(`UPDATE Courses SET semesters=8, active=true WHERE name='Biomedicina'`);
       await http.post("/mec-defaults/apply", {}, auth());
-      const bioId = Number(sql(`SELECT id FROM Courses WHERE name='Biomedicina' ORDER BY id DESC LIMIT 1`));
-      assert((await http.put(`/course-regulations/${bioId}`, { mecImpacted: true, percentualPresencial: 30, percentualSincrono: 20, teoriaAoVivo: true, praticaPresencial: true, cronogramaPraticasDefinido: false }, auth())).status === 200, "the share of Biomedicina");
+      for (const bioId of sql(`SELECT id FROM Courses WHERE name='Biomedicina' ORDER BY id`).split("\n").filter(Boolean)) {
+        // eslint-disable-next-line no-await-in-loop
+        assert((await http.put(`/course-regulations/${bioId}`, { mecImpacted: true, percentualPresencial: 30, percentualSincrono: 20, teoriaAoVivo: true, praticaPresencial: true, cronogramaPraticasDefinido: false }, auth())).status === 200, "the share of Biomedicina");
+      }
       sql(`INSERT INTO CommercialGrades (courseName, modality, curriculumTerm, courseTracks, internshipInfo, hasTcc, totalInternshipHours, totalCourseHours, degree, durationSemesters, whatsappSummary, complete, contentHash, catalogKey, fileName, createdAt, updatedAt) VALUES ('BIOMEDICINA (BACHARELADO)', 'SEMIPRESENCIAL', '2026/2', '[]', E'6º sem.: ESTÁGIO CURRICULAR SUPERVISIONADO EM BIOMEDICINA I (320h)\\n7º sem.: ESTÁGIO CURRICULAR SUPERVISIONADO EM BIOMEDICINA II (320h)', true, 640, 3200, 'Bacharelado', 8, '📚 resumo antigo com emoji', true, 'h-e2e-bio', 'bio-e2e', 'bio-e2e-sem-arquivo.pdf', now(), now())`);
       const emoji = /\p{Extended_Pictographic}/u;
       const MA = "5511920000260";
