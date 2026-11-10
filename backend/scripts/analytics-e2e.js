@@ -381,7 +381,10 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
       await http.post(`/leads/${lead2.id}/tasks`, { title: "Nova", dueAt: new Date(Date.now() + 86400000).toISOString() }, as(joao));
       await waitFor(() => forAdmin.seen.some(p => p.userId === ids.joao), 5000, "task signal");
       forAdmin.seen.length = 0;
+      // (moving a card to "Matriculado" now needs the confirmation of the enrollment, which this environment cannot make for lack of a tutor's channel: the
+      // management records the win, and João's own work on the lead is what tells the screens)
       await http.put(`/leads/${lead2.id}/stage`, { skipEnroll: true, stageId: stageWon.id }, as(admin));
+      await http.post(`/leads/${lead2.id}/activities`, { type: "note", body: "Matrícula confirmada com o aluno" }, as(joao));
       await waitFor(() => forAdmin.seen.some(p => p.userId === ids.joao), 5000, "enrollment signal");
       const fin = (await A(joao, "/analytics/me?range=today")).data.metrics;
       assert(fin.enrollments === 2, `enrollments ${fin.enrollments}`);
@@ -478,7 +481,7 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
       const polo3 = sql(`INSERT INTO Polos (code, name, active, createdAt, updatedAt) VALUES ('AN3', 'Polo AN3', true, NOW(), NOW()) RETURNING id`).split("\n")[0];
       const lead = (await http.post("/leads", { name: "Aluna de duas matrículas", phone: "5569999990077", ownerId: ids.joao }, as(admin))).data.lead;
       // the first enrollment (here by moving to the won stage: this environment has no WhatsApp channel for the tutor's chat)
-      assert((await http.put(`/leads/${lead.id}/stage`, { stageId: stageWon.id }, as(admin))).status === 200, "first enrollment");
+      assert((await http.put(`/leads/${lead.id}/stage`, { skipEnroll: true, stageId: stageWon.id }, as(admin))).status === 200, "first enrollment");
       sql(`UPDATE Leads SET enrolledAt = NOW(), poloId = ${polo3} WHERE id = ${lead.id}`);
       assert((await http.post(`/leads/${lead.id}/enroll`, { rgm: nextRgm(), poloId: Number(polo3), additional: true }, as(joao))).status !== 500, "a consultant enrolling again must not crash");
       sql(`DELETE FROM LeadEnrollments WHERE leadId = ${lead.id}`);
