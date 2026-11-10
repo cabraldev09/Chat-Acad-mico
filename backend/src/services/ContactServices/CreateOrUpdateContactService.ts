@@ -85,6 +85,8 @@ const CreateOrUpdateContactService = async ({
 
   if (contactByNumber) {
     await contactByNumber.update({
+      // the provider says this chat is a group: a contact saved before as a person is corrected
+      ...(isGroup && !contactByNumber.isGroup ? { isGroup: true } : {}),
       ...(contactByNumber.kind === "community" && !community?.kind ? {} : communityFields),
       lid: lid || contactByNumber.lid,
       ...(profilePicUrl && !isLocalPic(contactByNumber.getDataValue("profilePicUrl")) ? { profilePicUrl } : {})

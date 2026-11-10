@@ -3,6 +3,7 @@ import CheckContactOpenTickets from "../../helpers/CheckContactOpenTickets";
 import GetDefaultWhatsApp from "../../helpers/GetDefaultWhatsApp";
 import Ticket from "../../models/Ticket";
 import User from "../../models/User";
+import Whatsapp from "../../models/Whatsapp";
 import ShowContactService from "../ContactServices/ShowContactService";
 
 interface Request {
@@ -10,15 +11,20 @@ interface Request {
   status: string;
   userId: number;
   queueId?: number;
+  // the connection to open the conversation in (default: the person's own, else the institution's default)
+  whatsappId?: number;
 }
 
 const CreateTicketService = async ({
   contactId,
   status,
   userId,
-  queueId
+  queueId,
+  whatsappId
 }: Request): Promise<Ticket> => {
-  const defaultWhatsapp = await GetDefaultWhatsApp(userId);
+  const chosen = whatsappId ? await Whatsapp.findByPk(whatsappId) : null;
+  if (whatsappId && !chosen) throw new AppError("ERR_NO_WAPP_FOUND", 404);
+  const defaultWhatsapp = chosen || (await GetDefaultWhatsApp(userId));
 
   await CheckContactOpenTickets(contactId, defaultWhatsapp.id);
 

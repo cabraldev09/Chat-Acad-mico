@@ -1,18 +1,13 @@
 import React, { useState } from "react";
 import { User, X } from "lucide-react";
 
-import NewTicketModal from "../../components/NewTicketModal";
+import NewTicketModal, { phoneLabel } from "../../components/NewTicketModal";
 import { Button, cn } from "./orig";
 
 // "Send to a contact" for the analysis screens: the same list as "Enviar contato" in the chat (recent conversations and
 // the A-Z list, with photo, name and number); once one is chosen, a card with the photo, the name and the number stays
 // in the dialog, with a way to change it.
 
-const phoneLabel = (c) => {
-  const n = String((c && c.number) || "");
-  if (n.includes("_")) return n.replace(/^[a-z]+_/, "");
-  return n ? `+${n}` : "";
-};
 
 export const ContactAvatar = ({ contact, className }) => {
   const [broken, setBroken] = useState(false);
@@ -25,7 +20,8 @@ export const ContactAvatar = ({ contact, className }) => {
   );
 };
 
-export const ContactChooser = ({ contact, onPick, autoOpen = false, title = "Escolher contato" }) => {
+// allowGroups: what is sent has nothing personal in it (a grade), so a group can be chosen too
+export const ContactChooser = ({ contact, onPick, autoOpen = false, title = "Escolher contato", allowGroups = false }) => {
   const [open, setOpen] = useState(autoOpen && !contact);
   return (
     <>
@@ -42,10 +38,10 @@ export const ContactChooser = ({ contact, onPick, autoOpen = false, title = "Esc
       ) : (
         <button type="button" onClick={() => setOpen(true)} className="flex w-full items-center gap-3 rounded-xl border border-dashed border-slate-300 bg-slate-50/70 p-3 text-left text-sm text-slate-600 hover:border-brand-cyan hover:bg-white">
           <span className="grid size-11 shrink-0 place-items-center rounded-full bg-slate-200 text-slate-500"><User className="size-5" /></span>
-          <span><strong className="block text-slate-800">Escolher o contato</strong><span className="text-xs">Fotos, nomes e números, como em Enviar contato.</span></span>
+          <span><strong className="block text-slate-800">{allowGroups ? "Escolher o contato ou o grupo" : "Escolher o contato"}</strong><span className="text-xs">Fotos, nomes e números, como em Enviar contato.</span></span>
         </button>
       )}
-      <NewTicketModal modalOpen={open} title={title} hideNew onClose={() => setOpen(false)} onPick={(c) => onPick(c)} />
+      <NewTicketModal modalOpen={open} title={title} hideNew allowGroups={allowGroups} onClose={() => setOpen(false)} onPick={(c) => onPick(c)} />
     </>
   );
 };

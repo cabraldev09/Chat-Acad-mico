@@ -56,6 +56,8 @@ const SaveImportedContacts = async (list: Imported[]): Promise<SaveResult> => {
         if (item.name && isPlaceholder(found) && item.name !== found.name) patch.name = item.name;
         if (item.number && found.number !== item.number && (!found.number || found.number === item.lid)) patch.number = item.number;
         if (item.lid && !found.lid) patch.lid = item.lid;
+        // the provider says this chat is a group: a contact saved before as a person is corrected (it would show a "phone number" in the lists)
+        if (item.isGroup && !found.isGroup) patch.isGroup = true;
         if (Object.keys(patch).length) {
           // eslint-disable-next-line no-await-in-loop
           await found.update(patch).catch(() => undefined);

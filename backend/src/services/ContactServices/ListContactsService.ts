@@ -6,6 +6,8 @@ interface Request {
   pageNumber?: string;
   // the groups the person may see (see ConnectionScope)
   scope?: any | null;
+  // people: persons and companies; groups: groups and communities (channels are neither); nothing: everything
+  kind?: "people" | "groups";
 }
 
 interface Response {
@@ -29,9 +31,17 @@ export const contactsSearchWhere = (searchParam = "") => {
 const ListContactsService = async ({
   searchParam = "",
   pageNumber = "1",
-  scope = null
+  scope = null,
+  kind
 }: Request): Promise<Response> => {
-  const whereCondition: any = scope ? { [Op.and]: [contactsSearchWhere(searchParam), scope] } : contactsSearchWhere(searchParam);
+  const kindWhere: any[] =
+    kind === "people"
+      ? [{ isGroup: false }, { [Op.or]: [{ kind: { [Op.in]: ["person", "business"] } }, { kind: { [Op.is]: null } }] }]
+      : kind === "groups"
+        ? [{ isGroup: true }, { [Op.or]: [{ kind: { [Op.ne]: "channel" } }, { kind: { [Op.is]: null } }] }]
+        : [];
+  const parts: any[] = [contactsSearchWhere(searchParam), ...(scope ? [scope] : []), ...kindWhere];
+  const whereCondition: any = parts.length > 1 ? { [Op.and]: parts } : parts[0];
   const limit = 20;
   const offset = limit * (+pageNumber - 1);
 

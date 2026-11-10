@@ -99,9 +99,13 @@ const ContactDrawer = ({ open, handleDrawerClose, contact: contactProp, loading 
 					<div className={classes.contactHeader}>
 						<Avatar alt={contact.name} src={contact.profilePicUrl} className={classes.contactAvatar} />
 						<div className={classes.name}>{contact.name}</div>
-						<Link className={classes.number} href={`tel:${contact.number}`}>
-							{String(contact.number || "").includes("_") ? contact.number : `+${contact.number}`}
-						</Link>
+						{contact.isGroup ? (
+							<span className={classes.number}>{contact.kind === "community" || contact.parentGroupId ? "Comunidade" : "Grupo"}</span>
+						) : (
+							<Link className={classes.number} href={`tel:${contact.number}`}>
+								{String(contact.number || "").includes("_") ? contact.number : `+${contact.number}`}
+							</Link>
+						)}
 						<Button variant="outlined" color="primary" size="small" style={{ marginTop: 8 }} onClick={() => setModalOpen(true)}>
 							{i18n.t("contactDrawer.buttons.edit")}
 						</Button>
