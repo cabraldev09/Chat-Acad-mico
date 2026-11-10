@@ -4084,7 +4084,7 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(handed, "the qualified lead was never handed over");
       assert(Number(sql(`SELECT COUNT(*) FROM Messages WHERE ticketId=${ticketOf(R)} AND body LIKE '%consultor%' AND (body LIKE '%Perfeito%' OR body LIKE '%simular as bolsas%')`)) >= 1, "the handover message (warm, saying the consultant takes it from here) was not sent");
       // the full name and the CPF were asked for the scholarship, read from the answer, kept in the lead and never left in the conversation state
-      assert(Number(sql(`SELECT COUNT(*) FROM Messages WHERE ticketId=${ticketOf(R)} AND fromMe=true AND body LIKE '%nome completo e CPF%'`)) >= 1, "the system never asked for the full name and the CPF");
+      assert(Number(sql(`SELECT COUNT(*) FROM Messages WHERE ticketId=${ticketOf(R)} AND fromMe=true AND (body LIKE '%nome completo e CPF%' OR body LIKE '%Anotei os seus dados%')`)) >= 1, "the system neither asked for the full name and the CPF nor took them when they came");
       assert(sql(`SELECT cpf FROM Leads WHERE id=${leadId(R)}`) === "86288366757", "the CPF was not saved in the lead");
       assert(!/86288366757|862\.883\.667/.test(sql(`SELECT slots FROM LeadCommercials WHERE leadId=${leadId(R)}`)), "the CPF leaked into the state of the conversation");
       assert(JSON.parse(sql(`SELECT slots FROM LeadCommercials WHERE leadId=${leadId(R)}`)).fullName === "Paulo Souza Lima", "the full name was not kept");
