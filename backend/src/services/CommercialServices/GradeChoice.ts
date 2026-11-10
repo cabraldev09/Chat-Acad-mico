@@ -53,8 +53,8 @@ export const gradeCaption = (grade: { courseName: string; whatsappSummary?: stri
   const usable = summary && !summary.includes("{{");
   const stages = internships.map(s => `• ${s.semester}º semestre: ${s.discipline}${s.hours ? ` (${s.hours} h)` : ""}`);
   const mentionsStages = /est[aá]gio/i.test(summary);
-  let text = usable ? summary : `📚 *${String(grade.courseName).replace(/\s*\(.*\)\s*$/, "")}*`;
-  if (!mentionsStages && stages.length) text += `\n\n🏫 *Estágio supervisionado*${grade.totalInternshipHours ? `: ${grade.totalInternshipHours} horas no total` : ""}\n${stages.join("\n")}`;
+  let text = usable ? summary : `*Matriz curricular: ${String(grade.courseName).replace(/\s*\(.*\)\s*$/, "")}*`;
+  if (!mentionsStages && stages.length) text += `\n\nEstágios previstos:\n${stages.join("\n")}${grade.totalInternshipHours ? `\nAo todo, a matriz prevê ${grade.totalInternshipHours} horas de estágio durante o curso.` : ""}`;
   if (text.length <= 1000) return text;
   // too long: whole lines only, the stages kept
   const lines = text.split("\n");
@@ -68,17 +68,20 @@ export const gradeCaption = (grade: { courseName: string; whatsappSummary?: stri
   return out.join("\n").trim();
 };
 
-// What the agent says right after the grade: how the internship works and that the tutors follow the student. Only facts of the matrix and of the
-// knowledge base (the tutoring guides on documents, deadlines and activities).
+// What the agent says right after the grade, in the words the team uses: the tutoring first (the student is not alone), then how the internship
+// works (when it starts, how many hours, the tutoring and the agreements of the polo). Only facts of the matrix; the list of internships is already in
+// the caption under the PDF, so it is not repeated here.
+export const TUTORING_PITCH = "Sobre a tutoria, esse é um diferencial importante: mesmo estudando EAD, você não fica sozinho. Após a matrícula, a tutoria entra em contato para auxiliar no primeiro acesso, plataforma, disciplinas, atividades, provas, prazos e organização da sua rotina acadêmica.";
+export const INTERNSHIP_SUPPORT = "Na fase de estágio, a tutoria também auxilia com as orientações, a documentação e os encaminhamentos necessários. Nós temos convênios com órgãos públicos na cidade, o que ajuda bastante quando chega essa etapa do curso. A tutoria acompanha para orientar você sobre como proceder e quais documentos serão necessários.";
 export const internshipPitch = (grade: { totalInternshipHours?: number | null }, internships: Array<{ semester: number; discipline: string; hours: number | null }>): string => {
-  const tutoring = "A tutoria acompanha você durante todo o curso: orienta sobre plataforma, atividades, provas e prazos";
   if (!internships.length && !(grade.totalInternshipHours || 0)) {
-    return `Este curso não tem estágio obrigatório na matriz. ${tutoring}.`;
+    return `${TUTORING_PITCH}\n\nEste curso não possui estágio obrigatório, o que traz mais flexibilidade para organizar a rotina de estudos.`;
   }
   const hours = grade.totalInternshipHours || internships.reduce((t, x) => t + (x.hours || 0), 0);
   const first = [...internships].sort((a, b) => a.semester - b.semester)[0];
-  const where = internships.length ? ` (${internships.map(x => x.discipline).join(", ")})` : "";
-  return `O estágio supervisionado soma ${hours ? `${hours} horas` : "uma carga obrigatória"}${first ? `, a partir do ${first.semester}º semestre` : ""}${where}. Nessa fase a tutoria acompanha você de perto: orienta sobre a documentação, os prazos e as atividades do estágio, e segue com você até o fim do curso.`;
+  const when = first ? `começa no ${first.semester}º semestre e ` : "";
+  const total = hours ? `soma ${hours.toLocaleString("pt-BR")} horas` : "faz parte da formação";
+  return `${TUTORING_PITCH}\n\nO estágio supervisionado ${when}${total}. ${INTERNSHIP_SUPPORT}`;
 };
 
 // The person already sees the PDF arrive: the agent must not announce it. Whole sentences that say "I sent / I will send the grade" are dropped.

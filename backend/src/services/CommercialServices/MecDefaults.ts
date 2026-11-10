@@ -117,6 +117,13 @@ const BASE: AreaRule[] = [
 // the texts the system wrote before the new explanation: a rule that still has one of them (nobody edited it) gets the new text
 const PREVIOUS_TEXTS: string[] = ["Pelas novas regras nacionais do MEC, este curso deve ser ofertado no formato presencial. Para saber como funciona na sua cidade, um consultor confirma com você.", "Com as mudanças do MEC, este curso passa a ser semipresencial. A parte teórica continua on-line, com aulas ao vivo, e há uma parte prática presencial, com no mínimo 40% da carga horária. A organização dos encontros presenciais ainda não foi definida; assim que for, a tutoria avisa com antecedência.", "Com as mudanças do MEC, este curso passa a ser semipresencial. A parte teórica continua on-line, com aulas ao vivo, e há uma parte presencial, com no mínimo 30% da carga horária. A organização dos encontros presenciais ainda não foi definida; assim que for, a tutoria avisa com antecedência.", "Este curso não foi alterado pelas novas regras de modalidade do MEC e segue no formato atual."];
 
+// the texts the system wrote itself (the standard of each area, now and before): they are not the team's words for a course, so the agent explains
+// the course in the words of the team instead of reading them
+export const isStandardText = (text: string | null | undefined): boolean => {
+  const t = String(text || "").trim();
+  return !!t && (PREVIOUS_TEXTS.includes(t) || BASE.some(a => a.commercialApprovedText === t));
+};
+
 export const EDITABLE = ["mecImpacted", "percentualPresencial", "percentualSincrono", "teoriaAoVivo", "praticaPresencial", "cronogramaPraticasDefinido", "transitionNote", "commercialApprovedText"] as const;
 const SETTING = "mec_area_defaults";
 const SEEN = "mec_defaults_seen";

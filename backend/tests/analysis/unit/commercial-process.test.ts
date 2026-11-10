@@ -12,22 +12,26 @@ import { blankState, startConversation } from "../../../src/services/CommercialS
 // The commercial process in order (course → city → kind of entry → course presented → consultant), held by the system and not by the model.
 
 describe("the next question of the process", () => {
-  it("asks course, then city, then the kind of entry, and nothing once all are known", () => {
-    expect(nextQuestionOf({})).toBe(QUESTIONS.course);
-    expect(nextQuestionOf({ courseName: "Direito" })).toBe(QUESTIONS.city);
+  it("asks first whether it is the first degree, then course, then city, and nothing once all are known", () => {
+    expect(nextQuestionOf({})).toBe(QUESTIONS.entry);
+    expect(nextQuestionOf({ courseName: "Direito" })).toBe(QUESTIONS.entry);
+    expect(nextQuestionOf({ entryType: "first_degree" })).toBe(QUESTIONS.course);
+    expect(nextQuestionOf({ courseName: "Direito", entryType: "first_degree" })).toBe(QUESTIONS.city);
     expect(nextQuestionOf({ courseName: "Direito", city: "Porto Velho", entryType: "unknown" })).toBe(QUESTIONS.entry);
     expect(nextQuestionOf({ courseName: "Direito", poloId: 3, entryType: "first_degree" })).toBeNull();
   });
 
   it("respects what the administrator lets the agent ask and what the stage needs", () => {
-    expect(nextQuestionOf({}, { course: false })).toBe(QUESTIONS.city);
+    expect(nextQuestionOf({}, { course: false, entry: false })).toBe(QUESTIONS.city);
     expect(nextQuestionOf({ courseName: "Direito" }, { city: false })).toBe(QUESTIONS.entry);
+    expect(nextQuestionOf({ courseName: "Direito" }, { entry: false })).toBe(QUESTIONS.city);
     expect(nextQuestionOf({}, {}, ["entry"])).toBe(QUESTIONS.entry);
     expect(nextQuestionOf({ entryType: "transfer" }, {}, ["entry"])).toBeNull();
   });
 
   it("the opening asks the same next question", () => {
-    expect(openingText({ courseName: "Direito" }, "Ana", false)).toContain(QUESTIONS.city);
+    expect(openingText({ courseName: "Direito" }, "Ana", false)).toContain(QUESTIONS.entry);
+    expect(openingText({ courseName: "Direito", entryType: "first_degree" }, "Ana", false)).toContain(QUESTIONS.city);
   });
 });
 
@@ -96,7 +100,7 @@ describe("a new conversation starts the progress over, the lead stays", () => {
   });
 });
 
-import { cityCandidateOf, isQualified, missingOf, modalityTextOf, needsModalityExplanation, readyForConsultantOf } from "../../../src/services/CommercialServices/Rules";
+import { cityCandidateOf, isQualified, missingOf, entryAnswer, modalityQuestion, modalityTextOf, needsModalityExplanation, proceeds, readyForConsultantOf } from "../../../src/services/CommercialServices/Rules";
 
 describe("semipresencial: format and the MEC rule before the consultant", () => {
   const base = { courseName: "Enfermagem", city: "Porto Velho", entryType: "first_degree", courseExplained: true };
@@ -110,13 +114,43 @@ describe("semipresencial: format and the MEC rule before the consultant", () => 
     expect(readyForConsultantOf({ ...base, courseModality: "EAD", mecImpacted: true, bolsaDataAsked: 2 }, 5)).toBe(false);
   });
 
-  it("the explanation comes from the rule, says what the consultant confirms and asks if it is clear", () => {
-    const text = modalityTextOf("Enfermagem", { explicacao: { nacional: { regra: "Cursos desta área podem ser semipresenciais, com pelo menos 40% presencial." }, institucional: { confirmado: ["Há atividades práticas presenciais previstas."] }, naoConfirmado: ["dias"] } })!;
-    expect(text).toMatch(/Pela regra do MEC, cursos desta área/);
-    expect(text).toMatch(/atividades práticas presenciais/);
-    expect(text).toMatch(/o consultor confirma/);
-    expect(text).toMatch(/\?$/);
+  it("the explanation is the one of the team: today, the change of the MEC until May 2027 with the share of the course, what is not defined yet", () => {
+    const saude = modalityTextOf("Biomedicina", { mecImpactado: true, percentualPresencial: 30, explicacao: { area: "saude_eng_agro", turma: null } })!;
+    expect(saude).toMatch(/^Hoje, o curso funciona no formato EAD: aulas, atividades, provas e acompanhamento acontecem pela plataforma/);
+    expect(saude).toMatch(/os cursos da área da saúde, engenharias e agrárias estão passando por adequações/);
+    expect(saude).toMatch(/previsto até maio de 2027, o formato deverá mudar: a parte teórica será realizada ao vivo, com professor e turma/);
+    expect(saude).toMatch(/30% de carga prática presencial, em laboratório/);
+    expect(saude).toMatch(/na própria cidade ou no polo mais próximo/);
+    expect(saude).toMatch(/A quantidade exata de aulas presenciais ainda não foi definida/);
+    expect(saude).toMatch(/Até aqui você compreendeu\?$/);
+    expect(saude).not.toMatch(/\p{Extended_Pictographic}/u);
+    // the share is the one of the course; without one, no number is said
+    const lic = modalityTextOf("Pedagogia", { mecImpactado: true, percentualPresencial: null, explicacao: { area: "educacao_ciencias", turma: null } })!;
+    expect(lic).toMatch(/as licenciaturas estão passando por adequações/);
+    expect(lic).toMatch(/uma parte de atividades presenciais/);
+    expect(lic).not.toMatch(/\d+%/);
+    // what the class confirmed replaces "not defined yet"; a text of the team for the course replaces everything
+    const turma = modalityTextOf("Pedagogia", { mecImpactado: true, percentualPresencial: 30, explicacao: { area: "educacao_ciencias", turma: { presencialStart: "2027-03-01" } } })!;
+    expect(turma).toMatch(/começam em 01\/03\/2027/);
+    expect(turma).not.toMatch(/ainda não foi definida/);
+    expect(modalityTextOf("Pedagogia", { commercialApprovedText: "Texto da equipe para Pedagogia.", explicacao: { area: "educacao_ciencias" } })).toBe("Texto da equipe para Pedagogia.\n\nAté aqui você compreendeu?");
     expect(modalityTextOf("X", {})).toBeNull();
+  });
+
+  it("the question about the format and the end of the doubts are read by the system", () => {
+    for (const t of ["entendi, e é 100% ead?", "é online?", "tem aula presencial?", "preciso ir ao polo?", "como funcionam as aulas?", "é semipresencial?"]) expect(modalityQuestion(t), t).toBe(true);
+    for (const t of ["quanto custa o semipresencial?", "quero pedagogia", "oi"]) expect(modalityQuestion(t), t).toBe(false);
+    for (const t of ["Não tenho dúvidas, pode prosseguir", "Sim, pode continuar", "entendi, sem dúvidas", "tudo certo, pode seguir", "nenhuma dúvida"]) expect(proceeds(t), t).toBe(true);
+    for (const t of ["ok", "sim", "tenho uma dúvida sobre o estágio", "pode continuar?"]) expect(proceeds(t), t).toBe(false);
+  });
+
+  it("the short answer to the question of the first degree", () => {
+    const q = QUESTIONS.entry;
+    expect(entryAnswer("sim", q)).toBe("first_degree");
+    expect(entryAnswer("Sim, é a primeira", q)).toBe("first_degree");
+    expect(entryAnswer("não, já sou formada", q)).toBe("second_degree");
+    expect(entryAnswer("comecei outra faculdade e parei", q)).toBe("transfer");
+    expect(entryAnswer("sim", "Qual curso você tem interesse?")).toBeNull();
   });
 });
 

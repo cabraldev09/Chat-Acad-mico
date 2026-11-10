@@ -54,11 +54,13 @@ describe("the opening is written by the system", () => {
   });
 
   it("asks only the next thing that is missing and never what is known", () => {
-    expect(openingText({}, "Maria", false)).toBe("Olá! Tudo bem? 😊\n\nSou a Estela, assistente virtual da Cruzeiro do Sul Virtual.\n\nVocê deseja conhecer nossos cursos e fazer sua matrícula ou já é aluno e precisa falar com a tutoria?");
+    // a bare "oi": first of all, whether it is the first degree (and the way out for who is already a student), without emoji
+    expect(openingText({}, "Maria", false)).toBe("Olá! Tudo bem?\n\nSou a Estela, assistente virtual da Cruzeiro do Sul Virtual.\n\nEssa seria a sua *primeira graduação* ou você já tem alguma faculdade concluída? Se você já é aluno e precisa da tutoria, é só me dizer.");
     expect(openingText({}, "", false, { assistantName: "Bia", emoji: false } as any)).toMatch(/^Olá! Tudo bem\?\n\nSou a Bia,/);
-    expect(openingText({ city: "Porto Velho" }, "Maria", false)).toMatch(/Qual curso/);
-    expect(openingText({ courseName: "Administração" }, "Maria", false)).toMatch(/Vi que você tem interesse em Administração/);
-    expect(openingText({ courseName: "Administração" }, "Maria", false)).toMatch(/cidade/);
+    expect(openingText({ city: "Porto Velho" }, "Maria", false)).toMatch(/primeira graduação/);
+    expect(openingText({ city: "Porto Velho", entryType: "first_degree" }, "Maria", false)).toMatch(/Qual curso/);
+    expect(openingText({ courseName: "Administração" }, "Maria", false)).toMatch(/Recebi o seu interesse em cursar \*Administração\* e quero te ajudar a verificar a melhor bolsa/);
+    expect(openingText({ courseName: "Administração", entryType: "first_degree" }, "Maria", false)).toMatch(/cidade/);
     expect(openingText({ courseName: "Administração", city: "Porto Velho" }, "Maria", false)).toMatch(/primeira graduação/);
     expect(openingText({ courseName: "Administração", city: "Porto Velho", entryType: "transfer" }, "Maria", true)).toMatch(/de novo/);
   });
