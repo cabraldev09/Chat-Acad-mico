@@ -3952,7 +3952,8 @@ const postMeta = (id, payload, secret, badSig) => {
         // eslint-disable-next-line no-await-in-loop
         assert((await http.put(`/course-regulations/${bioId}`, { mecImpacted: true, percentualPresencial: 30, percentualSincrono: 20, teoriaAoVivo: true, praticaPresencial: true, cronogramaPraticasDefinido: false }, auth())).status === 200, "the share of Biomedicina");
       }
-      sql(`INSERT INTO CommercialGrades (courseName, modality, curriculumTerm, courseTracks, internshipInfo, hasTcc, totalInternshipHours, totalCourseHours, degree, durationSemesters, whatsappSummary, complete, contentHash, catalogKey, fileName, createdAt, updatedAt) VALUES ('BIOMEDICINA (BACHARELADO)', 'SEMIPRESENCIAL', '2026/2', '[]', E'6º sem.: ESTÁGIO CURRICULAR SUPERVISIONADO EM BIOMEDICINA I (320h)\\n7º sem.: ESTÁGIO CURRICULAR SUPERVISIONADO EM BIOMEDICINA II (320h)', true, 640, 3200, 'Bacharelado', 8, '📚 resumo antigo com emoji', true, 'h-e2e-bio', 'bio-e2e', 'bio-e2e-sem-arquivo.pdf', now(), now())`);
+      // (a newer matrix than the one that comes with the system, without a modality and without a file: it is the one chosen, and its summary goes in writing)
+      sql(`INSERT INTO CommercialGrades (courseName, modality, curriculumTerm, courseTracks, internshipInfo, hasTcc, totalInternshipHours, totalCourseHours, degree, durationSemesters, whatsappSummary, complete, contentHash, catalogKey, fileName, createdAt, updatedAt) VALUES ('BIOMEDICINA (BACHARELADO)', NULL, '2027/1', '[]', E'6º sem.: ESTÁGIO CURRICULAR SUPERVISIONADO EM BIOMEDICINA I (320h)\\n7º sem.: ESTÁGIO CURRICULAR SUPERVISIONADO EM BIOMEDICINA II (320h)', true, 640, 3200, 'Bacharelado', 8, '📚 resumo antigo com emoji', true, 'h-e2e-bio', 'bio-e2e', 'bio-e2e-sem-arquivo.pdf', now(), now())`);
       const emoji = /\p{Extended_Pictographic}/u;
       const MA = "5511920000260";
       const llmMa = anthropic.requests.length;
