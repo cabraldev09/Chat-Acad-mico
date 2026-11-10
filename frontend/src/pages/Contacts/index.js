@@ -369,7 +369,7 @@ const Contacts = () => {
                     align="center"
                     data-label={i18n.t("contacts.table.whatsapp")}
                   >
-                    {contact.number || <span style={{ opacity: 0.6 }} title="O WhatsApp esconde o telefone de algumas pessoas até elas escreverem para você">telefone oculto</span>}
+                    {contact.isGroup ? <span style={{ opacity: 0.6 }}>sem telefone (grupo)</span> : contact.number || <span style={{ opacity: 0.6 }} title="O WhatsApp esconde o telefone de algumas pessoas até elas escreverem para você">telefone oculto</span>}
                   </TableCell>
                   <TableCell
                     align="center"

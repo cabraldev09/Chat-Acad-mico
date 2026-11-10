@@ -48,11 +48,14 @@ interface ContactData {
 
 export const index = async (req: Request, res: Response): Promise<Response> => {
   const { searchParam, pageNumber } = req.query as IndexQuery;
+  // kind=people: only persons and companies (a group is not somebody to start a conversation with); kind=groups: only groups and communities
+  const kind = String((req.query as any).kind || "");
 
   const { contacts, count, hasMore } = await ListContactsService({
     searchParam,
     pageNumber,
-    scope: contactScopeWhere(await connectionScopeOf(req.user.id, roleOf(req.user)), req.user.id)
+    scope: contactScopeWhere(await connectionScopeOf(req.user.id, roleOf(req.user)), req.user.id),
+    kind: kind === "people" || kind === "groups" ? kind : undefined
   });
 
   return res.json({ contacts, count, hasMore });
