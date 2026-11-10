@@ -35,8 +35,10 @@ describe("the text under the PDF", () => {
 
   it("adds the internships when the summary does not mention them, and builds one when there is no summary", () => {
     const text = gradeCaption({ courseName: "PEDAGOGIA (LICENCIATURA)", whatsappSummary: "", totalInternshipHours: 300 }, stages);
-    expect(text).toContain("*PEDAGOGIA*");
-    expect(text).toMatch(/Estágio supervisionado\*: 300 horas/);
+    expect(text).toContain("*Matriz curricular: PEDAGOGIA*");
+    expect(text).toMatch(/Estágios previstos:/);
+    expect(text).toMatch(/Ao todo, a matriz prevê 300 horas de estágio/);
+    expect(text).not.toMatch(/\p{Extended_Pictographic}/u);
     expect(text).toContain("5º semestre: Educação Infantil (150 h)");
     expect(gradeCaption({ courseName: "X", whatsappSummary: "Resumo sem a palavra" }, stages)).toMatch(/Educação Infantil/);
   });

@@ -4,6 +4,7 @@ import { Op } from "sequelize";
 
 import { gradePath } from "../../analysis/Grades";
 import { chooseGrade, gradeCaption, internshipPitch } from "./GradeChoice";
+import { gradeSummaryOf } from "../../analysis/services/commercial-grades/reader";
 import { createCurricular } from "../../analysis/Store";
 import { PUBLIC_DIR } from "../../config/paths";
 import CommercialGrade from "../../models/CommercialGrade";
@@ -30,7 +31,7 @@ import SendWhatsAppMessage from "../WbotServices/SendWhatsAppMessage";
 import { searchChunks } from "../AiServices/Kb";
 import { resolvePoloFor } from "../PoloServices/ResolvePolo";
 import { cleanPatch, Slots } from "./Slots";
-import { areaOfCourse } from "./MecDefaults";
+import { areaOfCourse, isStandardText } from "./MecDefaults";
 import { explainCourse } from "./MecKnowledge";
 import { cohortFor } from "./Norms";
 import { topicsOf } from "./Rules";
@@ -261,13 +262,15 @@ export const runAcademicTool = async (name: string, input: any, ctx: AcademicCtx
         const area = await areaOfCourse(course);
         const cohort = await cohortFor(course.id, intake, poloId);
         const num = (v: any) => (v === null || v === undefined ? null : Number(v));
+        // the standard text of the area is not a text of the team: the course is explained in the words of the team (Rules.modalityTextOf)
+        const approved = r && r.commercialApprovedText && !isStandardText(r.commercialApprovedText) ? r.commercialApprovedText : null;
         const explicacao = explainCourse({
           area,
           catalogModality: modalityOf(course.modality),
           rule: r ? {
             mecImpacted: r.mecImpacted ?? null, percentualPresencial: num(r.percentualPresencial), percentualSincrono: num(r.percentualSincrono), teoriaAoVivo: r.teoriaAoVivo ?? null,
             praticaPresencial: r.praticaPresencial ?? null, cronogramaPraticasDefinido: r.cronogramaPraticasDefinido ?? null, transitionStatus: r.transitionStatus || null,
-            currentDelivery: r.currentDelivery || null, futureDelivery: r.futureDelivery || null, transitionNote: r.transitionNote || null, commercialApprovedText: r.commercialApprovedText || null
+            currentDelivery: r.currentDelivery || null, futureDelivery: r.futureDelivery || null, transitionNote: r.transitionNote || null, commercialApprovedText: approved
           } : null,
           cohort
         });
@@ -286,7 +289,7 @@ export const runAcademicTool = async (name: string, input: any, ctx: AcademicCtx
           modalidadeAtual: modalityOf(r.currentDelivery) || modalityOf(course.modality), regulacaoAplicavel: r.regulation || null, mecImpactado: r.mecImpacted ?? null,
           percentualPresencial: num(r.percentualPresencial), percentualSincrono: num(r.percentualSincrono), teoriaAoVivo: r.teoriaAoVivo ?? null, praticaPresencial: r.praticaPresencial ?? null,
           cronogramaPraticasDefinido: r.cronogramaPraticasDefinido ?? null, transitionStatus: r.transitionStatus || null, currentDeliveryDuringTransition: r.currentDelivery || null,
-          futureDelivery: r.futureDelivery || null, transitionNote: r.transitionNote || null, commercialApprovedText: r.commercialApprovedText || null, explicacao, normasComAlteracao: aviso
+          futureDelivery: r.futureDelivery || null, transitionNote: r.transitionNote || null, commercialApprovedText: approved, explicacao, normasComAlteracao: aviso
         };
       });
       remember(ctx, { courseId: course.id, courseName: course.name, mecImpacted: view.mecImpactado, courseModality: view.modalidadeAtual });
@@ -383,7 +386,7 @@ export const runAcademicTool = async (name: string, input: any, ctx: AcademicCtx
           }
         }
       }
-      return { agendado: true, quando, texto_confirmacao: `Combinado! O consultor do seu polo entra em contato ${quando}. Se precisar mudar, é só me avisar por aqui. 😊`, aviso: "Confirme com o texto_confirmacao; não prometa outro horário." };
+      return { agendado: true, quando, texto_confirmacao: `Combinado! O consultor do seu polo entra em contato ${quando}. Se precisar mudar, é só me avisar por aqui.`, aviso: "Confirme com o texto_confirmacao; não prometa outro horário." };
     }
 
     case "consultar_conhecimento": {
@@ -399,10 +402,11 @@ export const runAcademicTool = async (name: string, input: any, ctx: AcademicCtx
       if (!grade) return { enviado: false, erro: "Grade não encontrada. Use buscar_grade antes." };
       if (ctx.dryRun || !ctx.ticket) {
         remember(ctx, { gradeSent: true, gradeId: grade.id, gradeVersion: grade.curriculumTerm, gradeAsked: true });
-        return { enviado: false, simulado: true, aviso: "No teste o arquivo não é enviado. Diga que está encaminhando a grade." };
+        return { enviado: false, simulado: true, texto_estagio_tutoria: internshipPitch(grade, internshipsOf(grade)), aviso: "No teste o arquivo não é enviado. Diga que está encaminhando a grade." };
       }
       const source = gradePath(grade);
-      const caption = gradeCaption(grade, internshipsOf(grade));
+      // the summary is rebuilt from the matrix (the format of the team, without emoji), not the text saved when the PDF was read
+      const caption = gradeCaption({ courseName: grade.courseName, totalInternshipHours: grade.totalInternshipHours, whatsappSummary: gradeSummaryOf(grade) }, internshipsOf(grade));
       if (!fs.existsSync(source)) {
         // the file is not on the server: the summary of the matrix (with the internships) still goes, in writing
         if (caption) {

@@ -186,22 +186,38 @@ function durationText(semesters: number | null | undefined): string | null {
   return `${semesters} semestres (${Number.isInteger(years) ? years : String(years).replace(".", ",")} anos)`;
 }
 
-/** `certain`: the whole course was read. Without it, only an internship total declared as 0 in the PDF allows saying there is none. */
+/** The summary of a matrix for WhatsApp, in the words the team uses and without emoji (it goes under the PDF and in "Copiar").
+ * `certain`: the whole course was read. Without it, only an internship total declared as 0 in the PDF allows saying there is none. */
 function whatsappText(input: { courseName: string | null; hasTcc: boolean; totalInternshipHours: number | null; totalCourseHours: number | null; internshipInfo: string | null; certain: boolean; durationMonths?: number | null; degree?: string | null; durationSemesters?: number | null; extensionHours?: number | null }): string {
-  const lines = [`📚 *${readableName(input.courseName) || "Curso selecionado"}*`];
-  const facts = [input.degree, input.durationMonths ? `duração mínima de ${input.durationMonths} meses` : durationText(input.durationSemesters)].filter(Boolean);
-  if (facts.length) lines.push(`🎓 ${facts.join(" · ")}`);
-  if (input.totalCourseHours) lines.push(`⏱️ Carga horária total: ${input.totalCourseHours.toLocaleString("pt-BR")} horas`);
+  const name = readableName(input.courseName) || "Curso selecionado";
+  const degree = input.degree && !plainLower(name).includes(plainLower(input.degree)) ? ` (${readableName(input.degree)})` : "";
+  const lines = [`*Matriz curricular: ${name}${degree}*`];
+  const duration = input.durationMonths ? `duração mínima de ${input.durationMonths} meses` : durationText(input.durationSemesters);
+  if (duration) lines.push(`Duração: ${duration}`);
+  if (input.totalCourseHours) lines.push(`Carga horária total: ${input.totalCourseHours.toLocaleString("pt-BR")} horas`);
   if (input.internshipInfo) {
-    lines.push("", `🏫 *Estágio supervisionado*${input.totalInternshipHours ? `: ${input.totalInternshipHours.toLocaleString("pt-BR")} horas no total` : ""}`);
+    lines.push("", "Estágios previstos:");
     for (const line of input.internshipInfo.split("\n")) {
+      if (!line.trim()) continue;
       const m = line.trim().replace(/^[-•]\s*/, "").match(/^(\d+)\s*[ºo°]?\s*sem\.?:\s*(.+?)(?:\s*\((\d+)\s*h\))?\s*$/i);
       lines.push(m ? `• ${m[1]}º semestre: ${shortInternship(m[2])}${m[3] ? ` (${m[3]} h)` : ""}` : `• ${readableName(line.replace(/^[-•]\s*/, ""))}`);
     }
+    if (input.totalInternshipHours) lines.push(`Ao todo, a matriz prevê ${input.totalInternshipHours.toLocaleString("pt-BR")} horas de estágio durante o curso.`);
   } else if (input.certain || input.totalInternshipHours === 0) {
-    lines.push("", "✅ Este curso não possui estágio obrigatório, o que traz mais flexibilidade para organizar a rotina de estudos.");
+    lines.push("", "Este curso não possui estágio obrigatório.");
   }
-  if (input.hasTcc) lines.push("", "📝 A matriz prevê TCC / Trabalho de Curso.");
-  if (input.extensionHours) lines.push("", `🌐 Atividades de extensão: ${input.extensionHours.toLocaleString("pt-BR")} horas na matriz.`);
+  const extras: string[] = [];
+  if (input.hasTcc) extras.push("A matriz também prevê TCC (Trabalho de Curso).");
+  if (input.extensionHours) extras.push(`Atividades de extensão: ${input.extensionHours.toLocaleString("pt-BR")} horas na matriz.`);
+  if (extras.length) lines.push("", ...extras);
   return lines.join("\n");
+}
+
+function plainLower(s: string): string {
+  return String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
+/** The summary of a matrix already on file, rebuilt from its columns: a change of the format reaches every grade, old ones included. */
+export function gradeSummaryOf(g: { courseName: string | null; hasTcc?: boolean | null; totalInternshipHours?: number | null; totalCourseHours?: number | null; internshipInfo?: string | null; degree?: string | null; durationSemesters?: number | null }): string {
+  return whatsappText({ courseName: g.courseName, hasTcc: !!g.hasTcc, totalInternshipHours: g.totalInternshipHours ?? null, totalCourseHours: g.totalCourseHours ?? null, internshipInfo: g.internshipInfo || null, certain: false, degree: g.degree || null, durationSemesters: g.durationSemesters ?? null });
 }

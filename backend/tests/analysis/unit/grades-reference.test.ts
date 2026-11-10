@@ -44,8 +44,10 @@ describe("the text told to the student about the grade", () => {
     expect(r.totalInternshipHours).toBe(400);
     expect(r.whatsappSummary).not.toMatch(/Ambienta|Plano de Acompanhamento|Semin/i);
     expect(r.whatsappSummary).toMatch(/5º semestre: Educação Infantil \(150 h\)/);
-    expect(r.whatsappSummary).toMatch(/400 horas no total/);
+    expect(r.whatsappSummary).toMatch(/Ao todo, a matriz prevê 400 horas de estágio durante o curso/);
     expect(r.whatsappSummary).toMatch(/Carga horária total: 3\.200 horas/);
+    expect(r.whatsappSummary).toMatch(/^\*Matriz curricular: Pedagogia/);
+    expect(r.whatsappSummary).not.toMatch(/\p{Extended_Pictographic}/u);
   });
 
   it("every shipped matrix fits a PDF caption and lists internships consistent with its total", async () => {

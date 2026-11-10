@@ -140,7 +140,8 @@ export const MEC_CORE_BLOCK = [
   "- Formatos: presencial (mínimo 70% presencial), semipresencial (mínimo 30% presencial + 20% presencial ou síncrono mediado; 40% presencial em bacharelados de Saúde, Engenharias e Agricultura) e a distância (mínimo 10% presencial + 10% presencial ou síncrono mediado). Nenhum curso de graduação é 100% on-line: nunca responda só \"é online\" ou \"é semipresencial\", explique o que significa na prática.",
   "- São mínimos da carga horária total: nunca os transforme em número de aulas por semana ou por mês, nem em dias de polo.",
   "- Direito, Medicina, Enfermagem, Odontologia e Psicologia: só presencial. Licenciaturas (como Pedagogia) e saúde não podem ser EaD: são semipresenciais.",
-  "- Prazo de adaptação até 19/05/2027: é o limite das instituições, não a data em que as práticas começam. Cada turma tem o seu cronograma; só fale do que estiver registrado."
+  "- Prazo de adaptação até 19/05/2027: é o limite das instituições, não a data em que as práticas começam. Cada turma tem o seu cronograma; só fale do que estiver registrado.",
+  "- Como a equipe explica o formato (siga esta ordem, em blocos curtos e sem emoji): hoje o curso funciona pela plataforma (aulas, atividades, provas e acompanhamento), com flexibilidade para estudar de onde estiver; com as mudanças do MEC, a partir do prazo de adaptação previsto até maio de 2027, a parte teórica passa a ser ao vivo, com professor e turma, e o curso passa a ter o percentual presencial cadastrado para ele; a instituição busca viabilizar a parte prática da forma mais acessível, na própria cidade ou no polo mais próximo; a quantidade exata de aulas presenciais ainda não foi definida e pode ser semanal, mensal ou concentrada em períodos do semestre. Feche com \"Até aqui você compreendeu?\" e depois siga o atendimento (grade, tutoria, estágio, dúvidas, nome e CPF para simular as bolsas)."
 ].join("\n");
 
 // ---------------------------------------------------------------- the explanation of one course (built from the rule of the area, the rule of the course and the class)
@@ -215,6 +216,7 @@ const nationalOf = (area: AreaId, rule: RuleView | null): { regra: string; fonte
 };
 
 export interface Explanation {
+  area: AreaId;
   formatoCadastrado: string | null;
   nacional: { regra: string; fonte: string; transicao: string; observacao: string; regimeDaTurma?: string };
   institucional: { confirmado: string[] };
@@ -256,6 +258,7 @@ export const explainCourse = (input: { area: AreaId; catalogModality: string | n
     if (rule && rule.cronogramaPraticasDefinido === false) unknown.push("O início das práticas desta turma");
   }
   return {
+    area,
     formatoCadastrado: input.catalogModality,
     nacional: {
       ...nat,

@@ -5,11 +5,11 @@ import { toast } from "react-toastify";
 
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
-import { EmptyState, Section } from "../../components/ui";
+import { EmptyState, Section, Segmented } from "../../components/ui";
 
-// THE TRAINER. Two ways to teach the agent: talk to it (it answers and writes down what it understood) and send a file (a PDF, a document or a conversation
-// exported from WhatsApp). Everything it learns lands in "O que o agente aprendeu", where each lesson can be edited, switched off or deleted.
-// A lesson is in EVERY answer of the agent (the rules of the trainer are part of its prompt).
+// THE TRAINER, in one simple screen: on the left "Ensinar" (a rule, how I answer a customer, a conversation or a file, or a chat with the agent), on the
+// right "Testar agora" (the same customer message answered again after every change), and below "O que o agente aprendeu", where each lesson can be
+// edited, switched off or deleted. A lesson is in EVERY answer of the agent (the rules of the trainer are part of its prompt).
 
 const KIND = {
   regra: { label: "Regra", icon: ListChecks, color: "#0693e3" },
@@ -18,10 +18,15 @@ const KIND = {
 };
 const kindOf = (k) => KIND[k] || KIND.regra;
 
+// a part of the screen: its own card, or (inside "Ensinar") only its content
+const Part = ({ bare, title, hint, action, children }) => (bare
+  ? <div style={{ display: "grid", gap: 12 }}>{action ? <div style={{ justifySelf: "end" }}>{action}</div> : null}{children}</div>
+  : <Section title={title} hint={hint} action={action}>{children}</Section>);
+
 const bubble = (mine) => ({
   alignSelf: mine ? "flex-end" : "flex-start", maxWidth: "82%", padding: "8px 12px", fontSize: 14, whiteSpace: "pre-wrap", lineHeight: 1.45,
   borderRadius: mine ? "14px 14px 4px 14px" : "14px 14px 14px 4px",
-  background: mine ? "#0b4279" : "var(--ui-surface)", color: mine ? "#fff" : "inherit", border: mine ? "none" : "1px solid var(--ui-border)", boxShadow: "var(--ui-shadow-1)",
+  background: mine ? "var(--c-brand)" : "var(--surface)", color: mine ? "#fff" : "var(--text-1)", border: mine ? "none" : "1px solid var(--line)",
 });
 
 // a lesson proposed by the agent (or by the analysis of a file): the owner keeps or drops each one
@@ -49,8 +54,6 @@ const Learned = ({ agentId, version, onChanged }) => {
   const [rules, setRules] = useState(null);
   const [edit, setEdit] = useState(null);
   const [draft, setDraft] = useState("");
-  const [newText, setNewText] = useState("");
-  const [newKind, setNewKind] = useState("regra");
   const [filter, setFilter] = useState("todas");
   const [q, setQ] = useState("");
 
@@ -66,25 +69,13 @@ const Learned = ({ agentId, version, onChanged }) => {
     if (!window.confirm("Apagar este ensinamento? O agente deixa de segui-lo.")) return;
     try { await api.delete(`/ai-rules/${r.id}`); load(); onChanged && onChanged(); } catch (e) { toastError(e); }
   };
-  const add = async () => {
-    const text = newText.trim();
-    if (!text) return;
-    try { await api.post(`/ai-agents/${agentId}/rules`, { kind: newKind, text }); setNewText(""); load(); onChanged && onChanged(); } catch (e) { toastError(e); }
-  };
   const count = (k) => (rules || []).filter((r) => (k === "todas" ? true : k === "desligadas" ? !r.active : r.kind === k)).length;
   const shown = (rules || []).filter((r) => (filter === "todas" ? true : filter === "desligadas" ? !r.active : r.kind === filter) && (!q.trim() || r.text.toLowerCase().includes(q.trim().toLowerCase())));
   const activeCount = (rules || []).filter((r) => r.active).length;
 
   return (
     <Section title="O que o agente aprendeu" hint={rules ? `${activeCount} valendo agora em todas as respostas. O que você gravar, editar ou desligar vale na próxima mensagem.` : "Tudo isto vale em todas as respostas."}>
-      <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-        <TextField select size="small" variant="outlined" value={newKind} onChange={(e) => setNewKind(e.target.value)} SelectProps={{ native: true }} inputProps={{ "aria-label": "Tipo" }} style={{ width: 130 }}>
-          {Object.entries(KIND).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-        </TextField>
-        <TextField fullWidth size="small" variant="outlined" placeholder={newKind === "exemplo" ? "Cliente: ...  Resposta: ..." : newKind === "estilo" ? "Ex.: Fale de forma acolhedora e curta" : "Ex.: Nunca fale preço antes de saber o curso"} value={newText} onChange={(e) => setNewText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} />
-        <Button variant="contained" color="primary" disableElevation disabled={!newText.trim()} onClick={add} style={{ borderRadius: 10, whiteSpace: "nowrap" }}>Adicionar</Button>
-      </div>
-      {rules && rules.length > 4 && (
+      {rules && rules.length > 8 && (
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
           {[["todas", "Todas"], ...Object.entries(KIND).map(([k, v]) => [k, v.label]), ["desligadas", "Desligadas"]].map(([k, label]) => count(k) > 0 || k === "todas" ? (
             <button key={k} type="button" onClick={() => setFilter(k)} className="ui-press" style={{ border: "1px solid var(--ui-border)", borderRadius: 999, padding: "3px 10px", font: "inherit", fontSize: 12.5, cursor: "pointer", color: "inherit", background: filter === k ? "var(--ui-border)" : "transparent", fontWeight: filter === k ? 700 : 500 }}>{label} · {count(k)}</button>
@@ -93,9 +84,9 @@ const Learned = ({ agentId, version, onChanged }) => {
         </div>
       )}
       {!rules && <div className="ui-skeleton" style={{ height: 120 }} />}
-      {rules && rules.length === 0 && <EmptyState icon={<GraduationCap size={22} />} title="Ainda não aprendeu nada" text="Converse com o agente ao lado ou envie um arquivo: o que ele entender aparece aqui para você confirmar." />}
+      {rules && rules.length === 0 && <EmptyState icon={<GraduationCap size={22} />} title="Ainda não aprendeu nada" text="Use o quadro Ensinar: escreva uma regra, mostre como você responde ou envie uma conversa." />}
       {rules && rules.length > 0 && (
-        <div style={{ display: "grid", gap: 8, maxHeight: 480, overflowY: "auto" }}>
+        <div style={{ display: "grid", gap: 8, maxHeight: 420, overflowY: "auto" }}>
           {shown.length === 0 && <div style={{ fontSize: 13, opacity: 0.65, padding: "8px 2px" }}>Nenhum ensinamento nesse filtro.</div>}
           {shown.map((r) => {
             const k = kindOf(r.kind);
@@ -130,7 +121,7 @@ const Learned = ({ agentId, version, onChanged }) => {
 };
 
 // ---------------------------------------------------------------- talk to the agent to teach it
-const Coach = ({ agentId, onSaved }) => {
+const Coach = ({ agentId, onSaved, bare }) => {
   const [turns, setTurns] = useState([]);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -170,8 +161,8 @@ const Coach = ({ agentId, onSaved }) => {
   const ideas = ["Simule um cliente perguntando o valor do curso de Pedagogia", "Nunca fale preço antes de saber o curso e a cidade", "Fale sempre curto, no máximo duas frases por mensagem", "Quando o cliente disser que vai pensar, pergunte o que o preocupa"];
 
   return (
-    <Section title="Converse com o agente para ensinar" hint="Dê ordens como falaria com um funcionário novo. O que ele entender aparece para você gravar e já vale na próxima resposta. As mensagens fixas do sistema (abertura, fila e transferência) mudam em Ajustes.">
-      <div ref={end} style={{ height: 380, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8, padding: 12, borderRadius: 14, background: "color-mix(in srgb, var(--ui-border) 35%, transparent)" }}>
+    <Part bare={bare} title="Converse com o agente para ensinar" hint="Dê ordens como falaria com um funcionário novo. O que ele entender aparece para você gravar e já vale na próxima resposta.">
+      <div ref={end} style={{ height: 320, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8, padding: 12, borderRadius: 14, background: "var(--surface-2)", border: "1px solid var(--line)" }}>
         {turns.length === 0 && (
           <div style={{ margin: "auto", textAlign: "center", maxWidth: 380, display: "grid", gap: 10 }}>
             <span style={{ width: 44, height: 44, borderRadius: 14, display: "grid", placeItems: "center", margin: "0 auto", background: "rgba(6,147,227,.14)", color: "#0693e3" }}><Bot size={22} /></span>
@@ -203,12 +194,12 @@ const Coach = ({ agentId, onSaved }) => {
         <Button variant="contained" color="primary" disableElevation onClick={() => send()} disabled={busy || !text.trim()} startIcon={<Send size={16} />} style={{ borderRadius: 10 }}>Enviar</Button>
         <Button variant="outlined" onClick={() => setTurns([])} disabled={!turns.length} startIcon={<RotateCcw size={16} />} style={{ borderRadius: 10 }}>Recomeçar</Button>
       </div>
-    </Section>
+    </Part>
   );
 };
 
 // ---------------------------------------------------------------- the effect, at once: the same customer message, answered again after every change
-const SCENARIOS = ["Quanto tempo dura o curso de Pedagogia?", "Quanto custa?", "Quero me matricular", "É online?"];
+const SCENARIOS = ["Oi", "Quero fazer Pedagogia", "É 100% EAD?", "Me envia a grade de Pedagogia", "Quanto custa?"];
 
 const LivePreview = ({ agentId, flowId, commercial, version }) => {
   const [message, setMessage] = useState(SCENARIOS[0]);
@@ -248,7 +239,7 @@ const LivePreview = ({ agentId, flowId, commercial, version }) => {
 
   const same = before && now && before.join("\n") === now.answer.join("\n");
   return (
-    <Section title="Veja o efeito agora" hint="Escolha uma mensagem de cliente. A cada ensinamento gravado ou alterado, o agente responde de novo e você compara com a resposta de antes. Nada é enviado a ninguém.">
+    <Section title="Testar agora" hint="Escolha uma mensagem de cliente. A cada ensinamento gravado, o agente responde de novo e você compara com a resposta de antes. Nada é enviado a ninguém.">
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
         {SCENARIOS.map((sc) => (
           <button key={sc} type="button" onClick={() => { setMessage(sc); run(sc); }} className="ui-press" style={{ border: "1px solid var(--ui-border)", borderRadius: 999, padding: "3px 10px", font: "inherit", fontSize: 12.5, cursor: "pointer", color: "inherit", background: message === sc ? "var(--ui-border)" : "transparent" }}>{sc}</button>
@@ -281,7 +272,7 @@ const LivePreview = ({ agentId, flowId, commercial, version }) => {
 // ---------------------------------------------------------------- learn from a file
 const ACCEPT = ".pdf,.docx,.txt,.zip";
 
-const FileLearn = ({ agentId, onApplied, goRoteiro }) => {
+const FileLearn = ({ agentId, onApplied, goRoteiro, bare }) => {
   const [step, setStep] = useState("idle"); // idle | uploaded | analyzing | review | done
   const [dragging, setDragging] = useState(false);
   const [up, setUp] = useState(null);
@@ -347,7 +338,7 @@ const FileLearn = ({ agentId, onApplied, goRoteiro }) => {
   );
 
   return (
-    <Section title="Aprender com um arquivo" hint="PDF, documento ou a conversa exportada do WhatsApp (.txt ou .zip). O agente tira o jeito de falar, o passo a passo e o que a equipe sabe. Nada vale até você aprovar."
+    <Part bare={bare} title="Aprender com um arquivo" hint="PDF, documento ou a conversa exportada do WhatsApp (.txt ou .zip). Nada vale até você aprovar."
       action={step !== "idle" && step !== "uploading" ? <Button size="small" startIcon={<X size={15} />} onClick={reset}>Recomeçar</Button> : null}>
       {(step === "idle" || step === "uploading") && (
         <div
@@ -428,6 +419,54 @@ const FileLearn = ({ agentId, onApplied, goRoteiro }) => {
           </div>
         </div>
       )}
+    </Part>
+  );
+};
+
+// ---------------------------------------------------------------- teach: four simple ways, one at a time
+const MODES = [["regra", "Uma regra"], ["exemplo", "Como eu respondo"], ["arquivo", "Conversa ou arquivo"], ["conversar", "Conversar"]];
+
+const Teach = ({ agentId, onSaved, goRoteiro }) => {
+  const [mode, setMode] = useState("regra");
+  const [rule, setRule] = useState("");
+  const [customer, setCustomer] = useState("");
+  const [answer, setAnswer] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const save = async (kind, text, clear) => {
+    setBusy(true);
+    try {
+      await api.post(`/ai-agents/${agentId}/rules`, { kind, text, source: "treino" });
+      toast.success("Gravado. O agente já segue na próxima resposta.");
+      clear();
+      onSaved && onSaved();
+    } catch (e) { toastError(e); }
+    setBusy(false);
+  };
+  const exampleText = `Cliente: ${customer.trim()}\nResposta: ${answer.trim()}`;
+
+  return (
+    <Section title="Ensinar o agente" hint="Escolha um jeito de ensinar. O que você gravar vale na próxima resposta e aparece em O que o agente aprendeu.">
+      <div style={{ marginBottom: 14, overflowX: "auto" }}>
+        <Segmented items={MODES} value={mode} onChange={setMode} label="Como ensinar" />
+      </div>
+      {mode === "regra" && (
+        <div style={{ display: "grid", gap: 10 }}>
+          <div style={{ fontSize: 13, color: "var(--text-2)" }}>Uma ordem curta, como falaria com um funcionário novo.</div>
+          <TextField fullWidth multiline rows={3} variant="outlined" size="small" placeholder="Ex.: Antes de tudo, pergunte se é a primeira graduação. Não use emoji." value={rule} onChange={(e) => setRule(e.target.value)} inputProps={{ maxLength: 1200 }} />
+          <div><Button variant="contained" color="primary" disableElevation disabled={busy || rule.trim().length < 3} onClick={() => save("regra", rule.trim(), () => setRule(""))} startIcon={<Check size={16} />}>Gravar regra</Button></div>
+        </div>
+      )}
+      {mode === "exemplo" && (
+        <div style={{ display: "grid", gap: 10 }}>
+          <div style={{ fontSize: 13, color: "var(--text-2)" }}>Cole uma pergunta de cliente e a resposta que você daria. O agente imita o jeito e o conteúdo.</div>
+          <TextField fullWidth variant="outlined" size="small" label="Mensagem do cliente" placeholder="Ex.: É 100% EAD?" value={customer} onChange={(e) => setCustomer(e.target.value)} inputProps={{ maxLength: 300 }} />
+          <TextField fullWidth multiline rows={5} variant="outlined" size="small" label="Como eu respondo" placeholder="Ex.: Hoje, o curso funciona no formato EAD... Com as mudanças do MEC, a partir de maio de 2027..." value={answer} onChange={(e) => setAnswer(e.target.value)} inputProps={{ maxLength: 1100 }} />
+          <div><Button variant="contained" color="primary" disableElevation disabled={busy || customer.trim().length < 2 || answer.trim().length < 3} onClick={() => save("exemplo", exampleText, () => { setCustomer(""); setAnswer(""); })} startIcon={<Check size={16} />}>Gravar exemplo</Button></div>
+        </div>
+      )}
+      {mode === "arquivo" && <FileLearn bare agentId={agentId} onApplied={onSaved} goRoteiro={goRoteiro} />}
+      {mode === "conversar" && <Coach bare agentId={agentId} onSaved={onSaved} />}
     </Section>
   );
 };
@@ -437,12 +476,11 @@ const TrainTab = ({ agentId, goRoteiro, flowId, commercial }) => {
   const bump = () => setVersion((v) => v + 1);
   return (
     <div style={{ display: "grid", gap: 16 }}>
-      <div style={{ display: "grid", gap: 16, gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", alignItems: "start" }} className="ui-stagger">
-        <Coach agentId={agentId} onSaved={bump} />
-        <Learned agentId={agentId} version={version} onChanged={bump} />
+      <div style={{ display: "grid", gap: 16, gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", alignItems: "start" }}>
+        <Teach agentId={agentId} onSaved={bump} goRoteiro={goRoteiro} />
+        <LivePreview agentId={agentId} flowId={flowId} commercial={commercial} version={version} />
       </div>
-      <LivePreview agentId={agentId} flowId={flowId} commercial={commercial} version={version} />
-      <FileLearn agentId={agentId} onApplied={bump} goRoteiro={goRoteiro} />
+      <Learned agentId={agentId} version={version} onChanged={bump} />
     </div>
   );
 };

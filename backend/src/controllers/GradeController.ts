@@ -13,6 +13,7 @@ import { ticketFromTarget } from "../helpers/ChatTarget";
 import SendWhatsAppMedia from "../services/WbotServices/SendWhatsAppMedia";
 import SendWhatsAppMessage from "../services/WbotServices/SendWhatsAppMessage";
 import { gradePath, gradeView, importDefaultGrades, publishGrade, removeGrade } from "../analysis/Grades";
+import { gradeSummaryOf } from "../analysis/services/commercial-grades/reader";
 
 const manager = (req: Request): boolean => isManagerRole(roleOf(req.user));
 const mustManage = (req: Request): void => {
@@ -107,7 +108,7 @@ export const send = async (req: Request, res: Response): Promise<Response> => {
   if (ticket.status === "closed") throw new AppError("Só é possível enviar para conversas abertas.", 400);
   // with the PDF, the summary goes as its description (one message, like attaching a document with a caption);
   // a caption has a size limit, so a longer text goes first as its own message
-  const summary = wantSummary ? String(g.whatsappSummary || "").trim() : "";
+  const summary = wantSummary ? gradeSummaryOf(g).trim() : "";
   const asCaption = wantPdf && summary.length > 0 && summary.length <= CAPTION_LIMIT && !summary.includes("{{");
   if (summary && !asCaption) await SendWhatsAppMessage({ body: summary, ticket });
   if (wantPdf) {

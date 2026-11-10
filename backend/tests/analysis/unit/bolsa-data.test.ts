@@ -30,10 +30,14 @@ describe("what comes after the grade", () => {
       { semester: 6, discipline: "Anos Iniciais do Ensino Fundamental", hours: 150 },
       { semester: 7, discipline: "Gestão Educacional", hours: 100 }
     ]);
-    expect(text).toMatch(/400 horas, a partir do 5º semestre/);
-    expect(text).toContain("Educação Infantil, Anos Iniciais do Ensino Fundamental, Gestão Educacional");
-    expect(text).toMatch(/tutoria acompanha você/);
-    expect(internshipPitch({}, [])).toMatch(/não tem estágio obrigatório/);
+    expect(text).toMatch(/começa no 5º semestre e soma 400 horas/);
+    // the list is in the caption of the PDF: it is not repeated (and never in capitals)
+    expect(text).not.toContain("Educação Infantil");
+    expect(text).toMatch(/Sobre a tutoria, esse é um diferencial importante/);
+    expect(text).toMatch(/Na fase de estágio, a tutoria também auxilia/);
+    expect(text).toMatch(/convênios com órgãos públicos/);
+    expect(text).not.toMatch(/\p{Extended_Pictographic}/u);
+    expect(internshipPitch({}, [])).toMatch(/não possui estágio obrigatório/);
   });
 
   it("drops the sentences that announce the grade, keeps the rest", () => {
