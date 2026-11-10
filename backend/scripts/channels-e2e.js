@@ -5359,22 +5359,6 @@ const postMeta = (id, payload, secret, badSig) => {
       // "Matriculado" is not a stage to drop a card in: it needs the confirmation (only the management may win without one, saying so)
       const wonStage = (await http.get("/lead-stages", auth())).data.find(x => x.type === "won");
       assert((await http.put(`/leads/${noRgmLead.id}/stage`, { stageId: wonStage.id }, asUser(ctok))).status === 409, "a consultant moved a lead to Matriculado without confirming");
-      // the tutor informs the academic e-mail and sends the access: RGM, e-mail and the link of the portal, by the tutor's own conversation
-      const studentView = () => sql(`SELECT CONCAT(COALESCE(academicEmail,''),'|',CASE WHEN accessSentAt IS NULL THEN 'n' ELSE 's' END) FROM Students WHERE leadId=${lead.id}`);
-      assert(studentView() === "|n", `access starts empty: ${studentView()}`);
-      const tutorAuth = asUser(tutorId === tA.id ? atok : btok);
-      assert((await http.put(`/leads/${lead.id}/onboarding/access`, { academicEmail: "aluna.matricula@cs.cruzeirodosul.edu.br" }, asUser(ctok))).status === 403, "the consultant informed the access");
-      assert((await http.post(`/leads/${lead.id}/onboarding/access/send`, {}, tutorAuth)).status === 400, "sent the access without the e-mail");
-      assert((await http.put(`/leads/${lead.id}/onboarding/access`, { academicEmail: "nao-e-email" }, tutorAuth)).status === 400, "an invalid e-mail was accepted");
-      assert((await http.put(`/leads/${lead.id}/onboarding/access`, { academicEmail: "aluna.matricula@cs.cruzeirodosul.edu.br" }, tutorAuth)).status === 200, "informing the e-mail");
-      const tokensBefore = graph.sent.length;
-      const sentAccess = await http.post(`/leads/${lead.id}/onboarding/access/send`, {}, tutorAuth);
-      assert(sentAccess.status === 200, `send access ${sentAccess.status} ${JSON.stringify(sentAccess.data)}`);
-      const accessText = graph.sent.slice(tokensBefore).map(x => JSON.stringify(x.body || {})).join(" ");
-      assert(accessText.includes(`RGM: ${rgmOfLead}`) && accessText.includes("aluna.matricula@cs.cruzeirodosul.edu.br") && /portal\/ativar\/[a-f0-9]{64}/.test(accessText), `the access message: ${accessText.slice(0, 300)}`);
-      assert(studentView() === "aluna.matricula@cs.cruzeirodosul.edu.br|s", `access sent recorded: ${studentView()}`);
-      const listed = (await http.get("/onboarding", tutorAuth)).data.find(x => x.id === lead.id);
-      assert(listed && listed.rgm === rgmOfLead && listed.student && listed.student.accessSentAt && listed.checklist.access, `the board does not show the access: ${JSON.stringify(listed && listed.student)}`);
 
       // the administration writes the greeting; the tutor gets it ready, edited with their data, while nobody has answered yet
       assert((await http.put("/settings/onboarding_welcome_template", { value: "Oi, {{primeiro_nome}}! Sou {{tutor}} do polo {{polo}}." }, auth())).status === 200, "welcome template setting");
@@ -5410,6 +5394,22 @@ const postMeta = (id, payload, secret, badSig) => {
       const r2 = await http.post(`/leads/${l2.id}/enroll`, { rgm: nextRgm(), poloId: polo.id, tutorId: "auto", fee: "later", feeDueDate: due, whatsappId: cid }, asUser(ctok));
       assert(r2.status === 200 && r2.data.warnings.length === 0, `enroll later ${JSON.stringify(r2.data.warnings)}`);
       assert(sql(`SELECT CONCAT(status,'|',dueDate) FROM Payments WHERE leadId=${l2.id} ORDER BY id DESC LIMIT 1`) === `scheduled|${due}`, "fee not scheduled for the negotiated date");
+      // the tutor informs the academic e-mail and sends the access: RGM, e-mail and the link of the portal, by the tutor's own conversation
+      const studentView = () => sql(`SELECT CONCAT(COALESCE(academicEmail,''),'|',CASE WHEN accessSentAt IS NULL THEN 'n' ELSE 's' END) FROM Students WHERE leadId=${lead.id}`);
+      assert(studentView() === "|n", `access starts empty: ${studentView()}`);
+      const tutorAuth = asUser(mineTok);
+      assert((await http.put(`/leads/${lead.id}/onboarding/access`, { academicEmail: "aluna.matricula@cs.cruzeirodosul.edu.br" }, asUser(ctok))).status === 403, "the consultant informed the access");
+      assert((await http.post(`/leads/${lead.id}/onboarding/access/send`, {}, tutorAuth)).status === 400, "sent the access without the e-mail");
+      assert((await http.put(`/leads/${lead.id}/onboarding/access`, { academicEmail: "nao-e-email" }, tutorAuth)).status === 400, "an invalid e-mail was accepted");
+      assert((await http.put(`/leads/${lead.id}/onboarding/access`, { academicEmail: "aluna.matricula@cs.cruzeirodosul.edu.br" }, tutorAuth)).status === 200, "informing the e-mail");
+      const tokensBefore = graph.sent.length;
+      const sentAccess = await http.post(`/leads/${lead.id}/onboarding/access/send`, {}, tutorAuth);
+      assert(sentAccess.status === 200, `send access ${sentAccess.status} ${JSON.stringify(sentAccess.data)}`);
+      const accessText = graph.sent.slice(tokensBefore).map(x => JSON.stringify(x.body || {})).join(" ");
+      assert(accessText.includes(`RGM: ${rgmOfLead}`) && accessText.includes("aluna.matricula@cs.cruzeirodosul.edu.br") && /portal\/ativar\/[a-f0-9]{64}/.test(accessText), `the access message: ${accessText.slice(0, 300)}`);
+      assert(studentView() === "aluna.matricula@cs.cruzeirodosul.edu.br|s", `access sent recorded: ${studentView()}`);
+      const listed = (await http.get("/onboarding", tutorAuth)).data.find(x => x.id === lead.id);
+      assert(listed && listed.rgm === rgmOfLead && listed.student && listed.student.accessSentAt && listed.checklist.access, `the board does not show the access: ${JSON.stringify(listed && listed.student)}`);
     });
     await test("affiliates: scoped to their consultant, portal without prices, material by audience, bonus once per enrolment", async () => {
       const mkU = async (name, email) => (await http.post("/users", { name, email, password: "senha123", role: "consultor" }, auth())).data;
