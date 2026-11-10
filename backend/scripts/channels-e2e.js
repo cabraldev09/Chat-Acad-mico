@@ -6354,14 +6354,15 @@ const postMeta = (id, payload, secret, badSig) => {
         try{await new Promise(r=>setTimeout(r,1200));await runLeadSlaAlertOnce();await runLeadSlaAlertOnce();assert.equal(await Event.count({where:{ticketId:ticket.id,type:"sla"}}),before+1);}finally{await msg.destroy();await setSetting("crm_sla_minutes","15");await setSetting("crm_escalation_minutes","30");}`);
     });
     await test("private attachments reject unsigned links and support revocation", async () => {
+      const fileHttp = axios.create({ baseURL: API, validateStatus: () => true, httpAgent: new (require("http").Agent)({ keepAlive: false }) });
       const id=sql(`SELECT id FROM Messages WHERE ticketId=${cticket} AND mediaUrl IS NOT NULL LIMIT 1`);
       const raw=sql(`SELECT mediaUrl FROM Messages WHERE id='${id}'`);
-      assert((await http.get(`/public/${raw}`)).status===403,"unsigned file opened");
-      const link=(await http.get(`/files/messages/${encodeURIComponent(id)}/link`,auth())).data.url;
-      assert(link&&(await http.get(link,{responseType:"arraybuffer"})).status===200,"signed file unavailable");
-      assert((await http.get(link.replace(encodeURIComponent(raw),"different.pdf"))).status===403,"escaped scope");
-      assert((await http.post("/operations/files/revoke",{filename:raw},auth())).status===200,"revoke failed");
-      assert((await http.get(link)).status===403,"revoked link opened");
+      assert((await fileHttp.get(`/public/${raw}`)).status===403,"unsigned file opened");
+      const link=(await fileHttp.get(`/files/messages/${encodeURIComponent(id)}/link`,auth())).data.url;
+      assert(link&&(await fileHttp.get(link,{responseType:"arraybuffer"})).status===200,"signed file unavailable");
+      assert((await fileHttp.get(link.replace(encodeURIComponent(raw),"different.pdf"))).status===403,"escaped scope");
+      assert((await fileHttp.post("/operations/files/revoke",{filename:raw},auth())).status===200,"revoke failed");
+      assert((await fileHttp.get(link)).status===403,"revoked link opened");
     });
     await test("commercial follow-up creates once and stops after customer reply", async () => {
       inDb(`const Lead=require("./dist/models/Lead").default,Proposal=require("./dist/models/Proposal").default,Task=require("./dist/models/LeadTask").default,{tickCommercialFollowUp}=require("./dist/workers/CommercialFollowUp"),{setSetting}=require("./dist/helpers/AppSettings"),{Op}=require("sequelize");
