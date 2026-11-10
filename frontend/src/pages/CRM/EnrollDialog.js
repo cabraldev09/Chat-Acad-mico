@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { toast } from "react-toastify";
 import {
   Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField, MenuItem, Typography,
-  CircularProgress, makeStyles, RadioGroup, Radio, FormControlLabel, Switch,
+  CircularProgress, makeStyles, RadioGroup, Radio, FormControlLabel,
 } from "@material-ui/core";
 import { GraduationCap } from "lucide-react";
 
@@ -17,7 +17,9 @@ const useStyles = makeStyles((theme) => ({
   feeBox: { padding: theme.spacing(0.5, 1.5), borderRadius: 12, border: `1px solid ${theme.palette.divider}`, marginTop: 6 },
 }));
 
-// "Confirmar matrícula": picks the polo and tutor, settles the enrollment fee and hands the student over.
+// "Confirmar matrícula e enviar para a tutoria": the consultant checks the student's record (contact, course, polo), informs the RGM that the
+// institution gave the student, settles the fee and hands the student over. The RGM creates the student of the portal; the tutor then only
+// informs the academic e-mail of access.
 // "additional": the student is already enrolled and enrolls again (another course): it counts again and the tutor gets a new task.
 const EnrollDialog = ({ open, lead, onClose, onDone, additional = false }) => {
   const classes = useStyles();
@@ -26,17 +28,17 @@ const EnrollDialog = ({ open, lead, onClose, onDone, additional = false }) => {
   const [busy, setBusy] = useState(false);
   const [detail, setDetail] = useState(null);
   const [courses, setCourses] = useState([]);
-  const [v, setV] = useState({ poloId: "", tutorId: "auto", fee: "paid", feeDueDate: "", note: "", courseId: "" });
+  const [v, setV] = useState({ poloId: "", tutorId: "auto", fee: "paid", feeDueDate: "", note: "", courseId: "", rgm: "" });
 
   useEffect(() => {
     if (!open) return;
-    setV({ poloId: lead.poloId || "", tutorId: "auto", fee: "paid", feeDueDate: "", note: "", courseId: "" });
-    if (additional) api.get("/courses").then(({ data }) => setCourses(data.filter((c) => c.active))).catch(() => undefined);
+    setV({ poloId: lead.poloId || "", tutorId: "auto", fee: "paid", feeDueDate: "", note: "", courseId: "", rgm: "" });
+    api.get("/courses").then(({ data }) => setCourses(data.filter((c) => c.active))).catch(() => undefined);
     api.get("/polos").then(({ data }) => setPolos(data.filter((p) => p.active))).catch(toastError);
     // the board card is a summary: the CPF and polo come from the full record
     api.get(`/leads/${lead.id}`).then(({ data }) => {
       setDetail(data);
-      if (data.poloId) setV((cur) => ({ ...cur, poloId: cur.poloId || data.poloId }));
+      setV((cur) => ({ ...cur, poloId: cur.poloId || data.poloId || "", courseId: cur.courseId || (!additional && data.courseId) || "", rgm: cur.rgm || (!additional && data.rgm) || "" }));
     }).catch(() => setDetail(null));
   }, [open, lead, additional]);
 
@@ -45,9 +47,10 @@ const EnrollDialog = ({ open, lead, onClose, onDone, additional = false }) => {
     api.get(`/polos/${v.poloId}/tutors`).then(({ data }) => setTutors(data)).catch(() => setTutors([]));
   }, [v.poloId]);
 
-  const first = (lead.name || "").split(" ")[0];
   const needsCpf = !additional && (v.fee === "now" || v.fee === "later") && !(detail && detail.cpf);
-  const invalid = !v.poloId || (additional && !v.courseId) || (v.fee === "later" && !v.feeDueDate) || needsCpf;
+  const rgm = String(v.rgm || "").replace(/\s+/g, "");
+  const rgmOk = /^[A-Za-z0-9.\-/]{3,40}$/.test(rgm);
+  const invalid = !v.poloId || !v.courseId || !rgmOk || (v.fee === "later" && !v.feeDueDate) || needsCpf;
 
   const confirm = async () => {
     setBusy(true);
@@ -59,7 +62,8 @@ const EnrollDialog = ({ open, lead, onClose, onDone, additional = false }) => {
         feeDueDate: v.feeDueDate || null,
         note: v.note,
         additional: additional || undefined,
-        courseId: additional ? v.courseId : undefined
+        courseId: v.courseId,
+        rgm
       });
       toast.success(additional ? `Nova matrícula registrada (${data.number}ª). ${data.tutor ? `Tutor: ${data.tutor.name}.` : "Aguardando um tutor."}` : data.tutor ? `Matrícula confirmada. Tutor: ${data.tutor.name}.` : "Matrícula confirmada. Aguardando um tutor na fila.");
       (data.warnings || []).forEach((w) => toast.warn(w));
@@ -77,21 +81,24 @@ const EnrollDialog = ({ open, lead, onClose, onDone, additional = false }) => {
         <div className={classes.head}>
           <span className={classes.badge}><GraduationCap size={22} /></span>
           <div>
-            {additional ? "Nova matrícula" : "Confirmar matrícula"}
+            {additional ? "Nova matrícula" : "Confirmar matrícula e enviar para a tutoria"}
             <Typography variant="body2" color="textSecondary">{lead.name}</Typography>
           </div>
         </div>
       </DialogTitle>
       <DialogContent>
-        {additional && (
-          <>
-            <div className={classes.section}>Curso desta matrícula</div>
-            <TextField select fullWidth variant="outlined" margin="dense" label="Curso" value={v.courseId} onChange={(e) => setV({ ...v, courseId: e.target.value })}
-              helperText="O aluno continua com a primeira matrícula; esta conta como mais uma para você e para o polo.">
-              {courses.map((c) => (<MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>))}
-            </TextField>
-          </>
-        )}
+        <div className={classes.section}>Confira a ficha do aluno</div>
+        <div className={classes.feeBox} style={{ marginTop: 0 }}>
+          <div><b>{lead.name}</b></div>
+          <div className={classes.hint}>WhatsApp: {(detail && detail.phone) || lead.phone || "não informado"} · CPF: {(detail && detail.cpf) || "não informado"}</div>
+        </div>
+        <TextField select fullWidth variant="outlined" margin="dense" label="Curso" value={v.courseId} onChange={(e) => setV({ ...v, courseId: e.target.value })}
+          helperText={additional ? "O aluno continua com a primeira matrícula; esta conta como mais uma para você e para o polo." : "O curso em que o aluno se matriculou."}>
+          {courses.map((c) => (<MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>))}
+        </TextField>
+        <TextField fullWidth variant="outlined" margin="dense" label="RGM do aluno" required value={v.rgm} onChange={(e) => setV({ ...v, rgm: e.target.value })}
+          error={!!v.rgm && !rgmOk} inputProps={{ maxLength: 40 }}
+          helperText={v.rgm && !rgmOk ? "Use só letras, números e traços." : "O número de matrícula que a instituição gerou. Com ele o aluno já fica cadastrado no portal; o tutor só informa o e-mail de acesso."} />
         <div className={classes.section}>Quem vai ambientar o aluno</div>
         <TextField select fullWidth variant="outlined" margin="dense" label="Polo" value={v.poloId} onChange={(e) => setV({ ...v, poloId: e.target.value, tutorId: "auto" })}
           helperText={polos.length ? "O aluno vai para a fila de tutoria deste polo." : "Cadastre os polos em Polos e equipes."}>
@@ -127,7 +134,7 @@ const EnrollDialog = ({ open, lead, onClose, onDone, additional = false }) => {
       <DialogActions>
         <Button variant="outlined" color="secondary" onClick={onClose} disabled={busy}>Cancelar</Button>
         <Button variant="contained" color="primary" onClick={confirm} disabled={busy || invalid}>
-          {busy ? <CircularProgress size={18} /> : additional ? "Registrar nova matrícula" : "Confirmar matrícula"}
+          {busy ? <CircularProgress size={18} /> : additional ? "Registrar nova matrícula" : "Confirmar e enviar para a tutoria"}
         </Button>
       </DialogActions>
     </Dialog>

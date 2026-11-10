@@ -3,6 +3,10 @@
 // a person really did, and a consultant can never read another consultant's numbers.
 // Runs the real backend on its own port with a throw-away database and a Telegram mock (a real channel path:
 // the send goes through the outbound worker and the adapter). Usage: npm run test:assign
+// every enrollment is confirmed with its own RGM (the registration number of the student): unique per call
+let rgmSeq = 7100000;
+const nextRgm = () => String(++rgmSeq);
+
 const { spawn, execFileSync } = require("child_process");
 const crypto = require("crypto");
 const path = require("path");
@@ -178,7 +182,7 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
       assert((await http.post(`/leads/${lead.id}/activities`, { type: "call", body: "liguei" }, as(joao))).status < 300, "note");
       const task = (await http.post(`/leads/${lead.id}/tasks`, { title: "Retornar", dueAt: new Date(Date.now() - 3600000).toISOString() }, as(joao))).data;
       assert(task.id, "task");
-      assert((await http.put(`/leads/${lead.id}/stage`, { stageId: stageWon.id }, as(joao))).status === 200, "enroll");
+      assert((await http.put(`/leads/${lead.id}/stage`, { skipEnroll: true, stageId: stageWon.id }, as(admin))).status === 200, "enroll");
       await sleep(300);
     });
 
@@ -377,7 +381,7 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
       await http.post(`/leads/${lead2.id}/tasks`, { title: "Nova", dueAt: new Date(Date.now() + 86400000).toISOString() }, as(joao));
       await waitFor(() => forAdmin.seen.some(p => p.userId === ids.joao), 5000, "task signal");
       forAdmin.seen.length = 0;
-      await http.put(`/leads/${lead2.id}/stage`, { stageId: stageWon.id }, as(joao));
+      await http.put(`/leads/${lead2.id}/stage`, { skipEnroll: true, stageId: stageWon.id }, as(admin));
       await waitFor(() => forAdmin.seen.some(p => p.userId === ids.joao), 5000, "enrollment signal");
       const fin = (await A(joao, "/analytics/me?range=today")).data.metrics;
       assert(fin.enrollments === 2, `enrollments ${fin.enrollments}`);
@@ -476,17 +480,17 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
       // the first enrollment (here by moving to the won stage: this environment has no WhatsApp channel for the tutor's chat)
       assert((await http.put(`/leads/${lead.id}/stage`, { stageId: stageWon.id }, as(admin))).status === 200, "first enrollment");
       sql(`UPDATE Leads SET enrolledAt = NOW(), poloId = ${polo3} WHERE id = ${lead.id}`);
-      assert((await http.post(`/leads/${lead.id}/enroll`, { poloId: Number(polo3), additional: true }, as(joao))).status !== 500, "a consultant enrolling again must not crash");
+      assert((await http.post(`/leads/${lead.id}/enroll`, { rgm: nextRgm(), poloId: Number(polo3), additional: true }, as(joao))).status !== 500, "a consultant enrolling again must not crash");
       sql(`DELETE FROM LeadEnrollments WHERE leadId = ${lead.id}`);
-      const second = await http.post(`/leads/${lead.id}/enroll`, { poloId: Number(polo3), additional: true, courseName: "Pedagogia", fee: "exempt" }, as(admin));
+      const second = await http.post(`/leads/${lead.id}/enroll`, { rgm: nextRgm(), poloId: Number(polo3), additional: true, courseName: "Pedagogia", fee: "exempt" }, as(admin));
       assert(second.status === 200 && second.data.enrollment && second.data.number === 2, `second enrollment ${second.status} ${JSON.stringify(second.data).slice(0, 300)}`);
-      const third = await http.post(`/leads/${lead.id}/enroll`, { poloId: Number(polo3), additional: true, courseName: "Administração" }, as(admin));
+      const third = await http.post(`/leads/${lead.id}/enroll`, { rgm: nextRgm(), poloId: Number(polo3), additional: true, courseName: "Administração" }, as(admin));
       assert(third.status === 200 && third.data.number === 3, "third enrollment");
       const list = (await http.get(`/leads/${lead.id}/enrollments`, as(admin))).data;
       assert(list.length === 3 && list[1].courseName === "Pedagogia" && list[2].courseName === "Administração", `list ${JSON.stringify(list)}`);
       const after = (await A(joao, "/analytics/me?range=today")).data.metrics.enrollments;
       assert(after === before + 3, `the three enrollments counted ${after - before}`);
-      assert((await http.post(`/leads/${lead.id + 9999}/enroll`, { poloId: Number(polo3), additional: true }, as(admin))).status === 404, "unknown lead");
+      assert((await http.post(`/leads/${lead.id + 9999}/enroll`, { rgm: nextRgm(), poloId: Number(polo3), additional: true }, as(admin))).status === 404, "unknown lead");
     });
   } catch (err) {
     results.push([false, `setup -> ${err.stack || err.message}`]);

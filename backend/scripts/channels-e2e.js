@@ -2,6 +2,10 @@
 // End-to-end check of every API based channel against local mock servers
 // (Telegram Bot API + Meta Graph API). Runs the real backend on its own port
 // with a throw-away database. Usage: node scripts/channels-e2e.js
+// every enrollment is confirmed with its own RGM (the registration number of the student): unique per call
+let rgmSeq = 7100000;
+const nextRgm = () => String(++rgmSeq);
+
 const { spawn, execFileSync } = require("child_process");
 const crypto = require("crypto");
 const fs = require("fs");
@@ -929,7 +933,7 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.put(`/leads/${leadId}/stage`, { stageId: lost.id }, auth())).status === 400, "lost without reason accepted");
       assert((await http.put(`/leads/${leadId}/stage`, { stageId: lost.id, lostReason: "Preço / mensalidade" }, auth())).status === 200, "lost");
       assert(sql(`SELECT score FROM Leads WHERE id=${leadId}`) === "0", "lost score");
-      assert((await http.put(`/leads/${leadId}/stage`, { stageId: won.id }, auth())).status === 200, "won");
+      assert((await http.put(`/leads/${leadId}/stage`, { skipEnroll: true, stageId: won.id }, auth())).status === 200, "won");
       assert(sql(`SELECT wonAt IS NOT NULL AND lostAt IS NULL AND lostReason IS NULL FROM Leads WHERE id=${leadId}`) === "1", "won fields");
       assert(sql(`SELECT score FROM Leads WHERE id=${leadId}`) === "100", "won score");
       await http.put(`/leads/${leadId}/stage`, { stageId: first.id }, auth());
@@ -1561,13 +1565,13 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(names("LeadTags", "leadId", l.id) === "", "a label before the enrollment");
       // enrolled (the won column) with the fee still to pay: the label appears on the lead and on the contact
       const wonId = sql(`SELECT id FROM LeadStages WHERE type='won' ORDER BY position LIMIT 1`);
-      const moved = await http.put(`/leads/${l.id}/stage`, { stageId: Number(wonId) }, auth());
+      const moved = await http.put(`/leads/${l.id}/stage`, { skipEnroll: true, stageId: Number(wonId) }, auth());
       assert(moved.status === 200, `move ${moved.status}`);
       assert(names("LeadTags", "leadId", l.id) === "Taxa pendente", `lead labels: ${names("LeadTags", "leadId", l.id)}`);
       assert(names("ContactTags", "contactId", contactId) === "Taxa pendente", "the contact has no pending label");
       assert(names("TicketTags", "ticketId", feeTicket) === "Taxa pendente", "the conversation has no pending label");
       // moving the card again never doubles the label
-      await http.put(`/leads/${l.id}/stage`, { stageId: Number(wonId) }, auth());
+      await http.put(`/leads/${l.id}/stage`, { skipEnroll: true, stageId: Number(wonId) }, auth());
       assert(names("LeadTags", "leadId", l.id) === "Taxa pendente", "the label doubled");
       // the payment is confirmed by Efí: the label changes at once
       const secret = (await http.get("/payments/efi/settings", auth())).data.webhookUrl.split("/").pop();
@@ -1579,8 +1583,8 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(names("ContactTags", "contactId", contactId) === "Taxa paga", "the contact label was not swapped");
       assert(names("TicketTags", "ticketId", feeTicket) === "Taxa paga", "the conversation label was not swapped");
       // a lead that already paid is never marked as pending again
-      await http.put(`/leads/${l.id}/stage`, { stageId: Number(sql(`SELECT id FROM LeadStages WHERE type='open' ORDER BY position LIMIT 1`)) }, auth());
-      await http.put(`/leads/${l.id}/stage`, { stageId: Number(wonId) }, auth());
+      await http.put(`/leads/${l.id}/stage`, { skipEnroll: true, stageId: Number(sql(`SELECT id FROM LeadStages WHERE type='open' ORDER BY position LIMIT 1`)) }, auth());
+      await http.put(`/leads/${l.id}/stage`, { skipEnroll: true, stageId: Number(wonId) }, auth());
       assert(names("LeadTags", "leadId", l.id) === "Taxa paga", `a paid fee came back as pending: ${names("LeadTags", "leadId", l.id)}`);
     });
     await test("an open Bolix can be cancelled at Efí", async () => {
@@ -4652,7 +4656,7 @@ const postMeta = (id, payload, secret, badSig) => {
       const opened = await http.post(`/leads/${lead.id}/open-ticket`, { whatsappId: cid }, auth());
       assert(opened.status === 200 || opened.status === 201, `open-ticket ${opened.status}`);
       const contactId = sql(`SELECT contactId FROM Leads WHERE id=${lead.id}`);
-      const r = await http.post(`/leads/${lead.id}/enroll`, { poloId: poloD.id, tutorId: "auto", fee: "paid", whatsappId: cid }, auth());
+      const r = await http.post(`/leads/${lead.id}/enroll`, { rgm: nextRgm(), poloId: poloD.id, tutorId: "auto", fee: "paid", whatsappId: cid }, auth());
       assert(r.status === 200, `enroll ${r.status}`);
       let docs = (await http.get(`/leads/${lead.id}/documents`, auth())).data;
       assert(docs.documents.length === 3 && docs.summary.pending === 3 && docs.summary.complete === false, `documents ${JSON.stringify(docs.summary)}`);
@@ -4730,7 +4734,7 @@ const postMeta = (id, payload, secret, badSig) => {
         await waitFor(() => ticketOf(from), 8000, `ticket of ${name}`);
         const leadId = await waitFor(() => sql(`SELECT l.id FROM Leads l JOIN Contacts c ON c.id=l.contactId WHERE c.number='${from}'`), 8000, `lead of ${name}`);
         sql(`UPDATE Leads SET name='${name}' WHERE id=${leadId}`);
-        const r = await http.post(`/leads/${leadId}/enroll`, { poloId: poloR.id, tutorId: tutorR.id, fee: "paid", whatsappId: cid }, auth());
+        const r = await http.post(`/leads/${leadId}/enroll`, { rgm: nextRgm(), poloId: poloR.id, tutorId: tutorR.id, fee: "paid", whatsappId: cid }, auth());
         assert(r.status === 200, `enroll ${name} ${r.status} ${JSON.stringify(r.data).slice(0, 120)}`);
         return { from, leadId: Number(leadId), contactId: sql(`SELECT contactId FROM Leads WHERE id=${leadId}`) };
       };
@@ -5135,7 +5139,7 @@ const postMeta = (id, payload, secret, badSig) => {
       const lead = await mkLead("Aluno Esperando Tutor", "5511955553301", { ownerId: cons.id });
       const opened = await http.post(`/leads/${lead.id}/open-ticket`, { whatsappId: cid }, auth());
       assert(opened.status === 200 || opened.status === 201, `open-ticket ${opened.status}`);
-      const r = await http.post(`/leads/${lead.id}/enroll`, { poloId: polo.id, tutorId: "auto", fee: "paid", whatsappId: cid }, asUser(consTok));
+      const r = await http.post(`/leads/${lead.id}/enroll`, { rgm: nextRgm(), poloId: polo.id, tutorId: "auto", fee: "paid", whatsappId: cid }, asUser(consTok));
       assert(r.status === 200, `enroll ${r.status} ${JSON.stringify(r.data).slice(0, 160)}`);
       assert(sql(`SELECT COALESCE(onboardingTutorId::text,'') FROM Leads WHERE id=${lead.id}`) === "", "nobody should have been picked");
 
@@ -5160,7 +5164,7 @@ const postMeta = (id, payload, secret, badSig) => {
       // the tutor starts a student nobody had taken: the student and the conversation become theirs and show in their conversations
       const lead2 = await mkLead("Aluno Que a Tutora Inicia", "5511955553302", { ownerId: cons.id });
       await http.post(`/leads/${lead2.id}/open-ticket`, { whatsappId: cid }, auth());
-      const r2 = await http.post(`/leads/${lead2.id}/enroll`, { poloId: polo.id, tutorId: "auto", fee: "paid", whatsappId: cid }, asUser(consTok));
+      const r2 = await http.post(`/leads/${lead2.id}/enroll`, { rgm: nextRgm(), poloId: polo.id, tutorId: "auto", fee: "paid", whatsappId: cid }, asUser(consTok));
       assert(r2.status === 200, `enroll 2 ${r2.status}`);
       await http.put(`/leads/${lead2.id}/onboarding`, { tutorId: null }, auth());
       assert(sql(`SELECT COALESCE(onboardingTutorId::text,'') FROM Leads WHERE id=${lead2.id}`) === "", "the student should be waiting");
@@ -5175,7 +5179,7 @@ const postMeta = (id, payload, secret, badSig) => {
       // the administration starting a student does not take it over
       const lead3 = await mkLead("Aluno Da Gestao", "5511955553303", { ownerId: cons.id });
       await http.post(`/leads/${lead3.id}/open-ticket`, { whatsappId: cid }, auth());
-      await http.post(`/leads/${lead3.id}/enroll`, { poloId: polo.id, tutorId: "auto", fee: "paid", whatsappId: cid }, asUser(consTok));
+      await http.post(`/leads/${lead3.id}/enroll`, { rgm: nextRgm(), poloId: polo.id, tutorId: "auto", fee: "paid", whatsappId: cid }, asUser(consTok));
       await http.put(`/leads/${lead3.id}/onboarding`, { tutorId: null }, auth());
       await http.post(`/leads/${lead3.id}/onboarding`, { action: "start" }, auth());
       assert(sql(`SELECT COALESCE(onboardingTutorId::text,'') FROM Leads WHERE id=${lead3.id}`) === "", "an administrator became the tutor");
@@ -5287,7 +5291,7 @@ const postMeta = (id, payload, secret, badSig) => {
 
       // 1) a consultant confirms the enrollment informing that there is no fee: no charge, the label, the record
       const a = await enrolled("Aluno Isento", "5511955579201");
-      const r = await http.post(`/leads/${a.id}/enroll`, { poloId: poloX.id, tutorId: "auto", fee: "exempt", whatsappId: cid }, asUser(consTok));
+      const r = await http.post(`/leads/${a.id}/enroll`, { rgm: nextRgm(), poloId: poloX.id, tutorId: "auto", fee: "exempt", whatsappId: cid }, asUser(consTok));
       assert(r.status === 200, `exempt enrollment ${r.status} ${JSON.stringify(r.data).slice(0, 160)}`);
       assert(sql(`SELECT COUNT(*) FROM Payments WHERE leadId=${a.id}`) === "0", "a charge was created for an exempt enrollment");
       assert(names("LeadTags", "leadId", a.id) === "Matrícula isenta", `lead labels: ${names("LeadTags", "leadId", a.id)}`);
@@ -5295,7 +5299,7 @@ const postMeta = (id, payload, secret, badSig) => {
       if (aContact) assert(names("ContactTags", "contactId", aContact) === "Matrícula isenta", "the contact has no exempt label");
       assert(/Matrícula isenta/.test(sql(`SELECT body FROM LeadActivities WHERE leadId=${a.id} AND body LIKE '%isenta%' LIMIT 1`)), "no record of the waiver");
       // moving the card never turns it into pending
-      await http.put(`/leads/${a.id}/stage`, { stageId: Number(sql(`SELECT id FROM LeadStages WHERE type='won' ORDER BY position LIMIT 1`)) }, auth());
+      await http.put(`/leads/${a.id}/stage`, { skipEnroll: true, stageId: Number(sql(`SELECT id FROM LeadStages WHERE type='won' ORDER BY position LIMIT 1`)) }, auth());
       assert(names("LeadTags", "leadId", a.id) === "Matrícula isenta", "the exempt label was overwritten by the stage change");
 
       // 2) a payment that arrives anyway wins over the waiver (the money was received)
@@ -5325,7 +5329,7 @@ const postMeta = (id, payload, secret, badSig) => {
       const salesTicket = opened.data.ticketId;
 
       const before = graph.sent.length;
-      const r = await http.post(`/leads/${lead.id}/enroll`, { poloId: polo.id, tutorId: "auto", note: "Prefere à noite", fee: "paid", whatsappId: cid, introMessage: "Olá! Sou da tutoria e vou te ajudar no primeiro acesso." }, asUser(ctok));
+      const r = await http.post(`/leads/${lead.id}/enroll`, { rgm: nextRgm(), poloId: polo.id, tutorId: "auto", note: "Prefere à noite", fee: "paid", whatsappId: cid, introMessage: "Olá! Sou da tutoria e vou te ajudar no primeiro acesso." }, asUser(ctok));
       assert(r.status === 200, `enroll ${r.status} ${JSON.stringify(r.data)}`);
       const tutorId = r.data.tutor.id;
       assert([tA.id, tB.id].includes(tutorId), "tutor not from the polo");
@@ -5337,6 +5341,41 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${lead.id} AND userId=${tutorId} AND title LIKE 'Ambientar%'`) === "1", "tutor task");
       // nothing is sent to the student by the system: the tutor decides if and when to greet
       assert(graph.sent.length === before, `the system sent a message by itself on enrollment (${graph.sent.length - before})`);
+      // the RGM is part of the confirmation: the portal student is born with it, the tutor reads the hand-over note, nothing is left to chance
+      const rgmOfLead = sql(`SELECT rgm FROM Leads WHERE id=${lead.id}`);
+      assert(/^\d{7}$/.test(rgmOfLead), `the RGM did not stay on the lead: ${rgmOfLead}`);
+      const portal = sql(`SELECT CONCAT(rgm,'|',name,'|',COALESCE(responsibleUserId::text,''),'|',COALESCE(leadId::text,'')) FROM Students WHERE leadId=${lead.id}`);
+      assert(portal === `${rgmOfLead}|Aluna Matricula|${tutorId}|${lead.id}`, `the student of the portal: ${portal}`);
+      const handoverNotes = sql(`SELECT string_agg(note, ' || ') FROM TicketEvents WHERE ticketId=${ob}`);
+      assert(/Ficha de passagem/.test(handoverNotes) && handoverNotes.includes(`RGM: ${rgmOfLead}`) && handoverNotes.includes("Aluna Matricula"), "the hand-over note is missing");
+      assert(Number(sql(`SELECT COUNT(*) FROM LeadActivities WHERE leadId=${lead.id} AND meta LIKE '%"kind":"enrollment"%' AND meta LIKE '%"rgm":"${rgmOfLead}"%'`)) === 1, "the enrollment was not recorded with its facts");
+      // without the RGM, or with one that belongs to another student, the enrollment is refused (and nothing changes)
+      const noRgmLead = await mkLead("Aluno Sem RGM", "5511955552099", { ownerId: consult.id });
+      const noRgm = await http.post(`/leads/${noRgmLead.id}/enroll`, { poloId: polo.id, tutorId: "auto", fee: "paid", whatsappId: cid }, auth());
+      assert(noRgm.status === 400 && /RGM/.test(noRgm.data.error), `no RGM: ${noRgm.status} ${JSON.stringify(noRgm.data)}`);
+      const dup = await http.post(`/leads/${noRgmLead.id}/enroll`, { rgm: rgmOfLead, poloId: polo.id, tutorId: "auto", fee: "paid", whatsappId: cid }, auth());
+      assert(dup.status === 409, `repeated RGM: ${dup.status} ${JSON.stringify(dup.data)}`);
+      assert(sql(`SELECT onboardingStatus FROM Leads WHERE id=${noRgmLead.id}`) === "none" && stageName(noRgmLead.id) !== "Matriculado", "a refused enrollment changed the lead");
+      // "Matriculado" is not a stage to drop a card in: it needs the confirmation (only the management may win without one, saying so)
+      const wonStage = (await http.get("/lead-stages", auth())).data.find(x => x.type === "won");
+      assert((await http.put(`/leads/${noRgmLead.id}/stage`, { stageId: wonStage.id }, asUser(ctok))).status === 409, "a consultant moved a lead to Matriculado without confirming");
+      // the tutor informs the academic e-mail and sends the access: RGM, e-mail and the link of the portal, by the tutor's own conversation
+      const studentView = () => sql(`SELECT CONCAT(COALESCE(academicEmail,''),'|',CASE WHEN accessSentAt IS NULL THEN 'n' ELSE 's' END) FROM Students WHERE leadId=${lead.id}`);
+      assert(studentView() === "|n", `access starts empty: ${studentView()}`);
+      const tutorAuth = asUser(tutorId === tA.id ? atok : btok);
+      assert((await http.put(`/leads/${lead.id}/onboarding/access`, { academicEmail: "aluna.matricula@cs.cruzeirodosul.edu.br" }, asUser(ctok))).status === 403, "the consultant informed the access");
+      assert((await http.post(`/leads/${lead.id}/onboarding/access/send`, {}, tutorAuth)).status === 400, "sent the access without the e-mail");
+      assert((await http.put(`/leads/${lead.id}/onboarding/access`, { academicEmail: "nao-e-email" }, tutorAuth)).status === 400, "an invalid e-mail was accepted");
+      assert((await http.put(`/leads/${lead.id}/onboarding/access`, { academicEmail: "aluna.matricula@cs.cruzeirodosul.edu.br" }, tutorAuth)).status === 200, "informing the e-mail");
+      const tokensBefore = graph.sent.length;
+      const sentAccess = await http.post(`/leads/${lead.id}/onboarding/access/send`, {}, tutorAuth);
+      assert(sentAccess.status === 200, `send access ${sentAccess.status} ${JSON.stringify(sentAccess.data)}`);
+      const accessText = graph.sent.slice(tokensBefore).map(x => JSON.stringify(x.body || {})).join(" ");
+      assert(accessText.includes(`RGM: ${rgmOfLead}`) && accessText.includes("aluna.matricula@cs.cruzeirodosul.edu.br") && /portal\/ativar\/[a-f0-9]{64}/.test(accessText), `the access message: ${accessText.slice(0, 300)}`);
+      assert(studentView() === "aluna.matricula@cs.cruzeirodosul.edu.br|s", `access sent recorded: ${studentView()}`);
+      const listed = (await http.get("/onboarding", tutorAuth)).data.find(x => x.id === lead.id);
+      assert(listed && listed.rgm === rgmOfLead && listed.student && listed.student.accessSentAt && listed.checklist.access, `the board does not show the access: ${JSON.stringify(listed && listed.student)}`);
+
       // the administration writes the greeting; the tutor gets it ready, edited with their data, while nobody has answered yet
       assert((await http.put("/settings/onboarding_welcome_template", { value: "Oi, {{primeiro_nome}}! Sou {{tutor}} do polo {{polo}}." }, auth())).status === 200, "welcome template setting");
       const mineTok = tutorId === tA.id ? atok : btok;
@@ -5368,7 +5407,7 @@ const postMeta = (id, payload, secret, badSig) => {
       await http.put(`/leads/${l2.id}`, { cpf: cpfFor(123456790) }, auth());
       await http.post(`/leads/${l2.id}/open-ticket`, { whatsappId: cid }, auth());
       const due = new Date(Date.now() + 40 * 86400000).toISOString().slice(0, 10);
-      const r2 = await http.post(`/leads/${l2.id}/enroll`, { poloId: polo.id, tutorId: "auto", fee: "later", feeDueDate: due, whatsappId: cid }, asUser(ctok));
+      const r2 = await http.post(`/leads/${l2.id}/enroll`, { rgm: nextRgm(), poloId: polo.id, tutorId: "auto", fee: "later", feeDueDate: due, whatsappId: cid }, asUser(ctok));
       assert(r2.status === 200 && r2.data.warnings.length === 0, `enroll later ${JSON.stringify(r2.data.warnings)}`);
       assert(sql(`SELECT CONCAT(status,'|',dueDate) FROM Payments WHERE leadId=${l2.id} ORDER BY id DESC LIMIT 1`) === `scheduled|${due}`, "fee not scheduled for the negotiated date");
     });
@@ -5520,11 +5559,11 @@ const postMeta = (id, payload, secret, badSig) => {
       // enrolment: one bonus line, whichever way the card got to "Matriculado"; the campaign pays R$ 120
       const stages = (await http.get("/lead-stages", auth())).data;
       const won = stages.find(x => x.type === "won"), firstStage = stages.find(x => x.type === "open");
-      assert((await http.put(`/leads/${leadId}/stage`, { stageId: won.id }, asUser(ta))).status === 200, "won");
+      assert((await http.put(`/leads/${leadId}/stage`, { skipEnroll: true, stageId: won.id }, auth())).status === 200, "won");
       assert(sql(`SELECT CONCAT(COUNT(*),'|',MAX(amount),'|',MAX(status),'|',MAX(kind)) FROM AffiliateBonuses WHERE leadId=${leadId}`) === "1|120.00|pending|pix", "bonus line wrong");
       await http.put(`/leads/${leadId}/stage`, { stageId: firstStage.id }, asUser(ta));
       assert(sql(`SELECT status FROM AffiliateBonuses WHERE leadId=${leadId}`) === "cancelled", "undoing the enrolment did not cancel the bonus");
-      await http.put(`/leads/${leadId}/stage`, { stageId: won.id }, asUser(ta));
+      await http.put(`/leads/${leadId}/stage`, { skipEnroll: true, stageId: won.id }, auth());
       assert(sql(`SELECT CONCAT(COUNT(*),'|',MAX(status)) FROM AffiliateBonuses WHERE leadId=${leadId}`) === "1|pending", "re-enrolment must reuse the same line");
 
       // numbers of production
@@ -5764,7 +5803,7 @@ const postMeta = (id, payload, secret, badSig) => {
         await waitFor(() => ticketOf(from), 8000, `ticket of ${name}`);
         const leadId = Number(await waitFor(() => sql(`SELECT l.id FROM Leads l JOIN Contacts c ON c.id=l.contactId WHERE c.number='${from}'`), 8000, `lead of ${name}`));
         sql(`UPDATE Leads SET name='${name}' WHERE id=${leadId}`);
-        const r = await http.post(`/leads/${leadId}/enroll`, { poloId: poloX.id, tutorId: tutorX.id, fee: "paid", whatsappId: cid }, auth());
+        const r = await http.post(`/leads/${leadId}/enroll`, { rgm: nextRgm(), poloId: poloX.id, tutorId: tutorX.id, fee: "paid", whatsappId: cid }, auth());
         assert(r.status === 200, `enroll ${name} ${r.status}`);
         return { from, leadId, contactId: sql(`SELECT contactId FROM Leads WHERE id=${leadId}`) };
       };
@@ -5969,7 +6008,7 @@ const postMeta = (id, payload, secret, badSig) => {
         await waitFor(() => ticketOf(from), 8000, `ticket of ${name}`);
         const leadId = Number(await waitFor(() => sql(`SELECT l.id FROM Leads l JOIN Contacts c ON c.id=l.contactId WHERE c.number='${from}'`), 8000, `lead of ${name}`));
         sql(`UPDATE Leads SET name='${name}' WHERE id=${leadId}`);
-        assert((await http.post(`/leads/${leadId}/enroll`, { poloId, tutorId: Number(tutorId), fee: "paid", whatsappId: cid }, auth())).status === 200, `enroll ${name}`);
+        assert((await http.post(`/leads/${leadId}/enroll`, { rgm: nextRgm(), poloId, tutorId: Number(tutorId), fee: "paid", whatsappId: cid }, auth())).status === 200, `enroll ${name}`);
         return { from, leadId, contactId: sql(`SELECT contactId FROM Leads WHERE id=${leadId}`) };
       };
       const rita = await student("Rita Relacionamento");

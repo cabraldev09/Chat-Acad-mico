@@ -27,6 +27,14 @@ class Student extends Model<Student> {
   @Column
   phone: string;
 
+  // the academic e-mail the institution created for the student (what they log in with on the institution's systems); informed by the tutor
+  @Column
+  academicEmail: string;
+
+  // when the tutor sent the access (RGM, academic e-mail and the link of the portal) to the student
+  @Column(DataType.DATE)
+  accessSentAt: Date;
+
   @Column
   courseName: string;
 

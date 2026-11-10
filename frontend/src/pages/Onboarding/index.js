@@ -4,7 +4,7 @@ import { toast } from "react-toastify";
 import { makeStyles } from "@material-ui/core/styles";
 import { Typography, Chip, CircularProgress, Menu, MenuItem, Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField, ListItemIcon, Checkbox, FormControlLabel } from "@material-ui/core";
 import { BarsChart } from "../../components/charts";
-import { Play, CheckCheck, MessageSquare, MoreVertical, UserCog, UserCheck, Undo2, MoveRight, ListChecks, Send, BarChart3 } from "lucide-react";
+import { Play, CheckCheck, MessageSquare, MoreVertical, UserCog, UserCheck, Undo2, MoveRight, ListChecks, Send, BarChart3, KeyRound } from "lucide-react";
 
 import MainContainer from "../../components/MainContainer";
 import MainHeader from "../../components/MainHeader";
@@ -62,15 +62,17 @@ const FILTERS = {
   // for the tutor: the students assigned to them; for the consultant: the students they sent
   mine: (r, me) => !!me && (me.role === "consultor" && me.profile !== "admin" ? r.ownerId === me.id : r.onboardingTutorId === me.id),
   free: (r) => !r.onboardingTutorId && r.onboardingStatus !== "done",
+  noaccess: (r) => !(r.student && r.student.accessSentAt) && r.onboardingStatus !== "done",
   late: (r) => !!isLate(r),
   replied: (r) => r.unread > 0 && r.onboardingStatus !== "done",
 };
-const FILTER_LABELS = [["all", "Todos"], ["mine", "Meus alunos"], ["free", "Sem tutor"], ["late", "Atrasados"], ["replied", "Aluno respondeu"]];
+const FILTER_LABELS = [["all", "Todos"], ["mine", "Meus alunos"], ["free", "Sem tutor"], ["noaccess", "Sem acesso enviado"], ["late", "Atrasados"], ["replied", "Aluno respondeu"]];
 const STEPS = [
   { key: "first_access", label: "Primeiro acesso à plataforma" },
   { key: "ava", label: "Ambiente virtual (AVA) apresentado" },
   { key: "polo_contacts", label: "Contatos do polo e da tutoria passados" },
   { key: "documents", label: "Documentos da matrícula conferidos" },
+  { key: "access", label: "Acesso enviado (RGM, e-mail acadêmico e portal)" },
 ];
 const hoursText = (h) => (h === null || h === undefined ? "—" : h < 1 ? "menos de 1 h" : h < 48 ? `${String(h).replace(".", ",")} h` : `${Math.round(h / 24)} dias`);
 
@@ -99,6 +101,7 @@ const Onboarding = () => {
   const [filter, setFilter] = useState("all"); // all | mine | free | late | replied
   const [checklistFor, setChecklistFor] = useState(null); // lead id
   const [welcomeFor, setWelcomeFor] = useState(null); // { lead, text, blocked }
+  const [accessFor, setAccessFor] = useState(null); // { lead, email }
   const [stats, setStats] = useState(null);
   const [showStats, setShowStats] = useState(null); // null: follows the profile (open for the coordination)
   const isManager = !!me && (me.profile === "admin" || me.role === "admin" || me.role === "coordenacao");
@@ -173,6 +176,19 @@ const Onboarding = () => {
       if (lead.onboardingStatus === "pending") await api.post(`/leads/${lead.id}/onboarding`, { action: "start" });
       toast.success("Boas-vindas enviadas.");
       setWelcomeFor(null);
+      await load();
+    } catch (err) { toastError(err); }
+    setBusyId(null);
+  };
+  // the tutor informs the academic e-mail of access and sends the access (RGM, e-mail and the link of the portal) to the student
+  const saveAccess = async (send) => {
+    const { lead, email } = accessFor;
+    setBusyId(lead.id);
+    try {
+      if (!lead.student || email.trim().toLowerCase() !== (lead.student.academicEmail || "")) await api.put(`/leads/${lead.id}/onboarding/access`, { academicEmail: email });
+      if (send) await api.post(`/leads/${lead.id}/onboarding/access/send`, {});
+      toast.success(send ? "Acesso enviado ao aluno." : "E-mail de acesso salvo.");
+      setAccessFor(null);
       await load();
     } catch (err) { toastError(err); }
     setBusyId(null);
@@ -295,6 +311,11 @@ const Onboarding = () => {
                           <Send size={16} />
                         </IconAction>
                       )}
+                      {!readOnly && l.student && (
+                        <IconAction title="Acesso do aluno (e-mail acadêmico)" onClick={() => setAccessFor({ lead: l, email: (l.student && l.student.academicEmail) || "" })}>
+                          <KeyRound size={16} />
+                        </IconAction>
+                      )}
                       {!readOnly && (
                         <IconAction title="Checklist da ambientação" onClick={() => setChecklistFor(l.id)}>
                           <ListChecks size={16} />
@@ -325,7 +346,12 @@ const Onboarding = () => {
                       return nextStep ? <div className={classes.next}>Próxima etapa: <b style={{ fontWeight: 600 }}>{nextStep.label}</b></div> : <div className={classes.next} style={{ color: "#15803d" }}>Checklist completo: pode concluir.</div>;
                     })()}
                     {l.unread > 0 && <Chip size="small" color="primary" label={`Aluno respondeu (${l.unread})`} style={{ alignSelf: "flex-start" }} />}
-                    <div className={classes.meta}>{l.course ? l.course.name : "Curso não informado"}</div>
+                    <div className={classes.meta}>{l.course ? l.course.name : "Curso não informado"}{l.rgm ? ` · RGM ${l.rgm}` : ""}</div>
+                    {l.student && col.key !== "done" && (
+                      <div className={classes.meta} style={l.student.academicEmail ? undefined : { color: "#b45309", fontWeight: 600 }}>
+                        {l.student.accessSentAt ? "Acesso enviado ao aluno" : l.student.academicEmail ? "E-mail de acesso informado; falta enviar" : "Falta informar o e-mail de acesso"}
+                      </div>
+                    )}
                     <div className={classes.meta}>Tutor: {l.tutorName || "aguardando na fila"}{l.owner ? ` · Consultor: ${l.owner.name}` : ""}</div>
                     <div className={classes.meta}>
                       {col.key === "done" ? `Concluída ${since(l.onboardingDoneAt)}` : `Matriculado ${since(l.enrolledAt)}`}
@@ -389,6 +415,25 @@ const Onboarding = () => {
         <DialogActions>
           <Button variant="outlined" color="secondary" onClick={() => setWelcomeFor(null)}>Cancelar</Button>
           <Button variant="contained" color="primary" onClick={sendWelcome} disabled={!welcomeFor || !welcomeFor.text.trim() || busyId === (welcomeFor && welcomeFor.lead.id)}>Enviar</Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog open={!!accessFor} onClose={() => setAccessFor(null)} maxWidth="sm" fullWidth>
+        <DialogTitle>Acesso do aluno</DialogTitle>
+        <DialogContent>
+          {accessFor && (
+            <>
+              <Typography variant="body2" color="textSecondary" gutterBottom>
+                {accessFor.lead.name} · RGM {accessFor.lead.rgm || (accessFor.lead.student && accessFor.lead.student.rgm)}. O aluno já está no portal com o RGM: informe o e-mail acadêmico que a instituição criou para ele e envie o acesso pela sua conversa.
+              </Typography>
+              <TextField fullWidth autoFocus variant="outlined" margin="dense" type="email" label="E-mail acadêmico de acesso" placeholder="nome.sobrenome@cs.cruzeirodosul.edu.br" value={accessFor.email} onChange={(e) => setAccessFor({ ...accessFor, email: e.target.value })} />
+              <Typography variant="caption" color="textSecondary">A mensagem leva o RGM, o e-mail acadêmico e o link para o aluno criar a senha do portal (vale por 7 dias). Fica registrado na ficha do aluno.</Typography>
+            </>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button variant="outlined" color="secondary" onClick={() => setAccessFor(null)}>Cancelar</Button>
+          <Button variant="outlined" color="primary" onClick={() => saveAccess(false)} disabled={!accessFor || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(accessFor.email.trim())}>Só salvar o e-mail</Button>
+          <Button variant="contained" color="primary" onClick={() => saveAccess(true)} disabled={!accessFor || !accessFor.lead.ticketId || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(accessFor.email.trim()) || busyId === (accessFor && accessFor.lead.id)}>Salvar e enviar o acesso</Button>
         </DialogActions>
       </Dialog>
       <Dialog open={!!tutorFor} onClose={() => setTutorFor(null)} maxWidth="xs" fullWidth>

@@ -178,6 +178,10 @@ class Lead extends Model<Lead> {
   @Column
   enrolledAt: Date;
 
+  // the registration number the institution gave the student (informed by the consultant when the enrollment is confirmed)
+  @Column
+  rgm: string;
+
   // the period the student already re-enrolled for, and when
   @Column
   reenrolledTerm: string;
