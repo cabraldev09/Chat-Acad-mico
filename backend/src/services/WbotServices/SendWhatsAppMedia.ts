@@ -1,4 +1,6 @@
 import { deliver } from "../OutboundServices/Deliver";
+import { bodyOfMedia } from "../../helpers/MediaLabel";
+
 import { chatIdOf } from "../../helpers/ChatId";
 import fs from "fs";
 import path from "path";
@@ -19,13 +21,15 @@ interface Request {
   ticket: Ticket;
   body?: string;
   automated?: boolean;
+  displayName?: string;
 }
 
 const sendMedia = async ({
   media,
   ticket,
   body,
-  automated = false
+  automated = false,
+  displayName
 }: Request): Promise<ProviderMessage> => {
   try {
     if (!ticket.whatsappId) {
@@ -37,7 +41,7 @@ const sendMedia = async ({
       const whatsapp = await Whatsapp.findByPk(ticket.whatsappId);
       if (!whatsapp) throw new AppError("ERR_NO_WAPP_FOUND", 404);
       const caption = body ? formatBody(body, ticket.contact) : undefined;
-      let outgoing = { path: media.path, filename: media.filename, mimetype: media.mimetype };
+      let outgoing = { path: media.path, filename: displayName || media.filename, mimetype: media.mimetype };
       if (isAudio(media.mimetype)) {
         const mp3 = await toMp3(outgoing);
         if (mp3) outgoing = mp3;
@@ -53,7 +57,7 @@ const sendMedia = async ({
         messageData: {
           id: sent.id,
           ticketId: ticket.id,
-          body: caption || media.originalname || media.filename,
+          body: bodyOfMedia(caption, media.mimetype.split("/")[0], path.basename(outgoing.path), media.originalname || media.filename, media.mimetype),
           fromMe: true,
           read: true,
           mediaType: media.mimetype.split("/")[0],
@@ -62,7 +66,7 @@ const sendMedia = async ({
         }
       });
       await ticket.update({
-        lastMessage: caption || media.originalname || media.filename
+        lastMessage: bodyOfMedia(caption, media.mimetype.split("/")[0], path.basename(outgoing.path), media.originalname || media.filename, media.mimetype)
       });
       return {
         id: sent.id,
@@ -82,10 +86,11 @@ const sendMedia = async ({
       ? formatBody(body as string, ticket.contact)
       : undefined;
 
-    let mediaInput = {
+    let mediaInput: { filename: string; mimetype: string; path: string; displayName?: string } = {
       filename: media.filename,
       mimetype: media.mimetype,
-      path: media.path
+      path: media.path,
+      ...(displayName ? { displayName } : {})
     };
     let asVoice = false;
     let converted: string | null = null;
@@ -126,7 +131,7 @@ const sendMedia = async ({
       throw sendErr;
     }
 
-    await ticket.update({ lastMessage: body || (asVoice ? "Mensagem de voz" : media.filename) });
+    await ticket.update({ lastMessage: bodyOfMedia(body, asVoice ? "audio" : media.mimetype.split("/")[0], media.filename, media.originalname || media.filename, media.mimetype) });
 
     fs.rmSync(media.path, { force: true });
     if (converted) fs.rmSync(converted, { force: true });
@@ -134,6 +139,8 @@ const sendMedia = async ({
     return sentMessage;
   } catch (err) {
     logger.error({ info: "Could not send the media", err: String(err) });
+    // the channel said why (for example the 24 h window of Instagram is closed): the person is told, instead of a generic failure
+    if (err instanceof AppError && err.message === "ERR_REPLY_WINDOW_CLOSED") throw err;
     throw new AppError("ERR_SENDING_WAPP_MSG");
   }
 };

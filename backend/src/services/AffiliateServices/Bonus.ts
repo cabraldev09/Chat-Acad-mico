@@ -1,3 +1,4 @@
+import { getAppTz } from "../../helpers/AppTime";
 import { Op } from "sequelize";
 
 import Affiliate from "../../models/Affiliate";
@@ -90,7 +91,7 @@ export const resolveAmount = async (
 // the date the affiliate is due to be paid: the confirmation day plus the days in the rules (company timezone)
 const dueDate = (days: number): string => {
   const t = new Date(Date.now() + days * 86400000);
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Porto_Velho", year: "numeric", month: "2-digit", day: "2-digit" }).format(t);
+  return new Intl.DateTimeFormat("en-CA", { timeZone: getAppTz(), year: "numeric", month: "2-digit", day: "2-digit" }).format(t);
 };
 
 // Idempotent: one line per lead. A cancelled line comes back when the student is enrolled again.

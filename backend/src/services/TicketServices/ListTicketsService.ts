@@ -5,11 +5,14 @@ import Ticket from "../../models/Ticket";
 import Contact from "../../models/Contact";
 import sequelize from "../../database";
 import Queue from "../../models/Queue";
+import User from "../../models/User";
 import ShowUserService from "../UserServices/ShowUserService";
 import Whatsapp from "../../models/Whatsapp";
 import Tag from "../../models/Tag";
+import UserQueue from "../../models/UserQueue";
 import { portable } from "../../helpers/sqlDialect";
 import { Role, SEGMENTS_OF, isManagerRole } from "../../helpers/Roles";
+import { connectionScopeOf, ticketScopeWhere } from "../../helpers/ConnectionScope";
 
 interface Request {
   searchParam?: string;
@@ -74,9 +77,16 @@ const ListTicketsService = async ({
     {
       model: Contact,
       as: "contact",
-      attributes: ["id", "name", "number", "profilePicUrl", "channel", "isStaff", "kind", "parentGroupId", "readOnly"],
+      attributes: ["id", "name", "number", "profilePicUrl", "channel", "isStaff", "isPersonal", "kind", "parentGroupId", "readOnly"],
       // the search filters on the contact's name and number, so the count query must join it too
       required: !!searchParam
+    },
+    {
+      // who is attending: the list shows the attendant's label, also after a reload (not only on live updates)
+      model: User,
+      as: "user",
+      attributes: ["id", "name"],
+      required: false
     },
     {
       model: Queue,
@@ -197,12 +207,30 @@ const ListTicketsService = async ({
     if (segments.includes("sales")) bySegment.push({ segment: { [Op.is]: null } });
     const scope: any[] = [{ [Op.or]: bySegment }];
     if (role !== "coordenacao") scope.push({ [Op.or]: [{ userId: me }, { userId: { [Op.is]: null } }] });
+    // the official number (WhatsApp Cloud API) is shared by the whole team: there each person only sees the conversations given to them and the
+    // ones waiting in a queue of theirs (the polo's), never the ones the AI is still attending nor a colleague's
+    const official = (await Whatsapp.findAll({ where: { channel: "whatsapp_cloud" } as any, attributes: ["id"] })).map(w => w.id);
+    if (official.length) {
+      const mine = (await UserQueue.findAll({ where: { userId: me }, attributes: ["queueId"] })).map(q => q.queueId);
+      scope.push({
+        [Op.or]: [
+          { whatsappId: { [Op.notIn]: official } },
+          { whatsappId: { [Op.is]: null } },
+          { userId: me },
+          { userId: { [Op.is]: null }, aiActive: { [Op.not]: true }, queueId: { [Op.in]: mine.length ? mine : [0] } }
+        ]
+      });
+    }
     whereCondition = { [Op.and]: [whereCondition, ...scope] } as any;
   }
 
-  // this person's pins come first (pins are personal)
+  // groups, communities and private chats follow the connection: nobody reads another number's groups or personal chats
+  const byConnection = ticketScopeWhere(await connectionScopeOf(userId, role), userId);
+  if (byConnection) whereCondition = { [Op.and]: [whereCondition, byConnection] } as any;
+
+  // pins come first: the ones this person made in the system, and the ones pinned on the phone's WhatsApp
   const pinnedSql = literal(
-    portable(`EXISTS (SELECT 1 FROM TicketPins tp WHERE tp.ticketId = Ticket.id AND tp.userId = ${Number(userId) || 0})`)
+    portable(`(EXISTS (SELECT 1 FROM TicketPins tp WHERE tp.ticketId = Ticket.id AND tp.userId = ${Number(userId) || 0}) OR Ticket.waPinned = TRUE)`)
   );
 
   const limit = 40;
@@ -217,11 +245,21 @@ const ListTicketsService = async ({
       role === "admin"
         ? null
         : (await Whatsapp.findAll({ where: { ownerId: Number(userId) }, attributes: ["id"] })).map(w => w.id);
+    // the connection and the attendant chosen in the filters also narrow the history (a copied chat has no attendant)
+    const filterConnection = manager && Number(connectionId) ? Number(connectionId) : null;
+    const filterAttendant = manager && Number(attendantId) ? Number(attendantId) : null;
+    const historyConnection: any =
+      filterConnection !== null
+        ? { whatsappId: owned === null || owned.includes(filterConnection) ? filterConnection : { [Op.in]: [0] } }
+        : owned === null
+          ? {}
+          : { whatsappId: { [Op.in]: owned.length ? owned : [0] } };
     const history: any = {
       isHistorical: true,
       // a copied chat with nothing in it (only WhatsApp system lines) is noise; empty groups stay, they are listed on purpose
       [Op.or]: [{ isGroup: true }, { lastMessageId: { [Op.ne]: null } }],
-      ...(owned === null ? {} : { whatsappId: { [Op.in]: owned.length ? owned : [0] } }),
+      ...historyConnection,
+      ...(filterAttendant !== null ? { userId: filterAttendant } : {}),
       // the Grupos / private-only views apply to the history as well
       ...(groups === "only" ? { isGroup: true } : groups === "exclude" ? { isGroup: false } : {})
     };
@@ -243,7 +281,8 @@ const ListTicketsService = async ({
     limit,
     offset,
     attributes: { include: [[pinnedSql, "pinned"]] },
-    order: [[pinnedSql, "DESC"], [literal('COALESCE("Ticket"."lastMessageAt", "Ticket"."updatedAt")'), "DESC"]]
+    // the order of the phone: the chat time WhatsApp gives (or our last message, when it is newer or the channel has none); the id settles a tie so pages never repeat a chat
+    order: [[pinnedSql, "DESC"], [literal('GREATEST(COALESCE("Ticket"."waChatTimestamp", to_timestamp(0)), COALESCE("Ticket"."lastMessageAt", "Ticket"."updatedAt"))'), "DESC"], ["id", "DESC"]]
   });
 
   const hasMore = count > offset + tickets.length;

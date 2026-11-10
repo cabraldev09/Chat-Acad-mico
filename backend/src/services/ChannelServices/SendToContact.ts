@@ -15,6 +15,9 @@ import SendWhatsAppMessage from "../WbotServices/SendWhatsAppMessage";
 import SendWhatsAppMedia from "../WbotServices/SendWhatsAppMedia";
 import CreateMessageService from "../MessageServices/CreateMessageService";
 import { getAdapter } from "../../channels";
+import Ticket from "../../models/Ticket";
+import { getIO } from "../../libs/socket";
+import { logger } from "../../utils/logger";
 import { publicFile } from "../../helpers/PublicFile";
 
 
@@ -28,6 +31,8 @@ interface Input {
   template?: { name: string; language: string; params: string[] } | null;
   // keep the conversation open (assigned) instead of closing a ticket we created
   keepOpen?: { userId: number } | null;
+  // a question with options the person taps (official API: buttons or a list); other connections send the text only
+  choices?: { question: string; options: Array<{ id: string; label: string }> } | null;
 }
 
 // Sends an outbound (agent/system initiated) message to a contact through any
@@ -41,11 +46,32 @@ const SendToContact = async ({
   mediaUrl,
   template,
   keepOpen,
-  idempotencyKey
+  idempotencyKey,
+  choices
+
 }: Input): Promise<void> => {
   const found = await FindOrCreateTicketService(contact, whatsapp.id, 0);
   const ticket = await ShowTicketService(found.id);
   const hadMessages = (await Message.count({ where: { ticketId: ticket.id } })) > 0;
+  try {
+    await sendNow();
+  } catch (err) {
+    // nothing was sent and the conversation was opened only for this: it goes away, so the failure leaves no trace
+    // (an empty conversation "assigned to me" in the list, for a contact that was not even written to)
+    if (!hadMessages && Date.now() - new Date(ticket.createdAt).getTime() < 120000) {
+      try {
+        if ((await Message.count({ where: { ticketId: ticket.id } })) === 0) {
+          await Ticket.destroy({ where: { id: ticket.id } });
+          getIO().emit("ticket", { action: "delete", ticketId: ticket.id });
+        }
+      } catch (cleanupErr) {
+        logger.warn(`Could not remove the empty conversation ${ticket.id}: ${cleanupErr}`);
+      }
+    }
+    throw err;
+  }
+
+  async function sendNow(): Promise<void> {
 
   await deliver(ticket, { key: idempotencyKey, automated: !keepOpen, template }, async () => {
   let externalId = "";
@@ -85,8 +111,9 @@ const SendToContact = async ({
     });
     externalId = String(sent.id);
   } else {
-    const sent = await SendWhatsAppMessage({ body, ticket, automated: !keepOpen });
+    const sent = await SendWhatsAppMessage({ body, ticket, automated: !keepOpen, choices: choices || undefined });
     externalId = String(sent.id);
+
   }
 
   return { id: externalId };
@@ -104,6 +131,7 @@ const SendToContact = async ({
       ticketData: { status: "closed" },
       ticketId: ticket.id
     });
+  }
   }
 };
 

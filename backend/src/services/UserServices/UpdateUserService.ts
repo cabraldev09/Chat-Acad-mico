@@ -1,4 +1,7 @@
+import { MIN_PASSWORD } from "../../helpers/Passwords";
+import { joinRelationshipQueue, leaveRelationshipQueue } from "../RelationshipServices/Relationship";
 import * as Yup from "yup";
+import { col, fn, where } from "sequelize";
 
 import AppError from "../../errors/AppError";
 import { normalizePhone } from "../../helpers/Phone";
@@ -44,7 +47,7 @@ const UpdateUserService = async ({
     name: Yup.string().min(2),
     email: Yup.string().email(),
     profile: Yup.string(),
-    password: Yup.string()
+    password: Yup.string().min(MIN_PASSWORD, "ERR_PASSWORD_SHORT")
   });
 
   const {
@@ -75,11 +78,17 @@ const UpdateUserService = async ({
     throw new AppError("ERR_LAST_ADMIN", 400);
   }
 
+  const cleanEmail = email === undefined ? undefined : String(email).trim().toLowerCase();
+  if (cleanEmail && cleanEmail !== String(user.email).toLowerCase()) {
+    const taken = await User.findOne({ where: where(fn("LOWER", col("email")), cleanEmail), attributes: ["id"] });
+    if (taken && taken.id !== user.id) throw new AppError("ERR_USER_EMAIL_EXISTS", 409);
+  }
+
   await user.update({
     ...(typeof userData.acceptsNewTickets === "boolean" ? { acceptsNewTickets: userData.acceptsNewTickets } : {}),
     ...(userData.maxOpenTickets !== undefined ? { maxOpenTickets: Math.min(1000, Math.max(0, Math.floor(Number(userData.maxOpenTickets) || 0))) } : {}),
     tokenVersion: user.tokenVersion + 1,
-    email,
+    email: cleanEmail,
     password,
     profile: finalRole ? (finalRole === "admin" ? "admin" : "user") : profile,
     role: finalRole,
@@ -91,6 +100,9 @@ const UpdateUserService = async ({
   });
 
   await user.$set("queues", queueIds);
+  // the relationship team works from the queue of the department; leaving the team leaves the queue
+  if ((finalRole || user.role) === "relacionamento") await joinRelationshipQueue(user.id);
+  else if (finalRole) await leaveRelationshipQueue(user.id);
 
   await user.reload();
   disconnectUser(user.id);

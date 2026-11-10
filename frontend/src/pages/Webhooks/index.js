@@ -111,7 +111,7 @@ const ApiTokens = () => {
               <TableCell>{t.token}</TableCell>
               <TableCell>{t.lastUsedAt ? format(parseISO(t.lastUsedAt), "dd/MM/yy HH:mm") : "—"}</TableCell>
               <TableCell align="right">
-                <IconButton size="small" onClick={() => remove(t.id)}><DeleteOutline /></IconButton>
+                <IconButton aria-label="Excluir" size="small" onClick={() => remove(t.id)}><DeleteOutline /></IconButton>
               </TableCell>
             </TableRow>
           ))}
@@ -170,7 +170,7 @@ const Webhooks = () => {
             endpoint="/webhooks-config"
             addLabel="Novo webhook"
             emptyText="Nenhum webhook. Cadastre uma URL para receber eventos em tempo real (integração com CRM, n8n, Zapier…)."
-            mapIn={(r) => ({ ...r, events: JSON.parse(r.events || "[]") })}
+            mapIn={(r) => { let events = []; try { events = JSON.parse(r.events || "[]"); } catch (e) { /* a value saved in another shape */ } return { ...r, events: Array.isArray(events) ? events : [] }; }}
             fields={[
               { name: "name", label: "Nome", required: true },
               { name: "url", label: "URL (https://…)", required: true },

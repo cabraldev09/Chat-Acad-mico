@@ -4,12 +4,14 @@ import fs from "fs";
 import path from "path";
 
 import AppError from "../../errors/AppError";
+import { PUBLIC_DIR } from "../../config/paths";
 import { getSetting } from "../../helpers/AppSettings";
 import { logger } from "../../utils/logger";
 
 // Efí Bank (ex-Gerencianet) Pix API. Auth is OAuth2 client credentials over
 // mutual TLS: the .p12 certificate downloaded from the Efí panel is required.
-export const CERT_PATH = path.resolve(__dirname, "..", "..", "..", "secrets", "efi.p12");
+// Lives next to the uploads (on the persistent volume in production, outside the served /public folder), so it survives a new image.
+export const CERT_PATH = process.env.EFI_CERT_PATH || path.resolve(PUBLIC_DIR, "..", "secrets", "efi.p12");
 
 export interface EfiConfig {
   env: "sandbox" | "production";

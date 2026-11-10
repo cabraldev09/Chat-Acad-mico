@@ -1,3 +1,4 @@
+import { touchAnalytics } from "../services/AnalyticsServices/Realtime";
 import { assertLead } from "../middleware/scope";
 import { Request, Response } from "express";
 import { PUBLIC_DIR } from "../config/paths";
@@ -27,6 +28,7 @@ import { buildProposalMessages } from "../services/ProposalServices/proposalMess
 import ProposalTemplateInstitution from "../models/ProposalTemplateInstitution";
 import { renderPdf } from "../services/ProposalServices/pdf";
 import makeCrud from "./crudFactory";
+import { markMilestone } from "../services/CommercialServices/Milestones";
 
 
 const uid = (req: Request) => Number(req.user.id);
@@ -392,7 +394,9 @@ export const send = async (req: Request, res: Response): Promise<Response> => {
   }
 
   await p.update({ status: "sent", sentAt: new Date() });
+  touchAnalytics(p.createdBy);
   await addActivity(lead.id, uid(req), "whatsapp", `Proposta #${p.id} enviada ao candidato (${p.courseName})`);
+  void markMilestone(lead.id, "proposal_sent");
   await lead.update({ lastContactAt: new Date(), ...(lead.firstContactAt ? {} : { firstContactAt: new Date() }) });
 
   // move to the "proposta" stage when the lead is still earlier in the funnel

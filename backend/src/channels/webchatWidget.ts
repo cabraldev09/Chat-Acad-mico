@@ -77,7 +77,7 @@ const widgetSource = `(function () {
       if (m.mediaType === 'image') content += '<img src="' + esc(m.mediaUrl) + '" style="max-width:100%;border-radius:8px;display:block;margin-bottom:4px;">';
       else content += '<a href="' + esc(m.mediaUrl) + '" target="_blank" style="color:inherit;">&#128206; arquivo</a><br>';
     }
-    if (m.body && !(m.mediaUrl && m.body.indexOf('.') > 0 && m.body === m.mediaUrl.split('/').pop())) content += esc(m.body).replace(/\\n/g, '<br>');
+    if (m.body && !(m.mediaUrl && ((m.body.indexOf('.') > 0 && m.body === m.mediaUrl.split('/').pop()) || /^[^A-Za-z]*(Imagem|V.deo|.udio|Figurinha)$/.test(m.body)))) content += esc(m.body).replace(/\\n/g, '<br>');
     var b = el('div', 'max-width:80%;padding:8px 12px;border-radius:12px;font-size:14px;line-height:1.35;word-wrap:break-word;background:' + (mine ? color : '#fff') + ';color:' + (mine ? '#fff' : '#222') + ';box-shadow:0 1px 1px rgba(0,0,0,.08);', content);
     row.appendChild(b); list.appendChild(row);
   }

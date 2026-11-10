@@ -1,5 +1,7 @@
+import { logger } from "../utils/logger";
 import { Request, Response } from "express";
 
+import { Op } from "sequelize";
 import AppError from "../errors/AppError";
 import Polo from "../models/Polo";
 import PoloMember from "../models/PoloMember";
@@ -8,6 +10,9 @@ import User from "../models/User";
 import Lead from "../models/Lead";
 import Ticket from "../models/Ticket";
 import { POLO_FUNCTIONS } from "../helpers/Roles";
+import { tutorsOfPolo } from "../services/PoloServices/TutorsOfPolo";
+import PoloCoverage from "../models/PoloCoverage";
+import { cityKeyOf, forgetPolos, stateOf } from "../services/PoloServices/ResolvePolo";
 import syncPoloQueues from "../services/PoloServices/SyncPoloQueues";
 
 const withDetails = [
@@ -20,13 +25,7 @@ const withDetails = [
 ];
 
 // tutors of a polo (names only): any signed-in user may need to pick one when confirming an enrollment
-export const tutors = async (req: Request, res: Response): Promise<Response> => {
-  const rows = await PoloMember.findAll({
-    where: { poloId: req.params.id, role: "tutoria" },
-    include: [{ model: User, as: "user", attributes: ["id", "name"] }]
-  });
-  return res.json(rows.map(r => ({ id: r.user.id, name: r.user.name })));
-};
+export const tutors = async (req: Request, res: Response): Promise<Response> => res.json(await tutorsOfPolo(Number(req.params.id)));
 
 export const index = async (req: Request, res: Response): Promise<Response> => {
   const admin = req.user.role === "admin" || req.user.role === "coordenacao" || req.user.profile === "admin";
@@ -49,7 +48,9 @@ const clean = (b: any) => {
     code: b.code ? String(b.code).trim() : null,
     city: b.city ? String(b.city).trim() : null,
     state,
-    active: b.active === undefined ? true : Boolean(b.active)
+    active: b.active === undefined ? true : Boolean(b.active),
+    enrollsSemipresencial: Boolean(b.enrollsSemipresencial),
+    enrollPoloId: Number(b.enrollPoloId) || null
   };
 };
 
@@ -72,9 +73,47 @@ export const update = async (req: Request, res: Response): Promise<Response> => 
   if (data.code && data.code !== polo.code && (await Polo.findOne({ where: { code: data.code } }))) {
     throw new AppError("ERR_POLO_CODE_DUPLICATED", 409);
   }
+  if (data.enrollPoloId === polo.id) data.enrollPoloId = null;
   await polo.update(data);
+  forgetPolos();
   await syncPoloQueues(polo);
+  forgetPolos();
   return res.json(await reload(polo.id));
+};
+
+// the cities the polo serves (the ones the agent matches a lead's city to)
+export const coverage = async (req: Request, res: Response): Promise<Response> => {
+  const rows = await PoloCoverage.findAll({ where: { poloId: Number(req.params.id) }, order: [["city", "ASC"]] });
+  return res.json(rows.map(r => ({ id: r.id, city: r.city, state: r.state })));
+};
+
+// body: { cities: ["Candeias do Jamari - RO", { city: "Itapuã do Oeste", state: "RO" }] } — replaces the whole list of the polo. A city belongs to
+// one polo (per state): one already used by another polo is refused, naming it.
+export const setCoverage = async (req: Request, res: Response): Promise<Response> => {
+  const polo = await Polo.findByPk(req.params.id);
+  if (!polo) throw new AppError("ERR_NO_POLO_FOUND", 404);
+  const list: any[] = Array.isArray(req.body.cities) ? req.body.cities.slice(0, 500) : [];
+  const rows = new Map<string, { poloId: number; city: string; cityKey: string; state: string | null }>();
+  for (const item of list) {
+    const raw = typeof item === "string" ? item : String(item?.city || "");
+    const typed = typeof item === "string" ? null : item?.state ? String(item.state).trim().toUpperCase() : null;
+    const city = raw.replace(/\s*[-,/]\s*[A-Za-z]{2}\s*$/, "").trim().slice(0, 120);
+    const state = typed || stateOf(raw) || polo.state || null;
+    const cityKey = cityKeyOf(city);
+    if (cityKey.length < 2) continue;
+    if (state && !/^[A-Z]{2}$/.test(state)) throw new AppError("ERR_POLO_STATE_INVALID", 400);
+    rows.set(`${cityKey}|${state || ""}`, { poloId: polo.id, city, cityKey, state });
+  }
+  const mine = [...rows.values()];
+  if (mine.length) {
+    const taken = await PoloCoverage.findAll({ where: { cityKey: mine.map(r => r.cityKey), poloId: { [Op.ne]: polo.id } } as any, include: [{ model: Polo, as: "polo", attributes: ["name"] }] });
+    const clash = taken.find(t => rows.has(`${t.cityKey}|${t.state || ""}`));
+    if (clash) throw new AppError("ERR_POLO_COVERAGE_DUPLICATED", 409, { city: clash.city, polo: clash.polo?.name || "" });
+  }
+  await PoloCoverage.destroy({ where: { poloId: polo.id } });
+  if (mine.length) await PoloCoverage.bulkCreate(mine as any);
+  forgetPolos();
+  return coverage(req, res);
 };
 
 export const remove = async (req: Request, res: Response): Promise<Response> => {
@@ -86,7 +125,9 @@ export const remove = async (req: Request, res: Response): Promise<Response> => 
   if (leads || tickets) throw new AppError("ERR_POLO_IN_USE", 409);
   await PoloMember.destroy({ where: { poloId: polo.id } });
   await Queue.destroy({ where: { poloId: polo.id } });
+  await PoloCoverage.destroy({ where: { poloId: polo.id } });
   await polo.destroy();
+  forgetPolos();
   return res.json({ message: "deleted" });
 };
 
@@ -115,6 +156,33 @@ export const setMembers = async (req: Request, res: Response): Promise<Response>
   if (rows.length) await PoloMember.bulkCreate(rows as any);
   await syncPoloQueues(polo);
   return res.json(await reload(polo.id));
+};
+
+// POST /polos/:id/members/:userId  { role }  — puts ONE person in the team of the polo (keeps the rest)
+export const addMember = async (req: Request, res: Response): Promise<Response> => {
+  const polo = await Polo.findByPk(req.params.id);
+  if (!polo) throw new AppError("ERR_NO_POLO_FOUND", 404);
+  const userId = Number(req.params.userId);
+  const role = req.body.role || "comercial";
+  if (!userId || !(POLO_FUNCTIONS as readonly string[]).includes(role)) throw new AppError("ERR_POLO_MEMBER_INVALID", 400);
+  if (!(await User.count({ where: { id: userId } }))) throw new AppError("ERR_NO_USER_FOUND", 404);
+  await PoloMember.findOrCreate({ where: { poloId: polo.id, userId, role }, defaults: { poloId: polo.id, userId, role } as any });
+  // the answer goes right away; the queues of the polo are rebuilt in the background (the screen does not wait for them)
+  syncPoloQueues(polo).catch(err => logger.warn(`polo ${polo.id} queues: ${err}`));
+  return res.json({ ok: true, poloId: polo.id, userId, role });
+};
+
+// DELETE /polos/:id/members/:userId?role=  — takes ONE person out of the team (every function, or only the one in ?role)
+export const removeMember = async (req: Request, res: Response): Promise<Response> => {
+  const polo = await Polo.findByPk(req.params.id);
+  if (!polo) throw new AppError("ERR_NO_POLO_FOUND", 404);
+  const userId = Number(req.params.userId);
+  if (!userId) throw new AppError("ERR_POLO_MEMBER_INVALID", 400);
+  const where: any = { poloId: polo.id, userId };
+  if (req.query.role) where.role = String(req.query.role);
+  await PoloMember.destroy({ where });
+  syncPoloQueues(polo).catch(err => logger.warn(`polo ${polo.id} queues: ${err}`));
+  return res.json({ ok: true, poloId: polo.id, userId });
 };
 
 // body: { items: [{ code, name, city, state }], dryRun }

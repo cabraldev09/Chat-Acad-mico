@@ -109,6 +109,7 @@ const QuickAnswers = () => {
           setLoading(false);
         } catch (err) {
           toastError(err);
+          setLoading(false);
         }
       };
       fetchQuickAnswers();

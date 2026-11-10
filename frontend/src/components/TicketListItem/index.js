@@ -1,3 +1,4 @@
+import { looksLikeFileName } from "../../utils/mediaLabel";
 import React, { useState, useEffect, useRef, useContext } from "react";
 import { useHistory, useParams } from "react-router-dom";
 import clsx from "clsx";
@@ -10,7 +11,7 @@ import Menu from "@material-ui/core/Menu";
 import MenuItem from "@material-ui/core/MenuItem";
 import ListItemIcon from "@material-ui/core/ListItemIcon";
 import ListItemText from "@material-ui/core/ListItemText";
-import { Pin, PinOff, Archive, ArchiveRestore, ChevronDown, BellOff, BellRing, MailOpen, Check, CheckCheck, Clock, AlertCircle, Camera, Video, Mic, FileText, MapPin, Contact, Sticker } from "lucide-react";
+import { Pin, PinOff, Archive, ArchiveRestore, ChevronDown, BellOff, BellRing, MailOpen, Check, CheckCheck, Clock, AlertCircle, Camera, Video, Mic, FileText, MapPin, Contact, Sticker, Bot, User as UserRound } from "lucide-react";
 import { getDraft } from "../../utils/drafts";
 import { getContactSound, onSoundPrefsChange } from "../../utils/soundPrefs";
 
@@ -18,6 +19,8 @@ import ChannelIcon from "../ChannelIcon";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import { AuthContext } from "../../context/Auth/AuthContext";
+import { isManager } from "../../utils/access";
+import { useTyping, typingText } from "../../utils/typingStore";
 import { wa, dayLabel, clock } from "../chat/chatTheme";
 
 const useStyles = makeStyles((theme) => {
@@ -62,7 +65,7 @@ const useStyles = makeStyles((theme) => {
       borderBottom: `1px solid ${c.divider}`,
     },
     line: { display: "flex", alignItems: "center", gap: theme.spacing(1), minWidth: 0 },
-    name: { flex: 1, minWidth: 0, fontSize: 16, color: c.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+    name: { flex: 1, minWidth: 0, fontSize: 17, color: c.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
     time: { flex: "none", fontSize: 12, color: c.textSecondary },
     timeUnread: { color: c.badge, fontWeight: 600 },
     preview: {
@@ -88,8 +91,10 @@ const useStyles = makeStyles((theme) => {
       color: c.badgeText,
     },
     meta: { display: "flex", alignItems: "center", gap: 6, minWidth: 0, flexWrap: "nowrap", overflow: "hidden" },
+    // the labels share the line: when they do not all fit, each one gets shorter with "..." instead of the last being cut in half
     pill: {
-      flex: "none",
+      flex: "0 1 auto",
+      minWidth: 0,
       maxWidth: 110,
       overflow: "hidden",
       textOverflow: "ellipsis",
@@ -145,10 +150,10 @@ const useStyles = makeStyles((theme) => {
 // markdown markers and the invisible bot mark would look odd in a one-line preview
 // WhatsApp previews media with an icon and a short label instead of a file name
 const KIND = {
-  image: [Camera, "Foto"],
+  image: [Camera, "Imagem"],
   video: [Video, "Vídeo"],
   audio: [Mic, "Áudio"],
-  ptt: [Mic, "Mensagem de voz"],
+  ptt: [Mic, "Áudio"],
   document: [FileText, ""],
   location: [MapPin, "Localização"],
   vcard: [Contact, "Contato"],
@@ -162,7 +167,7 @@ const plain = (text) =>
     .replace(/\s*\n\s*/g, " ")
     .trim();
 
-const stamp = (iso) => {
+export const stamp = (iso) => {
   const d = new Date(iso);
   const label = dayLabel(d);
   if (label === "Hoje") return clock(d);
@@ -187,11 +192,17 @@ const TicketListItem = ({ ticket }) => {
     []
   );
 
+  // a waiting conversation can be read before it is accepted: always by the administration, and by the team when it already sits in a polo's queue
+  // (the agent may be talking to the lead; whoever wants to step in accepts it)
+  const canOpen = ticket.status !== "pending" || !!ticket.isGroup || isManager(user) || !!ticket.queue;
+
+  const typing = useTyping(ticket.id);
+
   const accept = async (e) => {
     e.stopPropagation();
     setLoading(true);
     try {
-      await api.put(`/tickets/${ticket.id}`, { status: "open", userId: user?.id });
+      await api.post(`/tickets/${ticket.id}/claim`);
       history.push(`/tickets/${ticket.id}`);
     } catch (err) {
       toastError(err);
@@ -202,10 +213,10 @@ const TicketListItem = ({ ticket }) => {
   const [menuEl, setMenuEl] = useState(null);
   const [soundPref, setSoundPref] = useState("default");
   useEffect(() => {
-    const refresh = () => setSoundPref(getContactSound(ticket.contact.id));
+    const refresh = () => setSoundPref(getContactSound(ticket.contact && ticket.contact.id));
     refresh();
     return onSoundPrefsChange(refresh);
-  }, [ticket.contact.id]);
+  }, [ticket.contact && ticket.contact.id]);
   const run = async (e, fn) => {
     e.stopPropagation();
     setMenuEl(null);
@@ -238,7 +249,7 @@ const TicketListItem = ({ ticket }) => {
   // a contact card shows the person's name, never the card's raw text
   const cardName = /^\s*BEGIN:VCARD/i.test(ticket.lastMessage || "") ? ((/(?:^|\n)FN[^:\n]*:([^\n\r]+)/i.exec(ticket.lastMessage) || [])[1] || "Contato").trim() : null;
   const kindOf = KIND[cardName ? "vcard" : ticket.lastMessageType] || [];
-  const previewText = cardName || (ticket.lastMessageType === "vcard" ? String(ticket.lastMessage || "").replace(/^👤\s*/, "") : null) || plain(ticket.lastMessage) || kindOf[1] || "";
+  const previewText = cardName || (ticket.lastMessageType === "vcard" ? String(ticket.lastMessage || "").replace(/^👤\s*/, "") : null) || (kindOf[1] && (looksLikeFileName(ticket.lastMessage) || /^[\p{Extended_Pictographic}\s]*(Foto|Imagem|Áudio|Mensagem de voz|Vídeo|Figurinha)$/u.test(plain(ticket.lastMessage))) ? kindOf[1] : plain(ticket.lastMessage)) || kindOf[1] || "";
   const [KindIcon, kindLabel] = KIND[cardName ? "vcard" : ticket.lastMessageType] || [];
 
   return (
@@ -247,9 +258,9 @@ const TicketListItem = ({ ticket }) => {
       tabIndex={0}
       data-ticket-id={ticket.id}
       className={clsx(classes.row, selected && classes.selected, ticket.status === "closed" && classes.closed)}
-      onClick={() => (ticket.status !== "pending" || ticket.isGroup) && history.push(`/tickets/${ticket.id}`)}
+      onClick={() => canOpen && history.push(`/tickets/${ticket.id}`)}
       onKeyDown={(e) => {
-        if (e.key === "Enter" && (ticket.status !== "pending" || ticket.isGroup)) history.push(`/tickets/${ticket.id}`);
+        if (e.key === "Enter" && canOpen) history.push(`/tickets/${ticket.id}`);
         // arrow keys walk the list like WhatsApp Web (only rows that are on screen: other tabs stay mounted, hidden)
         if (e.key === "ArrowDown" || e.key === "ArrowUp") {
           const rows = Array.from(document.querySelectorAll("[data-ticket-id]")).filter((el) => el.offsetParent !== null);
@@ -264,7 +275,7 @@ const TicketListItem = ({ ticket }) => {
     >
       <div className={classes.avatarWrap}>
         <Avatar className={classes.avatar} src={ticket?.contact?.profilePicUrl}>
-          {ticket.isGroup ? <Group /> : ticket.contact.name.charAt(0)}
+          {ticket.isGroup ? <Group /> : String((ticket.contact && ticket.contact.name) || "?").charAt(0)}
         </Avatar>
         <span className={classes.channel}>
           <ChannelIcon channel={ticket.whatsapp?.channel} size={13} />
@@ -273,7 +284,7 @@ const TicketListItem = ({ ticket }) => {
       <div className={classes.content}>
         <div className={classes.line}>
           <span className={classes.name} style={{ fontWeight: unread ? 600 : 400 }}>
-            {ticket.contact.name}
+            {(ticket.contact && ticket.contact.name) || "Sem nome"}
           </span>
           {ticket.lastMessage && (
             <span className={clsx(classes.time, unread && classes.timeUnread)}>{stamp(ticket.lastMessageAt || ticket.updatedAt)}</span>
@@ -286,7 +297,9 @@ const TicketListItem = ({ ticket }) => {
                 {ticket.lastMessageAck < 0 ? <AlertCircle size={15} /> : (ticket.lastMessageAck === 0 && Date.now() - new Date(ticket.lastMessageAt || ticket.updatedAt).getTime() < 120000) ? <Clock size={14} /> : ticket.lastMessageAck === 1 ? <Check size={16} /> : <CheckCheck size={16} />}
               </span>
             )}
-            {draft ? (
+            {typing ? (
+              <span style={{ color: "#00a884", fontWeight: 500 }}>{typing.from === "agent" && <Bot size={14} style={{ verticalAlign: -2, marginRight: 4 }} />}{typingText(typing)}</span>
+            ) : draft ? (
               <>
                 <span style={{ color: "#1fa855", fontWeight: 500 }}>Rascunho: </span>
                 {plain(draft)}
@@ -314,6 +327,11 @@ const TicketListItem = ({ ticket }) => {
           {ticket.pinned && (
             <Tooltip arrow title="Fixada no topo">
               <span className={classes.pin}><Pin size={14} /></span>
+            </Tooltip>
+          )}
+          {ticket.status === "pending" && !ticket.isGroup && ticket.aiActive && (
+            <Tooltip arrow title="O agente de IA está atendendo. Abra para acompanhar e aceite para assumir.">
+              <span className={classes.pin} style={{ color: "#0f766e" }}><Bot size={15} /></span>
             </Tooltip>
           )}
           {ticket.status === "pending" && !ticket.isGroup ? (
@@ -347,12 +365,25 @@ const TicketListItem = ({ ticket }) => {
             <span className={classes.dot} style={{ backgroundColor: ticket.queue?.color || "#9aa4ab" }} />
           </Tooltip>
           {ticket.queue?.name && <span className={classes.pill}>{ticket.queue.name}</span>}
-          {ticket.user?.name && <span className={classes.pill}>{ticket.user.name.split(" ")[0]}</span>}
+          {ticket.user?.name ? (
+            <Tooltip arrow title={`Atendente: ${ticket.user.name}`}>
+              <span className={classes.pill} style={{ display: "inline-flex", alignItems: "center", gap: 3 }}><UserRound size={11} />{ticket.user.name.split(" ")[0]}</span>
+            </Tooltip>
+          ) : !ticket.isGroup && ticket.aiActive ? (
+            <Tooltip arrow title="Quem atende: o agente de IA">
+              <span className={classes.pill} style={{ display: "inline-flex", alignItems: "center", gap: 3, color: "#0f766e" }}><Bot size={11} />IA</span>
+            </Tooltip>
+          ) : null}
           {(ticket.tags || []).slice(0, 2).map((t) => (
             <span key={t.id} title={t.name} className={classes.pill} style={{ backgroundColor: t.color, color: "#fff" }}>
               {t.name}
             </span>
           ))}
+          {(ticket.tags || []).length > 2 && (
+            <Tooltip arrow title={(ticket.tags || []).slice(2).map((t) => t.name).join(", ")}>
+              <span className={classes.pill} style={{ flex: "none" }}>+{ticket.tags.length - 2}</span>
+            </Tooltip>
+          )}
         </div>
       </div>
     </div>

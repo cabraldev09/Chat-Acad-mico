@@ -1,3 +1,4 @@
+import { hasContactAccessOrFree } from "../middleware/canAccessContact";
 import { chatIdOf } from "../helpers/ChatId";
 import { Request, Response } from "express";
 import { getIO } from "../libs/socket";
@@ -6,17 +7,29 @@ import CreateTicketService from "../services/TicketServices/CreateTicketService"
 import DeleteTicketService from "../services/TicketServices/DeleteTicketService";
 import ListTicketsService from "../services/TicketServices/ListTicketsService";
 import ShowTicketService from "../services/TicketServices/ShowTicketService";
+import { pickUserForQueue } from "../services/AutomationServices/AutoAssignTicket";
+import { moveToTutorNumber, tutorMoveFor } from "../services/TicketServices/TutorNumber";
 import UpdateTicketService from "../services/TicketServices/UpdateTicketService";
+import ClaimTicketService from "../services/TicketServices/ClaimTicketService";
 import SendWhatsAppMessage from "../services/WbotServices/SendWhatsAppMessage";
 import ShowWhatsAppService from "../services/WhatsappService/ShowWhatsAppService";
 import formatBody from "../helpers/Mustache";
 import Ticket from "../models/Ticket";
+import Whatsapp from "../models/Whatsapp";
 import TicketEvent from "../models/TicketEvent";
 import User from "../models/User";
 import Queue from "../models/Queue";
 import TicketPin from "../models/TicketPin";
 import UserQueue from "../models/UserQueue";
 import AppError from "../errors/AppError";
+import ChatFlowRun from "../models/ChatFlowRun";
+import Message from "../models/Message";
+import RunInboundAutomation from "../services/AutomationServices/RunInboundAutomation";
+import { findAgentForTicket, loadHistory, respond } from "../services/AiServices/RunAiAgent";
+import Lead from "../models/Lead";
+import { loadState } from "../services/CommercialServices/Slots";
+import { ENTRY_LABEL, INTEREST_LABEL, briefOf, suggestedStepOf } from "../services/CommercialServices/Rules";
+import { HandoffWhy, WHY_TEXT } from "../services/CommercialServices/Router";
 import { isManagerRole, roleOf } from "../helpers/Roles";
 import { getAdapter } from "../channels";
 import { whatsappProvider } from "../providers/WhatsApp";
@@ -76,7 +89,12 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
   let queueIds: number[] = [];
 
   if (queueIdsStringified) {
-    queueIds = JSON.parse(queueIdsStringified);
+    try {
+      const parsed = JSON.parse(queueIdsStringified);
+      queueIds = Array.isArray(parsed) ? parsed.map(Number).filter(Number.isFinite) : [];
+    } catch (_) {
+      queueIds = [];
+    }
   }
 
   // the browser tells which sectors to list: never beyond the ones the person belongs to
@@ -121,7 +139,12 @@ export const welcome = async (req: Request, res: Response): Promise<Response> =>
 };
 
 export const store = async (req: Request, res: Response): Promise<Response> => {
-  const { contactId, status, userId }: TicketData = req.body;
+  const { contactId, status }: TicketData = req.body;
+  // the conversation is opened for the person who asks, never for somebody else (managers may assign it); and only on a contact the person may reach
+  const asked = Number((req.body as any).userId);
+  const userId = isManagerRole(roleOf(req.user)) && Number.isInteger(asked) && asked > 0 ? asked : Number(req.user.id);
+  if (!Number.isInteger(Number(contactId)) || Number(contactId) <= 0) throw new AppError("ERR_NO_CONTACT_FOUND", 404);
+  if (!(await hasContactAccessOrFree(req, Number(contactId)))) throw new AppError("ERR_NO_PERMISSION", 403);
 
   const ticket = await CreateTicketService({ contactId, status, userId });
 
@@ -148,6 +171,7 @@ export const pin = async (req: Request, res: Response): Promise<Response> => {
   const { ticketId } = req.params;
   const userId = Number(req.user.id);
   const wanted = req.body?.pinned !== false;
+  if (!(await Ticket.findByPk(ticketId, { attributes: ["id"] }))) throw new AppError("ERR_NO_TICKET_FOUND", 404);
   const count = await TicketPin.count({ where: { userId } });
   if (wanted) {
     if (count >= 5 && !(await TicketPin.findOne({ where: { userId, ticketId } }))) {
@@ -173,6 +197,43 @@ export const archive = async (req: Request, res: Response): Promise<Response> =>
   return res.json({ archived });
 };
 
+// The person hands the conversation to the AI agent (it answers the last message at once and goes on from there), or takes it back from it.
+// body: { active: boolean }. The conversation goes to Aguardando without an attendant; whoever accepts it later takes it from the agent.
+export const ai = async (req: Request, res: Response): Promise<Response> => {
+  const ticketId = Number(req.params.ticketId);
+  const active = req.body?.active !== false;
+  let ticket = await ShowTicketService(String(ticketId));
+  if (ticket.isGroup) throw new AppError("ERR_AI_AGENT_NOT_AVAILABLE", 400);
+  const actor = await User.findByPk(Number(req.user.id), { attributes: ["name"] });
+  const emit = async (): Promise<void> => {
+    const fresh = await ShowTicketService(String(ticketId));
+    getIO().to(fresh.status).to(String(fresh.id)).to("notification").emit("ticket", { action: "update", ticket: fresh });
+  };
+  // whatever flow was waiting for an answer is over: the agent starts from the conversation as it is
+  await ChatFlowRun.update({ status: "done" }, { where: { ticketId, status: { [Op.in]: ["waiting", "delayed"] } } as any });
+  if (!active) {
+    await ticket.update({ aiActive: false });
+    await TicketEvent.create({ ticketId, type: "handoff", actorId: Number(req.user.id), note: `${actor?.name || "Alguém"} tirou a conversa do agente de IA.` } as any).catch(() => undefined);
+    await emit();
+    return res.json({ aiActive: false });
+  }
+  if (!(await findAgentForTicket(ticket))) throw new AppError("ERR_AI_AGENT_NOT_AVAILABLE", 400);
+  // a personal number sends every conversation back to its owner at the next message: the agent could not keep it
+  const line = await Whatsapp.findByPk(ticket.whatsappId, { attributes: ["id", "ownerId", "aiFirst"] });
+  if (line?.ownerId && !line.aiFirst) throw new AppError("ERR_AI_PERSONAL_NUMBER", 400);
+  if (ticket.status !== "pending" || ticket.userId) await UpdateTicketService({ ticketData: { status: "pending", userId: null }, ticketId });
+  ticket = await ShowTicketService(String(ticketId));
+  await ticket.update({ aiActive: true, chatbotNodeId: null, handoffAt: null as any });
+  await TicketEvent.create({ ticketId, type: "handoff", actorId: Number(req.user.id), note: `${actor?.name || "Alguém"} passou a conversa para o agente de IA.` } as any).catch(() => undefined);
+  await emit();
+  // the agent answers the last thing the person said, as if it had just arrived (never makes this request wait) — but only when nobody answered it
+  // yet: a second click (or a person who already replied) must not make the agent greet and ask everything again
+  const last = await Message.findOne({ where: { ticketId, isDeleted: false } as any, order: [["createdAt", "DESC"]], attributes: ["body", "fromMe"] });
+  const unanswered = !!last && !last.fromMe;
+  if (unanswered) void RunInboundAutomation({ ticketId, body: String(last?.body || "") });
+  return res.json({ aiActive: true, answeredNow: unanswered });
+};
+
 // "Mark as unread": the conversation shows the unread badge again until someone opens it
 export const markUnread = async (req: Request, res: Response): Promise<Response> => {
   const ticket = await ShowTicketService(req.params.ticketId);
@@ -183,6 +244,71 @@ export const markUnread = async (req: Request, res: Response): Promise<Response>
     .to("notification")
     .emit("ticket", { action: "update", ticket });
   return res.json({ unreadMessages: ticket.unreadMessages });
+};
+
+// What the consultant reads when a conversation of the agent reaches them: five lines (what the lead wants, the kind of entry and how warm, the
+// objections, the main doubt, the next step) and why it was handed over, from the state the agent kept. Nothing when the agent never talked.
+export const aiSummary = async (req: Request, res: Response): Promise<Response> => {
+  const ticket = await Ticket.findByPk(req.params.ticketId, { attributes: ["id", "contactId", "handoffReason", "aiActive"] });
+  if (!ticket) throw new AppError("ERR_NO_TICKET_FOUND", 404);
+  const lead = ticket.contactId ? await Lead.findOne({ where: { contactId: ticket.contactId }, attributes: ["id", "name"] }) : null;
+  if (!lead) return res.json({ lines: [] });
+  const state = await loadState(lead.id);
+  const x = state.slots;
+  if (!state.agentId && !x.lastOutboundAt) return res.json({ lines: [] });
+  const want = [x.interestKind ? INTEREST_LABEL[x.interestKind] || x.interestKind : null, x.courseName, x.poloName || x.city].filter(Boolean).join(" · ");
+  const objections = [x.mainObjection, ...String(x.objectionsSeen || "").split(",").filter(Boolean)].filter(Boolean);
+  const lines = [
+    `Quer: ${want || "ainda não disse"}`,
+    `Ingresso: ${ENTRY_LABEL[x.entryType || "unknown"]} · Temperatura: ${({ cold: "fria", warm: "morna", hot: "quente" } as any)[state.temperature] || state.temperature} (${state.commercialScore})`,
+    `Objeções: ${objections.length ? [...new Set(objections)].join(", ") : "nenhuma"}`,
+    `Dúvida principal: ${x.mainQuestion || x.unknownQuestion || "nenhuma registrada"}`,
+    `Próximo passo: ${suggestedStepOf(state)}`
+  ];
+  return res.json({ lines, why: ticket.handoffReason ? WHY_TEXT[ticket.handoffReason as HandoffWhy] || ticket.handoffReason : null });
+};
+
+// "Sugerir resposta": the agent writes the next answer of a conversation a person took, from the history and what it knows of the lead; the
+// consultant reads, edits and sends it (nothing goes out from here, nothing is saved)
+export const suggestReply = async (req: Request, res: Response): Promise<Response> => {
+  const ticket = await ShowTicketService(req.params.ticketId);
+  const agent = await findAgentForTicket(ticket);
+  if (!agent) throw new AppError("ERR_AI_NO_AGENT", 400);
+  const history = await loadHistory(ticket, 30);
+  if (!history.length || history[history.length - 1].role !== "user") return res.json({ text: "", note: "A última mensagem é sua: espere a pessoa responder." });
+  const lead = await Lead.findOne({ where: { contactId: ticket.contactId }, attributes: ["id"] });
+  const state = lead ? await loadState(lead.id) : null;
+  const summary = state ? briefOf(state) : null;
+  try {
+    const result = await respond(agent, { ticket: null, history, summary, collected: null, sandbox: true });
+    if (result.handoff || result.unknown || !result.text) return res.json({ text: "", note: "O agente não sabe responder isso com segurança: responda você." });
+    return res.json({ text: result.text.replace(/\[(HANDOFF|DESCONHECIDO)\]/g, "").trim() });
+  } catch (err) {
+    throw new AppError("ERR_AI_SUGGEST_FAILED", 502);
+  }
+};
+
+// "Marcar todas como lidas" in the Não lidas view: the conversations this person sees there (a manager: the ones of the attendant or the connection
+// chosen in the filters; anyone else: their own) stop counting as unread. Nothing is sent to the contact (it is not the attendant reading).
+export const readAll = async (req: Request, res: Response): Promise<Response> => {
+  const manager = isManagerRole(roleOf(req.user));
+  const where: any = { unreadMessages: { [Op.gt]: 0 } };
+  if (!manager) where.userId = Number(req.user.id);
+  else {
+    if (Number(req.body?.attendantId)) where.userId = Number(req.body.attendantId);
+    if (Number(req.body?.connectionId)) where.whatsappId = Number(req.body.connectionId);
+  }
+  if (req.body?.groups === "only") where.isGroup = true;
+  else if (req.body?.groups === "exclude") where.isGroup = false;
+  const tickets = await Ticket.findAll({ where, attributes: ["id", "status"], limit: 5000 });
+  const ids = tickets.map(t => t.id);
+  if (ids.length) {
+    await Message.update({ read: true }, { where: { ticketId: { [Op.in]: ids }, read: false } as any });
+    await Ticket.update({ unreadMessages: 0 } as any, { where: { id: { [Op.in]: ids } }, silent: true } as any);
+    const io = getIO();
+    tickets.forEach(t => io.to(t.status).to("notification").emit("ticket", { action: "updateUnread", ticketId: t.id }));
+  }
+  return res.json({ count: ids.length });
 };
 
 // The agent started typing: tell the contact where the channel allows it
@@ -218,13 +344,26 @@ export const update = async (
 
   const { note, notifyClient, ...changes } = ticketData;
 
-  const { ticket } = await UpdateTicketService({
+  let { ticket } = await UpdateTicketService({
     ticketData: changes,
     ticketId,
     actorId: Number(req.user.id),
     note,
     notifyClient: Boolean(notifyClient)
   });
+
+  // a conversation of the official number transferred to the tutoring continues on the tutor's own WhatsApp (the tutors do not use the official number)
+  if (changes.queueId && ticket.status !== "closed") {
+    const queue = await Queue.findByPk(changes.queueId, { include: [{ model: User, as: "users", attributes: ["id", "name"] }] });
+    if (queue && queue.role === "tutoria") {
+      const tutorId = ticket.userId || (await pickUserForQueue(queue, true))?.id || null;
+      const move = tutorId ? await tutorMoveFor(ticket, tutorId) : null;
+      if (move && tutorId) {
+        const moved = await moveToTutorNumber(ticket.id, move.whatsappId, tutorId, Number(req.user.id), queue.id);
+        if (moved) ticket = await ShowTicketService(String(moved.id));
+      }
+    }
+  }
 
   if (ticket.status === "closed") {
     const whatsapp = await ShowWhatsAppService(ticket.whatsappId);
@@ -293,7 +432,7 @@ export const groupInfo = async (req: Request, res: Response): Promise<Response> 
   const known = keys.length
     ? await Contact.findAll({
         where: { [Op.or]: [{ number: { [Op.in]: keys } }, { lid: { [Op.in]: keys } }] } as any,
-        attributes: ["id", "name", "number", "lid", "isStaff", "profilePicUrl"]
+        attributes: ["id", "name", "number", "lid", "isStaff", "isPersonal", "profilePicUrl"]
       })
     : [];
   const byKey = new Map<string, Contact>();
@@ -312,10 +451,33 @@ export const groupInfo = async (req: Request, res: Response): Promise<Response> 
         number: c && c.number ? c.number : /^\d{8,15}$/.test(p.key) ? p.key : null,
         isAdmin: p.isAdmin,
         isStaff: c ? c.isStaff : false,
+        isPersonal: c ? c.isPersonal : false,
         profilePicUrl: c ? c.profilePicUrl : null
       };
     })
     .sort((a, b) => Number(b.isAdmin) - Number(a.isAdmin) || String(a.name || a.number || "").localeCompare(String(b.name || b.number || "")));
 
   return res.json({ name: info.name, description: info.description, createdAt: info.createdAt, participants });
+};
+
+// "Aceitar" / "Assumir conversa": the person becomes the attendant, decided in one locked write. A conversation that already has another attendant answers 409
+// (ERR_TICKET_ALREADY_ASSIGNED, with who has it); it is never taken by accepting.
+export const claim = async (req: Request, res: Response): Promise<Response> => {
+  const { ticket } = await ClaimTicketService({ ticketId: Number(req.params.ticketId), userId: Number(req.user.id), reason: "accept", allowReopen: true });
+  return res.json(ticket);
+};
+
+// The management takes a conversation from its attendant on purpose (leaves a "takeover" event with who took it from whom).
+export const take = async (req: Request, res: Response): Promise<Response> => {
+  if (!isManagerRole(roleOf(req.user))) throw new AppError("ERR_NO_PERMISSION", 403);
+  const { ticket } = await ClaimTicketService({ ticketId: Number(req.params.ticketId), userId: Number(req.user.id), reason: "takeover", force: true, allowReopen: true });
+  return res.json(ticket);
+};
+
+// Why the robot answered or stayed quiet in this conversation (the last decisions it took, newest last)
+export const automation = async (req: Request, res: Response): Promise<Response> => {
+  const ticket = await Ticket.findByPk(req.params.ticketId, { attributes: ["id", "aiActive", "userId", "status", "queueId", "whatsappId"] });
+  if (!ticket) throw new AppError("ERR_NO_TICKET_FOUND", 404);
+  const { storedAutomationTrace } = await import("../services/AutomationServices/AutomationTrace");
+  return res.json({ aiActive: !!ticket.aiActive, userId: ticket.userId || null, status: ticket.status, lines: await storedAutomationTrace(ticket.id) });
 };

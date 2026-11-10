@@ -8,9 +8,9 @@ import { roleOf } from "./Roles";
 export const sessionUser = async (token: string) => {
   try {
     const claims = verify(token, authConfig.secret, { algorithms: ["HS256"] }) as any;
-    const user = await User.findByPk(claims.id, { attributes: ["id", "profile", "role", "tokenVersion"] });
+    const user = await User.findByPk(claims.id, { attributes: ["id", "profile", "role", "coordArea", "tokenVersion"] });
     if (!user || Number(claims.tokenVersion ?? 0) !== user.tokenVersion) throw new Error("revoked");
-    return { id: String(user.id), profile: user.profile, role: roleOf(user) };
+    return { id: String(user.id), profile: user.profile, role: roleOf(user), coordArea: user.coordArea || null };
   } catch (err) {
     throw new AppError("ERR_SESSION_EXPIRED", 401);
   }

@@ -36,11 +36,21 @@ function harness(provider = 'openai') {
     '../../utils/logger': { logger: { warn() {}, error() {} } },
     '../TicketServices/ShowTicketService': async () => ticket,
     './Kb': { ensureLegacy: async () => {}, matchFaq: async () => state.faq, searchChunks: async () => [] },
-    './Budget': { callWithBudget: async (_agent, kind, ticketId, body, call) => { const data = await call(body); usages.push({ kind, ticketId, usage: data.usage }); state.used += policy.usageCounts(data.usage).input; return data; } },
+    './Budget': { callWithBudget: async (_agent, kind, ticketId, body, call) => { if (kind !== "test" && _agent.dailyTokenCap > 0 && state.used >= _agent.dailyTokenCap) throw new Error("ERR_AI_TOKEN_CAP"); const data = await call(body); usages.push({ kind, ticketId, usage: data.usage }); state.used += policy.usageCounts(data.usage).input; return data; } },
     './Usage': { logUsage: async u => { usages.push(u); state.used += policy.usageCounts(u.usage).input; }, tokensToday: async () => state.used },
     './Tools': tools,
     './Handoff': { handoffToHuman: async (_id, _agent, reason) => { handoffs.push(reason); ticket.aiActive = false; } },
-    './Learning': { captureUnknown: async () => {} }
+    './Learning': { captureUnknown: async () => {}, notifyOwner: async () => {} },
+    './Training': { trainingBlock: async () => '' },
+    './Media': { textOfMessage: m => m.body || '' },
+    '../CommercialServices/Academic': { offeredCourses: async () => [] },
+    '../CommercialServices/Hours': { todayLine: async () => '' },
+    '../CommercialServices/Guards': { unsupportedFact: () => null },
+    '../CommercialServices/Blocks': { splitIntoBlocks: text => [text] },
+    '../FlowServices/Claim': { claimAi: async () => true, releaseAi: async () => {} },
+    '../AutomationServices/AutomationTrace': { noteAutomation: () => {} },
+    './Style': { styleRules: () => '', styleOf: () => ({}), signed: t => t }
+
   });
   const response = text => provider === 'openai' ? { choices: [{ message: { role: 'assistant', content: text } }], usage: { prompt_tokens: 50, completion_tokens: 10, prompt_tokens_details: { cached_tokens: 20 } } } : { content: [{ type: 'text', text }], stop_reason: 'end_turn', usage: { input_tokens: 30, cache_read_input_tokens: 20, output_tokens: 10 } };
   const toolCall = input => provider === 'openai' ? { choices: [{ message: { role: 'assistant', content: '', tool_calls: [{ id: 'tool-1', type: 'function', function: { name: 'salvar_lead', arguments: JSON.stringify(input) } }] } }], usage: { prompt_tokens: 50 } } : { content: [{ type: 'tool_use', id: 'tool-1', name: 'salvar_lead', input }], stop_reason: 'tool_use', usage: { input_tokens: 50 } };

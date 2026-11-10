@@ -6,6 +6,9 @@ import dispatchWebhook from "../WebhookServices/DispatchWebhook";
 import Whatsapp from "../../models/Whatsapp";
 import { hookTicketCreated } from "../CrmServices/LeadCore";
 import ShowTicketService from "./ShowTicketService";
+import emitTicketUpdate from "./EmitTicketUpdate";
+import { RELATIONSHIP_SEGMENT } from "../../helpers/Roles";
+import { ensureRelationshipQueue, isRelationshipConnection } from "../RelationshipServices/Relationship";
 
 const FindOrCreateTicketService = async (
   contact: Contact,
@@ -23,6 +26,9 @@ const FindOrCreateTicketService = async (
     }
   });
 
+  // set when the conversation changes hands or state here: the open chat and the lists are told at the end (a new ticket tells itself)
+  let changed = false;
+
   if (ticket) {
     await ticket.update({ unreadMessages });
   }
@@ -38,16 +44,22 @@ const FindOrCreateTicketService = async (
 
     if (ticket) {
       const wasHistory = ticket.isHistorical;
-      await ticket.update({
-        status: "pending",
-        userId: null,
-        unreadMessages,
-        chatbotNodeId: null,
-        aiActive: true,
-        closedAt: null,
-        ...(wasHistory ? { isHistorical: false, firstResponseAt: null } : {})
-      });
-      if (wasHistory) await Ticket.update({ createdAt: new Date() } as any, { where: { id: ticket.id }, silent: true } as any);
+      // only a closed (or copied) conversation comes back to the queue: one a person took in the meantime keeps its attendant
+      const [reopened] = await Ticket.update(
+        {
+          status: "pending",
+          userId: null,
+          unreadMessages,
+          chatbotNodeId: null,
+          aiActive: true,
+          closedAt: null,
+          ...(wasHistory ? { isHistorical: false, firstResponseAt: null } : {})
+        } as any,
+        { where: { id: ticket.id, [Op.or]: [{ status: "closed" }, { isHistorical: true }] } as any }
+      );
+      await ticket.reload();
+      changed = true;
+      if (reopened && wasHistory) await Ticket.update({ createdAt: new Date() } as any, { where: { id: ticket.id }, silent: true } as any);
     }
   }
 
@@ -68,6 +80,7 @@ const FindOrCreateTicketService = async (
         closedAt: null,
         firstResponseAt: null
       });
+      changed = true;
       await Ticket.update({ createdAt: new Date() } as any, { where: { id: history.id }, silent: true } as any);
       ticket = history;
       if (!groupContact) hookTicketCreated(contact, (await Whatsapp.findByPk(whatsappId))?.channel || "whatsapp");
@@ -85,16 +98,22 @@ const FindOrCreateTicketService = async (
 
     if (ticket) {
       const recent = new Date(ticket.updatedAt).getTime() > Date.now() - 2 * 3600 * 1000;
-      await ticket.update({
-        status: "pending",
-        userId: null,
-        unreadMessages,
-        chatbotNodeId: null,
-        aiActive: true,
-        closedAt: null,
-        ...(recent ? {} : { firstResponseAt: null })
-      });
-      if (!recent) await Ticket.update({ createdAt: new Date() } as any, { where: { id: ticket.id }, silent: true } as any);
+      // conditional on "still closed": a person who accepted it a moment ago is not sent back to Aguardando, and the robot is not switched on again
+      const [reopened] = await Ticket.update(
+        {
+          status: "pending",
+          userId: null,
+          unreadMessages,
+          chatbotNodeId: null,
+          aiActive: true,
+          closedAt: null,
+          ...(recent ? {} : { firstResponseAt: null })
+        } as any,
+        { where: { id: ticket.id, status: "closed" } as any }
+      );
+      await ticket.reload();
+      changed = true;
+      if (reopened && !recent) await Ticket.update({ createdAt: new Date() } as any, { where: { id: ticket.id }, silent: true } as any);
     }
   }
 
@@ -114,14 +133,23 @@ const FindOrCreateTicketService = async (
     });
   }
 
+  // the institution's own number: its conversations are the relationship department's (own segment, own queue)
+  if (!groupContact && ticket.segment !== RELATIONSHIP_SEGMENT && (await isRelationshipConnection(whatsappId))) {
+    const queue = await ensureRelationshipQueue();
+    await ticket.update({ segment: RELATIONSHIP_SEGMENT, queueId: queue.id });
+  }
+
   // a personal number: the conversation belongs to the person who connected it (the bots stay out).
   // Groups too: nobody "accepts" a group, whoever is in it already took part
-  const connection = await Whatsapp.findByPk(whatsappId, { attributes: ["id", "ownerId"] });
-  if (connection?.ownerId && ticket.status === "pending" && !ticket.userId) {
+  // unless the number also works as an attendance number ("aiFirst"): then the AI agent answers first and the owner follows like everyone else
+  const connection = await Whatsapp.findByPk(whatsappId, { attributes: ["id", "ownerId", "aiFirst"] });
+  if (connection?.ownerId && !connection.aiFirst && ticket.status === "pending" && !ticket.userId) {
     await ticket.update({ status: "open", userId: connection.ownerId });
+    changed = true;
   }
 
   ticket = await ShowTicketService(ticket.id);
+  if (changed) await emitTicketUpdate(ticket.id);
 
   return ticket;
 };

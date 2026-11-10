@@ -1,17 +1,19 @@
 import React, { Suspense, useCallback, useEffect, useState } from "react";
-import { useHistory } from "react-router-dom";
 import { toast } from "react-toastify";
 import { Button, TextField, Typography, makeStyles } from "@material-ui/core";
 import { FilePlus2, FileText, KanbanSquare, UserPlus } from "lucide-react";
 
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
-import { ScoreRing, burst } from "../../pages/CRM/shared";
+import { ScoreRing, burst, useCrmOptions } from "../../pages/CRM/shared";
+import { onColor, tint } from "../../utils/color";
+import AiBrief from "../AiBrief";
 import { lazyPage as lazy } from "../../utils/lazyPage";
 
 // the heavy CRM dialogs load only when someone opens them
 const ProposalStudio = lazy(() => import("../../pages/CRM/ProposalStudio"));
 const EnrollDialog = lazy(() => import("../../pages/CRM/EnrollDialog"));
+const LeadDrawer = lazy(() => import("../../pages/CRM/LeadDrawer"));
 const LostDialog = lazy(() => import("../../pages/CRM/LeadDrawer").then((m) => ({ default: m.LostDialog })));
 
 const useStyles = makeStyles((theme) => ({
@@ -32,19 +34,25 @@ const useStyles = makeStyles((theme) => ({
   },
 }));
 
+// the full record opens beside the conversation (it does not take the person out of the chat)
+const FichaSide = ({ leadId, onClose, onChanged }) => {
+  const ctx = useCrmOptions();
+  return <LeadDrawer side leadId={leadId} ctx={ctx} onClose={onClose} onChanged={onChanged} />;
+};
+
 const PROPOSAL_STATUS = { draft: "Rascunho", sent: "Enviada", viewed: "Visualizada", accepted: "Aceita" };
 
 // CRM summary of the person you are talking to, shown in the chat contact panel. Everything the consultant does with
 // a lead while chatting (move it along the funnel, mark it lost, enroll, generate and send a proposal) happens here.
 const LeadCard = ({ contactId }) => {
   const classes = useStyles();
-  const history = useHistory();
   const [lead, setLead] = useState(undefined);
   const [stages, setStages] = useState([]);
   const [options, setOptions] = useState({});
   const [proposals, setProposals] = useState([]);
   const [lostOpen, setLostOpen] = useState(false);
   const [enrollOpen, setEnrollOpen] = useState(false);
+  const [ficha, setFicha] = useState(false);
   const [studio, setStudio] = useState(null); // { id } | {}
   const [busy, setBusy] = useState(false);
 
@@ -80,7 +88,7 @@ const LeadCard = ({ contactId }) => {
   }
 
   const lost = stages.find((s) => s.type === "lost");
-  const move = async (stage, extra = {}, e) => {
+  const move = async (stage, extra = {}, e) => { e && e.persist && e.persist();
     setBusy(true);
     try {
       await api.put(`/leads/${lead.id}/stage`, { stageId: stage.id, ...extra });
@@ -104,11 +112,15 @@ const LeadCard = ({ contactId }) => {
         <ScoreRing value={lead.score} />
       </div>
 
+      <AiBrief leadId={lead.id} compact />
+
       <div>
         <div className={classes.label} style={{ marginBottom: 6 }}>Etapa do funil</div>
         <div className={classes.stages}>
           {stages.map((s) => (
-            <button key={s.id} type="button" disabled={busy} className={`${classes.stage} ${s.id === lead.stageId ? classes.stageOn : ""}`} onClick={(e) => pick(s, e)}>{s.name}</button>
+            <button key={s.id} type="button" disabled={busy} className={classes.stage} onClick={(e) => pick(s, e)}
+              style={s.id === lead.stageId ? { background: s.color, borderColor: s.color, color: onColor(s.color) } : { borderColor: tint(s.color, 0.55), background: tint(s.color, 0.1) }}
+              title={s.id === lead.stageId ? "Etapa atual do lead" : `Mover para ${s.name}`}>{s.name}</button>
           ))}
         </div>
       </div>
@@ -127,13 +139,14 @@ const LeadCard = ({ contactId }) => {
               <span className={classes.meta}>{PROPOSAL_STATUS[pr.status] || pr.status}</span>
             </button>
           ))}
-          <Button size="small" variant="contained" color="primary" startIcon={<FilePlus2 size={16} />} onClick={() => setStudio({})}>Gerar proposta</Button>
         </div>
       </div>
 
-      <Button size="small" variant="outlined" startIcon={<KanbanSquare size={16} />} onClick={() => history.push(`/crm?lead=${lead.id}`)}>Abrir ficha completa</Button>
+      <Button size="small" variant="outlined" startIcon={<KanbanSquare size={16} />} onClick={() => setFicha(true)}>Abrir ficha completa</Button>
+      <Button size="small" variant="contained" color="primary" startIcon={<FilePlus2 size={16} />} onClick={() => setStudio({})}>Gerar proposta</Button>
 
       <Suspense fallback={null}>
+        {ficha && <FichaSide leadId={lead.id} onClose={() => { setFicha(false); load(); }} onChanged={load} />}
         {lostOpen && lost && (
           <LostDialog open reasons={options.lostReasons || []} onClose={() => setLostOpen(false)}
             onConfirm={(reason, note) => { setLostOpen(false); move(lost, { lostReason: reason, lostNote: note }); }} />

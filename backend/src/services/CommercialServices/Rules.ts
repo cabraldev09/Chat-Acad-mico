@@ -1,0 +1,636 @@
+import { cleanCommercial, fillGreeting } from "./Config";
+import { CommercialState, Slots } from "./Slots";
+import { BOLSA_ASKS } from "./BolsaData";
+
+// The commercial rules, written as plain functions: the same input always gives the same answer, no model involved. The AI only
+// understands what the person said (the intent); the temperature, the score, the next action, the funnel column, the notes and the
+// handoff brief are computed here.
+export const INTENTS = [
+  "greeting", "course_duration", "course_modality", "mec", "curriculum", "internship", "paid_internship", "tcc", "platform", "tutoring", "faculty",
+  "recognition", "transfer", "second_degree", "analysis", "price", "enrollment", "proposal", "human", "follow_up", "no_interest", "objection", "unknown", "support_tutoring", "support_secretary", "other"
+] as const;
+
+const plain = (s: string): string =>
+  String(s || "")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+
+export const OBJECTION_TYPES = ["preco", "tempo", "confianca", "concorrente", "familia", "distancia", "duvida_ead", "outra"] as const;
+// after this many objections in the same conversation a person takes over (the agent has tried; the consultant closes)
+export const OBJECTION_LIMIT = 3;
+
+// ---------------------------------------------------------------- what is obvious needs no model
+const HUMAN = [
+  /(falar|conversar|passar|chamar).{0,30}(com )?(uma |um )?(pessoa|atendente|humano|consultor|consultora|vendedor|vendedora|gente de verdade)/,
+  /(quero|preciso|prefiro|gostaria de).{0,12}(um |uma )?(atendente|consultor|consultora|humano|pessoa de verdade)/,
+  /(me )?(passa|passe|transfere|transfira) (pra|para) (um |uma )?(atendente|consultor|consultora|pessoa)/,
+  /\b(atendimento|atendente|suporte|ajuda) humano\b/,
+  /(falar|conversar|chamar|passar).{0,20}(com )?(alguem|algum)\b/,
+  /\bhumano\b/
+];
+// a price, a scholarship, an enrollment or a proposal: the moment of the human proposal (the agent never gives a number)
+const MONEY = [
+  /\b(qual (e )?o? ?valor|qual (e )?o? ?preco|valor da mensalidade|valores|preco|precos|mensalidade|parcela|parcelas)\b/,
+  /\bquanto (custa|fica|pago|vai custar|sai|cobram|e o curso|e a mensalidade)\b/,
+  /\b(tem|ha|existe|consigo|posso ter) (alguma )?(bolsa|desconto)\b/,
+  /\b(bolsa|desconto|promocao|condicao especial|forma de pagamento|formas de pagamento)\b/,
+  /\b(me )?(manda|envia|passa|faz|gera|quero|queria|gostaria d[ea]|preciso d[ea]) (a |uma |sua )?proposta\b/,
+  /\bquero saber quanto\b/
+];
+const ENROLL = [
+  /quero (me )?matricular/,
+  /quero (fazer|garantir|realizar) (a |minha )?(matricula|inscricao)/,
+  /pode (prosseguir|seguir|continuar com a matricula)/,
+  /vamos (fechar|prosseguir|matricular)/,
+  /como (eu )?(faco|fazer) (pra|para) (me )?matricular/
+];
+const NO_INTEREST = [/nao tenho (mais )?interesse/, /\bdesisti\b/, /nao quero (mais )?(fazer|continuar|saber|estudar)/, /\bsem interesse\b/, /nao me interessa/];
+
+export type FastIntent = { intent: "human" | "price" | "enrollment" | "proposal" } | null;
+
+
+// "não quero falar com atendente", "ainda não quero me matricular": the phrase is there, the meaning is the opposite
+const NEGATION = /\b(nao|nunca|jamais|sem|ainda nao|nem)\b/;
+const hit = (list: RegExp[], t: string): boolean =>
+  list.some(r => {
+    const m = r.exec(t);
+    return !!m && !NEGATION.test(t.slice(Math.max(0, m.index - 22), m.index));
+  });
+
+export const fastIntent = (text: string): FastIntent => {
+  const t = plain(text);
+  if (!t) return null;
+  if (hit(HUMAN, t)) return { intent: "human" };
+  if (hit(ENROLL, t)) return { intent: "enrollment" };
+  if (/\bproposta\b/.test(t) && hit(MONEY, t)) return { intent: "proposal" };
+  if (hit(MONEY, t)) return { intent: "price" };
+  return null;
+};
+
+// A student who needs a sector is not a lead: tutoring (platform, access, activities, exams, deadlines) and secretary (declarations, transcript, diploma,
+// lock or cancel the enrollment) are the team of the polo. What is clear in the words needs no model. A prospect asking "how does the tutoring work?" is
+// still a sales question; the loose words (activity, exam, grade...) only count for who is already a student and speaks of their own.
+const SECRETARY = [
+  /\b(falar|conversar|chamar|passar|ligar).{0,25}(com )?(a )?secretaria\b/,
+  /\bdeclaracao (de )?(matricula|vinculo|escolaridade|conclusao|frequencia|estudante|cursando)\b/,
+  /\bhistorico escolar\b/,
+  /\b(segunda via|2a via|2 via)\b/,
+  /\bcertificado de conclusao\b/,
+  /\b(trancar|trancamento|cancelar|cancelamento)\b.{0,20}\b(matricula|curso|disciplina)\b/,
+  /\brematricula\b/,
+  // money matters of who already studies: the boleto, a charge, a payment that went wrong (the secretary of the polo takes it, the sales team does not)
+  /\b(meu|minha|o|a|esse|essa) (boleto|mensalidade|cobranca|pagamento|fatura|parcela)\b.{0,30}\b(errad\w*|atrasad\w*|duplicad\w*|vencid\w*|diferente|nao (chegou|veio|recebi|consigo|abre)|com problema)\b/,
+  /\b(boleto|cobranca|pagamento|fatura)\b.{0,20}\b(errad\w*|duplicad\w*|indevid\w*|com problema)\b/,
+  /\b(segunda via|2a via).{0,15}\b(boleto|fatura)\b/
+];
+const TUTORING = [
+  /\b(falar|conversar|chamar|passar|ligar).{0,25}(com )?(a |o )?(tutoria|tutor|tutora)\b/,
+  /\bmeu tutor\b|\bminha tutora\b/,
+  /\b(nao consigo|nao estou conseguindo|problema (para|pra|ao)|erro (para|pra|ao)).{0,25}\b(acessar|entrar|logar)\b/,
+  /\b(esqueci|perdi|redefinir|recuperar|trocar).{0,15}\bsenha\b/
+];
+const SECRETARY_STUDENT = [
+  /\b(preciso|quero|queria|gostaria|solicit\w+|pedir|emitir|tirar|baixar)\b.{0,30}\b(declaracao|historico|certificado|diploma|documento|documentos)\b/,
+  /\b(meu|meus|minha|minhas)\b.{0,20}\b(diploma|certificado|declaracao|historico|documentos?)\b/
+];
+const TUTORING_STUDENT = [
+  /\b(meu|meus|minha|minhas)\b.{0,25}\b(nota|notas|atividade|atividades|prova|provas|prazo|prazos|plataforma|acesso|disciplina|disciplinas|trabalho|trabalhos|estagio|tcc|login)\b/,
+  /\b(nao consigo|nao estou conseguindo|nao abre|nao carrega|nao aparece|nao liberou)\b.{0,30}\b(plataforma|ambiente|atividade|prova|nota|aula|disciplina)\b/,
+  /\b(duvida|ajuda|problema)\b.{0,25}\b(atividade|prova|nota|prazo|plataforma|disciplina|trabalho)\b/
+];
+
+export const supportIntent = (text: string, student: boolean): "tutoring" | "secretary" | null => {
+  const t = plain(text);
+  if (!t) return null;
+  if (hit(SECRETARY, t)) return "secretary";
+  if (hit(TUTORING, t)) return "tutoring";
+  if (student && hit(SECRETARY_STUDENT, t)) return "secretary";
+  if (student && hit(TUTORING_STUDENT, t)) return "tutoring";
+  return null;
+};
+
+// "me envia a grade de pedagogia", "quero ver a matriz curricular": the grade is sent by the system, not left to the model to remember the tool
+const GRADE_ASK = /\b(grade|matriz( curricular)?|curriculo|disciplinas do curso)\b/;
+const GRADE_VERB = /\b(envia|enviar|envie|manda|mandar|mande|passa|passar|quero|queria|gostaria|posso ver|pode me|tem a|ver a|me mostra|mostrar|cadê|cade|preciso)\b/;
+export const gradeRequest = (text: string): { course: string | null } | null => {
+  const t = plain(text);
+  if (!t || t.length > 160 || !GRADE_ASK.test(t) || !GRADE_VERB.test(t)) return null;
+  // a question about how the grade works, or the price, is not the request for the file
+  if (/\b(como funciona|o que e|o que significa|quanto|valor|mensalidade)\b/.test(t) && !/\b(envia|manda|mande|envie|quero ver|me mostra)\b/.test(t)) return null;
+  const m = t.match(/\b(?:grade|matriz(?: curricular)?|curriculo|disciplinas)\s+(?:curricular\s+)?(?:do curso\s+)?(?:de|do|da|dos|das)\s+(?:curso\s+(?:de|do|da)\s+)?([a-z ]{4,60})/);
+  const course = m ? m[1].replace(/\b(por favor|pfv|pf|pra mim|para mim|ai|aqui|agora|de novo|novamente|obrigado|obrigada)\b.*$/, "").replace(/\s+/g, " ").trim() : "";
+  return { course: course.length >= 4 ? course : null };
+};
+
+// A course the person names ("o curso de Direito", "graduação em Enfermagem"): the name, so the system can check it against the courses it offers.
+// Words that are not a course (tutoring, internship, the way of studying) are never taken for one.
+const COURSE_NOUN = /\b(?:cursos?|graduacao|faculdade|bacharelado|licenciatura|tecnologo|curso superior)\s+(?:de|em|do|da|dos|das)\s+([a-z][a-z ]{2,50})/;
+const COURSE_STOP = /\b(quanto|qual|quais|valor|custa|custo|mensalidade|preco|na|no|nas|nos|em|que|ai|pra|para|por|voces|vcs|se|tem|e|mas|ou|com|dura|duracao|como|quando|onde|tambem|mesmo|ainda|ja|nao|sim)\b/;
+const NOT_A_COURSE = /^(ead|distancia|semipresencial|presencial|tutoria|estagio|estagios|verao|ferias|inverno|extensao|idiomas|ingles|espanhol|reforco|preparacao|aperfeicoamento|especializacao|pos|pos graduacao|mba|mestrado|doutorado|atualizacao|formacao)$/;
+export const courseMention = (text: string): string | null => {
+  const t = plain(text);
+  if (!t || t.length > 200) return null;
+  const m = t.match(COURSE_NOUN);
+  if (!m) return null;
+  const name = m[1].split(COURSE_STOP)[0].replace(/\s+/g, " ").trim();
+  if (name.length < 4 || NOT_A_COURSE.test(name)) return null;
+  return name;
+};
+
+// the person takes back what made the lead "ready for the proposal"
+export const retractsBuying = (text: string): boolean => {
+  const t = plain(text);
+  return /\b(nao (vou|quero) (mais )?(me )?(matricular|fechar|prosseguir)|ainda nao (vou|quero|decidi|fechei)|deixa (pra|para) depois|desisti)\b/.test(t);
+};
+
+// A reason to hand the conversation to a person that needs no model to be seen: an unhappy person, money already paid or a legal
+// word, a wrong number, or the same request for the third time. The reason travels to the team in the handoff.
+const COMPLAINT = /\b(absurdo|pessim[oa]|horrivel|palhacada|vergonha|decepcion\w*|reclam(ar|acao|ando)|procon|processar|processo|advogad\w*|justica|denunci\w*|(levei|sofri|vitima de|aplicaram|caí em|cai em)( um)? golpe|enganad\w*|fraude|estorno|reembolso|ja paguei|paguei|comprovante|cancelar (a |minha )?(matricula|inscricao|contrato)|cobranca indevida)\b/;
+const WRONG_NUMBER = /\b(numero errado|nao sou (eu|essa pessoa|ele|ela)|foi engano|engano|nao conheco (voce|vocês)|quem e voce)\b/;
+export const humanReason = (text: string, previousUserTexts: string[] = []): "complaint" | "loop" | "other" | null => {
+  const t = plain(text);
+  if (!t) return null;
+  if (COMPLAINT.test(t)) return "complaint";
+  if (WRONG_NUMBER.test(t)) return "other";
+  // the same sentence again, twice before: the AI is not solving it
+  if (t.length >= 8 && previousUserTexts.map(plain).filter(p => p === t).length >= 2) return "loop";
+  return null;
+};
+
+// a message that only says hello or shows interest, with nothing to answer: the opening of the system is enough (no model)
+const GREET_WORDS = /^(oi+|ola+|opa|e ai|eae|bom dia|boa tarde|boa noite|boa madrugada|hello|hi|tudo bem|tudo bom|td bem|tudo certo|blz|beleza)\b[ ,.!]*/;
+const INTEREST_ONLY = /^((eu )?(quero|queria|gostaria de|preciso de|tenho interesse em|me interessei (em|por)))? ?(mais )?(informacao|informacoes|saber mais|conhecer)( (do|dos|sobre o|sobre os) (curso|cursos|valores))?( por favor| pfv)?$|^(tenho interesse|me interessei)( no curso| nos cursos)?$|^vim (pelo|pela|do|da|de|atraves).{0,30}$|^(voltei|estou de volta|to de volta|cheguei|de novo|de volta)( aqui)?$/;
+export const isGreeting = (text: string): boolean => {
+  let t = plain(text);
+  if (!t || t.length > 70 || t.includes("?")) return false;
+  if (fastIntent(text) || humanReason(text)) return false;
+  // greetings first ("bom dia, tudo bem?"), then what is left must be nothing or only "I want information": a course or a city is content
+  let guard = 0;
+  while (GREET_WORDS.test(t) && guard < 4) {
+    t = t.replace(GREET_WORDS, "").trim();
+    guard += 1;
+  }
+  return !t || INTEREST_ONLY.test(t);
+};
+
+// The first message of the agent, written by the system (a model would spend tokens to say the same thing every time): it welcomes the
+// person, mentions what is already known and asks only the next thing that is missing.
+// How the agent presents itself: always in the first answer of a conversation, whatever the person wrote. The owner can give the assistant a name
+// (persona.assistantName); without one it is "o assistente virtual".
+export const INTRO_SEEN = /\b(assistente virtual|aqui e (a|o) |eu sou (a|o) |meu nome e)\b/;
+export const DEFAULT_ASSISTANT = "Estela";
+export const introText = (persona: { assistantName?: string; commercial?: any } | null | undefined, first: string, institution = "Cruzeiro do Sul Virtual"): string => {
+  const name = first ? `, ${first}` : "";
+  const who = String(persona?.assistantName || "").trim() || DEFAULT_ASSISTANT;
+  // the administrator may write the greeting ({{nome}}, {{assistente}}); it still has to say that this is a virtual assistant
+  const custom = persona && persona.commercial ? cleanCommercial(persona.commercial).greeting : "";
+  if (custom) {
+    const text = fillGreeting(custom, first || "", who).replace(/\s{2,}/g, " ").trim();
+    return alreadyIntroduces(text) ? text : `${text} Sou ${/^(a|o) /i.test(who) ? who : `a ${who}`}, assistente virtual da ${institution}.`;
+  }
+  return `Olá${name}! Eu sou ${/^(a|o) /i.test(who) ? who : `a ${who}`}, assistente virtual da ${institution}.`;
+};
+export const alreadyIntroduces = (text: string): boolean => INTRO_SEEN.test(plain(text));
+
+export const openingText = (slots: Slots, first: string, returning: boolean, persona?: { assistantName?: string; commercial?: any } | null): string => {
+  const name = first ? `, ${first}` : "";
+  const hasCourse = !!(slots.courseName || slots.courseId);
+  const hasCity = !!(slots.city || slots.poloId);
+  const hasEntry = !!slots.entryType && slots.entryType !== "unknown";
+  // a contact who is already a student is asked what is needed (the agent also takes the tutoring and the secretary to the team of the polo)
+  if (slots.enrolledStudent && !returning) {
+    return `${introText(persona, first)}${slots.enrolledCourse ? ` Vi que você já estuda ${slots.enrolledCourse}.` : ""} Como posso te ajudar hoje? Se for sobre plataforma, atividades ou provas, chamo a tutoria; se for documento ou declaração, a secretaria.`;
+  }
+  const ask = nextQuestionOf(slots) || "Em que posso te ajudar agora?";
+  const course = hasCourse ? String(slots.courseName || "") : "";
+  // a bare "oi": nothing is known about what the person needs, so the answer is short, in three lines, and asks the one thing that tells the two paths apart
+  const customGreeting = persona && persona.commercial ? cleanCommercial(persona.commercial).greeting : "";
+  if (!returning && !hasCourse && !hasCity && !hasEntry && !customGreeting) {
+    const who = String(persona?.assistantName || "").trim() || DEFAULT_ASSISTANT;
+    const smile = (persona as any)?.emoji === false ? "" : " 😊";
+    return `Olá! Tudo bem?${smile}\n\nSou ${/^(a|o) /i.test(who) ? who : `a ${who}`}, assistente virtual da Cruzeiro do Sul Virtual.\n\nVocê deseja conhecer nossos cursos e fazer sua matrícula ou já é aluno e precisa falar com a tutoria?`;
+  }
+  if (returning) {
+    return `Oi${name}! Que bom falar com você de novo.${course ? ` Da última vez conversamos sobre ${course}.` : ""} ${hasCourse && hasCity && hasEntry ? "Em que posso te ajudar agora?" : ask}`;
+  }
+  return `${introText(persona, first)}${course ? ` Vi que você tem interesse em ${course}.` : ""} ${ask}`;
+};
+
+// The next question of the commercial process, always in the same order (course, city, kind of entry), only for what is still unknown and what
+// the administrator lets the agent ask: the system asks it when the model did not, so a lead is never left without the next step.
+export const QUESTIONS = {
+  course: "Qual curso você tem interesse? Se você já é aluno e precisa da tutoria ou da secretaria, é só me dizer.",
+  city: "Em qual cidade você mora? Assim eu já te mostro o polo mais perto.",
+  entry: "Você vai começar a primeira graduação ou já cursou (ou cursa) outra faculdade?"
+};
+export const nextQuestionOf = (slots: Slots, ask: { course?: boolean; city?: boolean; entry?: boolean } = {}, only?: string[]): string | null => {
+  const wanted = (k: string) => ask[k as "course"] !== false && (!only || only.includes(k));
+  if (!(slots.courseName || slots.courseId) && wanted("course")) return QUESTIONS.course;
+  if (!(slots.city || slots.poloId) && wanted("city")) return QUESTIONS.city;
+  if ((!slots.entryType || slots.entryType === "unknown") && wanted("entry")) return QUESTIONS.entry;
+  return null;
+};
+
+// the kind of entry said in the person's words: the first degree is never left to the model ("nunca fiz faculdade", "terminei o ensino médio")
+const FIRST_DEGREE = /\b(primeira (graduacao|faculdade|vez na faculdade)|nunca (fiz|cursei|comecei) (uma )?(faculdade|graduacao|curso superior)|(terminei|conclui|acabei|estou terminando|to terminando|vou terminar|terminando) o (ensino medio|medio|terceiro ano|3o ano|3 ano)|(so|apenas) (tenho )?o (ensino )?medio|nao tenho (faculdade|graduacao|curso superior|ensino superior)|nao fiz (faculdade|graduacao))\b|^(a |e a |vai ser a |sera a )?primeira( mesmo)?$/;
+export const entryOf = (text: string): "first_degree" | "transfer" | "second_degree" | null => {
+  const t = plain(text);
+  if (!t) return null;
+  const kind = interestOf(text);
+  if (kind === "transferencia") return "transfer";
+  if (kind === "segunda_graduacao") return "second_degree";
+  return FIRST_DEGREE.test(t) ? "first_degree" : null;
+};
+
+// the handover of a qualified lead does not leave a question hanging: the last sentences that only ask something are dropped (the handover
+// message that follows says what happens next)
+export const withoutClosingQuestion = (text: string): string => {
+  const parts = String(text || "").trim().split(/(?<=[.!?])\s+/);
+  while (parts.length && /\?[\s"”')]*$/.test(parts[parts.length - 1])) parts.pop();
+  return parts.join(" ").trim();
+};
+
+// the fields a stage asks for are filled when each one has a value in the state of the lead
+export const stageFieldsDone = (fields: Array<{ key: string; required: boolean }>, slots: Slots): boolean => {
+  const required = fields.filter(f => f.required);
+  if (!required.length) return false;
+  return required.every(f => {
+    const v = slots[f.key];
+    if (f.key === "entryType") return !!v && v !== "unknown";
+    if (f.key === "city") return !!(slots.city || slots.poloId);
+    if (f.key === "courseName") return !!(slots.courseName || slots.courseId);
+    return v !== undefined && v !== null && v !== "" && v !== false;
+  });
+};
+
+// the model said "no interest": it only counts when the person really said it
+export const confirmsNoInterest = (text: string): boolean => NO_INTEREST.some(r => r.test(plain(text)));
+
+// the subjects of the knowledge base a message is about: the passages come from there, not from every document
+export const topicsOf = (text: string): string[] => {
+  const t = plain(text);
+  const topics: string[] = [];
+  if (/(plataforma|ambiente virtual|portal do aluno|aplicativo|app\b|blackboard|moodle)/.test(t)) topics.push("institutional/platform");
+  if (/(tutoria|tutor|tutora|ambientacao|primeiro acesso)/.test(t)) topics.push("institutional/tutoring");
+  if (/(professor|professores|docente|corpo docente|mestre|doutor|titulacao)/.test(t)) topics.push("institutional/faculty");
+  if (/(estagio remunerado|estagiar|estagio pago|remunerado)/.test(t)) topics.push("institutional/internship");
+  if (/\b(mec|portaria|decreto|diretriz|semipresencial|100% ?ead|presencial)\b/.test(t)) topics.push("institutional/mec");
+  if (/(reconhec|autorizad|nota do mec|credenciad|valido|validade do diploma|diploma)/.test(t)) topics.push("institutional/recognition");
+  if (/(matricula|documentos?|inscricao|como (faco|funciona) (pra|para) (me )?matricular)/.test(t)) topics.push("institutional/enrollment");
+  // the doubts that hold a person back: the guidance of the base for them comes with the turn
+  if (/(\bcaro\b|sem dinheiro|nao (tenho|consigo)|muito (caro|longe|dificil)|medo|golpe|confiavel|desconfi|outra (faculdade|instituicao)|concorrente|minha familia|meu marido|minha esposa|nao sei se|ead (funciona|vale)|faculdade a distancia)/.test(t)) topics.push("institutional/objection");
+  return topics;
+};
+
+// ---------------------------------------------------------------- score, temperature, next action
+const INFO_INTENTS = ["course_duration", "course_modality", "mec", "curriculum", "internship", "paid_internship", "tcc", "transfer", "second_degree", "analysis"];
+const HOT_INTENTS = ["price", "enrollment", "proposal"];
+
+const seenOf = (slots: Slots): string[] => String(slots.intentsSeen || "").split(",").map(s => s.trim()).filter(Boolean);
+
+export interface TurnFacts {
+  intent?: string | null;
+  // the person wrote (not a message sent by the system)
+  replied?: boolean;
+  // a tool of the turn was used (the AI looked something up)
+  tools?: string[];
+  followUp?: boolean;
+  noInterest?: boolean;
+}
+
+const POINTS: Record<string, number> = {
+  replied: 5, course: 10, entry: 10, city: 5, curriculum: 5, internship: 5, modality: 5, price: 20, enrollment: 30, proposal: 30,
+  timeline_now: 15, timeline_week: 10, timeline_month: 5, shift: 2, motivation: 3, besttime: 3
+};
+// how soon the person says they will decide (the CRM lists them from the most ready)
+const TIMELINE_POINTS = ["timeline_now", "timeline_week", "timeline_month"];
+const readyTimeline = (slots: Slots): boolean => /agora|esta semana/i.test(String(slots.decisionTimeline || ""));
+
+// the points of each fact count once: the ledger is kept in the slots
+export const scoreOf = (slots: Slots, ready: boolean, intent?: string | null): { score: number; ledger: string[] } => {
+  const ledger = new Set(seenOf(slots));
+  const award = (k: string) => ledger.add(`pts:${k}`);
+  if (slots.lastInboundAt) award("replied");
+  if (slots.courseId || slots.courseName) award("course");
+  if (slots.entryType && slots.entryType !== "unknown") award("entry");
+  if (slots.city || slots.poloId) award("city");
+  if (slots.gradeAsked || slots.gradeSent || intent === "curriculum") award("curriculum");
+  if (intent === "internship" || intent === "paid_internship") award("internship");
+  if (intent === "course_modality" || intent === "mec") award("modality");
+  if (intent === "price") award("price");
+  if (intent === "enrollment") award("enrollment");
+  if (intent === "proposal" || ready) award("proposal");
+  const t = String(slots.decisionTimeline || "").toLowerCase();
+  if (t) {
+    const i = t.includes("agora") ? 0 : t.includes("semana") ? 1 : t.includes("m\u00eas") ? 2 : -1;
+    if (i >= 0) award(TIMELINE_POINTS[i]);
+  }
+  if (slots.shift) award("shift");
+  if (slots.motivation) award("motivation");
+  if (slots.bestTime) award("besttime");
+  let score = 0;
+  ledger.forEach(k => { if (k.startsWith("pts:")) score += POINTS[k.slice(4)] || 0; });
+  return { score: Math.min(100, score), ledger: [...ledger] };
+};
+
+export const temperatureOf = (slots: Slots, ready: boolean): "cold" | "warm" | "hot" => {
+  const seen = seenOf(slots);
+  if (ready || readyTimeline(slots) || HOT_INTENTS.some(i => seen.includes(i))) return "hot";
+  if (INFO_INTENTS.some(i => seen.includes(i)) || slots.courseId || slots.gradeSent || slots.courseExplained) return "warm";
+  return "cold";
+};
+
+const needsTranscript = (slots: Slots): boolean => slots.entryType === "transfer" || slots.entryType === "second_degree";
+
+// A semipresencial course (or one the MEC rules changed) cannot be handed over before the person heard how it works: the format, the share of
+// presential and live activities and what the class still has to confirm. Not something the administrator can turn off.
+export const needsModalityExplanation = (slots: Slots): boolean => /semi/i.test(String(slots.courseModality || "")) || slots.mecImpacted === true;
+export const modalityExplained = (slots: Slots): boolean => !!(slots.modalityExplained || slots.mecExplained);
+
+// qualified: course, city (or polo) and kind of entry are known and the course was presented (the column of the funnel follows this; the
+// handover to the consultant also waits for the format of a semipresencial course, see readyForConsultantOf)
+export const isQualified = (slots: Slots, requires: readonly string[] = ["course", "city", "entry", "explained"]): boolean => {
+  const has: Record<string, boolean> = {
+    course: !!(slots.courseId || slots.courseName),
+    city: !!(slots.city || slots.poloId),
+    entry: !!slots.entryType && slots.entryType !== "unknown",
+    explained: !!slots.courseExplained
+  };
+  // an empty list would qualify everybody on the first message: at least the course is always needed
+  const need = requires.length ? requires : ["course"];
+  return need.every(k => has[k] !== false);
+};
+
+// the explanation of the format of a semipresencial course, written by the system from the rule of the MEC and what the institution confirmed
+// (the result of the tool buscar_regra_modalidade): nothing invented, what is not confirmed goes to the consultant
+export const modalityTextOf = (courseName: string, view: any): string | null => {
+  const e = view && view.explicacao;
+  if (!e) return null;
+  const parts: string[] = [`Sobre como funciona ${courseName}:`];
+  if (e.nacional && e.nacional.regra) parts.push(`Pela regra do MEC, ${String(e.nacional.regra).replace(/^./, (c: string) => c.toLowerCase())}`);
+  const confirmed: string[] = (e.institucional && e.institucional.confirmado) || [];
+  if (view.commercialApprovedText) parts.push(String(view.commercialApprovedText));
+  else if (confirmed.length) parts.push(confirmed.join(" "));
+  if ((e.naoConfirmado || []).length) parts.push("Os detalhes que ainda dependem da sua turma (como dias e locais das atividades presenciais) o consultor confirma com você.");
+  parts.push("Ficou claro como funciona?");
+  return parts.join("\n\n");
+};
+
+// what is still missing to qualify, in the words of the administrator's screen
+export const missingOf = (slots: Slots, requires: readonly string[] = ["course", "city", "entry", "explained"]): string[] => {
+  const label: Record<string, string> = { course: "Curso", city: "Cidade ou polo", entry: "Tipo de ingresso", explained: "Curso apresentado" };
+  const has: Record<string, boolean> = {
+    course: !!(slots.courseId || slots.courseName), city: !!(slots.city || slots.poloId), entry: !!slots.entryType && slots.entryType !== "unknown", explained: !!slots.courseExplained
+  };
+  const out = (requires.length ? requires : ["course"]).filter(k => has[k] === false).map(k => label[k] || k);
+  if (needsModalityExplanation(slots) && !modalityExplained(slots)) out.push("Formato e regra do MEC explicados");
+  return out;
+};
+
+// How many answers a qualified lead gets from the agent before the consultant of the polo takes over: the questions of the lead are answered
+// first (a lead who asks for the price or a person is handed over at once, whatever this says). A transfer or second-degree lead waits for the
+// result of the curricular analysis to be explained.
+export const QUALIFIED_REPLIES = 2;
+
+// the consultant simulates the scholarship with the full name and the CPF: once the lead is qualified (or got the grade) they are asked, up to
+// BOLSA_ASKS times, and the handover waits for them (or for the asks to be used); never before the lead is qualified (the process goes in order)
+export const hasBolsaData = (slots: Slots): boolean => !!slots.fullName && !!slots.cpfGiven;
+// (not when the question is for someone else: the data would be of another person, the consultant handles it)
+export const needsBolsaData = (slots: Slots): boolean => isQualified(slots) && !hasBolsaData(slots) && slots.forWhom !== "amigo ou parente" && Number(slots.bolsaDataAsked || 0) < BOLSA_ASKS;
+
+export const readyForConsultantOf = (slots: Slots, replies: number, after: number = QUALIFIED_REPLIES, requires?: readonly string[]): boolean => {
+  if (!after || !isQualified(slots, requires)) return false;
+  // a semipresencial course goes to the consultant only after the format and the rule of the MEC were explained
+  if (needsModalityExplanation(slots) && !modalityExplained(slots)) return false;
+  const analysisDone = !needsTranscript(slots) || (slots.analysisStatus === "completed" && !!slots.analysisExplained);
+  // never wait forever for the data: a few more answers and the consultant takes it anyway
+  return analysisDone && replies >= after && (!needsBolsaData(slots) || replies >= after + 3);
+};
+
+export const nextActionOf = (s: CommercialState, facts: { human?: boolean; lost?: boolean } = {}): string => {
+  const slots = s.slots;
+  if (facts.lost) return "close_lost";
+  if (facts.human) return "human_service";
+  if (s.readyForProposal) return "generate_proposal";
+  if (s.followUpReason && s.followUpAt) return "follow_up";
+  if (slots.analysisStatus === "completed" && !slots.analysisExplained) return "explain_analysis";
+  if (slots.analysisStatus === "requested" || slots.analysisStatus === "in_progress") return "wait_analysis";
+  if (needsTranscript(slots) && !slots.hasTranscript) return "wait_transcript";
+  if (needsTranscript(slots) && slots.hasTranscript && slots.analysisStatus === "waiting_document") return "request_analysis";
+  if (!slots.city && !slots.poloId) return "identify_city";
+  if (!slots.entryType || slots.entryType === "unknown") return "identify_entry_type";
+  if (!slots.courseExplained) return "present_course";
+  if (!slots.modalityExplained || (slots.mecImpacted && !slots.mecExplained)) return "explain_modality";
+  if (slots.gradeAsked && !slots.gradeSent) return "send_curriculum";
+  return "answer_objection";
+};
+
+
+// A person names the consultant they want or already talked to: "Quero falar com João", "Já conversei com a Gabrielli", "fui atendida pelo Carlos".
+// Read from the original text (the name starts with a capital letter); the caller finds the consultant among the people of the team.
+const NOT_A_NAME = /^(voce|voces|vcs|alguem|algum|uma|um|o|a|os|as|pessoa|atendente|consultor|consultora|humano|secretaria|tutoria|tutor|tutora|vendedor|vendedora|equipe|time|gente|gerente|coordenador|coordenadora|setor|departamento|financeiro)$/;
+export const consultantMention = (text: string): { name: string; previous: boolean } | null => {
+  const raw = String(text || "");
+  const m = /\b(falar|conversar|ser atendid[oa]|atendimento|falei|conversei|fui atendid[oa]|atendid[oa]|atendeu|falando)\b(?: [a-zà-ú]+){0,3}? (?:com|pel[oa]|por)(?: o| a| o consultor| a consultora| o atendente| a atendente)? ([A-ZÁÉÍÓÚÂÊÔÃÕÇ][a-zà-úç]{2,})/.exec(raw);
+  if (!m) return null;
+  const name = m[2];
+  if (NOT_A_NAME.test(plain(name))) return null;
+  return { name, previous: /\b(falei|conversei|fui atendid\w*|atendeu|ja (falei|conversei|fui))\b/.test(plain(raw)) };
+};
+
+// ---------------------------------------------------------------- what the person wants (dynamic, read from what they write)
+// The kind of interest is never chosen from a menu: it comes from the words of the conversation and is revised at every message.
+export const INTEREST_KINDS = ["graduacao", "pos_graduacao", "tecnico", "segunda_graduacao", "transferencia", "matricula", "aluno", "administrativo", "outros"] as const;
+export const INTEREST_LABEL: Record<string, string> = {
+  graduacao: "Graduação", pos_graduacao: "Pós-graduação", tecnico: "Curso técnico", segunda_graduacao: "Segunda graduação", transferencia: "Transferência",
+  matricula: "Informações sobre matrícula", aluno: "Aluno existente", administrativo: "Assunto administrativo", outros: "Outros"
+};
+const INTEREST_RULES: Array<[string, RegExp]> = [
+  ["administrativo", /\b(boleto|segunda via|2a via|declaracao|historico escolar|certificado|diploma|trancar|trancamento|cancelar (a )?matricula|cancelamento|reembolso|nota fiscal|mensalidade (atrasada|errada|em atraso)|negociar divida|estorno|carteirinha|comprovante de matricula)\b/],
+  // a transfer says "meu curso" too: it is read before the student
+  ["transferencia", /\b(transferir|transferencia|trocar de faculdade|mudar de faculdade|vim de outra (faculdade|instituicao)|aproveitar (as )?(disciplinas|materias))\b/],
+  ["aluno", /\b(ja sou (aluno|aluna|estudante)|sou (aluno|aluna)(?! (de|da|do|em|na|no) (outra|outro|uma|um|ensino|escola|colegio|terceiro|3)\b)|minha (aula|nota|prova|tutoria|plataforma|disciplina)|meu (curso|polo|tutor|ava|login|acesso)|estudo ai|estudo ai na)\b/],
+  ["segunda_graduacao", /\b(segunda (graduacao|faculdade|licenciatura)|2[ao]? ?graduacao|ja tenho (uma )?(graduacao|faculdade|diploma|curso superior)|outra graduacao|ja sou (formado|formada|graduado|graduada))\b/],
+  ["pos_graduacao", /\b(pos[- ]?graduacao|especializacao|\bmba\b|mestrado|doutorado|lato sensu|stricto sensu)\b/],
+  ["tecnico", /\b(curso tecnico|tecnico em|ensino tecnico|\btecnico\b)\b/],
+  ["matricula", /\b(me matricular|matricula|inscricao|me inscrever|como (faco|eh|e) pra (entrar|ingressar|estudar)|vestibular|processo seletivo|documentos? (para|pra) (a )?matricula)\b/],
+  ["graduacao", /\b(graduacao|faculdade|bacharelado|licenciatura|curso superior|me graduar|fazer (um )?curso|quero estudar|quero fazer)\b/]
+];
+export const interestOf = (text: string, slots: Slots = {}): string | null => {
+  const t = plain(text);
+  if (!t) return slots.enrolledStudent ? "aluno" : null;
+  const hit = INTEREST_RULES.find(([, re]) => re.test(t));
+  if (hit) return hit[0];
+  if (courseMention(text)) return "graduacao";
+  return null;
+};
+
+// ---------------------------------------------------------------- the funnel
+// the keys of the commercial funnel and how far each one is (an automatic move only goes forward)
+export const STAGE_RANK: Record<string, number> = {
+  new_lead: 0, contact_started: 1, in_service: 2, follow_up: 2, no_response: 2, human_service: 2, qualified: 3, waiting_transcript: 4,
+  curricular_analysis: 5, analysis_done: 6, ready_for_proposal: 7, proposal: 8, enrollment_in_progress: 9, enrolled: 10
+};
+// from here on a person owns the lead: the agent no longer moves it
+const OWNED = ["proposal", "enrollment_in_progress", "enrolled", "no_interest", "lost"];
+
+export const targetStageKey = (s: CommercialState, facts: TurnFacts & { human?: boolean; firstContactSent?: boolean }): string | null => {
+  const slots = s.slots;
+  if (facts.noInterest) return "no_interest";
+  if (facts.human) return "human_service";
+  if (s.readyForProposal) return "ready_for_proposal";
+  if (facts.followUp) return "follow_up";
+  if (slots.analysisStatus === "completed") return "analysis_done";
+  if (slots.analysisStatus === "requested" || slots.analysisStatus === "in_progress") return "curricular_analysis";
+  const qualified = isQualified(slots);
+  if (qualified && needsTranscript(slots) && !slots.hasTranscript) return "waiting_transcript";
+  if (qualified) return "qualified";
+  if (facts.replied || slots.lastInboundAt) return "in_service";
+  if (facts.firstContactSent || slots.lastOutboundAt) return "contact_started";
+  return null;
+};
+
+export const canAutoMove = (current: string | null, target: string | null): boolean => {
+  if (!target) return false;
+  // an unmapped column (a person put the lead there): respected
+  if (!current) return false;
+  if (current === target) return false;
+  if (OWNED.includes(current)) return false;
+  if (current === "human_service") return false;
+  // lateral states can be entered from any column before the proposal; the lead coming back leaves them going forward
+  if (["human_service", "follow_up", "no_interest", "no_response"].includes(target)) return true;
+  if (["follow_up", "no_response"].includes(current)) return (STAGE_RANK[target] ?? -1) >= 2;
+  return (STAGE_RANK[target] ?? -1) > (STAGE_RANK[current] ?? 99);
+};
+
+// ---------------------------------------------------------------- notes and handoff (no model)
+export const ENTRY_LABEL: Record<string, string> = { first_degree: "Primeira graduação", transfer: "Transferência", second_degree: "Segunda graduação", unknown: "Tipo de ingresso não informado" };
+const TEMP_LABEL: Record<string, string> = { cold: "Frio", warm: "Morno", hot: "Quente" };
+const INTENT_LABEL: Record<string, string> = {
+  greeting: "Cumprimentou", course_duration: "Perguntou a duração", course_modality: "Perguntou a modalidade", mec: "Perguntou sobre o MEC", curriculum: "Pediu a grade",
+  internship: "Perguntou do estágio", paid_internship: "Perguntou do estágio remunerado", tcc: "Perguntou do TCC", platform: "Perguntou da plataforma", tutoring: "Perguntou da tutoria",
+  faculty: "Perguntou dos professores", recognition: "Perguntou do reconhecimento", transfer: "Falou de transferência", second_degree: "Falou de segunda graduação",
+  analysis: "Falou da análise curricular", price: "Perguntou valor", enrollment: "Quer se matricular", proposal: "Pediu a proposta", human: "Pediu uma pessoa",
+  follow_up: "Vai pensar", no_interest: "Sem interesse", objection: "Levantou uma objeção", unknown: "Perguntou algo sem resposta na base", other: "Conversou"
+};
+export const NEXT_LABEL: Record<string, string> = {
+  identify_entry_type: "Descobrir o tipo de ingresso", identify_city: "Descobrir a cidade", present_course: "Apresentar o curso", explain_modality: "Explicar a modalidade",
+  send_curriculum: "Enviar a grade", wait_transcript: "Aguardar o histórico", request_analysis: "Solicitar a análise curricular", wait_analysis: "Aguardar a análise",
+  explain_analysis: "Explicar o resultado da análise", answer_objection: "Tratar dúvidas e objeções", generate_proposal: "Gerar a proposta", follow_up: "Retomar o contato",
+  human_service: "Atendimento humano", close_lost: "Encerrar (sem interesse)"
+};
+export const intentLabel = (i?: string | null): string => (i ? INTENT_LABEL[i] || i : "—");
+
+const yesNo = (v: any): string => (v ? "Sim" : "Não");
+
+export const noteOf = (s: CommercialState): string => {
+  const x = s.slots;
+  const lines = [
+    `Lead interessado em ${x.courseName || "curso a definir"}.`,
+    `${ENTRY_LABEL[x.entryType || "unknown"]}.`,
+    x.city || x.poloName ? `Cidade: ${x.city || x.poloName}${x.poloName && x.city ? ` · Polo: ${x.poloName}` : ""}.` : null,
+    x.courseExplained ? "Curso apresentado." : null,
+    x.modalityExplained ? "Modalidade explicada." : null,
+    x.mecExplained ? "Mudança do MEC explicada." : null,
+    x.gradeSent ? "Grade enviada." : null,
+    x.internshipExplained ? "Estágio explicado." : null,
+    x.tutoringExplained ? "Tutoria explicada." : null,
+    x.analysisStatus && x.analysisStatus !== "not_applicable" ? `Análise curricular: ${{ waiting_document: "aguardando histórico", requested: "solicitada", in_progress: "em andamento", completed: "concluída" }[x.analysisStatus as string] || x.analysisStatus}.` : null,
+    x.mainObjection ? `Objeção principal: ${x.mainObjection}.` : null,
+    x.mainQuestion ? `Dúvida principal: ${x.mainQuestion}.` : null
+  ];
+  return lines.filter(Boolean).join("\n");
+};
+
+// the short stable hash of a text (to write a note only when it changed)
+export const hashOf = (text: string): string => {
+  let h = 5381;
+  for (let i = 0; i < text.length; i += 1) h = ((h << 5) + h + text.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(36);
+};
+
+const OBJECTION_LABEL: Record<string, string> = {
+  preco: "preço", tempo: "falta de tempo", confianca: "confiança", concorrente: "outra instituição", familia: "decisão com a família", distancia: "distância", duvida_ead: "dúvida sobre EAD", outra: "outra"
+};
+
+// What the consultant should do first (no model): the lead's own words about the moment come before the agent's guess.
+export const suggestedStepOf = (s: CommercialState): string => {
+  const x = s.slots;
+  const course = x.courseName || "o curso";
+  if (s.readyForProposal) return `Apresentar a melhor condição e gerar a proposta de ${course}.`;
+  const kinds = String(x.objectionsSeen || "").split(",").filter(Boolean).map(k => OBJECTION_LABEL[k] || k);
+  if (x.bestTime) return `Falar com o lead ${/^\d{4}-\d{2}-\d{2}/.test(String(x.bestTime)) ? `em ${String(x.bestTime).slice(8, 10)}/${String(x.bestTime).slice(5, 7)} às ${String(x.bestTime).slice(11, 16)}` : `(${x.bestTime})`}, retomando ${course}${kinds.length ? ` e tratando a objeção de ${kinds.join(", ")}` : ""}.`;
+  if (kinds.length) return `Tratar com empatia a objeção de ${kinds.join(", ")} antes de falar de valores.`;
+  if (x.readyForConsultant) return `Chamar o lead, confirmar o interesse em ${course} e apresentar a melhor condição do polo.`;
+  return s.nextAction ? NEXT_LABEL[s.nextAction] || s.nextAction : "Retomar a conversa.";
+};
+
+export const briefOf = (s: CommercialState, extra: { stageName?: string | null; source?: string | null; lastMessages?: string[]; enrollPolo?: string | null; cityPolo?: string | null } = {}): string => {
+  const x = s.slots;
+  const line = (label: string, value: any) => `${label}:\n${value === undefined || value === null || value === "" ? "Não informado" : value}`;
+  const optional = (label: string, value: any) => (value === undefined || value === null || value === "" ? null : `${label}: ${value}`);
+  return [
+    s.readyForProposal ? "LEAD PRONTO PARA PROPOSTA" : x.readyForConsultant ? "LEAD QUALIFICADO, PRONTO PARA O CONSULTOR" : "RESUMO DO ATENDIMENTO COM IA",
+    "",
+    `Nome: ${x.leadName || "Não informado"}`,
+    `Telefone: ${x.phone || "Não informado"}`,
+    `Cidade: ${x.city || "Não informada"}`,
+    `Curso: ${x.courseName || "Não definido"}`,
+    // semipresencial course: the enrollment is at a released polo and the city's polo is where the practical classes are meant to happen
+    extra.enrollPolo ? `Polo de matrícula (curso semipresencial): ${extra.enrollPolo}` : `Polo: ${x.poloName || "Não definido"}`,
+    extra.enrollPolo && extra.cityPolo ? `Polo da cidade, aulas práticas em viabilização (sem data nem promessa): ${extra.cityPolo}` : null,
+    optional("Origem", extra.source),
+    optional("Pretende decidir", x.decisionTimeline),
+    optional("Turno", x.shift),
+    optional("Motivação", x.motivation),
+    optional("Trabalha e estuda", x.worksAndStudies === undefined || x.worksAndStudies === null ? null : yesNo(x.worksAndStudies)),
+    optional("Como pretende pagar", x.financing),
+    optional("Melhor horário para falar", x.bestTime),
+    "",
+    line("Interesse", INTEREST_LABEL[x.interestKind || ""] || null),
+    x.preferredConsultantName ? line("Consultor pedido pelo lead", x.preferredConsultantName) : null,
+    line("Ingresso", ENTRY_LABEL[x.entryType || "unknown"]),
+    line("Duração", x.courseDurationText || (x.courseDurationSemesters ? `${x.courseDurationSemesters} semestres` : null)),
+    line("Modalidade", x.courseModality),
+    line("MEC explicado", x.mecImpacted === false ? "Não se aplica" : yesNo(x.mecExplained)),
+    line("Modalidade explicada", yesNo(x.modalityExplained)),
+    x.enrolledStudent ? line("Já é aluno", `Sim${x.enrolledCourse ? `, de ${x.enrolledCourse}` : ""}${x.forWhom ? ` · a pergunta é para: ${x.forWhom}` : " · para quem é a pergunta: ainda não perguntado"}`) : null,
+    line("Grade enviada", yesNo(x.gradeSent)),
+    line("Dados para simular a bolsa", hasBolsaData(x) ? "Nome completo e CPF informados (o CPF está no cadastro do lead)" : Number(x.bolsaDataAsked || 0) ? "Pedidos, ainda não enviados" : "Ainda não pedidos"),
+    line("Estágio", x.internshipExplained ? x.internshipSummary || "Explicado" : "Não explicado"),
+    line("Tutoria", x.tutoringExplained ? "Explicada" : "Não explicada"),
+    x.analysisStatus && x.analysisStatus !== "not_applicable"
+      ? line("Análise curricular", [x.analysisStatus, x.semesterEntry ? `ingresso no ${x.semesterEntry}º semestre` : null, x.estimatedCompletion ? `previsão ${x.estimatedCompletion}` : null].filter(Boolean).join(" · "))
+      : null,
+    line("Objeção principal", x.mainObjection),
+    optional("Tipos de objeção", String(x.objectionsSeen || "").split(",").filter(Boolean).map(k => OBJECTION_LABEL[k] || k).join(", ")),
+    line("Dúvida principal", x.mainQuestion),
+    x.unknownQuestion ? line("Pergunta sem resposta na base", x.unknownQuestion) : null,
+    "",
+    line("Temperatura", TEMP_LABEL[s.temperature] || s.temperature),
+    line("Score", s.commercialScore),
+    line("Última intenção", intentLabel(s.lastIntent)),
+    line("Próxima ação", s.nextAction ? NEXT_LABEL[s.nextAction] || s.nextAction : null),
+    line("Próximo passo sugerido ao consultor", suggestedStepOf(s)),
+    extra.lastMessages && extra.lastMessages.length ? `\nO que o lead disse por último:\n${extra.lastMessages.map(m => `“${m}”`).join("\n")}` : null,
+    extra.stageName ? line("Coluna do CRM", extra.stageName) : null,
+    s.summary ? `\nResumo:\n${s.summary}` : null
+  ]
+    .filter(v => v !== null)
+    .join("\n");
+};
+
+// what in a message can be the name of a town: after "moro em", "sou de", "cidade de"..., or a short answer that is only a name
+const CITY_AFTER = /\b(?:moro|resido|vivo|sou|estou|fico|morando|cidade)\s+(?:em|de|no|na|perto de|aqui em|e)?\s*([a-zà-ú' -]{3,40}?)(?=[,.!?;]|\s+e\s|\s+mas\s|\s+e$|$)/i;
+export const cityCandidateOf = (text: string, hasCourse: boolean): string | null => {
+  const raw = String(text || "").trim();
+  const m = raw.match(CITY_AFTER);
+  if (m && m[1] && plain(m[1]).length >= 3) return m[1].trim();
+  const t = plain(raw);
+  // a short answer that is only a name ("Candeias do Jamari", "ji parana"): not a course, not a number, not a question
+  if (!hasCourse && t.length >= 4 && t.length <= 30 && t.split(" ").length <= 4 && !/\d/.test(t) && !raw.includes("?") && !/^(sim|nao|ok|oi|ola|obrigad[oa]|beleza|certo|isso|claro|pode ser|tudo bem|bom dia|boa tarde|boa noite)\b/.test(t)) return raw.replace(/[.!]+$/, "");
+  return null;
+};

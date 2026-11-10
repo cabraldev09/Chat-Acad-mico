@@ -22,6 +22,10 @@ class QuickAnswer extends Model<QuickAnswer> {
   @Column(DataType.TEXT)
   message: string;
 
+  // who made it (null: the management's)
+  @Column
+  userId: number;
+
   @CreatedAt
   createdAt: Date;
 

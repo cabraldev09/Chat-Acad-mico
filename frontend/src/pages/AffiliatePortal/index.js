@@ -7,8 +7,13 @@ import {
 } from "lucide-react";
 
 import { getBackendUrl } from "../../config";
-import NumberTicker from "../../components/NumberTicker";
 import logo from "../../assets/logo-cruzeiro-color.svg";
+import BrandStar from "../../components/BrandStar";
+import { CopyButton } from "./shared";
+import PromoPanel, { Messages } from "./PromoPanel";
+import ArtLibrary from "./ArtLibrary";
+import { Funnel, ShareBar } from "./HomeParts";
+import heroStudent from "../../assets/brand/aluna.webp";
 import "./central.css";
 
 // Public page of one affiliate: no login, no cookies. The token in the address is the access. It never shows prices.
@@ -49,47 +54,6 @@ const daysLeft = (end) => {
   return d === 0 ? "termina hoje" : d === 1 ? "termina amanhã" : `termina em ${d} dias`;
 };
 
-const copyText = async (text, ok = "Copiado!") => {
-  try {
-    if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(text);
-    else {
-      const ta = document.createElement("textarea");
-      ta.value = text;
-      ta.style.position = "fixed";
-      ta.style.opacity = "0";
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand("copy");
-      document.body.removeChild(ta);
-    }
-    toast.success(ok);
-    return true;
-  } catch (e) {
-    toast.error("Não foi possível copiar. Selecione o texto e copie à mão.");
-    return false;
-  }
-};
-
-const CopyButton = ({ text, label = "Copiar mensagem", ok, className = "ca-btn", onCopied }) => {
-  const [done, setDone] = useState(false);
-  return (
-    <button
-      type="button"
-      className={`${className}${done ? " is-done" : ""}`}
-      onClick={async () => {
-        if (await copyText(text, ok)) {
-          setDone(true);
-          if (onCopied) onCopied();
-          setTimeout(() => setDone(false), 1800);
-        }
-      }}
-    >
-      {done ? <Check size={16} /> : <Copy size={16} />}
-      {done ? "Copiado" : label}
-    </button>
-  );
-};
-
 const isImage = (m) => m.hasFile && /^image\//.test(m.mimeType || "");
 
 const ReferralSheet = ({ token, courses, presetCourse, onClose, onDone }) => {
@@ -103,11 +67,14 @@ const ReferralSheet = ({ token, courses, presetCourse, onClose, onDone }) => {
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value }));
+  const set = (k) => (e) => { e && e.persist && e.persist(); return (setForm((f) => ({ ...f, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value }))); };
 
   const submit = async (e) => {
     e.preventDefault();
     setError("");
+    // the WhatsApp is how the consultant reaches the person: it is required, with the area code
+    const digits = form.phone.replace(/\D/g, "").replace(/^0+/, "").replace(/^55(?=\d{10,11}$)/, "");
+    if (digits.length < 10 || digits.length > 11) { setError("Informe o WhatsApp de quem você indica, com DDD. Exemplo: (69) 99999-0000."); return; }
     setBusy(true);
     try {
       const { data } = await http.post(`/affiliate-portal/${token}/referrals`, { ...form, courseId: form.courseId || undefined });
@@ -129,8 +96,8 @@ const ReferralSheet = ({ token, courses, presetCourse, onClose, onDone }) => {
         <label className="ca-field">Nome de quem você indica
           <input value={form.name} onChange={set("name")} required minLength={2} autoComplete="off" autoFocus />
         </label>
-        <label className="ca-field">WhatsApp com DDD
-          <input value={form.phone} onChange={set("phone")} required inputMode="tel" placeholder="(69) 99999-0000" autoComplete="off" />
+        <label className="ca-field">WhatsApp com DDD (obrigatório)
+          <input value={form.phone} onChange={set("phone")} required inputMode="tel" type="tel" minLength={10} maxLength={20} placeholder="(69) 99999-0000" autoComplete="off" />
         </label>
         <label className="ca-field">Curso de interesse (se souber)
           <select value={form.courseId} onChange={set("courseId")}>
@@ -216,7 +183,7 @@ const AffiliatePortal = ({ match }) => {
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState("all");
   const [colFilter, setColFilter] = useState("all");
-  const [view, setView] = useState("materials"); // materials | courses
+  const [view, setView] = useState("library"); // library | materials | courses
   const [format, setFormat] = useState("");
   const [sheet, setSheet] = useState(null);
 
@@ -233,6 +200,8 @@ const AffiliatePortal = ({ match }) => {
   const load = useCallback(async () => {
     try {
       const { data: d } = await http.get(`/affiliate-portal/${token}`);
+      // a proxy or a deploy in the middle can answer 200 with something that is not the portal: treat it as a failure
+      if (!d || typeof d !== "object" || !Array.isArray(d.courses)) throw new Error("bad payload");
       setData(d);
       setFormat((f) => f || (d.courses[0] ? d.courses[0].modality : ""));
       setState("ready");
@@ -251,7 +220,6 @@ const AffiliatePortal = ({ match }) => {
     materials.forEach((m) => { if (m.collection && COLLECTIONS[m.collection]) (map[m.collection] = map[m.collection] || []).push(m); });
     return map;
   }, [materials]);
-  const banners = useMemo(() => materials.filter((m) => m.kind === "banner" && isImage(m)), [materials]);
   const coverOf = (key) => (byCollection[key] || []).find((m) => isImage(m));
   const kinds = useMemo(() => [...new Set(materials.map((m) => m.kind))], [materials]);
 
@@ -276,7 +244,7 @@ const AffiliatePortal = ({ match }) => {
       <div className="ca-root">
         <div className="ca-center">
           <div>
-            <Lock size={40} color="#0693E3" />
+            <BrandStar variant="emblem" size={92} float shine style={{ marginBottom: 10 }} />
             <h1 className="ca-h2">{state === "invalid" ? "Este link não está disponível" : "Não conseguimos abrir agora"}</h1>
             <p className="ca-lead" style={{ margin: "12px auto" }}>
               {state === "invalid" ? "Ele pode ter sido trocado ou pausado. Peça um link novo ao seu consultor." : "Confira sua internet e tente de novo em instantes."}
@@ -293,6 +261,7 @@ const AffiliatePortal = ({ match }) => {
   const shareText = `Quer estudar com a gente? Peça informações por este link: ${data.referralUrl}`;
   const NAV = [["home", "Início", HomeIcon], ["materials", "Materiais", Folders], ["campaigns", "Campanhas", Megaphone], ["learn", "Orientações", HelpCircle], ["referrals", "Indicações", Users]];
   const courseListText = (g) => `${g.modality}\n${g.courses.map((c) => `• ${c.name}`).join("\n")}`;
+  const courseNames = [...new Set(data.courses.flatMap((g) => g.courses.map((c) => c.name)))].sort((a, b) => a.localeCompare(b, "pt-BR"));
   const collectionKeys = Object.keys(COLLECTIONS);
   const shown = collectionKeys.filter((k) => byCollection[k]);
 
@@ -319,48 +288,41 @@ const AffiliatePortal = ({ match }) => {
     const camp = data.campaigns[0];
     return (
       <>
-        <div className="ca-hero">
-          <div>
-            <span className="ca-over">Olá, {affiliate.firstName}</span>
-            <h1 className="ca-h1">Sua indicação.<br /><em>Um novo futuro.</em></h1>
-            <p className="ca-lead">{data.message}</p>
-            <div className="ca-hero-actions">
-              <button type="button" className="ca-btn is-primary" onClick={() => go("materials")}>Encontrar meus materiais <ArrowUpRight size={16} /></button>
-              <button type="button" className="ca-btn" onClick={() => setSheet({})}><UserPlus size={16} /> Indicar alguém</button>
+        <section className="ha-hero" aria-label="Início">
+          <div className="ha-copy">
+            <span className="ha-eyebrow"><i>{String(affiliate.firstName || "?").charAt(0).toUpperCase()}</i> Olá, {affiliate.firstName}</span>
+            <h1 className="ha-title">Sua indicação.<br /><em>Um novo futuro.</em></h1>
+            <p className="ha-lead">{data.message || "Tudo o que você precisa para indicar: materiais, cursos e campanhas."}</p>
+            <div className="ha-actions">
+              <button type="button" className="ha-btn is-main" onClick={() => go("materials")}>Encontrar meus materiais <ArrowUpRight size={18} /></button>
+              <button type="button" className="ha-btn is-glass" onClick={() => setSheet({})}><UserPlus size={18} /> Indicar alguém</button>
             </div>
-            {owner && <p className="ca-help" style={{ marginTop: 18, color: "var(--muted)" }}>Seu consultor: <strong style={{ color: "var(--ink)" }}>{owner.name}</strong></p>}
+            {owner && <p className="ha-owner"><span>{String(owner.name || "?").charAt(0).toUpperCase()}</span>Seu consultor <strong>{owner.name}</strong></p>}
           </div>
-          <div className="ca-collage" aria-hidden="true">
-            <div className="a">{banners[0] && <img src={`${API}/affiliate-portal/${token}/files/${banners[0].id}?preview=1`} alt="" />}</div>
-            <div className="b">{banners[1] && <img src={`${API}/affiliate-portal/${token}/files/${banners[1].id}?preview=1`} alt="" />}</div>
-            <div className="stamp">Você compartilha.<br />A educação transforma.</div>
-          </div>
-        </div>
-
-        <section className="ca-stats" aria-label="Sua produção">
-          <div className="ca-stat"><b><NumberTicker value={stats.referrals} /></b><span>pessoas indicadas</span></div>
-          <div className="ca-stat"><b><NumberTicker value={stats.enrolled} /></b><span>matrículas{stats.referrals ? ` · ${stats.conversion}%` : ""}</span></div>
-          <div className="ca-stat"><b><NumberTicker value={stats.bonusPending} format={brl} /></b><span>a receber</span></div>
-          <div className="ca-stat"><b><NumberTicker value={stats.bonusPaid} format={brl} /></b><span>já recebido</span></div>
+          <img className="ha-bg" src={heroStudent} alt="" aria-hidden="true" />
         </section>
 
-        <section className="ca-link">
-          <div><strong>Seu link de indicação</strong><code>{data.referralUrl}</code></div>
-          <div className="ca-link-actions">
-            <CopyButton text={data.referralUrl} label="Copiar link" ok="Link copiado!" />
-            <a className="ca-btn is-wa" href={`https://wa.me/?text=${encodeURIComponent(shareText)}`} target="_blank" rel="noopener noreferrer"><MessageCircle size={16} /> Enviar no WhatsApp</a>
-          </div>
-        </section>
+        <Funnel stats={stats} />
 
-        <div className="ca-section-head">
-          <div><span className="ca-over">Sua próxima divulgação</span><h2 className="ca-h2">Escolha uma coleção.</h2></div>
-          <button type="button" className="ca-text-link" onClick={() => go("materials")}>Ver todos os materiais <ArrowRight size={16} /></button>
+        <nav className="ha-quick" aria-label="Atalhos">
+          {[["materials", "Materiais", "Artes, textos e vídeos prontos", Folders, "sky"], ["campaigns", "Campanhas", "O que está valendo agora", Megaphone, "gold"], ["learn", "Orientações", "Como indicar e ganhar", HelpCircle, "green"], ["referrals", "Indicações", "Acompanhe quem você trouxe", Users, "violet"]].map(([k, title, text, Icon, tone]) => (
+            <button key={k} type="button" className={`ha-tile is-${tone}`} onClick={() => go(k)}>
+              <span className="ha-tile-icon"><Icon size={22} /></span>
+              <span className="ha-tile-text"><strong>{title}</strong><small>{text}</small></span>
+              <ArrowRight size={16} className="ha-tile-go" />
+            </button>
+          ))}
+        </nav>
+
+        <ShareBar link={data.referralUrl} nome={affiliate.firstName} />
+        {!affiliate.pixKey && <p className="ca-notice">Falta cadastrar a sua chave Pix para receber as bonificações. Peça ao seu consultor{owner ? `, ${owner.name}` : ""}.</p>}
+
+        <PromoPanel nome={affiliate.firstName} link={data.referralUrl} groups={data.courses} />
+
+        <div className="ca-section-head" style={{ marginTop: 56 }}>
+          <div><span className="ca-over">Prontas para postar</span><h2 className="ca-h2">Artes que já saem com o seu QR Code.</h2></div>
         </div>
-        {shown.length ? (
-          <div className="ca-collections">{shown.map((k) => CollectionTile({ k }))}</div>
-        ) : (
-          <div className="ca-empty"><Folders size={34} /><strong>As coleções chegam em breve</strong>Quando a equipe publicar os materiais, eles aparecem aqui organizados.</div>
-        )}
+        <ArtLibrary nome={affiliate.firstName} link={data.referralUrl} groups={data.courses} limit={6} onMore={() => { setView("library"); go("materials"); }} />
 
         {camp && (
           <section className="ca-feature">
@@ -376,6 +338,16 @@ const AffiliatePortal = ({ match }) => {
             </div>
             {camp.hasCover ? <img src={`${API}/affiliate-portal/${token}/campaigns/${camp.id}/cover`} alt="" /> : <div className="ca-stamp">Uma ação.<br />Todos os materiais juntos.</div>}
           </section>
+        )}
+
+        <div className="ca-section-head">
+          <div><span className="ca-over">Materiais da equipe</span><h2 className="ca-h2">Escolha uma coleção.</h2></div>
+          <button type="button" className="ca-text-link" onClick={() => go("materials")}>Ver todos os materiais <ArrowRight size={16} /></button>
+        </div>
+        {shown.length ? (
+          <div className="ca-collections">{shown.map((k) => CollectionTile({ k }))}</div>
+        ) : (
+          <div className="ca-empty"><Folders size={34} /><strong>As coleções chegam em breve</strong>Quando a equipe publicar os materiais, eles aparecem aqui organizados.</div>
         )}
 
         {data.videos.length > 0 && (
@@ -400,11 +372,17 @@ const AffiliatePortal = ({ match }) => {
       <h1 className="ca-h1" style={{ fontSize: "clamp(34px, 5vw, 54px)" }}>Seu material.<br />Do jeito certo.</h1>
       <div className="ca-tools">
         <div className="ca-chips">
-          <button type="button" className="ca-chip" aria-pressed={view === "materials"} onClick={() => setView("materials")}>Materiais</button>
+          <button type="button" className="ca-chip" aria-pressed={view === "library"} onClick={() => setView("library")}>Artes e mensagens prontas</button>
+          <button type="button" className="ca-chip" aria-pressed={view === "materials"} onClick={() => setView("materials")}>Materiais da equipe</button>
           <button type="button" className="ca-chip" aria-pressed={view === "courses"} onClick={() => setView("courses")}>Lista de cursos</button>
         </div>
       </div>
-      {view === "materials" ? (
+      {view === "library" ? (
+        <>
+          <ArtLibrary nome={affiliate.firstName} link={data.referralUrl} groups={data.courses} />
+          <div style={{ marginTop: 28 }}><Messages nome={affiliate.firstName} link={data.referralUrl} courses={courseNames} /></div>
+        </>
+      ) : view === "materials" ? (
         <>
           <div className="ca-tools" style={{ marginTop: 0 }}>
             <div className="ca-search">
@@ -568,7 +546,7 @@ const AffiliatePortal = ({ match }) => {
           {data.referrals.map((r) => (
             <div className="ca-row" key={r.id}>
               <span className="ca-avatar">{r.name[0]}</span>
-              <div><strong>{r.name}</strong><small>indicado em {day(r.createdAt)}</small></div>
+              <div><strong>{r.name}</strong><small>indicado em {day(r.createdAt)}{r.stage && r.status === "open" ? ` · ${r.stage}` : ""}</small></div>
               <span className={`ca-status ${r.status}`}>{r.status === "enrolled" ? "Matriculado" : r.status === "lost" ? "Não seguiu" : "Em atendimento"}</span>
             </div>
           ))}

@@ -1,5 +1,5 @@
 import React, { useContext, useEffect, useRef, useState } from "react";
-import { Pin, PinOff, Archive, ArchiveRestore, Bell, BellOff, BellRing, Check, Undo2, CheckCircle2, UserCheck, RotateCcw } from "lucide-react";
+import { Pin, PinOff, Archive, ArchiveRestore, Bell, BellOff, BellRing, Check, Undo2, CheckCircle2, UserCheck, RotateCcw, Bot } from "lucide-react";
 import { toast } from "react-toastify";
 import { useHistory } from "react-router-dom";
 import { makeStyles } from "@material-ui/core/styles";
@@ -22,10 +22,12 @@ import ChannelIcon from "../ChannelIcon";
 import TicketOptionsMenu from "../TicketOptionsMenu";
 import TicketTagsDialog from "../TicketTagsDialog";
 import ScheduleMessageDialog from "../ScheduleMessageDialog";
+import { isManager } from "../../utils/access";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import { AuthContext } from "../../context/Auth/AuthContext";
 import { wa } from "./chatTheme";
+import { typingText } from "../../utils/typingStore";
 import { SOUND_CHOICES, getContactSound, setContactSound, getSoundMode, onSoundPrefsChange } from "../../utils/soundPrefs";
 
 const useStyles = makeStyles((theme) => {
@@ -90,7 +92,8 @@ const useStyles = makeStyles((theme) => {
   };
 });
 
-const ChatHeader = ({ contact, ticket, onOpenInfo, onToggleSearch, typing }) => {
+const ChatHeader = ({ contact: contactProp, ticket, onOpenInfo, onToggleSearch, typing }) => {
+  const contact = contactProp || {};
   const classes = useStyles();
   const history = useHistory();
   const { user } = useContext(AuthContext);
@@ -179,10 +182,25 @@ const ChatHeader = ({ contact, ticket, onOpenInfo, onToggleSearch, typing }) => 
     }
   };
 
+  // the management takes a conversation from its attendant on purpose (it is registered who took it from whom)
+  const takeOver = async () => {
+    if (!window.confirm(`Assumir esta conversa de ${ticket.user?.name || "outro atendente"}? Ela passa a ser sua e ${ticket.user?.name || "o atendente"} deixa de responder.`)) return;
+    setLoading(true);
+    try {
+      await api.post(`/tickets/${ticket.id}/take`);
+      toast.success("Você assumiu a conversa.");
+    } catch (err) {
+      toastError(err);
+    }
+    setLoading(false);
+  };
+
   const setStatus = async (status, userId) => {
     setLoading(true);
     try {
-      await api.put(`/tickets/${ticket.id}`, { status, userId: userId || null });
+      // taking the conversation is a claim decided by the server (it refuses when someone else already has it); the rest is a plain update
+      if (status === "open" && userId) await api.post(`/tickets/${ticket.id}/claim`);
+      else await api.put(`/tickets/${ticket.id}`, { status, userId: userId || null });
       toast.success(
         {
           open: ticket.status === "closed" ? "Atendimento reaberto. A conversa voltou para você." : "Você assumiu o atendimento.",
@@ -204,9 +222,22 @@ const ChatHeader = ({ contact, ticket, onOpenInfo, onToggleSearch, typing }) => 
     setLoading(false);
   };
 
+  // hand the conversation to the AI agent (it answers the last message now) or take it back from it
+  const setAi = async (active) => {
+    setLoading(true);
+    try {
+      const { data } = await api.post(`/tickets/${ticket.id}/ai`, { active });
+      toast.success(!active ? "O agente de IA saiu da conversa." : data && data.answeredNow ? "O agente de IA assumiu a conversa e já vai responder." : "O agente de IA assumiu a conversa. Ele responde a próxima mensagem do cliente (a última já foi respondida).");
+      history.push("/tickets");
+    } catch (err) {
+      toastError(err);
+    }
+    setLoading(false);
+  };
+
   // team members' chats work like groups: no queue, so no accept / give back / finish buttons
   const plain = !!ticket.isGroup || !!contact.isStaff;
-  const SHORT = { "Aceitar atendimento": "Aceitar", "Devolver à fila": "Devolver", "Finalizar atendimento": "Finalizar", "Reabrir atendimento": "Reabrir" };
+  const SHORT = { "Agente de IA atende": "Agente", "Aceitar atendimento": "Aceitar", "Devolver à fila": "Devolver", "Finalizar atendimento": "Finalizar", "Reabrir atendimento": "Reabrir" };
   const button = (label, onClick, primary, icon, hint) => (
     <Tooltip title={hint || ""}>
       <span>
@@ -222,14 +253,14 @@ const ChatHeader = ({ contact, ticket, onOpenInfo, onToggleSearch, typing }) => 
     ticket.isHistorical ? "Histórico" : null,
     ticket.isGroup ? "Grupo" : contact.number && !String(contact.number).includes("_") ? `+${contact.number}` : null,
     ticket.queue?.name,
-    ticket.user ? `Atendente: ${ticket.user.name}` : ticket.status === "pending" ? "Aguardando atendimento" : null,
+    ticket.user ? `Atendente: ${ticket.user.name}` : ticket.status === "pending" ? (ticket.aiActive ? "Agente de IA atendendo" : "Aguardando atendimento") : null,
   ]
     .filter(Boolean)
     .join(" · ");
 
   return (
     <div className={classes.bar} ref={barRef}>
-      <IconButton className={classes.back} onClick={() => history.push("/tickets")}>
+      <IconButton aria-label="Voltar" className={classes.back} onClick={() => history.push("/tickets")}>
         <ArrowBack />
       </IconButton>
       <div className={classes.who} onClick={onOpenInfo} role="button" tabIndex={0}>
@@ -247,15 +278,20 @@ const ChatHeader = ({ contact, ticket, onOpenInfo, onToggleSearch, typing }) => 
             ))}
           </span>
           <span className={classes.sub}>
-            {typing ? <span style={{ color: "#00a884", fontWeight: 500 }}>digitando…</span> : subtitle}
+            {typing ? <span style={{ color: "#00a884", fontWeight: 500 }}>{typing.from === "agent" && <Bot size={13} style={{ verticalAlign: -2, marginRight: 4 }} />}{typingText(typing)}</span> : subtitle}
           </span>
         </div>
       </div>
       <div className={classes.actions}>
         {ticket.status === "pending" && !plain &&
           button("Aceitar atendimento", () => setStatus("open", user?.id), true, <UserCheck size={16} />, "Assumir esta conversa: ela passa a ser sua")}
+        {ticket.status === "pending" && !plain && !ticket.aiActive &&
+          button("Agente de IA atende", () => setAi(true), false, <Bot size={16} />, "O agente de IA assume esta conversa e responde agora")}
+        {ticket.status === "open" && !plain && ticket.userId && ticket.userId !== user?.id && isManager(user) &&
+          button("Assumir conversa", takeOver, true, <UserCheck size={16} />, `Tira a conversa de ${ticket.user?.name || "outro atendente"}: ela passa a ser sua`)}
         {ticket.status === "open" && !plain && (
           <>
+            {button("Agente de IA atende", () => setAi(true), false, <Bot size={16} />, "A conversa deixa de ser sua e o agente de IA assume e responde agora")}
             {button("Devolver à fila", () => setStatus("pending", null), false, <Undo2 size={16} />, "A conversa deixa de ser sua e volta para Aguardando, para outro atendente assumir")}
             {button("Finalizar atendimento", () => setStatus("closed", user?.id), true, <CheckCircle2 size={16} />, "Encerra a conversa. Se o contato escrever de novo, ela reabre")}
           </>
@@ -263,7 +299,7 @@ const ChatHeader = ({ contact, ticket, onOpenInfo, onToggleSearch, typing }) => 
         {ticket.status === "closed" && !plain &&
           button("Reabrir atendimento", () => setStatus("open", user?.id), true, <RotateCcw size={16} />, "Traz a conversa de volta para você")}
         <Tooltip title="Pesquisar na conversa">
-          <IconButton className={classes.icon} onClick={onToggleSearch}>
+          <IconButton className={classes.icon} aria-label="Buscar na conversa" onClick={onToggleSearch}>
             <Search />
           </IconButton>
         </Tooltip>
@@ -272,12 +308,12 @@ const ChatHeader = ({ contact, ticket, onOpenInfo, onToggleSearch, typing }) => 
             {!compact && (
               <>
             <Tooltip title="Etiquetas">
-              <IconButton className={classes.icon} onClick={() => setTagsOpen(true)}>
+              <IconButton className={classes.icon} aria-label="Etiquetas" onClick={() => setTagsOpen(true)}>
                 <LocalOfferOutlined />
               </IconButton>
             </Tooltip>
             <Tooltip title="Agendar mensagem">
-              <IconButton className={classes.icon} onClick={() => setScheduleOpen(true)}>
+              <IconButton className={classes.icon} aria-label="Agendar mensagem" onClick={() => setScheduleOpen(true)}>
                 <ScheduleIcon />
               </IconButton>
             </Tooltip>
@@ -367,7 +403,7 @@ const ChatHeader = ({ contact, ticket, onOpenInfo, onToggleSearch, typing }) => 
         )}
         {ticket.status === "open" && (
           <>
-            <IconButton className={classes.icon} onClick={(e) => setMenuEl(e.currentTarget)}>
+            <IconButton aria-label="Mais opções" className={classes.icon} onClick={(e) => setMenuEl(e.currentTarget)}>
               <MoreVert />
             </IconButton>
             <TicketOptionsMenu ticket={ticket} anchorEl={menuEl} menuOpen={Boolean(menuEl)} handleClose={() => setMenuEl(null)} />

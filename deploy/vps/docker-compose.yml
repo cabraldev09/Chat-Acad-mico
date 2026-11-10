@@ -15,18 +15,32 @@ services:
       # o VPS tem memória de sobra: o limite pequeno do Dockerfile é para planos de 1 GB
       NODE_OPTIONS: "--max-old-space-size=1536"
       WHATSAPP_PROVIDER: wwebjs
+      # as sessões do WhatsApp ficam SEMPRE no volume: sem isso o QR Code é pedido de novo a cada atualização
+      WWEBJS_AUTH_PATH: ${WWEBJS_AUTH_PATH:-/data/wwebjs}
+      UPLOAD_DIR: ${UPLOAD_DIR:-/data/public}
+      # a versão que está no ar (o /health devolve): deploy.sh/update.sh exportam GIT_SHA
+      GIT_SHA: ${GIT_SHA:-}
     # o Chromium (WhatsApp Web) trava com o /dev/shm padrão de 64 MB
     shm_size: "1gb"
+    # contêiner endurecido: sem privilégios extras, só o que o entrypoint precisa para entregar o volume ao usuário "node" e baixar os privilégios;
+    # a memória tem teto (o Chromium não derruba o servidor inteiro) e o desligamento espera os números do WhatsApp fecharem
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETUID, SETGID, DAC_OVERRIDE, FOWNER]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 8g
+    pids_limit: 2048
+    stop_grace_period: 60s
     volumes:
       - data:/data
     expose:
       - "8080"
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:8080/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 120s
+      # a short interval: "healthy" is seen within seconds of the API answering (30 s made every update wait for the next check)
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 60s
     logging:
       driver: json-file
       options: { max-size: "20m", max-file: "5" }

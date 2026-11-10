@@ -29,6 +29,13 @@ class KbDocument extends Model<KbDocument> {
   @Column(DataType.TEXT)
   keywords: string;
 
+  // the subject ("institutional/tutoring", "courses/12/overview"): a question is answered from its subject, not from every document
+  @Column
+  topic: string;
+
+  @Column
+  courseId: number;
+
   @AllowNull(false)
   @Column(DataType.TEXT({ length: "long" }))
   content: string;

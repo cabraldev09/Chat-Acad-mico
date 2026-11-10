@@ -10,7 +10,7 @@ import { useStyles } from "./shared";
 const RulesTab = () => {
   const classes = useStyles();
   const [f, setF] = useState(null);
-  useEffect(() => { api.get("/affiliate-rules").then(({ data }) => setF({ ...data, faqEdit: data.customFaq ? data.faq : [] })).catch(toastError); }, []);
+  useEffect(() => { api.get("/affiliate-rules").then(({ data }) => { const d = data && typeof data === "object" ? data : {}; setF({ ...d, faqEdit: d.customFaq && Array.isArray(d.faq) ? d.faq : [] }); }).catch(toastError); }, []);
   if (!f) return null;
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
 

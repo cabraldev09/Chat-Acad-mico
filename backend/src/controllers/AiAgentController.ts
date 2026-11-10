@@ -1,24 +1,55 @@
 import { Request, Response } from "express";
 import AiAgent from "../models/AiAgent";
+import { lastProcessEval, runProcessEval } from "../services/AiServices/ProcessEval";
 import { getSetting, setSetting } from "../helpers/AppSettings";
+import { getSecretSetting, setSecretSetting } from "../helpers/SecretSettings";
 import { isMasked, maskSecret } from "../helpers/Secrets";
 import makeCrud from "./crudFactory";
 import axios from "axios";
 import { Op, fn, col, QueryTypes } from "sequelize";
 import sequelize from "../database";
+import { aiError } from "../services/AiServices/Provider";
 import AppError from "../errors/AppError";
 import KbDocument from "../models/KbDocument";
 import KbChunk from "../models/KbChunk";
 import AiUsage from "../models/AiUsage";
+import Ticket from "../models/Ticket";
+import Course from "../models/Course";
+
 import { addDocument, indexDocument, ensureLegacy, searchChunks } from "../services/AiServices/Kb";
 import AiLearning from "../models/AiLearning";
+import AiRule from "../models/AiRule";
+import AiEvalCase from "../models/AiEvalCase";
+import User from "../models/User";
+import { logger } from "../utils/logger";
+import AiAgentRevision from "../models/AiAgentRevision";
+import { changedLabels, recordRevision, restoreRevision, snapshotOf } from "../services/AiServices/Revisions";
+import { cleanExpect, cleanMessages, runCase } from "../services/AiServices/Eval";
+import { KINDS, RuleKind, askModel, coachTurn, fromConversation, invalidateTraining } from "../services/AiServices/Training";
+import { exampleText, normalizeResult, stageOfStep } from "../services/AiServices/TrainingText";
+import { ExportedChat, looksLikeWhatsAppExport, maskPii, parseWhatsAppExport, toTranscript } from "../services/AiServices/ChatExport";
+import { analyze as analyzeFile, planOf } from "../services/AiServices/TrainAnalyze";
+import { cleanStage } from "../services/FlowServices/StageSpec";
+import { build as buildGraph } from "../services/FlowServices/Templates";
+import JSZip from "jszip";
+import crypto from "crypto";
 import { approve, discard } from "../services/AiServices/Learning";
 import { respond } from "../services/AiServices/RunAiAgent";
 import { priceOf, tokensToday } from "../services/AiServices/Usage";
 import { boundedInt, policyOf } from "../services/AiServices/Policy";
 import { DEFAULT_SLOTS } from "../services/AiServices/Tools";
+
 import { isUrlSafe, safeRequest } from "../helpers/SafeUrl";
-import { dayBounds, shiftDays } from "../helpers/AppTime";
+import { dayBounds, shiftDays, getAppTz } from "../helpers/AppTime";
+import ChatFlow from "../models/ChatFlow";
+import ChatFlowRun from "../models/ChatFlowRun";
+import ChatFlowStat from "../models/ChatFlowStat";
+import { AGENT_TEMPLATES, convertAgent, templateSummary } from "../services/FlowServices/AgentTemplates";
+import { generateAgent } from "../services/FlowServices/GenerateAgent";
+import { defaultProvider } from "../services/AiServices/Keys";
+import { ensurePipeline } from "../services/CommercialServices/Pipeline";
+import { cleanCommercial } from "../services/CommercialServices/Config";
+import { cleanConnectionIds } from "../helpers/AgentConnections";
 
 const crud = makeCrud(AiAgent, {
   fields: [
@@ -33,6 +64,7 @@ const crud = makeCrud(AiAgent, {
     "active",
     "queueId",
     "whatsappId",
+    "whatsappIds",
     "persona",
     "maxTokens",
     "dailyTokenCap",
@@ -45,7 +77,9 @@ const crud = makeCrud(AiAgent, {
     "learnFromTeam"
   ],
   required: ["name", "model"],
-  beforeSave: data => {
+  beforeSave: (data, req, existing) => {
+    // how the agent stands before this save: the history keeps what the save changed (written in afterSave, before the answer goes out)
+    if (existing) (req as any).agentBefore = snapshotOf(existing);
     if (data.provider !== undefined && !["openai", "anthropic"].includes(data.provider)) throw new AppError("ERR_AI_PROVIDER_INVALID");
     const limits: Record<string, [number, number, number]> = {
       maxTokens: [350, 100, 1200], maxHistory: [12, 6, 24], waitSeconds: [4, 0, 15],
@@ -69,7 +103,10 @@ const crud = makeCrud(AiAgent, {
         return { key, label, required: slot.required === true };
       });
     }
+
     if (isMasked(data.apiKey)) delete data.apiKey;
+    // what the administrator adjusted for the commercial attendance: only known keys, each cleaned
+    if (data.persona && typeof data.persona === "object" && data.persona.commercial !== undefined) data.persona = { ...data.persona, commercial: cleanCommercial(data.persona.commercial) };
     if (data.reviewNumber !== undefined) {
       const digits = String(data.reviewNumber || "").replace(/\D/g, "");
       if (digits && (digits.length < 10 || digits.length > 15)) throw new AppError("ERR_REVIEW_NUMBER_INVALID");
@@ -87,27 +124,134 @@ const crud = makeCrud(AiAgent, {
     ["queueId", "whatsappId", "reviewWhatsappId"].forEach(k => {
       if (data[k] === "" || data[k] === 0) data[k] = null;
     });
+    // the connections come as a list; the single one it had before moves into it, so the list is the only place to look
+    if (data.whatsappIds !== undefined) {
+      data.whatsappIds = cleanConnectionIds(data.whatsappIds);
+      data.whatsappId = null;
+    }
     return data;
+  },
+  afterSave: async (row, req, created) => {
+    const before = (req as any).agentBefore;
+    if (!created && before) await recordRevision(row.id, before, snapshotOf(row), Number(req.user?.id) || null).catch(err => logger.warn(`agent history not saved: ${err}`));
   }
 });
 
-export const { index, show, store, update, remove } = crud;
+export const { index, show, store, update } = crud;
+
+// the agent goes with its blocks (the flows of kind agent that talk as it)
+export const remove = async (req: Request, res: Response): Promise<Response> => {
+  const flows = await ChatFlow.findAll({ where: { agentId: Number(req.params.id) } });
+  for (const f of flows) {
+    // eslint-disable-next-line no-await-in-loop
+    await ChatFlowRun.destroy({ where: { flowId: f.id } });
+    // eslint-disable-next-line no-await-in-loop
+    await ChatFlowStat.destroy({ where: { flowId: f.id } });
+    // eslint-disable-next-line no-await-in-loop
+    await f.destroy();
+  }
+  return crud.remove(req, res);
+};
 
 export const getKeys = async (_req: Request, res: Response): Promise<Response> =>
   res.json({
-    anthropic: maskSecret(await getSetting("ai_anthropic_key")) || "",
-    openai: maskSecret(await getSetting("ai_openai_key")) || ""
+    anthropic: maskSecret(await getSecretSetting("ai_anthropic_key")) || "",
+    openai: maskSecret(await getSecretSetting("ai_openai_key")) || ""
   });
 
 export const setKeys = async (req: Request, res: Response): Promise<Response> => {
   const { anthropic, openai } = req.body;
   if (anthropic !== undefined && !isMasked(anthropic)) {
-    await setSetting("ai_anthropic_key", anthropic);
+    await setSecretSetting("ai_anthropic_key", anthropic);
   }
   if (openai !== undefined && !isMasked(openai)) {
-    await setSetting("ai_openai_key", openai);
+    await setSecretSetting("ai_openai_key", openai);
   }
   return res.json({ ok: true });
+};
+
+// ------------------------------------------------------------------ agents in blocks
+
+const DEFAULT_MODEL = "claude-haiku-5-5";
+const uid = (req: Request): number => Number(req.user.id);
+
+export const agentTemplates = async (_req: Request, res: Response): Promise<Response> => res.json(AGENT_TEMPLATES.map(templateSummary));
+
+// An agent made from a ready example: the persona, a few answers in the knowledge base and the blocks. It starts turned off (and as
+// a draft): nobody is answered until the team reviews it, publishes it and turns it on.
+interface NewAgent {
+  name: string;
+  persona: { systemPrompt: string; tone: string; rules: string; forbidden: string; handoffMessage: string; unknownMessage: string; assistantName?: string };
+  faq: Array<{ title: string; content: string; keywords?: string }>;
+  graph: any;
+  description: string;
+  kb?: Array<{ title: string; content: string; topic: string; keywords?: string }>;
+  // map (and create when missing) the columns of the commercial funnel
+  funnel?: boolean;
+}
+
+// the agent (turned off), its answers in the knowledge base and its blocks (a draft)
+const createAgentWithFlow = async (a: NewAgent, userId: number): Promise<{ agentId: number; flowId: number; funnel?: { created: string[]; missing: string[] } }> => {
+  const access = await defaultProvider();
+  const agent = await AiAgent.create({
+    name: a.name,
+    provider: access.provider,
+    model: access.model || DEFAULT_MODEL,
+    systemPrompt: a.persona.systemPrompt,
+    handoffMessage: a.persona.handoffMessage,
+    persona: { tone: a.persona.tone, rules: a.persona.rules, forbidden: a.persona.forbidden, unknownMessage: a.persona.unknownMessage, ...(a.persona.assistantName ? { assistantName: a.persona.assistantName } : {}) },
+    active: false,
+    maxTokens: 350,
+    handoffAfterTurns: 14,
+    waitSeconds: 4,
+    learnFromTeam: true
+  } as any);
+  for (const f of a.faq) {
+    // eslint-disable-next-line no-await-in-loop
+    await addDocument({ title: f.title, content: f.content, kind: "faq", source: "texto", keywords: f.keywords, agentId: agent.id } as any);
+  }
+  for (const k of a.kb || []) {
+    // eslint-disable-next-line no-await-in-loop
+    await addDocument({ title: k.title, content: k.content, kind: "doc", source: "texto", keywords: k.keywords, topic: k.topic, agentId: agent.id } as any);
+  }
+  const flow = await ChatFlow.create({ name: a.name, kind: "agent", agentId: agent.id, entry: JSON.stringify({ type: "agent", keywords: [] }), draft: JSON.stringify(a.graph), description: a.description, createdBy: userId } as any);
+  const funnel = a.funnel ? await ensurePipeline({ create: true }) : undefined;
+  // the commercial agent also learns the national norms of the register (their status included)
+  if ((a.kb || []).some(k => k.topic === "institutional/mec")) await (await import("../services/CommercialServices/MecDefaults")).syncMecKnowledge().catch(err => logger.warn(`norms not taught to the new agent: ${err}`));
+  return { agentId: agent.id, flowId: flow.id, ...(funnel ? { funnel: { created: funnel.created, missing: funnel.missing } } : {}) };
+};
+
+export const fromTemplate = async (req: Request, res: Response): Promise<Response> => {
+  const t = AGENT_TEMPLATES.find(x => x.key === req.body?.template);
+  if (!t) throw new AppError("ERR_NOT_FOUND", 404);
+  const name = String(req.body?.name || t.name).trim().slice(0, 80) || t.name;
+  // the funnel of the commercial agent is mapped and completed unless the person unchecked it
+  const funnel = !!t.commercial && req.body?.createFunnel !== false;
+  // the name the assistant presents itself with (optional) and the tone chosen on the screen of creation
+  const assistantName = String(req.body?.assistantName || "").trim().slice(0, 40);
+  const tone = String(req.body?.tone || "").trim().slice(0, 200);
+  const persona = { ...(t.persona as any), ...(assistantName ? { assistantName } : {}), ...(tone ? { tone } : {}) };
+  return res.status(201).json(await createAgentWithFlow({ name, persona, faq: t.faq, kb: t.kb, graph: t.graph, description: `Modelo: ${t.name}`, funnel }, uid(req)));
+};
+
+// "Criar com IA": a description of the business becomes the agent, its answers and its blocks (checked and fixed by the system before
+// it is shown); it opens as a draft for the team to review
+export const generate = async (req: Request, res: Response): Promise<Response> => {
+  const description = String(req.body?.description || "").trim().slice(0, 3000);
+  if (description.length < 20) throw new AppError("ERR_FIELD_REQUIRED_description", 400);
+  const out = await generateAgent(description, req.body?.segment);
+  const name = String(req.body?.name || out.agent.name).trim().slice(0, 80) || out.agent.name;
+  const made = await createAgentWithFlow({ name, persona: out.agent.persona, faq: out.agent.faq, graph: out.agent.graph, description: "Criado com IA a partir da sua descrição" }, uid(req));
+  return res.status(201).json({ ...made, attempts: out.attempts, issues: out.issues });
+};
+
+// The agent of today as blocks, in a draft (nothing changes for the people talking until it is published)
+export const convert = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await AiAgent.findByPk(req.params.id);
+  if (!agent) throw new AppError("ERR_NOT_FOUND", 404);
+  const graph = await convertAgent(agent);
+  const flow = await ChatFlow.create({ name: `${agent.name} (em blocos)`.slice(0, 80), kind: "agent", agentId: agent.id, entry: JSON.stringify({ type: "agent", keywords: [] }), draft: JSON.stringify(graph), description: "Convertido do agente de prompt único", createdBy: uid(req) } as any);
+  return res.status(201).json({ flowId: flow.id });
 };
 
 // ------------------------------------------------------------------ knowledge base
@@ -143,9 +287,23 @@ export const kbShow = async (req: Request, res: Response): Promise<Response> => 
   return res.json(doc);
 };
 
+// the subject of a document: "institutional/tutoring", "courses/12/overview" (the passages are read only when the question is about it)
+const topicOf = (v: any): string | null => {
+  const t = String(v ?? "").trim().toLowerCase();
+  if (!t) return null;
+  if (!/^[a-z0-9_-]+(\/[a-z0-9_-]+){0,2}$/.test(t)) throw new AppError("ERR_KB_TOPIC_INVALID", 400);
+  return t;
+};
+const courseOf = async (v: any): Promise<number | null> => {
+  const id = Number(v);
+  if (!id) return null;
+  if (!(await Course.findByPk(id, { attributes: ["id"] }))) throw new AppError("ERR_NOT_FOUND", 404);
+  return id;
+};
+
 export const kbAdd = async (req: Request, res: Response): Promise<Response> => {
   const agent = await loadAgent(req.params.id);
-  const { title, content, kind, keywords, shared } = req.body || {};
+  const { title, content, kind, keywords, shared, topic, courseId } = req.body || {};
   const text = String(content || "").trim();
   if (!String(title || "").trim()) throw new AppError("ERR_FIELD_REQUIRED_title");
   if (!text) throw new AppError("ERR_KB_EMPTY");
@@ -154,6 +312,8 @@ export const kbAdd = async (req: Request, res: Response): Promise<Response> => {
     content: text.slice(0, 200000),
     kind: kind === "faq" ? "faq" : "doc",
     keywords,
+    topic: topicOf(topic),
+    courseId: await courseOf(courseId),
     agentId: shared ? null : agent.id
   });
   return res.status(201).json(doc);
@@ -162,8 +322,10 @@ export const kbAdd = async (req: Request, res: Response): Promise<Response> => {
 export const kbUpdate = async (req: Request, res: Response): Promise<Response> => {
   const doc = await KbDocument.findByPk(req.params.docId);
   if (!doc) throw new AppError("ERR_NOT_FOUND", 404);
-  const { title, content, keywords } = req.body || {};
+  const { title, content, keywords, topic, courseId } = req.body || {};
   await doc.update({
+    ...(topic !== undefined ? { topic: topicOf(topic) } : {}),
+    ...(courseId !== undefined ? { courseId: await courseOf(courseId) } : {}),
     ...(title !== undefined ? { title: String(title).trim().slice(0, 250) } : {}),
     ...(content !== undefined ? { content: String(content).slice(0, 200000) } : {}),
     ...(keywords !== undefined ? { keywords } : {})
@@ -225,6 +387,8 @@ export const kbUpload = async (req: Request, res: Response): Promise<Response> =
     title: String(req.body?.title || "").trim() || file.originalname,
     content: text.slice(0, 200000),
     source: "arquivo",
+    topic: topicOf(req.body?.topic),
+    courseId: await courseOf(req.body?.courseId),
     agentId: req.body?.shared === "true" ? null : agent.id
   });
   return res.status(201).json(doc);
@@ -247,6 +411,8 @@ export const kbFromUrl = async (req: Request, res: Response): Promise<Response> 
     title: String(req.body?.title || "").trim() || url.replace(/^https?:\/\//, "").slice(0, 120),
     content: text.slice(0, 200000),
     source: "url",
+    topic: topicOf(req.body?.topic),
+    courseId: await courseOf(req.body?.courseId),
     agentId: req.body?.shared ? null : agent.id
   });
   return res.status(201).json(doc);
@@ -283,8 +449,7 @@ export const test = async (req: Request, res: Response): Promise<Response> => {
       tokens: result.tokens
     });
   } catch (err) {
-    if (err.message === "ERR_AI_NO_API_KEY") throw new AppError("ERR_AI_NO_API_KEY");
-    throw new AppError("ERR_AI_FAILED", 502);
+    throw aiError(err, "teste", agent.model);
   }
 };
 
@@ -293,7 +458,7 @@ export const usage = async (req: Request, res: Response): Promise<Response> => {
   const days = Math.min(30, Math.max(1, Number(req.query.days) || 7));
   const since = shiftDays(dayBounds().start, -(days - 1));
   const rows: any[] = await AiUsage.findAll({
-    attributes: ["model", "kind", [fn("SUM", col("inputTokens")), "input"], [fn("SUM", col("outputTokens")), "output"], [fn("SUM", col("cacheReadTokens")), "cacheRead"], [fn("COUNT", col("id")), "calls"]],
+    attributes: ["model", "kind", [fn("SUM", col("inputTokens")), "input"], [fn("SUM", col("outputTokens")), "output"], [fn("SUM", col("cacheReadTokens")), "cacheRead"], [fn("SUM", col("cacheWriteTokens")), "cacheWrite"], [fn("COUNT", col("id")), "calls"]],
     where: { agentId: agent.id, createdAt: { [Op.gte]: since } },
     group: ["model", "kind"],
     raw: true
@@ -301,22 +466,36 @@ export const usage = async (req: Request, res: Response): Promise<Response> => {
   const perDay: any[] = await sequelize.query(
     `SELECT TO_CHAR("createdAt" AT TIME ZONE :tz, 'YYYY-MM-DD') AS day, SUM("inputTokens") AS input, SUM("outputTokens") AS output, COUNT(*) AS calls
        FROM "AiUsage" WHERE "agentId" = :id AND kind <> 'test' AND "createdAt" >= :since GROUP BY 1 ORDER BY 1`,
-    { replacements: { tz: process.env.APP_TIMEZONE || "America/Porto_Velho", id: agent.id, since }, type: QueryTypes.SELECT }
+    { replacements: { tz: getAppTz(), id: agent.id, since }, type: QueryTypes.SELECT }
   ).catch(() => []);
-  const answered = await AiUsage.count({ distinct: true, col: "ticketId", where: { agentId: agent.id, ticketId: { [Op.ne]: null }, kind: { [Op.ne]: "test" }, createdAt: { [Op.gte]: since } } });
+  // the conversations THIS agent answered (a ticket counts once, for the agent whose model calls and turns are in it)
+  const answeredRows: any[] = await sequelize.query(
+    `SELECT COUNT(*) AS n FROM (
+       SELECT "ticketId" FROM "AiUsage" WHERE "agentId" = :id AND "kind" <> 'test' AND "ticketId" IS NOT NULL AND "createdAt" >= :since
+       UNION SELECT "ticketId" FROM "AgentTurnLogs" WHERE "agentId" = :id AND "ticketId" IS NOT NULL AND "createdAt" >= :since
+     ) t`,
+    { replacements: { id: agent.id, since }, type: QueryTypes.SELECT }
+  ).catch(() => []);
+  const answered = Number(answeredRows[0]?.n || 0);
   const prices = new Map(await Promise.all([...new Set(rows.map(r => String(r.model)))].map(async model => [model, await priceOf(model)] as const)));
   const costUsd = rows.length && rows.some(r => !prices.get(r.model)) ? null : rows.reduce((sum, row) => {
     const price = prices.get(row.model);
-    return sum + (price ? (Number(row.input || 0) * price.in + Number(row.output || 0) * price.out) / 1e6 : 0);
+    return sum + (price ? ((Number(row.input || 0) + Number(row.cacheRead || 0) * (row.model.startsWith("claude") ? 0.1 : 0.5) + Number(row.cacheWrite || 0) * (row.model.startsWith("claude") ? 1.25 : 1)) * price.in + Number(row.output || 0) * price.out) / 1e6 : 0);
   }, 0);
+
   const live = rows.filter(r => r.kind !== "test");
   const input = live.reduce((a, r) => a + Number(r.input || 0), 0);
   const output = live.reduce((a, r) => a + Number(r.output || 0), 0);
+  const cacheRead = live.reduce((a, r) => a + Number(r.cacheRead || 0), 0);
+  const cacheWrite = live.reduce((a, r) => a + Number(r.cacheWrite || 0), 0);
+  // what the provider charges for the cached part of the prompt, as a share of the normal input price (Claude: reading 10%, writing 125%; GPT: reading 50%)
+  const [readX, writeX] = agent.provider === "openai" ? [0.5, 1] : [0.1, 1.25];
+  const promptTotal = input + cacheRead + cacheWrite;
   return res.json({
     days,
     today: await tokensToday(agent.id),
     cap: agent.dailyTokenCap,
-    total: { input, output, cacheRead: live.reduce((a, r) => a + Number(r.cacheRead || 0), 0), calls: live.reduce((a, r) => a + Number(r.calls || 0), 0) },
+    total: { input, output, cacheRead, cacheWrite, cacheShare: promptTotal > 0 ? Math.round((cacheRead / promptTotal) * 100) : 0, calls: live.reduce((a, r) => a + Number(r.calls || 0), 0) },
     test: {
       input: rows.filter(r => r.kind === "test").reduce((sum, r) => sum + Number(r.input || 0), 0),
       output: rows.filter(r => r.kind === "test").reduce((sum, r) => sum + Number(r.output || 0), 0),
@@ -326,10 +505,10 @@ export const usage = async (req: Request, res: Response): Promise<Response> => {
     perDay: perDay.map(d => ({ day: d.day, input: Number(d.input), output: Number(d.output), calls: Number(d.calls) })),
     // only when the administrator typed the price of this model in Settings
     costUsd: costUsd === null ? null : Math.round(costUsd * 10000) / 10000
+
   });
 };
 
-export const defaults = async (_req: Request, res: Response): Promise<Response> => res.json({ slots: DEFAULT_SLOTS, model: "claude-haiku-5-5" });
 
 // ------------------------------------------------------------------ learning (review what the agent should learn)
 
@@ -393,4 +572,308 @@ export const learningTeach = async (req: Request, res: Response): Promise<Respon
   if (!question || !answer) throw new AppError("ERR_LEARNING_EMPTY");
   const row = await AiLearning.create({ agentId: agent.id, question: question.slice(0, 1000), suggestedAnswer: answer, status: "para_revisar", answerSource: "dono" } as any);
   return res.status(201).json(await approve(row, { asFaq: !!req.body?.asFaq, shared: !!req.body?.shared }));
+};
+
+// ------------------------------------------------------------------ the trainer: what the owner taught the agent
+
+const asTurns = (raw: any): Array<{ role: "user" | "assistant"; content: string }> =>
+  (Array.isArray(raw) ? raw : [])
+    .filter((m: any) => m && ["user", "assistant"].includes(m.role) && String(m.content || "").trim())
+    .map((m: any) => ({ role: m.role, content: String(m.content).slice(0, 2000) }));
+
+const aiFailure = (err: any, where = "treino", model?: string): AppError => aiError(err, where, model);
+
+export const ruleList = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await loadAgent(req.params.id);
+  const rows = await AiRule.findAll({ where: { agentId: agent.id }, order: [["position", "ASC"], ["id", "ASC"]] });
+  return res.json(rows);
+};
+
+const cleanKind = (k: any): RuleKind => (KINDS.includes(k) ? k : "regra");
+
+export const ruleCreate = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await loadAgent(req.params.id);
+  const text = String(req.body?.text || "").trim();
+  if (text.length < 3) throw new AppError("ERR_RULE_EMPTY");
+  const last = await AiRule.max("position", { where: { agentId: agent.id } });
+  const row = await AiRule.create({ agentId: agent.id, kind: cleanKind(req.body?.kind), text: text.slice(0, 1200), position: Number(last || 0) + 1, source: String(req.body?.source || "treino").slice(0, 20), createdBy: Number(req.user.id) } as any);
+  invalidateTraining(agent.id);
+  return res.status(201).json(row);
+};
+
+export const ruleBulk = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await loadAgent(req.params.id);
+  const items = (Array.isArray(req.body?.items) ? req.body.items : []).slice(0, 60);
+  let position = Number((await AiRule.max("position", { where: { agentId: agent.id } })) || 0);
+  const made: AiRule[] = [];
+  for (const it of items) {
+    const text = String(it?.text || "").trim();
+    if (text.length < 3) continue;
+    position += 1;
+    // eslint-disable-next-line no-await-in-loop
+    made.push(await AiRule.create({ agentId: agent.id, kind: cleanKind(it.kind), text: text.slice(0, 1200), position, source: String(req.body?.source || "treino").slice(0, 20), createdBy: Number(req.user.id) } as any));
+  }
+  invalidateTraining(agent.id);
+  return res.status(201).json(made);
+};
+
+export const ruleUpdate = async (req: Request, res: Response): Promise<Response> => {
+  const row = await AiRule.findByPk(req.params.id);
+  if (!row) throw new AppError("ERR_NOT_FOUND", 404);
+  const patch: any = {};
+  if (req.body?.text !== undefined) {
+    const text = String(req.body.text).trim();
+    if (text.length < 3) throw new AppError("ERR_RULE_EMPTY");
+    patch.text = text.slice(0, 1200);
+  }
+  if (req.body?.kind !== undefined) patch.kind = cleanKind(req.body.kind);
+  if (req.body?.active !== undefined) patch.active = !!req.body.active;
+  if (req.body?.position !== undefined) patch.position = Number(req.body.position) || 0;
+  await row.update(patch);
+  invalidateTraining(row.agentId);
+  return res.json(row);
+};
+
+export const ruleRemove = async (req: Request, res: Response): Promise<Response> => {
+  const row = await AiRule.findByPk(req.params.id);
+  if (!row) throw new AppError("ERR_NOT_FOUND", 404);
+  await row.destroy();
+  invalidateTraining(row.agentId);
+  return res.json({ message: "deleted" });
+};
+
+// The owner talks to the agent to teach it: the agent answers and proposes what it understood; nothing is saved until the owner accepts.
+export const coach = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await loadAgent(req.params.id);
+  const messages = asTurns(req.body?.messages);
+  if (!messages.length || messages[messages.length - 1].role !== "user") throw new AppError("ERR_AI_NO_HISTORY");
+  try {
+    return res.json(await coachTurn(agent, messages));
+  } catch (err) {
+    throw aiFailure(err);
+  }
+};
+
+// "Testar conexão": one tiny call with the saved provider, model and key; the answer says what is wrong when something is
+export const ping = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await loadAgent(req.params.id);
+  try {
+    const started = Date.now();
+    await askModel(agent, "Responda apenas: ok", [{ role: "user", content: "ok?" }], 20);
+    return res.json({ ok: true, provider: agent.provider, model: agent.model, ms: Date.now() - started });
+  } catch (err) {
+    throw aiFailure(err, "conexão", agent.model);
+  }
+};
+
+// A tester conversation turned into proposed lessons, for the owner to review.
+export const trainFromConversation = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await loadAgent(req.params.id);
+  const messages = asTurns(req.body?.messages);
+  if (messages.length < 2) throw new AppError("ERR_AI_NO_HISTORY");
+  try {
+    return res.json({ proposed: await fromConversation(agent, messages) });
+  } catch (err) {
+    throw aiFailure(err);
+  }
+};
+
+// ------------------------------------------------------------------ learning from a file (PDF, document, conversation exported from WhatsApp)
+
+interface Upload {
+  agentId: number;
+  kind: "whatsapp" | "document";
+  text: string;
+  chat?: ExportedChat;
+  at: number;
+}
+const uploads = new Map<string, Upload>();
+const UPLOAD_TTL = 20 * 60000;
+const sweepUploads = (): void => {
+  const now = Date.now();
+  uploads.forEach((u, k) => {
+    if (now - u.at > UPLOAD_TTL) uploads.delete(k);
+  });
+  // never more than a handful in memory
+  [...uploads.keys()].slice(0, Math.max(0, uploads.size - 20)).forEach(k => uploads.delete(k));
+};
+
+// the text inside a .zip of WhatsApp (the conversation is the .txt; photos and audios are ignored)
+const textOfZip = async (buffer: Buffer): Promise<string> => {
+  const zip = await JSZip.loadAsync(buffer);
+  const names = Object.keys(zip.files).filter(n => !zip.files[n].dir && /\.txt$/i.test(n) && !/^__MACOSX\//.test(n));
+  if (!names.length) throw new AppError("ERR_TRAIN_ZIP_EMPTY");
+  names.sort((a, b) => (/_chat\.txt$/i.test(b) ? 1 : 0) - (/_chat\.txt$/i.test(a) ? 1 : 0) || a.length - b.length);
+  return zip.files[names[0]].async("string");
+};
+
+export const trainUpload = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await loadAgent(req.params.id);
+  const file = (req as any).file as Express.Multer.File | undefined;
+  if (!file) throw new AppError("ERR_KB_EMPTY");
+  let text = "";
+  try {
+    text = /\.zip$/i.test(file.originalname) ? await textOfZip(file.buffer) : await textOfFile(file);
+  } catch (err) {
+    if (err instanceof AppError) throw err;
+    throw new AppError("ERR_KB_FILE_READ");
+  }
+  text = text.trim().slice(0, 1500000);
+  if (!text) throw new AppError("ERR_KB_FILE_READ");
+  sweepUploads();
+  const token = crypto.randomBytes(12).toString("hex");
+  const chat = looksLikeWhatsAppExport(text) ? parseWhatsAppExport(text) : undefined;
+  const kind = chat ? "whatsapp" : "document";
+  uploads.set(token, { agentId: agent.id, kind, text, chat, at: Date.now() });
+  const body = chat ? toTranscript(chat, chat.participants[0]?.name || "") : text;
+  return res.json({
+    token,
+    kind,
+    name: file.originalname,
+    chars: text.length,
+    messages: chat ? chat.messages.length : 0,
+    participants: chat ? chat.participants.slice(0, 12) : [],
+    suggested: chat && chat.participants[0] ? chat.participants[0].name : null,
+    plan: planOf(body)
+  });
+};
+
+export const trainAnalyze = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await loadAgent(req.params.id);
+  const up = uploads.get(String(req.body?.token || ""));
+  if (!up || up.agentId !== agent.id) throw new AppError("ERR_TRAIN_EXPIRED", 410);
+  let body = up.text;
+  if (up.kind === "whatsapp" && up.chat) {
+    const attendant = String(req.body?.attendant || "");
+    if (!up.chat.participants.some(p => p.name === attendant)) throw new AppError("ERR_TRAIN_ATTENDANT");
+    body = toTranscript(up.chat, attendant);
+  } else {
+    body = maskPii(body);
+  }
+  try {
+    return res.json({ kind: up.kind, ...(await analyzeFile(agent, up.kind, body)) });
+  } catch (err) {
+    throw aiFailure(err);
+  }
+};
+
+// what the owner approved: style and examples become lessons, facts go to the knowledge base, the steps become a draft of the Roteiro (nothing is published)
+export const trainApply = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await loadAgent(req.params.id);
+  const clean = normalizeResult(req.body);
+  const rules: Array<{ kind: RuleKind; text: string }> = [
+    ...clean.style.map(text => ({ kind: "estilo" as RuleKind, text })),
+    ...clean.examples.map(e => ({ kind: "exemplo" as RuleKind, text: exampleText(e) })),
+    ...(Array.isArray(req.body?.rules) ? req.body.rules : []).map((t: any) => ({ kind: "regra" as RuleKind, text: String(t || "").trim().slice(0, 1200) })).filter((r: { text: string }) => r.text.length >= 3)
+  ];
+  let position = Number((await AiRule.max("position", { where: { agentId: agent.id } })) || 0);
+  for (const r of rules) {
+    position += 1;
+    // eslint-disable-next-line no-await-in-loop
+    await AiRule.create({ agentId: agent.id, kind: r.kind, text: r.text, position, source: "arquivo", createdBy: Number(req.user.id) } as any);
+  }
+  invalidateTraining(agent.id);
+  for (const k of clean.knowledge) {
+    // eslint-disable-next-line no-await-in-loop
+    await addDocument({ agentId: agent.id, title: k.title, content: k.content, kind: "doc", source: "aprendido" } as any);
+  }
+  let flowId: number | null = null;
+  if (clean.steps.length) {
+    const nodes: Array<[string, string, any]> = [["start", "start", {}]];
+    const links: Array<[string, string, string?]> = [["start", "e1"]];
+    clean.steps.forEach((s, i) => {
+      nodes.push([`e${i + 1}`, "stage", cleanStage(stageOfStep(s, i))]);
+      links.push([`e${i + 1}`, i + 1 < clean.steps.length ? `e${i + 2}` : "consultor", "done"]);
+    });
+    nodes.push(["consultor", "transfer", { to: "polo_sales" }]);
+    const flow = await ChatFlow.create({ name: `${agent.name} (roteiro aprendido)`.slice(0, 80), kind: "agent", agentId: agent.id, entry: JSON.stringify({ type: "agent", keywords: [] }), draft: JSON.stringify(buildGraph({ nodes, links })), description: "Etapas aprendidas de um arquivo: revise e publique", createdBy: Number(req.user.id) } as any);
+    flowId = flow.id;
+  }
+  return res.status(201).json({ rules: rules.length, knowledge: clean.knowledge.length, steps: clean.steps.length, flowId });
+};
+
+// ------------------------------------------------------------------ test cases (conversations the agent must handle well)
+const caseView = (c: AiEvalCase) => {
+  const parse = (v: string | null, fallback: any) => {
+    try { return v ? JSON.parse(v) : fallback; } catch (e) { return fallback; }
+  };
+  return {
+    id: c.id, name: c.name, messages: parse(c.messages, []), expect: parse(c.expect, {}),
+    lastStatus: c.lastStatus || null, lastText: c.lastText || null, lastReasons: parse(c.lastReasons, []), lastRunAt: c.lastRunAt || null
+  };
+};
+
+export const evalList = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await loadAgent(req.params.id);
+  const rows = await AiEvalCase.findAll({ where: { agentId: agent.id }, order: [["id", "ASC"]] });
+  return res.json(rows.map(caseView));
+};
+
+export const evalCreate = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await loadAgent(req.params.id);
+  const messages = cleanMessages(req.body?.messages);
+  if (!messages.length) throw new AppError("ERR_AI_NO_HISTORY");
+  if ((await AiEvalCase.count({ where: { agentId: agent.id } })) >= 40) throw new AppError("ERR_AI_CASE_LIMIT");
+  const expect = cleanExpect(req.body?.expect);
+  if (!expect.mustContain.length && !expect.mustNotContain.length && !expect.outcome) throw new AppError("ERR_AI_CASE_EMPTY");
+  const name = String(req.body?.name || "").trim().slice(0, 160) || messages[messages.length - 1].content.slice(0, 60);
+  const row = await AiEvalCase.create({ agentId: agent.id, name, messages: JSON.stringify(messages), expect: JSON.stringify(expect), createdBy: Number(req.user.id) } as any);
+  return res.status(201).json(caseView(row));
+};
+
+export const evalRemove = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await loadAgent(req.params.id);
+  await AiEvalCase.destroy({ where: { id: req.params.caseId, agentId: agent.id } });
+  return res.json({ ok: true });
+};
+
+// runs the saved cases one after the other (one case when `caseId` is given); each verdict is kept for the list
+// the weekly check of the commercial process with the real model: the last report, and "Rodar agora"
+export const processEval = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await loadAgent(req.params.id);
+  return res.json({ report: await lastProcessEval(agent.id) });
+};
+
+export const processEvalRun = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await loadAgent(req.params.id);
+  return res.json({ report: await runProcessEval(agent) });
+};
+
+export const evalRun = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await loadAgent(req.params.id);
+  const where: any = { agentId: agent.id };
+  if (req.body?.caseId) where.id = Number(req.body.caseId);
+  const rows = await AiEvalCase.findAll({ where, order: [["id", "ASC"]], limit: 20 });
+  const out: any[] = [];
+  try {
+    for (const row of rows) {
+      // eslint-disable-next-line no-await-in-loop
+      const r = await runCase(agent, row);
+      // eslint-disable-next-line no-await-in-loop
+      await row.update({ lastStatus: r.status, lastText: r.text.slice(0, 2000), lastReasons: JSON.stringify(r.reasons), lastRunAt: new Date() });
+      out.push(caseView(row));
+    }
+  } catch (err) {
+    throw aiError(err, "casos de teste", agent.model);
+  }
+  return res.json({ passed: out.filter(c => c.lastStatus === "pass").length, failed: out.filter(c => c.lastStatus === "fail").length, cases: out });
+};
+
+// ------------------------------------------------------------------ history of changes (see what changed and put an earlier version back)
+export const historyList = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await loadAgent(req.params.id);
+  const rows = await AiAgentRevision.findAll({ where: { agentId: agent.id }, order: [["id", "DESC"]], limit: 40 });
+  const users = await User.findAll({ where: { id: rows.map(r => r.userId).filter(Boolean) as number[] }, attributes: ["id", "name"] });
+  const nameOf = new Map(users.map(u => [u.id, u.name]));
+  const current = snapshotOf(agent);
+  return res.json(rows.map(r => {
+    const snap = JSON.parse(r.snapshot);
+    return { id: r.id, at: r.createdAt, by: r.userId ? nameOf.get(r.userId) || "Usuário removido" : null, note: r.note, changed: JSON.parse(r.fields || "[]"), isCurrent: changedLabels(current, snap).length === 0 };
+  }));
+};
+
+export const historyRestore = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await loadAgent(req.params.id);
+  await restoreRevision(agent, Number(req.params.revisionId), Number(req.user.id));
+  return res.json({ ok: true });
 };

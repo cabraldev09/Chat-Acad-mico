@@ -8,8 +8,8 @@
 --
 
 
--- Dumped from database version 16.15 (Homebrew)
--- Dumped by pg_dump version 16.15 (Homebrew)
+-- Dumped from database version 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)
+-- Dumped by pg_dump version 16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)
 
 SET statement_timeout = 0;
 SET lock_timeout = 0;
@@ -25,6 +25,59 @@ SET row_security = off;
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
+
+--
+-- Name: AcademicAnalyses; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."AcademicAnalyses" (
+    id integer NOT NULL,
+    "userId" integer,
+    "studentId" integer,
+    "leadId" integer,
+    "contactId" integer,
+    origin character varying(20) DEFAULT 'STAFF_UPLOAD'::character varying NOT NULL,
+    "originalName" character varying(255),
+    "fileHash" character varying(64),
+    "contentHash" character varying(64),
+    "factsHash" character varying(64),
+    "documentType" character varying(40),
+    rgm character varying(40),
+    "studentName" character varying(160),
+    "courseName" character varying(200),
+    "currentPeriod" integer,
+    "currentPeriodConfirmed" boolean DEFAULT false NOT NULL,
+    status character varying(30),
+    version integer DEFAULT 1 NOT NULL,
+    "isCurrent" boolean DEFAULT true NOT NULL,
+    "changeSummary" text,
+    snapshot text NOT NULL,
+    forecast text,
+    message text,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: AcademicAnalyses_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."AcademicAnalyses_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: AcademicAnalyses_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."AcademicAnalyses_id_seq" OWNED BY public."AcademicAnalyses".id;
+
 
 --
 -- Name: AffiliateAudiences; Type: TABLE; Schema: public; Owner: -
@@ -147,6 +200,39 @@ ALTER SEQUENCE public."AffiliateCampaigns_id_seq" OWNED BY public."AffiliateCamp
 
 
 --
+-- Name: AffiliateClicks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."AffiliateClicks" (
+    id integer NOT NULL,
+    "affiliateId" integer NOT NULL,
+    visitor character varying(64) NOT NULL,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: AffiliateClicks_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."AffiliateClicks_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: AffiliateClicks_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."AffiliateClicks_id_seq" OWNED BY public."AffiliateClicks".id;
+
+
+--
 -- Name: AffiliateMaterials; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -243,6 +329,90 @@ ALTER SEQUENCE public."Affiliates_id_seq" OWNED BY public."Affiliates".id;
 
 
 --
+-- Name: AgentMetricEvents; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."AgentMetricEvents" (
+    id integer NOT NULL,
+    "leadId" integer,
+    "agentId" integer,
+    "flowId" integer,
+    event character varying(40) NOT NULL,
+    once boolean DEFAULT true NOT NULL,
+    meta text,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: AgentMetricEvents_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."AgentMetricEvents_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: AgentMetricEvents_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."AgentMetricEvents_id_seq" OWNED BY public."AgentMetricEvents".id;
+
+
+--
+-- Name: AgentTurnLogs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."AgentTurnLogs" (
+    id integer NOT NULL,
+    "agentId" integer,
+    "flowId" integer,
+    "nodeId" character varying(40),
+    "ticketId" integer,
+    "leadId" integer,
+    intent character varying(40),
+    deterministic boolean DEFAULT false NOT NULL,
+    "llmCalls" integer DEFAULT 0 NOT NULL,
+    "toolCalls" integer DEFAULT 0 NOT NULL,
+    "cacheHits" integer DEFAULT 0 NOT NULL,
+    "inputTokens" integer DEFAULT 0 NOT NULL,
+    "outputTokens" integer DEFAULT 0 NOT NULL,
+    "cacheReadTokens" integer DEFAULT 0 NOT NULL,
+    "latencyMs" integer DEFAULT 0 NOT NULL,
+    outcome character varying(40),
+    model character varying(60),
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: AgentTurnLogs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."AgentTurnLogs_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: AgentTurnLogs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."AgentTurnLogs_id_seq" OWNED BY public."AgentTurnLogs".id;
+
+
+--
 -- Name: AiAgents; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -335,6 +505,44 @@ ALTER SEQUENCE public."AiLearnings_id_seq" OWNED BY public."AiLearnings".id;
 
 
 --
+-- Name: AiRules; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."AiRules" (
+    id integer NOT NULL,
+    "agentId" integer NOT NULL,
+    kind character varying(255) DEFAULT 'regra'::character varying NOT NULL,
+    text text NOT NULL,
+    "position" integer DEFAULT 0 NOT NULL,
+    active boolean DEFAULT true NOT NULL,
+    source character varying(255) DEFAULT 'treino'::character varying NOT NULL,
+    "createdBy" integer,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: AiRules_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."AiRules_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: AiRules_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."AiRules_id_seq" OWNED BY public."AiRules".id;
+
+
+--
 -- Name: AiUsage; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -349,7 +557,11 @@ CREATE TABLE public."AiUsage" (
     "cacheReadTokens" integer DEFAULT 0 NOT NULL,
     "cacheWriteTokens" integer DEFAULT 0 NOT NULL,
     "createdAt" timestamp with time zone NOT NULL,
-    "updatedAt" timestamp with time zone NOT NULL
+    "updatedAt" timestamp with time zone NOT NULL,
+    "flowId" integer,
+    "nodeId" character varying(40),
+    "latencyMs" integer,
+    "leadId" integer
 );
 
 
@@ -610,6 +822,42 @@ ALTER SEQUENCE public."ChatFlowStats_id_seq" OWNED BY public."ChatFlowStats".id;
 
 
 --
+-- Name: ChatFlowVersions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."ChatFlowVersions" (
+    id integer NOT NULL,
+    "flowId" integer NOT NULL,
+    version integer NOT NULL,
+    graph text NOT NULL,
+    note character varying(200),
+    "publishedBy" integer,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: ChatFlowVersions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."ChatFlowVersions_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: ChatFlowVersions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."ChatFlowVersions_id_seq" OWNED BY public."ChatFlowVersions".id;
+
+
+--
 -- Name: ChatFlows; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -626,7 +874,9 @@ CREATE TABLE public."ChatFlows" (
     "publishedAt" timestamp with time zone,
     "createdBy" integer,
     "createdAt" timestamp with time zone NOT NULL,
-    "updatedAt" timestamp with time zone NOT NULL
+    "updatedAt" timestamp with time zone NOT NULL,
+    kind character varying(10) DEFAULT 'flow'::character varying NOT NULL,
+    "agentId" integer
 );
 
 
@@ -688,6 +938,97 @@ CREATE SEQUENCE public."ChatbotNodes_id_seq"
 --
 
 ALTER SEQUENCE public."ChatbotNodes_id_seq" OWNED BY public."ChatbotNodes".id;
+
+
+--
+-- Name: ClientErrors; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."ClientErrors" (
+    id integer NOT NULL,
+    code character varying(20) NOT NULL,
+    "userId" integer,
+    role character varying(30),
+    route character varying(200),
+    message text,
+    stack text,
+    components text,
+    "userAgent" character varying(300),
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL,
+    build character varying(20),
+    "resolvedAt" timestamp with time zone
+);
+
+
+--
+-- Name: ClientErrors_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."ClientErrors_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: ClientErrors_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."ClientErrors_id_seq" OWNED BY public."ClientErrors".id;
+
+
+--
+-- Name: CommercialGrades; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."CommercialGrades" (
+    id integer NOT NULL,
+    "courseName" character varying(200) NOT NULL,
+    modality character varying(80),
+    "curriculumTerm" character varying(40),
+    degree character varying(80),
+    "knowledgeArea" character varying(80),
+    "durationSemesters" integer,
+    "courseTracks" text DEFAULT '[]'::text NOT NULL,
+    "internshipInfo" text,
+    "hasTcc" boolean DEFAULT false NOT NULL,
+    "totalInternshipHours" integer,
+    "totalCourseHours" integer,
+    "whatsappSummary" text,
+    complete boolean DEFAULT true NOT NULL,
+    "contentHash" character varying(64) NOT NULL,
+    "catalogKey" character varying(64) NOT NULL,
+    "originalName" character varying(255),
+    "fileName" character varying(120) NOT NULL,
+    "sizeBytes" integer,
+    "uploadedById" integer,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: CommercialGrades_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."CommercialGrades_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: CommercialGrades_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."CommercialGrades_id_seq" OWNED BY public."CommercialGrades".id;
 
 
 --
@@ -825,7 +1166,10 @@ CREATE TABLE public."Contacts" (
     kind character varying(255) DEFAULT 'person'::character varying NOT NULL,
     "noReply" boolean DEFAULT false NOT NULL,
     "parentGroupId" character varying(255),
-    "readOnly" boolean DEFAULT false NOT NULL
+    "readOnly" boolean DEFAULT false NOT NULL,
+    "communityRole" character varying(20),
+    "communityId" character varying(255),
+    "isPersonal" boolean DEFAULT false NOT NULL
 );
 
 
@@ -847,6 +1191,51 @@ CREATE SEQUENCE public."Contacts_id_seq"
 --
 
 ALTER SEQUENCE public."Contacts_id_seq" OWNED BY public."Contacts".id;
+
+
+--
+-- Name: CourseRegulations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."CourseRegulations" (
+    id integer NOT NULL,
+    "courseId" integer NOT NULL,
+    "intakeTerm" character varying(10),
+    "mecImpacted" boolean,
+    regulation character varying(300),
+    "percentualPresencial" numeric(5,2),
+    "percentualSincrono" numeric(5,2),
+    "teoriaAoVivo" boolean,
+    "praticaPresencial" boolean,
+    "cronogramaPraticasDefinido" boolean,
+    "transitionStatus" character varying(40),
+    "currentDelivery" character varying(40),
+    "futureDelivery" character varying(40),
+    "transitionNote" text,
+    "commercialApprovedText" text,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: CourseRegulations_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."CourseRegulations_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: CourseRegulations_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."CourseRegulations_id_seq" OWNED BY public."CourseRegulations".id;
 
 
 --
@@ -886,6 +1275,67 @@ CREATE SEQUENCE public."Courses_id_seq"
 --
 
 ALTER SEQUENCE public."Courses_id_seq" OWNED BY public."Courses".id;
+
+
+--
+-- Name: CurricularAnalyses; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."CurricularAnalyses" (
+    id integer NOT NULL,
+    "userId" integer,
+    "leadId" integer,
+    "contactId" integer,
+    "candidateName" character varying(160),
+    "originalName" character varying(255),
+    "fileHash" character varying(64),
+    "pageCount" integer,
+    status character varying(20) DEFAULT 'COMPLETED'::character varying NOT NULL,
+    "errorMessage" text,
+    "courseName" character varying(200),
+    "matrixLabel" character varying(120),
+    campus character varying(120),
+    modality character varying(120),
+    "headerEntryPeriod" integer,
+    "entryPeriod" integer,
+    "entryPeriodSource" character varying(12),
+    "startTerm" character varying(8),
+    subjects text DEFAULT '[]'::text NOT NULL,
+    claims text DEFAULT '[]'::text NOT NULL,
+    "baseWarnings" text DEFAULT '[]'::text NOT NULL,
+    result text,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL,
+    "enrollmentStatus" character varying(20) DEFAULT 'PENDING'::character varying NOT NULL,
+    "enrollmentNote" text,
+    "enrollmentUpdatedAt" timestamp with time zone,
+    "enrollmentUpdatedById" integer,
+    "enrollmentReanalysisAt" timestamp with time zone,
+    "followUpDueAt" timestamp with time zone,
+    "followUpNotifiedAt" timestamp with time zone,
+    "followUpNotificationCount" integer DEFAULT 0 NOT NULL,
+    "poloId" integer
+);
+
+
+--
+-- Name: CurricularAnalyses_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."CurricularAnalyses_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: CurricularAnalyses_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."CurricularAnalyses_id_seq" OWNED BY public."CurricularAnalyses".id;
 
 
 --
@@ -978,7 +1428,8 @@ CREATE TABLE public."Goals" (
     "createdAt" timestamp with time zone NOT NULL,
     "updatedAt" timestamp with time zone NOT NULL,
     "workDays" integer DEFAULT 5 NOT NULL,
-    kind character varying(255) DEFAULT 'team'::character varying NOT NULL
+    kind character varying(255) DEFAULT 'team'::character varying NOT NULL,
+    "extraHolidays" text
 );
 
 
@@ -1086,7 +1537,9 @@ CREATE TABLE public."KbDocuments" (
     content text NOT NULL,
     "agentId" integer,
     "createdAt" timestamp with time zone NOT NULL,
-    "updatedAt" timestamp with time zone NOT NULL
+    "updatedAt" timestamp with time zone NOT NULL,
+    topic character varying(80),
+    "courseId" integer
 );
 
 
@@ -1144,6 +1597,125 @@ CREATE SEQUENCE public."LeadActivities_id_seq"
 --
 
 ALTER SEQUENCE public."LeadActivities_id_seq" OWNED BY public."LeadActivities".id;
+
+
+--
+-- Name: LeadCommercials; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."LeadCommercials" (
+    id integer NOT NULL,
+    "leadId" integer NOT NULL,
+    "agentId" integer,
+    "flowId" integer,
+    slots text DEFAULT '{}'::text NOT NULL,
+    temperature character varying(8) DEFAULT 'cold'::character varying NOT NULL,
+    "commercialScore" integer DEFAULT 0 NOT NULL,
+    "readyForProposal" boolean DEFAULT false NOT NULL,
+    "nextAction" character varying(40),
+    "lastIntent" character varying(40),
+    "followUpReason" character varying(300),
+    "followUpAt" timestamp with time zone,
+    summary text,
+    "stageKey" character varying(40),
+    "lastNoteHash" character varying(40),
+    "lastInboundAt" timestamp with time zone,
+    "lastOutboundAt" timestamp with time zone,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL,
+    "readyForConsultant" boolean DEFAULT false NOT NULL
+);
+
+
+--
+-- Name: LeadCommercials_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."LeadCommercials_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: LeadCommercials_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."LeadCommercials_id_seq" OWNED BY public."LeadCommercials".id;
+
+
+--
+-- Name: LeadDocuments; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."LeadDocuments" (
+    id integer NOT NULL,
+    "leadId" integer NOT NULL,
+    name character varying(120) NOT NULL,
+    status character varying(12) DEFAULT 'pending'::character varying NOT NULL,
+    "position" integer DEFAULT 0 NOT NULL,
+    "receivedAt" timestamp with time zone,
+    "receivedBy" integer,
+    note text,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: LeadDocuments_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."LeadDocuments_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: LeadDocuments_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."LeadDocuments_id_seq" OWNED BY public."LeadDocuments".id;
+
+
+--
+-- Name: LeadReminderLogs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."LeadReminderLogs" (
+    id integer NOT NULL,
+    "leadId" integer NOT NULL,
+    key character varying(120) NOT NULL,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: LeadReminderLogs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."LeadReminderLogs_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: LeadReminderLogs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."LeadReminderLogs_id_seq" OWNED BY public."LeadReminderLogs".id;
 
 
 --
@@ -1286,7 +1858,11 @@ CREATE TABLE public."Leads" (
     "indicatedBy" integer,
     "isHistorical" boolean DEFAULT false NOT NULL,
     "slaAlertedAt" timestamp with time zone,
-    "affiliateId" integer
+    "affiliateId" integer,
+    "reenrolledTerm" character varying(10),
+    "reenrolledAt" timestamp with time zone,
+    "onboardingChecklist" text,
+    "practicePoloId" integer
 );
 
 
@@ -1308,6 +1884,43 @@ CREATE SEQUENCE public."Leads_id_seq"
 --
 
 ALTER SEQUENCE public."Leads_id_seq" OWNED BY public."Leads".id;
+
+
+--
+-- Name: MarketingSpends; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."MarketingSpends" (
+    id integer NOT NULL,
+    month character varying(7) NOT NULL,
+    source character varying(80) NOT NULL,
+    campaign character varying(120),
+    amount numeric(12,2) DEFAULT 0 NOT NULL,
+    note text,
+    "createdBy" integer,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: MarketingSpends_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."MarketingSpends_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: MarketingSpends_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."MarketingSpends_id_seq" OWNED BY public."MarketingSpends".id;
 
 
 --
@@ -1333,6 +1946,126 @@ CREATE TABLE public."Messages" (
     "isEdited" boolean DEFAULT false NOT NULL,
     "isGif" boolean DEFAULT false NOT NULL
 );
+
+
+--
+-- Name: NpsSurveys; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."NpsSurveys" (
+    id integer NOT NULL,
+    "leadId" integer NOT NULL,
+    "contactId" integer,
+    kind character varying(12) NOT NULL,
+    status character varying(10) DEFAULT 'sent'::character varying NOT NULL,
+    score integer,
+    comment text,
+    "awaitingComment" boolean DEFAULT false NOT NULL,
+    "sentAt" timestamp with time zone NOT NULL,
+    "answeredAt" timestamp with time zone,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL,
+    "scoreGroup" character varying(10),
+    "whatsappId" integer
+);
+
+
+--
+-- Name: NpsSurveys_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."NpsSurveys_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: NpsSurveys_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."NpsSurveys_id_seq" OWNED BY public."NpsSurveys".id;
+
+
+--
+-- Name: OutboundMessages; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."OutboundMessages" (
+    id integer NOT NULL,
+    "ticketId" integer NOT NULL,
+    "userId" integer NOT NULL,
+    "clientKey" character varying(255) NOT NULL,
+    payload json NOT NULL,
+    status character varying(255) DEFAULT 'pending'::character varying NOT NULL,
+    attempts integer DEFAULT 0 NOT NULL,
+    "nextAttemptAt" timestamp with time zone,
+    "lockedAt" timestamp with time zone,
+    "providerMsgId" character varying(255),
+    error text,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL,
+    "sentAt" timestamp with time zone
+);
+
+
+--
+-- Name: OutboundMessages_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."OutboundMessages_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: OutboundMessages_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."OutboundMessages_id_seq" OWNED BY public."OutboundMessages".id;
+
+
+--
+-- Name: PasswordResets; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."PasswordResets" (
+    id integer NOT NULL,
+    "userId" integer NOT NULL,
+    "tokenHash" character varying(64) NOT NULL,
+    "expiresAt" timestamp with time zone NOT NULL,
+    "usedAt" timestamp with time zone,
+    "requestIp" character varying(64),
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: PasswordResets_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."PasswordResets_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: PasswordResets_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."PasswordResets_id_seq" OWNED BY public."PasswordResets".id;
 
 
 --
@@ -1398,6 +2131,41 @@ ALTER SEQUENCE public."Payments_id_seq" OWNED BY public."Payments".id;
 
 
 --
+-- Name: PoloCoverages; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."PoloCoverages" (
+    id integer NOT NULL,
+    "poloId" integer NOT NULL,
+    city character varying(255) NOT NULL,
+    "cityKey" character varying(255) NOT NULL,
+    state character varying(2),
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: PoloCoverages_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."PoloCoverages_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: PoloCoverages_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."PoloCoverages_id_seq" OWNED BY public."PoloCoverages".id;
+
+
+--
 -- Name: PoloMembers; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1443,7 +2211,9 @@ CREATE TABLE public."Polos" (
     state character varying(2),
     active boolean DEFAULT true NOT NULL,
     "createdAt" timestamp with time zone NOT NULL,
-    "updatedAt" timestamp with time zone NOT NULL
+    "updatedAt" timestamp with time zone NOT NULL,
+    "enrollsSemipresencial" boolean DEFAULT false NOT NULL,
+    "enrollPoloId" integer
 );
 
 
@@ -1648,7 +2418,8 @@ CREATE TABLE public."QuickAnswers" (
     shortcut text NOT NULL,
     message text NOT NULL,
     "createdAt" timestamp with time zone NOT NULL,
-    "updatedAt" timestamp with time zone NOT NULL
+    "updatedAt" timestamp with time zone NOT NULL,
+    "userId" integer
 );
 
 
@@ -1670,6 +2441,49 @@ CREATE SEQUENCE public."QuickAnswers_id_seq"
 --
 
 ALTER SEQUENCE public."QuickAnswers_id_seq" OWNED BY public."QuickAnswers".id;
+
+
+--
+-- Name: RetentionMessages; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."RetentionMessages" (
+    id integer NOT NULL,
+    "leadId" integer,
+    "contactId" integer,
+    name character varying(160),
+    number character varying(40),
+    kind character varying(10) NOT NULL,
+    body text NOT NULL,
+    "surveyId" integer,
+    "userId" integer,
+    status character varying(8) DEFAULT 'sent'::character varying NOT NULL,
+    error text,
+    "withButtons" boolean DEFAULT false NOT NULL,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL,
+    "whatsappId" integer
+);
+
+
+--
+-- Name: RetentionMessages_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."RetentionMessages_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: RetentionMessages_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."RetentionMessages_id_seq" OWNED BY public."RetentionMessages".id;
 
 
 --
@@ -1732,6 +2546,86 @@ CREATE TABLE public."Settings" (
     "createdAt" timestamp with time zone NOT NULL,
     "updatedAt" timestamp with time zone NOT NULL
 );
+
+
+--
+-- Name: StudentTokens; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."StudentTokens" (
+    id integer NOT NULL,
+    "studentId" integer NOT NULL,
+    kind character varying(12) NOT NULL,
+    "tokenHash" character varying(64) NOT NULL,
+    "expiresAt" timestamp with time zone NOT NULL,
+    "usedAt" timestamp with time zone,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: StudentTokens_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."StudentTokens_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: StudentTokens_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."StudentTokens_id_seq" OWNED BY public."StudentTokens".id;
+
+
+--
+-- Name: Students; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."Students" (
+    id integer NOT NULL,
+    rgm character varying(40) NOT NULL,
+    name character varying(160) NOT NULL,
+    email character varying(160),
+    phone character varying(40),
+    "courseName" character varying(200),
+    "poloId" integer,
+    "responsibleUserId" integer,
+    "leadId" integer,
+    "passwordHash" character varying(255),
+    "activatedAt" timestamp with time zone,
+    "blockedAt" timestamp with time zone,
+    "sessionVersion" integer DEFAULT 0 NOT NULL,
+    "lastLoginAt" timestamp with time zone,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: Students_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."Students_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: Students_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."Students_id_seq" OWNED BY public."Students".id;
 
 
 --
@@ -1864,7 +2758,13 @@ CREATE TABLE public."Tickets" (
     "lastMessageAck" integer DEFAULT 0 NOT NULL,
     "lastMessageType" character varying(255),
     "lastMessageAuthor" character varying(255),
-    "lastMessageAt" timestamp with time zone
+    "lastMessageAt" timestamp with time zone,
+    "waPinned" boolean DEFAULT false NOT NULL,
+    "handoffAt" timestamp with time zone,
+    "handoffReason" character varying(20),
+    "handoffAlerts" integer DEFAULT 0 NOT NULL,
+    "handoffAlertedAt" timestamp with time zone,
+    "aiClaimAt" timestamp with time zone
 );
 
 
@@ -1918,7 +2818,8 @@ CREATE TABLE public."Users" (
     "efiPayeeCode" character varying(255),
     preferences text,
     "coordArea" character varying(255),
-    phone character varying(255)
+    phone character varying(255),
+    "lastSeenAt" timestamp with time zone
 );
 
 
@@ -1940,6 +2841,44 @@ CREATE SEQUENCE public."Users_id_seq"
 --
 
 ALTER SEQUENCE public."Users_id_seq" OWNED BY public."Users".id;
+
+
+--
+-- Name: WebhookDeliveries; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."WebhookDeliveries" (
+    id integer NOT NULL,
+    "webhookId" integer NOT NULL,
+    payload text NOT NULL,
+    status character varying(16) DEFAULT 'pending'::character varying NOT NULL,
+    attempts integer DEFAULT 0 NOT NULL,
+    "nextAttemptAt" timestamp with time zone NOT NULL,
+    "claimedAt" timestamp with time zone,
+    "lastError" text,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: WebhookDeliveries_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."WebhookDeliveries_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: WebhookDeliveries_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."WebhookDeliveries_id_seq" OWNED BY public."WebhookDeliveries".id;
 
 
 --
@@ -2021,7 +2960,8 @@ CREATE TABLE public."Whatsapps" (
     "allowedGroups" text,
     "ownerId" integer,
     "historyImportedAt" timestamp with time zone,
-    "statusSince" timestamp with time zone
+    "statusSince" timestamp with time zone,
+    "aiFirst" boolean DEFAULT false NOT NULL
 );
 
 
@@ -2081,6 +3021,13 @@ ALTER SEQUENCE public."WppKeys_id_seq" OWNED BY public."WppKeys".id;
 
 
 --
+-- Name: AcademicAnalyses id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AcademicAnalyses" ALTER COLUMN id SET DEFAULT nextval('public."AcademicAnalyses_id_seq"'::regclass);
+
+
+--
 -- Name: AffiliateAudiences id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -2102,6 +3049,13 @@ ALTER TABLE ONLY public."AffiliateCampaigns" ALTER COLUMN id SET DEFAULT nextval
 
 
 --
+-- Name: AffiliateClicks id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AffiliateClicks" ALTER COLUMN id SET DEFAULT nextval('public."AffiliateClicks_id_seq"'::regclass);
+
+
+--
 -- Name: AffiliateMaterials id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -2116,6 +3070,20 @@ ALTER TABLE ONLY public."Affiliates" ALTER COLUMN id SET DEFAULT nextval('public
 
 
 --
+-- Name: AgentMetricEvents id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AgentMetricEvents" ALTER COLUMN id SET DEFAULT nextval('public."AgentMetricEvents_id_seq"'::regclass);
+
+
+--
+-- Name: AgentTurnLogs id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AgentTurnLogs" ALTER COLUMN id SET DEFAULT nextval('public."AgentTurnLogs_id_seq"'::regclass);
+
+
+--
 -- Name: AiAgents id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -2127,6 +3095,13 @@ ALTER TABLE ONLY public."AiAgents" ALTER COLUMN id SET DEFAULT nextval('public."
 --
 
 ALTER TABLE ONLY public."AiLearnings" ALTER COLUMN id SET DEFAULT nextval('public."AiLearnings_id_seq"'::regclass);
+
+
+--
+-- Name: AiRules id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AiRules" ALTER COLUMN id SET DEFAULT nextval('public."AiRules_id_seq"'::regclass);
 
 
 --
@@ -2179,6 +3154,13 @@ ALTER TABLE ONLY public."ChatFlowStats" ALTER COLUMN id SET DEFAULT nextval('pub
 
 
 --
+-- Name: ChatFlowVersions id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."ChatFlowVersions" ALTER COLUMN id SET DEFAULT nextval('public."ChatFlowVersions_id_seq"'::regclass);
+
+
+--
 -- Name: ChatFlows id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -2190,6 +3172,20 @@ ALTER TABLE ONLY public."ChatFlows" ALTER COLUMN id SET DEFAULT nextval('public.
 --
 
 ALTER TABLE ONLY public."ChatbotNodes" ALTER COLUMN id SET DEFAULT nextval('public."ChatbotNodes_id_seq"'::regclass);
+
+
+--
+-- Name: ClientErrors id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."ClientErrors" ALTER COLUMN id SET DEFAULT nextval('public."ClientErrors_id_seq"'::regclass);
+
+
+--
+-- Name: CommercialGrades id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."CommercialGrades" ALTER COLUMN id SET DEFAULT nextval('public."CommercialGrades_id_seq"'::regclass);
 
 
 --
@@ -2221,10 +3217,24 @@ ALTER TABLE ONLY public."Contacts" ALTER COLUMN id SET DEFAULT nextval('public."
 
 
 --
+-- Name: CourseRegulations id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."CourseRegulations" ALTER COLUMN id SET DEFAULT nextval('public."CourseRegulations_id_seq"'::regclass);
+
+
+--
 -- Name: Courses id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public."Courses" ALTER COLUMN id SET DEFAULT nextval('public."Courses_id_seq"'::regclass);
+
+
+--
+-- Name: CurricularAnalyses id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."CurricularAnalyses" ALTER COLUMN id SET DEFAULT nextval('public."CurricularAnalyses_id_seq"'::regclass);
 
 
 --
@@ -2277,6 +3287,27 @@ ALTER TABLE ONLY public."LeadActivities" ALTER COLUMN id SET DEFAULT nextval('pu
 
 
 --
+-- Name: LeadCommercials id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."LeadCommercials" ALTER COLUMN id SET DEFAULT nextval('public."LeadCommercials_id_seq"'::regclass);
+
+
+--
+-- Name: LeadDocuments id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."LeadDocuments" ALTER COLUMN id SET DEFAULT nextval('public."LeadDocuments_id_seq"'::regclass);
+
+
+--
+-- Name: LeadReminderLogs id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."LeadReminderLogs" ALTER COLUMN id SET DEFAULT nextval('public."LeadReminderLogs_id_seq"'::regclass);
+
+
+--
 -- Name: LeadStages id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -2298,10 +3329,45 @@ ALTER TABLE ONLY public."Leads" ALTER COLUMN id SET DEFAULT nextval('public."Lea
 
 
 --
+-- Name: MarketingSpends id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."MarketingSpends" ALTER COLUMN id SET DEFAULT nextval('public."MarketingSpends_id_seq"'::regclass);
+
+
+--
+-- Name: NpsSurveys id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."NpsSurveys" ALTER COLUMN id SET DEFAULT nextval('public."NpsSurveys_id_seq"'::regclass);
+
+
+--
+-- Name: OutboundMessages id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."OutboundMessages" ALTER COLUMN id SET DEFAULT nextval('public."OutboundMessages_id_seq"'::regclass);
+
+
+--
+-- Name: PasswordResets id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."PasswordResets" ALTER COLUMN id SET DEFAULT nextval('public."PasswordResets_id_seq"'::regclass);
+
+
+--
 -- Name: Payments id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public."Payments" ALTER COLUMN id SET DEFAULT nextval('public."Payments_id_seq"'::regclass);
+
+
+--
+-- Name: PoloCoverages id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."PoloCoverages" ALTER COLUMN id SET DEFAULT nextval('public."PoloCoverages_id_seq"'::regclass);
 
 
 --
@@ -2354,10 +3420,31 @@ ALTER TABLE ONLY public."QuickAnswers" ALTER COLUMN id SET DEFAULT nextval('publ
 
 
 --
+-- Name: RetentionMessages id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."RetentionMessages" ALTER COLUMN id SET DEFAULT nextval('public."RetentionMessages_id_seq"'::regclass);
+
+
+--
 -- Name: Schedules id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public."Schedules" ALTER COLUMN id SET DEFAULT nextval('public."Schedules_id_seq"'::regclass);
+
+
+--
+-- Name: StudentTokens id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."StudentTokens" ALTER COLUMN id SET DEFAULT nextval('public."StudentTokens_id_seq"'::regclass);
+
+
+--
+-- Name: Students id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."Students" ALTER COLUMN id SET DEFAULT nextval('public."Students_id_seq"'::regclass);
 
 
 --
@@ -2389,6 +3476,13 @@ ALTER TABLE ONLY public."Users" ALTER COLUMN id SET DEFAULT nextval('public."Use
 
 
 --
+-- Name: WebhookDeliveries id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."WebhookDeliveries" ALTER COLUMN id SET DEFAULT nextval('public."WebhookDeliveries_id_seq"'::regclass);
+
+
+--
 -- Name: Webhooks id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -2407,6 +3501,14 @@ ALTER TABLE ONLY public."Whatsapps" ALTER COLUMN id SET DEFAULT nextval('public.
 --
 
 ALTER TABLE ONLY public."WppKeys" ALTER COLUMN id SET DEFAULT nextval('public."WppKeys_id_seq"'::regclass);
+
+
+--
+-- Name: AcademicAnalyses AcademicAnalyses_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AcademicAnalyses"
+    ADD CONSTRAINT "AcademicAnalyses_pkey" PRIMARY KEY (id);
 
 
 --
@@ -2442,6 +3544,14 @@ ALTER TABLE ONLY public."AffiliateCampaigns"
 
 
 --
+-- Name: AffiliateClicks AffiliateClicks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AffiliateClicks"
+    ADD CONSTRAINT "AffiliateClicks_pkey" PRIMARY KEY (id);
+
+
+--
 -- Name: AffiliateMaterials AffiliateMaterials_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2474,6 +3584,22 @@ ALTER TABLE ONLY public."Affiliates"
 
 
 --
+-- Name: AgentMetricEvents AgentMetricEvents_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AgentMetricEvents"
+    ADD CONSTRAINT "AgentMetricEvents_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: AgentTurnLogs AgentTurnLogs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AgentTurnLogs"
+    ADD CONSTRAINT "AgentTurnLogs_pkey" PRIMARY KEY (id);
+
+
+--
 -- Name: AiAgents AiAgents_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2487,6 +3613,14 @@ ALTER TABLE ONLY public."AiAgents"
 
 ALTER TABLE ONLY public."AiLearnings"
     ADD CONSTRAINT "AiLearnings_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: AiRules AiRules_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AiRules"
+    ADD CONSTRAINT "AiRules_pkey" PRIMARY KEY (id);
 
 
 --
@@ -2554,6 +3688,14 @@ ALTER TABLE ONLY public."ChatFlowStats"
 
 
 --
+-- Name: ChatFlowVersions ChatFlowVersions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."ChatFlowVersions"
+    ADD CONSTRAINT "ChatFlowVersions_pkey" PRIMARY KEY (id);
+
+
+--
 -- Name: ChatFlows ChatFlows_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2567,6 +3709,22 @@ ALTER TABLE ONLY public."ChatFlows"
 
 ALTER TABLE ONLY public."ChatbotNodes"
     ADD CONSTRAINT "ChatbotNodes_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: ClientErrors ClientErrors_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."ClientErrors"
+    ADD CONSTRAINT "ClientErrors_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: CommercialGrades CommercialGrades_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."CommercialGrades"
+    ADD CONSTRAINT "CommercialGrades_pkey" PRIMARY KEY (id);
 
 
 --
@@ -2618,14 +3776,6 @@ ALTER TABLE ONLY public."Contacts"
 
 
 --
--- Name: Contacts Contacts_number_key1; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public."Contacts"
-    ADD CONSTRAINT "Contacts_number_key1" UNIQUE (number);
-
-
---
 -- Name: Contacts Contacts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2634,11 +3784,27 @@ ALTER TABLE ONLY public."Contacts"
 
 
 --
+-- Name: CourseRegulations CourseRegulations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."CourseRegulations"
+    ADD CONSTRAINT "CourseRegulations_pkey" PRIMARY KEY (id);
+
+
+--
 -- Name: Courses Courses_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public."Courses"
     ADD CONSTRAINT "Courses_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: CurricularAnalyses CurricularAnalyses_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."CurricularAnalyses"
+    ADD CONSTRAINT "CurricularAnalyses_pkey" PRIMARY KEY (id);
 
 
 --
@@ -2698,6 +3864,38 @@ ALTER TABLE ONLY public."LeadActivities"
 
 
 --
+-- Name: LeadCommercials LeadCommercials_leadId_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."LeadCommercials"
+    ADD CONSTRAINT "LeadCommercials_leadId_key" UNIQUE ("leadId");
+
+
+--
+-- Name: LeadCommercials LeadCommercials_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."LeadCommercials"
+    ADD CONSTRAINT "LeadCommercials_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: LeadDocuments LeadDocuments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."LeadDocuments"
+    ADD CONSTRAINT "LeadDocuments_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: LeadReminderLogs LeadReminderLogs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."LeadReminderLogs"
+    ADD CONSTRAINT "LeadReminderLogs_pkey" PRIMARY KEY (id);
+
+
+--
 -- Name: LeadStages LeadStages_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2730,11 +3928,43 @@ ALTER TABLE ONLY public."Leads"
 
 
 --
+-- Name: MarketingSpends MarketingSpends_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."MarketingSpends"
+    ADD CONSTRAINT "MarketingSpends_pkey" PRIMARY KEY (id);
+
+
+--
 -- Name: Messages Messages_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public."Messages"
     ADD CONSTRAINT "Messages_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: NpsSurveys NpsSurveys_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."NpsSurveys"
+    ADD CONSTRAINT "NpsSurveys_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: OutboundMessages OutboundMessages_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."OutboundMessages"
+    ADD CONSTRAINT "OutboundMessages_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: PasswordResets PasswordResets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."PasswordResets"
+    ADD CONSTRAINT "PasswordResets_pkey" PRIMARY KEY (id);
 
 
 --
@@ -2751,6 +3981,14 @@ ALTER TABLE ONLY public."Payments"
 
 ALTER TABLE ONLY public."Payments"
     ADD CONSTRAINT "Payments_txid_key" UNIQUE (txid);
+
+
+--
+-- Name: PoloCoverages PoloCoverages_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."PoloCoverages"
+    ADD CONSTRAINT "PoloCoverages_pkey" PRIMARY KEY (id);
 
 
 --
@@ -2842,6 +4080,14 @@ ALTER TABLE ONLY public."QuickAnswers"
 
 
 --
+-- Name: RetentionMessages RetentionMessages_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."RetentionMessages"
+    ADD CONSTRAINT "RetentionMessages_pkey" PRIMARY KEY (id);
+
+
+--
 -- Name: Schedules Schedules_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2863,6 +4109,22 @@ ALTER TABLE ONLY public."SequelizeMeta"
 
 ALTER TABLE ONLY public."Settings"
     ADD CONSTRAINT "Settings_pkey" PRIMARY KEY (key);
+
+
+--
+-- Name: StudentTokens StudentTokens_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."StudentTokens"
+    ADD CONSTRAINT "StudentTokens_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: Students Students_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."Students"
+    ADD CONSTRAINT "Students_pkey" PRIMARY KEY (id);
 
 
 --
@@ -2938,6 +4200,14 @@ ALTER TABLE ONLY public."Users"
 
 
 --
+-- Name: WebhookDeliveries WebhookDeliveries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."WebhookDeliveries"
+    ADD CONSTRAINT "WebhookDeliveries_pkey" PRIMARY KEY (id);
+
+
+--
 -- Name: Webhooks Webhooks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2978,6 +4248,41 @@ ALTER TABLE ONLY public."WppKeys"
 
 
 --
+-- Name: PoloCoverages_city_state; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX "PoloCoverages_city_state" ON public."PoloCoverages" USING btree ("cityKey", COALESCE(state, ''::character varying));
+
+
+--
+-- Name: PoloCoverages_poloId; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX "PoloCoverages_poloId" ON public."PoloCoverages" USING btree ("poloId");
+
+
+--
+-- Name: academic_analyses_rgm; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX academic_analyses_rgm ON public."AcademicAnalyses" USING btree (rgm);
+
+
+--
+-- Name: academic_analyses_student_id_version; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX academic_analyses_student_id_version ON public."AcademicAnalyses" USING btree ("studentId", version);
+
+
+--
+-- Name: academic_analyses_user_id_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX academic_analyses_user_id_created_at ON public."AcademicAnalyses" USING btree ("userId", "createdAt");
+
+
+--
 -- Name: affiliate_audiences_target_type_target_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2992,10 +4297,59 @@ CREATE INDEX affiliate_bonuses_affiliate_id_status ON public."AffiliateBonuses" 
 
 
 --
+-- Name: affiliate_clicks_affiliate_id_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX affiliate_clicks_affiliate_id_created_at ON public."AffiliateClicks" USING btree ("affiliateId", "createdAt");
+
+
+--
 -- Name: affiliates_owner_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX affiliates_owner_id ON public."Affiliates" USING btree ("ownerId");
+
+
+--
+-- Name: agent_metric_events_agent_id_event_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX agent_metric_events_agent_id_event_created_at ON public."AgentMetricEvents" USING btree ("agentId", event, "createdAt");
+
+
+--
+-- Name: agent_metric_once; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX agent_metric_once ON public."AgentMetricEvents" USING btree ("leadId", event) WHERE ((once = true) AND ("leadId" IS NOT NULL));
+
+
+--
+-- Name: agent_turn_logs_agent_id_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX agent_turn_logs_agent_id_created_at ON public."AgentTurnLogs" USING btree ("agentId", "createdAt");
+
+
+--
+-- Name: agent_turn_logs_flow_id_node_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX agent_turn_logs_flow_id_node_id ON public."AgentTurnLogs" USING btree ("flowId", "nodeId");
+
+
+--
+-- Name: agent_turn_logs_lead_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX agent_turn_logs_lead_id ON public."AgentTurnLogs" USING btree ("leadId");
+
+
+--
+-- Name: agent_turn_logs_ticket_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX agent_turn_logs_ticket_id ON public."AgentTurnLogs" USING btree ("ticketId");
 
 
 --
@@ -3013,6 +4367,13 @@ CREATE INDEX ai_learnings_ticket_id ON public."AiLearnings" USING btree ("ticket
 
 
 --
+-- Name: ai_rules_agent_id_active_kind; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ai_rules_agent_id_active_kind ON public."AiRules" USING btree ("agentId", active, kind);
+
+
+--
 -- Name: ai_usage_agent_id_created_at; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3024,6 +4385,20 @@ CREATE INDEX ai_usage_agent_id_created_at ON public."AiUsage" USING btree ("agen
 --
 
 CREATE INDEX automationtriggers_event_idx ON public."AutomationTriggers" USING btree (event, active);
+
+
+--
+-- Name: campaign_shippings_campaign_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX campaign_shippings_campaign_status ON public."CampaignShippings" USING btree ("campaignId", status);
+
+
+--
+-- Name: chat_flow_versions_flow_id_version; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX chat_flow_versions_flow_id_version ON public."ChatFlowVersions" USING btree ("flowId", version);
 
 
 --
@@ -3048,6 +4423,69 @@ CREATE UNIQUE INDEX chatflowstats_unique ON public."ChatFlowStats" USING btree (
 
 
 --
+-- Name: client_errors_code; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX client_errors_code ON public."ClientErrors" USING btree (code);
+
+
+--
+-- Name: client_errors_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX client_errors_created_at ON public."ClientErrors" USING btree ("createdAt");
+
+
+--
+-- Name: client_errors_route; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX client_errors_route ON public."ClientErrors" USING btree (route);
+
+
+--
+-- Name: commercial_grades_catalog_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX commercial_grades_catalog_key ON public."CommercialGrades" USING btree ("catalogKey");
+
+
+--
+-- Name: commercial_grades_content_hash; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX commercial_grades_content_hash ON public."CommercialGrades" USING btree ("contentHash");
+
+
+--
+-- Name: commercial_grades_course_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX commercial_grades_course_name ON public."CommercialGrades" USING btree ("courseName");
+
+
+--
+-- Name: contact_list_items_list; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX contact_list_items_list ON public."ContactListItems" USING btree ("contactListId");
+
+
+--
+-- Name: contacts_community_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX contacts_community_id_idx ON public."Contacts" USING btree ("communityId") WHERE ("communityId" IS NOT NULL);
+
+
+--
+-- Name: contacts_is_personal_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX contacts_is_personal_idx ON public."Contacts" USING btree ("isPersonal") WHERE ("isPersonal" = true);
+
+
+--
 -- Name: contacts_is_staff_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3066,6 +4504,34 @@ CREATE INDEX contacts_kind_idx ON public."Contacts" USING btree (kind) WHERE ((k
 --
 
 CREATE INDEX contacts_parent_group_idx ON public."Contacts" USING btree ("parentGroupId") WHERE ("parentGroupId" IS NOT NULL);
+
+
+--
+-- Name: course_regulations_course_id_intake_term; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX course_regulations_course_id_intake_term ON public."CourseRegulations" USING btree ("courseId", "intakeTerm");
+
+
+--
+-- Name: curricular_analyses_lead_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX curricular_analyses_lead_id ON public."CurricularAnalyses" USING btree ("leadId");
+
+
+--
+-- Name: curricular_analyses_user_id_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX curricular_analyses_user_id_created_at ON public."CurricularAnalyses" USING btree ("userId", "createdAt");
+
+
+--
+-- Name: curricular_followup_due_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX curricular_followup_due_idx ON public."CurricularAnalyses" USING btree ("followUpDueAt") WHERE ("followUpDueAt" IS NOT NULL);
 
 
 --
@@ -3094,6 +4560,69 @@ CREATE INDEX kb_chunks_document_id ON public."KbChunks" USING btree ("documentId
 --
 
 CREATE INDEX kb_chunks_tsv_idx ON public."KbChunks" USING gin (tsv);
+
+
+--
+-- Name: kb_documents_topic; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX kb_documents_topic ON public."KbDocuments" USING btree (topic);
+
+
+--
+-- Name: lead_activities_lead; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX lead_activities_lead ON public."LeadActivities" USING btree ("leadId");
+
+
+--
+-- Name: lead_commercials_ready_for_consultant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX lead_commercials_ready_for_consultant ON public."LeadCommercials" USING btree ("readyForConsultant");
+
+
+--
+-- Name: lead_commercials_ready_for_proposal; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX lead_commercials_ready_for_proposal ON public."LeadCommercials" USING btree ("readyForProposal");
+
+
+--
+-- Name: lead_commercials_temperature; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX lead_commercials_temperature ON public."LeadCommercials" USING btree (temperature);
+
+
+--
+-- Name: lead_documents_lead_id_name; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX lead_documents_lead_id_name ON public."LeadDocuments" USING btree ("leadId", name);
+
+
+--
+-- Name: lead_reminder_logs_lead_id_key_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX lead_reminder_logs_lead_id_key_created_at ON public."LeadReminderLogs" USING btree ("leadId", key, "createdAt");
+
+
+--
+-- Name: lead_tasks_lead; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX lead_tasks_lead ON public."LeadTasks" USING btree ("leadId");
+
+
+--
+-- Name: lead_tasks_user_open; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX lead_tasks_user_open ON public."LeadTasks" USING btree ("userId", "doneAt", "dueAt");
 
 
 --
@@ -3160,6 +4689,13 @@ CREATE INDEX leads_won_at_idx ON public."Leads" USING btree ("wonAt") WHERE ("wo
 
 
 --
+-- Name: marketing_spends_month_source; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX marketing_spends_month_source ON public."MarketingSpends" USING btree (month, source);
+
+
+--
 -- Name: messages_contact_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3178,6 +4714,55 @@ CREATE INDEX messages_ticket_created_idx ON public."Messages" USING btree ("tick
 --
 
 CREATE INDEX messages_ticket_unread_idx ON public."Messages" USING btree ("ticketId") WHERE ((read = false) AND ("fromMe" = false));
+
+
+--
+-- Name: nps_surveys_contact_id_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX nps_surveys_contact_id_status ON public."NpsSurveys" USING btree ("contactId", status);
+
+
+--
+-- Name: nps_surveys_lead_id_kind; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX nps_surveys_lead_id_kind ON public."NpsSurveys" USING btree ("leadId", kind);
+
+
+--
+-- Name: outbound_messages_status_next; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX outbound_messages_status_next ON public."OutboundMessages" USING btree (status, "nextAttemptAt");
+
+
+--
+-- Name: outbound_messages_ticket_client_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX outbound_messages_ticket_client_key ON public."OutboundMessages" USING btree ("ticketId", "clientKey");
+
+
+--
+-- Name: outbound_messages_user_sent; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX outbound_messages_user_sent ON public."OutboundMessages" USING btree ("userId", "sentAt");
+
+
+--
+-- Name: password_resets_token_hash; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX password_resets_token_hash ON public."PasswordResets" USING btree ("tokenHash");
+
+
+--
+-- Name: password_resets_user_id_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX password_resets_user_id_created_at ON public."PasswordResets" USING btree ("userId", "createdAt");
 
 
 --
@@ -3223,6 +4808,55 @@ CREATE INDEX proposals_affiliate_id ON public."Proposals" USING btree ("affiliat
 
 
 --
+-- Name: retention_messages_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX retention_messages_created_at ON public."RetentionMessages" USING btree ("createdAt");
+
+
+--
+-- Name: retention_messages_lead_id_kind; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX retention_messages_lead_id_kind ON public."RetentionMessages" USING btree ("leadId", kind);
+
+
+--
+-- Name: retention_messages_whatsapp_id_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX retention_messages_whatsapp_id_created_at ON public."RetentionMessages" USING btree ("whatsappId", "createdAt");
+
+
+--
+-- Name: schedules_status_send; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX schedules_status_send ON public."Schedules" USING btree (status, "sendAt");
+
+
+--
+-- Name: student_tokens_token_hash; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX student_tokens_token_hash ON public."StudentTokens" USING btree ("tokenHash");
+
+
+--
+-- Name: students_responsible_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX students_responsible_user_id ON public."Students" USING btree ("responsibleUserId");
+
+
+--
+-- Name: students_rgm; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX students_rgm ON public."Students" USING btree (rgm);
+
+
+--
 -- Name: ticket_events_ticket_created_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -3241,6 +4875,13 @@ CREATE INDEX ticket_events_ticket_id ON public."TicketEvents" USING btree ("tick
 --
 
 CREATE INDEX tickets_contact_idx ON public."Tickets" USING btree ("contactId");
+
+
+--
+-- Name: tickets_handoff_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX tickets_handoff_at ON public."Tickets" USING btree ("handoffAt");
 
 
 --
@@ -3286,10 +4927,25 @@ CREATE INDEX tickets_whatsapp_contact_idx ON public."Tickets" USING btree ("what
 
 
 --
+-- Name: webhook_deliveries_status_next_attempt_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX webhook_deliveries_status_next_attempt_at ON public."WebhookDeliveries" USING btree (status, "nextAttemptAt");
+
+
+--
 -- Name: wpp_keys_connection_type_key_unique; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX wpp_keys_connection_type_key_unique ON public."WppKeys" USING btree ("connectionId", type, "keyId");
+
+
+--
+-- Name: AcademicAnalyses AcademicAnalyses_studentId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AcademicAnalyses"
+    ADD CONSTRAINT "AcademicAnalyses_studentId_fkey" FOREIGN KEY ("studentId") REFERENCES public."Students"(id) ON UPDATE CASCADE ON DELETE SET NULL;
 
 
 --
@@ -3357,6 +5013,14 @@ ALTER TABLE ONLY public."AffiliateCampaigns"
 
 
 --
+-- Name: AffiliateClicks AffiliateClicks_affiliateId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AffiliateClicks"
+    ADD CONSTRAINT "AffiliateClicks_affiliateId_fkey" FOREIGN KEY ("affiliateId") REFERENCES public."Affiliates"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+--
 -- Name: AffiliateMaterials AffiliateMaterials_campaignId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3421,6 +5085,14 @@ ALTER TABLE ONLY public."AiLearnings"
 
 
 --
+-- Name: AiRules AiRules_agentId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AiRules"
+    ADD CONSTRAINT "AiRules_agentId_fkey" FOREIGN KEY ("agentId") REFERENCES public."AiAgents"(id) ON DELETE CASCADE;
+
+
+--
 -- Name: AutomationTriggers AutomationTriggers_flowId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3477,6 +5149,14 @@ ALTER TABLE ONLY public."ChatFlowStats"
 
 
 --
+-- Name: ChatFlowVersions ChatFlowVersions_flowId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."ChatFlowVersions"
+    ADD CONSTRAINT "ChatFlowVersions_flowId_fkey" FOREIGN KEY ("flowId") REFERENCES public."ChatFlows"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+--
 -- Name: ChatbotNodes ChatbotNodes_whatsappId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3514,6 +5194,14 @@ ALTER TABLE ONLY public."ContactTags"
 
 ALTER TABLE ONLY public."ContactTags"
     ADD CONSTRAINT "ContactTags_tagId_fkey" FOREIGN KEY ("tagId") REFERENCES public."Tags"(id) ON DELETE CASCADE;
+
+
+--
+-- Name: CourseRegulations CourseRegulations_courseId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."CourseRegulations"
+    ADD CONSTRAINT "CourseRegulations_courseId_fkey" FOREIGN KEY ("courseId") REFERENCES public."Courses"(id) ON UPDATE CASCADE ON DELETE CASCADE;
 
 
 --
@@ -3578,6 +5266,30 @@ ALTER TABLE ONLY public."LeadActivities"
 
 ALTER TABLE ONLY public."LeadActivities"
     ADD CONSTRAINT "LeadActivities_userId_fkey" FOREIGN KEY ("userId") REFERENCES public."Users"(id) ON DELETE SET NULL;
+
+
+--
+-- Name: LeadCommercials LeadCommercials_leadId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."LeadCommercials"
+    ADD CONSTRAINT "LeadCommercials_leadId_fkey" FOREIGN KEY ("leadId") REFERENCES public."Leads"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+--
+-- Name: LeadDocuments LeadDocuments_leadId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."LeadDocuments"
+    ADD CONSTRAINT "LeadDocuments_leadId_fkey" FOREIGN KEY ("leadId") REFERENCES public."Leads"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+--
+-- Name: LeadReminderLogs LeadReminderLogs_leadId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."LeadReminderLogs"
+    ADD CONSTRAINT "LeadReminderLogs_leadId_fkey" FOREIGN KEY ("leadId") REFERENCES public."Leads"(id) ON UPDATE CASCADE ON DELETE CASCADE;
 
 
 --
@@ -3653,6 +5365,14 @@ ALTER TABLE ONLY public."Leads"
 
 
 --
+-- Name: Leads Leads_practicePoloId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."Leads"
+    ADD CONSTRAINT "Leads_practicePoloId_fkey" FOREIGN KEY ("practicePoloId") REFERENCES public."Polos"(id) ON UPDATE CASCADE ON DELETE SET NULL;
+
+
+--
 -- Name: Leads Leads_stageId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3685,6 +5405,38 @@ ALTER TABLE ONLY public."Messages"
 
 
 --
+-- Name: NpsSurveys NpsSurveys_leadId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."NpsSurveys"
+    ADD CONSTRAINT "NpsSurveys_leadId_fkey" FOREIGN KEY ("leadId") REFERENCES public."Leads"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+--
+-- Name: OutboundMessages OutboundMessages_ticketId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."OutboundMessages"
+    ADD CONSTRAINT "OutboundMessages_ticketId_fkey" FOREIGN KEY ("ticketId") REFERENCES public."Tickets"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+--
+-- Name: OutboundMessages OutboundMessages_userId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."OutboundMessages"
+    ADD CONSTRAINT "OutboundMessages_userId_fkey" FOREIGN KEY ("userId") REFERENCES public."Users"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+--
+-- Name: PasswordResets PasswordResets_userId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."PasswordResets"
+    ADD CONSTRAINT "PasswordResets_userId_fkey" FOREIGN KEY ("userId") REFERENCES public."Users"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+--
 -- Name: Payments Payments_createdBy_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3709,6 +5461,14 @@ ALTER TABLE ONLY public."Payments"
 
 
 --
+-- Name: PoloCoverages PoloCoverages_poloId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."PoloCoverages"
+    ADD CONSTRAINT "PoloCoverages_poloId_fkey" FOREIGN KEY ("poloId") REFERENCES public."Polos"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+--
 -- Name: PoloMembers PoloMembers_poloId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3722,6 +5482,14 @@ ALTER TABLE ONLY public."PoloMembers"
 
 ALTER TABLE ONLY public."PoloMembers"
     ADD CONSTRAINT "PoloMembers_userId_fkey" FOREIGN KEY ("userId") REFERENCES public."Users"(id) ON DELETE CASCADE;
+
+
+--
+-- Name: Polos Polos_enrollPoloId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."Polos"
+    ADD CONSTRAINT "Polos_enrollPoloId_fkey" FOREIGN KEY ("enrollPoloId") REFERENCES public."Polos"(id) ON UPDATE CASCADE ON DELETE SET NULL;
 
 
 --
@@ -3805,6 +5573,14 @@ ALTER TABLE ONLY public."Queues"
 
 
 --
+-- Name: RetentionMessages RetentionMessages_leadId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."RetentionMessages"
+    ADD CONSTRAINT "RetentionMessages_leadId_fkey" FOREIGN KEY ("leadId") REFERENCES public."Leads"(id) ON UPDATE CASCADE ON DELETE SET NULL;
+
+
+--
 -- Name: Schedules Schedules_contactId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3834,6 +5610,14 @@ ALTER TABLE ONLY public."Schedules"
 
 ALTER TABLE ONLY public."Schedules"
     ADD CONSTRAINT "Schedules_whatsappId_fkey" FOREIGN KEY ("whatsappId") REFERENCES public."Whatsapps"(id) ON DELETE SET NULL;
+
+
+--
+-- Name: StudentTokens StudentTokens_studentId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."StudentTokens"
+    ADD CONSTRAINT "StudentTokens_studentId_fkey" FOREIGN KEY ("studentId") REFERENCES public."Students"(id) ON UPDATE CASCADE ON DELETE CASCADE;
 
 
 --
@@ -3914,6 +5698,14 @@ ALTER TABLE ONLY public."Tickets"
 
 ALTER TABLE ONLY public."Users"
     ADD CONSTRAINT "Users_whatsappId_fkey" FOREIGN KEY ("whatsappId") REFERENCES public."Whatsapps"(id) ON UPDATE CASCADE ON DELETE SET NULL;
+
+
+--
+-- Name: WebhookDeliveries WebhookDeliveries_webhookId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."WebhookDeliveries"
+    ADD CONSTRAINT "WebhookDeliveries_webhookId_fkey" FOREIGN KEY ("webhookId") REFERENCES public."Webhooks"(id) ON DELETE CASCADE;
 
 
 --
@@ -4125,6 +5917,12 @@ ALTER TABLE public."UserQueues" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."Users" ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: WebhookDeliveries; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public."WebhookDeliveries" ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: Webhooks; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -4200,6 +5998,7 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261013000004-create-campaigns.js')
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261013000005-create-chatbot-ai.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261014000001-create-crm.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261015000001-create-proposals.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261015144841-webhook-deliveries.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261016000001-crm-admission-cpf-payments.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261017000001-lead-decision-and-extra-semesters.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261018000001-ticket-events-and-hardening.js') ON CONFLICT DO NOTHING;
@@ -4250,6 +6049,42 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261106000003-merge-tutoria-academi
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261107000001-chat-flows.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261108000001-whatsapp-status-since.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261109000001-ai-agent-functions.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261110000001-client-errors.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261110000002-contact-community-role.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261110000003-password-resets.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261111000001-analysis.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261111000002-commercial-grades.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261112000001-ticket-wa-pinned.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261113000001-curricular-follow-up.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261116000001-client-errors-build.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261117000001-affiliate-clicks.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261118000001-lead-reminder-log.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261118000002-lead-documents.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261118000003-marketing-spend.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261118000004-retention.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261119000001-contact-personal.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261119000002-retention-messages.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261119000003-sticker-last-message.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261120000001-relationship-department.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261121000001-agent-graphs.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261122000001-commercial-agent.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261123000001-ai-handoff.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261124000001-ai-claim.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261125000001-onboarding-checklist.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261126000001-polo-coverage.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261126000002-lead-commercial-ready.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261127000001-indexes.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261127000002-polo-enrollment.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261128000001-whatsapp-ai-first.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261129000001-goal-extra-holidays.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261130000001-analysis-polo.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261201000001-quick-answer-owner.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261202000001-outbound-messages.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261203000001-outbound-sent-at.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261204000001-user-last-seen.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261205000001-handoff-tasks-follow-conversation.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261205000002-ai-rules.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261205000003-media-names-to-labels.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

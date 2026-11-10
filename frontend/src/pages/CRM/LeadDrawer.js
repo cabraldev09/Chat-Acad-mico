@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useContext, useEffect, useState } from "react";
 import { useHistory } from "react-router-dom";
 import { toast } from "react-toastify";
 import {
@@ -13,17 +13,27 @@ import { format, parseISO } from "date-fns";
 
 import EnrollDialog from "./EnrollDialog";
 import IconAction from "../../components/IconAction";
+import { AuthContext } from "../../context/Auth/AuthContext";
+import { isManager } from "../../utils/access";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import openSocket from "../../services/socket-io";
 import { WhatsAppBrand } from "../../icons/brands";
 import LeadFields from "./LeadFields";
+import ConfirmationModal from "../../components/ConfirmationModal";
 import ProposalStudio from "./ProposalStudio";
 import PaymentTab from "./PaymentTab";
-import { ScoreRing, SourceIcon, ago, isOverdue, burst, initials } from "./shared";
+import EnrollmentsList from "./EnrollmentsList";
+import DocumentsTab from "./DocumentsTab";
+import NotALead from "./NotALead";
+import { ScoreRing, SourceIcon, StagePill, ago, isOverdue, burst, initials } from "./shared";
+import { onColor, tint } from "../../utils/color";
+import AiBrief from "../../components/AiBrief";
 
 const useStyles = makeStyles((theme) => ({
   paper: { width: 500, maxWidth: "100vw", display: "flex", flexDirection: "column", borderLeft: theme.border.divider, animation: "slide-in-left .0s" },
+  // beside the conversation: it does not block the chat, so the consultant can copy from it and paste here
+  paperSide: { width: "min(500px, 38vw)", minWidth: "min(380px, 100vw)", top: 56, height: "calc(100% - 56px)", boxShadow: "-8px 0 24px -12px rgba(0,0,0,.25)" },
   head: { padding: theme.spacing(2.5, 2.5, 1.5), borderBottom: theme.border.divider },
   titleRow: { display: "flex", alignItems: "center", gap: theme.spacing(1.5) },
   avatar: { width: 44, height: 44, borderRadius: 12, background: "#0B4279", color: "#fff", display: "grid", placeItems: "center", fontWeight: 600, flex: "none" },
@@ -33,7 +43,7 @@ const useStyles = makeStyles((theme) => ({
   step: {
     border: theme.border.divider, borderRadius: 999, padding: "3px 11px", fontSize: 12.5, fontWeight: 500, cursor: "pointer",
     background: "transparent", color: theme.palette.text.secondary, fontFamily: "inherit",
-    transition: "all .2s var(--ease-out)", "&:hover": { borderColor: theme.palette.accent.main, color: theme.palette.text.primary },
+    transition: "border-color .2s var(--ease-out), color .2s var(--ease-out), background-color .2s var(--ease-out)", "&:hover": { borderColor: theme.palette.accent.main, color: theme.palette.text.primary },
   },
   stepDone: { background: theme.palette.action.selected, color: theme.palette.text.primary },
   stepNow: { background: "#0B4279", color: "#fff", borderColor: "#0B4279", boxShadow: "0 4px 12px -4px rgba(11,66,121,.6)" },
@@ -46,7 +56,7 @@ const useStyles = makeStyles((theme) => ({
   tlIcon: { width: 28, height: 28, borderRadius: "50%", display: "grid", placeItems: "center", background: theme.palette.action.selected, flex: "none", color: theme.palette.text.secondary },
   tlBody: { fontSize: 14, lineHeight: 1.45, overflowWrap: "anywhere", whiteSpace: "pre-wrap" },
   tlMeta: { fontSize: 12, color: theme.palette.text.secondary },
-  tab: { padding: "4px 6px", fontSize: 13, minWidth: 0 },
+  tab: { padding: "4px 13px", fontSize: 13, minWidth: 0, whiteSpace: "nowrap" },
   tabCount: { marginLeft: 5, fontSize: 11, fontWeight: 600, padding: "0 6px", borderRadius: 999, background: theme.palette.action.selected },
   taskRow: { display: "flex", alignItems: "center", gap: 4, padding: theme.spacing(0.5, 0), borderBottom: theme.border.divider },
 }));
@@ -79,10 +89,14 @@ export const LostDialog = ({ open, reasons = [], onClose, onConfirm }) => {
   );
 };
 
-const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab }) => {
+const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab, side = false }) => {
   const classes = useStyles();
   const history = useHistory();
+  const { user: me } = useContext(AuthContext);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const { options, courses, stages, users, tags } = ctx;
+  // sending a proposal to the affiliate: the management, or the consultant who owns the lead (the server refuses the others)
+  const canSendToAffiliate = (l) => !!me && (isManager(me) || (me.role === "consultor" && l && l.ownerId === me.id));
   const [lead, setLead] = useState(null);
   const [draft, setDraft] = useState(null);
   const [tab, setTab] = useState(0);
@@ -91,6 +105,7 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab }) => {
   const [note, setNote] = useState({ type: "note", body: "" });
   const [task, setTask] = useState({ title: "", type: "ligar", dueAt: "" });
   const [enrollOpen, setEnrollOpen] = useState(false);
+  const [againOpen, setAgainOpen] = useState(false);
   const [lostOpen, setLostOpen] = useState(false);
   const [proposals, setProposals] = useState([]);
   const [studio, setStudio] = useState(null); // { id } | {}
@@ -105,7 +120,7 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab }) => {
       ]);
       setProposals(pr.data);
       setLead(l.data);
-      setDraft((prev) => (prev && prev.id === l.data.id && prev.__dirty ? prev : { ...l.data, tagIds: l.data.tags.map((x) => x.id) }));
+      setDraft((prev) => (prev && prev.id === l.data.id && prev.__dirty ? prev : { ...l.data, tagIds: (l.data.tags || []).map((x) => x.id) }));
       setActs(a.data);
       setTasks(t.data);
     } catch (err) {
@@ -144,7 +159,7 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab }) => {
     }
   };
 
-  const move = async (stage, e, extra = {}) => {
+  const move = async (stage, e, extra = {}) => { e && e.persist && e.persist();
     // confirming an enrollment hands the student to the tutor: dedicated dialog
     if (stage.type === "won" && !extra.skipEnroll) { setEnrollOpen(true); return; }
     try {
@@ -190,12 +205,13 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab }) => {
   const currentIdx = lead ? openStages.findIndex((s) => s.id === lead.stageId) : -1;
 
   return (
-    <Drawer anchor="right" open={!!leadId} onClose={onClose} classes={{ paper: classes.paper }}>
+    <Drawer anchor="right" variant={side ? "persistent" : "temporary"} open={!!leadId} onClose={onClose} classes={{ paper: side ? `${classes.paper} ${classes.paperSide}` : classes.paper }}>
       {!lead || !draft ? (
         <div style={{ margin: "auto" }}><CircularProgress /></div>
       ) : (
         <>
           <EnrollDialog open={enrollOpen} lead={lead} onClose={() => setEnrollOpen(false)} onDone={() => { changed(); }} />
+          {againOpen && <EnrollDialog open additional lead={lead} onClose={() => setAgainOpen(false)} onDone={() => { setAgainOpen(false); changed(); }} />}
           <LostDialog open={lostOpen} reasons={options.lostReasons} onClose={() => setLostOpen(false)}
             onConfirm={(reason, n) => { setLostOpen(false); move(lost, null, { lostReason: reason, lostNote: n }); }} />
           <div className={classes.head}>
@@ -218,11 +234,17 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab }) => {
             <div className={classes.stepper}>
               {lead.stage.type === "open" ? openStages.map((s, i) => (
                 <button type="button" key={s.id} onClick={() => move(s)}
-                  className={`${classes.step} ${i < currentIdx ? classes.stepDone : ""} ${i === currentIdx ? classes.stepNow : ""}`}>
+                  className={classes.step}
+                  style={i === currentIdx
+                    ? { background: s.color, color: onColor(s.color), borderColor: s.color, fontWeight: 700, boxShadow: `0 4px 12px -4px ${tint(s.color, 0.7)}` }
+                    : i < currentIdx
+                      ? { background: tint(s.color, 0.2), color: "inherit", borderColor: tint(s.color, 0.5) }
+                      : { borderColor: tint(s.color, 0.45) }}
+                  title={i === currentIdx ? "Etapa atual do lead" : i < currentIdx ? "Etapa já passada" : "Próxima etapa: clique para mover"}>
                   {s.name}
                 </button>
               )) : (
-                <button type="button" className={classes.step} style={{ background: lead.stage.color, color: "#fff", borderColor: lead.stage.color }}
+                <button type="button" className={classes.step} style={{ background: lead.stage.color, color: onColor(lead.stage.color), borderColor: lead.stage.color }}
                   onClick={() => move(openStages[0])} title="Reabrir lead">
                   {lead.stage.name}{lead.lostReason ? ` · ${lead.lostReason}` : ""} (reabrir)
                 </button>
@@ -240,21 +262,40 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab }) => {
                   <Button size="small" variant="outlined" startIcon={<ThumbsDown size={16} />} onClick={() => setLostOpen(true)} style={{ color: "#dc2626", borderColor: "rgba(220,38,38,.4)" }}>Perdido</Button>
                 </>
               )}
-            </div>
+              {lead.enrolledAt && (
+                <Button size="small" variant="outlined" startIcon={<Trophy size={16} />} onClick={() => setAgainOpen(true)} style={{ color: "#16a34a", borderColor: "rgba(22,163,74,.5)" }}
+                  title="O aluno já é matriculado: registra mais uma matrícula (outro curso) que conta de novo para você e para o polo">Nova matrícula</Button>
+              )}
+              {!lead.enrolledAt && <NotALead lead={lead} onDone={() => { changed(); onClose(); }} />}
+              {!lead.enrolledAt && !lead.wonAt && me && isManager(me) && (
+                <Button size="small" variant="outlined" startIcon={<Trash2 size={15} />} onClick={() => setDeleteOpen(true)} style={{ color: "#dc2626", borderColor: "rgba(220,38,38,.4)" }}
+                  title="Apaga o lead do CRM (a conversa e o contato continuam)">Excluir lead</Button>
+              )}
+              <ConfirmationModal title="Excluir este lead?" open={deleteOpen} onClose={() => setDeleteOpen(false)}
+                onConfirm={async () => {
+                  setDeleteOpen(false);
+                  try { await api.delete(`/leads/${lead.id}`); toast.success(`${lead.name} foi excluído do CRM.`); changed(); onClose(); } catch (err) { toastError(err); }
+                }}>
+                {`${lead.name} será apagado do CRM com o histórico, as tarefas e as propostas. A conversa e o contato continuam. Isso não pode ser desfeito.`}
+              </ConfirmationModal>            </div>
           </div>
 
-          <Tabs value={tab} onChange={(e, v) => setTab(v)} variant="fullWidth" style={{ margin: "12px 20px 0" }}>
+          <Tabs value={tab} onChange={(e, v) => setTab(v)} variant="scrollable" scrollButtons="auto" style={{ margin: "12px 20px 0" }}>
             <Tab className={classes.tab} label="Resumo" />
             <Tab className={classes.tab} label={<span>Atividade{acts.length ? <b className={classes.tabCount}>{acts.length}</b> : null}</span>} />
             <Tab className={classes.tab} label={<span>Tarefas{tasks.filter((t) => !t.doneAt).length ? <b className={classes.tabCount}>{tasks.filter((t) => !t.doneAt).length}</b> : null}</span>} />
             <Tab className={classes.tab} label={<span>Propostas{proposals.length ? <b className={classes.tabCount}>{proposals.length}</b> : null}</span>} />
             <Tab className={classes.tab} label="Matrícula" />
+            <Tab className={classes.tab} label="Documentos" />
           </Tabs>
 
           <div className={classes.body}>
             {tab === 0 && (
-              <LeadFields lead={draft} options={options} courses={courses} users={users} tags={tags}
-                onChange={(d) => setDraft({ ...d, __dirty: true })} />
+              <>
+                {lead.commercial && <div style={{ marginBottom: 16 }}><AiBrief leadId={lead.id} /></div>}
+                <LeadFields lead={draft} options={options} courses={courses} users={users} tags={tags}
+                  onChange={(d) => setDraft({ ...d, __dirty: true })} />
+              </>
             )}
 
             {tab === 1 && (
@@ -308,13 +349,15 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab }) => {
                           {TASK_LABEL[t.type]} · {format(parseISO(t.dueAt), "dd/MM HH:mm")}{t.user ? ` · ${t.user.name}` : ""}
                         </div>
                       </div>
-                      <IconButton size="small" onClick={async () => { await api.delete(`/leads/${lead.id}/tasks/${t.id}`); changed(); }}><Trash2 size={16} /></IconButton>
+                      <IconButton aria-label="Excluir" size="small" onClick={async () => { await api.delete(`/leads/${lead.id}/tasks/${t.id}`); changed(); }}><Trash2 size={16} /></IconButton>
                     </div>
                   ))}
                 </div>
               </>
             )}
+            {tab === 4 && lead.enrolledAt && <EnrollmentsList leadId={lead.id} version={acts.length} />}
             {tab === 4 && <PaymentTab lead={lead} acts={acts} onChanged={changed} onEditSummary={() => setTab(0)} />}
+            {tab === 5 && <DocumentsTab lead={lead} onChanged={changed} />}
 
             {tab === 3 && (
               <>
@@ -344,9 +387,10 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab }) => {
                             toast.success("Mensagem copiada. Cole na conversa do WhatsApp.");
                           } catch (e) { toastError(e); }
                         }}><MessageSquare size={16} /></IconAction>
-                        {lead.affiliate && pr.status !== "draft" && (
+                        {lead.affiliate && pr.status !== "draft" && canSendToAffiliate(lead) && (
                           <IconAction title={`Enviar ao afiliado ${lead.affiliate.name} para encaminhar`} onClick={async () => {
-                            try { await api.post(`/affiliates/${lead.affiliate.id}/send-proposal`, { proposalId: pr.id }); toast.success("Proposta enviada ao afiliado."); } catch (e) { toastError(e); }
+                            const affiliateId = lead.affiliate.id;
+                            try { await api.post(`/affiliates/${affiliateId}/send-proposal`, { proposalId: pr.id }); toast.success("Proposta enviada ao afiliado."); } catch (e) { toastError(e); }
                           }}><Send size={16} /></IconAction>
                         )}
                         <IconAction title="Baixar PDF" onClick={async () => {

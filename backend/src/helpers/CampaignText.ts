@@ -16,8 +16,13 @@ export const spin = (text: string): string =>
     return list.length ? list[Math.floor(Math.random() * list.length)] : "";
   });
 
-export const renderCampaignText = (text: string, vars: Record<string, string>): string =>
-  Mustache.render(spin(text), vars);
+// {{name}} / {{nome}} the full name, {{primeiro_nome}} / {{first_name}} the first one, {{number}} the phone. The values go out as
+// typed (no HTML escaping: it is a WhatsApp text, and "D'Ávila & Cia" must not become "D&#39;Ávila &amp; Cia").
+export const renderCampaignText = (text: string, vars: Record<string, string>): string => {
+  const name = String(vars.name || "").trim();
+  const first = name.split(/\s+/)[0] || "";
+  return Mustache.render(spin(text), { ...vars, nome: name, primeiro_nome: first, first_name: first }, {}, { escape: (v: string) => v });
+};
 
 // Campaigns created before steps existed only have message/mediaUrl: they become step 1.
 export const stepsOf = (c: { steps?: any; message?: string; mediaUrl?: string | null }): CampaignStep[] => {

@@ -52,6 +52,7 @@ const tick = async (): Promise<void> => {
       await TicketEvent.create({ ticketId: ticket.id, type: "sla", note });
       await addActivity(lead.id, null, "sla", note);
       getIO().emit("leadAlert", { leadId: lead.id, ticketId: ticket.id, name: lead.name, ownerId: ticket.userId || lead.ownerId, minutes: Math.round(waited), escalated });
+
     }
   } catch (err) { logger.warn(`Lead SLA alert: ${err}`); }
   finally { running = false; }

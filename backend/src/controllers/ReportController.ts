@@ -1,3 +1,4 @@
+import { csvCell as safeCell } from "../helpers/Csv";
 import { Request, Response } from "express";
 import { QueryTypes } from "sequelize";
 
@@ -41,7 +42,8 @@ const COLUMNS: Array<{ key: keyof Row; label: string; kind: "text" | "int" | "pc
 
 const csvCell = (value: unknown, kind: string): string => {
   if (value === null || value === undefined) return "";
-  if (kind === "text") return `"${String(value).replace(/"/g, '""')}"`;
+  // a name typed by a stranger that starts with = + - @ would run as a formula in the spreadsheet: it gets the apostrophe of helpers/Csv
+  if (kind === "text") return safeCell(value);
   // Brazilian spreadsheets use the comma as the decimal separator
   if (kind === "int") return String(Math.round(Number(value)));
   return Number(value).toFixed(1).replace(".", ",");
@@ -50,7 +52,8 @@ const csvCell = (value: unknown, kind: string): string => {
 // Report by consultant or by polo, for the chosen period. JSON for the screen, CSV (opens in Excel) to download.
 export const crmReport = async (req: Request, res: Response): Promise<Response> => {
   const groupBy = req.query.groupBy === "polo" ? "polo" : "owner";
-  if (reqRole(req) === "tutor" || reqRole(req) === "academico") throw new AppError("ERR_NO_PERMISSION", 403);
+  // the sales numbers belong to the sales side and the management: tutoring, the academic team and relationship stay out
+  if (!["admin", "coordenacao", "consultor"].includes(reqRole(req))) throw new AppError("ERR_NO_PERMISSION", 403);
 
   const to = dayBounds(req.query.to ? String(req.query.to) : undefined).end;
   const from = req.query.from ? dayBounds(String(req.query.from)).start : dayBounds(shiftDays(new Date(), -29)).start;

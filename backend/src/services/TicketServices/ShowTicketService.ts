@@ -12,7 +12,8 @@ const ShowTicketService = async (id: string | number): Promise<Ticket> => {
       {
         model: Contact,
         as: "contact",
-        attributes: ["id", "name", "number", "profilePicUrl", "channel", "isStaff", "kind", "optOut"],
+        attributes: ["id", "name", "number", "profilePicUrl", "channel", "isStaff", "isPersonal", "kind", "readOnly", "optOut"],
+
         include: ["extraInfo"]
       },
       {

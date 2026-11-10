@@ -1,0 +1,76 @@
+name: Atualizar a VPS
+
+# A cada mudança do servidor na main, entra na VPS por SSH e roda o update.sh. A VPS não precisa guardar nenhuma senha do GitHub:
+# o repositório é privado, então o fetch usa o token que o próprio GitHub cria para esta execução e que expira ao terminar.
+# Segredo (Settings > Secrets and variables > Actions): VPS_SSH_KEY (chave privada só para deploy). A identidade pública do servidor fica em deploy/vps/known_hosts.
+on:
+  workflow_run:
+    workflows: ["Verificações"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  checks: read
+
+concurrency:
+  group: deploy-vps
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository) }}
+    runs-on: ubuntu-latest
+    env:
+      VPS_HOST: 209.145.48.49
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Testes aprovados para a revisão exata
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node deploy/vps/check-ci.js "${{ github.event.workflow_run.head_sha || github.sha }}"
+      - name: Confere os segredos
+        env:
+          KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          [ -n "$KEY" ] || { echo "::error::Falta o segredo VPS_SSH_KEY (veja docs/VPS-CONTABO.md)"; exit 1; }
+      - name: Prepara o SSH e confere a identidade do servidor
+        env:
+          KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          install -m 700 -d ~/.ssh
+          # aceita o segredo com ou sem as linhas BEGIN/END (copiar só o miolo é um erro comum): refaz o formato certo
+          body=$(printf '%s' "$KEY" | grep -v '^-----' | tr -d ' \r\n\t')
+          { echo "-----BEGIN OPENSSH PRIVATE KEY-----"; printf '%s' "$body" | fold -w 70; echo; echo "-----END OPENSSH PRIVATE KEY-----"; } > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          # diagnóstico da chave de deploy (nunca imprime a chave: só a primeira linha, o tamanho e a impressão digital pública)
+          echo "chave de deploy: $(wc -l < ~/.ssh/deploy_key) linhas; primeira linha: $(head -1 ~/.ssh/deploy_key | cut -c1-40)"
+          ssh-keygen -y -f ~/.ssh/deploy_key > /tmp/deploy.pub 2>/dev/null && ssh-keygen -lf /tmp/deploy.pub || { echo "::error::O segredo VPS_SSH_KEY não é uma chave privada válida (deve começar por -----BEGIN OPENSSH PRIVATE KEY----- e terminar por -----END OPENSSH PRIVATE KEY-----)."; exit 1; }
+          grep -v '^#' deploy/vps/known_hosts > ~/.ssh/known_hosts
+          # a chave guardada no repositório precisa ser a mesma que o servidor mostra agora
+          want=$(awk '{print $3}' ~/.ssh/known_hosts)
+          seen=$(ssh-keyscan -T 15 -t ed25519 "$VPS_HOST" 2>/dev/null | awk '$2=="ssh-ed25519"{print $3}')
+          echo "chave guardada: ${want:0:30}…  chave vista agora: ${seen:0:30}…"
+          [ -n "$seen" ] && [ "$seen" = "$want" ] || { echo "::error::A chave do servidor não confere com deploy/vps/known_hosts. Chave vista agora: $seen"; exit 1; }
+      - name: Atualiza a VPS
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WANT_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes -o ConnectTimeout=20 root@"$VPS_HOST" "GH_TOKEN='$GH_TOKEN' REPO='$REPO' WANT_SHA='$WANT_SHA' bash -s" <<'REMOTE'
+          set -euo pipefail
+          cd /opt/chat-academico
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git"
+          trap 'git remote set-url origin "https://github.com/${REPO}.git"' EXIT
+          ./deploy/vps/update.sh --force
+          # a porta 8080 só existe dentro do contêiner (o Caddy é quem fala com ela): o teste final entra nele
+          # e a versão que responde TEM de ser a deste commit (o deploy nunca diz "ok" sem ter atualizado)
+          docker exec chat-academico-api-1 node -e "const want=process.argv[1].slice(0,7);require('http').get('http://localhost:'+(process.env.PORT||8080)+'/health',r=>{let b='';r.on('data',d=>b+=d);r.on('end',()=>{console.log(r.statusCode,b);let v='';try{v=JSON.parse(b).version||''}catch(e){}process.exit(r.statusCode===200&&v===want?0:1)})}).on('error',e=>{console.log(e.message);process.exit(1)})" "$WANT_SHA"
+          REMOTE

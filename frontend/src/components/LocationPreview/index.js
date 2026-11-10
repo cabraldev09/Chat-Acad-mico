@@ -20,11 +20,11 @@ const LocationPreview = ({ image, link, description }) => {
     return (
 		<>
 			<div style={{
-				minWidth: "250px",
+				minWidth: "min(250px, 100%)",
 			}}>
 				<div>
 					<div style={{ float: "left" }}>
-						<img src={image} onClick={handleLocation} style={{ width: "100px" }} />
+						<img src={image} onClick={handleLocation} style={{ width: "100px", maxWidth: "40%", height: "auto" }} />
 					</div>
 					{ description && (
 					<div style={{ display: "flex", flexWrap: "wrap" }}>

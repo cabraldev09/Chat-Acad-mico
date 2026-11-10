@@ -1,3 +1,6 @@
+import { canTutorPolo } from "../PoloServices/TutorsOfPolo";
+import UserQueue from "../../models/UserQueue";
+import { roleOf } from "../../helpers/Roles";
 import sequelize from "../../database";
 import { Op } from "sequelize";
 
@@ -7,6 +10,9 @@ import { getIO } from "../../libs/socket";
 import Lead from "../../models/Lead";
 import LeadStage from "../../models/LeadStage";
 import LeadTask from "../../models/LeadTask";
+import LeadEnrollment from "../../models/LeadEnrollment";
+import Course from "../../models/Course";
+import { touchAnalytics } from "../AnalyticsServices/Realtime";
 import Polo from "../../models/Polo";
 import PoloMember from "../../models/PoloMember";
 import Queue from "../../models/Queue";
@@ -17,20 +23,29 @@ import Whatsapp from "../../models/Whatsapp";
 import { pickUserForQueue } from "../AutomationServices/AutoAssignTicket";
 import syncPoloQueues from "../PoloServices/SyncPoloQueues";
 import { createEnrollmentCharge } from "../PaymentServices/EnrollmentPayments";
+import { markFeeExempt, markFeePaid, markFeePending } from "../PaymentServices/FeeTags";
+import { startDocuments } from "./Documents";
 import ShowTicketService from "../TicketServices/ShowTicketService";
 import UpdateTicketService from "../TicketServices/UpdateTicketService";
 import dispatchWebhook from "../WebhookServices/DispatchWebhook";
 import { addActivity, changeStage, loadLead, resolveLeadTarget } from "./LeadCore";
+import { markMilestone } from "../CommercialServices/Milestones";
+import { notifyOnboarding, notifyTaskAssigned } from "./TaskNotify";
 
 export interface EnrollInput {
   poloId: number;
   tutorId?: number | "auto" | null;
   note?: string;
-  fee?: "paid" | "now" | "later";
+  // "exempt": the consultant informs that there is no fee to charge (no charge, label "Matrícula isenta")
+  fee?: "paid" | "now" | "later" | "exempt";
   feeDueDate?: string | null;
   // ignored: kept only so older screens that still send it do not break
   introMessage?: string | null;
   whatsappId?: number | null; // connection of the tutoring chat (default: the sales conversation's)
+  // another enrollment of a student who is already enrolled (another course): it counts again and the tutor gets a new task
+  additional?: boolean;
+  courseId?: number | null;
+  courseName?: string | null;
 }
 
 // Confirms the enrollment and hands the student to the polo's tutoring team:
@@ -57,8 +72,7 @@ const enrollLeadCore = async (lead: Lead, actorId: number, input: EnrollInput) =
   // the tutor: chosen by hand (must work in the polo's tutoring) or picked by the queue rule
   let tutor: User | null = null;
   if (input.tutorId && input.tutorId !== "auto") {
-    const member = await PoloMember.findOne({ where: { poloId: polo.id, userId: Number(input.tutorId), role: "tutoria" } });
-    if (!member) throw new AppError("ERR_USER_NOT_IN_QUEUE", 422);
+    if (!(await canTutorPolo(polo.id, Number(input.tutorId)))) throw new AppError("ERR_USER_NOT_IN_QUEUE", 422);
     tutor = await User.findByPk(Number(input.tutorId));
   } else {
     tutor = await pickUserForQueue(queue, true);
@@ -110,6 +124,8 @@ const enrollLeadCore = async (lead: Lead, actorId: number, input: EnrollInput) =
     onboardingAlertAt: null
   });
   await changeStage(lead.id, won.id, actorId);
+  // the only way to the "Matriculado" column is this one (the AI agent cannot do it); the agent only records the milestone
+  void markMilestone(lead.id, "enrolled");
 
   // 3) the tutor's own conversation
   let ticket = await Ticket.findOne({
@@ -146,14 +162,16 @@ const enrollLeadCore = async (lead: Lead, actorId: number, input: EnrollInput) =
 
   // 4) the tutor's task
   if (tutor) {
-    await LeadTask.create({
+    const tutorTask = await LeadTask.create({
       leadId: lead.id,
       userId: tutor.id,
       type: "outro",
       title: "Ambientar o aluno na plataforma (1º acesso, AVA e contatos do polo)",
       dueAt: new Date(Date.now() + 4 * 3600000)
     } as any);
+    void notifyTaskAssigned(tutorTask, actorId);
   }
+  void notifyOnboarding(lead, "assigned", polo.name);
 
 
   await addActivity(
@@ -168,7 +186,72 @@ const enrollLeadCore = async (lead: Lead, actorId: number, input: EnrollInput) =
   return { lead: out, ticketId: ticket.id, tutor: tutor ? { id: tutor.id, name: tutor.name } : null, warnings };
 };
 
+
+// A student who is already enrolled enrolls again (another course, maybe another polo): the first enrollment stays as it is, this one is
+// recorded on its own, counts for the consultant who owns the lead and for the polo, and the tutor receives a task for it.
+const enrollAdditional = async (lead: Lead, actorId: number, input: EnrollInput) => {
+  const warnings: string[] = [];
+  const polo = await Polo.findByPk(input.poloId);
+  if (!polo) throw new AppError("ERR_NO_POLO_FOUND", 404);
+  let queue = await Queue.findOne({ where: { poloId: polo.id, role: "tutoria" }, include: [{ model: User, as: "users", attributes: ["id", "name"] }] });
+  if (!queue) {
+    await syncPoloQueues(polo);
+    queue = await Queue.findOne({ where: { poloId: polo.id, role: "tutoria" }, include: [{ model: User, as: "users", attributes: ["id", "name"] }] });
+  }
+  if (!queue) throw new AppError("ERR_POLO_NO_TUTORING_QUEUE", 400);
+  let tutor: User | null = null;
+  if (input.tutorId && input.tutorId !== "auto") {
+    if (!(await canTutorPolo(polo.id, Number(input.tutorId)))) throw new AppError("ERR_USER_NOT_IN_QUEUE", 422);
+    tutor = await User.findByPk(Number(input.tutorId));
+  } else {
+    tutor = await pickUserForQueue(queue, true);
+    if (!tutor) warnings.push("O polo não tem tutor cadastrado: a tarefa da ambientação ficou sem responsável.");
+  }
+  let courseName = input.courseName ? String(input.courseName).slice(0, 200) : null;
+  let courseId: number | null = input.courseId ? Number(input.courseId) : null;
+  if (courseId) {
+    const course = await Course.findByPk(courseId);
+    if (course) courseName = courseName || course.name;
+    else courseId = null;
+  }
+  const row = await LeadEnrollment.create({
+    leadId: lead.id,
+    ownerId: lead.ownerId || null,
+    poloId: polo.id,
+    tutorId: tutor?.id || null,
+    actorId,
+    courseId,
+    courseName,
+    note: input.note ? String(input.note).slice(0, 1000) : null,
+    enrolledAt: new Date()
+  } as any);
+  const total = 1 + (await LeadEnrollment.count({ where: { leadId: lead.id } }));
+  const label = courseName ? ` em ${courseName}` : "";
+  const extraTask = await LeadTask.create({
+    leadId: lead.id,
+    userId: tutor?.id || null,
+    type: "outro",
+    title: `Ambientar o aluno na nova matrícula${label}`,
+    dueAt: new Date(Date.now() + 4 * 3600000)
+  } as any);
+  void notifyTaskAssigned(extraTask, actorId);
+  if (tutor) void notifyOnboarding({ id: lead.id, name: lead.name, onboardingTutorId: tutor.id, ownerId: null } as any, "assigned", polo.name);
+  await addActivity(lead.id, actorId, "system", `Nova matrícula (${total}ª)${label}. Polo ${polo.name}; tutor: ${tutor ? tutor.name : "aguardando"}.${input.note ? ` Obs.: ${input.note}` : ""}`);
+  const out = (await loadLead(lead.id)) as Lead;
+  getIO().emit("lead", { action: "update", lead: out });
+  if (lead.ownerId) touchAnalytics(lead.ownerId);
+  await dispatchWebhook("lead.enrolled", { leadId: lead.id, lead: lead.name, poloId: polo.id, tutorId: tutor?.id || null, additional: true, enrollmentId: row.id, course: courseName });
+  const ticket = await Ticket.findOne({ where: { leadId: lead.id, segment: "onboarding" }, order: [["id", "DESC"]], attributes: ["id"] });
+  return { lead: out, ticketId: ticket ? ticket.id : null, tutor: tutor ? { id: tutor.id, name: tutor.name } : null, warnings, repeated: false, enrollment: row, number: total };
+};
+
 const enrollLead = async (lead: Lead, actorId: number, input: EnrollInput) => {
+  if (input.additional) {
+    const current = await Lead.findByPk(lead.id);
+    if (!current) throw new AppError("ERR_LEAD_NOT_FOUND", 404);
+    if (!current.enrolledAt) throw new AppError("ERR_LEAD_NOT_ENROLLED_YET", 400);
+    return enrollAdditional(current, actorId, input);
+  }
   const result = await sequelize.transaction(async transaction => {
     const locked = await Lead.findByPk(lead.id, { transaction, lock: transaction.LOCK.UPDATE });
     if (!locked) throw new AppError("ERR_LEAD_NOT_FOUND", 404);
@@ -179,8 +262,17 @@ const enrollLead = async (lead: Lead, actorId: number, input: EnrollInput) => {
     }
     return { ...(await enrollLeadCore(locked, actorId, input)), repeated: false };
   });
+  // the documents the student has to deliver (the list of the administration), with the label while something is missing
+  if (!result.repeated) await startDocuments(result.lead).catch(() => undefined);
+  // the label of the fee: paid when it was declared paid, otherwise "Taxa pendente" until the payment is confirmed
+  if (!result.repeated && input.fee) {
+    if (input.fee === "exempt") {
+      await markFeeExempt(result.lead);
+      await addActivity(result.lead.id, actorId, "system", "Matrícula isenta: informado na confirmação que o aluno não paga a taxa (nenhuma cobrança foi gerada).");
+    } else await (input.fee === "paid" ? markFeePaid : markFeePending)(result.lead);
+  }
   // Network calls happen after the atomic local enrollment, never while holding the row lock.
-  if (!result.repeated && input.fee && input.fee !== "paid") {
+  if (!result.repeated && input.fee && input.fee !== "paid" && input.fee !== "exempt") {
     try {
       await createEnrollmentCharge(result.lead, actorId, { method: "bolix", dueDate: input.fee === "later" ? input.feeDueDate || null : null });
     } catch (err) { result.warnings.push(`A cobrança da taxa não foi gerada (${err.message}). Gere pela aba Matrícula.`); }
@@ -189,9 +281,65 @@ const enrollLead = async (lead: Lead, actorId: number, input: EnrollInput) => {
 };
 export default enrollLead;
 
+// A tutor who starts (or finishes) a student nobody had taken becomes that student's tutor: the conversation is theirs, open, in their list.
+// Administration and coordination never take it over by accident (the tutor is the one who talks to the student).
+const takeAsTutor = async (lead: Lead, actorId: number): Promise<void> => {
+  if (lead.onboardingTutorId) return;
+  const actor = await User.findByPk(actorId, { attributes: ["id", "name", "role", "profile"] });
+  if (!actor || roleOf(actor) !== "tutor") return;
+  await lead.update({ onboardingTutorId: actor.id });
+  const tickets = lead.contactId ? await Ticket.findAll({ where: { contactId: lead.contactId, segment: "onboarding", status: { [Op.in]: ["open", "pending"] } } }) : [];
+  for (const t of tickets) {
+    // the tutor works the queue of the conversation they now hold
+    // eslint-disable-next-line no-await-in-loop
+    if (t.queueId) await UserQueue.findOrCreate({ where: { userId: actor.id, queueId: t.queueId } });
+    // eslint-disable-next-line no-await-in-loop
+    await t.update({ userId: actor.id, status: "open" });
+    // eslint-disable-next-line no-await-in-loop
+    await TicketEvent.create({ ticketId: t.id, type: "handoff", actorId, toQueueId: t.queueId || null, toUserId: actor.id, note: `${actor.name} assumiu a ambientação do aluno.` });
+    // eslint-disable-next-line no-await-in-loop
+    const fresh = await ShowTicketService(t.id);
+    getIO().to("pending").to(fresh.status).to("notification").emit("ticket", { action: "update", ticket: fresh });
+  }
+  await LeadTask.update({ userId: actor.id } as any, { where: { leadId: lead.id, doneAt: null, title: { [Op.like]: "Ambientar o aluno%" } } as any });
+  await addActivity(lead.id, actorId, "system", `${actor.name} assumiu a ambientação como tutor.`);
+};
+
+// The steps the tutor ticks while getting the student started. Informational: concluding the onboarding is still the tutor's decision.
+export const CHECKLIST = [
+  { key: "first_access", label: "Primeiro acesso à plataforma" },
+  { key: "ava", label: "Ambiente virtual (AVA) apresentado" },
+  { key: "polo_contacts", label: "Contatos do polo e da tutoria passados" },
+  { key: "documents", label: "Documentos da matrícula conferidos" }
+] as const;
+
+export const parseChecklist = (raw: string | null | undefined): Record<string, string> => {
+  try {
+    const v = JSON.parse(raw || "{}");
+    return v && typeof v === "object" ? v : {};
+  } catch (_) {
+    return {};
+  }
+};
+
+export const setChecklist = async (lead: Lead, actorId: number, key: string, done: boolean) => {
+  if (lead.onboardingStatus === "none") throw new AppError("ERR_ONBOARDING_NOT_STARTED", 400);
+  const step = CHECKLIST.find(c => c.key === key);
+  if (!step) throw new AppError("ERR_NOT_FOUND", 404);
+  const now = parseChecklist(lead.onboardingChecklist);
+  if (done) now[key] = new Date().toISOString();
+  else delete now[key];
+  await lead.update({ onboardingChecklist: JSON.stringify(now) });
+  await addActivity(lead.id, actorId, "system", `Ambientação: "${step.label}" ${done ? "concluído" : "desmarcado"}.`);
+  const out = (await loadLead(lead.id)) as Lead;
+  getIO().emit("lead", { action: "update", lead: out });
+  return { checklist: now };
+};
+
 // start / done of the onboarding (tutor side). Done schedules the follow-ups of the consultant.
 export const setOnboarding = async (lead: Lead, actorId: number, action: "start" | "done") => {
   if (lead.onboardingStatus === "none") throw new AppError("ERR_ONBOARDING_NOT_STARTED", 400);
+  await takeAsTutor(lead, actorId);
   if (action === "start") {
     if (lead.onboardingStatus === "done") throw new AppError("ERR_ONBOARDING_ALREADY_DONE", 400);
     await lead.update({ onboardingStatus: "started", onboardingStartedAt: lead.onboardingStartedAt || new Date() });
@@ -212,6 +360,7 @@ export const setOnboarding = async (lead: Lead, actorId: number, action: "start"
       ] as any, { individualHooks: true });
     }
     await dispatchWebhook("onboarding.done", { leadId: lead.id, lead: lead.name, tutorId: lead.onboardingTutorId });
+    void notifyOnboarding(lead, "done");
   }
   const out = (await loadLead(lead.id)) as Lead;
   getIO().emit("lead", { action: "update", lead: out });
@@ -245,8 +394,7 @@ export const editOnboarding = async (lead: Lead, actorId: number, input: EditOnb
     if (!queue) throw new AppError("ERR_POLO_NO_TUTORING_QUEUE", 400);
     let tutor: User | null = null;
     if (input.tutorId && input.tutorId !== "auto") {
-      const member = await PoloMember.findOne({ where: { poloId: polo.id, userId: Number(input.tutorId), role: "tutoria" } });
-      if (!member) throw new AppError("ERR_USER_NOT_IN_QUEUE", 422);
+      if (!(await canTutorPolo(polo.id, Number(input.tutorId)))) throw new AppError("ERR_USER_NOT_IN_QUEUE", 422);
       tutor = await User.findByPk(Number(input.tutorId));
     } else if (input.tutorId === null) {
       tutor = null; // back to the polo's waiting line
@@ -262,6 +410,8 @@ export const editOnboarding = async (lead: Lead, actorId: number, input: EditOnb
     const tickets = lead.contactId
       ? await Ticket.findAll({ where: { contactId: lead.contactId, segment: "onboarding", status: { [Op.in]: ["open", "pending"] } } })
       : [];
+    // whoever receives the conversation works the queue it is in
+    if (tutor) await UserQueue.findOrCreate({ where: { userId: tutor.id, queueId: queue.id } });
     for (const t of tickets) {
       // eslint-disable-next-line no-await-in-loop
       await t.update({ queueId: queue.id, userId: tutor?.id || null, status: tutor ? "open" : "pending" });
@@ -271,6 +421,7 @@ export const editOnboarding = async (lead: Lead, actorId: number, input: EditOnb
       const fresh = await ShowTicketService(t.id);
       getIO().to(fresh.status).to("notification").emit("ticket", { action: "update", ticket: fresh });
     }
+    if (tutor && tutor.id !== previousTutorId) void notifyOnboarding({ id: lead.id, name: lead.name, onboardingTutorId: tutor.id, ownerId: null } as any, "tutor", polo.name);
     // open tutor task goes with the new tutor
     if (tutor) await LeadTask.update({ userId: tutor.id } as any, { where: { leadId: lead.id, userId: previousTutorId || tutor.id, doneAt: null, title: { [Op.like]: "Ambientar o aluno%" } } as any });
   }
@@ -279,6 +430,7 @@ export const editOnboarding = async (lead: Lead, actorId: number, input: EditOnb
     if (input.status === "done") {
       await setOnboarding(lead, actorId, "done");
     } else if (input.status === "started") {
+      await takeAsTutor(lead, actorId);
       await lead.update({ onboardingStatus: "started", onboardingStartedAt: lead.onboardingStartedAt || new Date(), onboardingDoneAt: null });
       notes.push("Ambientação em andamento");
     } else {

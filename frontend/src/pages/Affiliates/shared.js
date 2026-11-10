@@ -25,21 +25,14 @@ export const BONUS_STATUS = {
 
 export const PIX_TYPES = [["cpf", "CPF"], ["cnpj", "CNPJ"], ["phone", "Celular"], ["email", "E-mail"], ["random", "Chave aleatória"]];
 
-export const saveBlob = (blob, name) => {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = name;
-  a.click();
-  URL.revokeObjectURL(url);
-};
+export { saveBlob } from "../../utils/saveBlob";
 
 export const useStyles = makeStyles((theme) => ({
   page: { flex: 1, minHeight: 0, display: "flex", flexDirection: "column" },
   body: { flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", paddingBottom: theme.spacing(2), ...theme.scrollbarStyles },
   kpis: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: theme.spacing(1.5), marginBottom: theme.spacing(2) },
   kpi: { padding: theme.spacing(1.5, 2), animation: "page-in .45s var(--ease-out) both" },
-  kpiValue: { fontSize: 26, fontWeight: 700, letterSpacing: "-0.03em", lineHeight: 1.15 },
+  kpiValue: { fontSize: 30, fontWeight: 800, letterSpacing: "-0.03em", lineHeight: 1.15 },
   kpiLabel: { fontSize: 12.5, color: theme.palette.text.secondary, marginTop: 2 },
   toolbar: { display: "flex", gap: theme.spacing(1), alignItems: "center", flexWrap: "wrap", marginBottom: theme.spacing(1.5) },
   grow: { flex: 1, minWidth: 180 },
@@ -75,14 +68,4 @@ export const useStyles = makeStyles((theme) => ({
   actions: { display: "flex", gap: 4, marginLeft: "auto", flex: "none" },
 }));
 
-// /users answers 20 at a time
-export const fetchAllUsers = async () => {
-  let all = [];
-  for (let page = 1; page <= 25; page += 1) {
-    // eslint-disable-next-line no-await-in-loop
-    const { data } = await api.get("/users", { params: { pageNumber: page } });
-    all = all.concat(data.users || []);
-    if (!data.hasMore) break;
-  }
-  return all;
-};
+export { fetchAllUsers } from "../../utils/fetchAllUsers";

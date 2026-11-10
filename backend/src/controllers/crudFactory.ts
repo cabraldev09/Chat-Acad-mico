@@ -42,7 +42,9 @@ const makeCrud = (Model: ModelCtor<any>, opts: CrudOptions) => {
       const rows = await Model.findAll({
         where: opts.where ? opts.where(req) : undefined,
         include: opts.include,
-        order: opts.order || [["id", "DESC"]]
+        order: opts.order || [["id", "DESC"]],
+        // a screen never reads a whole table: up to 2000 rows unless it asks for fewer
+        limit: Math.min(2000, Math.max(1, Number(req.query.limit) || 2000))
       });
       return res.json(rows);
     },

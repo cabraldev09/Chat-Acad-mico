@@ -9,21 +9,31 @@ import ListItemText from "@material-ui/core/ListItemText";
 import ListSubheader from "@material-ui/core/ListSubheader";
 import Divider from "@material-ui/core/Divider";
 import MessagesSquareIcon from "lucide-react/dist/esm/icons/messages-square";
-import SyncAltIcon from "@material-ui/icons/SyncAlt";
-import ContactPhoneOutlinedIcon from "@material-ui/icons/ContactPhoneOutlined";
-import QuestionAnswerOutlinedIcon from "@material-ui/icons/QuestionAnswerOutlined";
-import ScheduleIcon from "@material-ui/icons/Schedule";
+// one icon per entry, never repeated (src/layout/menuIcons.test.js checks it)
+import PlugIcon from "lucide-react/dist/esm/icons/plug-2";
+import ContactIcon from "lucide-react/dist/esm/icons/contact";
+import ZapIcon from "lucide-react/dist/esm/icons/zap";
+import CalendarClockIcon from "lucide-react/dist/esm/icons/calendar-clock";
 import MegaphoneIcon from "lucide-react/dist/esm/icons/megaphone";
-import AssessmentOutlinedIcon from "@material-ui/icons/AssessmentOutlined";
+import BarChartIcon from "lucide-react/dist/esm/icons/bar-chart-3";
 import KanbanSquareIcon from "lucide-react/dist/esm/icons/kanban-square";
-import TrendingUpIcon from "lucide-react/dist/esm/icons/trending-up";
-import { isManager } from "../utils/access";
+import LayoutDashboardIcon from "lucide-react/dist/esm/icons/layout-dashboard";
+import { canOperateRetention, isManager } from "../utils/access";
+import { useMyTasks } from "../components/TaskAlert";
 import ListTodoIcon from "lucide-react/dist/esm/icons/list-todo";
-import HeartHandshakeIcon from "lucide-react/dist/esm/icons/heart-handshake";
+import MonitorCheckIcon from "lucide-react/dist/esm/icons/monitor-check";
+import HeartPulseIcon from "lucide-react/dist/esm/icons/heart-pulse";
 import Share2Icon from "lucide-react/dist/esm/icons/share-2";
 import WalletIcon from "lucide-react/dist/esm/icons/wallet";
 import GoalIcon from "lucide-react/dist/esm/icons/goal";
+import GaugeIcon from "lucide-react/dist/esm/icons/gauge";
 import SlidersIcon from "lucide-react/dist/esm/icons/sliders-horizontal";
+import GraduationCapIcon from "lucide-react/dist/esm/icons/graduation-cap";
+import FileSearchIcon from "lucide-react/dist/esm/icons/file-search";
+import LibraryIcon from "lucide-react/dist/esm/icons/library";
+import BookOpenCheckIcon from "lucide-react/dist/esm/icons/book-open-check";
+import BotIcon from "lucide-react/dist/esm/icons/bot";
+import WorkflowIcon from "lucide-react/dist/esm/icons/workflow";
 
 import api from "../services/api";
 import openSocket from "../services/socket-io";
@@ -46,6 +56,7 @@ const useStyles = makeStyles((theme) => ({
     },
   },
   navItemCollapsed: {
+    position: "relative",
     justifyContent: "center",
     padding: theme.spacing(1, 1),
   },
@@ -90,10 +101,16 @@ const useStyles = makeStyles((theme) => ({
     backgroundColor: "#FEF84C",
     flexShrink: 0,
   },
-  connectionDotCollapsed: {
+  connectionDotCollapsed: {},
+  // with the menu closed the number (or the dot) sits on the corner of the icon: the icons stay in one column, in order
+  collapsedAdornment: {
     position: "absolute",
-    top: 8,
-    right: 12,
+    top: 2,
+    right: 2,
+    transform: "scale(.82)",
+    transformOrigin: "top right",
+    pointerEvents: "none",
+    display: "flex",
   },
   divider: {
     margin: theme.spacing(1.25, 0.5),
@@ -143,7 +160,7 @@ function ListItemLink(props) {
             classes={{ root: classes.navTextRoot, primary: classes.navText }}
           />
         )}
-        {adornment}
+        {adornment ? collapsed ? <span className={classes.collapsedAdornment}>{adornment}</span> : adornment : null}
       </ListItem>
     </li>
   );
@@ -156,6 +173,23 @@ const MainListItems = (props) => {
   const { user } = useContext(AuthContext);
   const [connectionWarning, setConnectionWarning] = useState(false);
   const [aiReview, setAiReview] = useState(0);
+  const [followUps, setFollowUps] = useState(0);
+  const myTasks = useMyTasks();
+
+  // curricular analyses whose 24-hour return is waiting for an answer (mine; the management sees all)
+  useEffect(() => {
+    if (!user || !user.id) return undefined;
+    const load = () => api.get("/analysis/follow-ups").then(({ data }) => setFollowUps(Number(data.total) || 0)).catch(() => {});
+    load();
+    const timer = setInterval(() => { if (document.visibilityState === "visible") load(); }, 5 * 60 * 1000);
+    window.addEventListener("followups:changed", load);
+    const socket = openSocket();
+    // the live notice refreshes this counter and any open list (they listen to the same event)
+    const live = () => { try { window.dispatchEvent(new Event("followups:changed")); } catch (e) { /* old browser */ } };
+    socket.on("followUp", live);
+    return () => { clearInterval(timer); window.removeEventListener("followups:changed", load); socket.off("followUp", live); socket.disconnect(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user && user.id]);
 
   // answers the team gave that the owner has not reviewed yet
   useEffect(() => {
@@ -171,6 +205,8 @@ const MainListItems = (props) => {
     const delayDebounceFn = setTimeout(() => {
       if (whatsApps.length > 0) {
         const offlineWhats = whatsApps.filter((whats) => {
+          // only the numbers this person can reconnect (all for the management, their own for the others)
+          if (!isManager(user) && whats.ownerId !== user.id) return false;
           return (
             whats.status === "qrcode" ||
             whats.status === "PAIRING" ||
@@ -187,7 +223,23 @@ const MainListItems = (props) => {
       }
     }, 2000);
     return () => clearTimeout(delayDebounceFn);
-  }, [whatsApps]);
+  }, [whatsApps, user && user.id]);
+
+  // the same entry for everybody (the managers find it in the group of the automations)
+  const connectionsLink = (
+    <ListItemLink
+      to="/connections"
+      primary={i18n.t("mainDrawer.listItems.connections")}
+      icon={<PlugIcon className="ico" />}
+      collapsed={collapsed}
+      adornment={connectionWarning && <span className={clsx(classes.connectionDot, collapsed && classes.connectionDotCollapsed)} title="Há conexão com problema" />}
+    />
+  );
+
+  // my late tasks (red) or, when none is late, the ones for today: visible without opening anything
+  const tasksBadge = (myTasks.overdue + myTasks.today > 0) && (
+    <span className={classes.countBadge} style={myTasks.overdue > 0 ? { background: "#dc2626", color: "#fff" } : undefined} title={`${myTasks.overdue} atrasada(s) · ${myTasks.today} para hoje`}>{myTasks.overdue > 0 ? myTasks.overdue : myTasks.today}</span>
+  );
 
   return (
     <div onClick={drawerClose}>
@@ -201,23 +253,17 @@ const MainListItems = (props) => {
       <ListItemLink
         to="/contacts"
         primary={i18n.t("mainDrawer.listItems.contacts")}
-        icon={<ContactPhoneOutlinedIcon />}
+        icon={<ContactIcon className="ico" />}
         collapsed={collapsed}
       />
       {/* administration and coordination find these two in Configurações; everyone else keeps them here */}
       {!isManager(user) && (
         <>
-          <ListItemLink
-            to="/connections"
-            primary={i18n.t("mainDrawer.listItems.connections")}
-            icon={<SyncAltIcon />}
-            collapsed={collapsed}
-            adornment={connectionWarning && <span className={clsx(classes.connectionDot, collapsed && classes.connectionDotCollapsed)} />}
-          />
+          {connectionsLink}
           <ListItemLink
             to="/quickAnswers"
             primary={i18n.t("mainDrawer.listItems.quickAnswers")}
-            icon={<QuestionAnswerOutlinedIcon />}
+            icon={<ZapIcon className="ico" />}
             collapsed={collapsed}
           />
         </>
@@ -225,22 +271,62 @@ const MainListItems = (props) => {
       {!collapsed && (
         <ListSubheader disableSticky className={classes.sectionLabel}>CRM</ListSubheader>
       )}
-      <ListItemLink to="/crm" primary="Funil de captação" icon={<KanbanSquareIcon className="ico" />} collapsed={collapsed} />
-      <ListItemLink to="/crm/painel" primary="Painel do CRM" icon={<TrendingUpIcon className="ico" />} collapsed={collapsed} />
-      <ListItemLink to="/crm/tarefas" primary="Tarefas" icon={<ListTodoIcon className="ico" />} collapsed={collapsed} />
+      {/* the funnel and its panel are the sales pipeline: for tutoring and the academic team they would always be empty */}
+      {!["tutor", "academico"].includes(user.profile === "admin" ? "admin" : user.role) && (
+        <>
+          <ListItemLink to="/crm" primary="Funil de captação" icon={<KanbanSquareIcon className="ico" />} collapsed={collapsed} />
+          <ListItemLink to="/crm/painel" primary="Painel do CRM" icon={<LayoutDashboardIcon className="ico" />} collapsed={collapsed} adornment={myTasks.triage > 0 && <span className={classes.countBadge} style={myTasks.triageLate > 0 ? { background: "#dc2626", color: "#fff" } : undefined} title="Leads novos para conferir até o fim do dia">{myTasks.triage}</span>} />
+        </>
+      )}
+      {<ListItemLink to="/crm/tarefas" primary="Tarefas" icon={<ListTodoIcon className="ico" />} collapsed={collapsed} adornment={tasksBadge} />}
       {["admin", "coordenacao", "consultor"].includes(user.profile === "admin" ? "admin" : user.role || "consultor") && (
         <ListItemLink to="/crm/comissoes" primary="Comissões" icon={<WalletIcon className="ico" />} collapsed={collapsed} />
       )}
       <ListItemLink to="/crm/metas-polos" alsoActive={["/crm/metas"]} primary="Metas" icon={<GoalIcon className="ico" />} collapsed={collapsed} />
-      <ListItemLink to="/ambientacao" primary="Ambientação" icon={<HeartHandshakeIcon className="ico" />} collapsed={collapsed} />
+      {<ListItemLink to="/ambientacao" primary="Ambientação" icon={<MonitorCheckIcon className="ico" />} collapsed={collapsed} adornment={myTasks.onboarding > 0 && <span className={classes.countBadge} title="Alunos esperando a ambientação">{myTasks.onboarding}</span>} />}
+      {canOperateRetention(user) && (
+        <ListItemLink to="/crm/retencao" primary="Retenção" icon={<HeartPulseIcon className="ico" />} collapsed={collapsed} />
+      )}
+      {!collapsed && (
+        <ListSubheader disableSticky className={classes.sectionLabel}>Cursos e alunos</ListSubheader>
+      )}
+      <ListItemLink to="/grades" primary="Grades" icon={<LibraryIcon className="ico" />} collapsed={collapsed} />
+      <ListItemLink
+        to="/analise-curricular"
+        primary="Análise curricular"
+        icon={<FileSearchIcon className="ico" />}
+        collapsed={collapsed}
+        adornment={followUps > 0 && <span className={classes.countBadge} title="Retornos de 24 horas para registrar">{followUps}</span>}
+      />
+      {(isManager(user) || user.role === "tutor") && (
+        <>
+          <ListItemLink to="/analise-academica" primary="Análise acadêmica" icon={<BookOpenCheckIcon className="ico" />} collapsed={collapsed} />
+          <ListItemLink to="/alunos" primary="Alunos do portal" icon={<GraduationCapIcon className="ico" />} collapsed={collapsed} />
+        </>
+      )}
       {["admin", "coordenacao", "consultor"].includes(user.profile === "admin" ? "admin" : user.role || "consultor") && (
         <ListItemLink to="/afiliados" primary="Afiliados" icon={<Share2Icon className="ico" />} collapsed={collapsed} />
+      )}
+      {/* the tools that make the company advance are one click away, not inside Configurações */}
+      {isManager(user) && (
+        <>
+          {!collapsed && <ListSubheader disableSticky className={classes.sectionLabel}>Automação e IA</ListSubheader>}
+          <ListItemLink
+            to="/ai-agents"
+            primary="Agentes de IA"
+            icon={<BotIcon className="ico" />}
+            collapsed={collapsed}
+            adornment={aiReview > 0 && <span className={classes.countBadge} title="Respostas da equipe para você revisar">{aiReview}</span>}
+          />
+          <ListItemLink to="/chatbot" primary="Chatbot e fluxos" icon={<WorkflowIcon className="ico" />} collapsed={collapsed} />
+          {connectionsLink}
+        </>
       )}
       <Divider className={classes.divider} />
       <ListItemLink
         to="/schedules"
         primary="Agendamentos"
-        icon={<ScheduleIcon />}
+        icon={<CalendarClockIcon className="ico" />}
         collapsed={collapsed}
       />
       {["admin", "coordenacao", "consultor"].includes(user.profile === "admin" ? "admin" : user.role || "consultor") && (
@@ -251,10 +337,13 @@ const MainListItems = (props) => {
           collapsed={collapsed}
         />
       )}
+      {isManager(user) && (
+        <ListItemLink to="/gestao-comercial" primary="Gestão Comercial" icon={<GaugeIcon className="ico" />} collapsed={collapsed} adornment={tasksBadge} />
+      )}
       <ListItemLink
         to="/reports"
         primary="Estatísticas"
-        icon={<AssessmentOutlinedIcon />}
+        icon={<BarChartIcon className="ico" />}
         collapsed={collapsed}
       />
       {isManager(user) && (
@@ -262,7 +351,7 @@ const MainListItems = (props) => {
           <Divider className={classes.divider} />
           <ListItemLink
             to="/configuracoes"
-            alsoActive={["/connections", "/quickAnswers", "/users", "/polos", "/queues", "/tags", "/chatbot", "/ai-agents", "/monitor", "/crm/config", "/settings", "/integrations"]}
+            alsoActive={["/quickAnswers", "/users", "/polos", "/queues", "/tags", "/crm/config", "/settings", "/integrations"]}
             primary="Configurações"
             icon={<SlidersIcon className="ico" />}
             collapsed={collapsed}

@@ -1,12 +1,13 @@
 import React from "react";
 import { toast } from "react-toastify";
+import { labelOfKind, shownText } from "../../utils/mediaLabel";
 
 // Pop-up for a new message, on any screen of the system: who wrote, what, and a click takes you there.
 // It leaves by itself after a few seconds, and when the conversation is opened (dismissMessageToast).
 const LABEL = {
-  image: "📷 Foto",
+  image: "📷 Imagem",
   video: "🎥 Vídeo",
-  audio: "🎤 Mensagem de voz",
+  audio: "🎤 Áudio",
   document: "📄 Documento",
   application: "📄 Documento",
   location: "📍 Localização",
@@ -15,8 +16,9 @@ const LABEL = {
 
 const previewOf = (message, ticket, contact) => {
   const body = String(message.body || "").replace(/\*|_|~/g, "").trim();
-  const kind = LABEL[message.mediaType];
-  let text = kind && (!body || body === message.mediaUrl) ? kind : kind ? `${kind.split(" ")[0]} ${body}` : body || "Nova mensagem";
+  const kind = labelOfKind(message.mediaType, message.mediaUrl) || LABEL[message.mediaType];
+  const caption = shownText(body, message.mediaType, message.mediaUrl);
+  let text = kind && (!body || caption === kind) ? kind : kind ? `${kind.split(" ")[0]} ${body}` : body || "Nova mensagem";
   if (ticket.isGroup && message.contact && message.contact.name) text = `${message.contact.name.split(" ")[0]}: ${text}`;
   return text.length > 110 ? `${text.slice(0, 110)}…` : text;
 };

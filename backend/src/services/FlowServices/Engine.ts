@@ -1,4 +1,7 @@
+import { isEmail } from "../../helpers/Email";
 import { FlowNode, Graph, handleOf, nextNodeId } from "./Graph";
+import { cleanStage } from "./StageSpec";
+import { doneSteps, lockExit, markSteps, pendingSteps, pendingText, stepsKey } from "./StepLock";
 
 // The engine walks a flow. It knows nothing about WhatsApp or the database: everything it does to the outside world goes
 // through `Effects`. The same engine runs a real conversation (effects that send and save) and the simulator on screen
@@ -7,6 +10,8 @@ import { FlowNode, Graph, handleOf, nextNodeId } from "./Graph";
 export interface Effects {
   // the text is what the history shows; `choices` lets channels with buttons send them natively
   say(text: string, choices?: { question: string; options: Array<{ id: string; label: string }> }): Promise<void>;
+  // what the AI wrote: sent as short bubbles, one after the other, like a person
+  sayBlocks?(text: string): Promise<void>;
   // the value a condition looks at ("lead.course", "tag", "hours", "channel", "message"...)
   readField(field: string): Promise<string>;
   // an answer to a question: saved on the lead when the field is one of its own
@@ -18,9 +23,51 @@ export interface Effects {
   webhook(url: string, vars: Record<string, any>): Promise<boolean>;
   // first name and full name of the person, for {{primeiro_nome}} and {{nome}}
   who(): { name: string; first: string };
+  // the active polos the person can choose from, and the choice (lead polo + the sales queue of that polo); returns its name
+  listPolos(): Promise<PoloOption[]>;
+  setPolo(poloId: number): Promise<string>;
+  // one turn of an AI stage: what the AI says, the fields it found out and the exit it chose (null: the stage goes on)
+  aiTurn(args: StageTurnArgs): Promise<StageTurn>;
+  // an exit of a stage that is not connected to anything: the conversation goes to the team (with the reason)
+  humanHandoff(node: FlowNode, exit: string, vars: Record<string, any>): Promise<void>;
+  // starts another published flow on this conversation (the block "Chamar fluxo"); false when it is not published
+  startFlow(flowId: number): Promise<boolean>;
+  // the block "Estado comercial": a step of the commercial journey (find the lead, a column of the CRM, a task, the handoff brief...)
+  commercial(node: FlowNode, vars: Record<string, any>): Promise<void>;
+}
+
+export interface StageTurnArgs {
+  node: FlowNode;
+  vars: Record<string, any>;
+  // what the person wrote (null: the stage is starting and the AI speaks first)
+  input: string | null;
+  // turns the AI already had in this stage
+  turns: number;
+}
+export interface StageTurn {
+  text: string;
+  // done | human | off | limit | the id of an exit by intention; null/undefined = keep talking
+  exit?: string | null;
+  collected?: Record<string, string>;
+  // why the conversation goes to a person, when the turn decided it ("qualified", "loop"...)
+  why?: string;
+  // the steps of the checklist of the stage that are done (1-based): the lock lets the stage end only when all are
+  stepsDone?: number[];
+  // what the turn did, for the simulator (tools, CRM before/after, tokens...)
+  trace?: any;
+  // the agent is set to answer in one message (no short bubbles)
+  single?: boolean;
+}
+
+export interface PoloOption {
+  id: number;
+  name: string;
+  city: string;
 }
 
 export interface RunState {
+  // what the person wrote when the run was started by a message: an AI stage answers it right away
+  pending?: string | null;
   // the block waiting for the person (buttons, ask) or the delay block that is counting time
   nodeId: string | null;
   vars: Record<string, any>;
@@ -56,8 +103,12 @@ export const render = (text: string, vars: Record<string, any>, who: { name: str
 const menuText = (text: string, options: any[]): string => `${text}\n\n${options.map((o, i) => `*${i + 1}* - ${o.label}`).join("\n")}`;
 
 // what a person typed, matched to one of the options: the number, the name, or a keyword of the option
-const pickOption = (options: any[], answer: string): any | null => {
-  const a = normalize(answer);
+export const pickOption = (options: any[], answer: string): any | null => {
+  // a title that was cut shows "…" at the end, and two that looked the same come with their number in front ("2. Curso de…")
+  let a = normalize(answer).replace(/…$/, "").trim();
+  const numbered = a.match(/^(\d+)[.)]\s+\S/);
+  if (numbered && options[Number(numbered[1]) - 1]) return options[Number(numbered[1]) - 1];
+  a = a.replace(/^\d+[.)]\s+/, "").trim();
   if (/^\d+$/.test(a)) return options[Number(a) - 1] || null;
   const exact = options.find(o => normalize(o.label) === a);
   if (exact) return exact;
@@ -77,9 +128,58 @@ const pickOption = (options: any[], answer: string): any | null => {
   );
 };
 
+// letters and digits only, without accents: "Ji-Paraná" and "ji parana" are the same thing
+const plain = (s: string): string =>
+  normalize(s)
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+
+const distance = (a: string, b: string): number => {
+  const dp = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j += 1) dp[0][j] = j;
+  for (let i = 1; i <= a.length; i += 1) {
+    for (let j = 1; j <= b.length; j += 1) {
+      dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+  }
+  return dp[a.length][b.length];
+};
+
+// What the person wrote, matched to a polo: the number, the exact name or city, a phrase that contains it ("moro em ji
+// parana") or something close to it ("ji parna"). Several polos fit equally: the answer is returned as `ambiguous`.
+export const matchPolo = (polos: PoloOption[], answer: string): { polo?: PoloOption; ambiguous?: PoloOption[] } => {
+  const a = plain(answer);
+  if (!a) return {};
+  if (/^\d+$/.test(a)) return polos[Number(a) - 1] ? { polo: polos[Number(a) - 1] } : {};
+  const keys = (p: PoloOption): string[] => [plain(p.city), plain(p.name), plain(p.name).replace(/^polo /, "")].filter(k => k.length >= 3);
+  const words = a.split(" ");
+  const score = (p: PoloOption): number => {
+    let best = 0;
+    for (const k of keys(p)) {
+      if (k === a) best = Math.max(best, 100);
+      else if (` ${a} `.includes(` ${k} `)) best = Math.max(best, 80 + Math.min(k.length, 15));
+      else if (a.length >= 3 && ` ${k} `.includes(` ${a} `)) best = Math.max(best, 50 + a.length);
+      else {
+        // close spellings: compare with every stretch of the answer that has as many words as the key
+        const n = k.split(" ").length;
+        const tolerance = k.length >= 8 ? 2 : k.length >= 5 ? 1 : 0;
+        for (let i = 0; i + n <= words.length; i += 1) {
+          const d = distance(words.slice(i, i + n).join(" "), k);
+          if (d <= tolerance) best = Math.max(best, 40 - d * 5);
+        }
+      }
+    }
+    return best;
+  };
+  const scored = polos.map(p => ({ p, s: score(p) })).filter(x => x.s > 0).sort((x, y) => y.s - x.s);
+  if (!scored.length) return {};
+  const top = scored.filter(x => x.s === scored[0].s);
+  return top.length === 1 ? { polo: top[0].p } : { ambiguous: top.map(x => x.p) };
+};
+
 const validators: Record<string, (v: string) => string | null> = {
   text: v => (v.trim() ? v.trim().slice(0, 200) : null),
-  email: v => (/^\S+@\S+\.\S+$/.test(v.trim()) ? v.trim().toLowerCase().slice(0, 120) : null),
+  email: v => (isEmail(v) ? v.trim().toLowerCase().slice(0, 120) : null),
   phone: v => (v.replace(/\D/g, "").length >= 10 ? v.replace(/\D/g, "").slice(0, 15) : null),
   number: v => (/\d/.test(v) ? v.replace(/\D/g, "").slice(0, 12) : null)
 };
@@ -102,6 +202,7 @@ const ruleHolds = async (rule: any, vars: Record<string, any>, fx: Effects): Pro
       case "neq": ok = left !== right; break;
       case "contains": ok = left.includes(right); break;
       case "notcontains": ok = !left.includes(right); break;
+      case "in": ok = String(c.value ?? "").split(",").map(v => normalize(v)).filter(Boolean).includes(left); break;
       case "empty": ok = left === ""; break;
       case "notempty": ok = left !== ""; break;
       default: ok = false;
@@ -109,6 +210,63 @@ const ruleHolds = async (rule: any, vars: Record<string, any>, fx: Effects): Pro
     if (!ok) return false;
   }
   return (rule.all || []).length > 0;
+};
+
+const turnsKey = (nodeId: string): string => `__turns_${nodeId}`;
+
+// One step of an AI stage: the AI talks (or the fixed opening goes out), the fields it found are kept, and an exit moves the flow on.
+const stageStep = async (graph: Graph, node: FlowNode, state: RunState, fx: Effects, input: string | null): Promise<StepResult> => {
+  const st = cleanStage(node.data);
+  const who = fx.who();
+  const turns = Number(state.vars[turnsKey(node.id)] || 0);
+  state.nodeId = node.id;
+  state.tries = 0;
+  let turn: StageTurn;
+  if (turns >= st.maxTurns) turn = { text: "", exit: "limit" };
+  else if (input === null && st.quiet) turn = { text: "", exit: null };
+  else if (input === null && st.opening) turn = { text: st.opening, exit: null };
+  else {
+    state.vars[turnsKey(node.id)] = turns + 1;
+    turn = await fx.aiTurn({ node, vars: state.vars, input, turns });
+    // a turn that said nothing and decided nothing (a sticker, a message already answered) does not count against the limit
+    if (!turn.text && !turn.exit && !Object.keys(turn.collected || {}).length) state.vars[turnsKey(node.id)] = turns;
+  }
+  for (const [key, value] of Object.entries(turn.collected || {})) {
+    if (value === undefined || value === null || String(value) === "") continue;
+    state.vars[key] = value;
+    // eslint-disable-next-line no-await-in-loop
+    await fx.saveField(key, String(value));
+  }
+  // the checklist of the stage: what the AI marked as done is kept in the run, and the stage cannot end on the happy path while a step is pending
+  if (turn.stepsDone) state.vars[stepsKey(node.id)] = markSteps(st, doneSteps(state.vars, node.id), turn.stepsDone);
+  if (turn.exit) {
+    const lock = lockExit(st, doneSteps(state.vars, node.id), turn.exit, turn.why);
+    if (lock.held) {
+      // the end is refused: the stage goes on, and the next turn is told what is missing
+      state.vars.__stepsHeld = pendingText(st, lock.pending);
+      turn = { ...turn, exit: null };
+    }
+  }
+  if (turn.exit && st.steps && st.steps.length) {
+    // a way out that is not the happy path (limit of turns, a person asked, no interest...) with steps still pending: the team is told what was left
+    const pending = pendingSteps(st, doneSteps(state.vars, node.id));
+    if (pending.length) state.vars.__stepsMissing = pendingText(st, pending);
+  }
+  if (turn.text) await (fx.sayBlocks && !turn.single ? fx.sayBlocks(render(turn.text, state.vars, who)) : fx.say(render(turn.text, state.vars, who)));
+  if (!turn.exit) return { status: "waiting", state, path: [] };
+
+  const exit = String(turn.exit);
+  state.vars.__exit = exit;
+  const target = nextNodeId(graph, node.id, exit);
+  if (target) {
+    const step = await advance(graph, target, state, fx);
+    return { ...step, path: [node.id, ...step.path] };
+  }
+  state.nodeId = null;
+  if (exit === "done") return { status: "done", state, path: [node.id] };
+  // an exit that leads nowhere: the team takes the conversation (and knows why)
+  await fx.humanHandoff(node, exit, state.vars);
+  return { status: "handoff", state, path: [node.id] };
 };
 
 // Runs from a block until the flow has to wait (for an answer or for time) or ends.
@@ -142,7 +300,8 @@ export const advance = async (graph: Graph, startId: string | null, state: RunSt
         state.nodeId = node.id;
         state.tries = 0;
         // eslint-disable-next-line no-await-in-loop
-        await fx.say(menuText(render(d.text, state.vars, who), d.options || []), { question: render(d.text, state.vars, who), options: (d.options || []).map((o: any) => ({ id: String(o.id), label: String(o.label) })) });
+        // (over 10 options a channel cannot show buttons: only the numbered text goes)
+        await fx.say(menuText(render(d.text, state.vars, who), d.options || []), (d.options || []).length <= 10 ? { question: render(d.text, state.vars, who), options: (d.options || []).map((o: any) => ({ id: String(o.id), label: String(o.label) })) } : undefined);
         return done("waiting");
       }
       case "ask":
@@ -151,6 +310,22 @@ export const advance = async (graph: Graph, startId: string | null, state: RunSt
         // eslint-disable-next-line no-await-in-loop
         await fx.say(render(d.text, state.vars, who));
         return done("waiting");
+      case "polo": {
+        // eslint-disable-next-line no-await-in-loop
+        const polos = await fx.listPolos();
+        if (!polos.length) {
+          // nothing to choose from: go on instead of asking a question nobody can answer
+          current = go("other") || go();
+          break;
+        }
+        state.nodeId = node.id;
+        state.tries = 0;
+        const question = render(d.text, state.vars, who);
+        const options = polos.map(p => ({ id: String(p.id), label: p.name }));
+        // eslint-disable-next-line no-await-in-loop
+        await fx.say(menuText(question, options), polos.length <= 10 ? { question, options } : undefined);
+        return done("waiting");
+      }
       case "condition": {
         let handle = "else";
         for (const rule of d.rules || []) {
@@ -179,6 +354,27 @@ export const advance = async (graph: Graph, startId: string | null, state: RunSt
         // eslint-disable-next-line no-await-in-loop
         await fx.handToAi(node);
         return done("handoff");
+      case "stage": {
+        // the message that started the run is answered by the stage (if a block before it did not consume it)
+        const input = state.pending ?? null;
+        state.pending = null;
+        // eslint-disable-next-line no-await-in-loop
+        const step = await stageStep(graph, node, state, fx, input);
+        return { ...step, path: [...path, ...step.path.filter(id => id !== node.id)] };
+      }
+      case "commercial":
+        // eslint-disable-next-line no-await-in-loop
+        await fx.commercial(node, state.vars);
+        current = go();
+        break;
+      case "flow": {
+        // eslint-disable-next-line no-await-in-loop
+        const started = await fx.startFlow(Number(d.flowId));
+        // the flow is not published: the team takes it instead of leaving the person without an answer
+        // eslint-disable-next-line no-await-in-loop
+        if (!started) { await fx.humanHandoff(node, "off", state.vars); return done("handoff"); }
+        return done("done");
+      }
       case "transfer":
         // eslint-disable-next-line no-await-in-loop
         if (d.text) await fx.say(render(d.text, state.vars, who));
@@ -232,6 +428,11 @@ export const resume = async (graph: Graph, state: RunState, input: string, fx: E
 
   if (node.type === "delay") return advance(graph, nextNodeId(graph, node.id), state, fx);
 
+  if (node.type === "stage") {
+    const step = await stageStep(graph, node, state, fx, input);
+    return { ...step, path: [node.id, ...step.path.filter(id => id !== node.id)] };
+  }
+
   if (node.type === "buttons") {
     const options = d.options || [];
     const chosen = pickOption(options, input);
@@ -252,6 +453,27 @@ export const resume = async (graph: Graph, state: RunState, input: string, fx: E
       return { ...step, path: [node.id, ...step.path] };
     }
     await fx.say(`Não entendi. Responda com o número de uma das opções:\n\n${options.map((o: any, i: number) => `*${i + 1}* - ${o.label}`).join("\n")}`);
+    return { status: "waiting", state, path: [] };
+  }
+
+  if (node.type === "polo") {
+    const polos = await fx.listPolos();
+    const found = matchPolo(polos, input);
+    if (found.polo) {
+      state.vars.polo = found.polo.name;
+      state.vars.poloId = found.polo.id;
+      await fx.setPolo(found.polo.id);
+      const step = await advance(graph, nextNodeId(graph, node.id), state, fx);
+      return { ...step, path: [node.id, ...step.path] };
+    }
+    state.tries += 1;
+    const other = nextNodeId(graph, node.id, "other");
+    if (state.tries >= MAX_TRIES && other) {
+      const step = await advance(graph, other, state, fx);
+      return { ...step, path: [node.id, ...step.path] };
+    }
+    const list = (found.ambiguous || polos).map(p => `*${polos.indexOf(p) + 1}* - ${p.name}`).join("\n");
+    await fx.say(found.ambiguous ? `Encontrei mais de um polo. Qual deles?\n\n${list}` : `Não encontrei esse polo. Responda com o número, o nome ou a cidade:\n\n${list}`);
     return { status: "waiting", state, path: [] };
   }
 

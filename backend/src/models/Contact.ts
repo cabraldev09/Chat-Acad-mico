@@ -73,6 +73,14 @@ class Contact extends Model<Contact> {
   @Column
   parentGroupId: string;
 
+  // parent (the community itself) | announcement (its notices group) | member (a group inside it); null = not in a community
+  @Column
+  communityRole: string;
+
+  // WhatsApp id of the community this belongs to (for the parent, its own id)
+  @Column
+  communityId: string;
+
   // only administrators can write and this number is not one: the composer is locked
   @Column
   readOnly: boolean;
@@ -86,6 +94,11 @@ class Contact extends Model<Contact> {
   @Default(false)
   @Column
   isStaff: boolean;
+
+  // a friend or family member who wrote to the system: like the team, out of the statistics and the CRM funnel
+  @Default(false)
+  @Column
+  isPersonal: boolean;
 
   // asked to stop receiving mass messages
   @Default(false)

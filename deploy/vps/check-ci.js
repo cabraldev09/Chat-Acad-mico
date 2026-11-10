@@ -1,12 +1,12 @@
 // Deployment gate: require the exact revision's unit/build and integration jobs.
-const approved = runs => ['verificar', 'integracao'].every(name => {
+const approved = runs => ['verificar', 'api-ponta-a-ponta (canais e conversas)', 'api-ponta-a-ponta (responsabilidade pela conversa)', 'api-ponta-a-ponta (estatísticas e gestão comercial)', 'telas'].every(name => {
   const latest = runs.filter(run => run.name === name).sort((a, b) => Number(b.id || 0) - Number(a.id || 0))[0];
   return !!latest && latest.status === 'completed' && latest.conclusion === 'success';
 });
 module.exports = { approved };
-if (require.main === module) {
+if (require.main === module || process.argv[1] === "-") {
   (async () => {
-    const sha = process.argv[2];
+    const sha = process.argv[2] || process.argv[1];
     if (!/^[a-f0-9]{40}$/.test(sha || '')) throw new Error('Revisão de publicação inválida.');
     const repo = process.env.GITHUB_REPOSITORY || 'cabraldev09/Chat-Acad-mico';
     if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) throw new Error('Repositório inválido.');

@@ -64,7 +64,8 @@ const UsageTab = ({ agentId, model }) => {
       )}
       <Typography variant="body2" color="textSecondary" style={{ marginTop: 16 }}>
         {u.costUsd !== null ? `IA: estimativa no período (inclui testes): US$ ${u.costUsd.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}. ` : "Informe o preço do modelo abaixo para ver o custo em dólares. "}
-        Foram lidos {nf(u.total.cacheRead)} tokens de cache. A estimativa usa os preços de entrada e saída informados para cada modelo; não aplica tarifas específicas de cache nem inclui cobranças da Meta.
+        Foram lidos {nf(u.total.cacheRead)} tokens de cache. A estimativa usa os preços informados e os fatores de cache do provedor; não inclui cobranças da Meta.
+
       </Typography>
       <Typography variant="body2" color="textSecondary" style={{ marginTop: 8 }}>Testes: {nf((u.test?.input || 0) + (u.test?.output || 0))} tokens em {nf(u.test?.calls)} chamadas. São cobrados pelo provedor, mesmo fora do limite diário de atendimento.</Typography>
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 12 }}>

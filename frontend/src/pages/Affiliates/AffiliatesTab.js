@@ -32,7 +32,7 @@ const AffiliateForm = ({ open, affiliate, users, polos, canOwner, isAdmin, onClo
   useEffect(() => {
     if (open) setF(affiliate ? { ...EMPTY, ...Object.fromEntries(Object.entries(affiliate).filter(([, v]) => v !== null)), bonusValue: affiliate.bonusValue ?? "" } : EMPTY);
   }, [open, affiliate]);
-  const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }));
+  const set = (k) => (e) => { e && e.persist && e.persist(); return (setF((x) => ({ ...x, [k]: e.target.value }))); };
 
   const save = async () => {
     setBusy(true);
@@ -77,7 +77,7 @@ const AffiliateForm = ({ open, affiliate, users, polos, canOwner, isAdmin, onClo
         <TextField label="Observações" value={f.notes || ""} onChange={set("notes")} fullWidth multiline rows={2} margin="dense" variant="outlined" />
         {affiliate && (
           <FormControlLabel
-            control={<Switch color="primary" checked={f.status === "active"} onChange={(e) => setF((x) => ({ ...x, status: e.target.checked ? "active" : "paused" }))} />}
+            control={<Switch color="primary" checked={f.status === "active"} onChange={(e) => { e && e.persist && e.persist(); return (setF((x) => ({ ...x, status: e.target.checked ? "active" : "paused" }))); }} />}
             label={f.status === "active" ? "Ativo: o link do portal funciona" : "Pausado: o link do portal fica bloqueado"}
           />
         )}
@@ -104,7 +104,7 @@ const ReferralDialog = ({ open, affiliate, courses, onClose, onDone }) => {
   };
   return (
     <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
-      <DialogTitle>Nova indicação de {affiliate && affiliate.name.split(" ")[0]}</DialogTitle>
+      <DialogTitle>Nova indicação de {affiliate && String(affiliate.name || "").split(" ")[0]}</DialogTitle>
       <DialogContent dividers>
         <Typography variant="body2" color="textSecondary" gutterBottom>
           O lead fica com você e conta na produção do afiliado. Depois é só gerar a proposta e enviar o link para ele repassar.
@@ -172,9 +172,11 @@ const AffiliateDrawer = ({ id, canOwner, isAdmin, users, polos, courses, onClose
               <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
                 <Button size="small" variant="contained" color="primary" startIcon={<MessageCircle size={15} />} disabled={!a.phone}
                   onClick={() => run(() => api.post(`/affiliates/${a.id}/send-portal`), "Link enviado pelo WhatsApp.")}>Enviar por WhatsApp</Button>
+                <Button size="small" variant="outlined" disabled={!a.email}
+                  onClick={() => run(() => api.post(`/affiliates/${a.id}/send-access-email`), "Acesso enviado por e-mail.")}>Enviar por e-mail</Button>
                 <Button size="small" variant="outlined" startIcon={<RefreshCw size={15} />} onClick={() => setRotate(true)}>Trocar o link</Button>
               </div>
-              {!a.phone && <Typography variant="caption" color="textSecondary" display="block" style={{ marginTop: 6 }}>Cadastre o WhatsApp para enviar.</Typography>}
+              {(!a.phone || !a.email) && <Typography variant="caption" color="textSecondary" display="block" style={{ marginTop: 6 }}>{!a.phone && !a.email ? "Cadastre o WhatsApp ou o e-mail para enviar." : !a.phone ? "Cadastre o WhatsApp para enviar por lá." : "Cadastre o e-mail para enviar por e-mail."}</Typography>}
               {a.externalLink && (
                 <>
                   <div className={classes.sectionTitle} style={{ marginTop: 16 }}>Link no app Minhas indicações</div>
@@ -301,7 +303,7 @@ const AffiliatesTab = () => {
     Promise.all([
       api.get("/affiliates", { params: { days } }),
       api.get("/affiliates/ranking", { params: { days, by: "paid" } }),
-    ]).then(([a, r]) => { setRows(a.data); setRank(r.data); }).catch(toastError).finally(() => setLoading(false));
+    ]).then(([a, r]) => { setRows(Array.isArray(a.data) ? a.data : []); setRank(r.data && Array.isArray(r.data.affiliates) && r.data.totals ? r.data : { affiliates: [], totals: { referrals: 0, enrolled: 0, bonusOwed: 0, bonusPaid: 0 } }); }).catch(toastError).finally(() => setLoading(false));
   }, [days]);
   useEffect(() => { load(); }, [load]);
 

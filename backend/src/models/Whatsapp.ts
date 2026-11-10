@@ -48,6 +48,10 @@ class Whatsapp extends Model<Whatsapp> {
   @Column(DataType.DATE)
   statusSince: Date;
 
+  // why the connection is in this state, in words for the screen of Conexões ("o WhatsApp do celular desconectou este aparelho", ...)
+  @Column(DataType.TEXT)
+  statusNote: string;
+
   @BeforeCreate
   static startState(instance: Whatsapp): void {
     instance.statusSince = new Date();
@@ -99,10 +103,19 @@ class Whatsapp extends Model<Whatsapp> {
   @Column
   connectedSince: Date;
 
+  // the number typed to connect with the pairing code (digits with country code); empty = QR Code
+  @Column
+  pairingPhone: string;
+
   // who connected this number: its conversations go to that person (null = shared, managed by the administrator)
   @ForeignKey(() => User)
   @Column
   ownerId: number;
+
+  // a personal number that also works as an attendance number: the AI agent answers first instead of the conversation going to the owner
+  @Default(false)
+  @Column
+  aiFirst: boolean;
 
   @Column
   historyImportedAt: Date;

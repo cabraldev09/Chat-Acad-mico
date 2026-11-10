@@ -1,3 +1,4 @@
+import { isEmail } from "./Email";
 // Brazilian-first phone normalisation: digits only, country code 55 added when
 // the number looks like a national one (10-11 digits).
 export const normalizePhone = (raw?: string | null): string | null => {
@@ -8,8 +9,14 @@ export const normalizePhone = (raw?: string | null): string | null => {
   return digits;
 };
 
+// a number the consultant can write to on WhatsApp: the country code and the area code are there (at least 12 digits)
+export const isWhatsappReady = (raw?: string | null): boolean => {
+  const n = normalizePhone(raw);
+  return !!n && n.length >= 12 && n.length <= 15;
+};
+
 export const normalizeEmail = (raw?: string | null): string | null => {
   if (!raw) return null;
   const e = String(raw).trim().toLowerCase();
-  return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e) ? e : null;
+  return isEmail(e) ? e : null;
 };

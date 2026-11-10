@@ -53,6 +53,15 @@ class Ticket extends Model<Ticket> {
   @Column
   isGroup: boolean;
 
+  // pinned at the top of the phone's WhatsApp (kept up to date by the connection)
+  @Default(false)
+  @Column
+  waPinned: boolean;
+
+  // the last activity of this chat as WhatsApp shows it (the list is ordered like the phone's)
+  @Column(DataType.DATE(6))
+  waChatTimestamp: Date;
+
   @Column
   closedAt: Date;
 
@@ -93,6 +102,24 @@ class Ticket extends Model<Ticket> {
 
   @Column
   outOfHoursSentAt: Date;
+
+  // the handoff of the AI agent to the commercial team of the polo (see CommercialServices/Router)
+  // which server is answering this conversation right now (see FlowServices/Claim)
+  @Column
+  aiClaimAt: Date;
+
+  @Column
+  handoffAt: Date;
+
+  @Column
+  handoffReason: string;
+
+  @Default(0)
+  @Column
+  handoffAlerts: number;
+
+  @Column
+  handoffAlertedAt: Date;
 
   @CreatedAt
   createdAt: Date;

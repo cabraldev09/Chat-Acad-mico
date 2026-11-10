@@ -77,7 +77,9 @@ export const createLead = async (req: Request, res: Response): Promise<Response>
   if (!normalizePhone(b.phone) && !normalizeEmail(b.email)) {
     throw new AppError("ERR_LEAD_NEEDS_PHONE_OR_EMAIL");
   }
-  const { lead, created } = await upsertLead({ ...b, name: b.name, source: b.source || "API" });
+  // an integration creates leads from its own data: it never chooses the contact it attaches to nor the affiliate that earns the bonus
+  const { contactId: _contact, affiliateId: _affiliate, ...safe } = b;
+  const { lead, created } = await upsertLead({ ...safe, name: b.name, source: b.source || "API" });
   return res.status(created ? 201 : 200).json({ created, lead });
 };
 

@@ -18,7 +18,8 @@ const explain = (err: any): AppError => {
   const d = err?.response?.data;
   const msg = d?.error_description?.message || d?.error_description || d?.message || d?.error || err?.message || "falha na API";
   logger.warn(`Efí billet API error: ${JSON.stringify(d || err?.message)}`);
-  return new AppError(`Efí: ${typeof msg === "string" ? msg : JSON.stringify(msg)}`);
+  // the status Efí answered with travels along: the caller tells a refusal of the data (4xx) from a failure of the network
+  return new AppError(`Efí: ${typeof msg === "string" ? msg : JSON.stringify(msg)}`, 400, { efiStatus: Number(err?.response?.status) || 0 });
 };
 
 const request = async (cfg: EfiConfig, config: AxiosRequestConfig) => {
@@ -78,8 +79,11 @@ export const testBilletConnection = async (cfg: EfiConfig): Promise<void> => {
   }
 };
 
-// One-step boleto charge. `repass` routes `percentage` (1% = 100) of the amount to another Efí
-// account; whatever is not routed stays with the account that owns the credentials.
+// One-step boleto charge. `repass` routes `percentage` (1% = 100, so 10000 = all of it) of the amount to another Efí
+// account by its "payee_code" (the Wallet ID, the only thing needed); whatever is not routed stays with the account that
+// owns the credentials. `feeMode` says who pays the Efí fee: 1 = only the account that issued the charge, 2 = each
+// receiving account in proportion to what it gets (the default of Efí).
+// Docs: https://dev.efipay.com.br/en/docs/api-cobrancas/split-de-pagamento/
 export const createBolix = async (
   cfg: EfiConfig,
   p: {
@@ -91,11 +95,16 @@ export const createBolix = async (
     dueDate: string; // YYYY-MM-DD
     description: string;
     notificationUrl?: string;
-    repass?: { payeeCode: string; percentage: number } | null;
+    repass?: { payeeCode: string; percentage: number; feeMode?: 1 | 2 } | null;
   }
 ): Promise<BilletCharge> => {
   const item: any = { name: p.description.slice(0, 255), value: p.amountCents, amount: 1 };
-  if (p.repass) item.marketplace = { repasses: [{ payee_code: p.repass.payeeCode, percentage: p.repass.percentage }] };
+  if (p.repass) {
+    item.marketplace = {
+      mode: p.repass.feeMode === 1 ? 1 : 2,
+      repasses: [{ payee_code: p.repass.payeeCode, percentage: Math.min(10000, Math.max(1, Math.round(p.repass.percentage))) }]
+    };
+  }
   const data = await request(cfg, {
     method: "POST",
     url: "/v1/charge/one-step",

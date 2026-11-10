@@ -1,5 +1,8 @@
-import { Op } from "sequelize";
+import { touchAnalytics } from "../AnalyticsServices/Realtime";
+import { Op, QueryTypes } from "sequelize";
+import sequelize from "../../database";
 
+import AgentMetricEvent from "../../models/AgentMetricEvent";
 import Lead from "../../models/Lead";
 import LeadStage from "../../models/LeadStage";
 import LeadActivity from "../../models/LeadActivity";
@@ -13,11 +16,13 @@ import Payment from "../../models/Payment";
 import { getIO } from "../../libs/socket";
 import { getSetting, setSetting } from "../../helpers/AppSettings";
 import { normalizeEmail, normalizePhone } from "../../helpers/Phone";
+import { brPhoneVariants } from "../../helpers/PhoneVariants";
 import { normalizeCpf } from "../../helpers/Cpf";
 import dispatchWebhook from "../WebhookServices/DispatchWebhook";
 import { computeScore } from "./LeadScore";
 import { logger } from "../../utils/logger";
 import Affiliate from "../../models/Affiliate";
+import LeadCommercial from "../../models/LeadCommercial";
 import { fire } from "../../helpers/Fire";
 import { affiliateStageId, ensureAffiliateStage, tagAffiliateLead } from "../AffiliateServices/AffiliateLane";
 
@@ -27,6 +32,7 @@ export const leadInclude = [
   { model: User, as: "owner", attributes: ["id", "name"] },
   { model: Affiliate, as: "affiliate", attributes: ["id", "name"] },
   { model: Contact, as: "contact", attributes: ["id", "name", "number", "profilePicUrl", "channel"] },
+  { model: LeadCommercial, as: "commercial", required: false, attributes: ["temperature", "commercialScore", "readyForProposal", "readyForConsultant", "nextAction", "lastIntent", "followUpReason", "followUpAt", "stageKey", "lastInboundAt", "lastOutboundAt"] },
   { model: Tag, as: "tags", attributes: ["id", "name", "color"], through: { attributes: [] } },
   // only paid enrollment fees: lets cards show a "taxa paga" badge
   { model: Payment, as: "payments", attributes: ["id", "paidAt"], required: false, where: { status: "paid" } }
@@ -43,17 +49,26 @@ export const addActivity = async (
   type: string,
   body: string,
   meta?: unknown
-): Promise<LeadActivity> =>
-  LeadActivity.create({
+): Promise<LeadActivity> => {
+  const activity = await LeadActivity.create({
     leadId,
     userId: userId || null,
     type,
     body,
     meta: meta ? JSON.stringify(meta) : null
   });
+  // a person's work on a lead (or an enrollment) changes their numbers on every open screen
+  touchAnalytics(userId);
+  return activity;
+};
 
-const openStages = () =>
-  LeadStage.findAll({ where: { type: "open" }, order: [["position", "ASC"]] });
+// The open columns of the regular funnel, in order. The column of the people an affiliate referred is not one of them: it
+// comes before all the others only to hold those people until the first contact, so "the first column" of an ordinary
+// lead (a person from the history who wrote again, the score by stage, the advance after the first reply) is the next one.
+const openStages = async () => {
+  const lane = await affiliateStageId();
+  return LeadStage.findAll({ where: { type: "open", ...(lane ? { id: { [Op.ne]: lane } } : {}) }, order: [["position", "ASC"]] });
+};
 
 export const rescore = async (lead: Lead): Promise<void> => {
   const [stage, open] = await Promise.all([LeadStage.findByPk(lead.stageId), openStages()]);
@@ -71,11 +86,18 @@ export const pickOwner = async (): Promise<number | null> => {
   } catch (e) {
     ids = [];
   }
-  const users = await User.findAll({
+  let users = await User.findAll({
     where: ids.length ? { id: { [Op.in]: ids } } : {},
     attributes: ["id"],
     order: [["id", "ASC"]]
   });
+  // nobody picked on purpose: the round goes to those who HAVE a WhatsApp number (a lead given to someone who cannot answer just waits)
+  if (!ids.length && users.length) {
+    const withNumber = (await sequelize.query(`SELECT DISTINCT "ownerId" FROM "Whatsapps" WHERE channel = 'whatsapp' AND "ownerId" IS NOT NULL`, { type: QueryTypes.SELECT })) as any[];
+    const have = new Set(withNumber.map(r => Number(r.ownerId)));
+    const connected = users.filter(u => have.has(u.id));
+    if (connected.length) users = connected;
+  }
   if (!users.length) return null;
   const last = Number(await getSetting("crm_rr_last", "0"));
   const next = users.find(u => u.id > last) || users[0];
@@ -143,7 +165,8 @@ export const getEntryTerms = async (): Promise<{ terms: string[]; defaultTerm: s
 export const findDuplicate = async (phone: string | null, email: string | null, contactId?: number | null, cpf?: string | null) => {
   const or: any[] = [];
   if (cpf) or.push({ cpf });
-  if (phone) or.push({ phone });
+  // the same person with and without the ninth digit is one lead
+  if (phone) or.push({ phone: { [Op.in]: brPhoneVariants(phone) } });
   if (email) or.push({ email });
   if (contactId) or.push({ contactId });
   if (!or.length) return null;
@@ -161,7 +184,7 @@ export const upsertLead = async (
 
   let contactId = input.contactId || null;
   if (!contactId && phone) {
-    const contact = await Contact.findOne({ where: { number: phone } });
+    const contact = await Contact.findOne({ where: { number: { [Op.in]: brPhoneVariants(phone) } }, order: [["id", "ASC"]] });
     if (contact) contactId = contact.id;
   }
 
@@ -235,6 +258,8 @@ export const upsertLead = async (
     await tagAffiliateLead(created);
   }
   await rescore(created);
+  // every lead that enters counts once, whether or not the AI agent ever talked to it (the base to read the conversion against)
+  await AgentMetricEvent.create({ leadId: created.id, agentId: null, event: "lead_created", once: true, meta: JSON.stringify({ source: input.source || null }) } as any).catch(() => undefined);
 
   const lead = (await loadLead(created.id)) as Lead;
   emitLead("create", lead);
@@ -301,6 +326,11 @@ export const changeStage = async (
   await dispatchWebhook("lead.stage_changed", payload);
   fire("stage.changed", { leadId: lead.id, contactId: lead.contactId, stageId: to.id });
   if (to.type === "won") fire("enrollment.confirmed", { leadId: lead.id, contactId: lead.contactId });
+  // enrolled with the fee not recorded as paid: "Taxa pendente" (the payment confirmed later turns it into "Taxa paga")
+  if (to.type === "won") {
+    const { markFeePending } = await import("../PaymentServices/FeeTags");
+    await markFeePending(lead);
+  }
   if (to.type === "won") await dispatchWebhook("lead.won", payload);
   if (to.type === "lost") await dispatchWebhook("lead.lost", payload);
   return fresh;
@@ -314,7 +344,7 @@ const creating = new Map<number, Promise<Lead | null>>();
 
 export const ensureLead = async (contact: Contact, channel: string): Promise<Lead | null> => {
   // groups and people of the team are not candidates
-  if (contact.isGroup || contact.isStaff || contact.kind === "channel") return null;
+  if (contact.isGroup || contact.isStaff || contact.isPersonal || contact.kind === "channel") return null;
   const existing = await Lead.findOne({ where: { contactId: contact.id } });
   if (existing) return existing;
   if ((await getSetting("crm_autocreate", "true")) === "false") return null;
@@ -419,9 +449,10 @@ export const hookHumanReply = async (contactId: number, userId: number): Promise
     if (claimed) {
       await addActivity(lead.id, userId, "whatsapp", "Primeiro contato realizado");
       if ((await getSetting("crm_autoadvance", "true")) !== "false") {
-        const open = await openStages();
-        const idx = open.findIndex(s => s.id === lead.stageId);
-        if (idx === 0 && open[1]) await changeStage(lead.id, open[1].id, userId);
+        const [open, lane] = await Promise.all([openStages(), affiliateStageId()]);
+        // the first reply moves a lead out of the first column (or out of the affiliate column) to the next one
+        const waiting = lead.stageId === lane || open.findIndex(s => s.id === lead.stageId) === 0;
+        if (waiting && open[1]) await changeStage(lead.id, open[1].id, userId);
       }
     }
     await rescore(lead);
@@ -452,6 +483,28 @@ export const resolveLeadTarget = async (
   }
   if (!whatsapp) whatsapp = await GetDefaultWhatsApp(userId);
 
+  if (!contact) {
+    if (!lead.phone) throw new AppError("ERR_LEAD_NO_PHONE");
+    contact = await resolveOutboundContact(whatsapp, lead.phone, lead.name);
+    await lead.update({ contactId: contact.id });
+  }
+  return { contact, whatsapp };
+};
+
+// After-sales messages (the satisfaction survey, retention, re-enrollment) go out from the institution's own number, never from
+// the tutor's. When the number is chosen but not connected the message is refused with a clear reason (it would otherwise leave
+// from the tutor's number, which is what this exists to avoid); when none was chosen yet, the old behaviour stays.
+export const resolveRelationshipTarget = async (
+  lead: Lead,
+  userId: number
+): Promise<{ contact: Contact; whatsapp: Whatsapp }> => {
+  const { relationshipWhatsappId, relationshipConnection } = await import("../RelationshipServices/Relationship");
+  const { resolveOutboundContact } = await import("../ChannelServices/ResolveOutboundContact");
+  const { default: AppError } = await import("../../errors/AppError");
+  if (!(await relationshipWhatsappId())) return resolveLeadTarget(lead, userId, null);
+  const whatsapp = await relationshipConnection();
+  if (!whatsapp || whatsapp.status !== "CONNECTED") throw new AppError("ERR_RELATIONSHIP_WAPP_OFFLINE");
+  let contact: Contact | null = lead.contactId ? await Contact.findByPk(lead.contactId) : null;
   if (!contact) {
     if (!lead.phone) throw new AppError("ERR_LEAD_NO_PHONE");
     contact = await resolveOutboundContact(whatsapp, lead.phone, lead.name);

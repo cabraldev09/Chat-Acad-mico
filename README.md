@@ -116,14 +116,14 @@ createdb whaticket
 
 cp backend/.env.example backend/.env   # ajuste DB_*, JWT_*, CHROME_BIN e PORT=8080
 cp frontend/.env.example frontend/.env
-(cd backend && npm install && npm run build && npx sequelize db:migrate && npx sequelize db:seed:all)
+(cd backend && npm install && npm run build && npx sequelize db:migrate)
 (cd frontend && npm install)
 
 ./start-local.sh      # frontend em :3000, backend em :8080
 ./stop-local.sh
 ```
 
-Login inicial: `admin@whaticket.com` / `admin` — **troque a senha**.
+O administrador é criado no primeiro `./start-local.sh`; o e-mail e a senha inicial aparecem em `logs/bootstrap.log` (ou defina `ADMIN_EMAIL` e `ADMIN_PASSWORD` no `backend/.env`).
 
 ## Configuração por canal
 

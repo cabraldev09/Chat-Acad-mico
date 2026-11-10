@@ -1,3 +1,4 @@
+import { remember } from "../../../helpers/BoundedMap";
 import { syncChatRead } from "../../../services/MessageServices/SyncReadState";
 import { mkdirSync, readFileSync } from "fs";
 import path from "path";
@@ -385,7 +386,7 @@ const rememberReceivedEvent = (event: WaIncomingMessageEvent): void => {
   const events = receivedEventsByJid.get(jid) || [];
 
   receivedEventsByJid.set(jid, [...events, event].slice(-20));
-  unreadCountByJid.set(jid, (unreadCountByJid.get(jid) || 0) + 1);
+  remember(unreadCountByJid, jid, (unreadCountByJid.get(jid) || 0) + 1);
 };
 
 const buildContactPayload = async (
@@ -947,7 +948,7 @@ const sendMedia = async (
     media: mediaBuffer,
     mimetype: media.mimetype,
     ...(options?.caption ? { caption: options.caption } : {}),
-    ...(mediaType === "document" ? { fileName: media.filename } : {}),
+    ...(mediaType === "document" ? { fileName: media.displayName || media.filename } : {}),
     ...(isVoice ? { ptt: true } : {})
   } as WaSendMediaMessage;
 

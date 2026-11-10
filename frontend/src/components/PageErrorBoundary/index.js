@@ -1,12 +1,14 @@
 import React from "react";
 
-import api from "../../services/api";
+import { newErrorCode, reportClientError } from "../../utils/errorReporting";
+import { checkVersion } from "../../utils/versionWatch";
+import { reloadForNewVersion } from "../../utils/lazyPage";
 
 // A screen that fails to draw must never leave a blank page: say what happened and offer the way out.
 class PageErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
-    this.state = { failed: false, code: "" };
+    this.state = { failed: false, code: "", detail: "" };
   }
 
   static getDerivedStateFromError() {
@@ -15,24 +17,19 @@ class PageErrorBoundary extends React.Component {
 
   // a failed screen must not take the next ones down with it: moving to another address starts clean
   componentDidUpdate(prev) {
-    if (this.state.failed && prev.resetKey !== this.props.resetKey) this.setState({ failed: false, code: "" });
+    if (this.state.failed && prev.resetKey !== this.props.resetKey) this.setState({ failed: false, code: "", detail: "" });
   }
 
   componentDidCatch(error, info) {
     // eslint-disable-next-line no-console
     console.error("Screen failed to render:", error);
     // short code the user can read out; the same code is written to the server log with the message and the route
-    const code = Math.random().toString(36).slice(2, 7).toUpperCase();
-    this.setState({ code });
-    try {
-      api.post("/client-errors", {
-        code,
-        route: window.location.pathname + window.location.hash,
-        message: error && error.message,
-        stack: error && error.stack,
-        components: info && info.componentStack
-      }).catch(() => {});
-    } catch (e) { /* reporting must never break the fallback screen */ }
+    const code = newErrorCode();
+    this.setState({ code, detail: String((error && error.message) || "").slice(0, 160) });
+    reportClientError({ code, error, info });
+    // a tab that still runs an old version of the code is the usual reason for a screen that was fixed to fall again:
+    // when a newer version is published, load it (once; reloadForNewVersion does not loop)
+    checkVersion().then((outOfDate) => { if (outOfDate) reloadForNewVersion(); });
   }
 
   render() {
@@ -45,6 +42,7 @@ class PageErrorBoundary extends React.Component {
             Pode ser uma versão nova do sistema. Atualize a página; se continuar, volte ao início.
             {this.state.code ? ` Código do erro: ${this.state.code}.` : ""}
           </p>
+          {this.state.detail && <p style={{ opacity: 0.55, fontSize: 12, maxWidth: 460, margin: "-8px auto 16px", overflowWrap: "anywhere" }}>{this.state.detail}</p>}
           <button type="button" onClick={() => window.location.reload()} style={{ padding: "10px 18px", borderRadius: 10, border: 0, background: "#0B4279", color: "#fff", fontSize: 15, cursor: "pointer", marginRight: 8 }}>
             Atualizar a página
           </button>

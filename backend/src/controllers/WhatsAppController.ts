@@ -1,3 +1,4 @@
+import { normalizePairingPhone } from "../helpers/PairingPhone";
 import { Request, Response } from "express";
 import { getIO } from "../libs/socket";
 import { StartWhatsAppSession } from "../services/WbotServices/StartWhatsAppSession";
@@ -17,9 +18,9 @@ import { isManagerRole, roleOf } from "../helpers/Roles";
 import { startOfTodayApp } from "../helpers/AppTime";
 import { QueryTypes } from "sequelize";
 
-const isAdminReq = (req: Request) => req.user.profile === "admin";
+const isAdminReq = (req: Request) => isManagerRole(roleOf(req.user));
 const me = (req: Request) => Number(req.user.id);
-// QR Codes are only shown to administrators and to the person who owns the number
+// QR Codes are only shown to administrators, coordinators and to the person who owns the number
 const present = (req: Request, w: Whatsapp) => {
   const json: any = w.toJSON();
   if (!isAdminReq(req) && w.ownerId !== me(req)) delete json.qrcode;
@@ -73,6 +74,7 @@ export const health = async (req: Request, res: Response): Promise<Response> => 
         statusSince: w.statusSince,
         ownerId: w.ownerId,
         ownerName: owners.find(o => o.id === w.ownerId)?.name || null,
+        aiFirst: !!w.aiFirst,
         sentToday: t ? Number(t.sent) : 0,
         receivedToday: t ? Number(t.received) : 0,
         lastMessageAt: l ? l.last : null
@@ -151,6 +153,13 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
         : null;
       if (!current || current.ownerId !== ownerId) await owner.update({ whatsappId: whatsapp.id });
     }
+  }
+
+  // connecting with the pairing code: the number is typed here and the code appears instead of the QR Code
+  if (req.body.pairingPhone) {
+    const phone = normalizePairingPhone(req.body.pairingPhone);
+    if (!phone) throw new AppError("ERR_INVALID_PHONE", 400);
+    await whatsapp.update({ pairingPhone: phone });
   }
 
   StartWhatsAppSession(whatsapp);

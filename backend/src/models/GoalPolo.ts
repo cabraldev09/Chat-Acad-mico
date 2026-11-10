@@ -48,6 +48,10 @@ class GoalPolo extends Model<GoalPolo> {
   @Column(DataType.TEXT)
   manualMonthly: string;
 
+  // who saved this line last (updatedAt says when)
+  @Column
+  updatedById: number;
+
   @CreatedAt
   createdAt: Date;
 

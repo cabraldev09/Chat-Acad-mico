@@ -54,7 +54,7 @@ Entre no sistema → **Conexões → Conectar meu WhatsApp**. Se o WhatsApp avis
 ## O que fica automático
 
 - **Atualização**: a cada 5 minutos o servidor confere o GitHub e, se houver versão nova, reconstrói e reinicia sozinho (`/var/log/chat-academico-update.log`).
-- **Backup**: todo dia às 3h salva as sessões do WhatsApp e os arquivos em `/opt/backups` (guarda os 7 mais recentes).
+- **Backup**: todo dia às 3h salva as sessões do WhatsApp e os arquivos em `/opt/backups` (guarda os mais recentes) e, **a cada hora**, uma cópia do banco de dados (onde ficam todas as mensagens).
 - **HTTPS**: certificado gratuito, renovado sozinho.
 - **Reinício**: se o servidor reiniciar, tudo volta sozinho.
 
@@ -102,3 +102,19 @@ bash verify-backup.sh --offsite
 A restauração externa fica em `/opt/backups/restored-offsite`, sem sobrescrever o sistema em execução. A verificação restaura o dump em um PostgreSQL descartável, sem rede, consulta leads e mensagens e valida a integridade do arquivo de mídias. Não troca o banco de produção. O instalador agenda essa verificação semanalmente às 5h de domingo; instalações existentes precisam atualizar a entrada de cron, além de publicar os scripts. Confira os logs em `/var/log/chat-academico-backup.log` e `/var/log/chat-academico-restore-check.log`.
 
 O atualizador também precisa consultar os checks do GitHub antes de publicar. Para repositório privado, configure `GH_TOKEN` no ambiente da API com permissão de leitura dos checks. Sem checks aprovados ou quando a consulta falhar, a atualização é adiada.
+## Atualização automática pelo GitHub (repositório privado)
+
+Com o repositório privado, a VPS não consegue buscar o código sozinha. O arquivo `.github/workflows/deploy-vps.yml` resolve sem guardar senha na VPS:
+a cada mudança em `backend/`, `deploy/` ou no Dockerfile que entra na `main`, o GitHub entra por SSH e roda `update.sh --force`, usando um token que ele mesmo cria e que expira ao fim da execução.
+
+Configurar uma vez (no Mac):
+
+```bash
+ssh-keygen -t ed25519 -f ~/.ssh/deploy_chat_academico -N "" -C "github-deploy"      # chave só para isso
+ssh -i ~/.ssh/contabo_chat_academico root@209.145.48.49 "cat >> ~/.ssh/authorized_keys" < ~/.ssh/deploy_chat_academico.pub
+cat ~/.ssh/deploy_chat_academico | pbcopy                    # cola em: GitHub > Settings > Secrets and variables > Actions > VPS_SSH_KEY
+# a identidade pública do servidor já está em deploy/vps/known_hosts (o workflow confere com a que o servidor mostra)
+```
+
+Depois, em **Actions > Atualizar a VPS > Run workflow** dá para atualizar quando quiser.
+

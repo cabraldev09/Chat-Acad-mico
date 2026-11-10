@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useHistory } from "react-router-dom";
-import openSocket, { renewToken } from "../../services/socket-io";
+import openSocket from "../../services/socket-io";
+import { refreshSession } from "../../services/session";
 import { toast } from "react-toastify";
 import { i18n } from "../../translate/i18n";
 import api from "../../services/api";
@@ -17,42 +18,22 @@ const useAuth = () => {
     setIsAuth(false);
     setUser({});
   };
+  // the API client renews the login by itself (services/api.js); when it cannot, it tells the app to sign out
   useEffect(() => {
-    // Register once, and eject on unmount. Registering during render multiplied
-    // requests and attempted session refreshes even for legitimate 403 responses.
-    const request = api.interceptors.request.use(config => {
-      try {
-        const token = JSON.parse(localStorage.getItem("token") || "null");
-        if (token) config.headers.Authorization = `Bearer ${token}`;
-      } catch (_) { localStorage.removeItem("token"); }
-      return config;
-    });
-    const response = api.interceptors.response.use(value => value, async error => {
-      const original = error.config;
-      const authRequest = /\/auth\/(login|refresh_token|logout|signup)/.test(original?.url || "");
-      if (error.response?.status === 401 && original && !authRequest && !original._retry) {
-        original._retry = true;
-        const token = await renewToken(true);
-        if (token) { original.headers.Authorization = `Bearer ${token}`; return api(original); }
-      }
-      if (error.response?.status === 401 && !/\/auth\/login/.test(original?.url || "")) clear();
-      return Promise.reject(error);
-    });
-    return () => { api.interceptors.request.eject(request); api.interceptors.response.eject(response); };
+    const onExpired = () => clear();
+    window.addEventListener("sessionExpired", onExpired);
+    return () => window.removeEventListener("sessionExpired", onExpired);
   }, []);
 
   useEffect(() => {
     let active = true;
     (async () => {
       if (localStorage.getItem("token")) {
-        try {
-          const { data } = await api.post("/auth/refresh_token");
-          if (active) {
-            localStorage.setItem("token", JSON.stringify(data.token));
-            api.defaults.headers.Authorization = `Bearer ${data.token}`;
-            setIsAuth(true); setUser(data.user);
-          }
-        } catch (_) { if (active) clear(); }
+        // shares the renewal with any request that was refused while this one runs
+        const data = await refreshSession();
+        if (active) {
+          if (data) { api.defaults.headers.Authorization = `Bearer ${data.token}`; setIsAuth(true); setUser(data.user); } else clear();
+        }
       }
       if (active) setLoading(false);
     })();

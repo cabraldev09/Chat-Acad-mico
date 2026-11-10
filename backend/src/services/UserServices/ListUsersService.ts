@@ -27,7 +27,7 @@ const ListUsersService = async ({
           `%${searchParam.toLowerCase()}%`
         )
       },
-      { email: { [Op.like]: `%${searchParam.toLowerCase()}%` } }
+      { email: { [Op.iLike]: `%${searchParam.trim()}%` } }
     ]
   };
   const limit = 20;
@@ -38,6 +38,8 @@ const ListUsersService = async ({
     attributes: ["name", "id", "email", "profile", "role", "coordArea", "phone", "createdAt"],
     limit,
     offset,
+    // users with several queues are one user (without this the total counted them once per queue)
+    distinct: true,
     order: [["createdAt", "DESC"]],
     include: [
       { model: Queue, as: "queues", attributes: ["id", "name", "color"] },

@@ -1,19 +1,16 @@
 import React, { useEffect, useState } from "react";
 import { toast } from "react-toastify";
 import {
-  Dialog, DialogTitle, DialogContent, DialogActions, Button, Tabs, Tab, TextField, MenuItem, FormControlLabel, Switch,
-  Typography, Checkbox, makeStyles, CircularProgress, Chip, Badge,
+  Dialog, DialogContent, DialogActions, Button, Tabs, Tab, TextField, MenuItem, FormControlLabel, Switch,
+  Typography, Checkbox, makeStyles, CircularProgress, Chip,
 } from "@material-ui/core";
 import { Plus, Trash2, RotateCcw, Bot } from "lucide-react";
 
 import IconAction from "../../components/IconAction";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
-import KbTab from "./KbTab";
-import UsageTab from "./UsageTab";
-import TestTab from "./TestTab";
-import LearningTab from "./LearningTab";
 import FunctionsTab from "./FunctionsTab";
+import HistoryDialog from "./HistoryDialog";
 
 const MODELS = { anthropic: "claude-haiku-5-5", openai: "gpt-4o-mini" };
 
@@ -37,77 +34,62 @@ const useStyles = makeStyles((theme) => ({
   headTitle: { fontSize: 18, fontWeight: 700, lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
   headSub: { fontSize: 13, color: theme.palette.text.secondary },
   tabsWrap: { padding: theme.spacing(0, 3, 1.5) },
-  locked: { color: theme.palette.text.secondary, fontSize: 14, padding: theme.spacing(4, 2), textAlign: "center" },
 }));
 
 const blank = () => ({
   name: "", provider: "anthropic", model: MODELS.anthropic, apiKey: "", systemPrompt: "Você é a assistente virtual de matrículas da instituição. Seja acolhedora, objetiva e responda em português.",
   persona: { tone: "Acolhedor, direto e respeitoso. Trate o aluno pelo primeiro nome.", rules: "Faça uma pergunta por vez.\nSempre convide o aluno a falar com um consultor para a proposta.", forbidden: "Prometer mensalidade fixa até o fim do curso.\nPrometer desconto ou bolsa sem a proposta oficial.\nPedir CPF ou dados de pagamento." },
   handoffMessage: "Vou chamar um consultor da nossa equipe para continuar com você. Um momento, por favor.",
-  maxTokens: 350, dailyTokenCap: 300000, handoffAfterTurns: 14, waitSeconds: 4, slots: null, active: true, queueId: "", whatsappId: "",
+  maxTokens: 350, dailyTokenCap: 300000, handoffAfterTurns: 14, waitSeconds: 4, slots: null, active: true, queueId: "", whatsappId: "", whatsappIds: [],
 });
 
-const AgentEditor = ({ open, agent, onClose, onSaved }) => {
+// The settings of one agent: how it talks and when it answers, what it finds out about the person, and the flows it can start. What it KNOWS, what it
+// still cannot answer, tests and numbers live in the Central of the agent.
+const AgentEditor = ({ open, agent, initialTab = 0, onClose, onSaved }) => {
   const classes = useStyles();
   const [tab, setTab] = useState(0);
+  const [advanced, setAdvanced] = useState(false);
+  const [history, setHistory] = useState(false);
   const [v, setV] = useState(blank());
   const [id, setId] = useState(null);
   const [queues, setQueues] = useState([]);
   const [connections, setConnections] = useState([]);
   const [saving, setSaving] = useState(false);
-  const [toReview, setToReview] = useState(0);
+  const [pinging, setPinging] = useState(false);
 
   useEffect(() => {
     if (!open) return;
-    setTab(0);
+    setTab(initialTab);
+    setAdvanced(initialTab > 0);
     setId(agent ? agent.id : null);
-    setV(agent ? { ...blank(), ...agent, persona: { ...blank().persona, ...(agent.persona || {}) }, queueId: agent.queueId || "", whatsappId: agent.whatsappId || "" } : blank());
+    setV(agent ? { ...blank(), ...agent, persona: { ...blank().persona, ...(agent.persona || {}) }, queueId: agent.queueId || "", whatsappId: "", whatsappIds: [...new Set([agent.whatsappId, ...(Array.isArray(agent.whatsappIds) ? agent.whatsappIds : [])].filter(Boolean).map(Number))] } : blank());
     api.get("/queue").then(({ data }) => setQueues(data)).catch(() => {});
     api.get("/whatsapp").then(({ data }) => setConnections(data)).catch(() => {});
-  }, [open, agent]);
+  }, [open, agent, initialTab]);
 
   const set = (k, val) => setV((cur) => ({ ...cur, [k]: val }));
   const setPersona = (k, val) => setV((cur) => ({ ...cur, persona: { ...cur.persona, [k]: val } }));
   const slots = Array.isArray(v.slots) && v.slots.length ? v.slots : DEFAULT_SLOTS;
 
-  // returns the agent id (creating the agent first when it is new); used by the tabs that need an id
-  const save = async (stay) => {
-    if (!v.model.trim()) { toast.warn("Informe o modelo do agente."); setTab(0); return null; }
-    // a new agent without a name gets a provisional one, so the tabs can be used right away
-    const name = v.name.trim() || "Agente de matrículas";
-    if (!v.name.trim()) set("name", name);
+  const save = async () => {
+    if (!v.name.trim()) { toast.warn("Dê um nome ao agente."); setTab(0); return; }
+    if (!v.model.trim()) { toast.warn("Informe o modelo do agente."); setTab(0); return; }
     setSaving(true);
-    let savedId = id;
     try {
-      const payload = { ...v, name, queueId: v.queueId || null, whatsappId: v.whatsappId || null, slots: v.slots };
+      const payload = { ...v, name: v.name.trim(), queueId: v.queueId || null, whatsappId: null, whatsappIds: Array.isArray(v.whatsappIds) ? v.whatsappIds : [], slots: v.slots };
       const { data } = id ? await api.put(`/ai-agents/${id}`, payload) : await api.post("/ai-agents", payload);
-      savedId = data.id;
-      if (!id) setId(data.id);
-      if (!stay) toast.success(id ? "Agente salvo." : "Agente criado. Agora adicione a base de conhecimento.");
-      onSaved && onSaved();
-      if (!id && !stay) setTab(1);
+      toast.success(id ? "Agente salvo." : "Agente criado.");
+      onSaved && onSaved(data, !id);
+      onClose();
     } catch (err) {
       toastError(err);
-      savedId = null;
     }
     setSaving(false);
-    return savedId;
-  };
 
-  // new agents are created the first time someone opens a tab that needs one
-  const goTo = async (t) => {
-    if ((t > 0 && !id) || t === 6) {
-      const created = await save(true);
-      if (!created) return;
-      toast.success(id ? "Orientações salvas para o teste." : "Agente criado.");
-    }
-    setTab(t);
   };
 
   const updateSlot = (i, patch) => set("slots", slots.map((s, k) => (k === i ? { ...s, ...patch } : s)));
   const addSlot = () => set("slots", [...slots, { key: `campo_${slots.length + 1}`, label: "", required: false }]);
-
-  const locked = (children) => (id ? children : <div className={classes.locked}><CircularProgress size={22} /></div>);
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth scroll="paper">
@@ -119,41 +101,74 @@ const AgentEditor = ({ open, agent, onClose, onSaved }) => {
         </div>
         <Chip size="small" label={v.active ? "Ativo" : "Desligado"} color={v.active ? "primary" : "default"} />
       </div>
-      <div className={classes.tabsWrap}>
-        <Tabs value={tab} onChange={(e, t) => goTo(t)} variant="scrollable" scrollButtons="auto">
-          <Tab style={{ minWidth: 0 }} label="Instruções e limites" />
-          <Tab style={{ minWidth: 0 }} label="Base de conhecimento" />
-          <Tab style={{ minWidth: 0 }} label={<Badge color="secondary" badgeContent={toReview} invisible={!toReview} style={{ paddingRight: toReview ? 14 : 0 }}>Aprendizado</Badge>} />
-          <Tab style={{ minWidth: 0 }} label="Qualificação" />
-          <Tab style={{ minWidth: 0 }} label="Funções" />
-          <Tab style={{ minWidth: 0 }} label="Consumo" />
-          <Tab style={{ minWidth: 0 }} label="Testar agente" />
-          <Tab style={{ minWidth: 0 }} label="Automação e retomada" />
-        </Tabs>
-      </div>
+      {advanced && (
+        <div className={classes.tabsWrap}>
+          <Tabs value={tab} onChange={(e, t) => setTab(t)} variant="scrollable" scrollButtons="auto">
+            <Tab style={{ minWidth: 0 }} label="Atendimento" />
+            <Tab style={{ minWidth: 0 }} label="O que descobrir do cliente" />
+            <Tab style={{ minWidth: 0 }} label="Ações automáticas" />
+            <Tab style={{ minWidth: 0 }} label="Automação e retomada" />
+          </Tabs>
+        </div>
+      )}
+
       <DialogContent dividers className={classes.content}>
         {tab === 0 && (
           <>
             <div className={classes.grid}>
               <TextField variant="outlined" margin="dense" label="Nome do agente" required value={v.name} onChange={(e) => set("name", e.target.value)} />
               <FormControlLabel style={{ marginTop: 8 }} control={<Switch color="primary" checked={!!v.active} onChange={(e) => set("active", e.target.checked)} />} label={v.active ? "Ativo: responde os alunos" : "Desligado"} />
-              <TextField select variant="outlined" margin="dense" label="Provedor" value={v.provider} onChange={(e) => setV({ ...v, provider: e.target.value, model: MODELS[e.target.value] })}>
-                <MenuItem value="anthropic">Anthropic (Claude)</MenuItem>
-                <MenuItem value="openai">OpenAI</MenuItem>
-              </TextField>
-              <TextField variant="outlined" margin="dense" label="Modelo" required value={v.model} onChange={(e) => set("model", e.target.value)} helperText="Modelo pequeno gasta menos. Sugestão: claude-haiku-5-5." />
-              <TextField variant="outlined" margin="dense" type="password" label="Chave de API própria (opcional)" value={v.apiKey || ""} onChange={(e) => set("apiKey", e.target.value)} helperText="Se ficar vazio, usa a chave padrão da página." />
+
               <span />
             </div>
 
+            <div className={classes.section}>Como ele se apresenta</div>
+            <TextField fullWidth variant="outlined" margin="dense" label="Nome do assistente" placeholder="Estela" value={v.persona.assistantName || ""} onChange={(e) => setPersona("assistantName", e.target.value)}
+              helperText={`Na primeira mensagem de toda conversa: “${(() => { const n = String(v.persona.assistantName || "").trim(); const who = n || "Estela"; return `Olá! Eu sou ${/^(a|o) /i.test(who) ? who : `a ${who}`}, assistente virtual da Cruzeiro do Sul Virtual.`; })()}”`} />
+
             <div className={classes.section}>Como o agente fala</div>
-            <TextField fullWidth multiline rows={3} variant="outlined" margin="dense" label="Quem é o agente" value={v.systemPrompt || ""} onChange={(e) => set("systemPrompt", e.target.value)} />
             <TextField fullWidth variant="outlined" margin="dense" label="Tom de voz" value={v.persona.tone || ""} onChange={(e) => setPersona("tone", e.target.value)} />
+            <TextField fullWidth variant="outlined" margin="dense" label="Mensagem ao passar para a equipe" value={v.handoffMessage || ""} onChange={(e) => set("handoffMessage", e.target.value)} />
+            <div className={classes.grid} style={{ marginTop: 6 }}>
+              {[
+                ["emoji", "Usar emojis nas respostas", v.persona.emoji === true],
+                ["splitMessages", "Dividir respostas longas em mensagens curtas", v.persona.splitMessages !== false],
+                ["limitSubjects", "Falar só de assuntos da instituição", v.persona.limitSubjects !== false],
+                ["signMessages", "Assinar com o nome do assistente", v.persona.signMessages === true],
+              ].map(([key, label, on]) => (
+                <FormControlLabel key={key} control={<Switch color="primary" checked={on} onChange={(e) => setPersona(key, e.target.checked)} />} label={label} />
+              ))}
+            </div>
+            <Typography variant="caption" color="textSecondary" display="block" style={{ marginTop: 10 }}>
+              {v.active ? "O agente está ligado: responde os alunos assim que você salvar." : "O agente está desligado. Ligue acima para ele começar a atender."} Os cursos e as grades vêm do cadastro do sistema.
+            </Typography>
+
+            <button type="button" onClick={() => setAdvanced((x) => !x)} aria-expanded={advanced} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", border: "1px solid rgba(100,116,139,.3)", borderRadius: 12, padding: "10px 14px", margin: "18px 0 4px", background: "transparent", color: "inherit", fontFamily: "inherit", fontWeight: 600, cursor: "pointer" }}>
+              {advanced ? "Esconder configurações avançadas" : "Configurações avançadas"} <span style={{ fontWeight: 400, opacity: 0.7, fontSize: 12.5 }}>{advanced ? "" : "instruções detalhadas, modelo, chave, avisos, o que descobrir e ações"}</span>
+            </button>
+            {advanced && (
+              <>
+            <div className={classes.section}>Instruções detalhadas</div>
+            <TextField fullWidth multiline rows={3} variant="outlined" margin="dense" label="Quem é o agente" value={v.systemPrompt || ""} onChange={(e) => set("systemPrompt", e.target.value)} />
             <div className={classes.grid}>
               <TextField multiline rows={4} variant="outlined" margin="dense" label="Regras do atendimento (uma por linha)" value={v.persona.rules || ""} onChange={(e) => setPersona("rules", e.target.value)} />
               <TextField multiline rows={4} variant="outlined" margin="dense" label="Nunca fazer (uma por linha)" value={v.persona.forbidden || ""} onChange={(e) => setPersona("forbidden", e.target.value)} />
             </div>
-            <TextField fullWidth variant="outlined" margin="dense" label="Mensagem ao passar para a equipe" value={v.handoffMessage || ""} onChange={(e) => set("handoffMessage", e.target.value)} />
+
+            <div className={classes.section}>Modelo de IA</div>
+            <div className={classes.grid}>
+              <TextField select variant="outlined" margin="dense" label="Provedor" value={v.provider} onChange={(e) => setV({ ...v, provider: e.target.value, model: MODELS[e.target.value] })}>
+                <MenuItem value="anthropic">Anthropic (Claude)</MenuItem>
+                <MenuItem value="openai">OpenAI (GPT)</MenuItem>
+              </TextField>
+              <TextField variant="outlined" margin="dense" label="Modelo" required value={v.model} onChange={(e) => set("model", e.target.value)} helperText={v.provider === "openai" ? "Modelo pequeno gasta menos. Sugestão: gpt-4o-mini. O nome precisa existir na sua conta da OpenAI." : "Modelo pequeno gasta menos. Sugestão: claude-haiku-5-5."} />
+              <TextField variant="outlined" margin="dense" type="password" label="Chave de IA própria (opcional)" value={v.apiKey || ""} onChange={(e) => set("apiKey", e.target.value)} helperText={v.apiKey ? "Esta chave vale só para este agente. Se trocou de provedor, use uma chave do provedor novo ou apague esta." : "Se ficar vazio, usa a chave de IA geral."} />
+              {agent && agent.id && (
+                <Button variant="outlined" size="small" disabled={pinging} onClick={async () => { setPinging(true); try { const { data } = await api.post(`/ai-agents/${agent.id}/ping`); toast.success(`Conexão ok: ${data.model} respondeu em ${(data.ms / 1000).toFixed(1)} s.`); } catch (err) { toastError(err); } setPinging(false); }}>{pinging ? "Testando..." : "Testar conexão (usa o que está salvo)"}</Button>
+              )}
+              <span />
+            </div>
+
 
             <div className={classes.section}>Aprender e avisar você</div>
             <FormControlLabel control={<Switch color="primary" checked={v.learnFromTeam !== false} onChange={(e) => set("learnFromTeam", e.target.checked)} />}
@@ -174,9 +189,10 @@ const AgentEditor = ({ open, agent, onClose, onSaved }) => {
                 <MenuItem value="">Todas as filas</MenuItem>
                 {queues.map((q) => (<MenuItem key={q.id} value={q.id}>{q.name}</MenuItem>))}
               </TextField>
-              <TextField select variant="outlined" margin="dense" label="Conexão" value={v.whatsappId} onChange={(e) => set("whatsappId", e.target.value)} InputLabelProps={{ shrink: true }} SelectProps={{ displayEmpty: true }}>
-                <MenuItem value="">Todas as conexões</MenuItem>
-                {connections.map((c) => (<MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>))}
+              <TextField select variant="outlined" margin="dense" label="Conexões" value={v.whatsappIds || []} onChange={(e) => set("whatsappIds", e.target.value)} InputLabelProps={{ shrink: true }}
+                helperText="Marque todas em que este agente atende (por exemplo o número do QR Code e o da API oficial). Sem nenhuma marcada, atende as que não têm outro agente."
+                SelectProps={{ multiple: true, displayEmpty: true, renderValue: (sel) => (sel.length ? connections.filter((c) => sel.includes(c.id)).map((c) => c.name).join(", ") || `${sel.length} conexão(ões)` : "Todas as conexões") }}>
+                {connections.map((c) => (<MenuItem key={c.id} value={c.id}><Checkbox color="primary" size="small" checked={(v.whatsappIds || []).includes(c.id)} />{c.name}</MenuItem>))}
               </TextField>
             </div>
 
@@ -188,11 +204,11 @@ const AgentEditor = ({ open, agent, onClose, onSaved }) => {
               <TextField type="number" variant="outlined" margin="dense" label="Passar para a equipe após quantas respostas" value={v.handoffAfterTurns} onChange={(e) => set("handoffAfterTurns", Number(e.target.value))} />
               <TextField type="number" variant="outlined" margin="dense" label="Limite diário de tokens (0 = sem limite)" value={v.dailyTokenCap} onChange={(e) => set("dailyTokenCap", Number(e.target.value))} helperText="Ao atingir, o agente passa as conversas para a equipe." />
             </div>
+              </>
+            )}
           </>
         )}
-        {tab === 1 && locked(<KbTab agentId={id} />)}
-        {tab === 2 && locked(<LearningTab agentId={id} onCount={setToReview} />)}
-        {tab === 3 && (
+        {tab === 1 && (
           <>
             <Typography variant="body2" color="textSecondary" gutterBottom>
               O agente conversa até descobrir os campos obrigatórios. Quando todos estiverem preenchidos, o lead é atualizado, a conversa vai para a equipe comercial do polo do aluno com um resumo, e um consultor recebe uma tarefa.
@@ -208,13 +224,12 @@ const AgentEditor = ({ open, agent, onClose, onSaved }) => {
               <Button size="small" variant="outlined" startIcon={<Plus size={15} />} onClick={addSlot} disabled={slots.length >= 10}>Adicionar campo</Button>
               <Button size="small" variant="outlined" startIcon={<RotateCcw size={15} />} onClick={() => set("slots", null)}>Voltar ao padrão</Button>
             </div>
-            <Typography variant="caption" color="textSecondary" display="block" style={{ marginTop: 12 }}>Lembre de salvar na aba Instruções e limites depois de mudar os campos.</Typography>
+            <Typography variant="caption" color="textSecondary" display="block" style={{ marginTop: 12 }}>Clique em “Salvar agente” para guardar as mudanças de todas as abas.</Typography>
           </>
         )}
-        {tab === 4 && <FunctionsTab value={v.functions} onChange={(list) => set("functions", list)} />}
-        {tab === 5 && locked(<UsageTab agentId={id} model={v.model} />)}
-        {tab === 6 && locked(<TestTab agentId={id} />)}
-        {tab === 7 && (
+        {tab === 2 && <FunctionsTab value={v.functions} onChange={(list) => set("functions", list)} />}
+
+        {tab === 3 && (
           <>
             <Typography variant="body2" color="textSecondary" gutterBottom>
               Ative apenas o que o agente pode fazer. As orientações valem em todas as conversas; os dados coletados seguem para a equipe preparar a proposta.
@@ -235,9 +250,11 @@ const AgentEditor = ({ open, agent, onClose, onSaved }) => {
         )}
       </DialogContent>
       <DialogActions>
-        <Button variant="outlined" color="secondary" onClick={onClose}>Fechar</Button>
-        <Button variant="contained" color="primary" onClick={() => save(false)} disabled={saving}>{saving ? <CircularProgress size={18} /> : "Salvar agente"}</Button>
+        {id && <Button onClick={() => setHistory(true)} style={{ marginRight: "auto" }}>Histórico de alterações</Button>}
+        <Button onClick={onClose}>Fechar</Button>
+        <Button variant="contained" color="primary" onClick={save} disabled={saving} disableElevation>{saving ? <CircularProgress size={18} /> : "Salvar agente"}</Button>
       </DialogActions>
+      {id && <HistoryDialog open={history} agentId={id} onClose={() => setHistory(false)} onRestored={() => { setHistory(false); onClose(); }} />}
     </Dialog>
   );
 };

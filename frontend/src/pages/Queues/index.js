@@ -245,14 +245,14 @@ const Queues = () => {
                     )}
                   </TableCell>
                   <TableCell align="center">
-                    <IconButton
+                    <IconButton aria-label="Editar"
                       size="small"
                       onClick={() => handleEditQueue(queue)}
                     >
                       <Edit />
                     </IconButton>
 
-                    <IconButton
+                    <IconButton aria-label="Excluir"
                       size="small"
                       onClick={() => {
                         setSelectedQueue(queue);

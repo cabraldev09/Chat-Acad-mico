@@ -1,3 +1,4 @@
+import { insideFolder, safeStoredName } from "../helpers/SafeFile";
 import { parseVcards, registerAffiliateReferrals } from "../services/AffiliateServices/ReferralFromContact";
 import { join } from "path";
 import { promisify } from "util";
@@ -35,7 +36,7 @@ export interface ContactPayload {
   profilePicUrl?: string;
   isGroup: boolean;
   // set for groups when WhatsApp tells they belong to a community
-  community?: { kind: "community" | "group"; parentGroupId?: string | null; readOnly?: boolean };
+  community?: { kind: "community" | "group"; role?: "parent" | "announcement" | "member"; communityId?: string | null; parentGroupId?: string | null; readOnly?: boolean };
 }
 
 export interface MessagePayload {
@@ -89,22 +90,12 @@ const processLocationMessage = (
 };
 
 export const saveMediaFile = async (mediaPayload: MediaPayload): Promise<string> => {
-  const randomId = makeRandomId(5);
-  const { filename: originalFilename } = mediaPayload;
-
-  let filename: string;
-  if (!originalFilename) {
-    const [extension] = mediaPayload.mimetype.split("/")[1].split(";");
-    filename = `${randomId}-${new Date().getTime()}.${extension}`;
-  } else {
-    const baseName = originalFilename.split(".").slice(0, -1).join(".");
-    const extension = originalFilename.split(".").slice(-1)[0];
-    filename = `${baseName}.${randomId}.${extension}`;
-  }
+  // the name comes from the sender: it never decides where the file goes nor what kind of file it is (helpers/SafeFile.ts)
+  const filename = safeStoredName(mediaPayload.filename, mediaPayload.mimetype);
 
   try {
     await writeFileAsync(
-      join(PUBLIC_DIR, filename),
+      insideFolder(PUBLIC_DIR, filename),
       mediaPayload.data,
       "base64"
     );
@@ -138,12 +129,30 @@ const processVcardMessage = async (
   }
 };
 
+// Tries to bring a missing file again at 30 s, 2 min and 8 min (stops at the first success or when the message is gone)
+const retryMediaLater = (messageId: string): void => {
+  [30000, 120000, 480000].forEach((wait, n) => {
+    setTimeout(async () => {
+      try {
+        const found = await Message.findByPk(messageId, { attributes: ["id", "mediaUrl"] });
+        if (!found || found.getDataValue("mediaUrl")) return;
+        const { loadMessageMedia } = await import("../services/MessageServices/MessageActions");
+        await loadMessageMedia(messageId);
+        logger.info(`Media ${messageId} arrived on retry ${n + 1}`);
+      } catch (err) {
+        logger.warn(`Media ${messageId}: retry ${n + 1} did not work (${(err as Error).message})`);
+      }
+    }, wait);
+  });
+};
+
 export const handleMessage = async (
   messagePayload: MessagePayload,
   contactPayload: ContactPayload,
   contextPayload: WhatsappContextPayload,
   mediaPayload?: MediaPayload
 ): Promise<void> => {
+  const arrivedAt = Date.now();
   try {
     // groups only become conversations when the connection allows them
     if (contextPayload.groupContact) {
@@ -235,11 +244,25 @@ export const handleMessage = async (
       lastMessageText = processedMessage.body || mediaPayload?.filename || "";
     }
 
-    await ticket.update({ lastMessage: previewOf(lastMessageText, processedMessage.type) });
+    // a message older than the one shown (catch-up, history) must not rewrite the preview
+    if (!late || !ticket.lastMessageAt || sentAt >= new Date(ticket.lastMessageAt).getTime()) {
+      await ticket.update({ lastMessage: previewOf(lastMessageText, processedMessage.type) });
+    }
 
     await CreateMessageService({ messageData });
+    // a file that did not come down now (the phone may still be sending it, or WhatsApp is slow) is tried again a few times in the background
+    if (processedMessage.hasMedia && !mediaPayload) retryMediaLater(processedMessage.id);
 
     await processVcardMessage(processedMessage, contextPayload.groupContact ? undefined : contact.number);
+
+    // where a delay is born: WhatsApp (the connection received it late) or here (it took long to store)
+    {
+      const wppLag = arrivedAt - Number(processedMessage.timestamp) * 1000;
+      const stored = Date.now() - arrivedAt;
+      if (!processedMessage.fromMe && (wppLag > 4000 || stored > 2000)) {
+        logger.info(`Mensagem do ticket ${ticket.id}: chegou ${Math.round(wppLag / 100) / 10} s depois de enviada pelo WhatsApp; gravada em ${stored} ms`);
+      }
+    }
 
     if (!contextPayload.groupContact && !processedMessage.fromMe) {
       const optedOut = await processOptOut(ticket.id, processedMessage.body);
@@ -248,6 +271,8 @@ export const handleMessage = async (
           ticketId: ticket.id,
           body: processedMessage.body
         });
+      } else {
+        logger.info(`Automação do ticket ${ticket.id}: não rodou (${optedOut ? "a pessoa pediu para não receber mensagens" : `a conversa está com o atendente ${ticket.userId}`})`);
       }
     }
   } catch (err) {

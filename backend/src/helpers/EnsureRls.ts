@@ -13,7 +13,9 @@ export const ensureRls = async (): Promise<void> => {
       DO $$
       DECLARE r record;
       BEGIN
-        FOR r IN SELECT tablename FROM pg_tables WHERE schemaname = 'public' LOOP
+        -- only the tables still open: ALTER TABLE takes a heavy lock, and every restart would pay it on all of them
+        FOR r IN SELECT c.relname AS tablename FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+                 WHERE n.nspname = 'public' AND c.relkind = 'r' AND NOT c.relrowsecurity LOOP
           EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', r.tablename);
         END LOOP;
         IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN

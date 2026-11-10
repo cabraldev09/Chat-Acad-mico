@@ -7,6 +7,7 @@ import UserQueue from "../models/UserQueue";
 import Message from "../models/Message";
 import { SEGMENTS_OF, isManagerRole, roleOf } from "../helpers/Roles";
 import { poloIdsOf } from "./scope";
+import { connectionScopeOf, ticketVisibleIn } from "../helpers/ConnectionScope";
 
 const queueIdsOf = async (userId: number): Promise<number[]> => {
   const rows = await UserQueue.findAll({ where: { userId } });
@@ -29,17 +30,22 @@ export const assertTicketAccess = async (
       // assigned to them (the tutor is the one who talks to the student: nobody answers "as the tutor" by accident)
       // ("send" = a message goes out; changing the conversation, e.g. transferring it, stays allowed)
       if (mode !== "send") return;
-      const t = await Ticket.findByPk(ticketId, { attributes: ["id", "userId", "segment"] });
+      const t = await Ticket.findByPk(ticketId, { attributes: ["id", "userId", "segment", "isGroup"] });
       if (t && t.segment === "onboarding" && t.userId !== Number(req.user.id)) throw new AppError("ERR_ONBOARDING_TUTOR_ONLY", 403);
+      // seeing everything is not owning everything: a conversation that belongs to another attendant is not answered "over" them.
+      // The management transfers it or takes it over explicitly (POST /tickets/:id/take); groups have no single attendant.
+      if (t && !t.isGroup && t.userId && t.userId !== Number(req.user.id)) throw new AppError("ERR_TICKET_OWNED_BY_OTHER", 403);
       return;
     }
 
     const ticket = await Ticket.findByPk(ticketId, {
-      attributes: ["id", "userId", "queueId", "segment"]
+      attributes: ["id", "userId", "queueId", "segment", "isGroup", "whatsappId"]
     });
     if (!ticket) throw new AppError("ERR_NO_TICKET_FOUND", 404);
 
     const me = Number(req.user.id);
+    // another number's groups and personal chats are not readable, even knowing the id
+    if (!ticketVisibleIn(await connectionScopeOf(me, role), ticket, me)) throw new AppError("ERR_NO_PERMISSION", 403);
     const mine = ticket.userId === me;
     if (!mine && !(SEGMENTS_OF[role] || []).includes(ticket.segment || "sales")) {
       throw new AppError("ERR_NO_PERMISSION", 403);

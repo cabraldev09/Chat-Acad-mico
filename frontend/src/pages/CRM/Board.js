@@ -3,9 +3,9 @@ import { useHistory, useLocation } from "react-router-dom";
 import { toast } from "react-toastify";
 import {
   Button, TextField, MenuItem, InputAdornment, Dialog, DialogTitle, DialogContent, DialogActions,
-  Typography, makeStyles, ButtonGroup, Chip, Table, TableHead, TableRow, TableCell, TableBody, Paper,
+  Typography, makeStyles, ButtonGroup, Chip, Table, TableHead, TableRow, TableCell, TableBody, Paper, Menu, IconButton,
 } from "@material-ui/core";
-import { HeartHandshake, Search, Plus, Upload, LayoutGrid, List, Calendar, BadgeCheck, Rocket, Hourglass } from "lucide-react";
+import { MonitorCheck, Search, Plus, Upload, LayoutGrid, List, Calendar, BadgeCheck, Rocket, Hourglass, Flame, MoreHorizontal } from "lucide-react";
 import { format, parseISO } from "date-fns";
 
 import MainContainer from "../../components/MainContainer";
@@ -19,16 +19,18 @@ import LeadDrawer, { LostDialog } from "./LeadDrawer";
 import LeadFields from "./LeadFields";
 import EnrollDialog from "./EnrollDialog";
 import ImportDialog from "./ImportDialog";
-import { useCrmOptions, SourceIcon, ScoreRing, OwnerAvatar, ago, short, isOverdue, burst } from "./shared";
+import { useCrmOptions, SourceIcon, ScoreRing, OwnerAvatar, StagePill, ago, short, isOverdue, burst } from "./shared";
+import { tint } from "../../utils/color";
+import { NEXT_LABEL, TEMP_COLOR, TEMP_LABEL } from "../../utils/commercial";
 
 const useStyles = makeStyles((theme) => ({
   filters: { display: "flex", gap: theme.spacing(1), flexWrap: "wrap", marginBottom: theme.spacing(1.5) },
   board: {
-    display: "grid", gap: theme.spacing(1.5), alignItems: "start", flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden",
+    display: "grid", gap: theme.spacing(1.5), alignItems: "stretch", gridAutoRows: "min-content", flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden",
     gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", paddingBottom: theme.spacing(2), ...theme.scrollbarStyles,
   },
   col: {
-    background: theme.palette.type === "dark" ? "#0a1322" : "#eef2f7", borderRadius: 14, padding: theme.spacing(1),
+    background: theme.palette.type === "dark" ? "#0a1424" : "#d9e2ef", borderRadius: 14, padding: theme.spacing(1),
     display: "flex", flexDirection: "column", gap: theme.spacing(1), border: "1px solid transparent",
     transition: "border-color .15s, background .15s, box-shadow .2s",
   },
@@ -57,17 +59,39 @@ const useStyles = makeStyles((theme) => ({
   chipPaid: { background: "rgba(22,163,74,.14)", color: "#15803d" },
   more: { fontSize: 12.5, color: theme.palette.text.secondary, textAlign: "center", cursor: "pointer", padding: 4, "&:hover": { color: theme.palette.text.primary } },
   empty: { fontSize: 12.5, color: theme.palette.text.secondary, textAlign: "center", padding: theme.spacing(2, 1), border: `1px dashed ${theme.palette.divider}`, borderRadius: 10 },
+  // while a card is dragged every stage is one drop away, whatever the scroll of the board (a stage far above or below the card)
+  dropBar: {
+    gridColumn: "1 / -1", position: "sticky", top: 0, zIndex: 5, height: 0, overflow: "visible" },
+  dropBarIn: { display: "flex", alignItems: "center", gap: theme.spacing(0.75), flexWrap: "wrap",
+    padding: theme.spacing(0.75, 1), borderRadius: 12, background: theme.palette.type === "dark" ? "#0f1d33" : "#ffffff",
+    border: `1px solid ${theme.palette.accent.main}`, boxShadow: "0 10px 24px -14px rgba(11,66,121,.55)", animation: "pop-in .2s var(--ease-out) both",
+  },
+  dropLabel: { fontSize: 12, fontWeight: 600, color: theme.palette.text.secondary, marginRight: 4 },
+  dropChip: {
+    display: "inline-flex", alignItems: "center", gap: 6, borderRadius: 999, padding: "5px 12px", fontSize: 12.5, fontWeight: 600, cursor: "copy",
+    border: "1px solid transparent", background: theme.palette.action.selected, transition: "transform .12s, box-shadow .12s, border-color .12s",
+  },
+  dropChipOver: { transform: "scale(1.06)", borderColor: theme.palette.accent.main, boxShadow: `0 0 0 3px ${theme.palette.accent.main}30` },
+  cardMenu: { marginRight: -6, marginTop: -4, padding: 4, color: theme.palette.text.secondary },
   tableWrap: { flex: 1, overflowY: "auto", overflowX: "hidden", ...theme.scrollbarStyles },
 }));
 
-const LeadCard = ({ lead, onOpen, onDragStart, onDragEnd, dragging }) => {
+const LeadCard = ({ lead, stage, onOpen, onDragStart, onDragEnd, dragging, onMenu }) => {
   const classes = useStyles();
+  const color = (stage && stage.color) || (lead.stage && lead.stage.color) || null;
   return (
-    <div className={`${classes.card} ${dragging ? classes.cardDragging : ""}`} draggable onClick={() => onOpen(lead.id)}
-      onDragStart={(e) => { e.dataTransfer.setData("text/plain", String(lead.id)); e.dataTransfer.effectAllowed = "move"; onDragStart(lead); }} onDragEnd={onDragEnd}>
+    <div className={`${classes.card} ${dragging ? classes.cardDragging : ""}`}  draggable role="button" tabIndex={0} aria-label={`Abrir o lead ${lead.name}`}
+      onClick={() => onOpen(lead.id)} onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onOpen(lead.id); } }}
+      onDragStart={(e) => { e.dataTransfer.setData("text/plain", String(lead.id)); e.dataTransfer.effectAllowed = "move"; setTimeout(() => onDragStart(lead), 0); }} onDragEnd={onDragEnd}>
       <div className={classes.cardTop}>
         <div className={classes.cardName}>{lead.name}</div>
         <ScoreRing value={lead.score} />
+        {onMenu && (
+          <IconButton size="small" className={classes.cardMenu} aria-label="Mover para outra etapa" title="Mover para outra etapa"
+            onClick={(e) => { e.stopPropagation(); onMenu(lead, e.currentTarget); }} onDragStart={(e) => e.preventDefault()} draggable={false}>
+            <MoreHorizontal size={16} />
+          </IconButton>
+        )}
       </div>
       {lead.course && <div className={classes.cardCourse}>{lead.course.name}{lead.course.modality ? ` · ${lead.course.modality}` : ""}</div>}
       {lead.tags && lead.tags.length > 0 && (
@@ -78,7 +102,26 @@ const LeadCard = ({ lead, onOpen, onDragStart, onDragEnd, dragging }) => {
       <div className={classes.cardFoot}>
         {/* an enrolled student is past "where did it come from" and "wants to enrol": only what still matters is shown */}
         {!lead.wonAt && <span className={classes.chip} title={`Origem: ${lead.source}`}><SourceIcon source={lead.source} size={12} />{lead.source}</span>}
-        {lead.affiliate && <span className={`${classes.chip} ${classes.chipHot}`} title={`Indicado pelo afiliado ${lead.affiliate.name}`}>Afiliado: {lead.affiliate.name.split(" ")[0]}</span>}
+        {lead.commercial && lead.commercial.temperature && (
+          <span className={classes.chip} style={{ background: `${TEMP_COLOR[lead.commercial.temperature]}22`, color: TEMP_COLOR[lead.commercial.temperature] }}
+            title={`Agente de IA: lead ${(TEMP_LABEL[lead.commercial.temperature] || "").toLowerCase()}, pontuação ${lead.commercial.commercialScore}${lead.commercial.nextAction ? `. Próxima ação: ${NEXT_LABEL[lead.commercial.nextAction] || lead.commercial.nextAction}` : ""}`}>
+            <Flame size={12} />{TEMP_LABEL[lead.commercial.temperature]} · {lead.commercial.commercialScore}
+          </span>
+        )}
+        {lead.commercial && lead.commercial.readyForProposal && !lead.wonAt && <span className={`${classes.chip} ${classes.chipHot}`} title="O agente de IA já levantou tudo: falta a proposta do consultor">Pronto para proposta</span>}
+        {lead.commercial && lead.commercial.readyForConsultant && !lead.commercial.readyForProposal && !lead.wonAt && <span className={`${classes.chip} ${classes.chipHot}`} title="Qualificado pelo agente de IA, com as dúvidas respondidas: o consultor pode chamar">Pronto para o consultor</span>}
+        {lead.affiliate && <span className={`${classes.chip} ${classes.chipHot}`} title={`Indicado pelo afiliado ${lead.affiliate.name}`}>Afiliado: {String(lead.affiliate.name || "").split(" ")[0]}</span>}
+        {(() => {
+          // a lead of an open stage without contact for days is going cold (the same rule as "Leads esfriando" of the Painel): the card says it
+          if (!stage || stage.type !== "open" || lead.wonAt) return null;
+          const days = Math.floor((Date.now() - new Date(lead.lastContactAt || lead.createdAt).getTime()) / 86400000);
+          if (!(days >= 3)) return null;
+          return (
+            <span className={`${classes.chip} ${days >= 7 ? classes.chipLate : ""}`} style={days >= 7 ? undefined : { background: "rgba(217,119,6,.14)", color: "#b45309" }} title={`Sem contato há ${days} dias: retome a conversa`}>
+              <Hourglass size={12} />Parado há {days} dias
+            </span>
+          );
+        })()}
         {lead.slaAlertedAt && !lead.firstContactAt && (
           <span className={`${classes.chip} ${classes.chipLate}`} title="Este lead novo passou do tempo de resposta e ainda não foi atendido">
             <Hourglass size={12} />Sem resposta
@@ -92,7 +135,7 @@ const LeadCard = ({ lead, onOpen, onDragStart, onDragEnd, dragging }) => {
         )}
         {lead.onboardingStatus && lead.onboardingStatus !== "none" && (
           <span className={`${classes.chip} ${lead.onboardingStatus === "done" ? classes.chipPaid : ""}`} title="Situação da ambientação com o tutor">
-            <HeartHandshake size={12} />{{ pending: "Aguarda tutor", started: "Em ambientação", done: "Ambientado" }[lead.onboardingStatus]}
+            <MonitorCheck size={12} />{{ pending: "Aguarda tutor", started: "Em ambientação", done: "Ambientado" }[lead.onboardingStatus]}
           </span>
         )}
         {lead.nextFollowUpAt && (
@@ -138,12 +181,15 @@ const Board = () => {
   const location = useLocation();
   const ctx = useCrmOptions();
   const [view, setView] = useState("board");
-  const [filters, setFilters] = useState({ search: "", ownerId: "", courseId: "", source: "", affiliate: "", followUp: new URLSearchParams(location.search).get("followUp") || "" });
+  const [filters, setFilters] = useState({ search: "", ownerId: "", courseId: "", source: "", affiliate: "", tagId: new URLSearchParams(location.search).get("tagId") || "", ready: "", followUp: new URLSearchParams(location.search).get("followUp") || "" });
   const [board, setBoard] = useState(null);
   const [list, setList] = useState({ leads: [], count: 0 });
   const [openId, setOpenId] = useState(Number(new URLSearchParams(location.search).get("lead")) || null);
   const [drag, setDrag] = useState(null);
   const [over, setOver] = useState(null);
+  const [moveMenu, setMoveMenu] = useState(null);
+  const boardRef = useRef(null);
+  const pointer = useRef({ x: 0, y: 0 });
   const [newOpen, setNewOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [lostFor, setLostFor] = useState(null);
@@ -176,7 +222,7 @@ const Board = () => {
     return () => { clearTimeout(timer.current); socket.disconnect(); };
   }, [load]);
 
-  const moveLead = async (leadId, stage, e, extra = {}) => {
+  const moveLead = async (leadId, stage, e, extra = {}) => { e && e.persist && e.persist();
     // optimistic update so the card lands instantly
     setBoard((prev) => {
       if (!prev) return prev;
@@ -195,12 +241,8 @@ const Board = () => {
     load();
   };
 
-  const onDrop = (e, stage) => {
-    e.preventDefault();
-    setOver(null);
-    const id = Number(e.dataTransfer.getData("text/plain")) || (drag && drag.id);
-    setDrag(null);
-    if (!id) return;
+  const dropOn = (id, stage, e) => {
+    if (!id || !board) return;
     const current = board.find((s) => s.leads.some((l) => l.id === id));
     if (current && current.id === stage.id) return;
     if (stage.type === "lost") setLostFor({ id, stage });
@@ -210,6 +252,37 @@ const Board = () => {
       if (lead) setEnrollFor(lead);
     } else moveLead(id, stage, e);
   };
+
+  const onDrop = (e, stage) => {
+    e.preventDefault();
+    setOver(null);
+    const id = Number(e.dataTransfer.getData("text/plain")) || (drag && drag.id);
+    setDrag(null);
+    dropOn(id, stage, e);
+  };
+
+  // While a card is dragged the browser does not scroll the board (nor the column) when the stage of destination is out of sight: the board scrolls by
+  // itself when the pointer is near its top or bottom edge, and so does the column under the pointer.
+  useEffect(() => {
+    if (!drag) return undefined;
+    let raf = 0;
+    const EDGE = 90;
+    const MAX = 22;
+    const speedOf = (rect, y) => (y < rect.top + EDGE ? -MAX * Math.min(1, (rect.top + EDGE - y) / EDGE) : y > rect.bottom - EDGE ? MAX * Math.min(1, (y - (rect.bottom - EDGE)) / EDGE) : 0);
+    const onMove = (ev) => { pointer.current = { x: ev.clientX, y: ev.clientY }; };
+    const tick = () => {
+      const { x, y } = pointer.current;
+      const under = document.elementFromPoint(x, y);
+      const col = under && under.closest ? under.closest("[data-colbody]") : null;
+      if (col) { const v = speedOf(col.getBoundingClientRect(), y); if (v) col.scrollTop += v; }
+      const board = boardRef.current;
+      if (board) { const v = speedOf(board.getBoundingClientRect(), y); if (v) board.scrollTop += v; }
+      raf = requestAnimationFrame(tick);
+    };
+    document.addEventListener("dragover", onMove);
+    raf = requestAnimationFrame(tick);
+    return () => { document.removeEventListener("dragover", onMove); cancelAnimationFrame(raf); };
+  }, [drag]);
 
   const loadMore = async (stage) => {
     const { data } = await api.get("/leads", { params: { ...params(), stageId: stage.id, offset: stage.leads.length, limit: 30 } });
@@ -223,6 +296,19 @@ const Board = () => {
       {enrollFor && <EnrollDialog open lead={enrollFor} onClose={() => setEnrollFor(null)} onDone={() => load()} />}
       <LostDialog open={!!lostFor} reasons={ctx.options.lostReasons} onClose={() => setLostFor(null)}
         onConfirm={(reason, note) => { const f = lostFor; setLostFor(null); moveLead(f.id, f.stage, null, { lostReason: reason, lostNote: note }); }} />
+      {/* every stage one click away (keyboard and touch): the same rules as a drop (enrollment asks for the confirmation, lost asks for the reason) */}
+      <Menu anchorEl={moveMenu && moveMenu.el} open={!!moveMenu} onClose={() => setMoveMenu(null)} getContentAnchorEl={null}
+        anchorOrigin={{ vertical: "bottom", horizontal: "right" }} transformOrigin={{ vertical: "top", horizontal: "right" }}>
+        <Typography variant="caption" color="textSecondary" style={{ display: "block", padding: "4px 16px 6px" }}>Mover para</Typography>
+        {(board || []).map((stage) => {
+          const here = moveMenu && board.some((x) => x.id === stage.id && x.leads.some((l) => l.id === moveMenu.lead.id));
+          return (
+            <MenuItem key={stage.id} dense disabled={!!here} onClick={(e) => { const lead = moveMenu.lead; setMoveMenu(null); dropOn(lead.id, stage, e); }}>
+              <span className={classes.dot} style={{ background: stage.color, marginRight: 10 }} />{stage.name}
+            </MenuItem>
+          );
+        })}
+      </Menu>
       <NewLeadDialog open={newOpen} onClose={() => setNewOpen(false)} ctx={ctx} onCreated={(id) => { setOpenId(id); load(); }} />
       <ImportDialog open={importOpen} onClose={() => setImportOpen(false)} onDone={load} />
       <LeadDrawer leadId={openId} ctx={ctx} onClose={() => { setOpenId(null); if (location.search) history.replace("/crm"); }} onChanged={load} />
@@ -261,6 +347,14 @@ const Board = () => {
           <MenuItem value="">Todos os leads</MenuItem>
           <MenuItem value="any">Só indicados por afiliado</MenuItem>
         </TextField>
+        <TextField select size="small" variant="outlined" label="Etiqueta" value={filters.tagId} onChange={(e) => setFilters({ ...filters, tagId: e.target.value })} style={{ minWidth: 150 }}>
+          <MenuItem value="">Todas</MenuItem>
+          {ctx.tags.map((t) => (<MenuItem key={t.id} value={String(t.id)}>{t.name}</MenuItem>))}
+        </TextField>
+        <TextField select size="small" variant="outlined" label="Agente de IA" value={filters.ready} onChange={(e) => setFilters({ ...filters, ready: e.target.value })} style={{ minWidth: 190 }}>
+          <MenuItem value="">Todos</MenuItem>
+          <MenuItem value="consultant">Prontos para o consultor</MenuItem>
+        </TextField>
         <TextField select size="small" variant="outlined" label="Retorno" value={filters.followUp} onChange={(e) => setFilters({ ...filters, followUp: e.target.value })} style={{ minWidth: 140 }}>
           <MenuItem value="">Todos</MenuItem>
           <MenuItem value="overdue">Atrasados</MenuItem>
@@ -269,20 +363,33 @@ const Board = () => {
       </div>
 
       {view === "board" ? (
-        <div className={classes.board}>
+        <div className={classes.board} ref={boardRef}>
+          {drag && board && (
+            <div className={classes.dropBar}><div className={classes.dropBarIn} role="group" aria-label="Soltar o lead em uma etapa">
+              <span className={classes.dropLabel}>Soltar em:</span>
+              {board.map((stage) => (
+                <span key={stage.id} className={`${classes.dropChip} ${over === `bar-${stage.id}` ? classes.dropChipOver : ""}`}
+                  onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); if (over !== `bar-${stage.id}`) setOver(`bar-${stage.id}`); }}
+                  onDragLeave={() => setOver((o) => (o === `bar-${stage.id}` ? null : o))}
+                  onDrop={(e) => { e.preventDefault(); e.stopPropagation(); onDrop(e, stage); }}>
+                  <span className={classes.dot} style={{ background: stage.color }} />{stage.name}
+                </span>
+              ))}
+            </div></div>
+          )}
           {(board || []).map((stage) => (
-            <div key={stage.id} className={`${classes.col} ${over === stage.id ? classes.colOver : ""}`}
+            <div key={stage.id} className={`${classes.col} ${over === stage.id ? classes.colOver : ""}`} style={{ "--stage": stage.color }}
               onDragOver={(e) => { e.preventDefault(); if (over !== stage.id) setOver(stage.id); }}
               onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setOver(null); }}
               onDrop={(e) => onDrop(e, stage)}>
               <div className={classes.colHead}>
                 <span className={classes.dot} style={{ background: stage.color }} />
                 <span className={classes.colName} title={stage.name}>{stage.name}</span>
-                <span className={classes.count}>{stage.count}</span>
+                <span className={classes.count} style={{ color: stage.color, borderColor: tint(stage.color, 0.5) }}>{stage.count}</span>
               </div>
-              <div className={classes.colBody}>
+              <div className={classes.colBody} data-colbody="1">
                 {stage.leads.map((l) => (
-                  <LeadCard key={l.id} lead={l} onOpen={setOpenId} dragging={drag && drag.id === l.id}
+                  <LeadCard key={l.id} lead={l} stage={stage} onOpen={setOpenId} dragging={drag && drag.id === l.id} onMenu={(lead, el) => setMoveMenu({ lead, el })}
                     onDragStart={setDrag} onDragEnd={() => { setDrag(null); setOver(null); }} />
                 ))}
                 {stage.count === 0 && <div className={classes.empty}>Arraste um lead para cá</div>}
@@ -307,7 +414,7 @@ const Board = () => {
                 <TableRow key={l.id} hover style={{ cursor: "pointer" }} onClick={() => setOpenId(l.id)}>
                   <TableCell><b>{l.name}</b><div style={{ fontSize: 12, opacity: 0.7 }}>{l.phone || l.email}</div></TableCell>
                   <TableCell>{l.course ? l.course.name : "—"}</TableCell>
-                  <TableCell><Chip size="small" label={l.stage.name} style={{ background: l.stage.color, color: "#fff" }} /></TableCell>
+                  <TableCell><StagePill stage={l.stage} /></TableCell>
                   <TableCell><span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}><SourceIcon source={l.source} />{l.source}</span></TableCell>
                   <TableCell>{l.owner ? l.owner.name : <i>sem responsável</i>}</TableCell>
                   <TableCell align="center"><ScoreRing value={l.score} size={28} /></TableCell>

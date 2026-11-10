@@ -30,7 +30,7 @@ const RANGES = [["month", "Este mês"], ["30", "Últimos 30 dias"], ["90", "Últ
 
 const useStyles = makeStyles((theme) => {
   const dark = theme.palette.type === "dark";
-  const line = dark ? "rgba(255,255,255,.09)" : "#e3e9f1";
+  const line = "var(--line)";
   return {
     body: { flex: 1, overflowY: "auto", overflowX: "hidden", ...theme.scrollbarStyles, paddingBottom: theme.spacing(4) },
     wrap: { maxWidth: 920, margin: "0 auto" },
@@ -51,7 +51,7 @@ const useStyles = makeStyles((theme) => {
     tab: { border: 0, background: "transparent", color: theme.palette.text.secondary, padding: "6px 14px", borderRadius: 9, fontFamily: "inherit", fontSize: 13.5, fontWeight: 600, cursor: "pointer" },
     tabOn: { background: theme.palette.primary.main, color: "#fff" },
     statement: { background: theme.palette.cards.background, border: `1px solid ${line}`, borderRadius: 16, overflow: "hidden" },
-    dayHead: { display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "10px 18px", background: dark ? "rgba(255,255,255,.04)" : "#f4f7fb", borderTop: `1px solid ${line}`, fontSize: 12.5, fontWeight: 700, color: theme.palette.text.secondary, "&:first-child": { borderTop: 0 } },
+    dayHead: { display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "10px 18px", background: "var(--surface-2)", borderTop: `1px solid ${line}`, fontSize: 12.5, fontWeight: 700, color: theme.palette.text.secondary, "&:first-child": { borderTop: 0 } },
     entry: { display: "grid", gridTemplateColumns: "40px 1fr auto", gap: 14, alignItems: "center", padding: "12px 18px", borderTop: `1px solid ${line}` },
     icon: { width: 38, height: 38, borderRadius: "50%", display: "grid", placeItems: "center" },
     title: { fontWeight: 600, fontSize: 14.5, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
@@ -66,7 +66,8 @@ const Commissions = () => {
   const classes = useStyles();
   const history = useHistory();
   const { user } = useContext(AuthContext);
-  const isAdmin = user.profile === "admin";
+  // the coordination reads and settles everyone's commissions, like the administration
+  const isAdmin = user.profile === "admin" || user.role === "coordenacao";
   const [data, setData] = useState(null);
   const [bucket, setBucket] = useState("");
   const [range, setRange] = useState("month");
@@ -172,11 +173,11 @@ const Commissions = () => {
                 <div className={classes.hint} style={{ marginTop: 4, maxWidth: 640 }}>
                   {informed
                     ? "Informe o novo Wallet ID. As próximas comissões vão para a nova conta."
-                    : "Informe o Wallet ID da sua conta Efí para receber a comissão direto na sua conta, no momento em que o aluno pagar a taxa. Sem ele, a comissão fica com a empresa e é repassada a você à mão (aparece como “A receber”)."}
+                    : "Informe o Wallet ID da sua conta Efí para receber a comissão direto na sua conta, no momento em que o aluno pagar a taxa (a cobrança dos seus alunos sai como boleto com QR Code Pix, para a Efí poder repassar). Sem ele, a comissão fica com a empresa e é repassada a você à mão (aparece como “A receber”)."}
                 </div>
                 <div className={classes.walletForm}>
                   <TextField size="small" variant="outlined" label="Wallet ID da Efí" value={wallet} onChange={(e) => setWallet(e.target.value)} style={{ minWidth: 320 }}
-                    helperText="De 6 a 64 letras e números, sem espaços" inputProps={{ autoComplete: "off", spellCheck: false }} />
+                    helperText="É o “identificador de conta” da sua conta Efí (só ele). Precisa ser uma conta Efí." inputProps={{ autoComplete: "off", spellCheck: false }} />
                   <Button variant="contained" color="primary" onClick={saveWallet} disabled={saving || wallet.trim().length < 6}>Salvar</Button>
                   {informed && <Button variant="outlined" onClick={() => { setEditing(false); setWallet(""); }}>Cancelar</Button>}
                   {informed && <Button color="secondary" onClick={removeWallet}>Remover carteira</Button>}

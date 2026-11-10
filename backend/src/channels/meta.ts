@@ -7,9 +7,10 @@ import Contact from "../models/Contact";
 import { logger } from "../utils/logger";
 import AppError from "../errors/AppError";
 import { getPublicUrl } from "../helpers/PublicUrl";
+import { buildInteractive } from "../helpers/Interactive";
 import { setChannelStatus } from "../services/ChannelServices/ChannelStatus";
 import HandleChannelMessage from "../services/InboundServices/HandleChannelMessage";
-import { handleAckByExternalId } from "../services/InboundServices/HandleAck";
+import { handleAckByExternalId, handleSendFailure } from "../services/InboundServices/HandleAck";
 import { applyReaction } from "../services/MessageServices/MessageActions";
 import {
   ChannelAdapter,
@@ -19,6 +20,11 @@ import {
   externalIdOf,
   mediaKindOf
 } from "./types";
+import { IG_GRAPH } from "../helpers/MetaApp";
+import { noteWebhook } from "./WebhookLog";
+import { aliasMessage, failureOf, messageIdOf, rememberRecipient, sendToRecipient } from "./CloudRecipient";
+import { noteAutomation } from "../services/AutomationServices/AutomationTrace";
+import Ticket from "../models/Ticket";
 
 // Unversioned by default so Meta serves the app's default API version (pinned
 // versions expire). Set META_GRAPH_VERSION=vNN.0 to pin, GRAPH_API_URL to override.
@@ -28,6 +34,17 @@ const GRAPH =
     process.env.META_GRAPH_VERSION ? `/${process.env.META_GRAPH_VERSION}` : ""
   }`;
 
+// Everything the Cloud API sends goes through here (a Brazilian mobile refused without the 9 is tried with it, see CloudRecipient)
+export const cloudSend = async (whatsapp: Whatsapp, contact: Contact, payload: Record<string, any>): Promise<any> => {
+  const { accessToken, phoneNumberId } = getConfig(whatsapp);
+  const { data } = await sendToRecipient(
+    contact.number,
+    to => axios.post(`${GRAPH}/${phoneNumberId}/messages`, { messaging_product: "whatsapp", to, ...payload }, { headers: { Authorization: `Bearer ${accessToken}` } }),
+    to => logger.info(`WhatsApp Cloud: ${contact.number} fora da lista permitida, enviando para ${to}`)
+  );
+  return data;
+};
+
 // ---------------------------------------------------------------------------
 // Messenger + Instagram (same Send API shape, different ids)
 // ---------------------------------------------------------------------------
@@ -35,6 +52,16 @@ const GRAPH =
 // Messenger accepts a fixed set of reactions; Instagram only the heart
 const MESSENGER_REACTIONS: Record<string, string> = {
   "👍": "like", "👎": "dislike", "❤️": "love", "❤": "love", "😂": "smile", "😮": "wow", "😢": "sad", "😡": "angry"
+};
+
+// An Instagram connection made by the login (mode "oauth") talks to graph.instagram.com with its own long-lived token; one pasted by hand
+// (or Messenger) keeps using the Facebook Graph.
+const baseOf = (type: string, whatsapp: Whatsapp): string => (type === "instagram" && getConfig(whatsapp).mode === "oauth" ? IG_GRAPH : GRAPH);
+
+// Instagram and Messenger only let the page answer within 24 h of the person's last message
+const isWindowClosed = (err: any): boolean => {
+  const e = err?.response?.data?.error;
+  return !!e && (e.error_subcode === 2534022 || e.error_subcode === 2018278 || /outside of allowed window|allowed window/i.test(String(e.message || "")));
 };
 
 const socialAdapter = (type: "messenger" | "instagram", prefix: string): ChannelAdapter => ({
@@ -48,10 +75,10 @@ const socialAdapter = (type: "messenger" | "instagram", prefix: string): Channel
       return;
     }
     try {
-      const { data } = await axios.get(`${GRAPH}/me`, {
-        params: { access_token: accessToken, fields: "id,name" }
+      const { data } = await axios.get(`${baseOf(type, whatsapp)}/me`, {
+        params: { access_token: accessToken, fields: baseOf(type, whatsapp) === IG_GRAPH ? "user_id,username" : "id,name" }
       });
-      await whatsapp.update({ session: data.name || data.id });
+      await whatsapp.update({ session: data.username ? `@${data.username}` : data.name || data.id });
       await setChannelStatus(whatsapp, "CONNECTED");
     } catch (err) {
       logger.error(`${type} start failed: ${err?.response?.data?.error?.message || err}`);
@@ -66,7 +93,7 @@ const socialAdapter = (type: "messenger" | "instagram", prefix: string): Channel
   async sendTyping(whatsapp, contact: Contact) {
     const { accessToken } = getConfig(whatsapp);
     await axios.post(
-      `${GRAPH}/me/messages`,
+      `${baseOf(type, whatsapp)}/me/messages`,
       { recipient: { id: externalIdOf(contact, prefix) }, sender_action: "typing_on" },
       { params: { access_token: accessToken }, timeout: 8000 }
     );
@@ -77,7 +104,7 @@ const socialAdapter = (type: "messenger" | "instagram", prefix: string): Channel
     const reaction = type === "instagram" ? (emoji === "❤️" || emoji === "❤" ? "love" : "") : MESSENGER_REACTIONS[emoji] || "";
     if (emoji && !reaction) throw new AppError("ERR_REACTION_EMOJI_UNSUPPORTED", 400);
     await axios.post(
-      `${GRAPH}/me/messages`,
+      `${baseOf(type, whatsapp)}/me/messages`,
       {
         recipient: { id: externalIdOf(contact, prefix) },
         sender_action: emoji ? "react" : "unreact",
@@ -90,7 +117,7 @@ const socialAdapter = (type: "messenger" | "instagram", prefix: string): Channel
   async sendText(whatsapp, contact: Contact, body) {
     const { accessToken } = getConfig(whatsapp);
     const { data } = await axios.post(
-      `${GRAPH}/me/messages`,
+      `${baseOf(type, whatsapp)}/me/messages`,
       {
         recipient: { id: externalIdOf(contact, prefix) },
         message: { text: body },
@@ -105,7 +132,7 @@ const socialAdapter = (type: "messenger" | "instagram", prefix: string): Channel
   async sendChoices(whatsapp, contact: Contact, question, options) {
     const { accessToken } = getConfig(whatsapp);
     const { data } = await axios.post(
-      `${GRAPH}/me/messages`,
+      `${baseOf(type, whatsapp)}/me/messages`,
       {
         recipient: { id: externalIdOf(contact, prefix) },
         message: {
@@ -136,14 +163,14 @@ const socialAdapter = (type: "messenger" | "instagram", prefix: string): Channel
       filename: media.filename,
       contentType: media.mimetype
     });
-    const { data } = await axios.post(`${GRAPH}/me/messages`, form, {
+    const { data } = await axios.post(`${baseOf(type, whatsapp)}/me/messages`, form, {
       params: { access_token: accessToken },
       headers: form.getHeaders(),
       maxBodyLength: Infinity
     });
     if (caption) {
       await axios.post(
-        `${GRAPH}/me/messages`,
+        `${baseOf(type, whatsapp)}/me/messages`,
         {
           recipient: { id: externalIdOf(contact, prefix) },
           message: { text: caption },
@@ -156,8 +183,27 @@ const socialAdapter = (type: "messenger" | "instagram", prefix: string): Channel
   }
 });
 
-export const messenger = socialAdapter("messenger", "fb_");
-export const instagram = socialAdapter("instagram", "ig_");
+// a send refused because the 24 h window is closed becomes a clear message instead of a generic failure
+const withWindowError = (adapter: ChannelAdapter): ChannelAdapter => {
+  const wrap = <T extends (...args: any[]) => Promise<any>>(fn: T): T =>
+    (async (...args: any[]) => {
+      try {
+        return await fn(...args);
+      } catch (err) {
+        if (isWindowClosed(err)) throw new AppError("ERR_REPLY_WINDOW_CLOSED", 400);
+        throw err;
+      }
+    }) as T;
+  return {
+    ...adapter,
+    sendText: wrap(adapter.sendText),
+    sendMedia: wrap(adapter.sendMedia),
+    ...(adapter.sendChoices ? { sendChoices: wrap(adapter.sendChoices) } : {})
+  };
+};
+
+export const messenger = withWindowError(socialAdapter("messenger", "fb_"));
+export const instagram = withWindowError(socialAdapter("instagram", "ig_"));
 
 // ---------------------------------------------------------------------------
 // WhatsApp Cloud API
@@ -195,80 +241,42 @@ export const whatsappCloud: ChannelAdapter = {
   },
 
   async sendText(whatsapp, contact: Contact, body) {
-    const { accessToken, phoneNumberId } = getConfig(whatsapp);
-    const { data } = await axios.post(
-      `${GRAPH}/${phoneNumberId}/messages`,
-      {
-        messaging_product: "whatsapp",
-        to: contact.number,
-        type: "text",
-        text: { body, preview_url: false }
-      },
-      { headers: { Authorization: `Bearer ${accessToken}` } }
-    );
+    const data = await cloudSend(whatsapp, contact, { type: "text", text: { body, preview_url: false } });
     return { id: data.messages[0].id };
   },
 
-  // WhatsApp Cloud: up to 3 reply buttons, or a list for 4 to 10 options
+  // WhatsApp Cloud: up to 3 reply buttons, or a list for 4 to 10 options (see helpers/Interactive for the rules of Meta). More than
+  // 10 options cannot be sent as buttons: they go as a numbered text, which the flow understands too.
   async sendChoices(whatsapp, contact: Contact, question, options) {
-    const { accessToken, phoneNumberId } = getConfig(whatsapp);
-    const interactive =
-      options.length <= 3
-        ? {
-            type: "button",
-            body: { text: question.slice(0, 1000) },
-            action: { buttons: options.map((o, i) => ({ type: "reply", reply: { id: String(i + 1), title: o.label.slice(0, 20) } })) }
-          }
-        : {
-            type: "list",
-            body: { text: question.slice(0, 1000) },
-            action: { button: "Escolher", sections: [{ title: "Opções", rows: options.slice(0, 10).map((o, i) => ({ id: String(i + 1), title: o.label.slice(0, 24) })) }] }
-          };
-    const { data } = await axios.post(
-      `${GRAPH}/${phoneNumberId}/messages`,
-      { messaging_product: "whatsapp", to: contact.number, type: "interactive", interactive },
-      { headers: { Authorization: `Bearer ${accessToken}` } }
-    );
+    const interactive = buildInteractive(question, options);
+    if (!interactive) {
+      const menu = options.map((o, i) => `*${i + 1}* - ${o.label}`).join("\n");
+      return this.sendText(whatsapp, contact, `${question}\n\n${menu}`);
+    }
+    const data = await cloudSend(whatsapp, contact, { type: "interactive", interactive });
     return { id: data.messages[0].id };
   },
 
   async sendReaction(whatsapp, contact: Contact, messageId, emoji) {
-    const { accessToken, phoneNumberId } = getConfig(whatsapp);
-    await axios.post(
-      `${GRAPH}/${phoneNumberId}/messages`,
-      {
-        messaging_product: "whatsapp",
-        to: contact.number,
-        type: "reaction",
-        reaction: { message_id: messageId, emoji }
-      },
-      { headers: { Authorization: `Bearer ${accessToken}` } }
-    );
+    await cloudSend(whatsapp, contact, { type: "reaction", reaction: { message_id: messageId, emoji } });
   },
 
   async sendTemplate(whatsapp, contact: Contact, template) {
-    const { accessToken, phoneNumberId } = getConfig(whatsapp);
-    const { data } = await axios.post(
-      `${GRAPH}/${phoneNumberId}/messages`,
-      {
-        messaging_product: "whatsapp",
-        to: contact.number,
-        type: "template",
-        template: {
-          name: template.name,
-          language: { code: template.language || "pt_BR" },
-          components: template.params.length
-            ? [
-                {
-                  type: "body",
-                  parameters: template.params.map(text => ({ type: "text", text }))
-                }
-              ]
-            : []
-        }
-      },
-      { headers: { Authorization: `Bearer ${accessToken}` } }
-    );
+    const data = await cloudSend(whatsapp, contact, {
+      type: "template",
+      template: {
+        name: template.name,
+        language: { code: template.language || "pt_BR" },
+        components: template.params.length
+          ? [
+              {
+                type: "body",
+                parameters: template.params.map(text => ({ type: "text", text }))
+              }
+            ]
+          : []
+      }
+    });
     return { id: data.messages[0].id };
   },
 
@@ -291,11 +299,7 @@ export const whatsappCloud: ChannelAdapter = {
     const payload: any = { id: upload.data.id };
     if (caption && type !== "audio") payload.caption = caption;
     if (type === "document") payload.filename = media.filename;
-    const { data } = await axios.post(
-      `${GRAPH}/${phoneNumberId}/messages`,
-      { messaging_product: "whatsapp", to: contact.number, type, [type]: payload },
-      { headers }
-    );
+    const data = await cloudSend(whatsapp, contact, { type, [type]: payload });
     return { id: data.messages[0].id };
   }
 };
@@ -333,13 +337,13 @@ const processSocial = async (whatsapp: Whatsapp, entry: any, type: ChannelType) 
     let name = senderId;
     let pic: string | undefined;
     try {
-      const { data } = await axios.get(`${GRAPH}/${senderId}`, {
+      const { data } = await axios.get(`${baseOf(type, whatsapp)}/${senderId}`, {
         params: {
           access_token: config.accessToken,
-          fields: type === "instagram" ? "name,profile_pic" : "name,profile_pic"
+          fields: type === "instagram" && config.mode === "oauth" ? "name,username,profile_pic" : "name,profile_pic"
         }
       });
-      name = data.name || senderId;
+      name = data.name || (data.username ? `@${data.username}` : senderId);
       pic = data.profile_pic;
     } catch (e) {
       // profile lookup is best effort
@@ -380,17 +384,42 @@ const processSocial = async (whatsapp: Whatsapp, entry: any, type: ChannelType) 
   }
 };
 
+// Meta accepted a message and then could not deliver it: the conversation shows the failure and why; a Brazilian mobile refused
+// without the 9 (the test number and its allowed list) gets the same text again with the 9, and the next messages go that way.
+const cloudFailed = async (whatsapp: Whatsapp, st: any): Promise<void> => {
+  const { code, text, retryTo } = failureOf(st);
+  const message = await handleSendFailure(messageIdOf(st.id));
+  if (!message) return;
+  noteAutomation(message.ticketId, `a Meta não entregou a mensagem: ${text} (código ${code || "?"})${retryTo ? `; enviando de novo para ${retryTo}` : ""}`);
+  if (!retryTo || message.mediaType !== "chat" || !message.body) return;
+  const ticket = await Ticket.findByPk(message.ticketId, { include: ["contact"] });
+  if (!ticket?.contact) return;
+  rememberRecipient(ticket.contact.number, retryTo);
+  const data = await cloudSend(whatsapp, ticket.contact, { type: "text", text: { body: message.body, preview_url: false } });
+  const newId = data?.messages?.[0]?.id;
+  if (newId) aliasMessage(newId, message.id);
+  await message.update({ ack: 1 });
+  noteAutomation(message.ticketId, `a mensagem foi enviada de novo para ${retryTo}`);
+};
+
 const processCloud = async (whatsapp: Whatsapp, entry: any) => {
   const config = getConfig(whatsapp);
   const headers = { Authorization: `Bearer ${config.accessToken}` };
 
   for (const change of entry.changes || []) {
     const value = change.value || {};
-    if (value.metadata?.phone_number_id !== config.phoneNumberId) continue;
+    if (value.metadata?.phone_number_id !== config.phoneNumberId) {
+      noteWebhook(whatsapp.id, "numero_diferente", `a Meta mandou o número ${value.metadata?.phone_number_id || "?"} e a conexão tem ${config.phoneNumberId || "nenhum"}`);
+      continue;
+    }
 
     for (const st of value.statuses || []) {
+      if (st.status === "failed") {
+        await cloudFailed(whatsapp, st).catch(err => logger.error(`Cloud API failed status: ${err}`));
+        continue;
+      }
       const ack = ({ sent: 1, delivered: 2, read: 3 } as Record<string, number>)[st.status];
-      if (ack) await handleAckByExternalId(st.id, ack);
+      if (ack) await handleAckByExternalId(messageIdOf(st.id), ack);
     }
 
     for (const m of value.messages || []) {

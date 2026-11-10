@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { toast } from "react-toastify";
-import { Button, TextField, Typography, Chip, Tabs, Tab, FormControlLabel, Switch, Dialog, DialogTitle, DialogContent, DialogActions, InputAdornment, makeStyles } from "@material-ui/core";
-import { Trash2, FileText, HelpCircle, Link2, Upload, Pencil, Search, Sparkles } from "lucide-react";
+import { Button, TextField, Typography, Chip, Tabs, Tab, FormControlLabel, Switch, Dialog, DialogTitle, DialogContent, DialogActions, InputAdornment, MenuItem, makeStyles } from "@material-ui/core";
+import { Trash2, FileText, HelpCircle, Link2, Upload, Pencil, Search } from "lucide-react";
 
 import IconAction from "../../components/IconAction";
 import ConfirmationModal from "../../components/ConfirmationModal";
@@ -23,12 +23,56 @@ const useStyles = makeStyles((theme) => ({
 
 const SOURCE = { texto: "Texto", arquivo: "Arquivo", url: "Página da web", aprendido: "Aprendido" };
 
+// The subject of a document: the commercial agent reads a passage only when the question is about its subject, which keeps the prompt short.
+const TOPICS = [
+  ["institutional/platform", "Plataforma de estudo"], ["institutional/tutoring", "Tutoria"], ["institutional/faculty", "Corpo docente"], ["institutional/enrollment", "Matrícula e documentos"],
+  ["institutional/mec", "Mudanças do MEC"], ["institutional/internship", "Estágio remunerado"], ["institutional/recognition", "Reconhecimento do curso"], ["institutional/analysis", "Análise curricular"],
+];
+const COURSE_TOPICS = [["overview", "Visão geral"], ["modality", "Modalidade"], ["curriculum", "Grade"], ["internship", "Estágio"], ["tcc", "TCC"], ["regulation", "Regras e MEC"]];
+export const topicLabel = (t, courses) => {
+  if (!t) return "";
+  const known = TOPICS.find(([k]) => k === t);
+  if (known) return known[1];
+  const m = String(t).match(/^courses\/(\d+)\/(\w+)$/);
+  if (m) return `${(courses.find((c) => c.id === Number(m[1])) || {}).name || `Curso ${m[1]}`} · ${(COURSE_TOPICS.find(([k]) => k === m[2]) || [])[1] || m[2]}`;
+  return t;
+};
+
+const TopicPicker = ({ topic, courses, onChange }) => {
+  const m = String(topic || "").match(/^courses\/(\d+)\/(\w+)$/);
+  const kind = !topic ? "" : m ? "course" : topic;
+  return (
+    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+      <TextField select size="small" variant="outlined" margin="dense" label="Assunto (opcional)" style={{ flex: "1 1 220px" }} InputLabelProps={{ shrink: true }} SelectProps={{ displayEmpty: true }} value={kind}
+        onChange={(e) => onChange(e.target.value === "course" ? `courses/${(courses[0] || {}).id || 0}/overview` : e.target.value)}
+        helperText="Com assunto, o agente só lê este texto quando a conversa for sobre ele.">
+        <MenuItem value="">Geral (lido por palavras)</MenuItem>
+        {TOPICS.map(([k, l]) => <MenuItem key={k} value={k}>{l}</MenuItem>)}
+        <MenuItem value="course">Sobre um curso</MenuItem>
+      </TextField>
+      {m && (
+        <>
+          <TextField select size="small" variant="outlined" margin="dense" label="Curso" style={{ flex: "1 1 200px" }} InputLabelProps={{ shrink: true }} value={Number(m[1])} onChange={(e) => onChange(`courses/${e.target.value}/${m[2]}`)}>
+            {courses.map((c) => <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>)}
+          </TextField>
+          <TextField select size="small" variant="outlined" margin="dense" label="Parte" style={{ flex: "1 1 140px" }} InputLabelProps={{ shrink: true }} value={m[2]} onChange={(e) => onChange(`courses/${m[1]}/${e.target.value}`)}>
+            {COURSE_TOPICS.map(([k, l]) => <MenuItem key={k} value={k}>{l}</MenuItem>)}
+          </TextField>
+        </>
+      )}
+    </div>
+  );
+};
+const courseOfTopic = (t) => { const m = String(t || "").match(/^courses\/(\d+)\//); return m ? Number(m[1]) : null; };
+
 // Documents the agent can quote. Only the few passages that match each question are sent to the model.
-const KbTab = ({ agentId }) => {
+const KbTab = ({ agentId, initialMode = 0, initialTopic = "" }) => {
   const classes = useStyles();
   const [docs, setDocs] = useState([]);
-  const [mode, setMode] = useState(0);
-  const [form, setForm] = useState({ title: "", content: "", keywords: "", url: "", shared: false });
+  const [mode, setMode] = useState(initialMode);
+  const [form, setForm] = useState({ title: "", content: "", keywords: "", url: "", shared: false, topic: initialTopic });
+  const [courses, setCourses] = useState([]);
+  useEffect(() => { api.get("/courses").then(({ data }) => setCourses(Array.isArray(data) ? data : data.courses || [])).catch(() => undefined); }, []);
   const [busy, setBusy] = useState(false);
   const [removing, setRemoving] = useState(null);
   const [q, setQ] = useState("");
@@ -46,7 +90,7 @@ const KbTab = ({ agentId }) => {
   };
   const saveEdit = async () => {
     try {
-      await api.put(`/ai-agents/${agentId}/kb/${editing.id}`, { title: editing.title, content: editing.content, keywords: editing.keywords });
+      await api.put(`/ai-agents/${agentId}/kb/${editing.id}`, { title: editing.title, content: editing.content, keywords: editing.keywords, topic: editing.topic || "", courseId: courseOfTopic(editing.topic) || "" });
       toast.success("Documento atualizado.");
       setEditing(null);
       load();
@@ -56,21 +100,23 @@ const KbTab = ({ agentId }) => {
   const load = useCallback(() => api.get(`/ai-agents/${agentId}/kb`).then(({ data }) => setDocs(data)).catch(toastError), [agentId]);
   useEffect(() => { load(); }, [load]);
 
-  const reset = () => setForm({ title: "", content: "", keywords: "", url: "", shared: false });
+  const reset = () => setForm({ title: "", content: "", keywords: "", url: "", shared: false, topic: "" });
+  const subject = () => ({ topic: form.topic || "", courseId: courseOfTopic(form.topic) || "" });
   const run = async (fn, ok) => {
     setBusy(true);
     try { await fn(); toast.success(ok); reset(); load(); } catch (err) { toastError(err); }
     setBusy(false);
   };
 
-  const addText = () => run(() => api.post(`/ai-agents/${agentId}/kb`, { title: form.title, content: form.content, shared: form.shared }), "Documento adicionado.");
+  const addText = () => run(() => api.post(`/ai-agents/${agentId}/kb`, { title: form.title, content: form.content, shared: form.shared, ...subject() }), "Documento adicionado.");
   const addFaq = () => run(() => api.post(`/ai-agents/${agentId}/kb`, { kind: "faq", title: form.title, content: form.content, keywords: form.keywords, shared: form.shared }), "Pergunta frequente adicionada.");
-  const addUrl = () => run(() => api.post(`/ai-agents/${agentId}/kb/url`, { url: form.url, title: form.title, shared: form.shared }), "Página lida e adicionada.");
+  const addUrl = () => run(() => api.post(`/ai-agents/${agentId}/kb/url`, { url: form.url, title: form.title, shared: form.shared, ...subject() }), "Página lida e adicionada.");
   const addFile = (file) => run(() => {
     const data = new FormData();
     data.append("file", file);
     if (form.title) data.append("title", form.title);
     data.append("shared", String(form.shared));
+    if (form.topic) { data.append("topic", form.topic); if (courseOfTopic(form.topic)) data.append("courseId", String(courseOfTopic(form.topic))); }
     return api.post(`/ai-agents/${agentId}/kb/upload`, data);
   }, "Arquivo lido e adicionado.");
 
@@ -87,6 +133,7 @@ const KbTab = ({ agentId }) => {
             <TextField fullWidth variant="outlined" margin="dense" label={editing.kind === "faq" ? "Pergunta" : "Título"} value={editing.title} onChange={(e) => setEditing({ ...editing, title: e.target.value })} />
             <TextField fullWidth multiline rows={12} variant="outlined" margin="dense" label={editing.kind === "faq" ? "Resposta" : "Conteúdo"} value={editing.content} onChange={(e) => setEditing({ ...editing, content: e.target.value })} />
             {editing.kind === "faq" && <TextField fullWidth variant="outlined" margin="dense" label="Outras formas de perguntar (separe por vírgula)" value={editing.keywords || ""} onChange={(e) => setEditing({ ...editing, keywords: e.target.value })} />}
+            {editing.kind !== "faq" && <TopicPicker topic={editing.topic} courses={courses} onChange={(t) => setEditing({ ...editing, topic: t })} />}
           </DialogContent>
         )}
         <DialogActions>
@@ -99,7 +146,7 @@ const KbTab = ({ agentId }) => {
         <Typography className={classes.intro} style={{ marginBottom: 8 }}>Veja quais trechos o agente leria para responder. Se nenhum aparecer, falta conteúdo sobre esse assunto.</Typography>
         <div style={{ display: "flex", gap: 8 }}>
           <TextField fullWidth size="small" variant="outlined" placeholder="Ex.: Como funciona a bolsa para transferência?" value={probe.question} onChange={(e) => setProbe({ question: e.target.value, hits: null })} onKeyDown={(e) => e.key === "Enter" && probe.question.trim() && runProbe()} />
-          <Button variant="outlined" color="primary" style={{ whiteSpace: "nowrap", flex: "none" }} startIcon={<Sparkles size={15} />} disabled={!probe.question.trim()} onClick={runProbe}>Ver trechos</Button>
+          <Button variant="outlined" color="primary" style={{ whiteSpace: "nowrap", flex: "none" }} startIcon={<Search size={15} />} disabled={!probe.question.trim()} onClick={runProbe}>Ver trechos</Button>
         </div>
         {probe.hits && probe.hits.length === 0 && <Typography variant="body2" color="error" style={{ marginTop: 8 }}>Nenhum trecho encontrado. O agente diria que não sabe e avisaria a equipe.</Typography>}
         {(probe.hits || []).map((h, i) => (<div key={i} className={classes.hit}><div className={classes.hitTitle}>{h.title}</div>{h.content.length > 400 ? `${h.content.slice(0, 400)}…` : h.content}</div>))}
@@ -124,6 +171,7 @@ const KbTab = ({ agentId }) => {
           </>
         )}
         {mode === 3 && <TextField fullWidth variant="outlined" margin="dense" label="Endereço da página (https://…)" value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} helperText="Só endereços públicos. O texto da página é lido uma vez; para atualizar, adicione de novo." />}
+        {mode !== 1 && <TopicPicker topic={form.topic} courses={courses} onChange={(t) => setForm({ ...form, topic: t })} />}
         {mode === 2 && <Typography className={classes.intro} style={{ margin: "8px 0" }}>Formatos aceitos: PDF, Word (.docx), .txt, .md, .csv e .html. Até 8 MB.</Typography>}
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginTop: 4 }}>
           <FormControlLabel control={<Switch color="primary" checked={form.shared} onChange={(e) => setForm({ ...form, shared: e.target.checked })} />} label={form.shared ? "Todos os agentes usam" : "Só este agente usa"} />
@@ -152,6 +200,7 @@ const KbTab = ({ agentId }) => {
             <span className={classes.docTitle} title={d.title}>{d.title}</span>
             <Chip size="small" label={d.kind === "faq" ? "Pergunta frequente" : SOURCE[d.source] || d.source} />
             {d.kind !== "faq" && <Chip size="small" variant="outlined" label={`${d.chunks} ${d.chunks === 1 ? "trecho" : "trechos"}`} />}
+            {d.topic && <Chip size="small" color="secondary" variant="outlined" label={topicLabel(d.topic, courses)} />}
             {d.shared && <Chip size="small" color="primary" variant="outlined" label="Todos os agentes" />}
             {d.source !== "arquivo" && d.source !== "url" && <IconAction title="Editar documento" onClick={() => openEdit(d)}><Pencil size={16} /></IconAction>}
             <IconAction title="Remover documento" onClick={() => setRemoving(d)}><Trash2 size={16} /></IconAction>

@@ -31,7 +31,6 @@ import {
 
 import MainContainer from "../../components/MainContainer";
 import MainHeader from "../../components/MainHeader";
-import MainHeaderButtonsWrapper from "../../components/MainHeaderButtonsWrapper";
 import Title from "../../components/Title";
 import TableRowSkeleton from "../../components/TableRowSkeleton";
 import ResponsiveTable from "../../components/ResponsiveTable";
@@ -39,13 +38,24 @@ import ResponsiveTable from "../../components/ResponsiveTable";
 import api from "../../services/api";
 import WhatsAppModal from "../../components/WhatsAppModal";
 import MyNumberDialog from "./MyNumberDialog";
+import InstagramDialog from "./InstagramDialog";
 import ConfirmationModal from "../../components/ConfirmationModal";
 import QrcodeModal from "../../components/QrcodeModal";
 import { i18n } from "../../translate/i18n";
 import { WhatsAppsContext } from "../../context/WhatsApp/WhatsAppsContext";
 import toastError from "../../errors/toastError";
+import { canOperateRetention, isManager } from "../../utils/access";
 
 const useStyles = makeStyles(theme => ({
+	tiles: { display: "grid", gap: theme.spacing(1.5), gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))", padding: theme.spacing(0, 2, 1.5) },
+	tile: {
+		display: "flex", alignItems: "center", gap: theme.spacing(1.5), textAlign: "left", cursor: "pointer", font: "inherit", color: "inherit",
+		padding: theme.spacing(1.5, 2), borderRadius: 14, border: `1px solid ${theme.palette.divider}`, background: theme.palette.background.paper,
+		transition: "border-color .18s ease, box-shadow .18s ease",
+		"&:hover": { borderColor: theme.palette.primary.main, boxShadow: "0 4px 14px rgba(15,23,42,.08)" },
+		"&:focus-visible": { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: 2 },
+	},
+	tileText: { display: "flex", flexDirection: "column", gap: 2, minWidth: 0, "& b": { fontSize: 15 }, "& small": { fontSize: 12.5, color: theme.palette.text.secondary, lineHeight: 1.35 } },
 	mainPaper: {
 		flex: 1,
 		padding: theme.spacing(1),
@@ -102,10 +112,36 @@ const Connections = () => {
 	const { whatsApps, loading } = useContext(WhatsAppsContext);
 	// connecting and removing numbers is for the administrator; everyone else only sees the status
 	const { user } = useContext(AuthContext);
-	const isAdmin = user && user.profile === "admin";
+	const isAdmin = isManager(user);
 	// administrators manage everything; anyone else manages the number they connected themselves
-	const canManage = w => isAdmin || (w.ownerId && user && w.ownerId === user.id && (!w.channel || w.channel === "whatsapp"));
+	const canManage = w => isAdmin || (w.ownerId && user && w.ownerId === user.id && (!w.channel || w.channel === "whatsapp" || w.channel === "instagram"));
+	// an Instagram connected by the login (not by pasted keys): when its access expires, the person enters again
+	const igLogin = w => {
+		if (!w || w.channel !== "instagram") return null;
+		try {
+			const c = JSON.parse(w.config || "{}");
+			return c.mode === "oauth" ? c : null;
+		} catch (e) {
+			return null;
+		}
+	};
+	const [igDialog, setIgDialog] = useState({ open: false, whatsApp: null });
+	// back from the Instagram login: the result comes in the address
+	useEffect(() => {
+		const q = new URLSearchParams(window.location.search);
+		const r = q.get("instagram");
+		if (!r) return;
+		if (r === "ok") toast.success("Instagram conectado. As conversas do Direct já chegam aqui.");
+		else toast.error(q.get("motivo") || "Não foi possível conectar o Instagram.");
+		window.history.replaceState({}, "", window.location.pathname);
+	}, []);
 	const [myDialog, setMyDialog] = useState({ open: false, whatsApp: null });
+	// the number the relationship department works from (chosen in Retenção > Configurar)
+	const [relationshipId, setRelationshipId] = useState(0);
+	useEffect(() => {
+		if (!canOperateRetention(user)) return;
+		api.get("/retention/config").then(({ data }) => setRelationshipId((data.relationship && data.relationship.whatsappId) || 0)).catch(() => undefined);
+	}, [user]); // eslint-disable-line react-hooks/exhaustive-deps
 	// progress of "copy the conversations of the phone", by connection
 	const [copying, setCopying] = useState({});
 	useEffect(() => {
@@ -251,7 +287,12 @@ const Connections = () => {
 						{i18n.t("connections.buttons.qrcode")}
 					</Button>
 				)}
-				{whatsApp.status === "DISCONNECTED" && (
+				{whatsApp.status === "DISCONNECTED" && igLogin(whatsApp) && (
+					<Button size="small" variant="contained" color="primary" onClick={() => setIgDialog({ open: true, whatsApp })}>
+						Entrar de novo
+					</Button>
+				)}
+				{whatsApp.status === "DISCONNECTED" && !igLogin(whatsApp) && (
 					<>
 						<Button
 							size="small"
@@ -374,33 +415,37 @@ const Connections = () => {
 				onClose={() => setMyDialog({ open: false, whatsApp: null })}
 				onCreated={w => handleOpenQrModal(w)}
 			/>
+			<InstagramDialog
+				open={igDialog.open}
+				whatsApp={igDialog.whatsApp}
+				canConfigure={isAdmin}
+				onClose={() => setIgDialog({ open: false, whatsApp: null })}
+			/>
 			<WhatsAppModal
 				open={whatsAppModalOpen}
 				onClose={handleCloseWhatsAppModal}
 				whatsAppId={!qrModalOpen && selectedWhatsApp?.id}
+				onCreated={w => handleOpenQrModal(w)}
 			/>
 			<MainHeader>
 				<Title>{i18n.t("connections.title")}</Title>
-				<MainHeaderButtonsWrapper>
-					{isAdmin ? (
-						<Button
-							variant="contained"
-							color="primary"
-							onClick={handleOpenWhatsAppModal}
-						>
-							{i18n.t("connections.buttons.add")}
-						</Button>
-					) : (
-						<Button
-							variant="contained"
-							color="primary"
-							onClick={() => setMyDialog({ open: true, whatsApp: null })}
-						>
-							Conectar meu WhatsApp
-						</Button>
-					)}
-				</MainHeaderButtonsWrapper>
 			</MainHeader>
+			<div className={classes.tiles} role="group" aria-label="Conectar um canal">
+				<button type="button" className={classes.tile} onClick={() => (isAdmin ? handleOpenWhatsAppModal() : setMyDialog({ open: true, whatsApp: null }))}>
+					<ChannelIcon channel="whatsapp" size={30} />
+					<span className={classes.tileText}><b>{isAdmin ? "Adicionar WhatsApp" : "Conectar meu WhatsApp"}</b><small>Leia o QR Code ou digite um código no celular</small></span>
+				</button>
+				<button type="button" className={classes.tile} onClick={() => setIgDialog({ open: true, whatsApp: null })}>
+					<ChannelIcon channel="instagram" size={30} />
+					<span className={classes.tileText}><b>Conectar Instagram</b><small>Entre com a conta profissional e pronto</small></span>
+				</button>
+				{isAdmin && (
+					<button type="button" className={classes.tile} onClick={handleOpenWhatsAppModal}>
+						<ChannelIcon channel="webchat" size={30} />
+						<span className={classes.tileText}><b>Outros canais</b><small>Messenger, Telegram, WhatsApp Cloud API e chat do site</small></span>
+					</button>
+				)}
+			</div>
 			<Typography variant="caption" color="textSecondary" component="div" style={{ padding: "0 16px 10px" }}>
 				Dica: o WhatsApp desconecta os aparelhos vinculados quando o celular fica cerca de 14 dias sem internet. Abra o WhatsApp no celular pelo menos uma vez por semana. Se desconectar, as mensagens que já chegaram continuam guardadas aqui, e as que chegaram enquanto estava desconectado são recuperadas depois que você ler o QR Code de novo.
 			</Typography>
@@ -441,8 +486,14 @@ const Connections = () => {
 													<ChannelIcon channel={whatsApp.channel} />
 													{whatsApp.name}
 												</span>
+												{igLogin(whatsApp) && igLogin(whatsApp).username && (
+													<div style={{ fontSize: 12, opacity: 0.65 }}>@{igLogin(whatsApp).username} · entrou com o Instagram</div>
+												)}
 												{isAdmin && whatsApp.owner && (
 													<div style={{ fontSize: 12, opacity: 0.65 }}>Número de {whatsApp.owner.name}</div>
+												)}
+												{relationshipId > 0 && whatsApp.id === relationshipId && (
+													<div><span style={{ display: "inline-block", marginTop: 4, padding: "1px 9px", borderRadius: 999, fontSize: 11.5, fontWeight: 700, background: "rgba(124,58,237,.14)", color: "#6d28d9" }}>Relacionamento</span></div>
 												)}
 											</TableCell>
 											<TableCell
@@ -450,6 +501,11 @@ const Connections = () => {
 												data-label={i18n.t("connections.table.status")}
 											>
 												{renderStatusToolTips(whatsApp)}
+												{whatsApp.statusNote && whatsApp.status !== "CONNECTED" && (
+													<div data-testid={`status-note-${whatsApp.id}`} style={{ fontSize: 12, opacity: 0.75, marginTop: 4, maxWidth: 240, marginLeft: "auto", marginRight: "auto", lineHeight: 1.35 }}>
+														{whatsApp.statusNote}
+													</div>
+												)}
 											</TableCell>
 											<TableCell
 												align="center"
@@ -461,7 +517,7 @@ const Connections = () => {
 												align="center"
 												data-label={i18n.t("connections.table.lastUpdate")}
 											>
-												{format(parseISO(whatsApp.updatedAt), "dd/MM/yy HH:mm")}
+												{whatsApp.updatedAt ? format(parseISO(whatsApp.updatedAt), "dd/MM/yy HH:mm") : "—"}
 											</TableCell>
 											<TableCell
 												align="center"
@@ -476,14 +532,14 @@ const Connections = () => {
 											<TableCell align="center">
 												{canManage(whatsApp) && (
 													<>
-														<IconButton
+														<IconButton aria-label="Editar"
 															size="small"
 															onClick={() => handleEditWhatsApp(whatsApp)}
 														>
 															<Edit />
 														</IconButton>
 
-														<IconButton
+														<IconButton aria-label="Excluir"
 															size="small"
 															onClick={e => {
 																handleOpenConfirmationModal("delete", whatsApp.id);

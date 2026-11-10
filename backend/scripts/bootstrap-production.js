@@ -1,7 +1,8 @@
 /* eslint-disable */
 // Runs on every container start, after the migrations. Idempotent:
-//  * administrator: with ADMIN_EMAIL + ADMIN_PASSWORD, that user is created or promoted to admin with that password;
-//    without them and with no admin yet, one is created with a random password printed ONCE in the log
+//  * administrator: with ADMIN_EMAIL + ADMIN_PASSWORD, that user is CREATED when it does not exist (an existing one is never touched:
+//    the password a person chose in the system stays across deploys; ADMIN_RESET=true forces the variables onto the existing user, for a
+//    lost access); without them and with no admin yet, one is created with a random password printed ONCE in the log
 //  * makes sure the settings the screens read exist (public sign-up off, API token)
 require("dotenv").config();
 const crypto = require("crypto");
@@ -15,18 +16,22 @@ const { v4: uuid } = require("uuid");
   try {
     const email = (process.env.ADMIN_EMAIL || "").trim().toLowerCase();
     if (email && process.env.ADMIN_PASSWORD) {
-      // ADMIN_EMAIL + ADMIN_PASSWORD are the source of truth: create that administrator, or promote the
-      // existing user with this e-mail and set the password (so changing the variables fixes a lost access)
       const found = await User.findOne({ where: { email } });
-      if (found) {
+      if (found && process.env.ADMIN_RESET === "true") {
         await found.update({ profile: "admin", role: "admin", password: process.env.ADMIN_PASSWORD, tokenVersion: (found.tokenVersion || 0) + 1 });
-        console.log(`[início] ${email} é administrador (senha definida por ADMIN_PASSWORD).`);
+        console.log(`[início] ${email}: administrador e senha redefinidos por ADMIN_RESET=true (tire essa variável depois).`);
+      } else if (found) {
+        // nothing is overwritten; only an installation with no administrator at all gets this user promoted
+        if (!(await User.count({ where: { profile: "admin" } }))) {
+          await found.update({ profile: "admin", role: "admin" });
+          console.log(`[início] ${email} promovido a administrador (não havia nenhum).`);
+        }
       } else {
         await User.create({ name: process.env.ADMIN_NAME || "Administrador", email, password: process.env.ADMIN_PASSWORD, profile: "admin", role: "admin" });
         console.log(`[início] Administrador criado: ${email}`);
       }
     } else if (!(await User.count({ where: { profile: "admin" } }))) {
-      const adminEmail = email || "admin@whaticket.com";
+      const adminEmail = email || "admin@sistema.local";
       const password = crypto.randomBytes(9).toString("base64").replace(/[+/=]/g, "x");
       await User.create({ name: process.env.ADMIN_NAME || "Administrador", email: adminEmail, password, profile: "admin", role: "admin" });
       console.log(`[início] Administrador criado: ${adminEmail}`);

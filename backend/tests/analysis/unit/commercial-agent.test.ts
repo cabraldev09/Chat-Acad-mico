@@ -1,0 +1,319 @@
+import { describe, expect, it, vi } from "vitest";
+
+// the block builder imports the model of the old chatbot only to convert it; here no database is needed
+vi.mock("../../../src/models/ChatbotNode", () => ({ default: {} }));
+
+import { validateGraph } from "../../../src/services/FlowServices/Graph";
+import { cleanStage } from "../../../src/services/FlowServices/StageSpec";
+import { COMMERCIAL_KB, COMMERCIAL_PERSONA, COMMERCIAL_TEMPLATE_KEY, commercialGraph } from "../../../src/services/CommercialServices/Template";
+import { isGreeting, openingText, stageFieldsDone } from "../../../src/services/CommercialServices/Rules";
+
+// The ready agent "Comercial — Graduação" (the run in the simulator, with the funnel moving, is in the end-to-end checks).
+
+describe("the template Comercial — Graduação", () => {
+  it("has the key and a persona that forbids inventing", () => {
+    expect(COMMERCIAL_TEMPLATE_KEY).toBe("graduacao_comercial_cruzeiro");
+    expect(COMMERCIAL_PERSONA.systemPrompt).toMatch(/Nunca invente/);
+    expect(COMMERCIAL_PERSONA.forbidden).toMatch(/valor de mensalidade, bolsa/);
+  });
+
+  it("has a valid graph: every exit connected, no errors, human names on the blocks", () => {
+    const g = commercialGraph();
+    const issues = validateGraph(g, { hasAiAgent: true, kind: "agent" });
+    expect(issues.filter(i => i.level === "error")).toEqual([]);
+    expect(issues.filter(i => i.level === "warning")).toEqual([]);
+    g.nodes.filter(n => n.type !== "start").forEach(n => expect(String(n.data?.title || ""), n.id).not.toMatch(/stage_|condition_/));
+    expect(g.nodes.filter(n => n.type === "stage").every(n => cleanStage(n.data).hooks.includes("commercial"))).toBe(true);
+  });
+
+  it("is laid out: no two blocks on the same place", () => {
+    const g = commercialGraph();
+    const spots = new Set(g.nodes.map(n => `${(n as any).x}:${(n as any).y}`));
+    expect(spots.size).toBe(g.nodes.length);
+  });
+
+  it("only seeds the texts that the institution dictated", () => {
+    const titles = COMMERCIAL_KB.map(k => k.topic);
+    expect(titles).toEqual(expect.arrayContaining(["institutional/tutoring", "institutional/platform", "institutional/internship", "institutional/mec"]));
+    // faculty, enrollment documents and recognition were dictated by the institution: only what it said (masters and doctors, the maximum MEC grade)
+    expect(titles).toEqual(expect.arrayContaining(["institutional/faculty", "institutional/enrollment", "institutional/recognition"]));
+    const faculty = COMMERCIAL_KB.find(k => k.topic === "institutional/faculty")!;
+    expect(faculty.content).toMatch(/mestres e doutores/);
+    expect(COMMERCIAL_KB.find(k => k.topic === "institutional/recognition")!.content).toMatch(/nota máxima/);
+    // no invented percentages: the only ones are the official ones of the MEC norms of 2025 (10, 20, 30, 40, 70), only in the texts about them
+    COMMERCIAL_KB.forEach(k => expect(k.content).not.toMatch(/Harvard/));
+    COMMERCIAL_KB.filter(k => !/^institutional\/mec/.test(k.topic)).forEach(k => expect(k.content).not.toMatch(/\d+ ?%/));
+    COMMERCIAL_KB.filter(k => /^institutional\/mec/.test(k.topic)).forEach(k => (k.content.match(/\d+ ?%/g) || []).forEach(p => expect(["10%", "20%", "30%", "40%", "70%"]).toContain(p.replace(/\s/g, ""))));
+  });
+});
+
+describe("the opening is written by the system", () => {
+  it("a greeting is recognised, a real question is not", () => {
+    ["oi", "Olá, bom dia", "quero mais informações", "tenho interesse"].forEach(t => expect(isGreeting(t), t).toBe(true));
+    ["qual o valor?", "quanto tempo dura Administração?", "quero falar com uma pessoa", "vocês têm Pedagogia em Porto Velho e como funciona a prova?"].forEach(t => expect(isGreeting(t), t).toBe(false));
+  });
+
+  it("asks only the next thing that is missing and never what is known", () => {
+    expect(openingText({}, "Maria", false)).toBe("Olá! Tudo bem? 😊\n\nSou a Estela, assistente virtual da Cruzeiro do Sul Virtual.\n\nVocê deseja conhecer nossos cursos e fazer sua matrícula ou já é aluno e precisa falar com a tutoria?");
+    expect(openingText({}, "", false, { assistantName: "Bia", emoji: false } as any)).toMatch(/^Olá! Tudo bem\?\n\nSou a Bia,/);
+    expect(openingText({ city: "Porto Velho" }, "Maria", false)).toMatch(/Qual curso/);
+    expect(openingText({ courseName: "Administração" }, "Maria", false)).toMatch(/Vi que você tem interesse em Administração/);
+    expect(openingText({ courseName: "Administração" }, "Maria", false)).toMatch(/cidade/);
+    expect(openingText({ courseName: "Administração", city: "Porto Velho" }, "Maria", false)).toMatch(/primeira graduação/);
+    expect(openingText({ courseName: "Administração", city: "Porto Velho", entryType: "transfer" }, "Maria", true)).toMatch(/de novo/);
+  });
+
+  it("a stage ends when what it asks for is known", () => {
+    const fields = [{ key: "courseName", required: true }, { key: "city", required: true }, { key: "entryType", required: true }];
+    expect(stageFieldsDone(fields, { courseName: "Direito", city: "Vilhena" })).toBe(false);
+    expect(stageFieldsDone(fields, { courseName: "Direito", city: "Vilhena", entryType: "unknown" })).toBe(false);
+    expect(stageFieldsDone(fields, { courseName: "Direito", city: "Vilhena", entryType: "first_degree" })).toBe(true);
+  });
+});
+
+import { fastIntent, humanReason, retractsBuying } from "../../../src/services/CommercialServices/Rules";
+
+describe("what the person says is read with its negation and its content", () => {
+  it("a greeting with content is not only a greeting", () => {
+    ["Bom dia, quero Direito em Porto Velho, primeira graduação", "oi, quero saber o valor", "olá, tenho 30 anos e queria fazer Pedagogia", "boa tarde, moro em Vilhena"].forEach(t => expect(isGreeting(t), t).toBe(false));
+    ["Bom dia", "oi, tudo bem?", "Olá, boa tarde! Quero mais informações", "oi, tenho interesse", "boa noite, vim pelo instagram", "oi, voltei", "Olá, estou de volta"].forEach(t => expect(isGreeting(t.replace("?", "")), t).toBe(true));
+  });
+  it("negations undo the request", () => {
+    expect(fastIntent("não quero falar com atendente, prefiro por aqui")).toBeNull();
+    expect(fastIntent("ainda não quero me matricular")).toBeNull();
+    expect(fastIntent("quero falar com um atendente")?.intent).toBe("human");
+    expect(fastIntent("quero me matricular")?.intent).toBe("enrollment");
+  });
+  it("'transferir' does not call a person", () => {
+    expect(fastIntent("quero transferir minha faculdade, tenho uma pessoa conhecida que estuda aí")).toBeNull();
+    expect(fastIntent("me passa pra um atendente")?.intent).toBe("human");
+  });
+  it("the person takes back the interest in buying", () => {
+    ["não vou me matricular agora", "ainda não decidi", "deixa pra depois", "desisti"].forEach(t => expect(retractsBuying(t), t).toBe(true));
+    expect(retractsBuying("quero me matricular")).toBe(false);
+  });
+  it("unhappy people, payments, legal words, wrong numbers and repeated requests go to a person", () => {
+    ["isso é um absurdo", "vou reclamar no procon", "já paguei o boleto", "quero o estorno", "vou chamar meu advogado"].forEach(t => expect(humanReason(t), t).toBe("complaint"));
+    expect(humanReason("acho que foi engano, número errado")).toBe("other");
+    expect(humanReason("qual o prazo de entrega do diploma", ["qual o prazo de entrega do diploma", "qual o prazo de entrega do diploma"])).toBe("loop");
+    expect(humanReason("quero saber a duração do curso")).toBeNull();
+  });
+});
+
+import { unsafeAnswer } from "../../../src/services/CommercialServices/Guards";
+
+describe("what the agent may never say", () => {
+  it("amounts of money in any form", () => {
+    ["A mensalidade é R$ 299,90.", "Custa trezentos reais por mês", "Sai em 12x de 99", "Fica 299/mês", "A parcela é de 350", "US$ 50", "mil reais"].forEach(t => expect(unsafeAnswer(t, "").kind, t).toBe("price"));
+  });
+  it("scholarship and discount percentages, gratuity and promises", () => {
+    expect(unsafeAnswer("Você pode ter 40% de bolsa", "").kind).toBe("percent");
+    expect(unsafeAnswer("Tem desconto de 20%", "").kind).toBe("percent");
+    expect(unsafeAnswer("A matrícula é gratuita", "").kind).toBe("free");
+    expect(unsafeAnswer("Sem taxa nenhuma", "").kind).toBe("free");
+    expect(unsafeAnswer("Garantimos o aproveitamento das disciplinas", "").kind).toBe("promise");
+    expect(unsafeAnswer("Suas disciplinas serão aproveitadas", "").kind).toBe("promise");
+  });
+  it("numbers, percentages and dates must come from the tools or the approved base of this turn", () => {
+    expect(unsafeAnswer("As aulas começam em 03/08.", "").kind).toBe("fact");
+    expect(unsafeAnswer("As aulas começam em 03/08.", '{"inicio":"03/08"}')).toEqual({ unsafe: false });
+    expect(unsafeAnswer("O curso tem 30% das aulas presenciais.", "").kind).toBe("fact");
+    expect(unsafeAnswer("O curso tem 30% das aulas presenciais.", '{"percentualPresencial":30}')).toEqual({ unsafe: false });
+    expect(unsafeAnswer("Atendemos das 8h às 18h", "").kind).toBe("fact");
+  });
+  it("a normal answer passes", () => {
+    ["O curso de Direito tem 10 semestres (5 anos) e é semipresencial. Quer ver a grade?", "Ótima escolha! Me conta em qual cidade você mora?", "Vou chamar um consultor para continuar com você."].forEach(t => expect(unsafeAnswer(t, ""), t).toEqual({ unsafe: false }));
+  });
+});
+
+import { supportIntent } from "../../../src/services/CommercialServices/Rules";
+import { INSTITUTION_DOCS } from "../../../src/services/CommercialServices/InstitutionDocs";
+
+describe("the commercial agent also takes the tutoring and the secretary to the team of the polo", () => {
+  it("knows what each sector takes care of (the former Atendimento agent is part of it)", () => {
+    expect(INSTITUTION_DOCS.map(d => d.topic)).toEqual(expect.arrayContaining(["institutional/support-tutoring", "institutional/support-secretary"]));
+    INSTITUTION_DOCS.forEach(k => expect(k.content).not.toMatch(/R\$|\d+ ?%/));
+  });
+  it("recognises a request for a sector without a model", () => {
+    expect(supportIntent("Preciso de uma declaração de matrícula", false)).toBe("secretary");
+    expect(supportIntent("quero falar com a secretaria", false)).toBe("secretary");
+    expect(supportIntent("preciso trancar minha matrícula", false)).toBe("secretary");
+    expect(supportIntent("não consigo acessar a plataforma", false)).toBe("tutoring");
+    expect(supportIntent("esqueci minha senha", false)).toBe("tutoring");
+    expect(supportIntent("quero falar com a tutoria", false)).toBe("tutoring");
+  });
+  it("the loose words only count for who already studies", () => {
+    expect(supportIntent("minha prova não abriu", false)).toBeNull();
+    expect(supportIntent("minha prova não abriu", true)).toBe("tutoring");
+    expect(supportIntent("quero meu diploma", false)).toBeNull();
+    expect(supportIntent("preciso do meu histórico", true)).toBe("secretary");
+  });
+  it("a prospect asking how the tutoring works, or denying, is still a sales conversation", () => {
+    expect(supportIntent("como funciona a tutoria?", false)).toBeNull();
+    expect(supportIntent("como funciona a tutoria?", true)).toBeNull();
+    expect(supportIntent("quais documentos para a matrícula?", false)).toBeNull();
+    expect(supportIntent("não quero falar com a secretaria", false)).toBeNull();
+    expect(supportIntent("oi", true)).toBeNull();
+  });
+});
+
+import { briefOf, suggestedStepOf, scoreOf, temperatureOf, topicsOf } from "../../../src/services/CommercialServices/Rules";
+import { nudgeDue, nudgeText } from "../../../src/services/CommercialServices/Nudges";
+import { defaultSlots } from "../../../src/services/CommercialServices/Slots";
+
+describe("a doubt about trust is a conversation, not a complaint", () => {
+  it("'é golpe?' goes to the agent; having been scammed goes to a person", () => {
+    expect(humanReason("isso é golpe?", [])).toBeNull();
+    expect(humanReason("tenho medo de ser golpe", [])).toBeNull();
+    expect(humanReason("eu levei um golpe dessa faculdade", [])).toBe("complaint");
+    expect(humanReason("isso é uma fraude", [])).toBe("complaint");
+  });
+
+  it("the guide of objections comes with a turn that has one", () => {
+    expect(topicsOf("acho caro e tenho medo de golpe")).toContain("institutional/objection");
+    expect(topicsOf("moro longe do polo")).not.toContain("institutional/objection");
+  });
+});
+
+describe("what the lead says about the moment weighs on the score and the temperature", () => {
+  const base = { ...defaultSlots(), courseName: "Direito", city: "Porto Velho", entryType: "first_degree", lastInboundAt: "2026-01-01" };
+
+  it("who wants to start now scores more than who is only researching, and is hot", () => {
+    const now = scoreOf({ ...base, decisionTimeline: "Quer matricular agora" }, false).score;
+    const researching = scoreOf({ ...base, decisionTimeline: "Pesquisando, sem prazo" }, false).score;
+    expect(now).toBeGreaterThan(researching);
+    expect(temperatureOf({ ...base, decisionTimeline: "Decide esta semana" }, false)).toBe("hot");
+    expect(temperatureOf({ ...base, decisionTimeline: "Pesquisando, sem prazo" }, false)).not.toBe("hot");
+  });
+});
+
+describe("the brief the consultant reads", () => {
+  const state: any = { leadId: 1, agentId: 1, flowId: 1, temperature: "hot", commercialScore: 70, readyForProposal: false, nextAction: "answer_objection", lastIntent: "objection", followUpReason: null, followUpAt: null, summary: null, stageKey: null, lastNoteHash: null,
+    slots: { ...defaultSlots(), leadName: "Paulo", courseName: "Direito", city: "Vilhena", entryType: "first_degree", decisionTimeline: "Decide esta semana", shift: "Noite", bestTime: "2030-05-06 14:00", objectionsSeen: "preco,confianca", readyForConsultant: true } };
+
+  it("brings the origin, what the lead told, the objections, the last words and the next step", () => {
+    const text = briefOf(state, { source: "Site · campanha Vestibular", lastMessages: ["e se eu não conseguir pagar?"] });
+    expect(text).toMatch(/PRONTO PARA O CONSULTOR/);
+    expect(text).toMatch(/Origem: Site · campanha Vestibular/);
+    expect(text).toMatch(/Pretende decidir: Decide esta semana/);
+    expect(text).toMatch(/Turno: Noite/);
+    expect(text).toMatch(/Melhor horário para falar: 2030-05-06 14:00/);
+    expect(text).toMatch(/Tipos de objeção: preço, confiança/);
+    expect(text).toMatch(/“e se eu não conseguir pagar\?”/);
+    expect(text).toMatch(/Próximo passo sugerido ao consultor:\nFalar com o lead em 06\/05 às 14:00/);
+  });
+
+  it("without a day, the suggestion follows the moment", () => {
+    expect(suggestedStepOf({ ...state, slots: { ...state.slots, bestTime: null, objectionsSeen: "" } })).toMatch(/Chamar o lead, confirmar o interesse em Direito/);
+    expect(suggestedStepOf({ ...state, readyForProposal: true })).toMatch(/gerar a proposta de Direito/);
+  });
+});
+
+describe("reminders to a lead who went silent", () => {
+  it("three short, friendly texts that never talk money", () => {
+    const one = nudgeText(0, "Paulo", "Direito");
+    const two = nudgeText(1, "Paulo", "Direito");
+    const three = nudgeText(2, "Paulo", "Direito");
+    expect(one).toBe("Oi, Paulo! Tá por aí? 😊");
+    expect(two).toMatch(/Ficou com alguma dúvida sobre Direito/);
+    expect(three).toMatch(/consultor do seu polo/);
+    [one, two, three].forEach(t => expect(t).not.toMatch(/R\$|\d+ ?%|bolsa|desconto|valor/i));
+  });
+
+  it("the first after 10 minutes (any hour), the others after 3 and 9 hours in the working hours, never a fourth", () => {
+    const t0 = 1_000_000_000_000;
+    expect(nudgeDue(0, t0, t0 + 9 * 60000)).toBe(false);
+    expect(nudgeDue(0, t0, t0 + 10 * 60000, { businessNow: false })).toBe(true);
+    expect(nudgeDue(0, t0, t0 + 5 * 60000, { firstMinutes: 5 })).toBe(true);
+    expect(nudgeDue(1, t0, t0 + 2 * 3600000)).toBe(false);
+    expect(nudgeDue(1, t0, t0 + 3 * 3600000)).toBe(true);
+    expect(nudgeDue(1, t0, t0 + 3 * 3600000, { businessNow: false })).toBe(false);
+    expect(nudgeDue(2, t0, t0 + 9 * 3600000)).toBe(true);
+    expect(nudgeDue(3, t0, t0 + 99 * 3600000)).toBe(false);
+  });
+});
+
+import { commercialTurn } from "../../../src/services/CommercialServices/Hook";
+
+const fakePorts = (slots: Record<string, any> = {}): any => ({
+  state: { leadId: 1, agentId: 1, flowId: null, slots: { ...defaultSlots(), ...slots }, temperature: "cold", commercialScore: 0, readyForProposal: false, nextAction: null, lastIntent: null, followUpReason: null, followUpAt: null, summary: null, stageKey: null, lastNoteHash: null },
+  audit: [],
+  stageKeyNow: async () => null,
+  moveStage: async () => false,
+  markContact: async () => undefined,
+  task: async () => true,
+  note: async () => true,
+  event: async () => undefined,
+  save: async () => undefined,
+  stageName: async () => null
+});
+
+describe("the hook sends a student to the right team, asking the city once", () => {
+  it("with the polo known the exit is the sector and the reason says which", async () => {
+    const tutoring = await commercialTurn(fakePorts({ city: "Vilhena" }), { userText: "não consigo acessar a plataforma", fast: "tutoring", tools: [], hadText: true, replied: true });
+    expect(tutoring.exit).toBe("tutoria");
+    expect(tutoring.why).toBe("tutoring");
+    const secretary = await commercialTurn(fakePorts(), { userText: "preciso de uma declaração", fast: "secretary", tools: [], hadText: true, replied: true, hasPolo: true });
+    expect(secretary.exit).toBe("secretaria");
+    expect(secretary.why).toBe("secretary");
+  });
+  it("without a polo it asks the city, and goes on once it was asked (answered or not)", async () => {
+    const ports = fakePorts();
+    const first = await commercialTurn(ports, { userText: "preciso de uma declaração", fast: "secretary", tools: [], hadText: true, replied: true });
+    expect(first.exit).toBeNull();
+    expect(first.ask).toBe("city");
+    const answered = await commercialTurn(ports, { userText: "Cerejeiras", intent: "other", patch: { city: "Cerejeiras" }, tools: [], hadText: true, replied: true });
+    expect(answered.exit).toBe("secretaria");
+    expect(ports.state.slots.supportNeed).toBeUndefined();
+    const silent = fakePorts();
+    await commercialTurn(silent, { userText: "minha prova não abriu", fast: "tutoring", tools: [], hadText: true, replied: true });
+    const again = await commercialTurn(silent, { userText: "ok", intent: "other", tools: [], hadText: true, replied: true });
+    expect(again.exit).toBe("tutoria");
+  });
+  it("a student who changes the subject to money is a sales conversation again", async () => {
+    const ports = fakePorts();
+    await commercialTurn(ports, { userText: "preciso de uma declaração", fast: "secretary", tools: [], hadText: true, replied: true });
+    const price = await commercialTurn(ports, { userText: "quanto custa outro curso?", fast: "price", tools: [], hadText: true, replied: true });
+    expect(price.exit).toBe("proposta");
+  });
+  it("a person asked for wins over the sector", async () => {
+    const r = await commercialTurn(fakePorts({ city: "Vilhena" }), { userText: "quero falar com uma pessoa", fast: "human", tools: [], hadText: true, replied: true });
+    expect(r.exit).toBe("human");
+  });
+});
+
+describe("a question the base does not answer", () => {
+  it("is noted for the consultant and the conversation goes on, until the tries of the administrator run out", async () => {
+    const ports = fakePorts({ courseName: "Direito", city: "Porto Velho" });
+    ports.config = { maxClarifications: 3 };
+    const first = await commercialTurn(ports, { userText: "vocês têm convênio com a Nasa?", intent: "unknown", unknownQuestion: "convênio com a Nasa", tools: [], hadText: true, replied: true });
+    expect(first.exit).toBeNull();
+    expect(first.unknownHeld).toBe(true);
+    const second = await commercialTurn(ports, { userText: "e com a Nasa mesmo?", intent: "unknown", unknownQuestion: "convênio com a Nasa", tools: [], hadText: true, replied: true });
+    expect(second.exit).toBeNull();
+    const third = await commercialTurn(ports, { userText: "Nasa?", intent: "unknown", unknownQuestion: "convênio com a Nasa", tools: [], hadText: true, replied: true });
+    expect(third.exit).toBe("human");
+    expect(third.unknownHeld).toBeUndefined();
+  });
+
+  it("an answer in between starts the count again; with one try a person takes it at once", async () => {
+    const ports = fakePorts({ courseName: "Direito" });
+    ports.config = { maxClarifications: 2 };
+    await commercialTurn(ports, { userText: "Nasa?", intent: "unknown", tools: [], hadText: true, replied: true });
+    await commercialTurn(ports, { userText: "Porto Velho", intent: "other", patch: { city: "Porto Velho" }, tools: [], hadText: true, replied: true });
+    expect((await commercialTurn(ports, { userText: "Nasa?", intent: "unknown", tools: [], hadText: true, replied: true })).exit).toBeNull();
+    const once = fakePorts();
+    once.config = { maxClarifications: 1 };
+    expect((await commercialTurn(once, { userText: "Nasa?", intent: "unknown", tools: [], hadText: true, replied: true })).exit).toBe("human");
+  });
+});
+
+import { interestOf } from "../../../src/services/CommercialServices/Rules";
+
+describe("\"sou aluno\" alone is an existing student", () => {
+  it("with or without more words; a student of another school or of the high school is not", () => {
+    for (const t of ["sou aluno", "Sou aluna", "eu sou aluno da cruzeiro", "já sou aluno", "sou aluno, preciso de ajuda"]) expect(interestOf(t), t).toBe("aluno");
+    expect(interestOf("sou aluno de outra faculdade")).not.toBe("aluno");
+    expect(interestOf("sou aluno do ensino médio")).not.toBe("aluno");
+  });
+});

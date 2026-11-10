@@ -1,4 +1,7 @@
+import { MIN_PASSWORD } from "../../helpers/Passwords";
+import { joinRelationshipQueue } from "../RelationshipServices/Relationship";
 import * as Yup from "yup";
+import { col, fn, where } from "sequelize";
 
 import AppError from "../../errors/AppError";
 import { normalizePhone } from "../../helpers/Phone";
@@ -47,12 +50,12 @@ const CreateUserService = async ({
         async value => {
           if (!value) return false;
           const emailExists = await User.findOne({
-            where: { email: value }
+            where: where(fn("LOWER", col("email")), value.trim().toLowerCase())
           });
           return !emailExists;
         }
       ),
-    password: Yup.string().required().min(5)
+    password: Yup.string().required().min(MIN_PASSWORD, "ERR_PASSWORD_SHORT")
   });
 
   try {
@@ -69,7 +72,7 @@ const CreateUserService = async ({
 
   const user = await User.create(
     {
-      email,
+      email: String(email).trim().toLowerCase(),
       password,
       name,
       profile: finalRole === "admin" ? "admin" : "user",
@@ -82,6 +85,8 @@ const CreateUserService = async ({
   );
 
   await user.$set("queues", queueIds);
+  // the relationship team works from the queue of the department
+  if (finalRole === "relacionamento") await joinRelationshipQueue(user.id);
 
   await user.reload();
 

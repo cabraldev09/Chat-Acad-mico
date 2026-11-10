@@ -1,3 +1,6 @@
+import { touchAnalytics } from "../services/AnalyticsServices/Realtime";
+import { hasContactAccessOrFree } from "../middleware/canAccessContact";
+import { syncNextFollowUp } from "../services/CrmServices/FollowUp";
 import { fire } from "../helpers/Fire";
 import { Request, Response } from "express";
 import { getBusinessConfig, normalizeBusiness, resetBusinessCache, businessMinutes } from "../helpers/BusinessTime";
@@ -8,14 +11,26 @@ import { Op } from "sequelize";
 import { randomBytes } from "crypto";
 
 import Lead from "../models/Lead";
+import { logger } from "../utils/logger";
+import Payment from "../models/Payment";
 import LeadStage from "../models/LeadStage";
 import LeadActivity from "../models/LeadActivity";
 import LeadTask from "../models/LeadTask";
+import LeadEnrollment from "../models/LeadEnrollment";
+import { notifyTaskAssigned } from "../services/CrmServices/TaskNotify";
+import Polo from "../models/Polo";
 import Institution from "../models/Institution";
 import Course from "../models/Course";
 import User from "../models/User";
 import Ticket from "../models/Ticket";
 import Contact from "../models/Contact";
+import Tag from "../models/Tag";
+import { readDeadlines, runCadences } from "../services/CrmServices/Cadences";
+import { DOCS_PENDING_LABEL, listDocuments, remindDocuments, requiredDocs, setDocumentStatus } from "../services/CrmServices/Documents";
+import { FEE_PENDING_TAG } from "../services/PaymentServices/FeeTags";
+import { affiliateStageId } from "../services/AffiliateServices/AffiliateLane";
+import { RELATIONS, Relation, applyRelation } from "../services/CrmServices/Relation";
+import { brPhoneVariants } from "../helpers/PhoneVariants";
 import AppError from "../errors/AppError";
 import GetDefaultWhatsApp from "../helpers/GetDefaultWhatsApp";
 import Whatsapp from "../models/Whatsapp";
@@ -39,6 +54,8 @@ import {
 } from "../services/CrmServices/LeadCore";
 import dispatchWebhook from "../services/WebhookServices/DispatchWebhook";
 import makeCrud from "./crudFactory";
+import { syncHandoffTasks } from "../services/CrmServices/HandoffTasks";
+import { runTaskSweep } from "../workers/TaskSweep";
 
 const uid = (req: Request) => Number(req.user.id);
 
@@ -55,11 +72,12 @@ const buildWhere = (q: any) => {
   if (q.affiliate === "any") where.affiliateId = { [Op.ne]: null };
   else if (q.affiliate) where.affiliateId = Number(q.affiliate);
   if (q.search) {
-    const s = `%${String(q.search).trim()}%`;
+    // "maria" finds "Maria"; a "%" or "_" typed by the person is a character, not a wildcard
+    const s = `%${String(q.search).trim().replace(/[\\%_]/g, "\\$&")}%`;
     const digits = String(q.search).replace(/\D/g, "");
     where[Op.or] = [
-      { name: { [Op.like]: s } },
-      { email: { [Op.like]: s } },
+      { name: { [Op.iLike]: s } },
+      { email: { [Op.iLike]: s } },
       ...(digits.length >= 4 ? [{ phone: { [Op.like]: `%${digits}%` } }] : [])
     ];
   }
@@ -71,20 +89,23 @@ const buildWhere = (q: any) => {
   return where;
 };
 
-const withTag = (tagId?: string) =>
-  tagId
-    ? (leadInclude as any[]).map(i =>
-        i.as === "tags" ? { ...i, required: true, where: { id: tagId } } : i
-      )
-    : (leadInclude as any[]);
+// the includes of the lists: a label narrows to the leads that have it; "ready=consultant" to the ones the AI agent qualified and left ready
+const withTag = (tagId?: string, ready?: string) =>
+  (leadInclude as any[]).map(i => {
+    if (tagId && i.as === "tags") return { ...i, required: true, where: { id: tagId } };
+    if (ready === "consultant" && i.as === "commercial") return { ...i, required: true, where: { readyForConsultant: true } };
+    return i;
+  });
 
 export const index = async (req: Request, res: Response): Promise<Response> => {
   const limit = Math.min(Number(req.query.limit) || 50, 500);
   const offset = Number(req.query.offset) || 0;
   const { rows, count } = await Lead.findAndCountAll({
     where: await withLeadScope(req, buildWhere(req.query)),
-    include: withTag(req.query.tagId as string),
-    order: [["updatedAt", "DESC"]],
+    include: withTag(req.query.tagId as string, req.query.ready as string),
+    // one column of the board is ordered by score first: the next page ("Carregar mais") must follow the same order,
+    // or leads repeat and others are skipped
+    order: req.query.stageId ? [["score", "DESC"], ["updatedAt", "DESC"]] : [["updatedAt", "DESC"]],
     limit,
     offset,
     distinct: true
@@ -95,7 +116,7 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
 export const board = async (req: Request, res: Response): Promise<Response> => {
   const stages = await LeadStage.findAll({ order: [["position", "ASC"]] });
   const where = await withLeadScope(req, buildWhere({ ...req.query, stageId: undefined }));
-  const include = withTag(req.query.tagId as string);
+  const include = withTag(req.query.tagId as string, req.query.ready as string);
   const perStage = Math.min(Number(req.query.perStage) || 30, 100);
 
   const out = await Promise.all(
@@ -137,9 +158,13 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
     throw new AppError("ERR_LEAD_NEEDS_PHONE_OR_EMAIL");
   }
   if (b.cpf && !isValidCpf(b.cpf)) throw new AppError("ERR_CPF_INVALID");
+  // only the fields of the form: a lead is never tied to a contact, an affiliate or a consent date by the body of a request
+  const allowed: Record<string, any> = {};
+  [...FIELDS, "shift", "channel", "tagIds", "stageId"].forEach(f => { if (b[f] !== undefined) allowed[f] = b[f]; });
+  if (isAdminReq(req) && b.affiliateId) allowed.affiliateId = b.affiliateId;
   const { lead, created } = await upsertLead(
     {
-      ...b,
+      ...allowed,
       source: b.source || "Outro",
       // a consultant's own new lead is theirs unless they say otherwise
       ownerId: b.ownerId === undefined ? (reqRole(req) === "consultor" ? uid(req) : undefined) : b.ownerId || null
@@ -171,7 +196,10 @@ export const update = async (req: Request, res: Response): Promise<Response> => 
   if (patch.name === null) throw new AppError("ERR_FIELD_REQUIRED_name");
 
   const ownerChanged = patch.ownerId !== undefined && patch.ownerId !== lead.ownerId;
+  const previousOwner = lead.ownerId;
   await lead.update(patch);
+  // the open tasks follow whoever answers the lead now
+  if (ownerChanged) await syncHandoffTasks(lead.contactId, previousOwner).catch(() => undefined);
   if (Array.isArray(req.body.tagIds)) {
     const nextTags: number[] = req.body.tagIds.map(Number);
     const beforeTags = ((await (lead as any).$get("tags", { attributes: ["id"], joinTableAttributes: [] })) as any[]).map(t => t.id);
@@ -193,9 +221,41 @@ export const update = async (req: Request, res: Response): Promise<Response> => 
 export const remove = async (req: Request, res: Response): Promise<Response> => {
   const lead = await Lead.findByPk(req.params.id);
   if (!lead) throw new AppError("ERR_LEAD_NOT_FOUND", 404);
+  // a student, or a lead with a paid charge, carries money and history that must stay
+  if (lead.enrolledAt || lead.wonAt) throw new AppError("ERR_LEAD_DELETE_ENROLLED", 400);
+  const paid = await Payment.count({ where: { leadId: lead.id, status: "paid" } as any });
+  if (paid > 0) throw new AppError("ERR_LEAD_DELETE_PAID", 400);
+  logger.warn(`Lead excluído por ${req.user.id}: #${lead.id} "${String(lead.name || "").slice(0, 60)}" (etapa ${lead.stageId})`);
   await lead.destroy();
   getIO().emit("lead", { action: "delete", leadId: Number(req.params.id) });
   return res.json({ message: "deleted" });
+};
+
+// "This is not a lead": a friend or family member (or someone of the team) who wrote to the system. The lead leaves the funnel
+// and every number, and no new lead is made for that person; the conversation stays. "customer" brings it back.
+const RELATION_NOTE: Record<Relation, string> = {
+  customer: "Voltou a ser tratado como cliente.",
+  friend: "Marcado como amigo ou pessoal: saiu do funil e das estatísticas.",
+  staff: "Marcado como da equipe: saiu do funil e das estatísticas."
+};
+export const classify = async (req: Request, res: Response): Promise<Response> => {
+  const relation = String(req.body?.relation) as Relation;
+  if (!RELATIONS.includes(relation)) throw new AppError("ERR_INVALID_PARAMETER", 400);
+  const lead = await Lead.findByPk(req.params.id);
+  if (!lead) throw new AppError("ERR_LEAD_NOT_FOUND", 404);
+  // a student is never "just a friend": the mistake would take a paying student out of every number
+  if (relation !== "customer" && lead.enrolledAt) throw new AppError("ERR_LEAD_ENROLLED_RELATION", 400);
+  const contact = lead.contactId
+    ? await Contact.findByPk(lead.contactId)
+    : lead.phone
+      ? await Contact.findOne({ where: { number: { [Op.in]: brPhoneVariants(lead.phone) }, isGroup: false } })
+      : null;
+  if (contact) await applyRelation(contact, relation, true);
+  // no contact yet (a lead from a form): only the lead leaves, and its phone keeps no mark
+  else await lead.update({ isHistorical: relation !== "customer" } as any);
+  await addActivity(lead.id, uid(req), "system", RELATION_NOTE[relation]);
+  getIO().emit("lead", { action: "update", lead: await loadLead(lead.id) });
+  return res.json({ ok: true, relation });
 };
 
 export const setStage = async (req: Request, res: Response): Promise<Response> => {
@@ -234,15 +294,6 @@ export const addNote = async (req: Request, res: Response): Promise<Response> =>
   return res.status(201).json(a);
 };
 
-const syncNextFollowUp = async (leadId: number) => {
-  const next = await LeadTask.findOne({
-    where: { leadId, doneAt: null as any },
-    order: [["dueAt", "ASC"]]
-  });
-  await Lead.update({ nextFollowUpAt: next ? next.dueAt : null }, { where: { id: leadId } });
-  const lead = await loadLead(leadId);
-  if (lead) getIO().emit("lead", { action: "update", lead });
-};
 
 export const leadTasks = async (req: Request, res: Response): Promise<Response> =>
   res.json(
@@ -268,14 +319,17 @@ export const addTask = async (req: Request, res: Response): Promise<Response> =>
     userId: userId || lead.ownerId || uid(req)
   } as any);
   await addActivity(lead.id, uid(req), "task", `Tarefa criada: ${title}`);
+  touchAnalytics(task.userId);
   await syncNextFollowUp(lead.id);
+  void notifyTaskAssigned(task, uid(req));
   return res.status(201).json(task);
 };
 
 export const updateTask = async (req: Request, res: Response): Promise<Response> => {
-  const task = await LeadTask.findByPk(req.params.taskId);
+  const task = await LeadTask.findOne({ where: { id: req.params.taskId, leadId: req.params.id } });
   if (!task) throw new AppError("ERR_NOT_FOUND", 404);
   const { title, dueAt, type, userId } = req.body;
+  const was = task.userId;
   await task.update({
     ...(title ? { title } : {}),
     ...(type ? { type } : {}),
@@ -283,30 +337,38 @@ export const updateTask = async (req: Request, res: Response): Promise<Response>
     ...(dueAt ? { dueAt: new Date(dueAt), notifiedAt: null } : {})
   });
   await syncNextFollowUp(task.leadId);
+  if (userId && Number(userId) !== Number(was)) void notifyTaskAssigned(task, uid(req));
   return res.json(task);
 };
 
 export const completeTask = async (req: Request, res: Response): Promise<Response> => {
-  const task = await LeadTask.findByPk(req.params.taskId);
+  const task = await LeadTask.findOne({ where: { id: req.params.taskId, leadId: req.params.id } });
   if (!task) throw new AppError("ERR_NOT_FOUND", 404);
-  await task.update({ doneAt: task.doneAt ? null : new Date() });
+  await task.update(task.doneAt ? { doneAt: null, doneById: null } : { doneAt: new Date(), doneById: uid(req) });
+  touchAnalytics(task.userId);
   if (task.doneAt) await addActivity(task.leadId, uid(req), "task", `Tarefa concluída: ${task.title}`);
   await syncNextFollowUp(task.leadId);
   return res.json(task);
 };
 
 export const removeTask = async (req: Request, res: Response): Promise<Response> => {
-  const task = await LeadTask.findByPk(req.params.taskId);
+  const task = await LeadTask.findOne({ where: { id: req.params.taskId, leadId: req.params.id } });
   if (!task) throw new AppError("ERR_NOT_FOUND", 404);
   await task.destroy();
   await syncNextFollowUp(task.leadId);
   return res.json({ message: "deleted" });
 };
 
+// hands the open tasks of people without a WhatsApp to whoever answers the lead (the rest become "sem responsavel"); the same sweep runs on its own every 30 minutes
+export const releaseUnreachable = async (_req: Request, res: Response): Promise<Response> => res.json(await runTaskSweep());
+
 export const tasksIndex = async (req: Request, res: Response): Promise<Response> => {
   const { scope = "mine", status = "open" } = req.query as any;
   const where: any = {};
   if (scope === "mine" || !isAdminReq(req)) where.userId = uid(req);
+  // a manager looking at one person's tasks: the person is filtered here (a filter on the screen came after the 300-row limit)
+  else if ((req.query as any).userId === "0") where.userId = { [Op.is]: null };
+  else if (Number((req.query as any).userId)) where.userId = Number((req.query as any).userId);
   const now = new Date();
   const { start, end } = dayBounds();
   if (status === "done") where.doneAt = { [Op.not]: null };
@@ -317,9 +379,11 @@ export const tasksIndex = async (req: Request, res: Response): Promise<Response>
     where,
     include: [
       { model: Lead, as: "lead", attributes: ["id", "name", "phone", "stageId"], include: [{ model: LeadStage, as: "stage", attributes: ["name", "color"] }] },
-      { model: User, as: "user", attributes: ["id", "name"] }
+      { model: User, as: "user", attributes: ["id", "name"] },
+      { model: User, as: "doneBy", attributes: ["id", "name"], required: false }
     ],
-    order: [["dueAt", "ASC"]],
+    // the ones already done show the latest first (they stay registered); the open ones by due date
+    order: status === "done" ? [["doneAt", "DESC"]] : [["dueAt", "ASC"]],
     limit: 300
   });
   return res.json(rows);
@@ -337,6 +401,7 @@ export const byContact = async (req: Request, res: Response): Promise<Response> 
 export const fromContact = async (req: Request, res: Response): Promise<Response> => {
   const contact = await Contact.findByPk(req.params.contactId);
   if (!contact) throw new AppError("ERR_NO_CONTACT_FOUND", 404);
+  if (!(await hasContactAccessOrFree(req, contact.id))) throw new AppError("ERR_NO_PERMISSION", 403);
   const { channelSource } = await import("../services/CrmServices/crmOptions");
   const whatsapp = req.body.whatsappId ? await Whatsapp.findByPk(req.body.whatsappId) : null;
   const channel = whatsapp?.channel || contact.channel || "whatsapp";
@@ -531,6 +596,13 @@ export const getSettings = async (_req: Request, res: Response): Promise<Respons
     autoadvance: (await getSetting("crm_autoadvance", "true")) !== "false",
     ownerIds: JSON.parse(await getSetting("crm_owner_ids", "[]")),
     entryTerms: (await getEntryTerms()).terms,
+    // the last day to enroll in each period (the reminders of "deadline close" count from it)
+    entryDeadlines: await readDeadlines(),
+    // the documents a student delivers after the enrollment, and the automatic reminder about the missing ones
+    requiredDocs: await requiredDocs(),
+    docsAutoReminder: (await getSetting("docs_auto_reminder", "false")) === "true",
+    docsReminderDays: Number(await getSetting("docs_reminder_days", "3")),
+    docsReminderMax: Number(await getSetting("docs_reminder_max", "3")),
     defaultEntryTerm: (await getEntryTerms()).defaultTerm,
     formToken: await getSetting("crm_form_token", ""),
     formTitle: await getSetting("crm_form_title", "Quero conhecer a instituição"),
@@ -550,6 +622,20 @@ export const putSettings = async (req: Request, res: Response): Promise<Response
     await setSetting("crm_entry_terms", JSON.stringify(terms));
   }
   if (typeof b.defaultEntryTerm === "string") await setSetting("crm_default_entry", b.defaultEntryTerm);
+  if (Array.isArray(b.requiredDocs)) {
+    const names = [...new Set(b.requiredDocs.map((d: any) => String(d).trim().slice(0, 120)).filter(Boolean))].slice(0, 30);
+    await setSetting("crm_required_docs", JSON.stringify(names));
+  }
+  if (b.docsAutoReminder !== undefined) await setSetting("docs_auto_reminder", b.docsAutoReminder ? "true" : "false");
+  if (b.docsReminderDays !== undefined) await setSetting("docs_reminder_days", String(Math.min(30, Math.max(1, Math.round(Number(b.docsReminderDays) || 3)))));
+  if (b.docsReminderMax !== undefined) await setSetting("docs_reminder_max", String(Math.min(10, Math.max(1, Math.round(Number(b.docsReminderMax) || 3)))));
+  if (b.entryDeadlines && typeof b.entryDeadlines === "object") {
+    const out: Record<string, string> = {};
+    Object.entries(b.entryDeadlines).forEach(([term, date]) => {
+      if (/^20\d{2}\/[12]$/.test(term) && /^\d{4}-\d{2}-\d{2}$/.test(String(date))) out[term] = String(date);
+    });
+    await setSetting("crm_entry_deadlines", JSON.stringify(out));
+  }
   if (Array.isArray(b.ownerIds)) await setSetting("crm_owner_ids", JSON.stringify(b.ownerIds.map(Number)));
   if (typeof b.formTitle === "string") await setSetting("crm_form_title", b.formTitle.slice(0, 120));
   if (typeof b.formThanks === "string") await setSetting("crm_form_thanks", b.formThanks.slice(0, 300));
@@ -565,6 +651,31 @@ export const putSettings = async (req: Request, res: Response): Promise<Response
   return getSettings(req, res);
 };
 
+// ------------------------------------------------------------------ triage ("novos para conferir")
+// New people nobody answered yet, each one to its OWNER: a consultant only sees (and answers for) their own; the management sees everybody or one person
+// (?ownerId=). The one responsible is who ANSWERS the conversation (the owner of its open ticket), or the owner of the lead when nobody has it yet:
+// a lead of the administrator that Pedro is attending is Pedro's to check. "late" = it arrived on a previous day: the check is due the same day, before the day closes.
+export const triageList = async (req: Request, res: Response): Promise<Response> => {
+  const sequelize = (await import("../database")).default;
+  const { QueryTypes } = await import("sequelize");
+  const ownerId = reqRole(req) === "consultor" ? Number(req.user.id) : req.query.ownerId ? Number(req.query.ownerId) : null;
+  const todayStart = dayBounds(undefined).start;
+  const rows = (await sequelize.query(
+    portable(`
+    SELECT l.id, l.name, l.phone, l.source, l.createdAt, COALESCE(t.userId, l.ownerId) AS ownerId, u.name AS ownerName
+    FROM Leads l JOIN LeadStages s ON s.id = l.stageId
+    LEFT JOIN Tickets t ON t.id = (SELECT t2.id FROM Tickets t2 WHERE t2.contactId = l.contactId AND t2.status <> 'closed' ORDER BY t2.id DESC LIMIT 1)
+    LEFT JOIN Users u ON u.id = COALESCE(t.userId, l.ownerId)
+    WHERE s.type = 'open' AND l.firstContactAt IS NULL AND l.enrolledAt IS NULL AND l.isHistorical = false
+      AND (:ownerId IS NULL OR COALESCE(t.userId, l.ownerId) = :ownerId)
+    ORDER BY l.createdAt ASC LIMIT 200`),
+    { replacements: { ownerId }, type: QueryTypes.SELECT }
+  )) as any[];
+  const items = rows.map(r => ({ ...r, late: new Date(r.createdAt) < todayStart }));
+  const late = items.filter(i => i.late).length;
+  return res.json({ items, late, today: items.length - late, total: items.length });
+};
+
 // ------------------------------------------------------------------ metrics
 export const metrics = async (req: Request, res: Response): Promise<Response> => {
   const sequelize = (await import("../database")).default;
@@ -574,8 +685,10 @@ export const metrics = async (req: Request, res: Response): Promise<Response> =>
   // consultants only ever see their own numbers
   const ownerId = reqRole(req) === "consultor" ? Number(req.user.id) : req.query.ownerId ? Number(req.query.ownerId) : null;
   const courseId = req.query.courseId ? Number(req.query.courseId) : null;
-  const rep = { from, to, ownerId, courseId };
-  const f = `AND l.isHistorical = false AND (:ownerId IS NULL OR l.ownerId = :ownerId) AND (:courseId IS NULL OR l.courseId = :courseId)`;
+  const rep = { from, to, ownerId, courseId, feeTag: FEE_PENDING_TAG.name, docsTag: DOCS_PENDING_LABEL.name };
+  // "of a person" = the lead that person ANSWERS (owner of its open conversation, or of the lead while nobody has it): the same rule of the list of new leads
+  const f = `AND l.isHistorical = false AND (:ownerId IS NULL OR COALESCE((SELECT t9.userId FROM Tickets t9 WHERE t9.contactId = l.contactId AND t9.status <> 'closed' ORDER BY t9.id DESC LIMIT 1), l.ownerId) = :ownerId) AND (:courseId IS NULL OR l.courseId = :courseId)`;
+  const lane = await affiliateStageId();
   const q = async (sql: string): Promise<any[]> =>
     (await sequelize.query(portable(sql), { replacements: rep, type: QueryTypes.SELECT })) as any[];
 
@@ -638,14 +751,43 @@ export const metrics = async (req: Request, res: Response): Promise<Response> =>
     SELECT ${dayOf('l.wonAt')} AS day, COUNT(*) AS total FROM Leads l
     WHERE l.wonAt BETWEEN :from AND :to ${f} GROUP BY ${dayOf('l.wonAt')} ORDER BY day`);
 
+  // new people waiting for the first contact: the team confirms who is a lead (or marks a friend / team member)
+  const triage = await q(`
+    SELECT l.id, l.name, l.phone, l.source, l.createdAt, l.ownerId AS ownerId, u.name AS ownerName FROM Leads l JOIN LeadStages s ON s.id = l.stageId
+    LEFT JOIN Users u ON u.id = l.ownerId
+    WHERE s.type = 'open' AND l.firstContactAt IS NULL AND l.enrolledAt IS NULL ${f}
+    ORDER BY l.createdAt ASC LIMIT 30`);
+
+  // the same count for the period right before this one, to show the change
+  const span = to.getTime() - from.getTime();
+  const [prev] = await sequelize.query(
+    portable(`SELECT COUNT(*) AS leads, ${countIf("s.type='won'")} AS won FROM Leads l JOIN LeadStages s ON s.id = l.stageId
+      WHERE l.createdAt BETWEEN :pfrom AND :pto ${f}`),
+    { replacements: { ...rep, pfrom: new Date(from.getTime() - span - 1), pto: new Date(from.getTime() - 1) }, type: QueryTypes.SELECT }
+  ) as any[];
+
+  // open leads nobody contacted for over an hour, by consultant (now, not tied to the period)
+  const waitingByOwner = await q(`
+    SELECT l.ownerId AS ownerId, COUNT(*) AS total FROM Leads l JOIN LeadStages s ON s.id = l.stageId
+    WHERE s.type = 'open' AND l.firstContactAt IS NULL AND l.createdAt < ${nowMinus(1, "HOUR")} ${f} GROUP BY l.ownerId`);
+
   const [attention] = await q(`
     SELECT
       (SELECT COUNT(*) FROM LeadTasks t JOIN Leads l ON l.id = t.leadId WHERE t.doneAt IS NULL AND t.dueAt < ${nowSql()} ${f}) AS overdueTasks,
       (SELECT COUNT(*) FROM Leads l JOIN LeadStages s ON s.id = l.stageId
          WHERE s.type='open' AND COALESCE(l.lastContactAt, l.createdAt) < ${nowMinus(3, 'DAY')} ${f}) AS stale,
       (SELECT COUNT(*) FROM Leads l JOIN LeadStages s ON s.id = l.stageId
-         WHERE s.type='open' AND l.firstContactAt IS NULL AND l.createdAt < ${nowMinus(1, 'HOUR')} ${f}) AS waitingFirstContact`);
+         WHERE s.type='open' AND l.firstContactAt IS NULL AND l.createdAt < ${nowMinus(1, 'HOUR')} ${f}) AS waitingFirstContact,
+      (SELECT COUNT(*) FROM Leads l JOIN LeadStages s ON s.id = l.stageId
+         WHERE s.type='open' AND l.ownerId IS NULL ${f}) AS unassigned,
+      (SELECT COUNT(DISTINCT l.id) FROM Leads l JOIN LeadTags lt ON lt.leadId = l.id JOIN Tags tg ON tg.id = lt.tagId
+         WHERE tg.name = :feeTag ${f}) AS feePending,
+      (SELECT COUNT(DISTINCT l.id) FROM Leads l JOIN LeadTags lt ON lt.leadId = l.id JOIN Tags tg ON tg.id = lt.tagId
+         WHERE tg.name = :docsTag ${f}) AS docsPending`);
 
+  // the funnel opens filtered by these labels when a card of the panel is clicked
+  const tagIds = await Tag.findAll({ where: { name: { [Op.in]: [FEE_PENDING_TAG.name, DOCS_PENDING_LABEL.name] } }, attributes: ["id", "name"] });
+  const tagIdOf = (name: string) => tagIds.find(t => t.name === name)?.id ?? null;
   const num = (v: any) => (v === null || v === undefined ? null : Number(v));
   return res.json({
     range: { from, to },
@@ -660,20 +802,29 @@ export const metrics = async (req: Request, res: Response): Promise<Response> =>
       avgDaysToEnroll: num(kpi.avgDaysToEnroll),
       unassigned: Number(kpi.unassigned) || 0
     },
-    funnel: funnel.map(r => ({ ...r, total: Number(r.total) })),
+    // the column of the people an affiliate referred comes before the funnel (it only holds them until the first contact)
+    funnel: funnel.map(r => ({ ...r, total: Number(r.total), isAffiliateLane: !!lane && Number(r.id) === lane })),
     bySource: bySource.map(r => ({ ...r, leads: Number(r.leads), won: Number(r.won) })),
     byCourse: byCourse.map(r => ({ ...r, leads: Number(r.leads), won: Number(r.won) })),
     byOwner: byOwner.map(r => {
       const k = sums[String(r.ownerId ?? "none")];
-      return { ...r, leads: Number(r.leads), won: Number(r.won), open: Number(r.open), avgFirstContactMin: k ? k.s / k.n : null };
+      const w = waitingByOwner.find(x => (x.ownerId ?? null) === (r.ownerId ?? null));
+      return { ...r, leads: Number(r.leads), won: Number(r.won), open: Number(r.open), avgFirstContactMin: k ? k.s / k.n : null, waiting: w ? Number(w.total) : 0 };
     }),
+    previous: { leads: Number(prev?.leads) || 0, won: Number(prev?.won) || 0, conversion: Number(prev?.leads) ? (Number(prev.won) / Number(prev.leads)) * 100 : 0 },
+    triage: triage.map(r => ({ id: r.id, name: r.name, phone: r.phone, source: r.source, createdAt: r.createdAt, ownerId: r.ownerId, ownerName: r.ownerName, late: new Date(r.createdAt) < dayBounds(undefined).start })),
     lostReasons: lostReasons.map(r => ({ ...r, total: Number(r.total) })),
     created: created.map(r => ({ day: r.day, total: Number(r.total) })),
     wonDaily: wonDaily.map(r => ({ day: r.day, total: Number(r.total) })),
     attention: {
       overdueTasks: Number(attention.overdueTasks) || 0,
       stale: Number(attention.stale) || 0,
-      waitingFirstContact: Number(attention.waitingFirstContact) || 0
+      waitingFirstContact: Number(attention.waitingFirstContact) || 0,
+      unassigned: Number(attention.unassigned) || 0,
+      feePending: Number(attention.feePending) || 0,
+      docsPending: Number(attention.docsPending) || 0,
+      feeTagId: tagIdOf(FEE_PENDING_TAG.name),
+      docsTagId: tagIdOf(DOCS_PENDING_LABEL.name)
     }
   });
 };
@@ -692,21 +843,46 @@ export const enroll = async (req: Request, res: Response): Promise<Response> => 
       fee: req.body.fee,
       feeDueDate: req.body.feeDueDate,
       introMessage: req.body.introMessage,
-      whatsappId: req.body.whatsappId ? Number(req.body.whatsappId) : null
+      whatsappId: req.body.whatsappId ? Number(req.body.whatsappId) : null,
+      additional: req.body.additional === true,
+      courseId: req.body.courseId ? Number(req.body.courseId) : null,
+      courseName: req.body.courseName || null
     })
   );
 };
 
+// every enrollment of the student: the first (on the lead) and the ones after it
+export const enrollments = async (req: Request, res: Response): Promise<Response> => {
+  const lead = await Lead.findByPk(req.params.id, { include: [{ model: Course, as: "course", attributes: ["id", "name"] }] });
+  if (!lead) throw new AppError("ERR_LEAD_NOT_FOUND", 404);
+  const extra = await LeadEnrollment.findAll({ where: { leadId: lead.id }, order: [["enrolledAt", "ASC"], ["id", "ASC"]] });
+  const poloIds = Array.from(new Set([lead.poloId, ...extra.map(e => e.poloId)].filter(Boolean) as number[]));
+  const polos = poloIds.length ? await Polo.findAll({ where: { id: poloIds }, attributes: ["id", "name"] }) : [];
+  const name = (id: number | null) => polos.find(p => p.id === id)?.name || null;
+  const list = [
+    ...(lead.enrolledAt ? [{ id: null, number: 1, courseName: (lead as any).course?.name || null, poloName: name(lead.poloId), enrolledAt: lead.enrolledAt }] : []),
+    ...extra.map((e, i) => ({ id: e.id, number: (lead.enrolledAt ? 2 : 1) + i, courseName: e.courseName, poloName: name(e.poloId), enrolledAt: e.enrolledAt }))
+  ];
+  return res.json(list);
+};
+
 export const onboarding = async (req: Request, res: Response): Promise<Response> => {
+  // the consultant sold the enrollment; the ambientação itself is the tutor's work
+  if (reqRole(req) === "consultor") throw new AppError("ERR_NO_PERMISSION", 403);
   const lead = await Lead.findByPk(req.params.id);
   if (!lead) throw new AppError("ERR_LEAD_NOT_FOUND", 404);
   const action = req.body.action === "done" ? "done" : "start";
   const { setOnboarding } = await import("../services/CrmServices/EnrollLead");
-  return res.json(await setOnboarding(lead, uid(req), action));
+  const out = await setOnboarding(lead, uid(req), action);
+  // the conversation of the student, so the tutor goes straight to it
+  const conv = lead.contactId ? await Ticket.findOne({ where: { contactId: lead.contactId, segment: "onboarding" }, attributes: ["id"], order: [["id", "DESC"]] }) : null;
+  return res.json({ ...(out as any).toJSON(), ticketId: conv ? conv.id : null });
 };
 
 // edit a confirmed enrollment: tutor, polo or the step of the onboarding
 export const editOnboarding = async (req: Request, res: Response): Promise<Response> => {
+  // the consultant sold the enrollment; the ambientação itself is the tutor's work
+  if (reqRole(req) === "consultor") throw new AppError("ERR_NO_PERMISSION", 403);
   const lead = await Lead.findByPk(req.params.id);
   if (!lead) throw new AppError("ERR_LEAD_NOT_FOUND", 404);
   const { editOnboarding: edit } = await import("../services/CrmServices/EnrollLead");
@@ -716,9 +892,83 @@ export const editOnboarding = async (req: Request, res: Response): Promise<Respo
   return res.json(await edit(lead, uid(req), { status, tutorId, poloId: b.poloId ? Number(b.poloId) : undefined }));
 };
 
-export const onboardingList = async (req: Request, res: Response): Promise<Response> => {
+export const onboardingChecklist = async (req: Request, res: Response): Promise<Response> => {
+  // the consultant sold the enrollment; the ambientação itself is the tutor's work
+  if (reqRole(req) === "consultor") throw new AppError("ERR_NO_PERMISSION", 403);
+  const lead = await Lead.findByPk(req.params.id);
+  if (!lead) throw new AppError("ERR_LEAD_NOT_FOUND", 404);
+  const { setChecklist } = await import("../services/CrmServices/EnrollLead");
+  return res.json(await setChecklist(lead, uid(req), String(req.body?.key || ""), req.body?.done !== false));
+};
+
+// the numbers of the onboarding for the management: how fast the first contact happens, who is late, how many finish per week, per tutor
+export const onboardingStats = async (_req: Request, res: Response): Promise<Response> => {
+  const slaHours = Math.max(1, Number(await getSetting("onboarding_sla_hours", "24")) || 24);
   const rows = await Lead.findAll({
-    where: await withLeadScope(req, { onboardingStatus: { [Op.ne]: "none" } }),
+    where: { onboardingStatus: { [Op.ne]: "none" }, enrolledAt: { [Op.ne]: null } } as any,
+    attributes: ["id", "onboardingStatus", "onboardingTutorId", "enrolledAt", "onboardingStartedAt", "onboardingDoneAt"],
+    order: [["enrolledAt", "DESC"]],
+    limit: 5000
+  });
+  const now = Date.now();
+  const H = 3600000;
+  const since90 = now - 90 * 24 * H;
+  const firstContact = (r: Lead): number | null => (r.onboardingStartedAt && r.enrolledAt ? Math.max(0, (+new Date(r.onboardingStartedAt) - +new Date(r.enrolledAt)) / H) : null);
+  const avg = (xs: number[]): number | null => (xs.length ? Math.round((xs.reduce((a, b) => a + b, 0) / xs.length) * 10) / 10 : null);
+  const recent = rows.filter(r => r.enrolledAt && +new Date(r.enrolledAt) >= since90);
+  const pending = rows.filter(r => r.onboardingStatus === "pending");
+  const late = pending.filter(r => now - +new Date(r.enrolledAt) > slaHours * H);
+  const within = recent.map(firstContact).filter((x): x is number => x !== null);
+  // the Monday of each of the last 8 weeks, and how many students finished in it
+  const monday = (t: number): number => {
+    const d = new Date(t);
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    return d.getTime();
+  };
+  const weeks: Array<{ weekStart: string; done: number }> = [];
+  for (let i = 7; i >= 0; i -= 1) {
+    const start = monday(now - i * 7 * 24 * H);
+    const end = start + 7 * 24 * H;
+    weeks.push({ weekStart: new Date(start).toISOString().slice(0, 10), done: rows.filter(r => r.onboardingDoneAt && +new Date(r.onboardingDoneAt) >= start && +new Date(r.onboardingDoneAt) < end).length });
+  }
+  const tutorIds = [...new Set(rows.map(r => r.onboardingTutorId).filter(Boolean))] as number[];
+  const users = tutorIds.length ? await User.findAll({ where: { id: tutorIds }, attributes: ["id", "name"] }) : [];
+  const byTutor = tutorIds
+    .map(id => {
+      const mine = rows.filter(r => r.onboardingTutorId === id);
+      return {
+        tutorId: id,
+        name: users.find(u => u.id === id)?.name || "",
+        active: mine.filter(r => r.onboardingStatus !== "done").length,
+        late: mine.filter(r => r.onboardingStatus === "pending" && now - +new Date(r.enrolledAt) > slaHours * H).length,
+        doneLast30: mine.filter(r => r.onboardingDoneAt && now - +new Date(r.onboardingDoneAt) <= 30 * 24 * H).length,
+        avgFirstContactHours: avg(mine.filter(r => r.enrolledAt && +new Date(r.enrolledAt) >= since90).map(firstContact).filter((x): x is number => x !== null))
+      };
+    })
+    .sort((a, b) => b.active - a.active);
+  return res.json({
+    slaHours,
+    totals: { pending: pending.length, started: rows.filter(r => r.onboardingStatus === "started").length, done: rows.filter(r => r.onboardingStatus === "done").length, late: late.length, withoutTutor: rows.filter(r => !r.onboardingTutorId && r.onboardingStatus !== "done").length },
+    avgFirstContactHours: avg(within),
+    withinSlaShare: within.length ? Math.round((within.filter(h => h <= slaHours).length / within.length) * 100) : null,
+    weeks,
+    byTutor
+  });
+};
+
+// how many students wait for the first contact of the person (the badge of the menu)
+export const onboardingPending = async (req: Request, res: Response): Promise<Response> => {
+  const mine = reqRole(req) === "consultor" ? { ownerId: uid(req) } : reqRole(req) === "tutor" ? { onboardingTutorId: uid(req) } : {};
+  const total = await Lead.count({ where: await withLeadScope(req, { onboardingStatus: "pending", ...mine }) });
+  return res.json({ pending: total });
+};
+
+export const onboardingList = async (req: Request, res: Response): Promise<Response> => {
+  const { parseChecklist } = await import("../services/CrmServices/EnrollLead");
+  const rows = await Lead.findAll({
+    // a consultant sees only the students THEY sent to the ambientação; tutors see theirs (and the polo's queue), the management everyone
+    where: await withLeadScope(req, { onboardingStatus: { [Op.ne]: "none" }, ...(reqRole(req) === "consultor" ? { ownerId: uid(req) } : {}) }),
     include: leadInclude as any,
     order: [["enrolledAt", "DESC"]],
     limit: 300
@@ -728,13 +978,41 @@ export const onboardingList = async (req: Request, res: Response): Promise<Respo
   const tutors = tutorIds.length ? await User.findAll({ where: { id: tutorIds }, attributes: ["id", "name"] }) : [];
   const contactIds = rows.map(r => r.contactId).filter(Boolean);
   const tickets = contactIds.length
-    ? await Ticket.findAll({ where: { contactId: contactIds, segment: "onboarding" }, attributes: ["id", "contactId", "status"], order: [["id", "DESC"]] })
+    ? await Ticket.findAll({ where: { contactId: contactIds, segment: "onboarding" }, attributes: ["id", "contactId", "status", "unreadMessages", "lastMessageAt", "userId"], order: [["id", "DESC"]] })
     : [];
   return res.json(
     rows.map(r => ({
       ...r.toJSON(),
       tutorName: tutors.find(t => t.id === r.onboardingTutorId)?.name || null,
-      ticketId: tickets.find(t => t.contactId === r.contactId)?.id || null
+      onboardingChecklist: undefined,
+      checklist: parseChecklist(r.onboardingChecklist),
+      ticketId: tickets.find(t => t.contactId === r.contactId)?.id || null,
+      unread: tickets.find(t => t.contactId === r.contactId)?.unreadMessages || 0,
+      lastMessageAt: tickets.find(t => t.contactId === r.contactId)?.lastMessageAt || null
     }))
   );
+};
+
+// runs the follow-ups now (the worker does it every ten minutes): useful to see the result of a new trigger
+export const runCadencesNow = async (_req: Request, res: Response): Promise<Response> => res.json(await runCadences());
+
+// ------------------------------------------------ documents of the student
+export const documents = async (req: Request, res: Response): Promise<Response> => {
+  const lead = await Lead.findByPk(req.params.id);
+  if (!lead) throw new AppError("ERR_LEAD_NOT_FOUND", 404);
+  return res.json(await listDocuments(lead.id));
+};
+
+export const setDocument = async (req: Request, res: Response): Promise<Response> => {
+  const lead = await Lead.findByPk(req.params.id);
+  if (!lead) throw new AppError("ERR_LEAD_NOT_FOUND", 404);
+  const summary = await setDocumentStatus(lead, Number(req.params.docId), String(req.body.status || ""), uid(req), req.body.note);
+  return res.json({ ...(await listDocuments(lead.id)), summary });
+};
+
+export const remindDocs = async (req: Request, res: Response): Promise<Response> => {
+  const lead = await Lead.findByPk(req.params.id);
+  if (!lead) throw new AppError("ERR_LEAD_NOT_FOUND", 404);
+  const sent = await remindDocuments(lead, uid(req));
+  return res.json({ ok: true, missing: sent });
 };

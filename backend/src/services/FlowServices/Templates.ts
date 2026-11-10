@@ -32,7 +32,7 @@ let counter = 0;
 const uid = (p: string) => `${p}${Date.now().toString(36)}${(counter += 1).toString(36)}`;
 
 // Small builder used by the templates: blocks by key, links by key.
-const build = (spec: { nodes: Array<[string, string, any]>; links: Array<[string, string, string?]> }): Graph => {
+export const build = (spec: { nodes: Array<[string, string, any]>; links: Array<[string, string, string?]> }): Graph => {
   const nodes: FlowNode[] = spec.nodes.map(([key, type, data]) => ({ id: key, type, data }));
   const edges: FlowEdge[] = spec.links.map(([source, target, handle], i) => ({ id: `e${i}`, source, target, sourceHandle: handle || null }));
   return autoLayout({ nodes, edges });
@@ -65,17 +65,17 @@ export const TEMPLATES: FlowTemplate[] = [
         }],
         ["nome", "ask", { text: "Que bom! Para começar, qual é o seu nome completo?", field: "nome", validate: "text" }],
         ["curso", "ask", { text: "Qual curso você tem interesse?", field: "curso", validate: "text" }],
-        ["cidade", "ask", { text: "E em qual cidade você mora?", field: "cidade", validate: "text" }],
+        ["polo", "polo", { text: "Qual polo fica mais perto de você? Responda com o número, o nome ou a cidade." }],
         ["crm", "crm", { action: "send_to_crm", ownerMode: "roundrobin", source: "Chatbot" }],
         ["fim1", "message", { text: "Perfeito, {{primeiro_nome}}! Um consultor vai falar com você em instantes. 🎓" }],
-        ["transfer", "transfer", { to: "polo_sales" }],
+        ["transfer", "transfer", { to: "chosen_polo_sales" }],
         ["aluno", "message", { text: "Para assuntos acadêmicos, a tutoria do seu polo vai te atender." }],
         ["aluno_t", "transfer", { to: "polo_tutoria" }],
         ["humano", "transfer", { to: "polo_sales", text: "Certo! Já estou chamando um atendente." }]
       ],
       links: [
         ["start", "menu"], ["menu", "nome", "o1"], ["menu", "aluno", "o2"], ["menu", "humano", "o3"],
-        ["nome", "curso"], ["curso", "cidade"], ["cidade", "crm"], ["crm", "fim1"], ["fim1", "transfer"],
+        ["nome", "curso"], ["curso", "polo"], ["polo", "crm"], ["polo", "crm", "other"], ["crm", "fim1"], ["fim1", "transfer"],
         ["aluno", "aluno_t"]
       ]
     })
@@ -96,6 +96,118 @@ export const TEMPLATES: FlowTemplate[] = [
         ["ia", "ai", {}]
       ],
       links: [["start", "cond"], ["cond", "aviso", "r1"], ["cond", "ia", "else"], ["aviso", "nome"], ["nome", "crm"], ["crm", "fim"]]
+    })
+  },
+  {
+    key: "escolha-de-polo",
+    name: "Escolha de polo",
+    description: "Pergunta qual polo a pessoa prefere (entende número, nome ou cidade), grava o polo no lead e leva para o comercial daquele polo.",
+    entry: { type: "first_message" },
+    graph: build({
+      nodes: [
+        ["start", "start", {}],
+        ["oi", "message", { text: "Olá, {{primeiro_nome}}! 👋 Vou te ajudar a falar com o polo certo." }],
+        ["polo", "polo", { text: "Qual polo fica mais perto de você? Responda com o número, o nome ou a cidade." }],
+        ["nome", "ask", { text: "Qual é o seu nome completo?", field: "nome", validate: "text" }],
+        ["crm", "crm", { action: "send_to_crm", ownerMode: "roundrobin", source: "Chatbot" }],
+        ["fim", "message", { text: "Pronto! A equipe do polo {{polo}} já vai falar com você. 🎓" }],
+        ["transfer", "transfer", { to: "chosen_polo_sales" }],
+        ["ia", "ai", {}]
+      ],
+      links: [["start", "oi"], ["oi", "polo"], ["polo", "nome"], ["polo", "ia", "other"], ["nome", "crm"], ["crm", "fim"], ["fim", "transfer"]]
+    })
+  },
+  {
+    key: "triagem-de-qualificacao",
+    name: "Triagem de qualificação",
+    description: "Pergunta a modalidade, quando a pessoa pretende decidir e o motivo, guarda as respostas no lead (elas entram na pontuação) e leva quem está pronto direto para um consultor.",
+    entry: { type: "first_message" },
+    graph: build({
+      nodes: [
+        ["start", "start", {}],
+        ["oi", "message", { text: "Olá, {{primeiro_nome}}! 👋 Vou te fazer 3 perguntas rápidas para o consultor já saber como te ajudar." }],
+        ["modal", "buttons", {
+          text: "Como você prefere estudar?",
+          saveTo: "modalidade",
+          options: [{ id: "m1", label: "EAD" }, { id: "m2", label: "Semipresencial" }, { id: "m3", label: "Presencial" }]
+        }],
+        ["prazo", "buttons", {
+          text: "Quando você pretende começar?",
+          saveTo: "prazo_decisao",
+          options: [
+            { id: "p1", label: "Quer matricular agora" },
+            { id: "p2", label: "Decide esta semana" },
+            { id: "p3", label: "Decide este mês" },
+            { id: "p4", label: "Pesquisando, sem prazo" }
+          ]
+        }],
+        ["motivo", "buttons", {
+          text: "O que mais te motiva a estudar?",
+          saveTo: "motivacao",
+          options: [
+            { id: "t1", label: "Primeira graduação" },
+            { id: "t2", label: "Mudança de carreira" },
+            { id: "t3", label: "Promoção ou crescimento" },
+            { id: "t4", label: "Segunda graduação" }
+          ]
+        }],
+        ["crm", "crm", { action: "send_to_crm", ownerMode: "roundrobin", source: "Chatbot" }],
+        ["quente", "condition", { rules: [{ id: "r1", label: "Pronto para decidir", all: [{ field: "var:prazo_decisao", op: "in", value: "Quer matricular agora, Decide esta semana" }] }] }],
+        ["fim1", "message", { text: "Perfeito, {{primeiro_nome}}! Como você está perto de decidir, um consultor vai falar com você agora. 🎓" }],
+        ["transfer", "transfer", { to: "polo_sales" }],
+        ["fim2", "end", { text: "Obrigado, {{primeiro_nome}}! Anotei tudo e um consultor entra em contato para te ajudar a escolher o melhor caminho. 😊" }]
+      ],
+      links: [
+        ["start", "oi"], ["oi", "modal"], ["modal", "prazo", "m1"], ["modal", "prazo", "m2"], ["modal", "prazo", "m3"],
+        ["prazo", "motivo", "p1"], ["prazo", "motivo", "p2"], ["prazo", "motivo", "p3"], ["prazo", "motivo", "p4"],
+        ["motivo", "crm", "t1"], ["motivo", "crm", "t2"], ["motivo", "crm", "t3"], ["motivo", "crm", "t4"],
+        ["crm", "quente"], ["quente", "fim1", "r1"], ["quente", "fim2", "else"], ["fim1", "transfer"]
+      ]
+    })
+  },
+  {
+    key: "follow-up-lead-parado",
+    name: "Follow-up de lead parado",
+    description: "Para o gatilho “Lead parado”: retoma a conversa de quem parou de responder, com botões para continuar, adiar ou falar com um consultor.",
+    entry: { type: "manual" },
+    graph: build({
+      nodes: [
+        ["start", "start", {}],
+        ["oi", "buttons", {
+          text: "Oi, {{primeiro_nome}}! Passando para saber se você ainda tem interesse em estudar na Cruzeiro do Sul Virtual. Posso te ajudar com alguma dúvida? 😊",
+          options: [
+            { id: "o1", label: "Ainda tenho interesse" },
+            { id: "o2", label: "Agora não" },
+            { id: "o3", label: "Falar com um consultor" }
+          ]
+        }],
+        ["sim", "message", { text: "Que bom! Um consultor vai continuar a conversa com você." }],
+        ["sim_t", "transfer", { to: "polo_sales" }],
+        ["depois", "end", { text: "Tudo bem! Quando quiser retomar é só me chamar por aqui. 🎓" }],
+        ["humano", "transfer", { to: "polo_sales", text: "Certo! Já estou chamando um consultor." }]
+      ],
+      links: [["start", "oi"], ["oi", "sim", "o1"], ["oi", "depois", "o2"], ["oi", "humano", "o3"], ["sim", "sim_t"]]
+    })
+  },
+  {
+    key: "lembrete-prazo-matricula",
+    name: "Lembrete de prazo de matrícula",
+    description: "Para o gatilho “Prazo de matrícula se aproximando”: avisa que o período está acabando e chama um consultor para quem quer garantir a vaga.",
+    entry: { type: "manual" },
+    graph: build({
+      nodes: [
+        ["start", "start", {}],
+        ["aviso", "buttons", {
+          text: "Oi, {{primeiro_nome}}! O prazo de matrícula do período está chegando ao fim. Quer garantir a sua vaga? Posso chamar um consultor agora.",
+          options: [
+            { id: "o1", label: "Quero me matricular" },
+            { id: "o2", label: "Preciso de mais tempo" }
+          ]
+        }],
+        ["humano", "transfer", { to: "polo_sales", text: "Perfeito! Já estou chamando um consultor para finalizar com você." }],
+        ["depois", "end", { text: "Sem problema! Me avise por aqui quando estiver pronto(a). 😊" }]
+      ],
+      links: [["start", "aviso"], ["aviso", "humano", "o1"], ["aviso", "depois", "o2"]]
     })
   },
   {

@@ -15,9 +15,17 @@ ticketRoutes.post("/tickets/:ticketId/phone", isAuth, canSendTicket, phoneLimite
 
 ticketRoutes.get("/tickets", isAuth, TicketController.index);
 
+ticketRoutes.put("/tickets/read-all", isAuth, TicketController.readAll);
+
 ticketRoutes.get("/tickets/:ticketId", isAuth, canReadTicket, TicketController.show);
 
 ticketRoutes.get("/tickets/:ticketId/welcome", isAuth, canReadTicket, TicketController.welcome);
+
+ticketRoutes.get("/tickets/:ticketId/automation", isAuth, canReadTicket, TicketController.automation);
+
+ticketRoutes.get("/tickets/:ticketId/ai-summary", isAuth, canReadTicket, TicketController.aiSummary);
+
+ticketRoutes.post("/tickets/:ticketId/suggest-reply", isAuth, canSendTicket, TicketController.suggestReply);
 
 ticketRoutes.get("/tickets/:ticketId/group", isAuth, canReadTicket, TicketController.groupInfo);
 
@@ -31,6 +39,9 @@ ticketRoutes.get(
 ticketRoutes.post("/tickets", isAuth, TicketController.store);
 
 ticketRoutes.put("/tickets/:ticketId/pin", isAuth, canReadTicket, TicketController.pin);
+ticketRoutes.post("/tickets/:ticketId/claim", isAuth, canWriteTicket, TicketController.claim);
+ticketRoutes.post("/tickets/:ticketId/take", isAuth, canReadTicket, TicketController.take);
+ticketRoutes.post("/tickets/:ticketId/ai", isAuth, canWriteTicket, TicketController.ai);
 ticketRoutes.put("/tickets/:ticketId/archive", isAuth, canWriteTicket, TicketController.archive);
 ticketRoutes.put("/tickets/:ticketId/unread", isAuth, canWriteTicket, TicketController.markUnread);
 ticketRoutes.post("/tickets/:ticketId/typing", isAuth, canWriteTicket, TicketController.typing);

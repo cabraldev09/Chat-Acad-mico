@@ -1,3 +1,4 @@
+import { Op } from "sequelize";
 import { getIO } from "../../libs/socket";
 import Message from "../../models/Message";
 import Ticket from "../../models/Ticket";
@@ -5,6 +6,7 @@ import Whatsapp from "../../models/Whatsapp";
 import Tag from "../../models/Tag";
 import dispatchWebhook from "../WebhookServices/DispatchWebhook";
 import { hookInbound, hookHumanReply } from "../CrmServices/LeadCore";
+import { captureNpsAnswer } from "../CrmServices/Nps";
 import { captureTeamReply } from "../AiServices/Learning";
 
 interface MessageData {
@@ -28,12 +30,17 @@ const CreateMessageService = async ({
   messageData
 }: Request): Promise<Message> => {
   // the same message is processed more than once (media upload + create); a later pass must not lower the ticks
+  // (a message the system stores right after sending, and then again when the connection reports it, is the same message: the second pass changes the screens, not the counters, lessons and webhooks)
+  let already = false;
   if (messageData.id) {
     const current = await Message.findByPk(messageData.id, { attributes: ["id", "ack"] });
+    already = !!current;
     if (current && (current.ack || 0) > (messageData.ack || 0)) {
       messageData.ack = current.ack;
     }
   }
+  // a reply to a message that is not in our history (older than what was synced) would break the insert and lose the reply itself: it is saved without the quote
+  if (messageData.quotedMsgId && !(await Message.count({ where: { id: messageData.quotedMsgId } }))) messageData.quotedMsgId = undefined;
   await Message.upsert(messageData);
 
   const message = await Message.findByPk(messageData.id, {
@@ -82,22 +89,27 @@ const CreateMessageService = async ({
   const lastState = {
     lastMessageId: message.id,
     lastMessageFromMe: !!message.fromMe,
-    lastMessageType: message.mediaType || "chat",
+    // a sticker travels as a .webp image: the list says "Figurinha", not "Foto"
+    lastMessageType: message.mediaType === "image" && /\.webp(\?|$)/i.test(message.mediaUrl || "") ? "sticker" : message.mediaType || "chat",
     lastMessageAt: message.createdAt || new Date(),
     lastMessageAuthor: message.ticket.isGroup && !message.fromMe ? (message.contact?.name || null) : null
   };
-  await Ticket.update(
+  // only a message newer than the one shown becomes "the last": one that arrives late (catch-up, history) never takes a chat back in time
+  const at = lastState.lastMessageAt as Date;
+  const [newest] = await Ticket.update(
     { ...lastState, lastMessageAck: message.ack || 0 } as any,
-    { where: { id: message.ticketId }, silent: true } as any
+    { where: { id: message.ticketId, [Op.or]: [{ lastMessageAt: null }, { lastMessageAt: { [Op.lte]: at } }, { lastMessageId: message.id }] }, silent: true } as any
   );
   // the event below carries this ticket to the list, so it must already hold the new last message
-  message.ticket.set(
-    { ...lastState, lastMessageAck: message.ack || 0 } as any,
-    { raw: true } as any
-  );
+  if (newest) {
+    message.ticket.set(
+      { ...lastState, lastMessageAck: message.ack || 0 } as any,
+      { raw: true } as any
+    );
+  }
 
   // what the team answers after the AI handed a question over becomes a lesson for the owner to review
-  if (message.fromMe && message.ticket.userId && !message.ticket.isGroup && message.mediaType === "chat") {
+  if (!already && message.fromMe && message.ticket.userId && !message.ticket.isGroup && message.mediaType === "chat") {
     captureTeamReply(message.ticket, message.body).catch(() => undefined);
   }
 
@@ -109,12 +121,27 @@ const CreateMessageService = async ({
   if (!message.ticket.isGroup) {
     if (!message.fromMe) {
       hookInbound(message.ticket.contactId, message.ticket.whatsapp?.channel);
-    } else if (message.ticket.userId) {
+      // a bare number from 0 to 10 answers the satisfaction survey that was sent to this person
+      if (message.mediaType === "chat") captureNpsAnswer(message.ticket.contactId, message.body, message.ticket.whatsappId).catch(() => undefined);
+    } else if (message.ticket.userId && !already) {
       hookHumanReply(message.ticket.contactId, message.ticket.userId);
     }
   }
 
-  await dispatchWebhook(message.fromMe ? "message.sent" : "message.received", {
+  // the screens hear about the message first: nobody waits for the webhook queue to see what arrived
+  const io = getIO();
+  io.to(message.ticketId.toString())
+    .to(message.ticket.status)
+    .to("notification")
+    .emit("appMessage", {
+      action: "create",
+      message,
+      ticket: message.ticket,
+      contact: message.ticket.contact
+    });
+
+  if (already && message.fromMe) return message;
+  dispatchWebhook(message.fromMe ? "message.sent" : "message.received", {
     messageId: message.id,
     ticketId: message.ticketId,
     body: message.body,
@@ -127,18 +154,7 @@ const CreateMessageService = async ({
       number: message.ticket.contact.number
     },
     channel: message.ticket.whatsapp?.channel
-  });
-
-  const io = getIO();
-  io.to(message.ticketId.toString())
-    .to(message.ticket.status)
-    .to("notification")
-    .emit("appMessage", {
-      action: "create",
-      message,
-      ticket: message.ticket,
-      contact: message.ticket.contact
-    });
+  }).catch(() => undefined);
 
   return message;
 };

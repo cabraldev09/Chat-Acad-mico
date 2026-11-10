@@ -19,7 +19,7 @@ export const tickBudgetAlerts = async (): Promise<void> => {
     const sendWhere = { ...usageWhere, status: { [Op.in]: ["sent", "sending", "uncertain"] } };
     const active = { expiresAt: { [Op.gt]: new Date() } };
     const values: Array<[string, string, () => Promise<number>]> = [
-      ["ai_daily_token_cap", "Tokens de IA", async () => Number(await AiUsage.sum("inputTokens", { where: usageWhere }) || 0) + Number(await AiUsage.sum("outputTokens", { where: usageWhere }) || 0) + Number(await Reservation.sum("tokens", { where: active }) || 0)],
+      ["ai_daily_token_cap", "Tokens de IA", async () => Number(await AiUsage.sum("inputTokens", { where: usageWhere }) || 0) + Number(await AiUsage.sum("outputTokens", { where: usageWhere }) || 0) + Number(await AiUsage.sum("cacheReadTokens", { where: usageWhere }) || 0) + Number(await AiUsage.sum("cacheWriteTokens", { where: usageWhere }) || 0) + Number(await Reservation.sum("tokens", { where: active }) || 0)],
       ["ai_daily_usd_cap", "Orçamento estimado de IA", async () => Number(await AiUsage.sum("estimatedUsd", { where: usageWhere }) || 0) + Number(await Reservation.sum("estimatedUsd", { where: active }) || 0)],
       ["outbound_daily_messages", "Quantidade de envios", async () => OutboundDelivery.count({ where: sendWhere })],
       ["outbound_daily_usd", "Orçamento estimado da Meta", async () => Number(await OutboundDelivery.sum("estimatedUsd", { where: sendWhere }) || 0)]

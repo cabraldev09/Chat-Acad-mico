@@ -1,4 +1,4 @@
-import React, { useState, useContext, useEffect } from "react";
+import React, { useState, useContext, useEffect, useRef } from "react";
 import clsx from "clsx";
 import {
   makeStyles,
@@ -22,6 +22,8 @@ import { AuthContext } from "../context/Auth/AuthContext";
 import BackdropLoading from "../components/BackdropLoading";
 import CrmReminders from "../components/CrmReminders";
 import ConnectionAlert from "../components/ConnectionAlert";
+import TaskAlert from "../components/TaskAlert";
+import { Notices } from "../components/Notices";
 import { i18n } from "../translate/i18n";
 import { useThemeContext } from "../context/DarkMode";
 import BrandLogo from "../components/BrandLogo";
@@ -132,6 +134,20 @@ const LoggedInLayout = ({ children }) => {
     noSsr: true,
   });
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const alertsRef = useRef(null);
+  const [alertsH, setAlertsH] = useState(0);
+  // the notices only exist once the session has loaded (before that a loading screen is returned and the ref is empty)
+  const sessionLoading = useContext(AuthContext).loading;
+  useEffect(() => {
+    const el = alertsRef.current;
+    if (!el) return undefined;
+    const measure = () => setAlertsH(Math.round(el.getBoundingClientRect().height));
+    measure();
+    if (typeof ResizeObserver === "undefined") return undefined;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [sessionLoading]);
   const { user } = useContext(AuthContext);
   const { darkMode, toggleTheme } = useThemeContext();
   const location = useLocation();
@@ -180,7 +196,7 @@ const LoggedInLayout = ({ children }) => {
         <Toolbar variant="dense" className={classes.toolbar}>
           <IconButton
             edge="start"
-            aria-label="open drawer"
+            aria-label="Abrir ou fechar o menu"
             onClick={() => setDrawerOpen(!drawerOpen)}
             className={classes.menuButton}
           >
@@ -202,9 +218,15 @@ const LoggedInLayout = ({ children }) => {
       </AppBar>
       <CrmReminders />
       <main className={classes.content}>
-        <div key={location.pathname.split("/")[1]} className="page-enter">
+        <div key={location.pathname.split("/")[1]} className={clsx("page-enter", /^\/(chatbot|ai-agents\/blocos)\/\d+/.test(location.pathname) && "page-fill")} style={{ "--alerts-h": `${alertsH}px` }}>
           <div className={classes.appBarSpacer} />
-          <ConnectionAlert />
+          {/* the notices of the top take room: the screens below subtract it (var(--alerts-h)) so nothing ends up under the fold, like the box where the message is typed */}
+          <div ref={alertsRef}>
+            <Notices>
+              <ConnectionAlert />
+              <TaskAlert />
+            </Notices>
+          </div>
           {children ? children : null}
         </div>
       </main>

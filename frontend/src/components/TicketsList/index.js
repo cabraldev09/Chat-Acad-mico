@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useReducer, useContext } from "react";
 import openSocket from "../../services/socket-io";
+import { setTyping } from "../../utils/typingStore";
 
 import { makeStyles } from "@material-ui/core/styles";
 import List from "@material-ui/core/List";
@@ -74,10 +75,14 @@ const useStyles = makeStyles(theme => ({
 	},
 }));
 
-// unread/new activity goes to the top, but below the conversations this person pinned
+// the same order the server gives: pinned first, then the latest activity (the time WhatsApp gives the chat, or our last message when newer), the id settles a tie
+const activityOf = (t) => Math.max(t.waChatTimestamp ? new Date(t.waChatTimestamp).getTime() : 0, new Date(t.lastMessageAt || t.updatedAt || 0).getTime());
+const byActivity = (a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || activityOf(b) - activityOf(a) || b.id - a.id;
+// puts the ticket in its place (a message that is not newer than the last one shown never moves a chat up)
 const toTop = (state, ticket, index) => {
-	if (index !== -1) state.splice(index, 1);
-	state.splice(ticket.pinned ? 0 : state.filter(t => t.pinned).length, 0, ticket);
+	if (index !== -1) state.splice(index, 1, ticket);
+	else state.push(ticket);
+	state.sort(byActivity);
 };
 
 const reducer = (state, action) => {
@@ -85,9 +90,8 @@ const reducer = (state, action) => {
 		const { ticketId, pinned } = action.payload;
 		const idx = state.findIndex(t => t.id === ticketId);
 		if (idx === -1) return state;
-		const ticket = { ...state[idx], pinned };
-		state.splice(idx, 1);
-		state.splice(pinned ? 0 : state.filter(t => t.pinned).length, 0, ticket);
+		state[idx] = { ...state[idx], pinned };
+		state.sort(byActivity);
 		return [...state];
 	}
 
@@ -98,11 +102,11 @@ const reducer = (state, action) => {
 			const ticketIndex = state.findIndex(t => t.id === ticket.id);
 			if (ticketIndex !== -1) {
 				state[ticketIndex] = ticket;
-				if (ticket.unreadMessages > 0) toTop(state, ticket, ticketIndex);
 			} else {
 				state.push(ticket);
 			}
 		});
+		state.sort(byActivity);
 
 		return [...state];
 	}
@@ -127,11 +131,7 @@ const reducer = (state, action) => {
 			const previous = state[ticketIndex];
 			const merged = { ...previous, ...ticket, pinned: previous.pinned };
 			// something newer happened (a reaction, a message): the conversation goes up, like WhatsApp
-			if (ticket.lastMessageAt && previous.lastMessageAt && new Date(ticket.lastMessageAt) > new Date(previous.lastMessageAt)) {
-				toTop(state, merged, ticketIndex);
-			} else {
-				state[ticketIndex] = merged;
-			}
+			toTop(state, merged, ticketIndex);
 		} else {
 			toTop(state, ticket, -1);
 		}
@@ -143,8 +143,8 @@ const reducer = (state, action) => {
 		const ticket = action.payload;
 
 		const ticketIndex = state.findIndex(t => t.id === ticket.id);
-		const pinned = ticketIndex !== -1 ? state[ticketIndex].pinned : false;
-		toTop(state, { ...ticket, pinned }, ticketIndex);
+		const previous = ticketIndex !== -1 ? state[ticketIndex] : {};
+		toTop(state, { ...previous, ...ticket, pinned: !!previous.pinned }, ticketIndex);
 
 		return [...state];
 	}
@@ -224,7 +224,8 @@ const reducer = (state, action) => {
 	}, [tickets]);
 
 	useEffect(() => {
-		const socket = openSocket();
+		// the lists of each status join their own room: only the lists of the same status share a connection
+		const socket = openSocket(status ? `tickets:${status}` : "notification");
 
 		// "only": just groups; "exclude": private chats only
 		// a group of a community has its own view: the ordinary groups list leaves it out
@@ -251,6 +252,18 @@ const reducer = (state, action) => {
 				socket.emit("joinNotification");
 			}
 		});
+
+		// "digitando…" under the name, like WhatsApp
+		socket.on("typing", data => setTyping(data.ticketId, data.from, data.kind, data.ms));
+
+		// the chats pinned (or unpinned) on the phone's WhatsApp: the list follows without a reload
+		socket.on("ticketPins", data => {
+			(data.pinned || []).forEach(ticketId => dispatch({ type: "SET_PINNED", payload: { ticketId, pinned: true } }));
+			(data.unpinned || []).forEach(ticketId => dispatch({ type: "SET_PINNED", payload: { ticketId, pinned: false } }));
+		});
+
+		// the phone's order changed (a chat moved while the system was not looking): the list is read again, quietly
+		socket.on("ticketsReorder", () => window.dispatchEvent(new CustomEvent("socketReconnected")));
 
 		socket.on("ticket", data => {
 			if (data.action === "updateUnread") {
@@ -308,8 +321,12 @@ const reducer = (state, action) => {
 	}, [status, searchParam, showAll, user, selectedQueueIds, groups, communities, archived]);
 
 	useEffect(() => {
+		// the connection came back: the list reads what it missed, quietly (the rows stay on screen) and at most
+		// once every 20 seconds, so a flaky connection never makes the list blink
+		let last = 0;
 		const again = () => {
-			dispatch({ type: "RESET" });
+			if (Date.now() - last < 20000) return;
+			last = Date.now();
 			setPageNumber(1);
 			setReloadKey(k => k + 1);
 		};
@@ -391,7 +408,7 @@ const reducer = (state, action) => {
 							))}
 						</>
 					)}
-					{loading && <TicketsListSkeleton />}
+					{loading && (ticketsList.length === 0 || pageNumber > 1) && <TicketsListSkeleton />}
 				</List>
 			</Paper>
     </Paper>

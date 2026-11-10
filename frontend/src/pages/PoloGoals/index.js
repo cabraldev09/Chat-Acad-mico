@@ -23,6 +23,29 @@ const MONTH_NAMES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho",
 const monthName = (key) => MONTH_NAMES[Number(key.slice(5, 7)) - 1];
 const monthShort = (key) => monthName(key).slice(0, 3);
 const cap = (t) => t.charAt(0).toUpperCase() + t.slice(1);
+
+// The number shown in each month of a polo's strip:
+//  - a month that already passed shows what was done in it, and stays EMPTY when nothing was recorded (no invented target);
+//  - the current and the next months share what is still missing of the semester target (months whose target was set
+//    by hand keep it).
+// `now` is the month of today ("YYYY-MM").
+const planOfMonths = (row, now) => {
+  const months = row.months || [];
+  if (row.target === null || row.target === undefined) return months.map(() => ({ value: null, kind: "none" }));
+  const pastDone = months.reduce((t, m) => t + (m.month < now ? m.done : 0), 0);
+  const ahead = months.filter((m) => m.month >= now);
+  const left = Math.max(0, row.target - Math.max(row.done - ahead.reduce((t, m) => t + m.done, 0), pastDone));
+  // what is missing after the months already ahead got their own results is spread over the months still to come
+  const split = row.monthlyCustom ? null : evenSplit(left + ahead.reduce((t, m) => t + m.done, 0), Math.max(1, ahead.length));
+  let k = 0;
+  return months.map((m) => {
+    if (m.month < now) return { value: m.done > 0 ? m.done : null, kind: "past" };
+    const planned = split ? split[k] : m.target;
+    k += 1;
+    return { value: planned, kind: m.month === now ? "current" : "future", done: m.done };
+  });
+};
+const thisMonth = () => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Porto_Velho" }).format(new Date()).slice(0, 7);
 // the colour of a polo says how far it is from the target
 const TONE = {
   great: { bg: "#15803d", soft: "rgba(21,128,61,.14)", label: "Meta batida", dot: "🟢" },
@@ -35,6 +58,8 @@ const dm = (iso) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
 const shortName = (n) => String(n || "").replace(/\s*-\s*RO$/i, "");
 const pctLabel = (p) => (p === null || p === undefined ? "—" : `${brDecimal(p)}%`);
 const perDayLabel = (v) => (v === null || v === undefined ? "—" : brDecimal(v));
+// the table (like the company spreadsheet) shows the real sign: a polo above its target has a negative "Faltam" and a negative pace
+const signedPerDay = (missing, days, fallback) => (missing === null || missing === undefined || !days ? perDayLabel(fallback) : brDecimal(missing / days));
 const missingLabel = (r) => (r.missing === null || r.missing === undefined ? "—" : r.missing < 0 ? `+${Math.abs(r.missing)}` : r.missing);
 const evenSplit = (total, n) => { const base = Math.floor(total / n); const extra = total - base * n; return Array.from({ length: n }, (_, i) => base + (i < extra ? 1 : 0)); };
 const sameArray = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
@@ -74,24 +99,24 @@ const useStyles = makeStyles((theme) => ({
   monthOn: { background: theme.palette.primary.main, color: "#fff", borderColor: theme.palette.primary.main, "&:hover": { background: theme.palette.primary.main } },
   monthBar: { height: 4, borderRadius: 4, marginTop: 6, background: "rgba(127,140,160,.3)", overflow: "hidden" },
   hero: {
-    display: "grid", gridTemplateColumns: "auto minmax(0,1fr)", gap: theme.spacing(3), alignItems: "center", color: "#fff", borderRadius: 20, padding: theme.spacing(3),
-    background: "radial-gradient(120% 140% at 0% 0%, #0f5aa8 0%, #0B4279 45%, #082f57 100%)", boxShadow: "0 14px 34px rgba(11,66,121,.28)", marginBottom: theme.spacing(2),
+    display: "grid", gridTemplateColumns: "auto minmax(0,1fr)", gap: theme.spacing(3), alignItems: "center", color: "var(--text-1)", borderRadius: "var(--radius-card)", padding: theme.spacing(2.5, 3),
+    background: "var(--surface)", border: "1px solid var(--line)", boxShadow: "var(--shadow-card)", marginBottom: theme.spacing(2),
     [theme.breakpoints.down("xs")]: { gridTemplateColumns: "1fr", justifyItems: "center", textAlign: "center" },
   },
   heroNum: { fontSize: 44, fontWeight: 700, letterSpacing: "-0.04em", lineHeight: 1, fontVariantNumeric: "tabular-nums" },
-  heroSub: { opacity: 0.8, fontSize: 14, marginTop: 4 },
+  heroSub: { color: "var(--text-2)", fontSize: 13.5, marginTop: 4 },
   facts: { display: "flex", gap: 8, flexWrap: "wrap", marginTop: 14, [theme.breakpoints.down("xs")]: { justifyContent: "center" } },
-  fact: { background: "rgba(255,255,255,.12)", borderRadius: 12, padding: "7px 12px", fontSize: 13, lineHeight: 1.25 },
-  factN: { fontWeight: 700, fontSize: 16, fontVariantNumeric: "tabular-nums", display: "block" },
+  fact: { background: "var(--surface-2)", border: "1px solid var(--line)", borderRadius: "var(--radius-ctl)", padding: "7px 12px", fontSize: 12.5, lineHeight: 1.25, color: "var(--text-2)" },
+  factN: { fontWeight: 700, fontSize: 16, fontVariantNumeric: "tabular-nums", display: "block", color: "var(--text-1)" },
   toolbar: { display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: theme.spacing(1.5) },
   seg: { display: "inline-flex", border: theme.border.divider, borderRadius: 10, overflow: "hidden" },
   segBtn: { border: 0, background: "transparent", color: "inherit", padding: "6px 12px", fontFamily: "inherit", fontSize: 13, fontWeight: 600, cursor: "pointer", display: "inline-flex", gap: 6, alignItems: "center" },
   segOn: { background: theme.palette.primary.main, color: "#fff" },
   grid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: theme.spacing(1.5) },
-  card: { background: theme.palette.cards.background, border: theme.border.divider, borderRadius: 16, padding: theme.spacing(2), position: "relative", overflow: "hidden" },
+  card: { background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "var(--radius-card)", padding: theme.spacing(2), position: "relative", overflow: "hidden", boxShadow: "var(--shadow-card)", transition: "border-color .15s ease", "&:hover": { borderColor: "var(--line-strong)" } },
   rank: { width: 26, height: 26, borderRadius: 8, display: "inline-grid", placeItems: "center", fontSize: 12.5, fontWeight: 700, background: theme.palette.action.selected, flexShrink: 0 },
   badge: { borderRadius: 999, padding: "3px 10px", fontSize: 13, fontWeight: 700, fontVariantNumeric: "tabular-nums", color: "#fff", whiteSpace: "nowrap" },
-  track: { height: 10, borderRadius: 999, background: theme.palette.action.selected, position: "relative", marginTop: 14, marginBottom: 12 },
+  track: { height: 6, borderRadius: 999, background: "var(--track)", position: "relative", marginTop: 14, marginBottom: 12 },
   fill: { height: "100%", borderRadius: 999, transition: "width .7s cubic-bezier(.2,.8,.2,1)" },
   tick: { position: "absolute", top: -4, bottom: -4, width: 2, background: theme.palette.text.primary, opacity: 0.55, borderRadius: 2 },
   nums: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 },
@@ -100,9 +125,10 @@ const useStyles = makeStyles((theme) => ({
   foot: { display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", fontSize: 12, color: theme.palette.text.secondary, marginTop: 12, paddingTop: 10, borderTop: theme.border.divider },
   strip: { display: "flex", gap: 5, marginTop: 12, alignItems: "flex-end" },
   stripCol: { flex: 1, textAlign: "center", fontSize: 10.5, color: theme.palette.text.secondary, cursor: "pointer", border: 0, background: "transparent", padding: 0, fontFamily: "inherit" },
+  stripNum: { fontSize: 12.5, fontWeight: 700, lineHeight: "16px", marginBottom: 2, color: theme.palette.text.primary, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" },
   stripBar: { height: 26, borderRadius: 5, background: theme.palette.action.selected, position: "relative", overflow: "hidden", marginBottom: 3 },
-  tableWrap: { overflowX: "auto", background: theme.palette.cards.background, border: theme.border.divider, borderRadius: 16 },
-  table: { borderCollapse: "collapse", width: "100%", minWidth: 860, fontSize: 13.5, fontVariantNumeric: "tabular-nums", "& th": { background: "#4a90d9", color: "#fff", fontWeight: 600, padding: "10px 12px", textAlign: "center", whiteSpace: "nowrap" }, "& td": { padding: "9px 12px", textAlign: "center", borderBottom: theme.border.divider }, "& td:nth-child(2), & th:nth-child(2)": { textAlign: "left" }, "& tfoot td": { fontWeight: 700, background: theme.palette.action.hover } },
+  tableWrap: { overflowX: "auto", background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "var(--radius-card)" },
+  table: { borderCollapse: "collapse", width: "100%", minWidth: 860, fontSize: 13.5, fontVariantNumeric: "tabular-nums", "& th": { background: "var(--surface-2)", color: "var(--text-2)", fontSize: 12.5, fontWeight: 600, padding: "10px 12px", textAlign: "center", whiteSpace: "nowrap", borderBottom: "1px solid var(--line)" }, "& td": { padding: "9px 12px", textAlign: "center", borderBottom: theme.border.divider }, "& td:nth-child(2), & th:nth-child(2)": { textAlign: "left" }, "& tfoot td": { fontWeight: 700, background: theme.palette.action.hover } },
   hint: { fontSize: 12.5, color: theme.palette.text.secondary },
   empty: { textAlign: "center", color: theme.palette.text.secondary, padding: theme.spacing(6, 2) },
   editRow: { display: "grid", gridTemplateColumns: "minmax(160px,1.6fr) 92px 92px 92px 36px", gap: 8, alignItems: "center", padding: "6px 0", borderBottom: theme.border.divider, [theme.breakpoints.down("xs")]: { gridTemplateColumns: "1fr 1fr 1fr 36px" } },
@@ -117,10 +143,10 @@ const Ring = ({ pct, size = 150, caption = "da meta" }) => {
   const v = Math.min(100, pct || 0);
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label={`${pctLabel(pct)} ${caption}`}>
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,.16)" strokeWidth="12" />
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#FEF84C" strokeWidth="12" strokeLinecap="round" strokeDasharray={`${(v / 100) * c} ${c}`} transform={`rotate(-90 ${size / 2} ${size / 2})`} style={{ transition: "stroke-dasharray .8s cubic-bezier(.2,.8,.2,1)" }} />
-      <text x="50%" y="48%" textAnchor="middle" fill="#fff" style={{ fontSize: 30, fontWeight: 700, letterSpacing: "-0.03em" }}>{pct === null || pct === undefined ? "—" : `${Math.round(pct)}%`}</text>
-      <text x="50%" y="63%" textAnchor="middle" fill="rgba(255,255,255,.75)" style={{ fontSize: 12 }}>{caption}</text>
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--track)" strokeWidth="10" />
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--c-leads)" strokeWidth="10" strokeLinecap="round" strokeDasharray={`${(v / 100) * c} ${c}`} transform={`rotate(-90 ${size / 2} ${size / 2})`} style={{ transition: "stroke-dasharray .8s cubic-bezier(.2,.8,.2,1)" }} />
+      <text x="50%" y="48%" textAnchor="middle" fill="var(--text-1)" style={{ fontSize: 26, fontWeight: 700, letterSpacing: "-0.03em" }}>{pct === null || pct === undefined ? "—" : `${brDecimal(pct)}%`}</text>
+      <text x="50%" y="63%" textAnchor="middle" fill="var(--text-2)" style={{ fontSize: 12 }}>{caption}</text>
     </svg>
   );
 };
@@ -184,17 +210,26 @@ const textFor = (goal, rows, totals, heading, rangeLabel) => {
 
 // the dates, the title and the working-day rule of a period (a semester)
 const PeriodDialog = ({ open, onClose, goal, onSaved }) => {
-  const [f, setF] = useState({ title: "", startsOn: "", endsOn: "", workDays: 5 });
+  const [f, setF] = useState({ title: "", startsOn: "", endsOn: "", workDays: 5, extra: "" });
   const [saving, setSaving] = useState(false);
+  // what the calendar of the period looks like: the working days and the days taken out (holidays, and the days the company adds)
+  const [cal, setCal] = useState(null);
   useEffect(() => {
     if (!open) return;
-    if (goal) setF({ title: goal.title || "", startsOn: goal.startsOn, endsOn: goal.endsOn, workDays: goal.workDays });
+    if (goal) setF({ title: goal.title || "", startsOn: goal.startsOn, endsOn: goal.endsOn, workDays: goal.workDays, extra: (goal.extraHolidays || []).map((d) => d.split("-").reverse().join("/")).join("\n") });
     else {
       const y = new Date().getFullYear();
       const second = new Date().getMonth() >= 6;
-      setF({ title: `Graduação ${second ? 2 : 1}º semestre de ${y}`, startsOn: `${y}-${second ? "07" : "01"}-01`, endsOn: `${y}-${second ? "12-31" : "06-30"}`, workDays: 5 });
+      setF({ title: `Graduação ${second ? 2 : 1}º semestre de ${y}`, startsOn: `${y}-${second ? "07" : "01"}-01`, endsOn: `${y}-${second ? "12-31" : "06-30"}`, workDays: 5, extra: "" });
     }
   }, [open, goal]);
+  useEffect(() => {
+    if (!open || !f.startsOn || !f.endsOn || f.startsOn > f.endsOn) { setCal(null); return undefined; }
+    const timer = setTimeout(() => {
+      api.get("/goals/calendar", { params: { from: f.startsOn, to: f.endsOn, workDays: f.workDays, extra: f.extra } }).then(({ data }) => setCal(data)).catch(() => setCal(null));
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [open, f.startsOn, f.endsOn, f.workDays, f.extra]);
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
   const save = async () => {
     setSaving(true);
@@ -202,11 +237,11 @@ const PeriodDialog = ({ open, onClose, goal, onSaved }) => {
       let id;
       if (goal) {
         await api.put(`/goals/${goal.id}`, { title: f.title, startsOn: f.startsOn, endsOn: f.endsOn });
-        await api.put(`/goals/${goal.id}/polos`, { workDays: f.workDays });
+        await api.put(`/goals/${goal.id}/polos`, { workDays: f.workDays, extraHolidays: f.extra });
         id = goal.id;
       } else {
         const { data } = await api.post("/goals", { kind: "polo", title: f.title, startsOn: f.startsOn, endsOn: f.endsOn, members: [] });
-        await api.put(`/goals/${data.id}/polos`, { workDays: f.workDays });
+        await api.put(`/goals/${data.id}/polos`, { workDays: f.workDays, extraHolidays: f.extra });
         id = data.id;
       }
       toast.success(goal ? "Período atualizado." : "Semestre criado.");
@@ -224,6 +259,18 @@ const PeriodDialog = ({ open, onClose, goal, onSaved }) => {
         <TextField select fullWidth variant="outlined" margin="dense" label="Dias úteis" value={f.workDays} onChange={(e) => setF({ ...f, workDays: Number(e.target.value) })}>
           {WORK_DAYS.map(([v, l]) => <MenuItem key={v} value={v}>{l}</MenuItem>)}
         </TextField>
+        <TextField fullWidth multiline minRows={2} variant="outlined" margin="dense" label="Outros dias sem expediente" value={f.extra} onChange={set("extra")} InputLabelProps={{ shrink: true }}
+          placeholder={"29/05/2026\n05/06/2026"} helperText="Um dia por linha (feriado da cidade, recesso). Os feriados nacionais e de Rondônia já entram na conta." />
+        {cal && (
+          <div style={{ marginTop: 8, padding: "10px 12px", borderRadius: 10, background: "rgba(11,66,121,.07)", fontSize: 13.5 }}>
+            <b>{cal.total} dias úteis</b> neste período{cal.holidays && cal.holidays.length ? `, fora ${cal.holidays.length} dia${cal.holidays.length === 1 ? "" : "s"} sem expediente:` : "."}
+            {cal.holidays && cal.holidays.length > 0 && (
+              <div style={{ marginTop: 4, fontSize: 12.5, opacity: 0.85, lineHeight: 1.5 }}>
+                {cal.holidays.map((h) => `${h.date.slice(8, 10)}/${h.date.slice(5, 7)} ${h.name}`).join(" · ")}
+              </div>
+            )}
+          </div>
+        )}
         <div style={{ fontSize: 12.5, opacity: 0.75, marginTop: 8 }}>A meta de cada polo vale para o período todo e é distribuída pelos meses dele. Se você trocar os meses do período, a distribuição mensal volta a ser igual para todos.</div>
       </DialogContent>
       <DialogActions>
@@ -242,7 +289,7 @@ const PoloDialog = ({ open, onClose, row, data, onSaved }) => {
   const months = (data && data.months) || [];
   useEffect(() => {
     if (!open || !row) return;
-    setF({ target: row.target, manual: row.manual, canceled: row.canceled, monthly: [...row.monthly], adjust: months.map((m) => row.manualMonthly[m] || 0) });
+    setF({ target: row.target, manual: row.manual, canceled: row.canceled, monthly: [...row.monthly], adjust: months.map((m) => row.manualMonthly[m] || 0), inCourse: row.inCourse });
   }, [open, row]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!f || !row) return null;
   const sum = f.monthly.reduce((t, v) => t + v, 0);
@@ -256,7 +303,9 @@ const PoloDialog = ({ open, onClose, row, data, onSaved }) => {
     try {
       const manualMonthly = {};
       months.forEach((m, i) => { if (f.adjust[i]) manualMonthly[m] = f.adjust[i]; });
-      await api.put(`/goals/${data.goal.id}/polos/${row.poloId}`, { target: f.target, manual: f.manual, canceled: f.canceled, monthly: f.target === null ? null : f.monthly, manualMonthly });
+      // what is typed stays: the cancelled are the total minus the students in course typed
+      const total = (row.auto || 0) + (f.manual || 0) + f.adjust.reduce((t, n) => t + (Number(n) || 0), 0);
+      await api.put(`/goals/${data.goal.id}/polos/${row.poloId}`, { target: f.target, manual: f.manual, canceled: Math.max(0, total - (f.inCourse || 0)), monthly: f.target === null ? null : f.monthly, manualMonthly });
       toast.success("Meta do polo atualizada.");
       onSaved();
     } catch (e) { toastError(e); }
@@ -268,10 +317,12 @@ const PoloDialog = ({ open, onClose, row, data, onSaved }) => {
       <DialogContent dividers>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
           <NumberField fullWidth variant="outlined" size="small" nullable label="Meta do semestre" InputLabelProps={{ shrink: true }} value={f.target} onChange={changeTarget} />
-          <NumberField fullWidth variant="outlined" size="small" label="Já realizado (fora do CRM)" InputLabelProps={{ shrink: true }} value={f.manual} onChange={(v) => setF({ ...f, manual: v })} />
-          <NumberField fullWidth variant="outlined" size="small" label="Cancelados ou transferidos" InputLabelProps={{ shrink: true }} value={f.canceled} onChange={(v) => setF({ ...f, canceled: v })} />
+          <NumberField fullWidth variant="outlined" size="small" label="Já realizado" helperText={`${row.auto || 0} no CRM`} InputLabelProps={{ shrink: true }} value={(row.auto || 0) + (f.manual || 0)} onChange={(v) => setF({ ...f, manual: (v || 0) - (row.auto || 0) })} />
+          <NumberField fullWidth variant="outlined" size="small" label="Alunos em curso" InputLabelProps={{ shrink: true }} value={f.inCourse || 0}
+            onChange={(v) => setF({ ...f, inCourse: v || 0 })} />
         </div>
-        <div className={classes.hint} style={{ marginTop: 6 }}>No CRM este polo tem {row.auto} matrícula{row.auto === 1 ? "" : "s"} no período; elas entram sozinhas e somam ao que você informar.</div>
+        <div className={classes.hint} style={{ marginTop: 6 }}>Cancelados: {Math.max(0, (row.auto || 0) + (f.manual || 0) + (f.adjust || []).reduce((t, n) => t + (Number(n) || 0), 0) - (f.inCourse || 0))} (automático: matrículas menos alunos em curso).{row.updatedAt ? ` Atualizado em ${new Date(row.updatedAt).toLocaleDateString("pt-BR")}${row.updatedBy ? ` por ${String(row.updatedBy).split(" ")[0]}` : ""}.` : ""}</div>
+        <div className={classes.hint} style={{ marginTop: 6 }}>No CRM este polo tem {row.auto} matrícula{row.auto === 1 ? "" : "s"} no período; o total fica exatamente o que você digitar em Já realizado{(f.manual || 0) < 0 ? ` (${-(f.manual || 0)} a menos que o CRM, correção registrada)` : ""}.</div>
 
         <div style={{ display: "flex", alignItems: "center", marginTop: 16 }}>
           <div style={{ fontWeight: 700, flex: 1 }}>Meta de cada mês</div>
@@ -297,7 +348,8 @@ const PoloDialog = ({ open, onClose, row, data, onSaved }) => {
   );
 };
 
-// every polo at once: targets, what they already have and cancellations
+// every polo at once: targets, the enrollments outside the CRM and the students in course today. The cancellations are not typed: they are what is left
+// when the students in course are taken from the enrollments, and stay saved so that every new enrollment of the CRM raises the students in course
 const EditDialog = ({ open, onClose, data, onSaved }) => {
   const classes = useStyles();
   const [rows, setRows] = useState([]);
@@ -305,7 +357,8 @@ const EditDialog = ({ open, onClose, data, onSaved }) => {
   const [add, setAdd] = useState("");
   useEffect(() => {
     if (!open || !data) return;
-    setRows((data.rows || []).map((r) => ({ poloId: r.poloId, name: r.name, code: r.code, target: r.target, manual: r.manual, canceled: r.canceled, auto: r.auto, monthly: r.monthly, manualMonthly: r.manualMonthly, oldTarget: r.target })));
+    // "Já realizado" and "Alunos em curso" are what the person types and stay exactly so (one never moves the other); what is stored is derived when saving
+    setRows((data.rows || []).map((r) => ({ poloId: r.poloId, name: r.name, code: r.code, target: r.target, manual: r.manual, canceled: r.canceled, auto: r.auto, monthly: r.monthly, manualMonthly: r.manualMonthly, oldTarget: r.target, done: r.done, inCourse: r.inCourse, monthAdjust: (r.adjust || 0) - (r.manual || 0), updatedAt: r.updatedAt, updatedBy: r.updatedBy })));
     setAdd("");
   }, [open, data]);
   const set = (i, patch) => setRows((rs) => rs.map((r, k) => (k === i ? { ...r, ...patch } : r)));
@@ -315,7 +368,7 @@ const EditDialog = ({ open, onClose, data, onSaved }) => {
     try {
       await api.put(`/goals/${data.goal.id}/polos`, {
         rows: rows.map((r) => ({
-          poloId: r.poloId, target: r.target, manual: r.manual, canceled: r.canceled, manualMonthly: r.manualMonthly,
+          poloId: r.poloId, target: r.target, manual: (r.done || 0) - (r.auto || 0) - (r.monthAdjust || 0), canceled: Math.max(0, (r.done || 0) - (r.inCourse || 0)), manualMonthly: r.manualMonthly,
           // a changed target is spread again over the months; an untouched one keeps its monthly targets
           monthly: r.target === r.oldTarget ? r.monthly : undefined,
         })),
@@ -329,24 +382,24 @@ const EditDialog = ({ open, onClose, data, onSaved }) => {
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth scroll="paper">
       <DialogTitle>Metas de todos os polos</DialogTitle>
       <DialogContent dividers>
-        <div className={`${classes.editRow} ${classes.hint}`} style={{ fontWeight: 600 }}><span>Polo</span><span>Meta</span><span title="Matrículas que não estão no CRM">Já realizado</span><span>Cancelados</span><span /></div>
+        <div className={`${classes.editRow} ${classes.hint}`} style={{ fontWeight: 600 }}><span>Polo</span><span>Meta</span><span title="Total de matrículas do polo no semestre: as do CRM já estão incluídas">Já realizado</span><span title="Quem está estudando hoje. Os cancelados saem sozinhos: matrículas menos alunos em curso.">Alunos em curso</span><span /></div>
         {rows.map((r, i) => (
           <div className={classes.editRow} key={r.poloId}>
-            <div><div style={{ fontWeight: 600, fontSize: 14 }}>{r.name}</div><div className={classes.hint}>{r.code ? `Código ${r.code} · ` : ""}{r.auto} no CRM</div></div>
+            <div><div style={{ fontWeight: 600, fontSize: 14 }}>{r.name}</div><div className={classes.hint}>{r.code ? `Código ${r.code} · ` : ""}{r.auto} no CRM · {Math.max(0, (r.done || 0) - (r.inCourse || 0))} cancelados (automático){r.updatedAt ? ` · atualizado em ${new Date(r.updatedAt).toLocaleDateString("pt-BR")}${r.updatedBy ? ` por ${String(r.updatedBy).split(" ")[0]}` : ""}` : ""}</div></div>
             <NumberField size="small" variant="outlined" nullable value={r.target} onChange={(v) => set(i, { target: v })} />
-            <NumberField size="small" variant="outlined" value={r.manual} onChange={(v) => set(i, { manual: v })} />
-            <NumberField size="small" variant="outlined" value={r.canceled} onChange={(v) => set(i, { canceled: v })} />
+            <NumberField size="small" variant="outlined" value={r.done || 0} onChange={(v) => set(i, { done: v || 0 })} />
+            <NumberField size="small" variant="outlined" value={r.inCourse || 0} onChange={(v) => set(i, { inCourse: v || 0 })} />
             <Button size="small" aria-label="Tirar polo" style={{ minWidth: 0 }} onClick={() => setRows((rs) => rs.filter((_, k) => k !== i))}><Trash2 size={16} /></Button>
           </div>
         ))}
         {free.length > 0 && (
           <TextField select size="small" variant="outlined" label="Adicionar polo" value={add} style={{ minWidth: 260, marginTop: 14 }}
-            onChange={(e) => { const p = free.find((x) => x.id === Number(e.target.value)); if (p) setRows((rs) => [...rs, { poloId: p.id, name: p.name, code: p.code, target: null, manual: 0, canceled: 0, auto: 0, monthly: [], manualMonthly: {}, oldTarget: null }]); setAdd(""); }}>
+            onChange={(e) => { const p = free.find((x) => x.id === Number(e.target.value)); if (p) setRows((rs) => [...rs, { poloId: p.id, name: p.name, code: p.code, target: null, manual: 0, canceled: 0, auto: 0, monthly: [], manualMonthly: {}, oldTarget: null, done: 0, inCourse: 0, monthAdjust: 0 }]); setAdd(""); }}>
             {free.map((p) => <MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>)}
           </TextField>
         )}
         <div className={classes.hint} style={{ marginTop: 12 }}>
-          Para ajustar a meta de um mês, use o lápis no cartão do polo. As matrículas do CRM entram sozinhas; “Já realizado” soma o que está fora do CRM.
+          Para ajustar a meta de um mês, use o lápis no cartão do polo. As matrículas do CRM entram sozinhas; “Já realizado” é o total de matrículas do polo (as que o CRM já conta entram nele). Informe quantos alunos estão em curso: o número de cancelados é calculado (matrículas menos alunos em curso) e cada nova matrícula do CRM aumenta os alunos em curso.
         </div>
       </DialogContent>
       <DialogActions>
@@ -519,7 +572,7 @@ const PoloGoals = () => {
                   {totals.pct !== null && ` · ${totals.pct >= pace ? `${brDecimal(totals.pct - pace, 0)} pontos à frente do ritmo` : `${brDecimal(pace - totals.pct, 0)} pontos atrás do ritmo`}`}
                 </div>
                 <div className={classes.facts}>
-                  <span className={classes.fact}><span className={classes.factN}>{daysLeft}</span>dias úteis restantes</span>
+                  <span className={classes.fact} title="Sem fins de semana, feriados nacionais e de Rondônia e os dias sem expediente do período"><span className={classes.factN}>{daysLeft}</span>dias úteis restantes</span>
                   <span className={classes.fact}><span className={classes.factN}>{perDayLabel(totals.perDay)}</span>matrículas por dia</span>
                   {month ? (
                     <span className={classes.fact}><span className={classes.factN}>{data.totals.done}<span style={{ fontSize: 12, fontWeight: 500 }}> / {data.totals.target}</span></span>no semestre</span>
@@ -572,12 +625,20 @@ const PoloGoals = () => {
                       </div>
                       {!month && r.target !== null && (
                         <div className={classes.strip} aria-label="Meta e feitas por mês">
-                          {r.months.map((m) => (
-                            <button key={m.month} type="button" className={classes.stripCol} onClick={() => setMonth(m.month)} title={`${cap(monthName(m.month))}: ${m.done} de ${m.target}`}>
-                              <div className={classes.stripBar}><div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: `${Math.min(100, m.pct || 0)}%`, background: TONE[m.status].bg }} /></div>
-                              {monthShort(m.month)}
-                            </button>
-                          ))}
+                          {r.months.map((m, k) => {
+                            const plan = planOfMonths(r, thisMonth())[k];
+                            const shown = plan.kind === "current" ? `${plan.done || 0}/${plan.value}` : plan.value === null ? "" : String(plan.value);
+                            const title = plan.kind === "past"
+                              ? `${cap(monthName(m.month))}: ${m.done > 0 ? `${m.done} matrículas feitas` : "sem registro"}`
+                              : `${cap(monthName(m.month))}: ${plan.done || 0} feitas de ${plan.value} previstas`;
+                            return (
+                              <button key={m.month} type="button" className={classes.stripCol} onClick={() => setMonth(m.month)} title={title}>
+                                <div className={classes.stripNum} style={{ opacity: plan.kind === "future" ? 0.8 : 1 }}>{shown || "\u00a0"}</div>
+                                <div className={classes.stripBar}><div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: `${Math.min(100, m.pct || 0)}%`, background: TONE[m.status].bg }} /></div>
+                                {monthShort(m.month)}
+                              </button>
+                            );
+                          })}
                         </div>
                       )}
                       <div className={classes.foot}>
@@ -602,16 +663,16 @@ const PoloGoals = () => {
                   <tbody>
                     {shown.rows.map((r) => (
                       <tr key={r.poloId}>
-                        <td>{r.code || "—"}</td><td style={{ fontWeight: 600 }}>{r.name}</td><td>{r.p.target === null ? "—" : r.p.target}</td><td>{r.p.done}</td><td>{r.p.missing === null ? "—" : r.p.missing}</td>
+                        <td>{r.code || "—"}</td><td style={{ fontWeight: 600 }}>{r.name}</td><td>{r.p.target === null ? "—" : r.p.target}</td><td>{r.p.done}</td><td style={{ color: r.p.missing !== null && r.p.missing <= 0 ? "#15803d" : undefined, fontWeight: r.p.missing !== null && r.p.missing < 0 ? 600 : undefined }} title={r.p.missing !== null && r.p.missing < 0 ? "Acima da meta" : undefined}>{r.p.missing === null ? "—" : r.p.missing}</td>
                         <td style={{ background: TONE[r.p.status].soft, fontWeight: 700, color: TONE[r.p.status].bg }}>{pctLabel(r.p.pct)}</td>
-                        <td>{perDayLabel(r.p.perDay)}</td>
+                        <td>{signedPerDay(r.p.missing, totals.daysLeft, r.p.perDay)}</td>
                         {!month && <><td>{r.inCourse}</td><td>{r.canceled}</td><td>{brDecimal(r.canceledPct)}%</td></>}
                       </tr>
                     ))}
                   </tbody>
                   <tfoot>
                     <tr>
-                      <td /><td style={{ textAlign: "left" }}>TOTAL</td><td>{totals.target}</td><td>{totals.done}</td><td>{totals.missing}</td><td>{pctLabel(totals.pct)}</td><td>{perDayLabel(totals.perDay)}</td>
+                      <td /><td style={{ textAlign: "left" }}>TOTAL</td><td>{totals.target}</td><td>{totals.done}</td><td style={{ color: totals.missing <= 0 ? "#15803d" : undefined }}>{totals.missing}</td><td>{pctLabel(totals.pct)}</td><td>{signedPerDay(totals.missing, totals.daysLeft, totals.perDay)}</td>
                       {!month && <><td>{totals.inCourse}</td><td>{totals.canceled}</td><td>{brDecimal(totals.canceledPct)}%</td></>}
                     </tr>
                   </tfoot>

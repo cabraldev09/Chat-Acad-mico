@@ -1,3 +1,5 @@
+import { remember } from "../../../helpers/BoundedMap";
+import { watchChatState } from "../../../services/WbotServices/ChatState";
 import { syncChatRead } from "../../../services/MessageServices/SyncReadState";
 import qrCode from "qrcode-terminal";
 import {
@@ -9,21 +11,31 @@ import {
   MessageSendOptions
 } from "whatsapp-web.js";
 import { Poll } from "whatsapp-web.js";
+// the last steps of the start of whatsapp-web.js, used by the repair of a page that never said "ready" (see healInjection)
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { LoadUtils } = require("whatsapp-web.js/src/util/Injected/Utils");
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const ClientInfo = require("whatsapp-web.js/src/structures/ClientInfo");
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const InterfaceController = require("whatsapp-web.js/src/util/InterfaceController");
 import { applyReaction } from "../../../services/MessageServices/MessageActions";
 import { WWEBJS_AUTH_DIR } from "../../../config/paths";
 import fs from "fs";
 import path from "path";
 import { onDisconnected } from "../../../services/SafetyServices/SendGuard";
+import { disconnectNote, isLogoutReason, qrIsStale, setAsideLoginIn } from "../SessionNotes";
 import { getIO } from "../../../libs/socket";
 import Whatsapp from "../../../models/Whatsapp";
 import AppError from "../../../errors/AppError";
 import SaveImportedContacts from "../../../helpers/SaveImportedContacts";
+import CreateOrUpdateContactService from "../../../services/ContactServices/CreateOrUpdateContactService";
 import { isPhoneNumber } from "../../../helpers/ChatId";
 import User from "../../../models/User";
 import Contact from "../../../models/Contact";
 import Message from "../../../models/Message";
 import Ticket from "../../../models/Ticket";
-import { Op } from "sequelize";
+import { Op, QueryTypes } from "sequelize";
+import sequelize from "../../../database";
 import { logger } from "../../../utils/logger";
 import { WhatsappProvider } from "../whatsappProvider";
 import {
@@ -133,7 +145,7 @@ const getProfilePic = async (
       new Promise<undefined>(resolve => setTimeout(resolve, 1500))
     ]);
     if (url !== undefined) {
-      picCache.set(key, { url: url || undefined, at: Date.now() });
+      remember(picCache, key, { url: url || undefined, at: Date.now() });
     }
     return url || undefined;
   } catch (err) {
@@ -164,7 +176,7 @@ const resolvePhones = async (
       batch.forEach((id, k) => {
         const digits = onlyDigits(found?.[k]?.pn);
         const phone = isPhoneNumber(digits) ? digits : "";
-        phoneOfLid.set(id, phone);
+        remember(phoneOfLid, id, phone);
         out.set(id, phone);
       });
     } catch (err) {
@@ -210,24 +222,163 @@ const convertToContactPayload = async (
 // Is this group a WhatsApp Community (or the announcement group of one), or a sub-group of one? WhatsApp Web keeps this in
 // the group metadata; the field names changed between versions, so every known spelling is read and anything missing
 // simply means "ordinary group". It never throws: a group that cannot be classified stays a group.
+const serializedId = (v: any): string | null => (v && (v._serialized || (typeof v === "string" ? v : null))) || null;
+
 const communityOf = (chat: any, wbot: any): ContactPayload["community"] => {
   try {
     const md = chat?.groupMetadata || {};
     const type = String(md.groupType || md.type || "").toUpperCase();
-    const parent = md.parentGroupId?._serialized || md.parentGroup?._serialized || md.parent?._serialized || null;
+    const parent = serializedId(md.parentGroupId) || serializedId(md.parentGroup) || serializedId(md.parent) || serializedId(md.linkedParent) || null;
     const isParent = md.isParentGroup === true || md.isCommunity === true || type === "COMMUNITY" || type === "PARENT";
     const isAnnouncement = md.isCommunityAnnounce === true || md.isDefaultSubgroup === true || md.defaultSubgroup === true || type === "DEFAULT_SUBGROUP" || type === "COMMUNITY_ANNOUNCEMENT" || type === "LINKED_ANNOUNCEMENT_GROUP";
     const meId = wbot?.info?.wid?._serialized;
     const me = (chat.participants || []).find((p: any) => p.id?._serialized === meId);
     const adminsOnly = md.announce === true || chat.isReadOnly === true;
-    if (isParent || isAnnouncement) {
-      return { kind: "community", parentGroupId: parent, readOnly: adminsOnly && !(me && (me.isAdmin || me.isSuperAdmin)) };
-    }
-    if (parent) return { kind: "group", parentGroupId: parent, readOnly: adminsOnly && !(me && (me.isAdmin || me.isSuperAdmin)) };
+    const readOnly = adminsOnly && !(me && (me.isAdmin || me.isSuperAdmin));
+    if (isParent) return { kind: "community", role: "parent", communityId: serializedId(chat.id), parentGroupId: null, readOnly };
+    if (isAnnouncement) return { kind: "community", role: "announcement", communityId: parent, parentGroupId: parent, readOnly };
+    if (parent) return { kind: "group", role: "member", communityId: parent, parentGroupId: parent, readOnly };
   } catch (e) {
     // fall through: ordinary group
   }
   return undefined;
+};
+
+// Reads every group of the number once and records which communities exist, their announcements group and the groups
+// inside them (the "Comunidades" list of WhatsApp Web). A community parent has no messages, so it may not be among the
+// chats: it is created from what its groups say about it.
+const syncCommunities = async (wbot: Session): Promise<number> => {
+  const chats: any[] = await wbot.getChats();
+  const known = new Set<string>();
+  const parents = new Set<string>();
+  let found = 0;
+  for (const chat of chats.filter(c => c.isGroup)) {
+    const info = communityOf(chat, wbot);
+    if (!info) continue;
+    const id = serializedId(chat.id);
+    if (!id) continue;
+    known.add(id);
+    if (info.communityId) parents.add(info.communityId);
+    let pic: string | undefined;
+    try { pic = (await wbot.getProfilePicUrl(id)) || undefined; } catch (e) { pic = undefined; }
+    // eslint-disable-next-line no-await-in-loop
+    await CreateOrUpdateContactService({ name: chat.name || chat.id.user, number: chat.id.user, isGroup: true, profilePicUrl: pic, community: info });
+    found += 1;
+  }
+  for (const parentId of parents) {
+    if (known.has(parentId)) continue;
+    let name = "Comunidade";
+    let pic: string | undefined;
+    try {
+      const c: any = await wbot.getContactById(parentId);
+      name = c?.name || c?.pushname || name;
+      pic = (await wbot.getProfilePicUrl(parentId)) || undefined;
+    } catch (e) { /* the name stays generic until WhatsApp tells it */ }
+    // eslint-disable-next-line no-await-in-loop
+    await CreateOrUpdateContactService({ name, number: parentId.split("@")[0], isGroup: true, profilePicUrl: pic, community: { kind: "community", role: "parent", communityId: parentId, parentGroupId: null, readOnly: true } });
+    found += 1;
+  }
+  return found;
+};
+
+// What the phone shows, the list shows the same: the chats pinned at the top, and the pictures of the chats that have
+// none yet. Reads the chats once (it is a local read inside WhatsApp Web) and only writes what changed.
+const photoTried = new Map<string, number>();
+const syncChatTimes = async (chats: any[], whatsappId: number, key: (isGroup: boolean, number: string) => string): Promise<void> => {
+  const times = new Map<string, number>();
+  for (const c of chats) {
+    const seconds = Number(c.timestamp) || 0;
+    if (c.id?.user && seconds > 0 && !c.isNewsletter) times.set(key(!!c.isGroup, String(c.id.user)), seconds * 1000);
+  }
+  if (!times.size) return;
+  const numbers = [...new Set([...times.keys()].map(k => k.slice(2)))];
+  const byContact = new Map<number, number>();
+  for (let i = 0; i < numbers.length; i += 500) {
+    // eslint-disable-next-line no-await-in-loop
+    const contacts = await Contact.findAll({ where: { number: { [Op.in]: numbers.slice(i, i + 500) } }, attributes: ["id", "number", "isGroup"] });
+    contacts.forEach(ct => { const t = times.get(key(!!ct.isGroup, String(ct.number))); if (t) byContact.set(ct.id, t); });
+  }
+  if (!byContact.size) return;
+  const ids = [...byContact.keys()];
+  const tickets: Ticket[] = [];
+  for (let i = 0; i < ids.length; i += 500) {
+    // eslint-disable-next-line no-await-in-loop
+    tickets.push(...(await Ticket.findAll({ where: { whatsappId, isHistorical: false, contactId: { [Op.in]: ids.slice(i, i + 500) } }, attributes: ["id", "contactId", "waChatTimestamp"] })));
+  }
+  let changed = 0;
+  for (const t of tickets) {
+    const at = byContact.get(t.contactId) as number;
+    if (t.waChatTimestamp && Math.abs(new Date(t.waChatTimestamp).getTime() - at) < 1000) continue;
+    // eslint-disable-next-line no-await-in-loop
+    await Ticket.update({ waChatTimestamp: new Date(at) } as any, { where: { id: t.id }, silent: true } as any);
+    changed += 1;
+  }
+  if (changed) getIO().emit("ticketsReorder", { whatsappId });
+};
+const syncChatState = async (wbot: Session, whatsappId: number): Promise<void> => {
+  const chats: any[] = await wbot.getChats();
+  const key = (isGroup: boolean, number: string) => `${isGroup ? "g" : "p"}:${number}`;
+  const pinned = new Set<string>();
+  chats.filter(c => c.pinned && !c.archived && c.id?.user).forEach(c => pinned.add(key(!!c.isGroup, c.id.user)));
+
+  // the phone allows only a few pinned chats: look at those and at what is marked now, never at every ticket of the number
+  const pinnedChats = chats.filter(c => c.pinned && !c.archived && c.id?.user);
+  const pinnedContacts = pinnedChats.length
+    ? await Contact.findAll({ where: { number: { [Op.in]: pinnedChats.map(c => String(c.id.user)) } }, attributes: ["id", "number", "isGroup"] })
+    : [];
+  const shouldBe = pinnedContacts.filter(ct => pinned.has(key(!!ct.isGroup, String(ct.number)))).map(ct => ct.id);
+  const marked = await Ticket.findAll({ where: { whatsappId, isHistorical: false, waPinned: true }, attributes: ["id", "contactId"] });
+  const wanted = shouldBe.length
+    ? await Ticket.findAll({ where: { whatsappId, isHistorical: false, contactId: { [Op.in]: shouldBe } }, attributes: ["id", "waPinned"] })
+    : [];
+  const turnOn: number[] = wanted.filter(t => !t.waPinned).map(t => t.id);
+  const wantedIds = new Set(wanted.map(t => t.id));
+  const turnOff: number[] = marked.filter(t => !wantedIds.has(t.id)).map(t => t.id);
+  if (turnOn.length) await Ticket.update({ waPinned: true }, { where: { id: { [Op.in]: turnOn } } });
+  if (turnOff.length) await Ticket.update({ waPinned: false }, { where: { id: { [Op.in]: turnOff } } });
+  if (turnOn.length || turnOff.length) getIO().emit("ticketPins", { whatsappId, pinned: turnOn, unpinned: turnOff });
+
+  // the time WhatsApp gives each chat: the list is ordered like the phone's (only what differs is written)
+  await syncChatTimes(chats, whatsappId, key).catch(err => logger.warn(`chat times (${whatsappId}) failed: ${err}`));
+
+  // pictures: the most recent chats first, a few per round, and a chat without a picture is not asked again for hours
+  const recent = [...chats].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)).slice(0, 120).filter(c => c.id?.user);
+  const contacts = await Contact.findAll({
+    where: { number: { [Op.in]: recent.map(c => String(c.id.user)) } },
+    attributes: ["id", "number", "isGroup", "profilePicUrl"]
+  });
+  const missing = new Map<string, Contact>();
+  contacts.forEach(c => { if (!c.getDataValue("profilePicUrl")) missing.set(key(!!c.isGroup, String(c.number)), c); });
+  let asked = 0;
+  for (const chat of recent) {
+    if (asked >= 25) break;
+    const k = key(!!chat.isGroup, String(chat.id.user));
+    const contact = missing.get(k);
+    if (!contact) continue;
+    const last = photoTried.get(`${whatsappId}:${k}`) || 0;
+    if (Date.now() - last < 6 * 3600 * 1000) continue;
+    remember(photoTried, `${whatsappId}:${k}`, Date.now());
+    asked += 1;
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const pic = await wbot.getProfilePicUrl(serializedId(chat.id) as string);
+      if (pic) {
+        // eslint-disable-next-line no-await-in-loop
+        await contact.update({ profilePicUrl: pic });
+        getIO().emit("contact", { action: "update", contact });
+      }
+    } catch (e) { /* no picture (privacy) or not reachable now: the placeholder stays */ }
+  }
+};
+
+const communityTimers = new Map<number, NodeJS.Timeout>();
+const scheduleCommunitySync = (wbot: Session, whatsappId: number, delayMs: number): void => {
+  const old = communityTimers.get(whatsappId);
+  if (old) clearTimeout(old);
+  communityTimers.set(whatsappId, setTimeout(() => {
+    communityTimers.delete(whatsappId);
+    syncCommunities(wbot).catch(err => logger.warn(`communities sync (${whatsappId}) failed: ${err}`));
+  }, delayMs));
 };
 
 const verifyQuotedMessage = async (
@@ -263,12 +414,13 @@ const convertToMessagePayload = async (
 
   const quotedMsgId = await verifyQuotedMessage(processedMsg);
 
+  const labelled = msg.type === "poll_creation" || msg.type === "multi_vcard";
   return {
     id: processedMsg.id.id,
-    body: processedMsg.body,
+    body: labelled ? `${HISTORY_LABELS[msg.type]}${(msg as any).pollName ? `: ${(msg as any).pollName}` : ""}` : processedMsg.body,
     fromMe: processedMsg.fromMe,
     hasMedia: processedMsg.hasMedia,
-    type: mapMessageType(processedMsg.type),
+    type: labelled ? "chat" : mapMessageType(processedMsg.type),
     timestamp: processedMsg.timestamp,
     from: processedMsg.from,
     to: processedMsg.to,
@@ -276,6 +428,21 @@ const convertToMessagePayload = async (
     isGif: !!(processedMsg as any)._data?.isGif,
     quotedMsgId
   };
+};
+
+// Why a file did not come down: the stage WhatsApp Web gives the message (REUPLOADING = waiting for the phone to send it again, ERROR_* = the file is gone from their servers...)
+const whyNoMedia = async (msg: any): Promise<string> => {
+  try {
+    const info = await msg.client.pupPage.evaluate((id: string) => {
+      const { Msg } = (window as any).require("WAWebCollections");
+      const m = Msg.get(id);
+      if (!m) return { missing: true };
+      return { stage: m.mediaData && m.mediaData.mediaStage, type: m.type, directPath: !!m.directPath, size: m.size, hasWWebJS: !!(window as any).WWebJS && !!(window as any).WWebJS.resolveMediaBlob };
+    }, msg.id._serialized);
+    return JSON.stringify(info);
+  } catch (err) {
+    return `sem leitura (${(err as Error).message})`;
+  }
 };
 
 const convertToMediaPayload = async (
@@ -289,14 +456,18 @@ const convertToMediaPayload = async (
   for (let attempt = 0; attempt < 2 && !media; attempt += 1) {
     try {
       // eslint-disable-next-line no-await-in-loop
-      media = await msg.downloadMedia();
+      // WhatsApp Web can hang on a file for minutes (the browser only gives up after 3): after 25 s the message is stored without it and the file is tried again later
+      media = await withTimeout(msg.downloadMedia(), 25000);
     } catch (err) {
       logger.warn(`Media download failed (${msg.type}): ${err}`);
     }
     // eslint-disable-next-line no-await-in-loop
     if (!media && attempt === 0) await new Promise(r => setTimeout(r, 2500));
   }
-  if (!media) return undefined;
+  if (!media) {
+    logger.warn(`Media not downloaded (${msg.type}, ${msg.id.id}): ${await whyNoMedia(msg)}`);
+    return undefined;
+  }
 
   return {
     filename: media.filename || "",
@@ -325,14 +496,17 @@ const shouldHandleMessage = (msg: WbotMessage): boolean => {
       msg.type === "document" ||
       msg.type === "vcard" ||
       msg.type === "sticker" ||
-      msg.type === "location"
+      msg.type === "location" ||
+      // a poll and a list of contacts reach the screen as a short label, like in the imported history
+      msg.type === "poll_creation" ||
+      msg.type === "multi_vcard"
     )
   ) {
     return false;
   }
 
-  // Check for Unicode direction mark
-  if (/\u200e/.test(msg.body[0])) return false;
+  // Check for Unicode direction mark (the mark of the robot's own messages); a message with no text (a file alone) is not a mark
+  if (msg.body && /\u200e/.test(msg.body[0])) return false;
 
   // Additional validation for messages from me
   if (msg.fromMe) {
@@ -417,50 +591,100 @@ const markMessageChanged = async (messageId: string, patch: { isDeleted?: boolea
   getIO().to(String(found.ticketId)).emit("appMessage", { action: "update", message });
 };
 
-const syncUnreadMessages = async (wbot: Session, whatsappId: number) => {
+// One run at a time per number. `syncedAt` is when the last run STARTED: everything older was already looked at, so the next run (every few minutes) only
+// needs what came after it, and the first run after a (re)connection starts from the newest message that was stored.
+const syncing = new Set<number>();
+const syncedAt = new Map<number, number>();
+const SYNC_MARGIN_S = 120;
+// per number: the chat time (and chat) already looked at because WhatsApp was ahead of the stored messages
+const gapChecked = new Map<number, Map<string, number>>();
+
+const syncUnreadMessages = async (wbot: Session, whatsappId: number, opts: { periodic?: boolean } = {}) => {
+  if (syncing.has(whatsappId)) return;
+  syncing.add(whatsappId);
+  const startedAt = Date.now();
   try {
-    const last = await Message.findOne({
-      attributes: ["createdAt"],
-      include: [
-        {
-          model: Ticket,
-          as: "ticket",
-          attributes: [],
-          where: { whatsappId },
-          required: true
-        }
-      ],
-      order: [["createdAt", "DESC"]]
-    });
+    let sinceSeconds: number | null = null;
+    const previous = syncedAt.get(whatsappId);
+    if (previous) sinceSeconds = Math.floor(previous / 1000) - SYNC_MARGIN_S;
+    else {
+      const last = await Message.findOne({
+        attributes: ["createdAt"],
+        include: [{ model: Ticket, as: "ticket", attributes: [], where: { whatsappId }, required: true }],
+        order: [["createdAt", "DESC"]]
+      });
+      if (last) sinceSeconds = Math.floor(last.createdAt.getTime() / 1000) - 5;
+    }
     const observedAt = new Date();
-    const allChats = await wbot.getChats();
+    const allChats = await withTimeout(wbot.getChats(), 180000);
     for (const chat of allChats) {
       if (chat.unreadCount === 0) await syncChatRead(whatsappId, chat.id._serialized, observedAt);
     }
-    if (!last) return;
-    const sinceSeconds = Math.floor(last.createdAt.getTime() / 1000) - 5;
-
+    // a first connection imports nothing here (the history has its own, silent import)
+    if (sinceSeconds === null) {
+      syncedAt.set(whatsappId, startedAt);
+      return;
+    }
+    const since = sinceSeconds;
+    // besides the time window: every chat where WhatsApp is ahead of what we hold (its last activity is newer than the newest message stored for it)
+    // is looked at, whatever the window says. Each chat time is looked at once (a last event we do not store, like a call, would otherwise repeat forever).
+    const stored = (await sequelize.query(
+      `SELECT t."contactId", MAX(m."createdAt") AS last FROM "Messages" m JOIN "Tickets" t ON t.id = m."ticketId" WHERE t."whatsappId" = :whatsappId GROUP BY t."contactId"`,
+      { replacements: { whatsappId }, type: QueryTypes.SELECT }
+    )) as any[];
+    const lastOf = new Map<number, number>(stored.map(r => [Number(r.contactId), new Date(r.last).getTime()]));
+    const numbersOf = allChats.map(c => String(c.id?.user || "")).filter(Boolean);
+    const known = new Map<string, number>();
+    for (let i = 0; i < numbersOf.length; i += 500) {
+      // eslint-disable-next-line no-await-in-loop
+      const cs = await Contact.findAll({ where: { number: { [Op.in]: numbersOf.slice(i, i + 500) } }, attributes: ["id", "number", "isGroup"] });
+      cs.forEach(c => known.set(`${c.isGroup ? "g" : "p"}:${c.number}`, c.id));
+    }
+    const checked = (gapChecked.get(whatsappId) || new Map<string, number>());
+    gapChecked.set(whatsappId, checked);
+    const behind = (chat: any): boolean => {
+      const t = (chat.timestamp || 0) * 1000;
+      if (!t || checked.get(chat.id._serialized) === chat.timestamp) return false;
+      const cid = known.get(`${chat.isGroup ? "g" : "p"}:${chat.id.user}`);
+      return !cid || !lastOf.has(cid) || t > (lastOf.get(cid) as number) + 5000;
+    };
     const chats = allChats
-      .filter(chat => (chat.timestamp || 0) >= sinceSeconds && !chat.id._serialized.includes("@broadcast"))
+      .filter(chat => !chat.id._serialized.includes("@broadcast") && !chat.id._serialized.endsWith("@newsletter") && ((chat.timestamp || 0) >= since || behind(chat)))
       .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0))
-      .slice(-300);
+      .slice(-1000);
+    if (!opts.periodic || chats.length) logger.info(`Session ${whatsappId}: ${opts.periodic ? "conferindo" : "recuperando"} mensagens de ${chats.length} conversas desde ${new Date(since * 1000).toISOString()}`);
 
     /* eslint-disable no-restricted-syntax */
     /* eslint-disable no-await-in-loop */
     let caught = 0;
+    let failed = 0;
     for (const chat of chats) {
-      const recent = await chat.fetchMessages({ limit: 100 });
-      for (const msg of recent) {
-        if (msg.timestamp < sinceSeconds || !shouldHandleMessage(msg)) continue;
-        if (await Message.findByPk(msg.id.id, { attributes: ["id"] })) continue;
-        const { messagePayload, contactPayload, contextPayload, mediaPayload } = await getMessageData(msg, wbot);
-        await handleMessage(messagePayload, contactPayload, contextPayload, mediaPayload);
-        caught += 1;
+      // one chat that fails (a deleted group, a slow page) never stops the others
+      try {
+        const gap = behind(chat) && (chat.timestamp || 0) < since;
+        const recent = await withTimeout(chat.fetchMessages({ limit: gap ? 60 : opts.periodic ? 40 : 100 }), 45000);
+        for (const msg of recent) {
+          // a chat found behind is read to the end of what was fetched; a chat inside the window only from the mark
+          if ((!gap && msg.timestamp < since) || !shouldHandleMessage(msg)) continue;
+          if (await Message.findByPk(msg.id.id, { attributes: ["id"] })) continue;
+          const { messagePayload, contactPayload, contextPayload, mediaPayload } = await getMessageData(msg, wbot);
+          await handleMessage(messagePayload, contactPayload, contextPayload, mediaPayload);
+          caught += 1;
+        }
+        checked.set(chat.id._serialized, chat.timestamp);
+      } catch (err) {
+        failed += 1;
+        logger.warn(`Session ${whatsappId}: não consegui conferir uma conversa (${(err as Error).message})`);
       }
     }
-    if (caught) logger.info(`Session ${whatsappId}: caught up ${caught} messages from the time it was offline`);
+    // only a run that looked at everything moves the mark forward; with failures the next one starts from the same point
+    if (!failed) syncedAt.set(whatsappId, startedAt);
+    if (caught || failed || !opts.periodic) logger.info(`Session ${whatsappId}: recuperadas ${caught} mensagens do tempo em que ficou fora${failed ? ` (${failed} conversas não conferidas, tento de novo)` : ""} em ${Math.round((Date.now() - startedAt) / 1000)}s`);
+    if (caught) getIO().emit("whatsappSync", { whatsappId, caught });
   } catch (err) {
     logger.error(err, "Error syncing messages after reconnecting");
+  } finally {
+    syncing.delete(whatsappId);
   }
 };
 
@@ -468,7 +692,7 @@ const removeSession = (whatsappId: number): void => {
   try {
     const sessionIndex = sessions.findIndex(s => s.id === whatsappId);
     if (sessionIndex !== -1) {
-      sessions[sessionIndex].destroy();
+      sessions[sessionIndex].destroy().catch(() => undefined);
       sessions.splice(sessionIndex, 1);
     }
   } catch (err) {
@@ -481,7 +705,8 @@ const RECONNECT_MAX_ATTEMPTS = 6;
 
 // After the QR Code is read, WhatsApp Web must finish loading ("ready"). When it never does (little memory
 // for Chromium, or a WhatsApp Web update) the screen would stay on "QR CODE" forever: this timer says so and retries.
-const READY_TIMEOUT_MS = 150000;
+// a number with a long history takes minutes to load WhatsApp Web (it sits at 99% for a while): giving up early restarts the browser and the load begins again
+const READY_TIMEOUT_MS = Number(process.env.WHATSAPP_READY_TIMEOUT_MS) || 10 * 60 * 1000;
 const readyTimers = new Map<number, NodeJS.Timeout>();
 const clearReadyTimer = (whatsappId: number) => {
   const t = readyTimers.get(whatsappId);
@@ -489,6 +714,195 @@ const clearReadyTimer = (whatsappId: number) => {
   readyTimers.delete(whatsappId);
 };
 const memoryNote = () => `memória do processo ${Math.round(process.memoryUsage().rss / 1048576)} MB`;
+
+// A number must always be receiving, in real time. Three things keep it so, besides the retries above:
+//  1. every browser that was started is remembered until it is closed, so a stuck one is closed before another opens;
+//  2. a session that neither shows the QR Code nor becomes ready in a few minutes (the page never loaded) is closed and tried again;
+//  3. a heartbeat asks the connected session for its state: one that does not answer (frozen Chromium) is restarted.
+// What the watchdog worker needs to know (see workers/WhatsappWatchdog) is exported at the end.
+const clients = new Map<number, Session>();
+const INIT_TIMEOUT_MS = Number(process.env.WHATSAPP_INIT_TIMEOUT_MS) || 4 * 60 * 1000;
+const HEARTBEAT_MS = Number(process.env.WHATSAPP_HEARTBEAT_MS) || 90 * 1000;
+const initTimers = new Map<number, NodeJS.Timeout>();
+const heartbeats = new Map<number, NodeJS.Timeout>();
+// the sessions whose "ready" event came (the page finished injecting): the others are checked by the watchdog
+const readySeen = new Set<number>();
+const healTried = new Map<number, number>();
+const readyNudges = new Map<number, NodeJS.Timeout>();
+const retrying = new Set<number>();
+const clearInitTimer = (id: number) => {
+  const t = initTimers.get(id);
+  if (t) clearTimeout(t);
+  initTimers.delete(id);
+};
+const clearHeartbeat = (id: number) => {
+  const t = heartbeats.get(id);
+  if (t) clearInterval(t);
+  heartbeats.delete(id);
+};
+const closeClient = async (id: number): Promise<void> => {
+  clearInitTimer(id);
+  clearQrWatcher(id);
+  lastQrAt.delete(id);
+  clearHeartbeat(id);
+  clearReadyTimer(id);
+  const c = clients.get(id);
+  clients.delete(id);
+  readySeen.delete(id);
+  syncedAt.delete(id);
+  if (c) await Promise.race([c.destroy().catch(() => undefined), new Promise(r => setTimeout(r, 15000))]);
+};
+// the API is stopping (a new version, a restart): every WhatsApp Web closes properly, so the profile of the browser is not left half written
+export const closeAllWwebjsClients = async (): Promise<void> => {
+  await Promise.all([...clients.keys()].map(id => closeClient(id).catch(() => undefined)));
+};
+const withTimeout = <T>(p: Promise<T>, ms: number): Promise<T> => Promise.race([p, new Promise<T>((_, rej) => setTimeout(() => rej(new Error("timeout")), ms))]);
+
+// the browser of this number is gone or stuck: close it and open it again, slowing down (and finally asking a person) when it keeps failing
+const retryLater = async (whatsappId: number, reason: string): Promise<void> => {
+  if (retrying.has(whatsappId)) return;
+  retrying.add(whatsappId);
+  try {
+    const row = await Whatsapp.findByPk(whatsappId);
+    if (!row) return;
+    await closeClient(whatsappId);
+    const attempt = (reconnectAttempts.get(whatsappId) || 0) + 1;
+    reconnectAttempts.set(whatsappId, attempt);
+    if (attempt > RECONNECT_MAX_ATTEMPTS) {
+      logger.error(`Session ${row.name}: giving up after ${attempt - 1} attempts (${reason})`);
+      await row.update({ status: "DISCONNECTED", qrcode: "", statusNote: `Parou de tentar depois de ${attempt - 1} tentativas (${reason}). Clique em QR CODE para abrir de novo.` });
+      getIO().emit("whatsappSession", { action: "update", session: row });
+      getIO().emit("whatsappAlert", { whatsappId, name: row.name, ownerId: row.ownerId, reason });
+      return;
+    }
+    const delay = Math.min(2000 * 2 ** (attempt - 1), 60000);
+    logger.warn(`Session ${row.name}: ${reason}. Opening again in ${delay / 1000}s (attempt ${attempt})`);
+    await row.update({ status: "OPENING", statusNote: `${reason[0].toUpperCase()}${reason.slice(1)}; abrindo de novo (tentativa ${attempt}).` });
+    getIO().emit("whatsappSession", { action: "update", session: row });
+    await new Promise(r => setTimeout(r, delay));
+  } finally {
+    retrying.delete(whatsappId);
+  }
+  // a session opened meanwhile (the QR Code button, the person reconnecting) is not replaced by this retry
+  if (clients.has(whatsappId)) return;
+  const fresh = await Whatsapp.findByPk(whatsappId);
+  if (fresh) init(fresh);
+};
+
+// state of the sessions for the watchdog worker
+export const sessionWatch = (whatsappId: number): { hasClient: boolean; live: boolean; initializing: boolean } => ({
+  hasClient: clients.has(whatsappId),
+  live: sessions.some(s => s.id === whatsappId),
+  initializing: initTimers.has(whatsappId) || retrying.has(whatsappId) || readyTimers.has(whatsappId)
+});
+
+// A number that is delivering messages is connected, whatever the status in the database says. The status can lag behind (a "ready" that never fired after a
+// restart, an old "qrcode" event, a change_state of WhatsApp Web) and then the alert "a conexão caiu" contradicts the messages that keep arriving in real time.
+// Any event of the page proves it is alive, so the status is put right (at most once a minute per number) and the screens are told.
+const aliveAt = new Map<number, number>();
+const markAlive = (whatsappId: number): void => {
+  const now = Date.now();
+  if (now - (aliveAt.get(whatsappId) || 0) < 60000) return;
+  aliveAt.set(whatsappId, now);
+  Whatsapp.update({ status: "CONNECTED", qrcode: "" }, { where: { id: whatsappId, status: { [Op.ne]: "CONNECTED" } } })
+    .then(async ([changed]) => {
+      if (!changed) return;
+      const row = await Whatsapp.findByPk(whatsappId);
+      if (!row) return;
+      logger.warn(`Session ${row.name}: recebendo mensagens, mas o status estava desatualizado; marcada como conectada`);
+      getIO().emit("whatsappSession", { action: "update", session: row });
+    })
+    .catch(() => undefined);
+};
+
+// What the page of each number looks like from inside: registered for sending, "ready" seen, the state WhatsApp Web reports and whether the helpers of
+// whatsapp-web.js are injected in the page (without them nothing can be read or sent, even when the page says CONNECTED). Logged by the watchdog.
+export interface SessionHealth { id: number; registered: boolean; ready: boolean; state: string | null; injected: boolean | null }
+export const sessionHealth = async (): Promise<SessionHealth[]> => {
+  const out: SessionHealth[] = [];
+  for (const [id, wbot] of clients) {
+    // eslint-disable-next-line no-await-in-loop
+    const state = await withTimeout(wbot.getState() as Promise<string>, 15000).catch(() => null);
+    // eslint-disable-next-line no-await-in-loop
+    const injected = await withTimeout(wbot.pupPage!.evaluate(() => typeof (window as any).WWebJS !== "undefined"), 15000).catch(() => null);
+    out.push({ id, registered: sessions.some(s => s.id === id), ready: readySeen.has(id), state: state ? String(state) : null, injected });
+    // connected but never "ready": the repair runs (it logs each step)
+    if (state === "CONNECTED" && !readySeen.has(id) && !initTimers.has(id) && !retrying.has(id)) healInjection(id, wbot).catch(() => undefined);
+  }
+  return out;
+};
+
+// A page that says CONNECTED but whose "ready" never came cannot read or send anything: the events are not attached. The last steps of the start of
+// whatsapp-web.js are done here one by one (each one logged with its error), so the log says which one breaks and the session still comes up when it can.
+// Once every 4 minutes per number.
+const healInjection = async (id: number, wbot: Session): Promise<void> => {
+  if (readySeen.has(id) || Date.now() - (healTried.get(id) || 0) < 4 * 60000) return;
+  healTried.set(id, Date.now());
+  const page = wbot.pupPage!;
+  const step = async (name: string, fn: () => Promise<unknown>): Promise<void> => {
+    try {
+      await withTimeout(fn(), 60000);
+      logger.info(`Session ${id}: [reparo] ${name}: ok`);
+    } catch (err) {
+      logger.error(`Session ${id}: [reparo] ${name}: falhou: ${String((err as Error)?.message || err).slice(0, 300)}`);
+      throw err;
+    }
+  };
+  try {
+    const hasUtils = await withTimeout(page.evaluate(() => typeof (window as any).WWebJS !== "undefined"), 15000);
+    if (!hasUtils) await step("carregar utilitários", () => page.evaluate(LoadUtils));
+    await step("dados da conta", async () => {
+      const data = await page.evaluate(() => {
+        const w = window as any;
+        const me = w.require("WAWebUserPrefsMeUser");
+        return { ...w.require("WAWebConnModel").Conn.serialize(), wid: (me.getMaybeMePnUser && me.getMaybeMePnUser()) || (me.getMaybeMeLidUser && me.getMaybeMeLidUser()) || (me.getMeUser && me.getMeUser()) };
+      });
+      (wbot as any).info = new ClientInfo(wbot as any, data);
+    });
+    await step("interface", async () => { (wbot as any).interface = new InterfaceController(wbot as any); });
+    await step("eventos de mensagem", () => (wbot as any).attachEventListeners());
+    logger.warn(`Session ${id}: a página estava conectada sem o "ready"; os recursos foram carregados à mão e o "ready" foi disparado`);
+    (wbot as any).emit("ready");
+  } catch (err) {
+    // what the page offers instead, to know what changed in WhatsApp Web
+    const keys = await withTimeout(page.evaluate(() => { const w = window as any; try { return { me: Object.keys(w.require("WAWebUserPrefsMeUser") || {}).slice(0, 40), wwebjs: typeof w.WWebJS, version: w.Debug && w.Debug.VERSION }; } catch (e) { return { erro: String(e) }; } }), 15000).catch(() => null);
+    logger.error(`Session ${id}: o reparo não terminou: ${JSON.stringify(keys)}`);
+  }
+};
+
+// The watchdog asks the page itself (not the database) whether it is connected, and corrects the status when WhatsApp Web says CONNECTED.
+export const reconcileStatuses = async (): Promise<void> => {
+  for (const [id, wbot] of clients) {
+    try {
+      if (initTimers.has(id) || retrying.has(id)) continue;
+      const row = await Whatsapp.findByPk(id);
+      const registered = sessions.some(s => s.id === id);
+      if (!row || (row.status === "CONNECTED" && registered)) continue;
+      // eslint-disable-next-line no-await-in-loop
+      const state = await withTimeout(wbot.getState(), 15000).catch(() => null);
+      if (state !== "CONNECTED") continue;
+      // the page is connected but the "ready" event never came: the session is alive, so it is registered like a ready one.
+      // Without this the watchdog saw "connected but no session here" and opened a SECOND browser on the same profile, which failed and restarted everything.
+      if (!registered) {
+        wbot.id = id;
+        sessions.push(wbot);
+      }
+      clearReadyTimer(id);
+      clearInitTimer(id);
+      reconnectAttempts.set(id, 0);
+      // eslint-disable-next-line no-await-in-loop
+      await healInjection(id, wbot);
+      if (row.status !== "CONNECTED") {
+        // eslint-disable-next-line no-await-in-loop
+        await row.update({ status: "CONNECTED", qrcode: "" });
+        logger.warn(`Session ${row.name}: o WhatsApp Web está conectado, mas o status do banco estava desatualizado; corrigido`);
+        getIO().emit("whatsappSession", { action: "update", session: row });
+      }
+    } catch (err) {
+      logger.warn(`reconcile of session ${id} failed: ${err}`);
+    }
+  }
+};
 
 const sendMessage = async (
   sessionId: number,
@@ -540,6 +954,7 @@ const sendMedia = async (
         media.data?.toString("base64") || "",
         media.filename
       );
+  if (media.displayName) messageMedia.filename = media.displayName;
 
   const mediaOptions: MessageSendOptions = {
     caption: options?.caption,
@@ -617,7 +1032,7 @@ const HISTORY_LABELS: Record<string, string> = {
   image: "📷 Imagem",
   video: "🎥 Vídeo",
   audio: "🎤 Áudio",
-  ptt: "🎤 Mensagem de voz",
+  ptt: "🎤 Áudio",
   document: "📄 Documento",
   sticker: "Figurinha",
   location: "📍 Localização",
@@ -831,6 +1246,10 @@ const findMessage = async (
 
   const chat = await wbot.getChatById(chatId).catch(() => null);
   if (!chat) return null;
+  // most of the time the message is among the last few: look there first, the long scan is the last resort
+  const latest = await chat.fetchMessages({ limit: 60 });
+  const quick = latest.find(m => m.id.id === messageId);
+  if (quick) return quick;
   const recent = await chat.fetchMessages({ limit: 400 });
   return recent.find(m => m.id.id === messageId) || null;
 };
@@ -869,9 +1288,21 @@ const downloadMessageMedia = async (
   fromMe: boolean
 ): Promise<{ filename: string; mimetype: string; data: string; isGif?: boolean } | null> => {
   const message = await findMessage(getWbot(sessionId), chatId, messageId, fromMe);
-  if (!message || !message.hasMedia) return null;
-  const media = await message.downloadMedia();
-  if (!media) return null;
+  if (!message || !message.hasMedia) {
+    logger.warn(`Media on demand (${messageId}): ${!message ? "the message was not found on the phone's WhatsApp" : "the message carries no file"}`);
+    return null;
+  }
+  let media: any = null;
+  try {
+    media = await withTimeout(message.downloadMedia(), 90000);
+  } catch (err) {
+    logger.warn(`Media on demand (${messageId}) failed: ${(err as Error).message}`);
+    return null;
+  }
+  if (!media) {
+    logger.warn(`Media on demand (${messageId}) came back empty: ${await whyNoMedia(message)}`);
+    return null;
+  }
   return { filename: media.filename || "", mimetype: media.mimetype, data: media.data, isGif: !!(message as any)._data?.isGif };
 };
 
@@ -915,9 +1346,41 @@ const clearStaleBrowserLocks = (whatsappId: number): void => {
   });
 };
 
-const init = async (whatsapp: Whatsapp): Promise<void> => {
+const setAsideLogin = (whatsappId: number, why: string): boolean => setAsideLoginIn(WWEBJS_AUTH_DIR, whatsappId, why, (m: string) => logger.warn(m));
+// numbers logged out by WhatsApp: their saved login is put aside before the next start
+const loggedOut = new Set<number>();
+
+// A QR Code that stops renewing (the page lost its connection to WhatsApp and stays on "abrindo") can no longer be read: the phone keeps "loading"
+// and never connects, while the screen still shows it. A QR Code (or a pairing code, every 150 s) older than this opens the page again.
+const lastQrAt = new Map<number, number>();
+const qrWatchers = new Map<number, NodeJS.Timeout>();
+const clearQrWatcher = (id: number) => {
+  const t = qrWatchers.get(id);
+  if (t) clearInterval(t);
+  qrWatchers.delete(id);
+};
+
+// Two starts of the same number at once (a retry and the QR Code button, a reconnect and the watchdog) would open two browsers on the same
+// login folder: the QR Code read by the phone authenticates both and WhatsApp logs the device out right away. One start at a time per number.
+const starting = new Map<number, Promise<void>>();
+const init = (whatsapp: Whatsapp): Promise<void> => {
+  const running = starting.get(whatsapp.id);
+  if (running) return running;
+  const p = initOnce(whatsapp).finally(() => {
+    if (starting.get(whatsapp.id) === p) starting.delete(whatsapp.id);
+  });
+  starting.set(whatsapp.id, p);
+  return p;
+};
+
+const initOnce = async (whatsapp: Whatsapp): Promise<void> => {
+  let created: Session | null = null;
   try {
+    // a browser that was left behind (stuck, or from a session that never got to "ready") is closed before a new one opens
+    await closeClient(whatsapp.id);
     removeSession(whatsapp.id);
+    // WhatsApp logged this device out: its saved login would only keep the page on "abrindo"
+    if (loggedOut.delete(whatsapp.id)) setAsideLogin(whatsapp.id, "o WhatsApp desconectou este aparelho");
 
     const io = getIO();
     const sessionName = whatsapp.name;
@@ -928,6 +1391,8 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
 
     const wbot: Session = new Client({
       authStrategy: new LocalAuth({ clientId: `bd_${whatsapp.id}`, dataPath: WWEBJS_AUTH_DIR }),
+      // a number typed by the person: WhatsApp gives a code to type on the phone instead of the QR Code to read
+      ...(whatsapp.pairingPhone ? { pairWithPhoneNumber: { phoneNumber: whatsapp.pairingPhone, showNotification: true, intervalMs: 150000 } } : {}),
       puppeteer: {
         // headless: false, // TODO make sure chromium closes on session disconnection / delete
         executablePath: process.env.CHROME_BIN || undefined,
@@ -955,10 +1420,42 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
       }
     });
 
+    clients.set(whatsapp.id, wbot);
+    created = wbot;
+    // the page must show the QR Code or become ready: a browser that does neither in a few minutes is stuck
+    initTimers.set(
+      whatsapp.id,
+      setTimeout(() => {
+        initTimers.delete(whatsapp.id);
+        logger.error(`Session: ${sessionName} não abriu em ${INIT_TIMEOUT_MS / 1000}s (${memoryNote()})`);
+        whatsapp.update({ status: "TIMEOUT", statusNote: "A página do WhatsApp não abriu no servidor; abrindo de novo." }).then(() => getIO().emit("whatsappSession", { action: "update", session: whatsapp })).catch(() => undefined);
+        retryLater(whatsapp.id, "a página do WhatsApp não carregou").catch(err => logger.error(err, "retry after a stuck start failed"));
+      }, INIT_TIMEOUT_MS)
+    );
+
+    // the QR Code on the screen must keep renewing until it is read: one that stopped is dead, so the page is opened again
+    const watchQr = () => {
+      if (qrWatchers.has(whatsapp.id)) return;
+      const timer: NodeJS.Timeout = setInterval(() => {
+          // this browser was replaced: only its own timer stops (the new one has its own)
+          if (clients.get(whatsapp.id) !== wbot) { clearInterval(timer); if (qrWatchers.get(whatsapp.id) === timer) qrWatchers.delete(whatsapp.id); return; }
+          const stale = qrIsStale({ lastQrAt: lastQrAt.get(whatsapp.id), ready: readySeen.has(whatsapp.id), authenticated: readyTimers.has(whatsapp.id) || readyNudges.has(whatsapp.id), now: Date.now() });
+          if (!stale || retrying.has(whatsapp.id)) return;
+          clearQrWatcher(whatsapp.id);
+          logger.warn(`Session: ${sessionName} o QR Code parou de se renovar há ${Math.round((Date.now() - (lastQrAt.get(whatsapp.id) || 0)) / 60000)} min; abrindo a página de novo`);
+          retryLater(whatsapp.id, "o QR Code parou de se renovar (a página do WhatsApp ficou parada)").catch(err => logger.error(err, "retry after a stale QR failed"));
+        }, 30000);
+      qrWatchers.set(whatsapp.id, timer);
+    };
+
     wbot.on("qr", async qr => {
+      // waiting for someone to read the QR Code is normal: nothing is stuck
+      clearInitTimer(whatsapp.id);
       logger.info("Session:", sessionName);
       qrCode.generate(qr, { small: true });
-      await whatsapp.update({ qrcode: qr, status: "qrcode", retries: 0 });
+      lastQrAt.set(whatsapp.id, Date.now());
+      watchQr();
+      await whatsapp.update({ qrcode: qr, status: "qrcode", retries: 0, statusNote: "Aguardando a leitura do QR Code no celular (WhatsApp → Aparelhos conectados)." });
 
       const sessionIndex = sessions.findIndex(s => s.id === whatsapp.id);
       if (sessionIndex === -1) {
@@ -972,25 +1469,52 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
       });
     });
 
+    // the pairing code (8 characters): the same screen of the QR Code shows it; the phone types it in WhatsApp → Aparelhos conectados
+    wbot.on("code", async (code: string) => {
+      clearInitTimer(whatsapp.id);
+      logger.info(`Session: ${sessionName} código de pareamento gerado`);
+      lastQrAt.set(whatsapp.id, Date.now());
+      watchQr();
+      await whatsapp.update({ qrcode: `code:${code}`, status: "qrcode", retries: 0, statusNote: "Aguardando o código no celular (WhatsApp → Aparelhos conectados → Conectar com número)." });
+      if (sessions.findIndex(s => s.id === whatsapp.id) === -1) {
+        wbot.id = whatsapp.id;
+        sessions.push(wbot);
+      }
+      io.emit("whatsappSession", { action: "update", session: whatsapp });
+    });
+
     wbot.on("authenticated", async () => {
       logger.info(`Session: ${sessionName} AUTHENTICATED (QR Code lido, carregando o WhatsApp Web; ${memoryNote()})`);
       try {
-        await whatsapp.update({ status: "OPENING", qrcode: "" });
+        clearQrWatcher(whatsapp.id);
+        await whatsapp.update({ status: "OPENING", qrcode: "", statusNote: "QR Code lido; carregando as conversas do WhatsApp Web (pode levar alguns minutos)." });
         io.emit("whatsappSession", { action: "update", session: whatsapp });
       } catch (err) {
         logger.error(err, "Error on whatsapp authenticated event");
       }
+      // the login was accepted: from here only the "ready" timer (minutes, a long history sits at 99%) may restart the session; the 4-minute start timer used to kill it in the middle of the load
+      clearInitTimer(whatsapp.id);
       clearReadyTimer(whatsapp.id);
+      // when the page is connected but the library never says "ready", finish the start by hand after 60 s (the watchdog only comes every 3 minutes)
+      const nudgeOld = readyNudges.get(whatsapp.id);
+      if (nudgeOld) clearTimeout(nudgeOld);
+      readyNudges.set(whatsapp.id, setTimeout(() => {
+        readyNudges.delete(whatsapp.id);
+        if (!readySeen.has(whatsapp.id) && clients.get(whatsapp.id) === wbot) {
+          healTried.delete(whatsapp.id);
+          healInjection(whatsapp.id, wbot).catch(() => undefined);
+        }
+      }, 60000));
       readyTimers.set(
         whatsapp.id,
         setTimeout(async () => {
           readyTimers.delete(whatsapp.id);
           logger.error(
-            `Session: ${sessionName} não ficou pronta em ${READY_TIMEOUT_MS / 1000}s depois de ler o QR Code (${memoryNote()}). ` +
+            `Session: ${sessionName} não ficou pronta em ${READY_TIMEOUT_MS / 1000}s depois de autenticar (${memoryNote()}). ` +
               "Causas comuns: pouca memória no servidor para o Chromium, ou o WhatsApp Web mudou. Reiniciando a sessão."
           );
           try {
-            await whatsapp.update({ status: "TIMEOUT" });
+            await whatsapp.update({ status: "TIMEOUT", statusNote: "O QR Code foi lido, mas o WhatsApp Web não terminou de carregar; abrindo de novo." });
             io.emit("whatsappSession", { action: "update", session: whatsapp });
             await wbot.destroy().catch(() => undefined);
           } catch (err) {
@@ -1003,6 +1527,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
             io.emit("whatsappSession", { action: "update", session: whatsapp });
             return;
           }
+          if (clients.get(whatsapp.id) !== wbot) return;
           init(whatsapp);
         }, READY_TIMEOUT_MS)
       );
@@ -1024,7 +1549,8 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
 
       await whatsapp.update({
         status: "DISCONNECTED",
-        retries: whatsapp.retries + 1
+        retries: whatsapp.retries + 1,
+        statusNote: "O WhatsApp recusou o login salvo. Clique em QR CODE e leia o código de novo."
       });
 
       io.emit("whatsappSession", {
@@ -1034,9 +1560,33 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
     });
 
     wbot.on("ready", async () => {
+      readySeen.add(whatsapp.id);
+      clearQrWatcher(whatsapp.id);
       clearReadyTimer(whatsapp.id);
+      clearInitTimer(whatsapp.id);
       logger.info(`Session: ${sessionName} READY (${memoryNote()})`);
       reconnectAttempts.set(whatsapp.id, 0);
+      // "digitando…" of the lead for the team (best effort: see ChatState.ts)
+      watchChatState(wbot, whatsapp.id).catch(() => undefined);
+      // heartbeat: a frozen browser does not answer, and then no message would arrive until somebody noticed
+      clearHeartbeat(whatsapp.id);
+      let missed = 0;
+      heartbeats.set(
+        whatsapp.id,
+        setInterval(async () => {
+          try {
+            await withTimeout(wbot.getState(), 20000);
+            missed = 0;
+          } catch (err) {
+            missed += 1;
+            logger.warn(`Session: ${sessionName} did not answer the heartbeat (${missed}/2): ${(err as Error).message}`);
+            if (missed >= 2) {
+              clearHeartbeat(whatsapp.id);
+              retryLater(whatsapp.id, "a sessão parou de responder").catch(e => logger.error(e, "retry after a frozen session failed"));
+            }
+          }
+        }, HEARTBEAT_MS)
+      );
 
       const firstConnection = !whatsapp.connectedSince;
 
@@ -1045,6 +1595,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
           status: "CONNECTED",
           qrcode: "",
           retries: 0,
+          statusNote: "",
           ...(whatsapp.connectedSince ? {} : { connectedSince: new Date() })
         });
 
@@ -1060,8 +1611,27 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
         }
 
         wbot.sendPresenceAvailable();
-        await syncUnreadMessages(wbot, whatsapp.id);
+        // the catch-up runs in the background (it can take minutes on a big number): the rest of the start does not wait for it
+        syncUnreadMessages(wbot, whatsapp.id).catch(() => undefined);
+        // and every 5 minutes a light check brings what the live events may have missed (a throttled page, a dropped event)
+        const catchUp = setInterval(() => {
+          if (clients.get(whatsapp.id) !== wbot) { clearInterval(catchUp); return; }
+          syncUnreadMessages(wbot, whatsapp.id, { periodic: true }).catch(() => undefined);
+        }, 5 * 60 * 1000);
         if (firstConnection) afterFirstConnection(whatsapp);
+        // the communities of this number, a little after WhatsApp Web finished loading and then every 15 minutes
+        scheduleCommunitySync(wbot, whatsapp.id, 30000);
+        // the pins and pictures as the phone has them: a little after loading, then every 3 minutes
+        const chatState = () => syncChatState(wbot, whatsapp.id).catch(err => logger.warn(`chat state sync (${whatsapp.id}) failed: ${err}`));
+        setTimeout(chatState, 20000);
+        const stateTimer = setInterval(() => {
+          if (!sessions.some(x => x.id === whatsapp.id)) { clearInterval(stateTimer); return; }
+          chatState();
+        }, 3 * 60 * 1000);
+        const again = setInterval(() => {
+          if (!sessions.some(x => x.id === whatsapp.id)) { clearInterval(again); return; }
+          scheduleCommunitySync(wbot, whatsapp.id, 1000);
+        }, 15 * 60 * 1000);
       } catch (err) {
         logger.error(err, "Error on whatsapp ready event");
       }
@@ -1082,10 +1652,18 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
     });
 
     wbot.on("disconnected", async reason => {
+      // a browser that was already replaced (closed by a new start) says nothing about the session: restarting from it would open a second
+      // browser on the same login, and WhatsApp logs out a device that shows up twice
+      if (clients.get(whatsapp.id) !== wbot) {
+        logger.info(`Session ${sessionName}: disconnected from a browser already replaced (${reason}), ignored`);
+        return;
+      }
       clearReadyTimer(whatsapp.id);
+      clearHeartbeat(whatsapp.id);
       logger.info(`Disconnected session: ${sessionName}, reason: ${reason}`);
+      if (isLogoutReason(String(reason))) loggedOut.add(whatsapp.id);
       try {
-        await whatsapp.update({ status: "OPENING", session: "" });
+        await whatsapp.update({ status: "OPENING", session: "", statusNote: disconnectNote(String(reason)) });
 
         io.emit("whatsappSession", {
           action: "update",
@@ -1100,7 +1678,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
         reconnectAttempts.set(whatsapp.id, attempt);
         if (attempt > RECONNECT_MAX_ATTEMPTS) {
           logger.error(`Session ${sessionName}: giving up after ${attempt - 1} reconnect attempts`);
-          await whatsapp.update({ status: "DISCONNECTED", qrcode: "" });
+          await whatsapp.update({ status: "DISCONNECTED", qrcode: "", statusNote: `${disconnectNote(String(reason))} Parou de tentar sozinho depois de ${attempt - 1} tentativas.` });
           io.emit("whatsappSession", { action: "update", session: whatsapp });
           // WhatsApp also unlinks linked devices when the phone stays offline for about 14 days
           io.emit("whatsappAlert", { whatsappId: whatsapp.id, name: whatsapp.name, ownerId: whatsapp.ownerId, reason: String(reason) });
@@ -1113,6 +1691,8 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
 
         await new Promise(r => setTimeout(r, delay));
 
+        // someone opened the session again meanwhile (the QR Code button, the watchdog): that one stays
+        if (clients.get(whatsapp.id) !== wbot) return;
         init(whatsapp);
       } catch (err) {
         logger.error(err, "Error on whatsapp disconnected event");
@@ -1120,6 +1700,7 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
     });
 
     wbot.on("message_create", async msg => {
+      markAlive(whatsapp.id);
       if (!shouldHandleMessage(msg)) return;
 
       try {
@@ -1210,6 +1791,9 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
       }
     });
 
+    // a group changed (someone joined, left, a community was linked): look at the communities again
+    ["group_join", "group_leave", "group_update", "group_admin_changed"].forEach(evt => wbot.on(evt as any, () => scheduleCommunitySync(wbot, whatsapp.id, 8000)));
+
     // The event uses either a phone id, group id or LID depending on the account.
     wbot.on("unread_count", async (chat: any) => {
       const observedAt = new Date();
@@ -1225,20 +1809,34 @@ const init = async (whatsapp: Whatsapp): Promise<void> => {
 
     await wbot.initialize();
   } catch (err) {
+    // this browser was closed on purpose by a newer start: that one carries on, nothing to retry here
+    if (created && clients.get(whatsapp.id) !== created) return;
     logger.error(err, "Error on whatsapp session");
-    // the screen must not stay on "QR CODE" when the browser could not even start
+    // the screen must not stay on "QR CODE" when the browser could not even start: say so, and try again by itself
     try {
-      await whatsapp.update({ status: "DISCONNECTED", qrcode: "" });
+      await whatsapp.update({ status: "DISCONNECTED", qrcode: "", statusNote: "O navegador do servidor não conseguiu abrir o WhatsApp Web; tentando de novo." });
       getIO().emit("whatsappSession", { action: "update", session: whatsapp });
     } catch (e) {
       logger.error(e, "Error saving the failed session status");
     }
+    retryLater(whatsapp.id, "o navegador da sessão não conseguiu iniciar").catch(e => logger.error(e, "retry after a failed start failed"));
   }
 };
 
+// deleting or logging out a connection also stops its timers and closes its browser
+const removeSessionFully = (whatsappId: number): void => {
+  removeSession(whatsappId);
+  reconnectAttempts.delete(whatsappId);
+  closeClient(whatsappId).catch(() => undefined);
+};
+
 export const WhatsappWebJsProvider: WhatsappProvider = {
-  init,
-  removeSession,
+  // a start asked from outside (the QR CODE button, the server starting, the watchdog) gets the full count of automatic retries again
+  init: (whatsapp: Whatsapp) => {
+    reconnectAttempts.set(whatsapp.id, 0);
+    return init(whatsapp);
+  },
+  removeSession: removeSessionFully,
   logout,
   sendMessage,
   sendMedia,

@@ -1,5 +1,5 @@
 import TimezoneSelect from "../TimezoneSelect";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useContext } from "react";
 import { toast } from "react-toastify";
 
 import { makeStyles } from "@material-ui/core/styles";
@@ -24,6 +24,23 @@ import api from "../../services/api";
 import { i18n } from "../../translate/i18n";
 import toastError from "../../errors/toastError";
 import QueueSelect from "../QueueSelect";
+import { AuthContext } from "../../context/Auth/AuthContext";
+import { isManager } from "../../utils/access";
+
+const WEBHOOK_OUTCOME = {
+	recebido: "chegou ao sistema",
+	assinatura_invalida: "recusada",
+	sem_app_secret: "recusada",
+	numero_diferente: "ignorada",
+	verificacao_ok: "verificação aceita",
+	verificacao_recusada: "verificação recusada",
+};
+// the last time the Meta called this connection and what became of it, in words
+const webhookLine = w => {
+	if (!w) return "Nenhuma mensagem chegou da Meta desde que o servidor ligou. Se você já mandou uma mensagem, a Meta não está enviando: confira o campo messages do webhook e se o app está publicado.";
+	const when = new Date(w.at).toLocaleString("pt-BR", { timeZone: "America/Porto_Velho" });
+	return `${when}: ${WEBHOOK_OUTCOME[w.outcome] || w.outcome}${w.detail ? ` (${w.detail})` : ""}.`;
+};
 
 const useStyles = makeStyles(theme => ({
 	row: { display: "flex", gap: theme.spacing(1), alignItems: "center", flexWrap: "wrap" },
@@ -59,6 +76,13 @@ const defaultHours = () => ({
 	},
 });
 
+// a stored value of another shape (an old format, {}) must not break the editor: every day exists
+const mergeHours = (value) => {
+	const base = defaultHours();
+	const v = value && typeof value === "object" ? value : {};
+	return { ...base, ...v, days: { ...base.days, ...(v.days && typeof v.days === "object" ? v.days : {}) } };
+};
+
 const parse = (text, fallback) => {
 	try {
 		return text ? JSON.parse(text) : fallback;
@@ -72,7 +96,7 @@ const Copyable = ({ text }) => {
 	return (
 		<div className={classes.code}>
 			<span>{text}</span>
-			<IconButton
+			<IconButton aria-label="Copiar"
 				size="small"
 				onClick={() => {
 					navigator.clipboard?.writeText(text);
@@ -85,8 +109,9 @@ const Copyable = ({ text }) => {
 	);
 };
 
-const WhatsAppModal = ({ open, onClose, whatsAppId }) => {
+const WhatsAppModal = ({ open, onClose, whatsAppId, onCreated }) => {
 	const classes = useStyles();
+	const { user } = useContext(AuthContext);
 	const initialState = {
 		name: "",
 		greetingMessage: "",
@@ -96,9 +121,13 @@ const WhatsAppModal = ({ open, onClose, whatsAppId }) => {
 		channel: "whatsapp",
 	};
 	const [whatsApp, setWhatsApp] = useState(initialState);
+	const [pairingPhone, setPairingPhone] = useState("");
 	const [config, setConfig] = useState({});
 	const [hours, setHours] = useState(defaultHours());
 	const [selectedQueueIds, setSelectedQueueIds] = useState([]);
+	// the AI agent that answers on this connection (the same agent can serve several connections)
+	const [agents, setAgents] = useState([]);
+	const [agentId, setAgentId] = useState("");
 	const [channels, setChannels] = useState([]);
 	const [info, setInfo] = useState(null);
 	const [safety, setSafety] = useState(null);
@@ -112,6 +141,33 @@ const WhatsAppModal = ({ open, onClose, whatsAppId }) => {
 		api.get("/channels").then(({ data }) => setChannels(data)).catch(() => {});
 	}, [open]);
 
+	const agentConnections = a => [...new Set([a.whatsappId, ...(a.whatsappIds || [])].filter(Boolean).map(Number))];
+	useEffect(() => {
+		if (!open) return;
+		api
+			.get("/ai-agents")
+			.then(({ data }) => {
+				const list = Array.isArray(data) ? data : [];
+				setAgents(list);
+				const mine = whatsAppId ? list.find(a => agentConnections(a).includes(Number(whatsAppId))) : null;
+				setAgentId(mine ? mine.id : "");
+			})
+			.catch(() => setAgents([]));
+	}, [open, whatsAppId]);
+
+	// the chosen agent gets this connection in its list, and the others lose it
+	const syncAgent = async connectionId => {
+		for (const a of agents) {
+			const ids = agentConnections(a);
+			const has = ids.includes(Number(connectionId));
+			const want = a.id === agentId;
+			if (has !== want) {
+				// eslint-disable-next-line no-await-in-loop
+				await api.put(`/ai-agents/${a.id}`, { whatsappIds: want ? [...ids, Number(connectionId)] : ids.filter(x => x !== Number(connectionId)), whatsappId: null });
+			}
+		}
+	};
+
 	useEffect(() => {
 		if (!open || !whatsAppId) return;
 		const fetchSession = async () => {
@@ -119,7 +175,7 @@ const WhatsAppModal = ({ open, onClose, whatsAppId }) => {
 				const { data } = await api.get(`whatsapp/${whatsAppId}`);
 				setWhatsApp({ ...initialState, ...data });
 				setConfig(parse(data.config, {}));
-				setHours(parse(data.businessHours, defaultHours()));
+				setHours(mergeHours(parse(data.businessHours, defaultHours())));
 				setSelectedQueueIds(data.queues?.map(queue => queue.id) || []);
 				try {
 					setAllowed(data.allowedGroups ? JSON.parse(data.allowedGroups) : []);
@@ -147,7 +203,9 @@ const WhatsAppModal = ({ open, onClose, whatsAppId }) => {
 		setConfig({});
 		setHours(defaultHours());
 		setSelectedQueueIds([]);
+		setAgentId("");
 		setInfo(null);
+		setPairingPhone("");
 		setSafety(null);
 		setGroupList(null);
 		setAllowed([]);
@@ -178,6 +236,7 @@ const WhatsAppModal = ({ open, onClose, whatsAppId }) => {
 			outOfHoursMessage: whatsApp.outOfHoursMessage,
 			riskMode: whatsApp.riskMode,
 			groupsMode: whatsApp.groupsMode || "off",
+			...(isManager(user) ? { aiFirst: !!whatsApp.aiFirst } : {}),
 			allowedGroups: allowed,
 			businessHours: JSON.stringify(hours),
 			queueIds: selectedQueueIds,
@@ -186,14 +245,25 @@ const WhatsAppModal = ({ open, onClose, whatsAppId }) => {
 		if (whatsApp.channel !== "whatsapp") payload.config = JSON.stringify(config);
 
 		setSaving(true);
+		let createdNow = null;
 		try {
 			if (whatsAppId) {
 				await api.put(`/whatsapp/${whatsAppId}`, payload);
 			} else {
-				await api.post("/whatsapp", payload);
+				const { data: created } = await api.post("/whatsapp", { ...payload, ...(pairingPhone.replace(/\D/g, "") ? { pairingPhone } : {}) });
+				createdNow = created;
+			}
+			if (agents.length) {
+				try {
+					await syncAgent(whatsAppId || (createdNow && createdNow.id));
+				} catch (err) {
+					toast.warn("A conexão foi salva, mas não deu para ligar o agente de IA a ela. Faça em Agentes de IA → Ajustes.");
+				}
 			}
 			toast.success(i18n.t("whatsappModal.success"));
 			handleClose();
+			// a new WhatsApp number: the window with the QR Code (or the pairing code) opens at once
+			if (createdNow && createdNow.channel === "whatsapp" && onCreated) onCreated(createdNow);
 		} catch (err) {
 			toastError(err);
 		} finally {
@@ -209,7 +279,7 @@ const WhatsAppModal = ({ open, onClose, whatsAppId }) => {
 	const setDayTime = (d, key, value) =>
 		setHours({
 			...hours,
-			days: { ...hours.days, [d]: [{ ...(hours.days[d][0] || {}), [key]: value }] },
+			days: { ...hours.days, [d]: [{ ...((hours.days[d] || [])[0] || {}), [key]: value }] },
 		});
 
 	return (
@@ -240,6 +310,25 @@ const WhatsAppModal = ({ open, onClose, whatsAppId }) => {
 					/>
 				</div>
 
+				{!!whatsAppId && !!whatsApp.ownerId && isManager(user) && (
+					<div className={classes.section}>
+						<FormControlLabel
+							control={
+								<Switch
+									color="primary"
+									checked={!!whatsApp.aiFirst}
+									onChange={e => setWhatsApp({ ...whatsApp, aiFirst: e.target.checked })}
+								/>
+							}
+							label="Agente de IA atende primeiro (número de atendimento)"
+						/>
+						<div style={{ fontSize: 12, opacity: 0.75, marginTop: -4 }}>
+							Este é um número pessoal: por padrão, toda conversa nova vai direto para o dono e o agente de IA não responde. Ligado, o agente atende
+							os contatos novos primeiro e o dono acompanha ou assume quando quiser. Ligue só em número usado para atendimento.
+						</div>
+					</div>
+				)}
+
 				<TextField
 					select
 					fullWidth
@@ -258,6 +347,19 @@ const WhatsAppModal = ({ open, onClose, whatsAppId }) => {
 						<MenuItem key={c.type} value={c.type}>{c.label}</MenuItem>
 					))}
 				</TextField>
+
+				{!whatsAppId && (whatsApp.channel || "whatsapp") === "whatsapp" && (
+					<TextField
+						label="Número para conectar com código (opcional)"
+						value={pairingPhone}
+						onChange={e => setPairingPhone(e.target.value)}
+						variant="outlined"
+						margin="dense"
+						fullWidth
+						placeholder="69 99999-9999"
+						helperText="Preencha para conectar com um código de 8 letras digitado no celular, sem ler QR Code."
+					/>
+				)}
 
 				{(whatsApp.channel || "whatsapp") === "whatsapp" && (
 					<div className={classes.section}>
@@ -339,7 +441,7 @@ const WhatsAppModal = ({ open, onClose, whatsAppId }) => {
 														size="small"
 														color="primary"
 														checked={allowed.includes(g.id)}
-														onChange={e => setAllowed(a => (e.target.checked ? [...a, g.id] : a.filter(x => x !== g.id)))}
+														onChange={e => { e && e.persist && e.persist(); return (setAllowed(a => (e.target.checked ? [...a, g.id] : a.filter(x => x !== g.id)))); }}
 													/>
 												}
 												label={`${g.name} (${g.participants})`}
@@ -382,6 +484,18 @@ const WhatsAppModal = ({ open, onClose, whatsAppId }) => {
 							A Meta exige HTTPS público. Em localhost use um túnel (ex.: cloudflared) e defina PUBLIC_URL no backend/.env.
 							Atualmente: {info.publicUrl}
 						</Typography>
+						<Typography variant="subtitle2" style={{ marginTop: 12 }}>Última mensagem recebida da Meta</Typography>
+						<Typography variant="body2">{webhookLine(info.webhook)}</Typography>
+						{info.webhookCheck && (
+							<Typography variant="caption" className={classes.hint} display="block" style={{ marginTop: 4 }}>
+								Última verificação do endereço: {webhookLine(info.webhookCheck)}
+							</Typography>
+						)}
+						{whatsAppId && (
+							<Button size="small" style={{ marginTop: 4 }} onClick={() => api.get(`/channels/${whatsAppId}/info`).then(({ data: i }) => setInfo(i)).catch(() => {})}>
+								Atualizar
+							</Button>
+						)}
 					</div>
 				)}
 				{info && info.snippet && (
@@ -420,6 +534,32 @@ const WhatsAppModal = ({ open, onClose, whatsAppId }) => {
 					selectedQueueIds={selectedQueueIds}
 					onChange={selectedIds => setSelectedQueueIds(selectedIds)}
 				/>
+				{agents.length > 0 && (
+					<TextField
+						select
+						fullWidth
+						variant="outlined"
+						margin="dense"
+						label="Agente de IA que atende esta conexão"
+						value={agentId}
+						onChange={e => setAgentId(e.target.value)}
+						InputLabelProps={{ shrink: true }}
+						SelectProps={{ displayEmpty: true }}
+						helperText={
+							agentId && agents.find(a => a.id === agentId) && !agentConnections(agents.find(a => a.id === agentId)).length
+								? "Este agente hoje atende todas as conexões sem outro agente. Ao escolher aqui, ele passa a atender só as conexões marcadas."
+								: "O mesmo agente pode atender várias conexões. O agente precisa estar ligado (Agentes de IA → Ajustes)."
+						}
+					>
+						<MenuItem value="">Nenhum agente específico</MenuItem>
+						{agents.map(a => (
+							<MenuItem key={a.id} value={a.id}>
+								{a.name}
+								{a.active ? "" : " (desligado)"}
+							</MenuItem>
+						))}
+					</TextField>
+				)}
 
 				<div className={classes.section}>
 					<FormControlLabel

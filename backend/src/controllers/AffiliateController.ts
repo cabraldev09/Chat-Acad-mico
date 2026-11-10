@@ -1,3 +1,4 @@
+import { csvCell } from "../helpers/Csv";
 import { tagAffiliateLead } from "../services/AffiliateServices/AffiliateLane";
 import { Request, Response } from "express";
 import { Op } from "sequelize";
@@ -13,16 +14,19 @@ import Proposal from "../models/Proposal";
 import User from "../models/User";
 import { getSetting, setSetting } from "../helpers/AppSettings";
 import { getPublicUrl } from "../helpers/PublicUrl";
-import { normalizeEmail, normalizePhone } from "../helpers/Phone";
+import { isWhatsappReady, normalizeEmail, normalizePhone } from "../helpers/Phone";
 import {
   brl, newPortalToken, newRefCode, portalUrl, referralUrl, withAffiliateScope
 } from "../helpers/Affiliates";
 import { isAdminReq, withLeadScope } from "../middleware/scope";
 import { statsFor } from "../services/AffiliateServices/Stats";
+import { clicksFor } from "../services/AffiliateServices/Clicks";
 import { getPortalTexts, getRules } from "../services/AffiliateServices/Bonus";
 import { addActivity, loadLead, resolveLeadTarget, upsertLead } from "../services/CrmServices/LeadCore";
 import SendToContact from "../services/ChannelServices/SendToContact";
 import { getIO } from "../libs/socket";
+import { logger } from "../utils/logger";
+import { whatsappProvider } from "../providers/WhatsApp";
 
 const uid = (req: Request) => Number(req.user.id);
 const clip = (v: any, n = 160): string | null => {
@@ -83,6 +87,9 @@ const fieldsOf = (b: any, isNew: boolean) => {
   if (b.status !== undefined) data.status = b.status === "paused" ? "paused" : "active";
   return data;
 };
+
+import { mailConfigured, sendMail } from "../services/MailServices/SendMail";
+import { affiliateWelcomeMail } from "../services/MailServices/Templates";
 
 export const index = async (req: Request, res: Response): Promise<Response> => {
   const where = await withAffiliateScope(req, {});
@@ -183,6 +190,7 @@ export const summary = async (req: Request, res: Response): Promise<Response> =>
   const stats = await statsFor([a.id]);
   return res.json({
     affiliate: present(a, { stats: stats.get(a.id) }),
+    clicks: (await clicksFor([a.id])).get(a.id),
     leads,
     proposals: proposals.map(p => ({ ...p.toJSON(), publicUrl: `${getPublicUrl()}/p/${p.token}` })),
     bonuses
@@ -212,7 +220,7 @@ export const addReferral = async (req: Request, res: Response): Promise<Response
   const a = await load(req.params.id);
   const name = clip(req.body.name, 120);
   if (!name) throw new AppError("ERR_FIELD_REQUIRED_name");
-  if (!normalizePhone(req.body.phone)) throw new AppError("ERR_INVALID_PHONE");
+  if (!isWhatsappReady(req.body.phone)) throw new AppError("ERR_INVALID_PHONE");
   const course = req.body.courseId ? await Course.findByPk(Number(req.body.courseId)) : null;
   const { lead, created } = await upsertLead(
     {
@@ -254,19 +262,47 @@ const affiliateContact = async (a: Affiliate, req: Request) => {
   return resolveLeadTarget(fake, uid(req), req.body.whatsappId);
 };
 
+// Delivers a message to the affiliate on WhatsApp and says WHY when it cannot (the screen used to show one generic
+// failure for a number without WhatsApp, a disconnected number, a send limit and a real error alike).
+const deliverToAffiliate = async (a: Affiliate, req: Request, body: string): Promise<void> => {
+  const { contact, whatsapp } = await affiliateContact(a, req);
+  try {
+    // a number that is not on WhatsApp cannot receive anything: ask first, so the answer is clear
+    if (whatsapp.channel === "whatsapp") {
+      const registered = await whatsappProvider.checkNumber(whatsapp.id, String(contact.number || "").replace(/\D/g, ""));
+      if (!registered) throw new AppError("ERR_NUMBER_NOT_ON_WHATSAPP", 400);
+    }
+    await SendToContact({ contact, whatsapp, body, keepOpen: { userId: uid(req) } });
+  } catch (err) {
+    // the real reason stays in the log (it used to be thrown away)
+    logger.error({ affiliateId: a.id, whatsappId: whatsapp.id, number: contact.number, err: String((err as any)?.message || err) }, "Could not send to the affiliate");
+    // a reason the person can act on is passed on as it is; anything else is the generic failure
+    if (err instanceof AppError && /^ERR_(NUMBER_NOT_ON_WHATSAPP|WAPP_NOT_INITIALIZED|RATE_LIMITED|SENDING_WAPP_MSG|NO_DEF_WAPP_FOUND|WAPP_INVALID_CONTACT)$/.test(err.message)) throw err;
+    throw new AppError("ERR_AFFILIATE_SEND_FAILED");
+  }
+};
+
 // sends the portal link to the affiliate on WhatsApp
 export const sendPortal = async (req: Request, res: Response): Promise<Response> => {
   const a = await load(req.params.id);
-  const { contact, whatsapp } = await affiliateContact(a, req);
   const first = a.name.split(" ")[0];
   const body =
     (clip(req.body.message, 1500) ||
       `Olá, ${first}! Aqui está o seu acesso ao material de apoio (banners, textos, vídeos, cursos e campanhas):`) +
     `\n\n${portalUrl(a.portalToken)}\n\nGuarde este link: ele é só seu.`;
-  await SendToContact({ contact, whatsapp, body, keepOpen: { userId: uid(req) } }).catch(() => {
-    throw new AppError("ERR_AFFILIATE_SEND_FAILED");
-  });
+  await deliverToAffiliate(a, req, body);
   return res.json({ message: "sent" });
+};
+
+// sends the portal link to the affiliate by e-mail (the same link, in a message with the brand)
+export const sendPortalMail = async (req: Request, res: Response): Promise<Response> => {
+  const a = await load(req.params.id);
+  if (!a.email) throw new AppError("Este afiliado não tem e-mail cadastrado.", 400);
+  if (!(await mailConfigured())) throw new AppError("O envio de e-mails ainda não foi configurado em Configurações > E-mail.", 400);
+  await sendMail({ to: a.email, ...affiliateWelcomeMail(a.name, portalUrl(a.portalToken)) }).catch(() => {
+    throw new AppError("Não foi possível enviar o e-mail agora. Tente novamente em instantes.", 502);
+  });
+  return res.json({ message: "sent", to: a.email });
 };
 
 // sends a proposal made for a referred person to the affiliate, who forwards it
@@ -275,14 +311,11 @@ export const sendProposal = async (req: Request, res: Response): Promise<Respons
   const p = await Proposal.findByPk(Number(req.body.proposalId), { include: [{ model: Lead, as: "lead", attributes: ["id", "name", "affiliateId"] }] });
   if (!p || (p.affiliateId !== a.id && (p as any).lead?.affiliateId !== a.id)) throw new AppError("ERR_NOT_FOUND", 404);
   if (!isAdminReq(req) && (await Lead.count({ where: await withLeadScope(req, { id: p.leadId }) })) === 0) throw new AppError("ERR_NO_PERMISSION", 403);
-  const { contact, whatsapp } = await affiliateContact(a, req);
   const first = a.name.split(" ")[0];
   const body =
     `Olá, ${first}! Segue a proposta de ${(p as any).lead?.name || "seu indicado"} para você encaminhar:\n\n` +
     `${getPublicUrl()}/p/${p.token}\n\nO link abre a proposta completa (e tem o PDF para baixar).`;
-  await SendToContact({ contact, whatsapp, body, keepOpen: { userId: uid(req) } }).catch(() => {
-    throw new AppError("ERR_AFFILIATE_SEND_FAILED");
-  });
+  await deliverToAffiliate(a, req, body);
   await addActivity(p.leadId, uid(req), "whatsapp", `Proposta #${p.id} enviada ao afiliado ${a.name} para encaminhar`);
   return res.json({ message: "sent", url: `${getPublicUrl()}/p/${p.token}` });
 };
@@ -354,7 +387,7 @@ export const exportBonuses = async (req: Request, res: Response): Promise<void> 
     ],
     order: [["createdAt", "ASC"]]
   });
-  const esc = (v: any) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const esc = (v: any) => csvCell(v);
   const label: any = { pending: "Pendente", approved: "Aprovado", paid: "Pago", cancelled: "Cancelado" };
   const lines = [["Afiliado", "Tipo da chave", "Chave Pix", "Indicado", "Valor", "Situação", "Motivo", "Data", "Comprovante"].map(esc).join(";")];
   rows.forEach(r => {

@@ -220,7 +220,7 @@ const NewTicketModal = ({ modalOpen, onClose, title = "Nova conversa", onPick, h
               onChange={(e) => setQuery(e.target.value)}
             />
             {query && (
-              <IconButton size="small" onClick={() => setQuery("")} style={{ padding: 3 }}>
+              <IconButton aria-label="Limpar" size="small" onClick={() => setQuery("")} style={{ padding: 3 }}>
                 <ClearIcon style={{ fontSize: 18 }} />
               </IconButton>
             )}

@@ -6,7 +6,7 @@ import { safeRequest } from "../../helpers/SafeUrl";
 import { afterCommit } from "../../helpers/TransactionContext";
 import { logger } from "../../utils/logger";
 
-export const WEBHOOK_EVENTS = ["message.received", "message.sent", "ticket.created", "ticket.updated", "ticket.closed", "contact.created", "lead.created", "lead.updated", "lead.stage_changed", "lead.won", "lead.lost", "lead.enrolled", "onboarding.done", "proposal.sent", "proposal.viewed", "payment.paid"];
+export const WEBHOOK_EVENTS = ["message.received", "message.sent", "ticket.created", "ticket.updated", "ticket.closed", "contact.created", "lead.created", "lead.updated", "lead.stage_changed", "lead.won", "lead.lost", "lead.enrolled", "onboarding.done", "proposal.sent", "proposal.viewed", "payment.paid", "ai.handoff", "ai.unknown_question"];
 let busy = false;
 
 // Enqueue in the caller's transaction. Delivery failures never roll back business data.

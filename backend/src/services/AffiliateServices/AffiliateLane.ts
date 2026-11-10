@@ -34,8 +34,17 @@ export const ensureAffiliateStage = async (): Promise<LeadStage> => {
   return stage;
 };
 
-// id of the affiliate column, or 0 when it was never needed (does not create it)
-export const affiliateStageId = async (): Promise<number> => Number(await getSetting("affiliate_stage_id", "0")) || 0;
+// id of the affiliate column, or 0 when it was never needed (does not create it). The column is also found by its name when
+// the remembered id is missing: otherwise it would be taken for the first regular column of the funnel and ordinary leads
+// would start inside it.
+export const affiliateStageId = async (): Promise<number> => {
+  const stored = Number(await getSetting("affiliate_stage_id", "0")) || 0;
+  if (stored && (await LeadStage.findByPk(stored, { attributes: ["id"] }))) return stored;
+  const byName = await LeadStage.findOne({ where: { name: AFFILIATE_STAGE_NAME }, attributes: ["id"] });
+  if (!byName) return 0;
+  await setSetting("affiliate_stage_id", String(byName.id));
+  return byName.id;
+};
 
 export const ensureAffiliateTag = async (): Promise<Tag> => {
   const [tag] = await Tag.findOrCreate({ where: { name: AFFILIATE_TAG_NAME }, defaults: { name: AFFILIATE_TAG_NAME, color: "#F5A524" } as any });

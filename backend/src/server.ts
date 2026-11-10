@@ -12,21 +12,38 @@ import { startScheduler } from "./workers/Scheduler";
 import { startCampaignRunner } from "./workers/CampaignRunner";
 import { startCrmReminders } from "./workers/CrmReminders";
 import { startLeadSlaAlert } from "./workers/LeadSlaAlert";
+import { startHandoffSla } from "./workers/HandoffSla";
+import { startStaleRuns } from "./workers/StaleRuns";
+import { startAiReactivation } from "./workers/AiReactivation";
+import { startProcessEval } from "./services/AiServices/ProcessEval";
+import { startWhatsappWatchdog } from "./workers/WhatsappWatchdog";
+import { startChannelTokenRefresh } from "./workers/ChannelTokenRefresh";
+import { startDataRetention } from "./workers/DataRetention";
+import { startFollowUpAlert } from "./workers/FollowUpAlert";
 import { startProfilePicSync } from "./workers/ProfilePicSync";
 import { startAckReconciler } from "./workers/AckReconciler";
 import { startPaymentPoller } from "./workers/PaymentPoller";
 import { startOnboardingSla } from "./workers/OnboardingSla";
+import { startTaskSweep } from "./workers/TaskSweep";
 import { startChatbotReminder } from "./workers/ChatbotReminder";
+import { startOutboundWorker } from "./workers/OutboundWorker";
 import { startFlowRunner } from "./workers/FlowRunner";
+import { startCadences } from "./workers/Cadences";
 import { loadAppTz } from "./helpers/AppTime";
 import { whenLeader } from "./helpers/SingleInstance";
 import { ensureRls } from "./helpers/EnsureRls";
+import sequelize from "./database";
+import { persistAutomationTraces } from "./services/AutomationServices/AutomationTrace";
 
 const server = createServer(app);
 initIO(server);
 const boot = async () => {
   await ensureRls();
   await loadAppTz();
+  // "Ver o que o robô fez" is saved in the database too (it survives a restart)
+  persistAutomationTraces(sequelize);
+  // keys saved before they were sealed are sealed now (once)
+  import("./helpers/SecretSettings").then(m => m.sealStoredKeys()).then(n => { if (n) logger.info(`API keys sealed at rest: ${n}`); }).catch(err => logger.warn(`Sealing the API keys failed: ${err}`));
   server.listen(process.env.PORT, () => logger.info(`Server started on port: ${process.env.PORT}`));
 // Only one instance may own the WhatsApp sessions and the background workers
 whenLeader(() => {
@@ -38,15 +55,35 @@ whenLeader(() => {
   startCommercialFollowUp();
   startBudgetAlerts();
   startLeadSlaAlert();
+  startHandoffSla();
+  startStaleRuns();
+  startAiReactivation();
+  startProcessEval();
+  startWhatsappWatchdog();
+  startChannelTokenRefresh();
+  startDataRetention();
+  startFollowUpAlert();
   startProfilePicSync();
   startAckReconciler();
   startUnreadReconciler();
   startPaymentPoller();
   startOnboardingSla();
+  startTaskSweep();
   startChatbotReminder();
   startFlowRunner();
+  startOutboundWorker();
+  startCadences();
   // the polos and goals of the spreadsheet are loaded once, so the goals screen is never empty
-  import("./services/GoalServices/SeedPoloGoals").then(({ seedPoloGoals }) => seedPoloGoals()).catch(() => undefined);
+  import("./services/GoalServices/SeedPoloGoals").then(({ seedPoloGoals }) => seedPoloGoals()).catch(() => undefined)
+    // the cities come after the polos exist
+    .then(() => import("./services/PoloServices/SeedCoverage")).then(({ seedPoloCoverage }) => seedPoloCoverage()).catch(() => undefined);
+  // the commercial matrices that come with the system, read once when the catalog is empty
+  // and every stored matrix is read again once per version of the reader (internships, text told to the students)
+  import("./analysis/Grades").then(async ({ importDefaultGradesIfEmpty, refreshGradesOnce }) => { await importDefaultGradesIfEmpty(); await refreshGradesOnce(); }).catch(() => undefined);
+  // the rules of the MEC (Portaria 378/2025) for the courses that have none, once per version
+  import("./services/CommercialServices/MecDefaults").then(({ seedMecDefaults }) => seedMecDefaults()).catch(() => undefined);
+  // the goals of the polos: what was typed as "Já realizado" is the total shown (once)
+  import("./helpers/GoalTotals").then(({ migrateGoalTotals }) => migrateGoalTotals()).catch(() => undefined);
   // every contact already in the system becomes a lead too (idempotent)
   import("./services/CrmServices/LeadCore")
     .then(({ backfillLeads }) => backfillLeads())
@@ -55,8 +92,24 @@ whenLeader(() => {
 });
 };
 boot().catch(err => { logger.fatal({ err }, "Startup checks failed"); process.exit(1); });
-gracefulShutdown(server);
+gracefulShutdown(server, {
+  // Docker waits 60 s (stop_grace_period) before it kills the container
+  timeout: 55000,
+  onShutdown: async () => {
+    try {
+      if (String(process.env.WHATSAPP_PROVIDER || "wwebjs") === "wwebjs") {
+        const { closeAllWwebjsClients } = await import("./providers/WhatsApp/Implementations/wwebjs");
+        await closeAllWwebjsClients();
+      }
+      logger.info("WhatsApp sessions closed for the shutdown");
+    } catch (err) {
+      logger.warn(`Shutdown: the sessions did not close cleanly (${err})`);
+    }
+  }
+});
 
-// Exit after an uncaught failure: continuing could serve partially corrupted state.
+// Exit after an uncaught exception: continuing could serve partially corrupted state.
 process.on("uncaughtException", err => { logger.fatal({ err }, "Uncaught exception"); process.exit(1); });
-process.on("unhandledRejection", err => { logger.fatal({ err }, "Unhandled rejection"); process.exit(1); });
+// a promise nobody waited for that failed must not take every WhatsApp session down (they take minutes to come back): it is logged
+// loudly and the process keeps running
+process.on("unhandledRejection", err => { logger.error({ err }, "Unhandled rejection"); });

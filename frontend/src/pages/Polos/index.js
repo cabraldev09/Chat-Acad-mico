@@ -16,6 +16,7 @@ import ImportWizard from "../../components/ImportWizard";
 import ConfirmationModal from "../../components/ConfirmationModal";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
+import { fetchAllUsersPage } from "../../utils/fetchAllUsers";
 
 const FUNCTIONS = [
   { key: "comercial", label: "Comercial", hint: "Consultores que atendem candidatos e geram propostas." },
@@ -34,7 +35,7 @@ const DISTRIBUTION = [
 ];
 
 const useStyles = makeStyles((theme) => ({
-  grid: { display: "grid", gap: theme.spacing(2), gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", padding: theme.spacing(0.5, 0, 3) },
+  grid: { display: "grid", gap: theme.spacing(2), gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", alignContent: "start", padding: theme.spacing(0.5, 0, 3), flex: 1, minHeight: 0, overflowY: "auto" },
   card: { borderRadius: 16, border: `1px solid ${theme.palette.divider}`, backgroundColor: theme.palette.background.paper, padding: theme.spacing(2.25), display: "flex", flexDirection: "column", gap: theme.spacing(1.25) },
   head: { display: "flex", alignItems: "flex-start", gap: theme.spacing(1) },
   name: { fontSize: 17, fontWeight: 700, letterSpacing: "-0.01em" },
@@ -51,17 +52,21 @@ const useStyles = makeStyles((theme) => ({
   dot: { width: 10, height: 10, borderRadius: "50%", flex: "none" },
 }));
 
-const PoloForm = ({ open, polo, onClose, onSaved }) => {
-  const [v, setV] = useState({ code: "", name: "", city: "", state: "", active: true });
+const PoloForm = ({ open, polo, polos, onClose, onSaved }) => {
+  const [v, setV] = useState({ code: "", name: "", city: "", state: "", active: true, enrollsSemipresencial: false, enrollPoloId: "" });
+  const [cities, setCities] = useState("");
   const [busy, setBusy] = useState(false);
   useEffect(() => {
-    setV(polo ? { code: polo.code || "", name: polo.name || "", city: polo.city || "", state: polo.state || "", active: !!polo.active } : { code: "", name: "", city: "", state: "RO", active: true });
+    setV(polo ? { code: polo.code || "", name: polo.name || "", city: polo.city || "", state: polo.state || "", active: !!polo.active, enrollsSemipresencial: !!polo.enrollsSemipresencial, enrollPoloId: polo.enrollPoloId || "" } : { code: "", name: "", city: "", state: "RO", active: true, enrollsSemipresencial: false, enrollPoloId: "" });
+    setCities("");
+    // the other cities this polo serves (the agent sends a lead of those cities to this polo's commercial team)
+    if (polo && open) api.get(`/polos/${polo.id}/coverage`).then(({ data }) => setCities(data.map((r) => `${r.city}${r.state ? ` - ${r.state}` : ""}`).join("\n"))).catch(() => undefined);
   }, [polo, open]);
   const save = async () => {
     setBusy(true);
     try {
-      if (polo) await api.put(`/polos/${polo.id}`, v);
-      else await api.post("/polos", v);
+      const { data: saved } = polo ? await api.put(`/polos/${polo.id}`, v) : await api.post("/polos", v);
+      await api.put(`/polos/${saved.id}/coverage`, { cities: cities.split("\n").map((l) => l.trim()).filter(Boolean) });
       toast.success(polo ? "Polo atualizado." : "Polo criado, com as filas de cada função.");
       onSaved();
       onClose();
@@ -71,7 +76,7 @@ const PoloForm = ({ open, polo, onClose, onSaved }) => {
     setBusy(false);
   };
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
       <DialogTitle>{polo ? "Editar polo" : "Novo polo"}</DialogTitle>
       <DialogContent>
         <TextField fullWidth variant="outlined" margin="dense" label="Código do polo" value={v.code} onChange={(e) => setV({ ...v, code: e.target.value })} helperText="Ex.: 2085 (opcional)" />
@@ -82,10 +87,24 @@ const PoloForm = ({ open, polo, onClose, onSaved }) => {
             {UFS.map((u) => (<MenuItem key={u} value={u}>{u}</MenuItem>))}
           </TextField>
         </div>
+        <TextField fullWidth multiline minRows={4} variant="outlined" margin="dense" label="Cidades atendidas por este polo" value={cities} onChange={(e) => setCities(e.target.value)}
+          InputLabelProps={{ shrink: true }} placeholder={"Candeias do Jamari\nItapuã do Oeste - RO"}
+          helperText="Uma cidade por linha (a cidade do polo já conta). Quando a pessoa disser uma dessas cidades, o atendimento vai para a equipe comercial deste polo. Uma cidade só pode estar em um polo." />
         <FormControlLabel
           control={<Switch color="primary" checked={v.active} onChange={(e) => setV({ ...v, active: e.target.checked })} />}
           label={<span>Polo ativo <b style={{ fontSize: 12, color: v.active ? "#15803d" : "#64748b" }}>{v.active ? "• ligado" : "• desligado"}</b></span>}
         />
+        <FormControlLabel
+          control={<Switch color="primary" checked={v.enrollsSemipresencial} onChange={(e) => setV({ ...v, enrollsSemipresencial: e.target.checked, enrollPoloId: e.target.checked ? "" : v.enrollPoloId })} />}
+          label={<span>Matricula cursos semipresenciais <b style={{ fontSize: 12, color: v.enrollsSemipresencial ? "#15803d" : "#64748b" }}>{v.enrollsSemipresencial ? "• liberado" : "• não liberado"}</b></span>}
+        />
+        {!v.enrollsSemipresencial && (
+          <TextField select fullWidth variant="outlined" margin="dense" label="Quem se matricula em curso semipresencial vai para" value={v.enrollPoloId} onChange={(e) => setV({ ...v, enrollPoloId: e.target.value })}
+            helperText="Saúde, engenharias e licenciaturas só se matriculam nos polos liberados. Escolha o polo liberado mais perto: a conversa vai para a equipe dele, e este polo fica anotado como o das aulas práticas.">
+            <MenuItem value="">Nenhum (usa o primeiro polo liberado)</MenuItem>
+            {(polos || []).filter((p) => p.enrollsSemipresencial && (!polo || p.id !== polo.id)).map((p) => (<MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>))}
+          </TextField>
+        )}
         {!polo && <Typography variant="caption" color="textSecondary" display="block">Ao salvar, o sistema cria as filas Comercial, Tutoria, Acadêmico e Coordenação deste polo.</Typography>}
       </DialogContent>
       <DialogActions>
@@ -194,7 +213,7 @@ const Polos = () => {
 
   const load = useCallback(async () => {
     try {
-      const [p, u] = await Promise.all([api.get("/polos"), api.get("/users", { params: { pageNumber: 1 } })]);
+      const [p, u] = await Promise.all([api.get("/polos"), fetchAllUsersPage()]);
       setPolos(p.data);
       setUsers(u.data.users || []);
     } catch (err) {
@@ -219,7 +238,7 @@ const Polos = () => {
       <ConfirmationModal title={`Excluir o polo ${removing ? removing.name : ""}?`} open={!!removing} onClose={() => setRemoving(null)} onConfirm={remove}>
         As filas do polo também serão excluídas. Polos com leads ou conversas só podem ser desativados.
       </ConfirmationModal>
-      <PoloForm open={form.open} polo={form.polo} onClose={() => setForm({ open: false, polo: null })} onSaved={load} />
+      <PoloForm open={form.open} polo={form.polo} polos={polos} onClose={() => setForm({ open: false, polo: null })} onSaved={load} />
       <TeamDialog open={team.open} polo={team.polo} users={users} onClose={() => setTeam({ open: false, polo: null })} onSaved={load} />
       <ImportWizard
         open={importOpen}
@@ -262,6 +281,11 @@ const Polos = () => {
                   {p.active ? "Ativo" : "Inativo"}
                 </span>
               </div>
+              {(p.enrollsSemipresencial || p.enrollPoloId) && (
+                <div className={classes.meta} style={{ marginBottom: 6 }}>
+                  {p.enrollsSemipresencial ? "Matricula cursos semipresenciais" : `Semipresencial: matrícula em ${(polos.find((x) => x.id === p.enrollPoloId) || {}).name || "outro polo"}`}
+                </div>
+              )}
               <div>
                 {FUNCTIONS.map((f) => {
                   const list = (p.members || []).filter((m) => m.role === f.key);

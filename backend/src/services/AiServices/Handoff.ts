@@ -3,16 +3,15 @@ import { getSetting } from "../../helpers/AppSettings";
 import Lead from "../../models/Lead";
 import LeadStage from "../../models/LeadStage";
 import LeadTask from "../../models/LeadTask";
-import Queue from "../../models/Queue";
 import Ticket from "../../models/Ticket";
 import TicketEvent from "../../models/TicketEvent";
 import AiAgent from "../../models/AiAgent";
 import { addActivity, changeStage } from "../CrmServices/LeadCore";
-import UpdateTicketService from "../TicketServices/UpdateTicketService";
-import ShowTicketService from "../TicketServices/ShowTicketService";
-import AutoAssignTicket from "../AutomationServices/AutoAssignTicket";
 import { logger } from "../../utils/logger";
+import dispatchWebhook from "../WebhookServices/DispatchWebhook";
 import { slotsOf, missingSlots } from "./Tools";
+import { briefIfCommercial } from "../CommercialServices/Brief";
+import { HandoffWhy, Routed, WHY_TEXT, routeToCommercial } from "../CommercialServices/Router";
 
 export type HandoffReason = "pedido" | "limite_turnos" | "limite_tokens" | "qualificado" | "sem_resposta" | "desconhecido";
 
@@ -27,17 +26,27 @@ const REASON: Record<HandoffReason, string> = {
 
 const summaryOf = (agent: AiAgent, ticket: Ticket): string => {
   const c = (ticket.aiSlots || {}) as Record<string, string>;
-  const lines = slotsOf(agent)
-    .filter(s => c[s.key])
-    .map(s => `• ${s.label}: ${c[s.key]}`);
+  const known = new Set(slotsOf(agent).map(s => s.key));
+  const lines = [
+    ...slotsOf(agent).filter(s => c[s.key]).map(s => `• ${s.label}: ${c[s.key]}`),
+    // the fields of an AI stage of a flow are the ones of that flow, not of the agent
+    ...Object.entries(c).filter(([k, v]) => !known.has(k) && v).map(([k, v]) => `• ${k}: ${v}`)
+  ];
   return [ticket.aiSummary, lines.length ? lines.join("\n") : null].filter(Boolean).join("\n");
 };
 
 // Passes the conversation to the team with everything the AI learned, so nobody asks again.
-export const handoffToHuman = async (ticketId: number, agent: AiAgent, reason: HandoffReason, question?: string): Promise<void> => {
+const WHY_OF_REASON: Record<HandoffReason, HandoffWhy> = {
+  pedido: "human_request", limite_turnos: "limit_turns", limite_tokens: "limit_tokens", qualificado: "proposal", sem_resposta: "error", desconhecido: "unknown"
+};
+
+export const handoffToHuman = async (ticketId: number, agent: AiAgent, reason: HandoffReason, question?: string, why?: HandoffWhy): Promise<Routed | null> => {
   const ticket = await Ticket.findByPk(ticketId);
-  if (!ticket) return;
+  if (!ticket) return null;
   await ticket.update({ aiActive: false });
+  const because: HandoffWhy = why || WHY_OF_REASON[reason];
+  // the integrations are told that the agent handed over (and why), so a CRM or a dashboard outside can follow
+  await dispatchWebhook("ai.handoff", { ticketId, contactId: ticket.contactId, agentId: agent.id, agent: agent.name, reason, why: because, question: question || null }).catch(err => logger.warn(`ai.handoff webhook not queued: ${err}`));
 
   const complete = missingSlots(agent, ticket.aiSlots).length === 0;
   const summary = summaryOf(agent, ticket);
@@ -47,7 +56,7 @@ export const handoffToHuman = async (ticketId: number, agent: AiAgent, reason: H
     ticketId,
     type: "handoff",
     actorId: null,
-    note: `Atendimento com IA encerrado (${REASON[reason]}).${question ? `\nPergunta que ficou sem resposta: “${question}”` : ""}${summary ? `\n${summary}` : ""}`.slice(0, 1000)
+    note: `Atendimento com IA encerrado (${why ? WHY_TEXT[because] : REASON[reason]}).${question ? `\nPergunta que ficou sem resposta: “${question}”` : ""}${summary ? `\n${summary}` : ""}`.slice(0, 1000)
   } as any).catch(err => logger.warn(`handoff note not saved: ${err}`));
 
   if (reason === "qualificado") await TicketEvent.create({ ticketId, type: "ai_qualified", note: "Lead qualificado pela IA e encaminhado para proposta." });
@@ -55,32 +64,22 @@ export const handoffToHuman = async (ticketId: number, agent: AiAgent, reason: H
   const lead = await Lead.findOne({ where: { contactId: ticket.contactId } });
   if (lead) {
     await addActivity(lead.id, null, "system", `Atendimento com IA passou para a equipe (${REASON[reason]}).${summary ? `\n${summary}` : ""}`);
-    if (complete && !lead.wonAt && !lead.lostAt) {
+    // the commercial agent keeps the column and the tasks by its own rules (never back to "Qualificado"): here only the brief goes
+    const commercial = await briefIfCommercial(ticketId, lead).catch(() => false);
+    if (complete && !commercial && !lead.wonAt && !lead.lostAt) {
+
       const stage = await LeadStage.findOne({ where: { name: "Qualificado" } });
       if (stage && lead.stageId !== stage.id) await changeStage(lead.id, stage.id, null).catch(() => undefined);
     }
   }
 
-  // the polo of the student decides who answers: the polo's sales queue, then the queue's own distribution rule
-  if (lead?.poloId) {
-    const queue = await Queue.findOne({ where: { poloId: lead.poloId, role: "comercial" } });
-    if (queue && ticket.queueId !== queue.id) {
-      await UpdateTicketService({ ticketData: { queueId: queue.id }, ticketId }).catch(err => logger.warn(`handoff queue: ${err}`));
-    }
-  }
+  const routed = await routeToCommercial(ticket, { why: because, lead, city: (ticket.aiSlots as any)?.cidade || null, agentId: agent.id });
   await ticket.reload();
-  if (!ticket.queueId) {
-    const fallback = agent.queueId || Number(await getSetting("crm_fallback_queue_id", "0"));
-    if (fallback && await Queue.findByPk(fallback)) await UpdateTicketService({ ticketData: { queueId: fallback }, ticketId });
-  }
-  await AutoAssignTicket(await ShowTicketService(ticketId));
-  const assigned = await Ticket.findByPk(ticketId);
-  const ownerId = assigned?.userId || lead?.ownerId;
+  const ownerId = ticket.userId || lead?.ownerId;
   if (lead && ownerId && !lead.wonAt && !lead.lostAt) {
-    await ensureTask({
-      key: `handoff:${ticketId}:${ticket.aiTurns || 0}`, leadId: lead.id, userId: ownerId, type: "outro",
-      title: `Continuar atendimento da IA: ${REASON[reason]}`.slice(0, 200),
-      dueAt: new Date(Date.now() + 3600000)
+    await ensureTask({ key: `handoff:${ticketId}:${ticket.aiTurns || 0}`, leadId: lead.id, userId: ownerId, type: "outro",
+      title: `Continuar atendimento da IA: ${REASON[reason]}`.slice(0, 200), dueAt: new Date(Date.now() + 3600000)
     }).catch(err => logger.warn(`handoff task: ${err}`));
   }
+  return routed;
 };

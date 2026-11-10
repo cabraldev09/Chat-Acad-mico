@@ -12,7 +12,8 @@ import {
   ForeignKey,
   BelongsTo,
   BelongsToMany,
-  HasMany
+  HasMany,
+  HasOne
 } from "sequelize-typescript";
 
 import Course from "./Course";
@@ -26,6 +27,7 @@ import LeadActivity from "./LeadActivity";
 import LeadTask from "./LeadTask";
 import Payment from "./Payment";
 import Affiliate from "./Affiliate";
+import LeadCommercial from "./LeadCommercial";
 import { maskCpf } from "../helpers/Cpf";
 
 @Table
@@ -176,6 +178,13 @@ class Lead extends Model<Lead> {
   @Column
   enrolledAt: Date;
 
+  // the period the student already re-enrolled for, and when
+  @Column
+  reenrolledTerm: string;
+
+  @Column
+  reenrolledAt: Date;
+
   @Column
   onboardingStartedAt: Date;
 
@@ -184,6 +193,10 @@ class Lead extends Model<Lead> {
 
   @Column
   onboardingAlertAt: Date;
+
+  // JSON {step: ISO date}: the steps of the onboarding the tutor has ticked
+  @Column(DataType.TEXT)
+  onboardingChecklist: string;
 
   @Column
   indicatedBy: number;
@@ -211,12 +224,21 @@ class Lead extends Model<Lead> {
   @BelongsTo(() => Polo)
   polo: Polo;
 
+  // semipresencial course: `poloId` is where the student enrolls and this is the polo of the city, where the practical classes are meant to happen
+  @AllowNull(true)
+  @Column
+  practicePoloId: number;
+
   @ForeignKey(() => Contact)
   @Column
   contactId: number;
 
   @BelongsTo(() => Contact)
   contact: Contact;
+
+  // what the AI agent of graduation knows about the lead (temperature, score, next action...)
+  @HasOne(() => LeadCommercial, { foreignKey: "leadId" })
+  commercial: LeadCommercial;
 
   @BelongsToMany(() => Tag, () => LeadTag)
   tags: Tag[];

@@ -62,6 +62,9 @@ interface NewDoc {
   source?: "texto" | "arquivo" | "url" | "aprendido";
   keywords?: string | null;
   agentId?: number | null;
+  // the subject of the document ("institutional/tutoring", "courses/12/overview") and the course it is about
+  topic?: string | null;
+  courseId?: number | null;
 }
 
 export const indexDocument = async (doc: KbDocument): Promise<number> => {
@@ -81,7 +84,9 @@ export const addDocument = async (input: NewDoc): Promise<KbDocument> => {
     kind: input.kind || "doc",
     source: input.source || "texto",
     keywords: input.keywords || null,
-    agentId: input.agentId || null
+    agentId: input.agentId || null,
+    topic: input.topic ? String(input.topic).slice(0, 80) : null,
+    courseId: input.courseId || null
   } as any);
   await indexDocument(doc);
   return doc;
@@ -109,27 +114,66 @@ export interface Hit {
   score: number;
 }
 
-// Best chunks for a question among the agent's documents (and the shared ones).
-export const searchChunks = async (agentId: number, question: string, limit = 4): Promise<Hit[]> => {
+export interface SearchOptions {
+  // only the documents of these subjects (an exact subject, or the start of one: "courses/12" finds "courses/12/overview")
+  topics?: string[];
+  // and the documents about this course
+  courseId?: number | null;
+}
+
+// Best chunks for a question among the agent's documents (and the shared ones). With subjects, only those documents are read: the
+// answer comes from the subject of the question, not from the whole base.
+export const searchChunks = async (agentId: number, question: string, limit = 4, opts: SearchOptions = {}): Promise<Hit[]> => {
   const words = tokens(question);
-  if (!words.length) return [];
+  if (!words.length && !(opts.topics && opts.topics.length)) return [];
+  const topics = (opts.topics || []).filter(Boolean);
+  const scoped = topics.length > 0 || !!opts.courseId;
 
   if (isPg()) {
-    const rows: any[] = await sequelize.query(
-      `SELECT c."documentId", d.title, c.content, ts_rank(c.tsv, q.query) AS score
-         FROM "KbChunks" c
-         JOIN "KbDocuments" d ON d.id = c."documentId"
-         CROSS JOIN (SELECT to_tsquery('portuguese', :q) AS query) q
-        WHERE d.kind = 'doc' AND (d."agentId" IS NULL OR d."agentId" = :agentId) AND c.tsv @@ q.query
-        ORDER BY score DESC, c.id
-        LIMIT :limit`,
-      { replacements: { q: words.join(" | "), agentId, limit }, type: QueryTypes.SELECT }
-    );
+    const topicSql = scoped
+      ? `AND (${[
+          topics.length ? `d.topic IN (:topics) OR ${topics.map((_, i) => `d.topic LIKE :tp${i}`).join(" OR ")}` : null,
+          opts.courseId ? `d."courseId" = :courseId` : null,
+          // what the team taught the agent has no subject: it is read by its words, besides the documents of the subject
+          `d.topic IS NULL`
+        ].filter(Boolean).join(" OR ")})`
+      : "";
+    const replacements: any = { q: words.join(" | "), agentId, limit, topics: topics.length ? topics : [""], courseId: opts.courseId || 0 };
+    topics.forEach((t, i) => { replacements[`tp${i}`] = `${t}/%`; });
+    // a question with only a subject (no useful words) reads the first passages of that subject
+    const textSql = words.length ? "AND c.tsv @@ q.query" : "";
+    // how many of the question's words each passage holds (the order of the answer), the title and the keywords of the document (a bonus),
+    // and at most two passages of the same document, so one long document does not fill the prompt
+    const matchedSql = words.length ? words.map((_, i) => `(CASE WHEN c.tsv @@ to_tsquery('portuguese', :w${i}) THEN 1 ELSE 0 END)`).join(" + ") : "0";
+    words.forEach((w, i) => { replacements[`w${i}`] = w; });
+    const run = async (minMatched: number, max: number): Promise<any[]> =>
+      sequelize.query(
+        `SELECT * FROM (
+           SELECT c.id, c."documentId", d.title, c.content,
+                  ts_rank_cd(c.tsv, q.query, 32) + CASE WHEN to_tsvector('portuguese', d.title || ' ' || COALESCE(d.keywords, '')) @@ q.query THEN 0.3 ELSE 0 END AS score,
+                  ${matchedSql} AS matched,
+                  ROW_NUMBER() OVER (PARTITION BY c."documentId" ORDER BY ${matchedSql} DESC, ts_rank_cd(c.tsv, q.query, 32) DESC, c.id) AS rn
+             FROM "KbChunks" c
+             JOIN "KbDocuments" d ON d.id = c."documentId"
+             CROSS JOIN (SELECT to_tsquery('portuguese', :q) AS query) q
+            WHERE d.kind = 'doc' AND (d."agentId" IS NULL OR d."agentId" = :agentId) ${textSql} ${topicSql}
+         ) t
+          WHERE rn <= 2 AND matched >= :minMatched
+          ORDER BY matched DESC, score DESC, id
+          LIMIT :limit`,
+        { replacements: { ...(words.length ? replacements : { ...replacements, q: "x" }), minMatched, limit: max }, type: QueryTypes.SELECT }
+      );
+    // a long question must match at least two of its words; when nothing does, the best partial matches are better than silence
+    const strict = words.length >= 3 ? 2 : words.length ? 1 : 0;
+    let rows: any[] = await run(strict, limit);
+    if (!rows.length && strict > 1) rows = await run(1, Math.min(limit, 2));
     return rows.map(r => ({ documentId: r.documentId, title: r.title, content: r.content, score: Number(r.score) }));
   }
 
   // other databases: count how many words each chunk contains
-  const docs = await KbDocument.findAll({ where: { kind: "doc", agentId: { [Op.or]: [agentId, null] } } as any, attributes: ["id", "title"] });
+  const docs = (await KbDocument.findAll({ where: { kind: "doc", agentId: { [Op.or]: [agentId, null] } } as any, attributes: ["id", "title", "topic", "courseId"] })).filter(
+    d => !scoped || !d.topic || topics.some(t => d.topic === t || String(d.topic || "").startsWith(`${t}/`)) || (!!opts.courseId && d.courseId === opts.courseId)
+  );
   const chunks = await KbChunk.findAll({ where: { documentId: docs.map(d => d.id) } });
   return chunks
     .map(c => ({

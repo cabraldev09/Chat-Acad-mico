@@ -1,5 +1,4 @@
-import React, { useState, useEffect, useContext } from "react";
-import { accessLevel } from "../../utils/access";
+import React, { useState, useEffect, useMemo } from "react";
 import { useHistory } from "react-router-dom";
 
 import Button from "@material-ui/core/Button";
@@ -27,9 +26,6 @@ import api from "../../services/api";
 import ButtonWithSpinner from "../ButtonWithSpinner";
 import toastError from "../../errors/toastError";
 import useQueues from "../../hooks/useQueues";
-import useWhatsApps from "../../hooks/useWhatsApps";
-import { AuthContext } from "../../context/Auth/AuthContext";
-import { Can } from "../Can";
 
 const useStyles = makeStyles((theme) => ({
   maxWidth: {
@@ -41,7 +37,14 @@ const filterOptions = createFilterOptions({
 	trim: true,
 });
 
-const TransferTicketModal = ({ modalOpen, onClose, ticketid, ticketWhatsappId }) => {
+// the person who transfers chooses the DEPARTMENT (and the polo when the department has one per polo): the connection (the
+// number the conversation goes on) is never asked, it stays the one the client wrote to
+const DEPARTMENT = { comercial: "Comercial", tutoria: "Tutoria", coordenacao: "Coordenação", relacionamento: "Relacionamento" };
+const keyOf = (q) => (q.role && DEPARTMENT[q.role] ? `role:${q.role}` : `queue:${q.id}`);
+const labelOf = (q) => (q.role && DEPARTMENT[q.role] ? DEPARTMENT[q.role] : q.name);
+const poloOf = (q) => String(q.name || "").replace(/^[^·]*·\s*/, "") || q.name;
+
+const TransferTicketModal = ({ modalOpen, onClose, ticketid }) => {
 	const history = useHistory();
 	const [options, setOptions] = useState([]);
 	const [queues, setQueues] = useState([]);
@@ -49,15 +52,20 @@ const TransferTicketModal = ({ modalOpen, onClose, ticketid, ticketWhatsappId })
 	const [loading, setLoading] = useState(false);
 	const [searchParam, setSearchParam] = useState("");
 	const [selectedUser, setSelectedUser] = useState(null);
+	const [department, setDepartment] = useState('');
 	const [selectedQueue, setSelectedQueue] = useState('');
-	const [selectedWhatsapp, setSelectedWhatsapp] = useState(ticketWhatsappId);
 	const [note, setNote] = useState("");
 	const [notifyClient, setNotifyClient] = useState(false);
 	const classes = useStyles();
 	const { findAll: findAllQueues } = useQueues();
-	const { loadingWhatsapps, whatsApps } = useWhatsApps();
 
-	const { user: loggedInUser } = useContext(AuthContext);
+	// departments among the queues that can receive the conversation (one entry per department, not per polo)
+	const departments = useMemo(() => {
+		const seen = new Map();
+		queues.forEach((q) => { if (!seen.has(keyOf(q))) seen.set(keyOf(q), labelOf(q)); });
+		return [...seen.entries()].map(([key, label]) => ({ key, label }));
+	}, [queues]);
+	const polos = useMemo(() => queues.filter((q) => keyOf(q) === department), [queues, department]);
 
 	useEffect(() => {
 		const loadQueues = async () => {
@@ -99,6 +107,7 @@ const TransferTicketModal = ({ modalOpen, onClose, ticketid, ticketWhatsappId })
 		setSearchParam("");
 		setSelectedUser(null);
 		setSelectedQueue("");
+		setDepartment("");
 		setNote("");
 		setNotifyClient(false);
 	};
@@ -106,6 +115,10 @@ const TransferTicketModal = ({ modalOpen, onClose, ticketid, ticketWhatsappId })
 	const handleSaveTicket = async e => {
 		e.preventDefault();
 		if (!ticketid) return;
+		if (department && !selectedQueue) {
+			toast.error(i18n.t("transferTicketModal.choosePolo"));
+			return;
+		}
 		if (!selectedUser && !selectedQueue) {
 			toast.error(i18n.t("transferTicketModal.chooseDestination"));
 			return;
@@ -125,10 +138,6 @@ const TransferTicketModal = ({ modalOpen, onClose, ticketid, ticketWhatsappId })
 					data.status = 'pending';
 					data.userId = null;
 				}
-			}
-
-			if(selectedWhatsapp) {
-				data.whatsappId = selectedWhatsapp;
 			}
 
 			if (note.trim()) data.note = note.trim();
@@ -157,11 +166,12 @@ const TransferTicketModal = ({ modalOpen, onClose, ticketid, ticketWhatsappId })
 						getOptionLabel={option => `${option.name}`}
 						onChange={(e, newValue) => {
 							setSelectedUser(newValue);
+							setDepartment('');
+							setSelectedQueue('');
 							if (newValue != null && Array.isArray(newValue.queues)) {
 								setQueues(newValue.queues);
 							} else {
 								setQueues(allQueues);
-								setSelectedQueue('');
 							}
 						}}
 						options={options}
@@ -194,16 +204,36 @@ const TransferTicketModal = ({ modalOpen, onClose, ticketid, ticketWhatsappId })
 					<FormControl variant="outlined" className={classes.maxWidth}>
 						<InputLabel>{i18n.t("transferTicketModal.fieldQueueLabel")}</InputLabel>
 						<Select
-							value={selectedQueue}
-							onChange={(e) => setSelectedQueue(e.target.value)}
+							value={department}
+							onChange={(e) => {
+								const key = e.target.value;
+								setDepartment(key);
+								const list = queues.filter((q) => keyOf(q) === key);
+								// a department with a single queue is chosen at once; with one per polo the person picks the polo
+								setSelectedQueue(list.length === 1 ? list[0].id : '');
+							}}
 							label={i18n.t("transferTicketModal.fieldQueuePlaceholder")}
 						>
 							<MenuItem value={''}>&nbsp;</MenuItem>
-							{queues.map((queue) => (
-								<MenuItem key={queue.id} value={queue.id}>{queue.name}</MenuItem>
+							{departments.map((d) => (
+								<MenuItem key={d.key} value={d.key}>{d.label}</MenuItem>
 							))}
 						</Select>
 					</FormControl>
+					{polos.length > 1 && (
+						<FormControl variant="outlined" className={classes.maxWidth} style={{ marginTop: 16 }}>
+							<InputLabel>{i18n.t("transferTicketModal.fieldPoloLabel")}</InputLabel>
+							<Select
+								value={selectedQueue}
+								onChange={(e) => setSelectedQueue(e.target.value)}
+								label={i18n.t("transferTicketModal.fieldPoloLabel")}
+							>
+								{polos.map((q) => (
+									<MenuItem key={q.id} value={q.id}>{poloOf(q)}</MenuItem>
+								))}
+							</Select>
+						</FormControl>
+					)}
 					<TextField
 						className={classes.maxWidth}
 						style={{ marginTop: 20 }}
@@ -226,24 +256,6 @@ const TransferTicketModal = ({ modalOpen, onClose, ticketid, ticketWhatsappId })
 							/>
 						}
 						label={i18n.t("transferTicketModal.notifyClient")}
-					/>
-					<Can
-						role={accessLevel(loggedInUser)}
-						perform="ticket-options:transferWhatsapp"
-						yes={() => (!loadingWhatsapps && 
-							<FormControl variant="outlined" className={classes.maxWidth} style={{ marginTop: 20 }}>
-								<InputLabel>{i18n.t("transferTicketModal.fieldConnectionLabel")}</InputLabel>
-								<Select
-									value={selectedWhatsapp}
-									onChange={(e) => setSelectedWhatsapp(e.target.value)}
-									label={i18n.t("transferTicketModal.fieldConnectionPlaceholder")}
-								>
-									{whatsApps.map((whasapp) => (
-										<MenuItem key={whasapp.id} value={whasapp.id}>{whasapp.name}</MenuItem>
-									))}
-								</Select>
-							</FormControl>
-						)}
 					/>
 				</DialogContent>
 				<DialogActions>

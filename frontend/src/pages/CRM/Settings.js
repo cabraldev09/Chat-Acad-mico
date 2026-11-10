@@ -15,6 +15,7 @@ import ColorSwatchPicker from "../../components/ColorSwatchPicker";
 import api from "../../services/api";
 import { getBackendUrl } from "../../config";
 import toastError from "../../errors/toastError";
+import { fetchAllUsersPage } from "../../utils/fetchAllUsers";
 
 const useStyles = makeStyles((theme) => ({
   pane: { padding: theme.spacing(2.5), display: "grid", gap: theme.spacing(2), maxWidth: 720, overflowY: "auto", overflowX: "hidden", ...theme.scrollbarStyles },
@@ -23,6 +24,7 @@ const useStyles = makeStyles((theme) => ({
     borderRadius: 8, wordBreak: "break-all", display: "flex", justifyContent: "space-between", gap: 8, alignItems: "flex-start",
   },
   hint: { color: theme.palette.text.secondary, fontSize: 13 },
+  pill: { display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 600, padding: "3px 10px", borderRadius: 999 },
   row: { display: "flex", gap: theme.spacing(1), flexWrap: "wrap", alignItems: "center" },
 }));
 
@@ -74,11 +76,78 @@ export const Capture = ({ s, setS, save }) => {
   );
 };
 
+const PROFILE_LABEL = { admin: "Administração", coordenacao: "Coordenação", consultor: "Consultor", tutor: "Tutor" };
+
+// The Wallet ID of the Efí account of each seller (and of the admin who also sells): it is all a seller has to inform.
+// The administration can inform it for them. The commission goes straight to that wallet when the student pays.
+const SellerWallets = () => {
+  const classes = useStyles();
+  const [list, setList] = useState(null);
+  const [typed, setTyped] = useState({});
+  const [busy, setBusy] = useState(0);
+  // an API that is not updated yet does not know this list (404): the block stays hidden, with no error
+  const load = () => api.get("/payments/efi/wallets").then(({ data }) => setList(Array.isArray(data) ? data : [])).catch((e) => { if (e?.response?.status === 404) return; setList([]); toastError(e); });
+  useEffect(() => { load(); }, []);
+  if (!list) return null;
+  const save = async (u) => {
+    setBusy(u.id);
+    try {
+      await api.put(`/payments/efi/wallets/${u.id}`, { payeeCode: typed[u.id] });
+      toast.success(`Wallet ID de ${u.name} salvo`);
+      setTyped((t) => ({ ...t, [u.id]: "" }));
+      await load();
+    } catch (e) { toastError(e); }
+    setBusy(0);
+  };
+  const remove = async (u) => {
+    setBusy(u.id);
+    try { await api.delete(`/payments/efi/wallets/${u.id}`); toast.success(`Wallet ID de ${u.name} removido`); await load(); } catch (e) { toastError(e); }
+    setBusy(0);
+  };
+  return (
+    <div style={{ borderTop: "1px solid rgba(128,128,128,.25)", paddingTop: 16, display: "grid", gap: 10 }}>
+      <div>
+        <Typography variant="subtitle1" style={{ fontWeight: 600 }}>Wallet ID de cada vendedor</Typography>
+        <Typography className={classes.hint}>
+          A conta da empresa é a das credenciais acima: ela recebe a taxa e fica com o que não for comissão. O vendedor só precisa informar o Wallet ID da conta Efí dele (em Comissões); aqui a administração também pode informar por ele, inclusive o da própria conta de quem vende. Sem Wallet ID, a comissão fica com a empresa e é repassada depois.
+        </Typography>
+      </div>
+      {list.length === 0 && <Typography className={classes.hint}>Nenhum usuário cadastrado.</Typography>}
+      {list.map((u) => (
+        <div key={u.id} className={classes.row} style={{ borderTop: "1px solid rgba(128,128,128,.15)", paddingTop: 8 }}>
+          <div style={{ minWidth: 180, flex: "1 1 180px" }}>
+            <div style={{ fontWeight: 600, fontSize: 14 }}>{u.name}</div>
+            <div className={classes.hint}>{PROFILE_LABEL[u.profile] || u.profile} · {u.informed ? <>Wallet ID <b style={{ fontFamily: "monospace" }}>{u.masked}</b></> : "sem Wallet ID"}</div>
+          </div>
+          <TextField size="small" variant="outlined" label={u.informed ? "Novo Wallet ID" : "Wallet ID"} value={typed[u.id] || ""} onChange={(e) => setTyped({ ...typed, [u.id]: e.target.value })} style={{ width: 260 }} />
+          <Button variant="contained" color="primary" size="small" disabled={busy === u.id || (typed[u.id] || "").replace(/\s+/g, "").length < 6} onClick={() => save(u)}>Salvar</Button>
+          {u.informed && <Button size="small" color="secondary" disabled={busy === u.id} onClick={() => remove(u)}>Remover</Button>}
+        </div>
+      ))}
+    </div>
+  );
+};
+
+// A titled block of the payments settings: the title says what it is, one line says why, the fields follow.
+const Block = ({ title, hint, children, last = false }) => {
+  const classes = useStyles();
+  return (
+    <div style={{ display: "grid", gap: 12, paddingBottom: last ? 0 : 22, marginBottom: last ? 0 : 22, borderBottom: last ? 0 : "1px solid rgba(128,128,128,.2)" }}>
+      <div>
+        <Typography variant="subtitle1" style={{ fontWeight: 600 }}>{title}</Typography>
+        {hint && <Typography className={classes.hint}>{hint}</Typography>}
+      </div>
+      {children}
+    </div>
+  );
+};
+
 export const EfiSettings = ({ stages }) => {
   const classes = useStyles();
   const [v, setV] = useState(null);
   const [secret, setSecret] = useState("");
   const [busy, setBusy] = useState("");
+  const [advanced, setAdvanced] = useState(false);
   const load = () => api.get("/payments/efi/settings").then(({ data }) => { setV(data); setSecret(data.clientSecret); }).catch(toastError);
   useEffect(() => { load(); }, []);
   if (!v) return null;
@@ -87,58 +156,84 @@ export const EfiSettings = ({ stages }) => {
     const { data } = await api.put("/payments/efi/settings", { ...v, clientSecret: secret });
     setV(data); setSecret(data.clientSecret); toast.success("Configurações salvas");
   });
-  const upload = async (e) => {
-    const file = e.target.files[0]; e.target.value = "";
-    if (!file) return;
-    const form = new FormData(); form.append("certificate", file);
-    try { const { data } = await api.post("/payments/efi/certificate", form); setV(data); toast.success("Certificado enviado"); } catch (err) { toastError(err); }
-  };
-  const row = (ok, text) => (<div style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13.5 }}><ShieldCheck size={16} style={{ color: ok ? "#16a34a" : "#94a3b8" }} />{text}</div>);
+  const connected = !!v.clientId && !!v.clientSecret;
 
   return (
     <Paper variant="outlined" className={classes.pane}>
-      <div>
-        <Typography variant="subtitle1" style={{ fontWeight: 600 }}>Cobrança da taxa de matrícula pela Efí</Typography>
+      <Block
+        title="Taxa de matrícula pela Efí"
+        hint="A cobrança é sempre um boleto com QR Code de Pix: o aluno paga como preferir até o vencimento, e o sistema detecta o pagamento sozinho.">
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <span className={classes.pill} style={connected ? { background: "rgba(22,163,74,.14)", color: "#15803d" } : { background: "rgba(245,158,11,.18)", color: "#b45309" }}>
+            <ShieldCheck size={14} /> {connected ? "Conta da empresa conectada" : "Informe as credenciais da Efí"}
+          </span>
+          <span className={classes.pill} style={{ background: "rgba(6,147,227,.12)", color: "#0b4279" }}>{v.env === "production" ? "Produção" : "Homologação (testes)"}</span>
+        </div>
+      </Block>
+
+      <Block title="Conta da empresa" hint="A conta Efí que emite as cobranças. Use as credenciais de uma aplicação criada nela (Efí → API → Minhas aplicações). O que não for repassado a um vendedor fica nesta conta.">
+        <div className={classes.row}>
+          <TextField select size="small" variant="outlined" label="Ambiente" value={v.env} onChange={(e) => setV({ ...v, env: e.target.value })} style={{ width: 230 }}>
+            <MenuItem value="sandbox">Homologação (testes)</MenuItem><MenuItem value="production">Produção</MenuItem>
+          </TextField>
+          <TextField size="small" variant="outlined" label="Wallet ID da empresa (opcional)" value={v.companyPayeeCode || ""} onChange={(e) => setV({ ...v, companyPayeeCode: e.target.value })}
+            helperText="Evita que ele seja informado por engano como o de um vendedor." style={{ flex: 1, minWidth: 260 }} />
+        </div>
+        <div className={classes.row}>
+          <TextField size="small" variant="outlined" label="ID do cliente (Client_Id)" value={v.clientId} onChange={(e) => setV({ ...v, clientId: e.target.value })} style={{ flex: 1, minWidth: 260 }} />
+          <TextField size="small" variant="outlined" label="Segredo do cliente (Client_Secret)" type="password" value={secret} onChange={(e) => setSecret(e.target.value)} autoComplete="off" style={{ flex: 1, minWidth: 260 }} />
+        </div>
+        <div className={classes.row}>
+          <Button variant="contained" color="primary" disabled={busy === "save"} onClick={save}>Salvar</Button>
+          <Button variant="outlined" startIcon={<PlugZap size={16} />} disabled={busy === "test"} onClick={run("test", async () => { await api.post("/payments/efi/test"); toast.success("Conexão com a Efí funcionando"); })}>Testar conexão</Button>
+        </div>
+        <Typography className={classes.hint}>O Bolix precisa estar ativo na conta: Efí → Configurações da conta → Configurações de cobranças → Boletos bancários e carnês → Bolix.</Typography>
+      </Block>
+
+      <Block title="Cobrança" hint="Quando vence e o que acontece quando o aluno paga.">
+        <div className={classes.row}>
+          <TextField size="small" variant="outlined" type="number" label="Vence em (dias)" value={v.dueDays ?? 3} onChange={(e) => setV({ ...v, dueDays: e.target.value })} inputProps={{ min: 1, max: 30 }}
+            helperText="Quando o consultor não escolhe a data" style={{ width: 200 }} />
+          <TextField size="small" variant="outlined" type="number" label="Gerar o boleto (dias antes)" value={v.chargeDaysBefore} onChange={(e) => setV({ ...v, chargeDaysBefore: e.target.value })} inputProps={{ min: 0, max: 30 }}
+            helperText="Para vencimentos distantes" style={{ width: 220 }} />
+          <TextField select size="small" variant="outlined" label="Ao pagar, mover o lead para" value={v.moveStageId || ""} onChange={(e) => setV({ ...v, moveStageId: e.target.value || null })} style={{ flex: 1, minWidth: 240 }}>
+            <MenuItem value="">Automático (etapa “Matrícula…”)</MenuItem>
+            {stages.map((st) => (<MenuItem key={st.id} value={st.id}>{st.name}</MenuItem>))}
+          </TextField>
+        </div>
+        <div><Button variant="contained" color="primary" disabled={busy === "save"} onClick={save}>Salvar</Button></div>
+      </Block>
+
+      <Block title="Repasse ao vendedor" hint="O vendedor informa só o Wallet ID da conta Efí dele (em Comissões), ou a administração informa por ele na lista abaixo. Quando o aluno paga, a Efí manda a parte dele direto para a conta dele.">
+        <div className={classes.row}>
+          <TextField size="small" variant="outlined" label="Parte da taxa que vai ao vendedor (%)" type="number" value={v.consultantPct} onChange={(e) => setV({ ...v, consultantPct: e.target.value })} style={{ width: 280 }} inputProps={{ min: 1, max: 100 }} />
+          <TextField select size="small" variant="outlined" label="Quem paga a tarifa da Efí" value={v.feeMode || "proportional"} onChange={(e) => setV({ ...v, feeMode: e.target.value })} style={{ flex: 1, minWidth: 300 }}
+            helperText={(v.feeMode || "proportional") === "company" ? "A empresa paga a tarifa inteira; o vendedor recebe a parte dele sem desconto." : "Cada conta paga a tarifa sobre o que recebe: o vendedor arca com a tarifa da parte dele."}>
+            <MenuItem value="proportional">O vendedor paga a tarifa da parte dele</MenuItem>
+            <MenuItem value="company">Só a empresa paga a tarifa</MenuItem>
+          </TextField>
+        </div>
+        <div><Button variant="contained" color="primary" disabled={busy === "save"} onClick={save}>Salvar</Button></div>
         <Typography className={classes.hint}>
-          O sistema gera um PIX com QR Code para cada candidato (usando o CPF da ficha) e detecta sozinho quando ele paga: pelo aviso da Efí (webhook) e, como garantia, consultando as cobranças abertas a cada 30 segundos.
+          O repasse só existe entre contas Efí e usa apenas o Wallet ID. Se a Efí recusar o Wallet ID de um vendedor, o boleto sai mesmo assim na conta da empresa, o histórico do lead avisa e a comissão fica para repasse manual. Sem Wallet ID, a cobrança é toda da empresa e a comissão aparece em “a repassar” na tela de Comissões.
         </Typography>
-      </div>
-      <div style={{ display: "grid", gap: 6 }}>
-        {row(!!v.clientId && !!v.clientSecret, v.clientId && v.clientSecret ? "Credenciais informadas" : "Credenciais pendentes (Client ID e Client Secret)")}
-        {row(v.certificate, v.certificate ? "Certificado .p12 enviado" : "Certificado .p12 pendente")}
-        {row(!!v.pixKey, v.pixKey ? "Chave PIX informada" : "Chave PIX pendente")}
-      </div>
-      <TextField select size="small" variant="outlined" label="Ambiente" value={v.env} onChange={(e) => setV({ ...v, env: e.target.value })} style={{ maxWidth: 260 }}>
-        <MenuItem value="sandbox">Homologação (testes)</MenuItem><MenuItem value="production">Produção</MenuItem>
-      </TextField>
-      <TextField size="small" variant="outlined" label="ID do cliente (Client_Id)" value={v.clientId} onChange={(e) => setV({ ...v, clientId: e.target.value })} />
-      <TextField size="small" variant="outlined" label="Segredo do cliente (Client_Secret)" type="password" value={secret} onChange={(e) => setSecret(e.target.value)} autoComplete="off" />
-      <TextField size="small" variant="outlined" label="Chave PIX da conta Efí" value={v.pixKey} onChange={(e) => setV({ ...v, pixKey: e.target.value })} helperText="CPF/CNPJ, e-mail, telefone ou chave aleatória" />
-      <div className={classes.row}>
-        <Button component="label" variant="outlined" startIcon={<KeyRound size={16} />}>{v.certificate ? "Trocar certificado (.p12)" : "Enviar certificado (.p12)"}
-          <input hidden type="file" accept=".p12,.pfx" onChange={upload} /></Button>
-        <Typography className={classes.hint}>Baixe em Efí → API → Meus certificados. Fica guardado só no servidor.</Typography>
-      </div>
-      <div className={classes.row}>
-        <TextField size="small" variant="outlined" label="Validade da cobrança (minutos)" type="number" value={v.expiryMinutes} onChange={(e) => setV({ ...v, expiryMinutes: e.target.value })} style={{ width: 230 }} />
-        <TextField select size="small" variant="outlined" label="Ao pagar, mover o lead para" value={v.moveStageId || ""} onChange={(e) => setV({ ...v, moveStageId: e.target.value || null })} style={{ minWidth: 260 }}>
-          <MenuItem value="">Automático (etapa “Matrícula…”)</MenuItem>
-          {stages.map((st) => (<MenuItem key={st.id} value={st.id}>{st.name}</MenuItem>))}
-        </TextField>
-      </div>
-      <div className={classes.row}>
-        <Button variant="contained" color="primary" disabled={busy === "save"} onClick={save}>Salvar</Button>
-        <Button variant="outlined" startIcon={<PlugZap size={16} />} disabled={busy === "test"} onClick={run("test", async () => { await api.post("/payments/efi/test"); toast.success("Conexão com a Efí funcionando"); })}>Testar conexão</Button>
-      </div>
-      <div style={{ borderTop: "1px solid rgba(128,128,128,.25)", paddingTop: 16 }}>
-        <Typography variant="subtitle1" style={{ fontWeight: 600 }}>Aviso automático de pagamento (webhook)</Typography>
-        <Typography className={classes.hint} gutterBottom>
-          A Efí só entrega em endereço público HTTPS. {v.publicUrlIsHttps ? "O endereço público já está em HTTPS." : "Em localhost, use um túnel (ex.: cloudflared) e defina PUBLIC_URL em backend/.env. Sem isso o sistema confere os pagamentos sozinho a cada 30 s."}
-        </Typography>
-        <Copyable text={v.webhookUrl} />
-        <Button style={{ marginTop: 8 }} variant="outlined" startIcon={<RefreshCw size={16} />} disabled={busy === "hook"}
-          onClick={run("hook", async () => { await api.post("/payments/efi/webhook"); toast.success("Webhook registrado na Efí"); })}>Registrar webhook na Efí</Button>
-      </div>
+      </Block>
+
+      <SellerWallets />
+
+      <Block title="Avançado" hint="Só mexa se a Efí pedir." last>
+        <div><Button size="small" onClick={() => setAdvanced((x) => !x)}>{advanced ? "Esconder" : "Mostrar o aviso automático de pagamento (webhook)"}</Button></div>
+        {advanced && (
+          <div style={{ display: "grid", gap: 8 }}>
+            <Typography className={classes.hint}>
+              A Efí avisa o pagamento neste endereço (precisa ser público e em HTTPS). {v.publicUrlIsHttps ? "O endereço público já está em HTTPS." : "Aqui ele ainda não é HTTPS: o sistema confere os pagamentos sozinho a cada 30 segundos."}
+            </Typography>
+            <Copyable text={v.webhookUrl} />
+            <div><Button variant="outlined" startIcon={<RefreshCw size={16} />} disabled={busy === "hook"}
+              onClick={run("hook", async () => { await api.post("/payments/efi/webhook"); toast.success("Webhook registrado na Efí"); })}>Registrar webhook na Efí</Button></div>
+          </div>
+        )}
+      </Block>
     </Paper>
   );
 };
@@ -234,6 +329,36 @@ export const Automation = ({ s, setS, save, users }) => {
           </TextField>
         </div>
       </div>
+      <div>
+        <Typography variant="subtitle2" style={{ fontWeight: 600 }}>Prazo de matrícula de cada período</Typography>
+        <Typography className={classes.hint} gutterBottom>
+          O último dia para se matricular. Com o prazo cadastrado, o gatilho “Prazo de matrícula se aproximando” (em Gatilhos) lembra, uma vez, os leads do período que ainda não se matricularam. O gatilho “Lead parado” retoma quem deixou de responder.
+        </Typography>
+        <div className={classes.row}>
+          {(s.entryTerms || []).map((t) => (
+            <TextField key={t} size="small" variant="outlined" type="date" label={`Prazo de ${t}`} InputLabelProps={{ shrink: true }} style={{ width: 190 }}
+              value={(s.entryDeadlines || {})[t] || ""}
+              onChange={(e) => setS({ ...s, entryDeadlines: { ...(s.entryDeadlines || {}), [t]: e.target.value } })}
+              onBlur={() => save({ entryDeadlines: s.entryDeadlines || {} })} />
+          ))}
+          <Button size="small" variant="outlined" onClick={async () => { try { const { data } = await api.post("/crm/cadences/run"); toast.success(`Follow-ups rodados: ${data.idle} de lead parado, ${data.deadline} de prazo.`); } catch (e) { toastError(e); } }}>Rodar os follow-ups agora</Button>
+        </div>
+      </div>
+      <div>
+        <Typography variant="subtitle2" style={{ fontWeight: 600 }}>Documentos da matrícula</Typography>
+        <Typography className={classes.hint} gutterBottom>Os documentos que o aluno entrega depois de confirmada a matrícula, um por linha. Enquanto faltar algum, o aluno fica com a etiqueta “Documentos pendentes” e a aba Documentos do lead mostra o que falta.</Typography>
+        <TextField multiline rows={5} fullWidth size="small" variant="outlined" label="Documentos exigidos (um por linha)" value={(s.requiredDocs || []).join("\n")}
+          onChange={(e) => setS({ ...s, requiredDocs: e.target.value.split("\n") })}
+          onBlur={() => save({ requiredDocs: (s.requiredDocs || []).map((d) => d.trim()).filter(Boolean) })} />
+        <FormControlLabel control={<Switch color="primary" checked={!!s.docsAutoReminder} onChange={(e) => save({ docsAutoReminder: e.target.checked })} />}
+          label="Cobrar os documentos pendentes por WhatsApp automaticamente" />
+        {s.docsAutoReminder && (
+          <div className={classes.row}>
+            <TextField size="small" variant="outlined" type="number" label="A cada (dias)" style={{ width: 150 }} value={s.docsReminderDays || 3} onChange={(e) => setS({ ...s, docsReminderDays: e.target.value })} onBlur={() => save({ docsReminderDays: s.docsReminderDays })} />
+            <TextField size="small" variant="outlined" type="number" label="No máximo (vezes)" style={{ width: 170 }} value={s.docsReminderMax || 3} onChange={(e) => setS({ ...s, docsReminderMax: e.target.value })} onBlur={() => save({ docsReminderMax: s.docsReminderMax })} />
+          </div>
+        )}
+      </div>
       <TextField select variant="outlined" size="small" label="Distribuição de novos leads" value={s.autoassign || "roundrobin"} onChange={(e) => save({ autoassign: e.target.value })} style={{ maxWidth: 360 }}>
         <MenuItem value="roundrobin">Rodízio entre os consultores</MenuItem>
         <MenuItem value="none">Sem responsável (o primeiro a atender assume)</MenuItem>
@@ -313,7 +438,7 @@ const CrmSettings = () => {
   const load = () => api.get("/crm/settings").then(({ data }) => setS(data)).catch(toastError);
   useEffect(() => {
     load();
-    api.get("/users", { params: { pageNumber: 1 } }).then(({ data }) => setUsers(data.users || []));
+    fetchAllUsersPage().then(({ data }) => setUsers(data.users || []));
     api.get("/crm/options").then(({ data }) => setOptions(data));
     api.get("/institutions").then(({ data }) => setInstitutions(data)).catch(() => {});
     api.get("/lead-stages").then(({ data }) => setStages(data)).catch(() => {});
@@ -423,7 +548,7 @@ const CrmSettings = () => {
         {tab === 3 && (
           <CrudPage embedded title="Modelos de proposta" endpoint="/proposal-templates" addLabel="Novo modelo" socketEvent="proposalTemplate" dialogWidth="md"
             emptyText="Nenhum modelo." reloadKey={reload}
-            mapIn={(r) => ({ ...r, institutionIds: (r.institutions || []).map((i) => i.id), semestralSchedule: JSON.parse(r.semestralSchedule || "[]").map((x) => `${x.from}=${x.pct}`).join("\n") })}
+            mapIn={(r) => ({ ...r, institutionIds: (r.institutions || []).map((i) => i.id), semestralSchedule: (() => { try { const v = JSON.parse(r.semestralSchedule || "[]"); return Array.isArray(v) ? v : []; } catch (e) { return []; } })().map((x) => `${x.from}=${x.pct}`).join("\n") })}
             mapOut={(v) => ({ ...v, semestralSchedule: String(v.semestralSchedule || "").split(/\n/).map((l) => l.trim()).filter(Boolean).map((l) => { const [from, pct] = l.split("="); return { from: Number(from), pct: Number(String(pct).replace(",", ".")) }; }) })}
             fields={[
               { name: "name", label: "Nome do modelo", required: true },

@@ -201,6 +201,8 @@ const createAppTheme = (type) => {
           border: `1px solid ${colors.divider}`,
           backgroundColor: colors.cards.background,
           borderRadius: borderRadius.medium,
+          boxShadow: "var(--shadow-card)",
+          transition: "box-shadow .2s var(--ease-out), border-color .2s var(--ease-out), transform .2s var(--ease-out)",
           "&$rounded": { borderRadius: borderRadius.medium },
         },
       },
@@ -214,7 +216,14 @@ const createAppTheme = (type) => {
           border: `1px solid ${colors.divider}`,
           boxShadow: shadows[24],
           backgroundImage: "none",
+          // not a white sheet: the dialog is a tinted surface, the fields inside stay white and stand out
+          backgroundColor: isDark ? colors.background.paper : "#f2f6fb",
+          // on a phone the dialog uses the whole width (the form fields were being squeezed by the default margins)
+          [base.breakpoints.down("xs")]: { margin: 12, width: "calc(100% - 24px)", maxWidth: "calc(100% - 24px)", maxHeight: "calc(100% - 24px)" },
         },
+      },
+      MuiDrawer: {
+        paper: { backgroundColor: isDark ? colors.background.paper : "#f2f6fb", backgroundImage: "none" },
       },
       MuiBackdrop: {
         root: {
@@ -223,13 +232,13 @@ const createAppTheme = (type) => {
         },
       },
       MuiDialogTitle: {
-        root: { padding: "22px 24px 6px" },
+        root: { padding: "20px 24px 14px", borderBottom: `1px solid ${colors.divider}`, [base.breakpoints.down("xs")]: { padding: "16px 16px 12px" } },
       },
       MuiTypography: {
         h6: { fontSize: "1.05rem" },
       },
       MuiDialogContent: {
-        root: { padding: "12px 24px 8px" },
+        root: { padding: "16px 24px 8px", [base.breakpoints.down("xs")]: { padding: "12px 16px 8px" } },
         dividers: {
           padding: "12px 24px",
           borderTop: "none",
@@ -237,7 +246,7 @@ const createAppTheme = (type) => {
         },
       },
       MuiDialogActions: {
-        root: { padding: "16px 24px 20px", gap: 8 },
+        root: { padding: "16px 24px 20px", gap: 8, flexWrap: "wrap", [base.breakpoints.down("xs")]: { padding: "12px 16px 16px" } },
         spacing: { "& > :not(:first-child)": { marginLeft: 0 } },
       },
 
@@ -271,13 +280,14 @@ const createAppTheme = (type) => {
           fontSize: 12.5,
           fontWeight: 500,
           color: colors.text.secondary,
-          backgroundColor: isDark ? "#0a1322" : "#f8fafc",
+          backgroundColor: "var(--surface-2)",
           lineHeight: 1.4,
         },
         sizeSmall: { padding: "8px 12px" },
       },
       MuiTableRow: {
         root: {
+          transition: "background-color .15s var(--ease-out)",
           "&:last-child td": { borderBottom: 0 },
         },
         hover: { "&:hover": { backgroundColor: colors.action.hover } },
@@ -291,9 +301,10 @@ const createAppTheme = (type) => {
       MuiTabs: {
         root: {
           minHeight: 40,
-          padding: 4,
+          padding: 3,
           borderRadius: 10,
-          backgroundColor: isDark ? "#0a1322" : "#eef2f7",
+          backgroundColor: "var(--surface-2)",
+          border: "1px solid var(--line)",
         },
         indicator: { display: "none" },
         flexContainer: { gap: 2 },
@@ -311,8 +322,8 @@ const createAppTheme = (type) => {
           color: colors.text.secondary,
           "&$selected": {
             color: colors.text.primary,
-            backgroundColor: colors.cards.background,
-            boxShadow: shadows[2],
+            backgroundColor: "var(--surface)",
+            boxShadow: "0 1px 2px rgba(15,23,42,.08), 0 0 0 1px var(--line)",
           },
         },
       },

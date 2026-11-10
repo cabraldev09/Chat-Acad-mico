@@ -1,0 +1,184 @@
+/*
+ * The look of the original analysis system (Tailwind + shadcn), used by the screens that came from it: Portal do Aluno,
+ * Análise acadêmica, Análise curricular, Grades and Alunos. Everything lives under `.orig`, and Tailwind only reads the
+ * files listed below, so the rest of the system is not affected (no global reset, no extra utilities elsewhere).
+ */
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities) source(none) important;
+@source "../pages/Analysis";
+@source "../pages/Portal";
+@source "../pages/AcademicAnalysis";
+@source "../pages/CurricularAnalysis";
+@source "../pages/Grades";
+@source "../pages/Students";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --color-brand-navy: #003b71;
+  --color-brand-blue: #0693e3;
+  --color-brand-cyan: #0693e3;
+  --color-brand-gold: #fef84c;
+  --color-brand-navy-50: #e8f2fa;
+  --color-brand-cyan-50: #e9f6fe;
+  --color-brand-cyan-700: #0578bb;
+  --color-brand-gold-50: #fffde1;
+  --color-status-success: #1d8a5a;
+  --color-status-success-bg: #e6f5ee;
+  --color-status-warning: #b7791f;
+  --color-status-warning-bg: #fdf3e0;
+  --color-status-danger: #c0392b;
+  --color-status-danger-bg: #fbe9e7;
+  --color-status-info: #0578bb;
+  --color-status-info-bg: #e9f6fe;
+  --color-status-neutral: #5b6b7b;
+  --color-status-neutral-bg: #eef1f5;
+  --animate-blur-fade: blur-fade 0.6s cubic-bezier(0.2, 0.7, 0.2, 1) backwards;
+  --animate-shimmer-text: shimmer-text 3.2s linear infinite;
+  --animate-shine: shine 6s linear infinite;
+  --animate-pulse-ring: pulse-ring 2.2s cubic-bezier(0.2, 0.7, 0.2, 1) infinite;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+.orig {
+  --background: #f4f8fc;
+  --foreground: #17212b;
+  --card: #ffffff;
+  --card-foreground: #17212b;
+  --primary: #003b71;
+  --primary-foreground: #ffffff;
+  --secondary: #e8f2fa;
+  --secondary-foreground: #003b71;
+  --muted: #eef1f5;
+  --muted-foreground: #5b6b7b;
+  --accent: #e9f6fe;
+  --accent-foreground: #003b71;
+  --destructive: #c0392b;
+  --border: #dfe5ec;
+  --input: #dfe5ec;
+  --ring: #0693e3;
+  --radius: 0.625rem;
+  font-family: var(--font-sans);
+  color: var(--foreground);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-align: left;
+}
+
+/* what Tailwind's reset gives the original: a base the utilities can rely on (kept below the utilities in the cascade) */
+@layer base {
+  .orig *, .orig *::before, .orig *::after { box-sizing: border-box; margin: 0; padding: 0; border: 0 solid var(--border); }
+  .orig h1, .orig h2, .orig h3, .orig h4, .orig h5, .orig h6 { font-size: inherit; font-weight: inherit; }
+  .orig a { color: inherit; text-decoration: inherit; }
+  .orig p, .orig span, .orig div, .orig li, .orig label, .orig strong, .orig td, .orig th { font-family: inherit; }
+  .orig ol, .orig ul, .orig menu { list-style: none; }
+  .orig img, .orig svg, .orig video { display: block; vertical-align: middle; }
+  .orig img, .orig video { max-width: 100%; height: auto; }
+  .orig button, .orig input, .orig select, .orig textarea { font: inherit; color: inherit; letter-spacing: inherit; background: transparent; border-radius: 0; }
+  .orig button { cursor: pointer; text-align: inherit; }
+  .orig button:disabled { cursor: default; }
+  .orig table { border-collapse: collapse; border-color: inherit; text-indent: 0; }
+  .orig th { font-weight: inherit; text-align: inherit; }
+  .orig summary { display: list-item; }
+  .orig strong { font-weight: 600; }
+  .orig select, .orig input[type="text"], .orig input[type="search"], .orig input[type="number"] { appearance: none; }
+  .orig [hidden] { display: none; }
+}
+
+@keyframes blur-fade { from { opacity: 0; filter: blur(6px); transform: translateY(10px); } to { opacity: 1; filter: blur(0); transform: translateY(0); } }
+@keyframes shimmer-text { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@keyframes shine { from { background-position: 0% 0%; } 50% { background-position: 100% 100%; } to { background-position: 0% 0%; } }
+@keyframes pulse-ring { 0% { box-shadow: 0 0 0 0 rgb(6 147 227 / 0.45); } 70% { box-shadow: 0 0 0 8px rgb(6 147 227 / 0); } 100% { box-shadow: 0 0 0 0 rgb(6 147 227 / 0); } }
+@keyframes portal-progress { from { stroke-dashoffset: 307.876; } }
+@keyframes portal-expand { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
+
+/* the report page of the academic analysis and its cards */
+.orig .academic-analysis-shell { position: relative; isolation: isolate; }
+.orig .academic-report-page {
+  position: relative; isolation: isolate; border: 1px solid rgba(148, 163, 184, 0.2); border-radius: 1.5rem;
+  background: radial-gradient(ellipse at 8% 0%, rgba(14, 165, 233, 0.1), transparent 34%), radial-gradient(ellipse at 100% 55%, rgba(13, 148, 136, 0.07), transparent 34%), linear-gradient(140deg, #f0f5f9 0%, #f8fafc 52%, #eff7f7 100%);
+}
+.orig .academic-analysis-shell [data-slot="card"]:not([class*="bg-status-"]):not([class*="bg-orange-"]):not([class*="bg-brand-"]),
+.orig .academic-report-page [data-slot="card"]:not([class*="bg-status-"]):not([class*="bg-orange-"]):not([class*="bg-brand-"]) {
+  border-color: rgba(148, 163, 184, 0.3); background: linear-gradient(145deg, #ffffff 0%, #f7fafc 100%); box-shadow: 0 16px 38px -32px rgba(15, 42, 66, 0.62);
+}
+.orig [data-slot="card"] { transition: box-shadow .3s cubic-bezier(.2,.7,.2,1), transform .3s cubic-bezier(.2,.7,.2,1); }
+
+/* Portal Acadêmico: interactions, with a reduced-motion fallback */
+.orig.portal-experience { --portal-ease: cubic-bezier(.2, .7, .2, 1); overflow-x: clip; }
+.portal-experience :is(section, article) { scroll-margin-top: 5rem; }
+.portal-experience :is(button, a, input, summary) { -webkit-tap-highlight-color: transparent; }
+.portal-experience :is(button, a, input, summary):focus-visible { outline: 3px solid #0693e3; outline-offset: 4px; }
+.portal-experience :is(button, [data-slot="button"]) { transition: transform .2s var(--portal-ease), box-shadow .2s var(--portal-ease), background-color .2s; }
+.portal-experience button:active:not(:disabled) { transform: scale(.975); }
+.portal-experience details[open] > :not(summary) { animation: portal-expand .3s var(--portal-ease); }
+.portal-dashboard > header { background: rgb(255 255 255 / .9); backdrop-filter: blur(18px); }
+.portal-dashboard main > div > section > article:first-child circle:last-child { animation: portal-progress 1.25s var(--portal-ease) both; }
+.portal-dashboard main > div > section > article { transition: transform .25s var(--portal-ease), box-shadow .25s var(--portal-ease); }
+@media (hover: hover) {
+  .portal-dashboard article:hover { transform: translateY(-3px); box-shadow: 0 18px 38px -28px #003b7170; }
+  .portal-experience button:hover:not(:disabled) { transform: translateY(-1px); }
+}
+.portal-dashboard section[aria-label="Resumo da trajetória acadêmica"] > article > .flex > .min-w-0 { flex: 1 1 200px; }
+.portal-dashboard section[aria-label="Resumo da trajetória acadêmica"] > article > .flex > .min-w-0 > p:last-child { max-width: 26rem; }
+
+/* interface effects, in the brand colors */
+.orig .magic-card { position: relative; isolation: isolate; transition: transform .3s cubic-bezier(.2,.7,.2,1), box-shadow .3s cubic-bezier(.2,.7,.2,1), border-color .3s; }
+.orig .magic-card::before { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; opacity: 0; background: radial-gradient(420px circle at var(--spot-x, 50%) var(--spot-y, 50%), rgb(6 147 227 / .13), transparent 42%); transition: opacity .3s; pointer-events: none; }
+.orig .magic-card:hover::before { opacity: 1; }
+@media (hover: hover) { .orig .magic-card:hover { transform: translateY(-2px); box-shadow: 0 22px 44px -30px rgb(0 59 113 / .55); border-color: rgb(6 147 227 / .35); } }
+.orig .shine-border { position: relative; isolation: isolate; }
+.orig .shine-border::after {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 1px;
+  background: linear-gradient(120deg, transparent 20%, rgb(6 147 227 / .75), rgb(254 248 76 / .7), transparent 80%); background-size: 300% 300%; animation: var(--animate-shine);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; pointer-events: none;
+}
+.orig .shimmer-text { background: linear-gradient(90deg, currentColor 40%, rgb(255 255 255 / .95) 50%, currentColor 60%); background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; animation: var(--animate-shimmer-text); }
+.orig .app-canvas { background: radial-gradient(900px 420px at 100% -10%, rgb(6 147 227 / .07), transparent 60%), radial-gradient(700px 360px at -10% 20%, rgb(0 59 113 / .05), transparent 60%), #f4f8fc; }
+
+@media (prefers-reduced-motion: reduce) {
+  .portal-experience *, .portal-experience *::before, .portal-experience *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+  .orig .shimmer-text, .orig .shine-border::after, .orig .animate-pulse-ring { animation: none !important; }
+  .orig .magic-card, .orig [data-slot="card"] { transition: none !important; transform: none !important; }
+}
+
+/* the report of the student: over the system on screen, alone on paper */
+.orig-report-overlay { position: fixed; inset: 0; z-index: 1400; overflow-y: auto; background: #eef3f9; }
+@media print {
+  @page { margin: 10mm 11mm; }
+  html, body { background: #eef3f9 !important; }
+  #root { display: none !important; }
+  .orig-report-overlay { position: static !important; overflow: visible !important; background: transparent !important; }
+  .orig-report-overlay .no-print { display: none !important; }
+  .print-report { max-width: none !important; padding: 8mm 9mm !important; }
+  .print-report, .print-report * { print-color-adjust: exact; -webkit-print-color-adjust: exact; box-shadow: none !important; text-shadow: none !important; filter: none !important; }
+  .print-report .report-card { break-inside: avoid; }
+}

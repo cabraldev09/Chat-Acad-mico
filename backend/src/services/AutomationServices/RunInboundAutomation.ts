@@ -1,3 +1,5 @@
+import { isEmail } from "../../helpers/Email";
+import { isRelationshipConnection } from "../RelationshipServices/Relationship";
 import { subHours } from "date-fns";
 
 import ChatbotNode from "../../models/ChatbotNode";
@@ -5,11 +7,15 @@ import Ticket from "../../models/Ticket";
 import Message from "../../models/Message";
 import User from "../../models/User";
 import { logger } from "../../utils/logger";
+import { robotMayTalk } from "../../helpers/AgentScope";
 import ShowTicketService from "../TicketServices/ShowTicketService";
 import UpdateTicketService from "../TicketServices/UpdateTicketService";
 import ShowWhatsAppService from "../WhatsappService/ShowWhatsAppService";
 import SendWhatsAppMessage from "../WbotServices/SendWhatsAppMessage";
-import { findAgentForTicket, runAiForTicket } from "../AiServices/RunAiAgent";
+import { findAgentForTicket, findDedicatedAgent, runAiForTicket } from "../AiServices/RunAiAgent";
+import { runAgentGraph } from "../FlowServices/Runner";
+import { noteAutomation } from "./AutomationTrace";
+import emitTicketUpdate from "../TicketServices/EmitTicketUpdate";
 import { runFlowForTicket } from "../FlowServices/Runner";
 import { addActivity, changeStage } from "../CrmServices/LeadCore";
 import { applyToLead } from "../AiServices/Tools";
@@ -18,19 +24,30 @@ import Polo from "../../models/Polo";
 import Queue from "../../models/Queue";
 import Tag from "../../models/Tag";
 import LeadTag from "../../models/LeadTag";
-import { isUrlSafe, safeRequest } from "../../helpers/SafeUrl";
-import axios from "axios";
+import { safeRequest } from "../../helpers/SafeUrl";
 import AutoAssignTicket from "./AutoAssignTicket";
 import { isWithinBusinessHours } from "./BusinessHours";
 import { Op } from "sequelize";
 import { remindAiTicket } from "../AiServices/FollowUp";
+import { humanHasTicket } from "../../helpers/HumanOwnership";
+
 
 // Bot messages carry an invisible mark so they can be told apart from agent
 // messages (same convention the queue greeting already used).
 const MARK = "‎";
 
 const say = async (ticket: Ticket, body: string, options?: { optOutNotice?: boolean; outsideHoursNotice?: boolean }): Promise<void> => {
-  await SendWhatsAppMessage({ body: `${MARK}${body}`, ticket, automated: true, optOutNotice: options?.optOutNotice, outsideHoursNotice: options?.outsideHoursNotice });
+  try {
+    // a person may have taken the conversation while the robot was thinking: the robot never talks after that
+    if (await humanHasTicket(ticket.id)) {
+      logger.info(`Automação do ticket ${ticket.id}: resposta descartada, um atendente assumiu a conversa`);
+      return;
+    }
+    await SendWhatsAppMessage({ body: `${MARK}${body}`, ticket, automated: true, optOutNotice: options?.optOutNotice, outsideHoursNotice: options?.outsideHoursNotice });
+  } catch (err) {
+    logger.error(`Automation could not send message: ${err}`);
+  }
+
 };
 
 // chatbotNodeId: null = not started, 0 = waiting at root menu,
@@ -124,6 +141,7 @@ const runNodeAction = async (ticket: Ticket, node: ChatbotNode): Promise<void> =
     }
     case "ai": {
       await ticket.update({ chatbotNodeId: FLOW_DONE, aiActive: true });
+      await emitTicketUpdate(ticket.id);
       if (node.message) await say(ticket, node.message);
       return;
     }
@@ -165,9 +183,9 @@ const runNodeAction = async (ticket: Ticket, node: ChatbotNode): Promise<void> =
     }
     case "webhook": {
       // sends what the bot knows to another system (only public https/http addresses)
-      if (node.field && (await isUrlSafe(node.field))) {
-        await axios
-          .post(node.field, { ticketId: ticket.id, contactId: ticket.contactId, collected: ticket.aiSlots || {} }, { timeout: 5000 })
+      if (node.field) {
+        // safeRequest checks the address again when it connects and does not follow redirects (a public address that redirects or re-resolves to an internal one is refused)
+        await safeRequest({ method: "POST", url: node.field, data: { ticketId: ticket.id, contactId: ticket.contactId, collected: ticket.aiSlots || {} }, timeout: 5000 })
           .catch(err => logger.warn(`chatbot webhook failed: ${err.message}`));
       }
       if (node.message) await say(ticket, node.message);
@@ -221,7 +239,7 @@ const runChatbot = async (
     if (waiting?.action === "ask") {
       const field = waiting.field || "nome";
       const value = body.trim().slice(0, 200);
-      if (field === "email" && !/^\S+@\S+\.\S+$/.test(value)) {
+      if (field === "email" && !isEmail(value)) {
         await say(ticket, "Não consegui entender o e-mail. Pode digitar de novo?");
         return true;
       }
@@ -309,6 +327,13 @@ export const remindAiWaiting = async (ticketId: number): Promise<void> => {
   finally { aiRunning.delete(ticketId); }
 };
 
+export const cancelAiTimer = (ticketId: number): void => {
+  const timer = aiTimers.get(ticketId);
+  if (timer) clearTimeout(timer);
+  aiTimers.delete(ticketId);
+
+};
+
 const scheduleAi = (ticketId: number, waitSeconds: number): void => {
   const previous = aiTimers.get(ticketId);
   if (previous) clearTimeout(previous);
@@ -325,6 +350,7 @@ const scheduleAi = (ticketId: number, waitSeconds: number): void => {
         await runAiForTicket(ticketId, say);
       } catch (err) {
         logger.error(`AI run failed: ${err}`);
+        noteAutomation(ticketId, `o agente de IA falhou: ${(err as any)?.message || err}`);
       } finally {
         aiRunning.delete(ticketId);
       }
@@ -332,10 +358,28 @@ const scheduleAi = (ticketId: number, waitSeconds: number): void => {
   );
 };
 
+// Why the robot stayed quiet (or started), one line per message: "o robô não respondeu" is answered by the log, not by guessing
+const trace = (ticket: Ticket, what: string): void => {
+  logger.info(`Automação do ticket ${ticket.id}: ${what}`);
+  noteAutomation(ticket.id, what);
+};
+
 const runAi = async (ticket: Ticket): Promise<boolean> => {
-  if (!ticket.aiActive) return false;
+  if (!ticket.aiActive) {
+    trace(ticket, "agente de IA não entra: a conversa já saiu do agente (aiActive desligado, por exemplo depois de uma transferência)");
+    return false;
+  }
   const agent = await findAgentForTicket(ticket);
-  if (!agent) return false;
+  if (!agent) {
+    trace(ticket, `agente de IA não entra: nenhum agente ligado serve esta conversa (fila ${ticket.queueId || "—"}, conexão ${ticket.whatsappId})`);
+    return false;
+  }
+  // an agent built in blocks (with a published graph) talks through the flow engine; the others keep the single prompt
+  if (await runAgentGraph(ticket, agent)) {
+    trace(ticket, `agente "${agent.name}" (roteiro em blocos) vai responder em ${agent.waitSeconds ?? 4}s`);
+    return true;
+  }
+  trace(ticket, `agente "${agent.name}" sem roteiro publicado: responde pelo modo simples em ${agent.waitSeconds ?? 4}s`);
   scheduleAi(ticket.id, agent.waitSeconds ?? 4);
   return true;
 };
@@ -394,12 +438,42 @@ interface Input {
 const RunInboundAutomation = async ({ ticketId, body }: Input): Promise<void> => {
   try {
     const ticket = await ShowTicketService(ticketId);
-    if (ticket.isGroup || ticket.status === "closed" || ticket.userId) return;
+    // groups, communities, channels, the team's chats and personal contacts: no robot answers there, ever
+    if (!robotMayTalk(ticket)) {
+      const c = (ticket as any).contact;
+      trace(
+        ticket,
+        `nenhum robô responde aqui: ${ticket.isGroup ? "é um grupo" : c?.isStaff ? "o contato está marcado como Equipe" : c?.isPersonal ? "o contato está marcado como Amigo ou pessoal" : "o contato é de um tipo que o robô não atende"}. Em Contatos, mude a relação para Cliente para o agente responder`
+      );
+      return;
+    }
+    if (ticket.status === "closed" || ticket.userId) {
+      trace(ticket, ticket.userId ? `ninguém do automático responde: a conversa está com o atendente ${ticket.userId}` : "conversa fechada");
+      return;
+    }
+    // the institution's own number belongs to the relationship team: no flow, chatbot, AI agent, greeting or queue menu answers
+    // there (the satisfaction survey is read by the system and everything else waits in the queue for a person)
+    if (await isRelationshipConnection(ticket.whatsappId)) {
+      trace(ticket, `conexão ${ticket.whatsappId} é o número da instituição (Relacionamento): nenhum robô responde nela`);
+      return;
+    }
     if (ticket.botReminderAt) await ticket.update({ botReminderAt: null });
 
     const whatsapp = await ShowWhatsAppService(ticket.whatsappId);
 
     if (!isWithinBusinessHours(whatsapp)) {
+      trace(ticket, "fora do horário da conexão");
+      // an AI agent answers at any hour: the lead is qualified at night and the handover says when the team answers (Router: next opening,
+      // task for the first quarter of an hour). The "out of hours" text is only for numbers with no agent.
+      if (ticket.aiActive && (await findAgentForTicket(ticket))) {
+        // a conversation of the agent already going on is answered by its stage (not only the first message of the night)
+        if (await runFlowForTicket(ticket, body, { keywordOnly: true })) {
+          trace(ticket, "fora do horário: o roteiro em andamento respondeu");
+          return;
+        }
+        await runAi(ticket);
+        return;
+      }
       const recently =
         ticket.outOfHoursSentAt && ticket.outOfHoursSentAt > subHours(new Date(), 6);
       if (whatsapp.outOfHoursMessage && !recently) {
@@ -410,8 +484,18 @@ const RunInboundAutomation = async ({ ticketId, body }: Input): Promise<void> =>
     }
 
     // the visual flows come first; the old menu and the AI agent only answer when no flow took the message
-    if (await runFlowForTicket(ticket, body)) return;
-    if (await runChatbot(ticket, body, whatsapp.greetingMessage)) return;
+    // an agent given to this connection (or queue) answers first: only a flow with a keyword (the person asked for it) or one already in
+    // progress goes ahead of it, and the old menu stays out
+    const dedicated = ticket.aiActive ? await findDedicatedAgent(ticket) : null;
+    if (dedicated) trace(ticket, `o agente "${dedicated.name}" foi escolhido para esta conexão: fluxos que começam em qualquer mensagem e o menu antigo ficam de fora`);
+    if (await runFlowForTicket(ticket, body, { keywordOnly: !!dedicated })) {
+      trace(ticket, "um fluxo do Chatbot e fluxos respondeu antes do agente de IA");
+      return;
+    }
+    if (!dedicated && (await runChatbot(ticket, body, whatsapp.greetingMessage))) {
+      trace(ticket, "o chatbot antigo respondeu antes do agente de IA");
+      return;
+    }
     if (await runAi(ticket)) return;
     await runClassicQueueMenu(ticket, body, ticket.whatsappId);
   } catch (err) {

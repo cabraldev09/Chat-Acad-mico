@@ -9,6 +9,16 @@ import UpdateQuickAnswerService from "../services/QuickAnswerService/UpdateQuick
 import DeleteQuickAnswerService from "../services/QuickAnswerService/DeleteQuickAnswerService";
 
 import AppError from "../errors/AppError";
+import { isManagerRole, roleOf } from "../helpers/Roles";
+import QuickAnswer from "../models/QuickAnswer";
+
+// the replies are shared by everybody: a person changes or deletes the ones they made; the management changes all
+const mayChange = async (req: Request, quickAnswerId: string): Promise<void> => {
+  if (isManagerRole(roleOf(req.user))) return;
+  const row = await QuickAnswer.findByPk(quickAnswerId, { attributes: ["id", "userId"] });
+  if (!row) throw new AppError("ERR_NO_QUICK_ANSWER_FOUND", 404);
+  if (!row.userId || row.userId !== Number(req.user.id)) throw new AppError("ERR_NO_PERMISSION", 403);
+};
 
 type IndexQuery = {
   searchParam: string;
@@ -46,8 +56,10 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
   }
 
   const quickAnswer = await CreateQuickAnswerService({
-    ...newQuickAnswer
+    shortcut: newQuickAnswer.shortcut,
+    message: newQuickAnswer.message
   });
+  await quickAnswer.update({ userId: Number(req.user.id) });
 
   const io = getIO();
   io.emit("quickAnswer", {
@@ -70,7 +82,8 @@ export const update = async (
   req: Request,
   res: Response
 ): Promise<Response> => {
-  const quickAnswerData: QuickAnswerData = req.body;
+  // only the two fields of the form (the body never chooses the owner nor the id)
+  const quickAnswerData: QuickAnswerData = { shortcut: req.body?.shortcut, message: req.body?.message };
 
   const schema = Yup.object().shape({
     shortcut: Yup.string(),
@@ -84,6 +97,7 @@ export const update = async (
   }
 
   const { quickAnswerId } = req.params;
+  await mayChange(req, quickAnswerId);
 
   const quickAnswer = await UpdateQuickAnswerService({
     quickAnswerData,
@@ -104,6 +118,7 @@ export const remove = async (
   res: Response
 ): Promise<Response> => {
   const { quickAnswerId } = req.params;
+  await mayChange(req, quickAnswerId);
 
   await DeleteQuickAnswerService(quickAnswerId);
 

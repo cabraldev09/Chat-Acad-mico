@@ -26,6 +26,10 @@ const NewListDialog = ({ open, onClose, onCreated }) => {
   const [mode, setMode] = useState(0);
   const [name, setName] = useState("");
   const [f, setF] = useState({ stageId: "", courseId: "", poloId: "", tagId: "", source: "", noReplyDays: "" });
+  // who the list is for: the leads of the funnel, or the students (to offer them another course)
+  const [audience, setAudience] = useState("leads");
+  const [onboardingDone, setOnboardingDone] = useState(false);
+  const [enrolledDays, setEnrolledDays] = useState("");
   const [pasted, setPasted] = useState("");
   const [opts, setOpts] = useState({ stages: [], courses: [], polos: [], tags: [], sources: [] });
   const [count, setCount] = useState(null);
@@ -33,7 +37,7 @@ const NewListDialog = ({ open, onClose, onCreated }) => {
 
   useEffect(() => {
     if (!open) return;
-    setMode(0); setName(""); setPasted(""); setCount(null);
+    setMode(0); setName(""); setPasted(""); setCount(null); setAudience("leads"); setOnboardingDone(false); setEnrolledDays("");
     setF({ stageId: "", courseId: "", poloId: "", tagId: "", source: "", noReplyDays: "" });
     Promise.all([
       api.get("/lead-stages").catch(() => ({ data: [] })),
@@ -44,7 +48,7 @@ const NewListDialog = ({ open, onClose, onCreated }) => {
     ]).then(([st, co, po, ta, op]) => setOpts({ stages: st.data, courses: co.data, polos: po.data.filter((p) => p.active), tags: ta.data, sources: op.data.sources || [] }));
   }, [open]);
 
-  const body = () => Object.fromEntries(Object.entries(f).filter(([, v]) => v !== ""));
+  const body = () => ({ ...Object.fromEntries(Object.entries(f).filter(([, v]) => v !== "")), ...(audience === "students" ? { audience: "students", onboardingDone: onboardingDone || undefined, enrolledDays: enrolledDays || undefined, stageId: undefined } : {}) });
 
   // live "N pessoas" while the filters change
   useEffect(() => {
@@ -55,7 +59,7 @@ const NewListDialog = ({ open, onClose, onCreated }) => {
     }, 300);
     return () => { cancelled = true; clearTimeout(t); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, mode, f]);
+  }, [open, mode, f, audience, onboardingDone, enrolledDays]);
 
   const create = async () => {
     setBusy(true);
@@ -97,9 +101,25 @@ const NewListDialog = ({ open, onClose, onCreated }) => {
         </Tabs>
         {mode === 0 ? (
           <>
-            <Typography variant="body2" color="textSecondary">Escolha quem entra na lista. Sem filtros, entram todos os leads em andamento que têm telefone.</Typography>
+            <TextField select fullWidth variant="outlined" margin="dense" label="Quem entra" value={audience} InputLabelProps={{ shrink: true }} onChange={(e) => setAudience(e.target.value)}>
+              <MenuItem value="leads">Leads do funil (ainda não matriculados)</MenuItem>
+              <MenuItem value="students">Alunos matriculados (para oferecer outro curso)</MenuItem>
+            </TextField>
+            <Typography variant="body2" color="textSecondary">{audience === "students" ? "Só entram alunos com a matrícula confirmada. Use o polo e o curso para chegar em quem interessa." : "Escolha quem entra na lista. Sem filtros, entram todos os leads em andamento que têm telefone."}</Typography>
+            {audience === "students" && (
+              <div className={classes.grid}>
+                <TextField select fullWidth variant="outlined" margin="dense" label="Matriculados há" value={enrolledDays} InputLabelProps={{ shrink: true }} SelectProps={{ displayEmpty: true }} onChange={(e) => setEnrolledDays(e.target.value)}>
+                  <MenuItem value="">Qualquer prazo</MenuItem>
+                  {[30, 90, 180, 365].map((d) => (<MenuItem key={d} value={d}>{d} dias ou mais</MenuItem>))}
+                </TextField>
+                <TextField select fullWidth variant="outlined" margin="dense" label="Ambientação" value={onboardingDone ? "done" : ""} InputLabelProps={{ shrink: true }} SelectProps={{ displayEmpty: true }} onChange={(e) => setOnboardingDone(e.target.value === "done")}>
+                  <MenuItem value="">Qualquer situação</MenuItem>
+                  <MenuItem value="done">Só quem concluiu a ambientação</MenuItem>
+                </TextField>
+              </div>
+            )}
             <div className={classes.grid}>
-              {select("stageId", "Etapa do funil", opts.stages, (s) => s.name, "Todas as etapas em andamento")}
+              {audience !== "students" && select("stageId", "Etapa do funil", opts.stages, (s) => s.name, "Todas as etapas em andamento")}
               {select("courseId", "Curso de interesse", opts.courses, (c) => c.name)}
               {select("poloId", "Polo", opts.polos, (p) => p.name)}
               {select("tagId", "Etiqueta", opts.tags, (t) => t.name)}

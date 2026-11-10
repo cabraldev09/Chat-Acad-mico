@@ -1,4 +1,6 @@
 import { renewMediaElement } from "../../services/media-access";
+import { looksLikeFileName, shownText } from "../../utils/mediaLabel";
+
 import React, { useState, useEffect, useReducer, useRef, useCallback } from "react";
 import clsx from "clsx";
 import { makeStyles } from "@material-ui/core";
@@ -17,8 +19,8 @@ import Close from "@material-ui/icons/Close";
 import Forward from "@material-ui/icons/Forward";
 import StarBorder from "@material-ui/icons/StarBorder";
 import DeleteOutline from "@material-ui/icons/DeleteOutline";
-import CheckCircle from "@material-ui/icons/CheckCircle";
-import RadioButtonUnchecked from "@material-ui/icons/RadioButtonUnchecked";
+import { Check, Bot } from "lucide-react";
+import { useTyping } from "../../utils/typingStore";
 import { Dialog, DialogTitle, DialogContent, DialogActions, Button, Typography } from "@material-ui/core";
 import ForwardDialog from "../chat/ForwardDialog";
 import InsertDriveFile from "@material-ui/icons/InsertDriveFile";
@@ -47,16 +49,17 @@ const useStyles = makeStyles((theme) => {
     position: "relative",
     maxWidth: "min(68%, 600px)",
     minWidth: 84,
-    padding: "7px 11px 8px 12px",
-    borderRadius: 18,
+    padding: "6px 7px 8px 9px",
+    borderRadius: 8,
     background: bg,
     color,
     boxShadow: c.shadow,
-    fontSize: 14.5,
-    lineHeight: "20px",
-    letterSpacing: "-0.003em",
+    fontSize: 14.2,
+    lineHeight: "19px",
     wordBreak: "break-word",
-    [theme.breakpoints.down("xs")]: { maxWidth: "86%" },
+    // the conversation shares the screen with the list on tablets: the bubble may use more of what is left
+    [theme.breakpoints.down("sm")]: { maxWidth: "80%" },
+    [theme.breakpoints.down("xs")]: { maxWidth: "88%" },
     "&:hover $chevron": { opacity: 1 },
   });
 
@@ -67,11 +70,27 @@ const useStyles = makeStyles((theme) => {
       backgroundColor: c.header, borderBottom: `1px solid ${c.divider}`, color: c.text, boxShadow: c.shadow, animation: "pickIn .16s ease-out",
     },
     pickCount: { flex: 1, fontSize: 15, marginLeft: 6 },
-    pickRow: { cursor: "pointer", transition: "background-color .12s", "&:hover": { backgroundColor: "rgba(127,127,127,.08)" } },
-    pickRowOn: { backgroundColor: "rgba(0,168,132,.16) !important" },
-    pickMark: { alignSelf: "center", flex: "none", margin: "0 8px", color: c.textSecondary },
-    pickMarkOn: { color: c.accent },
-    "@global": { "@keyframes pickIn": { from: { opacity: 0, transform: "translateY(-8px)" }, to: { opacity: 1, transform: "none" } } },
+    // like WhatsApp Web: the whole line is tinted edge to edge and a round box sits in the left margin
+    pickRow: {
+      cursor: "pointer", position: "relative", userSelect: "none",
+      "&::before": { content: '""', position: "absolute", top: -2, bottom: -2, left: -100, right: -100, backgroundColor: "transparent", transition: "background-color .15s", pointerEvents: "none" },
+      "&:hover::before": { backgroundColor: dark ? "rgba(255,255,255,.04)" : "rgba(11,20,26,.04)" },
+      "& > *": { position: "relative", zIndex: 1 },
+    },
+    pickRowOn: { "&::before, &:hover::before": { backgroundColor: dark ? "rgba(0,168,132,.22)" : "rgba(37,211,102,.18)" } },
+    pickMark: {
+      position: "absolute !important", left: -42, top: "50%", marginTop: -10, width: 20, height: 20, borderRadius: "50%", boxSizing: "border-box",
+      border: `2px solid ${c.textSecondary}`, display: "grid", placeItems: "center", color: "#fff", transition: "background-color .12s, border-color .12s",
+      [theme.breakpoints.down("sm")]: { left: -28 },
+    },
+    pickMarkOn: { backgroundColor: c.accent, borderColor: c.accent },
+    listPicking: { overflowX: "hidden", [theme.breakpoints.down("sm")]: { paddingLeft: theme.spacing(5) } },
+    pickGo: { backgroundColor: c.accent, color: "#fff", borderRadius: 999, padding: "5px 16px", fontSize: 14, fontWeight: 600, marginLeft: 8, "&:hover": { backgroundColor: c.accent, filter: "brightness(.92)" } },
+    "@global": {
+      "@keyframes pickIn": { from: { opacity: 0, transform: "translateY(-8px)" }, to: { opacity: 1, transform: "none" } },
+      "@keyframes typingDot": { "0%, 60%, 100%": { transform: "translateY(0)", opacity: 0.45 }, "30%": { transform: "translateY(-5px)", opacity: 1 } },
+      "@keyframes typingIn": { from: { opacity: 0, transform: "translateY(6px) scale(.96)" }, to: { opacity: 1, transform: "none" } },
+    },
     list: {
       flex: 1,
       overflowY: "auto",
@@ -84,13 +103,12 @@ const useStyles = makeStyles((theme) => {
       ...theme.scrollbarStyles,
       [theme.breakpoints.up("md")]: { padding: theme.spacing(1.5, 7, 1) },
     },
-    row: { display: "flex", marginTop: 4 },
+    row: { display: "flex", marginTop: 2 },
     rowIn: { justifyContent: "flex-start" },
     rowOut: { justifyContent: "flex-end" },
-    rowFirst: { marginTop: 12 },
+    rowFirst: { marginTop: 10 },
     bubbleIn: {
       ...bubble(c.bubbleIn, c.text),
-      border: `1px solid ${dark ? "rgba(255,255,255,.04)" : "rgba(11,20,26,.06)"}`,
     },
     bubbleOut: {
       ...bubble(c.bubbleOutBg, c.bubbleOutText),
@@ -106,7 +124,24 @@ const useStyles = makeStyles((theme) => {
       "& $doc": { backgroundColor: dark ? "rgba(0,0,0,.18)" : "rgba(11,20,26,.06)" },
       "& $deleted": { color: c.textSecondary },
     },
-    tailed: {},
+    // the little tail of the last bubble of a sequence, as in the WhatsApp app
+    tailed: {
+      "&::before": { content: '""', position: "absolute", top: 0, width: 8, height: 13 },
+    },
+    // "digitando…" as WhatsApp draws it today: a small bubble at the end of the conversation with three dots that rise one after the other
+    typingRow: { display: "flex", marginTop: 8 },
+    typingBubble: {
+      display: "inline-flex", alignItems: "center", gap: 5, minHeight: 36, padding: "0 16px", borderRadius: 18, borderBottomLeftRadius: 5, boxShadow: c.shadow,
+      background: c.bubbleIn, border: `1px solid ${dark ? "rgba(255,255,255,.04)" : "rgba(11,20,26,.06)"}`,
+      animation: "typingIn .18s ease-out",
+    },
+    typingBubbleAgent: { background: c.bubbleOutBg, borderBottomLeftRadius: 18, borderBottomRightRadius: 5, border: 0 },
+    typingDot: {
+      width: 8, height: 8, borderRadius: "50%", backgroundColor: c.textSecondary, opacity: 0.55, animation: "typingDot 1.3s infinite ease-in-out",
+      "&:nth-child(2)": { animationDelay: ".18s" }, "&:nth-child(3)": { animationDelay: ".36s" },
+      "@media (prefers-reduced-motion: reduce)": { animation: "none", opacity: 0.7 },
+    },
+    typingBot: { marginRight: 2, color: c.bubbleOutText, opacity: 0.9 },
     sticker: {
       background: "transparent !important", boxShadow: "none !important", border: "0 !important", padding: "0 !important", minWidth: 0,
       "& $media": { margin: 0, overflow: "visible" },
@@ -119,8 +154,14 @@ const useStyles = makeStyles((theme) => {
       "&:hover": { transform: "scale(1.1)", color: c.accent },
     },
     rowHover: { "&:hover $reactBtn, & $reactBtn:focus-visible": { opacity: 1 } },
-    tailedIn: { borderBottomLeftRadius: 5 },
-    tailedOut: { borderBottomRightRadius: 5 },
+    tailedIn: {
+      borderTopLeftRadius: 0,
+      "&::before": { left: -8, background: c.bubbleIn, clipPath: "polygon(100% 0, 0 0, 100% 100%)" },
+    },
+    tailedOut: {
+      borderTopRightRadius: 0,
+      "&::before": { right: -8, background: c.bubbleOutBg, clipPath: "polygon(0 0, 100% 0, 0 100%)" },
+    },
     match: { outline: `2px solid ${dark ? "#667781" : "#ffd279"}`, outlineOffset: 1 },
     matchActive: { outline: `3px solid ${c.accent}`, outlineOffset: 1 },
     sender: { fontSize: 13, fontWeight: 600, color: c.sender, marginBottom: 1 },
@@ -176,10 +217,10 @@ const useStyles = makeStyles((theme) => {
       textShadow: "0 0 3px rgba(0,0,0,.7)",
       zIndex: 1,
     },
-    ack: { fontSize: 16, color: c.time },
+    ack: { fontSize: 16, color: c.time, marginLeft: 1 },
     ackRead: { fontSize: 16, color: c.tick },
     media: { margin: "-2px -3px 4px -4px", position: "relative", borderRadius: 6, overflow: "hidden", lineHeight: 0 },
-    video: { display: "block", maxWidth: "100%", width: 300, borderRadius: 6 },
+    video: { display: "block", maxWidth: "100%", width: 320, height: "auto", maxHeight: 420, borderRadius: 6, background: "#000" },
     doc: {
       display: "flex",
       alignItems: "center",
@@ -190,7 +231,7 @@ const useStyles = makeStyles((theme) => {
       backgroundColor: dark ? "rgba(0,0,0,.18)" : "rgba(11,20,26,.05)",
       textDecoration: "none",
       color: "inherit",
-      minWidth: 230,
+      minWidth: "min(230px, 100%)",
       "& svg": { fontSize: 32, color: c.textSecondary, flex: "none" },
     },
     docName: { flex: 1, minWidth: 0, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
@@ -210,7 +251,7 @@ const useStyles = makeStyles((theme) => {
       zIndex: 2,
     },
     withReactions: { marginBottom: 14 },
-    day: { alignSelf: "center", margin: "14px 0 8px", padding: "4px 14px", borderRadius: 999, fontSize: 12, fontWeight: 600, letterSpacing: ".01em", color: c.textSecondary, backgroundColor: c.chatChip, backdropFilter: "blur(6px)", boxShadow: c.shadow },
+    day: { alignSelf: "center", margin: "12px 0 8px", padding: "5px 12px", borderRadius: 8, fontSize: 12.5, fontWeight: 400, color: c.textSecondary, backgroundColor: c.chatChip, boxShadow: c.shadow },
     unreadDivider: {
       alignSelf: "center",
       margin: "14px 0 8px",
@@ -278,7 +319,14 @@ const reducer = (state, action) => {
   if (action.type === "ADD_MESSAGE") {
     const i = state.findIndex((m) => m.id === action.payload.id);
     if (i !== -1) state[i] = action.payload;
-    else state.push(action.payload);
+    else {
+      // the real copy of something typed here: the local one (same text, sent by us) goes away
+      if (action.payload.fromMe) {
+        const local = state.findIndex((m) => m.pending && m.body === action.payload.body);
+        if (local !== -1) state.splice(local, 1);
+      }
+      state.push(action.payload);
+    }
     return [...state];
   }
   if (action.type === "UPDATE_MESSAGE") {
@@ -286,20 +334,54 @@ const reducer = (state, action) => {
     if (i !== -1) state[i] = action.payload;
     return [...state];
   }
+  if (action.type === "SET_REACTIONS") {
+    const i = state.findIndex((m) => m.id === action.payload.id);
+    if (i === -1) return state;
+    const next = [...state];
+    next[i] = { ...state[i], reactions: action.payload.reactions };
+    return next;
+  }
+  // a message just typed shows at once (clock), and gives way to the real one when the server stores it
+  if (action.type === "ADD_LOCAL") {
+    if (state.some((m) => m.id === action.payload.id)) return state;
+    return [...state, action.payload];
+  }
+  if (action.type === "DROP_LOCAL") return state.filter((m) => m.id !== action.payload);
   if (action.type === "RESET") return [];
   return state;
 };
 
+// The stored file carries a unique part so two files with the same name never overwrite each other: "Nome~k3F9a.pdf"
+// (older files: "Nome.k3F9a.pdf"). The person must see the real name.
+const REAL_NAME = (name) =>
+  name
+    .replace(/~[A-Za-z0-9]{5}(\.[^.]+)$/, "$1")
+    // older files: five characters with at least a capital letter and a digit, right before the extension (a rare random
+    // name without both stays as it is: harmless, and no real name like "v2024" or "final" is cut)
+    .replace(/\.(?=[A-Za-z0-9]{5}\.[^.]+$)(?=[A-Za-z0-9]*\d)(?=[A-Za-z0-9]*[A-Z])[A-Za-z0-9]{5}(\.[^.]+)$/, "$1");
+
 const fileNameOf = (m) => {
-  const fromUrl = decodeURIComponent((m.mediaUrl || "").split("?")[0].split("/").pop() || "");
-  return m.body && m.body.length < 120 && !m.body.includes("\n") ? m.body : fromUrl || "arquivo";
+  const last = (m.mediaUrl || "").split("?")[0].split("/").pop() || "";
+  // a file called "Histórico 90%.pdf" is not valid URL text: decoding it throws, and that must not close the conversation
+  let decoded = last;
+  try { decoded = decodeURIComponent(last); } catch (e) { /* keep the name as it is */ }
+  const fromUrl = REAL_NAME(decoded);
+  // WhatsApp puts the file name in the text of a document sent without a caption; a short caption ("Segue") is not a name
+  const bodyIsName = m.body && m.body.length < 120 && !m.body.includes("\n") && /\.[A-Za-z0-9]{2,5}$/.test(m.body);
+  return bodyIsName ? m.body : fromUrl || "arquivo";
 };
 
-const isOnlyFileName = (m) => !m.body || /^[\p{Extended_Pictographic}\s]*(Imagem|Vídeo|Áudio|Mensagem de voz|Documento|Figurinha|Foto)$/u.test(m.body) || m.body === (m.mediaUrl || "").split("?")[0].split("/").pop() || /^\d{10,}\.\w{2,5}$/.test(m.body);
+const isOnlyFileName = (m) => !m.body || looksLikeFileName(m.body, m.mediaUrl) || /^[\p{Extended_Pictographic}\s]*(Imagem|Vídeo|Áudio|Mensagem de voz|Documento|Figurinha|Foto)$/u.test(m.body) || m.body === (m.mediaUrl || "").split("?")[0].split("/").pop() || /^\d{10,}\.\w{2,5}$/.test(m.body);
 
-const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex = 0, onMatches }) => {
+
+const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex = 0, onMatches, live = false }) => {
   const classes = useStyles();
   const [messagesList, dispatch] = useReducer(reducer, []);
+  const messagesListRef = useRef([]);
+  messagesListRef.current = messagesList;
+  // a conversation the AI agent or nobody has yet is read again more often: a missed live event never keeps the team behind the lead
+  const liveRef = useRef(false);
+  liveRef.current = !!live;
   const [pageNumber, setPageNumber] = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -308,12 +390,25 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
   const [picked, setPicked] = useState(null);
   const [forwardMany, setForwardMany] = useState(false);
   const [confirmMany, setConfirmMany] = useState(false);
-  const togglePick = (id) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
+  const lastPick = useRef(null);
+  // a click picks or unpicks one; with Shift it takes the whole stretch since the last click
+  const togglePick = (id, range = false) => setPicked((p) => {
+    const ids = messagesListRef.current.filter((m) => !m.isDeleted && !m.pending).map((m) => m.id);
+    const from = ids.indexOf(lastPick.current);
+    const to = ids.indexOf(id);
+    lastPick.current = id;
+    if (range && from !== -1 && to !== -1) {
+      const stretch = ids.slice(Math.min(from, to), Math.max(from, to) + 1);
+      return [...new Set([...p, ...stretch])];
+    }
+    return p.includes(id) ? p.filter((x) => x !== id) : [...p, id];
+  });
   useEffect(() => {
     if (!picked) return undefined;
-    const onKey = (e) => e.key === "Escape" && setPicked(null);
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
+    // Esc leaves the selection only: it must not also close the conversation (the header listens for the same key)
+    const onKey = (e) => { if (e.key === "Escape") { e.preventDefault(); setPicked(null); } };
+    document.addEventListener("keydown", onKey, true);
+    return () => document.removeEventListener("keydown", onKey, true);
   }, [picked]);
   useEffect(() => { setPicked(null); }, [ticketId]);
   const [anchorEl, setAnchorEl] = useState(null);
@@ -323,6 +418,9 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
   const [unreadTotal, setUnreadTotal] = useState(0);
   const currentTicketId = useRef(ticketId);
   const listRef = useRef();
+  const typing = useTyping(ticketId);
+  // the live connection is down: the screen keeps reading the conversation by itself, and says so
+  const [rtDown, setRtDown] = useState(false);
   const atBottomRef = useRef(true);
   const bubbleRefs = useRef({});
 
@@ -367,7 +465,7 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
   }, [pageNumber, ticketId, scrollToBottom]);
 
   useEffect(() => {
-    const socket = openSocket();
+    const socket = openSocket(`chat:${ticketId}`);
     // newest messages again (no "mark as read"): after a reconnection, when coming back to the tab, and every 25 s
     // while it is open, so a missed live event never leaves the conversation behind
     const resync = async () => {
@@ -382,12 +480,39 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
       }
     };
     let first = true;
+    // the server confirms the room; if it does not, try again a few times (otherwise this conversation would never get live messages)
+    const join = (attempt = 0) => {
+      socket.emit("joinChatBox", ticketId, (ack) => {
+        if (ack && ack.ok) return;
+        if (attempt < 3) setTimeout(() => join(attempt + 1), 1500 * (attempt + 1));
+      });
+    };
     socket.on("connect", () => {
-      socket.emit("joinChatBox", ticketId);
+      setRtDown(false);
+      join();
       if (!first) resync();
       first = false;
     });
-    const poll = setInterval(() => document.visibilityState === "visible" && resync(), 25000);
+    socket.on("disconnect", () => setRtDown(true));
+    socket.on("connect_error", () => setRtDown(true));
+    // reactions appear at once (see utils/optimisticReaction): the server answers later
+    const onReactions = (e) => dispatch({ type: "SET_REACTIONS", payload: e.detail });
+    window.addEventListener("message-reactions", onReactions);
+    // what is typed in the box appears here at once; if the send fails it goes away (the box gets the text back)
+    const onLocal = (e) => {
+      const d = e.detail || {};
+      if (String(d.ticketId) !== String(ticketId)) return;
+      dispatch({ type: "ADD_LOCAL", payload: { id: `local-${d.key}`, body: d.body, fromMe: true, ack: 0, read: true, pending: true, isDeleted: false, mediaType: "chat", createdAt: new Date().toISOString(), quotedMsg: d.quotedMsg || null } });
+      setTimeout(() => scrollToBottom(true), 30);
+    };
+    const onLocalDrop = (e) => dispatch({ type: "DROP_LOCAL", payload: `local-${(e.detail || {}).key}` });
+    window.addEventListener("pending-message", onLocal);
+    window.addEventListener("pending-message-drop", onLocalDrop);
+    let tick = 0;
+    const poll = setInterval(() => {
+      tick += 1;
+      if (liveRef.current || (tick % 3 === 0 && document.visibilityState === "visible")) resync();
+    }, 8000);
     const onVisible = () => document.visibilityState === "visible" && resync();
     document.addEventListener("visibilitychange", onVisible);
     socket.on("appMessage", (data) => {
@@ -400,6 +525,9 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
     });
     return () => {
       clearInterval(poll);
+      window.removeEventListener("message-reactions", onReactions);
+      window.removeEventListener("pending-message", onLocal);
+      window.removeEventListener("pending-message-drop", onLocalDrop);
       document.removeEventListener("visibilitychange", onVisible);
       socket.disconnect();
     };
@@ -427,6 +555,11 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
     };
     // the rows change with the messages
   }, [messagesList.length, ticketId]);
+
+  // the bubble appears under the last message: keep it in view when the person is reading the end of the conversation
+  useEffect(() => {
+    if (typing && atBottomRef.current) setTimeout(() => scrollToBottom(true), 30);
+  }, [typing, scrollToBottom]);
 
   const onScroll = (e) => {
     const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
@@ -559,7 +692,7 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
         <span className={classes.quoteName} style={m.quotedMsg?.fromMe ? { color: "#53bdeb" } : undefined}>
           {m.quotedMsg?.fromMe ? "Você" : m.quotedMsg?.contact?.name || "Contato"}
         </span>
-        {m.quotedMsg?.body}
+        {shownText(m.quotedMsg?.body, m.quotedMsg?.mediaType, m.quotedMsg?.mediaUrl)}
       </div>
     </div>
   );
@@ -600,14 +733,14 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
       <div
         key={m.id}
         className={clsx(classes.row, classes.rowHover, mine ? classes.rowOut : classes.rowIn, newSender && classes.rowFirst, picked && !m.isDeleted && classes.pickRow, picked && picked.includes(m.id) && classes.pickRowOn)}
-        onClick={picked && !m.isDeleted ? () => togglePick(m.id) : undefined}
+        onClick={picked && !m.isDeleted ? (e) => togglePick(m.id, e.shiftKey) : undefined}
       >
-        {mine && !picked && !m.isDeleted && (REACTIONS[channel] || REACTIONS.whatsapp).length > 0 && (
+        {mine && !picked && !m.isDeleted && !m.pending && (REACTIONS[channel] || REACTIONS.whatsapp).length > 0 && (
           <ReactionBar message={m} channel={channel} className={classes.reactBtn} />
         )}
         {picked && !m.isDeleted && (
           <span className={clsx(classes.pickMark, picked.includes(m.id) && classes.pickMarkOn)}>
-            {picked.includes(m.id) ? <CheckCircle /> : <RadioButtonUnchecked />}
+            {picked.includes(m.id) && <Check size={14} strokeWidth={3} />}
           </span>
         )}
         <div
@@ -616,16 +749,16 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
           }}
           className={clsx(
             mine ? classes.bubbleOut : classes.bubbleIn,
-            isLast && !isSticker && classes.tailed,
-            isLast && !isSticker && (mine ? classes.tailedOut : classes.tailedIn),
+            newSender && !isSticker && classes.tailed,
+            newSender && !isSticker && (mine ? classes.tailedOut : classes.tailedIn),
             isSticker && classes.sticker,
             rx.length > 0 && classes.withReactions,
             isMatch && classes.match,
             isActive && classes.matchActive
           )}
         >
-          {!m.isDeleted && (
-            <IconButton
+          {!m.isDeleted && !m.pending && (
+            <IconButton aria-label="Mostrar mais"
               size="small"
               className={classes.chevron}
               onClick={(e) => {
@@ -704,10 +837,10 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
               <span className={classes.pickCount}>{picked.length} {picked.length === 1 ? "selecionada" : "selecionadas"}</span>
               <IconButton size="small" disabled={!picked.length} title={allStarred ? "Desfavoritar" : "Favoritar"}
                 onClick={async () => {
-                  try { for (const m of chosen) await api.put(`/messages/${m.id}/star`, { starred: !allStarred }); } catch (err) { toastError(err); }
+                  try { await Promise.all(chosen.map((m) => api.put(`/messages/${m.id}/star`, { starred: !allStarred }))); } catch (err) { toastError(err); }
                   setPicked(null);
                 }}>{allStarred ? <StarBorder /> : <Star />}</IconButton>
-              <IconButton size="small" disabled={!picked.length} title="Encaminhar" onClick={() => setForwardMany(true)}><Forward /></IconButton>
+              <Button size="small" className={classes.pickGo} disabled={!picked.length} startIcon={<Forward />} onClick={() => setForwardMany(true)}>Encaminhar{picked.length ? ` (${picked.length})` : ""}</Button>
               <IconButton size="small" disabled={!picked.length} title="Apagar só aqui" onClick={() => setConfirmMany(true)}><DeleteOutline /></IconButton>
             </div>
             <ForwardDialog open={forwardMany} onClose={() => { setForwardMany(false); setPicked(null); }} messages={chosen} fromTicketId={ticketId} />
@@ -720,7 +853,7 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
                 <Button onClick={() => setConfirmMany(false)}>Cancelar</Button>
                 <Button variant="contained" color="primary" onClick={async () => {
                   setConfirmMany(false);
-                  try { for (const m of chosen) await api.delete(`/messages/${m.id}`, { params: { scope: "local" } }); } catch (err) { toastError(err); }
+                  try { await Promise.all(chosen.map((m) => api.delete(`/messages/${m.id}`, { params: { scope: "local" } }))); } catch (err) { toastError(err); }
                   setPicked(null);
                 }}>Apagar só aqui</Button>
               </DialogActions>
@@ -728,12 +861,27 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
           </>
         );
       })()}
-      <div ref={listRef} id="messagesList" className={classes.list} onScroll={onScroll}>
+      <div ref={listRef} id="messagesList" className={clsx(classes.list, picked && classes.listPicking)} onScroll={onScroll}>
         {messagesList.length > 0 ? items : !loading && <div className={classes.empty}>Nenhuma mensagem ainda. Diga olá!</div>}
+        {rtDown && (
+          <div role="status" style={{ alignSelf: "center", margin: "8px 0", padding: "4px 12px", borderRadius: 999, fontSize: 12, background: "rgba(237,108,2,.15)", color: "#b45309" }}>
+            Sem conexão em tempo real. Atualizando a cada 8 segundos.
+          </div>
+        )}
+        {typing && (
+          <div className={clsx(classes.typingRow, typing.from === "agent" ? classes.rowOut : classes.rowIn)} aria-live="polite" aria-label={typing.from === "agent" ? "O agente de IA está digitando" : "O contato está digitando"}>
+            <div className={clsx(classes.typingBubble, typing.from === "agent" && classes.typingBubbleAgent)}>
+              {typing.from === "agent" && <Bot size={15} className={classes.typingBot} />}
+              <span className={classes.typingDot} />
+              <span className={classes.typingDot} />
+              <span className={classes.typingDot} />
+            </div>
+          </div>
+        )}
       </div>
       {loading && <CircularProgress size={28} className={classes.loading} />}
       {!atBottom && (
-        <IconButton className={classes.fab} onClick={() => scrollToBottom(true)} aria-label="Ir para o fim">
+        <IconButton aria-label="Mostrar mais" className={classes.fab} onClick={() => scrollToBottom(true)} aria-label="Ir para o fim">
           {newCount > 0 && <span className={classes.fabBadge}>{newCount}</span>}
           <KeyboardArrowDown />
         </IconButton>

@@ -1,20 +1,16 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField, Typography, makeStyles } from "@material-ui/core";
+import { Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField, Typography } from "@material-ui/core";
 import { Send, RotateCcw } from "lucide-react";
 
-const useStyles = makeStyles((theme) => ({
-  chat: { borderRadius: 14, padding: theme.spacing(1.5), height: 360, overflowY: "auto", display: "flex", flexDirection: "column", gap: 6, background: theme.palette.type === "dark" ? "#0b141a" : "#efeae2", ...theme.scrollbarStyles },
-  me: { alignSelf: "flex-end", maxWidth: "80%", padding: "6px 10px", borderRadius: "10px 10px 2px 10px", background: theme.palette.type === "dark" ? "#005c4b" : "#d9fdd3", fontSize: 14, whiteSpace: "pre-wrap" },
-  bot: { alignSelf: "flex-start", maxWidth: "80%", padding: "6px 10px", borderRadius: "10px 10px 10px 2px", background: theme.palette.type === "dark" ? "#202c33" : "#fff", fontSize: 14, whiteSpace: "pre-wrap" },
-  sys: { alignSelf: "center", fontSize: 12, color: theme.palette.text.secondary, background: theme.palette.action.hover, borderRadius: 999, padding: "2px 10px", textAlign: "center" },
-  row: { display: "flex", gap: theme.spacing(1), marginTop: theme.spacing(1.25) },
-}));
+import { useSimChat } from "../../components/chat/SimChat";
+
+// the bubbles and the wallpaper are the ones of every simulator (components/chat/SimChat)
 
 const norm = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
 
 // Walks the same decisions the bot makes, without sending anything: actions that change records are only described.
 const Simulator = ({ open, onClose, nodes, queues, polos, greeting }) => {
-  const classes = useStyles();
+  const classes = useSimChat();
   const [log, setLog] = useState([]);
   const [text, setText] = useState("");
   const [at, setAt] = useState(null); // null = not started, 0 = root, node id = waiting there, -1 = finished
@@ -97,10 +93,10 @@ const Simulator = ({ open, onClose, nodes, queues, polos, greeting }) => {
       <DialogTitle>Testar o fluxo</DialogTitle>
       <DialogContent>
         <Typography variant="body2" color="textSecondary" style={{ marginBottom: 8 }}>Responda como o cliente. Nada é enviado e nenhum cadastro muda: as ações aparecem só descritas.</Typography>
-        <div className={classes.chat} ref={end}>
+        <div className={classes.chat} ref={end} style={{ height: 360 }}>
           {log.map((l, i) => (<div key={i} className={classes[l.k]}>{l.t}</div>))}
         </div>
-        <div className={classes.row}>
+        <div className={classes.composer}>
           <TextField fullWidth size="small" variant="outlined" placeholder={at === -1 ? "O fluxo terminou. Clique em Recomeçar." : "Resposta do cliente"} value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && send()} disabled={at === -1} />
           <Button variant="contained" color="primary" onClick={send} disabled={!text.trim() || at === -1} startIcon={<Send size={16} />}>Enviar</Button>
         </div>

@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import { countWorkDays as countDays, holidaysBetween, parseExtraDays } from "../helpers/WorkCalendar";
 import { Op } from "sequelize";
 
 import AppError from "../errors/AppError";
@@ -6,7 +7,9 @@ import Goal from "../models/Goal";
 import GoalMember from "../models/GoalMember";
 import GoalPolo from "../models/GoalPolo";
 import Polo from "../models/Polo";
+import User from "../models/User";
 import Lead from "../models/Lead";
+import LeadEnrollment from "../models/LeadEnrollment";
 import { dayBounds, getAppTz } from "../helpers/AppTime";
 
 // Team enrollment goals (administration and coordination). Each line counts, by itself, the enrollments (Leads.wonAt) of
@@ -36,7 +39,7 @@ const present = async (goal: Goal) => {
         where: { ownerId: allUserIds, isHistorical: false, wonAt: { [Op.gte]: start, [Op.lte]: end } as any },
         attributes: ["ownerId"],
         raw: true
-      })) as any[])
+      })) as any[]).concat((await LeadEnrollment.findAll({ where: { ownerId: allUserIds, enrolledAt: { [Op.gte]: start, [Op.lte]: end } as any }, attributes: ["ownerId"], raw: true })) as any[])
     : [];
   const perUser = new Map<number, number>();
   rows.forEach(r => perUser.set(r.ownerId, (perUser.get(r.ownerId) || 0) + 1));
@@ -85,7 +88,7 @@ const present = async (goal: Goal) => {
 
 // the goals a person is part of (for their own home screen): their line and the team total
 export const progressForUser = async (userId: number) => {
-  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Porto_Velho", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: getAppTz(), year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
   const goals = await Goal.findAll({ where: { status: "active", kind: "team", endsOn: { [Op.gte]: today } as any }, include: [GoalMember], order: [["endsOn", "ASC"]], limit: 6 });
   const out: any[] = [];
   for (const g of goals) {
@@ -112,7 +115,8 @@ const writeMembers = async (goalId: number, list: any[]): Promise<void> => {
       label: String(m.label || "").trim().slice(0, 80),
       userIds: JSON.stringify([...new Set(ids(m.userIds))]),
       target: int(m.target),
-      manualCount: int(m.manualCount) || 0,
+      // the screen sends it as `manual` (what the list answers with); `manualCount` is the column name
+      manualCount: int(m.manual ?? m.manualCount) || 0,
       note: m.note ? String(m.note).slice(0, 120) : null,
       position: i
     }))
@@ -188,22 +192,9 @@ export const repeat = async (req: Request, res: Response): Promise<Response> => 
 // A polo has a target for the whole period (a semester) and a target for each month of it. Done = enrollments counted from
 // the CRM (Leads.wonAt of the polo) + what the administration typed (a total for the period and/or adjustments of a month).
 
-const dayOk = (iso: string, workDays: number): boolean => {
-  const dow = new Date(`${iso}T12:00:00Z`).getUTCDay(); // 0 = Sunday
-  return workDays >= 7 ? true : workDays === 6 ? dow !== 0 : dow !== 0 && dow !== 6;
-};
-
-// working days from `from` to `to`, both included
-const countWorkDays = (from: string, to: string, workDays: number): number => {
-  let n = 0;
-  const cur = new Date(`${from}T12:00:00Z`);
-  const end = new Date(`${to}T12:00:00Z`);
-  for (let i = 0; cur <= end && i < 800; i += 1) {
-    if (dayOk(cur.toISOString().slice(0, 10), workDays)) n += 1;
-    cur.setUTCDate(cur.getUTCDate() + 1);
-  }
-  return n;
-};
+// working days from `from` to `to`, both included: weekends, the national and Rondônia holidays and the days the company added do not count
+// (see helpers/WorkCalendar)
+const extraOf = (goal: { extraHolidays?: string | null }): string[] => parseExtraDays(parseJson(goal.extraHolidays, []));
 
 // "2026-07" ... "2026-12" between the two dates
 export const monthsOf = (startsOn: string, endsOn: string): string[] => {
@@ -244,35 +235,42 @@ const statusOf = (pct: number | null): "great" | "good" | "warn" | "low" | "none
   pct === null ? "none" : pct >= 100 ? "great" : pct >= 60 ? "good" : pct >= 30 ? "warn" : "low";
 
 const pctOf = (done: number, target: number | null): number | null => (target ? Math.round((done / target) * 10000) / 100 : null);
+// the same as the spreadsheet of the administration: missing / working days left, negative when the polo is above the target
 const perDayOf = (missing: number | null, daysLeft: number): number | null =>
-  missing === null ? null : missing <= 0 ? 0 : daysLeft ? Math.round((missing / daysLeft) * 100) / 100 : null;
+  missing === null ? null : daysLeft ? Math.round((missing / daysLeft) * 100) / 100 : missing <= 0 ? 0 : null;
 
-export const poloBoard = async (req: Request, res: Response): Promise<Response> => {
+// The board of the polos: target, done and pace of each one in the current period. Used by the Metas screen and by the
+// manager's overview (Estatísticas), so both always show the same numbers.
+export const buildPoloBoard = async (goalIdWanted = 0, monthWanted = ""): Promise<any> => {
   const periods = await Goal.findAll({ where: { status: "active", kind: "polo" }, order: [["startsOn", "DESC"], ["id", "DESC"]], limit: 24 });
   // no semester yet: the same shape, empty, so the screen can show the way to create one
-  if (!periods.length) return res.json({ periods: [], goal: null, months: [], month: null, rows: [], totals: null, monthTotals: [], available: [] });
+  if (!periods.length) return { periods: [], goal: null, months: [], month: null, rows: [], totals: null, monthTotals: [], available: [] };
   const tz = getAppTz();
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: tz }).format(new Date());
-  const wanted = Number(req.query.goalId) || 0;
+  const wanted = goalIdWanted;
   const goal =
     periods.find(g => g.id === wanted) ||
     periods.find(g => g.startsOn <= today && g.endsOn >= today) ||
     periods[0];
   const wd = goal.workDays || 5;
+  const extra = extraOf(goal);
+  const countWorkDays = (a: string, b: string, w: number): number => countDays(a, b, w, extra);
   const months = monthsOf(goal.startsOn, goal.endsOn);
-  const monthKey = months.includes(String(req.query.month || "")) ? String(req.query.month) : null;
+  const monthKey = months.includes(monthWanted) ? monthWanted : null;
 
   const start = dayBounds(goal.startsOn).start;
   const end = dayBounds(goal.endsOn).end;
-  const [polos, saved, wonRows] = await Promise.all([
+  const [polos, saved, wonLeads, wonExtra] = await Promise.all([
     Polo.findAll({ where: { active: true }, order: [["name", "ASC"]] }),
     GoalPolo.findAll({ where: { goalId: goal.id } }),
     Lead.findAll({
       where: { isHistorical: false, poloId: { [Op.ne]: null } as any, wonAt: { [Op.gte]: start, [Op.lte]: end } as any },
       attributes: ["poloId", "wonAt"],
       raw: true
-    }) as unknown as Promise<any[]>
+    }) as unknown as Promise<any[]>,
+    LeadEnrollment.findAll({ where: { poloId: { [Op.ne]: null } as any, enrolledAt: { [Op.gte]: start, [Op.lte]: end } as any }, attributes: ["poloId", "enrolledAt"], raw: true }) as unknown as Promise<any[]>
   ]);
+  const wonRows = wonLeads.concat(wonExtra.map(r => ({ poloId: r.poloId, wonAt: r.enrolledAt })));
   // enrollments of each polo by month (in the company timezone)
   const wonBy = new Map<number, Record<string, number>>();
   const fmt = new Intl.DateTimeFormat("en-CA", { timeZone: tz });
@@ -283,9 +281,15 @@ export const poloBoard = async (req: Request, res: Response): Promise<Response> 
     wonBy.set(r.poloId, bucket);
   });
   const line = new Map(saved.map(g => [g.poloId, g]));
+  const editorIds = [...new Set(saved.map(g => g.updatedById).filter(Boolean))];
+  const editors = new Map((editorIds.length ? await User.findAll({ where: { id: editorIds }, attributes: ["id", "name"] }) : []).map(u => [u.id, u.name]));
 
   const from = today > goal.startsOn ? today : goal.startsOn;
   const daysLeft = goal.endsOn < today ? 0 : countWorkDays(from, goal.endsOn, wd);
+  // how much of the period has already gone by (in working days): the pace a polo should have by now
+  const daysTotal = countWorkDays(goal.startsOn, goal.endsOn, wd);
+  const daysDone = today < goal.startsOn ? 0 : countWorkDays(goal.startsOn, goal.endsOn < today ? goal.endsOn : today, wd);
+  const elapsed = daysTotal ? Math.min(1, daysDone / daysTotal) : 0;
   // working days still ahead inside each month
   const monthDaysLeft = (key: string): number => {
     const first = `${key}-01`;
@@ -300,6 +304,9 @@ export const poloBoard = async (req: Request, res: Response): Promise<Response> 
       const g = line.get(p.id);
       const target = g && g.target !== null && g.target !== undefined ? g.target : null;
       const monthly = monthlyOf(g, months.length, target);
+      // set by hand in the editor (the screen respects them) or just the even split (the screen re-distributes what is left)
+      const savedMonthly = parseJson(g?.monthly, null);
+      const monthlyCustom = Array.isArray(savedMonthly) && savedMonthly.length === months.length;
       const manualMonthly: Record<string, number> = parseJson(g?.manualMonthly, {});
       const crm = wonBy.get(p.id) || {};
       const auto = Object.values(crm).reduce((t, n) => t + n, 0);
@@ -315,6 +322,8 @@ export const poloBoard = async (req: Request, res: Response): Promise<Response> 
         const mMissing = mTarget === null ? null : mTarget - mDone;
         return { month: m, target: mTarget, done: mDone, missing: mMissing, pct: pctOf(mDone, mTarget), status: statusOf(pctOf(mDone, mTarget)), perDay: perDayOf(mMissing, monthDaysLeft(m)), adjust: Number(manualMonthly[m]) || 0 };
       });
+      // where the polo ends up if it keeps the pace so far (only with a target and enough of the period behind us)
+      const forecast = target !== null && elapsed >= 0.1 ? Math.round(done / elapsed) : null;
       return {
         poloId: p.id,
         code: p.code,
@@ -328,11 +337,16 @@ export const poloBoard = async (req: Request, res: Response): Promise<Response> 
         pct,
         status: statusOf(pct),
         perDay: perDayOf(missing, daysLeft),
+        expectedPct: target !== null ? Math.round(elapsed * 10000) / 100 : null,
+        forecast,
         canceled,
         inCourse: Math.max(0, done - canceled),
         canceledPct: done ? Math.round((canceled / done) * 10000) / 100 : 0,
         monthly,
+        monthlyCustom,
         manualMonthly,
+        updatedAt: g ? g.updatedAt : null,
+        updatedBy: g && g.updatedById ? editors.get(g.updatedById) || null : null,
         months: byMonth,
         month: monthKey ? byMonth[months.indexOf(monthKey)] : null
       };
@@ -366,9 +380,9 @@ export const poloBoard = async (req: Request, res: Response): Promise<Response> 
     const d = sum(r => r.months[i].done);
     return { month: m, target: t, done: d, missing: t - d, pct: pctOf(d, t), status: statusOf(pctOf(d, t)), perDay: perDayOf(t - d, monthDaysLeft(m)), daysLeft: monthDaysLeft(m) };
   });
-  return res.json({
+  return {
     periods: periods.map(g => ({ id: g.id, title: g.title, startsOn: g.startsOn, endsOn: g.endsOn })),
-    goal: { id: goal.id, title: goal.title, startsOn: goal.startsOn, endsOn: goal.endsOn, workDays: wd, daysLeft },
+    goal: { id: goal.id, title: goal.title, startsOn: goal.startsOn, endsOn: goal.endsOn, workDays: wd, daysLeft, daysTotal, elapsed, extraHolidays: extra, holidays: wd >= 7 ? [] : holidaysBetween(goal.startsOn, goal.endsOn, extra) },
     months,
     month: monthKey,
     rows,
@@ -376,8 +390,11 @@ export const poloBoard = async (req: Request, res: Response): Promise<Response> 
     monthTotals,
     // polos without a line yet, so the administration can add them
     available: polos.filter(p => !rows.some(r => r.poloId === p.id)).map(p => ({ id: p.id, code: p.code, name: p.name }))
-  });
+  };
 };
+
+export const poloBoard = async (req: Request, res: Response): Promise<Response> =>
+  res.json(await buildPoloBoard(Number(req.query.goalId) || 0, String(req.query.month || "")));
 
 const poloLine = (goalId: number, months: string[], r: any) => {
   const target = int(r.target);
@@ -392,11 +409,23 @@ const poloLine = (goalId: number, months: string[], r: any) => {
     goalId,
     poloId: Number(r.poloId),
     target,
-    manualCount: int(r.manual) || 0,
+    // what the administration typed minus what the CRM counts: negative when the CRM counts more than the real total (an enrollment
+    // counted twice, a lead won in the wrong polo), so the total of the polo is always exactly what was typed
+    manualCount: int(r.manual, -1000000) || 0,
     canceled: int(r.canceled) || 0,
     monthly: monthly ? JSON.stringify(monthly) : null,
     manualMonthly: Object.keys(manualMonthly).length ? JSON.stringify(manualMonthly) : null
   };
+};
+
+// what the calendar of a period looks like before it is saved: how many working days and which days are taken out
+export const calendar = async (req: Request, res: Response): Promise<Response> => {
+  const from = String(req.query.from || "");
+  const to = String(req.query.to || "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || from > to) return res.json({ workDays: 0, total: 0, holidays: [] });
+  const wd = Number(req.query.workDays) === 6 || Number(req.query.workDays) === 7 ? Number(req.query.workDays) : 5;
+  const extra = parseExtraDays(String(req.query.extra || ""));
+  return res.json({ workDays: wd, total: countDays(from, to, wd, extra), holidays: wd >= 7 ? [] : holidaysBetween(from, to, extra) });
 };
 
 // administration: the working-day rule and the lines of the polos (all of them at once)
@@ -407,12 +436,27 @@ export const updatePolos = async (req: Request, res: Response): Promise<Response
     const wd = Number(b.workDays);
     await goal.update({ workDays: wd === 6 || wd === 7 ? wd : 5 });
   }
+  if (b.extraHolidays !== undefined) {
+    const days = parseExtraDays(b.extraHolidays);
+    await goal.update({ extraHolidays: days.length ? JSON.stringify(days) : null });
+  }
   if (Array.isArray(b.rows)) {
     const months = monthsOf(goal.startsOn, goal.endsOn);
     const valid = new Set((await Polo.findAll({ attributes: ["id"] })).map(p => p.id));
-    await GoalPolo.destroy({ where: { goalId: goal.id } });
+    // each line keeps what was typed; only the lines that changed are written (with who did it), the ones taken out are removed
     const rows = b.rows.map((r: any) => poloLine(goal.id, months, r)).filter((r: any) => valid.has(r.poloId));
-    if (rows.length) await GoalPolo.bulkCreate(rows as any);
+    const previous = await GoalPolo.findAll({ where: { goalId: goal.id } });
+    const byPolo = new Map(previous.map(g => [g.poloId, g]));
+    const keep = new Set(rows.map((r: any) => r.poloId));
+    await GoalPolo.destroy({ where: { goalId: goal.id, poloId: { [Op.notIn]: keep.size ? [...keep] : [0] } } as any });
+    for (const row of rows) {
+      const old = byPolo.get(row.poloId);
+      const same = old && ["target", "manualCount", "canceled", "monthly", "manualMonthly"].every(k => String((old as any)[k] ?? "") === String((row as any)[k] ?? ""));
+      // eslint-disable-next-line no-await-in-loop
+      if (old && !same) await old.update({ ...row, updatedById: Number(req.user.id) } as any);
+      // eslint-disable-next-line no-await-in-loop
+      else if (!old) await GoalPolo.create({ ...row, updatedById: Number(req.user.id) } as any);
+    }
   }
   req.query.goalId = String(goal.id);
   return poloBoard(req, res);
@@ -435,7 +479,7 @@ export const updatePolo = async (req: Request, res: Response): Promise<Response>
     manualMonthly: body.manualMonthly !== undefined ? body.manualMonthly : parseJson(previous?.manualMonthly, {}),
     poloId
   };
-  const row = poloLine(goal.id, months, merged);
+  const row = { ...poloLine(goal.id, months, merged), updatedById: Number(req.user.id) };
   if (previous) await previous.update(row as any);
   else await GoalPolo.create(row as any);
   req.query.goalId = String(goal.id);
@@ -472,8 +516,8 @@ export const applyPoloImport = async (goal: Goal, items: any[], dryRun: boolean)
       }
       // eslint-disable-next-line no-await-in-loop
       const previous = await GoalPolo.findOne({ where: { goalId: goal.id, poloId: polo.id } });
-      const inCrm = await Lead.count({ where: { isHistorical: false, poloId: polo.id, wonAt: { [Op.gte]: startAt, [Op.lte]: endAt } as any } });
-      const row = poloLine(goal.id, months, { poloId: polo.id, target, manual: Math.max(0, (int(it.done) || 0) - inCrm), canceled: int(it.canceled) || 0, manualMonthly: parseJson(previous?.manualMonthly, {}) });
+      const inCrm = (await Lead.count({ where: { isHistorical: false, poloId: polo.id, wonAt: { [Op.gte]: startAt, [Op.lte]: endAt } as any } })) + (await LeadEnrollment.count({ where: { poloId: polo.id, enrolledAt: { [Op.gte]: startAt, [Op.lte]: endAt } as any } }));
+      const row = poloLine(goal.id, months, { poloId: polo.id, target, manual: (int(it.done) || 0) - inCrm, canceled: int(it.canceled) || 0, manualMonthly: parseJson(previous?.manualMonthly, {}) });
       if (previous) await previous.update(row as any);
       else await GoalPolo.create(row as any);
     }

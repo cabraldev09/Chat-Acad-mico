@@ -18,11 +18,19 @@ Por que a API não pode ficar no Supabase: as Edge Functions do Supabase são fu
 2. **Criar as tabelas** (escolha uma):
    - recomendado: no backend, com `DATABASE_URL` e `DB_SSL=true` no `.env`, rode `npm run db:migrate`;
    - alternativa: cole `supabase/schema.sql` no *SQL Editor* do Supabase (cria tudo, liga a segurança por linha e marca as migrations como aplicadas).
-3. **Usuário administrador**: `npx sequelize db:seed:all` cria `admin@whaticket.com` / `admin`. **Troque a senha no primeiro acesso.**
+3. **Usuário administrador**: o start roda `scripts/bootstrap-production.js`, que cria o administrador com `ADMIN_EMAIL`/`ADMIN_PASSWORD` (sem elas, com uma senha aleatória mostrada uma única vez no log). Uma senha trocada na tela nunca é desfeita por um deploy; `ADMIN_RESET=true` redefine só em caso de acesso perdido.
 4. **API**: suba o backend no host escolhido com as variáveis do `backend/.env.example` (`DATABASE_URL`, `DB_SSL=true`, `JWT_SECRET`, `JWT_REFRESH_SECRET`, `BACKEND_URL`, `FRONTEND_URL`, `APP_TIMEZONE`, `TRUST_PROXY=1`) e **um volume persistente** montado em `backend/.wwebjs_auth` (e `backend/public`). **Uma única réplica.**
 5. **Vercel**: importe `frontend/`, defina `VITE_BACKEND_URL` (URL da API) e faça o deploy.
 6. **Domínio**: aponte `app.seudominio.com.br` para a Vercel e `api.seudominio.com.br` para o host da API (HTTPS nos dois). Ajuste `FRONTEND_URL=https://app.seudominio.com.br` e `BACKEND_URL=https://api.seudominio.com.br` na API. Como front e API ficam em domínios diferentes, o cookie de renovação do login usa `SameSite=None; Secure` automaticamente quando `BACKEND_URL` começa com `https://` (ou `COOKIE_CROSS_SITE=true`).
 7. **Webhooks** (Meta, Efí): usam `https://api.seudominio.com.br/webhooks/...`.
+
+## Backup, teste de restauração e limpeza
+
+- **Backup**: `deploy/vps/backup.sh` (cron noturno) guarda o banco (`pg_dump`) e os arquivos do volume em `/opt/backups`, opcionalmente criptografados e copiados para fora do servidor.
+- **Teste de restauração**: `deploy/vps/restore-check.sh` restaura o dump mais novo em um Postgres descartável, confere as tabelas e as contagens (usuários, contatos, mensagens, leads) e apaga tudo no fim. Não toca no banco real. Rode depois de mexer no backup e deixe no cron uma vez por mês (a linha está no cabeçalho do script): backup que nunca foi restaurado não é backup.
+- **Restaurar de verdade** (desastre): pare a API (`docker compose stop api`), crie um banco vazio, `pg_restore --no-owner --no-acl -d <banco> <arquivo.dump>` (descriptografe antes com `openssl enc -d -aes-256-cbc -pbkdf2` se o arquivo termina em `.enc`), aponte `DATABASE_URL` para ele e suba a API: as migrações pendentes rodam sozinhas.
+- **Limpeza noturna** (`workers/DataRetention.ts`, entre 3 h e 5 h, em lotes): só tabelas que apenas crescem: envios já entregues da fila (120 dias), registros de turnos do agente (180), consumo de IA (400), erros do navegador (60), lembretes enviados (90) e redefinições de senha usadas ou vencidas (30). Conversas, mensagens, leads, tarefas, matrículas e o histórico de atividades nunca são apagados.
+- **Índices** das consultas por período e por dono (`20261207000007-hot-path-indexes`): criados sem travar a tabela (`CONCURRENTLY`).
 
 ## Segurança do banco
 
@@ -92,9 +100,9 @@ O que *pode* derrubar ou prejudicar um chip e como o sistema evita:
 
 **Importante, sem promessa falsa:** o WhatsApp por QR Code usa uma API **não oficial**. Nenhum sistema consegue garantir que um chip nunca será bloqueado, e este projeto **não tenta esconder** o uso nem burlar a detecção do WhatsApp — só reduz comportamentos de robô. Para disparos em volume e contato frio, a única opção sem risco é a **WhatsApp Cloud API oficial** (número da empresa com templates aprovados). Use o QR Code só para atendimento receptivo, com um chip que você aceite arriscar.
 
-## Railway (API) — variáveis e volume
+## Variáveis e volume da API (host com Docker)
 
-No serviço do repositório no Railway (o `Dockerfile` e o `railway.toml` na raiz já configuram build, migrations e health check):
+A produção atual roda na VPS (veja `docs/VPS-CONTABO.md`). Em qualquer outro host com Docker, o `Dockerfile` da raiz já faz build, migrations e health check:
 
 1. **Volume**: *Settings → Volumes → New Volume*, montar em `/data`. Sem ele a sessão do WhatsApp e os arquivos se perdem a cada deploy (e o chip pede novo QR Code).
 2. **Variáveis** (aba *Variables*):
@@ -116,5 +124,5 @@ No serviço do repositório no Railway (o `Dockerfile` e o `railway.toml` na rai
 | `NODE_ENV` | `production` |
 
 3. **Uma única réplica** (`numReplicas = 1`). Durante o deploy o Railway pode manter a versão antiga ligada por alguns segundos: a trava de instância única impede que as duas abram o WhatsApp ao mesmo tempo.
-4. **Banco novo**: o próprio start roda `sequelize db:migrate`. Depois, uma vez, no terminal do Railway (`railway run`): `npx sequelize db:seed:all` (cria o admin) e troque a senha.
+4. **Banco novo**: o próprio start roda `sequelize db:migrate`. O administrador é criado pelo `scripts/bootstrap-production.js` (veja o passo 3 acima).
 5. **Vercel**: projeto com *Root Directory* `frontend`, `VITE_BACKEND_URL=https://sua-api/`.

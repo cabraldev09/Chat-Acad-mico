@@ -36,3 +36,13 @@ export const handleAckByExternalId = async (
     if (fresh) io.to(fresh.status).to(String(fresh.id)).emit("ticket", { action: "update", ticket: fresh });
   }
 };
+
+// Meta accepted the message and later said it could not deliver it: the row shows the failure (an ack below the current one, which the
+// usual path never writes)
+export const handleSendFailure = async (messageId: string): Promise<Message | null> => {
+  const message = await Message.findByPk(messageId);
+  if (!message) return null;
+  await message.update({ ack: -1 });
+  getIO().to(message.ticketId.toString()).emit("appMessage", { action: "update", message });
+  return message;
+};

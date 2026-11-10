@@ -1,3 +1,4 @@
+import { shownText } from "../../utils/mediaLabel";
 import React, { useState, useEffect, useContext, useRef } from "react";
 import { useParams } from "react-router-dom";
 import { toast } from "react-toastify";
@@ -32,6 +33,7 @@ import { AuthContext } from "../../context/Auth/AuthContext";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 import toastError from "../../errors/toastError";
 import { wa } from "../chat/chatTheme";
+import { isManager } from "../../utils/access";
 import { getDraft, setDraft } from "../../utils/drafts";
 
 const MIC_ERRORS = {
@@ -72,13 +74,11 @@ const useStyles = makeStyles((theme) => {
       display: "flex",
       alignItems: "flex-end",
       gap: theme.spacing(0.25),
-      margin: theme.spacing(0.5, 2, 1.75),
-      padding: "6px 8px",
-      borderRadius: 28,
-      backgroundColor: c.panel,
-      boxShadow: c.float,
-      border: `1px solid ${c.divider}`,
-      [theme.breakpoints.down("xs")]: { margin: theme.spacing(0.5, 1, 1) },
+      margin: 0,
+      padding: "10px 16px",
+      borderRadius: 0,
+      backgroundColor: c.header,
+      [theme.breakpoints.down("xs")]: { padding: "8px 8px" },
     },
     icon: { color: c.textSecondary, padding: 9, transition: "color .15s, background-color .15s", "&:hover": { color: c.accent, backgroundColor: c.hover } },
     iconOn: { color: c.accent, transform: "rotate(45deg)" },
@@ -89,18 +89,21 @@ const useStyles = makeStyles((theme) => {
       display: "flex",
       alignItems: "center",
       minHeight: 42,
-      padding: "0 6px",
+      margin: "0 4px",
+      padding: "0 14px",
+      borderRadius: 22,
+      backgroundColor: c.inputBg,
     },
-    input: { flex: 1, fontSize: 15, color: c.text, padding: "9px 0", "& textarea": { lineHeight: "21px" } },
+    input: { flex: 1, fontSize: 15.5, color: c.text, padding: "9px 0", "& textarea": { lineHeight: "21px" } },
     send: {
       width: 42,
       height: 42,
       flex: "none",
       background: c.accent,
       color: "#fff",
-      boxShadow: "0 3px 10px rgba(0,168,132,.35)",
-      transition: "transform .12s, box-shadow .15s",
-      "&:hover": { background: c.accent, filter: "brightness(1.08)", transform: "translateY(-1px)" },
+      boxShadow: "none",
+      transition: "transform .12s",
+      "&:hover": { background: c.accent, filter: "brightness(1.08)" },
       "&:active": { transform: "scale(.94)" },
       "&.Mui-disabled": { background: c.accent, opacity: 0.5, color: "#fff", boxShadow: "none" },
     },
@@ -162,7 +165,10 @@ const useStyles = makeStyles((theme) => {
 
 const isImage = (f) => f && f.type && f.type.startsWith("image/");
 
-const MessageInput = ({ ticketStatus, historical, isGroup, contactName, channel, readOnly }) => {
+// one key per send: if the same request is repeated (double click, retry after a timeout) the server sends it only once
+const newKey = () => (window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+
+const MessageInput = ({ ticketStatus, aiActive, historical, isGroup, contactName, channel, readOnly, ticketUserId, ticketUserName }) => {
   const classes = useStyles();
   const emojiDark = useTheme().palette.type === "dark";
   const { ticketId } = useParams();
@@ -198,11 +204,20 @@ const MessageInput = ({ ticketStatus, historical, isGroup, contactName, channel,
   const { user } = useContext(AuthContext);
   const [signMessage, setSignMessage] = useLocalStorage("signOption", true);
   // groups and conversations from the phone's history are written in directly: the first message opens them
-  const open = ticketStatus === "open" || !!isGroup || !!historical;
+  // Whoever sends the first message of a conversation nobody attends (waiting, or with the AI agent) becomes its attendant: the server decides it
+  // in the same write as the send. A conversation that belongs to someone else is read-only here: it is transferred or taken over on purpose.
+  const mine = !ticketUserId || ticketUserId === user?.id;
+  const open = ((ticketStatus === "open" || ticketStatus === "pending") && mine) || !!isGroup || !!historical;
+  const takesOnSend = ticketStatus === "pending" && !ticketUserId && !isGroup && !historical;
 
   useEffect(() => {
     inputRef.current && inputRef.current.focus();
   }, [replyingMessage]);
+
+  // an upload or a recording ended: the cursor is back in the box
+  useEffect(() => {
+    if (!loading && inputRef.current) inputRef.current.focus();
+  }, [loading]);
 
   // leaving the conversation (or the page) must not leave the microphone on
   useEffect(
@@ -296,26 +311,38 @@ const MessageInput = ({ ticketStatus, historical, isGroup, contactName, channel,
     }
   };
 
-  const handleSend = async () => {
-    if (!inputMessage.trim()) return;
-    setLoading(true);
-    try {
-      await api.post(`/messages/${ticketId}`, {
-        read: 1,
-        fromMe: true,
-        mediaUrl: "",
-        body: signMessage ? `*${user?.name}:*\n${inputMessage.trim()}` : inputMessage.trim(),
-        quotedMsg: replyingMessage,
-      });
-    } catch (err) {
-      toastError(err);
-    }
+  // messages typed one after the other go out in the order they were typed, one request at a time
+  const sendQueue = useRef(Promise.resolve());
+
+  const handleSend = () => {
+    const text = inputMessage.trim();
+    if (!text) return;
+    const quoted = replyingMessage;
+    const body = signMessage ? `*${user?.name}:*\n${text}` : text;
+    // the box is free at once, with the cursor in it: the next message can be typed while this one goes out
     clearTimeout(draftTimer.current);
     setDraft(ticketId, "");
     setInputMessage("");
     setShowEmoji(false);
-    setLoading(false);
     setReplyingMessage(null);
+    if (inputRef.current) inputRef.current.focus();
+    // the bubble shows in the conversation right now (with the clock); the real one replaces it when the server stores the message
+    const key = newKey();
+    try { window.dispatchEvent(new CustomEvent("pending-message", { detail: { ticketId, key, body, quotedMsg: quoted } })); } catch (e) { /* old browser */ }
+    sendQueue.current = sendQueue.current.then(async () => {
+      try {
+        const res = await api.post(`/messages/${ticketId}`, { read: 1, fromMe: true, mediaUrl: "", body, quotedMsg: quoted, clientKey: key });
+        // sent (200): the real bubble is already there; queued (202): the local one waits for it, for at most a minute
+        const drop = () => { try { window.dispatchEvent(new CustomEvent("pending-message-drop", { detail: { key } })); } catch (e3) { /* old browser */ } };
+        if (res && res.status === 200) drop();
+        else setTimeout(drop, 60000);
+      } catch (err) {
+        try { window.dispatchEvent(new CustomEvent("pending-message-drop", { detail: { key } })); } catch (e2) { /* old browser */ }
+        toastError(err);
+        // what was typed comes back, unless something new is already being typed
+        setInputMessage((current) => (current ? current : text));
+      }
+    });
   };
 
   const handleUploadMedia = async () => {
@@ -328,6 +355,7 @@ const MessageInput = ({ ticketStatus, historical, isGroup, contactName, channel,
         // the caption travels with each file (documents keep their own name)
         formData.append("body", captions[i] || "");
       });
+      formData.append("clientKey", newKey());
       await api.post(`/messages/${ticketId}`, formData);
       clearMedias();
     } catch (err) {
@@ -392,6 +420,7 @@ const MessageInput = ({ ticketStatus, historical, isGroup, contactName, channel,
         formData.append("medias", result.blob, `audio-${Date.now()}.${extensionOf(result.type)}`);
         formData.append("body", "");
         formData.append("fromMe", true);
+        formData.append("clientKey", newKey());
         await api.post(`/messages/${ticketId}`, formData);
       }
     } catch (err) {
@@ -443,8 +472,12 @@ const MessageInput = ({ ticketStatus, historical, isGroup, contactName, channel,
     return (
       <div className={classes.wrap}>
         <div className={classes.blocked}>
-          {ticketStatus === "pending"
-            ? "Aceite a conversa para responder."
+          {ticketUserId && ticketUserId !== user?.id && ticketStatus !== "closed"
+            ? `Esta conversa está com ${ticketUserName || "outro atendente"}. Você acompanha as mensagens, mas só quem atende responde. Peça a transferência${isManager(user) ? " ou use Assumir conversa no topo" : ""}.`
+            : ticketStatus === "pending"
+            ? aiActive
+              ? "O agente de IA está atendendo esta conversa. Clique em Aceitar para assumir e responder você mesmo."
+              : "Aceite a conversa para responder."
             : historical
             ? "Esta conversa é do histórico do WhatsApp. Clique em Reabrir atendimento para voltar a responder."
             : ticketStatus === "closed"
@@ -481,10 +514,10 @@ const MessageInput = ({ ticketStatus, historical, isGroup, contactName, channel,
               <span className={classes.replyName} style={replyingMessage.fromMe ? { color: "#53bdeb" } : undefined}>
                 {replyingMessage.fromMe ? "Você" : replyingMessage.contact?.name || "Contato"}
               </span>
-              {replyingMessage.body}
+              {shownText(replyingMessage.body, replyingMessage.mediaType, replyingMessage.mediaUrl)}
             </div>
           </div>
-          <IconButton className={classes.icon} onClick={() => setReplyingMessage(null)}>
+          <IconButton aria-label="Fechar" className={classes.icon} onClick={() => setReplyingMessage(null)}>
             <Close />
           </IconButton>
         </div>
@@ -510,20 +543,20 @@ const MessageInput = ({ ticketStatus, historical, isGroup, contactName, channel,
       <div className={classes.bar}>
         {recording ? (
           <div className={classes.recorder}>
-            <IconButton className={classes.icon} onClick={cancelAudio} disabled={loading}>
+            <IconButton aria-label="Excluir" className={classes.icon} onClick={cancelAudio} disabled={loading}>
               <DeleteOutline />
             </IconButton>
             <div className={classes.rec}>
               <span className={classes.recDot} />
               <RecordingTimer />
             </div>
-            <IconButton className={classes.send} onClick={sendAudio} disabled={loading}>
+            <IconButton className={classes.send} aria-label="Enviar áudio" onClick={sendAudio} disabled={loading}>
               {loading ? <CircularProgress size={20} color="inherit" /> : <Send />}
             </IconButton>
           </div>
         ) : (
           <>
-            <IconButton className={classes.icon} onClick={() => setShowEmoji((v) => !v)} disabled={loading}>
+            <IconButton aria-label="Emojis" className={classes.icon} onClick={() => setShowEmoji((v) => !v)} disabled={loading}>
               <Mood />
             </IconButton>
             {showEmoji && (
@@ -535,7 +568,7 @@ const MessageInput = ({ ticketStatus, historical, isGroup, contactName, channel,
                 </ClickAwayListener>
               </div>
             )}
-            <IconButton
+            <IconButton aria-label="Adicionar"
               className={clsx(classes.icon, attachEl && classes.iconOn)}
               onClick={(e) => setAttachEl(e.currentTarget)}
               disabled={loading}
@@ -563,14 +596,14 @@ const MessageInput = ({ ticketStatus, historical, isGroup, contactName, channel,
                   if (el) inputRef.current = el;
                 }}
                 className={classes.input}
-                placeholder="Digite uma mensagem"
+                placeholder={takesOnSend ? "Ao enviar, a conversa passa a ser sua" : "Digite uma mensagem"}
                 multiline
                 maxRows={6}
                 value={inputMessage}
                 onChange={handleChange}
-                disabled={loading}
+                readOnly={loading}
                 onPaste={handlePaste}
-                onKeyDown={(e) => {
+                onKeyDown={(e) => { e && e.persist && e.persist();
                   if (!typeBar || !quickAnswers.length) return;
                   if (e.key === "ArrowDown" || e.key === "ArrowUp") {
                     e.preventDefault();
@@ -595,11 +628,11 @@ const MessageInput = ({ ticketStatus, historical, isGroup, contactName, channel,
               />
             </div>
             {inputMessage.trim() ? (
-              <IconButton className={classes.send} onClick={handleSend} disabled={loading}>
+              <IconButton className={classes.send} aria-label="Enviar mensagem" onClick={handleSend} disabled={loading}>
                 {loading ? <CircularProgress size={20} color="inherit" /> : <Send />}
               </IconButton>
             ) : (
-              <IconButton className={clsx(classes.icon, classes.mic)} onClick={startRecording} disabled={loading} style={{ width: 44, height: 44 }}>
+              <IconButton aria-label="Gravar áudio" className={clsx(classes.icon, classes.mic)} onClick={startRecording} disabled={loading} style={{ width: 44, height: 44 }}>
                 <Mic />
               </IconButton>
             )}

@@ -1,0 +1,58 @@
+/* ---------- dashboards (Gestão Comercial, Painel do CRM, Estatísticas): flat and calm ----------
+   Flat surfaces with a hairline border, no glass, no glow, no sheen. Motion is only a short entry, the growing bars and the numbers,
+   and stops with "reduce motion". The colours come from the tokens of ui.css (--surface, --line, --c-*). */
+@keyframes dash-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes dash-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+.dash-scope { --dash-accent: var(--c-leads); --dash-accent-2: var(--c-teal); --dash-glass: var(--surface); --dash-line: var(--line); position: relative; }
+.dash-scope > * { position: relative; z-index: 1; }
+
+/* every card */
+.dash-scope .ui-card, .dash-scope .glow-card, .dash-scope .dash-card {
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-card); box-shadow: var(--shadow-card);
+  animation: dash-rise .25s ease-out both; transition: border-color .15s ease; position: relative; overflow: hidden;
+}
+.dash-scope .ui-card:hover, .dash-scope .glow-card:hover, .dash-scope .dash-card:hover { border-color: var(--line-strong); }
+
+/* children of a grid enter together (a stagger reads as slow on a dashboard) */
+.dash-scope .dash-stagger > * { animation: dash-rise .25s ease-out both; }
+
+/* numbers */
+.dash-kpi-card { --tone: var(--dash-accent); }
+.dash-kpi-glow { display: none; }
+.dash-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--tone, var(--c-leads)); }
+
+/* charts: the tooltip of the kit is used; the default one of recharts gets the same look */
+.dash-scope .recharts-default-tooltip { background: var(--surface) !important; border: 1px solid var(--line-strong) !important; border-radius: 10px !important; box-shadow: var(--shadow-pop); color: var(--text-1); }
+.dash-scope .recharts-cartesian-grid line { stroke-dasharray: 3 4; stroke: var(--grid); }
+
+/* ranking: thin bars that grow */
+.dash-race { display: grid; gap: 12px; }
+.dash-race-row { display: grid; grid-template-columns: minmax(110px, 190px) 1fr auto; gap: 14px; align-items: center; font-size: 13.5px; }
+.dash-race-track { height: 6px; border-radius: 999px; background: var(--track); overflow: hidden; }
+.dash-race-fill { height: 100%; border-radius: 999px; transform-origin: left; background: var(--c-leads); animation: dash-grow .6s cubic-bezier(.22, 1, .36, 1) both; }
+
+/* polo card */
+.dash-polo { padding: 18px; display: grid; gap: 14px; }
+.dash-polo-head { display: flex; align-items: center; gap: 14px; }
+.dash-ring { width: 64px; height: 64px; flex: none; position: relative; }
+.dash-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.dash-ring circle { fill: none; stroke-width: 6; stroke-linecap: round; }
+.dash-ring .bg { stroke: var(--track); }
+.dash-ring .fg { stroke: var(--c-leads); stroke-dasharray: var(--ring-len, 163); transition: stroke-dashoffset .6s cubic-bezier(.22, 1, .36, 1); }
+.dash-ring b { position: absolute; inset: 0; display: grid; place-items: center; font-size: 13px; font-weight: 700; }
+.dash-polo-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.dash-polo-stats div { padding: 10px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--line); }
+.dash-polo-stats small { display: block; font-size: 11.5px; color: var(--text-2); }
+.dash-polo-stats b { font-size: 18px; font-variant-numeric: tabular-nums; letter-spacing: -.02em; color: var(--text-1); }
+.dash-team { display: flex; flex-wrap: wrap; gap: 6px; }
+.dash-team span { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 3px; border-radius: 999px; font-size: 12.5px; background: var(--surface-2); border: 1px solid var(--line); }
+.dash-team i { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-style: normal; font-size: 10.5px; font-weight: 700; color: #fff; background: var(--c-brand); }
+.dash-polo .dash-link { width: 100%; border: 1px solid var(--line); background: var(--surface-2); color: var(--text-1); font-weight: 600; border-radius: var(--radius-ctl); padding: 9px; cursor: pointer; }
+.dash-polo .dash-link:hover { border-color: var(--line-strong); }
+
+@media (prefers-reduced-motion: reduce) {
+  .dash-scope .ui-card, .dash-scope .glow-card, .dash-scope .dash-card, .dash-scope .dash-stagger > *, .dash-race-fill { animation: none !important; }
+  .dash-ring .fg { transition: none; }
+}
+@media (max-width: 640px) { .dash-race-row { grid-template-columns: 1fr auto; } .dash-race-track { grid-column: 1 / -1; order: 3; } }

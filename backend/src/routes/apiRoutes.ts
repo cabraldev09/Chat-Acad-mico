@@ -5,7 +5,7 @@ import uploadConfig from "../config/upload";
 import * as ApiController from "../controllers/ApiController";
 import isAuthApi from "../middleware/isAuthApi";
 
-const upload = multer(uploadConfig);
+const upload = multer({ ...uploadConfig, limits: { fileSize: 30 * 1024 * 1024, files: 5 } });
 
 const ApiRoutes = express.Router();
 
