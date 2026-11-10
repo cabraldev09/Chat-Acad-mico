@@ -3609,7 +3609,11 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(leadStage(A) === stageName("qualified"), `after presenting the course: ${leadStage(A)}`);
       assert(slotsA().courseExplained === true && slotsA().courseDurationSemesters === 10 && slotsA().courseModality === "SEMIPRESENCIAL", `slots from the tool ${JSON.stringify(slotsA())}`);
 
-      out = await say(A, "wamid.com-a4", "E sobre as mudanças do MEC, como fica?", t => t.some(x => /Portaria de teste/.test(x)), "the rule of the course");
+      // the question about the format is answered by the system from the rule of the course (the text of the team for it), without the model
+      llm = anthropic.requests.length;
+      out = await say(A, "wamid.com-a4m", "E sobre as mudanças do MEC, como fica?", t => t.some(x => /Até aqui você compreendeu\?/.test(x)), "the format told by the system");
+      assert(/Texto aprovado\./.test(out.join(" ")) && !/vou confirmar/i.test(out.join(" ")) && anthropic.requests.length === llm, `the format was not told from the rule: ${out}`);
+      out = await say(A, "wamid.com-a4", "E o MEC, o que diz sobre esse curso?", t => t.some(x => /Portaria de teste/.test(x)), "the rule of the course");
       assert(/práticas presenciais: true/.test(out.join(" ")) && /cronograma definido: false/.test(out.join(" ")), "the rule of the course was not read from the data");
       const sysOfMec = anthropic.requests.filter(r => /Em TODA resposta/.test(JSON.stringify(r.system))).slice(-2)[0].system.map(b => b.text).join("\n");
       assert(/mudanças do MEC/.test(sysOfMec) && /Já explicado/.test(sysOfMec), "the passage of the subject (MEC) or what was already explained did not reach the prompt");
