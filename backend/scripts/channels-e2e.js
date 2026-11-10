@@ -2261,6 +2261,39 @@ const postMeta = (id, payload, secret, badSig) => {
       const byContact = await http.post(`/grades/${marketing.id}/send`, { contactId: tgTicketData.contactId, pdf: false }, auth());
       assert(byContact.status === 200 && tg.sent.slice(before2).some(x => /Cst em Marketing/.test(String(x.body.text || ""))), `send by contact ${byContact.status} ${JSON.stringify(byContact.data)}`);
       assert((await http.post(`/grades/${marketing.id}/send`, {}, auth())).status === 400 && (await http.post(`/grades/${marketing.id}/send`, { contactId: 99999999 }, auth())).status === 404, "send without a target");
+      // a conversation that belongs to somebody else (the tutor's) is never written over: the send asks for another connection, saying who attends
+      const tutorGs = (await http.post("/users", { name: "Tutora Grade", email: "tutora-grade@x.com", password: "senha123", role: "tutor" }, auth())).data;
+      sql(`UPDATE Tickets SET userId=${tutorGs.id}, segment='onboarding' WHERE id=${tgTicket}`);
+      const tutorBusy = await http.post(`/grades/${marketing.id}/send`, { contactId: tgTicketData.contactId, whatsappId: tgId, pdf: false }, auth());
+      assert(tutorBusy.status === 409 && tutorBusy.data.error === "ERR_CHOOSE_CONNECTION" && /Tutora Grade \(tutoria\)/.test(tutorBusy.data.data.message), `tutor's conversation ${tutorBusy.status} ${JSON.stringify(tutorBusy.data)}`);
+      assert(Array.isArray(tutorBusy.data.data.connections) && !tutorBusy.data.data.connections.some(w => w.id === tgId), "the busy connection was offered");
+      sql(`UPDATE Tickets SET userId=1, segment='sales' WHERE id=${tgTicket}`);
+      assert((await http.post(`/grades/${marketing.id}/send`, { contactId: tgTicketData.contactId, whatsappId: tgId, pdf: false }, auth())).status === 200, "my own conversation in the chosen connection");
+      // a group: only through a QR connection that takes part in it; more than one asks which; the proposal (personal data) never goes to a group
+      const grp = sql(`INSERT INTO Contacts (name, number, email, isGroup, kind, createdAt, updatedAt) VALUES ('Grupo da Grade', '120363555000000009', '', true, 'group', NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const noChat = await http.post(`/grades/${marketing.id}/send`, { contactId: Number(grp), pdf: false }, auth());
+      assert(noChat.status === 400 && /ainda não tem conversa/.test(noChat.data.error), `group without a conversation ${noChat.status} ${JSON.stringify(noChat.data)}`);
+      const grpTicket = (wid, status) => sql(`INSERT INTO Tickets (status, contactId, whatsappId, unreadMessages, isGroup, segment, isHistorical, lastMessage, lastMessageAt, createdAt, updatedAt) VALUES ('${status}', ${grp}, ${wid}, 0, true, 'sales', false, 'oi', NOW(), NOW(), NOW()) RETURNING id`).split("\n")[0];
+      grpTicket(tgId, "open");
+      const notQr = await http.post(`/grades/${marketing.id}/send`, { contactId: Number(grp), pdf: false }, auth());
+      assert(notQr.status === 400 && /QR Code/.test(notQr.data.error), `group outside a QR connection ${notQr.status} ${JSON.stringify(notQr.data)}`);
+      const qrA = sql(`INSERT INTO Whatsapps (name, status, channel, isDefault, createdAt, updatedAt) VALUES ('QR Grupo A', 'DISCONNECTED', 'whatsapp', false, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const qrB = sql(`INSERT INTO Whatsapps (name, status, channel, isDefault, createdAt, updatedAt) VALUES ('QR Grupo B', 'DISCONNECTED', 'whatsapp', false, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const gA = grpTicket(qrA, "closed");
+      grpTicket(qrB, "closed");
+      const which = await http.post(`/grades/${marketing.id}/send`, { contactId: Number(grp), pdf: false }, auth());
+      assert(which.status === 409 && which.data.error === "ERR_CHOOSE_CONNECTION" && which.data.data.connections.length === 2 && which.data.data.connections.every(w => /QR Grupo/.test(w.name)), `group in two connections ${which.status} ${JSON.stringify(which.data)}`);
+      assert((await http.post(`/grades/${marketing.id}/send`, { contactId: Number(grp), whatsappId: tgId, pdf: false }, auth())).status === 400, "a group sent through a connection it is not in");
+      // the connection chosen: the group's conversation there is opened for the send (the number itself is not connected in this test, so the send stops at the channel)
+      const chosenSend = await http.post(`/grades/${marketing.id}/send`, { contactId: Number(grp), whatsappId: Number(qrA), pdf: false }, auth());
+      assert(chosenSend.data.error !== "ERR_CHOOSE_CONNECTION" && !/grupo/i.test(String(chosenSend.data.error || "")) && sql(`SELECT status FROM Tickets WHERE id=${gA}`) === "open", `group through the chosen connection ${chosenSend.status} ${JSON.stringify(chosenSend.data)}`);
+      sql(`DELETE FROM Tickets WHERE contactId=${grp}`);
+      sql(`DELETE FROM Whatsapps WHERE id IN (${qrA}, ${qrB})`);
+      // the chooser lists people and groups apart (a group is never shown as a contact with a "phone number")
+      const people = (await http.get("/contacts", { ...auth(), params: { searchParam: "Grupo da Grade", kind: "people" } })).data.contacts;
+      const groupsOnly2 = (await http.get("/contacts", { ...auth(), params: { searchParam: "Grupo da Grade", kind: "groups" } })).data.contacts;
+      assert(people.length === 0 && groupsOnly2.length === 1 && groupsOnly2[0].isGroup === true, `people/groups ${people.length}/${groupsOnly2.length}`);
+      assert((await http.get("/contacts", { ...auth(), params: { kind: "people" } })).data.contacts.every(c => !c.isGroup), "a group among the people");
       // permissions: a consultant reads and sends but does not publish or delete
       const consTk = (await http.post("/auth/login", { email: "outro-an@x.com", password: "senha123" })).data.token;
       assert((await http.get("/grades", asUser(consTk))).status === 200, "a consultant cannot read the catalog");

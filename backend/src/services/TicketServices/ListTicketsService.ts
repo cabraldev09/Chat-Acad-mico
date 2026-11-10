@@ -180,7 +180,8 @@ const ListTicketsService = async ({
 
   // the unread view rebuilt the filter above: the Grupos / private-only choice still applies
   if (withUnreadMessages === "true") {
-    if (groups === "only") whereCondition = { ...whereCondition, isGroup: true };
+    if (communities === "only") whereCondition = { [Op.and]: [whereCondition, { isGroup: true }, communityCond] } as any;
+    else if (groups === "only") whereCondition = { [Op.and]: [whereCondition, { isGroup: true }, notCommunityCond] } as any;
     if (groups === "exclude") whereCondition = { ...whereCondition, isGroup: false };
   }
 
@@ -263,10 +264,12 @@ const ListTicketsService = async ({
       // the Grupos / private-only views apply to the history as well
       ...(groups === "only" ? { isGroup: true } : groups === "exclude" ? { isGroup: false } : {})
     };
+    // (and the communities stay in their own view there too)
+    const historyView: any = communities === "only" ? { [Op.and]: [history, { isGroup: true }, communityCond] } : groups === "only" ? { [Op.and]: [history, notCommunityCond] } : history;
     finalWhere =
       historical === "true"
-        ? { [Op.and]: [whereCondition || {}, history] }
-        : { [Op.or]: [{ [Op.and]: [whereCondition || {}, { isHistorical: false }] }, history] };
+        ? { [Op.and]: [whereCondition || {}, historyView] }
+        : { [Op.or]: [{ [Op.and]: [whereCondition || {}, { isHistorical: false }] }, historyView] };
   }
 
   if (countOnly) {

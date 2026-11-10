@@ -63,8 +63,10 @@ const useStyles = makeStyles((theme) => {
   };
 });
 
-const phoneLabel = (c) => {
-  const n = String(c.number || "");
+// a group has no phone number: its id is never shown as one
+export const phoneLabel = (c) => {
+  if (c && c.isGroup) return c.kind === "community" || c.parentGroupId ? "Comunidade" : "Grupo";
+  const n = String((c && c.number) || "");
   if (n.includes("_")) return n.replace(/^[a-z]+_/, "");
   return n ? `+${n}` : "";
 };
@@ -72,7 +74,8 @@ const phoneLabel = (c) => {
 // "Nova conversa": search first, then add a contact, recent chats and the full A–Z list.
 // With onPick the same list serves other screens (for example "Enviar contato"): a click hands the contact over
 // instead of opening a conversation, and the "Novo contato" block can be hidden.
-const NewTicketModal = ({ modalOpen, onClose, title = "Nova conversa", onPick, hideNew }) => {
+// With allowGroups (only for what may go to a group, like a grade) a second tab lists the groups; people and groups are never mixed.
+const NewTicketModal = ({ modalOpen, onClose, title = "Nova conversa", onPick, hideNew, allowGroups = false }) => {
   const classes = useStyles();
   const history = useHistory();
   const { user } = useContext(AuthContext);
@@ -88,6 +91,8 @@ const NewTicketModal = ({ modalOpen, onClose, title = "Nova conversa", onPick, h
   const [creating, setCreating] = useState(false);
   const [contactModalOpen, setContactModalOpen] = useState(false);
   const [newContact, setNewContact] = useState({});
+  const [tab, setTab] = useState("people");
+  const wantGroups = allowGroups && tab === "groups";
 
   // reset when opened; load recent conversations
   useEffect(() => {
@@ -108,13 +113,13 @@ const NewTicketModal = ({ modalOpen, onClose, title = "Nova conversa", onPick, h
         .flat()
         .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
         .forEach((t) => {
-          if (!t.contact || t.isGroup || seen.has(t.contact.id)) return;
+          if (!t.contact || !!t.isGroup !== wantGroups || seen.has(t.contact.id)) return;
           seen.add(t.contact.id);
-          out.push({ ...t.contact, channel: t.whatsapp?.channel });
+          out.push({ ...t.contact, isGroup: !!t.isGroup, channel: t.whatsapp?.channel });
         });
       setRecents(out.slice(0, 5));
     });
-  }, [modalOpen, user]);
+  }, [modalOpen, user, wantGroups]);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -130,7 +135,7 @@ const NewTicketModal = ({ modalOpen, onClose, title = "Nova conversa", onPick, h
     let cancelled = false;
     setLoading(true);
     api
-      .get("/contacts", { params: { searchParam: search, pageNumber: page } })
+      .get("/contacts", { params: { searchParam: search, pageNumber: page, kind: wantGroups ? "groups" : "people" } })
       .then(({ data }) => {
         if (cancelled) return;
         setContacts((prev) => (page === 1 ? data.contacts : [...prev, ...data.contacts]));
@@ -141,7 +146,7 @@ const NewTicketModal = ({ modalOpen, onClose, title = "Nova conversa", onPick, h
     return () => {
       cancelled = true;
     };
-  }, [search, page, modalOpen]);
+  }, [search, page, modalOpen, wantGroups]);
 
   const onScroll = useCallback(
     (e) => {
@@ -215,7 +220,7 @@ const NewTicketModal = ({ modalOpen, onClose, title = "Nova conversa", onPick, h
             <InputBase
               autoFocus
               className={classes.input}
-              placeholder="Nome ou telefone"
+              placeholder={wantGroups ? "Nome do grupo" : "Nome ou telefone"}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
@@ -227,8 +232,19 @@ const NewTicketModal = ({ modalOpen, onClose, title = "Nova conversa", onPick, h
           </div>
         </div>
 
+        {allowGroups && (
+          <div role="tablist" aria-label="Contatos ou grupos" style={{ display: "flex", gap: 8, padding: "0 16px 8px" }}>
+            {[["people", "Contatos"], ["groups", "Grupos"]].map(([k, label]) => (
+              <button key={k} type="button" role="tab" aria-selected={tab === k}
+                onClick={() => { if (tab !== k) { setTab(k); setPage(1); setContacts([]); } }}
+                style={{ flex: 1, padding: "7px 10px", borderRadius: 999, font: "inherit", fontSize: 13.5, fontWeight: 600, cursor: "pointer", border: "1px solid var(--line, #d7dde3)", background: tab === k ? "var(--c-brand, #0b4279)" : "transparent", color: tab === k ? "#fff" : "inherit" }}>
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
         <div ref={bodyRef} className={classes.body} onScroll={onScroll}>
-          {!hideNew && <div className={classes.card}>
+          {!hideNew && !wantGroups && <div className={classes.card}>
             <div
               className={classes.row}
               onClick={() => {
@@ -258,19 +274,19 @@ const NewTicketModal = ({ modalOpen, onClose, title = "Nova conversa", onPick, h
               {contacts.length > 0 ? (
                 <div className={classes.card}>{contacts.map(row)}</div>
               ) : (
-                !loading && <div className={classes.empty}>Nenhum contato encontrado. Use “Adicionar como novo contato” acima.</div>
+                !loading && <div className={classes.empty}>{wantGroups ? "Nenhum grupo encontrado." : hideNew ? "Nenhum contato encontrado." : "Nenhum contato encontrado. Use “Adicionar como novo contato” acima."}</div>
               )}
             </>
           ) : (
             <>
-              {groups.length > 0 && <div className={classes.heading}>Todos os contatos</div>}
+              {groups.length > 0 && <div className={classes.heading}>{wantGroups ? "Todos os grupos" : "Todos os contatos"}</div>}
               {groups.map((g) => (
                 <React.Fragment key={g.letter}>
                   <div className={classes.letter}>{g.letter}</div>
                   <div className={classes.card}>{g.items.map(row)}</div>
                 </React.Fragment>
               ))}
-              {!loading && contacts.length === 0 && <div className={classes.empty}>Você ainda não tem contatos. Adicione o primeiro acima.</div>}
+              {!loading && contacts.length === 0 && <div className={classes.empty}>{wantGroups ? "Nenhum grupo nas suas conexões por QR Code." : "Você ainda não tem contatos. Adicione o primeiro acima."}</div>}
             </>
           )}
           {loading && (

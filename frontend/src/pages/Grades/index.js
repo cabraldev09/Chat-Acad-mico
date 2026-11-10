@@ -37,35 +37,66 @@ const Modal = ({ title, description, children, onClose }) => (
   </div></Portal>
 );
 
-// choose the contact (not a conversation): the open conversation of the person is used, or one is opened
+// choose the contact or the group (not a conversation): the open conversation that is yours is used, or one is opened. A conversation that
+// belongs to somebody else (the tutor's, another attendant's) is never written over: the server asks for another connection, and so does a
+// group that lives in more than one number.
 const SendDialog = ({ grade, onClose }) => {
   const [contact, setContact] = useState(null);
   const [summary, setSummary] = useState(true);
   const [pdf, setPdf] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [choice, setChoice] = useState(null); // { message, connections } when the server asks which connection
+  const [whatsappId, setWhatsappId] = useState("");
 
-  useEffect(() => { if (grade) setContact(null); }, [grade]);
+  useEffect(() => { if (grade) { setContact(null); setChoice(null); setWhatsappId(""); } }, [grade]);
 
   if (!grade) return null;
+  const pick = (c) => { setContact(c); setChoice(null); setWhatsappId(""); };
   const send = async () => {
     setBusy(true);
     try {
-      await api.post(`/grades/${grade.id}/send`, { contactId: contact.id, summary, pdf });
+      await api.post(`/grades/${grade.id}/send`, { contactId: contact.id, summary, pdf, ...(whatsappId ? { whatsappId: Number(whatsappId) } : {}) });
       toast.success(`Grade enviada para ${contact.name}.`);
       onClose();
-    } catch (e) { toastError(e); }
+    } catch (e) {
+      const body = e && e.response && e.response.data;
+      if (body && body.error === "ERR_CHOOSE_CONNECTION" && body.data) {
+        setChoice(body.data);
+        setWhatsappId(body.data.connections && body.data.connections.length === 1 ? String(body.data.connections[0].id) : "");
+      } else toastError(e);
+    }
     setBusy(false);
   };
+  const options = (choice && choice.connections) || [];
+  const blocked = !!choice && (!options.length || !whatsappId);
 
   return (
-    <Modal title="Enviar para um contato" description={grade.courseName} onClose={onClose}>
-      <ContactChooser autoOpen title="Enviar grade ao contato" contact={contact} onPick={setContact} />
-      <p className="text-xs text-slate-500">Se o contato já tem uma conversa aberta, o envio vai nela. Se não tem, abrimos uma conversa para você. Com o PDF, o resumo vai como descrição dele, numa mensagem só.</p>
+    <Modal title="Enviar para um contato ou grupo" description={grade.courseName} onClose={onClose}>
+      <ContactChooser autoOpen allowGroups title="Enviar grade" contact={contact} onPick={pick} />
+      <p className="text-xs text-slate-500">
+        {contact && contact.isGroup
+          ? "A grade vai para o grupo pelo número de QR Code que participa dele. Com o PDF, o resumo vai como descrição dele, numa mensagem só."
+          : "Se você já tem uma conversa aberta com o contato, o envio vai nela. Se não tem, abrimos uma conversa para você. Com o PDF, o resumo vai como descrição dele, numa mensagem só."}
+      </p>
+      {choice && (
+        <div role="alert" className="grid gap-2 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+          <span>{choice.message}</span>
+          {options.length > 0 && (
+            <label className="grid gap-1 text-xs font-medium text-slate-700">
+              Enviar pela conexão
+              <select value={whatsappId} onChange={(e) => setWhatsappId(e.target.value)} className="h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm text-slate-900">
+                <option value="">Escolha a conexão</option>
+                {options.map((w) => <option key={w.id} value={w.id}>{w.name}{w.status && w.status !== "CONNECTED" ? " (desconectada)" : ""}</option>)}
+              </select>
+            </label>
+          )}
+        </div>
+      )}
       <div className="grid gap-2 text-sm">
         <label className="flex items-center gap-2"><input type="checkbox" checked={summary} onChange={(e) => setSummary(e.target.checked)} className="size-4 accent-[#003B71]" style={{ appearance: "auto" }} />Resumo da grade</label>
         <label className="flex items-center gap-2"><input type="checkbox" checked={pdf} onChange={(e) => setPdf(e.target.checked)} className="size-4 accent-[#003B71]" style={{ appearance: "auto" }} />PDF da matriz</label>
       </div>
-      <div className="flex justify-end gap-2"><Button variant="outline" onClick={onClose}>Cancelar</Button><Button onClick={send} disabled={busy || !contact || (!summary && !pdf)}>{busy ? "Enviando…" : "Enviar"}</Button></div>
+      <div className="flex justify-end gap-2"><Button variant="outline" onClick={onClose}>Cancelar</Button><Button onClick={send} disabled={busy || !contact || (!summary && !pdf) || blocked}>{busy ? "Enviando…" : "Enviar"}</Button></div>
     </Modal>
   );
 };
@@ -119,7 +150,7 @@ const GradeCard = ({ g, manager, onSend, onDelete }) => {
         {g.totalCourseHours ? <p className="text-xs text-muted-foreground">Carga horária total: {g.totalCourseHours.toLocaleString("pt-BR")}h.</p> : null}
         <div className="mt-auto space-y-3 pt-2">
           <div className="flex flex-wrap gap-2">
-            <Button onClick={() => onSend(g)} className="h-9 gap-2 px-3"><Send className="size-4" /> Enviar ao contato</Button>
+            <Button onClick={() => onSend(g)} className="h-9 gap-2 px-3"><Send className="size-4" /> Enviar</Button>
             <Button variant="outline" onClick={copy} disabled={busy} className="h-9 gap-2 px-3"><ClipboardCopy className="size-4" /> Copiar resumo</Button>
           </div>
           <div className="border-t pt-3 text-xs text-muted-foreground">Atualizada em {new Date(g.updatedAt).toLocaleString("pt-BR")}</div>

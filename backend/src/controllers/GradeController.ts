@@ -99,7 +99,8 @@ const CAPTION_LIMIT = 1000;
 export const send = async (req: Request, res: Response): Promise<Response> => {
   const g = await load(req.params.id);
   // a contact was chosen (not a conversation): its open conversation is used, or one is opened for the person
-  const ticketId = await ticketFromTarget(req, req.body || {});
+  // a grade has nothing personal in it: it may go to a group too (through the QR connection where the group lives)
+  const ticketId = await ticketFromTarget(req, req.body || {}, { allowGroups: true });
   const wantSummary = req.body?.summary !== false;
   const wantPdf = req.body?.pdf !== false;
   if (!wantSummary && !wantPdf) throw new AppError("Escolha enviar o resumo, o PDF ou os dois.", 400);
