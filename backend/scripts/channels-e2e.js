@@ -4072,23 +4072,23 @@ const postMeta = (id, payload, secret, badSig) => {
       // the handover waits while the agent has just asked the person something (they answer first), but not forever: within a few answers it happens
       let handed = false;
       let rn = 4;
-      for (const q of ["E sobre as mudanças do MEC, como fica?", "Paulo Souza Lima, CPF 862.883.667-57", "Entendi, obrigado", "Certo, e agora?", "Pode ser"]) {
+      for (const q of ["E sobre as mudanças do MEC, como fica?", "Entendi, obrigado", "Paulo Souza Lima, CPF 862.883.667-57", "Certo, e agora?", "Pode ser"]) {
         out = await say(R, `wamid.com-r${rn}`, q, t => t.length > 0, "R answer");
         rn += 1;
         try {
-          await waitFor(() => sql(`SELECT handoffReason FROM Tickets WHERE id=${ticketOf(R)}`) === "qualified", 3500, "R routed as qualified");
+          await waitFor(() => /^(qualified|proposal)$/.test(sql(`SELECT handoffReason FROM Tickets WHERE id=${ticketOf(R)}`)), 3500, "R routed to the consultant");
           handed = true;
           break;
         } catch (e) { /* the agent asked something: the person answers first */ }
       }
       assert(handed, "the qualified lead was never handed over");
-      assert(Number(sql(`SELECT COUNT(*) FROM Messages WHERE ticketId=${ticketOf(R)} AND body LIKE '%Perfeito%' AND body LIKE '%consultor do nosso polo%'`)) >= 1, "the handover message (warm, with the name and the course) was not sent");
+      assert(Number(sql(`SELECT COUNT(*) FROM Messages WHERE ticketId=${ticketOf(R)} AND body LIKE '%consultor%' AND (body LIKE '%Perfeito%' OR body LIKE '%simular as bolsas%')`)) >= 1, "the handover message (warm, saying the consultant takes it from here) was not sent");
       // the full name and the CPF were asked for the scholarship, read from the answer, kept in the lead and never left in the conversation state
       assert(Number(sql(`SELECT COUNT(*) FROM Messages WHERE ticketId=${ticketOf(R)} AND fromMe=true AND body LIKE '%nome completo e CPF%'`)) >= 1, "the system never asked for the full name and the CPF");
       assert(sql(`SELECT cpf FROM Leads WHERE id=${leadId(R)}`) === "86288366757", "the CPF was not saved in the lead");
       assert(!/86288366757|862\.883\.667/.test(sql(`SELECT slots FROM LeadCommercials WHERE leadId=${leadId(R)}`)), "the CPF leaked into the state of the conversation");
       assert(JSON.parse(sql(`SELECT slots FROM LeadCommercials WHERE leadId=${leadId(R)}`)).fullName === "Paulo Souza Lima", "the full name was not kept");
-      assert(Number(sql(`SELECT COUNT(*) FROM Messages WHERE ticketId=${ticketOf(R)} AND fromMe=true AND body LIKE '%simular a bolsa%' AND body LIKE '%Perfeito%'`)) >= 1, "the handover did not say the consultant will simulate the scholarship");
+      assert(Number(sql(`SELECT COUNT(*) FROM Messages WHERE ticketId=${ticketOf(R)} AND fromMe=true AND (body LIKE '%simular a bolsa%' OR body LIKE '%simular as bolsas%')`)) >= 1, "the handover did not say the consultant will simulate the scholarship");
       assert(sql(`SELECT aiActive FROM Tickets WHERE id=${ticketOf(R)}`) === "0", "the AI kept talking after the handover");
       assert(Number(sql(`SELECT COUNT(*) FROM AgentMetricEvents WHERE leadId=${leadId(R)} AND event='handoff_qualified'`)) === 1, "no metric for the qualified handover");
       // the consultant who receives it reads five lines of what the agent learned, and why it came

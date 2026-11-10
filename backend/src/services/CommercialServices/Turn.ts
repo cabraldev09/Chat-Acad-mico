@@ -174,9 +174,12 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
   }
 
   // the full name and the CPF asked for the scholarship: read here, answered by the system (the CPF never goes to the model, the log or the brief)
-  if (d.input !== null && wrote && Number(state.slots.bolsaDataAsked || 0) > 0 && !hasBolsaData(state.slots)) {
-    const given = bolsaDataFrom(lastText);
-    if (given.cpf || given.fullName || given.invalidCpf) {
+  // (read when it was asked, and also when the person offers a valid CPF on their own: it is the data the consultant needs, asked or not)
+  const bolsaAsked = Number(state.slots.bolsaDataAsked || 0) > 0;
+  const bolsaGiven = d.input !== null && wrote && !hasBolsaData(state.slots) ? bolsaDataFrom(lastText) : null;
+  if (bolsaGiven && (bolsaAsked ? bolsaGiven.cpf || bolsaGiven.fullName || bolsaGiven.invalidCpf : !!bolsaGiven.cpf)) {
+    const given = bolsaGiven;
+    {
       const patch: Record<string, any> = {};
       if (given.fullName) patch.fullName = given.fullName;
       if (given.cpf) patch.cpfGiven = true;
@@ -197,7 +200,7 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
           : asked >= BOLSA_ASKS ? `Obrigado${first ? `, ${first}` : ""}. Anotei o que você enviou.` : bolsaRequestFor(missing);
       // same way out as an answer of the model: when this completes a qualified lead, the Router hears why (the warm handover message follows this text)
       // name and CPF complete and the lead qualified: the consultant simulates the scholarships and makes the proposal now (the conversation does not stop here)
-      const toProposal = complete && isQualified(after) && !(needsModalityExplanation(after) && !modalityExplained(after));
+      const toProposal = bolsaAsked && complete && isQualified(after) && !(needsModalityExplanation(after) && !modalityExplained(after));
       const hook = await commercialTurn(d.ports, { userText: lastText.replace(/\d/g, "•"), intent: toProposal ? "proposal" : "other", ...(toProposal ? { fast: "proposal" } : {}), patch, tools: [], hadText: true, replied: true, nodeId: d.nodeId });
       if (toProposal && hook.exit) text = `${text}\n\n${FIXED.toProposal}`;
       await log({ intent: "other", deterministic: true, llmCalls: 0, toolCalls: 0, cacheHits: 0, tokens: base.tokens, outcome: hook.exit, latencyMs: Date.now() - started });
