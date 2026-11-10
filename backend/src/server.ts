@@ -1,3 +1,5 @@
+import { startBudgetAlerts } from "./workers/BudgetAlerts";
+import { startCommercialFollowUp } from "./workers/CommercialFollowUp";
 import { createServer } from "http";
 import { startWebhookQueue } from "./services/WebhookServices/DispatchWebhook";
 import { startUnreadReconciler } from "./workers/UnreadReconciler";
@@ -33,6 +35,8 @@ whenLeader(() => {
   startWebhookQueue();
   startCampaignRunner();
   startCrmReminders();
+  startCommercialFollowUp();
+  startBudgetAlerts();
   startLeadSlaAlert();
   startProfilePicSync();
   startAckReconciler();

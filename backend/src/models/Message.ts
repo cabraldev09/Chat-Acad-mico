@@ -1,3 +1,4 @@
+import { signedFileUrl } from "../helpers/SignedFile";
 import Model from "./BaseModel";
 import {
   Table,
@@ -37,11 +38,7 @@ class Message extends Model<Message> {
   @Column(DataType.TEXT)
   get mediaUrl(): string | null {
     if (this.getDataValue("mediaUrl")) {
-      const base = process.env.BACKEND_URL || "";
-      const port = process.env.PROXY_PORT;
-      // https hosts (Railway) already answer on the default port
-      const origin = /^https:\/\//.test(base) || !port ? base : `${base}:${port}`;
-      return `${origin}/public/${this.getDataValue("mediaUrl")}`;
+      return signedFileUrl(String(this.getDataValue("mediaUrl")), this.id);
     }
     return null;
   }

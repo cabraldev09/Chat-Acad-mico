@@ -1,5 +1,5 @@
 import Model from "./BaseModel";
-import { Table, Column, CreatedAt, UpdatedAt, PrimaryKey, AutoIncrement, AllowNull, Default
+import { DataType, Table, Column, CreatedAt, UpdatedAt, PrimaryKey, AutoIncrement, AllowNull, Default
 } from "sequelize-typescript";
 
 @Table({ tableName: "AiUsage" })
@@ -39,6 +39,9 @@ class AiUsage extends Model<AiUsage> {
   @Default(0)
   @Column
   cacheWriteTokens: number;
+
+  @Column(DataType.DECIMAL(14, 8))
+  estimatedUsd: number;
 
   @CreatedAt
   createdAt: Date;

@@ -47,7 +47,7 @@ const UsageTab = ({ agentId, model }) => {
           <LinearProgress variant="determinate" value={pct} color={pct > 85 ? "secondary" : "primary"} />
         </div>
       ) : (
-        <Typography variant="body2" color="textSecondary" gutterBottom>Sem limite diário. Defina um limite na aba Persona e limites para evitar surpresas.</Typography>
+        <Typography variant="body2" color="textSecondary" gutterBottom>Sem limite diário. Defina um limite na aba Instruções e limites para evitar surpresas.</Typography>
       )}
       <Typography variant="subtitle2" gutterBottom>Tokens por dia</Typography>
       {u.perDay.length === 0 ? (
@@ -63,9 +63,10 @@ const UsageTab = ({ agentId, model }) => {
         </div>
       )}
       <Typography variant="body2" color="textSecondary" style={{ marginTop: 16 }}>
-        {u.costUsd !== null ? `Custo estimado no período: US$ ${u.costUsd.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}. ` : "Informe o preço do modelo abaixo para ver o custo em dólares. "}
-        O cache do prompt fixo reduz o custo das chamadas seguintes: {nf(u.total.cacheRead)} tokens foram lidos do cache.
+        {u.costUsd !== null ? `IA: estimativa no período (inclui testes): US$ ${u.costUsd.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}. ` : "Informe o preço do modelo abaixo para ver o custo em dólares. "}
+        Foram lidos {nf(u.total.cacheRead)} tokens de cache. A estimativa usa os preços de entrada e saída informados para cada modelo; não aplica tarifas específicas de cache nem inclui cobranças da Meta.
       </Typography>
+      <Typography variant="body2" color="textSecondary" style={{ marginTop: 8 }}>Testes: {nf((u.test?.input || 0) + (u.test?.output || 0))} tokens em {nf(u.test?.calls)} chamadas. São cobrados pelo provedor, mesmo fora do limite diário de atendimento.</Typography>
       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 12 }}>
         <TextField size="small" variant="outlined" label="Preço de entrada (US$ por milhão de tokens)" value={price.in} onChange={(e) => setPrice({ ...price, in: e.target.value })} style={{ minWidth: 260 }} />
         <TextField size="small" variant="outlined" label="Preço de saída (US$ por milhão de tokens)" value={price.out} onChange={(e) => setPrice({ ...price, out: e.target.value })} style={{ minWidth: 260 }} />

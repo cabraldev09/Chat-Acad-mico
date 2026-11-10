@@ -1,5 +1,7 @@
 import Model from "./BaseModel";
 import {
+  AfterSave,
+  AfterDestroy,
   Table,
   Column,
   DataType,
@@ -57,6 +59,16 @@ class LeadTask extends Model<LeadTask> {
 
   @BelongsTo(() => User)
   user: User;
+
+  @Column
+  automationKey: string;
+
+  @AfterSave
+  @AfterDestroy
+  static async syncFollowUp(task: LeadTask, options: any): Promise<void> {
+    const { syncLeadFollowUp } = await import("../services/CrmServices/Tasks");
+    await syncLeadFollowUp(task.leadId, options?.transaction);
+  }
 
   @CreatedAt
   createdAt: Date;

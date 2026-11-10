@@ -1,3 +1,4 @@
+import operationsRoutes from "./operationsRoutes";
 import { Router } from "express";
 
 import userRoutes from "./userRoutes";
@@ -31,6 +32,7 @@ routes.post("/client-errors", isAuth, rateLimit({ windowMs: 60000, max: 20, key:
   res.status(204).end();
 });
 
+routes.use(operationsRoutes);
 routes.use(userRoutes);
 routes.use("/auth", authRoutes);
 routes.use(settingRoutes);

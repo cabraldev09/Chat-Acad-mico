@@ -1,3 +1,4 @@
+import { renewMediaElement } from "../../services/media-access";
 import { Button } from "@material-ui/core";
 import React, { useRef } from "react";
 import { useEffect } from "react";
@@ -53,9 +54,7 @@ export default function({url}) {
 
     return (
         <>
-            <audio ref={audioRef} controls>
-                <source src={url} type="audio/ogg"></source>
-            </audio>
+            <audio ref={audioRef} controls src={url} onError={renewMediaElement} />
             {showButtonRate && <Button style={{marginLeft: "5px", marginTop: "-45px"}} onClick={toogleRate}>{audioRate}x</Button>}
         </>
     );

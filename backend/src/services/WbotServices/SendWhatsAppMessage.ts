@@ -1,3 +1,4 @@
+import { deliver } from "../OutboundServices/Deliver";
 import { fire } from "../../helpers/Fire";
 import { chatIdOf } from "../../helpers/ChatId";
 import { previewOf } from "../../helpers/MessagePreview";
@@ -23,11 +24,13 @@ interface Request {
   quotedMsg?: Message;
   // sent by a bot/campaign (not typed by a person): gets "typing…" and a delay
   automated?: boolean;
+  optOutNotice?: boolean;
+  outsideHoursNotice?: boolean;
   // a question with options: channels that have buttons send them natively (the text stays in the history)
   choices?: { question: string; options: Array<{ id: string; label: string }> };
 }
 
-const SendWhatsAppMessage = async ({
+const sendMessage = async ({
   body,
   ticket,
   quotedMsg,
@@ -112,5 +115,7 @@ const SendWhatsAppMessage = async ({
     throw new AppError("ERR_SENDING_WAPP_MSG");
   }
 };
+
+const SendWhatsAppMessage = (input: Request): Promise<ProviderMessage> => deliver(input.ticket, { automated: input.automated, optOutNotice: input.optOutNotice, outsideHoursNotice: input.outsideHoursNotice }, () => sendMessage(input));
 
 export default SendWhatsAppMessage;

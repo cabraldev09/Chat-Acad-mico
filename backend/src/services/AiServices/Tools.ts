@@ -8,6 +8,7 @@ import AiAgent from "../../models/AiAgent";
 import { isPg } from "../../helpers/sqlDialect";
 import { addActivity } from "../CrmServices/LeadCore";
 import { norm } from "./Kb";
+import { policyOf } from "./Policy";
 
 export interface Slot {
   key: string;
@@ -70,7 +71,7 @@ export const toolDefs = (agent: AiAgent) => [
     }
   },
   ...functionTools(agent)
-];
+].filter(t => t.name !== "simular_bolsa" || policyOf(agent.persona).simulateScholarship);
 
 const like = (text: string) => (isPg() ? { [Op.iLike]: `%${text}%` } : { [Op.like]: `%${text}%` });
 
@@ -87,10 +88,12 @@ interface Ctx {
   collected: Record<string, string>;
   // set when a function started a flow: the agent says nothing more
   flowStarted?: boolean;
+  userText?: string;
 }
 
 export const runTool = async (name: string, input: any, ctx: Ctx): Promise<any> => {
   input = input || {};
+  if (!toolDefs(ctx.agent).some(t => t.name === name)) return { erro: "Função não habilitada pelo administrador." };
   if (name.startsWith("fluxo_")) {
     const fn = (Array.isArray(ctx.agent.functions) ? ctx.agent.functions : []).find((f: any) => `fluxo_${f.name}` === name);
     if (!fn) return { erro: "Função desconhecida." };
@@ -122,9 +125,13 @@ export const runTool = async (name: string, input: any, ctx: Ctx): Promise<any> 
     return { polos: polos.map(p => ({ nome: p.name, cidade: p.city, estado: p.state })) };
   }
   if (name === "simular_bolsa") {
+    const pct = Number(input.percentual_bolsa);
+    const informed = [...String(ctx.userText || "").matchAll(/(\d+(?:[.,]\d+)?)\s*%/g)].map(m => Number(m[1].replace(",", ".")));
+    if (!Number.isFinite(pct) || pct < 0 || pct > 90 || !informed.includes(pct)) {
+      return { erro: "Informe um percentual de 0 a 90 explicitamente citado pelo aluno. Não crie descontos." };
+    }
     const [course] = await findCourses(String(input.curso || ""), 1);
     if (!course || course.monthlyFee == null) return { erro: "Curso não encontrado ou sem mensalidade cadastrada." };
-    const pct = Math.min(90, Math.max(0, Number(input.percentual_bolsa) || 0));
     const gross = Number(course.monthlyFee);
     return {
       curso: course.name,

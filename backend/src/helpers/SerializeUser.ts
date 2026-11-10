@@ -4,6 +4,8 @@ import Whatsapp from "../models/Whatsapp";
 import { roleOf } from "./Roles";
 
 interface SerializedUser {
+  acceptsNewTickets: boolean;
+  maxOpenTickets: number;
   id: number;
   name: string;
   email: string;
@@ -17,6 +19,8 @@ interface SerializedUser {
 
 export const SerializeUser = (user: User): SerializedUser => {
   return {
+    acceptsNewTickets: user.acceptsNewTickets,
+    maxOpenTickets: user.maxOpenTickets,
     id: user.id,
     name: user.name,
     email: user.email,

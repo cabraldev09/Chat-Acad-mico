@@ -10,7 +10,7 @@ export default {
   storage: multer.diskStorage({
     destination: publicFolder,
     filename(req, file, cb) {
-      // unguessable name: /public is served without authentication
+      // Random names plus expiring signed URLs protect uploaded media.
       const ext = path
         .extname(file.originalname)
         .toLowerCase()

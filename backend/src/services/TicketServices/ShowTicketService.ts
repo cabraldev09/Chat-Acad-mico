@@ -12,7 +12,7 @@ const ShowTicketService = async (id: string | number): Promise<Ticket> => {
       {
         model: Contact,
         as: "contact",
-        attributes: ["id", "name", "number", "profilePicUrl", "channel", "isStaff", "kind"],
+        attributes: ["id", "name", "number", "profilePicUrl", "channel", "isStaff", "kind", "optOut"],
         include: ["extraInfo"]
       },
       {
@@ -28,7 +28,7 @@ const ShowTicketService = async (id: string | number): Promise<Ticket> => {
       {
         model: Whatsapp,
         as: "whatsapp",
-        attributes: ["name", "channel"]
+        attributes: ["name", "channel", "businessHours"]
       },
       {
         model: Tag,

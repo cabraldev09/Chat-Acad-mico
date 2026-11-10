@@ -415,7 +415,7 @@ const CrmSettings = () => {
               { name: "active", label: "Ativa", type: "switch", default: true },
             ]}
             columns={[
-              { header: "Logo", render: (r) => (r.logoFile ? <img alt="" src={`${getBackendUrl().replace(/\/$/, "")}/public/${r.logoFile}`} style={{ maxHeight: 32, maxWidth: 120 }} /> : "—") },
+              { header: "Logo", render: (r) => (r.logoFile ? <img alt="" src={r.logoUrl} style={{ maxHeight: 32, maxWidth: 120 }} /> : "—") },
               { header: "Instituição", field: "name" }, { header: "CNPJ", render: (r) => r.cnpj || "—" },
               { header: "Ativa", render: (r) => <ActiveToggle key={r.id} row={r} endpoint="/institutions" /> },
             ]} />

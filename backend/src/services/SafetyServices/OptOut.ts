@@ -26,6 +26,7 @@ const processOptOut = async (ticketId: number, body: string): Promise<boolean> =
       optOutAt: wantsOut ? new Date() : null
     });
 
+    await ticket.update({ aiActive: !wantsOut });
     await SendWhatsAppMessage({
       body:
         BOT_MARK +
@@ -33,7 +34,7 @@ const processOptOut = async (ticketId: number, body: string): Promise<boolean> =
           ? "Tudo certo, você não receberá mais mensagens em massa da nossa equipe. Se mudar de ideia, responda VOLTAR."
           : "Pronto! Você voltará a receber nossas novidades."),
       ticket,
-      automated: true
+      automated: true, optOutNotice: true
     });
   } catch (err) {
     logger.error(`Opt-out handling failed: ${err}`);

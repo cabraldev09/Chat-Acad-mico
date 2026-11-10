@@ -1,3 +1,4 @@
+import { workLists } from "../services/CrmServices/WorkLists";
 import { Request, Response } from "express";
 import { QueryTypes } from "sequelize";
 
@@ -257,6 +258,7 @@ export const myDay = async (req: Request, res: Response): Promise<Response> => {
   }
 
   return res.json({
+    work: await workLists(me),
     slaMinutes: sla,
     toReply: toReply.slice(0, 8),
     toReplyCount: toReply.length,

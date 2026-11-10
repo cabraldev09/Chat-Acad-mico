@@ -79,6 +79,12 @@ class Ticket extends Model<Ticket> {
   botReminderAt: Date;
 
   @Column
+  slaAlertedMessageId: string;
+
+  @Column
+  slaEscalatedMessageId: string;
+
+  @Column
   chatbotNodeId: number;
 
   @Default(true)

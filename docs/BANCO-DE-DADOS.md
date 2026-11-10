@@ -5,7 +5,7 @@
 | Peça | Onde | Observação |
 |---|---|---|
 | Telas (React) | **Vercel** | só arquivos estáticos; aponta para a API por `VITE_BACKEND_URL` |
-| Banco de dados | **Supabase (PostgreSQL)** | é o único banco; 43 tabelas |
+| Banco de dados | **Supabase (PostgreSQL)** | guarda as tabelas da aplicação |
 | Arquivos enviados (mídia, PDFs, logos) | pasta `backend/public` no host da API (hoje) → Supabase Storage (próxima etapa) | |
 | **API Node (Express + socket.io + workers)** | **um host com processo ligado 24 h** (Railway, Fly.io, Render ou VPS) | **não roda dentro do Supabase** |
 | Sessões do WhatsApp (QR Code) | **disco do host da API** (`backend/.wwebjs_auth` ou `.zapo_auth`) | **não ficam no banco**; precisam de volume persistente |

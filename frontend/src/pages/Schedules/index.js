@@ -13,6 +13,7 @@ const STATUS = {
   sending: "Enviando",
   sent: "Enviada",
   failed: "Falhou",
+  uncertain: "Conferir entrega",
   cancelled: "Cancelada",
 };
 

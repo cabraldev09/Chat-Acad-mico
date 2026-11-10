@@ -125,3 +125,21 @@ Públicas: 18 · logado (qualquer perfil): 172 · gestão: 86 · admin: 21
 - POST /whatsappsession/:whatsappId → canManageWhatsapp
 - PUT /whatsappsession/:whatsappId → canManageWhatsapp
 - DELETE /whatsappsession/:whatsappId → canManageWhatsapp
+
+## Continuidade, orçamento e anexos
+
+As rotas abaixo usam o prefixo real da aplicação (não o prefixo interno dos subrouters):
+
+| Método e rota | Acesso | Uso |
+|---|---|---|
+| `GET /operations/config` | Gestão | Prazos e regras; opções financeiras somente para admin |
+| `PUT /operations/config` | Gestão | Salvar regras; valores financeiros exigem admin |
+| `GET /operations/summary` | Gestão | Exceções, disponibilidade, entregas; consumo somente para admin |
+| `PUT /operations/users/:id/capacity` | Gestão | `acceptsNewTickets` boolean e `maxOpenTickets` inteiro de 0 a 1.000; coordenador não altera administrador |
+| `POST /operations/reconcile/:kind/:id` | Gestão | `kind` = `schedule`, `campaign` ou `delivery`; confirmar `status` = `sent` ou `failed`, sem reenviar |
+| `POST /operations/files/revoke` | Admin | Revogar todos os links do `filename` informado |
+| `GET /files/messages/:id/link` | Logado, com acesso à conversa | Renovar link assinado de um anexo |
+| `PUT /me/preferences` | Logado | Também aceita `acceptsNewTickets` para pausar o próprio recebimento |
+| `GET /public/:filename?access=...` | Link assinado válido | Acesso temporário a arquivo; valida revogação e exclusão da mensagem |
+
+O registro de envio é preservado mesmo que a conversa seja removida, para não reduzir artificialmente o consumo do dia. A conferência manual de um envio incerto mantém sua reserva de custo até o fim do dia de consumo correspondente.

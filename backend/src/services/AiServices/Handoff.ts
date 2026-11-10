@@ -1,3 +1,5 @@
+import { ensureTask } from "../CrmServices/Tasks";
+import { getSetting } from "../../helpers/AppSettings";
 import Lead from "../../models/Lead";
 import LeadStage from "../../models/LeadStage";
 import LeadTask from "../../models/LeadTask";
@@ -48,21 +50,14 @@ export const handoffToHuman = async (ticketId: number, agent: AiAgent, reason: H
     note: `Atendimento com IA encerrado (${REASON[reason]}).${question ? `\nPergunta que ficou sem resposta: “${question}”` : ""}${summary ? `\n${summary}` : ""}`.slice(0, 1000)
   } as any).catch(err => logger.warn(`handoff note not saved: ${err}`));
 
+  if (reason === "qualificado") await TicketEvent.create({ ticketId, type: "ai_qualified", note: "Lead qualificado pela IA e encaminhado para proposta." });
+
   const lead = await Lead.findOne({ where: { contactId: ticket.contactId } });
   if (lead) {
     await addActivity(lead.id, null, "system", `Atendimento com IA passou para a equipe (${REASON[reason]}).${summary ? `\n${summary}` : ""}`);
-    if (complete) {
+    if (complete && !lead.wonAt && !lead.lostAt) {
       const stage = await LeadStage.findOne({ where: { name: "Qualificado" } });
       if (stage && lead.stageId !== stage.id) await changeStage(lead.id, stage.id, null).catch(() => undefined);
-      if (lead.ownerId) {
-        await LeadTask.create({
-          leadId: lead.id,
-          userId: lead.ownerId,
-          type: "outro",
-          title: "Continuar o atendimento: a IA já coletou os dados e preparou o resumo",
-          dueAt: new Date(Date.now() + 3600000)
-        } as any).catch(() => undefined);
-      }
     }
   }
 
@@ -73,5 +68,19 @@ export const handoffToHuman = async (ticketId: number, agent: AiAgent, reason: H
       await UpdateTicketService({ ticketData: { queueId: queue.id }, ticketId }).catch(err => logger.warn(`handoff queue: ${err}`));
     }
   }
+  await ticket.reload();
+  if (!ticket.queueId) {
+    const fallback = agent.queueId || Number(await getSetting("crm_fallback_queue_id", "0"));
+    if (fallback && await Queue.findByPk(fallback)) await UpdateTicketService({ ticketData: { queueId: fallback }, ticketId });
+  }
   await AutoAssignTicket(await ShowTicketService(ticketId));
+  const assigned = await Ticket.findByPk(ticketId);
+  const ownerId = assigned?.userId || lead?.ownerId;
+  if (lead && ownerId && !lead.wonAt && !lead.lostAt) {
+    await ensureTask({
+      key: `handoff:${ticketId}:${ticket.aiTurns || 0}`, leadId: lead.id, userId: ownerId, type: "outro",
+      title: `Continuar atendimento da IA: ${REASON[reason]}`.slice(0, 200),
+      dueAt: new Date(Date.now() + 3600000)
+    }).catch(err => logger.warn(`handoff task: ${err}`));
+  }
 };

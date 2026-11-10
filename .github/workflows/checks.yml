@@ -6,7 +6,7 @@ on:
   pull_request:
 
 env:
-  # the browser is only needed at runtime (inside the Docker image), not to check the code
+  # Build/unit jobs skip the browser download; integration locates Chrome or installs it explicitly.
   PUPPETEER_SKIP_DOWNLOAD: "true"
   PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: "true"
 
@@ -21,15 +21,22 @@ jobs:
       - name: Backend compila
         working-directory: backend
         run: |
-          npm install --legacy-peer-deps --no-audit --no-fund
+          npm ci --legacy-peer-deps --no-audit --no-fund
           ./node_modules/.bin/tsc --noEmit
+      - name: Regressões da IA e segurança
+        working-directory: backend
+        run: |
+          npm run test:ai
+          npm run test:security
+      - name: Bloqueio de publicação
+        run: node --test deploy/vps/check-ci.test.js
       - name: Tudo em português
         working-directory: backend
         run: node scripts/i18n-check.js
       - name: Frontend compila
         working-directory: frontend
         run: |
-          npm install --legacy-peer-deps --no-audit --no-fund
+          npm ci --legacy-peer-deps --no-audit --no-fund
           npx vite build
       - name: Frontend sem variáveis inexistentes (evita tela branca)
         working-directory: frontend
@@ -38,3 +45,35 @@ jobs:
           --parser-options=ecmaFeatures:{jsx:true} --env browser,es2021 --plugin react --plugin react-hooks
           --rule 'no-undef:error' --rule 'react/jsx-no-undef:error' --rule 'react/jsx-uses-vars:error'
           --rule 'react/jsx-uses-react:error' src
+
+  integracao:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Dependências reproduzíveis
+        working-directory: backend
+        run: npm ci --legacy-peer-deps --no-audit --no-fund
+      - name: Canais, permissões, pagamentos e continuidade
+        working-directory: backend
+        env:
+          PGUSER: postgres
+        run: |
+          if command -v google-chrome >/dev/null 2>&1; then
+            export CHROME_BIN="$(command -v google-chrome)"
+          else
+            npx puppeteer browsers install chrome
+            export CHROME_BIN="$(node -p "require('puppeteer').executablePath()")"
+          fi
+          npm run test:channels

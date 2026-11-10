@@ -17,6 +17,9 @@ LOCAL=$(git rev-parse HEAD)
 REMOTE=$(git rev-parse origin/main)
 if [ "$LOCAL" = "$REMOTE" ] && [ "${1:-}" != "--force" ]; then exit 0; fi
 
+# The exact commit must have passed checks; a push alone is not a release approval.
+docker compose -f deploy/vps/docker-compose.yml --env-file deploy/vps/.env run --rm --no-deps -T   -v /opt/chat-academico/deploy/vps/check-ci.js:/tmp/check-ci.js:ro --entrypoint node api /tmp/check-ci.js "$REMOTE"
+
 echo "$(date '+%F %T') atualizando ${LOCAL:0:7} -> ${REMOTE:0:7}"
 git reset -q --hard origin/main
 cd deploy/vps

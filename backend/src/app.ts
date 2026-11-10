@@ -1,4 +1,5 @@
 import "./bootstrap";
+import privateFiles from "./middleware/privateFiles";
 import "reflect-metadata";
 import "express-async-errors";
 import express, { Request, Response, NextFunction } from "express";
@@ -89,11 +90,13 @@ app.use(express.json());
 
 app.use(
   "/public",
+  privateFiles,
   express.static(uploadConfig.directory, {
     index: false,
     dotfiles: "deny",
     // names are unique per file, so browsers can keep pictures, voice notes and PDFs instead of fetching them again
-    maxAge: "7d",
+    maxAge: 0,
+    cacheControl: false,
     setHeaders: (res, filePath) => {
       // never let an uploaded html/svg/js run in the app's origin
       if (/\.(html?|svg|xml|js|mjs)$/i.test(filePath)) {

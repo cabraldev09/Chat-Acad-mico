@@ -2,6 +2,7 @@ import { subHours } from "date-fns";
 
 import ChatbotNode from "../../models/ChatbotNode";
 import Ticket from "../../models/Ticket";
+import Message from "../../models/Message";
 import User from "../../models/User";
 import { logger } from "../../utils/logger";
 import ShowTicketService from "../TicketServices/ShowTicketService";
@@ -22,17 +23,14 @@ import axios from "axios";
 import AutoAssignTicket from "./AutoAssignTicket";
 import { isWithinBusinessHours } from "./BusinessHours";
 import { Op } from "sequelize";
+import { remindAiTicket } from "../AiServices/FollowUp";
 
 // Bot messages carry an invisible mark so they can be told apart from agent
 // messages (same convention the queue greeting already used).
 const MARK = "‎";
 
-const say = async (ticket: Ticket, body: string): Promise<void> => {
-  try {
-    await SendWhatsAppMessage({ body: `${MARK}${body}`, ticket, automated: true });
-  } catch (err) {
-    logger.error(`Automation could not send message: ${err}`);
-  }
+const say = async (ticket: Ticket, body: string, options?: { optOutNotice?: boolean; outsideHoursNotice?: boolean }): Promise<void> => {
+  await SendWhatsAppMessage({ body: `${MARK}${body}`, ticket, automated: true, optOutNotice: options?.optOutNotice, outsideHoursNotice: options?.outsideHoursNotice });
 };
 
 // chatbotNodeId: null = not started, 0 = waiting at root menu,
@@ -304,6 +302,13 @@ const runChatbot = async (
 const aiTimers = new Map<number, NodeJS.Timeout>();
 const aiRunning = new Set<number>();
 
+export const remindAiWaiting = async (ticketId: number): Promise<void> => {
+  if (aiRunning.has(ticketId) || aiTimers.has(ticketId)) return;
+  aiRunning.add(ticketId);
+  try { await remindAiTicket(ticketId, say); }
+  finally { aiRunning.delete(ticketId); }
+};
+
 const scheduleAi = (ticketId: number, waitSeconds: number): void => {
   const previous = aiTimers.get(ticketId);
   if (previous) clearTimeout(previous);
@@ -338,8 +343,14 @@ const runAi = async (ticket: Ticket): Promise<boolean> => {
 // Reminder for people who left the bot hanging at a menu or question (see workers/ChatbotReminder)
 export const remindWaiting = async (ticketId: number): Promise<void> => {
   const ticket = await ShowTicketService(ticketId);
-  if (ticket.status === "closed" || ticket.userId || !(ticket.chatbotNodeId > 0)) return;
-  await ticket.update({ botReminderAt: new Date() });
+  if (ticket.status === "closed" || ticket.userId || ticket.isGroup || ticket.contact?.optOut || ticket.botReminderAt || !(ticket.chatbotNodeId > 0)) return;
+  if (!ticket.whatsapp || !isWithinBusinessHours(ticket.whatsapp)) return;
+  const inbound = await Message.findOne({ where: { ticketId, fromMe: false, isDeleted: false }, order: [["createdAt", "DESC"]] });
+  if (!inbound || Date.now() - new Date(inbound.createdAt).getTime() >= 23 * 3600000) return;
+  const [claimed] = await Ticket.update({ botReminderAt: new Date() }, {
+    where: { id: ticketId, botReminderAt: { [Op.is]: null }, userId: { [Op.is]: null }, status: "pending", updatedAt: ticket.updatedAt } as any
+  });
+  if (!claimed) return;
   await say(ticket, "Ainda está por aí? Responda quando puder e eu continuo de onde paramos. 🙂");
 };
 
@@ -393,7 +404,7 @@ const RunInboundAutomation = async ({ ticketId, body }: Input): Promise<void> =>
         ticket.outOfHoursSentAt && ticket.outOfHoursSentAt > subHours(new Date(), 6);
       if (whatsapp.outOfHoursMessage && !recently) {
         await ticket.update({ outOfHoursSentAt: new Date() });
-        await say(ticket, whatsapp.outOfHoursMessage);
+        await say(ticket, whatsapp.outOfHoursMessage, { outsideHoursNotice: true });
       }
       return;
     }

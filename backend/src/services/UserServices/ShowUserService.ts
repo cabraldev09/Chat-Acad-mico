@@ -6,7 +6,7 @@ import Whatsapp from "../../models/Whatsapp";
 const ShowUserService = async (id: string | number): Promise<User> => {
   const user = await User.findByPk(id, {
     attributes: [
-      "name",
+      "name", "acceptsNewTickets", "maxOpenTickets",
       "id",
       "email",
       "profile",

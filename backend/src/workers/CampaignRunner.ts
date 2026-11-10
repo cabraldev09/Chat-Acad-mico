@@ -59,6 +59,12 @@ const processCampaign = async (campaign: Campaign): Promise<void> => {
     });
 
     if (!shipping) {
+      const toReview = await CampaignShipping.count({ where: { campaignId: fresh.id, status: { [Op.in]: ["sending", "uncertain"] } } });
+      if (toReview) {
+        await fresh.update({ status: "paused", pauseReason: "Há entregas para conferir em Operação e custos. Nenhuma mensagem será reenviada automaticamente." });
+        await emitCampaign(fresh.id);
+        return;
+      }
       await fresh.update({ status: "finished", finishedAt: new Date() });
       states.delete(fresh.id);
       await emitCampaign(fresh.id);
@@ -118,9 +124,12 @@ const processCampaign = async (campaign: Campaign): Promise<void> => {
         name: shipping.name || contact.name,
         number: shipping.number
       });
+      const [claimed] = await CampaignShipping.update({ status: "sending" }, { where: { id: shipping.id, status: "pending" } });
+      if (!claimed) return;
       await SendToContact({
         contact,
         whatsapp,
+        idempotencyKey: `campaign:${fresh.id}:${shipping.id}:${index}`,
         body: formatBody(body, contact),
         mediaUrl: step.mediaUrl,
         template:
@@ -135,16 +144,17 @@ const processCampaign = async (campaign: Campaign): Promise<void> => {
       });
       finishedContact = index + 1 >= steps.length;
       const sentText = [shipping.message, body].filter(Boolean).join("\n— — —\n").slice(0, 4000);
-      await shipping.update(
+      await CampaignShipping.update(
         finishedContact
           ? { status: "sent", sentAt: new Date(), message: sentText, error: null, stepsDone: index + 1 }
-          : { message: sentText, error: null, stepsDone: index + 1 }
+          : { status: "pending", message: sentText, error: null, stepsDone: index + 1 },
+        { where: { id: shipping.id, status: "sending" } }
       );
     } catch (err) {
       // a failed step is not retried (the earlier ones already reached the person)
-      logger.warn(`Campaign ${fresh.id} -> ${shipping.number} step ${index + 1} failed: ${err}`);
+      logger.warn(`Campaign ${fresh.id} -> ${shipping.number} step ${index + 1} failed: ${err?.message || err}`);
       await shipping.update({
-        status: "failed",
+        status: "uncertain",
         error: `${steps.length > 1 ? `Mensagem ${index + 1} de ${steps.length}: ` : ""}${String(err.message || err)}`.slice(0, 500)
       });
       finishedContact = true;
@@ -187,5 +197,6 @@ const tick = async (): Promise<void> => {
 };
 
 export const startCampaignRunner = (): void => {
+  CampaignShipping.update({ status: "uncertain", error: "Envio interrompido: verificar entrega antes de reenviar." }, { where: { status: "sending" } }).catch(err => logger.error(`Campaign recovery: ${err}`));
   setInterval(tick, 3000);
 };

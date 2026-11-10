@@ -1,5 +1,6 @@
 import { Op, fn, col } from "sequelize";
 
+import { usageCounts } from "./Policy";
 import AiUsage from "../../models/AiUsage";
 import { dayBounds } from "../../helpers/AppTime";
 import { getSetting } from "../../helpers/AppSettings";
@@ -9,6 +10,7 @@ interface Counts {
   output_tokens?: number;
   cache_read_input_tokens?: number;
   cache_creation_input_tokens?: number;
+  prompt_tokens_details?: { cached_tokens?: number };
   prompt_tokens?: number;
   completion_tokens?: number;
 }
@@ -20,17 +22,19 @@ export const logUsage = async (a: {
   kind: "reply" | "summary" | "test";
   usage?: Counts;
 }): Promise<void> => {
-  const u = a.usage || {};
+  const u = usageCounts(a.usage);
+  const price = await priceOf(a.model);
   await AiUsage.create({
     agentId: a.agentId || null,
     ticketId: a.ticketId || null,
     model: a.model,
     kind: a.kind,
-    inputTokens: u.input_tokens ?? u.prompt_tokens ?? 0,
-    outputTokens: u.output_tokens ?? u.completion_tokens ?? 0,
-    cacheReadTokens: u.cache_read_input_tokens ?? 0,
-    cacheWriteTokens: u.cache_creation_input_tokens ?? 0
-  } as any).catch(() => undefined);
+    inputTokens: u.input,
+    outputTokens: u.output,
+    cacheReadTokens: u.cacheRead,
+    cacheWriteTokens: u.cacheWrite,
+    estimatedUsd: price ? (u.input * price.in + u.output * price.out) / 1e6 : null
+  } as any);
 };
 
 // real calls only (the agent tester does not count against the daily limit)

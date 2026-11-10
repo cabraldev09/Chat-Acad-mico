@@ -1,3 +1,4 @@
+import { renewMediaElement } from "../../services/media-access";
 import React, { useState, useEffect, useReducer, useRef, useCallback } from "react";
 import clsx from "clsx";
 import { makeStyles } from "@material-ui/core";
@@ -290,11 +291,11 @@ const reducer = (state, action) => {
 };
 
 const fileNameOf = (m) => {
-  const fromUrl = decodeURIComponent((m.mediaUrl || "").split("/").pop() || "");
+  const fromUrl = decodeURIComponent((m.mediaUrl || "").split("?")[0].split("/").pop() || "");
   return m.body && m.body.length < 120 && !m.body.includes("\n") ? m.body : fromUrl || "arquivo";
 };
 
-const isOnlyFileName = (m) => !m.body || /^[\p{Extended_Pictographic}\s]*(Imagem|Vídeo|Áudio|Mensagem de voz|Documento|Figurinha|Foto)$/u.test(m.body) || m.body === (m.mediaUrl || "").split("/").pop() || /^\d{10,}\.\w{2,5}$/.test(m.body);
+const isOnlyFileName = (m) => !m.body || /^[\p{Extended_Pictographic}\s]*(Imagem|Vídeo|Áudio|Mensagem de voz|Documento|Figurinha|Foto)$/u.test(m.body) || m.body === (m.mediaUrl || "").split("?")[0].split("/").pop() || /^\d{10,}\.\w{2,5}$/.test(m.body);
 
 const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex = 0, onMatches }) => {
   const classes = useStyles();
@@ -519,9 +520,9 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
         <div className={classes.media}>
           {m.isGif ? (
             // GIFs loop silently, like on WhatsApp
-            <video className={classes.video} src={m.mediaUrl} autoPlay loop muted playsInline />
+            <video onError={renewMediaElement} className={classes.video} src={m.mediaUrl} autoPlay loop muted playsInline />
           ) : (
-            <video className={classes.video} src={m.mediaUrl} controls preload="metadata" />
+            <video onError={renewMediaElement} className={classes.video} src={m.mediaUrl} controls preload="metadata" />
           )}
         </div>
       );

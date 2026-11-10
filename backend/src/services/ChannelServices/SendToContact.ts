@@ -1,3 +1,4 @@
+import { deliver } from "../OutboundServices/Deliver";
 import fs from "fs";
 import { PUBLIC_DIR } from "../../config/paths";
 import path from "path";
@@ -22,6 +23,7 @@ interface Input {
   contact: Contact;
   whatsapp: Whatsapp;
   body: string;
+  idempotencyKey?: string;
   mediaUrl?: string | null;
   template?: { name: string; language: string; params: string[] } | null;
   // keep the conversation open (assigned) instead of closing a ticket we created
@@ -38,16 +40,20 @@ const SendToContact = async ({
   body,
   mediaUrl,
   template,
-  keepOpen
+  keepOpen,
+  idempotencyKey
 }: Input): Promise<void> => {
   const found = await FindOrCreateTicketService(contact, whatsapp.id, 0);
   const ticket = await ShowTicketService(found.id);
   const hadMessages = (await Message.count({ where: { ticketId: ticket.id } })) > 0;
 
+  await deliver(ticket, { key: idempotencyKey, automated: !keepOpen, template }, async () => {
+  let externalId = "";
   if (template && whatsapp.channel === "whatsapp_cloud") {
     const adapter = getAdapter("whatsapp_cloud");
     if (!adapter.sendTemplate) throw new AppError("ERR_TEMPLATES_UNSUPPORTED");
     const sent = await adapter.sendTemplate(whatsapp, ticket.contact as any, template);
+    externalId = String(sent.id);
     await CreateMessageService({
       messageData: {
         id: sent.id,
@@ -66,7 +72,7 @@ const SendToContact = async ({
     // SendWhatsAppMedia consumes (deletes) the file it sends, so hand it a copy
     const copyName = `send-${Date.now()}-${Math.random().toString(36).slice(2, 6)}${path.extname(mediaUrl)}`;
     fs.copyFileSync(source, path.join(PUBLIC_DIR, copyName));
-    await SendWhatsAppMedia({
+    const sent = await SendWhatsAppMedia({
       media: {
         filename: copyName,
         originalname: mediaUrl,
@@ -77,9 +83,14 @@ const SendToContact = async ({
       body,
       automated: !keepOpen
     });
+    externalId = String(sent.id);
   } else {
-    await SendWhatsAppMessage({ body, ticket, automated: !keepOpen });
+    const sent = await SendWhatsAppMessage({ body, ticket, automated: !keepOpen });
+    externalId = String(sent.id);
   }
+
+  return { id: externalId };
+  });
 
   if (keepOpen) {
     if (ticket.status !== "open" || !ticket.userId) {

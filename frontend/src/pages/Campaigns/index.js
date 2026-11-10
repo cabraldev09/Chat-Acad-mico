@@ -209,6 +209,7 @@ const ReportDialog = ({ campaignId, onClose }) => {
             <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
               <Chip label={`Total ${c.counters.total}`} />
               <Chip color="primary" label={`Enviadas ${c.counters.sent}`} />
+              {!!c.counters.uncertain && <Chip color="secondary" label={`Conferir entrega ${c.counters.uncertain}`} />}
               <Chip label={`Pendentes ${c.counters.pending}`} />
               <Chip style={{ background: c.counters.failed ? "#ffcdd2" : undefined }} label={`Falhas ${c.counters.failed}`} />
             </div>
@@ -227,7 +228,7 @@ const ReportDialog = ({ campaignId, onClose }) => {
                     <TableRow key={s.id}>
                       <TableCell>{s.name}</TableCell>
                       <TableCell>{s.number}</TableCell>
-                      <TableCell>{{ pending: "Pendente", sent: "Enviada", failed: "Falhou", cancelled: "Cancelada" }[s.status] || s.status}</TableCell>
+                      <TableCell>{{ pending: "Pendente", sending: "Enviando", uncertain: "Conferir entrega", sent: "Enviada", failed: "Falhou", cancelled: "Cancelada" }[s.status] || s.status}</TableCell>
                       <TableCell>{s.error || (s.sentAt ? format(parseISO(s.sentAt), "dd/MM HH:mm:ss") : "—")}</TableCell>
                     </TableRow>
                   ))}
