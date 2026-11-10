@@ -3811,10 +3811,14 @@ const postMeta = (id, payload, secret, badSig) => {
       await waitFor(() => texts(FQ2).some(x => /Direito em Porto Velho|Até aqui você compreendeu/.test(x)), 20000, "second answer");
       assert(!texts(FQ2).some(x => /assistente virtual/.test(x)), "the presentation was repeated");
       assert(gradeTexts() === g0, "the grade went before the format was explained");
-      const FQ3 = graph.sent.length;
-      await inboundCloud(FIRSTQ, "wamid.com-fq3", "Sim, pode continuar");
+      // the course was already told (the duration came from the tool), so the first "pode continuar" answers "Posso te explicar como funciona o
+      // curso?" with the format; the next one brings the grade
+      out = await say(FIRSTQ, "wamid.com-fq3", "Sim, pode continuar", t => t.some(x => /Até aqui você compreendeu\?/.test(x)), "the format comes first");
+      assert(gradeTexts() === g0, "the grade went together with the format");
+      const FQ4 = graph.sent.length;
+      await inboundCloud(FIRSTQ, "wamid.com-fq4", "Sim, pode continuar");
       await waitFor(() => gradeTexts() === g0 + 1, 20000, "the grade is sent after the format, without being asked");
-      await waitFor(() => texts(FQ3).some(x => /Você tem alguma dúvida sobre o curso ou o formato\?/.test(x)), 20000, "the doubts are asked after the grade");
+      await waitFor(() => texts(FQ4).some(x => /Você tem alguma dúvida sobre o curso ou o formato\?/.test(x)), 20000, "the doubts are asked after the grade");
       await waitFor(() => JSON.parse(sql(`SELECT slots FROM LeadCommercials WHERE leadId=${leadId(FIRSTQ)}`)).gradeSent === true, 8000, "gradeSent saved");
       assert(gradeTexts() === g0 + 1, "the grade was sent twice");
 
