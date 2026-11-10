@@ -627,7 +627,7 @@ export const runAiForTicket = async (ticketId: number, say: Say): Promise<void> 
     if (!last || last.role !== "user") return;
 
     if (wantsToStop(last.content)) { await ticket.contact.update({ optOut: true, optOutAt: new Date() }); await ticket.update({ aiActive: false }); return; }
-    if (/\b(humano|atendente|consultor|pessoa real)\b/i.test(last.content)) { await handoff(ticket, agent, "pedido", say); return; }
+    if (/\b(humano|atendente|consultor|falar com (?:uma )?pessoa|pessoa real)\b/i.test(last.content)) { await handoff(ticket, agent, "pedido", say); return; }
 
     // an FAQ with a ready answer needs no model at all
     const faq = await matchFaq(agent.id, last.content);

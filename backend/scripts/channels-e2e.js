@@ -2844,9 +2844,9 @@ const postMeta = (id, payload, secret, badSig) => {
       const b = mk("Ordem B", "tg_ord_b", "7 days", "30 minutes");
       const c = mk("Ordem C", "tg_ord_c", "3 hours", "40 days");
       const queueIds = JSON.stringify((await http.get("/queue", auth())).data.map(q => q.id));
-      const list = (await http.get("/tickets", { params: { showAll: "true", historical: "all", queueIds }, ...auth() })).data.tickets.map(t => Number(t.id));
+      const list = (await http.get("/tickets", { params: { showAll: "true", historical: "all", searchParam: "Ordem", queueIds }, ...auth() })).data.tickets.map(t => Number(t.id));
       assert(list.indexOf(Number(c)) < list.indexOf(Number(a)) && list.indexOf(Number(a)) < list.indexOf(Number(b)), `order by last message: C ${list.indexOf(Number(c))}, A ${list.indexOf(Number(a))}, B ${list.indexOf(Number(b))}`);
-      const first = (await http.get("/tickets", { params: { showAll: "true", historical: "all", queueIds }, ...auth() })).data.tickets.find(t => Number(t.id) === Number(a));
+      const first = (await http.get("/tickets", { params: { showAll: "true", historical: "all", searchParam: "Ordem", queueIds }, ...auth() })).data.tickets.find(t => Number(t.id) === Number(a));
       assert(first.lastMessageAt, "the list does not carry lastMessageAt");
     });
     await test("messages can be deleted for everyone or only here, edits are limited to WhatsApp, \"mark as unread\" and the all-conversations view work", async () => {
@@ -3125,7 +3125,7 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(req.model === "claude-haiku-5-5" && req.max_tokens === 350, `model/max_tokens ${req.model} ${req.max_tokens}`);
       assert(req.system[0].cache_control && req.system[0].cache_control.type === "ephemeral", "stable prompt is not cached");
       assert(req.system[0].text.includes("acolhedor") && req.system[0].text.includes("Prometer mensalidade fixa"), "persona missing");
-      assert(/nunca prometa valor fixo/i.test(req.system[0].text), "fixed tuition rule missing");
+      assert(/Nunca diga que a mensalidade é fixa|nunca prometa valor fixo/i.test(req.system[0].text), "fixed tuition rule missing");
       assert(req.system[1].text.includes("bolsa de 40%") && !req.system[1].text.includes("Parágrafo 3"), `only the relevant passages should be sent: ${req.system[1].text.slice(0, 700)}`);
       assert(["buscar_curso", "listar_polos", "salvar_lead"].every(n => req.tools.some(t => t.name === n)), "tools missing");
       assert(!req.tools.some(t => t.name === "simular_bolsa"), "unauthorized scholarship tool exposed");

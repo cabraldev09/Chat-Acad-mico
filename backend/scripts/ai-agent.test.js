@@ -136,8 +136,8 @@ test('API error informs lead and assigns human follow-up', async () => {
   await h.service.runAiForTicket(h.ticket.id, h.say);
   assert.equal(h.sent.length, 1); assert.deepEqual(h.handoffs, ['sem_resposta']);
 });
-test('human request bypasses model and FAQ', async () => {
-  const h = harness(); h.inbound.body = 'Quero falar com um consultor';
+for (const phrase of ['Quero falar com um consultor', 'quero falar com uma pessoa']) test(`human request bypasses model and FAQ: ${phrase}`, async () => {
+  const h = harness(); h.inbound.body = phrase;
   await h.service.runAiForTicket(h.ticket.id, h.say);
   assert.equal(h.calls.length, 0); assert.deepEqual(h.handoffs, ['pedido']);
 });
