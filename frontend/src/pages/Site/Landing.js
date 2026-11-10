@@ -223,7 +223,7 @@ const FAQ = [
 ];
 
 const EXAMPLES = [
-  ["Primeiro contato", [["a", "Oi"], ["z", "Olá! Tudo bem? Sou a Estela, assistente virtual. Você quer conhecer nossos cursos e fazer sua matrícula ou já é aluno e precisa falar com a tutoria?"]]],
+  ["Primeiro contato", [["a", "Oi"], ["z", "Olá! Tudo bem? Sou a Estela, assistente virtual. Essa seria a sua primeira graduação ou você já tem alguma faculdade concluída?"]]],
   ["Curso e modalidade", [["a", "Pedagogia é online?"], ["z", "É semipresencial: combina estudos digitais, aulas com professores e uma parte presencial. O calendário de cada turma o consultor confirma com você."]]],
   ["Passando para a equipe", [["a", "Quero me matricular"], ["z", "Perfeito! Vou passar você para um consultor do polo, já com o resumo da nossa conversa."]]],
   ["Já é aluno", [["a", "Já sou aluno, preciso de ajuda com a plataforma"], ["z", "Claro! Vou chamar a tutoria do seu polo para te ajudar."]]],
@@ -255,7 +255,7 @@ const HowVisual = ({ i }) => (
     <div className={`sl-v ${i === 2 ? "on" : ""}`}><span className="sl-big">03</span><b>Modo de teste</b>
       <div className="sl-msgs" style={{ background: "#e9f4f2", borderRadius: 16, padding: 14 }}>
         <div className="sl-m r" style={{ animationDelay: "0s" }}>Oi</div>
-        <div className="sl-m l" style={{ animationDelay: "1.2s" }}>Olá! Sou a Estela, assistente virtual. Você quer conhecer nossos cursos ou já é aluno?</div>
+        <div className="sl-m l" style={{ animationDelay: "1.2s" }}>Olá! Sou a Estela, assistente virtual. Essa seria a sua primeira graduação?</div>
         <div className="sl-m r" style={{ animationDelay: "2.6s" }}>Quero Pedagogia</div>
       </div>
       <span className="sl-live"><i />sem enviar nada a ninguém</span>
@@ -385,7 +385,7 @@ const Landing = () => {
                 <p className="d">Apresenta-se, entende o que a pessoa quer e conduz sem interrogatório.</p>
                 <div className="sl-stage sl-glass"><div className="sl-msgs">
                   <div className="sl-m r" style={{ animationDelay: "0s" }}>Oi</div>
-                  <div className="sl-m l" style={{ animationDelay: "1.1s" }}>Olá! Sou a Estela, assistente virtual. Você quer conhecer nossos cursos ou já é aluno?</div>
+                  <div className="sl-m l" style={{ animationDelay: "1.1s" }}>Olá! Sou a Estela, assistente virtual. Essa seria a sua primeira graduação?</div>
                   <div className="sl-m r" style={{ animationDelay: "2.4s" }}>Quero Pedagogia, moro em Porto Velho</div>
                   <div className="sl-m l" style={{ animationDelay: "3.6s" }}>Ótimo! Posso te mostrar a grade e como funciona o curso?</div>
                 </div></div>
