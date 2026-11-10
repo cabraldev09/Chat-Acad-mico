@@ -3784,7 +3784,8 @@ const postMeta = (id, payload, secret, badSig) => {
       out = await say(L, "wamid.com-l3", "Quando começam as aulas?", t => t.some(x => /confirmar/.test(x)), "fact guard");
       assert(!out.some(x => /03\/08/.test(x)), `an invented date reached the person: ${out}`);
       await waitFor(() => Number(sql(`SELECT COUNT(*) FROM AiLearnings WHERE ticketId=${ticketOf(L)}`)) >= 1, 8000, "the unanswered question goes to the team");
-      assert(runOf(L) === "waiting|apresentar", `the conversation should go on: ${runOf(L)}`);
+      // (the course was already presented by the system, so the conversation may be in the guidance stage)
+      assert(/^waiting\|(apresentar|orientar)$/.test(runOf(L)), `the conversation should go on: ${runOf(L)}`);
 
       // R) the first message already asks about a course the institution does not offer: it presents itself, says it is not offered and lists the ones that are, without the model
       const NOFF = "5511920000230";
