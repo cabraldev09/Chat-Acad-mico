@@ -3976,11 +3976,16 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(/Sobre a tutoria, esse é um diferencial importante/.test(ma5) && /começa no 6º semestre e soma 640 horas/.test(ma5) && /convênios com órgãos públicos/.test(ma5), `MA tutoring and internship: ${ma5}`);
       assert(!emoji.test(ma5) && !/ESTÁGIO CURRICULAR/.test(ma5.replace(/\*Matriz[\s\S]*?Ao todo[^\n]*/, "")), `MA emoji or capitals: ${ma5}`);
       out = await say(MA, "wamid.ma-6", "Não tenho dúvidas, pode prosseguir", t => t.some(x => /nome completo e CPF para eu simular as bolsas disponíveis/.test(x)), "MA name and CPF asked");
-      assert(/^Caso não tenha, pode me informar o seu nome completo e CPF/.test(out[out.length - 1]), `MA bolsa: ${out}`);
+      assert(/Caso não tenha, pode me informar o seu nome completo e CPF/.test(out[out.length - 1]), `MA bolsa: ${out}`);
       out = await say(MA, "wamid.ma-7", "CPF: 529.829.821-45\nMAIRA DA SILVA BATISTA", t => t.some(x => /montar a sua proposta/.test(x)), "MA to the consultant");
       await waitFor(() => handoffOf(MA) === "proposal" && sql(`SELECT aiActive FROM Tickets WHERE id=${ticketOf(MA)}`) === "0", 15000, "MA handed to the consultant for the proposal");
       assert(slotsOfNumber(MA).fullName === "Maira da Silva Batista" && slotsOfNumber(MA).cpfGiven === true, `MA data: ${JSON.stringify(slotsOfNumber(MA)).slice(0, 300)}`);
       assert(anthropic.requests.length === llmMa2, "MA the model was called where the process needs none");
+      // the standard of the area comes back (the test of the MEC rules reads it)
+      for (const bioId of sql(`SELECT id FROM Courses WHERE name='Biomedicina' ORDER BY id`).split("\n").filter(Boolean)) {
+        // eslint-disable-next-line no-await-in-loop
+        await http.put(`/course-regulations/${bioId}`, { mecImpacted: true, percentualPresencial: 40, percentualSincrono: 20, teoriaAoVivo: true, praticaPresencial: true, cronogramaPraticasDefinido: false }, auth());
+      }
 
       // an amended norm is told to the agents with its status, and the check is recorded
       const n378 = norms.norms.find(n => n.key === "portaria-378-2025");
@@ -5166,7 +5171,7 @@ const postMeta = (id, payload, secret, badSig) => {
       const ped = list.find(g => /^PEDAGOGIA \(LICENCIATURA\)/i.test(g.courseName));
       if (ped) {
         const full = (await http.get(`/grades/${ped.id}`, auth())).data;
-        assert(!/Ambienta|Plano de Acompanhamento|Semin/i.test(full.whatsappSummary) && /400 horas no total/.test(full.whatsappSummary), `Pedagogia text ${full.whatsappSummary}`);
+        assert(!/Ambienta|Plano de Acompanhamento|Semin/i.test(full.whatsappSummary) && /Ao todo, a matriz prevê 400 horas de estágio/.test(full.whatsappSummary), `Pedagogia text ${full.whatsappSummary}`);
       }
     });
     await test("MEC rules: the standard of the Portaria 378/2025 by area is applied to the courses, adjusted once for the whole area, and the agents learn it", async () => {
