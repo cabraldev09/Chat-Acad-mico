@@ -1,5 +1,3 @@
-import { ensureTask } from "../CrmServices/Tasks";
-import { getSetting } from "../../helpers/AppSettings";
 import Lead from "../../models/Lead";
 import LeadStage from "../../models/LeadStage";
 import LeadTask from "../../models/LeadTask";
@@ -73,13 +71,6 @@ export const handoffToHuman = async (ticketId: number, agent: AiAgent, reason: H
     }
   }
 
-  const routed = await routeToCommercial(ticket, { why: because, lead, city: (ticket.aiSlots as any)?.cidade || null, agentId: agent.id });
-  await ticket.reload();
-  const ownerId = ticket.userId || lead?.ownerId;
-  if (lead && ownerId && !lead.wonAt && !lead.lostAt) {
-    await ensureTask({ key: `handoff:${ticketId}:${ticket.aiTurns || 0}`, leadId: lead.id, userId: ownerId, type: "outro",
-      title: `Continuar atendimento da IA: ${REASON[reason]}`.slice(0, 200), dueAt: new Date(Date.now() + 3600000)
-    }).catch(err => logger.warn(`handoff task: ${err}`));
-  }
-  return routed;
+  // The shared router already creates the task and assigns it to the polo's team.
+  return routeToCommercial(ticket, { why: because, lead, city: (ticket.aiSlots as any)?.cidade || null, agentId: agent.id });
 };

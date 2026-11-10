@@ -760,6 +760,7 @@ const postMeta = (id, payload, secret, badSig) => {
     console.log("\nwhatsapp_cloud");
     const cloudCfg = { phoneNumberId: "PN1", accessToken: "CLOUD-TOKEN", appSecret: "cloud-secret", verifyToken: "cloud-verify" };
     let cid, cticket;
+    const inboundCloud = (from, id, body) => postMeta(cid, cloudEvent([{ from, id, type: "text", text: { body } }], { contacts: [{ wa_id: from, profile: { name: "Aluno IA" } }] }), cloudCfg.appSecret);
     const cloudEvent = (messages, extra = {}) => ({ object: "whatsapp_business_account", entry: [{ id: "WABA", changes: [{ field: "messages", value: { messaging_product: "whatsapp", metadata: { phone_number_id: "PN1" }, contacts: [{ wa_id: "5511988887777", profile: { name: "João Pedro" } }], messages, ...extra } }] }] });
     await test("connects and reads the business phone number", async () => {
       cid = await createConnection("Cloud", "whatsapp_cloud", cloudCfg);
@@ -1043,6 +1044,7 @@ const postMeta = (id, payload, secret, badSig) => {
     // Free-text Cloud campaigns need a prior inbound message, just like production.
     for (const number of ["5511955551111", "5521955552001", "5521955552002", "5521955552003", "5521955552004", "5521955552005", "5521955553001", "5521955553002", "5521955553003"]) {
       await inboundCloud(number, `wamid.campaign-optin-${number}`, "Quero informações sobre os cursos");
+      await waitFor(() => ticketOf(number), 8000, "campaign customer request");
       sql(`UPDATE Tickets SET aiActive=false,userId=1 WHERE id=${ticketOf(number)}`);
     }
     await test("campanhas: nome com apóstrofo e &, primeiro nome, número sem 55 e número curto demais", async () => {
@@ -1136,6 +1138,8 @@ const postMeta = (id, payload, secret, badSig) => {
       const csv = await http.get(`/campaigns/${c.id}/report?format=csv`, auth());
       assert(csv.status === 200 && String(csv.data).startsWith('"Nome";"WhatsApp";"Situação"') && String(csv.data).includes('="5521955553001"') && String(csv.data).includes("Este número não tem WhatsApp."), `csv ${csv.status} ${JSON.stringify(String(csv.data).slice(0, 200))}`);
 
+      // The fixture represents a confirmed refusal, so it must not retain a successful delivery capability.
+      sql(`DELETE FROM OutboundDeliveries WHERE "key" LIKE 'campaign:${c.id}:%'`);
       const before = graph.sent.length;
       const retry = await http.post(`/campaigns/${c.id}/retry-failed`, {}, auth());
       assert(retry.status === 200 && retry.data.requeued === 1 && retry.data.campaign.status === "running", `retry ${retry.status} ${JSON.stringify(retry.data).slice(0, 160)}`);
@@ -1618,6 +1622,7 @@ const postMeta = (id, payload, secret, badSig) => {
     });
     await test("the Pix code and QR image are sent to the candidate in the conversation", async () => {
       await inboundCloud("5511955550004", "wamid.pix-window", "Quero pagar minha matrícula");
+      await waitFor(() => ticketOf("5511955550004"), 8000, "payment customer request");
       const l = await mkLead("Aluno Envio", "5511955550004", { ownerId: 1 });
 
       await http.put(`/leads/${l.id}`, { cpf: "111.444.777-35".replace("111.444.777-35", "390.533.447-05") }, auth());
@@ -2996,7 +3001,6 @@ const postMeta = (id, payload, secret, badSig) => {
     console.log("\nAI agent and chatbot");
     sql("DELETE FROM ChatbotNodes");
     let aiId, jiPolo;
-    const inboundCloud = (from, id, body) => postMeta(cid, cloudEvent([{ from, id, type: "text", text: { body } }], { contacts: [{ wa_id: from, profile: { name: "Aluno IA" } }] }), cloudCfg.appSecret);
     const sentTexts = since => graph.sent.slice(since).filter(x => x.body && x.body.type === "text").map(x => x.body.text.body);
     // everything a person sees: texts, and the question plus the options of buttons and lists
     const sentAny = since => graph.sent.slice(since).filter(x => x.body).map(x => x.body.type === "text" ? x.body.text.body : x.body.type === "interactive" ? [x.body.interactive.body.text, ...(x.body.interactive.action.buttons ? x.body.interactive.action.buttons.map(b => b.reply.title) : x.body.interactive.action.sections[0].rows.map(r => r.title))].join(" | ") : "");
@@ -4634,6 +4638,7 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(put.status === 200 && JSON.stringify(put.data.requiredDocs) === JSON.stringify(["RG ou CNH", "CPF", "Histórico escolar"]), `list ${JSON.stringify(put.data.requiredDocs)}`);
 
       await inboundCloud("5511955579301", "wamid.documents-window", "Quero enviar os documentos");
+      await waitFor(() => ticketOf("5511955579301"), 8000, "documents customer request");
       const lead = await mkLead("Aluno Documentos", "5511955579301", { ownerId: 1 });
       const opened = await http.post(`/leads/${lead.id}/open-ticket`, { whatsappId: cid }, auth());
       assert(opened.status === 200 || opened.status === 201, `open-ticket ${opened.status}`);
