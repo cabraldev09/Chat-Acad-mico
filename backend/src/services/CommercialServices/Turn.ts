@@ -237,7 +237,9 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
 
   // the short answer to "essa será a sua primeira graduação?" ("sim", "a primeira"): kept by the system, which asks the next thing at once
   const entryNow = d.input !== null && wrote && (!state.slots.entryType || state.slots.entryType === "unknown") ? entryAnswer(lastText, lastBot) : null;
-  if (entryNow === "first_degree" && !courseMention(lastText) && !/\?/.test(lastText) && lastText.trim().length <= 60) {
+  // (only when the message is just that answer: "Quero Direito em Porto Velho, primeira graduação" says more, and goes the usual way)
+  const saysMore = entryNow ? await detectFromText(lastText).then(x => !!(x.courseName || x.city || x.poloId)).catch(() => true) : true;
+  if (entryNow === "first_degree" && !saysMore && !courseMention(lastText) && !/\?/.test(lastText) && lastText.trim().length <= 60) {
     const next = nextQuestionOf({ ...state.slots, entryType: entryNow }, ask, stageNeeds);
     if (next) return answered(next, null, "other", { patch: { entryType: entryNow }, endsWithQuestion: true });
     const shown = await presentCourse(d, { ...state.slots, entryType: entryNow });

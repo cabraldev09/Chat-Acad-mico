@@ -2221,7 +2221,7 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(all.degrees.includes("Bacharelado") && all.areas.length > 3, "facets");
       // the summary text and the PDF behind the login
       const one = (await http.get(`/grades/${marketing.id}`, auth())).data;
-      assert(/📚 \*Cst em Marketing\*/.test(one.whatsappSummary) && /1\.600 horas/.test(one.whatsappSummary), `summary ${one.whatsappSummary}`);
+      assert(/^\*Matriz curricular: Cst em Marketing/.test(one.whatsappSummary) && /1\.600 horas/.test(one.whatsappSummary) && !/\p{Extended_Pictographic}/u.test(one.whatsappSummary), `summary ${one.whatsappSummary}`);
       const pdfRes = await http.get(`/grades/${marketing.id}/file`, { ...auth(), responseType: "arraybuffer" });
       assert(pdfRes.status === 200 && Buffer.from(pdfRes.data).subarray(0, 5).toString() === "%PDF-" && /pdf/.test(pdfRes.headers["content-type"]), "pdf download");
       assert((await http.get(`/grades/${marketing.id}/file`)).status === 401, "the pdf without login");
