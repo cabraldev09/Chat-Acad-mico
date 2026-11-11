@@ -32,10 +32,16 @@ export const detectFromText = async (text: string): Promise<Record<string, any>>
   if (!t) return {};
   const out: Record<string, any> = {};
   // a course of the catalogue named in full (the longest name wins: "Administração Pública" before "Administração")
-  const courses = (await offeredCourses().catch(() => [])).map(c => ({ c, n: plain(c.name) })).filter(x => x.n && hasWords(t, x.n)).sort((a, b) => b.n.length - a.n.length);
+  // (the catalogue names some courses "Cst Em Empreendedorismo": the person says "Empreendedorismo", so the name without that prefix counts too)
+  const named = (await offeredCourses().catch(() => [])).flatMap(c => {
+    const full = plain(c.name);
+    const bare = full.replace(/^(cst|curso superior de tecnologia|tecnologo|tecnologia|bacharelado|licenciatura) (em|de|do|da) /, "");
+    return [{ c, n: full }, ...(bare !== full && bare.length >= 6 ? [{ c, n: bare }] : [])];
+  });
+  const courses = named.filter(x => x.n && hasWords(t, x.n)).sort((a, b) => b.n.length - a.n.length);
   const top = courses[0];
   // two different courses in one message is a comparison, not a choice: nothing is decided
-  if (top && !courses.some(x => x !== top && !top.n.includes(x.n))) {
+  if (top && !courses.some(x => x.c !== top.c && !top.n.includes(x.n))) {
     out.courseName = top.c.name;
     if (top.c.id) out.courseId = top.c.id;
   }

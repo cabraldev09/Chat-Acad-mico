@@ -84,7 +84,8 @@ function Panel({ ticket }) {
   const steps = data.steps || [];
   const current = steps.find(s => s.key === data.current);
   const active = steps.find(s => s.key === selected) || current || steps[steps.length - 1];
-  const completed = steps.filter(s => s.done).length;
+  const required = steps.filter(s => !s.optional);
+  const completed = required.filter(s => s.done).length;
   const next = active && active.key === data.current ? data.suggestion : null;
   const canSend = !!ticket.userId && !ticket.aiActive && ticket.status === "open";
   const run = async fn => {
@@ -117,13 +118,14 @@ function Panel({ ticket }) {
       <div className={c.emblem}><Compass size={19} /></div>
       <div style={{ flex: "1 1 150px", minWidth: 0 }}>
         <div className={c.title}>Copiloto <span className={c.badge}>Processo de matrícula</span></div>
-        <div className={c.muted}>{current ? `Próxima etapa: ${current.label}` : "Processo concluído"} · {completed}/{steps.length} concluídas</div>
+        <div className={c.muted}>{current ? `Próxima etapa: ${current.label}` : "Processo concluído"} · {completed}/{required.length} concluídas</div>
+        {data.course && <div className={c.muted} title={data.course.fonte}><b>{data.course.name || "Curso"}</b> · {data.course.resumo}</div>}
       </div>
       {data.canManage && <IconButton size="small" title="Revisar e editar o processo da equipe" aria-label="Editar processo" onClick={() => setEditor(true)}><Settings2 size={17} /></IconButton>}
       <Button size="small" className={c.button} onClick={() => setOpen(v => !v)} endIcon={open ? <ChevronUp size={15} /> : <ChevronDown size={15} />}>{open ? "Recolher" : "Abrir"}</Button>
       <Button variant="contained" size="small" className={c.primary} disabled={busy || !data.aiAvailable || !canSend} title={data.aiNote || "Escrever uma sugestão para a última mensagem"} startIcon={busy ? <CircularProgress size={14} color="inherit" /> : <Sparkles size={14} />} onClick={suggest}>{busy ? "Aguarde…" : "Sugerir resposta"}</Button>
     </div>
-    <LinearProgress variant="determinate" value={steps.length ? completed / steps.length * 100 : 0} style={{ height: 2 }} aria-label="Progresso até a matrícula" />
+    <LinearProgress variant="determinate" value={required.length ? completed / required.length * 100 : 0} style={{ height: 2 }} aria-label="Progresso até a matrícula" />
     {open && <div className={c.content}>
       <div className={c.foot} style={{ paddingBottom: 8 }}>
         <Button size="small" className={c.button} startIcon={<ListChecks size={14} />} onClick={() => setAllSteps(v => !v)}>{allSteps ? "Ocultar etapas" : "Ver todas as etapas"}</Button>
@@ -134,7 +136,7 @@ function Panel({ ticket }) {
       <div className={allSteps ? c.layout : undefined}>
         {allSteps && <ol className={c.steps} aria-label="Etapas do processo">
           {steps.map((s, i) => <li key={s.key}><button type="button" aria-current={s.key === data.current ? "step" : undefined} aria-pressed={active && active.key === s.key} className={`${c.stepButton} ${active && active.key === s.key ? c.selected : ""}`} onClick={() => { setSelected(s.key); setSuggestion(null); }}>
-            <span className={`${c.dot} ${s.done ? c.done : s.key === data.current ? c.current : ""}`}>{s.done ? <Check size={13} /> : i + 1}</span><span style={{ flex: 1 }}>{s.label}</span>{s.key === "enroll" && <Flag size={12} />}
+            <span className={`${c.dot} ${s.done ? c.done : s.key === data.current ? c.current : ""}`}>{s.done ? <Check size={13} /> : i + 1}</span><span style={{ flex: 1 }}>{s.label}{s.optional && !s.done ? " (opcional)" : ""}</span>{s.key === "enroll" && <Flag size={12} />}
           </button></li>)}
         </ol>}
         {active && <div className={c.detail}>

@@ -133,6 +133,12 @@ const GradeCard = ({ g, manager, onSend, onDelete }) => {
           <span className="rounded-full bg-muted px-2 py-1 text-xs"><FileText className="mr-1 inline size-3" /> PDF</span>
           {!g.complete && <span title="O PDF não trouxe todos os dados (curso, carga horária ou duração). Confira antes de enviar." className="rounded-full bg-status-warning-bg px-2 py-1 text-xs font-medium text-status-warning">Conferir dados</span>}
         </div>
+        {g.mec && (
+          <div title={`${g.mec.fonte}. É o que a IA diz ao aluno.`} className={cn("rounded-lg border px-3 py-2 text-xs leading-5", g.mec.semPratica ? "border-status-success/30 bg-status-success-bg text-status-success" : "border-status-warning/40 bg-status-warning-bg text-status-warning")}>
+            <span className="font-semibold">Exigência do MEC</span>
+            <span className="block text-foreground">{g.mec.resumo}</span>
+          </div>
+        )}
         {(g.degree || g.knowledgeArea || g.durationSemesters) && (
           <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
             <span>{g.degree || "Grau não identificado"}</span>
