@@ -27,6 +27,8 @@ export interface Copilot {
   leadId: number | null;
   steps: CopilotStep[];
   current: StepKey | null;
+  // what the MEC asks of the course of the lead (the consultant says the same as the agent): "EAD: sem aulas práticas presenciais", "Semipresencial: 40% de prática presencial"
+  course: { name: string; formato: string; resumo: string; percentualPresencial: number | null; semPratica: boolean; fonte: string } | null;
   // the next message, ready to use (what the team says at this step), and what the screen can do for it
   suggestion: { text: string; action: "send_grade" | "proposal" | "enroll" | null } | null;
 }
@@ -120,9 +122,24 @@ const textFor = async (key: StepKey, s: Slots, leadName: string): Promise<{ text
   }
 };
 
+// the rule of the course the lead asked for, from the same tool the agent uses
+const courseRuleOf = async (s: Slots): Promise<Copilot["course"]> => {
+  if (!s.courseId && !s.courseName) return null;
+  try {
+    const ctx: AcademicCtx = { ticket: null, dryRun: true, slots: { ...s }, patch: {}, cacheHits: 0, agentId: null };
+    const arg = { courseId: s.courseId || undefined, courseName: s.courseName || undefined };
+    const view = await runAcademicTool("buscar_regra_modalidade", arg, ctx);
+    const m = view && !view.erro ? view.exigenciaMec : null;
+    if (!m) return null;
+    return { name: String(s.courseName || ""), formato: m.formato, resumo: m.resumo, percentualPresencial: m.percentualPresencial, semPratica: m.semPratica, fonte: m.fonte };
+  } catch (err) {
+    return null;
+  }
+};
+
 export const copilotOf = async (ticket: Ticket): Promise<Copilot> => {
   const lead = ticket.contactId ? await Lead.findOne({ where: { contactId: ticket.contactId }, attributes: ["id", "name", "cpf", "enrolledAt", "courseId"] }) : null;
-  if (!lead) return { hasLead: false, leadId: null, steps: [], current: null, suggestion: null };
+  if (!lead) return { hasLead: false, leadId: null, steps: [], current: null, course: null, suggestion: null };
   const state = await loadState(lead.id);
   const { slots, asked, proposalSent } = await readConversation(ticket, state.slots, lead.cpf || null);
   const proposals = await Proposal.count({ where: { leadId: lead.id } as any }).catch(() => 0);
@@ -140,5 +157,5 @@ export const copilotOf = async (ticket: Ticket): Promise<Copilot> => {
   const steps: CopilotStep[] = ORDER.map(key => ({ key, label: STEP_LABEL[key], done: done[key] }));
   const current = steps.find(x => !x.done)?.key || null;
   const next = current ? await textFor(current, slots, lead.name) : null;
-  return { hasLead: true, leadId: lead.id, steps, current, suggestion: next ? { text: next.text, action: next.action } : null };
+  return { hasLead: true, leadId: lead.id, steps, current, course: await courseRuleOf(slots), suggestion: next ? { text: next.text, action: next.action } : null };
 };

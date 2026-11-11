@@ -6,6 +6,8 @@ import { Op } from "sequelize";
 import { PUBLIC_DIR } from "../config/paths";
 import AppError from "../errors/AppError";
 import { isManagerRole, roleOf } from "../helpers/Roles";
+import Course from "../models/Course";
+import CourseRegulation from "../models/CourseRegulation";
 import CommercialGrade from "../models/CommercialGrade";
 import { assertTicketAccess } from "../middleware/canAccessTicket";
 import ShowTicketService from "../services/TicketServices/ShowTicketService";
@@ -26,6 +28,16 @@ const load = async (id: string): Promise<CommercialGrade> => {
   return g;
 };
 
+// the rule the team registered for each course (by name, as the grade names it), so the grade shows the same percentage the agent says
+const plainName = (s: string): string => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s*\(.*\)\s*$/, "").replace(/\s+/g, " ").trim();
+const rulesByCourse = async (): Promise<Map<string, CourseRegulation>> => {
+  const [courses, rules] = await Promise.all([Course.findAll({ where: { active: true } as any, attributes: ["id", "name"] }), CourseRegulation.findAll({ where: { intakeTerm: null } as any })]);
+  const byId = new Map(rules.map(r => [r.courseId, r]));
+  const out = new Map<string, CourseRegulation>();
+  courses.forEach(c => { const r = byId.get(c.id); if (r && !out.has(plainName(c.name))) out.set(plainName(c.name), r); });
+  return out;
+};
+
 // Everyone who works with candidates reads the catalog (the team consults it while chatting)
 export const index = async (req: Request, res: Response): Promise<Response> => {
   const and: any[] = [];
@@ -40,10 +52,14 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
   const rows = await CommercialGrade.findAll({ where: and.length ? { [Op.and]: and } : {}, order: [["courseName", "ASC"]] });
   const facets = await CommercialGrade.findAll({ attributes: ["degree", "knowledgeArea", "modality"], raw: true });
   const uniq = (key: "degree" | "knowledgeArea" | "modality") => [...new Set(facets.map((f: any) => f[key]).filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b), "pt-BR"));
-  return res.json({ grades: rows.map(g => gradeView(g)), degrees: uniq("degree"), areas: uniq("knowledgeArea"), modalities: uniq("modality") });
+  const rules = await rulesByCourse();
+  return res.json({ grades: rows.map(g => gradeView(g, false, rules.get(plainName(g.courseName)) || null)), degrees: uniq("degree"), areas: uniq("knowledgeArea"), modalities: uniq("modality") });
 };
 
-export const show = async (req: Request, res: Response): Promise<Response> => res.json(gradeView(await load(req.params.id), true));
+export const show = async (req: Request, res: Response): Promise<Response> => {
+  const g = await load(req.params.id);
+  return res.json(gradeView(g, true, (await rulesByCourse()).get(plainName(g.courseName)) || null));
+};
 
 // the PDF itself, behind the login
 export const file = async (req: Request, res: Response): Promise<void> => {

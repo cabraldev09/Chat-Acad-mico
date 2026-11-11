@@ -227,6 +227,7 @@ const startAnthropicMock = () => {
       if (/dura|tempo/i.test(said2)) return tool("buscar_curso", { courseName: "Direito" });
       if (/formato da pedagogia social/i.test(said2)) return tool("buscar_regra_modalidade", { courseName: "Pedagogia Social" });
       if (/^quero fazer o curso de biomedicina$/i.test(said2.trim())) return turn("Biomedicina é uma ótima escolha.", { intent: "other", curso: "Biomedicina" });
+      if (/^quero fazer o curso de empreendedorismo$/i.test(said2.trim())) return turn("Empreendedorismo é uma ótima escolha.", { intent: "other", curso: "Empreendedorismo" });
       if (/texto com markdown/i.test(said2)) return turn("**Pedagogia** tem 8 semestres.\n\n### Como funciona\nVeja [a grade](https://exemplo.com/g.pdf) e a tabela:\n| Item | Valor |\n|---|---|\n| Duração | 8 semestres |", { intent: "other" });
       if (/mec/i.test(said2)) return tool("buscar_regra_modalidade", { courseName: "Direito" });
       if (/nasa/i.test(said2)) return turn("Essa informação eu prefiro confirmar com a equipe para não te passar nada incorreto.", { intent: "unknown", pergunta_sem_resposta: "convênio com a Nasa" });
@@ -4068,6 +4069,28 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(cop.steps.filter(x => x.done).map(x => x.key).join(",") === "entry,course,city,format,grade,doubts,bolsa", `copilot done: ${JSON.stringify(cop.steps)}`);
       assert(cop.suggestion && cop.suggestion.action === "proposal" && /proposta da sua bolsa/.test(cop.suggestion.text) && !emoji.test(cop.suggestion.text), `copilot text: ${JSON.stringify(cop.suggestion)}`);
       assert(anthropic.requests.length === llmMa2, "the copilot called the model");
+      assert(cop.course && cop.course.semPratica === false && /Semipresencial: 30% de prática presencial/.test(cop.course.resumo), `copilot course rule: ${JSON.stringify(cop.course)}`);
+      // the grade says the same as the agent: what the MEC asks of the course, with the percentage the team registered
+      const gradesNow = (await http.get("/grades", auth())).data.grades.filter(g => /biomedicina/i.test(g.courseName));
+      assert(gradesNow.length && gradesNow.every(g => g.mec && g.mec.exigencia === "semipresencial" && g.mec.percentualPresencial === 30 && g.mec.semPratica === false), `grade mec: ${JSON.stringify(gradesNow.map(g => g.mec))}`);
+      // EA) a course the Portaria does not restrict (a tecnólogo of management) is EAD with no practical classes: the agent says the duration and the format, as the team does
+      if (sql(`SELECT COUNT(*) FROM Courses WHERE name ILIKE '%empreendedorismo%'`) === "0") await http.post("/courses", { name: "Empreendedorismo", modality: "EAD", category: "Graduação - Cruzeiro", semesters: 4, monthlyFee: 300, active: true }, auth());
+      sql(`UPDATE Courses SET semesters=4, active=true WHERE name ILIKE '%empreendedorismo%'`);
+      assert(sql(`SELECT COUNT(*) FROM Courses WHERE name ILIKE '%empreendedorismo%' AND active=true`) !== "0", `EA course missing: ${sql(`SELECT id||':'||name||':'||active FROM Courses WHERE name ILIKE '%empreend%'`)}`);
+      const EA = "5511920000261";
+      out = await say(EA, "wamid.ea-1", "Oi", t => t.some(x => /primeira graduação/.test(x)), "EA opening");
+      out = await say(EA, "wamid.ea-2", "Sim, é a minha primeira graduação", t => t.some(x => /Qual curso/.test(x)), "EA course asked");
+      out = await say(EA, "wamid.ea-3", "Quero fazer o curso de Empreendedorismo", t => t.some(x => /Você reside em qual cidade\?/.test(x)), `EA city asked (${sql(`SELECT string_agg(id||':'||name||':'||active||':'||COALESCE(level,'-'), ' ; ') FROM Courses WHERE name ILIKE '%empreend%'`)})`);
+      out = await say(EA, "wamid.ea-4", "Sou de Cidade Estela", t => t.some(x => /Até aqui você compreendeu\?/.test(x)), "EA course presented");
+      const ea4 = out.join("\n");
+      assert(/\*[^*]*Empreendedorismo\* tem duração de \*4 semestres\*, ou seja, aproximadamente \*2 anos\*/.test(ea4), `EA duration: ${ea4}`);
+      assert(/formato \*EAD\*, sem aulas práticas presenciais/.test(ea4) && /pela plataforma, pelo celular ou computador/.test(ea4) && /professores mestres e doutores/.test(ea4) && /tutoria desde a matrícula/.test(ea4), `EA format: ${ea4}`);
+      assert(!emoji.test(ea4) && !/maio de 2027|% de carga|laboratório|ainda não foi definida/.test(ea4), `EA must not talk about practical classes or the MEC deadline: ${ea4}`);
+      out = await say(EA, "wamid.ea-5", "Tem aula presencial?", t => t.some(x => /sem aulas práticas presenciais/.test(x)), "EA presential question");
+      assert(!/% de carga|laboratório/.test(out.join(" ")), `EA presential answer: ${out}`);
+      const eaGrade = (await http.get("/grades", auth())).data.grades.find(g => /empreendedorismo/i.test(g.courseName));
+      if (eaGrade) assert(eaGrade.mec.exigencia === "livre" && eaGrade.mec.semPratica === true && /EAD: sem aulas práticas/.test(eaGrade.mec.resumo), `EA grade mec: ${JSON.stringify(eaGrade.mec)}`);
+
       // the standard of the area comes back (the test of the MEC rules reads it)
       for (const bioId of sql(`SELECT id FROM Courses WHERE name='Biomedicina' ORDER BY id`).split("\n").filter(Boolean)) {
         // eslint-disable-next-line no-await-in-loop
@@ -4246,7 +4269,8 @@ const postMeta = (id, payload, secret, badSig) => {
       const markX = graph.sent.length;
       sql(`UPDATE LeadCommercials SET slots = (slots::jsonb || jsonb_build_object('lastInboundAt', to_char((now() - interval '4 hours') AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'), 'lastOutboundAt', to_char((now() - interval '3 hours 50 minutes') AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')))::text, lastInboundAt = now() - interval '4 hours', lastOutboundAt = now() - interval '3 hours 50 minutes' WHERE leadId=${leadId(X)}`);
       await waitFor(() => texts(markX).some(x => /Tá por aí\?/.test(x)), 30000, "X the first reminder");
-      assert(JSON.parse(sql(`SELECT slots FROM LeadCommercials WHERE leadId=${leadId(X)}`)).nudges === 1, "the reminder was not counted");
+      // (the worker sends the reminder and saves the count right after: wait for it instead of reading in between)
+      await waitFor(() => JSON.parse(sql(`SELECT slots FROM LeadCommercials WHERE leadId=${leadId(X)}`)).nudges === 1, 8000, "the reminder was not counted");
       await new Promise(r => setTimeout(r, 9000));
       assert(texts(markX).filter(x => /Tá por aí|Ficou com alguma dúvida|passando só para saber/i.test(x)).length === 1, "a second reminder came too soon");
       await say(X, "wamid.com-x3", "Quanto tempo dura o curso?", t => t.some(x => /Direito:/.test(x)), "X answers");
