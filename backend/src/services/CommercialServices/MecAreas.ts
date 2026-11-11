@@ -38,3 +38,44 @@ export const areaOf = (name: string, degree: string | null, catalogModality: str
   return "livre";
 };
 
+
+// What the Portaria MEC 378/2025 asks of a course, in one place: the grade, the consultant's panel, the agent and the screen of the courses read it from here.
+// "livre" is a course the Portaria does not mention (most of the tecnólogos of management and IT): the institution offers it as EAD and it has no practical classes.
+export type MecExigencia = "presencial" | "semipresencial" | "livre";
+export interface MecRequirement {
+  area: AreaId;
+  exigencia: MecExigencia;
+  // the format the student will find, in a word: EAD, Semipresencial or Presencial
+  formato: "EAD" | "Semipresencial" | "Presencial";
+  // minimum share of the workload in presential activities (the practical part); null when the course has none
+  percentualPresencial: number | null;
+  percentualSincrono: number | null;
+  semPratica: boolean;
+  fonte: string;
+  // one line for the consultant ("EAD: sem aulas práticas", "Semipresencial: 40% de prática presencial")
+  resumo: string;
+}
+
+const pct = (v: unknown): number | null => {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+};
+
+export const mecRequirementOf = (area: AreaId, rule?: { mecImpacted?: boolean | null; percentualPresencial?: unknown; percentualSincrono?: unknown } | null): MecRequirement => {
+  const p = pct(rule && rule.percentualPresencial);
+  const s = pct(rule && rule.percentualSincrono);
+  if (area === "presencial") {
+    return { area, exigencia: "presencial", formato: "Presencial", percentualPresencial: p ?? 70, percentualSincrono: null, semPratica: false, fonte: "Portaria MEC nº 378/2025, art. 5º", resumo: `Presencial: só pode ser ofertado presencialmente (mínimo de ${p ?? 70}% de atividades presenciais)` };
+  }
+  if (area === "saude_eng_agro" || area === "educacao_ciencias") {
+    const base = area === "saude_eng_agro" ? 40 : 30;
+    const art = area === "saude_eng_agro" ? "arts. 8º e 9º" : "arts. 7º e 9º";
+    return { area, exigencia: "semipresencial", formato: "Semipresencial", percentualPresencial: p ?? base, percentualSincrono: s ?? 20, semPratica: false, fonte: `Portaria MEC nº 378/2025, ${art}`, resumo: `Semipresencial: ${p ?? base}% de prática presencial (e ${s ?? 20}% presencial ou ao vivo)` };
+  }
+  // a course that is not mentioned, but that the team registered with a presential share, is explained with it
+  if (rule && rule.mecImpacted === true && p && p > 0) {
+    return { area, exigencia: "semipresencial", formato: "Semipresencial", percentualPresencial: p, percentualSincrono: s, semPratica: false, fonte: "Regra cadastrada pela instituição para o curso", resumo: `Semipresencial: ${p}% de prática presencial` };
+  }
+  return { area, exigencia: "livre", formato: "EAD", percentualPresencial: null, percentualSincrono: null, semPratica: true, fonte: "Portaria MEC nº 378/2025, art. 10 (curso não restringido)", resumo: "EAD: sem aulas práticas presenciais" };
+};

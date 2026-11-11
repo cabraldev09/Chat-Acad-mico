@@ -8,6 +8,7 @@ import AppError from "../errors/AppError";
 import { getSetting, setSetting } from "../helpers/AppSettings";
 import CommercialGrade from "../models/CommercialGrade";
 import { logger } from "../utils/logger";
+import { areaOf, mecRequirementOf, type MecRequirement } from "../services/CommercialServices/MecAreas";
 import { cleanReadingText, gradeSummaryOf, readCommercialGrade, type CommercialGradeReading } from "./services/commercial-grades/reader";
 
 // The catalog of commercial matrices. Reading is local (columns of the SIAA PDF); the same matrix is kept once: the
@@ -38,7 +39,12 @@ const parse = <T>(raw: string | null | undefined, fallback: T): T => {
   }
 };
 
-export const gradeView = (g: CommercialGrade, withSummary = false) => ({
+// What the Portaria MEC 378/2025 asks of this course (the area comes from its name and degree). `rule` is the percentage the team registered for the
+// course, when there is one: it is what the agent says, so it is what the consultant sees.
+export const gradeMec = (g: Pick<CommercialGrade, "courseName" | "degree" | "modality">, rule?: { mecImpacted?: boolean | null; percentualPresencial?: unknown; percentualSincrono?: unknown } | null): MecRequirement =>
+  mecRequirementOf(areaOf(g.courseName, g.degree || null, g.modality || null), rule || null);
+
+export const gradeView = (g: CommercialGrade, withSummary = false, rule?: { mecImpacted?: boolean | null; percentualPresencial?: unknown; percentualSincrono?: unknown } | null) => ({
   id: g.id,
   courseName: g.courseName,
   modality: g.modality,
@@ -56,6 +62,7 @@ export const gradeView = (g: CommercialGrade, withSummary = false) => ({
   sizeBytes: g.sizeBytes,
   updatedAt: g.updatedAt,
   createdAt: g.createdAt,
+  mec: gradeMec(g, rule),
   ...(withSummary ? { whatsappSummary: gradeSummaryOf(g) } : {})
 });
 

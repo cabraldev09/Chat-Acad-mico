@@ -214,6 +214,11 @@ const HandoffPanel = ({ ticket }) => {
         <button type="button" onClick={() => setOpen((v) => !v)} style={{ ...btn, background: "transparent", color: "#0f766e" }}>{open ? "Esconder" : "Ver copiloto"}</button>
         <button type="button" disabled={busy} onClick={suggest} title="A IA escreve uma resposta para o que a pessoa acabou de perguntar" style={main}>{busy && !suggestion ? "Escrevendo…" : "Pedir sugestão à IA"}</button>
       </div>
+      {open && copilot && copilot.course && (
+        <div title={copilot.course.fonte} style={{ marginTop: 6, fontSize: 12.5 }}>
+          <b>{copilot.course.name || "Curso"}</b> · {copilot.course.resumo}
+        </div>
+      )}
       {open && steps.length > 0 && (
         <ol style={{ listStyle: "none", margin: "8px 0 0", padding: 0, display: "flex", flexWrap: "wrap", gap: 6 }}>
           {steps.map((st) => {

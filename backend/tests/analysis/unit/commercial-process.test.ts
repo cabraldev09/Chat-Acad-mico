@@ -6,6 +6,7 @@ vi.mock("../../../src/models/Lead", () => ({ default: {} }));
 vi.mock("../../../src/models/LeadCommercial", () => ({ default: {} }));
 vi.mock("../../../src/models/Polo", () => ({ default: {} }));
 
+import { areaOf, mecRequirementOf } from "../../../src/services/CommercialServices/MecAreas";
 import { QUESTIONS, entryOf, isGreeting, needsBolsaData, nextQuestionOf, openingText, withoutClosingQuestion } from "../../../src/services/CommercialServices/Rules";
 import { blankState, startConversation } from "../../../src/services/CommercialServices/Slots";
 
@@ -112,6 +113,30 @@ describe("semipresencial: format and the MEC rule before the consultant", () => 
     expect(readyForConsultantOf({ ...base, courseModality: "Semipresencial", modalityExplained: true, bolsaDataAsked: 2 }, 5)).toBe(true);
     expect(readyForConsultantOf({ ...base, courseModality: "EAD", bolsaDataAsked: 2 }, 5)).toBe(true);
     expect(readyForConsultantOf({ ...base, courseModality: "EAD", mecImpacted: true, bolsaDataAsked: 2 }, 5)).toBe(false);
+  });
+
+  it("a course the Portaria does not restrict is EAD with no practical classes: duration comes before, the format says so and the follow-up is told", () => {
+    const ead = modalityTextOf("Empreendedorismo", { mecImpactado: false, explicacao: { area: "livre", turma: null } })!;
+    expect(ead).toMatch(/^O curso de \*Empreendedorismo\* é ofertado no formato \*EAD\*, sem aulas práticas presenciais/);
+    expect(ead).toMatch(/pela plataforma, pelo celular ou computador/);
+    expect(ead).toMatch(/acompanhamento acadêmico durante todo o curso e a tutoria desde a matrícula/);
+    expect(ead).toMatch(/professores mestres e doutores/);
+    expect(ead).toMatch(/Até aqui você compreendeu\?$/);
+    // the old promise of a small presential part is gone
+    expect(ead).not.toMatch(/pequena parte|avaliações presenciais/);
+  });
+
+  it("what the MEC asks of each course, in one place", () => {
+    const livre = mecRequirementOf(areaOf("Empreendedorismo", "Tecnológico", "EAD"));
+    expect(livre).toMatchObject({ exigencia: "livre", formato: "EAD", semPratica: true, percentualPresencial: null });
+    expect(livre.resumo).toMatch(/EAD: sem aulas práticas/);
+    const saude = mecRequirementOf(areaOf("Biomedicina", "Bacharelado", null));
+    expect(saude).toMatchObject({ exigencia: "semipresencial", formato: "Semipresencial", percentualPresencial: 40, percentualSincrono: 20, semPratica: false });
+    expect(mecRequirementOf(areaOf("Biomedicina", "Bacharelado", null), { percentualPresencial: "30.00" }).percentualPresencial).toBe(30);
+    expect(mecRequirementOf(areaOf("Pedagogia", "Licenciatura", null))).toMatchObject({ exigencia: "semipresencial", percentualPresencial: 30 });
+    expect(mecRequirementOf(areaOf("Direito", "Bacharelado", null))).toMatchObject({ exigencia: "presencial", formato: "Presencial", percentualPresencial: 70 });
+    // a course the Portaria does not name, registered by the team with a presential share, is explained with it
+    expect(mecRequirementOf("livre", { mecImpacted: true, percentualPresencial: 25 })).toMatchObject({ exigencia: "semipresencial", percentualPresencial: 25 });
   });
 
   it("the explanation is the one of the team: today, the change of the MEC until May 2027 with the share of the course, what is not defined yet", () => {

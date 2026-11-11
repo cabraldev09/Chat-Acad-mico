@@ -32,6 +32,7 @@ import { searchChunks } from "../AiServices/Kb";
 import { resolvePoloFor } from "../PoloServices/ResolvePolo";
 import { cleanPatch, Slots } from "./Slots";
 import { areaOfCourse, isStandardText } from "./MecDefaults";
+import { mecRequirementOf } from "./MecAreas";
 import { explainCourse } from "./MecKnowledge";
 import { cohortFor } from "./Norms";
 import { topicsOf } from "./Rules";
@@ -260,6 +261,7 @@ export const runAcademicTool = async (name: string, input: any, ctx: AcademicCtx
       const view = await cached(ctx, `regra:${course.id}:${intake}:${poloId || ""}`, async () => {
         const r = await regulationOf(course, intake);
         const area = await areaOfCourse(course);
+        const exigenciaMec = mecRequirementOf(area, r);
         const cohort = await cohortFor(course.id, intake, poloId);
         const num = (v: any) => (v === null || v === undefined ? null : Number(v));
         // the standard text of the area is not a text of the team: the course is explained in the words of the team (Rules.modalityTextOf)
@@ -281,7 +283,7 @@ export const runAcademicTool = async (name: string, input: any, ctx: AcademicCtx
           return {
             modalidadeAtual: modalityOf(course.modality), regulacaoAplicavel: null, mecImpactado: null, percentualPresencial: null, percentualSincrono: null, teoriaAoVivo: null,
             praticaPresencial: null, cronogramaPraticasDefinido: null, transitionStatus: null, currentDeliveryDuringTransition: null, futureDelivery: null, transitionNote: null,
-            commercialApprovedText: null, explicacao, normasComAlteracao: aviso,
+            commercialApprovedText: null, explicacao, exigenciaMec, normasComAlteracao: aviso,
             aviso: "Não há regra institucional cadastrada para este curso: use só a regra nacional de explicacao.nacional e diga que o consultor confirma como o curso funciona na prática."
           };
         }
@@ -289,7 +291,7 @@ export const runAcademicTool = async (name: string, input: any, ctx: AcademicCtx
           modalidadeAtual: modalityOf(r.currentDelivery) || modalityOf(course.modality), regulacaoAplicavel: r.regulation || null, mecImpactado: r.mecImpacted ?? null,
           percentualPresencial: num(r.percentualPresencial), percentualSincrono: num(r.percentualSincrono), teoriaAoVivo: r.teoriaAoVivo ?? null, praticaPresencial: r.praticaPresencial ?? null,
           cronogramaPraticasDefinido: r.cronogramaPraticasDefinido ?? null, transitionStatus: r.transitionStatus || null, currentDeliveryDuringTransition: r.currentDelivery || null,
-          futureDelivery: r.futureDelivery || null, transitionNote: r.transitionNote || null, commercialApprovedText: approved, explicacao, normasComAlteracao: aviso
+          futureDelivery: r.futureDelivery || null, transitionNote: r.transitionNote || null, commercialApprovedText: approved, explicacao, exigenciaMec, normasComAlteracao: aviso
         };
       });
       remember(ctx, { courseId: course.id, courseName: course.name, mecImpacted: view.mecImpactado, courseModality: view.modalidadeAtual });

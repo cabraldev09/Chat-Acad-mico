@@ -384,6 +384,11 @@ export const isQualified = (slots: Slots, requires: readonly string[] = ["course
 const AREA_SUBJECT: Record<string, string> = { educacao_ciencias: "as licenciaturas", saude_eng_agro: "os cursos da área da saúde, engenharias e agrárias" };
 const dateBr = (iso: string): string => String(iso).split("-").reverse().join("/");
 export const MODALITY_CHECK = "Até aqui você compreendeu?";
+// the format of a course that has no practical classes, in the words of the team (the duration goes before it, see durationLine)
+export const EAD_FOLLOW = "Você terá acompanhamento acadêmico durante todo o curso e a tutoria desde a matrícula. Sempre que precisar de orientação com a plataforma, as disciplinas ou questões acadêmicas, também pode procurar o nosso polo. O nosso corpo docente é formado por professores mestres e doutores.";
+export const eadTextOf = (courseName: string): string =>
+  [`O curso de *${courseName}* é ofertado no formato *EAD*, sem aulas práticas presenciais: o acesso aos conteúdos, às atividades e ao acompanhamento é pela plataforma, pelo celular ou computador.`, EAD_FOLLOW, MODALITY_CHECK].join("\n\n");
+
 export const modalityTextOf = (courseName: string, view: any): string | null => {
   const e = view && view.explicacao;
   if (!e) return null;
@@ -400,10 +405,8 @@ export const modalityTextOf = (courseName: string, view: any): string | null => 
   if (area === "presencial") {
     return ["Pelas regras do MEC, este curso só pode ser ofertado no formato presencial, com pelo menos 70% da carga horária em atividades presenciais. Como funciona na sua cidade, o consultor confirma com você.", MODALITY_CHECK].join("\n\n");
   }
-  if (!impacted) {
-    parts.push("Com as adequações do MEC, os cursos a distância também passam a ter uma pequena parte de atividades presenciais e avaliações presenciais. Como isso será organizado na sua turma, o consultor confirma com você.");
-    return [...parts, MODALITY_CHECK].join("\n\n");
-  }
+  // a course the Portaria does not restrict is EAD with no practical classes: the team says the duration (before) and the format, the follow-up and the teachers
+  if (!impacted) return eadTextOf(courseName);
   const p = view.percentualPresencial !== null && view.percentualPresencial !== undefined && Number.isFinite(Number(view.percentualPresencial)) ? Number(view.percentualPresencial) : null;
   const live = view.teoriaAoVivo === false ? "" : "a parte teórica será realizada ao vivo, com professor e turma, e ";
   const load = p ? `${p}% de carga ${area === "saude_eng_agro" ? "prática presencial, em laboratório" : "horária presencial"}` : "uma parte de atividades presenciais";
