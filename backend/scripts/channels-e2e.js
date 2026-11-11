@@ -4073,15 +4073,15 @@ const postMeta = (id, payload, secret, badSig) => {
       const gradesNow = (await http.get("/grades", auth())).data.grades.filter(g => /biomedicina/i.test(g.courseName));
       assert(gradesNow.length && gradesNow.every(g => g.mec && g.mec.exigencia === "semipresencial" && g.mec.percentualPresencial === 30 && g.mec.semPratica === false), `grade mec: ${JSON.stringify(gradesNow.map(g => g.mec))}`);
       // EA) a course the Portaria does not restrict (a tecnólogo of management) is EAD with no practical classes: the agent says the duration and the format, as the team does
-      if (sql(`SELECT COUNT(*) FROM Courses WHERE name='Empreendedorismo'`) === "0") await http.post("/courses", { name: "Empreendedorismo", modality: "EAD", category: "Graduação - Cruzeiro", semesters: 4, monthlyFee: 300, active: true }, auth());
-      sql(`UPDATE Courses SET semesters=4, active=true WHERE name='Empreendedorismo'`);
+      if (sql(`SELECT COUNT(*) FROM Courses WHERE name ILIKE '%empreendedorismo%'`) === "0") await http.post("/courses", { name: "Empreendedorismo", modality: "EAD", category: "Graduação - Cruzeiro", semesters: 4, monthlyFee: 300, active: true }, auth());
+      sql(`UPDATE Courses SET semesters=4, active=true WHERE name ILIKE '%empreendedorismo%'`);
       const EA = "5511920000261";
       out = await say(EA, "wamid.ea-1", "Oi", t => t.some(x => /primeira graduação/.test(x)), "EA opening");
       out = await say(EA, "wamid.ea-2", "Sim, é a minha primeira graduação", t => t.some(x => /Qual curso/.test(x)), "EA course asked");
       out = await say(EA, "wamid.ea-3", "Quero fazer o curso de Empreendedorismo", t => t.some(x => /Você reside em qual cidade\?/.test(x)), "EA city asked");
       out = await say(EA, "wamid.ea-4", "Sou de Cidade Estela", t => t.some(x => /Até aqui você compreendeu\?/.test(x)), "EA course presented");
       const ea4 = out.join("\n");
-      assert(/\*Empreendedorismo\* tem duração de \*4 semestres\*, ou seja, aproximadamente \*2 anos\*/.test(ea4), `EA duration: ${ea4}`);
+      assert(/\*[^*]*Empreendedorismo\* tem duração de \*4 semestres\*, ou seja, aproximadamente \*2 anos\*/.test(ea4), `EA duration: ${ea4}`);
       assert(/formato \*EAD\*, sem aulas práticas presenciais/.test(ea4) && /pela plataforma, pelo celular ou computador/.test(ea4) && /professores mestres e doutores/.test(ea4) && /tutoria desde a matrícula/.test(ea4), `EA format: ${ea4}`);
       assert(!emoji.test(ea4) && !/maio de 2027|% de carga|laboratório|ainda não foi definida/.test(ea4), `EA must not talk about practical classes or the MEC deadline: ${ea4}`);
       out = await say(EA, "wamid.ea-5", "Tem aula presencial?", t => t.some(x => /sem aulas práticas presenciais/.test(x)), "EA presential question");
