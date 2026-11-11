@@ -4070,7 +4070,7 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(anthropic.requests.length === llmMa2, "the copilot called the model");
       assert(cop.course && cop.course.semPratica === false && /Semipresencial: 30% de prática presencial/.test(cop.course.resumo), `copilot course rule: ${JSON.stringify(cop.course)}`);
       // the grade says the same as the agent: what the MEC asks of the course, with the percentage the team registered
-      const gradesNow = (await http.get("/grades", auth())).data.grades.filter(g => /Biomedicina/.test(g.courseName));
+      const gradesNow = (await http.get("/grades", auth())).data.grades.filter(g => /biomedicina/i.test(g.courseName));
       assert(gradesNow.length && gradesNow.every(g => g.mec && g.mec.exigencia === "semipresencial" && g.mec.percentualPresencial === 30 && g.mec.semPratica === false), `grade mec: ${JSON.stringify(gradesNow.map(g => g.mec))}`);
       // EA) a course the Portaria does not restrict (a tecnólogo of management) is EAD with no practical classes: the agent says the duration and the format, as the team does
       if (sql(`SELECT COUNT(*) FROM Courses WHERE name='Empreendedorismo'`) === "0") await http.post("/courses", { name: "Empreendedorismo", modality: "EAD", category: "Graduação - Cruzeiro", semesters: 4, monthlyFee: 300, active: true }, auth());
@@ -4086,7 +4086,7 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(!emoji.test(ea4) && !/maio de 2027|% de carga|laboratório|ainda não foi definida/.test(ea4), `EA must not talk about practical classes or the MEC deadline: ${ea4}`);
       out = await say(EA, "wamid.ea-5", "Tem aula presencial?", t => t.some(x => /sem aulas práticas presenciais/.test(x)), "EA presential question");
       assert(!/% de carga|laboratório/.test(out.join(" ")), `EA presential answer: ${out}`);
-      const eaGrade = (await http.get("/grades", auth())).data.grades.find(g => /Empreendedorismo/.test(g.courseName));
+      const eaGrade = (await http.get("/grades", auth())).data.grades.find(g => /empreendedorismo/i.test(g.courseName));
       if (eaGrade) assert(eaGrade.mec.exigencia === "livre" && eaGrade.mec.semPratica === true && /EAD: sem aulas práticas/.test(eaGrade.mec.resumo), `EA grade mec: ${JSON.stringify(eaGrade.mec)}`);
 
       // the standard of the area comes back (the test of the MEC rules reads it)
