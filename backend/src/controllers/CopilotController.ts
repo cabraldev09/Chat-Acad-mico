@@ -11,7 +11,7 @@ import { isManagerRole, roleOf } from "../helpers/Roles";
 import { policyFor } from "../services/CopilotServices/Policy";
 import { configOf, saveConfig, quotaOf, quotaExceeded, suggestionAgent, reserveSuggestion } from "../services/CopilotServices/Settings";
 import { copilotOf } from "../services/CommercialServices/Process";
-import { loadState } from "../services/CommercialServices/Slots";
+import { hydrate, loadState } from "../services/CommercialServices/Slots";
 import { briefOf } from "../services/CommercialServices/Rules";
 import { respond, loadHistory } from "../services/AiServices/RunAiAgent";
 
@@ -62,19 +62,20 @@ export const suggest = async (req: Request, res: Response) => {
   if (!last || last.fromMe) return res.json({ text: "", note: "Aguarde uma mensagem do contato antes de pedir uma sugestão." });
   const history = await loadHistory(ticket, 12);
   if (!history.length || history[history.length - 1].role !== "user") return res.json({ text: "", note: "Não há mensagem do contato para responder agora." });
-  const [step, lead] = await Promise.all([copilotOf(ticket, config), Lead.findOne({ where: { contactId: ticket.contactId }, attributes: ["id"] })]);
-  const state = lead ? await loadState(lead.id) : null;
+  const [step, lead] = await Promise.all([copilotOf(ticket, config), Lead.findOne({ where: { contactId: ticket.contactId } })]);
+  const state = lead ? await hydrate(await loadState(lead.id), lead) : null;
   const guide = [
     "Escreva a próxima mensagem do CONSULTOR que assumiu a conversa. Use a voz dele, sem se apresentar como assistente virtual. Seja profissional, breve e sem emoji.",
     "Responda primeiro o que a pessoa perguntou e conduza com uma pergunta para a próxima etapa. Nunca invente valores, bolsas, prazos ou confirmação de matrícula.",
     `Processo aprovado pelo gestor:\n${step.steps.map(s => `${s.done ? "Concluído" : s.key === step.current ? "ATUAL" : "Pendente"}: ${s.label}. ${s.instruction}`).join("\n")}`,
     step.suggestion ? `Texto de referência da próxima etapa:\n${step.suggestion.text}` : ""
   ].filter(Boolean).join("\n\n");
-  const contextKey = createHash("sha256").update(JSON.stringify({ messageId: last.id, body: last.body, progress: step.steps.map(s => [s.key, s.done]) })).digest("hex");
+  const summary = [state ? briefOf(state) : "", guide].filter(Boolean).join("\n\n");
+  const contextKey = createHash("sha256").update(JSON.stringify({ messageId: last.id, body: last.body, summary, progress: step.steps.map(s => [s.key, s.done]) })).digest("hex");
   const { request, cached } = await reserveSuggestion(config, ticket, Number(req.user.id), contextKey);
   if (cached) return res.json({ text: request.status === "ready" ? request.text : "", cached: true, note: request.status === "pending" && Date.now() - +new Date(request.createdAt) < 180000 ? "A sugestão desta mensagem já está sendo preparada. Aguarde." : "Esta mensagem já foi processada. Use o roteiro ou aguarde uma nova mensagem." });
   try {
-    const result = await respond(agent, { ticket: null, accountingTicketId: ticket.id, usageKind: "copilot", history, summary: [state ? briefOf(state) : "", guide].filter(Boolean).join("\n\n"), collected: null, sandbox: true });
+    const result = await respond(agent, { ticket: null, accountingTicketId: ticket.id, usageKind: "copilot", history, summary, collected: null, sandbox: true });
     const text = result.handoff || result.unknown ? "" : String(result.text || "").replace(/\[(HANDOFF|DESCONHECIDO)\]/g, "").trim();
     await request.update({ status: "ready", text });
     return res.json({ text, note: text ? "" : "Não há informação suficiente na base. Confira com a equipe e use o roteiro para continuar." });

@@ -6439,6 +6439,7 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(graph.sent.length + tg.sent.length === sent, "copilot sent a message");
       const prompt = JSON.stringify(anthropic.requests[calls-1].system);
       assert(/Revisão do gestor|Confirme o objetivo profissional/.test(prompt), "manager instructions missing");
+      assert(/Cidade conferida/.test(prompt), "CRM facts missing from suggestion context");
       inDb(`const Message=require("./dist/models/Message").default; await Message.create({id:"copilot-inbound-2",ticketId:${tid},fromMe:false,body:"Outra dúvida para o consultor",mediaType:"chat"});`);
       const blocked = await http.post(`/tickets/${tid}/suggest-reply`, {}, auth());
       assert(blocked.status === 429 && blocked.data.error === "ERR_COPILOT_DAILY_LIMIT", `quota not enforced: ${JSON.stringify(blocked.data)}`);
