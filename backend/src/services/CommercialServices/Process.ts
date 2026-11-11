@@ -81,7 +81,8 @@ export const readConversation = async (ticket: Ticket, slots: Slots, leadCpf: st
       if (/\bobjetivo\b|concurso publico|prestar concurso|formacao superior rapida/.test(t) && /\?/.test(text)) asked.add("objective");
       if (/ficha de matricula|nome completo da mae/.test(t)) asked.add("ficha");
       if (/\b(pix|boleto)\b/.test(t) && /taxa|matricula|copia e cola/.test(t)) asked.add("taxa");
-      if (/comunidade dos alunos|tutoria (vai|entra|ira) (entrar )?em contato|tutoria entra em contato/.test(t)) asked.add("comunidade");
+      // (the agent also speaks of the tutoring while it presents the course: only the invitation to the community of the students is the step)
+      if (/comunidade dos alunos/.test(t)) asked.add("comunidade");
       if (/afiliad|programa de indicac|indicar (um|uma|alguem)/.test(t)) asked.add("afiliado");
       continue;
     }
