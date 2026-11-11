@@ -14,6 +14,8 @@ import Lead from "../models/Lead";
 import { logger } from "../utils/logger";
 import Payment from "../models/Payment";
 import LeadStage from "../models/LeadStage";
+import Student from "../models/Student";
+import { isManagerRole, roleOf } from "../helpers/Roles";
 import LeadActivity from "../models/LeadActivity";
 import LeadTask from "../models/LeadTask";
 import LeadEnrollment from "../models/LeadEnrollment";
@@ -260,6 +262,15 @@ export const classify = async (req: Request, res: Response): Promise<Response> =
 
 export const setStage = async (req: Request, res: Response): Promise<Response> => {
   const { stageId, lostReason, lostNote } = req.body;
+  // "Matriculado" is reached by confirming the enrollment (RGM, course, polo and tutor): the stage alone is refused, unless it is explicitly a
+  // win that has no enrollment to confirm (skipEnroll, for the management)
+  const target = await LeadStage.findByPk(Number(stageId), { attributes: ["id", "type"] });
+  if (target && target.type === "won") {
+    const current = await Lead.findByPk(req.params.id, { attributes: ["id", "enrolledAt"] });
+    if (current && !current.enrolledAt && !(req.body.skipEnroll === true && isManagerRole(roleOf(req.user)))) {
+      throw new AppError("ERR_ENROLL_REQUIRED", 409);
+    }
+  }
   try {
     const lead = await changeStage(req.params.id, Number(stageId), uid(req), { lostReason, lostNote });
     return res.json(lead);
@@ -846,7 +857,8 @@ export const enroll = async (req: Request, res: Response): Promise<Response> => 
       whatsappId: req.body.whatsappId ? Number(req.body.whatsappId) : null,
       additional: req.body.additional === true,
       courseId: req.body.courseId ? Number(req.body.courseId) : null,
-      courseName: req.body.courseName || null
+      courseName: req.body.courseName || null,
+      rgm: req.body.rgm || null
     })
   );
 };
@@ -890,6 +902,61 @@ export const editOnboarding = async (req: Request, res: Response): Promise<Respo
   const status = ["pending", "started", "done"].includes(b.status) ? b.status : undefined;
   const tutorId = b.tutorId === "auto" ? "auto" : b.tutorId === null ? null : b.tutorId ? Number(b.tutorId) : undefined;
   return res.json(await edit(lead, uid(req), { status, tutorId, poloId: b.poloId ? Number(b.poloId) : undefined }));
+};
+
+// The access of the student: what the tutor informs (the academic e-mail the institution created) and what goes to the student by the tutor's WhatsApp.
+const accessView = (s: Student) => ({ id: s.id, rgm: s.rgm, academicEmail: s.academicEmail || null, activated: !!s.activatedAt, accessSentAt: s.accessSentAt || null });
+
+const accessStudent = async (req: Request): Promise<{ lead: Lead; student: Student }> => {
+  // the consultant sold the enrollment; the access is the tutor's work
+  if (reqRole(req) === "consultor") throw new AppError("ERR_NO_PERMISSION", 403);
+  const lead = await Lead.findByPk(req.params.id);
+  if (!lead) throw new AppError("ERR_LEAD_NOT_FOUND", 404);
+  const student = await Student.findOne({ where: { leadId: lead.id } });
+  if (!student) throw new AppError("Este aluno ainda não tem cadastro no portal. Confirme a matrícula com o RGM.", 400);
+  return { lead, student };
+};
+
+// the tutor informs the academic e-mail of access (the one the institution created for the student)
+export const onboardingAccessSave = async (req: Request, res: Response): Promise<Response> => {
+  const { lead, student } = await accessStudent(req);
+  const email = String(req.body?.academicEmail || "").trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 160) throw new AppError("E-mail inválido.", 400);
+  if (await Student.findOne({ where: { academicEmail: email, id: { [Op.ne]: student.id } } as any })) throw new AppError("Este e-mail de acesso já é de outro aluno.", 409);
+  await student.update({ academicEmail: email, accessSentAt: email === student.academicEmail ? student.accessSentAt : null } as any);
+  await addActivity(lead.id, uid(req), "system", `E-mail de acesso do aluno informado: ${email}.`, { kind: "access_email", studentId: student.id, email, actorId: uid(req) });
+  getIO().emit("lead", { action: "update", lead: await loadLead(lead.id) });
+  return res.json(accessView(student));
+};
+
+// the message with the access (RGM, academic e-mail and the link to choose the password of the portal), sent by the tutor's conversation
+export const onboardingAccessSend = async (req: Request, res: Response): Promise<Response> => {
+  const { lead, student } = await accessStudent(req);
+  if (!student.academicEmail) throw new AppError("Informe primeiro o e-mail de acesso do aluno.", 400);
+  const ticket = lead.contactId ? await Ticket.findOne({ where: { contactId: lead.contactId, segment: "onboarding", status: { [Op.in]: ["open", "pending"] } } as any, order: [["id", "DESC"]] }) : null;
+  if (!ticket) throw new AppError("Este aluno não tem a conversa de ambientação aberta.", 400);
+  const { issueToken } = await import("../analysis/Store");
+  const token = await issueToken(student, student.activatedAt ? "reset" : "invite");
+  const base = String(process.env.FRONTEND_URL || "").split(",")[0].trim().replace(/\/$/, "") || "http://localhost:3000";
+  const first = String(lead.name || "").trim().split(/\s+/)[0];
+  const body = [
+    `${first ? `${first}, ` : ""}segue o seu acesso:`,
+    "",
+    `RGM: ${student.rgm}`,
+    `E-mail acadêmico: ${student.academicEmail}`,
+    "",
+    "Senha: a mesma já utilizada para acessos anteriores, ou use a opção \"esqueci minha senha\" na tela de entrada.",
+    "",
+    `Para acompanhar a sua situação no portal do aluno, crie a sua senha por este link (vale por 7 dias): ${base}/portal/ativar/${token}`
+  ].join("\n");
+  const { default: SendWhatsAppMessage } = await import("../services/WbotServices/SendWhatsAppMessage");
+  const full = await (await import("../services/TicketServices/ShowTicketService")).default(ticket.id);
+  await SendWhatsAppMessage({ body, ticket: full });
+  await student.update({ accessSentAt: new Date() } as any);
+  const { setChecklist } = await import("../services/CrmServices/EnrollLead");
+  if (lead.onboardingStatus !== "none") await setChecklist(lead, uid(req), "access", true).catch(() => undefined);
+  await addActivity(lead.id, uid(req), "system", "Acesso enviado ao aluno (RGM, e-mail acadêmico e link do portal).", { kind: "access_sent", studentId: student.id, actorId: uid(req) });
+  return res.json(accessView(student));
 };
 
 export const onboardingChecklist = async (req: Request, res: Response): Promise<Response> => {
@@ -980,12 +1047,14 @@ export const onboardingList = async (req: Request, res: Response): Promise<Respo
   const tickets = contactIds.length
     ? await Ticket.findAll({ where: { contactId: contactIds, segment: "onboarding" }, attributes: ["id", "contactId", "status", "unreadMessages", "lastMessageAt", "userId"], order: [["id", "DESC"]] })
     : [];
+  const students = rows.length ? await Student.findAll({ where: { leadId: rows.map(r => r.id) } as any }) : [];
   return res.json(
     rows.map(r => ({
       ...r.toJSON(),
       tutorName: tutors.find(t => t.id === r.onboardingTutorId)?.name || null,
       onboardingChecklist: undefined,
       checklist: parseChecklist(r.onboardingChecklist),
+      student: students.find(x => x.leadId === r.id) ? accessView(students.find(x => x.leadId === r.id) as Student) : null,
       ticketId: tickets.find(t => t.contactId === r.contactId)?.id || null,
       unread: tickets.find(t => t.contactId === r.contactId)?.unreadMessages || 0,
       lastMessageAt: tickets.find(t => t.contactId === r.contactId)?.lastMessageAt || null

@@ -30,6 +30,9 @@ import UpdateTicketService from "../TicketServices/UpdateTicketService";
 import dispatchWebhook from "../WebhookServices/DispatchWebhook";
 import { addActivity, changeStage, loadLead, resolveLeadTarget } from "./LeadCore";
 import { markMilestone } from "../CommercialServices/Milestones";
+import { tutorConnectionFor } from "../TicketServices/TutorNumber";
+import Student from "../../models/Student";
+import { assertRgmFree, handoverNote, rgmOf, studentForEnrollment } from "./EnrollStudent";
 import { notifyOnboarding, notifyTaskAssigned } from "./TaskNotify";
 
 export interface EnrollInput {
@@ -46,6 +49,8 @@ export interface EnrollInput {
   additional?: boolean;
   courseId?: number | null;
   courseName?: string | null;
+  // the registration number the institution gave the student: required to confirm the enrollment (the student of the portal is created with it)
+  rgm?: string | null;
 }
 
 // Confirms the enrollment and hands the student to the polo's tutoring team:
@@ -53,6 +58,12 @@ export interface EnrollInput {
 // separate "onboarding" conversation opens for the tutor.
 const enrollLeadCore = async (lead: Lead, actorId: number, input: EnrollInput) => {
   const warnings: string[] = [];
+  const rgm = rgmOf(input.rgm);
+  await assertRgmFree(rgm, lead.id);
+  // the course confirmed in the dialog (the lead's own when nothing else was chosen)
+  let course: Course | null = input.courseId ? await Course.findByPk(Number(input.courseId)) : null;
+  if (input.courseId && !course) throw new AppError("ERR_COURSE_NOT_FOUND", 404);
+  if (!course && lead.courseId) course = await Course.findByPk(lead.courseId);
 
   const polo = await Polo.findByPk(input.poloId);
   if (!polo) throw new AppError("ERR_NO_POLO_FOUND", 404);
@@ -87,7 +98,8 @@ const enrollLeadCore = async (lead: Lead, actorId: number, input: EnrollInput) =
   // the administration, else a shared number). It is never the consultant's personal number.
   let whatsapp: Whatsapp | null = null;
   if (input.whatsappId) whatsapp = await Whatsapp.findByPk(input.whatsappId);
-  if (!whatsapp && tutor) whatsapp = await Whatsapp.findOne({ where: { ownerId: tutor.id, channel: "whatsapp" }, order: [["id", "ASC"]] });
+  // (the tutor's own QR connection, the one that is connected first; else the tutoring number: the same rule as a transfer to the tutoring)
+  if (!whatsapp && tutor) whatsapp = await tutorConnectionFor(tutor.id);
   if (!whatsapp) {
     const tutoriaConnId = Number(await getSetting("tutoria_whatsapp_id", "0")) || 0;
     whatsapp = tutoriaConnId ? await Whatsapp.findByPk(tutoriaConnId) : null;
@@ -116,6 +128,8 @@ const enrollLeadCore = async (lead: Lead, actorId: number, input: EnrollInput) =
   // 2) the lead
   await lead.update({
     poloId: polo.id,
+    rgm,
+    ...(course && course.id !== lead.courseId ? { courseId: course.id } : {}),
     onboardingStatus: "pending",
     onboardingTutorId: tutor?.id || null,
     enrolledAt: new Date(),
@@ -154,6 +168,17 @@ const enrollLeadCore = async (lead: Lead, actorId: number, input: EnrollInput) =
     toUserId: tutor?.id || null,
     note: input.note ? String(input.note).slice(0, 1000) : "Início da ambientação."
   });
+  // the student of the portal is born here, with the RGM; and the tutor reads who arrived in one note of the conversation
+  const actor = await User.findByPk(actorId, { attributes: ["id", "name"] });
+  const student = await studentForEnrollment({ lead, rgm, courseName: course ? course.name : null, poloId: polo.id, tutorId: tutor?.id || null });
+  await TicketEvent.create({
+    ticketId: ticket.id,
+    type: "handoff",
+    actorId,
+    toQueueId: queue.id,
+    toUserId: tutor?.id || null,
+    note: await handoverNote({ lead, rgm, courseName: course ? course.name : null, poloName: polo.name, consultantName: actor ? actor.name : null, note: input.note })
+  });
   const fresh = await ShowTicketService(ticket.id);
   getIO().to(fresh.status).to("notification").emit("ticket", { action: "update", ticket: fresh });
 
@@ -178,12 +203,13 @@ const enrollLeadCore = async (lead: Lead, actorId: number, input: EnrollInput) =
     lead.id,
     actorId,
     "system",
-    `Matrícula confirmada. Polo ${polo.name}; tutor: ${tutor ? tutor.name : "aguardando na fila"}.${input.note ? ` Obs.: ${input.note}` : ""}`
+    `Matrícula confirmada com o RGM ${rgm}${course ? `, curso ${course.name}` : ""}. Polo ${polo.name}; tutor: ${tutor ? tutor.name : "aguardando na fila"}. Aluno do portal criado.${input.note ? ` Obs.: ${input.note}` : ""}`,
+    { kind: "enrollment", rgm, courseId: course ? course.id : null, courseName: course ? course.name : null, poloId: polo.id, tutorId: tutor?.id || null, studentId: student.id, actorId }
   );
   const out = (await loadLead(lead.id)) as Lead;
   getIO().emit("lead", { action: "update", lead: out });
-  await dispatchWebhook("lead.enrolled", { leadId: lead.id, lead: lead.name, poloId: polo.id, tutorId: tutor?.id || null });
-  return { lead: out, ticketId: ticket.id, tutor: tutor ? { id: tutor.id, name: tutor.name } : null, warnings };
+  await dispatchWebhook("lead.enrolled", { leadId: lead.id, lead: lead.name, poloId: polo.id, tutorId: tutor?.id || null, rgm, course: course ? course.name : null, studentId: student.id });
+  return { lead: out, ticketId: ticket.id, tutor: tutor ? { id: tutor.id, name: tutor.name } : null, warnings, studentId: student.id };
 };
 
 
@@ -191,6 +217,11 @@ const enrollLeadCore = async (lead: Lead, actorId: number, input: EnrollInput) =
 // recorded on its own, counts for the consultant who owns the lead and for the polo, and the tutor receives a task for it.
 const enrollAdditional = async (lead: Lead, actorId: number, input: EnrollInput) => {
   const warnings: string[] = [];
+  // each course has its own registration number
+  const rgm = rgmOf(input.rgm);
+  if (rgm === lead.rgm) throw new AppError("Este é o RGM da primeira matrícula. A nova matrícula tem outro número.", 409);
+  if (await Student.findOne({ where: { rgm } })) throw new AppError("Já existe um aluno com este RGM.", 409);
+  if (await LeadEnrollment.findOne({ where: { rgm } })) throw new AppError("Este RGM já está em outra matrícula.", 409);
   const polo = await Polo.findByPk(input.poloId);
   if (!polo) throw new AppError("ERR_NO_POLO_FOUND", 404);
   let queue = await Queue.findOne({ where: { poloId: polo.id, role: "tutoria" }, include: [{ model: User, as: "users", attributes: ["id", "name"] }] });
@@ -222,9 +253,11 @@ const enrollAdditional = async (lead: Lead, actorId: number, input: EnrollInput)
     actorId,
     courseId,
     courseName,
+    rgm,
     note: input.note ? String(input.note).slice(0, 1000) : null,
     enrolledAt: new Date()
   } as any);
+  const student = await studentForEnrollment({ lead, rgm, courseName, poloId: polo.id, tutorId: tutor?.id || null });
   const total = 1 + (await LeadEnrollment.count({ where: { leadId: lead.id } }));
   const label = courseName ? ` em ${courseName}` : "";
   const extraTask = await LeadTask.create({
@@ -236,11 +269,11 @@ const enrollAdditional = async (lead: Lead, actorId: number, input: EnrollInput)
   } as any);
   void notifyTaskAssigned(extraTask, actorId);
   if (tutor) void notifyOnboarding({ id: lead.id, name: lead.name, onboardingTutorId: tutor.id, ownerId: null } as any, "assigned", polo.name);
-  await addActivity(lead.id, actorId, "system", `Nova matrícula (${total}ª)${label}. Polo ${polo.name}; tutor: ${tutor ? tutor.name : "aguardando"}.${input.note ? ` Obs.: ${input.note}` : ""}`);
+  await addActivity(lead.id, actorId, "system", `Nova matrícula (${total}ª)${label}, RGM ${rgm}. Polo ${polo.name}; tutor: ${tutor ? tutor.name : "aguardando"}.${input.note ? ` Obs.: ${input.note}` : ""}`, { kind: "enrollment", additional: true, rgm, courseId, courseName, poloId: polo.id, tutorId: tutor?.id || null, studentId: student.id, actorId });
   const out = (await loadLead(lead.id)) as Lead;
   getIO().emit("lead", { action: "update", lead: out });
   if (lead.ownerId) touchAnalytics(lead.ownerId);
-  await dispatchWebhook("lead.enrolled", { leadId: lead.id, lead: lead.name, poloId: polo.id, tutorId: tutor?.id || null, additional: true, enrollmentId: row.id, course: courseName });
+  await dispatchWebhook("lead.enrolled", { leadId: lead.id, lead: lead.name, poloId: polo.id, tutorId: tutor?.id || null, additional: true, enrollmentId: row.id, course: courseName, rgm, studentId: student.id });
   const ticket = await Ticket.findOne({ where: { leadId: lead.id, segment: "onboarding" }, order: [["id", "DESC"]], attributes: ["id"] });
   return { lead: out, ticketId: ticket ? ticket.id : null, tutor: tutor ? { id: tutor.id, name: tutor.name } : null, warnings, repeated: false, enrollment: row, number: total };
 };
@@ -310,7 +343,8 @@ export const CHECKLIST = [
   { key: "first_access", label: "Primeiro acesso à plataforma" },
   { key: "ava", label: "Ambiente virtual (AVA) apresentado" },
   { key: "polo_contacts", label: "Contatos do polo e da tutoria passados" },
-  { key: "documents", label: "Documentos da matrícula conferidos" }
+  { key: "documents", label: "Documentos da matrícula conferidos" },
+  { key: "access", label: "Acesso enviado (RGM, e-mail acadêmico e portal)" }
 ] as const;
 
 export const parseChecklist = (raw: string | null | undefined): Record<string, string> => {

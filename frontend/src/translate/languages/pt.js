@@ -642,6 +642,8 @@ const messages = {
         ERR_DELETE_WAPP_MSG: "Não foi possível excluir a mensagem do WhatsApp.",
         ERR_OTHER_OPEN_TICKET: "Já existe um tíquete aberto para este contato.",
         ERR_CHOOSE_CONNECTION: "Escolha por qual conexão enviar.",
+        ERR_ENROLL_REQUIRED: "Para mover para Matriculado, confirme a matrícula com o RGM do aluno.",
+        ERR_COURSE_NOT_FOUND: "Curso não encontrado.",
         ERR_SESSION_EXPIRED: "Sessão expirada. Por favor entre.",
         ERR_USER_CREATION_DISABLED:
           "A criação do usuário foi desabilitada pelo administrador.",
