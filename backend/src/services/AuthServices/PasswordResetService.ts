@@ -37,7 +37,7 @@ export const requestReset = async (emailRaw: string, ip: string): Promise<void> 
   await PasswordReset.create({ userId: user.id, tokenHash: hashOf(token), expiresAt: new Date(Date.now() + TOKEN_MINUTES * 60000), requestIp: String(ip || "").slice(0, 64) } as any);
   const link = `${frontBase()}/redefinir-senha/${token}`;
   const mail = resetPasswordMail(user.name, link, TOKEN_MINUTES);
-  sendMail({ to: user.email, ...mail }).catch(err => logger.warn(`password reset mail not sent: ${(err as Error).message}`));
+  sendMail({ to: user.email, ...mail, idempotencyKey: `password-reset/${hashOf(token)}` }).catch(err => logger.warn(`password reset mail not sent: ${(err as Error).message}`));
 };
 
 // Is this link still good? (so the screen can say so before the person types a password)

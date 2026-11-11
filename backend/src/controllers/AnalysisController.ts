@@ -447,7 +447,7 @@ export const studentInvite = async (req: Request, res: Response): Promise<Respon
   let emailed = false;
   if (s.email && (await mailConfigured())) {
     try {
-      await sendMail({ to: s.email, ...studentLinkMail(s.activatedAt ? "reset" : "invite", s.name, link, s.activatedAt ? "1 hora" : "7 dias") });
+      await sendMail({ to: s.email, ...studentLinkMail(s.activatedAt ? "reset" : "invite", s.name, link, s.activatedAt ? "1 hora" : "7 dias"), idempotencyKey: `student-invite/${s.id}/${token.slice(0, 16)}` });
       emailed = true;
     } catch (err) {
       logger.warn(`student invite mail not sent: ${(err as Error).message}`);

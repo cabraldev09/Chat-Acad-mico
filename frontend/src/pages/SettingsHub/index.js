@@ -349,24 +349,35 @@ const RegrasAcademicas = () => {
   );
 };
 
-// the e-mail account the system sends from ("Esqueci minha senha"). The password is typed here and never comes back.
+// the e-mail the system sends from ("Esqueci minha senha", the team, the affiliates, the student portal): an SMTP account or Resend.
+// The password and the key are typed here and never come back.
 const Email = () => {
   const classes = useStyles();
   const [f, setF] = useState(null);
   const [pass, setPass] = useState("");
+  const [key, setKey] = useState("");
+  const [inbound, setInbound] = useState("");
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
   useEffect(() => { api.get("/mail/settings").then(({ data }) => setF(data)).catch(toastError); }, []);
   if (!f) return <Typography className={classes.hint}>Carregando...</Typography>;
-  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  const set = (k) => (e) => { const value = e.target.value; setF((cur) => ({ ...cur, [k]: value })); };
+  const resend = f.provider === "resend";
+  const ready = resend ? f.hasResendKey && !!f.fromEmail : f.hasPassword;
   const save = async () => {
     setBusy(true);
     try {
-      const body = { host: f.host, port: Number(f.port), secure: !!f.secure, user: f.user, fromName: f.fromName };
+      const body = { provider: f.provider || "smtp", fromName: f.fromName, replyTo: f.replyTo || "" };
+      if (resend) Object.assign(body, { fromEmail: f.fromEmail || "", forwardTo: f.forwardTo || "" });
+      else Object.assign(body, { host: f.host, port: Number(f.port), secure: !!f.secure, user: f.user });
       if (pass.trim()) body.pass = pass;
+      if (key.trim()) body.resendKey = key.trim();
+      if (inbound.trim()) body.inboundSecret = inbound.trim();
       const { data } = await api.put("/mail/settings", body);
       setF(data);
       setPass("");
+      setKey("");
+      setInbound("");
       toast.success("E-mail salvo.");
     } catch (e) { toastError(e); }
     setBusy(false);
@@ -376,26 +387,63 @@ const Email = () => {
     try { const { data } = await api.post("/mail/test", {}); toast.success(`E-mail de teste enviado para ${data.to}.`); } catch (e) { toastError(e); }
     setBusy(false);
   };
+  const secret = (label, value, onChange, placeholder) => (
+    <TextField size="small" variant="outlined" label={label} type={show ? "text" : "password"} value={value} onChange={onChange} fullWidth autoComplete="new-password"
+      placeholder={placeholder} InputLabelProps={{ shrink: true }}
+      InputProps={{ endAdornment: <InputAdornment position="end"><Button size="small" onClick={() => setShow((v) => !v)}>{show ? "Ocultar" : "Mostrar"}</Button></InputAdornment> }} />
+  );
   return (
     <Paper variant="outlined" className={classes.card}>
-      <div className={classes.cardTitle}>Conta de e-mail do sistema</div>
+      <div className={classes.cardTitle}>Envio de e-mails do sistema</div>
       <div className={classes.hint}>
-        É daqui que sai o e-mail do “Esqueci minha senha”. Para uma conta Gmail, ative a verificação em duas etapas, crie uma “senha de app” em myaccount.google.com/apppasswords e digite aqui. Você pode trocar a conta quando quiser.
+        Todos os e-mails do sistema saem daqui: recuperação de senha, boas-vindas da equipe, afiliados, portal do aluno e avisos de retorno.
       </div>
-      <TextField size="small" variant="outlined" label="E-mail que envia" value={f.user || ""} onChange={set("user")} fullWidth InputLabelProps={{ shrink: true }} />
-      <TextField size="small" variant="outlined" label={f.hasPassword ? "Senha de app (já salva; digite só para trocar)" : "Senha de app"} type={show ? "text" : "password"} value={pass} onChange={(e) => setPass(e.target.value)} fullWidth autoComplete="new-password"
-        placeholder={f.hasPassword ? "••••••••" : "xxxx xxxx xxxx xxxx"} InputLabelProps={{ shrink: true }}
-        InputProps={{ endAdornment: <InputAdornment position="end"><Button size="small" onClick={() => setShow((v) => !v)}>{show ? "Ocultar" : "Mostrar"}</Button></InputAdornment> }} />
+      <TextField select size="small" variant="outlined" label="Como enviar" value={f.provider || "smtp"} onChange={set("provider")} style={{ maxWidth: 360 }} InputLabelProps={{ shrink: true }}>
+        <MenuItem value="resend">Resend (recomendado)</MenuItem>
+        <MenuItem value="smtp">Conta de e-mail (SMTP, ex.: Gmail)</MenuItem>
+      </TextField>
+      {resend ? (
+        <>
+          <div className={classes.hint}>
+            Use a chave de envio do Resend (Sending access, restrita ao domínio) e um remetente do domínio verificado, por exemplo nao-responda@mail.cruzeirodosulvirtual.app.br.
+          </div>
+          {secret(f.hasResendKey ? "Chave do Resend (já salva; cole só para trocar)" : "Chave do Resend", key, (e) => { const value = e.target.value; setKey(value); }, f.hasResendKey ? "••••••••" : "re_...")}
+          <TextField size="small" variant="outlined" label="E-mail que envia (domínio verificado)" value={f.fromEmail || ""} onChange={set("fromEmail")} fullWidth InputLabelProps={{ shrink: true }} />
+          <div className={classes.cardTitle} style={{ marginTop: 8 }}>E-mails recebidos</div>
+          <div className={classes.hint}>
+            Cada pessoa da equipe tem um endereço com o próprio nome (ex.: joao.silva@mail.cruzeirodosulvirtual.app.br). O que chega nele é encaminhado, com anexos, para o e-mail cadastrado dela no Chat. Endereços sem dono (ou nomes repetidos) vão para o e-mail abaixo; sem ele, para os administradores. No Resend, o webhook “email.received” aponta para o endereço da API terminado em /webhooks/resend.
+          </div>
+          <TextField size="small" variant="outlined" label="Endereço sem dono vai para" value={f.forwardTo || ""} onChange={set("forwardTo")} fullWidth placeholder="gerencia@exemplo.com" InputLabelProps={{ shrink: true }} />
+          {(f.aliases || []).length > 0 && (
+            <div className={classes.hint}>
+              <b>Endereço de cada pessoa</b>
+              {(f.aliases || []).map((a) => (
+                <div key={a.address + a.name}>{a.name}: {a.address} → {a.shared ? "nome repetido, vai para o endereço sem dono" : a.forwardsTo}</div>
+              ))}
+            </div>
+          )}
+          {secret(f.hasInboundSecret ? "Segredo do webhook (já salvo; cole só para trocar)" : "Segredo do webhook do Resend", inbound, (e) => { const value = e.target.value; setInbound(value); }, f.hasInboundSecret ? "••••••••" : "whsec_...")}
+        </>
+      ) : (
+        <>
+          <div className={classes.hint}>
+            Para uma conta Gmail, ative a verificação em duas etapas, crie uma “senha de app” em myaccount.google.com/apppasswords e digite aqui.
+          </div>
+          <TextField size="small" variant="outlined" label="E-mail que envia" value={f.user || ""} onChange={set("user")} fullWidth InputLabelProps={{ shrink: true }} />
+          {secret(f.hasPassword ? "Senha de app (já salva; digite só para trocar)" : "Senha de app", pass, (e) => { const value = e.target.value; setPass(value); }, f.hasPassword ? "••••••••" : "xxxx xxxx xxxx xxxx")}
+          <div className={classes.row}>
+            <TextField size="small" variant="outlined" label="Servidor" value={f.host || ""} onChange={set("host")} style={{ flex: 1, minWidth: 200 }} InputLabelProps={{ shrink: true }} />
+            <TextField size="small" variant="outlined" label="Porta" type="number" value={f.port || ""} onChange={set("port")} style={{ width: 110 }} InputLabelProps={{ shrink: true }} />
+            <FormControlLabel control={<Switch color="primary" checked={!!f.secure} onChange={(e) => { const checked = e.target.checked; setF((cur) => ({ ...cur, secure: checked })); }} />} label="Conexão segura (SSL)" />
+          </div>
+        </>
+      )}
       <TextField size="small" variant="outlined" label="Nome que aparece como remetente" value={f.fromName || ""} onChange={set("fromName")} fullWidth InputLabelProps={{ shrink: true }} />
-      <div className={classes.row}>
-        <TextField size="small" variant="outlined" label="Servidor" value={f.host || ""} onChange={set("host")} style={{ flex: 1, minWidth: 200 }} InputLabelProps={{ shrink: true }} />
-        <TextField size="small" variant="outlined" label="Porta" type="number" value={f.port || ""} onChange={set("port")} style={{ width: 110 }} InputLabelProps={{ shrink: true }} />
-        <FormControlLabel control={<Switch color="primary" checked={!!f.secure} onChange={(e) => setF({ ...f, secure: e.target.checked })} />} label="Conexão segura (SSL)" />
-      </div>
+      <TextField size="small" variant="outlined" label="Respostas vão para (opcional)" value={f.replyTo || ""} onChange={set("replyTo")} fullWidth placeholder="atendimento@mail.cruzeirodosulvirtual.app.br" InputLabelProps={{ shrink: true }} />
       <div className={classes.row}>
         <Button variant="contained" color="primary" onClick={save} disabled={busy}>Salvar</Button>
-        <Button variant="outlined" onClick={test} disabled={busy || !f.hasPassword}>Enviar e-mail de teste para mim</Button>
-        <span className={classes.hint}>{f.hasPassword ? "Senha salva." : "Falta digitar a senha de app."}</span>
+        <Button variant="outlined" onClick={test} disabled={busy || !ready}>Enviar e-mail de teste para mim</Button>
+        <span className={classes.hint}>{ready ? (resend ? "Chave e remetente salvos." : "Senha salva.") : resend ? "Falta a chave ou o remetente." : "Falta digitar a senha de app."}</span>
       </div>
     </Paper>
   );
