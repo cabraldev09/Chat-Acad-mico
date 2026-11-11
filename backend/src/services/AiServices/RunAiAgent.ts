@@ -1,3 +1,4 @@
+import { withReactiveReply } from "../../helpers/ReactiveReply";
 import { callWithBudget } from "./Budget";
 import { boundedInt, policyOf, wantsToStop, withNextStep, usageCounts } from "./Policy";
 import { robotMayTalk } from "../../helpers/AgentScope";
@@ -601,7 +602,7 @@ const handoff = async (ticket: Ticket, agent: AiAgent, reason: HandoffReason, sa
 };
 
 // Called once the person stopped writing (see RunInboundAutomation): answers the whole burst with one reply.
-export const runAiForTicket = async (ticketId: number, say: Say): Promise<void> => {
+const answerTicket = async (ticketId: number, say: Say): Promise<void> => {
   const ticket = await ShowTicketService(ticketId);
   if (!ticket.aiActive || ticket.userId || ticket.status === "closed" || !robotMayTalk(ticket)) return;
   const agent = await findAgentForTicket(ticket);
@@ -690,3 +691,5 @@ export const runAiForTicket = async (ticketId: number, say: Say): Promise<void> 
     await releaseAi(ticket.id);
   }
 };
+
+export const runAiForTicket = (ticketId: number, say: Say): Promise<void> => withReactiveReply(() => answerTicket(ticketId, say));

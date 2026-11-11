@@ -1,3 +1,4 @@
+import { withReactiveReply } from "../../helpers/ReactiveReply";
 import { isEmail } from "../../helpers/Email";
 import { isRelationshipConnection } from "../RelationshipServices/Relationship";
 import { subHours } from "date-fns";
@@ -503,4 +504,4 @@ const RunInboundAutomation = async ({ ticketId, body }: Input): Promise<void> =>
   }
 };
 
-export default RunInboundAutomation;
+export default (input: Input): Promise<void> => withReactiveReply(() => RunInboundAutomation(input));

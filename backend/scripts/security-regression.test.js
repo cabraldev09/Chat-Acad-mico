@@ -48,3 +48,10 @@ test('operation settings reject invalid costs, arbitrary keys and non-booleans',
   assert.equal(validateOperationSetting('outbound_allow_templates', true), 'true');
   assert.equal(validateOperationSetting('outbound_meta_template_usd', '0.02'), '0.02');
 });
+
+test('reactive attendance is scoped to the inbound reply and does not leak to workers', async () => {
+  const { withReactiveReply, isReactiveReply } = require('../dist/helpers/ReactiveReply');
+  assert.equal(isReactiveReply(), false);
+  await withReactiveReply(async () => { await Promise.resolve(); assert.equal(isReactiveReply(), true); });
+  assert.equal(isReactiveReply(), false);
+});

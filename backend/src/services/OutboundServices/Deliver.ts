@@ -1,3 +1,4 @@
+import { isReactiveReply } from "../../helpers/ReactiveReply";
 import { AsyncLocalStorage } from "async_hooks";
 import { randomUUID } from "crypto";
 import { Op } from "sequelize";
@@ -35,7 +36,7 @@ export const deliver = async <T extends { id: any }>(ticket: Ticket, options: Se
   const [contact, whatsapp] = await Promise.all([Contact.findByPk(ticket.contactId), Whatsapp.findByPk(ticket.whatsappId)]);
   if (!contact || !whatsapp) throw new AppError("ERR_NO_WAPP_FOUND", 404);
   if (contact.optOut && !options.optOutNotice) throw new AppError("ERR_CONTACT_OPTED_OUT", 409);
-  if (options.automated && !options.optOutNotice && !options.outsideHoursNotice && !isWithinBusinessHours(whatsapp)) throw new AppError("ERR_OUTSIDE_BUSINESS_HOURS", 409);
+  if (options.automated && !options.optOutNotice && !options.outsideHoursNotice && !isReactiveReply() && !isWithinBusinessHours(whatsapp)) throw new AppError("ERR_OUTSIDE_BUSINESS_HOURS", 409);
   const channel = whatsapp.channel || "whatsapp";
   const related = await Ticket.findAll({ where: { contactId: contact.id, whatsappId: whatsapp.id }, attributes: ["id"] });
   const inbound = await Message.findOne({
