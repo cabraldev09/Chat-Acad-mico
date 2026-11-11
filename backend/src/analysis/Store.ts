@@ -7,6 +7,8 @@ import AppError from "../errors/AppError";
 import { getSetting, setSetting } from "../helpers/AppSettings";
 import AcademicAnalysis from "../models/AcademicAnalysis";
 import { saveAnalysisDocument } from "./Documents";
+import AnalysisEvent from "../models/AnalysisEvent";
+import User from "../models/User";
 import CurricularAnalysis from "../models/CurricularAnalysis";
 import Student from "../models/Student";
 import { addActivity } from "../services/CrmServices/LeadCore";
@@ -212,8 +214,11 @@ export const createCurricular = async (
 
 export const updateCurricular = async (
   row: CurricularAnalysis,
-  patch: { entryPeriod?: number | null; startTerm?: string; leadId?: number | null; contactId?: number | null; poloId?: number | null; candidateName?: string | null }
+  patch: { entryPeriod?: number | null; startTerm?: string; leadId?: number | null; contactId?: number | null; poloId?: number | null; candidateName?: string | null },
+  userId: number | null = null
 ): Promise<CurricularAnalysis> => {
+  // what changes of the forecast and of the polo is written in the trail
+  const before = { entryPeriod: row.entryPeriod, startTerm: row.startTerm, poloId: row.poloId, candidateName: row.candidateName };
   if (patch.entryPeriod !== undefined && patch.entryPeriod !== null) {
     const n = Number(patch.entryPeriod);
     if (!(Number.isInteger(n) && n >= 1 && n <= 20)) throw new AppError("O período de ingresso precisa ser um número de 1 a 20.", 400);
@@ -234,14 +239,34 @@ export const updateCurricular = async (
       return asUserError(err);
     }
   }
+  const after = { entryPeriod: row.entryPeriod, startTerm: row.startTerm, poloId: row.poloId, candidateName: row.candidateName };
+  const changed = (Object.keys(before) as Array<keyof typeof before>).filter(k => before[k] !== after[k]);
+  if (changed.length) await recordAnalysisEvent("CURRICULAR", row.id, userId, "analysis_changed", null, Object.fromEntries(changed.map(k => [k, before[k]])), Object.fromEntries(changed.map(k => [k, after[k]])));
   return row;
 };
 
 // the reading of one line was wrong: fix its status, period or workload and the forecast follows (kept visible as manual)
-export const correctCurricularSubject = async (row: CurricularAnalysis, subjectId: string, patch: { status?: string; period?: number; workload?: number }): Promise<CurricularAnalysis> => {
+// the trail of the corrections (who, what, before and after)
+export const recordAnalysisEvent = async (kind: "CURRICULAR" | "ACADEMIC", analysisId: number, userId: number | null, action: string, subjectName: string | null, before: unknown, after: unknown): Promise<void> => {
+  try {
+    await AnalysisEvent.create({ kind, analysisId, userId, action, subjectName: subjectName ? String(subjectName).slice(0, 200) : null, before: before === null || before === undefined ? null : JSON.stringify(before), after: after === null || after === undefined ? null : JSON.stringify(after) } as any);
+  } catch (err) {
+    // the trail is a help: a failure never blocks the correction
+  }
+};
+
+const subjectText = (s: StoredSubject): Record<string, unknown> => ({ name: s.name, period: s.period, workload: s.workload, status: s.status });
+
+export const correctCurricularSubject = async (row: CurricularAnalysis, subjectId: string, patch: { status?: string; period?: number; workload?: number; name?: string }, userId: number | null = null): Promise<CurricularAnalysis> => {
   const subjects = parse<StoredSubject[]>(row.subjects, []);
   const subject = subjects.find(s => s.id === subjectId);
   if (!subject) throw new AppError("Disciplina não encontrada nesta análise.", 404);
+  const before = subjectText(subject);
+  if (patch.name !== undefined) {
+    const name = String(patch.name).replace(/\s+/g, " ").trim();
+    if (name.length < 3 || name.length > 200) throw new AppError("Informe o nome da disciplina (3 a 200 letras).", 400);
+    subject.name = name.toUpperCase();
+  }
   if (patch.status !== undefined) {
     if (!["EXEMPTED", "PENDING", "REVIEW"].includes(patch.status)) throw new AppError("Situação inválida.", 400);
     subject.status = patch.status as StoredSubject["status"];
@@ -259,11 +284,61 @@ export const correctCurricularSubject = async (row: CurricularAnalysis, subjectI
   }
   subject.note = "Corrigido manualmente";
   await row.update({ subjects: JSON.stringify(subjects) });
+  await recordAnalysisEvent("CURRICULAR", row.id, userId, "subject_edited", subject.name, before, subjectText(subject));
   try {
     return await recompute(row);
   } catch (err) {
     return asUserError(err);
   }
+};
+
+// a discipline the document did not bring (or that was not read) is added by hand: it is marked as manual and the forecast follows
+export const addCurricularSubject = async (row: CurricularAnalysis, userId: number | null, input: { name: string; period: number; workload: number; status?: string }): Promise<CurricularAnalysis> => {
+  const subjects = parse<StoredSubject[]>(row.subjects, []);
+  const name = String(input.name || "").replace(/\s+/g, " ").trim();
+  if (name.length < 3 || name.length > 200) throw new AppError("Informe o nome da disciplina (3 a 200 letras).", 400);
+  const period = Number(input.period);
+  if (!(Number.isInteger(period) && period >= 1 && period <= 20)) throw new AppError("O período precisa ser de 1 a 20.", 400);
+  const workload = Number(input.workload);
+  if (!(Number.isFinite(workload) && workload >= 0 && workload <= 2000)) throw new AppError("Carga horária inválida.", 400);
+  const status = input.status || "PENDING";
+  if (!["EXEMPTED", "PENDING", "REVIEW"].includes(status)) throw new AppError("Situação inválida.", 400);
+  if (subjects.length >= 300) throw new AppError("Limite de disciplinas da análise atingido.", 400);
+  const subject: StoredSubject = {
+    id: `manual-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+    code: null, name: name.toUpperCase(), workload: Math.round(workload), period, usedSubject: status === "EXEMPTED" ? "INCLUÍDA MANUALMENTE" : null,
+    status: status as StoredSubject["status"], readability: "CLEAR", sourcePage: 0, sourceRow: 0, sortIndex: subjects.length + 1, periodKnown: true, note: "Incluída manualmente"
+  } as StoredSubject;
+  subjects.push(subject);
+  await row.update({ subjects: JSON.stringify(subjects) });
+  await recordAnalysisEvent("CURRICULAR", row.id, userId, "subject_added", subject.name, null, subjectText(subject));
+  try {
+    return await recompute(row);
+  } catch (err) {
+    return asUserError(err);
+  }
+};
+
+export const removeCurricularSubject = async (row: CurricularAnalysis, userId: number | null, subjectId: string): Promise<CurricularAnalysis> => {
+  const subjects = parse<StoredSubject[]>(row.subjects, []);
+  const subject = subjects.find(s => s.id === subjectId);
+  if (!subject) throw new AppError("Disciplina não encontrada nesta análise.", 404);
+  if (subjects.length <= 1) throw new AppError("A análise precisa ter ao menos uma disciplina.", 400);
+  await row.update({ subjects: JSON.stringify(subjects.filter(s => s.id !== subjectId)) });
+  await recordAnalysisEvent("CURRICULAR", row.id, userId, "subject_removed", subject.name, subjectText(subject), null);
+  try {
+    return await recompute(row);
+  } catch (err) {
+    return asUserError(err);
+  }
+};
+
+export const listAnalysisEvents = async (kind: "CURRICULAR" | "ACADEMIC", analysisId: number): Promise<Array<{ id: number; action: string; subjectName: string | null; before: any; after: any; userId: number | null; userName: string | null; createdAt: Date }>> => {
+  const rows = await AnalysisEvent.findAll({ where: { kind, analysisId } as any, order: [["createdAt", "DESC"], ["id", "DESC"]], limit: 200 });
+  const ids = [...new Set(rows.map(r => r.userId).filter(Boolean))] as number[];
+  const names = new Map((ids.length ? await User.findAll({ where: { id: ids }, attributes: ["id", "name"] }) : []).map(u => [u.id, u.name]));
+  const parseJson = (v: string | null) => { try { return v ? JSON.parse(v) : null; } catch (e) { return null; } };
+  return rows.map(r => ({ id: r.id, action: r.action, subjectName: r.subjectName || null, before: parseJson(r.before), after: parseJson(r.after), userId: r.userId || null, userName: r.userId ? names.get(r.userId) || null : null, createdAt: r.createdAt }));
 };
 
 // ------------------------------------------------------------------ academic analysis

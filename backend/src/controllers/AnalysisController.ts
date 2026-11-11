@@ -12,6 +12,9 @@ import Polo from "../models/Polo";
 import Student from "../models/Student";
 import User from "../models/User";
 import {
+  addCurricularSubject,
+  listAnalysisEvents,
+  removeCurricularSubject,
   academicView,
   correctAcademic,
   correctCurricularSubject,
@@ -180,15 +183,34 @@ export const curricularUpdate = async (req: Request, res: Response): Promise<Res
     contactId: b.contactId === undefined ? undefined : num(b.contactId),
     poloId: b.poloId === undefined ? undefined : num(b.poloId),
     candidateName: b.candidateName
-  });
+  }, me(req));
   return res.json(await viewOf(out));
 };
 
 export const curricularSubject = async (req: Request, res: Response): Promise<Response> => {
   const row = await loadCurricular(req);
   const b = req.body || {};
-  const out = await correctCurricularSubject(row, String(req.params.subjectId), { status: b.status, period: b.period === undefined ? undefined : Number(b.period), workload: b.workload === undefined ? undefined : Number(b.workload) });
+  const out = await correctCurricularSubject(row, String(req.params.subjectId), { status: b.status, name: b.name, period: b.period === undefined ? undefined : Number(b.period), workload: b.workload === undefined ? undefined : Number(b.workload) }, me(req));
   return res.json(await viewOf(out));
+};
+
+// a discipline the document did not bring, added by hand (it stays marked as manual, and the trail says who added it)
+export const curricularSubjectAdd = async (req: Request, res: Response): Promise<Response> => {
+  const row = await loadCurricular(req);
+  const b = req.body || {};
+  const out = await addCurricularSubject(row, me(req), { name: b.name, period: Number(b.period), workload: Number(b.workload), status: b.status });
+  return res.status(201).json(await viewOf(out));
+};
+
+export const curricularSubjectRemove = async (req: Request, res: Response): Promise<Response> => {
+  const row = await loadCurricular(req);
+  return res.json(await viewOf(await removeCurricularSubject(row, me(req), String(req.params.subjectId))));
+};
+
+// who changed what, and when
+export const curricularEvents = async (req: Request, res: Response): Promise<Response> => {
+  const row = await loadCurricular(req);
+  return res.json({ events: await listAnalysisEvents("CURRICULAR", row.id) });
 };
 
 // ------------------------------------------------------------------ the 24-hour return and the commercial proposal
