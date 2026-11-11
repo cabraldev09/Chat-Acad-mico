@@ -75,6 +75,10 @@ test('copilot validates limits and preserves actual enrollment as final step', (
   const config = defaultConfig();
   config.steps.splice(1, 0, { key: 'entry', label: 'Duplicada', instruction: '', message: '' });
   assert.throws(() => validateConfig(config));
+  // only the tutoring/community and the referral steps may follow the enrollment
+  const late = defaultConfig();
+  late.steps.push({ key: 'custom_after', label: 'Depois', instruction: '', message: '' });
+  assert.throws(() => validateConfig(late));
   assert.equal(validateConfig({ ...defaultConfig(), dailyLimit: 0 }).dailyLimit, 0);
 });
 test('copilot manual progress can reopen a detected step but cannot confirm enrollment', () => {

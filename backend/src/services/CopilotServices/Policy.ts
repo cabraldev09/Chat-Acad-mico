@@ -27,6 +27,12 @@ export interface CopilotConfig {
 }
 export const defaultConfig = (): CopilotConfig => ({ version: 1, enabled: true, aiEnabled: false, agentId: null,
   dailyLimit: 100, userDailyLimit: 20, connectionDailyLimit: 50, connections: {}, steps: DEFAULT_STEPS.map(s => ({ ...s })) });
+// The enrollment (confirmed by the CRM, never by a checkbox) closes the sale: only the steps that follow it by nature (the tutoring and the community, the referral program) may come after it.
+const AFTER_ENROLLMENT = ["comunidade", "afiliado"];
+const enrollmentIsLastOf = (steps: ProcessStep[]): boolean => {
+  const at = steps.findIndex(s => s.key === "enroll");
+  return at >= 0 && steps.slice(at + 1).every(s => AFTER_ENROLLMENT.includes(s.key));
+};
 const invalid = (): never => { throw new AppError("ERR_COPILOT_CONFIG", 400); };
 const integer = (v: any, max = 100000): number => typeof v === "number" && Number.isSafeInteger(v) && v >= 0 && v <= max ? v : invalid();
 const bool = (v: any): boolean => typeof v === "boolean" ? v : invalid();
@@ -38,7 +44,7 @@ export const validateConfig = (v: any): CopilotConfig => {
     if (!s || !/^[a-z][a-z0-9_]{0,39}$/.test(s.key)) return invalid();
     return { key: s.key, label: text(s.label, 100, true), instruction: text(s.instruction, 800), message: text(s.message, 1500), optional: s.optional === undefined ? false : bool(s.optional) };
   });
-  if (new Set(steps.map(s => s.key)).size !== steps.length || !steps.some(s => s.key === "enroll")) return invalid();
+  if (new Set(steps.map(s => s.key)).size !== steps.length || !enrollmentIsLastOf(steps)) return invalid();
   if (!v.connections || typeof v.connections !== "object" || Array.isArray(v.connections) || Object.keys(v.connections).length > 500) return invalid();
   const connections: Record<string, ConnectionPolicy> = {};
   for (const [id, rule] of Object.entries(v.connections) as [string, any][]) {
