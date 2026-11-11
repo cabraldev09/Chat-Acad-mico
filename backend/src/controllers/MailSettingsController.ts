@@ -2,7 +2,7 @@ import { isEmail } from "../helpers/Email";
 import { Request, Response } from "express";
 
 import AppError from "../errors/AppError";
-import { setSetting } from "../helpers/AppSettings";
+import { getSetting, setSetting } from "../helpers/AppSettings";
 import { isMasked, sealSecret } from "../helpers/Secrets";
 import { readMailConfig, sendMail } from "../services/MailServices/SendMail";
 import { MAIL_CATALOG, testMail } from "../services/MailServices/Templates";
@@ -12,7 +12,11 @@ import User from "../models/User";
 const view = async () => {
   const c = await readMailConfig();
   // the password never goes back to the browser
-  return { host: c.host, port: c.port, secure: c.secure, user: c.user, fromName: c.fromName, hasPassword: !!c.pass, pass: c.pass ? "••••••••" : "" };
+  return {
+    provider: c.provider, host: c.host, port: c.port, secure: c.secure, user: c.user, fromName: c.fromName, hasPassword: !!c.pass, pass: c.pass ? "••••••••" : "",
+    fromEmail: c.fromEmail, replyTo: c.replyTo, hasResendKey: !!c.resendKey, resendKey: c.resendKey ? "••••••••" : "",
+    forwardTo: await getSetting("mail_forward_to", ""), hasInboundSecret: !!(await getSetting("mail_inbound_secret", ""))
+  };
 };
 
 export const show = async (_req: Request, res: Response): Promise<Response> => res.json(await view());
@@ -30,6 +34,31 @@ export const update = async (req: Request, res: Response): Promise<Response> => 
   if (b.port !== undefined) await setSetting("mail_port", String(port));
   if (b.secure !== undefined) await setSetting("mail_secure", b.secure ? "true" : "false");
   if (b.fromName !== undefined) await setSetting("mail_from_name", String(b.fromName).trim().slice(0, 60));
+  // Resend: the provider, the sender on the verified domain, where the answers go, and the sending key (sealed like the password)
+  if (b.provider !== undefined) {
+    if (b.provider !== "smtp" && b.provider !== "resend") throw new AppError("ERR_MAIL_PROVIDER_INVALID", 400);
+    await setSetting("mail_provider", b.provider);
+  }
+  const fromEmail = String(b.fromEmail ?? "").trim().toLowerCase();
+  const replyTo = String(b.replyTo ?? "").trim().toLowerCase();
+  if (b.fromEmail !== undefined && fromEmail && !isEmail(fromEmail)) throw new AppError("ERR_MAIL_FROM_INVALID", 400);
+  if (b.replyTo !== undefined && replyTo && !isEmail(replyTo)) throw new AppError("ERR_MAIL_REPLY_TO_INVALID", 400);
+  if (b.fromEmail !== undefined) await setSetting("mail_from_email", fromEmail);
+  if (b.replyTo !== undefined) await setSetting("mail_reply_to", replyTo);
+  // receiving: where the e-mails that arrive at the domain go, and the signing secret of the Resend webhook (sealed)
+  const forwardTo = String(b.forwardTo ?? "").trim().toLowerCase();
+  if (b.forwardTo !== undefined && forwardTo && !isEmail(forwardTo)) throw new AppError("ERR_MAIL_FORWARD_INVALID", 400);
+  if (b.forwardTo !== undefined) await setSetting("mail_forward_to", forwardTo);
+  if (typeof b.inboundSecret === "string" && !isMasked(b.inboundSecret)) {
+    const secret = b.inboundSecret.trim();
+    if (secret && !/^whsec_[A-Za-z0-9+/=]{16,}$/.test(secret)) throw new AppError("ERR_MAIL_INBOUND_SECRET_INVALID", 400);
+    await setSetting("mail_inbound_secret", secret ? sealSecret(secret) : "");
+  }
+  if (typeof b.resendKey === "string" && !isMasked(b.resendKey)) {
+    const key = b.resendKey.trim();
+    if (key && !/^re_[A-Za-z0-9_]{8,}$/.test(key)) throw new AppError("ERR_MAIL_RESEND_KEY_INVALID", 400);
+    await setSetting("mail_resend_key", key ? sealSecret(key) : "");
+  }
   // typed again: replaced; left as the mask: kept; emptied on purpose: removed
   if (typeof b.pass === "string" && !isMasked(b.pass)) await setSetting("mail_pass", b.pass.trim() ? sealSecret(b.pass.replace(/\s+/g, "")) : "");
   return res.json(await view());

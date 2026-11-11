@@ -95,7 +95,7 @@ export const forgot = async (req: Request, res: Response): Promise<Response> => 
     const recent = await StudentToken.count({ where: { studentId: student.id, kind: "reset", createdAt: { [Op.gt]: new Date(Date.now() - 3600000) } } });
     if (recent < 3) {
       const token = await issueToken(student, "reset");
-      sendMail({ to: student.email, ...studentLinkMail("reset", student.name, `${frontBase()}/portal/ativar/${token}`, "1 hora") }).catch(err => logger.warn(`student reset mail not sent: ${(err as Error).message}`));
+      sendMail({ to: student.email, ...studentLinkMail("reset", student.name, `${frontBase()}/portal/ativar/${token}`, "1 hora"), idempotencyKey: `student-reset/${student.id}/${token.slice(0, 16)}` }).catch(err => logger.warn(`student reset mail not sent: ${(err as Error).message}`));
     }
   }
   return sameAnswer(res);

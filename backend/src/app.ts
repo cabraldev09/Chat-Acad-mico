@@ -21,6 +21,7 @@ import courseLandingRoutes from "./routes/courseLandingRoutes";
 import affiliatePortalRoutes from "./routes/affiliatePortalRoutes";
 import proposalPublicRoutes from "./routes/proposalPublicRoutes";
 import efiWebhookRoutes from "./routes/efiWebhookRoutes";
+import resendWebhookRoutes from "./routes/resendWebhookRoutes";
 import securityHeaders from "./middleware/securityHeaders";
 import rateLimit from "./middleware/rateLimit";
 
@@ -84,7 +85,8 @@ app.use(
   }),
   express.urlencoded({ extended: false }),
   metaWebhookRoutes,
-  efiWebhookRoutes
+  efiWebhookRoutes,
+  resendWebhookRoutes
 );
 
 app.use(

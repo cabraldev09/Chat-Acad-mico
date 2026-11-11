@@ -118,3 +118,9 @@ cat ~/.ssh/deploy_chat_academico | pbcopy                    # cola em: GitHub >
 
 Depois, em **Actions > Atualizar a VPS > Run workflow** dá para atualizar quando quiser.
 
+
+## E-mail (Resend)
+- Configurações → E-mail → **Como enviar = Resend**: chave de envio do Resend (Sending access, restrita ao domínio `mail.cruzeirodosulvirtual.app.br`), remetente `nao-responda@mail.cruzeirodosulvirtual.app.br`, "Respostas vão para" (opcional). O SMTP continua disponível no mesmo seletor.
+- Todo e-mail do sistema passa por `backend/src/services/MailServices/SendMail.ts` (SDK oficial `resend`): chave de idempotência por envio (recuperação de senha e convites do portal usam uma por pedido), nova tentativa em 429/5xx.
+- **E-mails recebidos**: o domínio recebe no Resend, o webhook `email.received` chama `POST https://<API>/webhooks/resend` (assinatura conferida com o segredo `whsec_…` salvo na mesma tela) e o sistema encaminha a mensagem, com o `.eml` original anexado e "responder para" o remetente, ao endereço de "Encaminhar para".
+- A chave e o segredo ficam cifrados no banco (`mail_resend_key`, `mail_inbound_secret`).
