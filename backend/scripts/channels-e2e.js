@@ -3605,6 +3605,9 @@ const postMeta = (id, payload, secret, badSig) => {
       ["institutional/tutoring", "institutional/platform", "institutional/internship", "institutional/mec"].forEach(t => assert(topics.includes(t), `the knowledge base lacks ${t}: ${topics}`));
       // faculty, enrollment documents and recognition are the texts the institution dictated (masters and doctors, the maximum MEC grade)
       ["institutional/faculty", "institutional/enrollment", "institutional/recognition"].forEach(t => assert(topics.includes(t), `the knowledge base lacks ${t}: ${topics}`));
+      // the answers the team gives again and again (public exam, adjustment, fee, start of classes, a course not offered, cancellation, referral) are ready for the agent
+      ["institutional/public-exam", "institutional/tuition-adjustment", "institutional/enrollment-fee", "institutional/after-enrollment", "institutional/not-offered", "institutional/cancellation", "institutional/affiliate"].forEach(t => assert(topics.includes(t), `the knowledge base lacks ${t}: ${topics}`));
+      assert(/Extraordinário Aproveitamento de Estudos/.test(sql(`SELECT content FROM KbDocuments WHERE agentId=${agentId} AND topic='institutional/public-exam'`)) && !/R\$|\d+ ?%/.test(sql(`SELECT string_agg(content, ' ') FROM KbDocuments WHERE agentId=${agentId} AND topic LIKE 'institutional/%' AND topic IN ('institutional/tuition-adjustment','institutional/enrollment-fee','institutional/affiliate')`)), "the ready answers carry a price or a percentage");
       assert(/mestres e doutores/.test(sql(`SELECT content FROM KbDocuments WHERE agentId=${agentId} AND topic='institutional/faculty'`)), "the faculty text is not the dictated one");
       const fun = (await http.get("/crm-funnel", auth())).data;
       assert(fun.keys.length === 15 && fun.keys.every(k => k.stageId), `funnel not complete: ${fun.keys.filter(k => !k.stageId).map(k => k.key)}`);
@@ -4073,6 +4076,26 @@ const postMeta = (id, payload, secret, badSig) => {
       // the grade says the same as the agent: what the MEC asks of the course, with the percentage the team registered
       const gradesNow = (await http.get("/grades", auth())).data.grades.filter(g => /biomedicina/i.test(g.courseName));
       assert(gradesNow.length && gradesNow.every(g => g.mec && g.mec.exigencia === "semipresencial" && g.mec.percentualPresencial === 30 && g.mec.semPratica === false), `grade mec: ${JSON.stringify(gradesNow.map(g => g.mec))}`);
+      // the steps after the proposal, as the consultant does them in the conversations of the team: proposal, form, fee, proof, enrollment, tutoring and community
+      const tMA = ticketOf(MA);
+      assert((await http.post(`/tickets/${tMA}/take`, {}, auth())).status === 200, "the consultant takes the conversation");
+      const copNow = async () => (await http.get(`/tickets/${tMA}/copilot`, auth())).data;
+      const consultantSays = async text => { const r = await http.post(`/messages/${tMA}`, { body: text }, auth()); assert(r.status === 200, `consultant message ${r.status} ${JSON.stringify(r.data).slice(0, 120)}`); };
+      assert((await http.get(`/tickets/${tMA}/copilot`, auth())).data.steps.some(x => x.key === "objective" && x.optional), "the objective is an optional step");
+      await consultantSays("Maira, segue a proposta da sua bolsa para o curso de Biomedicina.");
+      let cp = await copNow();
+      assert(cp.current === "ficha" && /Ficha de matrícula/.test(cp.suggestion.text) && /Nome completo da mãe/.test(cp.suggestion.text) && !emoji.test(cp.suggestion.text), `after the proposal: ${cp.current} ${JSON.stringify(cp.suggestion)}`);
+      await consultantSays(cp.suggestion.text);
+      cp = await copNow();
+      assert(cp.current === "taxa" && /boleto da taxa de matrícula/.test(cp.suggestion.text) && /comprovante/.test(cp.suggestion.text), `after the form: ${cp.current}`);
+      await consultantSays(cp.suggestion.text);
+      cp = await copNow();
+      assert(cp.current === "comprovante", `after the fee: ${cp.current}`);
+      await inboundCloud(MA, "wamid.ma-pix", "Pix feito, segue o comprovante");
+      await waitFor(async () => (await copNow()).current === "enroll", 15000, "the proof of payment moved the process to the enrollment");
+      cp = await copNow();
+      assert(cp.suggestion.action === "enroll" && /matrícula/.test(cp.suggestion.text) && /Biomedicina/.test(cp.suggestion.text) && !emoji.test(cp.suggestion.text), `enrollment step: ${JSON.stringify(cp.suggestion)}`);
+      assert(anthropic.requests.length === llmMa2, "the steps after the proposal called the model");
       // EA) a course the Portaria does not restrict (a tecnólogo of management) is EAD with no practical classes: the agent says the duration and the format, as the team does
       if (sql(`SELECT COUNT(*) FROM Courses WHERE name ILIKE '%empreendedorismo%'`) === "0") await http.post("/courses", { name: "Empreendedorismo", modality: "EAD", category: "Graduação - Cruzeiro", semesters: 4, monthlyFee: 300, active: true }, auth());
       sql(`UPDATE Courses SET semesters=4, active=true WHERE name ILIKE '%empreendedorismo%'`);

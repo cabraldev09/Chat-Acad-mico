@@ -14,12 +14,14 @@ import { loadState, Slots } from "./Slots";
 // The state is read from the conversation itself (what the lead said, what the consultant already sent), so it keeps up after the handover, when the
 // state saved by the agent no longer changes. Nothing here writes to the lead or sends anything: it only says where the process is and what to say next.
 
-export type StepKey = "entry" | "course" | "city" | "format" | "grade" | "doubts" | "bolsa" | "proposal" | "enroll";
+export type StepKey = "entry" | "objective" | "course" | "city" | "format" | "grade" | "doubts" | "bolsa" | "proposal" | "ficha" | "taxa" | "comprovante" | "enroll" | "comunidade" | "afiliado";
 
 export interface CopilotStep {
   key: StepKey;
   label: string;
   done: boolean;
+  // a step the process does not wait for (the objective of the lead, the referral program)
+  optional: boolean;
 }
 
 export interface Copilot {
@@ -42,16 +44,25 @@ export const STEP_LABEL: Record<StepKey, string> = {
   doubts: "Dúvidas esclarecidas",
   bolsa: "Nome completo e CPF para simular a bolsa",
   proposal: "Proposta enviada",
-  enroll: "Matrícula confirmada"
+  objective: "Objetivo com a graduação",
+  ficha: "Ficha de matrícula e documentos",
+  taxa: "Taxa de matrícula (Pix ou boleto)",
+  comprovante: "Comprovante recebido",
+  enroll: "Matrícula confirmada",
+  comunidade: "Tutoria e Comunidade dos Alunos",
+  afiliado: "Programa de afiliados"
 };
-const ORDER: StepKey[] = ["entry", "course", "city", "format", "grade", "doubts", "bolsa", "proposal", "enroll"];
+const ORDER: StepKey[] = ["entry", "objective", "course", "city", "format", "grade", "doubts", "bolsa", "proposal", "ficha", "taxa", "comprovante", "enroll", "comunidade", "afiliado"];
+const OPTIONAL: StepKey[] = ["objective", "afiliado"];
 
 const plain = (s: string): string => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
 // what the conversation says, in order: the lead's words fill what is missing; what the consultant sent marks what was already done
-export const readConversation = async (ticket: Ticket, slots: Slots, leadCpf: string | null): Promise<{ slots: Slots; asked: Set<StepKey>; proposalSent: boolean }> => {
+export const readConversation = async (ticket: Ticket, slots: Slots, leadCpf: string | null): Promise<{ slots: Slots; asked: Set<StepKey>; got: Set<StepKey>; proposalSent: boolean }> => {
   const out: Slots = { ...slots };
   const asked = new Set<StepKey>();
+  // what the lead already gave (the documents and data of the form, the proof of payment, the objective)
+  const got = new Set<StepKey>();
   let proposalSent = false;
   const rows = await Message.findAll({ where: { ticketId: ticket.id } as any, order: [["createdAt", "ASC"]], limit: 300, attributes: ["id", "body", "fromMe", "mediaType", "createdAt"] });
   let lastMine = "";
@@ -61,12 +72,25 @@ export const readConversation = async (ticket: Ticket, slots: Slots, leadCpf: st
       lastMine = text;
       const t = plain(text);
       if (/ate aqui voce compreendeu/.test(t)) { out.modalityExplained = true; out.courseExplained = true; }
-      if (/matriz curricular|grade do curso|\.pdf/.test(t) || (m.mediaType === "document" && /pdf/.test(t))) out.gradeSent = true;
+      const isProposal = /\bproposta\b/.test(t);
+      if (!isProposal && (/matriz curricular|grade do curso|\.pdf/.test(t) || (m.mediaType === "document" && /pdf/.test(t)))) out.gradeSent = true;
       if (/alguma duvida|tem algo que eu posso/.test(t)) asked.add("doubts");
       if (/nome completo e cpf|nome completo e o cpf/.test(t)) asked.add("bolsa");
-      if (/proposta/.test(t) && /(encaminhando|segue|enviei|anexo|valor de)/.test(t)) proposalSent = true;
+      if (isProposal && (/(encaminhando|segue|enviei|anexo|valor de)/.test(t) || /\.pdf|document/.test(t) || m.mediaType === "document")) proposalSent = true;
+      // the steps after the proposal, as the consultant does them
+      if (/\bobjetivo\b|concurso publico|prestar concurso|formacao superior rapida/.test(t) && /\?/.test(text)) asked.add("objective");
+      if (/ficha de matricula|nome completo da mae/.test(t)) asked.add("ficha");
+      if (/\b(pix|boleto)\b/.test(t) && /taxa|matricula|copia e cola/.test(t)) asked.add("taxa");
+      if (/comunidade dos alunos|tutoria (vai|entra|ira) (entrar )?em contato|tutoria entra em contato/.test(t)) asked.add("comunidade");
+      if (/afiliad|programa de indicac|indicar (um|uma|alguem)/.test(t)) asked.add("afiliado");
       continue;
     }
+    // what the lead sends after those steps: documents and photos count (the file is not read here)
+    const lead = plain(text);
+    const hasFile = m.mediaType === "image" || m.mediaType === "document" || /\.(pdf|jpe?g|png)\b/.test(lead);
+    if (asked.has("ficha") && (hasFile || /\b(rg|cnh|nascimento|endereco|cep|nome da mae|mae)\b/.test(lead))) got.add("ficha");
+    if (asked.has("taxa") && (hasFile || /\b(pix feito|paguei|pago|comprovante|transferi)\b/.test(lead))) got.add("comprovante");
+    if (asked.has("objective") || /\b(concurso|segunda graduacao|formacao rapida|mudar de area|crescer na carreira|promocao|abrir (um )?negocio)\b/.test(lead)) got.add("objective");
     if (!text.trim() || /^\[/.test(text)) continue;
     // eslint-disable-next-line no-await-in-loop
     const found = await detectFromText(text).catch(() => ({} as Record<string, any>));
@@ -84,7 +108,7 @@ export const readConversation = async (ticket: Ticket, slots: Slots, leadCpf: st
     if (asked.has("doubts") && /\b(nao tenho (mais )?(nenhuma )?duvida|sem duvidas?|pode (prosseguir|continuar|seguir))\b/.test(plain(text))) out.doubtsOver = true;
   }
   if (leadCpf) out.cpfGiven = true;
-  return { slots: out, asked, proposalSent };
+  return { slots: out, asked, got, proposalSent };
 };
 
 const first = (name: string | null | undefined): string => String(name || "").trim().split(/\s+/)[0] || "";
@@ -117,7 +141,13 @@ const textFor = async (key: StepKey, s: Slots, leadName: string): Promise<{ text
       const name = first(s.fullName || leadName);
       return { text: `${name ? `${name}, c` : "C"}onforme combinamos, estou te encaminhando a proposta da sua bolsa${s.courseName ? ` para o curso de *${s.courseName}*` : ""}.`, action: "proposal" };
     }
-    case "enroll": return { text: "Se estiver tudo certo para você, me confirma que eu já te passo o próximo passo para realizarmos a matrícula.", action: "enroll" };
+    case "objective": return { text: s.courseName ? `Para eu te orientar certinho e não te indicar nada fora do seu objetivo: você está buscando o curso de *${s.courseName}* pensando em prestar concurso público, em crescer na carreira ou mais para ter uma formação superior e usar profissionalmente?` : "Para eu te orientar certinho e não te indicar nada fora do seu objetivo: você está buscando essa graduação pensando em prestar concurso público ou mais para ter uma formação superior e usar profissionalmente?", action: null };
+    case "ficha": return { text: "Perfeito! Para dar andamento à matrícula, preciso da foto do seu RG ou CNH (frente e verso) e que você preencha os dados abaixo.\n\nFicha de matrícula (fotos ou PDFs legíveis)\n\n* Nome completo:\n* Data de nascimento:\n* CPF:\n* RG (nº, órgão emissor, UF):\n* Nome completo da mãe:\n* Endereço completo (rua, nº, bairro, cidade, CEP):\n* Telefone celular atualizado:\n* E-mail pessoal:\n* Histórico do Ensino Médio (caso já tenha em mãos)", action: null };
+    case "taxa": return { text: "Vou te enviar agora o boleto da taxa de matrícula e o código Pix copia e cola. Assim que você realizar o pagamento, me envia o comprovante para eu dar baixa junto ao setor financeiro, por gentileza.", action: null };
+    case "comprovante": return { text: "Recebi, obrigado! Estou prosseguindo com a sua matrícula e já te aviso assim que ela for confirmada.", action: null };
+    case "enroll": return { text: `${first(s.fullName || leadName) ? `${first(s.fullName || leadName)}, s` : "S"}ua matrícula${s.courseName ? ` em *${s.courseName}*` : ""} foi confirmada com sucesso! Parabéns por essa nova etapa. Seja muito bem-vindo(a) à Cruzeiro do Sul Virtual!`, action: "enroll" };
+    case "comunidade": return { text: "Agora a tutoria vai entrar em contato com você para auxiliar no primeiro acesso, na ambientação da plataforma e no início das disciplinas. Você também já pode entrar na Comunidade dos Alunos, onde enviamos os principais avisos e orientações durante a formação.", action: null };
+    case "afiliado": return { text: "Se você conhece alguém que também queira estudar, pode participar do nosso programa de afiliados: quando a pessoa indicada realizar a matrícula e pagar a primeira mensalidade, você recebe uma comissão. Posso te explicar como funciona?", action: null };
     default: return null;
   }
 };
@@ -141,10 +171,12 @@ export const copilotOf = async (ticket: Ticket): Promise<Copilot> => {
   const lead = ticket.contactId ? await Lead.findOne({ where: { contactId: ticket.contactId }, attributes: ["id", "name", "cpf", "enrolledAt", "courseId"] }) : null;
   if (!lead) return { hasLead: false, leadId: null, steps: [], current: null, course: null, suggestion: null };
   const state = await loadState(lead.id);
-  const { slots, asked, proposalSent } = await readConversation(ticket, state.slots, lead.cpf || null);
+  const { slots, asked, got, proposalSent } = await readConversation(ticket, state.slots, lead.cpf || null);
   const proposals = await Proposal.count({ where: { leadId: lead.id } as any }).catch(() => 0);
+  const enrolled = !!lead.enrolledAt;
   const done: Record<StepKey, boolean> = {
     entry: !!slots.entryType && slots.entryType !== "unknown",
+    objective: got.has("objective") || asked.has("objective"),
     course: !!(slots.courseName || slots.courseId),
     city: !!(slots.city || slots.poloId),
     format: !!(slots.modalityExplained || slots.mecExplained),
@@ -152,10 +184,17 @@ export const copilotOf = async (ticket: Ticket): Promise<Copilot> => {
     doubts: !!(slots.doubtsOver || asked.has("bolsa") || (slots.fullName && slots.cpfGiven)),
     bolsa: !!(slots.fullName && slots.cpfGiven),
     proposal: proposals > 0 || proposalSent,
-    enroll: !!lead.enrolledAt
+    // the steps after the proposal are the consultant's: the form asked, the fee sent, the proof received, the enrollment confirmed, the tutoring and the community told
+    ficha: enrolled || asked.has("ficha"),
+    taxa: enrolled || asked.has("taxa"),
+    comprovante: enrolled || got.has("comprovante"),
+    enroll: enrolled,
+    comunidade: asked.has("comunidade"),
+    afiliado: asked.has("afiliado")
   };
-  const steps: CopilotStep[] = ORDER.map(key => ({ key, label: STEP_LABEL[key], done: done[key] }));
-  const current = steps.find(x => !x.done)?.key || null;
+  const steps: CopilotStep[] = ORDER.map(key => ({ key, label: STEP_LABEL[key], done: done[key], optional: OPTIONAL.includes(key) }));
+  // the process does not wait for the optional steps: the next one is the first undone step that is not optional (the optional one only when nothing else is left)
+  const current = (steps.find(x => !x.done && !x.optional) || steps.find(x => !x.done))?.key || null;
   const next = current ? await textFor(current, slots, lead.name) : null;
   return { hasLead: true, leadId: lead.id, steps, current, course: await courseRuleOf(slots), suggestion: next ? { text: next.text, action: next.action } : null };
 };

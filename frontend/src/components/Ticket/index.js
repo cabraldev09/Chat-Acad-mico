@@ -199,7 +199,8 @@ const HandoffPanel = ({ ticket }) => {
   const lines = (summary && summary.lines) || [];
   const steps = (copilot && copilot.steps) || [];
   const next = copilot && copilot.suggestion;
-  const doneCount = steps.filter((x) => x.done).length;
+  const required = steps.filter((x) => !x.optional);
+  const doneCount = required.filter((x) => x.done).length;
   const btn = { border: 0, borderRadius: 8, padding: "6px 12px", fontFamily: "inherit", fontWeight: 600, cursor: "pointer", fontSize: 13 };
   const main = { ...btn, background: "#0f766e", color: "#fff" };
   const ghost = { ...btn, background: "transparent", color: "#0f766e", border: "1px solid #0f766e" };
@@ -208,7 +209,7 @@ const HandoffPanel = ({ ticket }) => {
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
         <Bot size={16} color="#0f766e" />
         <b style={{ color: "#0f766e" }}>Copiloto</b>
-        {steps.length > 0 && <span style={{ opacity: 0.75 }}>· passo {Math.min(doneCount + 1, steps.length)} de {steps.length}</span>}
+        {steps.length > 0 && <span style={{ opacity: 0.75 }}>· passo {Math.min(doneCount + 1, required.length)} de {required.length}</span>}
         {summary && summary.why && <span style={{ opacity: 0.75 }}>· veio para você porque {summary.why}</span>}
         <span style={{ flex: 1 }} />
         <button type="button" onClick={() => setOpen((v) => !v)} style={{ ...btn, background: "transparent", color: "#0f766e" }}>{open ? "Esconder" : "Ver copiloto"}</button>
@@ -225,7 +226,7 @@ const HandoffPanel = ({ ticket }) => {
             const current = copilot.current === st.key;
             return (
               <li key={st.key} title={st.label} style={{ padding: "2px 9px", borderRadius: 999, fontSize: 12, fontWeight: current ? 700 : 500, border: `1px solid ${current ? "#0f766e" : "rgba(15,118,110,.25)"}`, background: current ? "#0f766e" : st.done ? "rgba(15,118,110,.14)" : "transparent", color: current ? "#fff" : "inherit", opacity: st.done || current ? 1 : 0.65 }}>
-                {st.done ? "✓ " : ""}{st.label}
+                {st.done ? "✓ " : ""}{st.label}{st.optional && !st.done ? " (opcional)" : ""}
               </li>
             );
           })}
