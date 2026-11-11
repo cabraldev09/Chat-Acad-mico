@@ -23,13 +23,17 @@ import LearningTab from "./LearningTab";
 import RegulationsDialog from "./RegulationsDialog";
 import AttendsPanel from "./AttendsPanel";
 import ProcessEvalPanel from "./ProcessEvalPanel";
+import ScriptPanel from "./ScriptPanel";
+import CoursesPanel from "./CoursesPanel";
 import TestTab from "./TestTab";
 import TrainTab from "./TrainTab";
 import UsageTab from "./UsageTab";
 
-const SECTIONS = ["inicio", "treinar", "conhecimento", "testar", "resultados", "ajustes"];
-// the old addresses keep working
-const ALIAS = { ensinar: "conhecimento" };
+// THREE STEPS and a menu: the process (Roteiro), the courses and what the agent knows (Cursos e regras), and to talk to it, correct it and teach it (Testar e ensinar).
+// Numbers, health and settings are one menu away (Mais). The old addresses keep working.
+const SECTIONS = ["roteiro", "cursos", "testar", "mais"];
+const ALIAS = { ensinar: "cursos", inicio: "roteiro", treinar: "testar", conhecimento: "cursos", resultados: "mais", ajustes: "mais" };
+const MORE_OF = { resultados: "resultados", ajustes: "ajustes" };
 
 const useStyles = makeStyles((theme) => ({
   page: { flex: 1, overflowY: "auto", overflowX: "hidden", ...theme.scrollbarStyles, padding: theme.spacing(0.5, 0.5, 4) },
@@ -73,11 +77,13 @@ const Central = () => {
   const [costs, setCosts] = useState(false);
   const [adv, setAdv] = useState(false);
   const [dialog, setDialog] = useState({ name: null, tab: 0 });
+  const [more, setMore] = useState(() => MORE_OF[new URLSearchParams(window.location.search).get("secao")] || "saude");
+  const [mode, setMode] = useState("testar");
 
   const section = useMemo(() => {
     const raw = new URLSearchParams(location.search).get("secao");
     const s = ALIAS[raw] || raw;
-    return SECTIONS.includes(s) ? s : "inicio";
+    return SECTIONS.includes(s) ? s : "roteiro";
   }, [location.search]);
   const go = useCallback((key, extra = {}) => {
     history.replace(`/ai-agents/${agentId}/central?secao=${ALIAS[key] || key}`);
@@ -89,18 +95,24 @@ const Central = () => {
     api.get("/ai-agents").then(({ data }) => setAgent((data || []).find((a) => a.id === agentId) || null)).catch(() => undefined);
   }, [agentId, history]);
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { if (section === "inicio") load(); }, [section, load]);
+  useEffect(() => { if (section === "roteiro" || section === "mais") load(); }, [section, load]);
+
+  // the old addresses that point at the results or the settings open that part of the menu
+  useEffect(() => {
+    const raw = new URLSearchParams(location.search).get("secao");
+    if (MORE_OF[raw]) setMore(MORE_OF[raw]);
+  }, [location.search]);
 
   const toggle = async () => {
     try { await api.put(`/ai-agents/${agentId}`, { active: !d.agent.active }); load(); } catch (e) { toastError(e); }
   };
-  const teachAbout = (mode, topic = "") => { setKb((k) => ({ mode, topic, n: k.n + 1 })); go("conhecimento", { teach: "conteudo" }); setAddMenu(null); };
+  const teachAbout = (mode, topic = "") => { setKb((k) => ({ mode, topic, n: k.n + 1 })); go("cursos", { teach: "conteudo" }); setAddMenu(null); };
   const closeDialog = () => { setDialog({ name: null, tab: 0 }); load(); };
 
   // each check of the health says where it is fixed
   const fix = (how) => {
     if (how === "ligar") return toggle();
-    if (how === "roteiro") return d.flow ? history.push(`/ai-agents/blocos/${d.flow.id}`) : go("ajustes");
+    if (how === "roteiro") return d.flow ? history.push(`/ai-agents/blocos/${d.flow.id}`) : (setMore("ajustes"), go("mais"));
     if (how === "polos") return history.push("/polos");
     if (how === "conexoes") return history.push("/connections");
     if (how === "grades") return history.push("/grades");
@@ -114,8 +126,8 @@ const Central = () => {
   const failing = d.health.filter((h) => !h.ok);
   const todo = [
     ...failing.map((h) => ({ key: `h-${h.key}`, title: h.label, text: h.detail, run: () => fix(h.fix) })),
-    ...(d.pending.waiting ? [{ key: "waiting", title: `${d.pending.waiting} pergunta${d.pending.waiting === 1 ? "" : "s"} sem resposta`, text: "O agente não soube responder. A sua resposta vira conhecimento dele.", run: () => go("conhecimento", { teach: "perguntas" }) }] : []),
-    ...(d.pending.toReview ? [{ key: "review", title: `${d.pending.toReview} resposta${d.pending.toReview === 1 ? "" : "s"} da equipe para aprovar`, text: "A equipe já respondeu. Aprove para o agente aprender.", run: () => go("conhecimento", { teach: "perguntas" }) }] : []),
+    ...(d.pending.waiting ? [{ key: "waiting", title: `${d.pending.waiting} pergunta${d.pending.waiting === 1 ? "" : "s"} sem resposta`, text: "O agente não soube responder. A sua resposta vira conhecimento dele.", run: () => go("cursos", { teach: "perguntas" }) }] : []),
+    ...(d.pending.toReview ? [{ key: "review", title: `${d.pending.toReview} resposta${d.pending.toReview === 1 ? "" : "s"} da equipe para aprovar`, text: "A equipe já respondeu. Aprove para o agente aprender.", run: () => go("cursos", { teach: "perguntas" }) }] : []),
     ...d.topics.filter((t) => !t.ok).slice(0, 3).map((t) => ({ key: `t-${t.topic}`, title: `Ensinar sobre ${t.label}`, text: "Hoje o agente diz que vai confirmar. Envie um texto ou PDF.", run: () => teachAbout(0, t.topic) })),
   ];
   const waiting = d.questions.filter((q) => q.status !== "para_revisar").slice(0, 4);
@@ -135,8 +147,8 @@ const Central = () => {
     { key: "chave", icon: Key, name: "Chave de IA", text: "A chave usada pelo agente para responder (Claude ou GPT).", run: () => setDialog({ name: "chave" }) },
   ];
 
-  const tabLabels = { inicio: "Início", treinar: "Treinar", conhecimento: "Conhecimento", testar: "Testar", resultados: "Resultados", ajustes: "Ajustes" };
-  const tabs = SECTIONS.map((k) => [k, tabLabels[k], k === "conhecimento" ? d.pending.waiting + d.pending.toReview : 0]);
+  const tabLabels = { roteiro: "1. Roteiro", cursos: "2. Cursos e regras", testar: "3. Testar e ensinar", mais: "Mais" };
+  const tabs = SECTIONS.map((k) => [k, tabLabels[k], k === "cursos" ? d.pending.waiting + d.pending.toReview : 0]);
   const readyPct = d.health.length ? Math.round(((d.health.length - failing.length) / d.health.length) * 100) : 100;
 
   return (
@@ -172,17 +184,9 @@ const Central = () => {
 
         <div style={{ marginBottom: 20, overflowX: "auto" }}><Segmented items={tabs} value={section} onChange={(k) => go(k)} label="Seções do agente" /></div>
 
-        {section === "inicio" && (
-          <>
-            <div className={`${classes.stats} ui-stagger`}>
-              <StatCard label="conversas nos últimos 7 dias" value={d.week.conversations} />
-              <StatCard label="chegaram a qualificados" value={d.week.qualifiedRate === null ? "—" : `${d.week.qualifiedRate}%`} />
-              <StatCard label="passaram para a equipe" value={d.week.handedOver} />
-              <StatCard label="perguntas sem resposta" value={d.week.unanswered} tone={d.week.unanswered ? "#d97706" : undefined} onClick={d.week.unanswered ? () => go("conhecimento", { teach: "perguntas" }) : undefined} />
-              <StatCard label="pronto para atender" value={`${readyPct}%`} hint={failing.length ? `${failing.length} a resolver` : "tudo em dia"} tone={readyPct === 100 ? "#16a34a" : undefined} />
-            </div>
-            <div className={classes.cols}>
-              <div style={{ display: "grid", gap: 16 }}>
+        {section === "roteiro" && (
+          <div style={{ display: "grid", gap: 16 }}>
+            {commercial && <ScriptPanel agentId={agentId} onTeach={() => { setMode("ensinar"); go("testar"); }} />}
                 <Section title="O que fazer agora" hint="O mais importante primeiro.">
                   {todo.length === 0 ? (
                     <div className={classes.allGood}><CheckCircle2 size={20} />Tudo em dia. O agente tem o que precisa para atender.</div>
@@ -194,46 +198,37 @@ const Central = () => {
                     </button>
                   ))}
                 </Section>
-                <Section title="Treine o agente" hint="O jeito mais rápido de deixar ele igual ao seu melhor atendente.">
-                  <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}>
-                    <button type="button" className="ui-card ui-lift ui-press" onClick={() => go("treinar")} style={{ padding: 14, textAlign: "left", font: "inherit", color: "inherit", display: "grid", gap: 4 }}>
-                      <MessageSquare size={20} style={{ color: "#0693e3" }} /><b>Conversar e ensinar</b><span className={classes.hint}>Dê ordens e veja ele responder.</span>
-                    </button>
-                    <button type="button" className="ui-card ui-lift ui-press" onClick={() => go("treinar")} style={{ padding: 14, textAlign: "left", font: "inherit", color: "inherit", display: "grid", gap: 4 }}>
-                      <FileUp size={20} style={{ color: "#7c3aed" }} /><b>Enviar PDF ou conversa</b><span className={classes.hint}>Aprende o estilo e o passo a passo.</span>
-                    </button>
-                  </div>
-                </Section>
                 {waiting.length > 0 && (
                   <Section title="Perguntas que o agente não soube responder">
                     {waiting.map((q) => (
                       <div key={q.question} className={classes.question}>
                         <HelpCircle size={18} style={{ opacity: 0.6, flex: "none" }} />
                         <div style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere", fontSize: 14 }}>{q.question}{q.count > 1 && <div className={classes.hint}>perguntada {q.count} vezes</div>}</div>
-                        <Button size="small" variant="outlined" onClick={() => go("conhecimento", { teach: "perguntas" })} style={{ borderRadius: 10 }}>Responder</Button>
+                        <Button size="small" variant="outlined" onClick={() => go("cursos", { teach: "perguntas" })} style={{ borderRadius: 10 }}>Responder</Button>
                       </div>
                     ))}
                   </Section>
                 )}
-              </div>
-              <Section title="Saúde do agente" hint="Tudo o que precisa estar certo para ele atender sozinho.">
-                {d.health.map((h) => (
-                  <div key={h.key} className={classes.check}>
-                    {h.ok ? <CheckCircle2 size={18} className={classes.ok} /> : <AlertTriangle size={18} className={classes.warn} />}
-                    <div style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 600 }}>{h.label}</div>
-                    {h.ok ? <span className={classes.hint}>Ok</span> : <button type="button" className={classes.link} onClick={() => fix(h.fix)}>Resolver</button>}
-                  </div>
-                ))}
+          </div>
+        )}
+
+        {section === "testar" && (
+          <>
+            <div style={{ marginBottom: 16 }}><Segmented items={[["testar", "Conversar e testar"], ["ensinar", "Ensinar"]]} value={mode} onChange={setMode} label="Testar e ensinar" /></div>
+            {mode === "testar" ? (
+              <Section title="Conversar com o agente" hint="Converse como se fosse um lead. Nada é enviado a ninguém e nenhum lead é criado. Errou? Vá em Ensinar, ou salve a conversa como treino.">
+                <TestTab agentId={agentId} flowId={d.flow ? d.flow.id : null} commercial={commercial} />
               </Section>
-              {commercial && <ProcessEvalPanel agentId={agentId} />}
-            </div>
+            ) : (
+              <TrainTab agentId={agentId} flowId={d.flow ? d.flow.id : null} commercial={commercial} goRoteiro={(flowId) => history.push(`/ai-agents/blocos/${flowId}`)} />
+            )}
           </>
         )}
 
-        {section === "treinar" && <TrainTab agentId={agentId} flowId={d.flow ? d.flow.id : null} commercial={commercial} goRoteiro={(flowId) => history.push(`/ai-agents/blocos/${flowId}`)} />}
 
-        {section === "conhecimento" && (
+        {section === "cursos" && (
           <>
+            {commercial && <div style={{ marginBottom: 16 }}><CoursesPanel onEditRules={() => setDialog({ name: "mec" })} onGrades={() => history.push("/grades")} /></div>}
             <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 16 }}>
               <Segmented items={[["perguntas", "Perguntas sem resposta", d.pending.waiting + d.pending.toReview], ["conteudo", "O que o agente sabe"]]} value={teach} onChange={setTeach} label="Conhecimento" />
               <span style={{ flex: 1 }} />
@@ -262,13 +257,35 @@ const Central = () => {
           </>
         )}
 
-        {section === "testar" && (
-          <Section title="Testar o agente" hint="Converse como se fosse um lead. Nada é enviado a ninguém e nenhum lead é criado. Gostou da conversa? Salve como treino.">
-            <TestTab agentId={agentId} flowId={d.flow ? d.flow.id : null} commercial={commercial} />
-          </Section>
+        {section === "mais" && (
+          <div style={{ marginBottom: 16 }}><Segmented items={[["saude", "Saúde"], ["resultados", "Resultados"], ["ajustes", "Ajustes"]]} value={more} onChange={setMore} label="Mais" /></div>
         )}
 
-        {section === "resultados" && (
+        {section === "mais" && more === "saude" && (
+          <>
+            <div className={`${classes.stats} ui-stagger`}>
+              <StatCard label="conversas nos últimos 7 dias" value={d.week.conversations} />
+              <StatCard label="chegaram a qualificados" value={d.week.qualifiedRate === null ? "—" : `${d.week.qualifiedRate}%`} />
+              <StatCard label="passaram para a equipe" value={d.week.handedOver} />
+              <StatCard label="perguntas sem resposta" value={d.week.unanswered} tone={d.week.unanswered ? "#d97706" : undefined} onClick={d.week.unanswered ? () => go("cursos", { teach: "perguntas" }) : undefined} />
+              <StatCard label="pronto para atender" value={`${readyPct}%`} hint={failing.length ? `${failing.length} a resolver` : "tudo em dia"} tone={readyPct === 100 ? "#16a34a" : undefined} />
+            </div>
+            <div className={classes.cols}>
+              <Section title="Saúde do agente" hint="Tudo o que precisa estar certo para ele atender sozinho.">
+                {d.health.map((h) => (
+                  <div key={h.key} className={classes.check}>
+                    {h.ok ? <CheckCircle2 size={18} className={classes.ok} /> : <AlertTriangle size={18} className={classes.warn} />}
+                    <div style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 600 }}>{h.label}</div>
+                    {h.ok ? <span className={classes.hint}>Ok</span> : <button type="button" className={classes.link} onClick={() => fix(h.fix)}>Resolver</button>}
+                  </div>
+                ))}
+              </Section>
+              {commercial && <ProcessEvalPanel agentId={agentId} />}
+            </div>
+          </>
+        )}
+
+        {section === "mais" && more === "resultados" && (
           <>
             {commercial && <QualityPanel agentId={agentId} />}
             {commercial ? <CommercialTab agentId={agentId} /> : <p className={classes.hint}>Os números de funil são do agente comercial. Veja abaixo o uso da IA por este agente.</p>}
@@ -279,7 +296,7 @@ const Central = () => {
           </>
         )}
 
-        {section === "ajustes" && (() => {
+        {section === "mais" && more === "ajustes" && (() => {
           const persona = (agent && agent.persona) || {};
           const who = String(persona.assistantName || "").trim();
           const name = who || "Estela";
