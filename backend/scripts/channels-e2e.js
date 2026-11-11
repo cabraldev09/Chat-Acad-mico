@@ -4075,10 +4075,11 @@ const postMeta = (id, payload, secret, badSig) => {
       // EA) a course the Portaria does not restrict (a tecnólogo of management) is EAD with no practical classes: the agent says the duration and the format, as the team does
       if (sql(`SELECT COUNT(*) FROM Courses WHERE name ILIKE '%empreendedorismo%'`) === "0") await http.post("/courses", { name: "Empreendedorismo", modality: "EAD", category: "Graduação - Cruzeiro", semesters: 4, monthlyFee: 300, active: true }, auth());
       sql(`UPDATE Courses SET semesters=4, active=true WHERE name ILIKE '%empreendedorismo%'`);
+      assert(sql(`SELECT COUNT(*) FROM Courses WHERE name ILIKE '%empreendedorismo%' AND active=true`) !== "0", `EA course missing: ${sql(`SELECT id||':'||name||':'||active FROM Courses WHERE name ILIKE '%empreend%'`)}`);
       const EA = "5511920000261";
       out = await say(EA, "wamid.ea-1", "Oi", t => t.some(x => /primeira graduação/.test(x)), "EA opening");
       out = await say(EA, "wamid.ea-2", "Sim, é a minha primeira graduação", t => t.some(x => /Qual curso/.test(x)), "EA course asked");
-      out = await say(EA, "wamid.ea-3", "Quero fazer o curso de Empreendedorismo", t => t.some(x => /Você reside em qual cidade\?/.test(x)), "EA city asked");
+      out = await say(EA, "wamid.ea-3", "Quero fazer o curso de Empreendedorismo", t => t.some(x => /Você reside em qual cidade\?/.test(x)), `EA city asked (${sql(`SELECT string_agg(id||':'||name||':'||active||':'||COALESCE(level,'-'), ' ; ') FROM Courses WHERE name ILIKE '%empreend%'`)})`);
       out = await say(EA, "wamid.ea-4", "Sou de Cidade Estela", t => t.some(x => /Até aqui você compreendeu\?/.test(x)), "EA course presented");
       const ea4 = out.join("\n");
       assert(/\*[^*]*Empreendedorismo\* tem duração de \*4 semestres\*, ou seja, aproximadamente \*2 anos\*/.test(ea4), `EA duration: ${ea4}`);
