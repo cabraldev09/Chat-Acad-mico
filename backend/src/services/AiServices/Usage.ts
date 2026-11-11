@@ -1,5 +1,6 @@
 import { Op, fn, col } from "sequelize";
 
+import { usageCounts } from "./Policy";
 import AiUsage from "../../models/AiUsage";
 import { dayBounds } from "../../helpers/AppTime";
 import { getSetting } from "../../helpers/AppSettings";
@@ -9,10 +10,9 @@ interface Counts {
   output_tokens?: number;
   cache_read_input_tokens?: number;
   cache_creation_input_tokens?: number;
+  prompt_tokens_details?: { cached_tokens?: number };
   prompt_tokens?: number;
   completion_tokens?: number;
-  // GPT counts the cached part inside prompt_tokens
-  prompt_tokens_details?: { cached_tokens?: number };
 }
 
 export const logUsage = async (a: {
@@ -26,8 +26,11 @@ export const logUsage = async (a: {
   latencyMs?: number | null;
   leadId?: number | null;
 }): Promise<void> => {
-  const u = a.usage || {};
-  const gptCached = u.prompt_tokens_details?.cached_tokens ?? 0;
+  const u = usageCounts(a.usage);
+  const price = await priceOf(a.model);
+
+  const regularInput = Math.max(0, u.input - u.cacheRead - u.cacheWrite);
+  const [readX, writeX] = a.model.startsWith("claude") ? [0.1, 1.25] : [0.5, 1];
   await AiUsage.create({
     agentId: a.agentId || null,
     ticketId: a.ticketId || null,
@@ -37,22 +40,23 @@ export const logUsage = async (a: {
     leadId: a.leadId || null,
     model: a.model,
     kind: a.kind,
-    // Claude reports what was NOT read from the cache as input; GPT includes it, so it is taken out to keep both on the same footing
-    inputTokens: u.input_tokens ?? Math.max(0, (u.prompt_tokens ?? 0) - gptCached),
-    outputTokens: u.output_tokens ?? u.completion_tokens ?? 0,
-    cacheReadTokens: u.cache_read_input_tokens ?? gptCached,
-    cacheWriteTokens: u.cache_creation_input_tokens ?? 0
-  } as any).catch(() => undefined);
+    inputTokens: regularInput,
+    outputTokens: u.output,
+    cacheReadTokens: u.cacheRead,
+    cacheWriteTokens: u.cacheWrite,
+    estimatedUsd: price ? ((regularInput + u.cacheRead * readX + u.cacheWrite * writeX) * price.in + u.output * price.out) / 1e6 : null
+  } as any);
+
 };
 
 // real calls only (the agent tester does not count against the daily limit)
 export const tokensToday = async (agentId: number): Promise<number> => {
   const row: any = await AiUsage.findOne({
-    attributes: [[fn("COALESCE", fn("SUM", col("inputTokens")), 0), "i"], [fn("COALESCE", fn("SUM", col("outputTokens")), 0), "o"]],
+    attributes: [[fn("COALESCE", fn("SUM", col("inputTokens")), 0), "i"], [fn("COALESCE", fn("SUM", col("outputTokens")), 0), "o"], [fn("COALESCE", fn("SUM", col("cacheReadTokens")), 0), "r"], [fn("COALESCE", fn("SUM", col("cacheWriteTokens")), 0), "w"]],
     where: { agentId, kind: { [Op.ne]: "test" }, createdAt: { [Op.gte]: dayBounds().start } },
     raw: true
   });
-  return Number(row?.i || 0) + Number(row?.o || 0);
+  return Number(row?.i || 0) + Number(row?.o || 0) + Number(row?.r || 0) + Number(row?.w || 0);
 };
 
 // Prices are not guessed: set "ai_price_<model>" = "entrada,saida" (US$ per million tokens) to see costs.

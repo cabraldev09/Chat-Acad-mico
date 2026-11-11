@@ -50,11 +50,16 @@ const CrmReminders = () => {
         onClick: () => history.push(`/crm?lead=${t.leadId}`),
       });
     });
+    socket.on("budgetAlert", (a) => {
+      if (user.profile !== "admin" && user.role !== "admin") return;
+      toast.warn(a.text, { toastId: `budget:${a.key}:${a.level}`, autoClose: false, onClick: () => history.push("/configuracoes?secao=operacao") });
+    });
     // a new lead nobody answered in time: the owner and the managers are warned
     socket.on("leadAlert", (a) => {
       const manager = user.profile === "admin" || user.role === "admin" || user.role === "coordenacao";
       if (!(a.ownerId === user.id || manager)) return;
-      toast.warn(<AlertToast title="Lead sem resposta" line={<><b>{prettyName(a.name)}</b> espera há {howLong(a.minutes)}</>} detail={a.ownerId === user.id ? "É seu: toque para abrir" : "Toque para abrir o lead"} />, {
+      toast.warn(<AlertToast title={a.escalated ? "Prazo escalado" : "Lead sem resposta"} line={<><b>{prettyName(a.name)}</b> espera há {howLong(a.minutes)}</>} detail={a.ownerId === user.id ? "É seu: toque para abrir" : "Toque para abrir o lead"} />, {
+
         autoClose: 20000,
         onClick: () => history.push(`/crm?lead=${a.leadId}`),
       });

@@ -258,6 +258,7 @@ const ReportDialog = ({ campaignId, onClose, onChanged }) => {
             <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
               <Chip label={`Total ${c.counters.total}`} />
               {chip("sent", "Enviadas", c.counters.sent)}
+              {!!c.counters.uncertain && chip("uncertain", "Conferir entrega", c.counters.uncertain)}
               {chip("pending", "Pendentes", c.counters.pending)}
               {chip("failed", "Falhas", c.counters.failed, c.counters.failed ? "#dc2626" : undefined)}
               {c.counters.cancelled > 0 && chip("cancelled", "Canceladas", c.counters.cancelled)}
@@ -266,6 +267,7 @@ const ReportDialog = ({ campaignId, onClose, onChanged }) => {
                 <Button size="small" variant="outlined" startIcon={<RotateCcw size={15} />} disabled={busy} onClick={retry}>Reenviar as falhas</Button>
               )}
               <Button size="small" variant="outlined" startIcon={<Download size={15} />} onClick={() => downloadFile(`/campaigns/${campaignId}/report`, { format: "csv", status: only || undefined }, `campanha-${campaignId}.csv`)}>Baixar planilha</Button>
+
             </div>
             {data.truncated && <Typography variant="caption" color="textSecondary" display="block" style={{ marginBottom: 6 }}>Mostrando os primeiros {data.shippings.length} envios. A planilha traz todos.</Typography>}
             <div className={classes.scroll}>
@@ -285,6 +287,7 @@ const ReportDialog = ({ campaignId, onClose, onChanged }) => {
                       <TableCell>{s.number}</TableCell>
                       <TableCell>{SHIP_STATUS[s.status] || s.status}</TableCell>
                       <TableCell>{s.errorText || s.error || (s.sentAt ? format(parseISO(s.sentAt), "dd/MM HH:mm:ss") : "—")}</TableCell>
+
                     </TableRow>
                   ))}
                   {data.shippings.length === 0 && <TableRow><TableCell colSpan={4} align="center">Nenhum envio nesta situação.</TableCell></TableRow>}

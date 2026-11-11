@@ -84,6 +84,24 @@ docker run --rm -v chat-academico-data:/data -v /opt/backups:/backup alpine \
 docker compose start api
 ```
 
+## Backup externo S3 e restauração verificada
+
+A cópia externa usa Restic com criptografia, compatível com S3 e serviços que oferecem a mesma API. No servidor, copie `deploy/vps/.backup.env.example` para `deploy/vps/.backup.env`, aplique `chmod 600` e informe endpoint/bucket, chave, segredo e uma senha exclusiva do repositório. Esse arquivo é ignorado pelo Git e não deve ser enviado pelo chat. Guarde a senha do Restic fora da VPS: sem ela, a restauração é impossível.
+
+Execute uma vez `bash offsite.sh init`. Depois, `backup.sh` identifica a versão do PostgreSQL e gera um dump do schema `public` usado pela aplicação (não inclui os serviços internos de Auth/Storage do Supabase). Um arquivo `.major` acompanha o dump para escolher a mesma versão na restauração. O script envia os dumps e mídias locais para o repositório externo e verifica sua integridade. A configuração da aplicação também é incluída na cópia criptografada; as credenciais do próprio backup devem ficar em um gerenciador de senhas separado. Se `.backup.env` não existir, o backup local continua e o log informa a ausência da cópia externa. Se o envio externo falhar, o script termina com erro. Histórico externo é mantido; acompanhe o espaço utilizado no bucket e defina retenção conforme a política da instituição.
+
+Comandos em `/opt/chat-academico/deploy/vps`:
+
+```bash
+bash offsite.sh snapshots
+bash offsite.sh check
+bash offsite.sh restore latest
+bash verify-backup.sh --offsite
+```
+
+A restauração externa fica em `/opt/backups/restored-offsite`, sem sobrescrever o sistema em execução. A verificação restaura o dump em um PostgreSQL descartável, sem rede, consulta leads e mensagens e valida a integridade do arquivo de mídias. Não troca o banco de produção. O instalador agenda essa verificação semanalmente às 5h de domingo; instalações existentes precisam atualizar a entrada de cron, além de publicar os scripts. Confira os logs em `/var/log/chat-academico-backup.log` e `/var/log/chat-academico-restore-check.log`.
+
+O atualizador também precisa consultar os checks do GitHub antes de publicar. Para repositório privado, configure `GH_TOKEN` no ambiente da API com permissão de leitura dos checks. Sem checks aprovados ou quando a consulta falhar, a atualização é adiada.
 ## Atualização automática pelo GitHub (repositório privado)
 
 Com o repositório privado, a VPS não consegue buscar o código sozinha. O arquivo `.github/workflows/deploy-vps.yml` resolve sem guardar senha na VPS:
@@ -99,3 +117,4 @@ cat ~/.ssh/deploy_chat_academico | pbcopy                    # cola em: GitHub >
 ```
 
 Depois, em **Actions > Atualizar a VPS > Run workflow** dá para atualizar quando quiser.
+

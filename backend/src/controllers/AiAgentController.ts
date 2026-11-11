@@ -15,6 +15,7 @@ import KbChunk from "../models/KbChunk";
 import AiUsage from "../models/AiUsage";
 import Ticket from "../models/Ticket";
 import Course from "../models/Course";
+
 import { addDocument, indexDocument, ensureLegacy, searchChunks } from "../services/AiServices/Kb";
 import AiLearning from "../models/AiLearning";
 import AiRule from "../models/AiRule";
@@ -35,6 +36,9 @@ import crypto from "crypto";
 import { approve, discard } from "../services/AiServices/Learning";
 import { respond } from "../services/AiServices/RunAiAgent";
 import { priceOf, tokensToday } from "../services/AiServices/Usage";
+import { boundedInt, policyOf } from "../services/AiServices/Policy";
+import { DEFAULT_SLOTS } from "../services/AiServices/Tools";
+
 import { isUrlSafe, safeRequest } from "../helpers/SafeUrl";
 import { dayBounds, shiftDays, getAppTz } from "../helpers/AppTime";
 import ChatFlow from "../models/ChatFlow";
@@ -76,6 +80,30 @@ const crud = makeCrud(AiAgent, {
   beforeSave: (data, req, existing) => {
     // how the agent stands before this save: the history keeps what the save changed (written in afterSave, before the answer goes out)
     if (existing) (req as any).agentBefore = snapshotOf(existing);
+    if (data.provider !== undefined && !["openai", "anthropic"].includes(data.provider)) throw new AppError("ERR_AI_PROVIDER_INVALID");
+    const limits: Record<string, [number, number, number]> = {
+      maxTokens: [350, 100, 1200], maxHistory: [12, 6, 24], waitSeconds: [4, 0, 15],
+      handoffAfterTurns: [14, 1, 100], dailyTokenCap: [300000, 0, 100000000]
+    };
+    for (const [key, [fallback, min, max]] of Object.entries(limits)) {
+      if (data[key] !== undefined) data[key] = boundedInt(data[key], fallback, min, max);
+    }
+    if (data.persona !== undefined) {
+      if (!data.persona || typeof data.persona !== "object" || Array.isArray(data.persona)) throw new AppError("ERR_AI_PERSONA_INVALID");
+      data.persona = { ...data.persona, ...policyOf(data.persona) };
+    }
+    if (data.slots !== undefined && data.slots !== null) {
+      if (!Array.isArray(data.slots) || data.slots.length > 10) throw new AppError("ERR_AI_SLOTS_INVALID");
+      const seen = new Set<string>();
+      data.slots = data.slots.map((slot: any) => {
+        const key = String(slot?.key || "");
+        const label = String(slot?.label || "").trim();
+        if (!/^[a-z][a-z0-9_]{0,39}$/.test(key) || !label || label.length > 150 || seen.has(key) || ["constructor", "prototype", "__proto__"].includes(key)) throw new AppError("ERR_AI_SLOTS_INVALID");
+        seen.add(key);
+        return { key, label, required: slot.required === true };
+      });
+    }
+
     if (isMasked(data.apiKey)) delete data.apiKey;
     // what the administrator adjusted for the commercial attendance: only known keys, each cleaned
     if (data.persona && typeof data.persona === "object" && data.persona.commercial !== undefined) data.persona = { ...data.persona, commercial: cleanCommercial(data.persona.commercial) };
@@ -413,7 +441,7 @@ export const test = async (req: Request, res: Response): Promise<Response> => {
         : result.unknown
         ? "(o agente não sabe responder: avisaria a equipe e guardaria a pergunta para você ensinar)"
         : result.text,
-      handoff: result.handoff,
+      handoff: result.handoff || !!result.qualified,
       unknown: result.unknown,
       sources: result.sources,
       tools: result.tools,
@@ -449,7 +477,12 @@ export const usage = async (req: Request, res: Response): Promise<Response> => {
     { replacements: { id: agent.id, since }, type: QueryTypes.SELECT }
   ).catch(() => []);
   const answered = Number(answeredRows[0]?.n || 0);
-  const price = await priceOf(agent.model);
+  const prices = new Map(await Promise.all([...new Set(rows.map(r => String(r.model)))].map(async model => [model, await priceOf(model)] as const)));
+  const costUsd = rows.length && rows.some(r => !prices.get(r.model)) ? null : rows.reduce((sum, row) => {
+    const price = prices.get(row.model);
+    return sum + (price ? ((Number(row.input || 0) + Number(row.cacheRead || 0) * (row.model.startsWith("claude") ? 0.1 : 0.5) + Number(row.cacheWrite || 0) * (row.model.startsWith("claude") ? 1.25 : 1)) * price.in + Number(row.output || 0) * price.out) / 1e6 : 0);
+  }, 0);
+
   const live = rows.filter(r => r.kind !== "test");
   const input = live.reduce((a, r) => a + Number(r.input || 0), 0);
   const output = live.reduce((a, r) => a + Number(r.output || 0), 0);
@@ -463,10 +496,16 @@ export const usage = async (req: Request, res: Response): Promise<Response> => {
     today: await tokensToday(agent.id),
     cap: agent.dailyTokenCap,
     total: { input, output, cacheRead, cacheWrite, cacheShare: promptTotal > 0 ? Math.round((cacheRead / promptTotal) * 100) : 0, calls: live.reduce((a, r) => a + Number(r.calls || 0), 0) },
+    test: {
+      input: rows.filter(r => r.kind === "test").reduce((sum, r) => sum + Number(r.input || 0), 0),
+      output: rows.filter(r => r.kind === "test").reduce((sum, r) => sum + Number(r.output || 0), 0),
+      calls: rows.filter(r => r.kind === "test").reduce((sum, r) => sum + Number(r.calls || 0), 0)
+    },
     conversations: answered,
     perDay: perDay.map(d => ({ day: d.day, input: Number(d.input), output: Number(d.output), calls: Number(d.calls) })),
     // only when the administrator typed the price of this model in Settings
-    costUsd: price ? Math.round(((input * price.in + cacheRead * price.in * readX + cacheWrite * price.in * writeX + output * price.out) / 1e6) * 100) / 100 : null
+    costUsd: costUsd === null ? null : Math.round(costUsd * 10000) / 10000
+
   });
 };
 

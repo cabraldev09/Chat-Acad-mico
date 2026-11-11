@@ -29,6 +29,14 @@ class User extends Model<User> {
   @Column
   id: number;
 
+  @Default(true)
+  @Column
+  acceptsNewTickets: boolean;
+
+  @Default(0)
+  @Column
+  maxOpenTickets: number;
+
   @Column
   name: string;
 

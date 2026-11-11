@@ -9,3 +9,5 @@ logs
 backend/public
 backend/secrets
 .git
+
+**/.backup.env

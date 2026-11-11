@@ -143,7 +143,8 @@ const withCounters = async (campaigns: Campaign[]) => {
     raw: true
   });
   return campaigns.map(c => {
-    const counters = { pending: 0, sent: 0, failed: 0, cancelled: 0, total: 0 };
+    const counters = { pending: 0, sending: 0, uncertain: 0, sent: 0, failed: 0, cancelled: 0, total: 0 };
+
     rows
       .filter(r => r.campaignId === c.id)
       .forEach(r => {

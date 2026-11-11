@@ -1,3 +1,4 @@
+import { refreshMediaUrl } from "../../services/media-access";
 import React, { useEffect, useRef, useState } from "react";
 import { makeStyles } from "@material-ui/core/styles";
 import { Download } from "lucide-react";
@@ -67,7 +68,7 @@ const FileCard = ({ url, name }) => {
         const [pdfjs, worker, { data }] = await Promise.all([
           import("pdfjs-dist/build/pdf.mjs"),
           import("pdfjs-dist/build/pdf.worker.min.mjs?url"),
-          api.get(url, { responseType: "blob" }),
+          refreshMediaUrl(url).then(fresh => api.get(fresh, { responseType: "blob" })),
         ]);
         pdfjs.GlobalWorkerOptions.workerSrc = worker.default;
         const buffer = await data.arrayBuffer();
@@ -106,7 +107,7 @@ const FileCard = ({ url, name }) => {
   const sub = [info && info.pages ? `${info.pages} ${info.pages === 1 ? "página" : "páginas"}` : null, info && info.size ? sizeOf(info.size) : null, ext || "arquivo"].filter(Boolean).join(" · ");
 
   return (
-    <a ref={box} className={classes.card} href={url} target="_blank" rel="noopener noreferrer" download={name}>
+    <a ref={box} className={classes.card} href={url} onClick={async (e) => { e.preventDefault(); const target = window.open("about:blank", "_blank"); if (target) target.opener = null; const fresh = await refreshMediaUrl(url); if (target) target.location.replace(fresh); }} target="_blank" rel="noopener noreferrer" download={name}>
       {isPdf && info && info.image && (
         <div className={classes.thumb} ref={canvasHost}>
           <img src={info.image} alt="" />

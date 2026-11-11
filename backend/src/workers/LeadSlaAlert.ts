@@ -1,84 +1,61 @@
 import { Op } from "sequelize";
-
 import Lead from "../models/Lead";
-import LeadStage from "../models/LeadStage";
+import Contact from "../models/Contact";
 import Ticket from "../models/Ticket";
 import Message from "../models/Message";
+import TicketEvent from "../models/TicketEvent";
 import { getIO } from "../libs/socket";
 import { getSetting } from "../helpers/AppSettings";
 import { getBusinessConfig, isBusinessNow, businessMinutes } from "../helpers/BusinessTime";
 import { addActivity } from "../services/CrmServices/LeadCore";
+import AutoAssignTicket from "../services/AutomationServices/AutoAssignTicket";
 import { logger } from "../utils/logger";
 
-// A new lead nobody has answered after X minutes (counted only inside working hours) raises one alert:
-// a note in the lead's history and a live notice for the owner and the managers.
+let running = false;
+let cursor = 0;
+// Every unanswered exchange is monitored, including after the first human reply.
 const tick = async (): Promise<void> => {
+  if (running) return;
+  running = true;
   try {
     const minutes = Number(await getSetting("crm_sla_minutes", "15"));
-    if (!minutes) return;
+    if (!(minutes > 0)) return;
+    const escalate = Math.max(minutes, Number(await getSetting("crm_escalation_minutes", "30")) || 30);
     const business = await getBusinessConfig();
     if (!isBusinessNow(business)) return;
-
     const now = new Date();
-    // candidates: open leads nobody has answered yet, with a message in the last 2 days
-    const leads = await Lead.findAll({
-      where: {
-        firstContactAt: null as any,
-        slaAlertedAt: null as any,
-        isHistorical: false,
-        lastInboundAt: { [Op.gte]: new Date(now.getTime() - 48 * 3600000) }
-      },
-      include: [{ model: LeadStage, as: "stage", where: { type: "open" }, attributes: ["id"], required: true }],
-      limit: 200
+    const tickets = await Ticket.findAll({
+      where: { id: { [Op.gt]: cursor }, status: { [Op.in]: ["pending", "open"] }, isHistorical: false, isGroup: false, archivedAt: null as any },
+      include: [{ model: Contact, as: "contact", where: { isStaff: false, noReply: false, kind: "person" } }],
+      order: [["id", "ASC"]], limit: 200
     });
-
-    for (const lead of leads) {
-      // The clock starts at the first message the person sent after our last reply (never at the moment the
-      // lead was registered, which can be much earlier), on the lead's current conversation.
-      // eslint-disable-next-line no-await-in-loop
-      const ticket = await Ticket.findOne({
-        where: { contactId: lead.contactId, isHistorical: false, status: { [Op.ne]: "closed" } },
-        order: [["updatedAt", "DESC"]],
-        attributes: ["id"]
+    cursor = tickets.length === 200 ? tickets[tickets.length - 1].id : 0;
+    for (const ticket of tickets) {
+      const lead = await Lead.findOne({ where: { contactId: ticket.contactId } });
+      if (!lead || ticket.contact?.optOut) continue;
+      if (!ticket.userId && !ticket.aiActive) await AutoAssignTicket(ticket);
+      const last = await Message.findOne({ where: { ticketId: ticket.id, isDeleted: false }, order: [["createdAt", "DESC"], ["id", "DESC"]] });
+      if (!last || last.fromMe) continue;
+      const reply = await Message.findOne({ where: { ticketId: ticket.id, fromMe: true, isDeleted: false }, order: [["createdAt", "DESC"]] });
+      const first = await Message.findOne({
+        where: { ticketId: ticket.id, fromMe: false, isDeleted: false, ...(reply ? { createdAt: { [Op.gt]: reply.createdAt } } : {}) },
+        order: [["createdAt", "ASC"], ["id", "ASC"]]
       });
-      if (!ticket) continue;
-      // eslint-disable-next-line no-await-in-loop
-      const lastReply = (
-        await Message.findOne({ where: { ticketId: ticket.id, fromMe: true }, order: [["createdAt", "DESC"]], attributes: ["createdAt"] })
-      )?.createdAt;
-      // eslint-disable-next-line no-await-in-loop
-      const firstWaiting = (
-        await Message.findOne({
-          // only the last 48 h count: a message from weeks ago, still unanswered, is not "a lead that just wrote"
-          where: { ticketId: ticket.id, fromMe: false, createdAt: { [Op.gt]: lastReply && new Date(lastReply) > new Date(now.getTime() - 48 * 3600000) ? lastReply : new Date(now.getTime() - 48 * 3600000) } },
-          order: [["createdAt", "ASC"]],
-          attributes: ["createdAt"]
-        })
-      )?.createdAt;
-      if (!firstWaiting) continue;
+      if (!first) continue;
+      const waited = businessMinutes(business, new Date(first.createdAt), now);
+      const escalated = waited >= escalate;
+      if (waited < minutes) continue;
+      const field = escalated ? "slaEscalatedMessageId" : "slaAlertedMessageId";
+      const [claimed] = await Ticket.update({ [field]: first.id }, { where: { id: ticket.id, [Op.or]: [{ [field]: { [Op.ne]: first.id } }, { [field]: { [Op.is]: null } }] } as any });
+      if (!claimed) continue;
+      const note = `${escalated ? "Prazo escalado para a gestão" : "Prazo de resposta excedido"}: ${Math.round(waited)} min aguardando resposta.${!ticket.userId && !ticket.aiActive ? " Sem atendente disponível: distribuir manualmente." : ""}`;
+      await TicketEvent.create({ ticketId: ticket.id, type: "sla", note });
+      await addActivity(lead.id, null, "sla", note);
+      getIO().emit("leadAlert", { leadId: lead.id, ticketId: ticket.id, name: lead.name, ownerId: ticket.userId || lead.ownerId, minutes: Math.round(waited), escalated });
 
-      const waited = businessMinutes(business, new Date(firstWaiting), now);
-      if (waited >= minutes) {
-        // eslint-disable-next-line no-await-in-loop
-        await lead.update({ slaAlertedAt: now });
-        // eslint-disable-next-line no-await-in-loop
-        await addActivity(lead.id, null, "sla", `Sem resposta há ${Math.round(waited)} min${business.enabled ? " de horário comercial" : ""}.`);
-        getIO().emit("leadAlert", {
-          leadId: lead.id,
-          name: lead.name,
-          ownerId: lead.ownerId,
-          minutes: Math.round(waited),
-          channel: lead.channel
-        });
-      }
     }
-  } catch (err) {
-    logger.warn(`Lead SLA alert tick failed: ${err}`);
-  }
+  } catch (err) { logger.warn(`Lead SLA alert: ${err}`); }
+  finally { running = false; }
 };
-
-export const startLeadSlaAlert = (): void => {
-  setInterval(tick, 60000);
-};
-
+export const startLeadSlaAlert = (): void => { setInterval(tick, 60000); };
 export { tick as runLeadSlaAlertOnce };

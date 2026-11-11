@@ -391,7 +391,7 @@ export const setOnboarding = async (lead: Lead, actorId: number, action: "start"
       await LeadTask.bulkCreate([
         { leadId: lead.id, userId: lead.ownerId, type: "whatsapp", title: "Pedir indicação a este aluno", dueAt: new Date(Date.now() + 30 * day) },
         { leadId: lead.id, userId: lead.ownerId, type: "whatsapp", title: "Oferecer nova graduação ou pós a este aluno", dueAt: new Date(Date.now() + 90 * day) }
-      ] as any);
+      ] as any, { individualHooks: true });
     }
     await dispatchWebhook("onboarding.done", { leadId: lead.id, lead: lead.name, tutorId: lead.onboardingTutorId });
     void notifyOnboarding(lead, "done");

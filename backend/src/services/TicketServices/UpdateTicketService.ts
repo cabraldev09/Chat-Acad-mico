@@ -1,3 +1,6 @@
+import Lead from "../../models/Lead";
+import LeadTask from "../../models/LeadTask";
+import { Op } from "sequelize";
 import CheckContactOpenTickets from "../../helpers/CheckContactOpenTickets";
 import SetTicketMessagesAsRead from "../../helpers/SetTicketMessagesAsRead";
 import { getIO } from "../../libs/socket";
@@ -124,6 +127,14 @@ const UpdateTicketService = async ({
     }
     await ticket.update({ status, queueId, userId }, { transaction });
   });
+
+  if (userId && userChanged && (ticket.segment || "sales") === "sales") {
+    const lead = await Lead.findOne({ where: { contactId: ticket.contactId } });
+    if (lead && !lead.wonAt && !lead.lostAt && lead.ownerId !== userId && (manual || !lead.ownerId)) {
+      await lead.update({ ownerId: userId });
+      await LeadTask.update({ userId }, { where: { leadId: lead.id, doneAt: null as any, automationKey: { [Op.ne]: null } } });
+    }
+  }
 
   // the triggers hear about what changed (never waits, never fails this update)
   if (status && status !== oldStatus) fire(status === "closed" ? "ticket.closed" : status === "open" ? "ticket.opened" : "ticket.pending", { ticketId: ticket.id, contactId: ticket.contactId });

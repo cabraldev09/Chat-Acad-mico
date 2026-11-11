@@ -42,6 +42,8 @@ if [ "${WANT_SHA:-}" != "" ] && [ "$(docker exec chat-academico-api-1 printenv G
   log "a versão ${WANT_SHA:0:7} já está no ar e saudável: nada a fazer"
   exit 0
 fi
+# Run the target revision's check gate in the existing Node container.
+git show "$REMOTE:deploy/vps/check-ci.js" | docker compose -f deploy/vps/docker-compose.yml --env-file deploy/vps/.env exec -T -e GH_TOKEN="${GH_TOKEN:-}" api node - "$REMOTE"
 log "atualizando ${LOCAL:0:7} -> ${REMOTE:0:7}"
 
 # 1) a migration in the new commit: a fresh dump of the database first (a failure is logged, and the update goes on only when a recent dump exists)

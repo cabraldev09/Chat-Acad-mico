@@ -29,16 +29,17 @@ const cleanSound = (input: any) => {
 };
 
 export const show = async (req: Request, res: Response): Promise<Response> => {
-  const user = await User.findByPk(req.user.id, { attributes: ["id", "preferences"] });
+  const user = await User.findByPk(req.user.id, { attributes: ["id", "preferences", "acceptsNewTickets", "maxOpenTickets"] });
   if (!user) throw new AppError("ERR_NO_PERMISSION", 403);
-  return res.json(parse(user.preferences));
+  return res.json({ ...parse(user.preferences), availability: { acceptsNewTickets: user.acceptsNewTickets, maxOpenTickets: user.maxOpenTickets } });
 };
 
 export const update = async (req: Request, res: Response): Promise<Response> => {
-  const user = await User.findByPk(req.user.id, { attributes: ["id", "preferences"] });
+  const user = await User.findByPk(req.user.id, { attributes: ["id", "preferences", "acceptsNewTickets", "maxOpenTickets"] });
   if (!user) throw new AppError("ERR_NO_PERMISSION", 403);
   const current = parse(user.preferences);
   if (req.body && req.body.sound !== undefined) current.sound = cleanSound(req.body.sound);
+  if (typeof req.body?.acceptsNewTickets === "boolean") await user.update({ acceptsNewTickets: req.body.acceptsNewTickets });
   await user.update({ preferences: JSON.stringify(current) });
-  return res.json(current);
+  return res.json({ ...current, availability: { acceptsNewTickets: user.acceptsNewTickets, maxOpenTickets: user.maxOpenTickets } });
 };

@@ -1,4 +1,6 @@
+import { deliver } from "../OutboundServices/Deliver";
 import { bodyOfMedia } from "../../helpers/MediaLabel";
+
 import { chatIdOf } from "../../helpers/ChatId";
 import fs from "fs";
 import path from "path";
@@ -22,7 +24,7 @@ interface Request {
   displayName?: string;
 }
 
-const SendWhatsAppMedia = async ({
+const sendMedia = async ({
   media,
   ticket,
   body,
@@ -142,5 +144,7 @@ const SendWhatsAppMedia = async ({
     throw new AppError("ERR_SENDING_WAPP_MSG");
   }
 };
+
+const SendWhatsAppMedia = (input: Request): Promise<ProviderMessage> => deliver(input.ticket, { automated: input.automated }, () => sendMedia(input));
 
 export default SendWhatsAppMedia;

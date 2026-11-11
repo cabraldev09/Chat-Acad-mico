@@ -12,6 +12,8 @@ import { COORD_AREAS, ROLES } from "../../helpers/Roles";
 import { disconnectUser } from "../../libs/socket";
 
 interface UserData {
+  acceptsNewTickets?: boolean;
+  maxOpenTickets?: number;
   email?: string;
   password?: string;
   name?: string;
@@ -83,6 +85,8 @@ const UpdateUserService = async ({
   }
 
   await user.update({
+    ...(typeof userData.acceptsNewTickets === "boolean" ? { acceptsNewTickets: userData.acceptsNewTickets } : {}),
+    ...(userData.maxOpenTickets !== undefined ? { maxOpenTickets: Math.min(1000, Math.max(0, Math.floor(Number(userData.maxOpenTickets) || 0))) } : {}),
     tokenVersion: user.tokenVersion + 1,
     email: cleanEmail,
     password,

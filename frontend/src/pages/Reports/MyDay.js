@@ -1,4 +1,7 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
+import { Button, FormControlLabel, Switch } from "@material-ui/core";
+import api from "../../services/api";
+import toastError from "../../errors/toastError";
 import { useHistory } from "react-router-dom";
 import { CalendarCheck2, Clock3, Target, Wallet } from "lucide-react";
 import { format, parseISO } from "date-fns";
@@ -11,10 +14,16 @@ const brl = (n) => Number(n || 0).toLocaleString("pt-BR", { style: "currency", c
 const MyDay = ({ data }) => {
   const c = useShared();
   const history = useHistory();
+  const [available, setAvailable] = useState(true);
+  useEffect(() => { api.get("/me/preferences").then(({ data: prefs }) => setAvailable(prefs.availability?.acceptsNewTickets !== false)).catch(toastError); }, []);
+  const toggle = async (value) => {
+    try { await api.put("/me/preferences", { acceptsNewTickets: value }); setAvailable(value); } catch (err) { toastError(err); }
+  };
   if (!data) return null;
   const sla = data.slaMinutes;
   return (
     <div className={c.stack} style={{ marginBottom: 20 }}>
+      <FormControlLabel control={<Switch color="primary" checked={available} onChange={(e) => toggle(e.target.checked)} />} label={available ? "Disponível para novos atendimentos" : "Recebimento de novos atendimentos pausado"} />
       <Insights items={data.insights} title="Seu dia" />
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>
         <div className={c.panel}>
@@ -43,6 +52,15 @@ const MyDay = ({ data }) => {
           </div>
         </div>
 
+        {[{ key: "proposals", title: "Propostas pendentes" }, { key: "payments", title: "Cobranças pendentes" }].map(({ key, title }) => (
+          <div className={c.panel} key={key}>
+            <h2 className={c.title}>{title}</h2>
+            {!(data.work?.[key] || []).length && <div className={c.sub}>Nenhuma pendência.</div>}
+            {(data.work?.[key] || []).slice(0, 8).map(item => <Button key={item.id} fullWidth style={{ justifyContent: "space-between", textTransform: "none" }} onClick={() => history.push(`/crm?lead=${item.leadId}`)}>
+              <span>{item.name}</span><span>{key === "proposals" ? item.viewed ? "Aberta sem decisão" : "Ainda não aberta" : brl(item.amount)}</span>
+            </Button>)}
+          </div>
+        ))}
         <div className={c.panel}>
           <h2 className={c.title}><Target size={16} /> Minha meta</h2>
           {data.goals.length === 0 && <div className={c.sub} style={{ marginTop: 8 }}>Você ainda não está em nenhuma meta do período.</div>}

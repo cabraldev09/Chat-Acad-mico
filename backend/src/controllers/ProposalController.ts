@@ -389,6 +389,7 @@ export const send = async (req: Request, res: Response): Promise<Response> => {
     }
   } catch (err) {
     fs.unlink(path.join(PUBLIC_DIR, file), () => undefined);
+    if (err instanceof AppError) throw err;
     throw new AppError("ERR_PROPOSAL_SEND_FAILED");
   }
 

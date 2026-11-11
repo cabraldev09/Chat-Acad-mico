@@ -1,4 +1,6 @@
+import { renewMediaElement } from "../../services/media-access";
 import { looksLikeFileName, shownText } from "../../utils/mediaLabel";
+
 import React, { useState, useEffect, useReducer, useRef, useCallback } from "react";
 import clsx from "clsx";
 import { makeStyles } from "@material-ui/core";
@@ -359,7 +361,7 @@ const REAL_NAME = (name) =>
     .replace(/\.(?=[A-Za-z0-9]{5}\.[^.]+$)(?=[A-Za-z0-9]*\d)(?=[A-Za-z0-9]*[A-Z])[A-Za-z0-9]{5}(\.[^.]+)$/, "$1");
 
 const fileNameOf = (m) => {
-  const last = (m.mediaUrl || "").split("/").pop() || "";
+  const last = (m.mediaUrl || "").split("?")[0].split("/").pop() || "";
   // a file called "Histórico 90%.pdf" is not valid URL text: decoding it throws, and that must not close the conversation
   let decoded = last;
   try { decoded = decodeURIComponent(last); } catch (e) { /* keep the name as it is */ }
@@ -369,7 +371,8 @@ const fileNameOf = (m) => {
   return bodyIsName ? m.body : fromUrl || "arquivo";
 };
 
-const isOnlyFileName = (m) => !m.body || looksLikeFileName(m.body, m.mediaUrl) || /^[\p{Extended_Pictographic}\s]*(Imagem|Vídeo|Áudio|Mensagem de voz|Documento|Figurinha|Foto)$/u.test(m.body) || m.body === (m.mediaUrl || "").split("/").pop() || /^\d{10,}\.\w{2,5}$/.test(m.body);
+const isOnlyFileName = (m) => !m.body || looksLikeFileName(m.body, m.mediaUrl) || /^[\p{Extended_Pictographic}\s]*(Imagem|Vídeo|Áudio|Mensagem de voz|Documento|Figurinha|Foto)$/u.test(m.body) || m.body === (m.mediaUrl || "").split("?")[0].split("/").pop() || /^\d{10,}\.\w{2,5}$/.test(m.body);
+
 
 const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex = 0, onMatches, live = false }) => {
   const classes = useStyles();
@@ -650,9 +653,9 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
         <div className={classes.media}>
           {m.isGif ? (
             // GIFs loop silently, like on WhatsApp
-            <video className={classes.video} src={m.mediaUrl} autoPlay loop muted playsInline />
+            <video onError={renewMediaElement} className={classes.video} src={m.mediaUrl} autoPlay loop muted playsInline />
           ) : (
-            <video className={classes.video} src={m.mediaUrl} controls preload="metadata" />
+            <video onError={renewMediaElement} className={classes.video} src={m.mediaUrl} controls preload="metadata" />
           )}
         </div>
       );

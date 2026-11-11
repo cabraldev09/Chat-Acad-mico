@@ -15,12 +15,14 @@ export const deliverStep = async (opts: {
   name: string;
   step: CampaignStep;
   index: number;
+  idempotencyKey?: string;
 }): Promise<string> => {
   const { campaign, whatsapp, number, name, step, index } = opts;
   const contact = await resolveOutboundContact(whatsapp, number, name || "");
   const body = renderCampaignText(step.body, { name: name || contact.name, number });
   const viaTemplate = usesTemplate(campaign, whatsapp);
   await SendToContact({
+    idempotencyKey: opts.idempotencyKey,
     contact,
     whatsapp,
     body,

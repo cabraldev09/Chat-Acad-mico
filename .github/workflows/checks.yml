@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  # the browser is only needed at runtime (inside the Docker image), not to check the code
+  # Build/unit jobs skip the browser download; integration locates Chrome or installs it explicitly.
   PUPPETEER_SKIP_DOWNLOAD: "true"
   PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: "true"
 
@@ -26,8 +26,15 @@ jobs:
       - name: Backend compila
         working-directory: backend
         run: |
-          npm install --legacy-peer-deps --no-audit --no-fund
+          npm ci --legacy-peer-deps --no-audit --no-fund
           ./node_modules/.bin/tsc --noEmit
+      - name: Regressões da IA e segurança
+        working-directory: backend
+        run: |
+          npm run test:ai
+          npm run test:security
+      - name: Bloqueio de publicação
+        run: node --test deploy/vps/check-ci.test.js
       - name: Tudo em português
         working-directory: backend
         run: node scripts/i18n-check.js
@@ -40,7 +47,7 @@ jobs:
       - name: Frontend compila
         working-directory: frontend
         run: |
-          npm install --legacy-peer-deps --no-audit --no-fund
+          npm ci --legacy-peer-deps --no-audit --no-fund
           npx vite build
       - name: Frontend sem leitura tardia de evento (erro "reading 'value'" no React 16)
         working-directory: frontend
@@ -87,6 +94,7 @@ jobs:
       CHROME_ARGS: "--no-sandbox --disable-setuid-sandbox"
       LOGIN_RATE_MAX: "100"
       NODE_ENV: test
+
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -97,6 +105,22 @@ jobs:
         run: |
           npm install --legacy-peer-deps --no-audit --no-fund
           npm run build
+      - name: Cliente PostgreSQL da mesma versão do serviço
+        if: matrix.script == 'channels-e2e.js'
+        env:
+          PG_TEST_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          client_dir="$RUNNER_TEMP/postgres-client"
+          mkdir -p "$client_dir"
+          cat > "$client_dir/psql" <<'CLIENT'
+          #!/usr/bin/env bash
+          exec docker exec -i "$PG_TEST_CONTAINER" "$(basename "$0")" "$@"
+          CLIENT
+          cp "$client_dir/psql" "$client_dir/pg_dump"
+          cp "$client_dir/psql" "$client_dir/pg_restore"
+          chmod +x "$client_dir/psql" "$client_dir/pg_dump" "$client_dir/pg_restore"
+          echo "PG_BIN=$client_dir" >> "$GITHUB_ENV"
+          echo "PG_TEST_CONTAINER=$PG_TEST_CONTAINER" >> "$GITHUB_ENV"
       - name: Testes de ponta a ponta (${{ matrix.nome }})
         working-directory: backend
         run: node scripts/${{ matrix.script }}
@@ -171,4 +195,5 @@ jobs:
         run: |
           echo "--- relatório ---"; cat /tmp/telas.txt || true
           echo "--- API (fim) ---"; tail -40 /tmp/api.log || true
+
 

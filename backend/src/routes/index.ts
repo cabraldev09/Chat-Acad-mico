@@ -1,3 +1,4 @@
+import operationsRoutes from "./operationsRoutes";
 import { Router } from "express";
 
 import userRoutes from "./userRoutes";
@@ -32,7 +33,9 @@ routes.get("/client-errors/summary", isAuth, isAdmin, ClientErrors.summary);
 routes.put("/client-errors/resolve", isAuth, isAdmin, ClientErrors.resolve);
 routes.delete("/client-errors", isAuth, isAdmin, ClientErrors.clear);
 
+routes.use(operationsRoutes);
 routes.use(analysisRoutes);
+
 routes.use(userRoutes);
 routes.use("/auth", authRoutes);
 routes.use(settingRoutes);

@@ -90,7 +90,11 @@ const dbConfig = require("../config/database");
 Sequelize.useCLS(transactionContext as any);
 const sequelize = new Sequelize(dbConfig);
 
+import OutboundDelivery from "../models/OutboundDelivery";
+import AiBudgetReservation from "../models/AiBudgetReservation";
+
 const models = [
+  OutboundDelivery, AiBudgetReservation,
   WebhookDelivery,
   User,
   Contact,

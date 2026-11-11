@@ -1,4 +1,5 @@
 import "./bootstrap";
+import privateFiles from "./middleware/privateFiles";
 import "reflect-metadata";
 import "express-async-errors";
 import express, { Request, Response, NextFunction } from "express";
@@ -98,11 +99,13 @@ app.use(express.json({ limit: "2mb" }));
 
 app.use(
   "/public",
+  privateFiles,
   express.static(uploadConfig.directory, {
     index: false,
     dotfiles: "deny",
     // names are unique per file, so browsers can keep pictures, voice notes and PDFs instead of fetching them again
-    maxAge: "7d",
+    maxAge: 0,
+    cacheControl: false,
     setHeaders: (res, filePath) => {
       // an uploaded file never runs in the origin of the API (it could use the session of whoever opens it): only pictures, sounds, videos and PDFs open
       // inside the browser; any other type (html, xhtml, svg, svgz, xml, js...) is a download

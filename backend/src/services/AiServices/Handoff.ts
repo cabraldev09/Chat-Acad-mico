@@ -57,26 +57,20 @@ export const handoffToHuman = async (ticketId: number, agent: AiAgent, reason: H
     note: `Atendimento com IA encerrado (${why ? WHY_TEXT[because] : REASON[reason]}).${question ? `\nPergunta que ficou sem resposta: “${question}”` : ""}${summary ? `\n${summary}` : ""}`.slice(0, 1000)
   } as any).catch(err => logger.warn(`handoff note not saved: ${err}`));
 
+  if (reason === "qualificado") await TicketEvent.create({ ticketId, type: "ai_qualified", note: "Lead qualificado pela IA e encaminhado para proposta." });
+
   const lead = await Lead.findOne({ where: { contactId: ticket.contactId } });
   if (lead) {
     await addActivity(lead.id, null, "system", `Atendimento com IA passou para a equipe (${REASON[reason]}).${summary ? `\n${summary}` : ""}`);
     // the commercial agent keeps the column and the tasks by its own rules (never back to "Qualificado"): here only the brief goes
     const commercial = await briefIfCommercial(ticketId, lead).catch(() => false);
-    if (complete && !commercial) {
+    if (complete && !commercial && !lead.wonAt && !lead.lostAt) {
+
       const stage = await LeadStage.findOne({ where: { name: "Qualificado" } });
       if (stage && lead.stageId !== stage.id) await changeStage(lead.id, stage.id, null).catch(() => undefined);
-      if (lead.ownerId) {
-        await LeadTask.create({
-          leadId: lead.id,
-          userId: lead.ownerId,
-          type: "outro",
-          title: "Continuar o atendimento: a IA já coletou os dados e preparou o resumo",
-          dueAt: new Date(Date.now() + 3600000)
-        } as any).catch(() => undefined);
-      }
     }
   }
 
-  // who takes it: the commercial team of the lead's polo (reserve queue and managers when there is none), warned at once
+  // The shared router already creates the task and assigns it to the polo's team.
   return routeToCommercial(ticket, { why: because, lead, city: (ticket.aiSlots as any)?.cidade || null, agentId: agent.id });
 };

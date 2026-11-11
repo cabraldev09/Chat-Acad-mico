@@ -2,7 +2,12 @@ import { onScheduleNow } from "../AnalyticsServices/AnalyticsService";
 import { Op, QueryTypes } from "sequelize";
 import sequelize from "../../database";
 import { portable } from "../../helpers/sqlDialect";
+import { Transaction } from "sequelize";
+import { transactionContext } from "../../helpers/TransactionContext";
+import { eligibleForAssignment } from "./AssignmentPolicy";
 
+
+import Lead from "../../models/Lead";
 import Queue from "../../models/Queue";
 import Whatsapp from "../../models/Whatsapp";
 import Ticket from "../../models/Ticket";
@@ -20,7 +25,9 @@ export const pickUserForQueue = async (queue: Queue, force = false, dryRun = fal
   const mode = !queue.autoAssign || queue.autoAssign === "none" ? (force ? "least" : "none") : queue.autoAssign;
   if (mode === "none") return null;
 
-  const all = [...(queue.users || [])].sort((a, b) => a.id - b.id);
+  const members = await User.findAll({ where: { id: (queue.users || []).map(u => u.id) }, attributes: ["id", "name", "acceptsNewTickets", "maxOpenTickets"], order: [["id", "ASC"]] });
+  const loads = await Promise.all(members.map(u => Ticket.count({ where: { userId: u.id, status: { [Op.ne]: "closed" } } })));
+  const all = members.filter((u, i) => eligibleForAssignment(u, loads[i]));
   if (!all.length) return null;
   // somebody who never connected a WhatsApp cannot answer: when at least one colleague of the queue can, the lead goes to them
   // the order of preference: a number connected now, then someone who owns a number (it may be reconnecting after a restart), and only then everybody
@@ -35,6 +42,7 @@ export const pickUserForQueue = async (queue: Queue, force = false, dryRun = fal
   const onDuty = duty ? pool.filter(u => duty.has(u.id)) : [];
   const users = onDuty.length ? onDuty : pool;
 
+
   if (mode === "least") {
     const counts = await Promise.all(
       users.map(u => Ticket.count({ where: { userId: u.id, status: { [Op.not]: "closed" } } }))
@@ -48,11 +56,12 @@ export const pickUserForQueue = async (queue: Queue, force = false, dryRun = fal
   return chosen;
 };
 
-const AutoAssignTicket = async (ticket: Ticket): Promise<boolean> => {
+const assign = async (ticket: Ticket): Promise<boolean> => {
+  await ticket.reload();
   if (!ticket.queueId || ticket.userId || ticket.isGroup) return false;
 
   const queue = await Queue.findByPk(ticket.queueId, {
-    include: [{ model: User, as: "users", attributes: ["id", "name"] }]
+    include: [{ model: User, as: "users", attributes: ["id", "name", "acceptsNewTickets", "maxOpenTickets"] }]
   });
   if (!queue) return false;
   const chosen = await pickUserForQueue(queue);
@@ -63,6 +72,7 @@ const AutoAssignTicket = async (ticket: Ticket): Promise<boolean> => {
       ticketData: { userId: chosen.id, status: "open" },
       ticketId: ticket.id
     });
+    if ((ticket.segment || "sales") === "sales") await Lead.update({ ownerId: chosen.id }, { where: { contactId: ticket.contactId, wonAt: null as any, lostAt: null as any } });
     await TicketEvent.create({
       ticketId: ticket.id,
       type: "auto_assigned",
@@ -74,6 +84,16 @@ const AutoAssignTicket = async (ticket: Ticket): Promise<boolean> => {
     logger.error(`Auto-assign failed: ${err}`);
     return false;
   }
+};
+
+const AutoAssignTicket = async (ticket: Ticket): Promise<boolean> => {
+  const run = async (transaction: Transaction) => {
+  // A short transaction: the capacity calculation and assignment must be one decision.
+  if (sequelize.getDialect() === "postgres") await sequelize.query("SELECT pg_advisory_xact_lock(918271)", { transaction });
+  return assign(ticket);
+  };
+  const current = transactionContext.get("transaction") as Transaction | undefined;
+  return current ? run(current) : sequelize.transaction(run);
 };
 
 // Conversations sitting with someone who never connected a WhatsApp (they cannot receive or answer) go to a colleague of the same queue who can.
@@ -114,6 +134,7 @@ export const redistributeUnreachableTickets = async (): Promise<number> => {
     }
   }
   return moved;
+
 };
 
 export default AutoAssignTicket;

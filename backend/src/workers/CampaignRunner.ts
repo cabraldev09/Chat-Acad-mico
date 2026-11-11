@@ -68,6 +68,12 @@ const processCampaign = async (campaign: Campaign): Promise<void> => {
     });
 
     if (!shipping) {
+      const toReview = await CampaignShipping.count({ where: { campaignId: fresh.id, status: { [Op.in]: ["sending", "uncertain"] } } });
+      if (toReview) {
+        await fresh.update({ status: "paused", pauseReason: "Há entregas para conferir em Operação e custos. Nenhuma mensagem será reenviada automaticamente." });
+        await emitCampaign(fresh.id);
+        return;
+      }
       await fresh.update({ status: "finished", finishedAt: new Date() });
       states.delete(fresh.id);
       await emitCampaign(fresh.id);
@@ -139,25 +145,30 @@ const processCampaign = async (campaign: Campaign): Promise<void> => {
       }
       if (fresh.pauseReason) await fresh.update({ pauseReason: null });
 
-      const body = await deliverStep({ campaign: fresh, whatsapp, number: shipping.number, name: shipping.name || "", step, index });
+      const [claimed] = await CampaignShipping.update({ status: "sending" }, { where: { id: shipping.id, status: "pending" } });
+      if (!claimed) return;
+      const body = await deliverStep({ campaign: fresh, whatsapp, number: shipping.number, name: shipping.name || "", step, index, idempotencyKey: `campaign:${fresh.id}:${shipping.id}:${index}` });
+
       finishedContact = index + 1 >= steps.length;
       const sentText = [shipping.message, body].filter(Boolean).join("\n— — —\n").slice(0, 4000);
-      await shipping.update(
+      await CampaignShipping.update(
         finishedContact
           ? { status: "sent", sentAt: new Date(), message: sentText, error: null, stepsDone: index + 1 }
-          : { message: sentText, error: null, stepsDone: index + 1 }
+          : { status: "pending", message: sentText, error: null, stepsDone: index + 1 },
+        { where: { id: shipping.id, status: "sending" } }
       );
     } catch (err) {
       // the pace protection said "too fast": nothing was tried with this person, so it is not a failure; look again soon
       if (err && (String(err.message) === "ERR_RATE_LIMITED" || err.statusCode === 429)) {
+        await CampaignShipping.update({ status: "pending" }, { where: { id: shipping.id, status: "sending" } });
         state.nextAt = Date.now() + 45000;
         await persist(fresh.id, state);
         return;
       }
       // a failed step is not retried (the earlier ones already reached the person)
-      logger.warn(`Campaign ${fresh.id} -> ${shipping.number} step ${index + 1} failed: ${err}`);
+      logger.warn(`Campaign ${fresh.id} -> ${shipping.number} step ${index + 1} failed: ${err?.message || err}`);
       await shipping.update({
-        status: "failed",
+        status: "uncertain",
         error: `${steps.length > 1 ? `Mensagem ${index + 1} de ${steps.length}: ` : ""}${String(err.message || err)}`.slice(0, 500)
       });
       finishedContact = true;
@@ -220,5 +231,6 @@ const tick = async (): Promise<void> => {
 };
 
 export const startCampaignRunner = (): void => {
+  CampaignShipping.update({ status: "uncertain", error: "Envio interrompido: verificar entrega antes de reenviar." }, { where: { status: "sending" } }).catch(err => logger.error(`Campaign recovery: ${err}`));
   setInterval(tick, 3000);
 };

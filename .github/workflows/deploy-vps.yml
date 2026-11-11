@@ -4,10 +4,15 @@ name: Atualizar a VPS
 # o repositório é privado, então o fetch usa o token que o próprio GitHub cria para esta execução e que expira ao terminar.
 # Segredo (Settings > Secrets and variables > Actions): VPS_SSH_KEY (chave privada só para deploy). A identidade pública do servidor fica em deploy/vps/known_hosts.
 on:
-  push:
+  workflow_run:
+    workflows: ["Verificações"]
+    types: [completed]
     branches: [main]
-    paths: ["backend/**", "deploy/**", "Dockerfile", "docker-entrypoint.sh"]
   workflow_dispatch:
+
+permissions:
+  contents: read
+  checks: read
 
 concurrency:
   group: deploy-vps
@@ -15,11 +20,21 @@ concurrency:
 
 jobs:
   deploy:
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository) }}
     runs-on: ubuntu-latest
     env:
       VPS_HOST: 209.145.48.49
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Testes aprovados para a revisão exata
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node deploy/vps/check-ci.js "${{ github.event.workflow_run.head_sha || github.sha }}"
       - name: Confere os segredos
         env:
           KEY: ${{ secrets.VPS_SSH_KEY }}
@@ -46,7 +61,7 @@ jobs:
       - name: Atualiza a VPS
         env:
           GH_TOKEN: ${{ github.token }}
-          WANT_SHA: ${{ github.sha }}
+          WANT_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
           REPO: ${{ github.repository }}
         run: |
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes -o ConnectTimeout=20 root@"$VPS_HOST" "GH_TOKEN='$GH_TOKEN' REPO='$REPO' WANT_SHA='$WANT_SHA' bash -s" <<'REMOTE'

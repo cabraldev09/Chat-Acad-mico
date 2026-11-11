@@ -17,7 +17,13 @@ const FormData = require("form-data");
 
 const ROOT = path.resolve(__dirname, "..");
 // PostgreSQL (the same engine as Supabase) is the supported database.
-const PGBIN = process.env.PG_BIN || path.dirname(execFileSync("which", ["psql"]).toString().trim());
+let PGBIN = process.env.PG_BIN || path.dirname(execFileSync("which", ["psql"]).toString().trim());
+// CI may have a newer pg_dump on PATH than its database service; use the matching installed client.
+if (!process.env.PG_BIN && process.platform === "linux") {
+  const major = Math.floor(Number(execFileSync(`${PGBIN}/psql`, ["-At", "-d", "postgres", "-c", "SHOW server_version_num"]).toString().trim()) / 10000);
+  const matching = `/usr/lib/postgresql/${major}/bin`;
+  if (fs.existsSync(`${matching}/pg_dump`)) PGBIN = matching;
+}
 const PGUSER = process.env.PGUSER || require("os").userInfo().username;
 const psql = (db, q) => execFileSync(`${PGBIN}/psql`, ["-X", "-U", PGUSER, "-d", db, "-At", "-c", q]).toString().trim();
 const DB = `chat_e2e_${process.pid}_${crypto.randomBytes(4).toString("hex")}`;
@@ -424,6 +430,7 @@ const test = async (name, fn) => {
       if (lines.length) console.log(`      server: ${lines.join("\n              ").slice(0, 1800)}`);
     }
   }
+
 };
 const assert = (c, m) => { if (!c) throw new Error(m || "assertion failed"); };
 
@@ -461,10 +468,11 @@ const postMeta = (id, payload, secret, badSig) => {
     const env = {
       ...process.env, DATABASE_URL: "", DATABASE_URL_POOL: "", DB_SSL: "false", NODE_ENV: "test", DB_NAME: DB, DB_HOST: "localhost", DB_USER: PGUSER, DB_PASS: "", DB_PORT: "5432", DB_DIALECT: "postgres",
       PORT: String(PORT), PROXY_PORT: String(PORT), BACKEND_URL: "http://localhost", PUBLIC_URL: API,
-      FRONTEND_URL: "http://localhost:3000", JWT_SECRET: "e2e", JWT_REFRESH_SECRET: "e2e-r", DASHBOARD_CACHE_MS: "0", LOGIN_RATE_MAX: "100",
+      FRONTEND_URL: "http://localhost:3000", JWT_SECRET: "e2e", JWT_REFRESH_SECRET: "e2e-r", DASHBOARD_CACHE_MS: "0", LOGIN_RATE_MAX: "150",
       TELEGRAM_API_URL: `http://localhost:${TG_PORT}`, GRAPH_API_URL: `http://localhost:${GRAPH_PORT}`, INSTAGRAM_TOKEN_URL: `http://localhost:${GRAPH_PORT}/ig/oauth/access_token`, INSTAGRAM_GRAPH_URL: `http://localhost:${GRAPH_PORT}/ig`, CHANNEL_TOKEN_REFRESH_MS: "2500", CHANNEL_TOKEN_FIRST_MS: "1500",
       SKIP_WHATSAPP_SESSIONS: "1", SKIP_DEFAULT_DATA: "1", LOG_LEVEL: "warn", EFI_API_URL: `http://localhost:${EFI_PORT}`, EFI_BILLET_API_URL: `http://localhost:${BILLET_PORT}`, EFI_POLL_MS: "1500",
       ANTHROPIC_API_URL: `http://localhost:${AI_PORT}`, OPENAI_API_URL: `http://localhost:${AI_PORT}`, STALE_RUNS_MS: "4000", HANDOFF_SLA_MS: "4000", ONBOARDING_SLA_MS: "4000", REACTIVATION_MS: "3000", ALLOW_PRIVATE_URLS: "true"
+
     };
     execFileSync("npx", ["sequelize", "db:migrate"], { cwd: ROOT, env, stdio: "ignore" });
     execFileSync("npx", ["sequelize", "db:seed:all"], { cwd: ROOT, env, stdio: "ignore" });
@@ -762,6 +770,7 @@ const postMeta = (id, payload, secret, badSig) => {
     console.log("\nwhatsapp_cloud");
     const cloudCfg = { phoneNumberId: "PN1", accessToken: "CLOUD-TOKEN", appSecret: "cloud-secret", verifyToken: "cloud-verify" };
     let cid, cticket;
+    const inboundCloud = (from, id, body) => postMeta(cid, cloudEvent([{ from, id, type: "text", text: { body } }], { contacts: [{ wa_id: from, profile: { name: "Aluno IA" } }] }), cloudCfg.appSecret);
     const cloudEvent = (messages, extra = {}) => ({ object: "whatsapp_business_account", entry: [{ id: "WABA", changes: [{ field: "messages", value: { messaging_product: "whatsapp", metadata: { phone_number_id: "PN1" }, contacts: [{ wa_id: "5511988887777", profile: { name: "João Pedro" } }], messages, ...extra } }] }] });
     await test("connects and reads the business phone number", async () => {
       cid = await createConnection("Cloud", "whatsapp_cloud", cloudCfg);
@@ -888,9 +897,9 @@ const postMeta = (id, payload, secret, badSig) => {
       const list = (await http.get("/api/v1/connections", { headers: { Authorization: `Bearer ${t}` } })).data;
       assert(list.length >= 5, `connections=${list.length}`);
       const before = graph.sent.length;
-      const r = await http.post("/api/v1/messages/send", { number: "5511977776666", body: "Olá {{name}}!", whatsappId: cid, name: "Lead API" }, { headers: { Authorization: `Bearer ${t}` } });
+      const r = await http.post("/api/v1/messages/send", { number: "5511988887777", body: "Olá {{name}}!", whatsappId: cid, name: "Lead API" }, { headers: { Authorization: `Bearer ${t}` } });
       assert(r.status === 200, `send ${r.status} ${JSON.stringify(r.data)}`);
-      assert(graph.sent.slice(before).some(x => x.body && x.body.to === "5511977776666"), "not sent through cloud api");
+      assert(graph.sent.slice(before).some(x => x.body && x.body.to === "5511988887777"), "not sent through cloud api");
     });
 
     // -------------------------------------------------------------------- CRM
@@ -998,6 +1007,7 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(!leadOf("5531977771111"), "an address-book contact became a lead");
     });
     await test("Cloud API campaign sends the approved template, not free text", async () => {
+      assert((await http.put("/operations/config", { outbound_allow_templates: "true" }, auth())).status === 200, "admin template authorization");
       const list = (await http.post("/contact-lists", { name: "Vestibular" }, auth())).data;
       await http.post(`/contact-lists/${list.id}/import`, { items: [{ name: "Rita Souza", number: "5511966665555" }] }, auth());
       const c = (await http.post("/campaigns", { name: "Vestibular 2027", message: "Olá {{name}}, inscrições abertas!", contactListId: list.id, whatsappId: cid, templateName: "inscricoes_abertas", templateLanguage: "pt_BR", intervalMin: 0, intervalMax: 0, batchSize: 50, batchPause: 1 }, auth())).data;
@@ -1009,6 +1019,8 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(s.body.to === "5511966665555", "recipient");
     });
     await test("a campaign with several messages delivers them in order, then marks the recipient as sent", async () => {
+      await postMeta(cid, cloudEvent([{ from: "5511955554444", id: "wamid.sequence.optin", type: "text", text: { body: "Pode me explicar a inscrição?" } }]), cloudCfg.appSecret);
+      await waitFor(() => ticketOf("5511955554444"), 8000, "sequence customer request");
       const list = (await http.post("/contact-lists", { name: "Sequência" }, auth())).data;
       await http.post(`/contact-lists/${list.id}/import`, { items: [{ name: "Paula Dias", number: "5511955554444" }] }, auth());
       const steps = [
@@ -1025,19 +1037,27 @@ const postMeta = (id, payload, secret, badSig) => {
       const c = (await http.post("/campaigns", { name: "Sequência", steps, contactListId: list.id, whatsappId: cid, intervalMin: 0, intervalMax: 0, batchSize: 50, batchPause: 1 }, auth())).data;
       assert(c.message.startsWith("Oi {{name}}") && !c.templateName, "first step should mirror message");
       const before = graph.sent.length;
+      const sequenceTexts = () => graph.sent.slice(before).filter(x => x.body?.type === "text" && x.body.to === "5511955554444").map(x => x.body.text.body).filter(t => /^Oi Paula Dias!/.test(t) || steps.slice(1).some(step => step.body === t));
       assert((await http.post(`/campaigns/${c.id}/start`, {}, auth())).status === 200, "start");
       try {
-        await waitFor(() => graph.sent.slice(before).filter(x => x.body && x.body.type === "text").length >= 3, 30000, "three messages");
+        await waitFor(() => sequenceTexts().length >= 3, 30000, "three messages");
       } catch (e) {
         throw new Error(`${e.message}; shipping=${sql(`SELECT status||'|'||stepsDone||'|'||COALESCE(error,'') FROM CampaignShippings WHERE campaignId=${c.id}`)} campaign=${sql(`SELECT status||'|'||COALESCE(pauseReason,'') FROM Campaigns WHERE id=${c.id}`)} sent=${JSON.stringify(graph.sent.slice(before).map(x => x.body && x.body.type))}`);
       }
-      const texts = graph.sent.slice(before).filter(x => x.body && x.body.type === "text").map(x => x.body.text.body);
+      const texts = sequenceTexts();
+
       assert(/^Oi Paula Dias! Tudo (bem|certo)\?$/.test(texts[0]), `first: ${texts[0]}`);
       assert(texts[1] === steps[1].body && texts[2] === steps[2].body, `order: ${JSON.stringify(texts)}`);
       await waitFor(() => sql(`SELECT status FROM CampaignShippings WHERE campaignId=${c.id}`) === "sent", 8000, "shipping sent");
       assert(sql(`SELECT stepsDone FROM CampaignShippings WHERE campaignId=${c.id}`) === "3", "stepsDone");
       assert(sql(`SELECT nextRunAt IS NOT NULL FROM Campaigns WHERE id=${c.id}`) === "1", "runner state was not persisted");
     });
+    // Free-text Cloud campaigns need a prior inbound message, just like production.
+    for (const number of ["5511955551111", "5521955552001", "5521955552002", "5521955552003", "5521955552004", "5521955552005", "5521955553001", "5521955553002", "5521955553003"]) {
+      await inboundCloud(number, `wamid.campaign-optin-${number}`, "Quero informações sobre os cursos");
+      await waitFor(() => ticketOf(number), 8000, "campaign customer request");
+      sql(`UPDATE Tickets SET aiActive=false,userId=1 WHERE id=${ticketOf(number)}`);
+    }
     await test("campanhas: nome com apóstrofo e &, primeiro nome, número sem 55 e número curto demais", async () => {
       const list = (await http.post("/contact-lists", { name: "Nomes difíceis" }, auth())).data;
       const imp = (await http.post(`/contact-lists/${list.id}/import`, { items: [{ name: "D'Ávila & Cia Ltda", number: "(11) 95555-1111" }, { name: "Curto", number: "12345" }] }, auth())).data;
@@ -1129,6 +1149,8 @@ const postMeta = (id, payload, secret, badSig) => {
       const csv = await http.get(`/campaigns/${c.id}/report?format=csv`, auth());
       assert(csv.status === 200 && String(csv.data).startsWith('"Nome";"WhatsApp";"Situação"') && String(csv.data).includes('="5521955553001"') && String(csv.data).includes("Este número não tem WhatsApp."), `csv ${csv.status} ${JSON.stringify(String(csv.data).slice(0, 200))}`);
 
+      // The fixture represents a confirmed refusal, so it must not retain a successful delivery capability.
+      sql(`DELETE FROM OutboundDeliveries WHERE "key" LIKE 'campaign:${c.id}:%'`);
       const before = graph.sent.length;
       const retry = await http.post(`/campaigns/${c.id}/retry-failed`, {}, auth());
       assert(retry.status === 200 && retry.data.requeued === 1 && retry.data.campaign.status === "running", `retry ${retry.status} ${JSON.stringify(retry.data).slice(0, 160)}`);
@@ -1262,6 +1284,8 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.get(`/p/${prop.token}`)).status === 404, "draft visible publicly");
     });
     await test("sending delivers the PDF in the conversation, moves the lead and notifies", async () => {
+      await postMeta(cid, cloudEvent([{ from: "5511955550001", id: "wamid.proposal.request", type: "text", text: { body: "Pode enviar minha proposta?" } }]), cloudCfg.appSecret);
+      await waitFor(() => ticketOf("5511955550001"), 8000, "proposal customer request");
       const lid = plead.id;
       // route the proposal through the WhatsApp Cloud connection (mock Graph API)
       await http.put(`/leads/${lid}`, { phone: "5511955550001" }, auth());
@@ -1608,7 +1632,10 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.post(`/payments/${p.id}/cancel`, {}, auth())).status === 400, "cancelled twice");
     });
     await test("the Pix code and QR image are sent to the candidate in the conversation", async () => {
+      await inboundCloud("5511955550004", "wamid.pix-window", "Quero pagar minha matrícula");
+      await waitFor(() => ticketOf("5511955550004"), 8000, "payment customer request");
       const l = await mkLead("Aluno Envio", "5511955550004", { ownerId: 1 });
+
       await http.put(`/leads/${l.id}`, { cpf: "111.444.777-35".replace("111.444.777-35", "390.533.447-05") }, auth());
       const p = (await http.post(`/leads/${l.id}/payments`, { method: "pix" }, auth())).data;
       const before = graph.sent.length;
@@ -2827,9 +2854,9 @@ const postMeta = (id, payload, secret, badSig) => {
       const b = mk("Ordem B", "tg_ord_b", "7 days", "30 minutes");
       const c = mk("Ordem C", "tg_ord_c", "3 hours", "40 days");
       const queueIds = JSON.stringify((await http.get("/queue", auth())).data.map(q => q.id));
-      const list = (await http.get("/tickets", { params: { showAll: "true", historical: "all", queueIds }, ...auth() })).data.tickets.map(t => Number(t.id));
+      const list = (await http.get("/tickets", { params: { showAll: "true", historical: "all", searchParam: "Ordem", queueIds }, ...auth() })).data.tickets.map(t => Number(t.id));
       assert(list.indexOf(Number(c)) < list.indexOf(Number(a)) && list.indexOf(Number(a)) < list.indexOf(Number(b)), `order by last message: C ${list.indexOf(Number(c))}, A ${list.indexOf(Number(a))}, B ${list.indexOf(Number(b))}`);
-      const first = (await http.get("/tickets", { params: { showAll: "true", historical: "all", queueIds }, ...auth() })).data.tickets.find(t => Number(t.id) === Number(a));
+      const first = (await http.get("/tickets", { params: { showAll: "true", historical: "all", searchParam: "Ordem", queueIds }, ...auth() })).data.tickets.find(t => Number(t.id) === Number(a));
       assert(first.lastMessageAt, "the list does not carry lastMessageAt");
     });
     await test("messages can be deleted for everyone or only here, edits are limited to WhatsApp, \"mark as unread\" and the all-conversations view work", async () => {
@@ -2895,6 +2922,7 @@ const postMeta = (id, payload, secret, badSig) => {
       const tutorLogin = await http.post("/auth/login", { email: "gaveta-tutor@x.com", password: "senha123" });
       const tutorRead = await http.get(`/messages/${t}/list`, { params: { kind: "media" }, ...asUser(tutorLogin.data.token) });
       assert(tutorRead.status === 403, `tutor reads a sales conversation: login ${tutorLogin.status}, read ${tutorRead.status} ${JSON.stringify(tutorRead.data).slice(0, 120)}`);
+
 
       const found = async q => {
         const r = await http.get("/tickets", { params: { showAll: "true", searchParam: q, queueIds: JSON.stringify((await http.get("/queue", auth())).data.map(x => x.id)) }, ...auth() });
@@ -3017,12 +3045,11 @@ const postMeta = (id, payload, secret, badSig) => {
     console.log("\nAI agent and chatbot");
     sql("DELETE FROM ChatbotNodes");
     let aiId, jiPolo;
-    const inboundCloud = (from, id, body) => postMeta(cid, cloudEvent([{ from, id, type: "text", text: { body } }], { contacts: [{ wa_id: from, profile: { name: "Aluno IA" } }] }), cloudCfg.appSecret);
     const sentTexts = since => graph.sent.slice(since).filter(x => x.body && x.body.type === "text").map(x => x.body.text.body);
     // everything a person sees: texts, and the question plus the options of buttons and lists
     const sentAny = since => graph.sent.slice(since).filter(x => x.body).map(x => x.body.type === "text" ? x.body.text.body : x.body.type === "interactive" ? [x.body.interactive.body.text, ...(x.body.interactive.action.buttons ? x.body.interactive.action.buttons.map(b => b.reply.title) : x.body.interactive.action.sections[0].rows.map(r => r.title))].join(" | ") : "");
     await test("knowledge base: documents are split, FAQ and files can be added", async () => {
-      aiId = (await http.post("/ai-agents", { name: "Agente de matrículas", provider: "anthropic", model: "claude-haiku-5-5", apiKey: "sk-ant-test", whatsappId: cid, waitSeconds: 1, dailyTokenCap: 100000, handoffAfterTurns: 14, handoffMessage: "Vou chamar um consultor.", persona: { tone: "acolhedor", rules: "Pergunte uma coisa por vez", forbidden: "Prometer mensalidade fixa" } }, auth())).data.id;
+      aiId = (await http.post("/ai-agents", { name: "Agente de matrículas", provider: "anthropic", model: "claude-haiku-5-5", apiKey: "sk-ant-test", whatsappId: cid, waitSeconds: 1, dailyTokenCap: 100000, handoffAfterTurns: 14, handoffMessage: "Vou chamar um consultor.", persona: { readyAnswers: true, tone: "acolhedor", rules: "Pergunte uma coisa por vez", forbidden: "Prometer mensalidade fixa" } }, auth())).data.id;
       assert(aiId, "agent not created");
       const long = Array.from({ length: 12 }, (_, i) => `Parágrafo ${i}: ${"informação sobre o calendário ".repeat(20)}`).join("\n\n");
       const d1 = await http.post(`/ai-agents/${aiId}/kb`, { title: "Calendário", content: long }, auth());
@@ -3066,7 +3093,7 @@ const postMeta = (id, payload, secret, badSig) => {
 
       before = graph.sent.length;
       await inboundCloud("5511910000032", "wamid.ai-g2", "qual a taxa de biblioteca?");
-      await waitFor(() => sentTexts(before).some(t => /confirmar essa informação/i.test(t)), 15000, "team confirms");
+      await waitFor(() => sentTexts(before).some(t => /confirmar (essa )?informação|passar sua dúvida/i.test(t)), 15000, "team confirms");
       assert(!sentAny(before).some(t => /\b(35|36)\b/.test(t)), "an amount with no source reached the person");
       assert((anthropic.guardCalls || 0) === g0 + 2, "the stubborn answer is rewritten only once");
 
@@ -3108,9 +3135,10 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(req.model === "claude-haiku-5-5" && req.max_tokens === 350, `model/max_tokens ${req.model} ${req.max_tokens}`);
       assert(req.system[0].cache_control && req.system[0].cache_control.type === "ephemeral", "stable prompt is not cached");
       assert(req.system[0].text.includes("acolhedor") && req.system[0].text.includes("Prometer mensalidade fixa"), "persona missing");
-      assert(req.system[0].text.includes("Nunca diga que a mensalidade é fixa"), "fixed tuition rule missing");
+      assert(/Nunca diga que a mensalidade é fixa|nunca prometa valor fixo/i.test(req.system[0].text), "fixed tuition rule missing");
       assert(req.system[1].text.includes("bolsa de 40%") && !req.system[1].text.includes("Parágrafo 3"), `only the relevant passages should be sent: ${req.system[1].text.slice(0, 700)}`);
-      assert(["buscar_curso", "listar_polos", "simular_bolsa", "salvar_lead"].every(n => req.tools.some(t => t.name === n)), "tools missing");
+      assert(["buscar_curso", "listar_polos", "salvar_lead"].every(n => req.tools.some(t => t.name === n)), "tools missing");
+      assert(!req.tools.some(t => t.name === "simular_bolsa"), "unauthorized scholarship tool exposed");
       assert(req.messages.length === 1 && /oi, tudo bem\?\nqueria saber/.test(req.messages[0].content), `burst should be one user turn: ${JSON.stringify(req.messages)}`);
       assert(Number(sql(`SELECT COUNT(*) FROM AiUsage WHERE agentId=${aiId} AND kind='reply'`)) >= 1, "usage not logged");
     });
@@ -3144,7 +3172,7 @@ const postMeta = (id, payload, secret, badSig) => {
       const calls = anthropic.requests.length, before = graph.sent.length;
       await inboundCloud("5511910000005", "wamid.ai-d1", "quero falar com uma pessoa");
       await waitFor(() => sentTexts(before).some(t => t.includes("Vou chamar um consultor")), 15000, "handoff message");
-      assert(anthropic.requests.length === calls + 1, "one call expected");
+      assert(anthropic.requests.length === calls, "human request should bypass paid generation");
       assert(sql(`SELECT aiActive FROM Tickets WHERE id=${ticketOf("5511910000005")}`) === "0", "ai still active");
     });
     await test("a person hands a conversation to the AI agent (it answers the last message at once) or takes it back from it", async () => {
@@ -3271,9 +3299,10 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(!/\.(js|html?|xhtml)$/i.test(out.a) && !/\.(js|html?|xhtml)$/i.test(out.b) && !/\.(js|html?|xhtml)$/i.test(out.c), `a page or script extension was kept ${JSON.stringify(out)}`);
       assert(out.existsA && out.existsB && !out.escaped, "the file was written outside of the public folder");
       // what is opened in the browser: a picture stays inline and sandboxed; anything else is a download
-      const page = await http.get("/public/e2e-page.xhtml", { responseType: "text" });
+      const signed = name => execFileSync(process.execPath, ["-e", `process.stdout.write(require("./dist/helpers/SignedFile").signedFileUrl(${JSON.stringify(name)}))`], { cwd: ROOT, env }).toString();
+      const page = await http.get(signed("e2e-page.xhtml"), { responseType: "text" });
       assert(page.status === 200 && /attachment/.test(String(page.headers["content-disposition"] || "")) && page.headers["x-content-type-options"] === "nosniff", `xhtml was served inline ${JSON.stringify(page.headers)}`);
-      const pic = await http.get("/public/e2e-pic.png");
+      const pic = await http.get(signed("e2e-pic.png"));
       assert(pic.status === 200 && !/attachment/.test(String(pic.headers["content-disposition"] || "")) && /sandbox/.test(String(pic.headers["content-security-policy"] || "")), "a picture lost its inline display or its sandbox");
       // a hostile text where an e-mail is expected is answered at once
       const started = Date.now();
@@ -4652,6 +4681,8 @@ const postMeta = (id, payload, secret, badSig) => {
       const put = await http.put("/crm/settings", { requiredDocs: ["RG ou CNH", "CPF", "Histórico escolar", "  ", "CPF"], docsAutoReminder: false }, auth());
       assert(put.status === 200 && JSON.stringify(put.data.requiredDocs) === JSON.stringify(["RG ou CNH", "CPF", "Histórico escolar"]), `list ${JSON.stringify(put.data.requiredDocs)}`);
 
+      await inboundCloud("5511955579301", "wamid.documents-window", "Quero enviar os documentos");
+      await waitFor(() => ticketOf("5511955579301"), 8000, "documents customer request");
       const lead = await mkLead("Aluno Documentos", "5511955579301", { ownerId: 1 });
       const opened = await http.post(`/leads/${lead.id}/open-ticket`, { whatsappId: cid }, auth());
       assert(opened.status === 200 || opened.status === 201, `open-ticket ${opened.status}`);
@@ -5039,9 +5070,12 @@ const postMeta = (id, payload, secret, badSig) => {
     await test("what the agent does not know is kept, the team's answer is captured, the owner reviews and the agent learns", async () => {
       assert((await http.put(`/ai-agents/${aiId}`, { reviewNumber: "(11) 99999-0000", reviewWhatsappId: cid, learnFromTeam: true, dailyTokenCap: 0 }, auth())).status === 200, "agent update");
       assert((await http.put(`/ai-agents/${aiId}`, { reviewNumber: "123" }, auth())).status === 400, "short review number accepted");
+      await inboundCloud("5511999990000", "wamid.reviewer.optin", "Quero receber avisos da equipe");
+      const reviewerTicket = ticketOf("5511999990000");
+      sql(`UPDATE Tickets SET aiActive=false, userId=1, status='open' WHERE id=${reviewerTicket}`);
       let before = graph.sent.length;
       await inboundCloud("5511910000009", "wamid.learn-1", "Vocês têm bolsa para atletas?");
-      await waitFor(() => sentTexts(before).some(t => t.includes("Vou confirmar")), 15000, "unknown reply");
+      await waitFor(() => sentTexts(before).some(t => t.includes("passar sua dúvida")), 15000, "unknown reply");
       const t = ticketOf("5511910000009");
       assert(sql(`SELECT aiActive FROM Tickets WHERE id=${t}`) === "0", "ticket should go to a person");
       assert(sql(`SELECT status FROM AiLearnings WHERE ticketId=${t}`) === "aguardando_equipe", "question not kept");
@@ -5327,6 +5361,9 @@ const postMeta = (id, payload, secret, badSig) => {
       const opened = await http.post(`/leads/${lead.id}/open-ticket`, { whatsappId: cid }, auth());
       assert(opened.status === 200 || opened.status === 201, `open-ticket ${opened.status} ${JSON.stringify(opened.data)}`);
       const salesTicket = opened.data.ticketId;
+      await inboundCloud("5511955552001", "wamid.enrollment-access-window", "Quero receber os acessos da matrícula");
+      await waitFor(() => Number(sql(`SELECT COUNT(*) FROM Messages WHERE ticketId=${salesTicket} AND fromMe=false`)) > 0, 8000, "student authorizes access in the Meta window");
+
 
       const before = graph.sent.length;
       const r = await http.post(`/leads/${lead.id}/enroll`, { rgm: nextRgm(), poloId: polo.id, tutorId: "auto", note: "Prefere à noite", fee: "paid", whatsappId: cid, introMessage: "Olá! Sou da tutoria e vou te ajudar no primeiro acesso." }, asUser(ctok));
@@ -6306,9 +6343,111 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(out.b[0] === mir.id && out.b[1] === null, `EAD lead stays at the polo of the city: ${JSON.stringify(out.b)}`);
       assert(out.c[0] === vil.id && out.c[1] === null, `a lead already in a released polo stays: ${JSON.stringify(out.c)}`);
     });
+
+    console.log("\nContinuidade, custos e arquivos privados");
+    const inDb = code => {
+      const source = `require("reflect-metadata"); const db=require("./dist/database").default; const assert=require("node:assert/strict"); require("./dist/libs/socket").initIO(require("http").createServer()); (async()=>{ ${code} })().then(()=>db.close()).then(()=>process.exit(0)).catch(e=>{console.error(e.stack);process.exit(1)});`;
+      return execFileSync(process.execPath, ["-e", source], { cwd: ROOT, env, timeout: 25000 }).toString();
+    };
+    await test("operation settings validate budgets and restrict staff access", async () => {
+      assert((await http.get("/operations/config",auth())).status===200,"missing config");
+      assert((await http.put("/operations/config",{ai_daily_usd_cap:"-1"},auth())).status===400,"negative budget");
+      assert((await http.put("/operations/config",{ai_openai_key:"not-allowed"},auth())).status===400,"arbitrary key");
+      assert((await http.get("/operations/summary",asUser(agentToken))).status===403,"consultant saw spend");
+      assert((await http.get("/operations/summary",auth())).status===200,"summary failed");
+    });
+    await test("task hooks synchronize bulk, completed and deleted follow-ups", async () => {
+      inDb(`const Lead=require("./dist/models/Lead").default, Task=require("./dist/models/LeadTask").default;
+        const lead=await Lead.findByPk(${leadId}); for(const t of await Task.findAll({where:{leadId:lead.id}})) await t.destroy();
+        const later=new Date(Date.now()+7200000), earlier=new Date(Date.now()+3600000);
+        const tasks=await Task.bulkCreate([{leadId:lead.id,userId:1,title:"late",dueAt:later},{leadId:lead.id,userId:1,title:"early",dueAt:earlier}],{individualHooks:true});
+        await lead.reload();assert.equal(+lead.nextFollowUpAt,+earlier);
+        await tasks.find(t=>t.title==="early").update({doneAt:new Date()}); await lead.reload();assert.equal(+lead.nextFollowUpAt,+later);
+        await tasks.find(t=>t.title==="late").destroy(); await lead.reload();assert.equal(lead.nextFollowUpAt,null);`);
+    });
+    await test("paused users are excluded from automatic distribution", async () => {
+      inDb(`const User=require("./dist/models/User").default, pick=require("./dist/services/AutomationServices/AutoAssignTicket").pickUserForQueue;
+        const user=await User.findByPk(${agentId}); const saved=user.acceptsNewTickets;
+        try{await user.update({acceptsNewTickets:false});assert.equal(await pick({id:90001,autoAssign:"least",users:[user]}),null);}finally{await user.update({acceptsNewTickets:saved});}`);
+    });
+    await test("global AI reservation blocks calls before reaching the provider", async () => {
+      inDb(`const {setSetting}=require("./dist/helpers/AppSettings"),{callWithBudget}=require("./dist/services/AiServices/Budget");
+        await setSetting("ai_daily_token_cap","1");let calls=0;
+        try{await assert.rejects(callWithBudget({id:1,model:"test",dailyTokenCap:0},"test",undefined,{max_tokens:100},async()=>{calls++;return{usage:{input_tokens:1}}}),/ERR_AI_TOKEN_CAP/);assert.equal(calls,0);}finally{await setSetting("ai_daily_token_cap","0");}`);
+    });
+    await test("outbound idempotency stores one send and blocks ambiguous delivery retries", async () => {
+      inDb(`const Ticket=require("./dist/models/Ticket").default,{deliver}=require("./dist/services/OutboundServices/Deliver");
+        const ticket=await Ticket.findByPk(${tgTicket});let calls=0;const send=async()=>{calls++;return{id:"one-idempotent-message"}};
+        await deliver(ticket,{key:"test:one"},send);await deliver(ticket,{key:"test:one"},send);assert.equal(calls,1);
+        const parallel=await Promise.allSettled([deliver(ticket,{key:"test:parallel"},async()=>{await new Promise(r=>setTimeout(r,100));return send()}),deliver(ticket,{key:"test:parallel"},send)]);
+        assert.equal(parallel.filter(r=>r.status==="fulfilled").length,1);assert.equal(calls,2);
+        await assert.rejects(deliver(ticket,{key:"test:ambiguous"},async()=>{throw new Error("timeout")}),/timeout/);
+        await assert.rejects(deliver(ticket,{key:"test:ambiguous"},send),{message:"ERR_DELIVERY_UNCERTAIN"});assert.equal(calls,2);`);
+    });
+    await test("shared outbound guard respects opt-out and daily budgets", async () => {
+      inDb(`const Ticket=require("./dist/models/Ticket").default,Contact=require("./dist/models/Contact").default,{deliver}=require("./dist/services/OutboundServices/Deliver"),{setSetting}=require("./dist/helpers/AppSettings");
+        const ticket=await Ticket.findByPk(${tgTicket});const c=await Contact.findByPk(ticket.contactId);const old=c.optOut;let calls=0;
+        try{await c.update({optOut:true});await assert.rejects(deliver(ticket,{},async()=>{calls++;return{id:"x"}}),{message:"ERR_CONTACT_OPTED_OUT"});}finally{await c.update({optOut:old});}
+        await setSetting("outbound_daily_messages","1");try{await assert.rejects(deliver(ticket,{},async()=>{calls++;return{id:"x"}}),{message:"ERR_OUTBOUND_BUDGET"});assert.equal(calls,0);}finally{await setSetting("outbound_daily_messages","0");}`);
+    });
+    await test("new inbound after first contact raises an SLA escalation once", async () => {
+      inDb(`const Ticket=require("./dist/models/Ticket").default,Message=require("./dist/models/Message").default,Lead=require("./dist/models/Lead").default,Event=require("./dist/models/TicketEvent").default;
+        const {setSetting}=require("./dist/helpers/AppSettings"),{runLeadSlaAlertOnce}=require("./dist/workers/LeadSlaAlert");
+        const ticket=await Ticket.findByPk(${tgTicket}),lead=await Lead.findOne({where:{contactId:ticket.contactId}});
+        await lead.update({wonAt:null,lostAt:null,firstContactAt:new Date(Date.now()-86400000)});await ticket.update({status:"open",isHistorical:false,archivedAt:null});
+        const last=await Message.findOne({where:{ticketId:ticket.id},order:[["createdAt","DESC"]]});
+        const msg=await Message.create({id:"sla-after-human",ticketId:ticket.id,fromMe:false,body:"Nova dúvida",createdAt:new Date(+last.createdAt+1000)});
+        await setSetting("business_hours",JSON.stringify({enabled:false}));await setSetting("crm_sla_minutes","0.000001");await setSetting("crm_escalation_minutes","0.000001");
+        const before=await Event.count({where:{ticketId:ticket.id,type:"sla"}});
+        try{await new Promise(r=>setTimeout(r,1200));await runLeadSlaAlertOnce();await runLeadSlaAlertOnce();assert.equal(await Event.count({where:{ticketId:ticket.id,type:"sla"}}),before+1);}finally{await msg.destroy();await setSetting("crm_sla_minutes","15");await setSetting("crm_escalation_minutes","30");}`);
+    });
+    await test("private attachments reject unsigned links and support revocation", async () => {
+      const fileHttp = axios.create({ baseURL: API, validateStatus: () => true, httpAgent: new (require("http").Agent)({ keepAlive: false }) });
+      const id=sql(`SELECT id FROM Messages WHERE ticketId=${cticket} AND mediaUrl IS NOT NULL LIMIT 1`);
+      const raw=sql(`SELECT mediaUrl FROM Messages WHERE id='${id}'`);
+      assert((await fileHttp.get(`/public/${raw}`)).status===403,"unsigned file opened");
+      const link=(await fileHttp.get(`/files/messages/${encodeURIComponent(id)}/link`,auth())).data.url;
+      assert(link&&(await fileHttp.get(link,{responseType:"arraybuffer"})).status===200,"signed file unavailable");
+      assert((await fileHttp.get(link.replace(encodeURIComponent(raw),"different.pdf"))).status===403,"escaped scope");
+      assert((await fileHttp.post("/operations/files/revoke",{filename:raw},auth())).status===200,"revoke failed");
+      assert((await fileHttp.get(link)).status===403,"revoked link opened");
+    });
+    await test("commercial follow-up creates once and stops after customer reply", async () => {
+      inDb(`const Lead=require("./dist/models/Lead").default,Proposal=require("./dist/models/Proposal").default,Task=require("./dist/models/LeadTask").default,{tickCommercialFollowUp}=require("./dist/workers/CommercialFollowUp"),{setSetting}=require("./dist/helpers/AppSettings"),{Op}=require("sequelize");
+        const lead=await Lead.findByPk(${leadId});await lead.update({ownerId:1,wonAt:null,lostAt:null,lastInboundAt:null});await setSetting("crm_followup_enabled","true");
+        const p=await Proposal.create({token:"test-commercial-"+Date.now(),status:"sent",leadId:lead.id,courseName:"Direito",grossFee:100,firstMonthly:80,bolsaPct:20,params:"{}",sentAt:new Date(Date.now()-10800000)});
+        await tickCommercialFollowUp();await tickCommercialFollowUp();const where={automationKey:{[Op.like]:"proposal:"+p.id+":%"}};
+        assert.equal(await Task.count({where}),1);await lead.reload();assert.ok(lead.nextFollowUpAt);
+        await lead.update({lastInboundAt:new Date()});await tickCommercialFollowUp();assert.equal(await Task.count({where:{...where,doneAt:null}}),0);`);
+    });
+
+    await test("concurrent AI calls reserve distinct budget and cannot spend the same balance", async () => {
+      inDb(`const Usage=require("./dist/models/AiUsage").default,Reservation=require("./dist/models/AiBudgetReservation").default,{dayBounds}=require("./dist/helpers/AppTime"),{setSetting}=require("./dist/helpers/AppSettings"),{callWithBudget}=require("./dist/services/AiServices/Budget"),{Op}=require("sequelize");
+        const where={createdAt:{[Op.gte]:dayBounds().start}},body={model:"test",max_tokens:100};
+        const bound=Buffer.byteLength(JSON.stringify(body),"utf8")+2048+100;
+        const used=Number(await Usage.sum("inputTokens",{where})||0)+Number(await Usage.sum("outputTokens",{where})||0)+Number(await Usage.sum("cacheReadTokens",{where})||0)+Number(await Usage.sum("cacheWriteTokens",{where})||0)+Number(await Reservation.sum("tokens",{where:{expiresAt:{[Op.gt]:new Date()}}})||0);
+        await setSetting("ai_daily_token_cap",String(used+bound));let calls=0;
+        const call=async()=>{calls++;await new Promise(r=>setTimeout(r,100));return{usage:{input_tokens:bound,output_tokens:0}}};
+        try{const results=await Promise.allSettled([callWithBudget({id:1,model:"test",dailyTokenCap:0},"test",undefined,body,call),callWithBudget({id:1,model:"test",dailyTokenCap:0},"test",undefined,body,call)]);assert.equal(results.filter(r=>r.status==="fulfilled").length,1);assert.equal(calls,1);}finally{await setSetting("ai_daily_token_cap","0");}`);
+    });
+    await test("deleting a conversation preserves its delivery and budget ledger", async () => {
+      inDb(`const Ticket=require("./dist/models/Ticket").default,Delivery=require("./dist/models/OutboundDelivery").default;
+        const original=await Ticket.findByPk(${tgTicket});const temporary=await Ticket.create({contactId:original.contactId,whatsappId:original.whatsappId,status:"closed",unreadMessages:0,isGroup:false});
+        const delivery=await Delivery.create({key:"test:retained-charge",ticketId:temporary.id,contactId:original.contactId,whatsappId:original.whatsappId,channel:"telegram",status:"sent",estimatedUsd:0});
+        await temporary.destroy();await delivery.reload();assert.equal(delivery.ticketId,null);assert.equal(delivery.status,"sent");`);
+    });
+    await test("database backup restores into a disposable database with the operational tables", async () => {
+      const restoreDb=`${DB}_restore`;
+      const archive=execFileSync(`${PGBIN}/pg_dump`,["-U",PGUSER,"-d",DB,"--format=custom","--schema=public","--no-owner","--no-acl"],{maxBuffer:32*1024*1024});
+      try{psql("postgres",`CREATE DATABASE ${restoreDb}`);execFileSync(`${PGBIN}/pg_restore`,["-U",PGUSER,"-d",restoreDb,"--exit-on-error","--clean","--if-exists","--no-owner","--no-acl"],{input:archive,maxBuffer:32*1024*1024});
+        assert(psql(restoreDb,'SELECT COUNT(*) FROM "Leads"')===psql(DB,'SELECT COUNT(*) FROM "Leads"'),"lead restoration mismatch");
+        assert(psql(restoreDb,'SELECT COUNT(*) FROM "OutboundDeliveries"')===psql(DB,'SELECT COUNT(*) FROM "OutboundDeliveries"'),"delivery restoration mismatch");
+      }finally{psql("postgres",`DROP DATABASE IF EXISTS ${restoreDb} WITH (FORCE)`);}
+    });
+
     await test("login is rate limited", async () => {
       let limited = false;
-      for (let i = 0; i < 120 && !limited; i += 1) {
+      for (let i = 0; i < 170 && !limited; i += 1) {
         limited = (await http.post("/auth/login", { email: "naoexiste@x.com", password: "errada" })).status === 429;
       }
       assert(limited, "no 429 after 120 wrong logins");

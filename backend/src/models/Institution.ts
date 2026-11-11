@@ -1,3 +1,4 @@
+import { signedFileUrl } from "../helpers/SignedFile";
 import Model from "./BaseModel";
 import {
   Table,
@@ -33,6 +34,11 @@ class Institution extends Model<Institution> {
   @Default(true)
   @Column
   active: boolean;
+
+  toJSON(): any {
+    const data = super.toJSON() as any;
+    return { ...data, logoUrl: data.logoFile ? signedFileUrl(data.logoFile) : null };
+  }
 
   @CreatedAt
   createdAt: Date;

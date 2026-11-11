@@ -28,6 +28,17 @@ DUMP="/opt/backups/banco-$STAMP.dump"
 FAILED=0
 trap 'rm -f "$ARCHIVE.partial" "$DUMP.partial"' EXIT
 
+# Match the server major, including Supabase projects upgraded independently of the API.
+PG_MAJOR=$(docker compose run --rm --no-deps -T --entrypoint node api -e '
+ const {Client}=require("pg");
+ const raw=require("./dist/config/database"); const cfg={...raw,...raw.lock};
+ const c=new Client({host:cfg.host,port:cfg.port||5432,user:cfg.username,password:cfg.password,database:cfg.database,ssl:cfg.dialectOptions?.ssl,connectionTimeoutMillis:10000});
+ (async()=>{await c.connect();const r=await c.query("SHOW server_version_num");process.stdout.write(String(Math.floor(Number(r.rows[0].server_version_num)/10000)));await c.end()})().catch(()=>{console.error("Não foi possível identificar a versão do banco para o backup.");process.exit(1)});
+')
+case "$PG_MAJOR" in ''|*[!0-9]*) echo 'Versão PostgreSQL inválida.' >&2; exit 1 ;; esac
+
+IMAGE="postgres:$PG_MAJOR-alpine"
+
 encrypt() { # stdin -> stdout
   if [ -n "$PASSPHRASE" ]; then openssl enc -aes-256-cbc -pbkdf2 -salt -pass env:BACKUP_PASSPHRASE_ENV; else cat; fi
 }
@@ -36,8 +47,9 @@ SUFFIX=""; [ -n "$PASSPHRASE" ] && SUFFIX=".enc"
 
 # 1) database: the URL is read from the container environment and goes by a pipe (never in the arguments, the log or the environment of the dump image)
 if docker compose run --rm --no-deps -T --entrypoint node api -e 'if(!process.env.DATABASE_URL){process.exit(1)};process.stdout.write(process.env.DATABASE_URL+"\n")' 2>/dev/null |
-  docker run --rm -i "$IMAGE" sh -c 'read -r u; pg_dump --dbname="$u" --format=custom --no-owner --no-acl' | encrypt > "$DUMP.partial" && test -s "$DUMP.partial"; then
+  docker run --rm -i "$IMAGE" sh -c 'read -r u; pg_dump --dbname="$u" --format=custom --schema=public --no-owner --no-acl' | encrypt > "$DUMP.partial" && test -s "$DUMP.partial"; then
   mv "$DUMP.partial" "$DUMP$SUFFIX"
+  printf '%s\n' "$PG_MAJOR" > "${DUMP%.dump}.major"
   echo "$(date '+%F %T') banco: $(du -h "$DUMP$SUFFIX" | cut -f1)"
 else
   echo "$(date '+%F %T') ERRO: o backup do banco falhou (confira a versão do pg_dump: imagem $IMAGE)" >&2
@@ -58,10 +70,19 @@ fi
 # 3) a copy outside this server (a disk that dies takes the local copy with it)
 if [ -n "$REMOTE" ] && [ "$FAILED" = "0" ]; then
   if command -v rclone >/dev/null 2>&1; then
-    rclone copy "$DUMP$SUFFIX" "$REMOTE" --quiet && rclone copy "$ARCHIVE$SUFFIX" "$REMOTE" --quiet || { echo "$(date '+%F %T') ERRO: a cópia para $REMOTE falhou" >&2; FAILED=1; }
+    rclone copy "$DUMP$SUFFIX" "$REMOTE" --quiet && { [ "${BACKUP_ONLY:-}" = "db" ] || rclone copy "$ARCHIVE$SUFFIX" "$REMOTE" --quiet; } || { echo "$(date '+%F %T') ERRO: a cópia para $REMOTE falhou" >&2; FAILED=1; }
   else
     echo "$(date '+%F %T') AVISO: BACKUP_RCLONE_REMOTE definido, mas o rclone não está instalado" >&2
     FAILED=1
+  fi
+fi
+
+# S3-compatible encrypted offsite backup (credentials stay on the server).
+if [ "$FAILED" = "0" ]; then
+  if [ -f .backup.env ] && grep -Eq '^RESTIC_REPOSITORY=.+$' .backup.env; then
+    bash ./offsite.sh backup || FAILED=1
+  elif [ -z "$REMOTE" ]; then
+    echo 'AVISO: cópia somente local; configure .backup.env para o backup externo criptografado.' >&2
   fi
 fi
 
@@ -78,3 +99,4 @@ if [ "$FAILED" = "0" ]; then
 fi
 ping_monitor "/fail"
 exit 1
+

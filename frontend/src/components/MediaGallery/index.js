@@ -1,3 +1,4 @@
+import { renewMediaElement } from "../../services/media-access";
 import React, { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { makeStyles } from "@material-ui/core/styles";
@@ -35,7 +36,7 @@ const useStyles = makeStyles(() => ({
 }));
 
 // straight from the server: fast, and the browser keeps what was already seen in the conversation
-const Photo = ({ url, className }) => <img className={className} src={url} alt="" decoding="async" />;
+const Photo = ({ url, className }) => <img onError={renewMediaElement} className={className} src={url} alt="" decoding="async" />;
 
 const MediaGallery = () => {
   const classes = useStyles();

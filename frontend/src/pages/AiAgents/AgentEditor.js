@@ -85,6 +85,7 @@ const AgentEditor = ({ open, agent, initialTab = 0, onClose, onSaved }) => {
       toastError(err);
     }
     setSaving(false);
+
   };
 
   const updateSlot = (i, patch) => set("slots", slots.map((s, k) => (k === i ? { ...s, ...patch } : s)));
@@ -106,15 +107,18 @@ const AgentEditor = ({ open, agent, initialTab = 0, onClose, onSaved }) => {
             <Tab style={{ minWidth: 0 }} label="Atendimento" />
             <Tab style={{ minWidth: 0 }} label="O que descobrir do cliente" />
             <Tab style={{ minWidth: 0 }} label="Ações automáticas" />
+            <Tab style={{ minWidth: 0 }} label="Automação e retomada" />
           </Tabs>
         </div>
       )}
+
       <DialogContent dividers className={classes.content}>
         {tab === 0 && (
           <>
             <div className={classes.grid}>
               <TextField variant="outlined" margin="dense" label="Nome do agente" required value={v.name} onChange={(e) => set("name", e.target.value)} />
               <FormControlLabel style={{ marginTop: 8 }} control={<Switch color="primary" checked={!!v.active} onChange={(e) => set("active", e.target.checked)} />} label={v.active ? "Ativo: responde os alunos" : "Desligado"} />
+
               <span />
             </div>
 
@@ -195,7 +199,8 @@ const AgentEditor = ({ open, agent, initialTab = 0, onClose, onSaved }) => {
             <div className={classes.section}>Limites (para gastar pouco)</div>
             <div className={classes.grid}>
               <TextField type="number" variant="outlined" margin="dense" label="Esperar o aluno terminar de escrever (segundos)" value={v.waitSeconds} onChange={(e) => set("waitSeconds", Number(e.target.value))} helperText="Várias mensagens seguidas viram uma resposta só." />
-              <TextField type="number" variant="outlined" margin="dense" label="Tamanho máximo de cada resposta (tokens)" value={v.maxTokens} onChange={(e) => set("maxTokens", Number(e.target.value))} helperText="350 equivale a umas 3 frases curtas." />
+              <TextField type="number" variant="outlined" margin="dense" label="Tamanho máximo de cada resposta (tokens)" value={v.maxTokens} onChange={(e) => set("maxTokens", Number(e.target.value))} helperText="Limite de geração, incluindo ferramentas. Respostas curtas reduzem o consumo." />
+              <TextField type="number" variant="outlined" margin="dense" label="Mensagens recentes na memória" value={v.maxHistory || 12} onChange={(e) => set("maxHistory", Number(e.target.value))} helperText="De 6 a 24. O resumo preserva o contexto anterior." />
               <TextField type="number" variant="outlined" margin="dense" label="Passar para a equipe após quantas respostas" value={v.handoffAfterTurns} onChange={(e) => set("handoffAfterTurns", Number(e.target.value))} />
               <TextField type="number" variant="outlined" margin="dense" label="Limite diário de tokens (0 = sem limite)" value={v.dailyTokenCap} onChange={(e) => set("dailyTokenCap", Number(e.target.value))} helperText="Ao atingir, o agente passa as conversas para a equipe." />
             </div>
@@ -223,6 +228,26 @@ const AgentEditor = ({ open, agent, initialTab = 0, onClose, onSaved }) => {
           </>
         )}
         {tab === 2 && <FunctionsTab value={v.functions} onChange={(list) => set("functions", list)} />}
+
+        {tab === 3 && (
+          <>
+            <Typography variant="body2" color="textSecondary" gutterBottom>
+              Ative apenas o que o agente pode fazer. As orientações valem em todas as conversas; os dados coletados seguem para a equipe preparar a proposta.
+            </Typography>
+            <FormControlLabel control={<Switch color="primary" checked={v.persona.guideSale !== false} onChange={(e) => setPersona("guideSale", e.target.checked)} />} label="Conduzir para a matrícula e terminar com um próximo passo" />
+            <FormControlLabel control={<Switch color="primary" checked={v.persona.readyAnswers === true} onChange={(e) => setPersona("readyAnswers", e.target.checked)} />} label="Usar respostas prontas de FAQ sem consultar a IA" />
+            <Typography variant="caption" color="textSecondary" display="block">Economiza tokens, mas envia o texto aprovado da FAQ diretamente. Desligado, a IA adapta a resposta às orientações e ao contexto.</Typography>
+            <FormControlLabel control={<Switch color="primary" checked={v.persona.simulateScholarship === true} onChange={(e) => setPersona("simulateScholarship", e.target.checked)} />} label="Permitir estimativa de bolsa com percentual informado pelo aluno" />
+            <Typography variant="caption" color="textSecondary" display="block">Estimativa não é uma oferta. O agente não escolhe descontos nem confirma matrícula ou pagamento.</Typography>
+            <div className={classes.section}>Retomar quando o lead não responder</div>
+            <FormControlLabel control={<Switch color="primary" checked={v.persona.followUp?.enabled === true} onChange={(e) => setPersona("followUp", { ...(v.persona.followUp || {}), enabled: e.target.checked })} />} label="Enviar uma mensagem de retomada" />
+            <TextField fullWidth type="number" variant="outlined" margin="dense" label="Minutos sem resposta" value={v.persona.followUp?.minutes ?? 30} disabled={!v.persona.followUp?.enabled} onChange={(e) => setPersona("followUp", { ...(v.persona.followUp || {}), minutes: Number(e.target.value) })} inputProps={{ min: 5, max: 1380 }} helperText="De 5 a 1.380 minutos. Verificado a cada minuto, respeitando o horário da conexão." />
+            <TextField fullWidth multiline rows={2} variant="outlined" margin="dense" label="Mensagem de retomada" value={v.persona.followUp?.message ?? "Posso continuar te ajudando com sua matrícula?"} disabled={!v.persona.followUp?.enabled} onChange={(e) => setPersona("followUp", { ...(v.persona.followUp || {}), message: e.target.value })} inputProps={{ maxLength: 600 }} />
+            <Typography variant="body2" color="textSecondary" style={{ marginTop: 12 }}>
+              Uma retomada por período sem resposta, sem chamada à IA. Para quando o lead responde, pede para parar ou um atendente assume. Enviada somente nas primeiras 23 horas desde a última mensagem do lead; não usa templates pagos para reabrir conversas. A Meta pode cobrar pela mensagem conforme o canal e a tabela da sua conta.
+            </Typography>
+          </>
+        )}
       </DialogContent>
       <DialogActions>
         {id && <Button onClick={() => setHistory(true)} style={{ marginRight: "auto" }}>Histórico de alterações</Button>}

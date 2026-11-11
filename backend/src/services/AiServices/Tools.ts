@@ -12,12 +12,14 @@ import AiAgent from "../../models/AiAgent";
 import { isPg } from "../../helpers/sqlDialect";
 import { addActivity } from "../CrmServices/LeadCore";
 import { norm } from "./Kb";
+import { policyOf } from "./Policy";
 import { safeRequest } from "../../helpers/SafeUrl";
 import { StageData, checkField } from "../FlowServices/StageSpec";
 import { ACADEMIC_TOOLS, AcademicCtx, findCourse, runAcademicTool } from "../CommercialServices/Academic";
 import { COMMERCIAL_TOOL_DEFS } from "../CommercialServices/ToolDefs";
 import { Slots, cleanPatch } from "../CommercialServices/Slots";
 import { lockExit, markSteps, pendingSteps, pendingText, stepsOf } from "../FlowServices/StepLock";
+
 
 export interface Slot {
   key: string;
@@ -94,8 +96,15 @@ export const stageToolDefs = (stage: StageData) => {
       input_schema: { type: "object", properties: { passos: { type: "array", items: { type: "number" }, description: "Números dos passos cumpridos, ex.: [1, 2]" } }, required: ["passos"] }
     });
   }
-  // in a commercial stage the code decides the exits from what the turn registered
-  if (commercial) return tools;
+  // Commercial rules decide the normal progression. Custom exits configured by the administrator remain available.
+  if (commercial) {
+    if (stage.outcomes.length) tools.push({
+      name: EXIT_TOOL,
+      description: `Escolha uma saída personalizada somente quando sua condição acontecer: ${stage.outcomes.map(o => `${o.id}: ${o.when}`).join("; ")}`,
+      input_schema: { type: "object", properties: { resultado: { type: "string", enum: stage.outcomes.map(o => o.id) }, motivo: { type: "string" } }, required: ["resultado"] }
+    });
+    return tools;
+  }
   const exits = ["concluido", "humano", "desconhecido", ...stage.outcomes.map(o => o.id)];
   tools.push({
     name: EXIT_TOOL,
@@ -150,7 +159,7 @@ export const toolDefs = (agent: AiAgent) => [
     }
   },
   ...functionTools(agent)
-];
+].filter(t => t.name !== "simular_bolsa" || policyOf(agent.persona).simulateScholarship);
 
 const like = (text: string) => (isPg() ? { [Op.iLike]: `%${text}%` } : { [Op.like]: `%${text}%` });
 
@@ -167,6 +176,7 @@ interface Ctx {
   collected: Record<string, string>;
   // set when a function started a flow: the agent says nothing more
   flowStarted?: boolean;
+  userText?: string;
   // an AI stage of a flow: its own fields and tools, and the exit it chose
   stage?: StageData;
   exit?: string;
@@ -176,6 +186,7 @@ interface Ctx {
   turn?: Record<string, any>;
   // the checklist of the stage: the steps (1-based) done so far, including the ones the model marks in this turn
   stepsDone?: number[];
+
 }
 
 const bool = (v: any): boolean | undefined => (v === undefined ? undefined : v === true || v === "true");
@@ -234,6 +245,10 @@ const callHttpTool = async (stage: StageData, name: string, input: any, dryRun: 
 
 export const runTool = async (name: string, input: any, ctx: Ctx): Promise<any> => {
   input = input || {};
+  const permitted = (ctx.stage ? stageToolDefs(ctx.stage) : toolDefs(ctx.agent)).some(t => t.name === name);
+  // The commercial engine answers factual questions before qualification using its shared academic catalog.
+  const academicLookup = ctx.stage?.hooks.includes("commercial") && (ACADEMIC_TOOLS as readonly string[]).includes(name);
+  if (!permitted && !academicLookup) return { erro: "Função não habilitada pelo administrador." };
   if (name.startsWith("fluxo_")) {
     const fn = (Array.isArray(ctx.agent.functions) ? ctx.agent.functions : []).find((f: any) => `fluxo_${f.name}` === name);
     if (!fn) return { erro: "Função desconhecida." };
@@ -267,9 +282,13 @@ export const runTool = async (name: string, input: any, ctx: Ctx): Promise<any> 
     return { polos: polos.map(p => ({ nome: p.name, cidade: p.city, estado: p.state })) };
   }
   if (name === "simular_bolsa") {
+    const pct = Number(input.percentual_bolsa);
+    const informed = [...String(ctx.userText || "").matchAll(/(\d+(?:[.,]\d+)?)\s*%/g)].map(m => Number(m[1].replace(",", ".")));
+    if (!Number.isFinite(pct) || pct < 0 || pct > 90 || !informed.includes(pct)) {
+      return { erro: "Informe um percentual de 0 a 90 explicitamente citado pelo aluno. Não crie descontos." };
+    }
     const [course] = await findCourses(String(input.curso || ""), 1);
     if (!course || course.monthlyFee == null) return { erro: "Curso não encontrado ou sem mensalidade cadastrada." };
-    const pct = Math.min(90, Math.max(0, Number(input.percentual_bolsa) || 0));
     const gross = Number(course.monthlyFee);
     return {
       curso: course.name,
