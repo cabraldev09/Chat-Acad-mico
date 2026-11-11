@@ -8,6 +8,7 @@ import { readMailConfig, sendMail } from "../services/MailServices/SendMail";
 import { MAIL_CATALOG, testMail } from "../services/MailServices/Templates";
 import { inlineLogoForScreen } from "../services/MailServices/Logo";
 import User from "../models/User";
+import { domainOf, loadAliasTable } from "../services/MailServices/Aliases";
 
 const view = async () => {
   const c = await readMailConfig();
@@ -15,7 +16,11 @@ const view = async () => {
   return {
     provider: c.provider, host: c.host, port: c.port, secure: c.secure, user: c.user, fromName: c.fromName, hasPassword: !!c.pass, pass: c.pass ? "••••••••" : "",
     fromEmail: c.fromEmail, replyTo: c.replyTo, hasResendKey: !!c.resendKey, resendKey: c.resendKey ? "••••••••" : "",
-    forwardTo: await getSetting("mail_forward_to", ""), hasInboundSecret: !!(await getSetting("mail_inbound_secret", ""))
+    forwardTo: await getSetting("mail_forward_to", ""), hasInboundSecret: !!(await getSetting("mail_inbound_secret", "")),
+    // the address of each person on the receiving domain and where it goes (a name shared by two people goes to the management)
+    aliases: c.fromEmail
+      ? (await loadAliasTable()).map(a => ({ name: a.name, address: `${a.alias}@${domainOf(c.fromEmail)}`, forwardsTo: a.shared ? "" : a.email, shared: a.shared }))
+      : []
   };
 };
 

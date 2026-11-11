@@ -4,6 +4,8 @@ import { openSecret } from "../../helpers/Secrets";
 import { logger } from "../../utils/logger";
 import type { CreateEmailOptions, GetReceivingEmailResponseSuccess } from "resend";
 import { readMailConfig, resendClient } from "./SendMail";
+import { domainOf, forwardTargets, loadAliasTable } from "./Aliases";
+import User from "../../models/User";
 
 const escape = (v: string): string => String(v || "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
 
@@ -23,8 +25,9 @@ export const forwardOf = (e: GetReceivingEmailResponseSuccess, to: string, from:
   };
 };
 
-// The receiving domain of Resend (mail.<domain>): whatever arrives there is forwarded, as it came (attachments included), to the address of the
-// team set on the Configurações screen. Resend calls the webhook with only the metadata of the e-mail; the forward fetches the content itself.
+// The receiving domain of Resend (mail.<domain>): whatever arrives there is forwarded, as it came (attachments included), to the e-mail of the
+// person who owns the address (joao.silva@ → João Silva, see Aliases.ts); an address without an owner goes to the management address set on the
+// Configurações screen (or to the administrators). Resend calls the webhook with only the metadata of the e-mail; the forward fetches the content itself.
 // The request is checked against the signing secret of the webhook before anything is done.
 export interface InboundHeaders {
   id: string;
@@ -49,11 +52,21 @@ export const handleInbound = async (rawBody: string, headers: InboundHeaders): P
   }
   if (event?.type !== "email.received") return { status: 200, body: { ignored: event?.type || null } };
 
-  const forwardTo = String(await getSetting("mail_forward_to", "")).trim();
   const emailId = String(event?.data?.email_id || "");
   if (!emailId) return { status: 400, body: { error: "no email id" } };
-  if (!isEmail(forwardTo) || !cfg.fromEmail) {
-    logger.warn(`inbound e-mail ${emailId} not forwarded: no forwarding address or sender set`);
+  if (!cfg.fromEmail) {
+    logger.warn(`inbound e-mail ${emailId} not forwarded: no sender set`);
+    return { status: 200, body: { forwarded: false } };
+  }
+  // each address of the domain goes to its owner (the person whose name made it); without an owner, to the management address
+  // set on the Configurações screen, or else to the administrators
+  const management = String(await getSetting("mail_forward_to", "")).trim();
+  const fallback = isEmail(management)
+    ? [management]
+    : (await User.findAll({ where: { profile: "admin" }, attributes: ["email"], raw: true }) as any[]).map(u => String(u.email || ""));
+  const targets = forwardTargets(event?.data?.to || [], domainOf(cfg.fromEmail), await loadAliasTable(), fallback);
+  if (!targets.length) {
+    logger.warn(`inbound e-mail ${emailId} not forwarded: nobody to forward it to`);
     return { status: 200, body: { forwarded: false } };
   }
   const got = await resend.emails.receiving.get(emailId);
@@ -72,14 +85,19 @@ export const handleInbound = async (rawBody: string, headers: InboundHeaders): P
       logger.warn(`inbound e-mail ${emailId}: raw content not downloaded: ${(err as Error).message}`);
     }
   }
-  // the id of the e-mail is the idempotency key: Resend retries a webhook that failed, and the team gets the e-mail once.
-  // The answer of the team goes to whoever wrote (reply-to), not back to the domain.
-  const { data, error } = await resend.emails.send(forwardOf(original, forwardTo, `${cfg.fromName.replace(/["<>]/g, "")} <${cfg.fromEmail}>`, eml), { idempotencyKey: `inbound-forward/${emailId}` });
-  if (error) {
-    logger.warn(`inbound e-mail ${emailId} not forwarded: ${error.statusCode ?? ""} ${error.name} ${error.message}`);
-    // a 5xx makes Resend try the webhook again later
-    return { status: 502, body: { forwarded: false } };
+  // the id of the e-mail and the destination make the idempotency key: Resend retries a webhook that failed, and each person gets the e-mail once.
+  // The answer goes to whoever wrote (reply-to), not back to the domain.
+  const from = `${cfg.fromName.replace(/["<>]/g, "")} <${cfg.fromEmail}>`;
+  let failed = false;
+  for (const to of targets) {
+    // eslint-disable-next-line no-await-in-loop
+    const { data, error } = await resend.emails.send(forwardOf(original, to, from, eml), { idempotencyKey: `inbound-forward/${emailId}/${to}` });
+    if (error) {
+      failed = true;
+      logger.warn(`inbound e-mail ${emailId} not forwarded: ${error.statusCode ?? ""} ${error.name} ${error.message}`);
+    } else logger.info(`inbound e-mail ${emailId} forwarded (${data?.id})`);
   }
-  logger.info(`inbound e-mail ${emailId} forwarded (${data?.id})`);
-  return { status: 200, body: { forwarded: true } };
+  // a 5xx makes Resend try the webhook again later; the ones already sent are not repeated (same keys)
+  if (failed) return { status: 502, body: { forwarded: false } };
+  return { status: 200, body: { forwarded: true, count: targets.length } };
 };

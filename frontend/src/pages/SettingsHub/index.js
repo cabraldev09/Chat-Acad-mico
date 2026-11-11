@@ -411,9 +411,17 @@ const Email = () => {
           <TextField size="small" variant="outlined" label="E-mail que envia (domínio verificado)" value={f.fromEmail || ""} onChange={set("fromEmail")} fullWidth InputLabelProps={{ shrink: true }} />
           <div className={classes.cardTitle} style={{ marginTop: 8 }}>E-mails recebidos</div>
           <div className={classes.hint}>
-            O que chega em qualquer endereço do domínio (ex.: atendimento@mail.cruzeirodosulvirtual.app.br) é encaminhado, com anexos, para o e-mail abaixo. No Resend, o webhook “email.received” aponta para o endereço da API terminado em /webhooks/resend.
+            Cada pessoa da equipe tem um endereço com o próprio nome (ex.: joao.silva@mail.cruzeirodosulvirtual.app.br). O que chega nele é encaminhado, com anexos, para o e-mail cadastrado dela no Chat. Endereços sem dono (ou nomes repetidos) vão para o e-mail abaixo; sem ele, para os administradores. No Resend, o webhook “email.received” aponta para o endereço da API terminado em /webhooks/resend.
           </div>
-          <TextField size="small" variant="outlined" label="Encaminhar para" value={f.forwardTo || ""} onChange={set("forwardTo")} fullWidth placeholder="equipe@exemplo.com" InputLabelProps={{ shrink: true }} />
+          <TextField size="small" variant="outlined" label="Endereço sem dono vai para" value={f.forwardTo || ""} onChange={set("forwardTo")} fullWidth placeholder="gerencia@exemplo.com" InputLabelProps={{ shrink: true }} />
+          {(f.aliases || []).length > 0 && (
+            <div className={classes.hint}>
+              <b>Endereço de cada pessoa</b>
+              {(f.aliases || []).map((a) => (
+                <div key={a.address + a.name}>{a.name}: {a.address} → {a.shared ? "nome repetido, vai para o endereço sem dono" : a.forwardsTo}</div>
+              ))}
+            </div>
+          )}
           {secret(f.hasInboundSecret ? "Segredo do webhook (já salvo; cole só para trocar)" : "Segredo do webhook do Resend", inbound, (e) => { const value = e.target.value; setInbound(value); }, f.hasInboundSecret ? "••••••••" : "whsec_...")}
         </>
       ) : (

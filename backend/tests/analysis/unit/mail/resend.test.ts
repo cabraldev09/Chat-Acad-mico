@@ -8,10 +8,17 @@ vi.mock("../../../../src/helpers/AppSettings", () => ({
   setSetting: async (key: string, value: string) => { settings[key] = value; }
 }));
 
+// the people of the team (the real ones are rows of the database)
+let people: Array<{ name: string; email: string; profile?: string }> = [];
+vi.mock("../../../../src/models/User", () => ({
+  default: { findAll: async ({ where }: any = {}) => people.filter(p => !where?.profile || p.profile === where.profile).map(({ name, email }) => ({ name, email })) }
+}));
+
 import { MAIL_CATALOG } from "../../../../src/services/MailServices/Templates";
 import { LOGO_CID } from "../../../../src/services/MailServices/Logo";
 import { MailConfig, mailConfigured, readMailConfig, resendPayload, sendMail } from "../../../../src/services/MailServices/SendMail";
 import { handleInbound } from "../../../../src/services/MailServices/Inbound";
+import { aliasOf, aliasTable, forwardTargets } from "../../../../src/services/MailServices/Aliases";
 
 const cfg = (over: Partial<MailConfig> = {}): MailConfig => ({
   provider: "resend", host: "", port: 465, secure: true, user: "", pass: "", fromName: "Cruzeiro do Sul Virtual",
@@ -81,6 +88,27 @@ describe("e-mail pelo Resend", () => {
   });
 });
 
+describe("endereço de cada pessoa", () => {
+  it("vem do primeiro e do último nome, sem acento nem partículas", () => {
+    expect(aliasOf("João da Silva")).toBe("joao.silva");
+    expect(aliasOf("  MARIA  José dos Santos ")).toBe("maria.santos");
+    expect(aliasOf("Cláudia")).toBe("claudia");
+    expect(aliasOf("")).toBe("");
+  });
+
+  it("o e-mail vai ao dono; endereço sem dono e nome repetido vão para a gerência", () => {
+    const table = aliasTable([
+      { name: "João Silva", email: "joao@gmail.com" }, { name: "Ana Souza", email: "ana1@gmail.com" }, { name: "Ana de Souza", email: "ana2@gmail.com" }, { name: "Sem Email", email: "" }
+    ]);
+    const d = "mail.cruzeirodosulvirtual.app.br";
+    expect(forwardTargets([`joao.silva@${d}`], d, table, ["gerencia@x.com"])).toEqual(["joao@gmail.com"]);
+    expect(forwardTargets([`"João" <Joao.Silva@${d}>`], d, table, ["gerencia@x.com"])).toEqual(["joao@gmail.com"]);
+    expect(forwardTargets([`atendimento@${d}`], d, table, ["gerencia@x.com"])).toEqual(["gerencia@x.com"]);
+    expect(forwardTargets([`ana.souza@${d}`], d, table, ["gerencia@x.com"])).toEqual(["gerencia@x.com"]);
+    expect(forwardTargets([`joao.silva@${d}`, `atendimento@${d}`, "outro@gmail.com"], d, table, ["gerencia@x.com"])).toEqual(["joao@gmail.com", "gerencia@x.com"]);
+  });
+});
+
 describe("e-mails recebidos são encaminhados à equipe", () => {
   // a webhook signed like Resend (Svix): base64 HMAC-SHA256 of "id.timestamp.body" with the secret after "whsec_"
   const key = Buffer.from("segredo-de-teste-123456").toString("base64");
@@ -89,7 +117,7 @@ describe("e-mails recebidos são encaminhados à equipe", () => {
     ({ id, timestamp: ts, signature: `v1,${createHmac("sha256", Buffer.from(key, "base64")).update(`${id}.${ts}.${body}`).digest("base64")}` });
   const received = JSON.stringify({ type: "email.received", created_at: new Date().toISOString(), data: { email_id: "in_42", from: "aluno@x.com", to: ["atendimento@mail.cruzeirodosulvirtual.app.br"], subject: "Dúvida" } });
 
-  beforeEach(() => { useResend(); Object.assign(settings, { mail_inbound_secret: secret, mail_forward_to: "equipe@cruzeiro.com" }); });
+  beforeEach(() => { useResend(); people = []; Object.assign(settings, { mail_inbound_secret: secret, mail_forward_to: "equipe@cruzeiro.com" }); });
 
   it("recusa um pedido sem assinatura válida e não encaminha nada", async () => {
     const bad = await handleInbound(received, { ...sign(received), signature: "v1,AAAA" });
@@ -107,13 +135,25 @@ describe("e-mails recebidos são encaminhados à equipe", () => {
     expect(calls[0].url).toMatch(/\/emails\/receiving\/in_42$/);
     expect(calls[1].url).toBe("https://files.resend.test/in_42.eml");
     const fwd = calls[2];
-    expect(new Headers(fwd.init.headers).get("idempotency-key")).toBe("inbound-forward/in_42");
+    expect(new Headers(fwd.init.headers).get("idempotency-key")).toBe("inbound-forward/in_42/equipe@cruzeiro.com");
     const body = JSON.parse(fwd.init.body);
     expect(body.to).toEqual(["equipe@cruzeiro.com"]);
     expect(body.reply_to).toEqual(["aluno@x.com"]);
     expect(body.subject).toBe("Fwd: Dúvida");
     expect(body.text).toContain("Qual o prazo?");
     expect(body.attachments[0]).toMatchObject({ filename: "mensagem-original.eml", content_type: "message/rfc822" });
+  });
+
+  it("o e-mail para o endereço de uma pessoa vai para o e-mail dela; sem gerência, o sem dono vai aos administradores", async () => {
+    people = [{ name: "João da Silva", email: "joao@gmail.com" }, { name: "Admin Geral", email: "admin@x.com", profile: "admin" }];
+    delete settings.mail_forward_to;
+    const body = JSON.stringify({ type: "email.received", created_at: new Date().toISOString(), data: { email_id: "in_7", from: "aluno@x.com", to: ["joao.silva@mail.cruzeirodosulvirtual.app.br", "atendimento@mail.cruzeirodosulvirtual.app.br"], subject: "Oi" } });
+    replies = [() => answer(200, { object: "email", id: "in_7", from: "aluno@x.com", to: ["joao.silva@mail.cruzeirodosulvirtual.app.br"], subject: "Oi", created_at: "2026-11-11", text: "oi", html: null, reply_to: null, raw: null })];
+    const r = await run(handleInbound(body, sign(body)));
+    expect(r).toMatchObject({ status: 200, body: { forwarded: true, count: 2 } });
+    const sends = calls.filter(c => /\/emails$/.test(c.url));
+    expect(sends.map(c => JSON.parse(c.init.body).to[0])).toEqual(["joao@gmail.com", "admin@x.com"]);
+    expect(sends.map(c => new Headers(c.init.headers).get("idempotency-key"))).toEqual(["inbound-forward/in_7/joao@gmail.com", "inbound-forward/in_7/admin@x.com"]);
   });
 
   it("outros eventos são ignorados", async () => {
