@@ -1,3 +1,4 @@
+import fs from "fs";
 import { isEmail } from "../helpers/Email";
 import { Request, Response } from "express";
 import { Op, WhereOptions } from "sequelize";
@@ -31,6 +32,7 @@ import {
   setEnrollment
 } from "../analysis/Store";
 import { buildCommercialMessage, buildCommercialProposal, type CommercialProposalInput } from "../analysis/domain/commercial/proposal";
+import { analysisDocumentPath, removeAnalysisDocument } from "../analysis/Documents";
 import { ticketFromTarget } from "../helpers/ChatTarget";
 import { assertTicketAccess } from "../middleware/canAccessTicket";
 import ShowTicketService from "../services/TicketServices/ShowTicketService";
@@ -74,7 +76,37 @@ const withPolo = async <T extends { poloId: number | null }>(views: T[]): Promis
   const names = new Map((ids.length ? await Polo.findAll({ where: { id: ids }, attributes: ["id", "name"] }) : []).map(p => [p.id, p.name]));
   return views.map(v => ({ ...v, poloName: v.poloId ? names.get(v.poloId) || null : null }));
 };
-const viewOf = async (row: CurricularAnalysis, withSubjects = true): Promise<any> => (await withPolo([curricularView(row, withSubjects)]))[0];
+// who asked for each analysis (the manager follows it) and where it came from: a consultant on the screen or the AI agent in the conversation
+const withRequester = async <T extends { userId: number | null }>(views: T[]): Promise<Array<T & { requesterName: string | null }>> => {
+  const ids = [...new Set(views.map(v => v.userId).filter(Boolean))] as number[];
+  const names = new Map((ids.length ? await User.findAll({ where: { id: ids }, attributes: ["id", "name"] }) : []).map(u => [u.id, u.name]));
+  return views.map(v => ({ ...v, requesterName: v.userId ? names.get(v.userId) || null : null }));
+};
+const viewOf = async (row: CurricularAnalysis, withSubjects = true): Promise<any> => (await withRequester(await withPolo([curricularView(row, withSubjects)])))[0];
+
+// the PDF kept with the analysis (only who may see the analysis reaches it)
+const sendDocument = (row: { filePath: string | null; originalName: string | null }, res: Response): void => {
+  const full = analysisDocumentPath(row.filePath);
+  if (!full) throw new AppError("O documento desta análise não foi guardado (análise antiga). Envie o PDF de novo para conferir.", 410);
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(row.originalName || "documento.pdf")}`);
+  res.setHeader("Cache-Control", "private, no-store");
+  fs.createReadStream(full).pipe(res);
+};
+
+// a consultant with a return past due (the candidate of an analysis delivered more than 24 hours ago, with no answer "enrolled or not")
+// does not start a new analysis or send a proposal before answering. The management is never blocked.
+const mustAnswerFollowUps = async (req: Request): Promise<void> => {
+  if (isManager(req)) return;
+  const due = await listDueFollowUps(me(req), 5);
+  if (!due.length) return;
+  const total = await countDueFollowUps(me(req));
+  throw new AppError("ERR_FOLLOWUP_PENDING", 409, {
+    detail: `Pendentes: ${due.map(d => d.candidateName || d.courseName || `análise ${d.id}`).slice(0, 3).join(", ")}${total > 3 ? ` e mais ${total - 3}` : ""}.`,
+    pending: due.map(d => ({ id: d.id, candidateName: d.candidateName, courseName: d.courseName, dueAt: d.followUpDueAt })),
+    total
+  });
+};
 
 export const rulesShow = async (_req: Request, res: Response): Promise<Response> => res.json(await getRules());
 export const rulesSave = async (req: Request, res: Response): Promise<Response> => res.json(await saveRules(req.body));
@@ -99,11 +131,25 @@ export const curricularIndex = async (req: Request, res: Response): Promise<Resp
   }
   if (num(req.query.leadId)) and.push({ leadId: num(req.query.leadId) });
   if (num(req.query.contactId)) and.push({ contactId: num(req.query.contactId) });
-  const rows = await CurricularAnalysis.findAll({ where: and.length ? { [Op.and]: and } : where, order: [["createdAt", "DESC"]], limit: 100 });
-  return res.json(await withPolo(rows.map(r => curricularView(r, false))));
+  // the manager follows who asked, where and what is still unanswered
+  if (isManager(req) && num(req.query.userId)) and.push({ userId: num(req.query.userId) });
+  if (num(req.query.poloId)) and.push({ poloId: num(req.query.poloId) });
+  const enrollment = String(req.query.enrollment || "").toUpperCase();
+  if (["PENDING", "ENROLLED", "NOT_ENROLLED"].includes(enrollment)) and.push({ enrollmentStatus: enrollment });
+  if (String(req.query.due || "") === "1") and.push({ status: "COMPLETED", enrollmentStatus: "PENDING", followUpDueAt: { [Op.lte]: new Date() } });
+  const from = req.query.from ? new Date(String(req.query.from)) : null;
+  const to = req.query.to ? new Date(String(req.query.to)) : null;
+  if (from && !Number.isNaN(+from)) and.push({ createdAt: { [Op.gte]: from } });
+  if (to && !Number.isNaN(+to)) and.push({ createdAt: { [Op.lte]: new Date(+to + 86400000 - 1) } });
+  const pageSize = Math.min(100, Math.max(1, num(req.query.pageSize) || 50));
+  const page = Math.max(1, num(req.query.page) || 1);
+  const { rows, count } = await CurricularAnalysis.findAndCountAll({ where: and.length ? { [Op.and]: and } : where, order: [["createdAt", "DESC"]], limit: pageSize, offset: (page - 1) * pageSize });
+  res.setHeader("X-Total-Count", String(count));
+  return res.json(await withRequester(await withPolo(rows.map(r => curricularView(r, false)))));
 };
 
 export const curricularStore = async (req: Request, res: Response): Promise<Response> => {
+  await mustAnswerFollowUps(req);
   const { bytes, name } = fileOf(req);
   const b = req.body || {};
   // the consultant says who the analysis is for (before the PDF is read: reading may cost)
@@ -191,6 +237,7 @@ export const curricularProposal = async (req: Request, res: Response): Promise<R
 
 // the message of the proposal goes to the chosen contact (its open conversation, or a new one) and the analysis is linked to it
 export const curricularSendProposal = async (req: Request, res: Response): Promise<Response> => {
+  await mustAnswerFollowUps(req);
   const row = await loadCurricular(req);
   if (row.status !== "COMPLETED") throw new AppError("A análise ainda não está pronta para ser enviada.", 400);
   const ticketId = await ticketFromTarget(req, req.body || {});
@@ -203,8 +250,14 @@ export const curricularSendProposal = async (req: Request, res: Response): Promi
   return res.json({ ok: true, ticketId });
 };
 
+export const curricularFile = async (req: Request, res: Response): Promise<void> => sendDocument(await loadCurricular(req), res);
+
+export const academicFile = async (req: Request, res: Response): Promise<void> => sendDocument(await loadAcademic(req), res);
+
 export const curricularRemove = async (req: Request, res: Response): Promise<Response> => {
-  await (await loadCurricular(req)).destroy();
+  const row = await loadCurricular(req);
+  removeAnalysisDocument(row.filePath);
+  await row.destroy();
   return res.status(204).end();
 };
 
@@ -284,6 +337,7 @@ export const academicRemove = async (req: Request, res: Response): Promise<Respo
   const row = await loadAcademic(req);
   // what is part of a student's history is not deleted by the common action
   if (row.studentId) throw new AppError("Esta análise faz parte do histórico de um aluno e não pode ser excluída.", 400);
+  removeAnalysisDocument(row.filePath);
   await row.destroy();
   return res.status(204).end();
 };

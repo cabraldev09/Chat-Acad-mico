@@ -1970,8 +1970,12 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(a.result.simulation.semesters.every(x => x.semesterLoad <= x.maximumCapacity), "a semester above its capacity");
       assert(a.result.narrative.text.includes("Ingresso: *2º semestre*"), "narrative");
       assert(!a.result.warnings.some(w => w.code.startsWith("INVARIANT_")), "an invariant was broken");
-      // the PDF itself is not kept: only a hash
+      // the PDF is kept to be checked against what was read: only the owner and the management open it, and the manager sees who asked
       assert(sql(`SELECT COUNT(*) FROM CurricularAnalyses WHERE fileHash IS NOT NULL`) !== "0", "hash not kept");
+      assert(a.hasDocument === true && typeof a.requesterName === "string" && a.requesterName.length > 0, `document/requester ${JSON.stringify([a.hasDocument, a.requesterName])}`);
+      const doc = await http.get(`/analysis/curricular/${a.id}/file`, { ...auth(), responseType: "arraybuffer" });
+      assert(doc.status === 200 && /pdf/.test(doc.headers["content-type"]) && Buffer.from(doc.data).slice(0, 4).toString() === "%PDF" && Buffer.from(doc.data).equals(sample), "the document was not served as sent");
+      assert((await http.get(`/analysis/curricular/${a.id}/file`)).status === 401, "the document was served without login");
 
       // changing the entry period recomputes from the saved lines (no PDF again)
       const early = (await http.put(`/analysis/curricular/${a.id}`, { entryPeriod: 1 }, auth())).data;
@@ -1997,6 +2001,7 @@ const postMeta = (id, payload, secret, badSig) => {
       await http.post("/users", { name: "Outro Consultor", email: "outro-an@x.com", password: "senha123", role: "consultor" }, auth());
       const other = (await http.post("/auth/login", { email: "outro-an@x.com", password: "senha123" })).data.token;
       assert((await http.get(`/analysis/curricular/${a.id}`, asUser(other))).status === 403, "another consultant opened it");
+      assert((await http.get(`/analysis/curricular/${a.id}/file`, asUser(other))).status === 403, "another consultant opened the document");
       assert((await http.get("/analysis/curricular", asUser(other))).data.length === 0, "another consultant listed it");
       assert((await http.get("/analysis/curricular", auth())).data.some(x => x.id === a.id), "the admin does not list it");
       assert((await http.get("/analysis/curricular")).status === 401, "no login");
@@ -2153,6 +2158,16 @@ const postMeta = (id, payload, secret, badSig) => {
       const mgmt = (await http.get("/analysis/follow-ups", auth())).data;
       assert(mgmt.due.some(x => x.id === a.id && x.ownerName === "Outro Consultor"), `management ${JSON.stringify(mgmt).slice(0, 200)}`);
       assert((await http.get(`/analysis/curricular/${a.id}`, asUser(owner))).data.enrollment.due === true, "the analysis does not say it is overdue");
+      // with the return overdue the consultant does not start another analysis or send a proposal; the management is not blocked
+      const blockForm = new FormData();
+      blockForm.append("file", sample, { filename: "outra.pdf", contentType: "application/pdf" });
+      blockForm.append("candidateName", "Candidata Bloqueada");
+      blockForm.append("poloId", sql(`SELECT id FROM Polos WHERE code='ANL1'`));
+      const blocked = await http.post("/analysis/curricular", blockForm, { headers: { ...blockForm.getHeaders(), Authorization: `Bearer ${owner}` } });
+      assert(blocked.status === 409 && blocked.data.message === "ERR_FOLLOWUP_PENDING" && /Candidata Retorno/.test(JSON.stringify(blocked.data)), `overdue return did not block ${blocked.status} ${JSON.stringify(blocked.data).slice(0, 200)}`);
+      assert((await http.post(`/analysis/curricular/${a.id}/send-proposal`, {}, asUser(owner))).status === 409, "a proposal went out with a return overdue");
+      const mgrDue = (await http.get("/analysis/curricular?due=1", auth())).data;
+      assert(mgrDue.some(x => x.id === a.id && x.requesterName === "Outro Consultor"), `manager filter ${JSON.stringify(mgrDue).slice(0, 200)}`);
 
       // the three outcomes
       const put = (body, who = owner) => http.put(`/analysis/curricular/${a.id}/enrollment`, body, asUser(who));

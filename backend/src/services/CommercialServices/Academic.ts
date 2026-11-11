@@ -470,7 +470,8 @@ export const analysisSlots = (row: CurricularAnalysis): Slots => {
       ? {
           semesterEntry: row.entryPeriod,
           subjectsWaived: result?.totals?.exempted ?? countOf(subjects, "EXEMPTED"),
-          subjectsRemaining: (result?.totals?.pending ?? countOf(subjects, "PENDING")) + adapt,
+          // the subjects to adapt are part of the pending ones (they are the pending of the periods before the entry): they are never added again
+          subjectsRemaining: result?.totals?.pending ?? countOf(subjects, "PENDING"),
           adaptations: adapt ? `${adapt} disciplinas a adaptar` : "",
           estimatedCompletion: sim?.estimatedCompletionTerm ? `previsão ${String(sim.estimatedCompletionTerm)}` : ""
         }

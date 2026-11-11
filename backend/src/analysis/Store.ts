@@ -6,6 +6,7 @@ import { Op } from "sequelize";
 import AppError from "../errors/AppError";
 import { getSetting, setSetting } from "../helpers/AppSettings";
 import AcademicAnalysis from "../models/AcademicAnalysis";
+import { saveAnalysisDocument } from "./Documents";
 import CurricularAnalysis from "../models/CurricularAnalysis";
 import Student from "../models/Student";
 import { addActivity } from "../services/CrmServices/LeadCore";
@@ -107,6 +108,7 @@ export const curricularView = (row: CurricularAnalysis, withSubjects = true) => 
   candidateName: row.candidateName,
   poloId: row.poloId || null,
   originalName: row.originalName,
+  hasDocument: !!row.filePath,
   pageCount: row.pageCount,
   status: row.status,
   errorMessage: row.errorMessage,
@@ -186,6 +188,7 @@ export const createCurricular = async (
     candidateName: opts.candidateName ? String(opts.candidateName).slice(0, 160) : null,
     poloId: opts.poloId || null,
     originalName: filename.slice(0, 255),
+    filePath: saveAnalysisDocument(bytes),
     fileHash: sha256(bytes),
     pageCount: read.pageCount,
     courseName: read.courseName,
@@ -275,6 +278,7 @@ export const academicView = (row: AcademicAnalysis, full = true) => {
     contactId: row.contactId,
     origin: row.origin,
     originalName: row.originalName,
+    hasDocument: !!row.filePath,
     documentType: row.documentType,
     rgm: row.rgm,
     studentName: row.studentName,
@@ -361,6 +365,7 @@ export const createAcademic = async (
     contactId: opts.contactId || null,
     origin: opts.origin || "STAFF_UPLOAD",
     originalName: filename.slice(0, 255),
+    filePath: saveAnalysisDocument(bytes),
     fileHash,
     contentHash,
     documentType: read.documentType,
