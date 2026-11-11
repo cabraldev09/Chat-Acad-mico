@@ -1,6 +1,7 @@
 import isRetentionOperator from "../middleware/isRetentionOperator";
 import express from "express";
 import multer from "multer";
+import * as Materials from "../controllers/CourseMaterialController";
 
 import isAuth from "../middleware/isAuth";
 import { canAccessContact } from "../middleware/canAccessContact";
@@ -46,6 +47,7 @@ import { affiliateUpload } from "../config/affiliateUpload";
 import { affiliateStaff, canAccessAffiliate } from "../helpers/Affiliates";
 
 const upload = multer({ ...uploadConfig, limits: { fileSize: 30 * 1024 * 1024 } });
+const materialUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024, files: 1 } });
 const certUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 1024 * 1024 } });
 const trainUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
 const kbUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024 } });
@@ -339,6 +341,13 @@ r.get("/lead-stages", isAuth, cached(), Lead.stages.index);
 r.post("/lead-stages", isAuth, isManager, Lead.stages.store);
 r.put("/lead-stages/:id", isAuth, isManager, Lead.stages.update);
 r.delete("/lead-stages/:id", isAuth, isManager, Lead.stages.remove);
+r.get("/course-materials", isAuth, Materials.index);
+r.get("/courses/:id/materials", isAuth, Materials.list);
+r.post("/courses/:id/materials", isAuth, isManager, materialUpload.single("file"), Materials.upload);
+r.get("/course-materials/:id/file", isAuth, Materials.file);
+r.put("/course-materials/:id/confirm", isAuth, isManager, Materials.confirm);
+r.delete("/course-materials/:id", isAuth, isManager, Materials.discard);
+r.post("/course-materials/:id/send", isAuth, Materials.send);
 r.get("/courses", isAuth, cached(), Lead.courses.index);
 r.post("/courses", isAuth, isManager, Lead.courses.store);
 r.put("/courses/:id", isAuth, isManager, Lead.courses.update);

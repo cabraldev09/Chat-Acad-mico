@@ -7,7 +7,7 @@ import { Section } from "../../components/ui";
 
 // The courses the agent talks about, each one with the format and the share of practical classes that the MEC asks for (the same the agent says and
 // the consultant sees in the grade). The rules of the team for a course are edited in the dialog.
-export default function CoursesPanel({ onEditRules, onGrades }) {
+export default function CoursesPanel({ onEditRules, onGrades, onMaterials }) {
   const [grades, setGrades] = useState(null);
   const [q, setQ] = useState("");
 
@@ -23,6 +23,7 @@ export default function CoursesPanel({ onEditRules, onGrades }) {
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar curso" aria-label="Buscar curso" style={{ flex: "1 1 220px", minWidth: 0, padding: "8px 12px", borderRadius: 10, border: "1px solid var(--ui-border)", font: "inherit", background: "var(--ui-surface)", color: "inherit" }} />
         <Button size="small" variant="outlined" startIcon={<Scale size={15} />} onClick={onEditRules} style={{ borderRadius: 10, textTransform: "none", fontWeight: 600 }}>Editar regras do MEC</Button>
         <Button size="small" variant="outlined" onClick={onGrades} style={{ borderRadius: 10, textTransform: "none", fontWeight: 600 }}>Cursos e grades</Button>
+        {onMaterials && <Button size="small" variant="contained" color="primary" disableElevation onClick={onMaterials} style={{ borderRadius: 10, textTransform: "none", fontWeight: 600 }}>Prints e textos dos cursos</Button>}
       </div>
       {grades === null ? <div className="ui-skeleton" style={{ height: 120, borderRadius: 12 }} /> : list.length === 0 ? <div style={{ fontSize: 14, opacity: 0.7 }}>Nenhum curso encontrado.</div> : (
         <div style={{ overflowX: "auto" }}>

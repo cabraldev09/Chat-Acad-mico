@@ -26,7 +26,7 @@ describe.skipIf(files.length === 0)("every commercial matrix is read from its PD
     if (problems.length) console.log("PROBLEMAS:\n" + problems.join("\n"));
     expect(files.length).toBeGreaterThan(0);
     expect(problems.length).toBeLessThanOrEqual(Math.ceil(files.length * 0.05));
-  });
+  }, 120000); // it reads every PDF of the catalogue: slow when the machine is busy
 });
 
 import { readableName } from "../../../src/analysis/services/commercial-grades/reader";

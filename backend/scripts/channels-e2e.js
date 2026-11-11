@@ -152,6 +152,10 @@ const startAnthropicMock = () => {
     const last = req.body.messages[req.body.messages.length - 1];
     const text = t => res.json({ content: [{ type: "text", text: t }], stop_reason: "end_turn", usage });
     const tool = (name, input) => res.json({ content: [{ type: "tool_use", id: `toolu_${anthropic.requests.length}`, name, input }], stop_reason: "tool_use", usage });
+    // the print of a course: the model reads the approved text and the share of presential classes
+    if (Array.isArray(req.body.tools) && req.body.tools.some(t => t.name === "registrar_print_curso")) {
+      return tool("registrar_print_curso", { curso: "Empreendedorismo", formato: "EAD", percentualPresencial: 0, textoAprovado: "O curso de Empreendedorismo é 100% EAD: aulas, atividades e acompanhamento pela plataforma, sem aulas práticas presenciais. 🎓" });
+    }
     // "create the agent with AI": answers through the tool; the first attempt has a stage without goal, the fix comes after the problems are sent back
     if (Array.isArray(req.body.tools) && req.body.tools.some(t => t.name === "criar_agente")) {
       const fixes = req.body.messages.filter(m => Array.isArray(m.content) && m.content.some(b => b.type === "tool_result")).length;
@@ -4155,6 +4159,24 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(!emoji.test(ea4) && !/maio de 2027|% de carga|laboratório|ainda não foi definida/.test(ea4), `EA must not talk about practical classes or the MEC deadline: ${ea4}`);
       out = await say(EA, "wamid.ea-5", "Tem aula presencial?", t => t.some(x => /sem aulas práticas presenciais/.test(x)), "EA presential question");
       assert(!/% de carga|laboratório/.test(out.join(" ")), `EA presential answer: ${out}`);
+      // the print of the course: the management attaches it, the AI reads it, the management confirms, and the agent says the approved text from then on
+      const eaCourseId = Number(sql(`SELECT id FROM Courses WHERE name ILIKE '%empreendedorismo%' AND active=true ORDER BY id LIMIT 1`));
+      const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+      const printForm = () => { const f = new FormData(); f.append("file", png, { filename: "print-empreendedorismo.png", contentType: "image/png" }); return f; };
+      const pf = printForm();
+      const printUp = await http.post(`/courses/${eaCourseId}/materials`, pf, { headers: { ...pf.getHeaders(), Authorization: `Bearer ${token}` } });
+      assert(printUp.status === 201 && printUp.data.status === "pending" && printUp.data.readStatus === "read" && /100% EAD/.test(printUp.data.reading.text) && !/\p{Extended_Pictographic}/u.test(printUp.data.reading.text) && printUp.data.reading.format === "EAD", `print upload: ${printUp.status} ${JSON.stringify(printUp.data).slice(0, 300)}`);
+      const notImage = new FormData(); notImage.append("file", Buffer.from("texto"), { filename: "x.txt", contentType: "text/plain" });
+      assert((await http.post(`/courses/${eaCourseId}/materials`, notImage, { headers: { ...notImage.getHeaders(), Authorization: `Bearer ${token}` } })).status === 400, "a text file was accepted as a print");
+      const listNow = (await http.get("/course-materials", auth())).data.courses.find(c => c.id === eaCourseId);
+      assert(listNow && listNow.waiting === 1 && listNow.mec.formato === "EAD", `courses list: ${JSON.stringify(listNow)}`);
+      assert((await http.get(`/course-materials/${printUp.data.id}/file`, { ...auth(), responseType: "arraybuffer" })).status === 200 && (await http.get(`/course-materials/${printUp.data.id}/file`)).status === 401, "the print is not served only to who is logged in");
+      const confirmed = await http.put(`/course-materials/${printUp.data.id}/confirm`, { percent: 0 }, auth());
+      assert(confirmed.status === 200 && confirmed.data.status === "confirmed" && confirmed.data.confirmedBy, `confirm: ${confirmed.status} ${JSON.stringify(confirmed.data).slice(0, 200)}`);
+      assert((await http.put(`/course-materials/${printUp.data.id}/confirm`, { percent: 140 }, auth())).status === 400, "a percentage above 100 was accepted");
+      const detailNow = (await http.get(`/courses/${eaCourseId}/materials`, auth())).data;
+      assert(/100% EAD/.test(detailNow.course.approvedText || "") && detailNow.course.mec.semPratica === true, `approved text in use: ${JSON.stringify(detailNow.course).slice(0, 300)}`);
+      assert((await http.post(`/course-materials/${printUp.data.id}/send`, {}, auth())).status === 400, "a print went out without a contact");
       const eaGrade = (await http.get("/grades", auth())).data.grades.find(g => /empreendedorismo/i.test(g.courseName));
       if (eaGrade) assert(eaGrade.mec.exigencia === "livre" && eaGrade.mec.semPratica === true && /EAD: sem aulas práticas/.test(eaGrade.mec.resumo), `EA grade mec: ${JSON.stringify(eaGrade.mec)}`);
 
@@ -5087,6 +5109,8 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await count({ audience: "students", onboardingDone: true })) === finished - 1, "a lost student stayed in the list");
     });
     await test("connection health: state, since when, what it did today; each person sees only their own numbers", async () => {
+      // (the suite may cross midnight in the time zone of the company: one message of the official number is brought to now, so "today" has it)
+      sql(`UPDATE Messages SET createdAt = now() WHERE id = (SELECT m.id FROM Messages m JOIN Tickets t ON t.id = m.ticketId JOIN Whatsapps w ON w.id = t.whatsappId WHERE w.channel = 'whatsapp_cloud' AND m.fromMe = false ORDER BY m.createdAt DESC LIMIT 1)`);
       const h = await http.get("/whatsapp-health", auth());
       assert(h.status === 200 && h.data.length >= 2, `health ${h.status} ${h.data.length}`);
       const first = h.data[0];

@@ -43,6 +43,7 @@ const AiAgentCentral = lazy(() => import("../pages/AiAgents/Central"));
 const Webhooks = lazy(() => import("../pages/Webhooks/"));
 const Reports = lazy(() => import("../pages/Reports/"));
 const CommercialCenter = lazy(() => import("../pages/CommercialCenter/"));
+const CourseMaterials = lazy(() => import("../pages/CourseMaterials/"));
 const CrmBoard = lazy(() => import("../pages/CRM/Board"));
 const CrmPanel = lazy(() => import("../pages/CRM/Panel"));
 const CrmTasks = lazy(() => import("../pages/CRM/Tasks"));
@@ -158,6 +159,8 @@ const Routes = () => {
                 <Route exact path="/crm/retencao" component={Retention} isPrivate retentionOnly />
                 <Route exact path="/afiliados" component={Affiliates} isPrivate salesOnly />
                 <Route exact path="/grades" component={Grades} isPrivate />
+                <Route exact path="/cursos" component={CourseMaterials} isPrivate />
+                <Route exact path="/cursos/:id" component={CourseMaterials} isPrivate />
                 <Route exact path="/analise-curricular/:id?" component={CurricularAnalysis} isPrivate />
                 <Route exact path="/analise-academica/:id?" component={AcademicAnalysis} isPrivate academicOnly />
                 <Route exact path="/alunos" component={Students} isPrivate academicOnly />

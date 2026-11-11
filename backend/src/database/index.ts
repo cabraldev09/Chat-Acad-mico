@@ -40,6 +40,7 @@ import Student from "../models/Student";
 import StudentToken from "../models/StudentToken";
 import CurricularAnalysis from "../models/CurricularAnalysis";
 import AnalysisEvent from "../models/AnalysisEvent";
+import CourseMaterial from "../models/CourseMaterial";
 import AcademicAnalysis from "../models/AcademicAnalysis";
 import CommercialGrade from "../models/CommercialGrade";
 import AiAgent from "../models/AiAgent";
@@ -138,6 +139,7 @@ const models = [
   StudentToken,
   CurricularAnalysis,
   AnalysisEvent,
+  CourseMaterial,
   AcademicAnalysis,
   CommercialGrade,
   AiAgent,

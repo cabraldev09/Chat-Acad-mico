@@ -29,6 +29,7 @@ import GoalIcon from "lucide-react/dist/esm/icons/goal";
 import GaugeIcon from "lucide-react/dist/esm/icons/gauge";
 import SlidersIcon from "lucide-react/dist/esm/icons/sliders-horizontal";
 import GraduationCapIcon from "lucide-react/dist/esm/icons/graduation-cap";
+import ImagesIcon from "lucide-react/dist/esm/icons/image-plus";
 import FileSearchIcon from "lucide-react/dist/esm/icons/file-search";
 import LibraryIcon from "lucide-react/dist/esm/icons/library";
 import BookOpenCheckIcon from "lucide-react/dist/esm/icons/book-open-check";
@@ -291,6 +292,7 @@ const MainListItems = (props) => {
         <ListSubheader disableSticky className={classes.sectionLabel}>Cursos e alunos</ListSubheader>
       )}
       <ListItemLink to="/grades" primary="Grades" icon={<LibraryIcon className="ico" />} collapsed={collapsed} />
+      <ListItemLink to="/cursos" primary="Cursos e materiais" icon={<ImagesIcon className="ico" />} collapsed={collapsed} />
       <ListItemLink
         to="/analise-curricular"
         primary="Análise curricular"
