@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from "react";
+import React, { useState, useEffect, useContext, useCallback } from "react";
 import { useParams, useHistory } from "react-router-dom";
 import { toast } from "react-toastify";
 import { makeStyles } from "@material-ui/core";
@@ -21,6 +21,7 @@ import toastError from "../../errors/toastError";
 import { i18n } from "../../translate/i18n";
 import { wa } from "../chat/chatTheme";
 import { AuthContext } from "../../context/Auth/AuthContext";
+import EnrollDialog from "../../pages/CRM/EnrollDialog";
 import { setTyping, clearTyping, useTyping } from "../../utils/typingStore";
 
 const useStyles = makeStyles((theme) => {
@@ -123,19 +124,39 @@ const AiBanner = ({ ticket }) => {
   );
 };
 
-// The conversation a person took from the agent: the five lines of what the agent learned (what the lead wants, how warm, objections, doubt,
-// next step) and "Sugerir resposta", the next answer written by the agent for the consultant to read, send or edit
+// THE COPILOT of the consultant who took the conversation from the agent: where the commercial process is (the steps of the team, the current one
+// highlighted), the next message ready in the words of the team (use it, edit it or send it), what the agent learned (the five lines) and, on request,
+// a suggestion of the AI for what the lead just asked. The panel follows the conversation: a new message updates the step.
 const HandoffPanel = ({ ticket }) => {
   const [summary, setSummary] = useState(null);
+  const [copilot, setCopilot] = useState(null);
   const [open, setOpen] = useState(true);
+  const [showSummary, setShowSummary] = useState(false);
   const [suggestion, setSuggestion] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [enrollLead, setEnrollLead] = useState(null);
   const show = !!ticket.id && !ticket.aiActive && !!ticket.userId && ticket.status === "open" && !ticket.isGroup && !ticket.isHistorical;
+  const reload = useCallback(() => {
+    api.get(`/tickets/${ticket.id}/copilot`).then(({ data }) => setCopilot(data)).catch(() => setCopilot(null));
+  }, [ticket.id]);
   useEffect(() => {
     setSummary(null);
+    setCopilot(null);
     setSuggestion(null);
-    if (!show) return;
+    if (!show) return undefined;
     api.get(`/tickets/${ticket.id}/ai-summary`).then(({ data }) => setSummary(data)).catch(() => setSummary({ lines: [] }));
+    reload();
+    // a message of the lead (or the consultant's own) moves the process: the step is read again, a little after the burst
+    let timer = null;
+    const onMessage = (e) => {
+      const d = e.detail || {};
+      if (d.ticketId && Number(d.ticketId) !== Number(ticket.id)) return;
+      clearTimeout(timer);
+      timer = setTimeout(reload, 1200);
+    };
+    window.addEventListener("copilotRefresh", onMessage);
+    const poll = setInterval(reload, 45000);
+    return () => { window.removeEventListener("copilotRefresh", onMessage); clearTimeout(timer); clearInterval(poll); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ticket.id, show]);
   if (!show) return null;
@@ -150,43 +171,87 @@ const HandoffPanel = ({ ticket }) => {
     }
     setBusy(false);
   };
-  const send = async () => {
+  const sendText = async (text) => {
     setBusy(true);
     try {
-      await api.post(`/messages/${ticket.id}`, { body: suggestion });
+      await api.post(`/messages/${ticket.id}`, { body: text });
       setSuggestion(null);
+      setTimeout(reload, 1500);
     } catch (err) {
       toastError(err);
     }
     setBusy(false);
   };
-  const edit = () => {
-    window.dispatchEvent(new CustomEvent("fillMessageInput", { detail: { ticketId: ticket.id, text: suggestion } }));
-    setSuggestion(null);
+  const fill = (text) => window.dispatchEvent(new CustomEvent("fillMessageInput", { detail: { ticketId: ticket.id, text } }));
+  const sendGrade = async () => {
+    if (!copilot || !copilot.leadId) return;
+    const { data: lead } = await api.get(`/leads/${copilot.leadId}`).catch(() => ({ data: null }));
+    window.location.assign(`/grades${lead && lead.courseName ? `?q=${encodeURIComponent(lead.courseName)}` : ""}`);
+  };
+  const openEnroll = async () => {
+    try {
+      const { data } = await api.get(`/leads/${copilot.leadId}`);
+      setEnrollLead(data);
+    } catch (err) {
+      toastError(err);
+    }
   };
   const lines = (summary && summary.lines) || [];
+  const steps = (copilot && copilot.steps) || [];
+  const next = copilot && copilot.suggestion;
+  const doneCount = steps.filter((x) => x.done).length;
   const btn = { border: 0, borderRadius: 8, padding: "6px 12px", fontFamily: "inherit", fontWeight: 600, cursor: "pointer", fontSize: 13 };
+  const main = { ...btn, background: "#0f766e", color: "#fff" };
+  const ghost = { ...btn, background: "transparent", color: "#0f766e", border: "1px solid #0f766e" };
   return (
     <div style={{ padding: "8px 14px", background: "rgba(15,118,110,.08)", borderBottom: "1px solid rgba(15,118,110,.18)", fontSize: 13 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
         <Bot size={16} color="#0f766e" />
-        <b style={{ color: "#0f766e" }}>{lines.length ? "Resumo do agente de IA" : "Agente de IA"}</b>
+        <b style={{ color: "#0f766e" }}>Copiloto</b>
+        {steps.length > 0 && <span style={{ opacity: 0.75 }}>· passo {Math.min(doneCount + 1, steps.length)} de {steps.length}</span>}
         {summary && summary.why && <span style={{ opacity: 0.75 }}>· veio para você porque {summary.why}</span>}
         <span style={{ flex: 1 }} />
-        {lines.length > 0 && <button type="button" onClick={() => setOpen((v) => !v)} style={{ ...btn, background: "transparent", color: "#0f766e" }}>{open ? "Esconder" : "Ver resumo"}</button>}
-        <button type="button" disabled={busy} onClick={suggest} style={{ ...btn, background: "#0f766e", color: "#fff" }}>{busy && !suggestion ? "Escrevendo…" : "Sugerir resposta"}</button>
+        <button type="button" onClick={() => setOpen((v) => !v)} style={{ ...btn, background: "transparent", color: "#0f766e" }}>{open ? "Esconder" : "Ver copiloto"}</button>
+        <button type="button" disabled={busy} onClick={suggest} title="A IA escreve uma resposta para o que a pessoa acabou de perguntar" style={main}>{busy && !suggestion ? "Escrevendo…" : "Pedir sugestão à IA"}</button>
       </div>
-      {open && lines.length > 0 && (
-        <ul style={{ margin: "6px 0 0", paddingLeft: 26, lineHeight: 1.5 }}>
-          {lines.map((l, i) => <li key={i}>{l}</li>)}
-        </ul>
+      {open && steps.length > 0 && (
+        <ol style={{ listStyle: "none", margin: "8px 0 0", padding: 0, display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {steps.map((st) => {
+            const current = copilot.current === st.key;
+            return (
+              <li key={st.key} title={st.label} style={{ padding: "2px 9px", borderRadius: 999, fontSize: 12, fontWeight: current ? 700 : 500, border: `1px solid ${current ? "#0f766e" : "rgba(15,118,110,.25)"}`, background: current ? "#0f766e" : st.done ? "rgba(15,118,110,.14)" : "transparent", color: current ? "#fff" : "inherit", opacity: st.done || current ? 1 : 0.65 }}>
+                {st.done ? "✓ " : ""}{st.label}
+              </li>
+            );
+          })}
+        </ol>
       )}
+      {open && next && !suggestion && (
+        <div style={{ marginTop: 8, background: "rgba(255,255,255,.7)", borderRadius: 10, padding: "8px 10px" }}>
+          <div style={{ fontSize: 11.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".05em", color: "#0f766e", marginBottom: 4 }}>Próxima mensagem</div>
+          <div style={{ whiteSpace: "pre-wrap", marginBottom: 8 }}>{next.text}</div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button type="button" disabled={busy} onClick={() => fill(next.text)} style={main}>Usar no campo de mensagem</button>
+            <button type="button" disabled={busy} onClick={() => sendText(next.text)} style={ghost}>Enviar agora</button>
+            {next.action === "send_grade" && <button type="button" onClick={sendGrade} style={ghost}>Enviar a grade (PDF)</button>}
+            {next.action === "enroll" && <button type="button" onClick={openEnroll} style={ghost}>Confirmar matrícula</button>}
+          </div>
+        </div>
+      )}
+      {open && lines.length > 0 && (
+        <div style={{ marginTop: 6 }}>
+          <button type="button" onClick={() => setShowSummary((v) => !v)} style={{ ...btn, padding: "2px 0", background: "transparent", color: "#0f766e" }}>{showSummary ? "Esconder o resumo do agente" : "Ver o resumo do agente de IA"}</button>
+          {showSummary && <ul style={{ margin: "4px 0 0", paddingLeft: 26, lineHeight: 1.5 }}>{lines.map((l, i) => <li key={i}>{l}</li>)}</ul>}
+        </div>
+      )}
+      {enrollLead && <EnrollDialog open lead={enrollLead} onClose={() => setEnrollLead(null)} onDone={() => { setEnrollLead(null); reload(); }} />}
       {suggestion && (
         <div style={{ marginTop: 8, background: "rgba(255,255,255,.7)", borderRadius: 10, padding: "8px 10px" }}>
+          <div style={{ fontSize: 11.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".05em", color: "#0f766e", marginBottom: 4 }}>Sugestão da IA</div>
           <div style={{ whiteSpace: "pre-wrap", marginBottom: 8 }}>{suggestion}</div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button type="button" disabled={busy} onClick={send} style={{ ...btn, background: "#0f766e", color: "#fff" }}>Enviar</button>
-            <button type="button" onClick={edit} style={{ ...btn, background: "transparent", color: "#0f766e", border: "1px solid #0f766e" }}>Editar antes</button>
+            <button type="button" disabled={busy} onClick={() => sendText(suggestion)} style={main}>Enviar</button>
+            <button type="button" onClick={() => { fill(suggestion); setSuggestion(null); }} style={ghost}>Editar antes</button>
             <button type="button" onClick={() => setSuggestion(null)} style={{ ...btn, background: "transparent", color: "inherit" }}>Descartar</button>
           </div>
         </div>
@@ -264,6 +329,7 @@ const Ticket = () => {
     socket.on("appMessage", (data) => {
       if (data.action !== "create" || +data.message?.ticketId !== +ticketId) return;
       if (!data.message.fromMe) clearTyping(ticketId);
+      window.dispatchEvent(new CustomEvent("copilotRefresh", { detail: { ticketId } }));
       const next = data.ticket;
       if (!next) return;
       setTicket((prev) => {

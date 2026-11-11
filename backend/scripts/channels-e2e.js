@@ -4047,6 +4047,12 @@ const postMeta = (id, payload, secret, badSig) => {
       await waitFor(() => handoffOf(MA) === "proposal" && sql(`SELECT aiActive FROM Tickets WHERE id=${ticketOf(MA)}`) === "0", 15000, "MA handed to the consultant for the proposal");
       assert(slotsOfNumber(MA).fullName === "Maira da Silva Batista" && slotsOfNumber(MA).cpfGiven === true, `MA data: ${JSON.stringify(slotsOfNumber(MA)).slice(0, 300)}`);
       assert(anthropic.requests.length === llmMa2, "MA the model was called where the process needs none");
+      // the copilot of the consultant reads the same conversation: everything up to the name and CPF is done, the proposal is next, with no model call
+      const cop = (await http.get(`/tickets/${ticketOf(MA)}/copilot`, auth())).data;
+      assert(cop.hasLead && cop.current === "proposal", `copilot step: ${JSON.stringify(cop.steps)}`);
+      assert(cop.steps.filter(x => x.done).map(x => x.key).join(",") === "entry,course,city,format,grade,doubts,bolsa", `copilot done: ${JSON.stringify(cop.steps)}`);
+      assert(cop.suggestion && cop.suggestion.action === "proposal" && /proposta da sua bolsa/.test(cop.suggestion.text) && !emoji.test(cop.suggestion.text), `copilot text: ${JSON.stringify(cop.suggestion)}`);
+      assert(anthropic.requests.length === llmMa2, "the copilot called the model");
       // the standard of the area comes back (the test of the MEC rules reads it)
       for (const bioId of sql(`SELECT id FROM Courses WHERE name='Biomedicina' ORDER BY id`).split("\n").filter(Boolean)) {
         // eslint-disable-next-line no-await-in-loop
