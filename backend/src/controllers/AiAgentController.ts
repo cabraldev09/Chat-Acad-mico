@@ -832,20 +832,24 @@ export const evalRemove = async (req: Request, res: Response): Promise<Response>
 // THE SCRIPT OF THE COMMERCIAL AGENT in one list: each step of the process of the team with what the agent says there (the same texts the agent uses, so what the
 // manager reads here is what the lead receives). The place to see the process; to change how a step is answered, teach it in "Testar e ensinar".
 export const script = async (req: Request, res: Response): Promise<Response> => {
-  await loadAgent(req.params.id);
+  const agent = await loadAgent(req.params.id);
   const { QUESTIONS, PRESENT_BRIDGE, DOUBTS_QUESTION, eadTextOf, durationLine } = await import("../services/CommercialServices/Rules");
   const { TUTORING_PITCH } = await import("../services/CommercialServices/GradeChoice");
   const { bolsaRequestFor } = await import("../services/CommercialServices/BolsaData");
   const { FIXED } = await import("../services/CommercialServices/Turn");
+  const { configOf } = await import("../services/CommercialServices/Config");
+  const mine = configOf(agent).texts;
+  // the steps whose words the team may change keep the standard in "standard" and what the team wrote in "text"
+  const step = (key: string, label: string, standard: string, note: string, editable: boolean) => ({ key, label, standard, text: editable && (mine as any)[key] ? (mine as any)[key] : standard, custom: editable && !!(mine as any)[key], editable, note });
   const steps = [
-    { key: "entry", label: "1. Primeira graduação", text: QUESTIONS.entry, note: "Pergunta antes de tudo, para saber se é primeira graduação, transferência ou segunda graduação." },
-    { key: "course", label: "2. Curso de interesse", text: QUESTIONS.course, note: "Reconhece o curso pelo nome do catálogo (com ou sem “CST em”)." },
-    { key: "city", label: "3. Cidade e polo", text: QUESTIONS.city, note: "Acha o polo pela cidade e leva o lead ao consultor desse polo." },
-    { key: "format", label: "4. Duração e formato", text: [PRESENT_BRIDGE, durationLine("Nome do curso", 4), eadTextOf("Nome do curso")].filter(Boolean).join("\n\n"), note: "Curso EAD: informa duração e formato, sem aulas práticas. Curso semipresencial: explica a mudança do MEC e o percentual de prática do curso (veja Cursos e regras)." },
-    { key: "grade", label: "5. Grade, tutoria e estágio", text: `Vou te enviar a grade do curso.\n\n${TUTORING_PITCH}`, note: "Envia o resumo e o PDF da grade, fala da tutoria e do estágio do curso." },
-    { key: "doubts", label: "6. Dúvidas", text: DOUBTS_QUESTION, note: "Responde as dúvidas com a base de conhecimento (concurso, reajuste, taxa, início das aulas, cancelamento) e retoma com “Tá por aí?” se a pessoa parar de responder." },
-    { key: "bolsa", label: "7. Nome completo e CPF", text: bolsaRequestFor({ name: true, cpf: true }), note: "Pede os dados para o consultor simular a bolsa. O CPF fica só no cadastro do lead." },
-    { key: "handoff", label: "8. Passagem ao consultor", text: FIXED.toProposal, note: "O consultor do polo monta a proposta. O agente nunca informa preço nem matricula." }
+    step("entry", "1. Primeira graduação", QUESTIONS.entry, "Pergunta antes de tudo, para saber se é primeira graduação, transferência ou segunda graduação.", true),
+    step("course", "2. Curso de interesse", QUESTIONS.course, "Reconhece o curso pelo nome do catálogo (com ou sem “CST em”).", true),
+    step("city", "3. Cidade e polo", QUESTIONS.city, "Acha o polo pela cidade e leva o lead ao consultor desse polo.", true),
+    step("format", "4. Duração e formato", [PRESENT_BRIDGE, durationLine("Nome do curso", 4), eadTextOf("Nome do curso")].filter(Boolean).join("\n\n"), "Curso EAD: informa duração e formato, sem aulas práticas. Curso semipresencial: explica a mudança do MEC e o percentual de prática do curso (veja Cursos e regras).", false),
+    step("grade", "5. Grade, tutoria e estágio", `Vou te enviar a grade do curso.\n\n${TUTORING_PITCH}`, "Envia o resumo e o PDF da grade, fala da tutoria e do estágio do curso.", false),
+    step("doubts", "6. Dúvidas", DOUBTS_QUESTION, "Responde as dúvidas com a base de conhecimento (concurso, reajuste, taxa, início das aulas, cancelamento) e retoma com “Tá por aí?” se a pessoa parar de responder.", true),
+    step("bolsa", "7. Nome completo e CPF", bolsaRequestFor({ name: true, cpf: true }), "Pede os dados para o consultor simular a bolsa. O CPF fica só no cadastro do lead.", true),
+    step("handoff", "8. Passagem ao consultor", FIXED.toProposal, "O consultor do polo monta a proposta. O agente nunca informa preço nem matricula.", true)
   ];
   return res.json({ steps });
 };

@@ -114,6 +114,10 @@ class CurricularAnalysis extends Model<CurricularAnalysis> {
   @Column
   followUpNotificationCount: number;
 
+  // set when the coordination of the polo was told that the return is still unanswered after two business days (once)
+  @Column(DataType.DATE(6))
+  followUpEscalatedAt: Date;
+
   @CreatedAt
   createdAt: Date;
 

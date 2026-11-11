@@ -5,7 +5,9 @@ import { getBusinessConfig, isBusinessNow } from "../helpers/BusinessTime";
 import { getIO } from "../libs/socket";
 import CurricularAnalysis from "../models/CurricularAnalysis";
 import User from "../models/User";
-import { businessDaysBetween } from "../analysis/Store";
+import { businessDaysBetween, listStaleEnrollmentCases } from "../analysis/Store";
+import Queue from "../models/Queue";
+import UserQueue from "../models/UserQueue";
 import { frontBase, notify } from "../services/MailServices/Notify";
 import { followUpMail } from "../services/MailServices/Templates";
 import { logger } from "../utils/logger";
@@ -84,9 +86,50 @@ export const runFollowUpOnce = async (now: Date = new Date()): Promise<{ analyse
   return { analyses: notified, owners: byOwner.size };
 };
 
+// The returns still unanswered after two business days go, once, to the coordination of the polo of the analysis (the coordinators who are in a queue of that polo;
+// none there, every coordinator): a live notice and an e-mail with the list. The consultant keeps being charged by the reminders above.
+export const runEscalationOnce = async (now: Date = new Date()): Promise<{ analyses: number; coordinators: number }> => {
+  const today = zoned(now);
+  if (today.weekday === 0 || today.weekday === 6 || !(await workingNow(now))) return { analyses: 0, coordinators: 0 };
+  const stale = (await listStaleEnrollmentCases(null, 200)).filter(a => !a.followUpEscalatedAt);
+  if (!stale.length) return { analyses: 0, coordinators: 0 };
+  const everyone = await User.findAll({ where: { role: "coordenacao" } as any, attributes: ["id", "name", "email"] });
+  if (!everyone.length) {
+    await CurricularAnalysis.update({ followUpEscalatedAt: now } as any, { where: { id: stale.map(a => a.id) } });
+    return { analyses: 0, coordinators: 0 };
+  }
+  const byPolo = new Map<number | null, CurricularAnalysis[]>();
+  stale.forEach(a => byPolo.set(a.poloId || null, [...(byPolo.get(a.poloId || null) || []), a]));
+  const told = new Set<number>();
+  for (const [poloId, list] of byPolo) {
+    // eslint-disable-next-line no-await-in-loop
+    let team: User[] = [];
+    if (poloId) {
+      // eslint-disable-next-line no-await-in-loop
+      const queues = await Queue.findAll({ where: { poloId } as any, attributes: ["id"] });
+      // eslint-disable-next-line no-await-in-loop
+      const links = queues.length ? await UserQueue.findAll({ where: { queueId: queues.map(q => q.id) } as any, attributes: ["userId"] }) : [];
+      const ids = new Set(links.map(l => l.userId));
+      team = everyone.filter(u => ids.has(u.id));
+    }
+    if (!team.length) team = everyone;
+    // claim first, then tell
+    // eslint-disable-next-line no-await-in-loop
+    await CurricularAnalysis.update({ followUpEscalatedAt: now } as any, { where: { id: list.map(a => a.id) } });
+    const items = list.map(a => ({ id: a.id, student: a.candidateName || "Candidato sem nome", course: a.courseName || "Curso não identificado", businessDays: businessDaysBetween(a.enrollmentReanalysisAt || a.createdAt) }));
+    for (const coordinator of team) {
+      getIO().to(`user:${coordinator.id}`).emit("followUp", { userId: coordinator.id, count: items.length, items: items.slice(0, 5), escalated: true });
+      notify(coordinator.email, followUpMail(coordinator.name, items, `${frontBase()}/analise-curricular`), "follow-up-escalation");
+      told.add(coordinator.id);
+    }
+  }
+  return { analyses: stale.length, coordinators: told.size };
+};
+
 const tick = async (): Promise<void> => {
   try {
     await runFollowUpOnce();
+    await runEscalationOnce();
   } catch (err) {
     logger.warn(`Follow-up alert tick failed: ${err}`);
   }

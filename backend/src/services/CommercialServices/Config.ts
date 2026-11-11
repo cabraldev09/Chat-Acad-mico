@@ -19,7 +19,11 @@ export interface CommercialConfig {
   // the lead keeps the consultant who already served them when that person belongs to the team
   keepOwner: boolean;
   messages: { queued: string; afterHours: string };
+  // the words of the team at each step of the script (empty = the standard of the process): what the agent says to ask the first degree, the course, the city, the doubts,
+  // the name and CPF, and when the consultant takes over
+  texts: { entry: string; course: string; city: string; doubts: string; bolsa: string; handoff: string };
 }
+export const SCRIPT_TEXT_KEYS = ["entry", "course", "city", "doubts", "bolsa", "handoff"] as const;
 
 export const DEFAULT_COMMERCIAL: CommercialConfig = {
   greeting: "",
@@ -29,7 +33,8 @@ export const DEFAULT_COMMERCIAL: CommercialConfig = {
   hotHandoff: "intent",
   maxClarifications: 3,
   keepOwner: true,
-  messages: { queued: "", afterHours: "" }
+  messages: { queued: "", afterHours: "" },
+  texts: { entry: "", course: "", city: "", doubts: "", bolsa: "", handoff: "" }
 };
 
 const bool = (v: any, d: boolean): boolean => (typeof v === "boolean" ? v : d);
@@ -53,7 +58,8 @@ export const cleanCommercial = (raw: any): CommercialConfig => {
     hotHandoff: c.hotHandoff === "hot" ? "hot" : "intent",
     maxClarifications: Number.isFinite(max) && max >= 1 && max <= 6 ? Math.floor(max) : DEFAULT_COMMERCIAL.maxClarifications,
     keepOwner: bool(c.keepOwner, true),
-    messages: { queued: text(msgs.queued, 500), afterHours: text(msgs.afterHours, 500) }
+    messages: { queued: text(msgs.queued, 500), afterHours: text(msgs.afterHours, 500) },
+    texts: Object.fromEntries(SCRIPT_TEXT_KEYS.map(k => [k, text(c.texts && typeof c.texts === "object" ? c.texts[k] : "", 700)])) as CommercialConfig["texts"]
   };
 };
 
