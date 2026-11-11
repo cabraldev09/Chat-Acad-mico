@@ -26,6 +26,7 @@ import api from "../../services/api";
 import ButtonWithSpinner from "../ButtonWithSpinner";
 import toastError from "../../errors/toastError";
 import useQueues from "../../hooks/useQueues";
+import EnrollDialog from "../../pages/CRM/EnrollDialog";
 
 const useStyles = makeStyles((theme) => ({
   maxWidth: {
@@ -56,6 +57,9 @@ const TransferTicketModal = ({ modalOpen, onClose, ticketid }) => {
 	const [selectedQueue, setSelectedQueue] = useState('');
 	const [note, setNote] = useState("");
 	const [notifyClient, setNotifyClient] = useState(false);
+	// to the tutoring a lead that did not enroll yet: the consultant says whether the student enrolled (and then confirms it with the RGM) or it is support to a student
+	const [enrollAsk, setEnrollAsk] = useState(null);
+	const [enrollLead, setEnrollLead] = useState(null);
 	const classes = useStyles();
 	const { findAll: findAllQueues } = useQueues();
 
@@ -110,6 +114,8 @@ const TransferTicketModal = ({ modalOpen, onClose, ticketid }) => {
 		setDepartment("");
 		setNote("");
 		setNotifyClient(false);
+		setEnrollAsk(null);
+		setEnrollLead(null);
 	};
 
 	const handleSaveTicket = async e => {
@@ -122,6 +128,18 @@ const TransferTicketModal = ({ modalOpen, onClose, ticketid }) => {
 		if (!selectedUser && !selectedQueue) {
 			toast.error(i18n.t("transferTicketModal.chooseDestination"));
 			return;
+		}
+		// the tutoring takes students: a lead that is not enrolled yet is asked first
+		if (!enrollAsk && department === "role:tutoria") {
+			try {
+				const { data: cop } = await api.get(`/tickets/${ticketid}/copilot`);
+				if (cop && cop.leadId) {
+					const { data: lead } = await api.get(`/leads/${cop.leadId}`);
+					if (lead && !lead.enrolledAt) { setEnrollAsk(lead); return; }
+				}
+			} catch (err) {
+				// without the lead the transfer goes as before
+			}
 		}
 		setLoading(true);
 		try {
@@ -154,6 +172,23 @@ const TransferTicketModal = ({ modalOpen, onClose, ticketid }) => {
 	};
 
 	return (
+		<>
+		<Dialog open={!!enrollAsk && !enrollLead} onClose={() => setEnrollAsk(null)} maxWidth="xs" fullWidth>
+			<DialogTitle>O aluno se matriculou?</DialogTitle>
+			<DialogContent>
+				<p style={{ margin: 0, lineHeight: 1.5 }}>
+					{enrollAsk && enrollAsk.name ? `${enrollAsk.name} ainda não tem a matrícula confirmada no CRM. ` : ""}
+					Se o aluno se matriculou, confirme a matrícula com o RGM: o aluno do portal é criado e a tutoria recebe o contato, o curso e o polo.
+					Se é só um atendimento de suporte a um aluno, a conversa vai para a tutoria como está.
+				</p>
+			</DialogContent>
+			<DialogActions>
+				<Button onClick={() => setEnrollAsk(null)} color="secondary">Voltar</Button>
+				<Button onClick={() => { const lead = enrollAsk; setEnrollLead(lead); }} color="primary" variant="contained">Sim, confirmar matrícula</Button>
+				<Button onClick={(e) => { handleSaveTicket(e); }} color="primary" variant="outlined">Não, é suporte a aluno</Button>
+			</DialogActions>
+		</Dialog>
+		{enrollLead && <EnrollDialog open lead={enrollLead} onClose={() => { setEnrollLead(null); }} onDone={() => { handleClose(); history.push("/tickets"); }} />}
 		<Dialog open={modalOpen} onClose={handleClose} maxWidth="xs" fullWidth scroll="paper">
 			<form onSubmit={handleSaveTicket}>
 				<DialogTitle id="form-dialog-title">
@@ -278,6 +313,7 @@ const TransferTicketModal = ({ modalOpen, onClose, ticketid }) => {
 				</DialogActions>
 			</form>
 		</Dialog>
+		</>
 	);
 };
 
