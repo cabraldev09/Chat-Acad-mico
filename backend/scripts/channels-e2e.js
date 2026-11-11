@@ -2196,7 +2196,7 @@ const postMeta = (id, payload, secret, badSig) => {
       const runDb = code => execFileSync(process.execPath, ["-e", `require("reflect-metadata"); const db=require("./dist/database").default; require("./dist/libs/socket").initIO(require("http").createServer()); (async()=>{ ${code} })().then(()=>db.close()).then(()=>process.exit(0)).catch(e=>{console.error(e.stack);process.exit(1)});`], { cwd: ROOT, env, timeout: 25000 }).toString();
       const esc1 = JSON.parse(runDb(`const {runEscalationOnce}=require("./dist/workers/FollowUpAlert"); console.log(JSON.stringify(await runEscalationOnce(new Date("2026-11-11T16:00:00Z"))));`).split("\n").filter(l => l.startsWith("{")).pop());
       assert(esc1.analyses >= 1 && esc1.coordinators >= 1, `escalation: ${JSON.stringify(esc1)}`);
-      assert(sql(`SELECT followUpEscalatedAt IS NOT NULL FROM CurricularAnalyses WHERE id = ${a.id}`) === "t", "the escalation was not recorded");
+      assert(sql(`SELECT CASE WHEN followUpEscalatedAt IS NULL THEN 0 ELSE 1 END FROM CurricularAnalyses WHERE id = ${a.id}`) === "1", "the escalation was not recorded");
       const esc2 = JSON.parse(runDb(`const {runEscalationOnce}=require("./dist/workers/FollowUpAlert"); console.log(JSON.stringify(await runEscalationOnce(new Date("2026-11-11T16:05:00Z"))));`).split("\n").filter(l => l.startsWith("{")).pop());
       assert(esc2.analyses === 0, `the coordination was told twice: ${JSON.stringify(esc2)}`);
       sql(`UPDATE CurricularAnalyses SET followUpDueAt = now() - interval '2 hours' WHERE id = ${a.id}`);
