@@ -226,12 +226,12 @@ export const QUESTIONS = {
   course: "Qual curso você tem interesse? Se você já é aluno e precisa da tutoria ou da secretaria, é só me dizer.",
   city: "Você reside em qual cidade?"
 };
-export const nextQuestionOf = (slots: Slots, ask: { course?: boolean; city?: boolean; entry?: boolean } = {}, only?: string[]): string | null => {
+export const nextQuestionOf = (slots: Slots, ask: { course?: boolean; city?: boolean; entry?: boolean } = {}, only?: string[], texts?: { entry?: string; course?: string; city?: string }): string | null => {
   const wanted = (k: string) => ask[k as "course"] !== false && (!only || only.includes(k));
   // first of all, whether it is the first degree (a transfer or a second degree goes another way: the transcript and the analysis)
-  if ((!slots.entryType || slots.entryType === "unknown") && wanted("entry")) return QUESTIONS.entry;
-  if (!(slots.courseName || slots.courseId) && wanted("course")) return QUESTIONS.course;
-  if (!(slots.city || slots.poloId) && wanted("city")) return QUESTIONS.city;
+  if ((!slots.entryType || slots.entryType === "unknown") && wanted("entry")) return (texts && texts.entry) || QUESTIONS.entry;
+  if (!(slots.courseName || slots.courseId) && wanted("course")) return (texts && texts.course) || QUESTIONS.course;
+  if (!(slots.city || slots.poloId) && wanted("city")) return (texts && texts.city) || QUESTIONS.city;
   return null;
 };
 

@@ -1992,6 +1992,24 @@ const postMeta = (id, payload, secret, badSig) => {
       const fixed = (await http.put(`/analysis/curricular/${a.id}/subject/${pendingLine.id}`, { status: "EXEMPTED" }, auth())).data;
       assert(fixed.result.totals.exempted === a.result.totals.exempted + 1 && fixed.result.totals.pending === a.result.totals.pending - 1, "the correction did not change the totals");
       assert((await http.put(`/analysis/curricular/${a.id}/subject/${pendingLine.id}`, { status: "XYZ" }, auth())).status === 400, "bad status accepted");
+      // the name, the period and the workload are corrected by hand; a discipline the document did not bring is added; one that should not be there is removed. All in the trail.
+      const renamed = (await http.put(`/analysis/curricular/${a.id}/subject/${pendingLine.id}`, { name: "Disciplina Renomeada Teste", workload: 80 }, auth())).data;
+      const renamedLine = renamed.subjects.find(x => x.id === pendingLine.id);
+      assert(renamedLine.name === "DISCIPLINA RENOMEADA TESTE" && renamedLine.workload === 80 && renamedLine.note === "Corrigido manualmente", `rename: ${JSON.stringify(renamedLine)}`);
+      assert((await http.put(`/analysis/curricular/${a.id}/subject/${pendingLine.id}`, { name: "ab" }, auth())).status === 400, "a name too short was accepted");
+      const counted = renamed.subjects.length;
+      const added = await http.post(`/analysis/curricular/${a.id}/subject`, { name: "Optativa Incluida", period: 4, workload: 60, status: "PENDING" }, auth());
+      assert(added.status === 201 && added.data.subjects.length === counted + 1 && added.data.subjects.some(x => /^manual-/.test(x.id) && x.name === "OPTATIVA INCLUIDA" && x.note === "Incluída manualmente"), `add: ${added.status} ${JSON.stringify(added.data).slice(0, 160)}`);
+      assert((await http.post(`/analysis/curricular/${a.id}/subject`, { name: "x", period: 4, workload: 60 }, auth())).status === 400 && (await http.post(`/analysis/curricular/${a.id}/subject`, { name: "Optativa Valida", period: 99, workload: 60 }, auth())).status === 400, "an invalid discipline was added");
+      const manualId = added.data.subjects.find(x => /^manual-/.test(x.id)).id;
+      const removed = await http.delete(`/analysis/curricular/${a.id}/subject/${manualId}`, auth());
+      assert(removed.status === 200 && removed.data.subjects.length === counted && !removed.data.subjects.some(x => x.id === manualId), `remove: ${removed.status}`);
+      assert((await http.delete(`/analysis/curricular/${a.id}/subject/nao-existe`, auth())).status === 404, "a missing discipline was removed");
+      const trail = (await http.get(`/analysis/curricular/${a.id}/events`, auth())).data.events;
+      const acts = trail.map(e => e.action);
+      assert(["subject_edited", "subject_added", "subject_removed"].every(x => acts.includes(x)) && trail.every(e => e.userName), `trail: ${JSON.stringify(trail.map(e => [e.action, e.userName]))}`);
+      const edited = trail.find(e => e.action === "subject_edited" && e.after && e.after.name === "DISCIPLINA RENOMEADA TESTE");
+      assert(edited && edited.before && edited.before.name !== edited.after.name, "the trail does not keep the value before");
 
       // refusals: not a PDF, a PDF without the table
       assert((await send({}, "x.pdf", Buffer.from("PK\x03\x04 nao e pdf"))).status === 400, "a zip passed");
@@ -2003,6 +2021,7 @@ const postMeta = (id, payload, secret, badSig) => {
       const other = (await http.post("/auth/login", { email: "outro-an@x.com", password: "senha123" })).data.token;
       assert((await http.get(`/analysis/curricular/${a.id}`, asUser(other))).status === 403, "another consultant opened it");
       assert((await http.get(`/analysis/curricular/${a.id}/file`, asUser(other))).status === 403, "another consultant opened the document");
+      assert((await http.get(`/analysis/curricular/${a.id}/events`, asUser(other))).status === 403, "another consultant read the trail");
       assert((await http.get("/analysis/curricular", asUser(other))).data.length === 0, "another consultant listed it");
       assert((await http.get("/analysis/curricular", auth())).data.some(x => x.id === a.id), "the admin does not list it");
       assert((await http.get("/analysis/curricular")).status === 401, "no login");
@@ -2169,6 +2188,20 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.post(`/analysis/curricular/${a.id}/send-proposal`, {}, asUser(owner))).status === 409, "a proposal went out with a return overdue");
       const mgrDue = (await http.get("/analysis/curricular?due=1", auth())).data;
       assert(mgrDue.some(x => x.id === a.id && x.requesterName === "Outro Consultor"), `manager filter ${JSON.stringify(mgrDue).slice(0, 200)}`);
+
+      // still unanswered after two business days: the coordination is told, once (the polo's coordinators, or every coordinator when the polo has none)
+      const coordUser = (await http.post("/users", { name: "Coordenadora do Polo", email: "coord-an@x.com", password: "senha123", role: "coordenacao", coordArea: "comercial" }, auth())).data;
+      assert(coordUser && coordUser.id, "the coordinator of the escalation was not created");
+      sql(`UPDATE CurricularAnalyses SET createdAt = now() - interval '9 days', followUpDueAt = now() - interval '6 days' WHERE id = ${a.id}`);
+      const runDb = code => execFileSync(process.execPath, ["-e", `require("reflect-metadata"); const db=require("./dist/database").default; require("./dist/libs/socket").initIO(require("http").createServer()); (async()=>{ ${code} })().then(()=>db.close()).then(()=>process.exit(0)).catch(e=>{console.error(e.stack);process.exit(1)});`], { cwd: ROOT, env, timeout: 25000 }).toString();
+      const esc1 = JSON.parse(runDb(`const {runEscalationOnce}=require("./dist/workers/FollowUpAlert"); console.log(JSON.stringify(await runEscalationOnce(new Date("2026-11-11T16:00:00Z"))));`).split("\n").filter(l => l.startsWith("{")).pop());
+      assert(esc1.analyses >= 1 && esc1.coordinators >= 1, `escalation: ${JSON.stringify(esc1)}`);
+      assert(sql(`SELECT CASE WHEN followUpEscalatedAt IS NULL THEN 0 ELSE 1 END FROM CurricularAnalyses WHERE id = ${a.id}`) === "1", "the escalation was not recorded");
+      const esc2 = JSON.parse(runDb(`const {runEscalationOnce}=require("./dist/workers/FollowUpAlert"); console.log(JSON.stringify(await runEscalationOnce(new Date("2026-11-11T16:05:00Z"))));`).split("\n").filter(l => l.startsWith("{")).pop());
+      assert(esc2.analyses === 0, `the coordination was told twice: ${JSON.stringify(esc2)}`);
+      sql(`UPDATE CurricularAnalyses SET followUpDueAt = now() - interval '2 hours' WHERE id = ${a.id}`);
+      // (the coordinator was only for this check: the list of users stays as the other tests expect it)
+      await http.delete(`/users/${coordUser.id}`, auth());
 
       // the three outcomes
       const put = (body, who = owner) => http.put(`/analysis/curricular/${a.id}/enrollment`, body, asUser(who));
@@ -3613,6 +3646,13 @@ const postMeta = (id, payload, secret, badSig) => {
       const scr = (await http.get(`/ai-agents/${agentId}/script`, auth())).data;
       assert(scr.steps.length === 8 && scr.steps[0].key === "entry" && /primeira graduação/.test(scr.steps[0].text) && /sem aulas práticas presenciais/.test(scr.steps[3].text) && scr.steps[7].key === "handoff", `script: ${JSON.stringify(scr.steps.map(x => x.key))}`);
       assert(!/\p{Extended_Pictographic}/u.test(scr.steps.map(x => x.text).join(" ")), "the script carries an emoji");
+      // the team writes its own words for a step; the script shows them (and the standard), and "back to the standard" clears it
+      const agentForTexts = (await http.get("/ai-agents", auth())).data.find(x => x.id === agentId);
+      const putTexts = texts => http.put(`/ai-agents/${agentId}`, { persona: { ...(agentForTexts.persona || {}), commercial: { ...((agentForTexts.persona || {}).commercial || {}), texts } } }, auth());
+      assert((await putTexts({ city: "Em qual cidade você mora?" })).status === 200, "the texts of the script were not saved");
+      const scr2 = (await http.get(`/ai-agents/${agentId}/script`, auth())).data.steps.find(x => x.key === "city");
+      assert(scr2.custom === true && scr2.text === "Em qual cidade você mora?" && /Você reside em qual cidade/.test(scr2.standard) && scr2.editable, `custom text: ${JSON.stringify(scr2)}`);
+      assert((await putTexts({ city: "" })).status === 200 && (await http.get(`/ai-agents/${agentId}/script`, auth())).data.steps.find(x => x.key === "city").custom === false, "the standard did not come back");
       const fun = (await http.get("/crm-funnel", auth())).data;
       assert(fun.keys.length === 15 && fun.keys.every(k => k.stageId), `funnel not complete: ${fun.keys.filter(k => !k.stageId).map(k => k.key)}`);
       assert(new Set(fun.keys.map(k => k.stageId)).size === 15, "two steps share a column");

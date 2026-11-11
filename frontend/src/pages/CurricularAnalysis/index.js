@@ -1,5 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useHistory, useParams } from "react-router-dom";
+import { AuthContext } from "../../context/Auth/AuthContext";
 import { toast } from "react-toastify";
 import { ArrowDown, Check, ChevronDown, ClipboardCopy, HelpCircle, Loader2, Search, SlidersHorizontal, Trash2, X } from "lucide-react";
 
@@ -169,10 +170,25 @@ const List = () => {
   const [query, setQuery] = useState("");
   const [applied, setApplied] = useState("");
   const [onlyDue, setOnlyDue] = useState(false);
+  // the filters of the management (who asked, polo, situation, period) and the pages of the list
+  const { user } = useContext(AuthContext);
+  const manager = !!user && ["admin", "coordenacao"].includes(String(user.profile === "admin" ? "admin" : user.role || "").toLowerCase());
+  const [filters, setFilters] = useState({ userId: "", poloId: "", enrollment: "", from: "", to: "" });
+  const [polos, setPolos] = useState([]);
+  const [people, setPeople] = useState([]);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const PAGE = 20;
+  useEffect(() => {
+    api.get("/polos").then(({ data }) => setPolos(Array.isArray(data) ? data : (data && data.polos) || [])).catch(() => setPolos([]));
+    if (manager) api.get("/users/", { params: { pageNumber: 1 } }).then(({ data }) => setPeople((data && data.users) || [])).catch(() => setPeople([]));
+  }, [manager]);
   const load = useCallback(() => {
-    api.get("/analysis/curricular", { params: { search: applied.trim() || undefined } }).then(({ data }) => setRows(data)).catch((e) => { toastError(e); setRows([]); });
-  }, [applied]);
+    const params = { search: applied.trim() || undefined, page, pageSize: PAGE, ...(filters.userId ? { userId: filters.userId } : {}), ...(filters.poloId ? { poloId: filters.poloId } : {}), ...(filters.enrollment ? { enrollment: filters.enrollment } : {}), ...(filters.from ? { from: filters.from } : {}), ...(filters.to ? { to: filters.to } : {}) };
+    api.get("/analysis/curricular", { params }).then((res) => { setRows(res.data); setTotal(Number(res.headers["x-total-count"]) || res.data.length); }).catch((e) => { toastError(e); setRows([]); });
+  }, [applied, page, filters]);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { setPage(1); }, [applied, filters]);
 
   return (
     <div className="orig mx-auto w-full max-w-[1440px] flex-1 space-y-6 overflow-y-auto p-4 pb-8 sm:p-6 md:space-y-8" style={{ minHeight: 0 }}>
@@ -198,6 +214,14 @@ const List = () => {
           <Button type="submit" size="lg" className="h-10"><Search className="mr-2 size-4" />Buscar</Button>
           <label className="flex h-10 items-center gap-2 text-sm text-slate-600"><input type="checkbox" checked={onlyDue} onChange={(e) => setOnlyDue(e.target.checked)} className="size-4 accent-[#003B71]" style={{ appearance: "auto" }} />Só retornos vencidos</label>
         </form>
+        <div className="mb-4 flex flex-wrap items-end gap-2 text-xs font-semibold text-slate-600">
+          {manager && <label>Solicitado por<Select value={filters.userId} onChange={(e) => setFilters({ ...filters, userId: e.target.value })} className="mt-1 w-44"><option value="">Todos</option>{people.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</Select></label>}
+          <label>Polo<Select value={filters.poloId} onChange={(e) => setFilters({ ...filters, poloId: e.target.value })} className="mt-1 w-44"><option value="">Todos</option>{polos.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</Select></label>
+          <label>Situação<Select value={filters.enrollment} onChange={(e) => setFilters({ ...filters, enrollment: e.target.value })} className="mt-1 w-40"><option value="">Todas</option><option value="PENDING">Sem retorno</option><option value="ENROLLED">Matriculou</option><option value="NOT_ENROLLED">Não matriculou</option></Select></label>
+          <label>De<Input type="date" value={filters.from} onChange={(e) => setFilters({ ...filters, from: e.target.value })} className="mt-1 h-10 w-40 bg-white" /></label>
+          <label>Até<Input type="date" value={filters.to} onChange={(e) => setFilters({ ...filters, to: e.target.value })} className="mt-1 h-10 w-40 bg-white" /></label>
+          {(filters.userId || filters.poloId || filters.enrollment || filters.from || filters.to) && <Button variant="outline" className="h-10" onClick={() => setFilters({ userId: "", poloId: "", enrollment: "", from: "", to: "" })}>Limpar filtros</Button>}
+        </div>
         {rows === null ? <p className="text-sm text-slate-500">Carregando…</p> : rows.filter((r) => !onlyDue || (r.enrollment && r.enrollment.due)).length === 0 ? (
           <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/70 p-8 text-center">{rows.length > 0 && onlyDue ? <p className="font-medium text-slate-800">Nenhum retorno vencido.</p> : <><p className="font-medium text-slate-800">Nenhuma análise curricular ainda.</p><p className="mt-1 text-sm text-slate-500">Envie o PDF do candidato acima: o sistema lê a grade, calcula quantas disciplinas faltam e mostra, semestre a semestre, quando ele termina o curso.</p></>}</div>
         ) : (
@@ -227,6 +251,15 @@ const List = () => {
                 </tbody>
               </table>
             </div>
+            {total > PAGE && (
+              <div className="flex items-center justify-between gap-3 border-t px-4 py-3 text-sm">
+                <span className="text-muted-foreground">{(page - 1) * PAGE + 1}–{Math.min(page * PAGE, total)} de {total}</span>
+                <div className="flex gap-2">
+                  <Button variant="outline" className="h-9" disabled={page <= 1} onClick={() => setPage(page - 1)}>Anterior</Button>
+                  <Button variant="outline" className="h-9" disabled={page * PAGE >= total} onClick={() => setPage(page + 1)}>Próxima</Button>
+                </div>
+              </div>
+            )}
           </Card>
         )}
       </section>
@@ -315,7 +348,7 @@ const GradeByPeriod = ({ subjects, entryPeriod }) => {
   );
 };
 
-const GradeTable = ({ subjects, onStatus }) => {
+const GradeTable = ({ subjects, onStatus, onEdit, onRemove, onAdd, onDocument }) => {
   const [filter, setFilter] = useState("ALL");
   const [period, setPeriod] = useState("ALL");
   const [q, setQ] = useState("");
@@ -337,11 +370,12 @@ const GradeTable = ({ subjects, onStatus }) => {
           <span className="relative block w-full sm:w-56"><Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar disciplina" className="h-10 bg-white pl-9" /></span>
         </div>
       </div>
+      {onAdd && <div className="flex justify-end"><Button variant="outline" className="h-9" onClick={onAdd}>Incluir disciplina</Button></div>}
       <div className="max-h-[calc(100dvh-21rem)] min-h-72 overflow-y-auto rounded-xl border bg-card">
         <table className="w-full text-left text-sm">
-          <thead className="sticky top-0 z-10 bg-card shadow-[0_1px_0_var(--border)]"><tr className="text-xs text-muted-foreground"><th className="w-10 p-3" /><th className="p-3 font-medium">Disciplina</th><th className="w-20 p-3 font-medium">C.H.</th><th className="w-24 p-3 font-medium">Período</th><th className="p-3 font-medium">Disciplina utilizada</th><th className="w-44 p-3 font-medium">Situação (corrigir)</th></tr></thead>
+          <thead className="sticky top-0 z-10 bg-card shadow-[0_1px_0_var(--border)]"><tr className="text-xs text-muted-foreground"><th className="w-10 p-3" /><th className="p-3 font-medium">Disciplina</th><th className="w-20 p-3 font-medium">C.H.</th><th className="w-24 p-3 font-medium">Período</th><th className="p-3 font-medium">Disciplina utilizada</th><th className="w-44 p-3 font-medium">Situação (corrigir)</th><th className="w-44 p-3 font-medium">Conferir e corrigir</th></tr></thead>
           <tbody>
-            {rows.length === 0 && <tr><td colSpan={6} className="py-8 text-center text-sm text-muted-foreground">Nenhuma disciplina para este filtro.</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={7} className="py-8 text-center text-sm text-muted-foreground">Nenhuma disciplina para este filtro.</td></tr>}
             {rows.map((s) => (
               <tr key={s.id} className="border-t align-top hover:bg-muted/40">
                 <td className="p-3"><StatusIcon status={s.status} /></td>
@@ -350,6 +384,12 @@ const GradeTable = ({ subjects, onStatus }) => {
                 <td className="p-3">{s.period}º</td>
                 <td className="p-3 text-muted-foreground">{s.usedSubject || "—"}</td>
                 <td className="p-3"><Select value={s.status} onChange={(e) => onStatus(s, e.target.value)} className="h-9">{Object.entries(STATUS_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</Select></td>
+                <td className="p-3 whitespace-nowrap text-xs">
+                  {onDocument && s.sourcePage > 0 && <button type="button" onClick={() => onDocument(s.sourcePage)} className="mr-2 font-semibold text-brand-navy underline" title="Abrir o PDF enviado nesta página">PDF p. {s.sourcePage}</button>}
+                  {onEdit && <button type="button" onClick={() => onEdit(s)} className="mr-2 font-semibold text-slate-700 underline">Editar</button>}
+                  {onRemove && <button type="button" onClick={() => onRemove(s)} className="font-semibold text-status-danger underline">Excluir</button>}
+                  {s.note && <span className="ml-1 text-muted-foreground" title={s.note}>•</span>}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -504,7 +544,28 @@ const Audit = ({ a }) => {
   );
 };
 
-const TABS = [["summary", "Resumo"], ["grade", "Grade curricular"], ["pending", "Pendências"], ["projection", "Previsão"], ["audit", "Conferência"]];
+const ACTION_LABEL = { subject_edited: "Disciplina corrigida", subject_added: "Disciplina incluída", subject_removed: "Disciplina excluída", analysis_changed: "Análise alterada" };
+const describe = (v) => (v ? Object.entries(v).map(([k, x]) => `${({ name: "nome", period: "período", workload: "C.H.", status: "situação", entryPeriod: "ingresso", startTerm: "início da previsão", poloId: "polo", candidateName: "aluno" })[k] || k}: ${x === null || x === undefined ? "—" : (STATUS_LABEL[x] || x)}`).join(" · ") : "—");
+
+// who changed what and when, after the reading of the document
+const History = ({ id, refresh }) => {
+  const [events, setEvents] = useState(null);
+  useEffect(() => { api.get(`/analysis/curricular/${id}/events`).then(({ data }) => setEvents(data.events || [])).catch(() => setEvents([])); }, [id, refresh]);
+  if (events === null) return <p className="text-sm text-slate-500">Carregando…</p>;
+  if (!events.length) return <div className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">Nenhuma alteração manual: a análise está como foi lida do documento.</div>;
+  return (
+    <ul className="divide-y rounded-xl border bg-card">
+      {events.map((e) => (
+        <li key={e.id} className="px-4 py-3 text-sm">
+          <div className="flex flex-wrap items-center gap-2"><b>{ACTION_LABEL[e.action] || e.action}</b>{e.subjectName && <span>{e.subjectName}</span>}<span className="text-xs text-muted-foreground">por {e.userName || "sistema"} em {new Date(e.createdAt).toLocaleString("pt-BR")}</span></div>
+          {(e.before || e.after) && <div className="mt-1 text-xs text-muted-foreground">{e.before && <span>Antes: {describe(e.before)}</span>}{e.before && e.after && " → "}{e.after && <span>Depois: {describe(e.after)}</span>}</div>}
+        </li>
+      ))}
+    </ul>
+  );
+};
+
+const TABS = [["summary", "Resumo"], ["grade", "Grade curricular"], ["pending", "Pendências"], ["projection", "Previsão"], ["audit", "Conferência"], ["history", "Histórico"]];
 
 const Detail = ({ id }) => {
   const history = useHistory();
@@ -514,6 +575,9 @@ const Detail = ({ id }) => {
   const [entry, setEntry] = useState("");
   const [term, setTerm] = useState("");
   const [busy, setBusy] = useState(false);
+  // a discipline being edited or added by hand, and the counter that makes the history read again
+  const [form, setForm] = useState(null);
+  const [changes, setChanges] = useState(0);
 
   const apply = useCallback((data) => { setA(data); setEntry(data.entryPeriod || ""); setTerm(data.startTerm || ""); }, []);
   useEffect(() => { api.get(`/analysis/curricular/${id}`).then(({ data }) => apply(data)).catch((e) => { toastError(e); history.replace("/analise-curricular"); }); }, [id, apply, history]);
@@ -527,11 +591,24 @@ const Detail = ({ id }) => {
     try { const { data } = await api.put(`/analysis/curricular/${id}/subject/${s.id}`, { status }); apply(data); toast.success("Linha corrigida. A previsão foi recalculada."); } catch (e) { toast.error(errorText(e)); }
   };
   // the PDF is opened with the session (the route is authenticated), in another tab
-  const openDocument = async () => {
+  const openDocument = async (page) => {
     try {
       const { data } = await api.get(`/analysis/curricular/${id}/file`, { responseType: "blob" });
-      window.open(URL.createObjectURL(new Blob([data], { type: "application/pdf" })), "_blank", "noopener");
+      window.open(`${URL.createObjectURL(new Blob([data], { type: "application/pdf" }))}${page ? `#page=${page}` : ""}`, "_blank", "noopener");
     } catch (e) { toast.error("Não foi possível abrir o documento. Envie o PDF de novo para conferir."); }
+  };
+  const saveSubject = async () => {
+    setBusy(true);
+    try {
+      const body = { name: form.name, period: Number(form.period), workload: Number(form.workload), status: form.status };
+      const { data } = form.id ? await api.put(`/analysis/curricular/${id}/subject/${form.id}`, body) : await api.post(`/analysis/curricular/${id}/subject`, body);
+      apply(data); setChanges((n) => n + 1); setForm(null); toast.success(form.id ? "Disciplina corrigida. A previsão foi recalculada." : "Disciplina incluída. A previsão foi recalculada.");
+    } catch (e) { toast.error(errorText(e)); }
+    setBusy(false);
+  };
+  const removeSubject = async (s) => {
+    if (!window.confirm(`Excluir a disciplina ${s.name} desta análise? Fica registrado no histórico.`)) return;
+    try { const { data } = await api.delete(`/analysis/curricular/${id}/subject/${s.id}`); apply(data); setChanges((n) => n + 1); toast.success("Disciplina excluída. A previsão foi recalculada."); } catch (e) { toast.error(errorText(e)); }
   };
   const remove = async () => { try { await api.delete(`/analysis/curricular/${id}`); toast.success("Análise excluída."); history.replace("/analise-curricular"); } catch (e) { toastError(e); } };
   const copy = async (text) => { try { await navigator.clipboard.writeText(text); toast.success("Texto copiado. É só colar na conversa."); } catch (e) { toast.error("Não foi possível copiar."); } };
@@ -555,7 +632,7 @@ const Detail = ({ id }) => {
               {a.candidateName && a.courseName && <span className="block font-medium text-foreground">{a.courseName}{a.modality ? ` · ${a.modality}` : ""}</span>}
               {a.poloName && <span className="block">Polo: {a.poloName}</span>}
               {a.requesterName && <span className="block">Solicitado por: {a.requesterName}</span>}
-              <span className="block">{a.hasDocument ? <button type="button" onClick={openDocument} className="font-semibold text-brand-navy underline">Abrir o documento enviado (PDF) para conferir</button> : "Documento não guardado (análise antiga)."}</span>
+              <span className="block">{a.hasDocument ? <button type="button" onClick={() => openDocument()} className="font-semibold text-brand-navy underline">Abrir o documento enviado (PDF) para conferir</button> : "Documento não guardado (análise antiga)."}</span>
               {(a.matrixLabel || a.campus) && <span className="block">{[a.matrixLabel, a.campus].filter(Boolean).join(" · ")}</span>}
               {a.originalName && <span className="break-all">{a.originalName}</span>} · enviado em {formatDay(a.createdAt)}
             </>}
@@ -608,7 +685,10 @@ const Detail = ({ id }) => {
                   <GradeByPeriod subjects={subjects} entryPeriod={a.entryPeriod} />
                 </div>
               )}
-              {tab === "grade" && <GradeTable subjects={subjects} onStatus={setStatus} />}
+              {tab === "grade" && <GradeTable subjects={subjects} onStatus={async (sub, st) => { await setStatus(sub, st); setChanges((n) => n + 1); }} onDocument={a.hasDocument ? openDocument : undefined}
+                onEdit={(sub) => setForm({ id: sub.id, name: sub.name, period: sub.period, workload: sub.workload, status: sub.status })} onRemove={removeSubject}
+                onAdd={() => setForm({ id: null, name: "", period: a.entryPeriod || 1, workload: 60, status: "PENDING" })} />}
+              {tab === "history" && <History id={id} refresh={changes} />}
               {tab === "pending" && <PendingTab subjects={subjects} entryPeriod={a.entryPeriod} />}
               {tab === "projection" && <Timeline a={a} byId={byId} />}
               {tab === "audit" && <Audit a={a} />}
@@ -617,6 +697,17 @@ const Detail = ({ id }) => {
         )}
       </div>
 
+      {form && (
+        <Modal title={form.id ? "Corrigir disciplina" : "Incluir disciplina"} description={form.id ? "Corrija o que foi lido errado. Tudo fica registrado no histórico, com quem alterou." : "Para uma disciplina que o documento não trouxe. Ela fica marcada como manual."} onClose={() => setForm(null)}>
+          <label className="block text-xs font-semibold text-slate-600">Nome da disciplina<Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="mt-1.5 h-10 bg-white" /></label>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <label className="block text-xs font-semibold text-slate-600">Período<Input type="number" min="1" max="20" value={form.period} onChange={(e) => setForm({ ...form, period: e.target.value })} className="mt-1.5 h-10 bg-white" /></label>
+            <label className="block text-xs font-semibold text-slate-600">Carga horária (h)<Input type="number" min="0" max="2000" value={form.workload} onChange={(e) => setForm({ ...form, workload: e.target.value })} className="mt-1.5 h-10 bg-white" /></label>
+            <label className="block text-xs font-semibold text-slate-600">Situação<span className="mt-1.5 block"><Select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>{Object.entries(STATUS_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</Select></span></label>
+          </div>
+          <div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setForm(null)}>Cancelar</Button><Button disabled={busy || String(form.name).trim().length < 3} onClick={saveSubject}>Salvar</Button></div>
+        </Modal>
+      )}
       {modal === "term" && (
         <Modal title="Início da previsão" description="Escolha em qual semestre-calendário a projeção deve começar. O período acadêmico continua sendo lido do PDF." onClose={() => setModal(null)}>
           <label className="block text-xs font-semibold text-slate-600">Primeiro semestre projetado<Input value={term} onChange={(e) => setTerm(e.target.value)} placeholder="2026.2" className="mt-1.5 h-10 bg-white" /></label>

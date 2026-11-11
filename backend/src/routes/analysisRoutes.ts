@@ -29,6 +29,9 @@ r.get("/analysis/curricular/:id/proposal", isAuth, Analysis.curricularProposal);
 r.post("/analysis/curricular/:id/send-proposal", isAuth, Analysis.curricularSendProposal);
 r.put("/analysis/curricular/:id", isAuth, Analysis.curricularUpdate);
 r.put("/analysis/curricular/:id/subject/:subjectId", isAuth, Analysis.curricularSubject);
+r.post("/analysis/curricular/:id/subject", isAuth, Analysis.curricularSubjectAdd);
+r.delete("/analysis/curricular/:id/subject/:subjectId", isAuth, Analysis.curricularSubjectRemove);
+r.get("/analysis/curricular/:id/events", isAuth, Analysis.curricularEvents);
 r.delete("/analysis/curricular/:id", isAuth, Analysis.curricularRemove);
 
 r.get("/analysis/academic", isAuth, Analysis.academicIndex);

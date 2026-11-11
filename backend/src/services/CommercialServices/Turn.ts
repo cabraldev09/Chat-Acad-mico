@@ -29,6 +29,9 @@ import { pendingSteps } from "../FlowServices/StepLock";
 //   1. what is obvious (a request for a person, a price) is answered by the system, without the model;
 //   2. the rest goes to the model, once, with the little context it needs;
 //   3. whatever the model understood goes through the rules (state, funnel, tasks, notes) and the exit of the stage is decided there.
+// the words of the team at each step of the script (the standard of the process where the team wrote nothing)
+const scriptTexts = (d: { ports: { config?: any } }): { entry?: string; course?: string; city?: string; doubts?: string; bolsa?: string; handoff?: string } => (d.ports.config && d.ports.config.texts) || {};
+
 export const FIXED = {
   human: "Claro! Vou chamar um consultor para continuar com você. Um momento, por favor.",
   proposal: "Ótima pergunta! Valores e bolsas dependem da sua situação e do seu polo, então quem apresenta a melhor condição é o consultor do seu polo. Vou encaminhar o seu atendimento agora para ele montar a proposta certinha. Se tiver um melhor horário para ele te chamar, é só avisar por aqui.",
@@ -202,7 +205,7 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
       // name and CPF complete and the lead qualified: the consultant simulates the scholarships and makes the proposal now (the conversation does not stop here)
       const toProposal = bolsaAsked && complete && isQualified(after) && !(needsModalityExplanation(after) && !modalityExplained(after));
       const hook = await commercialTurn(d.ports, { userText: lastText.replace(/\d/g, "•"), intent: toProposal ? "proposal" : "other", ...(toProposal ? { fast: "proposal" } : {}), patch, tools: [], hadText: true, replied: true, nodeId: d.nodeId });
-      if (toProposal && hook.exit) text = `${text}\n\n${FIXED.toProposal}`;
+      if (toProposal && hook.exit) text = `${text}\n\n${scriptTexts(d).handoff || FIXED.toProposal}`;
       await log({ intent: "other", deterministic: true, llmCalls: 0, toolCalls: 0, cacheHits: 0, tokens: base.tokens, outcome: hook.exit, latencyMs: Date.now() - started });
       if (d.lead && !d.sandbox) await syncLead(d, hook.trace.changed);
       return { text, exit: hook.exit, ...(hook.why ? { why: hook.why } : {}), collected: flat(hook.trace.changed), trace: { ...base, deterministic: true, intent: "other", commercial: hook.trace, entry: ENTRY_LABEL[state.slots.entryType || "unknown"], latencyMs: Date.now() - started } };
@@ -227,11 +230,11 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
   const stageNeeds = d.stage.fields.filter(f => f.required).map(f => (f.key === "courseName" ? "course" : f.key === "entryType" ? "entry" : f.key));
   if (!fresh && !media.length && d.input !== null && isGreeting(lastText)) {
     const smile = (d.agent.persona as any)?.emoji === true ? " 😊" : "";
-    const next = state.slots.enrolledStudent ? null : nextQuestionOf(state.slots, d.ports.config ? d.ports.config.ask : {});
+    const next = state.slots.enrolledStudent ? null : nextQuestionOf(state.slots, d.ports.config ? d.ports.config.ask : {}, undefined, scriptTexts(d));
     return answered(`Oi! Estou por aqui${smile}\n\n${next || "Em que posso te ajudar?"}`, null, "greeting", { intent: "greeting" });
   }
   if (!fresh && d.input === null && !state.slots.enrolledStudent) {
-    const next = nextQuestionOf(state.slots, d.ports.config ? d.ports.config.ask : {}, stageNeeds);
+    const next = nextQuestionOf(state.slots, d.ports.config ? d.ports.config.ask : {}, stageNeeds, scriptTexts(d));
     if (next) return answered(next, null, "greeting", {});
   }
 
@@ -243,7 +246,7 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
   // (only when the message is just that answer: "Quero Direito em Porto Velho, primeira graduação" says more, and goes the usual way)
   const saysMore = entryNow ? await detectFromText(lastText).then(x => !!(x.courseName || x.city || x.poloId)).catch(() => true) : true;
   if (entryNow === "first_degree" && !saysMore && !courseMention(lastText) && !/\?/.test(lastText) && lastText.trim().length <= 60) {
-    const next = nextQuestionOf({ ...state.slots, entryType: entryNow }, ask, stageNeeds);
+    const next = nextQuestionOf({ ...state.slots, entryType: entryNow }, ask, stageNeeds, scriptTexts(d));
     if (next) return answered(next, null, "other", { patch: { entryType: entryNow }, endsWithQuestion: true });
     const shown = await presentCourse(d, { ...state.slots, entryType: entryNow });
     if (shown) return answered(shown.text, null, "course_modality", { intent: "course_modality", patch: { entryType: entryNow, ...shown.patch }, endsWithQuestion: true });
@@ -252,7 +255,7 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
   // "não tenho dúvidas, pode prosseguir": the process goes on by itself (next question, the format, the data for the scholarship, the consultant)
   if (d.input !== null && wrote && !media.length && proceeds(lastText) && !state.slots.enrolledStudent) {
     const slots = state.slots;
-    const next = nextQuestionOf(slots, ask, stageNeeds);
+    const next = nextQuestionOf(slots, ask, stageNeeds, scriptTexts(d));
     if (next) return answered(next, null, "other", { endsWithQuestion: true });
     if (needsModalityExplanation(slots) && !modalityExplained(slots)) {
       const explained = await explainModality(d, slots.courseId, slots.courseName);
@@ -266,7 +269,7 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
           const ctx: AcademicCtx = { ticket: d.ticket, dryRun: d.sandbox, slots: { ...slots }, patch: {}, cacheHits: 0, agentId: d.agent.id };
           const g = await sendGradeFor(course, ctx);
           if (g.sent || g.simulated) {
-            const text = `${g.text || ""}\n\n${DOUBTS_QUESTION}`.trim();
+            const text = `${g.text || ""}\n\n${scriptTexts(d).doubts || DOUBTS_QUESTION}`.trim();
             return answered(text, null, "curriculum", { intent: "curriculum", patch: { ...ctx.patch, courseId: course.id, courseName: course.name, gradeAsked: true, gradeSent: true, courseExplained: true, internshipExplained: true, tutoringExplained: true }, tools: ["buscar_grade", "enviar_material"], endsWithQuestion: true });
           }
         }
@@ -275,11 +278,11 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
       }
     }
     if (needsBolsaData(slots)) {
-      const text = `Caso não tenha, ${bolsaRequestFor({ name: !slots.fullName, cpf: !slots.cpfGiven }).replace(/^./, c => c.toLowerCase())}`.replace(/^Caso não tenha, falta só/, "Falta só");
+      const text = `Caso não tenha, ${bolsaRequestFor({ name: !slots.fullName, cpf: !slots.cpfGiven }, scriptTexts(d).bolsa).replace(/^./, c => c.toLowerCase())}`.replace(/^Caso não tenha, falta só/, "Falta só");
       return answered(text, null, "other", { patch: { bolsaDataAsked: Number(slots.bolsaDataAsked || 0) + 1, courseExplained: true }, endsWithQuestion: true });
     }
     if (isQualified({ ...slots, courseExplained: true })) {
-      return answered(FIXED.toProposal, null, "proposal", { fast: "proposal", patch: { courseExplained: true } }, "qualified");
+      return answered(scriptTexts(d).handoff || FIXED.toProposal, null, "proposal", { fast: "proposal", patch: { courseExplained: true } }, "qualified");
     }
   }
 
@@ -344,11 +347,11 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
           const probe = { ...state.slots, ...patchOut };
           // the full name and the CPF for the scholarship (same rule as after any answer)
           if (needsBolsaData(probe)) {
-            text = `${text}\n\n${bolsaRequestFor({ name: !probe.fullName, cpf: !probe.cpfGiven })}`.trim();
+            text = `${text}\n\n${bolsaRequestFor({ name: !probe.fullName, cpf: !probe.cpfGiven }, scriptTexts(d).bolsa)}`.trim();
             patchOut = { ...patchOut, bolsaDataAsked: Number(probe.bolsaDataAsked || 0) + 1 };
           } else if (!probe.enrolledStudent) {
             // the conversation never stops at the grade: the next thing the process needs, or the doubts of the person
-            text = `${text}\n\n${nextQuestionOf(probe, ask, stageNeeds) || DOUBTS_QUESTION}`.trim();
+            text = `${text}\n\n${nextQuestionOf(probe, ask, stageNeeds, scriptTexts(d)) || scriptTexts(d).doubts || DOUBTS_QUESTION}`.trim();
           }
           const hook = await commercialTurn(d.ports, { userText: lastText, intent: "curriculum", patch: patchOut, tools: ["buscar_grade", "enviar_material"], hadText: true, replied: true, nodeId: d.nodeId, hasPolo: !!d.lead?.poloId, endsWithQuestion: /\?[\s"”')]*$/.test(text) });
           const latencyMs = Date.now() - started;
@@ -402,7 +405,7 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
   if (said && !patchOut.entryType) patchOut.entryType = said;
   const probe = { ...state.slots, ...patchOut };
   if (d.input !== null && !d.sandbox && needsBolsaData(probe) && (!/\?[\s"”')]*$/.test(String(text || "").trim()) || Number(probe.qualifiedReplies || 0) >= (d.ports.qualifyAfter || 2) + 1)) {
-    text = `${String(text || "").trim()}\n\n${bolsaRequestFor({ name: !probe.fullName, cpf: !probe.cpfGiven })}`.trim();
+    text = `${String(text || "").trim()}\n\n${bolsaRequestFor({ name: !probe.fullName, cpf: !probe.cpfGiven }, scriptTexts(d).bolsa)}`.trim();
     patchOut = { ...patchOut, bolsaDataAsked: Number(probe.bolsaDataAsked || 0) + 1 };
   }
   // The grade goes to every person who has a course, even if nobody asked for it and the model did not call the tool: it is part of the process.
@@ -510,7 +513,7 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
     }
   }
   // the answer that completes course, city and first degree: the team presents the course (bridge, duration, format) instead of the model
-  if ((!hook.exit || hook.exit === "done") && d.input !== null && !state.slots.enrolledStudent && !state.slots.courseExplained && !modalityExplained(state.slots) && !nextQuestionOf(state.slots, d.ports.config ? d.ports.config.ask : {})) {
+  if ((!hook.exit || hook.exit === "done") && d.input !== null && !state.slots.enrolledStudent && !state.slots.courseExplained && !modalityExplained(state.slots) && !nextQuestionOf(state.slots, d.ports.config ? d.ports.config.ask : {}, undefined, scriptTexts(d))) {
     const shown = await presentCourse(d, state.slots);
     if (shown) {
       text = shown.text;
@@ -520,7 +523,7 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
   }
   // the stage goes on and the answer asks nothing: the system asks the next thing the stage needs (course, city, kind of entry), once
   if (!hook.exit && d.input !== null && text && !/\?/.test(text) && !state.slots.enrolledStudent) {
-    const next = nextQuestionOf(state.slots, d.ports.config ? d.ports.config.ask : {}, stageNeeds);
+    const next = nextQuestionOf(state.slots, d.ports.config ? d.ports.config.ask : {}, stageNeeds, scriptTexts(d));
     if (next) text = `${String(text).trim()}\n\n${next}`;
   }
   if ((hook.exit === "off" || hook.unknownHeld) && d.ticket && !d.sandbox && d.agent.learnFromTeam !== false && unknownQuestion) {

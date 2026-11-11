@@ -292,6 +292,13 @@ const Detail = ({ id }) => {
   const reviewRef = useRef(null);
 
   const apply = useCallback((d) => { setA((old) => ({ ...(old || {}), ...d })); setPeriodText(d.currentPeriod ? String(d.currentPeriod) : ""); setMessageOverride(null); }, []);
+  // the PDF is opened with the session (the route is authenticated), in another tab
+  const openDocument = async () => {
+    try {
+      const { data } = await api.get(`/analysis/academic/${id}/file`, { responseType: "blob" });
+      window.open(URL.createObjectURL(new Blob([data], { type: "application/pdf" })), "_blank", "noopener");
+    } catch (e) { toastError(e); }
+  };
   const load = useCallback(() => api.get(`/analysis/academic/${id}`).then(({ data }) => apply(data)).catch((e) => { toastError(e); history.replace("/analise-academica"); }), [id, apply, history]);
   useEffect(() => { load(); }, [load]);
 
@@ -357,6 +364,7 @@ const Detail = ({ id }) => {
             <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-600">
               {a.rgm && <span className="rounded-md border border-slate-200 bg-white/80 px-2.5 py-1">RGM {a.rgm}</span>}
               {a.originalName && <span className="max-w-full truncate rounded-md border border-slate-200 bg-white/80 px-2.5 py-1" title={a.originalName}>{a.originalName}</span>}
+              {a.hasDocument ? <button type="button" onClick={openDocument} className="rounded-md border border-slate-200 bg-white/80 px-2.5 py-1 font-semibold text-brand-navy underline">Abrir o documento (PDF) para conferir</button> : <span className="rounded-md border border-dashed border-slate-300 px-2.5 py-1">Documento não guardado (análise antiga)</span>}
               <span className="rounded-md border border-slate-200 bg-white/80 px-2.5 py-1">Análise de {formatDate(a.createdAt)}</span>
               {a.studentId && <span className="rounded-md border border-slate-200 bg-white/80 px-2.5 py-1">Portal · versão {a.version}{a.isCurrent ? " (atual)" : ""}</span>}
             </div>

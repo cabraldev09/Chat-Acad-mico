@@ -161,15 +161,35 @@ export const readCurricularPdf = async (bytes: Buffer): Promise<CurricularRead> 
     note: n.note
   }));
   const warnings: AnalysisWarningInput[] = [];
-  // a reading made by the AI is checked against the official matrix of the course (names, série, and the semester of each exempted subject)
-  if (local.parserVersion === "vision-1") {
+  // rows of the table that looked like a discipline and gave no row are said, with where they are, so nothing is lost in silence
+  const dropped = (local.table && local.table.dropped) || [];
+  if (dropped.length) {
+    warnings.push({
+      code: "ROWS_DISCARDED", severity: "CRITICAL", source: "PIPELINE",
+      message: `${dropped.length} linha(s) do documento parecem disciplinas e não foram lidas (${dropped.slice(0, 3).map(d => `p. ${d.page}: “${d.text}”`).join("; ")}). Abra o documento e confira se falta alguma disciplina.`
+    });
+  }
+  // every reading is checked against the official matrix of the course: names, série, the count and the semester of each exempted subject. The reading made by the AI
+  // is corrected by it; a reading of the text of the PDF (reliable) is only compared, and what differs is shown to be checked against the document.
+  {
     try {
       const { matrixFor } = await import("./services/commercial-grades/matrix-lookup");
       const matrix = await matrixFor(data.document.course, data.document.modality);
       if (matrix) {
         const fixed = reconcileWithMatrix(subjects, matrix);
-        fixed.subjects.forEach((s, i) => { subjects[i] = s as StoredSubject; });
-        warnings.push(...fixed.warnings);
+        if (local.parserVersion === "vision-1") {
+          fixed.subjects.forEach((s, i) => { subjects[i] = s as StoredSubject; });
+          warnings.push(...fixed.warnings);
+        } else {
+          warnings.push(...fixed.warnings.filter(w => w.code !== "MATRIX_PERIOD_CORRECTED"));
+          fixed.subjects.forEach((s, i) => {
+            const p = (s as any).period;
+            if (subjects[i].status === "PENDING" && p && p !== subjects[i].period) warnings.push({ code: "MATRIX_PERIOD_DIFFERS", severity: "INFO", source: "PIPELINE", message: `“${subjects[i].name}” consta no ${subjects[i].period}º período do documento e no ${p}º da matriz do curso: confira.` });
+          });
+        }
+        if (matrix.length !== subjects.length) {
+          warnings.push({ code: "COUNT_DIFFERS_FROM_MATRIX", severity: "INFO", source: "PIPELINE", message: `O documento traz ${subjects.length} disciplina(s) e a matriz do curso tem ${matrix.length}. Normal quando há adaptações ou optativas; confira se não falta nenhuma.` });
+        }
       } else {
         warnings.push({ code: "MATRIX_NOT_FOUND", severity: "INFO", source: "PIPELINE", message: "A matriz do curso não está no catálogo de grades: a leitura do PDF não foi conferida com ela." });
       }

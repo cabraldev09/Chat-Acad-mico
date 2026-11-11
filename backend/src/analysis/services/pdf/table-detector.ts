@@ -30,6 +30,8 @@ export interface DetectedTable {
   headers: Record<number, ColumnLayout>;
   /** texto fora da tabela (para claims) por página */
   freeText: Record<number, string[]>;
+  /** lines of the table that looked like a discipline (they carry a load or a série) but gave no row: shown to the consultant, never lost in silence */
+  dropped?: Array<{ page: number; text: string }>;
 }
 
 export interface ColumnLayout {
@@ -146,6 +148,7 @@ function detectUnifiedEnrollmentTables(pages: ParsedPage[]): DetectedTable | nul
   const rows: DetectedRow[] = [];
   const headers: Record<number, ColumnLayout> = {};
   const freeText: Record<number, string[]> = {};
+  const dropped: Array<{ page: number; text: string }> = [];
   let section: "EXEMPTED" | "PENDING" | null = null;
   let pendingLayout: ColumnLayout | null = null;
   const entryLine = pages.flatMap((page) => page.lines).find((line) => /^\d+\s*[ºª]\s*semestre$/i.test(line.text.trim()));
@@ -199,7 +202,11 @@ function detectUnifiedEnrollmentTables(pages: ParsedPage[]): DetectedTable | nul
       if (section === "PENDING" && pendingLayout) {
         const periodPart = parts.find((p) => /^\d+\s*[ºª]?$/.test(p.text.trim()));
         const workloadPart = parts.find((p) => /^\d+\s*h$/i.test(p.text.trim()));
-        if (!periodPart || !workloadPart) continue;
+        if (!periodPart || !workloadPart) {
+          // a line with only one of the two cells and some text is a row that was not read: it is reported
+          if ((periodPart || workloadPart) && parts.length >= 2) dropped.push({ page: page.page, text: line.text.slice(0, 120) });
+          continue;
+        }
         // Nomes longos quebram em até duas linhas (uma acima e/ou abaixo da linha de Série/C.H.).
         // Linhas só com nome, coladas nesta linha de dados, completam o nome.
         const periodX = pendingLayout.period;
@@ -217,7 +224,7 @@ function detectUnifiedEnrollmentTables(pages: ParsedPage[]): DetectedTable | nul
           .map((c) => c.text)
           .filter(Boolean)
           .join(" ");
-        if (!name) continue;
+        if (!name) { dropped.push({ page: page.page, text: line.text.slice(0, 120) }); continue; }
         rowIndex++;
         const period = Number(periodPart.text.replace(/\D/g, ""));
         const workload = Number(workloadPart.text.replace(/\D/g, ""));
@@ -238,7 +245,7 @@ function detectUnifiedEnrollmentTables(pages: ParsedPage[]): DetectedTable | nul
         const groupParts = group.flatMap(splitParts);
         const name = groupParts.filter((p) => p.x < workloadPart.x - 10).map((p) => p.text.trim()).filter(Boolean).join(" ");
         const used = groupParts.filter((p) => p.x > workloadPart.x + 10 && p.x < 470).map((p) => p.text.trim()).filter(Boolean).join(" ");
-        if (!name) continue;
+        if (!name) { dropped.push({ page: page.page, text: line.text.slice(0, 120) }); continue; }
         rowIndex++;
         rows.push({
           page: page.page, rowIndex, code: null, name, workload: Number(workloadPart.text.replace(/\D/g, "")),
@@ -257,7 +264,7 @@ function detectUnifiedEnrollmentTables(pages: ParsedPage[]): DetectedTable | nul
       }
     }
   }
-  return { rows, headers, freeText };
+  return { rows, headers, freeText, dropped };
 }
 
 export function detectTables(pages: ParsedPage[]): DetectedTable {

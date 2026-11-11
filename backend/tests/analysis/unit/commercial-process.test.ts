@@ -6,6 +6,8 @@ vi.mock("../../../src/models/Lead", () => ({ default: {} }));
 vi.mock("../../../src/models/LeadCommercial", () => ({ default: {} }));
 vi.mock("../../../src/models/Polo", () => ({ default: {} }));
 
+import { bolsaRequestFor } from "../../../src/services/CommercialServices/BolsaData";
+import { cleanCommercial } from "../../../src/services/CommercialServices/Config";
 import { areaOf, mecRequirementOf } from "../../../src/services/CommercialServices/MecAreas";
 import { QUESTIONS, entryOf, isGreeting, needsBolsaData, nextQuestionOf, openingText, withoutClosingQuestion } from "../../../src/services/CommercialServices/Rules";
 import { blankState, startConversation } from "../../../src/services/CommercialServices/Slots";
@@ -113,6 +115,16 @@ describe("semipresencial: format and the MEC rule before the consultant", () => 
     expect(readyForConsultantOf({ ...base, courseModality: "Semipresencial", modalityExplained: true, bolsaDataAsked: 2 }, 5)).toBe(true);
     expect(readyForConsultantOf({ ...base, courseModality: "EAD", bolsaDataAsked: 2 }, 5)).toBe(true);
     expect(readyForConsultantOf({ ...base, courseModality: "EAD", mecImpacted: true, bolsaDataAsked: 2 }, 5)).toBe(false);
+  });
+
+  it("the team's own words replace the standard of a step of the script, and the standard stays where nothing was written", () => {
+    expect(nextQuestionOf({} as any, {}, undefined, { entry: "Você já fez alguma faculdade?" })).toBe("Você já fez alguma faculdade?");
+    expect(nextQuestionOf({ entryType: "first_degree" } as any, {}, undefined, { course: "Qual curso te interessa?" })).toBe("Qual curso te interessa?");
+    expect(nextQuestionOf({ entryType: "first_degree", courseName: "Pedagogia" } as any, {}, undefined, { city: "Em qual cidade você mora?" })).toBe("Em qual cidade você mora?");
+    expect(nextQuestionOf({ entryType: "first_degree", courseName: "Pedagogia" } as any, {}, undefined, {})).toBe(QUESTIONS.city);
+    expect(bolsaRequestFor({ name: true, cpf: true }, "Me manda o nome completo e o CPF, por favor.")).toBe("Me manda o nome completo e o CPF, por favor.");
+    expect(bolsaRequestFor({ name: false, cpf: true }, "Me manda o nome completo e o CPF, por favor.")).toMatch(/CPF/);
+    expect(cleanCommercial({ texts: { city: "  Em qual cidade?  ", entry: 5, bogus: "x" } }).texts).toEqual({ entry: "5", course: "", city: "Em qual cidade?", doubts: "", bolsa: "", handoff: "" });
   });
 
   it("a course the Portaria does not restrict is EAD with no practical classes: duration comes before, the format says so and the follow-up is told", () => {

@@ -90,7 +90,9 @@ app.use(
 app.use(
   cors({
     credentials: true,
-    origin: corsOrigin()
+    origin: corsOrigin(),
+    // the lists the screen pages through say how many there are in this header
+    exposedHeaders: ["X-Total-Count"]
   })
 );
 app.use(cookieParser());

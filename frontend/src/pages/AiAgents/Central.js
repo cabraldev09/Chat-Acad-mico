@@ -186,7 +186,7 @@ const Central = () => {
 
         {section === "roteiro" && (
           <div style={{ display: "grid", gap: 16 }}>
-            {commercial && <ScriptPanel agentId={agentId} onTeach={() => { setMode("ensinar"); go("testar"); }} />}
+            {commercial && <ScriptPanel agentId={agentId} agent={agent} onSaved={load} onTeach={() => { setMode("ensinar"); go("testar"); }} />}
                 <Section title="O que fazer agora" hint="O mais importante primeiro.">
                   {todo.length === 0 ? (
                     <div className={classes.allGood}><CheckCircle2 size={20} />Tudo em dia. O agente tem o que precisa para atender.</div>
