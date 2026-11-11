@@ -1,3 +1,4 @@
+import { Op } from "sequelize";
 import CopilotProgress from "../../models/CopilotProgress";
 import { configOf } from "../CopilotServices/Settings";
 import { completionOf, CopilotConfig } from "../CopilotServices/Policy";
@@ -10,7 +11,7 @@ import { detectFromText } from "./Detect";
 import { runAcademicTool, AcademicCtx } from "./Academic";
 import { TUTORING_PITCH } from "./GradeChoice";
 import { DOUBTS_QUESTION, PRESENT_BRIDGE, QUESTIONS, durationLine, entryAnswer, modalityTextOf } from "./Rules";
-import { loadState, Slots } from "./Slots";
+import { hydrate, loadState, Slots } from "./Slots";
 
 // THE COPILOT OF THE CONSULTANT. After the agent hands the conversation over, the consultant goes on with the same process the team follows:
 // first degree → course → city → format and MEC → grade, tutoring and internship → doubts → full name and CPF → proposal → enrollment.
@@ -64,7 +65,7 @@ export const readConversation = async (ticket: Ticket, slots: Slots, leadCpf: st
       lastMine = text;
       const t = plain(text);
       if (/ate aqui voce compreendeu/.test(t)) { out.modalityExplained = true; out.courseExplained = true; }
-      if (/matriz curricular|grade do curso|\.pdf/.test(t) || (m.mediaType === "document" && /pdf/.test(t))) out.gradeSent = true;
+      if (/matriz curricular|grade do curso|grade curricular/.test(t) || (m.mediaType === "document" && /(?:matriz|grade)[^\n]*\.pdf/.test(t))) out.gradeSent = true;
       if (/alguma duvida|tem algo que eu posso/.test(t)) asked.add("doubts");
       if (/nome completo e cpf|nome completo e o cpf/.test(t)) asked.add("bolsa");
       if (/proposta/.test(t) && /(encaminhando|segue|enviei|anexo|valor de)/.test(t)) proposalSent = true;
@@ -127,12 +128,12 @@ const textFor = async (key: StepKey, s: Slots, leadName: string): Promise<{ text
 
 export const copilotOf = async (ticket: Ticket, config?: CopilotConfig): Promise<Copilot> => {
   const settings = config || await configOf();
-  const lead = ticket.contactId ? await Lead.findOne({ where: { contactId: ticket.contactId }, attributes: ["id", "name", "cpf", "enrolledAt", "courseId"] }) : null;
-  const state = lead ? await loadState(lead.id) : { slots: {} as Slots };
+  const lead = ticket.contactId ? await Lead.findOne({ where: { contactId: ticket.contactId }, attributes: ["id", "name", "cpf", "enrolledAt", "courseId", "poloId", "city", "state", "email", "phone", "entryTerm", "admissionType"] }) : null;
+  const state = lead ? await hydrate(await loadState(lead.id), lead) : { slots: {} as Slots };
   const { slots, asked, proposalSent } = await readConversation(ticket, state.slots, lead?.cpf || null);
   const progress = await CopilotProgress.findByPk(ticket.id);
   const overrides = progress?.overrides || {};
-  const proposals = lead ? await Proposal.count({ where: { leadId: lead.id } as any }) : 0;
+  const proposals = lead ? await Proposal.count({ where: { leadId: lead.id, sentAt: { [Op.ne]: null } } as any }) : 0;
   const done: Record<StepKey, boolean> = {
     entry: !!slots.entryType && slots.entryType !== "unknown",
     course: !!(slots.courseName || slots.courseId),

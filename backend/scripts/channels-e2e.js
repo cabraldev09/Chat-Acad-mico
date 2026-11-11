@@ -6415,6 +6415,18 @@ const postMeta = (id, payload, secret, badSig) => {
       view = (await http.get(`/tickets/${tid}/copilot`, auth())).data;
       assert(view.aiAvailable && view.current === "custom_test" && view.suggestion.text === custom.message, "edited process not reflected");
     });
+    await test("copilot reuses CRM facts and does not confuse a draft or unrelated PDF with completed sales steps", async () => {
+      inDb(`const Lead=require("./dist/models/Lead").default, Course=require("./dist/models/Course").default, Stage=require("./dist/models/LeadStage").default, Proposal=require("./dist/models/Proposal").default, Ticket=require("./dist/models/Ticket").default, Message=require("./dist/models/Message").default;
+        const {copilotOf}=require("./dist/services/CommercialServices/Process");const ticket=await Ticket.findByPk(${copilotFixture.ticketId});
+        const course=await Course.findOne(),stage=await Stage.findOne();
+        const lead=await Lead.create({name:"Pessoa do CRM",contactId:ticket.contactId,courseId:course.id,stageId:stage.id,city:"Cidade conferida",admissionType:"ENEM"});
+        const draft=await Proposal.create({token:"copilot-draft-proof",status:"draft",leadId:lead.id,courseName:course.name,grossFee:100,firstMonthly:80,bolsaPct:20,params:"{}"});
+        await Message.create({id:"copilot-unrelated-pdf",ticketId:ticket.id,fromMe:true,body:"comprovante.pdf",mediaType:"document",createdAt:new Date(Date.now()-60000)});
+        const view=await copilotOf(ticket);const done=key=>view.steps.find(s=>s.key===key).done;
+        assert.ok(done("entry")&&done("course")&&done("city"));assert.equal(done("grade"),false);assert.equal(done("proposal"),false);
+        await draft.update({sentAt:new Date(),status:"sent"});assert.equal((await copilotOf(ticket)).steps.find(s=>s.key==="proposal").done,true);
+      `);
+    });
     await test("copilot caches suggestions, accounts tokens as real use and never sends a message", async () => {
       const tid = copilotFixture.ticketId, before = anthropic.requests.length, sent = graph.sent.length + tg.sent.length;
       const first = await http.post(`/tickets/${tid}/suggest-reply`, {}, auth());
