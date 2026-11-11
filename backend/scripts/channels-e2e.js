@@ -227,6 +227,7 @@ const startAnthropicMock = () => {
       if (/dura|tempo/i.test(said2)) return tool("buscar_curso", { courseName: "Direito" });
       if (/formato da pedagogia social/i.test(said2)) return tool("buscar_regra_modalidade", { courseName: "Pedagogia Social" });
       if (/^quero fazer o curso de biomedicina$/i.test(said2.trim())) return turn("Biomedicina é uma ótima escolha.", { intent: "other", curso: "Biomedicina" });
+      if (/^quero fazer o curso de empreendedorismo$/i.test(said2.trim())) return turn("Empreendedorismo é uma ótima escolha.", { intent: "other", curso: "Empreendedorismo" });
       if (/texto com markdown/i.test(said2)) return turn("**Pedagogia** tem 8 semestres.\n\n### Como funciona\nVeja [a grade](https://exemplo.com/g.pdf) e a tabela:\n| Item | Valor |\n|---|---|\n| Duração | 8 semestres |", { intent: "other" });
       if (/mec/i.test(said2)) return tool("buscar_regra_modalidade", { courseName: "Direito" });
       if (/nasa/i.test(said2)) return turn("Essa informação eu prefiro confirmar com a equipe para não te passar nada incorreto.", { intent: "unknown", pergunta_sem_resposta: "convênio com a Nasa" });
