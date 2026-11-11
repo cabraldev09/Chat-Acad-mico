@@ -361,6 +361,8 @@ r.post("/leads/:id/open-ticket", isAuth, canAccessLead, Lead.openTicket);
 r.get("/lead-tasks", isAuth, Lead.tasksIndex);
 r.post("/lead-tasks/release-unreachable", isAuth, isManager, Lead.releaseUnreachable);
 r.get("/onboarding", isAuth, Lead.onboardingList);
+r.put("/leads/:id/onboarding/access", isAuth, Lead.onboardingAccessSave);
+r.post("/leads/:id/onboarding/access/send", isAuth, Lead.onboardingAccessSend);
 r.get("/onboarding/pending", isAuth, Lead.onboardingPending);
 r.get("/onboarding/stats", isAuth, isManager, Lead.onboardingStats);
 r.put("/leads/:id/onboarding/checklist", isAuth, canAccessLead, Lead.onboardingChecklist);

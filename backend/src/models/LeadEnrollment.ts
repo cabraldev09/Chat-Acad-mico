@@ -38,6 +38,10 @@ class LeadEnrollment extends Model<LeadEnrollment> {
   @Column
   courseName: string;
 
+  // the registration number of this enrollment (each course has its own)
+  @Column
+  rgm: string;
+
   @Column
   note: string;
 
