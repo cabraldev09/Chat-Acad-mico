@@ -3609,6 +3609,10 @@ const postMeta = (id, payload, secret, badSig) => {
       ["institutional/public-exam", "institutional/tuition-adjustment", "institutional/enrollment-fee", "institutional/after-enrollment", "institutional/not-offered", "institutional/cancellation", "institutional/affiliate"].forEach(t => assert(topics.includes(t), `the knowledge base lacks ${t}: ${topics}`));
       assert(/Extraordinário Aproveitamento de Estudos/.test(sql(`SELECT content FROM KbDocuments WHERE agentId=${agentId} AND topic='institutional/public-exam'`)) && !/R\$|\d+ ?%/.test(sql(`SELECT string_agg(content, ' ') FROM KbDocuments WHERE agentId=${agentId} AND topic LIKE 'institutional/%' AND topic IN ('institutional/tuition-adjustment','institutional/enrollment-fee','institutional/affiliate')`)), "the ready answers carry a price or a percentage");
       assert(/mestres e doutores/.test(sql(`SELECT content FROM KbDocuments WHERE agentId=${agentId} AND topic='institutional/faculty'`)), "the faculty text is not the dictated one");
+      // the script of the agent is readable in one list (the manager sees what the lead receives)
+      const scr = (await http.get(`/ai-agents/${agentId}/script`, auth())).data;
+      assert(scr.steps.length === 8 && scr.steps[0].key === "entry" && /primeira graduação/.test(scr.steps[0].text) && /sem aulas práticas presenciais/.test(scr.steps[3].text) && scr.steps[7].key === "handoff", `script: ${JSON.stringify(scr.steps.map(x => x.key))}`);
+      assert(!/\p{Extended_Pictographic}/u.test(scr.steps.map(x => x.text).join(" ")), "the script carries an emoji");
       const fun = (await http.get("/crm-funnel", auth())).data;
       assert(fun.keys.length === 15 && fun.keys.every(k => k.stageId), `funnel not complete: ${fun.keys.filter(k => !k.stageId).map(k => k.key)}`);
       assert(new Set(fun.keys.map(k => k.stageId)).size === 15, "two steps share a column");
