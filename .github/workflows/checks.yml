@@ -107,12 +107,20 @@ jobs:
           npm run build
       - name: Cliente PostgreSQL da mesma versão do serviço
         if: matrix.script == 'channels-e2e.js'
+        env:
+          PG_TEST_CONTAINER: ${{ job.services.postgres.id }}
         run: |
-          if [ ! -x /usr/lib/postgresql/16/bin/pg_dump ]; then
-            sudo apt-get update -qq
-            sudo apt-get install -y postgresql-client-16
-          fi
-          echo "PG_BIN=/usr/lib/postgresql/16/bin" >> "$GITHUB_ENV"
+          client_dir="$RUNNER_TEMP/postgres-client"
+          mkdir -p "$client_dir"
+          cat > "$client_dir/psql" <<'CLIENT'
+          #!/usr/bin/env bash
+          exec docker exec -i "$PG_TEST_CONTAINER" "$(basename "$0")" "$@"
+          CLIENT
+          cp "$client_dir/psql" "$client_dir/pg_dump"
+          cp "$client_dir/psql" "$client_dir/pg_restore"
+          chmod +x "$client_dir/psql" "$client_dir/pg_dump" "$client_dir/pg_restore"
+          echo "PG_BIN=$client_dir" >> "$GITHUB_ENV"
+          echo "PG_TEST_CONTAINER=$PG_TEST_CONTAINER" >> "$GITHUB_ENV"
       - name: Testes de ponta a ponta (${{ matrix.nome }})
         working-directory: backend
         run: node scripts/${{ matrix.script }}
