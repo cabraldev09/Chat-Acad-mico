@@ -24,6 +24,7 @@ ticketRoutes.get("/tickets/:ticketId/welcome", isAuth, canReadTicket, TicketCont
 ticketRoutes.get("/tickets/:ticketId/automation", isAuth, canReadTicket, TicketController.automation);
 
 ticketRoutes.get("/tickets/:ticketId/ai-summary", isAuth, canReadTicket, TicketController.aiSummary);
+ticketRoutes.get("/tickets/:ticketId/copilot", isAuth, canReadTicket, TicketController.copilot);
 
 ticketRoutes.post("/tickets/:ticketId/suggest-reply", isAuth, canSendTicket, TicketController.suggestReply);
 
