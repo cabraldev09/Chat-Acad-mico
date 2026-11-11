@@ -240,6 +240,8 @@ interface RespondOptions {
   collected?: Record<string, string> | null;
   // the tester: no writes, usage kind "test"
   sandbox?: boolean;
+  usageKind?: "copilot";
+  accountingTicketId?: number;
   // an AI stage of a flow: its goal, fields, tools and exits replace the general ones of the agent
   stage?: StageData;
   flowId?: number | null;
@@ -388,7 +390,7 @@ const respondOnce = async (agent: AiAgent, opts: RespondOptions): Promise<AiResu
 
   const tokens = { input: 0, output: 0, cacheRead: 0 };
   const toolsUsed: string[] = [];
-  const kind = opts.sandbox ? "test" : "reply";
+  const kind = opts.usageKind || (opts.sandbox ? "test" : "reply");
   let text = "";
   let rounds = 0;
   const toolLog: Array<{ name: string; args: any; result: string }> = [];
@@ -413,7 +415,7 @@ const respondOnce = async (agent: AiAgent, opts: RespondOptions): Promise<AiResu
     if (opts.sandbox) return;
     await AgentMetricEvent.create({ leadId: opts.leadId || null, agentId: agent.id, flowId: opts.flowId || null, event: "tool_error", once: false, meta: JSON.stringify({ tool: name, error: String(err).slice(0, 200) }) } as any).catch(() => undefined);
   };
-  const usageOf = (usage: any) => ({ agentId: agent.id, ticketId: opts.ticket?.id, model: agent.model, kind, usage, flowId: opts.flowId, nodeId: opts.nodeId, leadId: opts.leadId, latencyMs: Date.now() - started } as any);
+  const usageOf = (usage: any) => ({ agentId: agent.id, ticketId: opts.accountingTicketId || opts.ticket?.id, model: agent.model, kind, usage, flowId: opts.flowId, nodeId: opts.nodeId, leadId: opts.leadId, latencyMs: Date.now() - started } as any);
   const finish = (ctx: any): AiResult => {
     const qualified = !stage && !ctx.flowStarted && !text.includes(HANDOFF_MARKER) && !text.includes(UNKNOWN_MARKER) && missingSlots(agent, collected).length === 0 && Object.keys(collected).length > 0;
     if (qualified) text = [text, agent.handoffMessage || "Vou chamar um consultor para preparar sua proposta e continuar sua matrícula."].filter(Boolean).join("\n\n");
@@ -432,7 +434,7 @@ const respondOnce = async (agent: AiAgent, opts: RespondOptions): Promise<AiResu
     for (let round = 0; round <= MAX_TOOL_ROUNDS; round += 1) {
       rounds += 1;
       // eslint-disable-next-line no-await-in-loop
-      const data: any = await withRetry(async compat => callWithBudget(agent, kind, opts.ticket?.id, {
+      const data: any = await withRetry(async compat => callWithBudget(agent, kind, opts.accountingTicketId || opts.ticket?.id, {
         model: agent.model, [compat ? "max_tokens" : "max_completion_tokens"]: budget, messages,
         ...(round < MAX_TOOL_ROUNDS && tools.length ? { tools, parallel_tool_calls: false } : {})
       }, async body => (await axios.post(`${OPENAI_URL()}/v1/chat/completions`, body, { headers: { Authorization: `Bearer ${apiKey}` }, timeout: 60000 })).data, usageOf(null)));
@@ -476,7 +478,7 @@ const respondOnce = async (agent: AiAgent, opts: RespondOptions): Promise<AiResu
   for (let round = 0; round <= MAX_TOOL_ROUNDS; round += 1) {
     rounds += 1;
     // eslint-disable-next-line no-await-in-loop
-    const data = await callWithBudget(agent, kind, opts.ticket?.id, {
+    const data = await callWithBudget(agent, kind, opts.accountingTicketId || opts.ticket?.id, {
       model: agent.model,
       max_tokens: budget,
       system,
@@ -539,7 +541,7 @@ export const respond = async (agent: AiAgent, opts: RespondOptions): Promise<AiR
       agent, apiKey,
       "Você revisa respostas de um atendimento no WhatsApp. Reescreva a resposta mantendo o tom, o idioma e os blocos curtos separados por linha em branco.",
       `Resposta original:\n${result.text}\n\nO dado "${bad}" não aparece nas ferramentas nem na base de conhecimento, então não pode ser dito. Reescreva sem esse dado: diga que vai confirmar com a equipe e conduza para o próximo passo. Responda só com o texto reescrito.`,
-      Math.max(agent.maxTokens || 350, 350), { ticketId: opts.ticket?.id, kind: opts.sandbox ? "test" : "reply", flowId: opts.flowId, nodeId: opts.nodeId, leadId: opts.leadId }
+      Math.max(agent.maxTokens || 350, 350), { ticketId: opts.accountingTicketId || opts.ticket?.id, kind: opts.usageKind || (opts.sandbox ? "test" : "reply"), flowId: opts.flowId, nodeId: opts.nodeId, leadId: opts.leadId }
     );
 
     if (fixed.text && !unsupportedFact(fixed.text, evidence)) return { ...result, text: fixed.text };

@@ -25,11 +25,10 @@ import AppError from "../errors/AppError";
 import ChatFlowRun from "../models/ChatFlowRun";
 import Message from "../models/Message";
 import RunInboundAutomation from "../services/AutomationServices/RunInboundAutomation";
-import { findAgentForTicket, loadHistory, respond } from "../services/AiServices/RunAiAgent";
-import AiAgent from "../models/AiAgent";
+import { findAgentForTicket } from "../services/AiServices/RunAiAgent";
 import Lead from "../models/Lead";
 import { loadState } from "../services/CommercialServices/Slots";
-import { ENTRY_LABEL, INTEREST_LABEL, briefOf, suggestedStepOf } from "../services/CommercialServices/Rules";
+import { ENTRY_LABEL, INTEREST_LABEL, suggestedStepOf } from "../services/CommercialServices/Rules";
 import { HandoffWhy, WHY_TEXT } from "../services/CommercialServices/Router";
 import { isManagerRole, roleOf } from "../helpers/Roles";
 import { getAdapter } from "../channels";
@@ -267,49 +266,6 @@ export const aiSummary = async (req: Request, res: Response): Promise<Response> 
     `Próximo passo: ${suggestedStepOf(state)}`
   ];
   return res.json({ lines, why: ticket.handoffReason ? WHY_TEXT[ticket.handoffReason as HandoffWhy] || ticket.handoffReason : null });
-};
-
-// The copilot of the consultant: where the commercial process is for this lead and the next message in the words of the team (no model, no cost)
-export const copilot = async (req: Request, res: Response): Promise<Response> => {
-  const ticket = await Ticket.findByPk(req.params.ticketId);
-  if (!ticket) throw new AppError("ERR_NO_TICKET_FOUND", 404);
-  const { copilotOf } = await import("../services/CommercialServices/Process");
-  return res.json(await copilotOf(ticket));
-};
-
-// "Sugerir resposta": the agent writes the next answer of a conversation a person took, from the history and what it knows of the lead; the
-// consultant reads, edits and sends it (nothing goes out from here, nothing is saved)
-const lastSuggest = new Map<number, number>();
-export const suggestReply = async (req: Request, res: Response): Promise<Response> => {
-  const ticket = await ShowTicketService(req.params.ticketId);
-  // one suggestion every few seconds per person: each one is a call to the model
-  const me = Number(req.user.id);
-  if (Date.now() - (lastSuggest.get(me) || 0) < 4000) throw new AppError("ERR_TOO_MANY_REQUESTS", 429);
-  lastSuggest.set(me, Date.now());
-  const lead0 = await Lead.findOne({ where: { contactId: ticket.contactId }, attributes: ["id"] });
-  const state0 = lead0 ? await loadState(lead0.id) : null;
-  // the agent that talked to the lead (its rules and its knowledge), else the one of the conversation
-  const agent = (state0 && state0.agentId ? await AiAgent.findByPk(state0.agentId) : null) || (await findAgentForTicket(ticket));
-  if (!agent) throw new AppError("ERR_AI_NO_AGENT", 400);
-  const history = await loadHistory(ticket, 30);
-  if (!history.length || history[history.length - 1].role !== "user") return res.json({ text: "", note: "A última mensagem é sua: espere a pessoa responder." });
-  const lead = await Lead.findOne({ where: { contactId: ticket.contactId }, attributes: ["id"] });
-  const state = lead ? await loadState(lead.id) : null;
-  const { copilotOf } = await import("../services/CommercialServices/Process");
-  const step = await copilotOf(ticket as any).catch(() => null);
-  const guide = [
-    "Você está escrevendo a próxima mensagem do CONSULTOR, que já assumiu a conversa: fale na voz dele (nunca como assistente virtual, sem se apresentar), de forma profissional e sem emoji.",
-    step && step.current ? `O processo comercial está no passo "${step.steps.find(x => x.key === step.current)?.label}". Responda primeiro o que a pessoa perguntou e depois conduza para esse passo.` : "",
-    "Não informe valores, bolsas ou prazos: quem apresenta a proposta é o consultor."
-  ].filter(Boolean).join("\n");
-  const summary = [state ? briefOf(state) : "", guide].filter(Boolean).join("\n\n");
-  try {
-    const result = await respond(agent, { ticket: null, history, summary, collected: null, sandbox: true });
-    if (result.handoff || result.unknown || !result.text) return res.json({ text: "", note: "O agente não sabe responder isso com segurança: responda você." });
-    return res.json({ text: result.text.replace(/\[(HANDOFF|DESCONHECIDO)\]/g, "").trim() });
-  } catch (err) {
-    throw new AppError("ERR_AI_SUGGEST_FAILED", 502);
-  }
 };
 
 // "Marcar todas como lidas" in the Não lidas view: the conversations this person sees there (a manager: the ones of the attendant or the connection

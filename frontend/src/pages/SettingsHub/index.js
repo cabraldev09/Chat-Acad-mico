@@ -1,3 +1,4 @@
+import CopilotSettings from "../../components/Copilot/Settings";
 import Operations from "./Operations";
 import React, { useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { Link, useHistory, useLocation } from "react-router-dom";
@@ -27,6 +28,7 @@ import { BUILD } from "../../utils/versionWatch";
 // Configurações: where the rules of the system are set. Each group holds the real controls (saved as soon as they change);
 // "Cadastros" shows what exists (connections, people, polos...) with a way into each list.
 const GROUPS = [
+  { id: "copiloto", label: "Copiloto", icon: Workflow, hint: "Processo, conexões e limites de IA" },
   { id: "operacao", label: "Operação e custos", icon: SlidersHorizontal, hint: "Prazos, capacidade e entregas" },
   { id: "geral", label: "Geral", icon: Settings2, hint: "Fuso, acesso e integração" },
   { id: "horario", label: "Horário e prazos", icon: Clock, hint: "Expediente e metas de resposta" },
@@ -604,6 +606,7 @@ const SettingsHub = () => {
             </div>
             {!values ? <Typography className={classes.hint}>Carregando...</Typography> : (
               <SectionBoundary name={current.id} resetKey={current.id}>
+                {current.id === "copiloto" && <CopilotSettings />}
                 {current.id === "operacao" && <Operations />}
 
                 {current.id === "geral" && <Geral values={values} save={save} admin={admin} />}

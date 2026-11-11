@@ -1,3 +1,6 @@
+import CopilotProgress from "../../models/CopilotProgress";
+import { configOf } from "../CopilotServices/Settings";
+import { completionOf, CopilotConfig } from "../CopilotServices/Policy";
 import Lead from "../../models/Lead";
 import Message from "../../models/Message";
 import Proposal from "../../models/Proposal";
@@ -17,7 +20,9 @@ import { loadState, Slots } from "./Slots";
 export type StepKey = "entry" | "course" | "city" | "format" | "grade" | "doubts" | "bolsa" | "proposal" | "enroll";
 
 export interface CopilotStep {
-  key: StepKey;
+  key: string;
+  instruction: string;
+  manual: boolean;
   label: string;
   done: boolean;
 }
@@ -26,7 +31,8 @@ export interface Copilot {
   hasLead: boolean;
   leadId: number | null;
   steps: CopilotStep[];
-  current: StepKey | null;
+  current: string | null;
+  processVersion: number;
   // the next message, ready to use (what the team says at this step), and what the screen can do for it
   suggestion: { text: string; action: "send_grade" | "proposal" | "enroll" | null } | null;
 }
@@ -42,7 +48,6 @@ export const STEP_LABEL: Record<StepKey, string> = {
   proposal: "Proposta enviada",
   enroll: "Matrícula confirmada"
 };
-const ORDER: StepKey[] = ["entry", "course", "city", "format", "grade", "doubts", "bolsa", "proposal", "enroll"];
 
 const plain = (s: string): string => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
@@ -51,9 +56,9 @@ export const readConversation = async (ticket: Ticket, slots: Slots, leadCpf: st
   const out: Slots = { ...slots };
   const asked = new Set<StepKey>();
   let proposalSent = false;
-  const rows = await Message.findAll({ where: { ticketId: ticket.id } as any, order: [["createdAt", "ASC"]], limit: 300, attributes: ["id", "body", "fromMe", "mediaType", "createdAt"] });
+  const rows = await Message.findAll({ where: { ticketId: ticket.id } as any, order: [["createdAt", "DESC"], ["id", "DESC"]], limit: 300, attributes: ["id", "body", "fromMe", "mediaType", "createdAt"] });
   let lastMine = "";
-  for (const m of rows) {
+  for (const m of rows.reverse()) {
     const text = String(m.body || "").replace(/^[‎‏]+/, "");
     if (m.fromMe) {
       lastMine = text;
@@ -67,7 +72,7 @@ export const readConversation = async (ticket: Ticket, slots: Slots, leadCpf: st
     }
     if (!text.trim() || /^\[/.test(text)) continue;
     // eslint-disable-next-line no-await-in-loop
-    const found = await detectFromText(text).catch(() => ({} as Record<string, any>));
+    const found = out.courseName && (out.city || out.poloId) ? {} as Record<string, any> : await detectFromText(text).catch(() => ({} as Record<string, any>));
     if (!out.courseName && found.courseName) { out.courseName = found.courseName; if (found.courseId) out.courseId = found.courseId; }
     if (!out.city && !out.poloId && (found.city || found.poloId)) { if (found.city) out.city = found.city; if (found.poloId) out.poloId = found.poloId; }
     if (!out.entryType || out.entryType === "unknown") {
@@ -120,12 +125,14 @@ const textFor = async (key: StepKey, s: Slots, leadName: string): Promise<{ text
   }
 };
 
-export const copilotOf = async (ticket: Ticket): Promise<Copilot> => {
+export const copilotOf = async (ticket: Ticket, config?: CopilotConfig): Promise<Copilot> => {
+  const settings = config || await configOf();
   const lead = ticket.contactId ? await Lead.findOne({ where: { contactId: ticket.contactId }, attributes: ["id", "name", "cpf", "enrolledAt", "courseId"] }) : null;
-  if (!lead) return { hasLead: false, leadId: null, steps: [], current: null, suggestion: null };
-  const state = await loadState(lead.id);
-  const { slots, asked, proposalSent } = await readConversation(ticket, state.slots, lead.cpf || null);
-  const proposals = await Proposal.count({ where: { leadId: lead.id } as any }).catch(() => 0);
+  const state = lead ? await loadState(lead.id) : { slots: {} as Slots };
+  const { slots, asked, proposalSent } = await readConversation(ticket, state.slots, lead?.cpf || null);
+  const progress = await CopilotProgress.findByPk(ticket.id);
+  const overrides = progress?.overrides || {};
+  const proposals = lead ? await Proposal.count({ where: { leadId: lead.id } as any }) : 0;
   const done: Record<StepKey, boolean> = {
     entry: !!slots.entryType && slots.entryType !== "unknown",
     course: !!(slots.courseName || slots.courseId),
@@ -135,10 +142,11 @@ export const copilotOf = async (ticket: Ticket): Promise<Copilot> => {
     doubts: !!(slots.doubtsOver || asked.has("bolsa") || (slots.fullName && slots.cpfGiven)),
     bolsa: !!(slots.fullName && slots.cpfGiven),
     proposal: proposals > 0 || proposalSent,
-    enroll: !!lead.enrolledAt
+    enroll: !!lead?.enrolledAt
   };
-  const steps: CopilotStep[] = ORDER.map(key => ({ key, label: STEP_LABEL[key], done: done[key] }));
+  const steps: CopilotStep[] = settings.steps.map(s => ({ key: s.key, label: s.label, instruction: s.instruction, done: completionOf(s.key, !!done[s.key as StepKey], overrides), manual: Object.prototype.hasOwnProperty.call(overrides, s.key) }));
   const current = steps.find(x => !x.done)?.key || null;
-  const next = current ? await textFor(current, slots, lead.name) : null;
-  return { hasLead: true, leadId: lead.id, steps, current, suggestion: next ? { text: next.text, action: next.action } : null };
+  const configured = settings.steps.find(s => s.key === current);
+  const next = current ? (configured?.message ? { text: configured.message, action: null } : await textFor(current as StepKey, slots, lead?.name || "")) : null;
+  return { hasLead: !!lead, leadId: lead?.id || null, steps, current, processVersion: settings.version, suggestion: next ? { text: next.text, action: next.action } : null };
 };

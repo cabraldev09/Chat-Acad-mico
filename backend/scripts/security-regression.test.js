@@ -55,3 +55,32 @@ test('reactive attendance is scoped to the inbound reply and does not leak to wo
   await withReactiveReply(async () => { await Promise.resolve(); assert.equal(isReactiveReply(), true); });
   assert.equal(isReactiveReply(), false);
 });
+
+test('copilot starts on all connections with paid suggestions opt-in', () => {
+  const { defaultConfig, policyFor } = require('../dist/services/CopilotServices/Policy');
+  const config = defaultConfig();
+  assert.equal(config.enabled, true);
+  assert.equal(config.aiEnabled, false);
+  assert.deepEqual(policyFor(config, 999), { enabled: true, dailyLimit: 50 });
+  config.connections['999'] = { enabled: false, dailyLimit: 2 };
+  assert.equal(policyFor(config, 999).enabled, false);
+  assert.equal(policyFor(config, 1000).enabled, true);
+});
+test('copilot validates limits and preserves actual enrollment as final step', () => {
+  const { defaultConfig, validateConfig } = require('../dist/services/CopilotServices/Policy');
+  for (const n of [-1, 1.1, NaN, Infinity, '20', null]) assert.throws(() => validateConfig({ ...defaultConfig(), dailyLimit: n }));
+  assert.throws(() => validateConfig({ ...defaultConfig(), enabled: 'true' }));
+  assert.throws(() => validateConfig({ ...defaultConfig(), steps: [] }));
+  assert.throws(() => validateConfig({ ...defaultConfig(), steps: defaultConfig().steps.reverse() }));
+  const config = defaultConfig();
+  config.steps.splice(1, 0, { key: 'entry', label: 'Duplicada', instruction: '', message: '' });
+  assert.throws(() => validateConfig(config));
+  assert.equal(validateConfig({ ...defaultConfig(), dailyLimit: 0 }).dailyLimit, 0);
+});
+test('copilot manual progress can reopen a detected step but cannot confirm enrollment', () => {
+  const { completionOf } = require('../dist/services/CopilotServices/Policy');
+  assert.equal(completionOf('entry', true, { entry: false }), false);
+  assert.equal(completionOf('entry', false, { entry: true }), true);
+  assert.equal(completionOf('enroll', false, { enroll: true }), false);
+  assert.equal(completionOf('enroll', true, { enroll: false }), true);
+});

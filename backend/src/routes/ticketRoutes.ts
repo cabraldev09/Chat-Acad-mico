@@ -5,9 +5,12 @@ import isAuth from "../middleware/isAuth";
 import isAdmin from "../middleware/isAdmin";
 import { canReadTicket, canWriteTicket, canSendTicket } from "../middleware/canAccessTicket";
 
+import * as CopilotController from "../controllers/CopilotController";
 import * as TicketController from "../controllers/TicketController";
 
 const ticketRoutes = express.Router();
+ticketRoutes.get("/copilot/settings", isAuth, isAdmin, CopilotController.settings);
+ticketRoutes.put("/copilot/settings", isAuth, isAdmin, CopilotController.updateSettings);
 
 const phoneLimiter = rateLimit({ windowMs: 60000, max: 20, key: req => `phone:${req.user.id}` });
 ticketRoutes.get("/tickets/:ticketId/phone", isAuth, canReadTicket, phoneLimiter, PhoneAction.show);
@@ -24,9 +27,11 @@ ticketRoutes.get("/tickets/:ticketId/welcome", isAuth, canReadTicket, TicketCont
 ticketRoutes.get("/tickets/:ticketId/automation", isAuth, canReadTicket, TicketController.automation);
 
 ticketRoutes.get("/tickets/:ticketId/ai-summary", isAuth, canReadTicket, TicketController.aiSummary);
-ticketRoutes.get("/tickets/:ticketId/copilot", isAuth, canReadTicket, TicketController.copilot);
+ticketRoutes.get("/tickets/:ticketId/copilot", isAuth, canReadTicket, CopilotController.show);
 
-ticketRoutes.post("/tickets/:ticketId/suggest-reply", isAuth, canSendTicket, TicketController.suggestReply);
+ticketRoutes.put("/tickets/:ticketId/copilot/progress", isAuth, canWriteTicket, CopilotController.progress);
+
+ticketRoutes.post("/tickets/:ticketId/suggest-reply", isAuth, canSendTicket, CopilotController.suggest);
 
 ticketRoutes.get("/tickets/:ticketId/group", isAuth, canReadTicket, TicketController.groupInfo);
 

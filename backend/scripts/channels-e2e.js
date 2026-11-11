@@ -6370,6 +6370,89 @@ const postMeta = (id, payload, secret, badSig) => {
       const source = `require("reflect-metadata"); const db=require("./dist/database").default; const assert=require("node:assert/strict"); require("./dist/libs/socket").initIO(require("http").createServer()); (async()=>{ ${code} })().then(()=>db.close()).then(()=>process.exit(0)).catch(e=>{console.error(e.stack);process.exit(1)});`;
       return execFileSync(process.execPath, ["-e", source], { cwd: ROOT, env, timeout: 25000 }).toString();
     };
+    console.log("\nCopiloto do consultor");
+    await test("copilot config is manager-only, validates revisions and blocks generic setting bypass", async () => {
+      assert((await http.get("/copilot/settings", asUser(agentToken))).status === 403, "staff read admin controls");
+      const config = (await http.get("/copilot/settings", auth())).data;
+      assert(config.enabled && !config.aiEnabled, "paid suggestions must be opt-in");
+      assert((await http.put("/copilot/settings", config, asUser(agentToken))).status === 403, "staff changed controls");
+      assert((await http.put("/settings/consultant_copilot", { value: "{}" }, auth())).status === 403, "generic bypass");
+      assert((await http.put("/copilot/settings", { ...config, dailyLimit: -1 }, auth())).status === 400, "negative limit accepted");
+      const saved = await http.put("/copilot/settings", config, auth());
+      assert(saved.status === 200 && saved.data.version === config.version + 1, "version not incremented");
+      assert((await http.put("/copilot/settings", config, auth())).status === 409, "stale editor overwrote process");
+    });
+    let copilotFixture;
+    await test("copilot works without lead or linked autonomous agent, saves progress and honors connection switches", async () => {
+      copilotFixture = JSON.parse(inDb(`
+        const Contact=require("./dist/models/Contact").default, Ticket=require("./dist/models/Ticket").default, Message=require("./dist/models/Message").default, Agent=require("./dist/models/AiAgent").default;
+        const contact=await Contact.create({name:"Teste copiloto",number:"5511990000901",channel:"telegram"});
+        const ticket=await Ticket.create({contactId:contact.id,whatsappId:${tgId},status:"open",userId:1,segment:"sales",isGroup:false,aiActive:false});
+        await Message.create({id:"copilot-inbound-1",ticketId:ticket.id,contactId:contact.id,fromMe:false,body:"Olá, gostaria de saber mais",mediaType:"chat"});
+        const agent=await Agent.create({name:"Copiloto manual",provider:"anthropic",model:"claude-haiku-5-5",apiKey:"sk-ant-test",active:false,dailyTokenCap:1000000});
+        console.log(JSON.stringify({ticketId:ticket.id,agentId:agent.id,connectionId:ticket.whatsappId}));`));
+      const tid = copilotFixture.ticketId;
+      const before = anthropic.requests.length;
+      let view = (await http.get(`/tickets/${tid}/copilot`, auth())).data;
+      assert(view.enabled && !view.hasLead && view.steps.length === 9 && view.current === "entry", "no process for unlinked contact");
+      assert(!view.aiAvailable && anthropic.requests.length === before, "process used paid generation");
+      assert((await http.post(`/tickets/${tid}/suggest-reply`, {}, auth())).status === 403, "AI opt-in ignored");
+      assert((await http.put(`/tickets/${tid}/copilot/progress`, {key:"entry",done:true}, auth())).data.current === "course", "step not saved");
+      view = (await http.get(`/tickets/${tid}/copilot`, auth())).data;
+      assert(view.steps[0].done && view.steps[0].manual, "progress not durable");
+      assert((await http.put(`/tickets/${tid}/copilot/progress`, {key:"enroll",done:true}, auth())).status === 400, "fake enrollment accepted");
+      assert((await http.put(`/tickets/${tid}/copilot/progress`, {key:"entry",done:null}, auth())).data.current === "entry", "auto detection not restored");
+      let config = (await http.get("/copilot/settings", auth())).data;
+      const custom = {key:"custom_test",label:"Revisão do gestor",instruction:"Confirme o objetivo profissional.",message:"O que você deseja alcançar com a graduação?"};
+      config.steps.splice(0,0,custom);
+      config.connections[String(copilotFixture.connectionId)] = {enabled:false,dailyLimit:1};
+      config = (await http.put("/copilot/settings", config, auth())).data;
+      assert((await http.get(`/tickets/${tid}/copilot`, auth())).data.enabled === false, "connection disable ignored");
+      delete config.connections[String(copilotFixture.connectionId)];
+      config.aiEnabled = true; config.agentId = copilotFixture.agentId;
+      config.dailyLimit = 1; config.userDailyLimit = 1; config.connectionDailyLimit = 1;
+      await http.put("/copilot/settings", config, auth());
+      view = (await http.get(`/tickets/${tid}/copilot`, auth())).data;
+      assert(view.aiAvailable && view.current === "custom_test" && view.suggestion.text === custom.message, "edited process not reflected");
+    });
+    await test("copilot caches suggestions, accounts tokens as real use and never sends a message", async () => {
+      const tid = copilotFixture.ticketId, before = anthropic.requests.length, sent = graph.sent.length + tg.sent.length;
+      const first = await http.post(`/tickets/${tid}/suggest-reply`, {}, auth());
+      assert(first.status === 200 && first.data.text, `suggestion failed: ${JSON.stringify(first.data)}`);
+      const calls = anthropic.requests.length;
+      assert(calls > before, "mock provider not called");
+      const second = await http.post(`/tickets/${tid}/suggest-reply`, {}, auth());
+      assert(second.status === 200 && second.data.cached && second.data.text === first.data.text && anthropic.requests.length === calls, "repeat charged again");
+      assert(sql(`SELECT COUNT(*) FROM AiUsage WHERE ticketId=${tid} AND kind='copilot'`) !== "0", "suggestion excluded from real budgets");
+      assert(graph.sent.length + tg.sent.length === sent, "copilot sent a message");
+      const prompt = JSON.stringify(anthropic.requests[calls-1].system);
+      assert(/Revisão do gestor|Confirme o objetivo profissional/.test(prompt), "manager instructions missing");
+      inDb(`const Message=require("./dist/models/Message").default; await Message.create({id:"copilot-inbound-2",ticketId:${tid},fromMe:false,body:"Outra dúvida para o consultor",mediaType:"chat"});`);
+      const blocked = await http.post(`/tickets/${tid}/suggest-reply`, {}, auth());
+      assert(blocked.status === 429 && blocked.data.error === "ERR_COPILOT_DAILY_LIMIT", `quota not enforced: ${JSON.stringify(blocked.data)}`);
+      assert(anthropic.requests.length === calls, "provider called after quota");
+      const view = (await http.get(`/tickets/${tid}/copilot`, auth())).data;
+      assert(view.enabled && !view.aiAvailable && view.suggestion && view.quota.user.used === 1, "free process unavailable after cap");
+    });
+    await test("copilot reservations serialize concurrent users and remain counted after worker restart", async () => {
+      inDb(`const {reserveSuggestion,configOf}=require("./dist/services/CopilotServices/Settings"); const Ticket=require("./dist/models/Ticket").default;
+        const Request=require("./dist/models/CopilotRequest").default; const ticket=await Ticket.findByPk(${copilotFixture.ticketId}); const config=await configOf();
+        for(const limits of [{dailyLimit:1,userDailyLimit:0,connectionDailyLimit:0},{dailyLimit:0,userDailyLimit:1,connectionDailyLimit:0},{dailyLimit:0,userDailyLimit:0,connectionDailyLimit:1}]) {
+          await Request.destroy({where:{ticketId:ticket.id}});
+          const policy={...config,...limits};
+          const calls=await Promise.allSettled([reserveSuggestion(policy,ticket,1,"parallel-a"),reserveSuggestion(policy,ticket,1,"parallel-b")]);
+          assert.equal(calls.filter(c=>c.status==="fulfilled").length,1);assert.equal(calls.filter(c=>c.status==="rejected").length,1);
+          assert.equal(calls.find(c=>c.status==="rejected").reason.message,"ERR_COPILOT_DAILY_LIMIT");
+          assert.equal(await Request.count({where:{ticketId:ticket.id}}),1);
+        }`);
+      // A second process sees the durable pending reservation left by the previous process.
+      inDb(`const {quotaOf,configOf}=require("./dist/services/CopilotServices/Settings"); const q=await quotaOf(await configOf(),1,${copilotFixture.connectionId});assert.equal(q.total.used,1);`);
+      let config = (await http.get("/copilot/settings", auth())).data;
+      config.steps = config.steps.filter(s => s.key !== "custom_test");
+      config.aiEnabled=false; config.agentId=null; config.dailyLimit=100; config.userDailyLimit=20; config.connectionDailyLimit=50;
+      await http.put("/copilot/settings",config,auth());
+    });
+
     await test("operation settings validate budgets and restrict staff access", async () => {
       assert((await http.get("/operations/config",auth())).status===200,"missing config");
       assert((await http.put("/operations/config",{ai_daily_usd_cap:"-1"},auth())).status===400,"negative budget");

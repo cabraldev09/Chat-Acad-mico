@@ -1,0 +1,169 @@
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { Button, CircularProgress, Dialog, DialogContent, DialogTitle, IconButton, LinearProgress, makeStyles } from "@material-ui/core";
+import { Check, ChevronDown, ChevronUp, Compass, Flag, ListChecks, Send, Settings2, Sparkles, X, FileText, GraduationCap, RotateCcw } from "lucide-react";
+import { toast } from "react-toastify";
+import api from "../../services/api";
+import toastError from "../../errors/toastError";
+import EnrollDialog from "../../pages/CRM/EnrollDialog";
+import CopilotSettings from "./Settings";
+
+const useStyles = makeStyles(theme => ({
+  root: { flex: "none", minWidth: 0, color: theme.palette.text.primary, background: theme.palette.background.paper, borderBottom: `1px solid ${theme.palette.divider}` },
+  header: { display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", flexWrap: "wrap" },
+  emblem: { display: "grid", placeItems: "center", width: 34, height: 34, borderRadius: 11, flexShrink: 0, color: "#0f766e", background: "rgba(15,118,110,.1)" },
+  title: { fontSize: 14, fontWeight: 700, lineHeight: 1.4 },
+  muted: { fontSize: 12, color: theme.palette.text.secondary, lineHeight: 1.5 },
+  badge: { display: "inline-flex", whiteSpace: "nowrap", borderRadius: 20, padding: "3px 9px", fontSize: 11, fontWeight: 600, background: theme.palette.action.hover, color: theme.palette.text.secondary },
+  primary: { background: "#0f766e", color: "#fff", borderRadius: 9, textTransform: "none", fontWeight: 600, boxShadow: "none", "&:hover": { background: "#115e59", boxShadow: "none" } },
+  button: { textTransform: "none", borderRadius: 8, fontSize: 12 },
+  content: { maxHeight: "min(48vh, 420px)", overflowY: "auto", padding: "0 16px 12px", ...theme.scrollbarStyles },
+  layout: { display: "grid", gridTemplateColumns: "minmax(180px, .85fr) minmax(240px, 1.6fr)", gap: 14, alignItems: "start", [theme.breakpoints.down("sm")]: { display: "flex", flexDirection: "column", alignItems: "stretch" } },
+  steps: { padding: 0, margin: 0, listStyle: "none", display: "grid", gap: 2, [theme.breakpoints.down("sm")]: { order: 1, maxHeight: 160, overflowY: "auto" } },
+  stepButton: { width: "100%", border: 0, borderRadius: 9, background: "transparent", color: theme.palette.text.secondary, padding: "7px 9px", display: "flex", alignItems: "center", gap: 9, textAlign: "left", cursor: "pointer", font: "inherit", fontSize: 12, "&:hover": { background: theme.palette.action.hover }, "&:focus-visible": { outline: "2px solid #0f766e" } },
+  selected: { background: "rgba(15,118,110,.09)", color: theme.palette.text.primary, fontWeight: 700 },
+  dot: { width: 23, height: 23, borderRadius: "50%", border: `1px solid ${theme.palette.divider}`, flexShrink: 0, display: "grid", placeItems: "center", fontSize: 10 },
+  done: { color: "#0f766e", background: "rgba(15,118,110,.1)", borderColor: "transparent" },
+  current: { color: "#fff", background: "#0f766e", borderColor: "#0f766e" },
+  detail: { display: "grid", gap: 10, [theme.breakpoints.down("sm")]: { order: 0 }, border: `1px solid ${theme.palette.divider}`, borderRadius: 12, padding: 14 },
+  eyebrow: { fontSize: 10, letterSpacing: ".08em", textTransform: "uppercase", fontWeight: 700, color: "#0f766e", display: "flex", alignItems: "center", gap: 6 },
+  message: { fontSize: 13, whiteSpace: "pre-wrap", lineHeight: 1.6, padding: 12, background: theme.palette.action.hover, borderRadius: 9 },
+  actions: { display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" },
+  foot: { display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, paddingTop: 8 },
+  summary: { padding: "8px 0 0 18px", margin: 0, fontSize: 12, lineHeight: 1.6 },
+  error: { padding: "10px 16px", fontSize: 12, display: "flex", gap: 12, alignItems: "center" }
+}));
+
+export default function Copilot({ ticket }) {
+  // A separate instance per ticket prevents a late request from showing another contact's suggestion.
+  return <Panel key={ticket.id} ticket={ticket} />;
+}
+function Panel({ ticket }) {
+  const c = useStyles();
+  const [data, setData] = useState(null);
+  const [error, setError] = useState(false);
+  const [open, setOpen] = useState(true);
+  const [allSteps, setAllSteps] = useState(false);
+  const [selected, setSelected] = useState(null);
+  const [suggestion, setSuggestion] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [summary, setSummary] = useState(null);
+  const [summaryOpen, setSummaryOpen] = useState(false);
+  const [editor, setEditor] = useState(false);
+  const [enrollLead, setEnrollLead] = useState(null);
+  const alive = useRef(true);
+  const requestSequence = useRef(0);
+  const suggestionEpoch = useRef(0);
+  const show = !!ticket.id && !ticket.isGroup && !ticket.isHistorical && ticket.status !== "closed";
+  const reload = useCallback(async () => {
+    const sequence = ++requestSequence.current;
+    try {
+      const { data: result } = await api.get(`/tickets/${ticket.id}/copilot`);
+      if (alive.current && sequence === requestSequence.current) { setData(result); setError(false); }
+    } catch (e) { if (alive.current && sequence === requestSequence.current) setError(true); }
+  }, [ticket.id]);
+  useEffect(() => {
+    alive.current = true;
+    if (!show) return undefined;
+    reload();
+    let timer;
+    const refresh = e => {
+      if (e.detail && e.detail.ticketId && Number(e.detail.ticketId) !== Number(ticket.id)) return;
+      suggestionEpoch.current++;
+      setSuggestion(null);
+      clearTimeout(timer);
+      timer = setTimeout(reload, 900);
+    };
+    const poll = setInterval(() => { if (!document.hidden) reload(); }, 60000);
+    window.addEventListener("copilotRefresh", refresh);
+    return () => { alive.current = false; clearInterval(poll); clearTimeout(timer); window.removeEventListener("copilotRefresh", refresh); };
+  }, [ticket.id, show, reload]);
+  useEffect(() => { suggestionEpoch.current++; setSuggestion(null); if (show) reload(); }, [ticket.userId, ticket.aiActive, show, reload]);
+  if (!show) return null;
+  if (error && !data) return <div className={c.error}>Não foi possível carregar o processo.<Button size="small" onClick={reload}>Tentar novamente</Button></div>;
+  if (!data || !data.enabled) return null;
+  const steps = data.steps || [];
+  const current = steps.find(s => s.key === data.current);
+  const active = steps.find(s => s.key === selected) || current || steps[steps.length - 1];
+  const completed = steps.filter(s => s.done).length;
+  const next = active && active.key === data.current ? data.suggestion : null;
+  const canSend = !!ticket.userId && !ticket.aiActive && ticket.status === "open";
+  const run = async fn => {
+    if (busy) return;
+    setBusy(true);
+    try { await fn(); } catch (e) { toastError(e); }
+    finally { if (alive.current) { setBusy(false); reload(); } }
+  };
+  const fill = text => window.dispatchEvent(new CustomEvent("fillMessageInput", { detail: { ticketId: ticket.id, text } }));
+  const suggest = () => run(async () => {
+    const epoch = suggestionEpoch.current;
+    const { data: result } = await api.post(`/tickets/${ticket.id}/suggest-reply`);
+    if (!alive.current || epoch !== suggestionEpoch.current) return;
+    if (result.text) setSuggestion(result.text); else toast.info(result.note || "Sem sugestão neste momento.");
+  });
+  const mark = done => run(async () => {
+    const { data: result } = await api.put(`/tickets/${ticket.id}/copilot/progress`, { key: active.key, done });
+    if (alive.current) { setData(result); setSelected(null); setSuggestion(null); }
+  });
+  const summaryToggle = async () => {
+    setSummaryOpen(v => !v);
+    if (summary) return;
+    try { const { data: result } = await api.get(`/tickets/${ticket.id}/ai-summary`); if (alive.current) setSummary(result); } catch (e) { toastError(e); }
+  };
+  const enrollment = () => run(async () => { const { data: lead } = await api.get(`/leads/${data.leadId}`); if (alive.current) setEnrollLead(lead); });
+  const quota = data.quota && data.quota.user;
+  const text = suggestion || (next && next.text);
+  return <section className={c.root} aria-label="Copiloto do consultor">
+    <div className={c.header}>
+      <div className={c.emblem}><Compass size={19} /></div>
+      <div style={{ flex: "1 1 150px", minWidth: 0 }}>
+        <div className={c.title}>Copiloto <span className={c.badge}>Processo de matrícula</span></div>
+        <div className={c.muted}>{current ? `Próxima etapa: ${current.label}` : "Processo concluído"} · {completed}/{steps.length} concluídas</div>
+      </div>
+      {data.canManage && <IconButton size="small" title="Revisar e editar o processo da equipe" aria-label="Editar processo" onClick={() => setEditor(true)}><Settings2 size={17} /></IconButton>}
+      <Button size="small" className={c.button} onClick={() => setOpen(v => !v)} endIcon={open ? <ChevronUp size={15} /> : <ChevronDown size={15} />}>{open ? "Recolher" : "Abrir"}</Button>
+      <Button variant="contained" size="small" className={c.primary} disabled={busy || !data.aiAvailable || !canSend} title={data.aiNote || "Escrever uma sugestão para a última mensagem"} startIcon={busy ? <CircularProgress size={14} color="inherit" /> : <Sparkles size={14} />} onClick={suggest}>{busy ? "Aguarde…" : "Sugerir resposta"}</Button>
+    </div>
+    <LinearProgress variant="determinate" value={steps.length ? completed / steps.length * 100 : 0} style={{ height: 2 }} aria-label="Progresso até a matrícula" />
+    {open && <div className={c.content}>
+      <div className={c.foot} style={{ paddingBottom: 8 }}>
+        <Button size="small" className={c.button} startIcon={<ListChecks size={14} />} onClick={() => setAllSteps(v => !v)}>{allSteps ? "Ocultar etapas" : "Ver todas as etapas"}</Button>
+        <span className={c.muted} style={{ flex: 1 }}>{data.aiNote || (quota ? `Suas sugestões hoje: ${quota.used}${quota.limit ? ` de ${quota.limit}` : " (sem limite)"}` : "")}</span>
+        <span className={c.badge}>Roteiro sem uso de IA</span>
+      </div>
+      {error && <div className={c.muted} role="status">O processo pode estar desatualizado. <Button size="small" onClick={reload}>Atualizar</Button></div>}
+      <div className={allSteps ? c.layout : undefined}>
+        {allSteps && <ol className={c.steps} aria-label="Etapas do processo">
+          {steps.map((s, i) => <li key={s.key}><button type="button" aria-current={s.key === data.current ? "step" : undefined} aria-pressed={active && active.key === s.key} className={`${c.stepButton} ${active && active.key === s.key ? c.selected : ""}`} onClick={() => { setSelected(s.key); setSuggestion(null); }}>
+            <span className={`${c.dot} ${s.done ? c.done : s.key === data.current ? c.current : ""}`}>{s.done ? <Check size={13} /> : i + 1}</span><span style={{ flex: 1 }}>{s.label}</span>{s.key === "enroll" && <Flag size={12} />}
+          </button></li>)}
+        </ol>}
+        {active && <div className={c.detail}>
+          <div className={c.eyebrow}>{suggestion ? <Sparkles size={12} /> : <Compass size={12} />}{suggestion ? "Sugestão de IA · revise antes de enviar" : active.done ? "Etapa concluída" : "Orientação do gestor"}</div>
+          <div className={c.title}>{active.label}</div>
+          <div className={c.muted}>{active.instruction}</div>
+          {!data.hasLead && <div className={c.muted}>Este contato ainda não tem lead no CRM. Vincule o cadastro para acompanhar proposta e matrícula. <a href="/crm">Abrir CRM</a></div>}
+          {text && <div className={c.message}>{text}</div>}
+          <div className={c.actions}>
+            {text && <Button size="small" className={c.primary} disabled={busy || !canSend} onClick={() => fill(text)}>Usar e editar mensagem</Button>}
+            {text && <Button size="small" className={c.button} disabled={busy || !canSend} startIcon={<Send size={13} />} onClick={() => run(async () => { await api.post(`/messages/${ticket.id}`, { body: text }); if (alive.current) setSuggestion(null); })}>Enviar</Button>}
+            {suggestion && <Button size="small" className={c.button} onClick={() => setSuggestion(null)}>Descartar</Button>}
+            {!suggestion && next && next.action === "send_grade" && data.leadId && <Button size="small" className={c.button} startIcon={<FileText size={13} />} href="/grades">Abrir grades</Button>}
+            {active.key === "enroll" && data.leadId && !active.done && <Button size="small" className={c.button} startIcon={<GraduationCap size={15} />} disabled={busy || !canSend} onClick={enrollment}>Registrar matrícula</Button>}
+            {active.key !== "enroll" && <Button size="small" className={c.button} disabled={busy || !canSend && !data.canManage} startIcon={active.done ? <RotateCcw size={13} /> : <Check size={14} />} onClick={() => mark(!active.done)}>{active.done ? "Reabrir etapa" : "Concluir etapa"}</Button>}
+            {active.manual && <Button size="small" className={c.button} disabled={busy || !canSend && !data.canManage} onClick={() => mark(null)}>Usar detecção automática</Button>}
+          </div>
+        </div>}
+      </div>
+      <div className={c.foot}>
+        <Button size="small" className={c.button} onClick={summaryToggle}>{summaryOpen ? "Ocultar resumo" : "Resumo do atendimento"}</Button>
+        <span className={c.muted}>Processo v{data.processVersion} · Você revisa e decide o que enviar.</span>
+      </div>
+      {summaryOpen && (summary ? (summary.lines || []).length ? <ul className={c.summary}>{summary.lines.map((line, i) => <li key={i}>{line}</li>)}</ul> : <div className={c.muted}>Ainda não há resumo do agente para esta conversa.</div> : <CircularProgress size={16} />)}
+    </div>}
+    <Dialog open={editor} onClose={() => setEditor(false)} fullWidth maxWidth="md" aria-labelledby="copilot-editor-title">
+      <DialogTitle id="copilot-editor-title"><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>Processo da equipe<IconButton aria-label="Fechar editor" onClick={() => setEditor(false)}><X size={18} /></IconButton></div></DialogTitle>
+      <DialogContent><CopilotSettings processOnly onSaved={() => { setEditor(false); reload(); }} /></DialogContent>
+    </Dialog>
+    {enrollLead && <EnrollDialog open lead={enrollLead} onClose={() => setEnrollLead(null)} onDone={() => { setEnrollLead(null); reload(); }} />}
+  </section>;
+}
