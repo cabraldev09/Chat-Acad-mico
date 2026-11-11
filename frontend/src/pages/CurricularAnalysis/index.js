@@ -27,7 +27,8 @@ const PERIODS = Array.from({ length: 12 }, (_, i) => i + 1);
 const MAX_MB = 20;
 
 // the term the forecast starts from while nobody types another one (the same in the server)
-const DEFAULT_TERM = "2026.2";
+// the next semester that still takes new students (Jan–Jun: this year .2; Jul–Dec: next year .1)
+const DEFAULT_TERM = (() => { const d = new Date(); return d.getMonth() < 6 ? `${d.getFullYear()}.2` : `${d.getFullYear() + 1}.1`; })();
 
 // seconds since the reading started (the loading element says how long it has been and what is going on)
 const useElapsed = (on) => {
@@ -203,7 +204,7 @@ const List = () => {
           <Card className="overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full min-w-[48rem] text-left text-sm">
-                <thead><tr className="border-b text-xs text-muted-foreground"><th className="px-4 py-3 font-medium">Aluno</th><th className="px-4 py-3 font-medium">Polo</th><th className="px-4 py-3 font-medium">Curso</th><th className="px-4 py-3 font-medium">Ingresso</th><th className="px-4 py-3 font-medium">Previsão</th><th className="px-4 py-3 font-medium">Verificação</th><th className="px-4 py-3 font-medium">Retorno</th><th className="px-4 py-3 font-medium">Data</th></tr></thead>
+                <thead><tr className="border-b text-xs text-muted-foreground"><th className="px-4 py-3 font-medium">Aluno</th><th className="px-4 py-3 font-medium">Polo</th><th className="px-4 py-3 font-medium">Solicitado por</th><th className="px-4 py-3 font-medium">Curso</th><th className="px-4 py-3 font-medium">Ingresso</th><th className="px-4 py-3 font-medium">Previsão</th><th className="px-4 py-3 font-medium">Verificação</th><th className="px-4 py-3 font-medium">Retorno</th><th className="px-4 py-3 font-medium">Data</th></tr></thead>
                 <tbody>
                   {rows.filter((r) => !onlyDue || (r.enrollment && r.enrollment.due)).map((r) => {
                     const sim = r.result && r.result.simulation;
@@ -213,6 +214,7 @@ const List = () => {
                       <tr key={r.id} onClick={() => history.push(`/analise-curricular/${r.id}`)} className="cursor-pointer border-b last:border-0 hover:bg-muted/50">
                         <td className="px-4 py-3 font-medium text-slate-900">{r.candidateName || "Aluno sem nome"}</td>
                         <td className="px-4 py-3 text-slate-600">{r.poloName || "—"}</td>
+                        <td className="px-4 py-3 text-slate-600">{r.requesterName || "—"}</td>
                         <td className="px-4 py-3 text-slate-600">{r.courseName || r.originalName}</td>
                         <td className="px-4 py-3">{r.entryPeriod ? ordinal(r.entryPeriod) : <span className="text-status-warning">Pendente</span>}</td>
                         <td className="px-4 py-3 font-semibold text-brand-navy">{sim && sim.estimatedCompletionTerm ? sim.estimatedCompletionTerm : "—"}</td>
@@ -524,6 +526,13 @@ const Detail = ({ id }) => {
   const setStatus = async (s, status) => {
     try { const { data } = await api.put(`/analysis/curricular/${id}/subject/${s.id}`, { status }); apply(data); toast.success("Linha corrigida. A previsão foi recalculada."); } catch (e) { toast.error(errorText(e)); }
   };
+  // the PDF is opened with the session (the route is authenticated), in another tab
+  const openDocument = async () => {
+    try {
+      const { data } = await api.get(`/analysis/curricular/${id}/file`, { responseType: "blob" });
+      window.open(URL.createObjectURL(new Blob([data], { type: "application/pdf" })), "_blank", "noopener");
+    } catch (e) { toast.error("Não foi possível abrir o documento. Envie o PDF de novo para conferir."); }
+  };
   const remove = async () => { try { await api.delete(`/analysis/curricular/${id}`); toast.success("Análise excluída."); history.replace("/analise-curricular"); } catch (e) { toastError(e); } };
   const copy = async (text) => { try { await navigator.clipboard.writeText(text); toast.success("Texto copiado. É só colar na conversa."); } catch (e) { toast.error("Não foi possível copiar."); } };
 
@@ -545,6 +554,8 @@ const Detail = ({ id }) => {
             description={<>
               {a.candidateName && a.courseName && <span className="block font-medium text-foreground">{a.courseName}{a.modality ? ` · ${a.modality}` : ""}</span>}
               {a.poloName && <span className="block">Polo: {a.poloName}</span>}
+              {a.requesterName && <span className="block">Solicitado por: {a.requesterName}</span>}
+              <span className="block">{a.hasDocument ? <button type="button" onClick={openDocument} className="font-semibold text-brand-navy underline">Abrir o documento enviado (PDF) para conferir</button> : "Documento não guardado (análise antiga)."}</span>
               {(a.matrixLabel || a.campus) && <span className="block">{[a.matrixLabel, a.campus].filter(Boolean).join(" · ")}</span>}
               {a.originalName && <span className="break-all">{a.originalName}</span>} · enviado em {formatDay(a.createdAt)}
             </>}
@@ -619,7 +630,7 @@ const Detail = ({ id }) => {
         </Modal>
       )}
       {modal === "delete" && (
-        <Modal title="Excluir esta análise?" description={`A análise de ${a.candidateName || "este candidato"} sai da lista. O PDF não é guardado pelo sistema.`} onClose={() => setModal(null)}>
+        <Modal title="Excluir esta análise?" description={`A análise de ${a.candidateName || "este candidato"} sai da lista. O PDF guardado também é apagado.`} onClose={() => setModal(null)}>
           <div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setModal(null)}>Cancelar</Button><Button onClick={remove}>Excluir</Button></div>
         </Modal>
       )}

@@ -10,6 +10,7 @@ import {
   detectInconsistencies,
   ENGINE_VERSION,
   isValidTerm,
+  suggestStartTerm,
   simulateCurriculum,
   validateAnalysis,
   type AcademicRules,
@@ -210,7 +211,8 @@ export interface CurricularResult {
 
 // the first term the team projects from while nothing else is typed (changed here when the semester moves)
 export const DEFAULT_START_TERM = "2026.2";
-export const defaultStartTerm = (): string => DEFAULT_START_TERM;
+// the next semester that still takes new students, from today's date (it was fixed in 2026.2 and went stale)
+export const defaultStartTerm = (): string => suggestStartTerm();
 
 // The same chain of the original pipeline after the extraction: totals, inconsistencies, simulation, claims, invariants
 export const computeCurricular = (input: {

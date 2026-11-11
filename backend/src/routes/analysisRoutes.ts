@@ -23,6 +23,7 @@ r.get("/analysis/curricular", isAuth, Analysis.curricularIndex);
 r.post("/analysis/curricular", isAuth, rateLimit({ windowMs: 60000, max: 20, key: req => `an:${(req as any).user?.id}` }), pdf.single("file"), Analysis.curricularStore);
 r.get("/analysis/follow-ups", isAuth, Analysis.followUps);
 r.get("/analysis/curricular/:id", isAuth, Analysis.curricularShow);
+r.get("/analysis/curricular/:id/file", isAuth, Analysis.curricularFile);
 r.put("/analysis/curricular/:id/enrollment", isAuth, Analysis.curricularEnrollment);
 r.get("/analysis/curricular/:id/proposal", isAuth, Analysis.curricularProposal);
 r.post("/analysis/curricular/:id/send-proposal", isAuth, Analysis.curricularSendProposal);
@@ -33,6 +34,7 @@ r.delete("/analysis/curricular/:id", isAuth, Analysis.curricularRemove);
 r.get("/analysis/academic", isAuth, Analysis.academicIndex);
 r.post("/analysis/academic", isAuth, rateLimit({ windowMs: 60000, max: 20, key: req => `an:${(req as any).user?.id}` }), pdf.single("file"), Analysis.academicStore);
 r.get("/analysis/academic/:id", isAuth, Analysis.academicShow);
+r.get("/analysis/academic/:id/file", isAuth, Analysis.academicFile);
 r.put("/analysis/academic/:id", isAuth, Analysis.academicUpdate);
 r.delete("/analysis/academic/:id", isAuth, Analysis.academicRemove);
 

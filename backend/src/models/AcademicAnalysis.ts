@@ -36,6 +36,10 @@ class AcademicAnalysis extends Model<AcademicAnalysis> {
   @Column
   originalName: string;
 
+  // the stored PDF (null for the analyses made before it was kept)
+  @Column
+  filePath: string;
+
   @Column
   fileHash: string;
 
