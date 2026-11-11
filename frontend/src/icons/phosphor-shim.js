@@ -156,6 +156,7 @@ import {
   SealCheck as PhSealCheck,
   ShareNetwork as PhShareNetwork,
   ShieldCheck as PhShieldCheck,
+  Sparkle as PhSparkle,
   Shuffle as PhShuffle,
   Sidebar as PhSidebar,
   SidebarSimple as PhSidebarSimple,
@@ -421,3 +422,5 @@ export const X = make(PhX, "X", "regular");
 export const XCircle = make(PhXCircle, "XCircle", "duotone");
 export const XOctagon = make(PhXCircle, "XOctagon", "duotone");
 export const Zap = make(PhLightning, "Zap", "duotone");
+
+export const Sparkles = make(PhSparkle, "Sparkles", "duotone");

@@ -9,7 +9,7 @@ import { logUsage, priceOf } from "./Usage";
 
 // Reserve before calling; persist usage and release in one short transaction after the call.
 // The input bound uses UTF-8 bytes + framing (more conservative than a token estimate).
-export const callWithBudget = async (agent: AiAgent, kind: "reply" | "summary" | "test", ticketId: number | undefined, body: any, call: (body: any) => Promise<any>, metadata: Record<string, any> = {}): Promise<any> => {
+export const callWithBudget = async (agent: AiAgent, kind: "reply" | "summary" | "test" | "copilot", ticketId: number | undefined, body: any, call: (body: any) => Promise<any>, metadata: Record<string, any> = {}): Promise<any> => {
   const inputBound = Buffer.byteLength(JSON.stringify(body), "utf8") + 2048;
   const outputBound = Number(body.max_completion_tokens || body.max_tokens || 350);
   const tokens = inputBound + outputBound;

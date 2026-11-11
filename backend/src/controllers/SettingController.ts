@@ -31,7 +31,7 @@ export const update = async (
     throw new AppError("ERR_NO_PERMISSION", 403);
   }
   // secrets have their own routes (sealed at rest); writing them here would store them in plain text
-  if (key === "mail_pass" || SEALED_SETTINGS.includes(key)) throw new AppError("ERR_NO_PERMISSION", 403);
+  if (key === "consultant_copilot" || key === "mail_pass" || SEALED_SETTINGS.includes(key)) throw new AppError("ERR_NO_PERMISSION", 403);
   const { value } = req.body;
 
   const setting = await UpdateSettingService({

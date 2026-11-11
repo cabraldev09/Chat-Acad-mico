@@ -129,7 +129,7 @@ export const isStandardText = (text: string | null | undefined): boolean => {
 export const EDITABLE = ["mecImpacted", "percentualPresencial", "percentualSincrono", "teoriaAoVivo", "praticaPresencial", "cronogramaPraticasDefinido", "transitionNote", "commercialApprovedText"] as const;
 const SETTING = "mec_area_defaults";
 const SEEN = "mec_defaults_seen";
-const VERSION = "mec-2025-v6";
+const VERSION = "mec-2025-v7";
 
 export const getAreas = async (): Promise<AreaRule[]> => {
   let saved: Record<string, any> = {};

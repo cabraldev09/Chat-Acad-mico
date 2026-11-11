@@ -43,7 +43,7 @@ const ROUTES = [
   "/users", "/polos", "/Queues", "/tags", "/configuracoes", "/crm/retencao",
   "/grades", "/analise-curricular", "/analise-curricular/1", "/analise-academica", "/analise-academica/1", "/alunos",
 ];
-const SETTINGS_GROUPS = ["geral", "horario", "atendimento", "tutoria", "captacao", "pagamentos", "cadastros", "regras", "email", "erros"];
+const SETTINGS_GROUPS = ["copiloto", "operacao", "geral", "horario", "atendimento", "tutoria", "captacao", "pagamentos", "cadastros", "regras", "email", "erros"];
 
 async function ensureUsers(adminToken) {
   const auth = { headers: { Authorization: `Bearer ${adminToken}` } };
