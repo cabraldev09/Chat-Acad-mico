@@ -245,7 +245,10 @@ const callHttpTool = async (stage: StageData, name: string, input: any, dryRun: 
 
 export const runTool = async (name: string, input: any, ctx: Ctx): Promise<any> => {
   input = input || {};
-  if (!(ctx.stage ? stageToolDefs(ctx.stage) : toolDefs(ctx.agent)).some(t => t.name === name)) return { erro: "Função não habilitada pelo administrador." };
+  const permitted = (ctx.stage ? stageToolDefs(ctx.stage) : toolDefs(ctx.agent)).some(t => t.name === name);
+  // The commercial engine answers factual questions before qualification using its shared academic catalog.
+  const academicLookup = ctx.stage?.hooks.includes("commercial") && (ACADEMIC_TOOLS as readonly string[]).includes(name);
+  if (!permitted && !academicLookup) return { erro: "Função não habilitada pelo administrador." };
   if (name.startsWith("fluxo_")) {
     const fn = (Array.isArray(ctx.agent.functions) ? ctx.agent.functions : []).find((f: any) => `fluxo_${f.name}` === name);
     if (!fn) return { erro: "Função desconhecida." };

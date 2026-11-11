@@ -13,7 +13,13 @@ const FormData = require("form-data");
 
 const ROOT = path.resolve(__dirname, "..");
 // PostgreSQL (the same engine as Supabase) is the supported database.
-const PGBIN = process.env.PG_BIN || path.dirname(execFileSync("which", ["psql"]).toString().trim());
+let PGBIN = process.env.PG_BIN || path.dirname(execFileSync("which", ["psql"]).toString().trim());
+// CI may have a newer pg_dump on PATH than its database service; use the matching installed client.
+if (!process.env.PG_BIN && process.platform === "linux") {
+  const major = Math.floor(Number(execFileSync(`${PGBIN}/psql`, ["-At", "-d", "postgres", "-c", "SHOW server_version_num"]).toString().trim()) / 10000);
+  const matching = `/usr/lib/postgresql/${major}/bin`;
+  if (fs.existsSync(`${matching}/pg_dump`)) PGBIN = matching;
+}
 const PGUSER = process.env.PGUSER || require("os").userInfo().username;
 const psql = (db, q) => execFileSync(`${PGBIN}/psql`, ["-X", "-U", PGUSER, "-d", db, "-At", "-c", q]).toString().trim();
 const DB = `chat_e2e_${process.pid}_${crypto.randomBytes(4).toString("hex")}`;
