@@ -2164,7 +2164,7 @@ const postMeta = (id, payload, secret, badSig) => {
       blockForm.append("candidateName", "Candidata Bloqueada");
       blockForm.append("poloId", sql(`SELECT id FROM Polos WHERE code='ANL1'`));
       const blocked = await http.post("/analysis/curricular", blockForm, { headers: { ...blockForm.getHeaders(), Authorization: `Bearer ${owner}` } });
-      assert(blocked.status === 409 && blocked.data.message === "ERR_FOLLOWUP_PENDING" && /Candidata Retorno/.test(JSON.stringify(blocked.data)), `overdue return did not block ${blocked.status} ${JSON.stringify(blocked.data).slice(0, 200)}`);
+      assert(blocked.status === 409 && blocked.data.error === "ERR_FOLLOWUP_PENDING" && /Candidata Retorno/.test(JSON.stringify(blocked.data)), `overdue return did not block ${blocked.status} ${JSON.stringify(blocked.data).slice(0, 200)}`);
       assert((await http.post(`/analysis/curricular/${a.id}/send-proposal`, {}, asUser(owner))).status === 409, "a proposal went out with a return overdue");
       const mgrDue = (await http.get("/analysis/curricular?due=1", auth())).data;
       assert(mgrDue.some(x => x.id === a.id && x.requesterName === "Outro Consultor"), `manager filter ${JSON.stringify(mgrDue).slice(0, 200)}`);
