@@ -19,7 +19,7 @@ export const logUsage = async (a: {
   agentId?: number | null;
   ticketId?: number | null;
   model: string;
-  kind: "reply" | "summary" | "test";
+  kind: "reply" | "summary" | "test" | "copilot";
   usage?: Counts;
   flowId?: number | null;
   nodeId?: string | null;
