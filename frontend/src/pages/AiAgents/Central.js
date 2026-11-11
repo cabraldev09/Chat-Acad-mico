@@ -228,7 +228,7 @@ const Central = () => {
 
         {section === "cursos" && (
           <>
-            {commercial && <div style={{ marginBottom: 16 }}><CoursesPanel onEditRules={() => setDialog({ name: "mec" })} onGrades={() => history.push("/grades")} /></div>}
+            {commercial && <div style={{ marginBottom: 16 }}><CoursesPanel onEditRules={() => setDialog({ name: "mec" })} onGrades={() => history.push("/grades")} onMaterials={() => history.push("/cursos")} /></div>}
             <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 16 }}>
               <Segmented items={[["perguntas", "Perguntas sem resposta", d.pending.waiting + d.pending.toReview], ["conteudo", "O que o agente sabe"]]} value={teach} onChange={setTeach} label="Conhecimento" />
               <span style={{ flex: 1 }} />

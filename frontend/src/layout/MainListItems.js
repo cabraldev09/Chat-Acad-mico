@@ -291,6 +291,7 @@ const MainListItems = (props) => {
         <ListSubheader disableSticky className={classes.sectionLabel}>Cursos e alunos</ListSubheader>
       )}
       <ListItemLink to="/grades" primary="Grades" icon={<LibraryIcon className="ico" />} collapsed={collapsed} />
+      <ListItemLink to="/cursos" primary="Cursos e materiais" icon={<LibraryIcon className="ico" />} collapsed={collapsed} />
       <ListItemLink
         to="/analise-curricular"
         primary="Análise curricular"

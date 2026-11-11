@@ -181,7 +181,16 @@ const List = () => {
   const PAGE = 20;
   useEffect(() => {
     api.get("/polos").then(({ data }) => setPolos(Array.isArray(data) ? data : (data && data.polos) || [])).catch(() => setPolos([]));
-    if (manager) api.get("/users/", { params: { pageNumber: 1 } }).then(({ data }) => setPeople((data && data.users) || [])).catch(() => setPeople([]));
+    // every person of the team (the list of users comes in pages)
+    if (manager) (async () => {
+      const all = [];
+      for (let n = 1; n <= 20; n += 1) {
+        const { data } = await api.get("/users/", { params: { pageNumber: n } });
+        all.push(...((data && data.users) || []));
+        if (!data || !data.hasMore) break;
+      }
+      setPeople(all.sort((a, b) => String(a.name).localeCompare(String(b.name), "pt-BR")));
+    })().catch(() => setPeople([]));
   }, [manager]);
   const load = useCallback(() => {
     const params = { search: applied.trim() || undefined, page, pageSize: PAGE, ...(filters.userId ? { userId: filters.userId } : {}), ...(filters.poloId ? { poloId: filters.poloId } : {}), ...(filters.enrollment ? { enrollment: filters.enrollment } : {}), ...(filters.from ? { from: filters.from } : {}), ...(filters.to ? { to: filters.to } : {}) };
