@@ -72,7 +72,7 @@ const useStyles = makeStyles(theme => {
 	};
 });
 
-const ContactDrawer = ({ open, handleDrawerClose, contact: contactProp, loading }) => {
+const ContactDrawer = ({ open, handleDrawerClose, contact: contactProp, loading, attendantId }) => {
 	const contact = contactProp || {};
 	const classes = useStyles();
 
@@ -167,7 +167,7 @@ const ContactDrawer = ({ open, handleDrawerClose, contact: contactProp, loading 
 						</div>
 					)}
 					<div style={{ marginBottom: 8 }}>
-						<LeadCard contactId={contact.id} />
+						<LeadCard contactId={contact.id} attendantId={attendantId} />
 					</div>
 					<SharedMedia />
 					<ContactModal open={modalOpen} onClose={() => setModalOpen(false)} contactId={contact.id} />

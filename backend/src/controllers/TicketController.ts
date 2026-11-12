@@ -62,6 +62,8 @@ interface TicketData {
   userId: number;
   note?: string;
   notifyClient?: boolean;
+  // false: the transfer is only this attendance, the client stays with their consultant
+  moveClient?: boolean;
 }
 
 export const index = async (req: Request, res: Response): Promise<Response> => {

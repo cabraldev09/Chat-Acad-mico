@@ -72,7 +72,8 @@ const assign = async (ticket: Ticket): Promise<boolean> => {
       ticketData: { userId: chosen.id, status: "open" },
       ticketId: ticket.id
     });
-    if ((ticket.segment || "sales") === "sales") await Lead.update({ ownerId: chosen.id }, { where: { contactId: ticket.contactId, wonAt: null as any, lostAt: null as any } });
+    // the rotation gives a consultant to a lead with nobody; a client who already has a consultant keeps them (only a person changes that)
+    if ((ticket.segment || "sales") === "sales") await Lead.update({ ownerId: chosen.id }, { where: { contactId: ticket.contactId, ownerId: null as any, wonAt: null as any, lostAt: null as any } });
     await TicketEvent.create({
       ticketId: ticket.id,
       type: "auto_assigned",
@@ -98,6 +99,7 @@ const AutoAssignTicket = async (ticket: Ticket): Promise<boolean> => {
 
 // Conversations sitting with someone who never connected a WhatsApp (they cannot receive or answer) go to a colleague of the same queue who can.
 // Whoever has no number of their own cannot hold a conversation, even one they touched recently: it goes to a colleague who can answer. Their open tasks follow (UpdateTicketService realigns them).
+// A conversation on the official number is answered inside the system by anyone, so it never moves for this reason.
 export const redistributeUnreachableTickets = async (): Promise<number> => {
   const stuck = (await sequelize.query(
     portable(`
@@ -105,6 +107,7 @@ export const redistributeUnreachableTickets = async (): Promise<number> => {
     JOIN Users u ON u.id = t.userId AND u.profile <> 'admin' AND (u.role = 'consultor' OR u.role IS NULL OR u.role = '')
     WHERE t.status IN ('open', 'pending') AND t.isGroup = false AND t.isHistorical = false AND t.queueId IS NOT NULL
       AND NOT EXISTS (SELECT 1 FROM Whatsapps w WHERE w.channel = 'whatsapp' AND w.ownerId = t.userId)
+      AND NOT EXISTS (SELECT 1 FROM Whatsapps tw WHERE tw.id = t.whatsappId AND tw.channel = 'whatsapp_cloud')
     ORDER BY t.id LIMIT 50`),
     { type: QueryTypes.SELECT }
   )) as any[];

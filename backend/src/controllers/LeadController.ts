@@ -605,6 +605,9 @@ export const getSettings = async (_req: Request, res: Response): Promise<Respons
     autoassign: await getSetting("crm_autoassign", "roundrobin"),
     autocreate: (await getSetting("crm_autocreate", "true")) !== "false",
     autoadvance: (await getSetting("crm_autoadvance", "true")) !== "false",
+    // the client who writes again goes straight back to their consultant (see ReturningClient)
+    returnToOwner: (await getSetting("return_to_owner", "true")) !== "false",
+    returnAwayMessage: await getSetting("return_to_owner_away_message", ""),
     ownerIds: JSON.parse(await getSetting("crm_owner_ids", "[]")),
     entryTerms: (await getEntryTerms()).terms,
     // the last day to enroll in each period (the reminders of "deadline close" count from it)
@@ -628,6 +631,8 @@ export const putSettings = async (req: Request, res: Response): Promise<Response
   if (b.autoassign !== undefined) await setSetting("crm_autoassign", b.autoassign === "none" ? "none" : "roundrobin");
   if (b.autocreate !== undefined) await setSetting("crm_autocreate", b.autocreate ? "true" : "false");
   if (b.autoadvance !== undefined) await setSetting("crm_autoadvance", b.autoadvance ? "true" : "false");
+  if (b.returnToOwner !== undefined) await setSetting("return_to_owner", b.returnToOwner ? "true" : "false");
+  if (typeof b.returnAwayMessage === "string") await setSetting("return_to_owner_away_message", b.returnAwayMessage.trim().slice(0, 500));
   if (Array.isArray(b.entryTerms)) {
     const terms = b.entryTerms.map((t: any) => String(t).trim()).filter((t: string) => /^20\d{2}\/[12]$/.test(t));
     await setSetting("crm_entry_terms", JSON.stringify(terms));

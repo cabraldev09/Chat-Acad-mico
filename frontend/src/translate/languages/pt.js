@@ -261,6 +261,7 @@ const messages = {
         noteLabel: "Observação para quem vai atender (opcional)",
         notePlaceholder: "Ex.: cliente quer proposta para Direito, já tem histórico",
         notifyClient: "Avisar o cliente sobre a transferência",
+        onlyThisAttendance: "Só este atendimento: o cliente continua na carteira do consultor dele",
         buttons: {
           ok: "Transferir",
           cancel: "Cancelar",

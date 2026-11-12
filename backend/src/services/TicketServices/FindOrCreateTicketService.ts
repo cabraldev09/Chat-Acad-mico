@@ -9,6 +9,7 @@ import ShowTicketService from "./ShowTicketService";
 import emitTicketUpdate from "./EmitTicketUpdate";
 import { RELATIONSHIP_SEGMENT } from "../../helpers/Roles";
 import { ensureRelationshipQueue, isRelationshipConnection } from "../RelationshipServices/Relationship";
+import { noticeIfOwnerAway, returnToOwner } from "../CrmServices/ReturningClient";
 
 const FindOrCreateTicketService = async (
   contact: Contact,
@@ -28,6 +29,9 @@ const FindOrCreateTicketService = async (
 
   // set when the conversation changes hands or state here: the open chat and the lists are told at the end (a new ticket tells itself)
   let changed = false;
+  // the conversation is coming back (a closed one reopened or a new one born): it may go straight to the client's consultant
+  let returning = false;
+  let previousUserId: number | null = null;
 
   if (ticket) {
     await ticket.update({ unreadMessages });
@@ -49,6 +53,8 @@ const FindOrCreateTicketService = async (
         {
           status: "pending",
           userId: null,
+          // who attended before: the client goes back to them when there is no owner in the CRM
+          ...(previousUserId ? { lastUserId: previousUserId } : {}),
           unreadMessages,
           chatbotNodeId: null,
           aiActive: true,
@@ -98,11 +104,14 @@ const FindOrCreateTicketService = async (
 
     if (ticket) {
       const recent = new Date(ticket.updatedAt).getTime() > Date.now() - 2 * 3600 * 1000;
+      previousUserId = ticket.status === "closed" ? ticket.userId || ticket.lastUserId || null : null;
       // conditional on "still closed": a person who accepted it a moment ago is not sent back to Aguardando, and the robot is not switched on again
       const [reopened] = await Ticket.update(
         {
           status: "pending",
           userId: null,
+          // who attended before: the client goes back to them when there is no owner in the CRM
+          ...(previousUserId ? { lastUserId: previousUserId } : {}),
           unreadMessages,
           chatbotNodeId: null,
           aiActive: true,
@@ -113,6 +122,7 @@ const FindOrCreateTicketService = async (
       );
       await ticket.reload();
       changed = true;
+      returning = !!reopened;
       if (reopened && !recent) await Ticket.update({ createdAt: new Date() } as any, { where: { id: ticket.id }, silent: true } as any);
     }
   }
@@ -125,6 +135,7 @@ const FindOrCreateTicketService = async (
       unreadMessages,
       whatsappId
     });
+    returning = !groupContact;
     hookTicketCreated(contact, (await Whatsapp.findByPk(whatsappId))?.channel || "whatsapp");
     await dispatchWebhook("ticket.created", {
       ticketId: ticket.id,
@@ -146,6 +157,17 @@ const FindOrCreateTicketService = async (
   if (connection?.ownerId && !connection.aiFirst && ticket.status === "pending" && !ticket.userId) {
     await ticket.update({ status: "open", userId: connection.ownerId });
     changed = true;
+  }
+
+  // a shared number (the official API of the polos): the client who already has a consultant goes back to them, robots and rotation stay out
+  if (returning && !groupContact) {
+    const owner = await returnToOwner(ticket, previousUserId);
+    if (owner) {
+      changed = true;
+      // after the client's message is stored: if the consultant is away, the client is told when the answer comes
+      const returnedId = ticket.id;
+      setTimeout(() => { noticeIfOwnerAway(returnedId, owner.id).catch(() => undefined); }, 2500).unref?.();
+    }
   }
 
   ticket = await ShowTicketService(ticket.id);

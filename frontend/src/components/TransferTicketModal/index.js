@@ -57,6 +57,8 @@ const TransferTicketModal = ({ modalOpen, onClose, ticketid }) => {
 	const [selectedQueue, setSelectedQueue] = useState('');
 	const [note, setNote] = useState("");
 	const [notifyClient, setNotifyClient] = useState(false);
+	// checked: the client stays with their consultant, only this attendance goes to the other person
+	const [onlyThisAttendance, setOnlyThisAttendance] = useState(false);
 	// to the tutoring a lead that did not enroll yet: the consultant says whether the student enrolled (and then confirms it with the RGM) or it is support to a student
 	const [enrollAsk, setEnrollAsk] = useState(null);
 	const [enrollLead, setEnrollLead] = useState(null);
@@ -114,6 +116,7 @@ const TransferTicketModal = ({ modalOpen, onClose, ticketid }) => {
 		setDepartment("");
 		setNote("");
 		setNotifyClient(false);
+		setOnlyThisAttendance(false);
 		setEnrollAsk(null);
 		setEnrollLead(null);
 	};
@@ -160,6 +163,7 @@ const TransferTicketModal = ({ modalOpen, onClose, ticketid }) => {
 
 			if (note.trim()) data.note = note.trim();
 			if (notifyClient) data.notifyClient = true;
+			if (selectedUser && onlyThisAttendance) data.moveClient = false;
 
 			await api.put(`/tickets/${ticketid}`, data);
 
@@ -292,6 +296,18 @@ const TransferTicketModal = ({ modalOpen, onClose, ticketid }) => {
 						}
 						label={i18n.t("transferTicketModal.notifyClient")}
 					/>
+					{selectedUser && (
+						<FormControlLabel
+							control={
+								<Checkbox
+									color="primary"
+									checked={onlyThisAttendance}
+									onChange={e => setOnlyThisAttendance(e.target.checked)}
+								/>
+							}
+							label={i18n.t("transferTicketModal.onlyThisAttendance")}
+						/>
+					)}
 				</DialogContent>
 				<DialogActions>
 					<Button

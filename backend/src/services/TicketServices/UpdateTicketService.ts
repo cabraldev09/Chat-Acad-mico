@@ -24,6 +24,8 @@ interface TicketData {
   userId?: number | null;
   queueId?: number | null;
   whatsappId?: number;
+  // a manual transfer: false keeps the client with their consultant (only this attendance changes hands)
+  moveClient?: boolean;
 }
 
 interface Request {
@@ -130,7 +132,9 @@ const UpdateTicketService = async ({
 
   if (userId && userChanged && (ticket.segment || "sales") === "sales") {
     const lead = await Lead.findOne({ where: { contactId: ticket.contactId } });
-    if (lead && !lead.wonAt && !lead.lostAt && lead.ownerId !== userId && (manual || !lead.ownerId)) {
+    // a manual transfer also passes the client to the new consultant, unless the person said it is only this attendance (moveClient: false)
+    const passClient = manual ? ticketData.moveClient !== false : !lead?.ownerId;
+    if (lead && !lead.wonAt && !lead.lostAt && lead.ownerId !== userId && passClient) {
       await lead.update({ ownerId: userId });
       await LeadTask.update({ userId }, { where: { leadId: lead.id, doneAt: null as any, automationKey: { [Op.ne]: null } } });
     }

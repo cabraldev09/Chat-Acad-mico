@@ -290,7 +290,7 @@ const Ticket = () => {
           <MessageInput channel={ticket.whatsapp?.channel || "whatsapp"} ticketStatus={ticket.status} ticketUserId={ticket.userId || null} ticketUserName={ticket.user?.name || ""} aiActive={!!ticket.aiActive} historical={!!ticket.isHistorical} isGroup={!!ticket.isGroup || !!contact.isStaff} readOnly={!!contact.readOnly} contactName={contact.name} />
         </ReplyMessageProvider>
       </div>
-      <ContactDrawer open={drawerOpen} handleDrawerClose={() => setDrawerOpen(false)} contact={contact} loading={loading} />
+      <ContactDrawer open={drawerOpen} handleDrawerClose={() => setDrawerOpen(false)} contact={contact} loading={loading} attendantId={ticket?.userId || null} />
     </div>
   );
 };
