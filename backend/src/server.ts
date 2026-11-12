@@ -18,6 +18,7 @@ import { startAiReactivation } from "./workers/AiReactivation";
 import { startProcessEval } from "./services/AiServices/ProcessEval";
 import { startWhatsappWatchdog } from "./workers/WhatsappWatchdog";
 import { startChannelTokenRefresh } from "./workers/ChannelTokenRefresh";
+import { startCloudHealth } from "./workers/CloudHealth";
 import { startDataRetention } from "./workers/DataRetention";
 import { startFollowUpAlert } from "./workers/FollowUpAlert";
 import { startProfilePicSync } from "./workers/ProfilePicSync";
@@ -61,6 +62,7 @@ whenLeader(() => {
   startProcessEval();
   startWhatsappWatchdog();
   startChannelTokenRefresh();
+  startCloudHealth();
   startDataRetention();
   startFollowUpAlert();
   startProfilePicSync();
