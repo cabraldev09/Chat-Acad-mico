@@ -405,7 +405,7 @@ const Email = () => {
       {resend ? (
         <>
           <div className={classes.hint}>
-            Use a chave de envio do Resend (Sending access, restrita ao domínio) e um remetente do domínio verificado, por exemplo nao-responda@mail.cruzeirodosulvirtual.app.br.
+            Use uma chave do Resend com Full access (a Sending access só envia: não lê os e-mails recebidos, e eles deixam de ser encaminhados) e um remetente do domínio verificado, por exemplo nao-responda@mail.cruzeirodosulvirtual.app.br.
           </div>
           {secret(f.hasResendKey ? "Chave do Resend (já salva; cole só para trocar)" : "Chave do Resend", key, (e) => { const value = e.target.value; setKey(value); }, f.hasResendKey ? "••••••••" : "re_...")}
           <TextField size="small" variant="outlined" label="E-mail que envia (domínio verificado)" value={f.fromEmail || ""} onChange={set("fromEmail")} fullWidth InputLabelProps={{ shrink: true }} />
