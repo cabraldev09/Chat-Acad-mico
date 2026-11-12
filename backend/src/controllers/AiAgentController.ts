@@ -468,10 +468,11 @@ export const usage = async (req: Request, res: Response): Promise<Response> => {
        FROM "AiUsage" WHERE "agentId" = :id AND kind <> 'test' AND "createdAt" >= :since GROUP BY 1 ORDER BY 1`,
     { replacements: { tz: getAppTz(), id: agent.id, since }, type: QueryTypes.SELECT }
   ).catch(() => []);
-  // the conversations THIS agent answered (a ticket counts once, for the agent whose model calls and turns are in it)
+  // the conversations THIS agent answered (a ticket counts once, for the agent whose model calls and turns are in it); the copilot's
+  // suggestions to a consultant are not conversations the agent answered
   const answeredRows: any[] = await sequelize.query(
     `SELECT COUNT(*) AS n FROM (
-       SELECT "ticketId" FROM "AiUsage" WHERE "agentId" = :id AND "kind" <> 'test' AND "ticketId" IS NOT NULL AND "createdAt" >= :since
+       SELECT "ticketId" FROM "AiUsage" WHERE "agentId" = :id AND "kind" NOT IN ('test', 'copilot') AND "ticketId" IS NOT NULL AND "createdAt" >= :since
        UNION SELECT "ticketId" FROM "AgentTurnLogs" WHERE "agentId" = :id AND "ticketId" IS NOT NULL AND "createdAt" >= :since
      ) t`,
     { replacements: { id: agent.id, since }, type: QueryTypes.SELECT }

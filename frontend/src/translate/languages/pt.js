@@ -460,6 +460,7 @@ const messages = {
         ERR_COPILOT_AGENT: "O agente escolhido não existe mais. Selecione outro agente.",
         ERR_COPILOT_VERSION: "Outro gestor alterou o processo. Recarregue a configuração e revise antes de salvar.",
         ERR_COPILOT_DISABLED: "O administrador desativou o copiloto ou as sugestões nesta conexão.",
+        ERR_COPILOT_FEEDBACK: "Escolha se a sugestão foi útil ou não.",
         ERR_COPILOT_CLAIM: "Assuma a conversa para pedir uma sugestão.",
         ERR_COPILOT_PROGRESS: "Etapa inválida. A matrícula deve ser registrada no CRM.",
         ERR_COPILOT_DAILY_LIMIT: "Limite diário de sugestões atingido. Continue usando o roteiro e os textos prontos.",

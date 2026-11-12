@@ -191,7 +191,7 @@ const callAnthropic = (apiKey: string, body: any) =>
   });
 
 // one plain answer, no tools (the rewrite of a guarded answer, the summary): the same provider as the agent
-const askOnce = async (agent: AiAgent, apiKey: string, system: string, user: string, maxTokens: number, accounting: any = {}): Promise<{ text: string; usage: any }> => {
+export const askOnce = async (agent: AiAgent, apiKey: string, system: string, user: string, maxTokens: number, accounting: any = {}): Promise<{ text: string; usage: any }> => {
   if (agent.provider === "openai") {
     const data: any = await withRetry(async compat => callWithBudget(agent, accounting.kind || "summary", accounting.ticketId, {
       model: agent.model, [compat ? "max_tokens" : "max_completion_tokens"]: maxTokens, messages: [{ role: "system", content: system }, { role: "user", content: user }]

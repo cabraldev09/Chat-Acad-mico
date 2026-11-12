@@ -45,13 +45,13 @@ export const quotaOf = async (config: CopilotConfig, userId: number, connectionI
 };
 export const quotaExceeded = (quota: Awaited<ReturnType<typeof quotaOf>>): boolean => [quota.total, quota.user, quota.connection].some(x => x.limit > 0 && x.used >= x.limit);
 // Durable reservation under a database lock: parallel tabs, users and API workers share the same daily allowance.
-export const reserveSuggestion = async (config: CopilotConfig, ticket: Ticket, userId: number, contextKey: string): Promise<{ request: CopilotRequest; cached: boolean }> => sequelize.transaction(async transaction => {
+export const reserveSuggestion = async (config: CopilotConfig, ticket: Ticket, userId: number, contextKey: string, extra: { kind?: string; mode?: string | null } = {}): Promise<{ request: CopilotRequest; cached: boolean }> => sequelize.transaction(async transaction => {
   await sequelize.query("SELECT pg_advisory_xact_lock(918275)", { transaction });
   const previous = await CopilotRequest.findOne({ where: { ticketId: ticket.id, contextKey, configVersion: config.version }, transaction });
   if (previous) return { request: previous, cached: true };
   if (quotaExceeded(await quotaOf(config, userId, ticket.whatsappId))) throw new AppError("ERR_COPILOT_DAILY_LIMIT", 429);
   const recent = await CopilotRequest.findOne({ where: { userId, createdAt: { [Op.gt]: new Date(Date.now() - 4000) } }, transaction });
   if (recent) throw new AppError("ERR_TOO_MANY_REQUESTS", 429);
-  const request = await CopilotRequest.create({ userId, ticketId: ticket.id, whatsappId: ticket.whatsappId, contextKey, configVersion: config.version, status: "pending" }, { transaction });
+  const request = await CopilotRequest.create({ userId, ticketId: ticket.id, whatsappId: ticket.whatsappId, contextKey, configVersion: config.version, status: "pending", kind: extra.kind || "suggestion", mode: extra.mode || null }, { transaction });
   return { request, cached: false };
 });
