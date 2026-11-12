@@ -19,6 +19,7 @@ import { LOGO_CID } from "../../../../src/services/MailServices/Logo";
 import { MailConfig, mailConfigured, readMailConfig, resendPayload, sendMail } from "../../../../src/services/MailServices/SendMail";
 import { handleInbound } from "../../../../src/services/MailServices/Inbound";
 import { aliasOf, aliasTable, forwardTargets } from "../../../../src/services/MailServices/Aliases";
+import { update as updateMailSettings } from "../../../../src/controllers/MailSettingsController";
 
 const cfg = (over: Partial<MailConfig> = {}): MailConfig => ({
   provider: "resend", host: "", port: 465, secure: true, user: "", pass: "", fromName: "Cruzeiro do Sul Virtual",
@@ -107,6 +108,13 @@ describe("endereço de cada pessoa", () => {
     expect(forwardTargets([`ana.souza@${d}`], d, table, ["gerencia@x.com"])).toEqual(["gerencia@x.com"]);
     expect(forwardTargets([`joao.silva@${d}`, `atendimento@${d}`, "outro@gmail.com"], d, table, ["gerencia@x.com"])).toEqual(["joao@gmail.com", "gerencia@x.com"]);
   });
+
+  it("nunca encaminha de volta para o próprio domínio (evita o e-mail girar sem parar)", () => {
+    const d = "mail.cruzeirodosulvirtual.app.br";
+    const table = aliasTable([{ name: "João da Silva", email: `joao@${d}` }]);
+    expect(forwardTargets([`atendimento@${d}`], d, table, [`atendimento@${d}`])).toEqual([]);
+    expect(forwardTargets([`joao.silva@${d}`], d, table, [`atendimento@${d}`, "admin@x.com"])).toEqual(["admin@x.com"]);
+  });
 });
 
 describe("e-mails recebidos são encaminhados à equipe", () => {
@@ -156,9 +164,37 @@ describe("e-mails recebidos são encaminhados à equipe", () => {
     expect(sends.map(c => new Headers(c.init.headers).get("idempotency-key"))).toEqual(["inbound-forward/in_7/joao@gmail.com", "inbound-forward/in_7/admin@x.com"]);
   });
 
+  it("a gerência no próprio domínio é trocada pelos administradores", async () => {
+    people = [{ name: "Admin Geral", email: "admin@x.com", profile: "admin" }];
+    settings.mail_forward_to = "atendimento@mail.cruzeirodosulvirtual.app.br";
+    replies = [() => answer(200, { object: "email", id: "in_42", from: "aluno@x.com", to: ["atendimento@mail.cruzeirodosulvirtual.app.br"], subject: "Dúvida", created_at: "2026-11-11", text: "oi", html: null, reply_to: null, raw: null })];
+    const r = await run(handleInbound(received, sign(received)));
+    expect(r).toMatchObject({ status: 200, body: { forwarded: true, count: 1 } });
+    expect(JSON.parse(calls.filter(c => /\/emails$/.test(c.url))[0].init.body).to).toEqual(["admin@x.com"]);
+  });
+
+  it("um e-mail que veio do próprio domínio (um encaminhamento voltando) não é encaminhado de novo", async () => {
+    const back = JSON.stringify({ type: "email.received", created_at: new Date().toISOString(), data: { email_id: "in_9", from: "Cruzeiro do Sul Virtual <nao-responda@mail.cruzeirodosulvirtual.app.br>", to: ["atendimento@mail.cruzeirodosulvirtual.app.br"], subject: "Fwd: Dúvida" } });
+    const r = await run(handleInbound(back, sign(back)));
+    expect(r).toMatchObject({ status: 200, body: { forwarded: false, skipped: "own domain" } });
+    expect(calls).toHaveLength(0);
+  });
+
   it("outros eventos são ignorados", async () => {
     const other = JSON.stringify({ type: "email.delivered", created_at: new Date().toISOString(), data: { email_id: "em_1" } });
     const r = await handleInbound(other, sign(other));
     expect(r).toMatchObject({ status: 200, body: { ignored: "email.delivered" } });
+  });
+});
+
+describe("tela de e-mail", () => {
+  it("recusa a gerência no domínio de recebimento e aceita um e-mail de fora", async () => {
+    useResend();
+    const res = { json: (b: any) => b } as any;
+    await expect(updateMailSettings({ body: { forwardTo: "atendimento@mail.cruzeirodosulvirtual.app.br" } } as any, res))
+      .rejects.toMatchObject({ message: "ERR_MAIL_FORWARD_SAME_DOMAIN", statusCode: 400 });
+    expect(settings.mail_forward_to).toBeUndefined();
+    await updateMailSettings({ body: { forwardTo: "gerencia@gmail.com" } } as any, res);
+    expect(settings.mail_forward_to).toBe("gerencia@gmail.com");
   });
 });

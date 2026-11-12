@@ -685,6 +685,7 @@ const messages = {
         ERR_MAIL_REPLY_TO_INVALID: "O endereço para respostas precisa ser um e-mail válido.",
         ERR_MAIL_RESEND_KEY_INVALID: "A chave do Resend começa com re_. Copie a chave de envio inteira.",
         ERR_MAIL_FORWARD_INVALID: "O endereço que recebe os e-mails encaminhados precisa ser um e-mail válido.",
+        ERR_MAIL_FORWARD_SAME_DOMAIN: "O endereço sem dono precisa ser um e-mail fora do domínio de recebimento (ex.: o Gmail da gerência); senão o e-mail volta para o próprio domínio e é encaminhado sem parar.",
         ERR_MAIL_INBOUND_SECRET_INVALID: "O segredo do webhook do Resend começa com whsec_. Copie o segredo inteiro.",
         ERR_INVALID_RESET_TOKEN: "Este link não vale mais. Peça um novo link para criar a senha.",
         ERR_PASSWORD_TOO_SHORT: "A senha precisa ter pelo menos 8 caracteres.",

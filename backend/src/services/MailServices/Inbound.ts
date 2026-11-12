@@ -58,13 +58,20 @@ export const handleInbound = async (rawBody: string, headers: InboundHeaders): P
     logger.warn(`inbound e-mail ${emailId} not forwarded: no sender set`);
     return { status: 200, body: { forwarded: false } };
   }
+  const domain = domainOf(cfg.fromEmail);
+  // an e-mail sent from the receiving domain itself is one of ours coming back (a forward or a system e-mail): forwarding it again would loop
+  const sender = String(event?.data?.from || "").replace(/^.*</, "").replace(/>.*$/, "").trim().toLowerCase();
+  if (domainOf(sender) === domain) {
+    logger.warn(`inbound e-mail ${emailId} not forwarded: it came from the receiving domain itself (${sender})`);
+    return { status: 200, body: { forwarded: false, skipped: "own domain" } };
+  }
   // each address of the domain goes to its owner (the person whose name made it); without an owner, to the management address
-  // set on the Configurações screen, or else to the administrators
-  const management = String(await getSetting("mail_forward_to", "")).trim();
-  const fallback = isEmail(management)
+  // set on the Configurações screen (never one on the receiving domain), or else to the administrators
+  const management = String(await getSetting("mail_forward_to", "")).trim().toLowerCase();
+  const fallback = isEmail(management) && domainOf(management) !== domain
     ? [management]
     : (await User.findAll({ where: { profile: "admin" }, attributes: ["email"], raw: true }) as any[]).map(u => String(u.email || ""));
-  const targets = forwardTargets(event?.data?.to || [], domainOf(cfg.fromEmail), await loadAliasTable(), fallback);
+  const targets = forwardTargets(event?.data?.to || [], domain, await loadAliasTable(), fallback);
   if (!targets.length) {
     logger.warn(`inbound e-mail ${emailId} not forwarded: nobody to forward it to`);
     return { status: 200, body: { forwarded: false } };

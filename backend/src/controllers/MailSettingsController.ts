@@ -53,6 +53,9 @@ export const update = async (req: Request, res: Response): Promise<Response> => 
   // receiving: where the e-mails that arrive at the domain go, and the signing secret of the Resend webhook (sealed)
   const forwardTo = String(b.forwardTo ?? "").trim().toLowerCase();
   if (b.forwardTo !== undefined && forwardTo && !isEmail(forwardTo)) throw new AppError("ERR_MAIL_FORWARD_INVALID", 400);
+  // the management address cannot be on the receiving domain: what arrives there would be forwarded to itself, forever
+  const receiving = domainOf(b.fromEmail !== undefined ? fromEmail : (await readMailConfig()).fromEmail);
+  if (b.forwardTo !== undefined && forwardTo && receiving && domainOf(forwardTo) === receiving) throw new AppError("ERR_MAIL_FORWARD_SAME_DOMAIN", 400);
   if (b.forwardTo !== undefined) await setSetting("mail_forward_to", forwardTo);
   if (typeof b.inboundSecret === "string" && !isMasked(b.inboundSecret)) {
     const secret = b.inboundSecret.trim();

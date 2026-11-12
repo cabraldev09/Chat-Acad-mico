@@ -29,13 +29,15 @@ export const loadAliasTable = async (): Promise<AliasEntry[]> =>
 export const domainOf = (address: string): string => String(address || "").split("@")[1]?.toLowerCase() || "";
 
 // The addresses an incoming e-mail goes to: the owner of each address of the domain it was sent to; without an owner, the fallback list.
+// Nothing is ever forwarded back to the receiving domain itself: it would arrive again and be forwarded again, forever.
 export const forwardTargets = (to: string[], domain: string, table: AliasEntry[], fallback: string[]): string[] => {
-  const owners = new Map(table.filter(r => !r.shared).map(r => [r.alias, r.email]));
+  const outside = (a: string) => isEmail(a) && domainOf(a) !== domain;
+  const owners = new Map(table.filter(r => !r.shared && outside(r.email)).map(r => [r.alias, r.email]));
   const out = new Set<string>();
   let orphan = false;
   to.map(a => String(a || "").replace(/^.*</, "").replace(/>.*$/, "").trim().toLowerCase())
     .filter(a => domainOf(a) === domain)
     .forEach(a => { const owner = owners.get(a.split("@")[0]); if (owner) out.add(owner); else orphan = true; });
-  if (orphan || !out.size) fallback.filter(isEmail).forEach(f => out.add(f.toLowerCase()));
+  if (orphan || !out.size) fallback.map(f => String(f || "").trim().toLowerCase()).filter(outside).forEach(f => out.add(f));
   return [...out];
 };
