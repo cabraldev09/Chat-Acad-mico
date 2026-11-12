@@ -13,6 +13,7 @@ import { onScheduleNow } from "../AnalyticsServices/AnalyticsService";
 import { isWithinBusinessHours } from "../AutomationServices/BusinessHours";
 import { nextOpening, whenText } from "../CommercialServices/Hours";
 import { isRelationshipConnection } from "../RelationshipServices/Relationship";
+import { TUTORIA_SEGMENTS, teamOfConnection } from "../ChannelServices/ConnectionTeam";
 
 // The client belongs to a consultant ("carteira"): when somebody who already talked to a consultant writes again on a shared number
 // (the official API of the polos, or any number with no owner), the conversation goes straight back to that consultant, without robots
@@ -33,20 +34,31 @@ export interface ClientOwner {
   source: "lead" | "last_attendant";
 }
 
-// Somebody of the team already talked to this client (a conversation of theirs, or one they attended last)
-const attended = async (contactId: number, userId: number): Promise<boolean> =>
-  (await Ticket.count({ where: { contactId, [Op.or]: [{ userId }, { lastUserId: userId }] } as any })) > 0;
+// Somebody of the team already talked to this client (a conversation of theirs, or one they attended last), on the same side
+// (the consultants' conversations, or the tutoring ones: one side never counts the other)
+const attended = async (contactId: number, userId: number, tutoring = false): Promise<boolean> =>
+  (await Ticket.count({
+    where: {
+      contactId,
+      [Op.and]: [
+        { [Op.or]: [{ userId }, { lastUserId: userId }] },
+        tutoring ? { segment: { [Op.in]: TUTORIA_SEGMENTS } } : { [Op.or]: [{ segment: { [Op.notIn]: TUTORIA_SEGMENTS } }, { segment: null }] }
+      ]
+    } as any
+  })) > 0;
 
 // The consultant who owns the client: the lead's owner (an open lead or a won one: the student stays with who enrolled them), else whoever
 // attended last. Only a consultant who already talked to the client counts: a lead the CRM rotation gave to someone who never answered it is
 // still qualified by the robots first, as before.
-export const clientOwnerOf = async (contactId: number, lastUserId?: number | null): Promise<ClientOwner | null> => {
-  const lead = await Lead.findOne({ where: { contactId }, attributes: ["id", "ownerId"], order: [["updatedAt", "DESC"]] });
-  const candidates: Array<[number | null | undefined, ClientOwner["source"]]> = [[lead?.ownerId, "lead"], [lastUserId, "last_attendant"]];
+// On the tutoring side the owner is the student's tutor (given at the enrollment), even before they ever talked.
+export const clientOwnerOf = async (contactId: number, lastUserId?: number | null, tutoring = false): Promise<ClientOwner | null> => {
+  const lead = await Lead.findOne({ where: { contactId }, attributes: ["id", "ownerId", "onboardingTutorId"], order: [["updatedAt", "DESC"]] });
+  const candidates: Array<[number | null | undefined, ClientOwner["source"]]> = [[tutoring ? lead?.onboardingTutorId : lead?.ownerId, "lead"], [lastUserId, "last_attendant"]];
   for (const [id, source] of candidates) {
     if (!id) continue;
+    // the tutor of the student needs no earlier conversation; anybody else must have attended the client on this side
     // eslint-disable-next-line no-await-in-loop
-    if (!(await attended(contactId, id))) continue;
+    if (!(tutoring && source === "lead") && !(await attended(contactId, id, tutoring))) continue;
     // eslint-disable-next-line no-await-in-loop
     const user = await User.findByPk(id, { attributes: ["id", "name", "profile"] });
     if (user) return { user, source };
@@ -62,7 +74,8 @@ export const returnToOwner = async (ticket: Ticket, previousUserId: number | nul
   const connection = await Whatsapp.findByPk(ticket.whatsappId, { attributes: ["id", "ownerId"] });
   // a personal number already belongs to its owner, and the institution's own number is the relationship team's
   if (!connection || connection.ownerId || (await isRelationshipConnection(ticket.whatsappId))) return null;
-  const owner = await clientOwnerOf(ticket.contactId, previousUserId || ticket.lastUserId);
+  const tutoring = (await teamOfConnection(ticket.whatsappId)) === "tutoria";
+  const owner = await clientOwnerOf(ticket.contactId, previousUserId || ticket.lastUserId, tutoring);
   if (!owner) return null;
 
   // only a conversation still waiting is taken (a robot or a person that took it meanwhile is not undone)
@@ -76,7 +89,7 @@ export const returnToOwner = async (ticket: Ticket, previousUserId: number | nul
     type: "returned_to_owner",
     actorId: null,
     toUserId: owner.user.id,
-    note: `O cliente voltou a escrever e foi direto para ${owner.user.name}, ${owner.source === "lead" ? "responsável por ele no CRM" : "que fez o último atendimento"}.`
+    note: `O cliente voltou a escrever e foi direto para ${owner.user.name}, ${owner.source === "lead" ? (tutoring ? "tutor dele" : "responsável por ele no CRM") : "que fez o último atendimento"}.`
   } as any);
   await ticket.reload();
   return owner.user;

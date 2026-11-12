@@ -45,7 +45,9 @@ describe("resumo do cliente para o consultor", () => {
 
   it("lê o JSON da IA mesmo com texto em volta e recusa o que não é resumo", () => {
     const b = parseBrief('Aqui está:\n```json\n{"resumo":"Quer Pedagogia EAD.","interesse":"Pedagogia","pendencias":["enviar grade",""],"objecoes":"x","proximoPasso":"Enviar a grade","mensagemSugerida":"Oi!"}\n```');
-    expect(b).toEqual({ resumo: "Quer Pedagogia EAD.", interesse: "Pedagogia", pendencias: ["enviar grade"], objecoes: [], proximoPasso: "Enviar a grade", mensagemSugerida: "Oi!" });
+    expect(b).toEqual({ resumo: "Quer Pedagogia EAD.", interesse: "Pedagogia", pendencias: ["enviar grade"], objecoes: [], proximoPasso: "Enviar a grade", mensagemSugerida: "Oi!", encaminhar: "" });
+    expect(parseBrief('{"resumo":"Dúvida da prova","encaminhar":"tutoria"}')?.encaminhar).toBe("tutoria");
+    expect(parseBrief('{"resumo":"x","encaminhar":"financeiro"}')?.encaminhar).toBe("");
     expect(parseBrief("não sei")).toBeNull();
     expect(parseBrief('{"resumo":""}')).toBeNull();
     expect(parseBrief("{quebrado")).toBeNull();

@@ -190,6 +190,10 @@ function Panel({ ticket }) {
           {b.pendencias && b.pendencias.length > 0 && <div><div className={c.muted}><b>Pendências</b></div><ul className={c.briefList}>{b.pendencias.map((p, i) => <li key={i}>{p}</li>)}</ul></div>}
           {b.objecoes && b.objecoes.length > 0 && <div><div className={c.muted}><b>Objeções</b></div><ul className={c.briefList}>{b.objecoes.map((p, i) => <li key={i}>{p}</li>)}</ul></div>}
           {b.proximoPasso && <div style={{ fontSize: 12 }}><b>Próximo passo:</b> {b.proximoPasso}</div>}
+          {b.encaminhar && <div className={c.actions}>
+            <span className={c.muted} style={{ flex: 1 }}>O assunto parece ser {b.encaminhar === "tutoria" ? "da tutoria" : "do consultor"}.</span>
+            <Button size="small" variant="outlined" className={c.button} disabled={!canSend} onClick={() => window.dispatchEvent(new CustomEvent("teamHandoffOpen", { detail: { ticketId: ticket.id } }))}>{b.encaminhar === "tutoria" ? "Chamar a tutoria" : "Chamar o consultor"}</Button>
+          </div>}
           {b.mensagemSugerida && <div className={c.actions}>
             <Button size="small" className={c.button} disabled={!canSend} title={canSend ? "Coloca a mensagem sugerida na caixa de texto para você revisar" : "Assuma a conversa para responder"} onClick={() => fill(b.mensagemSugerida)}>Usar mensagem sugerida</Button>
           </div>}

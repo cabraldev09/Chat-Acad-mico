@@ -55,7 +55,8 @@ const startTelegramMock = () => {
     if (method === "getUpdates") {
       const end = Date.now() + 1500;
       while (Date.now() < end) {
-        const pending = tg.updates.filter(u => u.update_id >= (body.offset || 0));
+        // each bot (connection) reads only its own updates; an update without a token is the first connection's
+        const pending = tg.updates.filter(u => u.update_id >= (body.offset || 0) && (u.token || "123:ABC") === req.params.token);
         if (pending.length) return ok(pending);
         await sleep(100);
       }
@@ -462,6 +463,59 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
       await waitFor(() => forLaura.seen.some(p => p.action === "delete" && p.ticketId === t.ticketId), 6000, "delete in Aguardando for the colleague");
       assert(!forLaura.seen.some(updated), "a colleague received a conversation that is not hers");
       [forLaura, forJoao, forAdmin].forEach(x => x.socket.close());
+    });
+
+    // ------------------------------------------------------------ 9. tutoring and consultants, each on their own number
+    console.log("\nTutoria e consultores, cada um no seu número");
+    const tania = await mkUser("Tânia Tutora", "tania@x.com", "tutor");
+    ids.tania = userId("tania@x.com");
+    const tw = await http.post("/whatsapp", { name: "Tutoria", channel: "telegram", team: "tutoria", config: JSON.stringify({ botToken: "456:DEF" }), queueIds: [queueId] }, as(admin));
+    assert(tw.status === 200, `tutoring connection ${tw.status}`);
+    const tutoriaId = tw.data.id;
+    await waitFor(async () => (await http.get(`/whatsapp/${tutoriaId}`, as(admin))).data.status === "CONNECTED", 12000, "tutoring connected");
+    assert(sql(`SELECT team FROM Whatsapps WHERE id=${tutoriaId}`) === "tutoria", "the function of the number was not saved");
+    const stage = sql(`SELECT id FROM LeadStages WHERE type='open' ORDER BY id LIMIT 1`).split("\n")[0];
+    const student = () => {
+      const t = mkTicket({ owner: ids.joao });
+      sql(`INSERT INTO Leads (name, phone, source, stageId, ownerId, onboardingTutorId, contactId, isHistorical, createdAt, updatedAt) VALUES ('Aluno ${seq}', '55690000077${seq}', 'Telegram', ${stage}, ${ids.joao}, ${ids.tania}, ${t.contactId}, false, NOW(), NOW())`);
+      return t;
+    };
+    await test("a message on the Tutoria number opens a tutoring conversation with the student's tutor, and the consultant cannot see it", async () => {
+      const t = student();
+      tg.updates.push({ token: "456:DEF", update_id: 500 + seq, message: { message_id: 900 + seq, chat: { id: Number(t.chat), type: "private" }, from: { first_name: "Aluno" }, text: "professor, não achei a prova" } });
+      const tid = await waitFor(() => sql(`SELECT id FROM Tickets WHERE contactId=${t.contactId} AND whatsappId=${tutoriaId}`), 10000, "tutoring conversation");
+      await waitFor(() => row(tid).status === "open", 10000, "with the tutor");
+      assert(row(tid).userId === ids.tania, JSON.stringify(row(tid)));
+      assert(sql(`SELECT segment FROM Tickets WHERE id=${tid}`) === "onboarding", "the tutoring conversation is not the tutoring's");
+      assert((await http.get(`/messages/${tid}`, as(joao))).status === 403, "the consultant read the tutoring conversation");
+      assert((await http.get(`/messages/${t.ticketId}`, as(tania))).status === 403, "the tutor read the consultant's conversation");
+      assert(row(t.ticketId).userId === ids.joao, "the consultant's conversation changed hands");
+    });
+    await test("Chamar a tutoria: the tutor is called on the Tutoria number with the note, the consultant's conversation stays with the consultant", async () => {
+      const t = student();
+      const r = await http.post(`/tickets/${t.ticketId}/handoff-team`, { team: "tutoria", note: "dúvida sobre a prova de quinta" }, as(joao));
+      assert(r.status === 200 && r.data.userId === ids.tania, `handoff ${r.status} ${JSON.stringify(r.data)}`);
+      const s = row(t.ticketId);
+      assert(s.userId === ids.joao && s.status === "open", `the source moved: ${JSON.stringify(s)}`);
+      const target = r.data.ticketId;
+      assert(sql(`SELECT whatsappId FROM Tickets WHERE id=${target}`) === String(tutoriaId) && sql(`SELECT segment FROM Tickets WHERE id=${target}`) === "onboarding", "not on the tutoring number");
+      // without a number of the consultants, the tutor has nobody to call back; with it, "Chamar o consultor" shows
+      assert((await http.get(`/tickets/${target}/team-handoff`, as(tania))).data.canCall === null, "called a side with no number");
+      sql(`UPDATE Whatsapps SET team='atendimento' WHERE id=${connectionId}`);
+      const seen = (await http.get(`/tickets/${target}/team-handoff`, as(tania))).data;
+      assert(seen.side === "tutoria" && seen.canCall === "atendimento" && /prova de quinta/.test(seen.last && seen.last.note), JSON.stringify(seen));
+      assert((await http.get(`/messages/${t.ticketId}`, as(tania))).status === 403, "the tutor reads the consultant's conversation after the call");
+      assert((await http.post(`/tickets/${target}/handoff-team`, { team: "tutoria" }, as(tania))).status === 400, "called its own side");
+    });
+    await test("a transfer to a tutoring queue calls the tutoring instead of handing the consultant's conversation to the tutor", async () => {
+      const tq = (await http.post("/queue", { name: "Tutoria", color: "#118844" }, as(admin))).data.id;
+      sql(`UPDATE Queues SET role='tutoria' WHERE id=${tq}`);
+      const t = student();
+      const r = await http.put(`/tickets/${t.ticketId}`, { queueId: tq, note: "aluno com dúvida acadêmica" }, as(joao));
+      assert(r.status === 200 && r.data.teamHandoff, `transfer ${r.status} ${JSON.stringify(r.data).slice(0, 200)}`);
+      const s = row(t.ticketId);
+      assert(s.userId === ids.joao, `the conversation went to the tutor: ${JSON.stringify(s)}`);
+      assert(sql(`SELECT COUNT(*) FROM TicketEvents WHERE ticketId=${r.data.teamHandoff.ticketId} AND type='team_handoff_in'`) === "1", "no call on the tutoring side");
     });
   } catch (err) {
     results.push([false, `setup -> ${err.stack || err.message}`]);

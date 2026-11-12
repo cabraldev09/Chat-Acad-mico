@@ -19,7 +19,8 @@ import TicketEvent from "../models/TicketEvent";
 import User from "../models/User";
 import { Op } from "sequelize";
 import { dayBounds } from "../helpers/AppTime";
-import { BRIEF_SYSTEM, contactTranscript, parseBrief } from "../services/CopilotServices/Brief";
+import { BRIEF_SYSTEM, contactTranscript, parseBrief, sameSideWhere } from "../services/CopilotServices/Brief";
+import { sideOfSegment } from "../services/ChannelServices/ConnectionTeam";
 
 export const settings = async (_req: Request, res: Response) => res.json(await configOf());
 export const updateSettings = async (req: Request, res: Response) => {
@@ -47,7 +48,7 @@ export const show = async (req: Request, res: Response) => {
     const since = new Date(ticket.createdAt);
     const [made, older, handed] = await Promise.all([
       CopilotRequest.count({ where: { ticketId: ticket.id, kind: "brief", createdAt: { [Op.gte]: since } } as any }),
-      Message.count({ where: { contactId: ticket.contactId, createdAt: { [Op.lt]: new Date(since.getTime() - 60000) } } as any }),
+      Message.count({ where: { ticketId: { [Op.in]: (await Ticket.findAll({ where: sameSideWhere(ticket), attributes: ["id"] })).map(t => t.id) }, createdAt: { [Op.lt]: new Date(since.getTime() - 60000) } } as any }),
       TicketEvent.count({ where: { ticketId: ticket.id, type: ["transfer", "returned_to_owner"], createdAt: { [Op.gte]: since } } as any })
     ]);
     autoBrief = !made && (older > 0 || handed > 0);
@@ -149,7 +150,8 @@ export const brief = async (req: Request, res: Response) => {
     if (!apiKey) throw new Error("ERR_AI_NO_API_KEY");
     const lead = await Lead.findOne({ where: { contactId: ticket.contactId } });
     const state = lead ? await hydrate(await loadState(lead.id), lead) : null;
-    const user = [state ? `Ficha do CRM:\n${briefOf(state)}` : "", `Atendimentos: ${story.conversations}. Consultores que já atenderam: ${story.attendants.join(", ") || "nenhum"}.`, `Histórico:\n${story.text}`].filter(Boolean).join("\n\n");
+    const side = sideOfSegment(ticket.segment) === "tutoria" ? "a TUTORIA (tutor do aluno matriculado)" : "o COMERCIAL (consultor de matrículas)";
+    const user = [`Quem atende esta conversa é ${side}.`, state ? `Ficha do CRM:\n${briefOf(state)}` : "", `Atendimentos: ${story.conversations}. Consultores que já atenderam: ${story.attendants.join(", ") || "nenhum"}.`, `Histórico:\n${story.text}`].filter(Boolean).join("\n\n");
     const out = await askOnce(agent, apiKey, BRIEF_SYSTEM, user, 700, { ticketId: ticket.id, kind: "copilot" });
     const parsed = parseBrief(out.text);
     await request.update({ status: parsed ? "ready" : "failed", text: parsed ? JSON.stringify(parsed) : null });

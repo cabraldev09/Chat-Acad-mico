@@ -17,6 +17,9 @@ import formatBody from "../helpers/Mustache";
 import Ticket from "../models/Ticket";
 import Whatsapp from "../models/Whatsapp";
 import TicketEvent from "../models/TicketEvent";
+import { handoffToTeam, lastHandoffIn } from "../services/TicketServices/TeamHandoff";
+import { sendOpeningTemplate, windowOf } from "../services/TicketServices/OpeningTemplate";
+import { connectionOfTeam, sideOfSegment } from "../services/ChannelServices/ConnectionTeam";
 import User from "../models/User";
 import Queue from "../models/Queue";
 import TicketPin from "../models/TicketPin";
@@ -326,6 +329,20 @@ export const update = async (
 
   const { note, notifyClient, ...changes } = ticketData;
 
+  // a conversation of the consultants sent to a tutoring queue: with a tutoring number, the tutoring is called there (the tutor never
+  // takes this conversation, the two sides do not read each other); the conversation stays as it is
+  if (changes.queueId) {
+    const target = await Queue.findByPk(changes.queueId, { attributes: ["id", "role"] });
+    const current = await Ticket.findByPk(ticketId, { attributes: ["id", "segment", "whatsappId", "status"] });
+    if (target?.role === "tutoria" && current && current.status !== "closed" && sideOfSegment(current.segment) !== "tutoria") {
+      const number = await connectionOfTeam("tutoria");
+      if (number && number.id !== current.whatsappId) {
+        const done = await handoffToTeam(current.id, "tutoria", Number(req.user.id), note || "");
+        return res.status(200).json({ ...(await ShowTicketService(String(current.id))).toJSON(), teamHandoff: done });
+      }
+    }
+  }
+
   let { ticket } = await UpdateTicketService({
     ticketData: changes,
     ticketId,
@@ -462,4 +479,28 @@ export const automation = async (req: Request, res: Response): Promise<Response>
   if (!ticket) throw new AppError("ERR_NO_TICKET_FOUND", 404);
   const { storedAutomationTrace } = await import("../services/AutomationServices/AutomationTrace");
   return res.json({ aiActive: !!ticket.aiActive, userId: ticket.userId || null, status: ticket.status, lines: await storedAutomationTrace(ticket.id) });
+};
+
+// "Chamar a tutoria" / "Chamar o consultor": the other side is called on its own number with a summary of this conversation
+export const handoffTeam = async (req: Request, res: Response): Promise<Response> => {
+  const team = req.body?.team === "tutoria" || req.body?.team === "atendimento" ? req.body.team : null;
+  if (!team) throw new AppError("ERR_TEAM_HANDOFF_TEAM", 400);
+  const done = await handoffToTeam(Number(req.params.ticketId), team, Number(req.user.id), String(req.body?.note || ""));
+  return res.json(done);
+};
+
+// the last call this conversation received from the other side, and which side it is on (for the "Chamar" button)
+export const teamHandoff = async (req: Request, res: Response): Promise<Response> => {
+  const ticket = await Ticket.findByPk(req.params.ticketId, { attributes: ["id", "segment", "whatsappId", "contactId"] });
+  if (!ticket) throw new AppError("ERR_NO_TICKET_FOUND", 404);
+  const side = sideOfSegment(ticket.segment);
+  const other = side === "tutoria" ? "atendimento" : side === "atendimento" ? "tutoria" : null;
+  const number = other ? await connectionOfTeam(other) : null;
+  return res.json({ side, canCall: other && number && number.id !== ticket.whatsappId ? other : null, last: await lastHandoffIn(ticket.id), window: await windowOf(ticket as any) });
+};
+
+// the approved opening template of this side, on the official number, when the 24 hours are closed
+export const openingTemplate = async (req: Request, res: Response): Promise<Response> => {
+  await sendOpeningTemplate(Number(req.params.ticketId), Number(req.user.id));
+  return res.json({ ok: true });
 };

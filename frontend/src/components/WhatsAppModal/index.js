@@ -236,7 +236,7 @@ const WhatsAppModal = ({ open, onClose, whatsAppId, onCreated }) => {
 			outOfHoursMessage: whatsApp.outOfHoursMessage,
 			riskMode: whatsApp.riskMode,
 			groupsMode: whatsApp.groupsMode || "off",
-			...(isManager(user) ? { aiFirst: !!whatsApp.aiFirst } : {}),
+			...(isManager(user) ? { aiFirst: !!whatsApp.aiFirst, team: whatsApp.team || null } : {}),
 			allowedGroups: allowed,
 			businessHours: JSON.stringify(hours),
 			queueIds: selectedQueueIds,
@@ -309,6 +309,25 @@ const WhatsAppModal = ({ open, onClose, whatsAppId, onCreated }) => {
 						label={i18n.t("whatsappModal.form.default")}
 					/>
 				</div>
+
+				{isManager(user) && !whatsApp.ownerId && (
+					<div className={classes.section}>
+						<TextField
+							select
+							fullWidth
+							variant="outlined"
+							margin="dense"
+							label="Função do número"
+							value={whatsApp.team || ""}
+							onChange={e => setWhatsApp({ ...whatsApp, team: e.target.value || null })}
+							helperText="Atendimento: consultores (matrículas). Tutoria: tutores dos alunos matriculados. Cada lado vê só as próprias conversas e o aluno cai com o responsável daquele lado."
+						>
+							<MenuItem value="">Geral</MenuItem>
+							<MenuItem value="atendimento">Atendimento / Matrículas (consultores)</MenuItem>
+							<MenuItem value="tutoria">Tutoria (tutores)</MenuItem>
+						</TextField>
+					</div>
+				)}
 
 				{!!whatsAppId && !!whatsApp.ownerId && isManager(user) && (
 					<div className={classes.section}>

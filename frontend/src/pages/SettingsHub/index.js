@@ -221,7 +221,22 @@ const Tutoria = ({ values, save }) => {
           {HOURS.map((h) => (<MenuItem key={h} value={h}>{h} horas</MenuItem>))}
         </TextField>
       </Card>
-      <Card title="Número da tutoria" sub="A conversa de ambientação sai pelo número do próprio tutor. Quando ele não tem um, usa este.">
+      <Card title="Mensagem de abertura nos números oficiais" sub="Fora das 24 horas desde a última mensagem do aluno, o número oficial só pode iniciar a conversa com um modelo aprovado pela Meta. Crie os modelos na Meta e informe aqui o nome exato. Parâmetros: {{1}} = primeiro nome do aluno, {{2}} = primeiro nome de quem escreve.">
+        {[["tutoria", "Tutoria"], ["atendimento", "Atendimento / Matrículas"]].map(([side, label]) => (
+          <div key={side} style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
+            <TextField variant="outlined" size="small" label={`Modelo — ${label}`} placeholder="ex.: abertura_tutoria"
+              defaultValue={values[`${side}_template_name`] || ""} key={`${side}-${values[`${side}_template_name`] || ""}`}
+              onBlur={(e) => { const v = e.target.value.trim(); if (v !== (values[`${side}_template_name`] || "")) save(`${side}_template_name`, v); }}
+              style={{ minWidth: 260 }} InputLabelProps={{ shrink: true }} />
+            <TextField variant="outlined" size="small" label="Idioma" placeholder="pt_BR"
+              defaultValue={values[`${side}_template_language`] || "pt_BR"} key={`${side}-lang-${values[`${side}_template_language`] || ""}`}
+              onBlur={(e) => { const v = e.target.value.trim() || "pt_BR"; if (v !== (values[`${side}_template_language`] || "pt_BR")) save(`${side}_template_language`, v); }}
+              style={{ width: 120 }} InputLabelProps={{ shrink: true }} />
+          </div>
+        ))}
+        <div className={classes.hint}>A função de cada número (Atendimento ou Tutoria) é escolhida em Conexões, no número. O envio de modelos também precisa estar liberado em Operação e custos.</div>
+      </Card>
+      <Card title="Número da tutoria" sub="Prefira marcar o número oficial da tutoria em Conexões → Função do número = Tutoria. Este campo vale para instalações antigas: sem número de Tutoria, a conversa sai pelo número do próprio tutor e, quando ele não tem um, por este.">
         <TextField select variant="outlined" size="small" label="Número padrão da tutoria" value={Number(values.tutoria_whatsapp_id || 0)} onChange={(e) => save("tutoria_whatsapp_id", e.target.value)} style={{ maxWidth: 360 }} InputLabelProps={{ shrink: true }}>
           <MenuItem value={0}>Nenhum (usa um número compartilhado)</MenuItem>
           {numbers.map((w) => (<MenuItem key={w.id} value={w.id}>{w.name}</MenuItem>))}

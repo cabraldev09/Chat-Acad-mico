@@ -10,6 +10,9 @@ import emitTicketUpdate from "./EmitTicketUpdate";
 import { RELATIONSHIP_SEGMENT } from "../../helpers/Roles";
 import { ensureRelationshipQueue, isRelationshipConnection } from "../RelationshipServices/Relationship";
 import { noticeIfOwnerAway, returnToOwner } from "../CrmServices/ReturningClient";
+import { TUTORIA_SEGMENTS, teamOfConnection } from "../ChannelServices/ConnectionTeam";
+import Lead from "../../models/Lead";
+import Queue from "../../models/Queue";
 
 const FindOrCreateTicketService = async (
   contact: Contact,
@@ -148,6 +151,14 @@ const FindOrCreateTicketService = async (
   if (!groupContact && ticket.segment !== RELATIONSHIP_SEGMENT && (await isRelationshipConnection(whatsappId))) {
     const queue = await ensureRelationshipQueue();
     await ticket.update({ segment: RELATIONSHIP_SEGMENT, queueId: queue.id });
+  }
+
+  // the tutoring number: its conversations are the tutors' (the tutoring of the student's polo); consultants never see them
+  if (!groupContact && !TUTORIA_SEGMENTS.includes(String(ticket.segment || "")) && (await teamOfConnection(whatsappId)) === "tutoria") {
+    const lead = await Lead.findOne({ where: { contactId: contact.id }, attributes: ["id", "poloId"], order: [["updatedAt", "DESC"]] });
+    const queue = lead?.poloId ? await Queue.findOne({ where: { poloId: lead.poloId, role: "tutoria" } as any, attributes: ["id"] }) : null;
+    await ticket.update({ segment: "onboarding", ...(queue ? { queueId: queue.id } : {}) });
+    changed = true;
   }
 
   // a personal number: the conversation belongs to the person who connected it (the bots stay out).

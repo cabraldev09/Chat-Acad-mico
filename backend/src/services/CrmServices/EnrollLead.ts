@@ -19,6 +19,7 @@ import Queue from "../../models/Queue";
 import Ticket from "../../models/Ticket";
 import TicketEvent from "../../models/TicketEvent";
 import User from "../../models/User";
+import { connectionOfTeam } from "../ChannelServices/ConnectionTeam";
 import Whatsapp from "../../models/Whatsapp";
 import { pickUserForQueue } from "../AutomationServices/AutoAssignTicket";
 import syncPoloQueues from "../PoloServices/SyncPoloQueues";
@@ -98,13 +99,17 @@ const enrollLeadCore = async (lead: Lead, actorId: number, input: EnrollInput) =
   // the administration, else a shared number). It is never the consultant's personal number.
   let whatsapp: Whatsapp | null = null;
   if (input.whatsappId) whatsapp = await Whatsapp.findByPk(input.whatsappId);
+  // the tutoring number of the institution (Função do número = Tutoria): the tutor answers there, inside the system, and the consultant's
+  // conversation stays on the consultants' number (each side with its own history)
+  if (!whatsapp) whatsapp = await connectionOfTeam("tutoria");
   // (the tutor's own QR connection, the one that is connected first; else the tutoring number: the same rule as a transfer to the tutoring)
   if (!whatsapp && tutor) whatsapp = await tutorConnectionFor(tutor.id);
   if (!whatsapp) {
     const tutoriaConnId = Number(await getSetting("tutoria_whatsapp_id", "0")) || 0;
     whatsapp = tutoriaConnId ? await Whatsapp.findByPk(tutoriaConnId) : null;
   }
-  if (!whatsapp) whatsapp = await Whatsapp.findOne({ where: { ownerId: null as any, channel: salesConn.channel }, order: [["isDefault", "DESC"], ["id", "ASC"]] });
+  // never the consultants' number (atendimento): their side does not see the tutoring
+  if (!whatsapp) whatsapp = await Whatsapp.findOne({ where: { ownerId: null as any, channel: salesConn.channel, [Op.or]: [{ team: null }, { team: { [Op.ne]: "atendimento" } }] } as any, order: [["isDefault", "DESC"], ["id", "ASC"]] });
   if (!whatsapp) whatsapp = salesConn;
 
   // 1) the sales conversations end here

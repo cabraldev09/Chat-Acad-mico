@@ -21,6 +21,7 @@ import toastError from "../../errors/toastError";
 import { i18n } from "../../translate/i18n";
 import { wa } from "../chat/chatTheme";
 import { AuthContext } from "../../context/Auth/AuthContext";
+import TeamBar from "../TeamBar";
 import Copilot from "../Copilot";
 import { setTyping, clearTyping, useTyping } from "../../utils/typingStore";
 
@@ -277,6 +278,7 @@ const Ticket = () => {
         <AiBanner ticket={ticket} />
         <Copilot ticket={ticket} />
         <WelcomeBanner ticket={ticket} />
+        <TeamBar ticket={ticket} />
         <ReplyMessageProvider>
           <MessagesList
             ticketId={ticketId}
