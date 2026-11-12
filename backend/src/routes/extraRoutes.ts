@@ -1,3 +1,4 @@
+import * as Tutoria from "../controllers/TutoriaController";
 import isRetentionOperator from "../middleware/isRetentionOperator";
 import express from "express";
 import multer from "multer";
@@ -371,6 +372,8 @@ r.post("/leads/:id/open-ticket", isAuth, canAccessLead, Lead.openTicket);
 r.get("/lead-tasks", isAuth, Lead.tasksIndex);
 r.post("/lead-tasks/release-unreachable", isAuth, isManager, Lead.releaseUnreachable);
 r.get("/onboarding", isAuth, Lead.onboardingList);
+r.get("/tutoria/students", isAuth, Tutoria.students);
+r.post("/tutoria/students/:leadId/conversation", isAuth, Tutoria.openConversation);
 r.put("/leads/:id/onboarding/access", isAuth, canAccessLead, Lead.onboardingAccessSave);
 r.post("/leads/:id/onboarding/access/send", isAuth, canAccessLead, Lead.onboardingAccessSend);
 r.get("/onboarding/pending", isAuth, Lead.onboardingPending);

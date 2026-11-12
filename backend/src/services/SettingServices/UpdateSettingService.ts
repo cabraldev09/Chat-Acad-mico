@@ -3,7 +3,7 @@ import Setting from "../../models/Setting";
 import { isValidTz, setAppTz } from "../../helpers/AppTime";
 
 // settings that may be created on first save
-const CREATABLE = ["appTimezone", "appName", "onboarding_sla_hours", "chatbot_reminder_minutes", "max_connections_per_user", "onboarding_welcome_template", "response_sla_minutes", "tutoria_whatsapp_id", "ai_reactivation", "ai_reactivation_minutes", "tutoria_template_name", "tutoria_template_language", "atendimento_template_name", "atendimento_template_language"];
+const CREATABLE = ["appTimezone", "appName", "onboarding_sla_hours", "chatbot_reminder_minutes", "max_connections_per_user", "onboarding_welcome_template", "response_sla_minutes", "tutoria_whatsapp_id", "ai_reactivation", "ai_reactivation_minutes", "tutoria_template_name", "tutoria_template_language", "atendimento_template_name", "atendimento_template_language", "tutoria_idle_days"];
 // per-model token prices, typed by the administrator
 const CREATABLE_PREFIX = ["ai_price_"];
 

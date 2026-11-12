@@ -17,7 +17,7 @@ const Route = ({ component: Component, isPrivate = false, adminOnly = false, man
   // adminOnly: administrator alone; managerOnly: administrator or coordinator
   const blocked =
     isAuth && !loading && user && user.profile &&
-    ((adminOnly && !isManager(user)) || (managerOnly && !isManager(user)) || (salesOnly && !isManager(user) && user.role !== "consultor") || (academicOnly && !isManager(user) && user.role !== "tutor") || (retentionOnly && !canOperateRetention(user)));
+    ((adminOnly && !isManager(user)) || (managerOnly && !isManager(user)) || (salesOnly && !isManager(user) && user.role !== "consultor") || (academicOnly && !isManager(user) && !["tutor", "academico"].includes(user.role)) || (retentionOnly && !canOperateRetention(user)));
 
   if (!isAuth && isPrivate) {
     return (

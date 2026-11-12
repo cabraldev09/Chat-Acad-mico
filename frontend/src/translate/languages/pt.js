@@ -633,6 +633,8 @@ const messages = {
         ERR_META_APP_NOT_CONFIGURED: "O app da Meta ainda não foi configurado. Peça ao administrador para cadastrar o ID e a chave do app em Conexões.",
         ERR_REPLY_WINDOW_CLOSED: "Passaram mais de 24 horas desde a última mensagem desta pessoa. Pelo número oficial do WhatsApp (ou pelo Instagram) só dá para responder dentro de 24 h: use \"Enviar mensagem de abertura\" ou aguarde ela escrever de novo.",
         ERR_TEAM_HANDOFF_TEAM: "Escolha se quer chamar a tutoria ou o consultor.",
+        ERR_WRONG_SIDE: "Esta conversa é do outro lado (tutoria ou comercial) e cada perfil atende pelo seu número. Use \"Chamar a tutoria\" ou \"Chamar o consultor\".",
+        ERR_USER_WRONG_SIDE: "Essa pessoa é do outro lado (tutoria ou comercial). Para envolver o outro lado, use \"Chamar a tutoria\" ou \"Chamar o consultor\".",
         ERR_TEAM_HANDOFF_GROUP: "Grupos não são repassados entre tutoria e consultores.",
         ERR_TEAM_HANDOFF_SAME_SIDE: "Esta conversa já é desse lado. Chame o outro lado.",
         ERR_TEAM_NO_TUTORIA_NUMBER: "Ainda não há número da Tutoria. Em Conexões, marque a Função do número = Tutoria no número oficial da tutoria.",

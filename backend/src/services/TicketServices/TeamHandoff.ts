@@ -56,6 +56,22 @@ const summaryFor = async (ticket: Ticket, team: Team, actorId: number): Promise<
   }
 };
 
+// The student's conversation on a side's number: an open one (kept with whoever holds it), else the last one there (reopened), else a new
+// one; given to the owner of that side, or waiting in the polo's queue of that side.
+export const sideConversation = async (contactId: number, team: Team, whatsappId: number, ownerId: number | null, queueId: number | null): Promise<Ticket> => {
+  const state = { userId: ownerId, status: ownerId ? "open" : "pending", segment: SEGMENT_OF[team], aiActive: false, chatbotNodeId: -1, ...(queueId ? { queueId } : {}) };
+  let other = await Ticket.findOne({ where: { contactId, whatsappId, status: { [Op.in]: ["open", "pending"] } } as any, order: [["updatedAt", "DESC"]] });
+  if (other) {
+    // somebody of that side already holds it: it stays with them
+    if (!other.userId) await other.update(state as any); else if (other.segment !== SEGMENT_OF[team]) await other.update({ segment: SEGMENT_OF[team] });
+    return other;
+  }
+  other = await Ticket.findOne({ where: { contactId, whatsappId, isHistorical: false } as any, order: [["updatedAt", "DESC"]] });
+  if (other) await other.update({ ...state, closedAt: null, unreadMessages: 0 } as any);
+  else other = await Ticket.create({ contactId, whatsappId, unreadMessages: 0, isGroup: false, ...state } as any);
+  return other;
+};
+
 export interface TeamHandoffResult {
   ticketId: number;
   userId: number | null;
@@ -83,17 +99,7 @@ export const handoffToTeam = async (ticketId: number, team: Team, actorId: numbe
   const summary = await summaryFor(source, team, actorId || 0);
   const cleanNote = String(note || "").trim().slice(0, 1000);
 
-  // the conversation of the other side: an open one, else the last one there (reopened), else a new one
-  const state = { userId: owner ? owner.id : null, status: owner ? "open" : "pending", segment: SEGMENT_OF[team], aiActive: false, chatbotNodeId: -1, ...(queue ? { queueId: queue.id } : {}) };
-  let other = await Ticket.findOne({ where: { contactId: source.contactId, whatsappId: target.id, status: { [Op.in]: ["open", "pending"] } } as any, order: [["updatedAt", "DESC"]] });
-  if (other) {
-    // somebody of that side already holds it: it stays with them
-    if (!other.userId) await other.update(state as any); else if (other.segment !== SEGMENT_OF[team]) await other.update({ segment: SEGMENT_OF[team] });
-  } else {
-    other = await Ticket.findOne({ where: { contactId: source.contactId, whatsappId: target.id, isHistorical: false } as any, order: [["updatedAt", "DESC"]] });
-    if (other) await other.update({ ...state, closedAt: null, unreadMessages: 0 } as any);
-    else other = await Ticket.create({ contactId: source.contactId, whatsappId: target.id, unreadMessages: 0, isGroup: false, ...state } as any);
-  }
+  const other = await sideConversation(source.contactId, team, target.id, owner ? owner.id : null, queue ? queue.id : null);
 
   const from = sideOfSegment(source.segment) === "tutoria" ? "a tutoria" : "o comercial";
   const text = [`${actor?.name || (actorId ? "A equipe" : "O agente de IA")} (${from}) chamou ${team === "tutoria" ? "a tutoria" : "o consultor"}.`, cleanNote ? `Recado: ${cleanNote}` : "", summary ? `Resumo da conversa: ${summary}` : ""].filter(Boolean).join("\n");

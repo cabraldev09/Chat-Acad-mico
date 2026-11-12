@@ -45,7 +45,16 @@ const keyOf = (q) => (q.role && DEPARTMENT[q.role] ? `role:${q.role}` : `queue:$
 const labelOf = (q) => (q.role && DEPARTMENT[q.role] ? DEPARTMENT[q.role] : q.name);
 const poloOf = (q) => String(q.name || "").replace(/^[^·]*·\s*/, "") || q.name;
 
-const TransferTicketModal = ({ modalOpen, onClose, ticketid }) => {
+// each side attends its own number: a tutoring conversation goes only to tutors (or the management), a sales one only to consultants
+const TUTORING = ["onboarding", "support"];
+const sameSide = (user, segment) => {
+	const role = user.profile === "admin" ? "admin" : user.role === "academico" ? "tutor" : user.role || "consultor";
+	if (role === "admin" || role === "coordenacao") return true;
+	if (role === "relacionamento") return segment === "relationship";
+	return TUTORING.includes(segment || "sales") ? role === "tutor" : role === "consultor";
+};
+
+const TransferTicketModal = ({ modalOpen, onClose, ticketid, ticketSegment }) => {
 	const history = useHistory();
 	const [options, setOptions] = useState([]);
 	const [queues, setQueues] = useState([]);
@@ -95,7 +104,7 @@ const TransferTicketModal = ({ modalOpen, onClose, ticketid }) => {
 					const { data } = await api.get("/users/", {
 						params: { searchParam },
 					});
-					setOptions(data.users);
+					setOptions((data.users || []).filter(u => sameSide(u, ticketSegment)));
 					setLoading(false);
 				} catch (err) {
 					setLoading(false);

@@ -53,3 +53,59 @@
 ## Fora do escopo por enquanto
 - **Coexistência:** o consultor usar o app WhatsApp Business no mesmo número oficial. Só faz sentido se cada consultor tiver um número oficial próprio.
 - **Sincronização automática dos modelos da Meta:** hoje o nome do modelo é digitado à mão.
+
+## Dois números: Atendimento (consultores) e Tutoria (tutores)
+- Cada número oficial tem uma **Função**, marcada em Conexões → editar o número → "Função do número":
+  - **Atendimento / Matrículas:** usado pelos consultores;
+  - **Tutoria:** usado pelos tutores, para os alunos matriculados.
+- **Cada perfil atende só pelo seu número.**
+  - O consultor não responde nem recebe conversa da tutoria, e o tutor não responde nem recebe conversa comercial. Os dois casos dão erro (`ERR_WRONG_SIDE`, `ERR_USER_WRONG_SIDE`).
+  - Gestores (coordenação e admin) atendem os dois lados.
+- **Carteira por lado:**
+  - no número da Tutoria, o aluno cai com o **tutor dele** (definido na matrícula);
+  - no de Atendimento, com o **consultor dono** no CRM.
+- **Histórico separado:** cada lado vê só as próprias conversas. O resumo da IA também lê só o próprio lado.
+- **"Chamar a tutoria" / "Chamar o consultor"**, na barra da conversa:
+  - abre ou acha a conversa do aluno no número do outro lado, com o responsável de lá;
+  - o recado e um resumo da IA vão junto;
+  - a conversa de origem continua com quem estava.
+  - A IA do número de matrículas faz o mesmo quando o assunto é acadêmico e avisa o aluno de que a tutoria vai falar pelo número da Tutoria.
+- **Mensagem de abertura:** fora das 24h, o número oficial só pode iniciar uma conversa com um modelo aprovado.
+  - Configure em Configurações → Tutoria: nome do modelo e idioma, um para cada lado.
+  - Parâmetros: {{1}} = primeiro nome do aluno, {{2}} = primeiro nome de quem escreve.
+- **Meus alunos** (menu da tutoria): a carteira do tutor, com:
+  - primeiro contato atrasado;
+  - aluno sem contato há N dias (`tutoria_idle_days`, padrão 15);
+  - chamados do comercial ainda sem resposta;
+  - mensagens não lidas;
+  - janela de 24h fechada.
+  - Ações: abrir a conversa no número da Tutoria e enviar a abertura.
+
+## Criar o número da Tutoria
+### 1. O número
+- **Mais fácil e garantido: um chip pré-pago** de qualquer operadora, de preferência com DDD 69 (cerca de R$ 15). Ele só serve para receber o código uma vez; não precisa ficar num celular depois.
+- **Alternativa virtual:** um **número fixo virtual brasileiro** de operadora VoIP (por exemplo Nvoip ou Telnyx), validado **por ligação**.
+  - A Meta aceita fixo com código por voz, mas alguns números VoIP são recusados.
+  - Durante a validação, desligue desvio de chamada e URA.
+  - Evite números gratuitos ou compartilhados.
+- **Regra da Meta:** o número **não pode estar em nenhum WhatsApp**, nem no app WhatsApp Business. Depois de ir para a API, ele não funciona mais no app.
+
+### 2. Na Meta (uma vez)
+1. Abra o Business Manager → WhatsApp Manager → **Números de telefone → Adicionar número de telefone**, na **mesma conta (WABA)** do número dos polos.
+2. Preencha o nome de exibição (ex.: "Cruzeiro do Sul Virtual – Tutoria"), a categoria Educação e o fuso horário.
+3. Valide por SMS (chip) ou por ligação (fixo ou VoIP).
+4. Copie o **Phone Number ID** do novo número, na tela da API do app.
+5. Garanta que o **token permanente** (usuário do sistema) tenha acesso ao novo número: Usuários do sistema → Atribuir ativos → a WABA.
+6. Crie dois **modelos** na categoria **Utilidade**:
+   - `abertura_tutoria`: "Olá, {{1}}! Aqui é {{2}}, da tutoria da Cruzeiro do Sul Virtual. Podemos falar sobre o seu curso?"
+   - `abertura_atendimento`: "Olá, {{1}}! Aqui é {{2}}, da Cruzeiro do Sul Virtual. Podemos continuar seu atendimento?"
+   - Espere a aprovação.
+
+### 3. No Chat
+1. Em **Conexões → Adicionar → WhatsApp (API Oficial)**, informe o Phone Number ID do novo número, o **mesmo** token de acesso, o **mesmo** App Secret e o **mesmo** Verify Token do número dos polos. Em **Função do número**, escolha **Tutoria**.
+2. **Não crie outro webhook.** O app da Meta já envia para a URL do número dos polos, e o Chat entrega cada mensagem à conexão do número certo.
+3. No número dos polos, marque **Função do número = Atendimento / Matrículas**.
+4. Em **Configurações → Tutoria → Mensagem de abertura**, informe `abertura_tutoria` e `abertura_atendimento`, com idioma `pt_BR`.
+5. Em **Operação e custos**, libere o envio de modelos (`outbound_allow_templates`).
+6. Faça o teste: mande uma mensagem do seu celular para o número da Tutoria. A conversa deve aparecer para o tutor do aluno, ou na fila da tutoria do polo, e nunca para os consultores.
+

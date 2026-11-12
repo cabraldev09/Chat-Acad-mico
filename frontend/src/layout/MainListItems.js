@@ -22,6 +22,7 @@ import { canOperateRetention, isManager } from "../utils/access";
 import { useMyTasks } from "../components/TaskAlert";
 import ListTodoIcon from "lucide-react/dist/esm/icons/list-todo";
 import MonitorCheckIcon from "lucide-react/dist/esm/icons/monitor-check";
+import UsersRoundIcon from "lucide-react/dist/esm/icons/users";
 import HeartPulseIcon from "lucide-react/dist/esm/icons/heart-pulse";
 import Share2Icon from "lucide-react/dist/esm/icons/share-2";
 import WalletIcon from "lucide-react/dist/esm/icons/wallet";
@@ -300,8 +301,9 @@ const MainListItems = (props) => {
         collapsed={collapsed}
         adornment={followUps > 0 && <span className={classes.countBadge} title="Retornos de 24 horas para registrar">{followUps}</span>}
       />
-      {(isManager(user) || user.role === "tutor") && (
+      {(isManager(user) || ["tutor", "academico"].includes(user.role)) && (
         <>
+          <ListItemLink to="/meus-alunos" primary={isManager(user) ? "Alunos da tutoria" : "Meus alunos"} icon={<UsersRoundIcon className="ico" />} collapsed={collapsed} />
           <ListItemLink to="/analise-academica" primary="Análise acadêmica" icon={<BookOpenCheckIcon className="ico" />} collapsed={collapsed} />
           <ListItemLink to="/alunos" primary="Alunos do portal" icon={<GraduationCapIcon className="ico" />} collapsed={collapsed} />
         </>

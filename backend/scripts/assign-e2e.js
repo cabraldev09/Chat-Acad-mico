@@ -517,6 +517,41 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
       assert(s.userId === ids.joao, `the conversation went to the tutor: ${JSON.stringify(s)}`);
       assert(sql(`SELECT COUNT(*) FROM TicketEvents WHERE ticketId=${r.data.teamHandoff.ticketId} AND type='team_handoff_in'`) === "1", "no call on the tutoring side");
     });
+    await test("each profile answers on its own side: a tutor cannot receive or answer a consultant's conversation; the management can", async () => {
+      const t = student();
+      const refused = await http.put(`/tickets/${t.ticketId}`, { userId: ids.tania }, as(joao));
+      assert(refused.status === 422 && refused.data.error === "ERR_USER_WRONG_SIDE", `transfer to the tutor: ${refused.status} ${JSON.stringify(refused.data)}`);
+      assert(row(t.ticketId).userId === ids.joao, "the conversation went to the tutor");
+      // given by hand (database) to the tutor anyway: she still cannot answer it
+      sql(`UPDATE Tickets SET userId=${ids.tania} WHERE id=${t.ticketId}`);
+      const r = await send(tania, t.ticketId, "posso ajudar?");
+      assert(r.status === 403 && r.data.error === "ERR_WRONG_SIDE", `tutor answered: ${r.status} ${JSON.stringify(r.data)}`);
+      sql(`UPDATE Tickets SET userId=${ids.joao} WHERE id=${t.ticketId}`);
+      assert((await http.put(`/tickets/${t.ticketId}`, { userId: ids.admin }, as(joao))).status === 200, "the management could not receive it");
+    });
+    await test("Meus alunos: the tutor sees only her students, with the call from the consultants pending until she answers, and opens the conversation on the Tutoria number", async () => {
+      const t = student();
+      const other = mkTicket({ owner: ids.joao });
+      sql(`INSERT INTO Leads (name, phone, source, stageId, ownerId, contactId, isHistorical, enrolledAt, onboardingStatus, createdAt, updatedAt) VALUES ('De outro tutor', '55690000066${seq}', 'Telegram', ${stage}, ${ids.joao}, ${other.contactId}, false, NOW(), 'pending', NOW(), NOW())`);
+      sql(`UPDATE Leads SET enrolledAt=NOW() - INTERVAL '3 days', onboardingStatus='started' WHERE contactId=${t.contactId}`);
+      assert((await http.get("/tutoria/students", as(joao))).status === 403, "a consultant read the tutor's panel");
+      const call = await http.post(`/tickets/${t.ticketId}/handoff-team`, { team: "tutoria", note: "rematrícula travada" }, as(joao));
+      assert(call.status === 200, `call ${call.status}`);
+      const mine = (await http.get("/tutoria/students", as(tania))).data;
+      const me = mine.students.find(s => s.contactId === t.contactId);
+      assert(me && me.callPending && mine.counters.calls >= 1, `call not pending: ${JSON.stringify(me)}`);
+      assert(!mine.students.some(s => s.contactId === other.contactId), "she sees another tutor's student");
+      const all = (await http.get("/tutoria/students", as(admin))).data;
+      assert(all.students.some(s => s.contactId === other.contactId), "the management does not see every student");
+      const opened = await http.post(`/tutoria/students/${me.leadId}/conversation`, {}, as(tania));
+      assert(opened.status === 200 && opened.data.ticketId === call.data.ticketId, `open ${opened.status} ${JSON.stringify(opened.data)}`);
+      assert((await http.post(`/tutoria/students/${me.leadId}/conversation`, {}, as(gabrielli))).status === 403, "a consultant opened the tutoring conversation");
+      const reply = await send(tania, opened.data.ticketId, "Oi! Vi seu recado, vamos resolver.");
+      assert(ok(reply), `tutor reply ${reply.status}`);
+      await sentOk(opened.data.ticketId);
+      const after = (await http.get("/tutoria/students", as(tania))).data.students.find(s => s.contactId === t.contactId);
+      assert(after && !after.callPending, "the call is still pending after the answer");
+    });
   } catch (err) {
     results.push([false, `setup -> ${err.stack || err.message}`]);
     console.log(`  ✗ setup\n      ${err.stack || err.message}`);
