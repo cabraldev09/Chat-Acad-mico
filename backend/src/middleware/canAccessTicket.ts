@@ -47,9 +47,13 @@ export const assertTicketAccess = async (
     // another number's groups and personal chats are not readable, even knowing the id
     if (!ticketVisibleIn(await connectionScopeOf(me, role), ticket, me)) throw new AppError("ERR_NO_PERMISSION", 403);
     const mine = ticket.userId === me;
-    if (!mine && !(SEGMENTS_OF[role] || []).includes(ticket.segment || "sales")) {
+    const mySide = (SEGMENTS_OF[role] || []).includes(ticket.segment || "sales");
+    if (!mine && !mySide) {
       throw new AppError("ERR_NO_PERMISSION", 403);
     }
+    // each profile answers on its own side's number (the consultant on Atendimento, the tutor on Tutoria): a conversation of the other side
+    // is never answered, even one given to the person by mistake. The way across is "Chamar a tutoria" / "Chamar o consultor".
+    if ((mode === "write" || mode === "send") && !mySide && !ticket.isGroup) throw new AppError("ERR_WRONG_SIDE", 403);
 
     const queues = await queueIdsOf(me);
     const inMyQueues = !ticket.queueId || queues.includes(ticket.queueId);

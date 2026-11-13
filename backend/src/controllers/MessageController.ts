@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import { noteSuggestionSent } from "../services/CopilotServices/Feedback";
 
 import SetTicketMessagesAsRead from "../helpers/SetTicketMessagesAsRead";
 import { getIO } from "../libs/socket";
@@ -69,6 +70,8 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
   // the call to the channel is made right after the commit (never inside the transaction) and answered here, like before: 200 when it left,
   // 202 when it stays queued for another attempt (the worker keeps trying and reports a final failure on the screen). A repeated key sends nothing.
   if (!duplicate) await processOutbound(row.id).catch(err => logger.error(`Outbound ${row.id}: ${err}`));
+  // a suggestion of the copilot put in the box: this message says if it went as it was, edited, or was discarded
+  if (!duplicate && !medias && body) noteSuggestionSent(Number(ticketId), Number(req.user.id), body).catch(() => undefined);
   await row.reload();
   return res.status(row.status === "sent" ? 200 : 202).json({ id: row.id, clientKey: row.clientKey, status: row.status, duplicate });
 };

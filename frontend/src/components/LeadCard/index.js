@@ -44,7 +44,7 @@ const PROPOSAL_STATUS = { draft: "Rascunho", sent: "Enviada", viewed: "Visualiza
 
 // CRM summary of the person you are talking to, shown in the chat contact panel. Everything the consultant does with
 // a lead while chatting (move it along the funnel, mark it lost, enroll, generate and send a proposal) happens here.
-const LeadCard = ({ contactId }) => {
+const LeadCard = ({ contactId, attendantId }) => {
   const classes = useStyles();
   const [lead, setLead] = useState(undefined);
   const [stages, setStages] = useState([]);
@@ -128,6 +128,12 @@ const LeadCard = ({ contactId }) => {
       <div className={classes.meta}>
         {lead.course ? `${lead.course.name} · ` : ""}{lead.owner ? `Responsável: ${lead.owner.name}` : "Sem responsável"}
       </div>
+      {lead.owner && attendantId && lead.owner.id !== attendantId && (
+        <div className={classes.meta} style={{ fontWeight: 600 }}
+          title="O cliente é da carteira de outro consultor: quando ele voltar a escrever, a conversa vai direto para esse consultor.">
+          Cliente da carteira de {lead.owner.name}
+        </div>
+      )}
 
       <div>
         <div className={classes.label} style={{ marginBottom: 6 }}>Propostas</div>

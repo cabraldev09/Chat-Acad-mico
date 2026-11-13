@@ -28,6 +28,7 @@ const Tickets = lazy(() => import("../pages/Tickets/"));
 const Connections = lazy(() => import("../pages/Connections/"));
 const Polos = lazy(() => import("../pages/Polos"));
 const Onboarding = lazy(() => import("../pages/Onboarding"));
+const Tutoria = lazy(() => import("../pages/Tutoria"));
 const Users = lazy(() => import("../pages/Users"));
 const Contacts = lazy(() => import("../pages/Contacts/"));
 const QuickAnswers = lazy(() => import("../pages/QuickAnswers/"));
@@ -131,6 +132,7 @@ const Routes = () => {
                 <Route exact path="/users" component={Users} isPrivate managerOnly />
                 <Route exact path="/polos" component={Polos} isPrivate managerOnly />
                 <Route exact path="/ambientacao" component={Onboarding} isPrivate />
+                <Route exact path="/meus-alunos" component={Tutoria} isPrivate academicOnly />
                 <Route exact path="/quickAnswers" component={QuickAnswers} isPrivate />
                 {/* the general settings moved into Configurações */}
                 <Route exact path="/Settings" component={() => <Redirect to="/configuracoes?secao=geral" />} isPrivate adminOnly />

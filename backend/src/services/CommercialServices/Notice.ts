@@ -12,6 +12,12 @@ export const afterHoursNotice = (r: Routed): string | null => {
 // The one thing said after the handoff: the semipresencial rule, the working hours, or that the lead waits in the queue (never "a consultant took it" before
 // the backend confirmed who did). The administrator can write the queue and the after-hours messages; {{quando}} and {{polo}} are filled in.
 export const afterHandoffNotice = (r: Routed, messages?: { queued?: string; afterHours?: string } | null): string | null => {
+  // the tutoring calls the student on the tutoring number: who writes and from where
+  if (r.teamHandoff) {
+    const first = String(r.teamHandoff.tutorName || "").trim().split(/\s+/)[0];
+    const hours = !r.within && r.whenText ? ` O retorno acontece ${r.whenText}.` : "";
+    return `${first ? `${first}, da tutoria${r.poloName ? ` do polo ${poloLabel(r.poloName)}` : ""},` : "A tutoria do seu polo"} vai falar com você pelo número da tutoria (${r.teamHandoff.connectionName}). Fique de olho: a mensagem chega de outro número.${hours}`;
+  }
   // the tutoring continues on the tutor's own WhatsApp: the student is told who writes and from where (said on the official number, before the move)
   if (r.moveTo) {
     const first = String(r.moveTo.tutorName || "").trim().split(/\s+/)[0];

@@ -22,6 +22,7 @@ interface WhatsappData {
   groupsMode?: string;
   allowedGroups?: string[];
   aiFirst?: boolean;
+  team?: string | null;
 }
 
 interface Request {
@@ -58,6 +59,7 @@ const UpdateWhatsAppService = async ({
     groupsMode,
     allowedGroups,
     aiFirst,
+    team,
     queueIds = []
   } = whatsappData;
 
@@ -108,6 +110,7 @@ const UpdateWhatsAppService = async ({
     riskMode,
     groupsMode,
     aiFirst: aiFirst === undefined ? undefined : !!aiFirst,
+    team: team === undefined ? undefined : team === "atendimento" || team === "tutoria" ? team : null,
     allowedGroups: allowedGroups === undefined ? undefined : JSON.stringify(allowedGroups.map(String))
   });
 

@@ -45,7 +45,16 @@ const keyOf = (q) => (q.role && DEPARTMENT[q.role] ? `role:${q.role}` : `queue:$
 const labelOf = (q) => (q.role && DEPARTMENT[q.role] ? DEPARTMENT[q.role] : q.name);
 const poloOf = (q) => String(q.name || "").replace(/^[^·]*·\s*/, "") || q.name;
 
-const TransferTicketModal = ({ modalOpen, onClose, ticketid }) => {
+// each side attends its own number: a tutoring conversation goes only to tutors (or the management), a sales one only to consultants
+const TUTORING = ["onboarding", "support"];
+const sameSide = (user, segment) => {
+	const role = user.profile === "admin" ? "admin" : user.role === "academico" ? "tutor" : user.role || "consultor";
+	if (role === "admin" || role === "coordenacao") return true;
+	if (role === "relacionamento") return segment === "relationship";
+	return TUTORING.includes(segment || "sales") ? role === "tutor" : role === "consultor";
+};
+
+const TransferTicketModal = ({ modalOpen, onClose, ticketid, ticketSegment }) => {
 	const history = useHistory();
 	const [options, setOptions] = useState([]);
 	const [queues, setQueues] = useState([]);
@@ -57,6 +66,8 @@ const TransferTicketModal = ({ modalOpen, onClose, ticketid }) => {
 	const [selectedQueue, setSelectedQueue] = useState('');
 	const [note, setNote] = useState("");
 	const [notifyClient, setNotifyClient] = useState(false);
+	// checked: the client stays with their consultant, only this attendance goes to the other person
+	const [onlyThisAttendance, setOnlyThisAttendance] = useState(false);
 	// to the tutoring a lead that did not enroll yet: the consultant says whether the student enrolled (and then confirms it with the RGM) or it is support to a student
 	const [enrollAsk, setEnrollAsk] = useState(null);
 	const [enrollLead, setEnrollLead] = useState(null);
@@ -93,7 +104,7 @@ const TransferTicketModal = ({ modalOpen, onClose, ticketid }) => {
 					const { data } = await api.get("/users/", {
 						params: { searchParam },
 					});
-					setOptions(data.users);
+					setOptions((data.users || []).filter(u => sameSide(u, ticketSegment)));
 					setLoading(false);
 				} catch (err) {
 					setLoading(false);
@@ -114,6 +125,7 @@ const TransferTicketModal = ({ modalOpen, onClose, ticketid }) => {
 		setDepartment("");
 		setNote("");
 		setNotifyClient(false);
+		setOnlyThisAttendance(false);
 		setEnrollAsk(null);
 		setEnrollLead(null);
 	};
@@ -160,6 +172,7 @@ const TransferTicketModal = ({ modalOpen, onClose, ticketid }) => {
 
 			if (note.trim()) data.note = note.trim();
 			if (notifyClient) data.notifyClient = true;
+			if (selectedUser && onlyThisAttendance) data.moveClient = false;
 
 			await api.put(`/tickets/${ticketid}`, data);
 
@@ -292,6 +305,18 @@ const TransferTicketModal = ({ modalOpen, onClose, ticketid }) => {
 						}
 						label={i18n.t("transferTicketModal.notifyClient")}
 					/>
+					{selectedUser && (
+						<FormControlLabel
+							control={
+								<Checkbox
+									color="primary"
+									checked={onlyThisAttendance}
+									onChange={e => setOnlyThisAttendance(e.target.checked)}
+								/>
+							}
+							label={i18n.t("transferTicketModal.onlyThisAttendance")}
+						/>
+					)}
 				</DialogContent>
 				<DialogActions>
 					<Button

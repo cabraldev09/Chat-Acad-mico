@@ -117,6 +117,11 @@ class Whatsapp extends Model<Whatsapp> {
   @Column
   aiFirst: boolean;
 
+  // what the number is for: "atendimento" (the consultants: enrollment and sales), "tutoria" (the tutors of the enrolled students),
+  // or null (general). Each side has its own conversations and its own "carteira" (see ConnectionTeam)
+  @Column
+  team: string;
+
   @Column
   historyImportedAt: Date;
 

@@ -22,13 +22,14 @@ import {
 } from "./types";
 import { IG_GRAPH } from "../helpers/MetaApp";
 import { noteWebhook } from "./WebhookLog";
+import { cloudConnectionFor } from "./CloudRouting";
 import { aliasMessage, failureOf, messageIdOf, rememberRecipient, sendToRecipient } from "./CloudRecipient";
 import { noteAutomation } from "../services/AutomationServices/AutomationTrace";
 import Ticket from "../models/Ticket";
 
 // Unversioned by default so Meta serves the app's default API version (pinned
 // versions expire). Set META_GRAPH_VERSION=vNN.0 to pin, GRAPH_API_URL to override.
-const GRAPH =
+export const GRAPH =
   process.env.GRAPH_API_URL ||
   `https://graph.facebook.com${
     process.env.META_GRAPH_VERSION ? `/${process.env.META_GRAPH_VERSION}` : ""
@@ -402,16 +403,18 @@ const cloudFailed = async (whatsapp: Whatsapp, st: any): Promise<void> => {
   noteAutomation(message.ticketId, `a mensagem foi enviada de novo para ${retryTo}`);
 };
 
-const processCloud = async (whatsapp: Whatsapp, entry: any) => {
-  const config = getConfig(whatsapp);
-  const headers = { Authorization: `Bearer ${config.accessToken}` };
-
+const processCloud = async (received: Whatsapp, entry: any) => {
   for (const change of entry.changes || []) {
     const value = change.value || {};
-    if (value.metadata?.phone_number_id !== config.phoneNumberId) {
-      noteWebhook(whatsapp.id, "numero_diferente", `a Meta mandou o número ${value.metadata?.phone_number_id || "?"} e a conexão tem ${config.phoneNumberId || "nenhum"}`);
+    const phoneNumberId = String(value.metadata?.phone_number_id || "");
+    // eslint-disable-next-line no-await-in-loop
+    const whatsapp = await cloudConnectionFor(received, phoneNumberId);
+    if (!whatsapp) {
+      noteWebhook(received.id, "numero_diferente", `a Meta mandou o número ${phoneNumberId || "?"} e nenhuma conexão da API Oficial deste app tem esse número (esta tem ${getConfig(received).phoneNumberId || "nenhum"})`);
       continue;
     }
+    if (whatsapp.id !== received.id) noteWebhook(whatsapp.id, "recebido", `evento do número ${phoneNumberId} entregue pela URL da conexão ${received.id}`);
+    const headers = { Authorization: `Bearer ${getConfig(whatsapp).accessToken}` };
 
     for (const st of value.statuses || []) {
       if (st.status === "failed") {

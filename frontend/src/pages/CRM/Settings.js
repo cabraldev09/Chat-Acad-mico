@@ -317,6 +317,17 @@ export const Automation = ({ s, setS, save, users }) => {
       <Typography className={classes.hint} style={{ marginTop: -12 }}>Vale para todos os canais. Grupos não viram lead. Quem já existe (mesmo telefone ou contato) não é duplicado.</Typography>
       <FormControlLabel control={<Switch color="primary" checked={!!s.autoadvance} onChange={(e) => save({ autoadvance: e.target.checked })} />}
         label="Mover para “Primeiro contato” quando um atendente responder" />
+      <FormControlLabel control={<Switch color="primary" checked={s.returnToOwner !== false} onChange={(e) => save({ returnToOwner: e.target.checked })} />}
+        label="Cliente que volta a escrever fala com o mesmo consultor" />
+      <Typography className={classes.hint} style={{ marginTop: -12 }}>
+        Nos números compartilhados (como a API Oficial dos polos), quem já foi atendido volta direto para o consultor dono dele no CRM (ou quem atendeu por último), sem robô e sem rodízio, mesmo fora do horário dele.
+      </Typography>
+      {s.returnToOwner !== false && (
+        <TextField size="small" variant="outlined" multiline minRows={2} label="Aviso ao cliente quando o consultor está fora do horário"
+          placeholder="Olá! {consultor} está fora do horário de atendimento agora e responde {quando}. Sua mensagem já ficou com {consultor}."
+          helperText="{consultor} vira o primeiro nome e {quando} o próximo horário (ex.: amanhã às 08:00). Enviado no máximo uma vez a cada 6 horas. Vazio usa o texto do exemplo."
+          value={s.returnAwayMessage || ""} onChange={(e) => setS({ ...s, returnAwayMessage: e.target.value })} onBlur={() => save({ returnAwayMessage: s.returnAwayMessage || "" })} />
+      )}
       <div>
         <Typography variant="subtitle2" style={{ fontWeight: 600 }}>Períodos de ingresso</Typography>
         <Typography className={classes.hint} gutterBottom>Os períodos que a instituição está captando. O padrão vem preenchido em todo lead novo e nas propostas.</Typography>

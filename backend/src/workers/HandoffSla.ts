@@ -11,6 +11,7 @@ import TicketEvent from "../models/TicketEvent";
 import User from "../models/User";
 import { pickUserForQueue } from "../services/AutomationServices/AutoAssignTicket";
 import { addActivity } from "../services/CrmServices/LeadCore";
+import { returnToOwnerEnabled } from "../services/CrmServices/ReturningClient";
 import UpdateTicketService from "../services/TicketServices/UpdateTicketService";
 import { logger } from "../utils/logger";
 
@@ -18,7 +19,8 @@ const MARK = "‎";
 
 // A conversation the AI agent handed to the commercial team must be answered by a person. Counted only inside the working hours:
 //   1st time the limit passes (default 15 min): live notice to the consultant, the queue and the managers;
-//   2nd time (another limit later): the conversation goes to the next consultant of the queue and everybody is warned again.
+//   2nd time (another limit later): the conversation goes to the next consultant of the queue and everybody is warned again
+//   (not when it is with the client's own consultant, see ReturningClient: then only the warning).
 // A person's reply ends the watch.
 const tick = async (): Promise<void> => {
   try {
@@ -44,11 +46,14 @@ const tick = async (): Promise<void> => {
       if (businessMinutes(business, new Date(since), now) < limit) continue;
 
       // eslint-disable-next-line no-await-in-loop
-      const lead = await Lead.findOne({ where: { contactId: ticket.contactId }, attributes: ["id", "name"] });
+      const lead = await Lead.findOne({ where: { contactId: ticket.contactId }, attributes: ["id", "name", "ownerId"] });
       const name = lead?.name || "";
       let userId = ticket.userId || null;
       let note = `Aguardando atendimento humano há ${Math.round(businessMinutes(business, new Date(ticket.handoffAt), now))} min`;
-      if (ticket.handoffAlerts >= 1 && ticket.queueId) {
+      // the client's own consultant keeps the client: they and the managers are warned again, the conversation does not change hands
+      // eslint-disable-next-line no-await-in-loop
+      const ownClient = !!ticket.userId && lead?.ownerId === ticket.userId && (await returnToOwnerEnabled());
+      if (ticket.handoffAlerts >= 1 && ticket.queueId && !ownClient) {
         // second time: the next consultant of the queue
         // eslint-disable-next-line no-await-in-loop
         const queue = await Queue.findByPk(ticket.queueId, { include: [{ model: User, as: "users", attributes: ["id", "name"] }] });

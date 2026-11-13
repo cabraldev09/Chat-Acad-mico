@@ -1,4 +1,6 @@
 import { getSetting } from "../../helpers/AppSettings";
+import { connectionOfTeam, sideOfSegment } from "../ChannelServices/ConnectionTeam";
+import { handoffToTeam } from "../TicketServices/TeamHandoff";
 import { getBusinessConfig, isBusinessNow } from "../../helpers/BusinessTime";
 import { getIO } from "../../libs/socket";
 import AgentMetricEvent from "../../models/AgentMetricEvent";
@@ -98,6 +100,8 @@ export interface Routed {
   priority?: string | null;
   // the conversation is on the official number and goes to a tutor: it continues on the tutor's own WhatsApp (moved after the notice is said)
   moveTo?: { whatsappId: number; whatsappName: string; tutorId: number; tutorName: string } | null;
+  // the student was called by the tutoring on the tutoring number (this conversation stays on the consultants' side and is closed after the notice)
+  teamHandoff?: { ticketId: number; connectionName: string; tutorName: string | null } | null;
 }
 
 // ---------------------------------------------------------------- polo
@@ -281,7 +285,19 @@ export const routeToCommercial = async (ticket: Ticket, opts: RouteOptions): Pro
     user = preferred || (keepOwner && ownerOfLead) || (users.length ? await pickUserForQueue(queue, true, false, official && team !== "tutoria") : null);
   }
   // a student of the official number sent to the tutoring: the tutor continues on their own WhatsApp
-  const move = official && team === "tutoria" && user ? await tutorMoveFor(ticket, user.id) : null;
+  // with a tutoring number, the student is called there by their tutor and this conversation never moves to the other side
+  const tutoringNumber = team === "tutoria" && sideOfSegment(ticket.segment) !== "tutoria" ? await connectionOfTeam("tutoria") : null;
+  let teamHandoff: Routed["teamHandoff"] = null;
+  if (tutoringNumber && tutoringNumber.id !== ticket.whatsappId) {
+    try {
+      const done = await handoffToTeam(ticket.id, "tutoria", null, `Encaminhado pelo agente de IA. Motivo: ${WHY_TEXT[opts.why]}.`);
+      const tutor = done.userId ? await User.findByPk(done.userId, { attributes: ["id", "name"] }) : null;
+      teamHandoff = { ticketId: done.ticketId, connectionName: done.connectionName, tutorName: tutor ? tutor.name : null };
+    } catch (err) {
+      logger.warn(`Tutoring call of ticket ${ticket.id} failed: ${err}`);
+    }
+  }
+  const move = official && team === "tutoria" && user && !teamHandoff ? await tutorMoveFor(ticket, user.id) : null;
   const moveTo = move && user ? { ...move, tutorId: user.id, tutorName: user.name } : null;
 
   const business = await getBusinessConfig();
@@ -291,7 +307,8 @@ export const routeToCommercial = async (ticket: Ticket, opts: RouteOptions): Pro
   let priority: string | null = null;
 
   try {
-    if (queue) {
+    // called on the tutoring number: the tutor is not put into this (consultants') conversation
+    if (queue && !teamHandoff) {
       await UpdateTicketService({ ticketData: { queueId: queue.id, ...(user ? { userId: user.id, status: "open" } : { status: "pending" }) }, ticketId: ticket.id });
     }
     await Ticket.update({ aiActive: false, chatbotNodeId: -1, handoffAt: new Date(), handoffReason: opts.why, handoffAlerts: 0, handoffAlertedAt: null as any }, { where: { id: ticket.id } });
@@ -367,7 +384,8 @@ export const routeToCommercial = async (ticket: Ticket, opts: RouteOptions): Pro
     whenText: when,
     semipresencial,
     priority,
-    moveTo
+    moveTo,
+    teamHandoff
   };
 };
 

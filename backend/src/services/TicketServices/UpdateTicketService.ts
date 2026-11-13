@@ -1,3 +1,4 @@
+import { SEGMENTS_OF, isManagerRole, roleOf } from "../../helpers/Roles";
 import Lead from "../../models/Lead";
 import LeadTask from "../../models/LeadTask";
 import { Op } from "sequelize";
@@ -24,6 +25,8 @@ interface TicketData {
   userId?: number | null;
   queueId?: number | null;
   whatsappId?: number;
+  // a manual transfer: false keeps the client with their consultant (only this attendance changes hands)
+  moveClient?: boolean;
 }
 
 interface Request {
@@ -80,6 +83,10 @@ const UpdateTicketService = async ({
     ? await User.findByPk(userId, { include: ["queues"] })
     : null;
   if (userId && !targetUser) throw new AppError("ERR_NO_USER_FOUND", 404);
+  // a conversation goes only to someone of its side (consultants: sales; tutors: tutoring); the management attends both
+  if (targetUser && !ticket.isGroup && !isManagerRole(roleOf(targetUser)) && !(SEGMENTS_OF[roleOf(targetUser)] || []).includes(ticket.segment || "sales")) {
+    throw new AppError("ERR_USER_WRONG_SIDE", 422);
+  }
 
   const queueChanged = queueId !== undefined && queueId !== previousQueueId;
   const userChanged = userId !== undefined && userId !== previousUserId;
@@ -130,7 +137,9 @@ const UpdateTicketService = async ({
 
   if (userId && userChanged && (ticket.segment || "sales") === "sales") {
     const lead = await Lead.findOne({ where: { contactId: ticket.contactId } });
-    if (lead && !lead.wonAt && !lead.lostAt && lead.ownerId !== userId && (manual || !lead.ownerId)) {
+    // a manual transfer also passes the client to the new consultant, unless the person said it is only this attendance (moveClient: false)
+    const passClient = manual ? ticketData.moveClient !== false : !lead?.ownerId;
+    if (lead && !lead.wonAt && !lead.lostAt && lead.ownerId !== userId && passClient) {
       await lead.update({ ownerId: userId });
       await LeadTask.update({ userId }, { where: { leadId: lead.id, doneAt: null as any, automationKey: { [Op.ne]: null } } });
     }

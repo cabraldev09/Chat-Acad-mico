@@ -75,6 +75,7 @@ export const health = async (req: Request, res: Response): Promise<Response> => 
         ownerId: w.ownerId,
         ownerName: owners.find(o => o.id === w.ownerId)?.name || null,
         aiFirst: !!w.aiFirst,
+        team: w.team || null,
         sentToday: t ? Number(t.sent) : 0,
         receivedToday: t ? Number(t.received) : 0,
         lastMessageAt: l ? l.last : null
@@ -143,6 +144,8 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
     outOfHoursMessage,
     ownerId
   });
+  // what a shared number is for (atendimento / tutoria): chosen by the administration
+  if (!ownerId && isAdminReq(req) && (req.body.team === "atendimento" || req.body.team === "tutoria")) await whatsapp.update({ team: req.body.team });
 
   // the person's own number becomes their sending number (unless they already use another number of theirs)
   if (ownerId) {

@@ -21,6 +21,7 @@ import toastError from "../../errors/toastError";
 import { i18n } from "../../translate/i18n";
 import { wa } from "../chat/chatTheme";
 import { AuthContext } from "../../context/Auth/AuthContext";
+import TeamBar from "../TeamBar";
 import Copilot from "../Copilot";
 import { setTyping, clearTyping, useTyping } from "../../utils/typingStore";
 
@@ -277,6 +278,7 @@ const Ticket = () => {
         <AiBanner ticket={ticket} />
         <Copilot ticket={ticket} />
         <WelcomeBanner ticket={ticket} />
+        <TeamBar ticket={ticket} />
         <ReplyMessageProvider>
           <MessagesList
             ticketId={ticketId}
@@ -290,7 +292,7 @@ const Ticket = () => {
           <MessageInput channel={ticket.whatsapp?.channel || "whatsapp"} ticketStatus={ticket.status} ticketUserId={ticket.userId || null} ticketUserName={ticket.user?.name || ""} aiActive={!!ticket.aiActive} historical={!!ticket.isHistorical} isGroup={!!ticket.isGroup || !!contact.isStaff} readOnly={!!contact.readOnly} contactName={contact.name} />
         </ReplyMessageProvider>
       </div>
-      <ContactDrawer open={drawerOpen} handleDrawerClose={() => setDrawerOpen(false)} contact={contact} loading={loading} />
+      <ContactDrawer open={drawerOpen} handleDrawerClose={() => setDrawerOpen(false)} contact={contact} loading={loading} attendantId={ticket?.userId || null} />
     </div>
   );
 };

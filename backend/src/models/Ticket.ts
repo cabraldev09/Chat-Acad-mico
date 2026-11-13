@@ -103,6 +103,10 @@ class Ticket extends Model<Ticket> {
   @Column
   outOfHoursSentAt: Date;
 
+  // who attended the conversation before it was closed: a client who comes back goes to them when the CRM names nobody (see ReturningClient)
+  @Column
+  lastUserId: number;
+
   // the handoff of the AI agent to the commercial team of the polo (see CommercialServices/Router)
   // which server is answering this conversation right now (see FlowServices/Claim)
   @Column

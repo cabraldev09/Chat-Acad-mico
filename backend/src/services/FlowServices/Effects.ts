@@ -202,7 +202,12 @@ export const ticketEffects = (ticket: Ticket, flowName: string, flowCtx: FlowCon
 
   // a person (or another automation) took the conversation, or it was closed, while the AI was thinking
   // the official number handed a student to a tutor: after the notice (said on the official number) the conversation moves to the tutor's WhatsApp
-  const moveIfTutor = async (routed: { moveTo?: { whatsappId: number; tutorId: number } | null; queueId?: number | null } | null): Promise<void> => {
+  const moveIfTutor = async (routed: { moveTo?: { whatsappId: number; tutorId: number } | null; teamHandoff?: { ticketId: number } | null; queueId?: number | null } | null): Promise<void> => {
+    // called on the tutoring number: this conversation (the consultants' side) ends here, after the notice
+    if (routed && routed.teamHandoff) {
+      await Ticket.update({ status: "closed", closedAt: new Date(), aiActive: false } as any, { where: { id: ticket.id, userId: null } as any }).catch(err => logger.warn(`Close of ticket ${ticket.id} after the tutoring call failed: ${err}`));
+      return;
+    }
     if (!routed || !routed.moveTo) return;
     try {
       await moveToTutorNumber(ticket.id, routed.moveTo.whatsappId, routed.moveTo.tutorId, null, routed.queueId || null);
