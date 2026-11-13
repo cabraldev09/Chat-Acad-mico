@@ -178,6 +178,7 @@ import {
   TextAlignLeft as PhTextAlignLeft,
   TextT as PhTextT,
   ThumbsDown as PhThumbsDown,
+  ThumbsUp as PhThumbsUp,
   Timer as PhTimer,
   Trash as PhTrash,
   Tray as PhTray,
@@ -394,6 +395,7 @@ export const Tags = make(PhTag, "Tags", "duotone");
 export const Target = make(PhTarget, "Target", "duotone");
 export const TextCursorInput = make(PhTextT, "TextCursorInput", "duotone");
 export const ThumbsDown = make(PhThumbsDown, "ThumbsDown", "duotone");
+export const ThumbsUp = make(PhThumbsUp, "ThumbsUp", "duotone");
 export const Timer = make(PhTimer, "Timer", "duotone");
 export const Trash2 = make(PhTrash, "Trash2", "duotone");
 export const TrendingUp = make(PhTrendUp, "TrendingUp", "duotone");
