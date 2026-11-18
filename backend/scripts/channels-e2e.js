@@ -5207,7 +5207,7 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.put(`/ai-agents/${aiId}`, { reviewNumber: "(11) 99999-0000", reviewWhatsappId: cid, learnFromTeam: true, dailyTokenCap: 0 }, auth())).status === 200, "agent update");
       assert((await http.put(`/ai-agents/${aiId}`, { reviewNumber: "123" }, auth())).status === 400, "short review number accepted");
       await inboundCloud("5511999990000", "wamid.reviewer.optin", "Quero receber avisos da equipe");
-      const reviewerTicket = ticketOf("5511999990000");
+      const reviewerTicket = await waitFor(() => ticketOf("5511999990000"), 8000, "reviewer ticket");
       sql(`UPDATE Tickets SET aiActive=false, userId=1, status='open' WHERE id=${reviewerTicket}`);
       let before = graph.sent.length;
       await inboundCloud("5511910000009", "wamid.learn-1", "Vocês têm bolsa para atletas?");
