@@ -10,6 +10,10 @@ set -euo pipefail
 
 REPO="${REPO:-https://github.com/cabraldev09/Chat-Acad-mico.git}"
 GH_TOKEN="${GH_TOKEN:-}"
+# Sem perguntas (GitHub Actions): NONINTERACTIVE=1 com API_DOMAIN, FRONT, ADM_EMAIL, ADM_PASS[, ADM_NAME] e DB_URL ou LOCAL_DB=1
+# (LOCAL_DB=1: o banco Postgres roda no próprio servidor, em docker-compose.localdb.yml)
+NONINTERACTIVE="${NONINTERACTIVE:-}"
+LOCAL_DB="${LOCAL_DB:-}"
 DEPLOY_PUBKEY="${DEPLOY_PUBKEY:-}"
 DIR=/opt/chat-academico
 say() { printf '\n\033[1;34m== %s\033[0m\n' "$*"; }
@@ -67,16 +71,33 @@ else
   # se o registro DNS "api" já aponta para este servidor, usa o endereço definitivo
   PREFERRED="${PREFERRED_DOMAIN:-}"
   if [ -n "$PREFERRED" ] && [ -n "$IP" ] && [ "$(getent ahostsv4 "$PREFERRED" 2>/dev/null | awk 'NR==1{print $1}')" = "$IP" ]; then DEFAULT_DOMAIN="$PREFERRED"; fi
-  echo "Responda as perguntas. Enter aceita o valor entre colchetes."
-  read -r -p "Endereço da API [$DEFAULT_DOMAIN]: " API_DOMAIN; API_DOMAIN=${API_DOMAIN:-$DEFAULT_DOMAIN}
-  read -r -p "Endereço do site [https://www.cruzeirodosulvirtual.app.br]: " FRONT; FRONT=${FRONT:-https://www.cruzeirodosulvirtual.app.br}
-  echo "Cole a conexão do banco (Supabase → Connect → Session pooler). Não aparece na tela enquanto você cola."
-  read -r -s -p "DATABASE_URL: " DB_URL; echo
-  [ -n "$DB_URL" ] || { echo "A DATABASE_URL é obrigatória."; exit 1; }
-  read -r -p "E-mail do administrador: " ADM_EMAIL
-  read -r -s -p "Senha do administrador (mínimo 8 caracteres): " ADM_PASS; echo
+  if [ -n "$NONINTERACTIVE" ]; then
+    API_DOMAIN=${API_DOMAIN:-$DEFAULT_DOMAIN}
+    FRONT=${FRONT:-https://www.cruzeirodosulvirtual.app.br}
+    DB_URL=${DB_URL:-}
+    ADM_NAME=${ADM_NAME:-Administrador}
+  else
+    echo "Responda as perguntas. Enter aceita o valor entre colchetes."
+    read -r -p "Endereço da API [$DEFAULT_DOMAIN]: " API_DOMAIN; API_DOMAIN=${API_DOMAIN:-$DEFAULT_DOMAIN}
+    read -r -p "Endereço do site [https://www.cruzeirodosulvirtual.app.br]: " FRONT; FRONT=${FRONT:-https://www.cruzeirodosulvirtual.app.br}
+    if [ -z "$LOCAL_DB" ]; then
+      echo "Cole a conexão do banco (Supabase → Connect → Session pooler). Vazio = banco no próprio servidor. Não aparece na tela."
+      read -r -s -p "DATABASE_URL: " DB_URL; echo
+    fi
+    read -r -p "E-mail do administrador: " ADM_EMAIL
+    read -r -s -p "Senha do administrador (mínimo 8 caracteres): " ADM_PASS; echo
+    read -r -p "Nome do administrador [Administrador]: " ADM_NAME; ADM_NAME=${ADM_NAME:-Administrador}
+  fi
+  [ -n "${ADM_EMAIL:-}" ] || { echo "O e-mail do administrador é obrigatório."; exit 1; }
   [ "${#ADM_PASS}" -ge 8 ] || { echo "Use uma senha com pelo menos 8 caracteres."; exit 1; }
-  read -r -p "Nome do administrador [Administrador]: " ADM_NAME; ADM_NAME=${ADM_NAME:-Administrador}
+  # sem banco externo: Postgres no próprio servidor
+  DB_EXTRA=""
+  if [ -z "${DB_URL:-}" ]; then
+    LOCAL_PASS=$(openssl rand -hex 24)
+    DB_URL="postgres://chat:${LOCAL_PASS}@db:5432/chat"
+    DB_EXTRA="COMPOSE_FILE=docker-compose.yml:docker-compose.localdb.yml
+LOCAL_DB_PASSWORD=$LOCAL_PASS"
+  fi
   JWT1=$(openssl rand -hex 32); JWT2=$(openssl rand -hex 32)
   umask 077
   cat > .env <<ENV
@@ -86,7 +107,7 @@ PUBLIC_URL=https://$API_DOMAIN
 FRONTEND_URL=$FRONT
 DB_DIALECT=postgres
 DATABASE_URL=$DB_URL
-DB_SSL=true
+DB_SSL=$([ -n "$DB_EXTRA" ] && echo false || echo true)
 JWT_SECRET=$JWT1
 JWT_REFRESH_SECRET=$JWT2
 TRUST_PROXY=1
@@ -99,6 +120,7 @@ UPLOAD_DIR=/data/public
 WWEBJS_AUTH_PATH=/data/wwebjs
 ZAPO_AUTH_PATH=/data/zapo/state.sqlite
 WHATSAPP_MAX_QR=10
+$DB_EXTRA
 ENV
   chmod 600 .env
 fi
