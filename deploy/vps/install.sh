@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
-# Instala o Chat Acadêmico (API) em um VPS Ubuntu 22/24 novo. Rode como root:
-#   bash <(curl -fsSL https://raw.githubusercontent.com/cabraldev09/Chat-Acad-mico/main/deploy/vps/install.sh)
+# Instala o Chat Acadêmico (API) em um VPS Ubuntu 22/24 novo (Hostinger, Contabo, Hetzner...). Rode como root.
+# O repositório é privado: passe um token do GitHub só de leitura (usado no primeiro clone e apagado em seguida) e a chave
+# pública de deploy (a que corresponde ao segredo VPS_SSH_KEY do GitHub Actions), para as atualizações automáticas entrarem:
+#   GH_TOKEN=github_pat_... DEPLOY_PUBKEY="ssh-ed25519 AAAA... deploy" bash install.sh
 # Pode rodar de novo sem medo: não apaga o .env nem os dados.
 set -euo pipefail
 
 [ "$(id -u)" = "0" ] || { echo "Rode como root (ssh root@IP-DO-SERVIDOR)."; exit 1; }
 
 REPO="${REPO:-https://github.com/cabraldev09/Chat-Acad-mico.git}"
+GH_TOKEN="${GH_TOKEN:-}"
+DEPLOY_PUBKEY="${DEPLOY_PUBKEY:-}"
 DIR=/opt/chat-academico
 say() { printf '\n\033[1;34m== %s\033[0m\n' "$*"; }
 
@@ -20,6 +24,13 @@ if ! command -v docker >/dev/null 2>&1; then
   curl -fsSL https://get.docker.com | sh
 fi
 systemctl enable --now docker
+
+# a chave de deploy do GitHub Actions entra no root (só ela, além das que já existem)
+if [ -n "$DEPLOY_PUBKEY" ]; then
+  install -m 700 -d /root/.ssh
+  touch /root/.ssh/authorized_keys && chmod 600 /root/.ssh/authorized_keys
+  grep -qxF "$DEPLOY_PUBKEY" /root/.ssh/authorized_keys || echo "$DEPLOY_PUBKEY" >> /root/.ssh/authorized_keys
+fi
 
 say "3/7 Memória extra (swap de 4 GB) e firewall"
 if ! swapon --show | grep -q .; then
@@ -36,7 +47,13 @@ say "4/7 Código"
 if [ -d "$DIR/.git" ]; then
   git -C "$DIR" fetch -q origin main && git -C "$DIR" reset -q --hard origin/main
 else
-  git clone -q "$REPO" "$DIR"
+  if [ -n "$GH_TOKEN" ]; then
+    git clone -q "https://x-access-token:${GH_TOKEN}@${REPO#https://}" "$DIR"
+    # o token não fica guardado no servidor: as atualizações usam o token temporário do GitHub Actions
+    git -C "$DIR" remote set-url origin "$REPO"
+  else
+    git clone -q "$REPO" "$DIR"
+  fi
 fi
 cd "$DIR/deploy/vps"
 chmod +x update.sh backup.sh offsite.sh verify-backup.sh
@@ -106,6 +123,9 @@ for i in $(seq 1 36); do
     echo; printf '\033[1;32mPRONTO: https://%s/health respondeu.\033[0m\n' "$DOMAIN"
     curl -fsS "https://$DOMAIN/health"; echo
     echo "Agora coloque https://$DOMAIN/ em VITE_BACKEND_URL na Vercel e faça Redeploy."
+    IP=$(curl -4 -fsS https://ifconfig.me || true)
+    echo; echo "Linha para deploy/vps/known_hosts (envie para quem cuida do GitHub):"
+    printf '%s %s\n' "$IP" "$(awk '{print $1" "$2}' /etc/ssh/ssh_host_ed25519_key.pub)"
     exit 0
   fi
   sleep 5

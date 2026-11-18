@@ -9,13 +9,15 @@ jobs:
   ler:
     runs-on: ubuntu-latest
     env:
-      VPS_HOST: 209.145.48.49
+      # the server's address is the first column of deploy/vps/known_hosts (changing server = changing that one line)
+      VPS_KNOWN_HOSTS: deploy/vps/known_hosts
     steps:
       - uses: actions/checkout@v4
       - name: Prepara o SSH e confere a identidade do servidor
         env:
           KEY: ${{ secrets.VPS_SSH_KEY }}
         run: |
+          VPS_HOST=$(grep -v '^#' "$VPS_KNOWN_HOSTS" | awk 'NF{print $1; exit}'); echo "VPS_HOST=$VPS_HOST" >> "$GITHUB_ENV"
           install -m 700 -d ~/.ssh
           body=$(printf '%s' "$KEY" | grep -v '^-----' | tr -d ' \r\n\t')
           { echo "-----BEGIN OPENSSH PRIVATE KEY-----"; printf '%s' "$body" | fold -w 70; echo; echo "-----END OPENSSH PRIVATE KEY-----"; } > ~/.ssh/deploy_key
