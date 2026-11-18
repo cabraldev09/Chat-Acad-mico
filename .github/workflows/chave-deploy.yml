@@ -1,0 +1,25 @@
+name: Mostrar a chave pública de deploy
+
+# Mostra a parte PÚBLICA da chave de deploy (segredo VPS_SSH_KEY), para colocar num servidor novo
+# (install.sh: DEPLOY_PUBKEY="..."). A chave privada nunca aparece. Roda só quando alguém clica em "Run workflow".
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mostrar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Chave pública
+        env:
+          KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          [ -n "$KEY" ] || { echo "::error::Falta o segredo VPS_SSH_KEY"; exit 1; }
+          umask 077
+          body=$(printf '%s' "$KEY" | grep -v '^-----' | tr -d ' \r\n\t')
+          { echo "-----BEGIN OPENSSH PRIVATE KEY-----"; printf '%s' "$body" | fold -w 70; echo; echo "-----END OPENSSH PRIVATE KEY-----"; } > key
+          echo "DEPLOY_PUBKEY:"
+          ssh-keygen -y -f key | awk '{print $1" "$2" deploy-chat-academico"}'
+          rm -f key
