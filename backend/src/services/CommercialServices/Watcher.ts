@@ -20,7 +20,9 @@ import { hydrate, loadState, saveState } from "./Slots";
 
 export interface WatchConfig { enabled: boolean; useAi: boolean; dailyLimit: number; everyMessages: number }
 const DEFAULTS: WatchConfig = { enabled: true, useAi: true, dailyLimit: 300, everyMessages: 8 };
-const QUIET_MS = 90 * 1000;
+// how long the conversation must stay quiet before a look (CRM_WATCH=off turns the automatic look off, as the end-to-end suite does:
+// it counts every call to the AI, and the look would add calls of its own at random moments)
+const QUIET_MS = Number(process.env.CRM_WATCH_QUIET_MS || 90 * 1000);
 
 export const watchConfigOf = async (): Promise<WatchConfig> => {
   try { return { ...DEFAULTS, ...JSON.parse(await getSetting("crm_watch", "{}")) }; } catch (e) { return { ...DEFAULTS }; }
@@ -151,6 +153,7 @@ export const watchTicket = async (ticketId: number, opts: { forceAi?: boolean } 
 
 // called for every message of a conversation: one look a moment after it goes quiet
 export const noteConversationMessage = (ticketId: number): void => {
+  if (process.env.CRM_WATCH === "off") return;
   sinceAi.set(ticketId, (sinceAi.get(ticketId) || 0) + 1);
   const previous = timers.get(ticketId);
   if (previous) clearTimeout(previous);
