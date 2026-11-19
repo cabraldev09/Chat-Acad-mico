@@ -1,0 +1,116 @@
+name: Configurar o Chat no servidor
+
+# Ajustes no servidor sem abrir o terminal:
+#  - redefine a senha do administrador (o caminho ADMIN_RESET do bootstrap-production.js);
+#  - deixa o site entrar com e sem "www" (FRONTEND_URL);
+#  - grava as configurações de e-mail do Resend (chave e segredo do webhook ficam cifrados no Chat) e manda um e-mail de teste.
+# Os valores sensíveis são escondidos do log.
+on:
+  workflow_dispatch:
+    inputs:
+      admin_email:
+        description: "E-mail do administrador"
+        required: true
+        default: "cabraldev4@gmail.com"
+      admin_password:
+        description: "Senha nova do administrador (mínimo 8 caracteres)"
+        required: true
+      resend_key:
+        description: "Chave do Resend (re_...) — vazio = não mexe no e-mail"
+        required: false
+        default: ""
+      resend_webhook_secret:
+        description: "Segredo do webhook do Resend (whsec_...)"
+        required: false
+        default: ""
+      mail_forward_to:
+        description: "Para onde vão os e-mails de endereços sem dono"
+        required: false
+        default: "cabraldev4@gmail.com"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-vps
+  cancel-in-progress: false
+
+jobs:
+  configurar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      VPS_KNOWN_HOSTS: deploy/vps/known_hosts
+      FRONTS: "https://www.cruzeirodosulvirtual.app.br,https://cruzeirodosulvirtual.app.br"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Esconde os valores sensíveis do log
+        env:
+          PASS: ${{ inputs.admin_password }}
+          KEY: ${{ inputs.resend_key }}
+          WHSEC: ${{ inputs.resend_webhook_secret }}
+        run: |
+          echo "::add-mask::$PASS"
+          [ -z "$KEY" ] || echo "::add-mask::$KEY"
+          [ -z "$WHSEC" ] || echo "::add-mask::$WHSEC"
+          [ "${#PASS}" -ge 8 ] || { echo "::error::A senha precisa de pelo menos 8 caracteres"; exit 1; }
+      - name: Prepara o SSH
+        env:
+          KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          VPS_HOST=$(grep -v '^#' "$VPS_KNOWN_HOSTS" | awk 'NF{print $1; exit}'); echo "VPS_HOST=$VPS_HOST" >> "$GITHUB_ENV"
+          install -m 700 -d ~/.ssh
+          body=$(printf '%s' "$KEY" | grep -v '^-----' | tr -d ' \r\n\t')
+          { echo "-----BEGIN OPENSSH PRIVATE KEY-----"; printf '%s' "$body" | fold -w 70; echo; echo "-----END OPENSSH PRIVATE KEY-----"; } > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          grep -v '^#' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+      - name: Endereços do site e senha do administrador
+        env:
+          ADM_EMAIL: ${{ inputs.admin_email }}
+          ADM_PASS: ${{ inputs.admin_password }}
+        run: |
+          q() { printf '%q' "$1"; }
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes -o ConnectTimeout=20 root@"$VPS_HOST" \
+            "FRONTS=$(q "$FRONTS") ADM_EMAIL=$(q "$ADM_EMAIL") ADM_PASS=$(q "$ADM_PASS") bash -s" <<'REMOTE'
+          set -euo pipefail
+          cd /opt/chat-academico/deploy/vps
+          if [ "$(grep '^FRONTEND_URL=' .env | cut -d= -f2-)" != "$FRONTS" ]; then
+            sed -i "s#^FRONTEND_URL=.*#FRONTEND_URL=$FRONTS#" .env
+            echo "FRONTEND_URL atualizado; reiniciando a API"
+            docker compose up -d api
+          fi
+          for i in $(seq 1 60); do
+            [ "$(docker inspect -f '{{.State.Health.Status}}' chat-academico-api-1)" = healthy ] && break
+            sleep 5
+          done
+          docker compose exec -T -e ADMIN_RESET=true -e ADMIN_EMAIL="$ADM_EMAIL" -e ADMIN_PASSWORD="$ADM_PASS" api node scripts/bootstrap-production.js
+          REMOTE
+      - name: Confere o login
+        env:
+          ADM_EMAIL: ${{ inputs.admin_email }}
+          ADM_PASS: ${{ inputs.admin_password }}
+        run: |
+          API="https://$(echo "$VPS_HOST" | tr . -).sslip.io"
+          echo "API=$API" >> "$GITHUB_ENV"
+          body=$(jq -n --arg e "$ADM_EMAIL" --arg p "$ADM_PASS" '{email:$e,password:$p}')
+          code=$(curl -sS -o /tmp/login.json -w '%{http_code}' -X POST "$API/auth/login" -H 'Content-Type: application/json' -H 'Origin: https://www.cruzeirodosulvirtual.app.br' -d "$body")
+          echo "login: HTTP $code"
+          [ "$code" = 200 ] || { jq -c '{error, message}' /tmp/login.json || true; exit 1; }
+          TOKEN=$(jq -r .token /tmp/login.json); echo "::add-mask::$TOKEN"; echo "TOKEN=$TOKEN" >> "$GITHUB_ENV"
+          for o in https://www.cruzeirodosulvirtual.app.br https://cruzeirodosulvirtual.app.br; do
+            echo "CORS $o -> $(curl -sS -o /dev/null -D - -X OPTIONS "$API/auth/login" -H "Origin: $o" -H 'Access-Control-Request-Method: POST' | grep -i '^access-control-allow-origin' | tr -d '\r')"
+          done
+      - name: E-mail pelo Resend
+        if: ${{ inputs.resend_key != '' }}
+        env:
+          KEY: ${{ inputs.resend_key }}
+          WHSEC: ${{ inputs.resend_webhook_secret }}
+          FWD: ${{ inputs.mail_forward_to }}
+        run: |
+          body=$(jq -n --arg k "$KEY" --arg w "$WHSEC" --arg f "$FWD" '{provider:"resend", fromName:"Cruzeiro do Sul Virtual", fromEmail:"nao-responda@mail.cruzeirodosulvirtual.app.br", replyTo:"atendimento@mail.cruzeirodosulvirtual.app.br", forwardTo:$f, resendKey:$k} + (if $w == "" then {} else {inboundSecret:$w} end)')
+          code=$(curl -sS -o /tmp/mail.json -w '%{http_code}' -X PUT "$API/mail/settings" -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d "$body")
+          echo "configurações de e-mail: HTTP $code"; jq -c 'del(.resendKey, .pass, .inboundSecret)' /tmp/mail.json || true
+          [ "$code" = 200 ] || exit 1
+          code=$(curl -sS -o /tmp/test.json -w '%{http_code}' -X POST "$API/mail/test" -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{}')
+          echo "e-mail de teste: HTTP $code"; jq -c . /tmp/test.json || true
+          [ "$code" = 200 ]

@@ -73,13 +73,13 @@ else
   if [ -n "$PREFERRED" ] && [ -n "$IP" ] && [ "$(getent ahostsv4 "$PREFERRED" 2>/dev/null | awk 'NR==1{print $1}')" = "$IP" ]; then DEFAULT_DOMAIN="$PREFERRED"; fi
   if [ -n "$NONINTERACTIVE" ]; then
     API_DOMAIN=${API_DOMAIN:-$DEFAULT_DOMAIN}
-    FRONT=${FRONT:-https://www.cruzeirodosulvirtual.app.br}
+    FRONT=${FRONT:-https://www.cruzeirodosulvirtual.app.br,https://cruzeirodosulvirtual.app.br}
     DB_URL=${DB_URL:-}
     ADM_NAME=${ADM_NAME:-Administrador}
   else
     echo "Responda as perguntas. Enter aceita o valor entre colchetes."
     read -r -p "Endereço da API [$DEFAULT_DOMAIN]: " API_DOMAIN; API_DOMAIN=${API_DOMAIN:-$DEFAULT_DOMAIN}
-    read -r -p "Endereço do site [https://www.cruzeirodosulvirtual.app.br]: " FRONT; FRONT=${FRONT:-https://www.cruzeirodosulvirtual.app.br}
+    read -r -p "Endereço do site [https://www.cruzeirodosulvirtual.app.br]: " FRONT; FRONT=${FRONT:-https://www.cruzeirodosulvirtual.app.br,https://cruzeirodosulvirtual.app.br}
     if [ -z "$LOCAL_DB" ]; then
       echo "Cole a conexão do banco (Supabase → Connect → Session pooler). Vazio = banco no próprio servidor. Não aparece na tela."
       read -r -s -p "DATABASE_URL: " DB_URL; echo
