@@ -1,11 +1,13 @@
 import AppError from "../../errors/AppError";
 
 export const CONFIG_KEY = "consultant_copilot";
+// The order of a real attendance: right after introducing themselves, the consultant finds out what the person is looking for (the course);
+// then whether they already have a degree (it decides the way in: first degree, second degree or transfer); then where they live.
 export const DEFAULT_STEPS = [
-  ["entry", "Forma de ingresso", "Identifique se é primeira graduação, transferência ou segunda graduação."],
-  ["objective", "Objetivo com a graduação", "Pergunte o objetivo (concurso, carreira, formação superior) para orientar sem indicar fora dele."],
-  ["course", "Curso de interesse", "Confirme o curso que a pessoa deseja estudar."],
+  ["course", "O que procura (curso)", "Logo depois de se apresentar, descubra o que a pessoa procura e qual curso quer fazer."],
+  ["entry", "Já tem graduação? (forma de ingresso)", "Pergunte se já tem uma faculdade concluída ou começada: define primeira graduação, segunda graduação ou transferência."],
   ["city", "Cidade e polo", "Confirme a cidade e o polo de atendimento."],
+  ["objective", "Objetivo com a graduação", "Pergunte o objetivo (concurso, carreira, formação superior) para orientar sem indicar fora dele."],
   ["format", "Formato e regras do MEC", "Explique o formato real do curso e confirme que a pessoa compreendeu."],
   ["grade", "Grade, tutoria e estágio", "Apresente a grade do curso, a tutoria e as informações de estágio."],
   ["doubts", "Dúvidas e objeções", "Responda às dúvidas antes de apresentar a proposta."],
@@ -18,6 +20,17 @@ export const DEFAULT_STEPS = [
   ["comunidade", "Tutoria e Comunidade dos Alunos", "Avise que a tutoria entra em contato e convide para a Comunidade dos Alunos."],
   ["afiliado", "Programa de afiliados", "Explique o programa de indicação, sem prometer valores."]
 ].map(([key, label, instruction]) => ({ key, label, instruction, message: "", optional: key === "objective" || key === "afiliado" }));
+// the order shipped before: a process still saved exactly like it moves to the new order (a process the manager changed is kept as it is)
+export const OLD_DEFAULT_ORDER = ["entry", "objective", "course", "city", "format", "grade", "doubts", "bolsa", "proposal", "ficha", "taxa", "comprovante", "enroll", "comunidade", "afiliado"];
+export const upgradeSteps = (steps: ProcessStep[]): ProcessStep[] => {
+  if (steps.map(s => s.key).join(",") !== OLD_DEFAULT_ORDER.join(",")) return steps;
+  const byKey = new Map(steps.map(s => [s.key, s]));
+  return DEFAULT_STEPS.map(d => {
+    const saved = byKey.get(d.key)!;
+    const untouched = ["entry", "course"].includes(d.key) && !saved.message;
+    return untouched ? { ...d } : saved;
+  });
+};
 export interface ProcessStep { key: string; label: string; instruction: string; message: string; optional?: boolean }
 export interface ConnectionPolicy { enabled: boolean; dailyLimit: number }
 export interface CopilotConfig {

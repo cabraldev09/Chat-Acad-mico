@@ -174,9 +174,9 @@ function Panel({ ticket }) {
     {open && <div className={c.content}>
       <div className={c.foot} style={{ paddingBottom: 8 }}>
         <Button size="small" className={c.button} startIcon={<ListChecks size={14} />} onClick={() => setAllSteps(v => !v)}>{allSteps ? "Ocultar etapas" : "Ver todas as etapas"}</Button>
-        <span className={c.muted} style={{ flex: 1 }}>{data.aiNote || (quota ? `Suas sugestões hoje: ${quota.used}${quota.limit ? ` de ${quota.limit}` : " (sem limite)"}` : "")}</span>
-        {!data.aiAvailable && data.canManage && <Button size="small" className={c.button} href="/configuracoes?secao=copiloto">Ligar sugestões de IA</Button>}
-        <span className={c.badge}>Roteiro sem uso de IA</span>
+        <span style={{ flex: 1 }} />
+        {quota && data.aiAvailable && <span className={c.muted}>{`Sugestões hoje: ${quota.used}${quota.limit ? `/${quota.limit}` : ""}`}</span>}
+        {!data.aiAvailable && data.canManage && <Button size="small" className={c.button} title={data.aiNote || ""} href="/configuracoes?secao=copiloto">Ligar sugestões de IA</Button>}
       </div>
       {data.situation && (data.situation.stage || data.situation.summary) && <div className={c.brief} aria-label="Situação do lead no CRM">
         <div className={c.actions}>

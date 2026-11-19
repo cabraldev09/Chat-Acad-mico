@@ -7,11 +7,13 @@ import Ticket from "../../models/Ticket";
 import CopilotRequest from "../../models/CopilotRequest";
 import AppError from "../../errors/AppError";
 import { dayBounds, getAppTz } from "../../helpers/AppTime";
-import { CONFIG_KEY, CopilotConfig, defaultConfig, policyFor, validateConfig } from "./Policy";
+import { CONFIG_KEY, CopilotConfig, defaultConfig, policyFor, upgradeSteps, validateConfig } from "./Policy";
 
 export const configOf = async (): Promise<CopilotConfig> => {
   const setting = await Setting.findByPk(CONFIG_KEY);
-  return setting ? validateConfig(JSON.parse(setting.value)) : defaultConfig();
+  if (!setting) return defaultConfig();
+  const config = validateConfig(JSON.parse(setting.value));
+  return { ...config, steps: upgradeSteps(config.steps) };
 };
 export const saveConfig = async (input: any): Promise<CopilotConfig> => {
   const config = validateConfig(input);
