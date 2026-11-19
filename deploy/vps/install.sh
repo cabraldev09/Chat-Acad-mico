@@ -125,8 +125,18 @@ ENV
   chmod 600 .env
 fi
 
-say "6/7 Subindo o sistema (o primeiro build leva uns 5 minutos)"
-docker compose up -d --build
+if [ -n "${IMAGE:-}" ]; then
+  # imagem já montada pelo GitHub Actions: o servidor só baixa (poucos minutos em vez de montar tudo aqui)
+  say "6/7 Baixando o sistema pronto e subindo"
+  if [ -n "$GH_TOKEN" ]; then printf '%s' "$GH_TOKEN" | docker login ghcr.io -u x-access-token --password-stdin >/dev/null; fi
+  docker pull -q "$IMAGE"
+  docker logout ghcr.io >/dev/null 2>&1 || true
+  docker tag "$IMAGE" chat-academico-api:vps
+  docker compose up -d --no-build
+else
+  say "6/7 Subindo o sistema (sem imagem pronta: o primeiro build leva de 10 a 25 minutos)"
+  docker compose up -d --build
+fi
 
 say "7/7 Atualização automática e backup"
 cat > /etc/cron.d/chat-academico <<CRON
