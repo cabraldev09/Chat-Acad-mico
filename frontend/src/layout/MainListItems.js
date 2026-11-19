@@ -49,35 +49,29 @@ const useStyles = makeStyles((theme) => ({
     margin: theme.spacing(0.125, 0),
     padding: theme.spacing(0.875, 1.25),
     borderRadius: theme.borderRadius.small,
-    color: theme.palette.text.secondary,
-    transition: "background-color .18s ease, color .18s ease, transform .18s ease, box-shadow .18s ease",
+    // on the navy side menu (layout/index.js): light text, the hover and the current page as before, in white tones
+    color: "rgba(255,255,255,.78)",
+    transition: "background-color .15s, color .15s",
     "&:hover": {
-      backgroundColor: "var(--accent-soft)",
-      color: "var(--accent-strong)",
-      transform: "translateX(2px)",
+      backgroundColor: "rgba(255,255,255,.08)",
+      color: "#fff",
     },
-    "&:hover $navIcon": { color: "var(--accent)" },
-    "@media (prefers-reduced-motion: reduce)": { transition: "none", "&:hover": { transform: "none" } },
   },
   navItemCollapsed: {
     position: "relative",
     justifyContent: "center",
     padding: theme.spacing(1, 1),
   },
-  // the current page: the light blue of the logo (#4595D8), a bar on the left and a soft glow
+  // the current page: a lighter band and the light blue of the logo (#4595D8) on the icon
   navItemActive: {
-    color: "var(--accent-strong)",
-    background: "linear-gradient(90deg, var(--accent-softer), var(--accent-soft))",
-    boxShadow: "inset 0 0 0 1px var(--accent-line), 0 4px 12px -6px var(--accent-glow)",
-    "&:hover": { background: "linear-gradient(90deg, var(--accent-softer), var(--accent-soft))", transform: "none" },
-    "&::before": {
-      content: '""', position: "absolute", left: 0, top: 7, bottom: 7, width: 3, borderRadius: 3, background: "var(--accent)",
-    },
+    color: "#fff",
+    backgroundColor: "rgba(255,255,255,.14)",
+    "&:hover": { backgroundColor: "rgba(255,255,255,.14)" },
     "& $navIcon": {
-      color: "var(--accent)",
+      color: "#4595D8",
     },
     "& $navText": {
-      fontWeight: 600,
+      fontWeight: 500,
     },
   },
   navIcon: {
@@ -126,11 +120,9 @@ const useStyles = makeStyles((theme) => ({
   },
   sectionLabel: {
     ...theme.typography.sectionLabel,
-    padding: theme.spacing(1, 1.25, 0.75),
+    padding: theme.spacing(0.5, 1.25, 0.75),
     lineHeight: 1.4,
-    color: "var(--accent)",
-    fontWeight: 700,
-    letterSpacing: ".04em",
+    color: "rgba(255,255,255,.55)",
   },
 }));
 

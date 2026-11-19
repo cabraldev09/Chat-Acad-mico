@@ -103,11 +103,12 @@ const SendDialog = ({ grade, onClose }) => {
 
 const GradeCard = ({ g, manager, onSend, onDelete }) => {
   const [busy, setBusy] = useState(false);
+  const [open, setOpen] = useState(false);
   const copy = async () => {
     setBusy(true);
     try {
-      const { data } = await api.get(`/grades/${g.id}`);
-      await copyText(data.whatsappSummary, "Resumo copiado. É só colar na conversa.");
+      const text = g.whatsappSummary || (await api.get(`/grades/${g.id}`)).data.whatsappSummary;
+      await copyText(text, "Resumo copiado. É só colar na conversa.");
     } catch (e) { toastError(e); }
     setBusy(false);
   };
@@ -153,6 +154,15 @@ const GradeCard = ({ g, manager, onSend, onDelete }) => {
           </div>
         )}
         <div className="line-clamp-3 min-h-[4.5rem] whitespace-pre-line text-sm leading-6 text-muted-foreground">{g.internshipInfo || "Esta matriz não prevê estágio obrigatório."}</div>
+        {g.whatsappSummary && (
+          <div className="rounded-lg border bg-muted/40 p-3">
+            <div className="mb-1 flex items-center justify-between gap-2 text-xs font-semibold text-brand-navy">
+              <span>Mensagem pronta para o WhatsApp</span>
+              <button type="button" onClick={() => setOpen(!open)} className="font-medium text-brand-cyan-700 hover:underline">{open ? "Ver menos" : "Ver tudo"}</button>
+            </div>
+            <div className={cn("whitespace-pre-line break-words text-xs leading-5 text-foreground", !open && "line-clamp-4")}>{g.whatsappSummary}</div>
+          </div>
+        )}
         {g.totalCourseHours ? <p className="text-xs text-muted-foreground">Carga horária total: {g.totalCourseHours.toLocaleString("pt-BR")}h.</p> : null}
         <div className="mt-auto space-y-3 pt-2">
           <div className="flex flex-wrap gap-2">
@@ -211,6 +221,15 @@ const Grades = () => {
     setBusy(false);
     if (fileInput.current) fileInput.current.value = "";
   };
+  const importDefaults = async () => {
+    setBusy(true);
+    try {
+      const { data: r } = await api.post("/grades/import-defaults");
+      toast.success(`Grades padrão: ${r.created} nova(s), ${r.updated} atualizada(s), ${r.unchanged} já estavam iguais${r.failed && r.failed.length ? `, ${r.failed.length} com problema` : ""}.`);
+      load();
+    } catch (e) { toastError(e); }
+    setBusy(false);
+  };
   const remove = async () => {
     try { await api.delete(`/grades/${delFor.id}`); toast.success("Grade excluída."); setDelFor(null); load(); } catch (e) { toastError(e); }
   };
@@ -227,6 +246,11 @@ const Grades = () => {
           <h1 className="break-words bg-gradient-to-r from-[#003B71] via-[#0a5a9a] to-[#0693e3] bg-clip-text text-2xl font-semibold tracking-tight text-transparent sm:text-3xl">Grades curriculares</h1>
           <p className="max-w-2xl text-sm text-muted-foreground">Biblioteca de PDFs com informações objetivas para orientar a conversa e o envio ao candidato.</p>
         </div>
+        {manager && (
+          <Button variant="outline" onClick={importDefaults} disabled={busy} className="h-10 shrink-0 gap-2 px-4" title="Publica todas as grades que vêm com o sistema (as que já existem são atualizadas)">
+            <UploadCloud className="size-4" /> {busy ? "Importando…" : "Importar grades padrão"}
+          </Button>
+        )}
       </div>
 
       {manager && (
