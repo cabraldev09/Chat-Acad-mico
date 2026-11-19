@@ -20,6 +20,7 @@ import { isManager } from "../../utils/access";
 import { fillDays } from "../../utils/chartDays";
 import toastError from "../../errors/toastError";
 import { fetchAllUsersPage } from "../../utils/fetchAllUsers";
+import StatsHubBar from "../../components/StatsHub";
 
 // Estatísticas: the one place for the numbers. Every figure appears once.
 // Administration and coordination open on the "Visão do gestor" (what needs attention + progress of the polos);
@@ -273,9 +274,10 @@ const ReportsClassic = () => {
 
   return (
     <div className={classes.page}>
+      <StatsHubBar />
       <div className={classes.top}>
         <div>
-          <h1 className={classes.hello}>Estatísticas</h1>
+          <h1 className={classes.hello}>Atendimento e canais</h1>
           <div className={classes.sub}>{data && data.scope === "all" ? "Toda a equipe" : "Seus atendimentos"} · {periodName}</div>
         </div>
         <div className={classes.controls}>

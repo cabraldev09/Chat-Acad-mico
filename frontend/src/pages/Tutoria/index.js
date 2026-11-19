@@ -1,6 +1,5 @@
 import React, { useCallback, useContext, useEffect, useState } from "react";
-import TutorPanel from "./TutorPanel";
-import { useHistory } from "react-router-dom";
+import { useHistory, useLocation } from "react-router-dom";
 import { toast } from "react-toastify";
 import { makeStyles } from "@material-ui/core/styles";
 import { Button, CircularProgress, MenuItem, TextField } from "@material-ui/core";
@@ -12,6 +11,7 @@ import Title from "../../components/Title";
 import { AuthContext } from "../../context/Auth/AuthContext";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
+import Onboarding from "../Onboarding";
 
 const useStyles = makeStyles((theme) => ({
   intro: { color: theme.palette.text.secondary, fontSize: 14, margin: theme.spacing(0, 0, 2) },
@@ -42,6 +42,9 @@ const when = (d) => (d ? new Date(d).toLocaleDateString("pt-BR", { day: "2-digit
 export default function Tutoria() {
   const c = useStyles();
   const history = useHistory();
+  const { search: query } = useLocation();
+  const tab = new URLSearchParams(query).get("aba") === "ambientacao" ? "ambientacao" : "alunos";
+  const setTab = (t) => history.replace(t === "ambientacao" ? "/meus-alunos?aba=ambientacao" : "/meus-alunos");
   const { user } = useContext(AuthContext);
   const manager = user.profile === "admin" || ["admin", "coordenacao"].includes(user.role);
   const [data, setData] = useState(null);
@@ -95,8 +98,14 @@ export default function Tutoria() {
 
   return (
     <MainContainer>
-      <MainHeader><Title>{manager ? "Alunos da tutoria" : "Meus alunos"}</Title></MainHeader>
-      {manager && <TutorPanel />}
+      <MainHeader>
+        <Title>{manager ? "Alunos da tutoria" : "Meus alunos"}</Title>
+        <div className="ui-tabs" role="tablist" aria-label="Seções da tutoria">
+          {[["alunos", "Alunos"], ["ambientacao", "Ambientação"]].map(([k, l]) => <button key={k} type="button" role="tab" aria-selected={tab === k} className={`ui-tabs__btn${tab === k ? " is-on" : ""}`} onClick={() => setTab(k)}>{l}</button>)}
+        </div>
+        {manager && <button type="button" onClick={() => history.push("/estatisticas/tutoria")} style={{ marginLeft: "auto", border: "1px solid var(--line-strong)", background: "var(--surface)", borderRadius: 8, padding: "6px 12px", font: "inherit", fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>Desempenho por tutor</button>}
+      </MainHeader>
+      {tab === "ambientacao" ? <Onboarding embedded /> : <div style={{ flex: 1, minHeight: 0, overflowY: "auto", paddingBottom: 16 }}>
       <div className={c.intro}>
         {manager ? "Os alunos de cada tutor" : "Os alunos que estão com você"} e o que precisa de atenção agora. A conversa abre no número da Tutoria{data?.rules?.numberName ? ` (${data.rules.numberName})` : ""}: o comercial não vê essas conversas.
         {data && !data.rules?.numberName && " Ainda não há número da Tutoria: marque a Função do número = Tutoria em Conexões."}
@@ -152,7 +161,7 @@ export default function Tutoria() {
                     <div className={c.actions}>
                       <Button size="small" variant="outlined" className={c.button} disabled={busy === s.leadId} startIcon={<MessageSquare size={13} />} onClick={() => open(s)}>Abrir conversa</Button>
                       {data.rules?.official && !s.windowOpen && data.rules?.template && <Button size="small" className={c.button} disabled={busy === s.leadId} startIcon={<MailOpen size={13} />} onClick={() => opening(s)}>Enviar abertura</Button>}
-                      <Button size="small" className={c.button} startIcon={<MonitorCheck size={13} />} onClick={() => history.push("/ambientacao")}>Ambientação</Button>
+                      <Button size="small" className={c.button} startIcon={<MonitorCheck size={13} />} onClick={() => setTab("ambientacao")}>Ambientação</Button>
                     </div>
                   </td>
                 </tr>
@@ -160,6 +169,7 @@ export default function Tutoria() {
             </table>}
         </div>
       </>}
+      </div>}
     </MainContainer>
   );
 }

@@ -332,9 +332,26 @@ const chunk = <T>(list: T[], size: number): T[][] => {
 export const preflight = async (req: Request, res: Response): Promise<Response> => {
   const campaign = await Campaign.findByPk(req.params.id);
   if (!campaign) throw new AppError("ERR_NOT_FOUND", 404);
+  return res.json(await preflightOf(campaign));
+};
+
+// the same check for a campaign still being written (the last step of the form, before saving)
+const DRAFT_FIELDS = ["contactListId", "whatsappId", "message", "steps", "intervalMin", "intervalMax", "batchSize", "batchPause", "templateName", "templateLanguage", "templateBody", "templateParams"];
+export const preflightDraft = async (req: Request, res: Response): Promise<Response> => {
+  const body = req.body || {};
+  if (!Number(body.contactListId)) throw new AppError("ERR_CAMPAIGN_LIST_REQUIRED", 400);
+  const draft: any = Campaign.build(Object.fromEntries(DRAFT_FIELDS.filter(k => body[k] !== undefined && body[k] !== "").map(k => [k, body[k]])) as any);
+  draft.intervalMin = Number(body.intervalMin) || draft.intervalMin || 20;
+  draft.intervalMax = Number(body.intervalMax) || draft.intervalMax || 60;
+  draft.batchSize = Number(body.batchSize) || draft.batchSize || 20;
+  draft.batchPause = Number(body.batchPause) || draft.batchPause || 300;
+  return res.json(await preflightOf(draft));
+};
+
+const preflightOf = async (campaign: Campaign): Promise<Record<string, any>> => {
   const whatsapp = await connectionOf(campaign);
 
-  const shipped = await CampaignShipping.count({ where: { campaignId: campaign.id } });
+  const shipped = campaign.id ? await CampaignShipping.count({ where: { campaignId: campaign.id } }) : 0;
   const people: Array<{ number: string }> = shipped
     ? await CampaignShipping.findAll({ where: { campaignId: campaign.id, status: "pending" }, attributes: ["number"] })
     : await ContactListItem.findAll({ where: { contactListId: campaign.contactListId }, attributes: ["number"] });
@@ -397,7 +414,7 @@ export const preflight = async (req: Request, res: Response): Promise<Response> 
   if (safety && safety.dailyLimit !== null && canReceive > Math.max(0, safety.dailyLimit - (safety.sentToday || 0))) {
     warnings.push(`Esta conexão envia até ${safety.dailyLimit} por dia em campanhas (hoje já foram ${safety.sentToday}): o envio continua nos dias seguintes.`);
   }
-  return res.json({
+  return {
     total,
     canReceive,
     blocked: { optedOut, cold },
@@ -406,7 +423,7 @@ export const preflight = async (req: Request, res: Response): Promise<Response> 
     connection: whatsapp ? { id: whatsapp.id, name: whatsapp.name, channel: whatsapp.channel, status: whatsapp.status, riskMode: whatsapp.riskMode || "strict" } : null,
     safety,
     warnings
-  });
+  };
 };
 
 // ---------------------------------------------------------------- contact lists

@@ -37,13 +37,14 @@ const ROLES = {
 // every address of the private area (parameters filled with something that exists or does not)
 const ROUTES = [
   "/tickets", "/tickets/1", "/contacts", "/connections", "/quickAnswers", "/schedules", "/reports", "/ambientacao",
+  "/estatisticas", "/estatisticas/tutoria", "/gestao-comercial", "/meus-alunos",
   "/crm", "/crm/painel", "/crm/tarefas", "/crm/comissoes", "/crm/metas-polos", "/crm/metas", "/crm/config",
   "/afiliados", "/afiliados?aba=materiais", "/afiliados?aba=campanhas", "/afiliados?aba=bonificacoes", "/afiliados?aba=regras",
   "/cursos", "/campaigns", "/chatbot", "/chatbot/1", "/chatbot-antigo", "/ai-agents", "/monitor", "/integrations",
   "/users", "/polos", "/Queues", "/tags", "/configuracoes", "/crm/retencao",
   "/grades", "/analise-curricular", "/analise-curricular/1", "/analise-academica", "/analise-academica/1", "/alunos",
 ];
-const SETTINGS_GROUPS = ["copiloto", "operacao", "geral", "horario", "atendimento", "tutoria", "captacao", "pagamentos", "cadastros", "regras", "email", "erros"];
+const SETTINGS_GROUPS = ["copiloto", "operacao", "meta", "geral", "horario", "atendimento", "tutoria", "captacao", "pagamentos", "cadastros", "regras", "email", "erros"];
 
 async function ensureUsers(adminToken) {
   const auth = { headers: { Authorization: `Bearer ${adminToken}` } };

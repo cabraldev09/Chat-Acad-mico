@@ -1,5 +1,5 @@
 import React, { useCallback, useContext, useEffect, useState } from "react";
-import { useHistory } from "react-router-dom";
+import { Redirect, useHistory } from "react-router-dom";
 import { toast } from "react-toastify";
 import { makeStyles } from "@material-ui/core/styles";
 import { Typography, Chip, CircularProgress, Menu, MenuItem, Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField, ListItemIcon, Checkbox, FormControlLabel } from "@material-ui/core";
@@ -86,7 +86,11 @@ const since = (iso) => {
 };
 
 // Tutors and coordination follow every enrolled student until the first access is done.
-const Onboarding = () => {
+// embedded: shown as the "Ambientação" tab of "Alunos da tutoria" (that page gives the container and the title)
+const Embedded = ({ children }) => <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>{children}</div>;
+
+const OnboardingBoard = ({ embedded = false }) => {
+  const Shell = embedded ? Embedded : MainContainer;
   const { user: me } = useContext(AuthContext);
   // the conversation of a student in tutoring is the tutor's (and the coordination's), not the consultant's
   const canOpenChat = !!me && me.role !== "consultor";
@@ -235,14 +239,16 @@ const Onboarding = () => {
     await edit(lead, { tutorId: pick === "auto" ? "auto" : pick || null }, pick ? "Tutor atualizado. A conversa foi para ele." : "Aluno devolvido para a fila da tutoria.");
   };
 
-  if (!rows) return <MainContainer><div className={classes.empty}><CircularProgress size={24} /></div></MainContainer>;
+  if (!rows) return <Shell><div className={classes.empty}><CircularProgress size={24} /></div></Shell>;
 
   return (
-    <MainContainer>
-      <MainHeader>
-        <Title>Ambientação</Title>
-        {isManager && <Button size="small" variant="outlined" startIcon={<BarChart3 size={15} />} onClick={() => setShowStats(!statsOpen)}>{statsOpen ? "Esconder painel" : "Mostrar painel"}</Button>}
-      </MainHeader>
+    <Shell>
+      {embedded ? (isManager && <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}><Button size="small" variant="outlined" startIcon={<BarChart3 size={15} />} onClick={() => setShowStats(!statsOpen)}>{statsOpen ? "Esconder painel" : "Mostrar painel"}</Button></div>) : (
+        <MainHeader>
+          <Title>Ambientação</Title>
+          {isManager && <Button size="small" variant="outlined" startIcon={<BarChart3 size={15} />} onClick={() => setShowStats(!statsOpen)}>{statsOpen ? "Esconder painel" : "Mostrar painel"}</Button>}
+        </MainHeader>
+      )}
       <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
       <p className={classes.intro}>
         Alunos com matrícula confirmada. O tutor combina o primeiro acesso, marca cada etapa do checklist e conclui; o consultor então recebe lembretes para pedir indicação e oferecer um novo curso.
@@ -470,8 +476,16 @@ const Onboarding = () => {
       </Dialog>
       <Typography variant="caption" color="textSecondary">O sistema avisa quando um aluno passa de {slaHours} horas sem o primeiro contato do tutor.</Typography>
       </div>
-    </MainContainer>
+    </Shell>
   );
+};
+
+// whoever works the tutoring has the board as a tab of "Alunos da tutoria" (old links and reminders land there)
+const Onboarding = ({ embedded = false }) => {
+  const { user } = useContext(AuthContext);
+  const tutoring = !!user && (user.profile === "admin" || ["admin", "coordenacao", "tutor", "academico"].includes(user.role));
+  if (!embedded && tutoring) return <Redirect to="/meus-alunos?aba=ambientacao" />;
+  return <OnboardingBoard embedded={embedded} />;
 };
 
 export default Onboarding;

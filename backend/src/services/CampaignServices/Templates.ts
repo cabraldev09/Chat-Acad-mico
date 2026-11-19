@@ -13,7 +13,7 @@ import { getConfig } from "../../channels/types";
 // and sees its real text. The WhatsApp account (WABA) of the number comes from the connection, or from the token's own scopes.
 export interface TemplateView { name: string; language: string; category: string; body: string; params: number; header: string | null; footer: string | null }
 
-const wabaOf = async (accessToken: string, configured?: string): Promise<string[]> => {
+export const wabaOf = async (accessToken: string, configured?: string): Promise<string[]> => {
   if (configured) return [String(configured).trim()];
   const { data } = await axios.get(`${GRAPH}/debug_token`, { params: { input_token: accessToken, access_token: accessToken }, timeout: 15000 });
   const scopes: any[] = data?.data?.granular_scopes || [];

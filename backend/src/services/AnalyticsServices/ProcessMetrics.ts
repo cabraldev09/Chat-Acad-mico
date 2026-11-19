@@ -20,6 +20,8 @@ export interface ProcessRow {
   processAvg: number | null; // % of the required steps done, averaged over the conversations looked at
   processSamples: number;
   stoppedAt: Array<{ step: string; n: number }>; // the step the conversations are waiting on, most common first
+  replyMedianMin: number | null; // typical wait of the lead for the consultant's answer (working minutes, median)
+  replyWithinSlaPct: number | null; // share answered within the target (Configurações → response_sla_minutes)
   byStage: Array<{ stage: string; color: string | null; n: number }>; // the consultant's open leads by funnel column
 }
 
@@ -43,7 +45,7 @@ export const processMetrics = async (users: Array<{ id: number; name: string }>,
   const ids = users.map(u => u.id);
   const out = new Map<number, ProcessRow>(users.map(u => [u.id, {
     userId: u.id, name: u.name, conversations: 0, messagesSent: 0, messagesReceived: 0, audiosSent: 0, audiosReceived: 0, gradesSent: 0,
-    stageMoves: 0, processAvg: null, processSamples: 0, stoppedAt: [], byStage: []
+    stageMoves: 0, processAvg: null, processSamples: 0, stoppedAt: [], byStage: [], replyMedianMin: null, replyWithinSlaPct: null
   }]));
   if (!ids.length) return [];
   const rep = { ids, from: period.start, to: period.end };
@@ -74,6 +76,31 @@ export const processMetrics = async (users: Array<{ id: number; name: string }>,
     const m = out.get(Number(r.userId));
     if (m) m.stoppedAt.push({ step: stepLabel(String(r.current)), n: Number(r.n) });
   });
+
+  // response time: each run of lead messages waits for the next answer in the conversations the person holds (same rule as "Equipe")
+  try {
+    const { getBusinessConfig } = await import("../../helpers/BusinessTime");
+    const { pairGaps, summarize } = await import("../../helpers/ResponseTimes");
+    const { getSetting } = await import("../../helpers/AppSettings");
+    const sla = Math.min(1440, Math.max(1, Number(await getSetting("response_sla_minutes", "15")) || 15));
+    const msgs = await rows(`SELECT m.ticketId, m.fromMe, m.createdAt, t.userId FROM Messages m JOIN Tickets t ON t.id = m.ticketId
+      WHERE t.userId IN (:ids) AND m.createdAt BETWEEN :from AND :to AND m.isDeleted = false AND ${VALID_TICKET} ORDER BY m.ticketId, m.createdAt LIMIT 60000`, rep);
+    const ownerOf = new Map(msgs.map(m => [Number(m.ticketId), Number(m.userId)]));
+    const byUser = new Map<number, number[]>();
+    pairGaps(msgs as any, await getBusinessConfig()).forEach(g => {
+      const u = ownerOf.get(Number(g.ticketId));
+      if (u) byUser.set(u, [...(byUser.get(u) || []), g.minutes]);
+    });
+    byUser.forEach((minutes, u) => {
+      const m = out.get(u);
+      if (!m) return;
+      const sum = summarize(minutes, sla);
+      m.replyMedianMin = sum.median;
+      m.replyWithinSlaPct = sum.withinSlaPct;
+    });
+  } catch (err) {
+    logger.warn(`Tempo de resposta por consultor: ${(err as Error).message}`);
+  }
 
   // the person's open leads, by funnel column (the picture now, not the period)
   (await rows(`SELECT l.ownerId AS userId, s.name AS stage, s.color, s.position, COUNT(*) AS n FROM Leads l JOIN LeadStages s ON s.id = l.stageId

@@ -147,3 +147,35 @@
 .MuiDialogContent-root, .MuiPaper-root { min-width: 0; }
 .MuiDialogContent-root { overflow-wrap: anywhere; }
 .MuiInputBase-root:focus-within { box-shadow: 0 0 0 3px var(--accent-soft); border-radius: var(--radius-ctl); }
+
+/* Estatísticas: the two departments of the hub (Comercial, Tutoria) on top of each page of the hub */
+.stats-hub { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 8px; margin: 0 0 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); box-shadow: var(--shadow-card, 0 1px 2px rgba(15,23,42,.06)); min-width: 0; }
+.stats-hub__title { font-weight: 700; font-size: 13px; color: var(--text-2); padding: 0 6px; }
+.stats-hub__dept { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 4px; border-radius: 11px; border: 1px solid transparent; background: var(--surface-2); min-width: 0; transition: border-color .2s ease, box-shadow .2s ease; }
+.stats-hub__dept.is-on { border-color: var(--accent-line); box-shadow: 0 0 0 3px var(--accent-softer); }
+.stats-hub__label { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; letter-spacing: .02em; text-transform: uppercase; color: var(--accent-strong); padding: 0 8px; }
+.stats-hub__item { border: 1px solid transparent; background: transparent; color: var(--text-1); font: inherit; font-size: 13.5px; font-weight: 600; padding: 6px 12px; border-radius: 8px; cursor: pointer; white-space: nowrap; transition: background .18s ease, color .18s ease, transform .18s ease; }
+.stats-hub__item:hover { background: var(--accent-soft); transform: translateY(-1px); }
+.stats-hub__item.is-on { background: var(--accent); color: #fff; box-shadow: 0 6px 16px -8px var(--accent-glow); }
+@media (max-width: 600px) { .stats-hub__title { width: 100%; } .stats-hub__dept { width: 100%; } }
+
+/* segmented tabs inside a page header (e.g. Alunos da tutoria: Alunos | Ambientação) */
+.ui-tabs { display: inline-flex; gap: 2px; padding: 3px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface-2); margin-left: 12px; max-width: 100%; overflow-x: auto; }
+.ui-tabs__btn { border: 0; background: transparent; color: var(--text-2); font: inherit; font-size: 13.5px; font-weight: 600; padding: 6px 14px; border-radius: 8px; cursor: pointer; white-space: nowrap; transition: background .18s ease, color .18s ease, box-shadow .18s ease; }
+.ui-tabs__btn:hover { color: var(--text-1); background: var(--accent-soft); }
+.ui-tabs__btn.is-on { background: var(--surface); color: var(--accent-strong); box-shadow: 0 1px 2px rgba(15,23,42,.08), inset 0 0 0 1px var(--accent-line); }
+@media (max-width: 600px) { .ui-tabs { margin-left: 0; } }
+
+@keyframes ui-spin { to { transform: rotate(360deg); } }
+.ui-spin { animation: ui-spin .9s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .ui-spin { animation: none; } }
+
+/* the steps of a form in parts (e.g. Nova campanha: Público, Mensagem, Envio, Revisar) */
+.ui-wizard { display: flex; gap: 6px; padding: 0 24px 12px; overflow-x: auto; }
+.ui-wizard__step { flex: 1 1 0; min-width: 110px; display: flex; align-items: center; gap: 8px; border: 1px solid var(--line); background: var(--surface-2); color: var(--text-2); border-radius: 10px; padding: 8px 10px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; transition: border-color .18s ease, background .18s ease, color .18s ease, box-shadow .18s ease; }
+.ui-wizard__step:hover { border-color: var(--accent-line); }
+.ui-wizard__step.is-on { border-color: var(--accent); background: var(--accent-soft); color: var(--text-1); box-shadow: 0 0 0 3px var(--accent-softer); }
+.ui-wizard__step.is-done { color: var(--text-1); }
+.ui-wizard__n { flex: none; width: 22px; height: 22px; border-radius: 50%; display: inline-grid; place-items: center; font-size: 12px; font-weight: 700; background: var(--surface); border: 1px solid var(--line-strong); }
+.ui-wizard__step.is-on .ui-wizard__n, .ui-wizard__step.is-done .ui-wizard__n { background: var(--accent); border-color: var(--accent); color: #fff; }
+.ui-wizard__t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

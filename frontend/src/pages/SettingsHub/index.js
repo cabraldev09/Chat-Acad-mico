@@ -1,12 +1,13 @@
 import CopilotSettings from "../../components/Copilot/Settings";
 import Operations from "./Operations";
+import MetaCosts from "./MetaCosts";
 import React, { useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { Link, useHistory, useLocation } from "react-router-dom";
 import { toast } from "react-toastify";
 import { Button, FormControlLabel, InputAdornment, MenuItem, Paper, Switch, TextField, Typography, makeStyles } from "@material-ui/core";
 import {
   ArrowUpRight, BellRing, Bot, Building2, Clock, CreditCard, Eye, EyeOff, FileInput, GraduationCap, KeyRound, ListTree, Plug, Search,
-  Settings2, Tags, Users, Workflow, Zap, Copy, SlidersHorizontal, Bug, Trash2, Mail, Calculator,
+  Settings2, Tags, Users, Workflow, Zap, Copy, SlidersHorizontal, Bug, Trash2, Mail, Calculator, CircleDollarSign,
 } from "lucide-react";
 
 import MainContainer from "../../components/MainContainer";
@@ -30,6 +31,7 @@ import { BUILD } from "../../utils/versionWatch";
 const GROUPS = [
   { id: "copiloto", label: "Copiloto", icon: Workflow, hint: "Processo, conexões e limites de IA" },
   { id: "operacao", label: "Operação e custos", icon: SlidersHorizontal, hint: "Prazos, capacidade e entregas" },
+  { id: "meta", label: "Custos da API oficial", icon: CircleDollarSign, hint: "Gasto real na Meta, por dia e tipo" },
   { id: "geral", label: "Geral", icon: Settings2, hint: "Fuso, acesso e integração" },
   { id: "horario", label: "Horário e prazos", icon: Clock, hint: "Expediente e metas de resposta" },
   { id: "atendimento", label: "Atendimento e CRM", icon: SlidersHorizontal, hint: "Distribuição, lembretes e períodos" },
@@ -671,6 +673,7 @@ const SettingsHub = () => {
               <SectionBoundary name={current.id} resetKey={current.id}>
                 {current.id === "copiloto" && <CopilotSettings />}
                 {current.id === "operacao" && <Operations />}
+                {current.id === "meta" && <MetaCosts />}
 
                 {current.id === "geral" && <Geral values={values} save={save} admin={admin} />}
                 {current.id === "horario" && <Horario values={values} save={save} crm={crm} />}
