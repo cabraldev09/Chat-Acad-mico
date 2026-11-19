@@ -126,6 +126,10 @@ const CreateMessageService = async ({
     } else if (message.ticket.userId && !already) {
       hookHumanReply(message.ticket.contactId, message.ticket.userId);
     }
+    // a person handles this conversation: it is followed for the CRM (stage and situation of the lead) a moment after it goes quiet
+    if (message.ticket.userId && !message.ticket.aiActive && !already) {
+      import("../CommercialServices/Watcher").then(w => w.noteConversationMessage(message.ticket.id)).catch(() => undefined);
+    }
   }
 
   // the screens hear about the message first: nobody waits for the webhook queue to see what arrived

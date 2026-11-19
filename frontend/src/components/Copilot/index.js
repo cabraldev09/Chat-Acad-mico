@@ -8,29 +8,29 @@ import EnrollDialog from "../../pages/CRM/EnrollDialog";
 import CopilotSettings from "./Settings";
 
 const useStyles = makeStyles(theme => ({
-  root: { flex: "none", minWidth: 0, color: theme.palette.text.primary, background: theme.palette.background.paper, borderBottom: `1px solid ${theme.palette.divider}` },
-  header: { display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", flexWrap: "wrap" },
+  root: { flex: "none", minWidth: 0, color: theme.palette.text.primary, background: theme.palette.background.paper, borderBottom: "2px solid var(--line-strong, #cbd5e1)" },
+  header: { display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", flexWrap: "wrap", background: "var(--surface-2, #f8fafc)", borderBottom: "1px solid var(--line, #e2e8f0)" },
   emblem: { display: "grid", placeItems: "center", width: 34, height: 34, borderRadius: 11, flexShrink: 0, color: theme.palette.type === "dark" ? "#5eead4" : "#0f766e", background: "rgba(15,118,110,.1)" },
   title: { fontSize: 14, fontWeight: 700, lineHeight: 1.4 },
-  muted: { fontSize: 12, color: theme.palette.text.secondary, lineHeight: 1.5 },
-  badge: { display: "inline-flex", whiteSpace: "nowrap", borderRadius: 20, padding: "3px 9px", fontSize: 11, fontWeight: 600, background: theme.palette.action.hover, color: theme.palette.text.secondary },
+  muted: { fontSize: 12, color: "var(--text-2, #475569)", lineHeight: 1.5 },
+  badge: { display: "inline-flex", whiteSpace: "nowrap", borderRadius: 20, padding: "2px 9px", fontSize: 11, fontWeight: 700, background: "var(--surface, #fff)", color: "var(--text-1, #0f172a)", border: "1px solid var(--line-strong, #cbd5e1)" },
   primary: { background: "#0f766e", color: "#fff", borderRadius: 9, textTransform: "none", fontWeight: 600, boxShadow: "none", "&:hover": { background: "#115e59", boxShadow: "none" } },
-  button: { textTransform: "none", borderRadius: 8, fontSize: 12 },
-  content: { maxHeight: "min(48vh, 420px)", overflowY: "auto", padding: "0 16px 12px", ...theme.scrollbarStyles },
+  button: { textTransform: "none", borderRadius: 8, fontSize: 12, fontWeight: 600, color: "var(--text-1, #0f172a)", border: "1px solid var(--line-strong, #cbd5e1)", background: "var(--surface, #fff)", padding: "3px 10px", "&:hover": { background: "var(--surface-2, #f1f5f9)" } },
+  content: { maxHeight: "min(48vh, 420px)", overflowY: "auto", padding: "10px 16px 12px", ...theme.scrollbarStyles },
   layout: { display: "grid", gridTemplateColumns: "minmax(180px, .85fr) minmax(240px, 1.6fr)", gap: 14, alignItems: "start", [theme.breakpoints.down("sm")]: { display: "flex", flexDirection: "column", alignItems: "stretch" } },
   steps: { padding: 0, margin: 0, listStyle: "none", display: "grid", gap: 2, [theme.breakpoints.down("sm")]: { order: 1, maxHeight: 160, overflowY: "auto" } },
-  stepButton: { width: "100%", border: 0, borderRadius: 9, background: "transparent", color: theme.palette.text.secondary, padding: "7px 9px", display: "flex", alignItems: "center", gap: 9, textAlign: "left", cursor: "pointer", font: "inherit", fontSize: 12, "&:hover": { background: theme.palette.action.hover }, "&:focus-visible": { outline: "2px solid #0f766e" } },
-  selected: { background: "rgba(15,118,110,.09)", color: theme.palette.text.primary, fontWeight: 700 },
-  dot: { width: 23, height: 23, borderRadius: "50%", border: `1px solid ${theme.palette.divider}`, flexShrink: 0, display: "grid", placeItems: "center", fontSize: 10 },
+  stepButton: { width: "100%", border: "1px solid transparent", borderRadius: 9, background: "transparent", color: "var(--text-2, #475569)", padding: "7px 9px", display: "flex", alignItems: "center", gap: 9, textAlign: "left", cursor: "pointer", font: "inherit", fontSize: 12, "&:hover": { background: theme.palette.action.hover }, "&:focus-visible": { outline: "2px solid #0f766e" } },
+  selected: { background: "rgba(15,118,110,.12)", borderColor: "rgba(15,118,110,.45)", color: "var(--text-1, #0f172a)", fontWeight: 700 },
+  dot: { width: 23, height: 23, borderRadius: "50%", border: "1px solid var(--line-strong, #cbd5e1)", flexShrink: 0, display: "grid", placeItems: "center", fontSize: 10 },
   done: { color: theme.palette.type === "dark" ? "#5eead4" : "#0f766e", background: "rgba(15,118,110,.1)", borderColor: "transparent" },
   current: { color: "#fff", background: "#0f766e", borderColor: "#0f766e" },
-  detail: { display: "grid", gap: 10, [theme.breakpoints.down("sm")]: { order: 0 }, border: `1px solid ${theme.palette.divider}`, borderRadius: 12, padding: 14 },
+  detail: { display: "grid", gap: 10, [theme.breakpoints.down("sm")]: { order: 0 }, border: "1px solid var(--line-strong, #cbd5e1)", borderRadius: 12, padding: 14, background: "var(--surface, #fff)", boxShadow: "var(--shadow-card, none)" },
   eyebrow: { fontSize: 10, letterSpacing: ".08em", textTransform: "uppercase", fontWeight: 700, color: theme.palette.type === "dark" ? "#5eead4" : "#0f766e", display: "flex", alignItems: "center", gap: 6 },
-  message: { fontSize: 13, whiteSpace: "pre-wrap", lineHeight: 1.6, padding: 12, background: theme.palette.action.hover, borderRadius: 9 },
+  message: { fontSize: 13, whiteSpace: "pre-wrap", lineHeight: 1.6, padding: 12, background: "var(--surface-2, #f8fafc)", border: "1px solid var(--line, #e2e8f0)", borderLeft: "3px solid #0f766e", borderRadius: 9, color: "var(--text-1, #0f172a)" },
   actions: { display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" },
   foot: { display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, paddingTop: 8 },
   summary: { padding: "8px 0 0 18px", margin: 0, fontSize: 12, lineHeight: 1.6 },
-  brief: { display: "grid", gap: 6, border: `1px solid ${theme.palette.divider}`, borderRadius: 12, padding: 12, marginBottom: 10 },
+  brief: { display: "grid", gap: 6, border: "1px solid var(--line-strong, #cbd5e1)", borderRadius: 12, padding: 12, marginBottom: 10, background: "var(--surface, #fff)" },
   briefList: { padding: "0 0 0 18px", margin: 0, fontSize: 12, lineHeight: 1.55 },
   chip: { textTransform: "none", borderRadius: 16, fontSize: 11, padding: "1px 9px", minWidth: 0 },
   thumb: { padding: 4 },
@@ -175,8 +175,18 @@ function Panel({ ticket }) {
       <div className={c.foot} style={{ paddingBottom: 8 }}>
         <Button size="small" className={c.button} startIcon={<ListChecks size={14} />} onClick={() => setAllSteps(v => !v)}>{allSteps ? "Ocultar etapas" : "Ver todas as etapas"}</Button>
         <span className={c.muted} style={{ flex: 1 }}>{data.aiNote || (quota ? `Suas sugestões hoje: ${quota.used}${quota.limit ? ` de ${quota.limit}` : " (sem limite)"}` : "")}</span>
+        {!data.aiAvailable && data.canManage && <Button size="small" className={c.button} href="/configuracoes?secao=copiloto">Ligar sugestões de IA</Button>}
         <span className={c.badge}>Roteiro sem uso de IA</span>
       </div>
+      {data.situation && (data.situation.stage || data.situation.summary) && <div className={c.brief} aria-label="Situação do lead no CRM">
+        <div className={c.actions}>
+          <span className={c.eyebrow} style={{ flex: 1 }}><History size={12} />Situação do lead</span>
+          {data.situation.stage && <span className={c.badge} style={data.situation.stageColor ? { borderColor: data.situation.stageColor } : undefined}>{data.situation.stage}</span>}
+          {data.situation.temperature && <span className={c.badge}>{{ cold: "Frio", warm: "Morno", hot: "Quente" }[data.situation.temperature] || data.situation.temperature}</span>}
+        </div>
+        {data.situation.summary && <div style={{ fontSize: 13 }}>{data.situation.summary}</div>}
+        {data.situation.nextAction && <div className={c.muted}><b>Próximo passo:</b> {data.situation.nextAction}</div>}
+      </div>}
       {(b || data.briefAvailable) && <div className={c.brief} aria-label="Resumo do cliente feito pela IA">
         <div className={c.actions}>
           <span className={c.eyebrow} style={{ flex: 1 }}><History size={12} />Resumo do cliente (IA){brief && brief.conversations > 1 ? ` · ${brief.conversations} atendimentos` : ""}</span>

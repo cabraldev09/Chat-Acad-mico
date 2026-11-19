@@ -5,6 +5,8 @@ import sequelize from "../database";
 import Ticket from "../models/Ticket";
 import Message from "../models/Message";
 import Lead from "../models/Lead";
+import LeadStage from "../models/LeadStage";
+import LeadCommercial from "../models/LeadCommercial";
 import CopilotProgress from "../models/CopilotProgress";
 import AppError from "../errors/AppError";
 import { isManagerRole, roleOf } from "../helpers/Roles";
@@ -12,7 +14,7 @@ import { policyFor } from "../services/CopilotServices/Policy";
 import { configOf, saveConfig, quotaOf, quotaExceeded, suggestionAgent, reserveSuggestion } from "../services/CopilotServices/Settings";
 import { copilotOf } from "../services/CommercialServices/Process";
 import { hydrate, loadState } from "../services/CommercialServices/Slots";
-import { briefOf } from "../services/CommercialServices/Rules";
+import { briefOf, NEXT_LABEL } from "../services/CommercialServices/Rules";
 import { respond, loadHistory, askOnce, resolveKey } from "../services/AiServices/RunAiAgent";
 import CopilotRequest from "../models/CopilotRequest";
 import TicketEvent from "../models/TicketEvent";
@@ -22,9 +24,17 @@ import { dayBounds } from "../helpers/AppTime";
 import { BRIEF_SYSTEM, contactTranscript, parseBrief, sameSideWhere } from "../services/CopilotServices/Brief";
 import { sideOfSegment } from "../services/ChannelServices/ConnectionTeam";
 
-export const settings = async (_req: Request, res: Response) => res.json(await configOf());
+export const settings = async (_req: Request, res: Response) => {
+  const { watchConfigOf, aiUsedToday } = await import("../services/CommercialServices/Watcher");
+  return res.json({ ...(await configOf()), watch: { ...(await watchConfigOf()), usedToday: await aiUsedToday() } });
+};
 export const updateSettings = async (req: Request, res: Response) => {
-  const config = await saveConfig(req.body);
+  const { watch, ...body } = req.body || {};
+  if (watch && typeof watch === "object") {
+    const { saveWatchConfig } = await import("../services/CommercialServices/Watcher");
+    await saveWatchConfig(watch);
+  }
+  const config = await saveConfig(body);
   getIO().emit("copilot", { action: "config", version: config.version });
   return res.json(config);
 };
@@ -53,7 +63,16 @@ export const show = async (req: Request, res: Response) => {
     ]);
     autoBrief = !made && (older > 0 || handed > 0);
   }
-  return res.json({ ...process, enabled: true, aiAvailable: !note, aiNote: note, briefAvailable, autoBrief, quota, canManage: isManagerRole(roleOf(req.user)) });
+  // what the automatic follow-up wrote on the lead (stage, situation, next step, temperature): shown on top, no new AI call
+  let situation: any = null;
+  if (process.leadId) {
+    const [lead, commercial] = await Promise.all([
+      Lead.findByPk(process.leadId, { attributes: ["id", "stageId"], include: [{ model: LeadStage, as: "stage", attributes: ["name", "color"] }] }).catch(() => null),
+      LeadCommercial.findOne({ where: { leadId: process.leadId }, attributes: ["summary", "nextAction", "temperature", "updatedAt"] })
+    ]);
+    situation = { stage: (lead as any)?.stage?.name || null, stageColor: (lead as any)?.stage?.color || null, summary: commercial?.summary || null, nextAction: commercial?.nextAction ? (NEXT_LABEL[commercial.nextAction] || commercial.nextAction) : null, temperature: commercial?.temperature || null, updatedAt: commercial?.updatedAt || null };
+  }
+  return res.json({ ...process, enabled: true, aiAvailable: !note, aiNote: note, briefAvailable, autoBrief, quota, situation, canManage: isManagerRole(roleOf(req.user)) });
 };
 export const progress = async (req: Request, res: Response) => {
   const ticket = await ticketOf(req);

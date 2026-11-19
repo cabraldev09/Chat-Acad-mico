@@ -26,12 +26,13 @@ const expiresOf = async (token: string, appToken: string): Promise<number | null
 };
 
 export const extendCloudToken = async (whatsapp: Whatsapp): Promise<"permanent" | "extended" | "kept" | "skipped"> => {
-  const { accessToken, appId, appSecret, tokenExpiresAt } = getConfig(whatsapp);
+  const { accessToken, appId, appSecret, tokenExpiresAt, tokenExtendError } = getConfig(whatsapp);
   if (!accessToken || !appId || !appSecret) return "skipped";
   const appToken = `${String(appId).trim()}|${appSecret}`;
   try {
     const expires = await expiresOf(accessToken, appToken);
     if (expires === null) return "skipped";
+    if (tokenExtendError) await saveConfig(whatsapp, { tokenExtendError: null });
     if (expires === 0) {
       if (tokenExpiresAt) await saveConfig(whatsapp, { tokenExpiresAt: null });
       return "permanent";
@@ -52,7 +53,14 @@ export const extendCloudToken = async (whatsapp: Whatsapp): Promise<"permanent" 
     return "extended";
   } catch (err: any) {
     // a wrong App ID or App Secret only means the token is not extended; the connection check that follows says what is wrong with it
-    logger.warn(`WhatsApp Cloud ${whatsapp.id}: token não estendido (${err?.response?.data?.error?.message || err?.message || err})`);
+    const message = String(err?.response?.data?.error?.message || err?.message || err);
+    logger.warn(`WhatsApp Cloud ${whatsapp.id}: token não estendido (${message})`);
+    // the Meta refused the App ID / App Secret pair: the connection keeps working, and the screen says why the token stays short
+    if (err?.response?.status && err.response.status < 500) {
+      await saveConfig(whatsapp, { tokenExtendError: /signature|client_secret|app secret|appsecret/i.test(message)
+        ? "O token é de 24 horas: o App ID e o App Secret salvos são de apps diferentes. Use os dois do mesmo app (o que recebe o webhook) para ele valer 60 dias."
+        : `O token não foi trocado por um de 60 dias: ${message}` }).catch(() => undefined);
+    }
     return "skipped";
   }
 };
