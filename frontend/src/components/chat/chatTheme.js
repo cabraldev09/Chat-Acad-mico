@@ -142,6 +142,11 @@ export const dayLabel = (date) => {
 export const clock = (date) =>
   new Date(date).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 
+// messages the official API does not deliver were saved, in older versions, as "[unsupported]": shown in words
+export const friendlyBody = (body) => (/^\[unsupported\]$/i.test(String(body || "").trim())
+  ? "⚠️ Mensagem que o WhatsApp oficial não entrega (enquete, mensagem temporária ou de visualização única). Peça para o cliente enviar de novo."
+  : body);
+
 // what to show in the conversation list for the last message
 export const previewOf = (ticket) => {
   const text = ticket.lastMessage || "";

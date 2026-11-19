@@ -3652,7 +3652,8 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(/mestres e doutores/.test(sql(`SELECT content FROM KbDocuments WHERE agentId=${agentId} AND topic='institutional/faculty'`)), "the faculty text is not the dictated one");
       // the script of the agent is readable in one list (the manager sees what the lead receives)
       const scr = (await http.get(`/ai-agents/${agentId}/script`, auth())).data;
-      assert(scr.steps.length === 8 && scr.steps[0].key === "entry" && /primeira graduação/.test(scr.steps[0].text) && /sem aulas práticas presenciais/.test(scr.steps[3].text) && scr.steps[7].key === "handoff", `script: ${JSON.stringify(scr.steps.map(x => x.key))}`);
+      assert(scr.steps.length === 9 && scr.steps[0].key === "intro" && /assistente virtual/.test(scr.steps[0].text) && scr.steps[1].key === "entry" && /primeira graduação/.test(scr.steps[1].text) && /sem aulas práticas presenciais/.test(scr.steps[4].text) && scr.steps[8].key === "handoff", `script: ${JSON.stringify(scr.steps.map(x => x.key))}`);
+      assert(scr.branches.length >= 5 && scr.answers.some(x => x.key === "proposal" && x.editable), `branches and ready answers: ${JSON.stringify(scr.answers && scr.answers.map(x => x.key))}`);
       assert(!/\p{Extended_Pictographic}/u.test(scr.steps.map(x => x.text).join(" ")), "the script carries an emoji");
       // the team writes its own words for a step; the script shows them (and the standard), and "back to the standard" clears it
       const agentForTexts = (await http.get("/ai-agents", auth())).data.find(x => x.id === agentId);

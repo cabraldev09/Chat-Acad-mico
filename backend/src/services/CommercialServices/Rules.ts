@@ -1,3 +1,4 @@
+import { institutionName } from "../../helpers/Institution";
 import { cleanCommercial, fillGreeting } from "./Config";
 import { CommercialState, Slots } from "./Slots";
 import { BOLSA_ASKS } from "./BolsaData";
@@ -182,7 +183,7 @@ export const isGreeting = (text: string): boolean => {
 // (persona.assistantName); without one it is "o assistente virtual".
 export const INTRO_SEEN = /\b(assistente virtual|aqui e (a|o) |eu sou (a|o) |meu nome e)\b/;
 export const DEFAULT_ASSISTANT = "Estela";
-export const introText = (persona: { assistantName?: string; commercial?: any } | null | undefined, first: string, institution = "Cruzeiro do Sul Virtual"): string => {
+export const introText = (persona: { assistantName?: string; commercial?: any } | null | undefined, first: string, institution = institutionName()): string => {
   const name = first ? `, ${first}` : "";
   const who = String(persona?.assistantName || "").trim() || DEFAULT_ASSISTANT;
   // the administrator may write the greeting ({{nome}}, {{assistente}}); it still has to say that this is a virtual assistant
@@ -210,7 +211,7 @@ export const openingText = (slots: Slots, first: string, returning: boolean, per
   const customGreeting = persona && persona.commercial ? cleanCommercial(persona.commercial).greeting : "";
   if (!returning && !hasCourse && !hasCity && !hasEntry && !customGreeting) {
     const who = String(persona?.assistantName || "").trim() || DEFAULT_ASSISTANT;
-    return `Olá! Tudo bem?\n\nSou ${/^(a|o) /i.test(who) ? who : `a ${who}`}, assistente virtual da Cruzeiro do Sul Virtual.\n\nEssa seria a sua *primeira graduação* ou você já tem alguma faculdade concluída? Se você já é aluno e precisa da tutoria, é só me dizer.`;
+    return `Olá! Tudo bem?\n\nSou ${/^(a|o) /i.test(who) ? who : `a ${who}`}, assistente virtual da ${institutionName()}.\n\nEssa seria a sua *primeira graduação* ou você já tem alguma faculdade concluída? Se você já é aluno e precisa da tutoria, é só me dizer.`;
   }
   if (returning) {
     return `Oi${name}! Que bom falar com você de novo.${course ? ` Da última vez conversamos sobre ${course}.` : ""} ${hasCourse && hasCity && hasEntry ? "Em que posso te ajudar agora?" : ask}`;

@@ -21,9 +21,9 @@ export interface CommercialConfig {
   messages: { queued: string; afterHours: string };
   // the words of the team at each step of the script (empty = the standard of the process): what the agent says to ask the first degree, the course, the city, the doubts,
   // the name and CPF, and when the consultant takes over
-  texts: { entry: string; course: string; city: string; doubts: string; bolsa: string; handoff: string };
+  texts: { entry: string; course: string; city: string; doubts: string; bolsa: string; handoff: string; proposal: string; tutoring: string; secretary: string; unknown: string; unknownHeld: string };
 }
-export const SCRIPT_TEXT_KEYS = ["entry", "course", "city", "doubts", "bolsa", "handoff"] as const;
+export const SCRIPT_TEXT_KEYS = ["entry", "course", "city", "doubts", "bolsa", "handoff", "proposal", "tutoring", "secretary", "unknown", "unknownHeld"] as const;
 
 export const DEFAULT_COMMERCIAL: CommercialConfig = {
   greeting: "",
@@ -34,7 +34,7 @@ export const DEFAULT_COMMERCIAL: CommercialConfig = {
   maxClarifications: 3,
   keepOwner: true,
   messages: { queued: "", afterHours: "" },
-  texts: { entry: "", course: "", city: "", doubts: "", bolsa: "", handoff: "" }
+  texts: { entry: "", course: "", city: "", doubts: "", bolsa: "", handoff: "", proposal: "", tutoring: "", secretary: "", unknown: "", unknownHeld: "" }
 };
 
 const bool = (v: any, d: boolean): boolean => (typeof v === "boolean" ? v : d);

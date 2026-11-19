@@ -21,7 +21,7 @@ const createAppTheme = (type) => {
 
   // borders do the heavy lifting, shadows stay whisper-quiet
   const shadows = [...base.shadows];
-  shadows[1] = isDark ? "0 0 0 1px #1c2b44" : "0 1px 2px 0 rgba(11,66,121,0.06)";
+  shadows[1] = isDark ? "0 0 0 1px #2a2c2c" : "0 1px 2px 0 rgba(11,66,121,0.06)";
   shadows[2] = isDark
     ? "0 1px 3px 0 rgba(0,0,0,0.5)"
     : "0 1px 3px 0 rgba(11,66,121,0.10), 0 1px 2px -1px rgba(11,66,121,0.06)";

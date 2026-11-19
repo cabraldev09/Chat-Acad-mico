@@ -124,7 +124,7 @@ describe("semipresencial: format and the MEC rule before the consultant", () => 
     expect(nextQuestionOf({ entryType: "first_degree", courseName: "Pedagogia" } as any, {}, undefined, {})).toBe(QUESTIONS.city);
     expect(bolsaRequestFor({ name: true, cpf: true }, "Me manda o nome completo e o CPF, por favor.")).toBe("Me manda o nome completo e o CPF, por favor.");
     expect(bolsaRequestFor({ name: false, cpf: true }, "Me manda o nome completo e o CPF, por favor.")).toMatch(/CPF/);
-    expect(cleanCommercial({ texts: { city: "  Em qual cidade?  ", entry: 5, bogus: "x" } }).texts).toEqual({ entry: "5", course: "", city: "Em qual cidade?", doubts: "", bolsa: "", handoff: "" });
+    expect(cleanCommercial({ texts: { city: "  Em qual cidade?  ", entry: 5, bogus: "x" } }).texts).toEqual({ entry: "5", course: "", city: "Em qual cidade?", doubts: "", bolsa: "", handoff: "", proposal: "", tutoring: "", secretary: "", unknown: "", unknownHeld: "" });
   });
 
   it("a course the Portaria does not restrict is EAD with no practical classes: duration comes before, the format says so and the follow-up is told", () => {
@@ -200,5 +200,14 @@ describe("the town in the person's words", () => {
     expect(cityCandidateOf("quanto custa?", false)).toBeNull();
     expect(cityCandidateOf("Direito", true)).toBeNull();
     expect(cityCandidateOf("quero fazer uma faculdade de direito à noite", false)).toBeNull();
+  });
+});
+
+describe("respostas prontas nas palavras da equipe", () => {
+  it("guarda os textos das respostas prontas (preço, tutoria, secretaria, não sabe) e descarta o resto", () => {
+    const t = cleanCommercial({ texts: { proposal: "  O consultor do polo te passa a bolsa.  ", unknown: "Vou confirmar.", outro: "x" } }).texts as any;
+    expect(t.proposal).toBe("O consultor do polo te passa a bolsa.");
+    expect(t.unknown).toBe("Vou confirmar.");
+    expect(t.outro).toBeUndefined();
   });
 });

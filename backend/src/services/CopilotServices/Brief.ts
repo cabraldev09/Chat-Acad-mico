@@ -1,3 +1,4 @@
+import { institutionName } from "../../helpers/Institution";
 import { Op } from "sequelize";
 
 import Message from "../../models/Message";
@@ -66,8 +67,9 @@ export interface CopilotBrief {
   encaminhar: "" | "tutoria" | "atendimento";
 }
 
-export const BRIEF_SYSTEM = [
-  "Você ajuda um CONSULTOR de uma faculdade EAD (Cruzeiro do Sul Virtual) a retomar o atendimento de um cliente no WhatsApp.",
+// a function: the institution name is a setting that can change while the server runs
+export const briefSystem = (): string => [
+  `Você ajuda um CONSULTOR de uma faculdade EAD (${institutionName()}) a retomar o atendimento de um cliente no WhatsApp.`,
   "Leia o histórico (pode ter vários atendimentos e consultores) e responda SOMENTE um JSON válido, sem texto fora dele, com as chaves:",
   '{"resumo": "até 4 frases: quem é, o que quer, o que já aconteceu", "interesse": "curso/forma de ingresso/polo de interesse ou vazio",',
   '"pendencias": ["o que ficou combinado e não foi feito, documentos, respostas devidas"], "objecoes": ["dúvidas ou receios que travam a matrícula"],',

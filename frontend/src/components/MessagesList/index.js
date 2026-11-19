@@ -40,7 +40,7 @@ import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import whatsBackground from "../../assets/wa-background.png";
 import whatsBackgroundDark from "../../assets/wa-background-dark.png";
-import { wa, dayLabel, clock } from "../chat/chatTheme";
+import { wa, dayLabel, clock, friendlyBody } from "../chat/chatTheme";
 
 const useStyles = makeStyles((theme) => {
   const c = wa(theme);
@@ -782,7 +782,7 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
               {hasMedia && renderMedia(m)}
               {showText && (
                 <div className={classes.text}>
-                  <MarkdownWrapper>{m.body}</MarkdownWrapper>
+                  <MarkdownWrapper>{friendlyBody(m.body)}</MarkdownWrapper>
                   <span className={classes.meta}>
                     {m.starred && <Star style={{ fontSize: 12 }} />}
                     {m.isEdited && <span style={{ fontStyle: "italic" }}>editada</span>}

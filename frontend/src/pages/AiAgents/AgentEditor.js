@@ -7,6 +7,7 @@ import {
 import { Plus, Trash2, RotateCcw, Bot } from "lucide-react";
 
 import IconAction from "../../components/IconAction";
+import useIntro from "./useIntro";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import FunctionsTab from "./FunctionsTab";
@@ -52,6 +53,7 @@ const AgentEditor = ({ open, agent, initialTab = 0, onClose, onSaved }) => {
   const [history, setHistory] = useState(false);
   const [v, setV] = useState(blank());
   const [id, setId] = useState(null);
+  const intro = useIntro(String((v.persona && v.persona.assistantName) || "").trim(), (v.persona && v.persona.commercial && v.persona.commercial.greeting) || "");
   const [queues, setQueues] = useState([]);
   const [connections, setConnections] = useState([]);
   const [saving, setSaving] = useState(false);
@@ -116,15 +118,15 @@ const AgentEditor = ({ open, agent, initialTab = 0, onClose, onSaved }) => {
         {tab === 0 && (
           <>
             <div className={classes.grid}>
-              <TextField variant="outlined" margin="dense" label="Nome do agente" required value={v.name} onChange={(e) => set("name", e.target.value)} />
+              <TextField variant="outlined" margin="dense" label="Nome interno (só a equipe vê)" required value={v.name} onChange={(e) => set("name", e.target.value)} helperText="Para achar o agente na lista. O cliente vê o nome de apresentação abaixo." />
               <FormControlLabel style={{ marginTop: 8 }} control={<Switch color="primary" checked={!!v.active} onChange={(e) => set("active", e.target.checked)} />} label={v.active ? "Ativo: responde os alunos" : "Desligado"} />
 
               <span />
             </div>
 
             <div className={classes.section}>Como ele se apresenta</div>
-            <TextField fullWidth variant="outlined" margin="dense" label="Nome do assistente" placeholder="Estela" value={v.persona.assistantName || ""} onChange={(e) => setPersona("assistantName", e.target.value)}
-              helperText={`Na primeira mensagem de toda conversa: “${(() => { const n = String(v.persona.assistantName || "").trim(); const who = n || "Estela"; return `Olá! Eu sou ${/^(a|o) /i.test(who) ? who : `a ${who}`}, assistente virtual da Cruzeiro do Sul Virtual.`; })()}”`} />
+            <TextField fullWidth variant="outlined" margin="dense" label="Nome com que ele se apresenta" placeholder="Estela" value={v.persona.assistantName || ""} onChange={(e) => setPersona("assistantName", e.target.value)}
+              helperText={intro ? `Na primeira mensagem de toda conversa: “${intro}”. A instituição vem de Configurações → Geral.` : "O nome que o cliente vê e que assina as mensagens."} />
 
             <div className={classes.section}>Como o agente fala</div>
             <TextField fullWidth variant="outlined" margin="dense" label="Tom de voz" value={v.persona.tone || ""} onChange={(e) => setPersona("tone", e.target.value)} />

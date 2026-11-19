@@ -1,0 +1,45 @@
+name: Preencher o App ID da API oficial (token de 60 dias)
+
+# Lê na Meta de qual app é o token salvo na conexão da API oficial, grava esse App ID (e o ID da conta do WhatsApp) e já tenta trocar
+# o token por um de 60 dias. Mostra só ids públicos e o resultado; nunca o token ou o App Secret.
+on:
+  workflow_dispatch:
+    inputs:
+      phone_id:
+        description: "Phone Number ID da conexão"
+        default: "1157228804130622"
+        required: true
+      waba_id:
+        description: "ID da conta do WhatsApp (WABA)"
+        default: "1358726479432345"
+        required: false
+
+jobs:
+  appid:
+    runs-on: ubuntu-latest
+    env:
+      # the server's address is the first column of deploy/vps/known_hosts (changing server = changing that one line)
+      VPS_KNOWN_HOSTS: deploy/vps/known_hosts
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepara o SSH e confere a identidade do servidor
+        env:
+          KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          VPS_HOST=$(grep -v '^#' "$VPS_KNOWN_HOSTS" | awk 'NF{print $1; exit}'); echo "VPS_HOST=$VPS_HOST" >> "$GITHUB_ENV"
+          install -m 700 -d ~/.ssh
+          body=$(printf '%s' "$KEY" | grep -v '^-----' | tr -d ' \r\n\t')
+          { echo "-----BEGIN OPENSSH PRIVATE KEY-----"; printf '%s' "$body" | fold -w 70; echo; echo "-----END OPENSSH PRIVATE KEY-----"; } > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          grep -v '^#' deploy/vps/known_hosts > ~/.ssh/known_hosts
+          want=$(awk '{print $3}' ~/.ssh/known_hosts)
+          seen=$(ssh-keyscan -T 15 -t ed25519 "$VPS_HOST" 2>/dev/null | awk '$2=="ssh-ed25519"{print $3}')
+          [ -n "$seen" ] && [ "$seen" = "$want" ] || { echo "::error::A chave do servidor não confere"; exit 1; }
+      - name: Preenche
+        env:
+          PHONE_ID: ${{ inputs.phone_id }}
+          WABA_ID: ${{ inputs.waba_id }}
+        run: |
+          case "$PHONE_ID$WABA_ID" in *[!0-9]*) echo "::error::use só números"; exit 1;; esac
+          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes backend/scripts/meta-app-id.js root@"$VPS_HOST":/tmp/meta-app-id.js
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@"$VPS_HOST" "docker cp /tmp/meta-app-id.js chat-academico-api-1:/app/backend/meta-app-id.js && docker exec -e PHONE_ID='$PHONE_ID' -e WABA_ID='$WABA_ID' chat-academico-api-1 node /app/backend/meta-app-id.js; s=\$?; docker exec chat-academico-api-1 rm -f /app/backend/meta-app-id.js; exit \$s"

@@ -143,7 +143,7 @@ main { overflow-x: hidden !important; overscroll-behavior-x: none; }
   font-family: inherit; overflow: hidden; backdrop-filter: blur(6px);
   animation-duration: .28s;
 }
-:root[data-theme="dark"] .Toastify__toast { background: #0f1c30; color: #f1f5f9; border-color: #1c2b44; box-shadow: 0 18px 44px -14px rgba(0,0,0,.8); }
+:root[data-theme="dark"] .Toastify__toast { background: #242626; color: #e9edef; border-color: #2f3232; box-shadow: 0 18px 44px -14px rgba(0,0,0,.8); }
 .Toastify__toast::before { display: none; }
 .Toastify__toast-body { margin: 0; padding: 0; display: block; }
 .Toastify__toast-body::before { display: none; }

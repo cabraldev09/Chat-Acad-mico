@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Button, CircularProgress, Dialog, DialogActions, DialogContent, Switch, TextField, makeStyles } from "@material-ui/core";
 import { Check, ChevronDown, GraduationCap, Headphones, Info, Pencil, Bot, MessageSquare, Workflow, X } from "lucide-react";
 
+import useIntro from "./useIntro";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 
@@ -60,7 +61,6 @@ const READY = [
   "Envia a grade curricular do curso do lead",
   "Passa para o consultor do polo quando o lead está pronto",
 ];
-const introPreview = (who) => { const n = who.trim() || "Estela"; return `Olá! Eu sou ${/^(a|o) /i.test(n) ? n : `a ${n}`}, assistente virtual da Cruzeiro do Sul Virtual.`; };
 
 const iconOf = (t) => (/comercial/i.test(t.key + t.name) ? GraduationCap : /atendimento|encaminh/i.test(t.key + t.name) ? Headphones : Workflow);
 
@@ -105,7 +105,7 @@ const NewAgentDialog = ({ open, onClose, onCreated, onManual }) => {
 
   const label = busy ? (mode === "ai" ? "A IA está desenhando…" : "Criando…") : mode === "ai" ? "Criar com IA" : mode === "manual" ? "Continuar" : "Criar agente";
   const disabled = busy || (mode === "ai" && description.trim().length < 20) || (mode === "template" && !template) || (mode === "quick" && !commercial);
-  const preview = introPreview(assistantName);
+  const preview = useIntro(assistantName.trim(), "");
 
   return (
     <Dialog open={open} onClose={busy ? undefined : onClose} maxWidth="sm" fullWidth scroll="paper" PaperProps={{ className: classes.paper }}>
@@ -122,7 +122,7 @@ const NewAgentDialog = ({ open, onClose, onCreated, onManual }) => {
         {mode === "quick" && (
           <>
             <p className={classes.lead}>Um agente comercial completo, pronto para atender quem chega. Você só escolhe como ele se apresenta.</p>
-            <TextField fullWidth variant="outlined" size="small" label="Nome do assistente" placeholder="Estela" value={assistantName} onChange={(e) => setAssistantName(e.target.value)} InputLabelProps={{ shrink: true }} helperText={`Primeira mensagem: “${preview}”`} />
+            <TextField fullWidth variant="outlined" size="small" label="Como o assistente se apresenta (nome)" placeholder="Estela" value={assistantName} onChange={(e) => setAssistantName(e.target.value)} InputLabelProps={{ shrink: true }} helperText={preview ? `Primeira mensagem: “${preview}”. É também o nome do agente no sistema.` : "É o nome que o cliente vê e o nome do agente no sistema."} />
             <div className={classes.rowSub} style={{ margin: "14px 0 6px" }}>Tom de voz</div>
             <div className={classes.chips} style={{ marginTop: 0 }} role="group" aria-label="Tom de voz">
               {TONES.map((t) => <button key={t.key} type="button" className={classes.chip} style={tone === t.text ? { borderColor: "#0693E3", background: "rgba(6,147,227,.1)", fontWeight: 700 } : undefined} aria-pressed={tone === t.text} onClick={() => setTone(t.text)}>{t.label}</button>)}
@@ -224,7 +224,7 @@ const NewAgentDialog = ({ open, onClose, onCreated, onManual }) => {
 
       <DialogActions style={{ padding: "8px 24px 20px" }}>
         <div className={classes.foot}>
-          {mode !== "manual" && <TextField fullWidth variant="outlined" size="small" label={mode === "quick" ? "Nome do agente (opcional)" : "Nome do agente (opcional)"} value={name} onChange={(e) => setName(e.target.value)} InputLabelProps={{ shrink: true }} />}
+          {mode !== "manual" && mode !== "quick" && <TextField fullWidth variant="outlined" size="small" label="Nome do agente (opcional)" value={name} onChange={(e) => setName(e.target.value)} InputLabelProps={{ shrink: true }} />}
           <div className={classes.safe}><Info size={15} style={{ flex: "none", marginTop: 1 }} />O agente nasce desligado e em edição: ninguém é atendido até você revisar, testar, publicar e ligar.</div>
           <div className={classes.actions}>
             <Button onClick={onClose} disabled={busy}>Cancelar</Button>

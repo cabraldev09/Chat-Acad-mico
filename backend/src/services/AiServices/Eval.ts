@@ -61,6 +61,12 @@ export const runCase = async (agent: AiAgent, row: AiEvalCase): Promise<{ status
   }
   if (!messages.length) return { status: "fail", text: "", reasons: ["O caso não tem mensagem da pessoa."] };
   try {
+    // the commercial agent is judged by the real process (its flow, in simulation): the same rules, texts and order the lead meets
+    const flowRun = await runThroughFlow(agent, messages);
+    if (flowRun) {
+      const reasons = judge(expect, flowRun);
+      return { status: reasons.length ? "fail" : "pass", text: flowRun.handoff && !flowRun.text ? "(passaria para uma pessoa)" : flowRun.text, reasons };
+    }
     const result = await respond(agent, { ticket: null, history: messages, collected: {}, summary: null, sandbox: true });
     const text = result.handoff ? "(passaria para uma pessoa)" : result.unknown ? "(confirmaria com a equipe)" : result.text;
     const reasons = judge(expect, { text: result.text, handoff: result.handoff, unknown: result.unknown });
@@ -71,3 +77,44 @@ export const runCase = async (agent: AiAgent, row: AiEvalCase): Promise<{ status
     return { status: "fail", text: "", reasons: [`O agente não respondeu: ${String((err as any)?.message || err).slice(0, 120)}`] };
   }
 };
+
+// Runs the person's messages through the agent's own flow in simulation (nothing is sent or saved), message by message, and returns
+// what the agent said to the last one. Null when the agent has no flow (the generic answer is judged instead).
+export const runThroughFlow = async (agent: AiAgent, messages: ChatTurn[]): Promise<{ text: string; handoff: boolean; unknown: boolean } | null> => {
+  const ChatFlow = (await import("../../models/ChatFlow")).default;
+  const flow = await ChatFlow.findOne({ where: { agentId: agent.id, kind: "agent" } as any, order: [["id", "DESC"]] });
+  if (!flow) return null;
+  const { parseGraph } = await import("../FlowServices/Graph");
+  const { advance, firstNode, resume } = await import("../FlowServices/Engine");
+  const { simEffects } = await import("../FlowServices/Effects");
+  const graph = parseGraph(flow.published || flow.draft);
+  const start = firstNode(graph);
+  if (!start) return null;
+  const inputs = messages.filter(m => m.role === "user").map(m => m.content);
+  const sim = simEffects({}, { agent, flowId: flow.id });
+  let step: any = null;
+  let before = 0;
+  for (const [i, input] of inputs.entries()) {
+    before = sim.messages.length;
+    // eslint-disable-next-line no-await-in-loop
+    step = i === 0 || !step || step.status !== "waiting" ? await advance(graph, start.id, { nodeId: null, vars: {}, tries: 0, pending: input }, sim.fx) : await resume(graph, step.state, input, sim.fx);
+    if (step.status === "handoff" || step.status === "done") break;
+  }
+  const text = sim.messages.slice(before).join("\n\n");
+  const handoff = !!step && (step.status === "handoff" || sim.routes.length > 0);
+  const unknown = /prefiro confirmar|confirmar com a equipe|vou confirmar/i.test(text);
+  return { text, handoff, unknown };
+};
+
+// The standard scenarios of the commercial process: what the administration expects in the situations that matter most. Loaded with one
+// click ("Carregar cenários padrão") and run before publishing; the checks are about what must never happen and where the conversation goes.
+export const DEFAULT_CASES: Array<{ name: string; messages: ChatTurn[]; expect: Expect }> = [
+  { name: "Saudação: se apresenta como assistente virtual", messages: [{ role: "user", content: "oi" }], expect: { mustContain: ["assistente virtual"], mustNotContain: ["R$"] } },
+  { name: "Já é aluno: chama a tutoria, sem vender", messages: [{ role: "user", content: "já sou aluno e não consigo acessar a plataforma" }], expect: { mustContain: [], mustNotContain: ["bolsa", "mensalidade", "R$"] } },
+  { name: "Curso fora do catálogo: avisa que não oferece", messages: [{ role: "user", content: "quero fazer medicina" }], expect: { mustContain: ["não oferece | nao oferece | não temos"], mustNotContain: ["R$"] } },
+  { name: "Pergunta o preço: não informa valor", messages: [{ role: "user", content: "quanto custa a mensalidade de pedagogia?" }], expect: { mustContain: [], mustNotContain: ["R$", "reais por mês"] } },
+  { name: "Pede uma pessoa: passa para o consultor", messages: [{ role: "user", content: "quero falar com um atendente humano" }], expect: { mustContain: [], mustNotContain: ["R$"], outcome: "handoff" } },
+  { name: "Promessa: nunca garante emprego ou aprovação", messages: [{ role: "user", content: "vocês garantem que eu consigo emprego depois do curso?" }], expect: { mustContain: [], mustNotContain: ["garantimos", "garantido", "com certeza vai conseguir"] } },
+  { name: "Segunda graduação: segue o processo", messages: [{ role: "user", content: "já sou formado em administração e quero fazer outra graduação" }], expect: { mustContain: [], mustNotContain: ["R$", "garantimos"] } },
+  { name: "Grade: fala da grade do curso", messages: [{ role: "user", content: "me manda a grade do curso de administração" }], expect: { mustContain: ["grade"], mustNotContain: ["R$"] } }
+];

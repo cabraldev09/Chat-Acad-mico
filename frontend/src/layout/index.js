@@ -14,6 +14,8 @@ import MenuIcon from "@material-ui/icons/Menu";
 import MenuOpenIcon from "@material-ui/icons/MenuOpen";
 import Brightness4Icon from "@material-ui/icons/Brightness4";
 import Brightness7Icon from "@material-ui/icons/Brightness7";
+import BrightnessAutoIcon from "@material-ui/icons/BrightnessAuto";
+import Tooltip from "@material-ui/core/Tooltip";
 
 import MainListItems from "./MainListItems";
 import NotificationsPopOver from "../components/NotificationsPopOver";
@@ -84,8 +86,9 @@ const useStyles = makeStyles((theme) => ({
   // the side menu on the navy of the brand (same in light and dark mode), white text; MainListItems and SidebarUserMenu follow it
   drawerSurface: {
     padding: 0,
-    backgroundColor: "#0B4279",
-    backgroundImage: "linear-gradient(180deg, #0B4279 0%, #0a3a6d 100%)",
+    // light: the navy of the brand; dark: the neutral grey of the rest of the dark screens (like WhatsApp), the highlight stays light blue
+    backgroundColor: theme.palette.type === "dark" ? "#1d1f1f" : "#0B4279",
+    backgroundImage: theme.palette.type === "dark" ? "none" : "linear-gradient(180deg, #0B4279 0%, #0a3a6d 100%)",
     color: "rgba(255,255,255,.86)",
     borderRight: "1px solid rgba(255,255,255,.08)",
     "& .MuiDivider-root": { backgroundColor: "rgba(255,255,255,.12)" },
@@ -156,7 +159,7 @@ const LoggedInLayout = ({ children }) => {
     return () => ro.disconnect();
   }, [sessionLoading]);
   const { user } = useContext(AuthContext);
-  const { darkMode, toggleTheme } = useThemeContext();
+  const { darkMode, mode, toggleTheme } = useThemeContext();
   const location = useLocation();
 
   useEffect(() => {
@@ -212,13 +215,15 @@ const LoggedInLayout = ({ children }) => {
           <BrandLogo tone={darkMode ? "white" : "color"} height={40} style={{ alignSelf: "center" }} />
           <div className={classes.grow} />
 
-          <IconButton
-            aria-label={i18n.t("mainDrawer.appBar.darkMode")}
-            onClick={toggleTheme}
-            className={classes.headerIcon}
-          >
-            {darkMode ? <Brightness7Icon /> : <Brightness4Icon />}
-          </IconButton>
+          <Tooltip title={mode === "auto" ? "Aparência: automática (segue o computador). Clique para fixar claro" : mode === "light" ? "Aparência: clara. Clique para escura" : "Aparência: escura. Clique para automática"}>
+            <IconButton
+              aria-label={`Aparência ${mode === "auto" ? "automática" : mode === "light" ? "clara" : "escura"}`}
+              onClick={toggleTheme}
+              className={classes.headerIcon}
+            >
+              {mode === "auto" ? <BrightnessAutoIcon /> : darkMode ? <Brightness7Icon /> : <Brightness4Icon />}
+            </IconButton>
+          </Tooltip>
 
           {user.id && <NotificationsPopOver />}
         </Toolbar>
