@@ -8,7 +8,9 @@ const { GRAPH } = require("/app/backend/dist/channels/meta");
 const { saveConfig, extendCloudToken } = require("/app/backend/dist/services/ChannelServices/CloudToken");
 
 const PHONE = String(process.env.PHONE_ID || "").replace(/\D/g, "");
+const GIVEN_APP = String(process.env.APP_ID || "").replace(/\D/g, "");
 const WABA = String(process.env.WABA_ID || "").replace(/\D/g, "");
+// the App ID given by the administration (Configurações do app → Básico); empty = the app that issued the token
 (async () => {
   const all = await Whatsapp.findAll({ where: { channel: "whatsapp_cloud" } });
   const list = all.filter(w => !PHONE || String(getConfig(w).phoneNumberId || "").replace(/\D/g, "") === PHONE);
@@ -26,8 +28,10 @@ const WABA = String(process.env.WABA_ID || "").replace(/\D/g, "");
     }
     const expires = Number(info.expires_at || 0);
     console.log(`  token do app "${info.application || "?"}" (App ID ${info.app_id || "?"}), válido: ${info.is_valid ? "sim" : "não"}, vence: ${expires ? new Date(expires * 1000).toISOString() : "nunca (permanente)"}`);
-    if (!info.app_id) continue;
-    await saveConfig(w, { appId: String(info.app_id), ...(WABA ? { wabaId: WABA } : {}), tokenExtendError: null });
+    const appId = GIVEN_APP || String(info.app_id || "");
+    if (!appId) continue;
+    if (GIVEN_APP && info.app_id && String(info.app_id) !== GIVEN_APP) console.log(`  atenção: o token salvo é do app ${info.app_id}, não do ${GIVEN_APP}. Gere o token na Configuração da API do app ${GIVEN_APP} e cole em Conexões, senão ele não vira de 60 dias.`);
+    await saveConfig(w, { appId, ...(WABA ? { wabaId: WABA } : {}), tokenExtendError: null });
     await w.reload();
     const result = await extendCloudToken(w);
     await w.reload();
