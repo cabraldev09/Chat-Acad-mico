@@ -49,11 +49,11 @@ export const resolvePeriod = (query: { range?: any; from?: any; to?: any }): Per
   return { range, start: dayBounds(startDay).start, end: dayBounds(endDay).end, from: startDay, to: endDay };
 };
 
-const rows = async (sql: string, replacements: Record<string, any>): Promise<any[]> =>
+export const rows = async (sql: string, replacements: Record<string, any>): Promise<any[]> =>
   (await sequelize.query(portable(sql), { replacements, type: QueryTypes.SELECT })) as any[];
 
 // Customers only: no groups, copied history, team members' chats or personal contacts
-const VALID_TICKET = `t.isHistorical = false AND t.isGroup = false AND NOT EXISTS (SELECT 1 FROM Contacts sc WHERE sc.id = t.contactId AND (sc.isStaff = true OR sc.isPersonal = true OR sc.kind <> 'person'))`;
+export const VALID_TICKET = `t.isHistorical = false AND t.isGroup = false AND NOT EXISTS (SELECT 1 FROM Contacts sc WHERE sc.id = t.contactId AND (sc.isStaff = true OR sc.isPersonal = true OR sc.kind <> 'person'))`;
 
 // ---------------------------------------------------------------- configuration (schedules, targets, rules)
 export interface AnalyticsConfig {

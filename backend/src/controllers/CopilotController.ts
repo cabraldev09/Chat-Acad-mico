@@ -63,6 +63,8 @@ export const show = async (req: Request, res: Response) => {
     ]);
     autoBrief = !made && (older > 0 || handed > 0);
   }
+  // the picture of the process is kept for the management's report (where each conversation is)
+  if (ticket.userId) import("../services/AnalyticsServices/ProcessMetrics").then(m => m.saveSnapshot(ticket, process as any)).catch(() => undefined);
   // what the automatic follow-up wrote on the lead (stage, situation, next step, temperature): shown on top, no new AI call
   let situation: any = null;
   if (process.leadId) {

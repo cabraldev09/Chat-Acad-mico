@@ -14,6 +14,7 @@ import { onColor, tint } from "../../utils/color";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import NumberTicker from "../../components/NumberTicker";
+import ProcessTab from "./ProcessTab";
 import { BRAND, BlockTitle, CompareBars, HistoryChart, Kpi, PeriodPicker, PresenceDot, PRESENCE, Progress, fmt, num, periodParams, useAnalytics, useDefinitions, useKit } from "../../components/analytics/kit";
 
 const DAYS = [["1", "Seg"], ["2", "Ter"], ["3", "Qua"], ["4", "Qui"], ["5", "Sex"], ["6", "Sáb"], ["0", "Dom"]];
@@ -575,7 +576,7 @@ const CommercialCenter = () => {
           </div>
         </div>
         <div role="tablist" style={{ display: "flex", gap: 4, marginTop: 14, overflowX: "auto" }}>
-          {[["geral", "Visão geral"], ["consultores", "Consultores"], ["polos", "Polos"], ["config", "Configuração"]].map(([k, label]) => (
+          {[["geral", "Visão geral"], ["consultores", "Consultores"], ["processo", "Atendimento e processo"], ["polos", "Polos"], ["config", "Configuração"]].map(([k, label]) => (
             <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setTab(k)} style={{ border: 0, background: "transparent", color: "#fff", opacity: tab === k ? 1 : 0.7, fontFamily: "inherit", fontSize: 14, fontWeight: 600, padding: "10px 16px", cursor: "pointer", borderBottom: `3px solid ${tab === k ? BRAND.gorse : "transparent"}`, whiteSpace: "nowrap" }}>{label}</button>
           ))}
         </div>
@@ -610,6 +611,7 @@ const CommercialCenter = () => {
       )}
       {selected && <Detail userId={selected} period={params} defs={defs} onClose={() => setSelected(null)} />}
 
+      {tab === "processo" && ready && <ProcessTab params={params} />}
       {data && tab === "polos" && <PoloBoard data={data} polos={polos} history={history} setTab={setTab} />}
 
       {data && tab === "config" && config && <ConfigPanel config={config} consultants={data.consultants} onSaved={setConfig} />}

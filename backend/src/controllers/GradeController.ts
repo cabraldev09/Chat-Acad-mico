@@ -141,5 +141,14 @@ export const send = async (req: Request, res: Response): Promise<Response> => {
       displayName: `${g.courseName}.pdf`.replace(/[\\/:*?"<>|]/g, "_")
     });
   }
+  // counted for the management: who sent which grade to which lead
+  try {
+    const Lead = (await import("../models/Lead")).default;
+    const { addActivity } = await import("../services/CrmServices/LeadCore");
+    const lead = await Lead.findOne({ where: { contactId: ticket.contactId }, attributes: ["id"], order: [["updatedAt", "DESC"]] });
+    if (lead) await addActivity(lead.id, Number(req.user.id), "grade_sent", `Grade enviada: ${g.courseName}`);
+  } catch (err) {
+    // the grade went out; only the count is lost
+  }
   return res.json({ ok: true });
 };

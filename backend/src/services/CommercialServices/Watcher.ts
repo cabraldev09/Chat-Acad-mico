@@ -148,6 +148,14 @@ export const watchTicket = async (ticketId: number, opts: { forceAi?: boolean } 
     }
   }
   await saveState(state);
+  // the picture of the process for the management's report (free: the same rules the copilot shows)
+  try {
+    const { copilotOf } = await import("./Process");
+    const { saveSnapshot } = await import("../AnalyticsServices/ProcessMetrics");
+    await saveSnapshot(ticket, await copilotOf(ticket));
+  } catch (err) {
+    logger.warn(`Retrato do processo do ticket ${ticket.id}: ${(err as Error).message}`);
+  }
   return { moved, ai };
 };
 

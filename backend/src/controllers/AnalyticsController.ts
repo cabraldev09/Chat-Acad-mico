@@ -78,3 +78,28 @@ export const exportTeam = async (req: Request, res: Response): Promise<void> => 
   res.setHeader("Content-Disposition", `attachment; filename="gestao-comercial-${p.from}-${p.to}.csv"`);
   res.send(`﻿${lines.join("\r\n")}`);
 };
+
+
+// "Atendimento e processo": per consultant, conversations, messages, audios, grades, process followed and where the leads stopped
+const stepLabelOf = async (): Promise<(key: string) => string> => {
+  const { configOf } = await import("../services/CopilotServices/Settings");
+  const { STEP_LABEL } = await import("../services/CommercialServices/Process");
+  const config = await configOf();
+  const labels = new Map(config.steps.map(s => [s.key, s.label]));
+  return (key: string) => labels.get(key) || (STEP_LABEL as any)[key] || key;
+};
+export const processTeam = async (req: Request, res: Response): Promise<Response> => {
+  if (!isManagerRole(roleOf(req.user))) throw new AppError("ERR_NO_PERMISSION", 403);
+  const p = resolvePeriod(req.query);
+  const ids = await visibleConsultantIds(req.user);
+  const User = (await import("../models/User")).default;
+  const users = ids.length ? (await User.findAll({ where: { id: ids }, attributes: ["id", "name"], order: [["name", "ASC"]] })).map(u => ({ id: u.id, name: u.name })) : [];
+  const { processMetrics } = await import("../services/AnalyticsServices/ProcessMetrics");
+  return res.json({ period: period(req), consultants: await processMetrics(users, p, await stepLabelOf()) });
+};
+export const processConsultant = async (req: Request, res: Response): Promise<Response> => {
+  const target = Number(req.params.userId);
+  if (!Number.isInteger(target) || !(await canSeeConsultant(req.user, target))) throw new AppError("ERR_NO_PERMISSION", 403);
+  const { consultantLeads } = await import("../services/AnalyticsServices/ProcessMetrics");
+  return res.json({ period: period(req), leads: await consultantLeads(target, resolvePeriod(req.query), await stepLabelOf()) });
+};
