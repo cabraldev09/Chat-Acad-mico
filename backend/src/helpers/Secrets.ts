@@ -81,6 +81,13 @@ export const openSecret = (stored: string): string => {
   }
 };
 
+// A token or secret pasted from a panel often carries spaces, line breaks, quotes or a "Bearer " in front; none of them is ever part of the
+// credential, and the provider refuses it ("Cannot parse access token"). A masked or already sealed value is left alone.
+export const cleanCredential = (value: string): string => {
+  if (!value || isMasked(value) || value.startsWith(SEAL_PREFIX)) return value;
+  return value.replace(/\s+/g, "").replace(/^bearer(?=[A-Za-z0-9])/i, "").replace(/^["'`]+|["'`]+$/g, "");
+};
+
 // The credentials of a channel connection are stored sealed (AES-256-GCM): a copy of the database alone does not reveal them. Values written
 // before sealing existed are read as they are and sealed the next time the connection is saved.
 export const sealConfig = (config?: string | null): string | undefined => {
@@ -88,7 +95,7 @@ export const sealConfig = (config?: string | null): string | undefined => {
   try {
     const parsed = JSON.parse(config);
     SECRET_CONFIG_KEYS.forEach(key => {
-      const value = parsed[key];
+      const value = typeof parsed[key] === "string" ? cleanCredential(parsed[key]) : parsed[key];
       if (typeof value === "string" && value && !isMasked(value) && !value.startsWith(SEAL_PREFIX)) parsed[key] = sealSecret(value);
     });
     return JSON.stringify(parsed);
