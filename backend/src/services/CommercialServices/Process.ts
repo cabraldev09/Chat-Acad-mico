@@ -43,8 +43,8 @@ export interface Copilot {
 }
 
 export const STEP_LABEL: Record<StepKey, string> = {
-  entry: "Primeira graduação ou já tem faculdade",
-  course: "Curso de interesse",
+  entry: "Já tem graduação? (forma de ingresso)",
+  course: "O que procura (curso)",
   city: "Cidade e polo",
   format: "Formato e mudanças do MEC explicados",
   grade: "Grade, tutoria e estágio",
@@ -122,7 +122,7 @@ const first = (name: string | null | undefined): string => String(name || "").tr
 const textFor = async (key: StepKey, s: Slots, leadName: string): Promise<{ text: string; action: "send_grade" | "proposal" | "enroll" | null } | null> => {
   switch (key) {
     case "entry": return { text: QUESTIONS.entry, action: null };
-    case "course": return { text: QUESTIONS.course, action: null };
+    case "course": return { text: "Me conta: o que você está procurando? Qual curso você tem interesse em fazer?", action: null };
     case "city": return { text: QUESTIONS.city, action: null };
     case "format": {
       try {
