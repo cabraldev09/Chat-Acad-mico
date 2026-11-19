@@ -1,0 +1,29 @@
+# Banco Postgres no próprio servidor (quando não há um banco externo, como o Supabase).
+# Ligado pelo .env com COMPOSE_FILE=docker-compose.yml:docker-compose.localdb.yml (o install.sh faz isso com LOCAL_DB=1).
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: chat
+      POSTGRES_USER: chat
+      POSTGRES_PASSWORD: ${LOCAL_DB_PASSWORD:?defina LOCAL_DB_PASSWORD no .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chat -d chat"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  api:
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+    name: chat-academico-pgdata

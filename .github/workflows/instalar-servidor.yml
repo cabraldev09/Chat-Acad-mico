@@ -1,0 +1,74 @@
+name: Instalar o sistema num servidor novo
+
+# Instala a API num VPS Ubuntu novo, sem perguntas, entrando pela chave de deploy (VPS_SSH_KEY). A chave pública precisa
+# já estar no root do servidor (painel da hospedagem, ou a ação "Mostrar a chave pública de deploy").
+# O repositório é clonado com o token temporário desta execução, que não fica no servidor.
+# No fim, mostra a linha para deploy/vps/known_hosts (a identidade do servidor, vista na primeira conexão).
+on:
+  workflow_dispatch:
+    inputs:
+      host:
+        description: "IP do servidor novo"
+        required: true
+      admin_email:
+        description: "E-mail do administrador do sistema"
+        required: true
+      admin_password:
+        description: "Senha inicial do administrador (troque depois do primeiro acesso)"
+        required: true
+      database_url:
+        description: "DATABASE_URL de um banco externo (vazio = banco Postgres no próprio servidor)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  instalar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Esconde os valores sensíveis do log
+        env:
+          PASS: ${{ inputs.admin_password }}
+          DBURL: ${{ inputs.database_url }}
+        run: |
+          echo "::add-mask::$PASS"
+          [ -z "$DBURL" ] || echo "::add-mask::$DBURL"
+      - name: Prepara o SSH
+        env:
+          KEY: ${{ secrets.VPS_SSH_KEY }}
+          HOST: ${{ inputs.host }}
+        run: |
+          [ -n "$KEY" ] || { echo "::error::Falta o segredo VPS_SSH_KEY"; exit 1; }
+          echo "$HOST" | grep -Eq '^[0-9]{1,3}(\.[0-9]{1,3}){3}$' || { echo "::error::IP inválido"; exit 1; }
+          install -m 700 -d ~/.ssh
+          body=$(printf '%s' "$KEY" | grep -v '^-----' | tr -d ' \r\n\t')
+          { echo "-----BEGIN OPENSSH PRIVATE KEY-----"; printf '%s' "$body" | fold -w 70; echo; echo "-----END OPENSSH PRIVATE KEY-----"; } > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          # servidor novo: a identidade é registrada nesta primeira conexão e mostrada no fim para entrar no known_hosts
+          for i in $(seq 1 12); do
+            ssh-keyscan -T 10 -t ed25519 "$HOST" 2>/dev/null | grep ssh-ed25519 > ~/.ssh/known_hosts && [ -s ~/.ssh/known_hosts ] && break
+            sleep 10
+          done
+          [ -s ~/.ssh/known_hosts ] || { echo "::error::O servidor $HOST não respondeu na porta 22"; exit 1; }
+      - name: Instala
+        env:
+          HOST: ${{ inputs.host }}
+          GH_TOKEN: ${{ github.token }}
+          ADM_EMAIL: ${{ inputs.admin_email }}
+          ADM_PASS: ${{ inputs.admin_password }}
+          DB_URL: ${{ inputs.database_url }}
+        run: |
+          q() { printf '%q' "$1"; }
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes -o ConnectTimeout=20 -o ServerAliveInterval=30 root@"$HOST" \
+            "curl -fsSL -H 'Authorization: Bearer $GH_TOKEN' https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/deploy/vps/install.sh -o /root/install.sh && \
+             NONINTERACTIVE=1 GH_TOKEN=$(q "$GH_TOKEN") ADM_EMAIL=$(q "$ADM_EMAIL") ADM_PASS=$(q "$ADM_PASS") DB_URL=$(q "$DB_URL") bash /root/install.sh"
+      - name: Identidade do servidor (para deploy/vps/known_hosts)
+        env:
+          HOST: ${{ inputs.host }}
+        run: |
+          echo "Linha para deploy/vps/known_hosts:"
+          awk -v h="$HOST" '{print h" "$2" "$3}' ~/.ssh/known_hosts

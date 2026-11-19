@@ -47,7 +47,7 @@ SUFFIX=""; [ -n "$PASSPHRASE" ] && SUFFIX=".enc"
 
 # 1) database: the URL is read from the container environment and goes by a pipe (never in the arguments, the log or the environment of the dump image)
 if docker compose run --rm --no-deps -T --entrypoint node api -e 'if(!process.env.DATABASE_URL){process.exit(1)};process.stdout.write(process.env.DATABASE_URL+"\n")' 2>/dev/null |
-  docker run --rm -i "$IMAGE" sh -c 'read -r u; pg_dump --dbname="$u" --format=custom --schema=public --no-owner --no-acl' | encrypt > "$DUMP.partial" && test -s "$DUMP.partial"; then
+  docker run --rm -i --network chat-academico_default "$IMAGE" sh -c 'read -r u; pg_dump --dbname="$u" --format=custom --schema=public --no-owner --no-acl' | encrypt > "$DUMP.partial" && test -s "$DUMP.partial"; then
   mv "$DUMP.partial" "$DUMP$SUFFIX"
   printf '%s\n' "$PG_MAJOR" > "${DUMP%.dump}.major"
   echo "$(date '+%F %T') banco: $(du -h "$DUMP$SUFFIX" | cut -f1)"
