@@ -5127,13 +5127,16 @@ const postMeta = (id, payload, secret, badSig) => {
       const person = await http.get("/whatsapp-health", asUser(tk));
       assert(person.status === 200 && person.data.every(w => !w.ownerId || w.ownerId === cons.id), "a person saw someone else's number");
     });
-    await test("mass messages are for the commercial team: a tutor cannot reach campaigns or contact lists", async () => {
+    await test("mass messages: a tutor sees only their own campaigns and lists, and never pastes numbers or uses someone else's list", async () => {
       await http.post("/users", { name: "Tutor sem campanhas", email: "tutor-camp@x.com", password: "senha123", role: "tutor" }, auth());
       const tk = (await http.post("/auth/login", { email: "tutor-camp@x.com", password: "senha123" })).data.token;
-      for (const [m, url] of [["get", "/campaigns"], ["post", "/campaigns"], ["get", "/contact-lists"], ["post", "/contact-lists"]]) {
-        const r = await http[m](url, ...(m === "post" ? [{}, asUser(tk)] : [asUser(tk)]));
-        assert(r.status === 403, `${m} ${url} answered ${r.status} to a tutor`);
-      }
+      const adminList = (await http.post("/contact-lists", { name: "Lista da administração" }, auth())).data;
+      const camps = await http.get("/campaigns", asUser(tk));
+      assert(camps.status === 200 && Array.isArray(camps.data) && camps.data.length === 0, `the tutor saw other campaigns: ${camps.status} ${Array.isArray(camps.data) ? camps.data.length : ""}`);
+      const lists = await http.get("/contact-lists", asUser(tk));
+      assert(lists.status === 200 && !lists.data.some(l => l.id === adminList.id), "the tutor saw the administration's list");
+      assert((await http.get(`/contact-lists/${adminList.id}/items`, asUser(tk))).status === 403, "the tutor read the administration's list");
+      assert((await http.post(`/contact-lists/${adminList.id}/import`, { items: [{ number: "5569999990000" }] }, asUser(tk))).status === 403, "the tutor pasted numbers");
       assert((await http.get("/campaigns", auth())).status === 200, "the administration lost the campaigns");
     });
     await test("choices go out as native buttons and lists, and the tap comes back as the option", async () => {
