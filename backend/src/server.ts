@@ -76,7 +76,7 @@ whenLeader(() => {
   startOutboundWorker();
   startCadences();
   // the polos and goals of the spreadsheet are loaded once, so the goals screen is never empty
-  import("./services/GoalServices/SeedPoloGoals").then(({ seedPoloGoals }) => seedPoloGoals()).catch(() => undefined)
+  import("./services/GoalServices/SeedPoloGoals").then(async ({ seedPoloGoals, seedGoal20271 }) => { await seedPoloGoals(); await seedGoal20271(); }).catch(() => undefined)
     // the cities come after the polos exist
     .then(() => import("./services/PoloServices/SeedCoverage")).then(({ seedPoloCoverage }) => seedPoloCoverage()).catch(() => undefined);
   // the commercial matrices that come with the system, read once when the catalog is empty

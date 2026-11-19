@@ -81,16 +81,23 @@ const useStyles = makeStyles((theme) => ({
     }),
     width: drawerCollapsedWidth,
   },
+  // the side menu on the navy of the brand (same in light and dark mode), white text; MainListItems and SidebarUserMenu follow it
   drawerSurface: {
     padding: 0,
-    backgroundColor: theme.palette.background.paper,
-    borderRight: theme.border.divider,
+    backgroundColor: "#0B4279",
+    backgroundImage: "linear-gradient(180deg, #0B4279 0%, #0a3a6d 100%)",
+    color: "rgba(255,255,255,.86)",
+    borderRight: "1px solid rgba(255,255,255,.08)",
+    "& .MuiDivider-root": { backgroundColor: "rgba(255,255,255,.12)" },
+    "& .MuiTypography-colorTextSecondary": { color: "rgba(255,255,255,.6)" },
+    "& .MuiAvatar-root": { backgroundColor: "rgba(255,255,255,.16)", color: "#fff" },
+    "& ::-webkit-scrollbar-thumb": { backgroundColor: "rgba(255,255,255,.22)" },
     [theme.breakpoints.down("xs")]: {
       pointerEvents: "none",
     },
   },
   drawerDocked: {
-    borderRight: theme.border.divider,
+    borderRight: 0,
   },
   sidebarCard: {
     flex: 1,
@@ -112,7 +119,7 @@ const useStyles = makeStyles((theme) => ({
     ...theme.scrollbarStyles,
   },
   sidebarFooter: {
-    borderTop: theme.border.divider,
+    borderTop: "1px solid rgba(255,255,255,.12)",
     paddingTop: theme.spacing(1),
     marginTop: theme.spacing(1),
   },

@@ -19,7 +19,7 @@ const useStyles = makeStyles((theme) => ({
     gap: theme.spacing(1.25),
     padding: theme.spacing(1, 1.25),
     borderRadius: theme.borderRadius.small,
-    "&:hover": { backgroundColor: theme.palette.action.hover },
+    "&:hover": { backgroundColor: "rgba(255,255,255,.08)" },
   },
   userButtonCollapsed: {
     justifyContent: "center",
@@ -36,7 +36,7 @@ const useStyles = makeStyles((theme) => ({
     textTransform: "capitalize",
   },
   expandIcon: {
-    color: theme.palette.text.secondary,
+    color: "rgba(255,255,255,.6)",
   },
 }));
 

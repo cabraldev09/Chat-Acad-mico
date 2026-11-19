@@ -53,7 +53,8 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
   const facets = await CommercialGrade.findAll({ attributes: ["degree", "knowledgeArea", "modality"], raw: true });
   const uniq = (key: "degree" | "knowledgeArea" | "modality") => [...new Set(facets.map((f: any) => f[key]).filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b), "pt-BR"));
   const rules = await rulesByCourse();
-  return res.json({ grades: rows.map(g => gradeView(g, false, rules.get(plainName(g.courseName)) || null)), degrees: uniq("degree"), areas: uniq("knowledgeArea"), modalities: uniq("modality") });
+  // the ready WhatsApp text goes with each grade: the card shows it, with copy and send
+  return res.json({ grades: rows.map(g => gradeView(g, true, rules.get(plainName(g.courseName)) || null)), degrees: uniq("degree"), areas: uniq("knowledgeArea"), modalities: uniq("modality") });
 };
 
 export const show = async (req: Request, res: Response): Promise<Response> => {
