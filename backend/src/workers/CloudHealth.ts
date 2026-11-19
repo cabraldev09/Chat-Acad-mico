@@ -69,12 +69,45 @@ export const checkCloudConnection = async (whatsapp: Whatsapp, starting = false)
   return status;
 };
 
+// The official number must not go down unnoticed: when it disconnects, or its token is about to end, the administrators get an
+// e-mail (at most once every 6 hours per number), besides the notice on the screen.
+const lastAlert = new Map<number, number>();
+const ALERT_EVERY_MS = 6 * 3600000;
+export const alertAdmins = async (w: Whatsapp, reason: string): Promise<boolean> => {
+  const last = lastAlert.get(w.id) || 0;
+  if (Date.now() - last < ALERT_EVERY_MS) return false;
+  lastAlert.set(w.id, Date.now());
+  const User = (await import("../models/User")).default;
+  const { notify, frontBase } = await import("../services/MailServices/Notify");
+  const admins = await User.findAll({ where: { profile: "admin" } as any, attributes: ["email"] });
+  const link = `${frontBase()}/connections`;
+  const subject = `WhatsApp oficial "${w.name}": ${w.status === "CONNECTED" ? "atenção" : "fora do ar"}`;
+  const text = `${reason}\n\nAbra Conexões para resolver: ${link}`;
+  const html = `<p>${reason.replace(/</g, "&lt;")}</p><p><a href="${link}">Abrir Conexões</a></p>`;
+  admins.forEach(a => notify(a.email, { subject, text, html }, "Cloud health alert"));
+  return true;
+};
+
 const tick = async (): Promise<void> => {
   try {
     const numbers = await Whatsapp.findAll({ where: { channel: "whatsapp_cloud" } as any });
     for (const w of numbers) {
-      // eslint-disable-next-line no-await-in-loop
-      await checkCloudConnection(w).catch(err => logger.warn(`Cloud health of connection ${w.id} failed: ${err}`));
+      try {
+        // a token close to its end is traded again before it stops (only when the App ID and the App Secret allow it)
+        const { tokenExpiresAt } = getConfig(w);
+        if (tokenExpiresAt && new Date(tokenExpiresAt).getTime() - Date.now() < 7 * 86400000) {
+          const { extendCloudToken } = await import("../services/ChannelServices/CloudToken");
+          // eslint-disable-next-line no-await-in-loop
+          await extendCloudToken(w);
+        }
+        // eslint-disable-next-line no-await-in-loop
+        const status = await checkCloudConnection(w);
+        const expiring = getConfig(w).tokenExpiresAt && new Date(getConfig(w).tokenExpiresAt).getTime() - Date.now() < 2 * 86400000;
+        if (status !== "CONNECTED") await alertAdmins(w, `O número oficial "${w.name}" está desconectado. ${w.statusNote || ""}`.trim());
+        else if (expiring) await alertAdmins(w, `O token de acesso do número oficial "${w.name}" vence em menos de 2 dias. Gere um token novo e cole na conexão para o número não cair.`);
+      } catch (err) {
+        logger.warn(`Cloud health of connection ${w.id} failed: ${err}`);
+      }
     }
   } catch (err) {
     logger.warn(`Cloud health tick failed: ${err}`);

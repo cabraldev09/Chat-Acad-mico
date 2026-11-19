@@ -30,7 +30,7 @@ import GoalIcon from "lucide-react/dist/esm/icons/goal";
 import GaugeIcon from "lucide-react/dist/esm/icons/gauge";
 import SlidersIcon from "lucide-react/dist/esm/icons/sliders-horizontal";
 import GraduationCapIcon from "lucide-react/dist/esm/icons/graduation-cap";
-import ImagesIcon from "lucide-react/dist/esm/icons/image-plus";
+import CoursesIcon from "lucide-react/dist/esm/icons/book-open";
 import FileSearchIcon from "lucide-react/dist/esm/icons/file-search";
 import LibraryIcon from "lucide-react/dist/esm/icons/library";
 import BookOpenCheckIcon from "lucide-react/dist/esm/icons/book-open-check";
@@ -51,26 +51,34 @@ const useStyles = makeStyles((theme) => ({
     padding: theme.spacing(0.875, 1.25),
     borderRadius: theme.borderRadius.small,
     color: theme.palette.text.secondary,
-    transition: "background-color .15s, color .15s",
+    transition: "background-color .18s ease, color .18s ease, transform .18s ease, box-shadow .18s ease",
     "&:hover": {
-      backgroundColor: theme.palette.action.hover,
-      color: theme.palette.text.primary,
+      backgroundColor: "var(--accent-soft)",
+      color: "var(--accent-strong)",
+      transform: "translateX(2px)",
     },
+    "&:hover $navIcon": { color: "var(--accent)" },
+    "@media (prefers-reduced-motion: reduce)": { transition: "none", "&:hover": { transform: "none" } },
   },
   navItemCollapsed: {
     position: "relative",
     justifyContent: "center",
     padding: theme.spacing(1, 1),
   },
+  // the current page: the light blue of the logo (#4595D8), a bar on the left and a soft glow
   navItemActive: {
-    color: theme.palette.text.primary,
-    backgroundColor: theme.palette.action.selected,
-    "&:hover": { backgroundColor: theme.palette.action.selected },
+    color: "var(--accent-strong)",
+    background: "linear-gradient(90deg, var(--accent-softer), var(--accent-soft))",
+    boxShadow: "inset 0 0 0 1px var(--accent-line), 0 4px 12px -6px var(--accent-glow)",
+    "&:hover": { background: "linear-gradient(90deg, var(--accent-softer), var(--accent-soft))", transform: "none" },
+    "&::before": {
+      content: '""', position: "absolute", left: 0, top: 7, bottom: 7, width: 3, borderRadius: 3, background: "var(--accent)",
+    },
     "& $navIcon": {
-      color: theme.palette.primary.main,
+      color: "var(--accent)",
     },
     "& $navText": {
-      fontWeight: 500,
+      fontWeight: 600,
     },
   },
   navIcon: {
@@ -119,8 +127,11 @@ const useStyles = makeStyles((theme) => ({
   },
   sectionLabel: {
     ...theme.typography.sectionLabel,
-    padding: theme.spacing(0.5, 1.25, 0.75),
+    padding: theme.spacing(1, 1.25, 0.75),
     lineHeight: 1.4,
+    color: "var(--accent)",
+    fontWeight: 700,
+    letterSpacing: ".04em",
   },
 }));
 
@@ -289,7 +300,7 @@ const MainListItems = (props) => {
         <ListSubheader disableSticky className={classes.sectionLabel}>Cursos e alunos</ListSubheader>
       )}
       <ListItemLink to="/grades" primary="Grades" icon={<LibraryIcon className="ico" />} collapsed={collapsed} />
-      <ListItemLink to="/cursos" primary="Cursos e materiais" icon={<ImagesIcon className="ico" />} collapsed={collapsed} />
+      <ListItemLink to="/cursos" primary="Cursos e materiais" icon={<CoursesIcon className="ico" />} collapsed={collapsed} />
       <ListItemLink
         to="/analise-curricular"
         primary="Análise curricular"

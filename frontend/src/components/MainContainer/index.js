@@ -28,7 +28,7 @@ const MainContainer = ({ children }) => {
 
   return (
     <Container className={classes.mainContainer} maxWidth={false}>
-      <div className={classes.contentWrapper}>{children}</div>
+      <div className={`${classes.contentWrapper} ui-page-enter`}>{children}</div>
     </Container>
   );
 };
