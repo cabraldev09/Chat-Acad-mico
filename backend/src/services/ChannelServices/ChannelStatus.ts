@@ -5,6 +5,7 @@ export const setChannelStatus = async (
   whatsapp: Whatsapp,
   status: string
 ): Promise<void> => {
-  await whatsapp.update({ status, qrcode: "" });
+  // a connection that works again shows no old warning
+  await whatsapp.update({ status, qrcode: "", ...(status === "CONNECTED" ? { statusNote: null } : {}) } as any);
   getIO().emit("whatsappSession", { action: "update", session: whatsapp });
 };

@@ -94,6 +94,16 @@ export default function CopilotSettings({ processOnly = false, onSaved }) {
   return <div className={c.root}>
     {processOnly && <Button href="/configuracoes?secao=copiloto" style={{ justifySelf: "start" }}>Ativação, conexões e limites de uso</Button>}
     {!processOnly && <>
+      {config.watch && <Paper variant="outlined" className={c.card}>
+        <div className={c.title}><ShieldCheck size={20} /> Acompanhamento automático do CRM</div>
+        <FormControlLabel control={<Switch checked={!!config.watch.enabled} onChange={e => set("watch", { ...config.watch, enabled: e.target.checked })} color="primary" />} label="Acompanhar as conversas dos consultores e atualizar o CRM sozinho" />
+        <div className={c.hint}>Depois que a conversa para por um minuto e meio, o sistema lê o que já aconteceu e move o lead para a frente no funil (nunca para trás, nunca para Matriculado ou Perdido), registrando o motivo no histórico do lead. Sem custo.</div>
+        <FormControlLabel control={<Switch checked={!!config.watch.useAi} disabled={!config.watch.enabled} onChange={e => set("watch", { ...config.watch, useAi: e.target.checked })} color="primary" />} label="Usar a IA (custo baixo) para registrar a situação do lead e o próximo passo" />
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+          <TextField variant="outlined" size="small" type="number" label="Análises por dia" value={config.watch.dailyLimit} disabled={!config.watch.enabled || !config.watch.useAi} onChange={e => set("watch", { ...config.watch, dailyLimit: Number(e.target.value) })} inputProps={{ min: 0, max: 5000 }} helperText={`Usadas hoje: ${config.watch.usedToday || 0}. 0 = sem limite.`} />
+          <TextField variant="outlined" size="small" type="number" label="A cada quantas mensagens" value={config.watch.everyMessages} disabled={!config.watch.enabled || !config.watch.useAi} onChange={e => set("watch", { ...config.watch, everyMessages: Number(e.target.value) })} inputProps={{ min: 3, max: 50 }} helperText="Uma análise curta (cerca de 20 mensagens) por vez." />
+        </div>
+      </Paper>}
       <Paper variant="outlined" className={c.card}>
         <div className={c.title}><ShieldCheck size={20} /> Disponibilidade e consumo</div>
         <FormControlLabel control={<Switch checked={config.enabled} onChange={e => set("enabled", e.target.checked)} color="primary" />} label="Copiloto disponível em todas as conexões" />

@@ -55,7 +55,14 @@ describe("token da API Oficial de 24 horas vira de 60 dias", () => {
     const w = conn({});
     get.mockRejectedValue({ response: { status: 400, data: { error: { message: "Invalid OAuth access token" } } } });
     expect(await extendCloudToken(w as any)).toBe("skipped");
-    expect(w.update).not.toHaveBeenCalled();
+    expect(JSON.parse(w.config).tokenExtendError).toContain("Invalid OAuth access token");
+  });
+
+  it("App ID e App Secret de apps diferentes: explica por que o token fica de 24 horas", async () => {
+    const w = conn({});
+    get.mockRejectedValue({ response: { status: 400, data: { error: { message: "Invalid OAuth access token signature." } } } });
+    await extendCloudToken(w as any);
+    expect(JSON.parse(w.config).tokenExtendError).toContain("apps diferentes");
   });
 
   it("avisa nos últimos 7 dias e quando venceu", () => {

@@ -41,7 +41,7 @@ export const checkCloudConnection = async (whatsapp: Whatsapp, starting = false)
         params: { access_token: accessToken, fields: "display_phone_number,verified_name,quality_rating" },
         timeout: 15000
       });
-      note = expiryNote(getConfig(whatsapp).tokenExpiresAt) || QUALITY[String(data.quality_rating || "GREEN").toUpperCase()] || "";
+      note = expiryNote(getConfig(whatsapp).tokenExpiresAt) || getConfig(whatsapp).tokenExtendError || QUALITY[String(data.quality_rating || "GREEN").toUpperCase()] || "";
       if (data.display_phone_number && whatsapp.session !== data.display_phone_number) await whatsapp.update({ session: data.display_phone_number });
     } catch (err: any) {
       const http = err?.response?.status;

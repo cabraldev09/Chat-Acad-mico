@@ -32,6 +32,9 @@ const reducer = (state, action) => {
 			state[whatsAppIndex].updatedAt = whatsApp.updatedAt;
 			state[whatsAppIndex].qrcode = whatsApp.qrcode;
 			state[whatsAppIndex].retries = whatsApp.retries;
+			// the reason shown under the status changes with it (and goes away when the connection is fine)
+			if ("statusNote" in whatsApp) state[whatsAppIndex].statusNote = whatsApp.statusNote;
+			if (whatsApp.session !== undefined) state[whatsAppIndex].session = whatsApp.session;
 			return [...state];
 		} else {
 			return [...state];

@@ -447,6 +447,8 @@ const processCloud = async (received: Whatsapp, entry: any) => {
           m.interactive?.button_reply?.title ||
           m.interactive?.list_reply?.title ||
           "[interativo]";
+      } else if (m.type === "unsupported") {
+        body = "⚠️ Mensagem que o WhatsApp oficial não entrega (enquete, mensagem temporária ou de visualização única). Peça para o cliente enviar de novo, em texto ou foto.";
       } else body = `[${m.type}]`;
 
       await HandleChannelMessage({

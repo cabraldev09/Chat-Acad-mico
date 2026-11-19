@@ -249,9 +249,17 @@ const ChatHeader = ({ contact: contactProp, ticket, onOpenInfo, onToggleSearch, 
     </Tooltip>
   );
 
+  // a contact with no saved name shows the number as its name: the line below does not repeat it
+  const numberLine = c => {
+    const number = String(c.number || "");
+    if (!number || number.includes("_")) return null;
+    const nameDigits = String(c.name || "").replace(/\D/g, "");
+    if (!c.name || nameDigits === number || nameDigits === number.replace(/^55/, "")) return "Contato não salvo";
+    return `+${number}`;
+  };
   const subtitle = [
     ticket.isHistorical ? "Histórico" : null,
-    ticket.isGroup ? "Grupo" : contact.number && !String(contact.number).includes("_") ? `+${contact.number}` : null,
+    ticket.isGroup ? "Grupo" : numberLine(contact),
     ticket.queue?.name,
     ticket.user ? `Atendente: ${ticket.user.name}` : ticket.status === "pending" ? (ticket.aiActive ? "Agente de IA atendendo" : "Aguardando atendimento") : null,
   ]
