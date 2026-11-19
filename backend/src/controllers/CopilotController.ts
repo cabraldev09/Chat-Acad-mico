@@ -21,7 +21,7 @@ import TicketEvent from "../models/TicketEvent";
 import User from "../models/User";
 import { Op } from "sequelize";
 import { dayBounds } from "../helpers/AppTime";
-import { BRIEF_SYSTEM, contactTranscript, parseBrief, sameSideWhere } from "../services/CopilotServices/Brief";
+import { briefSystem, contactTranscript, parseBrief, sameSideWhere } from "../services/CopilotServices/Brief";
 import { sideOfSegment } from "../services/ChannelServices/ConnectionTeam";
 
 export const settings = async (_req: Request, res: Response) => {
@@ -173,7 +173,7 @@ export const brief = async (req: Request, res: Response) => {
     const state = lead ? await hydrate(await loadState(lead.id), lead) : null;
     const side = sideOfSegment(ticket.segment) === "tutoria" ? "a TUTORIA (tutor do aluno matriculado)" : "o COMERCIAL (consultor de matrículas)";
     const user = [`Quem atende esta conversa é ${side}.`, state ? `Ficha do CRM:\n${briefOf(state)}` : "", `Atendimentos: ${story.conversations}. Consultores que já atenderam: ${story.attendants.join(", ") || "nenhum"}.`, `Histórico:\n${story.text}`].filter(Boolean).join("\n\n");
-    const out = await askOnce(agent, apiKey, BRIEF_SYSTEM, user, 700, { ticketId: ticket.id, kind: "copilot" });
+    const out = await askOnce(agent, apiKey, briefSystem(), user, 700, { ticketId: ticket.id, kind: "copilot" });
     const parsed = parseBrief(out.text);
     await request.update({ status: parsed ? "ready" : "failed", text: parsed ? JSON.stringify(parsed) : null });
     return res.json({ id: request.id, brief: parsed, conversations: story.conversations, note: parsed ? "" : "A IA não conseguiu resumir esta conversa. Tente de novo depois de uma nova mensagem." });

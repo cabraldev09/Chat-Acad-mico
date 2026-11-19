@@ -30,7 +30,12 @@ import { pendingSteps } from "../FlowServices/StepLock";
 //   2. the rest goes to the model, once, with the little context it needs;
 //   3. whatever the model understood goes through the rules (state, funnel, tasks, notes) and the exit of the stage is decided there.
 // the words of the team at each step of the script (the standard of the process where the team wrote nothing)
-const scriptTexts = (d: { ports: { config?: any } }): { entry?: string; course?: string; city?: string; doubts?: string; bolsa?: string; handoff?: string } => (d.ports.config && d.ports.config.texts) || {};
+const scriptTexts = (d: { ports: { config?: any } }): { entry?: string; course?: string; city?: string; doubts?: string; bolsa?: string; handoff?: string; proposal?: string; tutoring?: string; secretary?: string; unknown?: string; unknownHeld?: string } => (d.ports.config && d.ports.config.texts) || {};
+
+// a ready answer in the words of the team (Como ele atende → Respostas prontas) or the standard one; "unknown" also honours the
+// "message when it does not know" of the agent
+const fixedText = (d: { ports: { config?: any }; agent?: any }, key: "proposal" | "tutoring" | "secretary" | "unknown" | "unknownHeld"): string =>
+  (scriptTexts(d) as any)[key] || (key === "unknown" && d.agent && d.agent.persona && String(d.agent.persona.unknownMessage || "").trim()) || FIXED[key];
 
 export const FIXED = {
   human: "Claro! Vou chamar um consultor para continuar com você. Um momento, por favor.",
@@ -312,7 +317,7 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
   // 1) the obvious: no model
   const fast = d.input === null ? null : fastIntent(lastText);
   if (fast) {
-    const text = fast.intent === "human" ? d.agent.handoffMessage || FIXED.human : FIXED.proposal;
+    const text = fast.intent === "human" ? d.agent.handoffMessage || FIXED.human : fixedText(d, "proposal");
     const hook = await commercialTurn(d.ports, { userText: lastText, fast: fast.intent, tools: [], hadText: true, replied: true, retract: false, nodeId: d.nodeId });
     const latencyMs = Date.now() - started;
     await log({ intent: fast.intent, deterministic: true, llmCalls: 0, toolCalls: 0, cacheHits: 0, tokens: base.tokens, outcome: hook.exit, latencyMs });
@@ -324,7 +329,7 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
   const support = d.input === null ? null : supportIntent(lastText, !!state.slots.enrolledStudent);
   if (support) {
     const hook = await commercialTurn(d.ports, { userText: lastText, fast: support, tools: [], hadText: true, replied: true, retract: false, nodeId: d.nodeId, hasPolo: !!d.lead?.poloId });
-    const text = hook.exit ? FIXED[support] : FIXED.askCity;
+    const text = hook.exit ? fixedText(d, support as "tutoring" | "secretary") : FIXED.askCity;
     const latencyMs = Date.now() - started;
     await log({ intent: support, deterministic: true, llmCalls: 0, toolCalls: 0, cacheHits: 0, tokens: base.tokens, outcome: hook.exit, latencyMs });
     if (d.lead && !d.sandbox) await syncLead(d, hook.trace.changed);
@@ -461,22 +466,22 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
   const moneyLike = guard.unsafe && (guard.kind === "price" || guard.kind === "percent" || guard.kind === "free");
   // a qualified lead keeps the answer to the last question; the handover message follows it (the flow says it)
   if (hook.exit === "human" && hook.why !== "qualified") text = d.agent.handoffMessage || FIXED.human;
-  else if (hook.exit === "tutoria" || hook.exit === "secretaria") text = hook.exit === "secretaria" ? FIXED.secretary : FIXED.tutoring;
+  else if (hook.exit === "tutoria" || hook.exit === "secretaria") text = hook.exit === "secretaria" ? fixedText(d, "secretary") : fixedText(d, "tutoring");
   else if (hook.ask === "city") text = FIXED.askCity;
   else if (hook.exit === "proposta" || moneyLike) {
     // a price was asked (the model did not notice) or the answer carries a value: the proposal is for a person
-    text = FIXED.proposal;
+    text = fixedText(d, "proposal");
     if (hook.exit !== "proposta") {
       const again = await commercialTurn(d.ports, { userText: lastText, fast: "price", tools: [], hadText: true, replied: true, nodeId: d.nodeId });
       hook.exit = again.exit;
       hook.trace = { ...hook.trace, ...again.trace, actions: [...hook.trace.actions, ...again.trace.actions] };
     }
-  } else if (hook.exit === "off" && !text) text = FIXED.unknown;
+  } else if (hook.exit === "off" && !text) text = fixedText(d, "unknown");
   // nothing confirmed in the base: never a guess; the next question of the process follows (below)
-  else if (hook.unknownHeld && (!hook.exit || hook.why === "qualified")) text = FIXED.unknownHeld;
+  else if (hook.unknownHeld && (!hook.exit || hook.why === "qualified")) text = fixedText(d, "unknownHeld");
   else if (guard.unsafe) {
     // a promise or a fact that no tool or approved text backs: the agent says it will confirm, and the question is kept for the team
-    text = FIXED.unknown;
+    text = fixedText(d, "unknown");
     if (d.ticket && !d.sandbox && d.agent.learnFromTeam !== false) await captureUnknown(d.agent, d.ticket, unknownQuestion || lastText, d.contactName || undefined).catch(() => undefined);
   }
   if (guard.unsafe) await d.ports.event("agent_guard", { kind: guard.kind, token: guard.token || null }, false);

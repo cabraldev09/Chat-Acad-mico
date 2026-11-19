@@ -182,3 +182,71 @@
   .print-report, .print-report * { print-color-adjust: exact; -webkit-print-color-adjust: exact; box-shadow: none !important; text-shadow: none !important; filter: none !important; }
   .print-report .report-card { break-inside: avoid; }
 }
+
+/* ---------- dark: these screens follow the neutral dark of the rest of the system (like WhatsApp and the Apple apps) ---------- */
+/* the colours of the screen and the slate/amber/cyan scales are turned around, so text stays readable and panels stay dark */
+:root[data-theme="dark"] .orig {
+  --background: #111212;
+  --foreground: #e9edef;
+  --card: #161717;
+  --card-foreground: #e9edef;
+  --primary: #3b8fd6;
+  --primary-foreground: #ffffff;
+  --secondary: #242626;
+  --secondary-foreground: #e9edef;
+  --muted: #1d1f1f;
+  --muted-foreground: #8696a0;
+  --accent: #1a2733;
+  --accent-foreground: #b9dcf7;
+  --destructive: #f2867a;
+  --border: #2a2c2c;
+  --input: #2f3232;
+  --ring: #4595d8;
+  --color-brand-navy: #3b8fd6;
+  --color-brand-navy-50: #1a2733;
+  --color-brand-cyan-50: #13283a;
+  --color-brand-cyan-700: #6db3ea;
+  --color-brand-gold-50: #2b2a12;
+  --color-status-success: #3ecf8e;
+  --color-status-success-bg: rgba(62, 207, 142, 0.14);
+  --color-status-warning: #f0b450;
+  --color-status-warning-bg: rgba(240, 180, 80, 0.14);
+  --color-status-danger: #f2867a;
+  --color-status-danger-bg: rgba(242, 134, 122, 0.14);
+  --color-status-info: #6db3ea;
+  --color-status-info-bg: rgba(109, 179, 234, 0.14);
+  --color-status-neutral: #aebac1;
+  --color-status-neutral-bg: #242626;
+  --color-slate-50: #1d1f1f;
+  --color-slate-100: #242626;
+  --color-slate-200: #2a2c2c;
+  --color-slate-300: #3a3d3d;
+  --color-slate-400: #667781;
+  --color-slate-500: #8696a0;
+  --color-slate-600: #aebac1;
+  --color-slate-700: #d1d7db;
+  --color-slate-800: #e2e6e8;
+  --color-slate-900: #e9edef;
+  --color-slate-950: #f4f6f7;
+  --color-amber-50: rgba(240, 180, 80, 0.12);
+  --color-amber-100: rgba(240, 180, 80, 0.18);
+  --color-amber-200: rgba(240, 180, 80, 0.3);
+  --color-amber-300: rgba(240, 180, 80, 0.42);
+  --color-amber-800: #f3c77a;
+  --color-amber-900: #f6d49a;
+  --color-amber-950: #f9e2bb;
+  --color-cyan-50: #13283a;
+  --color-cyan-100: #1a3347;
+  --color-cyan-200: #23435c;
+  --color-cyan-800: #9fd3f5;
+  color-scheme: dark;
+}
+@layer base {
+  :root[data-theme="dark"] .orig .bg-white { background-color: var(--card) !important; }
+  :root[data-theme="dark"] .orig .border-white { border-color: var(--border) !important; }
+  :root[data-theme="dark"] .orig .from-white { --tw-gradient-from: var(--card) !important; }
+  :root[data-theme="dark"] .orig .via-white { --tw-gradient-via: var(--card) !important; }
+  :root[data-theme="dark"] .orig .to-white { --tw-gradient-to: var(--card) !important; }
+  /* the navy gradient titles become light blue */
+  :root[data-theme="dark"] .orig .bg-clip-text { background-image: linear-gradient(90deg, #d6ebfb, #6db3ea) !important; }
+}

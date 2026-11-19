@@ -1,3 +1,4 @@
+import { institutionName } from "../../helpers/Institution";
 import { Op } from "sequelize";
 import CopilotProgress from "../../models/CopilotProgress";
 import { configOf } from "../CopilotServices/Settings";
@@ -150,7 +151,7 @@ const textFor = async (key: StepKey, s: Slots, leadName: string): Promise<{ text
     case "ficha": return { text: "Perfeito! Para dar andamento à matrícula, preciso da foto do seu RG ou CNH (frente e verso) e que você preencha os dados abaixo.\n\nFicha de matrícula (fotos ou PDFs legíveis)\n\n* Nome completo:\n* Data de nascimento:\n* CPF:\n* RG (nº, órgão emissor, UF):\n* Nome completo da mãe:\n* Endereço completo (rua, nº, bairro, cidade, CEP):\n* Telefone celular atualizado:\n* E-mail pessoal:\n* Histórico do Ensino Médio (caso já tenha em mãos)", action: null };
     case "taxa": return { text: "Vou te enviar agora o boleto da taxa de matrícula e o código Pix copia e cola. Assim que você realizar o pagamento, me envia o comprovante para eu dar baixa junto ao setor financeiro, por gentileza.", action: null };
     case "comprovante": return { text: "Recebi, obrigado! Estou prosseguindo com a sua matrícula e já te aviso assim que ela for confirmada.", action: null };
-    case "enroll": return { text: `${first(s.fullName || leadName) ? `${first(s.fullName || leadName)}, s` : "S"}ua matrícula${s.courseName ? ` em *${s.courseName}*` : ""} foi confirmada com sucesso! Parabéns por essa nova etapa. Seja muito bem-vindo(a) à Cruzeiro do Sul Virtual!`, action: "enroll" };
+    case "enroll": return { text: `${first(s.fullName || leadName) ? `${first(s.fullName || leadName)}, s` : "S"}ua matrícula${s.courseName ? ` em *${s.courseName}*` : ""} foi confirmada com sucesso! Parabéns por essa nova etapa. Seja muito bem-vindo(a) à ${institutionName()}!`, action: "enroll" };
     case "comunidade": return { text: "Agora a tutoria vai entrar em contato com você para auxiliar no primeiro acesso, na ambientação da plataforma e no início das disciplinas. Você também já pode entrar na Comunidade dos Alunos, onde enviamos os principais avisos e orientações durante a formação.", action: null };
     case "afiliado": return { text: "Se você conhece alguém que também queira estudar, pode participar do nosso programa de afiliados: quando a pessoa indicada realizar a matrícula e pagar a primeira mensalidade, você recebe uma comissão. Posso te explicar como funciona?", action: null };
     default: return null;

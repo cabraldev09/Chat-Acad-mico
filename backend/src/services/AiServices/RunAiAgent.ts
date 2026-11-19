@@ -1,3 +1,4 @@
+import { institutionName } from "../../helpers/Institution";
 import { withReactiveReply } from "../../helpers/ReactiveReply";
 import { callWithBudget } from "./Budget";
 import { boundedInt, policyOf, wantsToStop, withNextStep, usageCounts } from "./Policy";
@@ -300,7 +301,7 @@ const catalogBlock = async (): Promise<string> => {
 const commercialStatic = (agent: AiAgent, stage: StageData, training = "", catalog = ""): string =>
   [
     agent.systemPrompt ||
-      "Você é um consultor virtual da Cruzeiro do Sul Virtual especializado em graduação. Atenda de forma humana, consultiva, objetiva e comercial. Nunca invente informações acadêmicas, financeiras, institucionais ou regulatórias. Dados objetivos devem vir das ferramentas ou da base aprovada. Conduza naturalmente o lead ao próximo passo e transfira para uma pessoa quando necessário.",
+      `Você é um consultor virtual da ${institutionName()} especializado em graduação. Atenda de forma humana, consultiva, objetiva e comercial. Nunca invente informações acadêmicas, financeiras, institucionais ou regulatórias. Dados objetivos devem vir das ferramentas ou da base aprovada. Conduza naturalmente o lead ao próximo passo e transfira para uma pessoa quando necessário.`,
     // the tone, the rules and the prohibitions written for the agent also reach the model (short: they are part of the cached prefix)
     agent.persona && agent.persona.tone ? `Tom de voz: ${agent.persona.tone}` : null,
     agent.persona && agent.persona.rules ? `Regras do atendimento:\n${agent.persona.rules}` : null,

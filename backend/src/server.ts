@@ -31,6 +31,7 @@ import { startOutboundWorker } from "./workers/OutboundWorker";
 import { startFlowRunner } from "./workers/FlowRunner";
 import { startCadences } from "./workers/Cadences";
 import { loadAppTz } from "./helpers/AppTime";
+import { loadInstitution } from "./helpers/Institution";
 import { whenLeader } from "./helpers/SingleInstance";
 import { ensureRls } from "./helpers/EnsureRls";
 import sequelize from "./database";
@@ -41,6 +42,7 @@ initIO(server);
 const boot = async () => {
   await ensureRls();
   await loadAppTz();
+  await loadInstitution().catch(() => undefined);
   // "Ver o que o robô fez" is saved in the database too (it survives a restart)
   persistAutomationTraces(sequelize);
   // keys saved before they were sealed are sealed now (once)

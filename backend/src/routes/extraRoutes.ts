@@ -150,6 +150,8 @@ r.post("/ai-agents", isAuth, isManager, Ai.store);
 r.put("/ai-agents/:id", isAuth, isManager, Ai.update);
 r.delete("/ai-agents/:id", isAuth, isManager, Ai.remove);
 r.get("/ai-agent-templates", isAuth, isManager, Ai.agentTemplates);
+// how the assistant introduces itself, with the institution of Configurações (one preview for every screen)
+r.get("/ai-agent-intro", isAuth, isManager, Ai.introPreview);
 r.get("/crm-funnel", isAuth, isManager, Commercial.funnelShow);
 r.put("/crm-funnel", isAuth, isManager, Commercial.funnelSave);
 r.post("/crm-funnel/create", isAuth, isManager, Commercial.funnelCreate);
@@ -189,6 +191,7 @@ r.get("/ai-agents/:id/history", isAuth, isManager, Ai.historyList);
 r.post("/ai-agents/:id/history/:revisionId/restore", isAuth, isManager, Ai.historyRestore);
 r.get("/ai-agents/:id/cases", isAuth, isManager, Ai.evalList);
 r.post("/ai-agents/:id/cases", isAuth, isManager, Ai.evalCreate);
+r.post("/ai-agents/:id/cases/defaults", isAuth, isManager, Ai.evalDefaults);
 r.post("/ai-agents/:id/cases/run", isAuth, isManager, Ai.evalRun);
 r.get("/ai-agents/:id/script", isAuth, isManager, Ai.script);
 r.get("/ai-agents/:id/process-eval", isAuth, isManager, Ai.processEval);

@@ -23,6 +23,7 @@ import LearningTab from "./LearningTab";
 import RegulationsDialog from "./RegulationsDialog";
 import AttendsPanel from "./AttendsPanel";
 import ProcessEvalPanel from "./ProcessEvalPanel";
+import useIntro from "./useIntro";
 import ScriptPanel from "./ScriptPanel";
 import CoursesPanel from "./CoursesPanel";
 import TestTab from "./TestTab";
@@ -71,6 +72,7 @@ const Central = () => {
   const agentId = Number(id);
   const [d, setD] = useState(null);
   const [agent, setAgent] = useState(null);
+  const introText = useIntro(String((agent && agent.persona && agent.persona.assistantName) || "").trim(), (agent && agent.persona && agent.persona.commercial && agent.persona.commercial.greeting) || "");
   const [kb, setKb] = useState({ mode: 0, topic: "", n: 0 });
   const [teach, setTeach] = useState("perguntas");
   const [addMenu, setAddMenu] = useState(null);
@@ -300,7 +302,7 @@ const Central = () => {
           const persona = (agent && agent.persona) || {};
           const who = String(persona.assistantName || "").trim();
           const name = who || "Estela";
-          const intro = (persona.commercial && persona.commercial.greeting) ? persona.commercial.greeting.replace(/\{\{\s*nome\s*\}\}/gi, "Maria").replace(/\{\{\s*assistente\s*\}\}/gi, name) : `Olá! Eu sou ${/^(a|o) /i.test(name) ? name : `a ${name}`}, assistente virtual da Cruzeiro do Sul Virtual.`;
+          const intro = introText || `Olá! Eu sou ${/^(a|o) /i.test(name) ? name : `a ${name}`}, assistente virtual.`;
           const courses = d.courses || { total: 0, names: [], withoutGrade: [] };
           const row = (key, Icon, name, text, run) => (
             <button key={key} type="button" className={classes.arow} onClick={run}>

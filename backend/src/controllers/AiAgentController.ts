@@ -221,10 +221,19 @@ const createAgentWithFlow = async (a: NewAgent, userId: number): Promise<{ agent
   return { agentId: agent.id, flowId: flow.id, ...(funnel ? { funnel: { created: funnel.created, missing: funnel.missing } } : {}) };
 };
 
+export const introPreview = async (req: Request, res: Response): Promise<Response> => {
+  const { introText } = await import("../services/CommercialServices/Rules");
+  const assistantName = String(req.query.assistantName || "").trim().slice(0, 40);
+  const greeting = String(req.query.greeting || "").trim().slice(0, 500);
+  return res.json({ text: introText({ assistantName, ...(greeting ? { commercial: { greeting } } : {}) } as any, String(req.query.first || "") .slice(0, 40)) });
+};
+
 export const fromTemplate = async (req: Request, res: Response): Promise<Response> => {
   const t = AGENT_TEMPLATES.find(x => x.key === req.body?.template);
   if (!t) throw new AppError("ERR_NOT_FOUND", 404);
-  const name = String(req.body?.name || t.name).trim().slice(0, 80) || t.name;
+  // one name on the screen: the commercial agent is known inside the system by the name it introduces itself with
+  const presented = String(req.body?.assistantName || "").trim().slice(0, 40);
+  const name = String(req.body?.name || (presented ? `${t.name} – ${presented}` : t.name)).trim().slice(0, 80) || t.name;
   // the funnel of the commercial agent is mapped and completed unless the person unchecked it
   const funnel = !!t.commercial && req.body?.createFunnel !== false;
   // the name the assistant presents itself with (optional) and the tone chosen on the screen of creation
@@ -822,6 +831,21 @@ export const evalCreate = async (req: Request, res: Response): Promise<Response>
   return res.status(201).json(caseView(row));
 };
 
+// the standard scenarios of the commercial process, added to the cases of the agent (the ones already there by name are kept)
+export const evalDefaults = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await loadAgent(req.params.id);
+  const { DEFAULT_CASES } = await import("../services/AiServices/Eval");
+  const have = new Set((await AiEvalCase.findAll({ where: { agentId: agent.id }, attributes: ["name"] })).map(c => c.name));
+  let added = 0;
+  for (const c of DEFAULT_CASES) {
+    if (have.has(c.name)) continue;
+    // eslint-disable-next-line no-await-in-loop
+    await AiEvalCase.create({ agentId: agent.id, name: c.name, messages: JSON.stringify(c.messages), expect: JSON.stringify(c.expect), createdBy: Number(req.user.id) } as any);
+    added += 1;
+  }
+  return res.json({ added, total: DEFAULT_CASES.length });
+};
+
 export const evalRemove = async (req: Request, res: Response): Promise<Response> => {
   const agent = await loadAgent(req.params.id);
   await AiEvalCase.destroy({ where: { id: req.params.caseId, agentId: agent.id } });
@@ -834,7 +858,7 @@ export const evalRemove = async (req: Request, res: Response): Promise<Response>
 // manager reads here is what the lead receives). The place to see the process; to change how a step is answered, teach it in "Testar e ensinar".
 export const script = async (req: Request, res: Response): Promise<Response> => {
   const agent = await loadAgent(req.params.id);
-  const { QUESTIONS, PRESENT_BRIDGE, DOUBTS_QUESTION, eadTextOf, durationLine } = await import("../services/CommercialServices/Rules");
+  const { QUESTIONS, PRESENT_BRIDGE, DOUBTS_QUESTION, eadTextOf, durationLine, introText } = await import("../services/CommercialServices/Rules");
   const { TUTORING_PITCH } = await import("../services/CommercialServices/GradeChoice");
   const { bolsaRequestFor } = await import("../services/CommercialServices/BolsaData");
   const { FIXED } = await import("../services/CommercialServices/Turn");
@@ -843,6 +867,7 @@ export const script = async (req: Request, res: Response): Promise<Response> => 
   // the steps whose words the team may change keep the standard in "standard" and what the team wrote in "text"
   const step = (key: string, label: string, standard: string, note: string, editable: boolean) => ({ key, label, standard, text: editable && (mine as any)[key] ? (mine as any)[key] : standard, custom: editable && !!(mine as any)[key], editable, note });
   const steps = [
+    step("intro", "Chegada e apresentação", introText(agent.persona as any, "Maria"), "Na primeira resposta de toda conversa o agente diz quem é e de qual instituição (o nome vem de Configurações → Geral). A saudação é editada em Ajustes do comercial.", false),
     step("entry", "1. Primeira graduação", QUESTIONS.entry, "Pergunta antes de tudo, para saber se é primeira graduação, transferência ou segunda graduação.", true),
     step("course", "2. Curso de interesse", QUESTIONS.course, "Reconhece o curso pelo nome do catálogo (com ou sem “CST em”).", true),
     step("city", "3. Cidade e polo", QUESTIONS.city, "Acha o polo pela cidade e leva o lead ao consultor desse polo.", true),
@@ -852,7 +877,25 @@ export const script = async (req: Request, res: Response): Promise<Response> => 
     step("bolsa", "7. Nome completo e CPF", bolsaRequestFor({ name: true, cpf: true }), "Pede os dados para o consultor simular a bolsa. O CPF fica só no cadastro do lead.", true),
     step("handoff", "8. Passagem ao consultor", FIXED.toProposal, "O consultor do polo monta a proposta. O agente nunca informa preço nem matricula.", true)
   ];
-  return res.json({ steps });
+  // the detours: what makes the agent leave the main path, at any step, and where the conversation goes
+  const branches = [
+    { key: "human", when: "Pede para falar com uma pessoa, reclama ou a conversa trava", goes: "Consultor do polo (ou a fila), com o resumo da conversa" },
+    { key: "student", when: "Já é aluno (plataforma, provas, documentos)", goes: "Tutoria ou secretaria do polo, sem conversa de vendas" },
+    { key: "catalog", when: "Pede um curso que não está no catálogo", goes: "Avisa que não oferece e sugere os cursos mais próximos" },
+    { key: "price", when: "Pergunta preço, desconto ou bolsa antes da hora", goes: "Explica que o consultor simula a bolsa e segue o processo" },
+    { key: "unknown", when: "Pergunta algo que não está na base", goes: "Diz que vai confirmar e pergunta à equipe (Respostas para revisar)" },
+    { key: "transfer", when: "Vem de outra faculdade (transferência)", goes: "Pede o histórico para a análise curricular" },
+    { key: "hours", when: "Fora do horário de atendimento", goes: "Continua atendendo e deixa a passagem para o próximo expediente" }
+  ];
+  // the ready answers the agent gives without the model, in the words of the team (empty = the standard)
+  const answers = [
+    step("proposal", "Quando pergunta preço, bolsa ou proposta", FIXED.proposal, "Sai na hora, sem a IA. O consultor do polo apresenta a condição.", true),
+    step("tutoring", "Quando é aluno e precisa da tutoria", FIXED.tutoring, "Chama a tutoria do polo, sem conversa de vendas.", true),
+    step("secretary", "Quando é aluno e precisa da secretaria", FIXED.secretary, "Documentos, declarações, trancamento.", true),
+    step("unknown", "Quando não sabe responder", (agent.persona as any)?.unknownMessage || FIXED.unknown, "A pergunta vai para a equipe (Respostas para revisar) e o agente não inventa.", true),
+    step("unknownHeld", "Quando anota a pergunta para o consultor", FIXED.unknownHeld, "A conversa continua e a pergunta aparece no resumo do consultor.", true)
+  ];
+  return res.json({ steps, branches, answers });
 };
 
 // the weekly check of the commercial process with the real model: the last report, and "Rodar agora"

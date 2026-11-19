@@ -8,9 +8,11 @@ import createAppTheme from "../../theme";
 const ThemeContext = createContext();
 
 export const ThemeProvider = ({ children }) => {
-  // follows the computer (dark / light) until the person chooses with the button; then the choice is remembered
+  // like the Apple apps: "Automático" follows the computer or the phone (dark at night when it is set so), or the person fixes light or dark;
+  // the button goes Automático → Claro → Escuro and the choice is remembered
   const saved = () => { try { const v = window.localStorage.getItem("theme"); return v === "dark" || v === "light" ? v : null; } catch (e) { return null; } };
   const system = () => { try { return window.matchMedia("(prefers-color-scheme: dark)").matches; } catch (e) { return false; } };
+  const [mode, setMode] = useState(() => saved() || "auto");
   const [darkMode, setDarkMode] = useState(() => (saved() ? saved() === "dark" : system()));
 
   useEffect(() => {
@@ -26,14 +28,14 @@ export const ThemeProvider = ({ children }) => {
     // native controls (scrollbars, selects, date pickers) and the browser bar follow the theme
     document.documentElement.style.colorScheme = darkMode ? "dark" : "light";
     const meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute("content", darkMode ? "#070d17" : "#0B4279");
+    if (meta) meta.setAttribute("content", darkMode ? "#161717" : "#0B4279");
   }, [darkMode]);
 
   const toggleTheme = () => {
-    setDarkMode((prevMode) => {
-      try { window.localStorage.setItem("theme", prevMode ? "light" : "dark"); } catch (e) { /* private window */ }
-      return !prevMode;
-    });
+    const next = mode === "auto" ? "light" : mode === "light" ? "dark" : "auto";
+    try { if (next === "auto") window.localStorage.removeItem("theme"); else window.localStorage.setItem("theme", next); } catch (e) { /* private window */ }
+    setMode(next);
+    setDarkMode(next === "auto" ? system() : next === "dark");
   };
 
   const theme = useMemo(
@@ -41,7 +43,7 @@ export const ThemeProvider = ({ children }) => {
     [darkMode]
   );
 
-  const contextValue = useMemo(() => ({ darkMode, toggleTheme }), [darkMode]);
+  const contextValue = useMemo(() => ({ darkMode, mode, toggleTheme }), [darkMode, mode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <ThemeContext.Provider value={contextValue}>

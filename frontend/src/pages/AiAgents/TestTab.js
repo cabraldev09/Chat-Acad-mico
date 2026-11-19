@@ -36,16 +36,33 @@ const CasesPanel = ({ agentId, refreshKey }) => {
     } catch (err) { toastError(err); }
     setRunning(false);
   };
+  // the standard scenarios of the commercial process (greeting, student, course not offered, price, a person, promises, grade...)
+  const loadDefaults = async () => {
+    try {
+      const { data } = await api.post(`/ai-agents/${agentId}/cases/defaults`);
+      toast.success(data.added ? `${data.added} cenários padrão adicionados. Clique em “Rodar todos”.` : "Os cenários padrão já estão na lista.");
+      load();
+    } catch (err) { toastError(err); }
+  };
   const remove = async (id) => {
     try { await api.delete(`/ai-agents/${agentId}/cases/${id}`); setCases((prev) => prev.filter((c) => c.id !== id)); } catch (err) { toastError(err); }
   };
-  if (!cases.length) return null;
+  if (!cases.length) {
+    return (
+      <div style={{ marginTop: 20, border: "1px dashed rgba(128,128,128,.4)", borderRadius: 12, padding: 14, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <ListChecks size={18} />
+        <span style={{ flex: 1, minWidth: 220, fontSize: 13.5 }}>Garanta que o agente faz o que a gestão quer: carregue os cenários padrão (saudação, aluno, curso fora do catálogo, preço, pedido de pessoa, promessas, grade) e rode antes de publicar.</span>
+        <Button variant="outlined" color="primary" size="small" onClick={loadDefaults}>Carregar cenários padrão</Button>
+      </div>
+    );
+  }
   const failing = cases.filter((c) => c.lastStatus === "fail").length;
   return (
     <div style={{ marginTop: 20 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
         <ListChecks size={18} />
         <Typography variant="subtitle1" style={{ fontWeight: 700, flex: 1 }}>Casos de teste ({cases.length})</Typography>
+        <Button size="small" disabled={running} onClick={loadDefaults}>Cenários padrão</Button>
         <Button variant="outlined" color="primary" size="small" startIcon={<Play size={14} />} disabled={running} onClick={() => run()}>{running ? "Rodando…" : "Rodar todos"}</Button>
       </div>
       <Typography variant="caption" color="textSecondary" display="block" style={{ marginBottom: 8 }}>

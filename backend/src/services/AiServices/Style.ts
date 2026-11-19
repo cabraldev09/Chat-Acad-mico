@@ -28,8 +28,12 @@ export const styleRules = (agent: Pick<AiAgent, "persona"> | null | undefined): 
   return lines.length ? `Estilo definido pela equipe:\n${lines.join("\n")}` : null;
 };
 
-// the name that signs an answer: the assistant's name when there is one, else the name of the agent
-export const signatureOf = (agent: Pick<AiAgent, "persona" | "name">): string => String(((agent.persona as any) || {}).assistantName || agent.name || "").trim();
+// the name that signs an answer: the name the assistant introduces itself with (the commercial agent is "Estela" by default, as in its
+// first message); only an agent without one signs with its own name
+export const signatureOf = (agent: Pick<AiAgent, "persona" | "name">): string => {
+  const p = ((agent.persona as any) || {});
+  return String(p.assistantName || (p.commercial ? "Estela" : agent.name) || "").trim();
+};
 
 export const signed = (text: string, agent: Pick<AiAgent, "persona" | "name">): string => {
   const s = styleOf(agent);

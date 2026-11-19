@@ -135,6 +135,11 @@ const Geral = ({ values, save, admin }) => {
   const token = values.userApiToken || "";
   return (
     <>
+      <Card title="Instituição" sub="O nome que o assistente de IA usa para se apresentar e nas mensagens prontas.">
+        <TextField variant="outlined" size="small" label="Nome da instituição" defaultValue={values.institution_name || "Cruzeiro do Sul Virtual"} style={{ maxWidth: 420, width: "100%" }}
+          inputProps={{ maxLength: 80 }} onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== (values.institution_name || "Cruzeiro do Sul Virtual")) save("institution_name", v); }}
+          helperText="Ex.: “Olá! Eu sou a Estela, assistente virtual da Cruzeiro do Sul Virtual.”" />
+      </Card>
       <Card title="Empresa e horário" sub="Todos os horários e o “hoje” dos relatórios seguem este fuso.">
         <TimezoneSelect value={values.appTimezone || "America/Porto_Velho"} onChange={(v) => save("appTimezone", v)} />
         <div className={classes.hint}>Os dados são guardados em UTC; só a exibição e a contagem do dia mudam.</div>
