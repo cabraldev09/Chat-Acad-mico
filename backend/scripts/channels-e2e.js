@@ -5556,7 +5556,7 @@ const postMeta = (id, payload, secret, badSig) => {
 
       // onboarding done: the consultant gets the follow-ups back
       assert((await http.post(`/leads/${lead.id}/onboarding`, { action: "start" }, asUser(mine))).data.onboardingStatus === "started", "start");
-      assert((await http.post(`/leads/${lead.id}/onboarding`, { action: "done" }, asUser(mine))).data.onboardingStatus === "done", "done");
+      assert((await http.post(`/leads/${lead.id}/onboarding`, { action: "done", note: "aluno já ambientado no polo" }, asUser(mine))).data.onboardingStatus === "done", "done");
       assert(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${lead.id} AND userId=${consult.id} AND (title LIKE 'Pedir indica%' OR title LIKE 'Oferecer nova%')`) === "2", "consultant follow-ups");
 
       // negotiated fee: the Bolix is scheduled for the agreed date

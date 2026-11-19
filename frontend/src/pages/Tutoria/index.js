@@ -1,4 +1,5 @@
-import React, { useCallback, useContext, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useContext, useEffect, useState } from "react";
+import TutorPanel from "./TutorPanel";
 import { useHistory } from "react-router-dom";
 import { toast } from "react-toastify";
 import { makeStyles } from "@material-ui/core/styles";
@@ -47,19 +48,19 @@ export default function Tutoria() {
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [tutorId, setTutorId] = useState("");
+  const [poloId, setPoloId] = useState("");
   const [busy, setBusy] = useState(null);
 
   const load = useCallback(() => {
     setData(null);
-    api.get("/tutoria/students", { params: manager && tutorId ? { tutorId } : {} }).then(({ data: d }) => setData(d)).catch((e) => { toastError(e); setData({ counters: {}, students: [], rules: {} }); });
-  }, [manager, tutorId]);
+    const params = manager ? { ...(tutorId ? { tutorId } : {}), ...(poloId ? { poloId } : {}) } : {};
+    api.get("/tutoria/students", { params }).then(({ data: d }) => setData(d)).catch((e) => { toastError(e); setData({ counters: {}, students: [], rules: {} }); });
+  }, [manager, tutorId, poloId]);
   useEffect(() => { load(); }, [load]);
 
-  const tutors = useMemo(() => {
-    const m = new Map();
-    (data?.students || []).forEach((s) => { if (s.tutorId) m.set(s.tutorId, s.tutorName); });
-    return [...m.entries()];
-  }, [data]);
+  // every tutor and polo comes from the server: the list does not shrink after a filter is chosen
+  const [lists, setLists] = useState({ tutors: [], polos: [] });
+  useEffect(() => { if (data?.tutors) setLists({ tutors: data.tutors, polos: data.polos || [] }); }, [data]);
 
   const FILTERS = [
     ["all", "Alunos", "total"],
@@ -94,7 +95,8 @@ export default function Tutoria() {
 
   return (
     <MainContainer>
-      <MainHeader><Title>Meus alunos</Title></MainHeader>
+      <MainHeader><Title>{manager ? "Alunos da tutoria" : "Meus alunos"}</Title></MainHeader>
+      {manager && <TutorPanel />}
       <div className={c.intro}>
         {manager ? "Os alunos de cada tutor" : "Os alunos que estão com você"} e o que precisa de atenção agora. A conversa abre no número da Tutoria{data?.rules?.numberName ? ` (${data.rules.numberName})` : ""}: o comercial não vê essas conversas.
         {data && !data.rules?.numberName && " Ainda não há número da Tutoria: marque a Função do número = Tutoria em Conexões."}
@@ -112,7 +114,12 @@ export default function Tutoria() {
           <TextField size="small" variant="outlined" placeholder="Buscar aluno, curso ou polo" value={search} onChange={(e) => setSearch(e.target.value)} style={{ minWidth: 260 }} />
           {manager && <TextField select size="small" variant="outlined" label="Tutor" value={tutorId} onChange={(e) => setTutorId(e.target.value)} style={{ minWidth: 200 }}>
             <MenuItem value="">Todos</MenuItem>
-            {tutors.map(([id, name]) => <MenuItem key={id} value={id}>{name}</MenuItem>)}
+            <MenuItem value="none">Sem tutor</MenuItem>
+            {lists.tutors.map((t) => <MenuItem key={t.id} value={t.id}>{t.name}</MenuItem>)}
+          </TextField>}
+          {manager && <TextField select size="small" variant="outlined" label="Polo" value={poloId} onChange={(e) => setPoloId(e.target.value)} style={{ minWidth: 180 }}>
+            <MenuItem value="">Todos</MenuItem>
+            {lists.polos.map((p) => <MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>)}
           </TextField>}
           <Button size="small" className={c.button} startIcon={<RefreshCw size={14} />} onClick={load}>Atualizar</Button>
         </div>

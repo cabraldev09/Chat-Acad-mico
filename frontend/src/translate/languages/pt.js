@@ -446,6 +446,8 @@ const messages = {
         ERR_PAYMENT_NOT_PENDING: "Esta cobrança não está mais aguardando pagamento.",
         ERR_POLO_NO_TUTORING_QUEUE: "Este polo ainda não tem fila de tutoria. Cadastre um tutor em Polos e equipes.",
         ERR_ONBOARDING_NOT_STARTED: "A ambientação ainda não foi iniciada.",
+        ERR_INVALID_PERIOD: "Período inválido: confira as datas de início e fim.",
+        ERR_ONBOARDING_CHECKLIST_INCOMPLETE: "Ainda há etapas do checklist sem marcar. Marque as etapas ou informe o motivo para concluir assim.",
         ERR_ONBOARDING_ALREADY_DONE: "A ambientação deste aluno já foi concluída.",
         ERR_PAYMENT_DUE_IN_PAST: "A data de vencimento precisa ser hoje ou uma data futura.",
         ERR_CAMPAIGN_NO_MESSAGE: "Escreva ao menos uma mensagem para a campanha.",

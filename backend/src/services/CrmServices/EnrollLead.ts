@@ -343,23 +343,8 @@ const takeAsTutor = async (lead: Lead, actorId: number): Promise<void> => {
   await addActivity(lead.id, actorId, "system", `${actor.name} assumiu a ambientação como tutor.`);
 };
 
-// The steps the tutor ticks while getting the student started. Informational: concluding the onboarding is still the tutor's decision.
-export const CHECKLIST = [
-  { key: "first_access", label: "Primeiro acesso à plataforma" },
-  { key: "ava", label: "Ambiente virtual (AVA) apresentado" },
-  { key: "polo_contacts", label: "Contatos do polo e da tutoria passados" },
-  { key: "documents", label: "Documentos da matrícula conferidos" },
-  { key: "access", label: "Acesso enviado (RGM, e-mail acadêmico e portal)" }
-] as const;
-
-export const parseChecklist = (raw: string | null | undefined): Record<string, string> => {
-  try {
-    const v = JSON.parse(raw || "{}");
-    return v && typeof v === "object" ? v : {};
-  } catch (_) {
-    return {};
-  }
-};
+export { CHECKLIST, parseChecklist, missingSteps } from "./OnboardingChecklist";
+import { CHECKLIST, parseChecklist, missingSteps } from "./OnboardingChecklist";
 
 export const setChecklist = async (lead: Lead, actorId: number, key: string, done: boolean) => {
   if (lead.onboardingStatus === "none") throw new AppError("ERR_ONBOARDING_NOT_STARTED", 400);
@@ -376,8 +361,11 @@ export const setChecklist = async (lead: Lead, actorId: number, key: string, don
 };
 
 // start / done of the onboarding (tutor side). Done schedules the follow-ups of the consultant.
-export const setOnboarding = async (lead: Lead, actorId: number, action: "start" | "done") => {
+export const setOnboarding = async (lead: Lead, actorId: number, action: "start" | "done", note = "") => {
   if (lead.onboardingStatus === "none") throw new AppError("ERR_ONBOARDING_NOT_STARTED", 400);
+  // a student is only "ambientado" with the checklist done; with a step left, the tutor says why (registered on the lead)
+  const missing = action === "done" ? missingSteps(lead.onboardingChecklist as any) : [];
+  if (missing.length && !String(note || "").trim()) throw new AppError("ERR_ONBOARDING_CHECKLIST_INCOMPLETE", 400);
   await takeAsTutor(lead, actorId);
   if (action === "start") {
     if (lead.onboardingStatus === "done") throw new AppError("ERR_ONBOARDING_ALREADY_DONE", 400);
@@ -389,7 +377,7 @@ export const setOnboarding = async (lead: Lead, actorId: number, action: "start"
       onboardingDoneAt: new Date(),
       onboardingStartedAt: lead.onboardingStartedAt || new Date()
     });
-    await addActivity(lead.id, actorId, "system", "Ambientação concluída: o aluno foi atendido pelo tutor.");
+    await addActivity(lead.id, actorId, "system", `Ambientação concluída: o aluno foi atendido pelo tutor.${missing.length ? ` Etapas não feitas: ${missing.map(s => s.label).join(", ")}. Motivo: ${String(note).trim().slice(0, 500)}` : ""}`);
     // the consultant gets the student back for referrals and new sales
     if (lead.ownerId) {
       const day = 86400000;
@@ -443,6 +431,11 @@ export const editOnboarding = async (lead: Lead, actorId: number, input: EditOnb
     }
     const before = lead.onboardingTutorId ? (await User.findByPk(lead.onboardingTutorId))?.name : null;
     await lead.update({ poloId: polo.id, onboardingTutorId: tutor?.id || null });
+    // the student's portal and academic analyses follow the new tutor (one tutor for the student everywhere)
+    if (tutor) {
+      const Student = (await import("../../models/Student")).default;
+      await Student.update({ responsibleUserId: tutor.id } as any, { where: { leadId: lead.id } as any }).catch(() => undefined);
+    }
     notes.push(changesPolo ? `Polo alterado para ${polo.name}` : "");
     notes.push(`Tutor: ${before || "fila"} → ${tutor ? tutor.name : "fila"}`);
 
