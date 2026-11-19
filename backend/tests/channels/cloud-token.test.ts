@@ -76,3 +76,15 @@ describe("chave colada no campo que mostra a máscara", () => {
   });
 });
 
+
+describe("Verify Token criado pelo servidor", () => {
+  it("cria quando falta e não troca o que já existe", async () => {
+    const { ensureVerifyToken } = await import("../../src/services/ChannelServices/CloudToken");
+    const sem = conn({ verifyToken: "" });
+    await ensureVerifyToken(sem as any);
+    expect(JSON.parse(sem.config).verifyToken).toMatch(/^chat-[0-9a-f]{24}$/);
+    const com = conn({ verifyToken: "meu-token" });
+    await ensureVerifyToken(com as any);
+    expect(com.update).not.toHaveBeenCalled();
+  });
+});

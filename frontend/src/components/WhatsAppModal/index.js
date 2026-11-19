@@ -123,6 +123,7 @@ const WhatsAppModal = ({ open, onClose, whatsAppId, onCreated }) => {
 	const [whatsApp, setWhatsApp] = useState(initialState);
 	const [pairingPhone, setPairingPhone] = useState("");
 	const [config, setConfig] = useState({});
+	const [savedKeys, setSavedKeys] = useState({});
 	const [hours, setHours] = useState(defaultHours());
 	const [selectedQueueIds, setSelectedQueueIds] = useState([]);
 	// the AI agent that answers on this connection (the same agent can serve several connections)
@@ -174,7 +175,12 @@ const WhatsAppModal = ({ open, onClose, whatsAppId, onCreated }) => {
 			try {
 				const { data } = await api.get(`whatsapp/${whatsAppId}`);
 				setWhatsApp({ ...initialState, ...data });
-				setConfig(parse(data.config, {}));
+				// a saved key comes as "••••abcd": the field starts empty (paste only to change it) and the mask is kept aside to send back
+				const loaded = parse(data.config, {});
+				const masked = {};
+				Object.keys(loaded).forEach(k => { if (typeof loaded[k] === "string" && loaded[k].startsWith("••••")) { masked[k] = loaded[k]; loaded[k] = ""; } });
+				setSavedKeys(masked);
+				setConfig(loaded);
 				setHours(mergeHours(parse(data.businessHours, defaultHours())));
 				setSelectedQueueIds(data.queues?.map(queue => queue.id) || []);
 				try {
@@ -201,6 +207,7 @@ const WhatsAppModal = ({ open, onClose, whatsAppId, onCreated }) => {
 		onClose();
 		setWhatsApp(initialState);
 		setConfig({});
+		setSavedKeys({});
 		setHours(defaultHours());
 		setSelectedQueueIds([]);
 		setAgentId("");
@@ -242,7 +249,8 @@ const WhatsAppModal = ({ open, onClose, whatsAppId, onCreated }) => {
 			queueIds: selectedQueueIds,
 		};
 		if (!whatsAppId) payload.channel = whatsApp.channel;
-		if (whatsApp.channel !== "whatsapp") payload.config = JSON.stringify(config);
+		// an empty key field keeps the saved key (the server keeps what comes as the mask)
+		if (whatsApp.channel !== "whatsapp") payload.config = JSON.stringify(Object.fromEntries(Object.entries(config).map(([k, v]) => [k, !v && savedKeys[k] ? savedKeys[k] : v])));
 
 		setSaving(true);
 		let createdNow = null;
@@ -490,8 +498,8 @@ const WhatsAppModal = ({ open, onClose, whatsAppId, onCreated }) => {
 								autoComplete="off"
 								value={config[f.key] || ""}
 								onChange={e => setConfig({ ...config, [f.key]: e.target.value })}
-								// a saved key shows as "••••abcd": selecting it all makes the paste replace it instead of joining it
-								onFocus={e => { if (f.secret) e.target.select(); }}
+								placeholder={savedKeys[f.key] ? `Salvo (termina em ${savedKeys[f.key].slice(4)}). Cole aqui só para trocar.` : undefined}
+								InputLabelProps={savedKeys[f.key] ? { shrink: true } : undefined}
 								helperText={f.help || undefined}
 							/>
 						))}
@@ -507,6 +515,12 @@ const WhatsAppModal = ({ open, onClose, whatsAppId, onCreated }) => {
 					<div className={classes.section}>
 						<Typography variant="subtitle2">URL do webhook (cole no painel da Meta)</Typography>
 						<Copyable text={info.webhookUrl} />
+						{info.verifyToken && (
+							<>
+								<Typography variant="subtitle2" style={{ marginTop: 12 }}>Verify Token (cole no mesmo lugar, na Meta)</Typography>
+								<Copyable text={info.verifyToken} />
+							</>
+						)}
 						<Typography variant="caption" className={classes.hint} display="block" style={{ marginTop: 4 }}>
 							A Meta exige HTTPS público. Em localhost use um túnel (ex.: cloudflared) e defina PUBLIC_URL no backend/.env.
 							Atualmente: {info.publicUrl}

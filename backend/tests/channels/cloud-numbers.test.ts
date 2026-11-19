@@ -84,6 +84,7 @@ describe("saúde dos números oficiais", () => {
     get.mockRejectedValue({ response: { status: 400, data: { error: { code: 190, message: "Invalid OAuth access token - Cannot parse access token" } } } });
     expect(await checkCloudConnection(w as any)).toBe("DISCONNECTED");
     expect(w.statusNote).toContain("começa com EAA");
+    expect(w.statusNote).toContain('O token salvo começa com "tok" e tem 5 caracteres');
   });
 
   it("número que o token não alcança pede a WABA atribuída ao usuário do sistema", async () => {
