@@ -65,3 +65,26 @@ describe("token da API Oficial de 24 horas vira de 60 dias", () => {
     expect(expiryNote(new Date(now - DAY).toISOString(), now)).toContain("venceu");
   });
 });
+
+describe("chave colada no campo que mostra a máscara", () => {
+  it("a chave nova vale, e não a antiga", async () => {
+    const { unmaskPasted, isMasked } = await vi.importActual<any>("../../src/helpers/Secrets");
+    expect(unmaskPasted("••••abcdEAAnovo")).toBe("EAAnovo");
+    expect(unmaskPasted("••••abcd")).toBe("••••abcd");
+    expect(isMasked(unmaskPasted("••••abcd"))).toBe(true);
+    expect(unmaskPasted("EAAx")).toBe("EAAx");
+  });
+});
+
+
+describe("Verify Token criado pelo servidor", () => {
+  it("cria quando falta e não troca o que já existe", async () => {
+    const { ensureVerifyToken } = await import("../../src/services/ChannelServices/CloudToken");
+    const sem = conn({ verifyToken: "" });
+    await ensureVerifyToken(sem as any);
+    expect(JSON.parse(sem.config).verifyToken).toMatch(/^chat-[0-9a-f]{24}$/);
+    const com = conn({ verifyToken: "meu-token" });
+    await ensureVerifyToken(com as any);
+    expect(com.update).not.toHaveBeenCalled();
+  });
+});

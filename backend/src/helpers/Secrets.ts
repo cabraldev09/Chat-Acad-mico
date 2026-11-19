@@ -3,6 +3,11 @@ const MASK = "••••";
 export const isMasked = (value: unknown): boolean =>
   typeof value === "string" && value.startsWith(MASK);
 
+// A new key pasted into a field that still shows the mask ("••••abcd" + the new key) used to look masked, and the old value was silently
+// kept. The mask and the 4 characters after it are dropped, and what was pasted is the new value.
+export const unmaskPasted = (value: unknown): unknown =>
+  typeof value === "string" && value.startsWith(MASK) && value.length > MASK.length + 4 ? value.slice(MASK.length + 4) : value;
+
 export const maskSecret = (value?: string | null): string | null | undefined => {
   if (!value) return value;
   return `${MASK}${value.slice(-4)}`;
@@ -41,6 +46,7 @@ export const mergeConfig = (oldConfig: string | null | undefined, newConfig: str
   }
   const next = JSON.parse(newConfig);
   Object.keys(next).forEach(key => {
+    next[key] = unmaskPasted(next[key]);
     if (isMasked(next[key]) && previous[key]) next[key] = previous[key];
   });
   // fields the client does not manage (e.g. generated webchat token)

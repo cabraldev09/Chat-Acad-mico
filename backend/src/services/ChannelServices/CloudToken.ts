@@ -1,4 +1,5 @@
 import axios from "axios";
+import { randomBytes } from "crypto";
 
 import Whatsapp from "../../models/Whatsapp";
 import { GRAPH } from "../../channels/meta";
@@ -12,7 +13,7 @@ import { logger } from "../../utils/logger";
 // health check say when it ends. A permanent token (expires_at = 0) is kept as it is.
 const LONG_ENOUGH_MS = 7 * 86400000;
 
-const saveConfig = async (whatsapp: Whatsapp, changes: Record<string, any>): Promise<void> => {
+export const saveConfig = async (whatsapp: Whatsapp, changes: Record<string, any>): Promise<void> => {
   const stored = JSON.parse((whatsapp.config as string) || "{}");
   await whatsapp.update({ config: sealConfig(JSON.stringify({ ...stored, ...changes })) as string });
 };
@@ -63,4 +64,10 @@ export const expiryNote = (tokenExpiresAt?: string | null, now = Date.now()): st
   if (left > 7) return "";
   if (left <= 0) return "O token de acesso venceu: gere um novo (Configuração da API do app ou usuário do sistema) e cole na conexão.";
   return `O token de acesso vence em ${left} dia${left > 1 ? "s" : ""}: gere um novo (Configuração da API do app ou usuário do sistema) e cole na conexão.`;
+};
+
+// the Verify Token of the webhook is created by the server (nobody has to invent one) and shown next to the webhook URL
+export const ensureVerifyToken = async (whatsapp: Whatsapp): Promise<void> => {
+  if (getConfig(whatsapp).verifyToken) return;
+  await saveConfig(whatsapp, { verifyToken: `chat-${randomBytes(12).toString("hex")}` });
 };

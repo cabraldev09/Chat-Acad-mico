@@ -58,6 +58,8 @@ export const checkCloudConnection = async (whatsapp: Whatsapp, starting = false)
       const meta = err?.response?.data?.error || {};
       status = "DISCONNECTED";
       note = cloudErrorNote(meta, http);
+      // what was saved, without showing it: a Meta token starts with EAA and is long
+      if (meta.code === 190) note += ` (O token salvo começa com "${String(accessToken).slice(0, 3)}" e tem ${String(accessToken).length} caracteres; o da Meta começa com EAA e passa de 100.)`;
     }
   }
   if (whatsapp.status !== status || (whatsapp.statusNote || "") !== note) {
