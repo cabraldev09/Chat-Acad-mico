@@ -254,6 +254,7 @@ r.delete("/schedules/:id", isAuth, Schedule.remove);
 // campaigns + contact lists: mass messages are for the commercial team and the administration, never for the tutoring
 const salesStaff = affiliateStaff;
 r.get("/campaigns", isAuth, salesStaff, Campaign.index);
+r.get("/campaigns/templates", isAuth, salesStaff, Campaign.templates);
 r.post("/campaigns", isAuth, salesStaff, Campaign.store);
 r.get("/campaigns/:id", isAuth, salesStaff, Campaign.show);
 r.put("/campaigns/:id", isAuth, salesStaff, Campaign.update);

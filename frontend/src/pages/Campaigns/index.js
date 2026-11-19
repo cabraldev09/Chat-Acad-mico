@@ -20,22 +20,24 @@ import {
   TableHead,
   TableRow,
   Chip,
+  Menu,
   makeStyles,
 } from "@material-ui/core";
+import MoreHoriz from "@material-ui/icons/MoreHoriz";
 import PlayArrow from "@material-ui/icons/PlayArrow";
 import Pause from "@material-ui/icons/Pause";
-import Stop from "@material-ui/icons/Stop";
 import Assessment from "@material-ui/icons/Assessment";
 import People from "@material-ui/icons/People";
 import { DeleteOutline } from "@material-ui/icons";
 import { format, parseISO } from "date-fns";
 
-import { Plus as PlusIcon, Users as UsersIcon, Copy, Download, RotateCcw, SendHorizontal, AlertTriangle } from "lucide-react";
+import { Plus as PlusIcon, Users as UsersIcon, Download, RotateCcw, SendHorizontal, AlertTriangle } from "lucide-react";
 import CrudPage from "../../components/CrudPage";
 import IconAction from "../../components/IconAction";
 import ConfirmationModal from "../../components/ConfirmationModal";
 import StepsEditor, { emptyStep } from "./StepsEditor";
 import NewListDialog from "./NewListDialog";
+import { PACES, PacePicker, TemplatePicker, paceOf } from "./SmartFields";
 import MainContainer from "../../components/MainContainer";
 import MainHeader from "../../components/MainHeader";
 import Title from "../../components/Title";
@@ -216,7 +218,7 @@ const ListItemsDialog = ({ list, onClose }) => {
   );
 };
 
-const SHIP_STATUS = { pending: "Pendente", sent: "Enviada", failed: "Falhou", cancelled: "Cancelada" };
+const SHIP_STATUS = { pending: "Pendente", sending: "Enviando", uncertain: "Conferir entrega", sent: "Enviada", failed: "Falhou", cancelled: "Cancelada" };
 
 const ReportDialog = ({ campaignId, onClose, onChanged }) => {
   const classes = useStyles();
@@ -234,9 +236,12 @@ const ReportDialog = ({ campaignId, onClose, onChanged }) => {
     return () => clearInterval(t);
   }, [live, load]);
   const retry = async () => {
+    // the ones to "check the delivery" may have arrived: they only go back when the person agrees (a resend can duplicate)
+    const uncertain = (c && c.counters.uncertain) || 0;
+    const includeUncertain = uncertain > 0 && window.confirm(`Há ${uncertain} envio(s) com entrega a conferir: podem ter chegado. Reenviar também esses? (pode duplicar a mensagem para alguns)`);
     setBusy(true);
     try {
-      const { data: r } = await api.post(`/campaigns/${campaignId}/retry-failed`);
+      const { data: r } = await api.post(`/campaigns/${campaignId}/retry-failed`, { includeUncertain });
       toast.success(`${r.requeued} envio${r.requeued === 1 ? "" : "s"} voltou${r.requeued === 1 ? "" : "ram"} para a fila.`);
       await load();
       onChanged();
@@ -263,7 +268,7 @@ const ReportDialog = ({ campaignId, onClose, onChanged }) => {
               {chip("failed", "Falhas", c.counters.failed, c.counters.failed ? "#dc2626" : undefined)}
               {c.counters.cancelled > 0 && chip("cancelled", "Canceladas", c.counters.cancelled)}
               <span style={{ flex: 1 }} />
-              {c.counters.failed > 0 && ["running", "paused", "finished"].includes(c.status) && (
+              {(c.counters.failed > 0 || c.counters.uncertain > 0) && ["running", "paused", "finished"].includes(c.status) && (
                 <Button size="small" variant="outlined" startIcon={<RotateCcw size={15} />} disabled={busy} onClick={retry}>Reenviar as falhas</Button>
               )}
               <Button size="small" variant="outlined" startIcon={<Download size={15} />} onClick={() => downloadFile(`/campaigns/${campaignId}/report`, { format: "csv", status: only || undefined }, `campanha-${campaignId}.csv`)}>Baixar planilha</Button>
@@ -437,6 +442,19 @@ const ListPicker = ({ value, lists, picked, onPicked, setValue, onNew }) => {
   );
 };
 
+// the less frequent actions of a row, under "…" (the row keeps only start/pause and the report in sight)
+const MoreActions = ({ items }) => {
+  const [anchor, setAnchor] = useState(null);
+  return (
+    <>
+      <IconButton size="small" aria-label="Mais ações" title="Mais ações" onClick={(e) => setAnchor(e.currentTarget)}><MoreHoriz fontSize="small" /></IconButton>
+      <Menu anchorEl={anchor} open={!!anchor} onClose={() => setAnchor(null)}>
+        {items.map((it) => <MenuItem key={it.label} onClick={() => { setAnchor(null); it.onClick(); }} style={it.danger ? { color: "#b91c1c" } : undefined}>{it.label}</MenuItem>)}
+      </Menu>
+    </>
+  );
+};
+
 const Campaigns = () => {
   const [tab, setTab] = useState(0);
   const [lists, setLists] = useState([]);
@@ -483,7 +501,7 @@ const Campaigns = () => {
         onCreated={(l) => { loadLists(); setReloadKey((k) => k + 1); setPickedList(l); }}
       />
       <MainHeader>
-        <Title>Campanhas em massa</Title>
+        <Title>Envio em massa</Title>
       </MainHeader>
       <Paper variant="outlined" style={{ marginBottom: 8 }}>
         <Tabs value={tab} onChange={(e, v) => setTab(v)} indicatorColor="primary" textColor="primary">
@@ -504,13 +522,22 @@ const Campaigns = () => {
             dialogWidth="md"
             mapIn={(row) => ({
               ...row,
+              pace: paceOf(row),
+              template: { name: row.templateName || "", language: row.templateLanguage || "pt_BR", body: row.templateBody || "", params: (() => { try { return JSON.parse(row.templateParams || "[]"); } catch (e) { return []; } })() },
               steps: Array.isArray(row.steps) && row.steps.length
                 ? row.steps.map((st) => ({ ...st, mediaName: st.mediaUrl || "" }))
                 : [{ ...emptyStep(), body: row.message || "", mediaUrl: row.mediaUrl || null, mediaName: row.mediaUrl || "", type: row.mediaUrl ? "media" : "text" }],
             })}
             mapOut={(payload) => {
               const steps = (payload.steps || []).map(({ mediaName, ...st }) => st);
-              return { ...payload, steps, message: steps[0] ? steps[0].body : "" };
+              const { pace, template, ...rest } = payload;
+              const p = pace || PACES.normal;
+              const t = template || {};
+              return {
+                ...rest, steps, message: steps[0] ? steps[0].body : "",
+                intervalMin: p.intervalMin, intervalMax: p.intervalMax, batchSize: p.batchSize, batchPause: p.batchPause,
+                templateName: t.name || null, templateLanguage: t.language || "pt_BR", templateBody: t.body || null, templateParams: JSON.stringify(t.params || []),
+              };
             }}
             emptyText="Nenhuma campanha ainda. Clique em Nova campanha: você pode criar a lista de contatos dentro do formulário."
             canEdit={(r) => ["draft", "scheduled", "paused"].includes(r.status)}
@@ -533,16 +560,11 @@ const Campaigns = () => {
                 render: (value, setValue) => <ConnectionPicker value={value} setValue={setValue} connections={connections} />,
               },
               {
-                name: "templateName",
-                label: "Modelo aprovado da API oficial (obrigatório para quem nunca conversou)",
+                name: "template",
+                type: "custom",
+                label: "Modelo aprovado",
                 hideOn: (v) => (connections.find((c) => c.id === v.whatsappId) || {}).channel !== "whatsapp_cloud",
-                helper: "Nome do modelo aprovado no painel da Meta. Com modelo, só a primeira mensagem é enviada e o {{1}} do modelo recebe o primeiro nome.",
-              },
-              {
-                name: "templateLanguage",
-                label: "Idioma do modelo",
-                default: "pt_BR",
-                hideOn: (v) => (connections.find((c) => c.id === v.whatsappId) || {}).channel !== "whatsapp_cloud",
+                render: (value, setValue, values) => <TemplatePicker whatsappId={values.whatsappId} value={value} setValue={setValue} />,
               },
               {
                 name: "steps",
@@ -557,11 +579,8 @@ const Campaigns = () => {
                   />
                 ),
               },
+              { name: "pace", type: "custom", label: "Ritmo de envio", default: { key: "normal", ...PACES.normal }, render: (value, setValue) => <PacePicker value={value} setValue={setValue} /> },
               { name: "scheduledAt", label: "Agendar início (vazio = iniciar manualmente)", type: "datetime", helper: "Com uma data, a campanha começa sozinha nesse horário. Dá para iniciar antes pelo botão de iniciar." },
-              { name: "intervalMin", label: "Intervalo mínimo entre mensagens (s)", type: "number", default: 20, helper: "Intervalos curtos aumentam o risco de bloqueio em conexão por QR Code." },
-              { name: "intervalMax", label: "Intervalo máximo entre mensagens (s)", type: "number", default: 60 },
-              { name: "batchSize", label: "Pausar a cada N mensagens", type: "number", default: 20 },
-              { name: "batchPause", label: "Duração da pausa (s)", type: "number", default: 300 },
             ]}
             columns={[
               { header: "Campanha", field: "name" },
@@ -585,13 +604,13 @@ const Campaigns = () => {
               {
                 header: "Progresso",
                 render: (r) => {
-                  const { sent, failed, cancelled = 0, total } = r.counters || { sent: 0, failed: 0, cancelled: 0, total: 0 };
-                  const done = sent + failed + cancelled;
+                  const { sent, failed, cancelled = 0, uncertain = 0, total } = r.counters || { sent: 0, failed: 0, cancelled: 0, uncertain: 0, total: 0 };
+                  const done = sent + failed + cancelled + uncertain;
                   return (
                     <div style={{ minWidth: 120 }}>
                       <LinearProgress variant="determinate" value={total ? (done / total) * 100 : 0} />
                       <Typography variant="caption">
-                        {sent}/{total} enviadas{failed ? ` · ${failed} falhas` : ""}{cancelled ? ` · ${cancelled} canceladas` : ""}
+                        {sent}/{total} enviadas{failed ? ` · ${failed} falhas` : ""}{uncertain ? ` · ${uncertain} a conferir` : ""}{cancelled ? ` · ${cancelled} canceladas` : ""}
                       </Typography>
                     </div>
                   );
@@ -607,15 +626,13 @@ const Campaigns = () => {
                 {["running", "scheduled"].includes(r.status) && (
                   <IconAction title="Pausar" onClick={act(r.id, "pause", reload, "Campanha pausada.")}><Pause /></IconAction>
                 )}
-                {["running", "paused", "scheduled"].includes(r.status) && (
-                  <IconAction title="Cancelar campanha" onClick={() => setCancelling(r)}><Stop /></IconAction>
-                )}
-                {r.counters && r.counters.failed > 0 && ["running", "paused", "finished"].includes(r.status) && (
-                  <IconAction title={`Reenviar as ${r.counters.failed} falhas`} onClick={act(r.id, "retry-failed", reload, "As falhas voltaram para a fila.")}><RotateCcw size={18} /></IconAction>
-                )}
-                <IconAction title="Enviar um teste para o meu número" onClick={() => setTesting(r)}><SendHorizontal size={18} /></IconAction>
-                <IconAction title="Duplicar como rascunho" onClick={act(r.id, "duplicate", reload, "Campanha duplicada como rascunho.")}><Copy size={18} /></IconAction>
                 <IconAction title="Ver relatório" onClick={() => setReport(r.id)}><Assessment /></IconAction>
+                <MoreActions items={[
+                  { label: "Enviar um teste para o meu número", onClick: () => setTesting(r) },
+                  { label: "Duplicar como rascunho", onClick: act(r.id, "duplicate", reload, "Campanha duplicada como rascunho.") },
+                  ...(r.counters && (r.counters.failed > 0 || r.counters.uncertain > 0) && ["running", "paused", "finished"].includes(r.status) ? [{ label: "Reenviar falhas (abre o relatório)", onClick: () => setReport(r.id) }] : []),
+                  ...(["running", "paused", "scheduled"].includes(r.status) ? [{ label: "Cancelar campanha", danger: true, onClick: () => setCancelling(r) }] : []),
+                ]} />
               </>
             )}
           />

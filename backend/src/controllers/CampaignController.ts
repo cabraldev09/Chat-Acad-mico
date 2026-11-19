@@ -80,7 +80,9 @@ const crud = makeCrud(Campaign, {
     "contactListId",
     "whatsappId",
     "templateName",
-    "templateLanguage"
+    "templateLanguage",
+    "templateParams",
+    "templateBody"
   ],
   required: ["name", "contactListId"],
   include: [
@@ -137,7 +139,10 @@ const crud = makeCrud(Campaign, {
 export const { show, store, update, remove } = crud;
 
 const withCounters = async (campaigns: Campaign[]) => {
+  if (!campaigns.length) return [];
   const rows: any[] = await CampaignShipping.findAll({
+    // only the campaigns listed (the history of every campaign is not counted again on each load)
+    where: { campaignId: campaigns.map(c => c.id) } as any,
     attributes: ["campaignId", "status", [fn("COUNT", col("id")), "total"]],
     group: ["campaignId", "status"],
     raw: true
@@ -166,8 +171,8 @@ export const index = async (_req: Request, res: Response): Promise<Response> => 
   return res.json(await withCounters(campaigns));
 };
 
-const SHIPPING_STATUS = ["pending", "sent", "failed", "cancelled"];
-const STATUS_LABEL: Record<string, string> = { pending: "Pendente", sent: "Enviada", failed: "Falhou", cancelled: "Cancelada" };
+const SHIPPING_STATUS = ["pending", "sending", "uncertain", "sent", "failed", "cancelled"];
+const STATUS_LABEL: Record<string, string> = { pending: "Pendente", sending: "Enviando", uncertain: "Conferir entrega", sent: "Enviada", failed: "Falhou", cancelled: "Cancelada" };
 const REPORT_LIMIT = 5000;
 
 // JSON for the screen; `format=csv` is the spreadsheet. `status` narrows the list (the counters stay whole).
@@ -256,9 +261,11 @@ export const retryFailed = async (req: Request, res: Response): Promise<Response
   if (!campaign) throw new AppError("ERR_NOT_FOUND", 404);
   if (!["running", "paused", "finished"].includes(campaign.status)) throw new AppError("ERR_CAMPAIGN_INVALID_STATE");
   if (campaign.whatsappId) await assertConnectionUse(req, campaign.whatsappId);
+  // the "check the delivery" ones may have arrived: they go back only when the person confirms (a resend can duplicate)
+  const statuses = req.body?.includeUncertain === true ? ["failed", "uncertain"] : ["failed"];
   const [requeued] = await CampaignShipping.update(
     { status: "pending", error: null },
-    { where: { campaignId: campaign.id, status: "failed", [Op.or]: [{ error: { [Op.is]: null } }, { error: { [Op.notLike]: "%pediu para não receber%" } }] } as any }
+    { where: { campaignId: campaign.id, status: statuses, [Op.or]: [{ error: { [Op.is]: null } }, { error: { [Op.notLike]: "%pediu para não receber%" } }] } as any }
   );
   if (!requeued) throw new AppError("ERR_CAMPAIGN_NOTHING_TO_RETRY");
   // a person whose every message already went out starts the last one again (never past the end of the sequence)
@@ -560,4 +567,14 @@ export const removeItem = async (req: Request, res: Response): Promise<Response>
     where: { id: req.params.itemId, contactListId: req.params.id }
   });
   return res.json({ message: "deleted" });
+};
+
+
+// the approved templates of an official number (read on the Meta), for the campaign to pick one
+export const templates = async (req: Request, res: Response): Promise<Response> => {
+  const whatsappId = Number(req.query.whatsappId);
+  if (!whatsappId) throw new AppError("ERR_NOT_FOUND", 404);
+  await assertConnectionUse(req, whatsappId);
+  const { approvedTemplates, TEMPLATE_VARIABLES } = await import("../services/CampaignServices/Templates");
+  return res.json({ templates: await approvedTemplates(whatsappId), variables: TEMPLATE_VARIABLES });
 };

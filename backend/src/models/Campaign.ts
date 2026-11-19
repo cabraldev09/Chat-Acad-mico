@@ -70,6 +70,14 @@ class Campaign extends Model<Campaign> {
   @Column
   templateLanguage: string;
 
+  // JSON list: the variable that fills each {{n}} of the template (primeiro_nome, nome, curso, polo, consultor, numero)
+  @Column(DataType.TEXT)
+  templateParams: string;
+
+  // the template's text, for the conversation history
+  @Column(DataType.TEXT)
+  templateBody: string;
+
   @Default(20)
   @Column
   intervalMin: number;
