@@ -1,7 +1,7 @@
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "react-toastify";
 import { Button, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, MenuItem, TextField, Tooltip, makeStyles } from "@material-ui/core";
-import { CalendarDays, ClipboardPaste, Copy, ImageDown, LayoutGrid, Pencil, Plus, Settings2, Table2, Trash2 } from "lucide-react";
+import { CalendarClock, CalendarDays, ClipboardPaste, Copy, ImageDown, LayoutGrid, Pencil, Plus, Settings2, Table2, Trash2 } from "lucide-react";
 
 import MainContainer from "../../components/MainContainer";
 import MainHeader from "../../components/MainHeader";
@@ -462,6 +462,37 @@ const ImportDialog = ({ open, onClose, goal, onSaved }) => {
   );
 };
 
+
+// postpones the end of the goal (the institution extended the intake, for example): the new date and the reason are kept in the history
+const PostponeDialog = ({ goal, onClose, onDone }) => {
+  const [endsOn, setEndsOn] = useState(String(goal.endsOn).slice(0, 10));
+  const [reason, setReason] = useState("");
+  const [saving, setSaving] = useState(false);
+  const save = async () => {
+    setSaving(true);
+    try {
+      await api.post(`/goals/${goal.id}/postpone`, { endsOn, reason });
+      toast.success("Prazo da meta alterado. O ritmo diário foi recalculado.");
+      onDone();
+    } catch (e) { toastError(e); }
+    setSaving(false);
+  };
+  return (
+    <Dialog open onClose={onClose} maxWidth="xs" fullWidth>
+      <DialogTitle>Adiar o prazo da meta</DialogTitle>
+      <DialogContent>
+        <div style={{ fontSize: 13.5, color: "var(--text-2)", marginBottom: 8 }}>Hoje termina em {dm(goal.endsOn)}. A nova data vale para todos os polos desta meta e o ritmo diário é recalculado.</div>
+        <TextField fullWidth type="date" variant="outlined" margin="dense" label="Novo fim" InputLabelProps={{ shrink: true }} value={endsOn} onChange={(e) => setEndsOn(e.target.value)} />
+        <TextField fullWidth multiline rows={2} variant="outlined" margin="dense" label="Motivo" placeholder="Ex.: a instituição prorrogou as matrículas" value={reason} onChange={(e) => setReason(e.target.value)} />
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose} disabled={saving}>Cancelar</Button>
+        <Button variant="contained" color="primary" onClick={save} disabled={saving || !endsOn || !reason.trim() || endsOn === String(goal.endsOn).slice(0, 10)}>Salvar novo prazo</Button>
+      </DialogActions>
+    </Dialog>
+  );
+};
+
 const PoloGoals = () => {
   const classes = useStyles();
   const { user } = useContext(AuthContext);
@@ -472,6 +503,7 @@ const PoloGoals = () => {
   const [dialog, setDialog] = useState(null); // period-new | period-edit | all | import | { polo }
   const [busy, setBusy] = useState(false);
   const shareRef = useRef(null);
+  const [changes, setChanges] = useState([]);
 
   const load = useCallback(async (goalId) => {
     try {
@@ -483,6 +515,11 @@ const PoloGoals = () => {
   useEffect(() => { load(); }, [load]);
 
   const goal = data && data.goal;
+  const goalId = goal ? goal.id : null;
+  useEffect(() => {
+    if (!manager || !goalId) { setChanges([]); return; }
+    api.get(`/goals/${goalId}/changes`).then(({ data: c }) => setChanges(c)).catch(() => setChanges([]));
+  }, [manager, goalId, data]);
   const mi = goal && month ? data.months.indexOf(month) : -1;
   const daysLeft = goal ? (month ? data.monthTotals[mi].daysLeft : goal.daysLeft) : 0;
   // each row with the numbers of what is on screen: the semester or the chosen month
@@ -547,7 +584,13 @@ const PoloGoals = () => {
               {manager && (
                 <Tooltip title="Definir início, fim e dias úteis do período"><IconButton size="small" onClick={() => setDialog("period-edit")} aria-label="Editar período"><CalendarDays size={18} /></IconButton></Tooltip>
               )}
+              {manager && <Button size="small" variant="outlined" startIcon={<CalendarClock size={15} />} onClick={() => setDialog("postpone")}>Adiar prazo</Button>}
             </div>
+            {changes.length > 0 && (
+              <div style={{ fontSize: 12.5, color: "var(--text-2)", margin: "-4px 0 12px" }}>
+                {changes.slice(0, 3).map((c) => <div key={c.id}>Prazo {c.to > c.from ? "adiado" : "antecipado"} de {dm(c.from)} para {dm(c.to)}{c.by ? ` por ${c.by}` : ""} em {new Date(c.at).toLocaleDateString("pt-BR")}{c.reason ? `: ${c.reason}` : ""}</div>)}
+              </div>
+            )}
 
             <div className={classes.months}>
               <button type="button" className={`${classes.monthBtn} ${!month ? classes.monthOn : ""}`} onClick={() => setMonth(null)}>
@@ -698,6 +741,7 @@ const PoloGoals = () => {
 
       {manager && (
         <>
+          {dialog === "postpone" && goal && <PostponeDialog goal={goal} onClose={() => setDialog(null)} onDone={() => { setDialog(null); load(goal.id); }} />}
           <PeriodDialog open={dialog === "period-new" || dialog === "period-edit"} onClose={() => setDialog(null)} goal={dialog === "period-edit" ? goal : null} onSaved={(id) => { setDialog(null); load(id); }} />
           <EditDialog open={dialog === "all"} onClose={() => setDialog(null)} data={data} onSaved={reload} />
           {goal && <ImportDialog open={dialog === "import"} onClose={() => setDialog(null)} goal={goal} onSaved={reload} />}

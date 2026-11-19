@@ -79,37 +79,43 @@ const firstPageOf = async (bytes: Buffer): Promise<Buffer | null> => {
 
 export class PrintReadError extends Error {}
 
-export const readCoursePrint = async (bytes: Buffer, mime: string, courseName: string): Promise<PrintReading> => {
+// Reads one picture (or the first page of a PDF) with the vision model and returns what it handed to the tool. Shared by the readers of
+// prints (course print, enrollment print). Throws PrintReadError with a sentence the person can act on.
+export const readImageWithTool = async (
+  bytes: Buffer, mime: string, tool: { name: string; description: string; input_schema: any }, system: string, instruction: string, what = "print"
+): Promise<any> => {
   const [anthropic, openai] = await Promise.all([anthropicAccess(), openaiAccess()]);
-  if (!anthropic.apiKey && !openai.apiKey) throw new PrintReadError("Não há chave de IA cadastrada: preencha o texto e o percentual à mão.");
+  if (!anthropic.apiKey && !openai.apiKey) throw new PrintReadError("Não há chave de IA cadastrada: preencha à mão.");
   let image = bytes;
   let media = mime;
   if (mime === "application/pdf") {
     const page = await firstPageOf(bytes);
-    if (!page) throw new PrintReadError("Não consegui abrir o PDF do print. Envie uma imagem (PNG ou JPG).");
+    if (!page) throw new PrintReadError("Não consegui abrir o PDF. Envie uma imagem (PNG ou JPG).");
     image = page;
     media = "image/png";
   }
-  const instruction = `Este é o print do curso de ${courseName}. Registre o que ele informa.`;
   try {
     if (anthropic.apiKey) {
       const { data } = await axios.post(`${ANTHROPIC_URL()}/v1/messages`, {
-        model: MODEL, max_tokens: 2000, system: SYSTEM, tools: [SCHEMA], tool_choice: { type: "tool", name: PRINT_TOOL },
+        model: MODEL, max_tokens: 2000, system, tools: [tool], tool_choice: { type: "tool", name: tool.name },
         messages: [{ role: "user", content: [{ type: "image", source: { type: "base64", media_type: media, data: image.toString("base64") } }, { type: "text", text: instruction }] }]
       }, { headers: { "x-api-key": anthropic.apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" }, timeout: 120000, maxBodyLength: Infinity });
-      return cleanPrintReading((data?.content || []).find((b: any) => b.type === "tool_use" && b.name === PRINT_TOOL)?.input);
+      return (data?.content || []).find((b: any) => b.type === "tool_use" && b.name === tool.name)?.input;
     }
     const { data } = await axios.post(`${OPENAI_URL()}/v1/chat/completions`, {
       model: OPENAI_MODEL, max_tokens: 2000, temperature: 0,
-      messages: [{ role: "system", content: SYSTEM }, { role: "user", content: [{ type: "image_url", image_url: { url: `data:${media};base64,${image.toString("base64")}`, detail: "high" } }, { type: "text", text: instruction }] }],
-      tools: [{ type: "function", function: { name: PRINT_TOOL, description: SCHEMA.description, parameters: SCHEMA.input_schema } }],
-      tool_choice: { type: "function", function: { name: PRINT_TOOL } }
+      messages: [{ role: "system", content: system }, { role: "user", content: [{ type: "image_url", image_url: { url: `data:${media};base64,${image.toString("base64")}`, detail: "high" } }, { type: "text", text: instruction }] }],
+      tools: [{ type: "function", function: { name: tool.name, description: tool.description, parameters: tool.input_schema } }],
+      tool_choice: { type: "function", function: { name: tool.name } }
     }, { headers: { Authorization: `Bearer ${openai.apiKey}`, "content-type": "application/json" }, timeout: 120000, maxBodyLength: Infinity });
     const args = data?.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments;
-    return cleanPrintReading(args ? JSON.parse(args) : null);
+    return args ? JSON.parse(args) : null;
   } catch (err: any) {
     const status = Number(err?.response?.status || 0);
-    logger.warn(`Print do curso: leitura falhou (${status || "sem resposta"}): ${String(err?.response?.data?.error?.message || err?.message || "").slice(0, 200)}`);
+    logger.warn(`Leitura do ${what} falhou (${status || "sem resposta"}): ${String(err?.response?.data?.error?.message || err?.message || "").slice(0, 200)}`);
     throw new PrintReadError(status === 401 || status === 403 ? "A chave de IA foi recusada pelo provedor: preencha à mão." : status === 429 ? "O limite da IA acabou: preencha à mão ou tente mais tarde." : "A IA não conseguiu ler o print agora: preencha à mão ou tente de novo.");
   }
 };
+
+export const readCoursePrint = async (bytes: Buffer, mime: string, courseName: string): Promise<PrintReading> =>
+  cleanPrintReading(await readImageWithTool(bytes, mime, SCHEMA, SYSTEM, `Este é o print do curso de ${courseName}. Registre o que ele informa.`, "print do curso"));

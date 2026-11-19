@@ -851,8 +851,7 @@ export const enroll = async (req: Request, res: Response): Promise<Response> => 
   if (!lead) throw new AppError("ERR_LEAD_NOT_FOUND", 404);
   if (!req.body.poloId) throw new AppError("ERR_FIELD_REQUIRED_poloId");
   const { default: enrollLead } = await import("../services/CrmServices/EnrollLead");
-  return res.json(
-    await enrollLead(lead, uid(req), {
+  const result: any = await enrollLead(lead, uid(req), {
       poloId: Number(req.body.poloId),
       tutorId: req.body.tutorId,
       note: req.body.note,
@@ -864,8 +863,13 @@ export const enroll = async (req: Request, res: Response): Promise<Response> => 
       courseId: req.body.courseId ? Number(req.body.courseId) : null,
       courseName: req.body.courseName || null,
       rgm: req.body.rgm || null
-    })
-  );
+    });
+  // the print attached in the dialog becomes the proof of this enrollment (the first one, or the extra course)
+  if (req.body.proofId && !result.repeated) {
+    const { attachProof } = await import("../services/CommercialServices/EnrollmentProof");
+    await attachProof(lead.id, Number(req.body.proofId), result.enrollment?.id || null);
+  }
+  return res.json(result);
 };
 
 // every enrollment of the student: the first (on the lead) and the ones after it

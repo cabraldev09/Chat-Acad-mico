@@ -448,6 +448,7 @@ const messages = {
         ERR_ONBOARDING_NOT_STARTED: "A ambientação ainda não foi iniciada.",
         ERR_INVALID_PERIOD: "Período inválido: confira as datas de início e fim.",
         ERR_CAMPAIGN_LIST_REQUIRED: "Escolha a lista de contatos da campanha.",
+        ERR_GOAL_CHANGE_REASON: "Diga o motivo da mudança do prazo.",
         ERR_ONBOARDING_CHECKLIST_INCOMPLETE: "Ainda há etapas do checklist sem marcar. Marque as etapas ou informe o motivo para concluir assim.",
         ERR_ONBOARDING_ALREADY_DONE: "A ambientação deste aluno já foi concluída.",
         ERR_PAYMENT_DUE_IN_PAST: "A data de vencimento precisa ser hoje ou uma data futura.",
