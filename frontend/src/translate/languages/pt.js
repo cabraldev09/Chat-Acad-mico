@@ -572,6 +572,7 @@ const messages = {
         ERR_SENDING_WAPP_MEDIA_MSG: "Não foi possível enviar o arquivo pelo WhatsApp. Confira a conexão.",
         ERR_NUMBER_NOT_ON_WHATSAPP: "Este número não tem WhatsApp.",
         ERR_TEMPLATES_UNSUPPORTED: "Este canal não envia modelos de mensagem.",
+        ERR_TEMPLATES_NO_WABA: "Não foi possível descobrir a conta do WhatsApp (WABA) deste número. Confira se o token tem a permissão whatsapp_business_management.",
         ERR_MEDIA_NOT_FOUND: "O arquivo anexado não foi encontrado no servidor. Anexe de novo.",
         ERR_QUEUE_INVALID_NAME: "Nome do setor inválido. Use pelo menos 2 caracteres.",
         ERR_QUEUE_NAME_ALREADY_EXISTS: "Já existe um setor com este nome.",
