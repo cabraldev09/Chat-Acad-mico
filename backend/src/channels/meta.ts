@@ -217,6 +217,9 @@ export const whatsappCloud: ChannelAdapter = {
   async start(whatsapp) {
     // the same check as the health worker: the screen shows the reason (and what to do) right away, not only in the log
     const { checkCloudConnection } = await import("../workers/CloudHealth");
+    // a 24-hour token becomes one of 60 days when the connection has the App ID and the App Secret
+    const { extendCloudToken } = await import("../services/ChannelServices/CloudToken");
+    await extendCloudToken(whatsapp);
     const status = await checkCloudConnection(whatsapp, true);
     if (status !== "CONNECTED") logger.error(`WhatsApp Cloud start failed (${whatsapp.id}): ${whatsapp.statusNote || status}`);
   },

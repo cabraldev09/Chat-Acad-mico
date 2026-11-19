@@ -26,6 +26,7 @@
 1. Use **um app** no Meta for Developers e **uma conta do WhatsApp Business (WABA)** verificada no nome da instituição.
 2. Cadastre cada número (polo ou institucional) na WABA. No Chat, cada número vira uma conexão "API Oficial", com o Phone Number ID dele.
 3. Use um **token permanente** de "usuário do sistema", no Business Manager → Usuários do sistema, com as permissões `whatsapp_business_messaging` e `whatsapp_business_management`. Token temporário expira em 24h, e a conexão fica vermelha.
+   - **Sem token permanente** (a Meta às vezes trava a verificação da conta ao gerar o do usuário do sistema): use o token de 24 h de Casos de uso → WhatsApp → Configuração da API e preencha também o **App ID** e o **App Secret** do mesmo app na conexão. Ao conectar, o Chat troca o token por um de **60 dias**; a validade aparece na conexão e, nos últimos 7 dias, um aviso pede um token novo.
 4. Configure **um único webhook** no app, com a URL de qualquer uma das conexões (`/webhooks/meta/<id>`), o Verify Token dela e o campo `messages` assinado.
    - Os eventos de todos os números do mesmo app são entregues à conexão certa pelo `phone_number_id`.
    - Todas as conexões do app precisam ter o **mesmo App Secret**.
