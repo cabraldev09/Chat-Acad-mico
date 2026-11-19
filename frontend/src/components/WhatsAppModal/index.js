@@ -490,8 +490,14 @@ const WhatsAppModal = ({ open, onClose, whatsAppId, onCreated }) => {
 								autoComplete="off"
 								value={config[f.key] || ""}
 								onChange={e => setConfig({ ...config, [f.key]: e.target.value })}
+								helperText={f.help || undefined}
 							/>
 						))}
+						{info && info.tokenExpiresAt && (
+							<Typography variant="caption" color="textSecondary">
+								O token vale até {new Date(info.tokenExpiresAt).toLocaleDateString("pt-BR")}. Perto do vencimento, cole um novo token aqui.
+							</Typography>
+						)}
 					</div>
 				)}
 

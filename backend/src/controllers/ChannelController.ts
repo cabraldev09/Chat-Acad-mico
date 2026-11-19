@@ -19,7 +19,8 @@ const CHANNELS = [
     label: "WhatsApp Cloud API (oficial)",
     fields: [
       { key: "phoneNumberId", label: "Phone Number ID" },
-      { key: "accessToken", label: "Access Token (permanente)", secret: true },
+      { key: "accessToken", label: "Access Token", secret: true, help: "O permanente (usuário do sistema) ou o de 24 horas da tela Configuração da API: com o App ID preenchido, o de 24 horas vira um de 60 dias." },
+      { key: "appId", label: "App ID (opcional)", help: "ID do app na Meta (Configurações do app → Básico). Com ele, o token de 24 horas é trocado por um de 60 dias." },
       { key: "appSecret", label: "App Secret (valida assinatura)", secret: true },
       { key: "verifyToken", label: "Verify Token (você define)", secret: true }
     ],
@@ -70,6 +71,7 @@ export const info = async (req: Request, res: Response): Promise<Response> => {
   if (!whatsapp) throw new AppError("ERR_NO_WAPP_FOUND", 404);
   const publicUrl = getPublicUrl();
   const out: Record<string, any> = { publicUrl, channel: whatsapp.channel };
+  if (whatsapp.channel === "whatsapp_cloud") out.tokenExpiresAt = getConfig(whatsapp).tokenExpiresAt || null;
   if (["whatsapp_cloud", "messenger", "instagram"].includes(whatsapp.channel)) {
     out.webhookUrl = `${publicUrl}/webhooks/meta/${whatsapp.id}`;
     // the last time the Meta called this connection and what became of it (empty until it calls after the server started)
