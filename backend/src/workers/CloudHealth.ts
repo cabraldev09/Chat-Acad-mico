@@ -12,10 +12,22 @@ const QUALITY: Record<string, string> = {
   RED: "Qualidade do número baixa (vermelha) na Meta: o limite de conversas pode cair. Reduza disparos e mensagens frias."
 };
 
+// What the person must do, in Portuguese, for the refusals of the Meta seen when a number is read
+export const cloudErrorNote = (meta: { code?: number; message?: string } = {}, http?: number): string => {
+  const msg = String(meta.message || "");
+  if (meta.code === 190 && /cannot parse/i.test(msg))
+    return "O token de acesso não é um token válido da Meta (foi colado incompleto ou é outro valor, como o App Secret). Copie de novo o token permanente do usuário do sistema (começa com EAA) e salve na conexão.";
+  if (meta.code === 190)
+    return "O token de acesso da Meta expirou ou foi revogado: gere um token permanente (usuário do sistema) e salve na conexão.";
+  if (meta.code === 100 || meta.code === 10 || meta.code === 200)
+    return "A Meta não deixa este token ler o número: confira o Phone Number ID e, no Business Manager, atribua a conta do WhatsApp (WABA) ao usuário do sistema com controle total.";
+  return `A Meta recusou a consulta do número: ${msg || `HTTP ${http || "?"}`}`;
+};
+
 // The official numbers (Cloud API) do not "disconnect" like a QR code: the token expires, a permission is removed or the number is
 // blocked, and nothing tells the system until a message fails. Every few minutes each number is read on the Meta and the connection shows
 // what is wrong (status and note) and the quality of the number. A network failure or an error of the Meta itself changes nothing.
-export const checkCloudConnection = async (whatsapp: Whatsapp): Promise<string> => {
+export const checkCloudConnection = async (whatsapp: Whatsapp, starting = false): Promise<string> => {
   const { accessToken, phoneNumberId } = getConfig(whatsapp);
   let status = "CONNECTED";
   let note = "";
@@ -33,12 +45,18 @@ export const checkCloudConnection = async (whatsapp: Whatsapp): Promise<string> 
     } catch (err: any) {
       const http = err?.response?.status;
       // only the Meta refusing the token or the number says the connection is broken; a timeout or a 5xx is checked again next time
-      if (!http || http >= 500) return whatsapp.status;
+      if ((!http || http >= 500) && !starting) return whatsapp.status;
+      if (!http || http >= 500) {
+        // connecting now and the Meta did not answer: the connection is not up, and the screen says why ("Tentar novamente" asks again)
+        status = "DISCONNECTED";
+        note = "A Meta não respondeu agora. Clique em Tentar novamente em alguns minutos.";
+        await whatsapp.update({ status, statusNote: note, qrcode: "" } as any);
+        getIO().emit("whatsappSession", { action: "update", session: whatsapp });
+        return status;
+      }
       const meta = err?.response?.data?.error || {};
       status = "DISCONNECTED";
-      note = meta.code === 190
-        ? "O token de acesso da Meta expirou ou foi revogado: gere um token permanente (usuário do sistema) e salve na conexão."
-        : `A Meta recusou a consulta do número: ${meta.message || `HTTP ${http}`}`;
+      note = cloudErrorNote(meta, http);
     }
   }
   if (whatsapp.status !== status || (whatsapp.statusNote || "") !== note) {

@@ -215,26 +215,10 @@ export const whatsappCloud: ChannelAdapter = {
   prefix: "",
 
   async start(whatsapp) {
-    const { accessToken, phoneNumberId } = getConfig(whatsapp);
-    if (!accessToken || !phoneNumberId) {
-      await setChannelStatus(whatsapp, "DISCONNECTED");
-      return;
-    }
-    try {
-      const { data } = await axios.get(`${GRAPH}/${phoneNumberId}`, {
-        params: {
-          access_token: accessToken,
-          fields: "display_phone_number,verified_name"
-        }
-      });
-      await whatsapp.update({
-        session: data.display_phone_number || data.verified_name
-      });
-      await setChannelStatus(whatsapp, "CONNECTED");
-    } catch (err) {
-      logger.error(`WhatsApp Cloud start failed: ${err?.response?.data?.error?.message || err}`);
-      await setChannelStatus(whatsapp, "DISCONNECTED");
-    }
+    // the same check as the health worker: the screen shows the reason (and what to do) right away, not only in the log
+    const { checkCloudConnection } = await import("../workers/CloudHealth");
+    const status = await checkCloudConnection(whatsapp, true);
+    if (status !== "CONNECTED") logger.error(`WhatsApp Cloud start failed (${whatsapp.id}): ${whatsapp.statusNote || status}`);
   },
 
   async stop() {

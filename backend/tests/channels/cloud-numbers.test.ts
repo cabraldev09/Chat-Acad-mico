@@ -78,4 +78,34 @@ describe("saúde dos números oficiais", () => {
     expect(w.update).not.toHaveBeenCalled();
     expect(emitted).toHaveLength(0);
   });
+
+  it("token colado errado (Cannot parse) explica o que copiar de novo", async () => {
+    const w = conn(1, "111");
+    get.mockRejectedValue({ response: { status: 400, data: { error: { code: 190, message: "Invalid OAuth access token - Cannot parse access token" } } } });
+    expect(await checkCloudConnection(w as any)).toBe("DISCONNECTED");
+    expect(w.statusNote).toContain("começa com EAA");
+  });
+
+  it("número que o token não alcança pede a WABA atribuída ao usuário do sistema", async () => {
+    const w = conn(1, "111");
+    get.mockRejectedValue({ response: { status: 400, data: { error: { code: 100, message: "Unsupported get request" } } } });
+    await checkCloudConnection(w as any);
+    expect(w.statusNote).toContain("WABA");
+  });
+
+  it("ao conectar, a Meta sem responder deixa desconectada com o motivo", async () => {
+    const w = conn(1, "111", "app-a", { status: "OPENING" });
+    get.mockRejectedValue(new Error("timeout"));
+    expect(await checkCloudConnection(w as any, true)).toBe("DISCONNECTED");
+    expect(w.statusNote).toContain("Tentar novamente");
+  });
+});
+
+describe("credenciais coladas", () => {
+  it("tira espaços, quebras de linha, aspas e o Bearer da frente", async () => {
+    const { cleanCredential } = await vi.importActual<any>("../../src/helpers/Secrets");
+    expect(cleanCredential(" Bearer EAAabc\n123 ")).toBe("EAAabc123");
+    expect(cleanCredential('"EAAx y"')).toBe("EAAxy");
+    expect(cleanCredential("EAAok")).toBe("EAAok");
+  });
 });
