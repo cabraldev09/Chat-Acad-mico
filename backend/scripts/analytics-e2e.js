@@ -495,6 +495,38 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
       assert(after === before + 3, `the three enrollments counted ${after - before}`);
       assert((await http.post(`/leads/${lead.id + 9999}/enroll`, { rgm: nextRgm(), poloId: Number(polo3), additional: true }, as(admin))).status === 404, "unknown lead");
     });
+
+    await test("the print of the enrollment is kept with it, the management lists the enrollments inside the goal and postpones a goal with a reason", async () => {
+      const FormData = require("form-data");
+      const day = (d) => d.toLocaleDateString("en-CA", { timeZone: "America/Porto_Velho" });
+      const now = new Date();
+      const polo4 = sql(`INSERT INTO Polos (code, name, active, createdAt, updatedAt) VALUES ('AN4', 'Polo AN4', true, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const goalId = sql(`INSERT INTO Goals (title, startsOn, endsOn, status, kind, workDays, createdAt, updatedAt) VALUES ('Meta teste', '${day(new Date(now.getTime() - 5 * 864e5))}', '${day(new Date(now.getTime() + 30 * 864e5))}', 'active', 'polo', 5, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      sql(`INSERT INTO GoalPolos (goalId, poloId, target, manualCount, canceled, createdAt, updatedAt) VALUES (${goalId}, ${polo4}, 10, 0, 0, NOW(), NOW())`);
+      const lead = (await http.post("/leads", { name: "Aluna com print", phone: "5569999990078", ownerId: ids.joao }, as(admin))).data.lead;
+      assert((await http.put(`/leads/${lead.id}/stage`, { skipEnroll: true, stageId: stageWon.id }, as(admin))).status === 200, "won");
+      sql(`UPDATE Leads SET enrolledAt = NOW(), poloId = ${polo4} WHERE id = ${lead.id}`);
+      const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64");
+      const form = new FormData();
+      form.append("file", png, { filename: "matricula.png", contentType: "image/png" });
+      const up = await http.post(`/leads/${lead.id}/enrollment-proof`, form, { headers: { ...form.getHeaders(), ...as(admin).headers } });
+      assert(up.status === 200 && up.data.id && "reading" in up.data, `upload ${up.status} ${JSON.stringify(up.data).slice(0, 200)}`);
+      const second = await http.post(`/leads/${lead.id}/enroll`, { rgm: nextRgm(), poloId: Number(polo4), additional: true, courseName: "Pedagogia", fee: "exempt", proofId: up.data.id }, as(admin));
+      assert(second.status === 200, `enroll ${second.status}`);
+      const file = await http.get(`/leads/${lead.id}/enrollment-proof/${up.data.id}/file`, as(admin));
+      assert(file.status === 200 && String(file.headers["content-type"]).startsWith("image/png"), `proof file ${file.status}`);
+      const list = await http.get(`/enrollments?from=${day(new Date(now.getTime() - 864e5))}&to=${day(new Date(now.getTime() + 864e5))}&poloId=${polo4}`, as(admin));
+      assert(list.status === 200 && list.data.total === 2, `enrollments ${list.status} ${JSON.stringify(list.data).slice(0, 300)}`);
+      const extra = list.data.rows.find(r => r.enrollmentId);
+      assert(extra && extra.proofId === up.data.id && extra.inGoal === true && extra.goal === "Meta teste" && list.data.inGoal === 2, `inside the goal ${JSON.stringify(list.data.rows)}`);
+      assert((await http.get("/enrollments", as(joao))).status === 403, "a consultant listed the enrollments");
+      const later = day(new Date(now.getTime() + 60 * 864e5));
+      assert((await http.post(`/goals/${goalId}/postpone`, { endsOn: later }, as(admin))).status === 400, "postponed without a reason");
+      const moved = await http.post(`/goals/${goalId}/postpone`, { endsOn: later, reason: "Prorrogação do calendário" }, as(admin));
+      assert(moved.status === 200 && moved.data.changed === true, `postpone ${moved.status}`);
+      const changes = (await http.get(`/goals/${goalId}/changes`, as(admin))).data;
+      assert(changes.length === 1 && changes[0].to === later && changes[0].reason === "Prorrogação do calendário" && changes[0].by, `history ${JSON.stringify(changes)}`);
+    });
   } catch (err) {
     results.push([false, `setup -> ${err.stack || err.message}`]);
     console.log(`  ✗ setup\n      ${err.stack || err.message}`);

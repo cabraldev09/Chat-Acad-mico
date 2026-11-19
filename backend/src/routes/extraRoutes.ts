@@ -40,6 +40,7 @@ import * as PoloCtl from "../controllers/PoloController";
 import * as Aff from "../controllers/AffiliateController";
 import * as Commission from "../controllers/CommissionController";
 import * as Goal from "../controllers/GoalController";
+import * as Enrollment from "../controllers/EnrollmentController";
 import * as Flow from "../controllers/FlowController";
 import * as Trigger from "../controllers/TriggerController";
 import * as DashboardMgmt from "../controllers/DashboardManagementController";
@@ -387,6 +388,9 @@ r.post("/leads/:id/onboarding/access/send", isAuth, canAccessLead, Lead.onboardi
 r.get("/onboarding/pending", isAuth, Lead.onboardingPending);
 r.get("/onboarding/stats", isAuth, isManager, Lead.onboardingStats);
 r.put("/leads/:id/onboarding/checklist", isAuth, canAccessLead, Lead.onboardingChecklist);
+// the print of the enrollment: read (the RGM fills the field) before confirming, and seen later
+r.post("/leads/:id/enrollment-proof", isAuth, canAccessLead, materialUpload.single("file"), Enrollment.uploadProof);
+r.get("/leads/:id/enrollment-proof/:proofId/file", isAuth, canAccessLead, Enrollment.proofFile);
 r.post("/leads/:id/enroll", isAuth, canAccessLead, Lead.enroll);
 r.get("/leads/:id/enrollments", isAuth, canAccessLead, Lead.enrollments);
 r.post("/leads/:id/onboarding", isAuth, canAccessLead, Lead.onboarding);
@@ -442,6 +446,11 @@ r.post("/goals", isAuth, isManager, Goal.store);
 r.put("/goals/:id", isAuth, isManager, Goal.update);
 r.delete("/goals/:id", isAuth, isManager, Goal.remove);
 r.post("/goals/:id/repeat", isAuth, isManager, Goal.repeat);
+// the end of a goal postponed, with the reason, and its history
+r.post("/goals/:id/postpone", isAuth, isManager, Enrollment.postponeGoal);
+r.get("/goals/:id/changes", isAuth, isManager, Enrollment.goalChanges);
+// Matrículas realizadas (management): every enrollment of the period, its print and whether it fell inside the goal
+r.get("/enrollments", isAuth, isManager, Enrollment.index);
 r.get("/commissions", isAuth, Commission.index);
 r.get("/commissions/export.csv", isAuth, Commission.exportCsv);
 r.put("/commissions/:id/settle", isAuth, Commission.settle);

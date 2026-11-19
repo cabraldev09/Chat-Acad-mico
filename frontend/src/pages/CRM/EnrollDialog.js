@@ -2,9 +2,9 @@ import React, { useEffect, useState } from "react";
 import { toast } from "react-toastify";
 import {
   Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField, MenuItem, Typography,
-  CircularProgress, makeStyles, RadioGroup, Radio, FormControlLabel,
+  CircularProgress, makeStyles, RadioGroup, Radio, FormControlLabel, Checkbox,
 } from "@material-ui/core";
-import { GraduationCap } from "lucide-react";
+import { GraduationCap, ImagePlus, CheckCircle2, AlertTriangle } from "lucide-react";
 
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
@@ -14,6 +14,9 @@ const useStyles = makeStyles((theme) => ({
   badge: { width: 40, height: 40, borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", color: "#16a34a", background: "rgba(22,163,74,.14)" },
   section: { margin: theme.spacing(2, 0, 0.5), fontSize: 13, fontWeight: 700, color: theme.palette.text.secondary },
   hint: { fontSize: 12.5, color: theme.palette.text.secondary, marginTop: 2 },
+  drop: { display: "flex", alignItems: "center", gap: 12, padding: theme.spacing(1.5), borderRadius: 12, border: `1.5px dashed ${theme.palette.divider}`, cursor: "pointer", transition: "border-color .15s, background .15s", "&:hover, &:focus-visible": { borderColor: "#4595D8", background: "rgba(69,149,216,.06)", outline: "none" } },
+  dropOn: { borderColor: "#4595D8", background: "rgba(69,149,216,.08)" },
+  thumb: { width: 64, height: 64, objectFit: "cover", borderRadius: 8, border: `1px solid ${theme.palette.divider}`, flex: "none" },
   feeBox: { padding: theme.spacing(0.5, 1.5), borderRadius: 12, border: `1px solid ${theme.palette.divider}`, marginTop: 6 },
 }));
 
@@ -29,10 +32,32 @@ const EnrollDialog = ({ open, lead, onClose, onDone, additional = false }) => {
   const [detail, setDetail] = useState(null);
   const [courses, setCourses] = useState([]);
   const [v, setV] = useState({ poloId: "", tutorId: "auto", fee: "paid", feeDueDate: "", note: "", courseId: "", rgm: "" });
+  // the print of the enrollment: read when attached (the RGM fills the field); kept with the enrollment for the management
+  const [proof, setProof] = useState(null); // { id, preview, reading, readNote }
+  const [reading, setReading] = useState(false);
+  const [noProof, setNoProof] = useState(false);
+  const [over, setOver] = useState(false);
+  const input = React.useRef(null);
+  const attach = async (file) => {
+    if (!file) return;
+    if (!/^image\/(png|jpeg|webp)$|^application\/pdf$/.test(file.type)) { toast.error("Envie uma imagem (PNG, JPG ou WEBP) ou um PDF."); return; }
+    setReading(true);
+    const preview = file.type.startsWith("image/") ? URL.createObjectURL(file) : null;
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const { data } = await api.post(`/leads/${lead.id}/enrollment-proof`, form);
+      setProof({ ...data, preview, name: file.name });
+      setNoProof(false);
+      if (data.reading && data.reading.rgm) setV((cur) => ({ ...cur, rgm: data.reading.rgm }));
+    } catch (err) { toastError(err); }
+    setReading(false);
+  };
 
   useEffect(() => {
     if (!open) return;
     setV({ poloId: lead.poloId || "", tutorId: "auto", fee: "paid", feeDueDate: "", note: "", courseId: "", rgm: "" });
+    setProof(null); setNoProof(false);
     api.get("/courses").then(({ data }) => setCourses(data.filter((c) => c.active))).catch(() => undefined);
     api.get("/polos").then(({ data }) => setPolos(data.filter((p) => p.active))).catch(toastError);
     // the board card is a summary: the CPF and polo come from the full record
@@ -50,7 +75,7 @@ const EnrollDialog = ({ open, lead, onClose, onDone, additional = false }) => {
   const needsCpf = !additional && (v.fee === "now" || v.fee === "later") && !(detail && detail.cpf);
   const rgm = String(v.rgm || "").replace(/\s+/g, "");
   const rgmOk = /^[A-Za-z0-9.\-/]{3,40}$/.test(rgm);
-  const invalid = !v.poloId || !v.courseId || !rgmOk || (v.fee === "later" && !v.feeDueDate) || needsCpf;
+  const invalid = !v.poloId || !v.courseId || !rgmOk || (v.fee === "later" && !v.feeDueDate) || needsCpf || reading || (!proof && !noProof);
 
   const confirm = async () => {
     setBusy(true);
@@ -63,7 +88,8 @@ const EnrollDialog = ({ open, lead, onClose, onDone, additional = false }) => {
         note: v.note,
         additional: additional || undefined,
         courseId: v.courseId,
-        rgm
+        rgm,
+        proofId: proof ? proof.id : undefined
       });
       toast.success(additional ? `Nova matrícula registrada (${data.number}ª). ${data.tutor ? `Tutor: ${data.tutor.name}.` : "Aguardando um tutor."}` : data.tutor ? `Matrícula confirmada. Tutor: ${data.tutor.name}.` : "Matrícula confirmada. Aguardando um tutor na fila.");
       (data.warnings || []).forEach((w) => toast.warn(w));
@@ -86,7 +112,23 @@ const EnrollDialog = ({ open, lead, onClose, onDone, additional = false }) => {
           </div>
         </div>
       </DialogTitle>
-      <DialogContent>
+      <DialogContent onPaste={(e) => { const f = Array.from(e.clipboardData.files || [])[0]; if (f) { e.preventDefault(); attach(f); } }}>
+        <div className={classes.section} style={{ marginTop: 4 }}>Print da matrícula</div>
+        <div role="button" tabIndex={0} aria-label="Anexar o print da matrícula" className={`${classes.drop} ${over ? classes.dropOn : ""}`}
+          onClick={() => input.current && input.current.click()} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); input.current && input.current.click(); } }}
+          onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)} onDrop={(e) => { e.preventDefault(); setOver(false); attach(e.dataTransfer.files[0]); }}>
+          <input ref={input} type="file" accept="image/png,image/jpeg,image/webp,application/pdf" hidden onChange={(e) => { attach(e.target.files[0]); e.target.value = ""; }} />
+          {proof && proof.preview ? <img src={proof.preview} alt="Print anexado" className={classes.thumb} /> : <ImagePlus size={26} style={{ color: "#4595D8", flex: "none" }} />}
+          <div style={{ minWidth: 0 }}>
+            {reading ? <><b>Lendo o print…</b><div className={classes.hint}>A IA procura o RGM, o nome e o curso.</div></> : proof ? (
+              <>
+                <b style={{ display: "flex", alignItems: "center", gap: 6 }}>{proof.reading && proof.reading.rgm ? <CheckCircle2 size={16} color="#16a34a" /> : <AlertTriangle size={16} color="#d97706" />} {proof.reading && proof.reading.rgm ? `RGM lido: ${proof.reading.rgm}` : "Print anexado"}</b>
+                <div className={classes.hint} style={{ overflowWrap: "anywhere" }}>{proof.readNote || [proof.reading && proof.reading.name, proof.reading && proof.reading.course].filter(Boolean).join(" · ") || proof.name}{" · clique para trocar"}</div>
+              </>
+            ) : <><b>Anexe o print da matrícula</b><div className={classes.hint}>Arraste, cole (Ctrl+V) ou clique. O RGM é preenchido sozinho e o print fica salvo para a gestão.</div></>}
+          </div>
+        </div>
+        {!proof && <FormControlLabel style={{ marginTop: 4 }} control={<Checkbox color="primary" size="small" checked={noProof} onChange={(e) => setNoProof(e.target.checked)} />} label={<span className={classes.hint}>Não tenho o print agora (digito o RGM)</span>} />}
         <div className={classes.section}>Confira a ficha do aluno</div>
         <div className={classes.feeBox} style={{ marginTop: 0 }}>
           <div><b>{lead.name}</b></div>

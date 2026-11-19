@@ -97,9 +97,11 @@ import CopilotRequest from "../models/CopilotRequest";
 import CopilotProgress from "../models/CopilotProgress";
 import CopilotSnapshot from "../models/CopilotSnapshot";
 import AiBudgetReservation from "../models/AiBudgetReservation";
+import EnrollmentProof from "../models/EnrollmentProof";
+import GoalChange from "../models/GoalChange";
 
 const models = [
-  CopilotRequest, CopilotProgress, CopilotSnapshot, OutboundDelivery, AiBudgetReservation,
+  CopilotRequest, CopilotProgress, CopilotSnapshot, OutboundDelivery, AiBudgetReservation, EnrollmentProof, GoalChange,
   WebhookDelivery,
   User,
   Contact,
