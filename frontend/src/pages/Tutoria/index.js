@@ -3,7 +3,7 @@ import { useHistory, useLocation } from "react-router-dom";
 import { toast } from "react-toastify";
 import { makeStyles } from "@material-ui/core/styles";
 import { Button, CircularProgress, MenuItem, TextField } from "@material-ui/core";
-import { MessageSquare, MailOpen, MonitorCheck, RefreshCw } from "lucide-react";
+import { MessageSquare, MailOpen, MonitorCheck, RefreshCw, Upload, Megaphone } from "lucide-react";
 
 import MainContainer from "../../components/MainContainer";
 import MainHeader from "../../components/MainHeader";
@@ -12,6 +12,18 @@ import { AuthContext } from "../../context/Auth/AuthContext";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import Onboarding from "../Onboarding";
+import ImportWizard from "../../components/ImportWizard";
+
+// the columns of the spreadsheet of students the tutor brings (the management also says whose they are)
+const STUDENT_COLUMNS = [
+  { key: "name", label: "Nome", required: true, aliases: ["aluno", "nome do aluno"] },
+  { key: "phone", label: "Telefone", aliases: ["whatsapp", "celular", "fone"], hint: "Com DDD. Telefone ou RGM é obrigatório." },
+  { key: "rgm", label: "RGM", aliases: ["ra", "matricula", "matrícula"] },
+  { key: "course", label: "Curso" },
+  { key: "polo", label: "Polo" },
+  { key: "email", label: "E-mail", aliases: ["email"] },
+  { key: "enrolledAt", label: "Matriculado em", aliases: ["data da matricula", "data da matrícula"], hint: "dd/mm/aaaa (opcional)" },
+];
 
 const useStyles = makeStyles((theme) => ({
   intro: { color: theme.palette.text.secondary, fontSize: 14, margin: theme.spacing(0, 0, 2) },
@@ -53,6 +65,7 @@ export default function Tutoria() {
   const [tutorId, setTutorId] = useState("");
   const [poloId, setPoloId] = useState("");
   const [busy, setBusy] = useState(null);
+  const [importing, setImporting] = useState(false);
 
   const load = useCallback(() => {
     setData(null);
@@ -103,8 +116,27 @@ export default function Tutoria() {
         <div className="ui-tabs" role="tablist" aria-label="Seções da tutoria">
           {[["alunos", "Alunos"], ["ambientacao", "Ambientação"]].map(([k, l]) => <button key={k} type="button" role="tab" aria-selected={tab === k} className={`ui-tabs__btn${tab === k ? " is-on" : ""}`} onClick={() => setTab(k)}>{l}</button>)}
         </div>
-        {manager && <button type="button" onClick={() => history.push("/estatisticas/tutoria")} style={{ marginLeft: "auto", border: "1px solid var(--line-strong)", background: "var(--surface)", borderRadius: 8, padding: "6px 12px", font: "inherit", fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>Desempenho por tutor</button>}
+        <span style={{ marginLeft: "auto" }} />
+        <Button size="small" variant="outlined" startIcon={<Upload size={15} />} onClick={() => setImporting(true)}>{manager ? "Importar alunos" : "Subir meus alunos"}</Button>
+        <Button size="small" variant="outlined" startIcon={<Megaphone size={15} />} onClick={() => history.push("/campaigns")}>Disparo para {manager ? "alunos" : "meus alunos"}</Button>
+        {manager && <button type="button" onClick={() => history.push("/estatisticas/tutoria")} style={{ border: "1px solid var(--line-strong)", background: "var(--surface)", borderRadius: 8, padding: "6px 12px", font: "inherit", fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>Desempenho por tutor</button>}
       </MainHeader>
+      <ImportWizard
+        open={importing}
+        onClose={() => setImporting(false)}
+        onDone={load}
+        title={manager ? "Importar alunos de um tutor" : "Subir meus alunos"}
+        endpoint="/tutoria/students/import"
+        templateName="modelo-alunos-tutoria"
+        columns={manager ? [...STUDENT_COLUMNS, { key: "tutor", label: "Tutor", hint: "Nome ou e-mail do tutor (ou escolha o tutor no filtro antes de importar)." }] : STUDENT_COLUMNS}
+        extraBody={manager && tutorId && tutorId !== "none" ? { tutorId } : {}}
+        examples={[{ name: "Maria Souza", phone: "69999990000", rgm: "12345678", course: "Pedagogia", polo: "Vilhena", email: "maria@email.com", enrolledAt: "10/02/2026" }]}
+        instructions={[
+          manager ? "Cada linha diz de qual tutor é o aluno (coluna Tutor), ou todos vão para o tutor escolhido no filtro." : "Os alunos entram como seus: aparecem em Meus alunos e nos disparos para os seus alunos.",
+          "Quem já está no sistema (pelo RGM, telefone ou e-mail) é atualizado, não duplicado. Aluno de outro tutor só muda pela coordenação.",
+          "Os alunos importados não contam como novas matrículas nos relatórios.",
+        ]}
+      />
       {tab === "ambientacao" ? <Onboarding embedded /> : <div style={{ flex: 1, minHeight: 0, overflowY: "auto", paddingBottom: 16 }}>
       <div className={c.intro}>
         {manager ? "Os alunos de cada tutor" : "Os alunos que estão com você"} e o que precisa de atenção agora. A conversa abre no número da Tutoria{data?.rules?.numberName ? ` (${data.rules.numberName})` : ""}: o comercial não vê essas conversas.

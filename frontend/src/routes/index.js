@@ -142,7 +142,7 @@ const Routes = () => {
                 <Route exact path="/Queues" component={Queues} isPrivate managerOnly />
                 <Route exact path="/tags" component={Tags} isPrivate managerOnly />
                 <Route exact path="/schedules" component={Schedules} isPrivate />
-                <Route exact path="/campaigns" component={Campaigns} isPrivate salesOnly />
+                <Route exact path="/campaigns" component={Campaigns} isPrivate campaignsOnly />
                 <Route exact path="/chatbot" component={Chatbot} isPrivate managerOnly />
                 <Route exact path="/chatbot/:id" component={FlowBuilder} isPrivate managerOnly />
                 <Route exact path="/ai-agents/blocos/:id" component={FlowBuilder} isPrivate managerOnly />

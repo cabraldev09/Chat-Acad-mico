@@ -47,3 +47,17 @@ export const openConversation = async (req: Request, res: Response): Promise<Res
   const full = await ShowTicketService(String(ticket.id));
   return res.json({ ticketId: ticket.id, window: await windowOf(full) });
 };
+
+// the tutor brings their students (a spreadsheet): each one becomes theirs in the whole system; the management imports for any tutor
+export const importStudents = async (req: Request, res: Response): Promise<Response> => {
+  const manager = isManagerRole(roleOf(req.user));
+  if (!manager && !isTutor(req)) throw new AppError("ERR_NO_PERMISSION", 403);
+  const items: any[] = Array.isArray(req.body?.items) ? req.body.items.slice(0, 2000) : [];
+  const { importTutorStudents } = await import("../services/TutoriaServices/ImportStudents");
+  return res.json(await importTutorStudents(items, {
+    actorId: Number(req.user.id),
+    tutorId: manager ? Number(req.body?.tutorId) || null : Number(req.user.id),
+    manager,
+    dryRun: Boolean(req.body?.dryRun)
+  }));
+};

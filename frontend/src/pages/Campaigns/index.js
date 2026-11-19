@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useContext, useEffect, useState, useCallback } from "react";
 import { toast } from "react-toastify";
 import {
   Button,
@@ -44,6 +44,8 @@ import Title from "../../components/Title";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import { downloadFile } from "../../utils/saveBlob";
+import { AuthContext } from "../../context/Auth/AuthContext";
+import { isManager } from "../../utils/access";
 
 const useStyles = makeStyles((theme) => ({
   body: { display: "flex", flexDirection: "column", flex: 1, minHeight: 0 },
@@ -99,7 +101,7 @@ const parseRows = (text) => {
   });
 };
 
-const ListItemsDialog = ({ list, onClose }) => {
+const ListItemsDialog = ({ list, onClose, tutor, onAddFromCrm }) => {
   const classes = useStyles();
   const [items, setItems] = useState([]);
   const [text, setText] = useState("");
@@ -148,12 +150,16 @@ const ListItemsDialog = ({ list, onClose }) => {
     <Dialog open onClose={onClose} maxWidth="md" fullWidth>
       <DialogTitle>Contatos da lista “{list.name}” ({items.length})</DialogTitle>
       <DialogContent dividers>
+        {!tutor && <>
         <Typography variant="body2" gutterBottom>
           Cole linhas no formato <b>nome;número;email</b> (ou só os números), ou envie um arquivo .csv. Número com DDI, ex.: 5511999999999.
         </Typography>
         <TextField fullWidth multiline rows={4} variant="outlined" value={text} onChange={(e) => setText(e.target.value)} placeholder={"Maria;5511999990000;maria@email.com\nJoão;5521988880000"} />
-        <div style={{ display: "flex", gap: 8, margin: "8px 0 16px" }}>
-          <Button variant="contained" color="primary" disabled={!text.trim()} onClick={() => doImport(parseRows(text))}>
+        </>}
+        <div style={{ display: "flex", gap: 8, margin: "8px 0 16px", flexWrap: "wrap" }}>
+          <Button variant="contained" color="primary" startIcon={<UsersIcon size={15} />} onClick={() => onAddFromCrm(list)}>{tutor ? "Adicionar dos meus alunos" : "Adicionar do CRM"}</Button>
+          {!tutor && <>
+          <Button variant="outlined" color="primary" disabled={!text.trim()} onClick={() => doImport(parseRows(text))}>
             Importar texto
           </Button>
           <Button variant="outlined" component="label">
@@ -170,12 +176,13 @@ const ListItemsDialog = ({ list, onClose }) => {
             />
           </Button>
           <Button variant="outlined" onClick={importSystemContacts}>Importar contatos do sistema</Button>
+          </>}
           <span style={{ flex: 1 }} />
           <Button variant="outlined" startIcon={<Download size={15} />} disabled={!items.length} onClick={() => downloadFile(`/contact-lists/${list.id}/export.csv`, undefined, `lista-${list.name}.csv`)}>Baixar a lista</Button>
         </div>
         {items.length === 0 && (
           <Typography color="textSecondary" style={{ textAlign: "center", padding: "24px 0" }}>
-            Esta lista está vazia. Cole os contatos acima, envie um arquivo ou importe os contatos do sistema.
+            {tutor ? "Esta lista está vazia. Adicione os seus alunos pelo botão acima." : "Esta lista está vazia. Adicione do CRM, cole os contatos, envie um arquivo ou importe os contatos do sistema."}
           </Typography>
         )}
         <div className={classes.scroll} style={items.length === 0 ? { display: "none" } : undefined}>
@@ -472,7 +479,7 @@ const ConnectionPicker = ({ value, setValue, connections }) => {
 };
 
 // list select plus a shortcut to create one without leaving the campaign form
-const ListPicker = ({ value, lists, picked, onPicked, setValue, onNew }) => {
+const ListPicker = ({ value, lists, picked, onPicked, setValue, onNew, tutor }) => {
   useEffect(() => {
     if (picked) { setValue(picked.id); onPicked(); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -483,11 +490,12 @@ const ListPicker = ({ value, lists, picked, onPicked, setValue, onNew }) => {
         select fullWidth required variant="outlined" margin="dense" label="Lista de contatos"
         value={lists.some((l) => l.id === value) ? value : ""}
         onChange={(e) => setValue(e.target.value)}
-        helperText={lists.length ? "Quem vai receber as mensagens." : "Você ainda não tem listas: crie a primeira ao lado."}
+        helperText={lists.length ? (tutor ? "Os seus alunos que vão receber as mensagens." : "Quem vai receber. Para mandar direto para os leads do CRM, use “Do CRM”: a lista sai dos filtros que você escolher.") : "Você ainda não tem listas: crie a primeira ao lado."}
       >
         {lists.map((l) => (<MenuItem key={l.id} value={l.id}>{l.name} ({l.itemCount} {Number(l.itemCount) === 1 ? "pessoa" : "pessoas"})</MenuItem>))}
       </TextField>
-      <Button variant="outlined" color="primary" onClick={onNew} startIcon={<PlusIcon size={16} />} style={{ marginTop: 8, whiteSpace: "nowrap", height: 40 }}>Nova lista</Button>
+      <Button variant="outlined" color="primary" onClick={() => onNew(0)} startIcon={<UsersIcon size={16} />} style={{ marginTop: 8, whiteSpace: "nowrap", height: 40 }}>{tutor ? "Dos meus alunos" : "Do CRM"}</Button>
+      {!tutor && <Button variant="outlined" onClick={() => onNew(1)} startIcon={<PlusIcon size={16} />} style={{ marginTop: 8, whiteSpace: "nowrap", height: 40 }}>Colar números</Button>}
     </div>
   );
 };
@@ -506,6 +514,9 @@ const MoreActions = ({ items }) => {
 };
 
 const Campaigns = () => {
+  const { user } = useContext(AuthContext);
+  // the tutor sends only to their own students, through the tutoring number
+  const tutor = !!user && !isManager(user) && ["tutor", "academico"].includes(user.role);
   const [tab, setTab] = useState(0);
   const [lists, setLists] = useState([]);
   const [connections, setConnections] = useState([]);
@@ -515,9 +526,10 @@ const Campaigns = () => {
   const [testing, setTesting] = useState(null);
   const [cancelling, setCancelling] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
-  const [newList, setNewList] = useState(false);
+  const [newList, setNewList] = useState(false); // false | { mode, target }
   const [pickedList, setPickedList] = useState(null);
   const loadLists = useCallback(() => api.get("/contact-lists").then(({ data }) => setLists(data)), []);
+  const tutoringNumber = connections.find((c) => c.team === "tutoria" && c.channel === "whatsapp_cloud") || connections.find((c) => c.team === "tutoria");
 
   useEffect(() => {
     loadLists();
@@ -538,7 +550,7 @@ const Campaigns = () => {
 
   return (
     <MainContainer>
-      {listDialog && <ListItemsDialog list={listDialog} onClose={() => { setListDialog(null); setReloadKey((k) => k + 1); }} />}
+      {listDialog && <ListItemsDialog list={listDialog} tutor={tutor} onAddFromCrm={(l) => setNewList({ mode: 0, target: l })} onClose={() => { setListDialog(null); setReloadKey((k) => k + 1); }} />}
       {report && <ReportDialog campaignId={report} onClose={() => setReport(null)} onChanged={() => setReloadKey((k) => k + 1)} />}
       {starting && <StartDialog campaign={starting} onClose={() => setStarting(null)} onStarted={() => setReloadKey((k) => k + 1)} />}
       {testing && <TestDialog campaign={testing} onClose={() => setTesting(null)} />}
@@ -546,9 +558,13 @@ const Campaigns = () => {
         {cancelling ? `“${cancelling.name}” para de enviar agora e os envios que faltam (${(cancelling.counters || {}).pending || 0}) são cancelados. Isso não pode ser desfeito.` : ""}
       </ConfirmationModal>
       <NewListDialog
-        open={newList}
+        open={!!newList}
+        initialMode={newList ? newList.mode : 0}
+        targetList={newList ? newList.target || null : null}
+        tutor={tutor}
+        manager={isManager(user)}
         onClose={() => setNewList(false)}
-        onCreated={(l) => { loadLists(); setReloadKey((k) => k + 1); setPickedList(l); }}
+        onCreated={(l) => { loadLists(); setReloadKey((k) => k + 1); if (!(newList && newList.target)) setPickedList(l); else setListDialog({ ...newList.target }); }}
       />
       <MainHeader>
         <Title>Envio em massa</Title>
@@ -608,14 +624,17 @@ const Campaigns = () => {
                 required: true,
                 label: "Lista de contatos",
                 render: (value, setValue) => (
-                  <ListPicker value={value} lists={lists} picked={pickedList} onPicked={() => setPickedList(null)} setValue={setValue} onNew={() => setNewList(true)} />
+                  <ListPicker value={value} lists={lists} picked={pickedList} onPicked={() => setPickedList(null)} setValue={setValue} tutor={tutor} onNew={(mode) => setNewList({ mode })} />
                 ),
               },
               {
                 name: "whatsappId",
                 type: "custom",
                 label: "Conexão de envio",
-                render: (value, setValue) => <ConnectionPicker value={value} setValue={setValue} connections={connections} />,
+                default: tutor ? (tutoringNumber ? tutoringNumber.id : "") : undefined,
+                render: (value, setValue) => (tutor
+                  ? <Typography variant="body2" style={{ margin: "8px 0" }}>Envio pelo número da Tutoria{tutoringNumber ? `: ${tutoringNumber.name}` : " (ainda não configurado em Conexões)"}.</Typography>
+                  : <ConnectionPicker value={value} setValue={setValue} connections={connections} />),
               },
               {
                 name: "template",
@@ -702,7 +721,7 @@ const Campaigns = () => {
             addLabel="Nova lista"
             reloadKey={reloadKey}
             emptyText="Nenhuma lista ainda. Use “Criar a partir do CRM” para montar uma lista com os leads do funil."
-            headerExtra={<Button variant="outlined" color="primary" startIcon={<UsersIcon size={16} />} onClick={() => setNewList(true)}>Criar a partir do CRM</Button>}
+            headerExtra={<Button variant="outlined" color="primary" startIcon={<UsersIcon size={16} />} onClick={() => setNewList({ mode: 0 })}>{tutor ? "Criar com os meus alunos" : "Criar a partir do CRM"}</Button>}
             fields={[{ name: "name", label: "Nome da lista", required: true }]}
             columns={[
               { header: "Lista", field: "name" },

@@ -552,6 +552,30 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
       const after = (await http.get("/tutoria/students", as(tania))).data.students.find(s => s.contactId === t.contactId);
       assert(after && !after.callPending, "the call is still pending after the answer");
     });
+
+    await test("the tutor brings her students, builds a list only with them and sends only through the Tutoria number", async () => {
+      const imp = await http.post("/tutoria/students/import", { items: [{ name: "Importada Um", phone: "69 99999-1001", rgm: "T1001", enrolledAt: "10/02/2026" }, { name: "Sem contato" }] }, as(tania));
+      assert(imp.status === 200 && imp.data.created === 1 && imp.data.errors === 1, `import ${imp.status} ${JSON.stringify(imp.data).slice(0, 300)}`);
+      const again = await http.post("/tutoria/students/import", { items: [{ name: "Importada Um", rgm: "T1001" }] }, as(tania));
+      assert(again.data.updated === 1 && again.data.created === 0, "the same student was duplicated");
+      assert((await http.post("/tutoria/students/import", { items: [] }, as(joao))).status === 403, "a consultant imported students");
+      const mine = (await http.get("/tutoria/students", as(tania))).data.students;
+      assert(mine.some(st => st.name === "Importada Um"), "the imported student is not hers");
+      const list = await http.post("/contact-lists/from-leads", { name: "Meus alunos e2e", audience: "leads" }, as(tania));
+      assert(list.status === 200 && list.data.id, `list ${list.status} ${JSON.stringify(list.data)}`);
+      const items = (await http.get(`/contact-lists/${list.data.id}/items`, as(tania))).data;
+      const numbers = items.map(i => i.number);
+      assert(numbers.includes("5569999991001") && !items.some(i => i.name === "De outro tutor"), `the list has someone else's students: ${JSON.stringify(items)}`);
+      assert((await http.post(`/contact-lists/${list.data.id}/import`, { items: [{ number: "5569999990000" }] }, as(tania))).status === 403, "the tutor pasted numbers");
+      const theirs = (await http.post("/contact-lists", { name: "Lista do consultor" }, as(joao))).data;
+      assert((await http.get(`/contact-lists/${theirs.id}/items`, as(tania))).status === 403, "the tutor read a consultant's list");
+      const camp = await http.post("/campaigns", { name: "Aviso aos meus alunos", message: "Oi!", contactListId: list.data.id }, as(tania));
+      assert(camp.status === 201 && camp.data.whatsappId === tutoriaId, `campaign ${camp.status} ${JSON.stringify(camp.data).slice(0, 200)}`);
+      assert((await http.post("/campaigns", { name: "Na lista dele", message: "Oi!", contactListId: theirs.id }, as(tania))).status === 403, "the tutor used a consultant's list");
+      const seen = (await http.get("/campaigns", as(tania))).data;
+      assert(seen.length === 1 && seen[0].id === camp.data.id, `the tutor sees other campaigns: ${seen.length}`);
+      assert((await http.get("/campaigns", as(joao))).status === 200, "the consultant lost the campaigns");
+    });
   } catch (err) {
     results.push([false, `setup -> ${err.stack || err.message}`]);
     console.log(`  ✗ setup\n      ${err.stack || err.message}`);

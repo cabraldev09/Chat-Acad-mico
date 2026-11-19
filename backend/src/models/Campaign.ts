@@ -45,6 +45,10 @@ class Campaign extends Model<Campaign> {
   @Column(DataType.JSON)
   steps: any;
 
+  // who created it (the tutor sees only their own)
+  @Column
+  createdById: number;
+
   @Column
   nextRunAt: Date;
 
