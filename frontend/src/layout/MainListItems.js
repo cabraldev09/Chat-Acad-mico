@@ -343,7 +343,7 @@ const MainListItems = (props) => {
         icon={<CalendarClockIcon className="ico" />}
         collapsed={collapsed}
       />
-      {["admin", "coordenacao", "consultor"].includes(user.profile === "admin" ? "admin" : user.role || "consultor") && (
+      {["admin", "coordenacao", "consultor", "tutor", "academico"].includes(user.profile === "admin" ? "admin" : user.role || "consultor") && (
         <ListItemLink
           to="/campaigns"
           primary="Campanhas"

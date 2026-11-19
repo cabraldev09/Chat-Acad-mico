@@ -24,6 +24,7 @@ import { withLeadScope } from "../middleware/scope";
 import AppError from "../errors/AppError";
 import { getIO } from "../libs/socket";
 import makeCrud from "./crudFactory";
+import { assertOwnList, tutorIdOf, tutoriaConnectionId } from "../services/CampaignServices/Access";
 import { CampaignStep, MAX_CAMPAIGN_STEPS, stepsOf } from "../helpers/CampaignText";
 
 // message/mediaUrl (the first step) stay filled for older screens and integrations
@@ -89,7 +90,17 @@ const crud = makeCrud(Campaign, {
     { model: ContactList, as: "contactList", attributes: ["id", "name"] },
     { model: Whatsapp, as: "whatsapp", attributes: ["id", "name", "channel"] }
   ],
+  authorize: async (req, row) => {
+    const me = tutorIdOf(req);
+    if (me && Number(row.createdById) !== me) throw new AppError("ERR_NO_PERMISSION", 403);
+  },
   beforeSave: async (data, _req, existing) => {
+    // who created it; the tutor sends only to their own lists, through the tutoring number
+    if (!existing) data.createdById = Number(_req.user.id);
+    if (tutorIdOf(_req)) {
+      data.whatsappId = await tutoriaConnectionId();
+      await assertOwnList(_req, data.contactListId !== undefined ? data.contactListId : existing?.contactListId);
+    }
     const connectionId = data.whatsappId || existing?.whatsappId;
     if (connectionId) await assertConnectionUse(_req, Number(connectionId));
     if (existing && !["draft", "scheduled", "paused"].includes(existing.status)) {
@@ -161,7 +172,9 @@ const withCounters = async (campaigns: Campaign[]) => {
 };
 
 export const index = async (_req: Request, res: Response): Promise<Response> => {
+  const me = tutorIdOf(_req);
   const campaigns = await Campaign.findAll({
+    ...(me ? { where: { createdById: me } as any } : {}),
     include: [
       { model: ContactList, as: "contactList", attributes: ["id", "name"] },
       { model: Whatsapp, as: "whatsapp", attributes: ["id", "name", "channel"] }
@@ -291,7 +304,8 @@ export const duplicate = async (req: Request, res: Response): Promise<Response> 
     contactListId: c.contactListId,
     whatsappId: c.whatsappId,
     templateName: c.templateName,
-    templateLanguage: c.templateLanguage
+    templateLanguage: c.templateLanguage,
+    createdById: Number(req.user.id)
   } as any);
   getIO().emit("campaign", { action: "create", row: copy });
   return res.status(201).json(copy);
@@ -340,6 +354,8 @@ const DRAFT_FIELDS = ["contactListId", "whatsappId", "message", "steps", "interv
 export const preflightDraft = async (req: Request, res: Response): Promise<Response> => {
   const body = req.body || {};
   if (!Number(body.contactListId)) throw new AppError("ERR_CAMPAIGN_LIST_REQUIRED", 400);
+  await assertOwnList(req, body.contactListId);
+  if (tutorIdOf(req)) body.whatsappId = await tutoriaConnectionId();
   const draft: any = Campaign.build(Object.fromEntries(DRAFT_FIELDS.filter(k => body[k] !== undefined && body[k] !== "").map(k => [k, body[k]])) as any);
   draft.intervalMin = Number(body.intervalMin) || draft.intervalMin || 20;
   draft.intervalMax = Number(body.intervalMax) || draft.intervalMax || 60;
@@ -431,7 +447,12 @@ const preflightOf = async (campaign: Campaign): Promise<Record<string, any>> => 
 const listCrud = makeCrud(ContactList, {
   event: "contactList",
   fields: ["name"],
-  required: ["name"]
+  required: ["name"],
+  authorize: async (req, row) => {
+    const me = tutorIdOf(req);
+    if (me && Number(row.createdById) !== me) throw new AppError("ERR_NO_PERMISSION", 403);
+  },
+  beforeSave: (data, req, existing) => (existing ? data : { ...data, createdById: Number(req.user.id) })
 });
 
 export const lists = {
@@ -443,7 +464,9 @@ export const lists = {
     return listCrud.remove(req, res);
   },
   index: async (_req: Request, res: Response): Promise<Response> => {
+    const me = tutorIdOf(_req);
     const rows = await ContactList.findAll({
+      ...(me ? { where: { createdById: me } as any } : {}),
       attributes: ["id", "name", "createdAt", [fn("COUNT", col("items.id")), "itemCount"]],
       include: [{ model: ContactListItem, as: "items", attributes: [] }],
       group: ["ContactList.id"],
@@ -487,8 +510,12 @@ export const listFromLeads = async (req: Request, res: Response): Promise<Respon
   if (b.poloId) and.push({ poloId: b.poloId });
   if (b.source) and.push({ source: b.source });
   if (b.ownerId) and.push({ ownerId: b.ownerId });
+  // the tutor's lists are always their own students; the management can pick the students of one tutor
+  const tutor = tutorIdOf(req);
+  if (tutor) { b.audience = "students"; b.tutorId = tutor; }
   // the students: enrolled and not lost; the ones who finished the onboarding, and the ones enrolled for at least N days
   const students = b.audience === "students";
+  if (students && b.tutorId) and.push({ onboardingTutorId: Number(b.tutorId) });
   if (students) {
     and.push({ enrolledAt: { [Op.ne]: null } });
     if (b.onboardingDone) and.push({ onboardingStatus: "done" });
@@ -525,10 +552,11 @@ export const listFromLeads = async (req: Request, res: Response): Promise<Respon
   if (b.listId) {
     list = await ContactList.findByPk(b.listId);
     if (!list) throw new AppError("ERR_NOT_FOUND", 404);
+    await assertOwnList(req, list.id);
   } else {
     const name = String(b.name || "").trim();
     if (!name) throw new AppError("ERR_FIELD_REQUIRED_name");
-    list = await ContactList.create({ name });
+    list = await ContactList.create({ name, createdById: Number(req.user.id) } as any);
   }
   if (!people.length) throw new AppError("ERR_CAMPAIGN_NO_LEADS");
 

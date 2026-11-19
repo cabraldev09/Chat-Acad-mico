@@ -6,6 +6,7 @@ import {
 
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
+import { fetchAllUsers } from "../../utils/fetchAllUsers";
 
 const useStyles = makeStyles((theme) => ({
   grid: { display: "grid", gap: theme.spacing(1.5), gridTemplateColumns: "1fr 1fr", [theme.breakpoints.down("xs")]: { gridTemplateColumns: "1fr" } },
@@ -20,8 +21,9 @@ const parsePasted = (text) =>
     return c.length === 1 ? { name: "", number: c[0] } : { name: c[0], number: c[1] };
   });
 
-// Creates a contact list from the CRM funnel (with filters) or from pasted numbers.
-const NewListDialog = ({ open, onClose, onCreated }) => {
+// Creates a contact list from the CRM funnel (with filters) or from pasted numbers. With `targetList` it adds the CRM people to an
+// existing list. A tutor only builds lists of their own students (the server enforces it too).
+const NewListDialog = ({ open, onClose, onCreated, initialMode = 0, targetList = null, tutor = false, manager = false }) => {
   const classes = useStyles();
   const [mode, setMode] = useState(0);
   const [name, setName] = useState("");
@@ -31,24 +33,25 @@ const NewListDialog = ({ open, onClose, onCreated }) => {
   const [onboardingDone, setOnboardingDone] = useState(false);
   const [enrolledDays, setEnrolledDays] = useState("");
   const [pasted, setPasted] = useState("");
-  const [opts, setOpts] = useState({ stages: [], courses: [], polos: [], tags: [], sources: [] });
+  const [opts, setOpts] = useState({ stages: [], courses: [], polos: [], tags: [], sources: [], users: [] });
   const [count, setCount] = useState(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (!open) return;
-    setMode(0); setName(""); setPasted(""); setCount(null); setAudience("leads"); setOnboardingDone(false); setEnrolledDays("");
-    setF({ stageId: "", courseId: "", poloId: "", tagId: "", source: "", noReplyDays: "" });
+    setMode(tutor ? 0 : initialMode); setName(targetList ? targetList.name : ""); setPasted(""); setCount(null); setAudience(tutor ? "students" : "leads"); setOnboardingDone(false); setEnrolledDays("");
+    setF({ stageId: "", courseId: "", poloId: "", tagId: "", source: "", noReplyDays: "", ownerId: "", tutorId: "" });
     Promise.all([
       api.get("/lead-stages").catch(() => ({ data: [] })),
       api.get("/courses").catch(() => ({ data: [] })),
       api.get("/polos").catch(() => ({ data: [] })),
       api.get("/tags").catch(() => ({ data: [] })),
       api.get("/crm/options").catch(() => ({ data: {} })),
-    ]).then(([st, co, po, ta, op]) => setOpts({ stages: st.data, courses: co.data, polos: po.data.filter((p) => p.active), tags: ta.data, sources: op.data.sources || [] }));
-  }, [open]);
+      manager ? fetchAllUsers().catch(() => []) : Promise.resolve([]),
+    ]).then(([st, co, po, ta, op, us]) => setOpts({ stages: st.data, courses: co.data, polos: po.data.filter((p) => p.active), tags: ta.data, sources: op.data.sources || [], users: us }));
+  }, [open, tutor, initialMode, targetList, manager]);
 
-  const body = () => ({ ...Object.fromEntries(Object.entries(f).filter(([, v]) => v !== "")), ...(audience === "students" ? { audience: "students", onboardingDone: onboardingDone || undefined, enrolledDays: enrolledDays || undefined, stageId: undefined } : {}) });
+  const body = () => ({ ...Object.fromEntries(Object.entries(f).filter(([k, v]) => v !== "" && !(k === "tutorId" && audience !== "students") && !(k === "ownerId" && audience === "students"))), ...(audience === "students" ? { audience: "students", onboardingDone: onboardingDone || undefined, enrolledDays: enrolledDays || undefined, stageId: undefined } : {}) });
 
   // live "N pessoas" while the filters change
   useEffect(() => {
@@ -66,9 +69,9 @@ const NewListDialog = ({ open, onClose, onCreated }) => {
     try {
       let list;
       if (mode === 0) {
-        const { data } = await api.post("/contact-lists/from-leads", { ...body(), name });
+        const { data } = await api.post("/contact-lists/from-leads", { ...body(), ...(targetList ? { listId: targetList.id } : { name }) });
         list = data;
-        toast.success(`Lista criada com ${data.imported} ${data.imported === 1 ? "pessoa" : "pessoas"}.`);
+        toast.success(targetList ? `${data.imported} ${data.imported === 1 ? "pessoa adicionada" : "pessoas adicionadas"} à lista${data.skipped ? ` (${data.skipped} já estavam)` : ""}.` : `Lista criada com ${data.imported} ${data.imported === 1 ? "pessoa" : "pessoas"}.`);
       } else {
         const { data: created } = await api.post("/contact-lists", { name });
         const { data } = await api.post(`/contact-lists/${created.id}/import`, { items: parsePasted(pasted) });
@@ -92,20 +95,24 @@ const NewListDialog = ({ open, onClose, onCreated }) => {
 
   return (
     <Dialog open={open} onClose={busy ? undefined : onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>Nova lista de contatos</DialogTitle>
+      <DialogTitle>{targetList ? `Adicionar do CRM à lista “${targetList.name}”` : tutor ? "Nova lista dos meus alunos" : "Nova lista de contatos"}</DialogTitle>
       <DialogContent>
-        <TextField autoFocus fullWidth variant="outlined" margin="dense" label="Nome da lista" value={name} onChange={(e) => setName(e.target.value)} />
-        <Tabs value={mode} onChange={(e, v) => setMode(v)} indicatorColor="primary" textColor="primary" className={classes.tabs}>
-          <Tab label="Do funil do CRM" />
-          <Tab label="Colar números" />
-        </Tabs>
+        {!targetList && <TextField autoFocus fullWidth variant="outlined" margin="dense" label="Nome da lista" value={name} onChange={(e) => setName(e.target.value)} />}
+        {!tutor && !targetList && (
+          <Tabs value={mode} onChange={(e, v) => setMode(v)} indicatorColor="primary" textColor="primary" className={classes.tabs}>
+            <Tab label="Do funil do CRM" />
+            <Tab label="Colar números" />
+          </Tabs>
+        )}
         {mode === 0 ? (
           <>
-            <TextField select fullWidth variant="outlined" margin="dense" label="Quem entra" value={audience} InputLabelProps={{ shrink: true }} onChange={(e) => setAudience(e.target.value)}>
-              <MenuItem value="leads">Leads do funil (ainda não matriculados)</MenuItem>
-              <MenuItem value="students">Alunos matriculados (para oferecer outro curso)</MenuItem>
-            </TextField>
-            <Typography variant="body2" color="textSecondary">{audience === "students" ? "Só entram alunos com a matrícula confirmada. Use o polo e o curso para chegar em quem interessa." : "Escolha quem entra na lista. Sem filtros, entram todos os leads em andamento que têm telefone."}</Typography>
+            {!tutor && (
+              <TextField select fullWidth variant="outlined" margin="dense" label="Quem entra" value={audience} InputLabelProps={{ shrink: true }} onChange={(e) => setAudience(e.target.value)}>
+                <MenuItem value="leads">Leads do funil (ainda não matriculados)</MenuItem>
+                <MenuItem value="students">Alunos matriculados (para oferecer outro curso)</MenuItem>
+              </TextField>
+            )}
+            <Typography variant="body2" color="textSecondary">{tutor ? "Só entram os seus alunos. Use o polo, o curso e a ambientação para chegar em quem interessa." : audience === "students" ? "Só entram alunos com a matrícula confirmada. Use o polo, o curso e o tutor para chegar em quem interessa." : "Escolha quem entra na lista. Sem filtros, entram todos os leads em andamento que têm telefone."}</Typography>
             {audience === "students" && (
               <div className={classes.grid}>
                 <TextField select fullWidth variant="outlined" margin="dense" label="Matriculados há" value={enrolledDays} InputLabelProps={{ shrink: true }} SelectProps={{ displayEmpty: true }} onChange={(e) => setEnrolledDays(e.target.value)}>
@@ -123,6 +130,8 @@ const NewListDialog = ({ open, onClose, onCreated }) => {
               {select("courseId", "Curso de interesse", opts.courses, (c) => c.name)}
               {select("poloId", "Polo", opts.polos, (p) => p.name)}
               {select("tagId", "Etiqueta", opts.tags, (t) => t.name)}
+              {manager && audience !== "students" && select("ownerId", "Consultor", opts.users.filter((u) => u.role === "consultor" || !u.role), (u) => u.name)}
+              {manager && audience === "students" && select("tutorId", "Tutor", opts.users.filter((u) => ["tutor", "academico"].includes(u.role)), (u) => u.name)}
               {select("source", "Origem", opts.sources, (s) => s, "Todas")}
               <TextField select fullWidth variant="outlined" margin="dense" label="Sem contato há" value={f.noReplyDays} InputLabelProps={{ shrink: true }} SelectProps={{ displayEmpty: true }} onChange={(e) => setF({ ...f, noReplyDays: e.target.value })}>
                 <MenuItem value="">Qualquer prazo</MenuItem>
@@ -142,7 +151,7 @@ const NewListDialog = ({ open, onClose, onCreated }) => {
       </DialogContent>
       <DialogActions>
         <Button variant="outlined" color="secondary" onClick={onClose} disabled={busy}>Cancelar</Button>
-        <Button variant="contained" color="primary" onClick={create} disabled={busy || !name.trim() || (mode === 0 ? count === 0 : !pasted.trim())}>Criar lista</Button>
+        <Button variant="contained" color="primary" onClick={create} disabled={busy || (!targetList && !name.trim()) || (mode === 0 ? count === 0 : !pasted.trim())}>{targetList ? "Adicionar à lista" : "Criar lista"}</Button>
       </DialogActions>
     </Dialog>
   );

@@ -28,6 +28,10 @@ class ContactList extends Model<ContactList> {
   @Column
   name: string;
 
+  // who created it (the tutor sees only their own)
+  @Column
+  createdById: number;
+
   @HasMany(() => ContactListItem)
   items: ContactListItem[];
 

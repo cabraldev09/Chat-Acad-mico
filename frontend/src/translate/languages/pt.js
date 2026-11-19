@@ -449,6 +449,8 @@ const messages = {
         ERR_INVALID_PERIOD: "Período inválido: confira as datas de início e fim.",
         ERR_CAMPAIGN_LIST_REQUIRED: "Escolha a lista de contatos da campanha.",
         ERR_GOAL_CHANGE_REASON: "Diga o motivo da mudança do prazo.",
+        ERR_TUTOR_ONLY_STUDENTS: "O tutor envia só para os próprios alunos: monte a lista a partir dos seus alunos.",
+        ERR_TUTORIA_NO_NUMBER: "Ainda não há número da Tutoria: marque a Função do número = Tutoria em Conexões.",
         ERR_ONBOARDING_CHECKLIST_INCOMPLETE: "Ainda há etapas do checklist sem marcar. Marque as etapas ou informe o motivo para concluir assim.",
         ERR_ONBOARDING_ALREADY_DONE: "A ambientação deste aluno já foi concluída.",
         ERR_PAYMENT_DUE_IN_PAST: "A data de vencimento precisa ser hoje ou uma data futura.",
