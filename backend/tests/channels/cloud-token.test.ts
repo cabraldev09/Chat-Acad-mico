@@ -65,3 +65,14 @@ describe("token da API Oficial de 24 horas vira de 60 dias", () => {
     expect(expiryNote(new Date(now - DAY).toISOString(), now)).toContain("venceu");
   });
 });
+
+describe("chave colada no campo que mostra a máscara", () => {
+  it("a chave nova vale, e não a antiga", async () => {
+    const { unmaskPasted, isMasked } = await vi.importActual<any>("../../src/helpers/Secrets");
+    expect(unmaskPasted("••••abcdEAAnovo")).toBe("EAAnovo");
+    expect(unmaskPasted("••••abcd")).toBe("••••abcd");
+    expect(isMasked(unmaskPasted("••••abcd"))).toBe(true);
+    expect(unmaskPasted("EAAx")).toBe("EAAx");
+  });
+});
+

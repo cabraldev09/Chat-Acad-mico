@@ -490,6 +490,8 @@ const WhatsAppModal = ({ open, onClose, whatsAppId, onCreated }) => {
 								autoComplete="off"
 								value={config[f.key] || ""}
 								onChange={e => setConfig({ ...config, [f.key]: e.target.value })}
+								// a saved key shows as "••••abcd": selecting it all makes the paste replace it instead of joining it
+								onFocus={e => { if (f.secret) e.target.select(); }}
 								helperText={f.help || undefined}
 							/>
 						))}
