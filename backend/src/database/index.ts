@@ -95,10 +95,11 @@ const sequelize = new Sequelize(dbConfig);
 import OutboundDelivery from "../models/OutboundDelivery";
 import CopilotRequest from "../models/CopilotRequest";
 import CopilotProgress from "../models/CopilotProgress";
+import CopilotSnapshot from "../models/CopilotSnapshot";
 import AiBudgetReservation from "../models/AiBudgetReservation";
 
 const models = [
-  CopilotRequest, CopilotProgress, OutboundDelivery, AiBudgetReservation,
+  CopilotRequest, CopilotProgress, CopilotSnapshot, OutboundDelivery, AiBudgetReservation,
   WebhookDelivery,
   User,
   Contact,

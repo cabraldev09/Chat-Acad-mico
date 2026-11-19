@@ -106,6 +106,8 @@ r.get("/analytics/team/export.csv", isAuth, isManager, Analytics.exportTeam);
 r.get("/analytics/config", isAuth, isManager, Analytics.getAnalyticsConfig);
 r.put("/analytics/config", isAuth, isManager, Analytics.putAnalyticsConfig);
 r.get("/analytics/consultant/:userId", isAuth, Analytics.consultant);
+r.get("/analytics/process", isAuth, isManager, Analytics.processTeam);
+r.get("/analytics/process/:userId", isAuth, Analytics.processConsultant);
 
 r.get("/dashboard/management", isAuth, DashboardMgmt.management);
 r.get("/dashboard/manager", isAuth, DashboardMgmt.managerOverview);
