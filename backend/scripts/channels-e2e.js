@@ -4117,7 +4117,7 @@ const postMeta = (id, payload, secret, badSig) => {
       // the copilot of the consultant reads the same conversation: everything up to the name and CPF is done, the proposal is next, with no model call
       const cop = (await http.get(`/tickets/${ticketOf(MA)}/copilot`, auth())).data;
       assert(cop.hasLead && cop.current === "proposal", `copilot step: ${JSON.stringify(cop.steps)}`);
-      assert(cop.steps.filter(x => x.done).map(x => x.key).join(",") === "entry,course,city,format,grade,doubts,bolsa", `copilot done: ${JSON.stringify(cop.steps)}`);
+      assert(cop.steps.filter(x => x.done).map(x => x.key).join(",") === "course,entry,city,format,grade,doubts,bolsa", `copilot done: ${JSON.stringify(cop.steps)}`);
       assert(cop.suggestion && cop.suggestion.action === "proposal" && /proposta da sua bolsa/.test(cop.suggestion.text) && !emoji.test(cop.suggestion.text), `copilot text: ${JSON.stringify(cop.suggestion)}`);
       assert(anthropic.requests.length === llmMa2, "the copilot called the model");
       assert(cop.course && cop.course.semPratica === false && /Semipresencial: 30% de prática presencial/.test(cop.course.resumo), `copilot course rule: ${JSON.stringify(cop.course)}`);
@@ -6509,14 +6509,14 @@ const postMeta = (id, payload, secret, badSig) => {
       const tid = copilotFixture.ticketId;
       const before = anthropic.requests.length;
       let view = (await http.get(`/tickets/${tid}/copilot`, auth())).data;
-      assert(view.enabled && !view.hasLead && view.steps.length === 15 && view.current === "entry", "no process for unlinked contact");
+      assert(view.enabled && !view.hasLead && view.steps.length === 15 && view.current === "course", "no process for unlinked contact");
       assert(!view.aiAvailable && anthropic.requests.length === before, "process used paid generation");
       assert((await http.post(`/tickets/${tid}/suggest-reply`, {}, auth())).status === 403, "AI opt-in ignored");
-      assert((await http.put(`/tickets/${tid}/copilot/progress`, {key:"entry",done:true}, auth())).data.current === "course", "step not saved");
+      assert((await http.put(`/tickets/${tid}/copilot/progress`, {key:"course",done:true}, auth())).data.current === "entry", "step not saved");
       view = (await http.get(`/tickets/${tid}/copilot`, auth())).data;
       assert(view.steps[0].done && view.steps[0].manual, "progress not durable");
       assert((await http.put(`/tickets/${tid}/copilot/progress`, {key:"enroll",done:true}, auth())).status === 400, "fake enrollment accepted");
-      assert((await http.put(`/tickets/${tid}/copilot/progress`, {key:"entry",done:null}, auth())).data.current === "entry", "auto detection not restored");
+      assert((await http.put(`/tickets/${tid}/copilot/progress`, {key:"course",done:null}, auth())).data.current === "course", "auto detection not restored");
       let config = (await http.get("/copilot/settings", auth())).data;
       const custom = {key:"custom_test",label:"Revisão do gestor",instruction:"Confirme o objetivo profissional.",message:"O que você deseja alcançar com a graduação?"};
       config.steps.splice(0,0,custom);
