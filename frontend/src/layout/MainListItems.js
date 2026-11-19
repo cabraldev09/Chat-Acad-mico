@@ -285,10 +285,6 @@ const MainListItems = (props) => {
         <ListItemLink to="/crm/comissoes" primary="Comissões" icon={<WalletIcon className="ico" />} collapsed={collapsed} />
       )}
       <ListItemLink to="/crm/metas-polos" alsoActive={["/crm/metas"]} primary="Metas" icon={<GoalIcon className="ico" />} collapsed={collapsed} />
-      {<ListItemLink to="/ambientacao" primary="Ambientação" icon={<MonitorCheckIcon className="ico" />} collapsed={collapsed} adornment={myTasks.onboarding > 0 && <span className={classes.countBadge} title="Alunos esperando a ambientação">{myTasks.onboarding}</span>} />}
-      {canOperateRetention(user) && (
-        <ListItemLink to="/crm/retencao" primary="Retenção" icon={<HeartPulseIcon className="ico" />} collapsed={collapsed} />
-      )}
       {!collapsed && (
         <ListSubheader disableSticky className={classes.sectionLabel}>Cursos e alunos</ListSubheader>
       )}
@@ -301,9 +297,19 @@ const MainListItems = (props) => {
         collapsed={collapsed}
         adornment={followUps > 0 && <span className={classes.countBadge} title="Retornos de 24 horas para registrar">{followUps}</span>}
       />
+      {/* the tutoring department in one place: the students, their ambientação, retention, academic analyses and the portal */}
+      {!collapsed && (
+        <ListSubheader disableSticky className={classes.sectionLabel}>Tutoria</ListSubheader>
+      )}
+      {(isManager(user) || ["tutor", "academico"].includes(user.role)) && (
+        <ListItemLink to="/meus-alunos" primary={isManager(user) ? "Alunos da tutoria" : "Meus alunos"} icon={<UsersRoundIcon className="ico" />} collapsed={collapsed} />
+      )}
+      {<ListItemLink to="/ambientacao" primary="Ambientação" icon={<MonitorCheckIcon className="ico" />} collapsed={collapsed} adornment={myTasks.onboarding > 0 && <span className={classes.countBadge} title="Alunos esperando a ambientação">{myTasks.onboarding}</span>} />}
+      {canOperateRetention(user) && (
+        <ListItemLink to="/crm/retencao" primary="Retenção" icon={<HeartPulseIcon className="ico" />} collapsed={collapsed} />
+      )}
       {(isManager(user) || ["tutor", "academico"].includes(user.role)) && (
         <>
-          <ListItemLink to="/meus-alunos" primary={isManager(user) ? "Alunos da tutoria" : "Meus alunos"} icon={<UsersRoundIcon className="ico" />} collapsed={collapsed} />
           <ListItemLink to="/analise-academica" primary="Análise acadêmica" icon={<BookOpenCheckIcon className="ico" />} collapsed={collapsed} />
           <ListItemLink to="/alunos" primary="Alunos do portal" icon={<GraduationCapIcon className="ico" />} collapsed={collapsed} />
         </>

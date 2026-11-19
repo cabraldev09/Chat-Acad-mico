@@ -890,7 +890,7 @@ export const onboarding = async (req: Request, res: Response): Promise<Response>
   if (!lead) throw new AppError("ERR_LEAD_NOT_FOUND", 404);
   const action = req.body.action === "done" ? "done" : "start";
   const { setOnboarding } = await import("../services/CrmServices/EnrollLead");
-  const out = await setOnboarding(lead, uid(req), action);
+  const out = await setOnboarding(lead, uid(req), action, String(req.body.note || ""));
   // the conversation of the student, so the tutor goes straight to it
   const conv = lead.contactId ? await Ticket.findOne({ where: { contactId: lead.contactId, segment: "onboarding" }, attributes: ["id"], order: [["id", "DESC"]] }) : null;
   return res.json({ ...(out as any).toJSON(), ticketId: conv ? conv.id : null });
@@ -1034,6 +1034,12 @@ export const onboardingPending = async (req: Request, res: Response): Promise<Re
   const mine = reqRole(req) === "consultor" ? { ownerId: uid(req) } : reqRole(req) === "tutor" ? { onboardingTutorId: uid(req) } : {};
   const total = await Lead.count({ where: await withLeadScope(req, { onboardingStatus: "pending", ...mine }) });
   return res.json({ pending: total });
+};
+
+// the deadline of the first contact of the ambientação (the screen reads it instead of assuming 24 hours)
+export const onboardingRules = async (_req: Request, res: Response): Promise<Response> => {
+  const { getSetting } = await import("../helpers/AppSettings");
+  return res.json({ slaHours: Math.max(1, Number(await getSetting("onboarding_sla_hours", "24")) || 24) });
 };
 
 export const onboardingList = async (req: Request, res: Response): Promise<Response> => {

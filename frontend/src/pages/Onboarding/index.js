@@ -55,8 +55,9 @@ const useStyles = makeStyles((theme) => ({
   empty: { textAlign: "center", color: theme.palette.text.secondary, fontSize: 13, padding: theme.spacing(3, 1) },
 }));
 
-const SLA_MS = 24 * 36e5;
-const isLate = (r) => r.onboardingStatus === "pending" && r.enrolledAt && Date.now() - new Date(r.enrolledAt).getTime() > SLA_MS;
+// the deadline of the first contact comes from the settings (Configurações → Tutoria); 24 h until it is read
+let SLA_HOURS = 24;
+const isLate = (r) => r.onboardingStatus === "pending" && r.enrolledAt && Date.now() - new Date(r.enrolledAt).getTime() > SLA_HOURS * 36e5;
 const FILTERS = {
   all: () => true,
   // for the tutor: the students assigned to them; for the consultant: the students they sent
@@ -90,6 +91,8 @@ const Onboarding = () => {
   // the conversation of a student in tutoring is the tutor's (and the coordination's), not the consultant's
   const canOpenChat = !!me && me.role !== "consultor";
   const isTutor = !!me && (me.role === "tutor" || me.role === "academico");
+  const [slaHours, setSlaHours] = useState(SLA_HOURS);
+  useEffect(() => { api.get("/onboarding/rules").then(({ data }) => { SLA_HOURS = Number(data.slaHours) || 24; setSlaHours(SLA_HOURS); }).catch(() => {}); }, []);
   // the consultant follows the students THEY sent; starting, finishing and changing the tutor is the tutor's work
   const readOnly = !!me && me.role === "consultor" && me.profile !== "admin";
   const classes = useStyles();
@@ -126,9 +129,18 @@ const Onboarding = () => {
   }, [load]);
 
   const act = async (lead, action) => {
+    // concluding with steps of the checklist left asks why (it goes to the student's history)
+    let note = "";
+    if (action === "done") {
+      const missing = STEPS.filter(st => !(lead.checklist || {})[st.key]);
+      if (missing.length) {
+        note = window.prompt(`Faltam ${missing.length} etapa(s) do checklist: ${missing.map(m => m.label).join("; ")}.\n\nPara concluir mesmo assim, escreva o motivo:`) || "";
+        if (!note.trim()) return;
+      }
+    }
     setBusyId(lead.id);
     try {
-      const { data } = await api.post(`/leads/${lead.id}/onboarding`, { action });
+      const { data } = await api.post(`/leads/${lead.id}/onboarding`, { action, note });
       toast.success(action === "start" ? "Ambientação iniciada." : "Ambientação concluída. O consultor foi avisado para pedir indicação.");
       await load();
       // starting takes the student and opens the conversation, so the tutor can greet right away
@@ -295,7 +307,7 @@ const Onboarding = () => {
               <div className={classes.colHint}>{col.hint}</div>
               {items.length === 0 && <div className={classes.empty}>Nenhum aluno aqui.</div>}
               {items.map((l) => {
-                const late = col.key === "pending" && l.enrolledAt && Date.now() - new Date(l.enrolledAt).getTime() > 24 * 36e5;
+                const late = col.key === "pending" && isLate(l);
                 return (
                   <div key={l.id} className={`${classes.card} ${late ? classes.cardLate : ""}`}>
                     <div className={classes.row}>
@@ -356,7 +368,7 @@ const Onboarding = () => {
                     <div className={classes.meta}>
                       {col.key === "done" ? `Concluída ${since(l.onboardingDoneAt)}` : `Matriculado ${since(l.enrolledAt)}`}
                     </div>
-                    {late && <span className={classes.lateChip}>Prazo de 24 h vencido</span>}
+                    {late && <span className={classes.lateChip}>Prazo de {slaHours} h vencido</span>}
                     {!readOnly && col.key !== "done" && (
                       <div className={classes.actions}>
                         {col.key === "pending" && (
@@ -456,7 +468,7 @@ const Onboarding = () => {
           <Button variant="contained" color="primary" onClick={saveTutor}>Salvar</Button>
         </DialogActions>
       </Dialog>
-      <Typography variant="caption" color="textSecondary">O sistema avisa quando um aluno passa de 24 horas sem o primeiro contato do tutor.</Typography>
+      <Typography variant="caption" color="textSecondary">O sistema avisa quando um aluno passa de {slaHours} horas sem o primeiro contato do tutor.</Typography>
       </div>
     </MainContainer>
   );

@@ -9,7 +9,7 @@ import emitTicketUpdate from "../services/TicketServices/EmitTicketUpdate";
 import { windowOf } from "../services/TicketServices/OpeningTemplate";
 import ShowTicketService from "../services/TicketServices/ShowTicketService";
 import { sideConversation } from "../services/TicketServices/TeamHandoff";
-import { listStudents } from "../services/TutoriaServices/Students";
+import { listStudents, tutorPanel, tutorsAndPolos } from "../services/TutoriaServices/Students";
 
 const isTutor = (req: Request): boolean => roleOf(req.user) === "tutor";
 
@@ -17,8 +17,18 @@ const isTutor = (req: Request): boolean => roleOf(req.user) === "tutor";
 export const students = async (req: Request, res: Response): Promise<Response> => {
   const manager = isManagerRole(roleOf(req.user));
   if (!manager && !isTutor(req)) throw new AppError("ERR_NO_PERMISSION", 403);
-  const tutorId = manager ? Number(req.query.tutorId) || null : Number(req.user.id);
-  return res.json(await listStudents({ tutorId, poloId: manager ? Number(req.query.poloId) || null : null }));
+  const tutorId = manager ? (req.query.tutorId === "none" ? "none" : Number(req.query.tutorId) || null) : Number(req.user.id);
+  const list = await listStudents({ tutorId, poloId: manager ? Number(req.query.poloId) || null : null });
+  return res.json({ ...list, ...(manager ? await tutorsAndPolos() : {}) });
+};
+
+// the manager's panel per tutor (period: from/to, default the last 30 days)
+export const panel = async (req: Request, res: Response): Promise<Response> => {
+  if (!isManagerRole(roleOf(req.user))) throw new AppError("ERR_NO_PERMISSION", 403);
+  const to = req.query.to ? new Date(`${req.query.to}T23:59:59`) : new Date();
+  const from = req.query.from ? new Date(`${req.query.from}T00:00:00`) : new Date(to.getTime() - 30 * 86400000);
+  if (Number.isNaN(+from) || Number.isNaN(+to) || from > to) throw new AppError("ERR_INVALID_PERIOD", 400);
+  return res.json(await tutorPanel(from, to));
 };
 
 // opens (or finds) the student's conversation on the tutoring number, with the student's tutor; outside the 24 hours the screen offers

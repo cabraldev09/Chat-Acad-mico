@@ -100,7 +100,8 @@ const factsOf = async (contactIds: number[]): Promise<Map<number, ContactFacts>>
 };
 
 export interface StudentsQuery {
-  tutorId?: number | null;
+  // a tutor's id, or "none" for the students nobody took yet
+  tutorId?: number | "none" | null;
   poloId?: number | null;
 }
 
@@ -118,7 +119,7 @@ export const listStudents = async (q: StudentsQuery) => {
     where: {
       enrolledAt: { [Op.ne]: null },
       lostAt: null,
-      ...(q.tutorId ? { onboardingTutorId: q.tutorId } : {}),
+      ...(q.tutorId === "none" ? { onboardingTutorId: null } : q.tutorId ? { onboardingTutorId: q.tutorId } : {}),
       ...(q.poloId ? { poloId: q.poloId } : {})
     } as any,
     attributes: ["id", "name", "phone", "contactId", "poloId", "courseId", "onboardingTutorId", "onboardingStatus", "onboardingChecklist", "enrolledAt"],
@@ -168,4 +169,64 @@ export const listStudents = async (q: StudentsQuery) => {
     unread: students.filter(s => s.unread > 0).length
   };
   return { rules: { slaHours, idleDays, official: rules.official, numberName: number ? number.name : null, template: !!template }, counters, students };
+};
+
+
+// the filters of the screen: every tutor (not only the ones in the list loaded) and every polo
+export const tutorsAndPolos = async () => {
+  const tutors = await User.findAll({ where: { role: ["tutor", "academico"] } as any, attributes: ["id", "name"], order: [["name", "ASC"]] });
+  const polos = await Polo.findAll({ attributes: ["id", "name"], order: [["name", "ASC"]] });
+  return { tutors: tutors.map(t => ({ id: t.id, name: t.name })), polos: polos.map(p => ({ id: p.id, name: p.name })) };
+};
+
+const median = (values: number[]): number | null => {
+  if (!values.length) return null;
+  const v = [...values].sort((a, b) => a - b);
+  const m = Math.floor(v.length / 2);
+  return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
+};
+
+// The manager's panel, per tutor, in a period: the students in the tutor's care, the students actually contacted (a message of the
+// tutoring sent to them), the onboarding finished over the onboarding started in the period, the real time to the first contact (the
+// first message of the tutoring after the enrollment, not the "Iniciar" click) and what is overdue now.
+export const tutorPanel = async (from: Date, to: Date) => {
+  const { students } = await listStudents({});
+  const q = async (sql: string, replacements: any) => (await sequelize.query(portable(sql), { replacements, type: QueryTypes.SELECT })) as any[];
+  const contacted = await q(`SELECT l.onboardingTutorId AS tutorId, COUNT(DISTINCT l.id) AS n FROM Leads l JOIN Tickets t ON t.contactId = l.contactId
+    JOIN Messages m ON m.ticketId = t.id WHERE l.onboardingTutorId IS NOT NULL AND t.segment IN (:segments) AND m.fromMe = true AND m.body NOT LIKE :mark
+    AND m.createdAt BETWEEN :from AND :to GROUP BY l.onboardingTutorId`, { segments: TUTORIA_SEGMENTS, mark: `${MARK}%`, from, to });
+  const enrolled = await q(`SELECT l.id, l.onboardingTutorId AS tutorId, l.enrolledAt, l.onboardingDoneAt,
+      (SELECT MIN(m.createdAt) FROM Tickets t JOIN Messages m ON m.ticketId = t.id WHERE t.contactId = l.contactId AND t.segment IN (:segments)
+        AND m.fromMe = true AND m.body NOT LIKE :mark AND m.createdAt >= l.enrolledAt) AS firstOut
+    FROM Leads l WHERE l.enrolledAt BETWEEN :from AND :to AND l.lostAt IS NULL`, { segments: TUTORIA_SEGMENTS, mark: `${MARK}%`, from, to });
+  const names = new Map((await tutorsAndPolos()).tutors.map(t => [t.id, t.name]));
+  const rows = new Map<number | null, any>();
+  const row = (id: number | null, name: string) => {
+    if (!rows.has(id)) rows.set(id, { tutorId: id, name, students: 0, contacted: 0, enrolled: 0, done: 0, firstContactHours: [] as number[], noContactYet: 0, late: 0, idle: 0, calls: 0, unread: 0 });
+    return rows.get(id);
+  };
+  students.forEach(s => {
+    const r = row(s.tutorId, s.tutorName || "Sem tutor");
+    r.students++;
+    if (s.late) r.late++;
+    if (s.idle) r.idle++;
+    if (s.callPending) r.calls++;
+    if (s.unread > 0) r.unread++;
+  });
+  contacted.forEach(c => { const r = rows.get(Number(c.tutorId)); if (r) r.contacted = Number(c.n); });
+  enrolled.forEach(e => {
+    const id = e.tutorId ? Number(e.tutorId) : null;
+    const r = rows.get(id) || row(id, id ? names.get(id) || "Tutor" : "Sem tutor");
+    r.enrolled++;
+    if (e.onboardingDoneAt) r.done++;
+    if (e.firstOut) r.firstContactHours.push((+new Date(e.firstOut) - +new Date(e.enrolledAt)) / H);
+    else r.noContactYet++;
+  });
+  const tutors = [...rows.values()].map(r => ({
+    ...r,
+    doneRate: r.enrolled ? Math.round((r.done / r.enrolled) * 100) : null,
+    firstContactMedianHours: (() => { const m = median(r.firstContactHours); return m === null ? null : Math.round(m * 10) / 10; })(),
+    firstContactHours: undefined
+  })).sort((a, b) => (a.tutorId === null ? 1 : b.tutorId === null ? -1 : String(a.name).localeCompare(String(b.name))));
+  return { from, to, tutors };
 };
