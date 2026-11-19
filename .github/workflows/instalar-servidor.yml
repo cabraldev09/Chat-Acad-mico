@@ -23,6 +23,7 @@ on:
 
 permissions:
   contents: read
+  packages: write
 
 jobs:
   instalar:
@@ -30,6 +31,23 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
+      # a imagem da API é montada aqui (máquina rápida, com cache) e o servidor só baixa: a instalação leva minutos, não meia hora
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Nome da imagem
+        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}-api:${GITHUB_SHA}" >> "$GITHUB_ENV"
+      - name: Monta a imagem da API
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ env.IMAGE }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
       - name: Esconde os valores sensíveis do log
         env:
           PASS: ${{ inputs.admin_password }}
@@ -65,7 +83,7 @@ jobs:
           q() { printf '%q' "$1"; }
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes -o ConnectTimeout=20 -o ServerAliveInterval=30 root@"$HOST" \
             "curl -fsSL -H 'Authorization: Bearer $GH_TOKEN' https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/deploy/vps/install.sh -o /root/install.sh && \
-             NONINTERACTIVE=1 GH_TOKEN=$(q "$GH_TOKEN") ADM_EMAIL=$(q "$ADM_EMAIL") ADM_PASS=$(q "$ADM_PASS") DB_URL=$(q "$DB_URL") bash /root/install.sh"
+             NONINTERACTIVE=1 IMAGE=$(q "$IMAGE") GH_TOKEN=$(q "$GH_TOKEN") ADM_EMAIL=$(q "$ADM_EMAIL") ADM_PASS=$(q "$ADM_PASS") DB_URL=$(q "$DB_URL") bash /root/install.sh"
       - name: Identidade do servidor (para deploy/vps/known_hosts)
         env:
           HOST: ${{ inputs.host }}

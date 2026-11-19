@@ -73,13 +73,13 @@ else
   if [ -n "$PREFERRED" ] && [ -n "$IP" ] && [ "$(getent ahostsv4 "$PREFERRED" 2>/dev/null | awk 'NR==1{print $1}')" = "$IP" ]; then DEFAULT_DOMAIN="$PREFERRED"; fi
   if [ -n "$NONINTERACTIVE" ]; then
     API_DOMAIN=${API_DOMAIN:-$DEFAULT_DOMAIN}
-    FRONT=${FRONT:-https://www.cruzeirodosulvirtual.app.br}
+    FRONT=${FRONT:-https://www.cruzeirodosulvirtual.app.br,https://cruzeirodosulvirtual.app.br}
     DB_URL=${DB_URL:-}
     ADM_NAME=${ADM_NAME:-Administrador}
   else
     echo "Responda as perguntas. Enter aceita o valor entre colchetes."
     read -r -p "Endereço da API [$DEFAULT_DOMAIN]: " API_DOMAIN; API_DOMAIN=${API_DOMAIN:-$DEFAULT_DOMAIN}
-    read -r -p "Endereço do site [https://www.cruzeirodosulvirtual.app.br]: " FRONT; FRONT=${FRONT:-https://www.cruzeirodosulvirtual.app.br}
+    read -r -p "Endereço do site [https://www.cruzeirodosulvirtual.app.br]: " FRONT; FRONT=${FRONT:-https://www.cruzeirodosulvirtual.app.br,https://cruzeirodosulvirtual.app.br}
     if [ -z "$LOCAL_DB" ]; then
       echo "Cole a conexão do banco (Supabase → Connect → Session pooler). Vazio = banco no próprio servidor. Não aparece na tela."
       read -r -s -p "DATABASE_URL: " DB_URL; echo
@@ -125,8 +125,18 @@ ENV
   chmod 600 .env
 fi
 
-say "6/7 Subindo o sistema (o primeiro build leva uns 5 minutos)"
-docker compose up -d --build
+if [ -n "${IMAGE:-}" ]; then
+  # imagem já montada pelo GitHub Actions: o servidor só baixa (poucos minutos em vez de montar tudo aqui)
+  say "6/7 Baixando o sistema pronto e subindo"
+  if [ -n "$GH_TOKEN" ]; then printf '%s' "$GH_TOKEN" | docker login ghcr.io -u x-access-token --password-stdin >/dev/null; fi
+  docker pull -q "$IMAGE"
+  docker logout ghcr.io >/dev/null 2>&1 || true
+  docker tag "$IMAGE" chat-academico-api:vps
+  docker compose up -d --no-build
+else
+  say "6/7 Subindo o sistema (sem imagem pronta: o primeiro build leva de 10 a 25 minutos)"
+  docker compose up -d --build
+fi
 
 say "7/7 Atualização automática e backup"
 cat > /etc/cron.d/chat-academico <<CRON
