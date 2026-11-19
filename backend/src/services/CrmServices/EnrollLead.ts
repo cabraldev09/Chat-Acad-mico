@@ -460,7 +460,8 @@ export const editOnboarding = async (lead: Lead, actorId: number, input: EditOnb
 
   if (input.status && input.status !== lead.onboardingStatus) {
     if (input.status === "done") {
-      await setOnboarding(lead, actorId, "done");
+      // the management editing the enrollment closes it directly (the reason is the edit itself, kept on the history)
+      await setOnboarding(lead, actorId, "done", "concluída pela gestão na edição da matrícula");
     } else if (input.status === "started") {
       await takeAsTutor(lead, actorId);
       await lead.update({ onboardingStatus: "started", onboardingStartedAt: lead.onboardingStartedAt || new Date(), onboardingDoneAt: null });
