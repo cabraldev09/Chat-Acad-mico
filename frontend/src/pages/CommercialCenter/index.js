@@ -15,6 +15,7 @@ import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import NumberTicker from "../../components/NumberTicker";
 import ProcessTab from "./ProcessTab";
+import StatsHubBar from "../../components/StatsHub";
 import { BRAND, BlockTitle, CompareBars, HistoryChart, Kpi, PeriodPicker, PresenceDot, PRESENCE, Progress, fmt, num, periodParams, useAnalytics, useDefinitions, useKit } from "../../components/analytics/kit";
 
 const DAYS = [["1", "Seg"], ["2", "Ter"], ["3", "Qua"], ["4", "Qui"], ["5", "Sex"], ["6", "Sáb"], ["0", "Dom"]];
@@ -564,6 +565,7 @@ const CommercialCenter = () => {
 
   return (
     <div className={`${c.page} dash-scope`}>
+      <StatsHubBar />
       <div style={{ background: "linear-gradient(135deg, #0a3a6d 0%, #0b4279 55%, #0d5aa0 100%)", color: "#fff", borderRadius: 24, padding: "22px 26px 0", marginBottom: 18, boxShadow: "0 30px 60px -34px rgba(8,40,82,.9), inset 0 1px 0 rgba(255,255,255,.14)", position: "relative", overflow: "hidden" }}>
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
           <div>

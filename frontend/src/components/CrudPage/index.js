@@ -125,6 +125,11 @@ const CrudPage = ({
   emptyText = "Nada cadastrado ainda.",
   reloadKey,
   embedded = false,
+  // wizard: the form in steps [{ title, hint, fields: [names], review: (payload, values) => node }]; the last step saves.
+  // saveActions: extra buttons of the last step ([{ key, label }]); onSaved(row, key) runs after saving with the saved row.
+  wizard,
+  saveActions = [],
+  onSaved,
 }) => {
   const classes = useStyles();
   const [rows, setRows] = useState([]);
@@ -134,6 +139,7 @@ const CrudPage = ({
   const [values, setValues] = useState({});
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(null);
+  const [step, setStep] = useState(0);
 
   const load = useCallback(async () => {
     try {
@@ -163,6 +169,7 @@ const CrudPage = ({
   const openNew = () => {
     setEditing(null);
     setValues(blank());
+    setStep(0);
     setOpen(true);
   };
 
@@ -176,19 +183,12 @@ const CrudPage = ({
     });
     setEditing(row);
     setValues(base);
+    setStep(0);
     setOpen(true);
   };
 
-  const save = async () => {
-    for (const f of fields) {
-      if (f.required && !(f.hideOn && f.hideOn(values))) {
-        const v = values[f.name];
-        if (v === "" || v === undefined || v === null) {
-          toast.error(`Preencha: ${f.label}`);
-          return;
-        }
-      }
-    }
+  const missing = (names) => fields.find((f) => (!names || names.includes(f.name)) && f.required && !(f.hideOn && f.hideOn(values)) && ["", undefined, null].includes(values[f.name]));
+  const buildPayload = () => {
     let payload = { ...values };
     Object.keys(payload).forEach((k) => k.endsWith("__label") && delete payload[k]);
     fields.forEach((f) => {
@@ -199,14 +199,23 @@ const CrudPage = ({
         payload[f.name] = Number(payload[f.name]);
       }
     });
-    if (mapOut) payload = mapOut(payload, editing);
+    return mapOut ? mapOut(payload, editing) : payload;
+  };
+  const save = async (actionKey) => {
+    const gap = missing();
+    if (gap) {
+      toast.error(`Preencha: ${gap.label}`);
+      if (wizard) { const at = wizard.findIndex((w) => w.fields.includes(gap.name)); if (at >= 0) setStep(at); }
+      return;
+    }
+    const payload = buildPayload();
     setSaving(true);
     try {
-      if (editing) await api.put(`${endpoint}/${editing.id}`, payload);
-      else await api.post(endpoint, payload);
+      const { data: saved } = editing ? await api.put(`${endpoint}/${editing.id}`, payload) : await api.post(endpoint, payload);
       toast.success("Salvo com sucesso");
       setOpen(false);
       load();
+      if (onSaved) onSaved(saved && saved.id ? saved : { ...(editing || {}), ...payload }, typeof actionKey === "string" ? actionKey : null);
     } catch (err) {
       toastError(err);
     } finally {
@@ -411,14 +420,38 @@ const CrudPage = ({
 
       <Dialog open={open} onClose={() => setOpen(false)} maxWidth={dialogWidth} fullWidth scroll="paper">
         <DialogTitle>{editing ? "Editar" : addLabel}</DialogTitle>
-        <DialogContent>{fields.map(renderField)}</DialogContent>
+        {wizard ? (
+          <>
+            <div className="ui-wizard" role="list" aria-label="Etapas">
+              {wizard.map((w, i) => (
+                <button key={w.title} type="button" role="listitem" aria-current={i === step ? "step" : undefined} className={`ui-wizard__step${i === step ? " is-on" : ""}${i < step ? " is-done" : ""}`}
+                  onClick={() => { if (i <= step || !wizard.slice(0, i).some((x) => missing(x.fields))) setStep(i); }}>
+                  <span className="ui-wizard__n">{i < step ? "✓" : i + 1}</span><span className="ui-wizard__t">{w.title}</span>
+                </button>
+              ))}
+            </div>
+            <DialogContent dividers>
+              {wizard[step].hint && <div style={{ fontSize: 13, color: "var(--text-2)", marginBottom: 8 }}>{wizard[step].hint}</div>}
+              {fields.filter((f) => wizard[step].fields.includes(f.name)).map(renderField)}
+              {wizard[step].review && wizard[step].review(buildPayload(), values)}
+            </DialogContent>
+          </>
+        ) : <DialogContent>{fields.map(renderField)}</DialogContent>}
         <DialogActions>
           <Button onClick={() => setOpen(false)} color="secondary" variant="outlined" disabled={saving}>
             Cancelar
           </Button>
-          <Button onClick={save} color="primary" variant="contained" disabled={saving}>
-            {saving ? <CircularProgress size={20} /> : "Salvar"}
-          </Button>
+          {wizard && step > 0 && <Button onClick={() => setStep(step - 1)} variant="outlined" disabled={saving}>Voltar</Button>}
+          {wizard && step < wizard.length - 1 ? (
+            <Button color="primary" variant="contained" onClick={() => { const gap = missing(wizard[step].fields); if (gap) toast.error(`Preencha: ${gap.label}`); else setStep(step + 1); }}>Próximo</Button>
+          ) : (
+            <>
+              {wizard && saveActions.map((a) => <Button key={a.key} onClick={() => save(a.key)} color="primary" variant="outlined" disabled={saving}>{a.label}</Button>)}
+              <Button onClick={() => save(null)} color="primary" variant="contained" disabled={saving}>
+                {saving ? <CircularProgress size={20} /> : "Salvar"}
+              </Button>
+            </>
+          )}
         </DialogActions>
       </Dialog>
 

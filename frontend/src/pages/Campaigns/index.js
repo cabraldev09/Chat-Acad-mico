@@ -386,6 +386,56 @@ const TestDialog = ({ campaign, onClose }) => {
   );
 };
 
+// the last step of the form: who receives, who is left out and why, how long it takes, and how the message looks (before saving)
+const DraftReview = ({ payload, lists, connections }) => {
+  const [pre, setPre] = useState(null);
+  const key = JSON.stringify(payload);
+  useEffect(() => {
+    setPre(null);
+    const t = setTimeout(() => api.post("/campaigns/preflight", payload).then(({ data }) => setPre(data)).catch(() => setPre(false)), 300);
+    return () => clearTimeout(t);
+  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+  const list = lists.find((l) => l.id === payload.contactListId);
+  const conn = connections.find((c) => c.id === payload.whatsappId) || connections.find((c) => c.isDefault);
+  const steps = payload.steps || [];
+  const preview = payload.templateName && conn && conn.channel === "whatsapp_cloud" ? (payload.templateBody || `Modelo ${payload.templateName}`) : (steps[0] && steps[0].body) || "";
+  const row = (label, value) => (
+    <div style={{ display: "grid", gridTemplateColumns: "minmax(90px, 140px) minmax(0, 1fr)", gap: 10, padding: "8px 0", borderBottom: "1px solid var(--line)", fontSize: 13.5 }}>
+      <span style={{ color: "var(--text-2)" }}>{label}</span><span style={{ overflowWrap: "anywhere" }}>{value}</span>
+    </div>
+  );
+  return (
+    <div style={{ display: "grid", gap: 14 }}>
+      <div>
+        {row("Campanha", <b>{payload.name || "—"}</b>)}
+        {row("Público", list ? `${list.name} (${list.itemCount} ${Number(list.itemCount) === 1 ? "pessoa" : "pessoas"})` : "—")}
+        {row("Conexão", conn ? `${conn.name} · ${riskOf(conn)[0]}` : "Sem conexão padrão")}
+        {row("Mensagem", payload.templateName && conn && conn.channel === "whatsapp_cloud" ? `Modelo aprovado “${payload.templateName}”` : `${steps.length} ${steps.length === 1 ? "mensagem" : "mensagens em sequência"}`)}
+        {row("Início", payload.scheduledAt ? format(parseISO(payload.scheduledAt), "dd/MM 'às' HH:mm") : "Quando você clicar em Iniciar")}
+      </div>
+      {preview && (
+        <div>
+          <div style={{ fontSize: 12.5, color: "var(--text-2)", marginBottom: 6 }}>Como chega para a primeira pessoa</div>
+          <div style={{ maxWidth: 420, padding: "10px 12px", borderRadius: "12px 12px 12px 4px", background: "var(--surface-2)", border: "1px solid var(--line)", fontSize: 13.5, whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{preview}</div>
+        </div>
+      )}
+      <div style={{ border: "1px solid var(--line-strong)", borderRadius: 12, padding: 14 }}>
+        <div style={{ fontWeight: 700, marginBottom: 6 }}>Conferência antes de enviar</div>
+        {pre === null ? <LinearProgress /> : pre === false ? <Typography variant="body2" color="textSecondary">Não foi possível conferir agora. A conferência é refeita quando você iniciar.</Typography> : (
+          <>
+            <Typography variant="body2"><b>{pre.canReceive}</b> de <b>{pre.total}</b> {pre.total === 1 ? "pessoa pode" : "pessoas podem"} receber{pre.messagesPerPerson > 1 ? `, ${pre.messagesPerPerson} mensagens cada` : ""}.{pre.canReceive > 0 ? ` Duração: ${duration(pre.estimatedSeconds)}.` : ""}</Typography>
+            {pre.warnings.map((w) => (
+              <div key={w} style={{ display: "flex", gap: 8, alignItems: "flex-start", marginTop: 8, padding: "8px 10px", borderRadius: 10, background: "rgba(245,158,11,.14)", fontSize: 13.5 }}>
+                <AlertTriangle size={16} color="#d97706" style={{ marginTop: 2, flex: "none" }} /> <span>{w}</span>
+              </div>
+            ))}
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
+
 // the connection that sends: what it is, how risky and how much it can still send today
 const ConnectionPicker = ({ value, setValue, connections }) => {
   const standard = connections.find((c) => c.isDefault);
@@ -520,6 +570,14 @@ const Campaigns = () => {
             socketEvent="campaign"
             reloadKey={reloadKey}
             dialogWidth="md"
+            wizard={[
+              { title: "Público", hint: "Dê um nome e escolha quem recebe. Dá para criar a lista aqui mesmo.", fields: ["name", "contactListId"] },
+              { title: "Mensagem", hint: "Na API oficial, quem nunca respondeu só recebe por um modelo aprovado pela Meta.", fields: ["whatsappId", "template", "steps"] },
+              { title: "Envio", hint: "O ritmo protege o número. Sem data, a campanha espera você clicar em Iniciar.", fields: ["pace", "scheduledAt"] },
+              { title: "Revisar", fields: [], review: (payload) => <DraftReview payload={payload} lists={lists} connections={connections} /> },
+            ]}
+            saveActions={[{ key: "test", label: "Salvar e enviar teste" }, { key: "start", label: "Salvar e iniciar" }]}
+            onSaved={(row, action) => { setReloadKey((k) => k + 1); if (action === "test") setTesting(row); if (action === "start") setStarting(row); }}
             mapIn={(row) => ({
               ...row,
               pace: paceOf(row),

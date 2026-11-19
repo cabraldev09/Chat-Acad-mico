@@ -1204,6 +1204,10 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.put(`/whatsapp/${wa.id}`, { name: "QR conferência", riskMode: "relaxed" }, auth())).status === 200, "relaxed mode");
       const relaxed = (await http.get(`/campaigns/${c.id}/preflight`, auth())).data;
       assert(relaxed.canReceive === 2 && relaxed.blocked.cold === 0 && relaxed.blocked.optedOut === 1, `relaxed ${JSON.stringify(relaxed.blocked)} ${relaxed.canReceive}`);
+      // the same check before saving (last step of the campaign form)
+      const draft = await http.post("/campaigns/preflight", { contactListId: list.id, whatsappId: wa.id, steps: [{ type: "text", body: "Oi" }, { type: "text", body: "Tudo bem?", delaySec: 5 }] }, auth());
+      assert(draft.status === 200 && draft.data.total === 3 && draft.data.canReceive === 2 && draft.data.messagesPerPerson === 2, `draft preflight ${draft.status} ${JSON.stringify(draft.data).slice(0, 200)}`);
+      assert((await http.post("/campaigns/preflight", { whatsappId: wa.id }, auth())).status === 400, "draft preflight without a list");
       const noList = (await http.post("/contact-lists", { name: "Vazia conferência" }, auth())).data;
       const empty = (await http.post("/campaigns", { name: "Vazia", message: "Oi", contactListId: noList.id, whatsappId: wa.id }, auth())).data;
       const e = (await http.get(`/campaigns/${empty.id}/preflight`, auth())).data;

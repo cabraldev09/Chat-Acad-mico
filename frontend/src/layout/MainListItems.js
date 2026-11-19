@@ -27,7 +27,6 @@ import HeartPulseIcon from "lucide-react/dist/esm/icons/heart-pulse";
 import Share2Icon from "lucide-react/dist/esm/icons/share-2";
 import WalletIcon from "lucide-react/dist/esm/icons/wallet";
 import GoalIcon from "lucide-react/dist/esm/icons/goal";
-import GaugeIcon from "lucide-react/dist/esm/icons/gauge";
 import SlidersIcon from "lucide-react/dist/esm/icons/sliders-horizontal";
 import GraduationCapIcon from "lucide-react/dist/esm/icons/graduation-cap";
 import CoursesIcon from "lucide-react/dist/esm/icons/book-open";
@@ -312,10 +311,12 @@ const MainListItems = (props) => {
       {!collapsed && (
         <ListSubheader disableSticky className={classes.sectionLabel}>Tutoria</ListSubheader>
       )}
-      {(isManager(user) || ["tutor", "academico"].includes(user.role)) && (
-        <ListItemLink to="/meus-alunos" primary={isManager(user) ? "Alunos da tutoria" : "Meus alunos"} icon={<UsersRoundIcon className="ico" />} collapsed={collapsed} />
+      {/* the ambientação is a tab of "Alunos da tutoria" for whoever works the tutoring; the others keep the board on its own */}
+      {(isManager(user) || ["tutor", "academico"].includes(user.role)) ? (
+        <ListItemLink to="/meus-alunos" alsoActive={["/ambientacao"]} primary={isManager(user) ? "Alunos da tutoria" : "Meus alunos"} icon={<UsersRoundIcon className="ico" />} collapsed={collapsed} adornment={myTasks.onboarding > 0 && <span className={classes.countBadge} title="Alunos esperando a ambientação">{myTasks.onboarding}</span>} />
+      ) : (
+        <ListItemLink to="/ambientacao" primary="Ambientação" icon={<MonitorCheckIcon className="ico" />} collapsed={collapsed} adornment={myTasks.onboarding > 0 && <span className={classes.countBadge} title="Alunos esperando a ambientação">{myTasks.onboarding}</span>} />
       )}
-      {<ListItemLink to="/ambientacao" primary="Ambientação" icon={<MonitorCheckIcon className="ico" />} collapsed={collapsed} adornment={myTasks.onboarding > 0 && <span className={classes.countBadge} title="Alunos esperando a ambientação">{myTasks.onboarding}</span>} />}
       {canOperateRetention(user) && (
         <ListItemLink to="/crm/retencao" primary="Retenção" icon={<HeartPulseIcon className="ico" />} collapsed={collapsed} />
       )}
@@ -358,14 +359,14 @@ const MainListItems = (props) => {
           collapsed={collapsed}
         />
       )}
-      {isManager(user) && (
-        <ListItemLink to="/gestao-comercial" primary="Gestão Comercial" icon={<GaugeIcon className="ico" />} collapsed={collapsed} adornment={tasksBadge} />
-      )}
+      {/* one hub for the numbers: Comercial (management + attendance and channels) and Tutoria */}
       <ListItemLink
-        to="/reports"
+        to="/estatisticas"
+        alsoActive={["/gestao-comercial", "/reports"]}
         primary="Estatísticas"
         icon={<BarChartIcon className="ico" />}
         collapsed={collapsed}
+        adornment={isManager(user) ? tasksBadge : undefined}
       />
       {isManager(user) && (
         <>
