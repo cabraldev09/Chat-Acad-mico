@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useContext, useEffect, useState } from "react";
 import { useHistory } from "react-router-dom";
 import { BarChart3, Clock, AlertTriangle, UserX, CheckCheck } from "lucide-react";
 
@@ -8,6 +8,10 @@ import TutorPanel from "../Tutoria/TutorPanel";
 import { BarsChart } from "../../components/charts";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
+import { AuthContext } from "../../context/Auth/AuthContext";
+import { isManager } from "../../utils/access";
+
+const PERIODS = [["semana", "Semana"], ["mes", "Mês"], ["ciclo", "Ciclo (semestre)"], ["90", "90 dias"]];
 
 // Estatísticas → Tutoria: the ambientação in numbers (first contact, within the deadline, late, without tutor, finished per week)
 // and the performance of each tutor in the period. The board of each student stays in "Alunos da tutoria".
@@ -16,14 +20,18 @@ const box = { border: "1px solid var(--line-strong)", borderRadius: 12, backgrou
 
 export default function TutoriaStats() {
   const history = useHistory();
+  const { user } = useContext(AuthContext);
+  const manager = isManager(user);
+  const [period, setPeriod] = useState("mes");
   const [stats, setStats] = useState(null);
-  useEffect(() => { api.get("/onboarding/stats").then(({ data }) => setStats(data)).catch((e) => { toastError(e); setStats(false); }); }, []);
+  useEffect(() => { setStats(null); api.get("/onboarding/stats", { params: { period } }).then(({ data }) => setStats(data)).catch((e) => { toastError(e); setStats(false); }); }, [period]);
   const kpis = stats ? [
-    [Clock, hoursText(stats.avgFirstContactHours), "tempo médio até o primeiro contato (90 dias)", "var(--accent)"],
+    [CheckCheck, stats.doneInPeriod, `ambientações concluídas (${stats.period})`, "#0B4279"],
+    [BarChart3, stats.enrolledInPeriod, `alunos recebidos (${stats.period})`, "#0f766e"],
+    [Clock, hoursText(stats.avgFirstContactHours), `tempo médio até o primeiro contato (${stats.period})`, "var(--accent)"],
     [CheckCheck, stats.withinSlaShare === null ? "—" : `${stats.withinSlaShare}%`, `iniciadas dentro de ${stats.slaHours} h`, "#0f766e"],
     [AlertTriangle, stats.totals.late, "atrasadas agora", stats.totals.late ? "#b91c1c" : "var(--text-3)"],
-    [UserX, stats.totals.withoutTutor, "alunos sem tutor", stats.totals.withoutTutor ? "#b45309" : "var(--text-3)"],
-    [BarChart3, stats.totals.done, "ambientações concluídas", "#0B4279"],
+    ...(manager ? [[UserX, stats.totals.withoutTutor, "alunos sem tutor", stats.totals.withoutTutor ? "#b45309" : "var(--text-3)"]] : []),
   ] : [];
   return (
     <MainContainer>
@@ -31,10 +39,13 @@ export default function TutoriaStats() {
         <StatsHubBar />
         <div style={{ display: "flex", alignItems: "flex-end", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
           <div style={{ flex: 1, minWidth: 240 }}>
-            <h1 style={{ margin: 0, fontSize: 24, letterSpacing: "-0.02em" }}>Desempenho da tutoria</h1>
-            <div style={{ fontSize: 13.5, color: "var(--text-2)", marginTop: 4 }}>A ambientação dos alunos matriculados e o trabalho de cada tutor.</div>
+            <h1 style={{ margin: 0, fontSize: 24, letterSpacing: "-0.02em" }}>{manager ? "Desempenho da tutoria" : "Meus números da tutoria"}</h1>
+            <div style={{ fontSize: 13.5, color: "var(--text-2)", marginTop: 4 }}>{manager ? "A ambientação dos alunos matriculados e o trabalho de cada tutor." : "Só os seus alunos: quantos chegaram, quantos você ambientou e quanto tempo levou o primeiro contato."}</div>
           </div>
-          <button type="button" onClick={() => history.push("/meus-alunos")} style={{ border: "1px solid var(--line-strong)", background: "var(--surface)", borderRadius: 8, padding: "7px 14px", font: "inherit", fontWeight: 600, cursor: "pointer" }}>Abrir os alunos da tutoria</button>
+          <button type="button" onClick={() => history.push("/meus-alunos")} style={{ border: "1px solid var(--line-strong)", background: "var(--surface)", borderRadius: 8, padding: "7px 14px", font: "inherit", fontWeight: 600, cursor: "pointer", color: "inherit" }}>{manager ? "Abrir os alunos da tutoria" : "Abrir meus alunos"}</button>
+        </div>
+        <div className="ui-tabs" role="tablist" aria-label="Período" style={{ marginLeft: 0, marginBottom: 14, flexWrap: "wrap" }}>
+          {PERIODS.map(([k, l]) => <button key={k} type="button" role="tab" aria-selected={period === k} className={`ui-tabs__btn${period === k ? " is-on" : ""}`} onClick={() => setPeriod(k)}>{l}</button>)}
         </div>
         {stats === null && <div style={{ color: "var(--text-2)", fontSize: 13, marginBottom: 16 }}>Carregando…</div>}
         {stats && (
@@ -56,7 +67,7 @@ export default function TutoriaStats() {
             </div>
           </>
         )}
-        <TutorPanel />
+        {manager && <TutorPanel />}
       </div>
     </MainContainer>
   );

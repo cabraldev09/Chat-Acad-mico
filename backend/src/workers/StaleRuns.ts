@@ -19,7 +19,10 @@ const tick = async (): Promise<void> => {
     const days = Number(await getSetting("ai_stale_run_days", "7"));
     if (!days) return;
     const cutoff = new Date(Date.now() - days * 86400000);
-    const runs = await ChatFlowRun.findAll({ where: { status: "waiting", updatedAt: { [Op.lt]: cutoff } }, limit: 50 });
+    // only the agents' runs (the menus of the chatbot keep waiting), the oldest first: a pile of menu runs never hides an agent's run
+    const agentFlows = (await ChatFlow.findAll({ where: { kind: "agent" } as any, attributes: ["id"] })).map(f => f.id);
+    if (!agentFlows.length) return;
+    const runs = await ChatFlowRun.findAll({ where: { status: "waiting", updatedAt: { [Op.lt]: cutoff }, flowId: { [Op.in]: agentFlows } } as any, order: [["updatedAt", "ASC"]], limit: 50 });
     for (const run of runs) {
       // eslint-disable-next-line no-await-in-loop
       const flow = await ChatFlow.findByPk(run.flowId);

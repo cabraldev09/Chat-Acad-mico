@@ -42,11 +42,16 @@ export const tick = async (): Promise<void> => {
         botReminderAt: { [Op.is]: null },
         updatedAt: { [Op.lt]: new Date(Date.now() - minutes * 60000) }
       } as any,
+      order: [["updatedAt", "ASC"]],
       limit: 20
     });
     for (const t of stale) {
       // eslint-disable-next-line no-await-in-loop
-      await remindWaiting(t.id).catch(err => logger.warn(`reminder failed: ${err}`));
+      await remindWaiting(t.id).catch(async err => {
+        logger.warn(`reminder failed: ${err}`);
+        // marked anyway: a reminder that cannot go out must not take the place of the others at every minute
+        await Ticket.update({ botReminderAt: new Date() } as any, { where: { id: t.id } }).catch(() => undefined);
+      });
     }
   } catch (err) {
     logger.error(`Chatbot reminder error: ${err}`);

@@ -1,13 +1,15 @@
 import CopilotSettings from "../../components/Copilot/Settings";
 import Operations from "./Operations";
 import MetaCosts from "./MetaCosts";
+import MetaTemplates from "./MetaTemplates";
+import Readiness from "./Readiness";
 import React, { useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { Link, useHistory, useLocation } from "react-router-dom";
 import { toast } from "react-toastify";
 import { Button, FormControlLabel, InputAdornment, MenuItem, Paper, Switch, TextField, Typography, makeStyles } from "@material-ui/core";
 import {
   ArrowUpRight, BellRing, Bot, Building2, Clock, CreditCard, Eye, EyeOff, FileInput, GraduationCap, KeyRound, ListTree, Plug, Search,
-  Settings2, Tags, Users, Workflow, Zap, Copy, SlidersHorizontal, Bug, Trash2, Mail, Calculator, CircleDollarSign,
+  Settings2, Tags, Users, Workflow, Zap, FileText, ListChecks, Copy, SlidersHorizontal, Bug, Trash2, Mail, Calculator, CircleDollarSign,
 } from "lucide-react";
 
 import MainContainer from "../../components/MainContainer";
@@ -29,9 +31,11 @@ import { BUILD } from "../../utils/versionWatch";
 // Configurações: where the rules of the system are set. Each group holds the real controls (saved as soon as they change);
 // "Cadastros" shows what exists (connections, people, polos...) with a way into each list.
 const GROUPS = [
+  { id: "prontidao", label: "Prontidão do sistema", icon: ListChecks, hint: "O que falta para o time usar" },
   { id: "copiloto", label: "Copiloto", icon: Workflow, hint: "Processo, conexões e limites de IA" },
   { id: "operacao", label: "Operação e custos", icon: SlidersHorizontal, hint: "Prazos, capacidade e entregas" },
   { id: "meta", label: "Custos da API oficial", icon: CircleDollarSign, hint: "Gasto real na Meta, por dia e tipo" },
+  { id: "modelos", label: "Modelos da Meta", icon: FileText, hint: "Modelos aprovados, em Utilidade" },
   { id: "geral", label: "Geral", icon: Settings2, hint: "Fuso, acesso e integração" },
   { id: "horario", label: "Horário e prazos", icon: Clock, hint: "Expediente e metas de resposta" },
   { id: "atendimento", label: "Atendimento e CRM", icon: SlidersHorizontal, hint: "Distribuição, lembretes e períodos" },
@@ -224,12 +228,21 @@ const Tutoria = ({ values, save }) => {
           InputLabelProps={{ shrink: true }} />
         <div className={classes.hint}>O sistema nunca envia esta mensagem sozinho: o tutor vê o texto no campo de mensagem, edita se quiser e envia. Variáveis: {"{{primeiro_nome}}"}, {"{{nome}}"}, {"{{tutor}}"} e {"{{polo}}"}. Em branco, vale um texto padrão.</div>
       </Card>
+      <Card title="Contato da tutoria na matrícula" sub="Ao confirmar a matrícula, o aluno recebe na conversa do consultor o número da tutoria (cartão de contato no WhatsApp por QR), para salvar e mandar um oi: a conversa no número da Tutoria começa gratuita.">
+        <TextField variant="outlined" size="small" label="Número da tutoria (com DDD)" placeholder="69 99325-8103"
+          defaultValue={values.tutoria_numero || ""} key={`tn-${values.tutoria_numero || ""}`} style={{ maxWidth: 260, width: "100%" }} InputLabelProps={{ shrink: true }}
+          onBlur={(e) => { const v = e.target.value.replace(/\D/g, ""); const full = v && (v.length === 10 || v.length === 11) ? `55${v}` : v; if (full !== (values.tutoria_numero || "")) save("tutoria_numero", full); }} />
+        <TextField variant="outlined" size="small" label="Modelo de boas-vindas (fora das 24 h)" placeholder="boas_vindas_matricula"
+          defaultValue={values.boas_vindas_template_name || ""} key={`bv-${values.boas_vindas_template_name || ""}`} style={{ maxWidth: 300, width: "100%", marginTop: 12 }} InputLabelProps={{ shrink: true }}
+          onBlur={(e) => { const v = e.target.value.trim(); if (v !== (values.boas_vindas_template_name || "")) save("boas_vindas_template_name", v); }} />
+        <div className={classes.hint}>Em branco, o sistema usa o número que a Meta informa para a conexão de Tutoria. O modelo recebe {"{{1}}"} = primeiro nome, {"{{2}}"} = curso, {"{{3}}"} = tutor e {"{{4}}"} = número da tutoria (o modelo boas_vindas_matricula de Modelos da Meta já vem assim e entra aqui sozinho quando aprovado).</div>
+      </Card>
       <Card title="Prazo do primeiro contato" sub="O sistema avisa a tutoria e a coordenação quando o aluno passa deste tempo sem contato depois da matrícula.">
         <TextField select variant="outlined" size="small" label="Alertar após" value={Number(values.onboarding_sla_hours || 24)} onChange={(e) => save("onboarding_sla_hours", e.target.value)} style={{ maxWidth: 260 }} InputLabelProps={{ shrink: true }}>
           {HOURS.map((h) => (<MenuItem key={h} value={h}>{h} horas</MenuItem>))}
         </TextField>
       </Card>
-      <Card title="Mensagem de abertura nos números oficiais" sub="Fora das 24 horas desde a última mensagem do aluno, o número oficial só pode iniciar a conversa com um modelo aprovado pela Meta. Crie os modelos na Meta e informe aqui o nome exato. Parâmetros: {{1}} = primeiro nome do aluno, {{2}} = primeiro nome de quem escreve.">
+      <Card title="Mensagem de abertura nos números oficiais" sub="Fora das 24 horas desde a última mensagem do aluno, o número oficial só pode iniciar a conversa com um modelo aprovado pela Meta. Crie os modelos em Configurações → Modelos da Meta (entram aqui sozinhos quando aprovados) ou informe o nome exato. Parâmetros: {{1}} = primeiro nome do aluno, {{2}} = primeiro nome de quem escreve.">
         {[["tutoria", "Tutoria"], ["atendimento", "Atendimento / Matrículas"]].map(([side, label]) => (
           <div key={side} style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
             <TextField variant="outlined" size="small" label={`Modelo — ${label}`} placeholder="ex.: abertura_tutoria"
@@ -648,6 +661,16 @@ const SettingsHub = () => {
   // the search jumps to the group that holds the word
   const found = q.trim() ? groups.filter((g) => `${g.label} ${g.hint}`.toLowerCase().includes(q.trim().toLowerCase())) : groups;
   const current = groups.find((g) => g.id === group) || groups[0];
+  // on the phone the groups are one sliding row: the open one slides into view (only the row moves, never the page)
+  const railRef = React.useRef(null);
+  useEffect(() => {
+    const nav = railRef.current;
+    const on = nav && nav.querySelector("[aria-current=true]");
+    if (!on || nav.scrollWidth <= nav.clientWidth) return;
+    const a = nav.getBoundingClientRect();
+    const b = on.getBoundingClientRect();
+    nav.scrollLeft += b.left - a.left - (a.width - b.width) / 2;
+  }, [current.id]);
 
   return (
     <MainContainer>
@@ -658,11 +681,11 @@ const SettingsHub = () => {
       </MainHeader>
       <div className={classes.body}>
         <div className={classes.layout}>
-          <nav className={classes.rail} aria-label="Grupos de configurações">
+          <nav ref={railRef} className={classes.rail} aria-label="Grupos de configurações">
             {found.map((g) => {
               const Icon = g.icon;
               return (
-                <button key={g.id} type="button" className={`${classes.railBtn} ${current.id === g.id ? classes.railOn : ""}`} onClick={() => open(g.id)}>
+                <button key={g.id} type="button" aria-current={current.id === g.id} className={`${classes.railBtn} ${current.id === g.id ? classes.railOn : ""}`} onClick={() => open(g.id)}>
                   <Icon size={18} />
                   <span><span className={classes.railLabel} style={{ display: "block" }}>{g.label}</span><span className={classes.railHint}>{g.hint}</span></span>
                 </button>
@@ -677,9 +700,11 @@ const SettingsHub = () => {
             </div>
             {!values ? <Typography className={classes.hint}>Carregando...</Typography> : (
               <SectionBoundary name={current.id} resetKey={current.id}>
+                {current.id === "prontidao" && <Readiness />}
                 {current.id === "copiloto" && <CopilotSettings />}
                 {current.id === "operacao" && <Operations />}
                 {current.id === "meta" && <MetaCosts />}
+                {current.id === "modelos" && <MetaTemplates />}
 
                 {current.id === "geral" && <Geral values={values} save={save} admin={admin} />}
                 {current.id === "horario" && <Horario values={values} save={save} crm={crm} />}

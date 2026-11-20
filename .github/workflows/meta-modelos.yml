@@ -1,0 +1,39 @@
+name: Enviar modelos para a Meta (pacote recomendado, Utilidade)
+
+# Envia os modelos recomendados para a conta do WhatsApp da API oficial (pelo token salvo no sistema), todos na categoria Utilidade
+# e protegidos contra a troca para Marketing, e mostra o status de cada um. "Só status" apenas lê e liga os aprovados às configurações.
+on:
+  workflow_dispatch:
+    inputs:
+      so_status:
+        description: "Só ler o status (não enviar nada)"
+        type: boolean
+        default: false
+
+jobs:
+  modelos:
+    runs-on: ubuntu-latest
+    env:
+      VPS_KNOWN_HOSTS: deploy/vps/known_hosts
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepara o SSH e confere a identidade do servidor
+        env:
+          KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          VPS_HOST=$(grep -v '^#' "$VPS_KNOWN_HOSTS" | awk 'NF{print $1; exit}'); echo "VPS_HOST=$VPS_HOST" >> "$GITHUB_ENV"
+          install -m 700 -d ~/.ssh
+          body=$(printf '%s' "$KEY" | grep -v '^-----' | tr -d ' \r\n\t')
+          { echo "-----BEGIN OPENSSH PRIVATE KEY-----"; printf '%s' "$body" | fold -w 70; echo; echo "-----END OPENSSH PRIVATE KEY-----"; } > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          grep -v '^#' deploy/vps/known_hosts > ~/.ssh/known_hosts
+          want=$(awk '{print $3}' ~/.ssh/known_hosts)
+          seen=$(ssh-keyscan -T 15 -t ed25519 "$VPS_HOST" 2>/dev/null | awk '$2=="ssh-ed25519"{print $3}')
+          [ -n "$seen" ] && [ "$seen" = "$want" ] || { echo "::error::A chave do servidor não confere"; exit 1; }
+      - name: Envia e lê o status
+        env:
+          SO_STATUS: ${{ inputs.so_status }}
+        run: |
+          case "$SO_STATUS" in true|false) ;; *) echo "::error::valor inválido"; exit 1;; esac
+          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes backend/scripts/meta-modelos.js root@"$VPS_HOST":/tmp/meta-modelos.js
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@"$VPS_HOST" "docker cp /tmp/meta-modelos.js chat-academico-api-1:/app/backend/meta-modelos.js && docker exec -e SO_STATUS='$SO_STATUS' chat-academico-api-1 node /app/backend/meta-modelos.js; s=\$?; docker exec chat-academico-api-1 rm -f /app/backend/meta-modelos.js; exit \$s"

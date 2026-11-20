@@ -9,17 +9,18 @@ import { isManager } from "../../utils/access";
 // so the manager moves between the commercial management, the reports and the tutoring numbers without going back to the menu.
 export const hubSections = (user) => {
   const manager = isManager(user);
+  const tutor = !!user && ["tutor", "academico"].includes(user.role);
   return [
     { dept: "Comercial", icon: Briefcase, items: [
       manager && { to: "/gestao-comercial", label: "Gestão comercial" },
       manager && { to: "/crm/matriculas", label: "Matrículas realizadas" },
       { to: "/reports", label: manager ? "Atendimento e canais" : "Meus números" },
     ].filter(Boolean) },
-    manager && { dept: "Tutoria", icon: GraduationCap, items: [{ to: "/estatisticas/tutoria", label: "Desempenho da tutoria" }] },
+    (manager || tutor) && { dept: "Tutoria", icon: GraduationCap, items: [{ to: "/estatisticas/tutoria", label: manager ? "Desempenho da tutoria" : "Minha tutoria" }] },
   ].filter(Boolean);
 };
 
-export const hubHome = (user) => (isManager(user) ? "/gestao-comercial" : "/reports");
+export const hubHome = (user) => (isManager(user) ? "/gestao-comercial" : user && ["tutor", "academico"].includes(user.role) ? "/estatisticas/tutoria" : "/reports");
 
 const StatsHubBar = () => {
   const { user } = useContext(AuthContext);

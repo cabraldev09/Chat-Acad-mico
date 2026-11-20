@@ -1,4 +1,4 @@
-import { Op } from "sequelize";
+import { Op, col, fn } from "sequelize";
 
 import { getSetting } from "../helpers/AppSettings";
 import { businessMinutes, getBusinessConfig, isBusinessNow } from "../helpers/BusinessTime";
@@ -32,7 +32,9 @@ const tick = async (): Promise<void> => {
     const now = new Date();
     const tickets = await Ticket.findAll({
       where: { handoffAt: { [Op.ne]: null, [Op.gte]: new Date(now.getTime() - 72 * 3600000) } as any, status: { [Op.ne]: "closed" }, handoffAlerts: { [Op.lt]: 2 } },
-      limit: 100
+      // the longest waiting first: those still inside the limit come last and never hold back one that passed it
+      order: [[fn("COALESCE", col("handoffAlertedAt"), col("handoffAt")), "ASC"]],
+      limit: 200
     });
     for (const ticket of tickets) {
       // eslint-disable-next-line no-await-in-loop

@@ -1,4 +1,4 @@
-import { Op } from "sequelize";
+import { Op, col, where as sqlWhere } from "sequelize";
 
 import { getSetting } from "../helpers/AppSettings";
 import { getBusinessConfig, isBusinessNow } from "../helpers/BusinessTime";
@@ -43,9 +43,12 @@ const tick = async (): Promise<void> => {
         lastInboundAt: { [Op.between]: [new Date(now - WINDOW_LIMIT_MS), new Date(now - firstMinutes * 60000)] },
         readyForProposal: false,
         readyForConsultant: false,
-        followUpAt: { [Op.is]: null }
+        followUpAt: { [Op.is]: null },
+        // the agent spoke last (the lead did not answer): filtered in the query, so the conversations where the lead answered never fill the page
+        [Op.and]: [sqlWhere(col("lastOutboundAt"), Op.gt, col("lastInboundAt"))]
       } as any,
-      limit: 100
+      order: [["lastInboundAt", "ASC"]],
+      limit: 300
     });
     for (const row of rows) {
       // the agent spoke last (the lead did not answer)

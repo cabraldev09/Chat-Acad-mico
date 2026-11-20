@@ -254,12 +254,15 @@ const MainListItems = (props) => {
         icon={<MessagesSquareIcon className="ico" />}
         collapsed={collapsed}
       />
-      <ListItemLink
-        to="/contacts"
-        primary={i18n.t("mainDrawer.listItems.contacts")}
-        icon={<ContactIcon className="ico" />}
-        collapsed={collapsed}
-      />
+      {/* the team works from the conversations and the CRM; the full list of contacts is for the management */}
+      {isManager(user) && (
+        <ListItemLink
+          to="/contacts"
+          primary={i18n.t("mainDrawer.listItems.contacts")}
+          icon={<ContactIcon className="ico" />}
+          collapsed={collapsed}
+        />
+      )}
       {/* administration and coordination find these two in Configurações; everyone else keeps them here */}
       {!isManager(user) && (
         <>
@@ -275,8 +278,8 @@ const MainListItems = (props) => {
       {!collapsed && (
         <ListSubheader disableSticky className={classes.sectionLabel}>CRM</ListSubheader>
       )}
-      {/* the funnel and its panel are the sales pipeline: for tutoring and the academic team they would always be empty */}
-      {!["tutor", "academico"].includes(user.profile === "admin" ? "admin" : user.role) && (
+      {/* the funnel and its panel: the sales pipeline (a tutor sees their own leads too); not for the relationship team */}
+      {user.role !== "relacionamento" && (
         <>
           <ListItemLink to="/crm" primary="Funil de captação" icon={<KanbanSquareIcon className="ico" />} collapsed={collapsed} />
           <ListItemLink to="/crm/painel" primary="Painel do CRM" icon={<LayoutDashboardIcon className="ico" />} collapsed={collapsed} adornment={myTasks.triage > 0 && <span className={classes.countBadge} style={myTasks.triageLate > 0 ? { background: "#dc2626", color: "#fff" } : undefined} title="Leads novos para conferir até o fim do dia">{myTasks.triage}</span>} />
@@ -286,7 +289,7 @@ const MainListItems = (props) => {
       {["admin", "coordenacao", "consultor"].includes(user.profile === "admin" ? "admin" : user.role || "consultor") && (
         <ListItemLink to="/crm/comissoes" primary="Comissões" icon={<WalletIcon className="ico" />} collapsed={collapsed} />
       )}
-      <ListItemLink to="/crm/metas-polos" alsoActive={["/crm/metas", "/crm/matriculas"]} primary="Metas" icon={<GoalIcon className="ico" />} collapsed={collapsed} />
+      {isManager(user) && <ListItemLink to="/crm/metas-polos" alsoActive={["/crm/metas", "/crm/matriculas"]} primary="Metas" icon={<GoalIcon className="ico" />} collapsed={collapsed} />}
       {!collapsed && (
         <ListSubheader disableSticky className={classes.sectionLabel}>Cursos e alunos</ListSubheader>
       )}
@@ -354,8 +357,8 @@ const MainListItems = (props) => {
       {/* one hub for the numbers: Comercial (management + attendance and channels) and Tutoria */}
       <ListItemLink
         to="/estatisticas"
-        alsoActive={["/gestao-comercial", "/reports"]}
-        primary="Estatísticas"
+        alsoActive={["/gestao-comercial", "/reports", "/estatisticas/tutoria"]}
+        primary={isManager(user) ? "Estatísticas" : "Meus números"}
         icon={<BarChartIcon className="ico" />}
         collapsed={collapsed}
         adornment={isManager(user) ? tasksBadge : undefined}

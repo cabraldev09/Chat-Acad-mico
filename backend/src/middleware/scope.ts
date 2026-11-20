@@ -13,7 +13,7 @@ import { isManagerRole, roleOf } from "../helpers/Roles";
 // What each job role may see of the CRM (leads and what hangs from them):
 //   admin, coordenacao  everything (the coordinator manages all polos)
 //   consultor    their own leads, plus unassigned ones of their polos (the intake queue)
-//   tutor/acad.  students of their polos
+//   tutor/acad.  students of their polos, plus their own leads (the commercial screens, like a consultant)
 export const poloIdsOf = async (userId: number): Promise<number[]> =>
   (await PoloMember.findAll({ where: { userId }, attributes: ["poloId"] })).map(m => m.poloId);
 
@@ -50,7 +50,8 @@ export const leadScopeWhere = async (req: Request): Promise<any | null> => {
   // the tutor works the students given to them and the ones still waiting for a tutor in their polos
   if (role === "tutor") {
     const mine = await tutorPoloIdsOf(me);
-    return { [Op.or]: [{ onboardingTutorId: me }, { onboardingTutorId: { [Op.is]: null }, onboardingStatus: { [Op.ne]: "none" }, poloId: { [Op.in]: mine.length ? mine : [0] } }] };
+    // ...and, like a consultant, the leads that are their own (a tutor may also bring and follow a sale: the same commercial screens)
+    return { [Op.or]: [{ ownerId: me }, { onboardingTutorId: me }, { onboardingTutorId: { [Op.is]: null }, onboardingStatus: { [Op.ne]: "none" }, poloId: { [Op.in]: mine.length ? mine : [0] } }] };
   }
   // the relationship team follows the students (the ones already enrolled) of every polo, never the sales funnel
   if (role === "relacionamento") return { enrolledAt: { [Op.ne]: null } };

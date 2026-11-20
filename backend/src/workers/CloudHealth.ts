@@ -74,9 +74,13 @@ export const checkCloudConnection = async (whatsapp: Whatsapp, starting = false)
 const lastAlert = new Map<number, number>();
 const ALERT_EVERY_MS = 6 * 3600000;
 export const alertAdmins = async (w: Whatsapp, reason: string): Promise<boolean> => {
-  const last = lastAlert.get(w.id) || 0;
+  // kept in the settings too: a restart of the server (a deploy) does not send the same e-mail again
+  const { getSetting, setSetting } = await import("../helpers/AppSettings");
+  const key = `cloud_alert_at_${w.id}`;
+  const last = Math.max(lastAlert.get(w.id) || 0, Number(await getSetting(key, "0")) || 0);
   if (Date.now() - last < ALERT_EVERY_MS) return false;
   lastAlert.set(w.id, Date.now());
+  await setSetting(key, String(Date.now())).catch(() => undefined);
   const User = (await import("../models/User")).default;
   const { notify, frontBase } = await import("../services/MailServices/Notify");
   const admins = await User.findAll({ where: { profile: "admin" } as any, attributes: ["email"] });

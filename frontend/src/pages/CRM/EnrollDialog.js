@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { toast } from "react-toastify";
 import {
   Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField, MenuItem, Typography,
-  CircularProgress, makeStyles, RadioGroup, Radio, FormControlLabel, Checkbox,
+  CircularProgress, makeStyles, RadioGroup, Radio, FormControlLabel, Checkbox, ListSubheader,
 } from "@material-ui/core";
 import { GraduationCap, ImagePlus, CheckCircle2, AlertTriangle } from "lucide-react";
 
@@ -28,6 +28,8 @@ const EnrollDialog = ({ open, lead, onClose, onDone, additional = false }) => {
   const classes = useStyles();
   const [polos, setPolos] = useState([]);
   const [tutors, setTutors] = useState([]);
+  // every tutor of the institution, for "another tutor" (one of another polo, who then joins this polo's tutoring)
+  const [allTutors, setAllTutors] = useState([]);
   const [busy, setBusy] = useState(false);
   const [detail, setDetail] = useState(null);
   const [courses, setCourses] = useState([]);
@@ -71,6 +73,12 @@ const EnrollDialog = ({ open, lead, onClose, onDone, additional = false }) => {
     if (!v.poloId) { setTutors([]); return; }
     api.get(`/polos/${v.poloId}/tutors`).then(({ data }) => setTutors(data)).catch(() => setTutors([]));
   }, [v.poloId]);
+  useEffect(() => {
+    if (!open) return;
+    api.get("/tutors").then(({ data }) => setAllTutors(Array.isArray(data) ? data : [])).catch(() => setAllTutors([]));
+  }, [open]);
+  const others = allTutors.filter((t) => !tutors.some((x) => x.id === t.id && !x.outside));
+  const isOther = others.some((t) => t.id === v.tutorId) || tutors.some((t) => t.id === v.tutorId && t.outside);
 
   const needsCpf = !additional && (v.fee === "now" || v.fee === "later") && !(detail && detail.cpf);
   const rgm = String(v.rgm || "").replace(/\s+/g, "");
@@ -147,9 +155,12 @@ const EnrollDialog = ({ open, lead, onClose, onDone, additional = false }) => {
           {polos.map((p) => (<MenuItem key={p.id} value={p.id}>{p.name}{p.city ? ` · ${p.city}` : ""}</MenuItem>))}
         </TextField>
         <TextField select fullWidth variant="outlined" margin="dense" label="Tutor" value={v.tutorId} onChange={(e) => setV({ ...v, tutorId: e.target.value })} disabled={!v.poloId}
-          helperText={v.poloId && !tutors.length ? "Este polo ainda não tem tutor: o aluno ficará aguardando na fila." : "Automático segue a regra de distribuição da fila (rodízio ou menos ocupado)."}>
+          helperText={isOther ? "Este tutor é de outro polo: ele passa a fazer parte da tutoria deste polo para acompanhar o aluno." : v.poloId && !tutors.some((t) => !t.outside) ? "Este polo ainda não tem tutor: escolha um de outro polo ou o aluno ficará aguardando na fila." : "Automático segue a regra de distribuição da fila (rodízio ou menos ocupado)."}>
           <MenuItem value="auto">Automático (rodízio da tutoria)</MenuItem>
-          {tutors.map((t) => (<MenuItem key={t.id} value={t.id}>{t.name}</MenuItem>))}
+          {tutors.some((t) => !t.outside) && <ListSubheader disableSticky style={{ pointerEvents: "none" }}>Tutores deste polo</ListSubheader>}
+          {tutors.filter((t) => !t.outside).map((t) => (<MenuItem key={t.id} value={t.id}>{t.name}</MenuItem>))}
+          {others.length > 0 && <ListSubheader disableSticky style={{ pointerEvents: "none" }}>Outro tutor</ListSubheader>}
+          {others.map((t) => (<MenuItem key={`o${t.id}`} value={t.id}>{t.name}</MenuItem>))}
         </TextField>
 
         {!additional && <div className={classes.section}>Taxa de matrícula</div>}
@@ -171,7 +182,7 @@ const EnrollDialog = ({ open, lead, onClose, onDone, additional = false }) => {
         <div className={classes.section}>Passagem de bastão</div>
         <TextField fullWidth multiline rows={2} variant="outlined" margin="dense" label="Observação para o tutor (opcional)" value={v.note} onChange={(e) => setV({ ...v, note: e.target.value })}
           helperText="Aparece no histórico. Ex.: prefere à noite, já tem notebook." />
-        <div className={classes.hint}>Nenhuma mensagem é enviada ao aluno agora. O tutor recebe a conversa com o texto de boas-vindas pronto e envia quando quiser. Daqui para frente o consultor não vê as mensagens do tutor, e o tutor não vê as suas; o contato com o aluno volta a você depois da ambientação.</div>
+        <div className={classes.hint}>{additional ? "Nenhuma mensagem é enviada ao aluno agora." : "O aluno recebe nesta conversa o número da tutoria, com o nome do tutor, e o pedido para mandar mensagem por lá e agendar a ambientação."} O tutor recebe a conversa com o texto de boas-vindas pronto. Daqui para frente o consultor não vê as mensagens do tutor, e o tutor não vê as suas; o contato com o aluno volta a você depois da ambientação.</div>
       </DialogContent>
       <DialogActions>
         <Button variant="outlined" color="secondary" onClick={onClose} disabled={busy}>Cancelar</Button>

@@ -1,5 +1,6 @@
 import * as Tutoria from "../controllers/TutoriaController";
 import * as MetaCosts from "../controllers/MetaCostsController";
+import * as MetaTemplates from "../controllers/MetaTemplatesController";
 import isRetentionOperator from "../middleware/isRetentionOperator";
 import express from "express";
 import multer from "multer";
@@ -187,6 +188,8 @@ r.get("/ai-agents/:id/kb/:docId", isAuth, isManager, Ai.kbShow);
 r.put("/ai-agents/:id/kb/:docId", isAuth, isManager, Ai.kbUpdate);
 r.delete("/ai-agents/:id/kb/:docId", isAuth, isManager, Ai.kbRemove);
 r.post("/ai-agents/:id/test", isAuth, isManager, Ai.test);
+r.put("/ai-agents/:id/draft", isAuth, isManager, Ai.saveDraft);
+r.delete("/ai-agents/:id/draft", isAuth, isManager, Ai.discardDraft);
 r.get("/ai-agents/:id/history", isAuth, isManager, Ai.historyList);
 r.post("/ai-agents/:id/history/:revisionId/restore", isAuth, isManager, Ai.historyRestore);
 r.get("/ai-agents/:id/cases", isAuth, isManager, Ai.evalList);
@@ -302,6 +305,7 @@ r.get("/channels/:whatsappId/groups", isAuth, canManageWhatsapp, Channel.groups)
 // polos (branches) and the team of each one
 r.get("/polos", isAuth, cached(), PoloCtl.index);
 r.get("/polos/:id/tutors", isAuth, PoloCtl.tutors);
+r.get("/tutors", isAuth, PoloCtl.allTutors);
 r.get("/polos/:id/coverage", isAuth, isManager, PoloCtl.coverage);
 r.put("/polos/:id/coverage", isAuth, isManager, PoloCtl.setCoverage);
 r.post("/polos", isAuth, isManager, PoloCtl.store);
@@ -388,11 +392,19 @@ r.get("/tutoria/students", isAuth, Tutoria.students);
 r.get("/tutoria/panel", isAuth, Tutoria.panel);
 r.post("/tutoria/students/import", isAuth, Tutoria.importStudents);
 r.get("/meta/costs", isAuth, isManager, MetaCosts.show);
+// the templates of the official WhatsApp account: list with status, create one (Utility only) and send the recommended pack
+r.get("/meta/templates", isAuth, isManager, MetaTemplates.index);
+r.get("/system/readiness", isAuth, isManager, async (_req, res) => {
+  const { readiness } = await import("../services/SystemServices/Readiness");
+  return res.json({ items: await readiness() });
+});
+r.post("/meta/templates", isAuth, isManager, MetaTemplates.store);
+r.post("/meta/templates/pack", isAuth, isManager, MetaTemplates.pack);
 r.post("/tutoria/students/:leadId/conversation", isAuth, Tutoria.openConversation);
 r.put("/leads/:id/onboarding/access", isAuth, canAccessLead, Lead.onboardingAccessSave);
 r.post("/leads/:id/onboarding/access/send", isAuth, canAccessLead, Lead.onboardingAccessSend);
 r.get("/onboarding/pending", isAuth, Lead.onboardingPending);
-r.get("/onboarding/stats", isAuth, isManager, Lead.onboardingStats);
+r.get("/onboarding/stats", isAuth, Lead.onboardingStats);
 r.put("/leads/:id/onboarding/checklist", isAuth, canAccessLead, Lead.onboardingChecklist);
 // the print of the enrollment: read (the RGM fills the field) before confirming, and seen later
 r.post("/leads/:id/enrollment-proof", isAuth, canAccessLead, materialUpload.single("file"), Enrollment.uploadProof);
