@@ -160,7 +160,7 @@ const TestTab = ({ agentId, flowId, commercial, hasDraft = false }) => {
     setBusy(true);
     try {
       if (real) {
-        const { data } = await api.post(`/flows/${flowId}/simulate`, { state: sim, input: content, restart: !sim, sample: {} });
+        const { data } = await api.post(`/flows/${flowId}/simulate`, { state: sim, input: content, restart: !sim, sample: {}, useDraft: hasDraft && useDraft });
         setSim(data.state);
         const last = (data.traces || [])[(data.traces || []).length - 1] || {};
         setSteps((cur) => [...cur, {
@@ -197,9 +197,9 @@ const TestTab = ({ agentId, flowId, commercial, hasDraft = false }) => {
       <Typography variant="caption" color="textSecondary" display="block" style={{ marginBottom: 8 }}>
         O uso entra no consumo, mas não conta no limite diário.
       </Typography>
-      {hasDraft && !real && (
+      {hasDraft && (
         <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, marginBottom: 8, cursor: "pointer" }}>
-          <input type="checkbox" checked={useDraft} onChange={(e) => { setUseDraft(e.target.checked); setTurns([]); setCollected({}); }} />
+          <input type="checkbox" checked={useDraft} onChange={(e) => { setUseDraft(e.target.checked); setTurns([]); setCollected({}); setSim(null); setSteps([]); }} />
           Usar o rascunho (as mudanças ainda não publicadas)
         </label>
       )}

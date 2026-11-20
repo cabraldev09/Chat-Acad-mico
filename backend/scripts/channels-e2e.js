@@ -5655,6 +5655,13 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(pub.status === 200 && pub.data.systemPrompt === "Rascunho: novo jeito de atender" && !(pub.data.persona || {}).draft, "publishing did not apply the draft or did not clear it");
       assert(Number(sql(`SELECT COUNT(*) FROM AiAgentRevisions WHERE agentId=${id}`)) > revs, "publishing left no history");
       await http.put(`/ai-agents/${id}/draft`, { systemPrompt: "outro" }, auth());
+      // the flow simulator tries the draft too, in memory: nothing about the published agent changes
+      const flowId = Number(sql(`SELECT id FROM ChatFlows ORDER BY (agentId=${id}) DESC NULLS LAST, id LIMIT 1`)) || 0;
+      if (flowId) {
+        const sim = await http.post(`/flows/${flowId}/simulate`, { input: "Oi", restart: true, sample: {}, useDraft: true }, auth());
+        assert(sim.status < 500, `simulating with the draft ${sim.status} ${JSON.stringify(sim.data).slice(0, 200)}`);
+        assert((await http.get("/ai-agents", auth())).data.find(a => a.id === id).systemPrompt === "Rascunho: novo jeito de atender", "simulating with the draft changed the agent");
+      }
       assert((await http.delete(`/ai-agents/${id}/draft`, auth())).status === 200 && !(await http.get("/ai-agents", auth())).data.find(a => a.id === id).persona.draft, "discarding kept the draft");
       await http.put(`/ai-agents/${id}`, { systemPrompt: live.systemPrompt, persona: live.persona }, auth());
     });

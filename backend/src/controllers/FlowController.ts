@@ -7,6 +7,7 @@ import ChatFlowRun from "../models/ChatFlowRun";
 import ChatFlowStat from "../models/ChatFlowStat";
 import ChatFlowVersion from "../models/ChatFlowVersion";
 import AiAgent from "../models/AiAgent";
+import { withDraft } from "./AiAgentController";
 import User from "../models/User";
 import AutomationTrigger from "../models/AutomationTrigger";
 import { advance, firstNode, resume, RunState } from "../services/FlowServices/Engine";
@@ -37,9 +38,11 @@ const cleanGraph = (raw: any): Graph => {
 };
 
 // the agent an AI stage talks as in the simulator: the one of the flow, else any active one
-const agentFor = async (flow: ChatFlow): Promise<AiAgent | null> => {
+// (with useDraft, the agent's unpublished changes are tried, in memory only)
+const agentFor = async (flow: ChatFlow, useDraft = false): Promise<AiAgent | null> => {
   const own = flow.agentId ? await AiAgent.findByPk(flow.agentId) : null;
-  return own || AiAgent.findOne({ where: { active: true }, order: [["id", "ASC"]] });
+  const agent = own || await AiAgent.findOne({ where: { active: true }, order: [["id", "ASC"]] });
+  return agent && useDraft ? withDraft(agent) : agent;
 };
 
 const present = async (flow: ChatFlow, withGraph = false) => {
@@ -203,7 +206,7 @@ export const simulate = async (req: Request, res: Response): Promise<Response> =
   const issues = validateGraph(graph, { hasAiAgent: await hasActiveAiAgent(), kind: flow.kind });
   if (issues.some(i => i.level === "error" && /início/.test(i.text))) return res.status(422).json({ error: "ERR_FLOW_HAS_ERRORS", issues });
   // an AI stage really answers in the simulator (with the model of the agent), without sending or saving anything
-  const { fx, messages, actions, traces, routes } = simEffects(b.sample || {}, { agent: await agentFor(flow), flowId: flow.id });
+  const { fx, messages, actions, traces, routes } = simEffects(b.sample || {}, { agent: await agentFor(flow, !!b.useDraft), flowId: flow.id });
   let step;
   try {
     if (b.state && b.state.nodeId && !b.restart) {

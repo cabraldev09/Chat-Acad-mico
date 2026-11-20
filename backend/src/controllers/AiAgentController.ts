@@ -450,8 +450,8 @@ export const discardDraft = async (req: Request, res: Response): Promise<Respons
   await agent.update({ persona } as any);
   return res.json({ ok: true });
 };
-// the agent as the draft would make it, only in memory (never saved)
-const withDraft = (agent: AiAgent): AiAgent => {
+// the agent as the draft would make it, only in memory (never saved); also used by the flow simulator
+export const withDraft = (agent: AiAgent): AiAgent => {
   const draft = (agent.persona as any)?.draft;
   if (!draft) return agent;
   const patch: Record<string, any> = {};
