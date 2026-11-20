@@ -430,8 +430,40 @@ export const kbFromUrl = async (req: Request, res: Response): Promise<Response> 
 // ------------------------------------------------------------------ tester and usage
 
 // "Testar agente": the same brain without WhatsApp. Nothing is written except the usage (not counted against the daily limit).
-export const test = async (req: Request, res: Response): Promise<Response> => {
+// The draft of the agent: changes kept apart (in persona.draft) while the published version keeps answering the leads. "Testar" can use
+// it; publishing is the normal save, which replaces the persona and so clears the draft (and records the history).
+const DRAFT_KEYS = ["name", "systemPrompt", "handoffMessage", "persona", "slots", "functions", "maxTokens", "handoffAfterTurns", "waitSeconds"];
+export const saveDraft = async (req: Request, res: Response): Promise<Response> => {
   const agent = await loadAgent(req.params.id);
+  const draft: Record<string, any> = {};
+  DRAFT_KEYS.forEach(k => { if (req.body && req.body[k] !== undefined) draft[k] = req.body[k]; });
+  if (draft.persona && typeof draft.persona === "object") { draft.persona = { ...draft.persona }; delete draft.persona.draft; }
+  if (JSON.stringify(draft).length > 200000) throw new AppError("ERR_AI_PERSONA_INVALID");
+  const persona = { ...((agent.persona as any) || {}), draft: { ...draft, savedAt: new Date().toISOString(), savedBy: Number(req.user.id) || null } };
+  await agent.update({ persona } as any);
+  return res.json({ draft: persona.draft });
+};
+export const discardDraft = async (req: Request, res: Response): Promise<Response> => {
+  const agent = await loadAgent(req.params.id);
+  const persona = { ...((agent.persona as any) || {}) };
+  delete persona.draft;
+  await agent.update({ persona } as any);
+  return res.json({ ok: true });
+};
+// the agent as the draft would make it, only in memory (never saved)
+const withDraft = (agent: AiAgent): AiAgent => {
+  const draft = (agent.persona as any)?.draft;
+  if (!draft) return agent;
+  const patch: Record<string, any> = {};
+  DRAFT_KEYS.forEach(k => { if (draft[k] !== undefined) patch[k] = draft[k]; });
+  if (patch.persona) patch.persona = { ...patch.persona, ...policyOf(patch.persona) };
+  agent.set(patch as any);
+  return agent;
+};
+
+export const test = async (req: Request, res: Response): Promise<Response> => {
+  const loaded = await loadAgent(req.params.id);
+  const agent = req.body?.useDraft ? withDraft(loaded) : loaded;
   const history = (Array.isArray(req.body?.messages) ? req.body.messages : [])
     .filter((m: any) => m && ["user", "assistant"].includes(m.role) && String(m.content || "").trim())
     .map((m: any) => ({ role: m.role, content: String(m.content).slice(0, 2000) }));
@@ -858,7 +890,7 @@ export const evalRemove = async (req: Request, res: Response): Promise<Response>
 // manager reads here is what the lead receives). The place to see the process; to change how a step is answered, teach it in "Testar e ensinar".
 export const script = async (req: Request, res: Response): Promise<Response> => {
   const agent = await loadAgent(req.params.id);
-  const { QUESTIONS, PRESENT_BRIDGE, DOUBTS_QUESTION, eadTextOf, durationLine, introText } = await import("../services/CommercialServices/Rules");
+  const { QUESTIONS, PRESENT_BRIDGE, DOUBTS_QUESTION, eadTextOf, durationLine, introText, getQuestionOrder } = await import("../services/CommercialServices/Rules");
   const { TUTORING_PITCH } = await import("../services/CommercialServices/GradeChoice");
   const { bolsaRequestFor } = await import("../services/CommercialServices/BolsaData");
   const { FIXED } = await import("../services/CommercialServices/Turn");
@@ -868,9 +900,12 @@ export const script = async (req: Request, res: Response): Promise<Response> => 
   const step = (key: string, label: string, standard: string, note: string, editable: boolean) => ({ key, label, standard, text: editable && (mine as any)[key] ? (mine as any)[key] : standard, custom: editable && !!(mine as any)[key], editable, note });
   const steps = [
     step("intro", "Chegada e apresentação", introText(agent.persona as any, "Maria"), "Na primeira resposta de toda conversa o agente diz quem é e de qual instituição (o nome vem de Configurações → Geral). A saudação é editada em Ajustes do comercial.", false),
-    step("entry", "1. Primeira graduação", QUESTIONS.entry, "Pergunta antes de tudo, para saber se é primeira graduação, transferência ou segunda graduação.", true),
-    step("course", "2. Curso de interesse", QUESTIONS.course, "Reconhece o curso pelo nome do catálogo (com ou sem “CST em”).", true),
-    step("city", "3. Cidade e polo", QUESTIONS.city, "Acha o polo pela cidade e leva o lead ao consultor desse polo.", true),
+    // the three questions, in the order of the process (the same the copilot shows to the consultant)
+    ...getQuestionOrder().map((k, i) => ({
+      entry: () => step("entry", `${i + 1}. Primeira graduação`, QUESTIONS.entry, "Saber se é primeira graduação, transferência ou segunda graduação (transferência e segunda graduação seguem para a análise curricular).", true),
+      course: () => step("course", `${i + 1}. Curso de interesse`, QUESTIONS.course, "Reconhece o curso pelo nome do catálogo (com ou sem “CST em”).", true),
+      city: () => step("city", `${i + 1}. Cidade e polo`, QUESTIONS.city, "Acha o polo pela cidade e leva o lead ao consultor desse polo.", true)
+    } as Record<string, () => ReturnType<typeof step>>)[k]()),
     step("format", "4. Duração e formato", [PRESENT_BRIDGE, durationLine("Nome do curso", 4), eadTextOf("Nome do curso")].filter(Boolean).join("\n\n"), "Curso EAD: informa duração e formato, sem aulas práticas. Curso semipresencial: explica a mudança do MEC e o percentual de prática do curso (veja Cursos e regras).", false),
     step("grade", "5. Grade, tutoria e estágio", `Vou te enviar a grade do curso.\n\n${TUTORING_PITCH}`, "Envia o resumo e o PDF da grade, fala da tutoria e do estágio do curso.", false),
     step("doubts", "6. Dúvidas", DOUBTS_QUESTION, "Responde as dúvidas com a base de conhecimento (concurso, reajuste, taxa, início das aulas, cancelamento) e retoma com “Tá por aí?” se a pessoa parar de responder.", true),

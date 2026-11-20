@@ -27,6 +27,13 @@ const withDetails = [
 // tutors of a polo (names only): any signed-in user may need to pick one when confirming an enrollment
 export const tutors = async (req: Request, res: Response): Promise<Response> => res.json(await tutorsOfPolo(Number(req.params.id)));
 
+// every tutor of the institution (the enrollment may send the student to a tutor of another polo)
+export const allTutors = async (_req: Request, res: Response): Promise<Response> => {
+  const { default: User } = await import("../models/User");
+  const { Op } = await import("sequelize");
+  return res.json(await User.findAll({ where: { role: { [Op.in]: ["tutor", "academico"] } } as any, attributes: ["id", "name"], order: [["name", "ASC"]] }));
+};
+
 export const index = async (req: Request, res: Response): Promise<Response> => {
   const admin = req.user.role === "admin" || req.user.role === "coordenacao" || req.user.profile === "admin";
   const polos = await Polo.findAll({

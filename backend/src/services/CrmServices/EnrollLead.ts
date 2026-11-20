@@ -1,10 +1,11 @@
-import { canTutorPolo } from "../PoloServices/TutorsOfPolo";
+import { canTutorPolo, tutorsOfPolo } from "../PoloServices/TutorsOfPolo";
 import UserQueue from "../../models/UserQueue";
 import { roleOf } from "../../helpers/Roles";
 import sequelize from "../../database";
 import { Op } from "sequelize";
 
 import AppError from "../../errors/AppError";
+import { logger } from "../../utils/logger";
 import { getSetting } from "../../helpers/AppSettings";
 import { getIO } from "../../libs/socket";
 import Lead from "../../models/Lead";
@@ -56,6 +57,22 @@ export interface EnrollInput {
 
 // Confirms the enrollment and hands the student to the polo's tutoring team:
 // the sales conversation is closed (the consultant keeps the lead, not the chat) and a
+
+// the tutor chosen by hand: one of the polo's tutoring, or a tutor of another polo, who then joins this polo's tutoring so the student's
+// conversation reaches them (the team is told)
+const chosenTutor = async (polo: Polo, tutorId: number, warnings: string[]): Promise<User | null> => {
+  const tutor = await User.findByPk(tutorId);
+  // one of the polo's own tutors (a polo still without any lists every tutor as "outside": choosing one makes them part of it)
+  const own = (await tutorsOfPolo(polo.id)).find(t => t.id === tutorId);
+  if (own && !own.outside) return tutor;
+  if (!tutor || !["tutor", "academico"].includes(roleOf(tutor))) throw new AppError("ERR_USER_NOT_IN_QUEUE", 422);
+  const queue = await Queue.findOne({ where: { poloId: polo.id, role: "tutoria" } });
+  if (!queue) throw new AppError("ERR_POLO_NO_TUTORING_QUEUE", 400);
+  await UserQueue.findOrCreate({ where: { userId: tutor.id, queueId: queue.id } });
+  warnings.push(`${tutor.name} passou a fazer parte da tutoria do polo ${polo.name} para acompanhar este aluno.`);
+  return tutor;
+};
+
 // separate "onboarding" conversation opens for the tutor.
 const enrollLeadCore = async (lead: Lead, actorId: number, input: EnrollInput) => {
   const warnings: string[] = [];
@@ -84,8 +101,7 @@ const enrollLeadCore = async (lead: Lead, actorId: number, input: EnrollInput) =
   // the tutor: chosen by hand (must work in the polo's tutoring) or picked by the queue rule
   let tutor: User | null = null;
   if (input.tutorId && input.tutorId !== "auto") {
-    if (!(await canTutorPolo(polo.id, Number(input.tutorId)))) throw new AppError("ERR_USER_NOT_IN_QUEUE", 422);
-    tutor = await User.findByPk(Number(input.tutorId));
+    tutor = await chosenTutor(polo, Number(input.tutorId), warnings);
   } else {
     tutor = await pickUserForQueue(queue, true);
     if (!tutor) warnings.push("O polo não tem tutor cadastrado: a conversa ficou aguardando na fila de tutoria.");
@@ -237,8 +253,7 @@ const enrollAdditional = async (lead: Lead, actorId: number, input: EnrollInput)
   if (!queue) throw new AppError("ERR_POLO_NO_TUTORING_QUEUE", 400);
   let tutor: User | null = null;
   if (input.tutorId && input.tutorId !== "auto") {
-    if (!(await canTutorPolo(polo.id, Number(input.tutorId)))) throw new AppError("ERR_USER_NOT_IN_QUEUE", 422);
-    tutor = await User.findByPk(Number(input.tutorId));
+    tutor = await chosenTutor(polo, Number(input.tutorId), warnings);
   } else {
     tutor = await pickUserForQueue(queue, true);
     if (!tutor) warnings.push("O polo não tem tutor cadastrado: a tarefa da ambientação ficou sem responsável.");
@@ -301,7 +316,13 @@ const enrollLead = async (lead: Lead, actorId: number, input: EnrollInput) => {
     return { ...(await enrollLeadCore(locked, actorId, input)), repeated: false };
   });
   // the documents the student has to deliver (the list of the administration), with the label while something is missing
-  if (!result.repeated) await startDocuments(result.lead).catch(() => undefined);
+  if (!result.repeated) await startDocuments(result.lead).catch(err => { logger.warn(`Documentos da matrícula não iniciados (lead ${result.lead.id}): ${err.message}`); result.warnings.push("A lista de documentos não foi criada: abra a aba Documentos do aluno."); });
+  // the student gets the tutoring number in the consultant's conversation (to write there for free)
+  if (!result.repeated) {
+    const { sendTutoriaContact } = await import("./TutoriaContact");
+    const warn = await sendTutoriaContact(result.lead, result.tutor?.name);
+    if (warn) result.warnings.push(warn);
+  }
   // the label of the fee: paid when it was declared paid, otherwise "Taxa pendente" until the payment is confirmed
   if (!result.repeated && input.fee) {
     if (input.fee === "exempt") {
@@ -434,7 +455,7 @@ export const editOnboarding = async (lead: Lead, actorId: number, input: EditOnb
     // the student's portal and academic analyses follow the new tutor (one tutor for the student everywhere)
     if (tutor) {
       const Student = (await import("../../models/Student")).default;
-      await Student.update({ responsibleUserId: tutor.id } as any, { where: { leadId: lead.id } as any }).catch(() => undefined);
+      await Student.update({ responsibleUserId: tutor.id } as any, { where: { leadId: lead.id } as any }).catch(err => logger.warn(`Tutor do portal não atualizado (lead ${lead.id}): ${err.message}`));
     }
     notes.push(changesPolo ? `Polo alterado para ${polo.name}` : "");
     notes.push(`Tutor: ${before || "fila"} → ${tutor ? tutor.name : "fila"}`);

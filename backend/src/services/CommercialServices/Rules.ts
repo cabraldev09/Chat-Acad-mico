@@ -211,7 +211,9 @@ export const openingText = (slots: Slots, first: string, returning: boolean, per
   const customGreeting = persona && persona.commercial ? cleanCommercial(persona.commercial).greeting : "";
   if (!returning && !hasCourse && !hasCity && !hasEntry && !customGreeting) {
     const who = String(persona?.assistantName || "").trim() || DEFAULT_ASSISTANT;
-    return `Olá! Tudo bem?\n\nSou ${/^(a|o) /i.test(who) ? who : `a ${who}`}, assistente virtual da ${institutionName()}.\n\nEssa seria a sua *primeira graduação* ou você já tem alguma faculdade concluída? Se você já é aluno e precisa da tutoria, é só me dizer.`;
+    const first = questionOrder[0];
+    const question = QUESTIONS[first] + (first === "course" ? "" : " Se você já é aluno e precisa da tutoria, é só me dizer.");
+    return `Olá! Tudo bem?\n\nSou ${/^(a|o) /i.test(who) ? who : `a ${who}`}, assistente virtual da ${institutionName()}.\n\n${question}`;
   }
   if (returning) {
     return `Oi${name}! Que bom falar com você de novo.${course ? ` Da última vez conversamos sobre ${course}.` : ""} ${hasCourse && hasCity && hasEntry ? "Em que posso te ajudar agora?" : ask}`;
@@ -220,19 +222,31 @@ export const openingText = (slots: Slots, first: string, returning: boolean, per
   return `${introText(persona, first)}${course ? `\n\nRecebi o seu interesse em cursar *${course}* e quero te ajudar a verificar a melhor bolsa disponível para você.\n\n` : " "}${ask}`;
 };
 
-// The next question of the commercial process, always in the same order (course, city, kind of entry), only for what is still unknown and what
+// The next question of the commercial process, in the order of the process, only for what is still unknown and what
 // the administrator lets the agent ask: the system asks it when the model did not, so a lead is never left without the next step.
 export const QUESTIONS = {
   entry: "Essa seria a sua *primeira graduação* ou você já tem alguma faculdade concluída?",
   course: "Qual curso você tem interesse? Se você já é aluno e precisa da tutoria ou da secretaria, é só me dizer.",
   city: "Você reside em qual cidade?"
 };
+// The order of the questions is the one of the Process of the copilot (Configurações → Copiloto), the same for the agent and for the
+// consultant: by default the course first, then the first degree, then the city. Loaded at start and refreshed when the process is saved.
+const ASKED = ["course", "entry", "city"] as const;
+type Asked = typeof ASKED[number];
+let questionOrder: Asked[] = ["course", "entry", "city"];
+export const setQuestionOrder = (keys: string[]): void => {
+  const mine = keys.filter((k): k is Asked => (ASKED as readonly string[]).includes(k));
+  questionOrder = [...mine, ...ASKED.filter(k => !mine.includes(k))].filter((k, i, a) => a.indexOf(k) === i);
+};
+export const getQuestionOrder = (): string[] => [...questionOrder];
 export const nextQuestionOf = (slots: Slots, ask: { course?: boolean; city?: boolean; entry?: boolean } = {}, only?: string[], texts?: { entry?: string; course?: string; city?: string }): string | null => {
   const wanted = (k: string) => ask[k as "course"] !== false && (!only || only.includes(k));
-  // first of all, whether it is the first degree (a transfer or a second degree goes another way: the transcript and the analysis)
-  if ((!slots.entryType || slots.entryType === "unknown") && wanted("entry")) return (texts && texts.entry) || QUESTIONS.entry;
-  if (!(slots.courseName || slots.courseId) && wanted("course")) return (texts && texts.course) || QUESTIONS.course;
-  if (!(slots.city || slots.poloId) && wanted("city")) return (texts && texts.city) || QUESTIONS.city;
+  const missing: Record<Asked, boolean> = {
+    entry: !slots.entryType || slots.entryType === "unknown",
+    course: !(slots.courseName || slots.courseId),
+    city: !(slots.city || slots.poloId)
+  };
+  for (const k of questionOrder) if (missing[k] && wanted(k)) return (texts && texts[k]) || QUESTIONS[k];
   return null;
 };
 

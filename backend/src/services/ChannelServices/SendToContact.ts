@@ -33,6 +33,10 @@ interface Input {
   keepOpen?: { userId: number } | null;
   // a question with options the person taps (official API: buttons or a list); other connections send the text only
   choices?: { question: string; options: Array<{ id: string; label: string }> } | null;
+  // send in this very conversation (even a closed one), without opening, reopening or moving any ticket
+  ticketId?: number | null;
+  // a send a person asked for right now (the confirmation of an enrollment): not held by the business hours like the robot's
+  byPerson?: boolean;
 }
 
 // Sends an outbound (agent/system initiated) message to a contact through any
@@ -47,10 +51,12 @@ const SendToContact = async ({
   template,
   keepOpen,
   idempotencyKey,
-  choices
+  choices,
+  ticketId,
+  byPerson
 
 }: Input): Promise<void> => {
-  const found = await FindOrCreateTicketService(contact, whatsapp.id, 0);
+  const found = ticketId ? { id: ticketId } : await FindOrCreateTicketService(contact, whatsapp.id, 0);
   const ticket = await ShowTicketService(found.id);
   const hadMessages = (await Message.count({ where: { ticketId: ticket.id } })) > 0;
   try {
@@ -58,7 +64,7 @@ const SendToContact = async ({
   } catch (err) {
     // nothing was sent and the conversation was opened only for this: it goes away, so the failure leaves no trace
     // (an empty conversation "assigned to me" in the list, for a contact that was not even written to)
-    if (!hadMessages && Date.now() - new Date(ticket.createdAt).getTime() < 120000) {
+    if (!ticketId && !hadMessages && Date.now() - new Date(ticket.createdAt).getTime() < 120000) {
       try {
         if ((await Message.count({ where: { ticketId: ticket.id } })) === 0) {
           await Ticket.destroy({ where: { id: ticket.id } });
@@ -73,7 +79,7 @@ const SendToContact = async ({
 
   async function sendNow(): Promise<void> {
 
-  await deliver(ticket, { key: idempotencyKey, automated: !keepOpen, template }, async () => {
+  await deliver(ticket, { key: idempotencyKey, automated: !keepOpen && !byPerson, template }, async () => {
   let externalId = "";
   if (template && whatsapp.channel === "whatsapp_cloud") {
     const adapter = getAdapter("whatsapp_cloud");
@@ -107,11 +113,11 @@ const SendToContact = async ({
       } as Express.Multer.File,
       ticket,
       body,
-      automated: !keepOpen
+      automated: !keepOpen && !byPerson
     });
     externalId = String(sent.id);
   } else {
-    const sent = await SendWhatsAppMessage({ body, ticket, automated: !keepOpen, choices: choices || undefined });
+    const sent = await SendWhatsAppMessage({ body, ticket, automated: !keepOpen && !byPerson, choices: choices || undefined });
     externalId = String(sent.id);
 
   }

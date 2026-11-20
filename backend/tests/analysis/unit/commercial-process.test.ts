@@ -9,19 +9,29 @@ vi.mock("../../../src/models/Polo", () => ({ default: {} }));
 import { bolsaRequestFor } from "../../../src/services/CommercialServices/BolsaData";
 import { cleanCommercial } from "../../../src/services/CommercialServices/Config";
 import { areaOf, mecRequirementOf } from "../../../src/services/CommercialServices/MecAreas";
-import { QUESTIONS, entryOf, isGreeting, needsBolsaData, nextQuestionOf, openingText, withoutClosingQuestion } from "../../../src/services/CommercialServices/Rules";
+import { QUESTIONS, entryOf, isGreeting, needsBolsaData, nextQuestionOf, openingText, setQuestionOrder, withoutClosingQuestion } from "../../../src/services/CommercialServices/Rules";
 import { blankState, startConversation } from "../../../src/services/CommercialServices/Slots";
 
 // The commercial process in order (course → city → kind of entry → course presented → consultant), held by the system and not by the model.
 
 describe("the next question of the process", () => {
-  it("asks first whether it is the first degree, then course, then city, and nothing once all are known", () => {
-    expect(nextQuestionOf({})).toBe(QUESTIONS.entry);
+  it("asks first the course, then whether it is the first degree, then city, and nothing once all are known", () => {
+    expect(nextQuestionOf({})).toBe(QUESTIONS.course);
     expect(nextQuestionOf({ courseName: "Direito" })).toBe(QUESTIONS.entry);
     expect(nextQuestionOf({ entryType: "first_degree" })).toBe(QUESTIONS.course);
     expect(nextQuestionOf({ courseName: "Direito", entryType: "first_degree" })).toBe(QUESTIONS.city);
     expect(nextQuestionOf({ courseName: "Direito", city: "Porto Velho", entryType: "unknown" })).toBe(QUESTIONS.entry);
     expect(nextQuestionOf({ courseName: "Direito", poloId: 3, entryType: "first_degree" })).toBeNull();
+  });
+
+  it("follows the order of the process of the copilot (one order for the agent and the consultant)", () => {
+    setQuestionOrder(["entry", "objective", "course", "city"]);
+    expect(nextQuestionOf({})).toBe(QUESTIONS.entry);
+    setQuestionOrder(["city", "course"]);
+    expect(nextQuestionOf({})).toBe(QUESTIONS.city);
+    expect(nextQuestionOf({ city: "Vilhena", courseName: "Direito" })).toBe(QUESTIONS.entry);
+    setQuestionOrder(["course", "entry", "city"]);
+    expect(nextQuestionOf({})).toBe(QUESTIONS.course);
   });
 
   it("respects what the administrator lets the agent ask and what the stage needs", () => {
@@ -118,7 +128,7 @@ describe("semipresencial: format and the MEC rule before the consultant", () => 
   });
 
   it("the team's own words replace the standard of a step of the script, and the standard stays where nothing was written", () => {
-    expect(nextQuestionOf({} as any, {}, undefined, { entry: "Você já fez alguma faculdade?" })).toBe("Você já fez alguma faculdade?");
+    expect(nextQuestionOf({ courseName: "Pedagogia" } as any, {}, undefined, { entry: "Você já fez alguma faculdade?" })).toBe("Você já fez alguma faculdade?");
     expect(nextQuestionOf({ entryType: "first_degree" } as any, {}, undefined, { course: "Qual curso te interessa?" })).toBe("Qual curso te interessa?");
     expect(nextQuestionOf({ entryType: "first_degree", courseName: "Pedagogia" } as any, {}, undefined, { city: "Em qual cidade você mora?" })).toBe("Em qual cidade você mora?");
     expect(nextQuestionOf({ entryType: "first_degree", courseName: "Pedagogia" } as any, {}, undefined, {})).toBe(QUESTIONS.city);

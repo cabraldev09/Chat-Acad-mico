@@ -73,14 +73,41 @@ const AgentEditor = ({ open, agent, initialTab = 0, onClose, onSaved }) => {
   const setPersona = (k, val) => setV((cur) => ({ ...cur, persona: { ...cur.persona, [k]: val } }));
   const slots = Array.isArray(v.slots) && v.slots.length ? v.slots : DEFAULT_SLOTS;
 
+  // the draft: changes saved apart while the published version keeps answering (persona.draft); publishing clears it
+  const draft = (agent && agent.persona && agent.persona.draft) || null;
+  const [draftState, setDraftState] = useState("none");
+  useEffect(() => { if (open) setDraftState(draft ? "available" : "none"); }, [open, draft]);
+  const payloadOf = () => {
+    const persona = { ...(v.persona || {}) };
+    delete persona.draft;
+    return { ...v, persona, name: v.name.trim(), queueId: v.queueId || null, whatsappId: null, whatsappIds: Array.isArray(v.whatsappIds) ? v.whatsappIds : [], slots: v.slots };
+  };
+  const openDraft = () => {
+    setV((cur) => ({ ...cur, ...draft, persona: { ...blank().persona, ...(draft.persona || cur.persona || {}) } }));
+    setDraftState("open");
+  };
+  const saveDraft = async () => {
+    setSaving(true);
+    try {
+      await api.put(`/ai-agents/${id}/draft`, payloadOf());
+      toast.success("Rascunho salvo. Quem atende continua com a versão publicada; teste em Testar (opção “usar o rascunho”) e publique quando estiver pronto.");
+      onSaved && onSaved(null, false);
+      onClose();
+    } catch (err) { toastError(err); }
+    setSaving(false);
+  };
+  const discardDraft = async () => {
+    try { await api.delete(`/ai-agents/${id}/draft`); setDraftState("none"); toast.success("Rascunho descartado."); onSaved && onSaved(null, false); } catch (err) { toastError(err); }
+  };
+
   const save = async () => {
     if (!v.name.trim()) { toast.warn("Dê um nome ao agente."); setTab(0); return; }
     if (!v.model.trim()) { toast.warn("Informe o modelo do agente."); setTab(0); return; }
     setSaving(true);
     try {
-      const payload = { ...v, name: v.name.trim(), queueId: v.queueId || null, whatsappId: null, whatsappIds: Array.isArray(v.whatsappIds) ? v.whatsappIds : [], slots: v.slots };
+      const payload = payloadOf();
       const { data } = id ? await api.put(`/ai-agents/${id}`, payload) : await api.post("/ai-agents", payload);
-      toast.success(id ? "Agente salvo." : "Agente criado.");
+      toast.success(id ? "Publicado: o agente já atende assim." : "Agente criado.");
       onSaved && onSaved(data, !id);
       onClose();
     } catch (err) {
@@ -103,6 +130,17 @@ const AgentEditor = ({ open, agent, initialTab = 0, onClose, onSaved }) => {
         </div>
         <Chip size="small" label={v.active ? "Ativo" : "Desligado"} color={v.active ? "primary" : "default"} />
       </div>
+      {id && draft && draftState !== "none" && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", padding: "8px 24px", background: "rgba(245,158,11,.12)", borderBottom: "1px solid rgba(245,158,11,.35)", fontSize: 13 }}>
+          <span style={{ flex: "1 1 240px" }}>
+            {draftState === "open"
+              ? "Você está vendo o rascunho. “Publicar” coloca estas mudanças no atendimento; “Salvar rascunho” guarda sem publicar."
+              : `Há mudanças não publicadas (rascunho salvo em ${new Date(draft.savedAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}).`}
+          </span>
+          {draftState === "available" && <Button size="small" variant="outlined" onClick={openDraft}>Abrir rascunho</Button>}
+          <Button size="small" onClick={discardDraft}>Descartar rascunho</Button>
+        </div>
+      )}
       {advanced && (
         <div className={classes.tabsWrap}>
           <Tabs value={tab} onChange={(e, t) => setTab(t)} variant="scrollable" scrollButtons="auto">
@@ -254,7 +292,8 @@ const AgentEditor = ({ open, agent, initialTab = 0, onClose, onSaved }) => {
       <DialogActions>
         {id && <Button onClick={() => setHistory(true)} style={{ marginRight: "auto" }}>Histórico de alterações</Button>}
         <Button onClick={onClose}>Fechar</Button>
-        <Button variant="contained" color="primary" onClick={save} disabled={saving} disableElevation>{saving ? <CircularProgress size={18} /> : "Salvar agente"}</Button>
+        {id && <Button variant="outlined" color="primary" onClick={saveDraft} disabled={saving} title="Guarda as mudanças sem mudar o atendimento: dá para testar antes de publicar">Salvar rascunho</Button>}
+        <Button variant="contained" color="primary" onClick={save} disabled={saving} disableElevation>{saving ? <CircularProgress size={18} /> : id ? "Publicar" : "Criar agente"}</Button>
       </DialogActions>
       {id && <HistoryDialog open={history} agentId={id} onClose={() => setHistory(false)} onRestored={() => { setHistory(false); onClose(); }} />}
     </Dialog>

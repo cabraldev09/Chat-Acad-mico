@@ -2,6 +2,7 @@ import { QueryTypes } from "sequelize";
 
 import sequelize from "../database";
 import { getSetting, setSetting } from "../helpers/AppSettings";
+import { getAppTz } from "../helpers/AppTime";
 import { logger } from "../utils/logger";
 
 // The tables that only grow (a copy of every send, every model call, every error) are trimmed once a night, in small batches so the
@@ -59,12 +60,15 @@ export const runRetention = async (): Promise<Record<string, number>> => {
 
 const tick = async (): Promise<void> => {
   try {
-    const hour = new Date().getHours();
-    const today = new Date().toISOString().slice(0, 10);
-    // once a day, in the small hours (the server clock); the date is kept so a restart does not run it twice
+    // once a day, in the small hours of the company's time zone (not the server's clock); the date is saved only once it worked, so a
+    // failure is tried again in the next half hour and a restart does not run it twice
+    const parts = new Intl.DateTimeFormat("en-CA", { timeZone: getAppTz(), year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hourCycle: "h23" }).formatToParts(new Date());
+    const part = (t: string) => (parts.find(p => p.type === t) || { value: "" }).value;
+    const hour = Number(part("hour"));
+    const today = `${part("year")}-${part("month")}-${part("day")}`;
     if (hour < 3 || hour > 5 || (await getSetting("retention_last_run", "")) === today) return;
-    await setSetting("retention_last_run", today);
     const done = await runRetention();
+    await setSetting("retention_last_run", today);
     const text = Object.entries(done).filter(([, n]) => n > 0).map(([t, n]) => `${t}: ${n}`).join(", ");
     logger.info(`Data retention: ${text || "nothing to trim"}`);
   } catch (err) {

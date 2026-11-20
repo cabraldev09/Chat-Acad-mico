@@ -43,6 +43,7 @@ const boot = async () => {
   await ensureRls();
   await loadAppTz();
   await loadInstitution().catch(() => undefined);
+  await import("./services/CopilotServices/Settings").then(m => m.loadQuestionOrder()).catch(() => undefined);
   // "Ver o que o robô fez" is saved in the database too (it survives a restart)
   persistAutomationTraces(sequelize);
   // keys saved before they were sealed are sealed now (once)

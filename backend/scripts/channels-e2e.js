@@ -99,7 +99,7 @@ const waitFor = async (fn, ms = 12000, label = "condition") => {
 
 // ----------------------------------------------------------------- mocks
 const tg = { updates: [], sent: [], offset: 0, n: 100 };
-const graph = { sent: [], media: [], n: 0, hooks: [], igRevoked: false, igRefreshes: 0 };
+const graph = { sent: [], media: [], n: 0, hooks: [], igRevoked: false, igRefreshes: 0, templates: [] };
 const efi = { charges: {}, calls: [], webhook: null, authOk: 0 };
 const EFI_PORT = 9103;
 const BILLET_PORT = 9104;
@@ -317,6 +317,15 @@ const startGraphMock = () => {
   });
   app.get("/ig/:id", (req, res) => res.json({ name: "Joana Souza", username: "joana", profile_pic: `http://localhost:${GRAPH_PORT}/pic.jpg` }));
   app.get("/me", (q, res) => res.json({ id: "PAGE1", name: "Mock Page" }));
+  // the WhatsApp account (WABA) of the token and its templates: created as sent, listed with the status the test sets
+  app.get("/debug_token", (req, res) => res.json({ data: { granular_scopes: [{ scope: "whatsapp_business_management", target_ids: ["WABA1"] }] } }));
+  app.get("/:waba/message_templates", (req, res) => res.json({ data: graph.templates.map(t => ({ name: t.name, language: t.language, category: t.category, status: t.status, rejected_reason: t.reason || "NONE", components: t.components })) }));
+  app.post("/:waba/message_templates", (req, res) => {
+    const b = req.body || {};
+    if (/recusa/.test(b.name)) return res.status(400).json({ error: { message: "Invalid parameter", error_user_msg: "O conteúdo parece promocional" } });
+    graph.templates.push({ ...b, waba: req.params.waba, token: req.query.access_token, status: "PENDING" });
+    return res.json({ id: `TPL${graph.templates.length}`, status: "PENDING", category: b.category });
+  });
   app.get("/:id", (req, res) => {
     const { id } = req.params;
     if (id === "PN1") return res.json({ display_phone_number: "+55 11 99999-0000", verified_name: "Mock Co" });
@@ -3652,7 +3661,7 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(/mestres e doutores/.test(sql(`SELECT content FROM KbDocuments WHERE agentId=${agentId} AND topic='institutional/faculty'`)), "the faculty text is not the dictated one");
       // the script of the agent is readable in one list (the manager sees what the lead receives)
       const scr = (await http.get(`/ai-agents/${agentId}/script`, auth())).data;
-      assert(scr.steps.length === 9 && scr.steps[0].key === "intro" && /assistente virtual/.test(scr.steps[0].text) && scr.steps[1].key === "entry" && /primeira graduação/.test(scr.steps[1].text) && /sem aulas práticas presenciais/.test(scr.steps[4].text) && scr.steps[8].key === "handoff", `script: ${JSON.stringify(scr.steps.map(x => x.key))}`);
+      assert(scr.steps.length === 9 && scr.steps[0].key === "intro" && /assistente virtual/.test(scr.steps[0].text) && scr.steps[1].key === "course" && /Qual curso/.test(scr.steps[1].text) && scr.steps[2].key === "entry" && /sem aulas práticas presenciais/.test(scr.steps[4].text) && scr.steps[8].key === "handoff", `script: ${JSON.stringify(scr.steps.map(x => x.key))}`);
       assert(scr.branches.length >= 5 && scr.answers.some(x => x.key === "proposal" && x.editable), `branches and ready answers: ${JSON.stringify(scr.answers && scr.answers.map(x => x.key))}`);
       assert(!/\p{Extended_Pictographic}/u.test(scr.steps.map(x => x.text).join(" ")), "the script carries an emoji");
       // the team writes its own words for a step; the script shows them (and the standard), and "back to the standard" clears it
@@ -3725,8 +3734,8 @@ const postMeta = (id, payload, secret, badSig) => {
       // A) a lead from the first "oi" to the handoff for the proposal
       const A = "5511920000201";
       let llm = anthropic.requests.length;
-      let out = await say(A, "wamid.com-a1", "oi", t => t.some(x => /primeira graduação/.test(x)), "the opening");
-      assert(/primeira graduação/.test(out.join(" ")) && anthropic.requests.length === llm, "the opening should be written by the system, without the model");
+      let out = await say(A, "wamid.com-a1", "oi", t => t.some(x => /Qual curso/.test(x)), "the opening");
+      assert(/Qual curso/.test(out.join(" ")) && anthropic.requests.length === llm, "the opening should be written by the system, without the model");
       await waitFor(() => runOf(A) === "waiting|qualificar", 8000, "waits at the first stage");
       // the person wrote first, so the lead is already "in service" (the first contact is still recorded as a milestone)
       assert(leadStage(A) === stageName("in_service"), `after the opening: ${leadStage(A)}`);
@@ -3962,10 +3971,10 @@ const postMeta = (id, payload, secret, badSig) => {
 
       // OI2) a second "oi" after the opening: the system answers short, without presenting itself again, and asks the next step (no model)
       const OI2 = "5511920000232";
-      await say(OI2, "wamid.com-oi1", "oi", t => t.some(x => /primeira graduação/.test(x)), "OI2 opening");
+      await say(OI2, "wamid.com-oi1", "oi", t => t.some(x => /Qual curso/.test(x)), "OI2 opening");
       const llmOi = anthropic.requests.length;
       out = await say(OI2, "wamid.com-oi2", "oi", t => t.some(x => /Estou por aqui/.test(x)), "OI2 second hello");
-      assert(out.some(x => /primeira graduação/.test(x)) && !out.some(x => /assistente virtual/.test(x)), `the second hello presented again or asked nothing: ${out}`);
+      assert(out.some(x => /Qual curso/.test(x)) && !out.some(x => /assistente virtual/.test(x)), `the second hello presented again or asked nothing: ${out}`);
       assert(anthropic.requests.length === llmOi, "the second hello went to the model");
 
       // Q) the scenarios of the attendance, in the layer that needs no model: what is recognised at once and where each conversation goes
@@ -3983,9 +3992,9 @@ const postMeta = (id, payload, secret, badSig) => {
 
       // "Oi": a short presentation by the default assistant (Estela) and the next question, no model
       const Q1 = "5511920000240";
-      out = await say(Q1, "wamid.qs-1", "Oi", t => t.some(x => /primeira graduação/.test(x)), "greeting by Estela");
+      out = await say(Q1, "wamid.qs-1", "Oi", t => t.some(x => /Qual curso/.test(x)), "greeting by Estela");
       assert(/Estela, assistente virtual/.test(out.join(" ")), `the greeting does not present Estela: ${out}`);
-      assert(/primeira graduação/.test(out.join(" ")), `the greeting did not lead to the next question: ${out}`);
+      assert(/Qual curso/.test(out.join(" ")), `the greeting did not lead to the next question: ${out}`);
 
       // "Quanto custa Criminologia?": the course is recognised in the words, the price goes to the consultant with the course already in the brief
       const Q2 = "5511920000241";
@@ -4094,12 +4103,13 @@ const postMeta = (id, payload, secret, badSig) => {
       sql(`INSERT INTO CommercialGrades (courseName, modality, curriculumTerm, courseTracks, internshipInfo, hasTcc, totalInternshipHours, totalCourseHours, degree, durationSemesters, whatsappSummary, complete, contentHash, catalogKey, fileName, createdAt, updatedAt) VALUES ('BIOMEDICINA (BACHARELADO)', NULL, '2027/1', '[]', E'6º sem.: ESTÁGIO CURRICULAR SUPERVISIONADO EM BIOMEDICINA I (320h)\\n7º sem.: ESTÁGIO CURRICULAR SUPERVISIONADO EM BIOMEDICINA II (320h)', true, 640, 3200, 'Bacharelado', 8, '📚 resumo antigo com emoji', true, 'h-e2e-bio', 'bio-e2e', 'bio-e2e-sem-arquivo.pdf', now(), now())`);
       const emoji = /\p{Extended_Pictographic}/u;
       const MA = "5511920000260";
-      const llmMa = anthropic.requests.length;
-      out = await say(MA, "wamid.ma-1", "Oi", t => t.some(x => /primeira graduação/.test(x)), "MA opening");
-      assert(/Essa seria a sua \*primeira graduação\*/.test(out.join(" ")) && !emoji.test(out.join(" ")), `MA opening: ${out}`);
-      out = await say(MA, "wamid.ma-2", "Sim, é a minha primeira graduação", t => t.some(x => /Qual curso/.test(x)), "MA course asked");
-      assert(slotsOfNumber(MA).entryType === "first_degree" && anthropic.requests.length === llmMa, "MA the first degree was not kept by the system");
-      out = await say(MA, "wamid.ma-3", "Quero fazer o curso de Biomedicina", t => t.some(x => /Você reside em qual cidade\?/.test(x)), "MA city asked");
+      const llmMa = anthropic.requests.length; void llmMa;
+      // course first (the order of the process), then the first degree, then the city
+      out = await say(MA, "wamid.ma-1", "Oi", t => t.some(x => /Qual curso/.test(x)), "MA opening");
+      assert(/Qual curso você tem interesse\?/.test(out.join(" ")) && !emoji.test(out.join(" ")), `MA opening: ${out}`);
+      out = await say(MA, "wamid.ma-2", "Quero fazer o curso de Biomedicina", t => t.some(x => /primeira graduação/.test(x)), "MA first degree asked");
+      out = await say(MA, "wamid.ma-3", "Sim, é a minha primeira graduação", t => t.some(x => /Você reside em qual cidade\?/.test(x)), "MA city asked");
+      assert(slotsOfNumber(MA).entryType === "first_degree", `MA the first degree was not kept by the system: ${JSON.stringify(slotsOfNumber(MA))}`);
       const gradesBefore = graph.sent.filter(x => x.body && x.body.type === "text" && /Matriz curricular: Biomedicina/.test(x.body.text.body)).length;
       out = await say(MA, "wamid.ma-4", "Sou de Cidade Estela", t => t.some(x => /Até aqui você compreendeu\?/.test(x)), "MA course presented");
       const ma4 = out.join("\n");
@@ -4154,9 +4164,9 @@ const postMeta = (id, payload, secret, badSig) => {
       sql(`UPDATE Courses SET semesters=4, active=true WHERE name ILIKE '%empreendedorismo%'`);
       assert(sql(`SELECT COUNT(*) FROM Courses WHERE name ILIKE '%empreendedorismo%' AND active=true`) !== "0", `EA course missing: ${sql(`SELECT id||':'||name||':'||active FROM Courses WHERE name ILIKE '%empreend%'`)}`);
       const EA = "5511920000261";
-      out = await say(EA, "wamid.ea-1", "Oi", t => t.some(x => /primeira graduação/.test(x)), "EA opening");
-      out = await say(EA, "wamid.ea-2", "Sim, é a minha primeira graduação", t => t.some(x => /Qual curso/.test(x)), "EA course asked");
-      out = await say(EA, "wamid.ea-3", "Quero fazer o curso de Empreendedorismo", t => t.some(x => /Você reside em qual cidade\?/.test(x)), `EA city asked (${sql(`SELECT string_agg(id||':'||name||':'||active||':'||COALESCE(level,'-'), ' ; ') FROM Courses WHERE name ILIKE '%empreend%'`)})`);
+      out = await say(EA, "wamid.ea-1", "Oi", t => t.some(x => /Qual curso/.test(x)), "EA opening");
+      out = await say(EA, "wamid.ea-2", "Quero fazer o curso de Empreendedorismo", t => t.some(x => /primeira graduação/.test(x)), "EA first degree asked");
+      out = await say(EA, "wamid.ea-3", "Sim, é a minha primeira graduação", t => t.some(x => /Você reside em qual cidade\?/.test(x)), `EA city asked (${sql(`SELECT string_agg(id||':'||name||':'||active||':'||COALESCE(level,'-'), ' ; ') FROM Courses WHERE name ILIKE '%empreend%'`)})`);
       out = await say(EA, "wamid.ea-4", "Sou de Cidade Estela", t => t.some(x => /Até aqui você compreendeu\?/.test(x)), "EA course presented");
       const ea4 = out.join("\n");
       assert(/\*[^*]*Empreendedorismo\* tem duração de \*4 semestres\*, ou seja, aproximadamente \*2 anos\*/.test(ea4), `EA duration: ${ea4}`);
@@ -5369,7 +5379,10 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.put(`/leads/${lead2.id}/onboarding/checklist`, { key: "nope", done: true }, asUser(tutorTok))).status === 404, "unknown step accepted");
       const st = await http.get("/onboarding/stats", auth());
       assert(st.status === 200 && st.data.weeks.length === 8 && st.data.totals.pending >= 1 && Array.isArray(st.data.byTutor), `stats ${st.status}`);
-      assert((await http.get("/onboarding/stats", asUser(tutorTok))).status === 403, "a tutor read the management panel");
+      // a tutor reads only their own numbers (by week, month or cycle), never the whole tutoring
+      const mineSt = await http.get("/onboarding/stats?period=ciclo", asUser(tutorTok));
+      assert(mineSt.status === 200 && mineSt.data.scope === "mine" && mineSt.data.byTutor.every(t => t.tutorId === tutor.id) && mineSt.data.period, `a tutor read the management panel ${JSON.stringify(mineSt.data).slice(0, 200)}`);
+      assert((await http.get("/onboarding/stats", asUser(consTok))).status === 403, "a consultant read the tutoring numbers");
 
       // over 24 h without the first contact: one task for every administrator, once
       sql(`UPDATE Leads SET onboardingStatus='pending', onboardingAlertAt=NULL, enrolledAt=NOW() - INTERVAL '2 days' WHERE id=${lead.id}`);
@@ -5591,6 +5604,89 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(studentView() === "aluna.matricula@cs.cruzeirodosul.edu.br|s", `access sent recorded: ${studentView()}`);
       const listed = (await http.get("/onboarding", tutorAuth)).data.find(x => x.id === lead.id);
       assert(listed && listed.rgm === rgmOfLead && listed.student && listed.student.accessSentAt && listed.checklist.access, `the board does not show the access: ${JSON.stringify(listed && listed.student)}`);
+    });
+    await test("enrolling with a tutor of another polo: the tutor joins this polo's tutoring and the student gets the tutoring number to schedule the ambientação", async () => {
+      const idOf = email => Number(sql(`SELECT id FROM Users WHERE email='${email}'`));
+      const [tB, consult] = [idOf("tutorb@matricula.test"), idOf("consultorm@matricula.test")];
+      const ctok = (await http.post("/auth/login", { email: "consultorm@matricula.test", password: "senha123" })).data.token;
+      const polo = (await http.post("/polos", { name: "Polo Sem Tutor", code: "SEMT1", state: "RO" }, auth())).data;
+      await http.put(`/polos/${polo.id}/members`, { members: [{ userId: consult, role: "comercial" }] }, auth());
+      // the consultant sees every tutor of the institution to choose "another tutor"
+      const all = await http.get("/tutors", asUser(ctok));
+      assert(all.status === 200 && all.data.some(t => t.id === tB) && all.data.every(t => t.id && t.name && !t.email), `the list of tutors: ${JSON.stringify(all.data).slice(0, 200)}`);
+      // a consultant is never accepted as the tutor
+      const lead0 = await mkLead("Aluno Tutor Errado", "5511955552301", { ownerId: consult });
+      assert((await http.post(`/leads/${lead0.id}/enroll`, { rgm: nextRgm(), poloId: polo.id, tutorId: consult, fee: "paid", whatsappId: cid }, asUser(ctok))).status === 422, "a consultant was accepted as the tutor");
+
+      assert((await http.put("/settings/tutoria_numero", { value: "5569993258103" }, auth())).status === 200, "tutoring number setting");
+      const lead = await mkLead("Bruna Outro Polo", "5511955552302", { ownerId: consult });
+      const opened = await http.post(`/leads/${lead.id}/open-ticket`, { whatsappId: cid }, auth());
+      const salesTicket = opened.data.ticketId;
+      await inboundCloud("5511955552302", "wamid.enroll-tutoria-window", "Pode confirmar minha matrícula");
+      await waitFor(() => Number(sql(`SELECT COUNT(*) FROM Messages WHERE ticketId=${salesTicket} AND fromMe=false`)) > 0, 8000, "student writes in the Meta window");
+      const before = graph.sent.length;
+      const r = await http.post(`/leads/${lead.id}/enroll`, { rgm: nextRgm(), poloId: polo.id, tutorId: tB, fee: "paid", whatsappId: cid }, asUser(ctok));
+      assert(r.status === 200 && r.data.tutor && r.data.tutor.id === tB, `enroll with another polo's tutor ${r.status} ${JSON.stringify(r.data).slice(0, 200)}`);
+      assert(r.data.warnings.some(w => /Tutor B/.test(w) && /Polo Sem Tutor/.test(w)), `the team is not told the tutor joined the polo: ${JSON.stringify(r.data.warnings)}`);
+      assert(sql(`SELECT COUNT(*) FROM UserQueues uq JOIN Queues q ON q.id=uq.queueId WHERE uq.userId=${tB} AND q.poloId=${polo.id} AND q.role='tutoria'`) === "1", "the tutor did not join the polo's tutoring");
+      assert(sql(`SELECT userId FROM Tickets WHERE id=${r.data.ticketId}`) === String(tB), "the onboarding conversation is not with the chosen tutor");
+      // the student receives, in the consultant's conversation, the tutoring number with the tutor's name and the ask to schedule
+      const sentText = graph.sent.slice(before).map(x => JSON.stringify(x.body || {})).join(" ");
+      assert(sentText.includes("Tutor B") && sentText.includes("+55 (69) 99325-8103") && /agendar a sua ambientação/.test(sentText), `the tutoring contact: ${sentText.slice(0, 300)}`);
+      assert(Number(sql(`SELECT COUNT(*) FROM Messages WHERE ticketId=${salesTicket} AND fromMe=true AND body LIKE '%ambientação%'`)) === 1, "the tutoring contact is not in the conversation history");
+      // a repeated confirmation does not send it again
+      await http.post(`/leads/${lead.id}/enroll`, { rgm: nextRgm(), poloId: polo.id, tutorId: tB, fee: "paid", whatsappId: cid }, asUser(ctok));
+      assert(graph.sent.slice(before).filter(x => /ambientação/.test(JSON.stringify(x.body || {}))).length === 1, "the tutoring contact went twice");
+      await http.put("/settings/tutoria_numero", { value: "" }, auth());
+    });
+    await test("agent draft: changes are kept apart while the published version keeps answering, and publishing clears the draft with history", async () => {
+      const id = Number(sql(`SELECT id FROM AiAgents ORDER BY id LIMIT 1`));
+      const live = (await http.get("/ai-agents", auth())).data.find(a => a.id === id);
+      const saved = await http.put(`/ai-agents/${id}/draft`, { systemPrompt: "Rascunho: novo jeito de atender", persona: { ...(live.persona || {}), tone: "rascunho" } }, auth());
+      assert(saved.status === 200 && saved.data.draft.systemPrompt === "Rascunho: novo jeito de atender", `draft ${saved.status}`);
+      const after = (await http.get("/ai-agents", auth())).data.find(a => a.id === id);
+      assert(after.systemPrompt === live.systemPrompt && after.persona.draft && !after.persona.draft.persona.draft, "the draft changed the published agent");
+      const consTok = (await http.post("/auth/login", { email: "consultorm@matricula.test", password: "senha123" })).data.token;
+      assert((await http.put(`/ai-agents/${id}/draft`, { systemPrompt: "x" }, asUser(consTok))).status === 403, "a consultant saved a draft");
+      const revs = Number(sql(`SELECT COUNT(*) FROM AiAgentRevisions WHERE agentId=${id}`));
+      const persona = { ...after.persona, ...after.persona.draft.persona };
+      delete persona.draft;
+      const pub = await http.put(`/ai-agents/${id}`, { systemPrompt: after.persona.draft.systemPrompt, persona }, auth());
+      assert(pub.status === 200 && pub.data.systemPrompt === "Rascunho: novo jeito de atender" && !(pub.data.persona || {}).draft, "publishing did not apply the draft or did not clear it");
+      assert(Number(sql(`SELECT COUNT(*) FROM AiAgentRevisions WHERE agentId=${id}`)) > revs, "publishing left no history");
+      await http.put(`/ai-agents/${id}/draft`, { systemPrompt: "outro" }, auth());
+      assert((await http.delete(`/ai-agents/${id}/draft`, auth())).status === 200 && !(await http.get("/ai-agents", auth())).data.find(a => a.id === id).persona.draft, "discarding kept the draft");
+      await http.put(`/ai-agents/${id}`, { systemPrompt: live.systemPrompt, persona: live.persona }, auth());
+    });
+    await test("Meta templates: the recommended pack goes as Utility and protected, nothing is duplicated, and an approved one takes its place", async () => {
+      const consTok = (await http.post("/auth/login", { email: "consultorm@matricula.test", password: "senha123" })).data.token;
+      assert((await http.get("/meta/templates", asUser(consTok))).status === 403, "a consultant reached the Meta templates");
+      const first = await http.get("/meta/templates", auth());
+      assert(first.status === 200 && first.data.pack.length === 8 && first.data.pack.every(p => !p.created), `templates screen ${first.status} ${JSON.stringify(first.data).slice(0, 200)}`);
+      const sent = await http.post("/meta/templates/pack", {}, auth());
+      assert(sent.status === 200 && sent.data.results.length === 8 && sent.data.results.every(x => /^enviado/.test(x.result)), `pack ${JSON.stringify(sent.data)}`);
+      assert(graph.templates.length === 8 && graph.templates.every(t => t.waba === "WABA1" && t.category === "UTILITY" && t.allow_category_change === false && t.language === "pt_BR"), `templates as sent: ${JSON.stringify(graph.templates.map(t => [t.name, t.category, t.allow_category_change]))}`);
+      assert(graph.templates.every(t => { const n = (t.components[0].text.match(/\{\{\d+\}\}/g) || []).length; return !n || (t.components[0].example.body_text[0].length >= 1); }), "a template went without examples");
+      // nothing linked while under review (the Meta would refuse a send with it)
+      assert(!sql(`SELECT value FROM Settings WHERE key='boas_vindas_template_name'`), "a template under review was put to use");
+      const again = await http.post("/meta/templates/pack", {}, auth());
+      assert(again.data.results.every(x => x.result === "já existe") && graph.templates.length === 8, "the pack was sent twice");
+      graph.templates.find(t => t.name === "boas_vindas_matricula").status = "APPROVED";
+      const after = await http.get("/meta/templates", auth());
+      assert(after.data.linked.includes("boas_vindas_matricula") && sql(`SELECT value FROM Settings WHERE key='boas_vindas_template_name'`) === "boas_vindas_matricula", `the approved template was not linked: ${JSON.stringify(after.data.linked)}`);
+      // a new template: examples are required, and a refusal comes back with the Meta's reason
+      assert((await http.post("/meta/templates", { name: "aviso_x", body: "Olá {{1}}", examples: [] }, auth())).status === 400, "a template without examples was sent");
+      const refused = await http.post("/meta/templates", { name: "recusa_promo", body: "Olá {{1}}", examples: ["Ana"] }, auth());
+      assert(refused.status === 400 && /promocional/.test(refused.data.error), `the Meta's refusal: ${JSON.stringify(refused.data)}`);
+      const made = await http.post("/meta/templates", { name: "Aviso Prova", body: "Olá {{1}}, a sua prova é em {{2}}.", examples: ["Ana", "10/12"] }, auth());
+      assert(made.status === 201 && made.data.name === "aviso_prova" && graph.templates.find(t => t.name === "aviso_prova").category === "UTILITY", `new template ${made.status} ${JSON.stringify(made.data)}`);
+      await http.put("/settings/boas_vindas_template_name", { value: "" }, auth());
+      // the readiness checklist: what is missing for the team, each item saying where to fix it; managers only
+      assert((await http.get("/system/readiness", asUser(consTok))).status === 403, "a consultant read the readiness checklist");
+      const ready = await http.get("/system/readiness", auth());
+      const keys = (ready.data.items || []).map(i => i.key);
+      assert(ready.status === 200 && ["ai", "tutoria", "templates_allowed", "templates", "efi", "polos"].every(k => keys.includes(k)) && ready.data.items.every(i => i.label && i.detail && i.where), `readiness ${JSON.stringify(ready.data).slice(0, 300)}`);
+      assert(ready.data.items.find(i => i.key === "templates").ok === false && ready.data.items.find(i => i.key === "efi").ok === false, "the readiness hides what is missing");
     });
     await test("affiliates: scoped to their consultant, portal without prices, material by audience, bonus once per enrolment", async () => {
       const mkU = async (name, email) => (await http.post("/users", { name, email, password: "senha123", role: "consultor" }, auth())).data;

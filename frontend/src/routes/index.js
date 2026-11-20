@@ -155,7 +155,7 @@ const Routes = () => {
                 <Route exact path="/reports" component={Reports} isPrivate />
                 <Route exact path="/gestao-comercial" component={CommercialCenter} isPrivate managerOnly />
                 <Route exact path="/estatisticas" component={Statistics} isPrivate />
-                <Route exact path="/estatisticas/tutoria" component={TutoriaStats} isPrivate managerOnly />
+                <Route exact path="/estatisticas/tutoria" component={TutoriaStats} isPrivate />
                 <Route exact path="/crm/matriculas" component={Enrollments} isPrivate managerOnly />
                 <Route exact path="/crm" component={CrmBoard} isPrivate />
                 <Route exact path="/crm/painel" component={CrmPanel} isPrivate />

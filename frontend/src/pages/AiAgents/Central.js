@@ -219,7 +219,7 @@ const Central = () => {
             <div style={{ marginBottom: 16 }}><Segmented items={[["testar", "Conversar e testar"], ["ensinar", "Ensinar"]]} value={mode} onChange={setMode} label="Testar e ensinar" /></div>
             {mode === "testar" ? (
               <Section title="Conversar com o agente" hint="Converse como se fosse um lead. Nada é enviado a ninguém e nenhum lead é criado. Errou? Vá em Ensinar, ou salve a conversa como treino.">
-                <TestTab agentId={agentId} flowId={d.flow ? d.flow.id : null} commercial={commercial} />
+                <TestTab agentId={agentId} flowId={d.flow ? d.flow.id : null} commercial={commercial} hasDraft={!!(agent && agent.persona && agent.persona.draft)} />
               </Section>
             ) : (
               <TrainTab agentId={agentId} flowId={d.flow ? d.flow.id : null} commercial={commercial} goRoteiro={(flowId) => history.push(`/ai-agents/blocos/${flowId}`)} />

@@ -85,13 +85,15 @@ const CasesPanel = ({ agentId, refreshKey }) => {
 };
 
 // Talks to the agent exactly like a student would, without sending anything on WhatsApp or changing any record.
-const TestTab = ({ agentId, flowId, commercial }) => {
+const TestTab = ({ agentId, flowId, commercial, hasDraft = false }) => {
   const classes = useStyles();
   const chat = useSimChat();
   const [turns, setTurns] = useState([]);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [collected, setCollected] = useState({});
+  // test the unpublished changes (the draft) instead of what answers the leads
+  const [useDraft, setUseDraft] = useState(false);
   // the commercial agent is tested with the same engine that answers the leads (presentation, courses of the system, grade, handoff); the rest with the simple tester
   const real = !!flowId && !!commercial;
   const [sim, setSim] = useState(null);
@@ -177,7 +179,7 @@ const TestTab = ({ agentId, flowId, commercial }) => {
         const slots = (data.state && data.state.vars && data.state.vars.__commercial && data.state.vars.__commercial.state && data.state.vars.__commercial.state.slots) || {};
         setCollected(Object.fromEntries([["nome", slots.leadName], ["curso", slots.courseName], ["cidade", slots.city], ["ingresso", slots.entryType && slots.entryType !== "unknown" ? slots.entryType : ""], ["curso pedido que não oferecemos", slots.unofferedCourse]].filter(([, v]) => v)));
       } else {
-        const { data } = await api.post(`/ai-agents/${agentId}/test`, { messages: next.map(({ role, content: c }) => ({ role, content: c })), collected });
+        const { data } = await api.post(`/ai-agents/${agentId}/test`, { messages: next.map(({ role, content: c }) => ({ role, content: c })), collected, useDraft: hasDraft && useDraft });
         setCollected(data.collected || {});
         setTurns([...next, { role: "assistant", content: data.text || "(sem resposta)", question: content, sources: data.sources || [], meta: `${(data.tools || []).map((t) => TOOL[t] || t).join(", ")}${data.tools?.length ? " · " : ""}${data.tokens.input + data.tokens.output} tokens` }]);
       }
@@ -195,6 +197,12 @@ const TestTab = ({ agentId, flowId, commercial }) => {
       <Typography variant="caption" color="textSecondary" display="block" style={{ marginBottom: 8 }}>
         O uso entra no consumo, mas não conta no limite diário.
       </Typography>
+      {hasDraft && !real && (
+        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, marginBottom: 8, cursor: "pointer" }}>
+          <input type="checkbox" checked={useDraft} onChange={(e) => { setUseDraft(e.target.checked); setTurns([]); setCollected({}); }} />
+          Usar o rascunho (as mudanças ainda não publicadas)
+        </label>
+      )}
       <div className={real ? classes.split : undefined}>
       <div style={{ minWidth: 0 }}>
       <div className={chat.chat} ref={end} style={{ height: 420 }}>

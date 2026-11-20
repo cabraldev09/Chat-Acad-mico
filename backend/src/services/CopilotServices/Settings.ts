@@ -9,12 +9,18 @@ import AppError from "../../errors/AppError";
 import { dayBounds, getAppTz } from "../../helpers/AppTime";
 import { CONFIG_KEY, CopilotConfig, defaultConfig, policyFor, upgradeSteps, validateConfig } from "./Policy";
 
+// the agent asks in the order of this process (one order for the agent and the copilot)
+const shareOrder = async (config: CopilotConfig): Promise<void> => {
+  const { setQuestionOrder } = await import("../CommercialServices/Rules");
+  setQuestionOrder(config.steps.map(s => s.key));
+};
 export const configOf = async (): Promise<CopilotConfig> => {
   const setting = await Setting.findByPk(CONFIG_KEY);
   if (!setting) return defaultConfig();
   const config = validateConfig(JSON.parse(setting.value));
   return { ...config, steps: upgradeSteps(config.steps) };
 };
+export const loadQuestionOrder = async (): Promise<void> => shareOrder(await configOf());
 export const saveConfig = async (input: any): Promise<CopilotConfig> => {
   const config = validateConfig(input);
   if (config.agentId && !(await AiAgent.findByPk(config.agentId))) throw new AppError("ERR_COPILOT_AGENT", 400);
@@ -28,7 +34,7 @@ export const saveConfig = async (input: any): Promise<CopilotConfig> => {
     config.version++;
     await Setting.upsert({ key: CONFIG_KEY, value: JSON.stringify(config) }, { transaction });
     return config;
-  });
+  }).then(async saved => { await shareOrder({ ...saved, steps: upgradeSteps(saved.steps) }); return saved; });
 };
 export const suggestionAgent = async (config: CopilotConfig, ticket: Ticket): Promise<AiAgent | null> => {
   if (config.agentId) return AiAgent.findByPk(config.agentId); // a manual copilot can use training without starting the autonomous bot
