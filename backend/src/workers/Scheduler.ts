@@ -30,6 +30,9 @@ export const tick = async (): Promise<void> => {
       // eslint-disable-next-line no-await-in-loop
       const [claimed] = await Schedule.update({ status: "sending" }, { where: { id: schedule.id, status: "pending" } });
       if (!claimed) continue;
+      // the row in memory must know it is "sending" too: otherwise putting it back to "pending" (the next message of a sequence) looks like
+      // no change to Sequelize, is not saved, and the schedule stays stuck in "sending"
+      schedule.set("status", "sending");
       try {
         // eslint-disable-next-line no-await-in-loop
         const contact = await Contact.findByPk(schedule.contactId);
