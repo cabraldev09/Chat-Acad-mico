@@ -31,7 +31,8 @@ export const callWithBudget = async (agent: AiAgent, kind: "reply" | "summary" |
       if (used + held + tokens > agent.dailyTokenCap) throw new Error("ERR_AI_TOKEN_CAP");
     }
     if (Number(globalUsd) > 0) {
-      const unknown = await AiUsage.count({ where: { createdAt: { [Op.gte]: since }, estimatedUsd: { [Op.is]: null } }, transaction });
+      // a document reading of a model without a price does not block the agents (its tokens still count)
+      const unknown = await AiUsage.count({ where: { createdAt: { [Op.gte]: since }, estimatedUsd: { [Op.is]: null }, kind: { [Op.ne]: "reading" } }, transaction });
       if (!price || unknown) throw new Error("ERR_AI_RATE_REQUIRED");
       const spent = Number(await AiUsage.sum("estimatedUsd", { where: { createdAt: { [Op.gte]: since } }, transaction }) || 0);
       const held = Number(await Reservation.sum("estimatedUsd", { where: active, transaction }) || 0);

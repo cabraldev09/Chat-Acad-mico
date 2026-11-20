@@ -2,12 +2,15 @@ import Mustache from "mustache";
 
 import AppError from "../errors/AppError";
 import { publicFile } from "./PublicFile";
+import { cleanButtons } from "./QuickButtons";
 
 export interface CampaignStep {
   type: "text" | "media";
   body: string;
   mediaUrl: string | null;
   delaySec: number;
+  // up to 3 quick-reply buttons under a text message (see QuickButtons)
+  buttons?: string[];
 }
 
 export const MAX_CAMPAIGN_STEPS = 5;
@@ -43,7 +46,8 @@ export const cleanSteps = (raw: any): CampaignStep[] => {
     if (mediaUrl) publicFile(mediaUrl);
     if (!body && !mediaUrl) throw new AppError("ERR_CAMPAIGN_STEP_EMPTY");
     const delaySec = Math.min(600, Math.max(0, Math.round(Number(s?.delaySec) || 0)));
-    return { type: mediaUrl ? "media" : "text", body, mediaUrl, delaySec } as CampaignStep;
+    const buttons = mediaUrl ? [] : cleanButtons(s?.buttons);
+    return { type: mediaUrl ? "media" : "text", body, mediaUrl, delaySec, ...(buttons.length ? { buttons } : {}) } as CampaignStep;
   });
   if (!out.length) throw new AppError("ERR_CAMPAIGN_NO_MESSAGE");
   return out;

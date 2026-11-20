@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 
 import AppError from "../errors/AppError";
 import User from "../models/User";
+import { companyWelcome } from "../helpers/OnboardingWelcome";
 
 const parse = (raw: string | null | undefined): Record<string, any> => {
   try {
@@ -31,7 +32,7 @@ const cleanSound = (input: any) => {
 export const show = async (req: Request, res: Response): Promise<Response> => {
   const user = await User.findByPk(req.user.id, { attributes: ["id", "preferences", "acceptsNewTickets", "maxOpenTickets"] });
   if (!user) throw new AppError("ERR_NO_PERMISSION", 403);
-  return res.json({ ...parse(user.preferences), availability: { acceptsNewTickets: user.acceptsNewTickets, maxOpenTickets: user.maxOpenTickets } });
+  return res.json({ ...parse(user.preferences), companyWelcome: await companyWelcome(), availability: { acceptsNewTickets: user.acceptsNewTickets, maxOpenTickets: user.maxOpenTickets } });
 };
 
 export const update = async (req: Request, res: Response): Promise<Response> => {
@@ -39,6 +40,11 @@ export const update = async (req: Request, res: Response): Promise<Response> => 
   if (!user) throw new AppError("ERR_NO_PERMISSION", 403);
   const current = parse(user.preferences);
   if (req.body && req.body.sound !== undefined) current.sound = cleanSound(req.body.sound);
+  // the tutor's own welcome text for a newly enrolled student (empty: the text of the company)
+  if (typeof req.body?.welcomeTemplate === "string") {
+    const text = req.body.welcomeTemplate.trim().slice(0, 1500);
+    if (text) current.welcomeTemplate = text; else delete current.welcomeTemplate;
+  }
   if (typeof req.body?.acceptsNewTickets === "boolean") await user.update({ acceptsNewTickets: req.body.acceptsNewTickets });
   await user.update({ preferences: JSON.stringify(current) });
   return res.json({ ...current, availability: { acceptsNewTickets: user.acceptsNewTickets, maxOpenTickets: user.maxOpenTickets } });

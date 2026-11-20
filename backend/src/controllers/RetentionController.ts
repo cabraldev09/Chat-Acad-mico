@@ -21,6 +21,7 @@ import { Scope, markReenrolled, readRetentionConfig, rematriculaList, riskStuden
 import { csvAsText, csvDay, sendCsv } from "../helpers/Csv";
 import { OUTCOMES, registerContact, todayList } from "../services/CrmServices/RetentionToday";
 import { relationshipConnection, relationshipWhatsappId, setRelationshipWhatsappId } from "../services/RelationshipServices/Relationship";
+import { withButtons } from "../helpers/QuickButtons";
 
 const uid = (req: Request): number => Number(req.user.id);
 
@@ -237,8 +238,9 @@ export const sendBulk = async (req: Request, res: Response): Promise<Response> =
       try {
         // eslint-disable-next-line no-await-in-loop
         await assertCanSend(contact, whatsapp);
+        const tapped = withButtons(whatsapp.channel, body, req.body?.buttons);
         // eslint-disable-next-line no-await-in-loop
-        await SendToContact({ contact, whatsapp, body });
+        await SendToContact({ contact, whatsapp, body: tapped.body, choices: tapped.choices });
       } catch (err) {
         // eslint-disable-next-line no-await-in-loop
         await logRetention({ lead: null, name: label, number: contact.number, contactId: contact.id, kind: "custom", body, userId: uid(req), error: (err as Error).message, whatsappId: whatsapp.id });
@@ -261,7 +263,7 @@ export const sendBulk = async (req: Request, res: Response): Promise<Response> =
       // eslint-disable-next-line no-await-in-loop
       if (kind === "nps") await sendSurvey(lead, "manual", uid(req));
       // eslint-disable-next-line no-await-in-loop
-      else await sendRetentionMessage(lead, uid(req), kind === "custom" ? text : undefined);
+      else await sendRetentionMessage(lead, uid(req), kind === "custom" ? text : undefined, req.body?.buttons);
       results.push({ leadId: id, name: lead.name, ok: true });
     } catch (err) {
       results.push({ leadId: id, name: lead.name, ok: false, error: sendErrorText((err as Error).message) });

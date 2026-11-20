@@ -6,7 +6,6 @@ import api from "../../services/api";
 import toastError from "../../errors/toastError";
 
 const FIELDS = [
-  ["crm_sla_minutes", "Avisar após minutos sem resposta (0 desliga)"],
   ["crm_escalation_minutes", "Escalar para a gestão após minutos"],
   ["crm_proposal_unopened_minutes", "Retornar proposta não aberta após minutos (0 desliga)"],
   ["crm_proposal_viewed_minutes", "Retornar proposta aberta após minutos (0 desliga)"],

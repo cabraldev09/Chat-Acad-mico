@@ -70,7 +70,7 @@ const processCampaign = async (campaign: Campaign): Promise<void> => {
     if (!shipping) {
       const toReview = await CampaignShipping.count({ where: { campaignId: fresh.id, status: { [Op.in]: ["sending", "uncertain"] } } });
       if (toReview) {
-        await fresh.update({ status: "paused", pauseReason: "Há entregas para conferir em Operação e custos. Nenhuma mensagem será reenviada automaticamente." });
+        await fresh.update({ status: "paused", pauseReason: "Há entregas para conferir em Operação. Nenhuma mensagem será reenviada automaticamente." });
         await emitCampaign(fresh.id);
         return;
       }

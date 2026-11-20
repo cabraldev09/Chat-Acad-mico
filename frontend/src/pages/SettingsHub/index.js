@@ -1,6 +1,6 @@
 import CopilotSettings from "../../components/Copilot/Settings";
 import Operations from "./Operations";
-import MetaCosts from "./MetaCosts";
+import Costs from "./Costs";
 import MetaTemplates from "./MetaTemplates";
 import Readiness from "./Readiness";
 import React, { useCallback, useContext, useEffect, useMemo, useState } from "react";
@@ -33,12 +33,11 @@ import { BUILD } from "../../utils/versionWatch";
 const GROUPS = [
   { id: "prontidao", label: "Prontidão do sistema", icon: ListChecks, hint: "O que falta para o time usar" },
   { id: "copiloto", label: "Copiloto", icon: Workflow, hint: "Processo, conexões e limites de IA" },
-  { id: "operacao", label: "Operação e custos", icon: SlidersHorizontal, hint: "Prazos, capacidade e entregas" },
-  { id: "meta", label: "Custos da API oficial", icon: CircleDollarSign, hint: "Gasto real na Meta, por dia e tipo" },
+  { id: "operacao", label: "Operação", icon: SlidersHorizontal, hint: "Prazos, capacidade, entregas e limites de gasto" },
+  { id: "meta", label: "Custos", icon: CircleDollarSign, hint: "Meta e IA (OpenAI e Anthropic), e como gastar menos" },
   { id: "modelos", label: "Modelos da Meta", icon: FileText, hint: "Modelos aprovados, em Utilidade" },
   { id: "geral", label: "Geral", icon: Settings2, hint: "Fuso, acesso e integração" },
-  { id: "horario", label: "Horário e prazos", icon: Clock, hint: "Expediente e metas de resposta" },
-  { id: "atendimento", label: "Atendimento e CRM", icon: SlidersHorizontal, hint: "Distribuição, lembretes e períodos" },
+  { id: "atendimento", label: "Atendimento e horário", icon: Clock, hint: "Expediente, prazos, distribuição e lembretes" },
   { id: "tutoria", label: "Tutoria (acadêmico)", icon: BellRing, hint: "Boas-vindas e prazo do 1º contato" },
   { id: "captacao", label: "Captação", icon: FileInput, hint: "Formulário público, páginas por curso e API" },
   { id: "pagamentos", label: "Pagamentos", icon: CreditCard, hint: "Taxa de matrícula (Efí)", admin: true },
@@ -220,8 +219,8 @@ const Tutoria = ({ values, save }) => {
   const numbers = (whatsApps || []).filter((w) => (w.channel || "whatsapp") === "whatsapp" || w.channel === "whatsapp_cloud");
   return (
     <>
-      <Card title="Boas-vindas do tutor" sub="O texto que o tutor recebe pronto na conversa do aluno recém-matriculado.">
-        <TextField fullWidth multiline rows={5} variant="outlined" label="Mensagem de boas-vindas"
+      <Card title="Boas-vindas do tutor (texto da empresa)" sub="O texto padrão que o tutor recebe pronto na conversa do aluno recém-matriculado. Cada tutor pode escrever o próprio em Ambientação → Meu texto de boas-vindas; quem não escrever usa este.">
+        <TextField fullWidth multiline rows={5} variant="outlined" label="Mensagem de boas-vindas da empresa"
           defaultValue={values.onboarding_welcome_template || ""} key={values.onboarding_welcome_template || "vazio"}
           placeholder="Olá, {{primeiro_nome}}! Parabéns pela matrícula! Eu sou {{tutor}}, do polo {{polo}}..."
           onBlur={(e) => { if (e.target.value !== (values.onboarding_welcome_template || "")) save("onboarding_welcome_template", e.target.value); }}
@@ -243,7 +242,7 @@ const Tutoria = ({ values, save }) => {
         </TextField>
       </Card>
       <Card title="Mensagem de abertura nos números oficiais" sub="Fora das 24 horas desde a última mensagem do aluno, o número oficial só pode iniciar a conversa com um modelo aprovado pela Meta. Crie os modelos em Configurações → Modelos da Meta (entram aqui sozinhos quando aprovados) ou informe o nome exato. Parâmetros: {{1}} = primeiro nome do aluno, {{2}} = primeiro nome de quem escreve.">
-        {[["tutoria", "Tutoria"], ["atendimento", "Atendimento / Matrículas"]].map(([side, label]) => (
+        {[["tutoria", "Tutoria"], ["atendimento", "Atendimento / Matrículas"], ["relacionamento", "Retenção (relacionamento)"], ["rematricula", "Rematrícula"]].map(([side, label]) => (
           <div key={side} style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
             <TextField variant="outlined" size="small" label={`Modelo — ${label}`} placeholder="ex.: abertura_tutoria"
               defaultValue={values[`${side}_template_name`] || ""} key={`${side}-${values[`${side}_template_name`] || ""}`}
@@ -255,7 +254,7 @@ const Tutoria = ({ values, save }) => {
               style={{ width: 120 }} InputLabelProps={{ shrink: true }} />
           </div>
         ))}
-        <div className={classes.hint}>A função de cada número (Atendimento ou Tutoria) é escolhida em Conexões, no número. O envio de modelos também precisa estar liberado em Operação e custos.</div>
+        <div className={classes.hint}>A retenção usa o modelo de relacionamento para as mensagens de retenção e as escritas na hora, e o de rematrícula para a cadência de rematrícula ({"{{1}}"} = primeiro nome, {"{{2}}"} = curso, {"{{3}}"} = fim do período). Todos são de Utilidade, a categoria mais barata. A função de cada número (Atendimento ou Tutoria) é escolhida em Conexões, no número. O envio de modelos também precisa estar liberado em Operação.</div>
       </Card>
       <Card title="Número da tutoria" sub="Prefira marcar o número oficial da tutoria em Conexões → Função do número = Tutoria. Este campo vale para instalações antigas: sem número de Tutoria, a conversa sai pelo número do próprio tutor e, quando ele não tem um, por este.">
         <TextField select variant="outlined" size="small" label="Número padrão da tutoria" value={Number(values.tutoria_whatsapp_id || 0)} onChange={(e) => save("tutoria_whatsapp_id", e.target.value)} style={{ maxWidth: 360 }} InputLabelProps={{ shrink: true }}>
@@ -649,7 +648,8 @@ const SettingsHub = () => {
   const { search } = useLocation();
   const admin = isManager(user); // the coordination has the same powers as the administrator
   const groups = useMemo(() => GROUPS.filter((g) => !g.admin || admin), [admin]);
-  const wanted = new URLSearchParams(search).get("secao");
+  const asked = new URLSearchParams(search).get("secao");
+  const wanted = asked === "horario" ? "atendimento" : asked;
   const [group, setGroup] = useState(groups.some((g) => g.id === wanted) ? wanted : "geral");
   const [q, setQ] = useState("");
   const [values, save] = useSettings();
@@ -703,12 +703,11 @@ const SettingsHub = () => {
                 {current.id === "prontidao" && <Readiness />}
                 {current.id === "copiloto" && <CopilotSettings />}
                 {current.id === "operacao" && <Operations />}
-                {current.id === "meta" && <MetaCosts />}
+                {current.id === "meta" && <Costs />}
                 {current.id === "modelos" && <MetaTemplates />}
 
                 {current.id === "geral" && <Geral values={values} save={save} admin={admin} />}
-                {current.id === "horario" && <Horario values={values} save={save} crm={crm} />}
-                {current.id === "atendimento" && <Atendimento values={values} save={save} crm={crm} />}
+                {current.id === "atendimento" && <><Horario values={values} save={save} crm={crm} /><Atendimento values={values} save={save} crm={crm} /></>}
                 {current.id === "tutoria" && <Tutoria values={values} save={save} />}
                 {current.id === "captacao" && (
                   <>
