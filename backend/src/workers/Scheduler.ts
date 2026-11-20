@@ -8,6 +8,7 @@ import GetDefaultWhatsApp from "../helpers/GetDefaultWhatsApp";
 import SendToContact from "../services/ChannelServices/SendToContact";
 import { getIO } from "../libs/socket";
 import { logger } from "../utils/logger";
+import { stepsOf } from "../helpers/CampaignText";
 
 let busy = false;
 
@@ -40,16 +41,23 @@ export const tick = async (): Promise<void> => {
             await GetDefaultWhatsApp(schedule.userId || undefined);
         if (!whatsapp) throw new Error("connection not found");
 
+        // one message of the sequence per turn: the next one waits its delay without holding the worker (it comes back as pending)
+        const steps = stepsOf({ steps: schedule.steps, message: schedule.body, mediaUrl: schedule.mediaUrl });
+        const index = Math.min(Number(schedule.stepsDone) || 0, steps.length - 1);
+        const step = steps[index];
         // eslint-disable-next-line no-await-in-loop
         await SendToContact({
           contact,
           whatsapp,
-          body: schedule.body,
-          mediaUrl: schedule.mediaUrl,
-          idempotencyKey: `schedule:${schedule.id}`
+          body: step.body,
+          mediaUrl: step.mediaUrl,
+          idempotencyKey: index === 0 ? `schedule:${schedule.id}` : `schedule:${schedule.id}:${index}`
         });
+        const next = steps[index + 1];
         // eslint-disable-next-line no-await-in-loop
-        await schedule.update({ status: "sent", sentAt: new Date(), error: null });
+        await schedule.update(next
+          ? { status: "pending", stepsDone: index + 1, sendAt: new Date(Date.now() + Math.max(3, Number(next.delaySec) || 0) * 1000), error: null }
+          : { status: "sent", stepsDone: steps.length, sentAt: new Date(), error: null });
       } catch (err) {
         logger.error(`Schedule ${schedule.id} failed: ${err}`);
         // eslint-disable-next-line no-await-in-loop

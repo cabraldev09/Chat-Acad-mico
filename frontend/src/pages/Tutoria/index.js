@@ -152,13 +152,13 @@ export default function Tutoria() {
           ))}
         </div>
         <div className={c.bar}>
-          <TextField size="small" variant="outlined" placeholder="Buscar aluno, curso ou polo" value={search} onChange={(e) => setSearch(e.target.value)} style={{ minWidth: 260 }} />
-          {manager && <TextField select size="small" variant="outlined" label="Tutor" value={tutorId} onChange={(e) => setTutorId(e.target.value)} style={{ minWidth: 200 }}>
+          <TextField size="small" variant="outlined" placeholder="Buscar aluno, curso ou polo" value={search} onChange={(e) => setSearch(e.target.value)} style={{ minWidth: "min(260px, 100%)", flex: "1 1 260px" }} />
+          {manager && <TextField select size="small" variant="outlined" label="Tutor" value={tutorId} onChange={(e) => setTutorId(e.target.value)} style={{ minWidth: "min(200px, 100%)", flex: "1 1 200px" }}>
             <MenuItem value="">Todos</MenuItem>
             <MenuItem value="none">Sem tutor</MenuItem>
             {lists.tutors.map((t) => <MenuItem key={t.id} value={t.id}>{t.name}</MenuItem>)}
           </TextField>}
-          {manager && <TextField select size="small" variant="outlined" label="Polo" value={poloId} onChange={(e) => setPoloId(e.target.value)} style={{ minWidth: 180 }}>
+          {manager && <TextField select size="small" variant="outlined" label="Polo" value={poloId} onChange={(e) => setPoloId(e.target.value)} style={{ minWidth: "min(180px, 100%)", flex: "1 1 180px" }}>
             <MenuItem value="">Todos</MenuItem>
             {lists.polos.map((p) => <MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>)}
           </TextField>}

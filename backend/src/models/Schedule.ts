@@ -34,6 +34,13 @@ class Schedule extends Model<Schedule> {
   @Column
   mediaUrl: string;
 
+  // a short sequence of messages (see helpers/CampaignText); empty = body/mediaUrl alone
+  @Column(DataType.JSON)
+  steps: any;
+
+  @Column
+  stepsDone: number;
+
   @AllowNull(false)
   @Column
   sendAt: Date;

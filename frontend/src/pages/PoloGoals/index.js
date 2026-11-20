@@ -119,7 +119,7 @@ const useStyles = makeStyles((theme) => ({
   track: { height: 6, borderRadius: 999, background: "var(--track)", position: "relative", marginTop: 14, marginBottom: 12 },
   fill: { height: "100%", borderRadius: 999, transition: "width .7s cubic-bezier(.2,.8,.2,1)" },
   tick: { position: "absolute", top: -4, bottom: -4, width: 2, background: theme.palette.text.primary, opacity: 0.55, borderRadius: 2 },
-  nums: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 },
+  nums: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(90px, 1fr))", gap: 8 },
   numLabel: { fontSize: 11.5, color: theme.palette.text.secondary },
   numVal: { fontSize: 21, fontWeight: 700, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums", lineHeight: 1.15 },
   foot: { display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", fontSize: 12, color: theme.palette.text.secondary, marginTop: 12, paddingTop: 10, borderTop: theme.border.divider },
@@ -132,7 +132,7 @@ const useStyles = makeStyles((theme) => ({
   hint: { fontSize: 12.5, color: theme.palette.text.secondary },
   empty: { textAlign: "center", color: theme.palette.text.secondary, padding: theme.spacing(6, 2) },
   editRow: { display: "grid", gridTemplateColumns: "minmax(160px,1.6fr) 92px 92px 92px 36px", gap: 8, alignItems: "center", padding: "6px 0", borderBottom: theme.border.divider, [theme.breakpoints.down("xs")]: { gridTemplateColumns: "1fr 1fr 1fr 36px" } },
-  monthRow: { display: "grid", gridTemplateColumns: "110px 1fr 1fr", gap: 8, alignItems: "center", padding: "4px 0" },
+  monthRow: { display: "grid", gridTemplateColumns: "minmax(70px, 110px) minmax(0, 1fr) minmax(0, 1fr)", gap: 8, alignItems: "center", padding: "4px 0" },
   sheet: { width: "100%", fontFamily: "ui-monospace, Menlo, monospace", fontSize: 12.5, whiteSpace: "pre", overflowX: "auto" },
 }));
 

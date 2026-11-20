@@ -1,4 +1,4 @@
-import React, { useContext } from "react";
+import React, { useContext, useEffect, useRef } from "react";
 import { useHistory, useLocation } from "react-router-dom";
 import { Briefcase, GraduationCap } from "lucide-react";
 
@@ -26,9 +26,15 @@ const StatsHubBar = () => {
   const history = useHistory();
   const { pathname } = useLocation();
   const sections = hubSections(user);
+  const bar = useRef(null);
+  // on the phone the bar slides: the current tab is brought into view
+  useEffect(() => {
+    const on = bar.current && bar.current.querySelector(".stats-hub__item.is-on");
+    if (on && on.scrollIntoView) on.scrollIntoView({ block: "nearest", inline: "center" });
+  }, [pathname]);
   if (sections.reduce((n, s) => n + s.items.length, 0) < 2) return null;
   return (
-    <nav aria-label="Estatísticas" className="stats-hub">
+    <nav aria-label="Estatísticas" className="stats-hub" ref={bar}>
       <span className="stats-hub__title">Estatísticas</span>
       {sections.map(({ dept, icon: Icon, items }) => {
         const on = items.some((i) => pathname === i.to);

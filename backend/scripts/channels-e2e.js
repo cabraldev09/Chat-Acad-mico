@@ -5833,6 +5833,19 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.post("/schedules", { body: "x", sendAt: when, contactId: tgContactId, whatsappId: Number(tgId) }, asUser(other))).status === 403, "a consultant used another person's number");
       sql(`UPDATE Whatsapps SET ownerId = NULL WHERE id = ${tgId}`);
 
+      // a scheduled message can be a short sequence: the worker sends one, waits, then the next, and marks it sent at the end
+      const seqBefore = tg.sent.length;
+      const seqSched = await http.post("/schedules", { sendAt: new Date().toISOString(), contactId: tgContactId, whatsappId: Number(tgId), steps: [{ body: "Agendada parte um", delaySec: 3 }, { body: "Agendada parte dois", delaySec: 3 }] }, auth());
+      assert(seqSched.status === 200 || seqSched.status === 201, `sequence schedule ${seqSched.status} ${JSON.stringify(seqSched.data).slice(0, 160)}`);
+      assert(seqSched.data.body === "Agendada parte um", "the first message is not kept in body");
+      const texts = () => tg.sent.slice(seqBefore).filter(x => x.method === "sendMessage").map(x => String(x.body.text || ""));
+      await waitFor(() => texts().some(t => t.includes("Agendada parte dois")), 50000, "second scheduled message");
+      const order = texts().filter(t => /Agendada parte/.test(t));
+      assert(order.length === 2 && order[0].includes("um") && order[1].includes("dois"), `order ${JSON.stringify(order)}`);
+      await waitFor(() => sql(`SELECT status FROM Schedules WHERE id = ${seqSched.data.id}`) === "sent", 10000, "schedule marked sent");
+      assert(sql(`SELECT stepsDone FROM Schedules WHERE id = ${seqSched.data.id}`) === "2", "stepsDone");
+      assert((await http.post("/schedules", { sendAt: when, contactId: tgContactId, steps: [{ body: "" }] }, auth())).status === 400, "an empty step was accepted");
+
       // "Carregar mais" follows the order of the column (score first), so no lead repeats or is skipped
       const stage = sql(`SELECT id FROM LeadStages ORDER BY position LIMIT 1`);
       const made = [];

@@ -47,7 +47,7 @@ const useStyles = makeStyles((theme) => {
     badge: { fontSize: 11.5, fontWeight: 700, padding: "2px 8px", borderRadius: 999, background: "rgba(245,158,11,.16)", color: dark ? "#fbbf24" : "#b45309" },
     badgeRed: { background: "rgba(220,38,38,.14)", color: dark ? "#fca5a5" : "#b91c1c" },
     notice: { display: "flex", gap: 8, alignItems: "center", fontSize: 13.5, padding: "9px 12px", borderRadius: 10, background: "rgba(245,158,11,.14)" },
-    band: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", [theme.breakpoints.down("sm")]: { gridTemplateColumns: "repeat(2, 1fr)" } },
+    band: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", [theme.breakpoints.down("sm")]: { gridTemplateColumns: "repeat(2, 1fr)" }, [theme.breakpoints.down("xs")]: { gridTemplateColumns: "1fr" } },
     cell: { padding: theme.spacing(0.5, 2, 0.5, 0), "& b": { display: "block", fontSize: 28, letterSpacing: "-0.035em", fontVariantNumeric: "tabular-nums", marginTop: 4 }, "& span": { fontSize: 12.5, color: theme.palette.text.secondary } },
     retry: { border: `1px solid ${line}`, background: "transparent", color: "inherit", borderRadius: 10, padding: "6px 12px", cursor: "pointer", fontFamily: "inherit", display: "inline-flex", gap: 6, alignItems: "center" },
   };

@@ -73,7 +73,7 @@ const useStyles = makeStyles((theme) => ({
   },
   dropChipOver: { transform: "scale(1.06)", borderColor: theme.palette.accent.main, boxShadow: `0 0 0 3px ${theme.palette.accent.main}30` },
   cardMenu: { marginRight: -6, marginTop: -4, padding: 4, color: theme.palette.text.secondary },
-  tableWrap: { flex: 1, overflowY: "auto", overflowX: "hidden", ...theme.scrollbarStyles },
+  tableWrap: { flex: 1, overflowY: "auto", overflowX: "auto", ...theme.scrollbarStyles, "& table": { minWidth: 760 } },
 }));
 
 const LeadCard = ({ lead, stage, onOpen, onDragStart, onDragEnd, dragging, onMenu }) => {

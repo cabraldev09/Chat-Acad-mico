@@ -40,7 +40,8 @@ const sample = (text) =>
     .replace(/\{\{\s*(primeiro_nome|first_name)\s*\}\}/g, "Maria")
     .replace(/\{\{\s*number\s*\}\}/g, "5569999990000");
 
-const StepsEditor = ({ steps, onChange, riskNote }) => {
+// schedule: one contact (a scheduled message), so no "leave the list" notice and the words speak of one person
+const StepsEditor = ({ steps, onChange, riskNote, schedule = false }) => {
   const classes = useStyles();
   const [busy, setBusy] = useState(null);
   const set = (i, patch) => onChange(steps.map((s, k) => (k === i ? { ...s, ...patch } : s)));
@@ -67,7 +68,9 @@ const StepsEditor = ({ steps, onChange, riskNote }) => {
   return (
     <div>
       <Typography className={classes.intro}>
-        Cada pessoa recebe as mensagens na ordem, com uma pausa entre elas. Use <b>{"{{name}}"}</b> para o nome, <b>{"{{primeiro_nome}}"}</b> para só o primeiro nome e <b>{"{{spin|Olá|Oi|E aí}}"}</b> para variar o texto entre os destinatários.
+        {schedule
+          ? <>As mensagens saem na ordem, com a pausa escolhida entre uma e outra. Use <b>{"{{name}}"}</b> para o nome do contato.</>
+          : <>Cada pessoa recebe as mensagens na ordem, com uma pausa entre elas. Use <b>{"{{name}}"}</b> para o nome, <b>{"{{primeiro_nome}}"}</b> para só o primeiro nome e <b>{"{{spin|Olá|Oi|E aí}}"}</b> para variar o texto entre os destinatários.</>}
         {riskNote ? ` ${riskNote}` : ""}
       </Typography>
       {steps.map((s, i) => (
@@ -108,11 +111,11 @@ const StepsEditor = ({ steps, onChange, riskNote }) => {
         <Button size="small" variant="outlined" color="primary" startIcon={<Plus size={15} />} disabled={steps.length >= MAX_STEPS} onClick={() => onChange([...steps, emptyStep()])}>
           {steps.length >= MAX_STEPS ? `Limite de ${MAX_STEPS} mensagens` : "Adicionar mensagem"}
         </Button>
-        <Button size="small" variant="outlined" disabled={steps.some((x) => /\bSAIR\b/.test(x.body))}
+        {!schedule && <Button size="small" variant="outlined" disabled={steps.some((x) => /\bSAIR\b/.test(x.body))}
           title="Escreve no fim da última mensagem como a pessoa pede para não receber mais"
           onClick={() => { const last = steps.length - 1; set(last, { body: `${steps[last].body.trimEnd()}${steps[last].body.trim() ? "\n\n" : ""}Para não receber mais mensagens, responda SAIR.` }); }}>
           {steps.some((x) => /\bSAIR\b/.test(x.body)) ? "Aviso de saída incluído" : "Incluir aviso para sair da lista"}
-        </Button>
+        </Button>}
       </div>
 
       <div className={classes.previewTitle}>Como a pessoa vai receber</div>

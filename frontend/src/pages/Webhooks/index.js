@@ -91,11 +91,11 @@ const ApiTokens = () => {
       <Typography variant="body2" color="textSecondary" gutterBottom>
         Use um token no cabeçalho <b>Authorization: Bearer &lt;token&gt;</b>. O token completo só aparece uma vez, na criação.
       </Typography>
-      <div style={{ display: "flex", gap: 8, margin: "8px 0" }}>
+      <div style={{ display: "flex", gap: 8, margin: "8px 0", flexWrap: "wrap" }}>
         <TextField size="small" variant="outlined" label="Nome (ex: CRM)" value={name} onChange={(e) => setName(e.target.value)} />
         <Button variant="contained" color="primary" onClick={create}>Gerar token</Button>
       </div>
-      <Table size="small">
+      <div style={{ overflowX: "auto" }}><Table size="small">
         <TableHead>
           <TableRow>
             <TableCell>Nome</TableCell>
@@ -116,7 +116,7 @@ const ApiTokens = () => {
             </TableRow>
           ))}
         </TableBody>
-      </Table>
+      </Table></div>
       <Divider style={{ margin: "16px 0" }} />
       <Typography variant="subtitle2">Endpoints</Typography>
       <div className={classes.code}>

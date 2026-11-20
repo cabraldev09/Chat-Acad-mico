@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback } from "react";
 import { toast } from "react-toastify";
 import {
   Button,
-  IconButton,
   makeStyles,
   Paper,
   TableBody,
@@ -30,6 +29,7 @@ import MainHeaderButtonsWrapper from "../MainHeaderButtonsWrapper";
 import Title from "../Title";
 import ResponsiveTable from "../ResponsiveTable";
 import ConfirmationModal from "../ConfirmationModal";
+import IconAction from "../IconAction";
 import openSocket from "../../services/socket-io";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
@@ -472,33 +472,36 @@ const CrudPage = ({
             <TableHead>
               <TableRow>
                 {columns.map((c) => (
-                  <TableCell key={c.header} align="center">
+                  <TableCell key={c.header} align={c.align || "left"}>
                     {c.header}
                   </TableCell>
                 ))}
-                <TableCell align="center">Ações</TableCell>
+                <TableCell align="right" style={{ width: 1, whiteSpace: "nowrap" }}>Ações</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {rows.map((row) => (
                 <TableRow key={row.id}>
                   {columns.map((c) => (
-                    <TableCell key={c.header} align="center" data-label={c.header}>
+                    <TableCell key={c.header} align={c.align || "left"} data-label={c.header}>
                       {c.render ? c.render(row) : row[c.field]}
                     </TableCell>
                   ))}
-                  <TableCell align="center">
-                    {rowActions && rowActions(row, load)}
-                    {canEdit(row) && (
-                      <IconButton aria-label="Editar" size="small" onClick={() => openEdit(row)}>
-                        <Edit />
-                      </IconButton>
-                    )}
-                    {canDelete(row) && (
-                      <IconButton aria-label="Excluir" size="small" onClick={() => setDeleting(row)}>
-                        <DeleteOutline />
-                      </IconButton>
-                    )}
+                  <TableCell align="right" style={{ width: 1, whiteSpace: "nowrap" }}>
+                    {/* every action the same: a button with a hint, same size, in one line */}
+                    <div style={{ display: "inline-flex", alignItems: "center", justifyContent: "flex-end", gap: 2, flexWrap: "nowrap" }}>
+                      {rowActions && rowActions(row, load)}
+                      {canEdit(row) && (
+                        <IconAction title="Editar" onClick={() => openEdit(row)}>
+                          <Edit />
+                        </IconAction>
+                      )}
+                      {canDelete(row) && (
+                        <IconAction title="Excluir" onClick={() => setDeleting(row)}>
+                          <DeleteOutline />
+                        </IconAction>
+                      )}
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}

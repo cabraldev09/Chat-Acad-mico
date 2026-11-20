@@ -44,7 +44,7 @@ const useStyles = makeStyles((theme) => ({
   kpi: { border: `1px solid ${theme.palette.divider}`, borderRadius: 12, padding: theme.spacing(1.5, 2), background: theme.palette.background.paper, boxShadow: "0 1px 2px rgba(11,66,121,.06)" },
   kpiL: { fontSize: 12.5, color: theme.palette.text.secondary, display: "block" },
   kpiN: { display: "block", fontSize: 28, fontWeight: 700, letterSpacing: "-0.03em", lineHeight: 1.15, fontVariantNumeric: "tabular-nums" },
-  box: { border: "1px solid var(--line)", borderRadius: "var(--radius-card)", padding: theme.spacing(2, 2.25), background: "var(--surface)", boxShadow: "var(--shadow-card)" },
+  box: { border: "1px solid var(--line)", borderRadius: "var(--radius-card)", padding: theme.spacing(2, 2.25), background: "var(--surface)", boxShadow: "var(--shadow-card)", overflowX: "auto", minWidth: 0 },
   next: { fontSize: 12.5, display: "flex", alignItems: "center", gap: 6, color: theme.palette.text.secondary },
   actions: { display: "flex", alignItems: "center", gap: 4, marginTop: 6, flexWrap: "wrap" },
   stats: { display: "grid", gap: theme.spacing(1.5), gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", },
