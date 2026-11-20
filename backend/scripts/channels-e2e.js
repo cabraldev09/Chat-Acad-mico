@@ -320,6 +320,11 @@ const startGraphMock = () => {
   // the WhatsApp account (WABA) of the token and its templates: created as sent, listed with the status the test sets
   app.get("/debug_token", (req, res) => res.json({ data: { granular_scopes: [{ scope: "whatsapp_business_management", target_ids: ["WABA1"] }] } }));
   app.get("/:waba/message_templates", (req, res) => res.json({ data: graph.templates.map(t => ({ name: t.name, language: t.language, category: t.category, status: t.status, rejected_reason: t.reason || "NONE", components: t.components })) }));
+  app.delete("/:waba/message_templates", (req, res) => {
+    const before = graph.templates.length;
+    graph.templates = graph.templates.filter(t => t.name !== req.query.name);
+    res.status(graph.templates.length < before ? 200 : 404).json({ success: graph.templates.length < before });
+  });
   app.post("/:waba/message_templates", (req, res) => {
     const b = req.body || {};
     if (/recusa/.test(b.name)) return res.status(400).json({ error: { message: "Invalid parameter", error_user_msg: "O conteúdo parece promocional" } });
@@ -1547,7 +1552,8 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(billet.calls.length === callsBefore, "charge created too early");
       sql(`UPDATE Payments SET generateAt=NOW() - INTERVAL '1 minute' WHERE id=${r.data.id}`);
       await waitFor(() => sql(`SELECT status FROM Payments WHERE id=${r.data.id}`) === "pending", 12000, "scheduled charge issued");
-      assert(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${l.id} AND userId=${bolixConsultantId} AND title LIKE 'Enviar o boleto%'`) === "1", "no reminder task for the consultant");
+      // the charge is issued first and the task right after it: wait for the task instead of reading it in the same instant
+      await waitFor(() => sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${l.id} AND userId=${bolixConsultantId} AND title LIKE 'Enviar o boleto%'`) === "1", 8000, "no reminder task for the consultant");
     });
     await test("a seller with a Wallet ID gets the Bolix with the split by itself; who pays the fee is the manager's choice; a refused Wallet ID does not stop the charge", async () => {
       const due = ymdPlus(2);
@@ -5707,24 +5713,34 @@ const postMeta = (id, payload, secret, badSig) => {
       const consTok = (await http.post("/auth/login", { email: "consultorm@matricula.test", password: "senha123" })).data.token;
       assert((await http.get("/meta/templates", asUser(consTok))).status === 403, "a consultant reached the Meta templates");
       const first = await http.get("/meta/templates", auth());
-      assert(first.status === 200 && first.data.pack.length === 8 && first.data.pack.every(p => !p.created), `templates screen ${first.status} ${JSON.stringify(first.data).slice(0, 200)}`);
+      assert(first.status === 200 && first.data.pack.length === 12 && first.data.pack.every(p => !p.created), `templates screen ${first.status} ${JSON.stringify(first.data).slice(0, 200)}`);
       const sent = await http.post("/meta/templates/pack", {}, auth());
-      assert(sent.status === 200 && sent.data.results.length === 8 && sent.data.results.every(x => /^enviado/.test(x.result)), `pack ${JSON.stringify(sent.data)}`);
-      assert(graph.templates.length === 8 && graph.templates.every(t => t.waba === "WABA1" && t.category === "UTILITY" && t.allow_category_change === false && t.language === "pt_BR"), `templates as sent: ${JSON.stringify(graph.templates.map(t => [t.name, t.category, t.allow_category_change]))}`);
+      assert(sent.status === 200 && sent.data.results.length === 12 && sent.data.results.every(x => /^enviado/.test(x.result)), `pack ${JSON.stringify(sent.data)}`);
+      assert(graph.templates.length === 12 && graph.templates.every(t => t.waba === "WABA1" && t.category === "UTILITY" && t.allow_category_change === false && t.language === "pt_BR"), `templates as sent: ${JSON.stringify(graph.templates.map(t => [t.name, t.category, t.allow_category_change]))}`);
       assert(graph.templates.every(t => { const n = (t.components[0].text.match(/\{\{\d+\}\}/g) || []).length; return !n || (t.components[0].example.body_text[0].length >= 1); }), "a template went without examples");
       // nothing linked while under review (the Meta would refuse a send with it)
       assert(!sql(`SELECT value FROM Settings WHERE key='boas_vindas_template_name'`), "a template under review was put to use");
       const again = await http.post("/meta/templates/pack", {}, auth());
-      assert(again.data.results.every(x => x.result === "já existe") && graph.templates.length === 8, "the pack was sent twice");
-      graph.templates.find(t => t.name === "boas_vindas_matricula").status = "APPROVED";
+      assert(again.data.results.every(x => x.result === "já existe") && graph.templates.length === 12, "the pack was sent twice");
+      // nobody already talking to the team gets an "Olá" again, and the openings carry quick-reply buttons
+      assert(first.data.pack.every(p => !/^\s*ol[áa]/i.test(p.body) && p.department), "a template of the pack opens with Olá or has no department");
+      const opening = graph.templates.find(t => t.name === "retomada_atendimento");
+      assert(opening && opening.components.some(c => c.type === "BUTTONS" && c.buttons.length === 2 && c.buttons.every(b => b.type === "QUICK_REPLY")), `the opening went without buttons ${JSON.stringify(opening && opening.components)}`);
+      graph.templates.find(t => t.name === "matricula_confirmada_tutoria").status = "APPROVED";
       const after = await http.get("/meta/templates", auth());
-      assert(after.data.linked.includes("boas_vindas_matricula") && sql(`SELECT value FROM Settings WHERE key='boas_vindas_template_name'`) === "boas_vindas_matricula", `the approved template was not linked: ${JSON.stringify(after.data.linked)}`);
+      assert(after.data.linked.includes("matricula_confirmada_tutoria") && sql(`SELECT value FROM Settings WHERE key='boas_vindas_template_name'`) === "matricula_confirmada_tutoria" && after.data.templates.find(x => x.name === "retomada_atendimento").department === "atendimento", `the approved template was not linked: ${JSON.stringify(after.data.linked)}`);
       // a new template: examples are required, and a refusal comes back with the Meta's reason
       assert((await http.post("/meta/templates", { name: "aviso_x", body: "Olá {{1}}", examples: [] }, auth())).status === 400, "a template without examples was sent");
       const refused = await http.post("/meta/templates", { name: "recusa_promo", body: "Olá {{1}}", examples: ["Ana"] }, auth());
       assert(refused.status === 400 && /promocional/.test(refused.data.error), `the Meta's refusal: ${JSON.stringify(refused.data)}`);
       const made = await http.post("/meta/templates", { name: "Aviso Prova", body: "Olá {{1}}, a sua prova é em {{2}}.", examples: ["Ana", "10/12"] }, auth());
       assert(made.status === 201 && made.data.name === "aviso_prova" && graph.templates.find(t => t.name === "aviso_prova").category === "UTILITY", `new template ${made.status} ${JSON.stringify(made.data)}`);
+      // a template made on the screen keeps its department; an old one can be removed, a pack one cannot
+      const dept = await http.post("/meta/templates", { name: "aviso_documento", body: "{{1}}, recebemos o seu documento.", examples: ["Ana"], department: "atendimento", use: "aviso", buttons: ["Obrigado"] }, auth());
+      assert(dept.status === 201 && (await http.get("/meta/templates", auth())).data.templates.find(x => x.name === "aviso_documento").department === "atendimento", "the department of a new template was lost");
+      assert((await http.delete("/meta/templates/retomada_atendimento", auth())).status === 400, "a template of the pack was removed");
+      assert((await http.delete("/meta/templates/aviso_prova", auth())).status === 200 && !graph.templates.find(x => x.name === "aviso_prova"), "an old template was not removed");
+      assert((await http.delete("/meta/templates/aviso_documento", asUser(consTok))).status === 403, "a consultant removed a template");
       await http.put("/settings/boas_vindas_template_name", { value: "" }, auth());
       // the readiness checklist: what is missing for the team, each item saying where to fix it; managers only
       assert((await http.get("/system/readiness", asUser(consTok))).status === 403, "a consultant read the readiness checklist");
@@ -6226,12 +6242,12 @@ const postMeta = (id, payload, secret, badSig) => {
       await http.put("/retention/config", { nps: { templateName: "" } }, auth());
 
       // the retention message outside the 24 hours goes by the Utility opening of the relationship department (never free text)
-      await http.put("/settings/relacionamento_template_name", { value: "abertura_relacionamento" }, auth());
+      await http.put("/settings/relacionamento_template_name", { value: "retomada_relacionamento" }, auth());
       const before6 = graph.sent.length;
       const opening = await http.post("/retention/send", { kind: "custom", leadIds: [elis.leadId], text: "Oi {{nome}}, tudo certo com o curso?", buttons: ["Sim", "Não"] }, auth());
       assert(opening.status === 200 && opening.data.sent === 1, `utility opening ${JSON.stringify(opening.data).slice(0, 200)}`);
       const opened = await waitFor(() => graph.sent.slice(before6).find(x => x.body && x.body.to === elis.from && x.body.type === "template"), 12000, "the utility opening");
-      assert(opened.body.template.name === "abertura_relacionamento" && opened.body.template.components[0].parameters[0].text === "Elis", `opening payload ${JSON.stringify(opened.body.template).slice(0, 200)}`);
+      assert(opened.body.template.name === "retomada_relacionamento" && opened.body.template.components[0].parameters[0].text === "Elis", `opening payload ${JSON.stringify(opened.body.template).slice(0, 200)}`);
       assert(!graph.sent.slice(before6).some(x => x.body && x.body.to === elis.from && ["text", "interactive"].includes(x.body.type)), "free text went outside the 24 hours");
       await http.put("/settings/relacionamento_template_name", { value: "" }, auth());
 
@@ -6669,7 +6685,7 @@ const postMeta = (id, payload, secret, badSig) => {
     await test("copilot config is manager-only, validates revisions and blocks generic setting bypass", async () => {
       assert((await http.get("/copilot/settings", asUser(agentToken))).status === 403, "staff read admin controls");
       const config = (await http.get("/copilot/settings", auth())).data;
-      assert(config.enabled && !config.aiEnabled, "paid suggestions must be opt-in");
+      assert(config.enabled && config.aiEnabled, "the AI suggestions are on by default (tied to the sales process)");
       assert((await http.put("/copilot/settings", config, asUser(agentToken))).status === 403, "staff changed controls");
       assert((await http.put("/settings/consultant_copilot", { value: "{}" }, auth())).status === 403, "generic bypass");
       assert((await http.put("/copilot/settings", { ...config, dailyLimit: -1 }, auth())).status === 400, "negative limit accepted");

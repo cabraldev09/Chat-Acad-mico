@@ -29,19 +29,19 @@ import { fetchAllUsersPage } from "../../utils/fetchAllUsers";
 import { BUILD } from "../../utils/versionWatch";
 
 // Configurações: where the rules of the system are set. Each group holds the real controls (saved as soon as they change);
-// "Cadastros" shows what exists (connections, people, polos...) with a way into each list.
+// "Cadastros" shows the lists that are not in the side menu (people, polos, queues...), never a second way to what the menu already has.
 const GROUPS = [
   { id: "prontidao", label: "Prontidão do sistema", icon: ListChecks, hint: "O que falta para o time usar" },
-  { id: "copiloto", label: "Copiloto", icon: Workflow, hint: "Processo, conexões e limites de IA" },
-  { id: "operacao", label: "Operação", icon: SlidersHorizontal, hint: "Prazos, capacidade, entregas e limites de gasto" },
-  { id: "meta", label: "Custos", icon: CircleDollarSign, hint: "Meta e IA (OpenAI e Anthropic), e como gastar menos" },
-  { id: "modelos", label: "Modelos da Meta", icon: FileText, hint: "Modelos aprovados, em Utilidade" },
-  { id: "geral", label: "Geral", icon: Settings2, hint: "Fuso, acesso e integração" },
+  { id: "geral", label: "Geral", icon: Settings2, hint: "Nome, fuso e acesso" },
   { id: "atendimento", label: "Atendimento e horário", icon: Clock, hint: "Expediente, prazos, distribuição e lembretes" },
-  { id: "tutoria", label: "Tutoria (acadêmico)", icon: BellRing, hint: "Boas-vindas e prazo do 1º contato" },
-  { id: "captacao", label: "Captação", icon: FileInput, hint: "Formulário público, páginas por curso e API" },
+  { id: "tutoria", label: "Tutoria", icon: BellRing, hint: "Boas-vindas, número e prazo do 1º contato" },
+  { id: "copiloto", label: "Copiloto", icon: Workflow, hint: "Processo de vendas e sugestões da IA" },
+  { id: "modelos", label: "Modelos da Meta", icon: FileText, hint: "Por departamento, em Utilidade, e onde cada um é usado" },
+  { id: "meta", label: "Custos", icon: CircleDollarSign, hint: "Meta e IA, e como gastar menos" },
+  { id: "operacao", label: "Operação", icon: SlidersHorizontal, hint: "Capacidade, entregas e limites de gasto" },
+  { id: "captacao", label: "Captação", icon: FileInput, hint: "Formulário público e páginas por curso" },
+  { id: "cadastros", label: "Cadastros", icon: ListTree, hint: "Usuários, polos, filas, etiquetas e funil" },
   { id: "pagamentos", label: "Pagamentos", icon: CreditCard, hint: "Taxa de matrícula (Efí)", admin: true },
-  { id: "cadastros", label: "Cadastros", icon: ListTree, hint: "Conexões, equipe, polos, filas" },
   { id: "regras", label: "Regras acadêmicas", icon: Calculator, hint: "Vagas extras e semestres nas previsões", admin: true },
   { id: "email", label: "E-mail", icon: Mail, hint: "Conta de envio e modelos de e-mail", admin: true },
   { id: "erros", label: "Erros de tela", icon: Bug, hint: "Telas que falharam no navegador de alguém", admin: true },
@@ -231,32 +231,14 @@ const Tutoria = ({ values, save }) => {
         <TextField variant="outlined" size="small" label="Número da tutoria (com DDD)" placeholder="69 99325-8103"
           defaultValue={values.tutoria_numero || ""} key={`tn-${values.tutoria_numero || ""}`} style={{ maxWidth: 260, width: "100%" }} InputLabelProps={{ shrink: true }}
           onBlur={(e) => { const v = e.target.value.replace(/\D/g, ""); const full = v && (v.length === 10 || v.length === 11) ? `55${v}` : v; if (full !== (values.tutoria_numero || "")) save("tutoria_numero", full); }} />
-        <TextField variant="outlined" size="small" label="Modelo de boas-vindas (fora das 24 h)" placeholder="boas_vindas_matricula"
-          defaultValue={values.boas_vindas_template_name || ""} key={`bv-${values.boas_vindas_template_name || ""}`} style={{ maxWidth: 300, width: "100%", marginTop: 12 }} InputLabelProps={{ shrink: true }}
-          onBlur={(e) => { const v = e.target.value.trim(); if (v !== (values.boas_vindas_template_name || "")) save("boas_vindas_template_name", v); }} />
-        <div className={classes.hint}>Em branco, o sistema usa o número que a Meta informa para a conexão de Tutoria. O modelo recebe {"{{1}}"} = primeiro nome, {"{{2}}"} = curso, {"{{3}}"} = tutor e {"{{4}}"} = número da tutoria (o modelo boas_vindas_matricula de Modelos da Meta já vem assim e entra aqui sozinho quando aprovado).</div>
+        <div className={classes.hint}>Em branco, o sistema usa o número que a Meta informa para a conexão de Tutoria. Fora das 24 horas, o aviso sai pelo modelo escolhido em Modelos da Meta → Em uso.</div>
       </Card>
       <Card title="Prazo do primeiro contato" sub="O sistema avisa a tutoria e a coordenação quando o aluno passa deste tempo sem contato depois da matrícula.">
         <TextField select variant="outlined" size="small" label="Alertar após" value={Number(values.onboarding_sla_hours || 24)} onChange={(e) => save("onboarding_sla_hours", e.target.value)} style={{ maxWidth: 260 }} InputLabelProps={{ shrink: true }}>
           {HOURS.map((h) => (<MenuItem key={h} value={h}>{h} horas</MenuItem>))}
         </TextField>
       </Card>
-      <Card title="Mensagem de abertura nos números oficiais" sub="Fora das 24 horas desde a última mensagem do aluno, o número oficial só pode iniciar a conversa com um modelo aprovado pela Meta. Crie os modelos em Configurações → Modelos da Meta (entram aqui sozinhos quando aprovados) ou informe o nome exato. Parâmetros: {{1}} = primeiro nome do aluno, {{2}} = primeiro nome de quem escreve.">
-        {[["tutoria", "Tutoria"], ["atendimento", "Atendimento / Matrículas"], ["relacionamento", "Retenção (relacionamento)"], ["rematricula", "Rematrícula"]].map(([side, label]) => (
-          <div key={side} style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
-            <TextField variant="outlined" size="small" label={`Modelo — ${label}`} placeholder="ex.: abertura_tutoria"
-              defaultValue={values[`${side}_template_name`] || ""} key={`${side}-${values[`${side}_template_name`] || ""}`}
-              onBlur={(e) => { const v = e.target.value.trim(); if (v !== (values[`${side}_template_name`] || "")) save(`${side}_template_name`, v); }}
-              style={{ minWidth: 260 }} InputLabelProps={{ shrink: true }} />
-            <TextField variant="outlined" size="small" label="Idioma" placeholder="pt_BR"
-              defaultValue={values[`${side}_template_language`] || "pt_BR"} key={`${side}-lang-${values[`${side}_template_language`] || ""}`}
-              onBlur={(e) => { const v = e.target.value.trim() || "pt_BR"; if (v !== (values[`${side}_template_language`] || "pt_BR")) save(`${side}_template_language`, v); }}
-              style={{ width: 120 }} InputLabelProps={{ shrink: true }} />
-          </div>
-        ))}
-        <div className={classes.hint}>A retenção usa o modelo de relacionamento para as mensagens de retenção e as escritas na hora, e o de rematrícula para a cadência de rematrícula ({"{{1}}"} = primeiro nome, {"{{2}}"} = curso, {"{{3}}"} = fim do período). Todos são de Utilidade, a categoria mais barata. A função de cada número (Atendimento ou Tutoria) é escolhida em Conexões, no número. O envio de modelos também precisa estar liberado em Operação.</div>
-      </Card>
-      <Card title="Número da tutoria" sub="Prefira marcar o número oficial da tutoria em Conexões → Função do número = Tutoria. Este campo vale para instalações antigas: sem número de Tutoria, a conversa sai pelo número do próprio tutor e, quando ele não tem um, por este.">
+      <Card title="Número padrão da tutoria (instalações antigas)" sub="Prefira marcar o número da tutoria em Conexões → Função do número = Tutoria. Sem isso, a conversa sai pelo número do próprio tutor e, quando ele não tem um, por este.">
         <TextField select variant="outlined" size="small" label="Número padrão da tutoria" value={Number(values.tutoria_whatsapp_id || 0)} onChange={(e) => save("tutoria_whatsapp_id", e.target.value)} style={{ maxWidth: 360 }} InputLabelProps={{ shrink: true }}>
           <MenuItem value={0}>Nenhum (usa um número compartilhado)</MenuItem>
           {numbers.map((w) => (<MenuItem key={w.id} value={w.id}>{w.name}</MenuItem>))}
@@ -273,60 +255,28 @@ const Pagamentos = () => {
 };
 
 const REGISTRY = [
-  { to: "/connections", icon: Plug, title: "Conexões", what: "números e canais", key: "connections" },
   { to: "/users", icon: Users, title: "Usuários", what: "pessoas com acesso", key: "users" },
   { to: "/polos", icon: Building2, title: "Polos e equipes", what: "polos", key: "polos" },
   { to: "/queues", icon: ListTree, title: "Filas", what: "filas de atendimento", key: "queues" },
   { to: "/tags", icon: Tags, title: "Etiquetas", what: "etiquetas", key: "tags" },
-  { to: "/quickAnswers", icon: Zap, title: "Respostas rápidas", what: "mensagens prontas", key: "quick" },
-  { to: "/chatbot", icon: Workflow, title: "Chatbot e fluxos", what: "opções no menu do bot", key: "chatbot" },
-  { to: "/ai-agents", icon: Bot, title: "Agentes de IA", what: "agentes", key: "agents" },
   { to: "/crm/config", icon: GraduationCap, title: "Funil, cursos e propostas", what: "etapas do funil", key: "stages" },
   { to: "/integrations", icon: KeyRound, title: "API e webhooks", what: "tokens e avisos", key: null, admin: true },
 ];
 
 const Cadastros = ({ admin }) => {
   const classes = useStyles();
-  const { whatsApps } = useContext(WhatsAppsContext);
   const [counts, setCounts] = useState({});
-  const [health, setHealth] = useState([]);
   useEffect(() => {
-    api.get("/whatsapp-health").then(({ data }) => setHealth(data)).catch(() => undefined);
     const count = (key, url, pick) => api.get(url).then(({ data }) => setCounts((c) => ({ ...c, [key]: pick(data) }))).catch(() => undefined);
     const len = (d) => (Array.isArray(d) ? d.length : (d.rows || d.polos || d.users || d.queues || d.tags || d.quickAnswers || []).length);
     count("users", "/users", (d) => (d.count !== undefined ? d.count : len(d)));
     count("polos", "/polos", len);
     count("queues", "/queue", len);
     count("tags", "/tags", len);
-    count("quick", "/quickAnswers", len);
-    count("chatbot", "/flows", len);
-    count("agents", "/ai-agents", len);
     count("stages", "/lead-stages", len);
   }, []);
-  const list = whatsApps || [];
-  const online = list.filter((w) => w.status === "CONNECTED").length;
   return (
     <>
-      <Card title="Conexões agora" sub="O estado de cada número e canal. Gerencie e leia os QR Codes em Conexões.">
-        {list.length === 0 && <div className={classes.hint}>Nenhuma conexão cadastrada.</div>}
-        {list.map((w) => {
-          const [label, color] = STATUS[w.status] || [w.status || "—", "#7b8a9d"];
-          const h = health.find((x) => x.id === w.id);
-          const mins = w.statusSince ? Math.max(0, Math.floor((Date.now() - new Date(w.statusSince).getTime()) / 60000)) : null;
-          return (
-            <div key={w.id} className={classes.conn}>
-              <span className={classes.dot} style={{ background: color }} />
-              <span style={{ flex: 1, minWidth: 0 }}>
-                <span style={{ display: "block", fontWeight: 600, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{w.name}</span>
-                {h && <span className={classes.hint}>Hoje: {h.receivedToday} recebidas · {h.sentToday} enviadas{h.lastMessageAt ? ` · última mensagem ${new Date(h.lastMessageAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}` : ""}{h.ownerName ? ` · de ${h.ownerName}` : ""}</span>}
-              </span>
-              <span className={classes.hint} style={{ textAlign: "right" }}>{label}{w.status !== "CONNECTED" && mins !== null ? ` há ${mins < 60 ? `${mins} min` : `${Math.floor(mins / 60)} h`}` : ""}</span>
-            </div>
-          );
-        })}
-        {list.length > 0 && <div className={classes.hint}>{online} de {list.length} conectad{online === 1 ? "a" : "as"}.</div>}
-        <div><Button component={Link} to="/connections" variant="outlined" size="small">Gerenciar conexões</Button></div>
-      </Card>
       <div className={classes.grid}>
         {REGISTRY.filter((r) => r.key !== "connections" && (!r.admin || admin)).map((r) => {
           const Icon = r.icon;
@@ -704,7 +654,7 @@ const SettingsHub = () => {
                 {current.id === "copiloto" && <CopilotSettings />}
                 {current.id === "operacao" && <Operations />}
                 {current.id === "meta" && <Costs />}
-                {current.id === "modelos" && <MetaTemplates />}
+                {current.id === "modelos" && <MetaTemplates values={values} save={save} />}
 
                 {current.id === "geral" && <Geral values={values} save={save} admin={admin} />}
                 {current.id === "atendimento" && <><Horario values={values} save={save} crm={crm} /><Atendimento values={values} save={save} crm={crm} /></>}

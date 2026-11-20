@@ -385,7 +385,7 @@ const Envios = ({ manager, canCompose }) => {
         <TextField select size="small" variant="outlined" label="Período" value={range} onChange={(e) => setRange(e.target.value)} style={{ width: 170 }}>
           {RANGES.map(([v, l]) => <MenuItem key={v} value={v}>{l}</MenuItem>)}
         </TextField>
-        <TextField select size="small" variant="outlined" label="Tipo" value={kind} onChange={(e) => setKind(e.target.value)} style={{ width: 220 }}>
+        <TextField select size="small" variant="outlined" label="Tipo" value={kind} onChange={(e) => setKind(e.target.value)} style={{ flex: "1 1 220px", maxWidth: "100%" }}>
           <MenuItem value="">Todos</MenuItem>
           {Object.entries(KIND_LABEL).map(([v, l]) => <MenuItem key={v} value={v}>{l}</MenuItem>)}
         </TextField>

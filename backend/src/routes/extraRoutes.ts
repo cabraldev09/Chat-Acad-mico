@@ -400,6 +400,7 @@ r.get("/system/readiness", isAuth, isManager, async (_req, res) => {
 });
 r.post("/meta/templates", isAuth, isManager, MetaTemplates.store);
 r.post("/meta/templates/pack", isAuth, isManager, MetaTemplates.pack);
+r.delete("/meta/templates/:name", isAuth, isManager, MetaTemplates.remove);
 r.post("/tutoria/students/:leadId/conversation", isAuth, Tutoria.openConversation);
 r.put("/leads/:id/onboarding/access", isAuth, canAccessLead, Lead.onboardingAccessSave);
 r.post("/leads/:id/onboarding/access/send", isAuth, canAccessLead, Lead.onboardingAccessSend);

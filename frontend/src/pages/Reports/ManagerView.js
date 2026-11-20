@@ -143,25 +143,14 @@ const ManagerView = ({ data, error, onRetry, periodName }) => {
 
   return (
     <div className={s.stack}>
-      <section className={c.section} aria-labelledby="mv-alerts">
-        <div className={c.head}>
-          <h2 className={c.h} id="mv-alerts">Precisa de atenção</h2>
-          <span className={c.hint}>Situação de agora, sem relação com o período escolhido</span>
-        </div>
-        {data.alerts.length === 0 ? (
-          <div className={c.good}><CheckCircle2 size={20} color={GREEN} /> Tudo em dia: nada parado nos pontos que acompanhamos.</div>
-        ) : (
-          <div className={c.alerts}>
-            {data.alerts.map((a) => (
-              <button key={a.key} type="button" className={c.alert} style={{ borderLeftColor: a.tone === "danger" ? RED : AMBER }} onClick={() => history.push(a.to)}>
-                <span className={c.alertN} style={{ color: a.tone === "danger" ? RED : AMBER }}>{a.count}</span>
-                <span className={c.alertL}>{a.label}</span>
-                <ArrowUpRight size={16} style={{ opacity: 0.5 }} />
-              </button>
-            ))}
-          </div>
-        )}
-      </section>
+      {/* what is stuck right now lives in the Painel do CRM (one place, not repeated here) */}
+      {data.alerts.length > 0 && (
+        <button type="button" className={c.alert} style={{ borderLeftColor: data.alerts.some((a) => a.tone === "danger") ? RED : AMBER }} onClick={() => history.push("/crm/painel")}>
+          <span className={c.alertN} style={{ color: data.alerts.some((a) => a.tone === "danger") ? RED : AMBER }}>{data.alerts.reduce((n, a) => n + Number(a.count || 0), 0)}</span>
+          <span className={c.alertL}>pontos de atenção agora: veja e resolva no Painel do CRM</span>
+          <ArrowUpRight size={16} style={{ opacity: 0.5 }} />
+        </button>
+      )}
 
       <section className={c.section} aria-labelledby="mv-polos">
         <div className={c.head}>

@@ -25,8 +25,9 @@ const ReactionBar = ({ message, channel = "whatsapp", className }) => {
   const classes = useStyles();
   const [anchor, setAnchor] = useState(null);
   const [full, setFull] = useState(false);
-  // WhatsApp: the six you use most; other channels keep their own fixed set
-  const palette = channel === "whatsapp" ? topEmojis(6) : REACTIONS[channel] || REACTIONS.whatsapp;
+  // WhatsApp (QR Code and the official API) accepts any emoji: the six you use most and "+" for all of them; other channels keep their fixed set
+  const anyEmoji = channel === "whatsapp" || channel === "whatsapp_cloud";
+  const palette = anyEmoji ? topEmojis(6) : REACTIONS[channel] || REACTIONS.whatsapp;
 
   let mine = null;
   try {
@@ -43,7 +44,8 @@ const ReactionBar = ({ message, channel = "whatsapp", className }) => {
     close();
     try {
       await reactNow(message, mine === emoji ? "" : emoji);
-      if (mine !== emoji) bumpEmoji(emoji);
+      // the full picker already counts its own picks
+      if (mine !== emoji && !full) bumpEmoji(emoji);
     } catch (err) {
       toastError(err);
     }
@@ -72,7 +74,7 @@ const ReactionBar = ({ message, channel = "whatsapp", className }) => {
                 {e}
               </button>
             ))}
-            {channel === "whatsapp" && (
+            {anyEmoji && (
               <button type="button" className={classes.more} title="Mais emojis" onClick={() => setFull(true)}>
                 <Plus size={18} />
               </button>

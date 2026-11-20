@@ -55,16 +55,16 @@ const CoursePages = () => {
         <Typography style={{ fontWeight: 600 }}>Origem do link</Typography>
         <Typography className={classes.hint} gutterBottom>Preencha para marcar de onde vem quem abrir o link. O lead chega no CRM com essa origem. Ex.: origem “google”, meio “cpc”, campanha “vestibular-2026”.</Typography>
         <div className={classes.row}>
-          <TextField size="small" variant="outlined" label="Origem (utm_source)" value={utm.source} onChange={(e) => setUtm({ ...utm, source: e.target.value.trim() })} style={{ width: 200 }} />
-          <TextField size="small" variant="outlined" label="Meio (utm_medium)" value={utm.medium} onChange={(e) => setUtm({ ...utm, medium: e.target.value.trim() })} style={{ width: 200 }} />
-          <TextField size="small" variant="outlined" label="Campanha (utm_campaign)" value={utm.campaign} onChange={(e) => setUtm({ ...utm, campaign: e.target.value.trim() })} style={{ width: 240 }} />
+          <TextField size="small" variant="outlined" label="Origem (utm_source)" value={utm.source} onChange={(e) => setUtm({ ...utm, source: e.target.value.trim() })} style={{ width: "min(100%, 200px)" }} />
+          <TextField size="small" variant="outlined" label="Meio (utm_medium)" value={utm.medium} onChange={(e) => setUtm({ ...utm, medium: e.target.value.trim() })} style={{ width: "min(100%, 200px)" }} />
+          <TextField size="small" variant="outlined" label="Campanha (utm_campaign)" value={utm.campaign} onChange={(e) => setUtm({ ...utm, campaign: e.target.value.trim() })} style={{ width: "min(100%, 240px)" }} />
         </div>
       </div>
 
       <div className={classes.card}>
         <div className={classes.row} style={{ marginBottom: 6 }}>
           <Typography style={{ fontWeight: 600, flex: 1 }}>Páginas dos cursos ({courses.length})</Typography>
-          <TextField size="small" variant="outlined" label="Buscar curso" value={search} onChange={(e) => setSearch(e.target.value)} style={{ width: 240 }} />
+          <TextField size="small" variant="outlined" label="Buscar curso" value={search} onChange={(e) => setSearch(e.target.value)} style={{ width: "min(100%, 240px)" }} />
         </div>
         <Typography className={classes.hint}>A página mostra o curso (sem valores) e um formulário. Quem preencher vira lead já ligado ao curso.</Typography>
         {shown.map((c) => (

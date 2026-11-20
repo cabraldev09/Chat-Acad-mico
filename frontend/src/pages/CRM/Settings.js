@@ -206,8 +206,8 @@ export const EfiSettings = ({ stages }) => {
 
       <Block title="Repasse ao vendedor" hint="O vendedor informa só o Wallet ID da conta Efí dele (em Comissões), ou a administração informa por ele na lista abaixo. Quando o aluno paga, a Efí manda a parte dele direto para a conta dele.">
         <div className={classes.row}>
-          <TextField size="small" variant="outlined" label="Parte da taxa que vai ao vendedor (%)" type="number" value={v.consultantPct} onChange={(e) => setV({ ...v, consultantPct: e.target.value })} style={{ width: 280 }} inputProps={{ min: 1, max: 100 }} />
-          <TextField select size="small" variant="outlined" label="Quem paga a tarifa da Efí" value={v.feeMode || "proportional"} onChange={(e) => setV({ ...v, feeMode: e.target.value })} style={{ flex: 1, minWidth: 300 }}
+          <TextField size="small" variant="outlined" label="Parte da taxa que vai ao vendedor (%)" type="number" value={v.consultantPct} onChange={(e) => setV({ ...v, consultantPct: e.target.value })} style={{ flex: "1 1 240px", maxWidth: "100%" }} inputProps={{ min: 1, max: 100 }} />
+          <TextField select size="small" variant="outlined" label="Quem paga a tarifa da Efí" value={v.feeMode || "proportional"} onChange={(e) => setV({ ...v, feeMode: e.target.value })} style={{ flex: 1, minWidth: "min(100%, 240px)" }}
             helperText={(v.feeMode || "proportional") === "company" ? "A empresa paga a tarifa inteira; o vendedor recebe a parte dele sem desconto." : "Cada conta paga a tarifa sobre o que recebe: o vendedor arca com a tarifa da parte dele."}>
             <MenuItem value="proportional">O vendedor paga a tarifa da parte dele</MenuItem>
             <MenuItem value="company">Só a empresa paga a tarifa</MenuItem>
@@ -332,7 +332,7 @@ export const Automation = ({ s, setS, save, users }) => {
         <Typography variant="subtitle2" style={{ fontWeight: 600 }}>Períodos de ingresso</Typography>
         <Typography className={classes.hint} gutterBottom>Os períodos que a instituição está captando. O padrão vem preenchido em todo lead novo e nas propostas.</Typography>
         <div className={classes.row}>
-          <TextField size="small" variant="outlined" label="Períodos (ex.: 2026/2, 2027/1)" value={(s.entryTerms || []).join(", ")} style={{ minWidth: 280 }}
+          <TextField size="small" variant="outlined" label="Períodos (ex.: 2026/2, 2027/1)" value={(s.entryTerms || []).join(", ")} style={{ minWidth: "min(100%, 240px)" }}
             onChange={(e) => setS({ ...s, entryTerms: e.target.value.split(",").map((t) => t.trim()).filter(Boolean) })}
             onBlur={() => save({ entryTerms: s.entryTerms })} />
           <TextField select size="small" variant="outlined" label="Período padrão" value={s.defaultEntryTerm || ""} onChange={(e) => save({ defaultEntryTerm: e.target.value })} style={{ minWidth: 160 }}>

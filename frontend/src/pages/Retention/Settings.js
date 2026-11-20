@@ -71,7 +71,7 @@ export const RelationshipBlock = ({ c, setC, save, bare }) => {
       <Typography className={classes.hint} gutterBottom>
         A pesquisa de satisfação, a mensagem de retenção, o aviso de rematrícula e os envios da aba Envios saem por este número, o da instituição, separado do número do tutor. As respostas caem na fila Relacionamento.
       </Typography>
-      <TextField select size="small" variant="outlined" label="Conexão" value={rel.whatsappId || 0} style={{ minWidth: 280 }}
+      <TextField select size="small" variant="outlined" label="Conexão" value={rel.whatsappId || 0} style={{ minWidth: "min(100%, 240px)" }}
         onChange={(e) => save({ relationshipWhatsappId: Number(e.target.value) }, "Número do relacionamento salvo.")}>
         <MenuItem value={0}>Nenhum (segue a última conversa do aluno)</MenuItem>
         {numbers.map((w) => <MenuItem key={w.id} value={w.id}>{w.name}{w.channel === "whatsapp_cloud" ? " · API oficial" : " · QR Code"}</MenuItem>)}
@@ -117,7 +117,7 @@ export const NpsBlock = ({ c, setC, save, bare }) => {
       </div>
       <div className={classes.row} style={{ marginTop: 8 }}>
         <TextField size="small" variant="outlined" label="Modelo aprovado (fora das 24 h da API oficial)" value={c.nps.templateName || ""} onChange={(e) => setC({ ...c, nps: { ...c.nps, templateName: e.target.value } })} onBlur={() => save({ nps: { templateName: c.nps.templateName || "" } })}
-          helperText="Opcional. Sem ele, a pesquisa só sai para quem escreveu nas últimas 24 horas." style={{ flex: 1, minWidth: 280 }} />
+          helperText="Opcional. Sem ele, a pesquisa só sai para quem escreveu nas últimas 24 horas." style={{ flex: 1, minWidth: "min(100%, 240px)" }} />
         <TextField size="small" variant="outlined" label="Idioma do modelo" value={c.nps.templateLanguage || "pt_BR"} onChange={(e) => setC({ ...c, nps: { ...c.nps, templateLanguage: e.target.value } })} onBlur={() => save({ nps: { templateLanguage: c.nps.templateLanguage || "pt_BR" } })} style={{ width: 160 }} />
       </div>
       <Typography className={classes.hint} style={{ marginTop: 6 }}>Crie o modelo no painel da Meta com o texto da pergunta ({"{{1}}"} é o primeiro nome) e três botões de resposta rápida com os mesmos textos acima. Os botões só aparecem na API oficial; conexões por QR Code recebem a pergunta em texto e o aluno digita a nota.</Typography>
