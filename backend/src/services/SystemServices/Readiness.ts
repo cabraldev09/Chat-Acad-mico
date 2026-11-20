@@ -8,6 +8,7 @@ import Polo from "../../models/Polo";
 import PoloMember from "../../models/PoloMember";
 import { mailConfigured } from "../MailServices/SendMail";
 import { connectionOfTeam } from "../ChannelServices/ConnectionTeam";
+import { lastWebhook } from "../../channels/WebhookLog";
 
 // Configurações → Prontidão do sistema: what still has to be set before the team works on the system, each item with what is missing and
 // where to fix it. Read-only: nothing here changes a setting.
@@ -24,6 +25,13 @@ export const readiness = async (): Promise<ReadinessItem[]> => {
   const down = cloud.filter(w => w.status !== "CONNECTED");
   add("numbers", "Números oficiais conectados", cloud.length > 0 && !down.length, "required",
     !cloud.length ? "Nenhum número da API oficial cadastrado." : down.length ? `Fora do ar: ${down.map(w => w.name).join(", ")}.` : `${cloud.length} número(s) conectado(s).`, "Conexões");
+  // what the Meta last did at each official number's webhook: a refused delivery means no message from the leads arrives at all
+  const refused = cloud.map(w => ({ w, note: lastWebhook(w.id) })).filter(x => x.note && (x.note.outcome === "assinatura_invalida" || x.note.outcome === "sem_app_secret"));
+  add("webhook", "Mensagens da Meta chegando", cloud.length > 0 && !refused.length, "required",
+    refused.length
+      ? `A Meta está enviando as mensagens, mas o sistema recusa: ${refused.map(x => `${x.w.name} (${x.note!.outcome === "sem_app_secret" ? "sem App Secret" : "o App Secret salvo não é o do app da Meta"})`).join(", ")}. Nenhuma mensagem dos leads entra até corrigir.`
+      : cloud.length ? "Nenhuma recusa recente." : "Sem número oficial.",
+    "Conexões → número → App ID e chave secreta (App Secret do app na Meta)");
   const soon = cloud.filter(w => { const at = Number(getConfig(w).tokenExpiresAt || 0); return at > 0 && at - Date.now() < 15 * 86400000; });
   add("token", "Validade do token da Meta", !soon.length, "required",
     soon.length ? `Vence em menos de 15 dias: ${soon.map(w => `${w.name} (${new Date(Number(getConfig(w).tokenExpiresAt)).toLocaleDateString("pt-BR")})`).join(", ")}.` : "Nenhum token perto de vencer.", "Conexões → número → App ID e chave secreta");

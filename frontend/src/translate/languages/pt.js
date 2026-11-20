@@ -471,6 +471,7 @@ const messages = {
         ERR_COPILOT_PROGRESS: "Etapa inválida. A matrícula deve ser registrada no CRM.",
         ERR_COPILOT_DAILY_LIMIT: "Limite diário de sugestões atingido. Continue usando o roteiro e os textos prontos.",
         ERR_COPILOT_TOKEN_LIMIT: "O limite de consumo de IA foi atingido ou falta configurar o preço do modelo. O roteiro continua disponível.",
+        ERR_AI_RETURN_OTHER: "Outro consultor passou este lead para a IA qualificar: a conversa volta para ele.",
         ERR_AI_AGENT_NOT_AVAILABLE: "Não há agente de IA ligado para esta conversa (ou ela é um grupo). Ligue um em Agentes de IA e tente de novo.",
         ERR_PIN_LIMIT: "Você pode fixar no máximo 5 conversas. Desafixe uma para fixar outra.",
         ERR_KB_EMPTY: "Escreva ou envie o conteúdo do documento.",

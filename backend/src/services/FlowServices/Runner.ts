@@ -18,6 +18,7 @@ import { cleanStage } from "./StageSpec";
 import { Graph, parseGraph } from "./Graph";
 import emitTicketUpdate from "../TicketServices/EmitTicketUpdate";
 import { noteAutomation } from "../AutomationServices/AutomationTrace";
+import { startDelayOf } from "../../helpers/ReplyPace";
 
 export interface FlowEntry {
   type: "first_message" | "keyword" | "any" | "manual" | "agent";
@@ -208,7 +209,8 @@ export const resumeStaleStageRuns = async (): Promise<void> => {
 export const runAgentGraph = async (ticket: Ticket, agent: AiAgent): Promise<boolean> => {
   const flow = await ChatFlow.findOne({ where: { kind: "agent", agentId: agent.id, status: "published" }, order: [["id", "DESC"]] });
   if (!flow) return false;
-  debounce(`agent-start:${ticket.id}`, agent.waitSeconds ?? 4, async () => {
+  // the first message of a conversation is answered at once; the next ones wait for the burst to end
+  debounce(`agent-start:${ticket.id}`, await startDelayOf(ticket, agent.waitSeconds), async () => {
     const fresh = await ShowTicketService(ticket.id);
     if (!fresh.aiActive || fresh.userId || fresh.status === "closed" || !robotMayTalk(fresh)) {
       logger.info(`Agente ${agent.name} no ticket ${ticket.id}: não começou (aiActive ${fresh.aiActive}, atendente ${fresh.userId || "nenhum"}, status ${fresh.status})`);

@@ -50,6 +50,7 @@ import { transcribeAudio } from "../AiServices/Transcribe";
 import emitTicketUpdate from "../TicketServices/EmitTicketUpdate";
 import { syncHandoffTasks } from "../CrmServices/HandoffTasks";
 import { noteAutomation } from "../AutomationServices/AutomationTrace";
+import { paceBeforeSend } from "../../helpers/ReplyPace";
 
 // invisible mark: bot messages are told apart from the team's
 const MARK = "‎";
@@ -259,6 +260,9 @@ export const ticketEffects = (ticket: Ticket, flowName: string, flowCtx: FlowCon
     async say(text, choices) {
       // a person took the conversation while the flow was thinking: nothing from the robot goes out after that
       if (await humanHasTicket(ticket.id)) return;
+      // the AI types like a person (the first answer of the conversation goes at once); menus of a plain chatbot flow are not delayed
+      if (flowCtx.agentId) await paceBeforeSend(ticket, text);
+      if (flowCtx.agentId && (await humanHasTicket(ticket.id))) return;
       const send = () => SendWhatsAppMessage({ body: `${MARK}${text}`, ticket, automated: true, choices: choices ? { ...choices, question: `${MARK}${choices.question}` } : undefined });
       try {
         await send();

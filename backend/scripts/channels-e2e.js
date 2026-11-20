@@ -3273,9 +3273,12 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(sql(`SELECT CONCAT(status,'|',IFNULL(userId,'null'),'|',CAST(aiActive AS INTEGER)) FROM Tickets WHERE id=${t}`) === "pending|null|1", "the conversation did not go back to the agent without an attendant");
       await waitFor(() => anthropic.requests.length > calls, 15000, "the agent answered the last message");
       assert(Number(sql(`SELECT COUNT(*) FROM TicketEvents WHERE ticketId=${t} AND type='handoff' AND note LIKE '%passou a conversa para o agente de IA%'`)) === 1, "the hand over was not written down");
+      // the consultant who handed it gets it back when the AI finishes (or when they take it back)
+      assert(sql(`SELECT IFNULL(aiReturnUserId,'null') FROM Tickets WHERE id=${t}`) === "1", "who handed the lead to the AI was not kept");
       // taking it back
       sql(`UPDATE Tickets SET aiActive=1, status='pending', userId=NULL WHERE id=${t}`);
       assert((await http.post(`/tickets/${t}/ai`, { active: false }, auth())).data.aiActive === false && sql(`SELECT CAST(aiActive AS INTEGER) FROM Tickets WHERE id=${t}`) === "0", "the agent was not taken off the conversation");
+      assert(sql(`SELECT CONCAT(status,'|',IFNULL(userId,'null'),'|',IFNULL(aiReturnUserId,'null')) FROM Tickets WHERE id=${t}`) === "open|1|null", "taking it back did not return the conversation to who handed it");
       // a group is not for the agent, and a consultant cannot move someone else's conversation
       assert((await http.post(`/tickets/${t}/ai`, { active: true }, { headers: {} })).status === 401, "no login");
     });
@@ -6684,6 +6687,9 @@ const postMeta = (id, payload, secret, badSig) => {
         const agent=await Agent.create({name:"Copiloto manual",provider:"anthropic",model:"claude-haiku-5-5",apiKey:"sk-ant-test",active:false,dailyTokenCap:1000000});
         console.log(JSON.stringify({ticketId:ticket.id,agentId:agent.id,connectionId:ticket.whatsappId}));`));
       const tid = copilotFixture.ticketId;
+      // the AI suggestions come on by default (tied to the sales process); the manager can still turn them off
+      assert(JSON.parse(inDb(`console.log(JSON.stringify(require("./dist/services/CopilotServices/Policy").defaultConfig().aiEnabled))`)) === true, "AI suggestions are not on by default");
+      { const off = (await http.get("/copilot/settings", auth())).data; off.aiEnabled = false; await http.put("/copilot/settings", off, auth()); }
       const before = anthropic.requests.length;
       let view = (await http.get(`/tickets/${tid}/copilot`, auth())).data;
       assert(view.enabled && !view.hasLead && view.steps.length === 15 && view.current === "course", "no process for unlinked contact");
@@ -6754,7 +6760,7 @@ const postMeta = (id, payload, secret, badSig) => {
       inDb(`const {quotaOf,configOf}=require("./dist/services/CopilotServices/Settings"); const q=await quotaOf(await configOf(),1,${copilotFixture.connectionId});assert.equal(q.total.used,1);`);
       let config = (await http.get("/copilot/settings", auth())).data;
       config.steps = config.steps.filter(s => s.key !== "custom_test");
-      config.aiEnabled=false; config.agentId=null; config.dailyLimit=100; config.userDailyLimit=20; config.connectionDailyLimit=50;
+      config.aiEnabled=true; config.agentId=null; config.dailyLimit=100; config.userDailyLimit=20; config.connectionDailyLimit=50;
       await http.put("/copilot/settings",config,auth());
     });
 

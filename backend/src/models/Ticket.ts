@@ -115,6 +115,10 @@ class Ticket extends Model<Ticket> {
   @Column
   handoffAt: Date;
 
+  // who handed this conversation to the AI to qualify: it comes back to this person (see TicketController.ai and the Router)
+  @Column
+  aiReturnUserId: number;
+
   @Column
   handoffReason: string;
 

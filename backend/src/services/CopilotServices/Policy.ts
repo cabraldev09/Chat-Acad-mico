@@ -38,7 +38,8 @@ export interface CopilotConfig {
   dailyLimit: number; userDailyLimit: number; connectionDailyLimit: number;
   connections: Record<string, ConnectionPolicy>; steps: ProcessStep[];
 }
-export const defaultConfig = (): CopilotConfig => ({ version: 1, enabled: true, aiEnabled: false, agentId: null,
+// the AI suggestions are on from the start (tied to the sales process); the manager may turn them off
+export const defaultConfig = (): CopilotConfig => ({ version: 1, enabled: true, aiEnabled: true, agentId: null,
   dailyLimit: 100, userDailyLimit: 20, connectionDailyLimit: 50, connections: {}, steps: DEFAULT_STEPS.map(s => ({ ...s })) });
 // The enrollment (confirmed by the CRM, never by a checkbox) closes the sale: only the steps that follow it by nature (the tutoring and the community, the referral program) may come after it.
 const AFTER_ENROLLMENT = ["comunidade", "afiliado"];
