@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from "react";
 import { toast } from "react-toastify";
-import { IconButton } from "@material-ui/core";
 import CancelOutlined from "@material-ui/icons/CancelOutlined";
 import { format, parseISO } from "date-fns";
 
 import CrudPage from "../../components/CrudPage";
+import IconAction from "../../components/IconAction";
+import StepsEditor, { emptyStep } from "../Campaigns/StepsEditor";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 
@@ -45,12 +46,31 @@ const Schedules = () => {
           options: connections.map((w) => ({ value: w.id, label: w.name })),
         },
         { name: "sendAt", label: "Enviar em", type: "datetime", required: true },
-        { name: "body", label: "Mensagem", type: "textarea", required: true, helper: "Use {{name}} para o nome do contato." },
+        {
+          name: "steps",
+          type: "custom",
+          label: "Mensagens",
+          default: [emptyStep()],
+          render: (value, setValue) => (
+            <StepsEditor schedule steps={Array.isArray(value) && value.length ? value : [emptyStep()]} onChange={setValue} />
+          ),
+        },
       ]}
+      mapIn={(row) => ({
+        ...row,
+        steps: Array.isArray(row.steps) && row.steps.length
+          ? row.steps.map((st) => ({ ...st, mediaName: st.mediaUrl || "" }))
+          : [{ ...emptyStep(), body: row.body || "", mediaUrl: row.mediaUrl || null, mediaName: row.mediaUrl || "", type: row.mediaUrl ? "media" : "text" }],
+      })}
+      mapOut={(payload) => ({ ...payload, steps: (payload.steps || []).map(({ mediaName, ...st }) => st) })}
       columns={[
         { header: "Contato", render: (r) => r.contact?.name },
         { header: "Quando", render: (r) => format(parseISO(r.sendAt), "dd/MM/yyyy HH:mm") },
-        { header: "Mensagem", render: (r) => (r.body.length > 60 ? `${r.body.slice(0, 60)}…` : r.body) },
+        { header: "Mensagem", render: (r) => {
+          const n = Array.isArray(r.steps) ? r.steps.length : 1;
+          const text = (r.body || "").length > 60 ? `${r.body.slice(0, 60)}…` : r.body || "(arquivo)";
+          return <span>{text}{n > 1 ? <span style={{ color: "var(--text-2)", fontSize: 12 }}> · {Math.min(r.stepsDone || 0, n)}/{n} enviadas</span> : null}</span>;
+        } },
         {
           header: "Situação",
           render: (r) => (
@@ -61,8 +81,7 @@ const Schedules = () => {
       canEdit={(r) => r.status === "pending"}
       rowActions={(r, reload) =>
         r.status === "pending" && (
-          <IconButton
-            size="small"
+          <IconAction
             title="Cancelar envio"
             onClick={async () => {
               try {
@@ -75,7 +94,7 @@ const Schedules = () => {
             }}
           >
             <CancelOutlined />
-          </IconButton>
+          </IconAction>
         )
       }
     />

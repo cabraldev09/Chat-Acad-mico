@@ -200,7 +200,7 @@ const AffiliateDrawer = ({ id, canOwner, isAdmin, users, polos, courses, onClose
 
             <div className={classes.section}>
               <div className={classes.sectionTitle}>Produção</div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 8 }}>
                 {[["Indicados", a.stats.referrals], ["Propostas", a.stats.proposals], ["Matrículas", a.stats.enrolled], ["Conversão", `${a.stats.conversion}%`]].map(([l, v]) => (
                   <GlowCard key={l} className={classes.kpi} style={{ padding: 10 }}><div className={classes.kpiValue} style={{ fontSize: 20 }}>{v}</div><div className={classes.kpiLabel}>{l}</div></GlowCard>
                 ))}

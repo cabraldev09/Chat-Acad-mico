@@ -25,24 +25,9 @@ import AppError from "../errors/AppError";
 import { getIO } from "../libs/socket";
 import makeCrud from "./crudFactory";
 import { assertOwnList, tutorIdOf, tutoriaConnectionId } from "../services/CampaignServices/Access";
-import { CampaignStep, MAX_CAMPAIGN_STEPS, stepsOf } from "../helpers/CampaignText";
+import { CampaignStep, MAX_CAMPAIGN_STEPS, cleanSteps, stepsOf } from "../helpers/CampaignText";
 
 // message/mediaUrl (the first step) stay filled for older screens and integrations
-const cleanSteps = (raw: any): CampaignStep[] => {
-  if (!Array.isArray(raw)) throw new AppError("ERR_CAMPAIGN_NO_MESSAGE");
-  if (raw.length > MAX_CAMPAIGN_STEPS) throw new AppError("ERR_CAMPAIGN_TOO_MANY_STEPS");
-  const out = raw.map((s: any) => {
-    const body = String(s?.body || "").trim().slice(0, 4000);
-    const mediaUrl = s?.mediaUrl ? String(s.mediaUrl) : null;
-    if (mediaUrl) publicFile(mediaUrl);
-    if (!body && !mediaUrl) throw new AppError("ERR_CAMPAIGN_STEP_EMPTY");
-    const delaySec = Math.min(600, Math.max(0, Math.round(Number(s?.delaySec) || 0)));
-    return { type: mediaUrl ? "media" : "text", body, mediaUrl, delaySec } as CampaignStep;
-  });
-  if (!out.length) throw new AppError("ERR_CAMPAIGN_NO_MESSAGE");
-  return out;
-};
-
 const applySteps = async (data: any, existing?: Campaign) => {
   if (data.steps === undefined && data.message !== undefined && !existing) {
     // legacy payload: a single message

@@ -35,7 +35,7 @@ const useStyles = makeStyles((theme) => {
   const card = "var(--surface)";
   const soft = "var(--surface-2)";
   return {
-    page: { padding: theme.spacing(3), maxWidth: 1280, margin: "0 auto", height: "auto" },
+    page: { padding: theme.spacing(3), maxWidth: 1280, margin: "0 auto", height: "auto", [theme.breakpoints.down("xs")]: { padding: theme.spacing(1.5) } },
     top: { display: "flex", alignItems: "flex-end", flexWrap: "wrap", gap: theme.spacing(2), marginBottom: theme.spacing(2.5) },
     hello: { fontSize: 22, fontWeight: 700, letterSpacing: "-0.02em", lineHeight: 1.2, margin: 0 },
     sub: { color: theme.palette.text.secondary, fontSize: 14, marginTop: 4 },
@@ -58,13 +58,13 @@ const useStyles = makeStyles((theme) => {
     panel: { background: card, border: `1px solid ${line}`, borderRadius: "var(--radius-card)", padding: theme.spacing(2.25, 2.5), boxShadow: "var(--shadow-card)", minWidth: 0 },
     panelTitle: { fontSize: 14, fontWeight: 650, margin: 0, letterSpacing: "-0.01em", display: "flex", alignItems: "center", gap: 8 },
     panelSub: { fontSize: 12.5, color: theme.palette.text.secondary, marginTop: 2 },
-    band: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", background: card, border: `1px solid ${line}`, borderRadius: "var(--radius-card)", overflow: "hidden", [theme.breakpoints.down("sm")]: { gridTemplateColumns: "repeat(2, 1fr)" } },
+    band: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", background: card, border: `1px solid ${line}`, borderRadius: "var(--radius-card)", overflow: "hidden", [theme.breakpoints.down("sm")]: { gridTemplateColumns: "repeat(2, 1fr)" }, [theme.breakpoints.down("xs")]: { gridTemplateColumns: "1fr" } },
     cell: { padding: theme.spacing(2, 2.25), borderRight: `1px solid ${line}`, [theme.breakpoints.down("sm")]: { borderBottom: `1px solid ${line}` }, "&:last-child": { borderRight: 0 } },
     cellLabel: { fontSize: 12.5, color: theme.palette.text.secondary, display: "flex", alignItems: "center", gap: 6, fontWeight: 500 },
     cellValue: { fontSize: 30, fontWeight: 700, letterSpacing: "-0.035em", lineHeight: 1.1, marginTop: 8, fontVariantNumeric: "tabular-nums" },
     cellNote: { fontSize: 12, marginTop: 6, color: theme.palette.text.secondary },
     pill: { display: "inline-block", fontSize: 11.5, fontWeight: 700, padding: "1px 7px", borderRadius: 999 },
-    nowGrid: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: theme.spacing(1) },
+    nowGrid: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: theme.spacing(1), [theme.breakpoints.down("xs")]: { gridTemplateColumns: "1fr" } },
     nowBtn: {
       border: `1px solid ${line}`, background: soft, borderRadius: 12, padding: "10px 12px", textAlign: "left", cursor: "pointer", fontFamily: "inherit", color: "inherit",
       "&:hover": { borderColor: theme.palette.primary.main },

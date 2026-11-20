@@ -47,7 +47,8 @@ const GROUPS = [
 const useStyles = makeStyles((theme) => ({
   body: { flex: 1, overflowY: "auto", overflowX: "hidden", ...theme.scrollbarStyles, paddingBottom: theme.spacing(4) },
   layout: { display: "grid", gridTemplateColumns: "250px minmax(0,1fr)", gap: theme.spacing(3), alignItems: "start", [theme.breakpoints.down("sm")]: { gridTemplateColumns: "1fr" } },
-  rail: { position: "sticky", top: 0, display: "flex", flexDirection: "column", gap: 2, [theme.breakpoints.down("sm")]: { position: "static", flexDirection: "row", flexWrap: "wrap", gap: 6 } },
+  // on the phone the groups become one row that slides sideways (not a tall block of buttons)
+  rail: { position: "sticky", top: 0, display: "flex", flexDirection: "column", gap: 2, [theme.breakpoints.down("sm")]: { position: "static", flexDirection: "row", flexWrap: "nowrap", overflowX: "auto", gap: 6, paddingBottom: 4, scrollbarWidth: "none", "&::-webkit-scrollbar": { display: "none" } } },
   railBtn: {
     border: 0, background: "transparent", color: theme.palette.text.secondary, textAlign: "left", cursor: "pointer", fontFamily: "inherit", padding: "9px 12px", borderRadius: 12,
     display: "flex", gap: 11, alignItems: "center", "&:hover": { background: theme.palette.action.hover, color: theme.palette.text.primary },
@@ -358,7 +359,7 @@ const RegrasAcademicas = () => {
         <TextField size="small" variant="outlined" type="number" label="Semestres adicionais simulados" value={r.maxAdditionalSemesters} onChange={(e) => setR({ ...r, maxAdditionalSemesters: e.target.value })} style={{ width: 230 }} InputLabelProps={{ shrink: true }} helperText="Limite de segurança" />
       </div>
       <div className={classes.row}>
-        <TextField select size="small" variant="outlined" label="Se sobrar pendência depois do último período" value={add.type} onChange={(e) => setR({ ...r, additionalSemesterCapacityRule: e.target.value === "FIXED_VALUE" ? { type: "FIXED_VALUE", value: add.value || 11 } : { type: e.target.value } })} style={{ minWidth: 340 }} InputLabelProps={{ shrink: true }}>
+        <TextField select size="small" variant="outlined" label="Se sobrar pendência depois do último período" value={add.type} onChange={(e) => setR({ ...r, additionalSemesterCapacityRule: e.target.value === "FIXED_VALUE" ? { type: "FIXED_VALUE", value: add.value || 11 } : { type: e.target.value } })} style={{ minWidth: 0, width: "100%", maxWidth: 420 }} InputLabelProps={{ shrink: true }}>
           <MenuItem value="SAME_AS_LAST_PERIOD">Cria semestres com a mesma capacidade do último período</MenuItem>
           <MenuItem value="FIXED_VALUE">Cria semestres com um número fixo de disciplinas</MenuItem>
           <MenuItem value="UNCONFIGURED">Não cria: a previsão fica em aberto com aviso</MenuItem>
@@ -491,7 +492,7 @@ const EmailModels = () => {
     <Paper variant="outlined" className={classes.card}>
       <div className={classes.cardTitle}>E-mails do sistema</div>
       <div className={classes.hint}>Todos usam o mesmo modelo, com a marca, um botão principal e o motivo do envio. Escolha um para ver como a pessoa recebe.</div>
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(220px, 300px) minmax(0, 1fr)", gap: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 16 }}>
         <div style={{ display: "grid", gap: 6, alignContent: "start" }}>
           {list.map((t) => (
             <button key={t.key} type="button" onClick={() => setKey(t.key)}

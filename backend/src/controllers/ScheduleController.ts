@@ -6,6 +6,7 @@ import Schedule from "../models/Schedule";
 import Contact from "../models/Contact";
 import AppError from "../errors/AppError";
 import makeCrud from "./crudFactory";
+import { cleanSteps } from "../helpers/CampaignText";
 
 const authorize = async (req: Request, row: Schedule): Promise<void> => {
   if (!isManagerRole(req.user.role) && row.userId !== Number(req.user.id)) throw new AppError("ERR_NO_PERMISSION", 403);
@@ -14,14 +15,23 @@ const authorize = async (req: Request, row: Schedule): Promise<void> => {
 const crud = makeCrud(Schedule, {
   event: "schedule",
   authorize,
-  fields: ["body", "sendAt", "contactId", "ticketId", "whatsappId", "mediaUrl"],
-  required: ["body", "sendAt", "contactId"],
+  fields: ["body", "sendAt", "contactId", "ticketId", "whatsappId", "mediaUrl", "steps"],
+  required: ["sendAt", "contactId"],
   include: [{ model: Contact, as: "contact", attributes: ["id", "name", "number"] }],
   order: [["sendAt", "ASC"]],
   beforeSave: async (data, req, existing) => {
     if (existing && existing.status !== "pending") throw new AppError("ERR_SCHEDULE_NOT_PENDING", 400);
     const target = { ...(existing ? existing.toJSON() : {}), ...data };
     await assertOutboundTarget(req, target);
+    // the messages: a sequence (steps) or a single text; the first one stays in body/mediaUrl for the older screens
+    if (data.steps !== undefined && data.steps !== null) {
+      const steps = cleanSteps(data.steps);
+      data.steps = steps;
+      data.body = steps[0].body;
+      data.mediaUrl = steps[0].mediaUrl;
+    } else if (!existing && !String(data.body || "").trim() && !data.mediaUrl) {
+      throw new AppError("ERR_FIELD_REQUIRED_body");
+    }
     if (data.mediaUrl) publicFile(data.mediaUrl);
     if (data.sendAt) {
       const d = new Date(data.sendAt);

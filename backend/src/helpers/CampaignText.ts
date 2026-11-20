@@ -1,5 +1,8 @@
 import Mustache from "mustache";
 
+import AppError from "../errors/AppError";
+import { publicFile } from "./PublicFile";
+
 export interface CampaignStep {
   type: "text" | "media";
   body: string;
@@ -28,4 +31,20 @@ export const renderCampaignText = (text: string, vars: Record<string, string>): 
 export const stepsOf = (c: { steps?: any; message?: string; mediaUrl?: string | null }): CampaignStep[] => {
   if (Array.isArray(c.steps) && c.steps.length) return c.steps as CampaignStep[];
   return [{ type: c.mediaUrl ? "media" : "text", body: c.message || "", mediaUrl: c.mediaUrl || null, delaySec: 0 }];
+};
+
+// the messages of a sequence (campaign or scheduled message), checked: up to 5, each with a text or a file, and the wait before the next one
+export const cleanSteps = (raw: any): CampaignStep[] => {
+  if (!Array.isArray(raw)) throw new AppError("ERR_CAMPAIGN_NO_MESSAGE");
+  if (raw.length > MAX_CAMPAIGN_STEPS) throw new AppError("ERR_CAMPAIGN_TOO_MANY_STEPS");
+  const out = raw.map((s: any) => {
+    const body = String(s?.body || "").trim().slice(0, 4000);
+    const mediaUrl = s?.mediaUrl ? String(s.mediaUrl) : null;
+    if (mediaUrl) publicFile(mediaUrl);
+    if (!body && !mediaUrl) throw new AppError("ERR_CAMPAIGN_STEP_EMPTY");
+    const delaySec = Math.min(600, Math.max(0, Math.round(Number(s?.delaySec) || 0)));
+    return { type: mediaUrl ? "media" : "text", body, mediaUrl, delaySec } as CampaignStep;
+  });
+  if (!out.length) throw new AppError("ERR_CAMPAIGN_NO_MESSAGE");
+  return out;
 };

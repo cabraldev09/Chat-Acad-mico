@@ -235,7 +235,7 @@ const Queues = () => {
                     {queue.greetingMessage && (
                       <div className={classes.customTableCell}>
                         <Typography
-                          style={{ width: 300, align: "center" }}
+                          style={{ maxWidth: 300, width: "100%", align: "center" }}
                           noWrap
                           variant="body2"
                         >

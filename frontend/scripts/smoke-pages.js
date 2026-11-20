@@ -236,6 +236,33 @@ async function sweepRole(browser, name, def) {
     try { await page.goto(`${BASE}/configuracoes?secao=${g}`, { waitUntil: "networkidle2", timeout: 40000 }); } catch (e) { note("timeout", e.message); }
     await check(`/configuracoes?secao=${g}`);
   }
+  // the phone (390×844): every screen again, looking for anything wider than the screen (the page or a box sticking out of it)
+  if (name === "admin" || name === "tutor") {
+    await page.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true });
+    for (const route of [...ROUTES.filter((r) => !/\/\d+$/.test(r)), ...SETTINGS_GROUPS.map((g) => `/configuracoes?secao=${g}`)]) {
+      current = `${route} (celular)`;
+      try { await page.goto(BASE + route, { waitUntil: "networkidle2", timeout: 40000 }); } catch (e) { note("timeout", e.message); continue; }
+      await sleep(1200);
+      const wide = await page.evaluate(() => {
+        const W = window.innerWidth;
+        const main = document.querySelector("main");
+        const out = [];
+        if (document.documentElement.scrollWidth > W + 2) out.push(`page ${document.documentElement.scrollWidth}px`);
+        if (main && main.scrollWidth > main.clientWidth + 4) {
+          // the widest thing that is not inside a box that scrolls by itself
+          const culprit = [...main.querySelectorAll("*")].find((el) => {
+            const r = el.getBoundingClientRect();
+            if (r.right <= W + 2 || !r.width) return false;
+            for (let p = el.parentElement; p && p !== main; p = p.parentElement) { if (/(auto|scroll)/.test(getComputedStyle(p).overflowX)) return false; }
+            return true;
+          });
+          if (culprit) out.push(`${culprit.tagName.toLowerCase()}.${String(culprit.className).split(" ")[0].slice(0, 30)} até ${Math.round(culprit.getBoundingClientRect().right)}px`);
+        }
+        return out;
+      }).catch(() => []);
+      wide.forEach((w) => note("mobile", w));
+    }
+  }
   await ctx.close();
   return issues;
 }

@@ -133,7 +133,8 @@ const useStyles = makeStyles((theme) => ({
     flex: 1,
     minWidth: 0,
     overflowY: "auto",
-    overflowX: "hidden",
+    // a page wider than the screen scrolls instead of being cut silently
+    overflowX: "auto",
   },
 }));
 
@@ -143,6 +144,8 @@ const LoggedInLayout = ({ children }) => {
   const isMobile = useMediaQuery((theme) => theme.breakpoints.down("xs"), {
     noSsr: true,
   });
+  // tablets and landscape phones (up to 960px): the menu stays as a column of icons, so the page keeps its width
+  const isCompact = useMediaQuery((theme) => theme.breakpoints.down("sm"), { noSsr: true });
   const [drawerOpen, setDrawerOpen] = useState(false);
   const alertsRef = useRef(null);
   const [alertsH, setAlertsH] = useState(0);
@@ -163,11 +166,11 @@ const LoggedInLayout = ({ children }) => {
   const location = useLocation();
 
   useEffect(() => {
-    setDrawerOpen(!isMobile);
-  }, [isMobile]);
+    setDrawerOpen(!isCompact);
+  }, [isCompact]);
 
   const drawerClose = () => {
-    if (isMobile) {
+    if (isCompact) {
       setDrawerOpen(false);
     }
   };

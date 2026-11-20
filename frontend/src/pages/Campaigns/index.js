@@ -485,17 +485,17 @@ const ListPicker = ({ value, lists, picked, onPicked, setValue, onNew, tutor }) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [picked]);
   return (
-    <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+    <div style={{ display: "flex", gap: 8, alignItems: "flex-start", flexWrap: "wrap" }}>
       <TextField
-        select fullWidth required variant="outlined" margin="dense" label="Lista de contatos"
+        select required variant="outlined" margin="dense" label="Lista de contatos" style={{ flex: "1 1 260px", minWidth: 0 }}
         value={lists.some((l) => l.id === value) ? value : ""}
         onChange={(e) => setValue(e.target.value)}
-        helperText={lists.length ? (tutor ? "Os seus alunos que vão receber as mensagens." : "Quem vai receber. Para mandar direto para os leads do CRM, use “Do CRM”: a lista sai dos filtros que você escolher.") : "Você ainda não tem listas: crie a primeira ao lado."}
+        helperText={lists.length ? (tutor ? "Os seus alunos que vão receber." : "Quem vai receber. “Do CRM” monta a lista pelos filtros.") : "Você ainda não tem listas: crie ao lado."}
       >
         {lists.map((l) => (<MenuItem key={l.id} value={l.id}>{l.name} ({l.itemCount} {Number(l.itemCount) === 1 ? "pessoa" : "pessoas"})</MenuItem>))}
       </TextField>
-      <Button variant="outlined" color="primary" onClick={() => onNew(0)} startIcon={<UsersIcon size={16} />} style={{ marginTop: 8, whiteSpace: "nowrap", height: 40 }}>{tutor ? "Dos meus alunos" : "Do CRM"}</Button>
-      {!tutor && <Button variant="outlined" onClick={() => onNew(1)} startIcon={<PlusIcon size={16} />} style={{ marginTop: 8, whiteSpace: "nowrap", height: 40 }}>Colar números</Button>}
+      <Button variant="outlined" color="primary" onClick={() => onNew(0)} startIcon={<UsersIcon size={16} />} style={{ marginTop: 8, whiteSpace: "nowrap", height: 40, flex: "0 0 auto" }}>{tutor ? "Dos meus alunos" : "Do CRM"}</Button>
+      {!tutor && <Button variant="outlined" onClick={() => onNew(1)} startIcon={<PlusIcon size={16} />} style={{ marginTop: 8, whiteSpace: "nowrap", height: 40, flex: "0 0 auto" }}>Colar números</Button>}
     </div>
   );
 };
@@ -505,7 +505,7 @@ const MoreActions = ({ items }) => {
   const [anchor, setAnchor] = useState(null);
   return (
     <>
-      <IconButton size="small" aria-label="Mais ações" title="Mais ações" onClick={(e) => setAnchor(e.currentTarget)}><MoreHoriz fontSize="small" /></IconButton>
+      <IconAction title="Mais ações" onClick={(e) => setAnchor(e.currentTarget)}><MoreHoriz /></IconAction>
       <Menu anchorEl={anchor} open={!!anchor} onClose={() => setAnchor(null)}>
         {items.map((it) => <MenuItem key={it.label} onClick={() => { setAnchor(null); it.onClick(); }} style={it.danger ? { color: "#b91c1c" } : undefined}>{it.label}</MenuItem>)}
       </Menu>
@@ -725,7 +725,7 @@ const Campaigns = () => {
             fields={[{ name: "name", label: "Nome da lista", required: true }]}
             columns={[
               { header: "Lista", field: "name" },
-              { header: "Contatos", field: "itemCount" },
+              { header: "Contatos", field: "itemCount", align: "right" },
             ]}
             rowActions={(r) => (
               <IconAction title="Ver e editar os contatos" onClick={() => setListDialog(r)}><People /></IconAction>

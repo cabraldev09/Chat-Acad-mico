@@ -54,9 +54,9 @@ const Leads = ({ consultant, params, onClose }) => {
                   {l.stage && <span style={pill(l.stageColor)}>{l.stage}</span>}
                   {l.temperature && <span style={pill()}>{{ cold: "Frio", warm: "Morno", hot: "Quente" }[l.temperature] || l.temperature}</span>}
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13, flexWrap: "wrap" }}>
                   <span style={{ color: "var(--text-2)" }}>Parou em:</span><b>{l.stoppedAt}</b>
-                  <span style={{ flex: 1 }} /><div style={{ width: 160 }}><Bar value={l.progress} /></div>
+                  <span style={{ flex: 1 }} /><div style={{ width: 160, maxWidth: "100%" }}><Bar value={l.progress} /></div>
                 </div>
                 {l.summary && <div style={{ fontSize: 12.5, color: "var(--text-2)" }}>{l.summary}</div>}
               </button>

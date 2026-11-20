@@ -25,7 +25,7 @@ export const useKit = makeStyles((theme) => ({
   h2: { fontSize: 14, fontWeight: 650, margin: 0, display: "flex", alignItems: "center", gap: 8, letterSpacing: "-0.01em" },
   sub: { fontSize: 12.5, color: "var(--text-2)", marginTop: 3 },
   grid: { display: "grid", gap: theme.spacing(1.5), gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))" },
-  cols: { display: "grid", gap: theme.spacing(2), gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", alignItems: "start" },
+  cols: { display: "grid", gap: theme.spacing(2), gridTemplateColumns: "repeat(auto-fit, minmax(min(320px, 100%), 1fr))", alignItems: "start" },
   kpi: { background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "var(--radius-card)", padding: "14px 16px", minWidth: 0, position: "relative", boxShadow: "var(--shadow-card)", transition: "border-color .15s ease", "&:hover": { borderColor: "var(--line-strong)" } },
   kpiIcon: { display: "inline-flex", alignItems: "center", justifyContent: "center", flex: "none", width: 28, height: 28, borderRadius: 8, color: "var(--tone, var(--text-2))", background: "color-mix(in srgb, var(--tone, #64748b) 12%, transparent)" },
   kpiLabel: { fontSize: 12.5, fontWeight: 550, color: "var(--text-2)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, minHeight: 28 },

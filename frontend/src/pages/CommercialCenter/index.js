@@ -566,7 +566,7 @@ const CommercialCenter = () => {
   return (
     <div className={`${c.page} dash-scope`}>
       <StatsHubBar />
-      <div style={{ background: "linear-gradient(135deg, #0a3a6d 0%, #0b4279 55%, #0d5aa0 100%)", color: "#fff", borderRadius: 24, padding: "22px 26px 0", marginBottom: 18, boxShadow: "0 30px 60px -34px rgba(8,40,82,.9), inset 0 1px 0 rgba(255,255,255,.14)", position: "relative", overflow: "hidden" }}>
+      <div style={{ background: "linear-gradient(135deg, #0a3a6d 0%, #0b4279 55%, #0d5aa0 100%)", color: "#fff", borderRadius: "clamp(14px, 3vw, 24px)", padding: "clamp(14px, 3vw, 22px) clamp(14px, 3vw, 26px) 0", marginBottom: 18, boxShadow: "0 30px 60px -34px rgba(8,40,82,.9), inset 0 1px 0 rgba(255,255,255,.14)", position: "relative", overflow: "hidden" }}>
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
           <div>
             <h1 className={c.h1} style={{ color: "#fff" }}>Gestão Comercial</h1>
