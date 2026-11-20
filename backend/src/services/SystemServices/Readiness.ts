@@ -33,7 +33,7 @@ export const readiness = async (): Promise<ReadinessItem[]> => {
   add("tutoria", "Número da Tutoria", !!tutoriaNumber, "required", tutoriaNumber ? `O aluno recebe o número ${tutoriaNumber} na matrícula.` : "Sem número, o aluno não recebe o contato da tutoria ao se matricular.", "Configurações → Tutoria");
 
   const allowed = (await getSetting("outbound_allow_templates", "false")) === "true";
-  add("templates_allowed", "Envio de modelos autorizado", allowed, "required", allowed ? "Autorizado." : "Sem autorização, nada sai fora das 24 horas (abertura, boas-vindas, campanhas com modelo).", "Configurações → Operação e custos");
+  add("templates_allowed", "Envio de modelos autorizado", allowed, "required", allowed ? "Autorizado." : "Sem autorização, nada sai fora das 24 horas (abertura, boas-vindas, campanhas com modelo).", "Configurações → Operação");
   const linked = await Promise.all(["atendimento_template_name", "tutoria_template_name", "boas_vindas_template_name"].map(k => getSetting(k, "")));
   const missing = ["abertura do atendimento", "abertura da tutoria", "boas-vindas da matrícula"].filter((_, i) => !String(linked[i] || "").trim());
   add("templates", "Modelos aprovados em uso", !missing.length, "required", missing.length ? `Falta modelo para: ${missing.join(", ")}.` : "Abertura do atendimento, da tutoria e boas-vindas com modelos aprovados.", "Configurações → Modelos da Meta");

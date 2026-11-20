@@ -10,10 +10,21 @@ import User from "../models/User";
 export const DEFAULT_WELCOME =
   "Olá, {{primeiro_nome}}! Parabéns pela matrícula! 🎓 Eu sou {{tutor}}, tutor(a) do polo {{polo}}, e vou te ajudar no primeiro acesso à plataforma. Qual o melhor horário para falarmos?";
 
+// each tutor may write their own text (Meus alunos → Meu texto de boas-vindas); without one, the text of the company, else the default
+export const companyWelcome = async (): Promise<string> => (await getSetting("onboarding_welcome_template", "")).trim() || DEFAULT_WELCOME;
+export const ownWelcomeOf = (preferences: string | null | undefined): string => {
+  try {
+    const v = preferences ? JSON.parse(preferences) : {};
+    return typeof v?.welcomeTemplate === "string" ? v.welcomeTemplate.trim() : "";
+  } catch (e) {
+    return "";
+  }
+};
+
 export const renderWelcome = async (ticket: Ticket, actorId: number): Promise<string> => {
-  const template = (await getSetting("onboarding_welcome_template", "")).trim() || DEFAULT_WELCOME;
   const contact = await Contact.findByPk(ticket.contactId, { attributes: ["name"] });
-  const tutor = await User.findByPk(ticket.userId || actorId, { attributes: ["name"] });
+  const tutor = await User.findByPk(ticket.userId || actorId, { attributes: ["name", "preferences"] });
+  const template = ownWelcomeOf(tutor?.preferences) || (await companyWelcome());
   const queue = ticket.queueId ? await Queue.findByPk(ticket.queueId, { attributes: ["poloId"] }) : null;
   const polo = queue?.poloId ? await Polo.findByPk(queue.poloId, { attributes: ["name"] }) : null;
   const table: Record<string, string> = {

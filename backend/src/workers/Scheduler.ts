@@ -9,6 +9,7 @@ import SendToContact from "../services/ChannelServices/SendToContact";
 import { getIO } from "../libs/socket";
 import { logger } from "../utils/logger";
 import { stepsOf } from "../helpers/CampaignText";
+import { withButtons } from "../helpers/QuickButtons";
 
 let busy = false;
 
@@ -49,10 +50,13 @@ export const tick = async (): Promise<void> => {
         const index = Math.min(Number(schedule.stepsDone) || 0, steps.length - 1);
         const step = steps[index];
         // eslint-disable-next-line no-await-in-loop
+        const tapped = step.mediaUrl ? { body: step.body, choices: null } : withButtons(whatsapp.channel, step.body, step.buttons);
+        // eslint-disable-next-line no-await-in-loop
         await SendToContact({
           contact,
           whatsapp,
-          body: step.body,
+          body: tapped.body,
+          choices: tapped.choices,
           mediaUrl: step.mediaUrl,
           idempotencyKey: index === 0 ? `schedule:${schedule.id}` : `schedule:${schedule.id}:${index}`
         });

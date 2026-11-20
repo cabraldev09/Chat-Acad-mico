@@ -4,6 +4,7 @@ import { renderCampaignText, CampaignStep } from "../../helpers/CampaignText";
 import SendToContact from "../ChannelServices/SendToContact";
 import { resolveOutboundContact } from "../ChannelServices/ResolveOutboundContact";
 import { fillTemplate, templateValues } from "./Templates";
+import { withButtons } from "../../helpers/QuickButtons";
 
 // An approved template opens the conversation on the official API; the messages after it need the person to answer first.
 export const usesTemplate = (campaign: Campaign, whatsapp: Whatsapp): boolean => whatsapp.channel === "whatsapp_cloud" && !!campaign.templateName;
@@ -33,13 +34,17 @@ export const deliverStep = async (opts: {
     // the conversation keeps what the person really received
     if (filled.text) sentText = filled.text;
   }
+  // the buttons of the step (the approved template brings its own, if any)
+  const tapped = viaTemplate || step.mediaUrl ? { body: sentText, choices: null } : withButtons(whatsapp.channel, sentText, step.buttons);
+  sentText = tapped.body;
   await SendToContact({
     idempotencyKey: opts.idempotencyKey,
     contact,
     whatsapp,
     body: sentText,
     mediaUrl: viaTemplate ? undefined : step.mediaUrl,
-    template
+    template,
+    choices: tapped.choices
   });
   return sentText;
 };

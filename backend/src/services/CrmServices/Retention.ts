@@ -12,6 +12,8 @@ import { logger } from "../../utils/logger";
 import SendToContact from "../ChannelServices/SendToContact";
 import { setLabel } from "./Labels";
 import { assertCanSend, logRetention } from "./RetentionLog";
+import { retentionTemplate, retentionTemplateName } from "./RetentionTemplate";
+import { withButtons } from "../../helpers/QuickButtons";
 import { addActivity, resolveRelationshipTarget } from "./LeadCore";
 
 // Keeping the students: who went quiet (risk of dropping out) and the re-enrollment of the next period.
@@ -129,19 +131,32 @@ export const runRiskScan = async (): Promise<number> => {
 };
 
 // a message of the team to a student: the retention message of the settings (at risk) or a text written by hand (`custom`)
-export const sendRetentionMessage = async (lead: Lead, userId: number, custom?: string): Promise<string> => {
+export const sendRetentionMessage = async (lead: Lead, userId: number, custom?: string, buttons?: string[]): Promise<string> => {
   const { riskMessage } = await readRetentionConfig();
-  const body = render(custom && custom.trim() ? custom.trim() : riskMessage, lead.name);
+  let body = render(custom && custom.trim() ? custom.trim() : riskMessage, lead.name);
   const kind = custom && custom.trim() ? "custom" : "risk";
   const { contact, whatsapp } = await resolveRelationshipTarget(lead, userId);
+  let withButtonsSent = false;
   try {
-    await assertCanSend(contact, whatsapp);
-    await SendToContact({ contact, whatsapp, body, keepOpen: { userId } });
+    // outside the 24 h of the official API: the approved Utility opening of the relationship department, never a Marketing message
+    const official = whatsapp.channel === "whatsapp_cloud";
+    const hasTemplate = official && !!(await retentionTemplateName("relacionamento"));
+    const { outsideWindow } = await assertCanSend(contact, whatsapp, { allowTemplate: hasTemplate });
+    const opening = outsideWindow && hasTemplate ? await retentionTemplate("relacionamento", lead, userId) : null;
+    if (opening) {
+      body = opening.text;
+      await SendToContact({ contact, whatsapp, body, template: opening.template, keepOpen: { userId } });
+    } else {
+      const tapped = withButtons(whatsapp.channel, body, buttons);
+      withButtonsSent = !!tapped.choices || tapped.body !== body;
+      body = tapped.body;
+      await SendToContact({ contact, whatsapp, body, choices: tapped.choices, keepOpen: { userId } });
+    }
   } catch (err) {
     await logRetention({ lead, contactId: contact.id, kind, body, userId, error: (err as Error).message, whatsappId: whatsapp.id });
     throw err;
   }
-  await logRetention({ lead, contactId: contact.id, kind, body, userId, whatsappId: whatsapp.id });
+  await logRetention({ lead, contactId: contact.id, kind, body, userId, withButtons: withButtonsSent, whatsappId: whatsapp.id });
   await addActivity(lead.id, userId, "whatsapp", kind === "custom" ? "Mensagem enviada ao aluno pela tela de Retenção." : "Mensagem de retenção enviada ao aluno.");
   return body;
 };
@@ -241,11 +256,17 @@ export const runRematricula = async (): Promise<number> => {
       try {
         // eslint-disable-next-line no-await-in-loop
         const { contact, whatsapp } = await resolveRelationshipTarget(lead, lead.onboardingTutorId || lead.ownerId || 0);
-        const text = render(c.message, lead.name, { periodo: c.term });
+        let text = render(c.message, lead.name, { periodo: c.term });
+        // outside the 24 h of the official API: the approved Utility notice of re-enrollment
         // eslint-disable-next-line no-await-in-loop
-        await assertCanSend(contact, whatsapp);
+        const hasTemplate = whatsapp.channel === "whatsapp_cloud" && !!(await retentionTemplateName("rematricula"));
         // eslint-disable-next-line no-await-in-loop
-        await SendToContact({ contact, whatsapp, body: text });
+        const { outsideWindow } = await assertCanSend(contact, whatsapp, { allowTemplate: hasTemplate });
+        // eslint-disable-next-line no-await-in-loop
+        const notice = outsideWindow && hasTemplate ? await retentionTemplate("rematricula", lead, null, { endsAt: c.endsAt }) : null;
+        if (notice) text = notice.text;
+        // eslint-disable-next-line no-await-in-loop
+        await SendToContact({ contact, whatsapp, body: text, template: notice ? notice.template : null });
         // eslint-disable-next-line no-await-in-loop
         await logRetention({ lead, contactId: contact.id, kind: "remat", body: text, whatsappId: whatsapp.id });
         // eslint-disable-next-line no-await-in-loop

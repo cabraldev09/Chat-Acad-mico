@@ -1066,6 +1066,25 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(sql(`SELECT stepsDone FROM CampaignShippings WHERE campaignId=${c.id}`) === "3", "stepsDone");
       assert(sql(`SELECT nextRunAt IS NOT NULL FROM Campaigns WHERE id=${c.id}`) === "1", "runner state was not persisted");
     });
+    await test("campaign and scheduled message steps go with quick-reply buttons (native on the official API)", async () => {
+      await postMeta(cid, cloudEvent([{ from: "5511955557777", id: "wamid.buttons.optin", type: "text", text: { body: "Quero saber das bolsas" } }]), cloudCfg.appSecret);
+      await waitFor(() => ticketOf("5511955557777"), 8000, "buttons customer request");
+      const list = (await http.post("/contact-lists", { name: "Botões" }, auth())).data;
+      await http.post(`/contact-lists/${list.id}/import`, { items: [{ name: "Rita Botões", number: "5511955557777" }] }, auth());
+      const c = (await http.post("/campaigns", { name: "Com botões", steps: [{ body: "Oi {{primeiro_nome}}, quer a sua bolsa?", buttons: ["Quero", "Agora não"], delaySec: 0 }], contactListId: list.id, whatsappId: cid, intervalMin: 0, intervalMax: 0, batchSize: 50, batchPause: 1 }, auth())).data;
+      assert(Array.isArray(c.steps) && c.steps[0].buttons.join("|") === "Quero|Agora não", `steps saved ${JSON.stringify(c.steps)}`);
+      const before = graph.sent.length;
+      assert((await http.post(`/campaigns/${c.id}/start`, {}, auth())).status === 200, "start");
+      const msg = await waitFor(() => graph.sent.slice(before).find(x => x.body && x.body.to === "5511955557777" && x.body.type === "interactive"), 30000, "the campaign with buttons");
+      assert(msg.body.interactive.action.buttons.map(b => b.reply.title).join("|") === "Quero|Agora não" && msg.body.interactive.body.text === "Oi Rita, quer a sua bolsa?", `campaign buttons ${JSON.stringify(msg.body.interactive).slice(0, 200)}`);
+      // the same steps in a scheduled message
+      const contactId = Number(sql(`SELECT id FROM Contacts WHERE number='5511955557777' LIMIT 1`));
+      const before2 = graph.sent.length;
+      const sch = await http.post("/schedules", { contactId, whatsappId: cid, sendAt: new Date(Date.now() - 1000).toISOString(), steps: [{ body: "Lembrete da sua bolsa", buttons: ["Ok"] }] }, auth());
+      assert(sch.status < 300, `schedule ${sch.status} ${JSON.stringify(sch.data).slice(0, 200)}`);
+      const sm = await waitFor(() => graph.sent.slice(before2).find(x => x.body && x.body.to === "5511955557777" && x.body.type === "interactive"), 90000, "the scheduled message with buttons");
+      assert(sm.body.interactive.action.buttons.map(b => b.reply.title).join() === "Ok", "scheduled buttons");
+    });
     // Free-text Cloud campaigns need a prior inbound message, just like production.
     for (const number of ["5511955551111", "5521955552001", "5521955552002", "5521955552003", "5521955552004", "5521955552005", "5521955553001", "5521955553002", "5521955553003"]) {
       await inboundCloud(number, `wamid.campaign-optin-${number}`, "Quero informações sobre os cursos");
@@ -5639,6 +5658,22 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(graph.sent.slice(before).filter(x => /ambientação/.test(JSON.stringify(x.body || {}))).length === 1, "the tutoring contact went twice");
       await http.put("/settings/tutoria_numero", { value: "" }, auth());
     });
+    await test("costs: the AI spending by use and model for the management, and each tutor's own welcome text", async () => {
+      sql(`INSERT INTO AiUsage (model, kind, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, estimatedUsd, createdAt, updatedAt) VALUES ('gpt-4o-mini', 'reply', 1000, 500, 0, 0, 0.0012, NOW(), NOW()), ('claude-sonnet-4-5', 'reading', 3000, 800, 0, 0, NULL, NOW(), NOW())`);
+      const costs = await http.get("/operations/ai-costs", { params: { days: 1 }, ...auth() });
+      assert(costs.status === 200 && costs.data.total.calls >= 2 && costs.data.total.unpriced >= 1, `ai costs ${JSON.stringify(costs.data).slice(0, 300)}`);
+      assert(costs.data.byProvider.some(p => p.label === "OpenAI") && costs.data.byProvider.some(p => p.label === "Anthropic"), "the providers");
+      assert(costs.data.byKind.some(k => k.label === "Leitura de documentos e prints"), "the kinds");
+      const consTok = (await http.post("/auth/login", { email: "consultorm@matricula.test", password: "senha123" })).data.token;
+      assert((await http.get("/operations/ai-costs", asUser(consTok))).status === 403, "a consultant read the AI costs");
+      // the welcome text: the tutor's own one first, else the company's
+      const me = await http.get("/me/preferences", asUser(consTok));
+      assert(me.status === 200 && typeof me.data.companyWelcome === "string" && me.data.companyWelcome.length > 10, "the company welcome is shown as the base");
+      const saved = await http.put("/me/preferences", { welcomeTemplate: "Oi {{primeiro_nome}}, aqui é {{tutor}}!" }, asUser(consTok));
+      assert(saved.status === 200 && saved.data.welcomeTemplate === "Oi {{primeiro_nome}}, aqui é {{tutor}}!", "the own welcome was not saved");
+      const cleared = await http.put("/me/preferences", { welcomeTemplate: "  " }, asUser(consTok));
+      assert(cleared.status === 200 && cleared.data.welcomeTemplate === undefined, "clearing kept the own welcome");
+    });
     await test("agent draft: changes are kept apart while the published version keeps answering, and publishing clears the draft with history", async () => {
       const id = Number(sql(`SELECT id FROM AiAgents ORDER BY id LIMIT 1`));
       const live = (await http.get("/ai-agents", auth())).data.find(a => a.id === id);
@@ -6186,6 +6221,24 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(tplMsg.body.template.name === "pesquisanps" && tplMsg.body.template.components[0].parameters[0].text === "Elis", "template payload");
       assert(!graph.sent.slice(before4).some(x => x.body && x.body.type === "interactive"), "buttons were sent outside the 24 hours");
       await http.put("/retention/config", { nps: { templateName: "" } }, auth());
+
+      // the retention message outside the 24 hours goes by the Utility opening of the relationship department (never free text)
+      await http.put("/settings/relacionamento_template_name", { value: "abertura_relacionamento" }, auth());
+      const before6 = graph.sent.length;
+      const opening = await http.post("/retention/send", { kind: "custom", leadIds: [elis.leadId], text: "Oi {{nome}}, tudo certo com o curso?", buttons: ["Sim", "Não"] }, auth());
+      assert(opening.status === 200 && opening.data.sent === 1, `utility opening ${JSON.stringify(opening.data).slice(0, 200)}`);
+      const opened = await waitFor(() => graph.sent.slice(before6).find(x => x.body && x.body.to === elis.from && x.body.type === "template"), 12000, "the utility opening");
+      assert(opened.body.template.name === "abertura_relacionamento" && opened.body.template.components[0].parameters[0].text === "Elis", `opening payload ${JSON.stringify(opened.body.template).slice(0, 200)}`);
+      assert(!graph.sent.slice(before6).some(x => x.body && x.body.to === elis.from && ["text", "interactive"].includes(x.body.type)), "free text went outside the 24 hours");
+      await http.put("/settings/relacionamento_template_name", { value: "" }, auth());
+
+      // inside the 24 hours the message written by hand goes with the quick-reply buttons
+      const before7 = graph.sent.length;
+      const tapped = await http.post("/retention/send", { kind: "custom", leadIds: [davi.leadId], text: "Oi {{nome}}, vai renovar a matrícula?", buttons: ["Sim, vou", "Ainda não", "Falar com alguém", "Quarto botão"] }, auth());
+      assert(tapped.status === 200 && tapped.data.sent === 1, `buttons ${JSON.stringify(tapped.data).slice(0, 200)}`);
+      const withBtn = await waitFor(() => graph.sent.slice(before7).find(x => x.body && x.body.to === davi.from && x.body.type === "interactive"), 12000, "the message with buttons");
+      assert(withBtn.body.interactive.action.buttons.map(b => b.reply.title).join("|") === "Sim, vou|Ainda não|Falar com alguém", `retention buttons ${JSON.stringify(withBtn.body.interactive).slice(0, 200)}`);
+      assert(withBtn.body.interactive.body.text.includes("Oi Davi, vai renovar"), "the text of the message with buttons");
 
       // who asked to stop (SAIR) receives nothing
       sql(`UPDATE Contacts SET optOut=true WHERE id=${elis.contactId}`);

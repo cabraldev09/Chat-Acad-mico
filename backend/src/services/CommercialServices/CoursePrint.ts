@@ -7,6 +7,9 @@ import { promisify } from "util";
 
 import { anthropicAccess, openaiAccess } from "../AiServices/Keys";
 import { logger } from "../../utils/logger";
+import { logUsage } from "../AiServices/Usage";
+// the reading costs go to the AI usage too (Configurações > Custos); a failure to record never stops the reading
+const record = (model: string, usage: any): void => { if (usage) logUsage({ model, kind: "reading", usage }).catch(() => undefined); };
 
 // The print of a course that the institution sends to the commercial team: the model reads it like a person would and hands back the course, the format,
 // the share of presential (and live) classes and the text approved to tell the student. Nothing read here is used before the management confirms it.
@@ -100,6 +103,7 @@ export const readImageWithTool = async (
         model: MODEL, max_tokens: 2000, system, tools: [tool], tool_choice: { type: "tool", name: tool.name },
         messages: [{ role: "user", content: [{ type: "image", source: { type: "base64", media_type: media, data: image.toString("base64") } }, { type: "text", text: instruction }] }]
       }, { headers: { "x-api-key": anthropic.apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" }, timeout: 120000, maxBodyLength: Infinity });
+      record(MODEL, data?.usage);
       return (data?.content || []).find((b: any) => b.type === "tool_use" && b.name === tool.name)?.input;
     }
     const { data } = await axios.post(`${OPENAI_URL()}/v1/chat/completions`, {
@@ -108,6 +112,7 @@ export const readImageWithTool = async (
       tools: [{ type: "function", function: { name: tool.name, description: tool.description, parameters: tool.input_schema } }],
       tool_choice: { type: "function", function: { name: tool.name } }
     }, { headers: { Authorization: `Bearer ${openai.apiKey}`, "content-type": "application/json" }, timeout: 120000, maxBodyLength: Infinity });
+    record(OPENAI_MODEL, data?.usage);
     const args = data?.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments;
     return args ? JSON.parse(args) : null;
   } catch (err: any) {

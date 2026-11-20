@@ -9,6 +9,9 @@ import { logger } from "../../../utils/logger";
 import { anthropicAccess, openaiAccess } from "../../../services/AiServices/Keys";
 import type { DetectedRow } from "./table-detector";
 import type { LocalExtraction } from "./parser";
+import { logUsage } from "../../../services/AiServices/Usage";
+// the reading costs go to the AI usage too (Configurações > Custos); a failure to record never stops the reading
+const record = (model: string, usage: any): void => { if (usage) logUsage({ model, kind: "reading", usage }).catch(() => undefined); };
 
 // Some printouts have no text at all: the browser drew the letters as shapes ("Save as PDF" with outlined fonts), so the local reader finds nothing.
 // For those, and only those, the model reads the pages like a person would and hands back the same two lists the local reader builds for the unified
@@ -110,6 +113,7 @@ const askModel = async (bytes: Buffer, pages: Buffer[] | null, anthropicKey: str
       },
       { headers: { "x-api-key": anthropicKey, "anthropic-version": "2023-06-01", "content-type": "application/json" }, timeout: 180000, maxBodyLength: Infinity }
     );
+    record(MODEL, data?.usage);
     return (data?.content || []).find((b: any) => b.type === "tool_use" && b.name === TOOL)?.input;
   }
   const parts: any[] = pages
@@ -127,6 +131,7 @@ const askModel = async (bytes: Buffer, pages: Buffer[] | null, anthropicKey: str
     },
     { headers: { Authorization: `Bearer ${openaiKey}`, "content-type": "application/json" }, timeout: 180000, maxBodyLength: Infinity }
   );
+  record(OPENAI_MODEL, data?.usage);
   const args = data?.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments;
   return args ? JSON.parse(args) : null;
 };

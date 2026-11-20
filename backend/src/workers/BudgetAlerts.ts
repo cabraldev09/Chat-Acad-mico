@@ -32,7 +32,7 @@ export const tickBudgetAlerts = async (): Promise<void> => {
       const id = `${key}:${level}`;
       if (!level || notified.has(id)) continue;
       notified.add(id);
-      getIO().emit("budgetAlert", { key, level, text: `${label}: ${level === 100 ? "limite diário atingido" : "80% do limite diário utilizado ou reservado"}. Confira Operação e custos.` });
+      getIO().emit("budgetAlert", { key, level, text: `${label}: ${level === 100 ? "limite diário atingido" : "80% do limite diário utilizado ou reservado"}. Confira Operação.` });
     }
   } catch (err) { logger.warn(`Budget alerts: ${err}`); }
   finally { busy = false; }

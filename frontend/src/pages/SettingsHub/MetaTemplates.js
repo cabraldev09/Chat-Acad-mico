@@ -153,7 +153,7 @@ export default function MetaTemplates() {
           ))}
           {!data.templates.length && <div style={hint}>Nenhum modelo na conta ainda.</div>}
         </div>
-        <div style={{ ...hint, marginTop: 8 }}>Para os modelos saírem nas campanhas e na abertura de conversas, o envio também precisa estar autorizado em Operação e custos.</div>
+        <div style={{ ...hint, marginTop: 8 }}>Para os modelos saírem nas campanhas e na abertura de conversas, o envio também precisa estar autorizado em Operação.</div>
       </div>
     </div>
   );

@@ -7,6 +7,7 @@ const r = Router();
 r.get("/operations/config", isAuth, isManager, Operations.config);
 r.put("/operations/config", isAuth, isManager, Operations.saveConfig);
 r.get("/operations/summary", isAuth, isManager, Operations.summary);
+r.get("/operations/ai-costs", isAuth, isManager, Operations.aiCosts);
 r.put("/operations/users/:id/capacity", isAuth, isManager, Operations.capacity);
 r.post("/operations/reconcile/:kind/:id", isAuth, isManager, Operations.reconcile);
 r.post("/operations/files/revoke", isAuth, isAdmin, Operations.revokeFile);

@@ -4,7 +4,7 @@ import { toast } from "react-toastify";
 import { makeStyles } from "@material-ui/core/styles";
 import { Typography, Chip, CircularProgress, Menu, MenuItem, Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField, ListItemIcon, Checkbox, FormControlLabel } from "@material-ui/core";
 import { BarsChart } from "../../components/charts";
-import { Play, CheckCheck, MessageSquare, MoreVertical, UserCog, UserCheck, Undo2, MoveRight, ListChecks, Send, BarChart3, KeyRound } from "lucide-react";
+import { Play, CheckCheck, MessageSquare, MoreVertical, UserCog, UserCheck, Undo2, MoveRight, ListChecks, Send, BarChart3, KeyRound, Pencil } from "lucide-react";
 
 import MainContainer from "../../components/MainContainer";
 import MainHeader from "../../components/MainHeader";
@@ -175,6 +175,21 @@ const OnboardingBoard = ({ embedded = false }) => {
   };
 
   // the greeting the administration wrote, ready to be edited and sent from the card (taking the student first when nobody has)
+  // each tutor writes their own welcome text (it fills "Enviar boas-vindas" and the banner of the conversation); empty: the company's
+  const [mine, setMine] = useState(null); // { text, company }
+  const openMine = async () => {
+    try {
+      const { data } = await api.get("/me/preferences");
+      setMine({ text: data.welcomeTemplate || "", company: data.companyWelcome || "" });
+    } catch (err) { toastError(err); }
+  };
+  const saveMine = async () => {
+    try {
+      await api.put("/me/preferences", { welcomeTemplate: mine.text });
+      toast.success(mine.text.trim() ? "Seu texto de boas-vindas foi salvo." : "Você volta a usar o texto da empresa.");
+      setMine(null);
+    } catch (err) { toastError(err); }
+  };
   const openWelcome = async (lead) => {
     if (!lead.ticketId) { toast.info("Este aluno ainda não tem a conversa de ambientação."); return; }
     try {
@@ -243,10 +258,18 @@ const OnboardingBoard = ({ embedded = false }) => {
 
   return (
     <Shell>
-      {embedded ? (isManager && <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}><Button size="small" variant="outlined" startIcon={<BarChart3 size={15} />} onClick={() => setShowStats(!statsOpen)}>{statsOpen ? "Esconder painel" : "Mostrar painel"}</Button></div>) : (
+      {embedded ? (
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+          <Button size="small" variant="outlined" startIcon={<Pencil size={15} />} onClick={openMine}>Meu texto de boas-vindas</Button>
+          {isManager && <Button size="small" variant="outlined" startIcon={<BarChart3 size={15} />} onClick={() => setShowStats(!statsOpen)}>{statsOpen ? "Esconder painel" : "Mostrar painel"}</Button>}
+        </div>
+      ) : (
         <MainHeader>
           <Title>Ambientação</Title>
-          {isManager && <Button size="small" variant="outlined" startIcon={<BarChart3 size={15} />} onClick={() => setShowStats(!statsOpen)}>{statsOpen ? "Esconder painel" : "Mostrar painel"}</Button>}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <Button size="small" variant="outlined" startIcon={<Pencil size={15} />} onClick={openMine}>Meu texto de boas-vindas</Button>
+            {isManager && <Button size="small" variant="outlined" startIcon={<BarChart3 size={15} />} onClick={() => setShowStats(!statsOpen)}>{statsOpen ? "Esconder painel" : "Mostrar painel"}</Button>}
+          </div>
         </MainHeader>
       )}
       <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
@@ -417,6 +440,24 @@ const OnboardingBoard = ({ embedded = false }) => {
           })()}
         </DialogContent>
         <DialogActions><Button variant="outlined" color="secondary" onClick={() => setChecklistFor(null)}>Fechar</Button></DialogActions>
+      </Dialog>
+      <Dialog open={!!mine} onClose={() => setMine(null)} maxWidth="sm" fullWidth>
+        <DialogTitle>Meu texto de boas-vindas</DialogTitle>
+        <DialogContent>
+          {mine && (
+            <>
+              <Typography variant="body2" color="textSecondary" gutterBottom>
+                O texto que aparece pronto na conversa do aluno recém-matriculado. Ele nunca sai sozinho: você confere e envia. Variáveis: {"{{primeiro_nome}}"}, {"{{nome}}"}, {"{{tutor}}"} e {"{{polo}}"}. Em branco, vale o texto da empresa.
+              </Typography>
+              <TextField fullWidth multiline minRows={5} variant="outlined" value={mine.text} placeholder={mine.company} onChange={(e) => setMine({ ...mine, text: e.target.value.slice(0, 1500) })} inputProps={{ "aria-label": "Meu texto de boas-vindas" }} />
+              {!mine.text.trim() && mine.company && <Button size="small" style={{ marginTop: 8 }} onClick={() => setMine({ ...mine, text: mine.company })}>Começar do texto da empresa</Button>}
+            </>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button variant="outlined" color="secondary" onClick={() => setMine(null)}>Cancelar</Button>
+          <Button variant="contained" color="primary" onClick={saveMine}>Salvar</Button>
+        </DialogActions>
       </Dialog>
       <Dialog open={!!welcomeFor} onClose={() => setWelcomeFor(null)} maxWidth="sm" fullWidth>
         <DialogTitle>Enviar boas-vindas</DialogTitle>

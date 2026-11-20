@@ -11,6 +11,7 @@ import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import { downloadFile } from "../../utils/saveBlob";
 import WhatsPreview from "./Preview";
+import QuickButtonsField, { buttonsPreview } from "../../components/QuickButtonsField";
 
 const useStyles = makeStyles((theme) => {
   const line = theme.palette.type === "dark" ? "rgba(255,255,255,.09)" : "#e3e9f1";
@@ -56,6 +57,8 @@ export const Composer = ({ open, onClose, onSent, manager, initialIds = [] }) =>
   const classes = useStyles();
   const [kind, setKind] = useState("nps");
   const [text, setText] = useState("");
+  // quick-reply buttons of the retention or hand-written message (the survey has its own)
+  const [buttons, setButtons] = useState([]);
   const [source, setSource] = useState("students");
   const [filters, setFilters] = useState(NO_FILTER);
   const [listId, setListId] = useState("");
@@ -78,7 +81,7 @@ export const Composer = ({ open, onClose, onSent, manager, initialIds = [] }) =>
 
   useEffect(() => {
     if (!open) return;
-    setKind("nps"); setText(""); setPicked([]); setResult(null); setPreview(null); setSource("students"); setFilters(NO_FILTER); setListId(""); setWhatsappId(""); setSearch("");
+    setKind("nps"); setText(""); setButtons([]); setPicked([]); setResult(null); setPreview(null); setSource("students"); setFilters(NO_FILTER); setListId(""); setWhatsappId(""); setSearch("");
     const get = (url, key, field) => api.get(url).then(({ data }) => setLookups((l) => ({ ...l, [field]: asList(data, key) }))).catch(() => undefined);
     get("/lead-stages", "stages", "stages");
     get("/courses", "courses", "courses");
@@ -189,6 +192,7 @@ export const Composer = ({ open, onClose, onSent, manager, initialIds = [] }) =>
       const { data } = await api.post("/retention/send", {
         kind,
         text: kind === "custom" ? text : undefined,
+        buttons: kind !== "nps" ? buttonsPreview(buttons) : undefined,
         leadIds: picked.filter((x) => x.leadId).map((x) => x.leadId),
         recipients: outside.map((x) => ({ contactId: x.contactId, number: x.number, name: x.name })),
         whatsappId: outside.length && whatsappId ? Number(whatsappId) : undefined,
@@ -241,6 +245,7 @@ export const Composer = ({ open, onClose, onSent, manager, initialIds = [] }) =>
               {kind === "custom" && (
                 <TextField multiline rows={4} size="small" variant="outlined" label="Mensagem (use {{nome}} para o primeiro nome)" value={text} onChange={(e) => setText(e.target.value)} inputProps={{ maxLength: 1000 }} />
               )}
+              {kind !== "nps" && <QuickButtonsField value={buttons} onChange={setButtons} />}
               {kind !== "custom" && manager && (
                 <div style={{ display: "grid", gap: 8 }}>
                   <TextField multiline rows={4} size="small" variant="outlined" label={kind === "nps" ? "Pergunta da pesquisa (use {{nome}})" : "Mensagem de retenção (use {{nome}})"} value={draft} onChange={(e) => setDraft(e.target.value)} inputProps={{ maxLength: 1000 }} />
@@ -322,10 +327,10 @@ export const Composer = ({ open, onClose, onSent, manager, initialIds = [] }) =>
               <Typography variant="subtitle2" gutterBottom>Como a pessoa vai receber</Typography>
               {preview && preview.samples.map((sm, i) => (
                 <div key={`${sm.leadId}-${sm.name}-${i}`} style={{ marginBottom: 10 }}>
-                  <WhatsPreview text={sm.text} name={sm.name} buttons={preview.buttons} extra={{}} />
+                  <WhatsPreview text={sm.text} name={sm.name} buttons={kind === "nps" ? preview.buttons : buttonsPreview(buttons)} extra={{}} />
                 </div>
               ))}
-              {preview && preview.buttons.length > 0 && <Typography className={classes.hint}>Os botões aparecem na conexão da API oficial (Cloud), dentro de 24 horas depois da última mensagem do aluno. Nas demais, ele responde digitando a nota de 0 a 10.</Typography>}
+              {preview && kind === "nps" && preview.buttons.length > 0 && <Typography className={classes.hint}>Os botões aparecem na conexão da API oficial (Cloud), dentro de 24 horas depois da última mensagem do aluno. Nas demais, ele responde digitando a nota de 0 a 10.</Typography>}
               {picked.length > 3 && <Typography className={classes.hint}>E mais {picked.length - 3} {picked.length - 3 === 1 ? "pessoa" : "pessoas"} com a mesma mensagem.</Typography>}
             </div>
           </div>

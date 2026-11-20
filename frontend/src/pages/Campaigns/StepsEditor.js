@@ -3,6 +3,7 @@ import { Button, TextField, MenuItem, Typography, makeStyles } from "@material-u
 import { Plus, ArrowUp, ArrowDown, Trash2, Paperclip, X } from "lucide-react";
 
 import IconAction from "../../components/IconAction";
+import QuickButtonsField, { buttonsPreview } from "../../components/QuickButtonsField";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 
@@ -30,6 +31,8 @@ const useStyles = makeStyles((theme) => ({
   chat: { borderRadius: 14, padding: theme.spacing(1.5), display: "flex", flexDirection: "column", gap: 6, background: theme.palette.type === "dark" ? "#0b141a" : "#efeae2" },
   bubble: { alignSelf: "flex-start", maxWidth: "88%", padding: "6px 10px", borderRadius: "10px 10px 10px 2px", fontSize: 13.5, whiteSpace: "pre-wrap", wordBreak: "break-word", background: theme.palette.type === "dark" ? "#202c33" : "#fff", color: theme.palette.text.primary, boxShadow: "0 1px 0.5px rgba(11,20,26,.18)" },
   wait: { alignSelf: "center", fontSize: 11.5, color: theme.palette.text.secondary },
+  buttons: { alignSelf: "flex-start", maxWidth: "88%", display: "flex", flexDirection: "column", gap: 4 },
+  chip: { padding: "6px 10px", borderRadius: 10, textAlign: "center", fontSize: 13, fontWeight: 600, color: theme.palette.type === "dark" ? "#53bdeb" : "#027eb5", background: theme.palette.type === "dark" ? "#202c33" : "#fff", boxShadow: "0 1px 0.5px rgba(11,20,26,.18)" },
 }));
 
 // the same variables the sender fills in, with sample data
@@ -58,7 +61,7 @@ const StepsEditor = ({ steps, onChange, riskNote, schedule = false }) => {
       const form = new FormData();
       form.append("file", file);
       const { data } = await api.post("/uploads", form);
-      set(i, { mediaUrl: data.filename, mediaName: data.originalname, type: "media" });
+      set(i, { mediaUrl: data.filename, mediaName: data.originalname, type: "media", buttons: [] });
     } catch (err) {
       toastError(err);
     }
@@ -93,6 +96,7 @@ const StepsEditor = ({ steps, onChange, riskNote, schedule = false }) => {
             value={s.body}
             onChange={(e) => set(i, { body: e.target.value })}
           />
+          {!s.mediaUrl && <QuickButtonsField value={s.buttons} onChange={(buttons) => set(i, { buttons })} />}
           <div className={classes.file}>
             <Button size="small" variant="outlined" component="label" startIcon={<Paperclip size={15} />} disabled={busy === i}>
               {s.mediaUrl ? "Trocar anexo" : "Anexar imagem, vídeo ou documento"}
@@ -127,6 +131,11 @@ const StepsEditor = ({ steps, onChange, riskNote, schedule = false }) => {
               {s.mediaUrl && <div style={{ opacity: 0.7, marginBottom: s.body ? 4 : 0 }}>📎 {s.mediaName || "anexo"}</div>}
               {sample(s.body) || (s.mediaUrl ? "" : <i style={{ opacity: 0.6 }}>Mensagem vazia</i>)}
             </div>
+            {!s.mediaUrl && buttonsPreview(s.buttons).length > 0 && (
+              <div className={classes.buttons}>
+                {buttonsPreview(s.buttons).map((b, k) => <span key={k} className={classes.chip}>{b}</span>)}
+              </div>
+            )}
           </React.Fragment>
         ))}
       </div>

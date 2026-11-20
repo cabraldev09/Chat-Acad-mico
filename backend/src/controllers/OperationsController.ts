@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { Op } from "sequelize";
+import { Op, QueryTypes } from "sequelize";
 import sequelize from "../database";
 import { OPERATION_DEFAULTS, FINANCIAL_KEYS, validateOperationSetting } from "../helpers/OperationSettings";
 import { getSetting, setSetting } from "../helpers/AppSettings";
@@ -100,4 +100,47 @@ export const revokeFile = async (req: Request, res: Response): Promise<Response>
   publicFile(filename);
   await setSetting(`file_revoked_${filename}`, "true");
   return res.json({ ok: true });
+};
+
+// "Custos" in Configurações: what the AI (OpenAI and Anthropic) spent in the period, by day, by use and by model, from the
+// usage the system records on every call. Prices are the ones typed in Agentes de IA > Uso (US$ per million tokens);
+// a call of a model without a price counts its tokens but not its value.
+const KIND_LABEL: Record<string, string> = {
+  reply: "Atendimento da IA", summary: "Resumos e leituras", test: "Testes do agente", copilot: "Copiloto do consultor", reading: "Leitura de documentos e prints"
+};
+const providerOf = (model: string): string => (/claude|anthropic|opus|sonnet|haiku|fable/i.test(model) ? "Anthropic" : /gpt|o\d|openai|whisper|text-embedding/i.test(model) ? "OpenAI" : "Outro");
+export const aiCosts = async (req: Request, res: Response): Promise<Response> => {
+  const days = Math.min(92, Math.max(1, Number(req.query.days) || 30));
+  const since = new Date(dayBounds().start.getTime() - (days - 1) * 86400000);
+  const rows = (await sequelize.query(
+    `SELECT to_char("createdAt" AT TIME ZONE :tz, 'YYYY-MM-DD') AS day, COALESCE(model, '') AS model, COALESCE(kind, '') AS kind,
+            COUNT(*)::int AS calls, COALESCE(SUM("inputTokens"), 0)::bigint AS input, COALESCE(SUM("outputTokens"), 0)::bigint AS output,
+            COALESCE(SUM("estimatedUsd"), 0)::float AS usd, SUM(CASE WHEN "estimatedUsd" IS NULL THEN 1 ELSE 0 END)::int AS unpriced
+       FROM "AiUsage" WHERE "createdAt" >= :since GROUP BY 1, 2, 3`,
+    { replacements: { since, tz: await getSetting("appTimezone", "America/Porto_Velho") }, type: QueryTypes.SELECT }
+  )) as Array<{ day: string; model: string; kind: string; calls: number; input: string | number; output: string | number; usd: number; unpriced: number }>;
+  const add = (map: Map<string, any>, key: string, label: string, r: typeof rows[number]) => {
+    const cur = map.get(key) || { key, label, calls: 0, tokens: 0, usd: 0, unpriced: 0 };
+    cur.calls += r.calls; cur.tokens += Number(r.input) + Number(r.output); cur.usd += Number(r.usd) || 0; cur.unpriced += r.unpriced;
+    map.set(key, cur);
+  };
+  const byDay = new Map<string, any>(); const byKind = new Map<string, any>(); const byModel = new Map<string, any>(); const byProvider = new Map<string, any>();
+  rows.forEach(r => {
+    add(byDay, r.day, r.day, r);
+    add(byKind, r.kind || "outro", KIND_LABEL[r.kind] || (r.kind ? r.kind : "Outro"), r);
+    add(byModel, r.model || "?", r.model || "Modelo não informado", r);
+    add(byProvider, providerOf(r.model), providerOf(r.model), r);
+  });
+  const round = (x: any) => ({ ...x, usd: Math.round(x.usd * 10000) / 10000 });
+  const sort = (m: Map<string, any>) => [...m.values()].map(round).sort((a, b) => b.usd - a.usd || b.tokens - a.tokens);
+  const total = rows.reduce((a, r) => ({ calls: a.calls + r.calls, tokens: a.tokens + Number(r.input) + Number(r.output), usd: a.usd + (Number(r.usd) || 0), unpriced: a.unpriced + r.unpriced }), { calls: 0, tokens: 0, usd: 0, unpriced: 0 });
+  return res.json({
+    days,
+    total: round(total),
+    byDay: [...byDay.values()].map(round).sort((a, b) => a.key.localeCompare(b.key)),
+    byKind: sort(byKind),
+    byModel: sort(byModel),
+    byProvider: sort(byProvider),
+    caps: { dailyUsd: Number(await getSetting("ai_daily_usd_cap", "0")) || 0, dailyTokens: Number(await getSetting("ai_daily_token_cap", "0")) || 0 }
+  });
 };
