@@ -210,7 +210,7 @@ const TransferTicketModal = ({ modalOpen, onClose, ticketid, ticketSegment }) =>
 				<DialogContent dividers>
 					<Autocomplete
 						fullWidth
-						style={{ minWidth: 320, marginBottom: 20 }}
+						style={{ minWidth: "min(100%, 240px)", marginBottom: 20 }}
 						getOptionLabel={option => `${option.name}`}
 						onChange={(e, newValue) => {
 							setSelectedUser(newValue);

@@ -50,8 +50,23 @@ export const findAgentForTicket = async (ticket: Ticket): Promise<AiAgent | null
   const byQueue = agents.find(a => a.queueId && ticket.queueId && a.queueId === ticket.queueId);
   const byConn = agents.find(a => !a.queueId && connectionsOf(a).includes(ticket.whatsappId));
   const global = agents.find(a => !a.queueId && !connectionsOf(a).length);
-  return byQueue || byConn || global || null;
+  if (byQueue || byConn || global) return byQueue || byConn || global || null;
+  // a consultant handed this conversation to the AI to qualify: the commercial agent takes it even on a connection it does not serve
+  return ticket.aiReturnUserId ? commercialAgent(agents) : null;
 };
+
+// the agent that sells: an active one whose published flow has the commercial block; else the first active one
+export const commercialAgent = async (active?: AiAgent[]): Promise<AiAgent | null> => {
+  const agents = active || (await AiAgent.findAll({ where: { active: true }, order: [["id", "ASC"]] }));
+  if (!agents.length) return null;
+  const ChatFlow = (await import("../../models/ChatFlow")).default;
+  const flows = await ChatFlow.findAll({ where: { kind: "agent", agentId: agents.map(a => a.id) } as any, attributes: ["agentId", "published", "draft"] });
+  const sells = (g: any): boolean => /"hooks":\s*\[[^\]]*"commercial"/.test(typeof g === "string" ? g : JSON.stringify(g || ""));
+  const id = flows.find(f => sells(f.published) || sells(f.draft))?.agentId;
+  return agents.find(a => a.id === id) || agents[0];
+};
+// the agent a person can hand a conversation to (the button "IA qualificar"): the one that serves it, else the commercial one
+export const agentToQualify = async (ticket: Ticket): Promise<AiAgent | null> => (await findAgentForTicket(ticket)) || commercialAgent();
 
 // An agent that was given this queue or this connection on purpose (not the one that serves everything nobody else serves): the person who
 // set it up expects it to answer first, ahead of the flows that start on any message and of the old menu.

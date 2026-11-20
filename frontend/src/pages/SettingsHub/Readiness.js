@@ -12,6 +12,7 @@ const card = { border: "1px solid var(--line-strong)", borderRadius: 12, backgro
 const FIX = {
   ai: ["/ai-agents?abrir=chave", "Cadastrar a chave"],
   numbers: ["/connections", "Abrir Conexões"],
+  webhook: ["/connections", "Corrigir a chave secreta"],
   token: ["/connections", "Abrir Conexões"],
   tutoria: ["/configuracoes?secao=tutoria", "Informar o número"],
   templates_allowed: ["/configuracoes?secao=operacao", "Autorizar o envio"],

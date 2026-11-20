@@ -31,6 +31,7 @@ import { isWithinBusinessHours } from "./BusinessHours";
 import { Op } from "sequelize";
 import { remindAiTicket } from "../AiServices/FollowUp";
 import { humanHasTicket } from "../../helpers/HumanOwnership";
+import { paceBeforeSend, startDelayOf } from "../../helpers/ReplyPace";
 
 
 // Bot messages carry an invisible mark so they can be told apart from agent
@@ -348,7 +349,7 @@ const scheduleAi = (ticketId: number, waitSeconds: number): void => {
       }
       aiRunning.add(ticketId);
       try {
-        await runAiForTicket(ticketId, say);
+        await runAiForTicket(ticketId, async (t: Ticket, body: string) => { await paceBeforeSend(t, body); return say(t, body); });
       } catch (err) {
         logger.error(`AI run failed: ${err}`);
         noteAutomation(ticketId, `o agente de IA falhou: ${(err as any)?.message || err}`);
@@ -377,11 +378,12 @@ const runAi = async (ticket: Ticket): Promise<boolean> => {
   }
   // an agent built in blocks (with a published graph) talks through the flow engine; the others keep the single prompt
   if (await runAgentGraph(ticket, agent)) {
-    trace(ticket, `agente "${agent.name}" (roteiro em blocos) vai responder em ${agent.waitSeconds ?? 4}s`);
+    trace(ticket, `agente "${agent.name}" (roteiro em blocos) vai responder${(await startDelayOf(ticket, agent.waitSeconds)) ? ` em ${agent.waitSeconds ?? 4}s` : " na hora (primeira mensagem)"}`);
     return true;
   }
-  trace(ticket, `agente "${agent.name}" sem roteiro publicado: responde pelo modo simples em ${agent.waitSeconds ?? 4}s`);
-  scheduleAi(ticket.id, agent.waitSeconds ?? 4);
+  const wait = await startDelayOf(ticket, agent.waitSeconds);
+  trace(ticket, `agente "${agent.name}" sem roteiro publicado: responde pelo modo simples em ${wait}s`);
+  scheduleAi(ticket.id, wait);
   return true;
 };
 

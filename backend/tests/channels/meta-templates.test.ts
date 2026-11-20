@@ -19,11 +19,18 @@ describe("pacote de modelos da Meta", () => {
       expect(() => cleanDraft(t)).not.toThrow();
     }
   });
+  it("quem já está no processo não recebe Olá de novo; cada modelo tem departamento; as aberturas têm botões", () => {
+    for (const t of pack) {
+      expect(t.body).not.toMatch(/^\s*ol[aá]/i);
+      expect(t.department).toBeTruthy();
+    }
+    for (const t of pack.filter(p => p.use === "abertura")) expect((t.buttons || []).length).toBeGreaterThan(0);
+  });
   it("não usa palavras de oferta (o que faria a Meta tratar como Marketing)", () => {
     for (const t of pack) expect(t.body).not.toMatch(/desconto|promo|oferta|gr[aá]tis|imperd[ií]vel|condi[cç][oõ]es especiais/i);
   });
   it("as boas-vindas da matrícula pedem para agendar a ambientação com o tutor", () => {
-    const bv = pack.find(t => t.name === "boas_vindas_matricula")!;
+    const bv = pack.find(t => t.name === "matricula_confirmada_tutoria")!;
     expect(bv.setting).toBe("boas_vindas_template_name");
     expect(paramsIn(bv.body)).toBe(4);
     expect(bv.body).toMatch(/ambientação/);

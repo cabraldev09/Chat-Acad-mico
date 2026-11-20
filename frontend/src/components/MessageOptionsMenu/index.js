@@ -13,6 +13,9 @@ import ForwardDialog from "../chat/ForwardDialog";
 import { ReplyMessageContext } from "../../context/ReplyingMessage/ReplyingMessageContext";
 import toastError from "../../errors/toastError";
 import { wa } from "../chat/chatTheme";
+import EmojiPicker from "../EmojiPicker";
+import { topEmojis } from "../../utils/emojiUsage";
+import { Plus } from "lucide-react";
 
 // each channel accepts a different set of reactions; webchat has none
 export const REACTIONS = {
@@ -57,7 +60,10 @@ const useStyles = makeStyles((theme) => {
 });
 
 const MessageOptionsMenu = ({ message, menuOpen, handleClose, anchorEl, ticketId, channel = "whatsapp", onSelect }) => {
-  const palette = REACTIONS[channel] || REACTIONS.whatsapp;
+  // WhatsApp (QR Code and the official API) accepts any emoji: the six most used and "+" for all of them
+  const anyEmoji = channel === "whatsapp" || channel === "whatsapp_cloud";
+  const palette = anyEmoji ? topEmojis(6) : REACTIONS[channel] || REACTIONS.whatsapp;
+  const [allEmojis, setAllEmojis] = useState(false);
   const classes = useStyles();
   const { setReplyingMessage } = useContext(ReplyMessageContext);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -148,14 +154,16 @@ const MessageOptionsMenu = ({ message, menuOpen, handleClose, anchorEl, ticketId
         </DialogContent>
         <DialogActions><Button onClick={() => setInfoOpen(false)}>Fechar</Button></DialogActions>
       </Dialog>
-      <Popover open={!!reactionAnchor} anchorEl={reactionAnchor} onClose={() => setReactionAnchor(null)}
+      <Popover open={!!reactionAnchor} anchorEl={reactionAnchor} onClose={() => { setReactionAnchor(null); setAllEmojis(false); }}
         anchorOrigin={{ vertical: "top", horizontal: "right" }} transformOrigin={{ vertical: "bottom", horizontal: "right" }}
         PaperProps={{ className: classes.reactionPaper }}>
-        <div style={{ display: "flex" }} role="group" aria-label="Reagir à mensagem">
+        {allEmojis ? <EmojiPicker onSelect={(emoji) => { setReactionAnchor(null); setAllEmojis(false); react(emoji); }} perLine={8} /> : (
+        <div style={{ display: "flex", alignItems: "center" }} role="group" aria-label="Reagir à mensagem">
           {palette.map((emoji) => <button key={emoji} type="button" aria-label={`Reagir com ${emoji}`}
             aria-pressed={mine === emoji} className={`${classes.emoji} ${mine === emoji ? classes.emojiOn : ""}`}
             onClick={() => { setReactionAnchor(null); react(emoji); }}>{emoji}</button>)}
-        </div>
+          {anyEmoji && <button type="button" aria-label="Mais emojis" title="Mais emojis" className={classes.emoji} onClick={() => setAllEmojis(true)}><Plus size={18} /></button>}
+        </div>)}
       </Popover>
       <Menu anchorEl={anchorEl} getContentAnchorEl={null} open={menuOpen} onClose={handleClose}
         anchorOrigin={{ vertical: "bottom", horizontal: "right" }} transformOrigin={{ vertical: "top", horizontal: "right" }}

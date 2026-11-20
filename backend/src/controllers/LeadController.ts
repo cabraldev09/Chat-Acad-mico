@@ -693,6 +693,49 @@ export const triageList = async (req: Request, res: Response): Promise<Response>
 };
 
 // ------------------------------------------------------------------ metrics
+const crmNow = async (q: (sql: string) => Promise<any[]>, f: string, lane: number | null) => {
+  const funnel = await q(`
+    SELECT s.id, s.name, s.color, s.type, s.position, COUNT(l.id) AS total
+    FROM LeadStages s LEFT JOIN Leads l ON l.stageId = s.id ${f}
+    GROUP BY s.id, s.name, s.color, s.type, s.position ORDER BY s.position`);
+  const byOwner = await q(`
+    SELECT COALESCE(u.name,'Sem responsável') AS name, u.id AS ownerId, COUNT(*) AS open,
+      ${countIf(`l.firstContactAt IS NULL AND l.createdAt < ${nowMinus(1, "HOUR")}`)} AS waiting,
+      ${countIf(`COALESCE(l.lastContactAt, l.createdAt) < ${nowMinus(3, "DAY")}`)} AS stale
+    FROM Leads l JOIN LeadStages s ON s.id = l.stageId LEFT JOIN Users u ON u.id = l.ownerId
+    WHERE s.type = 'open' ${f} GROUP BY u.id, u.name ORDER BY waiting DESC, open DESC`);
+  const [attention] = await q(`
+    SELECT
+      (SELECT COUNT(*) FROM LeadTasks t JOIN Leads l ON l.id = t.leadId WHERE t.doneAt IS NULL AND t.dueAt < ${nowSql()} ${f}) AS overdueTasks,
+      (SELECT COUNT(*) FROM Leads l JOIN LeadStages s ON s.id = l.stageId
+         WHERE s.type='open' AND COALESCE(l.lastContactAt, l.createdAt) < ${nowMinus(3, 'DAY')} ${f}) AS stale,
+      (SELECT COUNT(*) FROM Leads l JOIN LeadStages s ON s.id = l.stageId
+         WHERE s.type='open' AND l.firstContactAt IS NULL AND l.createdAt < ${nowMinus(1, 'HOUR')} ${f}) AS waitingFirstContact,
+      (SELECT COUNT(*) FROM Leads l JOIN LeadStages s ON s.id = l.stageId
+         WHERE s.type='open' AND l.ownerId IS NULL ${f}) AS unassigned,
+      (SELECT COUNT(DISTINCT l.id) FROM Leads l JOIN LeadTags lt ON lt.leadId = l.id JOIN Tags tg ON tg.id = lt.tagId
+         WHERE tg.name = :feeTag ${f}) AS feePending,
+      (SELECT COUNT(DISTINCT l.id) FROM Leads l JOIN LeadTags lt ON lt.leadId = l.id JOIN Tags tg ON tg.id = lt.tagId
+         WHERE tg.name = :docsTag ${f}) AS docsPending`);
+  const tagIds = await Tag.findAll({ where: { name: { [Op.in]: [FEE_PENDING_TAG.name, DOCS_PENDING_LABEL.name] } }, attributes: ["id", "name"] });
+  const tagIdOf = (name: string) => tagIds.find(t => t.name === name)?.id ?? null;
+  return {
+    now: true,
+    funnel: funnel.map(r => ({ ...r, total: Number(r.total), isAffiliateLane: !!lane && Number(r.id) === lane })),
+    byOwner: byOwner.map(r => ({ ...r, open: Number(r.open), waiting: Number(r.waiting), stale: Number(r.stale) })),
+    attention: {
+      overdueTasks: Number(attention.overdueTasks) || 0,
+      stale: Number(attention.stale) || 0,
+      waitingFirstContact: Number(attention.waitingFirstContact) || 0,
+      unassigned: Number(attention.unassigned) || 0,
+      feePending: Number(attention.feePending) || 0,
+      docsPending: Number(attention.docsPending) || 0,
+      feeTagId: tagIdOf(FEE_PENDING_TAG.name),
+      docsTagId: tagIdOf(DOCS_PENDING_LABEL.name)
+    }
+  };
+};
+
 export const metrics = async (req: Request, res: Response): Promise<Response> => {
   const sequelize = (await import("../database")).default;
   const { QueryTypes } = await import("sequelize");
@@ -707,6 +750,10 @@ export const metrics = async (req: Request, res: Response): Promise<Response> =>
   const lane = await affiliateStageId();
   const q = async (sql: string): Promise<any[]> =>
     (await sequelize.query(portable(sql), { replacements: rep, type: QueryTypes.SELECT })) as any[];
+
+  // the Painel do CRM is "what to do now": the funnel as it is today, who is waiting and the points of attention, with no period
+  // (the results of a period live in Estatísticas → Captação, from the same endpoint without "now")
+  if (req.query.now) return res.json(await crmNow(q, f, lane));
 
   const [kpi] = await q(`
     SELECT COUNT(*) AS leads,
@@ -766,6 +813,10 @@ export const metrics = async (req: Request, res: Response): Promise<Response> =>
   const wonDaily = await q(`
     SELECT ${dayOf('l.wonAt')} AS day, COUNT(*) AS total FROM Leads l
     WHERE l.wonAt BETWEEN :from AND :to ${f} GROUP BY ${dayOf('l.wonAt')} ORDER BY day`);
+  // second courses of the same person are enrollments too (the same rule of Matrículas realizadas)
+  const [extra] = await q(`
+    SELECT COUNT(*) AS total FROM LeadEnrollments e JOIN Leads l ON l.id = e.leadId
+    WHERE e.createdAt BETWEEN :from AND :to ${f}`).catch(() => [{ total: 0 }]);
 
   // new people waiting for the first contact: the team confirms who is a lead (or marks a friend / team member)
   const triage = await q(`
@@ -830,6 +881,7 @@ export const metrics = async (req: Request, res: Response): Promise<Response> =>
     previous: { leads: Number(prev?.leads) || 0, won: Number(prev?.won) || 0, conversion: Number(prev?.leads) ? (Number(prev.won) / Number(prev.leads)) * 100 : 0 },
     triage: triage.map(r => ({ id: r.id, name: r.name, phone: r.phone, source: r.source, createdAt: r.createdAt, ownerId: r.ownerId, ownerName: r.ownerName, late: new Date(r.createdAt) < dayBounds(undefined).start })),
     lostReasons: lostReasons.map(r => ({ ...r, total: Number(r.total) })),
+    enrollmentsInPeriod: wonDaily.reduce((a, r) => a + Number(r.total || 0), 0) + (Number(extra?.total) || 0),
     created: created.map(r => ({ day: r.day, total: Number(r.total) })),
     wonDaily: wonDaily.map(r => ({ day: r.day, total: Number(r.total) })),
     attention: {

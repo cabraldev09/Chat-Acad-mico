@@ -13,6 +13,7 @@ export const hubSections = (user) => {
   return [
     { dept: "Comercial", icon: Briefcase, items: [
       manager && { to: "/gestao-comercial", label: "Gestão comercial" },
+      { to: "/estatisticas/captacao", label: "Captação e resultados" },
       manager && { to: "/crm/matriculas", label: "Matrículas realizadas" },
       { to: "/reports", label: manager ? "Atendimento e canais" : "Meus números" },
     ].filter(Boolean) },

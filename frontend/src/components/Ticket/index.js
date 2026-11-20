@@ -93,7 +93,7 @@ const AiBanner = ({ ticket }) => {
     setBusy(true);
     try {
       await api.post(`/tickets/${ticket.id}/claim`);
-      toast.success("Você assumiu a conversa. O agente de IA parou de responder.");
+      toast.success("Você assumiu de novo. A IA parou de responder.");
     } catch (err) {
       toastError(err);
     }
@@ -106,10 +106,10 @@ const AiBanner = ({ ticket }) => {
         <Bot size={19} />
       </span>
       <span style={{ flex: 1, minWidth: 220 }}>
-        <b>O agente de IA está atendendo este lead agora.</b> Acompanhe as respostas aqui. Para assumir, clique em Assumir: o agente para na hora e a conversa passa a ser sua.
+        <b>A IA está qualificando este lead.</b> Acompanhe as respostas aqui. Quando ela terminar, a conversa volta {ticket.aiReturnUserId ? "para quem passou o lead" : "para a equipe"}; para voltar antes, clique em Assumir de novo.
       </span>
       <button type="button" disabled={busy} onClick={take} style={{ border: 0, borderRadius: 10, background: "#fff", color: "#0f766e", padding: "8px 16px", fontFamily: "inherit", fontWeight: 700, cursor: "pointer" }}>
-        Assumir conversa
+        Assumir de novo
       </button>
       <button type="button" onClick={showWhy} style={{ border: "1px solid rgba(255,255,255,.6)", borderRadius: 10, background: "transparent", color: "#fff", padding: "7px 14px", fontFamily: "inherit", fontWeight: 600, cursor: "pointer" }}>
         {why ? "Esconder o que o robô fez" : "Ver o que o robô fez"}

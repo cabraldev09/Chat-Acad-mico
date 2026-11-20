@@ -394,6 +394,12 @@ const cloudFailed = async (whatsapp: Whatsapp, st: any): Promise<void> => {
 const processCloud = async (received: Whatsapp, entry: any) => {
   for (const change of entry.changes || []) {
     const value = change.value || {};
+    // the Meta approved, refused or paused a template: the screen of the templates updates by itself
+    if (change.field === "message_template_status_update" || change.field === "message_template_quality_update" || change.field === "template_category_update") {
+      // eslint-disable-next-line no-await-in-loop
+      (await import("../services/CampaignServices/Templates")).notifyTemplates();
+      continue;
+    }
     const phoneNumberId = String(value.metadata?.phone_number_id || "");
     // eslint-disable-next-line no-await-in-loop
     const whatsapp = await cloudConnectionFor(received, phoneNumberId);

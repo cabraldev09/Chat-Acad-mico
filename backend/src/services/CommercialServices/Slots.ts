@@ -205,3 +205,15 @@ export const startConversation = (state: CommercialState, ticketId: number, now 
   s.readyForProposal = false;
   return true;
 };
+
+// The consultant handed the lead back to the AI: it goes on qualifying from where the lead is (the slots stay), but it is not "ready for
+// the consultant" any more, so the AI does not hand it straight back after its first reply.
+export const reopenQualification = async (ticket: { contactId: number }): Promise<void> => {
+  const Lead = (await import("../../models/Lead")).default;
+  const lead = await Lead.findOne({ where: { contactId: ticket.contactId }, attributes: ["id"] });
+  if (!lead) return;
+  const state = await loadState(lead.id);
+  if (!state.slots.readyForConsultant && !state.slots.qualifiedReplies) return;
+  state.slots = { ...state.slots, readyForConsultant: false, qualifiedReplies: 0 };
+  await saveState(state);
+};

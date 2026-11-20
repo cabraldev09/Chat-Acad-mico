@@ -230,7 +230,7 @@ const ImportWizard = ({ open, onClose, onDone, title, endpoint, columns, templat
               <Typography variant="body2" color="textSecondary" style={{ alignSelf: "center" }}>{fileName}</Typography>
             </div>
             <div className={classes.tableWrap}>
-              <table className={classes.table}>
+              <div style={{ overflowX: "auto", maxWidth: "100%" }}><table className={classes.table}>
                 <thead>
                   <tr>
                     <th className={classes.th}>Linha</th>
@@ -250,7 +250,7 @@ const ImportWizard = ({ open, onClose, onDone, title, endpoint, columns, templat
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </table></div>
             </div>
             {preview.errors > 0 && (
               <Typography variant="body2" style={{ marginTop: 10 }} color="textSecondary">

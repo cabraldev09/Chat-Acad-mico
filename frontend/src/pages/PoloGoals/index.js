@@ -112,7 +112,7 @@ const useStyles = makeStyles((theme) => ({
   seg: { display: "inline-flex", border: theme.border.divider, borderRadius: 10, overflow: "hidden" },
   segBtn: { border: 0, background: "transparent", color: "inherit", padding: "6px 12px", fontFamily: "inherit", fontSize: 13, fontWeight: 600, cursor: "pointer", display: "inline-flex", gap: 6, alignItems: "center" },
   segOn: { background: theme.palette.primary.main, color: "#fff" },
-  grid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: theme.spacing(1.5) },
+  grid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 300px), 1fr))", gap: theme.spacing(1.5) },
   card: { background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "var(--radius-card)", padding: theme.spacing(2), position: "relative", overflow: "hidden", boxShadow: "var(--shadow-card)", transition: "border-color .15s ease", "&:hover": { borderColor: "var(--line-strong)" } },
   rank: { width: 26, height: 26, borderRadius: 8, display: "inline-grid", placeItems: "center", fontSize: 12.5, fontWeight: 700, background: theme.palette.action.selected, flexShrink: 0 },
   badge: { borderRadius: 999, padding: "3px 10px", fontSize: 13, fontWeight: 700, fontVariantNumeric: "tabular-nums", color: "#fff", whiteSpace: "nowrap" },

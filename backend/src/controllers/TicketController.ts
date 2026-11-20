@@ -28,7 +28,8 @@ import AppError from "../errors/AppError";
 import ChatFlowRun from "../models/ChatFlowRun";
 import Message from "../models/Message";
 import RunInboundAutomation from "../services/AutomationServices/RunInboundAutomation";
-import { findAgentForTicket } from "../services/AiServices/RunAiAgent";
+import { agentToQualify, findAgentForTicket } from "../services/AiServices/RunAiAgent";
+import { reopenQualification } from "../services/CommercialServices/Slots";
 import Lead from "../models/Lead";
 import { loadState } from "../services/CommercialServices/Slots";
 import { ENTRY_LABEL, INTEREST_LABEL, suggestedStepOf } from "../services/CommercialServices/Rules";
@@ -217,18 +218,25 @@ export const ai = async (req: Request, res: Response): Promise<Response> => {
   // whatever flow was waiting for an answer is over: the agent starts from the conversation as it is
   await ChatFlowRun.update({ status: "done" }, { where: { ticketId, status: { [Op.in]: ["waiting", "delayed"] } } as any });
   if (!active) {
-    await ticket.update({ aiActive: false });
+    // taking it back: the conversation stays (or comes back) with the person who handed it, or with whoever takes it now
+    const back = ticket.aiReturnUserId || Number(req.user.id);
+    await ticket.update({ aiActive: false, aiReturnUserId: null as any });
+    if (!ticket.userId) await UpdateTicketService({ ticketData: { status: "open", userId: back }, ticketId });
     await TicketEvent.create({ ticketId, type: "handoff", actorId: Number(req.user.id), note: `${actor?.name || "Alguém"} tirou a conversa do agente de IA.` } as any).catch(() => undefined);
     await emit();
     return res.json({ aiActive: false });
   }
-  if (!(await findAgentForTicket(ticket))) throw new AppError("ERR_AI_AGENT_NOT_AVAILABLE", 400);
+  if (!(await agentToQualify(ticket))) throw new AppError("ERR_AI_AGENT_NOT_AVAILABLE", 400);
+  // the consultant who hands it keeps it: when the AI finishes qualifying, the conversation comes back to them
+  const handedBy = ticket.userId || Number(req.user.id);
   // a personal number sends every conversation back to its owner at the next message: the agent could not keep it
   const line = await Whatsapp.findByPk(ticket.whatsappId, { attributes: ["id", "ownerId", "aiFirst"] });
   if (line?.ownerId && !line.aiFirst) throw new AppError("ERR_AI_PERSONAL_NUMBER", 400);
   if (ticket.status !== "pending" || ticket.userId) await UpdateTicketService({ ticketData: { status: "pending", userId: null }, ticketId });
   ticket = await ShowTicketService(String(ticketId));
-  await ticket.update({ aiActive: true, chatbotNodeId: null, handoffAt: null as any });
+  await ticket.update({ aiActive: true, chatbotNodeId: null, handoffAt: null as any, aiReturnUserId: handedBy as any });
+  // the AI goes on from where the lead is, instead of handing it straight back because it was already qualified once
+  await reopenQualification(ticket).catch(() => undefined);
   await TicketEvent.create({ ticketId, type: "handoff", actorId: Number(req.user.id), note: `${actor?.name || "Alguém"} passou a conversa para o agente de IA.` } as any).catch(() => undefined);
   await emit();
   // the agent answers the last thing the person said, as if it had just arrived (never makes this request wait) — but only when nobody answered it
@@ -462,6 +470,10 @@ export const groupInfo = async (req: Request, res: Response): Promise<Response> 
 // "Aceitar" / "Assumir conversa": the person becomes the attendant, decided in one locked write. A conversation that already has another attendant answers 409
 // (ERR_TICKET_ALREADY_ASSIGNED, with who has it); it is never taken by accepting.
 export const claim = async (req: Request, res: Response): Promise<Response> => {
+  // a lead that a consultant handed to the AI to qualify is still theirs: only they (or the management) take it back
+  const held = await Ticket.findByPk(req.params.ticketId, { attributes: ["id", "aiReturnUserId", "aiActive"] });
+  if (held?.aiActive && held.aiReturnUserId && held.aiReturnUserId !== Number(req.user.id) && !isManagerRole(roleOf(req.user))) throw new AppError("ERR_AI_RETURN_OTHER", 403);
+  if (held?.aiReturnUserId) await held.update({ aiReturnUserId: null as any });
   const { ticket } = await ClaimTicketService({ ticketId: Number(req.params.ticketId), userId: Number(req.user.id), reason: "accept", allowReopen: true });
   return res.json(ticket);
 };

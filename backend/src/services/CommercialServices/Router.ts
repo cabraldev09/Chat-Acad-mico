@@ -297,6 +297,9 @@ export const routeToCommercial = async (ticket: Ticket, opts: RouteOptions): Pro
       logger.warn(`Tutoring call of ticket ${ticket.id} failed: ${err}`);
     }
   }
+  // a consultant handed this lead to the AI to qualify: it goes back to that consultant, not to the distribution
+  const returnTo = team === "comercial" && ticket.aiReturnUserId ? await User.findByPk(ticket.aiReturnUserId) : null;
+  if (returnTo) user = returnTo;
   const move = official && team === "tutoria" && user && !teamHandoff ? await tutorMoveFor(ticket, user.id) : null;
   const moveTo = move && user ? { ...move, tutorId: user.id, tutorName: user.name } : null;
 
@@ -308,10 +311,12 @@ export const routeToCommercial = async (ticket: Ticket, opts: RouteOptions): Pro
 
   try {
     // called on the tutoring number: the tutor is not put into this (consultants') conversation
-    if (queue && !teamHandoff) {
+    if (returnTo && !teamHandoff) {
+      await UpdateTicketService({ ticketData: { ...(queue ? { queueId: queue.id } : {}), userId: returnTo.id, status: "open" }, ticketId: ticket.id });
+    } else if (queue && !teamHandoff) {
       await UpdateTicketService({ ticketData: { queueId: queue.id, ...(user ? { userId: user.id, status: "open" } : { status: "pending" }) }, ticketId: ticket.id });
     }
-    await Ticket.update({ aiActive: false, chatbotNodeId: -1, handoffAt: new Date(), handoffReason: opts.why, handoffAlerts: 0, handoffAlertedAt: null as any }, { where: { id: ticket.id } });
+    await Ticket.update({ aiActive: false, aiReturnUserId: null as any, chatbotNodeId: -1, handoffAt: new Date(), handoffReason: opts.why, handoffAlerts: 0, handoffAlertedAt: null as any }, { where: { id: ticket.id } });
     // the open conversation and the list hear that the agent left (the alert "agente atendendo" goes away)
     try {
       const fresh = await ShowTicketService(String(ticket.id));
@@ -329,7 +334,7 @@ export const routeToCommercial = async (ticket: Ticket, opts: RouteOptions): Pro
       fromQueueId: ticket.queueId || null,
       toQueueId: queue ? queue.id : null,
       toUserId: user ? user.id : null,
-      note: `Agente de IA → ${label}${user ? ` (${user.name})` : queue ? " (aguardando alguém da fila)" : ""}${fallback && queue ? " · fila central" : ""}. Motivo: ${WHY_TEXT[opts.why]}.${viaPreferred ? " Consultor pedido pelo lead." : ""}${priority ? ` Prioridade ${priority} (lead quente).` : ""}`.slice(0, 480)
+      note: `Agente de IA → ${label}${user ? ` (${user.name})` : queue ? " (aguardando alguém da fila)" : ""}${fallback && queue ? " · fila central" : ""}. Motivo: ${WHY_TEXT[opts.why]}.${returnTo ? " Volta para quem passou o lead para a IA qualificar." : viaPreferred ? " Consultor pedido pelo lead." : ""}${priority ? ` Prioridade ${priority} (lead quente).` : ""}`.slice(0, 480)
     } as any);
   } catch (err) {
     logger.error(`Handoff routing failed: ${err}`);

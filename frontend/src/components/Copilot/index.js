@@ -12,11 +12,15 @@ const useStyles = makeStyles(theme => ({
   header: { display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", flexWrap: "wrap", background: "var(--surface-2, #f8fafc)", borderBottom: "1px solid var(--line, #e2e8f0)" },
   emblem: { display: "grid", placeItems: "center", width: 34, height: 34, borderRadius: 11, flexShrink: 0, color: theme.palette.type === "dark" ? "#5eead4" : "#0f766e", background: "rgba(15,118,110,.1)" },
   title: { fontSize: 14, fontWeight: 700, lineHeight: 1.4 },
-  muted: { fontSize: 12, color: "var(--text-2, #475569)", lineHeight: 1.5 },
+  muted: { fontSize: 12.5, color: "var(--text-2, #475569)", lineHeight: 1.5 },
+  body: { fontSize: 13.5, lineHeight: 1.55, color: "var(--text-1, #0f172a)" },
+  body2: { fontSize: 13, lineHeight: 1.5, color: "var(--text-1, #0f172a)", opacity: 0.85 },
+  note: { display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", marginBottom: 10, borderRadius: 10, fontSize: 13, color: "var(--text-1, #0f172a)", background: "rgba(217,119,6,.10)", border: "1px solid rgba(217,119,6,.35)" },
+  link: { textTransform: "none", fontSize: 12.5, fontWeight: 600, color: theme.palette.type === "dark" ? "#5eead4" : "#0f766e", padding: "2px 6px", minHeight: 0 },
   badge: { display: "inline-flex", whiteSpace: "nowrap", borderRadius: 20, padding: "2px 9px", fontSize: 11, fontWeight: 700, background: "var(--surface, #fff)", color: "var(--text-1, #0f172a)", border: "1px solid var(--line-strong, #cbd5e1)" },
   primary: { background: "#0f766e", color: "#fff", borderRadius: 9, textTransform: "none", fontWeight: 600, boxShadow: "none", "&:hover": { background: "#115e59", boxShadow: "none" } },
   button: { textTransform: "none", borderRadius: 8, fontSize: 12, fontWeight: 600, color: "var(--text-1, #0f172a)", border: "1px solid var(--line-strong, #cbd5e1)", background: "var(--surface, #fff)", padding: "3px 10px", "&:hover": { background: "var(--surface-2, #f1f5f9)" } },
-  content: { maxHeight: "min(48vh, 420px)", overflowY: "auto", padding: "10px 16px 12px", ...theme.scrollbarStyles },
+  content: { maxHeight: "min(48vh, 440px)", overflowY: "auto", padding: "12px 16px 12px", display: "grid", gap: 10, background: "var(--surface-2, #f8fafc)", ...theme.scrollbarStyles, [theme.breakpoints.down("xs")]: { maxHeight: "38vh", padding: "10px 12px" } },
   layout: { display: "grid", gridTemplateColumns: "minmax(180px, .85fr) minmax(240px, 1.6fr)", gap: 14, alignItems: "start", [theme.breakpoints.down("sm")]: { display: "flex", flexDirection: "column", alignItems: "stretch" } },
   steps: { padding: 0, margin: 0, listStyle: "none", display: "grid", gap: 2, [theme.breakpoints.down("sm")]: { order: 1, maxHeight: 160, overflowY: "auto" } },
   stepButton: { width: "100%", border: "1px solid transparent", borderRadius: 9, background: "transparent", color: "var(--text-2, #475569)", padding: "7px 9px", display: "flex", alignItems: "center", gap: 9, textAlign: "left", cursor: "pointer", font: "inherit", fontSize: 12, "&:hover": { background: theme.palette.action.hover }, "&:focus-visible": { outline: "2px solid #0f766e" } },
@@ -25,12 +29,12 @@ const useStyles = makeStyles(theme => ({
   done: { color: theme.palette.type === "dark" ? "#5eead4" : "#0f766e", background: "rgba(15,118,110,.1)", borderColor: "transparent" },
   current: { color: "#fff", background: "#0f766e", borderColor: "#0f766e" },
   detail: { display: "grid", gap: 10, [theme.breakpoints.down("sm")]: { order: 0 }, border: "1px solid var(--line-strong, #cbd5e1)", borderRadius: 12, padding: 14, background: "var(--surface, #fff)", boxShadow: "var(--shadow-card, none)" },
-  eyebrow: { fontSize: 10, letterSpacing: ".08em", textTransform: "uppercase", fontWeight: 700, color: theme.palette.type === "dark" ? "#5eead4" : "#0f766e", display: "flex", alignItems: "center", gap: 6 },
-  message: { fontSize: 13, whiteSpace: "pre-wrap", lineHeight: 1.6, padding: 12, background: "var(--surface-2, #f8fafc)", border: "1px solid var(--line, #e2e8f0)", borderLeft: "3px solid #0f766e", borderRadius: 9, color: "var(--text-1, #0f172a)" },
+  eyebrow: { fontSize: 11, letterSpacing: ".06em", textTransform: "uppercase", fontWeight: 700, color: theme.palette.type === "dark" ? "#5eead4" : "#0f766e", display: "flex", alignItems: "center", gap: 6 },
+  message: { fontSize: 14, whiteSpace: "pre-wrap", lineHeight: 1.6, padding: 12, background: "var(--surface-2, #f8fafc)", border: "1px solid var(--line, #e2e8f0)", borderLeft: "3px solid #0f766e", borderRadius: 9, color: "var(--text-1, #0f172a)" },
   actions: { display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" },
   foot: { display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, paddingTop: 8 },
   summary: { padding: "8px 0 0 18px", margin: 0, fontSize: 12, lineHeight: 1.6 },
-  brief: { display: "grid", gap: 6, border: "1px solid var(--line-strong, #cbd5e1)", borderRadius: 12, padding: 12, marginBottom: 10, background: "var(--surface, #fff)" },
+  brief: { display: "grid", gap: 8, border: "1px solid var(--line, #e2e8f0)", borderRadius: 12, padding: 14, background: "var(--surface, #fff)" },
   briefList: { padding: "0 0 0 18px", margin: 0, fontSize: 12, lineHeight: 1.55 },
   chip: { textTransform: "none", borderRadius: 16, fontSize: 11, padding: "1px 9px", minWidth: 0 },
   thumb: { padding: 4 },
@@ -46,7 +50,8 @@ function Panel({ ticket }) {
   const c = useStyles();
   const [data, setData] = useState(null);
   const [error, setError] = useState(false);
-  const [open, setOpen] = useState(true);
+  // on a phone the panel starts closed: the conversation comes first
+  const [open, setOpen] = useState(() => typeof window === "undefined" || !window.matchMedia || !window.matchMedia("(max-width: 599px)").matches);
   const [allSteps, setAllSteps] = useState(false);
   const [selected, setSelected] = useState(null);
   // { id, text, sources, mode, feedback } of the last suggestion of the AI
@@ -172,57 +177,29 @@ function Panel({ ticket }) {
     </div>
     <LinearProgress variant="determinate" value={required.length ? completed / required.length * 100 : 0} style={{ height: 2 }} aria-label="Progresso até a matrícula" />
     {open && <div className={c.content}>
-      <div className={c.foot} style={{ paddingBottom: 8 }}>
-        <Button size="small" className={c.button} startIcon={<ListChecks size={14} />} onClick={() => setAllSteps(v => !v)}>{allSteps ? "Ocultar etapas" : "Ver todas as etapas"}</Button>
-        <span style={{ flex: 1 }} />
-        {quota && data.aiAvailable && <span className={c.muted}>{`Sugestões hoje: ${quota.used}${quota.limit ? `/${quota.limit}` : ""}`}</span>}
-        {!data.aiAvailable && data.canManage && <Button size="small" className={c.button} title={data.aiNote || ""} href="/configuracoes?secao=copiloto">Ligar sugestões de IA</Button>}
-      </div>
-      {data.situation && (data.situation.stage || data.situation.summary) && <div className={c.brief} aria-label="Situação do lead no CRM">
-        <div className={c.actions}>
-          <span className={c.eyebrow} style={{ flex: 1 }}><History size={12} />Situação do lead</span>
-          {data.situation.stage && <span className={c.badge} style={data.situation.stageColor ? { borderColor: data.situation.stageColor } : undefined}>{data.situation.stage}</span>}
-          {data.situation.temperature && <span className={c.badge}>{{ cold: "Frio", warm: "Morno", hot: "Quente" }[data.situation.temperature] || data.situation.temperature}</span>}
-        </div>
-        {data.situation.summary && <div style={{ fontSize: 13 }}>{data.situation.summary}</div>}
-        {data.situation.nextAction && <div className={c.muted}><b>Próximo passo:</b> {data.situation.nextAction}</div>}
+      {!data.aiAvailable && data.aiNote && <div className={c.note} role="status">
+        <Sparkles size={14} /><span style={{ flex: 1 }}>{data.aiNote}</span>
+        {data.canManage && <Button size="small" className={c.button} href="/configuracoes?secao=prontidao">Resolver</Button>}
       </div>}
-      {(b || data.briefAvailable) && <div className={c.brief} aria-label="Resumo do cliente feito pela IA">
-        <div className={c.actions}>
-          <span className={c.eyebrow} style={{ flex: 1 }}><History size={12} />Resumo do cliente (IA){brief && brief.conversations > 1 ? ` · ${brief.conversations} atendimentos` : ""}</span>
-          {b && <IconButton size="small" className={`${c.thumb} ${brief.feedback === "util" ? c.thumbOn : ""}`} title="Resumo útil" aria-label="Resumo útil" onClick={() => rate(brief, setBrief, "util")}><ThumbsUp size={14} /></IconButton>}
-          {b && <IconButton size="small" className={`${c.thumb} ${brief.feedback === "nao_util" ? c.thumbOn : ""}`} title="Resumo não ajudou" aria-label="Resumo não ajudou" onClick={() => rate(brief, setBrief, "nao_util")}><ThumbsDown size={14} /></IconButton>}
-          {data.briefAvailable && <Button size="small" className={c.button} disabled={briefBusy} startIcon={briefBusy ? <CircularProgress size={12} color="inherit" /> : <Sparkles size={13} />} onClick={() => makeBrief(false)}>{b ? "Atualizar" : "Resumir histórico"}</Button>}
-        </div>
-        {b ? <>
-          <div style={{ fontSize: 13, lineHeight: 1.55 }}>{b.resumo}</div>
-          {b.interesse && <div className={c.muted}><b>Interesse:</b> {b.interesse}</div>}
-          {b.pendencias && b.pendencias.length > 0 && <div><div className={c.muted}><b>Pendências</b></div><ul className={c.briefList}>{b.pendencias.map((p, i) => <li key={i}>{p}</li>)}</ul></div>}
-          {b.objecoes && b.objecoes.length > 0 && <div><div className={c.muted}><b>Objeções</b></div><ul className={c.briefList}>{b.objecoes.map((p, i) => <li key={i}>{p}</li>)}</ul></div>}
-          {b.proximoPasso && <div style={{ fontSize: 12 }}><b>Próximo passo:</b> {b.proximoPasso}</div>}
-          {b.encaminhar && <div className={c.actions}>
-            <span className={c.muted} style={{ flex: 1 }}>O assunto parece ser {b.encaminhar === "tutoria" ? "da tutoria" : "do consultor"}.</span>
-            <Button size="small" variant="outlined" className={c.button} disabled={!canSend} onClick={() => window.dispatchEvent(new CustomEvent("teamHandoffOpen", { detail: { ticketId: ticket.id } }))}>{b.encaminhar === "tutoria" ? "Chamar a tutoria" : "Chamar o consultor"}</Button>
-          </div>}
-          {b.mensagemSugerida && <div className={c.actions}>
-            <Button size="small" className={c.button} disabled={!canSend} title={canSend ? "Coloca a mensagem sugerida na caixa de texto para você revisar" : "Assuma a conversa para responder"} onClick={() => fill(b.mensagemSugerida)}>Usar mensagem sugerida</Button>
-          </div>}
-        </> : <div className={c.muted}>{briefBusy ? "Lendo o histórico do cliente…" : "Resumo do histórico completo do cliente, inclusive atendimentos anteriores, com o próximo passo."}</div>}
-      </div>}
-      {error && <div className={c.muted} role="status">O processo pode estar desatualizado. <Button size="small" onClick={reload}>Atualizar</Button></div>}
+      {error && <div className={c.note} role="status"><span style={{ flex: 1 }}>O processo pode estar desatualizado.</span><Button size="small" className={c.button} onClick={reload}>Atualizar</Button></div>}
+
+      {/* 1. what to say now: the step of the process, the ready text (or the AI suggestion) and the actions */}
       <div className={allSteps ? c.layout : undefined}>
         {allSteps && <ol className={c.steps} aria-label="Etapas do processo">
           {steps.map((s, i) => <li key={s.key}><button type="button" aria-current={s.key === data.current ? "step" : undefined} aria-pressed={active && active.key === s.key} className={`${c.stepButton} ${active && active.key === s.key ? c.selected : ""}`} onClick={() => { setSelected(s.key); setSuggestion(null); }}>
             <span className={`${c.dot} ${s.done ? c.done : s.key === data.current ? c.current : ""}`}>{s.done ? <Check size={13} /> : i + 1}</span><span style={{ flex: 1 }}>{s.label}{s.optional && !s.done ? " (opcional)" : ""}</span>{s.key === "enroll" && <Flag size={12} />}
           </button></li>)}
         </ol>}
-        {active && <div className={c.detail}>
-          <div className={c.eyebrow}>{suggestion ? <Sparkles size={12} /> : <Compass size={12} />}{suggestion ? "Sugestão de IA · revise antes de enviar" : active.done ? "Etapa concluída" : "Orientação do gestor"}</div>
+        {active && <div className={c.detail} aria-label="Próxima mensagem">
+          <div className={c.actions}>
+            <span className={c.eyebrow} style={{ flex: 1 }}>{suggestion ? <Sparkles size={12} /> : <Compass size={12} />}{suggestion ? "Sugestão da IA · revise antes de enviar" : active.done ? "Etapa concluída" : "Próxima mensagem"}</span>
+            <Button size="small" className={c.link} startIcon={<ListChecks size={14} />} onClick={() => setAllSteps(v => !v)}>{allSteps ? "Ocultar etapas" : `Etapas ${completed}/${required.length}`}</Button>
+          </div>
           <div className={c.title}>{active.label}</div>
-          <div className={c.muted}>{active.instruction}</div>
-          {!data.hasLead && <div className={c.muted}>Este contato ainda não tem lead no CRM. Vincule o cadastro para acompanhar proposta e matrícula. <a href="/crm">Abrir CRM</a></div>}
+          {active.instruction && <div className={c.body2}>{active.instruction}</div>}
+          {!data.hasLead && <div className={c.body2}>Este contato ainda não tem lead no CRM. Vincule o cadastro para acompanhar proposta e matrícula. <a href="/crm">Abrir CRM</a></div>}
           {text && <div className={c.message}>{text}</div>}
-          {suggestion && suggestion.sources && suggestion.sources.length > 0 && <div className={c.muted}><BookOpen size={12} style={{ verticalAlign: "-2px", marginRight: 4 }} />Baseado em: {suggestion.sources.join(" · ")}</div>}
+          {suggestion && suggestion.sources && suggestion.sources.length > 0 && <div className={c.body2}><BookOpen size={12} style={{ verticalAlign: "-2px", marginRight: 4 }} />Baseado em: {suggestion.sources.join(" · ")}</div>}
           {suggestion && <div className={c.actions}>
             {[["regenerar", "Outra versão"], ["mais_curta", "Mais curta"], ["mais_formal", "Mais formal"], ["mais_calorosa", "Mais calorosa"]].map(([m, label]) =>
               <Button key={m} size="small" variant="outlined" className={c.chip} disabled={busy || !data.aiAvailable} onClick={() => suggest(m)}>{label}</Button>)}
@@ -231,7 +208,7 @@ function Panel({ ticket }) {
             <IconButton size="small" className={`${c.thumb} ${suggestion.feedback === "nao_util" ? c.thumbOn : ""}`} title="Sugestão não ajudou" aria-label="Sugestão não ajudou" onClick={() => rate(suggestion, setSuggestion, "nao_util")}><ThumbsDown size={14} /></IconButton>
           </div>}
           <div className={c.actions}>
-            {text && <Button size="small" className={c.primary} disabled={busy || !canSend} onClick={() => takeText(text, !!suggestion)}>Usar e editar mensagem</Button>}
+            {text && <Button size="small" className={c.primary} disabled={busy || !canSend} onClick={() => takeText(text, !!suggestion)}>Usar e editar</Button>}
             {/* only the manager's ready text goes out in one click: a text written by the AI is always reviewed in the message box first */}
             {text && !suggestion && <Button size="small" className={c.button} disabled={busy || !canSend} startIcon={<Send size={13} />} onClick={() => run(async () => { await api.post(`/messages/${ticket.id}`, { body: text }); })}>Enviar</Button>}
             {suggestion && <Button size="small" className={c.button} onClick={() => setSuggestion(null)}>Descartar</Button>}
@@ -242,11 +219,35 @@ function Panel({ ticket }) {
           </div>
         </div>}
       </div>
-      <div className={c.foot}>
-        <Button size="small" className={c.button} onClick={summaryToggle}>{summaryOpen ? "Ocultar resumo" : "Resumo do atendimento"}</Button>
-        <span className={c.muted}>Processo v{data.processVersion} · Você revisa e decide o que enviar.</span>
-      </div>
-      {summaryOpen && (summary ? (summary.lines || []).length ? <ul className={c.summary}>{summary.lines.map((line, i) => <li key={i}>{line}</li>)}</ul> : <div className={c.muted}>Ainda não há resumo do agente para esta conversa.</div> : <CircularProgress size={16} />)}
+
+      {/* 2. who the lead is: the CRM situation, the summary of the AI and the summary of this conversation, in one card */}
+      {(data.situation || b || data.briefAvailable) && <div className={c.brief} aria-label="Situação do lead">
+        <div className={c.actions}>
+          <span className={c.eyebrow} style={{ flex: 1 }}><History size={12} />Situação do lead{brief && brief.conversations > 1 ? ` · ${brief.conversations} atendimentos` : ""}</span>
+          {data.situation && data.situation.stage && <span className={c.badge} style={data.situation.stageColor ? { borderColor: data.situation.stageColor } : undefined}>{data.situation.stage}</span>}
+          {data.situation && data.situation.temperature && <span className={c.badge}>{{ cold: "Frio", warm: "Morno", hot: "Quente" }[data.situation.temperature] || data.situation.temperature}</span>}
+        </div>
+        {b ? <div className={c.body}>{b.resumo}</div> : data.situation && data.situation.summary ? <div className={c.body}>{data.situation.summary}</div> : null}
+        {((b && b.proximoPasso) || (data.situation && data.situation.nextAction)) && <div className={c.body2}><b>Próximo passo:</b> {(b && b.proximoPasso) || data.situation.nextAction}</div>}
+        {b && b.interesse && <div className={c.body2}><b>Interesse:</b> {b.interesse}</div>}
+        {b && b.pendencias && b.pendencias.length > 0 && <div className={c.body2}><b>Pendências:</b> {b.pendencias.join("; ")}</div>}
+        {b && b.objecoes && b.objecoes.length > 0 && <div className={c.body2}><b>Objeções:</b> {b.objecoes.join("; ")}</div>}
+        {b && b.encaminhar && <div className={c.actions}>
+          <span className={c.body2} style={{ flex: 1 }}>O assunto parece ser {b.encaminhar === "tutoria" ? "da tutoria" : "do consultor"}.</span>
+          <Button size="small" variant="outlined" className={c.button} disabled={!canSend} onClick={() => window.dispatchEvent(new CustomEvent("teamHandoffOpen", { detail: { ticketId: ticket.id } }))}>{b.encaminhar === "tutoria" ? "Chamar a tutoria" : "Chamar o consultor"}</Button>
+        </div>}
+        <div className={c.actions}>
+          {data.briefAvailable && <Button size="small" className={c.button} disabled={briefBusy} startIcon={briefBusy ? <CircularProgress size={12} color="inherit" /> : <Sparkles size={13} />} onClick={() => makeBrief(false)}>{b ? "Atualizar resumo" : "Resumir histórico"}</Button>}
+          {b && b.mensagemSugerida && <Button size="small" className={c.button} disabled={!canSend} title={canSend ? "Coloca a mensagem sugerida na caixa de texto para você revisar" : "Assuma a conversa para responder"} onClick={() => fill(b.mensagemSugerida)}>Usar mensagem sugerida</Button>}
+          <Button size="small" className={c.link} onClick={summaryToggle}>{summaryOpen ? "Ocultar o que o agente anotou" : "O que o agente anotou"}</Button>
+          <span style={{ flex: 1 }} />
+          {b && <IconButton size="small" className={`${c.thumb} ${brief.feedback === "util" ? c.thumbOn : ""}`} title="Resumo útil" aria-label="Resumo útil" onClick={() => rate(brief, setBrief, "util")}><ThumbsUp size={14} /></IconButton>}
+          {b && <IconButton size="small" className={`${c.thumb} ${brief.feedback === "nao_util" ? c.thumbOn : ""}`} title="Resumo não ajudou" aria-label="Resumo não ajudou" onClick={() => rate(brief, setBrief, "nao_util")}><ThumbsDown size={14} /></IconButton>}
+        </div>
+        {briefBusy && !b && <div className={c.body2}>Lendo o histórico do cliente…</div>}
+        {summaryOpen && (summary ? (summary.lines || []).length ? <ul className={c.summary}>{summary.lines.map((line, i) => <li key={i}>{line}</li>)}</ul> : <div className={c.body2}>Ainda não há anotações do agente para esta conversa.</div> : <CircularProgress size={16} />)}
+      </div>}
+      {quota && data.aiAvailable && <div className={c.body2} style={{ textAlign: "right" }}>{`Sugestões da IA hoje: ${quota.used}${quota.limit ? ` de ${quota.limit}` : ""}`}</div>}
     </div>}
     <Dialog open={editor} onClose={() => setEditor(false)} fullWidth maxWidth="md" aria-labelledby="copilot-editor-title">
       <DialogTitle id="copilot-editor-title"><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>Processo da equipe<IconButton aria-label="Fechar editor" onClick={() => setEditor(false)}><X size={18} /></IconButton></div></DialogTitle>

@@ -227,8 +227,8 @@ const ChatHeader = ({ contact: contactProp, ticket, onOpenInfo, onToggleSearch, 
     setLoading(true);
     try {
       const { data } = await api.post(`/tickets/${ticket.id}/ai`, { active });
-      toast.success(!active ? "O agente de IA saiu da conversa." : data && data.answeredNow ? "O agente de IA assumiu a conversa e já vai responder." : "O agente de IA assumiu a conversa. Ele responde a próxima mensagem do cliente (a última já foi respondida).");
-      history.push("/tickets");
+      // the consultant stays in the conversation and follows the AI; when it finishes qualifying, the lead comes back to them
+      toast.success(!active ? "Você assumiu de novo: a IA parou de responder." : data && data.answeredNow ? "A IA está qualificando o lead e já vai responder. Quando terminar, a conversa volta para você." : "A IA está qualificando o lead: responde a próxima mensagem. Quando terminar, a conversa volta para você.");
     } catch (err) {
       toastError(err);
     }
@@ -237,7 +237,7 @@ const ChatHeader = ({ contact: contactProp, ticket, onOpenInfo, onToggleSearch, 
 
   // team members' chats work like groups: no queue, so no accept / give back / finish buttons
   const plain = !!ticket.isGroup || !!contact.isStaff;
-  const SHORT = { "Agente de IA atende": "Agente", "Aceitar atendimento": "Aceitar", "Devolver à fila": "Devolver", "Finalizar atendimento": "Finalizar", "Reabrir atendimento": "Reabrir" };
+  const SHORT = { "IA qualificar o lead": "IA qualificar", "Aceitar atendimento": "Aceitar", "Devolver à fila": "Devolver", "Finalizar atendimento": "Finalizar", "Reabrir atendimento": "Reabrir" };
   const button = (label, onClick, primary, icon, hint) => (
     <Tooltip title={hint || ""}>
       <span>
@@ -261,7 +261,7 @@ const ChatHeader = ({ contact: contactProp, ticket, onOpenInfo, onToggleSearch, 
     ticket.isHistorical ? "Histórico" : null,
     ticket.isGroup ? "Grupo" : numberLine(contact),
     ticket.queue?.name,
-    ticket.user ? `Atendente: ${ticket.user.name}` : ticket.status === "pending" ? (ticket.aiActive ? "Agente de IA atendendo" : "Aguardando atendimento") : null,
+    ticket.user ? `Atendente: ${ticket.user.name}` : ticket.status === "pending" ? (ticket.aiActive ? "IA qualificando o lead" : "Aguardando atendimento") : null,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -294,12 +294,12 @@ const ChatHeader = ({ contact: contactProp, ticket, onOpenInfo, onToggleSearch, 
         {ticket.status === "pending" && !plain &&
           button("Aceitar atendimento", () => setStatus("open", user?.id), true, <UserCheck size={16} />, "Assumir esta conversa: ela passa a ser sua")}
         {ticket.status === "pending" && !plain && !ticket.aiActive &&
-          button("Agente de IA atende", () => setAi(true), false, <Bot size={16} />, "O agente de IA assume esta conversa e responde agora")}
+          button("IA qualificar o lead", () => setAi(true), false, <Bot size={16} />, "A IA continua a qualificação de onde o lead está e devolve a conversa para você no fim")}
         {ticket.status === "open" && !plain && ticket.userId && ticket.userId !== user?.id && isManager(user) &&
           button("Assumir conversa", takeOver, true, <UserCheck size={16} />, `Tira a conversa de ${ticket.user?.name || "outro atendente"}: ela passa a ser sua`)}
         {ticket.status === "open" && !plain && (
           <>
-            {button("Agente de IA atende", () => setAi(true), false, <Bot size={16} />, "A conversa deixa de ser sua e o agente de IA assume e responde agora")}
+            {button("IA qualificar o lead", () => setAi(true), false, <Bot size={16} />, "A IA continua a qualificação de onde o lead está e devolve a conversa para você no fim")}
             {button("Devolver à fila", () => setStatus("pending", null), false, <Undo2 size={16} />, "A conversa deixa de ser sua e volta para Aguardando, para outro atendente assumir")}
             {button("Finalizar atendimento", () => setStatus("closed", user?.id), true, <CheckCircle2 size={16} />, "Encerra a conversa. Se o contato escrever de novo, ela reabre")}
           </>

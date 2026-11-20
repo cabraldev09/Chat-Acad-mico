@@ -38,8 +38,8 @@ export const saveConfig = async (input: any): Promise<CopilotConfig> => {
 };
 export const suggestionAgent = async (config: CopilotConfig, ticket: Ticket): Promise<AiAgent | null> => {
   if (config.agentId) return AiAgent.findByPk(config.agentId); // a manual copilot can use training without starting the autonomous bot
-  const { findAgentForTicket } = await import("../AiServices/RunAiAgent");
-  return await findAgentForTicket(ticket) || await AiAgent.findOne({ where: { active: true }, order: [["id", "ASC"]] });
+  const { agentToQualify } = await import("../AiServices/RunAiAgent");
+  return agentToQualify(ticket);
 };
 export const quotaOf = async (config: CopilotConfig, userId: number, connectionId: number) => {
   const where = { createdAt: { [Op.gte]: dayBounds().start, [Op.lte]: dayBounds().end } };

@@ -21,6 +21,7 @@ import { COLORS, ChartLegend, DailyChart, FunnelBars, RankBars, SplitBar, Trend 
 import { tint } from "../../utils/color";
 import NotALead from "./NotALead";
 import "../../styles/dash.css";
+import StatsHubBar from "../../components/StatsHub";
 
 const useStyles = makeStyles((theme) => {
   const line = "var(--line)";
@@ -61,7 +62,7 @@ const useStyles = makeStyles((theme) => {
     col7: { gridColumn: "span 7", [theme.breakpoints.down("sm")]: { gridColumn: "span 12" } },
     col5: { gridColumn: "span 5", [theme.breakpoints.down("sm")]: { gridColumn: "span 12" } },
     chart: { height: 250 },
-    funnelRow: { display: "grid", gridTemplateColumns: "150px 1fr 90px", alignItems: "center", gap: 10, padding: "5px 0", fontSize: 13.5 },
+    funnelRow: { display: "grid", gridTemplateColumns: "150px 1fr 90px", alignItems: "center", gap: 10, padding: "5px 0", fontSize: 13.5, [theme.breakpoints.down("xs")]: { gridTemplateColumns: "minmax(0,1fr) 64px", "& > :nth-child(2)": { gridColumn: "1 / -1", order: 3 } } },
     bar: { height: 22, borderRadius: 6, transition: "width 1s cubic-bezier(.2,.8,.2,1)", minWidth: 4 },
     lane: { display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", marginBottom: 8, borderRadius: 8, background: "rgba(245,165,36,.12)", fontSize: 13, cursor: "pointer" },
     error: { margin: theme.spacing(2), padding: theme.spacing(2), display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" },
@@ -107,7 +108,9 @@ const SectionHead = ({ title, hint }) => {
 
 const todayStr = () => format(new Date(), "yyyy-MM-dd");
 
-const Panel = () => {
+// mode "now": the Painel do CRM, what to do today (no period). mode "results": Estatísticas → Captação, the period with its charts.
+const Panel = ({ mode = "now" }) => {
+  const results = mode === "results";
   const { user: me } = useContext(AuthContext);
   const canExport = !!me && me.role !== "tutor";
   const classes = useStyles();
@@ -157,11 +160,11 @@ const Panel = () => {
     const mine = ++ticket.current;
     setLoading(true);
     setFailed(false);
-    api.get("/crm/metrics", { params: { from, to, ownerId: ownerId || undefined, courseId: courseId || undefined } })
+    api.get("/crm/metrics", { params: results ? { from, to, ownerId: ownerId || undefined, courseId: courseId || undefined } : { now: 1, ownerId: ownerId || undefined, courseId: courseId || undefined } })
       .then(({ data }) => { if (mine === ticket.current) setD(data); })
       .catch((err) => { if (mine === ticket.current) { setFailed(true); toastError(err); } })
       .finally(() => { if (mine === ticket.current) setLoading(false); });
-  }, [from, to, ownerId, courseId]);
+  }, [from, to, ownerId, courseId, results]);
   useEffect(() => {
     // the first load is at once; after that a short wait keeps typing a date from firing one request per digit
     const t = setTimeout(load, d ? 160 : 0);
@@ -177,10 +180,11 @@ const Panel = () => {
   // referred comes before the funnel (it only holds them until the first contact), so it is not a step of it.
   const lane = d ? d.funnel.find((f) => f.isAffiliateLane) : null;
   const steps = d ? d.funnel.filter((f) => f.type !== "lost" && !f.isAffiliateLane) : [];
-  const reached = steps.map((f, i) => ({ ...f, reached: steps.slice(i).reduce((a, x) => a + x.total, 0) }));
+  // now: how many leads are in each stage today; results: who reached each stage (this one or a later one)
+  const reached = steps.map((f, i) => ({ ...f, reached: results ? steps.slice(i).reduce((a, x) => a + x.total, 0) : f.total }));
   const lostTotal = d ? d.funnel.filter((f) => f.type === "lost").reduce((a, x) => a + x.total, 0) : 0;
   const maxFunnel = Math.max(1, ...reached.map((f) => f.reached));
-  const wonInPeriod = (d?.wonDaily || []).reduce((a, r) => a + Number(r.total || 0), 0);
+  const wonInPeriod = d && d.enrollmentsInPeriod !== undefined ? d.enrollmentsInPeriod : (d?.wonDaily || []).reduce((a, r) => a + Number(r.total || 0), 0);
   const full = (r) => (r.key ? r.key.split("-").reverse().join("/") : r.day);
   const sparkLeads = series.map((r) => ({ v: r.leads || 0, day: r.day, full: full(r) }));
   const sparkWon = series.map((r) => ({ v: r.matriculas || 0, day: r.day, full: full(r) }));
@@ -199,7 +203,7 @@ const Panel = () => {
   const sourceRows = (d?.bySource || []).map((s2) => ({ key: s2.name, name: s2.name, icon: <SourceIcon source={s2.name} />, value: Number(s2.leads), bar: (Number(s2.leads) / maxSource) * 100, note: `${s2.won} matr. · ${pct(s2.won, s2.leads)}`, color: COLORS.leads }));
   const maxCourse = Math.max(1, ...(d?.byCourse || []).map((c2) => Number(c2.leads)));
   const courseRows = (d?.byCourse || []).slice(0, 8).map((c2) => ({ key: c2.name, name: c2.name, value: Number(c2.leads), bar: (Number(c2.leads) / maxCourse) * 100, note: `${c2.won} matr.`, color: COLORS.brand }));
-  const [ownerSort, setOwnerSort] = useState({ key: "won", dir: -1 });
+  const [ownerSort, setOwnerSort] = useState({ key: mode === "results" ? "won" : "waiting", dir: -1 });
   const ownersSorted = [...(d?.byOwner || [])].sort((a, b) => {
     const val = (o) => (ownerSort.key === "conv" ? (o.leads ? o.won / o.leads : 0) : Number(o[ownerSort.key] || 0));
     return (val(a) - val(b)) * ownerSort.dir || String(a.name).localeCompare(String(b.name));
@@ -208,12 +212,14 @@ const Panel = () => {
   const sortBy = (key) => setOwnerSort((cur) => (cur.key === key ? { key, dir: -cur.dir } : { key, dir: -1 }));
   const prev = d?.previous;
   const reload = () => { load(); loadTriage(); };
+  const noKpi = { leads: 0, won: 0, lost: 0, open: 0, conversion: 0, avgDaysToEnroll: null, unassigned: 0 };
+  const kpi = (d && d.kpi) || noKpi;
 
-  const allAlerts = d ? [
+  const allAlerts = d && d.attention ? [
     [Hourglass, "Aguardando 1º contato", d.attention.waitingFirstContact, AMBER, "rgba(217,119,6,.14)", "/crm"],
     [AlertTriangle, "Tarefas atrasadas", d.attention.overdueTasks, RED, "rgba(220,38,38,.12)", "/crm/tarefas"],
     [Flame, "Leads esfriando (+3 dias)", d.attention.stale, "#0693E3", "rgba(6,147,227,.12)", "/crm?followUp=overdue"],
-    [UserX, "Sem responsável", d.attention.unassigned ?? d.kpi.unassigned, "#64748b", "rgba(100,116,139,.14)", "/crm"],
+    [UserX, "Sem responsável", d.attention.unassigned ?? kpi.unassigned, "#64748b", "rgba(100,116,139,.14)", "/crm"],
     [CircleDollarSign, "Taxa de matrícula pendente", d.attention.feePending, "#E5484D", "rgba(229,72,77,.12)", d.attention.feeTagId ? `/crm?tagId=${d.attention.feeTagId}` : "/crm"],
     [FileWarning, "Documentos pendentes", d.attention.docsPending, "#b45309", "rgba(245,158,11,.16)", d.attention.docsTagId ? `/crm?tagId=${d.attention.docsTagId}` : "/crm"],
   ] : [];
@@ -224,28 +230,30 @@ const Panel = () => {
   return (
     <MainContainer>
       <MainHeader>
-        <Title>Painel do CRM</Title>
+        <Title>{results ? "Captação e resultados" : "Painel do CRM"}</Title>
         <MainHeaderButtonsWrapper>
-          <div className={classes.chips} role="group" aria-label="Período">
+          {results && <div className={classes.chips} role="group" aria-label="Período">
             {presets.map(([label, start]) => (
               <button key={label} type="button" className={`${classes.chip} ${from === start && to === todayStr() ? classes.chipOn : ""}`} onClick={() => { setFrom(start); setTo(todayStr()); }}>{label}</button>
             ))}
-          </div>
-          <TextField size="small" type="date" label="De" variant="outlined" InputLabelProps={{ shrink: true }} value={from} onChange={(e) => setFrom(e.target.value)} style={{ width: 150 }} />
-          <TextField size="small" type="date" label="Até" variant="outlined" InputLabelProps={{ shrink: true }} value={to} onChange={(e) => setTo(e.target.value)} style={{ width: 150 }} />
+          </div>}
+          {results && <TextField size="small" type="date" label="De" variant="outlined" InputLabelProps={{ shrink: true }} value={from} onChange={(e) => setFrom(e.target.value)} style={{ width: 150 }} />}
+          {results && <TextField size="small" type="date" label="Até" variant="outlined" InputLabelProps={{ shrink: true }} value={to} onChange={(e) => setTo(e.target.value)} style={{ width: 150 }} />}
           <TextField select size="small" label="Consultor" variant="outlined" value={ownerId} onChange={(e) => setOwnerId(e.target.value)} style={{ minWidth: 130 }}>
             <MenuItem value="">Todos</MenuItem>{users.map((u) => (<MenuItem key={u.id} value={u.id}>{u.name}</MenuItem>))}
           </TextField>
           <TextField select size="small" label="Curso" variant="outlined" value={courseId} onChange={(e) => setCourseId(e.target.value)} style={{ minWidth: 130 }}>
             <MenuItem value="">Todos</MenuItem>{courses.map((c) => (<MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>))}
           </TextField>
-          {canExport && <Button variant="outlined" startIcon={<Download size={16} />} onClick={(e) => setExportEl(e.currentTarget)}>Exportar</Button>}
+          {!results && <Button variant="outlined" startIcon={<ArrowUpRight size={16} />} onClick={() => history.push("/estatisticas/captacao")}>Ver resultados</Button>}
+          {canExport && results && <Button variant="outlined" startIcon={<Download size={16} />} onClick={(e) => setExportEl(e.currentTarget)}>Exportar</Button>}
           <Menu anchorEl={exportEl} open={Boolean(exportEl)} onClose={() => setExportEl(null)} getContentAnchorEl={null} anchorOrigin={{ vertical: "bottom", horizontal: "right" }} transformOrigin={{ vertical: "top", horizontal: "right" }}>
             <MenuItem onClick={() => exportReport("owner")}>Por consultor (planilha)</MenuItem>
             <MenuItem onClick={() => exportReport("polo")}>Por polo (planilha)</MenuItem>
           </Menu>
         </MainHeaderButtonsWrapper>
       </MainHeader>
+      {results && <StatsHubBar />}
 
       <TopLoader active={loading} />
       {failed && !d && (
@@ -257,7 +265,7 @@ const Panel = () => {
       {d && (
         <div className={`${classes.scroll} dash-scope`}>
          <div className={`${classes.content} ${loading ? classes.contentBusy : ""}`} aria-busy={loading}>
-          {(triage.total > 0 || (isManager && triageScope === "all")) && (
+          {!results && (triage.total > 0 || (isManager && triageScope === "all")) && (
             <>
               <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginTop: 8 }}>
                 <div style={{ flex: 1, minWidth: 260 }}>
@@ -302,7 +310,7 @@ const Panel = () => {
             </>
           )}
 
-          {alerts.length > 0 ? (
+          {results ? null : alerts.length > 0 ? (
             <>
               <SectionHead color="#d97706" title="Pontos de atenção" hint="Situação de agora, não muda com o período escolhido" />
               <div className={classes.alerts}>
@@ -322,7 +330,8 @@ const Panel = () => {
             <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderRadius: 12, background: "rgba(22,163,74,.1)", color: "#15803d", fontWeight: 600 }}>Nenhum ponto de atenção agora.</div>
           )}
 
-          <SectionHead color="#16a34a" title="Resultados do período" hint="Dos leads que entraram entre as datas escolhidas, quantos já se matricularam. A seta compara com o período anterior." />
+          {results && <>
+          <SectionHead color="#16a34a" title="Resultados do período" hint="Leads que entraram e matrículas confirmadas entre as datas escolhidas. A seta compara com o período anterior." />
           <GlowCard style={{ padding: 0, overflow: "hidden" }}>
             <div className={classes.band}>
               <div className={classes.cell}>
@@ -333,18 +342,17 @@ const Panel = () => {
                 <div className={classes.label} style={{ fontSize: 12, marginTop: 6 }}>{d.kpi.open} em andamento agora</div>
               </div>
               <div className={classes.cell}>
-                <div className={classes.label}>Matrículas</div>
-                <div className={classes.cellVal}><NumberTicker value={d.kpi.won} /></div>
-                <div style={{ marginTop: 4 }}><Delta now={d.kpi.won} before={prev && prev.won} /></div>
+                <div className={classes.label}>Matrículas no período</div>
+                <div className={classes.cellVal}><NumberTicker value={wonInPeriod} /></div>
                 <Trend data={sparkWon} color={COLORS.won} kind="bar" name="Matrículas" label="Matrículas confirmadas por dia" />
-                <div className={classes.label} style={{ fontSize: 12, marginTop: 6 }}>{wonInPeriod} confirmadas no período</div>
+                <div className={classes.label} style={{ fontSize: 12, marginTop: 6 }}>{kpi.won} delas são de leads que entraram neste período</div>
               </div>
               <div className={classes.cell}>
-                <div className={classes.label}>Conversão</div>
+                <div className={classes.label}>Conversão dos leads do período</div>
                 <div className={classes.cellVal}>{`${d.kpi.conversion.toFixed(1).replace(".", ",")}%`}</div>
                 <div style={{ marginTop: 4 }}><Delta now={d.kpi.conversion} before={prev && prev.conversion} points /></div>
                 <Trend data={sparkConv} color={COLORS.brand} name="Conversão acumulada" unit="percent" label="Conversão acumulada ao longo do período" />
-                <div className={classes.label} style={{ fontSize: 12, marginTop: 6 }}>lead → matrícula, acumulada no período</div>
+                <div className={classes.label} style={{ fontSize: 12, marginTop: 6 }}>dos leads que entraram, quantos já se matricularam</div>
               </div>
               <div className={classes.cell} style={{ borderRight: 0 }}>
                 <div className={classes.label}>Tempo até a matrícula</div>
@@ -356,9 +364,10 @@ const Panel = () => {
               </div>
             </div>
           </GlowCard>
+          </>}
 
           <div className={classes.grid} style={{ marginTop: 16 }}>
-            <GlowCard className={`${classes.card} ${classes.col12}`}>
+            {results && <GlowCard className={`${classes.card} ${classes.col12}`}>
               <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap", justifyContent: "space-between" }}>
                 <div>
                   <Typography variant="subtitle2">Leads captados e matrículas por dia</Typography>
@@ -367,12 +376,12 @@ const Panel = () => {
                 <ChartLegend items={[[COLORS.leads, "Leads captados"], [COLORS.won, "Matrículas"], [COLORS.brand, "Média de 7 dias (leads)", true]]} />
               </div>
               <DailyChart series={series} />
-            </GlowCard>
+            </GlowCard>}
 
-            <GlowCard className={`${classes.card} ${classes.col7}`}>
-              <Typography variant="subtitle2" gutterBottom>Funil de matrícula</Typography>
+            {!results && <GlowCard className={`${classes.card} ${classes.col7}`}>
+              <Typography variant="subtitle2" gutterBottom>Funil agora</Typography>
               <Typography variant="caption" color="textSecondary" display="block" style={{ marginBottom: 12 }}>
-                Leads que estão em cada etapa ou já passaram dela; ao lado de cada barra, a parte da etapa anterior que chegou até ali.
+                Quantos leads estão em cada etapa hoje. Clique em Ver resultados para o funil de um período.
               </Typography>
               {lane && lane.total > 0 && (
                 <div className={classes.lane} role="button" tabIndex={0} onClick={() => history.push("/crm")}
@@ -383,36 +392,36 @@ const Panel = () => {
               <FunnelBars steps={reached} />
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12, paddingTop: 10, borderTop: "1px solid rgba(100,116,139,.2)", fontSize: 13.5 }}>
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><span style={{ width: 8, height: 8, borderRadius: 2, background: COLORS.lost }} />Perdidos (ficam fora do funil)</span>
-                <b style={{ fontVariantNumeric: "tabular-nums" }}>{lostTotal} <span style={{ fontWeight: 500, opacity: 0.65, fontSize: 12 }}>{pct(lostTotal, d.kpi.leads)} dos leads</span></b>
+                <b style={{ fontVariantNumeric: "tabular-nums" }}>{lostTotal}</b>
               </div>
-            </GlowCard>
+            </GlowCard>}
 
-            <GlowCard className={`${classes.card} ${classes.col5}`}>
+            {results && <GlowCard className={`${classes.card} ${classes.col5}`}>
               <Typography variant="subtitle2" gutterBottom>Motivos de perda</Typography>
               <Typography variant="caption" color="textSecondary" display="block" style={{ marginBottom: 12 }}>O que mais derruba os leads do período.</Typography>
               <RankBars rows={lostRows} empty="Nenhuma perda no período." />
-            </GlowCard>
+            </GlowCard>}
 
-            <GlowCard className={`${classes.card} ${classes.col5}`}>
+            {results && <GlowCard className={`${classes.card} ${classes.col7}`}>
               <Typography variant="subtitle2" gutterBottom>Origem dos leads</Typography>
               <Typography variant="caption" color="textSecondary" display="block" style={{ marginBottom: 12 }}>Quantos leads e quantas matrículas vieram de cada canal.</Typography>
               <RankBars rows={sourceRows} />
-            </GlowCard>
+            </GlowCard>}
 
-            <GlowCard className={`${classes.card} ${classes.col7}`}>
+            {results && <GlowCard className={`${classes.card} ${classes.col12}`}>
               <Typography variant="subtitle2" gutterBottom>Cursos mais procurados</Typography>
               <Typography variant="caption" color="textSecondary" display="block" style={{ marginBottom: 12 }}>Leads por curso (os 8 primeiros) e as matrículas de cada um.</Typography>
               <RankBars rows={courseRows} />
-            </GlowCard>
+            </GlowCard>}
 
-            <GlowCard className={`${classes.card} ${classes.col12}`}>
-              <Typography variant="subtitle2" gutterBottom>Desempenho dos consultores</Typography>
+            <GlowCard className={`${classes.card} ${results ? classes.col12 : classes.col5}`}>
+              <Typography variant="subtitle2" gutterBottom>{results ? "Desempenho dos consultores" : "Consultores agora"}</Typography>
               <div style={{ overflowX: "auto" }}>
                 <Table size="small">
                   <TableHead>
                     <TableRow>
                       <TableCell>Consultor</TableCell>
-                      {[["leads", "Leads"], ["open", "Em andamento"], ["won", "Matrículas"], ["conv", "Conversão"], ["waiting", "Sem 1º contato agora"]].map(([k, label]) => (
+                      {(results ? [["leads", "Leads"], ["won", "Matrículas"], ["conv", "Conversão"]] : [["open", "Em andamento"], ["waiting", "Sem 1º contato"], ["stale", "Esfriando"]]).map(([k, label]) => (
                         <TableCell key={k} align="right" sortDirection={ownerSort.key === k ? (ownerSort.dir > 0 ? "asc" : "desc") : false}>
                           <button type="button" onClick={() => sortBy(k)} style={{ border: 0, background: "transparent", cursor: "pointer", font: "inherit", color: "inherit", fontWeight: 600, padding: 0 }} aria-label={`Ordenar por ${label}`}>
                             {label}{ownerSort.key === k ? (ownerSort.dir > 0 ? " ↑" : " ↓") : ""}
@@ -426,20 +435,20 @@ const Panel = () => {
                       <TableRow key={o.name} hover>
                         <TableCell>
                           <div style={{ fontWeight: 600 }}>{o.name}</div>
-                          <div className={classes.miniBar} style={{ marginTop: 4, width: 120 }}><div style={{ width: `${(Number(o.leads) / maxOwnerLeads) * 100}%`, height: "100%", background: COLORS.leads, opacity: 0.7 }} /></div>
+                          {results && <div className={classes.miniBar} style={{ marginTop: 4, width: 120 }}><div style={{ width: `${(Number(o.leads) / maxOwnerLeads) * 100}%`, height: "100%", background: COLORS.leads, opacity: 0.7 }} /></div>}
                         </TableCell>
-                        <TableCell align="right" style={{ fontVariantNumeric: "tabular-nums" }}>{o.leads}</TableCell>
-                        <TableCell align="right" style={{ fontVariantNumeric: "tabular-nums" }}>{o.open}</TableCell>
-                        <TableCell align="right" style={{ fontVariantNumeric: "tabular-nums" }}><b>{o.won}</b></TableCell>
-                        <TableCell align="right" style={{ fontVariantNumeric: "tabular-nums" }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "flex-end" }}>
-                            <div className={classes.miniBar} style={{ width: 56 }}><div style={{ width: `${Math.min(100, o.leads ? (o.won / o.leads) * 100 * 4 : 0)}%`, height: "100%", background: COLORS.won }} /></div>
-                            <span style={{ minWidth: 44 }}>{pct(o.won, o.leads)}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell align="right" style={{ color: o.waiting ? RED : undefined, fontWeight: o.waiting ? 700 : 400, fontVariantNumeric: "tabular-nums" }}>{o.waiting || 0}</TableCell>
+                        {results ? <>
+                          <TableCell align="right" style={{ fontVariantNumeric: "tabular-nums" }}>{o.leads}</TableCell>
+                          <TableCell align="right" style={{ fontVariantNumeric: "tabular-nums" }}><b>{o.won}</b></TableCell>
+                          <TableCell align="right" style={{ fontVariantNumeric: "tabular-nums" }}>{pct(o.won, o.leads)}</TableCell>
+                        </> : <>
+                          <TableCell align="right" style={{ fontVariantNumeric: "tabular-nums" }}>{o.open}</TableCell>
+                          <TableCell align="right" style={{ color: o.waiting ? RED : undefined, fontWeight: o.waiting ? 700 : 400, fontVariantNumeric: "tabular-nums" }}>{o.waiting || 0}</TableCell>
+                          <TableCell align="right" style={{ color: o.stale ? AMBER : undefined, fontVariantNumeric: "tabular-nums" }}>{o.stale || 0}</TableCell>
+                        </>}
                       </TableRow>
                     ))}
+                    {ownersSorted.length === 0 && <TableRow><TableCell colSpan={4} style={{ color: "var(--text-2)" }}>{results ? "Sem leads no período." : "Ninguém com leads em andamento agora."}</TableCell></TableRow>}
                   </TableBody>
                 </Table>
               </div>

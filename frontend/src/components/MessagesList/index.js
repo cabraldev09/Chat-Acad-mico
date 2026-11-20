@@ -153,7 +153,8 @@ const useStyles = makeStyles((theme) => {
       background: c.panel, boxShadow: c.shadow, opacity: 0, transition: "opacity .12s, transform .12s",
       "&:hover": { transform: "scale(1.1)", color: c.accent },
     },
-    rowHover: { "&:hover $reactBtn, & $reactBtn:focus-visible": { opacity: 1 } },
+    // on a phone (no hover) the button stays visible, lighter, so a reaction is one tap away
+    rowHover: { "&:hover $reactBtn, & $reactBtn:focus-visible": { opacity: 1 }, "@media (hover: none)": { "& $reactBtn": { opacity: 0.55 } } },
     tailedIn: {
       borderTopLeftRadius: 0,
       "&::before": { left: -8, background: c.bubbleIn, clipPath: "polygon(100% 0, 0 0, 100% 100%)" },
