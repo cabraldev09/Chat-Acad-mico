@@ -54,7 +54,7 @@ const useStyles = makeStyles((theme) => ({
   rail: { position: "sticky", top: 0, display: "flex", flexDirection: "column", gap: 2, [theme.breakpoints.down("sm")]: { position: "static", flexDirection: "row", flexWrap: "nowrap", overflowX: "auto", gap: 6, paddingBottom: 4, scrollbarWidth: "none", "&::-webkit-scrollbar": { display: "none" } } },
   railBtn: {
     border: 0, background: "transparent", color: theme.palette.text.secondary, textAlign: "left", cursor: "pointer", fontFamily: "inherit", padding: "9px 12px", borderRadius: 12,
-    display: "flex", gap: 11, alignItems: "center", "&:hover": { background: theme.palette.action.hover, color: theme.palette.text.primary },
+    display: "flex", gap: 11, alignItems: "center", "& > svg": { flex: "none" }, "&:hover": { background: theme.palette.action.hover, color: theme.palette.text.primary },
     [theme.breakpoints.down("sm")]: { border: theme.border.divider },
   },
   railOn: { background: theme.palette.action.selected, color: theme.palette.text.primary },
@@ -67,7 +67,7 @@ const useStyles = makeStyles((theme) => ({
   card: { borderRadius: 16, padding: theme.spacing(2.25), display: "grid", gap: theme.spacing(1.25), background: theme.palette.cards.background },
   cardTitle: { fontWeight: 700, fontSize: 15 },
   hint: { fontSize: 12.5, color: theme.palette.text.secondary },
-  row: { display: "flex", gap: theme.spacing(1), alignItems: "center", flexWrap: "wrap" },
+  row: { display: "flex", gap: theme.spacing(1), alignItems: "flex-start", flexWrap: "wrap" },
   grid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(250px, 1fr))", gap: theme.spacing(1.5) },
   tile: {
     display: "flex", gap: 12, alignItems: "flex-start", padding: theme.spacing(1.75), borderRadius: 14, textDecoration: "none", color: "inherit", position: "relative",

@@ -101,10 +101,12 @@ const createAppTheme = (type) => {
             backgroundColor: colors.background.default,
           },
           "::selection": { background: alpha(colors.primary.main, 0.25) },
+          // the ring is drawn inside the element: outside, a scrolling panel cut it (the "broken border" around a selected item)
           "*:focus-visible": {
             outline: `2px solid ${colors.accent.main}`,
-            outlineOffset: 2,
+            outlineOffset: -2,
           },
+          "*:focus:not(:focus-visible)": { outline: "none" },
           "@keyframes shimmer": {
             "0%": { backgroundPosition: "-200% 0" },
             "100%": { backgroundPosition: "200% 0" },
@@ -122,7 +124,7 @@ const createAppTheme = (type) => {
           fontWeight: 500,
           textTransform: "none",
           padding: "6px 14px",
-          minHeight: 36,
+          minHeight: 38,
           transition: "background-color .15s, border-color .15s, box-shadow .15s, color .15s",
         },
         sizeSmall: { minHeight: 30, padding: "3px 10px", fontSize: "13px" },
@@ -177,7 +179,8 @@ const createAppTheme = (type) => {
           "&$focused": { boxShadow: `0 0 0 3px ${ring}` },
         },
         input: { padding: "10px 12px" },
-        inputMarginDense: { paddingTop: 8, paddingBottom: 8 },
+        // one height for the whole system: a small field (38 px) is as tall as the button beside it
+        inputMarginDense: { paddingTop: 10, paddingBottom: 10 },
       },
       // long labels were wrapping onto two lines and landing on top of the typed value
       MuiInputLabel: {

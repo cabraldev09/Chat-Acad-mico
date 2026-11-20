@@ -43,7 +43,7 @@ const webhookLine = w => {
 };
 
 const useStyles = makeStyles(theme => ({
-	row: { display: "flex", gap: theme.spacing(1), alignItems: "center", flexWrap: "wrap" },
+	row: { display: "flex", gap: theme.spacing(1), alignItems: "flex-start", flexWrap: "wrap" },
 	section: { marginTop: theme.spacing(2) },
 	code: {
 		fontFamily: "monospace",

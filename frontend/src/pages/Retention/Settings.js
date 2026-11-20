@@ -15,7 +15,7 @@ const useStyles = makeStyles((theme) => {
   return {
     card: { background: theme.palette.cards.background, border: `1px solid ${line}`, borderRadius: 16, padding: theme.spacing(2.25), marginBottom: theme.spacing(2) },
     hint: { fontSize: 13, color: theme.palette.text.secondary },
-    row: { display: "flex", gap: theme.spacing(1.25), flexWrap: "wrap", alignItems: "center" },
+    row: { display: "flex", gap: theme.spacing(1.25), flexWrap: "wrap", alignItems: "flex-start" },
     preview: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: theme.spacing(2), alignItems: "start", [theme.breakpoints.down("sm")]: { gridTemplateColumns: "1fr" } },
     adjust: { border: `1px solid ${line}`, borderRadius: 16, marginBottom: theme.spacing(2), background: theme.palette.type === "dark" ? "rgba(6,147,227,.06)" : "#eef4fb", overflow: "hidden" },
     adjustHead: { display: "flex", alignItems: "center", gap: 10, width: "100%", border: 0, background: "transparent", cursor: "pointer", font: "inherit", color: "inherit", padding: theme.spacing(1.5, 2), textAlign: "left", "&:focus-visible": { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: -2 } },

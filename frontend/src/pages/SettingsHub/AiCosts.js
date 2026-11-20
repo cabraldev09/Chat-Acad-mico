@@ -17,8 +17,10 @@ const num = (v) => Number(v || 0).toLocaleString("pt-BR");
 export default function AiCosts() {
   const [days, setDays] = useState(30);
   const [data, setData] = useState(null);
+  const [failed, setFailed] = useState(false);
   const load = useCallback(async () => {
-    try { const { data: d } = await api.get("/operations/ai-costs", { params: { days } }); setData(d); } catch (err) { toastError(err); }
+    setFailed(false);
+    try { const { data: d } = await api.get("/operations/ai-costs", { params: { days } }); setData(d); } catch (err) { setFailed(true); toastError(err); }
   }, [days]);
   useEffect(() => { setData(null); load(); }, [load]);
 
@@ -27,7 +29,9 @@ export default function AiCosts() {
       <div className="ui-tabs" role="tablist" aria-label="Período da IA" style={{ marginLeft: 0 }}>
         {PERIODS.map(([k, l]) => <button key={k} type="button" role="tab" aria-selected={days === k} className={`ui-tabs__btn${days === k ? " is-on" : ""}`} onClick={() => setDays(k)}>{l}</button>)}
       </div>
-      {!data ? <div style={{ color: "var(--text-2)", fontSize: 13 }}>Somando o uso da IA…</div> : (
+      {failed ? (
+        <div style={{ color: "var(--text-2)", fontSize: 13 }}>Não foi possível somar o uso da IA agora. <button type="button" onClick={load} style={{ border: 0, background: "none", color: "var(--accent)", font: "inherit", fontWeight: 600, cursor: "pointer", padding: 0 }}>Tentar de novo</button></div>
+      ) : !data ? <div style={{ color: "var(--text-2)", fontSize: 13 }}>Somando o uso da IA…</div> : (
         <>
           <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))" }}>
             {[

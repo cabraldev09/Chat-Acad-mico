@@ -494,8 +494,8 @@ const ListPicker = ({ value, lists, picked, onPicked, setValue, onNew, tutor }) 
       >
         {lists.map((l) => (<MenuItem key={l.id} value={l.id}>{l.name} ({l.itemCount} {Number(l.itemCount) === 1 ? "pessoa" : "pessoas"})</MenuItem>))}
       </TextField>
-      <Button variant="outlined" color="primary" onClick={() => onNew(0)} startIcon={<UsersIcon size={16} />} style={{ marginTop: 8, whiteSpace: "nowrap", height: 40, flex: "0 0 auto" }}>{tutor ? "Dos meus alunos" : "Do CRM"}</Button>
-      {!tutor && <Button variant="outlined" onClick={() => onNew(1)} startIcon={<PlusIcon size={16} />} style={{ marginTop: 8, whiteSpace: "nowrap", height: 40, flex: "0 0 auto" }}>Colar números</Button>}
+      <Button variant="outlined" color="primary" onClick={() => onNew(0)} startIcon={<UsersIcon size={16} />} style={{ marginTop: 8, whiteSpace: "nowrap", flex: "0 0 auto" }}>{tutor ? "Dos meus alunos" : "Do CRM"}</Button>
+      {!tutor && <Button variant="outlined" onClick={() => onNew(1)} startIcon={<PlusIcon size={16} />} style={{ marginTop: 8, whiteSpace: "nowrap", flex: "0 0 auto" }}>Colar números</Button>}
     </div>
   );
 };

@@ -47,7 +47,7 @@ export const readiness = async (): Promise<ReadinessItem[]> => {
   const hours = await getSetting("business_hours", "");
   let hoursOn = false;
   try { hoursOn = !!JSON.parse(hours || "{}").enabled; } catch { hoursOn = false; }
-  add("hours", "Horário de atendimento", hoursOn, "recommended", hoursOn ? "Definido: prazos e alertas contam só o expediente." : "Sem horário, os prazos contam as 24 horas do dia.", "Configurações → Horário e prazos");
+  add("hours", "Horário de atendimento", hoursOn, "recommended", hoursOn ? "Definido: prazos e alertas contam só o expediente." : "Sem horário, os prazos contam as 24 horas do dia.", "Configurações → Atendimento e horário");
 
   const polos = await Polo.findAll({ attributes: ["id", "name"] });
   const members = await PoloMember.findAll({ where: { poloId: { [Op.in]: polos.map(p => p.id) } } as any, attributes: ["poloId", "role"] });
