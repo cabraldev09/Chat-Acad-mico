@@ -56,11 +56,13 @@ test('reactive attendance is scoped to the inbound reply and does not leak to wo
   assert.equal(isReactiveReply(), false);
 });
 
-test('copilot starts on all connections with paid suggestions opt-in', () => {
+// the AI suggestions come on by default (asked by the company: always tied to the sales process), but always inside daily limits
+test('copilot starts on all connections with the AI suggestions on and bounded by daily limits', () => {
   const { defaultConfig, policyFor } = require('../dist/services/CopilotServices/Policy');
   const config = defaultConfig();
   assert.equal(config.enabled, true);
-  assert.equal(config.aiEnabled, false);
+  assert.equal(config.aiEnabled, true);
+  assert.ok(config.dailyLimit > 0 && config.userDailyLimit > 0 && config.connectionDailyLimit > 0);
   assert.deepEqual(policyFor(config, 999), { enabled: true, dailyLimit: 50 });
   config.connections['999'] = { enabled: false, dailyLimit: 2 };
   assert.equal(policyFor(config, 999).enabled, false);
