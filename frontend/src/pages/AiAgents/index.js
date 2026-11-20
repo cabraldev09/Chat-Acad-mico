@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { useHistory } from "react-router-dom";
+import { useHistory, useLocation } from "react-router-dom";
 import { toast } from "react-toastify";
 import { Button, Menu, MenuItem, Switch, Tooltip, makeStyles } from "@material-ui/core";
 import { AlertTriangle, ChevronDown, ChevronRight, Filter, GraduationCap, Headphones, Key, Plus, Scale, Trash2, UserCheck, Workflow } from "lucide-react";
@@ -47,7 +47,9 @@ const AiAgents = () => {
   const [editing, setEditing] = useState(undefined); // undefined = closed, null = new agent (form)
   const [creating, setCreating] = useState(false);
   const [removing, setRemoving] = useState(null);
-  const [dialog, setDialog] = useState(null);
+  // ?abrir=chave (from Prontidão do sistema) opens that window directly
+  const { search } = useLocation();
+  const [dialog, setDialog] = useState(() => { const a = new URLSearchParams(search).get("abrir"); return ["chave", "funil", "mec", "assume"].includes(a) ? a : null; });
   const [menu, setMenu] = useState(null);
   const [handoff, setHandoff] = useState(null);
 

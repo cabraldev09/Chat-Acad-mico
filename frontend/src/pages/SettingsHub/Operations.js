@@ -40,10 +40,12 @@ export default function Operations() {
         <MenuItem value="0">Usar a fila já definida no atendimento</MenuItem>{summary.queues.map(q => <MenuItem key={q.id} value={String(q.id)}>{q.name}</MenuItem>)}
       </TextField>
       <FormControlLabel control={<Switch color="primary" checked={settings.crm_followup_enabled === "true"} onChange={e => setSettings({ ...settings, crm_followup_enabled: String(e.target.checked) })} />} label="Criar tarefas para acompanhar propostas e cobranças" />
-      {FIELDS.filter(([key]) => settings[key] !== undefined).map(([key, label]) => <TextField key={key} variant="outlined" size="small" type="number" inputProps={{ min: 0, step: key.includes("usd") ? "any" : 1 }} label={label} value={settings[key]} onChange={e => setSettings({ ...settings, [key]: e.target.value })} />)}
+      <div style={{ display: "grid", gap: 14, gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", alignItems: "start" }}>
+        {FIELDS.filter(([key]) => settings[key] !== undefined).map(([key, label]) => <TextField key={key} variant="outlined" size="small" type="number" inputProps={{ min: 0, step: key.includes("usd") ? "any" : 1 }} InputLabelProps={{ shrink: true }} label={label} value={settings[key]} onChange={e => setSettings({ ...settings, [key]: e.target.value })} />)}
+      </div>
       {admin && <FormControlLabel control={<Switch color="primary" checked={settings.outbound_allow_templates === "true"} onChange={e => setSettings({ ...settings, outbound_allow_templates: String(e.target.checked) })} />} label="Autorizar envios com templates aprovados da Meta" />}
       <Typography variant="caption" color="textSecondary">Os valores em dólares são estimativas configuradas, não a fatura. Mensagens de atendimento e templates podem ter preços diferentes por categoria e destino. Limites de IA reservam margem antes de cada chamada; testes também consomem o orçamento global.</Typography>
-      <Button variant="contained" color="primary" disabled={busy} onClick={save}>Salvar regras</Button>
+      <div><Button variant="contained" color="primary" disabled={busy} onClick={save}>Salvar regras</Button></div>
     </Paper>
     {spend && <Paper variant="outlined" style={{ padding: 20 }}>
       <Typography variant="h6">Consumo de hoje</Typography>
@@ -59,10 +61,11 @@ export default function Operations() {
     </Paper>
     <Paper variant="outlined" style={{ padding: 20, display: "grid", gap: 10 }}>
       <Typography variant="h6">Disponibilidade da equipe</Typography>
+      <Typography variant="body2" color="textSecondary">Capacidade: quantas conversas abertas a pessoa pode ter ao mesmo tempo (0 = sem limite).</Typography>
       {summary.users.map((user, i) => <div key={user.id} style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
         <FormControlLabel control={<Switch color="primary" checked={user.acceptsNewTickets !== false} onChange={e => setSummary({ ...summary, users: summary.users.map((u, j) => j === i ? { ...u, acceptsNewTickets: e.target.checked } : u) })} />} label={`${user.name} · ${user.openTickets} abertos`} />
-        <TextField size="small" type="number" label="Capacidade (0 sem limite)" value={user.maxOpenTickets} inputProps={{ min: 0, max: 1000 }} onChange={e => setSummary({ ...summary, users: summary.users.map((u, j) => j === i ? { ...u, maxOpenTickets: Number(e.target.value) } : u) })} />
-        <Button onClick={async () => { try { await api.put(`/operations/users/${user.id}/capacity`, { acceptsNewTickets: user.acceptsNewTickets, maxOpenTickets: user.maxOpenTickets }); toast.success("Capacidade salva."); } catch (err) { toastError(err); } }}>Salvar</Button>
+        <TextField size="small" variant="outlined" type="number" label="Capacidade" style={{ width: 120 }} value={user.maxOpenTickets} inputProps={{ min: 0, max: 1000 }} onChange={e => setSummary({ ...summary, users: summary.users.map((u, j) => j === i ? { ...u, maxOpenTickets: Number(e.target.value) } : u) })} />
+        <Button variant="outlined" onClick={async () => { try { await api.put(`/operations/users/${user.id}/capacity`, { acceptsNewTickets: user.acceptsNewTickets, maxOpenTickets: user.maxOpenTickets }); toast.success("Capacidade salva."); } catch (err) { toastError(err); } }}>Salvar</Button>
       </div>)}
     </Paper>
     <Paper variant="outlined" style={{ padding: 20 }}>

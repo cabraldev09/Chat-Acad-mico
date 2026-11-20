@@ -39,7 +39,7 @@ const useStyles = makeStyles((theme) => ({
     borderRadius: 4,
   },
   children: { marginLeft: theme.spacing(3) },
-  line: { display: "flex", alignItems: "center", gap: theme.spacing(1), flexWrap: "wrap" },
+  line: { display: "flex", alignItems: "flex-start", gap: theme.spacing(1), flexWrap: "wrap" },
   hint: { opacity: 0.75, marginBottom: theme.spacing(2) },
 }));
 

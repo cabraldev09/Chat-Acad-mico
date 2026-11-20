@@ -12,7 +12,7 @@ const useStyles = makeStyles(theme => ({
   hint: { fontSize: 13, color: theme.palette.text.secondary, lineHeight: 1.6 },
   grid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px,1fr))", gap: 14 },
   step: { border: `1px solid ${theme.palette.divider}`, borderRadius: 12, padding: 14, display: "grid", gap: 10 },
-  row: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" },
+  row: { display: "flex", alignItems: "flex-start", gap: 8, flexWrap: "wrap" },
   number: { width: 28, height: 28, borderRadius: 9, background: theme.palette.action.selected, display: "grid", placeItems: "center", fontWeight: 700, color: theme.palette.primary.main },
   footer: { display: "flex", gap: 12, justifyContent: "flex-end", position: "sticky", bottom: 0, background: theme.palette.background.paper, padding: "12px 0", zIndex: 1 }
 }));

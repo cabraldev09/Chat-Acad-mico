@@ -25,7 +25,7 @@ const useStyles = makeStyles((theme) => ({
   },
   hint: { color: theme.palette.text.secondary, fontSize: 13 },
   pill: { display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 600, padding: "3px 10px", borderRadius: 999 },
-  row: { display: "flex", gap: theme.spacing(1), flexWrap: "wrap", alignItems: "center" },
+  row: { display: "flex", gap: theme.spacing(1), flexWrap: "wrap", alignItems: "flex-start" },
 }));
 
 const copy = (text) => { navigator.clipboard?.writeText(text); toast.success("Copiado"); };
