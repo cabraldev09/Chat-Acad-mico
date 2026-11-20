@@ -182,8 +182,9 @@
 .ui-wizard__n { flex: none; width: 22px; height: 22px; border-radius: 50%; display: inline-grid; place-items: center; font-size: 12px; font-weight: 700; background: var(--surface); border: 1px solid var(--line-strong); }
 .ui-wizard__step.is-on .ui-wizard__n, .ui-wizard__step.is-done .ui-wizard__n { background: var(--accent); border-color: var(--accent); color: #fff; }
 .ui-wizard__t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* on the phone the steps go in two rows, every name visible */
 @media (max-width: 600px) {
-  .ui-wizard { padding: 0 16px 10px; gap: 4px; }
-  .ui-wizard__step { min-width: 0; padding: 6px; justify-content: center; }
-  .ui-wizard__step:not(.is-on) .ui-wizard__t { display: none; }
+  .ui-wizard { display: grid; grid-template-columns: 1fr 1fr; padding: 0 16px 10px; gap: 6px; overflow: visible; }
+  .ui-wizard__step { min-width: 0; padding: 7px 8px; }
+  .ui-wizard__t { white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.2; }
 }
