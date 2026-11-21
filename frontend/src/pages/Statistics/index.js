@@ -1,6 +1,6 @@
-import React, { useContext, useMemo, useState } from "react";
-import { useHistory } from "react-router-dom";
-import { AlertTriangle, BarChart3, GraduationCap, Lightbulb, Sparkles, Users } from "lucide-react";
+import React, { useContext, useState } from "react";
+import { Redirect, useHistory, useLocation } from "react-router-dom";
+import { AlertTriangle, Sparkles } from "lucide-react";
 
 import { AuthContext } from "../../context/Auth/AuthContext";
 import { isManager } from "../../utils/access";
@@ -12,12 +12,6 @@ import { useKit, useAnalytics, PeriodPicker, periodParams, num } from "../../com
 
 // Estatísticas: one panel with the real numbers of the system, in tabs. The management sees the whole team; a consultant sees only their
 // own numbers (the server decides, whatever is asked); a tutor sees the tutoring. Every block handles loading, empty and error.
-const TABS = {
-  comercial: { label: "Comercial", icon: BarChart3 },
-  consultores: { label: "Consultores", icon: Users },
-  treinamento: { label: "Treinamento", icon: Lightbulb },
-  tutoria: { label: "Tutoria", icon: GraduationCap },
-};
 
 const pct = (v) => (v === null || v === undefined ? "-" : `${String(Math.round(v * 10) / 10).replace(".", ",")}%`);
 const rank = (list, nameKey, valueKey, color, note) => {
@@ -182,7 +176,7 @@ const Training = ({ params }) => {
   );
 };
 
-const Tutoring = ({ params }) => {
+export const Tutoring = ({ params }) => {
   const c = useKit();
   const { data, loading, error, reload } = useAnalytics("/analytics/tutoria", params);
   if (error && !data) return <Failed onRetry={reload} />;
@@ -225,50 +219,45 @@ const Tutoring = ({ params }) => {
   );
 };
 
+// Estatísticas → Visão geral, Consultores and Treinamento (the tab comes in ?aba=, so the tabs of the hub bar open them); the other
+// tabs of the area (Captação, Matrículas, Atendimento, Tutoria, Equipe agora) are their own screens under the same bar
 export default function Statistics() {
   const c = useKit();
   const history = useHistory();
+  const { search } = useLocation();
   const { user } = useContext(AuthContext);
   const manager = isManager(user);
   const tutor = !!user && ["tutor", "academico"].includes(user.role);
-  const tabs = useMemo(() => (manager ? ["comercial", "consultores", "treinamento", "tutoria"] : tutor ? ["tutoria"] : ["comercial"]), [manager, tutor]);
-  const [tab, setTab] = useState(tabs[0]);
+  const wanted = new URLSearchParams(search).get("aba") || "comercial";
+  const tab = manager && ["consultores", "treinamento"].includes(wanted) ? wanted : "comercial";
   const [period, setPeriod] = useState({ range: "month" });
   const params = periodParams(period);
-  const current = tabs.includes(tab) ? tab : tabs[0];
-  const more = manager
-    ? [["/gestao-comercial", "Gestão comercial (equipe agora)"], ["/estatisticas/captacao", "Captação e resultados"], ["/crm/matriculas", "Matrículas realizadas"], ["/reports", "Atendimento e canais"], ["/estatisticas/tutoria", "Desempenho da tutoria"]]
-    : tutor ? [["/estatisticas/tutoria", "Minha tutoria em detalhe"]] : [["/reports", "Meus números em detalhe"]];
+  if (tutor) return <Redirect to="/estatisticas/tutoria" />;
+  const titles = { comercial: manager ? "Visão geral" : "Meus números", consultores: "Consultores", treinamento: "Treinamento" };
+  const leads = {
+    comercial: manager ? "Onde os leads param, objeções, vendas por cidade e curso e como o processo é seguido." : "Os seus números no período, com os mesmos critérios da gestão.",
+    consultores: "Cada consultor no período: conversas, pessoas, matrículas, grades e o processo.",
+    treinamento: "O que a revisão diária da IA encontrou repetindo nas conversas de cada consultor.",
+  };
   return (
     <div className={c.page}>
       <StatsHubBar />
       <div className={c.head}>
         <div style={{ minWidth: 0 }}>
-          <h1 className={c.h1}>{manager ? "Estatísticas" : tutor ? "Minha tutoria" : "Meus números"}</h1>
-          <div className={c.lead}>{manager ? "Os números reais da equipe: onde os leads param, objeções, vendas, como o processo é seguido e a tutoria." : "Os seus números no período, com os mesmos critérios da gestão."}</div>
+          <h1 className={c.h1}>{titles[tab]}</h1>
+          <div className={c.lead}>{leads[tab]}</div>
         </div>
         <PeriodPicker value={period} onChange={setPeriod} />
       </div>
-      {tabs.length > 1 && (
-        <div className={c.chips} role="tablist" aria-label="Assunto" style={{ marginBottom: 16 }}>
-          {tabs.map((k) => {
-            const T = TABS[k];
-            return (
-              <button key={k} type="button" role="tab" aria-selected={current === k} className={`${c.chip} ${current === k ? c.chipOn : ""}`} onClick={() => setTab(k)} style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
-                <T.icon size={14} />{T.label}
-              </button>
-            );
-          })}
+      {tab === "comercial" && <Commercial params={params} manager={manager} />}
+      {tab === "consultores" && <Consultants params={params} />}
+      {tab === "treinamento" && <Training params={params} />}
+      {!manager && (
+        <div className={c.sub} style={{ marginTop: 18, display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+          <span>Mais detalhes:</span>
+          <button type="button" className={c.btn} onClick={() => history.push("/reports")}>Meu atendimento</button>
         </div>
       )}
-      {current === "comercial" && <Commercial params={params} manager={manager} />}
-      {current === "consultores" && <Consultants params={params} />}
-      {current === "treinamento" && <Training params={params} />}
-      {current === "tutoria" && <Tutoring params={params} />}
-      <div className={c.sub} style={{ marginTop: 18, display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-        <span>Mais detalhes:</span>
-        {more.map(([to, label]) => <button key={to} type="button" className={c.btn} onClick={() => history.push(to)}>{label}</button>)}
-      </div>
     </div>
   );
 }

@@ -820,8 +820,9 @@ const postMeta = (id, payload, secret, badSig) => {
       const before = graph.sent.length;
       const r = await http.post(`/messages/${cticket}`, { body: "Olá João!" }, auth());
       assert(r.status === 200, `status ${r.status}`);
-      const s = graph.sent.slice(before).find(x => x.path === "/PN1/messages");
-      assert(s && s.body.to === "5511988887777" && s.body.type === "text" && s.auth === "Bearer CLOUD-TOKEN", "payload");
+      // the text itself (the same call also carries the "read" of the person's last message: the two blue ticks on the official number)
+      const s = graph.sent.slice(before).find(x => x.path === "/PN1/messages" && x.body.type === "text");
+      assert(s && s.body.to === "5511988887777" && s.auth === "Bearer CLOUD-TOKEN", `payload ${JSON.stringify(graph.sent.slice(before).map(x => x.body))}`);
       outId = sql(`SELECT id FROM Messages WHERE ticketId=${cticket} AND fromMe=1 ORDER BY createdAt DESC LIMIT 1`);
       assert(outId.startsWith("wamid.mock"), `outbound id ${outId}`);
     });

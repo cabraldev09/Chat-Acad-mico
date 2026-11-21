@@ -83,7 +83,8 @@ const MessageOptionsMenu = ({ message, menuOpen, handleClose, anchorEl, ticketId
   const age = Date.now() - new Date(message.createdAt).getTime();
   const isWhatsapp = channel === "whatsapp";
   // WhatsApp's own limits: delete for everyone for about 2 days, edit for about 15 minutes
-  const canDeleteForAll = !!message.fromMe && age < 2 * 24 * 3600 * 1000;
+  // the official API of the Meta cannot delete a message on the contact's phone: there it is "only here"
+  const canDeleteForAll = isWhatsapp && !!message.fromMe && age < 2 * 24 * 3600 * 1000;
   const canEdit = isWhatsapp && !!message.fromMe && !message.mediaUrl && message.mediaType === "chat" && !!message.body && age < 15 * 60 * 1000;
 
   const run = async (fn) => {
@@ -111,6 +112,8 @@ const MessageOptionsMenu = ({ message, menuOpen, handleClose, anchorEl, ticketId
           <Typography variant="body2" color="textSecondary">
             {canDeleteForAll
               ? "Apagar para todos some também para o contato. Apagar só aqui esconde a mensagem no sistema e não muda nada no WhatsApp."
+              : message.fromMe && channel === "whatsapp_cloud"
+              ? "Pelo número oficial (API da Meta) não é possível apagar no celular do contato. Você pode esconder a mensagem só aqui no sistema."
               : message.fromMe
               ? "O WhatsApp só deixa apagar para todos por cerca de 2 dias. Você pode esconder a mensagem só aqui no sistema; nada muda no WhatsApp."
               : "Esta mensagem é do contato: só dá para escondê-la aqui no sistema, nada muda no WhatsApp."}

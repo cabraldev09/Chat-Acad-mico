@@ -14,9 +14,12 @@ const lookup = async (req: Request) => {
   if (!phone?.isValid()) throw new AppError("ERR_WAPP_INVALID_CONTACT", 400);
   const source = await ShowTicketService(req.params.ticketId);
   await assertConnectionUse(req, source.whatsappId);
-  if ((source.whatsapp?.channel || "whatsapp") !== "whatsapp") return { phone, source, registered: false, number: phone.number.slice(1) };
+  const channel = source.whatsapp?.channel || "whatsapp";
+  // the official API cannot look a number up before writing to it: "unknown" (null), and the conversation can still be opened
+  if (channel === "whatsapp_cloud") return { phone, source, registered: null as boolean | null, number: phone.number.slice(1) };
+  if (channel !== "whatsapp") return { phone, source, registered: false as boolean | null, number: phone.number.slice(1) };
   const found = await whatsappProvider.checkNumber(source.whatsappId, phone.number.slice(1));
-  return { phone, source, registered: !!found, number: String(found || phone.number).split("@")[0].replace(/\D/g, "") };
+  return { phone, source, registered: !!found as boolean | null, number: String(found || phone.number).split("@")[0].replace(/\D/g, "") };
 };
 export const show = async (req: Request, res: Response) => {
   const { phone, registered } = await lookup(req);
@@ -24,7 +27,7 @@ export const show = async (req: Request, res: Response) => {
 };
 export const open = async (req: Request, res: Response) => {
   const { phone, source, registered, number } = await lookup(req);
-  if (!registered) throw new AppError("ERR_WAPP_INVALID_CONTACT", 400);
+  if (registered === false) throw new AppError("ERR_WAPP_INVALID_CONTACT", 400);
   const contact = await GetContactService({ name: phone.formatNational(), number });
   await assertContactAccess(req, contact.id);
   const ticket = await FindOrCreateTicketService(contact, source.whatsappId, 0);
