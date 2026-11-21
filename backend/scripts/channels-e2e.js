@@ -3276,8 +3276,8 @@ const postMeta = (id, payload, secret, badSig) => {
       // somebody took it, then wants the agent to carry on
       sql(`UPDATE Tickets SET status='open', userId=1, aiActive=0 WHERE id=${t}`);
       // the person writes while it is with a human: nobody answers it yet
-      await inboundCloud("5511910000005", "wamid.ai-d2", "Quais cursos vocês têm?");
-      await waitFor(() => sql(`SELECT COUNT(*) FROM Messages WHERE ticketId=${t} AND body LIKE 'Quais cursos%'`) === "1", 8000, "the message arrived");
+      await inboundCloud("5511910000005", "wamid.ai-d2", "Vocês têm Pedagogia à noite?");
+      await waitFor(() => sql(`SELECT COUNT(*) FROM Messages WHERE ticketId=${t} AND body LIKE 'Vocês têm Pedagogia%'`) === "1", 8000, "the message arrived");
       const calls = anthropic.requests.length;
       const r = await http.post(`/tickets/${t}/ai`, { active: true }, auth());
       assert(r.status === 200 && r.data.aiActive === true, `hand over ${r.status}`);
@@ -4737,7 +4737,9 @@ const postMeta = (id, payload, secret, badSig) => {
       before = graph.sent.length;
       await http.put(`/tickets/${tk}/tags`, { tagIds: [tag.id] }, auth());
       await waitFor(() => sentTexts(before).some(t => t.includes("Gatilho de etiqueta funcionou")), 12000, "trigger message");
-      const list = (await http.get("/automation-triggers", auth())).data.find(t => t.id === trig.data.id);
+      // the flow sends its message and then counts the run: wait for the count, not only for the message
+      let list = null;
+      await waitFor(async () => { list = (await http.get("/automation-triggers", auth())).data.find(t => t.id === trig.data.id); return list && list.runCount === 1; }, 5000, "trigger run counted");
       assert(list.runCount === 1 && list.flowName === "Resposta ao gatilho", `run count ${list.runCount}`);
       // the same trigger does not repeat on the same conversation right away
       before = graph.sent.length;

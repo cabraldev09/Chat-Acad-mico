@@ -31,10 +31,14 @@ export const startDelayOf = async (ticket: Pick<Ticket, "id">, waitSeconds: numb
 export const typingMsFor = (text: string): number => Math.min(MAX_TYPING_MS, Math.max(MIN_TYPING_MS, 600 + String(text || "").length * 25));
 
 // the official API shows "digitando…" to the person when the last message they sent is marked as read with the typing indicator
-const cloudTyping = async (ticket: Ticket): Promise<void> => {
-  const whatsapp = ticket.whatsapp || (ticket.whatsappId ? await Whatsapp.findByPk(ticket.whatsappId) : null);
+// (only "text": the official API has no "gravando áudio"). Used by the AI before each bubble and by the consultant's typing.
+export const cloudTypingFor = async (whatsapp: Whatsapp | null | undefined, where: { ticketId?: number; contactId?: number }): Promise<void> => {
   if (!whatsapp || whatsapp.channel !== "whatsapp_cloud") return;
-  const last = await Message.findOne({ where: { ticketId: ticket.id, fromMe: false }, order: [["createdAt", "DESC"]], attributes: ["id"] });
+  const filter: any = { fromMe: false };
+  if (where.ticketId) filter.ticketId = where.ticketId;
+  else if (where.contactId) filter.contactId = where.contactId;
+  else return;
+  const last = await Message.findOne({ where: filter, order: [["createdAt", "DESC"]], attributes: ["id"] });
   if (!last || !/^wamid\./.test(String(last.id))) return;
   const { accessToken, phoneNumberId } = getConfig(whatsapp);
   if (!accessToken || !phoneNumberId) return;
@@ -43,12 +47,23 @@ const cloudTyping = async (ticket: Ticket): Promise<void> => {
     { headers: { Authorization: `Bearer ${accessToken}` }, timeout: 8000 });
 };
 
-// before each bubble of the AI: nothing on the very first one, "digitando…" and a short pause on the others
+const cloudTyping = async (ticket: Ticket): Promise<void> => {
+  const whatsapp = ticket.whatsapp || (ticket.whatsappId ? await Whatsapp.findByPk(ticket.whatsappId) : null);
+  await cloudTypingFor(whatsapp, { ticketId: ticket.id });
+};
+
+// the Meta refusal is kept in the log with its reason (an expired message, a token without permission), not hidden
+export const typingFailure = (err: any): string => {
+  const e = err?.response?.data?.error;
+  return e ? `${e.code || ""} ${e.message || ""}`.trim() : String(err?.message || err);
+};
+
+// before each bubble of the AI: "digitando…" on the person's WhatsApp right away; a short pause only after the first reply
 export const paceBeforeSend = async (ticket: Ticket, text: string): Promise<void> => {
   if (process.env.NODE_ENV === "test" && process.env.REPLY_PACE !== "1") return;
-  if (!(await hasOutbound(ticket.id))) return;
-  const ms = typingMsFor(text);
-  emitTyping(ticket.id, "agent", "typing", ms + 500);
-  await cloudTyping(ticket).catch(err => logger.debug(`typing indicator not sent: ${err?.message || err}`));
-  await new Promise(r => setTimeout(r, ms));
+  const first = !(await hasOutbound(ticket.id));
+  const ms = first ? 0 : typingMsFor(text);
+  if (ms) emitTyping(ticket.id, "agent", "typing", ms + 500);
+  await cloudTyping(ticket).catch(err => logger.warn(`typing indicator not sent (ticket ${ticket.id}): ${typingFailure(err)}`));
+  if (ms) await new Promise(r => setTimeout(r, ms));
 };

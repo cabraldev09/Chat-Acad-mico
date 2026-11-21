@@ -23,13 +23,25 @@ const previewOf = (message, ticket, contact) => {
   return text.length > 110 ? `${text.slice(0, 110)}…` : text;
 };
 
+// the photo of the contact when the channel gives one (WhatsApp by QR Code); otherwise two initials in a color that is always the same for that person
+// (the official API of the Meta does not send profile photos)
+const COLORS = ["#0b4279", "#0f766e", "#7c3aed", "#b45309", "#be123c", "#0369a1", "#4d7c0f", "#a21caf"];
+const initialsOf = (name) => {
+  const words = String(name || "").replace(/[^\p{L}\s]/gu, " ").trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return "?";
+  return (words[0][0] + (words.length > 1 ? words[words.length - 1][0] : "")).toUpperCase();
+};
+const colorOf = (key) => COLORS[[...String(key || "")].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7) % COLORS.length];
+
+const Avatar = ({ contact }) => {
+  const [failed, setFailed] = React.useState(false);
+  if (contact.profilePicUrl && !failed) return <img className="msgtoast-avatar" src={contact.profilePicUrl} alt="" onError={() => setFailed(true)} />;
+  return <span className="msgtoast-avatar msgtoast-initial" style={{ background: colorOf(contact.number || contact.name) }}>{initialsOf(contact.name)}</span>;
+};
+
 const Body = ({ ticket, contact, message }) => (
   <div className="msgtoast">
-    {contact.profilePicUrl ? (
-      <img className="msgtoast-avatar" src={contact.profilePicUrl} alt="" />
-    ) : (
-      <span className="msgtoast-avatar msgtoast-initial">{String(contact.name || "?").charAt(0).toUpperCase()}</span>
-    )}
+    <Avatar contact={contact} />
     <div className="msgtoast-text">
       <div className="msgtoast-name">{ticket.isGroup ? `${contact.name}` : contact.name}</div>
       <div className="msgtoast-msg">{previewOf(message, ticket, contact)}</div>

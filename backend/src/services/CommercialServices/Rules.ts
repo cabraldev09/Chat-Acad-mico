@@ -267,10 +267,12 @@ export const entryAnswer = (text: string, lastQuestion: string): "first_degree" 
   if (said) return said;
   const q = plain(lastQuestion);
   const t = plain(text).replace(/[.!]+$/, "");
-  if (!t || t.length > 60 || !/primeira graduacao/.test(q)) return null;
+  if (!t || t.length > 120 || !/primeira graduacao/.test(q)) return null;
   if (/^(sim|isso|exato|exatamente|e sim|sera sim|vai ser|sim,? (e|sera|vai ser) (a )?primeira|(e |sera |vai ser )?(a )?primeira( graduacao| faculdade| vez)?( sim)?|nunca fiz)\b/.test(t)) return "first_degree";
   if (/\b(ja (sou )?formad[oa]|ja (tenho|fiz|conclui|terminei) (uma )?(graduacao|faculdade|curso superior))\b/.test(t)) return "second_degree";
-  if (/\b(comecei|estou cursando|to cursando|curso|cursava|tranquei|parei)\b/.test(t) && /\b(outra|faculdade|curso|graduacao)\b/.test(t)) return "transfer";
+  // studying now and finishing soon ("tô cursando TI e me formo ano que vem"): it will be a second degree, not the first
+  if (/\b(estou|to|tou|t[oô]|ainda)\s+(cursando|estudando|fazendo)\b|\bfaco faculdade\b/.test(t) && /\b(me formo|vou me formar|termino|formo (ano|semestre)|ultimo (ano|semestre|periodo))\b/.test(t)) return "second_degree";
+  if (/\b(comecei|estou cursando|to cursando|tou cursando|estou estudando|to estudando|faco faculdade|curso|cursava|tranquei|parei)\b/.test(t) && /\b(outra|faculdade|curso|graduacao|cursando|estudando)\b/.test(t)) return "transfer";
   return null;
 };
 

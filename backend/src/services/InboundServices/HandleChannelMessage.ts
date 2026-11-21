@@ -15,6 +15,7 @@ import { logger } from "../../utils/logger";
 import CreateMessageService from "../MessageServices/CreateMessageService";
 import FindOrCreateTicketService from "../TicketServices/FindOrCreateTicketService";
 import RunInboundAutomation from "../AutomationServices/RunInboundAutomation";
+import { isLate } from "../../helpers/LateMessage";
 import { PUBLIC_DIR } from "../../config/paths";
 import processOptOut from "../SafetyServices/OptOut";
 
@@ -36,6 +37,8 @@ export interface InboundChannelMessage {
   body: string;
   media?: InboundMedia;
   quotedMsgId?: string;
+  // when the person sent it (the provider's own time): a message delivered late keeps its place in the conversation
+  sentAt?: Date;
 }
 
 const randomSuffix = (): string =>
@@ -129,6 +132,9 @@ const HandleChannelMessage = async (
       quotedMsgId: input.quotedMsgId,
       ack: 0
     };
+    // the time the person sent it orders the conversation (never a time in the future)
+    if (input.sentAt && !Number.isNaN(input.sentAt.getTime()) && input.sentAt.getTime() <= Date.now()) messageData.createdAt = input.sentAt;
+    const late = isLate(input.sentAt);
 
     if (input.media) {
       const filename = await saveMediaBuffer(input.media);
@@ -141,7 +147,10 @@ const HandleChannelMessage = async (
     await ticket.update({ lastMessage: messageData.body });
     const message = await CreateMessageService({ messageData });
 
-    if (!(await processOptOut(ticket.id, input.body))) {
+    if (late) {
+      const { noteAutomation } = await import("../AutomationServices/AutomationTrace");
+      noteAutomation(ticket.id, "mensagem antiga entregue com atraso pelo canal: guardada no lugar certo, sem resposta automática");
+    } else if (!(await processOptOut(ticket.id, input.body))) {
       await RunInboundAutomation({
         ticketId: ticket.id,
         body: input.body

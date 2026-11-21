@@ -52,6 +52,8 @@ export interface WhatsappProvider {
   sendSeen(sessionId: number, chatId: string): Promise<void>;
   // shows "typing…" to the contact (optional, used to humanize bot replies)
   sendTyping?(sessionId: number, chatId: string): Promise<void>;
+  // shows "gravando áudio…" to the contact while the agent records
+  sendRecording?(sessionId: number, chatId: string): Promise<void>;
   // groups this connection belongs to (used to pick which ones become conversations)
   listGroups?(sessionId: number): Promise<{ id: string; name: string; participants: number }[]>;
   // walks over the existing conversations of the phone (most recent first), calling `onChat` for each one

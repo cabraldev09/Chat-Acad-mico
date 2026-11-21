@@ -102,6 +102,20 @@ const useStyles = makeStyles((theme) => ({
   drawerDocked: {
     borderRight: 0,
   },
+  // opened by the mouse over the collapsed menu: it floats over the page (the conversation does not move) and closes when the mouse leaves
+  drawerPeek: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    bottom: 0,
+    zIndex: theme.zIndex.drawer + 2,
+    boxShadow: "8px 0 24px -12px rgba(15,23,42,.45)",
+  },
+  drawerHolder: {
+    position: "relative",
+    flex: "none",
+    width: drawerCollapsedWidth,
+  },
   sidebarCard: {
     flex: 1,
     minHeight: 0,
@@ -147,6 +161,31 @@ const LoggedInLayout = ({ children }) => {
   // tablets and landscape phones (up to 960px): the menu stays as a column of icons, so the page keeps its width
   const isCompact = useMediaQuery((theme) => theme.breakpoints.down("sm"), { noSsr: true });
   const [drawerOpen, setDrawerOpen] = useState(false);
+  // desktop: the menu folds by itself when the person clicks anywhere else (a contact, the conversation) and opens again under the mouse
+  const [peek, setPeek] = useState(false);
+  const drawerRef = useRef(null);
+  const peekTimer = useRef(null);
+  useEffect(() => {
+    if (isCompact || !drawerOpen) return undefined;
+    const fold = (e) => {
+      if (drawerRef.current && drawerRef.current.contains(e.target)) return;
+      if (e.target && e.target.closest && e.target.closest('[aria-label="Abrir ou fechar o menu"]')) return;
+      setDrawerOpen(false);
+    };
+    document.addEventListener("mousedown", fold);
+    return () => document.removeEventListener("mousedown", fold);
+  }, [isCompact, drawerOpen]);
+  useEffect(() => () => clearTimeout(peekTimer.current), []);
+  const peekOn = () => {
+    if (isCompact || drawerOpen) return;
+    clearTimeout(peekTimer.current);
+    peekTimer.current = setTimeout(() => setPeek(true), 120);
+  };
+  const peekOff = () => {
+    clearTimeout(peekTimer.current);
+    setPeek(false);
+  };
+  const shown = drawerOpen || peek;
   const alertsRef = useRef(null);
   const [alertsH, setAlertsH] = useState(0);
   // the notices only exist once the session has loaded (before that a loading screen is returned and the ref is empty)
@@ -170,6 +209,7 @@ const LoggedInLayout = ({ children }) => {
   }, [isCompact]);
 
   const drawerClose = () => {
+    setPeek(false);
     if (isCompact) {
       setDrawerOpen(false);
     }
@@ -181,13 +221,16 @@ const LoggedInLayout = ({ children }) => {
 
   return (
     <div className={classes.root}>
+      {/* while the mouse opens it, the menu floats over the page: a holder keeps the width of the folded menu so nothing moves */}
+      <div ref={drawerRef} className={peek && !drawerOpen ? classes.drawerHolder : undefined} onMouseEnter={peekOn} onMouseLeave={peekOff} style={{ display: "flex" }}>
       <Drawer
         variant={isMobile ? "temporary" : "permanent"}
-        className={drawerOpen ? classes.drawerPaper : classes.drawerPaperClose}
+        className={shown ? classes.drawerPaper : classes.drawerPaperClose}
         classes={{
           paper: clsx(
             classes.drawerPaper,
-            !drawerOpen && classes.drawerPaperClose,
+            !shown && classes.drawerPaperClose,
+            peek && !drawerOpen && classes.drawerPeek,
             classes.drawerSurface
           ),
           paperAnchorDockedLeft: classes.drawerDocked,
@@ -198,13 +241,14 @@ const LoggedInLayout = ({ children }) => {
         <div className={classes.appBarSpacer} />
         <div className={classes.sidebarCard}>
           <List className={classes.navList}>
-            <MainListItems drawerClose={drawerClose} collapsed={!drawerOpen} />
+            <MainListItems drawerClose={drawerClose} collapsed={!shown} />
           </List>
           <div className={classes.sidebarFooter}>
-            <SidebarUserMenu collapsed={!drawerOpen} />
+            <SidebarUserMenu collapsed={!shown} />
           </div>
         </div>
       </Drawer>
+      </div>
       <AppBar position="absolute" className={classes.appBar}>
         <Toolbar variant="dense" className={classes.toolbar}>
           <IconButton

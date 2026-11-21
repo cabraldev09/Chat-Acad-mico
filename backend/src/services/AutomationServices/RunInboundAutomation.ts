@@ -13,7 +13,7 @@ import ShowTicketService from "../TicketServices/ShowTicketService";
 import UpdateTicketService from "../TicketServices/UpdateTicketService";
 import ShowWhatsAppService from "../WhatsappService/ShowWhatsAppService";
 import SendWhatsAppMessage from "../WbotServices/SendWhatsAppMessage";
-import { findAgentForTicket, findDedicatedAgent, runAiForTicket } from "../AiServices/RunAiAgent";
+import { commercialAgent, findAgentForTicket, findDedicatedAgent, runAiForTicket } from "../AiServices/RunAiAgent";
 import { runAgentGraph } from "../FlowServices/Runner";
 import { noteAutomation } from "./AutomationTrace";
 import emitTicketUpdate from "../TicketServices/EmitTicketUpdate";
@@ -32,6 +32,8 @@ import { Op } from "sequelize";
 import { remindAiTicket } from "../AiServices/FollowUp";
 import { humanHasTicket } from "../../helpers/HumanOwnership";
 import { paceBeforeSend, startDelayOf } from "../../helpers/ReplyPace";
+import { polishReply, repeatsHandoff, withoutRepeats } from "../../helpers/ReplyPolish";
+import { asksCourseList, sendCourseFolder } from "../CommercialServices/CourseFolder";
 
 
 // Bot messages carry an invisible mark so they can be told apart from agent
@@ -349,7 +351,7 @@ const scheduleAi = (ticketId: number, waitSeconds: number): void => {
       }
       aiRunning.add(ticketId);
       try {
-        await runAiForTicket(ticketId, async (t: Ticket, body: string) => { await paceBeforeSend(t, body); return say(t, body); });
+        await runAiForTicket(ticketId, async (t: Ticket, raw: string) => { const body = await withoutRepeats(t.id, polishReply(raw)); if (!body || (await repeatsHandoff(t.id, body))) return undefined as any; await paceBeforeSend(t, body); return say(t, body); });
       } catch (err) {
         logger.error(`AI run failed: ${err}`);
         noteAutomation(ticketId, `o agente de IA falhou: ${(err as any)?.message || err}`);
@@ -366,6 +368,19 @@ const trace = (ticket: Ticket, what: string): void => {
   noteAutomation(ticket.id, what);
 };
 
+// "Quais cursos vocês têm?" to the AI agent: the folder with every course goes instead of a list typed by the model (once per conversation)
+const folderFirst = async (ticket: Ticket, body: string): Promise<boolean> => {
+  if (!ticket.aiActive || !asksCourseList(body)) return false;
+  try {
+    if (!(await sendCourseFolder(ticket))) return false;
+    trace(ticket, "a pessoa perguntou quais cursos há: o folder dos cursos foi enviado no lugar da resposta da IA");
+    return true;
+  } catch (err) {
+    logger.warn(`Course folder not sent to ticket ${ticket.id}: ${err}`);
+    return false;
+  }
+};
+
 const runAi = async (ticket: Ticket): Promise<boolean> => {
   if (!ticket.aiActive) {
     trace(ticket, "agente de IA não entra: a conversa já saiu do agente (aiActive desligado, por exemplo depois de uma transferência)");
@@ -379,6 +394,13 @@ const runAi = async (ticket: Ticket): Promise<boolean> => {
   // an agent built in blocks (with a published graph) talks through the flow engine; the others keep the single prompt
   if (await runAgentGraph(ticket, agent)) {
     trace(ticket, `agente "${agent.name}" (roteiro em blocos) vai responder${(await startDelayOf(ticket, agent.waitSeconds)) ? ` em ${agent.waitSeconds ?? 4}s` : " na hora (primeira mensagem)"}`);
+    return true;
+  }
+  // a consultant handed this conversation to the AI to qualify ("IA qualificar") and the agent of the connection has no process of its own: the
+  // sales agent with a published process takes it, so the lead goes through the whole process instead of the short "name and city" of the simple mode
+  const seller = ticket.aiReturnUserId ? await commercialAgent() : null;
+  if (seller && seller.id !== agent.id && (await runAgentGraph(ticket, seller))) {
+    trace(ticket, `agente "${agent.name}" sem roteiro publicado: o processo comercial do agente "${seller.name}" responde`);
     return true;
   }
   const wait = await startDelayOf(ticket, agent.waitSeconds);
@@ -474,6 +496,7 @@ const RunInboundAutomation = async ({ ticketId, body }: Input): Promise<void> =>
           trace(ticket, "fora do horário: o roteiro em andamento respondeu");
           return;
         }
+        if (await folderFirst(ticket, body)) return;
         await runAi(ticket);
         return;
       }
@@ -499,6 +522,7 @@ const RunInboundAutomation = async ({ ticketId, body }: Input): Promise<void> =>
       trace(ticket, "o chatbot antigo respondeu antes do agente de IA");
       return;
     }
+    if (await folderFirst(ticket, body)) return;
     if (await runAi(ticket)) return;
     await runClassicQueueMenu(ticket, body, ticket.whatsappId);
   } catch (err) {

@@ -1014,6 +1014,16 @@ const sendTyping = async (sessionId: number, chatId: string): Promise<void> => {
   }
 };
 
+const sendRecording = async (sessionId: number, chatId: string): Promise<void> => {
+  try {
+    const wbot = getWbot(sessionId);
+    const chat = await wbot.getChatById(chatId);
+    await chat.sendStateRecording();
+  } catch (err) {
+    logger.debug(`recording indicator not sent: ${err}`);
+  }
+};
+
 const listGroups = async (sessionId: number) => {
   const wbot = getWbot(sessionId);
   const chats = await wbot.getChats();
@@ -1856,6 +1866,7 @@ export const WhatsappWebJsProvider: WhatsappProvider = {
   getContacts,
   sendSeen,
   sendTyping,
+  sendRecording,
   listGroups,
   importChats,
   sendPoll,
