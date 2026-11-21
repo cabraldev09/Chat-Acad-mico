@@ -6,6 +6,7 @@ import Whatsapp from "../../models/Whatsapp";
 import ShowWhatsAppService from "./ShowWhatsAppService";
 import AssociateWhatsappQueue from "./AssociateWhatsappQueue";
 import { mergeConfig } from "../../helpers/Secrets";
+import { forgetWebhook } from "../../channels/WebhookLog";
 
 interface WhatsappData {
   name?: string;
@@ -113,6 +114,8 @@ const UpdateWhatsAppService = async ({
     team: team === undefined ? undefined : team === "atendimento" || team === "tutoria" ? team : null,
     allowedGroups: allowedGroups === undefined ? undefined : JSON.stringify(allowedGroups.map(String))
   });
+
+  if (config !== undefined) forgetWebhook(whatsapp.id);
 
   await AssociateWhatsappQueue(whatsapp, queueIds);
 
