@@ -5154,8 +5154,8 @@ const postMeta = (id, payload, secret, badSig) => {
     await test("connection health: state, since when, what it did today; each person sees only their own numbers", async () => {
       // (the suite may cross midnight in the time zone of the company: one message of the official number is brought to now, so "today" has it)
       // (there is more than one official number by now: the check below reads the same number whose message was moved)
-      const [movedId, movedWa] = sql(`SELECT m.id || '|' || t.whatsappId FROM Messages m JOIN Tickets t ON t.id = m.ticketId JOIN Whatsapps w ON w.id = t.whatsappId WHERE w.channel = 'whatsapp_cloud' AND m.fromMe = false ORDER BY m.createdAt DESC LIMIT 1`).split("|").map(Number);
-      sql(`UPDATE Messages SET createdAt = now() WHERE id = ${movedId}`);
+      const movedWa = Number(sql(`WITH last AS (SELECT m.id, t.whatsappId FROM Messages m JOIN Tickets t ON t.id = m.ticketId JOIN Whatsapps w ON w.id = t.whatsappId WHERE w.channel = 'whatsapp_cloud' AND m.fromMe = false ORDER BY m.createdAt DESC LIMIT 1), moved AS (UPDATE Messages SET createdAt = now() WHERE id IN (SELECT id FROM last) RETURNING id) SELECT whatsappId FROM last WHERE EXISTS (SELECT 1 FROM moved)`));
+      assert(movedWa > 0, "no inbound message of an official number to bring to today");
       const h = await http.get("/whatsapp-health", auth());
       assert(h.status === 200 && h.data.length >= 2, `health ${h.status} ${h.data.length}`);
       const first = h.data[0];
