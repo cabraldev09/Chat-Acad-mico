@@ -322,6 +322,17 @@ const StartDialog = ({ campaign, onClose, onStarted }) => {
   const [busy, setBusy] = useState(false);
   useEffect(() => { api.get(`/campaigns/${campaign.id}/preflight`).then(({ data }) => setPre(data)).catch((e) => { toastError(e); onClose(); }); }, [campaign.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const waiting = campaign.status === "scheduled";
+  // consent is registered, not required: whoever has none can be taken out of the list before the first send
+  const removeNoConsent = async () => {
+    setBusy(true);
+    try {
+      const { data } = await api.post(`/campaigns/${campaign.id}/remove-no-consent`);
+      toast.success(`${data.removed} ${data.removed === 1 ? "contato saiu" : "contatos saíram"} da lista.`);
+      const { data: fresh } = await api.get(`/campaigns/${campaign.id}/preflight`);
+      setPre(fresh);
+    } catch (err) { toastError(err); }
+    setBusy(false);
+  };
   const verb = waiting ? "Iniciar agora" : campaign.status === "paused" ? "Retomar" : "Iniciar";
   const go = async () => {
     setBusy(true);
@@ -354,6 +365,9 @@ const StartDialog = ({ campaign, onClose, onStarted }) => {
               </div>
             ))}
             {pre.total > 0 && pre.canReceive === 0 && <Typography variant="body2" color="error" style={{ marginTop: 10 }}>Ninguém receberia por esta conexão: resolva os avisos acima antes de iniciar.</Typography>}
+            {pre.noConsent > 0 && campaign.status === "draft" && (
+              <Button size="small" variant="outlined" style={{ marginTop: 10 }} disabled={busy} onClick={removeNoConsent}>Tirar da lista quem não tem consentimento ({pre.noConsent})</Button>
+            )}
           </>
         )}
       </DialogContent>

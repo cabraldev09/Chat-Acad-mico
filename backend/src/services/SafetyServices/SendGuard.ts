@@ -189,6 +189,12 @@ export const tripBreaker = async (
       { where: { whatsappId, status: "running" } }
     );
     logger.warn(`Safety breaker on connection ${whatsappId}: ${reason} (${paused} campaign(s) paused)`);
+    // the administrators are told by e-mail too (at most once every 6 hours per number), not only the people online now
+    const w = await Whatsapp.findByPk(whatsappId);
+    if (w) {
+      const { alertAdmins } = await import("../../workers/CloudHealth");
+      await alertAdmins(w, `O número "${w.name}": ${reason}`).catch(() => undefined);
+    }
     getIO().emit("safety", { action: "paused", whatsappId, reason, paused });
     if (paused) {
       const rows = await Campaign.findAll({ where: { whatsappId, pauseReason: reason.slice(0, 250) } });

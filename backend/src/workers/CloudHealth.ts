@@ -85,7 +85,8 @@ export const alertAdmins = async (w: Whatsapp, reason: string): Promise<boolean>
   const { notify, frontBase } = await import("../services/MailServices/Notify");
   const admins = await User.findAll({ where: { profile: "admin" } as any, attributes: ["email"] });
   const link = `${frontBase()}/connections`;
-  const subject = `WhatsApp oficial "${w.name}": ${w.status === "CONNECTED" ? "atenção" : "fora do ar"}`;
+  const kind = w.channel === "whatsapp_cloud" ? "WhatsApp oficial" : "WhatsApp";
+  const subject = `${kind} "${w.name}": ${w.status === "CONNECTED" ? "atenção" : "fora do ar"}`;
   const text = `${reason}\n\nAbra Conexões para resolver: ${link}`;
   const html = `<p>${reason.replace(/</g, "&lt;")}</p><p><a href="${link}">Abrir Conexões</a></p>`;
   admins.forEach(a => notify(a.email, { subject, text, html }, "Cloud health alert"));

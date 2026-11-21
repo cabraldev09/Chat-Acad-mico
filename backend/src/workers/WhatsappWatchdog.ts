@@ -6,6 +6,7 @@ import Whatsapp from "../models/Whatsapp";
 import { reconcileStatuses, sessionHealth, sessionWatch } from "../providers/WhatsApp/Implementations/wwebjs";
 import { StartWhatsAppSession } from "../services/WbotServices/StartWhatsAppSession";
 import { logger } from "../utils/logger";
+import { alertAdmins } from "./CloudHealth";
 
 // The last line of defence of "always receiving": the provider retries on its own (see wwebjs.ts), and this looks at the database every few
 // minutes for what slipped through (a process that lost its timers, a session that gave up long ago while its login is still saved):
@@ -15,6 +16,7 @@ import { logger } from "../utils/logger";
 const STUCK_MIN = 8;
 const DEAD_MIN = 30;
 const lastTry = new Map<number, number>();
+const failedReopens = new Map<number, number>();
 // the sessions are opened one by one when the server starts: the watchdog waits for them
 const bootAt = Date.now();
 const GRACE_MS = Number(process.env.WHATSAPP_WATCHDOG_GRACE_MS ?? 5 * 60000);
@@ -45,9 +47,21 @@ const tick = async (): Promise<void> => {
       if ((w.status === "OPENING" || w.status === "TIMEOUT") && minutes > STUCK_MIN && !watch.initializing) why = `${w.status === "TIMEOUT" ? "sem resposta" : "abrindo"} há ${Math.round(minutes)} min`;
       else if (w.status === "CONNECTED" && !watch.live && minutes > 5) why = "conectada no banco, mas sem sessão ativa neste servidor";
       else if (w.status === "DISCONNECTED" && minutes > DEAD_MIN && !watch.initializing && hasLogin(w.id) && now - (lastTry.get(w.id) || 0) > DEAD_MIN * 60000) why = `desconectada há ${Math.round(minutes)} min com o login salvo`;
+      // a number that came back clears the count of failed reopenings
+      if (w.status === "CONNECTED" && watch.live) failedReopens.delete(w.id);
       if (!why || (recently && w.status !== "DISCONNECTED")) continue;
       lastTry.set(w.id, now);
       logger.warn(`WhatsApp watchdog: ${w.name} ${why}. Reabrindo.`);
+      // after 3 reopenings that did not bring it back: a notice that stays on the connection and an e-mail to the administrators
+      const tries = (failedReopens.get(w.id) || 0) + 1;
+      failedReopens.set(w.id, tries);
+      if (tries === 3) {
+        const reason = `O número "${w.name}" não voltou depois de 3 tentativas automáticas de reconectar (${why}). Abra Conexões e leia o QR Code de novo, se for preciso.`;
+        // eslint-disable-next-line no-await-in-loop
+        await w.update({ statusNote: reason.slice(0, 250) } as any).catch(() => undefined);
+        // eslint-disable-next-line no-await-in-loop
+        await alertAdmins(w, reason).catch(() => undefined);
+      }
       // eslint-disable-next-line no-await-in-loop
       await StartWhatsAppSession(w);
     }

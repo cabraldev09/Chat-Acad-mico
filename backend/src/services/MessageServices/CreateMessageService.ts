@@ -121,6 +121,8 @@ const CreateMessageService = async ({
   if (!message.ticket.isGroup) {
     if (!message.fromMe) {
       hookInbound(message.ticket.contactId, message.ticket.whatsapp?.channel);
+      // the person wrote first: registered as consent to be answered (the first source of the consent is kept)
+      import("../SafetyServices/Consent").then(m => m.noteConsent(message.ticket.contactId, "inbound")).catch(() => undefined);
       // a bare number from 0 to 10 answers the satisfaction survey that was sent to this person
       if (message.mediaType === "chat") captureNpsAnswer(message.ticket.contactId, message.body, message.ticket.whatsappId).catch(() => undefined);
     } else if (message.ticket.userId && !already) {

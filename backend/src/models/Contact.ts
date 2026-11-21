@@ -108,6 +108,13 @@ class Contact extends Model<Contact> {
   @Column
   optOutAt: Date;
 
+  // consent to receive messages (registered, see migration 20261222000005): when, and how (form | inbound | import | manual)
+  @Column
+  consentAt: Date;
+
+  @Column
+  consentSource: string;
+
   @CreatedAt
   createdAt: Date;
 

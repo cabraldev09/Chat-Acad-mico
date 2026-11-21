@@ -1,5 +1,7 @@
 import { Op } from "sequelize";
 
+import sequelize from "../../database";
+
 import { normalizeEmail, normalizePhone } from "../../helpers/Phone";
 import { brPhoneVariants } from "../../helpers/PhoneVariants";
 import Contact from "../../models/Contact";
@@ -36,13 +38,40 @@ export const importTutorStudents = async (
   const courseOf = (v: unknown) => { const k = plain(v); return k ? courses.find(c => plain(c.name) === k) || courses.find(c => plain(c.name).startsWith(k)) || null : null; };
   const poloOf = (v: unknown) => { const k = plain(v); return k ? polos.find(p => plain(p.code) === k || plain(p.name) === k) || polos.find(p => plain(p.name).includes(k) || plain(p.city) === k) || null : null; };
   const tutorOf = (v: unknown) => { const k = plain(v); return k ? tutors.find(t => plain(t.email) === k || plain(t.name) === k) || tutors.find(t => plain(t.name).startsWith(k)) || null : null; };
+  // every lookup in a few queries up front (up to 2000 lines): leads by RGM, phone (with and without the 9) and e-mail, the portal
+  // students by RGM and the contacts by phone
+  const clean = items.map((it: any) => ({
+    it,
+    name: String(it.name || "").replace(/\s+/g, " ").trim().slice(0, 200),
+    phone: normalizePhone(it.phone),
+    email: normalizeEmail(it.email),
+    rgm: String(it.rgm || "").replace(/\s+/g, "").replace(/[^A-Za-z0-9.\-/]/g, "").slice(0, 40) || null
+  }));
+  const rgms = [...new Set(clean.map(c => c.rgm).filter(Boolean))] as string[];
+  const phones = [...new Set(clean.flatMap(c => (c.phone ? brPhoneVariants(c.phone) : [])))];
+  const emails = [...new Set(clean.map(c => c.email).filter(Boolean))] as string[];
+  const [byRgmRows, byPhoneRows, byEmailRows, studentRows, contactRows] = await Promise.all([
+    rgms.length ? Lead.findAll({ where: { rgm: { [Op.in]: rgms } } as any }) : [],
+    phones.length ? Lead.findAll({ where: { phone: { [Op.in]: phones } } as any, order: [["enrolledAt", "DESC NULLS LAST"], ["id", "DESC"]] } as any) : [],
+    emails.length ? Lead.findAll({ where: { email: { [Op.in]: emails } } as any }) : [],
+    rgms.length ? Student.findAll({ where: { rgm: { [Op.in]: rgms } } as any }) : [],
+    phones.length ? Contact.findAll({ where: { number: { [Op.in]: phones } } as any, order: [["id", "ASC"]] }) : []
+  ]);
+  const byRgm = new Map((byRgmRows as Lead[]).map(l => [l.rgm, l]));
+  const byPhone = new Map<string, Lead>();
+  (byPhoneRows as Lead[]).forEach(l => brPhoneVariants(l.phone || "").forEach(v => { if (!byPhone.has(v)) byPhone.set(v, l); }));
+  const byEmail = new Map((byEmailRows as Lead[]).map(l => [l.email, l]));
+  const studentOf = new Map((studentRows as Student[]).map(st => [st.rgm, st]));
+  const contactOf = new Map<string, Contact>();
+  (contactRows as Contact[]).forEach(c => { if (!contactOf.has(c.number)) contactOf.set(c.number, c); });
+  const findLead = (rgm: string | null, phone: string | null, email: string | null): Lead | null =>
+    (rgm && byRgm.get(rgm)) || (phone && brPhoneVariants(phone).map(v => byPhone.get(v)).find(Boolean)) || (email && byEmail.get(email)) || null;
+
   const rows: ImportRow[] = [];
-  for (const [i, it] of items.entries()) {
+  const activities: Array<{ leadId: number; text: string }> = [];
+  for (const [i, c] of clean.entries()) {
+    const { it, name, phone, email, rgm } = c;
     const line = i + 1;
-    const name = String(it.name || "").replace(/\s+/g, " ").trim().slice(0, 200);
-    const phone = normalizePhone(it.phone);
-    const email = normalizeEmail(it.email);
-    const rgm = String(it.rgm || "").replace(/\s+/g, "").replace(/[^A-Za-z0-9.\-/]/g, "").slice(0, 40) || null;
     const fail = (error: string) => rows.push({ line, status: "error", name, error });
     if (!name) { fail("Falta o nome"); continue; }
     if (!phone && !rgm) { fail("Informe o telefone ou o RGM"); continue; }
@@ -57,56 +86,61 @@ export const importTutorStudents = async (
     const course = courseOf(it.course);
     const polo = poloOf(it.polo);
     if (it.polo && !polo) { fail(`Polo "${it.polo}" não encontrado`); continue; }
-    // eslint-disable-next-line no-await-in-loop
-    const existing = (rgm && (await Lead.findOne({ where: { rgm } }))) ||
-      // eslint-disable-next-line no-await-in-loop
-      (phone && (await Lead.findOne({ where: { phone: { [Op.in]: brPhoneVariants(phone) } }, order: [["enrolledAt", "DESC NULLS LAST"], ["id", "DESC"]] } as any))) ||
-      // eslint-disable-next-line no-await-in-loop
-      (email && (await Lead.findOne({ where: { email } }))) || null;
+    const existing = findLead(rgm, phone, email);
+    // a person of the sales funnel is never made a student by a spreadsheet: the enrollment is confirmed in the CRM (with the RGM)
+    if (existing && !existing.enrolledAt) { fail("Está no funil e ainda não é aluno matriculado: a matrícula é confirmada no CRM"); continue; }
     if (existing && existing.onboardingTutorId && existing.onboardingTutorId !== tutorId && !opts.manager) {
       fail("Já é aluno de outro tutor: peça à coordenação para trocar"); continue;
+    }
+    const student = rgm ? studentOf.get(rgm) : undefined;
+    if (student && student.responsibleUserId && student.responsibleUserId !== tutorId && !opts.manager) {
+      fail("No portal, já é aluno de outro tutor: peça à coordenação para trocar"); continue;
     }
     rows.push({ line, status: existing ? "update" : "new", name });
     if (opts.dryRun) continue;
     const enrolledAt = dateOf(it.enrolledAt) || new Date();
-    if (existing) {
-      const patch: any = { onboardingTutorId: tutorId };
-      if (!existing.enrolledAt) patch.enrolledAt = enrolledAt;
-      if (!existing.onboardingStatus || existing.onboardingStatus === "none") patch.onboardingStatus = "done";
-      if (!existing.rgm && rgm) patch.rgm = rgm;
-      if (!existing.poloId && polo) patch.poloId = polo.id;
-      if (!existing.courseId && course) patch.courseId = course.id;
-      if (!existing.phone && phone) patch.phone = phone;
-      if (!existing.email && email) patch.email = email;
-      // eslint-disable-next-line no-await-in-loop
-      await existing.update(patch);
-      // eslint-disable-next-line no-await-in-loop
-      await addActivity(existing.id, opts.actorId, "system", "Aluno incluído na carteira do tutor pela importação de alunos");
-    } else {
-      // eslint-disable-next-line no-await-in-loop
-      const contact = phone ? await Contact.findOne({ where: { number: { [Op.in]: brPhoneVariants(phone) } }, order: [["id", "ASC"]] }) : null;
-      // eslint-disable-next-line no-await-in-loop
-      const lead = await Lead.create({
-        name, phone, email, rgm, courseId: course?.id || null, poloId: polo?.id || null, stageId: won ? won.id : null, ownerId: null, contactId: contact?.id || null,
-        source: "Tutoria (importação)", enrolledAt, onboardingStatus: "done", onboardingTutorId: tutorId, isHistorical: true
-      } as any);
-      // eslint-disable-next-line no-await-in-loop
-      await addActivity(lead.id, opts.actorId, "system", "Aluno importado pela tutoria");
-    }
-    // the portal: the student of this tutor (by the RGM)
-    if (rgm) {
-      // eslint-disable-next-line no-await-in-loop
-      const lead = await Lead.findOne({ where: { rgm }, attributes: ["id"] });
-      // eslint-disable-next-line no-await-in-loop
-      const student = await Student.findOne({ where: { rgm } });
-      const data: any = { name, responsibleUserId: tutorId, leadId: lead?.id || null, ...(phone ? { phone } : {}), ...(course ? { courseName: course.name } : it.course ? { courseName: String(it.course).slice(0, 200) } : {}), ...(polo ? { poloId: polo.id } : {}) };
-      try {
-        // eslint-disable-next-line no-await-in-loop
-        if (student) await student.update(data);
-        // eslint-disable-next-line no-await-in-loop
-        else await Student.create({ rgm, ...data, ...(email ? { email } : {}) } as any);
-      } catch (err) { /* an e-mail already used by another student: the lead is in, the portal is done by hand */ }
-    }
+    // eslint-disable-next-line no-await-in-loop
+    await sequelize.transaction(async transaction => {
+      let leadId: number;
+      if (existing) {
+        const patch: any = { onboardingTutorId: tutorId };
+        if (!existing.onboardingStatus || existing.onboardingStatus === "none") patch.onboardingStatus = "done";
+        if (!existing.rgm && rgm) patch.rgm = rgm;
+        if (!existing.poloId && polo) patch.poloId = polo.id;
+        if (!existing.courseId && course) patch.courseId = course.id;
+        if (!existing.phone && phone) patch.phone = phone;
+        if (!existing.email && email) patch.email = email;
+        await existing.update(patch, { transaction });
+        leadId = existing.id;
+        activities.push({ leadId, text: "Aluno incluído na carteira do tutor pela importação de alunos" });
+      } else {
+        const contact = phone ? brPhoneVariants(phone).map(v => contactOf.get(v)).find(Boolean) || null : null;
+        const lead = await Lead.create({
+          name, phone, email, rgm, courseId: course?.id || null, poloId: polo?.id || null, stageId: won ? won.id : null, ownerId: null, contactId: contact?.id || null,
+          source: "Tutoria (importação)", enrolledAt, onboardingStatus: "done", onboardingTutorId: tutorId, isHistorical: true
+        } as any, { transaction });
+        leadId = lead.id;
+        // the next lines of the same spreadsheet find it too
+        if (rgm) byRgm.set(rgm, lead);
+        if (phone) brPhoneVariants(phone).forEach(v => byPhone.set(v, lead));
+        if (email) byEmail.set(email, lead);
+        activities.push({ leadId, text: "Aluno importado pela tutoria" });
+      }
+      // the portal: the student of this tutor (by the RGM)
+      if (rgm) {
+        const data: any = { name, responsibleUserId: tutorId, leadId, ...(phone ? { phone } : {}), ...(course ? { courseName: course.name } : it.course ? { courseName: String(it.course).slice(0, 200) } : {}), ...(polo ? { poloId: polo.id } : {}) };
+        try {
+          if (student) await student.update(data, { transaction });
+          else studentOf.set(rgm, await Student.create({ rgm, ...data, ...(email ? { email } : {}) } as any, { transaction }));
+        } catch (err) { /* an e-mail already used by another student: the lead is in, the portal is done by hand */ }
+      }
+    }).catch(err => {
+      rows[rows.length - 1] = { line, status: "error", name, error: `Não foi possível gravar: ${(err as Error).message}`.slice(0, 200) };
+    });
+  }
+  for (const a of activities) {
+    // eslint-disable-next-line no-await-in-loop
+    await addActivity(a.leadId, opts.actorId, "system", a.text).catch(() => undefined);
   }
   return { created: rows.filter(r => r.status === "new").length, updated: rows.filter(r => r.status === "update").length, errors: rows.filter(r => r.status === "error").length, rows };
 };

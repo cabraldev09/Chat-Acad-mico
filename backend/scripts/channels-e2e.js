@@ -5740,6 +5740,34 @@ const postMeta = (id, payload, secret, badSig) => {
       const cleaned = await http.post("/system/affiliate-leads/clean", {}, auth());
       assert(cleaned.status === 200, `cleaning the affiliate leads ${cleaned.status} ${JSON.stringify(cleaned.data).slice(0, 300)}`);
     });
+    await test("review 2: the tutor import never turns a prospect into a student; consent is registered and the campaign shows (and removes) who has none", async () => {
+      const tut = (await http.post("/users", { name: "Tutora Importação", email: "tutora-import@x.test", password: "senha123", role: "tutor" }, auth())).data;
+      assert(tut && tut.id, "tutor");
+      const ttok = (await http.post("/auth/login", { email: "tutora-import@x.test", password: "senha123" })).data.token;
+      const prospect = await mkLead("Prospect Importação", "5511955558801");
+      const r = await http.post("/tutoria/students/import", { items: [{ name: "Prospect Importação", phone: "5511955558801" }, { name: "Aluno Novo Importação", phone: "5511955558802", rgm: "IMP0001" }] }, asUser(ttok));
+      assert(r.status === 200 && r.data.rows[0].status === "error" && /funil/.test(r.data.rows[0].error) && r.data.rows[1].status === "new", `import ${JSON.stringify(r.data).slice(0, 300)}`);
+      assert(sql(`SELECT CONCAT(COALESCE(onboardingTutorId::text,''),'|',COALESCE(enrolledAt::text,'')) FROM Leads WHERE id=${prospect.id}`) === "|", "a prospect became a student of the tutor");
+      assert(sql(`SELECT COUNT(*) FROM Leads WHERE rgm='IMP0001' AND onboardingTutorId=${tut.id} AND enrolledAt IS NOT NULL`) === "1", "the new student was not imported");
+      // the same spreadsheet again: the student is found in one batch (no duplicate)
+      const again = await http.post("/tutoria/students/import", { items: [{ name: "Aluno Novo Importação", phone: "5511955558802", rgm: "IMP0001" }] }, asUser(ttok));
+      assert(again.data.rows[0].status === "update" && sql(`SELECT COUNT(*) FROM Leads WHERE rgm='IMP0001'`) === "1", `repeated import ${JSON.stringify(again.data)}`);
+
+      // consent: whoever writes first has it registered (the official number here)
+      await inboundCloud("5511955558803", "wamid.consent-1", "Oi, quero informações");
+      await waitFor(() => sql(`SELECT consentSource FROM Contacts WHERE number='5511955558803'`) === "inbound", 8000, "consent of who wrote first");
+      const list = (await http.post("/contact-lists", { name: "Consentimento" }, auth())).data;
+      await http.post(`/contact-lists/${list.id}/import`, { items: [{ name: "Escreveu", number: "5511955558803" }, { name: "Nunca falou", number: "5511955558804" }] }, auth());
+      const c = (await http.post("/campaigns", { name: "Consentimento", message: "Oi", contactListId: list.id, whatsappId: Number(cid) }, auth())).data;
+      const pre = (await http.get(`/campaigns/${c.id}/preflight`, auth())).data;
+      assert(pre.noConsent === 1 && pre.warnings.some(w => /consentimento/.test(w)), `preflight consent ${JSON.stringify({ noConsent: pre.noConsent, warnings: pre.warnings })}`);
+      const removed = await http.post(`/campaigns/${c.id}/remove-no-consent`, {}, auth());
+      assert(removed.status === 200 && removed.data.removed === 1 && sql(`SELECT COUNT(*) FROM ContactListItems WHERE contactListId=${list.id}`) === "1", `remove without consent ${JSON.stringify(removed.data)}`);
+      // a list imported saying the people agreed registers it on the contacts that exist
+      sql(`INSERT INTO Contacts (name, number, email, isGroup, kind, channel, createdAt, updatedAt) VALUES ('Lista Consentida', '5511955558805', '', false, 'person', 'whatsapp', NOW(), NOW())`);
+      await http.post(`/contact-lists/${list.id}/import`, { items: [{ name: "Lista Consentida", number: "5511955558805" }], consent: true }, auth());
+      assert(sql(`SELECT consentSource FROM Contacts WHERE number='5511955558805'`) === "import", "the consent of an imported list was not registered");
+    });
     await test("the Meta webhook is stored before the 200 and processed from the queue; the same delivery twice is one message", async () => {
       const body = cloudEvent([{ from: "5511955557001", id: "wamid.durable-1", type: "text", text: { body: "Mensagem guardada antes da resposta" } }]);
       const first = await postMeta(cid, body, cloudCfg.appSecret);

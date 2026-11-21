@@ -3,6 +3,9 @@ import { Request, Response } from "express";
 import AppError from "../errors/AppError";
 import { getAppTz } from "../helpers/AppTime";
 import { metaCosts } from "../services/ChannelServices/MetaCosts";
+import { Op } from "sequelize";
+import { dayBounds } from "../helpers/AppTime";
+import OutboundDelivery from "../models/OutboundDelivery";
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -14,5 +17,22 @@ export const show = async (req: Request, res: Response): Promise<Response> => {
   const from = String(req.query.from || `${today.slice(0, 8)}01`);
   if (!DAY.test(from) || !DAY.test(to) || from > to) throw new AppError("ERR_INVALID_PERIOD", 400);
   if ((new Date(to).getTime() - new Date(from).getTime()) / 86400000 > 92) throw new AppError("ERR_INVALID_PERIOD", 400);
-  return res.json(await metaCosts(from, to, tz, req.query.fresh === "1"));
+  const report = await metaCosts(from, to, tz, req.query.fresh === "1");
+  // what the system estimated for the same days (the flat rate of Operação e custos, used by the daily budget): compared with the real
+  // cost, it shows whether the rate is right; with the account in another currency, the comparison is only indicative
+  const { start } = dayBounds(from, tz);
+  const { end } = dayBounds(to, tz);
+  const where = { createdAt: { [Op.between]: [start, end] }, channel: "whatsapp_cloud", status: { [Op.in]: ["sent", "uncertain"] } } as any;
+  const [estimatedUsd, messages, unpriced] = await Promise.all([
+    OutboundDelivery.sum("estimatedUsd", { where }),
+    OutboundDelivery.count({ where }),
+    OutboundDelivery.count({ where: { ...where, estimatedUsd: null } })
+  ]);
+  const real = Number(report.total || 0);
+  const est = Number(estimatedUsd || 0);
+  const suggestedRate = messages > unpriced && real > 0 && (!report.currency || report.currency === "USD") ? Math.round((real / (messages - unpriced)) * 10000) / 10000 : null;
+  return res.json({
+    ...report,
+    estimate: { usd: Math.round(est * 100) / 100, messages, unpriced, sameCurrency: !report.currency || report.currency === "USD", suggestedRate }
+  });
 };
