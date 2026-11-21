@@ -322,7 +322,7 @@ export const RankBars = ({ rows, empty = "Sem dados no período." }) => {
 };
 
 // The funnel: one bar per stage, as wide as the leads that reached it, and the share of the previous stage on the right
-export const FunnelBars = ({ steps }) => {
+export const FunnelBars = ({ steps, compare = true }) => {
   const c = useStyles();
   const t = useChartTheme();
   const max = Math.max(1, ...steps.map((s) => s.reached));
@@ -338,7 +338,7 @@ export const FunnelBars = ({ steps }) => {
               {s.reached > 0 ? <div className={c.funnelBar} style={{ width: `${Math.max(2, (s.reached / max) * 100)}%`, background: `${col}${t.dark ? "59" : "40"}`, borderRight: `2px solid ${col}` }} /> : null}
               <span className={c.funnelValue}>{num(s.reached)}</span>
             </div>
-            <span className={c.funnelStep}>{i > 0 && prev > 0 ? <>{pct1(s.reached, prev)}<span className={c.longText}> da anterior</span></> : ""}</span>
+            <span className={c.funnelStep}>{compare && i > 0 && prev > 0 ? <>{pct1(s.reached, prev)}<span className={c.longText}> da anterior</span></> : ""}</span>
           </div>
         );
       })}

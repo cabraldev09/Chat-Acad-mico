@@ -2,7 +2,7 @@ import { fillDays } from "../../utils/chartDays";
 import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useHistory } from "react-router-dom";
 import { Typography, TextField, MenuItem, makeStyles, Table, TableHead, TableRow, TableCell, TableBody, Button, Menu } from "@material-ui/core";
-import { AlertTriangle, Hourglass, UserX, Flame, Download, CircleDollarSign, FileWarning, Sprout, RefreshCw, ArrowUpRight, ArrowDownRight, Minus } from "lucide-react";
+import { AlertTriangle, Download, Sprout, RefreshCw, ArrowUpRight, ArrowDownRight, Minus, ChevronDown } from "lucide-react";
 import { format, subDays, startOfMonth } from "date-fns";
 
 import MainContainer from "../../components/MainContainer";
@@ -23,6 +23,7 @@ import NotALead from "./NotALead";
 import "../../styles/dash.css";
 import { ErrorState } from "../../components/ui";
 import StatsHubBar from "../../components/StatsHub";
+import { InsightsCard, TeamOnline } from "../../components/Insights";
 
 const useStyles = makeStyles((theme) => {
   const line = "var(--line)";
@@ -219,16 +220,10 @@ const Panel = ({ mode = "now" }) => {
   const noKpi = { leads: 0, won: 0, lost: 0, open: 0, conversion: 0, avgDaysToEnroll: null, unassigned: 0 };
   const kpi = (d && d.kpi) || noKpi;
 
-  const allAlerts = d && d.attention ? [
-    [Hourglass, "Aguardando 1º contato", d.attention.waitingFirstContact, AMBER, "rgba(217,119,6,.14)", "/crm"],
-    [AlertTriangle, "Tarefas atrasadas", d.attention.overdueTasks, RED, "rgba(220,38,38,.12)", "/crm/tarefas"],
-    [Flame, "Leads esfriando (+3 dias)", d.attention.stale, "#0693E3", "rgba(6,147,227,.12)", "/crm?followUp=overdue"],
-    [UserX, "Sem responsável", d.attention.unassigned ?? kpi.unassigned, "#64748b", "rgba(100,116,139,.14)", "/crm"],
-    [CircleDollarSign, "Taxa de matrícula pendente", d.attention.feePending, "#E5484D", "rgba(229,72,77,.12)", d.attention.feeTagId ? `/crm?tagId=${d.attention.feeTagId}` : "/crm"],
-    [FileWarning, "Documentos pendentes", d.attention.docsPending, "#b45309", "rgba(245,158,11,.16)", d.attention.docsTagId ? `/crm?tagId=${d.attention.docsTagId}` : "/crm"],
-  ] : [];
-  // only what needs attention, by urgency (an empty counter is not information)
-  const alerts = allAlerts.filter((a) => Number(a[2]) > 0);
+  // the funnel of now shows the stages that hold leads; the empty ones open on request (a column of zeros is not information)
+  const [showEmpty, setShowEmpty] = useState(false);
+  const emptySteps = reached.filter((f) => !f.reached).length;
+  const funnelSteps = showEmpty ? reached : reached.filter((f) => f.reached > 0);
 
 
   return (
@@ -269,6 +264,12 @@ const Panel = ({ mode = "now" }) => {
       {d && (
         <div className={`${classes.scroll} dash-scope`}>
          <div className={`${classes.content} ${loading ? classes.contentBusy : ""}`} aria-busy={loading}>
+          {!results && (
+            <div className={classes.grid} style={{ marginTop: 8, marginBottom: 4 }}>
+              <div className={isManager ? classes.col7 : classes.col12} style={{ minWidth: 0 }}><InsightsCard /></div>
+              {isManager && <div className={classes.col5} style={{ minWidth: 0 }}><TeamOnline /></div>}
+            </div>
+          )}
           {!results && triageFailed && <ErrorState title="Não foi possível carregar os leads novos para conferir." onRetry={loadTriage} compact />}
           {!results && (triage.total > 0 || (isManager && triageScope === "all")) && (
             <>
@@ -313,26 +314,6 @@ const Panel = ({ mode = "now" }) => {
                 {triage.total === 0 && <Typography className={classes.label}>Nada para conferir. Tudo em dia.</Typography>}
               </GlowCard>
             </>
-          )}
-
-          {results ? null : alerts.length > 0 ? (
-            <>
-              <SectionHead color="#d97706" title="Pontos de atenção" hint="Situação de agora, não muda com o período escolhido" />
-              <div className={classes.alerts}>
-                {alerts.map(([Icon, label, value, fg, bg, to2]) => (
-                  <GlowCard key={label} lift tone={fg} className={classes.alert} role="button" tabIndex={0} onClick={() => history.push(to2)}
-                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); history.push(to2); } }}>
-                    <span className={classes.alertIcon} style={{ background: bg, color: fg }}><Icon size={18} /></span>
-                    <div>
-                      <div className={classes.label}>{label}</div>
-                      <div style={{ fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}><NumberTicker value={value || 0} /></div>
-                    </div>
-                  </GlowCard>
-                ))}
-              </div>
-            </>
-          ) : (
-            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderRadius: 12, background: "rgba(22,163,74,.1)", color: "#15803d", fontWeight: 600 }}>Nenhum ponto de atenção agora.</div>
           )}
 
           {results && <>
@@ -386,7 +367,7 @@ const Panel = ({ mode = "now" }) => {
             {!results && <GlowCard className={`${classes.card} ${classes.col7}`}>
               <Typography variant="subtitle2" gutterBottom>Funil agora</Typography>
               <Typography variant="caption" color="textSecondary" display="block" style={{ marginBottom: 12 }}>
-                Quantos leads estão em cada etapa hoje. Clique em Ver resultados para o funil de um período.
+                Quantos leads estão em cada etapa hoje.
               </Typography>
               {lane && lane.total > 0 && (
                 <div className={classes.lane} role="button" tabIndex={0} onClick={() => history.push("/crm")}
@@ -394,7 +375,13 @@ const Panel = ({ mode = "now" }) => {
                   <Sprout size={15} /> <b>{lane.total}</b> indicação{lane.total > 1 ? "ões" : ""} de afiliados aguardando o 1º contato (já contam em "Leads captados")
                 </div>
               )}
-              <FunnelBars steps={reached} />
+              <FunnelBars steps={funnelSteps} compare={false} />
+              {!funnelSteps.length && <Typography className={classes.label}>Nenhum lead em andamento agora.</Typography>}
+              {emptySteps > 0 && (
+                <button type="button" onClick={() => setShowEmpty((v) => !v)} style={{ marginTop: 8, border: 0, background: "transparent", color: "var(--c-leads, #0693E3)", fontFamily: "inherit", fontSize: 12.5, fontWeight: 600, cursor: "pointer", padding: 0, display: "inline-flex", alignItems: "center", gap: 4 }}>
+                  <ChevronDown size={14} style={{ transform: showEmpty ? "rotate(180deg)" : "none" }} />{showEmpty ? "Esconder etapas vazias" : `Mostrar etapas vazias (${emptySteps})`}
+                </button>
+              )}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12, paddingTop: 10, borderTop: "1px solid rgba(100,116,139,.2)", fontSize: 13.5 }}>
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><span style={{ width: 8, height: 8, borderRadius: 2, background: COLORS.lost }} />Perdidos (ficam fora do funil)</span>
                 <b style={{ fontVariantNumeric: "tabular-nums" }}>{lostTotal}</b>
@@ -419,8 +406,8 @@ const Panel = ({ mode = "now" }) => {
               <RankBars rows={courseRows} />
             </GlowCard>}
 
-            <GlowCard className={`${classes.card} ${results ? classes.col12 : classes.col5}`}>
-              <Typography variant="subtitle2" gutterBottom>{results ? "Desempenho dos consultores" : "Consultores agora"}</Typography>
+            {!results && <GlowCard className={`${classes.card} ${classes.col5}`}>
+              <Typography variant="subtitle2" gutterBottom>Consultores agora</Typography>
               <div style={{ overflowX: "auto" }}>
                 <Table size="small">
                   <TableHead>
@@ -457,7 +444,7 @@ const Panel = ({ mode = "now" }) => {
                   </TableBody>
                 </Table>
               </div>
-            </GlowCard>
+            </GlowCard>}
           </div>
          </div>
         </div>

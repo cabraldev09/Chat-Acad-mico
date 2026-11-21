@@ -41,7 +41,7 @@ const Failed = ({ onRetry }) => {
   );
 };
 
-const Commercial = ({ params, manager }) => {
+const Commercial = ({ params }) => {
   const c = useKit();
   const { data, loading, error, reload } = useAnalytics("/analytics/commercial", params);
   if (error && !data) return <Failed onRetry={reload} />;
@@ -80,22 +80,12 @@ const Commercial = ({ params, manager }) => {
         </ChartCard>
       </div>
       <div className={c.cols}>
-        <ChartCard title="Matrículas por cidade" loading={wait} empty={!d.sales.byCity.length}><RankBars rows={rank(d.sales.byCity, "name", "n", "won")} /></ChartCard>
-        <ChartCard title="Matrículas por curso" loading={wait} empty={!d.sales.byCourse.length}><RankBars rows={rank(d.sales.byCourse, "name", "n", "leads")} /></ChartCard>
-      </div>
-      <div className={c.cols}>
+        <ChartCard title="Matrículas por cidade" sub="Onde estão os alunos que se matricularam no período" loading={wait} empty={!d.sales.byCity.length}><RankBars rows={rank(d.sales.byCity, "name", "n", "won")} /></ChartCard>
         <ChartCard title="Etapas do processo mais puladas" sub="Uma etapa sem fazer enquanto a seguinte já foi feita" loading={wait} empty={!d.process.skipped.length} emptyText="Nenhuma etapa pulada no período.">
           <RankBars rows={rank(d.process.skipped, "label", "n", "lost")} />
         </ChartCard>
-        <ChartCard title="Motivos de perda" loading={wait} empty={!d.lostReasons.length} emptyText="Nenhum lead perdido no período.">
-          <RankBars rows={rank(d.lostReasons, "reason", "n", "muted")} />
-        </ChartCard>
       </div>
-      {manager && d.sales.top && d.sales.top.length > 0 && (
-        <ChartCard title="Quem vende o quê" sub="Os 5 maiores pares de consultor e curso">
-          <RankBars rows={rank(d.sales.top.map((t) => ({ ...t, label: `${t.name}: ${t.course}` })), "label", "n", "brand")} />
-        </ChartCard>
-      )}
+      <div className={c.sub}>Origem dos leads, cursos mais procurados e motivos de perda estão na aba Captação.</div>
     </div>
   );
 };
@@ -105,7 +95,9 @@ const Consultants = ({ params }) => {
   const { data, loading, error, reload } = useAnalytics("/analytics/commercial", params);
   if (error && !data) return <Failed onRetry={reload} />;
   const rows = (data && data.consultants) || [];
+  const top = (data && data.sales && data.sales.top) || [];
   return (
+    <div style={{ display: "grid", gap: 16 }}>
     <ChartCard title="Cada consultor no período" sub="Conversas, pessoas, matrículas e como o processo foi seguido" loading={loading && !data} empty={!rows.length} emptyText="Nenhum consultor com atividade no período.">
       <div className={c.scroll}>
         <table className={c.table}>
@@ -129,6 +121,12 @@ const Consultants = ({ params }) => {
         </table>
       </div>
     </ChartCard>
+    {top.length > 0 && (
+      <ChartCard title="Quem vende o quê" sub="Os 5 maiores pares de consultor e curso no período">
+        <RankBars rows={rank(top.map((t) => ({ ...t, label: `${t.name}: ${t.course}` })), "label", "n", "brand")} />
+      </ChartCard>
+    )}
+    </div>
   );
 };
 
@@ -235,8 +233,8 @@ export default function Statistics() {
   if (tutor) return <Redirect to="/estatisticas/tutoria" />;
   const titles = { comercial: manager ? "Visão geral" : "Meus números", consultores: "Consultores", treinamento: "Treinamento" };
   const leads = {
-    comercial: manager ? "Onde os leads param, objeções, vendas por cidade e curso e como o processo é seguido." : "Os seus números no período, com os mesmos critérios da gestão.",
-    consultores: "Cada consultor no período: conversas, pessoas, matrículas, grades e o processo.",
+    comercial: manager ? "Onde os leads param, objeções, matrículas por cidade e as etapas puladas do processo." : "Os seus números no período, com os mesmos critérios da gestão.",
+    consultores: "Cada consultor no período: conversas, pessoas, matrículas, grades, o processo e o que cada um vende.",
     treinamento: "O que a revisão diária da IA encontrou repetindo nas conversas de cada consultor.",
   };
   return (
@@ -249,7 +247,7 @@ export default function Statistics() {
         </div>
         <PeriodPicker value={period} onChange={setPeriod} />
       </div>
-      {tab === "comercial" && <Commercial params={params} manager={manager} />}
+      {tab === "comercial" && <Commercial params={params} />}
       {tab === "consultores" && <Consultants params={params} />}
       {tab === "treinamento" && <Training params={params} />}
       {!manager && (

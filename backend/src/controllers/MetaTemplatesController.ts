@@ -10,6 +10,7 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
   const templates = await allTemplates(whatsappId);
   const linked = await linkApproved(institutionName(), templates);
   const status = new Map(templates.map(t => [t.name, t.status]));
+  const category = new Map(templates.map(t => [t.name, t.category]));
   const pack = TEMPLATE_PACK(institutionName());
   const info = await templatesInfo();
   const packOf = new Map(pack.map(p => [p.name, p]));
@@ -21,7 +22,7 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
       return { ...t, inPack: !!p, department: p?.department || i.department || null, use: p?.use || i.use || null, purpose: p?.purpose || i.purpose || null };
     }),
     linked,
-    pack: pack.map(t => ({ ...t, created: status.has(t.name), status: status.get(t.name) || null }))
+    pack: pack.map(t => ({ ...t, created: status.has(t.name), status: status.get(t.name) || null, category: category.get(t.name) || null }))
   });
 };
 

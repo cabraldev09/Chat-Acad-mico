@@ -133,7 +133,22 @@ export const TEMPLATE_PACK = (institution: string): TemplateDraft[] => [
     body: "{{1}}, a rematrícula do seu curso {{2}} vai até {{3}}. Se precisar de ajuda para concluir, responda esta mensagem.", examples: ["Maria", "Pedagogia", "15/01/2027"] },
   { name: "regularizar_matricula", department: "relacionamento", use: "aviso",
     purpose: "Aluno cancelado ou trancado: a situação da matrícula",
-    body: "{{1}}, a sua matrícula no curso {{2}} consta como {{3}} no nosso sistema. Em caso de dúvida sobre a sua situação acadêmica, responda esta mensagem.", examples: ["Maria", "Pedagogia", "trancada"] }
+    body: "{{1}}, a sua matrícula no curso {{2}} consta como {{3}} no nosso sistema. Em caso de dúvida sobre a sua situação acadêmica, responda esta mensagem.", examples: ["Maria", "Pedagogia", "trancada"] },
+  { name: "analise_historico_concluida", department: "atendimento", use: "aviso", buttons: ["Quero o resultado"],
+    purpose: "A análise do histórico (aproveitamento de disciplinas) que a pessoa pediu foi concluída",
+    body: "{{1}}, a análise do seu histórico escolar para o curso {{2}} foi concluída. Responda esta mensagem para receber o resultado.", examples: ["Maria", "Pedagogia"] },
+  { name: "documento_recebido", department: "atendimento", use: "aviso",
+    purpose: "Confirmar que um documento da matrícula chegou",
+    body: "{{1}}, recebemos o documento {{2}} da sua matrícula no curso {{3}}. Se faltar algo, avisaremos por aqui.", examples: ["Maria", "RG", "Pedagogia"] },
+  { name: "pagamento_confirmado", department: "financeiro", use: "aviso",
+    purpose: "Pagamento da taxa ou da mensalidade confirmado",
+    body: "{{1}}, o pagamento de {{2}} referente ao curso {{3}} foi confirmado. Guarde esta mensagem como comprovante do recebimento.", examples: ["Maria", "taxa de matrícula", "Pedagogia"] },
+  { name: "acesso_portal_liberado", department: "tutoria", use: "aviso",
+    purpose: "O acesso do aluno ao portal foi liberado (RGM e e-mail acadêmico)",
+    body: "{{1}}, o seu acesso ao portal do aluno está liberado. RGM: {{2}}. E-mail de acesso: {{3}}. Em caso de dúvida no primeiro acesso, responda esta mensagem.", examples: ["Maria", "1234567", "maria.silva@cs.cruzeirodosul.edu.br"] },
+  { name: "inicio_das_aulas", department: "tutoria", use: "aviso",
+    purpose: "Data de início das aulas do curso do aluno",
+    body: "{{1}}, as aulas do curso {{2}} começam em {{3}}. O acesso às disciplinas é pelo portal do aluno.", examples: ["Maria", "Pedagogia", "02/02/2027"] }
 ];
 
 // department and use of the templates created on the screen (the pack ones carry their own)

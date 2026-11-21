@@ -5813,15 +5813,15 @@ const postMeta = (id, payload, secret, badSig) => {
       const consTok = (await http.post("/auth/login", { email: "consultorm@matricula.test", password: "senha123" })).data.token;
       assert((await http.get("/meta/templates", asUser(consTok))).status === 403, "a consultant reached the Meta templates");
       const first = await http.get("/meta/templates", auth());
-      assert(first.status === 200 && first.data.pack.length === 12 && first.data.pack.every(p => !p.created), `templates screen ${first.status} ${JSON.stringify(first.data).slice(0, 200)}`);
+      assert(first.status === 200 && first.data.pack.length === 17 && first.data.pack.every(p => !p.created), `templates screen ${first.status} ${JSON.stringify(first.data).slice(0, 200)}`);
       const sent = await http.post("/meta/templates/pack", {}, auth());
-      assert(sent.status === 200 && sent.data.results.length === 12 && sent.data.results.every(x => /^enviado/.test(x.result)), `pack ${JSON.stringify(sent.data)}`);
-      assert(graph.templates.length === 12 && graph.templates.every(t => t.waba === "WABA1" && t.category === "UTILITY" && t.allow_category_change === false && t.language === "pt_BR"), `templates as sent: ${JSON.stringify(graph.templates.map(t => [t.name, t.category, t.allow_category_change]))}`);
+      assert(sent.status === 200 && sent.data.results.length === 17 && sent.data.results.every(x => /^enviado/.test(x.result)), `pack ${JSON.stringify(sent.data)}`);
+      assert(graph.templates.length === 17 && graph.templates.every(t => t.waba === "WABA1" && t.category === "UTILITY" && t.allow_category_change === false && t.language === "pt_BR"), `templates as sent: ${JSON.stringify(graph.templates.map(t => [t.name, t.category, t.allow_category_change]))}`);
       assert(graph.templates.every(t => { const n = (t.components[0].text.match(/\{\{\d+\}\}/g) || []).length; return !n || (t.components[0].example.body_text[0].length >= 1); }), "a template went without examples");
       // nothing linked while under review (the Meta would refuse a send with it)
       assert(!sql(`SELECT value FROM Settings WHERE key='boas_vindas_template_name'`), "a template under review was put to use");
       const again = await http.post("/meta/templates/pack", {}, auth());
-      assert(again.data.results.every(x => x.result === "já existe") && graph.templates.length === 12, "the pack was sent twice");
+      assert(again.data.results.every(x => x.result === "já existe") && graph.templates.length === 17, "the pack was sent twice");
       // nobody already talking to the team gets an "Olá" again, and the openings carry quick-reply buttons
       assert(first.data.pack.every(p => !/^\s*ol[áa]/i.test(p.body) && p.department), "a template of the pack opens with Olá or has no department");
       const opening = graph.templates.find(t => t.name === "retomada_atendimento");

@@ -84,7 +84,12 @@ Os canais que dizem **não** não entregam o evento a sistemas de atendimento. N
 
 ## Operação e custos
 
-Em **Configurações → Operação e custos**, administração e coordenação configuram prazos de resposta, escalonamento, fila de fallback e tarefas comerciais. Somente a administração altera limites financeiros e autoriza templates. O administrador também consulta encaminhamentos sem responsável, entregas a conferir, capacidade dos atendentes e estimativas de consumo.
+As regras da operação ficam no grupo de cada assunto em Configurações:
+
+- **Horário e atendimento:** prazos de resposta, escalonamento, fila de fallback, tarefas comerciais e a capacidade de cada atendente. Administração e coordenação alteram.
+- **Custos → Limites de gasto:** limites diários da IA e da Meta e o consumo de hoje. Só a administração altera.
+- **Modelos da Meta:** a autorização de envio com modelos. Só a administração altera.
+- **Entregas e arquivos:** as entregas a conferir e a revogação de links de arquivos.
 
 - Cada período sem resposta é acompanhado, mesmo depois do primeiro contato humano. Um alerta inicial e um escalonamento são registrados por período. Horário comercial, grupos, contatos de equipe e contatos que recusaram mensagens são respeitados.
 - A distribuição automática considera pausa de recebimento e capacidade de conversas abertas. Zero significa sem limite. Se ninguém estiver disponível, a conversa fica visível na lista de atendimentos sem responsável; o sistema tenta distribuir novamente. A pessoa também pode pausar o recebimento em **Meu dia**.

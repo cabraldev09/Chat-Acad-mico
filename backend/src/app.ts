@@ -161,6 +161,12 @@ app.use(async (err: Error, req: Request, res: Response, _: NextFunction) => {
     return /^update or delete/i.test(err.message) ? res.status(409).json({ error: "ERR_IN_USE" }) : res.status(404).json({ error: "ERR_NOT_FOUND" });
   }
 
+  // a second record with the same unique value (a tag or a queue with a name that exists): the person changes the name, not a server error
+  if (code === "23505" || err.name === "SequelizeUniqueConstraintError") {
+    logger.warn({ request: `${req.method} ${req.originalUrl}`, message: err.message });
+    return res.status(409).json({ error: "ERR_DUPLICATED" });
+  }
+
   // one line that names the request, so a 500 on the screen can be found in the log
   Sentry.captureException(err);
   // never the whole object: a database error carries the SQL and its parameters (names, phones, CPF of the request)

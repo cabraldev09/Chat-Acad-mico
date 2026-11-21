@@ -193,7 +193,8 @@ const LoggedInLayout = ({ children }) => {
   useEffect(() => {
     const el = alertsRef.current;
     if (!el) return undefined;
-    const measure = () => setAlertsH(Math.round(el.getBoundingClientRect().height));
+    // the layout height (offsetHeight): a notice still animating in (a transform) would measure smaller and leave the page a few pixels too tall, with a second scrollbar
+    const measure = () => setAlertsH(el.offsetHeight);
     measure();
     if (typeof ResizeObserver === "undefined") return undefined;
     const ro = new ResizeObserver(measure);

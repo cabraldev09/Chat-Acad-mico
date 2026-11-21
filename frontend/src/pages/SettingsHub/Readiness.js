@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { CheckCircle2, AlertTriangle, AlertCircle, RefreshCw, ArrowRight } from "lucide-react";
+import { CheckCircle2, AlertTriangle, AlertCircle, RefreshCw, ArrowRight, ChevronDown } from "lucide-react";
 
 import { toast } from "react-toastify";
 import api from "../../services/api";
@@ -16,7 +16,7 @@ const FIX = {
   webhook: ["/connections", "Corrigir a chave secreta"],
   token: ["/connections", "Abrir Conexões"],
   tutoria: ["/configuracoes?secao=tutoria", "Informar o número"],
-  templates_allowed: ["/configuracoes?secao=operacao", "Autorizar o envio"],
+  templates_allowed: ["/configuracoes?secao=modelos", "Autorizar o envio"],
   templates: ["/configuracoes?secao=modelos", "Enviar os modelos"],
   efi: ["/configuracoes?secao=pagamentos", "Abrir Pagamentos"],
   mail: ["/configuracoes?secao=email", "Configurar o e-mail"],
@@ -31,6 +31,8 @@ const btn = { display: "inline-flex", alignItems: "center", justifyContent: "cen
 export default function Readiness() {
   const [items, setItems] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [showDone, setShowDone] = useState(false);
+  const [openDetail, setOpenDetail] = useState({});
   const load = useCallback(async () => {
     setBusy(true);
     try { const { data } = await api.get("/system/readiness"); setItems(data.items || []); } catch (err) { toastError(err); }
@@ -46,30 +48,64 @@ export default function Readiness() {
 
   const pending = items.filter((i) => !i.ok);
   const required = pending.filter((i) => i.level === "required");
-  return (
-    <div style={{ display: "grid", gap: 12, minWidth: 0 }}>
-      <div style={{ ...card, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-        {required.length ? <AlertCircle size={22} color="#b91c1c" /> : pending.length ? <AlertTriangle size={22} color="#b45309" /> : <CheckCircle2 size={22} color="#15803d" />}
-        <div style={{ flex: "1 1 220px" }}>
-          <div style={{ fontWeight: 700 }}>{required.length ? `Faltam ${required.length} ${required.length === 1 ? "ajuste obrigatório" : "ajustes obrigatórios"} antes de o time usar o sistema` : pending.length ? "Pronto para o time usar, com recomendações" : "Tudo pronto para o time usar"}</div>
-          <div style={{ fontSize: 12.5, color: "var(--text-2)" }}>{items.length - pending.length} de {items.length} itens conferidos estão em ordem. Clique no botão de cada item para ir direto ao lugar de resolver.</div>
+  const recommended = pending.filter((i) => i.level !== "required");
+  const done = items.filter((i) => i.ok);
+  const share = items.length ? Math.round((done.length / items.length) * 100) : 100;
+  const tone = required.length ? "#b91c1c" : pending.length ? "#b45309" : "#15803d";
+
+  const Row = ({ i }) => {
+    const fix = FIX[i.key];
+    const long = String(i.detail || "").length > 160;
+    const open = !!openDetail[i.key];
+    return (
+      <div style={{ ...card, padding: "12px 14px", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        {i.ok ? <CheckCircle2 size={18} color="#15803d" style={{ flex: "none", alignSelf: "flex-start", marginTop: 2 }} /> : i.level === "required" ? <AlertCircle size={18} color="#b91c1c" style={{ flex: "none", alignSelf: "flex-start", marginTop: 2 }} /> : <AlertTriangle size={18} color="#b45309" style={{ flex: "none", alignSelf: "flex-start", marginTop: 2 }} />}
+        <div style={{ minWidth: 0, flex: "1 1 260px" }}>
+          <div style={{ fontWeight: 600, fontSize: 14 }}>{i.label}</div>
+          <div style={{ fontSize: 13, color: "var(--text-2)", overflowWrap: "anywhere", ...(long && !open ? { display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" } : {}) }}>{i.detail}</div>
+          {long && <button type="button" onClick={() => setOpenDetail((o) => ({ ...o, [i.key]: !o[i.key] }))} style={{ border: 0, background: "transparent", padding: 0, marginTop: 2, color: "var(--accent)", font: "inherit", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>{open ? "Ver menos" : "Ver tudo"}</button>}
+          {!i.ok && !fix && i.key !== "affiliate_leads" && <div style={{ fontSize: 12.5, marginTop: 2, color: "var(--text-2)" }}>Onde resolver: {i.where}</div>}
         </div>
-        <button type="button" onClick={load} disabled={busy} style={btn}>
-          <RefreshCw size={14} className={busy ? "ui-spin" : undefined} /> Conferir de novo
-        </button>
+        {!i.ok && fix && <Link to={fix[0]} style={{ ...btn, color: "var(--accent)" }}>{fix[1]} <ArrowRight size={14} /></Link>}
+        {!i.ok && i.key === "affiliate_leads" && <button type="button" onClick={cleanAffiliateLeads} style={{ ...btn, color: "var(--accent)" }}>Tirar do funil</button>}
       </div>
-      {[...pending.sort((a, b) => (a.level === b.level ? 0 : a.level === "required" ? -1 : 1)), ...items.filter((i) => i.ok)].map((i) => (
-        <div key={i.key} style={{ ...card, padding: "12px 14px", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-          {i.ok ? <CheckCircle2 size={18} color="#15803d" style={{ flex: "none", alignSelf: "flex-start", marginTop: 2 }} /> : i.level === "required" ? <AlertCircle size={18} color="#b91c1c" style={{ flex: "none", alignSelf: "flex-start", marginTop: 2 }} /> : <AlertTriangle size={18} color="#b45309" style={{ flex: "none", alignSelf: "flex-start", marginTop: 2 }} />}
-          <div style={{ minWidth: 0, flex: "1 1 260px" }}>
-            <div style={{ fontWeight: 600, fontSize: 14 }}>{i.label}{!i.ok && <span style={{ fontWeight: 500, fontSize: 12, color: "var(--text-2)" }}> · {i.level === "required" ? "obrigatório" : "recomendado"}</span>}</div>
-            <div style={{ fontSize: 13, color: "var(--text-2)", overflowWrap: "anywhere" }}>{i.detail}</div>
-            {!i.ok && <div style={{ fontSize: 12.5, marginTop: 2, color: "var(--text-2)" }}>Onde resolver: {i.where}</div>}
+    );
+  };
+  const Group = ({ title, list }) => (list.length ? (
+    <div style={{ display: "grid", gap: 8 }}>
+      <div style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--text-2)", marginTop: 4 }}>{title} · {list.length}</div>
+      {list.map((i) => <Row key={i.key} i={i} />)}
+    </div>
+  ) : null);
+
+  return (
+    <div style={{ display: "grid", gap: 14, minWidth: 0 }}>
+      <div style={{ ...card, display: "grid", gap: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          {required.length ? <AlertCircle size={22} color={tone} /> : pending.length ? <AlertTriangle size={22} color={tone} /> : <CheckCircle2 size={22} color={tone} />}
+          <div style={{ flex: "1 1 220px", minWidth: 0 }}>
+            <div style={{ fontWeight: 700 }}>{required.length ? `Faltam ${required.length} ${required.length === 1 ? "ajuste obrigatório" : "ajustes obrigatórios"} antes de o time usar o sistema` : pending.length ? "Pronto para o time usar, com recomendações" : "Tudo pronto para o time usar"}</div>
+            <div style={{ fontSize: 12.5, color: "var(--text-2)" }}>{done.length} de {items.length} itens em ordem. O botão de cada item leva direto ao lugar de resolver.</div>
           </div>
-          {!i.ok && FIX[i.key] && <Link to={FIX[i.key][0]} style={{ ...btn, color: "var(--accent)" }}>{FIX[i.key][1]} <ArrowRight size={14} /></Link>}
-          {!i.ok && i.key === "affiliate_leads" && <button type="button" onClick={cleanAffiliateLeads} style={{ ...btn, color: "var(--accent)" }}>Tirar do funil</button>}
+          <button type="button" onClick={load} disabled={busy} style={btn}>
+            <RefreshCw size={14} className={busy ? "ui-spin" : undefined} /> Conferir de novo
+          </button>
         </div>
-      ))}
+        <div role="progressbar" aria-valuenow={share} aria-valuemin={0} aria-valuemax={100} aria-label="Itens em ordem" style={{ height: 8, borderRadius: 999, background: "var(--surface-2)", overflow: "hidden" }}>
+          <div style={{ width: `${share}%`, height: "100%", borderRadius: 999, background: tone, transition: "width .4s ease" }} />
+        </div>
+      </div>
+      <Group title="Obrigatórios" list={required} />
+      <Group title="Recomendados" list={recommended} />
+      {done.length > 0 && (
+        <div style={{ display: "grid", gap: 8 }}>
+          <button type="button" onClick={() => setShowDone((v) => !v)} aria-expanded={showDone} style={{ ...btn, justifyContent: "space-between", width: "100%", height: 40, color: "var(--text-1)" }}>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><CheckCircle2 size={16} color="#15803d" />{done.length} {done.length === 1 ? "item em ordem" : "itens em ordem"}</span>
+            <ChevronDown size={16} style={{ transform: showDone ? "rotate(180deg)" : "none", transition: "transform .2s ease" }} />
+          </button>
+          {showDone && done.map((i) => <Row key={i.key} i={i} />)}
+        </div>
+      )}
     </div>
   );
 }

@@ -1,8 +1,8 @@
 import React, { useState } from "react";
-import { Link } from "react-router-dom";
 
 import MetaCosts from "./MetaCosts";
 import AiCosts from "./AiCosts";
+import Operations from "./Operations";
 
 // Configurações → Custos: the two bills of the system in one place (the Meta, for the official WhatsApp, and the AI), with
 // what makes the Meta cheaper.
@@ -20,19 +20,20 @@ export default function Costs() {
   return (
     <div style={{ display: "grid", gap: 16, minWidth: 0 }}>
       <div className="ui-tabs" role="tablist" aria-label="Custos" style={{ marginLeft: 0 }}>
-        {[["meta", "WhatsApp oficial (Meta)"], ["ia", "IA (OpenAI e Anthropic)"], ["dicas", "Como gastar menos"]].map(([k, l]) => (
+        {[["meta", "WhatsApp oficial (Meta)"], ["ia", "IA (OpenAI e Anthropic)"], ["limites", "Limites de gasto"], ["dicas", "Como gastar menos"]].map(([k, l]) => (
           <button key={k} type="button" role="tab" aria-selected={tab === k} className={`ui-tabs__btn${tab === k ? " is-on" : ""}`} onClick={() => setTab(k)}>{l}</button>
         ))}
       </div>
       {tab === "meta" && <MetaCosts />}
       {tab === "ia" && <AiCosts />}
+      {tab === "limites" && <Operations part="limites" />}
       {tab === "dicas" && (
         <div className="ui-card" style={{ padding: 16 }}>
           <ul style={{ margin: 0, paddingLeft: 18, display: "grid", gap: 8, fontSize: 13.5 }}>
             {TIPS.map((t) => <li key={t}>{t}</li>)}
           </ul>
           <div style={{ fontSize: 12.5, color: "var(--text-2)", marginTop: 12 }}>
-            Para travar o gasto, defina o orçamento diário da Meta e da IA em <Link to="/configuracoes?secao=operacao">Operação</Link>.
+            Para travar o gasto, defina o orçamento diário da Meta e da IA na aba <button type="button" onClick={() => setTab("limites")} style={{ border: 0, background: "transparent", padding: 0, color: "var(--accent)", font: "inherit", fontWeight: 600, cursor: "pointer" }}>Limites de gasto</button>.
           </div>
         </div>
       )}

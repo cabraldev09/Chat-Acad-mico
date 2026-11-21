@@ -22,6 +22,17 @@ const STATUS = {
   PAUSED: ["Pausado", "#b91c1c"],
   DISABLED: ["Desativado", "#b91c1c"],
 };
+// the category the Meta gave each template (it decides, even when the template is sent as Utility): it sets the price of each send
+const CATEGORY = {
+  UTILITY: ["Utilidade", "#0369a1", "Categoria de aviso: a mais barata das pagas, e grátis dentro das 24 h."],
+  MARKETING: ["Marketing", "#b45309", "A Meta classificou como Marketing: cada envio custa mais que Utilidade."],
+  AUTHENTICATION: ["Autenticação", "#6d28d9", "Categoria de códigos de acesso."],
+};
+const CategoryBadge = ({ category }) => {
+  if (!category) return null;
+  const [label, color, title] = CATEGORY[category] || [category, "var(--text-2)", ""];
+  return <span title={title} style={{ display: "inline-block", fontSize: 12, fontWeight: 700, color, background: `${color}14`, borderRadius: 999, padding: "2px 9px", whiteSpace: "nowrap" }}>{label}</span>;
+};
 const USE = { abertura: "Abertura do departamento (fora das 24 h)", aviso: "Aviso do sistema", campanha: "Campanhas" };
 const DEPT_ORDER = ["atendimento", "tutoria", "relacionamento", "financeiro"];
 
@@ -46,10 +57,12 @@ const Row = ({ t, onRemove }) => (
     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
       <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 12.5, fontWeight: 600, wordBreak: "break-all", flex: "1 1 160px" }}>{t.name}</span>
       <Badge status={t.status} />
-      {t.category === "MARKETING" && <span title="A Meta classificou como Marketing: cada envio custa mais que Utilidade" style={{ display: "inline-block", fontSize: 12, fontWeight: 700, color: "#b45309", border: "1px solid #b45309", borderRadius: 999, padding: "1px 8px", whiteSpace: "nowrap" }}>Marketing (mais caro)</span>}
+      <CategoryBadge category={t.category} />
       {onRemove && <IconAction title="Remover da conta da Meta" onClick={() => onRemove(t.name)}><Trash2 size={15} /></IconAction>}
     </div>
     {(t.purpose || t.use) && <div style={{ fontSize: 13 }}>{t.purpose}{t.use ? <span style={{ color: "var(--text-2)" }}>{t.purpose ? " · " : ""}{USE[t.use] || t.use}</span> : null}</div>}
+    {t.category === "MARKETING" && <div style={{ fontSize: 12.5, color: "#b45309" }}>A Meta enquadrou como Marketing: cada envio custa mais. Para voltar a Utilidade, reescreva como aviso (sem convite nem oferta) e envie com outro nome.</div>}
+    {t.result && <div style={{ fontSize: 12.5, color: /^enviado|^já existe/.test(t.result) ? "#15803d" : "#b91c1c" }}>Envio: {t.result}</div>}
     {t.reason && <div style={{ fontSize: 13, color: "#b91c1c" }}>Motivo da Meta: {t.reason}</div>}
     {t.body && <div style={{ ...hint, overflowWrap: "anywhere" }}>{t.body}</div>}
     {t.buttons && t.buttons.length > 0 && <div style={hint}>Botões: {t.buttons.join(" · ")}</div>}
@@ -79,6 +92,8 @@ export default function MetaTemplates({ values, save }) {
   const [busy, setBusy] = useState(false);
   const [sending, setSending] = useState(false);
   const [draft, setDraft] = useState(EMPTY);
+  // the answer of the last pack send, shown on each template (what was sent, what already existed, what the Meta refused)
+  const [packResults, setPackResults] = useState({});
   const quiet = useRef(false);
 
   const load = useCallback(async (silent) => {
@@ -114,12 +129,17 @@ export default function MetaTemplates({ values, save }) {
     setSending(true);
     quiet.current = true;
     try {
-      const { data: d } = await api.post("/meta/templates/pack");
+      const { data: d } = await api.post("/meta/templates/pack", {}, { timeout: 180000 });
+      setPackResults(Object.fromEntries((d.results || []).map((r) => [r.name, r.result])));
       const failed = (d.results || []).filter((r) => !/^enviado|^já existe/.test(r.result));
       if (failed.length) toast.warn(`Alguns modelos não foram aceitos: ${failed.map((f) => f.name).join(", ")}. Veja o motivo na lista.`);
       else toast.success("Modelos enviados. A Meta costuma responder em minutos; o status muda aqui sozinho.");
       await load(true);
-    } catch (err) { toastError(err); }
+    } catch (err) {
+      toastError(err);
+      // the Meta may have taken some before the error: the list says what really is there
+      await load(true);
+    }
     quiet.current = false;
     setSending(false);
   };
@@ -158,6 +178,7 @@ export default function MetaTemplates({ values, save }) {
   const packNames = new Set((data.pack || []).map((p) => p.name));
   const byDept = DEPT_ORDER.map((d) => [d, (data.templates || []).filter((t) => t.department === d)]);
   const others = (data.templates || []).filter((t) => !t.department);
+  const all = data.templates || [];
 
   return (
     <div style={{ display: "grid", gap: 16, minWidth: 0 }}>
@@ -167,12 +188,26 @@ export default function MetaTemplates({ values, save }) {
           <Button size="small" variant="outlined" onClick={() => load()}>Tentar de novo</Button>
         </div>
       )}
+      <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))" }}>
+        {[
+          ["Aprovados", all.filter((t) => t.status === "APPROVED").length, "#15803d"],
+          ["Em análise", all.filter((t) => t.status === "PENDING" || t.status === "IN_APPEAL").length, "#b45309"],
+          ["Recusados", all.filter((t) => ["REJECTED", "PAUSED", "DISABLED"].includes(t.status)).length, "#b91c1c"],
+          ["Em Utilidade", all.filter((t) => t.category === "UTILITY").length, "#0369a1"],
+          ["Em Marketing", all.filter((t) => t.category === "MARKETING").length, "#b45309"],
+        ].map(([label, value, color]) => (
+          <div key={label} style={{ ...card, padding: "12px 14px" }}>
+            <div style={{ fontSize: 12.5, color: "var(--text-2)", fontWeight: 600 }}>{label}</div>
+            <div style={{ fontSize: 24, fontWeight: 700, color: value ? color : "inherit", fontVariantNumeric: "tabular-nums" }}>{value}</div>
+          </div>
+        ))}
+      </div>
       <div style={card}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
           <div style={{ fontWeight: 700, flex: "1 1 220px" }}>Pacote recomendado</div>
           <Button size="small" variant="outlined" onClick={() => load()} disabled={busy} startIcon={<RefreshCw size={14} className={busy ? "ui-spin" : undefined} />}>Atualizar</Button>
-          <Button size="small" variant="contained" color="primary" onClick={sendPack} disabled={sending || !missing.length} startIcon={<Send size={14} />}>
-            {missing.length ? `Enviar ${missing.length} para a Meta` : "Todos enviados"}
+          <Button size="small" variant="contained" color="primary" onClick={sendPack} disabled={sending || !missing.length} startIcon={sending ? <CircularProgress size={14} color="inherit" /> : <Send size={14} />}>
+            {sending ? `Enviando ${missing.length}...` : missing.length ? `Enviar ${missing.length} para a Meta` : "Todos enviados"}
           </Button>
         </div>
         <div style={hint}>
@@ -187,7 +222,7 @@ export default function MetaTemplates({ values, save }) {
                 <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text-2)", textTransform: "uppercase", letterSpacing: ".05em" }}>{departments[d] || d}</div>
                 {items.map((p) => {
                   const t = (data.templates || []).find((x) => x.name === p.name);
-                  return <Row key={p.name} t={{ ...p, status: t?.status, reason: t?.reason }} />;
+                  return <Row key={p.name} t={{ ...p, status: t?.status, reason: t?.reason, category: t?.category || p.category, result: packResults[p.name] }} />;
                 })}
               </div>
             );
