@@ -578,7 +578,7 @@ const messages = {
         ERR_NUMBER_NOT_ON_WHATSAPP: "Este número não tem WhatsApp.",
         ERR_TEMPLATES_UNSUPPORTED: "Este canal não envia modelos de mensagem.",
         ERR_TEMPLATES_NO_WABA: "Não foi possível descobrir a conta do WhatsApp (WABA) deste número. Confira se o token tem a permissão whatsapp_business_management.",
-        ERR_TEMPLATE_INVALID: "Dê um nome e escreva o texto do modelo.",
+        ERR_TEMPLATE_NAME_BODY: "Dê um nome e escreva o texto do modelo.",
         ERR_TEMPLATE_IN_PACK: "Este modelo é do pacote recomendado e está em uso: ele não pode ser removido daqui.",
         ERR_TEMPLATE_EXAMPLES: "Preencha um exemplo para cada variável ({{1}}, {{2}}...) do modelo.",
         ERR_MEDIA_NOT_FOUND: "O arquivo anexado não foi encontrado no servidor. Anexe de novo.",

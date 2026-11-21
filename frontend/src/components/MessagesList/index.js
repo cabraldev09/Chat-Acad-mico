@@ -882,7 +882,7 @@ const MessagesList = ({ ticketId, isGroup, channel, searchTerm = "", matchIndex 
       </div>
       {loading && <CircularProgress size={28} className={classes.loading} />}
       {!atBottom && (
-        <IconButton aria-label="Mostrar mais" className={classes.fab} onClick={() => scrollToBottom(true)} aria-label="Ir para o fim">
+        <IconButton className={classes.fab} onClick={() => scrollToBottom(true)} aria-label="Ir para o fim">
           {newCount > 0 && <span className={classes.fabBadge}>{newCount}</span>}
           <KeyboardArrowDown />
         </IconButton>
