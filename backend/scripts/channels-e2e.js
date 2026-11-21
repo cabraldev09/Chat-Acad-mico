@@ -5832,13 +5832,15 @@ const postMeta = (id, payload, secret, badSig) => {
       const after = await http.get("/meta/templates", auth());
       assert(after.data.linked.includes("matricula_confirmada_tutoria") && sql(`SELECT value FROM Settings WHERE key='boas_vindas_template_name'`) === "matricula_confirmada_tutoria" && after.data.templates.find(x => x.name === "retomada_atendimento").department === "atendimento", `the approved template was not linked: ${JSON.stringify(after.data.linked)}`);
       // a new template: examples are required, and a refusal comes back with the Meta's reason
-      assert((await http.post("/meta/templates", { name: "aviso_x", body: "Olá {{1}}", examples: [] }, auth())).status === 400, "a template without examples was sent");
-      const refused = await http.post("/meta/templates", { name: "recusa_promo", body: "Olá {{1}}", examples: ["Ana"] }, auth());
+      assert((await http.post("/meta/templates", { name: "aviso_x", body: "Olá {{1}}, aviso.", examples: [] }, auth())).status === 400, "a template without examples was sent");
+      const edge = await http.post("/meta/templates", { name: "aviso_borda", body: "{{1}}, a sua matrícula está confirmada.", examples: ["Ana"] }, auth());
+      assert(edge.status === 400 && edge.data.error === "ERR_TEMPLATE_VARIABLE_EDGE" && !graph.templates.find(t => t.name === "aviso_borda"), `a template starting with a variable went to the Meta: ${edge.status} ${JSON.stringify(edge.data)}`);
+      const refused = await http.post("/meta/templates", { name: "recusa_promo", body: "Olá {{1}}, aviso.", examples: ["Ana"] }, auth());
       assert(refused.status === 400 && /promocional/.test(refused.data.error), `the Meta's refusal: ${JSON.stringify(refused.data)}`);
-      const made = await http.post("/meta/templates", { name: "Aviso Prova", body: "Olá {{1}}, a sua prova é em {{2}}.", examples: ["Ana", "10/12"] }, auth());
+      const made = await http.post("/meta/templates", { name: "Aviso Prova", body: "Olá {{1}}, a sua prova é em {{2}}, no polo.", examples: ["Ana", "10/12"] }, auth());
       assert(made.status === 201 && made.data.name === "aviso_prova" && graph.templates.find(t => t.name === "aviso_prova").category === "UTILITY", `new template ${made.status} ${JSON.stringify(made.data)}`);
       // a template made on the screen keeps its department; an old one can be removed, a pack one cannot
-      const dept = await http.post("/meta/templates", { name: "aviso_documento", body: "{{1}}, recebemos o seu documento.", examples: ["Ana"], department: "atendimento", use: "aviso", buttons: ["Obrigado"] }, auth());
+      const dept = await http.post("/meta/templates", { name: "aviso_documento", body: "Documento recebido, {{1}}: obrigado.", examples: ["Ana"], department: "atendimento", use: "aviso", buttons: ["Obrigado"] }, auth());
       assert(dept.status === 201 && (await http.get("/meta/templates", auth())).data.templates.find(x => x.name === "aviso_documento").department === "atendimento", "the department of a new template was lost");
       assert((await http.delete("/meta/templates/retomada_atendimento", auth())).status === 400, "a template of the pack was removed");
       assert((await http.delete("/meta/templates/aviso_prova", auth())).status === 200 && !graph.templates.find(x => x.name === "aviso_prova"), "an old template was not removed");
