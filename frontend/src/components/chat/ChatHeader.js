@@ -4,6 +4,7 @@ import { toast } from "react-toastify";
 import { useHistory } from "react-router-dom";
 import { makeStyles } from "@material-ui/core/styles";
 import Avatar from "@material-ui/core/Avatar";
+import { colorOf, initialsOf } from "../../utils/avatar";
 import IconButton from "@material-ui/core/IconButton";
 import Tooltip from "@material-ui/core/Tooltip";
 import Menu from "@material-ui/core/Menu";
@@ -273,8 +274,8 @@ const ChatHeader = ({ contact: contactProp, ticket, onOpenInfo, onToggleSearch, 
       </IconButton>
       <div className={classes.who} onClick={onOpenInfo} role="button" tabIndex={0} aria-label={`Dados de ${contact.name || "contato"}`}
         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpenInfo && onOpenInfo(); } }}>
-        <Avatar className={classes.avatar} src={contact.profilePicUrl}>
-          {contact.name?.charAt(0)}
+        <Avatar className={classes.avatar} src={contact.profilePicUrl} style={contact.profilePicUrl ? undefined : { background: colorOf(contact.number || contact.name), color: "#fff", fontWeight: 700 }}>
+          {initialsOf(contact.name)}
         </Avatar>
         <div className={classes.names}>
           <span className={classes.name}>

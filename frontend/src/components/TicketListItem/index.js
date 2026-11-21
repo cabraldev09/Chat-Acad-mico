@@ -1,4 +1,5 @@
 import { looksLikeFileName } from "../../utils/mediaLabel";
+import { colorOf, initialsOf } from "../../utils/avatar";
 import React, { useState, useEffect, useRef, useContext } from "react";
 import { useHistory, useParams } from "react-router-dom";
 import clsx from "clsx";
@@ -274,8 +275,8 @@ const TicketListItem = ({ ticket }) => {
       }}
     >
       <div className={classes.avatarWrap}>
-        <Avatar className={classes.avatar} src={ticket?.contact?.profilePicUrl}>
-          {ticket.isGroup ? <Group /> : String((ticket.contact && ticket.contact.name) || "?").charAt(0)}
+        <Avatar className={classes.avatar} src={ticket?.contact?.profilePicUrl} style={ticket?.contact?.profilePicUrl || ticket.isGroup ? undefined : { background: colorOf((ticket.contact && (ticket.contact.number || ticket.contact.name)) || ""), color: "#fff", fontWeight: 700, fontSize: 15 }}>
+          {ticket.isGroup ? <Group /> : initialsOf(ticket.contact && ticket.contact.name)}
         </Avatar>
         <span className={classes.channel}>
           <ChannelIcon channel={ticket.whatsapp?.channel} size={13} />
