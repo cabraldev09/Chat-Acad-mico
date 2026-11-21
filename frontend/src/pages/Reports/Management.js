@@ -3,6 +3,7 @@ import { Bar, BarChart, CartesianGrid, Cell, ReferenceLine, ResponsiveContainer,
 import { useChartTheme } from "../../components/charts";
 import { Building2, Gauge, MapPin, Users } from "lucide-react";
 
+import { ErrorState } from "../../components/ui";
 import { Insights, SlaBar, hm, useShared } from "./shared";
 
 const Kpi = ({ label, value, note, tone }) => (
@@ -14,9 +15,10 @@ const Kpi = ({ label, value, note, tone }) => (
 );
 
 // Management: every department, attendant and polo side by side, with response times that do not lie (median, P90, share on time)
-const Management = ({ data, sla }) => {
+const Management = ({ data, sla, failed, onRetry }) => {
   const c = useShared();
   const ct = useChartTheme();
+  if (!data && failed) return <div className={c.panel}><ErrorState title="Não foi possível carregar a visão de gestão." onRetry={onRetry} compact /></div>;
   if (!data) return <div className={c.panel} style={{ opacity: 0.6 }}>Carregando a visão de gestão...</div>;
   const t = data.total;
   const delta = t.reply.median !== null && t.previousMedian ? Math.round(((t.reply.median - t.previousMedian) / t.previousMedian) * 100) : null;

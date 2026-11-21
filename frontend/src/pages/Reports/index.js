@@ -20,6 +20,7 @@ import { isManager } from "../../utils/access";
 import { fillDays } from "../../utils/chartDays";
 import toastError from "../../errors/toastError";
 import { fetchAllUsersPage } from "../../utils/fetchAllUsers";
+import { ErrorState } from "../../components/ui";
 import StatsHubBar from "../../components/StatsHub";
 
 // Estatísticas: the one place for the numbers. Every figure appears once.
@@ -156,6 +157,9 @@ const ReportsClassic = () => {
   const [data, setData] = useState(null);
   const [overview, setOverview] = useState(null);
   const [mgmt, setMgmt] = useState(null);
+  // a failed load is shown as an error with "try again", never as an endless "Carregando..."
+  const [failed, setFailed] = useState({ data: false, overview: false, mgmt: false });
+  const [attempt, setAttempt] = useState(0);
   const [myDay, setMyDay] = useState(null);
 
   const shown = data ? data.date : today;
@@ -179,7 +183,8 @@ const ReportsClassic = () => {
       if (!manager) api.get("/dashboard/me").then(({ data: d }) => setMyDay(d)).catch(toastError);
       const { data: d } = await api.get("/dashboard", { params: { date: date || undefined, days } });
       setData(d);
-    } catch (err) { toastError(err); }
+      setFailed((f) => ({ ...f, data: false }));
+    } catch (err) { setFailed((f) => ({ ...f, data: true })); toastError(err); }
   }, [date, days, manager]);
   useEffect(() => { load(); }, [load]);
 
@@ -204,12 +209,14 @@ const ReportsClassic = () => {
   // the heavier numbers are fetched only for the tab that shows them
   useEffect(() => {
     if (!data || lean) return;
-    if (tab === "equipe" && manager) api.get("/dashboard/management", { params: { date: date || undefined, days } }).then(({ data: m }) => setMgmt(m)).catch(toastError);
+    if (tab === "equipe" && manager) api.get("/dashboard/management", { params: { date: date || undefined, days } }).then(({ data: m }) => { setMgmt(m); setFailed((f) => ({ ...f, mgmt: false })); }).catch((e) => { setFailed((f) => ({ ...f, mgmt: true })); toastError(e); });
     if (tab !== "equipe") {
       api.get("/stats/overview", { params: { from: range.from, to: range.to, queueId: queueId || undefined, userId: userId || undefined } })
-        .then(({ data: o }) => setOverview(o && typeof o === "object" ? { ...o, perQueue: o.perQueue || [], perTag: o.perTag || [], period: o.period || {} } : null)).catch(toastError);
+        .then(({ data: o }) => { setOverview(o && typeof o === "object" ? { ...o, perQueue: o.perQueue || [], perTag: o.perTag || [], period: o.period || {} } : null); setFailed((f) => ({ ...f, overview: false })); })
+        .catch((e) => { setFailed((f) => ({ ...f, overview: true })); toastError(e); });
     }
-  }, [tab, data, lean, range.from, range.to, queueId, userId, date, days, manager]);
+  }, [tab, data, lean, range.from, range.to, queueId, userId, date, days, manager, attempt]);
+  const retry = () => { setFailed({ data: false, overview: false, mgmt: false }); setAttempt((n) => n + 1); load(); };
 
   useEffect(() => {
     let timer;
@@ -256,18 +263,19 @@ const ReportsClassic = () => {
     } catch (err) { toastError(err); }
   };
 
+  // the row opens the conversation; "não precisa de resposta" is a button beside it (never a button inside another button)
   const list = (rows, color, withMute) => rows.map((t) => (
-    <button key={t.id} type="button" className={classes.row} onClick={() => history.push(`/tickets/${t.id}`)}>
-      <span className={classes.rowName}>{t.name}</span>
-      <span className={classes.rowTime} style={{ color }}>há {minutes(t.seconds)}</span>
+    <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+      <button type="button" className={classes.row} style={{ flex: 1, minWidth: 0 }} onClick={() => history.push(`/tickets/${t.id}`)}>
+        <span className={classes.rowName}>{t.name}</span>
+        <span className={classes.rowTime} style={{ color }}>há {minutes(t.seconds)}</span>
+      </button>
       {withMute && (
-        <span className={classes.mute} role="button" tabIndex={0} title="Não precisa de resposta (avisos, listas)" aria-label="Não precisa de resposta"
-          onClick={(e) => { e.stopPropagation(); silence(t); }}
-          onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); silence(t); } }}>
+        <button type="button" className={classes.mute} title="Não precisa de resposta (avisos, listas)" aria-label={`${t.name}: não precisa de resposta`} onClick={() => silence(t)}>
           <BellOff size={15} />
-        </span>
+        </button>
       )}
-    </button>
+    </div>
   ));
 
   const tabs = manager ? TABS : TABS.slice(0, 1);
@@ -316,7 +324,7 @@ const ReportsClassic = () => {
 
       {!lean && tab === "geral" && !manager && <div style={{ marginBottom: 20 }}><MyDay data={myDay} /></div>}
 
-      {!lean && tab === "equipe" && manager && <Management data={mgmt} sla={mgmt ? mgmt.slaMinutes : 15} />}
+      {!lean && tab === "equipe" && manager && <Management data={mgmt} sla={mgmt ? mgmt.slaMinutes : 15} failed={failed.mgmt || (failed.data && !data)} onRetry={retry} />}
 
       {!lean && tab === "canais" && manager && (
         <div className={classes.stack}>
@@ -330,7 +338,7 @@ const ReportsClassic = () => {
               {users.map((u) => (<MenuItem key={u.id} value={u.id}>{u.name}</MenuItem>))}
             </TextField>
           </div>
-          {!overview ? <div className={classes.panel} style={{ opacity: 0.6 }}>Carregando...</div> : (
+          {!overview ? (failed.overview || (failed.data && !data) ? <div className={classes.panel}><ErrorState title="Não foi possível carregar os números." onRetry={retry} compact /></div> : <div className={classes.panel} style={{ opacity: 0.6 }}>Carregando...</div>) : (
             <>
               <div className={classes.charts}>
                 <div className={classes.panel}>
@@ -420,7 +428,7 @@ const ReportsClassic = () => {
                   })}
                 </div>
               ) : (
-                <div className={classes.empty}>{p ? "Nenhum atendimento neste período." : "Carregando..."}</div>
+                <div className={classes.empty}>{p ? "Nenhum atendimento neste período." : failed.data ? <ErrorState title="Não foi possível carregar os atendimentos." onRetry={retry} compact /> : "Carregando..."}</div>
               )}
             </div>
 

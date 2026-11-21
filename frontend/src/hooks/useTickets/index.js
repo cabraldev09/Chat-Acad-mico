@@ -25,9 +25,13 @@ const useTickets = ({
     const [hasMore, setHasMore] = useState(false);
     const [tickets, setTickets] = useState([]);
     const [count, setCount] = useState(0);
+    // a failed load is told apart from an empty inbox; retry() asks again
+    const [error, setError] = useState(false);
+    const [attempt, setAttempt] = useState(0);
 
     useEffect(() => {
         setLoading(true);
+        setError(false);
         const delayDebounceFn = setTimeout(() => {
             const fetchTickets = async() => {
                 try {
@@ -57,6 +61,7 @@ const useTickets = ({
                     setLoading(false)
                 } catch (err) {
                     setLoading(false)
+                    setError(true)
                     toastError(err)
                 }
             }
@@ -80,9 +85,10 @@ const useTickets = ({
         allQueues,
         attendantId,
         connectionId,
+        attempt,
     ])
 
-    return { tickets, loading, hasMore, count };
+    return { tickets, loading, hasMore, count, error, retry: () => setAttempt((n) => n + 1) };
 };
 
 export default useTickets;

@@ -26,6 +26,7 @@ import openSocket from "../../services/socket-io";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import { fetchAllUsersPage } from "../../utils/fetchAllUsers";
+import { ErrorState } from "../../components/ui";
 import { BUILD } from "../../utils/versionWatch";
 
 // Configurações: where the rules of the system are set. Each group holds the real controls (saved as soon as they change);
@@ -51,7 +52,10 @@ const useStyles = makeStyles((theme) => ({
   body: { flex: 1, overflowY: "auto", overflowX: "hidden", ...theme.scrollbarStyles, paddingBottom: theme.spacing(4) },
   layout: { display: "grid", gridTemplateColumns: "250px minmax(0,1fr)", gap: theme.spacing(3), alignItems: "start", [theme.breakpoints.down("sm")]: { gridTemplateColumns: "1fr" } },
   // on the phone the groups become one row that slides sideways (not a tall block of buttons)
-  rail: { position: "sticky", top: 0, display: "flex", flexDirection: "column", gap: 2, [theme.breakpoints.down("sm")]: { position: "static", flexDirection: "row", flexWrap: "nowrap", overflowX: "auto", gap: 6, paddingBottom: 4, scrollbarWidth: "none", "&::-webkit-scrollbar": { display: "none" } } },
+  rail: { position: "sticky", top: 0, display: "flex", flexDirection: "column", gap: 2, [theme.breakpoints.down("sm")]: { position: "static", flexDirection: "row", flexWrap: "nowrap", overflowX: "auto", gap: 6, paddingBottom: 4, scrollbarWidth: "none", "&::-webkit-scrollbar": { display: "none" },
+    // the edges fade out: a sign that the row slides and there are more groups to the side
+    WebkitMaskImage: "linear-gradient(90deg, transparent 0, #000 14px, #000 calc(100% - 28px), transparent 100%)",
+    maskImage: "linear-gradient(90deg, transparent 0, #000 14px, #000 calc(100% - 28px), transparent 100%)" } },
   railBtn: {
     border: 0, background: "transparent", color: theme.palette.text.secondary, textAlign: "left", cursor: "pointer", fontFamily: "inherit", padding: "9px 12px", borderRadius: 12,
     display: "flex", gap: 11, alignItems: "center", "& > svg": { flex: "none" }, "&:hover": { background: theme.palette.action.hover, color: theme.palette.text.primary },
@@ -102,35 +106,42 @@ const Card = ({ title, sub, children }) => {
 };
 
 // the settings of the system, saved as soon as they change
+// a failed load never shows the forms with default values (a change there would overwrite the real settings): it shows the error
 const useSettings = () => {
   const [values, setValues] = useState(null);
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
-    api.get("/settings").then(({ data }) => setValues(Object.fromEntries(data.map((s) => [s.key, s.value])))).catch((e) => { toastError(e); setValues({}); });
+    setFailed(false);
+    api.get("/settings").then(({ data }) => setValues(Object.fromEntries(data.map((s) => [s.key, s.value])))).catch((e) => { toastError(e); setFailed(true); });
     const socket = openSocket();
     socket.on("settings", (d) => { if (d.action === "update") setValues((cur) => ({ ...cur, [d.setting.key]: d.setting.value })); });
     return () => socket.disconnect();
-  }, []);
+  }, [attempt]);
   const save = useCallback(async (key, value) => {
     let previous;
     setValues((cur) => { previous = cur && cur[key]; return { ...cur, [key]: value }; });
     try { await api.put(`/settings/${key}`, { value: String(value) }); toast.success("Configuração salva."); } catch (err) { setValues((cur) => ({ ...cur, [key]: previous })); toastError(err); }
   }, []);
-  return [values, save];
+  return [values, save, failed, () => setAttempt((n) => n + 1)];
 };
 
 // the CRM rules (distribution, hours, form...) live in their own endpoint
 const useCrm = (enabled) => {
   const [s, setS] = useState({});
   const [users, setUsers] = useState([]);
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     if (!enabled) return;
-    api.get("/crm/settings").then(({ data }) => setS(data)).catch(toastError);
+    setFailed(false);
+    api.get("/crm/settings").then(({ data }) => setS(data)).catch((e) => { toastError(e); setFailed(true); });
     fetchAllUsersPage().then(({ data }) => setUsers(data.users || [])).catch(() => undefined);
-  }, [enabled]);
+  }, [enabled, attempt]);
   const save = async (patch) => {
     try { const { data } = await api.put("/crm/settings", patch); setS(data); toast.success("Salvo."); } catch (err) { toastError(err); }
   };
-  return { s, setS, save, users };
+  return { s, setS, save, users, failed, retry: () => setAttempt((n) => n + 1) };
 };
 
 const Geral = ({ values, save, admin }) => {
@@ -602,7 +613,7 @@ const SettingsHub = () => {
   const wanted = asked === "horario" ? "atendimento" : asked;
   const [group, setGroup] = useState(groups.some((g) => g.id === wanted) ? wanted : "geral");
   const [q, setQ] = useState("");
-  const [values, save] = useSettings();
+  const [values, save, valuesFailed, retryValues] = useSettings();
   const crm = useCrm(true);
 
   useEffect(() => { if (groups.some((g) => g.id === wanted)) setGroup(wanted); }, [wanted, groups]);
@@ -648,7 +659,7 @@ const SettingsHub = () => {
               <div className={classes.h}>{current.label}</div>
               <div className={classes.sub}>{current.hint}</div>
             </div>
-            {!values ? <Typography className={classes.hint}>Carregando...</Typography> : (
+            {!values && valuesFailed ? <ErrorState title="Não foi possível carregar as configurações." text="Nada foi alterado. Tente de novo para editar." onRetry={retryValues} /> : crm.failed && ["horario", "atendimento", "captacao"].includes(current.id) ? <ErrorState title="Não foi possível carregar as regras do atendimento." text="Nada foi alterado. Tente de novo para editar." onRetry={crm.retry} /> : !values ? <Typography className={classes.hint}>Carregando...</Typography> : (
               <SectionBoundary name={current.id} resetKey={current.id}>
                 {current.id === "prontidao" && <Readiness />}
                 {current.id === "copiloto" && <CopilotSettings />}

@@ -271,7 +271,8 @@ const ChatHeader = ({ contact: contactProp, ticket, onOpenInfo, onToggleSearch, 
       <IconButton aria-label="Voltar" className={classes.back} onClick={() => history.push("/tickets")}>
         <ArrowBack />
       </IconButton>
-      <div className={classes.who} onClick={onOpenInfo} role="button" tabIndex={0}>
+      <div className={classes.who} onClick={onOpenInfo} role="button" tabIndex={0} aria-label={`Dados de ${contact.name || "contato"}`}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpenInfo && onOpenInfo(); } }}>
         <Avatar className={classes.avatar} src={contact.profilePicUrl}>
           {contact.name?.charAt(0)}
         </Avatar>
