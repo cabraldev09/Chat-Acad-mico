@@ -12,6 +12,7 @@ import { AuthContext } from "../../context/Auth/AuthContext";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import Onboarding from "../Onboarding";
+import { ErrorState } from "../../components/ui";
 import ImportWizard from "../../components/ImportWizard";
 
 // the columns of the spreadsheet of students the tutor brings (the management also says whose they are)
@@ -34,7 +35,17 @@ const useStyles = makeStyles((theme) => ({
   kpiN: { display: "block", fontSize: 26, fontWeight: 700, letterSpacing: "-0.03em", lineHeight: 1.2, fontVariantNumeric: "tabular-nums" },
   bar: { display: "flex", gap: theme.spacing(1), flexWrap: "wrap", alignItems: "center", margin: theme.spacing(0, 0, 1.5) },
   box: { border: "1px solid var(--line)", borderRadius: "var(--radius-card)", background: "var(--surface)", boxShadow: "var(--shadow-card)", overflowX: "auto" },
-  table: { width: "100%", borderCollapse: "collapse", fontSize: 13.5, "& th": { textAlign: "left", fontWeight: 600, padding: "8px 10px", borderBottom: `1px solid ${theme.palette.divider}`, whiteSpace: "nowrap" }, "& td": { padding: "8px 10px", borderBottom: `1px solid ${theme.palette.divider}`, verticalAlign: "top" } },
+  table: {
+    width: "100%", borderCollapse: "collapse", fontSize: 13.5,
+    "& th": { textAlign: "left", fontWeight: 600, padding: "8px 10px", borderBottom: `1px solid ${theme.palette.divider}`, whiteSpace: "nowrap" },
+    "& td": { padding: "8px 10px", borderBottom: `1px solid ${theme.palette.divider}`, verticalAlign: "top" },
+    // on the phone each student is a card: every column stacked and the actions in sight (no sideways scroll hiding them)
+    [theme.breakpoints.down("xs")]: {
+      "& thead": { display: "none" },
+      "& tr": { display: "block", padding: "10px 4px", borderBottom: `1px solid ${theme.palette.divider}` },
+      "& td": { display: "block", border: 0, padding: "3px 10px" }
+    }
+  },
   name: { fontWeight: 600 },
   meta: { fontSize: 12.5, color: theme.palette.text.secondary },
   tag: { display: "inline-block", fontSize: 11.5, fontWeight: 700, padding: "1px 8px", borderRadius: 999, marginRight: 4, marginTop: 2 },
@@ -66,11 +77,14 @@ export default function Tutoria() {
   const [poloId, setPoloId] = useState("");
   const [busy, setBusy] = useState(null);
   const [importing, setImporting] = useState(false);
+  // a failed load says so (with "try again"), instead of looking like an empty tutoring
+  const [failed, setFailed] = useState(false);
 
   const load = useCallback(() => {
     setData(null);
+    setFailed(false);
     const params = manager ? { ...(tutorId ? { tutorId } : {}), ...(poloId ? { poloId } : {}) } : {};
-    api.get("/tutoria/students", { params }).then(({ data: d }) => setData(d)).catch((e) => { toastError(e); setData({ counters: {}, students: [], rules: {} }); });
+    api.get("/tutoria/students", { params }).then(({ data: d }) => setData(d)).catch((e) => { toastError(e); setFailed(true); });
   }, [manager, tutorId, poloId]);
   useEffect(() => { load(); }, [load]);
 
@@ -142,7 +156,7 @@ export default function Tutoria() {
         {manager ? "Os alunos de cada tutor" : "Os alunos que estão com você"} e o que precisa de atenção agora. A conversa abre no número da Tutoria{data?.rules?.numberName ? ` (${data.rules.numberName})` : ""}: o comercial não vê essas conversas.
         {data && !data.rules?.numberName && " Ainda não há número da Tutoria: marque a Função do número = Tutoria em Conexões."}
       </div>
-      {!data ? <CircularProgress size={24} /> : <>
+      {!data ? (failed ? <ErrorState title="Não foi possível carregar os alunos da tutoria." onRetry={load} /> : <CircularProgress size={24} />) : <>
         <div className={c.kpis}>
           {FILTERS.map(([key, label, counter]) => (
             <button key={key} type="button" className={`${c.kpi} ${filter === key ? c.kpiOn : ""}`} aria-pressed={filter === key} onClick={() => setFilter(key)}>
@@ -165,7 +179,7 @@ export default function Tutoria() {
           <Button size="small" className={c.button} startIcon={<RefreshCw size={14} />} onClick={load}>Atualizar</Button>
         </div>
         <div className={c.box}>
-          {!rows.length ? <div className={c.empty}>{filter === "all" ? "Nenhum aluno por aqui ainda." : "Nada nesta situação. 🎉"}</div> :
+          {!rows.length ? <div className={c.empty}>{filter === "all" ? "Nenhum aluno por aqui ainda." : "Nada nesta situação."}</div> :
             <table className={c.table}>
               <thead><tr><th>Aluno</th><th>Ambientação</th><th>Último contato</th><th>Situação</th><th /></tr></thead>
               <tbody>{rows.map((s) => (

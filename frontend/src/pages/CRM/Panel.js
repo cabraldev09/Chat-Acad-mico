@@ -21,6 +21,7 @@ import { COLORS, ChartLegend, DailyChart, FunnelBars, RankBars, SplitBar, Trend 
 import { tint } from "../../utils/color";
 import NotALead from "./NotALead";
 import "../../styles/dash.css";
+import { ErrorState } from "../../components/ui";
 import StatsHubBar from "../../components/StatsHub";
 
 const useStyles = makeStyles((theme) => {
@@ -148,10 +149,13 @@ const Panel = ({ mode = "now" }) => {
     await downloadFile("/crm/report", { from, to, groupBy, format: "csv" }, `relatorio-${groupBy === "polo" ? "polos" : "consultores"}-${from}-a-${to}.csv`);
   };
 
+  // the triage block says when it could not load (instead of simply not appearing)
+  const [triageFailed, setTriageFailed] = useState(false);
   const loadTriage = useCallback(() => {
     if (!me) return;
     const who = triageScope === "mine" || !isManager ? me.id : ownerId || undefined;
-    api.get("/crm/triage", { params: { ownerId: who } }).then(({ data }) => setTriage(data)).catch(() => undefined);
+    setTriageFailed(false);
+    api.get("/crm/triage", { params: { ownerId: who } }).then(({ data }) => setTriage(data)).catch(() => setTriageFailed(true));
   }, [me, triageScope, ownerId, isManager]);
   useEffect(() => { loadTriage(); }, [loadTriage]);
 
@@ -265,6 +269,7 @@ const Panel = ({ mode = "now" }) => {
       {d && (
         <div className={`${classes.scroll} dash-scope`}>
          <div className={`${classes.content} ${loading ? classes.contentBusy : ""}`} aria-busy={loading}>
+          {!results && triageFailed && <ErrorState title="Não foi possível carregar os leads novos para conferir." onRetry={loadTriage} compact />}
           {!results && (triage.total > 0 || (isManager && triageScope === "all")) && (
             <>
               <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginTop: 8 }}>

@@ -12,6 +12,7 @@ import TicketsListSkeleton from "../TicketsListSkeleton";
 import useTickets from "../../hooks/useTickets";
 import { i18n } from "../../translate/i18n";
 import { AuthContext } from "../../context/Auth/AuthContext";
+import { ErrorState } from "../ui";
 import { Link } from "react-router-dom";
 
 const useStyles = makeStyles(theme => ({
@@ -197,7 +198,7 @@ const reducer = (state, action) => {
 		setPageNumber(1);
 	}, [status, searchParam, dispatch, showAll, selectedQueueIds, withUnreadMessages, groups, archived, historical, everything, tagId, allQueues, attendantId, connectionId]);
 
-	const { tickets, hasMore, loading } = useTickets({
+	const { tickets, hasMore, loading, error, retry } = useTickets({
 		pageNumber,
 		searchParam,
 		status,
@@ -378,7 +379,9 @@ const reducer = (state, action) => {
 				onScroll={handleScroll}
 			>
 				<List style={{ paddingTop: 0 }}>
-					{ticketsList.length === 0 && !loading ? (
+					{error && ticketsList.length === 0 && !loading ? (
+						<ErrorState title="Não foi possível carregar as conversas." onRetry={retry} />
+					) : ticketsList.length === 0 && !loading ? (
 						<div className={classes.noTicketsDiv}>
 							<span className={classes.noTicketsTitle}>
 								{i18n.t("ticketsList.noTicketsTitle")}

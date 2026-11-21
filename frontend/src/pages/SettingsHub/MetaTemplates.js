@@ -74,6 +74,8 @@ const IN_USE = [
 export default function MetaTemplates({ values, save }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
+  // an automatic refresh that failed: the list on screen may be old (said, with "try again")
+  const [stale, setStale] = useState(false);
   const [busy, setBusy] = useState(false);
   const [sending, setSending] = useState(false);
   const [draft, setDraft] = useState(EMPTY);
@@ -85,9 +87,11 @@ export default function MetaTemplates({ values, save }) {
       const { data: d } = await api.get("/meta/templates");
       setData(d);
       setError("");
+      setStale(false);
       if (d.linked && d.linked.length) toast.success(`Aprovado e já em uso: ${d.linked.join(", ")}.`);
     } catch (err) {
       if (!silent) setError(err?.response?.data?.error || err?.response?.data?.message || "Não foi possível ler os modelos na Meta.");
+      else setStale(true);
     }
     if (!silent) setBusy(false);
   }, []);
@@ -157,6 +161,12 @@ export default function MetaTemplates({ values, save }) {
 
   return (
     <div style={{ display: "grid", gap: 16, minWidth: 0 }}>
+      {stale && (
+        <div role="alert" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", padding: "8px 12px", borderRadius: 10, background: "rgba(245,158,11,.14)", fontSize: 13 }}>
+          <span style={{ flex: "1 1 220px" }}>Não foi possível atualizar agora: a lista pode estar desatualizada.</span>
+          <Button size="small" variant="outlined" onClick={() => load()}>Tentar de novo</Button>
+        </div>
+      )}
       <div style={card}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
           <div style={{ fontWeight: 700, flex: "1 1 220px" }}>Pacote recomendado</div>

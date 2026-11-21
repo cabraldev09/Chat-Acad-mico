@@ -108,8 +108,11 @@ export const useAnalytics = (path, params, enabled = true) => {
     const again = () => { clearTimeout(timer.current); timer.current = setTimeout(load, 900); };
     socket.on("connect", () => socket.emit("joinNotification"));
     ["analytics", "appMessage", "ticket", "lead"].forEach((e) => socket.on(e, again));
-    const poll = setInterval(load, 60000);
-    return () => { clearTimeout(timer.current); clearInterval(poll); socket.disconnect(); };
+    // only while the page is visible; coming back to the tab refreshes at once
+    const poll = setInterval(() => { if (document.visibilityState === "visible") load(); }, 60000);
+    const back = () => { if (document.visibilityState === "visible") load(); };
+    document.addEventListener("visibilitychange", back);
+    return () => { clearTimeout(timer.current); clearInterval(poll); document.removeEventListener("visibilitychange", back); socket.disconnect(); };
   }, [load, enabled]);
 
   return { ...state, reload: load };

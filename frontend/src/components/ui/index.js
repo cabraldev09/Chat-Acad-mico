@@ -70,6 +70,19 @@ export const EmptyState = ({ icon, title, text, action }) => (
   </div>
 );
 
+// ---- ErrorState: a load that failed is never shown as "empty" or as an endless "loading": it says so and offers to try again
+export const ErrorState = ({ title = "Não foi possível carregar.", text = "Confira a conexão e tente de novo.", onRetry, compact = false }) => (
+  <div role="alert" style={{ textAlign: "center", padding: compact ? "14px 12px" : "32px 16px", display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+    <div style={{ fontWeight: 650, fontSize: 14.5 }}>{title}</div>
+    {text ? <div style={{ fontSize: 13, color: "var(--text-2)", maxWidth: 420 }}>{text}</div> : null}
+    {onRetry ? (
+      <button type="button" onClick={onRetry} style={{ display: "inline-flex", alignItems: "center", gap: 6, height: 32, border: "1px solid var(--line-strong)", background: "var(--surface)", borderRadius: 8, padding: "0 12px", font: "inherit", fontSize: 13, fontWeight: 600, cursor: "pointer", color: "inherit" }}>
+        Tentar de novo
+      </button>
+    ) : null}
+  </div>
+);
+
 // ---- Skeleton: the shape of what is loading
 export const Skeleton = ({ width = "100%", height = 16, style }) => <div className="ui-skeleton" style={{ width, height, ...style }} />;
 export const SkeletonCards = ({ n = 4, height = 110 }) => (
