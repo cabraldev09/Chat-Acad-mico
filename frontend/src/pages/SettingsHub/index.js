@@ -37,26 +37,28 @@ const GROUPS = [
   { id: "prontidao", section: "Começar", label: "Prontidão do sistema", icon: ListChecks, hint: "O que falta para o time usar", keywords: "pendências falta configurar checklist" },
   { id: "cadastros", section: "Equipe", label: "Equipe e cadastros", icon: ListTree, hint: "Usuários, polos, filas, etiquetas e funil", keywords: "usuários pessoas polos filas etiquetas funil etapas cursos propostas api webhooks" },
   { id: "geral", section: "Atendimento", label: "Geral", icon: Settings2, hint: "Nome, fuso e acesso", keywords: "nome instituição fuso horário acesso login senha versão" },
-  { id: "atendimento", section: "Atendimento", label: "Horário e atendimento", icon: Clock, hint: "Expediente, prazos, distribuição e lembretes", keywords: "horário expediente fora do horário prazo distribuição automática lembrete sla fila espera" },
+  { id: "atendimento", section: "Atendimento", label: "Horário e atendimento", icon: Clock, hint: "Expediente, prazos, distribuição e lembretes", keywords: "horário expediente fora do horário prazo distribuição automática lembrete sla fila espera capacidade disponibilidade escalar proposta cobrança acompanhamento" },
   { id: "tutoria", section: "Atendimento", label: "Tutoria", icon: BellRing, hint: "Boas-vindas, número e prazo do 1º contato", keywords: "tutor boas-vindas ambientação número prazo primeiro contato" },
   { id: "copiloto", section: "Atendimento", label: "Copiloto", icon: Workflow, hint: "Processo de vendas e sugestões da IA", keywords: "processo etapas sugestão ia consultor limite" },
-  { id: "modelos", section: "WhatsApp e custos", label: "Modelos da Meta", icon: FileText, hint: "Modelos por departamento e onde cada um é usado", keywords: "template modelo meta aprovado utilidade marketing abertura" },
-  { id: "meta", section: "WhatsApp e custos", label: "Custos", icon: CircleDollarSign, hint: "Meta e IA, orçamento e como gastar menos", keywords: "custo gasto preço orçamento openai anthropic meta fatura" },
-  { id: "operacao", section: "WhatsApp e custos", label: "Limites e entregas", icon: SlidersHorizontal, hint: "Capacidade, limites de gasto e envio de modelos", keywords: "limite diário tokens envio autorizar modelos capacidade entregas operação" },
+  { id: "modelos", section: "WhatsApp e custos", label: "Modelos da Meta", icon: FileText, hint: "Modelos por departamento e onde cada um é usado", keywords: "template modelo meta aprovado utilidade marketing abertura autorizar envio categoria" },
+  { id: "meta", section: "WhatsApp e custos", label: "Custos", icon: CircleDollarSign, hint: "Meta e IA, orçamento e como gastar menos", keywords: "custo gasto preço orçamento openai anthropic meta fatura limite diário tokens" },
   { id: "captacao", section: "Matrícula", label: "Captação", icon: FileInput, hint: "Formulário público e páginas por curso", keywords: "formulário site página curso lead captação" },
   { id: "pagamentos", section: "Matrícula", label: "Pagamentos", icon: CreditCard, hint: "Taxa de matrícula (Efí)", admin: true, keywords: "efí pix boleto taxa pagamento" },
   { id: "regras", section: "Matrícula", label: "Regras acadêmicas", icon: Calculator, hint: "Vagas extras e semestres nas previsões", admin: true, keywords: "vagas semestres previsão análise curricular regras" },
   { id: "email", section: "Sistema", label: "E-mail", icon: Mail, hint: "Conta de envio e modelos de e-mail", admin: true, keywords: "email e-mail envio smtp resend modelo pendências diário" },
+  { id: "entregas", section: "Sistema", label: "Entregas e arquivos", icon: SlidersHorizontal, hint: "Mensagens interrompidas e acesso a arquivos", keywords: "entrega mensagem interrompida conferir reenviar arquivo revogar link operação" },
   { id: "erros", section: "Sistema", label: "Erros de tela", icon: Bug, hint: "Telas que falharam no navegador de alguém", admin: true, keywords: "erro falha tela navegador" },
 ];
 const plainText = (t) => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 
 const useStyles = makeStyles((theme) => ({
-  body: { flex: 1, overflowY: "auto", overflowX: "hidden", ...theme.scrollbarStyles, paddingBottom: theme.spacing(4), [theme.breakpoints.down("xs")]: { padding: "0 12px 32px" } },
-  layout: { display: "grid", gridTemplateColumns: "250px minmax(0,1fr)", gap: theme.spacing(3), alignItems: "start", [theme.breakpoints.down("sm")]: { gridTemplateColumns: "1fr" } },
+  // on a computer the list of groups and the open group scroll each on their own (the list never runs away with the page); on a phone one scroll
+  body: { flex: 1, minHeight: 0, overflow: "hidden", display: "flex", [theme.breakpoints.down("sm")]: { display: "block", overflowY: "auto", overflowX: "hidden", ...theme.scrollbarStyles, paddingBottom: theme.spacing(4) }, [theme.breakpoints.down("xs")]: { padding: "0 12px 32px" } },
+  layout: { flex: 1, minHeight: 0, display: "grid", gridTemplateColumns: "260px minmax(0,1fr)", gridTemplateRows: "minmax(0, 1fr)", gap: theme.spacing(3), [theme.breakpoints.down("sm")]: { gridTemplateColumns: "1fr", gridTemplateRows: "auto" } },
+  scrollArea: { minHeight: 0, overflowY: "auto", overflowX: "hidden", overscrollBehavior: "contain", ...theme.scrollbarStyles, paddingBottom: theme.spacing(4), [theme.breakpoints.down("sm")]: { overflow: "visible", paddingBottom: 0 } },
   // on the phone the groups become one row that slides sideways (not a tall block of buttons)
   // the phone shows the list of groups first and the group in full after a tap (with "Voltar"), like the settings of a phone
-  rail: { position: "sticky", top: 0, display: "flex", flexDirection: "column", gap: 2, [theme.breakpoints.down("sm")]: { position: "static" } },
+  rail: { display: "flex", flexDirection: "column", gap: 2, paddingRight: 4 },
   railBtn: {
     border: 0, background: "transparent", color: theme.palette.text.secondary, textAlign: "left", cursor: "pointer", fontFamily: "inherit", padding: "9px 12px", borderRadius: 12,
     display: "flex", gap: 11, alignItems: "center", "& > svg": { flex: "none" }, "&:hover": { background: theme.palette.action.hover, color: theme.palette.text.primary },
@@ -639,15 +641,24 @@ const SettingsHub = () => {
   const [listOnPhone, setListOnPhone] = useState(!wanted);
   // the required items still missing (Prontidão): a count on the group, so it is seen from anywhere in Configurações
   const [pendingCount, setPendingCount] = useState(0);
-  useEffect(() => {
-    api.get("/system/readiness").then(({ data }) => setPendingCount((data.items || []).filter((i) => !i.ok && i.level === "required").length)).catch(() => undefined);
-  }, [group]);
   const [q, setQ] = useState("");
   const [values, save, valuesFailed, retryValues] = useSettings();
+  // the count follows what is saved: fixing an item on any group lowers it without reloading the page
+  useEffect(() => {
+    const t = setTimeout(() => {
+      api.get("/system/readiness").then(({ data }) => setPendingCount((data.items || []).filter((i) => !i.ok && i.level === "required").length)).catch(() => undefined);
+    }, 400);
+    return () => clearTimeout(t);
+  }, [group, values]);
   const crm = useCrm(true);
 
-  useEffect(() => { if (groups.some((g) => g.id === wanted)) setGroup(wanted); }, [wanted, groups]);
-  const open = (id) => { setGroup(id); setListOnPhone(false); history.replace(`/configuracoes?secao=${id}`); };
+  // old links to the group that was split ("operacao") open where its main part went
+  useEffect(() => { const w = wanted === "operacao" ? "modelos" : wanted; if (groups.some((g) => g.id === w)) setGroup(w); }, [wanted, groups]);
+  const panelRef = React.useRef(null);
+  const open = (id) => {
+    setGroup(id); setListOnPhone(false); history.replace(`/configuracoes?secao=${id}`);
+    if (panelRef.current) panelRef.current.scrollTop = 0;
+  };
 
   // the search jumps to the group that holds the word
   const found = q.trim() ? groups.filter((g) => plainText(`${g.label} ${g.hint} ${g.keywords || ""}`).includes(plainText(q.trim()))) : groups;
@@ -674,7 +685,7 @@ const SettingsHub = () => {
       </MainHeader>
       <div className={classes.body}>
         <div className={classes.layout}>
-          {showList && <nav ref={railRef} className={classes.rail} aria-label="Grupos de configurações">
+          {showList && <nav ref={railRef} className={`${classes.rail} ${classes.scrollArea}`} aria-label="Grupos de configurações">
             {found.map((g, i) => {
               const Icon = g.icon;
               const sectionStart = i === 0 || found[i - 1].section !== g.section;
@@ -692,7 +703,7 @@ const SettingsHub = () => {
             })}
             {found.length === 0 && <div className={classes.hint} style={{ padding: 8 }}>Nada encontrado com “{q}”.</div>}
           </nav>}
-          {showPanel && <div className={classes.panel}>
+          {showPanel && <div ref={panelRef} className={classes.scrollArea}><div className={classes.panel}>
             <Button className={classes.back} size="small" onClick={() => setListOnPhone(true)} style={{ justifySelf: "start", textTransform: "none" }}>← Todas as configurações</Button>
             <div className={classes.head}>
               <div className={classes.h}>{current.label}</div>
@@ -702,12 +713,12 @@ const SettingsHub = () => {
               <SectionBoundary name={current.id} resetKey={current.id}>
                 {current.id === "prontidao" && <Readiness />}
                 {current.id === "copiloto" && <CopilotSettings />}
-                {current.id === "operacao" && <Operations />}
+                {current.id === "entregas" && <Operations part="entregas" />}
                 {current.id === "meta" && <Costs />}
-                {current.id === "modelos" && <MetaTemplates values={values} save={save} />}
+                {current.id === "modelos" && <><Operations part="modelos" /><MetaTemplates values={values} save={save} /></>}
 
                 {current.id === "geral" && <Geral values={values} save={save} admin={admin} />}
-                {current.id === "atendimento" && <><Horario values={values} save={save} crm={crm} /><Atendimento values={values} save={save} crm={crm} /></>}
+                {current.id === "atendimento" && <><Horario values={values} save={save} crm={crm} /><Atendimento values={values} save={save} crm={crm} /><Operations part="atendimento" /></>}
                 {current.id === "tutoria" && <Tutoria values={values} save={save} />}
                 {current.id === "captacao" && (
                   <>
@@ -722,7 +733,7 @@ const SettingsHub = () => {
                 {current.id === "erros" && admin && <ErrosDeTela />}
               </SectionBoundary>
             )}
-          </div>}
+          </div></div>}
         </div>
       </div>
     </MainContainer>

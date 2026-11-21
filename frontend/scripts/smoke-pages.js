@@ -44,7 +44,7 @@ const ROUTES = [
   "/users", "/polos", "/Queues", "/tags", "/configuracoes", "/crm/retencao",
   "/grades", "/analise-curricular", "/analise-curricular/1", "/analise-academica", "/analise-academica/1", "/alunos",
 ];
-const SETTINGS_GROUPS = ["prontidao", "modelos", "copiloto", "operacao", "meta", "geral", "horario", "atendimento", "tutoria", "captacao", "pagamentos", "cadastros", "regras", "email", "erros"];
+const SETTINGS_GROUPS = ["prontidao", "modelos", "copiloto", "entregas", "meta", "geral", "atendimento", "tutoria", "captacao", "pagamentos", "cadastros", "regras", "email", "erros"];
 
 // what the sweep itself created, erased at the end (the screens may still create a few things while forms are typed in)
 const created = [];

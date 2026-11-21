@@ -227,3 +227,18 @@ export const tutoria = async (req: Request, res: Response): Promise<Response> =>
   }
   return res.json({ period: period(req), scope: manager ? "all" : "mine", ...insights, panel });
 };
+
+// ---------------------------------------------------------------- insights and who is online (Painel do CRM and Estatísticas)
+// short sentences from real data, each with where to act: the management reads its team, a consultant reads their own leads
+export const insights = async (req: Request, res: Response): Promise<Response> => {
+  const { insightsFor } = await import("../services/AnalyticsServices/Insights");
+  const key = `analytics-insights:${req.user.id}`;
+  return res.json({ items: await remember(key, Number(process.env.DASHBOARD_CACHE_MS ?? 10000), () => insightsFor(req.user)) });
+};
+
+// who is using the system now (a request in the last 5 minutes) and the last access of each person; management only
+export const online = async (req: Request, res: Response): Promise<Response> => {
+  if (!isManagerRole(roleOf(req.user))) throw new AppError("ERR_NO_PERMISSION", 403);
+  const { teamOnline } = await import("../services/AnalyticsServices/Insights");
+  return res.json({ users: await teamOnline(req.user) });
+};

@@ -594,6 +594,23 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
       assert(t.status === 200 && t.data.scope === "all" && typeof t.data.totals.students === "number" && Array.isArray(t.data.onboardingStalled) && t.data.panel, `tutoria ${t.status} ${JSON.stringify(t.data).slice(0, 300)}`);
       assert((await A(joao, "/analytics/tutoria")).status === 403, "a consultant read the tutoring");
     });
+    await test("insights: the management reads the team (the stopped lead of Gabrielli included), a consultant only their own; who is online is for the management", async () => {
+      const team = await A(admin, "/analytics/insights");
+      assert(team.status === 200 && Array.isArray(team.data.items), `insights ${team.status} ${JSON.stringify(team.data).slice(0, 300)}`);
+      assert(team.data.items.every(i => i.title && i.detail && i.link && ["danger", "warn", "good", "info"].includes(i.tone)), `shape ${JSON.stringify(team.data.items).slice(0, 300)}`);
+      assert(team.data.items.some(i => i.key === "stale"), `the stopped lead did not become an insight ${JSON.stringify(team.data.items.map(i => i.key))}`);
+      const mine = await A(joao, "/analytics/insights");
+      assert(mine.status === 200 && Array.isArray(mine.data.items) && !mine.data.items.some(i => i.key === "away_with_leads" || i.key === "unassigned"), `consultant ${JSON.stringify(mine.data).slice(0, 300)}`);
+      const on = await A(admin, "/analytics/online");
+      const me = on.data.users && on.data.users.find(u => u.id === ids.admin);
+      assert(on.status === 200 && me && me.online === true && me.lastSeenAt, `online ${on.status} ${JSON.stringify(on.data).slice(0, 300)}`);
+      assert((await A(joao, "/analytics/online")).status === 403, "a consultant read who is online");
+    });
+    await test("a second record with a name that exists is a clear refusal (409), never a server error", async () => {
+      const once = await http.post("/tags", { name: "Etiqueta repetida", color: "#0693E3" }, { headers: { Authorization: `Bearer ${admin}` } });
+      const twice = await http.post("/tags", { name: "Etiqueta repetida", color: "#0693E3" }, { headers: { Authorization: `Bearer ${admin}` } });
+      assert([200, 201].includes(once.status) && twice.status === 409 && twice.data.error === "ERR_DUPLICATED", `tags ${once.status} ${twice.status} ${JSON.stringify(twice.data)}`);
+    });
   } catch (err) {
     results.push([false, `setup -> ${err.stack || err.message}`]);
     console.log(`  ✗ setup\n      ${err.stack || err.message}`);

@@ -103,9 +103,10 @@ const useStyles = makeStyles((theme) => ({
     borderRight: 0,
   },
   // opened by the mouse over the collapsed menu: it floats over the page (the conversation does not move) and closes when the mouse leaves
+  // it opens under the top bar: the logo and the menu button stay in sight (over the bar the top of the menu was an empty block)
   drawerPeek: {
     position: "absolute",
-    top: 0,
+    top: theme.sizing.appBar,
     left: 0,
     bottom: 0,
     zIndex: theme.zIndex.drawer + 2,
@@ -193,7 +194,8 @@ const LoggedInLayout = ({ children }) => {
   useEffect(() => {
     const el = alertsRef.current;
     if (!el) return undefined;
-    const measure = () => setAlertsH(Math.round(el.getBoundingClientRect().height));
+    // the layout height (offsetHeight): a notice still animating in (a transform) would measure smaller and leave the page a few pixels too tall, with a second scrollbar
+    const measure = () => setAlertsH(el.offsetHeight);
     measure();
     if (typeof ResizeObserver === "undefined") return undefined;
     const ro = new ResizeObserver(measure);
@@ -238,7 +240,7 @@ const LoggedInLayout = ({ children }) => {
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
       >
-        <div className={classes.appBarSpacer} />
+        {!(peek && !drawerOpen) && <div className={classes.appBarSpacer} />}
         <div className={classes.sidebarCard}>
           <List className={classes.navList}>
             <MainListItems drawerClose={drawerClose} collapsed={!shown} />

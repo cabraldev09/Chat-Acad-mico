@@ -49,7 +49,7 @@
 - A Meta cobra por conversa ou mensagem, de acordo com a categoria: serviço, marketing ou utilidade.
 - As respostas do consultor a uma mensagem do cliente (serviço) dentro da janela costumam ser gratuitas ou baratas.
 - Disparos de marketing custam mais.
-- As estimativas e os limites diários do sistema ficam em Configurações → Operação e custos.
+- As estimativas e os limites diários do sistema ficam em Configurações → Custos (aba Limites de gasto).
 
 ## Fora do escopo por enquanto
 - **Coexistência:** o consultor usar o app WhatsApp Business no mesmo número oficial. Só faz sentido se cada consultor tiver um número oficial próprio.

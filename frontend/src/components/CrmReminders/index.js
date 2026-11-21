@@ -52,7 +52,7 @@ const CrmReminders = () => {
     });
     socket.on("budgetAlert", (a) => {
       if (user.profile !== "admin" && user.role !== "admin") return;
-      toast.warn(a.text, { toastId: `budget:${a.key}:${a.level}`, autoClose: false, onClick: () => history.push("/configuracoes?secao=operacao") });
+      toast.warn(a.text, { toastId: `budget:${a.key}:${a.level}`, autoClose: false, onClick: () => history.push("/configuracoes?secao=meta") });
     });
     // a new lead nobody answered in time: the owner and the managers are warned
     socket.on("leadAlert", (a) => {

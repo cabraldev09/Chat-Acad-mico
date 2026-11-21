@@ -490,7 +490,7 @@ const messages = {
         ERR_OUTSIDE_BUSINESS_HOURS: "O envio automático está fora do horário de atendimento da conexão.",
         ERR_OUTBOUND_BUDGET: "O limite diário de envios ou do orçamento estimado foi atingido.",
         ERR_OUTBOUND_RATE_REQUIRED: "Cadastre a estimativa do preço da mensagem antes de usar um orçamento em dólares.",
-        ERR_TEMPLATES_NOT_AUTHORIZED: "O administrador precisa autorizar templates em Configurações → Operação.",
+        ERR_TEMPLATES_NOT_AUTHORIZED: "O administrador precisa autorizar o envio com modelos em Configurações → Modelos da Meta.",
         ERR_TEMPLATE_INVALID: "Confira nome, idioma e parâmetros do template aprovado.",
         ERR_DELIVERY_KEY_CONFLICT: "Este identificador de envio já pertence a outro destinatário.",
         ERR_DELIVERY_UNCERTAIN: "Este envio já foi iniciado. Confira a entrega antes de criar um novo envio.",

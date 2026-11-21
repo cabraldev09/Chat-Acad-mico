@@ -1,8 +1,7 @@
 import React, { useContext, useEffect, useMemo, useState } from "react";
 import { useHistory } from "react-router-dom";
 import { toast } from "react-toastify";
-import { TimeChart } from "../../components/charts";
-import { AlertTriangle, Wifi, WifiOff, BarChart3, CalendarClock, Check, ChevronDown, ChevronUp, Download, HeartPulse, ListTodo, Megaphone, MapPin, MonitorCheck, Plus, Search, Gauge, Settings2, Target, Users, X } from "lucide-react";
+import { AlertTriangle, Wifi, WifiOff, BarChart3, CalendarClock, Check, ChevronDown, ChevronUp, Download, HeartPulse, ListTodo, Megaphone, MapPin, MonitorCheck, Plus, Search, Settings2, Target, Users, X } from "lucide-react";
 
 import Tooltip from "@material-ui/core/Tooltip";
 import Drawer from "@material-ui/core/Drawer";
@@ -22,7 +21,7 @@ import { ManagementFeedback } from "../Reports/Management";
 const DAYS = [["1", "Seg"], ["2", "Ter"], ["3", "Qua"], ["4", "Qui"], ["5", "Sex"], ["6", "Sáb"], ["0", "Dom"]];
 const LEVEL = { high: "#dc2626", medium: "#d97706", low: "#0693E3" };
 const TAB_HELP = {
-  geral: "Resumo da equipe no período escolhido: totais, quem está trabalhando agora e o que precisa da sua atenção.",
+  geral: "Quem está trabalhando agora e o que precisa da sua atenção. Os totais do período estão em Visão geral e Captação.",
   consultores: "Uma lista só: WhatsApp, polos e números de cada consultor. Vincule a polos aqui mesmo e clique no nome para ver a evolução, as metas e as tarefas.",
   polos: "Os números somados por polo e quem está em cada equipe. Para vincular alguém, use a aba Consultores.",
   config: "Defina horários de trabalho, metas diárias e a regra de inatividade. Vale para esta tela e para a de cada consultor.",
@@ -334,6 +333,8 @@ const Alerts = ({ alerts, onOpen, history }) => {
 const PoloCell = ({ b, polos, onChanged }) => {
   const [anchor, setAnchor] = useState(null);
   const [busy, setBusy] = useState(null);
+  const [saved, setSaved] = useState(null);
+  const changed = React.useRef(false);
   // the screen answers at once (the check appears right away); the server confirms in the background and the choice goes back if it refuses
   const [ids, setIds] = useState(b.user.poloIds || []);
   useEffect(() => setIds(b.user.poloIds || []), [b.user.poloIds]);
@@ -345,7 +346,9 @@ const PoloCell = ({ b, polos, onChanged }) => {
     try {
       if (had) await api.delete(`/polos/${polo.id}/members/${b.user.id}`);
       else await api.post(`/polos/${polo.id}/members/${b.user.id}`, { role: "comercial" });
-      onChanged();
+      // the table reloads when the menu closes: reloading now would rebuild the row under the open menu and throw it to a corner
+      changed.current = true;
+      setSaved(polo.id);
     } catch (err) {
       setIds((cur) => (had ? [...cur, polo.id] : cur.filter((x) => x !== polo.id)));
       toastError(err);
@@ -359,12 +362,12 @@ const PoloCell = ({ b, polos, onChanged }) => {
       <button type="button" aria-label={`Vincular ${b.user.name} a polos`} onClick={(e) => setAnchor(e.currentTarget)} style={{ display: "inline-flex", alignItems: "center", gap: 3, border: "1px dashed rgba(127,140,160,.6)", background: "transparent", color: "inherit", borderRadius: 999, padding: "2px 9px", fontFamily: "inherit", fontSize: 12, fontWeight: 600, cursor: "pointer", opacity: chips.length ? 0.7 : 1 }}>
         {chips.length ? <Plus size={12} /> : <><MapPin size={12} /> Vincular</>}
       </button>
-      <Popover open={!!anchor} anchorEl={anchor} onClose={() => setAnchor(null)} anchorOrigin={{ vertical: "bottom", horizontal: "left" }} transformOrigin={{ vertical: "top", horizontal: "left" }}>
+      <Popover open={!!anchor} anchorEl={anchor} onClose={() => { setAnchor(null); setSaved(null); if (changed.current) { changed.current = false; onChanged(); } }} anchorOrigin={{ vertical: "bottom", horizontal: "left" }} transformOrigin={{ vertical: "top", horizontal: "left" }}>
         <div style={{ padding: 8, minWidth: 240, maxHeight: 340, overflowY: "auto" }}>
-          <div style={{ padding: "6px 10px", fontSize: 12, opacity: 0.7 }}>Polos de {b.user.name}</div>
+          <div style={{ padding: "6px 10px", fontSize: 12, opacity: 0.7, display: "flex", justifyContent: "space-between", gap: 8 }}><span>Polos de {b.user.name}</span>{busy ? <span>Salvando...</span> : saved ? <span style={{ color: "#15803d", opacity: 1, fontWeight: 600 }}>Salvo</span> : null}</div>
           {polos.length === 0 && <div style={{ padding: "8px 10px", fontSize: 13 }}>Nenhum polo cadastrado ainda.</div>}
           {polos.map((p) => (
-            <button key={p.id} type="button" disabled={busy === p.id} onClick={() => toggle(p)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, border: 0, background: "transparent", color: "inherit", padding: "8px 10px", borderRadius: 8, fontFamily: "inherit", fontSize: 14, textAlign: "left", cursor: "pointer" }}>
+            <button key={p.id} type="button" className="polo-option" aria-pressed={mine.has(p.id)} disabled={busy === p.id} onClick={() => toggle(p)} style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, border: 0, opacity: busy === p.id ? 0.6 : 1, color: "inherit", padding: "8px 10px", borderRadius: 8, fontFamily: "inherit", fontSize: 14, textAlign: "left", cursor: "pointer" }}>
               <span style={{ width: 18, height: 18, borderRadius: 5, display: "grid", placeItems: "center", border: `2px solid ${mine.has(p.id) ? BRAND.cerulean : "rgba(127,140,160,.7)"}`, background: mine.has(p.id) ? BRAND.cerulean : "transparent", color: "#fff", flex: "none" }}>{mine.has(p.id) && <Check size={12} strokeWidth={3} />}</span>
               <span style={{ flex: 1, minWidth: 0 }}>{p.name}{p.city ? <span style={{ opacity: 0.6 }}> · {p.city}{p.state ? `/${p.state}` : ""}</span> : null}</span>
             </button>
@@ -459,23 +462,6 @@ const ConsultantsTable = ({ ranked, totals, polos, defs, selected, onSelect, onC
   );
 };
 
-// the team in one picture: bars of conversations per person, a line of people contacted, and what changed (like a trading board)
-const TeamPulse = ({ consultants }) => {
-  const c = useKit();
-  const rows = [...consultants].sort((a, b) => b.metrics.attendances - a.metrics.attendances).slice(0, 10).map((b) => ({ name: b.user.name.split(" ")[0], conversas: b.metrics.attendances, pessoas: b.metrics.peopleContacted, matriculas: b.metrics.enrollments }));
-  const any = rows.some((r) => r.conversas || r.pessoas || r.matriculas);
-  return (
-    <div className={`${c.panel} dash-card`}>
-      <BlockTitle icon={<Gauge size={16} />} title="Produção da equipe" help="Conversas atendidas (barras; cada conversa conta uma vez), pessoas contatadas (linha) e matrículas (pontos) de cada consultor no período." />
-      {!any ? <div className={c.sub} style={{ padding: "26px 0" }}>Ainda sem produção neste período. Quando alguém atender uma conversa, o gráfico acende aqui.</div> : (
-        <div style={{ marginTop: 12 }}>
-          <TimeChart data={rows} xKey="name" interval={0} height={280} label="Produção da equipe por consultor" title={(p) => p.name}
-            series={[{ key: "conversas", name: "Conversas", color: "leads", kind: "bar" }, { key: "pessoas", name: "Pessoas contatadas", color: "violet", kind: "line" }, { key: "matriculas", name: "Matrículas", color: "won", kind: "line" }]} />
-        </div>
-      )}
-    </div>
-  );
-};
 
 // ring that fills (the conversion of a polo)
 const Ring = ({ value }) => {
@@ -587,20 +573,20 @@ const CommercialCenter = () => {
   return (
     <div className={`${c.page} dash-scope`}>
       <StatsHubBar />
-      <div style={{ background: "linear-gradient(135deg, #0a3a6d 0%, #0b4279 55%, #0d5aa0 100%)", color: "#fff", borderRadius: "clamp(14px, 3vw, 24px)", padding: "clamp(14px, 3vw, 22px) clamp(14px, 3vw, 26px) 0", marginBottom: 18, boxShadow: "0 30px 60px -34px rgba(8,40,82,.9), inset 0 1px 0 rgba(255,255,255,.14)", position: "relative", overflow: "hidden" }}>
+      <div style={{ background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "var(--radius-card, 14px)", padding: "clamp(14px, 3vw, 20px) clamp(14px, 3vw, 22px) 0", marginBottom: 18, boxShadow: "var(--shadow-card)", position: "relative", overflow: "hidden" }}>
         <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
           <div>
-            <h1 className={c.h1} style={{ color: "#fff" }}>Gestão Comercial</h1>
-            <div style={{ fontSize: 13.5, opacity: 0.8, marginTop: 4 }}>{TAB_HELP[tab]}</div>
+            <h1 className={c.h1}>Equipe agora</h1>
+            <div className={c.lead}>{TAB_HELP[tab]}</div>
           </div>
           <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
             <PeriodPicker value={period} onChange={setPeriod} />
-            <button type="button" onClick={exportCsv} style={{ border: "1px solid rgba(255,255,255,.4)", background: "transparent", color: "#fff", borderRadius: 10, padding: "7px 14px", fontFamily: "inherit", fontSize: 13, fontWeight: 600, cursor: "pointer" }}><Download size={14} style={{ verticalAlign: -2 }} /> Exportar</button>
+            <button type="button" onClick={exportCsv} className={c.btn}><Download size={14} style={{ verticalAlign: -2 }} /> Exportar</button>
           </div>
         </div>
         <div role="tablist" style={{ display: "flex", gap: 4, marginTop: 14, overflowX: "auto" }}>
-          {[["geral", "Visão geral"], ["consultores", "Consultores"], ["processo", "Atendimento e processo"], ["polos", "Polos"], ["config", "Configuração"]].map(([k, label]) => (
-            <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setTab(k)} style={{ border: 0, background: "transparent", color: "#fff", opacity: tab === k ? 1 : 0.7, fontFamily: "inherit", fontSize: 14, fontWeight: 600, padding: "10px 16px", cursor: "pointer", borderBottom: `3px solid ${tab === k ? BRAND.gorse : "transparent"}`, whiteSpace: "nowrap" }}>{label}</button>
+          {[["geral", "Agora"], ["consultores", "Consultores"], ["processo", "Atendimento e processo"], ["polos", "Polos"], ["config", "Configuração"]].map(([k, label]) => (
+            <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setTab(k)} style={{ border: 0, background: "transparent", color: tab === k ? "var(--text-1)" : "var(--text-2)", fontFamily: "inherit", fontSize: 14, fontWeight: 600, padding: "10px 14px", cursor: "pointer", borderBottom: `2px solid ${tab === k ? "var(--c-brand, #0B4279)" : "transparent"}`, whiteSpace: "nowrap" }}>{label}</button>
           ))}
         </div>
       </div>
@@ -618,10 +604,6 @@ const CommercialCenter = () => {
               <button type="button" className={c.btnPrimary} onClick={() => history.push("/crm/tarefas?scope=all&status=open&userId=0")}>Distribuir</button>
             </div>
           )}
-          <div className={`${c.grid4} dash-stagger`}>
-            {["attendances", "peopleContacted", "leadsWorked", "firstContactMinutes", "pendingReply", "enrollments", "conversion", "tasksOverdue"].map((k) => <Kpi key={k} k={k} value={data.totals[k]} def={defs[k]} tone={k === "tasksOverdue" && data.totals[k] > 0 ? "#dc2626" : undefined} />)}
-          </div>
-          <TeamPulse consultants={data.consultants} />
           <div className={c.cols}>
             <Team consultants={data.consultants} onOpen={(id) => { setSelected(id); setTab("consultores"); }} />
             <Alerts alerts={data.alerts} onOpen={(id) => { setSelected(id); setTab("consultores"); }} history={history} />
