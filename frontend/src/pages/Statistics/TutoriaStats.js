@@ -4,6 +4,7 @@ import { BarChart3, Clock, AlertTriangle, UserX, CheckCheck } from "lucide-react
 
 import MainContainer from "../../components/MainContainer";
 import StatsHubBar from "../../components/StatsHub";
+import { Tutoring } from "./index";
 import TutorPanel from "../Tutoria/TutorPanel";
 import { BarsChart } from "../../components/charts";
 import api from "../../services/api";
@@ -51,6 +52,8 @@ export default function TutoriaStats() {
         <div className="ui-tabs" role="tablist" aria-label="Período" style={{ marginLeft: 0, marginBottom: 14, flexWrap: "wrap" }}>
           {PERIODS.map(([k, l]) => <button key={k} type="button" role="tab" aria-selected={period === k} className={`ui-tabs__btn${period === k ? " is-on" : ""}`} onClick={() => setPeriod(k)}>{l}</button>)}
         </div>
+        {/* what needs care now: students without contact, risk of dropping out, re-enrollments and where the onboarding stops */}
+        <div style={{ marginBottom: 16 }}><Tutoring params={{ range: period === "semana" ? "week" : "month" }} /></div>
         {stats === null && <div style={{ color: "var(--text-2)", fontSize: 13, marginBottom: 16 }}>Carregando…</div>}
         {stats && (
           <>
