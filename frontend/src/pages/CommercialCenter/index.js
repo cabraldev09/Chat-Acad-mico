@@ -17,6 +17,7 @@ import NumberTicker from "../../components/NumberTicker";
 import ProcessTab from "./ProcessTab";
 import StatsHubBar from "../../components/StatsHub";
 import { BRAND, BlockTitle, CompareBars, HistoryChart, Kpi, PeriodPicker, PresenceDot, PRESENCE, Progress, fmt, num, periodParams, useAnalytics, useDefinitions, useKit } from "../../components/analytics/kit";
+import { ManagementFeedback } from "../Reports/Management";
 
 const DAYS = [["1", "Seg"], ["2", "Ter"], ["3", "Qua"], ["4", "Qui"], ["5", "Sex"], ["6", "Sáb"], ["0", "Dom"]];
 const LEVEL = { high: "#dc2626", medium: "#d97706", low: "#0693E3" };
@@ -29,6 +30,24 @@ const TAB_HELP = {
 // where a click on an alert takes the manager (the task screen opens already filtered on that person)
 // only the overdue tasks have a screen filtered on the person; every other alert opens that person's detail here (the generic links were MY inbox / MY panel)
 const alertLink = (a) => `/crm/tarefas?scope=all&status=overdue&userId=${a.userId}`;
+const dateInPoloTime = (date) => date.toLocaleDateString("en-CA", { timeZone: "America/Porto_Velho" });
+
+const supervisorPeriod = (period) => {
+  const today = dateInPoloTime(new Date());
+  const date = period.range === "custom" ? period.to : today;
+  if (period.range === "today") return { date: today, days: 1 };
+  if (period.range === "week") return { date: today, days: 7 };
+  if (period.range === "month") return { date: today, days: Number(today.slice(-2)) };
+  if (period.range === "custom" && period.from && period.to) {
+    const from = Date.parse(`${period.from}T00:00:00Z`);
+    const to = Date.parse(`${period.to}T00:00:00Z`);
+    const days = Math.floor((to - from) / 86400000) + 1;
+    if (days >= 1 && days <= 31) return { date, days };
+    return { date, days: 1, unavailableMessage: "Para gerar o feedback, selecione um período de até 31 dias e confira as datas." };
+  }
+  if (period.range === "custom") return { date: today, days: 1, unavailableMessage: "Informe as datas inicial e final para gerar o feedback." };
+  return { date: today, days: 1 };
+};
 
 const COLS = [["messagesSent", "Mensagens"], ["attendances", "Atend."], ["leadsWorked", "Leads"], ["reactivated", "Reativ."], ["firstContactMinutes", "1º contato"], ["pendingReply", "Pendentes"], ["enrollments", "Matrículas"], ["conversion", "Conv."], ["tasksOverdue", "Atrasadas"]];
 
@@ -471,7 +490,7 @@ const Ring = ({ value }) => {
   );
 };
 
-const PoloBoard = ({ data, polos, history, setTab }) => {
+const PoloBoard = ({ data, polos, history, setTab, feedbackPeriod }) => {
   const c = useKit();
   const byId = new Map(data.polos.map((p) => [p.poloId, p]));
   // every polo of the system appears, with or without team
@@ -483,6 +502,7 @@ const PoloBoard = ({ data, polos, history, setTab }) => {
   const sum = (k) => withTeam.reduce((s, p) => s + Number(p.totals[k] || 0), 0);
   return (
     <div style={{ display: "grid", gap: 16 }}>
+      <ManagementFeedback {...feedbackPeriod} />
       <div className={`${c.grid4} dash-stagger`}>
         {[["Polos com equipe", withTeam.length, "#22d3ee"], ["Consultores vinculados", withTeam.reduce((s, p) => s + p.consultants, 0), "#818cf8"], ["Mensagens no período", sum("messagesSent"), "#0693e3"], ["Matrículas no período", sum("enrollments"), "#4ade80"]].map(([label, value, tone]) => (
           <div key={label} className={`${c.kpi} dash-card`} style={{ "--tone": tone }}>
@@ -544,6 +564,7 @@ const CommercialCenter = () => {
   const [selected, setSelected] = useState(null);
   const [config, setConfig] = useState(null);
   const params = useMemo(() => periodParams(period), [period]);
+  const feedbackPeriod = useMemo(() => supervisorPeriod(period), [period]);
   const ready = period.range !== "custom" || (period.from && period.to);
   const { data, loading, reload } = useAnalytics("/analytics/team", params, !!ready);
   useEffect(() => { if (data) setConfig(data.config); }, [data]);
@@ -614,7 +635,7 @@ const CommercialCenter = () => {
       {selected && <Detail userId={selected} period={params} defs={defs} onClose={() => setSelected(null)} />}
 
       {tab === "processo" && ready && <ProcessTab params={params} />}
-      {data && tab === "polos" && <PoloBoard data={data} polos={polos} history={history} setTab={setTab} />}
+      {data && tab === "polos" && <PoloBoard data={data} polos={polos} history={history} setTab={setTab} feedbackPeriod={feedbackPeriod} />}
 
       {data && tab === "config" && config && <ConfigPanel config={config} consultants={data.consultants} onSaved={setConfig} />}
     </div>

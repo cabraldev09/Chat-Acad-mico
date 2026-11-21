@@ -316,7 +316,7 @@ const ReportsClassic = () => {
 
       {!lean && tab === "geral" && !manager && <div style={{ marginBottom: 20 }}><MyDay data={myDay} /></div>}
 
-      {!lean && tab === "equipe" && manager && <Management data={mgmt} sla={mgmt ? mgmt.slaMinutes : 15} />}
+      {!lean && tab === "equipe" && manager && <Management data={mgmt} sla={mgmt ? mgmt.slaMinutes : 15} date={date || undefined} days={days} />}
 
       {!lean && tab === "canais" && manager && (
         <div className={classes.stack}>

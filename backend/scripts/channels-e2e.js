@@ -2861,6 +2861,8 @@ const postMeta = (id, payload, secret, badSig) => {
       m(1, false, 200); m(2, true, 190); m(3, false, 170); m(4, true, 110); m(5, false, 90); m(6, true, 85);
 
       const mgmt = (await http.get("/dashboard/management", { params: { days: 7 }, ...auth() })).data;
+      const monthToDate = (await http.get("/dashboard/management", { params: { days: 31 }, ...auth() })).data;
+      assert(monthToDate.rangeDays === 31, `month-to-date period was not accepted: ${monthToDate.rangeDays}`);
       const me = mgmt.attendants.find(a => a.id === att.id);
       assert(me && me.reply.count === 3 && me.reply.median === 10 && me.reply.p90 === 50 && me.reply.withinSlaPct === 67, `reply stats ${JSON.stringify(me && me.reply)}`);
       assert(me.reply.avg === 25, `the average hides the problem: ${me.reply.avg}`);
