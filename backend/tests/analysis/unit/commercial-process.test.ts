@@ -221,3 +221,17 @@ describe("respostas prontas nas palavras da equipe", () => {
     expect(t.outro).toBeUndefined();
   });
 });
+
+import { entryAnswer as entryAnswerOf } from "../../../src/services/CommercialServices/Rules";
+
+describe("the answer to 'is this your first degree?'", () => {
+  const q = "Essa seria a sua primeira graduação ou você já tem alguma faculdade concluída?";
+  it("someone studying now and graduating soon will make a second degree", () => {
+    expect(entryAnswerOf("Tô cursando t.i e me formo ano que vem", q)).toBe("second_degree");
+    expect(entryAnswerOf("to cursando ADS e termino esse semestre", q)).toBe("second_degree");
+  });
+  it("someone studying without finishing is a transfer; a plain yes is the first degree", () => {
+    expect(entryAnswerOf("estou cursando pedagogia em outra faculdade", q)).toBe("transfer");
+    expect(entryAnswerOf("sim, primeira", q)).toBe("first_degree");
+  });
+});

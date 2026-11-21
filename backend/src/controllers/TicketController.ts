@@ -308,15 +308,19 @@ export const readAll = async (req: Request, res: Response): Promise<Response> =>
 const typingSent = new Map<number, number>();
 export const typing = async (req: Request, res: Response): Promise<Response> => {
   const ticket = await ShowTicketService(req.params.ticketId);
+  // "recording": the agent is recording an audio (WhatsApp by QR Code shows "gravando áudio…"; the official API has only "digitando…")
+  const recording = req.body?.kind === "recording";
   const last = typingSent.get(ticket.id) || 0;
-  if (ticket.isGroup || ticket.status === "closed" || Date.now() - last < 3500) return res.json({ sent: false });
+  if (ticket.isGroup || ticket.status === "closed" || (!recording && Date.now() - last < 3500)) return res.json({ sent: false });
   typingSent.set(ticket.id, Date.now());
   if (typingSent.size > 5000) typingSent.clear();
 
   const channel = ticket.whatsapp?.channel || "whatsapp";
   try {
     if (channel === "whatsapp") {
-      await whatsappProvider.sendTyping?.(ticket.whatsappId, chatIdOf(ticket.contact, false));
+      const chatId = chatIdOf(ticket.contact, false);
+      if (recording && whatsappProvider.sendRecording) await whatsappProvider.sendRecording(ticket.whatsappId, chatId);
+      else await whatsappProvider.sendTyping?.(ticket.whatsappId, chatId);
     } else {
       const whatsapp = await ShowWhatsAppService(ticket.whatsappId);
       await getAdapter(channel).sendTyping?.(whatsapp, ticket.contact as any);

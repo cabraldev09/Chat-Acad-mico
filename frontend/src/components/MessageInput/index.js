@@ -94,7 +94,7 @@ const useStyles = makeStyles((theme) => {
       borderRadius: 22,
       backgroundColor: c.inputBg,
     },
-    input: { flex: 1, fontSize: 15.5, color: c.text, padding: "9px 0", "& textarea": { lineHeight: "21px" } },
+    input: { flex: 1, fontSize: 16, color: c.text, padding: "9px 0", "& textarea": { lineHeight: "21px" } },
     send: {
       width: 42,
       height: 42,
@@ -385,6 +385,10 @@ const MessageInput = ({ ticketStatus, aiActive, historical, isGroup, contactName
       r.rec.stop();
     });
 
+  const recordingPing = useRef(null);
+  useEffect(() => () => clearInterval(recordingPing.current), []);
+  useEffect(() => { if (!recording) clearInterval(recordingPing.current); }, [recording]);
+
   const startRecording = async () => {
     setLoading(true);
     try {
@@ -403,6 +407,11 @@ const MessageInput = ({ ticketStatus, aiActive, historical, isGroup, contactName
       rec.start(250);
       recorderRef.current = { rec, stream, chunks, type: rec.mimeType || mimeType || "audio/webm", startedAt: Date.now() };
       setRecording(true);
+      // "gravando áudio…" for the contact (WhatsApp by QR Code), repeated while the recording lasts
+      const tell = () => api.post(`/tickets/${ticketId}/typing`, { kind: "recording" }).catch(() => {});
+      tell();
+      clearInterval(recordingPing.current);
+      recordingPing.current = setInterval(tell, 15000);
     } catch (err) {
       toast.error(MIC_ERRORS[err && err.name] || "Não foi possível gravar o áudio.");
     }

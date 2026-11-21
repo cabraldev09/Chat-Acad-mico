@@ -229,6 +229,12 @@ export const whatsappCloud: ChannelAdapter = {
     // webhook driven
   },
 
+  // "digitando…" on the person's WhatsApp while the consultant types (the official API only has the text indicator)
+  async sendTyping(whatsapp, contact: Contact) {
+    const { cloudTypingFor } = await import("../helpers/ReplyPace");
+    await cloudTypingFor(whatsapp, { contactId: contact.id });
+  },
+
   async sendText(whatsapp, contact: Contact, body) {
     const data = await cloudSend(whatsapp, contact, { type: "text", text: { body, preview_url: false } });
     return { id: data.messages[0].id };
@@ -473,7 +479,8 @@ const processCloud = async (received: Whatsapp, entry: any) => {
         contactName: profileName || m.from,
         messageId: m.id,
         body,
-        media
+        media,
+        sentAt: m.timestamp ? new Date(Number(m.timestamp) * 1000) : undefined
       });
     }
   }

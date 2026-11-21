@@ -51,6 +51,7 @@ import emitTicketUpdate from "../TicketServices/EmitTicketUpdate";
 import { syncHandoffTasks } from "../CrmServices/HandoffTasks";
 import { noteAutomation } from "../AutomationServices/AutomationTrace";
 import { paceBeforeSend } from "../../helpers/ReplyPace";
+import { polishReply, repeatsHandoff, withoutRepeats } from "../../helpers/ReplyPolish";
 
 // invisible mark: bot messages are told apart from the team's
 const MARK = "‎";
@@ -254,12 +255,18 @@ export const ticketEffects = (ticket: Ticket, flowName: string, flowCtx: FlowCon
 
     // what the AI wrote goes out as short bubbles, one after the other (the sender shows "digitando…" and waits like a person)
     async sayBlocks(text) {
+      if (flowCtx.agentId) text = await withoutRepeats(ticket.id, polishReply(text));
       for (const block of splitIntoBlocks(text)) await this.say(block);
     },
 
     async say(text, choices) {
       // a person took the conversation while the flow was thinking: nothing from the robot goes out after that
       if (await humanHasTicket(ticket.id)) return;
+      // what the AI wrote is polished (price as scholarship, no robotic confirmations) and a repeated "a consultant will continue" is dropped
+      if (flowCtx.agentId) {
+        text = await withoutRepeats(ticket.id, polishReply(text));
+        if (!text || (await repeatsHandoff(ticket.id, text))) return;
+      }
       // the AI types like a person (the first answer of the conversation goes at once); menus of a plain chatbot flow are not delayed
       if (flowCtx.agentId) await paceBeforeSend(ticket, text);
       if (flowCtx.agentId && (await humanHasTicket(ticket.id))) return;

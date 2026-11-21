@@ -54,8 +54,9 @@ const useStyles = makeStyles((theme) => {
     background: bg,
     color,
     boxShadow: c.shadow,
-    fontSize: 14.2,
-    lineHeight: "19px",
+    // read comfortably on a laptop screen without zoom (the team asked for bigger text)
+    fontSize: 16,
+    lineHeight: "22px",
     wordBreak: "break-word",
     // the conversation shares the screen with the list on tablets: the bubble may use more of what is left
     [theme.breakpoints.down("sm")]: { maxWidth: "80%" },
@@ -165,7 +166,7 @@ const useStyles = makeStyles((theme) => {
     },
     match: { outline: `2px solid ${dark ? "#667781" : "#ffd279"}`, outlineOffset: 1 },
     matchActive: { outline: `3px solid ${c.accent}`, outlineOffset: 1 },
-    sender: { fontSize: 13, fontWeight: 600, color: c.sender, marginBottom: 1 },
+    sender: { fontSize: 14, fontWeight: 600, color: c.sender, marginBottom: 1 },
     chevron: {
       position: "absolute",
       top: 2,
@@ -192,7 +193,7 @@ const useStyles = makeStyles((theme) => {
     quoteOut: { backgroundColor: c.quoteOut },
     quoteBar: { flex: "none", width: 4, backgroundColor: c.quoteBar },
     quoteBarMe: { backgroundColor: c.quoteBarMe },
-    quoteBody: { padding: "5px 9px", minWidth: 0, fontSize: 13, color: c.textSecondary, maxHeight: 64, overflow: "hidden" },
+    quoteBody: { padding: "5px 9px", minWidth: 0, fontSize: 14, color: c.textSecondary, maxHeight: 64, overflow: "hidden" },
     quoteName: { display: "block", fontSize: 12.5, fontWeight: 700, color: c.quoteName, marginBottom: 1 },
     text: { whiteSpace: "pre-wrap", overflowWrap: "anywhere", "& p": { margin: 0 } },
     deleted: { fontStyle: "italic", color: c.textSecondary, display: "flex", alignItems: "center", gap: 6 },
@@ -202,7 +203,7 @@ const useStyles = makeStyles((theme) => {
       alignItems: "center",
       gap: 3,
       margin: "7px 0 -5px 12px",
-      fontSize: 11,
+      fontSize: 12,
       lineHeight: "15px",
       fontVariantNumeric: "tabular-nums",
       color: c.time,
@@ -235,7 +236,7 @@ const useStyles = makeStyles((theme) => {
       minWidth: "min(230px, 100%)",
       "& svg": { fontSize: 32, color: c.textSecondary, flex: "none" },
     },
-    docName: { flex: 1, minWidth: 0, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+    docName: { flex: 1, minWidth: 0, fontSize: 15, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
     reactions: {
       position: "absolute",
       left: 8,
