@@ -357,7 +357,7 @@ const MainListItems = (props) => {
       {/* one hub for the numbers: Comercial (management + attendance and channels) and Tutoria */}
       <ListItemLink
         to="/estatisticas"
-        alsoActive={["/gestao-comercial", "/reports", "/estatisticas/tutoria"]}
+        alsoActive={["/gestao-comercial", "/reports", "/estatisticas/tutoria", "/estatisticas/captacao"]}
         primary={isManager(user) ? "Estatísticas" : "Meus números"}
         icon={<BarChartIcon className="ico" />}
         collapsed={collapsed}

@@ -6,7 +6,7 @@ import Readiness from "./Readiness";
 import React, { useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { Link, useHistory, useLocation } from "react-router-dom";
 import { toast } from "react-toastify";
-import { Button, FormControlLabel, InputAdornment, MenuItem, Paper, Switch, TextField, Typography, makeStyles } from "@material-ui/core";
+import { Button, FormControlLabel, InputAdornment, MenuItem, Paper, Switch, TextField, Typography, makeStyles, useMediaQuery } from "@material-ui/core";
 import {
   ArrowUpRight, BellRing, Bot, Building2, Clock, CreditCard, Eye, EyeOff, FileInput, GraduationCap, KeyRound, ListTree, Plug, Search,
   Settings2, Tags, Users, Workflow, Zap, FileText, ListChecks, Copy, SlidersHorizontal, Bug, Trash2, Mail, Calculator, CircleDollarSign,
@@ -31,39 +31,43 @@ import { BUILD } from "../../utils/versionWatch";
 
 // Configurações: where the rules of the system are set. Each group holds the real controls (saved as soon as they change);
 // "Cadastros" shows the lists that are not in the side menu (people, polos, queues...), never a second way to what the menu already has.
+// grouped in a few sections with short titles; each group lists the words a person would search for (the search finds the setting,
+// not only the name of the group)
 const GROUPS = [
-  { id: "prontidao", label: "Prontidão do sistema", icon: ListChecks, hint: "O que falta para o time usar" },
-  { id: "geral", label: "Geral", icon: Settings2, hint: "Nome, fuso e acesso" },
-  { id: "atendimento", label: "Atendimento e horário", icon: Clock, hint: "Expediente, prazos, distribuição e lembretes" },
-  { id: "tutoria", label: "Tutoria", icon: BellRing, hint: "Boas-vindas, número e prazo do 1º contato" },
-  { id: "copiloto", label: "Copiloto", icon: Workflow, hint: "Processo de vendas e sugestões da IA" },
-  { id: "modelos", label: "Modelos da Meta", icon: FileText, hint: "Por departamento, em Utilidade, e onde cada um é usado" },
-  { id: "meta", label: "Custos", icon: CircleDollarSign, hint: "Meta e IA, e como gastar menos" },
-  { id: "operacao", label: "Operação", icon: SlidersHorizontal, hint: "Capacidade, entregas e limites de gasto" },
-  { id: "captacao", label: "Captação", icon: FileInput, hint: "Formulário público e páginas por curso" },
-  { id: "cadastros", label: "Cadastros", icon: ListTree, hint: "Usuários, polos, filas, etiquetas e funil" },
-  { id: "pagamentos", label: "Pagamentos", icon: CreditCard, hint: "Taxa de matrícula (Efí)", admin: true },
-  { id: "regras", label: "Regras acadêmicas", icon: Calculator, hint: "Vagas extras e semestres nas previsões", admin: true },
-  { id: "email", label: "E-mail", icon: Mail, hint: "Conta de envio e modelos de e-mail", admin: true },
-  { id: "erros", label: "Erros de tela", icon: Bug, hint: "Telas que falharam no navegador de alguém", admin: true },
+  { id: "prontidao", section: "Começar", label: "Prontidão do sistema", icon: ListChecks, hint: "O que falta para o time usar", keywords: "pendências falta configurar checklist" },
+  { id: "cadastros", section: "Equipe", label: "Equipe e cadastros", icon: ListTree, hint: "Usuários, polos, filas, etiquetas e funil", keywords: "usuários pessoas polos filas etiquetas funil etapas cursos propostas api webhooks" },
+  { id: "geral", section: "Atendimento", label: "Geral", icon: Settings2, hint: "Nome, fuso e acesso", keywords: "nome instituição fuso horário acesso login senha versão" },
+  { id: "atendimento", section: "Atendimento", label: "Horário e atendimento", icon: Clock, hint: "Expediente, prazos, distribuição e lembretes", keywords: "horário expediente fora do horário prazo distribuição automática lembrete sla fila espera" },
+  { id: "tutoria", section: "Atendimento", label: "Tutoria", icon: BellRing, hint: "Boas-vindas, número e prazo do 1º contato", keywords: "tutor boas-vindas ambientação número prazo primeiro contato" },
+  { id: "copiloto", section: "Atendimento", label: "Copiloto", icon: Workflow, hint: "Processo de vendas e sugestões da IA", keywords: "processo etapas sugestão ia consultor limite" },
+  { id: "modelos", section: "WhatsApp e custos", label: "Modelos da Meta", icon: FileText, hint: "Modelos por departamento e onde cada um é usado", keywords: "template modelo meta aprovado utilidade marketing abertura" },
+  { id: "meta", section: "WhatsApp e custos", label: "Custos", icon: CircleDollarSign, hint: "Meta e IA, orçamento e como gastar menos", keywords: "custo gasto preço orçamento openai anthropic meta fatura" },
+  { id: "operacao", section: "WhatsApp e custos", label: "Limites e entregas", icon: SlidersHorizontal, hint: "Capacidade, limites de gasto e envio de modelos", keywords: "limite diário tokens envio autorizar modelos capacidade entregas operação" },
+  { id: "captacao", section: "Matrícula", label: "Captação", icon: FileInput, hint: "Formulário público e páginas por curso", keywords: "formulário site página curso lead captação" },
+  { id: "pagamentos", section: "Matrícula", label: "Pagamentos", icon: CreditCard, hint: "Taxa de matrícula (Efí)", admin: true, keywords: "efí pix boleto taxa pagamento" },
+  { id: "regras", section: "Matrícula", label: "Regras acadêmicas", icon: Calculator, hint: "Vagas extras e semestres nas previsões", admin: true, keywords: "vagas semestres previsão análise curricular regras" },
+  { id: "email", section: "Sistema", label: "E-mail", icon: Mail, hint: "Conta de envio e modelos de e-mail", admin: true, keywords: "email e-mail envio smtp resend modelo pendências diário" },
+  { id: "erros", section: "Sistema", label: "Erros de tela", icon: Bug, hint: "Telas que falharam no navegador de alguém", admin: true, keywords: "erro falha tela navegador" },
 ];
+const plainText = (t) => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 
 const useStyles = makeStyles((theme) => ({
-  body: { flex: 1, overflowY: "auto", overflowX: "hidden", ...theme.scrollbarStyles, paddingBottom: theme.spacing(4) },
+  body: { flex: 1, overflowY: "auto", overflowX: "hidden", ...theme.scrollbarStyles, paddingBottom: theme.spacing(4), [theme.breakpoints.down("xs")]: { padding: "0 12px 32px" } },
   layout: { display: "grid", gridTemplateColumns: "250px minmax(0,1fr)", gap: theme.spacing(3), alignItems: "start", [theme.breakpoints.down("sm")]: { gridTemplateColumns: "1fr" } },
   // on the phone the groups become one row that slides sideways (not a tall block of buttons)
-  rail: { position: "sticky", top: 0, display: "flex", flexDirection: "column", gap: 2, [theme.breakpoints.down("sm")]: { position: "static", flexDirection: "row", flexWrap: "nowrap", overflowX: "auto", gap: 6, paddingBottom: 4, scrollbarWidth: "none", "&::-webkit-scrollbar": { display: "none" },
-    // the edges fade out: a sign that the row slides and there are more groups to the side
-    WebkitMaskImage: "linear-gradient(90deg, transparent 0, #000 14px, #000 calc(100% - 28px), transparent 100%)",
-    maskImage: "linear-gradient(90deg, transparent 0, #000 14px, #000 calc(100% - 28px), transparent 100%)" } },
+  // the phone shows the list of groups first and the group in full after a tap (with "Voltar"), like the settings of a phone
+  rail: { position: "sticky", top: 0, display: "flex", flexDirection: "column", gap: 2, [theme.breakpoints.down("sm")]: { position: "static" } },
   railBtn: {
     border: 0, background: "transparent", color: theme.palette.text.secondary, textAlign: "left", cursor: "pointer", fontFamily: "inherit", padding: "9px 12px", borderRadius: 12,
     display: "flex", gap: 11, alignItems: "center", "& > svg": { flex: "none" }, "&:hover": { background: theme.palette.action.hover, color: theme.palette.text.primary },
-    [theme.breakpoints.down("sm")]: { border: theme.border.divider },
+    [theme.breakpoints.down("sm")]: { padding: "12px", borderBottom: theme.border.divider, borderRadius: 0 },
   },
   railOn: { background: theme.palette.action.selected, color: theme.palette.text.primary },
   railLabel: { fontSize: 14, fontWeight: 600, lineHeight: 1.2 },
-  railHint: { fontSize: 11.5, opacity: 0.75, [theme.breakpoints.down("sm")]: { display: "none" } },
+  railSection: { fontSize: 11, fontWeight: 700, letterSpacing: ".07em", textTransform: "uppercase", color: theme.palette.text.secondary, opacity: 0.8, padding: "14px 12px 4px", "&:first-child": { paddingTop: 2 } },
+  pending: { marginLeft: "auto", minWidth: 20, height: 20, padding: "0 6px", borderRadius: 10, background: "#dc2626", color: "#fff", fontSize: 11.5, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center", flex: "none" },
+  back: { display: "none !important", [theme.breakpoints.down("sm")]: { display: "inline-flex !important" } },
+  railHint: { fontSize: 11.5, opacity: 0.75 },
   panel: { display: "grid", gap: theme.spacing(2), maxWidth: 820 },
   head: { marginBottom: theme.spacing(0.5) },
   h: { fontSize: 22, fontWeight: 700, letterSpacing: "-0.02em" },
@@ -102,6 +106,19 @@ const Card = ({ title, sub, children }) => {
       <div><div className={classes.cardTitle}>{title}</div>{sub && <div className={classes.hint}>{sub}</div>}</div>
       {children}
     </Paper>
+  );
+};
+
+// what is rarely changed (or only for old installations) stays folded, under the main controls
+const Advanced = ({ children, label = "Avançado" }) => {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ display: "grid", gap: 12 }}>
+      <Button size="small" onClick={() => setOpen((v) => !v)} aria-expanded={open} style={{ justifySelf: "start", textTransform: "none", fontWeight: 600 }}>
+        {open ? "▾" : "▸"} {label}
+      </Button>
+      {open && children}
+    </div>
   );
 };
 
@@ -159,7 +176,9 @@ const Geral = ({ values, save, admin }) => {
         <TimezoneSelect value={values.appTimezone || "America/Porto_Velho"} onChange={(v) => save("appTimezone", v)} />
         <div className={classes.hint}>Os dados são guardados em UTC; só a exibição e a contagem do dia mudam.</div>
       </Card>
-      <Card title="Números de WhatsApp por pessoa" sub="Cada pessoa conecta o próprio número em Conexões e as conversas dele ficam com ela.">
+      {/* numbers per person (WhatsApp by QR Code) and the old single API token: rarely used while the team works on the official number */}
+      <Advanced>
+      <Card title="Números de WhatsApp por pessoa (QR Code)" sub="Só vale para números conectados por QR Code. Hoje a equipe usa o número oficial (API da Meta).">
         <TextField select variant="outlined" size="small" label="Limite por pessoa" value={Number(values.max_connections_per_user || 1)} onChange={(e) => save("max_connections_per_user", e.target.value)} style={{ maxWidth: 260 }} InputLabelProps={{ shrink: true }}>
           {[1, 2, 3].map((n) => (<MenuItem key={n} value={n}>{n} {n === 1 ? "número" : "números"}</MenuItem>))}
         </TextField>
@@ -176,6 +195,7 @@ const Geral = ({ values, save, admin }) => {
           </Card>
         </>
       )}
+      </Advanced>
     </>
   );
 };
@@ -238,7 +258,7 @@ const Tutoria = ({ values, save }) => {
           InputLabelProps={{ shrink: true }} />
         <div className={classes.hint}>O sistema nunca envia esta mensagem sozinho: o tutor vê o texto no campo de mensagem, edita se quiser e envia. Variáveis: {"{{primeiro_nome}}"}, {"{{nome}}"}, {"{{tutor}}"} e {"{{polo}}"}. Em branco, vale um texto padrão.</div>
       </Card>
-      <Card title="Contato da tutoria na matrícula" sub="Ao confirmar a matrícula, o aluno recebe na conversa do consultor o número da tutoria (cartão de contato no WhatsApp por QR), para salvar e mandar um oi: a conversa no número da Tutoria começa gratuita.">
+      <Card title="Contato da tutoria na matrícula" sub="Ao confirmar a matrícula, o aluno recebe na conversa do consultor o número da tutoria, para salvar e mandar um oi: a conversa no número da Tutoria começa gratuita.">
         <TextField variant="outlined" size="small" label="Número da tutoria (com DDD)" placeholder="69 99325-8103"
           defaultValue={values.tutoria_numero || ""} key={`tn-${values.tutoria_numero || ""}`} style={{ maxWidth: 260, width: "100%" }} InputLabelProps={{ shrink: true }}
           onBlur={(e) => { const v = e.target.value.replace(/\D/g, ""); const full = v && (v.length === 10 || v.length === 11) ? `55${v}` : v; if (full !== (values.tutoria_numero || "")) save("tutoria_numero", full); }} />
@@ -249,12 +269,14 @@ const Tutoria = ({ values, save }) => {
           {HOURS.map((h) => (<MenuItem key={h} value={h}>{h} horas</MenuItem>))}
         </TextField>
       </Card>
+      <Advanced>
       <Card title="Número padrão da tutoria (instalações antigas)" sub="Prefira marcar o número da tutoria em Conexões → Função do número = Tutoria. Sem isso, a conversa sai pelo número do próprio tutor e, quando ele não tem um, por este.">
         <TextField select variant="outlined" size="small" label="Número padrão da tutoria" value={Number(values.tutoria_whatsapp_id || 0)} onChange={(e) => save("tutoria_whatsapp_id", e.target.value)} style={{ maxWidth: 360 }} InputLabelProps={{ shrink: true }}>
           <MenuItem value={0}>Nenhum (usa um número compartilhado)</MenuItem>
           {numbers.map((w) => (<MenuItem key={w.id} value={w.id}>{w.name}</MenuItem>))}
         </TextField>
       </Card>
+      </Advanced>
     </>
   );
 };
@@ -611,16 +633,26 @@ const SettingsHub = () => {
   const groups = useMemo(() => GROUPS.filter((g) => !g.admin || admin), [admin]);
   const asked = new URLSearchParams(search).get("secao");
   const wanted = asked === "horario" ? "atendimento" : asked;
-  const [group, setGroup] = useState(groups.some((g) => g.id === wanted) ? wanted : "geral");
+  const [group, setGroup] = useState(groups.some((g) => g.id === wanted) ? wanted : "prontidao");
+  // the phone: the list first; a group opens in full (and "Voltar" brings the list back)
+  const narrow = useMediaQuery((theme) => theme.breakpoints.down("sm"), { noSsr: true });
+  const [listOnPhone, setListOnPhone] = useState(!wanted);
+  // the required items still missing (Prontidão): a count on the group, so it is seen from anywhere in Configurações
+  const [pendingCount, setPendingCount] = useState(0);
+  useEffect(() => {
+    api.get("/system/readiness").then(({ data }) => setPendingCount((data.items || []).filter((i) => !i.ok && i.level === "required").length)).catch(() => undefined);
+  }, [group]);
   const [q, setQ] = useState("");
   const [values, save, valuesFailed, retryValues] = useSettings();
   const crm = useCrm(true);
 
   useEffect(() => { if (groups.some((g) => g.id === wanted)) setGroup(wanted); }, [wanted, groups]);
-  const open = (id) => { setGroup(id); history.replace(`/configuracoes?secao=${id}`); };
+  const open = (id) => { setGroup(id); setListOnPhone(false); history.replace(`/configuracoes?secao=${id}`); };
 
   // the search jumps to the group that holds the word
-  const found = q.trim() ? groups.filter((g) => `${g.label} ${g.hint}`.toLowerCase().includes(q.trim().toLowerCase())) : groups;
+  const found = q.trim() ? groups.filter((g) => plainText(`${g.label} ${g.hint} ${g.keywords || ""}`).includes(plainText(q.trim()))) : groups;
+  const showList = !narrow || listOnPhone || !!q.trim();
+  const showPanel = !narrow || (!listOnPhone && !q.trim());
   const current = groups.find((g) => g.id === group) || groups[0];
   // on the phone the groups are one sliding row: the open one slides into view (only the row moves, never the page)
   const railRef = React.useRef(null);
@@ -637,24 +669,31 @@ const SettingsHub = () => {
     <MainContainer>
       <MainHeader>
         <Title>Configurações</Title>
-        <TextField size="small" variant="outlined" placeholder="Buscar um grupo" value={q} onChange={(e) => setQ(e.target.value)} style={{ minWidth: 240 }}
+        <TextField size="small" variant="outlined" placeholder="Buscar uma configuração" value={q} onChange={(e) => setQ(e.target.value)} style={{ minWidth: 240 }}
           InputProps={{ startAdornment: <InputAdornment position="start"><Search size={16} /></InputAdornment> }} />
       </MainHeader>
       <div className={classes.body}>
         <div className={classes.layout}>
-          <nav ref={railRef} className={classes.rail} aria-label="Grupos de configurações">
-            {found.map((g) => {
+          {showList && <nav ref={railRef} className={classes.rail} aria-label="Grupos de configurações">
+            {found.map((g, i) => {
               const Icon = g.icon;
+              const sectionStart = i === 0 || found[i - 1].section !== g.section;
+              const on = current.id === g.id && !(narrow && listOnPhone);
               return (
-                <button key={g.id} type="button" aria-current={current.id === g.id} className={`${classes.railBtn} ${current.id === g.id ? classes.railOn : ""}`} onClick={() => open(g.id)}>
-                  <Icon size={18} />
-                  <span><span className={classes.railLabel} style={{ display: "block" }}>{g.label}</span><span className={classes.railHint}>{g.hint}</span></span>
-                </button>
+                <React.Fragment key={g.id}>
+                  {sectionStart && <div className={classes.railSection}>{g.section}</div>}
+                  <button type="button" aria-current={on} className={`${classes.railBtn} ${on ? classes.railOn : ""}`} onClick={() => { setQ(""); open(g.id); }} title={g.hint}>
+                    <Icon size={18} />
+                    <span style={{ minWidth: 0, flex: 1 }}><span className={classes.railLabel} style={{ display: "block" }}>{g.label}</span><span className={classes.railHint}>{g.hint}</span></span>
+                    {g.id === "prontidao" && pendingCount > 0 && <span className={classes.pending} aria-label={`${pendingCount} pendência(s) obrigatória(s)`}>{pendingCount}</span>}
+                  </button>
+                </React.Fragment>
               );
             })}
-            {found.length === 0 && <div className={classes.hint} style={{ padding: 8 }}>Nenhum grupo com “{q}”.</div>}
-          </nav>
-          <div className={classes.panel}>
+            {found.length === 0 && <div className={classes.hint} style={{ padding: 8 }}>Nada encontrado com “{q}”.</div>}
+          </nav>}
+          {showPanel && <div className={classes.panel}>
+            <Button className={classes.back} size="small" onClick={() => setListOnPhone(true)} style={{ justifySelf: "start", textTransform: "none" }}>← Todas as configurações</Button>
             <div className={classes.head}>
               <div className={classes.h}>{current.label}</div>
               <div className={classes.sub}>{current.hint}</div>
@@ -683,7 +722,7 @@ const SettingsHub = () => {
                 {current.id === "erros" && admin && <ErrosDeTela />}
               </SectionBoundary>
             )}
-          </div>
+          </div>}
         </div>
       </div>
     </MainContainer>
