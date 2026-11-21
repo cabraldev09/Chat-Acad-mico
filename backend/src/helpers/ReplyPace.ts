@@ -32,7 +32,7 @@ export const typingMsFor = (text: string): number => Math.min(MAX_TYPING_MS, Mat
 
 // the official API shows "digitando…" to the person when the last message they sent is marked as read with the typing indicator
 // (only "text": the official API has no "gravando áudio"). Used by the AI before each bubble and by the consultant's typing.
-export const cloudTypingFor = async (whatsapp: Whatsapp | null | undefined, where: { ticketId?: number; contactId?: number }): Promise<void> => {
+export const cloudTypingFor = async (whatsapp: Whatsapp | null | undefined, where: { ticketId?: number; contactId?: number }, typing = true): Promise<void> => {
   if (!whatsapp || whatsapp.channel !== "whatsapp_cloud") return;
   const filter: any = { fromMe: false };
   if (where.ticketId) filter.ticketId = where.ticketId;
@@ -43,12 +43,13 @@ export const cloudTypingFor = async (whatsapp: Whatsapp | null | undefined, wher
   const { accessToken, phoneNumberId } = getConfig(whatsapp);
   if (!accessToken || !phoneNumberId) return;
   const { GRAPH } = await import("../channels/meta");
-  await axios.post(`${GRAPH}/${phoneNumberId}/messages`, { messaging_product: "whatsapp", status: "read", message_id: last.id, typing_indicator: { type: "text" } },
+  await axios.post(`${GRAPH}/${phoneNumberId}/messages`, { messaging_product: "whatsapp", status: "read", message_id: last.id, ...(typing ? { typing_indicator: { type: "text" } } : {}) },
     { headers: { Authorization: `Bearer ${accessToken}` }, timeout: 8000 });
 };
 
 const cloudTyping = async (ticket: Ticket): Promise<void> => {
-  const whatsapp = ticket.whatsapp || (ticket.whatsappId ? await Whatsapp.findByPk(ticket.whatsappId) : null);
+  // the connection of the ticket usually comes without its credentials (only id, name, channel): load it whole
+  const whatsapp = ticket.whatsappId ? await Whatsapp.findByPk(ticket.whatsappId) : null;
   await cloudTypingFor(whatsapp, { ticketId: ticket.id });
 };
 

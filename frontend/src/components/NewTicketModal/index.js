@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useContext, useRef, useCallback } from "react";
+import { WhatsAppsContext } from "../../context/WhatsApp/WhatsAppsContext";
 import { useHistory } from "react-router-dom";
 import { makeStyles } from "@material-ui/core/styles";
 import Dialog from "@material-ui/core/Dialog";
@@ -92,7 +93,10 @@ const NewTicketModal = ({ modalOpen, onClose, title = "Nova conversa", onPick, h
   const [contactModalOpen, setContactModalOpen] = useState(false);
   const [newContact, setNewContact] = useState({});
   const [tab, setTab] = useState("people");
-  const wantGroups = allowGroups && tab === "groups";
+  // groups only exist on a WhatsApp by QR Code (the official API does not send to groups): without one the tab is not shown
+  const { whatsApps: connections } = useContext(WhatsAppsContext) || {};
+  const hasQr = (connections || []).some((w) => (w.channel || "whatsapp") === "whatsapp" && w.status === "CONNECTED");
+  const wantGroups = allowGroups && hasQr && tab === "groups";
 
   // reset when opened; load recent conversations
   useEffect(() => {
@@ -232,7 +236,7 @@ const NewTicketModal = ({ modalOpen, onClose, title = "Nova conversa", onPick, h
           </div>
         </div>
 
-        {allowGroups && (
+        {allowGroups && hasQr && (
           <div role="tablist" aria-label="Contatos ou grupos" style={{ display: "flex", gap: 8, padding: "0 16px 8px" }}>
             {[["people", "Contatos"], ["groups", "Grupos"]].map(([k, label]) => (
               <button key={k} type="button" role="tab" aria-selected={tab === k}

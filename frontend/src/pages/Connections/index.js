@@ -431,10 +431,13 @@ const Connections = () => {
 				<Title>{i18n.t("connections.title")}</Title>
 			</MainHeader>
 			<div className={classes.tiles} role="group" aria-label="Conectar um canal">
-				<button type="button" className={classes.tile} onClick={() => (isAdmin ? handleOpenWhatsAppModal() : setMyDialog({ open: true, whatsApp: null }))}>
-					<ChannelIcon channel="whatsapp" size={30} />
-					<span className={classes.tileText}><b>{isAdmin ? "Adicionar WhatsApp" : "Conectar meu WhatsApp"}</b><small>Leia o QR Code ou digite um código no celular</small></span>
-				</button>
+				{/* for now the team works only through the official number (API of the Meta): the administrator adds connections */}
+				{isAdmin && (
+					<button type="button" className={classes.tile} onClick={() => handleOpenWhatsAppModal()}>
+						<ChannelIcon channel="whatsapp" size={30} />
+						<span className={classes.tileText}><b>Adicionar WhatsApp</b><small>Número oficial (API da Meta) ou QR Code</small></span>
+					</button>
+				)}
 				<button type="button" className={classes.tile} onClick={() => setIgDialog({ open: true, whatsApp: null })}>
 					<ChannelIcon channel="instagram" size={30} />
 					<span className={classes.tileText}><b>Conectar Instagram</b><small>Entre com a conta profissional e pronto</small></span>
