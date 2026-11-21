@@ -23,6 +23,7 @@ import IconButton from "@material-ui/core/IconButton";
 import DeleteOutlineIcon from "@material-ui/icons/DeleteOutline";
 import EditIcon from "@material-ui/icons/Edit";
 
+import { WhatsAppsContext } from "../../context/WhatsApp/WhatsAppsContext";
 import api from "../../services/api";
 import TableRowSkeleton from "../../components/TableRowSkeleton";
 import ResponsiveTable from "../../components/ResponsiveTable";
@@ -238,6 +239,9 @@ const Contacts = () => {
     setPageNumber(1);
   };
 
+  const { whatsApps: connections } = useContext(WhatsAppsContext) || {};
+  const hasQr = (connections || []).some((w) => (w.channel || "whatsapp") === "whatsapp" && w.status === "CONNECTED");
+
   const handleimportContact = async () => {
     setImporting(true);
     try {
@@ -305,14 +309,17 @@ const Contacts = () => {
               ),
             }}
           />
-          <Button
-            variant="contained"
-            color="primary"
-            onClick={(e) => setConfirmOpen(true)}
-            disabled={importing}
-          >
-            {importing ? "Importando…" : i18n.t("contacts.buttons.import")}
-          </Button>
+          {/* only a WhatsApp by QR Code has an address book to import; the official API has none */}
+          {hasQr && (
+            <Button
+              variant="contained"
+              color="primary"
+              onClick={(e) => setConfirmOpen(true)}
+              disabled={importing}
+            >
+              {importing ? "Importando…" : i18n.t("contacts.buttons.import")}
+            </Button>
+          )}
           {canExport && (
             <Tooltip title={searchParam ? "Baixa só os contatos da busca atual" : "Baixa todos os contatos em uma planilha"}>
               <span>

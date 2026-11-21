@@ -8,8 +8,8 @@ import EnrollDialog from "../../pages/CRM/EnrollDialog";
 import CopilotSettings from "./Settings";
 
 const useStyles = makeStyles(theme => ({
-  root: { flex: "none", minWidth: 0, color: theme.palette.text.primary, background: theme.palette.background.paper, borderBottom: "2px solid var(--line-strong, #cbd5e1)" },
-  header: { display: "flex", alignItems: "center", gap: 8, padding: "5px 12px", minHeight: 44, flexWrap: "wrap", background: "var(--surface-2, #f8fafc)", borderBottom: "1px solid var(--line, #e2e8f0)" },
+  root: { flex: "none", minWidth: 0, position: "relative", zIndex: 5, color: theme.palette.text.primary, background: theme.palette.background.paper, borderBottom: "2px solid var(--line-strong, #cbd5e1)" },
+  header: { display: "flex", alignItems: "center", gap: 8, padding: "5px 12px", minHeight: 44, flexWrap: "wrap", [theme.breakpoints.down("xs")]: { flexWrap: "nowrap", padding: "5px 8px" }, background: "var(--surface-2, #f8fafc)", borderBottom: "1px solid var(--line, #e2e8f0)" },
   emblem: { display: "grid", placeItems: "center", width: 26, height: 26, borderRadius: 8, flexShrink: 0, color: theme.palette.type === "dark" ? "#5eead4" : "#0f766e", background: "rgba(15,118,110,.1)" },
   title: { fontSize: 14, fontWeight: 700, lineHeight: 1.4 },
   muted: { fontSize: 12.5, color: "var(--text-2, #475569)", lineHeight: 1.5 },
@@ -20,8 +20,15 @@ const useStyles = makeStyles(theme => ({
   badge: { display: "inline-flex", whiteSpace: "nowrap", borderRadius: 20, padding: "2px 9px", fontSize: 11, fontWeight: 700, background: "var(--surface, #fff)", color: "var(--text-1, #0f172a)", border: "1px solid var(--line-strong, #cbd5e1)" },
   primary: { background: "#0f766e", color: "#fff", borderRadius: 9, textTransform: "none", fontWeight: 600, boxShadow: "none", "&:hover": { background: "#115e59", boxShadow: "none" } },
   button: { textTransform: "none", borderRadius: 8, fontSize: 12, fontWeight: 600, color: "var(--text-1, #0f172a)", border: "1px solid var(--line-strong, #cbd5e1)", background: "var(--surface, #fff)", padding: "3px 10px", "&:hover": { background: "var(--surface-2, #f1f5f9)" } },
+  wide: { [theme.breakpoints.down("xs")]: { display: "none !important" } },
   line: { fontSize: 13, lineHeight: 1.4, color: "var(--text-2, #475569)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
-  content: { maxHeight: "min(40vh, 380px)", overflowY: "auto", padding: "12px 16px 12px", display: "grid", gap: 10, background: "var(--surface-2, #f8fafc)", ...theme.scrollbarStyles, [theme.breakpoints.down("xs")]: { maxHeight: "38vh", padding: "10px 12px" } },
+  // open, the copilot floats over the conversation (the messages never move): a panel on the right; on the phone a sheet from the bottom
+  content: {
+    position: "absolute", top: "100%", right: 12, width: "min(460px, calc(100% - 24px))", maxHeight: "min(70vh, 640px)", overflowY: "auto",
+    padding: "12px 14px", display: "grid", gap: 10, alignContent: "start", background: "var(--surface-2, #f8fafc)", border: "1px solid var(--line-strong, #cbd5e1)",
+    borderRadius: 12, boxShadow: "0 18px 40px -16px rgba(15,23,42,.45)", marginTop: 6, ...theme.scrollbarStyles,
+    [theme.breakpoints.down("xs")]: { position: "fixed", top: "auto", bottom: 0, left: 0, right: 0, width: "100%", maxHeight: "65vh", borderRadius: "16px 16px 0 0", marginTop: 0, padding: "12px" }
+  },
   layout: { display: "grid", gridTemplateColumns: "minmax(180px, .85fr) minmax(240px, 1.6fr)", gap: 14, alignItems: "start", [theme.breakpoints.down("sm")]: { display: "flex", flexDirection: "column", alignItems: "stretch" } },
   steps: { padding: 0, margin: 0, listStyle: "none", display: "grid", gap: 2, [theme.breakpoints.down("sm")]: { order: 1, maxHeight: 160, overflowY: "auto" } },
   stepButton: { width: "100%", border: "1px solid transparent", borderRadius: 9, background: "transparent", color: "var(--text-2, #475569)", padding: "7px 9px", display: "flex", alignItems: "center", gap: 9, textAlign: "left", cursor: "pointer", font: "inherit", fontSize: 12, "&:hover": { background: theme.palette.action.hover }, "&:focus-visible": { outline: "2px solid #0f766e" } },
@@ -51,8 +58,24 @@ function Panel({ ticket }) {
   const c = useStyles();
   const [data, setData] = useState(null);
   const [error, setError] = useState(false);
-  // on a phone the panel starts closed: the conversation comes first
-  const [open, setOpen] = useState(() => typeof window === "undefined" || !window.matchMedia || !window.matchMedia("(max-width: 599px)").matches);
+  // the conversation comes first: the panel starts closed and remembers the choice of the person (this browser)
+  const [open, setOpenState] = useState(() => { try { return window.localStorage.getItem("copilot_open") === "1"; } catch (e) { return false; } });
+  const setOpen = (fn) => setOpenState((v) => { const next = typeof fn === "function" ? fn(v) : fn; try { window.localStorage.setItem("copilot_open", next ? "1" : "0"); } catch (e) { /* private mode */ } return next; });
+  const rootRef = useRef(null);
+  // Esc or a click outside closes the floating panel (a dialog opened from it does not count)
+  useEffect(() => {
+    if (!open) return undefined;
+    const key = (e) => { if (e.key === "Escape") setOpen(false); };
+    const click = (e) => {
+      if (rootRef.current && rootRef.current.contains(e.target)) return;
+      if (e.target && e.target.closest && e.target.closest(".MuiDialog-root, .MuiPopover-root, .MuiMenu-paper")) return;
+      setOpen(false);
+    };
+    document.addEventListener("keydown", key);
+    document.addEventListener("mousedown", click);
+    return () => { document.removeEventListener("keydown", key); document.removeEventListener("mousedown", click); };
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [situationOpen, setSituationOpen] = useState(false);
   const [allSteps, setAllSteps] = useState(false);
   const [selected, setSelected] = useState(null);
   // { id, text, sources, mode, feedback } of the last suggestion of the AI
@@ -170,7 +193,7 @@ function Panel({ ticket }) {
   const quota = data.quota && data.quota.user;
   const text = (suggestion && suggestion.text) || (next && next.text);
   const b = brief && brief.brief;
-  return <section className={c.root} aria-label="Copiloto do consultor">
+  return <section className={c.root} aria-label="Copiloto do consultor" ref={rootRef}>
     <div className={c.header}>
       <div className={c.emblem}><Compass size={15} /></div>
       {/* one line: the step, the progress and the course; the details open below, inside a box with its own scroll */}
@@ -179,8 +202,13 @@ function Panel({ ticket }) {
         {data.course && <span> · {data.course.name || "Curso"} ({data.course.formato || data.course.resumo})</span>}
       </div>
       {data.canManage && <IconButton size="small" title="Revisar e editar o processo da equipe" aria-label="Editar processo" onClick={() => setEditor(true)}><Settings2 size={17} /></IconButton>}
-      <Button size="small" className={c.button} onClick={() => setOpen(v => !v)} endIcon={open ? <ChevronUp size={15} /> : <ChevronDown size={15} />}>{open ? "Recolher" : "Abrir"}</Button>
-      <Button variant="contained" size="small" className={c.primary} disabled={busy || !data.aiAvailable || !canSend} title={data.aiNote || "Escrever uma sugestão para a última mensagem"} startIcon={busy ? <CircularProgress size={14} color="inherit" /> : <Sparkles size={14} />} onClick={() => suggest()}>{busy ? "Aguarde…" : "Sugerir resposta"}</Button>
+      {/* the main thing without opening: use or send the ready text of the step */}
+      {!open && next && next.text && !suggestion && <>
+        <Button size="small" className={`${c.button} ${c.wide}`} disabled={busy || !canSend} title={next.text} onClick={() => takeText(next.text, false)}>Usar</Button>
+        <Button size="small" className={`${c.button} ${c.wide}`} disabled={busy || !canSend} startIcon={<Send size={13} />} title={next.text} onClick={() => run(() => sendReady(next.text))}>{next.action === "send_grade" && next.gradeId ? "Enviar com a grade" : "Enviar"}</Button>
+      </>}
+      <Button size="small" className={c.button} onClick={() => setOpen(v => !v)} aria-expanded={open} endIcon={open ? <ChevronUp size={15} /> : <ChevronDown size={15} />}>{open ? "Fechar" : "Etapa"}</Button>
+      <Button variant="contained" size="small" className={c.primary} disabled={busy || !data.aiAvailable || !canSend} title={data.aiNote || "Escrever uma sugestão para a última mensagem"} aria-label="Sugerir resposta" startIcon={busy ? <CircularProgress size={14} color="inherit" /> : <Sparkles size={14} />} onClick={() => suggest()}><span className={c.wide}>{busy ? "Aguarde…" : "Sugerir resposta"}</span></Button>
     </div>
     <LinearProgress variant="determinate" value={required.length ? completed / required.length * 100 : 0} style={{ height: 2 }} aria-label="Progresso até a matrícula" />
     {open && <div className={c.content}>
@@ -229,11 +257,12 @@ function Panel({ ticket }) {
 
       {/* 2. who the lead is: the CRM situation, the summary of the AI and the summary of this conversation, in one card */}
       {(data.situation || b || data.briefAvailable) && <div className={c.brief} aria-label="Situação do lead">
-        <div className={c.actions}>
-          <span className={c.eyebrow} style={{ flex: 1 }}><History size={12} />Situação do lead{brief && brief.conversations > 1 ? ` · ${brief.conversations} atendimentos` : ""}</span>
+        <div className={c.actions} role="button" tabIndex={0} aria-expanded={situationOpen} style={{ cursor: "pointer" }} onClick={() => setSituationOpen(v => !v)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSituationOpen(v => !v); } }}>
+          <span className={c.eyebrow} style={{ flex: 1 }}>{situationOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}<History size={12} />Situação do lead{brief && brief.conversations > 1 ? ` · ${brief.conversations} atendimentos` : ""}</span>
           {data.situation && data.situation.stage && <span className={c.badge} style={data.situation.stageColor ? { borderColor: data.situation.stageColor } : undefined}>{data.situation.stage}</span>}
           {data.situation && data.situation.temperature && <span className={c.badge}>{{ cold: "Frio", warm: "Morno", hot: "Quente" }[data.situation.temperature] || data.situation.temperature}</span>}
         </div>
+        {situationOpen && <>
         {b ? <div className={c.body}>{b.resumo}</div> : data.situation && data.situation.summary ? <div className={c.body}>{data.situation.summary}</div> : null}
         {((b && b.proximoPasso) || (data.situation && data.situation.nextAction)) && <div className={c.body2}><b>Próximo passo:</b> {(b && b.proximoPasso) || data.situation.nextAction}</div>}
         {b && b.interesse && <div className={c.body2}><b>Interesse:</b> {b.interesse}</div>}
@@ -253,6 +282,7 @@ function Panel({ ticket }) {
         </div>
         {briefBusy && !b && <div className={c.body2}>Lendo o histórico do cliente…</div>}
         {summaryOpen && (summary ? (summary.lines || []).length ? <ul className={c.summary}>{summary.lines.map((line, i) => <li key={i}>{line}</li>)}</ul> : <div className={c.body2}>Ainda não há anotações do agente para esta conversa.</div> : <CircularProgress size={16} />)}
+        </>}
       </div>}
       {quota && data.aiAvailable && <div className={c.body2} style={{ textAlign: "right" }}>{`Sugestões da IA hoje: ${quota.used}${quota.limit ? ` de ${quota.limit}` : ""}`}</div>}
     </div>}

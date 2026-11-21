@@ -292,9 +292,11 @@ export const computePresence = async (userIds: number[], config: AnalyticsConfig
     { ids: userIds, since: new Date(now.getTime() - 3 * 86400000) }
   );
   const numbers = await rows(`SELECT ownerId, name, status, statusSince FROM Whatsapps WHERE channel = 'whatsapp' AND ownerId IN (:ids)`, { ids: userIds });
+  // the official number of the team (API of the Meta) serves everybody: who has no number of their own works through it
+  const official = (await rows(`SELECT name FROM Whatsapps WHERE channel = 'whatsapp_cloud' AND status = 'CONNECTED' ORDER BY id LIMIT 1`, {}))[0];
   const whatsappOf = (id: number): Presence["whatsapp"] => {
     const mine = numbers.filter(n => Number(n.ownerId) === id);
-    if (!mine.length) return { state: "none", name: null, since: null };
+    if (!mine.length) return official ? { state: "connected", name: String(official.name || "Número oficial"), since: null } : { state: "none", name: null, since: null };
     const up = mine.find(n => n.status === "CONNECTED");
     const n = up || mine[0];
     return { state: up ? "connected" : "offline", name: n.name, since: n.statusSince ? new Date(n.statusSince).toISOString() : null };
