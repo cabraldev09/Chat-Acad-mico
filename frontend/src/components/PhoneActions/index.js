@@ -47,7 +47,7 @@ const PhoneActions = ({ href, children }) => {
       history.push(`/tickets/${data.id}`);
     } catch (err) { toastError(err); } finally { setBusy(false); }
   };
-  const subtitle = !ticketId ? "Número de telefone" : !state ? "Verificando o número…" : state.unavailable ? "Não foi possível verificar o WhatsApp agora." : state.registered ? "Esse número de telefone já está no WhatsApp." : "Número válido. Disponibilidade no WhatsApp não confirmada.";
+  const subtitle = !ticketId ? "Número de telefone" : !state ? "Verificando o número…" : state.unavailable ? "Não foi possível verificar o WhatsApp agora." : state.registered ? "Esse número de telefone já está no WhatsApp." : state.registered === null ? "Número válido. A conversa sai pelo número oficial." : "Número válido. Disponibilidade no WhatsApp não confirmada.";
   return <>
     <button type="button" className={classes.link} onClick={e => { e.stopPropagation(); setAnchor(e.currentTarget); }} aria-haspopup="dialog" aria-expanded={!!anchor}>{children}</button>
     <Popover open={!!anchor} anchorEl={anchor} onClose={() => setAnchor(null)}
@@ -55,7 +55,7 @@ const PhoneActions = ({ href, children }) => {
       PaperProps={{ className: classes.paper, role: "dialog", "aria-label": `Ações para ${number}` }}>
       <div className={classes.header}><div className={classes.avatar}><Phone size={21} /></div><div><Typography style={{ fontWeight: 600, fontSize: 16 }}>{display}</Typography><Typography variant="body2" color="textSecondary" style={{ marginTop: 3, fontSize: 12 }}>{subtitle}</Typography></div></div>
       <div className={classes.actions}>
-        {ticketId && <><ButtonBase className={classes.action} disabled={busy || !state?.registered} onClick={chat}><MessageSquare size={22} />Conversar com {display}</ButtonBase><Divider /></>}
+        {ticketId && <><ButtonBase className={classes.action} disabled={busy || !state || state.registered === false} onClick={chat}><MessageSquare size={22} />Conversar com {display}</ButtonBase><Divider /></>}
         <ButtonBase className={classes.action} component="a" href={`https://wa.me/${number.slice(1)}`} target="_blank" rel="noopener noreferrer"><ExternalLink size={22} />Abrir no WhatsApp</ButtonBase><Divider />
         <ButtonBase className={classes.action} component="a" href={`tel:${number}`}><Phone size={22} />Ligar pelo telefone</ButtonBase><Divider />
         <ButtonBase className={classes.action} onClick={async () => { try { await navigator.clipboard.writeText(number); toast.success("Número copiado."); setAnchor(null); } catch (err) { toastError(err); } }}><Copy size={22} />Copiar número</ButtonBase>
