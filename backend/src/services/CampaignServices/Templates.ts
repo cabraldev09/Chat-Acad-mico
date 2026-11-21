@@ -166,7 +166,14 @@ const accountOf = async (w: Whatsapp): Promise<{ waba: string; token: string }> 
 export interface TemplateStatus { name: string; language: string; category: string; status: string; reason: string | null; body: string; buttons: string[] }
 export const allTemplates = async (whatsappId?: number | null): Promise<TemplateStatus[]> => {
   const { waba, token } = await accountOf(await cloudConnection(whatsappId));
-  const { data } = await axios.get(`${GRAPH}/${waba}/message_templates`, { params: { fields: "name,language,category,status,rejected_reason,components", limit: 200, access_token: token }, timeout: 20000 });
+  let data: any;
+  try {
+    ({ data } = await axios.get(`${GRAPH}/${waba}/message_templates`, { params: { fields: "name,language,category,status,rejected_reason,components", limit: 200, access_token: token }, timeout: 20000 }));
+  } catch (err: any) {
+    // the Meta refused (token expired or without permission, account changed): a clear message on the screen, never a blank error 500
+    const status = err?.response?.status;
+    throw new AppError(status === 400 || status === 401 || status === 403 ? "ERR_META_TEMPLATES_REFUSED" : "ERR_META_TEMPLATES_UNAVAILABLE", 502);
+  }
   return (data?.data || []).map((t: any) => ({
     name: t.name, language: t.language, category: t.category, status: t.status,
     reason: t.rejected_reason && t.rejected_reason !== "NONE" ? t.rejected_reason : null,

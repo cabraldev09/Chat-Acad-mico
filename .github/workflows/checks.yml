@@ -189,6 +189,14 @@ jobs:
           npx vite build
           nohup npx vite preview --port 3000 > /tmp/web.log 2>&1 &
           for i in $(seq 1 30); do curl -fs http://localhost:3000/ > /dev/null && break; sleep 2; done
+      - name: Varredura das rotas (todas as GET como admin, consultor e tutor)
+        working-directory: backend
+        env:
+          API: http://localhost:8080
+          PGHOST: localhost
+          PGUSER: postgres
+          PGDATABASE: telas
+        run: node scripts/route-sweep.js
       - name: Varredura das telas
         working-directory: frontend
         env:
