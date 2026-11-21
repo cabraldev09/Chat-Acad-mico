@@ -13,6 +13,32 @@ import { noticeIfOwnerAway, returnToOwner } from "../CrmServices/ReturningClient
 import { TUTORIA_SEGMENTS, teamOfConnection } from "../ChannelServices/ConnectionTeam";
 import Lead from "../../models/Lead";
 import Queue from "../../models/Queue";
+import User from "../../models/User";
+import TicketEvent from "../../models/TicketEvent";
+
+// the affiliate of this number (if any) and where their conversation goes: their consultant, or the queue without the robot
+const routeAffiliate = async (ticket: Ticket, contact: Contact): Promise<{ owner: User | null } | null> => {
+  const { findAffiliateByPhone } = await import("../AffiliateServices/AffiliateLane");
+  const affiliate = contact.number ? await findAffiliateByPhone(contact.number) : null;
+  if (!affiliate) return null;
+  const owner = affiliate.ownerId ? await User.findByPk(affiliate.ownerId, { attributes: ["id", "name"] }) : null;
+  if (owner) {
+    if (ticket.userId === owner.id && ticket.status === "open" && !ticket.aiActive) return { owner };
+    // a conversation another person took meanwhile is not taken from them
+    const [taken] = await Ticket.update(
+      { status: "open", userId: owner.id, aiActive: false, chatbotNodeId: -1 } as any,
+      { where: { id: ticket.id, [Op.or]: [{ userId: null }, { userId: owner.id }] } as any }
+    );
+    if (!taken) return null;
+    await TicketEvent.create({ ticketId: ticket.id, type: "returned_to_owner", actorId: null, toUserId: owner.id, note: `Afiliado(a) ${affiliate.name}: a conversa foi direto para ${owner.name}, que acompanha este afiliado.` } as any);
+  } else {
+    if (!ticket.aiActive && ticket.chatbotNodeId === -1) return { owner: null };
+    await Ticket.update({ aiActive: false, chatbotNodeId: -1 } as any, { where: { id: ticket.id } });
+    await TicketEvent.create({ ticketId: ticket.id, type: "affiliate_without_owner", actorId: null, note: `Afiliado(a) ${affiliate.name} sem consultor responsável: a conversa ficou na fila para a coordenação distribuir.` } as any);
+  }
+  await ticket.reload();
+  return { owner };
+};
 
 const FindOrCreateTicketService = async (
   contact: Contact,
@@ -168,6 +194,21 @@ const FindOrCreateTicketService = async (
   if (connection?.ownerId && !connection.aiFirst && ticket.status === "pending" && !ticket.userId) {
     await ticket.update({ status: "open", userId: connection.ownerId });
     changed = true;
+  }
+
+  // an affiliate writing to the official number of the attendance goes straight to the consultant who follows them (their "carteira"):
+  // no robot, no rotation. Without a consultant (deactivated), the conversation waits in the queue, still without the robot.
+  if (!groupContact && !connection?.ownerId && ticket.segment !== RELATIONSHIP_SEGMENT && !TUTORIA_SEGMENTS.includes(String(ticket.segment || ""))) {
+    const routed = await routeAffiliate(ticket, contact);
+    if (routed) {
+      changed = true;
+      returning = false;
+      if (routed.owner) {
+        const routedId = ticket.id;
+        const ownerId = routed.owner.id;
+        setTimeout(() => { noticeIfOwnerAway(routedId, ownerId).catch(() => undefined); }, 2500).unref?.();
+      }
+    }
   }
 
   // a shared number (the official API of the polos): the client who already has a consultant goes back to them, robots and rotation stay out

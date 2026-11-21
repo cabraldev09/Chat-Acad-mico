@@ -15,6 +15,7 @@ import ColorSwatchPicker from "../../components/ColorSwatchPicker";
 import api from "../../services/api";
 import { getBackendUrl } from "../../config";
 import toastError from "../../errors/toastError";
+import { dayDefault } from "../../utils/workWeek";
 import { fetchAllUsersPage } from "../../utils/fetchAllUsers";
 
 const useStyles = makeStyles((theme) => ({
@@ -256,10 +257,10 @@ export const HoursAndAlerts = ({ s, save }) => {
 
   const setDay = (d, patch) => {
     const list = hours.days[d] || [];
-    const first = { start: "08:00", end: "18:00", ...(list[0] || {}), ...patch };
+    const first = { ...dayDefault(d), ...(list[0] || {}), ...patch };
     setHours({ ...hours, days: { ...hours.days, [d]: [first, ...list.slice(1)] } });
   };
-  const toggleDay = (d, on) => setHours({ ...hours, days: { ...hours.days, [d]: on ? [{ start: "08:00", end: "18:00" }] : [] } });
+  const toggleDay = (d, on) => setHours({ ...hours, days: { ...hours.days, [d]: on ? [dayDefault(d)] : [] } });
 
   return (
     <div style={{ borderTop: "1px solid rgba(128,128,128,.25)", paddingTop: 16, display: "grid", gap: 12 }}>
