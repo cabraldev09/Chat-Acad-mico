@@ -134,6 +134,7 @@ export interface Metrics {
   userId: number;
   messagesSent: number;
   attendances: number;
+  peopleContacted: number;
   reactivated: number;
   leadsWorked: number;
   pendingReply: number;
@@ -152,7 +153,7 @@ export interface Metrics {
 }
 
 const blank = (userId: number): Metrics => ({
-  userId, messagesSent: 0, attendances: 0, reactivated: 0, leadsWorked: 0, pendingReply: 0, inProgress: 0, tasksOpen: 0, tasksOverdue: 0,
+  userId, messagesSent: 0, attendances: 0, peopleContacted: 0, reactivated: 0, leadsWorked: 0, pendingReply: 0, inProgress: 0, tasksOpen: 0, tasksOverdue: 0,
   tasksDone: 0, followUpsDue: 0, proposalsSent: 0, proposalsViewed: 0, enrollments: 0, conversion: null, firstContactMinutes: null, firstContactSamples: 0
 });
 
@@ -165,7 +166,9 @@ export const computeMetrics = async (userIds: number[], period: Period, now: Dat
   // human messages: one row per send, by who sent it (the outbox is the only place with the real author; robots never go through it)
   const sends = `FROM OutboundMessages o JOIN Tickets t ON t.id = o.ticketId WHERE o.status = 'sent' AND o.userId IN (:ids) AND o.sentAt BETWEEN :from AND :to AND ${VALID_TICKET}`;
   (await rows(`SELECT o.userId, COUNT(*) AS n ${sends} GROUP BY o.userId`, rep)).forEach(r => set(r, "messagesSent"));
+  // each conversation (ticket) once, however many messages it had; each person once, however many conversations they had
   (await rows(`SELECT o.userId, COUNT(DISTINCT o.ticketId) AS n ${sends} GROUP BY o.userId`, rep)).forEach(r => set(r, "attendances"));
+  (await rows(`SELECT o.userId, COUNT(DISTINCT t.contactId) AS n ${sends} GROUP BY o.userId`, rep)).forEach(r => set(r, "peopleContacted"));
   (await rows(
     `SELECT o.userId, COUNT(DISTINCT o.ticketId) AS n ${sends} AND NOT EXISTS (SELECT 1 FROM Messages m WHERE m.ticketId = o.ticketId AND m.createdAt < o.sentAt AND m.createdAt >= o.sentAt - INTERVAL '7 days') GROUP BY o.userId`,
     rep
@@ -229,14 +232,14 @@ export const computeMetrics = async (userIds: number[], period: Period, now: Dat
 };
 
 // ---------------------------------------------------------------- history (per day, same rules)
-export const computeSeries = async (userIds: number[], period: Period): Promise<Map<number, Array<{ day: string; messagesSent: number; attendances: number; enrollments: number }>>> => {
-  const out = new Map<number, Array<{ day: string; messagesSent: number; attendances: number; enrollments: number }>>();
+export const computeSeries = async (userIds: number[], period: Period): Promise<Map<number, Array<{ day: string; messagesSent: number; attendances: number; peopleContacted: number; enrollments: number }>>> => {
+  const out = new Map<number, Array<{ day: string; messagesSent: number; attendances: number; peopleContacted: number; enrollments: number }>>();
   if (!userIds.length) return out;
   const tz = getAppTz();
   const rep = { ids: userIds, from: period.start, to: period.end, tz };
   const dayOf = (col: string) => `to_char(${col} AT TIME ZONE :tz, 'YYYY-MM-DD')`;
   const sent = await rows(
-    `SELECT o.userId, ${dayOf("o.sentAt")} AS day, COUNT(*) AS m, COUNT(DISTINCT o.ticketId) AS a FROM OutboundMessages o JOIN Tickets t ON t.id = o.ticketId
+    `SELECT o.userId, ${dayOf("o.sentAt")} AS day, COUNT(*) AS m, COUNT(DISTINCT o.ticketId) AS a, COUNT(DISTINCT t.contactId) AS p FROM OutboundMessages o JOIN Tickets t ON t.id = o.ticketId
      WHERE o.status = 'sent' AND o.userId IN (:ids) AND o.sentAt BETWEEN :from AND :to AND ${VALID_TICKET} GROUP BY o.userId, day`,
     rep
   );
@@ -248,6 +251,7 @@ export const computeSeries = async (userIds: number[], period: Period): Promise<
       day,
       messagesSent: Number(sent.find(r => Number(r.userId) === id && r.day === day)?.m || 0),
       attendances: Number(sent.find(r => Number(r.userId) === id && r.day === day)?.a || 0),
+      peopleContacted: Number(sent.find(r => Number(r.userId) === id && r.day === day)?.p || 0),
       enrollments: Number(won.find(r => Number(r.userId) === id && r.day === day)?.n || 0)
     })));
   }
@@ -316,7 +320,7 @@ export interface ConsultantBundle {
   metrics: Metrics;
   presence: Presence;
   goals: any[];
-  series: Array<{ day: string; messagesSent: number; attendances: number; enrollments: number }>;
+  series: Array<{ day: string; messagesSent: number; attendances: number; peopleContacted: number; enrollments: number }>;
 }
 
 export const bundlesFor = async (userIds: number[], period: Period, opts: { goals?: boolean } = {}): Promise<ConsultantBundle[]> => {
@@ -382,6 +386,7 @@ export const alertsOf = (bundles: ConsultantBundle[], config: AnalyticsConfig): 
     if (m.tasksOverdue > 0) alerts.push({ level: m.tasksOverdue >= 5 ? "high" : "medium", userId: user.id, name: user.name, code: "tasks_overdue", text: `${m.tasksOverdue} tarefa(s) atrasada(s)`, link: `/crm/tarefas?scope=all` });
     if (m.pendingReply >= 5) alerts.push({ level: "high", userId: user.id, name: user.name, code: "pending_reply", text: `${m.pendingReply} conversas esperando resposta`, link: `/tickets` });
     if (!noNumber && p.onSchedule && p.state === "idle") alerts.push({ level: "medium", userId: user.id, name: user.name, code: "idle_on_schedule", text: `No horário de trabalho, sem atividade há mais de ${config.activeWindowMinutes} min`, link: `/gestao-comercial` });
+    if (!noNumber && config.dailyAttendancesTarget > 0 && m.attendances < config.dailyAttendancesTarget && p.onSchedule) alerts.push({ level: "low", userId: user.id, name: user.name, code: "below_attendances_target", text: `${m.attendances} de ${config.dailyAttendancesTarget} conversas da meta diária`, link: `/gestao-comercial` });
     if (!noNumber && config.dailyMessagesTarget > 0 && m.messagesSent < config.dailyMessagesTarget && p.onSchedule) alerts.push({ level: "low", userId: user.id, name: user.name, code: "below_messages_target", text: `${m.messagesSent} de ${config.dailyMessagesTarget} mensagens da meta diária`, link: `/gestao-comercial` });
     if (m.followUpsDue >= 5) alerts.push({ level: "medium", userId: user.id, name: user.name, code: "followups_due", text: `${m.followUpsDue} follow-ups para hoje`, link: `/crm/painel` });
     if (m.leadsWorked >= 10 && m.enrollments === 0) alerts.push({ level: "low", userId: user.id, name: user.name, code: "no_conversion", text: `${m.leadsWorked} leads trabalhados e nenhuma matrícula no período`, link: `/crm/painel` });

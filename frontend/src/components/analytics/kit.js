@@ -49,21 +49,22 @@ export const useKit = makeStyles((theme) => ({
 
 // what each indicator means, in one sentence, shown under the number (the ⓘ has the complete definition from the server)
 export const KPI_COLOR = {
-  messagesSent: "#0693E3", attendances: "#0B4279", reactivated: "#14b8a6", leadsWorked: "#8b5cf6", pendingReply: "#d97706",
+  messagesSent: "#0693E3", attendances: "#0B4279", peopleContacted: "#0693E3", reactivated: "#14b8a6", leadsWorked: "#8b5cf6", pendingReply: "#d97706",
   inProgress: "#0693E3", tasksOpen: "#6366f1", tasksOverdue: "#dc2626", tasksDone: "#16a34a", followUpsDue: "#f97316",
   proposalsSent: "#8b5cf6", proposalsViewed: "#14b8a6", enrollments: "#16a34a", conversion: "#8b5cf6",
 };
 
 // one icon per indicator: read the card before reading the label
 export const KPI_ICON = {
-  messagesSent: Send, attendances: MessageSquare, reactivated: Zap, leadsWorked: Users, pendingReply: Inbox, inProgress: Clock,
+  messagesSent: Send, attendances: MessageSquare, peopleContacted: Users, reactivated: Zap, leadsWorked: Users, pendingReply: Inbox, inProgress: Clock,
   tasksOpen: ListTodo, tasksOverdue: AlertTriangle, tasksDone: CheckCheck, followUpsDue: CalendarClock, proposalsSent: FileText,
   proposalsViewed: Eye, enrollments: UserCheck, conversion: TrendingUp, firstContactMinutes: Clock,
 };
 
 export const SHORT = {
   messagesSent: "Mensagens que pessoas digitaram e enviaram pelo sistema. Não conta IA, robôs nem abrir uma conversa.",
-  attendances: "Conversas de clientes diferentes em que houve ao menos uma mensagem humana no período.",
+  attendances: "Cada conversa (ticket) com mensagem humana no período conta uma vez, quantas mensagens tiver.",
+  peopleContacted: "Pessoas diferentes que receberam mensagem humana no período. Quem tem duas conversas conta uma vez.",
   reactivated: "Conversas retomadas por uma pessoa depois de 7 dias ou mais sem nenhuma mensagem.",
   leadsWorked: "Leads em que alguém registrou anotação, mudou a etapa, fez contato ou enviou mensagem.",
   pendingReply: "Conversas abertas em que o cliente falou por último e ainda espera resposta.",
@@ -200,7 +201,7 @@ const full = (d) => (d ? `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}` :
 // the production of the team over the days: the same flat chart of the whole system (components/charts)
 export const HistoryChart = ({ series, height = 200 }) => (
   <TimeChart data={(series || []).map((s) => ({ ...s, label: short(s.day) }))} height={height} title={(p) => full(p.day)}
-    series={[{ key: "messagesSent", name: "Mensagens", color: "leads", kind: "area" }, { key: "attendances", name: "Atendimentos", color: "violet", kind: "line" }, { key: "enrollments", name: "Matrículas", color: "won", kind: "line" }]} />
+    series={[{ key: "attendances", name: "Conversas", color: "leads", kind: "area" }, { key: "peopleContacted", name: "Pessoas contatadas", color: "violet", kind: "line" }, { key: "enrollments", name: "Matrículas", color: "won", kind: "line" }]} />
 );
 
 export const CompareBars = ({ data, keys, height = 240 }) => <BarsChart data={data} keys={keys} height={height} />;

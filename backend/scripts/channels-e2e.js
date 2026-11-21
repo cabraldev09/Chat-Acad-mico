@@ -142,6 +142,11 @@ const startAnthropicMock = () => {
     req.resume();
     req.on("end", () => res.json({ text: "qual o valor do curso de Direito" }));
   });
+  // the OpenAI format, used only by the daily review of the consultants' conversations (it answers the codes of one review)
+  app.post("/v1/chat/completions", (req, res) => {
+    anthropic.openai = [...(anthropic.openai || []), req.body];
+    res.json({ choices: [{ message: { content: JSON.stringify({ objections: [{ type: "preco", handled: false }], difficulties: ["bolsa"], skipped: ["grade"], note: "Explicar a bolsa antes da proposta" }) } }], usage: { prompt_tokens: 200, completion_tokens: 40, total_tokens: 240 } });
+  });
   app.post("/v1/messages", (req, res) => {
     anthropic.requests.push(req.body);
     const usage = { input_tokens: 120, output_tokens: 30, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 };
@@ -4866,6 +4871,9 @@ const postMeta = (id, payload, secret, badSig) => {
       const contactId = sql(`SELECT contactId FROM Leads WHERE id=${lead.id}`);
       const r = await http.post(`/leads/${lead.id}/enroll`, { rgm: nextRgm(), poloId: poloD.id, tutorId: "auto", fee: "paid", whatsappId: cid }, auth());
       assert(r.status === 200, `enroll ${r.status}`);
+      // the picture of the sales process as it stood before the enrollment is kept (what was skipped can still be seen afterwards)
+      const pic = sql(`SELECT meta FROM LeadActivities WHERE leadId=${lead.id} AND type='process_at_enroll'`);
+      assert(pic && Array.isArray(JSON.parse(pic).missing) && Array.isArray(JSON.parse(pic).done), `process at the enrollment ${pic}`);
       let docs = (await http.get(`/leads/${lead.id}/documents`, auth())).data;
       assert(docs.documents.length === 3 && docs.summary.pending === 3 && docs.summary.complete === false, `documents ${JSON.stringify(docs.summary)}`);
       assert(/Documentos pendentes/.test(names("LeadTags", "leadId", lead.id)), "the enrolled student has no pending-documents label");
@@ -6946,6 +6954,46 @@ const postMeta = (id, payload, secret, badSig) => {
         const original=await Ticket.findByPk(${tgTicket});const temporary=await Ticket.create({contactId:original.contactId,whatsappId:original.whatsappId,status:"closed",unreadMessages:0,isGroup:false});
         const delivery=await Delivery.create({key:"test:retained-charge",ticketId:temporary.id,contactId:original.contactId,whatsappId:original.whatsappId,channel:"telegram",status:"sent",estimatedUsd:0});
         await temporary.destroy();await delivery.reload();assert.equal(delivery.ticketId,null);assert.equal(delivery.status,"sent");`);
+    });
+    await test("the daily review: the AI reads a consultant's conversation without CPF, phone or names, keeps only codes, and the management sees the training needed", async () => {
+      const u = (await http.post("/users", { name: "Consultora Revisada", email: "review-cons@x.com", password: "senha123", role: "consultor" }, auth())).data;
+      const tok = (await http.post("/auth/login", { email: "review-cons@x.com", password: "senha123" })).data.token;
+      const contactId = sql(`INSERT INTO Contacts (name, number, email, isGroup, kind, channel, createdAt, updatedAt) VALUES ('Pedro Interessado', '5569911112222', '', false, 'person', 'whatsapp', NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const ticketId = sql(`INSERT INTO Tickets (status, contactId, whatsappId, userId, unreadMessages, isGroup, createdAt, updatedAt) VALUES ('open', ${contactId}, ${cid}, ${u.id}, 0, false, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const lines = [[false, "Oi, quero fazer Direito mas achei caro. Meu CPF 123.456.789-09"], [true, "Oi Pedro, o valor é esse mesmo"], [false, "Me liga no 69 99999-1234"], [true, "Certo, vou mandar a proposta"]];
+      lines.forEach(([fromMe, body], i) => sql(`INSERT INTO Messages (id, ticketId, contactId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('rev-${ticketId}-${i}', ${ticketId}, ${contactId}, '${body}', ${fromMe}, true, 'chat', 1, NOW() - INTERVAL '${10 - i} minutes', NOW())`));
+      sql(`INSERT INTO OutboundMessages (ticketId, userId, clientKey, payload, status, attempts, sentAt, providerMsgId, createdAt, updatedAt) VALUES (${ticketId}, ${u.id}, 'rev-${ticketId}', '{}', 'sent', 1, NOW(), 'rev-${ticketId}-1', NOW(), NOW())`);
+      // without an OpenAI agent nothing is read and nothing is spent
+      const none = await http.post("/analytics/coaching/run", {}, auth());
+      assert(none.status === 200 && none.data.reason === "no_openai_agent" && none.data.reviewed === 0, `run without agent ${JSON.stringify(none.data)}`);
+      assert((await http.post("/analytics/coaching/run", {}, asUser(tok))).status === 403, "a consultant ran the review");
+      const agent = (await http.post("/ai-agents", { name: "Revisor", provider: "openai", model: "gpt-4o-mini", apiKey: "sk-e2e-review", active: true }, auth())).data;
+      try {
+        if (!agent.active) await http.put(`/ai-agents/${agent.id}`, { active: true }, auth());
+        anthropic.openai = [];
+        const run = await http.post("/analytics/coaching/run", {}, auth());
+        assert(run.status === 200 && run.data.reviewed >= 1, `run ${run.status} ${JSON.stringify(run.data)}`);
+        const sent = (anthropic.openai || []).map(b => JSON.stringify(b.messages)).find(m => /valor/.test(m) && /proposta/.test(m));
+        assert(sent, "the conversation did not reach the model");
+        assert(!/123\.456|99999|Pedro|Revisada/.test(sent), `personal data went to the model: ${sent.slice(0, 300)}`);
+        const kept = sql(`SELECT objections::text || '|' || skipped::text || '|' || COALESCE(note, '') FROM ConsultantReviews WHERE ticketId=${ticketId}`);
+        assert(/"preco"/.test(kept) && /false/.test(kept) && /grade/.test(kept), `review kept ${kept}`);
+        // a second run the same day reads nothing again (and spends nothing)
+        const again = await http.post("/analytics/coaching/run", {}, auth());
+        assert(again.status === 200 && !sql(`SELECT COUNT(*) FROM ConsultantReviews WHERE ticketId=${ticketId}`).startsWith("2"), "the same conversation was read twice");
+        // with enough conversations the training appears for the management, in the alerts and in the commercial view
+        for (let i = 0; i < 5; i += 1) sql(`INSERT INTO ConsultantReviews (userId, ticketId, day, objections, difficulties, skipped, createdAt, updatedAt) VALUES (${u.id}, ${ticketId}, '2000-01-0${i + 1}', '[{"type":"preco","handled":false}]', '[]', '[]', NOW(), NOW())`);
+        const coach = await http.get("/analytics/coaching?range=week", auth());
+        const mine = coach.status === 200 && coach.data.consultants.find(c => c.userId === u.id);
+        assert(mine && mine.items.some(it => it.kind === "objection" && it.key === "preco"), `coaching ${coach.status} ${JSON.stringify(mine)}`);
+        const team = (await http.get("/analytics/team?range=today", auth())).data;
+        assert(team.alerts.some(a => a.userId === u.id && a.code === "training_needed"), "the training is not in the alerts");
+        const com = (await http.get("/analytics/commercial?range=week", auth())).data;
+        assert(com.objections.byConsultant.some(c => c.userId === u.id && c.objections.some(o => o.type === "preco" && o.unhandled >= 1)), "the objections are not in the commercial view");
+        assert((await http.get("/analytics/coaching?range=week", asUser(tok))).status === 403, "a consultant read the training of the team");
+      } finally {
+        await http.delete(`/ai-agents/${agent.id}`, auth());
+      }
     });
     await test("database backup restores into a disposable database with the operational tables", async () => {
       const restoreDb=`${DB}_restore`;

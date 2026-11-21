@@ -37,6 +37,21 @@ import Student from "../../models/Student";
 import { assertRgmFree, handoverNote, rgmOf, studentForEnrollment } from "./EnrollStudent";
 import { notifyOnboarding, notifyTaskAssigned } from "./TaskNotify";
 
+
+const processAtEnroll = async (leadId: number, contactId: number, actorId?: number | null): Promise<void> => {
+  try {
+    const sale = await Ticket.findOne({ where: { contactId, segment: { [Op.ne]: "onboarding" } }, order: [["updatedAt", "DESC"]] });
+    if (!sale) return;
+    const { copilotOf } = await import("../CommercialServices/Process");
+    const copilot = await copilotOf(sale);
+    const done = copilot.steps.filter(st => st.done).map(st => st.key);
+    const missing = copilot.steps.filter(st => !st.done && !st.optional).map(st => st.key);
+    await addActivity(leadId, actorId, "process_at_enroll", `Processo na matrícula: ${done.length} de ${copilot.steps.filter(st => !st.optional).length} etapas`, { ticketId: sale.id, userId: sale.userId || null, done, missing });
+  } catch (err) {
+    logger.warn(`Retrato do processo na matrícula do lead #${leadId} não salvo: ${(err as Error).message}`);
+  }
+};
+
 export interface EnrollInput {
   poloId: number;
   tutorId?: number | "auto" | null;
@@ -127,6 +142,10 @@ const enrollLeadCore = async (lead: Lead, actorId: number, input: EnrollInput) =
   // never the consultants' number (atendimento): their side does not see the tutoring
   if (!whatsapp) whatsapp = await Whatsapp.findOne({ where: { ownerId: null as any, channel: salesConn.channel, [Op.or]: [{ team: null }, { team: { [Op.ne]: "atendimento" } }] } as any, order: [["isDefault", "DESC"], ["id", "ASC"]] });
   if (!whatsapp) whatsapp = salesConn;
+
+  // 0) the picture of the sales process as it stood before the enrollment (afterwards ficha, taxa and comprovante count as done
+  //    by themselves, so what was skipped could no longer be seen): read by Estatísticas → Comercial
+  await processAtEnroll(lead.id, contact.id, actorId);
 
   // 1) the sales conversations end here
   const sales = await Ticket.findAll({

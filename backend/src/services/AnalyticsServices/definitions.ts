@@ -10,8 +10,9 @@ export interface KpiDefinition {
 }
 
 export const KPI_DEFINITIONS: KpiDefinition[] = [
+  { key: "attendances", label: "Conversas atendidas", unit: "count", kind: "period", description: "Conversas (tickets) de clientes em que a pessoa enviou ao menos uma mensagem no período. Cada conversa conta uma vez, quantas mensagens tiver. Sem grupos, histórico, equipe e contatos pessoais." },
+  { key: "peopleContacted", label: "Pessoas contatadas", unit: "count", kind: "period", description: "Pessoas diferentes que receberam ao menos uma mensagem da pessoa no período. Quem tem duas conversas conta uma vez." },
   { key: "messagesSent", label: "Mensagens enviadas", unit: "count", kind: "period", description: "Mensagens digitadas e enviadas por uma pessoa pelo sistema (autoria real, uma por envio). Mensagens da IA, de campanhas automáticas e de robôs nunca entram. Abrir uma conversa não conta." },
-  { key: "attendances", label: "Atendimentos válidos", unit: "count", kind: "period", description: "Conversas distintas de clientes (sem grupos, histórico, equipe e contatos pessoais) em que a pessoa enviou ao menos uma mensagem no período." },
   { key: "reactivated", label: "Contatos reativados", unit: "count", kind: "period", description: "Conversas em que a pessoa escreveu depois de 7 dias ou mais sem nenhuma mensagem de ninguém." },
   { key: "leadsWorked", label: "Leads trabalhados", unit: "count", kind: "period", description: "Leads distintos em que a pessoa registrou uma atividade (anotação, etapa, contato) ou enviou mensagem pela conversa do lead. Atividades automáticas do sistema não contam." },
   { key: "pendingReply", label: "Conversas pendentes", unit: "count", kind: "now", description: "Conversas abertas da pessoa em que o cliente foi o último a escrever." },
