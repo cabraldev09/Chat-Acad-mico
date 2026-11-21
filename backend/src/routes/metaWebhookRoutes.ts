@@ -3,7 +3,7 @@ import { createHmac, timingSafeEqual } from "crypto";
 
 import Whatsapp from "../models/Whatsapp";
 import { getConfig } from "../channels/types";
-import { processMetaWebhook } from "../channels/meta";
+import { kickWebhook, storeWebhook } from "../services/ChannelServices/MetaWebhookQueue";
 import { logger } from "../utils/logger";
 import { getMetaApp } from "../helpers/MetaApp";
 import { describeCloudBody, noteWebhook } from "../channels/WebhookLog";
@@ -30,22 +30,16 @@ router.post("/meta", async (req: Request, res: Response) => {
     logger.warn("Meta app webhook signature mismatch");
     return res.sendStatus(401);
   }
-  res.sendStatus(200);
-  (async () => {
-    const connections = await Whatsapp.findAll({ where: { channel: "instagram" } as any });
-    for (const entry of req.body?.entry || []) {
-      const whatsapp = connections.find(w => {
-        const c = getConfig(w);
-        return c.mode === "oauth" && String(c.igUserId) === String(entry.id);
-      });
-      if (!whatsapp) {
-        logger.warn(`Meta app webhook: no connection for account ${entry.id}`);
-        continue;
-      }
-      // eslint-disable-next-line no-await-in-loop
-      await processMetaWebhook(whatsapp, { entry: [entry] });
-    }
-  })().catch(err => logger.error(`Meta app webhook error: ${err}`));
+  // stored before the 200: a restart or an error while processing no longer loses what the Meta delivered
+  try {
+    const row = await storeWebhook(null, (req as any).rawBody, req.body);
+    res.sendStatus(200);
+    if (row.status === "pending") kickWebhook(row.id);
+  } catch (err) {
+    // not stored: the Meta tries again on an error answer
+    logger.error(`Meta app webhook not stored: ${err}`);
+    return res.sendStatus(500);
+  }
   return undefined;
 });
 
@@ -95,11 +89,16 @@ router.post("/meta/:whatsappId", async (req: Request, res: Response) => {
 
   const seen = describeCloudBody(req.body);
   noteWebhook(whatsapp.id, "recebido", seen.text, seen.messages);
-  // acknowledge fast; Meta retries on slow responses
-  res.sendStatus(200);
-  processMetaWebhook(whatsapp, req.body).catch(err =>
-    logger.error(`Meta webhook error: ${err}`)
-  );
+  // stored before the 200 (fast: one insert), processed right after and again by the queue if it fails or the server restarts
+  try {
+    const row = await storeWebhook(whatsapp.id, (req as any).rawBody, req.body);
+    res.sendStatus(200);
+    if (row.status === "pending") kickWebhook(row.id);
+  } catch (err) {
+    // not stored: the Meta tries again on an error answer
+    logger.error(`Meta webhook not stored for connection ${whatsapp.id}: ${err}`);
+    return res.sendStatus(500);
+  }
   return undefined;
 });
 

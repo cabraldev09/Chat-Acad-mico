@@ -9,6 +9,7 @@ import { initIO } from "./libs/socket";
 import { logger } from "./utils/logger";
 import { StartAllWhatsAppsSessions } from "./services/WbotServices/StartAllWhatsAppsSessions";
 import { startScheduler } from "./workers/Scheduler";
+import { startMetaWebhookQueue } from "./services/ChannelServices/MetaWebhookQueue";
 import { startCampaignRunner } from "./workers/CampaignRunner";
 import { startCrmReminders } from "./workers/CrmReminders";
 import { startLeadSlaAlert } from "./workers/LeadSlaAlert";
@@ -53,6 +54,7 @@ const boot = async () => {
 whenLeader(() => {
   StartAllWhatsAppsSessions();
   startScheduler();
+  startMetaWebhookQueue();
   startWebhookQueue();
   startCampaignRunner();
   startCrmReminders();

@@ -31,6 +31,8 @@ interface Request {
   outsideHoursNotice?: boolean;
   // a question with options: channels that have buttons send them natively (the text stays in the history)
   choices?: { question: string; options: Array<{ id: string; label: string }> };
+  // the same key twice never sends twice (a retry of a send that already reached WhatsApp answers with the first one)
+  deliveryKey?: string;
 }
 
 const sendMessage = async ({
@@ -55,19 +57,24 @@ const sendMessage = async ({
         choices && choices.options.length && adapter.sendChoices
           ? await adapter.sendChoices(whatsapp, ticket.contact as any, choices.question, choices.options)
           : await adapter.sendText(whatsapp, ticket.contact as any, text);
-      await CreateMessageService({
-        messageData: {
-          id: sent.id,
-          ticketId: ticket.id,
-          body: text,
-          fromMe: true,
-          read: true,
-          mediaType: "chat",
-          ack: 1,
-          quotedMsgId: quotedMsg?.id
-        }
-      });
-      await ticket.update({ lastMessage: previewOf(text) });
+      // the channel accepted it: from here on an error is only logged (sending again would deliver it twice)
+      try {
+        await CreateMessageService({
+          messageData: {
+            id: sent.id,
+            ticketId: ticket.id,
+            body: text,
+            fromMe: true,
+            read: true,
+            mediaType: "chat",
+            ack: 1,
+            quotedMsgId: quotedMsg?.id
+          }
+        });
+        await ticket.update({ lastMessage: previewOf(text) });
+      } catch (saveErr) {
+        logger.error({ ticketId: ticket.id, err: String((saveErr as any)?.message || saveErr) }, "A mensagem foi entregue, mas não foi gravada na conversa");
+      }
       if (!automated) fire("message.agent_sent", { ticketId: ticket.id, contactId: ticket.contactId });
       return {
         id: sent.id,
@@ -125,7 +132,8 @@ const sendMessage = async ({
       const total = Date.now() - t0;
       if (total > 4000) logger.info(`Envio automático do ticket ${ticket.id}: ${total} ms no total (digitando ${typedMs} ms, ritmo de envio ${paceMs} ms, WhatsApp ${total - typedMs - paceMs} ms)`);
     }
-    await ticket.update({ lastMessage: previewOf(body) });
+    // accepted by WhatsApp: an error from here on is only logged (sending again would deliver it twice)
+    await ticket.update({ lastMessage: previewOf(body) }).catch(e => logger.warn(`lastMessage do ticket ${ticket.id} não atualizado: ${e}`));
     // The message is stored here, right after WhatsApp accepted it, so it shows in the open conversation at once (the connection's own report of it
     // comes later, through a slower path). The listener skips what starts with the robots' invisible mark, so for those this is the only copy.
     // Saving twice is harmless (same id).
@@ -149,6 +157,6 @@ const sendMessage = async ({
   }
 };
 
-const SendWhatsAppMessage = (input: Request): Promise<ProviderMessage> => deliver(input.ticket, { automated: input.automated, optOutNotice: input.optOutNotice, outsideHoursNotice: input.outsideHoursNotice }, () => sendMessage(input));
+const SendWhatsAppMessage = (input: Request): Promise<ProviderMessage> => deliver(input.ticket, { key: input.deliveryKey, automated: input.automated, optOutNotice: input.optOutNotice, outsideHoursNotice: input.outsideHoursNotice }, () => sendMessage(input));
 
 export default SendWhatsAppMessage;

@@ -1,7 +1,7 @@
 require("../bootstrap");
 
-// Works with MariaDB/MySQL (local) and PostgreSQL (Supabase).
-//   DB_DIALECT=mysql|postgres
+// PostgreSQL only (the server, Supabase and the tests). Several parts depend on it (advisory locks, RETURNING, the retention SQL).
+//   DB_DIALECT=postgres                                (optional; anything else stops the API at start)
 //   DATABASE_URL=postgresql://user:pass@host:5432/db   (optional, wins over DB_*)
 //   DB_SSL=true                                        (Supabase needs SSL)
 // Every timestamp is stored in UTC; the company timezone (APP_TIMEZONE /
@@ -18,19 +18,18 @@ const fromUrl = (raw = process.env.DATABASE_URL): Record<string, any> => {
   };
 };
 
-const dialect =
-  process.env.DB_DIALECT ||
-  (process.env.DATABASE_URL && /^postgres/.test(process.env.DATABASE_URL)
-    ? "postgres"
-    : "mysql");
+if (process.env.DB_DIALECT && process.env.DB_DIALECT !== "postgres") {
+  throw new Error(`Banco não suportado: DB_DIALECT=${process.env.DB_DIALECT}. O sistema funciona só com PostgreSQL (DB_DIALECT=postgres).`);
+}
+if (process.env.DATABASE_URL && !/^postgres/.test(process.env.DATABASE_URL)) {
+  throw new Error("Banco não suportado: a DATABASE_URL não é de PostgreSQL. O sistema funciona só com PostgreSQL.");
+}
+const dialect = "postgres";
 
 const useSsl = process.env.DB_SSL === "true";
 
 module.exports = {
-  define:
-    dialect === "mysql"
-      ? { charset: "utf8mb4", collate: "utf8mb4_bin" }
-      : {},
+  define: {},
   dialect,
   timezone: "+00:00",
   host: process.env.DB_HOST,

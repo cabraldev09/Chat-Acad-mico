@@ -1,5 +1,10 @@
 import { Router } from "express";
+import fs from "fs";
+import os from "os";
+import path from "path";
 import multer from "multer";
+
+import { batchLimit } from "../helpers/UploadLimit";
 
 import * as Analysis from "../controllers/AnalysisController";
 import * as Portal from "../controllers/StudentPortalController";
@@ -11,7 +16,12 @@ import rateLimit from "../middleware/rateLimit";
 // PDFs are read in memory and never written to disk
 const pdf = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024, files: 1 } });
 
-const gradeUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024, files: 150 } });
+// the grades of a whole catalog (up to 150 PDFs) go to a temporary folder, not to memory: the controller reads one file at a time and
+// erases them at the end. The whole batch is limited too (a single request can no longer fill the server's memory or disk)
+const GRADE_TMP = path.join(os.tmpdir(), "grade-uploads");
+fs.mkdirSync(GRADE_TMP, { recursive: true });
+const gradeUpload = multer({ storage: multer.diskStorage({ destination: GRADE_TMP }), limits: { fileSize: 8 * 1024 * 1024, files: 150 } });
+const gradeBatchLimit = batchLimit(300 * 1024 * 1024);
 
 const r = Router();
 
@@ -51,7 +61,7 @@ r.post("/students/:id/upload", isAuth, rateLimit({ windowMs: 60000, max: 20, key
 
 // ---- commercial grades (matrices): everybody consults and sends, the management publishes
 r.get("/grades", isAuth, Grades.index);
-r.post("/grades", isAuth, rateLimit({ windowMs: 60000, max: 10, key: req => `gr:${(req as any).user?.id}` }), gradeUpload.array("files", 150), Grades.store);
+r.post("/grades", isAuth, rateLimit({ windowMs: 60000, max: 10, key: req => `gr:${(req as any).user?.id}` }), gradeUpload.array("files", 150), gradeBatchLimit, Grades.store);
 r.post("/grades/import-defaults", isAuth, Grades.importDefaults);
 r.post("/grades/refresh", isAuth, Grades.refresh);
 r.get("/grades/:id", isAuth, Grades.show);

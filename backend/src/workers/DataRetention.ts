@@ -24,7 +24,9 @@ export const RULES: Rule[] = [
   { table: "AutomationTraces", where: `"createdAt" < NOW() - INTERVAL '{days} days'`, days: 90 },
   { table: "ClientErrors", where: `"createdAt" < NOW() - INTERVAL '{days} days'`, days: 60 },
   { table: "LeadReminderLogs", where: `"createdAt" < NOW() - INTERVAL '{days} days'`, days: 90 },
-  { table: "PasswordResets", where: `("usedAt" IS NOT NULL OR "expiresAt" < NOW()) AND "createdAt" < NOW() - INTERVAL '{days} days'`, days: 30 }
+  { table: "PasswordResets", where: `("usedAt" IS NOT NULL OR "expiresAt" < NOW()) AND "createdAt" < NOW() - INTERVAL '{days} days'`, days: 30 },
+  // the copy of each webhook of the Meta: once processed, it is only an audit trail of a few days
+  { table: "MetaWebhookEvents", where: `status = 'done' AND "updatedAt" < NOW() - INTERVAL '{days} days'`, days: 7 }
 ];
 
 const BATCH = 2000;
@@ -45,17 +47,20 @@ export const prune = async (rule: Rule): Promise<number> => {
   return total;
 };
 
-export const runRetention = async (): Promise<Record<string, number>> => {
-  const out: Record<string, number> = {};
+// what each table trimmed, and the tables that failed (the day only counts as done when none failed)
+export const runRetention = async (): Promise<{ trimmed: Record<string, number>; failed: string[] }> => {
+  const trimmed: Record<string, number> = {};
+  const failed: string[] = [];
   for (const rule of RULES) {
     try {
       // eslint-disable-next-line no-await-in-loop
-      out[rule.table] = await prune(rule);
+      trimmed[rule.table] = await prune(rule);
     } catch (err) {
+      failed.push(rule.table);
       logger.warn(`Data retention ${rule.table} failed: ${err}`);
     }
   }
-  return out;
+  return { trimmed, failed };
 };
 
 const tick = async (): Promise<void> => {
@@ -67,10 +72,11 @@ const tick = async (): Promise<void> => {
     const hour = Number(part("hour"));
     const today = `${part("year")}-${part("month")}-${part("day")}`;
     if (hour < 3 || hour > 5 || (await getSetting("retention_last_run", "")) === today) return;
-    const done = await runRetention();
-    await setSetting("retention_last_run", today);
-    const text = Object.entries(done).filter(([, n]) => n > 0).map(([t, n]) => `${t}: ${n}`).join(", ");
-    logger.info(`Data retention: ${text || "nothing to trim"}`);
+    const { trimmed, failed } = await runRetention();
+    // a table that failed is tried again in the next half hour (the day is not marked as done)
+    if (!failed.length) await setSetting("retention_last_run", today);
+    const text = Object.entries(trimmed).filter(([, n]) => n > 0).map(([t, n]) => `${t}: ${n}`).join(", ");
+    logger.info(`Data retention: ${text || "nothing to trim"}${failed.length ? ` (falharam: ${failed.join(", ")}; nova tentativa em 30 min)` : ""}`);
   } catch (err) {
     logger.warn(`Data retention failed: ${err}`);
   }

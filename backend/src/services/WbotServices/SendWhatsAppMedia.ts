@@ -21,6 +21,8 @@ interface Request {
   ticket: Ticket;
   body?: string;
   automated?: boolean;
+  // the same key twice never sends twice (see SendWhatsAppMessage)
+  deliveryKey?: string;
   displayName?: string;
 }
 
@@ -145,6 +147,6 @@ const sendMedia = async ({
   }
 };
 
-const SendWhatsAppMedia = (input: Request): Promise<ProviderMessage> => deliver(input.ticket, { automated: input.automated }, () => sendMedia(input));
+const SendWhatsAppMedia = (input: Request): Promise<ProviderMessage> => deliver(input.ticket, { key: input.deliveryKey, automated: input.automated }, () => sendMedia(input));
 
 export default SendWhatsAppMedia;

@@ -479,15 +479,19 @@ const processCloud = async (received: Whatsapp, entry: any) => {
   }
 };
 
-export const processMetaWebhook = async (whatsapp: Whatsapp, body: any): Promise<void> => {
+// strict: after trying every entry, the first error is thrown (the stored webhook is tried again; a message already saved is skipped by its id)
+export const processMetaWebhook = async (whatsapp: Whatsapp, body: any, strict = false): Promise<void> => {
+  let first: unknown = null;
   for (const entry of body.entry || []) {
     try {
       if (whatsapp.channel === "whatsapp_cloud") await processCloud(whatsapp, entry);
       else await processSocial(whatsapp, entry, whatsapp.channel as ChannelType);
     } catch (err) {
       logger.error(`Meta webhook processing error: ${err}`);
+      if (!first) first = err;
     }
   }
+  if (strict && first) throw first;
 };
 
 export const metaWebhookUrl = (whatsappId: number): string =>

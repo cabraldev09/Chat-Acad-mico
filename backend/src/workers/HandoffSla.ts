@@ -86,8 +86,20 @@ const tick = async (): Promise<void> => {
   }
 };
 
+// a slow round (many conversations) never overlaps the next: the same conversation would be warned or moved twice
+let running = false;
+const guarded = async (): Promise<void> => {
+  if (running) return;
+  running = true;
+  try {
+    await tick();
+  } finally {
+    running = false;
+  }
+};
+
 export const startHandoffSla = (): void => {
-  setInterval(tick, Number(process.env.HANDOFF_SLA_MS) || 60000);
+  setInterval(guarded, Number(process.env.HANDOFF_SLA_MS) || 60000);
 };
 
 export { tick as runHandoffSlaOnce };
