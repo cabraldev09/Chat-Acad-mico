@@ -5153,13 +5153,15 @@ const postMeta = (id, payload, secret, badSig) => {
     });
     await test("connection health: state, since when, what it did today; each person sees only their own numbers", async () => {
       // (the suite may cross midnight in the time zone of the company: one message of the official number is brought to now, so "today" has it)
-      sql(`UPDATE Messages SET createdAt = now() WHERE id = (SELECT m.id FROM Messages m JOIN Tickets t ON t.id = m.ticketId JOIN Whatsapps w ON w.id = t.whatsappId WHERE w.channel = 'whatsapp_cloud' AND m.fromMe = false ORDER BY m.createdAt DESC LIMIT 1)`);
+      // (there is more than one official number by now: the check below reads the same number whose message was moved)
+      const movedWa = Number(sql(`WITH last AS (SELECT m.id, t.whatsappId FROM Messages m JOIN Tickets t ON t.id = m.ticketId JOIN Whatsapps w ON w.id = t.whatsappId WHERE w.channel = 'whatsapp_cloud' AND m.fromMe = false ORDER BY m.createdAt DESC LIMIT 1), moved AS (UPDATE Messages SET createdAt = now() WHERE id IN (SELECT id FROM last) RETURNING id) SELECT whatsappId FROM last WHERE EXISTS (SELECT 1 FROM moved)`));
+      assert(movedWa > 0, "no inbound message of an official number to bring to today");
       const h = await http.get("/whatsapp-health", auth());
       assert(h.status === 200 && h.data.length >= 2, `health ${h.status} ${h.data.length}`);
       const first = h.data[0];
       assert(first.name && first.status && first.statusSince && typeof first.sentToday === "number" && typeof first.receivedToday === "number", `shape ${JSON.stringify(first)}`);
-      const cloud = h.data.find(x => x.channel === "whatsapp_cloud");
-      assert(cloud && cloud.receivedToday >= 1, "today's messages were not counted");
+      const cloud = h.data.find(x => x.id === movedWa);
+      assert(cloud && cloud.channel === "whatsapp_cloud" && cloud.receivedToday >= 1, "today's messages were not counted");
       // the state hook: a change of status through the model moves "since"
       const cons = (await http.post("/users", { name: "Pessoa da Saúde", email: "health-cons@x.com", password: "senha123", role: "consultor" }, auth())).data;
       const tk = (await http.post("/auth/login", { email: "health-cons@x.com", password: "senha123" })).data.token;
