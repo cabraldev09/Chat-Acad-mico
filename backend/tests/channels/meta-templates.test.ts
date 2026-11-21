@@ -7,7 +7,7 @@ vi.mock("../../src/services/ChannelServices/ConnectionTeam", () => ({ connection
 vi.mock("../../src/services/TicketServices/OpeningTemplate", () => ({ windowOf: vi.fn() }));
 vi.mock("../../src/helpers/AppSettings", () => ({ getSetting: vi.fn(async (_k: string, d: string) => d), setSetting: vi.fn() }));
 
-import { TEMPLATE_PACK, cleanDraft, paramsIn } from "../../src/services/CampaignServices/Templates";
+import { TEMPLATE_PACK, cleanDraft, paramsIn, variableAtEdge } from "../../src/services/CampaignServices/Templates";
 import { prettyPhone, vcardOf, welcomeText } from "../../src/services/CrmServices/TutoriaContact";
 
 describe("pacote de modelos da Meta", () => {
@@ -39,9 +39,21 @@ describe("pacote de modelos da Meta", () => {
 
 describe("rascunho de modelo", () => {
   it("normaliza o nome e exige um exemplo para cada variável", () => {
-    expect(cleanDraft({ name: "Aviso Boleto Mês", body: "Olá {{1}}", examples: ["Ana"] }).name).toBe("aviso_boleto_mes");
+    expect(cleanDraft({ name: "Aviso Boleto Mês", body: "Olá {{1}}, o boleto saiu.", examples: ["Ana"] }).name).toBe("aviso_boleto_mes");
     expect(() => cleanDraft({ name: "x", body: "Olá {{1}} e {{2}}", examples: ["Ana"] })).toThrow();
     expect(() => cleanDraft({ name: "", body: "Olá" })).toThrow();
+  });
+});
+
+describe("variável no início ou no fim (a Meta recusa)", () => {
+  it("é recusada aqui antes de ir para a Meta, com a pontuação em volta", () => {
+    expect(variableAtEdge("{{1}}, a sua matrícula está confirmada.")).toBe(true);
+    expect(variableAtEdge("A sua prova é em {{2}}.")).toBe(true);
+    expect(variableAtEdge("Matrícula confirmada, {{1}}: tudo certo.")).toBe(false);
+    expect(() => cleanDraft({ name: "x", body: "{{1}}, tudo certo.", examples: ["Ana"] })).toThrow();
+  });
+  it("nenhum modelo do pacote começa ou termina com variável", () => {
+    for (const t of TEMPLATE_PACK("Cruzeiro do Sul Virtual")) expect(variableAtEdge(t.body)).toBe(false);
   });
 });
 

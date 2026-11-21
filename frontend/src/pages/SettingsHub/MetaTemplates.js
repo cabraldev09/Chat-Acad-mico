@@ -95,17 +95,21 @@ export default function MetaTemplates({ values, save }) {
   // the answer of the last pack send, shown on each template (what was sent, what already existed, what the Meta refused)
   const [packResults, setPackResults] = useState({});
   const quiet = useRef(false);
+  const [checkedAt, setCheckedAt] = useState(null);
 
-  const load = useCallback(async (silent) => {
+  // manual: the "Atualizar" button says it worked (or why not) and keeps the list on screen when it fails
+  const load = useCallback(async (silent, manual) => {
     if (!silent) setBusy(true);
     try {
       const { data: d } = await api.get("/meta/templates");
       setData(d);
       setError("");
       setStale(false);
+      setCheckedAt(new Date());
+      if (manual) toast.success("Lista atualizada com a Meta.");
       if (d.linked && d.linked.length) toast.success(`Aprovado e já em uso: ${d.linked.join(", ")}.`);
     } catch (err) {
-      if (!silent) setError(err?.response?.data?.error || err?.response?.data?.message || "Não foi possível ler os modelos na Meta.");
+      if (manual) { toastError(err); setStale(true); } else if (!silent) setError(err?.response?.data?.error || err?.response?.data?.message || "Não foi possível ler os modelos na Meta.");
       else setStale(true);
     }
     if (!silent) setBusy(false);
@@ -145,6 +149,8 @@ export default function MetaTemplates({ values, save }) {
   };
 
   const n = paramsIn(draft.body);
+  // the Meta refuses a text that starts or ends with a variable (the same rule the server checks)
+  const edge = /^[\s\p{P}]*\{\{\d+\}\}/u.test(draft.body.trim()) || /\{\{\d+\}\}[\s\p{P}]*$/u.test(draft.body.trim());
   const examples = useMemo(() => Array.from({ length: n }, (_, i) => draft.examples[i] || ""), [n, draft.examples]);
   const create = async () => {
     setSending(true);
@@ -205,11 +211,13 @@ export default function MetaTemplates({ values, save }) {
       <div style={card}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
           <div style={{ fontWeight: 700, flex: "1 1 220px" }}>Pacote recomendado</div>
-          <Button size="small" variant="outlined" onClick={() => load()} disabled={busy} startIcon={<RefreshCw size={14} className={busy ? "ui-spin" : undefined} />}>Atualizar</Button>
+          {checkedAt && <span style={{ fontSize: 12, color: "var(--text-2)" }}>Conferido às {checkedAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</span>}
+          <Button size="small" variant="outlined" onClick={() => load(false, true)} disabled={busy || sending} startIcon={<RefreshCw size={14} className={busy ? "ui-spin" : undefined} />}>{busy ? "Atualizando..." : "Atualizar"}</Button>
           <Button size="small" variant="contained" color="primary" onClick={sendPack} disabled={sending || !missing.length} startIcon={sending ? <CircularProgress size={14} color="inherit" /> : <Send size={14} />}>
             {sending ? `Enviando ${missing.length}...` : missing.length ? `Enviar ${missing.length} para a Meta` : "Todos enviados"}
           </Button>
         </div>
+        {sending && <div role="status" style={{ ...hint, marginBottom: 8, color: "var(--accent)" }}>Enviando para a Meta. Leva alguns segundos; o resultado de cada modelo aparece abaixo.</div>}
         <div style={hint}>
           Modelos por departamento, escritos como aviso para a categoria <b>Utilidade</b> (a mais barata). A Meta pode mudar a categoria por conta própria: quando ela passa um modelo para Marketing, ele aparece marcado aqui, porque cada envio fica mais caro. Quem já está conversando com a equipe não recebe "Olá" de novo: o modelo começa pelo nome e diz o que continua. Os de abertura têm botões de resposta, que reabrem a conversa gratuita de 24 horas. Ao ser aprovado, cada um passa a ser usado sozinho no lugar certo.
         </div>
@@ -271,7 +279,7 @@ export default function MetaTemplates({ values, save }) {
             </div>
             <TextField size="small" variant="outlined" label="Nome (letras minúsculas e _)" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "_") })} />
             <TextField size="small" variant="outlined" label="Para que serve (só para a equipe)" value={draft.purpose} onChange={(e) => setDraft({ ...draft, purpose: e.target.value.slice(0, 120) })} />
-            <TextField multiline minRows={3} variant="outlined" label="Texto" value={draft.body} onChange={(e) => setDraft({ ...draft, body: e.target.value })} placeholder="{{1}}, a sua solicitação sobre o curso {{2}} continua aberta. Para seguir, é só responder." />
+            <TextField multiline minRows={3} variant="outlined" label="Texto" value={draft.body} onChange={(e) => setDraft({ ...draft, body: e.target.value })} placeholder="Sobre a sua solicitação, {{1}}: o curso {{2}} continua em aberto. Para seguir, é só responder." />
             {examples.length > 0 && (
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 {examples.map((ex, i) => (
@@ -294,12 +302,13 @@ export default function MetaTemplates({ values, save }) {
               <span style={hint}>Utilidade · português (Brasil)</span>
               <span style={{ flex: 1 }} />
               <Button size="small" variant="contained" color="primary" startIcon={<Send size={14} />} onClick={create}
-                disabled={sending || !draft.name.trim() || !draft.body.trim() || examples.some((x) => !x.trim())}>Enviar para análise</Button>
+                disabled={sending || edge || !draft.name.trim() || !draft.body.trim() || examples.some((x) => !x.trim())}>{sending ? "Enviando..." : "Enviar para análise"}</Button>
             </div>
           </div>
           <div style={{ display: "grid", gap: 6, minWidth: 0 }}>
             <div style={{ fontSize: 13, fontWeight: 700 }}>Como a pessoa vê</div>
             <Bubble body={draft.body} examples={examples} buttons={draft.buttons} />
+            {edge && <div style={{ ...hint, color: "#b91c1c" }}>A Meta não aceita variável no começo nem no fim do texto. Comece e termine com palavras, por exemplo: "Matrícula confirmada, {"{{1}}"}: ...".</div>}
             {/^\s*(ol[áa]|oi)\b/i.test(draft.body) && draft.use !== "campanha" && <div style={{ ...hint, color: "#b45309" }}>Quem já conversa com a equipe estranha um "Olá" no meio do processo: comece pelo nome ({"{{1}}"}, ...).</div>}
             {/(desconto|promo|oferta|gr[áa]tis|imperd[íi]vel|últimas vagas)/i.test(draft.body) && <div style={{ ...hint, color: "#b91c1c" }}>Palavras de oferta fazem a Meta recusar como Utilidade.</div>}
           </div>

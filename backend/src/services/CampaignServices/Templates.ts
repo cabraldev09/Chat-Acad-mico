@@ -100,55 +100,55 @@ export interface TemplateDraft {
 export const TEMPLATE_PACK = (institution: string): TemplateDraft[] => [
   { name: "retomada_atendimento", department: "atendimento", use: "abertura", setting: "atendimento_template_name", buttons: ["Continuar o atendimento", "Agora não"],
     purpose: "Retomar o atendimento de matrícula depois de 24 h sem resposta",
-    body: `{{1}}, aqui é {{2}}, da ${institution}. O seu atendimento de matrícula está em andamento e aguarda a sua resposta para continuar.`, examples: ["Maria", "Ana"] },
+    body: `Atendimento de matrícula da ${institution}: {{1}}, aqui é {{2}}. O seu atendimento está em andamento e aguarda a sua resposta para continuar.`, examples: ["Maria", "Ana"] },
   { name: "solicitacao_em_aberto", department: "atendimento", use: "aviso",
     purpose: "Quem pediu informações e parou de responder",
-    body: "{{1}}, a sua solicitação de informações sobre o curso {{2}} está registrada e segue em aberto, aguardando a sua resposta para ser concluída.", examples: ["Maria", "Pedagogia"] },
+    body: "Sobre a sua solicitação, {{1}}: as informações do curso {{2}} estão registradas e seguem em aberto, aguardando a sua resposta para serem concluídas.", examples: ["Maria", "Pedagogia"] },
   { name: "proposta_pronta", department: "atendimento", use: "aviso", buttons: ["Quero ver a proposta"],
     purpose: "A simulação de valores que a pessoa pediu foi concluída",
-    body: "{{1}}, a simulação de valores que você solicitou para o curso {{2}} foi concluída. Responda esta mensagem para recebê-la.", examples: ["Maria", "Pedagogia"] },
+    body: "Simulação concluída, {{1}}: a simulação de valores que você solicitou para o curso {{2}} está pronta. Responda esta mensagem para recebê-la.", examples: ["Maria", "Pedagogia"] },
   { name: "documentos_pendentes", department: "atendimento", use: "aviso",
     purpose: "Falta documento para concluir a matrícula",
-    body: "{{1}}, para concluir a sua matrícula no curso {{2}} ainda falta: {{3}}. Você pode enviar por aqui mesmo.", examples: ["Maria", "Pedagogia", "foto do RG"] },
+    body: "Documentos da matrícula, {{1}}: para concluir a sua matrícula no curso {{2}} ainda falta {{3}}. Você pode enviar por aqui mesmo.", examples: ["Maria", "Pedagogia", "foto do RG"] },
   { name: "taxa_matricula_vencimento", department: "financeiro", use: "aviso",
     purpose: "Taxa de matrícula perto do vencimento",
-    body: "{{1}}, a taxa de matrícula do curso {{2}} vence em {{3}}. Se já pagou, desconsidere. Para receber o Pix ou o boleto de novo, responda aqui.", examples: ["Maria", "Pedagogia", "25/11/2026"] },
+    body: "Taxa de matrícula, {{1}}: a taxa do curso {{2}} vence em {{3}}. Se já pagou, desconsidere. Para receber o Pix ou o boleto de novo, responda aqui.", examples: ["Maria", "Pedagogia", "25/11/2026"] },
   { name: "vencimento_mensalidade", department: "financeiro", use: "aviso",
     purpose: "Boleto da mensalidade perto do vencimento",
-    body: "{{1}}, o boleto da mensalidade do curso {{2}} vence em {{3}}. Se já pagou, desconsidere. Para a segunda via, responda aqui.", examples: ["Maria", "Pedagogia", "10/12/2026"] },
+    body: "Mensalidade, {{1}}: o boleto do curso {{2}} vence em {{3}}. Se já pagou, desconsidere. Para a segunda via, responda aqui.", examples: ["Maria", "Pedagogia", "10/12/2026"] },
   { name: "matricula_confirmada_tutoria", department: "tutoria", use: "aviso", setting: "boas_vindas_template_name",
     purpose: "Matrícula confirmada: quem é o tutor e o número da tutoria",
-    body: `{{1}}, a sua matrícula no curso {{2}} está confirmada. Quem acompanha você é {{3}}, da tutoria da ${institution}, pelo número {{4}}. Mande uma mensagem nesse número para agendar a sua ambientação.`, examples: ["Maria", "Pedagogia", "Ana Paula", "+55 (69) 99325-8103"] },
+    body: `Matrícula confirmada, {{1}}: a sua matrícula no curso {{2}} está confirmada. Quem acompanha você é {{3}}, da tutoria da ${institution}, pelo número {{4}}. Mande uma mensagem nesse número para agendar a sua ambientação.`, examples: ["Maria", "Pedagogia", "Ana Paula", "+55 (69) 99325-8103"] },
   { name: "retomada_tutoria", department: "tutoria", use: "abertura", setting: "tutoria_template_name", buttons: ["Sim, podemos falar", "Agora não"],
     purpose: "A tutoria retomar o contato com o aluno depois de 24 h",
-    body: `{{1}}, aqui é {{2}}, da tutoria da ${institution}, sobre o acompanhamento do seu curso. Podemos falar por aqui?`, examples: ["Maria", "Paula"] },
+    body: `Tutoria da ${institution}: {{1}}, aqui é {{2}}, sobre o acompanhamento do seu curso. Podemos falar por aqui?`, examples: ["Maria", "Paula"] },
   { name: "ambientacao_agendada", department: "tutoria", use: "aviso",
     purpose: "Lembrete da ambientação marcada",
-    body: "{{1}}, a sua ambientação com a tutoria está marcada para {{2}}. Se precisar trocar o horário, responda esta mensagem.", examples: ["Maria", "21/11 às 14h"] },
+    body: "Ambientação agendada, {{1}}: a sua ambientação com a tutoria está marcada para {{2}}. Se precisar trocar o horário, responda esta mensagem.", examples: ["Maria", "21/11 às 14h"] },
   { name: "retomada_relacionamento", department: "relacionamento", use: "abertura", setting: "relacionamento_template_name", buttons: ["Sim, podemos falar", "Agora não"],
     purpose: "Retenção: retomar o contato com o aluno depois de 24 h",
-    body: `{{1}}, aqui é {{2}}, do relacionamento com o aluno da ${institution}. Há um atendimento sobre a sua matrícula aguardando a sua resposta.`, examples: ["Maria", "Carla"] },
+    body: `Relacionamento com o aluno da ${institution}: {{1}}, aqui é {{2}}. Há um atendimento sobre a sua matrícula aguardando a sua resposta.`, examples: ["Maria", "Carla"] },
   { name: "prazo_rematricula", department: "relacionamento", use: "aviso", setting: "rematricula_template_name", buttons: ["Quero ajuda"],
     purpose: "Prazo da rematrícula do aluno ativo",
-    body: "{{1}}, a rematrícula do seu curso {{2}} vai até {{3}}. Se precisar de ajuda para concluir, responda esta mensagem.", examples: ["Maria", "Pedagogia", "15/01/2027"] },
+    body: "Rematrícula, {{1}}: a rematrícula do seu curso {{2}} vai até {{3}}. Se precisar de ajuda para concluir, responda esta mensagem.", examples: ["Maria", "Pedagogia", "15/01/2027"] },
   { name: "regularizar_matricula", department: "relacionamento", use: "aviso",
     purpose: "Aluno cancelado ou trancado: a situação da matrícula",
-    body: "{{1}}, a sua matrícula no curso {{2}} consta como {{3}} no nosso sistema. Em caso de dúvida sobre a sua situação acadêmica, responda esta mensagem.", examples: ["Maria", "Pedagogia", "trancada"] },
+    body: "Situação da matrícula, {{1}}: a sua matrícula no curso {{2}} consta como {{3}} no nosso sistema. Em caso de dúvida sobre a sua situação acadêmica, responda esta mensagem.", examples: ["Maria", "Pedagogia", "trancada"] },
   { name: "analise_historico_concluida", department: "atendimento", use: "aviso", buttons: ["Quero o resultado"],
     purpose: "A análise do histórico (aproveitamento de disciplinas) que a pessoa pediu foi concluída",
-    body: "{{1}}, a análise do seu histórico escolar para o curso {{2}} foi concluída. Responda esta mensagem para receber o resultado.", examples: ["Maria", "Pedagogia"] },
+    body: "Análise do histórico, {{1}}: a análise do seu histórico escolar para o curso {{2}} foi concluída. Responda esta mensagem para receber o resultado.", examples: ["Maria", "Pedagogia"] },
   { name: "documento_recebido", department: "atendimento", use: "aviso",
     purpose: "Confirmar que um documento da matrícula chegou",
-    body: "{{1}}, recebemos o documento {{2}} da sua matrícula no curso {{3}}. Se faltar algo, avisaremos por aqui.", examples: ["Maria", "RG", "Pedagogia"] },
+    body: "Documento recebido, {{1}}: recebemos o documento {{2}} da sua matrícula no curso {{3}}. Se faltar algo, avisaremos por aqui.", examples: ["Maria", "RG", "Pedagogia"] },
   { name: "pagamento_confirmado", department: "financeiro", use: "aviso",
     purpose: "Pagamento da taxa ou da mensalidade confirmado",
-    body: "{{1}}, o pagamento de {{2}} referente ao curso {{3}} foi confirmado. Guarde esta mensagem como comprovante do recebimento.", examples: ["Maria", "taxa de matrícula", "Pedagogia"] },
+    body: "Pagamento confirmado, {{1}}: o pagamento de {{2}} referente ao curso {{3}} foi confirmado. Guarde esta mensagem como comprovante do recebimento.", examples: ["Maria", "taxa de matrícula", "Pedagogia"] },
   { name: "acesso_portal_liberado", department: "tutoria", use: "aviso",
     purpose: "O acesso do aluno ao portal foi liberado (RGM e e-mail acadêmico)",
-    body: "{{1}}, o seu acesso ao portal do aluno está liberado. RGM: {{2}}. E-mail de acesso: {{3}}. Em caso de dúvida no primeiro acesso, responda esta mensagem.", examples: ["Maria", "1234567", "maria.silva@cs.cruzeirodosul.edu.br"] },
+    body: "Acesso ao portal liberado, {{1}}: o seu RGM é {{2}} e o e-mail de acesso é {{3}}. Em caso de dúvida no primeiro acesso, responda esta mensagem.", examples: ["Maria", "1234567", "maria.silva@cs.cruzeirodosul.edu.br"] },
   { name: "inicio_das_aulas", department: "tutoria", use: "aviso",
     purpose: "Data de início das aulas do curso do aluno",
-    body: "{{1}}, as aulas do curso {{2}} começam em {{3}}. O acesso às disciplinas é pelo portal do aluno.", examples: ["Maria", "Pedagogia", "02/02/2027"] }
+    body: "Início das aulas, {{1}}: as aulas do curso {{2}} começam em {{3}}. O acesso às disciplinas é pelo portal do aluno.", examples: ["Maria", "Pedagogia", "02/02/2027"] }
 ];
 
 // department and use of the templates created on the screen (the pack ones carry their own)
@@ -197,6 +197,11 @@ export const allTemplates = async (whatsappId?: number | null): Promise<Template
   })).sort((a: TemplateStatus, b: TemplateStatus) => a.name.localeCompare(b.name));
 };
 
+export const variableAtEdge = (body: string): boolean => {
+  const text = String(body || "").trim();
+  return /^[\s\p{P}]*\{\{\d+\}\}/u.test(text) || /\{\{\d+\}\}[\s\p{P}]*$/u.test(text);
+};
+
 export const cleanDraft = (d: Partial<TemplateDraft>): TemplateDraft => {
   const name = String(d.name || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9_]/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "").slice(0, 60);
   const body = String(d.body || "").trim().slice(0, 1024);
@@ -204,6 +209,8 @@ export const cleanDraft = (d: Partial<TemplateDraft>): TemplateDraft => {
   const n = paramsIn(body);
   const examples = (Array.isArray(d.examples) ? d.examples : []).map(e => String(e || "").trim()).slice(0, n);
   if (examples.length < n || examples.some(e => !e)) throw new AppError("ERR_TEMPLATE_EXAMPLES", 400);
+  // the Meta refuses a text that starts or ends with a variable ({{1}}, ...), punctuation around it included: said here, before sending
+  if (variableAtEdge(body)) throw new AppError("ERR_TEMPLATE_VARIABLE_EDGE", 400);
   const department = d.department && (DEPARTMENTS as any)[d.department] ? d.department : undefined;
   const use: TemplateUse | undefined = d.use && ["abertura", "aviso", "campanha"].includes(d.use) ? d.use : undefined;
   // quick-reply buttons of the template (up to 3, 25 letters each, as the Meta allows)
@@ -235,16 +242,21 @@ export const createTemplate = async (draft: Partial<TemplateDraft>, whatsappId?:
 // the recommended pack: creates the ones that do not exist yet and points the settings (opening of each team, welcome) to them
 export const sendTemplatePack = async (institution: string, whatsappId?: number | null): Promise<Array<{ name: string; result: string }>> => {
   const existing = new Set((await allTemplates(whatsappId)).map(t => t.name));
-  const out: Array<{ name: string; result: string }> = [];
-  for (const t of TEMPLATE_PACK(institution)) {
-    try {
-      if (existing.has(t.name)) out.push({ name: t.name, result: "já existe" });
-      // eslint-disable-next-line no-await-in-loop
-      else out.push({ name: t.name, result: `enviado (${(await createTemplate(t, whatsappId)).status})` });
-    } catch (err) {
-      out.push({ name: t.name, result: (err as Error).message });
+  const pack = TEMPLATE_PACK(institution);
+  const out: Array<{ name: string; result: string }> = pack.map(t => ({ name: t.name, result: existing.has(t.name) ? "já existe" : "" }));
+  // a few at a time (one by one, 17 templates of up to 20 s each kept the screen loading for minutes)
+  const queue = pack.map((t, i) => ({ t, i })).filter(({ t }) => !existing.has(t.name));
+  const worker = async () => {
+    for (let next = queue.shift(); next; next = queue.shift()) {
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        out[next.i].result = `enviado (${(await createTemplate(next.t, whatsappId)).status})`;
+      } catch (err) {
+        out[next.i].result = (err as Error).message;
+      }
     }
-  }
+  };
+  await Promise.all([worker(), worker(), worker(), worker()]);
   return out;
 };
 

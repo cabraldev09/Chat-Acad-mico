@@ -585,6 +585,7 @@ const messages = {
         ERR_UPLOAD_TOO_LARGE: "Arquivos demais de uma vez: envie em partes menores (até 300 MB por envio).",
         ERR_TEMPLATE_IN_PACK: "Este modelo é do pacote recomendado e está em uso: ele não pode ser removido daqui.",
         ERR_TEMPLATE_EXAMPLES: "Preencha um exemplo para cada variável ({{1}}, {{2}}...) do modelo.",
+        ERR_TEMPLATE_VARIABLE_EDGE: "A Meta não aceita modelo que começa ou termina com uma variável ({{1}}). Comece e termine o texto com palavras, por exemplo: \"Matrícula confirmada, {{1}}: ...\".",
         ERR_MEDIA_NOT_FOUND: "O arquivo anexado não foi encontrado no servidor. Anexe de novo.",
         ERR_QUEUE_INVALID_NAME: "Nome do setor inválido. Use pelo menos 2 caracteres.",
         ERR_QUEUE_NAME_ALREADY_EXISTS: "Já existe um setor com este nome.",
