@@ -1,6 +1,7 @@
 import React from "react";
 import { toast } from "react-toastify";
 import { labelOfKind, shownText } from "../../utils/mediaLabel";
+import { colorOf, initialsOf } from "../../utils/avatar";
 
 // Pop-up for a new message, on any screen of the system: who wrote, what, and a click takes you there.
 // It leaves by itself after a few seconds, and when the conversation is opened (dismissMessageToast).
@@ -23,16 +24,7 @@ const previewOf = (message, ticket, contact) => {
   return text.length > 110 ? `${text.slice(0, 110)}…` : text;
 };
 
-// the photo of the contact when the channel gives one (WhatsApp by QR Code); otherwise two initials in a color that is always the same for that person
-// (the official API of the Meta does not send profile photos)
-const COLORS = ["#0b4279", "#0f766e", "#7c3aed", "#b45309", "#be123c", "#0369a1", "#4d7c0f", "#a21caf"];
-const initialsOf = (name) => {
-  const words = String(name || "").replace(/[^\p{L}\s]/gu, " ").trim().split(/\s+/).filter(Boolean);
-  if (!words.length) return "?";
-  return (words[0][0] + (words.length > 1 ? words[words.length - 1][0] : "")).toUpperCase();
-};
-const colorOf = (key) => COLORS[[...String(key || "")].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7) % COLORS.length];
-
+// the photo of the contact (QR Code, or read for the official number through a QR connection); otherwise colored initials
 const Avatar = ({ contact }) => {
   const [failed, setFailed] = React.useState(false);
   if (contact.profilePicUrl && !failed) return <img className="msgtoast-avatar" src={contact.profilePicUrl} alt="" onError={() => setFailed(true)} />;
