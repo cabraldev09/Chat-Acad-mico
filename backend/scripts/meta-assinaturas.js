@@ -21,6 +21,14 @@ const { wabaOf } = require("/app/backend/dist/services/CampaignServices/Template
     } catch (err) {
       console.log(`  a Meta não leu o token: ${err?.response?.data?.error?.message || err.message}`);
     }
+    // the number can have an address of its own that wins over the app's (webhook_configuration): a leftover from another server keeps the messages away
+    try {
+      const { data } = await axios.get(`${GRAPH}/${cfg.phoneNumberId}`, { params: { fields: "display_phone_number,webhook_configuration", access_token: cfg.accessToken }, timeout: 20000 });
+      const wc = data?.webhook_configuration || {};
+      console.log(`  número ${data?.display_phone_number || "?"}: endereço próprio do número = ${wc.phone_number || "(nenhum)"}; da conta = ${wc.whatsapp_business_account || "(nenhum)"}; do app = ${wc.application || "(nenhum)"}`);
+    } catch (err) {
+      console.log(`  a Meta não leu o endereço do número: ${err?.response?.data?.error?.message || err.message}`);
+    }
     let wabas = [];
     try { wabas = await wabaOf(cfg.accessToken, cfg.wabaId); } catch (err) { console.log(`  não achei a conta do WhatsApp: ${err.message}`); }
     for (const waba of wabas) {
