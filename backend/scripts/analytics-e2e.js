@@ -159,7 +159,7 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
 
     const A = (token, p) => http.get(p, as(token));
     const strip = b => { const { period, ...rest } = b; return rest; };
-    const KPIS = ["messagesSent", "attendances", "reactivated", "leadsWorked", "pendingReply", "inProgress", "tasksOpen", "tasksOverdue", "tasksDone", "followUpsDue", "proposalsSent", "proposalsViewed", "enrollments", "conversion"];
+    const KPIS = ["messagesSent", "attendances", "peopleContacted", "reactivated", "leadsWorked", "pendingReply", "inProgress", "tasksOpen", "tasksOverdue", "tasksDone", "followUpsDue", "proposalsSent", "proposalsViewed", "enrollments", "conversion"];
     await test("polo supervisor feedback is management-only and skips OpenAI when the sample is insufficient", async () => {
       const response = await http.post("/dashboard/management/feedback", { days: 1 }, as(admin));
       assert(response.status === 200, `management feedback ${response.status} ${JSON.stringify(response.data)}`);
@@ -218,6 +218,7 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
       const m = (await A(joao, "/analytics/me?range=today")).data.metrics;
       assert(m.messagesSent === 6, `messagesSent ${m.messagesSent}`);
       assert(m.attendances === 3, `attendances ${m.attendances}`);
+      assert(m.peopleContacted === 3, `peopleContacted ${m.peopleContacted}`);
       assert(m.leadsWorked >= 1, `leadsWorked ${m.leadsWorked}`);
       assert(m.enrollments === 1, `enrollments ${m.enrollments}`);
       assert(m.tasksOpen === 1 && m.tasksOverdue === 1, `tasks ${m.tasksOpen}/${m.tasksOverdue}`);
@@ -233,6 +234,23 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
       await sentOk(t.ticketId);
       const m = (await A(laura, "/analytics/me?range=today")).data.metrics;
       assert(m.messagesSent === 1 && m.attendances === 1, `${m.messagesSent}/${m.attendances}`);
+    });
+    await test("each conversation counts once, however many messages; two conversations of the same person are one person contacted", async () => {
+      const before = (await A(laura, "/analytics/me?range=today")).data.metrics;
+      const first = mkTicket();
+      for (let i = 0; i < 4; i += 1) assert(ok(await send(laura, first.ticketId, `parte ${i}`)), "send");
+      await sentOk(first.ticketId);
+      sql(`UPDATE Tickets SET status = 'closed' WHERE id = ${first.ticketId}`);
+      const again = sql(`INSERT INTO Tickets (status, contactId, whatsappId, queueId, userId, unreadMessages, isGroup, createdAt, updatedAt) VALUES ('pending', ${first.contactId}, ${connectionId}, ${queueId}, NULL, 1, false, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      sql(`INSERT INTO Messages (id, ticketId, contactId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('seed-${again}', ${again}, ${first.contactId}, 'Voltei', false, false, 'chat', 0, NOW(), NOW())`);
+      assert(ok(await send(laura, Number(again), "de novo")), "send again");
+      await sentOk(Number(again));
+      const after = (await A(laura, "/analytics/me?range=today")).data;
+      assert(after.metrics.messagesSent - before.messagesSent === 5, `messages ${after.metrics.messagesSent - before.messagesSent}`);
+      assert(after.metrics.attendances - before.attendances === 2, `conversations ${after.metrics.attendances - before.attendances}`);
+      assert(after.metrics.peopleContacted - before.peopleContacted === 1, `people ${after.metrics.peopleContacted - before.peopleContacted}`);
+      const today = after.series[after.series.length - 1];
+      assert(today.attendances === after.metrics.attendances && today.peopleContacted === after.metrics.peopleContacted, `series ${JSON.stringify(today)}`);
     });
     await test("a message of a conversation that was refused (someone else's) is nobody's work", async () => {
       const t = mkTicket({ owner: ids.gabrielli });
@@ -534,6 +552,47 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
       assert(moved.status === 200 && moved.data.changed === true, `postpone ${moved.status}`);
       const changes = (await http.get(`/goals/${goalId}/changes`, as(admin))).data;
       assert(changes.length === 1 && changes[0].to === later && changes[0].reason === "Prorrogação do calendário" && changes[0].by, `history ${JSON.stringify(changes)}`);
+    });
+
+    // ------------------------------------------------------------ Estatísticas → Comercial e Tutoria
+    console.log("\nEstatísticas do comercial e da tutoria");
+    await test("the commercial view: volume, sales by consultant, city and course, the leads stopped in a column, grades and the time in each column", async () => {
+      const open = sql(`SELECT id FROM LeadStages WHERE type='open' ORDER BY position LIMIT 1`).split("\n")[0];
+      const next = sql(`SELECT id FROM LeadStages WHERE type='open' ORDER BY position OFFSET 1 LIMIT 1`).split("\n")[0] || open;
+      // a lead of Gabrielli open in the first column for 10 days (stopped), and one that spent 3 days there before moving on
+      sql(`INSERT INTO Leads (name, phone, source, stageId, ownerId, isHistorical, createdAt, updatedAt) VALUES ('Parado', '5569000000101', 'WhatsApp', ${open}, ${ids.gabrielli}, false, NOW() - INTERVAL '10 days', NOW())`);
+      const moved = sql(`INSERT INTO Leads (name, phone, source, stageId, ownerId, isHistorical, createdAt, updatedAt) VALUES ('Andou', '5569000000102', 'WhatsApp', ${next}, ${ids.gabrielli}, false, NOW() - INTERVAL '3 days', NOW()) RETURNING id`).split("\n")[0];
+      sql(`INSERT INTO LeadActivities (leadId, userId, type, body, meta, createdAt, updatedAt) VALUES (${moved}, ${ids.gabrielli}, 'stage', 'A → B', '{"from":${open},"to":${next}}', NOW(), NOW())`);
+      sql(`INSERT INTO LeadActivities (leadId, userId, type, body, createdAt, updatedAt) VALUES (${moved}, ${ids.gabrielli}, 'grade_sent', 'Grade enviada', NOW(), NOW())`);
+      const r = await A(admin, "/analytics/commercial?range=month");
+      assert(r.status === 200, `commercial ${r.status} ${JSON.stringify(r.data).slice(0, 300)}`);
+      const d = r.data;
+      const jo = d.consultants.find(c => c.userId === ids.joao);
+      const ga = d.consultants.find(c => c.userId === ids.gabrielli);
+      assert(jo && jo.enrollments >= 1 && jo.conversations >= 3 && jo.peopleContacted >= 3, `João ${JSON.stringify(jo)}`);
+      assert(ga && ga.stalled >= 1 && ga.gradesSent === 1, `Gabrielli ${JSON.stringify(ga)}`);
+      assert(d.sales.byConsultant.some(x => x.userId === ids.joao) && d.sales.byCity.length >= 1 && d.sales.byCourse.length >= 1, `sales ${JSON.stringify(d.sales)}`);
+      const first = d.stages.find(st => st.stageId === Number(open));
+      assert(first && first.stalled >= 1 && first.byConsultant.some(x => x.userId === ids.gabrielli && x.stalled >= 1), `stalled ${JSON.stringify(first)}`);
+      assert(d.volume.conversations >= jo.conversations && d.volume.peopleContacted >= jo.peopleContacted, `volume ${JSON.stringify(d.volume)}`);
+      // one consultant narrows it; a polo narrows it
+      const one = (await A(admin, `/analytics/commercial?range=month&userId=${ids.gabrielli}`)).data;
+      assert(one.consultants.length === 1 && one.consultants[0].userId === ids.gabrielli, "the filter by consultant");
+      // only her lead left the first column, after 3 days in it
+      const hers = one.stages.find(st => st.stageId === Number(open));
+      assert(hers && hers.avgDays !== null && hers.avgDays >= 2.5 && hers.avgDays <= 3.5, `time in the column ${hers && hers.avgDays}`);
+    });
+    await test("a consultant reads only their own commercial numbers, whatever the query says; the coordination only its polos", async () => {
+      const mine = await A(joao, `/analytics/commercial?range=month&userId=${ids.gabrielli}&poloId=1`);
+      assert(mine.status === 200 && mine.data.consultants.length === 1 && mine.data.consultants[0].userId === ids.joao, `consultant ${JSON.stringify(mine.data.consultants)}`);
+      assert(!JSON.stringify(mine.data).includes("Gabrielli"), "a consultant saw someone else's name");
+      assert((await A(coord, `/analytics/commercial?range=month&userId=${ids.gabrielli}`)).status === 403, "the coordination read a consultant outside its polos");
+      assert((await A(joao, "/analytics/coaching")).status === 403, "a consultant read the training of the team");
+    });
+    await test("the tutoring view: the management sees every tutor, a consultant is refused", async () => {
+      const t = await A(admin, "/analytics/tutoria?range=month");
+      assert(t.status === 200 && t.data.scope === "all" && typeof t.data.totals.students === "number" && Array.isArray(t.data.onboardingStalled) && t.data.panel, `tutoria ${t.status} ${JSON.stringify(t.data).slice(0, 300)}`);
+      assert((await A(joao, "/analytics/tutoria")).status === 403, "a consultant read the tutoring");
     });
   } catch (err) {
     results.push([false, `setup -> ${err.stack || err.message}`]);

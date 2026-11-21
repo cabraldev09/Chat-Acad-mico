@@ -36,6 +36,21 @@ export const collectPending = async (): Promise<DigestItem[]> => {
   } catch (err) {
     logger.warn(`Pending digest: courses without grade not read: ${err}`);
   }
+  // what the daily review of the AI found repeating in the conversations of each consultant (only codes and team names)
+  try {
+    const { recentCoaching } = await import("../services/AnalyticsServices/ConsultantReview");
+    const { visibleConsultantIds } = await import("../services/AnalyticsServices/AnalyticsService");
+    const { configOf } = await import("../services/CopilotServices/Settings");
+    const labels = new Map((await configOf()).steps.map((st: any) => [st.key, st.label]));
+    const ids = await visibleConsultantIds({ id: 0, profile: "admin", role: "admin" });
+    const people = await User.findAll({ where: { id: ids } as any, attributes: ["id", "name"] });
+    const list = await recentCoaching(people.map(u => ({ id: u.id, name: u.name })), k => String(labels.get(k) || k));
+    if (list.length) {
+      items.push({ level: "recommended", label: "Treinamento sugerido", detail: list.slice(0, 6).map(c => `${c.name}: ${c.items[0].text.charAt(0).toLowerCase()}${c.items[0].text.slice(1)}`).join("; ") + (list.length > 6 ? ` e mais ${list.length - 6}` : "") + ".", where: "Estatísticas" });
+    }
+  } catch (err) {
+    logger.warn(`Pending digest: training suggestions not read: ${err}`);
+  }
   return items;
 };
 

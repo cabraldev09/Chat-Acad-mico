@@ -50,11 +50,22 @@ export const team = async (req: Request, res: Response): Promise<Response> => {
       consultants: bundles,
       totals: totalsOf(bundles),
       polos: await byPolo(bundles),
-      alerts: alertsOf(bundles, config),
+      alerts: await withCoaching(alertsOf(bundles, config), bundles.map(b => ({ id: b.user.id, name: b.user.name }))),
       unassigned: await unassignedTasks(),
       config
     };
   }));
+};
+
+// what the daily review of the AI found repeating goes into the same list, ordered by how urgent it is
+const withCoaching = async (alerts: any[], users: Array<{ id: number; name: string }>): Promise<any[]> => {
+  try {
+    const { recentCoaching, coachingAlerts } = await import("../services/AnalyticsServices/ConsultantReview");
+    const order: Record<string, number> = { high: 0, medium: 1, low: 2 };
+    return [...alerts, ...coachingAlerts(await recentCoaching(users, await stepLabelOf()))].sort((a, b) => order[a.level] - order[b.level]);
+  } catch (_) {
+    return alerts;
+  }
 };
 
 export const getAnalyticsConfig = async (_req: Request, res: Response): Promise<Response> => res.json(await getConfig());
@@ -102,4 +113,117 @@ export const processConsultant = async (req: Request, res: Response): Promise<Re
   if (!Number.isInteger(target) || !(await canSeeConsultant(req.user, target))) throw new AppError("ERR_NO_PERMISSION", 403);
   const { consultantLeads } = await import("../services/AnalyticsServices/ProcessMetrics");
   return res.json({ period: period(req), leads: await consultantLeads(target, resolvePeriod(req.query), await stepLabelOf()) });
+};
+
+// whose numbers a commercial view reads: the management, the consultants it may see (a polo or one person narrows it);
+// anybody else, only their own, whatever the query says
+const commercialUsers = async (req: Request): Promise<Array<{ id: number; name: string }>> => {
+  const User = (await import("../models/User")).default;
+  let ids: number[];
+  if (isManagerRole(roleOf(req.user))) {
+    ids = await visibleConsultantIds(req.user);
+    const poloId = Number(req.query.poloId);
+    if (Number.isInteger(poloId) && poloId > 0) {
+      const PoloMember = (await import("../models/PoloMember")).default;
+      const inPolo = new Set((await PoloMember.findAll({ where: { poloId }, attributes: ["userId"] })).map(m => m.userId));
+      ids = ids.filter(id => inPolo.has(id));
+    }
+    const one = Number(req.query.userId);
+    if (Number.isInteger(one) && one > 0) {
+      if (!(await canSeeConsultant(req.user, one))) throw new AppError("ERR_NO_PERMISSION", 403);
+      ids = [one];
+    }
+  } else ids = [Number(req.user.id)];
+  return ids.length ? (await User.findAll({ where: { id: ids }, attributes: ["id", "name"], order: [["name", "ASC"]] })).map(u => ({ id: u.id, name: u.name })) : [];
+};
+
+// "Estatísticas → Comercial": where the leads stop, objections, sales by city and course, grades, audio and the process followed
+export const commercial = async (req: Request, res: Response): Promise<Response> => {
+  const p = resolvePeriod(req.query);
+  const users = await commercialUsers(req);
+  const key = `analytics-commercial:${req.user.id}:${p.from}:${p.to}:${users.map(u => u.id).join(",")}`;
+  return res.json(await remember(key, Number(process.env.DASHBOARD_CACHE_MS ?? 10000), async () => {
+    const { configOf } = await import("../services/CopilotServices/Settings");
+    const { salesInsights } = await import("../services/AnalyticsServices/SalesInsights");
+    const steps = (await configOf()).steps.map((s: any) => ({ key: s.key, label: s.label, optional: !!s.optional }));
+    return { period: period(req), ...(await salesInsights(users, p, steps)) };
+  }));
+};
+
+// ---------------------------------------------------------------- training: what the daily review of the AI found repeating per consultant
+const COACHING_TEXT_TTL = 24 * 60 * 60 * 1000;
+
+export const coaching = async (req: Request, res: Response): Promise<Response> => {
+  if (!isManagerRole(roleOf(req.user))) throw new AppError("ERR_NO_PERMISSION", 403);
+  const p = resolvePeriod({ range: req.query.range || "custom", from: req.query.from, to: req.query.to });
+  const users = await commercialUsers(req);
+  const { coachingFor, COACHING_MIN_REVIEWS } = await import("../services/AnalyticsServices/ConsultantReview");
+  const list = await coachingFor(users, p.start, p.end, await stepLabelOf());
+  const { getSetting } = await import("../helpers/AppSettings");
+  return res.json({
+    period: period(req),
+    minReviews: COACHING_MIN_REVIEWS,
+    enabled: (await getSetting("consultant_review_enabled", "true")) !== "false",
+    lastRun: (await getSetting("consultant_review_last", "")) || null,
+    consultants: list
+  });
+};
+
+// one short training suggestion per consultant, written by the AI from the codes found (no names, no conversation text leave here)
+export const coachingText = async (req: Request, res: Response): Promise<Response> => {
+  if (!isManagerRole(roleOf(req.user))) throw new AppError("ERR_NO_PERMISSION", 403);
+  const p = resolvePeriod({ range: req.body?.range || "custom", from: req.body?.from, to: req.body?.to });
+  const users = await commercialUsers(req);
+  const { coachingFor } = await import("../services/AnalyticsServices/ConsultantReview");
+  const list = (await coachingFor(users, p.start, p.end, await stepLabelOf())).filter(c => c.items.length);
+  if (!list.length) return res.json({ tips: [] });
+  const key = `coaching-text:${p.from}:${p.to}:${list.map(c => `${c.userId}-${c.items.map(i => `${i.kind}${i.key}${i.hits}`).join("")}`).join(",")}`;
+  return res.json(await remember(key, COACHING_TEXT_TTL, async () => {
+    const AiAgent = (await import("../models/AiAgent")).default;
+    const { askOnce, resolveKey } = await import("../services/AiServices/RunAiAgent");
+    const agent = await AiAgent.findOne({ where: { provider: "openai", active: true } as any, order: [["id", "ASC"]] });
+    if (!agent) throw new AppError("ERR_AI_SUPERVISOR_UNAVAILABLE", 503);
+    const apiKey = await resolveKey(agent);
+    if (!apiKey) throw new AppError("ERR_AI_NO_API_KEY", 400);
+    const input = list.map((c, i) => ({ i, reviewed: c.reviewed, problems: c.items.map(it => it.text) }));
+    let parsed: any;
+    try {
+      const answer = await askOnce(agent, apiKey,
+        "Você orienta a gestão comercial de uma faculdade. Para cada pessoa (identificada só por um número), escreva UMA sugestão de treinamento prática, em português, com no máximo 160 caracteres, baseada apenas nos problemas listados. Responda só com JSON válido no formato {\"tips\":[{\"i\":numero,\"text\":string}]}.",
+        JSON.stringify(input), 400, { kind: "copilot" });
+      parsed = JSON.parse(String(answer.text || "").replace(/^```(?:json)?\s*/i, "").replace(/```$/, "").trim());
+    } catch (err) {
+      const code = String((err as Error)?.message || "");
+      if (/ERR_AI_TOKEN_CAP|ERR_AI_RATE_REQUIRED/.test(code)) throw new AppError("ERR_COPILOT_TOKEN_LIMIT", 429);
+      throw new AppError("ERR_AI_BAD_ANSWER", 502);
+    }
+    const tips = (Array.isArray(parsed?.tips) ? parsed.tips : [])
+      .filter((t: any) => Number.isInteger(t?.i) && list[t.i] && typeof t.text === "string" && t.text.trim())
+      .map((t: any) => ({ userId: list[t.i].userId, text: String(t.text).trim().slice(0, 200) }));
+    return { tips, generatedAt: new Date().toISOString() };
+  }));
+};
+
+// an administrator reads the conversations of a day now (the same reading the night does), e.g. to see the result right after turning it on
+export const coachingRun = async (req: Request, res: Response): Promise<Response> => {
+  const { todayInAppTz } = await import("../helpers/AppTime");
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(String(req.body?.day || "")) ? String(req.body.day) : todayInAppTz();
+  const { runConsultantReview } = await import("../workers/ConsultantReview");
+  return res.json({ day, ...(await runConsultantReview(day)) });
+};
+
+// "Estatísticas → Tutoria": the management sees every tutor; a tutor or the academic team sees only their own students
+export const tutoria = async (req: Request, res: Response): Promise<Response> => {
+  const role = roleOf(req.user);
+  const manager = isManagerRole(role);
+  if (!manager && !["tutor", "academico"].includes(role)) throw new AppError("ERR_NO_PERMISSION", 403);
+  const p = resolvePeriod(req.query);
+  const { tutoriaInsights } = await import("../services/AnalyticsServices/TutoriaInsights");
+  const insights = await tutoriaInsights(manager ? null : [Number(req.user.id)], p.start, p.end);
+  let panel: any = null;
+  if (manager) {
+    const { tutorPanel } = await import("../services/TutoriaServices/Students");
+    panel = await tutorPanel(p.start, p.end);
+  }
+  return res.json({ period: period(req), scope: manager ? "all" : "mine", ...insights, panel });
 };
