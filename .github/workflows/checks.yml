@@ -49,6 +49,12 @@ jobs:
         run: |
           npm ci --legacy-peer-deps --no-audit --no-fund
           npx vite build
+      - name: Testes de componentes do frontend
+        working-directory: frontend
+        run: |
+          # instaladas só aqui, sem mudar o package-lock (o pacote xlsx vem de um endereço próprio)
+          npm install --no-save --legacy-peer-deps --no-audit --no-fund vitest@3.2.4 jsdom@26.1.0 @testing-library/react@12.1.5
+          npx vitest run
       - name: Frontend sem leitura tardia de evento (erro "reading 'value'" no React 16)
         working-directory: frontend
         run: node scripts/check-lazy-events.js
@@ -174,7 +180,7 @@ jobs:
           npx sequelize db:migrate
           # the known administrator of the tests is only created when NODE_ENV is "test" (a real installation never gets it)
           NODE_ENV=test npx sequelize db:seed:all
-          nohup node dist/server.js > /tmp/api.log 2>&1 &
+          ALLOW_SWEEP=1 nohup node dist/server.js > /tmp/api.log 2>&1 &
           for i in $(seq 1 60); do curl -fs http://localhost:8080/health && break; sleep 2; done
       - name: Frontend (build de produção) no ar
         working-directory: frontend

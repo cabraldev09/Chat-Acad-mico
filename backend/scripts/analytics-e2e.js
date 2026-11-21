@@ -18,8 +18,8 @@ const PGBIN = process.env.PG_BIN || path.dirname(execFileSync("which", ["psql"])
 const PGUSER = process.env.PGUSER || require("os").userInfo().username;
 const psql = (db, q) => execFileSync(`${PGBIN}/psql`, ["-X", "-U", PGUSER, "-d", db, "-At", "-c", q]).toString().trim();
 const DB = `chat_analytics_${process.pid}_${crypto.randomBytes(4).toString("hex")}`;
-const PORT = 8094;
-const TG_PORT = 9112;
+// free ports asked at start (scripts/e2e-ports.js): suites and runs side by side never collide
+const [PORT, TG_PORT] = require("./e2e-ports").freePorts(2);
 const API = `http://localhost:${PORT}`;
 
 // plain camelCase SQL: quote mixed-case identifiers for Postgres, print booleans as 1/0

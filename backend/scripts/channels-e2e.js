@@ -27,9 +27,8 @@ if (!process.env.PG_BIN && process.platform === "linux") {
 const PGUSER = process.env.PGUSER || require("os").userInfo().username;
 const psql = (db, q) => execFileSync(`${PGBIN}/psql`, ["-X", "-U", PGUSER, "-d", db, "-At", "-c", q]).toString().trim();
 const DB = `chat_e2e_${process.pid}_${crypto.randomBytes(4).toString("hex")}`;
-const PORT = 8091;
-const TG_PORT = 9101;
-const GRAPH_PORT = 9102;
+// every port is free when the suite starts (scripts/e2e-ports.js): suites and runs side by side never collide
+const [PORT, TG_PORT, GRAPH_PORT, EFI_PORT, BILLET_PORT, AI_PORT, SMTP_PORT] = require("./e2e-ports").freePorts(7);
 const API = `http://localhost:${PORT}`;
 const PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
@@ -101,9 +100,6 @@ const waitFor = async (fn, ms = 12000, label = "condition") => {
 const tg = { updates: [], sent: [], offset: 0, n: 100 };
 const graph = { sent: [], media: [], n: 0, hooks: [], igRevoked: false, igRefreshes: 0, templates: [] };
 const efi = { charges: {}, calls: [], webhook: null, authOk: 0 };
-const EFI_PORT = 9103;
-const BILLET_PORT = 9104;
-const AI_PORT = 9105;
 const anthropic = { requests: [] };
 const billet = { charges: {}, calls: [], notifications: {}, n: 500 };
 
@@ -1853,7 +1849,7 @@ const postMeta = (id, payload, secret, badSig) => {
         });
         sock.on("error", () => {});
       });
-      await new Promise(r => smtp.listen(9106, "127.0.0.1", r));
+      await new Promise(r => smtp.listen(SMTP_PORT, "127.0.0.1", r));
       try {
         const decode = raw => raw.replace(/=\r?\n/g, "").replace(/=3D/g, "=");
         // nothing is set up yet: asking for a link answers the same and sends nothing
@@ -1864,7 +1860,7 @@ const postMeta = (id, payload, secret, badSig) => {
         assert((await http.post("/mail/test", {}, auth())).status === 400, "test mail without setup");
 
         // set up from the screen: the password is sealed and never comes back
-        const saved = await http.put("/mail/settings", { host: "127.0.0.1", port: 9106, secure: false, user: "cruzeirogpt@gmail.com", fromName: "Cruzeiro Teste", pass: "abcd efgh ijkl mnop" }, auth());
+        const saved = await http.put("/mail/settings", { host: "127.0.0.1", port: SMTP_PORT, secure: false, user: "cruzeirogpt@gmail.com", fromName: "Cruzeiro Teste", pass: "abcd efgh ijkl mnop" }, auth());
         assert(saved.status === 200 && saved.data.hasPassword === true && !JSON.stringify(saved.data).includes("abcdefgh"), `settings ${JSON.stringify(saved.data)}`);
         assert(sql(`SELECT value FROM Settings WHERE key='mail_pass'`).startsWith("enc:v1:"), "the mail password is not sealed");
         assert(!JSON.stringify((await http.get("/settings", auth())).data).includes("mail_pass"), "the mail password is in the generic settings list");
@@ -1934,7 +1930,7 @@ const postMeta = (id, payload, secret, badSig) => {
         });
         sock.on("error", () => {});
       });
-      await new Promise(r => smtp.listen(9106, "127.0.0.1", r));
+      await new Promise(r => smtp.listen(SMTP_PORT, "127.0.0.1", r));
       try {
         const decode = raw => raw.replace(/=\r?\n/g, "").replace(/=3D/g, "=").replace(/=C3=A7/g, "ç").replace(/=C3=A3/g, "ã");
         // the administrators that exist (creating another one would change what other tests assume about the last administrator)

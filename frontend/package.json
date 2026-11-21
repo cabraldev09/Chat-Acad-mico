@@ -39,6 +39,7 @@
   },
   "scripts": {
     "dev": "vite",
+    "test": "vitest run",
     "start": "vite",
     "build": "vite build",
     "preview": "vite preview"

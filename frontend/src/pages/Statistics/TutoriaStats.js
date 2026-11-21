@@ -1,5 +1,5 @@
 import React, { useContext, useEffect, useState } from "react";
-import { useHistory } from "react-router-dom";
+import { Redirect, useHistory } from "react-router-dom";
 import { BarChart3, Clock, AlertTriangle, UserX, CheckCheck } from "lucide-react";
 
 import MainContainer from "../../components/MainContainer";
@@ -10,6 +10,7 @@ import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import { AuthContext } from "../../context/Auth/AuthContext";
 import { isManager } from "../../utils/access";
+import { hubHome } from "../../components/StatsHub";
 
 const PERIODS = [["semana", "Semana"], ["mes", "Mês"], ["ciclo", "Ciclo (semestre)"], ["90", "90 dias"]];
 
@@ -24,7 +25,9 @@ export default function TutoriaStats() {
   const manager = isManager(user);
   const [period, setPeriod] = useState("mes");
   const [stats, setStats] = useState(null);
-  useEffect(() => { setStats(null); api.get("/onboarding/stats", { params: { period } }).then(({ data }) => setStats(data)).catch((e) => { toastError(e); setStats(false); }); }, [period]);
+  // the tutoring numbers are for the management and the tutors: anyone else goes to their own numbers (no request, no "sem permissão")
+  const allowed = manager || (!!user && ["tutor", "academico"].includes(user.role));
+  useEffect(() => { if (!allowed) return; setStats(null); api.get("/onboarding/stats", { params: { period } }).then(({ data }) => setStats(data)).catch((e) => { toastError(e); setStats(false); }); }, [period, allowed]);
   const kpis = stats ? [
     [CheckCheck, stats.doneInPeriod, `ambientações concluídas (${stats.period})`, "#0B4279"],
     [BarChart3, stats.enrolledInPeriod, `alunos recebidos (${stats.period})`, "#0f766e"],
@@ -33,6 +36,7 @@ export default function TutoriaStats() {
     [AlertTriangle, stats.totals.late, "atrasadas agora", stats.totals.late ? "#b91c1c" : "var(--text-3)"],
     ...(manager ? [[UserX, stats.totals.withoutTutor, "alunos sem tutor", stats.totals.withoutTutor ? "#b45309" : "var(--text-3)"]] : []),
   ] : [];
+  if (!allowed) return <Redirect to={hubHome(user)} />;
   return (
     <MainContainer>
       <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "4px 2px 24px" }}>

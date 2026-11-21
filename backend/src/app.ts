@@ -44,7 +44,9 @@ app.get("/health", async (_req: Request, res: Response) => {
     // version: the commit that is running, so a deploy can be checked from outside (nothing else about the server is told to an anonymous caller)
     res.json({
       ok: true,
-      version: String(process.env.GIT_SHA || process.env.RAILWAY_GIT_COMMIT_SHA || "").slice(0, 7) || undefined
+      version: String(process.env.GIT_SHA || process.env.RAILWAY_GIT_COMMIT_SHA || "").slice(0, 7) || undefined,
+      // a test server that lets the screen sweep create its data (ALLOW_SWEEP=1, only in CI or locally); a real server never says so
+      ...(process.env.ALLOW_SWEEP === "1" ? { sweepable: true } : {})
     });
   } catch (e) {
     res.status(503).json({ ok: false });
