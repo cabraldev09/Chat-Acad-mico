@@ -397,6 +397,7 @@ r.get("/meta/templates", isAuth, isManager, MetaTemplates.index);
 r.get("/system/readiness", isAuth, isManager, async (_req, res) => {
   const { readiness } = await import("../services/SystemServices/Readiness");
   return res.json({ items: await readiness() });
+});
 // takes out of the funnel the affiliates that entered as leads when they wrote (never a student or a lead with a paid charge)
 r.post("/system/affiliate-leads/clean", isAuth, isManager, async (req, res) => {
   const { affiliateLeads } = await import("../services/SystemServices/Readiness");
@@ -414,7 +415,6 @@ r.post("/system/affiliate-leads/clean", isAuth, isManager, async (req, res) => {
   }
   logger.warn(`Afiliados tirados do funil por ${req.user.id}: ${leads.map(l => `#${l.id}`).join(", ") || "nenhum"}`);
   return res.json({ removed: leads.length });
-});
 });
 r.post("/meta/templates", isAuth, isManager, MetaTemplates.store);
 r.post("/meta/templates/pack", isAuth, isManager, MetaTemplates.pack);

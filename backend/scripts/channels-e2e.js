@@ -5737,7 +5737,8 @@ const postMeta = (id, payload, secret, badSig) => {
       // the readiness lists the affiliates without a consultant and those that are leads
       const ready = (await http.get("/system/readiness", auth())).data.items;
       assert(["users_hours", "users_number", "affiliates_owner", "affiliate_leads"].every(k => ready.some(i => i.key === k)), "the readiness misses the team and affiliate items");
-      assert((await http.post("/system/affiliate-leads/clean", {}, auth())).status === 200, "cleaning the affiliate leads");
+      const cleaned = await http.post("/system/affiliate-leads/clean", {}, auth());
+      assert(cleaned.status === 200, `cleaning the affiliate leads ${cleaned.status} ${JSON.stringify(cleaned.data).slice(0, 300)}`);
     });
     await test("the team's week: a new person and the company start Monday to Thursday 08-18 and Friday 08-17; the number must exist", async () => {
       const crm = (await http.get("/crm/settings", auth())).data;
