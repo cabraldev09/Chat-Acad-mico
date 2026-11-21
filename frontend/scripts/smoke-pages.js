@@ -46,22 +46,36 @@ const ROUTES = [
 ];
 const SETTINGS_GROUPS = ["prontidao", "modelos", "copiloto", "operacao", "meta", "geral", "horario", "atendimento", "tutoria", "captacao", "pagamentos", "cadastros", "regras", "email", "erros"];
 
+// what the sweep itself created, erased at the end (the screens may still create a few things while forms are typed in)
+const created = [];
+// problems of the preparation: they fail the sweep (a screen swept without its data proves nothing)
+const setupIssues = [];
+
 async function ensureUsers(adminToken) {
   const auth = { headers: { Authorization: `Bearer ${adminToken}` } };
   for (const [name, def] of Object.entries(ROLES)) {
     if (name === "admin") continue;
     const r = await http.post("/users", { name: `Varredura ${name}`, email: def.email, password: PASS, role: def.role, coordArea: def.coordArea }, auth);
-    if (![200, 201, 409, 422].includes(r.status)) console.log(`(could not create ${name}: ${r.status} ${JSON.stringify(r.data).slice(0, 100)})`);
+    if ([200, 201].includes(r.status) && r.data && r.data.id) created.push(`/users/${r.data.id}`);
+    else if (![409, 422].includes(r.status) && !(r.status === 400 && /ERR_EMAIL_ALREADY_EXISTS|já existe/i.test(JSON.stringify(r.data)))) setupIssues.push({ role: name, route: "/users", kind: "setup", text: `could not create the user: ${r.status} ${JSON.stringify(r.data).slice(0, 100)}` });
   }
   return auth;
 }
 
 // some data so the screens are not empty (every call may fail: it is only a help)
 async function seed(auth) {
-  const tryPost = (url, body) => http.post(url, body, auth).catch(() => null);
+  const tryPost = async (url, body) => {
+    const r = await http.post(url, body, auth).catch(() => null);
+    const id = r && r.data && (r.data.id || (r.data.lead && r.data.lead.id));
+    if (r && [200, 201].includes(r.status) && id) created.push(`${url === "/leads" ? "/leads" : url}/${id}`);
+    // already there from an earlier run (409/422) is fine; anything else means the screens are swept without their data
+    else if (!r || ![409, 422].includes(r.status)) setupIssues.push({ role: "setup", route: url, kind: "setup", text: `could not create the sweep data: ${r ? r.status : "no answer"}` });
+    return r;
+  };
   const polo = await tryPost("/polos", { name: "Polo Varredura", code: "VAR", city: "Porto Velho", state: "RO" });
   const aff = await tryPost("/affiliates", { name: "Afiliado Varredura", phone: "5569988880001", email: "afiliado.varredura@x.com", city: "Porto Velho" });
-  await tryPost("/affiliates", { name: "Afiliado Sem Dados" });
+  // an affiliate with only a name (the screens must cope with the missing data): it may be refused by the validation, that is fine
+  await http.post("/affiliates", { name: "Afiliado Sem Dados" }, auth).then((r) => { if (r && r.data && r.data.id) created.push(`/affiliates/${r.data.id}`); }).catch(() => null);
   await tryPost("/tags", { name: "Varredura", color: "#0693E3" });
   await tryPost("/quickAnswers", { shortcut: "varredura", message: "Mensagem de teste" });
   await tryPost("/leads", { name: "Lead Varredura", phone: "5569977770001", source: "Site" });
@@ -267,8 +281,20 @@ async function sweepRole(browser, name, def) {
   return issues;
 }
 
+// the toasts expected on purpose: addresses with an id that does not exist ("/tickets/1", "/chatbot/1", "/analise-*/1")
+const EXPECTED_TOAST = (i) => i.kind === "toast" && /\/\d+$/.test(i.route) && /não encontrad|Nenhum tíquete|removido/i.test(i.text);
+
 (async () => {
   const wanted = process.argv.slice(2);
+  // never against a real server: the sweep creates users, polos, leads and types into forms. The API must say it is a test server
+  // (ALLOW_SWEEP=1 in its environment) or the person running it must say so explicitly (SMOKE_ALLOW=1)
+  const health = await http.get("/health").catch(() => null);
+  const local = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/?$/.test(API);
+  if (!(health && health.data && health.data.sweepable) && process.env.SMOKE_ALLOW !== "1") {
+    console.log(`refused: ${API} did not say it is a test server (start the API with ALLOW_SWEEP=1, or run with SMOKE_ALLOW=1 if you are sure)`);
+    process.exit(3);
+  }
+  if (!local && process.env.SMOKE_ALLOW !== "1") { console.log(`refused: ${API} is not local (SMOKE_ALLOW=1 to go on anyway)`); process.exit(3); }
   const login = await http.post("/auth/login", ADMIN);
   if (login.status !== 200) { console.log("cannot sign in as the administrator:", login.status); process.exit(2); }
   const auth = await ensureUsers(login.data.token);
@@ -296,8 +322,15 @@ async function sweepRole(browser, name, def) {
     else { const issues = await sweepPortal(browser, portalToken, courseId); console.log(`${issues.length} finding(s)`); all.push(...issues); }
   }
   await browser.close();
+  // erases what the sweep created (users last: they may own the rest)
+  for (const url of [...created].reverse()) { await http.delete(url, auth).catch(() => null); }
+  all.push(...setupIssues);
   const lines = all.map((i) => `${i.role.padEnd(11)} ${i.route.padEnd(36)} ${i.kind.padEnd(11)} ${i.text}`);
   fs.writeFileSync(process.env.REPORT || "/tmp/smoke-report.txt", lines.join("\n") + "\n");
   console.log(lines.join("\n") || "no findings");
-  process.exit(all.some((i) => ["ERROR PAGE", "script", "blank", "login"].includes(i.kind) || i.kind.startsWith("http")) ? 1 : 0);
+  // what fails the check: an error page, a script error, a blank page, a failed login, a 5xx, a screen that did not open in time, a page
+  // wider than the phone, a failed preparation, and an error toast that was not expected (console messages are only reported)
+  const failing = all.filter((i) => ["ERROR PAGE", "script", "blank", "login", "timeout", "mobile", "setup"].includes(i.kind) || i.kind.startsWith("http") || (i.kind === "toast" && !EXPECTED_TOAST(i)));
+  if (failing.length) console.log(`\n${failing.length} finding(s) fail the check.`);
+  process.exit(failing.length ? 1 : 0);
 })();
