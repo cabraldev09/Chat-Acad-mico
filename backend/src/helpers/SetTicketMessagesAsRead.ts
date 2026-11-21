@@ -10,6 +10,7 @@ import { whatsappProvider } from "../providers/WhatsApp";
 // Without a viewerId the caller already knows the reader is the attendant (the sender of a message).
 const SetTicketMessagesAsRead = async (ticket: Ticket, viewerId?: number): Promise<void> => {
   if (viewerId !== undefined && !ticket.isGroup && ticket.userId !== viewerId) return;
+  const hadUnread = Number(ticket.unreadMessages || 0) > 0;
   await Message.update(
     { read: true },
     {
@@ -28,6 +29,11 @@ const SetTicketMessagesAsRead = async (ticket: Ticket, viewerId?: number): Promi
         ticket.whatsappId,
         chatIdOf(ticket.contact, ticket.isGroup)
       );
+    } else if (hadUnread && ticket.whatsapp?.channel === "whatsapp_cloud") {
+      // the official number: the person sees the two blue ticks when the attendant opens the conversation (the last message they sent)
+      const { cloudTypingFor } = await import("./ReplyPace");
+      const Whatsapp = (await import("../models/Whatsapp")).default;
+      await cloudTypingFor(await Whatsapp.findByPk(ticket.whatsappId), { ticketId: ticket.id }, false);
     }
   } catch (err) {
     logger.warn(
