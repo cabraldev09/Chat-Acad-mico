@@ -74,3 +74,10 @@ describe("a value from the catalogue", () => {
     expect(out).toContain(PRICE_SENTENCE);
   });
 });
+
+describe("the next question of the process", () => {
+  it("may be asked again (only information is not repeated)", () => {
+    const q = "Para eu te orientar certinho, qual curso você tem interesse em fazer e em qual cidade você mora hoje?";
+    expect(dropRepeatedParagraphs(`Estou por aqui.\n\n${q}`, [q])).toBe(`Estou por aqui.\n\n${q}`);
+  });
+});
