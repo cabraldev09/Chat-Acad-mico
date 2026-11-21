@@ -81,3 +81,10 @@ describe("the next question of the process", () => {
     expect(dropRepeatedParagraphs(`Estou por aqui.\n\n${q}`, [q])).toBe(`Estou por aqui.\n\n${q}`);
   });
 });
+
+describe("a question followed by a hint", () => {
+  it("is still a question of the process", () => {
+    const q = "Qual curso você tem interesse? Se você já é aluno e precisa da tutoria ou da secretaria, é só me dizer.";
+    expect(dropRepeatedParagraphs(`Estou por aqui\n\n${q}`, [q])).toBe(`Estou por aqui\n\n${q}`);
+  });
+});

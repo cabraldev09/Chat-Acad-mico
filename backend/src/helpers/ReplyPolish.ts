@@ -67,7 +67,7 @@ export const dropRepeatedParagraphs = (text: string, alreadySent: string[]): str
   const kept = String(text || "").split(/\n{2,}/).filter(p => {
     const k = keyOf(p);
     // a question is the next step of the process: asking it again is how the conversation goes on (only information is not repeated)
-    if (k.length < REPEAT_MIN || /\?[\s"”')]*$/.test(p.trim())) return true;
+    if (k.length < REPEAT_MIN || p.includes("?")) return true;
     if (seen.has(k)) return false;
     seen.add(k);
     return true;
