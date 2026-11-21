@@ -52,9 +52,10 @@ export default function Operations({ part = "atendimento" }) {
         <Typography variant="body2" color="textSecondary">Sem esta autorização nada sai fora das 24 horas: abertura dos departamentos, boas-vindas da matrícula e campanhas com modelo.</Typography>
       </div>
       <FormControlLabel style={{ margin: 0 }} control={<Switch color="primary" checked={settings.outbound_allow_templates === "true"} onChange={async e => {
-        const next = { ...settings, outbound_allow_templates: String(e.target.checked) };
+        const on = e.target.checked;
+        const next = { ...settings, outbound_allow_templates: String(on) };
         setSettings(next); setBusy(true);
-        try { const { data } = await api.put("/operations/config", next); setSettings(data); toast.success(e.target.checked ? "Envio com modelos autorizado." : "Envio com modelos desligado."); } catch (err) { toastError(err); load(); } finally { setBusy(false); }
+        try { const { data } = await api.put("/operations/config", next); setSettings(data); toast.success(on ? "Envio com modelos autorizado." : "Envio com modelos desligado."); } catch (err) { toastError(err); load(); } finally { setBusy(false); }
       }} disabled={busy} />} label={settings.outbound_allow_templates === "true" ? "Autorizado" : "Desligado"} />
     </Paper>;
   }
