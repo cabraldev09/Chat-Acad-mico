@@ -16,6 +16,8 @@ import ZapIcon from "lucide-react/dist/esm/icons/zap";
 import CalendarClockIcon from "lucide-react/dist/esm/icons/calendar-clock";
 import MegaphoneIcon from "lucide-react/dist/esm/icons/megaphone";
 import BarChartIcon from "lucide-react/dist/esm/icons/bar-chart-3";
+import GaugeIcon from "lucide-react/dist/esm/icons/gauge";
+import LineChartIcon from "lucide-react/dist/esm/icons/line-chart";
 import KanbanSquareIcon from "lucide-react/dist/esm/icons/kanban-square";
 import LayoutDashboardIcon from "lucide-react/dist/esm/icons/layout-dashboard";
 import { canOperateRetention, isManager } from "../utils/access";
@@ -354,15 +356,22 @@ const MainListItems = (props) => {
           collapsed={collapsed}
         />
       )}
-      {/* one hub for the numbers: Comercial (management + attendance and channels) and Tutoria */}
-      <ListItemLink
-        to="/estatisticas"
-        alsoActive={["/gestao-comercial", "/reports", "/estatisticas/tutoria", "/estatisticas/captacao"]}
-        primary={isManager(user) ? "Estatísticas" : "Meus números"}
-        icon={<BarChartIcon className="ico" />}
-        collapsed={collapsed}
-        adornment={isManager(user) ? tasksBadge : undefined}
-      />
+      {/* two separate places: the management sees the whole team (Gestão comercial); a consultant sees only their own (Meu desempenho);
+          the tutor keeps the numbers of the tutoring */}
+      {isManager(user) ? (
+        <ListItemLink
+          to="/estatisticas"
+          alsoActive={["/gestao-comercial", "/reports", "/estatisticas/tutoria", "/estatisticas/captacao"]}
+          primary="Gestão comercial"
+          icon={<BarChartIcon className="ico" />}
+          collapsed={collapsed}
+          adornment={tasksBadge}
+        />
+      ) : ["tutor", "academico"].includes(user.role) ? (
+        <ListItemLink to="/estatisticas/tutoria" primary="Minha tutoria" icon={<LineChartIcon className="ico" />} collapsed={collapsed} />
+      ) : (
+        <ListItemLink to="/meu-desempenho" alsoActive={["/estatisticas", "/reports", "/estatisticas/captacao"]} primary="Meu desempenho" icon={<GaugeIcon className="ico" />} collapsed={collapsed} />
+      )}
       {isManager(user) && (
         <>
           <Divider className={classes.divider} />

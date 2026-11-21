@@ -105,6 +105,7 @@ r.post("/affiliate-campaigns/:id/release", isAuth, affiliateStaff, AffMat.releas
 // commercial analytics: one service computes everything; the personal route never reads whose numbers from the request
 r.get("/analytics/definitions", isAuth, Analytics.definitions);
 r.get("/analytics/me", isAuth, Analytics.me);
+r.get("/analytics/me/overview", isAuth, Analytics.meOverview);
 r.get("/analytics/team", isAuth, isManager, Analytics.team);
 r.get("/analytics/team/export.csv", isAuth, isManager, Analytics.exportTeam);
 r.get("/analytics/config", isAuth, isManager, Analytics.getAnalyticsConfig);

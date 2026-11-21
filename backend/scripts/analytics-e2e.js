@@ -611,6 +611,17 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
       const twice = await http.post("/tags", { name: "Etiqueta repetida", color: "#0693E3" }, { headers: { Authorization: `Bearer ${admin}` } });
       assert([200, 201].includes(once.status) && twice.status === 409 && twice.data.error === "ERR_DUPLICATED", `tags ${once.status} ${twice.status} ${JSON.stringify(twice.data)}`);
     });
+    await test("Meu desempenho: the consultant gets only their own numbers, leads, to-dos and results, whatever the query says", async () => {
+      const mine = await A(joao, `/analytics/me/overview?range=month&userId=${ids.gabrielli}`);
+      assert(mine.status === 200, `overview ${mine.status} ${JSON.stringify(mine.data).slice(0, 300)}`);
+      const d = mine.data;
+      assert(d.user.id === ids.joao && d.results && d.results.now && typeof d.results.now.enrollments === "number" && d.leads && Array.isArray(d.leads.stages) && Array.isArray(d.insights) && d.focus && Array.isArray(d.tips), `shape ${JSON.stringify(d).slice(0, 400)}`);
+      const ownLeads = Number(sql(`SELECT COUNT(*) FROM Leads l JOIN LeadStages s ON s.id = l.stageId WHERE s.type='open' AND l.ownerId=${ids.joao} AND l.isHistorical=false`));
+      assert(d.leads.open === ownLeads, `leads of João ${d.leads.open} vs ${ownLeads}`);
+      assert(!JSON.stringify(d).includes("Gabrielli") && !d.insights.some(i => i.key === "away_with_leads" || i.key === "unassigned"), "a consultant saw someone else's data");
+      const hers = (await A(gabrielli, "/analytics/me/overview?range=month")).data;
+      assert(hers.user.id === ids.gabrielli && hers.leads.stages.some(st => st.n >= 1), `Gabrielli sees her own leads ${JSON.stringify(hers.leads)}`);
+    });
   } catch (err) {
     results.push([false, `setup -> ${err.stack || err.message}`]);
     console.log(`  ✗ setup\n      ${err.stack || err.message}`);

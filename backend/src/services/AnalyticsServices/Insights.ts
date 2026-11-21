@@ -32,8 +32,9 @@ const safe = async <T>(name: string, fn: () => Promise<T>): Promise<T | null> =>
   try { return await fn(); } catch (err) { logger.warn({ err: String((err as any)?.message || err), name }, "insight failed"); return null; }
 };
 
-export const insightsFor = async (user: any, now: Date = new Date()): Promise<Insight[]> => {
-  const manager = isManagerRole(roleOf(user));
+// selfOnly: the person's own leads and conversations, even for a manager (the "Meu desempenho" screen)
+export const insightsFor = async (user: any, now: Date = new Date(), opts: { selfOnly?: boolean } = {}): Promise<Insight[]> => {
+  const manager = !opts.selfOnly && isManagerRole(roleOf(user));
   const ids = manager ? await visibleConsultantIds(user) : [Number(user.id)];
   if (!ids.length) return [];
   const rep = { ids, now, hourAgo: new Date(now.getTime() - 3600000), threeDays: new Date(now.getTime() - 3 * DAY), weekAgo: new Date(now.getTime() - 7 * DAY), twoWeeks: new Date(now.getTime() - 14 * DAY), month: new Date(now.getTime() - 30 * DAY) };

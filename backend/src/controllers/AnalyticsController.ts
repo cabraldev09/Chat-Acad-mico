@@ -242,3 +242,35 @@ export const online = async (req: Request, res: Response): Promise<Response> => 
   const { teamOnline } = await import("../services/AnalyticsServices/Insights");
   return res.json({ users: await teamOnline(req.user) });
 };
+
+// "Meu desempenho": everything about the person who asks, and only them (nothing in the query chooses whose numbers are read):
+// production and goals (the same bundle as /analytics/me), the leads now, what to do (insights of their own leads and conversations),
+// the commercial results against the period before, the training the daily review found for them and tips against the team average
+export const meOverview = async (req: Request, res: Response): Promise<Response> => {
+  const id = Number(req.user.id);
+  const p = resolvePeriod(req.query);
+  const { computeMetrics } = await import("../services/AnalyticsServices/AnalyticsService");
+  const { myLeads, teamAverages, gradesSentBy, tipsFor } = await import("../services/AnalyticsServices/Performance");
+  const { insightsFor } = await import("../services/AnalyticsServices/Insights");
+  const { focusFor } = await import("../services/AnalyticsServices/Focus");
+  const length = p.end.getTime() - p.start.getTime();
+  const before = { ...p, start: new Date(p.start.getTime() - length), end: new Date(p.start.getTime() - 1) };
+  const [[bundle], config, leads, insights, focus, team, grades, previous] = await Promise.all([
+    bundlesFor([id], p), getConfig(), myLeads(id), insightsFor(req.user, new Date(), { selfOnly: true }), focusFor(id),
+    teamAverages(p), gradesSentBy(id, p), computeMetrics([id], before as any)
+  ]);
+  const { coachingFor } = await import("../services/AnalyticsServices/ConsultantReview");
+  const [coaching] = await coachingFor([{ id, name: "" }], p.start, p.end, await stepLabelOf()).catch(() => [] as any[]);
+  return res.json({
+    period: period(req),
+    ...bundle,
+    targets: { dailyMessages: config.dailyMessagesTarget, dailyAttendances: config.dailyAttendancesTarget },
+    focus,
+    leads,
+    insights,
+    results: { now: { ...bundle.metrics, gradesSent: grades }, before: previous.get(id) || null },
+    team,
+    tips: tipsFor({ metrics: bundle.metrics, grades }, team),
+    coaching: coaching ? { reviewed: coaching.reviewed, items: coaching.items || [], strengths: coaching.strengths || [] } : null
+  });
+};
