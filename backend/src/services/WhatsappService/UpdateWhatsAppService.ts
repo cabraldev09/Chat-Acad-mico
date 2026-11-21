@@ -5,7 +5,7 @@ import AppError from "../../errors/AppError";
 import Whatsapp from "../../models/Whatsapp";
 import ShowWhatsAppService from "./ShowWhatsAppService";
 import AssociateWhatsappQueue from "./AssociateWhatsappQueue";
-import { mergeConfig } from "../../helpers/Secrets";
+import { cleanCredential, isMasked, looksLikeAppSecret, mergeConfig } from "../../helpers/Secrets";
 import { forgetWebhook } from "../../channels/WebhookLog";
 
 interface WhatsappData {
@@ -94,6 +94,13 @@ const UpdateWhatsAppService = async ({
   }
 
   const whatsapp = await ShowWhatsAppService(whatsappId);
+
+  // an official number: the Access Token field must not receive the App Secret (it would replace a working token and take the number down)
+  if (config !== undefined && whatsapp.channel === "whatsapp_cloud") {
+    let typed: unknown;
+    try { typed = JSON.parse(config)?.accessToken; } catch (e) { typed = undefined; }
+    if (typeof typed === "string" && !isMasked(typed) && looksLikeAppSecret(cleanCredential(typed))) throw new AppError("ERR_CLOUD_TOKEN_IS_SECRET", 400);
+  }
 
   const mergedConfig =
     config !== undefined ? mergeConfig(whatsapp.getDataValue("config"), config) : undefined;

@@ -89,6 +89,10 @@ export const openSecret = (stored: string): string => {
 
 // A token or secret pasted from a panel often carries spaces, line breaks, quotes or a "Bearer " in front; none of them is ever part of the
 // credential, and the provider refuses it ("Cannot parse access token"). A masked or already sealed value is left alone.
+// 32 letters and digits (hex) is the shape of the App Secret of a Meta app. A Meta access token starts with "EAA" and has more than 100 characters,
+// so a value of this shape in the token field is the secret pasted (or filled by the browser) in the wrong place: saving it would replace a working token
+export const looksLikeAppSecret = (value: unknown): boolean => typeof value === "string" && /^[0-9a-f]{32}$/i.test(value.trim());
+
 export const cleanCredential = (value: string): string => {
   if (!value || isMasked(value) || value.startsWith(SEAL_PREFIX)) return value;
   return value.replace(/\s+/g, "").replace(/^bearer(?=[A-Za-z0-9])/i, "").replace(/^["'`]+|["'`]+$/g, "");
