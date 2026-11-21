@@ -76,6 +76,12 @@ export const dropRepeatedParagraphs = (text: string, alreadySent: string[]): str
   return kept.length ? kept.join("\n\n").trim() : String(text || "").trim();
 };
 
+// "Tem aula presencial?", "e a duração", "quanto tempo dura": the person is asking
+export const isQuestion = (text: string): boolean => {
+  const t = plain(text).trim();
+  return t.includes("?") || /^(tem|quanto|quantos|qual|quais|como|quando|onde|e a|e o|posso|pode|precisa|da para|e se|sera|vai)\b/.test(t);
+};
+
 // what the conversation already got from us today (enough to catch the AI repeating itself, light on the database)
 export const withoutRepeats = async (ticketId: number, text: string): Promise<string> => {
   const sent = await Message.findAll({
@@ -84,7 +90,10 @@ export const withoutRepeats = async (ticketId: number, text: string): Promise<st
     limit: 40,
     attributes: ["body"]
   });
-  const out = dropRepeatedParagraphs(text, sent.map(m => String(m.body || "")));
+  // the person asked something (again): answering it is right, even with words said before; only repeats inside this answer go
+  const lastIn = await Message.findOne({ where: { ticketId, fromMe: false } as any, order: [["createdAt", "DESC"]], attributes: ["body"] });
+  const asked = isQuestion(String(lastIn?.body || ""));
+  const out = dropRepeatedParagraphs(text, asked ? [] : sent.map(m => String(m.body || "")));
   // the conversation is already going (we wrote in the last 24 h): no "Oi! Como posso te ajudar?" opening again
   return sent.length ? withoutOpeningGreeting(out) : out;
 };

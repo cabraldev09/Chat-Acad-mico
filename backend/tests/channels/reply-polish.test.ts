@@ -88,3 +88,13 @@ describe("a question followed by a hint", () => {
     expect(dropRepeatedParagraphs(`Estou por aqui\n\n${q}`, [q])).toBe(`Estou por aqui\n\n${q}`);
   });
 });
+
+describe("the person asks", () => {
+  it("recognizes a question even without the question mark", async () => {
+    const { isQuestion } = await import("../../src/helpers/ReplyPolish");
+    expect(isQuestion("Tem aula presencial?")).toBe(true);
+    expect(isQuestion("quanto tempo dura")).toBe(true);
+    expect(isQuestion("ok")).toBe(false);
+    expect(isQuestion("Sou de Porto Velho")).toBe(false);
+  });
+});
