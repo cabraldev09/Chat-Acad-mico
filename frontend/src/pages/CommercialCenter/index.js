@@ -49,7 +49,7 @@ const supervisorPeriod = (period) => {
   return { date: today, days: 1 };
 };
 
-const COLS = [["messagesSent", "Mensagens"], ["attendances", "Atend."], ["leadsWorked", "Leads"], ["reactivated", "Reativ."], ["firstContactMinutes", "1º contato"], ["pendingReply", "Pendentes"], ["enrollments", "Matrículas"], ["conversion", "Conv."], ["tasksOverdue", "Atrasadas"]];
+const COLS = [["attendances", "Conversas"], ["peopleContacted", "Pessoas"], ["messagesSent", "Mensagens"], ["leadsWorked", "Leads"], ["reactivated", "Reativ."], ["firstContactMinutes", "1º contato"], ["pendingReply", "Pendentes"], ["enrollments", "Matrículas"], ["conversion", "Conv."], ["tasksOverdue", "Atrasadas"]];
 
 const ConfigPanel = ({ config, consultants, onSaved }) => {
   const c = useKit();
@@ -81,10 +81,10 @@ const ConfigPanel = ({ config, consultants, onSaved }) => {
         <label className={c.sub}>Considerar parado após (minutos sem atividade). Quem está no horário de trabalho e passa desse tempo sem enviar mensagem, mexer em lead ou concluir tarefa aparece como "No horário, sem atividade".
           <input type="number" min={1} max={240} className={c.input} style={{ width: "100%", marginTop: 4 }} value={form.activeWindowMinutes} onChange={(e) => setForm({ ...form, activeWindowMinutes: e.target.value })} />
         </label>
-        <label className={c.sub}>Meta diária de mensagens enviadas. Aparece na tela do consultor e gera alerta quando ele está no horário e abaixo da meta (0 = sem meta).
+        <label className={c.sub}>Meta diária de mensagens enviadas (opcional). Gera alerta quando a pessoa está no horário e abaixo da meta (0 = sem meta). Prefira a meta de conversas.
           <input type="number" min={0} className={c.input} style={{ width: "100%", marginTop: 4 }} value={form.dailyMessagesTarget} onChange={(e) => setForm({ ...form, dailyMessagesTarget: e.target.value })} />
         </label>
-        <label className={c.sub}>Meta diária de atendimentos (conversas diferentes atendidas por dia). Aparece na tela do consultor (0 = sem meta).
+        <label className={c.sub}>Meta diária de conversas atendidas (cada conversa conta uma vez). Aparece na tela do consultor e gera alerta quando ele está no horário e abaixo da meta (0 = sem meta).
           <input type="number" min={0} className={c.input} style={{ width: "100%", marginTop: 4 }} value={form.dailyAttendancesTarget} onChange={(e) => setForm({ ...form, dailyAttendancesTarget: e.target.value })} />
         </label>
       </div>
@@ -158,7 +158,7 @@ const Detail = ({ userId, period, defs, onClose }) => {
         <div>
           <BlockTitle title="Números do período" help="Os mesmos números da tela pessoal da pessoa. Passe o mouse em cada cartão para ler o que ele conta." />
           <div className={c.grid4} style={{ marginTop: 10 }}>
-            {["messagesSent", "attendances", "leadsWorked", "firstContactMinutes", "enrollments", "conversion", "pendingReply", "tasksOverdue"].map((k) => <Kpi key={k} k={k} value={m[k]} def={defs[k]} hint={k === "firstContactMinutes" ? firstHint : undefined} tone={k === "tasksOverdue" && m[k] > 0 ? "#dc2626" : undefined} />)}
+            {["attendances", "peopleContacted", "leadsWorked", "firstContactMinutes", "enrollments", "conversion", "pendingReply", "tasksOverdue"].map((k) => <Kpi key={k} k={k} value={m[k]} def={defs[k]} hint={k === "firstContactMinutes" ? firstHint : undefined} tone={k === "tasksOverdue" && m[k] > 0 ? "#dc2626" : undefined} />)}
           </div>
         </div>
         <div className="ui-card" style={{ padding: 18 }}>
@@ -459,18 +459,18 @@ const ConsultantsTable = ({ ranked, totals, polos, defs, selected, onSelect, onC
   );
 };
 
-// the team in one picture: bars of messages per person, a line of attendances, and what changed (like a trading board)
+// the team in one picture: bars of conversations per person, a line of people contacted, and what changed (like a trading board)
 const TeamPulse = ({ consultants }) => {
   const c = useKit();
-  const rows = [...consultants].sort((a, b) => b.metrics.messagesSent - a.metrics.messagesSent).slice(0, 10).map((b) => ({ name: b.user.name.split(" ")[0], mensagens: b.metrics.messagesSent, atendimentos: b.metrics.attendances, matriculas: b.metrics.enrollments }));
-  const any = rows.some((r) => r.mensagens || r.atendimentos || r.matriculas);
+  const rows = [...consultants].sort((a, b) => b.metrics.attendances - a.metrics.attendances).slice(0, 10).map((b) => ({ name: b.user.name.split(" ")[0], conversas: b.metrics.attendances, pessoas: b.metrics.peopleContacted, matriculas: b.metrics.enrollments }));
+  const any = rows.some((r) => r.conversas || r.pessoas || r.matriculas);
   return (
     <div className={`${c.panel} dash-card`}>
-      <BlockTitle icon={<Gauge size={16} />} title="Produção da equipe" help="Mensagens enviadas (barras), atendimentos (linha) e matrículas (pontos) de cada consultor no período." />
-      {!any ? <div className={c.sub} style={{ padding: "26px 0" }}>Ainda sem produção neste período. Quando alguém enviar mensagens ou atender, o gráfico acende aqui.</div> : (
+      <BlockTitle icon={<Gauge size={16} />} title="Produção da equipe" help="Conversas atendidas (barras; cada conversa conta uma vez), pessoas contatadas (linha) e matrículas (pontos) de cada consultor no período." />
+      {!any ? <div className={c.sub} style={{ padding: "26px 0" }}>Ainda sem produção neste período. Quando alguém atender uma conversa, o gráfico acende aqui.</div> : (
         <div style={{ marginTop: 12 }}>
           <TimeChart data={rows} xKey="name" interval={0} height={280} label="Produção da equipe por consultor" title={(p) => p.name}
-            series={[{ key: "mensagens", name: "Mensagens", color: "leads", kind: "bar" }, { key: "atendimentos", name: "Atendimentos", color: "violet", kind: "line" }, { key: "matriculas", name: "Matrículas", color: "won", kind: "line" }]} />
+            series={[{ key: "conversas", name: "Conversas", color: "leads", kind: "bar" }, { key: "pessoas", name: "Pessoas contatadas", color: "violet", kind: "line" }, { key: "matriculas", name: "Matrículas", color: "won", kind: "line" }]} />
         </div>
       )}
     </div>
@@ -494,17 +494,17 @@ const PoloBoard = ({ data, polos, history, setTab, feedbackPeriod }) => {
   const c = useKit();
   const byId = new Map(data.polos.map((p) => [p.poloId, p]));
   // every polo of the system appears, with or without team
-  const all = polos.map((p) => ({ poloId: p.id, name: p.name, city: p.city, state: p.state, consultants: (byId.get(p.id) || {}).consultants || 0, totals: (byId.get(p.id) || {}).totals || { messagesSent: 0, leadsWorked: 0, enrollments: 0, conversion: null } }));
+  const all = polos.map((p) => ({ poloId: p.id, name: p.name, city: p.city, state: p.state, consultants: (byId.get(p.id) || {}).consultants || 0, totals: (byId.get(p.id) || {}).totals || { attendances: 0, messagesSent: 0, leadsWorked: 0, enrollments: 0, conversion: null } }));
   data.polos.forEach((p) => { if (!all.some((x) => x.poloId === p.poloId)) all.push(p); });
-  const ranked = [...all].sort((a, b) => (b.totals.enrollments || 0) - (a.totals.enrollments || 0) || (b.totals.messagesSent || 0) - (a.totals.messagesSent || 0));
+  const ranked = [...all].sort((a, b) => (b.totals.enrollments || 0) - (a.totals.enrollments || 0) || (b.totals.attendances || 0) - (a.totals.attendances || 0));
   const withTeam = ranked.filter((p) => p.consultants > 0);
-  const maxM = Math.max(1, ...withTeam.map((p) => p.totals.messagesSent || 0));
+  const maxM = Math.max(1, ...withTeam.map((p) => p.totals.attendances || 0));
   const sum = (k) => withTeam.reduce((s, p) => s + Number(p.totals[k] || 0), 0);
   return (
     <div style={{ display: "grid", gap: 16 }}>
       <ManagementFeedback {...feedbackPeriod} />
       <div className={`${c.grid4} dash-stagger`}>
-        {[["Polos com equipe", withTeam.length, "#22d3ee"], ["Consultores vinculados", withTeam.reduce((s, p) => s + p.consultants, 0), "#818cf8"], ["Mensagens no período", sum("messagesSent"), "#0693e3"], ["Matrículas no período", sum("enrollments"), "#4ade80"]].map(([label, value, tone]) => (
+        {[["Polos com equipe", withTeam.length, "#22d3ee"], ["Consultores vinculados", withTeam.reduce((s, p) => s + p.consultants, 0), "#818cf8"], ["Conversas no período", sum("attendances"), "#0693e3"], ["Matrículas no período", sum("enrollments"), "#4ade80"]].map(([label, value, tone]) => (
           <div key={label} className={`${c.kpi} dash-card`} style={{ "--tone": tone }}>
             <div className={c.kpiLabel}><span>{label}</span></div>
             <div className={c.kpiValue}><NumberTicker value={value} format={(n) => num(n)} /></div>
@@ -515,8 +515,8 @@ const PoloBoard = ({ data, polos, history, setTab, feedbackPeriod }) => {
       {withTeam.length > 0 && (
         <div className={`${c.cols} `} style={{ gridTemplateColumns: "1fr" }}>
           <div className={`${c.panel} dash-card`}>
-            <BlockTitle title="Mensagens, leads e matrículas por polo" help="Os números dos consultores de cada polo, somados." />
-            <CompareBars data={withTeam.slice(0, 8).map((p) => ({ name: p.name.split(" - ")[0].slice(0, 14), messagesSent: p.totals.messagesSent, leadsWorked: p.totals.leadsWorked, enrollments: p.totals.enrollments }))} keys={[["messagesSent", "Mensagens", "#22d3ee"], ["leadsWorked", "Leads trabalhados", "#818cf8"], ["enrollments", "Matrículas", "#4ade80"]]} />
+            <BlockTitle title="Conversas, leads e matrículas por polo" help="Os números dos consultores de cada polo, somados." />
+            <CompareBars data={withTeam.slice(0, 8).map((p) => ({ name: p.name.split(" - ")[0].slice(0, 14), attendances: p.totals.attendances, leadsWorked: p.totals.leadsWorked, enrollments: p.totals.enrollments }))} keys={[["attendances", "Conversas", "#22d3ee"], ["leadsWorked", "Leads trabalhados", "#818cf8"], ["enrollments", "Matrículas", "#4ade80"]]} />
           </div>
         </div>
       )}
@@ -536,11 +536,11 @@ const PoloBoard = ({ data, polos, history, setTab, feedbackPeriod }) => {
               {p.consultants > 0 ? (
                 <>
                   <div className="dash-polo-stats">
-                    <div><small>Mensagens</small><b><NumberTicker value={p.totals.messagesSent || 0} format={(n) => num(n)} /></b></div>
+                    <div><small>Conversas</small><b><NumberTicker value={p.totals.attendances || 0} format={(n) => num(n)} /></b></div>
                     <div><small>Leads</small><b><NumberTicker value={p.totals.leadsWorked || 0} format={(n) => num(n)} /></b></div>
                     <div><small>Matrículas</small><b><NumberTicker value={p.totals.enrollments || 0} format={(n) => num(n)} /></b></div>
                   </div>
-                  <Progress value={p.totals.messagesSent || 0} max={maxM} color="var(--c-leads)" />
+                  <Progress value={p.totals.attendances || 0} max={maxM} color="var(--c-leads)" />
                   <div className="dash-team">{team.map((b) => <span key={b.user.id}><i>{(b.user.name || "?").charAt(0).toUpperCase()}</i>{b.user.name.split(" ")[0]}</span>)}</div>
                 </>
               ) : (
@@ -582,7 +582,7 @@ const CommercialCenter = () => {
     } catch (err) { toastError(err); }
   };
 
-  const ranked = useMemo(() => (data ? [...data.consultants].sort((a, b) => b.metrics.enrollments - a.metrics.enrollments || b.metrics.messagesSent - a.metrics.messagesSent) : []), [data]);
+  const ranked = useMemo(() => (data ? [...data.consultants].sort((a, b) => b.metrics.enrollments - a.metrics.enrollments || b.metrics.attendances - a.metrics.attendances) : []), [data]);
 
   return (
     <div className={`${c.page} dash-scope`}>
@@ -619,7 +619,7 @@ const CommercialCenter = () => {
             </div>
           )}
           <div className={`${c.grid4} dash-stagger`}>
-            {["messagesSent", "attendances", "leadsWorked", "firstContactMinutes", "pendingReply", "enrollments", "conversion", "tasksOverdue"].map((k) => <Kpi key={k} k={k} value={data.totals[k]} def={defs[k]} tone={k === "tasksOverdue" && data.totals[k] > 0 ? "#dc2626" : undefined} />)}
+            {["attendances", "peopleContacted", "leadsWorked", "firstContactMinutes", "pendingReply", "enrollments", "conversion", "tasksOverdue"].map((k) => <Kpi key={k} k={k} value={data.totals[k]} def={defs[k]} tone={k === "tasksOverdue" && data.totals[k] > 0 ? "#dc2626" : undefined} />)}
           </div>
           <TeamPulse consultants={data.consultants} />
           <div className={c.cols}>

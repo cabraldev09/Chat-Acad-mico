@@ -112,6 +112,14 @@ r.put("/analytics/config", isAuth, isManager, Analytics.putAnalyticsConfig);
 r.get("/analytics/consultant/:userId", isAuth, Analytics.consultant);
 r.get("/analytics/process", isAuth, isManager, Analytics.processTeam);
 r.get("/analytics/process/:userId", isAuth, Analytics.processConsultant);
+// everyone logged in: the management sees the consultants it may see, anybody else only their own numbers (decided in the controller)
+r.get("/analytics/commercial", isAuth, Analytics.commercial);
+// training suggested by the daily review of the AI: the management reads it; only an administrator runs a reading on demand (it spends)
+r.get("/analytics/coaching", isAuth, isManager, Analytics.coaching);
+r.post("/analytics/coaching/text", isAuth, isManager, Analytics.coachingText);
+r.post("/analytics/coaching/run", isAuth, isAdmin, Analytics.coachingRun);
+// the tutoring: the management sees every tutor, a tutor only their own students (decided in the controller)
+r.get("/analytics/tutoria", isAuth, Analytics.tutoria);
 
 r.get("/dashboard/management", isAuth, DashboardMgmt.management);
 r.post("/dashboard/management/feedback", isAuth, isManager, DashboardMgmt.managementFeedback);
