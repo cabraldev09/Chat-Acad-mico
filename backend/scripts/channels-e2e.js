@@ -3609,11 +3609,13 @@ const postMeta = (id, payload, secret, badSig) => {
       await typed(a, "wamid.blk-a1", "oi, quero um cadastro");
       await waitFor(() => cloudTexts(before0).some(t => /Qual é o seu nome completo/.test(t)), 15000, "the AI stage answers the first message");
       const runA = () => sql(`SELECT CONCAT(r.status,'|',COALESCE(r.nodeId,'')) FROM ChatFlowRuns r JOIN Tickets t ON t.id=r.ticketId JOIN Contacts c ON c.id=t.contactId WHERE c.number='${a}' AND r.flowId=${flow.id} ORDER BY r.id DESC LIMIT 1`);
-      assert(runA() === "waiting|s", `run after the first message ${runA()}`);
+      // the runner saves the state of the run right after sending: wait for it, as for the message
+      await waitFor(() => runA() === "waiting|s", 5000, "the run waits on the AI stage after the first message");
       let mark = graph.sent.length;
       await typed(a, "wamid.blk-a2", "meu nome é Paulo, email ruim");
       await waitFor(() => cloudTexts(mark).some(t => /e-mail completo/.test(t)), 15000, "the AI asks for the e-mail again");
-      assert(runA() === "waiting|s" && !sql(`SELECT aiSlots FROM Tickets WHERE id=${ticketOf(a)}`).includes("paulo\""), "a bad e-mail was kept or the stage ended");
+      await waitFor(() => runA() === "waiting|s", 5000, "the run still waits on the AI stage");
+      assert(!sql(`SELECT aiSlots FROM Tickets WHERE id=${ticketOf(a)}`).includes("paulo\""), "a bad e-mail was kept or the stage ended");
       mark = graph.sent.length;
       await typed(a, "wamid.blk-a3", "meu nome é Paulo, o email é paulo@x.com");
       await waitFor(() => cloudTexts(mark).some(t => /Cadastro concluído, obrigado!/.test(t)), 15000, "the flow follows the exit 'done'");
