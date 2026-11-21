@@ -70,6 +70,10 @@ export const findOrCreateChannelContact = async (
     }
     if (name && contact.name === contact.number) patch.name = name;
     if (Object.keys(patch).length) await contact.update(patch);
+    // the official API sends no profile picture: the picture of the number is read through a WhatsApp by QR Code (ProfilePicSync)
+    if (!contact.getDataValue("profilePicUrl") || /^https?:/.test(String(contact.getDataValue("profilePicUrl")))) {
+      import("../../workers/ProfilePicSync").then(m => m.pictureSoon(contact!.id)).catch(() => undefined);
+    }
   } else {
     contact = await Contact.create({
       name: name || number,
@@ -79,6 +83,7 @@ export const findOrCreateChannelContact = async (
       channel: whatsapp.channel
     });
     getIO().emit("contact", { action: "create", contact });
+    if (!profilePicUrl) import("../../workers/ProfilePicSync").then(m => m.pictureSoon(contact!.id)).catch(() => undefined);
   }
   return contact;
 };

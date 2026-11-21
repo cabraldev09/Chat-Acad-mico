@@ -10,11 +10,18 @@ import { chatIdOf } from "../helpers/ChatId";
 import { isLocalPic } from "../helpers/PicUrl";
 import { whatsappProvider } from "../providers/WhatsApp";
 import { logger } from "../utils/logger";
+import { getIO } from "../libs/socket";
 
 const AVATAR_DIR = path.join(PUBLIC_DIR, "avatars");
 const RETRY_AFTER_MS = 7 * 24 * 3600 * 1000;
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 let running = false;
+// a person who just wrote (official number included) goes first: the picture shows in the list and in the notification within seconds
+const urgent = new Set<number>();
+export const pictureSoon = (contactId: number): void => {
+  if (contactId) urgent.add(contactId);
+  if (urgent.size > 500) urgent.clear();
+};
 
 // WhatsApp's picture links stop working after a while, so the real picture of each person and group is
 // downloaded once and kept on our side. People are processed a few at a time, conversations first, so
@@ -46,20 +53,31 @@ const tick = async (): Promise<void> => {
     if (!connection || !whatsappProvider.getChatPicUrl) return;
 
     const retryBefore = new Date(Date.now() - RETRY_AFTER_MS);
-    const batch = await Contact.findAll({
+    const firstIds = [...urgent].slice(0, 5);
+    firstIds.forEach(id => urgent.delete(id));
+    const first = firstIds.length ? await Contact.findAll({
+      where: {
+        id: firstIds,
+        isGroup: false,
+        [Op.or]: [{ profilePicUrl: { [Op.is]: null } }, { profilePicUrl: { [Op.like]: "http%" } }],
+        [Op.and]: [{ [Op.or]: [{ picCheckedAt: { [Op.is]: null } }, { picCheckedAt: { [Op.lt]: new Date(Date.now() - 24 * 3600 * 1000) } }] }]
+      } as any
+    }) : [];
+    const rest = await Contact.findAll({
       where: {
         [Op.and]: [
           { [Op.or]: [{ profilePicUrl: { [Op.is]: null } }, { profilePicUrl: { [Op.like]: "http%" } }] },
           { [Op.or]: [{ picCheckedAt: { [Op.is]: null } }, { picCheckedAt: { [Op.lt]: retryBefore } }] }
         ]
       } as any,
-      // people with a conversation first
+      // people with the most recent conversations first (the new leads of today before the old contacts)
       order: [
-        [literal(`(SELECT COUNT(*) FROM "Tickets" t WHERE t."contactId" = "Contact"."id") > 0`), "DESC"],
-        ["id", "ASC"]
+        [literal(`(SELECT MAX(t."updatedAt") FROM "Tickets" t WHERE t."contactId" = "Contact"."id")`), "DESC NULLS LAST"],
+        ["id", "DESC"]
       ],
       limit: 10
     });
+    const batch = [...first, ...rest.filter(c => !first.some(f => f.id === c.id))];
 
     for (const contact of batch) {
       try {
@@ -75,6 +93,8 @@ const tick = async (): Promise<void> => {
         if (buf) {
           // eslint-disable-next-line no-await-in-loop
           await contact.update({ profilePicUrl: save(contact, buf), picCheckedAt: new Date() });
+          // the open screens (list, conversation, notification) show the picture without reloading
+          getIO().emit("contact", { action: "update", contact });
         } else {
           // no picture (private or none): ask again in a week
           // eslint-disable-next-line no-await-in-loop
