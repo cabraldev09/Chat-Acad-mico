@@ -396,9 +396,9 @@ const runAi = async (ticket: Ticket): Promise<boolean> => {
     trace(ticket, `agente "${agent.name}" (roteiro em blocos) vai responder${(await startDelayOf(ticket, agent.waitSeconds)) ? ` em ${agent.waitSeconds ?? 4}s` : " na hora (primeira mensagem)"}`);
     return true;
   }
-  // the agent of this connection has no process of its own, but the team has a sales agent with a published process: that one answers, so
-  // the lead goes through the whole process (course, format, grade, doubts, scholarship) instead of the short "name and city" of the simple mode
-  const seller = await commercialAgent();
+  // a consultant handed this conversation to the AI to qualify ("IA qualificar") and the agent of the connection has no process of its own: the
+  // sales agent with a published process takes it, so the lead goes through the whole process instead of the short "name and city" of the simple mode
+  const seller = ticket.aiReturnUserId ? await commercialAgent() : null;
   if (seller && seller.id !== agent.id && (await runAgentGraph(ticket, seller))) {
     trace(ticket, `agente "${agent.name}" sem roteiro publicado: o processo comercial do agente "${seller.name}" responde`);
     return true;

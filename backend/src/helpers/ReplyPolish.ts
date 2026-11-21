@@ -32,7 +32,14 @@ export const polishReply = (input: string): string => {
         return true;
       }
       return true;
-    }).map(sentence => (PRICE_TABLE.test(plain(sentence)) ? `${PRICE_SENTENCE} ` : sentence));
+    }).map(sentence => {
+      if (!PRICE_TABLE.test(plain(sentence))) return sentence;
+      // a value from the catalogue stays (without the word "tabela"), followed by the scholarship sentence; the "it may vary" kind is replaced
+      if (/R\$\s*\d/.test(sentence) && !/pode(m)?\s+variar/.test(plain(sentence))) {
+        return `${sentence.replace(/\s+de\s+tabela/gi, "").trim()} ${PRICE_SENTENCE} `;
+      }
+      return `${PRICE_SENTENCE} `;
+    });
     return kept.join("").trim();
   });
   return paragraphs.filter(Boolean).join("\n\n").trim();
@@ -64,7 +71,8 @@ export const dropRepeatedParagraphs = (text: string, alreadySent: string[]): str
     seen.add(k);
     return true;
   });
-  return kept.join("\n\n").trim();
+  // everything was already said (the person asked the same thing again): the answer goes as it is, a person who wrote always gets a reply
+  return kept.length ? kept.join("\n\n").trim() : String(text || "").trim();
 };
 
 // what the conversation already got from us today (enough to catch the AI repeating itself, light on the database)

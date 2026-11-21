@@ -58,3 +58,19 @@ describe("the AI in a conversation already going", () => {
     expect(withoutOpeningGreeting("Oi, tudo bem?")).toBe("Oi, tudo bem?");
   });
 });
+
+describe("the same question asked again", () => {
+  it("still gets an answer when the whole reply was said before", () => {
+    const safe = "Essa informação eu preciso confirmar com a equipe antes de te passar, para não te informar nada errado.";
+    expect(dropRepeatedParagraphs(safe, [safe])).toBe(safe);
+  });
+});
+
+describe("a value from the catalogue", () => {
+  it("keeps the value, drops the word tabela and tells about the scholarships", () => {
+    const out = polishReply("O curso Direito tem mensalidade de tabela de R$ 1300.");
+    expect(out).toContain("R$ 1300");
+    expect(out).not.toMatch(/tabela/);
+    expect(out).toContain(PRICE_SENTENCE);
+  });
+});
