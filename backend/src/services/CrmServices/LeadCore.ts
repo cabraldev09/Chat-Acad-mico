@@ -347,6 +347,11 @@ export const ensureLead = async (contact: Contact, channel: string): Promise<Lea
   if (contact.isGroup || contact.isStaff || contact.isPersonal || contact.kind === "channel") return null;
   const existing = await Lead.findOne({ where: { contactId: contact.id } });
   if (existing) return existing;
+  // an affiliate writing to the official number is a partner talking to their consultant, not someone who wants to study
+  if (contact.number) {
+    const { findAffiliateByPhone } = await import("../AffiliateServices/AffiliateLane");
+    if (await findAffiliateByPhone(contact.number)) return null;
+  }
   if ((await getSetting("crm_autocreate", "true")) === "false") return null;
 
   const pending = creating.get(contact.id);
@@ -385,6 +390,12 @@ export const hookInbound = async (contactId: number, channel?: string): Promise<
       if (!contact) return;
       lead = await ensureLead(contact, channel || contact.channel || "whatsapp");
       if (!lead) return;
+    }
+    // an affiliate taken out of the funnel stays out when they write again
+    if (lead.isHistorical) {
+      const contactRow = await Contact.findByPk(contactId, { attributes: ["number"] });
+      const { findAffiliateByPhone } = await import("../AffiliateServices/AffiliateLane");
+      if (contactRow?.number && (await findAffiliateByPhone(contactRow.number))) return;
     }
     if (lead.isHistorical) {
       // someone from the history wrote again: from now on this is a real lead, counted from this moment

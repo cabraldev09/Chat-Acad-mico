@@ -1,3 +1,4 @@
+import Whatsapp from "../../models/Whatsapp";
 import { MIN_PASSWORD } from "../../helpers/Passwords";
 import { joinRelationshipQueue, leaveRelationshipQueue } from "../RelationshipServices/Relationship";
 import * as Yup from "yup";
@@ -84,6 +85,8 @@ const UpdateUserService = async ({
     if (taken && taken.id !== user.id) throw new AppError("ERR_USER_EMAIL_EXISTS", 409);
   }
 
+  // the number the person uses must exist
+  if (whatsappId && !(await Whatsapp.findByPk(Number(whatsappId), { attributes: ["id"] }))) throw new AppError("ERR_NO_WAPP_FOUND", 404);
   await user.update({
     ...(typeof userData.acceptsNewTickets === "boolean" ? { acceptsNewTickets: userData.acceptsNewTickets } : {}),
     ...(userData.maxOpenTickets !== undefined ? { maxOpenTickets: Math.min(1000, Math.max(0, Math.floor(Number(userData.maxOpenTickets) || 0))) } : {}),

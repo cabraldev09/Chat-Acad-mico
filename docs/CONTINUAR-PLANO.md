@@ -6,16 +6,12 @@ Atualizado em 20/11/2026. Este arquivo existe para que outra sessão ou conta do
 
 | O quê | Onde |
 |---|---|
-| Já no `main` (em produção depois do deploy) | Até o PR #94 (agendadas em sequência, tabelas, estatísticas, celular) |
-| Pronto, mas **ainda sem PR** | Branch `claude/system-agent-analysis-improvements-n0anpw`, commit `ddd8fec` (com uma mesclagem `-s ours` por cima, sem mudar arquivos) |
+| Já no `main` | Até o PR #98. A seção 2 (modelos da Meta, contato da tutoria, curso primeiro, rascunho, prontidão, perfis) entrou no #95; os #96–#98 vieram de outra sessão |
+| Este PR (afiliado no número oficial, semana do time, formulário de usuário) | Branch `claude/system-agent-analysis-improvements-n0anpw`, ver a seção 7 |
 
-**Primeira tarefa da próxima sessão:**
-1. Rodar as verificações.
-2. Abrir o PR dessa branch para o `main`. A descrição pronta está na seção 5.
-3. Acompanhar o CI até ficar verde.
-4. Mesclar.
+**Próxima tarefa:** acompanhar o CI do PR aberto a partir desta branch, mesclar e conferir no servidor (seção 7).
 
-## 2. O que já foi feito na branch (sem PR)
+## 2. O que entrou no PR #95
 
 ### Modelos da Meta, todos na categoria Utilidade e protegidos
 - Tela **Configurações → Modelos da Meta**: `frontend/src/pages/SettingsHub/MetaTemplates.js`.
@@ -134,3 +130,23 @@ O conteúdo é a seção 2 deste arquivo, mais a seção 3 (testes).
   - nunca pedir nem colar tokens ou chaves no chat; usar o formulário seguro;
   - workflows imprimem só IDs públicos;
   - a chave de serviço do Supabase que foi exposta deve ser trocada.
+
+## 7. Afiliado no número oficial, semana do time e formulário de usuário (20/11)
+
+- **Semana do time:**
+  - seg–qui 08h–18h, sex 08h–17h, sem fim de semana: `standardWeek()` em `backend/src/helpers/BusinessTime.ts`, `frontend/src/utils/workWeek.js`;
+  - a migração `20261222000003-standard-week.ts` liga o horário da empresa com essa semana e dá a mesma semana a quem não tinha horário ou estava no padrão antigo (seg–sex 08–17); o horário anterior da empresa fica em `business_hours_before_20261120`;
+  - num banco sem usuários (os testes) a migração não faz nada.
+- **Formulário de usuário** (`frontend/src/components/UserModal/index.js`):
+  - horário por dia, para consultor, tutor e relacionamento; não apaga mais o horário por dia salvo em Gestão Comercial;
+  - "Número que a pessoa usa" vem com o número oficial da equipe (tutoria para tutor, atendimento para os outros); o backend recusa uma conexão que não existe;
+  - "Celular da pessoa (opcional)" no lugar do "WhatsApp de contato".
+- **Afiliado:**
+  - o portal manda para o número oficial (`affiliate_support_phone` ou a conexão oficial de atendimento), com a mensagem pronta e o nome do consultor;
+  - quem escreve no número oficial e é afiliado (reconhecido com e sem o 9) vai direto para `Affiliate.ownerId`, sem IA, sem rodízio e sem virar lead (`FindOrCreateTicketService.routeAffiliate`, `LeadCore.ensureLead`);
+  - um cartão de contato enviado ao número oficial vira indicação do consultor (`helpers/CloudContacts.ts`, `channels/meta.ts`).
+- **Prontidão:** novos itens "Horário de cada pessoa", "Número de cada pessoa", "Afiliados com consultor" e "Afiliados fora do funil", este com o botão "Tirar do funil" (`POST /system/affiliate-leads/clean`).
+- **Depois do deploy:**
+  - conferir em Configurações → Atendimento e horário;
+  - um afiliado de teste escreve no número oficial e cai na conversa do consultor dele;
+  - rodar "Tirar do funil" em Prontidão.

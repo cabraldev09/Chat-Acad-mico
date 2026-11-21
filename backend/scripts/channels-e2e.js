@@ -2759,7 +2759,8 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(portal.materials.find(m => m.id === mat.id).collection === "pos", "portal lacks the collection");
       assert(portal.faq.length === 1 && portal.faq[0].q === "Pergunta de teste?", "portal FAQ");
       assert(portal.videos.length === 1 && portal.videos[0].key === "program" && portal.videos[0].embed.includes("dQw4w9WgXcQ"), `videos ${JSON.stringify(portal.videos)}`);
-      assert(portal.support && portal.support.url === "https://wa.me/69999990000", "support link");
+      // the general support number typed by the administration is the official one; the message comes ready with the affiliate's name
+      assert(portal.support && portal.support.url.startsWith("https://wa.me/5569999990000?text=") && decodeURIComponent(portal.support.url).includes("Central Teste"), `support link ${JSON.stringify(portal.support)}`);
       assert(!/R\$ ?\d/.test(JSON.stringify({ m: portal.materials, c: portal.courses, f: portal.faq })), "a price leaked into the portal");
 
       // the copy counter
@@ -2822,7 +2823,8 @@ const postMeta = (id, payload, secret, badSig) => {
 
       const aff = (await http.post("/affiliates", { name: "Indicadora da Dona", phone: "(69) 97000-1111" }, asUser(to))).data;
       const portal = (await http.get(`/affiliate-portal/${aff.portalToken}`)).data;
-      assert(portal.support && portal.support.url === "https://wa.me/5569981112222" && portal.support.name === "Dona do Afiliado", `support ${JSON.stringify(portal.support)}`);
+      // the affiliate writes to the official number (never the consultant's own WhatsApp) and the consultant who follows them answers
+      assert(portal.support && !portal.support.url.includes("5569981112222") && portal.support.official && portal.support.name === "Dona do Afiliado", `support ${JSON.stringify(portal.support)}`);
 
       // rule: first monthly fee, 45 days
       assert((await http.put("/affiliate-rules", { mode: "first_monthly", payDays: 45, trigger: "enrolled", kind: "pix" }, auth())).data.payDays === 45, "rules");
@@ -5708,6 +5710,41 @@ const postMeta = (id, payload, secret, badSig) => {
       }
       assert((await http.delete(`/ai-agents/${id}/draft`, auth())).status === 200 && !(await http.get("/ai-agents", auth())).data.find(a => a.id === id).persona.draft, "discarding kept the draft");
       await http.put(`/ai-agents/${id}`, { systemPrompt: live.systemPrompt, persona: live.persona }, auth());
+    });
+    await test("affiliate on the official number: straight to their consultant (no robot, no rotation, no lead for the affiliate), a shared card is a referral, the portal points to the official number", async () => {
+      const cons = (await http.post("/users", { name: "Consultora dos Afiliados", email: "cons-afiliados@x.test", password: "senha123", role: "consultor" }, auth())).data;
+      const aff = (await http.post("/affiliates", { name: "Parceira Oficial", phone: "(69) 98111-2233", ownerId: cons.id }, auth())).data;
+      assert(aff.ownerId === cons.id, `affiliate owner ${JSON.stringify(aff).slice(0, 160)}`);
+      const llm = anthropic.requests.length;
+      // the official API sends the mobile without the ninth digit
+      await inboundCloud("556981112233", "wamid.affiliate-1", "Oi, tenho uma pessoa interessada no curso");
+      const tid = await waitFor(() => sql(`SELECT t.id FROM Tickets t JOIN Contacts c ON c.id=t.contactId WHERE c.number IN ('556981112233','5569981112233') ORDER BY t.id DESC LIMIT 1`), 8000, "affiliate ticket");
+      await waitFor(() => sql(`SELECT CONCAT(status,'|',userId) FROM Tickets WHERE id=${tid}`) === `open|${cons.id}`, 8000, "the affiliate's conversation goes to their consultant");
+      await sleep(2500);
+      assert(sql(`SELECT aiActive FROM Tickets WHERE id=${tid}`) === "0" && anthropic.requests.length === llm, "a robot answered the affiliate");
+      assert(sql(`SELECT COUNT(*) FROM Messages WHERE ticketId=${tid} AND fromMe=true`) === "0", "something was sent to the affiliate by itself");
+      const contactId = sql(`SELECT contactId FROM Tickets WHERE id=${tid}`);
+      assert(sql(`SELECT COUNT(*) FROM Leads WHERE contactId=${contactId}`) === "0", "the affiliate became a lead of the funnel");
+      assert(sql(`SELECT COUNT(*) FROM TicketEvents WHERE ticketId=${tid} AND note LIKE '%Parceira Oficial%'`) === "1", "the history does not say why the conversation went to the consultant");
+      // a contact card shared on the official number: the person becomes a referral lead of the affiliate's consultant
+      await postMeta(cid, cloudEvent([{ from: "556981112233", id: "wamid.affiliate-card", type: "contacts", contacts: [{ name: { formatted_name: "Indicado Pelo Cartao" }, phones: [{ phone: "+55 69 98444-5566", wa_id: "5569984445566" }] }] }]), cloudCfg.appSecret);
+      await waitFor(() => sql(`SELECT CONCAT(ownerId,'|',affiliateId) FROM Leads WHERE name='Indicado Pelo Cartao'`) === `${cons.id}|${aff.id}`, 8000, "the shared card became a referral of the consultant");
+      await waitFor(() => Number(sql(`SELECT COUNT(*) FROM Messages WHERE ticketId=${tid} AND body LIKE 'Contato compartilhado: Indicado Pelo Cartao%'`)) === 1, 8000, "the card is readable in the conversation");
+      assert(sql(`SELECT CONCAT(status,'|',userId) FROM Tickets WHERE id=${tid}`) === `open|${cons.id}`, "the card moved the conversation away from the consultant");
+      // the portal: support is the official number, with the message ready and the consultant's name
+      const portal = (await http.get(`/affiliate-portal/${aff.portalToken}`)).data;
+      assert(portal.support && /^https:\/\/wa\.me\/\d{10,}\?text=/.test(portal.support.url) && decodeURIComponent(portal.support.url).includes("Parceira Oficial") && portal.support.official, `portal support ${JSON.stringify(portal.support)}`);
+      // the readiness lists the affiliates without a consultant and those that are leads
+      const ready = (await http.get("/system/readiness", auth())).data.items;
+      assert(["users_hours", "users_number", "affiliates_owner", "affiliate_leads"].every(k => ready.some(i => i.key === k)), "the readiness misses the team and affiliate items");
+      assert((await http.post("/system/affiliate-leads/clean", {}, auth())).status === 200, "cleaning the affiliate leads");
+    });
+    await test("the team's week: a new person and the company start Monday to Thursday 08-18 and Friday 08-17; the number must exist", async () => {
+      const crm = (await http.get("/crm/settings", auth())).data;
+      assert(crm.standardWeek && crm.standardWeek["5"][0].end === "17:00" && crm.standardWeek["4"][0].end === "18:00" && !crm.standardWeek["6"].length, `standard week ${JSON.stringify(crm.standardWeek)}`);
+      assert((await http.post("/users", { name: "Numero Errado", email: "numero-errado@x.test", password: "senha123", role: "consultor", whatsappId: 999999 }, auth())).status === 404, "a user was saved with a number that does not exist");
+      const ok = await http.post("/users", { name: "Numero Certo", email: "numero-certo@x.test", password: "senha123", role: "consultor", whatsappId: Number(cid) }, auth());
+      assert([200, 201].includes(ok.status) && sql(`SELECT whatsappId FROM Users WHERE email='numero-certo@x.test'`) === String(cid), `user with the official number ${ok.status}`);
     });
     await test("Meta templates: the recommended pack goes as Utility and protected, nothing is duplicated, and an approved one takes its place", async () => {
       const consTok = (await http.post("/auth/login", { email: "consultorm@matricula.test", password: "senha123" })).data.token;

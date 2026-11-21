@@ -9,6 +9,13 @@ import PoloMember from "../../models/PoloMember";
 import { mailConfigured } from "../MailServices/SendMail";
 import { connectionOfTeam } from "../ChannelServices/ConnectionTeam";
 import { lastWebhook } from "../../channels/WebhookLog";
+import User from "../../models/User";
+import Affiliate from "../../models/Affiliate";
+import Contact from "../../models/Contact";
+import Lead from "../../models/Lead";
+import Payment from "../../models/Payment";
+import { normalizePhone } from "../../helpers/Phone";
+import { brPhoneVariants } from "../../helpers/PhoneVariants";
 
 // Configurações → Prontidão do sistema: what still has to be set before the team works on the system, each item with what is missing and
 // where to fix it. Read-only: nothing here changes a setting.
@@ -62,5 +69,35 @@ export const readiness = async (): Promise<ReadinessItem[]> => {
   const lacking = polos.filter(p => !members.some(m => m.poloId === p.id && m.role === "comercial") || !members.some(m => m.poloId === p.id && m.role === "tutoria"));
   add("polos", "Polos com consultor e tutor", polos.length > 0 && !lacking.length, "recommended",
     !polos.length ? "Nenhum polo cadastrado." : lacking.length ? `Sem consultor ou tutor: ${lacking.slice(0, 8).map(p => p.name).join(", ")}${lacking.length > 8 ? ` e mais ${lacking.length - 8}` : ""}.` : "Todos os polos têm consultor e tutor.", "Polos e equipes");
+
+  // the team: everyone who attends has working hours and the number they send from
+  const team = await User.findAll({ where: { role: { [Op.in]: ["consultor", "tutor", "academico", "relacionamento"] } } as any, attributes: ["id", "name", "whatsappId"] });
+  const names = (list: User[]) => `${list.slice(0, 8).map(u => u.name).join(", ")}${list.length > 8 ? ` e mais ${list.length - 8}` : ""}`;
+  let schedules: Record<string, any> = {};
+  try { schedules = JSON.parse(await getSetting("analytics_config", "{}")).schedules || {}; } catch { schedules = {}; }
+  const noHours = team.filter(u => !Object.values(schedules[String(u.id)] || {}).some((d: any) => Array.isArray(d) && d.length));
+  add("users_hours", "Horário de cada pessoa", !noHours.length, "recommended", noHours.length ? `Sem horário de trabalho: ${names(noHours)}.` : "Toda a equipe tem horário de trabalho.", "Usuários → editar a pessoa");
+  const noNumber = team.filter(u => !u.whatsappId);
+  add("users_number", "Número de cada pessoa", !noNumber.length, "recommended", noNumber.length ? `Sem o número que usam: ${names(noNumber)}.` : "Toda a equipe tem o número oficial definido.", "Usuários → editar a pessoa");
+
+  // the affiliates: each one with a consultant (their messages to the official number go to that person), and none counted as a lead
+  const affiliates = await Affiliate.findAll({ where: { status: "active" } as any, attributes: ["id", "name", "ownerId"] });
+  const ownerIds = new Set((await User.findAll({ where: { id: affiliates.map(a => a.ownerId).filter(Boolean) as number[] }, attributes: ["id"] })).map(u => u.id));
+  const orphan = affiliates.filter(a => !a.ownerId || !ownerIds.has(a.ownerId));
+  add("affiliates_owner", "Afiliados com consultor", !orphan.length, "recommended", orphan.length ? `Sem consultor (a conversa deles fica na fila): ${orphan.slice(0, 8).map(a => a.name).join(", ")}${orphan.length > 8 ? ` e mais ${orphan.length - 8}` : ""}.` : "Todo afiliado tem um consultor.", "Afiliados");
+  const asLeads = await affiliateLeads();
+  add("affiliate_leads", "Afiliados fora do funil", !asLeads.length, "recommended", asLeads.length ? `${asLeads.length} afiliado(s) entraram no funil como lead quando escreveram. Eles não são interessados em estudar.` : "Nenhum afiliado contado como lead.", "Prontidão → Tirar do funil");
   return out;
+};
+
+// leads that are in fact affiliates (created when they wrote before the system knew them): only those without enrollment and payment
+export const affiliateLeads = async (): Promise<Lead[]> => {
+  const affiliates = await Affiliate.findAll({ where: { status: "active", phone: { [Op.ne]: null } } as any, attributes: ["phone"] });
+  const numbers = [...new Set(affiliates.flatMap(a => brPhoneVariants(normalizePhone(a.phone) || "")))];
+  if (!numbers.length) return [];
+  const contacts = await Contact.findAll({ where: { number: { [Op.in]: numbers } } as any, attributes: ["id"] });
+  if (!contacts.length) return [];
+  const leads = await Lead.findAll({ where: { contactId: { [Op.in]: contacts.map(c => c.id) }, enrolledAt: null, wonAt: null, isHistorical: false } as any, attributes: ["id", "name", "contactId"] });
+  const paid = new Set((await Payment.findAll({ where: { leadId: { [Op.in]: leads.map(l => l.id) }, status: "paid" } as any, attributes: ["leadId"] })).map(p => p.leadId));
+  return leads.filter(l => !paid.has(l.id));
 };

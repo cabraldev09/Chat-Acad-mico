@@ -1,3 +1,4 @@
+import { resetAffiliateCache } from "../services/AffiliateServices/AffiliateLane";
 import { csvCell } from "../helpers/Csv";
 import { tagAffiliateLead } from "../services/AffiliateServices/AffiliateLane";
 import { Request, Response } from "express";
@@ -128,6 +129,7 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
   } as any);
   const full = await load(a.id);
   getIO().emit("affiliate", { action: "create", affiliate: present(full) });
+  resetAffiliateCache();
   return res.status(201).json(present(full));
 };
 
@@ -139,6 +141,7 @@ export const update = async (req: Request, res: Response): Promise<Response> => 
   }
   if (req.body.bonusValue !== undefined && isAdminReq(req)) data.bonusValue = money(req.body.bonusValue);
   await a.update(data);
+  resetAffiliateCache();
   const full = await load(a.id);
   getIO().emit("affiliate", { action: "update", affiliate: present(full) });
   return res.json(present(full));
@@ -150,6 +153,7 @@ export const remove = async (req: Request, res: Response): Promise<Response> => 
     throw new AppError("ERR_AFFILIATE_HAS_OPEN_BONUS");
   }
   await a.destroy();
+  resetAffiliateCache();
   getIO().emit("affiliate", { action: "delete", affiliateId: a.id });
   return res.json({ message: "deleted" });
 };
