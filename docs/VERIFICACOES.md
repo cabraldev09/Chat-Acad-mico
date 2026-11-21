@@ -15,6 +15,7 @@ Rode tudo isto antes de enviar ao GitHub e de atualizar a VPS. Qualquer falha im
 | **Leitura tardia de evento (erro "reading 'value'")** | `node scripts/check-lazy-events.js` | `frontend` |
 | Menu lateral sem ícone repetido | `node scripts/check-menu-icons.js` | `frontend` |
 | Build do frontend | `npx vite build` | `frontend` |
+| Varredura de todas as rotas GET da API como administrador, consultor e tutor: falha em erro 500 ou rota da gestão aberta para quem não é da gestão | `API=http://localhost:8080 PGDATABASE=telas node scripts/route-sweep.js` (API em 8080) | `backend` |
 | Varredura de todas as telas, 4 perfis + a Central do Afiliado pública (abas, QR Code e arte em Story e Feed), digitando nos formulários | `node scripts/smoke-pages.js portal admin coordenacao consultor tutor` (API em 8080 e `vite preview` em 3000) | `frontend` |
 
 ## Por que existe a verificação de leitura tardia de evento

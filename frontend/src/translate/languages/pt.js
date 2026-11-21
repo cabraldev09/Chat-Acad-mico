@@ -645,6 +645,8 @@ const messages = {
         ERR_AI_CASE_LIMIT: "Você já tem 40 casos de teste neste agente. Apague algum para salvar outro.",
         ERR_AI_CASE_EMPTY: "Diga o que a resposta deve conter, o que não pode conter ou o que o agente deve fazer.",
         ERR_META_APP_ID: "O ID do app do Instagram tem só números (copie em developers.facebook.com > seu app > Instagram > Configuração da API com login do Instagram).",
+        ERR_META_TEMPLATES_REFUSED: "A Meta recusou a consulta dos modelos. Confira o token da conexão da API oficial em Conexões (pode ter vencido ou estar sem permissão).",
+        ERR_META_TEMPLATES_UNAVAILABLE: "Não foi possível consultar os modelos na Meta agora. Tente de novo em alguns minutos.",
         ERR_META_APP_NOT_CONFIGURED: "O app da Meta ainda não foi configurado. Peça ao administrador para cadastrar o ID e a chave do app em Conexões.",
         ERR_REPLY_WINDOW_CLOSED: "Passaram mais de 24 horas desde a última mensagem desta pessoa. Pelo número oficial do WhatsApp (ou pelo Instagram) só dá para responder dentro de 24 h: use \"Enviar mensagem de abertura\" ou aguarde ela escrever de novo.",
         ERR_TEAM_HANDOFF_TEAM: "Escolha se quer chamar a tutoria ou o consultor.",
