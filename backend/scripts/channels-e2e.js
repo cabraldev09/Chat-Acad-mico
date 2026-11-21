@@ -808,12 +808,12 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(fs.existsSync(path.join(ROOT, "public", f)), "file missing");
     });
     await test("wrong phone_number_id is ignored", async () => {
-      const n = msgCount(cticket);
       const bad = cloudEvent([{ from: "5511988887777", id: "wamid.in3", type: "text", text: { body: "x" } }]);
       bad.entry[0].changes[0].value.metadata.phone_number_id = "OTHER";
       await postMeta(cid, bad, cloudCfg.appSecret);
       await sleep(1200);
-      assert(msgCount(cticket) === n, "foreign number stored");
+      // looks for this very message (counting the whole conversation also counted the image of the test before, still being saved)
+      assert(Number(sql(`SELECT COUNT(*) FROM Messages WHERE id='wamid.in3'`)) === 0, "foreign number stored");
     });
     let outId;
     await test("agent reply uses the Cloud API with bearer auth", async () => {
