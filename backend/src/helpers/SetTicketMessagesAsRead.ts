@@ -29,8 +29,8 @@ const SetTicketMessagesAsRead = async (ticket: Ticket, viewerId?: number): Promi
         ticket.whatsappId,
         chatIdOf(ticket.contact, ticket.isGroup)
       );
-    } else if (hadUnread && ticket.whatsapp?.channel === "whatsapp_cloud") {
-      // the official number: the person sees the two blue ticks when the attendant opens the conversation (the last message they sent)
+    } else if (hadUnread && viewerId !== undefined && ticket.whatsapp?.channel === "whatsapp_cloud") {
+      // the official number: the person sees the two blue ticks when the attendant opens the conversation (not on every message sent)
       const { cloudTypingFor } = await import("./ReplyPace");
       const Whatsapp = (await import("../models/Whatsapp")).default;
       await cloudTypingFor(await Whatsapp.findByPk(ticket.whatsappId), { ticketId: ticket.id }, false);
