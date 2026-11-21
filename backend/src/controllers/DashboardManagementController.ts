@@ -14,6 +14,10 @@ import { riskStudents } from "../services/CrmServices/Retention";
 import { FEE_PENDING_TAG } from "../services/PaymentServices/FeeTags";
 import { dayOf, nowMinus, nowSql, portable } from "../helpers/sqlDialect";
 import { summaryForUser } from "./CommissionController";
+import AiAgent from "../models/AiAgent";
+import AppError from "../errors/AppError";
+import { askOnce, resolveKey } from "../services/AiServices/RunAiAgent";
+import { buildPoloSupervisorInput, parsePoloSupervisorAnswer, poloSupervisorEvidence, POLO_SUPERVISOR_MIN_SAMPLE } from "../services/AiServices/PoloSupervisor";
 
 const q = async (sql: string, replacements: Record<string, any>): Promise<any[]> =>
   (await sequelize.query(portable(sql), { replacements, type: QueryTypes.SELECT })) as any[];
@@ -32,8 +36,11 @@ const DEPARTMENTS: Array<[string, string]> = [
 const BASE = `t.isHistorical = false AND t.isGroup = false AND NOT EXISTS (SELECT 1 FROM Contacts sc WHERE sc.id = t.contactId AND (sc.isStaff = true OR sc.isPersonal = true OR sc.kind <> 'person'))`;
 
 const period = (req: Request) => {
-  const day = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.date || "")) ? String(req.query.date) : undefined;
-  const rangeDays = [1, 7, 30].includes(Number(req.query.days)) ? Number(req.query.days) : 1;
+  const requestedDate = req.query.date ?? req.body?.date;
+  const requestedDays = req.query.days ?? req.body?.days;
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(String(requestedDate || "")) ? String(requestedDate) : undefined;
+  const requestedRangeDays = Number(requestedDays);
+  const rangeDays = Number.isInteger(requestedRangeDays) && requestedRangeDays >= 1 && requestedRangeDays <= 31 ? requestedRangeDays : 1;
   const endBounds = dayBounds(day);
   const start = dayBounds(shiftDays(endBounds.start, -(rangeDays - 1))).start;
   const prevEnd = new Date(start.getTime() - 1);
@@ -70,7 +77,7 @@ const buildManagement = async (p: ReturnType<typeof period>): Promise<any> => {
     ),
     q(`SELECT ownerId, poloId, COUNT(*) AS n FROM (SELECT l.ownerId, l.poloId FROM Leads l WHERE l.isHistorical = false AND l.wonAt BETWEEN :from AND :to UNION ALL SELECT e.ownerId, e.poloId FROM LeadEnrollments e WHERE e.enrolledAt BETWEEN :from AND :to) w GROUP BY ownerId, poloId`, rep),
     q(`SELECT id, name, role, profile FROM Users`, {}),
-    q(`SELECT id, name FROM Polos`, {})
+    q(`SELECT id, name FROM Polos WHERE active = true`, {})
   ]);
 
   const meta = new Map<number, any>();
@@ -146,7 +153,6 @@ const buildManagement = async (p: ReturnType<typeof period>): Promise<any> => {
         enrolled: enrolledBy(r => Number(r.poloId) === id)
       };
     })
-    .filter(x => x.attendances || x.openNow || x.waitingNow || x.enrolled)
     .sort((a, b) => b.attendances - a.attendances);
 
   const total = {
@@ -198,6 +204,87 @@ export const management = async (req: Request, res: Response): Promise<Response>
   const p = period(req);
   const key = `dash-mgmt:${p.rangeDays}:${p.to.toISOString().slice(0, 10)}`;
   return res.json(await remember(key, Number(process.env.DASHBOARD_CACHE_MS ?? 10000), () => buildManagement(p)));
+};
+
+// On-demand, aggregated management feedback. Only numeric polo metrics leave the server.
+export const managementFeedback = async (req: Request, res: Response): Promise<Response> => {
+  if (!isManagerRole(roleOf(req.user))) throw new AppError("ERR_NO_PERMISSION", 403);
+
+  const p = period(req);
+  const dashboardKey = `dash-mgmt:${p.rangeDays}:${p.to.toISOString().slice(0, 10)}`;
+  const dashboard = await remember(dashboardKey, Number(process.env.DASHBOARD_CACHE_MS ?? 10000), () => buildManagement(p));
+  const base = (dashboard.polos as any[]).map(po => ({
+    poloId: Number(po.id),
+    polo: String(po.name || "Polo"),
+    attendances: Number(po.attendances || 0),
+    receivedMessages: Number(po.received || 0),
+    sentMessages: Number(po.sent || 0),
+    openNow: Number(po.openNow || 0),
+    waitingNow: Number(po.waitingNow || 0),
+    unansweredNow: Number(po.unansweredNow || 0),
+    enrollments: Number(po.enrolled || 0),
+    replies: {
+      count: Number(po.reply?.count || 0),
+      medianMinutes: po.reply?.median == null ? null : Number(po.reply.median),
+      p90Minutes: po.reply?.p90 == null ? null : Number(po.reply.p90),
+      withinSlaPct: po.reply?.withinSlaPct == null ? null : Number(po.reply.withinSlaPct)
+    }
+  }));
+  const input = buildPoloSupervisorInput(base);
+  const cacheKey = `polo-supervisor:${p.from.toISOString()}:${p.to.toISOString()}`;
+  const result = await remember(cacheKey, 5 * 60 * 1000, async () => {
+    let feedback: any = {
+      summary: "Nenhum polo atingiu a amostra mínima para uma leitura da IA neste período.",
+      strengths: [],
+      risks: [],
+      nextActions: [],
+      caveats: []
+    };
+    if (input.eligible.length) {
+      const agent = await AiAgent.findOne({ where: { provider: "openai", active: true } as any, order: [["id", "ASC"]] });
+      if (!agent) throw new AppError("ERR_AI_SUPERVISOR_UNAVAILABLE", 503);
+      const apiKey = await resolveKey(agent);
+      if (!apiKey) throw new AppError("ERR_AI_NO_API_KEY", 400);
+      try {
+        const answer = await askOnce(
+          agent,
+          apiKey,
+          "Você apoia gestores de uma equipe acadêmica. Use somente os números agregados fornecidos. Não infira causas. Gere JSON válido, sem markdown, exatamente no formato {\"summary\":string,\"strengths\":string[],\"risks\":[{\"poloId\":numero,\"issue\":string,\"action\":string}],\"nextActions\":string[],\"caveats\":string[]}. Cada risco deve usar poloId elegível. Seja breve e não afirme fatos além dos números. As leituras e ações são sugestões para revisão humana.",
+          `Período de ${p.rangeDays} dia(s). Amostra mínima de atendimentos por polo: ${POLO_SUPERVISOR_MIN_SAMPLE}. Dados exclusivamente agregados, sem nomes de pessoas, leads ou mensagens. Analise apenas os polos elegíveis abaixo; não conclua nada sobre os demais.\n${JSON.stringify(input.eligible)}`,
+          500,
+          { kind: "copilot" }
+        );
+        feedback = parsePoloSupervisorAnswer(answer.text, input.eligible.map(row => row.poloId));
+      } catch (err) {
+        const code = String((err as Error)?.message || "");
+        if (/ERR_AI_TOKEN_CAP|ERR_AI_RATE_REQUIRED/.test(code)) throw new AppError("ERR_COPILOT_TOKEN_LIMIT", 429);
+        if (/ERR_AI_NO_API_KEY/.test(code)) throw new AppError("ERR_AI_NO_API_KEY", 400);
+        if (/ERR_AI_BAD_ANSWER/.test(code)) throw new AppError("ERR_AI_BAD_ANSWER", 502);
+        throw new AppError("ERR_AI_SUGGEST_FAILED", 502);
+      }
+    }
+
+    const poloNames = new Map(base.map(row => [row.poloId, row.polo]));
+    const poloMetrics = new Map(base.map(row => [row.poloId, row]));
+    feedback.risks = feedback.risks.map((risk: any) => {
+      const metrics = poloMetrics.get(risk.poloId);
+      const evidence = metrics ? poloSupervisorEvidence(metrics) : "Indicadores não disponíveis.";
+      return { ...risk, polo: poloNames.get(risk.poloId) || "Polo", evidence };
+    });
+    feedback.caveats = [
+      ...feedback.caveats,
+      ...base.filter(row => row.attendances < POLO_SUPERVISOR_MIN_SAMPLE).map(row => `${row.polo}: amostra insuficiente (${row.attendances} de ${POLO_SUPERVISOR_MIN_SAMPLE} atendimentos mínimos); os números aparecem na base, sem conclusão da IA.`),
+      ...(input.eligible.length ? ["Leituras e ações da IA são orientativas; confirme os indicadores antes de tomar decisões sobre a equipe."] : [])
+    ];
+    return {
+      period: { days: p.rangeDays, from: p.from.toISOString(), to: p.to.toISOString() },
+      minimumSample: POLO_SUPERVISOR_MIN_SAMPLE,
+      base,
+      ...feedback,
+      source: { rangeDays: p.rangeDays, polos: base.length, generatedAt: new Date().toISOString(), cacheSeconds: 300 }
+    };
+  });
+  return res.json(result);
 };
 
 // "My day" for the person logged in: what needs an answer, what is due, how they are doing against the goal and the commissions

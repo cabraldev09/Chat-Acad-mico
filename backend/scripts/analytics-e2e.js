@@ -160,6 +160,14 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
     const A = (token, p) => http.get(p, as(token));
     const strip = b => { const { period, ...rest } = b; return rest; };
     const KPIS = ["messagesSent", "attendances", "reactivated", "leadsWorked", "pendingReply", "inProgress", "tasksOpen", "tasksOverdue", "tasksDone", "followUpsDue", "proposalsSent", "proposalsViewed", "enrollments", "conversion"];
+    await test("polo supervisor feedback is management-only and skips OpenAI when the sample is insufficient", async () => {
+      const response = await http.post("/dashboard/management/feedback", { days: 1 }, as(admin));
+      assert(response.status === 200, `management feedback ${response.status} ${JSON.stringify(response.data)}`);
+      assert(response.data.period.days === 1 && response.data.minimumSample === 5, "feedback period or minimum sample is wrong");
+      assert(Array.isArray(response.data.base) && typeof response.data.summary === "string" && Array.isArray(response.data.risks), "feedback response shape");
+      assert(response.data.summary.includes("Nenhum polo atingiu"), "the empty sample should not need an OpenAI agent");
+      assert((await http.post("/dashboard/management/feedback", { days: 1 }, as(joao))).status === 403, "a consultant opened management feedback");
+    });
     const stages = (await http.get("/lead-stages", as(admin))).data;
     const stageWon = (Array.isArray(stages) ? stages : stages.stages).find(x => x.type === "won");
     assert(stageWon, "no won stage seeded");

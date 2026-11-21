@@ -324,7 +324,7 @@ const ReportsClassic = () => {
 
       {!lean && tab === "geral" && !manager && <div style={{ marginBottom: 20 }}><MyDay data={myDay} /></div>}
 
-      {!lean && tab === "equipe" && manager && <Management data={mgmt} sla={mgmt ? mgmt.slaMinutes : 15} failed={failed.mgmt || (failed.data && !data)} onRetry={retry} />}
+      {!lean && tab === "equipe" && manager && <Management data={mgmt} sla={mgmt ? mgmt.slaMinutes : 15} failed={failed.mgmt || (failed.data && !data)} onRetry={retry} date={date || undefined} days={days} />}
 
       {!lean && tab === "canais" && manager && (
         <div className={classes.stack}>

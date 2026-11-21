@@ -2859,6 +2859,8 @@ const postMeta = (id, payload, secret, badSig) => {
       m(1, false, 200); m(2, true, 190); m(3, false, 170); m(4, true, 110); m(5, false, 90); m(6, true, 85);
 
       const mgmt = (await http.get("/dashboard/management", { params: { days: 7 }, ...auth() })).data;
+      const monthToDate = (await http.get("/dashboard/management", { params: { days: 31 }, ...auth() })).data;
+      assert(monthToDate.rangeDays === 31, `month-to-date period was not accepted: ${monthToDate.rangeDays}`);
       const me = mgmt.attendants.find(a => a.id === att.id);
       assert(me && me.reply.count === 3 && me.reply.median === 10 && me.reply.p90 === 50 && me.reply.withinSlaPct === 67, `reply stats ${JSON.stringify(me && me.reply)}`);
       assert(me.reply.avg === 25, `the average hides the problem: ${me.reply.avg}`);
@@ -6670,7 +6672,7 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(sql(`SELECT queueId FROM Tickets WHERE id=${ta}`) === alfaQueue && sql(`SELECT userId FROM Tickets WHERE id=${ta}`) === String(cons.id) && sql(`SELECT status FROM Tickets WHERE id=${ta}`) === "open", "the consultant of the polo did not take it");
       assert(sql(`SELECT aiActive FROM Tickets WHERE id=${ta}`) === "0" && sql(`SELECT handoffAt IS NOT NULL FROM Tickets WHERE id=${ta}`) === "1", "the handoff was not marked");
       assert(Number(sql(`SELECT COUNT(*) FROM TicketEvents WHERE ticketId=${ta} AND type='transfer' AND note LIKE 'Agente de IA →%' AND note LIKE '%Consultor Alfa%'`)) === 1, "the routing was not written down");
-      assert(Number(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${leadOf(a)} AND title='Atender lead encaminhado pelo agente de IA' AND userId=${cons.id}`)) === 1, "no task for the consultant");
+      await waitFor(() => Number(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${leadOf(a)} AND title='Atender lead encaminhado pelo agente de IA' AND userId=${cons.id}`)) === 1, 10000, "no task for the consultant");
       assert(Number(sql(`SELECT COUNT(*) FROM AgentMetricEvents WHERE leadId=${leadOf(a)} AND event='handoff_human_request'`)) === 1, "no metric");
 
       // nobody answers: the team is warned once the limit passes (the worker looks every minute)

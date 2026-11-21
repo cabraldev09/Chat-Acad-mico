@@ -114,6 +114,7 @@ r.get("/analytics/process", isAuth, isManager, Analytics.processTeam);
 r.get("/analytics/process/:userId", isAuth, Analytics.processConsultant);
 
 r.get("/dashboard/management", isAuth, DashboardMgmt.management);
+r.post("/dashboard/management/feedback", isAuth, isManager, DashboardMgmt.managementFeedback);
 r.get("/dashboard/manager", isAuth, DashboardMgmt.managerOverview);
 r.get("/dashboard/me", isAuth, DashboardMgmt.myDay);
 r.get("/dashboard", isAuth, Dashboard.index);
