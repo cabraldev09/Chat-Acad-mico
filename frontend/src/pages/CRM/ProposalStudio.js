@@ -232,7 +232,7 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
   return (
     <Dialog fullScreen open onClose={() => onClose()} classes={{ paper: classes.paper }}>
       <div className={classes.top}>
-        <IconButton aria-label="Fechar" onClick={() => onClose()} aria-label="Fechar"><X /></IconButton>
+        <IconButton onClick={() => onClose()} aria-label="Fechar"><X /></IconButton>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div className={classes.title}>Proposta de bolsa{saved ? ` #${saved.id}` : ""}</div>
           <Typography variant="body2" color="textSecondary" noWrap>{lead.name}{institution ? ` · ${institution.name}` : ""}{lead.affiliate ? ` · indicado pelo afiliado ${lead.affiliate.name}` : ""}</Typography>

@@ -17,6 +17,18 @@ describe("which grade belongs to the course", () => {
     expect(chooseGrade(all, { name: "Administração", modality: "Semipresencial" }, "2026.2")).toMatchObject({ grade: { id: 3 }, current: true });
   });
 
+  it("the catalogue name meets the PDF name even with the CST prefix and small words missing", () => {
+    const all = [grade(1, "CST EM ANÁLISE E DESENVOLVIMENTO DE SISTEMAS", "EAD", "2024.1"), grade(2, "CST EM COMPUTAÇÃO EM NUVEM", "EAD", "2024.1"), grade(3, "CST EM CRIMINOLOGIA", "EAD", "2024.1")];
+    expect(chooseGrade(all, { name: "Análise e desenvolvimento de sistemas", modality: "EAD" }, null).grade?.id).toBe(1);
+    expect(chooseGrade(all, { name: "Computação nuvem", modality: "EAD" }, null).grade?.id).toBe(2);
+    expect(chooseGrade(all, { name: "Criminologia", modality: "EAD" }, null).grade?.id).toBe(3);
+    expect(chooseGrade(all, { name: "Cst Em Criminologia", modality: "EAD" }, null).grade?.id).toBe(3);
+  });
+
+  it("a 2.0 course does not borrow the matrix of the standard one", () => {
+    expect(chooseGrade([grade(1, "ADMINISTRAÇÃO (BACHARELADO)", "EAD", "2022.2")], { name: "Administração 2.0", modality: "EAD" }, null).grade).toBeNull();
+  });
+
   it("no grade for a course that is not in the catalogue", () => {
     expect(chooseGrade([grade(1, "Direito", "Presencial", "2024.1")], { name: "Pedagogia" }, null).grade).toBeNull();
   });

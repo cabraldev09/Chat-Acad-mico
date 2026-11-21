@@ -21,6 +21,12 @@ import { brPhoneVariants } from "../../helpers/PhoneVariants";
 // where to fix it. Read-only: nothing here changes a setting.
 export interface ReadinessItem { key: string; label: string; ok: boolean; level: "required" | "recommended"; detail: string; where: string }
 
+// "3 min", "2 h": how long ago something happened, for a warning that would otherwise read as if it were happening now
+export const minutesAgo = (at: number): string => {
+  const min = Math.max(0, Math.round((Date.now() - at) / 60000));
+  return min < 60 ? `${min} min` : `${Math.round(min / 60)} h`;
+};
+
 export const readiness = async (): Promise<ReadinessItem[]> => {
   const out: ReadinessItem[] = [];
   const add = (key: string, label: string, ok: boolean, level: ReadinessItem["level"], detail: string, where: string) => out.push({ key, label, ok, level, detail, where });
@@ -36,7 +42,7 @@ export const readiness = async (): Promise<ReadinessItem[]> => {
   const refused = cloud.map(w => ({ w, note: lastWebhook(w.id) })).filter(x => x.note && (x.note.outcome === "assinatura_invalida" || x.note.outcome === "sem_app_secret"));
   add("webhook", "Mensagens da Meta chegando", cloud.length > 0 && !refused.length, "required",
     refused.length
-      ? `A Meta está enviando as mensagens, mas o sistema recusa: ${refused.map(x => `${x.w.name} (${x.note!.outcome === "sem_app_secret" ? "sem App Secret" : "o App Secret salvo não é o do app da Meta"})`).join(", ")}. Nenhuma mensagem dos leads entra até corrigir.`
+      ? `A Meta está enviando as mensagens, mas o sistema recusa: ${refused.map(x => `${x.w.name} (${x.note!.outcome === "sem_app_secret" ? "sem App Secret" : "o App Secret salvo não é o do app da Meta"}, última tentativa há ${minutesAgo(x.note!.at)})`).join(", ")}. Nenhuma mensagem dos leads entra até corrigir.`
       : cloud.length ? "Nenhuma recusa recente." : "Sem número oficial.",
     "Conexões → número → App ID e chave secreta (App Secret do app na Meta)");
   const soon = cloud.filter(w => { const at = Number(getConfig(w).tokenExpiresAt || 0); return at > 0 && at - Date.now() < 15 * 86400000; });
