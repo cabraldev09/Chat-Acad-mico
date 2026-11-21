@@ -280,3 +280,12 @@ export const setNoReply = async (req: Request, res: Response): Promise<Response>
   getIO().emit("contact", { action: "update", contact });
   return res.status(200).json(contact);
 };
+
+// the contact panel (like the WhatsApp profile): the picture read now and the "recado" of the person
+export const profile = async (req: Request, res: Response): Promise<Response> => {
+  const contact = await Contact.findByPk(req.params.contactId);
+  if (!contact) throw new AppError("ERR_NO_CONTACT_FOUND", 404);
+  const { readProfileNow } = await import("../workers/ProfilePicSync");
+  const result = await readProfileNow(contact);
+  return res.json({ ...result, profilePicUrl: contact.profilePicUrl });
+};

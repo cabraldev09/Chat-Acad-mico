@@ -115,6 +115,37 @@ const tick = async (): Promise<void> => {
   }
 };
 
+// the profile of one person, read now (the contact panel): the picture (saved on our side) and the "recado", through a WhatsApp by QR Code.
+// The official API of the Meta gives neither, so without a QR connection the panel shows the initials.
+export const readProfileNow = async (contact: Contact): Promise<{ about: string | null; refreshed: boolean; viaQr: boolean }> => {
+  const connection = await Whatsapp.findOne({ where: { status: "CONNECTED", channel: "whatsapp" }, order: [["id", "ASC"]] });
+  if (!connection || contact.isGroup) return { about: null, refreshed: false, viaQr: false };
+  const chatId = chatIdOf(contact, false);
+  const timeout = <T>(p: Promise<T>): Promise<T | undefined> => Promise.race([p, new Promise<undefined>(resolve => setTimeout(resolve, 8000))]);
+  let refreshed = false;
+  try {
+    const recent = contact.picCheckedAt && Date.now() - new Date(contact.picCheckedAt).getTime() < 6 * 3600 * 1000;
+    if (whatsappProvider.getChatPicUrl && (!recent || !isLocalPic(contact.getDataValue("profilePicUrl")))) {
+      const url = await timeout(whatsappProvider.getChatPicUrl(connection.id, chatId));
+      const buf = url ? await download(url) : null;
+      if (buf) {
+        await contact.update({ profilePicUrl: save(contact, buf), picCheckedAt: new Date() });
+        getIO().emit("contact", { action: "update", contact });
+        refreshed = true;
+      } else await contact.update({ picCheckedAt: new Date() });
+    }
+  } catch (err) {
+    logger.debug(`profile picture not read for contact ${contact.id}: ${err}`);
+  }
+  let about: string | null = null;
+  try {
+    about = (whatsappProvider.getAbout ? (await timeout(whatsappProvider.getAbout(connection.id, chatId))) : null) || null;
+  } catch (err) {
+    about = null;
+  }
+  return { about, refreshed, viaQr: true };
+};
+
 export const startProfilePicSync = (): void => {
   setInterval(tick, 20000);
 };

@@ -1151,6 +1151,13 @@ const fetchChatMessages = async (
   return messages.map(convertToProviderMessage);
 };
 
+const getAbout = async (sessionId: number, chatId: string): Promise<string | undefined> => {
+  const wbot = getWbot(sessionId);
+  const contact = await wbot.getContactById(chatId);
+  const about = await contact.getAbout();
+  return about ? String(about) : undefined;
+};
+
 const getContacts = async (sessionId: number): Promise<ProviderContact[]> => {
   const wbot = getWbot(sessionId);
   const contacts = await wbot.getContacts();
@@ -1845,6 +1852,7 @@ export const WhatsappWebJsProvider: WhatsappProvider = {
   checkNumber,
   getProfilePicUrl,
   getChatPicUrl,
+  getAbout,
   getContacts,
   sendSeen,
   sendTyping,
