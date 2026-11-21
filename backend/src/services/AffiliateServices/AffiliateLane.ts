@@ -1,3 +1,4 @@
+import { brPhoneVariants } from "../../helpers/PhoneVariants";
 import { Op } from "sequelize";
 
 import { getSetting, setSetting } from "../../helpers/AppSettings";
@@ -60,11 +61,16 @@ export const tagAffiliateLead = async (lead: Lead): Promise<void> => {
   }
 };
 
-// the affiliate who owns this phone number (the sender of a shared contact), when there is one
+// the affiliate who owns this phone number (who writes to the official number, or shares a contact), when there is one. The official API
+// often sends a Brazilian mobile without the ninth digit, so both forms are compared. The list is kept for a minute (a few hundred).
+let cache: { at: number; list: Affiliate[] } | null = null;
+export const resetAffiliateCache = (): void => { cache = null; };
 export const findAffiliateByPhone = async (raw: string): Promise<Affiliate | null> => {
   const phone = normalizePhone(raw);
   if (!phone) return null;
-  // the phone is stored as typed ("(69) 99999-0000"), so both sides are compared normalised; there are only a few hundred
-  const candidates = await Affiliate.findAll({ where: { status: "active", phone: { [Op.ne]: null as any } } });
-  return candidates.find(a => normalizePhone(a.phone) === phone) || null;
+  const wanted = new Set(brPhoneVariants(phone));
+  if (!cache || Date.now() - cache.at > 60000) {
+    cache = { at: Date.now(), list: await Affiliate.findAll({ where: { status: "active", phone: { [Op.ne]: null as any } } }) };
+  }
+  return cache.list.find(a => brPhoneVariants(normalizePhone(a.phone) || "").some(v => wanted.has(v))) || null;
 };

@@ -67,10 +67,15 @@ else
 fi
 fi
 
-# 3) a copy outside this server (a disk that dies takes the local copy with it)
+# 3) a copy outside this server (a disk that dies takes the local copy with it). Never unencrypted: rclone needs BACKUP_PASSPHRASE
+OFFSITE_OK=0
+if [ -n "$REMOTE" ] && [ -z "$PASSPHRASE" ]; then
+  echo "$(date '+%F %T') ERRO: BACKUP_RCLONE_REMOTE sem BACKUP_PASSPHRASE: a cópia externa não foi feita (ela sairia sem criptografia)" >&2
+  REMOTE=""
+fi
 if [ -n "$REMOTE" ] && [ "$FAILED" = "0" ]; then
   if command -v rclone >/dev/null 2>&1; then
-    rclone copy "$DUMP$SUFFIX" "$REMOTE" --quiet && { [ "${BACKUP_ONLY:-}" = "db" ] || rclone copy "$ARCHIVE$SUFFIX" "$REMOTE" --quiet; } || { echo "$(date '+%F %T') ERRO: a cópia para $REMOTE falhou" >&2; FAILED=1; }
+    rclone copy "$DUMP$SUFFIX" "$REMOTE" --quiet && { [ "${BACKUP_ONLY:-}" = "db" ] || rclone copy "$ARCHIVE$SUFFIX" "$REMOTE" --quiet; } && OFFSITE_OK=1 || { echo "$(date '+%F %T') ERRO: a cópia para $REMOTE falhou" >&2; FAILED=1; }
   else
     echo "$(date '+%F %T') AVISO: BACKUP_RCLONE_REMOTE definido, mas o rclone não está instalado" >&2
     FAILED=1
@@ -80,8 +85,8 @@ fi
 # S3-compatible encrypted offsite backup (credentials stay on the server).
 if [ "$FAILED" = "0" ]; then
   if [ -f .backup.env ] && grep -Eq '^RESTIC_REPOSITORY=.+$' .backup.env; then
-    bash ./offsite.sh backup || FAILED=1
-  elif [ -z "$REMOTE" ]; then
+    bash ./offsite.sh backup && OFFSITE_OK=1 || FAILED=1
+  elif [ "$OFFSITE_OK" = "0" ]; then
     echo 'AVISO: cópia somente local; configure .backup.env para o backup externo criptografado.' >&2
   fi
 fi
@@ -93,7 +98,14 @@ if [ "$FAILED" = "0" ]; then
 fi
 
 if [ "$FAILED" = "0" ]; then
-  echo "$(date '+%F %T') backup concluído: arquivos e PostgreSQL."
+  # the local copy worked (the update of the server may go on), but without a copy outside the server the monitor is told it failed:
+  # a lost disk would take every backup with it
+  if [ "$OFFSITE_OK" = "0" ]; then
+    echo "$(date '+%F %T') backup local concluído, SEM cópia externa: o monitor foi avisado como falha."
+    ping_monitor "/fail"
+    exit 0
+  fi
+  echo "$(date '+%F %T') backup concluído: arquivos e PostgreSQL, com cópia externa."
   ping_monitor ""
   exit 0
 fi

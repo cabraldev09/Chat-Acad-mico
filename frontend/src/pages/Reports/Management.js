@@ -4,6 +4,7 @@ import { useChartTheme } from "../../components/charts";
 import { AlertTriangle, Building2, CheckCircle2, Gauge, MapPin, RefreshCw, Sparkles, Users } from "lucide-react";
 import api from "../../services/api";
 
+import { ErrorState } from "../../components/ui";
 import { Insights, SlaBar, hm, useShared } from "./shared";
 
 const Kpi = ({ label, value, note, tone }) => (
@@ -187,9 +188,10 @@ export const ManagementFeedback = ({ date, days, unavailableMessage }) => {
   );
 };
 
-const Management = ({ data, sla, date, days }) => {
+const Management = ({ data, sla, failed, onRetry, date, days }) => {
   const c = useShared();
   const ct = useChartTheme();
+  if (!data && failed) return <div className={c.panel}><ErrorState title="Não foi possível carregar a visão de gestão." onRetry={onRetry} compact /></div>;
   if (!data) return <div className={c.panel} style={{ opacity: 0.6 }}>Carregando a visão de gestão...</div>;
   const t = data.total;
   const delta = t.reply.median !== null && t.previousMedian ? Math.round(((t.reply.median - t.previousMedian) / t.previousMedian) * 100) : null;

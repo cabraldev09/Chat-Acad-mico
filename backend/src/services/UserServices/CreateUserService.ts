@@ -1,3 +1,4 @@
+import Whatsapp from "../../models/Whatsapp";
 import { MIN_PASSWORD } from "../../helpers/Passwords";
 import { joinRelationshipQueue } from "../RelationshipServices/Relationship";
 import * as Yup from "yup";
@@ -67,6 +68,8 @@ const CreateUserService = async ({
   if (role !== undefined && !(ROLES as readonly string[]).includes(role)) {
     throw new AppError("ERR_INVALID_ROLE", 400);
   }
+  // the number the person uses must exist (a typo or a deleted connection would leave their sends without a number)
+  if (whatsappId && !(await Whatsapp.findByPk(Number(whatsappId), { attributes: ["id"] }))) throw new AppError("ERR_NO_WAPP_FOUND", 404);
   // the role decides the permission level: only "admin" is an administrator
   const finalRole = role || (profile === "admin" ? "admin" : "consultor");
 

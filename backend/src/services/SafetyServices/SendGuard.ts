@@ -88,19 +88,23 @@ export const dailyColdLimit = (whatsapp: Whatsapp): number => {
 
 const startOfToday = (): Date => startOfTodayApp();
 
+// how many campaign messages this connection sent today: one counted query, kept 20 s per connection (asked for every recipient of a
+// campaign); each send that goes out adds one to the kept number, so the daily limit stays exact in between
+const sentCache = new Map<number, { at: number; day: number; n: number }>();
 export const sentTodayByCampaigns = async (whatsappId: number): Promise<number> => {
-  const campaigns = await Campaign.findAll({
-    where: { whatsappId },
-    attributes: ["id"]
-  });
-  if (!campaigns.length) return 0;
-  return CampaignShipping.count({
-    where: {
-      campaignId: { [Op.in]: campaigns.map(c => c.id) },
-      status: "sent",
-      sentAt: { [Op.gte]: startOfToday() }
-    }
-  });
+  const day = startOfToday().getTime();
+  const kept = sentCache.get(whatsappId);
+  if (kept && kept.day === day && Date.now() - kept.at < 20000) return kept.n;
+  const campaigns = await Campaign.findAll({ where: { whatsappId }, attributes: ["id"] });
+  const n = campaigns.length
+    ? await CampaignShipping.count({ where: { campaignId: { [Op.in]: campaigns.map(c => c.id) }, status: "sent", sentAt: { [Op.gte]: startOfToday() } } })
+    : 0;
+  sentCache.set(whatsappId, { at: Date.now(), day, n });
+  return n;
+};
+export const countCampaignSend = (whatsappId: number): void => {
+  const kept = sentCache.get(whatsappId);
+  if (kept) kept.n += 1;
 };
 
 export const hasConversed = async (contactId: number, whatsappId?: number): Promise<boolean> => {
@@ -137,7 +141,8 @@ export const checkCampaignSend = async (
   }
   if (!isUnofficial(whatsapp)) return null;
 
-  const warm = contact ? await hasConversed(contact.id) : false;
+  // warm = the person already wrote to THIS number (a reply on another connection does not make a number known to this one)
+  const warm = contact ? await hasConversed(contact.id, whatsapp.id) : false;
   if (!warm && whatsapp.riskMode !== "relaxed") {
     return {
       kind: "contact",
@@ -184,6 +189,12 @@ export const tripBreaker = async (
       { where: { whatsappId, status: "running" } }
     );
     logger.warn(`Safety breaker on connection ${whatsappId}: ${reason} (${paused} campaign(s) paused)`);
+    // the administrators are told by e-mail too (at most once every 6 hours per number), not only the people online now
+    const w = await Whatsapp.findByPk(whatsappId);
+    if (w) {
+      const { alertAdmins } = await import("../../workers/CloudHealth");
+      await alertAdmins(w, `O número "${w.name}": ${reason}`).catch(() => undefined);
+    }
     getIO().emit("safety", { action: "paused", whatsappId, reason, paused });
     if (paused) {
       const rows = await Campaign.findAll({ where: { whatsappId, pauseReason: reason.slice(0, 250) } });

@@ -34,6 +34,7 @@ import QueueSelect from "../QueueSelect";
 import { AuthContext } from "../../context/Auth/AuthContext";
 import { Can } from "../Can";
 import useWhatsApps from "../../hooks/useWhatsApps";
+import { dayDefault, standardDays } from "../../utils/workWeek";
 
 const useStyles = makeStyles(theme => ({
 	root: {
@@ -75,12 +76,30 @@ const UserSchema = Yup.object().shape({
 });
 
 const DAYS = [[1, "Seg"], [2, "Ter"], [3, "Qua"], [4, "Qui"], [5, "Sex"], [6, "Sáb"], [0, "Dom"]];
-const DEFAULT_WORK = { start: "08:00", end: "17:00", days: [1, 2, 3, 4, 5] };
+// the hours of the person, day by day (each day its own start and end): starts as the team's week (Mon-Thu 08-18, Fri 08-17)
+const DEFAULT_WORK = () => standardDays();
+const WITH_HOURS = ["consultor", "tutor", "relacionamento"];
+// the official number of the person's side: tutoring for a tutor, the relationship number for the relationship team, attendance otherwise
+const officialFor = (role, list) => {
+	const cloud = (list || []).filter((w) => w.channel === "whatsapp_cloud");
+	const team = role === "tutor" ? "tutoria" : "atendimento";
+	return (cloud.find((w) => w.team === team) || cloud.find((w) => !w.team) || cloud[0] || null);
+};
+
+// renders nothing: follows the role chosen in the form and picks the official number of that side (while the number was not chosen by hand)
+const OfficialNumber = ({ role, whatsApps, current, onPick }) => {
+	useEffect(() => {
+		const w = officialFor(role, whatsApps);
+		if (w && w.id !== current) onPick(w.id);
+	}, [role, whatsApps, current, onPick]);
+	return null;
+};
 
 const UserModal = ({ open, onClose, userId }) => {
 	const classes = useStyles();
 	// the working hours (used by the management center: who is "in working hours", late alerts): set when the person is created and editable later
 	const [work, setWork] = useState(DEFAULT_WORK);
+	const workDays = DAYS.map(([d]) => d).filter((d) => (work[d] || []).length);
 
 	const initialState = {
 		name: "",
@@ -121,14 +140,13 @@ const UserModal = ({ open, onClose, userId }) => {
 
 	useEffect(() => {
 		if (!open) return;
-		if (!userId) { setWork(DEFAULT_WORK); return; }
+		if (!userId) { setWork(DEFAULT_WORK()); return; }
+		// each day as it was saved (also a second interval set in Gestão Comercial is kept)
 		api.get("/analytics/config").then(({ data }) => {
 			const mine = (data.schedules || {})[userId] || {};
-			const days = Object.keys(mine).filter((d) => (mine[d] || []).length).map(Number);
-			if (!days.length) { setWork({ ...DEFAULT_WORK, days: [] }); return; }
-			const first = mine[days[0]][0];
-			setWork({ start: first.start, end: first.end, days });
-		}).catch(() => setWork(DEFAULT_WORK));
+			const days = Object.keys(mine).filter((d) => (mine[d] || []).length);
+			setWork(days.length ? Object.fromEntries(DAYS.map(([d]) => [d, (mine[d] || []).map((i) => ({ ...i }))])) : DEFAULT_WORK());
+		}).catch(() => setWork(DEFAULT_WORK()));
 	}, [userId, open]);
 
 	// writes the hours of the person in the shared configuration (the same one of the management center)
@@ -136,14 +154,22 @@ const UserModal = ({ open, onClose, userId }) => {
 		const { data: cfg } = await api.get("/analytics/config");
 		const schedules = { ...(cfg.schedules || {}) };
 		const mine = {};
-		work.days.forEach((d) => { if (work.start && work.end) mine[d] = [{ start: work.start, end: work.end }]; });
+		DAYS.forEach(([d]) => { const list = (work[d] || []).filter((i) => i.start && i.end && i.end > i.start); if (list.length) mine[d] = list; });
 		if (Object.keys(mine).length) schedules[id] = mine; else delete schedules[id];
 		await api.put("/analytics/config", { ...cfg, schedules });
 	};
 
+	const toggleDay = (d) => setWork((w) => ({ ...w, [d]: (w[d] || []).length ? [] : [dayDefault(d)] }));
+	const setDayTime = (d, key, value) => setWork((w) => { const list = w[d] && w[d].length ? w[d] : [dayDefault(d)]; return { ...w, [d]: [{ ...list[0], [key]: value }, ...list.slice(1)] }; });
+
+	// a new person starts on the official number of their side, until someone picks the number by hand
+	const [numberTouched, setNumberTouched] = useState(false);
+
 	const handleClose = () => {
 		onClose();
 		setUser(initialState);
+		setWhatsappId("");
+		setNumberTouched(false);
 	};
 
 	const handleSaveUser = async values => {
@@ -157,7 +183,7 @@ const UserModal = ({ open, onClose, userId }) => {
 				savedId = data && data.id;
 			}
 			toast.success(i18n.t("userModal.success"));
-			if (savedId && values.role === "consultor") {
+			if (savedId && WITH_HOURS.includes(values.role)) {
 				try { await saveWork(savedId); } catch (e) { toast.warn("O usuário foi salvo, mas o horário de trabalho não. Defina em Gestão Comercial > Configuração."); }
 			}
 		} catch (err) {
@@ -194,8 +220,8 @@ const UserModal = ({ open, onClose, userId }) => {
 					{({ touched, errors, isSubmitting, values, setFieldValue }) => (
 						<Form>
 							<DialogContent dividers>
-								<div className={classes.multFieldLine}>
-									<Field
+								{!userId && !numberTouched && !loading && <OfficialNumber role={values.role} whatsApps={whatsApps} current={whatsappId} onPick={setWhatsappId} />}
+								<Field
 										as={TextField}
 										label={i18n.t("userModal.form.name")}
 										autoFocus
@@ -206,32 +232,7 @@ const UserModal = ({ open, onClose, userId }) => {
 										margin="dense"
 										fullWidth
 									/>
-									<Field
-										as={TextField}
-										name="password"
-										variant="outlined"
-										margin="dense"
-										label={i18n.t("userModal.form.password")}
-										error={touched.password && Boolean(errors.password)}
-										helperText={touched.password && errors.password}
-										type={showPassword ? 'text' : 'password'}
-										InputProps={{
-										endAdornment: (
-											<InputAdornment position="end">
-											<IconButton
-												aria-label="toggle password visibility"
-												onClick={() => setShowPassword((e) => !e)}
-											>
-												{showPassword ? <VisibilityOff /> : <Visibility />}
-											</IconButton>
-											</InputAdornment>
-										)
-										}}
-										fullWidth
-									/>
-								</div>
-								<div className={classes.multFieldLine}>
-									<Field
+								<Field
 										as={TextField}
 										label={i18n.t("userModal.form.email")}
 										name="email"
@@ -241,9 +242,10 @@ const UserModal = ({ open, onClose, userId }) => {
 										margin="dense"
 										fullWidth
 									/>
+								<div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", columnGap: 8 }}>
 									<FormControl
 										variant="outlined"
-										className={classes.formControl}
+										fullWidth
 										margin="dense"
 									>
 										<Can
@@ -273,16 +275,39 @@ const UserModal = ({ open, onClose, userId }) => {
 											)}
 										/>
 									</FormControl>
+									<Field
+										as={TextField}
+										name="password"
+										variant="outlined"
+										margin="dense"
+										label={i18n.t("userModal.form.password")}
+										error={touched.password && Boolean(errors.password)}
+										helperText={touched.password && errors.password}
+										type={showPassword ? 'text' : 'password'}
+										InputProps={{
+										endAdornment: (
+											<InputAdornment position="end">
+											<IconButton
+												aria-label="toggle password visibility"
+												onClick={() => setShowPassword((e) => !e)}
+											>
+												{showPassword ? <VisibilityOff /> : <Visibility />}
+											</IconButton>
+											</InputAdornment>
+										)
+										}}
+										fullWidth
+									/>
 								</div>
 								<TextField
-									label="WhatsApp de contato"
+									label="Celular da pessoa (opcional)"
 									name="phone"
 									value={values.phone || ""}
 									onChange={(e) => setFieldValue("phone", e.target.value)}
 									variant="outlined"
 									margin="dense"
 									fullWidth
-									helperText="É o suporte que os afiliados cadastrados por esta pessoa veem"
+									helperText="Para avisos internos. Os afiliados falam com o número oficial e caem direto na conversa desta pessoa."
 								/>
 								{values.role === "coordenacao" && (
 									<FormControl variant="outlined" margin="dense" fullWidth>
@@ -297,10 +322,13 @@ const UserModal = ({ open, onClose, userId }) => {
 									role={accessLevel(loggedInUser)}
 									perform="user-modal:editQueues"
 									yes={() => (
-										<QueueSelect
-											selectedQueueIds={selectedQueueIds}
-											onChange={values => setSelectedQueueIds(values)}
-										/>
+										<>
+											<QueueSelect
+												selectedQueueIds={selectedQueueIds}
+												onChange={values => setSelectedQueueIds(values)}
+											/>
+											<div style={{ fontSize: 12, opacity: 0.7, margin: "-2px 2px 4px" }}>As filas dos polos são preenchidas sozinhas em Polos e equipes.</div>
+										</>
 									)}
 								/>
 								<Can
@@ -308,35 +336,47 @@ const UserModal = ({ open, onClose, userId }) => {
 									perform="user-modal:editQueues"
 									yes={() => (!loading &&
 										<FormControl variant="outlined" margin="dense" className={classes.maxWidth} fullWidth>
-											<InputLabel>{i18n.t("userModal.form.whatsapp")}</InputLabel>
+											<InputLabel>Número que a pessoa usa</InputLabel>
 											<Field
 												as={Select}
 												value={whatsappId}
-												onChange={(e) => setWhatsappId(e.target.value)}
-												label={i18n.t("userModal.form.whatsapp")}
+												onChange={(e) => { setNumberTouched(true); setWhatsappId(e.target.value); }}
+												label="Número que a pessoa usa"
 											>
-												<MenuItem value={''}>&nbsp;</MenuItem>
+												<MenuItem value={''}><em>Nenhum (escolhe a cada conversa)</em></MenuItem>
 												{whatsApps.map((whatsapp) => (
-													<MenuItem key={whatsapp.id} value={whatsapp.id}>{whatsapp.name}</MenuItem>
+													<MenuItem key={whatsapp.id} value={whatsapp.id}>{whatsapp.name}{whatsapp.channel === "whatsapp_cloud" ? " · API oficial" : ""}</MenuItem>
 												))}
 											</Field>
+											<div style={{ fontSize: 12, opacity: 0.7, margin: "4px 2px 0" }}>As conversas novas e os envios desta pessoa saem por este número.</div>
 										</FormControl>
 									)}
 								/>
-								{values.role === "consultor" && (
+								{WITH_HOURS.includes(values.role) && (
 									<div style={{ marginTop: 14 }}>
-										<div style={{ fontSize: 13, fontWeight: 700, marginBottom: 2 }}>Horário de trabalho</div>
-										<div style={{ fontSize: 12, opacity: 0.7, marginBottom: 8 }}>Define quando a pessoa deve estar atendendo. Dá para mudar depois, aqui ou em Gestão Comercial.</div>
-										<div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+										<div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+											<div style={{ fontSize: 13, fontWeight: 700, flex: 1 }}>Horário de trabalho</div>
+											<Button size="small" onClick={() => setWork(DEFAULT_WORK())}>Usar o horário da empresa</Button>
+										</div>
+										<div style={{ fontSize: 12, opacity: 0.7, marginBottom: 8 }}>Cada dia com o seu horário. Diz quem está no expediente (distribuição das conversas, alertas e o aviso de fora do horário). Dá para mudar depois, aqui ou em Gestão Comercial.</div>
+										<div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
 											{DAYS.map(([d, label]) => (
-												<Button key={d} size="small" variant={work.days.includes(d) ? "contained" : "outlined"} color="primary" disableElevation style={{ minWidth: 44 }}
-													onClick={() => setWork((w) => ({ ...w, days: w.days.includes(d) ? w.days.filter((x) => x !== d) : [...w.days, d] }))}>{label}</Button>
+												<Button key={d} size="small" variant={workDays.includes(d) ? "contained" : "outlined"} color="primary" disableElevation style={{ minWidth: 44 }} aria-pressed={workDays.includes(d)}
+													onClick={() => toggleDay(d)}>{label}</Button>
 											))}
 										</div>
-										<div style={{ display: "flex", gap: 8 }}>
-											<TextField label="Início" type="time" variant="outlined" margin="dense" InputLabelProps={{ shrink: true }} value={work.start} onChange={(e) => { const v = e.target.value; setWork((w) => ({ ...w, start: v })); }} />
-											<TextField label="Fim" type="time" variant="outlined" margin="dense" InputLabelProps={{ shrink: true }} value={work.end} onChange={(e) => { const v = e.target.value; setWork((w) => ({ ...w, end: v })); }} />
-										</div>
+										{workDays.map((d) => {
+											const slot = (work[d] || [])[0] || dayDefault(d);
+											const bad = !(slot.end > slot.start);
+											return (
+												<div key={d} style={{ display: "grid", gridTemplateColumns: "44px 1fr 1fr", gap: 8, alignItems: "center" }}>
+													<span style={{ fontSize: 13, fontWeight: 600 }}>{(DAYS.find((x) => x[0] === d) || [])[1]}</span>
+													<TextField label="Início" type="time" variant="outlined" margin="dense" size="small" InputLabelProps={{ shrink: true }} value={slot.start} onChange={(e) => setDayTime(d, "start", e.target.value)} />
+													<TextField label="Fim" type="time" variant="outlined" margin="dense" size="small" InputLabelProps={{ shrink: true }} value={slot.end} error={bad} onChange={(e) => setDayTime(d, "end", e.target.value)} />
+												</div>
+											);
+										})}
+										{!workDays.length && <div style={{ fontSize: 12, opacity: 0.7 }}>Nenhum dia marcado: a pessoa fica sem horário (não entra no "no expediente").</div>}
 									</div>
 								)}
 							</DialogContent>

@@ -453,6 +453,16 @@ const processCloud = async (received: Whatsapp, entry: any) => {
           m.interactive?.button_reply?.title ||
           m.interactive?.list_reply?.title ||
           "[interativo]";
+      } else if (m.type === "contacts") {
+        // a shared contact card: the names and numbers stay in the text; sent by an affiliate, each person becomes a referral lead of
+        // the affiliate's consultant (the same as on the QR numbers)
+        const { peopleOfCloudContacts, cardText } = await import("../helpers/CloudContacts");
+        const people = peopleOfCloudContacts(m.contacts);
+        body = cardText(people);
+        if (people.length) {
+          const { registerAffiliateReferrals } = await import("../services/AffiliateServices/ReferralFromContact");
+          registerAffiliateReferrals(m.from, people).catch(err => logger.warn(`Referral from a shared contact failed: ${err}`));
+        }
       } else if (m.type === "unsupported") {
         body = "⚠️ Mensagem que o WhatsApp oficial não entrega (enquete, mensagem temporária ou de visualização única). Peça para o cliente enviar de novo, em texto ou foto.";
       } else body = `[${m.type}]`;
@@ -469,15 +479,19 @@ const processCloud = async (received: Whatsapp, entry: any) => {
   }
 };
 
-export const processMetaWebhook = async (whatsapp: Whatsapp, body: any): Promise<void> => {
+// strict: after trying every entry, the first error is thrown (the stored webhook is tried again; a message already saved is skipped by its id)
+export const processMetaWebhook = async (whatsapp: Whatsapp, body: any, strict = false): Promise<void> => {
+  let first: unknown = null;
   for (const entry of body.entry || []) {
     try {
       if (whatsapp.channel === "whatsapp_cloud") await processCloud(whatsapp, entry);
       else await processSocial(whatsapp, entry, whatsapp.channel as ChannelType);
     } catch (err) {
       logger.error(`Meta webhook processing error: ${err}`);
+      if (!first) first = err;
     }
   }
+  if (strict && first) throw first;
 };
 
 export const metaWebhookUrl = (whatsappId: number): string =>

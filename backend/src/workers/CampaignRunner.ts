@@ -8,7 +8,7 @@ import { brPhoneVariants } from "../helpers/PhoneVariants";
 import { getIO } from "../libs/socket";
 import { logger } from "../utils/logger";
 import { stepsOf } from "../helpers/CampaignText";
-import { checkCampaignSend } from "../services/SafetyServices/SendGuard";
+import { checkCampaignSend, countCampaignSend } from "../services/SafetyServices/SendGuard";
 import { deliverStep, usesTemplate } from "../services/CampaignServices/Deliver";
 import { ensureShippings } from "../services/CampaignServices/Shippings";
 
@@ -157,6 +157,7 @@ const processCampaign = async (campaign: Campaign): Promise<void> => {
           : { status: "pending", message: sentText, error: null, stepsDone: index + 1 },
         { where: { id: shipping.id, status: "sending" } }
       );
+      if (finishedContact) countCampaignSend(whatsapp.id);
     } catch (err) {
       // the pace protection said "too fast": nothing was tried with this person, so it is not a failure; look again soon
       if (err && (String(err.message) === "ERR_RATE_LIMITED" || err.statusCode === 429)) {
@@ -223,13 +224,23 @@ const promoteScheduled = async (): Promise<void> => {
   }
 };
 
+// one round at a time, and at most a few campaigns at once (many running campaigns do not open dozens of sends in parallel)
+const PARALLEL = 4;
+let ticking = false;
 const tick = async (): Promise<void> => {
+  if (ticking) return;
+  ticking = true;
   try {
     await promoteScheduled();
     const running = await Campaign.findAll({ where: { status: "running" } });
-    await Promise.all(running.map(processCampaign));
+    for (let i = 0; i < running.length; i += PARALLEL) {
+      // eslint-disable-next-line no-await-in-loop
+      await Promise.all(running.slice(i, i + PARALLEL).map(processCampaign));
+    }
   } catch (err) {
     logger.error(`Campaign tick error: ${err}`);
+  } finally {
+    ticking = false;
   }
 };
 

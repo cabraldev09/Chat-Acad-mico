@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { CheckCircle2, AlertTriangle, AlertCircle, RefreshCw, ArrowRight } from "lucide-react";
 
+import { toast } from "react-toastify";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 
@@ -21,6 +22,9 @@ const FIX = {
   mail: ["/configuracoes?secao=email", "Configurar o e-mail"],
   hours: ["/configuracoes?secao=atendimento", "Definir o horário"],
   polos: ["/polos", "Abrir Polos"],
+  users_hours: ["/users", "Abrir Usuários"],
+  users_number: ["/users", "Abrir Usuários"],
+  affiliates_owner: ["/afiliados", "Abrir Afiliados"],
 };
 const btn = { display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, height: 34, boxSizing: "border-box", border: "1px solid var(--line-strong)", background: "var(--surface)", borderRadius: 8, padding: "0 12px", font: "inherit", fontSize: 13, fontWeight: 600, cursor: "pointer", color: "inherit", textDecoration: "none", whiteSpace: "nowrap", flex: "none" };
 
@@ -33,6 +37,11 @@ export default function Readiness() {
     setBusy(false);
   }, []);
   useEffect(() => { load(); }, [load]);
+  // the affiliates that entered the funnel as leads go out of it (never a student or a lead with a paid charge)
+  const cleanAffiliateLeads = async () => {
+    if (!window.confirm("Tirar do funil os afiliados que entraram como lead? Só saem os que não têm matrícula nem pagamento; as conversas continuam.")) return;
+    try { const { data } = await api.post("/system/affiliate-leads/clean"); toast.success(`${data.removed} afiliado(s) saíram do funil.`); load(); } catch (err) { toastError(err); }
+  };
   if (!items) return <div style={{ fontSize: 13, color: "var(--text-2)" }}>Conferindo...</div>;
 
   const pending = items.filter((i) => !i.ok);
@@ -58,6 +67,7 @@ export default function Readiness() {
             {!i.ok && <div style={{ fontSize: 12.5, marginTop: 2, color: "var(--text-2)" }}>Onde resolver: {i.where}</div>}
           </div>
           {!i.ok && FIX[i.key] && <Link to={FIX[i.key][0]} style={{ ...btn, color: "var(--accent)" }}>{FIX[i.key][1]} <ArrowRight size={14} /></Link>}
+          {!i.ok && i.key === "affiliate_leads" && <button type="button" onClick={cleanAffiliateLeads} style={{ ...btn, color: "var(--accent)" }}>Tirar do funil</button>}
         </div>
       ))}
     </div>

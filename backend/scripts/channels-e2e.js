@@ -2759,7 +2759,8 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(portal.materials.find(m => m.id === mat.id).collection === "pos", "portal lacks the collection");
       assert(portal.faq.length === 1 && portal.faq[0].q === "Pergunta de teste?", "portal FAQ");
       assert(portal.videos.length === 1 && portal.videos[0].key === "program" && portal.videos[0].embed.includes("dQw4w9WgXcQ"), `videos ${JSON.stringify(portal.videos)}`);
-      assert(portal.support && portal.support.url === "https://wa.me/69999990000", "support link");
+      // the general support number typed by the administration is the official one; the message comes ready with the affiliate's name
+      assert(portal.support && portal.support.url.startsWith("https://wa.me/5569999990000?text=") && decodeURIComponent(portal.support.url).includes("Central Teste"), `support link ${JSON.stringify(portal.support)}`);
       assert(!/R\$ ?\d/.test(JSON.stringify({ m: portal.materials, c: portal.courses, f: portal.faq })), "a price leaked into the portal");
 
       // the copy counter
@@ -2822,7 +2823,8 @@ const postMeta = (id, payload, secret, badSig) => {
 
       const aff = (await http.post("/affiliates", { name: "Indicadora da Dona", phone: "(69) 97000-1111" }, asUser(to))).data;
       const portal = (await http.get(`/affiliate-portal/${aff.portalToken}`)).data;
-      assert(portal.support && portal.support.url === "https://wa.me/5569981112222" && portal.support.name === "Dona do Afiliado", `support ${JSON.stringify(portal.support)}`);
+      // the affiliate writes to the official number (never the consultant's own WhatsApp) and the consultant who follows them answers
+      assert(portal.support && !portal.support.url.includes("5569981112222") && portal.support.official && portal.support.name === "Dona do Afiliado", `support ${JSON.stringify(portal.support)}`);
 
       // rule: first monthly fee, 45 days
       assert((await http.put("/affiliate-rules", { mode: "first_monthly", payDays: 45, trigger: "enrolled", kind: "pix" }, auth())).data.payDays === 45, "rules");
@@ -5710,6 +5712,84 @@ const postMeta = (id, payload, secret, badSig) => {
       }
       assert((await http.delete(`/ai-agents/${id}/draft`, auth())).status === 200 && !(await http.get("/ai-agents", auth())).data.find(a => a.id === id).persona.draft, "discarding kept the draft");
       await http.put(`/ai-agents/${id}`, { systemPrompt: live.systemPrompt, persona: live.persona }, auth());
+    });
+    await test("affiliate on the official number: straight to their consultant (no robot, no rotation, no lead for the affiliate), a shared card is a referral, the portal points to the official number", async () => {
+      const cons = (await http.post("/users", { name: "Consultora dos Afiliados", email: "cons-afiliados@x.test", password: "senha123", role: "consultor" }, auth())).data;
+      const aff = (await http.post("/affiliates", { name: "Parceira Oficial", phone: "(69) 98111-2233", ownerId: cons.id }, auth())).data;
+      assert(aff.ownerId === cons.id, `affiliate owner ${JSON.stringify(aff).slice(0, 160)}`);
+      const llm = anthropic.requests.length;
+      // the official API sends the mobile without the ninth digit
+      await inboundCloud("556981112233", "wamid.affiliate-1", "Oi, tenho uma pessoa interessada no curso");
+      const tid = await waitFor(() => sql(`SELECT t.id FROM Tickets t JOIN Contacts c ON c.id=t.contactId WHERE c.number IN ('556981112233','5569981112233') ORDER BY t.id DESC LIMIT 1`), 8000, "affiliate ticket");
+      await waitFor(() => sql(`SELECT CONCAT(status,'|',userId) FROM Tickets WHERE id=${tid}`) === `open|${cons.id}`, 8000, "the affiliate's conversation goes to their consultant");
+      await sleep(2500);
+      assert(sql(`SELECT aiActive FROM Tickets WHERE id=${tid}`) === "0" && anthropic.requests.length === llm, "a robot answered the affiliate");
+      assert(sql(`SELECT COUNT(*) FROM Messages WHERE ticketId=${tid} AND fromMe=true`) === "0", "something was sent to the affiliate by itself");
+      const contactId = sql(`SELECT contactId FROM Tickets WHERE id=${tid}`);
+      assert(sql(`SELECT COUNT(*) FROM Leads WHERE contactId=${contactId}`) === "0", "the affiliate became a lead of the funnel");
+      assert(sql(`SELECT COUNT(*) FROM TicketEvents WHERE ticketId=${tid} AND note LIKE '%Parceira Oficial%'`) === "1", "the history does not say why the conversation went to the consultant");
+      // a contact card shared on the official number: the person becomes a referral lead of the affiliate's consultant
+      await postMeta(cid, cloudEvent([{ from: "556981112233", id: "wamid.affiliate-card", type: "contacts", contacts: [{ name: { formatted_name: "Indicado Pelo Cartao" }, phones: [{ phone: "+55 69 98444-5566", wa_id: "5569984445566" }] }] }]), cloudCfg.appSecret);
+      await waitFor(() => sql(`SELECT CONCAT(ownerId,'|',affiliateId) FROM Leads WHERE name='Indicado Pelo Cartao'`) === `${cons.id}|${aff.id}`, 8000, "the shared card became a referral of the consultant");
+      await waitFor(() => Number(sql(`SELECT COUNT(*) FROM Messages WHERE ticketId=${tid} AND body LIKE 'Contato compartilhado: Indicado Pelo Cartao%'`)) === 1, 8000, "the card is readable in the conversation");
+      assert(sql(`SELECT CONCAT(status,'|',userId) FROM Tickets WHERE id=${tid}`) === `open|${cons.id}`, "the card moved the conversation away from the consultant");
+      // the portal: support is the official number, with the message ready and the consultant's name
+      const portal = (await http.get(`/affiliate-portal/${aff.portalToken}`)).data;
+      assert(portal.support && /^https:\/\/wa\.me\/\d{10,}\?text=/.test(portal.support.url) && decodeURIComponent(portal.support.url).includes("Parceira Oficial") && portal.support.official, `portal support ${JSON.stringify(portal.support)}`);
+      // the readiness lists the affiliates without a consultant and those that are leads
+      const ready = (await http.get("/system/readiness", auth())).data.items;
+      assert(["users_hours", "users_number", "affiliates_owner", "affiliate_leads"].every(k => ready.some(i => i.key === k)), "the readiness misses the team and affiliate items");
+      const cleaned = await http.post("/system/affiliate-leads/clean", {}, auth());
+      assert(cleaned.status === 200, `cleaning the affiliate leads ${cleaned.status} ${JSON.stringify(cleaned.data).slice(0, 300)}`);
+    });
+    await test("review 2: the tutor import never turns a prospect into a student; consent is registered and the campaign shows (and removes) who has none", async () => {
+      const tut = (await http.post("/users", { name: "Tutora Importação", email: "tutora-import@x.test", password: "senha123", role: "tutor" }, auth())).data;
+      assert(tut && tut.id, "tutor");
+      const ttok = (await http.post("/auth/login", { email: "tutora-import@x.test", password: "senha123" })).data.token;
+      const prospect = await mkLead("Prospect Importação", "5511955558801");
+      const r = await http.post("/tutoria/students/import", { items: [{ name: "Prospect Importação", phone: "5511955558801" }, { name: "Aluno Novo Importação", phone: "5511955558802", rgm: "IMP0001" }] }, asUser(ttok));
+      assert(r.status === 200 && r.data.rows[0].status === "error" && /funil/.test(r.data.rows[0].error) && r.data.rows[1].status === "new", `import ${JSON.stringify(r.data).slice(0, 300)}`);
+      assert(sql(`SELECT CONCAT(COALESCE(onboardingTutorId::text,''),'|',COALESCE(enrolledAt::text,'')) FROM Leads WHERE id=${prospect.id}`) === "|", "a prospect became a student of the tutor");
+      assert(sql(`SELECT COUNT(*) FROM Leads WHERE rgm='IMP0001' AND onboardingTutorId=${tut.id} AND enrolledAt IS NOT NULL`) === "1", "the new student was not imported");
+      // the same spreadsheet again: the student is found in one batch (no duplicate)
+      const again = await http.post("/tutoria/students/import", { items: [{ name: "Aluno Novo Importação", phone: "5511955558802", rgm: "IMP0001" }] }, asUser(ttok));
+      assert(again.data.rows[0].status === "update" && sql(`SELECT COUNT(*) FROM Leads WHERE rgm='IMP0001'`) === "1", `repeated import ${JSON.stringify(again.data)}`);
+
+      // consent: whoever writes first has it registered (the official number here)
+      await inboundCloud("5511955558803", "wamid.consent-1", "Oi, quero informações");
+      await waitFor(() => sql(`SELECT consentSource FROM Contacts WHERE number='5511955558803'`) === "inbound", 8000, "consent of who wrote first");
+      const list = (await http.post("/contact-lists", { name: "Consentimento" }, auth())).data;
+      await http.post(`/contact-lists/${list.id}/import`, { items: [{ name: "Escreveu", number: "5511955558803" }, { name: "Nunca falou", number: "5511955558804" }] }, auth());
+      const c = (await http.post("/campaigns", { name: "Consentimento", message: "Oi", contactListId: list.id, whatsappId: Number(cid) }, auth())).data;
+      const pre = (await http.get(`/campaigns/${c.id}/preflight`, auth())).data;
+      assert(pre.noConsent === 1 && pre.warnings.some(w => /consentimento/.test(w)), `preflight consent ${JSON.stringify({ noConsent: pre.noConsent, warnings: pre.warnings })}`);
+      const removed = await http.post(`/campaigns/${c.id}/remove-no-consent`, {}, auth());
+      assert(removed.status === 200 && removed.data.removed === 1 && sql(`SELECT COUNT(*) FROM ContactListItems WHERE contactListId=${list.id}`) === "1", `remove without consent ${JSON.stringify(removed.data)}`);
+      // a list imported saying the people agreed registers it on the contacts that exist
+      sql(`INSERT INTO Contacts (name, number, email, isGroup, kind, channel, createdAt, updatedAt) VALUES ('Lista Consentida', '5511955558805', '', false, 'person', 'whatsapp', NOW(), NOW())`);
+      await http.post(`/contact-lists/${list.id}/import`, { items: [{ name: "Lista Consentida", number: "5511955558805" }], consent: true }, auth());
+      assert(sql(`SELECT consentSource FROM Contacts WHERE number='5511955558805'`) === "import", "the consent of an imported list was not registered");
+    });
+    await test("the Meta webhook is stored before the 200 and processed from the queue; the same delivery twice is one message", async () => {
+      const body = cloudEvent([{ from: "5511955557001", id: "wamid.durable-1", type: "text", text: { body: "Mensagem guardada antes da resposta" } }]);
+      const first = await postMeta(cid, body, cloudCfg.appSecret);
+      assert(first.status === 200, `webhook ${first.status}`);
+      await waitFor(() => sql(`SELECT status FROM MetaWebhookEvents WHERE body LIKE '%wamid.durable-1%' ORDER BY id DESC LIMIT 1`) === "done", 8000, "the stored webhook was processed");
+      const again = await postMeta(cid, body, cloudCfg.appSecret);
+      assert(again.status === 200, `repeated webhook ${again.status}`);
+      await sleep(1500);
+      assert(sql(`SELECT COUNT(*) FROM MetaWebhookEvents WHERE body LIKE '%wamid.durable-1%'`) === "1", "the same delivery was stored twice");
+      assert(sql(`SELECT COUNT(*) FROM Messages WHERE id='wamid.durable-1'`) === "1", "the message was duplicated");
+      // a bad signature is never stored
+      const bad = await postMeta(cid, cloudEvent([{ from: "5511955557001", id: "wamid.durable-bad", type: "text", text: { body: "x" } }]), "wrong-secret");
+      assert(bad.status === 401 && sql(`SELECT COUNT(*) FROM MetaWebhookEvents WHERE body LIKE '%wamid.durable-bad%'`) === "0", "an unsigned webhook was stored");
+    });
+    await test("the team's week: a new person and the company start Monday to Thursday 08-18 and Friday 08-17; the number must exist", async () => {
+      const crm = (await http.get("/crm/settings", auth())).data;
+      assert(crm.standardWeek && crm.standardWeek["5"][0].end === "17:00" && crm.standardWeek["4"][0].end === "18:00" && !crm.standardWeek["6"].length, `standard week ${JSON.stringify(crm.standardWeek)}`);
+      assert((await http.post("/users", { name: "Numero Errado", email: "numero-errado@x.test", password: "senha123", role: "consultor", whatsappId: 999999 }, auth())).status === 404, "a user was saved with a number that does not exist");
+      const ok = await http.post("/users", { name: "Numero Certo", email: "numero-certo@x.test", password: "senha123", role: "consultor", whatsappId: Number(cid) }, auth());
+      assert([200, 201].includes(ok.status) && sql(`SELECT whatsappId FROM Users WHERE email='numero-certo@x.test'`) === String(cid), `user with the official number ${ok.status}`);
     });
     await test("Meta templates: the recommended pack goes as Utility and protected, nothing is duplicated, and an approved one takes its place", async () => {
       const consTok = (await http.post("/auth/login", { email: "consultorm@matricula.test", password: "senha123" })).data.token;

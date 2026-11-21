@@ -12,11 +12,18 @@ export interface BusinessConfig {
   days: Record<string, BusinessInterval[]>;
 }
 
-const workday = [{ start: "08:00", end: "18:00" }];
-export const DEFAULT_BUSINESS: BusinessConfig = {
-  enabled: false,
-  days: { "0": [], "1": workday, "2": workday, "3": workday, "4": workday, "5": workday, "6": [{ start: "08:00", end: "12:00" }] }
-};
+// The standard week of the team: Monday to Thursday 08:00-18:00, Friday 08:00-17:00, no weekend. One place for every default (the
+// company hours, each person's hours, the hours of a connection), so the screens and the server never disagree.
+export const standardWeek = (): Record<string, BusinessInterval[]> => ({
+  "0": [],
+  "1": [{ start: "08:00", end: "18:00" }],
+  "2": [{ start: "08:00", end: "18:00" }],
+  "3": [{ start: "08:00", end: "18:00" }],
+  "4": [{ start: "08:00", end: "18:00" }],
+  "5": [{ start: "08:00", end: "17:00" }],
+  "6": []
+});
+export const DEFAULT_BUSINESS: BusinessConfig = { enabled: false, days: standardWeek() };
 
 const toMinutes = (hhmm: string): number => {
   const [h, m] = String(hhmm).split(":").map(Number);

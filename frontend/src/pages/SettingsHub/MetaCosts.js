@@ -67,6 +67,17 @@ export default function MetaCosts() {
               </div>
             ))}
           </div>
+          {data.estimate && data.estimate.messages > 0 && (
+            <div style={{ ...card, display: "grid", gap: 4 }}>
+              <div style={{ fontSize: 15, fontWeight: 700 }}>Estimado pelo sistema × cobrado pela Meta</div>
+              <div style={{ fontSize: 13 }}>
+                O sistema estimou <b>{new Intl.NumberFormat("pt-BR", { style: "currency", currency: "USD" }).format(data.estimate.usd)}</b> para {data.estimate.messages.toLocaleString("pt-BR")} envios no período (a tarifa de Operação e custos, usada no orçamento do dia); a Meta cobrou <b>{money(data.total)}</b>.
+                {data.estimate.unpriced > 0 && <> {data.estimate.unpriced} envio(s) sem tarifa não entraram na estimativa.</>}
+              </div>
+              {!data.estimate.sameCurrency && <div style={{ fontSize: 12.5, color: "var(--text-2)" }}>A conta da Meta cobra em {data.currency}: a comparação com a estimativa em dólar é só uma referência.</div>}
+              {data.estimate.suggestedRate !== null && <div style={{ fontSize: 12.5, color: "var(--text-2)" }}>Pelo que a Meta cobrou, a tarifa média real ficou em US$ {String(data.estimate.suggestedRate).replace(".", ",")} por envio. Se estiver muito diferente da tarifa salva, ajuste em Operação e custos.</div>}
+            </div>
+          )}
           <div style={card}>
             <div style={{ fontSize: 15, fontWeight: 700 }}>Gasto por dia</div>
             <div style={{ fontSize: 12.5, color: "var(--text-2)" }}>Valores da própria Meta ({data.currency || "moeda da conta"}). A Meta consolida os números algumas vezes por hora.</div>

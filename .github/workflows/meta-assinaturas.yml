@@ -1,0 +1,32 @@
+name: Ver quais apps recebem as mensagens da Meta (somente leitura)
+
+# Lê na Meta quais apps estão assinados na conta do WhatsApp do número oficial e de qual app é o token salvo. Serve para achar por que o
+# webhook é recusado ("assinatura diferente"). Não altera nada; mostra só ids públicos e nomes de apps.
+on:
+  workflow_dispatch:
+
+jobs:
+  assinaturas:
+    runs-on: ubuntu-latest
+    env:
+      # the server's address is the first column of deploy/vps/known_hosts (changing server = changing that one line)
+      VPS_KNOWN_HOSTS: deploy/vps/known_hosts
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepara o SSH e confere a identidade do servidor
+        env:
+          KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          VPS_HOST=$(grep -v '^#' "$VPS_KNOWN_HOSTS" | awk 'NF{print $1; exit}'); echo "VPS_HOST=$VPS_HOST" >> "$GITHUB_ENV"
+          install -m 700 -d ~/.ssh
+          body=$(printf '%s' "$KEY" | grep -v '^-----' | tr -d ' \r\n\t')
+          { echo "-----BEGIN OPENSSH PRIVATE KEY-----"; printf '%s' "$body" | fold -w 70; echo; echo "-----END OPENSSH PRIVATE KEY-----"; } > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          grep -v '^#' deploy/vps/known_hosts > ~/.ssh/known_hosts
+          want=$(awk '{print $3}' ~/.ssh/known_hosts)
+          seen=$(ssh-keyscan -T 15 -t ed25519 "$VPS_HOST" 2>/dev/null | awk '$2=="ssh-ed25519"{print $3}')
+          [ -n "$seen" ] && [ "$seen" = "$want" ] || { echo "::error::A chave do servidor não confere"; exit 1; }
+      - name: Lê as assinaturas
+        run: |
+          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes backend/scripts/meta-assinaturas.js root@"$VPS_HOST":/tmp/meta-assinaturas.js
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@"$VPS_HOST" "docker cp /tmp/meta-assinaturas.js chat-academico-api-1:/app/backend/meta-assinaturas.js && docker exec chat-academico-api-1 node /app/backend/meta-assinaturas.js; s=\$?; docker exec chat-academico-api-1 rm -f /app/backend/meta-assinaturas.js; exit \$s"

@@ -86,7 +86,8 @@ export const fillTemplate = (keys: string[], values: Record<string, string>, bod
 
 // The recommended templates, all in the cheapest category (Utility): each one is a notice about something that already exists for the
 // person (their enrollment, request, re-enrollment, charge), with no offer or promotion, which is what the Meta accepts as Utility.
-// They are sent with allow_category_change=false: if the Meta judges one as Marketing it refuses it (it is never charged as Marketing).
+// The Meta no longer honours allow_category_change: it may move a template to Marketing by itself (and it then costs more). So the texts
+// are pure notices (no invitation, no offer), and the screen shows the real category of each one (the category_update webhook refreshes it).
 export type TemplateDepartment = "atendimento" | "tutoria" | "relacionamento" | "financeiro";
 export const DEPARTMENTS: Record<TemplateDepartment, string> = { atendimento: "Atendimento (matrículas)", tutoria: "Tutoria", relacionamento: "Relacionamento com o aluno", financeiro: "Financeiro" };
 // where a template is used: the opening of a department (outside the 24 h), a notice of the system, or a campaign chosen by hand
@@ -97,15 +98,15 @@ export interface TemplateDraft {
 }
 // The texts never open with "Olá" when the person is already talking to us: they start with the name and say what continues.
 export const TEMPLATE_PACK = (institution: string): TemplateDraft[] => [
-  { name: "retomada_atendimento", department: "atendimento", use: "abertura", setting: "atendimento_template_name", buttons: ["Sim, podemos seguir", "Agora não"],
+  { name: "retomada_atendimento", department: "atendimento", use: "abertura", setting: "atendimento_template_name", buttons: ["Continuar o atendimento", "Agora não"],
     purpose: "Retomar o atendimento de matrícula depois de 24 h sem resposta",
-    body: `{{1}}, aqui é {{2}}, da ${institution}. Estou dando continuidade ao seu atendimento de matrícula. Podemos seguir por aqui?`, examples: ["Maria", "Ana"] },
+    body: `{{1}}, aqui é {{2}}, da ${institution}. O seu atendimento de matrícula está em andamento e aguarda a sua resposta para continuar.`, examples: ["Maria", "Ana"] },
   { name: "solicitacao_em_aberto", department: "atendimento", use: "aviso",
     purpose: "Quem pediu informações e parou de responder",
-    body: "{{1}}, a sua solicitação de informações sobre o curso {{2}} continua aberta. Para seguir com o atendimento, é só responder esta mensagem.", examples: ["Maria", "Pedagogia"] },
+    body: "{{1}}, a sua solicitação de informações sobre o curso {{2}} está registrada e segue em aberto, aguardando a sua resposta para ser concluída.", examples: ["Maria", "Pedagogia"] },
   { name: "proposta_pronta", department: "atendimento", use: "aviso", buttons: ["Quero ver a proposta"],
-    purpose: "A proposta (bolsa) que a pessoa pediu ficou pronta",
-    body: "{{1}}, a proposta que você pediu para o curso {{2}} está pronta. Responda esta mensagem para receber os detalhes.", examples: ["Maria", "Pedagogia"] },
+    purpose: "A simulação de valores que a pessoa pediu foi concluída",
+    body: "{{1}}, a simulação de valores que você solicitou para o curso {{2}} foi concluída. Responda esta mensagem para recebê-la.", examples: ["Maria", "Pedagogia"] },
   { name: "documentos_pendentes", department: "atendimento", use: "aviso",
     purpose: "Falta documento para concluir a matrícula",
     body: "{{1}}, para concluir a sua matrícula no curso {{2}} ainda falta: {{3}}. Você pode enviar por aqui mesmo.", examples: ["Maria", "Pedagogia", "foto do RG"] },
@@ -126,13 +127,13 @@ export const TEMPLATE_PACK = (institution: string): TemplateDraft[] => [
     body: "{{1}}, a sua ambientação com a tutoria está marcada para {{2}}. Se precisar trocar o horário, responda esta mensagem.", examples: ["Maria", "21/11 às 14h"] },
   { name: "retomada_relacionamento", department: "relacionamento", use: "abertura", setting: "relacionamento_template_name", buttons: ["Sim, podemos falar", "Agora não"],
     purpose: "Retenção: retomar o contato com o aluno depois de 24 h",
-    body: `{{1}}, aqui é {{2}}, do relacionamento com o aluno da ${institution}, sobre a sua matrícula. Podemos falar por aqui?`, examples: ["Maria", "Carla"] },
+    body: `{{1}}, aqui é {{2}}, do relacionamento com o aluno da ${institution}. Há um atendimento sobre a sua matrícula aguardando a sua resposta.`, examples: ["Maria", "Carla"] },
   { name: "prazo_rematricula", department: "relacionamento", use: "aviso", setting: "rematricula_template_name", buttons: ["Quero ajuda"],
     purpose: "Prazo da rematrícula do aluno ativo",
     body: "{{1}}, a rematrícula do seu curso {{2}} vai até {{3}}. Se precisar de ajuda para concluir, responda esta mensagem.", examples: ["Maria", "Pedagogia", "15/01/2027"] },
   { name: "regularizar_matricula", department: "relacionamento", use: "aviso",
-    purpose: "Aluno cancelado ou trancado: como voltar ao curso",
-    body: "{{1}}, consta no nosso sistema que a sua matrícula no curso {{2}} está {{3}}. Se quiser saber como regularizar, responda esta mensagem.", examples: ["Maria", "Pedagogia", "trancada"] }
+    purpose: "Aluno cancelado ou trancado: a situação da matrícula",
+    body: "{{1}}, a sua matrícula no curso {{2}} consta como {{3}} no nosso sistema. Em caso de dúvida sobre a sua situação acadêmica, responda esta mensagem.", examples: ["Maria", "Pedagogia", "trancada"] }
 ];
 
 // department and use of the templates created on the screen (the pack ones carry their own)
@@ -177,7 +178,7 @@ export const allTemplates = async (whatsappId?: number | null): Promise<Template
 export const cleanDraft = (d: Partial<TemplateDraft>): TemplateDraft => {
   const name = String(d.name || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9_]/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "").slice(0, 60);
   const body = String(d.body || "").trim().slice(0, 1024);
-  if (!name || !body) throw new AppError("ERR_TEMPLATE_INVALID", 400);
+  if (!name || !body) throw new AppError("ERR_TEMPLATE_NAME_BODY", 400);
   const n = paramsIn(body);
   const examples = (Array.isArray(d.examples) ? d.examples : []).map(e => String(e || "").trim()).slice(0, n);
   if (examples.length < n || examples.some(e => !e)) throw new AppError("ERR_TEMPLATE_EXAMPLES", 400);
@@ -251,7 +252,7 @@ export const notifyTemplates = (): void => {
 export const deleteTemplate = async (name: string, whatsappId?: number | null): Promise<void> => {
   const { institutionName } = await import("../../helpers/Institution");
   const clean = String(name || "").replace(/[^a-z0-9_]/g, "");
-  if (!clean) throw new AppError("ERR_TEMPLATE_INVALID", 400);
+  if (!clean) throw new AppError("ERR_TEMPLATE_NAME_BODY", 400);
   if (TEMPLATE_PACK(institutionName()).some(t => t.name === clean)) throw new AppError("ERR_TEMPLATE_IN_PACK", 400);
   const { waba, token } = await accountOf(await cloudConnection(whatsappId));
   try {

@@ -9,10 +9,11 @@ import Course from "../models/Course";
 import Lead from "../models/Lead";
 import LeadStage from "../models/LeadStage";
 import User from "../models/User";
+import Whatsapp from "../models/Whatsapp";
 import { getSetting } from "../helpers/AppSettings";
 import { getPortalTexts } from "../services/AffiliateServices/Bonus";
 import { inWindow, isVisibleTo, referralUrl, releasedIds } from "../helpers/Affiliates";
-import { isWhatsappReady } from "../helpers/Phone";
+import { isWhatsappReady, normalizePhone } from "../helpers/Phone";
 import { statsFor } from "../services/AffiliateServices/Stats";
 import { clicksFor } from "../services/AffiliateServices/Clicks";
 import { upsertLead } from "../services/CrmServices/LeadCore";
@@ -62,7 +63,19 @@ const shortName = (n: string): string => {
 };
 
 // FAQ, videos and the way to reach support, all edited by the administration
-const portalTexts = async (owner: { name: string; phone?: string | null } | null) => {
+// the official number of the attendance (where the affiliate writes and lands straight in their consultant's conversation): the number
+// typed in the affiliate rules, else the number the Meta reports for the attendance connection
+export const officialSupportNumber = async (typed: string): Promise<string> => {
+  // typed with the area code only ("69 99999-0000"): the country code is added, so wa.me opens the right number
+  const own = normalizePhone(String(typed || "")) || "";
+  if (own) return own;
+  const { connectionOfTeam } = await import("../services/ChannelServices/ConnectionTeam");
+  const line = await connectionOfTeam("atendimento");
+  const cloud = line && line.channel === "whatsapp_cloud" ? line : await Whatsapp.findOne({ where: { channel: "whatsapp_cloud" } as any, order: [["id", "ASC"]] });
+  return cloud ? String(cloud.session || "").replace(/\D/g, "") : "";
+};
+
+const portalTexts = async (owner: { name: string; phone?: string | null } | null, aff?: Affiliate | null) => {
   const t = await getPortalTexts();
   const embed = (url: string) => {
     const m = String(url || "").match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([\w-]{11})/);
@@ -72,12 +85,14 @@ const portalTexts = async (owner: { name: string; phone?: string | null } | null
     { key: "program", title: "Como funciona o programa", url: t.videoProgram },
     { key: "tutorial", title: "Como usar os materiais", url: t.videoTutorial }
   ].filter(v => v.url).map(v => ({ ...v, embed: embed(v.url) }));
-  // support is the person who registered the affiliate (their WhatsApp); the general number is only a fallback
-  const phone = (owner && owner.phone) || t.supportPhone;
+  // support is the official number: the affiliate writes there and the conversation goes straight to the consultant who follows them
+  // (the consultant's own WhatsApp only when there is no official number at all)
+  const phone = (await officialSupportNumber(t.supportPhone)) || (owner && owner.phone) || "";
+  const hello = aff ? `Olá! Sou ${aff.name}, afiliado(a)${aff.refCode ? ` (código ${aff.refCode})` : ""}.` : "Olá! Sou afiliado(a).";
   return {
     faq: t.faq,
     videos,
-    support: phone ? { name: owner ? owner.name : "Equipe", url: `https://wa.me/${phone}` } : null
+    support: phone ? { name: owner ? owner.name : "Equipe", url: `https://wa.me/${phone}?text=${encodeURIComponent(hello)}`, number: phone, official: true } : null
   };
 };
 
@@ -149,7 +164,7 @@ router.get("/:token", loadAffiliate, async (req: Request, res: Response) => {
     owner: owner ? { name: owner.name } : null,
     title: await getSetting("affiliate_portal_title", "Central do Afiliado"),
     message: await getSetting("affiliate_portal_message", "Tudo o que você precisa para indicar: materiais, cursos e campanhas."),
-    ...(await portalTexts(owner)),
+    ...(await portalTexts(owner, aff)),
     referralUrl: referralUrl(aff.refCode),
     externalLink: aff.externalLink || null,
     stats: stats && {

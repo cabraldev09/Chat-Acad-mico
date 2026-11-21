@@ -95,3 +95,4 @@ Para um erro: reproduza antes de corrigir e mostre o mesmo teste passando depois
 | Testes | Testes unitários, ponta a ponta e varredura de telas; encontra a causa de testes instáveis. |
 | Revisor | Revisa cada mudança: segurança, permissões, bugs, desempenho. Aponta o caso real e a correção mínima. |
 | Meta e WhatsApp | API oficial da Meta (modelos, webhook, janela de 24 h, custos) e números por QR Code. |
+| Segurança e Estabilidade | Segurança (permissões por perfil, vazamento de dados, segredos, rotas sem proteção) e prevenção de queda (tarefas em segundo plano, banco, fila de mensagens, limites, backup, deploy, alertas). Aponta o caso real e a correção mínima; não altera servidor nem contas reais. |

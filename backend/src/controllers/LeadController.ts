@@ -3,7 +3,7 @@ import { hasContactAccessOrFree } from "../middleware/canAccessContact";
 import { syncNextFollowUp } from "../services/CrmServices/FollowUp";
 import { fire } from "../helpers/Fire";
 import { Request, Response } from "express";
-import { getBusinessConfig, normalizeBusiness, resetBusinessCache, businessMinutes } from "../helpers/BusinessTime";
+import { getBusinessConfig, normalizeBusiness, resetBusinessCache, businessMinutes, standardWeek } from "../helpers/BusinessTime";
 import { dayBounds, shiftDays } from "../helpers/AppTime";
 import { withLeadScope, isAdminReq, reqRole } from "../middleware/scope";
 import { portable, nowSql, nowMinus, diffMinutes, diffHours, dayOf, countIf } from "../helpers/sqlDialect";
@@ -227,7 +227,8 @@ export const remove = async (req: Request, res: Response): Promise<Response> => 
   if (lead.enrolledAt || lead.wonAt) throw new AppError("ERR_LEAD_DELETE_ENROLLED", 400);
   const paid = await Payment.count({ where: { leadId: lead.id, status: "paid" } as any });
   if (paid > 0) throw new AppError("ERR_LEAD_DELETE_PAID", 400);
-  logger.warn(`Lead excluído por ${req.user.id}: #${lead.id} "${String(lead.name || "").slice(0, 60)}" (etapa ${lead.stageId})`);
+  // only technical ids in the log (never the person's name)
+  logger.warn(`Lead excluído por ${req.user.id}: #${lead.id} (etapa ${lead.stageId})`);
   await lead.destroy();
   getIO().emit("lead", { action: "delete", leadId: Number(req.params.id) });
   return res.json({ message: "deleted" });
@@ -623,7 +624,9 @@ export const getSettings = async (_req: Request, res: Response): Promise<Respons
     formThanks: await getSetting("crm_form_thanks", "Recebemos seus dados! Em breve um consultor entra em contato."),
     formColor: await getSetting("crm_form_color", "#0B4279"),
     slaMinutes: Number(await getSetting("crm_sla_minutes", "15")),
-    businessHours: await getBusinessConfig()
+    businessHours: await getBusinessConfig(),
+    // the team's standard week (Mon-Thu 08-18, Fri 08-17): what a day turned on starts with on the screens
+    standardWeek: standardWeek()
   });
 
 export const putSettings = async (req: Request, res: Response): Promise<Response> => {

@@ -8,6 +8,15 @@ const plain = (s: string): string =>
     .replace(/\s+/g, " ")
     .trim();
 
+// The name of a course as the catalogue writes it ("Análise e desenvolvimento de sistemas", "Computação nuvem") and as the matrix PDF writes it
+// ("CST EM ANÁLISE E DESENVOLVIMENTO DE SISTEMAS", "CST EM COMPUTAÇÃO EM NUVEM") must meet: the "CST em" prefix and the small words are not part of the name.
+const nameKey = (s: string): string =>
+  plain(s)
+    .replace(/^(curso superior de tecnologia em|tecnologo em|tecnologia em|cst em|cst)\s+/, "")
+    .replace(/\b(de|da|do|das|dos|e|em)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
 const modalityOf = (m: string | null | undefined): string | null => {
   const t = plain(m || "");
   if (!t) return null;
@@ -32,10 +41,10 @@ interface GradeLike {
 // The course of the catalogue is "Pedagogia" (Semipresencial) while the matrix on file may be "PEDAGOGIA (LICENCIATURA)" (EAD): the name decides,
 // and the modality is only a preference. A matrix of another modality is better than "no grade", the agent says how the course is offered.
 export const chooseGrade = <G extends GradeLike>(all: G[], course: { name: string; modality?: string | null }, intake: string | null): { grade: G | null; current: boolean } => {
-  const name = plain(course.name);
+  const name = nameKey(course.name);
   const modality = modalityOf(course.modality);
-  const named = all.filter(g => g.courseName && (plain(g.courseName) === name || plain(g.courseName).replace(/\s*\(.*\)\s*$/, "") === name));
-  const loose = named.length ? named : all.filter(g => g.courseName && plain(g.courseName).startsWith(name));
+  const named = all.filter(g => g.courseName && (nameKey(g.courseName) === name || nameKey(g.courseName.replace(/\s*\(.*\)\s*$/, "")) === name));
+  const loose = named.length ? named : all.filter(g => g.courseName && nameKey(g.courseName).startsWith(name));
   if (!loose.length) return { grade: null, current: false };
   const sameModality = loose.filter(g => !modality || !g.modality || modalityOf(g.modality) === modality);
   const pool = sameModality.length ? sameModality : loose;

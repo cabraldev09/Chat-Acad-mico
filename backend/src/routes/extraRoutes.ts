@@ -279,6 +279,7 @@ r.post("/campaigns/:id/retry-failed", isAuth, salesStaff, ownCampaign, Campaign.
 r.post("/campaigns/:id/duplicate", isAuth, salesStaff, ownCampaign, Campaign.duplicate);
 r.post("/campaigns/:id/test", isAuth, salesStaff, ownCampaign, Campaign.sendTest);
 r.get("/campaigns/:id/preflight", isAuth, salesStaff, ownCampaign, Campaign.preflight);
+r.post("/campaigns/:id/remove-no-consent", isAuth, salesStaff, ownCampaign, Campaign.removeNoConsent);
 r.get("/contact-lists", isAuth, salesStaff, Campaign.lists.index);
 r.post("/contact-lists", isAuth, salesStaff, Campaign.lists.store);
 r.post("/contact-lists/from-leads", isAuth, salesStaff, Campaign.listFromLeads);
@@ -398,6 +399,24 @@ r.get("/meta/templates", isAuth, isManager, MetaTemplates.index);
 r.get("/system/readiness", isAuth, isManager, async (_req, res) => {
   const { readiness } = await import("../services/SystemServices/Readiness");
   return res.json({ items: await readiness() });
+});
+// takes out of the funnel the affiliates that entered as leads when they wrote (never a student or a lead with a paid charge)
+r.post("/system/affiliate-leads/clean", isAuth, isManager, async (req, res) => {
+  const { affiliateLeads } = await import("../services/SystemServices/Readiness");
+  const { getIO } = await import("../libs/socket");
+  const { logger } = await import("../utils/logger");
+  const leads = await affiliateLeads();
+  // out of the funnel and of every number, like the history (nothing is deleted: tasks, proposals and conversations stay)
+  const { addActivity } = await import("../services/CrmServices/LeadCore");
+  for (const lead of leads) {
+    // eslint-disable-next-line no-await-in-loop
+    await lead.update({ isHistorical: true } as any);
+    // eslint-disable-next-line no-await-in-loop
+    await addActivity(lead.id, Number(req.user.id), "system", "É afiliado(a), não interessado em estudar: saiu do funil e das estatísticas.").catch(() => undefined);
+    getIO().emit("lead", { action: "delete", leadId: lead.id });
+  }
+  logger.warn(`Afiliados tirados do funil por ${req.user.id}: ${leads.map(l => `#${l.id}`).join(", ") || "nenhum"}`);
+  return res.json({ removed: leads.length });
 });
 r.post("/meta/templates", isAuth, isManager, MetaTemplates.store);
 r.post("/meta/templates/pack", isAuth, isManager, MetaTemplates.pack);

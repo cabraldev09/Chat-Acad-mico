@@ -61,7 +61,7 @@ const factsOf = async (contactIds: number[]): Promise<Map<number, ContactFacts>>
     portable(`
     SELECT t.contactId AS contactId,
       MAX(t.id) AS ticketId,
-      SUM(t.unreadMessages) AS unread,
+      (SELECT SUM(u.unreadMessages) FROM Tickets u WHERE u.contactId = t.contactId AND u.segment IN (:segments) AND u.isGroup = false) AS unread,
       MAX(CASE WHEN m.fromMe = false THEN m.createdAt END) AS lastIn,
       MAX(CASE WHEN m.fromMe = true AND m.body NOT LIKE :mark THEN m.createdAt END) AS lastOut
     FROM Tickets t LEFT JOIN Messages m ON m.ticketId = t.id

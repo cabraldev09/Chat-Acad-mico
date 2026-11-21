@@ -9,7 +9,7 @@ import toastError from "../../errors/toastError";
 import IconAction from "../../components/IconAction";
 
 // Configurações → Modelos da Meta: the templates of the official WhatsApp account by department, with their status (updated live), the
-// recommended pack (all Utility, the cheapest paid category, protected from becoming Marketing), and a form to create a new one with its
+// recommended pack (written as notices for Utility, the cheapest paid category; the Meta may still move one to Marketing), and a form to create a new one with its
 // department, where it is used and up to 3 quick-reply buttons.
 const card = { border: "1px solid var(--line-strong)", borderRadius: 12, background: "var(--surface)", padding: 16, boxShadow: "var(--shadow-card)", minWidth: 0 };
 const hint = { fontSize: 13, color: "var(--text-2)", lineHeight: 1.5 };
@@ -46,6 +46,7 @@ const Row = ({ t, onRemove }) => (
     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
       <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 12.5, fontWeight: 600, wordBreak: "break-all", flex: "1 1 160px" }}>{t.name}</span>
       <Badge status={t.status} />
+      {t.category === "MARKETING" && <span title="A Meta classificou como Marketing: cada envio custa mais que Utilidade" style={{ display: "inline-block", fontSize: 12, fontWeight: 700, color: "#b45309", border: "1px solid #b45309", borderRadius: 999, padding: "1px 8px", whiteSpace: "nowrap" }}>Marketing (mais caro)</span>}
       {onRemove && <IconAction title="Remover da conta da Meta" onClick={() => onRemove(t.name)}><Trash2 size={15} /></IconAction>}
     </div>
     {(t.purpose || t.use) && <div style={{ fontSize: 13 }}>{t.purpose}{t.use ? <span style={{ color: "var(--text-2)" }}>{t.purpose ? " · " : ""}{USE[t.use] || t.use}</span> : null}</div>}
@@ -73,6 +74,8 @@ const IN_USE = [
 export default function MetaTemplates({ values, save }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
+  // an automatic refresh that failed: the list on screen may be old (said, with "try again")
+  const [stale, setStale] = useState(false);
   const [busy, setBusy] = useState(false);
   const [sending, setSending] = useState(false);
   const [draft, setDraft] = useState(EMPTY);
@@ -84,9 +87,11 @@ export default function MetaTemplates({ values, save }) {
       const { data: d } = await api.get("/meta/templates");
       setData(d);
       setError("");
+      setStale(false);
       if (d.linked && d.linked.length) toast.success(`Aprovado e já em uso: ${d.linked.join(", ")}.`);
     } catch (err) {
       if (!silent) setError(err?.response?.data?.error || err?.response?.data?.message || "Não foi possível ler os modelos na Meta.");
+      else setStale(true);
     }
     if (!silent) setBusy(false);
   }, []);
@@ -156,6 +161,12 @@ export default function MetaTemplates({ values, save }) {
 
   return (
     <div style={{ display: "grid", gap: 16, minWidth: 0 }}>
+      {stale && (
+        <div role="alert" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", padding: "8px 12px", borderRadius: 10, background: "rgba(245,158,11,.14)", fontSize: 13 }}>
+          <span style={{ flex: "1 1 220px" }}>Não foi possível atualizar agora: a lista pode estar desatualizada.</span>
+          <Button size="small" variant="outlined" onClick={() => load()}>Tentar de novo</Button>
+        </div>
+      )}
       <div style={card}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
           <div style={{ fontWeight: 700, flex: "1 1 220px" }}>Pacote recomendado</div>
@@ -165,7 +176,7 @@ export default function MetaTemplates({ values, save }) {
           </Button>
         </div>
         <div style={hint}>
-          Modelos por departamento, na categoria <b>Utilidade</b> e protegidos (a Meta não pode mudá-los para Marketing). Quem já está conversando com a equipe não recebe "Olá" de novo: o modelo começa pelo nome e diz o que continua. Os de abertura têm botões de resposta, que reabrem a conversa gratuita de 24 horas. Ao ser aprovado, cada um passa a ser usado sozinho no lugar certo.
+          Modelos por departamento, escritos como aviso para a categoria <b>Utilidade</b> (a mais barata). A Meta pode mudar a categoria por conta própria: quando ela passa um modelo para Marketing, ele aparece marcado aqui, porque cada envio fica mais caro. Quem já está conversando com a equipe não recebe "Olá" de novo: o modelo começa pelo nome e diz o que continua. Os de abertura têm botões de resposta, que reabrem a conversa gratuita de 24 horas. Ao ser aprovado, cada um passa a ser usado sozinho no lugar certo.
         </div>
         <div style={{ display: "grid", gap: 14, marginTop: 12 }}>
           {DEPT_ORDER.map((d) => {

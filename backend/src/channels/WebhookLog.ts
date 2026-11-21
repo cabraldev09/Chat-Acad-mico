@@ -18,6 +18,12 @@ export const noteWebhook = (whatsappId: number, outcome: WebhookNote["outcome"],
   target.set(Number(whatsappId), { at: Date.now(), outcome, detail, messages });
 };
 
+// Saving the connection (a new App Secret, token or number) starts the story again: a refusal recorded with the old secret says nothing about the new
+// one, and would keep the warning on screen until the Meta happens to call again
+export const forgetWebhook = (whatsappId: number): void => {
+  deliveries.delete(Number(whatsappId));
+};
+
 export const lastWebhook = (whatsappId: number): WebhookNote | null => deliveries.get(Number(whatsappId)) || null;
 export const lastWebhookCheck = (whatsappId: number): WebhookNote | null => checks.get(Number(whatsappId)) || null;
 

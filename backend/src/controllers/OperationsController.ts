@@ -47,17 +47,28 @@ export const summary = async (req: Request, res: Response): Promise<Response> =>
     CampaignShipping.findAll({ where: { status: "uncertain" }, attributes: ["id", "campaignId", "name", "error"], limit: 50 }),
     Schedule.findAll({ where: { status: "uncertain" }, attributes: ["id", "contactId", "error"], limit: 50 })
   ]);
-  const spend = req.user.profile === "admin" ? {
-    aiEstimatedUsd: Number(await AiUsage.sum("estimatedUsd", { where: { createdAt: { [Op.gte]: since } } }) || 0),
-    aiUnpricedCalls: await AiUsage.count({ where: { createdAt: { [Op.gte]: since }, estimatedUsd: null as any } }),
-    aiReservedTokens: Number(await AiBudgetReservation.sum("tokens", { where: { expiresAt: { [Op.gt]: new Date() } } }) || 0),
-    messages: await OutboundDelivery.count({ where: { createdAt: { [Op.gte]: since }, status: { [Op.in]: ["sent", "sending", "uncertain"] } } }),
-    metaEstimatedUsd: Number(await OutboundDelivery.sum("estimatedUsd", { where: { createdAt: { [Op.gte]: since }, status: { [Op.in]: ["sent", "sending", "uncertain"] } } }) || 0),
-    metaUnpricedMessages: await OutboundDelivery.count({ where: { createdAt: { [Op.gte]: since }, channel: { [Op.in]: ["whatsapp_cloud", "messenger", "instagram"] }, estimatedUsd: null as any } }),
-    qualified: await TicketEvent.count({ distinct: true, col: "ticketId", where: { type: "ai_qualified", createdAt: { [Op.gte]: since } } }),
-    enrollments: await Lead.count({ where: { enrolledAt: { [Op.gte]: since } } })
-  } : null;
-  return res.json({ unassigned, uncertain, shippings, schedules, queues, users: await Promise.all(users.map(async u => ({ ...u.toJSON(), openTickets: await Ticket.count({ where: { userId: u.id, status: { [Op.ne]: "closed" } } }) }))), spend });
+  // the spending of the day, every number in parallel (admin only)
+  const spend = req.user.profile === "admin" ? await (async () => {
+    const sent = { createdAt: { [Op.gte]: since }, status: { [Op.in]: ["sent", "sending", "uncertain"] } };
+    const [aiUsd, aiUnpriced, reserved, messages, metaUsd, metaUnpriced, qualified, enrollments] = await Promise.all([
+      AiUsage.sum("estimatedUsd", { where: { createdAt: { [Op.gte]: since } } }),
+      AiUsage.count({ where: { createdAt: { [Op.gte]: since }, estimatedUsd: null as any } }),
+      AiBudgetReservation.sum("tokens", { where: { expiresAt: { [Op.gt]: new Date() } } }),
+      OutboundDelivery.count({ where: sent as any }),
+      OutboundDelivery.sum("estimatedUsd", { where: sent as any }),
+      OutboundDelivery.count({ where: { createdAt: { [Op.gte]: since }, channel: { [Op.in]: ["whatsapp_cloud", "messenger", "instagram"] }, estimatedUsd: null as any } }),
+      TicketEvent.count({ distinct: true, col: "ticketId", where: { type: "ai_qualified", createdAt: { [Op.gte]: since } } }),
+      Lead.count({ where: { enrolledAt: { [Op.gte]: since } } })
+    ]);
+    return {
+      aiEstimatedUsd: Number(aiUsd || 0), aiUnpricedCalls: aiUnpriced, aiReservedTokens: Number(reserved || 0), messages,
+      metaEstimatedUsd: Number(metaUsd || 0), metaUnpricedMessages: metaUnpriced, qualified, enrollments
+    };
+  })() : null;
+  // the open conversations of each person in one grouped query (not one count per person)
+  const open = (await Ticket.count({ where: { status: { [Op.ne]: "closed" }, userId: { [Op.ne]: null } } as any, group: ["userId"] })) as unknown as Array<{ userId: number; count: number }>;
+  const openOf = new Map(open.map(r => [Number(r.userId), Number(r.count)]));
+  return res.json({ unassigned, uncertain, shippings, schedules, queues, users: users.map(u => ({ ...u.toJSON(), openTickets: openOf.get(u.id) || 0 })), spend });
 };
 export const capacity = async (req: Request, res: Response): Promise<Response> => {
   const user = await User.findByPk(req.params.id);

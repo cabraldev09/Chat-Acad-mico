@@ -525,9 +525,11 @@ const AffiliatePortal = ({ match }) => {
             {data.faq.map((f, i) => <details className="ca-faq" key={i}><summary>{f.q}</summary><p>{f.a}</p></details>)}
             <div className="ca-box" style={{ marginTop: 32 }}>
               <h3>Conte com a equipe</h3>
-              <p className="ca-help" style={{ margin: "4px 0 14px" }}>Precisa de ajuda para orientar uma pessoa interessada?</p>
+              <p className="ca-help" style={{ margin: "4px 0 14px" }}>
+                Precisa de ajuda para orientar uma pessoa interessada? Fale pelo WhatsApp oficial{owner ? <>: quem atende é <b>{owner.name}</b>, o seu consultor</> : ""}. Para indicar alguém, é só enviar o contato da pessoa nessa mesma conversa.
+              </p>
               {data.support ? (
-                <a className="ca-btn is-primary" href={data.support.url} target="_blank" rel="noopener noreferrer"><MessageCircle size={16} /> Falar com o suporte</a>
+                <a className="ca-btn is-primary" href={data.support.url} target="_blank" rel="noopener noreferrer"><MessageCircle size={16} /> Falar com {owner ? owner.name.split(" ")[0] : "o suporte"} no WhatsApp</a>
               ) : owner ? <small>Fale com o seu consultor, {owner.name}.</small> : <small>Fale com o seu consultor.</small>}
             </div>
           </>

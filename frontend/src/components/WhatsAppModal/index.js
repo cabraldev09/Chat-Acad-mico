@@ -25,6 +25,7 @@ import { i18n } from "../../translate/i18n";
 import toastError from "../../errors/toastError";
 import QueueSelect from "../QueueSelect";
 import { AuthContext } from "../../context/Auth/AuthContext";
+import { dayDefault, standardDays } from "../../utils/workWeek";
 import { isManager } from "../../utils/access";
 
 const WEBHOOK_OUTCOME = {
@@ -65,15 +66,7 @@ const DAYS = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sáb
 const defaultHours = () => ({
 	enabled: false,
 	timezone: "America/Porto_Velho",
-	days: {
-		0: [],
-		1: [{ start: "08:00", end: "18:00" }],
-		2: [{ start: "08:00", end: "18:00" }],
-		3: [{ start: "08:00", end: "18:00" }],
-		4: [{ start: "08:00", end: "18:00" }],
-		5: [{ start: "08:00", end: "18:00" }],
-		6: [],
-	},
+	days: standardDays(),
 });
 
 // a stored value of another shape (an old format, {}) must not break the editor: every day exists
@@ -282,7 +275,7 @@ const WhatsAppModal = ({ open, onClose, whatsAppId, onCreated }) => {
 	const setDay = (d, on) =>
 		setHours({
 			...hours,
-			days: { ...hours.days, [d]: on ? [{ start: "08:00", end: "18:00" }] : [] },
+			days: { ...hours.days, [d]: on ? [dayDefault(d)] : [] },
 		});
 	const setDayTime = (d, key, value) =>
 		setHours({
@@ -495,7 +488,8 @@ const WhatsAppModal = ({ open, onClose, whatsAppId, onCreated }) => {
 								margin="dense"
 								label={f.label}
 								type={f.secret ? "password" : "text"}
-								autoComplete="off"
+								autoComplete={f.secret ? "new-password" : "off"}
+								inputProps={{ name: `cred-${f.key}`, "data-lpignore": "true", "data-1p-ignore": "true" }}
 								value={config[f.key] || ""}
 								onChange={e => setConfig({ ...config, [f.key]: e.target.value })}
 								placeholder={savedKeys[f.key] ? `Salvo (termina em ${savedKeys[f.key].slice(4)}). Cole aqui só para trocar.` : undefined}

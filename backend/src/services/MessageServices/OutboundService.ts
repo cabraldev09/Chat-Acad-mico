@@ -100,28 +100,34 @@ export const processOutbound = async (id: number): Promise<void> => {
     SetTicketMessagesAsRead(ticket);
     const quotedMsg = payload.quotedMsgId ? await Message.findByPk(payload.quotedMsgId) : undefined;
     let providerId: string | undefined;
+    // each piece has its own delivery key: a retry after the 2nd file failed does not send the 1st again (it answers with the first send)
     if (payload.medias?.length) {
       // sequential: keeps the order the agent chose and paces unofficial connections
-      for (const media of payload.medias as OutboundMedia[]) {
+      const medias = payload.medias as OutboundMedia[];
+      for (let i = 0; i < medias.length; i += 1) {
         // eslint-disable-next-line no-await-in-loop
-        const sent = await SendWhatsAppMedia({ media: media as any, ticket, body: (media.caption || "").trim() || undefined });
+        const sent = await SendWhatsAppMedia({ media: medias[i] as any, ticket, body: (medias[i].caption || "").trim() || undefined, deliveryKey: `outbound:${row.id}:${i}` });
         providerId = sent?.id || providerId;
       }
     } else {
-      const sent = await SendWhatsAppMessage({ body: payload.body, ticket, quotedMsg: quotedMsg || undefined });
+      const sent = await SendWhatsAppMessage({ body: payload.body, ticket, quotedMsg: quotedMsg || undefined, deliveryKey: `outbound:${row.id}` });
       providerId = sent?.id;
     }
-    await row.update({ status: "sent", sentAt: new Date(), providerMsgId: providerId || null, lockedAt: null, error: null });
+    // only a row still in "sending" changes (the sweep may have reported it meanwhile)
+    await OutboundMessage.update({ status: "sent", sentAt: new Date(), providerMsgId: providerId || null, lockedAt: null, error: null } as any, { where: { id: row.id, status: "sending" } as any });
     touchAnalytics(row.userId);
     hookHumanReply(ticket.contactId, row.userId);
   } catch (err) {
     const reason = String((err as any)?.message || err);
-    // a refusal that will not change by trying again (the channel's reply window is closed) is reported at once
-    if (reason !== "ERR_REPLY_WINDOW_CLOSED" && row.attempts < MAX_ATTEMPTS) {
-      // the call failed before WhatsApp accepted it: try again soon
-      await row.update({ status: "pending", lockedAt: null, error: reason.slice(0, 1000), nextAttemptAt: new Date(Date.now() + 5000 * row.attempts) });
+    // not retried: a refusal that will not change (closed reply window) and a send that may already have reached the phone
+    // (ERR_DELIVERY_UNCERTAIN: the delivery of this key started and was not confirmed) — the person checks the conversation
+    const final = ["ERR_REPLY_WINDOW_CLOSED", "ERR_DELIVERY_UNCERTAIN", "ERR_DELIVERY_KEY_CONFLICT"].includes(reason);
+    if (!final && row.attempts < MAX_ATTEMPTS) {
+      // the call failed before WhatsApp accepted it: try again soon (only while the row is still ours: a row the sweep reported stays reported)
+      await OutboundMessage.update({ status: "pending", lockedAt: null, error: reason.slice(0, 1000), nextAttemptAt: new Date(Date.now() + 5000 * row.attempts) } as any, { where: { id: row.id, status: "sending" } as any });
     } else {
-      await fail(row, reason);
+      const [mine] = await OutboundMessage.update({ status: "sending" } as any, { where: { id: row.id, status: "sending" } as any });
+      if (mine) await fail(row, reason === "ERR_DELIVERY_UNCERTAIN" ? "Não foi possível confirmar o envio. Confira a conversa antes de enviar de novo." : reason);
     }
   }
 };

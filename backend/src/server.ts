@@ -9,6 +9,7 @@ import { initIO } from "./libs/socket";
 import { logger } from "./utils/logger";
 import { StartAllWhatsAppsSessions } from "./services/WbotServices/StartAllWhatsAppsSessions";
 import { startScheduler } from "./workers/Scheduler";
+import { startMetaWebhookQueue } from "./services/ChannelServices/MetaWebhookQueue";
 import { startCampaignRunner } from "./workers/CampaignRunner";
 import { startCrmReminders } from "./workers/CrmReminders";
 import { startLeadSlaAlert } from "./workers/LeadSlaAlert";
@@ -19,6 +20,7 @@ import { startProcessEval } from "./services/AiServices/ProcessEval";
 import { startWhatsappWatchdog } from "./workers/WhatsappWatchdog";
 import { startChannelTokenRefresh } from "./workers/ChannelTokenRefresh";
 import { startCloudHealth } from "./workers/CloudHealth";
+import { startPendingDigest } from "./workers/PendingDigest";
 import { startDataRetention } from "./workers/DataRetention";
 import { startFollowUpAlert } from "./workers/FollowUpAlert";
 import { startProfilePicSync } from "./workers/ProfilePicSync";
@@ -53,6 +55,7 @@ const boot = async () => {
 whenLeader(() => {
   StartAllWhatsAppsSessions();
   startScheduler();
+  startMetaWebhookQueue();
   startWebhookQueue();
   startCampaignRunner();
   startCrmReminders();
@@ -66,6 +69,7 @@ whenLeader(() => {
   startWhatsappWatchdog();
   startChannelTokenRefresh();
   startCloudHealth();
+  startPendingDigest();
   startDataRetention();
   startFollowUpAlert();
   startProfilePicSync();
