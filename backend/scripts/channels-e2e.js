@@ -4736,7 +4736,9 @@ const postMeta = (id, payload, secret, badSig) => {
       before = graph.sent.length;
       await http.put(`/tickets/${tk}/tags`, { tagIds: [tag.id] }, auth());
       await waitFor(() => sentTexts(before).some(t => t.includes("Gatilho de etiqueta funcionou")), 12000, "trigger message");
-      const list = (await http.get("/automation-triggers", auth())).data.find(t => t.id === trig.data.id);
+      // the flow sends its message and then counts the run: wait for the count, not only for the message
+      let list = null;
+      await waitFor(async () => { list = (await http.get("/automation-triggers", auth())).data.find(t => t.id === trig.data.id); return list && list.runCount === 1; }, 5000, "trigger run counted");
       assert(list.runCount === 1 && list.flowName === "Resposta ao gatilho", `run count ${list.runCount}`);
       // the same trigger does not repeat on the same conversation right away
       before = graph.sent.length;
