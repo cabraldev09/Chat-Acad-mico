@@ -174,7 +174,21 @@ export const findDuplicate = async (phone: string | null, email: string | null, 
 };
 
 // Creates a lead, or enriches the existing one when the same person arrives again
+// a lead that comes with consent (a form the person filled) records it on the contact too (see SafetyServices/Consent)
 export const upsertLead = async (
+  input: LeadInput,
+  actorId?: number | null
+): Promise<{ lead: Lead; created: boolean }> => {
+  const out = await upsertLeadCore(input, actorId);
+  if ((input as any).consentAt) {
+    const { noteConsent, noteConsentByPhone } = await import("../SafetyServices/Consent");
+    if (out.lead.contactId) await noteConsent(out.lead.contactId, "form").catch(() => undefined);
+    else await noteConsentByPhone(input.phone, "form").catch(() => undefined);
+  }
+  return out;
+};
+
+const upsertLeadCore = async (
   input: LeadInput,
   actorId?: number | null
 ): Promise<{ lead: Lead; created: boolean }> => {

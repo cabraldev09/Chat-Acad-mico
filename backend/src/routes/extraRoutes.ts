@@ -278,6 +278,7 @@ r.post("/campaigns/:id/retry-failed", isAuth, salesStaff, ownCampaign, Campaign.
 r.post("/campaigns/:id/duplicate", isAuth, salesStaff, ownCampaign, Campaign.duplicate);
 r.post("/campaigns/:id/test", isAuth, salesStaff, ownCampaign, Campaign.sendTest);
 r.get("/campaigns/:id/preflight", isAuth, salesStaff, ownCampaign, Campaign.preflight);
+r.post("/campaigns/:id/remove-no-consent", isAuth, salesStaff, ownCampaign, Campaign.removeNoConsent);
 r.get("/contact-lists", isAuth, salesStaff, Campaign.lists.index);
 r.post("/contact-lists", isAuth, salesStaff, Campaign.lists.store);
 r.post("/contact-lists/from-leads", isAuth, salesStaff, Campaign.listFromLeads);

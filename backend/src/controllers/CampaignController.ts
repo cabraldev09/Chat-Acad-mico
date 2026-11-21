@@ -363,7 +363,7 @@ const preflightOf = async (campaign: Campaign): Promise<Record<string, any>> => 
   const contacts: Contact[] = [];
   for (const part of chunk([...new Set(variantsOf.flat())], 800)) {
     // eslint-disable-next-line no-await-in-loop
-    contacts.push(...(await Contact.findAll({ where: { number: { [Op.in]: part } }, attributes: ["id", "number", "optOut"] })));
+    contacts.push(...(await Contact.findAll({ where: { number: { [Op.in]: part } }, attributes: ["id", "number", "optOut", "consentAt"] })));
   }
   const warm = new Set<number>();
   for (const part of chunk(contacts.map(c => c.id), 800)) {
@@ -381,12 +381,15 @@ const preflightOf = async (campaign: Campaign): Promise<Record<string, any>> => 
   const relaxed = !!whatsapp && whatsapp.riskMode === "relaxed";
   let optedOut = 0;
   let cold = 0;
+  // consent is registered, not required: the team sees how many have none (and may take them out of the list)
+  let noConsent = 0;
   variantsOf.forEach(vs => {
     const c = vs.map(v => byNumber.get(v)).find(Boolean);
     if (c && c.optOut) {
       optedOut += 1;
       return;
     }
+    if (!c || !c.consentAt) noConsent += 1;
     const isWarm = !!c && warm.has(c.id);
     // cold contacts: only a template (official API) or a flexible QR connection may write to them
     if (!isWarm && !template && !(whatsapp && isUnofficial(whatsapp) && relaxed) && (official || (whatsapp && isUnofficial(whatsapp)))) cold += 1;
@@ -412,6 +415,9 @@ const preflightOf = async (campaign: Campaign): Promise<Record<string, any>> => 
         : `${cold} ${cold === 1 ? "contato nunca respondeu" : "contatos nunca responderam"} e esta conexão está em modo seguro: ${cold === 1 ? "ele será pulado" : "eles serão pulados"}. Para escrever a quem nunca respondeu, use a API oficial com um modelo ou o modo flexível (com mais risco para o número).`
     );
   }
+  if (noConsent) {
+    warnings.push(`${noConsent} ${noConsent === 1 ? "contato não tem" : "contatos não têm"} consentimento registrado (formulário, conversa iniciada pela pessoa ou lista importada com consentimento). Dá para tirá-los da lista antes de enviar.`);
+  }
   if (safety && safety.dailyLimit !== null && canReceive > Math.max(0, safety.dailyLimit - (safety.sentToday || 0))) {
     warnings.push(`Esta conexão envia até ${safety.dailyLimit} por dia em campanhas (hoje já foram ${safety.sentToday}): o envio continua nos dias seguintes.`);
   }
@@ -419,6 +425,7 @@ const preflightOf = async (campaign: Campaign): Promise<Record<string, any>> => 
     total,
     canReceive,
     blocked: { optedOut, cold },
+    noConsent,
     messagesPerPerson,
     estimatedSeconds,
     connection: whatsapp ? { id: whatsapp.id, name: whatsapp.name, channel: whatsapp.channel, status: whatsapp.status, riskMode: whatsapp.riskMode || "strict" } : null,
@@ -589,6 +596,14 @@ export const importItems = async (req: Request, res: Response): Promise<Response
     });
   });
   await ContactListItem.bulkCreate(toCreate);
+  // "tenho o consentimento destes contatos": recorded on the contacts that already exist (the import is the source)
+  if (req.body.consent === true && toCreate.length) {
+    const { noteConsentByPhone } = await import("../services/SafetyServices/Consent");
+    for (const item of toCreate) {
+      // eslint-disable-next-line no-await-in-loop
+      await noteConsentByPhone(item.number, "import");
+    }
+  }
   return res.json({ imported: toCreate.length, skipped, invalid, duplicated: skipped - invalid });
 };
 
@@ -607,4 +622,21 @@ export const templates = async (req: Request, res: Response): Promise<Response> 
   await assertConnectionUse(req, whatsappId);
   const { approvedTemplates, TEMPLATE_VARIABLES } = await import("../services/CampaignServices/Templates");
   return res.json({ templates: await approvedTemplates(whatsappId), variables: TEMPLATE_VARIABLES });
+};
+
+// takes out of the campaign's list the contacts without registered consent (only before the campaign starts sending)
+export const removeNoConsent = async (req: Request, res: Response): Promise<Response> => {
+  const campaign = await Campaign.findByPk(req.params.id);
+  if (!campaign) throw new AppError("ERR_NOT_FOUND", 404);
+  if (await CampaignShipping.count({ where: { campaignId: campaign.id } })) throw new AppError("ERR_CAMPAIGN_ALREADY_STARTED", 409);
+  const items = await ContactListItem.findAll({ where: { contactListId: campaign.contactListId }, attributes: ["id", "number"] });
+  const variants = [...new Set(items.flatMap(i => brPhoneVariants(i.number)))];
+  const consented = new Set<string>();
+  for (const part of chunk(variants, 800)) {
+    // eslint-disable-next-line no-await-in-loop
+    (await Contact.findAll({ where: { number: { [Op.in]: part }, consentAt: { [Op.ne]: null } } as any, attributes: ["number"] })).forEach(c => consented.add(c.number));
+  }
+  const out = items.filter(i => !brPhoneVariants(i.number).some(v => consented.has(v))).map(i => i.id);
+  if (out.length) await ContactListItem.destroy({ where: { id: { [Op.in]: out } } as any });
+  return res.json({ removed: out.length });
 };

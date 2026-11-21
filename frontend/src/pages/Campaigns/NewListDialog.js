@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { toast } from "react-toastify";
 import {
-  Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField, MenuItem, Tabs, Tab, Typography, makeStyles,
+  Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField, MenuItem, Tabs, Tab, Typography, makeStyles, Checkbox, FormControlLabel,
 } from "@material-ui/core";
 
 import api from "../../services/api";
@@ -33,13 +33,15 @@ const NewListDialog = ({ open, onClose, onCreated, initialMode = 0, targetList =
   const [onboardingDone, setOnboardingDone] = useState(false);
   const [enrolledDays, setEnrolledDays] = useState("");
   const [pasted, setPasted] = useState("");
+  // the pasted people agreed to receive messages (recorded on their contacts as consent from an imported list)
+  const [consent, setConsent] = useState(false);
   const [opts, setOpts] = useState({ stages: [], courses: [], polos: [], tags: [], sources: [], users: [] });
   const [count, setCount] = useState(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (!open) return;
-    setMode(tutor ? 0 : initialMode); setName(targetList ? targetList.name : ""); setPasted(""); setCount(null); setAudience(tutor ? "students" : "leads"); setOnboardingDone(false); setEnrolledDays("");
+    setMode(tutor ? 0 : initialMode); setName(targetList ? targetList.name : ""); setPasted(""); setConsent(false); setCount(null); setAudience(tutor ? "students" : "leads"); setOnboardingDone(false); setEnrolledDays("");
     setF({ stageId: "", courseId: "", poloId: "", tagId: "", source: "", noReplyDays: "", ownerId: "", tutorId: "" });
     Promise.all([
       api.get("/lead-stages").catch(() => ({ data: [] })),
@@ -74,7 +76,7 @@ const NewListDialog = ({ open, onClose, onCreated, initialMode = 0, targetList =
         toast.success(targetList ? `${data.imported} ${data.imported === 1 ? "pessoa adicionada" : "pessoas adicionadas"} à lista${data.skipped ? ` (${data.skipped} já estavam)` : ""}.` : `Lista criada com ${data.imported} ${data.imported === 1 ? "pessoa" : "pessoas"}.`);
       } else {
         const { data: created } = await api.post("/contact-lists", { name });
-        const { data } = await api.post(`/contact-lists/${created.id}/import`, { items: parsePasted(pasted) });
+        const { data } = await api.post(`/contact-lists/${created.id}/import`, { items: parsePasted(pasted), consent });
         list = { id: created.id, name: created.name };
         toast.success(`Lista criada: ${data.imported} importados, ${data.skipped} ignorados (repetidos ou inválidos).`);
       }
@@ -146,6 +148,7 @@ const NewListDialog = ({ open, onClose, onCreated, initialMode = 0, targetList =
           <>
             <Typography variant="body2" color="textSecondary" gutterBottom>Uma pessoa por linha, no formato <b>nome;número</b> (ou só o número com DDI, ex.: 5569999990000).</Typography>
             <TextField fullWidth multiline rows={7} variant="outlined" margin="dense" value={pasted} onChange={(e) => setPasted(e.target.value)} placeholder={"Maria;5569999990000\n5569988880000"} />
+            <FormControlLabel control={<Checkbox color="primary" checked={consent} onChange={(e) => setConsent(e.target.checked)} />} label="Tenho o consentimento destas pessoas para enviar mensagens" />
           </>
         )}
       </DialogContent>
