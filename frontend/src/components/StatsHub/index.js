@@ -12,16 +12,18 @@ export const hubSections = (user) => {
   const tutor = !!user && ["tutor", "academico"].includes(user.role);
   return [
     { dept: "Comercial", icon: Briefcase, items: [
+      !tutor && { to: "/estatisticas", label: manager ? "Visão geral" : "Meus números" },
       manager && { to: "/gestao-comercial", label: "Gestão comercial" },
       { to: "/estatisticas/captacao", label: "Captação e resultados" },
       manager && { to: "/crm/matriculas", label: "Matrículas realizadas" },
-      { to: "/reports", label: manager ? "Atendimento e canais" : "Meus números" },
+      { to: "/reports", label: manager ? "Atendimento e canais" : "Meu atendimento" },
     ].filter(Boolean) },
     (manager || tutor) && { dept: "Tutoria", icon: GraduationCap, items: [{ to: "/estatisticas/tutoria", label: manager ? "Desempenho da tutoria" : "Minha tutoria" }] },
   ].filter(Boolean);
 };
 
-export const hubHome = (user) => (isManager(user) ? "/gestao-comercial" : user && ["tutor", "academico"].includes(user.role) ? "/estatisticas/tutoria" : "/reports");
+// the panel of /estatisticas is the home of the hub for everybody (each one sees what they may see there)
+export const hubHome = () => "/estatisticas";
 
 const StatsHubBar = () => {
   const { user } = useContext(AuthContext);

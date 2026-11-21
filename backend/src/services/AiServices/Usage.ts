@@ -3,7 +3,7 @@ import { Op, fn, col } from "sequelize";
 import { usageCounts } from "./Policy";
 import AiUsage from "../../models/AiUsage";
 import { dayBounds } from "../../helpers/AppTime";
-import { getSetting } from "../../helpers/AppSettings";
+import { priceInfoOf } from "./Prices";
 
 interface Counts {
   input_tokens?: number;
@@ -59,9 +59,8 @@ export const tokensToday = async (agentId: number): Promise<number> => {
   return Number(row?.i || 0) + Number(row?.o || 0) + Number(row?.r || 0) + Number(row?.w || 0);
 };
 
-// Prices are not guessed: set "ai_price_<model>" = "entrada,saida" (US$ per million tokens) to see costs.
+// The price saved for the model (Agentes de IA → Uso) or, without one, the reference price of the known models (Prices.ts)
 export const priceOf = async (model: string): Promise<{ in: number; out: number } | null> => {
-  const raw = await getSetting(`ai_price_${model}`, "");
-  const [i, o] = raw.split(",").map(Number);
-  return Number.isFinite(i) && Number.isFinite(o) && raw ? { in: i, out: o } : null;
+  const info = await priceInfoOf(model);
+  return info ? { in: info.in, out: info.out } : null;
 };

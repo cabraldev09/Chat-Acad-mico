@@ -3522,7 +3522,8 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.post(`/ai-agents/${aiId}/test`, { messages: [] }, auth())).status === 400, "empty conversation accepted");
       const u = (await http.get(`/ai-agents/${aiId}/usage`, auth())).data;
       assert(u.total.calls >= 5 && u.total.input > 0 && u.cap === 0, `usage ${JSON.stringify(u)}`);
-      assert(u.costUsd === null && u.total.cacheShare === 0, "no price typed: the cost is not guessed");
+      // no price typed: the reference price of the known model is used (claude-haiku-5-5 in Prices.ts), so the spending is never shown as zero
+      assert(Number(u.costUsd) > 0 && u.total.cacheShare === 0, `reference price not used: ${u.costUsd}`);
       // the cached part of the prompt is charged at its own rate: reading costs a tenth of the input price, writing 25% more
       sql(`INSERT INTO Settings ("key", value, createdAt, updatedAt) VALUES ('ai_price_claude-haiku-5-5', '1000000,0', NOW(), NOW())`);
       const before = Number((await http.get(`/ai-agents/${aiId}/usage`, auth())).data.costUsd);
@@ -4304,7 +4305,8 @@ const postMeta = (id, payload, secret, badSig) => {
       const f = e => m.funnel.find(x => x.event === e).leads;
       assert(f("lead_received") >= 5 && f("contact_started") >= 5 && f("replied") >= 5 && f("qualified") >= 2 && f("ready_for_proposal") >= 1 && f("human_handoff") >= 1 && f("follow_up") >= 1, `funnel ${JSON.stringify(m.funnel)}`);
       assert(m.ai.turns >= 15 && m.ai.deterministicTurns >= 8 && m.ai.llmCalls >= 5 && m.ai.toolCalls >= 3 && m.ai.tokens.total > 0 && m.ai.deterministicShare > 30, `ai ${JSON.stringify(m.ai)}`);
-      assert(m.ai.perConversation > 0 && m.ai.priceSet === false && m.ai.costUsd === null, "the cost must not be guessed without a configured price");
+      // no price typed: the reference price of the known model of the agent is used (Prices.ts), so the spending is not shown as zero
+      assert(m.ai.perConversation > 0 && m.ai.priceSet === true && Number(m.ai.costUsd) > 0, `the reference price was not used: ${JSON.stringify({ priceSet: m.ai.priceSet, costUsd: m.ai.costUsd })}`);
       assert(m.unknownQuestions >= 1, "unknown question not counted");
       assert(m.handoffs && m.handoffs.total >= 5 && m.handoffs.byReason.some(r => r.why === "complaint") && m.handoffs.byReason.some(r => r.why === "proposal"), `handoffs ${JSON.stringify(m.handoffs)}`);
       assert(m.technical.errors >= 1 && m.technical.guards >= 2, `technical ${JSON.stringify(m.technical)}`);
@@ -5685,6 +5687,13 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(costs.status === 200 && costs.data.total.calls >= 2 && costs.data.total.unpriced >= 1, `ai costs ${JSON.stringify(costs.data).slice(0, 300)}`);
       assert(costs.data.byProvider.some(p => p.label === "OpenAI") && costs.data.byProvider.some(p => p.label === "Anthropic"), "the providers");
       assert(costs.data.byKind.some(k => k.label === "Leitura de documentos e prints"), "the kinds");
+      // the price of each model of the period: the reference one for a known model, none for an unknown one; no admin key, no real bill
+      assert(costs.data.prices.some(p => p.model === "gpt-4o-mini" && p.source === "padrão" && p.in === 0.15) && costs.data.real === null && costs.data.budget === null, `prices ${JSON.stringify(costs.data.prices)}`);
+      // the budget of the month: what is left and the warning from 80%
+      assert((await http.put("/operations/config", { ai_monthly_budget_usd: "0.001" }, auth())).status === 200, "budget saved");
+      const withBudget = (await http.get("/operations/ai-costs", { params: { days: 1 }, ...auth() })).data;
+      assert(withBudget.budget && withBudget.budget.limit === 0.001 && withBudget.budget.warn === true && withBudget.budget.remaining === 0, `budget ${JSON.stringify(withBudget.budget)}`);
+      await http.put("/operations/config", { ai_monthly_budget_usd: "0" }, auth());
       const consTok = (await http.post("/auth/login", { email: "consultorm@matricula.test", password: "senha123" })).data.token;
       assert((await http.get("/operations/ai-costs", asUser(consTok))).status === 403, "a consultant read the AI costs");
       // the welcome text: the tutor's own one first, else the company's

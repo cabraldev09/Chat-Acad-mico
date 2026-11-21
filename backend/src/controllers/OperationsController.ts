@@ -1,6 +1,8 @@
 import { Request, Response } from "express";
 import { Op, QueryTypes } from "sequelize";
 import sequelize from "../database";
+import { priceInfoOf, PRICES_DATE } from "../services/AiServices/Prices";
+import { monthBudget, openaiRealCosts } from "../services/AiServices/RealCosts";
 import { OPERATION_DEFAULTS, FINANCIAL_KEYS, validateOperationSetting } from "../helpers/OperationSettings";
 import { getSetting, setSetting } from "../helpers/AppSettings";
 import { dayBounds } from "../helpers/AppTime";
@@ -152,6 +154,12 @@ export const aiCosts = async (req: Request, res: Response): Promise<Response> =>
     byKind: sort(byKind),
     byModel: sort(byModel),
     byProvider: sort(byProvider),
-    caps: { dailyUsd: Number(await getSetting("ai_daily_usd_cap", "0")) || 0, dailyTokens: Number(await getSetting("ai_daily_token_cap", "0")) || 0 }
+    caps: { dailyUsd: Number(await getSetting("ai_daily_usd_cap", "0")) || 0, dailyTokens: Number(await getSetting("ai_daily_token_cap", "0")) || 0 },
+    // the price used for each model of the period: the one typed in Agentes de IA → Uso or the reference price (with the date of the table)
+    prices: await Promise.all([...byModel.keys()].filter(m => m && m !== "?").map(async model => ({ model, ...(await priceInfoOf(model)) }))),
+    pricesDate: PRICES_DATE,
+    // what the OpenAI really charged in the same days (needs the administrator key) and the budget of the month
+    real: await openaiRealCosts(since).catch(() => null),
+    budget: await monthBudget().catch(() => null)
   });
 };

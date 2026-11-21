@@ -10,11 +10,18 @@ import { chatIdOf } from "../helpers/ChatId";
 import { isLocalPic } from "../helpers/PicUrl";
 import { whatsappProvider } from "../providers/WhatsApp";
 import { logger } from "../utils/logger";
+import { getIO } from "../libs/socket";
 
 const AVATAR_DIR = path.join(PUBLIC_DIR, "avatars");
 const RETRY_AFTER_MS = 7 * 24 * 3600 * 1000;
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 let running = false;
+// a person who just wrote (official number included) goes first: the picture shows in the list and in the notification within seconds
+const urgent = new Set<number>();
+export const pictureSoon = (contactId: number): void => {
+  if (contactId) urgent.add(contactId);
+  if (urgent.size > 500) urgent.clear();
+};
 
 // WhatsApp's picture links stop working after a while, so the real picture of each person and group is
 // downloaded once and kept on our side. People are processed a few at a time, conversations first, so
@@ -46,20 +53,31 @@ const tick = async (): Promise<void> => {
     if (!connection || !whatsappProvider.getChatPicUrl) return;
 
     const retryBefore = new Date(Date.now() - RETRY_AFTER_MS);
-    const batch = await Contact.findAll({
+    const firstIds = [...urgent].slice(0, 5);
+    firstIds.forEach(id => urgent.delete(id));
+    const first = firstIds.length ? await Contact.findAll({
+      where: {
+        id: firstIds,
+        isGroup: false,
+        [Op.or]: [{ profilePicUrl: { [Op.is]: null } }, { profilePicUrl: { [Op.like]: "http%" } }],
+        [Op.and]: [{ [Op.or]: [{ picCheckedAt: { [Op.is]: null } }, { picCheckedAt: { [Op.lt]: new Date(Date.now() - 24 * 3600 * 1000) } }] }]
+      } as any
+    }) : [];
+    const rest = await Contact.findAll({
       where: {
         [Op.and]: [
           { [Op.or]: [{ profilePicUrl: { [Op.is]: null } }, { profilePicUrl: { [Op.like]: "http%" } }] },
           { [Op.or]: [{ picCheckedAt: { [Op.is]: null } }, { picCheckedAt: { [Op.lt]: retryBefore } }] }
         ]
       } as any,
-      // people with a conversation first
+      // people with the most recent conversations first (the new leads of today before the old contacts)
       order: [
-        [literal(`(SELECT COUNT(*) FROM "Tickets" t WHERE t."contactId" = "Contact"."id") > 0`), "DESC"],
-        ["id", "ASC"]
+        [literal(`(SELECT MAX(t."updatedAt") FROM "Tickets" t WHERE t."contactId" = "Contact"."id")`), "DESC NULLS LAST"],
+        ["id", "DESC"]
       ],
       limit: 10
     });
+    const batch = [...first, ...rest.filter(c => !first.some(f => f.id === c.id))];
 
     for (const contact of batch) {
       try {
@@ -75,6 +93,8 @@ const tick = async (): Promise<void> => {
         if (buf) {
           // eslint-disable-next-line no-await-in-loop
           await contact.update({ profilePicUrl: save(contact, buf), picCheckedAt: new Date() });
+          // the open screens (list, conversation, notification) show the picture without reloading
+          getIO().emit("contact", { action: "update", contact });
         } else {
           // no picture (private or none): ask again in a week
           // eslint-disable-next-line no-await-in-loop
@@ -93,6 +113,37 @@ const tick = async (): Promise<void> => {
   } finally {
     running = false;
   }
+};
+
+// the profile of one person, read now (the contact panel): the picture (saved on our side) and the "recado", through a WhatsApp by QR Code.
+// The official API of the Meta gives neither, so without a QR connection the panel shows the initials.
+export const readProfileNow = async (contact: Contact): Promise<{ about: string | null; refreshed: boolean; viaQr: boolean }> => {
+  const connection = await Whatsapp.findOne({ where: { status: "CONNECTED", channel: "whatsapp" }, order: [["id", "ASC"]] });
+  if (!connection || contact.isGroup) return { about: null, refreshed: false, viaQr: false };
+  const chatId = chatIdOf(contact, false);
+  const timeout = <T>(p: Promise<T>): Promise<T | undefined> => Promise.race([p, new Promise<undefined>(resolve => setTimeout(resolve, 8000))]);
+  let refreshed = false;
+  try {
+    const recent = contact.picCheckedAt && Date.now() - new Date(contact.picCheckedAt).getTime() < 6 * 3600 * 1000;
+    if (whatsappProvider.getChatPicUrl && (!recent || !isLocalPic(contact.getDataValue("profilePicUrl")))) {
+      const url = await timeout(whatsappProvider.getChatPicUrl(connection.id, chatId));
+      const buf = url ? await download(url) : null;
+      if (buf) {
+        await contact.update({ profilePicUrl: save(contact, buf), picCheckedAt: new Date() });
+        getIO().emit("contact", { action: "update", contact });
+        refreshed = true;
+      } else await contact.update({ picCheckedAt: new Date() });
+    }
+  } catch (err) {
+    logger.debug(`profile picture not read for contact ${contact.id}: ${err}`);
+  }
+  let about: string | null = null;
+  try {
+    about = (whatsappProvider.getAbout ? (await timeout(whatsappProvider.getAbout(connection.id, chatId))) : null) || null;
+  } catch (err) {
+    about = null;
+  }
+  return { about, refreshed, viaQr: true };
 };
 
 export const startProfilePicSync = (): void => {

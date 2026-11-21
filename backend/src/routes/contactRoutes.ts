@@ -20,6 +20,7 @@ contactRoutes.get("/contacts", isAuth, ContactController.index);
 contactRoutes.get("/contacts/export.csv", isAuth, ContactController.exportCsv);
 
 contactRoutes.get("/contacts/:contactId", isAuth, canAccessContact, ContactController.show);
+contactRoutes.get("/contacts/:contactId/profile", isAuth, canAccessContact, ContactController.profile);
 
 contactRoutes.post("/contacts", isAuth, ContactController.store);
 

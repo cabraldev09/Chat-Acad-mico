@@ -26,6 +26,18 @@ import { toast } from "react-toastify";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import { wa } from "../chat/chatTheme";
+import { colorOf, initialsOf } from "../../utils/avatar";
+
+// "+55 69 99228-3812", as the WhatsApp shows a Brazilian number
+export const prettyNumber = (raw) => {
+	const n = String(raw || "").replace(/\D/g, "");
+	if (/^55\d{10,11}$/.test(n)) {
+		const ddd = n.slice(2, 4);
+		const rest = n.slice(4);
+		return `+55 ${ddd} ${rest.length === 9 ? `${rest.slice(0, 5)}-${rest.slice(5)}` : `${rest.slice(0, 4)}-${rest.slice(4)}`}`;
+	}
+	return n ? `+${n}` : String(raw || "");
+};
 
 const useStyles = makeStyles(theme => {
 	const c = wa(theme);
@@ -64,7 +76,9 @@ const useStyles = makeStyles(theme => {
 			backgroundColor: c.panel,
 			boxShadow: c.shadow,
 		},
-		contactAvatar: { width: 150, height: 150, marginBottom: theme.spacing(1) },
+		contactAvatar: { width: 200, height: 200, marginBottom: theme.spacing(1.5), fontSize: 64, fontWeight: 600, cursor: "zoom-in", [theme.breakpoints.down("xs")]: { width: 160, height: 160, fontSize: 52 } },
+		about: { fontSize: 14.5, color: c.text, whiteSpace: "pre-wrap", overflowWrap: "anywhere" },
+		viewer: { position: "fixed", inset: 0, zIndex: 1400, background: "rgba(0,0,0,.86)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "zoom-out", padding: 16 },
 		name: { fontSize: 20, color: c.text, textAlign: "center" },
 		number: { fontSize: 15, color: c.textSecondary },
 		label: { fontSize: 13, color: c.accent, marginBottom: 2 },
@@ -79,8 +93,19 @@ const ContactDrawer = ({ open, handleDrawerClose, contact: contactProp, loading,
 	const [modalOpen, setModalOpen] = useState(false);
 	const [relation, setRelation] = useState(null);
 	const [community, setCommunity] = useState(null);
+	// like the WhatsApp profile: the picture read now (also for the official number, through a QR connection) and the "recado"
+	const [profile, setProfile] = useState(null);
+	const [viewer, setViewer] = useState(false);
 	// the drawer is reused from one contact to the next
 	useEffect(() => setRelation(null), [contact && contact.id]);
+	useEffect(() => {
+		setProfile(null);
+		if (!open || !contact.id || contact.isGroup) return undefined;
+		let alive = true;
+		api.get(`/contacts/${contact.id}/profile`).then(({ data }) => { if (alive) setProfile(data); }).catch(() => undefined);
+		return () => { alive = false; };
+	}, [open, contact.id, contact.isGroup]);
+	const picture = (profile && profile.profilePicUrl) || contact.profilePicUrl;
 
 	if (!open) return null;
 
@@ -97,19 +122,38 @@ const ContactDrawer = ({ open, handleDrawerClose, contact: contactProp, loading,
 			) : (
 				<div className={classes.content}>
 					<div className={classes.contactHeader}>
-						<Avatar alt={contact.name} src={contact.profilePicUrl} className={classes.contactAvatar} />
+						<Avatar
+							alt={contact.name}
+							src={picture}
+							className={classes.contactAvatar}
+							onClick={() => picture && setViewer(true)}
+							style={picture ? undefined : { background: colorOf(contact.number || contact.name), color: "#fff", cursor: "default" }}
+						>
+							{initialsOf(contact.name)}
+						</Avatar>
 						<div className={classes.name}>{contact.name}</div>
 						{contact.isGroup ? (
 							<span className={classes.number}>{contact.kind === "community" || contact.parentGroupId ? "Comunidade" : "Grupo"}</span>
 						) : (
 							<Link className={classes.number} href={`tel:${contact.number}`}>
-								{String(contact.number || "").includes("_") ? contact.number : `+${contact.number}`}
+								{String(contact.number || "").includes("_") ? contact.number : prettyNumber(contact.number)}
 							</Link>
 						)}
 						<Button variant="outlined" color="primary" size="small" style={{ marginTop: 8 }} onClick={() => setModalOpen(true)}>
 							{i18n.t("contactDrawer.buttons.edit")}
 						</Button>
 					</div>
+					{!contact.isGroup && profile && profile.about && (
+						<div className={classes.card}>
+							<div className={classes.label}>Recado</div>
+							<div className={classes.about}>{profile.about}</div>
+						</div>
+					)}
+					{viewer && picture && (
+						<div className={classes.viewer} role="dialog" aria-label={`Foto de ${contact.name}`} onClick={() => setViewer(false)} onKeyDown={(e) => e.key === "Escape" && setViewer(false)} tabIndex={-1}>
+							<img src={picture} alt={contact.name} style={{ maxWidth: "min(640px, 100%)", maxHeight: "100%", borderRadius: 4 }} />
+						</div>
+					)}
 					{contact.isGroup && (
 						<div className={classes.card} style={{ paddingTop: 8, paddingBottom: 8 }}>
 							<FormControlLabel

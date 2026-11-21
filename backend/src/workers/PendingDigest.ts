@@ -51,6 +51,16 @@ export const collectPending = async (): Promise<DigestItem[]> => {
   } catch (err) {
     logger.warn(`Pending digest: training suggestions not read: ${err}`);
   }
+  // the AI budget of the month typed in Custos: from 80% it goes to the daily e-mail
+  try {
+    const { monthBudget } = await import("../services/AiServices/RealCosts");
+    const budget = await monthBudget();
+    if (budget && budget.warn) {
+      items.push({ level: budget.pct >= 100 ? "required" : "recommended", label: "Orçamento da IA", detail: `${Math.round(budget.pct)}% do orçamento do mês usado (US$ ${budget.spent.toFixed(2)} de US$ ${budget.limit.toFixed(2)}, ${budget.source === "real" ? "valor cobrado pela OpenAI" : "estimado pelo sistema"}).`, where: "Configurações, Custos" });
+    }
+  } catch (err) {
+    logger.warn(`Pending digest: AI budget not read: ${err}`);
+  }
   return items;
 };
 

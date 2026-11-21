@@ -7,7 +7,7 @@ import toastError from "../../errors/toastError";
 
 // The keys of the AI providers the agents use when they have no key of their own. They are kept on the server and never come back whole.
 const KeysDialog = ({ open, onClose, onSaved }) => {
-  const [keys, setKeys] = useState({ anthropic: "", openai: "" });
+  const [keys, setKeys] = useState({ anthropic: "", openai: "", openaiAdmin: "" });
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -36,6 +36,7 @@ const KeysDialog = ({ open, onClose, onSaved }) => {
         </Typography>
         <TextField fullWidth variant="outlined" margin="dense" label="Chave da Anthropic (Claude)" type="password" value={keys.anthropic} onChange={(e) => setKeys({ ...keys, anthropic: e.target.value })} InputLabelProps={{ shrink: true }} />
         <TextField fullWidth variant="outlined" margin="dense" label="Chave da OpenAI (GPT e áudios)" type="password" value={keys.openai} onChange={(e) => setKeys({ ...keys, openai: e.target.value })} InputLabelProps={{ shrink: true }} helperText="Também entende áudios dos leads, quando está conectada." />
+        <TextField fullWidth variant="outlined" margin="dense" label="Chave de administrador da OpenAI (opcional)" type="password" autoComplete="new-password" value={keys.openaiAdmin || ""} onChange={(e) => setKeys({ ...keys, openaiAdmin: e.target.value })} InputLabelProps={{ shrink: true }} helperText="Só para ler quanto a OpenAI cobrou de verdade (Configurações, Custos). Crie em platform.openai.com, Organization, Admin keys. Não é usada para responder." />
       </DialogContent>
       <DialogActions style={{ padding: "8px 24px 20px" }}>
         <Button onClick={onClose}>Cancelar</Button>

@@ -34,6 +34,17 @@ export const tickBudgetAlerts = async (): Promise<void> => {
       notified.add(id);
       getIO().emit("budgetAlert", { key, level, text: `${label}: ${level === 100 ? "limite diário atingido" : "80% do limite diário utilizado ou reservado"}. Confira Operação.` });
     }
+    // the budget of the month typed for the AI (Custos): 80% and 100%, once per month and level
+    const { monthBudget } = await import("../services/AiServices/RealCosts");
+    const budget = await monthBudget();
+    if (budget) {
+      const level = budget.pct >= 100 ? 100 : budget.pct >= 80 ? 80 : 0;
+      const id = `ai_month:${new Date().toISOString().slice(0, 7)}:${level}`;
+      if (level && !notified.has(id)) {
+        notified.add(id);
+        getIO().emit("budgetAlert", { key: "ai_monthly_budget_usd", level, text: `Orçamento da IA no mês: ${level === 100 ? "atingido" : `${Math.round(budget.pct)}% usado`}. Confira Configurações, Custos.` });
+      }
+    }
   } catch (err) { logger.warn(`Budget alerts: ${err}`); }
   finally { busy = false; }
 };
