@@ -488,7 +488,8 @@ const WhatsAppModal = ({ open, onClose, whatsAppId, onCreated }) => {
 								margin="dense"
 								label={f.label}
 								type={f.secret ? "password" : "text"}
-								autoComplete="off"
+								autoComplete={f.secret ? "new-password" : "off"}
+								inputProps={{ name: `cred-${f.key}`, "data-lpignore": "true", "data-1p-ignore": "true" }}
 								value={config[f.key] || ""}
 								onChange={e => setConfig({ ...config, [f.key]: e.target.value })}
 								placeholder={savedKeys[f.key] ? `Salvo (termina em ${savedKeys[f.key].slice(4)}). Cole aqui só para trocar.` : undefined}

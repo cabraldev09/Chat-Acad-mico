@@ -514,6 +514,7 @@ const messages = {
         ERR_CAMPAIGN_EMPTY_LIST: "A lista de contatos está vazia. Adicione contatos antes de iniciar a campanha.",
         ERR_RELATIONSHIP_WAPP_OFFLINE: "O número do relacionamento está desconectado. Reconecte em Conexões.",
         ERR_RETENTION_COLD: "Esta pessoa nunca respondeu e a conexão por QR Code está em modo seguro.",
+        ERR_CLOUD_TOKEN_IS_SECRET: "O que você colou em Access Token tem o formato do App Secret (32 letras e números). O token da Meta começa com EAA e é bem longo. Nada foi salvo: confira o campo, que o navegador pode ter preenchido sozinho.",
         ERR_CLOUD_WINDOW_CLOSED: "Fora das 24 horas da API oficial do WhatsApp só sai mensagem por modelo aprovado.",
         ERR_RETENTION_DAILY_LIMIT: "Limite diário de envios desta conexão por QR Code atingido. Continue amanhã.",
         ERR_RETENTION_TOO_MANY: "Escolha até 50 alunos por envio.",

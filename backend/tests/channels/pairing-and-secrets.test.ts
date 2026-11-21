@@ -226,3 +226,13 @@ describe("the scenarios of the attendance that need no model", () => {
     expect(consultantMention("Quero falar com um consultor")).toBeNull();
   });
 });
+
+import { looksLikeAppSecret } from "../../src/helpers/Secrets";
+
+describe("the Access Token field of an official number", () => {
+  it("recognises the shape of an App Secret (32 letters and digits) and not that of a Meta token", () => {
+    expect(looksLikeAppSecret("9db1c4e5a7f0123456789abcdef01234")).toBe(true);
+    expect(looksLikeAppSecret(`EAA${"x".repeat(150)}`)).toBe(false);
+    expect(looksLikeAppSecret("")).toBe(false);
+  });
+});
