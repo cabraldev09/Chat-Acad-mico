@@ -24,7 +24,7 @@ const ROUTES = process.env.ROUTES ? process.env.ROUTES.split(",") : [
   "/configuracoes?secao=entregas", "/configuracoes?secao=erros",
 ];
 // what would change data or leave the screen: never clicked here
-const SKIP = /(excluir|remover|apagar|deletar|delete|sair|logout|desconect|encerrar|finalizar|enviar|disparar|revogar|resetar|redefinir|limpar|tirar do funil|não é lead|arquivar|bloquear|transferir|assumir|devolver|aprovar|recusar|confirmar|pagar|cobrar|gerar|importar|exportar|baixar|download|sincronizar|reiniciar|testar|conectar|reconectar|desligar|ligar|salvar|criar|adicionar|novo|nova|cadastrar|publicar|duplicar|copiar|aplicar|distribuir|marcar|concluir|registrar|autorizar|vincular|conferir de novo|usar|sugerir|qr|ia qualificar)/i;
+const SKIP = /(excluir|remover|apagar|deletar|delete|sair|logout|desconect|encerrar|finalizar|enviar|disparar|revogar|resetar|redefinir|limpar|tirar do funil|não é lead|arquivar|bloquear|transferir|assumir|devolver|aprovar|recusar|confirmar|pagar|cobrar|gerar|importar|exportar|baixar|download|sincronizar|reiniciar|testar|conectar|reconectar|desligar|ligar|salvar|publicar|duplicar|copiar|aplicar|distribuir|marcar|concluir|registrar|autorizar|vincular|conferir de novo|usar|sugerir|qr|ia qualificar)/i;
 
 (async () => {
   const browser = await chromium.launch(process.env.CHROME_BIN ? { executablePath: process.env.CHROME_BIN } : {});
