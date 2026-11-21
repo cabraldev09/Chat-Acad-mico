@@ -297,7 +297,7 @@ export const metrics = async (req: Request, res: Response): Promise<Response> =>
   ).catch(() => []);
   const latencyUsage = await AiUsage.count({ where: { agentId: agent.id, kind: { [Op.ne]: "test" }, createdAt: { [Op.gte]: from } } as any });
 
-  // the cost only when the administrator typed the price of the model (prices are never guessed)
+  // the price typed for the model or the reference price of a known model (Prices.ts); an unknown model has no cost
   const price = await priceOf(agent.model);
   const costUsd = price ? Math.round(((input * price.in + output * price.out) / 1e6) * 10000) / 10000 : null;
   // the handoffs to people: by reason, by polo, how long until a person answered and how many nobody answered

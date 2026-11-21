@@ -4305,7 +4305,8 @@ const postMeta = (id, payload, secret, badSig) => {
       const f = e => m.funnel.find(x => x.event === e).leads;
       assert(f("lead_received") >= 5 && f("contact_started") >= 5 && f("replied") >= 5 && f("qualified") >= 2 && f("ready_for_proposal") >= 1 && f("human_handoff") >= 1 && f("follow_up") >= 1, `funnel ${JSON.stringify(m.funnel)}`);
       assert(m.ai.turns >= 15 && m.ai.deterministicTurns >= 8 && m.ai.llmCalls >= 5 && m.ai.toolCalls >= 3 && m.ai.tokens.total > 0 && m.ai.deterministicShare > 30, `ai ${JSON.stringify(m.ai)}`);
-      assert(m.ai.perConversation > 0 && m.ai.priceSet === false && m.ai.costUsd === null, "the cost must not be guessed without a configured price");
+      // no price typed: the reference price of the known model of the agent is used (Prices.ts), so the spending is not shown as zero
+      assert(m.ai.perConversation > 0 && m.ai.priceSet === true && Number(m.ai.costUsd) > 0, `the reference price was not used: ${JSON.stringify({ priceSet: m.ai.priceSet, costUsd: m.ai.costUsd })}`);
       assert(m.unknownQuestions >= 1, "unknown question not counted");
       assert(m.handoffs && m.handoffs.total >= 5 && m.handoffs.byReason.some(r => r.why === "complaint") && m.handoffs.byReason.some(r => r.why === "proposal"), `handoffs ${JSON.stringify(m.handoffs)}`);
       assert(m.technical.errors >= 1 && m.technical.guards >= 2, `technical ${JSON.stringify(m.technical)}`);
