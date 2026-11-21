@@ -17,7 +17,6 @@ const createAppTheme = (type) => {
   const colors = palette[type];
   const isDark = type === "dark";
   const base = createTheme({ palette: { type, ...colors } });
-  const ring = alpha(colors.accent.main, isDark ? 0.3 : 0.22);
 
   // borders do the heavy lifting, shadows stay whisper-quiet
   const shadows = [...base.shadows];
@@ -107,6 +106,8 @@ const createAppTheme = (type) => {
             outlineOffset: -2,
           },
           "*:focus:not(:focus-visible)": { outline: "none" },
+          // a text field shows where the cursor is by itself: clicking a box never draws a frame around it (the keyboard ring stays on buttons and links)
+          "input:focus, textarea:focus, select:focus, [contenteditable]:focus, [tabindex='-1']:focus": { outline: "none" },
           "@keyframes shimmer": {
             "0%": { backgroundPosition: "-200% 0" },
             "100%": { backgroundPosition: "200% 0" },
@@ -176,7 +177,6 @@ const createAppTheme = (type) => {
           "& $notchedOutline": { borderColor: colors.divider },
           "&:hover $notchedOutline": { borderColor: isDark ? "#2c4062" : "#cbd5e1" },
           "&$focused $notchedOutline": { borderColor: colors.accent.main, borderWidth: 1 },
-          "&$focused": { boxShadow: `0 0 0 3px ${ring}` },
         },
         input: { padding: "10px 12px" },
         // one height for the whole system: a small field (38 px) is as tall as the button beside it

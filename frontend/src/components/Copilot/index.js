@@ -9,8 +9,8 @@ import CopilotSettings from "./Settings";
 
 const useStyles = makeStyles(theme => ({
   root: { flex: "none", minWidth: 0, color: theme.palette.text.primary, background: theme.palette.background.paper, borderBottom: "2px solid var(--line-strong, #cbd5e1)" },
-  header: { display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", flexWrap: "wrap", background: "var(--surface-2, #f8fafc)", borderBottom: "1px solid var(--line, #e2e8f0)" },
-  emblem: { display: "grid", placeItems: "center", width: 34, height: 34, borderRadius: 11, flexShrink: 0, color: theme.palette.type === "dark" ? "#5eead4" : "#0f766e", background: "rgba(15,118,110,.1)" },
+  header: { display: "flex", alignItems: "center", gap: 8, padding: "5px 12px", minHeight: 44, flexWrap: "wrap", background: "var(--surface-2, #f8fafc)", borderBottom: "1px solid var(--line, #e2e8f0)" },
+  emblem: { display: "grid", placeItems: "center", width: 26, height: 26, borderRadius: 8, flexShrink: 0, color: theme.palette.type === "dark" ? "#5eead4" : "#0f766e", background: "rgba(15,118,110,.1)" },
   title: { fontSize: 14, fontWeight: 700, lineHeight: 1.4 },
   muted: { fontSize: 12.5, color: "var(--text-2, #475569)", lineHeight: 1.5 },
   body: { fontSize: 13.5, lineHeight: 1.55, color: "var(--text-1, #0f172a)" },
@@ -20,7 +20,8 @@ const useStyles = makeStyles(theme => ({
   badge: { display: "inline-flex", whiteSpace: "nowrap", borderRadius: 20, padding: "2px 9px", fontSize: 11, fontWeight: 700, background: "var(--surface, #fff)", color: "var(--text-1, #0f172a)", border: "1px solid var(--line-strong, #cbd5e1)" },
   primary: { background: "#0f766e", color: "#fff", borderRadius: 9, textTransform: "none", fontWeight: 600, boxShadow: "none", "&:hover": { background: "#115e59", boxShadow: "none" } },
   button: { textTransform: "none", borderRadius: 8, fontSize: 12, fontWeight: 600, color: "var(--text-1, #0f172a)", border: "1px solid var(--line-strong, #cbd5e1)", background: "var(--surface, #fff)", padding: "3px 10px", "&:hover": { background: "var(--surface-2, #f1f5f9)" } },
-  content: { maxHeight: "min(48vh, 440px)", overflowY: "auto", padding: "12px 16px 12px", display: "grid", gap: 10, background: "var(--surface-2, #f8fafc)", ...theme.scrollbarStyles, [theme.breakpoints.down("xs")]: { maxHeight: "38vh", padding: "10px 12px" } },
+  line: { fontSize: 13, lineHeight: 1.4, color: "var(--text-2, #475569)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
+  content: { maxHeight: "min(40vh, 380px)", overflowY: "auto", padding: "12px 16px 12px", display: "grid", gap: 10, background: "var(--surface-2, #f8fafc)", ...theme.scrollbarStyles, [theme.breakpoints.down("xs")]: { maxHeight: "38vh", padding: "10px 12px" } },
   layout: { display: "grid", gridTemplateColumns: "minmax(180px, .85fr) minmax(240px, 1.6fr)", gap: 14, alignItems: "start", [theme.breakpoints.down("sm")]: { display: "flex", flexDirection: "column", alignItems: "stretch" } },
   steps: { padding: 0, margin: 0, listStyle: "none", display: "grid", gap: 2, [theme.breakpoints.down("sm")]: { order: 1, maxHeight: 160, overflowY: "auto" } },
   stepButton: { width: "100%", border: "1px solid transparent", borderRadius: 9, background: "transparent", color: "var(--text-2, #475569)", padding: "7px 9px", display: "flex", alignItems: "center", gap: 9, textAlign: "left", cursor: "pointer", font: "inherit", fontSize: 12, "&:hover": { background: theme.palette.action.hover }, "&:focus-visible": { outline: "2px solid #0f766e" } },
@@ -127,6 +128,12 @@ function Panel({ ticket }) {
     try { await fn(); } catch (e) { toastError(e); }
     finally { if (alive.current) { setBusy(false); reload(); } }
   };
+  // the ready text goes as short messages, one idea each (never a wall of text); the grade step sends the grade right after its line
+  const sendReady = async value => {
+    const parts = String(value || "").split(/\n{2,}/).map(p => p.trim()).filter(Boolean);
+    for (const body of parts) await api.post(`/messages/${ticket.id}`, { body });
+    if (next && next.action === "send_grade" && next.gradeId) await api.post(`/grades/${next.gradeId}/send`, { ticketId: ticket.id, summary: false });
+  };
   const fill = text => window.dispatchEvent(new CustomEvent("fillMessageInput", { detail: { ticketId: ticket.id, text } }));
   const suggest = mode => run(async () => {
     const epoch = suggestionEpoch.current;
@@ -165,11 +172,11 @@ function Panel({ ticket }) {
   const b = brief && brief.brief;
   return <section className={c.root} aria-label="Copiloto do consultor">
     <div className={c.header}>
-      <div className={c.emblem}><Compass size={19} /></div>
-      <div style={{ flex: "1 1 150px", minWidth: 0 }}>
-        <div className={c.title}>Copiloto <span className={c.badge}>Processo de matrícula</span></div>
-        <div className={c.muted}>{current ? `Próxima etapa: ${current.label}` : "Processo concluído"} · {completed}/{required.length} concluídas</div>
-        {data.course && <div className={c.muted} title={data.course.fonte}><b>{data.course.name || "Curso"}</b> · {data.course.resumo}</div>}
+      <div className={c.emblem}><Compass size={15} /></div>
+      {/* one line: the step, the progress and the course; the details open below, inside a box with its own scroll */}
+      <div style={{ flex: "1 1 160px", minWidth: 0 }} className={c.line} title={data.course ? `${data.course.name || "Curso"}: ${data.course.resumo}` : undefined}>
+        <b style={{ color: "var(--text-1, #0f172a)" }}>Copiloto</b> · {current ? current.label : "Processo concluído"} · {completed}/{required.length}
+        {data.course && <span> · {data.course.name || "Curso"} ({data.course.formato || data.course.resumo})</span>}
       </div>
       {data.canManage && <IconButton size="small" title="Revisar e editar o processo da equipe" aria-label="Editar processo" onClick={() => setEditor(true)}><Settings2 size={17} /></IconButton>}
       <Button size="small" className={c.button} onClick={() => setOpen(v => !v)} endIcon={open ? <ChevronUp size={15} /> : <ChevronDown size={15} />}>{open ? "Recolher" : "Abrir"}</Button>
@@ -210,7 +217,7 @@ function Panel({ ticket }) {
           <div className={c.actions}>
             {text && <Button size="small" className={c.primary} disabled={busy || !canSend} onClick={() => takeText(text, !!suggestion)}>Usar e editar</Button>}
             {/* only the manager's ready text goes out in one click: a text written by the AI is always reviewed in the message box first */}
-            {text && !suggestion && <Button size="small" className={c.button} disabled={busy || !canSend} startIcon={<Send size={13} />} onClick={() => run(async () => { await api.post(`/messages/${ticket.id}`, { body: text }); })}>Enviar</Button>}
+            {text && !suggestion && <Button size="small" className={c.button} disabled={busy || !canSend} startIcon={<Send size={13} />} onClick={() => run(() => sendReady(text))}>{next && next.action === "send_grade" && next.gradeId ? "Enviar com a grade" : "Enviar"}</Button>}
             {suggestion && <Button size="small" className={c.button} onClick={() => setSuggestion(null)}>Descartar</Button>}
             {!suggestion && next && next.action === "send_grade" && data.leadId && <Button size="small" className={c.button} startIcon={<FileText size={13} />} href="/grades">Abrir grades</Button>}
             {active.key === "enroll" && data.leadId && !active.done && <Button size="small" className={c.button} startIcon={<GraduationCap size={15} />} disabled={busy || !canSend} onClick={enrollment}>Registrar matrícula</Button>}

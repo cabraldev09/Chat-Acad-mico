@@ -252,7 +252,12 @@ const stageStep = async (graph: Graph, node: FlowNode, state: RunState, fx: Effe
     const pending = pendingSteps(st, doneSteps(state.vars, node.id));
     if (pending.length) state.vars.__stepsMissing = pendingText(st, pending);
   }
-  if (turn.text) await (fx.sayBlocks && !turn.single ? fx.sayBlocks(render(turn.text, state.vars, who)) : fx.say(render(turn.text, state.vars, who)));
+  if (turn.text) {
+    const out = render(turn.text, state.vars, who);
+    // "uma mensagem só" holds for a normal answer; a long one (the presentation of the course) still goes in short bubbles, never as a wall
+    const long = out.length > 300 && out.includes("\n\n");
+    await (fx.sayBlocks && (!turn.single || long) ? fx.sayBlocks(out) : fx.say(out));
+  }
   if (!turn.exit) return { status: "waiting", state, path: [] };
 
   const exit = String(turn.exit);

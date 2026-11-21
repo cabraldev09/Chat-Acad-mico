@@ -30,6 +30,7 @@ import { askRules, signed, styleOf, styleRules } from "./Style";
 import AgentMetricEvent from "../../models/AgentMetricEvent";
 import { unsupportedFact } from "../CommercialServices/Guards";
 import { forChannel } from "../../helpers/ChannelText";
+import { isHandoffNotice } from "../../helpers/ReplyPolish";
 import { connectionsOf } from "../../helpers/AgentConnections";
 import { offeredCourses } from "../CommercialServices/Academic";
 import { todayLine } from "../CommercialServices/Hours";
@@ -434,7 +435,8 @@ const respondOnce = async (agent: AiAgent, opts: RespondOptions): Promise<AiResu
   const usageOf = (usage: any) => ({ agentId: agent.id, ticketId: opts.accountingTicketId || opts.ticket?.id, model: agent.model, kind, usage, flowId: opts.flowId, nodeId: opts.nodeId, leadId: opts.leadId, latencyMs: Date.now() - started } as any);
   const finish = (ctx: any): AiResult => {
     const qualified = !stage && !ctx.flowStarted && !text.includes(HANDOFF_MARKER) && !text.includes(UNKNOWN_MARKER) && missingSlots(agent, collected).length === 0 && Object.keys(collected).length > 0;
-    if (qualified) text = [text, agent.handoffMessage || "Vou chamar um consultor para preparar sua proposta e continuar sua matrícula."].filter(Boolean).join("\n\n");
+    // the handoff notice goes once: when the model already told the person a consultant will continue, it is not added again
+    if (qualified && !isHandoffNotice(text)) text = [text, agent.handoffMessage || "Vou chamar um consultor para preparar sua proposta e continuar sua matrícula."].filter(Boolean).join("\n\n");
     return ({
     stepsDone: ctx.stepsDone,
     qualified,
@@ -682,7 +684,8 @@ const answerTicket = async (ticketId: number, say: Say): Promise<void> => {
     if (!result.text) { await handoff(ticket, agent, "sem_resposta", say); return; }
     if (result.text) {
       const out = signed(result.text, agent);
-      if (styleOf(agent).splitMessages) for (const block of splitIntoBlocks(out)) await say(ticket, block);
+      // "uma mensagem só" holds for a normal answer; a long one still goes in short bubbles, never as a wall
+      if (styleOf(agent).splitMessages || (out.length > 300 && out.includes("\n\n"))) for (const block of splitIntoBlocks(out)) await say(ticket, block);
       else await say(ticket, out);
     }
 

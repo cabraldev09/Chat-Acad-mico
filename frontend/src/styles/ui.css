@@ -146,7 +146,6 @@
 /* nothing pushes past its box: long words and tables wrap or scroll inside their own card */
 .MuiDialogContent-root, .MuiPaper-root { min-width: 0; }
 .MuiDialogContent-root { overflow-wrap: anywhere; }
-.MuiInputBase-root:focus-within { box-shadow: 0 0 0 3px var(--accent-soft); border-radius: var(--radius-ctl); }
 
 /* Estatísticas: one clean tab bar for the hub, the departments (Comercial, Tutoria) as quiet labels; on the phone it slides sideways */
 .stats-hub { display: flex; align-items: flex-end; gap: 18px; margin: 0 0 18px; border-bottom: 1px solid var(--line); overflow-x: auto; overflow-y: hidden; scrollbar-width: none; min-width: 0; -webkit-overflow-scrolling: touch; }

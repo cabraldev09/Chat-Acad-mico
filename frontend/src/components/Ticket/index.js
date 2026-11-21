@@ -100,22 +100,22 @@ const AiBanner = ({ ticket }) => {
     setBusy(false);
   };
   return (
-    <div role="status" style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", padding: "10px 16px", background: "linear-gradient(90deg, #0f766e 0%, #0e7490 100%)", color: "#fff", fontSize: 14 }}>
-      <style>{"@keyframes aiPulse{0%{box-shadow:0 0 0 0 rgba(255,255,255,.7)}70%{box-shadow:0 0 0 10px rgba(255,255,255,0)}100%{box-shadow:0 0 0 0 rgba(255,255,255,0)}}@media (prefers-reduced-motion: reduce){.ai-pulse{animation:none!important}}"}</style>
-      <span className="ai-pulse" style={{ width: 34, height: 34, borderRadius: "50%", background: "rgba(255,255,255,.18)", display: "inline-flex", alignItems: "center", justifyContent: "center", flex: "none", animation: "aiPulse 1.8s infinite" }}>
-        <Bot size={19} />
+    <div role="status" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", padding: "5px 12px", minHeight: 40, background: "var(--surface-2, #f0fdfa)", borderBottom: "1px solid var(--line, #e2e8f0)", color: "var(--text-1, #0f172a)", fontSize: 13 }}>
+      {/* compact: one line that does not take the room of the messages */}
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "3px 10px", borderRadius: 999, background: "#0f766e", color: "#fff", fontWeight: 700, fontSize: 12, flex: "none" }}>
+        <Bot size={14} /> IA qualificando
       </span>
-      <span style={{ flex: 1, minWidth: 220 }}>
-        <b>A IA está qualificando este lead.</b> Acompanhe as respostas aqui. Quando ela terminar, a conversa volta {ticket.aiReturnUserId ? "para quem passou o lead" : "para a equipe"}; para voltar antes, clique em Assumir de novo.
+      <span style={{ flex: "1 1 160px", minWidth: 0, color: "var(--text-2, #475569)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={`Quando a IA terminar, a conversa volta ${ticket.aiReturnUserId ? "para quem passou o lead" : "para a equipe"}.`}>
+        Ao terminar, volta {ticket.aiReturnUserId ? "para quem passou o lead" : "para a equipe"}
       </span>
-      <button type="button" disabled={busy} onClick={take} style={{ border: 0, borderRadius: 10, background: "#fff", color: "#0f766e", padding: "8px 16px", fontFamily: "inherit", fontWeight: 700, cursor: "pointer" }}>
+      <button type="button" onClick={showWhy} style={{ border: 0, background: "transparent", color: "#0f766e", padding: "4px 6px", fontFamily: "inherit", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+        {why ? "Esconder" : "O que a IA fez"}
+      </button>
+      <button type="button" disabled={busy} onClick={take} style={{ border: "1px solid #0f766e", borderRadius: 8, background: "var(--surface, #fff)", color: "#0f766e", padding: "4px 12px", fontFamily: "inherit", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
         Assumir de novo
       </button>
-      <button type="button" onClick={showWhy} style={{ border: "1px solid rgba(255,255,255,.6)", borderRadius: 10, background: "transparent", color: "#fff", padding: "7px 14px", fontFamily: "inherit", fontWeight: 600, cursor: "pointer" }}>
-        {why ? "Esconder o que o robô fez" : "Ver o que o robô fez"}
-      </button>
       {why && (
-        <div style={{ flexBasis: "100%", background: "rgba(0,0,0,.22)", borderRadius: 10, padding: "8px 12px", fontSize: 13 }}>
+        <div style={{ flexBasis: "100%", maxHeight: "30vh", overflowY: "auto", background: "var(--surface, #fff)", border: "1px solid var(--line, #e2e8f0)", borderRadius: 8, padding: "8px 12px", fontSize: 13 }}>
           {why.lines.length ? why.lines.map((l, i) => (
             <div key={i}>{new Date(l.at).toLocaleTimeString("pt-BR", { timeZone: "America/Porto_Velho" })} · {l.text}</div>
           )) : <div>O servidor ainda não registrou nada para esta conversa (isso acontece logo depois de ele reiniciar). Mande outra mensagem e abra de novo.</div>}

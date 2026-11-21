@@ -23,6 +23,7 @@ import { Op } from "sequelize";
 import { dayBounds } from "../helpers/AppTime";
 import { briefSystem, contactTranscript, parseBrief, sameSideWhere } from "../services/CopilotServices/Brief";
 import { sideOfSegment } from "../services/ChannelServices/ConnectionTeam";
+import { midConversation, polishReply } from "../helpers/ReplyPolish";
 
 export const settings = async (_req: Request, res: Response) => {
   const { watchConfigOf, aiUsedToday } = await import("../services/CommercialServices/Watcher");
@@ -120,9 +121,21 @@ export const suggest = async (req: Request, res: Response) => {
   if (!history.length || history[history.length - 1].role !== "user") return res.json({ text: "", note: "Não há mensagem do contato para responder agora." });
   const [step, lead] = await Promise.all([copilotOf(ticket, config), Lead.findOne({ where: { contactId: ticket.contactId } })]);
   const state = lead ? await hydrate(await loadState(lead.id), lead) : null;
+  // what is already known goes to the model as known (it never asks the name or the city again, and the next-question helper skips them)
+  const known: Record<string, string> = { ...((ticket.aiSlots || {}) as Record<string, string>) };
+  const s = (state?.slots || {}) as Record<string, any>;
+  if (!known.nome && (s.leadName || lead?.name)) known.nome = String(s.leadName || lead?.name);
+  if (!known.cidade && (s.city || lead?.city)) known.cidade = String(s.city || lead?.city);
+  if (!known.curso && s.courseName) known.curso = String(s.courseName);
+  const current = step.steps.find(x => x.key === step.current);
   const guide = [
+    "A conversa já está em andamento: NÃO cumprimente (sem Oi, Olá, Bom dia, Que bom) e não se apresente. Se a pessoa mandou só um cumprimento ou \"ok\", retome a etapa atual com uma frase curta.",
+    Object.keys(known).length ? `Já sabemos (não pergunte de novo): ${Object.entries(known).filter(([, v]) => v).map(([k, v]) => `${k}: ${v}`).join("; ")}.` : "",
+    current ? `Etapa ATUAL do processo: ${current.label}. ${current.instruction || ""} Escreva só o que serve a esta etapa, em no máximo 2 parágrafos curtos e uma única pergunta no fim.` : "",
     "Escreva a próxima mensagem do CONSULTOR que assumiu a conversa. Use a voz dele, sem se apresentar como assistente virtual. Seja profissional, breve e sem emoji.",
     "Responda primeiro o que a pessoa perguntou e conduza com uma pergunta para a próxima etapa. Nunca invente valores, bolsas, prazos ou confirmação de matrícula.",
+    "Leia a conversa inteira antes de escrever: não pergunte de novo o que a pessoa já disse (nome, cidade, polo, curso, se já tem graduação). Quando o polo ou a cidade já estão definidos, avance para qualificar: objetivo com o curso, primeira graduação ou não, formato e horários, e o que falta para a simulação da bolsa.",
+    "Sobre valores: diga que trabalhamos com bolsas de estudo, que dependem da disponibilidade, e que o consultor faz a simulação. Nunca fale em valor de tabela.",
     `Processo aprovado pelo gestor:\n${step.steps.map(s => `${s.done ? "Concluído" : s.key === step.current ? "ATUAL" : "Pendente"}: ${s.label}. ${s.instruction}`).join("\n")}`,
     step.suggestion ? `Texto de referência da próxima etapa:\n${step.suggestion.text}` : ""
   ].filter(Boolean).join("\n\n");
@@ -135,8 +148,8 @@ export const suggest = async (req: Request, res: Response) => {
   const sourcesOf = (r: CopilotRequest) => { try { return JSON.parse(r.sources || "[]"); } catch { return []; } };
   if (cached) return res.json({ id: request.id, text: request.status === "ready" ? request.text : "", sources: sourcesOf(request), cached: true, note: request.status === "pending" && Date.now() - +new Date(request.createdAt) < 180000 ? "A sugestão desta mensagem já está sendo preparada. Aguarde." : "Esta mensagem já foi processada. Peça uma variação ou aguarde uma nova mensagem." });
   try {
-    const result = await respond(agent, { ticket: null, accountingTicketId: ticket.id, usageKind: "copilot", history, summary, collected: null, sandbox: true });
-    const text = result.handoff || result.unknown ? "" : String(result.text || "").replace(/\[(HANDOFF|DESCONHECIDO)\]/g, "").trim();
+    const result = await respond(agent, { ticket: null, accountingTicketId: ticket.id, usageKind: "copilot", history, summary, collected: known, sandbox: true });
+    const text = result.handoff || result.unknown ? "" : midConversation(polishReply(String(result.text || "").replace(/\[(HANDOFF|DESCONHECIDO)\]/g, "").trim()), known);
     const sources = [...new Set(result.sources || [])].slice(0, 5);
     await request.update({ status: "ready", text, sources: JSON.stringify(sources) });
     return res.json({ id: request.id, text, sources, mode, note: text ? "" : "Não há informação suficiente na base. Confira com a equipe e use o roteiro para continuar." });

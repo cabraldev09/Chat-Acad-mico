@@ -9,9 +9,9 @@ import Proposal from "../../models/Proposal";
 import Ticket from "../../models/Ticket";
 import { bolsaDataFrom, bolsaRequestFor } from "./BolsaData";
 import { detectFromText } from "./Detect";
-import { runAcademicTool, AcademicCtx } from "./Academic";
+import { runAcademicTool, AcademicCtx, findCourse, pickGrade } from "./Academic";
 import { TUTORING_PITCH } from "./GradeChoice";
-import { DOUBTS_QUESTION, PRESENT_BRIDGE, QUESTIONS, durationLine, entryAnswer, modalityTextOf } from "./Rules";
+import { DOUBTS_QUESTION, QUESTIONS, durationLine, entryAnswer, modalityTextOf } from "./Rules";
 import { hydrate, loadState, Slots } from "./Slots";
 
 // THE COPILOT OF THE CONSULTANT. After the agent hands the conversation over, the consultant goes on with the same process the team follows:
@@ -40,7 +40,7 @@ export interface Copilot {
   // what the MEC asks of the course of the lead (the consultant says the same as the agent): "EAD: sem aulas práticas presenciais", "Semipresencial: 40% de prática presencial"
   course: { name: string; formato: string; resumo: string; percentualPresencial: number | null; semPratica: boolean; fonte: string } | null;
   // the next message, ready to use (what the team says at this step), and what the screen can do for it
-  suggestion: { text: string; action: "send_grade" | "proposal" | "enroll" | null } | null;
+  suggestion: { text: string; action: "send_grade" | "proposal" | "enroll" | null; gradeId?: number | null } | null;
 }
 
 export const STEP_LABEL: Record<StepKey, string> = {
@@ -133,15 +133,17 @@ const textFor = async (key: StepKey, s: Slots, leadName: string): Promise<{ text
         const course = await runAcademicTool("buscar_curso", arg, ctx);
         const name = String((course && course.nome) || s.courseName || "o curso");
         const body = view && !view.erro && view.explicacao ? modalityTextOf(name, view) : null;
-        if (body) return { text: [PRESENT_BRIDGE, course && course.nome ? durationLine(String(course.nome), course.duracaoSemestres) : null, body].filter(Boolean).join("\n\n"), action: null };
+        // short: the duration and the format, ending in the question; one idea per message when it is sent
+        if (body) return { text: [course && course.nome ? durationLine(String(course.nome), course.duracaoSemestres) : null, body].filter(Boolean).join("\n\n"), action: null };
       } catch (err) {
         // without the rule of the course the consultant explains it
       }
       return { text: "Vou te explicar como ficaram as mudanças do MEC e como funciona o formato do curso. Até aqui você compreendeu?", action: null };
     }
     case "grade":
-      return { text: `Vou te enviar a *grade do curso* para você visualizar melhor as disciplinas e a estrutura da formação.\n\n${TUTORING_PITCH}`, action: "send_grade" };
-    case "doubts": return { text: DOUBTS_QUESTION, action: null };
+      // "Enviar" sends this line and the grade of the course right after it; the tutoring comes in the next step, on its own
+      return { text: "Vou te enviar a *grade do curso* para você visualizar melhor as disciplinas e a estrutura da formação.", action: "send_grade" };
+    case "doubts": return { text: `${TUTORING_PITCH}\n\n${DOUBTS_QUESTION}`, action: null };
     case "bolsa": return { text: `Caso não tenha, ${bolsaRequestFor({ name: !s.fullName, cpf: !s.cpfGiven }).replace(/^./, c => c.toLowerCase())}`, action: null };
     case "proposal": {
       const name = first(s.fullName || leadName);
@@ -205,5 +207,17 @@ export const copilotOf = async (ticket: Ticket, config?: CopilotConfig): Promise
   const current = (steps.find(x => !x.done && !x.optional) || steps.find(x => !x.done))?.key || null;
   const configured = settings.steps.find(s => s.key === current);
   const next = current ? (configured?.message ? { text: configured.message, action: null } : await textFor(current as StepKey, slots, lead?.name || "")) : null;
-  return { hasLead: !!lead, leadId: lead?.id || null, steps, current, processVersion: settings.version, course: await courseRuleOf(slots), suggestion: next ? { text: next.text, action: next.action } : null };
+  return { hasLead: !!lead, leadId: lead?.id || null, steps, current, processVersion: settings.version, course: await courseRuleOf(slots), suggestion: next ? { text: next.text, action: next.action, ...(next.action === "send_grade" ? { gradeId: await gradeIdOf(slots) } : {}) } : null };
+};
+
+// the grade the "Enviar" of the grade step sends (the same choice the agent makes), null when the course has none
+const gradeIdOf = async (s: Slots): Promise<number | null> => {
+  try {
+    const course = await findCourse({ courseId: s.courseId, courseName: s.courseName });
+    if (!course) return null;
+    const { grade } = await pickGrade(course, null);
+    return grade ? grade.id : null;
+  } catch (err) {
+    return null;
+  }
 };
