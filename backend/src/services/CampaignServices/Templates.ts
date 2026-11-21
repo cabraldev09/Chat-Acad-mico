@@ -177,7 +177,7 @@ export const allTemplates = async (whatsappId?: number | null): Promise<Template
 export const cleanDraft = (d: Partial<TemplateDraft>): TemplateDraft => {
   const name = String(d.name || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9_]/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "").slice(0, 60);
   const body = String(d.body || "").trim().slice(0, 1024);
-  if (!name || !body) throw new AppError("ERR_TEMPLATE_INVALID", 400);
+  if (!name || !body) throw new AppError("ERR_TEMPLATE_NAME_BODY", 400);
   const n = paramsIn(body);
   const examples = (Array.isArray(d.examples) ? d.examples : []).map(e => String(e || "").trim()).slice(0, n);
   if (examples.length < n || examples.some(e => !e)) throw new AppError("ERR_TEMPLATE_EXAMPLES", 400);
@@ -251,7 +251,7 @@ export const notifyTemplates = (): void => {
 export const deleteTemplate = async (name: string, whatsappId?: number | null): Promise<void> => {
   const { institutionName } = await import("../../helpers/Institution");
   const clean = String(name || "").replace(/[^a-z0-9_]/g, "");
-  if (!clean) throw new AppError("ERR_TEMPLATE_INVALID", 400);
+  if (!clean) throw new AppError("ERR_TEMPLATE_NAME_BODY", 400);
   if (TEMPLATE_PACK(institutionName()).some(t => t.name === clean)) throw new AppError("ERR_TEMPLATE_IN_PACK", 400);
   const { waba, token } = await accountOf(await cloudConnection(whatsappId));
   try {
