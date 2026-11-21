@@ -156,11 +156,16 @@ export const remove = async (req: Request, res: Response): Promise<Response> => 
 export const getKeys = async (_req: Request, res: Response): Promise<Response> =>
   res.json({
     anthropic: maskSecret(await getSecretSetting("ai_anthropic_key")) || "",
-    openai: maskSecret(await getSecretSetting("ai_openai_key")) || ""
+    openai: maskSecret(await getSecretSetting("ai_openai_key")) || "",
+    // the administrator key of the OpenAI organization: only to read the real costs (Configurações → Custos), never to answer
+    openaiAdmin: maskSecret(await getSecretSetting("ai_openai_admin_key")) || ""
   });
 
 export const setKeys = async (req: Request, res: Response): Promise<Response> => {
-  const { anthropic, openai } = req.body;
+  const { anthropic, openai, openaiAdmin } = req.body;
+  if (openaiAdmin !== undefined && !isMasked(openaiAdmin)) {
+    await setSecretSetting("ai_openai_admin_key", String(openaiAdmin || "").trim());
+  }
   if (anthropic !== undefined && !isMasked(anthropic)) {
     await setSecretSetting("ai_anthropic_key", anthropic);
   }

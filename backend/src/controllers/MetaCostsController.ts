@@ -3,6 +3,7 @@ import { Request, Response } from "express";
 import AppError from "../errors/AppError";
 import { getAppTz } from "../helpers/AppTime";
 import { metaCosts } from "../services/ChannelServices/MetaCosts";
+import { META_RATES_BR, META_RATES_DATE, META_RULES } from "../services/ChannelServices/MetaRates";
 import { Op } from "sequelize";
 import { dayBounds } from "../helpers/AppTime";
 import OutboundDelivery from "../models/OutboundDelivery";
@@ -33,6 +34,8 @@ export const show = async (req: Request, res: Response): Promise<Response> => {
   const suggestedRate = messages > unpriced && real > 0 && (!report.currency || report.currency === "USD") ? Math.round((real / (messages - unpriced)) * 10000) / 10000 : null;
   return res.json({
     ...report,
-    estimate: { usd: Math.round(est * 100) / 100, messages, unpriced, sameCurrency: !report.currency || report.currency === "USD", suggestedRate }
+    estimate: { usd: Math.round(est * 100) / 100, messages, unpriced, sameCurrency: !report.currency || report.currency === "USD", suggestedRate },
+    // how the Meta charges, with the reference rate of each category (Brazil) and the date of the table
+    pricing: { date: META_RATES_DATE, currency: "USD", country: "Brasil", rates: META_RATES_BR, rules: META_RULES }
   });
 };

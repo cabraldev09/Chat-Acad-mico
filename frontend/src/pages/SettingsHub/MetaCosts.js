@@ -60,13 +60,40 @@ export default function MetaCosts() {
       ) : (
         <>
           <div className="dash-stagger" style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))" }}>
-            {[["Gasto no período", money(data.total), "var(--accent)"], ["Gasto hoje", money(data.today), "#0f766e"], ["Mensagens cobradas", paid.toLocaleString("pt-BR"), "#0B4279"], ["Gratuitas (janela de 24 h)", data.freeVolume.toLocaleString("pt-BR"), "var(--text-3)"]].map(([l, v, tone]) => (
+            {[["Gasto no período", money(data.total), "var(--accent)"], ["Gasto hoje", money(data.today), "#0f766e"], ["Modelos cobrados", paid.toLocaleString("pt-BR"), "#0B4279"], ["Gratuitas (janela de 24 h)", data.freeVolume.toLocaleString("pt-BR"), "var(--text-3)"]].map(([l, v, tone]) => (
               <div key={l} className="ui-card" style={{ padding: 14, minWidth: 0 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--text-2)", fontSize: 12.5 }}><CircleDollarSign size={15} style={{ color: tone }} /> {l}</div>
                 <div style={{ fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums", marginTop: 4, overflowWrap: "anywhere" }}>{v}</div>
               </div>
             ))}
           </div>
+          {data.pricing && (
+            <div style={card} aria-label="Como a Meta cobra">
+              <div style={{ fontSize: 15, fontWeight: 700 }}>Como a Meta cobra</div>
+              <ul style={{ margin: "8px 0 10px", paddingLeft: 18, fontSize: 13, display: "grid", gap: 4 }}>
+                {data.pricing.rules.map((r) => <li key={r}>{r}</li>)}
+              </ul>
+              <div style={{ overflowX: "auto", border: "1px solid var(--line)", borderRadius: 10 }}>
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <thead><tr><th style={th}>Categoria</th><th style={th}>Tarifa por modelo ({data.pricing.country})</th><th style={th}>Modelos no período</th><th style={th}>Cobrado</th></tr></thead>
+                  <tbody>
+                    {data.pricing.rates.map((r) => {
+                      const real = (data.byCategory || []).find((c) => String(c.category).toUpperCase() === r.category);
+                      return (
+                        <tr key={r.category}>
+                          <td style={cell}><b>{r.label}</b><div style={{ fontSize: 12, color: "var(--text-2)", whiteSpace: "normal" }}>{r.note}</div></td>
+                          <td style={cell}>{new Intl.NumberFormat("pt-BR", { style: "currency", currency: "USD", maximumFractionDigits: 4 }).format(r.usd)}</td>
+                          <td style={cell}>{real ? real.volume.toLocaleString("pt-BR") : 0}</td>
+                          <td style={{ ...cell, fontWeight: 700 }}>{money(real ? real.cost : 0)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <div style={{ fontSize: 12.5, color: "var(--text-2)", marginTop: 6 }}>Tarifas de referência da tabela pública da Meta ({String(data.pricing.date).split("-").reverse().join("/")}), em dólar. Confira a tabela oficial antes de planejar campanhas; o valor cobrado de verdade é o que aparece nas colunas da Meta.</div>
+            </div>
+          )}
           {data.estimate && data.estimate.messages > 0 && (
             <div style={{ ...card, display: "grid", gap: 4 }}>
               <div style={{ fontSize: 15, fontWeight: 700 }}>Estimado pelo sistema × cobrado pela Meta</div>
@@ -88,12 +115,12 @@ export default function MetaCosts() {
             ) : <div style={{ color: "var(--text-2)", fontSize: 13, marginTop: 10 }}>Sem cobranças no período.</div>}
           </div>
           <div style={{ display: "grid", gap: 16, gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))" }}>
-            {[["Por tipo de mensagem", data.byCategory.map((c) => [c.category, c.label, c.volume, c.cost])], ["Por número", data.byNumber.map((n) => [n.phone, n.name, n.volume, n.cost])]].map(([title, rows]) => (
+            {[["Por categoria", data.byCategory.map((c) => [c.category, c.label, c.volume, c.cost])], ["Por número", data.byNumber.map((n) => [n.phone, n.name, n.volume, n.cost])]].map(([title, rows]) => (
               <div key={title} style={card}>
                 <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 8 }}>{title}</div>
                 <div style={{ overflowX: "auto", border: "1px solid var(--line)", borderRadius: 10 }}>
                   <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                    <thead><tr><th style={th}>{title === "Por número" ? "Número" : "Tipo"}</th><th style={th}>Mensagens</th><th style={th}>Gasto</th></tr></thead>
+                    <thead><tr><th style={th}>{title === "Por número" ? "Número" : "Tipo"}</th><th style={th}>{title === "Por número" ? "Mensagens" : "Modelos"}</th><th style={th}>Gasto</th></tr></thead>
                     <tbody>
                       {rows.map(([k, l, v, c]) => <tr key={k}><td style={{ ...cell, overflowWrap: "anywhere" }}>{l}</td><td style={cell}>{v.toLocaleString("pt-BR")}</td><td style={{ ...cell, fontWeight: 700 }}>{money(c)}</td></tr>)}
                       {!rows.length && <tr><td colSpan={3} style={{ ...cell, color: "var(--text-2)" }}>Nada no período.</td></tr>}
