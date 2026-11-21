@@ -14,7 +14,7 @@ const ADMIN = { email: process.env.ADMIN_EMAIL || "admin@whaticket.com", passwor
 const MAX = Number(process.env.MAX || 40);
 const ROUTES = process.env.ROUTES ? process.env.ROUTES.split(",") : [
   "/tickets", "/contacts", "/connections", "/quickAnswers", "/schedules", "/reports", "/ambientacao",
-  "/estatisticas", "/estatisticas?aba=consultores", "/estatisticas?aba=treinamento", "/estatisticas/captacao", "/estatisticas/tutoria", "/gestao-comercial", "/meus-alunos",
+  "/estatisticas", "/meu-desempenho", "/estatisticas?aba=consultores", "/estatisticas?aba=treinamento", "/estatisticas/captacao", "/estatisticas/tutoria", "/gestao-comercial", "/meus-alunos",
   "/crm", "/crm/painel", "/crm/tarefas", "/crm/comissoes", "/crm/metas-polos", "/crm/retencao",
   "/afiliados", "/cursos", "/campaigns", "/chatbot", "/ai-agents", "/users", "/polos", "/Queues", "/tags", "/grades",
   "/analise-curricular", "/analise-academica", "/alunos",

@@ -24,16 +24,12 @@ export const hubSections = (user) => {
       ]
     : tutor
     ? [{ to: "/estatisticas/tutoria", label: "Minha tutoria" }]
-    : [
-        { to: "/estatisticas", label: "Meus números" },
-        { to: "/estatisticas/captacao", label: "Captação" },
-        { to: "/reports", label: "Meu atendimento" },
-      ];
+    : [];
   return [{ dept: "Estatísticas", icon: Briefcase, items }];
 };
 
 // the panel of /estatisticas is the home of the hub (each one sees what they may see there); the tutor starts on the tutoring
-export const hubHome = (user) => (user && ["tutor", "academico"].includes(user.role) ? "/estatisticas/tutoria" : "/estatisticas");
+export const hubHome = (user) => (user && ["tutor", "academico"].includes(user.role) ? "/estatisticas/tutoria" : isManager(user) ? "/estatisticas" : "/meu-desempenho");
 
 const StatsHubBar = () => {
   const { user } = useContext(AuthContext);

@@ -46,6 +46,7 @@ const Reports = lazy(() => import("../pages/Reports/"));
 const CommercialCenter = lazy(() => import("../pages/CommercialCenter/"));
 const Statistics = lazy(() => import("../pages/Statistics/"));
 const TutoriaStats = lazy(() => import("../pages/Statistics/TutoriaStats"));
+const MyPerformance = lazy(() => import("../pages/MyPerformance/"));
 const Enrollments = lazy(() => import("../pages/Enrollments/"));
 const CourseMaterials = lazy(() => import("../pages/CourseMaterials/"));
 const CrmBoard = lazy(() => import("../pages/CRM/Board"));
@@ -156,6 +157,7 @@ const Routes = () => {
                 <Route exact path="/reports" component={Reports} isPrivate />
                 <Route exact path="/gestao-comercial" component={CommercialCenter} isPrivate managerOnly />
                 <Route exact path="/estatisticas" component={Statistics} isPrivate />
+                <Route exact path="/meu-desempenho" component={MyPerformance} isPrivate />
                 <Route exact path="/estatisticas/tutoria" component={TutoriaStats} isPrivate />
                 <Route exact path="/estatisticas/captacao" component={CrmResults} isPrivate />
                 <Route exact path="/crm/matriculas" component={Enrollments} isPrivate managerOnly />

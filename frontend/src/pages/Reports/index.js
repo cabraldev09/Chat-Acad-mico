@@ -1,5 +1,5 @@
 import React, { useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { useHistory } from "react-router-dom";
+import { Redirect, useHistory } from "react-router-dom";
 import { toast } from "react-toastify";
 import { MenuItem, TextField } from "@material-ui/core";
 import { makeStyles } from "@material-ui/core/styles";
@@ -14,7 +14,6 @@ import api from "../../services/api";
 import Management from "./Management";
 import ManagerView from "./ManagerView";
 import MyDay from "./MyDay";
-import MyStats from "./MyStats";
 import { Insights } from "./shared";
 import { isManager } from "../../utils/access";
 import { fillDays } from "../../utils/chartDays";
@@ -505,7 +504,7 @@ const ReportsClassic = () => {
 const Reports = () => {
   const { user } = useContext(AuthContext);
   const consultant = user && user.profile !== "admin" && (user.role === "consultor" || !user.role);
-  return consultant ? <MyStats /> : <ReportsClassic />;
+  return consultant ? <Redirect to="/meu-desempenho" /> : <ReportsClassic />;
 };
 
 export default Reports;

@@ -231,6 +231,8 @@ export default function Statistics() {
   const [period, setPeriod] = useState({ range: "month" });
   const params = periodParams(period);
   if (tutor) return <Redirect to="/estatisticas/tutoria" />;
+  // a consultant has their own place (Meu desempenho); the statistics of the team are the management's
+  if (!manager) return <Redirect to="/meu-desempenho" />;
   const titles = { comercial: manager ? "Visão geral" : "Meus números", consultores: "Consultores", treinamento: "Treinamento" };
   const leads = {
     comercial: manager ? "Onde os leads param, objeções, matrículas por cidade e as etapas puladas do processo." : "Os seus números no período, com os mesmos critérios da gestão.",
