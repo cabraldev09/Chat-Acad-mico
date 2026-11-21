@@ -1,3 +1,4 @@
+import { lastInboundAt } from "../OutboundServices/LastInbound";
 import AppError from "../../errors/AppError";
 import { getSetting } from "../../helpers/AppSettings";
 import Message from "../../models/Message";
@@ -30,9 +31,9 @@ export const windowOf = async (ticket: Pick<Ticket, "id" | "whatsappId" | "segme
   const w = await Whatsapp.findByPk(ticket.whatsappId, { attributes: ["id", "channel"] });
   const channel = w?.channel || "whatsapp";
   if (channel !== "whatsapp_cloud") return { official: false, open: true, template: null };
-  const last = await Message.findOne({ where: { fromMe: false }, include: [{ model: Ticket, as: "ticket", attributes: [], where: { contactId: ticket.contactId, whatsappId: ticket.whatsappId }, required: true }], order: [["createdAt", "DESC"]], attributes: ["createdAt"] });
+  const last = await lastInboundAt(ticket.contactId, ticket.whatsappId);
   const side = sideOfSegment(ticket.segment) === "tutoria" ? "tutoria" : "atendimento";
-  return { official: true, open: inMessagingWindow(channel, last ? new Date(last.createdAt) : null), template: await openingTemplateOf(side) };
+  return { official: true, open: inMessagingWindow(channel, last), template: await openingTemplateOf(side) };
 };
 
 export const sendOpeningTemplate = async (ticketId: number, userId: number): Promise<void> => {

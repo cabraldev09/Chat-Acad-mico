@@ -13,8 +13,11 @@ import { dayBounds } from "../../helpers/AppTime";
 import AppError from "../../errors/AppError";
 import { isWithinBusinessHours } from "../AutomationServices/BusinessHours";
 import { inMessagingWindow, validateTemplate } from "./Policy";
+import { lastInboundAt } from "./LastInbound";
 
 const context = new AsyncLocalStorage<number>();
+// errors our senders raise when the channel answered with a refusal (see SendWhatsAppMessage/Media): nothing was delivered
+const REFUSALS = ["ERR_SENDING_WAPP_MSG", "ERR_SENDING_WAPP_MEDIA_MSG", "ERR_REPLY_WINDOW_CLOSED", "ERR_RATE_LIMITED", "ERR_WAPP_NOT_INITIALIZED"];
 export interface SendPolicy {
   key?: string;
   automated?: boolean;
@@ -31,21 +34,20 @@ export const deliver = async <T extends { id: any }>(ticket: Ticket, options: Se
   if (prior) {
     if (prior.contactId !== ticket.contactId || prior.whatsappId !== ticket.whatsappId) throw new AppError("ERR_DELIVERY_KEY_CONFLICT", 409);
     if (prior.status === "sent" && prior.externalId) return { id: prior.externalId } as T;
-    throw new AppError("ERR_DELIVERY_UNCERTAIN", 409);
+    // the channel refused it before anything went out: the same key may try again
+    if (prior.status === "refused") await prior.destroy();
+    else throw new AppError("ERR_DELIVERY_UNCERTAIN", 409);
   }
   const [contact, whatsapp] = await Promise.all([Contact.findByPk(ticket.contactId), Whatsapp.findByPk(ticket.whatsappId)]);
   if (!contact || !whatsapp) throw new AppError("ERR_NO_WAPP_FOUND", 404);
   if (contact.optOut && !options.optOutNotice) throw new AppError("ERR_CONTACT_OPTED_OUT", 409);
   if (options.automated && !options.optOutNotice && !options.outsideHoursNotice && !isReactiveReply() && !isWithinBusinessHours(whatsapp)) throw new AppError("ERR_OUTSIDE_BUSINESS_HOURS", 409);
   const channel = whatsapp.channel || "whatsapp";
-  const related = await Ticket.findAll({ where: { contactId: contact.id, whatsappId: whatsapp.id }, attributes: ["id"] });
-  const inbound = await Message.findOne({
-    where: { ticketId: related.map(t => t.id), fromMe: false, isDeleted: false }, order: [["createdAt", "DESC"]], attributes: ["createdAt"]
-  });
+  const inboundAt = await lastInboundAt(contact.id, whatsapp.id);
   if (options.template) {
     if (channel !== "whatsapp_cloud" || !validateTemplate(options.template)) throw new AppError("ERR_TEMPLATE_INVALID", 400);
     if (await getSetting("outbound_allow_templates", "false") !== "true") throw new AppError("ERR_TEMPLATES_NOT_AUTHORIZED", 409);
-  } else if (!inMessagingWindow(channel, inbound?.createdAt || null)) throw new AppError("ERR_MESSAGING_WINDOW_CLOSED", 409);
+  } else if (!inMessagingWindow(channel, inboundAt)) throw new AppError("ERR_MESSAGING_WINDOW_CLOSED", 409);
   const meta = ["whatsapp_cloud", "instagram", "messenger"].includes(channel);
   const rateRaw = await getSetting(options.template ? "outbound_meta_template_usd" : "outbound_meta_service_usd", "");
   const rate = meta && rateRaw !== "" && Number.isFinite(Number(rateRaw)) && Number(rateRaw) >= 0 ? Number(rateRaw) : null;
@@ -70,8 +72,10 @@ export const deliver = async <T extends { id: any }>(ticket: Ticket, options: Se
     await row.update({ status: "sent", externalId: String(result.id), error: null });
     return result;
   } catch (err) {
-    // A timeout or a persistence failure after sending is not proof of non-delivery.
-    await row.update({ status: "uncertain", error: String(err.message || err).slice(0, 500) });
+    // the channel said no (it answered with a refusal, nothing reached the phone): "refused", and a retry with the same key may go.
+    // A timeout or a persistence failure after sending is not proof of non-delivery: "uncertain", never sent again by itself.
+    const refused = err instanceof AppError && REFUSALS.includes(err.message);
+    await row.update({ status: refused ? "refused" : "uncertain", error: String(err.message || err).slice(0, 500) });
     throw err;
   }
 };

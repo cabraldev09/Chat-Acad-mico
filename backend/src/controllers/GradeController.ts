@@ -79,14 +79,21 @@ export const store = async (req: Request, res: Response): Promise<Response> => {
   if (!files.length) throw new AppError("Selecione ao menos 1 arquivo PDF.", 400);
   const upsert = String(req.body?.mode || "") === "upsert" || files.length > 1;
   const results: Array<{ name: string; ok: boolean; message: string; id?: number; action?: string; warning?: boolean }> = [];
-  for (const f of files) {
-    try {
-      // eslint-disable-next-line no-await-in-loop
-      const r = await publishGrade({ bytes: f.buffer, filename: f.originalname.replace(/[\\/:*?"<>|]/g, "_"), userId: Number(req.user.id), upsert });
-      results.push({ name: f.originalname, ok: true, message: r.message, id: r.id, action: r.action, warning: r.warning });
-    } catch (err) {
-      results.push({ name: f.originalname, ok: false, message: err instanceof AppError ? err.message : "Não foi possível ler este PDF." });
+  try {
+    for (const f of files) {
+      try {
+        // one file in memory at a time (they wait on disk, see analysisRoutes)
+        // eslint-disable-next-line no-await-in-loop
+        const bytes = f.buffer || (await fs.promises.readFile(f.path));
+        // eslint-disable-next-line no-await-in-loop
+        const r = await publishGrade({ bytes, filename: f.originalname.replace(/[\\/:*?"<>|]/g, "_"), userId: Number(req.user.id), upsert });
+        results.push({ name: f.originalname, ok: true, message: r.message, id: r.id, action: r.action, warning: r.warning });
+      } catch (err) {
+        results.push({ name: f.originalname, ok: false, message: err instanceof AppError ? err.message : "Não foi possível ler este PDF." });
+      }
     }
+  } finally {
+    files.forEach(f => { if (f.path) fs.unlink(f.path, () => undefined); });
   }
   const failed = results.filter(r => !r.ok).length;
   return res.status(failed === results.length ? 400 : 201).json({ results, created: results.filter(r => r.action === "created").length, updated: results.filter(r => r.action === "updated").length, unchanged: results.filter(r => r.action === "unchanged").length, failed });

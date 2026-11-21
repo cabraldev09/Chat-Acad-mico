@@ -227,7 +227,8 @@ export const remove = async (req: Request, res: Response): Promise<Response> => 
   if (lead.enrolledAt || lead.wonAt) throw new AppError("ERR_LEAD_DELETE_ENROLLED", 400);
   const paid = await Payment.count({ where: { leadId: lead.id, status: "paid" } as any });
   if (paid > 0) throw new AppError("ERR_LEAD_DELETE_PAID", 400);
-  logger.warn(`Lead excluído por ${req.user.id}: #${lead.id} "${String(lead.name || "").slice(0, 60)}" (etapa ${lead.stageId})`);
+  // only technical ids in the log (never the person's name)
+  logger.warn(`Lead excluído por ${req.user.id}: #${lead.id} (etapa ${lead.stageId})`);
   await lead.destroy();
   getIO().emit("lead", { action: "delete", leadId: Number(req.params.id) });
   return res.json({ message: "deleted" });

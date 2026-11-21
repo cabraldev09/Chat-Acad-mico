@@ -5740,6 +5740,20 @@ const postMeta = (id, payload, secret, badSig) => {
       const cleaned = await http.post("/system/affiliate-leads/clean", {}, auth());
       assert(cleaned.status === 200, `cleaning the affiliate leads ${cleaned.status} ${JSON.stringify(cleaned.data).slice(0, 300)}`);
     });
+    await test("the Meta webhook is stored before the 200 and processed from the queue; the same delivery twice is one message", async () => {
+      const body = cloudEvent([{ from: "5511955557001", id: "wamid.durable-1", type: "text", text: { body: "Mensagem guardada antes da resposta" } }]);
+      const first = await postMeta(cid, body, cloudCfg.appSecret);
+      assert(first.status === 200, `webhook ${first.status}`);
+      await waitFor(() => sql(`SELECT status FROM MetaWebhookEvents WHERE body LIKE '%wamid.durable-1%' ORDER BY id DESC LIMIT 1`) === "done", 8000, "the stored webhook was processed");
+      const again = await postMeta(cid, body, cloudCfg.appSecret);
+      assert(again.status === 200, `repeated webhook ${again.status}`);
+      await sleep(1500);
+      assert(sql(`SELECT COUNT(*) FROM MetaWebhookEvents WHERE body LIKE '%wamid.durable-1%'`) === "1", "the same delivery was stored twice");
+      assert(sql(`SELECT COUNT(*) FROM Messages WHERE id='wamid.durable-1'`) === "1", "the message was duplicated");
+      // a bad signature is never stored
+      const bad = await postMeta(cid, cloudEvent([{ from: "5511955557001", id: "wamid.durable-bad", type: "text", text: { body: "x" } }]), "wrong-secret");
+      assert(bad.status === 401 && sql(`SELECT COUNT(*) FROM MetaWebhookEvents WHERE body LIKE '%wamid.durable-bad%'`) === "0", "an unsigned webhook was stored");
+    });
     await test("the team's week: a new person and the company start Monday to Thursday 08-18 and Friday 08-17; the number must exist", async () => {
       const crm = (await http.get("/crm/settings", auth())).data;
       assert(crm.standardWeek && crm.standardWeek["5"][0].end === "17:00" && crm.standardWeek["4"][0].end === "18:00" && !crm.standardWeek["6"].length, `standard week ${JSON.stringify(crm.standardWeek)}`);
