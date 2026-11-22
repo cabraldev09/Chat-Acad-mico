@@ -119,15 +119,15 @@ export const processOutbound = async (id: number): Promise<void> => {
     hookHumanReply(ticket.contactId, row.userId);
   } catch (err) {
     const reason = String((err as any)?.message || err);
-    // not retried: a refusal that will not change (closed reply window) and a send that may already have reached the phone
-    // (ERR_DELIVERY_UNCERTAIN: the delivery of this key started and was not confirmed) — the person checks the conversation
-    const final = ["ERR_REPLY_WINDOW_CLOSED", "ERR_DELIVERY_UNCERTAIN", "ERR_DELIVERY_KEY_CONFLICT"].includes(reason);
+    // Not retried: a refusal that will not change, or a generic send error that may hide provider acceptance.
+    // The latter must be checked in the conversation; only the same idempotency key may be retried after manual confirmation.
+    const final = ["ERR_REPLY_WINDOW_CLOSED", "ERR_DELIVERY_UNCERTAIN", "ERR_DELIVERY_KEY_CONFLICT", "ERR_SENDING_WAPP_MSG"].includes(reason);
     if (!final && row.attempts < MAX_ATTEMPTS) {
       // the call failed before WhatsApp accepted it: try again soon (only while the row is still ours: a row the sweep reported stays reported)
       await OutboundMessage.update({ status: "pending", lockedAt: null, error: reason.slice(0, 1000), nextAttemptAt: new Date(Date.now() + 5000 * row.attempts) } as any, { where: { id: row.id, status: "sending" } as any });
     } else {
       const [mine] = await OutboundMessage.update({ status: "sending" } as any, { where: { id: row.id, status: "sending" } as any });
-      if (mine) await fail(row, reason === "ERR_DELIVERY_UNCERTAIN" ? "Não foi possível confirmar o envio. Confira a conversa antes de enviar de novo." : reason);
+      if (mine) await fail(row, ["ERR_DELIVERY_UNCERTAIN", "ERR_SENDING_WAPP_MSG"].includes(reason) ? "Não foi possível confirmar o envio. Confira a conversa antes de enviar de novo." : reason);
     }
   }
 };
