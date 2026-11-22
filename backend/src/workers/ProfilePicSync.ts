@@ -42,6 +42,9 @@ const save = (contact: Contact, buf: Buffer): string => {
   return `avatars/${name}`;
 };
 
+const SWEEP_MS = 2 * 60 * 1000;
+let lastSweep = 0;
+
 const tick = async (): Promise<void> => {
   if (running) return;
   running = true;
@@ -63,7 +66,11 @@ const tick = async (): Promise<void> => {
         [Op.and]: [{ [Op.or]: [{ picCheckedAt: { [Op.is]: null } }, { picCheckedAt: { [Op.lt]: new Date(Date.now() - 24 * 3600 * 1000) } }] }]
       } as any
     }) : [];
-    const rest = await Contact.findAll({
+    // the contacts that only wait for a periodic check are looked for every 2 minutes (the query sorts every candidate by its last
+    // conversation); the ones a screen asked for just now (urgent) still go on every tick
+    const sweep = Date.now() - lastSweep >= SWEEP_MS;
+    if (sweep) lastSweep = Date.now();
+    const rest = !sweep ? [] : await Contact.findAll({
       where: {
         [Op.and]: [
           { [Op.or]: [{ profilePicUrl: { [Op.is]: null } }, { profilePicUrl: { [Op.like]: "http%" } }] },

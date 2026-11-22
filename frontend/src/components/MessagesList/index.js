@@ -303,20 +303,26 @@ const reducer = (state, action) => {
   if (action.type === "LOAD_MESSAGES") {
     const fresh = [];
     let changed = false;
-    const sig = (m) => `${m.ack}|${m.reactions}|${m.isDeleted}|${m.body}|${m.starred}|${m.mediaUrl}|${m.isEdited}|${m.read}`;
+    // the file of a message is compared without its access token (the link is renewed every hour; the file is the same)
+    const file = (u) => String(u || "").split("?")[0];
+    const sig = (m) => `${m.ack}|${m.reactions}|${m.isDeleted}|${m.body}|${m.starred}|${file(m.mediaUrl)}|${m.isEdited}|${m.read}`;
+    const index = new Map(state.map((m, i) => [m.id, i]));
+    let next = state;
     action.payload.forEach((message) => {
-      const i = state.findIndex((m) => m.id === message.id);
-      if (i !== -1) {
+      const i = index.get(message.id);
+      if (i !== undefined) {
         // a periodic refresh that finds nothing new must not redraw the whole conversation
-        if (sig(state[i]) !== sig(message)) {
-          state[i] = message;
+        if (sig(next[i]) !== sig(message)) {
+          if (next === state) next = state.slice();
+          next[i] = message;
           changed = true;
         }
       } else fresh.push(message);
     });
     if (!fresh.length && !changed) return state;
+    if (!fresh.length) return next;
     // older pages go in front, newer ones (a refresh after a gap) at the end: always in the order they were written
-    return [...fresh, ...state].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+    return [...fresh, ...next].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
   }
   if (action.type === "ADD_MESSAGE") {
     const i = state.findIndex((m) => m.id === action.payload.id);

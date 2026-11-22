@@ -133,6 +133,33 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
   return res.status(200).json({ tickets, count, hasMore });
 };
 
+// The chips of the conversations screen in one request: Atendendo, Aguardando and the unread counts (private and groups). The screen
+// used to send four requests after every new message; here they run together, and a burst of messages is answered from memory.
+export const counts = async (req: Request, res: Response): Promise<Response> => {
+  const q = req.query as IndexQuery & { tagId?: string };
+  const userId = req.user.id;
+  let queueIds: number[] = [];
+  try { const parsed = JSON.parse(String(q.queueIds || "[]")); queueIds = Array.isArray(parsed) ? parsed.map(Number).filter(Number.isFinite) : []; } catch (_) { queueIds = []; }
+  if (!isManagerRole(roleOf(req.user))) {
+    const mine = (await UserQueue.findAll({ where: { userId: Number(userId) } })).map(x => x.queueId);
+    queueIds = queueIds.filter(id => mine.includes(Number(id)));
+  }
+  const role = roleOf(req.user);
+  const base = { userId, queueIds, role, countOnly: true, allQueues: q.allQueues, attendantId: q.attendantId, connectionId: q.connectionId };
+  const key = `ticket-counts:${userId}:${queueIds.join(",")}:${q.allQueues || ""}:${q.attendantId || ""}:${q.connectionId || ""}:${q.tagId || ""}:${q.showAll || ""}`;
+  const { remember } = await import("../helpers/TtlCache");
+  const result = await remember(key, Number(process.env.TICKET_COUNTS_MS ?? 1500), async () => {
+    const [open, pending, unreadPrivate, unreadGroups] = await Promise.all([
+      ListTicketsService({ ...base, groups: "exclude", tagId: q.tagId, status: "open", showAll: q.showAll === "true" ? "true" : undefined }),
+      ListTicketsService({ ...base, groups: "exclude", tagId: q.tagId, status: "pending" }),
+      ListTicketsService({ ...base, groups: "exclude", withUnreadMessages: "true", showAll: "true" }),
+      ListTicketsService({ ...base, groups: "only", withUnreadMessages: "true", showAll: "true" })
+    ]);
+    return { open: open.count, pending: pending.count, unread: unreadPrivate.count, groupUnread: unreadGroups.count };
+  });
+  return res.json(result);
+};
+
 // "Enviar boas-vindas" (tutor): the text the administration wrote, ready to be edited and sent by the tutor. Shown only
 // while nobody has answered the student yet.
 export const welcome = async (req: Request, res: Response): Promise<Response> => {

@@ -13,9 +13,12 @@ const tick = async (): Promise<void> => {
       include: [{ model: Lead, as: "lead", attributes: ["id", "name"] }],
       limit: 50
     });
-    for (const task of due) {
-      // eslint-disable-next-line no-await-in-loop
-      await task.update({ notifiedAt: new Date() });
+    if (!due.length) return;
+    // one update for the whole batch, without the per-task hook (marking "reminded" does not change the next follow-up of the lead, and
+    // the hook re-saved and re-broadcast the lead once per task); only the rows still unmarked are taken, so two instances never repeat one
+    const [, marked] = await LeadTask.update({ notifiedAt: new Date() } as any, { where: { id: due.map(t => t.id), notifiedAt: null as any }, returning: true } as any) as any;
+    const fresh = new Set((marked || []).map((t: any) => t.id));
+    for (const task of due.filter(t => fresh.has(t.id))) {
       getIO().emit("crmReminder", {
         taskId: task.id,
         userId: task.userId,

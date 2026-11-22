@@ -55,7 +55,7 @@ module.exports = {
       process.env.DB_POOL_MAX ||
         (/pooler\.supabase\.com/.test(process.env.DATABASE_URL_POOL || process.env.DATABASE_URL || "")
           ? /:6543\//.test(process.env.DATABASE_URL_POOL || process.env.DATABASE_URL || "") ? 12 : 4
-          : 10)
+          : 20)
     ),
     idle: 10000,
     acquire: 30000

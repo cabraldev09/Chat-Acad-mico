@@ -226,19 +226,27 @@ const TicketsManager = () => {
     return () => window.removeEventListener("openNewConversation", open);
   }, []);
 
-  // groups do not show in "Atendendo", so their unread count lives on the Grupos chip (like WhatsApp's unread filter)
+  // groups do not show in "Atendendo", so their unread count lives on the Grupos chip (like WhatsApp's unread filter).
+  // All the chips come from the server in ONE request (GET /tickets/counts: the size of the whole list, not of the pages already
+  // loaded), asked again when a conversation changes hands or a message arrives; a burst of events makes a single request.
   const [groupUnread, setGroupUnread] = useState(0);
   const [dmUnread, setDmUnread] = useState(0);
   useEffect(() => {
     let timer;
+    let alive = true;
     const refresh = () => {
       clearTimeout(timer);
       timer = setTimeout(() => {
-        const count = (groups) =>
-          api.get("/tickets", { params: { withUnreadMessages: "true", groups, showAll: "true", countOnly: "true", queueIds: JSON.stringify(selectedQueueIds), allQueues: scope.allQueues ? "true" : undefined, attendantId: attendantId || undefined, connectionId: connectionId || undefined } })
-            .then(({ data }) => data.count || 0);
-        Promise.all([count("only"), count("exclude")]).then(([g, d]) => { setGroupUnread(g); setDmUnread(d); }).catch(() => undefined);
-      }, 700);
+        api.get("/tickets/counts", { params: { queueIds: JSON.stringify(selectedQueueIds), allQueues: scope.allQueues ? "true" : undefined, attendantId: attendantId || undefined, connectionId: connectionId || undefined, tagId: tagId || undefined, showAll: showAllTickets ? "true" : undefined } })
+          .then(({ data }) => {
+            if (!alive) return;
+            setOpenCount(data.open || 0);
+            setPendingCount(data.pending || 0);
+            setDmUnread(data.unread || 0);
+            setGroupUnread(data.groupUnread || 0);
+          })
+          .catch(() => undefined);
+      }, 800);
     };
     refresh();
     const socket = openSocket("notification");
@@ -246,29 +254,7 @@ const TicketsManager = () => {
     socket.on("appMessage", refresh);
     socket.on("ticket", refresh);
     return () => {
-      clearTimeout(timer);
-      socket.disconnect();
-    };
-  }, [selectedQueueIds, scope.allQueues, attendantId, connectionId]);
-
-  // "Atendendo" and "Aguardando" counters come from the server (the size of the whole list, not of the pages already loaded) and are asked
-  // again whenever a conversation changes hands, so taking a conversation moves the numbers at once, with no reload
-  useEffect(() => {
-    let timer;
-    const refresh = () => {
-      clearTimeout(timer);
-      timer = setTimeout(() => {
-        const base = { groups: "exclude", countOnly: "true", queueIds: JSON.stringify(selectedQueueIds), allQueues: scope.allQueues ? "true" : undefined, attendantId: attendantId || undefined, connectionId: connectionId || undefined, tagId: tagId || undefined };
-        api.get("/tickets", { params: { ...base, status: "open", showAll: showAllTickets ? "true" : undefined } }).then(({ data }) => setOpenCount(data.count || 0)).catch(() => undefined);
-        api.get("/tickets", { params: { ...base, status: "pending" } }).then(({ data }) => setPendingCount(data.count || 0)).catch(() => undefined);
-      }, 400);
-    };
-    refresh();
-    const socket = openSocket("notification");
-    socket.on("connect", () => socket.emit("joinNotification"));
-    socket.on("ticket", refresh);
-    socket.on("appMessage", refresh);
-    return () => {
+      alive = false;
       clearTimeout(timer);
       socket.disconnect();
     };
@@ -285,7 +271,13 @@ const TicketsManager = () => {
     load();
     const socket = openSocket("notification");
     socket.on("connect", () => socket.emit("joinNotification"));
-    ["ticket", "appMessage", "contact"].forEach((evt) => socket.on(evt, load));
+    // only events of groups and communities change this list (a private message does not)
+    const ofGroup = (data) => {
+      const t = (data && (data.ticket || (data.message && data.message.ticket))) || null;
+      const c = (data && data.contact) || (t && t.contact) || null;
+      return !!((t && t.isGroup) || (c && (c.isGroup || c.kind === "community" || c.parentGroupId)) || (data && data.action === "delete"));
+    };
+    ["ticket", "appMessage", "contact"].forEach((evt) => socket.on(evt, (data) => { if (ofGroup(data)) load(); }));
     return () => { clearTimeout(timer); socket.disconnect(); };
   }, []);
   const communityUnread = (communities || []).reduce((n, c) => n + (c.unread || 0), 0);

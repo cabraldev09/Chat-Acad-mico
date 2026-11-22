@@ -24,14 +24,20 @@ const tick = async (): Promise<void> => {
     const business = await getBusinessConfig();
     if (!isBusinessNow(business)) return;
     const now = new Date();
+    // only what can need something: the customer spoke last (an answer is owed), or nobody has the conversation yet (to distribute it).
+    // Before, every open conversation was read (four queries each) every minute.
     const tickets = await Ticket.findAll({
-      where: { id: { [Op.gt]: cursor }, status: { [Op.in]: ["pending", "open"] }, isHistorical: false, isGroup: false, archivedAt: null as any },
+      where: {
+        id: { [Op.gt]: cursor }, status: { [Op.in]: ["pending", "open"] }, isHistorical: false, isGroup: false, archivedAt: null as any,
+        [Op.or]: [{ lastMessageFromMe: { [Op.not]: true } }, { userId: null, aiActive: { [Op.not]: true } }]
+      } as any,
       include: [{ model: Contact, as: "contact", where: { isStaff: false, noReply: false, kind: "person" } }],
       order: [["id", "ASC"]], limit: 200
     });
     cursor = tickets.length === 200 ? tickets[tickets.length - 1].id : 0;
+    const leads = new Map((await Lead.findAll({ where: { contactId: [...new Set(tickets.map(t => t.contactId))] } as any, attributes: ["id", "name", "contactId", "ownerId"] })).map(l => [l.contactId, l]));
     for (const ticket of tickets) {
-      const lead = await Lead.findOne({ where: { contactId: ticket.contactId } });
+      const lead = leads.get(ticket.contactId);
       if (!lead || ticket.contact?.optOut) continue;
       if (!ticket.userId && !ticket.aiActive) await AutoAssignTicket(ticket);
       const last = await Message.findOne({ where: { ticketId: ticket.id, isDeleted: false }, order: [["createdAt", "DESC"], ["id", "DESC"]] });
