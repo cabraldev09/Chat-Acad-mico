@@ -102,7 +102,7 @@ O que *pode* derrubar ou prejudicar um chip e como o sistema evita:
 
 ## Variáveis e volume da API (host com Docker)
 
-A produção atual roda na VPS (veja `docs/VPS-CONTABO.md`). Em qualquer outro host com Docker, o `Dockerfile` da raiz já faz build, migrations e health check:
+A produção atual roda na VPS da Hostinger (veja `docs/VPS-HOSTINGER.md`). Em qualquer outro host com Docker, o `Dockerfile` da raiz já faz build, migrations e health check:
 
 1. **Volume**: *Settings → Volumes → New Volume*, montar em `/data`. Sem ele a sessão do WhatsApp e os arquivos se perdem a cada deploy (e o chip pede novo QR Code).
 2. **Variáveis** (aba *Variables*):

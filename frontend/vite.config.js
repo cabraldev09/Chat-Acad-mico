@@ -129,7 +129,6 @@ export default defineConfig({
       },
     },
     include: [
-      "mic-recorder-to-mp3",
       "@material-ui/core",
       "lucide-react",
       "@material-ui/lab",
