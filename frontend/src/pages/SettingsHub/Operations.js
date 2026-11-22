@@ -80,6 +80,14 @@ export default function Operations({ part = "atendimento" }) {
     <Paper variant="outlined" style={{ padding: 20 }}>
       <Typography variant="h6">Conferir entregas</Typography>
       <Typography variant="body2">Mensagens interrompidas não são reenviadas automaticamente. Confira a conversa e registre o resultado; se precisar reenviar, crie um novo envio.</Typography>
+      {(summary.metaWebhooks || []).length > 0 && <Paper role="alert" variant="outlined" style={{ padding: 12, borderColor: "#c62828" }}>
+        <Typography variant="subtitle2">Eventos da Meta com falha definitiva</Typography>
+        <Typography variant="body2">A Meta já recebeu estes eventos, mas o sistema não conseguiu processá-los após cinco tentativas. Confira a conexão e os registros de erro antes de qualquer ação; a tela não reenvia nem reprocessa eventos.</Typography>
+        {(summary.metaWebhooks || []).map(event => <Typography key={event.id} variant="caption" display="block">
+          Evento #{event.id} · {event.whatsappId ? `conexão #${event.whatsappId}` : "aplicativo Meta"} · {event.attempts} tentativas · {new Date(event.updatedAt).toLocaleString("pt-BR")}
+        </Typography>)}
+        <Button component={Link} to="/connections">Abrir conexões</Button>
+      </Paper>}
       {summary.uncertain.map(d => <div key={d.id}>{d.ticketId ? <Button component={Link} to={`/tickets/${d.ticketId}`}>Abrir conversa #{d.ticketId}</Button> : <Typography variant="body2">Conversa removida; registro de consumo preservado.</Typography>}<Typography variant="caption">{d.status === "sending" ? "Envio em andamento" : d.error}</Typography>{d.status === "uncertain" && (!d.ticketId || !/^(schedule|campaign):/.test(d.key)) && <><Button onClick={() => reconcile("delivery", d.id, "sent")}>Confirmei a entrega</Button><Button onClick={() => reconcile("delivery", d.id, "failed")}>Confirmei que não chegou</Button></>}</div>)}
       {[...summary.schedules.map(s => ({ ...s, kind: "schedule", label: "Agendamento" })), ...summary.shippings.map(s => ({ ...s, kind: "campaign", label: "Campanha" }))].map(s => <div key={`${s.kind}:${s.id}`} style={{ marginTop: 8 }}>
         <Typography variant="body2">{s.label} #{s.id}: {s.error}</Typography><Button onClick={() => reconcile(s.kind, s.id, "sent")}>Confirmei a entrega</Button><Button onClick={() => reconcile(s.kind, s.id, "failed")}>Confirmei que não chegou</Button>

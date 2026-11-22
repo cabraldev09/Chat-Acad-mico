@@ -17,6 +17,7 @@ import CampaignShipping from "../models/CampaignShipping";
 import Schedule from "../models/Schedule";
 import AiUsage from "../models/AiUsage";
 import AiBudgetReservation from "../models/AiBudgetReservation";
+import MetaWebhookEvent from "../models/MetaWebhookEvent";
 import Lead from "../models/Lead";
 import TicketEvent from "../models/TicketEvent";
 import Queue from "../models/Queue";
@@ -41,13 +42,14 @@ export const saveConfig = async (req: Request, res: Response): Promise<Response>
 };
 export const summary = async (req: Request, res: Response): Promise<Response> => {
   const since = dayBounds().start;
-  const [unassigned, uncertain, users, queues, shippings, schedules] = await Promise.all([
+  const [unassigned, uncertain, users, queues, shippings, schedules, metaWebhooks] = await Promise.all([
     Ticket.findAll({ where: { status: { [Op.in]: ["pending", "open"] }, userId: null as any, aiActive: false, isGroup: false, isHistorical: false }, include: [{ model: Contact, as: "contact", attributes: ["id", "name"], where: { isStaff: false, noReply: false, optOut: false, kind: "person" } }], order: [["updatedAt", "ASC"]], limit: 50 }),
     OutboundDelivery.findAll({ where: { status: { [Op.in]: ["uncertain", "sending"] }, [Op.or]: [{ error: null as any }, { error: { [Op.notLike]: "Revisão manual:%" } }] }, order: [["createdAt", "ASC"]], limit: 50 }),
     User.findAll({ attributes: ["id", "name", "acceptsNewTickets", "maxOpenTickets"] }),
     Queue.findAll({ attributes: ["id", "name"] }),
     CampaignShipping.findAll({ where: { status: "uncertain" }, attributes: ["id", "campaignId", "name", "error"], limit: 50 }),
-    Schedule.findAll({ where: { status: "uncertain" }, attributes: ["id", "contactId", "error"], limit: 50 })
+    Schedule.findAll({ where: { status: "uncertain" }, attributes: ["id", "contactId", "error"], limit: 50 }),
+    MetaWebhookEvent.findAll({ where: { status: "failed" }, attributes: ["id", "whatsappId", "attempts", "updatedAt"], order: [["updatedAt", "ASC"]], limit: 20 })
   ]);
   // the spending of the day, every number in parallel (admin only)
   const spend = req.user.profile === "admin" ? await (async () => {
@@ -70,7 +72,7 @@ export const summary = async (req: Request, res: Response): Promise<Response> =>
   // the open conversations of each person in one grouped query (not one count per person)
   const open = (await Ticket.count({ where: { status: { [Op.ne]: "closed" }, userId: { [Op.ne]: null } } as any, group: ["userId"] })) as unknown as Array<{ userId: number; count: number }>;
   const openOf = new Map(open.map(r => [Number(r.userId), Number(r.count)]));
-  return res.json({ unassigned, uncertain, shippings, schedules, queues, users: users.map(u => ({ ...u.toJSON(), openTickets: openOf.get(u.id) || 0 })), spend });
+  return res.json({ unassigned, uncertain, shippings, schedules, metaWebhooks, queues, users: users.map(u => ({ ...u.toJSON(), openTickets: openOf.get(u.id) || 0 })), spend });
 };
 export const capacity = async (req: Request, res: Response): Promise<Response> => {
   const user = await User.findByPk(req.params.id);
