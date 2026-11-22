@@ -125,7 +125,7 @@ r.get("/analytics/tutoria", isAuth, Analytics.tutoria);
 r.get("/analytics/insights", isAuth, Analytics.insights);
 r.get("/analytics/online", isAuth, isManager, Analytics.online);
 
-r.get("/dashboard/management", isAuth, DashboardMgmt.management);
+r.get("/dashboard/management", isAuth, isManager, DashboardMgmt.management);
 r.post("/dashboard/management/feedback", isAuth, isManager, rateLimit({ windowMs: 10 * 60 * 1000, max: 5, key: req => `management-feedback:${req.user.id}` }), DashboardMgmt.managementFeedback);
 r.get("/dashboard/manager", isAuth, DashboardMgmt.managerOverview);
 r.get("/dashboard/me", isAuth, DashboardMgmt.myDay);
