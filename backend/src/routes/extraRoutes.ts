@@ -50,6 +50,7 @@ import * as Analytics from "../controllers/AnalyticsController";
 import * as AffMat from "../controllers/AffiliateMaterialController";
 import { affiliateUpload } from "../config/affiliateUpload";
 import { affiliateStaff, canAccessAffiliate } from "../helpers/Affiliates";
+import rateLimit from "../middleware/rateLimit";
 
 const upload = multer({ ...uploadConfig, limits: { fileSize: 30 * 1024 * 1024 } });
 const materialUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024, files: 1 } });
@@ -125,7 +126,7 @@ r.get("/analytics/insights", isAuth, Analytics.insights);
 r.get("/analytics/online", isAuth, isManager, Analytics.online);
 
 r.get("/dashboard/management", isAuth, DashboardMgmt.management);
-r.post("/dashboard/management/feedback", isAuth, isManager, DashboardMgmt.managementFeedback);
+r.post("/dashboard/management/feedback", isAuth, isManager, rateLimit({ windowMs: 10 * 60 * 1000, max: 5, key: req => `management-feedback:${req.user.id}` }), DashboardMgmt.managementFeedback);
 r.get("/dashboard/manager", isAuth, DashboardMgmt.managerOverview);
 r.get("/dashboard/me", isAuth, DashboardMgmt.myDay);
 r.get("/dashboard", isAuth, Dashboard.index);
