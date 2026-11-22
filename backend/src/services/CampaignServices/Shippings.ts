@@ -26,8 +26,9 @@ const ERROR_TEXT: Array<[RegExp, string]> = [
   [/ERR_WAPP_INVALID_CONTACT/, "Este número não tem WhatsApp."],
   [/ERR_WAPP_CHECK_CONTACT/, "Não foi possível conferir se o número tem WhatsApp."],
   [/ERR_RATE_LIMITED/, "Envio em ritmo alto demais para proteger o número."],
+  [/ERR_PROVIDER_REFUSED/, "O provedor recusou o envio. Confira o destinatário ou a mensagem antes de corrigir e reenviar."],
   [/ERR_WAPP_NOT_INITIALIZED|ERR_NO_DEF_WAPP_FOUND|ERR_NO_WAPP_FOUND/, "A conexão não estava disponível no momento do envio."],
-  [/ERR_SENDING_WAPP_MSG|ERR_SENDING_WAPP_MEDIA_MSG/, "O WhatsApp não aceitou o envio."],
+  [/ERR_SENDING_WAPP_MSG|ERR_SENDING_WAPP_MEDIA_MSG/, "Não foi possível confirmar o envio. Confira a conversa antes de tentar novamente."],
   [/ERR_MEDIA_NOT_FOUND/, "O arquivo anexado não foi encontrado."],
   [/ERR_TEMPLATES_UNSUPPORTED/, "Esta conexão não envia modelos aprovados."],
   [/ERR_[A-Z0-9_]+/, "Não foi possível enviar."]

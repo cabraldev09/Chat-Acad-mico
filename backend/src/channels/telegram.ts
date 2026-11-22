@@ -5,6 +5,7 @@ import fs from "fs";
 import Whatsapp from "../models/Whatsapp";
 import Contact from "../models/Contact";
 import { logger } from "../utils/logger";
+import AppError from "../errors/AppError";
 import { setChannelStatus } from "../services/ChannelServices/ChannelStatus";
 import HandleChannelMessage from "../services/InboundServices/HandleChannelMessage";
 import { applyReaction } from "../services/MessageServices/MessageActions";
@@ -21,12 +22,22 @@ const API = process.env.TELEGRAM_API_URL || "https://api.telegram.org";
 const running = new Map<number, { stop: boolean }>();
 
 const call = async (token: string, method: string, data?: any, timeout = 30000) => {
-  const res = await axios.post(`${API}/bot${token}/${method}`, data, {
-    timeout,
-    headers: data instanceof FormData ? data.getHeaders() : undefined,
-    maxBodyLength: Infinity
-  });
-  return res.data.result;
+  try {
+    const res = await axios.post(`${API}/bot${token}/${method}`, data, {
+      timeout,
+      headers: data instanceof FormData ? data.getHeaders() : undefined,
+      maxBodyLength: Infinity
+    });
+    return res.data.result;
+  } catch (err: any) {
+    const status = Number(err?.response?.status || 0);
+    const sending = ["sendMessage", "sendPhoto", "sendVideo", "sendAudio", "sendVoice", "sendDocument"].includes(method);
+    // A provider 4xx response confirms rejection. Network errors and 5xx are
+    // ambiguous because Telegram may have accepted the send before failing.
+    if (sending && status === 429) throw new AppError("ERR_RATE_LIMITED", 429);
+    if (sending && status >= 400 && status < 500) throw new AppError("ERR_PROVIDER_REFUSED", 409);
+    throw err;
+  }
 };
 
 const downloadFile = async (token: string, fileId: string) => {

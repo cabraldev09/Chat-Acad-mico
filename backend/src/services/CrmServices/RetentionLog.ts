@@ -65,7 +65,7 @@ const SEND_ERRORS: Record<string, string> = {
   ERR_RETENTION_COLD: "Esta pessoa nunca escreveu para este número e a conexão por QR Code está em modo seguro. Use a API oficial ou espere ela escrever.",
   ERR_RELATIONSHIP_WAPP_OFFLINE: "O número do relacionamento está desconectado. Reconecte em Conexões; o envio não sai pelo número do tutor.",
   ERR_RATE_LIMITED: "Envio em ritmo alto demais para proteger o número. Tente de novo em alguns minutos.",
-  ERR_SENDING_WAPP_MSG: "O WhatsApp não aceitou o envio.",
+  ERR_SENDING_WAPP_MSG: "Não foi possível confirmar o envio. Confira a conversa antes de tentar novamente.",
   ERR_NO_DEF_WAPP_FOUND: "Não há conexão de WhatsApp disponível.",
   ERR_WAPP_NOT_INITIALIZED: "A conexão do WhatsApp não está pronta."
 };
