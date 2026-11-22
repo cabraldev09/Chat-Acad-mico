@@ -86,18 +86,29 @@ const present = async (goal: Goal) => {
   };
 };
 
-// the goals a person is part of (for their own home screen): their line and the team total
-export const progressForUser = async (userId: number) => {
+// the goals running now, computed once (each one costs two aggregate queries)
+const activeGoals = async () => {
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: getAppTz(), year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
   const goals = await Goal.findAll({ where: { status: "active", kind: "team", endsOn: { [Op.gte]: today } as any }, include: [GoalMember], order: [["endsOn", "ASC"]], limit: 6 });
   const out: any[] = [];
   for (const g of goals) {
     // eslint-disable-next-line no-await-in-loop
-    const p = await present(g);
-    const mine = p.members.find(m => m.userIds.includes(userId));
-    if (mine) out.push({ id: p.id, title: p.title, startsOn: p.startsOn, endsOn: p.endsOn, daysLeft: p.daysLeft, elapsedPct: p.elapsedPct, mine, total: p.total });
+    out.push(await present(g));
   }
   return out;
+};
+const lineOf = (presented: any[], userId: number) => presented
+  .map(p => ({ p, mine: p.members.find((m: any) => m.userIds.includes(userId)) }))
+  .filter(x => x.mine)
+  .map(({ p, mine }) => ({ id: p.id, title: p.title, startsOn: p.startsOn, endsOn: p.endsOn, daysLeft: p.daysLeft, elapsedPct: p.elapsedPct, mine, total: p.total }));
+
+// the goals a person is part of (for their own home screen): their line and the team total
+export const progressForUser = async (userId: number) => lineOf(await activeGoals(), userId);
+
+// the same for many people at once (the management center): the goals are computed once, not once per consultant
+export const progressForUsers = async (userIds: number[]): Promise<Map<number, any[]>> => {
+  const presented = await activeGoals();
+  return new Map(userIds.map(id => [id, lineOf(presented, id)]));
 };
 
 const load = async (id: number | string): Promise<Goal> => {

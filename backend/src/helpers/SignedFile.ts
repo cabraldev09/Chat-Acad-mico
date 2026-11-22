@@ -2,9 +2,13 @@ import { sign, verify } from "jsonwebtoken";
 import path from "path";
 import auth from "../config/auth";
 
-export const signedFileUrl = (filename: string, messageId?: string): string => {
+// The link of a file is the same for a whole hour (the token is signed for a fixed hour window, valid until the end of the next one):
+// before, every read of a conversation produced a new link, so the browser downloaded every photo and audio again on each refresh.
+const WINDOW = 3600;
+export const signedFileUrl = (filename: string, messageId?: string, now: number = Date.now()): string => {
   const file = path.basename(filename);
-  const token = sign({ purpose: "file", file, ...(messageId ? { messageId } : {}) }, auth.secret, { algorithm: "HS256", expiresIn: 3600 });
+  const iat = Math.floor(now / 1000 / WINDOW) * WINDOW;
+  const token = sign({ purpose: "file", file, ...(messageId ? { messageId } : {}), iat, exp: iat + 2 * WINDOW }, auth.secret, { algorithm: "HS256" });
   const base = process.env.BACKEND_URL || "";
   const port = process.env.PROXY_PORT;
   const origin = /^https:\/\//.test(base) || !port ? base : `${base}:${port}`;

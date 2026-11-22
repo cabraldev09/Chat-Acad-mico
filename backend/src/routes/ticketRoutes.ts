@@ -17,6 +17,8 @@ const phoneLimiter = rateLimit({ windowMs: 60000, max: 20, key: req => `phone:${
 ticketRoutes.get("/tickets/:ticketId/phone", isAuth, canReadTicket, phoneLimiter, PhoneAction.show);
 ticketRoutes.post("/tickets/:ticketId/phone", isAuth, canSendTicket, phoneLimiter, PhoneAction.open);
 
+// the chip counters of the conversations screen, in one request (same visibility rules as the list)
+ticketRoutes.get("/tickets/counts", isAuth, TicketController.counts);
 ticketRoutes.get("/tickets", isAuth, TicketController.index);
 
 ticketRoutes.put("/tickets/read-all", isAuth, TicketController.readAll);

@@ -58,8 +58,8 @@ export default wrap(I);`;
           `import wrap from "/src/icons/wrap.js";`,
           ...Object.entries(iconMap).map(([k, v]) =>
             v.startsWith("@brand/")
-              ? `export const ${k} = wrap(B.${v.slice(7)});`
-              : `export const ${k} = wrap(L.${v});`
+              ? `export const ${k} = /*#__PURE__*/ wrap(B.${v.slice(7)});`
+              : `export const ${k} = /*#__PURE__*/ wrap(L.${v});`
           ),
         ].join("\n");
       }

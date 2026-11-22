@@ -123,7 +123,7 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
       ...process.env, DATABASE_URL: "", DATABASE_URL_POOL: "", DB_SSL: "false", NODE_ENV: "test", DB_NAME: DB, DB_HOST: "localhost", DB_USER: PGUSER, DB_PASS: process.env.PGPASSWORD || "", DB_PORT: "5432", DB_DIALECT: "postgres",
       PORT: String(PORT), PROXY_PORT: String(PORT), BACKEND_URL: "http://localhost", PUBLIC_URL: API, FRONTEND_URL: "http://localhost:3000",
       JWT_SECRET: "e2e", DASHBOARD_CACHE_MS: "0", JWT_REFRESH_SECRET: "e2e-r", LOGIN_RATE_MAX: "1000", TELEGRAM_API_URL: `http://localhost:${TG_PORT}`,
-      SKIP_WHATSAPP_SESSIONS: "1", SKIP_DEFAULT_DATA: "1", LOG_LEVEL: "warn"
+      SKIP_WHATSAPP_SESSIONS: "1", SKIP_DEFAULT_DATA: "1", TICKET_COUNTS_MS: "0", LOG_LEVEL: "warn"
     };
     execFileSync("npx", ["sequelize", "db:migrate"], { cwd: ROOT, env, stdio: "ignore" });
     execFileSync("npx", ["sequelize", "db:seed:all"], { cwd: ROOT, env, stdio: "ignore" });
@@ -197,6 +197,23 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
       await sentOk(b.ticketId);
       assert(sentTo(b.chat) === 1, `delivered ${sentTo(b.chat)} times`);
       assert((await countOnly(joao, "pending")) === before - 1, "the Aguardando counter did not drop");
+    });
+    await test("the chips of the screen come in one request and say the same as the list (Atendendo, Aguardando, unread)", async () => {
+      const q = `queueIds=${JSON.stringify([queueId])}`;
+      for (const token of [joao, admin]) {
+        const c = (await http.get(`/tickets/counts?${q}`, as(token))).data;
+        const open = (await http.get(`/tickets?status=open&groups=exclude&countOnly=true&${q}`, as(token))).data.count;
+        const pending = (await http.get(`/tickets?status=pending&groups=exclude&countOnly=true&${q}`, as(token))).data.count;
+        const unread = (await http.get(`/tickets?withUnreadMessages=true&groups=exclude&showAll=true&countOnly=true&${q}`, as(token))).data.count;
+        assert(c.open === open && c.pending === pending && c.unread === unread && typeof c.groupUnread === "number", `counts ${JSON.stringify(c)} vs ${open}/${pending}/${unread}`);
+        // the lean count (only the joins it filters on) gives the same total as the full list
+        const listed = (await http.get(`/tickets?status=pending&groups=exclude&${q}`, as(token))).data.count;
+        assert(listed === pending, `the lean count ${pending} differs from the list ${listed}`);
+      }
+      // a consultant's counters never include a colleague's conversations
+      const gab = (await http.get(`/tickets/counts?${q}`, as(gabrielli))).data;
+      const gabOpen = (await http.get(`/tickets?status=open&groups=exclude&countOnly=true&${q}`, as(gabrielli))).data.count;
+      assert(gab.open === gabOpen, `colleague counts ${JSON.stringify(gab)} vs ${gabOpen}`);
     });
     await test("the conversation left Aguardando and is in Atendendo", async () => {
       const pending = (await http.get(`/tickets?status=pending&showAll=true&queueIds=${JSON.stringify([queueId])}`, as(joao))).data.tickets.map(t => t.id);

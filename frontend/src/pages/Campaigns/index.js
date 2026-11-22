@@ -239,7 +239,8 @@ const ReportDialog = ({ campaignId, onClose, onChanged }) => {
   const live = c && ["running", "scheduled"].includes(c.status);
   useEffect(() => {
     if (!live) return undefined;
-    const t = setInterval(load, 5000);
+    // only while the tab is visible (a report left open in the background does not ask every 5 s)
+    const t = setInterval(() => { if (document.visibilityState === "visible") load(); }, 5000);
     return () => clearInterval(t);
   }, [live, load]);
   const retry = async () => {

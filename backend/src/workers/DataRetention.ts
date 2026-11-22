@@ -28,6 +28,10 @@ export const RULES: Rule[] = [
   // Webhook bodies can contain conversation content: keep completed and terminal failures for review for at most seven days.
   // what the daily review of the AI read: the trends of a year are enough for the training of the team
   { table: "ConsultantReviews", where: `"createdAt" < NOW() - INTERVAL '{days} days'`, days: 400 },
+  // the ledger of each send (dedupe key and estimated cost): the daily budget reads only today; a finished send is history after a few months
+  { table: "OutboundDeliveries", where: `status <> 'sending' AND "updatedAt" < NOW() - INTERVAL '{days} days'`, days: 120 },
+  // the log of the webhooks delivered to other systems: only the ones that ended (delivered, failed for good, cancelled)
+  { table: "WebhookDeliveries", where: `status NOT IN ('pending', 'sending') AND "createdAt" < NOW() - INTERVAL '{days} days'`, days: 30 },
   { table: "MetaWebhookEvents", where: `status IN ('done', 'failed') AND "updatedAt" < NOW() - INTERVAL '{days} days'`, days: 7 }
 ];
 

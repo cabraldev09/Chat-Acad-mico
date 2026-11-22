@@ -14,7 +14,9 @@ export default async (req: Request, res: Response, next: NextFunction): Promise<
       const message = await Message.findByPk(claims.messageId);
       if (!message || message.isDeleted || message.getDataValue("mediaUrl") !== filename) throw new Error("Deleted file");
     }
-    res.setHeader("Cache-Control", "private, no-store");
+    // the same link serves the same file for the hour: the browser may keep it a few minutes instead of downloading it on every
+    // refresh of the conversation (private: never in a shared cache)
+    res.setHeader("Cache-Control", "private, max-age=600");
     res.setHeader("Referrer-Policy", "no-referrer");
     next();
   } catch (_) { res.status(403).json({ error: "ERR_FILE_ACCESS_EXPIRED" }); }

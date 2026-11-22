@@ -9,7 +9,7 @@ import AppError from "../../errors/AppError";
 import User from "../../models/User";
 import PoloMember from "../../models/PoloMember";
 import Polo from "../../models/Polo";
-import { progressForUser } from "../../controllers/GoalController";
+import { progressForUsers } from "../../controllers/GoalController";
 import { KPI_KEYS } from "./definitions";
 import { businessMinutes, getBusinessConfig } from "../../helpers/BusinessTime";
 
@@ -336,7 +336,7 @@ export const bundlesFor = async (userIds: number[], period: Period, opts: { goal
     User.findAll({ where: { id: userIds }, attributes: ["id", "name"] }),
     PoloMember.findAll({ where: { userId: userIds }, attributes: ["poloId", "userId"] })
   ]);
-  const goals = opts.goals === false ? new Map<number, any[]>() : new Map<number, any[]>(await Promise.all(userIds.map(async id => [id, await progressForUser(id).catch(() => [])] as [number, any[]])));
+  const goals = opts.goals === false ? new Map<number, any[]>() : await progressForUsers(userIds).catch(() => new Map<number, any[]>());
   return userIds.map(id => ({
     user: { id, name: users.find(u => u.id === id)?.name || `#${id}`, poloIds: [...new Set(members.filter(m => m.userId === id).map(m => m.poloId))] },
     metrics: metrics.get(id) as Metrics,
