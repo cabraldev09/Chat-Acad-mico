@@ -24,12 +24,15 @@ const pct = (a, b) => (b ? `${Math.round((a / b) * 100)}%` : "—");
 function CopilotUsage({ classes: c }) {
   const [days, setDays] = useState(30);
   const [data, setData] = useState(null);
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let alive = true;
     setData(null);
-    api.get(`/copilot/usage?days=${days}`).then(({ data: result }) => { if (alive) setData(result); }).catch(toastError);
+    setFailed(false);
+    api.get(`/copilot/usage?days=${days}`).then(({ data: result }) => { if (alive) setData(result); }).catch((err) => { if (alive) { setFailed(true); toastError(err); } });
     return () => { alive = false; };
-  }, [days]);
+  }, [days, attempt]);
   const row = (label, v, key) => <tr key={key}>
     <td style={{ padding: "6px 8px" }}>{label}</td>
     <td align="right">{v.suggestions}</td><td align="right">{v.briefs}</td>
@@ -44,7 +47,7 @@ function CopilotUsage({ classes: c }) {
       </TextField>
     </div>
     <div className={c.hint}>“Enviada como veio” e “editada” contam as sugestões que o consultor colocou na caixa de mensagem e depois enviou. 👍 / 👎 é a opinião do consultor.</div>
-    {!data ? <CircularProgress size={20} /> : !data.users.length ? <div className={c.hint}>Ninguém usou o copiloto neste período.</div> :
+    {!data ? failed ? <div role="alert" className={c.hint}>Não foi possível carregar o uso do copiloto. <Button size="small" onClick={() => setAttempt((n) => n + 1)}>Tentar novamente</Button></div> : <CircularProgress size={20} aria-label="Carregando uso do copiloto" /> : !data.users.length ? <div className={c.hint}>Ninguém usou o copiloto neste período.</div> :
       <div style={{ overflowX: "auto" }}><table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
         <thead><tr style={{ textAlign: "right" }}><th style={{ textAlign: "left", padding: "6px 8px" }}>Consultor</th><th>Sugestões</th><th>Resumos</th><th>Enviada como veio</th><th>Editada</th><th>👍 / 👎</th></tr></thead>
         <tbody>{data.users.map(u => row(u.name, u, u.userId))}{row(<b>Equipe</b>, data.total, "total")}</tbody>

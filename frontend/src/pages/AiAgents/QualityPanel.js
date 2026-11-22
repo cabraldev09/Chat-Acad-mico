@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { MenuItem, TextField, Typography, makeStyles } from "@material-ui/core";
+import { Button, MenuItem, TextField, Typography, makeStyles } from "@material-ui/core";
 
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
@@ -36,10 +36,13 @@ const QualityPanel = ({ agentId }) => {
   const classes = useStyles();
   const [days, setDays] = useState(30);
   const [d, setD] = useState(null);
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     setD(null);
-    api.get(`/ai-agents/${agentId}/quality`, { params: { days } }).then(({ data }) => setD(data)).catch(toastError);
-  }, [agentId, days]);
+    setFailed(false);
+    api.get(`/ai-agents/${agentId}/quality`, { params: { days } }).then(({ data }) => setD(data)).catch((err) => { setFailed(true); toastError(err); });
+  }, [agentId, days, attempt]);
 
   const header = (
     <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
@@ -51,7 +54,7 @@ const QualityPanel = ({ agentId }) => {
       </TextField>
     </div>
   );
-  if (!d) return <div>{header}<Typography color="textSecondary" variant="body2">Carregando…</Typography></div>;
+  if (!d) return <div>{header}{failed ? <div role="alert"><Typography style={{ color: "#b91c1c" }} variant="body2">Não foi possível carregar os indicadores de qualidade.</Typography><Button size="small" onClick={() => setAttempt((n) => n + 1)}>Tentar novamente</Button></div> : <Typography color="textSecondary" variant="body2">Carregando…</Typography>}</div>;
 
   const t = d.timeToHandoff;
   const maxDept = Math.max(1, ...d.byDepartment.map((x) => x.count));
