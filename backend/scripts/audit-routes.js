@@ -27,3 +27,5 @@ console.log("\n## Para revisar: alteram dados e só pedem login, sem checagem de
 rows.filter(r => r.who === "logado" && mut(r) && !r.scoped).forEach(r => console.log(`- ${r.method} ${r.path} (${r.file})`));
 console.log("\n## Alteram dados com checagem de escopo\n");
 rows.filter(r => r.who === "logado" && mut(r) && r.scoped).forEach(r => console.log(`- ${r.method} ${r.path} → ${r.scoped}`));
+console.log("\n## Painel da gestão (admin e coordenação)\n");
+rows.filter(r => r.who === "gestão" && r.path.startsWith("/dashboard/")).forEach(r => console.log(`- ${r.method} ${r.path} (${r.file})`));
