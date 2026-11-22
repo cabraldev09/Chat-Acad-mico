@@ -25,10 +25,10 @@ export const RULES: Rule[] = [
   { table: "ClientErrors", where: `"createdAt" < NOW() - INTERVAL '{days} days'`, days: 60 },
   { table: "LeadReminderLogs", where: `"createdAt" < NOW() - INTERVAL '{days} days'`, days: 90 },
   { table: "PasswordResets", where: `("usedAt" IS NOT NULL OR "expiresAt" < NOW()) AND "createdAt" < NOW() - INTERVAL '{days} days'`, days: 30 },
-  // the copy of each webhook of the Meta: once processed, it is only an audit trail of a few days
+  // Webhook bodies can contain conversation content: keep completed and terminal failures for review for at most seven days.
   // what the daily review of the AI read: the trends of a year are enough for the training of the team
   { table: "ConsultantReviews", where: `"createdAt" < NOW() - INTERVAL '{days} days'`, days: 400 },
-  { table: "MetaWebhookEvents", where: `status = 'done' AND "updatedAt" < NOW() - INTERVAL '{days} days'`, days: 7 }
+  { table: "MetaWebhookEvents", where: `status IN ('done', 'failed') AND "updatedAt" < NOW() - INTERVAL '{days} days'`, days: 7 }
 ];
 
 const BATCH = 2000;
