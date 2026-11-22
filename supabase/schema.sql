@@ -2305,7 +2305,12 @@ CREATE TABLE public."LeadTasks" (
     "createdAt" timestamp with time zone NOT NULL,
     "updatedAt" timestamp with time zone NOT NULL,
     "doneById" integer,
-    "automationKey" character varying(200)
+    "automationKey" character varying(200),
+    kind character varying(30) DEFAULT 'manual'::character varying NOT NULL,
+    priority character varying(10) DEFAULT 'normal'::character varying NOT NULL,
+    "ticketId" integer,
+    "createdById" integer,
+    "closedReason" character varying(40)
 );
 
 
@@ -2512,6 +2517,45 @@ CREATE SEQUENCE public."MetaWebhookEvents_id_seq"
 --
 
 ALTER SEQUENCE public."MetaWebhookEvents_id_seq" OWNED BY public."MetaWebhookEvents".id;
+
+
+--
+-- Name: Notifications; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."Notifications" (
+    id integer NOT NULL,
+    "userId" integer NOT NULL,
+    kind character varying(40) NOT NULL,
+    level character varying(10) DEFAULT 'info'::character varying NOT NULL,
+    title character varying(160) NOT NULL,
+    body character varying(400),
+    link character varying(200),
+    "dedupeKey" character varying(160),
+    "readAt" timestamp with time zone,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: Notifications_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public."Notifications_id_seq"
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: Notifications_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public."Notifications_id_seq" OWNED BY public."Notifications".id;
 
 
 --
@@ -4126,6 +4170,13 @@ ALTER TABLE ONLY public."MetaWebhookEvents" ALTER COLUMN id SET DEFAULT nextval(
 
 
 --
+-- Name: Notifications id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."Notifications" ALTER COLUMN id SET DEFAULT nextval('public."Notifications_id_seq"'::regclass);
+
+
+--
 -- Name: NpsSurveys id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -4880,6 +4931,14 @@ ALTER TABLE ONLY public."MetaWebhookEvents"
 
 ALTER TABLE ONLY public."MetaWebhookEvents"
     ADD CONSTRAINT "MetaWebhookEvents_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: Notifications Notifications_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."Notifications"
+    ADD CONSTRAINT "Notifications_pkey" PRIMARY KEY (id);
 
 
 --
@@ -5801,6 +5860,13 @@ CREATE INDEX lead_tasks_lead ON public."LeadTasks" USING btree ("leadId");
 
 
 --
+-- Name: lead_tasks_lead_kind; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX lead_tasks_lead_kind ON public."LeadTasks" USING btree ("leadId", kind);
+
+
+--
 -- Name: lead_tasks_user_open; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5959,6 +6025,20 @@ CREATE INDEX messages_unconfirmed_ack ON public."Messages" USING btree ("created
 --
 
 CREATE INDEX meta_webhook_events_status_idx ON public."MetaWebhookEvents" USING btree (status, "nextAt");
+
+
+--
+-- Name: notifications_user_dedupe; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX notifications_user_dedupe ON public."Notifications" USING btree ("userId", "dedupeKey");
+
+
+--
+-- Name: notifications_user_read; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX notifications_user_read ON public."Notifications" USING btree ("userId", "readAt", "createdAt");
 
 
 --
@@ -6709,11 +6789,27 @@ ALTER TABLE ONLY public."LeadTags"
 
 
 --
+-- Name: LeadTasks LeadTasks_createdById_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."LeadTasks"
+    ADD CONSTRAINT "LeadTasks_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES public."Users"(id) ON UPDATE CASCADE ON DELETE SET NULL;
+
+
+--
 -- Name: LeadTasks LeadTasks_leadId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public."LeadTasks"
     ADD CONSTRAINT "LeadTasks_leadId_fkey" FOREIGN KEY ("leadId") REFERENCES public."Leads"(id) ON DELETE CASCADE;
+
+
+--
+-- Name: LeadTasks LeadTasks_ticketId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."LeadTasks"
+    ADD CONSTRAINT "LeadTasks_ticketId_fkey" FOREIGN KEY ("ticketId") REFERENCES public."Tickets"(id) ON UPDATE CASCADE ON DELETE SET NULL;
 
 
 --
@@ -6810,6 +6906,14 @@ ALTER TABLE ONLY public."Messages"
 
 ALTER TABLE ONLY public."MetaWebhookEvents"
     ADD CONSTRAINT "MetaWebhookEvents_whatsappId_fkey" FOREIGN KEY ("whatsappId") REFERENCES public."Whatsapps"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+--
+-- Name: Notifications Notifications_userId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."Notifications"
+    ADD CONSTRAINT "Notifications_userId_fkey" FOREIGN KEY ("userId") REFERENCES public."Users"(id) ON UPDATE CASCADE ON DELETE CASCADE;
 
 
 --
@@ -7579,6 +7683,7 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261222000004-meta-webhook-events.j
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261222000005-contact-consent.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261222000006-consultant-reviews.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261222000007-speed-indexes.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261222000008-tasks-and-notifications.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

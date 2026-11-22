@@ -251,7 +251,9 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
       const lead = (await http.post("/leads", { name: "Lead do João", phone: "5569999990001", stageId: undefined }, as(joao))).data.lead;
       assert(lead && lead.id, "lead not created");
       assert((await http.post(`/leads/${lead.id}/activities`, { type: "call", body: "liguei" }, as(joao))).status < 300, "note");
-      const task = (await http.post(`/leads/${lead.id}/tasks`, { title: "Retornar", dueAt: new Date(Date.now() - 3600000).toISOString() }, as(joao))).data;
+      // the late task is on another lead of João, still in the funnel (enrolling a lead closes the tasks of its sale by themselves)
+      const other = (await http.post("/leads", { name: "Outro lead do João", phone: "5569999990012", stageId: undefined }, as(joao))).data.lead;
+      const task = (await http.post(`/leads/${other.id}/tasks`, { title: "Retornar", dueAt: new Date(Date.now() - 3600000).toISOString() }, as(joao))).data;
       assert(task.id, "task");
       assert((await http.put(`/leads/${lead.id}/stage`, { skipEnroll: true, stageId: stageWon.id }, as(admin))).status === 200, "enroll");
       await sleep(300);
@@ -684,6 +686,89 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
       assert(!JSON.stringify(d).includes("Gabrielli") && !d.insights.some(i => i.key === "away_with_leads" || i.key === "unassigned"), "a consultant saw someone else's data");
       const hers = (await A(gabrielli, "/analytics/me/overview?range=month")).data;
       assert(hers.user.id === ids.gabrielli && hers.leads.stages.some(st => st.n >= 1), `Gabrielli sees her own leads ${JSON.stringify(hers.leads)}`);
+    });
+
+    // ------------------------------------------------------------ Tarefas que fecham sozinhas e central de avisos
+    console.log("\nTarefas e avisos");
+    const openStage = () => sql(`SELECT id FROM LeadStages WHERE type='open' ORDER BY position LIMIT 1`).split("\n")[0];
+    const mkLeadFor = (owner, name) => {
+      const t = mkTicket({ owner });
+      const id = sql(`INSERT INTO Leads (name, phone, source, stageId, ownerId, contactId, isHistorical, createdAt, updatedAt) VALUES ('${name}', '55690000${Math.floor(Math.random() * 90000 + 10000)}', 'WhatsApp', ${openStage()}, ${owner}, ${t.contactId}, false, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      return { leadId: Number(id), ticket: t };
+    };
+    const taskOf = id => { const [doneAt, reason, userId] = sql(`SELECT COALESCE(doneAt::text, ''), COALESCE(closedReason, ''), COALESCE(userId::text, '') FROM LeadTasks WHERE id=${id}`).split("|"); return { done: !!doneAt, reason, userId: userId ? Number(userId) : null }; };
+    await test("tasks: the tabs never count a task twice (Atrasadas, Hoje, Próximos) and concluding says which one it is", async () => {
+      const { leadId } = mkLeadFor(ids.joao, "Lead das abas");
+      const mk = async (minutes, title) => (await http.post(`/leads/${leadId}/tasks`, { title, type: "ligar", dueAt: new Date(Date.now() + minutes * 60000).toISOString() }, as(joao))).data;
+      const late = await mk(-60, "Atrasada");
+      const later = await mk(3 * 24 * 60, "Depois");
+      const lists = {};
+      for (const st of ["overdue", "today", "upcoming"]) lists[st] = (await http.get(`/lead-tasks?status=${st}&scope=mine`, as(joao))).data.map(t => t.id);
+      assert(lists.overdue.includes(late.id) && !lists.today.includes(late.id) && !lists.upcoming.includes(late.id), `late task in ${JSON.stringify(lists)}`);
+      assert(lists.upcoming.includes(later.id) && !lists.today.includes(later.id), "the task of next days");
+      const c = (await http.get("/lead-tasks/counts?scope=mine", as(joao))).data;
+      assert(c.overdue === lists.overdue.length && c.today === lists.today.length && c.upcoming === lists.upcoming.length && c.open === c.overdue + c.today + c.upcoming, `counts ${JSON.stringify(c)}`);
+      // concluding twice keeps it concluded (it used to flip back); reopening is explicit
+      for (let i = 0; i < 2; i += 1) assert((await http.put(`/leads/${leadId}/tasks/${late.id}/done`, { done: true }, as(joao))).status === 200, "done");
+      assert(taskOf(late.id).done === true && taskOf(late.id).reason === "done", "a second click reopened the task");
+      await http.put(`/leads/${leadId}/tasks/${late.id}/done`, { done: false }, as(joao));
+      assert(taskOf(late.id).done === false, "reopen");
+    });
+    await test("tasks: only the management gives a task to someone else; a colleague cannot touch it; deleting is registered", async () => {
+      const { leadId } = mkLeadFor(ids.joao, "Lead da permissão");
+      const t = (await http.post(`/leads/${leadId}/tasks`, { title: "Ligar amanhã", type: "ligar", dueAt: new Date(Date.now() + 86400000).toISOString() }, as(joao))).data;
+      assert((await http.put(`/leads/${leadId}/tasks/${t.id}`, { userId: ids.gabrielli }, as(joao))).status === 403, "a consultant handed a task to a colleague");
+      assert((await http.post(`/leads/${leadId}/tasks`, { title: "Para outra", dueAt: new Date().toISOString(), userId: ids.gabrielli }, as(joao))).status === 403, "a consultant created a task for a colleague");
+      assert((await http.put(`/leads/${leadId}/tasks/${t.id}`, { userId: ids.laura }, as(admin))).status === 200, "the management hands it");
+      assert(taskOf(t.id).userId === ids.laura, "handed");
+      // the new person has the notice in the bell; nobody else sees it
+      const bell = (await http.get("/notifications", as(laura))).data;
+      const notice = bell.notifications.find(n => n.kind === "task_assigned" && /Ligar amanhã/.test(n.title));
+      assert(notice && !notice.readAt && bell.unread >= 1, `notice ${JSON.stringify(bell).slice(0, 300)}`);
+      assert(!(await http.get("/notifications", as(gabrielli))).data.notifications.some(n => n.id === notice.id), "another person read the notice");
+      assert((await http.put(`/notifications/${notice.id}/read`, {}, as(gabrielli))).data.updated === 0, "another person marked the notice");
+      assert((await http.put(`/notifications/${notice.id}/read`, {}, as(laura))).data.updated === 1, "mark read");
+      await http.put("/notifications/read-all", {}, as(laura));
+      assert((await http.get("/notifications/count", as(laura))).data.unread === 0, "read all");
+      // a colleague who neither created it nor has it cannot delete it; the person who created it can, and the lead keeps the record
+      assert((await http.delete(`/leads/${leadId}/tasks/${t.id}`, as(gabrielli))).status === 403, "a colleague deleted the task");
+      assert((await http.delete(`/leads/${leadId}/tasks/${t.id}`, as(joao))).status === 200, "delete");
+      assert(Number(sql(`SELECT COUNT(*) FROM LeadActivities WHERE leadId=${leadId} AND body LIKE 'Tarefa apagada:%'`)) === 1, "deleting is not registered");
+    });
+    await test("tasks close by themselves: the AI handoff when the consultant answers, everything of the sale when the lead is enrolled", async () => {
+      const { leadId, ticket } = mkLeadFor(ids.joao, "Lead do handoff");
+      const handoff = sql(`INSERT INTO LeadTasks (leadId, userId, title, type, kind, priority, ticketId, dueAt, createdAt, updatedAt) VALUES (${leadId}, ${ids.joao}, 'Atender lead encaminhado pelo agente de IA', 'whatsapp', 'handoff', 'high', ${ticket.ticketId}, NOW() + INTERVAL '15 minutes', NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const manual = (await http.post(`/leads/${leadId}/tasks`, { title: "Enviar proposta", type: "proposta", dueAt: new Date(Date.now() + 3600000).toISOString() }, as(joao))).data;
+      // the list shows it urgent and with its conversation
+      const listed = (await http.get("/lead-tasks?status=open&scope=mine", as(joao))).data.find(t => t.id === Number(handoff));
+      assert(listed && listed.priority === "high" && listed.ticketId === ticket.ticketId, `listed ${JSON.stringify(listed)}`);
+      assert(ok(await send(joao, ticket.ticketId, "Oi! Já vou te ajudar")), "reply");
+      await waitFor(() => taskOf(handoff).done, 10000, "the handoff task closed after the reply");
+      assert(taskOf(handoff).reason === "replied", `reason ${taskOf(handoff).reason}`);
+      assert(taskOf(manual.id).done === false, "the reply closed a task it should not");
+      assert((await http.put(`/leads/${leadId}/stage`, { skipEnroll: true, stageId: stageWon.id }, as(admin))).status === 200, "won");
+      await waitFor(() => taskOf(manual.id).done, 8000, "the sale task closed with the enrollment");
+      assert(taskOf(manual.id).reason === "lead_won", `reason ${taskOf(manual.id).reason}`);
+    });
+    await test("the academic transcript: an analysis created for the lead closes 'Pedir o histórico' and takes the lead out of 'Aguardando histórico'", async () => {
+      const ensureStage = (name, pos) => sql(`SELECT id FROM LeadStages WHERE name='${name}'`).split("\n")[0] || sql(`INSERT INTO LeadStages (name, color, position, type, createdAt, updatedAt) VALUES ('${name}', '#f59e0b', ${pos}, 'open', NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const waiting = ensureStage("Aguardando histórico", 40);
+      const analysis = ensureStage("Análise curricular", 41);
+      const { leadId } = mkLeadFor(ids.joao, "Lead do histórico");
+      sql(`UPDATE Leads SET stageId=${waiting} WHERE id=${leadId}`);
+      const task = sql(`INSERT INTO LeadTasks (leadId, userId, title, type, kind, dueAt, createdAt, updatedAt) VALUES (${leadId}, ${ids.joao}, 'Pedir o histórico acadêmico ao lead', 'documentos', 'transcript', NOW() + INTERVAL '2 days', NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const polo = sql(`SELECT id FROM Polos ORDER BY id LIMIT 1`).split("\n")[0] || sql(`INSERT INTO Polos (code, name, active, createdAt, updatedAt) VALUES ('TRX', 'Polo Histórico', true, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const FormData = require("form-data");
+      const f = new FormData();
+      f.append("file", require("fs").readFileSync(path.join(__dirname, "fixtures", "sample-analise.pdf")), { filename: "historico.pdf", contentType: "application/pdf" });
+      f.append("candidateName", "Lead do histórico");
+      f.append("poloId", polo);
+      f.append("leadId", String(leadId));
+      const r = await http.post("/analysis/curricular", f, { headers: { ...f.getHeaders(), ...as(admin).headers } });
+      assert(r.status === 201, `analysis ${r.status} ${JSON.stringify(r.data).slice(0, 200)}`);
+      await waitFor(() => taskOf(task).done, 10000, "the transcript task closed");
+      assert(taskOf(task).reason === "transcript_received", `reason ${taskOf(task).reason}`);
+      await waitFor(() => sql(`SELECT stageId FROM Leads WHERE id=${leadId}`) === String(analysis), 8000, "the lead left Aguardando histórico");
     });
   } catch (err) {
     results.push([false, `setup -> ${err.stack || err.message}`]);

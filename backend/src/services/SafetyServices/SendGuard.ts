@@ -196,6 +196,8 @@ export const tripBreaker = async (
       await alertAdmins(w, `O número "${w.name}": ${reason}`).catch(() => undefined);
     }
     getIO().emit("safety", { action: "paused", whatsappId, reason, paused });
+    const { notifyManagers } = await import("../NotificationServices/Notify");
+    void notifyManagers({ kind: "safety_paused", level: "urgent", title: `Envios pausados no número ${w ? w.name : whatsappId}`, body: reason.slice(0, 300), link: "/connections", dedupeKey: `safety:${whatsappId}:${new Date().toISOString().slice(0, 13)}` });
     if (paused) {
       const rows = await Campaign.findAll({ where: { whatsappId, pauseReason: reason.slice(0, 250) } });
       rows.forEach(row => getIO().emit("campaign", { action: "update", row }));

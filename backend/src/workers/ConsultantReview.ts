@@ -12,6 +12,26 @@ export const runConsultantReview = async (day: string) => {
   return reviewDay(day, steps);
 };
 
+// once a week the management hears, in the bell, who needs training in what (only what repeats: see ConsultantReview.coachingFrom)
+const weeklyTraining = async (): Promise<void> => {
+  const { recentCoaching } = await import("../services/AnalyticsServices/ConsultantReview");
+  const { visibleConsultantIds } = await import("../services/AnalyticsServices/AnalyticsService");
+  const { configOf } = await import("../services/CopilotServices/Settings");
+  const User = (await import("../models/User")).default;
+  const labels = new Map((await configOf()).steps.map((st: any) => [st.key, st.label]));
+  const ids = await visibleConsultantIds({ id: 0, profile: "admin", role: "admin" });
+  const people = await User.findAll({ where: { id: ids } as any, attributes: ["id", "name"] });
+  const list = await recentCoaching(people.map(u => ({ id: u.id, name: u.name })), k => String(labels.get(k) || k));
+  if (!list.length) return;
+  const d = new Date();
+  const week = `${d.getUTCFullYear()}-${Math.ceil(((+d - Date.UTC(d.getUTCFullYear(), 0, 1)) / 86400000 + 1) / 7)}`;
+  const { notifyManagers } = await import("../services/NotificationServices/Notify");
+  for (const c of list) {
+    // eslint-disable-next-line no-await-in-loop
+    await notifyManagers({ kind: "training", level: "info", title: `Treinamento sugerido: ${c.name}`, body: c.items.slice(0, 2).map(i => i.text).join("; "), link: "/estatisticas", dedupeKey: `training:${week}:${c.userId}` });
+  }
+};
+
 const tick = async (): Promise<void> => {
   try {
     if ((await getSetting("consultant_review_enabled", "true")) === "false") return;
@@ -23,6 +43,7 @@ const tick = async (): Promise<void> => {
     if (Number(part("hour")) < hour || (await getSetting("consultant_review_last", "")) === today) return;
     await setSetting("consultant_review_last", today);
     const run = await runConsultantReview(today);
+    await weeklyTraining().catch(err => logger.warn(`Aviso de treinamento: ${err}`));
     logger.info(`Revisão diária das conversas (${today}): ${run.reviewed} lidas, ${run.skipped} curtas demais, ${run.failed} com erro${run.stoppedByBudget ? ", parou no limite de gasto" : ""}${run.reason ? ` (${run.reason})` : ""}`);
   } catch (err) {
     logger.warn(`Revisão diária das conversas falhou: ${err}`);

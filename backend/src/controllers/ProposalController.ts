@@ -418,6 +418,9 @@ export const publicView = async (req: Request, res: Response): Promise<Response>
   if (!p.viewedAt) {
     await p.update({ viewedAt: new Date() });
     await addActivity(p.leadId, null, "system", `O candidato abriu a proposta #${p.id}`);
+    const lead = await Lead.findByPk(p.leadId, { attributes: ["id", "name", "ownerId"] });
+    const { notify } = await import("../services/NotificationServices/Notify");
+    if (lead) void notify([lead.ownerId, p.createdBy], { kind: "proposal_viewed", title: `${lead.name} abriu a proposta`, body: "Bom momento para falar com o lead.", link: `/crm?lead=${lead.id}`, dedupeKey: `proposal-viewed:${p.id}` });
     await dispatchWebhook("proposal.viewed", { proposalId: p.id, leadId: p.leadId });
     getIO().emit("lead", { action: "update", lead: await loadLead(p.leadId) });
   }

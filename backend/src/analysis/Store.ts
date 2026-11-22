@@ -205,7 +205,10 @@ export const createCurricular = async (
     baseWarnings: JSON.stringify(read.warnings)
   } as any);
   try {
-    return await recompute(row, { entryPeriod });
+    const done = await recompute(row, { entryPeriod });
+    // the transcript of a lead arrived: the task that asked for it closes and the lead leaves "Aguardando histórico"
+    if (row.leadId) import("../services/CrmServices/TaskLifecycle").then(m => m.transcriptArrived(row.leadId as number, userId || null)).catch(() => undefined);
+    return done;
   } catch (err) {
     await row.destroy();
     return asUserError(err);

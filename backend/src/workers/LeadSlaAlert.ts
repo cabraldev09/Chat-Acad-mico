@@ -9,6 +9,7 @@ import { getSetting } from "../helpers/AppSettings";
 import { getBusinessConfig, isBusinessNow, businessMinutes } from "../helpers/BusinessTime";
 import { addActivity } from "../services/CrmServices/LeadCore";
 import AutoAssignTicket from "../services/AutomationServices/AutoAssignTicket";
+import { notify, managerIds } from "../services/NotificationServices/Notify";
 import { logger } from "../utils/logger";
 
 let running = false;
@@ -50,7 +51,14 @@ const tick = async (): Promise<void> => {
       if (!first) continue;
       const waited = businessMinutes(business, new Date(first.createdAt), now);
       const escalated = waited >= escalate;
-      if (waited < minutes) continue;
+      // about to break (70% of the time): the person who answers hears it in the bell, once per message waiting
+      if (waited < minutes) {
+        const owner = ticket.userId || lead.ownerId;
+        if (owner && waited >= minutes * 0.7) {
+          await notify([owner], { kind: "sla_soon", level: "warning", title: `${lead.name} espera resposta há ${Math.round(waited)} min`, body: `O prazo de resposta é ${minutes} min.`, link: `/tickets/${ticket.id}`, dedupeKey: `sla-soon:${ticket.id}:${first.id}` });
+        }
+        continue;
+      }
       const field = escalated ? "slaEscalatedMessageId" : "slaAlertedMessageId";
       const [claimed] = await Ticket.update({ [field]: first.id }, { where: { id: ticket.id, [Op.or]: [{ [field]: { [Op.ne]: first.id } }, { [field]: { [Op.is]: null } }] } as any });
       if (!claimed) continue;
@@ -58,6 +66,9 @@ const tick = async (): Promise<void> => {
       await TicketEvent.create({ ticketId: ticket.id, type: "sla", note });
       await addActivity(lead.id, null, "sla", note);
       getIO().emit("leadAlert", { leadId: lead.id, ticketId: ticket.id, name: lead.name, ownerId: ticket.userId || lead.ownerId, minutes: Math.round(waited), escalated });
+      // kept in the bell: the person who answers; when escalated, the management too
+      const who = [ticket.userId || lead.ownerId, ...(escalated ? await managerIds() : [])];
+      await notify(who, { kind: escalated ? "sla_escalated" : "sla_breached", level: escalated ? "urgent" : "warning", title: `${escalated ? "Prazo escalado" : "Prazo de resposta excedido"}: ${lead.name}`, body: `${Math.round(waited)} min aguardando resposta.`, link: `/tickets/${ticket.id}`, dedupeKey: `sla:${ticket.id}:${first.id}:${escalated ? "esc" : "alert"}` });
 
     }
   } catch (err) { logger.warn(`Lead SLA alert: ${err}`); }

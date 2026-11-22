@@ -71,6 +71,28 @@ class LeadTask extends Model<LeadTask> {
   @Column
   automationKey: string;
 
+  // what the task is: manual | handoff | proposal | transcript | callback | billet | onboarding | onboarding_late | followup | nps |
+  // retention | flow | referral | upsell. The automatic ones close by themselves when what they ask for happens (CrmServices/TaskLifecycle).
+  @Default("manual")
+  @Column
+  kind: string;
+
+  // high | normal
+  @Default("normal")
+  @Column
+  priority: string;
+
+  // the conversation it is about (opens straight from the task list)
+  @Column
+  ticketId: number;
+
+  @Column
+  createdById: number;
+
+  // why it closed: done (a person ticked it) | replied | transcript_received | paid | onboarding_done | lead_won | lead_lost
+  @Column
+  closedReason: string;
+
   @AfterSave
   @AfterDestroy
   static async syncFollowUp(task: LeadTask, options: any): Promise<void> {

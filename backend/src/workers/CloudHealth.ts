@@ -71,25 +71,31 @@ export const checkCloudConnection = async (whatsapp: Whatsapp, starting = false)
 
 // The official number must not go down unnoticed: when it disconnects, or its token is about to end, the administrators get an
 // e-mail (at most once every 6 hours per number), besides the notice on the screen.
-const lastAlert = new Map<number, number>();
+const lastAlert = new Map<string, number>();
 const ALERT_EVERY_MS = 6 * 3600000;
-export const alertAdmins = async (w: Whatsapp, reason: string): Promise<boolean> => {
+// topic: the kind of problem. Each one has its own clock (a "sending paused" e-mail no longer hides a "disconnected" one for 6 hours).
+export const alertAdmins = async (w: Whatsapp, reason: string, topic: "health" | "watchdog" | "safety" = "health"): Promise<boolean> => {
   // kept in the settings too: a restart of the server (a deploy) does not send the same e-mail again
   const { getSetting, setSetting } = await import("../helpers/AppSettings");
-  const key = `cloud_alert_at_${w.id}`;
-  const last = Math.max(lastAlert.get(w.id) || 0, Number(await getSetting(key, "0")) || 0);
+  const key = topic === "health" ? `cloud_alert_at_${w.id}` : `cloud_alert_${topic}_at_${w.id}`;
+  const memo = `${topic}:${w.id}`;
+  const last = Math.max(lastAlert.get(memo) || 0, Number(await getSetting(key, "0")) || 0);
   if (Date.now() - last < ALERT_EVERY_MS) return false;
-  lastAlert.set(w.id, Date.now());
+  lastAlert.set(memo, Date.now());
   await setSetting(key, String(Date.now())).catch(() => undefined);
   const User = (await import("../models/User")).default;
   const { notify, frontBase } = await import("../services/MailServices/Notify");
-  const admins = await User.findAll({ where: { profile: "admin" } as any, attributes: ["email"] });
+  // the administration and the coordination (the coordination has the same powers and also runs the numbers)
+  const { Op } = await import("sequelize");
+  const admins = await User.findAll({ where: { [Op.or]: [{ profile: "admin" }, { role: { [Op.in]: ["admin", "coordenacao"] } }] } as any, attributes: ["id", "email"] });
   const link = `${frontBase()}/connections`;
   const kind = w.channel === "whatsapp_cloud" ? "WhatsApp oficial" : "WhatsApp";
   const subject = `${kind} "${w.name}": ${w.status === "CONNECTED" ? "atenção" : "fora do ar"}`;
   const text = `${reason}\n\nAbra Conexões para resolver: ${link}`;
   const html = `<p>${reason.replace(/</g, "&lt;")}</p><p><a href="${link}">Abrir Conexões</a></p>`;
   admins.forEach(a => notify(a.email, { subject, text, html }, "Cloud health alert"));
+  const { notify: notice } = await import("../services/NotificationServices/Notify");
+  await notice(admins.map(a => a.id), { kind: `connection_${topic}`, level: w.status === "CONNECTED" ? "warning" : "urgent", title: subject, body: reason.slice(0, 300), link: "/connections", dedupeKey: `connection:${topic}:${w.id}:${new Date().toISOString().slice(0, 13)}` });
   return true;
 };
 

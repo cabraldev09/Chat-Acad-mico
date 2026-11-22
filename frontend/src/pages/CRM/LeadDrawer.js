@@ -7,7 +7,7 @@ import {
 } from "@material-ui/core";
 import {
   X, MessageSquare, Phone, Mail, StickyNote, PhoneCall, MapPin, ArrowRight, ListTodo,
-  Info, Trash2, Trophy, ThumbsDown, Check, FileText, FilePlus2, Download, Link2, CopyPlus, SendHorizonal, Send,
+  Info, Trash2, Trophy, ThumbsDown, Check, FileText, FilePlus2, Download, Link2, CopyPlus, SendHorizonal, Send, Clock,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 
@@ -195,8 +195,22 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab, side = false 
     try {
       await api.post(`/leads/${lead.id}/tasks`, { ...task, dueAt: new Date(task.dueAt).toISOString() });
       setTask({ title: "", type: task.type, dueAt: "" });
-      changed();
+      tasksChanged();
     } catch (err) { toastError(err); }
+  };
+
+  // the counters of the menu and of the strip on top follow every change made here
+  const tasksChanged = () => { changed(); try { window.dispatchEvent(new Event("tasks:changed")); } catch (e) { /* old browser */ } };
+  const setTaskDone = async (t, done) => {
+    try { await api.put(`/leads/${lead.id}/tasks/${t.id}/done`, { done }); tasksChanged(); } catch (err) { toastError(err); }
+  };
+  const tomorrow = async (t) => {
+    const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(9, 0, 0, 0);
+    try { await api.put(`/leads/${lead.id}/tasks/${t.id}`, { dueAt: d.toISOString() }); toast.success("Remarcada para amanhã às 9h.", { autoClose: 2500 }); tasksChanged(); } catch (err) { toastError(err); }
+  };
+  const removeTask = async (t) => {
+    if (!window.confirm(`Apagar a tarefa "${t.title}"? Fica registrado no histórico do lead.`)) return;
+    try { await api.delete(`/leads/${lead.id}/tasks/${t.id}`); tasksChanged(); } catch (err) { toastError(err); }
   };
 
   const openStages = stages.filter((s) => s.type === "open");
@@ -342,14 +356,15 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab, side = false 
                   {tasks.length === 0 && <Typography color="textSecondary" variant="body2">Nenhuma tarefa. Agende o próximo contato para não esfriar o lead.</Typography>}
                   {tasks.map((t) => (
                     <div key={t.id} className={classes.taskRow}>
-                      <Checkbox size="small" color="primary" checked={!!t.doneAt} onChange={async () => { await api.post(`/leads/${lead.id}/tasks/${t.id}/toggle`); changed(); }} />
+                      <Checkbox size="small" color="primary" checked={!!t.doneAt} inputProps={{ "aria-label": t.doneAt ? "Reabrir a tarefa" : "Concluir a tarefa" }} onChange={() => setTaskDone(t, !t.doneAt)} />
                       <div style={{ flex: 1, minWidth: 0, opacity: t.doneAt ? 0.55 : 1 }}>
                         <div style={{ fontSize: 14, textDecoration: t.doneAt ? "line-through" : "none" }}>{t.title}</div>
                         <div className={classes.tlMeta} style={{ color: !t.doneAt && isOverdue(t.dueAt) ? "#dc2626" : undefined }}>
-                          {TASK_LABEL[t.type]} · {format(parseISO(t.dueAt), "dd/MM HH:mm")}{t.user ? ` · ${t.user.name}` : ""}
+                          {t.priority === "high" && !t.doneAt ? "Urgente · " : ""}{TASK_LABEL[t.type]} · {format(parseISO(t.dueAt), "dd/MM HH:mm")}{t.user ? ` · ${t.user.name}` : " · sem responsável"}
                         </div>
                       </div>
-                      <IconButton aria-label="Excluir" size="small" onClick={async () => { await api.delete(`/leads/${lead.id}/tasks/${t.id}`); changed(); }}><Trash2 size={16} /></IconButton>
+                      {!t.doneAt && <IconButton aria-label="Remarcar para amanhã às 9h" title="Remarcar para amanhã às 9h" size="small" onClick={() => tomorrow(t)}><Clock size={16} /></IconButton>}
+                      <IconButton aria-label="Excluir" size="small" onClick={() => removeTask(t)}><Trash2 size={16} /></IconButton>
                     </div>
                   ))}
                 </div>

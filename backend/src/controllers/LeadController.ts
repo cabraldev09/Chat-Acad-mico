@@ -7,7 +7,7 @@ import { getBusinessConfig, normalizeBusiness, resetBusinessCache, businessMinut
 import { dayBounds, shiftDays } from "../helpers/AppTime";
 import { withLeadScope, isAdminReq, reqRole } from "../middleware/scope";
 import { portable, nowSql, nowMinus, diffMinutes, diffHours, dayOf, countIf } from "../helpers/sqlDialect";
-import { Op } from "sequelize";
+import { Op, literal } from "sequelize";
 import { randomBytes } from "crypto";
 
 import Lead from "../models/Lead";
@@ -316,19 +316,29 @@ export const leadTasks = async (req: Request, res: Response): Promise<Response> 
     })
   );
 
+// who may touch a task that is not theirs: the management; anybody else only the tasks given to them, created by them or without a person
+const canTouchTask = (req: Request, task: LeadTask): boolean =>
+  isAdminReq(req) || !task.userId || Number(task.userId) === uid(req) || Number(task.createdById) === uid(req);
+
 export const addTask = async (req: Request, res: Response): Promise<Response> => {
-  const { title, type = "ligar", dueAt, userId } = req.body;
+  const { title, type = "ligar", dueAt, userId, priority, ticketId } = req.body;
   if (!title || !dueAt) throw new AppError("ERR_FIELD_REQUIRED_title_dueAt");
   const due = new Date(dueAt);
   if (Number.isNaN(due.getTime())) throw new AppError("ERR_INVALID_DATE");
   const lead = await Lead.findByPk(req.params.id);
   if (!lead) throw new AppError("ERR_LEAD_NOT_FOUND", 404);
+  // only the management gives a task to someone else
+  if (userId && Number(userId) !== uid(req) && !isAdminReq(req)) throw new AppError("ERR_NO_PERMISSION", 403);
   const task = await LeadTask.create({
     leadId: lead.id,
-    title,
+    title: String(title).slice(0, 160),
     type,
     dueAt: due,
-    userId: userId || lead.ownerId || uid(req)
+    userId: userId || lead.ownerId || uid(req),
+    kind: "manual",
+    priority: priority === "high" ? "high" : "normal",
+    ticketId: Number(ticketId) || null,
+    createdById: uid(req)
   } as any);
   await addActivity(lead.id, uid(req), "task", `Tarefa criada: ${title}`);
   touchAnalytics(task.userId);
@@ -340,65 +350,99 @@ export const addTask = async (req: Request, res: Response): Promise<Response> =>
 export const updateTask = async (req: Request, res: Response): Promise<Response> => {
   const task = await LeadTask.findOne({ where: { id: req.params.taskId, leadId: req.params.id } });
   if (!task) throw new AppError("ERR_NOT_FOUND", 404);
-  const { title, dueAt, type, userId } = req.body;
+  if (!canTouchTask(req, task)) throw new AppError("ERR_NO_PERMISSION", 403);
+  const { title, dueAt, type, userId, priority } = req.body;
+  // handing a task to another person (or taking it out of someone) is for the management
+  const reassign = userId !== undefined && (userId === null ? task.userId !== null : Number(userId) !== Number(task.userId));
+  if (reassign && !isAdminReq(req) && Number(userId) !== uid(req)) throw new AppError("ERR_NO_PERMISSION", 403);
+  if (dueAt && Number.isNaN(new Date(dueAt).getTime())) throw new AppError("ERR_INVALID_DATE");
   const was = task.userId;
   await task.update({
-    ...(title ? { title } : {}),
+    ...(title ? { title: String(title).slice(0, 160) } : {}),
     ...(type ? { type } : {}),
-    ...(userId ? { userId } : {}),
+    ...(priority ? { priority: priority === "high" ? "high" : "normal" } : {}),
+    ...(reassign ? { userId: userId === null ? null : Number(userId), notifiedAt: null } : {}),
     ...(dueAt ? { dueAt: new Date(dueAt), notifiedAt: null } : {})
   });
   await syncNextFollowUp(task.leadId);
-  if (userId && Number(userId) !== Number(was)) void notifyTaskAssigned(task, uid(req));
+  if (reassign && task.userId && Number(task.userId) !== Number(was)) void notifyTaskAssigned(task, uid(req));
+  if (reassign) await addActivity(task.leadId, uid(req), "task", `Tarefa "${task.title}" passada para outra pessoa.`);
+  [was, task.userId].filter(Boolean).forEach(id => getIO().emit("taskChanged", { userId: id, leadId: task.leadId }));
   return res.json(task);
 };
 
-export const completeTask = async (req: Request, res: Response): Promise<Response> => {
+// concluding (or reopening) says which one it is: a click on a task the system closed a moment ago does not reopen it
+export const setTaskDone = async (req: Request, res: Response): Promise<Response> => {
   const task = await LeadTask.findOne({ where: { id: req.params.taskId, leadId: req.params.id } });
   if (!task) throw new AppError("ERR_NOT_FOUND", 404);
-  await task.update(task.doneAt ? { doneAt: null, doneById: null } : { doneAt: new Date(), doneById: uid(req) });
+  if (!canTouchTask(req, task)) throw new AppError("ERR_NO_PERMISSION", 403);
+  const want = req.body?.done === undefined ? !task.doneAt : req.body.done !== false && req.body.done !== "false";
+  if (want && !task.doneAt) {
+    await task.update({ doneAt: new Date(), doneById: uid(req), closedReason: "done" } as any);
+    await addActivity(task.leadId, uid(req), "task", `Tarefa concluída: ${task.title}`);
+  } else if (!want && task.doneAt) {
+    await task.update({ doneAt: null, doneById: null, closedReason: null, notifiedAt: null } as any);
+  }
   touchAnalytics(task.userId);
-  if (task.doneAt) await addActivity(task.leadId, uid(req), "task", `Tarefa concluída: ${task.title}`);
   await syncNextFollowUp(task.leadId);
+  if (task.userId) getIO().emit("taskChanged", { userId: task.userId, leadId: task.leadId });
   return res.json(task);
 };
+export const completeTask = setTaskDone;
 
 export const removeTask = async (req: Request, res: Response): Promise<Response> => {
   const task = await LeadTask.findOne({ where: { id: req.params.taskId, leadId: req.params.id } });
   if (!task) throw new AppError("ERR_NOT_FOUND", 404);
+  if (!canTouchTask(req, task)) throw new AppError("ERR_NO_PERMISSION", 403);
   await task.destroy();
+  await addActivity(task.leadId, uid(req), "task", `Tarefa apagada: ${task.title}`);
   await syncNextFollowUp(task.leadId);
+  if (task.userId) getIO().emit("taskChanged", { userId: task.userId, leadId: task.leadId });
   return res.json({ message: "deleted" });
 };
 
 // hands the open tasks of people without a WhatsApp to whoever answers the lead (the rest become "sem responsavel"); the same sweep runs on its own every 30 minutes
 export const releaseUnreachable = async (_req: Request, res: Response): Promise<Response> => res.json(await runTaskSweep());
 
-export const tasksIndex = async (req: Request, res: Response): Promise<Response> => {
-  const { scope = "mine", status = "open" } = req.query as any;
+// the filter of the list: overdue (due already), today (still to come today), upcoming (after today), open (all not done), done
+const taskWhere = (req: Request, status: string): any => {
   const where: any = {};
+  const { scope = "mine" } = req.query as any;
   if (scope === "mine" || !isAdminReq(req)) where.userId = uid(req);
   // a manager looking at one person's tasks: the person is filtered here (a filter on the screen came after the 300-row limit)
   else if ((req.query as any).userId === "0") where.userId = { [Op.is]: null };
   else if (Number((req.query as any).userId)) where.userId = Number((req.query as any).userId);
   const now = new Date();
-  const { start, end } = dayBounds();
+  const { end } = dayBounds();
   if (status === "done") where.doneAt = { [Op.not]: null };
   else where.doneAt = { [Op.is]: null };
   if (status === "overdue") where.dueAt = { [Op.lt]: now };
-  if (status === "today") where.dueAt = { [Op.between]: [start, end] };
+  // "Hoje" is what is still to come today: what already passed is in "Atrasadas" (a task never counts in both)
+  if (status === "today") where.dueAt = { [Op.between]: [now, end] };
+  if (status === "upcoming") where.dueAt = { [Op.gt]: end };
+  return where;
+};
+
+export const tasksIndex = async (req: Request, res: Response): Promise<Response> => {
+  const status = String((req.query as any).status || "open");
   const rows = await LeadTask.findAll({
-    where,
+    where: taskWhere(req, status),
     include: [
-      { model: Lead, as: "lead", attributes: ["id", "name", "phone", "stageId"], include: [{ model: LeadStage, as: "stage", attributes: ["name", "color"] }] },
+      { model: Lead, as: "lead", attributes: ["id", "name", "phone", "stageId", "contactId"], include: [{ model: LeadStage, as: "stage", attributes: ["name", "color"] }] },
       { model: User, as: "user", attributes: ["id", "name"] },
       { model: User, as: "doneBy", attributes: ["id", "name"], required: false }
     ],
-    // the ones already done show the latest first (they stay registered); the open ones by due date
-    order: status === "done" ? [["doneAt", "DESC"]] : [["dueAt", "ASC"]],
+    // the ones already done show the latest first (they stay registered); the open ones: urgent first, then by due date
+    order: status === "done" ? [["doneAt", "DESC"]] : [[literal(`CASE WHEN "LeadTask"."priority" = 'high' THEN 0 ELSE 1 END`), "ASC"], ["dueAt", "ASC"]],
     limit: 300
   });
   return res.json(rows);
+};
+
+// the numbers of the tabs, of the menu badge and of the strip on top, in one request
+export const tasksCounts = async (req: Request, res: Response): Promise<Response> => {
+  const [overdue, today, upcoming] = await Promise.all(["overdue", "today", "upcoming"].map(st => LeadTask.count({ where: taskWhere(req, st) })));
+  return res.json({ overdue, today, upcoming, open: overdue + today + upcoming });
 };
 
 // ------------------------------------------------------------ chat bridge

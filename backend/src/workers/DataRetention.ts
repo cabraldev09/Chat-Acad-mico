@@ -32,6 +32,8 @@ export const RULES: Rule[] = [
   { table: "OutboundDeliveries", where: `status <> 'sending' AND "updatedAt" < NOW() - INTERVAL '{days} days'`, days: 120 },
   // the log of the webhooks delivered to other systems: only the ones that ended (delivered, failed for good, cancelled)
   { table: "WebhookDeliveries", where: `status NOT IN ('pending', 'sending') AND "createdAt" < NOW() - INTERVAL '{days} days'`, days: 30 },
+  // the notices of the bell: the read ones after a month, any after three
+  { table: "Notifications", where: `("readAt" IS NOT NULL AND "readAt" < NOW() - INTERVAL '{days} days') OR "createdAt" < NOW() - INTERVAL '90 days'`, days: 30 },
   { table: "MetaWebhookEvents", where: `status IN ('done', 'failed') AND "updatedAt" < NOW() - INTERVAL '{days} days'`, days: 7 }
 ];
 
