@@ -5381,6 +5381,13 @@ CREATE INDEX ai_usage_agent_id_created_at ON public."AiUsage" USING btree ("agen
 
 
 --
+-- Name: ai_usage_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ai_usage_created_at ON public."AiUsage" USING btree ("createdAt");
+
+
+--
 -- Name: analysis_events_kind_analysis_id_created_at; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5539,6 +5546,13 @@ CREATE INDEX contacts_kind_idx ON public."Contacts" USING btree (kind) WHERE ((k
 --
 
 CREATE INDEX contacts_parent_group_idx ON public."Contacts" USING btree ("parentGroupId") WHERE ("parentGroupId" IS NOT NULL);
+
+
+--
+-- Name: contacts_pic_checked_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX contacts_pic_checked_at ON public."Contacts" USING btree ("picCheckedAt");
 
 
 --
@@ -5773,6 +5787,13 @@ CREATE UNIQUE INDEX lead_tasks_automation_key ON public."LeadTasks" USING btree 
 
 
 --
+-- Name: lead_tasks_due_unnotified; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX lead_tasks_due_unnotified ON public."LeadTasks" USING btree ("dueAt") WHERE (("doneAt" IS NULL) AND ("notifiedAt" IS NULL));
+
+
+--
 -- Name: lead_tasks_lead; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5843,13 +5864,6 @@ CREATE INDEX leads_onboarding_tutor_id ON public."Leads" USING btree ("onboardin
 
 
 --
--- Name: leads_owner; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX leads_owner ON public."Leads" USING btree ("ownerId");
-
-
---
 -- Name: leads_owner_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5889,13 +5903,6 @@ CREATE INDEX leads_stage_historical ON public."Leads" USING btree ("stageId", "i
 --
 
 CREATE INDEX leads_stage_id ON public."Leads" USING btree ("stageId");
-
-
---
--- Name: leads_won_at; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX leads_won_at ON public."Leads" USING btree ("wonAt");
 
 
 --
@@ -5941,6 +5948,13 @@ CREATE INDEX messages_ticket_unread_idx ON public."Messages" USING btree ("ticke
 
 
 --
+-- Name: messages_unconfirmed_ack; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX messages_unconfirmed_ack ON public."Messages" USING btree ("createdAt") WHERE (("fromMe" = true) AND (ack < 3));
+
+
+--
 -- Name: meta_webhook_events_status_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5973,6 +5987,13 @@ CREATE INDEX nps_surveys_sent_at_idx ON public."NpsSurveys" USING btree ("sentAt
 --
 
 CREATE INDEX outbound_daily_usage ON public."OutboundDeliveries" USING btree ("createdAt", status);
+
+
+--
+-- Name: outbound_deliveries_status_updated; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX outbound_deliveries_status_updated ON public."OutboundDeliveries" USING btree (status, "updatedAt");
 
 
 --
@@ -6116,13 +6137,6 @@ CREATE INDEX ticket_events_ticket_created_idx ON public."TicketEvents" USING btr
 
 
 --
--- Name: ticket_events_ticket_id; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX ticket_events_ticket_id ON public."TicketEvents" USING btree ("ticketId");
-
-
---
 -- Name: tickets_contact_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6183,6 +6197,13 @@ CREATE INDEX tickets_waiting_response ON public."Tickets" USING btree (status, "
 --
 
 CREATE INDEX tickets_whatsapp_contact_idx ON public."Tickets" USING btree ("whatsappId", "contactId");
+
+
+--
+-- Name: webhook_deliveries_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX webhook_deliveries_created_at ON public."WebhookDeliveries" USING btree ("createdAt");
 
 
 --
@@ -7557,6 +7578,7 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261222000003-standard-week.js') ON
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261222000004-meta-webhook-events.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261222000005-contact-consent.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261222000006-consultant-reviews.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261222000007-speed-indexes.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.
