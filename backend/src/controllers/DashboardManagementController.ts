@@ -38,9 +38,19 @@ const BASE = `t.isHistorical = false AND t.isGroup = false AND NOT EXISTS (SELEC
 const period = (req: Request) => {
   const requestedDate = req.query.date ?? req.body?.date;
   const requestedDays = req.query.days ?? req.body?.days;
-  const day = /^\d{4}-\d{2}-\d{2}$/.test(String(requestedDate || "")) ? String(requestedDate) : undefined;
+  const hasDate = requestedDate !== undefined && requestedDate !== null && requestedDate !== "";
+  const dateText = String(requestedDate || "");
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(dateText) ? dateText : undefined;
+  if (hasDate) {
+    const parsedDate = day ? new Date(`${day}T00:00:00.000Z`) : null;
+    if (!day || !parsedDate || Number.isNaN(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== day || dayBounds(day).start > dayBounds().end) {
+      throw new AppError("ERR_INVALID_PERIOD", 400);
+    }
+  }
   const requestedRangeDays = Number(requestedDays);
-  const rangeDays = Number.isInteger(requestedRangeDays) && requestedRangeDays >= 1 && requestedRangeDays <= 31 ? requestedRangeDays : 1;
+  const hasDays = requestedDays !== undefined && requestedDays !== null && requestedDays !== "";
+  if (hasDays && (!Number.isInteger(requestedRangeDays) || requestedRangeDays < 1 || requestedRangeDays > 31)) throw new AppError("ERR_INVALID_PERIOD", 400);
+  const rangeDays = hasDays ? requestedRangeDays : 1;
   const endBounds = dayBounds(day);
   const start = dayBounds(shiftDays(endBounds.start, -(rangeDays - 1))).start;
   const prevEnd = new Date(start.getTime() - 1);
