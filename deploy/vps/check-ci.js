@@ -3,7 +3,8 @@ const approved = runs => ['verificar', 'api-ponta-a-ponta (canais e conversas)',
   const latest = runs.filter(run => run.name === name).sort((a, b) => Number(b.id || 0) - Number(a.id || 0))[0];
   return !!latest && latest.status === 'completed' && latest.conclusion === 'success';
 });
-module.exports = { approved };
+const isCurrentMainSha = (sha, mainSha) => /^[a-f0-9]{40}$/.test(mainSha || '') && sha === mainSha;
+module.exports = { approved, isCurrentMainSha };
 if (require.main === module || process.argv[1] === "-") {
   (async () => {
     const sha = process.argv[2] || process.argv[1];
@@ -12,6 +13,10 @@ if (require.main === module || process.argv[1] === "-") {
     if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) throw new Error('Repositório inválido.');
     const headers = { Accept: 'application/vnd.github+json', 'User-Agent': 'Chat-Academico-Deploy' };
     if (process.env.GH_TOKEN) headers.Authorization = `Bearer ${process.env.GH_TOKEN}`;
+    const mainResult = await fetch(`https://api.github.com/repos/${repo}/git/ref/heads/main`, { headers, signal: AbortSignal.timeout(15000) });
+    if (!mainResult.ok) throw new Error(`Não foi possível confirmar a revisão atual da main (HTTP ${mainResult.status}).`);
+    const mainBody = await mainResult.json();
+    if (!isCurrentMainSha(sha, mainBody.object && mainBody.object.sha)) throw new Error('Publicação adiada: a revisão não é a ponta atual da main.');
     const result = await fetch(`https://api.github.com/repos/${repo}/commits/${sha}/check-runs?per_page=100`, { headers, signal: AbortSignal.timeout(15000) });
     if (!result.ok) throw new Error(`Não foi possível consultar as verificações (HTTP ${result.status}).`);
     const body = await result.json();
