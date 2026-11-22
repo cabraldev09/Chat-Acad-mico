@@ -552,7 +552,7 @@ const CommercialCenter = () => {
   const params = useMemo(() => periodParams(period), [period]);
   const feedbackPeriod = useMemo(() => supervisorPeriod(period), [period]);
   const ready = period.range !== "custom" || (period.from && period.to);
-  const { data, loading, reload } = useAnalytics("/analytics/team", params, !!ready);
+  const { data, loading, error, reload } = useAnalytics("/analytics/team", params, !!ready);
   useEffect(() => { if (data) setConfig(data.config); }, [data]);
   // the polos that exist, to link people to them without leaving this screen
   const [polos, setPolos] = useState([]);
@@ -592,6 +592,7 @@ const CommercialCenter = () => {
       </div>
 
       {loading && !data && <div className={c.sub}>Carregando…</div>}
+      {error && !data && <div role="alert" className={c.sub}>Não foi possível carregar os dados da equipe. <button type="button" className={c.btn} onClick={reload}>Tentar novamente</button></div>}
       {data && tab === "geral" && (
         <div style={{ display: "grid", gap: 16 }}>
           {data.unassigned && data.unassigned.open > 0 && (
