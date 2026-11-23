@@ -6865,6 +6865,14 @@ const postMeta = (id, payload, secret, badSig) => {
       // the proposal of a lead of the north university carries its name and its color
       const prop = await http.post("/proposals/preview", { leadId: out.lead, courseId: ids.north }, auth());
       assert(prop.status === 200 && prop.data.html.includes("Universidade Norte Teste") && prop.data.html.includes("#123ABC"), `the proposal did not take the university of the lead: ${prop.status} ${String(prop.data.html || JSON.stringify(prop.data)).slice(0, 200)}`);
+      // the form of the north university: its name and color, and the lead comes of the north (an unknown address is not a form)
+      const tokenForm = (await http.get("/crm/settings", auth())).data.formToken || (await http.put("/crm/settings", {}, auth())).data.formToken;
+      const form = await http.get(`/leadform/${tokenForm}/u/norte-teste`);
+      assert(form.status === 200 && String(form.data).includes("Norte Teste") && String(form.data).includes("#123ABC") && String(form.data).includes("Engenharia Norte Teste"), `the form of the university: ${form.status}`);
+      assert((await http.get(`/leadform/${tokenForm}/u/nao-existe`)).status === 404, "a form of a university that does not exist");
+      const sent = await http.post(`/leadform/${tokenForm}/u/norte-teste/submit`, { name: "Lead Norte Teste", phone: "11 97777-0951", email: "lead.norte@x.com", consent: true });
+      assert(sent.status === 200 && sql(`SELECT institutionId FROM Leads WHERE email='lead.norte@x.com'`) === String(north), "the lead of the form of the university is not of it");
+      psql(DB, `DELETE FROM "Leads" WHERE email='lead.norte@x.com'`);
       psql(DB, `DELETE FROM "Courses" WHERE name='Engenharia Norte Teste'`);
       // a number with conversations: the university cannot go away until the number changes; the screen changes it
       assert((await http.delete(`/institutions/${north}`, auth())).data.error === "ERR_INSTITUTION_IN_USE", "a university with numbers was deleted");

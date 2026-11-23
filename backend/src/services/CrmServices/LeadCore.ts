@@ -106,6 +106,8 @@ export const pickOwner = async (): Promise<number | null> => {
 };
 
 export interface LeadInput {
+  // the university the person came for (a form of one university); else the one of the conversation, else the default
+  institutionId?: number | null;
   name?: string;
   phone?: string | null;
   email?: string | null;
@@ -235,6 +237,7 @@ const upsertLeadCore = async (
   const ownerId = input.ownerId === undefined ? await pickOwner() : input.ownerId;
 
   const created = await Lead.create({
+    ...(input.institutionId ? { institutionId: input.institutionId } : {}),
     name,
     phone,
     email,

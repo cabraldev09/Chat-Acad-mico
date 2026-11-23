@@ -59,6 +59,13 @@ Com uma universidade só, ou numa conversa da padrão, nada muda.
 - **E-mail:** os e-mails sobre um aluno (convite e senha do portal, análise publicada, acesso ativado) saem com o remetente da
   universidade dele. O nome é o do remetente da universidade, senão o nome curto. No Resend, o endereço também muda: precisa estar num
   domínio verificado. No SMTP, o endereço é sempre o da conta. A universidade padrão sem remetente próprio usa o de Configurações.
+- **Páginas públicas:**
+  - Formulário de captação de uma universidade: `/leadform/<token>/u/<endereço>`. Mostra o nome, o logo e a cor dela e só os cursos que
+    a conversa dela ofereceria; o lead já chega com a universidade.
+  - O link de cada universidade aparece em CRM → Configurações → Captação quando há duas ou mais.
+  - No formulário geral, o lead que escolhe um curso de uma universidade fica com ela.
+  - Página de um curso (`/curso/<id>-<nome>`): usa a cor da universidade do curso. Um curso de outra universidade que não a padrão
+    mostra o nome dela no lugar do logo do grupo, e o lead fica com a universidade do curso.
 - **Agente de IA:** cada número tem o seu agente, então um agente por universidade é só ligar o agente aos números dela.
 
 ## Reversão da migração
@@ -71,5 +78,5 @@ em funcionamento.
 
 - Configurações próprias por universidade (`InstitutionSettings`), caindo na configuração geral: Efí, número da tutoria, formulário.
 - Polos que servem várias universidades (`PoloInstitutions`).
-- Páginas públicas pelo endereço, com a marca da universidade, e logo da universidade nos e-mails.
+- Logo da universidade nos e-mails e no portal do aluno e do afiliado.
 - Filtro "Universidade" em Estatísticas, Metas, Campanhas e Custos.

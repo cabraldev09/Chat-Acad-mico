@@ -11,6 +11,8 @@ import { CRM_OPTIONS } from "../services/CrmServices/crmOptions";
 import { renderLeadPage } from "../helpers/LeadPage";
 import path from "path";
 import { makeThrottle } from "../helpers/RateWindow";
+import { courseInstitutionWhere, institutionBySlug, runAsInstitution, type InstitutionView } from "../helpers/Institution";
+import { logoDataUri } from "../helpers/LogoFile";
 
 // Public lead capture form (embed with an <iframe>) and its JSON endpoint.
 const router = express.Router();
@@ -40,8 +42,36 @@ router.get("/:token", async (req: Request, res: Response) => {
   return res.type("html").send(renderLeadPage({ title, color, courses, customTitle: title !== DEFAULT_TITLE }));
 });
 
+// the form of one university (/leadform/<token>/u/<address>): its color, its logo, its courses, and the lead is of that university
+const universityOf = async (slug: string): Promise<InstitutionView | null> => {
+  const inst = await institutionBySlug(slug);
+  return inst && inst.active ? inst : null;
+};
+
+router.get("/:token/u/:slug", async (req: Request, res: Response) => {
+  if (!(await validToken(req.params.token))) return res.status(404).send("Formulário indisponível");
+  const inst = await universityOf(req.params.slug);
+  if (!inst) return res.status(404).send("Formulário indisponível");
+  const [title, color, courses] = await Promise.all([
+    getSetting("crm_form_title", DEFAULT_TITLE),
+    getSetting("crm_form_color", "#0B4279"),
+    runAsInstitution(inst, async () => Course.findAll({ where: { active: true, ...(await courseInstitutionWhere()) } as any, order: [["name", "ASC"]] }))
+  ]);
+  return res.type("html").send(renderLeadPage({
+    title, color: inst.brandColor || color, courses, customTitle: title !== DEFAULT_TITLE,
+    brand: { name: inst.shortName || inst.name, logo: logoDataUri(inst.logoFile) }
+  }));
+});
+
+router.post("/:token/u/:slug/submit", express.json(), async (req: Request, res: Response) => {
+  if (!(await validToken(req.params.token))) return res.status(404).json({ error: "Formulário indisponível" });
+  const inst = await universityOf(req.params.slug);
+  if (!inst) return res.status(404).json({ error: "Formulário indisponível" });
+  return submit(req, res, null, inst);
+});
+
 // validates the submission and creates (or enriches) the lead; the affiliate, when there is one, owns the referral
-const submit = async (req: Request, res: Response, affiliate: Affiliate | null) => {
+const submit = async (req: Request, res: Response, affiliate: Affiliate | null, inst: InstitutionView | null = null) => {
   if (throttled(req.ip || "")) return res.status(429).json({ error: "Muitas tentativas. Aguarde alguns minutos." });
   const b = req.body || {};
   if (b.website) return res.json({ message: "Recebido" }); // honeypot: pretend success
@@ -54,6 +84,7 @@ const submit = async (req: Request, res: Response, affiliate: Affiliate | null) 
   const course = b.courseId ? await Course.findByPk(Number(b.courseId)) : null;
   const clip = (v: any, n = 120) => (v ? String(v).slice(0, n) : undefined);
   const { lead, created } = await upsertLead({
+    institutionId: inst?.id || (course?.institutionId ?? null),
     name: clip(name, 120),
     phone: b.phone,
     email: b.email,

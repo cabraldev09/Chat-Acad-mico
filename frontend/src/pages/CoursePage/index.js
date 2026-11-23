@@ -92,7 +92,13 @@ const CoursePage = ({ match }) => {
   return (
     <div className="cp-root"><style>{css}</style>
       <div className="cp-wrap" style={embed ? { paddingTop: 12 } : undefined}>
-        {!embed && <div className="cp-top"><img src={logo} alt="Cruzeiro do Sul Virtual" draggable={false} /></div>}
+        {!embed && (
+          <div className="cp-top">
+            {data.institution
+              ? <strong style={{ fontSize: 20, color }}>{data.institution.name}</strong>
+              : <img src={logo} alt="Cruzeiro do Sul Virtual" draggable={false} />}
+          </div>
+        )}
         <div className="cp-grid">
           <div>
             <span className="cp-chip">{c.category || "Graduação"}</span>
