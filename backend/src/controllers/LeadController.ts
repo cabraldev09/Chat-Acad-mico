@@ -899,6 +899,12 @@ export const metrics = async (req: Request, res: Response): Promise<Response> =>
     SELECT COUNT(*) AS total FROM LeadEnrollments e JOIN Leads l ON l.id = e.leadId
     WHERE e.createdAt BETWEEN :from AND :to ${f}`).catch(() => [{ total: 0 }]);
 
+  // the enrollments of the period by the kind of course (EAD, ao vivo, semipresencial...), as the course catalogue names it
+  const byModality = await q(`
+    SELECT COALESCE(NULLIF(c.modality,''), NULLIF(l.modality,''), 'Não informado') AS name, COUNT(*) AS total
+    FROM Leads l LEFT JOIN Courses c ON c.id = l.courseId
+    WHERE l.wonAt BETWEEN :from AND :to ${f} GROUP BY 1 ORDER BY total DESC`);
+
   // new people waiting for the first contact: the team confirms who is a lead (or marks a friend / team member)
   const triage = await q(`
     SELECT l.id, l.name, l.phone, l.source, l.createdAt, l.ownerId AS ownerId, u.name AS ownerName FROM Leads l JOIN LeadStages s ON s.id = l.stageId
@@ -909,7 +915,9 @@ export const metrics = async (req: Request, res: Response): Promise<Response> =>
   // the same count for the period right before this one, to show the change
   const span = to.getTime() - from.getTime();
   const [prev] = await sequelize.query(
-    portable(`SELECT COUNT(*) AS leads, ${countIf("s.type='won'")} AS won FROM Leads l JOIN LeadStages s ON s.id = l.stageId
+    portable(`SELECT COUNT(*) AS leads, ${countIf("s.type='won'")} AS won, ${countIf("s.type='lost'")} AS lost,
+        (SELECT COUNT(*) FROM Leads l WHERE l.wonAt BETWEEN :pfrom AND :pto ${f}) AS enrollments
+      FROM Leads l JOIN LeadStages s ON s.id = l.stageId
       WHERE l.createdAt BETWEEN :pfrom AND :pto ${f}`),
     { replacements: { ...rep, pfrom: new Date(from.getTime() - span - 1), pto: new Date(from.getTime() - 1) }, type: QueryTypes.SELECT }
   ) as any[];
@@ -959,7 +967,8 @@ export const metrics = async (req: Request, res: Response): Promise<Response> =>
       const w = waitingByOwner.find(x => (x.ownerId ?? null) === (r.ownerId ?? null));
       return { ...r, leads: Number(r.leads), won: Number(r.won), open: Number(r.open), avgFirstContactMin: k ? k.s / k.n : null, waiting: w ? Number(w.total) : 0 };
     }),
-    previous: { leads: Number(prev?.leads) || 0, won: Number(prev?.won) || 0, conversion: Number(prev?.leads) ? (Number(prev.won) / Number(prev.leads)) * 100 : 0 },
+    previous: { leads: Number(prev?.leads) || 0, won: Number(prev?.won) || 0, lost: Number(prev?.lost) || 0, enrollments: Number(prev?.enrollments) || 0, conversion: Number(prev?.leads) ? (Number(prev.won) / Number(prev.leads)) * 100 : 0 },
+    byModality: byModality.map(r => ({ name: String(r.name), total: Number(r.total) })),
     triage: triage.map(r => ({ id: r.id, name: r.name, phone: r.phone, source: r.source, createdAt: r.createdAt, ownerId: r.ownerId, ownerName: r.ownerName, late: new Date(r.createdAt) < dayBounds(undefined).start })),
     lostReasons: lostReasons.map(r => ({ ...r, total: Number(r.total) })),
     enrollmentsInPeriod: wonDaily.reduce((a, r) => a + Number(r.total || 0), 0) + (Number(extra?.total) || 0),

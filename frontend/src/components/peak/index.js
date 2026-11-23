@@ -311,3 +311,4 @@ export const DonutChart = ({ parts, centerLabel = "total", size = 176, stroke = 
     </div>
   );
 };
+export { CompareStat, CenterFunnel, ShareStats, BarsChart, BoardHead, Switch, weeksOf } from "./board";
