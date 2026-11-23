@@ -1,6 +1,6 @@
 import React, { useContext, useEffect, useMemo, useState } from "react";
 import { Redirect, useHistory, useLocation } from "react-router-dom";
-import { AlertTriangle, Download, Sparkles } from "lucide-react";
+import { AlertTriangle, Clock, Download, FileText, Inbox, ListTodo, Sparkles, TrendingUp, Users } from "lucide-react";
 
 import { AuthContext } from "../../context/Auth/AuthContext";
 import { isManager } from "../../utils/access";
@@ -8,7 +8,8 @@ import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import StatsHubBar from "../../components/StatsHub";
 import { ChartCard, RankBars } from "../../components/charts";
-import { useKit, useAnalytics, useDefinitions, PeriodPicker, periodParams, num } from "../../components/analytics/kit";
+import { useKit, useAnalytics, useDefinitions, PeriodPicker, periodParams, num, fmt, minutesText } from "../../components/analytics/kit";
+import { PeakChart, PeakRow, GlowStat, GlowPanel, GlowRank, rankRows, dayLabel, ACCENT } from "../../components/peak";
 import PoloProgress from "../../components/analytics/PoloProgress";
 import { ConversationsOverview } from "../Reports";
 import { Team, Alerts, Detail, ConfigPanel, PoloBoard, supervisorPeriod } from "../CommercialCenter";
@@ -23,30 +24,62 @@ const rank = (list, nameKey, valueKey, color, note) => {
   return list.slice(0, 8).map((r) => ({ key: String(r[nameKey]), name: String(r[nameKey]), value: num(r[valueKey]), bar: ((Number(r[valueKey]) || 0) / max) * 100, color, note: note ? note(r) : undefined }));
 };
 
-const Stat = ({ label, value, hint, tone }) => {
-  const c = useKit();
-  return (
-    <div className={c.kpi} style={{ "--tone": tone || "#0693E3" }}>
-      <div className={c.kpiLabel}><span>{label}</span></div>
-      <div className={c.kpiValue}>{value}</div>
-      {hint ? <div className={c.kpiHint}>{hint}</div> : null}
-    </div>
-  );
+const Failed = ({ onRetry }) => <GlowPanel error onRetry={onRetry} />;
+
+const PERIOD_LABEL = { today: "Hoje", week: "7 dias", month: "Este mês", custom: "Período" };
+
+// the production of the whole team, day by day: the days of every consultant added up
+const teamSeries = (consultants) => {
+  const days = new Map();
+  (consultants || []).forEach((p) => (p.series || []).forEach((d) => {
+    const t = days.get(d.day) || { day: d.day, attendances: 0, messagesSent: 0, peopleContacted: 0, enrollments: 0 };
+    ["attendances", "messagesSent", "peopleContacted", "enrollments"].forEach((k) => { t[k] += Number(d[k]) || 0; });
+    days.set(d.day, t);
+  }));
+  return [...days.values()].sort((x, y) => (x.day < y.day ? -1 : 1));
+};
+// one true sentence under the number: the best day of the period
+const peakNote = (series, key) => {
+  const best = series.reduce((top, d) => (d[key] > (top ? top[key] : 0) ? d : top), null);
+  return best ? `Melhor dia: ${num(best[key])} em ${dayLabel(best.day)}` : "Nenhum registro no período";
 };
 
-const Failed = ({ onRetry }) => {
-  const c = useKit();
+// Resultado do período: the four numbers the management looks for first, each with its line over the days, and what explains them
+const Results = ({ params, period }) => {
+  const { data, loading, error, reload } = useAnalytics("/analytics/team", params);
+  const series = useMemo(() => teamSeries(data && data.consultants), [data]);
+  if (error && !data) return <Failed onRetry={reload} />;
+  const wait = loading && !data;
+  const t = (data && data.totals) || {};
+  const labels = series.map((d) => dayLabel(d.day));
+  const badge = PERIOD_LABEL[period.range] || "Período";
+  const peaks = [
+    { key: "enrollments", title: "Matrículas", accent: ACCENT.good },
+    { key: "attendances", title: "Conversas atendidas", accent: ACCENT.brand },
+    { key: "peopleContacted", title: "Pessoas contatadas", accent: ACCENT.violet },
+    { key: "messagesSent", title: "Mensagens enviadas", accent: "#38b6f5" },
+  ];
+  const first = t.firstContactMinutes;
   return (
-    <div className={c.panel} role="alert" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-      <AlertTriangle size={16} style={{ color: "#b45309" }} />
-      <span style={{ flex: 1, minWidth: 0 }}>Não foi possível carregar estes números agora.</span>
-      <button type="button" className={c.btn} onClick={onRetry}>Tentar de novo</button>
+    <div style={{ display: "grid", gap: 14, minWidth: 0 }}>
+      <PeakRow label="Resultado do período">
+        {peaks.map((p) => (wait
+          ? <div key={p.key} className="pk pk-skel" style={{ aspectRatio: "540 / 696", borderRadius: 30, width: "100%", maxWidth: 340, justifySelf: "center" }} aria-hidden="true" />
+          : <PeakChart key={p.key} title={p.title} value={Number(t[p.key]) || 0} data={series.map((d) => d[p.key])} labels={labels} accent={p.accent} badge={badge} caption={peakNote(series, p.key)} />))}
+      </PeakRow>
+      <div className="pk-grid">
+        <GlowStat id="conversion" label="Conversão" icon={TrendingUp} tone="violet" loading={wait} value={fmt(t.conversion, "percent")} hint="Matrículas divididas pelos leads trabalhados" />
+        <GlowStat id="firstContact" label="Primeiro contato" icon={Clock} tone={first > 15 ? "warn" : "good"} loading={wait} value={first === null || first === undefined ? "—" : minutesText(first)} hint="Média em horário comercial. Ideal: até 15 min" />
+        <GlowStat id="pendingReply" label="Aguardando resposta" icon={Inbox} tone={t.pendingReply ? "warn" : undefined} loading={wait} value={num(t.pendingReply)} hint="Conversas em que o cliente falou por último" />
+        <GlowStat id="tasksOverdue" label="Tarefas atrasadas" icon={ListTodo} tone={t.tasksOverdue ? "bad" : "good"} loading={wait} value={num(t.tasksOverdue)} hint={`${num(t.tasksOpen)} abertas no total`} />
+        <GlowStat id="proposals" label="Propostas enviadas" icon={FileText} loading={wait} value={num(t.proposalsSent)} hint={`${num(t.proposalsViewed)} abertas pelo candidato`} />
+        <GlowStat id="leadsWorked" label="Leads trabalhados" icon={Users} loading={wait} value={num(t.leadsWorked)} hint={`${num(t.reactivated)} conversas retomadas`} />
+      </div>
     </div>
   );
 };
 
 const Commercial = ({ params }) => {
-  const c = useKit();
   const { data, loading, error, reload } = useAnalytics("/analytics/commercial", params);
   if (error && !data) return <Failed onRetry={reload} />;
   const d = data || { volume: {}, stages: [], objections: { byType: [] }, lostReasons: [], sales: { byCity: [], byCourse: [], byConsultant: [] }, process: { skipped: [] } };
@@ -55,46 +88,45 @@ const Commercial = ({ params }) => {
   const stalled = (d.stages || []).reduce((t, s) => t + (s.stalled || 0), 0);
   return (
     <div style={{ display: "grid", gap: 16 }}>
-      <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
-        <Stat label="Pessoas contatadas" value={wait ? "…" : num(d.volume.peopleContacted)} hint={`${num(d.volume.newContacts)} pela primeira vez`} tone="#7c3aed" />
-        <Stat label="Matrículas dos consultores" value={wait ? "…" : num(enrollments)} hint="Primeiras matrículas e cursos extras" tone="#16a34a" />
-        <Stat label={`Parados há ${d.stalledDays || 7} dias ou mais`} value={wait ? "…" : num(stalled)} hint="Leads abertos sem mudar de etapa" tone="#d97706" />
+      <div className="pk-grid">
+        <GlowStat id="people" label="Pessoas contatadas" tone="violet" loading={wait} value={num(d.volume.peopleContacted)} hint={`${num(d.volume.newContacts)} pela primeira vez`} />
+        <GlowStat id="sales" label="Matrículas dos consultores" tone="good" loading={wait} value={num(enrollments)} hint="Primeiras matrículas e cursos extras" />
+        <GlowStat id="stalled" label={`Parados há ${d.stalledDays || 7} dias ou mais`} tone={stalled ? "warn" : undefined} loading={wait} value={num(stalled)} hint="Leads abertos sem mudar de etapa" />
       </div>
-      <div className={c.cols}>
-        <ChartCard title="Onde os leads param" sub="Abertos em cada etapa, parados e tempo médio na etapa" loading={wait} empty={!d.stages.length}>
-          <div className={c.scroll}>
-            <table className={c.table}>
-              <thead><tr><th>Etapa</th><th className="r">Abertos</th><th className="r">Parados</th><th className="r">Tempo médio</th></tr></thead>
-              <tbody>
-                {d.stages.map((s) => (
-                  <tr key={s.stageId} style={{ cursor: "default" }}>
-                    <td><span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 999, background: s.color || "var(--c-leads)", marginRight: 8 }} />{s.name}</td>
-                    <td className="r">{num(s.open)}</td>
-                    <td className="r" style={{ color: s.stalled ? "#b45309" : undefined, fontWeight: s.stalled ? 700 : undefined }}>{num(s.stalled)}</td>
-                    <td className="r">{s.avgDays === null || s.avgDays === undefined ? "-" : `${String(s.avgDays).replace(".", ",")} d`}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </ChartCard>
-        <ChartCard title="Objeções mais comuns" sub="Da revisão diária das conversas e do agente de IA" loading={wait} empty={!d.objections.byType.length} emptyText="Nenhuma objeção registrada no período.">
-          <RankBars rows={rank(d.objections.byType.map((o) => ({ ...o, total: o.n + o.agent })), "type", "total", "warn", (o) => (o.unhandled ? `${o.unhandled} sem resposta` : undefined))} />
-        </ChartCard>
+      <div className="pk-grid-wide">
+        <GlowPanel title="Onde os leads param" sub="Abertos em cada etapa, parados e tempo médio na etapa" loading={wait} empty={!d.stages.length}>
+          <table className="pk-table pk-stack">
+            <thead><tr><th>Etapa</th><th className="r">Abertos</th><th className="r">Parados</th><th className="r">Tempo médio</th></tr></thead>
+            <tbody>
+              {d.stages.map((s) => (
+                <tr key={s.stageId}>
+                  <td data-main="1"><span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 999, background: s.color || "var(--pk-accent)", marginRight: 8 }} />{s.name}</td>
+                  <td className="r" data-label="Abertos">{num(s.open)}</td>
+                  <td className="r" data-label="Parados" style={{ color: s.stalled ? "var(--pk-warn)" : undefined, fontWeight: s.stalled ? 700 : undefined }}>{num(s.stalled)}</td>
+                  <td className="r" data-label="Tempo médio">{s.avgDays === null || s.avgDays === undefined ? "-" : `${String(s.avgDays).replace(".", ",")} d`}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </GlowPanel>
+        <GlowPanel tone="warn" title="Objeções mais comuns" sub="Da revisão diária das conversas e do agente de IA" loading={wait} empty={!d.objections.byType.length} emptyText="Nenhuma objeção registrada no período.">
+          <GlowRank rows={rankRows(d.objections.byType.map((o) => ({ ...o, total: o.n + o.agent })), "type", "total", { note: (o) => (o.unhandled ? `${o.unhandled} sem resposta` : undefined) })} />
+        </GlowPanel>
       </div>
-      <div className={c.cols}>
-        <ChartCard title="Matrículas por cidade" sub="Onde estão os alunos que se matricularam no período" loading={wait} empty={!d.sales.byCity.length}><RankBars rows={rank(d.sales.byCity, "name", "n", "won")} /></ChartCard>
-        <ChartCard title="Etapas do processo mais puladas" sub="Uma etapa sem fazer enquanto a seguinte já foi feita" loading={wait} empty={!d.process.skipped.length} emptyText="Nenhuma etapa pulada no período.">
-          <RankBars rows={rank(d.process.skipped, "label", "n", "lost")} />
-        </ChartCard>
+      <div className="pk-grid-wide">
+        <GlowPanel tone="good" title="Matrículas por cidade" sub="Onde estão os alunos que se matricularam no período" loading={wait} empty={!d.sales.byCity.length}>
+          <GlowRank rows={rankRows(d.sales.byCity, "name", "n")} />
+        </GlowPanel>
+        <GlowPanel tone="bad" title="Etapas do processo mais puladas" sub="Uma etapa sem fazer enquanto a seguinte já foi feita" loading={wait} empty={!d.process.skipped.length} emptyText="Nenhuma etapa pulada no período.">
+          <GlowRank rows={rankRows(d.process.skipped, "label", "n")} />
+        </GlowPanel>
       </div>
-      <div className={c.sub}>Origem dos leads, cursos mais procurados e motivos de perda estão na aba Captação.</div>
+      <div style={{ fontSize: 12.5, color: "var(--text-2)" }}>Origem dos leads, cursos mais procurados e motivos de perda estão na aba Captação.</div>
     </div>
   );
 };
 
 const Consultants = ({ params }) => {
-  const c = useKit();
   const defs = useDefinitions();
   const { data, loading, error, reload } = useAnalytics("/analytics/commercial", params);
   const proc = useAnalytics("/analytics/process", params);
@@ -104,6 +136,12 @@ const Consultants = ({ params }) => {
   const rows = (data && data.consultants) || [];
   const top = (data && data.sales && data.sales.top) || [];
   const process = new Map(((proc.data && proc.data.consultants) || []).map((r) => [r.userId, r]));
+  const wait = loading && !data;
+  const byEnrollments = [...rows].sort((x, y) => (y.enrollments || 0) - (x.enrollments || 0) || (y.conversations || 0) - (x.conversations || 0));
+  // the fastest to answer first; who has no answer measured in the period stays out
+  const byReply = rows.map((r) => ({ ...r, reply: (process.get(r.userId) || {}).replyMedianMin, sla: (process.get(r.userId) || {}).replyWithinSlaPct }))
+    .filter((r) => r.reply !== null && r.reply !== undefined).sort((x, y) => x.reply - y.reply);
+  const slowest = Math.max(1, ...byReply.map((r) => r.reply));
   const exportCsv = async () => {
     try {
       const { data: csv } = await api.get("/analytics/team/export.csv", { params, responseType: "blob" });
@@ -115,45 +153,53 @@ const Consultants = ({ params }) => {
   };
   return (
     <div style={{ display: "grid", gap: 16 }}>
-    <ChartCard title="Cada consultor no período" sub="Clique no nome para ver a evolução, as metas e as tarefas. Em Conversas, onde cada uma parou no processo." loading={loading && !data} empty={!rows.length} emptyText="Nenhum consultor com atividade no período."
-      action={<button type="button" className={c.btn} onClick={exportCsv} disabled={!rows.length}><Download size={14} style={{ verticalAlign: -2 }} /> Exportar</button>}>
-      <div className={c.scroll}>
-        <table className={c.table}>
-          <thead><tr><th>Consultor</th><th className="r">Conversas</th><th className="r">Pessoas</th><th className="r">Matrículas</th><th className="r">Resposta</th><th className="r">Processo seguido</th><th>Parou mais em</th><th className="r">Grades</th><th className="r">Grade faltando</th><th className="r">Com áudio</th><th className="r">Parados</th><th className="r">Perdidos</th></tr></thead>
-          <tbody>
-            {rows.map((r) => {
-              const pr = process.get(r.userId);
-              const stop = pr && pr.stoppedAt && pr.stoppedAt[0];
-              return (
-                <tr key={r.userId} onClick={() => setDetail(r.userId)}>
-                  <td style={{ whiteSpace: "nowrap", fontWeight: 600 }}>{r.name}</td>
-                  <td className="r">
-                    <button type="button" className={c.btn} style={{ padding: "2px 8px" }} onClick={(e) => { e.stopPropagation(); setStops(r); }} aria-label={`Onde as conversas de ${r.name} pararam`}>{num(r.conversations)}</button>
-                  </td>
-                  <td className="r">{num(r.peopleContacted)}</td>
-                  <td className="r" style={{ fontWeight: 700 }}>{num(r.enrollments)}</td>
-                  <td className="r">{pr ? mins(pr.replyMedianMin) : "-"}</td>
-                  <td className="r">{pct(r.processAvg)}</td>
-                  <td style={{ whiteSpace: "nowrap" }}>{stop ? `${stop.step} (${stop.n})` : "-"}</td>
-                  <td className="r">{num(r.gradesSent)}</td>
-                  <td className="r" style={{ color: r.gradeMissing ? "#b45309" : undefined }}>{num(r.gradeMissing)}</td>
-                  <td className="r">{pct(r.audioShare)}</td>
-                  <td className="r">{num(r.stalled)}</td>
-                  <td className="r">{num(r.lost)}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+      <div className="pk-grid-wide">
+        <GlowPanel id="rank-enrollments" tone="good" title="Ranking de matrículas" sub="Quem mais matriculou no período. Clique no nome para ver os detalhes." loading={wait} empty={!rows.length} emptyText="Nenhum consultor com atividade no período.">
+          <GlowRank rows={rankRows(byEnrollments, "name", "enrollments", { limit: 10, note: (r) => `${num(r.conversations)} conversas, ${num(r.peopleContacted)} pessoas`, onClick: (r) => setDetail(r.userId) })} />
+        </GlowPanel>
+        <GlowPanel id="rank-reply" title="Tempo de resposta" sub="Mediana para responder o cliente, do mais rápido ao mais lento" loading={proc.loading && !proc.data} empty={!byReply.length} emptyText="Nenhuma resposta medida no período.">
+          <GlowRank rows={byReply.slice(0, 10).map((r) => ({ key: String(r.userId), name: r.name, value: mins(r.reply), bar: (r.reply / slowest) * 100, note: r.sla === null || r.sla === undefined ? undefined : `${pct(r.sla)} dentro do prazo`, onClick: () => setDetail(r.userId) }))} />
+        </GlowPanel>
       </div>
-    </ChartCard>
-    {top.length > 0 && (
-      <ChartCard title="Quem vende o quê" sub="Os 5 maiores pares de consultor e curso no período">
-        <RankBars rows={rank(top.map((t) => ({ ...t, label: `${t.name}: ${t.course}` })), "label", "n", "brand")} />
-      </ChartCard>
-    )}
-    {detail && <Detail userId={detail} period={params} defs={defs} onClose={() => setDetail(null)} />}
-    {stops && <Leads consultant={stops} params={params} onClose={() => setStops(null)} />}
+      <GlowPanel id="consultants" title="Cada consultor no período" sub="Clique na linha para ver a evolução, as metas e as tarefas. Em Conversas, onde cada uma parou no processo." loading={wait} empty={!rows.length} emptyText="Nenhum consultor com atividade no período."
+        action={<button type="button" className="pk-btn" onClick={exportCsv} disabled={!rows.length}><Download size={14} style={{ verticalAlign: -2 }} /> Exportar</button>}>
+        <div className="pk-scroll">
+          <table className="pk-table pk-stack">
+            <thead><tr><th>Consultor</th><th className="r">Conversas</th><th className="r">Pessoas</th><th className="r">Matrículas</th><th className="r">Resposta</th><th className="r">Processo seguido</th><th>Parou mais em</th><th className="r">Grades</th><th className="r">Grade faltando</th><th className="r">Com áudio</th><th className="r">Parados</th><th className="r">Perdidos</th></tr></thead>
+            <tbody>
+              {rows.map((r) => {
+                const pr = process.get(r.userId);
+                const stop = pr && pr.stoppedAt && pr.stoppedAt[0];
+                return (
+                  <tr key={r.userId} data-click="1" onClick={() => setDetail(r.userId)}>
+                    <td data-main="1" style={{ whiteSpace: "nowrap", fontWeight: 600 }}>{r.name}</td>
+                    <td className="r" data-label="Conversas">
+                      <button type="button" className="pk-btn" style={{ padding: "2px 8px" }} onClick={(e) => { e.stopPropagation(); setStops(r); }} aria-label={`Onde as conversas de ${r.name} pararam`}>{num(r.conversations)}</button>
+                    </td>
+                    <td className="r" data-label="Pessoas">{num(r.peopleContacted)}</td>
+                    <td className="r" data-label="Matrículas" style={{ fontWeight: 700 }}>{num(r.enrollments)}</td>
+                    <td className="r" data-label="Resposta">{pr ? mins(pr.replyMedianMin) : "-"}</td>
+                    <td className="r" data-label="Processo seguido">{pct(r.processAvg)}</td>
+                    <td data-label="Parou mais em">{stop ? `${stop.step} (${stop.n})` : "-"}</td>
+                    <td className="r" data-label="Grades">{num(r.gradesSent)}</td>
+                    <td className="r" data-label="Grade faltando" style={{ color: r.gradeMissing ? "var(--pk-warn)" : undefined }}>{num(r.gradeMissing)}</td>
+                    <td className="r" data-label="Com áudio">{pct(r.audioShare)}</td>
+                    <td className="r" data-label="Parados">{num(r.stalled)}</td>
+                    <td className="r" data-label="Perdidos">{num(r.lost)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </GlowPanel>
+      {top.length > 0 && (
+        <GlowPanel tone="violet" title="Quem vende o quê" sub="Os 5 maiores pares de consultor e curso no período">
+          <GlowRank rows={rankRows(top.map((t) => ({ ...t, label: `${t.name}: ${t.course}` })), "label", "n")} />
+        </GlowPanel>
+      )}
+      {detail && <Detail userId={detail} period={params} defs={defs} onClose={() => setDetail(null)} />}
+      {stops && <Leads consultant={stops} params={params} onClose={() => setStops(null)} />}
     </div>
   );
 };
@@ -219,9 +265,10 @@ const Overview = ({ params, period }) => {
   const range = conversationRange(period);
   return (
     <div style={{ display: "grid", gap: 28 }}>
+      <Section title="Resultado do período" sub="Passe o dedo ou o mouse sobre a linha para ver cada dia"><Results params={params} period={period} /></Section>
       <Section title="Agora" sub="Quem está trabalhando e o que precisa da sua atenção"><Now params={params} /></Section>
       <PoloProgress title="Progresso dos polos" />
-      <Section title="Período" sub="Atendimentos, mensagens, tempos e a fila"><ConversationsOverview days={range.days} date={range.date} /></Section>
+      <Section title="Atendimento" sub="Atendimentos, mensagens, tempos e a fila"><ConversationsOverview days={range.days} date={range.date} /></Section>
       <Section title="Comercial" sub="Onde os leads param, objeções, cidades e o processo"><Commercial params={params} /></Section>
     </div>
   );
@@ -306,11 +353,11 @@ export const Tutoring = ({ params }) => {
   const wait = loading && !data;
   return (
     <div style={{ display: "grid", gap: 16 }}>
-      <div className={c.grid4}>
-        <Stat label="Alunos acompanhados" value={wait ? "…" : num(t.students)} hint={`${num(t.onboardingOpen)} em ambientação`} tone="#0693E3" />
-        <Stat label={`Sem contato há ${d.noContactDays || 7} dias`} value={wait ? "…" : num(t.noContact)} hint="Nenhuma mensagem do tutor" tone="#d97706" />
-        <Stat label="Risco de evasão" value={wait ? "…" : num(t.atRisk)} hint={`${num(t.atRiskWithFee)} com taxa em aberto`} tone="#dc2626" />
-        <Stat label="Rematrículas" value={wait ? "…" : num(t.reenrolled)} hint="No período" tone="#16a34a" />
+      <div className="pk-grid">
+        <GlowStat id="students" label="Alunos acompanhados" loading={wait} value={num(t.students)} hint={`${num(t.onboardingOpen)} em ambientação`} />
+        <GlowStat id="noContact" label={`Sem contato há ${d.noContactDays || 7} dias`} tone={t.noContact ? "warn" : undefined} loading={wait} value={num(t.noContact)} hint="Nenhuma mensagem do tutor" />
+        <GlowStat id="atRisk" label="Risco de evasão" tone={t.atRisk ? "bad" : undefined} loading={wait} value={num(t.atRisk)} hint={`${num(t.atRiskWithFee)} com taxa em aberto`} />
+        <GlowStat id="reenrolled" label="Rematrículas" tone="good" loading={wait} value={num(t.reenrolled)} hint="No período" />
       </div>
       <div className={c.cols}>
         <ChartCard title="Onde a ambientação para" sub="Alunos com a etapa ainda aberta" loading={wait} empty={!d.onboardingStalled.some((s) => s.n)} emptyText="Nenhuma etapa da ambientação parada.">
@@ -343,9 +390,9 @@ export const Tutoring = ({ params }) => {
 // Estatísticas: one page with the tabs of the management (the tab comes in ?aba=, so the hub bar and a link open the right one). A tab
 // already opened stays mounted when the person moves to another one, so going back is instant and nothing blinks.
 const TABS = ["geral", "consultores", "polos", "treinamento"];
-const TITLES = { geral: "Visão geral", consultores: "Consultores", polos: "Polos e metas", treinamento: "Treinamento" };
+const TITLES = { geral: "Estatísticas", consultores: "Estatísticas: consultores", polos: "Estatísticas: polos e metas", treinamento: "Estatísticas: treinamento" };
 const LEADS = {
-  geral: "O que acontece agora, as metas dos polos, o período e o comercial.",
+  geral: "O resultado do período, o que acontece agora, as metas dos polos, o atendimento e o comercial.",
   consultores: "Cada consultor no período: conversas, matrículas, resposta, o processo e o que cada um vende.",
   polos: "As metas do semestre, os números de cada polo e os horários e metas diárias da equipe.",
   treinamento: "O que a revisão diária da IA encontrou repetindo nas conversas de cada consultor.",
@@ -359,7 +406,7 @@ export default function Statistics() {
   const tutor = !!user && ["tutor", "academico"].includes(user.role);
   const wanted = new URLSearchParams(search).get("aba") || "geral";
   const tab = TABS.includes(wanted) ? wanted : "geral";
-  const [period, setPeriod] = useState({ range: "today" });
+  const [period, setPeriod] = useState({ range: "month" });
   const params = useMemo(() => periodParams(period), [period]);
   const [visited, setVisited] = useState(() => new Set([tab]));
   useEffect(() => { setVisited((v) => (v.has(tab) ? v : new Set([...v, tab]))); }, [tab]);

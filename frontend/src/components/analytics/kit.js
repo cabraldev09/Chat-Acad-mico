@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { makeStyles } from "@material-ui/core/styles";
 import MuiTooltip from "@material-ui/core/Tooltip";
 import { BarsChart, TimeChart } from "../charts";
-import { CalendarClock, CheckCheck, Clock, Eye, FileText, Flag, Inbox, MessageSquare, Send, Target, TrendingUp, AlertTriangle, ListTodo, UserCheck, Users, Zap } from "lucide-react";
+import { CalendarClock, CheckCheck, Clock, Eye, FileText, Inbox, MessageSquare, Send, Target, TrendingUp, AlertTriangle, ListTodo, UserCheck, Users, Zap } from "lucide-react";
 
 import api from "../../services/api";
 import openSocket from "../../services/socket-io";
@@ -85,38 +85,72 @@ export const num = (v) => Number(v || 0).toLocaleString("pt-BR");
 export const minutesText = (v) => (v < 60 ? `${Math.round(v)} min` : v < 1440 ? `${Math.floor(v / 60)} h${Math.round(v % 60) ? ` ${Math.round(v % 60)} min` : ""}` : `${Math.round((v / 1440) * 10) / 10} d`.replace(".", ","));
 export const fmt = (v, unit) => (v === null || v === undefined ? "—" : unit === "percent" ? `${String(v).replace(".", ",")}%` : unit === "minutes" ? minutesText(v) : num(v));
 
-// one signal from the server (no numbers inside) makes the screen read the numbers again, through the same API that applies the permissions
-export const useAnalytics = (path, params, enabled = true) => {
-  const [state, setState] = useState({ data: null, loading: true, error: null });
-  const key = JSON.stringify(params || {});
-  const timer = useRef(null);
-  const seq = useRef(0);
-
-  const load = useCallback(() => {
-    if (!enabled) return Promise.resolve();
-    const mine = ++seq.current;
-    return api
+// one signal from the server (no numbers inside) makes the screen read the numbers again, through the same API that applies the permissions.
+// Every block of a screen that reads the same address shares one request, and the whole screen shares one socket and one timer.
+const stores = new Map();
+let liveSocket = null;
+let liveTimer = null;
+let livePoll = null;
+const refreshAll = () => stores.forEach((s) => { if (s.subs.size) s.load(); });
+const onVisible = () => { if (document.visibilityState === "visible") refreshAll(); };
+const startLive = () => {
+  if (liveSocket) return;
+  liveSocket = openSocket("analytics-live");
+  const again = () => { clearTimeout(liveTimer); liveTimer = setTimeout(refreshAll, 900); };
+  liveSocket.on("connect", () => liveSocket.emit("joinNotification"));
+  ["analytics", "appMessage", "ticket", "lead"].forEach((e) => liveSocket.on(e, again));
+  // only while the page is visible; coming back to the tab refreshes at once
+  livePoll = setInterval(onVisible, 60000);
+  document.addEventListener("visibilitychange", onVisible);
+};
+const stopLive = () => {
+  if (!liveSocket) return;
+  clearTimeout(liveTimer); clearInterval(livePoll);
+  document.removeEventListener("visibilitychange", onVisible);
+  liveSocket.disconnect();
+  liveSocket = null;
+};
+const storeFor = (path, key) => {
+  const id = `${path}?${key}`;
+  if (stores.has(id)) return stores.get(id);
+  const store = { state: { data: null, loading: true, error: null }, subs: new Set(), busy: null };
+  const set = (state) => { store.state = state; store.subs.forEach((fn) => fn(state)); };
+  store.load = () => {
+    if (store.busy) return store.busy;
+    store.busy = api
       .get(path, { params: JSON.parse(key) })
-      .then(({ data }) => { if (mine === seq.current) setState({ data, loading: false, error: null }); })
-      .catch((err) => { if (mine === seq.current) { setState((s) => ({ ...s, loading: false, error: err })); toastError(err); } });
-  }, [path, key, enabled]);
+      .then(({ data }) => set({ data, loading: false, error: null }))
+      .catch((err) => { set({ ...store.state, loading: false, error: err }); toastError(err); })
+      .then(() => { store.busy = null; });
+    return store.busy;
+  };
+  stores.set(id, store);
+  return store;
+};
 
-  useEffect(() => { setState((s) => ({ ...s, loading: true })); load(); }, [load]);
+export const useAnalytics = (path, params, enabled = true) => {
+  const key = JSON.stringify(params || {});
+  const [state, setState] = useState({ data: null, loading: true, error: null });
+  // while the numbers of another period load, the ones on screen stay (dimmed by who shows them) instead of blinking away
+  const kept = useRef(null);
 
   useEffect(() => {
     if (!enabled) return undefined;
-    const socket = openSocket("analytics-live");
-    const again = () => { clearTimeout(timer.current); timer.current = setTimeout(load, 900); };
-    socket.on("connect", () => socket.emit("joinNotification"));
-    ["analytics", "appMessage", "ticket", "lead"].forEach((e) => socket.on(e, again));
-    // only while the page is visible; coming back to the tab refreshes at once
-    const poll = setInterval(() => { if (document.visibilityState === "visible") load(); }, 60000);
-    const back = () => { if (document.visibilityState === "visible") load(); };
-    document.addEventListener("visibilitychange", back);
-    return () => { clearTimeout(timer.current); clearInterval(poll); document.removeEventListener("visibilitychange", back); socket.disconnect(); };
-  }, [load, enabled]);
+    const store = storeFor(path, key);
+    store.subs.add(setState);
+    setState(store.state);
+    startLive();
+    store.load();
+    return () => {
+      store.subs.delete(setState);
+      if (!store.subs.size) stores.delete(`${path}?${key}`);
+      if (![...stores.values()].some((s) => s.subs.size)) stopLive();
+    };
+  }, [path, key, enabled]);
 
-  return { ...state, reload: load };
+  if (state.data) kept.current = state.data;
+  const reload = useCallback(() => (enabled ? storeFor(path, key).load() : Promise.resolve()), [path, key, enabled]);
+  return { ...state, data: state.data || kept.current, reload };
 };
 
 let defsCache = null;

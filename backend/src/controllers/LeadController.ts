@@ -728,6 +728,16 @@ export const putSettings = async (req: Request, res: Response): Promise<Response
   return getSettings(req, res);
 };
 
+
+// whose leads a panel may be narrowed to: a consultant always sees their own; the management picks anyone; every other profile
+// sees the whole picture or its own leads, never the numbers of one chosen colleague
+const ownerFilter = (req: Request): number | null => {
+  const self = Number(req.user.id);
+  if (reqRole(req) === "consultor") return self;
+  const asked = req.query.ownerId ? Number(req.query.ownerId) : null;
+  if (!asked || !Number.isInteger(asked)) return null;
+  return isManagerRole(reqRole(req)) || asked === self ? asked : null;
+};
 // ------------------------------------------------------------------ triage ("novos para conferir")
 // New people nobody answered yet, each one to its OWNER: a consultant only sees (and answers for) their own; the management sees everybody or one person
 // (?ownerId=). The one responsible is who ANSWERS the conversation (the owner of its open ticket), or the owner of the lead when nobody has it yet:
@@ -735,7 +745,7 @@ export const putSettings = async (req: Request, res: Response): Promise<Response
 export const triageList = async (req: Request, res: Response): Promise<Response> => {
   const sequelize = (await import("../database")).default;
   const { QueryTypes } = await import("sequelize");
-  const ownerId = reqRole(req) === "consultor" ? Number(req.user.id) : req.query.ownerId ? Number(req.query.ownerId) : null;
+  const ownerId = ownerFilter(req);
   const todayStart = dayBounds(undefined).start;
   const rows = (await sequelize.query(
     portable(`
@@ -803,7 +813,7 @@ export const metrics = async (req: Request, res: Response): Promise<Response> =>
   const to = dayBounds(req.query.to ? String(req.query.to) : undefined).end;
   const from = req.query.from ? dayBounds(String(req.query.from)).start : dayBounds(shiftDays(new Date(), -29)).start;
   // consultants only ever see their own numbers
-  const ownerId = reqRole(req) === "consultor" ? Number(req.user.id) : req.query.ownerId ? Number(req.query.ownerId) : null;
+  const ownerId = ownerFilter(req);
   const courseId = req.query.courseId ? Number(req.query.courseId) : null;
   const rep = { from, to, ownerId, courseId, feeTag: FEE_PENDING_TAG.name, docsTag: DOCS_PENDING_LABEL.name };
   // "of a person" = the lead that person ANSWERS (owner of its open conversation, or of the lead while nobody has it): the same rule of the list of new leads

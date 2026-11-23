@@ -11,6 +11,7 @@ import * as Sentry from "@sentry/node";
 import sequelize from "./database";
 import uploadConfig from "./config/upload";
 import AppError from "./errors/AppError";
+import axios from "axios";
 import routes from "./routes";
 import { logger } from "./utils/logger";
 import webchatRoutes from "./routes/webchatRoutes";
@@ -26,6 +27,10 @@ import securityHeaders from "./middleware/securityHeaders";
 import rateLimit from "./middleware/rateLimit";
 
 Sentry.init({ dsn: process.env.SENTRY_DSN });
+
+// No call to a provider (Meta, Telegram, e-mail, AI) may wait forever: one connection left hanging would hold the sending queue and
+// the retry of webhooks with it. Two minutes is far above any real answer, media included.
+axios.defaults.timeout = Number(process.env.HTTP_TIMEOUT_MS) || 120000;
 
 const app = express();
 

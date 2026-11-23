@@ -356,13 +356,13 @@ const MainListItems = (props) => {
           collapsed={collapsed}
         />
       )}
-      {/* two separate places: the management sees the whole team (Gestão comercial); a consultant sees only their own (Meu desempenho);
+      {/* two separate places: the management sees the whole team (Estatísticas); a consultant sees only their own (Meu desempenho);
           the tutor keeps the numbers of the tutoring */}
       {isManager(user) ? (
         <ListItemLink
           to="/estatisticas"
           alsoActive={["/reports", "/estatisticas/tutoria", "/estatisticas/captacao"]}
-          primary="Gestão comercial"
+          primary="Estatísticas"
           icon={<BarChartIcon className="ico" />}
           collapsed={collapsed}
           adornment={tasksBadge}

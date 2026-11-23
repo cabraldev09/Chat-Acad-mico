@@ -118,7 +118,14 @@ const remind = async (row: LeadCommercial, now: number, opts: { firstMinutes: nu
 };
 
 export const startAiReactivation = (): void => {
-  setInterval(tick, Number(process.env.REACTIVATION_MS) || 60000).unref?.();
+  // one round at a time: a slow round (the AI or the provider taking long) must not overlap the next and send a reminder twice
+  let running = false;
+  const round = async () => {
+    if (running) return;
+    running = true;
+    try { await tick(); } finally { running = false; }
+  };
+  setInterval(round, Number(process.env.REACTIVATION_MS) || 60000).unref?.();
 };
 
 export { tick as runAiReactivationOnce };

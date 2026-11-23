@@ -258,7 +258,7 @@ export const meOverview = async (req: Request, res: Response): Promise<Response>
   const before = { ...p, start: new Date(p.start.getTime() - length), end: new Date(p.start.getTime() - 1) };
   const [[bundle], config, leads, insights, focus, team, grades, previous] = await Promise.all([
     bundlesFor([id], p), getConfig(), myLeads(id), insightsFor(req.user, new Date(), { selfOnly: true }), focusFor(id),
-    teamAverages(p), gradesSentBy(id, p), computeMetrics([id], before as any)
+    teamAverages(p, id), gradesSentBy(id, p), computeMetrics([id], before as any)
   ]);
   const { coachingFor } = await import("../services/AnalyticsServices/ConsultantReview");
   const [coaching] = await coachingFor([{ id, name: "" }], p.start, p.end, await stepLabelOf()).catch(() => [] as any[]);

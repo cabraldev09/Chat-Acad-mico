@@ -30,7 +30,13 @@ export const warnUnassigned = async (): Promise<number> => {
 };
 
 export const startTaskSweep = (): void => {
-  const run = () => runTaskSweep().then(r => { if (r.redistributed || r.aligned || r.moved || r.released) logger.info(`Task sweep: ${JSON.stringify(r)}`); }).catch(err => logger.warn(`task sweep failed: ${err}`));
+  // one sweep at a time: two overlapping sweeps would hand the same task out twice
+  let running = false;
+  const run = () => {
+    if (running) return undefined;
+    running = true;
+    return runTaskSweep().then(r => { if (r.redistributed || r.aligned || r.moved || r.released) logger.info(`Task sweep: ${JSON.stringify(r)}`); }).catch(err => logger.warn(`task sweep failed: ${err}`)).then(() => { running = false; });
+  };
   const every = Number(process.env.TASK_SWEEP_MS) || 5 * 60 * 1000;
   setTimeout(run, Math.min(60 * 1000, every));
   setInterval(run, every);

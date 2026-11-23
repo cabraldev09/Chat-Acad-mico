@@ -10,12 +10,24 @@ As definições de cada indicador estão em `definitions.ts` e saem em `GET /ana
 | Metas dos polos | Visão geral, Polos e metas e Meu desempenho | `GET /dashboard/polos-progress` | todos os logados: só meta, feito e ritmo de cada polo, sem pessoas; marca os polos de quem vê |
 
 **Visão geral (gestão)** é a tela principal, de cima para baixo:
-1. **Agora:** quem está trabalhando, WhatsApp desconectado, alertas e tarefas sem responsável.
-2. **Progresso dos polos:** meta do semestre, ritmo esperado e previsão de cada polo.
-3. **Período:** leitura do período, atendimentos, mensagens, matrículas, tempo até finalizar, fila agora, atendimentos e gráficos
+1. **Resultado do período:** matrículas, conversas atendidas, pessoas contatadas e mensagens enviadas, cada uma com a linha dia a
+   dia (soma dos consultores que a pessoa pode ver), e os cartões de conversão, primeiro contato, espera, tarefas e propostas.
+2. **Agora:** quem está trabalhando, WhatsApp desconectado, alertas e tarefas sem responsável.
+3. **Progresso dos polos:** meta do semestre, ritmo esperado e previsão de cada polo.
+4. **Atendimento:** leitura do período, atendimentos, mensagens, matrículas, tempo até finalizar, fila agora e gráficos
    (o mesmo bloco de Atendimento, embutido como `ConversationsOverview`).
-4. **Comercial:** pessoas contatadas, matrículas dos consultores, leads parados, onde os leads param, objeções, cidades e etapas
+5. **Comercial:** pessoas contatadas, matrículas dos consultores, leads parados, onde os leads param, objeções, cidades e etapas
    puladas.
+
+**Meu desempenho (consultor)**, de cima para baixo: resultados do período com a linha dia a dia e a comparação com o período
+anterior; a meta em anel e a posição na equipe; o que foi feito hoje; o que fazer agora; os demais resultados; os leads no funil;
+as metas dos polos; as orientações. A posição vem em `team.position` de `/analytics/me/overview` (`{ rank, of }`, por matrículas
+no período): só o lugar e o total de consultores, nunca o número de um colega.
+
+**Visual:** os painéis usam o kit de `frontend/src/components/peak` (estilo do Peak Chart, de Louis Studios, no 21st.dev): `PeakChart`
+para o número principal com a linha, `GlowStat` para os cartões menores, `DotTile` para os contadores de agora, `GlowPanel`,
+`GlowRank`, `GlowRing` e `GlowFunnel` para blocos, rankings, metas e funil. No máximo quatro `PeakChart` por tela (cada um anima um
+canvas, só enquanto está visível). `useAnalytics` divide uma consulta por endereço e um socket por tela.
 
 "Equipe agora" (`/gestao-comercial`, hoje um redirecionamento) e a "Visão do gestor" de Atendimento saíram, porque repetiam esses
 números. A aba Consultores junta os números comerciais com o tempo de resposta e onde cada conversa parou (clique em Conversas). A
@@ -27,7 +39,7 @@ Os dois leem o mesmo pacote por pessoa (`bundlesFor`): mesmos filtros de períod
 - **Conversas atendidas** (`attendances`): conversas (tickets) de clientes com ao menos uma mensagem humana no período. Cada conversa conta uma vez, quantas mensagens tiver. É o número principal da produção.
 - **Pessoas contatadas** (`peopleContacted`): contatos diferentes que receberam mensagem humana no período. Quem tem duas conversas conta uma vez.
 - **Mensagens enviadas** (no período de atendimento e na exportação dos consultores): envios humanos feitos pelo sistema (tabela `OutboundMessages`, `status=sent`, `sentAt`, `userId` = autor real). Idempotente por `clientKey`: repetir o envio não conta de novo. Nunca contam mensagens da IA, de robôs/campanhas, nem **abrir uma conversa**. Envio recusado (conversa de outro) não gera registro.
-- **Matrículas**: `Leads.wonAt` no período, `ownerId` = consultor (mesma regra das Metas).
+- **Matrículas**: `Leads.wonAt` no período, `ownerId` = consultor, mais os cursos extras em `LeadEnrollments.enrolledAt` (mesma regra das Metas).
 - Limite conhecido: mensagens digitadas direto no celular e encaminhamentos/enquetes/cartões não passam pelo envio do sistema e não têm autoria registrada; não entram na contagem.
 
 ## Tempo real

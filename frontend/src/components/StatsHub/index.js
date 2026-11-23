@@ -35,7 +35,9 @@ const StatsHubBar = () => {
   const { user } = useContext(AuthContext);
   const history = useHistory();
   const { pathname, search } = useLocation();
-  const here = `${pathname}${new URLSearchParams(search).get("aba") ? `?aba=${new URLSearchParams(search).get("aba")}` : ""}`;
+  // "?aba=geral" is the overview itself: the first tab stays marked whichever way the person got there
+  const aba = new URLSearchParams(search).get("aba");
+  const here = `${pathname}${aba && aba !== "geral" ? `?aba=${aba}` : ""}`;
   const sections = hubSections(user);
   const bar = useRef(null);
   // on the phone the bar slides: the current tab is brought into view
