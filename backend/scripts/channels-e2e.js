@@ -4165,7 +4165,8 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(!out.some(x => /assumiu|já está com/.test(x)), `the lead was told someone took it: ${out}`);
       assert(anthropic.requests.length === llm0, "the model was called in the scenarios that need none");
 
-      // the real conversation of 23/11: the area asked for lists only what the catalogue has (never Medicina or Enfermagem), with the format;
+      // the real conversation of 23/11: the area asked for lists only what the catalogue has (never Medicina or Enfermagem), by the name of
+      // each course (the format is explained course by course, never as a word next to every name of a long list);
       // "radiologia semi presencial" is the course Radiologia, not a course that is not offered
       await http.post("/courses", { name: "Cst Em Radiologia", modality: "SEMIPRESENCIAL", category: "Graduação - Cruzeiro", semesters: 6, monthlyFee: 400, active: true }, auth());
       const QA = "5511920000258";
@@ -4173,7 +4174,7 @@ const postMeta = (id, payload, secret, badSig) => {
       const llmArea = anthropic.requests.length;
       out = await say(QA, "wamid.qs-a2", "Gostaria de saber sobre os cursos na área da saúde", t => t.some(x => /área de saúde/.test(x)), "the area is answered from the catalogue");
       assert(anthropic.requests.length === llmArea, "the area question should not call the model");
-      assert(/Radiologia \(tecnólogo\): semipresencial/.test(out.join("\n")), `the health courses of the catalogue are missing: ${out}`);
+      assert(/Radiologia \(tecnólogo\)/.test(out.join("\n")) && /Biomedicina/.test(out.join("\n")), `the health courses of the catalogue are missing: ${out}`);
       assert(!/Medicina|Enfermagem|Cst Em/.test(out.join("\n")), `a course that is not offered, or a raw name, was told: ${out}`);
       // "nessa área": the area comes from what the agent just said, and the list is again the one of the catalogue, without the model
       const llmArea2 = anthropic.requests.length;
