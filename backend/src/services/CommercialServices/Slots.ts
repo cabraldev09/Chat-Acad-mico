@@ -38,6 +38,12 @@ export const SLOT_KINDS: Record<string, Kind> = {
   fullName: "string", cpfGiven: "boolean", bolsaDataAsked: "number",
   // answers given after the price was asked, while the course is presented and the data for the scholarship are asked (Rules.holdsProposal)
   valueHeld: "number",
+  // the person is choosing a course again (asked for an area, or for a course that is not offered): nothing of the old course counts until one is named
+  courseChoosing: "boolean",
+  // a transfer or a second degree was told once that the subjects already taken may be reused (by the curricular analysis)
+  reuseExplained: "boolean", formatTried: "boolean", formatMark: "string", formatMarkCourse: "string", priceAsks: "number",
+  // the commercial lane (asked the price: "price"; wants to enroll now: "enrollment"), and the one question after "vou pensar"
+  fastLane: "string", thinkAsked: "boolean",
   // a contact who is already a student: for whom is the question, and what they already know
   // a student who needs the tutoring or the secretary: what was asked, whether the city was asked (once) before the team of the polo is called
   supportNeed: "string", supportCityAsked: "number", supportKind: "string",

@@ -490,7 +490,7 @@ const respondOnce = async (agent: AiAgent, opts: RespondOptions): Promise<AiResu
   const usageOf = (usage: any) => ({ agentId: agent.id, ticketId: opts.accountingTicketId || opts.ticket?.id, model: agent.model, kind, usage, flowId: opts.flowId, nodeId: opts.nodeId, leadId: opts.leadId, latencyMs: Date.now() - started } as any);
   const finish = (ctx: any): AiResult => {
     // a course the institution does not offer, affirmed by the model ("Enfermagem e Medicina são semipresenciais"): never reaches the person
-    const invented = !ctx.flowStarted && text && !text.includes(HANDOFF_MARKER) && !text.includes(UNKNOWN_MARKER) ? inventedCourse(text, offered) : null;
+    const invented = !ctx.flowStarted && text && !text.includes(HANDOFF_MARKER) && !text.includes(UNKNOWN_MARKER) ? inventedCourse(text, offered, evidence.join("\n")) : null;
     if (invented) {
       logger.warn(`AI agent "${agent.name}" named a course that is not offered (${invented}): answer replaced`);
       text = notOfferedText(invented, offered);

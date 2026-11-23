@@ -30,7 +30,12 @@ const HUMAN = [
   /(me )?(passa|passe|transfere|transfira) (pra|para) (um |uma )?(atendente|consultor|consultora|pessoa)/,
   /\b(atendimento|atendente|suporte|ajuda) humano\b/,
   /(falar|conversar|chamar|passar).{0,20}(com )?(alguem|algum)\b/,
-  /\bhumano\b/
+  /\bhumano\b/,
+  /^(um |uma )?(atendente|consultor|consultora)( por favor| pfv)?$/,
+  /\b(atendente|pessoa|gente) de verdade\b/,
+  /\bfalar com gente\b/,
+  /\b(alguem|voces|vcs) (pode|podem|consegue|conseguem)? ?me lig(ar|a|uem)\b|\btem como (alguem )?me ligar\b/,
+  /(me )?(passa|passe|transfere|transfira|encaminha) (pro|pra o|para o|pra|para) ?(um |uma |o |a )?(atendente|consultor|consultora|pessoa|vendedor)/
 ];
 // a price, a scholarship, an enrollment or a proposal: the moment of the human proposal (the agent never gives a number)
 const MONEY = [
@@ -39,16 +44,38 @@ const MONEY = [
   /\b(tem|ha|existe|consigo|posso ter) (alguma )?(bolsa|desconto)\b/,
   /\b(bolsa|desconto|promocao|condicao especial|forma de pagamento|formas de pagamento)\b/,
   /\b(me )?(manda|envia|passa|faz|gera|quero|queria|gostaria d[ea]|preciso d[ea]) (a |uma |sua )?proposta\b/,
-  /\bquero saber quanto\b/
+  /\bquero saber quanto\b/,
+  // an estimate, "uma base", "mais ou menos quanto": still a price; so is the investment and the price range
+  /\b(estimativa|valor aproximado|uma base (de valor|de preco)?|so uma base|mais ou menos quanto|por volta de quanto|em media quanto|faixa de (preco|valor)|investimento|quanto (seria|sairia|ficaria|vou pagar|eu pago|e o valor|e a mensalidade)|qual (seria )?(a |o )?(mensalidade|valor|preco|custo))\b/,
+  /\b(custa|custo|custos)\b/,
+  /\b(me )?(passa|passe|fala|fale|diz|diga|manda|mande|informa|informe) (o |os |a |as )?(valor|valores|preco|precos|mensalidade)\b/,
+  /\bquanto (fica|ficam|e|esta|ta)\b(?! (o tempo|a duracao|tempo))/
 ];
 const ENROLL = [
   /quero (me )?matricular/,
   /quero (fazer|garantir|realizar) (a |minha )?(matricula|inscricao)/,
   /pode (prosseguir|seguir|continuar com a matricula)/,
   /vamos (fechar|prosseguir|matricular)/,
-  /como (eu )?(faco|fazer) (pra|para) (me )?matricular/
+  /como (eu )?(faco|fazer) (pra|para) (me )?(matricular|inscrever)/,
+  /(pode|podem|quero|vamos) (fazer|efetuar) (a )?minha matricula/,
+  /quero (garantir|reservar) (a )?minha vaga/,
+  /quero (fechar|comecar) (agora|hoje|ja|logo)/,
+  /quero (me )?inscrever/,
+  /\b(fazer|efetuar) (a )?(minha )?(matricula|inscricao) (hoje|agora|ja)\b/
 ];
-const NO_INTEREST = [/nao tenho (mais )?interesse/, /\bdesisti\b/, /nao quero (mais )?(fazer|continuar|saber|estudar)/, /\bsem interesse\b/, /nao me interessa/];
+const NO_INTEREST = [/nao tenho (mais )?interesse/, /\bdesisti\b/, /nao quero (mais )?(fazer|continuar|saber|estudar|receber)/, /\bsem interesse\b/, /nao me interessa/, /par[ae]m? de (me )?(mandar|enviar) mensage/, /por enquanto nao quero/, /nao (me )?(mande|envie|manda) mais/];
+// "não tenho mais interesse", "para de me mandar mensagem": said in the words, whatever the model understood
+export const saysNoInterest = (text: string): boolean => hit(NO_INTEREST, plain(text));
+// "vou pensar", "depois eu vejo", "te aviso": the person asked for time
+export const asksForTime = (text: string): boolean => /\b(vou pensar|vou ver|depois (eu )?(vejo|falo|te falo|retorno)|te aviso|mais tarde|outro dia|agora nao (posso|da)|deixa (pra|para) depois)\b/.test(plain(text));
+// a doubt or a question of the lead: it is answered first; nothing else is asked on top of it
+export const asksSomething = (text: string): boolean => /\?/.test(text) || /^\s*(como|quando|quanto|qual|quais|onde|por ?que|tem |posso|da pra|da para|e se|sera que|e o |e a )/.test(plain(text));
+// "sim", "entendi", "ok", "blz" as the answer to "Até aqui você compreendeu?" or to the question of the doubts: the process goes on
+export const affirms = (text: string, lastQuestion: string): boolean => {
+  const q = plain(lastQuestion);
+  if (!/ate aqui voce compreendeu|ficou claro|alguma duvida|quer que eu te explique|quer que eu ja peca|seguimos com/.test(q)) return false;
+  return /^((sim|s|ss|entendi|compreendi|ok|okay|certo|beleza|blz|show|perfeito|otimo|claro|pode|pode sim|isso|uhum|aham|tudo certo|tudo bem|ta|ta bom|ficou claro|ficou|deu pra entender|entendido|legal|top)[ ,.!]*)+$/.test(plain(text).trim());
+};
 
 export type FastIntent = { intent: "human" | "price" | "enrollment" | "proposal" } | null;
 
@@ -276,7 +303,8 @@ export const entryAnswer = (text: string, lastQuestion: string): "first_degree" 
   const t = plain(text).replace(/[.!]+$/, "");
   if (!t || t.length > 120 || !/primeira graduacao/.test(q)) return null;
   if (/^(sim|isso|exato|exatamente|e sim|sera sim|vai ser|sim,? (e|sera|vai ser) (a )?primeira|(e |sera |vai ser )?(a )?primeira( graduacao| faculdade| vez)?( sim)?|nunca fiz)\b/.test(t)) return "first_degree";
-  if (/\b(ja (sou )?formad[oa]|ja (tenho|fiz|conclui|terminei) (uma )?(graduacao|faculdade|curso superior))\b/.test(t)) return "second_degree";
+  if (/\b(ja (sou )?formad[oa]|ja (tenho|fiz|conclui|terminei) (uma )?(graduacao|faculdade|curso superior)|ja (fiz|conclui|terminei|me formei em) [a-z ]{3,40}|terminei em \d{4}|me formei)\b/.test(t)) return "second_degree";
+  if (/\b(faco|to fazendo|estou fazendo|curso)\b.{0,40}\b(na|no|em outra|pela|numa|em uma)\b/.test(t) || /\b(\d|primeiro|segundo|terceiro|quarto|quinto|sexto|setimo|oitavo)o? (periodo|semestre)\b/.test(t)) return "transfer";
   // studying now and finishing soon ("tô cursando TI e me formo ano que vem"): it will be a second degree, not the first
   if (/\b(estou|to|tou|t[oô]|ainda)\s+(cursando|estudando|fazendo)\b|\bfaco faculdade\b/.test(t) && /\b(me formo|vou me formar|termino|formo (ano|semestre)|ultimo (ano|semestre|periodo))\b/.test(t)) return "second_degree";
   if (/\b(comecei|estou cursando|to cursando|tou cursando|estou estudando|to estudando|faco faculdade|curso|cursava|tranquei|parei)\b/.test(t) && /\b(outra|faculdade|curso|graduacao|cursando|estudando)\b/.test(t)) return "transfer";
@@ -450,6 +478,29 @@ export const modalityTextOf = (courseName: string, view: any): string | null => 
   return [...parts, MODALITY_CHECK].join("\n\n");
 };
 
+// The same question about the format right after the explanation ("tem aula presencial?"): the answer in one or two lines, from the same rule,
+// instead of the whole explanation again. A text the team wrote for the course has no short form (null: the caller decides).
+export const MODALITY_SHORT_CHECK = "Ficou claro como funciona?";
+export const modalityShortOf = (courseName: string, view: any): string | null => {
+  const e = view && view.explicacao;
+  if (!e || String(view.commercialApprovedText || "").trim()) return null;
+  const area = String(e.area || view.area || "");
+  if (area === "presencial") return [`O curso de *${courseName}* é presencial: pelo menos 70% da carga horária acontece em atividades presenciais. Os dias e os horários na sua cidade o consultor confirma com você.`, MODALITY_SHORT_CHECK].join("\n\n");
+  const impacted = view.mecImpactado === true || /semi/i.test(String(view.modalidadeAtual || "")) || area === "educacao_ciencias" || area === "saude_eng_agro";
+  if (!impacted) return [`O curso de *${courseName}* é EAD, sem aulas práticas presenciais: você estuda pela plataforma, pelo celular ou computador.`, MODALITY_SHORT_CHECK].join("\n\n");
+  const today = String(view.currentDeliveryDuringTransition || "").trim();
+  if (today && !/^(ead|semipresencial|presencial|a dist[aâ]ncia)$/i.test(today)) return null;
+  const p = view.percentualPresencial !== null && view.percentualPresencial !== undefined && Number.isFinite(Number(view.percentualPresencial)) ? Number(view.percentualPresencial) : null;
+  const load = p ? `${p}% de carga ${area === "saude_eng_agro" ? "prática presencial, em laboratório" : "horária presencial"}` : "uma parte de atividades presenciais";
+  const t = e.turma || null;
+  const known = !!(t && (t.presencialStart || t.expectedCalendar || t.activityLocation || (t.practiceSchedule && t.practiceDefined !== false)));
+  return [
+    `Hoje, o curso de *${courseName}* funciona no formato EAD, pela plataforma. Com as mudanças do MEC, até maio de 2027 ele passará a ter ${load}.`,
+    known ? "Os detalhes da sua turma o consultor confirma com você." : "A quantidade exata de encontros presenciais ainda não foi definida.",
+    MODALITY_SHORT_CHECK
+  ].join("\n\n");
+};
+
 // "É 100% EAD?", "é online?", "tem aula presencial?", "precisa ir ao polo?": a question about the format, answered by the system from the rule of the course
 const MODALITY_ASK = /\b(100 ?% (ead|online|on line|a distancia|digital)|(e|eh|sera|vai ser|funciona) (todo |totalmente |tudo )?(ead|online|on line|a distancia|semipresencial|semi presencial|presencial)|(tem|terei|vou ter|precisa ter|e preciso ter|havera) (aula|aulas|encontro|encontros|atividade|atividades|prova|provas|pratica|praticas) presencia(l|is)|(preciso|precisa|tenho que|vou ter que|terei que) (ir|ir ate|comparecer|frequentar) (ao|no|o|a) (polo|faculdade|presencial)|como (funciona|funcionam|sao|e) (o curso|as aulas|a modalidade|o formato|o semipresencial|o ead)|qual (e )?(a modalidade|o formato)|mudanca(s)? do mec|novas regras do mec|semipresencial)\b/;
 export const modalityQuestion = (text: string): boolean => {
@@ -471,6 +522,7 @@ export const proceeds = (text: string): boolean => {
 export const DOUBTS_QUESTION = "Você tem alguma dúvida sobre o curso ou o formato?";
 
 // once the course, the city and the first degree are known, the team presents the course: a bridge, the duration, then the format (modalityTextOf)
+export const PRESENT_BRIDGE_PLAIN = "Perfeito, vou te enviar as informações certinhas sobre o curso e te explicar como ele funciona, para você iniciar sua graduação com segurança.";
 export const PRESENT_BRIDGE = "Perfeito, vou te enviar as informações certinhas sobre o curso e também te explicar como ficaram as mudanças do MEC. Assim você entende direitinho o formato, o que mudou e como funciona para iniciar sua graduação com segurança.";
 export const durationLine = (courseName: string, semesters: number | null | undefined): string | null => {
   const n = Number(semesters || 0);
@@ -499,19 +551,60 @@ export const QUALIFIED_REPLIES = 2;
 // BOLSA_ASKS times, and the handover waits for them (or for the asks to be used); never before the lead is qualified (the process goes in order)
 export const hasBolsaData = (slots: Slots): boolean => !!slots.fullName && !!slots.cpfGiven;
 // (not when the question is for someone else: the data would be of another person, the consultant handles it)
-export const needsBolsaData = (slots: Slots): boolean => isQualified(slots) && !hasBolsaData(slots) && slots.forWhom !== "amigo ou parente" && Number(slots.bolsaDataAsked || 0) < BOLSA_ASKS;
+// The order of the team: course, kind of entry and city; the format and the changes of the MEC; the grade, the tutoring and the internship; the
+// doubts; and only then the full name and the CPF. So the data is never asked while the person is still choosing a course, nor before the
+// format of a course the MEC changed (semipresencial) was explained.
+export const formatPending = (slots: Slots): boolean => needsModalityExplanation(slots) && !modalityExplained(slots);
+export const needsBolsaData = (slots: Slots): boolean =>
+  isQualified(slots) && !slots.courseChoosing && !formatPending(slots) && !hasBolsaData(slots) && slots.forWhom !== "amigo ou parente" && Number(slots.bolsaDataAsked || 0) < BOLSA_ASKS;
+// "Já tenho graduação em Administração", "sou formada em Pedagogia", "estou cursando Fisioterapia": the course named is the one the person
+// already has (or is taking), not the one they want now
+export const priorStudy = (text: string): boolean => {
+  const t = plain(text);
+  return /\b(ja (tenho|fiz|conclui|terminei|cursei|sou|me formei|estudo|estudei)|sou (formad|graduad|bacharel|licenciad|tecnolog)|formad[oa] em|graduad[oa] em|me formei|tenho (diploma|graduacao|faculdade|bacharelado|licenciatura)|faculdade de|estou (cursando|fazendo|no \d)|to (cursando|fazendo|no \d)|curso atualmente|cursava|fazia|tranquei|parei|terminei em \d{4})\b/.test(t)
+    || /\b(faco|curso|estudo)\b.{0,40}\b(na|no|em outra|pela|numa|em uma)\b/.test(t)
+    || /\b(\d|primeiro|segundo|terceiro|quarto|quinto|sexto|setimo|oitavo)o? (periodo|semestre)\b/.test(t);
+};
+// what is said once to who comes from another course or already has a degree: the subjects may be reused, by the analysis (never a promise)
+export const REUSE_TEXT = "Como você já tem estudos de nível superior, as disciplinas que você já cursou podem ser aproveitadas. Com o seu histórico acadêmico em PDF eu solicito a análise curricular, que mostra exatamente quais poderão ser dispensadas.";
+export const reuseAlreadySaid = (text: string): boolean => /an[aá]lise curricular|aproveit|dispensad/i.test(String(text || ""));
+// another course in this very message: what was explained about the old one does not count for the new one
+export const afterCourseChange = (slots: Slots, patch: Record<string, any>): Slots => {
+  const changed = (patch.courseId && slots.courseId && Number(patch.courseId) !== Number(slots.courseId)) || (!patch.courseId && patch.courseName && slots.courseName && plain(String(patch.courseName)) !== plain(String(slots.courseName)));
+  const named = !!(patch.courseId || patch.courseName);
+  return { ...slots, ...patch, ...(changed ? { courseExplained: false, modalityExplained: false, mecExplained: false, internshipExplained: false, gradeSent: false, ...(patch.courseModality ? {} : { courseModality: null, mecImpacted: null }) } : {}), ...(named ? { courseChoosing: false } : {}) };
+};
 
 // who asks the price, the scholarship or the enrollment is worked first: the agent presents the course (the value of it) and asks the data for the
 // consultant to simulate the scholarship; the consultant is called once that is done, or after VALUE_HOLD answers at most (never a loop)
-export const VALUE_HOLD = 2;
-export const holdsProposal = (slots: Slots): boolean =>
-  !slots.enrolledStudent && Number(slots.valueHeld || 0) < VALUE_HOLD && (!slots.courseExplained || needsBolsaData(slots));
+export const VALUE_HOLD = 8;
+// Who asks the price or wants to enroll is on the commercial lane: the agent answers that intent at once (never a value), confirms only
+// what the consultant needs and is not known yet (course, kind of entry, city, the name), and hands over. The academic presentation is not
+// forced on them. A second question about the price calls the consultant right away, with what is known.
+export const PRICE_ASKS = 1;
+export const laneAsksName = (slots: Slots): boolean => !slots.fullName && slots.forWhom !== "amigo ou parente" && Number(slots.bolsaDataAsked || 0) < BOLSA_ASKS;
+export const lanePending = (slots: Slots): boolean =>
+  !(slots.courseId || slots.courseName) || slots.courseChoosing === true || !(slots.city || slots.poloId) || !slots.entryType || slots.entryType === "unknown" || laneAsksName(slots);
+export const processPending = (slots: Slots): boolean =>
+  !(slots.courseId || slots.courseName) || !(slots.city || slots.poloId) || !slots.entryType || slots.entryType === "unknown" || !slots.courseExplained || slots.courseChoosing === true || formatPending(slots) || needsBolsaData(slots);
+export const holdsProposal = (slots: Slots): boolean => !slots.enrolledStudent && Number(slots.valueHeld || 0) < VALUE_HOLD && (slots.fastLane ? lanePending(slots) : processPending(slots));
 // the words for the moment of the price: values come from the consultant, and before that the course
 export const VALUE_BRIDGE = "Os valores e as bolsas dependem da sua situação e do seu polo, por isso quem simula a melhor bolsa para você é o consultor do seu polo. Vou encaminhar para ele, mas antes quero te mostrar o que o curso oferece.";
+// "quero me matricular": no talk of values was asked for
+export const ENROLL_BRIDGE = "Que bom! Vou te encaminhar para o consultor do seu polo, que conduz a matrícula e apresenta a sua bolsa.";
+// the name of the contact is used only when it looks like the name of a person (never "Lead", "Cliente", a number or the name of a company)
+export const personName = (first: string): string => {
+  const f = String(first || "").trim();
+  if (!/^[A-Za-zÀ-ÿ]{3,20}$/.test(f)) return "";
+  return /^(lead|leads|teste|test|cliente|contato|consultor|consultora|comercial|atendimento|atendente|aluno|aluna|whatsapp|user|usuario|admin|suporte|vendas|polo|loja|empresa|sem|nome)$/i.test(f) ? "" : f;
+};
+// "vou pensar": one gentle question about what may still be unclear, then the decision of the person is respected
+export const THINK_PROBE = "Claro, sem pressa. Antes de você ir: ficou alguma dúvida sobre o curso, o formato ou o processo de matrícula que eu possa esclarecer?";
+export const THINK_BYE = "Tudo bem! Fico à disposição. Quando quiser retomar, é só me chamar por aqui.";
 export const VALUE_BRIDGE_SHORT = "Os valores e as bolsas dependem da sua situação e do seu polo, por isso quem simula a melhor bolsa para você é o consultor do seu polo.";
 
 export const readyForConsultantOf = (slots: Slots, replies: number, after: number = QUALIFIED_REPLIES, requires?: readonly string[]): boolean => {
-  if (!after || !isQualified(slots, requires)) return false;
+  if (!after || !isQualified(slots, requires) || slots.courseChoosing) return false;
   // a semipresencial course goes to the consultant only after the format and the rule of the MEC were explained
   if (needsModalityExplanation(slots) && !modalityExplained(slots)) return false;
   const analysisDone = !needsTranscript(slots) || (slots.analysisStatus === "completed" && !!slots.analysisExplained);
@@ -702,6 +795,9 @@ export const briefOf = (s: CommercialState, extra: { stageName?: string | null; 
     line("Interesse", INTEREST_LABEL[x.interestKind || ""] || null),
     x.preferredConsultantName ? line("Consultor pedido pelo lead", x.preferredConsultantName) : null,
     line("Ingresso", ENTRY_LABEL[x.entryType || "unknown"]),
+    optional("Formação anterior", [x.previousCourse, x.previousInstitution].filter(Boolean).join(" · ")),
+    optional("Intenção de matrícula", x.fastLane === "enrollment" ? "Quer se matricular agora (prioridade)" : x.fastLane ? "Perguntou valor ou bolsa" : null),
+    optional("Dados pendentes", [!(x.courseId || x.courseName) ? "curso" : null, !(x.city || x.poloId) ? "cidade" : null, !x.entryType || x.entryType === "unknown" ? "forma de ingresso" : null, !x.fullName ? "nome completo" : null, !x.cpfGiven ? "CPF" : null].filter(Boolean).join(", ")),
     line("Duração", x.courseDurationText || (x.courseDurationSemesters ? `${x.courseDurationSemesters} semestres` : null)),
     line("Modalidade", x.courseModality),
     line("MEC explicado", x.mecImpacted === false ? "Não se aplica" : yesNo(x.mecExplained)),

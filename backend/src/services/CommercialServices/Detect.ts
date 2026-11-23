@@ -27,9 +27,43 @@ Polo.addHook("afterDestroy", dropPolosCache);
 Polo.addHook("afterBulkUpdate", dropPolosCache);
 Polo.addHook("afterBulkDestroy", dropPolosCache);
 
+// how people write a course or a city in a hurry ("fisio", "rh", "adm", "pvh")
+const COURSE_ALIASES: Array<[RegExp, string]> = [
+  [/\bfisio\b/g, "fisioterapia"], [/\brh\b/g, "recursos humanos"], [/\badm\b/g, "administracao"], [/\bed\.? ?fisica\b/g, "educacao fisica"],
+  [/\bads\b/g, "analise e desenvolvimento de sistemas"], [/\bbiomed\b/g, "biomedicina"], [/\bnutri\b/g, "nutricao"], [/\bfono\b/g, "fonoaudiologia"],
+  [/\bcontabilidade\b/g, "ciencias contabeis"], [/\bpedago\b/g, "pedagogia"]
+];
+const CITY_ALIASES: Array<[RegExp, string]> = [[/\bpvh\b/g, "porto velho"], [/\bjipa\b/g, "ji parana"]];
+const distance = (a: string, b: string): number => {
+  const m = a.length, n = b.length;
+  if (Math.abs(m - n) > 2) return 9;
+  let prev = Array.from({ length: n + 1 }, (_, j) => j);
+  for (let i = 1; i <= m; i += 1) {
+    const row = [i];
+    for (let j = 1; j <= n; j += 1) row[j] = Math.min(prev[j] + 1, row[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    prev = row;
+  }
+  return prev[n];
+};
+// a name written with a typo ("biomedisina", "fisoterapia", "pedagojia"): the same number of words, the same first letter, one or two letters off
+const nearName = (t: string, n: string): boolean => {
+  if (n.length < 7) return false;
+  const words = t.split(" ");
+  const size = n.split(" ").length;
+  for (let i = 0; i + size <= words.length; i += 1) {
+    const gram = words.slice(i, i + size).join(" ");
+    if (gram[0] === n[0] && gram !== n && distance(gram, n) <= (n.length >= 11 ? 2 : 1)) return true;
+  }
+  return false;
+};
+// the course the person WANTS, when another one is named with it ("já tenho pedagogia e quero fazer nutrição", "faço fisio mas quero mudar pra TO")
+const WISH = /\b(quero (fazer|cursar|estudar|mudar (pra|para)|ir (pra|para)|transferir (pra|para)|comecar)|queria (fazer|cursar)|gostaria de (fazer|cursar)|prefiro|interesse em|pretendo (fazer|cursar)|penso em (fazer|cursar)) /g;
+
 export const detectFromText = async (text: string): Promise<Record<string, any>> => {
-  const t = plain(text);
+  let t = plain(text);
   if (!t) return {};
+  COURSE_ALIASES.forEach(([r, v]) => { t = t.replace(r, v); });
+  CITY_ALIASES.forEach(([r, v]) => { t = t.replace(r, v); });
   const out: Record<string, any> = {};
   // a course of the catalogue named in full (the longest name wins: "Administração Pública" before "Administração")
   // (the catalogue names some courses "Cst Em Empreendedorismo": the person says "Empreendedorismo", so the name without that prefix counts too)
@@ -38,12 +72,26 @@ export const detectFromText = async (text: string): Promise<Record<string, any>>
     const bare = full.replace(/^(cst|curso superior de tecnologia|tecnologo|tecnologia|bacharelado|licenciatura) (em|de|do|da) /, "");
     return [{ c, n: full }, ...(bare !== full && bare.length >= 6 ? [{ c, n: bare }] : [])];
   });
-  const courses = named.filter(x => x.n && hasWords(t, x.n)).sort((a, b) => b.n.length - a.n.length);
+  let courses = named.filter(x => x.n && hasWords(t, x.n)).sort((a, b) => b.n.length - a.n.length);
+  // nothing written right: a name with a typo counts when only one course is that close
+  if (!courses.length) {
+    const near = named.filter(x => x.n && nearName(t, x.n));
+    if (new Set(near.map(x => x.c.id || x.c.name)).size === 1) courses = [near[0]];
+  }
   const top = courses[0];
-  // two different courses in one message is a comparison, not a choice: nothing is decided
-  if (top && !courses.some(x => x.c !== top.c && !top.n.includes(x.n))) {
+  const others = courses.filter(x => x.c !== top?.c && !top!.n.includes(x.n));
+  if (top && !others.length) {
     out.courseName = top.c.name;
     if (top.c.id) out.courseId = top.c.id;
+  } else if (top) {
+    // two different courses: the one after "quero fazer", "prefiro", "quero mudar pra" is the choice; without that it is a comparison, nothing is decided
+    let wishAt = -1;
+    for (const m of t.matchAll(WISH)) wishAt = (m.index || 0) + m[0].length - 1;
+    const after = wishAt >= 0 ? [top, ...others].map(x => ({ x, at: t.indexOf(x.n) })).filter(o => o.at >= wishAt).sort((a, b) => a.at - b.at)[0] : null;
+    if (after) {
+      out.courseName = after.x.c.name;
+      if (after.x.c.id) out.courseId = after.x.c.id;
+    } else out.courseOptions = [...new Set([top, ...others].map(x => x.c.name))].slice(0, 3);
   }
   // a city of a polo named in the message
   const list = await polos().catch((err: any) => { logger.warn(`detect: polos not read: ${err?.message}`); return []; });

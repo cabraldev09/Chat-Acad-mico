@@ -144,6 +144,9 @@ function Panel({ ticket }) {
   const required = steps.filter(s => !s.optional);
   const completed = required.filter(s => s.done).length;
   const next = active && active.key === data.current ? data.suggestion : null;
+  // "waiting": the step was already sent and the lead did not answer; "reply": the lead said something else first
+  const kind = next && !suggestion ? next.kind || "next" : "next";
+  const ctx = data.context || {};
   const canSend = !!ticket.userId && !ticket.aiActive && ticket.status === "open";
   const run = async fn => {
     if (busy) return;
@@ -203,7 +206,8 @@ function Panel({ ticket }) {
       </div>
       {data.canManage && <IconButton size="small" title="Revisar e editar o processo da equipe" aria-label="Editar processo" onClick={() => setEditor(true)}><Settings2 size={17} /></IconButton>}
       {/* the main thing without opening: use or send the ready text of the step */}
-      {!open && next && next.text && !suggestion && <>
+      {!open && kind === "waiting" && !suggestion && <span className={c.line} style={{ flex: "none", fontWeight: 600 }}>Aguardando o lead</span>}
+      {!open && next && next.text && !suggestion && kind !== "waiting" && <>
         <Button size="small" className={`${c.button} ${c.wide}`} disabled={busy || !canSend} title={next.text} onClick={() => takeText(next.text, false)}>Usar</Button>
         <Button size="small" className={`${c.button} ${c.wide}`} disabled={busy || !canSend} startIcon={<Send size={13} />} title={next.text} onClick={() => run(() => sendReady(next.text))}>{next.action === "send_grade" && next.gradeId ? "Enviar com a grade" : "Enviar"}</Button>
       </>}
@@ -227,12 +231,17 @@ function Panel({ ticket }) {
         </ol>}
         {active && <div className={c.detail} aria-label="Próxima mensagem">
           <div className={c.actions}>
-            <span className={c.eyebrow} style={{ flex: 1 }}>{suggestion ? <Workflow size={12} /> : <Compass size={12} />}{suggestion ? "Sugestão da IA · revise antes de enviar" : active.done ? "Etapa concluída" : "Próxima mensagem"}</span>
+            <span className={c.eyebrow} style={{ flex: 1 }}>{suggestion ? <Workflow size={12} /> : <Compass size={12} />}{suggestion ? "Sugestão da IA · revise antes de enviar" : active.done ? "Etapa concluída" : kind === "waiting" ? "Aguardando o lead" : kind === "reply" ? "O lead respondeu" : "Próxima mensagem"}</span>
             <Button size="small" className={c.link} startIcon={<ListChecks size={14} />} onClick={() => setAllSteps(v => !v)}>{allSteps ? "Ocultar etapas" : `Etapas ${completed}/${required.length}`}</Button>
           </div>
           <div className={c.title}>{active.label}</div>
           {active.instruction && <div className={c.body2}>{active.instruction}</div>}
           {!data.hasLead && <div className={c.body2}>Este contato ainda não tem lead no CRM. Vincule o cadastro para acompanhar proposta e matrícula. <a href="/crm">Abrir CRM</a></div>}
+          {/* why this is the suggestion now: what was already sent, what the lead just said */}
+          {!suggestion && next && next.note && <div className={c.note} role="status" style={{ marginTop: 8 }}><span style={{ flex: 1 }}>{next.note}</span></div>}
+          {!suggestion && next && kind === "reply" && ctx.lastLeadText && <div className={c.body2} style={{ marginTop: 6 }}>Última mensagem do lead: <i>“{ctx.lastLeadText}”</i></div>}
+          {!suggestion && kind === "waiting" && text && <div className={c.body2} style={{ marginTop: 6 }}>Lembrete, se o lead demorar:</div>}
+          {!suggestion && kind === "reply" && text && <div className={c.body2} style={{ marginTop: 6 }}>Depois de responder, retome com:</div>}
           {text && <div className={c.message}>{text}</div>}
           {suggestion && suggestion.sources && suggestion.sources.length > 0 && <div className={c.body2}><BookOpen size={12} style={{ verticalAlign: "-2px", marginRight: 4 }} />Baseado em: {suggestion.sources.join(" · ")}</div>}
           {suggestion && <div className={c.actions}>
@@ -245,7 +254,8 @@ function Panel({ ticket }) {
           <div className={c.actions}>
             {text && <Button size="small" className={c.primary} disabled={busy || !canSend} onClick={() => takeText(text, !!suggestion)}>Usar e editar</Button>}
             {/* only the manager's ready text goes out in one click: a text written by the AI is always reviewed in the message box first */}
-            {text && !suggestion && <Button size="small" className={c.button} disabled={busy || !canSend} startIcon={<Send size={13} />} onClick={() => run(() => sendReady(text))}>{next && next.action === "send_grade" && next.gradeId ? "Enviar com a grade" : "Enviar"}</Button>}
+            {text && !suggestion && <Button size="small" className={c.button} disabled={busy || !canSend} startIcon={<Send size={13} />} onClick={() => run(() => sendReady(text))}>{next && next.action === "send_grade" && next.gradeId ? "Enviar com a grade" : kind === "waiting" ? "Enviar lembrete" : "Enviar"}</Button>}
+            {!suggestion && kind === "reply" && ctx.leadAsked && <Button size="small" className={c.button} disabled={busy || !data.aiAvailable || !canSend} startIcon={<Workflow size={13} />} onClick={() => suggest()}>Sugerir resposta</Button>}
             {suggestion && <Button size="small" className={c.button} onClick={() => setSuggestion(null)}>Descartar</Button>}
             {!suggestion && next && next.action === "send_grade" && data.leadId && <Button size="small" className={c.button} startIcon={<FileText size={13} />} href="/grades">Abrir grades</Button>}
             {active.key === "enroll" && data.leadId && !active.done && <Button size="small" className={c.button} startIcon={<GraduationCap size={15} />} disabled={busy || !canSend} onClick={enrollment}>Registrar matrícula</Button>}

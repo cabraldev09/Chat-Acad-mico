@@ -49,6 +49,8 @@ export const splitIntoBlocks = (raw: string): string[] => {
     const para = p.trim();
     if (!para) return;
     if (para.length <= BLOCK_MAX) parts.push(para);
+    // a long list keeps one item per line: it goes in as many bubbles as it needs, never flattened into a paragraph and cut in the middle of an item
+    else if (para.split("\n").filter(l => /^\s*([-•*]|\d+[.)])\s+/.test(l)).length >= 3) parts.push(...pack(para.split("\n").map(l => l.trim()).filter(Boolean), BLOCK_MAX, "\n"));
     else {
       // 2) a long paragraph goes by sentences, packed up to the limit
       const packed = pack(sentences(para.replace(/\n/g, " ")), BLOCK_MAX, " ");
