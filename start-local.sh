@@ -1,5 +1,5 @@
 #!/bin/bash
-# Sobe MariaDB + backend (8080) + frontend (3000) em localhost
+# Sobe o Postgres + backend (8080) + frontend (3000) em localhost
 DIR="$(cd "$(dirname "$0")" && pwd)"
 export PATH=/opt/homebrew/opt/node@22/bin:/opt/homebrew/opt/postgresql@16/bin:$PATH
 mkdir -p "$DIR/logs"

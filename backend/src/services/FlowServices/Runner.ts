@@ -122,9 +122,11 @@ const startRun = async (flow: ChatFlow, ticket: Ticket, fx?: Effects, pending?: 
     if (flow.kind !== "agent") {
       noteAutomation(ticket.id, `o fluxo "${flow.name}" (nº ${flow.id}, ${flow.whatsappId ? `da conexão ${flow.whatsappId}` : "de todas as conexões"}, entrada "${parseEntry(flow.entry).type}") começou e ${step.status === "done" ? "terminou" : step.status === "waiting" ? "ficou esperando a resposta da pessoa" : step.status === "handoff" ? "passou para a equipe" : "ficou em espera"} passando por ${step.path.length} bloco(s)`);
     }
+    // the conversation is released before the run says "done": a message that arrives in between never finds the run ended with the
+    // AI still on (it started the agent over)
+    await release(ticket, step, flow);
     await save(run, step);
     await record(flow, step, true, false);
-    await release(ticket, step, flow);
   } catch (err) {
     await failRun(run, ticket, flow, effects, err);
   } finally {
@@ -185,9 +187,11 @@ export const resumeStageRun = async (ticketId: number): Promise<void> => {
     noteAutomation(ticketId, `a etapa de IA "${run.nodeId}" do roteiro "${flow.name}" está respondendo`);
     const step = await resume(graph, state, await lastUserText(ticketId), effects);
     noteAutomation(ticketId, `a etapa de IA terminou a vez: ${step.status === "waiting" ? "espera a próxima mensagem" : step.status === "handoff" ? "passou a conversa para a equipe" : step.status === "done" ? "o roteiro terminou" : "o roteiro ficou em espera"}`);
+    // the conversation is released before the run says "done": a message that arrives in between never finds the run ended with the
+    // AI still on (it started the agent over)
+    await release(ticket, step, flow);
     await save(run, step);
     await record(flow, step, false, crmBefore);
-    await release(ticket, step, flow);
   } catch (err) {
     await failRun(run, ticket, flow, effects, err);
   } finally {
@@ -277,9 +281,11 @@ export const runFlowForTicket = async (ticket: Ticket, body: string, opts: { key
       const state = stateOf(active);
       const crmBefore = !!state.vars.__crm;
       const step = await resume(graph, state, body, ticketEffects(ticket, flow.name, contextOf(flow)));
+      // the conversation is released before the run says "done": a message that arrives in between never finds the run ended with the
+      // AI still on (it started the agent over)
+      await release(ticket, step, flow);
       await save(active, step);
       await record(flow, step, false, crmBefore);
-      await release(ticket, step, flow);
       return true;
     }
 
@@ -337,11 +343,13 @@ export const resumeDelayedRuns = async (): Promise<void> => {
       // eslint-disable-next-line no-await-in-loop
       const step = await resume(graph, state, "", ticketEffects(ticket, flow.name, contextOf(flow)));
       // eslint-disable-next-line no-await-in-loop
+      // released before the run says "done" (see above)
+      // eslint-disable-next-line no-await-in-loop
+      await release(ticket, step, flow);
+      // eslint-disable-next-line no-await-in-loop
       await save(run, step);
       // eslint-disable-next-line no-await-in-loop
       await record(flow, step, false, !!state.vars.__crm);
-      // eslint-disable-next-line no-await-in-loop
-      await release(ticket, step, flow);
     } catch (err) {
       logger.error(`Flow resume failed: ${err}`);
     }
