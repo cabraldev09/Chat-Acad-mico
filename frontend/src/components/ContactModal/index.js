@@ -54,11 +54,12 @@ const useStyles = makeStyles(theme => ({
 
 const ContactSchema = Yup.object().shape({
 	name: Yup.string()
-		.min(2, "Too Short!")
-		.max(50, "Too Long!")
-		.required("Required"),
-	number: Yup.string().min(8, "Too Short!").max(50, "Too Long!"),
-	email: Yup.string().email("Invalid email"),
+		.min(2, "Nome curto demais.")
+		.max(50, "Nome longo demais.")
+		.required("Informe o nome."),
+	// spaces, hyphens, brackets and "+" may stay: only the digits count
+	number: Yup.string().test("digits", "Informe o número com o DDD.", v => String(v || "").replace(/\D/g, "").length >= 8).max(50, "Número longo demais."),
+	email: Yup.string().email("E-mail inválido."),
 });
 
 const ContactModal = ({ open, onClose, contactId, initialValues, onSave }) => {
@@ -107,7 +108,9 @@ const ContactModal = ({ open, onClose, contactId, initialValues, onSave }) => {
 		setContact(initialState);
 	};
 
-	const handleSaveContact = async values => {
+	const handleSaveContact = async typed => {
+		// the number goes as digits only, however it was typed
+		const values = { ...typed, number: String(typed.number || "").replace(/\D/g, "") };
 		try {
 			if (contactId) {
 				await api.put(`/contacts/${contactId}`, values);

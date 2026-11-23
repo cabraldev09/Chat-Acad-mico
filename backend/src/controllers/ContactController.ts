@@ -1,4 +1,5 @@
 import { getAppTz } from "../helpers/AppTime";
+import { contactDigits } from "../helpers/Phone";
 import * as Yup from "yup";
 import { Request, Response } from "express";
 import { getIO } from "../libs/socket";
@@ -129,20 +130,11 @@ export const getContact = async (
 
 export const store = async (req: Request, res: Response): Promise<Response> => {
   const newContact: ContactData = req.body;
-  newContact.number = newContact.number.replace("-", "").replace(" ", "");
-
-  const schema = Yup.object().shape({
-    name: Yup.string().required(),
-    number: Yup.string()
-      .required()
-      .matches(/^\d+$/, "Invalid number format. Only numbers is allowed.")
-  });
-
-  try {
-    await schema.validate(newContact);
-  } catch (err) {
-    throw new AppError(err.message);
-  }
+  // typed with spaces, hyphens, brackets or "+": only the digits are kept (the old code removed just the first space and hyphen,
+  // so "55 69 99297-9581" was refused)
+  newContact.number = contactDigits(newContact.number);
+  if (!String(newContact.name || "").trim()) throw new AppError("ERR_FIELD_REQUIRED_name");
+  if (newContact.number.length < 8) throw new AppError("ERR_CONTACT_NUMBER_INVALID");
 
   await CheckIsValidContact(newContact.number);
   const validNumber: any = await CheckContactNumber(newContact.number);
@@ -184,19 +176,9 @@ export const update = async (
   res: Response
 ): Promise<Response> => {
   const contactData: ContactData = req.body;
-
-  const schema = Yup.object().shape({
-    name: Yup.string(),
-    number: Yup.string().matches(
-      /^\d+$/,
-      "Invalid number format. Only numbers is allowed."
-    )
-  });
-
-  try {
-    await schema.validate(contactData);
-  } catch (err) {
-    throw new AppError(err.message);
+  if (contactData.number !== undefined && contactData.number !== null) {
+    contactData.number = contactDigits(contactData.number);
+    if (contactData.number.length < 8) throw new AppError("ERR_CONTACT_NUMBER_INVALID");
   }
 
   const { contactId } = req.params;

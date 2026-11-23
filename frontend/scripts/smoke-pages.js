@@ -417,6 +417,19 @@ async function sweepRole(browser, name, def, detailRoutes = []) {
         return out;
       }).catch(() => []);
       wide.forEach((w) => note("mobile", w));
+      // a box painted with a gradient under a translucent border shows the gradient again along its edge and corners (a dark
+      // strip on a blue card): the gradient must be measured from the border (background-origin: border-box)
+      const edges = await page.evaluate(() => {
+        const out = [];
+        document.querySelectorAll("body *").forEach((el) => {
+          const c = getComputedStyle(el);
+          if (!/gradient/.test(c.backgroundImage) || el.offsetWidth < 40 || el.offsetHeight < 20) return;
+          const seeThrough = ["Top", "Right", "Bottom", "Left"].some((s) => parseFloat(c[`border${s}Width`]) > 0 && c[`border${s}Style`] !== "none" && /rgba\([^)]*,\s*0?\.\d+\)|transparent/.test(c[`border${s}Color`]));
+          if (seeThrough && /padding-box|content-box/.test(c.backgroundOrigin)) out.push(`${el.tagName.toLowerCase()}.${String(el.className.baseVal ?? el.className).split(" ")[0].slice(0, 30)}`);
+        });
+        return [...new Set(out)];
+      }).catch(() => []);
+      edges.forEach((w) => note("borda", `degradê repetido sob a borda: ${w}`));
     }
   await ctx.close();
   return issues;
