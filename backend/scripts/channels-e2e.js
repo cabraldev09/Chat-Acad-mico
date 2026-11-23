@@ -4443,7 +4443,7 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(poloOf(wl.id) === "|", `a city nobody serves kept a polo: ${poloOf(wl.id)}`);
       await http.put(`/leads/${wl.id}`, { city: "" }, auth());
       assert(poloOf(wl.id) === `${poloS.id}|wallet`, `without a city the wallet did not come back: ${poloOf(wl.id)}`);
-      const wc = (await http.post("/leads", { name: "Lead Com Cidade", phone: "5511920000398", ownerId: consS.id, city: "Itapuã do Oeste" }, auth())).data.lead;
+      const wc = (await http.post("/leads", { name: "Lead Com Cidade", phone: "5511920000398", ownerId: consS.id, city: "Candeias do Jamari" }, auth())).data.lead;
       assert(poloOf(wc.id) === `${poloS.id}|city`, `a lead created with a served city did not get its polo: ${poloOf(wc.id)}`);
 
       // V) objections: the agent answers them (with the guide of the base) and a person takes over after the third; "é golpe?" is a doubt, not a complaint
