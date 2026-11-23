@@ -494,6 +494,15 @@ export const hasBolsaData = (slots: Slots): boolean => !!slots.fullName && !!slo
 // (not when the question is for someone else: the data would be of another person, the consultant handles it)
 export const needsBolsaData = (slots: Slots): boolean => isQualified(slots) && !hasBolsaData(slots) && slots.forWhom !== "amigo ou parente" && Number(slots.bolsaDataAsked || 0) < BOLSA_ASKS;
 
+// who asks the price, the scholarship or the enrollment is worked first: the agent presents the course (the value of it) and asks the data for the
+// consultant to simulate the scholarship; the consultant is called once that is done, or after VALUE_HOLD answers at most (never a loop)
+export const VALUE_HOLD = 2;
+export const holdsProposal = (slots: Slots): boolean =>
+  !slots.enrolledStudent && Number(slots.valueHeld || 0) < VALUE_HOLD && (!slots.courseExplained || needsBolsaData(slots));
+// the words for the moment of the price: values come from the consultant, and before that the course
+export const VALUE_BRIDGE = "Os valores e as bolsas dependem da sua situação e do seu polo, por isso quem simula a melhor bolsa para você é o consultor do seu polo. Vou encaminhar para ele, mas antes quero te mostrar o que o curso oferece.";
+export const VALUE_BRIDGE_SHORT = "Os valores e as bolsas dependem da sua situação e do seu polo, por isso quem simula a melhor bolsa para você é o consultor do seu polo.";
+
 export const readyForConsultantOf = (slots: Slots, replies: number, after: number = QUALIFIED_REPLIES, requires?: readonly string[]): boolean => {
   if (!after || !isQualified(slots, requires)) return false;
   // a semipresencial course goes to the consultant only after the format and the rule of the MEC were explained

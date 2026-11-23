@@ -3817,9 +3817,15 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(!/Tutoria|Plataforma de estudo/.test(sysOfMec.split("Base aprovada")[1] || ""), "passages of other subjects reached the prompt");
 
       llm = anthropic.requests.length;
-      out = await say(A, "wamid.com-a5", "qual o valor da mensalidade? tem bolsa?", t => t.some(x => /consultor/.test(x)), "the handoff for the proposal");
+      // the price is worked first: the values come from the consultant, who simulates the scholarship with the name and the CPF asked now
+      out = await say(A, "wamid.com-a5", "qual o valor da mensalidade? tem bolsa?", t => t.some(x => /consultor do seu polo/.test(x)), "the price is worked before the consultant");
       assert(anthropic.requests.length === llm, "a question about price should not call the model");
       assert(!out.some(x => /R\$|\d+,\d{2}/.test(x)), `a value was told: ${out}`);
+      if (/CPF/.test(out.join(" "))) {
+        assert(!/^handoff|^done/.test(runOf(A)) && sql(`SELECT aiActive FROM Tickets WHERE id=${ticketOf(A)}`) === "1", "handed over before the data for the scholarship");
+        assert(Number(slotsA().valueHeld) === 1, `the hold was not counted: ${JSON.stringify(slotsA())}`);
+        out = await say(A, "wamid.com-a5b", "Ana Paula Souza, CPF 714.602.381-84", t => t.some(x => /simular as bolsas/.test(x)), "the data for the scholarship, then the consultant");
+      }
       await waitFor(() => /^handoff|^done/.test(runOf(A)), 8000, "the flow hands over");
       assert(leadStage(A) === stageName("ready_for_proposal"), `column after the price: ${leadStage(A)}`);
       assert(Number(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${leadId(A)} AND title='Gerar e apresentar proposta'`)) === 1, "the proposal task is missing or repeated");
@@ -4048,15 +4054,23 @@ const postMeta = (id, payload, secret, badSig) => {
 
       // "Quanto custa Criminologia?": the course is recognised in the words, the price goes to the consultant with the course already in the brief
       const Q2 = "5511920000241";
-      out = await say(Q2, "wamid.qs-2", "Quanto custa Criminologia?", t => t.some(x => /consultor/.test(x)), "price handed to the consultant");
+      // the course is worked first (the consultant simulates the scholarship); whoever insists on the price is handed over
+      out = await say(Q2, "wamid.qs-2", "Quanto custa Criminologia?", t => t.some(x => /consultor do seu polo/.test(x)), "the price is worked before the consultant");
       assert(out.some(x => /Estela, assistente virtual/.test(x)), `no presentation before the answer: ${out}`);
       assert(!out.some(x => /R\$|mensalidade de/.test(x)), "a price was given");
-      await waitFor(() => slotsOfNumber(Q2).courseName === "Criminologia" && handoffOf(Q2) === "proposal", 15000, "the course recognised and the handoff routed");
+      await waitFor(() => slotsOfNumber(Q2).courseName === "Criminologia", 15000, "the course recognised");
+      assert(sql(`SELECT aiActive FROM Tickets WHERE id=${ticketOf(Q2)}`) === "1" && !handoffOf(Q2), `handed over before the course was worked: ${handoffOf(Q2)}`);
+      out = await say(Q2, "wamid.qs-2b", "Mas qual o valor da mensalidade?", t => t.some(x => /consultor/.test(x)), "the insisted price goes to the consultant");
+      assert(!out.some(x => /R\$|mensalidade de/.test(x)), "a price was given");
+      await waitFor(() => handoffOf(Q2) === "proposal", 15000, "the handoff routed");
       assert(Number(sql(`SELECT COUNT(*) FROM TicketEvents WHERE ticketId=${ticketOf(Q2)} AND type='handoff' AND note LIKE '%Curso:%Criminologia%'`)) >= 1, "the brief does not carry the course");
 
       // "Quero me matricular hoje": straight to the consultant, even with nothing else known
       const Q3 = "5511920000242";
-      await say(Q3, "wamid.qs-3", "Quero me matricular hoje", t => t.some(x => /consultor/.test(x)), "enrollment handed over");
+      // "Quero me matricular hoje": the agent first asks the course to present it; insisting goes to the consultant
+      out = await say(Q3, "wamid.qs-3", "Quero me matricular hoje", t => t.some(x => /consultor do seu polo/.test(x)), "enrollment worked first");
+      assert(/curso/i.test(out.join(" ")) && sql(`SELECT aiActive FROM Tickets WHERE id=${ticketOf(Q3)}`) === "1", `the course was not asked: ${out}`);
+      await say(Q3, "wamid.qs-3b", "Quero me matricular agora mesmo", t => t.some(x => /consultor/.test(x)), "enrollment handed over");
       await waitFor(() => handoffOf(Q3) === "proposal" && sql(`SELECT aiActive FROM Tickets WHERE id=${ticketOf(Q3)}`) === "0", 15000, "the AI is out after the handoff");
 
       // "Já sou aluno": the system asks which team (tutoring or secretary) instead of selling

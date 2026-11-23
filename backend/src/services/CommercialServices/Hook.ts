@@ -1,5 +1,5 @@
 import { AuditLine, CommercialPorts } from "./Ports";
-import { OBJECTION_LIMIT, canAutoMove, confirmsNoInterest, hashOf, intentLabel, interestOf, INTEREST_LABEL, isQualified, missingOf, nextActionOf, noteOf, readyForConsultantOf, scoreOf, targetStageKey, temperatureOf } from "./Rules";
+import { OBJECTION_LIMIT, canAutoMove, confirmsNoInterest, hashOf, intentLabel, interestOf, INTEREST_LABEL, holdsProposal, isQualified, missingOf, nextActionOf, noteOf, readyForConsultantOf, scoreOf, targetStageKey, temperatureOf } from "./Rules";
 import { STAGE_SPECS, StageKey } from "./Pipeline";
 import { cleanPatch } from "./Slots";
 import { defaultFollowUp, parseFollowUp, ymdOf } from "./Hours";
@@ -34,6 +34,8 @@ export interface TurnInput {
   retract?: boolean;
   // a step of the checklist of the stage is still pending: the happy-path exits (proposal, qualified handover) wait for it
   stepsPending?: boolean;
+  // the system is presenting the course to someone who asked the price: the proposal waits this turn (holdValue false hands over at once)
+  holdValue?: boolean;
   // the block of the flow where it happened (for the gaps in the knowledge base)
   nodeId?: string | null;
   now?: Date;
@@ -220,6 +222,12 @@ export const commercialTurn = async (ports: CommercialPorts, input: TurnInput): 
   if (human) await ports.event("human_handoff");
   if (input.unknownQuestion || intent === "unknown") await ports.event("unknown", { question: s.slots.unknownQuestion, courseId: s.slots.courseId || null, stage: input.nodeId || null, intent, at: now.toISOString() }, false);
   if (input.fast) await ports.event("deterministic_reply", { intent: input.fast }, false);
+  // asked the price: the course is presented and the data for the scholarship asked before the consultant (a few answers at most)
+  const holdValue = input.holdValue === false ? false : s.readyForProposal && !human && !noInterest && (input.holdValue === true || holdsProposal(s.slots));
+  if (holdValue) {
+    s.slots.valueHeld = Number(s.slots.valueHeld || 0) + 1;
+    reasons.push("Pediu valores: antes do consultor, o curso é apresentado e os dados para simular a bolsa são pedidos.");
+  }
   await ports.save();
 
   // 8) the way out of the stage, when there is a reason for it
@@ -233,7 +241,7 @@ export const commercialTurn = async (ports: CommercialPorts, input: TurnInput): 
   else if (supportExit) { exit = supportExit; exitWhy = supportExit === "secretaria" ? "Aluno que precisa da secretaria do polo." : "Aluno que precisa da tutoria do polo."; }
   else if (ask) exit = null;
   else if (noInterest) { exit = "sem_interesse"; exitWhy = "A pessoa confirmou que não tem interesse."; }
-  else if (s.readyForProposal && !input.stepsPending) { exit = "proposta"; exitWhy = intent === "price" ? "Pediu valores: quem apresenta as condições é o consultor." : intent === "enrollment" ? "Quer se matricular: o consultor conduz a matrícula." : intent === "proposal" ? "Pediu proposta ou link de inscrição." : "Lead quente: encaminhado ao consultor."; }
+  else if (s.readyForProposal && !input.stepsPending && !holdValue) { exit = "proposta"; exitWhy = intent === "price" ? "Pediu valores: quem apresenta as condições é o consultor." : intent === "enrollment" ? "Quer se matricular: o consultor conduz a matrícula." : intent === "proposal" ? "Pediu proposta ou link de inscrição." : "Lead quente: encaminhado ao consultor."; }
   else if (followUp) { exit = "follow_up"; exitWhy = "Pediu um tempo: o retorno ficou agendado."; }
   // a question the base does not answer: the agent says it will confirm, the question is noted for the consultant and the conversation goes on
   // (the process continues); only after the "tentativas de esclarecimento" of the administrator in a row does a person take over

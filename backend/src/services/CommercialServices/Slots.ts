@@ -36,6 +36,8 @@ export const SLOT_KINDS: Record<string, Kind> = {
   // control of the agent itself: questions without an answer in a row, voice notes asked in writing, the last brief written, what the CRM held
   // the data the consultant needs to simulate the scholarship: the full name, whether a valid CPF arrived (the CPF itself lives only in the lead) and how many times it was asked
   fullName: "string", cpfGiven: "boolean", bolsaDataAsked: "number",
+  // answers given after the price was asked, while the course is presented and the data for the scholarship are asked (Rules.holdsProposal)
+  valueHeld: "number",
   // a contact who is already a student: for whom is the question, and what they already know
   // a student who needs the tutoring or the secretary: what was asked, whether the city was asked (once) before the team of the polo is called
   supportNeed: "string", supportCityAsked: "number", supportKind: "string",
