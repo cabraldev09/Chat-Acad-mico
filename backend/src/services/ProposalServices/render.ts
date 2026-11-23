@@ -1,7 +1,5 @@
-import fs from "fs";
-import { PUBLIC_DIR } from "../../config/paths";
+import { logoDataUri } from "../../helpers/LogoFile";
 import { fmtDateTime } from "../../helpers/AppTime";
-import path from "path";
 
 import { ProposalParams, ProposalResult } from "./calc";
 
@@ -29,17 +27,6 @@ const dash = (n: number, f: (x: number) => string) => (n ? f(n) : "-");
 
 
 
-const logoDataUri = (file?: string | null): string | null => {
-  if (!file) return null;
-  try {
-    const full = path.join(PUBLIC_DIR, path.basename(file));
-    const ext = path.extname(full).slice(1).toLowerCase() || "png";
-    const mime = ext === "svg" ? "image/svg+xml" : ext === "jpg" ? "image/jpeg" : `image/${ext}`;
-    return `data:${mime};base64,${fs.readFileSync(full).toString("base64")}`;
-  } catch (e) {
-    return null;
-  }
-};
 
 const fmtDate = (d: Date) => fmtDateTime(d);
 

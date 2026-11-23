@@ -5,6 +5,7 @@ import rateLimit from "../middleware/rateLimit";
 import { normalizeEmail, normalizePhone } from "../helpers/Phone";
 import Course from "../models/Course";
 import { upsertLead } from "../services/CrmServices/LeadCore";
+import { institutionById } from "../helpers/Institution";
 
 // The public page of one course, for the site and for the ads: the course (never its price) and a form that opens a lead
 // already tied to it, with the origin (UTM) of the visit. Public: no login.
@@ -23,7 +24,10 @@ router.get("/:slug", async (req: Request, res: Response) => {
   if (!course) return res.status(404).json({ error: "Curso indisponível" });
   return res.json({
     course: { id: course.id, name: course.name, modality: course.modality, category: course.category, semesters: course.semesters },
-    color: await getSetting("crm_form_color", "#0B4279"),
+    // the color and the name of the university of the course (else the ones of the group)
+    color: (course.institutionId && (await institutionById(course.institutionId))?.brandColor) || (await getSetting("crm_form_color", "#0B4279")),
+    // a course of another university shows its name in place of the group's logo
+    institution: course.institutionId ? await institutionById(course.institutionId).then(i => (i && !i.isDefault ? { name: i.shortName || i.name, site: i.site } : null)) : null,
     thanks: await getSetting("crm_form_thanks", "Recebemos seus dados! Em breve um consultor entra em contato.")
   });
 });
@@ -43,6 +47,7 @@ router.post("/:slug/lead", submitLimiter, express.json(), async (req: Request, r
   if (b.consent !== true) return res.status(400).json({ error: "É preciso aceitar o contato para continuar." });
   const clip = (v: any, n = 120) => (v ? String(v).slice(0, n) : undefined);
   await upsertLead({
+    institutionId: course.institutionId || null,
     name: clip(name, 120),
     phone: b.phone,
     email: b.email,

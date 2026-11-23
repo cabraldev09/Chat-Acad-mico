@@ -26,13 +26,19 @@ export interface LeadPageOptions {
   // the title the administration chose for the form; the default one is replaced by the headline of the page
   customTitle?: boolean;
   thanks?: string;
+  // the university of the page (its form): its name and logo replace the ones of the group
+  brand?: { name: string; logo: string | null } | null;
 }
 
 export const renderLeadPage = (o: LeadPageOptions): string => {
   const color = /^#[0-9a-f]{6}$/i.test(o.color) ? o.color : "#0B4279";
   const opt = (arr: string[]) => arr.map(v => `<option>${esc(v)}</option>`).join("");
   const logo = logoBytes();
-  const logoTag = logo
+  const logoTag = o.brand
+    ? o.brand.logo
+      ? `<img class="logo" src="${o.brand.logo}" alt="${esc(o.brand.name)}" style="max-height:65px;width:auto;max-width:276px">`
+      : `<strong class="logo-text">${esc(o.brand.name)}</strong>`
+    : logo
     ? `<img class="logo" src="data:image/png;base64,${logo.toString("base64")}" width="276" height="65" alt="Cruzeiro do Sul Virtual">`
     : `<strong class="logo-text">Cruzeiro do Sul Virtual</strong>`;
 

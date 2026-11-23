@@ -42,6 +42,11 @@ export const Capture = ({ s, setS, save }) => {
   const classes = useStyles();
   const base = getBackendUrl().replace(/\/$/, "");
   const link = s.formToken ? `${base}/leadform/${s.formToken}` : "";
+  // with two or more universities, each one has its own form: its color, its logo, its courses, and the lead is of that university
+  const [universities, setUniversities] = useState([]);
+  useEffect(() => {
+    api.get("/institutions").then(({ data }) => setUniversities((Array.isArray(data) ? data : []).filter((i) => i.active !== false && i.slug))).catch(() => setUniversities([]));
+  }, []);
   return (
     <Paper variant="outlined" className={classes.pane}>
       <div>
@@ -53,6 +58,18 @@ export const Capture = ({ s, setS, save }) => {
           <Copyable text={link} />
           <Copyable text={`<iframe src="${link}" width="100%" height="760" style="border:0"></iframe>`} />
           <Typography className={classes.hint}>Exemplo com UTM: {link}?utm_source=instagram&utm_campaign=vestibular-2027</Typography>
+          {universities.length > 1 && (
+            <div>
+              <Typography variant="subtitle2" style={{ fontWeight: 600, marginTop: 8 }}>Formulário de cada universidade</Typography>
+              <Typography className={classes.hint}>Mesma página com a cor, o logo e os cursos da universidade. O lead já chega com ela.</Typography>
+              {universities.map((u) => (
+                <div key={u.id} style={{ marginTop: 6 }}>
+                  <Typography variant="caption" style={{ fontWeight: 600 }}>{u.shortName || u.name}</Typography>
+                  <Copyable text={`${link}/u/${u.slug}`} />
+                </div>
+              ))}
+            </div>
+          )}
           <div className={classes.row}>
             <Button variant="outlined" size="small" href={link} target="_blank">Abrir formulário</Button>
             <Button variant="outlined" size="small" startIcon={<RefreshCw size={14} />}

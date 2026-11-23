@@ -165,3 +165,9 @@ export const findCatalogCourse = async (where: { name: string; category: any; mo
   const owners = await institutionsWithNumbers();
   return Course.findOne({ where: { ...where, [Op.or]: [{ institutionId: null }, ...(owners.length ? [{ institutionId: { [Op.notIn]: owners } }] : [{ institutionId: { [Op.ne]: null } }])] } as any, order: [["id", "ASC"]] });
 };
+
+// runs a piece of work (a public page, a form) as a given university: its name and its courses
+export const runAsInstitution = async <T>(inst: InstitutionView | null, fn: () => Promise<T>): Promise<T> => {
+  if (!inst || (await allInstitutions()).length <= 1) return fn();
+  return scope.run({ id: inst.id, name: inst.isDefault ? cached : inst.shortName || inst.name || cached }, fn);
+};
