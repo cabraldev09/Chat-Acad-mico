@@ -10,7 +10,7 @@ import StatsHubBar from "../../components/StatsHub";
 import { ChartCard } from "../../components/charts";
 import { useKit, useAnalytics, useDefinitions, PeriodPicker, periodParams, num, fmt, minutesText } from "../../components/analytics/kit";
 import Drawer from "@material-ui/core/Drawer";
-import { PeakChart, PeakRow, GlowStat, GlowPanel, GlowRank, SectionTitle, DonutChart, RingStat, rankRows, dayLabel, ACCENT } from "../../components/peak";
+import { GlowStat, GlowPanel, GlowRank, SectionTitle, DonutChart, RingStat, rankRows, CountStat, BarsChart, Switch } from "../../components/peak";
 import PoloProgress from "../../components/analytics/PoloProgress";
 import { ConversationsOverview } from "../Reports";
 import { Team, Alerts, Detail, ConfigPanel, PoloBoard, supervisorPeriod } from "../CommercialCenter";
@@ -34,35 +34,39 @@ const teamSeries = (consultants) => {
   }));
   return [...days.values()].sort((x, y) => (x.day < y.day ? -1 : 1));
 };
-// one true sentence under the number: the best day of the period
-const peakNote = (series, key) => {
-  const best = series.reduce((top, d) => (d[key] > (top ? top[key] : 0) ? d : top), null);
-  return best ? `Melhor dia: ${num(best[key])} em ${dayLabel(best.day)}` : "Nenhum registro no período";
-};
-
-// Resultado do período: the four numbers the management looks for first, each with its line over the days, and what explains them
+// Resultado do período: the four numbers the management looks for first, the days behind the one chosen, and what explains them
+const RESULT_KEYS = [
+  { key: "enrollments", title: "Matrículas", unit: "matrículas" },
+  { key: "attendances", title: "Conversas atendidas", unit: "conversas" },
+  { key: "peopleContacted", title: "Pessoas contatadas", unit: "pessoas" },
+  { key: "messagesSent", title: "Mensagens enviadas", unit: "mensagens" },
+];
 const Results = ({ params, period }) => {
   const { data, loading, error, reload } = useAnalytics("/analytics/team", params);
   const series = useMemo(() => teamSeries(data && data.consultants), [data]);
+  const [shown, setShown] = useState("enrollments");
   if (error && !data) return <Failed onRetry={reload} />;
   const wait = loading && !data;
   const t = (data && data.totals) || {};
-  const labels = series.map((d) => dayLabel(d.day));
   const badge = PERIOD_LABEL[period.range] || "Período";
-  const peaks = [
-    { key: "enrollments", title: "Matrículas", accent: ACCENT.good },
-    { key: "attendances", title: "Conversas atendidas", accent: ACCENT.brand },
-    { key: "peopleContacted", title: "Pessoas contatadas", accent: ACCENT.violet },
-    { key: "messagesSent", title: "Mensagens enviadas", accent: "#38b6f5" },
-  ];
+  const current = RESULT_KEYS.find((k) => k.key === shown) || RESULT_KEYS[0];
   const first = t.firstContactMinutes;
   return (
-    <div style={{ display: "grid", gap: 14, minWidth: 0 }}>
-      <PeakRow label="Resultado do período">
-        {peaks.map((p) => (wait
-          ? <div key={p.key} className="pk pk-skel" style={{ aspectRatio: "540 / 696", borderRadius: 30, width: "100%", maxWidth: 340, justifySelf: "center" }} aria-hidden="true" />
-          : <PeakChart key={p.key} title={p.title} value={Number(t[p.key]) || 0} data={series.map((d) => d[p.key])} labels={labels} accent={p.accent} badge={badge} caption={peakNote(series, p.key)} />))}
-      </PeakRow>
+    <div className="gv-plain" style={{ display: "grid", gap: 14, minWidth: 0 }}>
+      <div className="pk-grid-4" role="group" aria-label="Resultado do período">
+        {RESULT_KEYS.map((k) => (
+          <CountStat key={k.key} id={k.key} label={k.title} value={Number(t[k.key]) || 0} loading={wait} hint={badge}
+            action={shown === k.key ? "No gráfico abaixo" : "Ver por dia"} onClick={() => setShown(k.key)} />
+        ))}
+      </div>
+      <section className="gv-card" data-panel="bars" aria-busy={wait ? "true" : undefined}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+          <h3 className="gv-title">{current.title} por dia</h3>
+          <Switch label="O que mostrar" value={shown} onChange={setShown} options={RESULT_KEYS.map((k) => [k.key, k.title])} />
+        </div>
+        {wait ? <div className="pk-skel" style={{ height: 220, borderRadius: 8 }} aria-hidden="true" />
+          : <BarsChart days={series.map((d) => ({ day: d.day, value: d[current.key] }))} unit={current.unit} />}
+      </section>
       <div className="pk-grid">
         <GlowStat id="conversion" label="Conversão" icon={TrendingUp} tone="violet" loading={wait} value={fmt(t.conversion, "percent")} hint="Matrículas divididas pelos leads trabalhados" />
         <GlowStat id="firstContact" label="Primeiro contato" icon={Clock} tone={first > 15 ? "warn" : "good"} loading={wait} value={first === null || first === undefined ? "—" : minutesText(first)} hint="Média em horário comercial. Ideal: até 15 min" />
@@ -291,7 +295,7 @@ const Overview = ({ params, period }) => {
   const range = conversationRange(period);
   return (
     <div style={{ display: "grid", gap: 28 }}>
-      <Section title="Resultado do período" sub="Passe o dedo ou o mouse sobre a linha para ver cada dia"><Results params={params} period={period} /></Section>
+      <Section title="Resultado do período" sub="Toque em um número para ver os dias dele no gráfico"><Results params={params} period={period} /></Section>
       <Section title="Agora" sub="Quem está trabalhando e o que precisa da sua atenção"><Now params={params} /></Section>
       <PoloProgress title="Progresso dos polos" />
       <Section title="Atendimento" sub="Atendimentos, mensagens, tempos e a fila"><ConversationsOverview days={range.days} date={range.date} /></Section>
