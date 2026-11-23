@@ -1,5 +1,5 @@
 import { CHECKLIST, parseChecklist } from "../CrmServices/OnboardingChecklist";
-import { rows } from "./AnalyticsService";
+import { rows, LEAD_IN_INSTITUTION } from "./AnalyticsService";
 
 // What the tutoring needs to see beyond the onboarding numbers: students the tutor has not talked to for a week, where the onboarding
 // stops (the checklist step not ticked), students at risk of leaving (no conversation for 15 days, and with a fee still open when there is
@@ -15,11 +15,11 @@ export const tutoriaInsights = async (tutorIds: number[] | null, from: Date, to:
       (SELECT MAX(m.createdAt) FROM Tickets t JOIN Messages m ON m.ticketId = t.id WHERE t.contactId = l.contactId AND m.fromMe = true) AS lastOut,
       (SELECT MAX(m.createdAt) FROM Tickets t JOIN Messages m ON m.ticketId = t.id WHERE t.contactId = l.contactId AND m.fromMe = false) AS lastIn,
       EXISTS (SELECT 1 FROM Payments p WHERE p.leadId = l.id AND p.status IN ('pending', 'expired')) AS feeOpen
-    FROM Leads l WHERE l.enrolledAt IS NOT NULL AND l.lostAt IS NULL AND l.isHistorical = false ${scope} LIMIT 20000`, rep);
+    FROM Leads l WHERE l.enrolledAt IS NOT NULL AND l.lostAt IS NULL AND l.isHistorical = false AND ${LEAD_IN_INSTITUTION} ${scope} LIMIT 20000`, rep);
   const names = new Map((await rows(`SELECT id, name FROM Users WHERE id IN (SELECT DISTINCT onboardingTutorId FROM Leads l WHERE l.enrolledAt IS NOT NULL ${scope})`, rep)).map(u => [Number(u.id), String(u.name)]));
   const nps = await rows(`SELECT l.onboardingTutorId AS tutorId, COUNT(*) AS n, AVG(s.score) AS avg,
       SUM(CASE WHEN s.score >= 9 THEN 1 ELSE 0 END) AS promoters, SUM(CASE WHEN s.score <= 6 THEN 1 ELSE 0 END) AS detractors
-    FROM NpsSurveys s JOIN Leads l ON l.id = s.leadId WHERE s.score IS NOT NULL AND s.answeredAt BETWEEN :from AND :to ${scope} GROUP BY l.onboardingTutorId`, rep);
+    FROM NpsSurveys s JOIN Leads l ON l.id = s.leadId WHERE s.score IS NOT NULL AND s.answeredAt BETWEEN :from AND :to AND ${LEAD_IN_INSTITUTION} ${scope} GROUP BY l.onboardingTutorId`, rep);
 
   const day = 86400000;
   const now = Date.now();

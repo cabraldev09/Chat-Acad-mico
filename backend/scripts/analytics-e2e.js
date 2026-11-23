@@ -647,6 +647,24 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
       const hers = one.stages.find(st => st.stageId === Number(open));
       assert(hers && hers.avgDays !== null && hers.avgDays >= 2.5 && hers.avgDays <= 3.5, `time in the column ${hers && hers.avgDays}`);
     });
+    await test("Estatísticas by university: the leads and conversations of another university leave the numbers of the default one", async () => {
+      const made = await http.post("/institutions", { name: "Universidade Norte Estatísticas", shortName: "Norte Est" }, as(admin));
+      assert(made.status === 201, `university ${made.status} ${JSON.stringify(made.data)}`);
+      const north = made.data.id;
+      const def = Number(sql(`SELECT id FROM Institutions WHERE isDefault = true`));
+      // the stopped lead of Gabrielli is of the north university; the one that moved has no university (= the default)
+      sql(`UPDATE Leads SET institutionId = ${north} WHERE phone = '5569000000101'`);
+      const all = (await A(admin, `/analytics/commercial?range=month&userId=${ids.gabrielli}`)).data;
+      const n = (await A(admin, `/analytics/commercial?range=month&userId=${ids.gabrielli}&institutionId=${north}`)).data;
+      const d = (await A(admin, `/analytics/commercial?range=month&userId=${ids.gabrielli}&institutionId=${def}`)).data;
+      const stalled = x => x.consultants[0] ? x.consultants[0].stalled : -1;
+      assert(stalled(all) >= 1 && stalled(n) === 1 && stalled(d) === stalled(all) - 1, `stalled leads by university: all ${stalled(all)}, north ${stalled(n)}, default ${stalled(d)}`);
+      // the north university has no conversation: its volume is zero, the default keeps the conversations with no university
+      assert(n.volume.conversations === 0 && d.volume.conversations === all.volume.conversations, `conversations by university: ${JSON.stringify({ all: all.volume, north: n.volume, dflt: d.volume })}`);
+      assert((await A(admin, "/analytics/commercial?range=month&institutionId=999999")).status === 404, "a university that does not exist");
+      sql(`UPDATE Leads SET institutionId = NULL WHERE phone = '5569000000101'`);
+      assert((await http.delete(`/institutions/${north}`, as(admin))).status === 200, "the test university was not removed");
+    });
     await test("a consultant reads only their own commercial numbers, whatever the query says; the coordination only its polos", async () => {
       const mine = await A(joao, `/analytics/commercial?range=month&userId=${ids.gabrielli}&poloId=1`);
       assert(mine.status === 200 && mine.data.consultants.length === 1 && mine.data.consultants[0].userId === ids.joao, `consultant ${JSON.stringify(mine.data.consultants)}`);

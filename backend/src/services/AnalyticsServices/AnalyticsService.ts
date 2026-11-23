@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "async_hooks";
 import { QueryTypes } from "sequelize";
 
 import sequelize from "../../database";
@@ -49,11 +50,27 @@ export const resolvePeriod = (query: { range?: any; from?: any; to?: any }): Per
   return { range, start: dayBounds(startDay).start, end: dayBounds(endDay).end, from: startDay, to: endDay };
 };
 
-export const rows = async (sql: string, replacements: Record<string, any>): Promise<any[]> =>
-  (await sequelize.query(portable(sql), { replacements, type: QueryTypes.SELECT })) as any[];
+// The university an analytics screen is filtered by (Estatísticas → "Universidade"): every query of the screen runs inside it and reads
+// it as :inst_id / :inst_default. A conversation or a lead with no university of its own (NULL) is of the default one.
+const instScope = new AsyncLocalStorage<{ id: number; isDefault: boolean }>();
+export const withAnalyticsInstitution = <T>(inst: { id: number; isDefault: boolean } | null, fn: () => Promise<T>): Promise<T> =>
+  inst ? instScope.run(inst, fn) : fn();
+export const analyticsInstitutionId = (): number | null => instScope.getStore()?.id || null;
+const instOf = (alias: string): string =>
+  `(CAST(:inst_id AS INTEGER) IS NULL OR ${alias}.institutionId = :inst_id OR (${alias}.institutionId IS NULL AND :inst_default))`;
+// a lead of the university of the screen (use in every query on "Leads l")
+export const LEAD_IN_INSTITUTION = instOf("l");
 
-// Customers only: no groups, copied history, team members' chats or personal contacts
-export const VALID_TICKET = `t.isHistorical = false AND t.isGroup = false AND NOT EXISTS (SELECT 1 FROM Contacts sc WHERE sc.id = t.contactId AND (sc.isStaff = true OR sc.isPersonal = true OR sc.kind <> 'person'))`;
+export const rows = async (sql: string, replacements: Record<string, any>): Promise<any[]> => {
+  const inst = instScope.getStore();
+  return (await sequelize.query(portable(sql), {
+    replacements: { inst_id: inst ? inst.id : null, inst_default: inst ? inst.isDefault : false, ...replacements },
+    type: QueryTypes.SELECT
+  })) as any[];
+};
+
+// Customers only: no groups, copied history, team members' chats or personal contacts; and of the university of the screen, when one is chosen
+export const VALID_TICKET = `t.isHistorical = false AND t.isGroup = false AND NOT EXISTS (SELECT 1 FROM Contacts sc WHERE sc.id = t.contactId AND (sc.isStaff = true OR sc.isPersonal = true OR sc.kind <> 'person')) AND ${instOf("t")}`;
 
 // ---------------------------------------------------------------- configuration (schedules, targets, rules)
 export interface AnalyticsConfig {
@@ -191,7 +208,7 @@ export const computeMetrics = async (userIds: number[], period: Period, now: Dat
   (await rows(`SELECT userId, COUNT(*) AS n FROM LeadTasks WHERE userId IN (:ids) AND doneAt IS NULL AND dueAt < :now GROUP BY userId`, rep)).forEach(r => set(r, "tasksOverdue"));
   (await rows(`SELECT userId, COUNT(*) AS n FROM LeadTasks WHERE userId IN (:ids) AND doneAt BETWEEN :from AND :to GROUP BY userId`, rep)).forEach(r => set(r, "tasksDone"));
   (await rows(
-    `SELECT l.ownerId AS userId, COUNT(*) AS n FROM Leads l JOIN LeadStages s ON s.id = l.stageId WHERE l.ownerId IN (:ids) AND s.type = 'open' AND l.nextFollowUpAt IS NOT NULL AND l.nextFollowUpAt <= :endOfToday GROUP BY l.ownerId`,
+    `SELECT l.ownerId AS userId, COUNT(*) AS n FROM Leads l JOIN LeadStages s ON s.id = l.stageId WHERE l.ownerId IN (:ids) AND ${LEAD_IN_INSTITUTION} AND s.type = 'open' AND l.nextFollowUpAt IS NOT NULL AND l.nextFollowUpAt <= :endOfToday GROUP BY l.ownerId`,
     rep
   )).forEach(r => set(r, "followUpsDue"));
 
@@ -212,7 +229,7 @@ export const computeMetrics = async (userIds: number[], period: Period, now: Dat
      FROM (
        SELECT l.id, l.contactId, l.createdAt AS c, COALESCE(t.userId, l.ownerId) AS userId FROM Leads l
        LEFT JOIN Tickets t ON t.id = (SELECT t2.id FROM Tickets t2 WHERE t2.contactId = l.contactId AND t2.status <> 'closed' ORDER BY t2.id DESC LIMIT 1)
-       WHERE l.isHistorical = false AND l.createdAt BETWEEN :from AND :to
+       WHERE l.isHistorical = false AND ${LEAD_IN_INSTITUTION} AND l.createdAt BETWEEN :from AND :to
      ) r WHERE r.userId IN (:ids) LIMIT 20000`,
     rep
   );

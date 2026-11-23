@@ -1,4 +1,4 @@
-import { rows, computeMetrics, consultantWhere, Period } from "./AnalyticsService";
+import { rows, computeMetrics, consultantWhere, Period, LEAD_IN_INSTITUTION } from "./AnalyticsService";
 
 // "Meu desempenho": what the consultant has to do and their commercial results, read only from what the system already counts,
 // plus short tips that compare the person with the average of the team (never a number that is not in the data).
@@ -8,13 +8,13 @@ export const myLeads = async (userId: number) => {
   const now = Date.now();
   const stages = await rows(
     `SELECT s.id, s.name, s.color, s.type, s.position, COUNT(l.id) AS n FROM LeadStages s
-     LEFT JOIN Leads l ON l.stageId = s.id AND l.ownerId = :id AND l.isHistorical = false
+     LEFT JOIN Leads l ON l.stageId = s.id AND l.ownerId = :id AND l.isHistorical = false AND ${LEAD_IN_INSTITUTION}
      GROUP BY s.id, s.name, s.color, s.type, s.position ORDER BY s.position`, { id: userId });
   const [r] = await rows(
     `SELECT COUNT(*) AS open,
        SUM(CASE WHEN l.firstContactAt IS NULL AND l.createdAt < :hourAgo THEN 1 ELSE 0 END) AS waiting,
        SUM(CASE WHEN COALESCE(l.lastContactAt, l.createdAt) < :threeDays THEN 1 ELSE 0 END) AS stale
-     FROM Leads l JOIN LeadStages s ON s.id = l.stageId WHERE s.type = 'open' AND l.ownerId = :id AND l.isHistorical = false`,
+     FROM Leads l JOIN LeadStages s ON s.id = l.stageId WHERE s.type = 'open' AND l.ownerId = :id AND l.isHistorical = false AND ${LEAD_IN_INSTITUTION}`,
     { id: userId, hourAgo: new Date(now - 3600000), threeDays: new Date(now - 3 * 86400000) });
   return {
     stages: stages.filter(s => s.type === "open").map(s => ({ id: Number(s.id), name: s.name, color: s.color, n: Number(s.n) })),

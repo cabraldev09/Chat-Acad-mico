@@ -38,6 +38,7 @@ import * as ChannelOAuth from "../controllers/ChannelOAuthController";
 import * as Lead from "../controllers/LeadController";
 import * as Proposal from "../controllers/ProposalController";
 import * as Institutions from "../controllers/InstitutionController";
+import analyticsInstitution from "../middleware/analyticsInstitution";
 import * as Retention from "../controllers/RetentionController";
 import * as Payment from "../controllers/PaymentController";
 import * as PoloCtl from "../controllers/PoloController";
@@ -107,24 +108,24 @@ r.post("/affiliate-campaigns/:id/release", isAuth, affiliateStaff, AffMat.releas
 
 // commercial analytics: one service computes everything; the personal route never reads whose numbers from the request
 r.get("/analytics/definitions", isAuth, Analytics.definitions);
-r.get("/analytics/me", isAuth, Analytics.me);
-r.get("/analytics/me/overview", isAuth, Analytics.meOverview);
-r.get("/analytics/team", isAuth, isManager, Analytics.team);
-r.get("/analytics/team/export.csv", isAuth, isManager, Analytics.exportTeam);
+r.get("/analytics/me", isAuth, analyticsInstitution, Analytics.me);
+r.get("/analytics/me/overview", isAuth, analyticsInstitution, Analytics.meOverview);
+r.get("/analytics/team", isAuth, analyticsInstitution, isManager, Analytics.team);
+r.get("/analytics/team/export.csv", isAuth, analyticsInstitution, isManager, Analytics.exportTeam);
 r.get("/analytics/config", isAuth, isManager, Analytics.getAnalyticsConfig);
 r.put("/analytics/config", isAuth, isManager, Analytics.putAnalyticsConfig);
-r.get("/analytics/consultant/:userId", isAuth, Analytics.consultant);
-r.get("/analytics/process", isAuth, isManager, Analytics.processTeam);
-r.get("/analytics/process/:userId", isAuth, Analytics.processConsultant);
+r.get("/analytics/consultant/:userId", isAuth, analyticsInstitution, Analytics.consultant);
+r.get("/analytics/process", isAuth, analyticsInstitution, isManager, Analytics.processTeam);
+r.get("/analytics/process/:userId", isAuth, analyticsInstitution, Analytics.processConsultant);
 // everyone logged in: the management sees the consultants it may see, anybody else only their own numbers (decided in the controller)
-r.get("/analytics/commercial", isAuth, Analytics.commercial);
+r.get("/analytics/commercial", isAuth, analyticsInstitution, Analytics.commercial);
 // training suggested by the daily review of the AI: the management reads it; only an administrator runs a reading on demand (it spends)
-r.get("/analytics/coaching", isAuth, isManager, Analytics.coaching);
+r.get("/analytics/coaching", isAuth, analyticsInstitution, isManager, Analytics.coaching);
 r.post("/analytics/coaching/text", isAuth, isManager, Analytics.coachingText);
 r.post("/analytics/coaching/run", isAuth, isAdmin, Analytics.coachingRun);
 // the tutoring: the management sees every tutor, a tutor only their own students (decided in the controller)
-r.get("/analytics/tutoria", isAuth, Analytics.tutoria);
-r.get("/analytics/insights", isAuth, Analytics.insights);
+r.get("/analytics/tutoria", isAuth, analyticsInstitution, Analytics.tutoria);
+r.get("/analytics/insights", isAuth, analyticsInstitution, Analytics.insights);
 r.get("/analytics/online", isAuth, isManager, Analytics.online);
 
 r.get("/dashboard/management", isAuth, isManager, DashboardMgmt.management);

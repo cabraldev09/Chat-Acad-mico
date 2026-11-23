@@ -1,5 +1,5 @@
 import { logger } from "../../utils/logger";
-import { Period, rows, VALID_TICKET } from "./AnalyticsService";
+import { Period, rows, VALID_TICKET, LEAD_IN_INSTITUTION } from "./AnalyticsService";
 
 // one block that fails (an old row with broken JSON) leaves that block empty and is logged; the rest of the picture still comes
 const safe = (p: Promise<any[]>, what: string): Promise<any[]> => p.catch(err => { logger.warn(`Estatísticas do comercial (${what}): ${(err as Error).message}`); return []; });
@@ -85,7 +85,7 @@ export const salesInsights = async (users: Array<{ id: number; name: string }>, 
   const won = await rows(`SELECT w.userId, w.city, w.course, COUNT(*) AS n FROM (
       SELECT l.ownerId AS userId, COALESCE(NULLIF(p.city, ''), NULLIF(l.city, ''), 'Sem cidade') AS city, COALESCE(c.name, 'Sem curso') AS course
         FROM Leads l LEFT JOIN Polos p ON p.id = l.poloId LEFT JOIN Courses c ON c.id = l.courseId
-        WHERE l.ownerId IN (:ids) AND l.wonAt BETWEEN :from AND :to AND l.isHistorical = false
+        WHERE l.ownerId IN (:ids) AND l.wonAt BETWEEN :from AND :to AND l.isHistorical = false AND ${LEAD_IN_INSTITUTION}
       UNION ALL
       SELECT e.ownerId AS userId, COALESCE(NULLIF(p.city, ''), 'Sem cidade') AS city, COALESCE(c.name, NULLIF(e.courseName, ''), 'Sem curso') AS course
         FROM LeadEnrollments e LEFT JOIN Polos p ON p.id = e.poloId LEFT JOIN Courses c ON c.id = e.courseId
@@ -115,13 +115,13 @@ export const salesInsights = async (users: Array<{ id: number; name: string }>, 
   (await rows(`SELECT l.ownerId AS userId,
       SUM(CASE WHEN NOT EXISTS (SELECT 1 FROM Proposals pr WHERE pr.leadId = l.id AND pr.sentAt IS NOT NULL) THEN 1 ELSE 0 END) AS np,
       SUM(CASE WHEN NOT EXISTS (SELECT 1 FROM LeadActivities a WHERE a.leadId = l.id AND a.type = 'grade_sent') THEN 1 ELSE 0 END) AS ng
-    FROM Leads l WHERE l.ownerId IN (:ids) AND l.wonAt BETWEEN :from AND :to AND l.isHistorical = false GROUP BY l.ownerId`, rep)).forEach(r => {
+    FROM Leads l WHERE l.ownerId IN (:ids) AND l.wonAt BETWEEN :from AND :to AND l.isHistorical = false AND ${LEAD_IN_INSTITUTION} GROUP BY l.ownerId`, rep)).forEach(r => {
     const m = at(r.userId); if (m) { m.enrolledWithoutProposal = n(r.np); m.enrolledWithoutGrade = n(r.ng); }
   });
 
   // what was still missing in the sales process at the moment of each enrollment (the picture taken by EnrollLead)
   const atEnroll = await safe(rows(`SELECT l.ownerId AS userId, a.meta FROM LeadActivities a JOIN Leads l ON l.id = a.leadId
-    WHERE a.type = 'process_at_enroll' AND l.ownerId IN (:ids) AND a.createdAt BETWEEN :from AND :to`, rep), "processo na matrícula");
+    WHERE ${LEAD_IN_INSTITUTION} AND a.type = 'process_at_enroll' AND l.ownerId IN (:ids) AND a.createdAt BETWEEN :from AND :to`, rep), "processo na matrícula");
   atEnroll.forEach(r => {
     const m = at(r.userId); if (!m) return;
     let missing: string[] = [];
@@ -137,14 +137,14 @@ export const salesInsights = async (users: Array<{ id: number; name: string }>, 
       SELECT CAST(CAST(a.meta AS json)->>'from' AS text) AS fromStage,
              ${"EXTRACT(EPOCH FROM (a.createdAt - COALESCE(LAG(a.createdAt) OVER (PARTITION BY a.leadId ORDER BY a.createdAt), l.createdAt))) / 86400"} AS days
         FROM LeadActivities a JOIN Leads l ON l.id = a.leadId
-        WHERE a.type = 'stage' AND l.ownerId IN (:ids) AND l.isHistorical = false AND a.meta IS NOT NULL AND a.meta LIKE '{%'
+        WHERE a.type = 'stage' AND l.ownerId IN (:ids) AND l.isHistorical = false AND ${LEAD_IN_INSTITUTION} AND a.meta IS NOT NULL AND a.meta LIKE '{%'
     ) x WHERE x.fromStage IS NOT NULL AND x.days >= 0 GROUP BY x.fromStage`, rep), "tempo nas etapas");
   const stageRows = await rows(`SELECT s.id, s.name, s.color, s.position, s.type FROM LeadStages s ORDER BY s.position`, rep);
   const open = await rows(`SELECT l.stageId, l.ownerId AS userId,
       COUNT(*) AS total,
       SUM(CASE WHEN COALESCE((SELECT MAX(a.createdAt) FROM LeadActivities a WHERE a.leadId = l.id AND a.type = 'stage'), l.createdAt) < :stalledBefore THEN 1 ELSE 0 END) AS stalled
     FROM Leads l JOIN LeadStages s ON s.id = l.stageId
-    WHERE l.ownerId IN (:ids) AND l.isHistorical = false AND s.type = 'open' GROUP BY l.stageId, l.ownerId`, rep);
+    WHERE l.ownerId IN (:ids) AND l.isHistorical = false AND ${LEAD_IN_INSTITUTION} AND s.type = 'open' GROUP BY l.stageId, l.ownerId`, rep);
   open.forEach(r => { const m = at(r.userId); if (m) m.stalled += n(r.stalled); });
   const stages = stageRows.filter(s => s.type === "open").map(s => {
     const mine = open.filter(r => String(r.stageId) === String(s.id));
@@ -160,7 +160,7 @@ export const salesInsights = async (users: Array<{ id: number; name: string }>, 
 
   // ---- lost leads: why, per owner
   const lost = await rows(`SELECT l.ownerId AS userId, COALESCE(NULLIF(l.lostReason, ''), 'Sem motivo') AS reason, COUNT(*) AS n
-    FROM Leads l WHERE l.ownerId IN (:ids) AND l.lostAt BETWEEN :from AND :to AND l.isHistorical = false GROUP BY l.ownerId, reason`, rep);
+    FROM Leads l WHERE l.ownerId IN (:ids) AND l.lostAt BETWEEN :from AND :to AND l.isHistorical = false AND ${LEAD_IN_INSTITUTION} GROUP BY l.ownerId, reason`, rep);
   lost.forEach(r => { const m = at(r.userId); if (m) m.lost += n(r.n); });
   const reasons = new Map<string, number>();
   lost.forEach(r => reasons.set(String(r.reason), (reasons.get(String(r.reason)) || 0) + n(r.n)));
@@ -172,7 +172,7 @@ export const salesInsights = async (users: Array<{ id: number; name: string }>, 
     FROM ConsultantReviews r, jsonb_array_elements(r.objections) o WHERE r.userId IN (:ids) AND r.createdAt BETWEEN :from AND :to GROUP BY r.userId, type`, rep), "objeções");
   obj.forEach(r => { const m = at(r.userId); if (m) m.objections.push({ type: String(r.type), n: n(r.n), unhandled: n(r.unhandled) }); });
   const agentObj = await safe(rows(`SELECT CAST(lc.slots AS json)->>'objectionType' AS type, COUNT(*) AS n FROM LeadCommercials lc JOIN Leads l ON l.id = lc.leadId
-    WHERE l.ownerId IN (:ids) AND lc.updatedAt BETWEEN :from AND :to AND lc.slots LIKE '{%' GROUP BY type`, rep), "objeções do agente");
+    WHERE ${LEAD_IN_INSTITUTION} AND l.ownerId IN (:ids) AND lc.updatedAt BETWEEN :from AND :to AND lc.slots LIKE '{%' GROUP BY type`, rep), "objeções do agente");
   const types = new Map<string, { type: string; n: number; unhandled: number; agent: number }>();
   obj.forEach(r => { const t = types.get(String(r.type)) || { type: String(r.type), n: 0, unhandled: 0, agent: 0 }; t.n += n(r.n); t.unhandled += n(r.unhandled); types.set(t.type, t); });
   agentObj.filter(r => r.type).forEach(r => { const t = types.get(String(r.type)) || { type: String(r.type), n: 0, unhandled: 0, agent: 0 }; t.agent += n(r.n); types.set(t.type, t); });
