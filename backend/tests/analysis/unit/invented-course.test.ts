@@ -57,14 +57,15 @@ describe("the course asked for is found in the catalogue, in the words of the pe
     expect(courseLabel("Administração")).toBe("Administração");
     expect(courseLabel("Letras - Libras")).toBe("Letras - Libras");
   });
-  it("an area asked for lists only what the catalogue has, with the format, and one question", () => {
+  it("an area asked for lists only what the catalogue has, and one question", () => {
     expect(areaAsked("Gostaria de saber sobre os cursos na área da saúde")).toBe("saude");
     expect(areaAsked("tem algo na área de tecnologia?")).toBe("tecnologia");
     expect(areaAsked("quero Administração")).toBeNull();
     const list = [...catalog, { id: 5, name: "Cst Em Radiologia", level: "Graduação", modality: "SEMIPRESENCIAL" }];
     const t = areaText("saude", list);
-    expect(t).toMatch(/Radiologia \(tecnólogo\): semipresencial/);
-    expect(t).toMatch(/Gestão Hospitalar: EAD/);
+    expect(t).toMatch(/- Radiologia \(tecnólogo\)\n/);
+    expect(t).toMatch(/- Gestão Hospitalar/);
+    expect(t).not.toMatch(/semipresencial|EAD/);
     expect(t).not.toMatch(/Medicina|Enfermagem|Administração|R\$/);
     expect((t.match(/\?/g) || []).length).toBe(1);
     expect(areaText("saude", [catalog[0]])).toMatch(/não tem cursos cadastrados na área de saúde/);
@@ -88,3 +89,56 @@ describe("the whole list of the area, also when the area was said before", () =>
     expect(areaInContext("Quero Biomedicina", before)).toBeNull();
   });
 });
+
+import { areasAsked, areasHelp, asksForCourses, unofferedMention } from "../../../src/services/CommercialServices/InventedCourse";
+import { affirms, asksSomething, asksForTime, saysNoInterest, priorStudy, entryAnswer, fastIntent, holdsProposal as holds, humanReason, needsBolsaData } from "../../../src/services/CommercialServices/Rules";
+
+// What the simulated leads found (scripts/lead-sim): each case is a sentence a lead wrote and the system got wrong.
+describe("what the simulated leads found", () => {
+  const cat = [...catalog, { id: 9, name: "Biomedicina", level: "Graduação", modality: "SEMIPRESENCIAL" }];
+  it("Biomedicina offered does not make Medicina offered", () => {
+    expect(unofferedMention("oi boa tarde, tem medicina?", cat)).toBe("Medicina");
+    expect(inventedCourse("Temos Medicina e Enfermagem, os dois semipresenciais.", cat)).toBe("Medicina");
+    expect(unofferedMention("quero biomedicina", cat)).toBeNull();
+    expect(unofferedMention("tenho direito a bolsa?", cat)).toBeNull();
+  });
+  it("two areas in one message, and the areas offered to who does not know the course", () => {
+    expect(areasAsked("tem curso na area de gestão ou educação?")).toEqual(["gestao", "educacao"]);
+    expect(areasAsked("quais cursos da area da saude vcs tem?")).toEqual(["saude"]);
+    expect(areasAsked("quero Administração")).toEqual([]);
+    expect(asksForCourses("não sei ainda, o que você indica?")).toBe(true);
+    expect(asksForCourses("quais cursos tem?")).toBe(true);
+    expect(areasHelp(cat)).toMatch(/áreas de saúde, tecnologia, gestão e educação|Qual dessas áreas/);
+  });
+  it("the course a person already has or is taking is not the one they want", () => {
+    ["Já tenho uma graduação em Administração", "nao, faço fisioterapia na sao lucas, to no terceiro periodo", "ja tenho faculdade de ed fisica", "ja fiz administração, terminei em 2019"].forEach(t => expect(priorStudy(t), t).toBe(true));
+    ["quero fazer nutrição", "tem fisioterapia?"].forEach(t => expect(priorStudy(t), t).toBe(false));
+    const q = "Essa seria a sua *primeira graduação* ou você já tem alguma faculdade concluída?";
+    expect(entryAnswer("ja fiz administração, terminei em 2019", q)).toBe("second_degree");
+    expect(entryAnswer("nao, faço fisioterapia na sao lucas, to no terceiro periodo", q)).toBe("transfer");
+    expect(entryAnswer("sim", q)).toBe("first_degree");
+  });
+  it("a short yes to \"Até aqui você compreendeu?\" moves the process on; a doubt, time or no interest stops any request", () => {
+    expect(affirms("blz", "Até aqui você compreendeu?")).toBe(true);
+    expect(affirms("sim entendi", "Até aqui você compreendeu?")).toBe(true);
+    expect(affirms("sim", "Qual curso você tem interesse?")).toBe(false);
+    expect(asksSomething("e tem estagio? como funciona")).toBe(true);
+    expect(asksForTime("vou pensar e te aviso")).toBe(true);
+    expect(saysNoInterest("para de me mandar mensagem")).toBe(true);
+    expect(saysNoInterest("hmm nao tenho mais interesse")).toBe(true);
+  });
+  it("a person is asked for in many words", () => {
+    ["vc é robo? tem algum atendente de verdade ai", "atendente", "tem como alguem me ligar?", "prefiro falar com gente, nao com maquina", "me passa pro consultor"].forEach(t => expect(!!humanReason(t) || (fastIntent(t) || {} as any).intent === "human", t).toBe(true));
+  });
+  it("the price asked early keeps the lead with the agent until the process is done", () => {
+    const base = { courseName: "Biomedicina", readyForProposal: true };
+    expect(holds({ ...base, valueHeld: 3 })).toBe(true);
+    expect(holds({ ...base, city: "Buritis", entryType: "first_degree", courseExplained: true, modalityExplained: true, fullName: "Ana Souza", cpfGiven: true })).toBe(false);
+    // the data for the scholarship is never asked while a course is being chosen, nor before the format of a course the MEC changed
+    const q = { courseName: "Biomedicina", city: "Buritis", entryType: "first_degree", courseExplained: true };
+    expect(needsBolsaData({ ...q, courseChoosing: true })).toBe(false);
+    expect(needsBolsaData({ ...q, mecImpacted: true })).toBe(false);
+    expect(needsBolsaData({ ...q, mecImpacted: true, mecExplained: true })).toBe(true);
+  });
+});
+

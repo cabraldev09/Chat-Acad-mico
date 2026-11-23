@@ -4254,8 +4254,8 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(/\*Matriz curricular: Biomedicina \(Bacharelado\)\*/.test(ma5) && /Estágios previstos:/.test(ma5) && /6º semestre: Biomedicina I \(320 h\)/.test(ma5) && /Ao todo, a matriz prevê 640 horas/.test(ma5), `MA caption: ${ma5}`);
       assert(/Sobre a tutoria, esse é um diferencial importante/.test(ma5) && /começa no 6º semestre e soma 640 horas/.test(ma5) && /convênios com órgãos públicos/.test(ma5), `MA tutoring and internship: ${ma5}`);
       assert(!emoji.test(ma5) && !/ESTÁGIO CURRICULAR/.test(ma5.replace(/\*Matriz[\s\S]*?Ao todo[^\n]*/, "")), `MA emoji or capitals: ${ma5}`);
-      out = await say(MA, "wamid.ma-6", "Não tenho dúvidas, pode prosseguir", t => t.some(x => /nome completo e CPF para eu simular as bolsas disponíveis/.test(x)), "MA name and CPF asked");
-      assert(/Caso não tenha, pode me informar o seu nome completo e CPF/.test(out[out.length - 1]), `MA bolsa: ${out}`);
+      out = await say(MA, "wamid.ma-6", "Não tenho dúvidas, pode prosseguir", t => t.some(x => /simular as bolsas disponíveis para você, pode me informar o seu nome completo e CPF/.test(x)), "MA name and CPF asked");
+      assert(/^Perfeito\. Para o consultor do seu polo simular as bolsas/.test(out[out.length - 1]), `MA bolsa: ${out}`);
       out = await say(MA, "wamid.ma-7", "CPF: 529.829.821-45\nMAIRA DA SILVA BATISTA", t => t.some(x => /montar a sua proposta/.test(x)), "MA to the consultant");
       await waitFor(() => handoffOf(MA) === "proposal" && sql(`SELECT aiActive FROM Tickets WHERE id=${ticketOf(MA)}`) === "0", 15000, "MA handed to the consultant for the proposal");
       assert(slotsOfNumber(MA).fullName === "Maira da Silva Batista" && slotsOfNumber(MA).cpfGiven === true, `MA data: ${JSON.stringify(slotsOfNumber(MA)).slice(0, 300)}`);
