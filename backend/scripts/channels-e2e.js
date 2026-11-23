@@ -2742,7 +2742,9 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.post("/users", { name: "Intruso", email: "intruso@x.com", password: "senha123", role: "admin" }, as)).status === 403, "coordinator created an admin");
       assert((await http.post("/users", { name: "Intruso", email: "intruso2@x.com", password: "senha123", profile: "admin" }, as)).status === 403, "coordinator created an admin by profile");
       assert((await http.put(`/users/${team.data.id}`, { role: "admin" }, as)).status === 403, "coordinator promoted someone to admin");
-      const adminId = (await http.get("/users", auth())).data.users.find(u => u.profile === "admin").id;
+      // the list comes 20 at a time, newest first: the administrator of the run is the oldest user, so it is read from the database
+      const adminId = Number(sql("SELECT id FROM Users WHERE profile='admin' ORDER BY id LIMIT 1"));
+      assert(adminId > 0, "administrator of the run");
       assert((await http.put(`/users/${adminId}`, { name: "Trocado" }, as)).status === 403, "coordinator edited an admin");
       // it removes people of the team, never an administrator
       const throwaway = (await http.post("/users", { name: "Descartavel", email: "descartavel@x.com", password: "senha123", role: "consultor" }, as)).data;
