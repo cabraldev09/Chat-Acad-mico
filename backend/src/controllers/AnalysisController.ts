@@ -338,7 +338,7 @@ export const academicShow = async (req: Request, res: Response): Promise<Respons
 
 // the student who already uses the portal is told when the team publishes a new version of the analysis
 const notifyAnalysis = (student: Student | null, course: string | null): void => {
-  if (student && student.activatedAt && !student.blockedAt) notify(student.email, studentAnalysisMail(student.name, course || student.courseName || "", `${frontBase()}/portal/login`), "student analysis");
+  if (student && student.activatedAt && !student.blockedAt) notify(student.email, studentAnalysisMail(student.name, course || student.courseName || "", `${frontBase()}/portal/login`), "student analysis", { leadId: student.leadId || null });
 };
 
 export const academicUpdate = async (req: Request, res: Response): Promise<Response> => {
@@ -447,7 +447,7 @@ export const studentInvite = async (req: Request, res: Response): Promise<Respon
   let emailed = false;
   if (s.email && (await mailConfigured())) {
     try {
-      await sendMail({ to: s.email, ...studentLinkMail(s.activatedAt ? "reset" : "invite", s.name, link, s.activatedAt ? "1 hora" : "7 dias"), idempotencyKey: `student-invite/${s.id}/${token.slice(0, 16)}` });
+      await sendMail({ to: s.email, ...studentLinkMail(s.activatedAt ? "reset" : "invite", s.name, link, s.activatedAt ? "1 hora" : "7 dias"), idempotencyKey: `student-invite/${s.id}/${token.slice(0, 16)}`, leadId: s.leadId || null });
       emailed = true;
     } catch (err) {
       logger.warn(`student invite mail not sent: ${(err as Error).message}`);

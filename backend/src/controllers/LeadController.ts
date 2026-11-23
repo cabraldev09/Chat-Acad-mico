@@ -1,3 +1,4 @@
+import { findCatalogCourse } from "../helpers/Institution";
 import { touchAnalytics } from "../services/AnalyticsServices/Realtime";
 import { hasContactAccessOrFree } from "../middleware/canAccessContact";
 import { syncNextFollowUp } from "../services/CrmServices/FollowUp";
@@ -632,8 +633,9 @@ export const importCourses = async (req: Request, res: Response): Promise<Respon
       name, category: String(it.category || "").trim() || null, level: String(it.level || "").trim() || null,
       modality: normalizeModality(it.modality), monthlyFee: fee, semesters, institutionId, active: yes(it.active)
     };
+    // the same course of two universities is two courses (one line per university)
     // eslint-disable-next-line no-await-in-loop
-    const existing = await Course.findOne({ where: { name, category: data.category, modality: data.modality } });
+    const existing = await findCatalogCourse({ name, category: data.category, modality: data.modality }, data.institutionId ?? null);
     if (!dryRun) {
       // eslint-disable-next-line no-await-in-loop
       if (existing) await existing.update(data);

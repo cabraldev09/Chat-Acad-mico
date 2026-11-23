@@ -43,6 +43,24 @@ As entradas que trabalham em nome de uma conversa rodam dentro de `withInstituti
 
 Com uma universidade só, ou numa conversa da padrão, nada muda.
 
+## O que segue a universidade
+
+- **Cursos:** um curso pode ser de uma universidade ou de nenhuma em especial.
+  - A IA, o chatbot e as ferramentas de cursos (`offeredCourses`, `findCourse`, a busca de cursos do agente) seguem
+    `courseInstitutionWhere`. Uma universidade só passa a ter cursos próprios quando ganha pelo menos um número:
+    - a conversa de uma universidade com número vê os cursos dela e os sem universidade;
+    - a conversa da padrão vê tudo, menos os cursos das outras universidades que já têm número.
+  - Assim nada some da IA antes de uma universidade começar a atender pelo número dela.
+  - Na importação do catálogo, o mesmo nome, categoria e modalidade em duas universidades são dois cursos.
+  - Na universidade padrão, a importação reaproveita os cursos sem universidade ou de universidades ainda sem número, em vez de
+    duplicar.
+- **Proposta:** usa a universidade do curso, senão a do lead. O cabeçalho mostra o nome e o logo da universidade; a tabela e o
+  título usam a cor da marca; o rodapé da universidade aparece no fim.
+- **E-mail:** os e-mails sobre um aluno (convite e senha do portal, análise publicada, acesso ativado) saem com o remetente da
+  universidade dele. O nome é o do remetente da universidade, senão o nome curto. No Resend, o endereço também muda: precisa estar num
+  domínio verificado. No SMTP, o endereço é sempre o da conta. A universidade padrão sem remetente próprio usa o de Configurações.
+- **Agente de IA:** cada número tem o seu agente, então um agente por universidade é só ligar o agente aos números dela.
+
 ## Reversão da migração
 
 Antes de reverter `20261222000009-institutions`, faça rollback do código que lê e grava `institutionId`. A migração `down` é atômica,
@@ -51,8 +69,7 @@ em funcionamento.
 
 ## Próximas etapas
 
-- Configurações próprias por universidade (`InstitutionSettings`), caindo na configuração geral.
-- Catálogo, agente de IA, base de conhecimento, modelos da Meta, Efí e e-mail por universidade.
+- Configurações próprias por universidade (`InstitutionSettings`), caindo na configuração geral: Efí, número da tutoria, formulário.
 - Polos que servem várias universidades (`PoloInstitutions`).
-- Páginas públicas pelo endereço, com a marca da universidade.
+- Páginas públicas pelo endereço, com a marca da universidade, e logo da universidade nos e-mails.
 - Filtro "Universidade" em Estatísticas, Metas, Campanhas e Custos.
