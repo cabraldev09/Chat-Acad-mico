@@ -735,9 +735,10 @@ const explainModality = async (d: TurnDeps, courseId: any, courseName: any): Pro
     if (!text) return null;
     // the same explanation was just given for another course of the same area: said in one line, not sent all over again
     const mark = plainText(text.split(name).join("")).replace(/[^a-z0-9]/g, "").slice(0, 400);
-    if (d.ports.state.slots.formatMark && d.ports.state.slots.formatMark === mark) text = `O curso de *${name}* segue o mesmo formato e as mesmas mudanças do MEC que acabei de te explicar.\n\nAté aqui você compreendeu?`;
+    if (d.ports.state.slots.formatMark && d.ports.state.slots.formatMark === mark && d.ports.state.slots.formatMarkCourse && d.ports.state.slots.formatMarkCourse !== name) text = `O curso de *${name}* segue o mesmo formato e as mesmas mudanças do MEC que acabei de te explicar.\n\nAté aqui você compreendeu?`;
     else if (!text.includes(name)) text = `Sobre o curso de *${name}*:\n\n${text}`;
     ctx.patch.formatMark = mark;
+    ctx.patch.formatMarkCourse = name;
     await d.ports.event("modality_explained", { course: name }, true).catch(() => undefined);
     return { text, patch: { ...ctx.patch, modalityExplained: true, courseExplained: true, ...(view.mecImpactado ? { mecExplained: true } : {}) } };
   } catch (err) {
