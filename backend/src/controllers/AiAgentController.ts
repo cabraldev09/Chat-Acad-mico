@@ -524,7 +524,7 @@ export const test = async (req: Request, res: Response): Promise<Response> => {
         ? "(o agente passaria a conversa para uma pessoa)"
         : result.unknown
         ? "(o agente não sabe responder: avisaria a equipe e guardaria a pergunta para você ensinar)"
-        : result.text,
+        : [result.text, result.handoffText].filter(Boolean).join("\n\n"),
       handoff: result.handoff || !!result.qualified,
       unknown: result.unknown,
       sources: result.sources,

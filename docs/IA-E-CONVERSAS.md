@@ -58,6 +58,37 @@ Execute `cd backend && npm run test:ai` para testar o fluxo com dependências si
 
 Referências: [instruções e contexto na OpenAI](https://developers.openai.com/api/docs/guides/prompt-engineering), [cache de prompts](https://developers.openai.com/api/docs/guides/prompt-caching) e [política de mensagens do WhatsApp](https://whatsappbusiness.com/policy/).
 
+### Retomada, passagem para a equipe e áudio
+
+- **A pessoa voltou depois de um tempo** (6 h ou mais desde a nossa última mensagem):
+  - o histórico enviado ao modelo marca a volta com uma nota, por exemplo
+    `[Nova conversa em 23/11 às 00:03, 3 dias depois da anterior]`;
+  - mensagens curtas repetidas, como "oi", "oi", são lidas uma vez só;
+  - o prompt ganha o bloco **Retomada da conversa** (`resumeContextOf`, `AiServices/RunAiAgent.ts`), com:
+    - há quanto tempo a pessoa sumiu;
+    - se o atendimento anterior terminou (conversa encerrada e reaberta, matrícula feita ou perdida) ou ficou pela metade;
+    - a etapa do funil, o resumo e a nossa última mensagem.
+  - O agente responde à mensagem nova:
+    - se for só um cumprimento e o atendimento anterior ficou pela metade, lembra em uma frase onde parou e faz **uma** pergunta para continuar;
+    - se o atendimento anterior terminou, cumprimenta de volta e pergunta como ajudar agora, citando o último assunto.
+  - Ele nunca cumprimenta como se fosse a primeira conversa e nunca diz que uma mensagem "não chegou".
+  - No modo simples, o resumo é atualizado antes de responder.
+  - Vale para o modo simples e para as etapas de IA dos roteiros, inclusive o agente comercial.
+- **Passar para a equipe sem deixar pergunta no ar:**
+  - no modo simples, a conversa só é passada quando **a própria resposta** completou os dados. Dados que sobraram de um atendimento anterior não disparam a passagem no primeiro "oi";
+  - a resposta perde a pergunta final, e o aviso de que um consultor continua vai num balão separado;
+  - ao reabrir uma conversa depois de 2 h, a contagem de respostas da IA recomeça. Os dados coletados e o resumo ficam como memória.
+- **Áudio:**
+  - toda nota de voz que chega para a IA, no modo simples e nos roteiros, é transcrita uma vez (`transcribeMessage`, `AiServices/Transcribe.ts`) e guardada em `Messages.transcript`;
+  - o histórico mostra `[áudio] "o que a pessoa disse"` em todos os turnos seguintes, então o agente não perde o raciocínio;
+  - um áudio que ainda está baixando é esperado por alguns segundos.
+  - **Sem chave da OpenAI**, ou com a transcrição desligada: o agente pede uma vez para a pessoa escrever e, na segunda, passa para a equipe.
+  - **Chave usada, em ordem:**
+    1. a de Configurações → IA;
+    2. a variável `OPENAI_API_KEY` do servidor;
+    3. a de um agente OpenAI ativo.
+  - **Interruptor:** `ai_transcribe_audio` (ligado por padrão).
+
 ## Chatbot de menus
 Além de submenu, texto, fila, atendente, IA e encerrar, há passos que **seguem o fluxo**: *perguntar e guardar a resposta*,
 *perguntar o polo e enviar à equipe dele*, *mover o lead de etapa*, *etiquetar* e *avisar outro sistema (webhook)*. O botão
