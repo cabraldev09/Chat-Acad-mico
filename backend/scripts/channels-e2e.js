@@ -3952,9 +3952,10 @@ const postMeta = (id, payload, secret, badSig) => {
       llm = anthropic.requests.length;
       mk = graph.sent.length;
       await media(J, "wamid.com-j2", "audio", { id: "MEDIAOGG3", mime_type: "audio/ogg" });
-      await waitFor(() => texts(mk).some(x => /consultor/.test(x)), 20000, "the voice note was understood (price question)");
+      await waitFor(() => texts(mk).some(x => /consultor do seu polo/.test(x)), 20000, "the voice note was understood (price question)");
       assert(anthropic.transcriptions >= 1 && anthropic.requests.length === llm, "the voice note was not transcribed, or the model was called for a price question");
-      await waitFor(() => sql(`SELECT handoffReason FROM Tickets WHERE id=${ticketOf(J)}`) === "proposal", 8000, "reason proposal (J)");
+      // the price is worked before the consultant: the lead is ready for the proposal and the hold was counted
+      await waitFor(() => { const sl = JSON.parse(sql(`SELECT slots FROM LeadCommercials WHERE leadId=${leadId(J)}`) || "{}"); return Number(sl.valueHeld) === 1; }, 8000, "the price question held for the course (J)");
       sql(`DELETE FROM Settings WHERE key='ai_transcribe_audio'`);
 
       // K) the model writes a price: it never reaches the person, the lead goes to the proposal
