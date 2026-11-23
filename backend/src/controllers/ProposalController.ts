@@ -1,5 +1,5 @@
 import { touchAnalytics } from "../services/AnalyticsServices/Realtime";
-import { assertLead } from "../middleware/scope";
+import { assertLead, isAdminReq } from "../middleware/scope";
 import { Request, Response } from "express";
 import { PUBLIC_DIR } from "../config/paths";
 import fs from "fs";
@@ -29,6 +29,8 @@ import ProposalTemplateInstitution from "../models/ProposalTemplateInstitution";
 import { renderPdf } from "../services/ProposalServices/pdf";
 import makeCrud from "./crudFactory";
 import { markMilestone } from "../services/CommercialServices/Milestones";
+import { dueDatesOf, EntryTurma, getEntryCalendar, startOf, turmaFor } from "../services/CrmServices/EntryCalendar";
+import { todayInAppTz } from "../helpers/AppTime";
 
 
 const uid = (req: Request) => Number(req.user.id);
@@ -85,14 +87,19 @@ const defaultStart = (entryTerm?: string | null) => {
 const modalityLabel = (c?: Course | null) =>
   c ? [c.modality, c.category || c.level].filter(Boolean).join(" - ") : undefined;
 
-// Everything the studio needs to start: course price, template rules, calendar
-const buildDefaults = async (lead: Lead, courseId?: number | null, templateId?: number | null) => {
+// Everything the studio needs to start: course price, template rules, calendar. The class of the entry calendar comes from the day
+// of the enrollment (today), unless the studio asks for another one; it sets the period, the installments of the first semester and
+// the due date of the 1st monthly fee (the boleto deadline of the class).
+const buildDefaults = async (lead: Lead, courseId?: number | null, templateId?: number | null, turmaKey?: string | null) => {
   const course = courseId ? await Course.findByPk(courseId) : lead.courseId ? await Course.findByPk(lead.courseId) : null;
   // the university of the proposal: the one of the course, else the one of the lead (the number it came through)
   const ownInstitution = course?.institutionId || lead.institutionId || null;
   const tpl = await defaultTemplate(templateId, ownInstitution);
   if (!tpl) throw new AppError("ERR_NO_PROPOSAL_TEMPLATE");
   const gross = course?.monthlyFee ? Number(course.monthlyFee) : 0;
+  const calendar = await getEntryCalendar();
+  const turma: EntryTurma | null =
+    turmaKey === "" ? null : (turmaKey && calendar.find(t => t.key === turmaKey)) || turmaFor(calendar, todayInAppTz());
   const params: ProposalParams = {
     gross,
     firstMonthly: gross ? Math.round(gross * 0.2 * 100) / 100 : 0,
@@ -122,8 +129,13 @@ const buildDefaults = async (lead: Lead, courseId?: number | null, templateId?: 
     fixedUntilEnd: !!tpl.fixedUntilEnd,
     installmentsFixed: tpl.installmentsFixed || null,
     firstExempt: !!tpl.firstExempt,
-    secondDueDate: null
+    secondDueDate: null,
+    entryTurma: null,
+    releaseDate: null
   };
+  if (turma) {
+    Object.assign(params, startOf(turma), dueDatesOf(turma, params.dueDay), { installments: turma.installments, entryTurma: turma.name, releaseDate: turma.releaseDate || null });
+  }
   const institutionId = ownInstitution || tpl.institutionId || null;
   const snapshot: Snapshot = {
     title: course?.name || lead.name,
@@ -131,7 +143,7 @@ const buildDefaults = async (lead: Lead, courseId?: number | null, templateId?: 
     texts: { bolsaNote: tpl.bolsaNote, observation: tpl.observation, disclaimer: tpl.disclaimer, finalMessage: tpl.finalMessage, waIntro: tpl.waIntro, waClosing: tpl.waClosing },
     institutionId
   };
-  return { course, tpl, params, snapshot };
+  return { course, tpl, params, snapshot, calendar, turma };
 };
 
 const normalizeParams = (base: ProposalParams, raw: any = {}): ProposalParams => {
@@ -158,15 +170,20 @@ const normalizeParams = (base: ProposalParams, raw: any = {}): ProposalParams =>
     semestralSchedule: raw.semestralSchedule ? parseSchedule(raw.semestralSchedule) : base.semestralSchedule,
     projectionFrom: null,
     projectionTo: null,
-    firstDueDate: raw.firstDueDate || null,
+    firstDueDate: raw.firstDueDate !== undefined ? raw.firstDueDate || null : base.firstDueDate || null,
     hasRegression: raw.hasRegression === undefined ? base.hasRegression !== false : !!raw.hasRegression,
     hasAdjustment: raw.hasAdjustment === undefined ? base.hasAdjustment !== false : !!raw.hasAdjustment,
     fixedUntilEnd: raw.fixedUntilEnd === undefined ? !!base.fixedUntilEnd : !!raw.fixedUntilEnd,
     installmentsFixed:
       raw.installmentsFixed === undefined ? base.installmentsFixed || null : num(raw.installmentsFixed, 0) > 0 ? Math.round(num(raw.installmentsFixed, 0)) : null,
     firstExempt: raw.firstExempt === undefined ? !!base.firstExempt : !!raw.firstExempt,
-    secondDueDate: raw.secondDueDate || null
+    secondDueDate: raw.secondDueDate !== undefined ? raw.secondDueDate || null : base.secondDueDate || null,
+    entryTurma: raw.entryTurma !== undefined ? String(raw.entryTurma || "").trim().slice(0, 40) || null : base.entryTurma || null,
+    releaseDate: raw.releaseDate !== undefined ? (/^\d{4}-\d{2}-\d{2}$/.test(String(raw.releaseDate)) ? String(raw.releaseDate) : null) : base.releaseDate || null
   };
+  ["firstDueDate", "secondDueDate"].forEach(k => {
+    if ((p as any)[k] && !/^\d{4}-\d{2}-\d{2}$/.test(String((p as any)[k]))) (p as any)[k] = null;
+  });
   // the projection covers only the semesters still to be attended
   p.entrySemester = Math.min(
     p.courseSemesters || 1,
@@ -185,6 +202,51 @@ const normalizeParams = (base: ProposalParams, raw: any = {}): ProposalParams =>
   if (!(p.gross > 0)) throw new AppError("ERR_PROPOSAL_NO_GROSS");
   if (!(p.firstMonthly > 0) || p.firstMonthly > p.gross) throw new AppError("ERR_PROPOSAL_FIRST_MONTHLY");
   return p;
+};
+
+// The gross monthly fee is the course's price and the consultant cannot change it. The management (admin, coordination) may unlock it
+// and type another value; a value they unlocked stays when a consultant edits the draft later. Without a course there is nothing to
+// lock (the draft is only a simulation and cannot be sent); a course without a price needs the management.
+const lockedGross = (req: Request, d: { course: Course | null; params: ProposalParams }, raw: any = {}, before?: ProposalParams | null) => {
+  const manager = isAdminReq(req);
+  const coursePrice = d.params.gross;
+  if (manager && raw.grossUnlocked) return { gross: num(raw.gross, coursePrice), unlocked: true };
+  if (!manager && before?.grossUnlocked) return { gross: Number(before.gross), unlocked: true };
+  if (coursePrice > 0) return { gross: coursePrice, unlocked: false };
+  if (!d.course) return { gross: num(raw.gross, 0), unlocked: false };
+  if (!manager) throw new AppError("ERR_PROPOSAL_COURSE_NO_PRICE");
+  return { gross: num(raw.gross, 0), unlocked: true };
+};
+
+const paramsFor = (req: Request, d: { course: Course | null; params: ProposalParams }, raw: any = {}, before?: ProposalParams | null): ProposalParams => {
+  const lock = lockedGross(req, d, raw || {}, before);
+  const params = normalizeParams(d.params, { ...(raw || {}), gross: lock.gross });
+  params.grossUnlocked = lock.unlocked;
+  return params;
+};
+
+// the WhatsApp blocks the consultant edited, kept with the draft: { intro: "…", summary: "…" }
+const cleanBlocks = (v: any): Record<string, string> | null => {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return null;
+  const out: Record<string, string> = {};
+  Object.entries(v).slice(0, 10).forEach(([k, text]) => {
+    if (/^[a-z]{1,20}$/.test(k) && typeof text === "string") out[k] = text.slice(0, 4000);
+  });
+  return out;
+};
+
+// what a proposal must say before it is generated (PDF) or sent: the form of admission, the course and the deadlines.
+// A draft saves without them, so the consultant can leave and come back.
+export const missingOf = (p: { courseId?: number | null }, params: Partial<ProposalParams>): string | null => {
+  if (!params.admissionType) return "ERR_PROPOSAL_NEEDS_ADMISSION";
+  if (!p.courseId) return "ERR_PROPOSAL_NEEDS_COURSE";
+  if (!(params.firstExempt ? params.secondDueDate || params.firstDueDate : params.firstDueDate)) return "ERR_PROPOSAL_NEEDS_DUE_DATE";
+  return null;
+};
+const assertReady = (p: Proposal) => {
+  const { params } = JSON.parse(p.params || "{}");
+  const missing = missingOf(p, params || {});
+  if (missing) throw new AppError(missing);
 };
 
 const compose = async (lead: Lead, params: ProposalParams, snapshot: Snapshot, generatedAt = new Date()) => {
@@ -222,6 +284,15 @@ const affiliateNames = async (ids: Array<number | null | undefined>): Promise<Ma
 };
 
 const present = (p: Proposal) => ({ ...p.toJSON(), params: JSON.parse(p.params), link: link(p) });
+// the class and period of a proposal, for the list of the lead
+const entryOf = (p: Proposal) => {
+  try {
+    const { params } = JSON.parse(p.params);
+    return params ? { turma: params.entryTurma || null, term: params.startYear ? `${params.startYear}/${params.startSemester}` : null, firstDueDate: params.firstDueDate || null } : null;
+  } catch (e) {
+    return null;
+  }
+};
 
 // ---------------------------------------------------------------------------
 
@@ -229,12 +300,20 @@ export const defaults = async (req: Request, res: Response): Promise<Response> =
   await assertLead(req, String(req.query.leadId));
   const lead = await Lead.findByPk(String(req.query.leadId));
   if (!lead) throw new AppError("ERR_LEAD_NOT_FOUND", 404);
-  const { params, snapshot, tpl, course } = await buildDefaults(
+  const { params, snapshot, tpl, course, calendar, turma } = await buildDefaults(
     lead,
     req.query.courseId ? Number(req.query.courseId) : null,
-    req.query.templateId ? Number(req.query.templateId) : null
+    req.query.templateId ? Number(req.query.templateId) : null,
+    req.query.turma !== undefined ? String(req.query.turma) : null
   );
-  return res.json({ params, snapshot, templateId: tpl.id, courseId: course ? course.id : null });
+  params.grossUnlocked = false;
+  return res.json({
+    params, snapshot, templateId: tpl.id, courseId: course ? course.id : null,
+    calendar, turmaKey: turma ? turma.key : "",
+    // the price of the course locks the gross fee; only the management may unlock it
+    coursePrice: course?.monthlyFee ? Number(course.monthlyFee) : null,
+    canUnlockGross: isAdminReq(req)
+  });
 };
 
 export const preview = async (req: Request, res: Response): Promise<Response> => {
@@ -243,13 +322,15 @@ export const preview = async (req: Request, res: Response): Promise<Response> =>
   const lead = await Lead.findByPk(leadId);
   if (!lead) throw new AppError("ERR_LEAD_NOT_FOUND", 404);
   const d = await buildDefaults(lead, courseId, templateId);
-  const params = normalizeParams(d.params, raw);
+  const before = req.body.proposalId ? await Proposal.findByPk(req.body.proposalId, { attributes: ["id", "leadId", "courseId", "params"] }) : null;
+  const sameDraft = before && before.leadId === lead.id && before.courseId === (d.course ? d.course.id : null);
+  const params = paramsFor(req, d, raw, sameDraft ? JSON.parse(before.params || "{}").params : null);
   const snapshot: Snapshot = {
     ...d.snapshot,
     ...(snapRaw && typeof snapRaw === "object" ? { texts: { ...d.snapshot.texts, ...(snapRaw.texts || {}) }, institutionId: snapRaw.institutionId ?? d.snapshot.institutionId } : {})
   };
   const { result, html, messages } = await compose(lead, params, snapshot);
-  return res.json({ result, html, messages });
+  return res.json({ result, html, messages, gross: params.gross, grossUnlocked: !!params.grossUnlocked, missing: missingOf({ courseId: d.course ? d.course.id : null }, params) });
 };
 
 const save = async (req: Request, existing?: Proposal) => {
@@ -257,8 +338,17 @@ const save = async (req: Request, existing?: Proposal) => {
   await assertLead(req, existing ? existing.leadId : leadId);
   const lead = await Lead.findByPk(existing ? existing.leadId : leadId);
   if (!lead) throw new AppError("ERR_LEAD_NOT_FOUND", 404);
-  const d = await buildDefaults(lead, existing ? existing.courseId : courseId, existing ? existing.templateId : templateId);
-  const params = normalizeParams(d.params, raw);
+  // the course and the model the studio shows now (they may have changed since the first save)
+  const d = await buildDefaults(
+    lead,
+    courseId !== undefined ? courseId : existing ? existing.courseId : null,
+    templateId !== undefined ? templateId : existing ? existing.templateId : null
+  );
+  const stored = existing ? JSON.parse(existing.params || "{}") : {};
+  // a value the management unlocked holds for the same course; another course brings its own price
+  const sameCourse = !!existing && existing.courseId === (d.course ? d.course.id : null);
+  const params = paramsFor(req, d, raw, sameCourse ? stored.params || null : null);
+  const blocks = req.body.messageBlocks !== undefined ? cleanBlocks(req.body.messageBlocks) : stored.blocks || null;
   const snapshot: Snapshot = {
     ...d.snapshot,
     ...(snapRaw && typeof snapRaw === "object" ? { texts: { ...d.snapshot.texts, ...(snapRaw.texts || {}) }, institutionId: snapRaw.institutionId ?? d.snapshot.institutionId } : {})
@@ -269,11 +359,17 @@ const save = async (req: Request, existing?: Proposal) => {
     grossFee: params.gross,
     firstMonthly: params.firstMonthly,
     bolsaPct: result.bolsaApplied,
-    params: JSON.stringify({ params, snapshot }),
+    params: JSON.stringify({ params, snapshot, ...(blocks && Object.keys(blocks).length ? { blocks } : {}) }),
     courseId: d.course ? d.course.id : null,
     templateId: d.tpl.id,
     institutionId: snapshot.institutionId || null
   };
+  // what the proposal settled also fills the lead, where it is still empty
+  const fill: any = {};
+  if (!lead.admissionType && params.admissionType) fill.admissionType = params.admissionType;
+  if (!lead.courseId && d.course) fill.courseId = d.course.id;
+  if (!lead.entryTerm && params.startYear) fill.entryTerm = `${params.startYear}/${params.startSemester}`;
+  if (Object.keys(fill).length) await lead.update(fill);
   if (existing) {
     await existing.update(data);
     return existing;
@@ -316,7 +412,7 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
     limit: 100
   });
   const names = await affiliateNames(rows.map(r => r.affiliateId));
-  return res.json(rows.map(r => ({ ...r.toJSON(), params: undefined, link: link(r), affiliate: r.affiliateId ? { id: r.affiliateId, name: names.get(r.affiliateId) || null } : null })));
+  return res.json(rows.map(r => ({ ...r.toJSON(), params: undefined, entry: entryOf(r), link: link(r), affiliate: r.affiliateId ? { id: r.affiliateId, name: names.get(r.affiliateId) || null } : null })));
 };
 
 export const show = async (req: Request, res: Response): Promise<Response> => {
@@ -341,6 +437,8 @@ export const duplicate = async (req: Request, res: Response): Promise<Response> 
 export const remove = async (req: Request, res: Response): Promise<Response> => {
   const p = await Proposal.findByPk(req.params.id);
   if (!p) throw new AppError("ERR_NOT_FOUND", 404);
+  // a proposal the candidate received is part of the history of the lead; only the management removes it
+  if (p.status !== "draft" && !isAdminReq(req)) throw new AppError("ERR_PROPOSAL_ALREADY_SENT", 403);
   await p.destroy();
   return res.json({ message: "deleted" });
 };
@@ -350,6 +448,7 @@ const pdfName = (name: string) => `Proposta - ${name.replace(/[\\/:*?"<>|]/g, ""
 export const pdf = async (req: Request, res: Response): Promise<Response> => {
   const p = await Proposal.findByPk(req.params.id, { include: [{ model: Lead, as: "lead", attributes: ["name"] }] });
   if (!p) throw new AppError("ERR_NOT_FOUND", 404);
+  if (p.status === "draft") assertReady(p);
   const { html } = await rebuild(p);
   const buf = await renderPdf(html);
   res.setHeader("Content-Type", "application/pdf");
@@ -360,6 +459,7 @@ export const pdf = async (req: Request, res: Response): Promise<Response> => {
 export const send = async (req: Request, res: Response): Promise<Response> => {
   const p = await Proposal.findByPk(req.params.id);
   if (!p) throw new AppError("ERR_NOT_FOUND", 404);
+  assertReady(p);
   const lead = (await Lead.findByPk(p.leadId)) as Lead;
   const { html, messages } = await rebuild(p);
   const buf = await renderPdf(html);

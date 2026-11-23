@@ -333,6 +333,68 @@ export const HoursAndAlerts = ({ s, save }) => {
   );
 };
 
+// The entry calendar: one line per class, ordered by the boleto deadline (the order the team works by). The proposal takes the
+// period, the installments of the first semester and the due date of the 1st monthly fee from the class of the enrollment day.
+const today = () => new Date().toLocaleDateString("en-CA");
+const fmtDay = (iso) => (iso ? iso.split("-").reverse().join("/") : "—");
+const emptyTurma = () => ({ term: "", name: "", from: "", to: "", veteranosFrom: "", boletoDeadline: "", releaseDate: "", installments: 6 });
+const EntryCalendar = ({ s, save }) => {
+  const classes = useStyles();
+  const [rows, setRows] = useState(null);
+  const list = rows || s.entryCalendar || [];
+  const now = today();
+  const setRow = (i, k) => (e) => { const v = e.target.value; setRows(list.map((r, j) => (j === i ? { ...r, [k]: v } : r))); };
+  const submit = async () => {
+    const bad = list.find((r) => !/^20\d{2}\/[12]$/.test(String(r.term).trim()) || !String(r.name).trim() || !r.from || !r.to || !r.boletoDeadline || r.from > r.to || !(Number(r.installments) >= 1 && Number(r.installments) <= 12));
+    if (bad) { toast.error("Confira cada turma: período (ex.: 2027/1), nome, início e fim das matrículas, prazo do boleto e parcelas de 1 a 12."); return; }
+    const ok = await save({ entryCalendar: list.map((r) => ({ ...r, term: String(r.term).trim(), name: String(r.name).trim(), installments: Number(r.installments) })) });
+    if (ok !== false) setRows(null);
+  };
+  const field = (i, k, label, extra = {}) => (
+    <TextField size="small" variant="outlined" label={label} value={list[i][k] || ""} onChange={setRow(i, k)} InputLabelProps={{ shrink: true }} {...extra} />
+  );
+  return (
+    <div>
+      <Typography variant="subtitle2" style={{ fontWeight: 600 }}>Calendário de entradas (turmas)</Typography>
+      <Typography className={classes.hint} gutterBottom>
+        O dia da matrícula define a turma. Na proposta, a turma preenche o período, as parcelas do 1º semestre e o vencimento da 1ª mensalidade, que é o prazo do boleto. As demais mensalidades seguem o dia de vencimento do modelo.
+      </Typography>
+      <div style={{ display: "grid", gap: 10 }}>
+        {list.length === 0 && <Typography className={classes.hint}>Nenhuma turma cadastrada. Sem turma, o consultor informa as datas na proposta.</Typography>}
+        {list.map((r, i) => {
+          const current = r.from && r.to && r.from <= now && now <= r.to;
+          return (
+            <Paper key={i} variant="outlined" style={{ padding: 12, display: "grid", gap: 10, borderColor: current ? "#16a34a" : undefined }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <b style={{ fontSize: 15 }}>{r.name || "Nova turma"} {r.term}</b>
+                <span className={classes.pill} style={{ background: "#e8f0ff", color: "#1d3a8a" }}>Prazo do boleto: {fmtDay(r.boletoDeadline)}</span>
+                {current && <span className={classes.pill} style={{ background: "#dcfce7", color: "#166534" }}>Turma atual</span>}
+                <span style={{ flex: 1 }} />
+                <Button size="small" onClick={() => setRows(list.filter((_, j) => j !== i))}>Remover</Button>
+              </div>
+              <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))" }}>
+                {field(i, "term", "Período", { placeholder: "2027/1" })}
+                {field(i, "name", "Turma", { placeholder: "Fevereiro" })}
+                {field(i, "from", "Matrículas de", { type: "date" })}
+                {field(i, "to", "Matrículas até", { type: "date" })}
+                {field(i, "veteranosFrom", "Veteranos a partir de", { type: "date" })}
+                {field(i, "boletoDeadline", "Prazo do boleto", { type: "date" })}
+                {field(i, "releaseDate", "Liberação no AVA até", { type: "date" })}
+                {field(i, "installments", "Parcelas no semestre", { type: "number", inputProps: { min: 1, max: 12 } })}
+              </div>
+            </Paper>
+          );
+        })}
+      </div>
+      <div className={classes.row} style={{ marginTop: 10 }}>
+        <Button size="small" variant="outlined" onClick={() => setRows([...list, emptyTurma()])}>Adicionar turma</Button>
+        {rows && <Button size="small" variant="contained" color="primary" onClick={submit}>Salvar calendário</Button>}
+        {rows && <Button size="small" onClick={() => setRows(null)}>Descartar alterações</Button>}
+      </div>
+    </div>
+  );
+};
+
 export const Automation = ({ s, setS, save, users }) => {
   const classes = useStyles();
   const [busy, setBusy] = useState(false);
@@ -366,6 +428,7 @@ export const Automation = ({ s, setS, save, users }) => {
           </TextField>
         </div>
       </div>
+      <EntryCalendar s={s} save={save} />
       <div>
         <Typography variant="subtitle2" style={{ fontWeight: 600 }}>Prazo de matrícula de cada período</Typography>
         <Typography className={classes.hint} gutterBottom>

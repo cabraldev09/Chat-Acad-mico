@@ -1330,11 +1330,25 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await bad({ gross: 0, firstMonthly: 100 })).status === 400, "zero gross accepted");
       assert((await bad({ gross: 500, firstMonthly: 900 })).status === 400, "first monthly above gross accepted");
     });
-    let prop;
-    await test("saves a draft, downloads a real PDF and shows it on the public link only after sending", async () => {
-      const r = await http.post("/proposals", { leadId: plead.id, params: { gross: REF1.gross, firstMonthly: REF1.first, semesters: 6, startYear: 2026, startSemester: 2 } }, auth());
+    let prop, propCourse;
+    await test("a draft saves without the base data, but the PDF and the sending ask for the admission, the course and the deadline", async () => {
+      propCourse = (await http.post("/courses", { name: "Administração Proposta Teste", modality: "EAD", category: "Graduação - Teste", semesters: 6, monthlyFee: REF1.gross, active: true }, auth())).data;
+      const base = { gross: REF1.gross, firstMonthly: REF1.first, semesters: 6, startYear: 2026, startSemester: 2 };
+      const r = await http.post("/proposals", { leadId: plead.id, params: base }, auth());
       assert(r.status === 201, `store ${r.status} ${JSON.stringify(r.data)}`);
       prop = r.data;
+      const noAdmission = await http.get(`/proposals/${prop.id}/pdf`, auth());
+      assert(noAdmission.status === 400 && noAdmission.data.error === "ERR_PROPOSAL_NEEDS_ADMISSION", `pdf without admission ${noAdmission.status} ${JSON.stringify(noAdmission.data)}`);
+      await http.put(`/proposals/${prop.id}`, { params: { ...base, admissionType: "ENEM", firstDueDate: "2027-02-01" } }, auth());
+      const noCourse = await http.post(`/proposals/${prop.id}/send`, {}, auth());
+      assert(noCourse.status === 400 && noCourse.data.error === "ERR_PROPOSAL_NEEDS_COURSE", `send without course ${noCourse.status} ${JSON.stringify(noCourse.data)}`);
+      const noDate = await http.put(`/proposals/${prop.id}`, { courseId: propCourse.id, params: { ...base, admissionType: "ENEM", firstDueDate: null } }, auth());
+      assert(noDate.status === 200, `put ${noDate.status}`);
+      assert((await http.get(`/proposals/${prop.id}/pdf`, auth())).data.error === "ERR_PROPOSAL_NEEDS_DUE_DATE", "pdf without the 1st due date");
+      // the course chosen after the first save counts (it used to keep the course of the first save)
+      const done = await http.put(`/proposals/${prop.id}`, { courseId: propCourse.id, params: { ...base, admissionType: "ENEM", firstDueDate: "2027-02-01" } }, auth());
+      assert(done.data.courseId === propCourse.id && done.data.courseName === propCourse.name, `course change ignored: ${done.data.courseId}`);
+      assert(sql(`SELECT admissionType FROM Leads WHERE id=${plead.id}`) === "ENEM", "the admission of the proposal fills the lead");
       const pdf = await http.get(`/proposals/${prop.id}/pdf`, { ...auth(), responseType: "arraybuffer" });
       assert(pdf.status === 200 && Buffer.from(pdf.data).slice(0, 4).toString() === "%PDF", `pdf ${pdf.status}`);
       assert((await http.get(`/p/${prop.token}`)).status === 404, "draft visible publicly");
@@ -1365,6 +1379,52 @@ const postMeta = (id, payload, secret, badSig) => {
       const shown = (await http.get(`/proposals/${prop.id}`, auth())).data;
       assert(!shown.html.includes("texto novo") && shown.html.includes("R$ 99,00"), "template change leaked into an issued proposal");
       await http.put(`/proposal-templates/${tpl.id}`, { enrollmentFee: 99, observation: tpl.observation }, auth());
+    });
+    await test("the entry calendar fills the class, the installments and the 1st due date; the course price locks the gross fee", async () => {
+      const day = d => new Date(Date.now() + d * 86400000).toLocaleDateString("en-CA", { timeZone: "America/Porto_Velho" });
+      const saved = await http.put("/crm/settings", { entryCalendar: [
+        { term: "2031/1", name: "Março", from: day(11), to: day(40), boletoDeadline: day(41), releaseDate: day(42), installments: 5 },
+        { term: "2031/1", name: "Fevereiro", from: day(-10), to: day(10), veteranosFrom: day(-2), boletoDeadline: day(12), releaseDate: day(13), installments: 6 },
+        { term: "2031/1", name: "Sem prazo", from: day(1), to: day(2), installments: 4 }] }, auth());
+      assert(saved.data.entryCalendar.map(t => t.name).join() === "Fevereiro,Março", `calendar ${JSON.stringify(saved.data.entryCalendar)}`);
+      const d = (await http.get("/proposals/defaults", { params: { leadId: plead.id, courseId: propCourse.id }, ...auth() })).data;
+      assert(d.turmaKey === "2031/1|Fevereiro" && d.params.entryTurma === "Fevereiro", `class of today ${d.turmaKey}`);
+      assert(d.params.installments === 6 && d.params.firstDueDate === day(12) && d.params.releaseDate === day(13), `dates ${JSON.stringify([d.params.installments, d.params.firstDueDate])}`);
+      assert(d.params.startYear === 2031 && d.params.startSemester === 1, "period of the class");
+      assert(d.coursePrice === REF1.gross && d.canUnlockGross === true, "price and unlock");
+      const m = (await http.get("/proposals/defaults", { params: { leadId: plead.id, courseId: propCourse.id, turma: "2031/1|Março" }, ...auth() })).data;
+      assert(m.params.installments === 5 && m.params.firstDueDate === day(41), "another class chosen");
+      const pv = await http.post("/proposals/preview", { leadId: plead.id, courseId: propCourse.id, params: { ...d.params, admissionType: "ENEM" } }, auth());
+      assert(pv.data.html.includes("Turma de ingresso:") && pv.data.missing === null, `document ${pv.data.missing}`);
+      assert(pv.data.messages.some(x => x.text.includes("*Turma:* Fevereiro (2031/1)")), "WhatsApp summary names the class");
+
+      // a consultant cannot change the gross fee; the management can unlock it and the consultant keeps that value
+      const cons = (await http.post("/users", { name: "Consultora Proposta", email: "proposta@polo.test", password: "senha123", role: "consultor" }, auth())).data;
+      const tok = (await http.post("/auth/login", { email: "proposta@polo.test", password: "senha123" })).data.token;
+      const l = (await http.post("/leads", { name: "Aluno Duas Propostas", phone: "11 95555-0099", source: "WhatsApp", ownerId: cons.id }, auth())).data.lead;
+      const params = { ...d.params, admissionType: "ENEM", firstMonthly: 300 };
+      const tried = await http.post("/proposals", { leadId: l.id, courseId: propCourse.id, params: { ...params, gross: 5000, grossUnlocked: true } }, asUser(tok));
+      assert(tried.status === 201 && Number(tried.data.grossFee) === REF1.gross && tried.data.params.params.grossUnlocked === false, `consultant changed the gross: ${tried.status} ${tried.data.grossFee}`);
+      const unlocked = await http.put(`/proposals/${tried.data.id}`, { courseId: propCourse.id, params: { ...params, gross: 1200, grossUnlocked: true } }, auth());
+      assert(Number(unlocked.data.grossFee) === 1200, `management unlock ${unlocked.data.grossFee}`);
+      const kept = await http.put(`/proposals/${tried.data.id}`, { courseId: propCourse.id, params: { ...params, gross: 9999, firstMonthly: 250 }, messageBlocks: { intro: "Oi, segue a sua proposta.", bad: 3, "x-y": "z" } }, asUser(tok));
+      assert(Number(kept.data.grossFee) === 1200 && Number(kept.data.firstMonthly) === 250, `unlocked value lost: ${kept.data.grossFee}`);
+      // the edited WhatsApp blocks come back when the draft is opened again
+      const shown = (await http.get(`/proposals/${tried.data.id}`, asUser(tok))).data;
+      assert(JSON.stringify(shown.params.blocks) === JSON.stringify({ intro: "Oi, segue a sua proposta." }), `blocks ${JSON.stringify(shown.params.blocks)}`);
+      // a second proposal for the same lead; the list says the class of each one
+      const second = await http.post("/proposals", { leadId: l.id, courseId: propCourse.id, params: { ...m.params, admissionType: "ENEM", firstMonthly: 280 } }, asUser(tok));
+      assert(second.status === 201, `second ${second.status}`);
+      const list = (await http.get("/proposals", { params: { leadId: l.id }, ...asUser(tok) })).data;
+      assert(list.length === 2 && list[0].entry.turma === "Março" && list[1].entry.turma === "Fevereiro", `list ${JSON.stringify(list.map(x => x.entry))}`);
+      // a course without a price needs the management
+      const free = (await http.post("/courses", { name: "Curso Sem Preço Teste", modality: "EAD", semesters: 8, active: true }, auth())).data;
+      const noPrice = await http.post("/proposals/preview", { leadId: l.id, courseId: free.id, params: { ...params, gross: 900 } }, asUser(tok));
+      assert(noPrice.status === 400 && noPrice.data.error === "ERR_PROPOSAL_COURSE_NO_PRICE", `no price ${noPrice.status} ${JSON.stringify(noPrice.data)}`);
+      const byManager = await http.post("/proposals/preview", { leadId: l.id, courseId: free.id, params: { ...params, gross: 900 } }, auth());
+      assert(byManager.status === 200 && byManager.data.gross === 900 && byManager.data.grossUnlocked === true, `manager on a course without price ${byManager.status}`);
+      // the rest of the run works without a calendar (dates typed in each test)
+      await http.put("/crm/settings", { entryCalendar: [] }, auth());
     });
 
     // ------------------------------------------- admission, CPF and payments
@@ -2682,7 +2742,9 @@ const postMeta = (id, payload, secret, badSig) => {
       assert((await http.post("/users", { name: "Intruso", email: "intruso@x.com", password: "senha123", role: "admin" }, as)).status === 403, "coordinator created an admin");
       assert((await http.post("/users", { name: "Intruso", email: "intruso2@x.com", password: "senha123", profile: "admin" }, as)).status === 403, "coordinator created an admin by profile");
       assert((await http.put(`/users/${team.data.id}`, { role: "admin" }, as)).status === 403, "coordinator promoted someone to admin");
-      const adminId = (await http.get("/users", auth())).data.users.find(u => u.profile === "admin").id;
+      // the list comes 20 at a time, newest first: the administrator of the run is the oldest user, so it is read from the database
+      const adminId = Number(sql("SELECT id FROM Users WHERE profile='admin' ORDER BY id LIMIT 1"));
+      assert(adminId > 0, "administrator of the run");
       assert((await http.put(`/users/${adminId}`, { name: "Trocado" }, as)).status === 403, "coordinator edited an admin");
       // it removes people of the team, never an administrator
       const throwaway = (await http.post("/users", { name: "Descartavel", email: "descartavel@x.com", password: "senha123", role: "consultor" }, as)).data;

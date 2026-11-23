@@ -38,6 +38,7 @@ export const renderProposalHtml = (i: RenderInput): string => {
   const first = p.firstMonthly;
   const firstDue = p.firstDueDate ? new Date(`${p.firstDueDate}T12:00:00`).toLocaleDateString("pt-BR") : null;
   const secondDue = p.secondDueDate ? new Date(`${p.secondDueDate}T12:00:00`).toLocaleDateString("pt-BR") : null;
+  const release = p.releaseDate ? new Date(`${p.releaseDate}T12:00:00`).toLocaleDateString("pt-BR") : null;
   // extra rules only appear when a model departs from the classic behavior
   const rules: string[] = [];
   if (p.fixedUntilEnd) rules.push("Mensalidade fixa até o fim do curso, sem reajuste.");
@@ -111,6 +112,7 @@ ${brand ? `.proj th{color:${brand}}.proj td.m{color:${brand}}h1{color:${brand}}`
 <div class="kv" style="margin-top:8px"><b>Taxa de matrícula:</b> ${brl(p.enrollmentFee)} <span class="muted">(no ato da inscrição)</span></div>
 <div class="kv"><b>Demais mensalidades:</b> todo dia ${p.dueDay}</div>
 <div class="kv"><b>Quantidade de parcelas desse semestre:</b> ${p.installments}</div>
+${p.entryTurma ? `<div class="kv"><b>Turma de ingresso:</b> ${esc(p.entryTurma)} de ${p.startYear}/${p.startSemester}${release ? ` <span class="muted">(disciplinas liberadas no AVA até ${release})</span>` : ""}</div>` : ""}
 ${rules.map(t => `<div class="kv muted">${esc(t)}</div>`).join("")}
 
 <h2>2ª mensalidade em diante. (Pontualidade já inclusa de ${p.punctualityPct}%).</h2>

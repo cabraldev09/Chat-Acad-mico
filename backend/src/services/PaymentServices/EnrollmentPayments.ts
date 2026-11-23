@@ -63,9 +63,11 @@ const resolveRecipient = async (lead: Lead, fallbackUserId: number) => {
   return { userId: user?.id || null, code: null as string | null, pct: 0 };
 };
 
-// Enrollment fee that the proposal promised, else the default template's fee
+// Enrollment fee that the proposal promised (the last one sent to the candidate, else the last draft), else the default template's fee
 const defaultAmount = async (leadId: number): Promise<{ amount: number; proposalId: number | null }> => {
-  const proposal = await Proposal.findOne({ where: { leadId }, order: [["id", "DESC"]] });
+  const proposal =
+    (await Proposal.findOne({ where: { leadId, status: "sent" }, order: [["sentAt", "DESC"], ["id", "DESC"]] })) ||
+    (await Proposal.findOne({ where: { leadId }, order: [["id", "DESC"]] }));
   if (proposal) {
     try {
       const fee = Number(JSON.parse(proposal.params).params.enrollmentFee);
