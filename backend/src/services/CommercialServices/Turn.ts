@@ -205,19 +205,21 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
       const missing = { name: !after.fullName, cpf: !after.cpfGiven };
       const asked = Number(state.slots.bolsaDataAsked || 0);
       const complete = !missing.name && !missing.cpf;
-      patch.bolsaDataAsked = complete || asked >= BOLSA_ASKS ? asked : asked + 1;
+      // the person is answering (sent the name, the CPF comes next): the piece that is missing is asked, a couple of times at most
+      const gavePart = !complete && !!(given.fullName || given.cpf) && asked < BOLSA_ASKS + 2;
+      patch.bolsaDataAsked = complete || (asked >= BOLSA_ASKS && !gavePart) ? asked : asked + 1;
       const first = String(after.fullName || state.slots.leadName || d.contactName || "").trim().split(/\s+/)[0];
       let text = given.invalidCpf && !given.cpf
         ? "Esse CPF não parece válido. Confere os 11 números e me envia de novo, por favor?"
         : complete
           ? `Agradeço${first ? `, ${first}` : ""}. Anotei os seus dados.`
-          : asked >= BOLSA_ASKS ? `Agradeço${first ? `, ${first}` : ""}. Anotei o que você enviou.` : bolsaRequestFor(missing);
+          : asked >= BOLSA_ASKS && !gavePart ? `Agradeço${first ? `, ${first}` : ""}. Anotei o que você enviou.` : bolsaRequestFor(missing);
       // same way out as an answer of the model: when this completes a qualified lead, the Router hears why (the warm handover message follows this text)
       // name and CPF complete and the lead qualified: the consultant simulates the scholarships and makes the proposal now (the conversation does not stop here)
       const toProposal = bolsaAsked && complete && isQualified(after) && !(needsModalityExplanation(after) && !modalityExplained(after));
       const hook = await commercialTurn(d.ports, { userText: lastText.replace(/\d/g, "•"), intent: toProposal ? "proposal" : "other", ...(toProposal ? { fast: "proposal" } : {}), patch, tools: [], hadText: true, replied: true, nodeId: d.nodeId,
         // still asking for what is missing: nobody takes the conversation in the middle of the question
-        ...(!complete && asked < BOLSA_ASKS ? { stay: true, endsWithQuestion: true } : {}) });
+        ...(!complete && (asked < BOLSA_ASKS || gavePart) ? { stay: true, endsWithQuestion: true } : {}) });
       // the conversation goes to the consultant now: the person is always told so
       if (hook.exit) text = `${text}\n\n${scriptTexts(d).handoff || FIXED.toProposal}`;
       await log({ intent: "other", deterministic: true, llmCalls: 0, toolCalls: 0, cacheHits: 0, tokens: base.tokens, outcome: hook.exit, latencyMs: Date.now() - started });
@@ -380,7 +382,8 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
   // (the third time the price is asked, the consultant is called)
   if (fast && fast.intent !== "human" && holdsProposal(slotsHeard) && Number(state.slots.priceAsks || 0) < PRICE_ASKS) {
     const worked = await valueReply(d, slotsHeard, ask, stageNeeds, fast.intent);
-    worked.patch = { ...worked.patch, priceAsks: Number(state.slots.priceAsks || 0) + 1 };
+    // ("quero me matricular" is not a question about the price: it does not count as insisting)
+    if (fast.intent !== "enrollment") worked.patch = { ...worked.patch, priceAsks: Number(state.slots.priceAsks || 0) + 1 };
     const hook = await commercialTurn(d.ports, { userText: lastText, fast: fast.intent, patch: worked.patch, tools: worked.tools, hadText: true, replied: true, retract: false, nodeId: d.nodeId, hasPolo: !!d.lead?.poloId, endsWithQuestion: true, holdValue: true });
     const latencyMs = Date.now() - started;
     await log({ intent: fast.intent, deterministic: true, llmCalls: 0, toolCalls: worked.tools.length, cacheHits: 0, tokens: base.tokens, outcome: hook.exit, latencyMs });

@@ -4256,6 +4256,12 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(!emoji.test(ma5) && !/ESTÁGIO CURRICULAR/.test(ma5.replace(/\*Matriz[\s\S]*?Ao todo[^\n]*/, "")), `MA emoji or capitals: ${ma5}`);
       out = await say(MA, "wamid.ma-6", "Não tenho dúvidas, pode prosseguir", t => t.some(x => /simular as bolsas disponíveis para você, pode me informar o seu nome completo e CPF/.test(x)), "MA name and CPF asked");
       assert(/^Perfeito\. Para o consultor do seu polo simular as bolsas/.test(out[out.length - 1]), `MA bolsa: ${out}`);
+      // the copilot follows the conversation: the name and the CPF were just asked, so it does not suggest asking again; it says it waits and
+      // offers a short reminder (never the same message, never "Caso não tenha" out of place)
+      const copWait = (await http.get(`/tickets/${ticketOf(MA)}/copilot`, auth())).data;
+      assert(copWait.current === "bolsa" && copWait.suggestion.kind === "waiting" && /Você já pediu o nome completo e o CPF/.test(copWait.suggestion.note), `copilot while waiting: ${JSON.stringify(copWait.suggestion)}`);
+      assert(/conseguiu ver a minha mensagem/.test(copWait.suggestion.text) && !/Caso não tenha/.test(copWait.suggestion.text), `copilot reminder: ${copWait.suggestion.text}`);
+      assert(copWait.context.lastFrom === "team" && copWait.context.askedCurrentAt, `copilot context: ${JSON.stringify(copWait.context)}`);
       out = await say(MA, "wamid.ma-7", "CPF: 529.829.821-45\nMAIRA DA SILVA BATISTA", t => t.some(x => /montar a sua proposta/.test(x)), "MA to the consultant");
       await waitFor(() => handoffOf(MA) === "proposal" && sql(`SELECT aiActive FROM Tickets WHERE id=${ticketOf(MA)}`) === "0", 15000, "MA handed to the consultant for the proposal");
       assert(slotsOfNumber(MA).fullName === "Maira da Silva Batista" && slotsOfNumber(MA).cpfGiven === true, `MA data: ${JSON.stringify(slotsOfNumber(MA)).slice(0, 300)}`);
