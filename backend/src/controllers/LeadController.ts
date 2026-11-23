@@ -58,6 +58,7 @@ import dispatchWebhook from "../services/WebhookServices/DispatchWebhook";
 import makeCrud from "./crudFactory";
 import { syncHandoffTasks } from "../services/CrmServices/HandoffTasks";
 import { runTaskSweep } from "../workers/TaskSweep";
+import { assertTicketAccess } from "../middleware/canAccessTicket";
 
 const uid = (req: Request) => Number(req.user.id);
 
@@ -329,15 +330,26 @@ export const addTask = async (req: Request, res: Response): Promise<Response> =>
   if (!lead) throw new AppError("ERR_LEAD_NOT_FOUND", 404);
   // only the management gives a task to someone else
   if (userId && Number(userId) !== uid(req) && !isAdminReq(req)) throw new AppError("ERR_NO_PERMISSION", 403);
+  let linkedTicketId: number | null = null;
+  if (ticketId !== undefined && ticketId !== null && ticketId !== "") {
+    const id = Number(ticketId);
+    if (!Number.isSafeInteger(id) || id < 1) throw new AppError("ERR_NO_TICKET_FOUND", 404);
+    await assertTicketAccess(req, id, "read");
+    const ticket = await Ticket.findByPk(id, { attributes: ["id", "contactId"] });
+    if (!ticket) throw new AppError("ERR_NO_TICKET_FOUND", 404);
+    if (!lead.contactId || Number(ticket.contactId) !== Number(lead.contactId)) throw new AppError("ERR_NO_PERMISSION", 403);
+    linkedTicketId = ticket.id;
+  }
+  const assignedUserId = isAdminReq(req) ? (userId || lead.ownerId || uid(req)) : uid(req);
   const task = await LeadTask.create({
     leadId: lead.id,
     title: String(title).slice(0, 160),
     type,
     dueAt: due,
-    userId: userId || lead.ownerId || uid(req),
+    userId: assignedUserId,
     kind: "manual",
     priority: priority === "high" ? "high" : "normal",
-    ticketId: Number(ticketId) || null,
+    ticketId: linkedTicketId,
     createdById: uid(req)
   } as any);
   await addActivity(lead.id, uid(req), "task", `Tarefa criada: ${title}`);
