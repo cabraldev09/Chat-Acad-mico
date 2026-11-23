@@ -56,6 +56,7 @@ function harness(provider = 'openai') {
   const service = isolated('services/AiServices/RunAiAgent.js', {
     axios: { post: async (url, body) => { calls.push({ url, body }); const next = state.responses.shift(); if (next instanceof Error) throw next; if (!next) throw new Error('Unexpected API call'); return { data: next }; } },
     '../../models/AiAgent': { findAll: async () => [agent] },
+    '../../models/ChatFlow': { findAll: async () => state.flows || [] },
     '../../models/Message': { findOne: async () => state.latest, findAll: async () => [...state.history].reverse() },
     '../../models/Ticket': { findByPk: async () => ticket },
     '../../helpers/Institution': { institutionName: () => 'Cruzeiro do Sul Virtual', institutionFor: async () => ({ id: 1 }), legacyInstitutionId: async () => 1 },
@@ -184,6 +185,19 @@ for (const phrase of ['Quero falar com um consultor', 'quero falar com uma pesso
   const h = harness(); h.inbound.body = phrase;
   await h.service.runAiForTicket(h.ticket.id, h.say);
   assert.equal(h.calls.length, 0); assert.deepEqual(h.handoffs, ['pedido']);
+});
+test('an agent whose script was never published does not answer: the team takes the conversation, no model', async () => {
+  const h = harness(); h.state.flows = [{ status: 'draft', name: 'Comercial', description: 'Faz toda a qualificação do lead' }];
+  h.inbound.body = 'Gostaria de saber sobre os cursos na área da saúde';
+  await h.service.runAiForTicket(h.ticket.id, h.say);
+  assert.equal(h.calls.length, 0); assert.deepEqual(h.handoffs, ['sem_roteiro']); assert.equal(h.sent.length, 1);
+});
+test('a draft made from an agent that answers by the form, or a published script, changes nothing', async () => {
+  for (const flows of [[{ status: 'draft', name: 'Matrículas (em blocos)', description: 'Convertido do agente de prompt único' }], [{ status: 'draft', name: 'Matrículas (roteiro aprendido)', description: '' }], [{ status: 'draft', name: 'x' }, { status: 'published', name: 'y' }]]) {
+    const h = harness(); h.state.flows = flows; h.inbound.body = 'Quero falar com um consultor';
+    await h.service.runAiForTicket(h.ticket.id, h.say);
+    assert.deepEqual(h.handoffs, ['pedido']);
+  }
 });
 test('refusal persists opt-out and disables automation without using tokens', async () => {
   const h = harness(); h.inbound.body = 'Não tenho interesse.';
