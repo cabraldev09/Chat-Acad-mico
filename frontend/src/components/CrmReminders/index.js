@@ -44,8 +44,9 @@ const CrmReminders = () => {
     if (!user || !user.id) return undefined;
     const socket = openSocket();
     socket.on("crmReminder", (t) => {
-      if (t.userId && t.userId !== user.id) return;
-      toast.info(`⏰ ${t.title}${t.leadName ? ` — ${t.leadName}` : ""}`, {
+      // only the person the task is given to (a task without a person no longer pops up for every manager)
+      if (Number(t.userId) !== Number(user.id)) return;
+      toast.info(`${t.title}${t.leadName ? ` — ${t.leadName}` : ""}`, {
         autoClose: 12000,
         onClick: () => history.push(`/crm?lead=${t.leadId}`),
       });

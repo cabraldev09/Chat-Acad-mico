@@ -6,7 +6,7 @@ let failSecond = true;
 vi.mock("../../src/services/WbotServices/SendWhatsAppMedia", () => ({
   default: vi.fn(async (input: any) => {
     sent.push(input.deliveryKey);
-    if (failSecond && input.deliveryKey.endsWith(":1")) { failSecond = false; throw new Error("ERR_SENDING_WAPP_MSG"); }
+    if (failSecond && input.deliveryKey.endsWith(":1")) { failSecond = false; throw new Error("ERR_PROVIDER_REFUSED"); }
     return { id: `p-${input.deliveryKey}` };
   })
 }));

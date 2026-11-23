@@ -5,6 +5,7 @@ import OutboundDelivery from "../models/OutboundDelivery";
 import { getSetting } from "../helpers/AppSettings";
 import { dayBounds } from "../helpers/AppTime";
 import { getIO } from "../libs/socket";
+import { notifyManagers } from "../services/NotificationServices/Notify";
 import { logger } from "../utils/logger";
 let busy = false;
 let day = "";
@@ -14,6 +15,7 @@ export const tickBudgetAlerts = async (): Promise<void> => {
   busy = true;
   try {
     const since = dayBounds().start;
+    // the memory only spares the database within the day; what was already said is in the notices (dedupeKey)
     if (day !== since.toISOString()) { day = since.toISOString(); notified.clear(); }
     const usageWhere = { createdAt: { [Op.gte]: since } };
     const sendWhere = { ...usageWhere, status: { [Op.in]: ["sent", "sending", "uncertain"] } };
@@ -29,10 +31,11 @@ export const tickBudgetAlerts = async (): Promise<void> => {
       if (!(cap > 0)) continue;
       const used = await usage();
       const level = used >= cap ? 100 : used >= cap * 0.8 ? 80 : 0;
-      const id = `${key}:${level}`;
+      const id = `${key}:${since.toISOString().slice(0, 10)}:${level}`;
       if (!level || notified.has(id)) continue;
       notified.add(id);
-      getIO().emit("budgetAlert", { key, level, text: `${label}: ${level === 100 ? "limite diário atingido" : "80% do limite diário utilizado ou reservado"}. Confira Operação.` });
+      const text = `${label}: ${level === 100 ? "limite diário atingido" : "80% do limite diário utilizado ou reservado"}. Confira Operação.`;
+      if (await notifyManagers({ kind: "budget", level: level === 100 ? "urgent" : "warning", title: text, link: "/configuracoes?secao=operacao", dedupeKey: `budget:${id}` })) getIO().emit("budgetAlert", { key, level, text });
     }
     // the budget of the month typed for the AI (Custos): 80% and 100%, once per month and level
     const { monthBudget } = await import("../services/AiServices/RealCosts");
@@ -42,7 +45,9 @@ export const tickBudgetAlerts = async (): Promise<void> => {
       const id = `ai_month:${new Date().toISOString().slice(0, 7)}:${level}`;
       if (level && !notified.has(id)) {
         notified.add(id);
-        getIO().emit("budgetAlert", { key: "ai_monthly_budget_usd", level, text: `Orçamento da IA no mês: ${level === 100 ? "atingido" : `${Math.round(budget.pct)}% usado`}. Confira Configurações, Custos.` });
+        const text = `Orçamento da IA no mês: ${level === 100 ? "atingido" : `${Math.round(budget.pct)}% usado`}. Confira Configurações, Custos.`;
+        // the notice of the month is kept per month and level: a new day or a restart does not repeat it (it repeated every day)
+        if (await notifyManagers({ kind: "budget", level: level === 100 ? "urgent" : "warning", title: text, link: "/configuracoes?secao=custos", dedupeKey: `budget:${id}` })) getIO().emit("budgetAlert", { key: "ai_monthly_budget_usd", level, text });
       }
     }
   } catch (err) { logger.warn(`Budget alerts: ${err}`); }

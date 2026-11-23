@@ -86,7 +86,7 @@ export const eventAllowed = async (user: User, event: string, data: any, rooms: 
     if (event === "user") return manager || user.profile === "admin" || Number(data.user?.id || data.userId) === Number(user.id);
     if (event === "contactsImport") return Number(data.userId) === Number(user.id);
     // the return of a curricular analysis is for its owner (the management reads it on the screen)
-    if (event === "followUp" || event === "taskAssigned" || event === "onboardingAssigned") return Number(data.userId) === Number(user.id);
+    if (event === "followUp" || event === "taskAssigned" || event === "onboardingAssigned" || event === "notification" || event === "taskChanged") return Number(data.userId) === Number(user.id);
     // a student entered the risk of dropping out: the tutor, the consultant of the student and the management
     if (event === "riskAlert") return manager || Number(data.tutorId) === Number(user.id) || Number(data.ownerId) === Number(user.id);
     // Settings may contain API credentials. Other users refetch their permitted subset over HTTP.
@@ -114,6 +114,10 @@ const send = async (event: string, payload: any, rooms: string[]): Promise<void>
   // Serialize once: model toJSON masks CPF, channel credentials and webhook secrets.
   const data = JSON.parse(JSON.stringify(payload));
   const checks = new Map<string, Promise<User>>();
+  // one decision per person for this event: the same person with several tabs (or the conversations screen, the menu and a chat
+  // open at once) used to repeat the database checks once per connection. Nothing is kept after this event, so a transfer is
+  // always judged with fresh data.
+  const decisions = new Map<string, Promise<boolean>>();
   await Promise.all(Array.from(io.sockets.sockets.values()).map(async socket => {
     if (rooms.length && !rooms.some(room => socket.rooms.has(room))) return;
     const token = socket.data.token;
@@ -129,7 +133,9 @@ const send = async (event: string, payload: any, rooms: string[]): Promise<void>
         return;
       }
       const user = await checks.get(token) as User;
-      if (!(await eventAllowed(user, event, data, rooms))) {
+      const who = `${user.id}`;
+      if (!decisions.has(who)) decisions.set(who, eventAllowed(user, event, data, rooms));
+      if (!(await decisions.get(who))) {
         const id = data.ticket?.id || data.ticketId;
         if (event === "ticket" && id && socket.data.visibleTickets?.has(String(id))) {
           socket.emit("ticket", { action: "delete", ticketId: id });

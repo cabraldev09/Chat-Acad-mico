@@ -97,8 +97,11 @@ export const dbPorts = (lead: Lead, state: CommercialState, ctx: { agentId?: num
       if (await LeadReminderLog.findOne({ where: { leadId: lead.id, key } })) return false;
       const open = await LeadTask.findOne({ where: { leadId: lead.id, title, doneAt: null as any } });
       if (open) return false;
+      const kind = ({ proposal: "proposal", transcript: "transcript" } as Record<string, string>)[dedupeKey.split(":")[0]] || "manual";
+      // the person who will answer the handoff already has "Atender lead encaminhado pelo agente de IA": a second task at the same time is noise
+      if (kind === "proposal" && (await LeadTask.findOne({ where: { leadId: lead.id, kind: "handoff", doneAt: null as any }, attributes: ["id"] }))) return false;
       await LeadReminderLog.create({ leadId: lead.id, key } as any);
-      await LeadTask.create({ leadId: lead.id, userId: lead.ownerId || null, type: type || TASK_TYPE[dedupeKey.split(":")[0]] || "outro", title: title.slice(0, 160), dueAt } as any);
+      await LeadTask.create({ leadId: lead.id, userId: lead.ownerId || null, type: type || TASK_TYPE[dedupeKey.split(":")[0]] || "outro", title: title.slice(0, 160), dueAt, kind } as any);
       await syncNextFollowUp(lead.id);
       audit.push({ kind: "task", text: `Criou a tarefa “${title}”` });
       return true;

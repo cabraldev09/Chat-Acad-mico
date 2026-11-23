@@ -1,33 +1,58 @@
-import React, { useCallback, useContext, useEffect, useState } from "react";
+import React, { useContext, useEffect, useState } from "react";
 import { useHistory, useLocation } from "react-router-dom";
 import { AlarmClock } from "lucide-react";
 
 import api from "../../services/api";
+import openSocket from "../../services/socket-io";
 import { AuthContext } from "../../context/Auth/AuthContext";
 import { Notice } from "../Notices";
 
-// My follow-up tasks that are late or due today. One count for the whole app: the strip on top, the badge of the menu.
+// My follow-up tasks that are late or due today. One count for the whole app (the strip on top and the badge of the menu share it: one
+// request for everybody that shows it, not one per component), read again when a task of mine changes, on focus and every 2 minutes.
+const EMPTY = { overdue: 0, today: 0, triage: 0, triageLate: 0, onboarding: 0 };
+const shared = { counts: EMPTY, listeners: new Set(), userId: null, timer: null, pending: null, socket: null };
+const publish = (counts) => { shared.counts = counts; shared.listeners.forEach((fn) => fn(counts)); };
+const loadShared = () => {
+  if (!shared.userId || shared.pending) return shared.pending;
+  const me = shared.userId;
+  shared.pending = Promise.all([
+    api.get("/lead-tasks/counts", { params: { scope: "mine" } }).then(({ data }) => data).catch(() => null),
+    // my new leads nobody answered yet: each consultant checks their own before the day closes (the screen of the CRM is not for tutors)
+    api.get("/crm/triage", { params: { ownerId: me } }).then(({ data }) => data).catch(() => ({ total: 0, late: 0 })),
+    // students of mine waiting for the ambientação (tutor: the ones to start; consultant: the ones I sent that have not started)
+    api.get("/onboarding/pending").then(({ data }) => data.pending || 0).catch(() => 0),
+  ]).then(([c, t, o]) => {
+    if (shared.userId !== me) return;
+    publish({ overdue: c ? c.overdue : shared.counts.overdue, today: c ? c.today : shared.counts.today, triage: t.total || 0, triageLate: t.late || 0, onboarding: o });
+  }).finally(() => { shared.pending = null; });
+  return shared.pending;
+};
+const start = (userId) => {
+  if (shared.userId === userId && shared.timer) return;
+  shared.userId = userId;
+  clearInterval(shared.timer);
+  shared.timer = setInterval(() => { if (document.visibilityState === "visible") loadShared(); }, 2 * 60 * 1000);
+  window.addEventListener("tasks:changed", loadShared);
+  window.addEventListener("focus", loadShared);
+  if (!shared.socket) {
+    shared.socket = openSocket();
+    // a task of mine changed somewhere (given to me, closed by the system, moved by the sweep)
+    shared.socket.on("taskChanged", () => loadShared());
+    shared.socket.on("taskAssigned", () => loadShared());
+  }
+  loadShared();
+};
+
 export const useMyTasks = () => {
   const { user } = useContext(AuthContext);
-  const [counts, setCounts] = useState({ overdue: 0, today: 0, triage: 0, triageLate: 0, onboarding: 0 });
-  const load = useCallback(() => {
-    if (!user || !user.id) return;
-    Promise.all([
-      api.get("/lead-tasks", { params: { status: "overdue", scope: "mine" } }),
-      api.get("/lead-tasks", { params: { status: "today", scope: "mine" } }),
-      // my new leads nobody answered yet: each consultant checks their own before the day closes (the screen of the CRM is not for tutors)
-      api.get("/crm/triage", { params: { ownerId: user.id } }).then(({ data }) => data).catch(() => ({ total: 0, late: 0 })),
-      // students of mine waiting for the ambientação (tutor: the ones to start; consultant: the ones I sent that have not started)
-      api.get("/onboarding/pending").then(({ data }) => data.pending || 0).catch(() => 0),
-    ]).then(([a, b, t, o]) => setCounts({ overdue: (a.data || []).length, today: (b.data || []).length, triage: t.total || 0, triageLate: t.late || 0, onboarding: o })).catch(() => undefined);
-  }, [user]);
+  const [counts, setCounts] = useState(shared.counts);
   useEffect(() => {
-    load();
-    const timer = setInterval(() => { if (document.visibilityState === "visible") load(); }, 2 * 60 * 1000);
-    window.addEventListener("tasks:changed", load);
-    window.addEventListener("focus", load);
-    return () => { clearInterval(timer); window.removeEventListener("tasks:changed", load); window.removeEventListener("focus", load); };
-  }, [load]);
+    if (!user || !user.id) return undefined;
+    shared.listeners.add(setCounts);
+    start(user.id);
+    setCounts(shared.counts);
+    return () => { shared.listeners.delete(setCounts); };
+  }, [user]);
   return counts;
 };
 

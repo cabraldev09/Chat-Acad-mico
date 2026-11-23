@@ -326,6 +326,10 @@ export const changeStage = async (
     { from: from?.id, to: to.id }
   );
   await rescore(lead);
+  if (to.type === "won" || to.type === "lost") {
+    const { closeOnStage } = await import("./TaskLifecycle");
+    await closeOnStage(lead.id, to.type as "won" | "lost");
+  }
 
   // affiliates earn on the enrolment, however the card got to "Matriculado"; undoing it cancels what was not paid
   if (lead.affiliateId) {
@@ -396,7 +400,7 @@ export const hookTicketCreated = async (contact: Contact, channel: string): Prom
 };
 
 // Runs for every inbound message, on every channel
-export const hookInbound = async (contactId: number, channel?: string): Promise<void> => {
+export const hookInbound = async (contactId: number, channel?: string, sentPdf = false): Promise<void> => {
   try {
     let lead = await Lead.findOne({ where: { contactId } });
     if (!lead) {
@@ -426,6 +430,11 @@ export const hookInbound = async (contactId: number, channel?: string): Promise<
     }
     await lead.update({ lastInboundAt: new Date(), lastContactAt: new Date() });
     await rescore(lead);
+    // a PDF from the lead is the academic transcript that was asked for (also after the AI handed the conversation to a person)
+    if (sentPdf) {
+      const { transcriptArrived } = await import("./TaskLifecycle");
+      await transcriptArrived(lead.id);
+    }
   } catch (err) {
     logger.warn(`CRM inbound hook failed: ${err}`);
   }
@@ -471,6 +480,8 @@ export const hookHumanReply = async (contactId: number, userId: number): Promise
     const patch: any = { lastContactAt: now };
     if (!lead.ownerId) patch.ownerId = userId;
     await lead.update(patch);
+    // a person answered: "Atender lead encaminhado pelo agente de IA" is done
+    import("./TaskLifecycle").then(m => m.closeTasksFor(lead.id, ["handoff"], "replied")).catch(() => undefined);
     if (claimed) {
       await addActivity(lead.id, userId, "whatsapp", "Primeiro contato realizado");
       if ((await getSetting("crm_autoadvance", "true")) !== "false") {

@@ -1,6 +1,6 @@
-# Rotas da API (423)
+# Rotas da API (549)
 
-Públicas: 31 · logado (qualquer perfil): 244 · gestão: 109 · admin: 31
+Públicas: 33 · logado (qualquer perfil): 298 · gestão: 174 · admin: 36
 
 ## Públicas (sem login)
 
@@ -25,6 +25,8 @@ Públicas: 31 · logado (qualquer perfil): 244 · gestão: 109 · admin: 31
 - GET /_aluna.webp (leadFormRoutes.ts)
 - GET /:token (leadFormRoutes.ts)
 - POST /:token/submit (leadFormRoutes.ts)
+- GET /meta (metaWebhookRoutes.ts)
+- POST /meta (metaWebhookRoutes.ts)
 - GET /meta/:whatsappId (metaWebhookRoutes.ts)
 - POST /meta/:whatsappId (metaWebhookRoutes.ts)
 - GET /:token (proposalPublicRoutes.ts)
@@ -43,6 +45,8 @@ Públicas: 31 · logado (qualquer perfil): 244 · gestão: 109 · admin: 31
 - POST /analysis/curricular/:id/send-proposal (analysisRoutes.ts)
 - PUT /analysis/curricular/:id (analysisRoutes.ts)
 - PUT /analysis/curricular/:id/subject/:subjectId (analysisRoutes.ts)
+- POST /analysis/curricular/:id/subject (analysisRoutes.ts)
+- DELETE /analysis/curricular/:id/subject/:subjectId (analysisRoutes.ts)
 - DELETE /analysis/curricular/:id (analysisRoutes.ts)
 - POST /analysis/academic (analysisRoutes.ts)
 - PUT /analysis/academic/:id (analysisRoutes.ts)
@@ -51,7 +55,6 @@ Públicas: 31 · logado (qualquer perfil): 244 · gestão: 109 · admin: 31
 - PUT /students/:id (analysisRoutes.ts)
 - POST /students/:id/invite (analysisRoutes.ts)
 - POST /students/:id/upload (analysisRoutes.ts)
-- POST /grades (analysisRoutes.ts)
 - POST /grades/import-defaults (analysisRoutes.ts)
 - POST /grades/refresh (analysisRoutes.ts)
 - POST /grades/:id/send (analysisRoutes.ts)
@@ -67,14 +70,18 @@ Públicas: 31 · logado (qualquer perfil): 244 · gestão: 109 · admin: 31
 - POST /schedules/:id/cancel (extraRoutes.ts)
 - DELETE /schedules/:id (extraRoutes.ts)
 - PUT /me/preferences (extraRoutes.ts)
+- POST /retention/contact/:leadId (extraRoutes.ts)
 - POST /retention/preview (extraRoutes.ts)
 - POST /retention/send (extraRoutes.ts)
 - POST /retention/nps/send/:leadId (extraRoutes.ts)
 - POST /retention/risk/:leadId/message (extraRoutes.ts)
 - POST /retention/rematricula/:leadId (extraRoutes.ts)
+- POST /course-materials/:id/send (extraRoutes.ts)
 - POST /leads (extraRoutes.ts)
 - POST /leads/import (extraRoutes.ts)
 - POST /leads/from-contact/:contactId (extraRoutes.ts)
+- POST /tutoria/students/import (extraRoutes.ts)
+- POST /tutoria/students/:leadId/conversation (extraRoutes.ts)
 - POST /proposals/preview (extraRoutes.ts)
 - POST /proposals (extraRoutes.ts)
 - PUT /me/efi (extraRoutes.ts)
@@ -85,11 +92,13 @@ Públicas: 31 · logado (qualquer perfil): 244 · gestão: 109 · admin: 31
 - PUT /quickAnswers/:quickAnswerId (quickAnswerRoutes.ts)
 - DELETE /quickAnswers/:quickAnswerId (quickAnswerRoutes.ts)
 - PUT /settings/:settingKey (settingRoutes.ts)
+- PUT /tickets/read-all (ticketRoutes.ts)
 - POST /tickets (ticketRoutes.ts)
 - POST /whatsapp/ (whatsappRoutes.ts)
 
 ## Alteram dados com checagem de escopo
 
+- POST /grades → gradeBatchLimit
 - PUT /contacts/:contactId → canAccessContact
 - PUT /contacts/:contactId/no-reply → canAccessContact
 - PUT /contacts/:contactId/staff → canAccessContact
@@ -114,20 +123,22 @@ Públicas: 31 · logado (qualquer perfil): 244 · gestão: 109 · admin: 31
 - PUT /tickets/:ticketId/tags → canWriteTicket
 - PUT /contacts/:contactId/tags → canAccessContact
 - POST /campaigns → salesStaff
-- PUT /campaigns/:id → salesStaff
-- DELETE /campaigns/:id → salesStaff
-- POST /campaigns/:id/start → salesStaff
-- POST /campaigns/:id/pause → salesStaff
-- POST /campaigns/:id/cancel → salesStaff
-- POST /campaigns/:id/retry-failed → salesStaff
-- POST /campaigns/:id/duplicate → salesStaff
-- POST /campaigns/:id/test → salesStaff
+- POST /campaigns/preflight → salesStaff
+- PUT /campaigns/:id → salesStaff, ownCampaign
+- DELETE /campaigns/:id → salesStaff, ownCampaign
+- POST /campaigns/:id/start → salesStaff, ownCampaign
+- POST /campaigns/:id/pause → salesStaff, ownCampaign
+- POST /campaigns/:id/cancel → salesStaff, ownCampaign
+- POST /campaigns/:id/retry-failed → salesStaff, ownCampaign
+- POST /campaigns/:id/duplicate → salesStaff, ownCampaign
+- POST /campaigns/:id/test → salesStaff, ownCampaign
+- POST /campaigns/:id/remove-no-consent → salesStaff, ownCampaign
 - POST /contact-lists → salesStaff
 - POST /contact-lists/from-leads → salesStaff
-- PUT /contact-lists/:id → salesStaff
-- DELETE /contact-lists/:id → salesStaff
-- POST /contact-lists/:id/import → salesStaff
-- DELETE /contact-lists/:id/items/:itemId → salesStaff
+- PUT /contact-lists/:id → salesStaff, ownList
+- DELETE /contact-lists/:id → salesStaff, ownList
+- POST /contact-lists/:id/import → salesStaff, notTutor
+- DELETE /contact-lists/:id/items/:itemId → salesStaff, ownList
 - PUT /retention/config → isRetentionOperator
 - POST /retention/run → isRetentionOperator
 - PUT /leads/:id/documents/:docId → canAccessLead
@@ -138,7 +149,10 @@ Públicas: 31 · logado (qualquer perfil): 244 · gestão: 109 · admin: 31
 - POST /leads/:id/activities → canAccessLead
 - POST /leads/:id/tasks → canAccessLead
 - POST /leads/:id/open-ticket → canAccessLead
+- PUT /leads/:id/onboarding/access → canAccessLead
+- POST /leads/:id/onboarding/access/send → canAccessLead
 - PUT /leads/:id/onboarding/checklist → canAccessLead
+- POST /leads/:id/enrollment-proof → canAccessLead
 - POST /leads/:id/enroll → canAccessLead
 - POST /leads/:id/onboarding → canAccessLead
 - PUT /leads/:id/onboarding → canAccessLead
@@ -163,7 +177,16 @@ Públicas: 31 · logado (qualquer perfil): 244 · gestão: 109 · admin: 31
 - POST /messages/:messageId/react → canWriteMessage
 - POST /messages/:messageId/forward → canWriteMessage
 - POST /tickets/:ticketId/phone → canSendTicket, phoneLimiter
+- PUT /tickets/:ticketId/copilot/progress → canWriteTicket
+- POST /tickets/:ticketId/suggest-reply → canSendTicket
+- POST /tickets/:ticketId/handoff-team → canSendTicket
+- POST /tickets/:ticketId/opening-template → canSendTicket
+- POST /tickets/:ticketId/copilot/brief → canReadTicket
+- PUT /tickets/:ticketId/copilot/requests/:requestId/feedback → canReadTicket
+- PUT /tickets/:ticketId/copilot/requests/:requestId/take → canSendTicket
 - PUT /tickets/:ticketId/pin → canReadTicket
+- POST /tickets/:ticketId/claim → canWriteTicket
+- POST /tickets/:ticketId/take → canReadTicket
 - POST /tickets/:ticketId/ai → canWriteTicket
 - PUT /tickets/:ticketId/archive → canWriteTicket
 - PUT /tickets/:ticketId/unread → canWriteTicket
@@ -176,20 +199,7 @@ Públicas: 31 · logado (qualquer perfil): 244 · gestão: 109 · admin: 31
 - PUT /whatsappsession/:whatsappId → canManageWhatsapp
 - DELETE /whatsappsession/:whatsappId → canManageWhatsapp
 
-## Continuidade, orçamento e anexos
+## Painel da gestão (admin e coordenação)
 
-As rotas abaixo usam o prefixo real da aplicação (não o prefixo interno dos subrouters):
-
-| Método e rota | Acesso | Uso |
-|---|---|---|
-| `GET /operations/config` | Gestão | Prazos e regras; opções financeiras somente para admin |
-| `PUT /operations/config` | Gestão | Salvar regras; valores financeiros exigem admin |
-| `GET /operations/summary` | Gestão | Exceções, disponibilidade, entregas; consumo somente para admin |
-| `PUT /operations/users/:id/capacity` | Gestão | `acceptsNewTickets` boolean e `maxOpenTickets` inteiro de 0 a 1.000; coordenador não altera administrador |
-| `POST /operations/reconcile/:kind/:id` | Gestão | `kind` = `schedule`, `campaign` ou `delivery`; confirmar `status` = `sent` ou `failed`, sem reenviar |
-| `POST /operations/files/revoke` | Admin | Revogar todos os links do `filename` informado |
-| `GET /files/messages/:id/link` | Logado, com acesso à conversa | Renovar link assinado de um anexo |
-| `PUT /me/preferences` | Logado | Também aceita `acceptsNewTickets` para pausar o próprio recebimento |
-| `GET /public/:filename?access=...` | Link assinado válido | Acesso temporário a arquivo; valida revogação e exclusão da mensagem |
-
-O registro de envio é preservado mesmo que a conversa seja removida, para não reduzir artificialmente o consumo do dia. A conferência manual de um envio incerto mantém sua reserva de custo até o fim do dia de consumo correspondente.
+- GET /dashboard/management (extraRoutes.ts)
+- POST /dashboard/management/feedback (extraRoutes.ts)

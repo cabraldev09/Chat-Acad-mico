@@ -59,7 +59,8 @@ const useLoad = (url, enabled = true, every = 0) => {
   useEffect(() => {
     load();
     if (!every) return undefined;
-    const t = setInterval(load, every);
+    // only while the tab is visible
+    const t = setInterval(() => { if (document.visibilityState === "visible") load(); }, every);
     return () => clearInterval(t);
   }, [load, every]);
   return { ...state, reload: load };

@@ -16,8 +16,9 @@ import { inMessagingWindow, validateTemplate } from "./Policy";
 import { lastInboundAt } from "./LastInbound";
 
 const context = new AsyncLocalStorage<number>();
-// errors our senders raise when the channel answered with a refusal (see SendWhatsAppMessage/Media): nothing was delivered
-const REFUSALS = ["ERR_SENDING_WAPP_MSG", "ERR_SENDING_WAPP_MEDIA_MSG", "ERR_REPLY_WINDOW_CLOSED", "ERR_RATE_LIMITED", "ERR_WAPP_NOT_INITIALIZED"];
+// Only errors that prove the provider did not accept the message are safe to retry.
+// Generic send errors can hide a timeout after provider acceptance and must stay uncertain.
+const REFUSALS = ["ERR_REPLY_WINDOW_CLOSED", "ERR_RATE_LIMITED", "ERR_WAPP_NOT_INITIALIZED", "ERR_PROVIDER_REFUSED"];
 export interface SendPolicy {
   key?: string;
   automated?: boolean;

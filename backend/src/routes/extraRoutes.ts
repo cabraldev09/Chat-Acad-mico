@@ -1,4 +1,5 @@
 import * as Tutoria from "../controllers/TutoriaController";
+import * as Notifications from "../controllers/NotificationController";
 import * as MetaCosts from "../controllers/MetaCostsController";
 import * as MetaTemplates from "../controllers/MetaTemplatesController";
 import isRetentionOperator from "../middleware/isRetentionOperator";
@@ -50,6 +51,7 @@ import * as Analytics from "../controllers/AnalyticsController";
 import * as AffMat from "../controllers/AffiliateMaterialController";
 import { affiliateUpload } from "../config/affiliateUpload";
 import { affiliateStaff, canAccessAffiliate } from "../helpers/Affiliates";
+import rateLimit from "../middleware/rateLimit";
 
 const upload = multer({ ...uploadConfig, limits: { fileSize: 30 * 1024 * 1024 } });
 const materialUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024, files: 1 } });
@@ -124,8 +126,8 @@ r.get("/analytics/tutoria", isAuth, Analytics.tutoria);
 r.get("/analytics/insights", isAuth, Analytics.insights);
 r.get("/analytics/online", isAuth, isManager, Analytics.online);
 
-r.get("/dashboard/management", isAuth, DashboardMgmt.management);
-r.post("/dashboard/management/feedback", isAuth, isManager, DashboardMgmt.managementFeedback);
+r.get("/dashboard/management", isAuth, isManager, DashboardMgmt.management);
+r.post("/dashboard/management/feedback", isAuth, isManager, rateLimit({ windowMs: 10 * 60 * 1000, max: 5, key: req => `management-feedback:${req.user.id}` }), DashboardMgmt.managementFeedback);
 r.get("/dashboard/manager", isAuth, DashboardMgmt.managerOverview);
 r.get("/dashboard/me", isAuth, DashboardMgmt.myDay);
 r.get("/dashboard", isAuth, Dashboard.index);
@@ -397,7 +399,14 @@ r.post("/leads/:id/activities", isAuth, canAccessLead, Lead.addNote);
 r.get("/leads/:id/tasks", isAuth, canAccessLead, Lead.leadTasks);
 r.post("/leads/:id/tasks", isAuth, canAccessLead, Lead.addTask);
 r.post("/leads/:id/open-ticket", isAuth, canAccessLead, Lead.openTicket);
+// the notification center (the bell): each person reads and marks only their own notices
+r.get("/notifications", isAuth, Notifications.index);
+r.get("/notifications/count", isAuth, Notifications.count);
+r.put("/notifications/read-all", isAuth, Notifications.readAll);
+r.put("/notifications/:id/read", isAuth, Notifications.read);
 r.get("/lead-tasks", isAuth, Lead.tasksIndex);
+// the numbers of the tabs and of the menu badge (the same filters as the list)
+r.get("/lead-tasks/counts", isAuth, Lead.tasksCounts);
 r.post("/lead-tasks/release-unreachable", isAuth, isManager, Lead.releaseUnreachable);
 r.get("/onboarding", isAuth, Lead.onboardingList);
 r.get("/onboarding/rules", isAuth, Lead.onboardingRules);
@@ -447,6 +456,8 @@ r.post("/leads/:id/onboarding", isAuth, canAccessLead, Lead.onboarding);
 r.put("/leads/:id/onboarding", isAuth, canAccessLead, Lead.editOnboarding);
 r.put("/leads/:id/tasks/:taskId", isAuth, canAccessLead, Lead.updateTask);
 r.post("/leads/:id/tasks/:taskId/toggle", isAuth, canAccessLead, Lead.completeTask);
+// conclude or reopen with the choice said (done: true | false): never flips a task the system closed a moment ago
+r.put("/leads/:id/tasks/:taskId/done", isAuth, canAccessLead, Lead.setTaskDone);
 r.delete("/leads/:id/tasks/:taskId", isAuth, canAccessLead, Lead.removeTask);
 
 // ---------------------------------------------------------------- proposals

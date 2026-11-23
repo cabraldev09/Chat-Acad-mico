@@ -25,10 +25,16 @@ export const RULES: Rule[] = [
   { table: "ClientErrors", where: `"createdAt" < NOW() - INTERVAL '{days} days'`, days: 60 },
   { table: "LeadReminderLogs", where: `"createdAt" < NOW() - INTERVAL '{days} days'`, days: 90 },
   { table: "PasswordResets", where: `("usedAt" IS NOT NULL OR "expiresAt" < NOW()) AND "createdAt" < NOW() - INTERVAL '{days} days'`, days: 30 },
-  // the copy of each webhook of the Meta: once processed, it is only an audit trail of a few days
+  // Webhook bodies can contain conversation content: keep completed and terminal failures for review for at most seven days.
   // what the daily review of the AI read: the trends of a year are enough for the training of the team
   { table: "ConsultantReviews", where: `"createdAt" < NOW() - INTERVAL '{days} days'`, days: 400 },
-  { table: "MetaWebhookEvents", where: `status = 'done' AND "updatedAt" < NOW() - INTERVAL '{days} days'`, days: 7 }
+  // the ledger of each send (dedupe key and estimated cost): the daily budget reads only today; a finished send is history after a few months
+  { table: "OutboundDeliveries", where: `status <> 'sending' AND "updatedAt" < NOW() - INTERVAL '{days} days'`, days: 120 },
+  // the log of the webhooks delivered to other systems: only the ones that ended (delivered, failed for good, cancelled)
+  { table: "WebhookDeliveries", where: `status NOT IN ('pending', 'sending') AND "createdAt" < NOW() - INTERVAL '{days} days'`, days: 30 },
+  // the notices of the bell: the read ones after a month, any after three
+  { table: "Notifications", where: `("readAt" IS NOT NULL AND "readAt" < NOW() - INTERVAL '{days} days') OR "createdAt" < NOW() - INTERVAL '90 days'`, days: 30 },
+  { table: "MetaWebhookEvents", where: `status IN ('done', 'failed') AND "updatedAt" < NOW() - INTERVAL '{days} days'`, days: 7 }
 ];
 
 const BATCH = 2000;

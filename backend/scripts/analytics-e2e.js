@@ -19,7 +19,7 @@ const PGUSER = process.env.PGUSER || require("os").userInfo().username;
 const psql = (db, q) => execFileSync(`${PGBIN}/psql`, ["-X", "-U", PGUSER, "-d", db, "-At", "-c", q]).toString().trim();
 const DB = `chat_analytics_${process.pid}_${crypto.randomBytes(4).toString("hex")}`;
 // free ports asked at start (scripts/e2e-ports.js): suites and runs side by side never collide
-const [PORT, TG_PORT] = require("./e2e-ports").freePorts(2);
+const [PORT, TG_PORT, AI_PORT] = require("./e2e-ports").freePorts(3);
 const API = `http://localhost:${PORT}`;
 
 // plain camelCase SQL: quote mixed-case identifiers for Postgres, print booleans as 1/0
@@ -46,6 +46,7 @@ const assert = (c, m) => { if (!c) throw new Error(m || "assertion failed"); };
 
 // ------------------------------------------------------------------ Telegram mock
 const tg = { updates: [], sent: [], n: 100, failChats: new Set(), delayMs: 0 };
+const aiMock = { requests: [], poloId: 0 };
 const startTelegramMock = () => {
   const app = express();
   app.use(express.json());
@@ -73,6 +74,24 @@ const startTelegramMock = () => {
   });
   return new Promise(r => { const s = app.listen(TG_PORT, () => r(s)); });
 };
+const startAiMock = () => {
+  const app = express();
+  app.use(express.json());
+  app.post("/v1/chat/completions", (req, res) => {
+    aiMock.requests.push(req.body);
+    return res.json({
+      choices: [{ message: { content: JSON.stringify({
+        summary: "Amostra elegível conferida no ambiente de teste.",
+        strengths: ["Atendimentos registrados"],
+        risks: [{ poloId: aiMock.poloId, issue: "Fila de teste", action: "Revisar a fila" }],
+        nextActions: ["Acompanhar o próximo período"],
+        caveats: []
+      }) } }],
+      usage: { prompt_tokens: 80, completion_tokens: 40, total_tokens: 120 }
+    });
+  });
+  return new Promise(r => { const s = app.listen(AI_PORT, () => r(s)); });
+};
 const sentTo = chat => tg.sent.filter(s => String(s.body.chat_id) === String(chat) && s.method === "sendMessage").length;
 
 // ------------------------------------------------------------------ harness
@@ -94,12 +113,12 @@ let connectionId, queueId;
 let seq = 0;
 
 // a conversation straight into the database, in the state a scenario needs
-const mkTicket = ({ owner = null, status, ai = false, unread = 1, closed = false } = {}) => {
+const mkTicket = ({ owner = null, queue = queueId, status, ai = false, unread = 1, closed = false } = {}) => {
   seq += 1;
   const chat = `${7000 + seq}`;
   const contactId = sql(`INSERT INTO Contacts (name, number, email, isGroup, channel, createdAt, updatedAt) VALUES ('Lead ${seq}', 'tg_${chat}', '', false, 'telegram', NOW(), NOW()) RETURNING id`).split("\n")[0];
   const st = status || (closed ? "closed" : owner ? "open" : "pending");
-  const ticketId = sql(`INSERT INTO Tickets (status, contactId, whatsappId, queueId, userId, aiActive, unreadMessages, isGroup, createdAt, updatedAt) VALUES ('${st}', ${contactId}, ${connectionId}, ${queueId}, ${owner || "NULL"}, ${ai}, ${unread}, false, NOW(), NOW()) RETURNING id`).split("\n")[0];
+  const ticketId = sql(`INSERT INTO Tickets (status, contactId, whatsappId, queueId, userId, aiActive, unreadMessages, isGroup, createdAt, updatedAt) VALUES ('${st}', ${contactId}, ${connectionId}, ${queue}, ${owner || "NULL"}, ${ai}, ${unread}, false, NOW(), NOW()) RETURNING id`).split("\n")[0];
   sql(`INSERT INTO Messages (id, ticketId, contactId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('seed-${ticketId}', ${ticketId}, ${contactId}, 'Olá, quero saber do curso', false, false, 'chat', 0, NOW(), NOW())`);
   return { ticketId: Number(ticketId), contactId: Number(contactId), chat };
 };
@@ -125,12 +144,13 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
     const env = {
       ...process.env, DATABASE_URL: "", DATABASE_URL_POOL: "", DB_SSL: "false", NODE_ENV: "test", DB_NAME: DB, DB_HOST: "localhost", DB_USER: PGUSER, DB_PASS: process.env.PGPASSWORD || "", DB_PORT: "5432", DB_DIALECT: "postgres",
       PORT: String(PORT), PROXY_PORT: String(PORT), BACKEND_URL: "http://localhost", PUBLIC_URL: API, FRONTEND_URL: "http://localhost:3000",
-      JWT_SECRET: "e2e", DASHBOARD_CACHE_MS: "0", JWT_REFRESH_SECRET: "e2e-r", LOGIN_RATE_MAX: "1000", TELEGRAM_API_URL: `http://localhost:${TG_PORT}`,
+      JWT_SECRET: "e2e", DASHBOARD_CACHE_MS: "0", JWT_REFRESH_SECRET: "e2e-r", LOGIN_RATE_MAX: "1000", TELEGRAM_API_URL: `http://localhost:${TG_PORT}`, OPENAI_API_URL: `http://localhost:${AI_PORT}`,
       SKIP_WHATSAPP_SESSIONS: "1", SKIP_DEFAULT_DATA: "1", LOG_LEVEL: "warn"
     };
     execFileSync("npx", ["sequelize", "db:migrate"], { cwd: ROOT, env, stdio: "ignore" });
     execFileSync("npx", ["sequelize", "db:seed:all"], { cwd: ROOT, env, stdio: "ignore" });
     await startTelegramMock();
+    await startAiMock();
     backend = spawn("node", ["dist/server.js"], { cwd: ROOT, env, stdio: ["ignore", "pipe", "pipe"] });
     let log = "";
     backend.stdout.on("data", d => (log += d));
@@ -149,6 +169,9 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
     gabrielli = await mkUser("Gabrielli", "gabrielli@x.com", "consultor");
     laura = await mkUser("Laura", "laura@x.com", "consultor");
     coord = await mkUser("Coordenação", "coord@x.com", "coordenacao");
+    const tutor = await mkUser("Tutor QA", "tutor@x.com", "tutor");
+    const academico = await mkUser("Acadêmico QA", "academico@x.com", "academico");
+    const relacionamento = await mkUser("Relacionamento QA", "relacionamento@x.com", "relacionamento");
     ids = { joao: userId("joao@x.com"), gabrielli: userId("gabrielli@x.com"), laura: userId("laura@x.com"), coord: userId("coord@x.com"), admin: userId("admin@whaticket.com") };
 
     const w = await http.post("/whatsapp", { name: "Telegram", channel: "telegram", config: JSON.stringify({ botToken: "123:ABC" }), queueIds: [queueId] }, as(admin));
@@ -160,13 +183,53 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
     const A = (token, p) => http.get(p, as(token));
     const strip = b => { const { period, ...rest } = b; return rest; };
     const KPIS = ["messagesSent", "attendances", "peopleContacted", "reactivated", "leadsWorked", "pendingReply", "inProgress", "tasksOpen", "tasksOverdue", "tasksDone", "followUpsDue", "proposalsSent", "proposalsViewed", "enrollments", "conversion"];
-    await test("polo supervisor feedback is management-only and skips OpenAI when the sample is insufficient", async () => {
-      const response = await http.post("/dashboard/management/feedback", { days: 1 }, as(admin));
+    await test("management dashboard and feedback enforce access for all six roles", async () => {
+      const denied = [joao, tutor, academico, relacionamento];
+      assert((await http.get("/dashboard/management", as(admin))).status === 200, "admin could not read management dashboard");
+      assert((await http.get("/dashboard/management", as(coord))).status === 200, "coordination could not read management dashboard");
+      for (const token of denied) {
+        assert((await http.get("/dashboard/management", as(token))).status === 403, "a non-manager read the management dashboard");
+        assert((await http.post("/dashboard/management/feedback", { days: 1 }, as(token))).status === 403, "a non-manager generated management feedback");
+      }
+    });
+
+    await test("polo supervisor feedback skips OpenAI when the sample is insufficient", async () => {
+      const response = await http.post("/dashboard/management/feedback", { days: 31 }, as(admin));
       assert(response.status === 200, `management feedback ${response.status} ${JSON.stringify(response.data)}`);
-      assert(response.data.period.days === 1 && response.data.minimumSample === 5, "feedback period or minimum sample is wrong");
+      assert(response.data.period.days === 31 && response.data.minimumSample === 5, "feedback period or minimum sample is wrong");
       assert(Array.isArray(response.data.base) && typeof response.data.summary === "string" && Array.isArray(response.data.risks), "feedback response shape");
       assert(response.data.summary.includes("Nenhum polo atingiu"), "the empty sample should not need an OpenAI agent");
       assert((await http.post("/dashboard/management/feedback", { days: 1 }, as(joao))).status === 403, "a consultant opened management feedback");
+      assert((await http.post("/dashboard/management/feedback", { days: 32 }, as(admin))).status === 400, "feedback accepted a range longer than 31 days");
+      const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+      assert((await http.post("/dashboard/management/feedback", { date: tomorrow }, as(admin))).status === 400, "feedback accepted a future date");
+      for (let i = 0; i < 2; i += 1) assert((await http.post("/dashboard/management/feedback", { days: 21 + i }, as(admin))).status === 200, "feedback was rate limited before the configured maximum");
+      assert((await http.post("/dashboard/management/feedback", { days: 23 }, as(admin))).status === 429, "management feedback is not rate limited per manager");
+    });
+
+    await test("eligible polo feedback reaches the provider with aggregates and caches its result", async () => {
+      const polo = await http.post("/polos", { name: "Polo QA Feedback", city: "Porto Velho", state: "RO" }, as(admin));
+      assert(polo.status === 201, `create test polo ${polo.status} ${JSON.stringify(polo.data)}`);
+      const salesQueue = (polo.data.queues || []).find(q => q.role === "comercial");
+      assert(salesQueue, "test polo has no sales queue");
+      aiMock.poloId = Number(polo.data.id);
+      sql("UPDATE AiAgents SET active=false");
+      const agent = await http.post("/ai-agents", { name: "Supervisor QA", provider: "openai", model: "gpt-4o-mini", apiKey: "sk-test-only", active: true, dailyTokenCap: 100000 }, as(admin));
+      assert(agent.status === 201, `create test AI agent ${agent.status} ${JSON.stringify(agent.data)}`);
+      const tickets = Array.from({ length: 5 }, () => mkTicket({ queue: salesQueue.id }));
+      const first = await http.post("/dashboard/management/feedback", { days: 1 }, as(coord));
+      assert(first.status === 200, `eligible feedback ${first.status} ${JSON.stringify(first.data)}`);
+      assert(first.data.summary === "Amostra elegível conferida no ambiente de teste.", "eligible model response was not returned");
+      assert(first.data.risks[0]?.polo === "Polo QA Feedback" && first.data.risks[0]?.evidence.includes("5 atendimentos"), "risk evidence does not match the numeric base");
+      assert(first.data.base.some(row => row.poloId === aiMock.poloId && row.attendances === 5), "eligible polo metrics were not reflected in the response");
+      assert(aiMock.requests.length === 1, `expected one provider request, got ${aiMock.requests.length}`);
+      const prompt = JSON.stringify(aiMock.requests[0].messages);
+      const userPrompt = (aiMock.requests[0].messages || []).find(message => message.role === "user")?.content || "";
+      assert(userPrompt.includes(`\"poloId\":${aiMock.poloId}`) && userPrompt.includes("\"attendances\":5"), `provider did not receive eligible aggregate metrics: ${userPrompt}`);
+      assert(!prompt.includes("Polo QA Feedback") && !prompt.includes("João Vitor") && !prompt.includes("5569999990001"), "provider prompt included names or contact data");
+      const cached = await http.post("/dashboard/management/feedback", { days: 1 }, as(coord));
+      assert(cached.status === 200 && aiMock.requests.length === 1, "feedback result was not cached");
+      assert(tickets.length === 5, "expected five synthetic tickets");
     });
     const stages = (await http.get("/lead-stages", as(admin))).data;
     const stageWon = (Array.isArray(stages) ? stages : stages.stages).find(x => x.type === "won");
@@ -188,7 +251,9 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
       const lead = (await http.post("/leads", { name: "Lead do João", phone: "5569999990001", stageId: undefined }, as(joao))).data.lead;
       assert(lead && lead.id, "lead not created");
       assert((await http.post(`/leads/${lead.id}/activities`, { type: "call", body: "liguei" }, as(joao))).status < 300, "note");
-      const task = (await http.post(`/leads/${lead.id}/tasks`, { title: "Retornar", dueAt: new Date(Date.now() - 3600000).toISOString() }, as(joao))).data;
+      // the late task is on another lead of João, still in the funnel (enrolling a lead closes the tasks of its sale by themselves)
+      const other = (await http.post("/leads", { name: "Outro lead do João", phone: "5569999990012", stageId: undefined }, as(joao))).data.lead;
+      const task = (await http.post(`/leads/${other.id}/tasks`, { title: "Retornar", dueAt: new Date(Date.now() - 3600000).toISOString() }, as(joao))).data;
       assert(task.id, "task");
       assert((await http.put(`/leads/${lead.id}/stage`, { skipEnroll: true, stageId: stageWon.id }, as(admin))).status === 200, "enroll");
       await sleep(300);
@@ -621,6 +686,89 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
       assert(!JSON.stringify(d).includes("Gabrielli") && !d.insights.some(i => i.key === "away_with_leads" || i.key === "unassigned"), "a consultant saw someone else's data");
       const hers = (await A(gabrielli, "/analytics/me/overview?range=month")).data;
       assert(hers.user.id === ids.gabrielli && hers.leads.stages.some(st => st.n >= 1), `Gabrielli sees her own leads ${JSON.stringify(hers.leads)}`);
+    });
+
+    // ------------------------------------------------------------ Tarefas que fecham sozinhas e central de avisos
+    console.log("\nTarefas e avisos");
+    const openStage = () => sql(`SELECT id FROM LeadStages WHERE type='open' ORDER BY position LIMIT 1`).split("\n")[0];
+    const mkLeadFor = (owner, name) => {
+      const t = mkTicket({ owner });
+      const id = sql(`INSERT INTO Leads (name, phone, source, stageId, ownerId, contactId, isHistorical, createdAt, updatedAt) VALUES ('${name}', '55690000${Math.floor(Math.random() * 90000 + 10000)}', 'WhatsApp', ${openStage()}, ${owner}, ${t.contactId}, false, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      return { leadId: Number(id), ticket: t };
+    };
+    const taskOf = id => { const [doneAt, reason, userId] = sql(`SELECT COALESCE(doneAt::text, ''), COALESCE(closedReason, ''), COALESCE(userId::text, '') FROM LeadTasks WHERE id=${id}`).split("|"); return { done: !!doneAt, reason, userId: userId ? Number(userId) : null }; };
+    await test("tasks: the tabs never count a task twice (Atrasadas, Hoje, Próximos) and concluding says which one it is", async () => {
+      const { leadId } = mkLeadFor(ids.joao, "Lead das abas");
+      const mk = async (minutes, title) => (await http.post(`/leads/${leadId}/tasks`, { title, type: "ligar", dueAt: new Date(Date.now() + minutes * 60000).toISOString() }, as(joao))).data;
+      const late = await mk(-60, "Atrasada");
+      const later = await mk(3 * 24 * 60, "Depois");
+      const lists = {};
+      for (const st of ["overdue", "today", "upcoming"]) lists[st] = (await http.get(`/lead-tasks?status=${st}&scope=mine`, as(joao))).data.map(t => t.id);
+      assert(lists.overdue.includes(late.id) && !lists.today.includes(late.id) && !lists.upcoming.includes(late.id), `late task in ${JSON.stringify(lists)}`);
+      assert(lists.upcoming.includes(later.id) && !lists.today.includes(later.id), "the task of next days");
+      const c = (await http.get("/lead-tasks/counts?scope=mine", as(joao))).data;
+      assert(c.overdue === lists.overdue.length && c.today === lists.today.length && c.upcoming === lists.upcoming.length && c.open === c.overdue + c.today + c.upcoming, `counts ${JSON.stringify(c)}`);
+      // concluding twice keeps it concluded (it used to flip back); reopening is explicit
+      for (let i = 0; i < 2; i += 1) assert((await http.put(`/leads/${leadId}/tasks/${late.id}/done`, { done: true }, as(joao))).status === 200, "done");
+      assert(taskOf(late.id).done === true && taskOf(late.id).reason === "done", "a second click reopened the task");
+      await http.put(`/leads/${leadId}/tasks/${late.id}/done`, { done: false }, as(joao));
+      assert(taskOf(late.id).done === false, "reopen");
+    });
+    await test("tasks: only the management gives a task to someone else; a colleague cannot touch it; deleting is registered", async () => {
+      const { leadId } = mkLeadFor(ids.joao, "Lead da permissão");
+      const t = (await http.post(`/leads/${leadId}/tasks`, { title: "Ligar amanhã", type: "ligar", dueAt: new Date(Date.now() + 86400000).toISOString() }, as(joao))).data;
+      assert((await http.put(`/leads/${leadId}/tasks/${t.id}`, { userId: ids.gabrielli }, as(joao))).status === 403, "a consultant handed a task to a colleague");
+      assert((await http.post(`/leads/${leadId}/tasks`, { title: "Para outra", dueAt: new Date().toISOString(), userId: ids.gabrielli }, as(joao))).status === 403, "a consultant created a task for a colleague");
+      assert((await http.put(`/leads/${leadId}/tasks/${t.id}`, { userId: ids.laura }, as(admin))).status === 200, "the management hands it");
+      assert(taskOf(t.id).userId === ids.laura, "handed");
+      // the new person has the notice in the bell; nobody else sees it
+      const bell = (await http.get("/notifications", as(laura))).data;
+      const notice = bell.notifications.find(n => n.kind === "task_assigned" && /Ligar amanhã/.test(n.title));
+      assert(notice && !notice.readAt && bell.unread >= 1, `notice ${JSON.stringify(bell).slice(0, 300)}`);
+      assert(!(await http.get("/notifications", as(gabrielli))).data.notifications.some(n => n.id === notice.id), "another person read the notice");
+      assert((await http.put(`/notifications/${notice.id}/read`, {}, as(gabrielli))).data.updated === 0, "another person marked the notice");
+      assert((await http.put(`/notifications/${notice.id}/read`, {}, as(laura))).data.updated === 1, "mark read");
+      await http.put("/notifications/read-all", {}, as(laura));
+      assert((await http.get("/notifications/count", as(laura))).data.unread === 0, "read all");
+      // a colleague who neither created it nor has it cannot delete it; the person who created it can, and the lead keeps the record
+      assert((await http.delete(`/leads/${leadId}/tasks/${t.id}`, as(gabrielli))).status === 403, "a colleague deleted the task");
+      assert((await http.delete(`/leads/${leadId}/tasks/${t.id}`, as(joao))).status === 200, "delete");
+      assert(Number(sql(`SELECT COUNT(*) FROM LeadActivities WHERE leadId=${leadId} AND body LIKE 'Tarefa apagada:%'`)) === 1, "deleting is not registered");
+    });
+    await test("tasks close by themselves: the AI handoff when the consultant answers, everything of the sale when the lead is enrolled", async () => {
+      const { leadId, ticket } = mkLeadFor(ids.joao, "Lead do handoff");
+      const handoff = sql(`INSERT INTO LeadTasks (leadId, userId, title, type, kind, priority, ticketId, dueAt, createdAt, updatedAt) VALUES (${leadId}, ${ids.joao}, 'Atender lead encaminhado pelo agente de IA', 'whatsapp', 'handoff', 'high', ${ticket.ticketId}, NOW() + INTERVAL '15 minutes', NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const manual = (await http.post(`/leads/${leadId}/tasks`, { title: "Enviar proposta", type: "proposta", dueAt: new Date(Date.now() + 3600000).toISOString() }, as(joao))).data;
+      // the list shows it urgent and with its conversation
+      const listed = (await http.get("/lead-tasks?status=open&scope=mine", as(joao))).data.find(t => t.id === Number(handoff));
+      assert(listed && listed.priority === "high" && listed.ticketId === ticket.ticketId, `listed ${JSON.stringify(listed)}`);
+      assert(ok(await send(joao, ticket.ticketId, "Oi! Já vou te ajudar")), "reply");
+      await waitFor(() => taskOf(handoff).done, 10000, "the handoff task closed after the reply");
+      assert(taskOf(handoff).reason === "replied", `reason ${taskOf(handoff).reason}`);
+      assert(taskOf(manual.id).done === false, "the reply closed a task it should not");
+      assert((await http.put(`/leads/${leadId}/stage`, { skipEnroll: true, stageId: stageWon.id }, as(admin))).status === 200, "won");
+      await waitFor(() => taskOf(manual.id).done, 8000, "the sale task closed with the enrollment");
+      assert(taskOf(manual.id).reason === "lead_won", `reason ${taskOf(manual.id).reason}`);
+    });
+    await test("the academic transcript: an analysis created for the lead closes 'Pedir o histórico' and takes the lead out of 'Aguardando histórico'", async () => {
+      const ensureStage = (name, pos) => sql(`SELECT id FROM LeadStages WHERE name='${name}'`).split("\n")[0] || sql(`INSERT INTO LeadStages (name, color, position, type, createdAt, updatedAt) VALUES ('${name}', '#f59e0b', ${pos}, 'open', NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const waiting = ensureStage("Aguardando histórico", 40);
+      const analysis = ensureStage("Análise curricular", 41);
+      const { leadId } = mkLeadFor(ids.joao, "Lead do histórico");
+      sql(`UPDATE Leads SET stageId=${waiting} WHERE id=${leadId}`);
+      const task = sql(`INSERT INTO LeadTasks (leadId, userId, title, type, kind, dueAt, createdAt, updatedAt) VALUES (${leadId}, ${ids.joao}, 'Pedir o histórico acadêmico ao lead', 'documentos', 'transcript', NOW() + INTERVAL '2 days', NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const polo = sql(`SELECT id FROM Polos ORDER BY id LIMIT 1`).split("\n")[0] || sql(`INSERT INTO Polos (code, name, active, createdAt, updatedAt) VALUES ('TRX', 'Polo Histórico', true, NOW(), NOW()) RETURNING id`).split("\n")[0];
+      const FormData = require("form-data");
+      const f = new FormData();
+      f.append("file", require("fs").readFileSync(path.join(__dirname, "fixtures", "sample-analise.pdf")), { filename: "historico.pdf", contentType: "application/pdf" });
+      f.append("candidateName", "Lead do histórico");
+      f.append("poloId", polo);
+      f.append("leadId", String(leadId));
+      const r = await http.post("/analysis/curricular", f, { headers: { ...f.getHeaders(), ...as(admin).headers } });
+      assert(r.status === 201, `analysis ${r.status} ${JSON.stringify(r.data).slice(0, 200)}`);
+      await waitFor(() => taskOf(task).done, 10000, "the transcript task closed");
+      assert(taskOf(task).reason === "transcript_received", `reason ${taskOf(task).reason}`);
+      await waitFor(() => sql(`SELECT stageId FROM Leads WHERE id=${leadId}`) === String(analysis), 8000, "the lead left Aguardando histórico");
     });
   } catch (err) {
     results.push([false, `setup -> ${err.stack || err.message}`]);

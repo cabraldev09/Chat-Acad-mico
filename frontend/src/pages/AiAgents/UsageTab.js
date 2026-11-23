@@ -20,9 +20,11 @@ const nf = (n) => Number(n || 0).toLocaleString("pt-BR");
 const UsageTab = ({ agentId, model }) => {
   const classes = useStyles();
   const [u, setU] = useState(null);
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const [price, setPrice] = useState({ in: "", out: "" });
-  const load = () => api.get(`/ai-agents/${agentId}/usage`, { params: { days: 7 } }).then(({ data }) => setU(data)).catch(toastError);
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [agentId]);
+  const load = () => { setU(null); setFailed(false); return api.get(`/ai-agents/${agentId}/usage`, { params: { days: 7 } }).then(({ data }) => setU(data)).catch((err) => { setFailed(true); toastError(err); }); };
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [agentId, attempt]);
   const savePrice = async () => {
     try {
       await api.put(`/settings/ai_price_${model}`, { value: `${String(price.in).replace(",", ".")},${String(price.out).replace(",", ".")}` });
@@ -30,7 +32,7 @@ const UsageTab = ({ agentId, model }) => {
       load();
     } catch (err) { toastError(err); }
   };
-  if (!u) return null;
+  if (!u) return failed ? <div role="alert"><Typography color="textSecondary" variant="body2">Não foi possível carregar o uso e o custo estimado.</Typography><Button size="small" onClick={() => setAttempt((n) => n + 1)}>Tentar novamente</Button></div> : <LinearProgress aria-label="Carregando uso do agente" />;
   const max = Math.max(1, ...u.perDay.map((d) => d.input + d.output));
   const pct = u.cap > 0 ? Math.min(100, (u.today / u.cap) * 100) : 0;
   return (

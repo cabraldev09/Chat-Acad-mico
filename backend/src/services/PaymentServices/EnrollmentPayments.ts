@@ -323,6 +323,11 @@ const markPaidCore = async (
 
   // "Taxa pendente" becomes "Taxa paga" right now, on the lead, the contact and the conversations
   await markFeePaid(lead);
+  // the task of sending the billet is done, and the consultant hears that the fee was paid (kept in the bell)
+  const { closeTasksFor } = await import("../CrmServices/TaskLifecycle");
+  await closeTasksFor(lead.id, ["billet"], "paid");
+  const { notify } = await import("../NotificationServices/Notify");
+  void notify([lead.ownerId, payment.recipientUserId], { kind: "payment_paid", level: "info", title: `Taxa de matrícula paga: ${lead.name}`, body: `${brl(paidValue)} confirmados.`, link: `/crm?lead=${lead.id}`, dedupeKey: `payment-paid:${payment.id}` });
 
   const fresh = await loadLead(lead.id);
   getIO().emit("lead", { action: "update", lead: fresh });
@@ -460,6 +465,7 @@ export const generateScheduledCharges = async (): Promise<void> => {
         leadId: lead.id,
         userId: owner,
         type: "whatsapp",
+        kind: "billet",
         title: `Enviar o boleto da taxa de matrícula (${brl(Number(payment.amount))}, vence em ${new Date(`${payment.dueDate}T12:00:00Z`).toLocaleDateString("pt-BR", { timeZone: "UTC" })})`,
         dueAt: new Date()
       } as any);

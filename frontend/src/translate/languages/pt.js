@@ -494,6 +494,7 @@ const messages = {
         ERR_TEMPLATE_INVALID: "Confira nome, idioma e parâmetros do template aprovado.",
         ERR_DELIVERY_KEY_CONFLICT: "Este identificador de envio já pertence a outro destinatário.",
         ERR_DELIVERY_UNCERTAIN: "Este envio já foi iniciado. Confira a entrega antes de criar um novo envio.",
+        ERR_PROVIDER_REFUSED: "O provedor recusou o envio. Corrija o destinatário ou a mensagem antes de tentar novamente.",
         ERR_DELIVERY_NOT_UNCERTAIN: "Este envio não está mais aguardando conferência. Atualize a tela.",
         ERR_FILE_ACCESS_EXPIRED: "O link do arquivo expirou ou foi revogado. Reabra a conversa para atualizar o acesso.",
         ERR_AI_TOKEN_CAP: "O orçamento reservado da IA atingiu o limite. O atendimento continuará com a equipe.",
@@ -693,7 +694,7 @@ const messages = {
         ERR_INVALID_CREDENTIALS:
           "Erro de autenticação. Por favor, tente novamente.",
         ERR_SENDING_WAPP_MSG:
-          "Erro ao enviar mensagem do WhatsApp. Verifique a página de conexões.",
+          "Não foi possível confirmar o envio. Confira a conversa antes de tentar novamente.",
         ERR_DELETE_WAPP_MSG: "Não foi possível excluir a mensagem do WhatsApp.",
         ERR_OTHER_OPEN_TICKET: "Já existe um tíquete aberto para este contato.",
         ERR_FOLLOWUP_PENDING: "Antes de continuar, informe se o aluno das análises anteriores se matriculou.",

@@ -391,4 +391,5 @@ const TicketListItem = ({ ticket }) => {
   );
 };
 
-export default TicketListItem;
+// a new message redraws only the row whose conversation changed (the list holds dozens of rows and every live event re-rendered all of them)
+export default React.memo(TicketListItem);

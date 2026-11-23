@@ -124,7 +124,7 @@ export default function MetaTemplates({ values, save }) {
   const reviewing = (data?.templates || []).some((t) => t.status === "PENDING" || t.status === "IN_APPEAL");
   useEffect(() => {
     if (!reviewing) return undefined;
-    const t = setInterval(() => load(true), 30000);
+    const t = setInterval(() => { if (document.visibilityState === "visible") load(true); }, 30000);
     return () => clearInterval(t);
   }, [reviewing, load]);
 

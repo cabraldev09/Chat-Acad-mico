@@ -216,11 +216,41 @@ const Board = () => {
 
   useEffect(() => { const t = setTimeout(load, filters.search ? 350 : 0); return () => clearTimeout(t); }, [load, filters.search]);
 
+  // A change of a lead that is on the board and stays in the same column updates only its card. Anything else (a new lead, a change of
+  // column, a removal) reloads the board, at most once every few seconds: the AI and the automations touch leads all day, and the
+  // whole board (two queries per column) used to be read again by every open screen on each of those touches.
+  const boardNow = useRef(board);
+  useEffect(() => { boardNow.current = board; }, [board]);
+  const lastFull = useRef(0);
   useEffect(() => {
     const socket = openSocket();
-    socket.on("lead", () => { clearTimeout(timer.current); timer.current = setTimeout(load, 500); });
+    const reload = () => {
+      clearTimeout(timer.current);
+      const wait = Math.max(500, 5000 - (Date.now() - lastFull.current));
+      timer.current = setTimeout(() => { lastFull.current = Date.now(); load(); }, wait);
+    };
+    socket.on("lead", (data) => {
+      const lead = data && data.lead;
+      const stages = boardNow.current;
+      if (view === "board" && stages && lead && data.action === "update") {
+        const column = stages.find((st) => st.leads.some((l) => l.id === lead.id));
+        if (column && (lead.stageId === undefined || Number(lead.stageId) === Number(column.id))) {
+          setBoard((prev) => prev && prev.map((st) => {
+            if (st.id !== column.id) return st;
+            return { ...st, leads: st.leads.map((card) => {
+              if (card.id !== lead.id) return card;
+              const merged = { ...card };
+              Object.keys(card).forEach((k) => { if (lead[k] !== undefined) merged[k] = lead[k]; });
+              return merged;
+            }) };
+          }));
+          return;
+        }
+      }
+      reload();
+    });
     return () => { clearTimeout(timer.current); socket.disconnect(); };
-  }, [load]);
+  }, [load, view]);
 
   const moveLead = async (leadId, stage, e, extra = {}) => { e && e.persist && e.persist();
     // optimistic update so the card lands instantly

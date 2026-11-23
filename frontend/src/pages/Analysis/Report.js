@@ -4,6 +4,17 @@ import ReactDOM from "react-dom";
 import logoWhite from "../../assets/logo-cruzeiro.svg";
 import { cn, completionOf, pluralize, statusOutcome } from "./orig";
 
+// the handwritten font of the report's slogan is loaded with the analysis screens (this module), not on every screen of the system
+const loadSloganFont = () => {
+  if (typeof document === "undefined" || document.getElementById("font-caveat")) return;
+  const link = document.createElement("link");
+  link.id = "font-caveat";
+  link.rel = "stylesheet";
+  link.href = "https://fonts.googleapis.com/css2?family=Caveat:wght@700&display=swap";
+  document.head.appendChild(link);
+};
+loadSloganFont();
+
 // "Gerar relatório do aluno": the report that the original prints for the student (header band, journey, path to
 // graduation, pending subjects and the next step). It opens over the system and prints alone (Imprimir / Salvar PDF).
 

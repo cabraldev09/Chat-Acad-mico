@@ -12,6 +12,6 @@ describe("limpeza noturna", () => {
     const { trimmed, failed } = await runRetention();
     expect(failed).toEqual(["AiUsage"]);
     expect(trimmed.AgentTurnLogs).toBe(0);
-    expect(RULES.some(r => r.table === "MetaWebhookEvents" && /status = 'done'/.test(r.where))).toBe(true);
+    expect(RULES.some(r => r.table === "MetaWebhookEvents" && /status IN \('done', 'failed'\)/.test(r.where))).toBe(true);
   });
 });

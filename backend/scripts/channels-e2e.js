@@ -490,7 +490,7 @@ const postMeta = (id, payload, secret, badSig) => {
       PORT: String(PORT), PROXY_PORT: String(PORT), BACKEND_URL: "http://localhost", PUBLIC_URL: API,
       FRONTEND_URL: "http://localhost:3000", JWT_SECRET: "e2e", JWT_REFRESH_SECRET: "e2e-r", DASHBOARD_CACHE_MS: "0", LOGIN_RATE_MAX: "150",
       TELEGRAM_API_URL: `http://localhost:${TG_PORT}`, GRAPH_API_URL: `http://localhost:${GRAPH_PORT}`, INSTAGRAM_TOKEN_URL: `http://localhost:${GRAPH_PORT}/ig/oauth/access_token`, INSTAGRAM_GRAPH_URL: `http://localhost:${GRAPH_PORT}/ig`, CHANNEL_TOKEN_REFRESH_MS: "2500", CHANNEL_TOKEN_FIRST_MS: "1500",
-      SKIP_WHATSAPP_SESSIONS: "1", SKIP_DEFAULT_DATA: "1", LOG_LEVEL: "warn", EFI_API_URL: `http://localhost:${EFI_PORT}`, EFI_BILLET_API_URL: `http://localhost:${BILLET_PORT}`, EFI_POLL_MS: "1500",
+      SKIP_WHATSAPP_SESSIONS: "1", SKIP_DEFAULT_DATA: "1", SETTINGS_CACHE_MS: "0", LOG_LEVEL: "warn", EFI_API_URL: `http://localhost:${EFI_PORT}`, EFI_BILLET_API_URL: `http://localhost:${BILLET_PORT}`, EFI_POLL_MS: "1500",
       ANTHROPIC_API_URL: `http://localhost:${AI_PORT}`, OPENAI_API_URL: `http://localhost:${AI_PORT}`, STALE_RUNS_MS: "4000", HANDOFF_SLA_MS: "4000", ONBOARDING_SLA_MS: "4000", REACTIVATION_MS: "3000", ALLOW_PRIVATE_URLS: "true", CRM_WATCH: "off"
 
     };
@@ -5429,11 +5429,13 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(mineSt.status === 200 && mineSt.data.scope === "mine" && mineSt.data.byTutor.every(t => t.tutorId === tutor.id) && mineSt.data.period, `a tutor read the management panel ${JSON.stringify(mineSt.data).slice(0, 200)}`);
       assert((await http.get("/onboarding/stats", asUser(consTok))).status === 403, "a consultant read the tutoring numbers");
 
-      // over 24 h without the first contact: one task for every administrator, once
+      // over 24 h without the first contact: ONE urgent task without a person (the management hands it out; it used to be one per manager,
+      // and none of them ever closed) and a notice in the bell of every manager, once
       sql(`UPDATE Leads SET onboardingStatus='pending', onboardingAlertAt=NULL, enrolledAt=NOW() - INTERVAL '2 days' WHERE id=${lead.id}`);
-      await waitFor(() => Number(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${lead.id} AND title LIKE 'Ambientação atrasada%'`)) >= 1, 15000, "late onboarding task for the administrators");
+      await waitFor(() => Number(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${lead.id} AND title LIKE 'Ambientação atrasada%'`)) >= 1, 15000, "late onboarding task for the management");
       const admins = Number(sql(`SELECT COUNT(*) FROM Users WHERE profile='admin' OR role IN ('admin','coordenacao')`));
-      assert(Number(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${lead.id} AND title LIKE 'Ambientação atrasada%'`)) === admins, "one task per administrator expected");
+      assert(Number(sql(`SELECT COUNT(*) FROM LeadTasks WHERE leadId=${lead.id} AND title LIKE 'Ambientação atrasada%' AND userId IS NULL AND kind='onboarding_late' AND priority='high'`)) === 1, "one task without a person expected");
+      await waitFor(() => Number(sql(`SELECT COUNT(*) FROM Notifications WHERE kind='onboarding_late' AND dedupeKey='onboarding-late:${lead.id}'`)) === admins, 8000, "a notice for every manager");
     });
     await test("grades: reading them again rewrites the WhatsApp text of every matrix and lists only real internships", async () => {
       const r = await http.post("/grades/refresh", {}, auth());
@@ -6931,10 +6933,10 @@ const postMeta = (id, payload, secret, badSig) => {
         const ticket=await Ticket.findByPk(${tgTicket}),lead=await Lead.findOne({where:{contactId:ticket.contactId}});
         await lead.update({wonAt:null,lostAt:null,firstContactAt:new Date(Date.now()-86400000)});await ticket.update({status:"open",isHistorical:false,archivedAt:null});
         const last=await Message.findOne({where:{ticketId:ticket.id},order:[["createdAt","DESC"]]});
-        const msg=await Message.create({id:"sla-after-human",ticketId:ticket.id,fromMe:false,body:"Nova dúvida",createdAt:new Date(+last.createdAt+1000)});
+        const msg=await Message.create({id:"sla-after-human",ticketId:ticket.id,fromMe:false,body:"Nova dúvida",createdAt:new Date(+last.createdAt+1000)});const wasFromMe=ticket.lastMessageFromMe;await ticket.update({lastMessageFromMe:false});
         await setSetting("business_hours",JSON.stringify({enabled:false}));await setSetting("crm_sla_minutes","0.000001");await setSetting("crm_escalation_minutes","0.000001");
         const before=await Event.count({where:{ticketId:ticket.id,type:"sla"}});
-        try{await new Promise(r=>setTimeout(r,1200));await runLeadSlaAlertOnce();await runLeadSlaAlertOnce();assert.equal(await Event.count({where:{ticketId:ticket.id,type:"sla"}}),before+1);}finally{await msg.destroy();await setSetting("crm_sla_minutes","15");await setSetting("crm_escalation_minutes","30");}`);
+        try{await new Promise(r=>setTimeout(r,1200));await runLeadSlaAlertOnce();await runLeadSlaAlertOnce();assert.equal(await Event.count({where:{ticketId:ticket.id,type:"sla"}}),before+1);}finally{await msg.destroy();await ticket.update({lastMessageFromMe:wasFromMe});await setSetting("crm_sla_minutes","15");await setSetting("crm_escalation_minutes","30");}`);
     });
     await test("private attachments reject unsigned links and support revocation", async () => {
       const fileHttp = axios.create({ baseURL: API, validateStatus: () => true, httpAgent: new (require("http").Agent)({ keepAlive: false }) });

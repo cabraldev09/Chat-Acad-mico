@@ -33,6 +33,10 @@ const sendMedia = async ({
   automated = false,
   displayName
 }: Request): Promise<ProviderMessage> => {
+  // Once a provider resolves the send, any later database or filesystem error is
+  // ambiguous: the media may already be on the recipient's phone.
+  let acceptedByProvider = false;
+  let providerCallStarted = false;
   try {
     if (!ticket.whatsappId) {
       throw new AppError("ERR_TICKET_NO_WHATSAPP");
@@ -48,12 +52,14 @@ const sendMedia = async ({
         const mp3 = await toMp3(outgoing);
         if (mp3) outgoing = mp3;
       }
+      providerCallStarted = true;
       const sent = await getAdapter(channel).sendMedia(
         whatsapp,
         ticket.contact as any,
         outgoing,
         caption
       );
+      acceptedByProvider = true;
       // keep a copy in /public so the agent UI can render what was sent
       await CreateMessageService({
         messageData: {
@@ -121,12 +127,14 @@ const sendMedia = async ({
 
     let sentMessage: ProviderMessage;
     try {
+      providerCallStarted = true;
       sentMessage = await whatsappProvider.sendMedia(
         ticket.whatsappId,
         chatId,
         mediaInput,
         mediaOptions
       );
+      acceptedByProvider = true;
       recordSendResult(whatsapp, true);
     } catch (sendErr) {
       recordSendResult(whatsapp, false);
@@ -141,8 +149,10 @@ const sendMedia = async ({
     return sentMessage;
   } catch (err) {
     logger.error({ info: "Could not send the media", err: String(err) });
+    const knownRefusal = err instanceof AppError && ["ERR_REPLY_WINDOW_CLOSED", "ERR_RATE_LIMITED", "ERR_WAPP_NOT_INITIALIZED", "ERR_PROVIDER_REFUSED"].includes(err.message);
+    if (acceptedByProvider || (providerCallStarted && !knownRefusal)) throw new AppError("ERR_DELIVERY_UNCERTAIN", 409);
     // the channel said why (for example the 24 h window of Instagram is closed): the person is told, instead of a generic failure
-    if (err instanceof AppError && err.message === "ERR_REPLY_WINDOW_CLOSED") throw err;
+    if (err instanceof AppError && (knownRefusal || err.message === "ERR_DELIVERY_UNCERTAIN")) throw err;
     throw new AppError("ERR_SENDING_WAPP_MSG");
   }
 };

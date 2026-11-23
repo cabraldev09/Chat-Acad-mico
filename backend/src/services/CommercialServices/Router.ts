@@ -344,6 +344,9 @@ export const routeToCommercial = async (ticket: Ticket, opts: RouteOptions): Pro
   const noTeam = !!queue && !user && !fallback;
   // the person who takes it hears about it now (not only when the lead writes again) and gets a task
   try {
+    // kept in the bell of who takes it (or of the management, when nobody of the team could take it)
+    const { notify, managerIds } = await import("../NotificationServices/Notify");
+    void notify(user ? [user.id] : await managerIds(), { kind: "ai_handoff", level: "warning", title: `Lead encaminhado pela IA: ${lead?.name || ticket.contact?.name || "contato"}`, body: WHY_TEXT[opts.why], link: `/tickets/${ticket.id}`, dedupeKey: `ai-handoff:${ticket.id}:${new Date().toISOString().slice(0, 13)}` });
     getIO().emit("aiHandoff", {
       ticketId: ticket.id,
       leadId: lead ? lead.id : null,
@@ -366,7 +369,7 @@ export const routeToCommercial = async (ticket: Ticket, opts: RouteOptions): Pro
         await LeadReminderLog.create({ leadId: lead.id, key } as any);
         // inside the working hours the team has 15 minutes; outside, the first quarter of an hour of the next working day
         const dueAt = within ? new Date(Date.now() + 15 * 60000) : new Date((nextOpening(business) || new Date(Date.now() + 3600000)).getTime() + 15 * 60000);
-        await LeadTask.create({ leadId: lead.id, userId: owner, type: "whatsapp", title: "Atender lead encaminhado pelo agente de IA", dueAt } as any);
+        await LeadTask.create({ leadId: lead.id, userId: owner, type: "whatsapp", title: "Atender lead encaminhado pelo agente de IA", dueAt, kind: "handoff", priority: "high", ticketId: ticket.id } as any);
         await syncNextFollowUp(lead.id);
       }
       await addActivity(lead.id, null, "system", `Encaminhado pelo agente de IA ao ${label}${user ? ` (${user.name})` : ""}. Motivo: ${WHY_TEXT[opts.why]}.${priority ? ` Prioridade ${priority} (lead quente).` : ""}`).catch(() => undefined);

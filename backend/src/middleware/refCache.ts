@@ -22,8 +22,13 @@ export const cached =
     next();
   };
 
+// the writes of every minute that never touch reference data: sending and reading messages, moving conversations, the copilot, the
+// activities and tasks of a lead and the reports of screen errors. Before, each of them emptied the cache of every user, so during the
+// working day the cache was almost always empty. Any other change still clears it.
+const NOT_REFERENCE = /^\/(messages|client-errors|tickets|copilot|forward|typing|outbound|notifications)(\/|$|\?)|^\/leads\/\d+\/(activities|tasks)(\/|$|\?)/;
+
 export const clearCacheOnChange = (req: Request, res: Response, next: NextFunction): void => {
-  if (req.method !== "GET" && req.method !== "HEAD" && req.method !== "OPTIONS") {
+  if (req.method !== "GET" && req.method !== "HEAD" && req.method !== "OPTIONS" && !NOT_REFERENCE.test(req.path)) {
     res.on("finish", () => {
       if (res.statusCode < 400) forget("ref:");
     });

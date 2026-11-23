@@ -167,7 +167,8 @@ const processCampaign = async (campaign: Campaign): Promise<void> => {
         return;
       }
       // a failed step is not retried (the earlier ones already reached the person)
-      logger.warn(`Campaign ${fresh.id} -> ${shipping.number} step ${index + 1} failed: ${err?.message || err}`);
+      const errorCode = /^ERR_[A-Z0-9_]+$/.test(String(err?.message || "")) ? String(err.message) : "UNEXPECTED";
+      logger.warn({ campaignId: fresh.id, shippingId: shipping.id, step: index + 1, errorCode }, "Campaign delivery step failed");
       // a refusal decided here, before anything left (opted out, closed window, template not authorized, budget, business hours): it
       // surely did not reach the person, so it is "failed" with the reason, never "uncertain" (which asks the team to check the chat)
       const refused = /^ERR_(CONTACT_OPTED_OUT|MESSAGING_WINDOW_CLOSED|TEMPLATES_NOT_AUTHORIZED|TEMPLATE_INVALID|TEMPLATES_UNSUPPORTED|OUTBOUND_BUDGET|OUTBOUND_RATE_REQUIRED|OUTSIDE_BUSINESS_HOURS|NO_WAPP_FOUND|INVALID_NUMBER|WAPP_NOT_INITIALIZED)$/.test(String(err?.message || ""));

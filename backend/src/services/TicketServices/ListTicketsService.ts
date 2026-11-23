@@ -13,6 +13,11 @@ import UserQueue from "../../models/UserQueue";
 import { portable } from "../../helpers/sqlDialect";
 import { Role, SEGMENTS_OF, isManagerRole } from "../../helpers/Roles";
 import { connectionScopeOf, ticketScopeWhere } from "../../helpers/ConnectionScope";
+import { remember } from "../../helpers/TtlCache";
+
+// who sees which numbers and sectors changes rarely: the lists of one person read it from memory for a few seconds
+// (each new message makes every open screen count its chips again)
+const SCOPE_TTL = 5000;
 
 interface Request {
   searchParam?: string;
@@ -210,9 +215,9 @@ const ListTicketsService = async ({
     if (role !== "coordenacao") scope.push({ [Op.or]: [{ userId: me }, { userId: { [Op.is]: null } }] });
     // the official number (WhatsApp Cloud API) is shared by the whole team: there each person only sees the conversations given to them and the
     // ones waiting in a queue of theirs (the polo's), never the ones the AI is still attending nor a colleague's
-    const official = (await Whatsapp.findAll({ where: { channel: "whatsapp_cloud" } as any, attributes: ["id"] })).map(w => w.id);
+    const official = await remember("scope:official-numbers", SCOPE_TTL, async () => (await Whatsapp.findAll({ where: { channel: "whatsapp_cloud" } as any, attributes: ["id"] })).map(w => w.id));
     if (official.length) {
-      const mine = (await UserQueue.findAll({ where: { userId: me }, attributes: ["queueId"] })).map(q => q.queueId);
+      const mine = await remember(`scope:queues:${me}`, SCOPE_TTL, async () => (await UserQueue.findAll({ where: { userId: me }, attributes: ["queueId"] })).map(q => q.queueId));
       scope.push({
         [Op.or]: [
           { whatsappId: { [Op.notIn]: official } },
@@ -226,7 +231,7 @@ const ListTicketsService = async ({
   }
 
   // groups, communities and private chats follow the connection: nobody reads another number's groups or personal chats
-  const byConnection = ticketScopeWhere(await connectionScopeOf(userId, role), userId);
+  const byConnection = ticketScopeWhere(await remember(`scope:connections:${userId}:${role || ""}`, SCOPE_TTL, () => connectionScopeOf(userId, role)), userId);
   if (byConnection) whereCondition = { [Op.and]: [whereCondition, byConnection] } as any;
 
   // pins come first: the ones this person made in the system, and the ones pinned on the phone's WhatsApp
@@ -273,7 +278,10 @@ const ListTicketsService = async ({
   }
 
   if (countOnly) {
-    const total = await Ticket.count({ where: finalWhere as any, include: includeCondition, distinct: true });
+    // a counter only joins what it filters on (the contact for a search, the tags for a tag): the other joins are only for showing
+    // rows, and with them every chip of the screen cost a five-table COUNT DISTINCT on each new message
+    const countInclude = includeCondition.filter((inc: any) => (inc.as === "contact" && !!searchParam) || (inc.as === "tags" && !!tagId));
+    const total = await Ticket.count({ where: finalWhere as any, include: countInclude, distinct: countInclude.length > 0, col: "id" });
     return { tickets: [], count: total, hasMore: false };
   }
 

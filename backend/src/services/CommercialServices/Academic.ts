@@ -383,7 +383,7 @@ export const runAcademicTool = async (name: string, input: any, ctx: AcademicCtx
           const key = `callback:${ymd}`;
           if (!(await LeadReminderLog.findOne({ where: { leadId: lead.id, key } }))) {
             await LeadReminderLog.create({ leadId: lead.id, key } as any);
-            await LeadTask.create({ leadId: lead.id, userId: lead.ownerId || null, type: "ligar", title: `Retornar ao lead no horário combinado (${quando})${input.observacao ? `: ${String(input.observacao).slice(0, 80)}` : ""}`, dueAt: at } as any);
+            await LeadTask.create({ leadId: lead.id, userId: lead.ownerId || null, type: "ligar", kind: "callback", title: `Retornar ao lead no horário combinado (${quando})${input.observacao ? `: ${String(input.observacao).slice(0, 80)}` : ""}`, dueAt: at } as any);
             await syncNextFollowUp(lead.id);
           }
         }
