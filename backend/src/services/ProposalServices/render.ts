@@ -9,7 +9,7 @@ export interface RenderInput {
   title: string; // course name
   modalityLabel?: string; // e.g. "EAD - Graduação"
   leadName: string;
-  institution?: { name: string; cnpj?: string | null; logoFile?: string | null } | null;
+  institution?: { name: string; cnpj?: string | null; logoFile?: string | null; brandColor?: string | null; footer?: string | null } | null;
   params: ProposalParams;
   result: ProposalResult;
   texts: { bolsaNote?: string | null; observation?: string | null; disclaimer?: string | null; finalMessage?: string | null };
@@ -46,6 +46,8 @@ const fmtDate = (d: Date) => fmtDateTime(d);
 export const renderProposalHtml = (i: RenderInput): string => {
   const { params: p, result: r } = i;
   const logo = logoDataUri(i.institution?.logoFile);
+  // the color of the university's brand on the titles of the table (only a valid #RRGGBB reaches the page)
+  const brand = /^#[0-9a-fA-F]{6}$/.test(String(i.institution?.brandColor || "")) ? String(i.institution?.brandColor) : null;
   const first = p.firstMonthly;
   const firstDue = p.firstDueDate ? new Date(`${p.firstDueDate}T12:00:00`).toLocaleDateString("pt-BR") : null;
   const secondDue = p.secondDueDate ? new Date(`${p.secondDueDate}T12:00:00`).toLocaleDateString("pt-BR") : null;
@@ -99,6 +101,8 @@ table{width:100%;border-collapse:collapse}
 .prod .r{text-align:right}
 .total{break-inside:avoid;display:flex;justify-content:space-between;background:#e8f8ef;padding:9px 10px;margin-top:6px;font-weight:700;border-radius:4px}
 .final{margin-top:4px}
+${brand ? `.proj th{color:${brand}}.proj td.m{color:${brand}}h1{color:${brand}}` : ""}
+.foot{margin-top:14px;padding-top:8px;border-top:1px solid #e5e7eb;color:#6b7280;font-size:10.5px;white-space:pre-line}
 .compact{font-size:12px;line-height:1.32}.compact h2{margin:10px 0 5px}.compact .proj td{padding:3px 5px}.compact .proj th{padding:4px 5px}.compact .prod td{padding:5px 8px}.compact .head{margin-bottom:8px}.compact .note{margin-bottom:5px}
 </style></head><body><div class="page${r.rows.length > 6 ? " compact" : ""}">
 <div class="head">
@@ -144,5 +148,6 @@ ${i.texts.disclaimer ? `<div class="note">${esc(i.texts.disclaimer)}</div>` : ""
 
 <h2>Mensagem final</h2>
 <div class="final">${esc(i.texts.finalMessage || "")}</div>
+${i.institution?.footer ? `<div class="foot">${esc(i.institution.footer)}</div>` : ""}
 </div></body></html>`;
 };

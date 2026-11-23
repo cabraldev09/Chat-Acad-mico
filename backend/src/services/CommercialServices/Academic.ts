@@ -1,3 +1,4 @@
+import { courseInstitutionWhere, currentInstitutionId, institutionsWithNumbers } from "../../helpers/Institution";
 import fs from "fs";
 import path from "path";
 import { Op } from "sequelize";
@@ -79,11 +80,13 @@ export const clearAcademicCache = (): void => memo.clear();
 export interface OfferedCourse { id: number; name: string; level: string | null; modality: string | null }
 export const offeredCourses = async (): Promise<OfferedCourse[]> => {
   const stamp = await stampOf();
-  const hit = memo.get("offered");
+  // each university offers its own courses (and the ones of no university in particular)
+  const key = `offered:${currentInstitutionId() || 0}:${currentInstitutionId() ? (await institutionsWithNumbers()).join(",") : ""}`;
+  const hit = memo.get(key);
   if (hit && hit.stamp === stamp) return hit.value as OfferedCourse[];
-  const rows = await Course.findAll({ where: { active: true } as any, attributes: ["id", "name", "level", "modality"], order: [["name", "ASC"]], limit: 300 });
+  const rows = await Course.findAll({ where: { active: true, ...(await courseInstitutionWhere()) } as any, attributes: ["id", "name", "level", "modality"], order: [["name", "ASC"]], limit: 300 });
   const value = rows.map(c => ({ id: c.id, name: String(c.name || "").trim(), level: c.level || null, modality: c.modality || null })).filter(c => c.name);
-  memo.set("offered", { stamp, value });
+  memo.set(key, { stamp, value });
   return value;
 };
 
@@ -143,7 +146,7 @@ const startsAWord = (n: string, want: string): boolean => (` ${n}`).includes(` $
 const fuzzyCourse = async (name: string): Promise<Course | null> => {
   const want = plain(name);
   if (want.length < 4) return null;
-  const all = await Course.findAll({ where: { active: true } as any, attributes: ["id", "name", "modality", "level", "semesters", "monthlyFee", "active"] });
+  const all = await Course.findAll({ where: { active: true, ...(await courseInstitutionWhere()) } as any, attributes: ["id", "name", "modality", "level", "semesters", "monthlyFee", "active"] });
   const scored = all
     .map(c => {
       const n = plain(c.name);
@@ -167,7 +170,7 @@ export const findCourse = async (input: { courseId?: any; courseName?: any; offe
   if (!name) return null;
   const like = isPg() ? { [Op.iLike]: `%${name.replace(/[%_]/g, "")}%` } : { [Op.like]: `%${name.replace(/[%_]/g, "")}%` };
   const want = plain(name);
-  const found = (await Course.findAll({ where: { active: true, name: like } as any, limit: 12 })).filter(c => startsAWord(plain(c.name), want));
+  const found = (await Course.findAll({ where: { active: true, name: like, ...(await courseInstitutionWhere()) } as any, limit: 12 })).filter(c => startsAWord(plain(c.name), want));
   if (!found.length) return fuzzyCourse(name);
   const wantMod = modalityOf(modality);
   const score = (c: Course): number => {

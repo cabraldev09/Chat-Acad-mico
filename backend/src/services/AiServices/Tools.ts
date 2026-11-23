@@ -1,3 +1,4 @@
+import { courseInstitutionWhere } from "../../helpers/Institution";
 import { CRM_OPTIONS } from "../CrmServices/crmOptions";
 import { stateOf } from "../PoloServices/ResolvePolo";
 import { Op } from "sequelize";
@@ -163,8 +164,8 @@ export const toolDefs = (agent: AiAgent) => [
 
 const like = (text: string) => (isPg() ? { [Op.iLike]: `%${text}%` } : { [Op.like]: `%${text}%` });
 
-const findCourses = (name: string, limit = 5) =>
-  Course.findAll({ where: { active: true, name: like(name.trim()) } as any, limit, order: [["name", "ASC"]] });
+const findCourses = async (name: string, limit = 5) =>
+  Course.findAll({ where: { active: true, name: like(name.trim()), ...(await courseInstitutionWhere()) } as any, limit, order: [["name", "ASC"]] });
 
 const money = (n: any) => (n == null ? null : Number(n));
 

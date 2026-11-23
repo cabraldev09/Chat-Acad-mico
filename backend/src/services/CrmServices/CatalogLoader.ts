@@ -1,3 +1,4 @@
+import { findCatalogCourse } from "../../helpers/Institution";
 import { readFileSync } from "fs";
 import { join } from "path";
 import Course from "../../models/Course";
@@ -54,8 +55,9 @@ export const loadDefaultCatalog = async (opts: { force?: boolean } = {}): Promis
       institutionId: inst.id,
       active: true
     };
+    // the same course of two universities is two courses
     // eslint-disable-next-line no-await-in-loop
-    const existing = await Course.findOne({ where: { name, category: data.category, modality: data.modality } });
+    const existing = await findCatalogCourse({ name, category: data.category, modality: data.modality }, data.institutionId ?? null);
     if (!existing) {
       // eslint-disable-next-line no-await-in-loop
       await Course.create(data);

@@ -61,6 +61,8 @@ export interface Mail {
   // the same send repeated (a click twice, a retry of the caller) is delivered once by Resend; one per attempt or event
   idempotencyKey?: string;
   replyTo?: string;
+  // who the e-mail is about: it goes with the sender of that person's university (else the one of the conversation being worked on)
+  leadId?: number | null;
 }
 
 const masked = (to: string): string => to.replace(/(.).+(@.+)/, "$1***$2");
@@ -148,8 +150,21 @@ export const sendResend = async (cfg: MailConfig, mail: Mail, wait: (ms: number)
   throw new AppError("ERR_MAIL_SEND_FAILED", 502);
 };
 
+// the sender of the university the e-mail is about: its name and, with Resend, its address (it must be on a verified domain). The default
+// university and the e-mails of no university keep the sender of Configurações.
+export const senderFor = async (cfg: MailConfig, mail: Pick<Mail, "leadId">): Promise<MailConfig> => {
+  const { currentInstitutionId, institutionFor } = await import("../../helpers/Institution");
+  const institutionId = currentInstitutionId();
+  if (!mail.leadId && !institutionId) return cfg;
+  const inst = await institutionFor(mail.leadId ? { leadId: mail.leadId } : { institutionId });
+  if (!inst) return cfg;
+  const name = inst.mailFromName || (inst.isDefault ? null : inst.shortName || inst.name);
+  const address = cfg.provider === "resend" && inst.mailFrom ? inst.mailFrom : null;
+  return name || address ? { ...cfg, fromName: name || cfg.fromName, fromEmail: address || cfg.fromEmail } : cfg;
+};
+
 export const sendMail = async (mail: Mail): Promise<void> => {
-  const cfg = await readMailConfig();
+  const cfg = await senderFor(await readMailConfig(), mail);
   if (cfg.provider === "resend") {
     await sendResend(cfg, mail);
     return;

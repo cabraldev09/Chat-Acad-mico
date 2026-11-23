@@ -88,7 +88,9 @@ const modalityLabel = (c?: Course | null) =>
 // Everything the studio needs to start: course price, template rules, calendar
 const buildDefaults = async (lead: Lead, courseId?: number | null, templateId?: number | null) => {
   const course = courseId ? await Course.findByPk(courseId) : lead.courseId ? await Course.findByPk(lead.courseId) : null;
-  const tpl = await defaultTemplate(templateId, course?.institutionId);
+  // the university of the proposal: the one of the course, else the one of the lead (the number it came through)
+  const ownInstitution = course?.institutionId || lead.institutionId || null;
+  const tpl = await defaultTemplate(templateId, ownInstitution);
   if (!tpl) throw new AppError("ERR_NO_PROPOSAL_TEMPLATE");
   const gross = course?.monthlyFee ? Number(course.monthlyFee) : 0;
   const params: ProposalParams = {
@@ -122,7 +124,7 @@ const buildDefaults = async (lead: Lead, courseId?: number | null, templateId?: 
     firstExempt: !!tpl.firstExempt,
     secondDueDate: null
   };
-  const institutionId = course?.institutionId || tpl.institutionId || null;
+  const institutionId = ownInstitution || tpl.institutionId || null;
   const snapshot: Snapshot = {
     title: course?.name || lead.name,
     modalityLabel: modalityLabel(course),

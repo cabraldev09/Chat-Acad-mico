@@ -84,7 +84,7 @@ export const activate = async (req: Request, res: Response): Promise<Response> =
   const firstAccess = !student.activatedAt;
   await student.update({ passwordHash: await hash(password, 10), activatedAt: student.activatedAt || new Date(), sessionVersion: (student.sessionVersion || 0) + 1 });
   await StudentToken.update({ usedAt: new Date() }, { where: { studentId: student.id, usedAt: null } as any });
-  if (firstAccess) notify(student.email, studentActivatedMail(student.name, student.rgm, `${frontBase()}/portal/login`), "student activated");
+  if (firstAccess) notify(student.email, studentActivatedMail(student.name, student.rgm, `${frontBase()}/portal/login`), "student activated", { leadId: student.leadId || null });
   return res.json({ ok: true });
 };
 
@@ -95,7 +95,7 @@ export const forgot = async (req: Request, res: Response): Promise<Response> => 
     const recent = await StudentToken.count({ where: { studentId: student.id, kind: "reset", createdAt: { [Op.gt]: new Date(Date.now() - 3600000) } } });
     if (recent < 3) {
       const token = await issueToken(student, "reset");
-      sendMail({ to: student.email, ...studentLinkMail("reset", student.name, `${frontBase()}/portal/ativar/${token}`, "1 hora"), idempotencyKey: `student-reset/${student.id}/${token.slice(0, 16)}` }).catch(err => logger.warn(`student reset mail not sent: ${(err as Error).message}`));
+      sendMail({ to: student.email, ...studentLinkMail("reset", student.name, `${frontBase()}/portal/ativar/${token}`, "1 hora"), idempotencyKey: `student-reset/${student.id}/${token.slice(0, 16)}`, leadId: student.leadId || null }).catch(err => logger.warn(`student reset mail not sent: ${(err as Error).message}`));
     }
   }
   return sameAnswer(res);

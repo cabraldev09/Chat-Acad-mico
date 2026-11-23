@@ -6789,7 +6789,7 @@ const postMeta = (id, payload, secret, badSig) => {
       return execFileSync(process.execPath, ["-e", source], { cwd: ROOT, env, timeout: 25000 }).toString();
     };
     console.log("\nUniversidades do grupo");
-    await test("universities: one default, address never repeated, the number decides the university of the conversation and of the lead, and the AI speaks for it", async () => {
+    await test("universities: one default, address never repeated, the number decides the university of the conversation and of the lead, the AI speaks for it and offers its courses, the proposal carries its brand", async () => {
       // the migration made the existing data belong to one default university
       const list = (await http.get("/institutions", auth())).data;
       const def = list.find(i => i.isDefault);
@@ -6844,6 +6844,28 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(out.inside === "Norte Teste" && out.other === out.outside && out.outside !== "Norte Teste", `the AI did not speak for the university of the conversation: ${JSON.stringify(out)}`);
       assert(out.nested === out.outside, `a default conversation inherited the outer university: ${JSON.stringify(out)}`);
       assert(out.concurrent[0] === "Norte Teste" && out.concurrent[1] === out.outside, `conversation contexts crossed: ${JSON.stringify(out.concurrent)}`);
+      // the catalogue: the same course of two universities is two courses; the AI of a conversation offers only the courses of its university
+      // (and the ones of no university in particular)
+      const imp = await http.post("/courses/import", { items: [
+        { name: "Engenharia Norte Teste", category: "Graduação", modality: "EAD", monthlyFee: "500", semesters: 10, institution: "Universidade Norte Teste", active: "Sim" },
+        { name: "Engenharia Norte Teste", category: "Graduação", modality: "EAD", monthlyFee: "450", semesters: 10, institution: def.name, active: "Sim" }
+      ] }, auth());
+      assert(imp.status === 200 && imp.data.created === 2, `the same course of two universities was not two courses: ${JSON.stringify(imp.data)}`);
+      const again = await http.post("/courses/import", { items: [{ name: "Engenharia Norte Teste", category: "Graduação", modality: "EAD", monthlyFee: "520", semesters: 10, institution: "Universidade Norte Teste", active: "Sim" }] }, auth());
+      assert(again.data.created === 0 && again.data.updated === 1, "importing again doubled the course");
+      const offered = JSON.parse(inDb(`
+        const I=require("./dist/helpers/Institution"); const A=require("./dist/services/CommercialServices/Academic");
+        const pick=list=>list.filter(c=>c.name==="Engenharia Norte Teste").map(c=>c.id);
+        const north=await I.withInstitutionOf({ticketId:${out.ids[0]}}, async()=>pick(await A.offeredCourses()));
+        const dflt=await I.withInstitutionOf({ticketId:${out.ids[1]}}, async()=>pick(await A.offeredCourses()));
+        const found=await I.withInstitutionOf({ticketId:${out.ids[0]}}, async()=>(await A.findCourse({courseName:"Engenharia Norte Teste"}))?.institutionId);
+        console.log(JSON.stringify({north,dflt,found}));`).trim().split("\n").pop());
+      const ids = { north: Number(sql(`SELECT id FROM Courses WHERE name='Engenharia Norte Teste' AND institutionId=${north}`)), dflt: Number(sql(`SELECT id FROM Courses WHERE name='Engenharia Norte Teste' AND institutionId=${def.id}`)) };
+      assert(JSON.stringify(offered.north) === JSON.stringify([ids.north]) && JSON.stringify(offered.dflt) === JSON.stringify([ids.dflt]) && offered.found === north, `the AI offered a course of another university: ${JSON.stringify({ offered, ids })}`);
+      // the proposal of a lead of the north university carries its name and its color
+      const prop = await http.post("/proposals/preview", { leadId: out.lead, courseId: ids.north }, auth());
+      assert(prop.status === 200 && prop.data.html.includes("Universidade Norte Teste") && prop.data.html.includes("#123ABC"), `the proposal did not take the university of the lead: ${prop.status} ${String(prop.data.html || JSON.stringify(prop.data)).slice(0, 200)}`);
+      psql(DB, `DELETE FROM "Courses" WHERE name='Engenharia Norte Teste'`);
       // a number with conversations: the university cannot go away until the number changes; the screen changes it
       assert((await http.delete(`/institutions/${north}`, auth())).data.error === "ERR_INSTITUTION_IN_USE", "a university with numbers was deleted");
       const moved = await http.put(`/whatsapp/${out.wa}`, { institutionId: null }, auth());

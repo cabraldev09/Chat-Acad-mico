@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from "async_hooks";
+import { Op } from "sequelize";
 
 import { getSetting } from "./AppSettings";
 
@@ -11,8 +12,10 @@ export const DEFAULT_INSTITUTION = "Cruzeiro do Sul Virtual";
 let cached = DEFAULT_INSTITUTION;
 // inside the work of one conversation (withInstitutionOf), the name is the one of the university of that conversation: every text and
 // prompt that says institutionName() follows it with no change of its own
-const scope = new AsyncLocalStorage<string>();
-export const institutionName = (): string => scope.getStore() || cached;
+const scope = new AsyncLocalStorage<{ id: number | null; name: string }>();
+export const institutionName = (): string => scope.getStore()?.name || cached;
+// the university of the conversation being worked on (null outside one, or with one university only)
+export const currentInstitutionId = (): number | null => scope.getStore()?.id || null;
 export const setInstitution = (value: string | null | undefined): void => {
   cached = String(value || "").replace(/\s+/g, " ").trim().slice(0, 80) || DEFAULT_INSTITUTION;
 };
@@ -117,7 +120,48 @@ export const getSettingFor = async (key: string, institutionId: number | null | 
 
 // runs the work of one conversation (an AI turn, a flow, the copilot) speaking for the university of that conversation
 export const withInstitutionOf = async <T>(ctx: Parameters<typeof institutionFor>[0], fn: () => Promise<T>): Promise<T> => {
-  let name: string;
-  try { name = await institutionNameFor(ctx); } catch (_) { name = cached; }
-  return scope.run(name || cached, fn);
+  // always a scope of its own: a conversation of the default university inside the work of another one never inherits the other's name
+  let store: { id: number | null; name: string } = { id: null, name: cached };
+  try {
+    if ((await allInstitutions()).length > 1) {
+      const inst = await institutionFor(ctx);
+      if (inst) store = { id: inst.id, name: inst.isDefault ? cached : inst.shortName || inst.name || cached };
+    }
+  } catch (_) { store = { id: null, name: cached }; }
+  return scope.run(store, fn);
+};
+
+// the universities with a number of their own: only they have courses of their own (the courses of a university with no number yet are
+// still offered by the default one, so nothing disappears before a university really starts to talk)
+export const institutionsWithNumbers = (): Promise<number[]> => remember("withNumbers", async () => {
+  const Whatsapp = (await import("../models/Whatsapp")).default;
+  const rows: any[] = await Whatsapp.findAll({ attributes: ["institutionId"], where: { institutionId: { [Op.ne]: null } } as any, group: ["institutionId"], raw: true });
+  return rows.map(r => Number(r.institutionId)).filter(Boolean);
+});
+
+// the courses a conversation may offer. With one university: all. In a conversation of a university with numbers: its own and the ones of
+// no university in particular. In one of the default: everything except the courses of the other universities that have numbers.
+export const courseInstitutionWhere = async (): Promise<Record<string | symbol, unknown>> => {
+  const id = currentInstitutionId();
+  if (!id) return {};
+  const inst = await institutionById(id);
+  const owners = await institutionsWithNumbers();
+  if (inst?.isDefault) {
+    const others = owners.filter(x => x !== id);
+    return others.length ? { [Op.or]: [{ institutionId: null }, { institutionId: { [Op.notIn]: others } }] } : {};
+  }
+  return { institutionId: { [Op.or]: [null, id] } };
+};
+
+// the course of a catalogue line: the same name, category and format of the same university. For the default university, a course of no
+// university in particular (the catalogue from before the universities) or of a university with no number yet is the same course, so
+// importing it again updates instead of doubling
+export const findCatalogCourse = async (where: { name: string; category: any; modality: any }, institutionId: number | null): Promise<any> => {
+  const Course = (await import("../models/Course")).default;
+  const exact = await Course.findOne({ where: { ...where, institutionId: institutionId ?? null } as any });
+  if (exact || !institutionId) return exact;
+  if ((await defaultInstitution())?.id !== institutionId) return null;
+  // for the default one, a course of no university, or of a university with no number yet, is the same course
+  const owners = await institutionsWithNumbers();
+  return Course.findOne({ where: { ...where, [Op.or]: [{ institutionId: null }, ...(owners.length ? [{ institutionId: { [Op.notIn]: owners } }] : [{ institutionId: { [Op.ne]: null } }])] } as any, order: [["id", "ASC"]] });
 };
