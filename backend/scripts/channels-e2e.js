@@ -3762,6 +3762,14 @@ const postMeta = (id, payload, secret, badSig) => {
 
       // 3) a real conversation: the agent on, the flow published
       await http.put(`/ai-agents/${agentId}`, { active: true, whatsappId: cid, apiKey: "sk-ant-test", waitSeconds: 0, provider: "anthropic", model: "claude-haiku-5-5" }, auth());
+      // the agent is on and its script was never published: it does not talk to the lead (no model, no free answer), the team takes the conversation
+      {
+        const NP = "5511920000259", before = graph.sent.length, calls = anthropic.requests.length;
+        await inboundCloud(NP, "wamid.com-np1", "Gostaria de saber sobre os cursos na área da saúde");
+        await waitFor(() => sql(`SELECT handoffReason FROM Tickets WHERE id=${ticketOf(NP)}`) === "error" && sql(`SELECT aiActive FROM Tickets WHERE id=${ticketOf(NP)}`) === "0", 20000, "without a published script the conversation goes to the team");
+        assert(anthropic.requests.length === calls, "the model answered a lead without a published script");
+        assert(!sentTexts(before).some(t => /Enfermagem|Medicina|semipresencia/i.test(t)), `a free answer reached the lead: ${sentTexts(before)}`);
+      }
       assert((await http.post(`/flows/${flowId}/publish`, {}, auth())).status === 200, "publish the commercial flow");
       const texts = since => graph.sent.slice(since).filter(x => x.path === "/PN1/messages" && x.body && x.body.type === "text" && x.body.text).map(x => x.body.text.body);
       // the rule "a qualified lead goes to the consultant after a few answers" has its own scenario (R): the others keep talking

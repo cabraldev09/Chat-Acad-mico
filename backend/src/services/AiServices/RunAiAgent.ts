@@ -667,6 +667,16 @@ const handoff = async (ticket: Ticket, agent: AiAgent, reason: HandoffReason, sa
   await handoffToHuman(ticket.id, agent, reason);
 };
 
+// the agent was given a script in blocks and no version of it is published (an agent made only by the form has no script: it answers by the form)
+export const scriptNotPublished = async (agentId: number): Promise<boolean> => {
+  const ChatFlow = (await import("../../models/ChatFlow")).default;
+  const flows = await ChatFlow.findAll({ where: { kind: "agent", agentId } as any, attributes: ["status", "name", "description"] });
+  if (flows.some(f => f.status === "published")) return false;
+  // a draft made FROM an agent that already answers by the form (converted to blocks, or learned from the conversations) changes nothing
+  // until it is published: that agent keeps answering by the form (AiAgentController.convert and the learned script)
+  return flows.some(f => f.description !== "Convertido do agente de prompt único" && !/\(roteiro aprendido\)$/.test(String(f.name || "")));
+};
+
 // Called once the person stopped writing (see RunInboundAutomation): answers the whole burst with one reply.
 const answerTicket = async (ticketId: number, say: Say): Promise<void> => {
   const ticket = await ShowTicketService(ticketId);
@@ -678,6 +688,15 @@ const answerTicket = async (ticketId: number, say: Say): Promise<void> => {
   if (!(await claimAi(ticket.id))) return;
 
   try {
+    // An agent that has a script (Roteiro) and never published it does not talk to people: without the script the model would answer
+    // freely, outside the process the team taught. The conversation goes to the team and the management is told to publish it.
+    if (await scriptNotPublished(agent.id)) {
+      logger.warn(`AI agent "${agent.name}" has a script that is not published: ticket ${ticket.id} goes to the team`);
+      noteAutomation(ticketId, `o agente "${agent.name}" não atendeu: o roteiro dele não está publicado. Publique em Agentes de IA para a IA voltar a atender.`);
+      await notifyOwner(agent, `O agente *${agent.name}* não está atendendo: o roteiro dele não está publicado. As conversas estão indo para a equipe. Publique o roteiro em Agentes de IA.`).catch(() => undefined);
+      await handoff(ticket, agent, "sem_roteiro", say);
+      return;
+    }
     if (agent.dailyTokenCap > 0 && (await tokensToday(agent.id)) >= agent.dailyTokenCap) {
       await handoff(ticket, agent, "limite_tokens", say);
       return;
