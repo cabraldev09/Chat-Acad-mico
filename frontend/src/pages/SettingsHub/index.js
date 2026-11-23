@@ -158,7 +158,7 @@ const useCrm = (enabled) => {
     fetchAllUsersPage().then(({ data }) => setUsers(data.users || [])).catch(() => undefined);
   }, [enabled, attempt]);
   const save = async (patch) => {
-    try { const { data } = await api.put("/crm/settings", patch); setS(data); toast.success("Salvo."); } catch (err) { toastError(err); }
+    try { const { data } = await api.put("/crm/settings", patch); setS(data); toast.success("Salvo."); return true; } catch (err) { toastError(err); return false; }
   };
   return { s, setS, save, users, failed, retry: () => setAttempt((n) => n + 1) };
 };

@@ -141,7 +141,7 @@ const LeadCard = ({ contactId, attendantId }) => {
           {proposals.slice(0, 3).map((pr) => (
             <button key={pr.id} type="button" className={classes.proposal} onClick={() => setStudio({ id: pr.id })}>
               <FileText size={15} />
-              <span style={{ flex: 1 }}>{pr.title || `Proposta #${pr.id}`}</span>
+              <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>#{pr.id} · {pr.courseName || "Proposta"}{pr.entry && pr.entry.turma ? ` · ${pr.entry.turma}` : ""}</span>
               <span className={classes.meta}>{PROPOSAL_STATUS[pr.status] || pr.status}</span>
             </button>
           ))}

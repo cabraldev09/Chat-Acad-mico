@@ -5,7 +5,7 @@ import {
   CircularProgress, DialogTitle, DialogContent, DialogActions,
 } from "@material-ui/core";
 import { Autocomplete } from "@material-ui/lab";
-import { X, Save, Download, Link2, SendHorizonal, ChevronDown, SlidersHorizontal, Type, Plus, Trash2, GraduationCap, Wallet, Copy, MessageSquare } from "lucide-react";
+import { X, Save, Download, SendHorizonal, ChevronDown, SlidersHorizontal, Type, Plus, Trash2, GraduationCap, Wallet, Copy, MessageSquare, CalendarClock, Lock, Check, CopyPlus, FilePlus2, AlertTriangle } from "lucide-react";
 
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
@@ -32,12 +32,47 @@ const useStyles = makeStyles((theme) => ({
   sheet: { width: 860, height: 1200, background: "#fff", borderRadius: 4, boxShadow: "0 18px 50px -20px rgba(11,66,121,.45)", border: 0, transition: "opacity .2s", transformOrigin: "top left", position: "absolute", top: 0, left: 0 },
   foot: { display: "flex", alignItems: "center", gap: 8, padding: theme.spacing(1.25, 2.5), borderTop: theme.border.divider, background: theme.palette.cards.background, flexWrap: "wrap" },
   err: { color: "#dc2626", fontSize: 13, textAlign: "center" },
+  deadline: { display: "grid", gap: 10, gridTemplateColumns: "repeat(3, minmax(0, 1fr))", marginTop: theme.spacing(1), [theme.breakpoints.down("xs")]: { gridTemplateColumns: "1fr 1fr" } },
+  dl: { borderRadius: 12, padding: theme.spacing(1, 1.25), background: theme.palette.action.hover, minWidth: 0 },
+  dlMain: { background: theme.palette.type === "dark" ? "rgba(37,99,235,.18)" : "#e8f0ff", boxShadow: `inset 0 0 0 1px ${theme.palette.primary.main}` },
+  dlLabel: { fontSize: 11.5, fontWeight: 600, color: theme.palette.text.secondary, textTransform: "uppercase", letterSpacing: ".03em" },
+  dlValue: { fontSize: 17, fontWeight: 700, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums" },
+  missing: { display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: theme.palette.type === "dark" ? "#fbbf24" : "#b45309", minWidth: 0 },
+  footInfo: { flex: 1, minWidth: 0, display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", [theme.breakpoints.down("xs")]: { flexBasis: "100%" } },
+  savedAt: { fontSize: 12.5, color: theme.palette.text.secondary, display: "inline-flex", alignItems: "center", gap: 4 },
+  lockRow: { display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: theme.palette.text.secondary, marginTop: 2, flexWrap: "wrap" },
 }));
 
 const ERR = {
   ERR_PROPOSAL_NO_GROSS: "Escolha o curso: a mensalidade bruta vem do catálogo.",
   ERR_PROPOSAL_FIRST_MONTHLY: "A primeira mensalidade precisa ser maior que zero e não pode passar da mensalidade bruta.",
   ERR_NO_PROPOSAL_TEMPLATE: "Cadastre um modelo de proposta em Configurar CRM.",
+  ERR_PROPOSAL_COURSE_NO_PRICE: "Este curso não tem mensalidade cadastrada. Peça à gestão para cadastrar em Cursos.",
+};
+
+const pad = (n) => String(n).padStart(2, "0");
+const fmtDay = (iso) => { const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? `${m[3]}/${m[2]}/${m[1]}` : "—"; };
+// the 1st monthly fee is due on the boleto deadline of the class; the 2nd on the contracted day of the following month
+const dueDatesOf = (t, dueDay) => {
+  const [y, m] = t.boletoDeadline.split("-").map(Number);
+  const d = Math.min(28, Math.max(1, Math.round(Number(dueDay) || 10)));
+  return { firstDueDate: t.boletoDeadline, secondDueDate: `${m === 12 ? y + 1 : y}-${pad(m === 12 ? 1 : m + 1)}-${pad(d)}` };
+};
+const turmaFields = (t, dueDay) => (t
+  ? { turma: t.key, entryTerm: t.term, installments: String(t.installments), entryTurma: t.name, releaseDate: t.releaseDate || "", ...dueDatesOf(t, dueDay) }
+  : { turma: "", entryTurma: "", releaseDate: "" });
+const keyOf = (calendar, p) => {
+  if (!p.entryTurma) return "";
+  const t = (calendar || []).find((x) => x.name === p.entryTurma && x.term === `${p.startYear}/${p.startSemester}`);
+  return t ? t.key : "";
+};
+// what the proposal must say before the PDF or the sending (the server checks the same)
+const missingOf = (f, courseId) => {
+  const out = [];
+  if (!courseId) out.push("curso");
+  if (!f.admissionType) out.push("forma de ingresso");
+  if (!(f.firstExempt ? f.secondDueDate || f.firstDueDate : f.firstDueDate)) out.push("turma ou 1º vencimento");
+  return out;
 };
 
 const toNum = (v) => { const n = Number(String(v ?? "").replace(/\./g, "").replace(",", ".")); return Number.isNaN(n) ? 0 : n; };
@@ -46,7 +81,8 @@ const r2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
 const brl = (n) => Number(n || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 // backend params -> text inputs
-const toForm = (p) => ({
+const toForm = (p, calendar) => ({
+  turma: keyOf(calendar, p), entryTurma: p.entryTurma || "", releaseDate: p.releaseDate || "", grossUnlocked: !!p.grossUnlocked,
   gross: money(p.gross), first: money(p.firstMonthly), bolsa: p.gross ? money(r2((1 - p.firstMonthly / p.gross) * 100)) : "",
   enrollmentFee: money(p.enrollmentFee), dueDay: String(p.dueDay), installments: String(p.installments), firstDueDate: p.firstDueDate || "",
   entryTerm: `${p.startYear}/${p.startSemester}`, entrySemester: p.entrySemester || 1, courseSemesters: p.courseSemesters || p.semesters, admissionType: p.admissionType || "",
@@ -71,6 +107,7 @@ const toParams = (f) => {
     annualMin: toNum(f.annualMin), annualMax: toNum(f.annualMax), semestralSchedule: f.schedule.map((x) => ({ from: toNum(x.from), pct: toNum(x.pct) })),
     hasRegression: !!f.hasRegression, hasAdjustment: !!f.hasAdjustment, fixedUntilEnd: !!f.fixedUntilEnd,
     installmentsFixed: toNum(f.installmentsFixed) || null, firstExempt: !!f.firstExempt, secondDueDate: f.secondDueDate || null,
+    entryTurma: f.entryTurma || null, releaseDate: f.releaseDate || null, grossUnlocked: !!f.grossUnlocked,
   };
 };
 
@@ -84,15 +121,21 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
   const [templateId, setTemplateId] = useState(null);
   const [snapshot, setSnapshot] = useState(null);
   const [f, setF] = useState(null);
+  const [calendar, setCalendar] = useState([]);
+  const [currentKey, setCurrentKey] = useState("");
+  const [coursePrice, setCoursePrice] = useState(null);
+  const [canUnlock, setCanUnlock] = useState(false);
   const [html, setHtml] = useState("");
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
   const [advanced, setAdvanced] = useState(false);
   const [texts, setTexts] = useState(false);
   const [saved, setSaved] = useState(null);
+  const [savedAt, setSavedAt] = useState(null);
+  const [cleanSnap, setCleanSnap] = useState(null); // what the last save (or the opening) looked like
   const [busy, setBusy] = useState("");
   const [sendOpen, setSendOpen] = useState(false);
-  const [message, setMessage] = useState("");
+  const [leaveOpen, setLeaveOpen] = useState(false);
   const [blocks, setBlocks] = useState([]);
   const [blockEdits, setBlockEdits] = useState({});
   const loadSeq = useRef(0);
@@ -114,17 +157,21 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
     setCourseId(data.courseId);
     setTemplateId(data.templateId);
     setSnapshot(data.snapshot);
+    setCalendar(data.calendar || []);
+    setCurrentKey(data.turmaKey || "");
+    setCoursePrice(data.coursePrice);
+    setCanUnlock(!!data.canUnlockGross);
     // read here, not inside the updater (which runs while drawing, out of reach of the error handling around this call)
-    const fresh = toForm(data.params);
+    const fresh = toForm(data.params, data.calendar);
     setF((prev) => {
       const next = { ...fresh };
       if (keep && prev) {
-        // switching course: keep the negotiated discount and the candidate's ingress choices
+        // switching course: keep the negotiated discount, the candidate's ingress choices and the class of the calendar
         if (toNum(prev.bolsa) > 0 && data.params.gross) {
           next.first = money(r2(data.params.gross * (1 - toNum(prev.bolsa) / 100)));
           next.bolsa = prev.bolsa;
         }
-        next.entryTerm = prev.entryTerm; next.admissionType = prev.admissionType; next.firstDueDate = prev.firstDueDate;
+        ["entryTerm", "admissionType", "firstDueDate", "secondDueDate", "turma", "entryTurma", "releaseDate", "installments"].forEach((k) => { next[k] = prev[k]; });
         next.entrySemester = Math.min(prev.entrySemester, next.courseSemesters);
         if (!prev.attendAuto) { next.attend = prev.attend; next.attendAuto = false; }
       }
@@ -132,22 +179,36 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
     });
   }, [lead.id]);
 
+  const openProposal = useCallback(async (id) => {
+    const { data } = await api.get(`/proposals/${id}`);
+    // the calendar, the price of the course and who may unlock it
+    const { data: d } = await api.get("/proposals/defaults", { params: { leadId: lead.id, courseId: data.courseId || undefined, templateId: data.templateId || undefined } });
+    setCalendar(d.calendar || []); setCurrentKey(d.turmaKey || ""); setCoursePrice(d.coursePrice); setCanUnlock(!!d.canUnlockGross);
+    setSaved(data); setCourseId(data.courseId); setTemplateId(data.templateId);
+    setSnapshot(data.params.snapshot); setF(toForm(data.params.params, d.calendar));
+    setBlockEdits(data.params.blocks || {});
+    setCleanSnap(null);
+  }, [lead.id]);
+
   useEffect(() => {
     (async () => {
       try {
         const [c, t, i] = await Promise.all([api.get("/courses"), api.get("/proposal-templates"), api.get("/institutions")]);
         setCourses(c.data.filter((x) => x.active)); setTemplates(t.data); setInstitutions(i.data);
-        if (proposalId) {
-          const { data } = await api.get(`/proposals/${proposalId}`);
-          setSaved(data); setCourseId(data.courseId); setTemplateId(data.templateId);
-          setSnapshot(data.params.snapshot); setF(toForm(data.params.params));
-        } else {
-          await loadDefaults(lead.courseId, null, false);
-        }
+        if (proposalId) await openProposal(proposalId);
+        else await loadDefaults(lead.courseId, null, false);
       } catch (err) { toastError(err); onClose(); }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const bodyOf = () => ({ leadId: lead.id, courseId, templateId, params: toParams(f), snapshot, messageBlocks: blockEdits });
+  const snapOf = () => JSON.stringify(bodyOf());
+  // the state right after opening counts as saved: closing without touching anything does not ask
+  useEffect(() => {
+    if (f && snapshot && cleanSnap === null) setCleanSnap(snapOf());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [f, snapshot, cleanSnap]);
 
   // live preview, debounced
   useEffect(() => {
@@ -155,7 +216,7 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
     const seq = (loadSeq.current += 1);
     const t = setTimeout(async () => {
       try {
-        const { data } = await api.post("/proposals/preview", { leadId: lead.id, courseId, templateId, params: toParams(f), snapshot });
+        const { data } = await api.post("/proposals/preview", { leadId: lead.id, proposalId: saved ? saved.id : undefined, courseId, templateId, params: toParams(f), snapshot });
         if (seq !== loadSeq.current) return;
         setHtml(data.html); setResult(data.result); setBlocks(data.messages || []); setError("");
       } catch (err) {
@@ -165,26 +226,41 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
       }
     }, 280);
     return () => clearTimeout(t);
-  }, [f, snapshot, courseId, templateId, lead.id]);
+  }, [f, snapshot, courseId, templateId, lead.id, saved]);
 
-  const set = (k) => (e) => { e && e.persist && e.persist(); return (setF((p) => ({ ...p, [k]: e.target.value }))); };
+  const set = (k) => (e) => { const v = e.target.value; setF((p) => ({ ...p, [k]: v })); };
   const field = (k, label, extra = {}) => (
     <TextField fullWidth variant="outlined" margin="dense" label={label} value={f[k]} onChange={set(k)} {...extra} />
   );
-  const setBolsa = (e) => { e && e.persist && e.persist(); return (setF((p) => {
-    const b = toNum(e.target.value);
-    return { ...p, bolsa: e.target.value, first: money(r2(toNum(p.gross) * (1 - b / 100))) };
-  })); };
-  const setFirst = (e) => { e && e.persist && e.persist(); return (setF((p) => ({ ...p, first: e.target.value, bolsa: toNum(p.gross) ? money(r2((1 - toNum(e.target.value) / toNum(p.gross)) * 100)) : "" }))); };
-  const setGross = (e) => { e && e.persist && e.persist(); return (setF((p) => {
-    const g = toNum(e.target.value);
-    return { ...p, gross: e.target.value, first: money(r2(g * (1 - toNum(p.bolsa) / 100))) };
-  })); };
+  const setBolsa = (e) => { const v = e.target.value; setF((p) => ({ ...p, bolsa: v, first: money(r2(toNum(p.gross) * (1 - toNum(v) / 100))) })); };
+  const setFirst = (e) => { const v = e.target.value; setF((p) => ({ ...p, first: v, bolsa: toNum(p.gross) ? money(r2((1 - toNum(v) / toNum(p.gross)) * 100)) : "" })); };
+  const setGross = (e) => { const v = e.target.value; setF((p) => ({ ...p, gross: v, first: money(r2(toNum(v) * (1 - toNum(p.bolsa) / 100))) })); };
+  const setDueDay = (e) => {
+    const v = e.target.value;
+    setF((p) => {
+      const t = p.turma && calendar.find((x) => x.key === p.turma);
+      return { ...p, dueDay: v, ...(t ? dueDatesOf(t, toNum(v)) : {}) };
+    });
+  };
+  const pickTurma = (e) => {
+    const key = e.target.value;
+    setF((p) => ({ ...p, ...turmaFields(calendar.find((x) => x.key === key), toNum(p.dueDay)) }));
+  };
+  // the gross fee is the course's price; only the management unlocks it (and locking again brings the price back)
+  const toggleGross = () => setF((p) => {
+    if (p.grossUnlocked) {
+      const g = coursePrice || toNum(p.gross);
+      return { ...p, grossUnlocked: false, gross: money(g), first: money(r2(g * (1 - toNum(p.bolsa) / 100))) };
+    }
+    return { ...p, grossUnlocked: true };
+  });
 
   const persist = async () => {
-    const body = { leadId: lead.id, courseId, templateId, params: toParams(f), snapshot };
+    const body = bodyOf();
     const { data } = saved ? await api.put(`/proposals/${saved.id}`, body) : await api.post("/proposals", body);
     setSaved(data);
+    setSavedAt(new Date());
+    setCleanSnap(JSON.stringify(body));
     onSaved && onSaved();
     return data;
   };
@@ -193,7 +269,8 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
     try { await fn(); } catch (err) { toastError(err); } finally { setBusy(""); }
   };
 
-  const saveDraft = run("save", async () => { await persist(); toast.success("Rascunho salvo"); });
+  const saveOnly = run("save", async () => { await persist(); });
+  const saveAndLeave = run("leave", async () => { await persist(); setLeaveOpen(false); toast.success("Proposta salva"); onClose(); });
   const download = run("pdf", async () => {
     const p = await persist();
     const res = await api.get(`/proposals/${p.id}/pdf`, { responseType: "blob" });
@@ -201,11 +278,6 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
     const a = document.createElement("a");
     a.href = url; a.download = `Proposta - ${lead.name}.pdf`; a.click();
     URL.revokeObjectURL(url);
-  });
-  const copyLink = run("link", async () => {
-    const p = await persist();
-    await navigator.clipboard.writeText(p.link);
-    toast.success("Link copiado. Ele só abre depois que a proposta for enviada.");
   });
   const send = run("send", async () => {
     const p = await persist();
@@ -215,12 +287,27 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
     setSendOpen(false);
     onClose(true);
   });
+  // a sent proposal stays as it was: a copy becomes the new draft
+  const duplicate = run("dup", async () => {
+    const { data } = await api.post(`/proposals/${saved.id}/duplicate`);
+    onSaved && onSaved();
+    await openProposal(data.id);
+    toast.success("Cópia criada como rascunho");
+  });
+  // another proposal for the same lead (another course or condition), starting from the defaults
+  const startNew = run("new", async () => {
+    setSaved(null); setSavedAt(null); setBlockEdits({}); setCleanSnap(null); setHtml(""); setResult(null);
+    await loadDefaults(courseId, templateId, false);
+    setCleanSnap(null);
+  });
 
   const textOf = (b) => (blockEdits[b.id] !== undefined ? blockEdits[b.id] : b.text);
   const copyText = async (text, what) => {
     try { await navigator.clipboard.writeText(text); toast.success(`${what} copiado. Cole no WhatsApp.`); } catch (e) { toast.error("Não consegui copiar. Selecione o texto e copie manualmente."); }
   };
   const locked = saved && saved.status !== "draft";
+  const dirty = !!f && !locked && cleanSnap !== null && snapOf() !== cleanSnap;
+  const tryClose = () => { if (dirty) setLeaveOpen(true); else onClose(); };
   const course = courses.find((c) => c.id === courseId);
   const institution = institutions.find((i) => i.id === (snapshot && snapshot.institutionId));
   const needsSemester = f && (options.admissionNeedsSemester || []).includes(f.admissionType);
@@ -228,16 +315,21 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
   const attend = f ? toNum(f.attend) || remaining : 0;
   const extra = Math.max(0, attend - remaining);
   const terms = f ? [...new Set([...(options.entryTerms || []), f.entryTerm])] : [];
+  const turma = f && f.turma ? calendar.find((x) => x.key === f.turma) : null;
+  const missing = f ? missingOf(f, courseId) : [];
+  const grossLocked = f && !f.grossUnlocked && !!coursePrice;
+  const blocked = !f || !!busy || !!locked || !!error;
 
   return (
-    <Dialog fullScreen open onClose={() => onClose()} classes={{ paper: classes.paper }}>
+    <Dialog fullScreen open onClose={tryClose} classes={{ paper: classes.paper }}>
       <div className={classes.top}>
-        <IconButton onClick={() => onClose()} aria-label="Fechar"><X /></IconButton>
+        <IconButton onClick={tryClose} aria-label="Fechar"><X /></IconButton>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div className={classes.title}>Proposta de bolsa{saved ? ` #${saved.id}` : ""}</div>
+          <div className={classes.title}>{saved ? `Proposta #${saved.id}` : "Nova proposta"}{saved ? (locked ? " · enviada" : " · rascunho") : ""}</div>
           <Typography variant="body2" color="textSecondary" noWrap>{lead.name}{institution ? ` · ${institution.name}` : ""}{lead.affiliate ? ` · indicado pelo afiliado ${lead.affiliate.name}` : ""}</Typography>
         </div>
-        {locked && <span className={classes.chip}>Já enviada — duplique para alterar</span>}
+        {locked && <Button variant="outlined" size="small" startIcon={<CopyPlus size={15} />} disabled={!!busy} onClick={duplicate}>Duplicar para editar</Button>}
+        {saved && !locked && <Button size="small" startIcon={<FilePlus2 size={15} />} disabled={!!busy || dirty} title={dirty ? "Salve esta proposta antes de começar outra" : ""} onClick={startNew}>Nova proposta</Button>}
       </div>
 
       {!f ? <div style={{ margin: "auto" }}><CircularProgress /></div> : (
@@ -255,7 +347,7 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
                   </div>
                 )}
                 onChange={(e, c) => c && loadDefaults(c.id, templateId, true)}
-                renderInput={(params) => <TextField {...params} variant="outlined" margin="dense" label="Curso" placeholder="Busque pelo nome" />}
+                renderInput={(params) => <TextField {...params} required variant="outlined" margin="dense" label="Curso" placeholder="Busque pelo nome" error={!locked && !courseId} helperText={!locked && !courseId ? "Obrigatório para gerar" : undefined} />}
               />
               {course && (
                 <div className={classes.facts}>
@@ -272,14 +364,16 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
                   .map((t) => (<MenuItem key={t.id} value={t.id}>{t.name}</MenuItem>))}
               </TextField>
               <div className={classes.grid2}>
-                <TextField select fullWidth variant="outlined" margin="dense" label="Forma de ingresso" value={f.admissionType} disabled={!!locked}
+                <TextField select fullWidth required variant="outlined" margin="dense" label="Forma de ingresso" value={f.admissionType} disabled={!!locked}
+                  error={!locked && !f.admissionType} helperText={!locked && !f.admissionType ? "Obrigatório para gerar" : " "}
                   onChange={(e) => { e && e.persist && e.persist(); return (setF((p) => {
                     const entry = (options.admissionNeedsSemester || []).includes(e.target.value) ? p.entrySemester : 1;
                     return { ...p, admissionType: e.target.value, entrySemester: entry, ...(p.attendAuto ? { attend: String(p.courseSemesters - entry + 1) } : {}) };
                   })); }}>
                   {(options.admissionTypes || []).map((t) => (<MenuItem key={t} value={t}>{t}</MenuItem>))}
                 </TextField>
-                <TextField select fullWidth variant="outlined" margin="dense" label="Período de ingresso" value={f.entryTerm} onChange={set("entryTerm")} disabled={!!locked}>
+                <TextField select fullWidth variant="outlined" margin="dense" label="Período de ingresso" value={f.entryTerm} onChange={set("entryTerm")} disabled={!!locked || !!turma}
+                  helperText={turma ? "Vem da turma" : " "}>
                   {terms.map((t) => (<MenuItem key={t} value={t}>{termLabel(t)}</MenuItem>))}
                 </TextField>
               </div>
@@ -300,24 +394,64 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
             </div>
 
             <div className={classes.card}>
+              <div className={classes.cardHead}><CalendarClock size={17} /> Turma e prazos</div>
+              <TextField select fullWidth variant="outlined" margin="dense" label="Turma do calendário" value={f.turma} onChange={pickTurma} disabled={!!locked}
+                helperText={calendar.length ? "A turma é a do período em que o aluno faz a matrícula. Os prazos vêm do calendário." : "Nenhuma turma no calendário. Cadastre em Configurar CRM ou informe as datas."}>
+                {calendar.map((t) => (
+                  <MenuItem key={t.key} value={t.key}>
+                    <span style={{ display: "flex", gap: 8, width: "100%", alignItems: "baseline", flexWrap: "wrap" }}>
+                      <b>{t.name} {t.term}</b>
+                      <span style={{ opacity: 0.75 }}>boleto até {fmtDay(t.boletoDeadline)}</span>
+                      {t.key === currentKey && <span style={{ fontSize: 12, fontWeight: 700, color: "#16a34a" }}>turma atual</span>}
+                    </span>
+                  </MenuItem>
+                ))}
+                <MenuItem value="">Sem turma (informar as datas)</MenuItem>
+              </TextField>
+              {turma ? (
+                <>
+                  <div className={classes.deadline}>
+                    <div className={`${classes.dl} ${classes.dlMain}`}><div className={classes.dlLabel}>Prazo do boleto</div><div className={classes.dlValue}>{fmtDay(turma.boletoDeadline)}</div></div>
+                    <div className={classes.dl}><div className={classes.dlLabel}>AVA liberado até</div><div className={classes.dlValue}>{turma.releaseDate ? fmtDay(turma.releaseDate) : "—"}</div></div>
+                    <div className={classes.dl}><div className={classes.dlLabel}>Parcelas</div><div className={classes.dlValue}>{turma.installments}</div></div>
+                  </div>
+                  <div className={classes.note} style={{ marginTop: 8 }}>
+                    Matrículas de {fmtDay(turma.from)} a {fmtDay(turma.to)}{turma.veteranosFrom ? ` · veteranos a partir de ${fmtDay(turma.veteranosFrom)}` : ""}. A 1ª mensalidade vence no prazo do boleto; as demais, todo dia {f.dueDay || "—"}.
+                  </div>
+                </>
+              ) : (
+                <div className={classes.grid2}>
+                  {field("firstDueDate", f.firstExempt ? "1ª (isenta) vence em" : "1ª mensalidade vence em", { type: "date", required: true, InputLabelProps: { shrink: true }, disabled: !!locked, error: !locked && !f.firstDueDate })}
+                  {field("installments", "Parcelas deste semestre", { disabled: !!locked })}
+                </div>
+              )}
+              {f.firstExempt && field("secondDueDate", "2ª mensalidade vence em", { type: "date", InputLabelProps: { shrink: true }, disabled: !!locked })}
+            </div>
+
+            <div className={classes.card}>
               <div className={classes.cardHead}><Wallet size={17} /> Condições comerciais</div>
               <div className={classes.grid2}>
-                {field("gross", "Mensalidade bruta (R$)", { onChange: setGross, disabled: !!locked })}
+                {field("gross", "Mensalidade bruta (R$)", { onChange: setGross, disabled: !!locked || grossLocked, helperText: grossLocked ? "Valor do curso" : f.grossUnlocked ? "Destravado pela gestão" : " " })}
                 {field("bolsa", "Bolsa aplicada (%)", { onChange: setBolsa, disabled: !!locked })}
                 {field("first", "Primeira mensalidade (R$)", { onChange: setFirst, disabled: !!locked })}
                 {field("enrollmentFee", "Taxa de matrícula (R$)", { disabled: !!locked })}
-                {field("dueDay", "Dia de vencimento", { disabled: !!locked })}
-                {field("installments", "Parcelas deste semestre", { disabled: !!locked })}
+                {field("dueDay", "Dia de vencimento das demais", { onChange: setDueDay, disabled: !!locked })}
               </div>
+              {(canUnlock && (coursePrice || f.grossUnlocked)) ? (
+                <div className={classes.lockRow}>
+                  <Lock size={14} /> {f.grossUnlocked ? "A mensalidade bruta foi destravada." : "A mensalidade bruta vem do curso e fica travada para os consultores."}
+                  <Button size="small" disabled={!!locked} onClick={toggleGross}>{f.grossUnlocked ? "Voltar ao valor do curso" : "Destravar"}</Button>
+                </div>
+              ) : null}
+              {course && !coursePrice && !f.grossUnlocked && (
+                <div className={classes.missing} style={{ marginTop: 4 }}><AlertTriangle size={14} /> Este curso não tem mensalidade cadastrada. {canUnlock ? "Destrave e informe o valor, ou cadastre em Cursos." : "Peça à gestão para cadastrar em Cursos."}</div>
+              )}
+              {canUnlock && course && !coursePrice && !f.grossUnlocked && <Button size="small" onClick={toggleGross}>Destravar e informar o valor</Button>}
               <div className={classes.note}>Mude a primeira mensalidade ou a bolsa: o outro valor se ajusta.</div>
               <FormControlLabel
                 control={<Switch color="primary" checked={!!f.firstExempt} disabled={!!locked} onChange={(e) => { e && e.persist && e.persist(); return (setF((p) => ({ ...p, firstExempt: e.target.checked }))); }} />}
                 label="1ª mensalidade isenta"
               />
-              <div className={classes.grid2}>
-                {field("firstDueDate", f.firstExempt ? "1ª (isenta) vence em" : "1ª mensalidade vence em", { type: "date", InputLabelProps: { shrink: true }, disabled: !!locked })}
-                {f.firstExempt && field("secondDueDate", "2ª mensalidade vence em", { type: "date", InputLabelProps: { shrink: true }, disabled: !!locked })}
-              </div>
               {field("installmentsFixed", "Total de parcelas do curso (vazio = até o fim do curso)", { disabled: !!locked, type: "number", inputProps: { min: 1, max: 120 } })}
               <FormControlLabel
                 control={<Switch color="primary" checked={!!f.fixedUntilEnd} disabled={!!locked} onChange={(e) => { e && e.persist && e.persist(); return (setF((p) => ({ ...p, fixedUntilEnd: e.target.checked }))); }} />}
@@ -432,12 +566,32 @@ const ProposalStudio = ({ lead, proposalId, ctx, onClose, onSaved }) => {
       )}
 
       <div className={classes.foot}>
-        <span style={{ flex: 1 }} />
-        <Button variant="outlined" startIcon={<Save size={16} />} disabled={!f || !!busy || !!locked || !!error} onClick={saveDraft}>Salvar rascunho</Button>
-        <Button variant="outlined" startIcon={<Download size={16} />} disabled={!f || !!busy || !!locked || !!error} onClick={download}>{busy === "pdf" ? "Gerando…" : "Baixar PDF"}</Button>
-        <Button variant="outlined" startIcon={<Link2 size={16} />} disabled={!f || !!busy || !!locked || !!error} onClick={copyLink}>Copiar link</Button>
-        <Button variant="contained" color="primary" startIcon={<SendHorizonal size={16} />} disabled={!f || !!busy || !!locked || !!error} onClick={() => setSendOpen(true)}>Enviar ao candidato</Button>
+        <div className={classes.footInfo}>
+          {!locked && missing.length > 0 && <span className={classes.missing}><AlertTriangle size={15} style={{ flex: "none" }} /> Falta para gerar o PDF ou enviar: {missing.join(", ")}.</span>}
+          {!locked && (dirty
+            ? <span className={classes.savedAt}>Alterações não salvas</span>
+            : savedAt ? <span className={classes.savedAt}><Check size={14} /> Salvo às {savedAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</span> : null)}
+        </div>
+        {!locked && <Button variant="outlined" startIcon={busy === "save" ? <CircularProgress size={16} /> : <Save size={16} />} disabled={blocked} onClick={saveOnly}>Salvar</Button>}
+        {!locked && <Button variant="outlined" startIcon={busy === "leave" ? <CircularProgress size={16} /> : <Check size={16} />} disabled={blocked} onClick={saveAndLeave}>Salvar e sair</Button>}
+        <Button variant="outlined" startIcon={<Download size={16} />} disabled={!f || !!busy || !!error || (!locked && missing.length > 0)} onClick={locked ? run("pdf", async () => {
+          const res = await api.get(`/proposals/${saved.id}/pdf`, { responseType: "blob" });
+          const url = URL.createObjectURL(res.data); const a = document.createElement("a"); a.href = url; a.download = `Proposta - ${lead.name}.pdf`; a.click(); URL.revokeObjectURL(url);
+        }) : download}>{busy === "pdf" ? "Gerando…" : "Baixar PDF"}</Button>
+        {!locked && <Button variant="contained" color="primary" startIcon={<SendHorizonal size={16} />} disabled={blocked || missing.length > 0} onClick={() => setSendOpen(true)}>Enviar ao candidato</Button>}
       </div>
+
+      <Dialog open={leaveOpen} onClose={() => setLeaveOpen(false)} maxWidth="sm">
+        <DialogTitle>Salvar antes de sair?</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="textSecondary">Esta proposta tem alterações que ainda não foram salvas.</Typography>
+        </DialogContent>
+        <DialogActions style={{ flexWrap: "wrap", gap: 6 }}>
+          <Button onClick={() => setLeaveOpen(false)}>Continuar editando</Button>
+          <Button color="secondary" onClick={() => { setLeaveOpen(false); onClose(); }}>Sair sem salvar</Button>
+          <Button variant="contained" color="primary" disabled={!!busy || !!error} startIcon={busy === "leave" ? <CircularProgress size={16} /> : <Save size={16} />} onClick={saveAndLeave}>Salvar e sair</Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog open={sendOpen} onClose={() => setSendOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>Enviar proposta a {lead.name.split(" ")[0]}</DialogTitle>

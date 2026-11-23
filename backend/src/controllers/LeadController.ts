@@ -671,6 +671,8 @@ export const getSettings = async (_req: Request, res: Response): Promise<Respons
     entryTerms: (await getEntryTerms()).terms,
     // the last day to enroll in each period (the reminders of "deadline close" count from it)
     entryDeadlines: await readDeadlines(),
+    // the classes of each period: enrollment window, boleto deadline, AVA release and installments (the proposal takes its dates from it)
+    entryCalendar: await (await import("../services/CrmServices/EntryCalendar")).getEntryCalendar(),
     // the documents a student delivers after the enrollment, and the automatic reminder about the missing ones
     requiredDocs: await requiredDocs(),
     docsAutoReminder: (await getSetting("docs_auto_reminder", "false")) === "true",
@@ -713,6 +715,7 @@ export const putSettings = async (req: Request, res: Response): Promise<Response
     });
     await setSetting("crm_entry_deadlines", JSON.stringify(out));
   }
+  if (Array.isArray(b.entryCalendar)) await (await import("../services/CrmServices/EntryCalendar")).saveEntryCalendar(b.entryCalendar);
   if (Array.isArray(b.ownerIds)) await setSetting("crm_owner_ids", JSON.stringify(b.ownerIds.map(Number)));
   if (typeof b.formTitle === "string") await setSetting("crm_form_title", b.formTitle.slice(0, 120));
   if (typeof b.formThanks === "string") await setSetting("crm_form_thanks", b.formThanks.slice(0, 300));
