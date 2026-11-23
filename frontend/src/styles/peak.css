@@ -1,13 +1,13 @@
-/* The boxes of the panels. White on the blue-grey page, with a marked border and shadow so each one reads as a block, a strip of
-   colour on top that says what kind of number it is (blue volume, green gain, amber attention, red problem), navy numbers and
-   light-blue details. In the dark theme the boxes are blue-grey. The Peak Chart on top of the page stays dark: it is the highlight. */
+/* The boxes of the panels: plain white on a neutral grey page, a crisp border and a soft shadow. No tinted backgrounds and no
+   coloured strips: colour appears only where it says something (the number of a problem, a small dot of state, a chart).
+   In the dark theme the boxes are a neutral dark grey. The Peak Chart on top of the page stays dark: it is the highlight. */
 .pk {
   --pk-accent: var(--c-leads);
-  --pk-num: var(--c-brand);
+  --pk-num: var(--text-1);
   --pk-ink: var(--text-1);
-  --pk-ink-2: #4b5c72;
+  --pk-ink-2: #5b6676;
   --pk-ink-3: var(--text-3);
-  --pk-line: #cbd6e4;
+  --pk-line: #dfe3ea;
   --pk-good: #15803d;
   --pk-bad: #dc2626;
   --pk-warn: #b45309;
@@ -15,28 +15,25 @@
   position: relative;
   min-width: 0;
   color: var(--pk-ink);
-  border-radius: 16px;
+  border-radius: 14px;
   border: 1px solid var(--pk-line);
   background: var(--pk-base);
-  box-shadow: 0 1px 2px rgba(11, 66, 121, 0.08), 0 10px 22px -14px rgba(11, 66, 121, 0.35);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05), 0 1px 3px rgba(16, 24, 40, 0.04);
   overflow: hidden;
 }
-:root[data-theme="dark"] .pk { --pk-base: #18212d; --pk-line: rgba(130, 165, 210, 0.2); --pk-ink-2: #9aa9bb; --pk-good: #4ade80; --pk-bad: #f87171; --pk-warn: #fbbf24; box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset; }
-/* the strip of colour on top */
-.pk::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 3px; background: linear-gradient(90deg, var(--pk-accent), color-mix(in srgb, var(--pk-accent) 45%, transparent)); pointer-events: none; }
-.pk[data-tone="good"] { --pk-accent: var(--c-won); --pk-num: var(--pk-good); }
+:root[data-theme="dark"] .pk { --pk-base: #1b1d1f; --pk-line: rgba(255, 255, 255, 0.1); --pk-ink-2: #9aa3ad; --pk-good: #4ade80; --pk-bad: #f87171; --pk-warn: #fbbf24; box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset; }
+.pk[data-tone="good"] { --pk-accent: var(--c-won); }
 .pk[data-tone="bad"] { --pk-accent: var(--c-lost); --pk-num: var(--pk-bad); }
 .pk[data-tone="warn"] { --pk-accent: var(--c-warn); --pk-num: var(--pk-warn); }
 .pk[data-tone="violet"] { --pk-accent: var(--c-violet); }
 .pk[data-tone="brand"] { --pk-accent: var(--c-brand); }
 button.pk, a.pk { font: inherit; text-align: left; cursor: pointer; text-decoration: none; width: 100%; transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease; }
-button.pk:hover, a.pk:hover { border-color: var(--pk-accent); box-shadow: 0 2px 4px rgba(11, 66, 121, 0.1), 0 16px 28px -16px rgba(11, 66, 121, 0.5); transform: translateY(-1px); }
+button.pk:hover, a.pk:hover { border-color: #b8c0cc; box-shadow: 0 2px 4px rgba(16, 24, 40, 0.06), 0 8px 16px -8px rgba(16, 24, 40, 0.12); }
 button.pk:focus-visible, a.pk:focus-visible { outline: 2px solid var(--pk-accent); outline-offset: 2px; }
 
 /* the title of a section of a page: a navy bar, the title and one sentence */
 .pk-section { display: flex; align-items: center; gap: 10px 12px; flex-wrap: wrap; margin: 0 0 12px; min-width: 0; }
-.pk-section h2 { margin: 0; font-size: 17px; font-weight: 700; letter-spacing: -0.02em; display: flex; align-items: center; gap: 10px; color: var(--text-1); }
-.pk-section h2::before { content: ""; width: 4px; height: 18px; border-radius: 4px; background: linear-gradient(180deg, #0b4279, #0693e3); flex: none; }
+.pk-section h2 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -0.02em; display: flex; align-items: center; gap: 10px; color: var(--text-1); }
 .pk-section .hint { font-size: 12.5px; color: var(--text-2); flex: 1; min-width: 160px; }
 
 /* the row of Peak Charts: columns on a wide screen, a swipe row on a phone (the page itself never scrolls sideways) */
@@ -55,24 +52,27 @@ button.pk:focus-visible, a.pk:focus-visible { outline: 2px solid var(--pk-accent
 
 /* small stat card */
 .pk-stat { padding: 16px 16px 14px; display: flex; flex-direction: column; gap: 6px; min-height: 124px; }
-.pk-label { font-size: 12.5px; font-weight: 600; color: var(--pk-ink-2); display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
-.pk-ico { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; flex: none; color: var(--pk-accent); background: color-mix(in srgb, var(--pk-accent) 14%, transparent); margin: -2px -2px 0 0; }
-.pk-value { color: var(--pk-num); font-size: 30px; font-weight: 700; letter-spacing: -0.03em; line-height: 1.1; font-variant-numeric: tabular-nums; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.pk-label { font-size: 13px; font-weight: 500; color: var(--pk-ink-2); display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.pk-ico { display: grid; place-items: center; flex: none; color: var(--pk-ink-3); }
+.pk-value { color: var(--pk-num); font-size: 28px; font-weight: 650; letter-spacing: -0.03em; line-height: 1.1; font-variant-numeric: tabular-nums; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .pk-hint { font-size: 12px; color: var(--pk-ink-2); line-height: 1.35; }
 .pk-chip { position: relative; display: inline-flex; align-items: center; gap: 3px; font-size: 11.5px; font-weight: 700; letter-spacing: 0; padding: 2px 7px; border-radius: 999px; background: var(--track); color: var(--pk-ink-2); white-space: nowrap; }
 .pk-chip[data-good="1"] { background: color-mix(in srgb, var(--pk-good) 15%, transparent); color: var(--pk-good); }
 .pk-chip[data-good="0"] { background: color-mix(in srgb, var(--pk-bad) 13%, transparent); color: var(--pk-bad); }
 .pk-spark { display: block; width: 100%; height: 38px; margin-top: auto; overflow: visible; }
 
-/* the counter of what asks for action now: a large number that counts up, on a tinted box */
-.pk-count { padding: 18px 18px 16px; display: flex; flex-direction: column; gap: 4px; min-height: 138px; background: linear-gradient(180deg, color-mix(in srgb, var(--pk-accent) 9%, var(--pk-base)) 0%, var(--pk-base) 70%); }
-.pk-count .n { color: var(--pk-num); font-size: 44px; font-weight: 750; letter-spacing: -0.04em; line-height: 1; font-variant-numeric: tabular-nums; margin-top: 6px; }
-.pk-count .go { margin-top: auto; padding-top: 8px; font-size: 12.5px; font-weight: 650; color: var(--pk-accent); display: inline-flex; align-items: center; gap: 4px; }
+/* the counter of what asks for action now: a large number that counts up; a dot of colour says the state */
+.pk-count { padding: 18px 18px 16px; display: flex; flex-direction: column; gap: 4px; min-height: 132px; }
+.pk-count .pk-label > span:first-child { display: inline-flex; align-items: center; gap: 8px; }
+.pk-count .pk-label > span:first-child::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--pk-accent); flex: none; }
+.pk-count .n { color: var(--pk-num); font-size: 40px; font-weight: 650; letter-spacing: -0.04em; line-height: 1.05; font-variant-numeric: tabular-nums; margin-top: 8px; }
+.pk-count .go { margin-top: auto; padding-top: 10px; font-size: 12.5px; font-weight: 600; color: var(--pk-ink-2); display: inline-flex; align-items: center; gap: 4px; }
+button.pk-count:hover .go { color: var(--c-brand); }
 
 /* panel with a title */
 .pk-panel { padding: 20px 20px 18px; }
 .pk-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
-.pk-title { margin: 0; font-size: 15px; font-weight: 700; letter-spacing: -0.01em; color: var(--pk-ink); }
+.pk-title { margin: 0; font-size: 14.5px; font-weight: 650; letter-spacing: -0.01em; color: var(--pk-ink); }
 .pk-sub { font-size: 12.5px; color: var(--pk-ink-2); margin-top: 3px; line-height: 1.4; }
 .pk-state { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; min-height: 110px; text-align: center; font-size: 13.5px; color: var(--pk-ink-2); }
 .pk-btn { border: 1px solid var(--pk-line); background: var(--pk-base); color: var(--pk-ink); border-radius: 10px; padding: 6px 12px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
@@ -92,15 +92,13 @@ button.pk:focus-visible, a.pk:focus-visible { outline: 2px solid var(--pk-accent
 .pk-rank li { display: grid; grid-template-columns: 30px minmax(0, 1fr) 84px auto; gap: 2px 12px; align-items: center; padding: 9px 8px; border-radius: 10px; font-size: 13.5px; }
 .pk-rank li + li { border-top: 1px solid color-mix(in srgb, var(--pk-line) 60%, transparent); border-radius: 0; }
 .pk-rank .pos { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; background: var(--track); color: var(--pk-ink-2); font-variant-numeric: tabular-nums; }
-.pk-rank li:nth-child(1) .pos { background: #0b4279; color: #fff; }
-.pk-rank li:nth-child(2) .pos { background: color-mix(in srgb, #0b4279 55%, #fff); color: #fff; }
-.pk-rank li:nth-child(3) .pos { background: color-mix(in srgb, #0693e3 45%, #fff); color: #0b2a4a; }
+.pk-rank li:nth-child(1) .pos { background: var(--text-1); color: var(--pk-base); }
 .pk-rank .who { min-width: 0; }
 .pk-rank .name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
 .pk-rank .note { display: block; font-size: 12px; color: var(--pk-ink-2); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pk-rank .track { height: 6px; border-radius: 999px; background: var(--track); overflow: hidden; }
-.pk-rank .fill { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--pk-num), var(--pk-accent)); transition: width 0.6s cubic-bezier(0.2, 0.8, 0.2, 1); }
-.pk-rank .val { color: var(--pk-num); font-weight: 750; font-size: 15px; font-variant-numeric: tabular-nums; text-align: right; min-width: 44px; }
+.pk-rank .track { height: 4px; border-radius: 999px; background: var(--track); overflow: hidden; }
+.pk-rank .fill { display: block; height: 100%; border-radius: 999px; background: var(--c-brand); transition: width 0.6s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.pk-rank .val { color: var(--pk-num); font-weight: 650; font-size: 15px; font-variant-numeric: tabular-nums; text-align: right; min-width: 44px; }
 .pk-rank .val small { display: block; font-size: 11.5px; font-weight: 600; color: var(--pk-ink-2); }
 .pk-rank li[data-me="1"] { background: var(--accent-soft); }
 .pk-rank button.name { border: 0; background: none; color: inherit; font: inherit; font-weight: 600; padding: 0; text-align: left; cursor: pointer; width: 100%; }
@@ -117,34 +115,33 @@ button.pk:focus-visible, a.pk:focus-visible { outline: 2px solid var(--pk-accent
 
 /* the funnel as a sequence of stages: each stage is a block with its number; the empty ones fold into one quiet line */
 .pk-flow { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
-.pk-flow .stage { position: relative; border: 1px solid var(--pk-line); border-radius: 12px; padding: 12px 14px 12px 16px; background: color-mix(in srgb, var(--stage, var(--c-leads)) 7%, var(--pk-base)); font: inherit; color: inherit; text-align: left; min-width: 0; }
-.pk-flow button.stage { cursor: pointer; transition: border-color .15s ease, transform .15s ease; }
-.pk-flow button.stage:hover { border-color: var(--stage, var(--c-leads)); transform: translateY(-1px); }
-.pk-flow .stage::before { content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 4px; border-radius: 0 4px 4px 0; background: var(--stage, var(--c-leads)); }
-.pk-flow .stage .step { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--pk-ink-3); }
-.pk-flow .stage .nm { font-size: 13px; font-weight: 600; color: var(--pk-ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 1px; }
-.pk-flow .stage .n { font-size: 30px; font-weight: 750; letter-spacing: -0.03em; line-height: 1.1; color: var(--pk-ink); font-variant-numeric: tabular-nums; margin-top: 6px; display: flex; align-items: baseline; gap: 8px; }
-.pk-flow .stage .n small { font-size: 12px; font-weight: 650; color: var(--pk-ink-2); letter-spacing: 0; }
+.pk-flow .stage { position: relative; border: 1px solid var(--pk-line); border-radius: 10px; padding: 12px 14px; background: var(--surface-2); font: inherit; color: inherit; text-align: left; min-width: 0; }
+.pk-flow button.stage { cursor: pointer; transition: border-color .15s ease, background .15s ease; }
+.pk-flow button.stage:hover { border-color: #b8c0cc; background: var(--pk-base); }
+.pk-flow .stage .step { font-size: 11px; font-weight: 600; color: var(--pk-ink-3); display: flex; align-items: center; gap: 6px; }
+.pk-flow .stage .step::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--stage, var(--c-leads)); }
+.pk-flow .stage .nm { font-size: 13px; font-weight: 600; color: var(--pk-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 3px; }
+.pk-flow .stage .n { font-size: 26px; font-weight: 650; letter-spacing: -0.03em; line-height: 1.1; color: var(--pk-ink); font-variant-numeric: tabular-nums; margin-top: 8px; display: flex; align-items: baseline; gap: 8px; }
+.pk-flow .stage .n small { font-size: 12px; font-weight: 500; color: var(--pk-ink-2); letter-spacing: 0; }
 .pk-flow-empty { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--pk-line); font-size: 12.5px; color: var(--pk-ink-2); display: flex; gap: 6px 8px; flex-wrap: wrap; align-items: center; }
 .pk-flow-empty span.tag { padding: 2px 9px; border-radius: 999px; background: var(--track); font-size: 12px; }
 
 /* a list of things to do: colour of the state, what it is, and the button that opens the right screen */
-.pk-todo { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
-.pk-todo li { display: flex; align-items: center; gap: 12px; padding: 11px 12px; border: 1px solid var(--pk-line); border-left: 4px solid var(--todo, var(--c-leads)); border-radius: 10px; background: color-mix(in srgb, var(--todo, var(--c-leads)) 5%, var(--pk-base)); min-width: 0; }
+.pk-todo { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+.pk-todo li { display: flex; align-items: center; gap: 12px; padding: 12px 0; min-width: 0; }
+.pk-todo li + li { border-top: 1px solid var(--pk-line); }
+.pk-todo li::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--todo, var(--c-leads)); flex: none; }
 .pk-todo .txt { flex: 1; min-width: 0; }
 .pk-todo .txt b { display: block; font-size: 13.5px; line-height: 1.35; }
 .pk-todo .txt span { display: block; font-size: 12.5px; color: var(--pk-ink-2); margin-top: 2px; line-height: 1.4; }
 
 /* table inside a panel */
 .pk-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
-.pk-table th { text-align: left; font-size: 11.5px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: var(--pk-ink-2); padding: 9px 10px; background: color-mix(in srgb, var(--c-brand) 6%, transparent); border-bottom: 1px solid var(--pk-line); white-space: nowrap; }
-.pk-table th:first-child { border-radius: 8px 0 0 0; }
-.pk-table th:last-child { border-radius: 0 8px 0 0; }
+.pk-table th { text-align: left; font-size: 12px; font-weight: 500; color: var(--pk-ink-2); padding: 8px 10px; border-bottom: 1px solid var(--pk-line); white-space: nowrap; }
 .pk-table td { padding: 11px 10px; border-bottom: 1px solid color-mix(in srgb, var(--pk-line) 60%, transparent); vertical-align: middle; }
-.pk-table tbody tr:nth-child(even) { background: color-mix(in srgb, var(--c-brand) 2.5%, transparent); }
 .pk-table .r { text-align: right; font-variant-numeric: tabular-nums; }
 .pk-table tbody tr[data-click="1"] { cursor: pointer; }
-.pk-table tbody tr[data-click="1"]:hover { background: var(--accent-soft); }
+.pk-table tbody tr[data-click="1"]:hover { background: var(--surface-2); }
 .pk-scroll { overflow-x: auto; }
 /* on a phone each row of the table becomes a card: nothing scrolls sideways */
 @media (max-width: 720px) {

@@ -54,7 +54,7 @@ const useStyles = makeStyles((theme) => {
     dateInput: { border: 0, background: "transparent", color: "inherit", fontFamily: "inherit", fontSize: 13.5, fontWeight: 600, cursor: "pointer", colorScheme: theme.palette.type },
     layout: { display: "grid", gap: theme.spacing(2.5), gridTemplateColumns: "minmax(0, 1fr) 340px", alignItems: "start", [theme.breakpoints.down("md")]: { gridTemplateColumns: "1fr" } },
     stack: { display: "grid", gap: theme.spacing(2.5), minWidth: 0 },
-    panel: { background: "var(--card-bg)", border: "1px solid var(--card-line)", borderRadius: 16, padding: theme.spacing(2.25, 2.5), boxShadow: "var(--card-shadow)", minWidth: 0 },
+    panel: { background: "var(--card-bg)", border: "1px solid var(--card-line)", borderRadius: 14, padding: theme.spacing(2.25, 2.5), boxShadow: "var(--card-shadow)", minWidth: 0 },
     panelTitle: { fontSize: 14, fontWeight: 650, margin: 0, letterSpacing: "-0.01em", display: "flex", alignItems: "center", gap: 8 },
     panelSub: { fontSize: 12.5, color: theme.palette.text.secondary, marginTop: 2 },
     nowGrid: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: theme.spacing(1), [theme.breakpoints.down("xs")]: { gridTemplateColumns: "1fr" } },

@@ -24,10 +24,10 @@ anterior; a meta em anel e a posição na equipe; o que foi feito hoje; o que fa
 as metas dos polos; as orientações. A posição vem em `team.position` de `/analytics/me/overview` (`{ rank, of }`, por matrículas
 no período): só o lugar e o total de consultores, nunca o número de um colega.
 
-**Visual:** os painéis usam o kit de `frontend/src/components/peak` sobre um fundo azul-acinzentado (`#e6edf5`, o fundo padrão do
+**Visual:** os painéis usam o kit de `frontend/src/components/peak` sobre um fundo cinza neutro (`#f0f2f5`, o fundo padrão do
 sistema). No topo, até quatro `PeakChart` (o cartão escuro do Peak Chart, de Louis Studios, no 21st.dev). Abaixo, caixas brancas
-com borda e sombra marcadas e uma faixa de cor no topo que diz o tipo do número: azul volume, verde ganho, âmbar atenção, vermelho
-problema (`styles/peak.css`). As peças:
+lisas, com borda fina e sombra leve, sem fundo tingido nem faixa colorida: a cor aparece só onde diz algo (o número de um problema,
+um ponto de estado, um gráfico) (`styles/peak.css`). As peças:
 - `SectionTitle`: título de seção com barra azul-marinho;
 - `GlowStat`: cartão de número com ícone em pastilha; `CountStat`: número grande que conta até o valor e abre a lista filtrada;
 - `GlowFunnel`: o funil em blocos na ordem das etapas (número e parte do total); as etapas vazias viram uma linha só;

@@ -154,7 +154,7 @@
 .stats-hub__dept { display: inline-flex; align-items: center; gap: 2px; flex: none; padding: 4px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow-card); }
 .stats-hub__item { border: 0; background: transparent; color: var(--text-2); font: inherit; font-size: 13.5px; font-weight: 600; padding: 8px 16px; border-radius: 999px; cursor: pointer; white-space: nowrap; transition: color .15s ease, background .15s ease; }
 .stats-hub__item:hover { color: var(--text-1); background: var(--accent-soft); }
-.stats-hub__item.is-on { color: #fff; background: #0b4279; box-shadow: 0 6px 14px -8px rgba(11, 66, 121, 0.8); }
+.stats-hub__item.is-on { color: #fff; background: #0b4279; }
 :root[data-theme="dark"] .stats-hub__item.is-on { background: #1f5f99; }
 .stats-hub__item:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
@@ -190,6 +190,6 @@
 .dock-label::before { content: ""; position: absolute; left: -4px; top: 50%; width: 8px; height: 8px; background: inherit; transform: translateY(-50%) rotate(45deg); border-radius: 1px; }
 
 /* the boxes of the panels that are not in components/peak yet (Atendimento, Polos e metas, Equipe agora): the same white box with a
-   marked border and shadow, so every screen of the area reads the same */
-:root { --card-bg: #ffffff; --card-line: #cbd6e4; --card-shadow: 0 1px 2px rgba(11, 66, 121, 0.08), 0 10px 22px -14px rgba(11, 66, 121, 0.35); }
-:root[data-theme="dark"] { --card-bg: #18212d; --card-line: rgba(130, 165, 210, 0.2); --card-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset; }
+   crisp border, so every screen of the area reads the same */
+:root { --card-bg: #ffffff; --card-line: #dfe3ea; --card-shadow: 0 1px 2px rgba(16, 24, 40, 0.05), 0 1px 3px rgba(16, 24, 40, 0.04); }
+:root[data-theme="dark"] { --card-bg: #1b1d1f; --card-line: rgba(255, 255, 255, 0.1); --card-shadow: none; }

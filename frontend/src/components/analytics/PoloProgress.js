@@ -51,10 +51,10 @@ const PoloCard = ({ p, mine, onOpen }) => {
   const hasTarget = p.target !== null && p.target !== undefined;
   return (
     <button type="button" className="pk" data-tone={TONE_OF[pace.tone]} onClick={onOpen} aria-label={`${p.name}: ${pace.label}. Abrir as metas dos polos`}
-      style={{ padding: "16px 16px 14px", display: "grid", gap: 10, ...(mine ? { borderColor: "var(--c-brand)", boxShadow: "0 0 0 1px var(--c-brand), 0 10px 22px -14px rgba(11,66,121,.45)" } : {}) }}>
+      style={{ padding: "16px 16px 14px", display: "grid", gap: 10, ...(mine ? { borderColor: "var(--text-1)" } : {}) }}>
       <span style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
         <span style={{ fontSize: 14, fontWeight: 700, lineHeight: 1.3, minWidth: 0 }} title={p.name}>{p.name}</span>
-        {mine ? <span className="pk-badge" style={{ background: "#0b4279", color: "#fff", flex: "none" }}>Seu polo</span> : null}
+        {mine ? <span className="pk-badge" style={{ background: "var(--text-1)", color: "var(--card-bg)", flex: "none" }}>Seu polo</span> : null}
       </span>
       <span style={{ display: "flex", alignItems: "center", gap: 14 }}>
         {hasTarget ? <PaceRing pct={p.pct} color={pace.color} /> : null}

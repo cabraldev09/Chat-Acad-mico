@@ -25,8 +25,8 @@ const palette = {
     text: { primary: "#0b1a2e", secondary: "#64748b" },
     divider: "#d5dde8",
     background: {
-      // a blue-grey a step deeper than white, so the white boxes stand out on every screen
-      default: "#e6edf5",
+      // a neutral grey a step deeper than white, so the white boxes stand out on every screen
+      default: "#f0f2f5",
       paper: "#ffffff",
       chat: "#f1f5f9",
     },

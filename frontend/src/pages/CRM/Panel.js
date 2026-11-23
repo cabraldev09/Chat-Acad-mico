@@ -233,7 +233,7 @@ const Panel = ({ mode = "now" }) => {
             <>
               <SectionTitle title="O que pede ação agora" hint="Os números de agora. Cada cartão abre a lista já filtrada." style={{ marginTop: 10 }} />
               <div className="pk-grid-4">
-                <CountStat id="open" label="Leads em andamento" icon={Users} tone="brand" value={openNow} hint="Em alguma etapa do funil" action="Abrir o funil" onClick={() => history.push("/crm")} />
+                <CountStat id="open" label="Leads em andamento" icon={Users} value={openNow} hint="Em alguma etapa do funil" action="Abrir o funil" onClick={() => history.push("/crm")} />
                 <CountStat id="waiting" label="Sem primeiro contato" icon={Clock} tone={waitingNow ? "bad" : "good"} value={waitingNow} hint={waitingNow ? "Chegaram há mais de uma hora" : "Ninguém esperando o primeiro contato"} action="Atender agora" onClick={() => history.push("/crm")} />
                 <CountStat id="stale" label="Esfriando" icon={Hourglass} tone={staleNow ? "warn" : "good"} value={staleNow} hint="Três dias ou mais sem contato" action="Retomar o contato" onClick={() => history.push("/crm?followUp=overdue")} />
                 <CountStat id="triage" label="Novos para conferir" icon={AlertTriangle} tone={triage.late ? "bad" : triage.total ? "warn" : "good"} value={triage.total} hint={triage.late ? `${nf(triage.late)} de dias anteriores` : "Confira no mesmo dia"} />
@@ -284,7 +284,7 @@ const Panel = ({ mode = "now" }) => {
 
               <SectionTitle title="Funil agora" hint="Quantos leads estão em cada etapa hoje. Clique em uma etapa para abrir o quadro." style={{ marginTop: 26 }}
                 action={<span className="pk-hint">Perdidos, fora do funil: <b>{nf(lostTotal)}</b></span>} />
-              <GlowPanel id="funnel" tone="brand" empty={!reached.some((f) => f.reached > 0) && !(lane && lane.total > 0)} emptyText="Nenhum lead em andamento agora.">
+              <GlowPanel id="funnel" empty={!reached.some((f) => f.reached > 0) && !(lane && lane.total > 0)} emptyText="Nenhum lead em andamento agora.">
                 {lane && lane.total > 0 && (
                   <div className={classes.lane} role="button" tabIndex={0} onClick={() => history.push("/crm")}
                     onKeyDown={(e) => { if (e.key === "Enter") history.push("/crm"); }}>
@@ -354,7 +354,7 @@ const Panel = ({ mode = "now" }) => {
               </div>
 
               <SectionTitle title="Dia a dia" hint="Cada dia do período, mesmo os sem movimento." style={{ marginTop: 26 }} />
-              <GlowPanel id="daily" tone="brand" action={<ChartLegend items={[[COLORS.leads, "Leads captados"], [COLORS.won, "Matrículas"], [COLORS.brand, "Média de 7 dias (leads)", true]]} />}>
+              <GlowPanel id="daily" action={<ChartLegend items={[[COLORS.leads, "Leads captados"], [COLORS.won, "Matrículas"], [COLORS.brand, "Média de 7 dias (leads)", true]]} />}>
                 <DailyChart series={series} />
               </GlowPanel>
 
