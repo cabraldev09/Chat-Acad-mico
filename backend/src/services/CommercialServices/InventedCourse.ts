@@ -7,14 +7,17 @@ const ASKED_COURSES = [
   "Publicidade e Propaganda", "Ciências Contábeis", "Administração", "Pedagogia", "Serviço Social", "Letras", "História", "Geografia", "Matemática"
 ];
 const plainName = (s: string): string => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-export const inventedCourse = (reply: string, list: Array<{ name: string }>): string | null => {
+// (a course named in what the tools or the approved texts returned is not an invention: the rule of the MEC names Medicina and Direito)
+export const inventedCourse = (reply: string, list: Array<{ name: string }>, evidence = ""): string | null => {
   if (!reply || !list.length) return null;
+  const backed = plainName(evidence);
   const offered = list.map(c => plainName(c.name));
   const sentences = String(reply).split(/(?<=[.!?:;])\s+|\n+/).map(plainName).filter(Boolean);
   for (const name of ASKED_COURSES) {
     const n = plainName(name);
     const word = new RegExp(`\\b${n}\\b`);
     if (offered.some(o => word.test(o))) continue;
+    if (backed && word.test(backed)) continue;
     if (sentences.some(t => word.test(t) && !/\b(nao|nem|nenhum|nenhuma|infelizmente|sem)\b/.test(t))) return name;
   }
   return null;

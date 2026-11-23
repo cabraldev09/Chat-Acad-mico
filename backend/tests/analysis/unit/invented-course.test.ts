@@ -28,6 +28,11 @@ describe("a course the institution does not offer never reaches the person", () 
   it("one word inside another is not a course", () => {
     expect(inventedCourse("A medicação e a enfermaria não fazem parte do curso.", catalog)).toBeNull();
   });
+  it("a course named in what the tools returned is not an invention (the rule of the MEC names Medicina)", () => {
+    const rule = "Cursos como Medicina, Direito, Odontologia, Psicologia e Enfermagem só podem ser ofertados no formato presencial.";
+    expect(inventedCourse("Pela regra do MEC, Medicina e Direito são presenciais.", catalog, rule)).toBeNull();
+    expect(inventedCourse("Temos Medicina, que é semipresencial.", catalog, "outro texto qualquer")).toBe("Medicina");
+  });
   it("no catalogue, no check", () => {
     expect(inventedCourse("Temos Medicina.", [])).toBeNull();
   });

@@ -446,7 +446,7 @@ const commercialAiTurnInner = async (d: TurnDeps): Promise<CommercialTurnResult>
   }
 
   // "É 100% EAD?", "tem aula presencial?": the system explains the format of the course from its rule, in the words of the team (never "vou confirmar")
-  if (d.input !== null && wrote && !media.length && modalityQuestion(lastText) && !state.slots.enrolledStudent && !modalityExplained(state.slots)) {
+  if (d.input !== null && wrote && !media.length && modalityQuestion(lastText) && !state.slots.enrolledStudent && !(modalityExplained(state.slots) && /ate aqui voce compreendeu|ficou claro como funciona|mesmas mudancas do mec/.test(plainText(lastBot)))) {
     const named3 = courseMention(lastText);
     const explained = await explainModality(d, named3 ? null : state.slots.courseId, named3 || state.slots.courseName);
     if (explained) return answered(explained.text, null, "course_modality", { intent: "course_modality", patch: explained.patch, endsWithQuestion: true });
