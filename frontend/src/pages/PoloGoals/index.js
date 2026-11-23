@@ -100,34 +100,39 @@ const useStyles = makeStyles((theme) => ({
   monthOn: { background: theme.palette.primary.main, color: "#fff", borderColor: theme.palette.primary.main, "&:hover": { background: theme.palette.primary.main } },
   monthBar: { height: 4, borderRadius: 4, marginTop: 6, background: "rgba(127,140,160,.3)", overflow: "hidden" },
   hero: {
-    display: "grid", gridTemplateColumns: "auto minmax(0,1fr)", gap: theme.spacing(3), alignItems: "center", color: "var(--text-1)", borderRadius: "var(--radius-card)", padding: theme.spacing(2.5, 3),
-    background: "var(--surface)", border: "1px solid var(--line)", boxShadow: "var(--shadow-card)", marginBottom: theme.spacing(2),
+    // the summary of the semester in the look of the cards of numbers (blue melting into navy, white text); the ring reads these colours
+    display: "grid", gridTemplateColumns: "auto minmax(0,1fr)", gap: theme.spacing(3), alignItems: "center", color: "#fff", borderRadius: 16, padding: theme.spacing(2.5, 3),
+    "--text-1": "#fff", "--text-2": "rgba(255,255,255,.8)", "--track": "rgba(255,255,255,.2)", "--c-leads": "#fff",
+    background: "radial-gradient(90% 150% at -6% 55%, #6cc0ff 0%, #3b8cff 22%, #2457e6 42%, rgba(25,58,160,.55) 60%, rgba(11,30,66,0) 80%), linear-gradient(100deg, #1b3fae 0%, #0c2147 62%, #0a1a38 100%)", border: "1px solid rgba(255,255,255,.14)", boxShadow: "0 14px 26px -16px rgba(20,60,160,.65)", marginBottom: theme.spacing(2),
     [theme.breakpoints.down("xs")]: { gridTemplateColumns: "1fr", justifyItems: "center", textAlign: "center" },
   },
   heroNum: { fontSize: 44, fontWeight: 700, letterSpacing: "-0.04em", lineHeight: 1, fontVariantNumeric: "tabular-nums" },
-  heroSub: { color: "var(--text-2)", fontSize: 13.5, marginTop: 4 },
+  heroSub: { color: "rgba(255,255,255,.82)", fontSize: 13.5, marginTop: 4 },
   facts: { display: "flex", gap: 8, flexWrap: "wrap", marginTop: 14, [theme.breakpoints.down("xs")]: { justifyContent: "center" } },
-  fact: { background: "var(--surface-2)", border: "1px solid var(--line)", borderRadius: "var(--radius-ctl)", padding: "7px 12px", fontSize: 12.5, lineHeight: 1.25, color: "var(--text-2)" },
-  factN: { fontWeight: 700, fontSize: 16, fontVariantNumeric: "tabular-nums", display: "block", color: "var(--text-1)" },
+  fact: { background: "rgba(255,255,255,.12)", border: "1px solid rgba(255,255,255,.18)", borderRadius: "var(--radius-ctl)", padding: "7px 12px", fontSize: 12.5, lineHeight: 1.25, color: "rgba(255,255,255,.82)" },
+  factN: { fontWeight: 700, fontSize: 16, fontVariantNumeric: "tabular-nums", display: "block", color: "#fff" },
   toolbar: { display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: theme.spacing(1.5) },
   seg: { display: "inline-flex", border: theme.border.divider, borderRadius: 10, overflow: "hidden" },
   segBtn: { border: 0, background: "transparent", color: "inherit", padding: "6px 12px", fontFamily: "inherit", fontSize: 13, fontWeight: 600, cursor: "pointer", display: "inline-flex", gap: 6, alignItems: "center" },
   segOn: { background: theme.palette.primary.main, color: "#fff" },
   grid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 300px), 1fr))", gap: theme.spacing(1.5) },
-  card: { background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "var(--radius-card)", padding: theme.spacing(2), position: "relative", overflow: "hidden", boxShadow: "var(--shadow-card)", transition: "border-color .15s ease", "&:hover": { borderColor: "var(--line-strong)" } },
+  card: { background: "var(--card-bg, var(--surface))", border: "1px solid var(--card-line, var(--line))", borderRadius: 14, position: "relative", overflow: "hidden", boxShadow: "var(--card-shadow)", transition: "border-color .15s ease", "&:hover": { borderColor: "var(--c-brand)" } },
+  // the name of the polo on a navy band: the head of the card, read first
+  cardHead: { display: "flex", alignItems: "center", gap: 10, padding: theme.spacing(1.5, 2), color: "#fff", background: "linear-gradient(100deg, #1b4f9a 0%, #0b4279 45%, #0a2f5c 100%)", "& $rank": { background: "rgba(255,255,255,.18)", color: "#fff" }, "& $hint": { color: "rgba(255,255,255,.8)" }, "& .MuiIconButton-root": { color: "#fff" } },
+  cardBody: { padding: theme.spacing(0.5, 2, 2) },
   rank: { width: 26, height: 26, borderRadius: 8, display: "inline-grid", placeItems: "center", fontSize: 12.5, fontWeight: 700, background: theme.palette.action.selected, flexShrink: 0 },
-  badge: { borderRadius: 999, padding: "3px 10px", fontSize: 13, fontWeight: 700, fontVariantNumeric: "tabular-nums", color: "#fff", whiteSpace: "nowrap" },
+  badge: { borderRadius: 999, padding: "3px 10px", fontSize: 13, fontWeight: 700, fontVariantNumeric: "tabular-nums", color: "#fff", whiteSpace: "nowrap", boxShadow: "0 0 0 2px rgba(255,255,255,.28)" },
   track: { height: 6, borderRadius: 999, background: "var(--track)", position: "relative", marginTop: 14, marginBottom: 12 },
   fill: { height: "100%", borderRadius: 999, transition: "width .7s cubic-bezier(.2,.8,.2,1)" },
   tick: { position: "absolute", top: -4, bottom: -4, width: 2, background: theme.palette.text.primary, opacity: 0.55, borderRadius: 2 },
   nums: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(90px, 1fr))", gap: 8 },
   numLabel: { fontSize: 11.5, color: theme.palette.text.secondary },
-  numVal: { fontSize: 21, fontWeight: 700, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums", lineHeight: 1.15 },
+  numVal: { color: "var(--c-brand)", fontSize: 21, fontWeight: 700, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums", lineHeight: 1.15 },
   foot: { display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", fontSize: 12, color: theme.palette.text.secondary, marginTop: 12, paddingTop: 10, borderTop: theme.border.divider },
   strip: { display: "flex", gap: 5, marginTop: 12, alignItems: "flex-end" },
   stripCol: { flex: 1, textAlign: "center", fontSize: 10.5, color: theme.palette.text.secondary, cursor: "pointer", border: 0, background: "transparent", padding: 0, fontFamily: "inherit" },
   stripNum: { fontSize: 12.5, fontWeight: 700, lineHeight: "16px", marginBottom: 2, color: theme.palette.text.primary, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" },
-  stripBar: { height: 26, borderRadius: 5, background: theme.palette.action.selected, position: "relative", overflow: "hidden", marginBottom: 3 },
+  stripBar: { height: 26, borderRadius: 5, background: "color-mix(in srgb, var(--c-brand) 9%, transparent)", position: "relative", overflow: "hidden", marginBottom: 3 },
   tableWrap: { overflowX: "auto", background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "var(--radius-card)" },
   table: { borderCollapse: "collapse", width: "100%", minWidth: 860, fontSize: 13.5, fontVariantNumeric: "tabular-nums", "& th": { background: "var(--surface-2)", color: "var(--text-2)", fontSize: 12.5, fontWeight: 600, padding: "10px 12px", textAlign: "center", whiteSpace: "nowrap", borderBottom: "1px solid var(--line)" }, "& td": { padding: "9px 12px", textAlign: "center", borderBottom: theme.border.divider }, "& td:nth-child(2), & th:nth-child(2)": { textAlign: "left" }, "& tfoot td": { fontWeight: 700, background: theme.palette.action.hover } },
   hint: { fontSize: 12.5, color: theme.palette.text.secondary },
@@ -661,15 +666,16 @@ const PoloGoals = () => {
                   const tone = TONE[r.p.status];
                   return (
                     <div key={r.poloId} className={classes.card}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <div className={classes.cardHead}>
                         <span className={classes.rank}>{i + 1}</span>
                         <div style={{ minWidth: 0, flex: 1 }}>
-                          <div style={{ fontWeight: 700, fontSize: 15, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.name}>{shortName(r.name)}</div>
+                          <div style={{ fontWeight: 700, fontSize: 15, lineHeight: 1.25, overflowWrap: "anywhere" }}>{shortName(r.name)}</div>
                           <div className={classes.hint}>{r.code ? `Código ${r.code} · ` : ""}{tone.label}</div>
                         </div>
                         <span className={classes.badge} style={{ background: tone.bg }}>{pctLabel(r.p.pct)}</span>
                         {manager && <Tooltip title="Atualizar a meta deste polo"><IconButton size="small" aria-label={`Editar ${r.name}`} onClick={() => setDialog({ polo: r })}><Pencil size={16} /></IconButton></Tooltip>}
                       </div>
+                      <div className={classes.cardBody}>
                       <div className={classes.track} title={`Ritmo esperado hoje: ${Math.round(pace)}%`}>
                         <div className={classes.fill} style={{ width: `${Math.min(100, r.p.pct || 0)}%`, background: tone.bg }} />
                         <span className={classes.tick} style={{ left: `${pace}%` }} />
@@ -700,6 +706,7 @@ const PoloGoals = () => {
                       <div className={classes.foot}>
                         <span>{perDayLabel(r.p.perDay)} por dia</span>
                         {!month && <span>{r.inCourse} em curso · {r.canceled} cancel.</span>}
+                      </div>
                       </div>
                     </div>
                   );
