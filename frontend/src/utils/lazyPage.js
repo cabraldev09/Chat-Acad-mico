@@ -31,13 +31,31 @@ const withRetry = async (factory, tries = 3, wait = 900) => {
   throw last;
 };
 
-export const lazyPage = (factory) =>
-  lazy(() =>
+// every page file, so the ones not opened yet can be fetched in the background (prefetchPages)
+const pages = [];
+
+export const lazyPage = (factory) => {
+  pages.push(factory);
+  return lazy(() =>
     withRetry(factory).catch((err) => {
       if (reloadForNewVersion()) return new Promise(() => undefined); // the page is being reloaded
       throw err;
     })
   );
+};
+
+// After the first screen, the other pages are downloaded one at a time while the browser is idle: moving to another screen then opens
+// it at once, with no loading in between. A file that fails here is simply loaded again when the page is opened.
+export const prefetchPages = () => {
+  const queue = [...pages];
+  const idle = (fn) => (typeof window.requestIdleCallback === "function" ? window.requestIdleCallback(fn, { timeout: 3000 }) : setTimeout(fn, 300));
+  const next = () => {
+    const factory = queue.shift();
+    if (!factory) return;
+    Promise.resolve().then(factory).catch(() => undefined).then(() => idle(next));
+  };
+  idle(next);
+};
 
 // vite also reports failed preloads of lazy files with this event
 export const installChunkRecovery = () => {

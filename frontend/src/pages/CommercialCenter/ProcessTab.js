@@ -1,14 +1,11 @@
 import React, { useMemo, useState } from "react";
 import { useHistory } from "react-router-dom";
-import { ListChecks, MessageSquare, Mic, FileText, X } from "lucide-react";
+import { X } from "lucide-react";
 import Drawer from "@material-ui/core/Drawer";
 
-import { BlockTitle, useAnalytics, useKit } from "../../components/analytics/kit";
+import { useAnalytics } from "../../components/analytics/kit";
 
-// "Atendimento e processo": how each consultant works the sales process in the period. Conversations and messages, audios and grades
-// sent, how much of the process the conversations went through and where they stopped, the open leads by funnel column.
-const cell = { padding: "10px 12px", borderBottom: "1px solid var(--line)", fontSize: 13, verticalAlign: "middle", whiteSpace: "nowrap" };
-const head = { ...cell, fontSize: 12, fontWeight: 700, color: "var(--text-2)", textAlign: "left", background: "var(--surface-2)", position: "sticky", top: 0 };
+// Where each conversation of a consultant stopped in the sales process (opened from Estatísticas → Consultores)
 const mins = (m) => (m === null || m === undefined ? "—" : m < 1 ? "< 1 min" : m < 60 ? `${Math.round(m)} min` : `${Math.floor(m / 60)} h ${String(Math.round(m % 60)).padStart(2, "0")}`);
 const pill = (color) => ({ display: "inline-block", fontSize: 11.5, fontWeight: 700, padding: "2px 9px", borderRadius: 999, border: `1px solid ${color || "var(--line-strong)"}`, color: "var(--text-1)", marginRight: 4, marginBottom: 2 });
 
@@ -68,59 +65,4 @@ const Leads = ({ consultant, params, onClose }) => {
   );
 };
 
-const ProcessTab = ({ params }) => {
-  const c = useKit();
-  const { data, loading } = useAnalytics("/analytics/process", params);
-  const [open, setOpen] = useState(null);
-  const rows = data?.consultants || [];
-  const total = (k) => rows.reduce((s, r) => s + (r[k] || 0), 0);
-  const download = () => {
-    const header = ["Consultor", "Conversas", "Mensagens enviadas", "Mensagens recebidas", "Áudios enviados", "Áudios recebidos", "Grades enviadas", "Tempo de resposta (mediana, min)", "Respondidas no prazo (%)", "Processo seguido (%)", "Conversas analisadas", "Parou mais em", "Mudanças de etapa"];
-    const lines = rows.map(r => [r.name, r.conversations, r.messagesSent, r.messagesReceived, r.audiosSent, r.audiosReceived, r.gradesSent, r.replyMedianMin ?? "", r.replyWithinSlaPct ?? "", r.processAvg ?? "", r.processSamples, r.stoppedAt[0]?.step || "", r.stageMoves]);
-    const csv = [header, ...lines].map(l => l.map(v => `"${String(v).replace(/"/g, '""')}"`).join(";")).join("\n");
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob(["﻿" + csv], { type: "text/csv" }));
-    a.download = "atendimento-e-processo.csv"; a.click();
-  };
-  return (
-    <div style={{ display: "grid", gap: 16 }}>
-      <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))" }}>
-        {[[<MessageSquare size={16} />, "Conversas", total("conversations")], [<MessageSquare size={16} />, "Mensagens enviadas", total("messagesSent")], [<Mic size={16} />, "Áudios (env./rec.)", `${total("audiosSent")} / ${total("audiosReceived")}`], [<FileText size={16} />, "Grades enviadas", total("gradesSent")]].map(([icon, label, value]) => (
-          <div key={label} className={c.panel}><div style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12.5, color: "var(--text-2)" }}>{icon}{label}</div><div style={{ fontSize: 26, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{value}</div></div>
-        ))}
-      </div>
-      <div className={c.panel}>
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>
-          <div style={{ flex: 1 }}><BlockTitle icon={<ListChecks size={16} />} title="Atendimento e processo por consultor" help="Clique no consultor para ver onde cada conversa parou. O processo é o do copiloto (Configurações → Copiloto)." /></div>
-          <button type="button" onClick={download} disabled={!rows.length} style={{ border: "1px solid var(--line-strong)", background: "var(--surface)", borderRadius: 8, padding: "6px 12px", fontWeight: 600, cursor: "pointer" }}>Exportar CSV</button>
-        </div>
-        {loading && !data ? <div style={{ color: "var(--text-2)" }}>Carregando…</div> : (
-          <div style={{ overflowX: "auto", border: "1px solid var(--line)", borderRadius: 10 }}>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead><tr>{["Consultor", "Conversas", "Mensagens env. / rec.", "Áudios env. / rec.", "Grades", "Tempo de resposta", "Processo seguido", "Parou mais em", "Leads por etapa"].map(h => <th key={h} style={head}>{h}</th>)}</tr></thead>
-              <tbody>
-                {rows.map(r => (
-                  <tr key={r.userId} onClick={() => setOpen(r)} style={{ cursor: "pointer" }}>
-                    <td style={{ ...cell, fontWeight: 700 }}>{r.name}</td>
-                    <td style={cell}>{r.conversations}</td>
-                    <td style={cell}>{r.messagesSent} / {r.messagesReceived}</td>
-                    <td style={cell}>{r.audiosSent} / {r.audiosReceived}</td>
-                    <td style={cell}>{r.gradesSent}</td>
-                    <td style={cell}><b>{mins(r.replyMedianMin)}</b>{r.replyWithinSlaPct !== null && r.replyWithinSlaPct !== undefined ? <div style={{ fontSize: 11.5, color: r.replyWithinSlaPct >= 80 ? "#0f766e" : r.replyWithinSlaPct >= 50 ? "#b45309" : "#b91c1c" }}>{r.replyWithinSlaPct}% no prazo</div> : null}</td>
-                    <td style={cell}><Bar value={r.processAvg} />{r.processSamples ? <div style={{ fontSize: 11.5, color: "var(--text-3)" }}>{r.processSamples} conversa{r.processSamples > 1 ? "s" : ""}</div> : null}</td>
-                    <td style={cell}>{r.stoppedAt[0] ? <><b>{r.stoppedAt[0].step}</b> <span style={{ color: "var(--text-2)" }}>({r.stoppedAt[0].n})</span></> : "—"}</td>
-                    <td style={{ ...cell, whiteSpace: "normal", minWidth: 220 }}>{r.byStage.length ? r.byStage.map(s => <span key={s.stage} style={pill(s.color)}>{s.stage}: {s.n}</span>) : "—"}</td>
-                  </tr>
-                ))}
-                {!rows.length && <tr><td colSpan={9} style={{ ...cell, color: "var(--text-2)" }}>Nenhum consultor no período.</td></tr>}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-      {open && <Leads consultant={open} params={params} onClose={() => setOpen(null)} />}
-    </div>
-  );
-};
-
-export default ProcessTab;
+export { Leads, Bar, mins };

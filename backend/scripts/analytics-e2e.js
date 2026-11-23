@@ -619,6 +619,18 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
       assert(changes.length === 1 && changes[0].to === later && changes[0].reason === "Prorrogação do calendário" && changes[0].by, `history ${JSON.stringify(changes)}`);
     });
 
+    await test("the goals of every polo: a consultant reads them (target, done and pace, never a person) and their own polos are marked", async () => {
+      const r = await A(joao, "/dashboard/polos-progress");
+      assert(r.status === 200 && r.data.goal && Array.isArray(r.data.polos) && r.data.polos.length >= 1, `polos progress ${r.status} ${JSON.stringify(r.data).slice(0, 300)}`);
+      const row = r.data.polos.find(p => p.target === 10);
+      assert(row && typeof row.done === "number" && typeof row.pct === "number", `the polo with a goal of 10: ${JSON.stringify(r.data.polos)}`);
+      const allowed = ["poloId", "name", "target", "done", "pct", "status", "missing", "perDay", "expectedPct", "forecast"];
+      assert(r.data.polos.every(p => Object.keys(p).every(k => allowed.includes(k))), `a polo card carries more than the goal: ${JSON.stringify(r.data.polos[0])}`);
+      const mine = sql(`SELECT string_agg(poloId::text, ',' ORDER BY poloId) FROM PoloMembers WHERE userId = ${ids.joao}`) || "";
+      assert([...r.data.mine].sort((a, b) => a - b).join(",") === mine, `the polos of the consultant: ${JSON.stringify(r.data.mine)} vs ${mine}`);
+      assert((await http.get("/dashboard/polos-progress")).status === 401, "the goals of the polos without login");
+    });
+
     // ------------------------------------------------------------ Estatísticas → Comercial e Tutoria
     console.log("\nEstatísticas do comercial e da tutoria");
     await test("the commercial view: volume, sales by consultant, city and course, the leads stopped in a column, grades and the time in each column", async () => {

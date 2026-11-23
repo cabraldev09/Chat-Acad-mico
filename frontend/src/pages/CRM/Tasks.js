@@ -155,7 +155,7 @@ const Tasks = () => {
   return (
     <MainContainer>
       <MainHeader>
-        <button type="button" onClick={() => (history.length > 1 ? history.goBack() : history.push(manager ? "/gestao-comercial" : "/tickets"))} aria-label="Voltar" style={{ display: "inline-flex", alignItems: "center", gap: 6, border: 0, background: "transparent", color: "inherit", cursor: "pointer", fontFamily: "inherit", fontSize: 14, padding: "6px 8px 6px 0" }}><ArrowLeft size={18} />Voltar</button>
+        <button type="button" onClick={() => (history.length > 1 ? history.goBack() : history.push(manager ? "/estatisticas" : "/tickets"))} aria-label="Voltar" style={{ display: "inline-flex", alignItems: "center", gap: 6, border: 0, background: "transparent", color: "inherit", cursor: "pointer", fontFamily: "inherit", fontSize: 14, padding: "6px 8px 6px 0" }}><ArrowLeft size={18} />Voltar</button>
         <Title>Tarefas de acompanhamento</Title>
         {manager && (
           <MainHeaderButtonsWrapper>

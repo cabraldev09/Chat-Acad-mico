@@ -131,6 +131,8 @@ r.get("/analytics/online", isAuth, isManager, Analytics.online);
 r.get("/dashboard/management", isAuth, isManager, DashboardMgmt.management);
 r.post("/dashboard/management/feedback", isAuth, isManager, rateLimit({ windowMs: 10 * 60 * 1000, max: 5, key: req => `management-feedback:${req.user.id}` }), DashboardMgmt.managementFeedback);
 r.get("/dashboard/manager", isAuth, DashboardMgmt.managerOverview);
+// the goals of every polo (target, done, pace): everyone who works on the enrollments follows them
+r.get("/dashboard/polos-progress", isAuth, DashboardMgmt.polosProgress);
 r.get("/dashboard/me", isAuth, DashboardMgmt.myDay);
 r.get("/dashboard", isAuth, Dashboard.index);
 

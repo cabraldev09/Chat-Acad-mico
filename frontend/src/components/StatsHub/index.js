@@ -16,11 +16,11 @@ export const hubSections = (user) => {
     ? [
         { to: "/estatisticas", label: "Visão geral" },
         { to: "/estatisticas?aba=consultores", label: "Consultores" },
+        { to: "/estatisticas?aba=polos", label: "Polos e metas" },
         { to: "/estatisticas?aba=treinamento", label: "Treinamento" },
         { to: "/estatisticas/captacao", label: "Captação" },
         { to: "/reports", label: "Atendimento" },
         { to: "/estatisticas/tutoria", label: "Tutoria" },
-        { to: "/gestao-comercial", label: "Equipe agora" },
       ]
     : tutor
     ? [{ to: "/estatisticas/tutoria", label: "Minha tutoria" }]
