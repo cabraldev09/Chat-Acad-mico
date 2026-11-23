@@ -22,8 +22,7 @@ import NotALead from "./NotALead";
 import "../../styles/dash.css";
 import StatsHubBar from "../../components/StatsHub";
 import { InsightsCard, TeamOnline } from "../../components/Insights";
-import { ACCENT, Badge, CountStat, GlowFunnel, GlowPanel, GlowRank, GlowStat, PeakChart, PeakRow, SectionTitle, change } from "../../components/peak";
-import { Donut } from "../../components/charts";
+import { ACCENT, Badge, CountStat, GlowFunnel, GlowPanel, GlowRank, GlowStat, PeakChart, PeakRow, SectionTitle, DonutChart, change } from "../../components/peak";
 
 const useStyles = makeStyles((theme) => {
   const line = "var(--line)";
@@ -57,8 +56,6 @@ const useStyles = makeStyles((theme) => {
 
 const pct = (a, b) => (b ? `${((a / b) * 100).toFixed(1).replace(".", ",")}%` : "—");
 const nf = (v) => Number(v || 0).toLocaleString("pt-BR");
-// one colour per slice, the same order on every chart of shares
-const SHARE_COLORS = ["leads", "brand", "violet", "teal", "warn", "won", "muted"];
 const dm = (key) => (key ? `${String(key).slice(8, 10)}/${String(key).slice(5, 7)}` : "");
 
 const todayStr = () => format(new Date(), "yyyy-MM-dd");
@@ -155,7 +152,7 @@ const Panel = ({ mode = "now" }) => {
   const lostRows = (d?.lostReasons || []).slice(0, 6).map((r) => ({ key: r.name, name: r.name, value: nf(r.total), bar: (Number(r.total) / topLost) * 100, note: `${pct(Number(r.total), lostTotal)} das perdas` }));
   const lostOthers = (d?.lostReasons || []).slice(6).reduce((a, r) => a + Number(r.total), 0);
   if (lostOthers > 0) lostRows.push({ key: "outros", name: "Outros motivos", value: nf(lostOthers), bar: (lostOthers / topLost) * 100, note: `${pct(lostOthers, lostTotal)} das perdas` });
-  const lostParts = [...(d?.lostReasons || []).slice(0, 6).map((r, i) => ({ label: r.name, value: Number(r.total), color: ["lost", "warn", "violet", "brand", "teal", "leads"][i] })), ...(lostOthers > 0 ? [{ label: "Outros motivos", value: lostOthers, color: "muted" }] : [])];
+  const lostParts = [...(d?.lostReasons || []).slice(0, 6).map((r) => ({ label: r.name, value: Number(r.total) })), ...(lostOthers > 0 ? [{ label: "Outros motivos", value: lostOthers }] : [])];
   const maxSource = Math.max(1, ...(d?.bySource || []).map((s2) => Number(s2.leads)));
   const sourceRows = (d?.bySource || []).map((s2) => ({ key: s2.name, name: s2.name, value: nf(s2.leads), bar: (Number(s2.leads) / maxSource) * 100, note: `${nf(s2.won)} matrículas, ${pct(s2.won, s2.leads)} de conversão` }));
   const maxCourse = Math.max(1, ...(d?.byCourse || []).map((c2) => Number(c2.leads)));
@@ -362,10 +359,10 @@ const Panel = ({ mode = "now" }) => {
 
               <div className="pk-grid-wide">
                 <GlowPanel id="sources" title="Origem dos leads" sub="A parte de cada canal nos leads do período." empty={!sourceRows.length} emptyText="Nenhum lead no período.">
-                  <Donut parts={(d.bySource || []).map((x, i) => ({ label: x.name, value: Number(x.leads), color: SHARE_COLORS[i % SHARE_COLORS.length] }))} centerLabel="leads" />
+                  <DonutChart parts={(d.bySource || []).map((x) => ({ label: x.name, value: Number(x.leads), won: x.won }))} centerLabel="leads" note={(x) => `${nf(x.won)} matr.`} />
                 </GlowPanel>
                 <GlowPanel id="lost-reasons" tone="bad" title="Motivos de perda" sub="O que mais derruba os leads do período." empty={!lostRows.length} emptyText="Nenhuma perda no período.">
-                  <Donut parts={lostParts} centerLabel="perdas" />
+                  <DonutChart parts={lostParts} centerLabel="perdas" />
                 </GlowPanel>
                 <GlowPanel id="courses" tone="violet" title="Cursos mais procurados" sub="Os 8 primeiros, com as matrículas de cada um." empty={!courseRows.length} emptyText="Nenhum lead com curso no período.">
                   <GlowRank rows={courseRows} />

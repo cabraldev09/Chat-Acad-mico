@@ -230,3 +230,84 @@ export const TodoList = ({ items, action = "Resolver" }) => (
 
 // the days of a series as dd/mm, for the readout of the Peak Chart
 export const dayLabel = (d) => (d ? `${String(d).slice(8, 10)}/${String(d).slice(5, 7)}` : "");
+
+/**
+ * A share as a ring beside its name: "what it is" and "n of total" (after the "Stats cards with links" of 21st.dev). With onClick the
+ * whole card is a button that opens the detail.
+ */
+export const RingStat = ({ id, title, value, total, unit, tone, onClick, action }) => {
+  const share = total > 0 ? Math.min(100, (Number(value) / Number(total)) * 100) : 0;
+  const size = 64;
+  const r = 26;
+  const len = 2 * Math.PI * r;
+  const Tag = onClick ? "button" : "div";
+  return (
+    <Tag type={onClick ? "button" : undefined} className="pk pk-ringstat" data-tone={tone} data-stat={id} onClick={onClick}>
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden="true">
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--track)" strokeWidth="7" />
+        <circle className="arc" cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--pk-accent)" strokeWidth="7" strokeLinecap="round" strokeDasharray={len} strokeDashoffset={len * (1 - share / 100)} transform={`rotate(-90 ${size / 2} ${size / 2})`} />
+        <text x="50%" y="52%" textAnchor="middle" dominantBaseline="middle" fill="var(--pk-ink)" style={{ fontSize: 15, fontWeight: 650 }}>{Math.round(share)}%</text>
+      </svg>
+      <span className="txt">
+        <b>{title}</b>
+        <span>{nf(value)} de {nf(total)}{unit ? ` ${unit}` : ""}</span>
+        {onClick && action ? <span className="go">{action}<ChevronRight size={13} aria-hidden="true" /></span> : null}
+      </span>
+    </Tag>
+  );
+};
+
+// one colour per slice, the same order on every chart of shares (the blues of the brand first)
+export const SHARE_PALETTE = ["#0b4279", "#0693e3", "#14b8a6", "#8b5cf6", "#f59e0b", "#ef5d6c", "#94a3b8"];
+
+/**
+ * The parts of a whole as a ring with round ends that draws itself, after the Donut Chart of 21st.dev (written without framer-motion,
+ * which needs React 18). Pointing at a slice, or at its line in the legend, lights it and puts its number in the centre.
+ * parts: [{ label, value, color? }]. centerLabel: what the total is ("leads", "perdas").
+ */
+export const DonutChart = ({ parts, centerLabel = "total", size = 176, stroke = 20, note }) => {
+  const [on, setOn] = React.useState(null);
+  const shown = (parts || []).filter((p) => Number(p.value) > 0).map((p, i) => ({ ...p, value: Number(p.value), color: p.color || SHARE_PALETTE[i % SHARE_PALETTE.length] }));
+  const total = shown.reduce((t, p) => t + p.value, 0);
+  const r = size / 2 - stroke / 2;
+  const len = 2 * Math.PI * r;
+  // a small gap between slices so the round ends do not swallow a thin slice
+  const gap = shown.length > 1 ? Math.min(stroke * 0.9, len / (shown.length * 4)) : 0;
+  let from = 0;
+  const active = on === null ? null : shown[on];
+  return (
+    <div className="pk-donut">
+      <div className="ring" style={{ width: size, height: size }} onMouseLeave={() => setOn(null)}>
+        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label={shown.map((p) => `${p.label}: ${nf(p.value)}`).join(", ")}>
+          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--track)" strokeWidth={stroke} />
+          {shown.map((p, i) => {
+            const part = (p.value / total) * len;
+            const dash = Math.max(0.01, part - gap);
+            const offset = -(from + gap / 2);
+            from += part;
+            return (
+              <circle key={p.label} className="seg" cx={size / 2} cy={size / 2} r={r} fill="none" stroke={p.color} strokeWidth={stroke} strokeLinecap="round"
+                strokeDasharray={`${dash} ${len}`} strokeDashoffset={offset} transform={`rotate(-90 ${size / 2} ${size / 2})`}
+                style={{ "--i": i, opacity: on === null || on === i ? 1 : 0.28 }} onMouseEnter={() => setOn(i)} />
+            );
+          })}
+        </svg>
+        <div className="mid" aria-hidden="true">
+          <small>{active ? active.label : centerLabel}</small>
+          <b>{nf(active ? active.value : total)}</b>
+          {active ? <span>{Math.round((active.value / total) * 100)}%</span> : null}
+        </div>
+      </div>
+      <ul className="legend">
+        {shown.map((p, i) => (
+          <li key={p.label} data-on={on === i ? "1" : undefined} tabIndex={0} onMouseEnter={() => setOn(i)} onMouseLeave={() => setOn(null)} onFocus={() => setOn(i)} onBlur={() => setOn(null)}>
+            <i style={{ background: p.color }} aria-hidden="true" />
+            <span className="lb" title={p.label}>{p.label}{note ? <em>{note(p)}</em> : null}</span>
+            <b>{nf(p.value)}</b>
+            <span className="pc">{Math.round((p.value / total) * 100)}%</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+};

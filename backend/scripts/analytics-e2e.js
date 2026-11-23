@@ -659,6 +659,15 @@ const userId = n => Number(sql(`SELECT id FROM Users WHERE email='${n}'`));
       const hers = one.stages.find(st => st.stageId === Number(open));
       assert(hers && hers.avgDays !== null && hers.avgDays >= 2.5 && hers.avgDays <= 3.5, `time in the column ${hers && hers.avgDays}`);
     });
+    await test("who skipped a step of the process: only the management reads the list (it names leads)", async () => {
+      for (const who of [joao, tutor]) assert((await A(who, "/analytics/process/skipped?range=month&step=grade")).status === 403, "someone outside the management read who skipped a step");
+      assert((await http.get("/analytics/process/skipped?range=month&step=grade")).status === 401, "the list without login");
+      const r = await A(admin, "/analytics/process/skipped?range=month&step=an-unknown-step");
+      assert(r.status === 200 && Array.isArray(r.data.rows) && r.data.rows.length === 0, `unknown step ${r.status} ${JSON.stringify(r.data).slice(0, 200)}`);
+      assert((await A(coord, "/analytics/process/skipped?range=month&step=grade")).status === 200, "the coordination could not read the list");
+      const c = (await A(admin, "/analytics/commercial?range=month")).data;
+      assert(typeof c.process.samples === "number", "the commercial view lost the number of conversations with a process");
+    });
     await test("Estatísticas by university: the leads and conversations of another university leave the numbers of the default one", async () => {
       const made = await http.post("/institutions", { name: "Universidade Norte Estatísticas", shortName: "Norte Est" }, as(admin));
       assert(made.status === 201, `university ${made.status} ${JSON.stringify(made.data)}`);

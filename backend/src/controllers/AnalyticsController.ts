@@ -138,6 +138,19 @@ const commercialUsers = async (req: Request): Promise<Array<{ id: number; name: 
   return ids.length ? (await User.findAll({ where: { id: ids }, attributes: ["id", "name"], order: [["name", "ASC"]] })).map(u => ({ id: u.id, name: u.name })) : [];
 };
 
+// Behind one skipped step: who skipped it, with which lead and when. Management only (it shows the names of the leads), and only
+// the consultants the requester may see, of the university of the screen.
+export const processSkipped = async (req: Request, res: Response): Promise<Response> => {
+  if (!isManagerRole(roleOf(req.user))) throw new AppError("ERR_NO_PERMISSION", 403);
+  const step = String(req.query.step || "").slice(0, 80);
+  const users = await commercialUsers(req);
+  const { configOf } = await import("../services/CopilotServices/Settings");
+  const { skippedDetail } = await import("../services/AnalyticsServices/SalesInsights");
+  const steps = (await configOf()).steps.map((s: any) => ({ key: s.key, label: s.label, optional: !!s.optional }));
+  const found = steps.find((s: any) => s.key === step);
+  return res.json({ period: period(req), step, label: found ? found.label : step, rows: await skippedDetail(users, resolvePeriod(req.query), steps, step) });
+};
+
 // "Estatísticas → Comercial": where the leads stop, objections, sales by city and course, grades, audio and the process followed
 export const commercial = async (req: Request, res: Response): Promise<Response> => {
   const p = resolvePeriod(req.query);

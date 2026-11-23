@@ -28,11 +28,41 @@ export const skippedSteps = (order: StepDef[], doneKeys: string[]): string[] => 
   return required.slice(0, Math.max(0, lastDone)).filter(s => !done.has(s.key)).map(s => s.key);
 };
 
+// Who skipped one step, with which lead and when: the conversations behind one line of "the steps most often skipped". "When" is
+// the last time the process of that conversation changed (what the system records), the most recent first. Only names: no phone.
+export interface SkippedRow { userId: number; consultant: string; leadId: number | null; leadName: string; ticketId: number; at: string }
+export const skippedDetail = async (users: Array<{ id: number; name: string }>, period: Period, steps: StepDef[], stepKey: string): Promise<SkippedRow[]> => {
+  const ids = users.map(u => u.id);
+  if (!ids.length || !steps.some(s => s.key === stepKey && !s.optional)) return [];
+  const nameOf = new Map(users.map(u => [u.id, u.name]));
+  const snaps = await rows(
+    `SELECT c.ticketId, c.leadId, c.userId, c.doneKeys, c.updatedAt, COALESCE(l.name, ct.name) AS leadName
+     FROM CopilotSnapshots c
+     LEFT JOIN Leads l ON l.id = c.leadId
+     LEFT JOIN Tickets t ON t.id = c.ticketId
+     LEFT JOIN Contacts ct ON ct.id = t.contactId
+     WHERE c.userId IN (:ids) AND c.updatedAt BETWEEN :from AND :to AND (c.leadId IS NULL OR l.id IS NULL OR ${LEAD_IN_INSTITUTION})
+     ORDER BY c.updatedAt DESC LIMIT 20000`, { ids, from: period.start, to: period.end });
+  return skippedRowsOf(snaps, steps, stepKey, nameOf);
+};
+
+// the conversations (already the most recent first) in which `stepKey` was skipped, at most 200
+export const skippedRowsOf = (snaps: any[], steps: StepDef[], stepKey: string, nameOf: Map<number, string>): SkippedRow[] => {
+  const out: SkippedRow[] = [];
+  for (const s of snaps) {
+    const done: string[] = Array.isArray(s.doneKeys) ? s.doneKeys : (() => { try { return JSON.parse(s.doneKeys || "[]"); } catch (_) { return []; } })();
+    if (!skippedSteps(steps, done).includes(stepKey)) continue;
+    out.push({ userId: Number(s.userId), consultant: nameOf.get(Number(s.userId)) || `#${s.userId}`, leadId: s.leadId ? Number(s.leadId) : null, leadName: s.leadName || "Sem nome", ticketId: Number(s.ticketId), at: new Date(s.updatedAt).toISOString() });
+    if (out.length >= 200) break;
+  }
+  return out;
+};
+
 export const salesInsights = async (users: Array<{ id: number; name: string }>, period: Period, steps: StepDef[]) => {
   const ids = users.map(u => u.id);
   const nameOf = new Map(users.map(u => [u.id, u.name]));
   const labelOf = new Map(steps.map(s => [s.key, s.label]));
-  const empty = { consultants: [], stages: [], objections: { byType: [], byConsultant: [] }, lostReasons: [], sales: { byConsultant: [], byCity: [], byCourse: [], top: [] }, process: { skipped: [] }, volume: { conversations: 0, peopleContacted: 0, newContacts: 0 } };
+  const empty = { consultants: [], stages: [], objections: { byType: [], byConsultant: [] }, lostReasons: [], sales: { byConsultant: [], byCity: [], byCourse: [], top: [] }, process: { skipped: [], samples: 0 }, volume: { conversations: 0, peopleContacted: 0, newContacts: 0 } };
   if (!ids.length) return empty;
   const rep = { ids, from: period.start, to: period.end, stalledBefore: new Date(Date.now() - STALL_DAYS * 86400000) };
 
@@ -221,7 +251,8 @@ export const salesInsights = async (users: Array<{ id: number; name: string }>, 
       byCourse: sum("course"),
       top: [...pairs.values()].sort((a, b) => b.n - a.n).slice(0, 5)
     },
-    process: { skipped: [...skippedAll.entries()].map(([k, c]) => ({ step: k, label: labelOf.get(k) || k, n: c })).sort((a, b) => b.n - a.n) },
+    // samples: the conversations with a process in the period, so a skipped step reads as "n of samples"
+    process: { skipped: [...skippedAll.entries()].map(([k, c]) => ({ step: k, label: labelOf.get(k) || k, n: c })).sort((a, b) => b.n - a.n), samples: snaps.length },
     volume: { conversations: totalOf("conversations"), peopleContacted: totalOf("peopleContacted"), newContacts: totalOf("newContacts") }
   };
 };

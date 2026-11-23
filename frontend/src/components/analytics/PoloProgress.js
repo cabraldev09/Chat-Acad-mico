@@ -46,38 +46,30 @@ const PaceRing = ({ pct, color, size = 62, stroke = 7 }) => {
 };
 const TONE_OF = { reached: "good", ok: "good", late: "warn", behind: "bad", none: undefined };
 
+// one polo: the ring, "done of target" and one line with what is missing; the state is a dot of colour beside the name (said once)
 const PoloCard = ({ p, mine, onOpen }) => {
   const pace = paceOf(p);
   const hasTarget = p.target !== null && p.target !== undefined;
   return (
-    <button type="button" className="pk" data-tone={TONE_OF[pace.tone]} onClick={onOpen} aria-label={`${p.name}: ${pace.label}. Abrir as metas dos polos`}
-      style={{ padding: "16px 16px 14px", display: "grid", gap: 10, ...(mine ? { borderColor: "var(--text-1)" } : {}) }}>
-      <span style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
-        <span style={{ fontSize: 14, fontWeight: 700, lineHeight: 1.3, minWidth: 0 }} title={p.name}>{p.name}</span>
-        {mine ? <span className="pk-badge" style={{ background: "var(--text-1)", color: "var(--card-bg)", flex: "none" }}>Seu polo</span> : null}
-      </span>
-      <span style={{ display: "flex", alignItems: "center", gap: 14 }}>
-        {hasTarget ? <PaceRing pct={p.pct} color={pace.color} /> : null}
-        <span style={{ minWidth: 0 }}>
-          <span style={{ display: "block", fontSize: 26, fontWeight: 750, letterSpacing: "-0.03em", lineHeight: 1.1, fontVariantNumeric: "tabular-nums", color: "var(--text-1)" }}>
-            {p.done}{hasTarget && <span style={{ fontSize: 14, fontWeight: 600, color: "var(--text-2)" }}> de {p.target}</span>}
-          </span>
-          <span className="pk-badge" data-tone={TONE_OF[pace.tone]} style={{ marginTop: 6 }}>{pace.label}</span>
+    <button type="button" className="pk" onClick={onOpen} aria-label={`${p.name}: ${pace.label}. Abrir as metas dos polos`}
+      style={{ padding: "14px 16px", display: "flex", alignItems: "center", gap: 14, ...(mine ? { borderColor: "var(--c-brand)" } : {}) }}>
+      {hasTarget ? <PaceRing pct={p.pct} color={pace.color} size={56} stroke={6} /> : null}
+      <span style={{ minWidth: 0, display: "grid", gap: 3 }}>
+        <span style={{ fontSize: 13.5, fontWeight: 600, lineHeight: 1.3, overflowWrap: "anywhere" }}>{p.name}{mine ? <span className="pk-hint" style={{ fontWeight: 500 }}> (seu polo)</span> : null}</span>
+        <span style={{ fontSize: 20, fontWeight: 650, letterSpacing: "-0.02em", lineHeight: 1.15, fontVariantNumeric: "tabular-nums" }}>
+          {p.done}{hasTarget && <span style={{ fontSize: 13, fontWeight: 500, color: "var(--text-2)" }}> de {p.target}</span>}
         </span>
-      </span>
-      <span className="pk-hint">
-        {hasTarget ? (
-          <>
-            {p.missing > 0 ? <>Faltam <b>{p.missing}</b>{p.perDay ? `, ${String(p.perDay).replace(".", ",")} por dia útil` : ""}</> : "Meta cumprida"}
-            {p.forecast !== null && p.forecast !== undefined && p.pct < 100 ? <>. Previsão no ritmo atual: <b style={{ color: p.forecast >= p.target ? GREEN : RED }}>{p.forecast}</b></> : null}
-          </>
-        ) : "Sem meta definida para o semestre."}
+        <span className="pk-hint" style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+          <span style={{ width: 7, height: 7, borderRadius: "50%", background: pace.color, flex: "none" }} aria-hidden="true" />
+          {hasTarget ? (p.missing > 0 ? <>{pace.label}, faltam {p.missing}{p.perDay ? ` (${String(p.perDay).replace(".", ",")} por dia útil)` : ""}</> : "Meta cumprida") : "Sem meta definida"}
+        </span>
       </span>
     </button>
   );
 };
 
-const PoloProgress = ({ title = "Metas dos polos" }) => {
+// onlyMine: the reader's own polos and the total (the screen of the consultant); a link opens all of them
+const PoloProgress = ({ title = "Metas dos polos", onlyMine = false }) => {
   const history = useHistory();
   const [data, setData] = useState(null);
   const [error, setError] = useState(false);
@@ -106,7 +98,9 @@ const PoloProgress = ({ title = "Metas dos polos" }) => {
   const mine = new Set((data.mine || []).map(Number));
   const goal = data.goal;
   const t = data.totals;
-  const polos = sortPolos(data.polos || [], mine);
+  const everyPolo = sortPolos(data.polos || [], mine);
+  const narrowed = onlyMine && mine.size > 0;
+  const polos = narrowed ? everyPolo.filter((p) => mine.has(Number(p.poloId))) : everyPolo;
   const open = () => history.push("/crm/metas-polos");
   // the pace the whole semester asks for by now: the same mark the polos use (they share the semester)
   const withPace = (data.polos || []).find((p) => p.expectedPct !== null && p.expectedPct !== undefined);
@@ -114,7 +108,7 @@ const PoloProgress = ({ title = "Metas dos polos" }) => {
   const totalPace = t ? paceOf({ target: t.target, pct: t.pct, expectedPct: expected }) : null;
   return (
     <section>
-      <SectionTitle title={title} hint={goal ? `${goal.title ? `${goal.title}, ` : ""}${fmtDay(goal.startsOn)} a ${fmtDay(goal.endsOn)}, ${goal.daysLeft} ${goal.daysLeft === 1 ? "dia útil restante" : "dias úteis restantes"}` : undefined} />
+      <SectionTitle title={title} action={narrowed && everyPolo.length > polos.length ? <button type="button" className="pk-btn" onClick={open}>Ver todos os polos ({everyPolo.length})</button> : null} hint={goal ? `${goal.title ? `${goal.title}, ` : ""}${fmtDay(goal.startsOn)} a ${fmtDay(goal.endsOn)}, ${goal.daysLeft} ${goal.daysLeft === 1 ? "dia útil restante" : "dias úteis restantes"}` : undefined} />
       {!goal ? (
         <GlowPanel empty emptyText="Nenhum semestre com metas de polo ativo." />
       ) : (
@@ -135,7 +129,7 @@ const PoloProgress = ({ title = "Metas dos polos" }) => {
             </GlowPanel>
           )}
           {polos.length === 0 ? <GlowPanel empty emptyText="Nenhum polo com meta neste semestre." /> : (
-            <div className="pk-grid-4">{polos.map((p) => <PoloCard key={p.poloId} p={p} mine={mine.has(Number(p.poloId))} onOpen={open} />)}</div>
+            <div className="pk-ringgrid">{polos.map((p) => <PoloCard key={p.poloId} p={p} mine={mine.has(Number(p.poloId))} onOpen={open} />)}</div>
           )}
         </div>
       )}
