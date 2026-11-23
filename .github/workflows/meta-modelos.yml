@@ -8,6 +8,10 @@ on:
       so_status:
         description: "Só ler o status (não enviar nada)"
         type: boolean
+        default: true
+      confirmar_envio:
+        description: "Confirmo que quero enviar os modelos para a Meta"
+        type: boolean
         default: false
 
 jobs:
@@ -33,7 +37,12 @@ jobs:
       - name: Envia e lê o status
         env:
           SO_STATUS: ${{ inputs.so_status }}
+          CONFIRMAR_ENVIO: ${{ inputs.confirmar_envio }}
         run: |
           case "$SO_STATUS" in true|false) ;; *) echo "::error::valor inválido"; exit 1;; esac
+          case "$CONFIRMAR_ENVIO" in true|false) ;; *) echo "::error::confirmação inválida"; exit 1;; esac
+          if [ "$SO_STATUS" = false ] && [ "$CONFIRMAR_ENVIO" != true ]; then
+            echo "::error::O envio exige marcar confirmar_envio=true"; exit 1
+          fi
           scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes backend/scripts/meta-modelos.js root@"$VPS_HOST":/tmp/meta-modelos.js
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes root@"$VPS_HOST" "docker cp /tmp/meta-modelos.js chat-academico-api-1:/app/backend/meta-modelos.js && docker exec -e SO_STATUS='$SO_STATUS' chat-academico-api-1 node /app/backend/meta-modelos.js; s=\$?; docker exec chat-academico-api-1 rm -f /app/backend/meta-modelos.js; exit \$s"

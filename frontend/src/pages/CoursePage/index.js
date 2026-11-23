@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
 
 import { getBackendUrl } from "../../config";
@@ -38,6 +38,11 @@ const css = `
 .cp-btn:disabled{opacity:.6;cursor:default}
 .cp-consent{display:flex;gap:10px;font-size:13px;margin-top:14px;align-items:flex-start}
 .cp-err{margin-top:12px;background:rgba(220,38,38,.12);color:#dc2626;border-radius:12px;padding:10px 12px;font-size:14px}
+.cp-state{text-align:center;padding:80px 16px 24px}
+.cp-spinner{width:28px;height:28px;margin:0 auto 14px;border:3px solid #d6dfeb;border-top-color:#0693e3;border-radius:50%;animation:cp-spin .8s linear infinite}
+@keyframes cp-spin{to{transform:rotate(360deg)}}
+.cp-retry{margin-top:10px;border:0;border-radius:12px;padding:12px 18px;font:inherit;font-weight:700;color:#fff;background:#0b4279;cursor:pointer}
+.cp-retry:focus-visible{outline:3px solid #0693e3;outline-offset:2px}
 .cp-ok{text-align:center;padding:24px 8px}.cp-ok b{display:block;font-size:22px;margin-bottom:8px}
 .cp-hp{position:absolute;left:-9999px;width:1px;height:1px;opacity:0}
 `;
@@ -54,11 +59,21 @@ const CoursePage = ({ match }) => {
   const [error, setError] = useState("");
   const [done, setDone] = useState("");
 
-  useEffect(() => {
-    http.get(`/public/courses/${slug}`)
-      .then(({ data: d }) => { if (!d || !d.course) throw new Error("bad payload"); setData(d); setState("ready"); document.title = `${d.course.name} · Cruzeiro do Sul Virtual`; })
-      .catch((err) => setState(err.response && err.response.status === 404 ? "invalid" : "error"));
+  const loadCourse = useCallback(async () => {
+    setState("loading");
+    setError("");
+    try {
+      const { data: d } = await http.get(`/public/courses/${slug}`, { timeout: 15000 });
+      if (!d || !d.course) throw new Error("bad payload");
+      setData(d);
+      setState("ready");
+      document.title = `${d.course.name} · Cruzeiro do Sul Virtual`;
+    } catch (err) {
+      setState(err.response && err.response.status === 404 ? "invalid" : "error");
+    }
   }, [slug]);
+
+  useEffect(() => { loadCourse(); }, [loadCourse]);
 
   const send = async (e) => {
     e.preventDefault();
@@ -76,13 +91,21 @@ const CoursePage = ({ match }) => {
     setBusy(false);
   };
 
-  if (state === "loading") return <div className="cp-root"><style>{css}</style></div>;
+  if (state === "loading") return (
+    <div className="cp-root"><style>{css}</style>
+      <main className="cp-wrap cp-state" role="status" aria-live="polite">
+        <div className="cp-spinner" aria-hidden="true" />
+        <p className="cp-lead cp-muted">Carregando as informações do curso…</p>
+      </main>
+    </div>
+  );
   if (state !== "ready") {
     return (
       <div className="cp-root"><style>{css}</style>
         <div className="cp-wrap" style={{ textAlign: "center", paddingTop: 80 }}>
           <h1 className="cp-h1" style={{ fontSize: 32 }}>{state === "invalid" ? "Este curso não está disponível" : "Não conseguimos abrir agora"}</h1>
           <p className="cp-lead cp-muted" style={{ margin: "12px auto" }}>{state === "invalid" ? "Ele pode ter saído do ar. Fale com a gente pelo WhatsApp." : "Confira sua internet e tente de novo em instantes."}</p>
+          {state === "error" && <button type="button" className="cp-retry" onClick={loadCourse}>Tentar novamente</button>}
         </div>
       </div>
     );

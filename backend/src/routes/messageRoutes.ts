@@ -3,12 +3,14 @@ import multer from "multer";
 import isAuth from "../middleware/isAuth";
 import { canReadTicket, canWriteTicket, canSendTicket, canWriteMessage } from "../middleware/canAccessTicket";
 import uploadConfig from "../config/upload";
+import { uploadCapacity } from "../middleware/uploadCapacity";
 
 import * as MessageController from "../controllers/MessageController";
 
 const messageRoutes = Router();
 
 // a document sent by the team: up to 64 MB, at most 10 files at once
+const MESSAGE_MAX_REQUEST_BYTES = 10 * 64 * 1024 * 1024 + 2 * 1024 * 1024;
 const upload = multer({ ...uploadConfig, limits: { fileSize: 64 * 1024 * 1024, files: 10 } });
 
 // before the routes with a :ticketId, which would take "forward-batch" for an id
@@ -23,6 +25,7 @@ messageRoutes.post(
   "/messages/:ticketId",
   isAuth,
   canSendTicket,
+  uploadCapacity(MESSAGE_MAX_REQUEST_BYTES),
   upload.array("medias"),
   MessageController.store
 );

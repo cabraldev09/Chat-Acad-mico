@@ -439,7 +439,9 @@ const test = async (name, fn) => {
       try {
         console.log("      --- debug ---");
         console.log(psql(DB, pgSql(`SELECT id, ticketId, fromMe, left(body, 90) FROM Messages ORDER BY id DESC LIMIT 14`)));
+        console.log(psql(DB, pgSql(`SELECT id, whatsappId, institutionId, chatbotNodeId, aiActive, status, createdAt FROM Tickets ORDER BY id DESC LIMIT 12`)));
         console.log(psql(DB, pgSql(`SELECT id, flowId, ticketId, status, nodeId, left(vars, 120) FROM ChatFlowRuns ORDER BY id DESC LIMIT 5`)));
+        console.log(psql(DB, pgSql(`SELECT id, ticketId, left(text, 220), createdAt FROM AutomationTraces ORDER BY id DESC LIMIT 24`)));
         anthropic.requests.slice(-4).forEach(r => console.log("      request:", JSON.stringify(r.messages[r.messages.length - 1]).slice(0, 700)));
         console.log(global.__backendLog().split("\n").filter(l => /ERROR|Error|error:|TypeError|ReferenceError| at /.test(l) && !/QR|Efí|INVALID_CRED|TOO_MANY/.test(l)).slice(-40).join("\n"));
       } catch (err) { console.log(`      debug failed: ${err.message}`); }
@@ -456,6 +458,11 @@ const assert = (c, m) => { if (!c) throw new Error(m || "assertion failed"); };
 
 let token;
 const http = axios.create({ baseURL: API, validateStatus: () => true });
+// Public-form tests use isolated documentation-only IPs so their fixture traffic
+// cannot consume the same per-IP throttle bucket as unrelated E2E requests.
+const postLeadForm = (path, body, testIp) => http.post(path, body, {
+  headers: { "X-Forwarded-For": testIp }
+});
 const auth = () => ({ headers: { Authorization: `Bearer ${token}` } });
 const asUser = t => ({ headers: { Authorization: `Bearer ${t}` } });
 
@@ -479,9 +486,14 @@ const postMeta = (id, payload, secret, badSig) => {
 // ------------------------------------------------------------------ main
 (async () => {
   let backend;
+  let restoreActiveAiAgents = [];
   const cleanup = async () => {
+    if (restoreActiveAiAgents.length) {
+      try { sql(`UPDATE AiAgents SET active=true WHERE id IN (${restoreActiveAiAgents.map(Number).filter(Number.isInteger).join(",")})`); } catch (e) {}
+    }
     if (backend) backend.kill();
-    try { psql("postgres", `DROP DATABASE IF EXISTS ${DB} WITH (FORCE)`); } catch (e) {}
+    if (process.env.E2E_KEEP_DB === "1") console.log(`E2E_KEEP_DB=1: banco temporário preservado para diagnóstico: ${DB}`);
+    else try { psql("postgres", `DROP DATABASE IF EXISTS ${DB} WITH (FORCE)`); } catch (e) {}
   };
   try {
     psql("postgres", `CREATE DATABASE ${DB}`);
@@ -490,7 +502,7 @@ const postMeta = (id, payload, secret, badSig) => {
       PORT: String(PORT), PROXY_PORT: String(PORT), BACKEND_URL: "http://localhost", PUBLIC_URL: API,
       FRONTEND_URL: "http://localhost:3000", JWT_SECRET: "e2e", JWT_REFRESH_SECRET: "e2e-r", DASHBOARD_CACHE_MS: "0", LOGIN_RATE_MAX: "150",
       TELEGRAM_API_URL: `http://localhost:${TG_PORT}`, GRAPH_API_URL: `http://localhost:${GRAPH_PORT}`, INSTAGRAM_TOKEN_URL: `http://localhost:${GRAPH_PORT}/ig/oauth/access_token`, INSTAGRAM_GRAPH_URL: `http://localhost:${GRAPH_PORT}/ig`, CHANNEL_TOKEN_REFRESH_MS: "2500", CHANNEL_TOKEN_FIRST_MS: "1500",
-      SKIP_WHATSAPP_SESSIONS: "1", SKIP_DEFAULT_DATA: "1", SETTINGS_CACHE_MS: "0", LOG_LEVEL: "warn", EFI_API_URL: `http://localhost:${EFI_PORT}`, EFI_BILLET_API_URL: `http://localhost:${BILLET_PORT}`, EFI_POLL_MS: "1500",
+      SKIP_WHATSAPP_SESSIONS: "1", TRUST_PROXY: "loopback", SKIP_DEFAULT_DATA: "1", SETTINGS_CACHE_MS: "0", LOG_LEVEL: "warn", EFI_API_URL: `http://localhost:${EFI_PORT}`, EFI_BILLET_API_URL: `http://localhost:${BILLET_PORT}`, EFI_POLL_MS: "1500",
       ANTHROPIC_API_URL: `http://localhost:${AI_PORT}`, OPENAI_API_URL: `http://localhost:${AI_PORT}`, STALE_RUNS_MS: "4000", HANDOFF_SLA_MS: "4000", ONBOARDING_SLA_MS: "4000", REACTIVATION_MS: "3000", ALLOW_PRIVATE_URLS: "true", CRM_WATCH: "off"
 
     };
@@ -991,10 +1003,10 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(photo.status === 200 && String(photo.headers["content-type"]).includes("image/webp") && Buffer.from(photo.data).length > 20000, `photo ${photo.status}`);
       assert((await http.get("/leadform/wrong")).status === 404, "wrong token page");
       const body = { name: "Pedro Lima", phone: "11 98888-0001", email: "pedro@x.com", consent: true, utm_source: "instagram", utm_campaign: "vestibular" };
-      assert((await http.post(`/leadform/${tokenForm}/submit`, { ...body, consent: false })).status === 400, "no consent accepted");
-      assert((await http.post(`/leadform/${tokenForm}/submit`, { ...body, website: "spam" })).status === 200, "honeypot");
+      assert((await postLeadForm(`/leadform/${tokenForm}/submit`, { ...body, consent: false }, "198.51.100.10")).status === 400, "no consent accepted");
+      assert((await postLeadForm(`/leadform/${tokenForm}/submit`, { ...body, website: "spam" }, "198.51.100.10")).status === 200, "honeypot");
       assert(!sql(`SELECT id FROM Leads WHERE email='pedro@x.com'`), "bot created a lead");
-      assert((await http.post(`/leadform/${tokenForm}/submit`, body)).status === 200, "valid submit");
+      assert((await postLeadForm(`/leadform/${tokenForm}/submit`, body, "198.51.100.10")).status === 200, "valid submit");
       assert(sql(`SELECT CONCAT(source,'|',utmSource,'|',utmCampaign,'|',CAST(consentAt IS NOT NULL AS INTEGER)) FROM Leads WHERE email='pedro@x.com'`) === "Site / formulário|instagram|vestibular|1", "form fields");
     });
     await test("API v1 creates leads (deduplicated) and lists them", async () => {
@@ -1030,7 +1042,7 @@ const postMeta = (id, payload, secret, badSig) => {
     await test("Cloud API campaign sends the approved template, not free text", async () => {
       assert((await http.put("/operations/config", { outbound_allow_templates: "true" }, auth())).status === 200, "admin template authorization");
       const list = (await http.post("/contact-lists", { name: "Vestibular" }, auth())).data;
-      await http.post(`/contact-lists/${list.id}/import`, { items: [{ name: "Rita Souza", number: "5511966665555" }] }, auth());
+      await http.post(`/contact-lists/${list.id}/import`, { items: [{ name: "Rita Souza", number: "5511966665555" }], consent: true }, auth());
       const c = (await http.post("/campaigns", { name: "Vestibular 2027", message: "Olá {{name}}, inscrições abertas!", contactListId: list.id, whatsappId: cid, templateName: "inscricoes_abertas", templateLanguage: "pt_BR", intervalMin: 0, intervalMax: 0, batchSize: 50, batchPause: 1 }, auth())).data;
       const before = graph.sent.length;
       assert((await http.post(`/campaigns/${c.id}/start`, {}, auth())).status === 200, "start");
@@ -1043,7 +1055,7 @@ const postMeta = (id, payload, secret, badSig) => {
       await postMeta(cid, cloudEvent([{ from: "5511955554444", id: "wamid.sequence.optin", type: "text", text: { body: "Pode me explicar a inscrição?" } }]), cloudCfg.appSecret);
       await waitFor(() => ticketOf("5511955554444"), 8000, "sequence customer request");
       const list = (await http.post("/contact-lists", { name: "Sequência" }, auth())).data;
-      await http.post(`/contact-lists/${list.id}/import`, { items: [{ name: "Paula Dias", number: "5511955554444" }] }, auth());
+      await http.post(`/contact-lists/${list.id}/import`, { items: [{ name: "Paula Dias", number: "5511955554444" }], consent: true }, auth());
       const steps = [
         { body: "Oi {{name}}! {{spin|Tudo bem|Tudo certo}}?", delaySec: 0 },
         { body: "Abrimos as inscrições do vestibular.", delaySec: 3 },
@@ -1077,7 +1089,7 @@ const postMeta = (id, payload, secret, badSig) => {
       await postMeta(cid, cloudEvent([{ from: "5511955557777", id: "wamid.buttons.optin", type: "text", text: { body: "Quero saber das bolsas" } }]), cloudCfg.appSecret);
       await waitFor(() => ticketOf("5511955557777"), 8000, "buttons customer request");
       const list = (await http.post("/contact-lists", { name: "Botões" }, auth())).data;
-      await http.post(`/contact-lists/${list.id}/import`, { items: [{ name: "Rita Botões", number: "5511955557777" }] }, auth());
+      await http.post(`/contact-lists/${list.id}/import`, { items: [{ name: "Rita Botões", number: "5511955557777" }], consent: true }, auth());
       const c = (await http.post("/campaigns", { name: "Com botões", steps: [{ body: "Oi {{primeiro_nome}}, quer a sua bolsa?", buttons: ["Quero", "Agora não"], delaySec: 0 }], contactListId: list.id, whatsappId: cid, intervalMin: 0, intervalMax: 0, batchSize: 50, batchPause: 1 }, auth())).data;
       assert(Array.isArray(c.steps) && c.steps[0].buttons.join("|") === "Quero|Agora não", `steps saved ${JSON.stringify(c.steps)}`);
       const before = graph.sent.length;
@@ -1100,7 +1112,7 @@ const postMeta = (id, payload, secret, badSig) => {
     }
     await test("campanhas: nome com apóstrofo e &, primeiro nome, número sem 55 e número curto demais", async () => {
       const list = (await http.post("/contact-lists", { name: "Nomes difíceis" }, auth())).data;
-      const imp = (await http.post(`/contact-lists/${list.id}/import`, { items: [{ name: "D'Ávila & Cia Ltda", number: "(11) 95555-1111" }, { name: "Curto", number: "12345" }] }, auth())).data;
+      const imp = (await http.post(`/contact-lists/${list.id}/import`, { items: [{ name: "D'Ávila & Cia Ltda", number: "(11) 95555-1111" }, { name: "Curto", number: "12345" }], consent: true }, auth())).data;
       assert(imp.imported === 1 && imp.invalid === 1, `import ${JSON.stringify(imp)}`);
       const items = (await http.get(`/contact-lists/${list.id}/items`, auth())).data;
       assert(items.length === 1 && items[0].number === "5511955551111", `the country code was not added: ${JSON.stringify(items)}`);
@@ -1115,7 +1127,7 @@ const postMeta = (id, payload, secret, badSig) => {
     await test("campanhas: agendar, iniciar agora, iniciar sozinha na hora, não disparar atrasada, pausar, retomar e cancelar", async () => {
       const mk = async (name, numbers) => {
         const list = (await http.post("/contact-lists", { name }, auth())).data;
-        await http.post(`/contact-lists/${list.id}/import`, { items: numbers.map((n, i) => ({ name: `${name} ${i + 1}`, number: n })) }, auth());
+        await http.post(`/contact-lists/${list.id}/import`, { items: numbers.map((n, i) => ({ name: `${name} ${i + 1}`, number: n })), consent: true }, auth());
         return list;
       };
       const base = { intervalMin: 0, intervalMax: 0, batchSize: 50, batchPause: 1, whatsappId: cid };
@@ -1174,7 +1186,7 @@ const postMeta = (id, payload, secret, badSig) => {
     });
     await test("campanhas: reenviar falhas, relatório com motivo em português e em planilha, duplicar, lista em uso e conexão fora do ar", async () => {
       const list = (await http.post("/contact-lists", { name: "Falhas" }, auth())).data;
-      await http.post(`/contact-lists/${list.id}/import`, { items: [{ name: "Falha Um", number: "5521955553001" }, { name: "Falha Dois", number: "5521955553002" }] }, auth());
+      await http.post(`/contact-lists/${list.id}/import`, { items: [{ name: "Falha Um", number: "5521955553001" }, { name: "Falha Dois", number: "5521955553002" }], consent: true }, auth());
       const c = (await http.post("/campaigns", { name: "Com falhas", message: "Oi {{name}}", contactListId: list.id, whatsappId: cid, intervalMin: 0, intervalMax: 0, batchSize: 50, batchPause: 1 }, auth())).data;
       assert((await http.post(`/campaigns/${c.id}/retry-failed`, {}, auth())).status === 400, "retry on a campaign that never started");
       assert((await http.post(`/campaigns/${c.id}/start`, {}, auth())).status === 200, "start");
@@ -1208,7 +1220,7 @@ const postMeta = (id, payload, secret, badSig) => {
 
       // the connection goes down: the campaign says it is waiting and goes on when it is back
       const l2 = (await http.post("/contact-lists", { name: "Conexão cai" }, auth())).data;
-      await http.post(`/contact-lists/${l2.id}/import`, { items: [{ name: "Espera", number: "5521955553003" }] }, auth());
+      await http.post(`/contact-lists/${l2.id}/import`, { items: [{ name: "Espera", number: "5521955553003" }], consent: true }, auth());
       const c2 = (await http.post("/campaigns", { name: "Espera a conexão", message: "Oi", contactListId: l2.id, whatsappId: cid, intervalMin: 0, intervalMax: 0, batchSize: 50, batchPause: 1 }, auth())).data;
       sql(`UPDATE Whatsapps SET status='DISCONNECTED' WHERE id=${cid}`);
       const before2 = graph.sent.length;
@@ -1227,18 +1239,18 @@ const postMeta = (id, payload, secret, badSig) => {
       await sleep(1500);
       sql(`UPDATE Whatsapps SET status='CONNECTED' WHERE id=${wa.id}`);
       const known = sql(`INSERT INTO Contacts (name, number, email, isGroup, kind, channel, createdAt, updatedAt) VALUES ('Conhecida', '556999993333', '', false, 'person', 'whatsapp', NOW(), NOW()) RETURNING id`).split("\n")[0];
-      sql(`INSERT INTO Contacts (name, number, email, isGroup, kind, channel, optOut, createdAt, updatedAt) VALUES ('Saiu', '5569977775555', '', false, 'person', 'whatsapp', true, NOW(), NOW())`);
+      sql(`INSERT INTO Contacts (name, number, email, isGroup, kind, channel, optOut, consentAt, consentSource, createdAt, updatedAt) VALUES ('Saiu', '5569977775555', '', false, 'person', 'whatsapp', true, NOW(), 'manual', NOW(), NOW())`);
       const t = sql(`INSERT INTO Tickets (status, contactId, whatsappId, unreadMessages, isGroup, segment, createdAt, updatedAt) VALUES ('closed', ${known}, ${wa.id}, 0, false, 'sales', NOW(), NOW()) RETURNING id`).split("\n")[0];
       sql(`INSERT INTO Messages (id, ticketId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('pre-known-1', ${t}, 'oi', false, true, 'chat', 0, NOW(), NOW())`);
       const list = (await http.post("/contact-lists", { name: "Conferência" }, auth())).data;
-      await http.post(`/contact-lists/${list.id}/import`, { items: [{ name: "Conhecida", number: "5569999993333" }, { name: "Desconhecida", number: "5569988884444" }, { name: "Saiu", number: "5569977775555" }] }, auth());
+      await http.post(`/contact-lists/${list.id}/import`, { items: [{ name: "Conhecida", number: "5569999993333" }, { name: "Desconhecida", number: "5569988884444" }, { name: "Saiu", number: "5569977775555" }], consent: true }, auth());
       const c = (await http.post("/campaigns", { name: "Conferência", message: "Oi", contactListId: list.id, whatsappId: wa.id }, auth())).data;
       const pre = await http.get(`/campaigns/${c.id}/preflight`, auth());
-      assert(pre.status === 200 && pre.data.total === 3 && pre.data.blocked.optedOut === 1 && pre.data.blocked.cold === 1 && pre.data.canReceive === 1, `preflight ${JSON.stringify(pre.data).slice(0, 300)}`);
+      assert(pre.status === 200 && pre.data.total === 3 && pre.data.blocked.optedOut === 1 && pre.data.blocked.cold === 1 && pre.data.blocked.noConsent === 0 && pre.data.canReceive === 1, `preflight ${JSON.stringify(pre.data).slice(0, 300)}`);
       assert(pre.data.connection.riskMode === "strict" && pre.data.warnings.length >= 2 && typeof pre.data.estimatedSeconds === "number", "connection, warnings and duration");
       assert((await http.put(`/whatsapp/${wa.id}`, { name: "QR conferência", riskMode: "relaxed" }, auth())).status === 200, "relaxed mode");
       const relaxed = (await http.get(`/campaigns/${c.id}/preflight`, auth())).data;
-      assert(relaxed.canReceive === 2 && relaxed.blocked.cold === 0 && relaxed.blocked.optedOut === 1, `relaxed ${JSON.stringify(relaxed.blocked)} ${relaxed.canReceive}`);
+      assert(relaxed.canReceive === 2 && relaxed.blocked.cold === 0 && relaxed.blocked.optedOut === 1 && relaxed.blocked.noConsent === 0, `relaxed ${JSON.stringify(relaxed.blocked)} ${relaxed.canReceive}`);
       // the same check before saving (last step of the campaign form)
       const draft = await http.post("/campaigns/preflight", { contactListId: list.id, whatsappId: wa.id, steps: [{ type: "text", body: "Oi" }, { type: "text", body: "Tudo bem?", delaySec: 5 }] }, auth());
       assert(draft.status === 200 && draft.data.total === 3 && draft.data.canReceive === 2 && draft.data.messagesPerPerson === 2, `draft preflight ${draft.status} ${JSON.stringify(draft.data).slice(0, 200)}`);
@@ -1764,7 +1776,7 @@ const postMeta = (id, payload, secret, badSig) => {
       await sleep(1500); // let the (skipped) session start finish before faking the status
       sql(`UPDATE Whatsapps SET status='CONNECTED' WHERE id=${wa.id}`);
       const list = (await http.post("/contact-lists", { name: "Frios" }, auth())).data;
-      await http.post(`/contact-lists/${list.id}/import`, { items: [{ name: "Frio Um", number: "5511977770001" }] }, auth());
+      await http.post(`/contact-lists/${list.id}/import`, { items: [{ name: "Frio Um", number: "5511977770001" }], consent: true }, auth());
       const c = (await http.post("/campaigns", { name: "Frios", message: "Oi {{name}}", contactListId: list.id, whatsappId: wa.id, intervalMin: 0, intervalMax: 0, batchSize: 50, batchPause: 1 }, auth())).data;
       assert((await http.post(`/campaigns/${c.id}/start`, {}, auth())).status === 200, "start");
       try {
@@ -3090,6 +3102,7 @@ const postMeta = (id, payload, secret, badSig) => {
 
       const made = await http.post("/whatsapp", { name: "x", channel: "telegram", config: "{}", queueIds: [1] }, asUser(t1));
       assert(made.status === 200 && made.data.channel === "whatsapp" && made.data.ownerId === u1.id, `own number ${made.status} ${JSON.stringify(made.data).slice(0, 200)}`);
+      assert(sql(`SELECT CONCAT(channel,'|',status) FROM Whatsapps WHERE id=${made.data.id}`) === "whatsapp|OPENING", "E2E skip did not preserve the created QR connection without opening a session");
       assert(/Dona/.test(made.data.name) || made.data.name === "x", "name");
       assert(made.data.isDefault === false, "a personal number must not become the default");
       assert(sql(`SELECT whatsappId FROM Users WHERE id=${u1.id}`) === String(made.data.id), "becomes the person's sending number");
@@ -4469,7 +4482,8 @@ const postMeta = (id, payload, secret, badSig) => {
       await http.put(`/ai-agents/${aiId}`, { active: true }, auth());
     });
     // the agent of this connection answers before the flows that start on any message, so the flow tests below run with it off
-    await http.put(`/ai-agents/${aiId}`, { active: false }, auth());
+    restoreActiveAiAgents = sql(`SELECT id FROM AiAgents WHERE whatsappId=${Number(cid)} AND active=true`).split("\n").filter(Boolean);
+    sql(`UPDATE AiAgents SET active=false WHERE whatsappId=${Number(cid)}`);
     await test("chatbot can ask a question, offer polos and call a webhook", async () => {
       sql("DELETE FROM ChatbotNodes");
       const root = (await http.post("/chatbot-nodes", { title: "Quero me matricular", action: "ask", message: "Qual o seu nome completo?", field: "nome", position: 1 }, auth())).data;
@@ -5240,6 +5254,8 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(tg.sent.slice(tbefore).some(x => x.method === "answerCallbackQuery"), "the tap was not acknowledged");
       await http.post(`/flows/${tgFlow}/unpublish`, {}, auth());
     });
+    // Only the agent created by this suite is enabled for its function tests; other seeded
+    // agents remain paused until cleanup so they cannot steal first-message flow fixtures.
     await http.put(`/ai-agents/${aiId}`, { active: true }, auth());
     await test("AI functions: the agent starts a published flow by itself and the flow takes over", async () => {
       const flow = (await http.post("/flows", { name: "Menu de cursos", entry: { type: "manual" }, graph: { nodes: [
@@ -5458,6 +5474,8 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(areaOfCourse("Biomedicina") === "saude_eng_agro" && areaOfCourse("Engenharia Civil") === "saude_eng_agro", "health/engineering are 40%");
       assert(areaOfCourse("Administração") === "livre", "Administração should not be impacted");
       assert(areaOfCourse("Física") === "educacao_ciencias" || areaOfCourse("Pedagogia") === "educacao_ciencias", "teaching/natural sciences are 30%");
+      // Isolate the default application from the previous dialogue test, which deliberately sets the course to 30%.
+      sql(`DELETE FROM CourseRegulations WHERE courseId IN (SELECT id FROM Courses WHERE name IN ('Biomedicina','Engenharia Civil'))`);
       // the first start fills the courses without a rule (applying again keeps whatever exists)
       const first = await http.post("/mec-defaults/apply", {}, auth());
       assert(first.status === 200 && first.data.created + first.data.skipped === d.total - d.areas.reduce((n, a) => n + 0, 0), `apply ${JSON.stringify(first.data)} total ${d.total}`);
@@ -5785,9 +5803,15 @@ const postMeta = (id, payload, secret, badSig) => {
       await http.post(`/contact-lists/${list.id}/import`, { items: [{ name: "Escreveu", number: "5511955558803" }, { name: "Nunca falou", number: "5511955558804" }] }, auth());
       const c = (await http.post("/campaigns", { name: "Consentimento", message: "Oi", contactListId: list.id, whatsappId: Number(cid) }, auth())).data;
       const pre = (await http.get(`/campaigns/${c.id}/preflight`, auth())).data;
-      assert(pre.noConsent === 1 && pre.warnings.some(w => /consentimento/.test(w)), `preflight consent ${JSON.stringify({ noConsent: pre.noConsent, warnings: pre.warnings })}`);
+      assert(pre.noConsent === 1 && pre.blocked.noConsent === 1 && pre.canReceive === 1 && pre.warnings.some(w => /consentimento/.test(w)), `preflight consent ${JSON.stringify({ noConsent: pre.noConsent, blocked: pre.blocked, canReceive: pre.canReceive, warnings: pre.warnings })}`);
       const removed = await http.post(`/campaigns/${c.id}/remove-no-consent`, {}, auth());
       assert(removed.status === 200 && removed.data.removed === 1 && sql(`SELECT COUNT(*) FROM ContactListItems WHERE contactListId=${list.id}`) === "1", `remove without consent ${JSON.stringify(removed.data)}`);
+      const reimport = await http.post(`/contact-lists/${list.id}/import`, { items: [{ name: "Escreveu", number: "5511955558803" }], consent: true }, auth());
+      assert(reimport.data.imported === 0 && sql(`SELECT consentSource FROM Contacts WHERE number='5511955558803'`) === "inbound", "reimporting an existing list entry replaced its first consent source");
+      const incremental = (await http.post("/contact-lists", { name: "Consentimento incremental" }, auth())).data;
+      await http.post(`/contact-lists/${incremental.id}/import`, { items: [{ name: "Importação inicial", number: "5511955558806" }] }, auth());
+      const consentedAgain = await http.post(`/contact-lists/${incremental.id}/import`, { items: [{ name: "Importação inicial", number: "5511955558806" }], consent: true }, auth());
+      assert(consentedAgain.data.imported === 0 && sql(`SELECT consentSource FROM Contacts WHERE number='5511955558806'`) === "import", "a repeated import did not record its new consent declaration");
       // a list imported saying the people agreed registers it on the contacts that exist
       sql(`INSERT INTO Contacts (name, number, email, isGroup, kind, channel, createdAt, updatedAt) VALUES ('Lista Consentida', '5511955558805', '', false, 'person', 'whatsapp', NOW(), NOW())`);
       await http.post(`/contact-lists/${list.id}/import`, { items: [{ name: "Lista Consentida", number: "5511955558805" }], consent: true }, auth());
@@ -6800,6 +6824,10 @@ const postMeta = (id, payload, secret, badSig) => {
       const made = await http.post("/institutions", { name: "Universidade Norte Teste", shortName: "Norte Teste", brandColor: "#123ABC", mailFrom: "contato@norte.test" }, auth());
       assert(made.status === 201 && made.data.slug === "norte-teste" && !made.data.isDefault, `created ${JSON.stringify(made.data)}`);
       const north = made.data.id;
+      const northAgent = await http.post("/ai-agents", { name: "Agente CRUD Norte Teste", model: "claude-haiku-5-5", active: false, institutionId: north }, auth());
+      assert(northAgent.status === 201 && northAgent.data.institutionId === north, `the agent editor could not assign a university: ${JSON.stringify(northAgent.data)}`);
+      assert((await http.get("/ai-agents", auth())).data.some(item => item.id === northAgent.data.id && item.institutionId === north), "the agent list did not preserve its university assignment");
+      assert((await http.post("/ai-agents", { name: "Agente inválido Teste", model: "claude-haiku-5-5", active: false, institutionId: 99999999 }, auth())).data.error === "ERR_INSTITUTION_NOT_FOUND", "agent accepted an unknown university");
       assert((await http.post("/institutions", { name: "Outra", slug: "Norte Teste" }, auth())).data.error === "ERR_INSTITUTION_SLUG_TAKEN", "repeated address accepted");
       assert((await http.put(`/institutions/${north}`, { brandColor: "azul" }, auth())).data.error === "ERR_INSTITUTION_COLOR", "bad color accepted");
       assert((await http.put(`/institutions/${def.id}`, { isDefault: false }, auth())).data.error === "ERR_INSTITUTION_DEFAULT", "the default was turned off with no other");
@@ -6821,6 +6849,7 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(sql(`SELECT COUNT(*) FROM Institutions WHERE isDefault`) === "1", "concurrent update left multiple defaults");
       await http.put(`/institutions/${def.id}`, { isDefault: true }, auth());
       assert(sql(`SELECT string_agg(id::text, ',') FROM Institutions WHERE isDefault`) === String(def.id), "the default did not come back");
+      assert(sql(`SELECT value FROM Settings WHERE key='legacy_institution_id'`) === String(def.id), "the original default was not pinned for historical rows");
       // a number of the north university: what comes through it is of the north; a number of the default stays of the default
       const out = JSON.parse(inDb(`
         const Whatsapp=require("./dist/models/Whatsapp").default, Contact=require("./dist/models/Contact").default, Ticket=require("./dist/models/Ticket").default, Lead=require("./dist/models/Lead").default;
@@ -6844,6 +6873,25 @@ const postMeta = (id, payload, secret, badSig) => {
       assert(out.inside === "Norte Teste" && out.other === out.outside && out.outside !== "Norte Teste", `the AI did not speak for the university of the conversation: ${JSON.stringify(out)}`);
       assert(out.nested === out.outside, `a default conversation inherited the outer university: ${JSON.stringify(out)}`);
       assert(out.concurrent[0] === "Norte Teste" && out.concurrent[1] === out.outside, `conversation contexts crossed: ${JSON.stringify(out.concurrent)}`);
+      // Legacy rows stay with the migration-time university even after the operational default changes. New rows take the new default.
+      psql(DB, `UPDATE "Whatsapps" SET "institutionId"=NULL WHERE id=${tgId}; UPDATE "Tickets" SET "institutionId"=NULL WHERE id=${out.ids[1]}`);
+      await http.put(`/institutions/${north}`, { isDefault: true }, auth());
+      const legacy = JSON.parse(inDb(`
+        const I=require("./dist/helpers/Institution"), Whatsapp=require("./dist/models/Whatsapp").default, Campaign=require("./dist/models/Campaign").default, ContactList=require("./dist/models/ContactList").default, Agent=require("./dist/models/AiAgent").default, Ticket=require("./dist/models/Ticket").default;
+        const whatsappId=await I.institutionIdForWhatsapp(${tgId});
+        const contactId=await I.institutionIdForContact(${out.contacts[1]});
+        const oldName=await I.withInstitutionOf({ticketId:${out.ids[1]}},async()=>I.institutionName());
+        const wa=await Whatsapp.create({name:"Número Novo Padrão Teste",channel:"webchat",status:"CONNECTED"});
+        const list=await ContactList.create({name:"Lista Novo Padrão Teste"});
+        const campaign=await Campaign.create({name:"Campanha Novo Padrão Teste",message:"Olá",contactListId:list.id});
+        const agent=await Agent.create({name:"Agente Novo Padrão Teste",provider:"anthropic",model:"claude-haiku-5-5",active:false});
+        const { suggestionAgent }=require("./dist/services/CopilotServices/Settings"); const defaultTicket=await Ticket.findByPk(${out.ids[1]});
+        const crossUniversityAgent=await suggestionAgent({agentId:agent.id},defaultTicket);
+        console.log(JSON.stringify({whatsappId,contactId,oldName,newWhatsapp:wa.institutionId,newWhatsappId:wa.id,newCampaign:campaign.institutionId,newCampaignId:campaign.id,contactListId:list.id,newAgent:agent.institutionId,newAgentId:agent.id,crossUniversityAgent:crossUniversityAgent?.id||null}));`).trim().split("\n").pop());
+      assert(legacy.whatsappId === def.id && legacy.contactId === def.id && legacy.oldName === def.name, `legacy rows changed institution after switching the default: ${JSON.stringify(legacy)}`);
+      assert(legacy.newWhatsapp === north && legacy.newCampaign === north && legacy.newAgent === north, `new rows did not take the current default: ${JSON.stringify(legacy)}`);
+      assert(legacy.crossUniversityAgent === null, `copilot selected an agent from another university: ${JSON.stringify(legacy)}`);
+      await http.put(`/institutions/${def.id}`, { isDefault: true }, auth());
       // the catalogue: the same course of two universities is two courses; the AI of a conversation offers only the courses of its university
       // (and the ones of no university in particular)
       const imp = await http.post("/courses/import", { items: [
@@ -6870,18 +6918,37 @@ const postMeta = (id, payload, secret, badSig) => {
       const form = await http.get(`/leadform/${tokenForm}/u/norte-teste`);
       assert(form.status === 200 && String(form.data).includes("Norte Teste") && String(form.data).includes("#123ABC") && String(form.data).includes("Engenharia Norte Teste"), `the form of the university: ${form.status}`);
       assert((await http.get(`/leadform/${tokenForm}/u/nao-existe`)).status === 404, "a form of a university that does not exist");
-      const sent = await http.post(`/leadform/${tokenForm}/u/norte-teste/submit`, { name: "Lead Norte Teste", phone: "11 97777-0951", email: "lead.norte@x.com", consent: true });
+      const defaultCourse = Number(sql(`SELECT id FROM Courses WHERE institutionId=${def.id} ORDER BY id LIMIT 1`));
+      assert(defaultCourse > 0, "the default university has no course fixture");
+      const forgedCourse = await postLeadForm(`/leadform/${tokenForm}/u/norte-teste/submit`, { name: "Lead Curso Cruzado", phone: "11 97777-0954", email: "lead.cruzado@x.com", consent: true, courseId: defaultCourse }, "198.51.100.20");
+      assert(forgedCourse.status === 400 && sql(`SELECT COUNT(*) FROM Leads WHERE email='lead.cruzado@x.com'`) === "0", "a public form accepted another university's course");
+      const sharedCourse = Number(inDb(`const Course=require("./dist/models/Course").default; const row=await Course.create({name:"Curso Compartilhado Teste",category:"Graduação",modality:"EAD",institutionId:null,active:true}); console.log(row.id);`).trim().split("\n").pop());
+      const sharedSubmission = await postLeadForm(`/leadform/${tokenForm}/u/norte-teste/submit`, { name: "Lead Curso Compartilhado", phone: "11 97777-0955", email: "lead.compartilhado@x.com", consent: true, courseId: sharedCourse }, "198.51.100.20");
+      assert(sharedSubmission.status === 200 && sql(`SELECT CONCAT(institutionId,'|',courseId) FROM Leads WHERE email='lead.compartilhado@x.com'`) === `${north}|${sharedCourse}`, "a shared course was rejected or branded as the default university");
+      const sent = await postLeadForm(`/leadform/${tokenForm}/u/norte-teste/submit`, { name: "Lead Norte Teste", phone: "11 97777-0951", email: "lead.norte@x.com", consent: true }, "198.51.100.20");
       assert(sent.status === 200 && sql(`SELECT institutionId FROM Leads WHERE email='lead.norte@x.com'`) === String(north), "the lead of the form of the university is not of it");
-      psql(DB, `DELETE FROM "Leads" WHERE email='lead.norte@x.com'`);
+      const samePerson = await postLeadForm(`/leadform/${tokenForm}/u/${def.slug}/submit`, { name: "Lead da mesma pessoa", phone: "11 97777-0951", email: "lead.norte@x.com", consent: true }, "198.51.100.20");
+      const samePersonRows = sql(`SELECT CONCAT(id,'=',COALESCE(institutionId::text,'null')) FROM Leads WHERE email='lead.norte@x.com' ORDER BY id`).split("\n");
+      assert(samePerson.status === 200 && samePersonRows.length === 2 && new Set(samePersonRows.map(row => row.split("=")[1])).size === 2, `the same person was incorrectly merged across universities: status=${samePerson.status}, rows=${samePersonRows.join(",")}, body=${JSON.stringify(samePerson.data)}`);
+      psql(DB, `DELETE FROM "Leads" WHERE email IN ('lead.norte@x.com','lead.compartilhado@x.com'); DELETE FROM "Courses" WHERE id=${sharedCourse}`);
       psql(DB, `DELETE FROM "Courses" WHERE name='Engenharia Norte Teste'`);
       // a number with conversations: the university cannot go away until the number changes; the screen changes it
       assert((await http.delete(`/institutions/${north}`, auth())).data.error === "ERR_INSTITUTION_IN_USE", "a university with numbers was deleted");
       const moved = await http.put(`/whatsapp/${out.wa}`, { institutionId: null }, auth());
-      assert(moved.status === 200 && sql(`SELECT COALESCE(institutionId::text,'') FROM Whatsapps WHERE id=${out.wa}`) === "", "the number did not leave the university");
+      assert(moved.status === 200 && sql(`SELECT institutionId FROM Whatsapps WHERE id=${out.wa}`) === String(def.id), "the number did not return to the current default university");
       assert((await http.put(`/whatsapp/${out.wa}`, { institutionId: 999999 }, auth())).status === 404, "a number took a university that does not exist");
       assert((await http.delete(`/institutions/${north}`, auth())).data.error === "ERR_INSTITUTION_IN_USE", "history lost its university after its number moved");
-      psql(DB, `DELETE FROM "Leads" WHERE id=${out.lead}; DELETE FROM "Tickets" WHERE id IN (${out.ids.join(",")}); DELETE FROM "Contacts" WHERE id IN (${out.contacts.join(",")}); DELETE FROM "Whatsapps" WHERE id=${out.wa}`);
+      psql(DB, `DELETE FROM "CampaignShippings" WHERE "campaignId"=${legacy.newCampaignId}; DELETE FROM "Campaigns" WHERE id=${legacy.newCampaignId}; DELETE FROM "ContactLists" WHERE id=${legacy.contactListId}; DELETE FROM "AiAgents" WHERE id IN (${legacy.newAgentId},${northAgent.data.id}); DELETE FROM "Whatsapps" WHERE id IN (${out.wa},${legacy.newWhatsappId}); DELETE FROM "Leads" WHERE id=${out.lead}; DELETE FROM "Tickets" WHERE id IN (${out.ids.join(",")}); DELETE FROM "Contacts" WHERE id IN (${out.contacts.join(",")})`);
       assert((await http.delete(`/institutions/${north}`, auth())).status === 200, "the test university was not deleted");
+    });
+    await test("campaign delivery guard rejects contacts without recorded consent before any provider call", async () => {
+      const result = JSON.parse(inDb(`
+        const { checkCampaignSend } = require("./dist/services/SafetyServices/SendGuard");
+        const blocked = await checkCampaignSend({ id: 1, channel: "whatsapp_cloud" }, { id: 2, consentAt: null });
+        const missing = await checkCampaignSend({ id: 1, channel: "whatsapp_cloud" }, null);
+        console.log(JSON.stringify({ blocked, missing }));`));
+      assert(result.blocked?.kind === "contact" && /consentimento/.test(result.blocked.reason), `missing consent was allowed: ${JSON.stringify(result)}`);
+      assert(result.missing?.kind === "contact" && /consentimento/.test(result.missing.reason), `unknown contact was allowed: ${JSON.stringify(result)}`);
     });
     console.log("\nCopiloto do consultor");
     await test("copilot config is manager-only, validates revisions and blocks generic setting bypass", async () => {
@@ -7130,6 +7197,28 @@ const postMeta = (id, payload, secret, badSig) => {
       // the e-mail does not distinguish capitals
       const caps = await http.post("/auth/login", { email: "ADMIN@Whaticket.com", password: "admin" });
       assert(caps.status === 200, `login with capitals ${caps.status}`);
+    });
+    await test("refresh rate limit keeps CORS headers on 429", async () => {
+      const origin = "http://localhost:3000";
+      let limited;
+      for (let i = 0; i < 402; i += 1) {
+        const response = await http.post("/auth/refresh_token", {}, { headers: { Origin: origin } });
+        if (response.status === 429) { limited = response; break; }
+      }
+      assert(limited, "refresh endpoint did not reach its rate limit");
+      assert(limited.headers["access-control-allow-origin"] === origin, "429 omitted Access-Control-Allow-Origin");
+      assert(limited.headers["access-control-allow-credentials"] === "true", "429 omitted Access-Control-Allow-Credentials");
+      const widgetOrigin = "https://chat-embed.example";
+      const preflight = await http.options("/webchat/1", { headers: { Origin: widgetOrigin, "Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "content-type" } });
+      assert(preflight.status === 204, `public widget preflight returned ${preflight.status}`);
+      assert(preflight.headers["access-control-allow-origin"] === widgetOrigin, "public widget preflight did not allow an external origin");
+      let publicLimited;
+      for (let i = 0; i < 122; i += 1) {
+        const response = await http.post("/webchat/1", {}, { headers: { Origin: widgetOrigin, "X-Forwarded-For": "198.51.100.77" } });
+        if (response.status === 429) { publicLimited = response; break; }
+      }
+      assert(publicLimited, "public webchat did not reach its rate limit");
+      assert(publicLimited.headers["access-control-allow-origin"] === widgetOrigin, "public 429 omitted Access-Control-Allow-Origin");
     });
     await test("bad requests are answered as such, not as server errors", async () => {
       const bad = await http.post("/auth/login", "{not json", { headers: { "content-type": "application/json" } });

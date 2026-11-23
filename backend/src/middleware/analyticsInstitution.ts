@@ -1,7 +1,7 @@
 import { NextFunction, Request, Response } from "express";
 
 import AppError from "../errors/AppError";
-import { allInstitutions } from "../helpers/Institution";
+import { allInstitutions, legacyInstitutionId } from "../helpers/Institution";
 import { withAnalyticsInstitution } from "../services/AnalyticsServices/AnalyticsService";
 
 // Estatísticas → "Universidade": ?institutionId=N runs the whole screen inside that university (its conversations and its leads; the ones
@@ -13,7 +13,7 @@ const analyticsInstitution = async (req: Request, _res: Response, next: NextFunc
   const id = Number(raw);
   const inst = Number.isInteger(id) && id > 0 ? (await allInstitutions()).find(i => i.id === id) : null;
   if (!inst) throw new AppError("ERR_NOT_FOUND", 404);
-  return withAnalyticsInstitution({ id: inst.id, isDefault: inst.isDefault }, async () => next());
+  return withAnalyticsInstitution({ id: inst.id, isDefault: inst.isDefault, isLegacy: inst.id === await legacyInstitutionId() }, async () => next());
 };
 
 export default analyticsInstitution;

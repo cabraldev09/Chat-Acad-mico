@@ -7,19 +7,20 @@ import { rows, LEAD_IN_INSTITUTION } from "./AnalyticsService";
 export const NO_CONTACT_DAYS = 7;
 export const RISK_DAYS = 15;
 
-export const tutoriaInsights = async (tutorIds: number[] | null, from: Date, to: Date) => {
+export const tutoriaInsights = async (tutorIds: number[] | null, from: Date, to: Date, poloIds: number[] | null = null) => {
   const scope = tutorIds ? "AND l.onboardingTutorId IN (:tutors)" : "AND l.onboardingTutorId IS NOT NULL";
-  const rep = { tutors: tutorIds && tutorIds.length ? tutorIds : [0], from, to, now: new Date(), noContact: NO_CONTACT_DAYS, risk: RISK_DAYS };
+  const poloScope = poloIds === null ? "" : "AND l.poloId IN (:polos)";
+  const rep = { tutors: tutorIds && tutorIds.length ? tutorIds : [0], polos: poloIds?.length ? poloIds : [0], from, to, now: new Date(), noContact: NO_CONTACT_DAYS, risk: RISK_DAYS };
   // the students in care: enrolled, not lost; the last message of anybody of the team to them, and the last message they sent
   const students = await rows(`SELECT l.id, l.onboardingTutorId AS tutorId, l.onboardingStatus AS status, l.onboardingChecklist AS checklist, l.reenrolledAt,
-      (SELECT MAX(m.createdAt) FROM Tickets t JOIN Messages m ON m.ticketId = t.id WHERE t.contactId = l.contactId AND m.fromMe = true) AS lastOut,
-      (SELECT MAX(m.createdAt) FROM Tickets t JOIN Messages m ON m.ticketId = t.id WHERE t.contactId = l.contactId AND m.fromMe = false) AS lastIn,
+      (SELECT MAX(m.createdAt) FROM Tickets t JOIN Messages m ON m.ticketId = t.id WHERE t.contactId = l.contactId AND t.institutionId IS NOT DISTINCT FROM l.institutionId AND m.fromMe = true) AS lastOut,
+      (SELECT MAX(m.createdAt) FROM Tickets t JOIN Messages m ON m.ticketId = t.id WHERE t.contactId = l.contactId AND t.institutionId IS NOT DISTINCT FROM l.institutionId AND m.fromMe = false) AS lastIn,
       EXISTS (SELECT 1 FROM Payments p WHERE p.leadId = l.id AND p.status IN ('pending', 'expired')) AS feeOpen
-    FROM Leads l WHERE l.enrolledAt IS NOT NULL AND l.lostAt IS NULL AND l.isHistorical = false AND ${LEAD_IN_INSTITUTION} ${scope} LIMIT 20000`, rep);
-  const names = new Map((await rows(`SELECT id, name FROM Users WHERE id IN (SELECT DISTINCT onboardingTutorId FROM Leads l WHERE l.enrolledAt IS NOT NULL ${scope})`, rep)).map(u => [Number(u.id), String(u.name)]));
+    FROM Leads l WHERE l.enrolledAt IS NOT NULL AND l.lostAt IS NULL AND l.isHistorical = false AND ${LEAD_IN_INSTITUTION} ${scope} ${poloScope} LIMIT 20000`, rep);
+  const names = new Map((await rows(`SELECT id, name FROM Users WHERE id IN (SELECT DISTINCT onboardingTutorId FROM Leads l WHERE l.enrolledAt IS NOT NULL AND ${LEAD_IN_INSTITUTION} ${scope} ${poloScope})`, rep)).map(u => [Number(u.id), String(u.name)]));
   const nps = await rows(`SELECT l.onboardingTutorId AS tutorId, COUNT(*) AS n, AVG(s.score) AS avg,
       SUM(CASE WHEN s.score >= 9 THEN 1 ELSE 0 END) AS promoters, SUM(CASE WHEN s.score <= 6 THEN 1 ELSE 0 END) AS detractors
-    FROM NpsSurveys s JOIN Leads l ON l.id = s.leadId WHERE s.score IS NOT NULL AND s.answeredAt BETWEEN :from AND :to AND ${LEAD_IN_INSTITUTION} ${scope} GROUP BY l.onboardingTutorId`, rep);
+    FROM NpsSurveys s JOIN Leads l ON l.id = s.leadId WHERE s.score IS NOT NULL AND s.answeredAt BETWEEN :from AND :to AND ${LEAD_IN_INSTITUTION} ${scope} ${poloScope} GROUP BY l.onboardingTutorId`, rep);
 
   const day = 86400000;
   const now = Date.now();

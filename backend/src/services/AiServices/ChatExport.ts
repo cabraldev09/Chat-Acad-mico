@@ -71,6 +71,12 @@ export const maskPii = (text: string): string =>
     .replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, "[email]")
     .replace(/(?:\+?55\s?)?\(?\d{2}\)?\s?9?\d{4}[-\s]?\d{4}\b/g, "[telefone]");
 
+export const maskNamedPerson = (text: string, name?: string | null): string => {
+  const value = String(name || "").trim();
+  if (value.length < 3) return text;
+  return text.replace(new RegExp(`(?<![\\p{L}\\p{N}])${value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\p{L}\\p{N}])`, "giu"), "[cliente]");
+};
+
 // the conversation as a transcript: the attendant is "ATENDENTE", everybody else "CLIENTE"; a long pause starts a new conversation
 export const toTranscript = (chat: ExportedChat, attendant: string): string => {
   const out: string[] = [];

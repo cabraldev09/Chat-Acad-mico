@@ -14,7 +14,7 @@ import ShowTicketService from "../TicketServices/ShowTicketService";
 import UpdateTicketService from "../TicketServices/UpdateTicketService";
 import ShowWhatsAppService from "../WhatsappService/ShowWhatsAppService";
 import SendWhatsAppMessage from "../WbotServices/SendWhatsAppMessage";
-import { commercialAgent, findAgentForTicket, findDedicatedAgent, runAiForTicket } from "../AiServices/RunAiAgent";
+import { commercialAgentForTicket, findAgentForTicket, findDedicatedAgent, runAiForTicket } from "../AiServices/RunAiAgent";
 import { runAgentGraph } from "../FlowServices/Runner";
 import { noteAutomation } from "./AutomationTrace";
 import emitTicketUpdate from "../TicketServices/EmitTicketUpdate";
@@ -399,7 +399,7 @@ const runAi = async (ticket: Ticket): Promise<boolean> => {
   }
   // a consultant handed this conversation to the AI to qualify ("IA qualificar") and the agent of the connection has no process of its own: the
   // sales agent with a published process takes it, so the lead goes through the whole process instead of the short "name and city" of the simple mode
-  const seller = ticket.aiReturnUserId ? await commercialAgent() : null;
+  const seller = ticket.aiReturnUserId ? await commercialAgentForTicket(ticket) : null;
   if (seller && seller.id !== agent.id && (await runAgentGraph(ticket, seller))) {
     trace(ticket, `agente "${agent.name}" sem roteiro publicado: o processo comercial do agente "${seller.name}" responde`);
     return true;

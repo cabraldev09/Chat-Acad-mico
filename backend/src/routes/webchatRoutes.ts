@@ -18,6 +18,7 @@ import { getIO } from "../libs/socket";
 import { isAgentTyping } from "../services/ChannelServices/TypingState";
 import { makeThrottle } from "../helpers/RateWindow";
 import { remember } from "../helpers/TtlCache";
+import { uploadCapacity } from "../middleware/uploadCapacity";
 
 // a visitor of the site is anonymous: only what a person sends in a conversation (pictures, sounds, PDF, office files, text), a few files, never a page or a script
 const VISITOR_FILES = /^(image\/(jpeg|png|gif|webp)|audio\/(ogg|mpeg|mp4|aac|wav|webm)|video\/(mp4|webm|quicktime)|application\/(pdf|msword|vnd\.ms-excel|vnd\.ms-powerpoint|vnd\.openxmlformats-officedocument\.[a-z.]+|zip)|text\/(plain|csv))$/i;
@@ -65,6 +66,7 @@ router.post(
     if (ipThrottled(`ip:${req.ip}`)) return res.status(429).json({ error: "slow down" });
     return next();
   },
+  uploadCapacity(15 * 1024 * 1024 + 1024 * 1024),
   upload.single("file"),
   async (req: Request, res: Response) => {
     const file = req.file;

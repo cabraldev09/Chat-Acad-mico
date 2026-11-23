@@ -17,6 +17,7 @@ import { copilotOf } from "../services/CommercialServices/Process";
 import { hydrate, loadState } from "../services/CommercialServices/Slots";
 import { briefOf, NEXT_LABEL } from "../services/CommercialServices/Rules";
 import { respond, loadHistory, askOnce, resolveKey } from "../services/AiServices/RunAiAgent";
+import { maskNamedPerson, maskPii } from "../services/AiServices/ChatExport";
 import CopilotRequest from "../models/CopilotRequest";
 import TicketEvent from "../models/TicketEvent";
 import User from "../models/User";
@@ -61,7 +62,7 @@ const showNow = async (req: Request, res: Response) => {
     const since = new Date(ticket.createdAt);
     const [made, older, handed] = await Promise.all([
       CopilotRequest.count({ where: { ticketId: ticket.id, kind: "brief", createdAt: { [Op.gte]: since } } as any }),
-      Message.count({ where: { ticketId: { [Op.in]: (await Ticket.findAll({ where: sameSideWhere(ticket), attributes: ["id"] })).map(t => t.id) }, createdAt: { [Op.lt]: new Date(since.getTime() - 60000) } } as any }),
+      Message.count({ where: { ticketId: { [Op.in]: (await Ticket.findAll({ where: await sameSideWhere(ticket), attributes: ["id"] })).map(t => t.id) }, createdAt: { [Op.lt]: new Date(since.getTime() - 60000) } } as any }),
       TicketEvent.count({ where: { ticketId: ticket.id, type: ["transfer", "returned_to_owner"], createdAt: { [Op.gte]: since } } as any })
     ]);
     autoBrief = !made && (older > 0 || handed > 0);
@@ -127,7 +128,7 @@ const suggestNow = async (req: Request, res: Response) => {
   // what is already known goes to the model as known (it never asks the name or the city again, and the next-question helper skips them)
   const known: Record<string, string> = { ...((ticket.aiSlots || {}) as Record<string, string>) };
   const s = (state?.slots || {}) as Record<string, any>;
-  if (!known.nome && (s.leadName || lead?.name)) known.nome = String(s.leadName || lead?.name);
+  if (!known.nome && (s.leadName || lead?.name)) known.nome = "já informado";
   if (!known.cidade && (s.city || lead?.city)) known.cidade = String(s.city || lead?.city);
   if (!known.curso && s.courseName) known.curso = String(s.courseName);
   const current = step.steps.find(x => x.key === step.current);
@@ -144,8 +145,13 @@ const suggestNow = async (req: Request, res: Response) => {
   ].filter(Boolean).join("\n\n");
   // the summary of the whole story of the client (when the consultant already asked for it) helps the reply not to repeat questions
   const brief = briefJson(await lastBriefOf(ticket.id));
-  const story = brief ? `Resumo do histórico do cliente: ${brief.resumo}${brief.pendencias?.length ? `\nPendências: ${brief.pendencias.join("; ")}` : ""}` : "";
-  const summary = [state ? briefOf(state) : "", story, guide, mode ? `Variação pedida pelo consultor: ${MODES[mode]}` : ""].filter(Boolean).join("\n\n");
+  const anonymize = (value: string) => {
+    const name = String(lead?.name || s.leadName || "").trim();
+    const withoutName = maskNamedPerson(value, name);
+    return maskPii(withoutName).replace(/Nome:\s*[^\n]*/gi, "Nome: já informado");
+  };
+  const story = brief ? `Resumo do histórico do cliente: ${anonymize(brief.resumo)}${brief.pendencias?.length ? `\nPendências: ${brief.pendencias.map(anonymize).join("; ")}` : ""}` : "";
+  const summary = [state ? anonymize(briefOf(state)) : "", story, guide, mode ? `Variação pedida pelo consultor: ${MODES[mode]}` : ""].filter(Boolean).join("\n\n");
   const contextKey = createHash("sha256").update(JSON.stringify({ messageId: last.id, body: last.body, summary, mode, progress: step.steps.map(s => [s.key, s.done]) })).digest("hex");
   const { request, cached } = await reserveSuggestion(config, ticket, Number(req.user.id), contextKey, { kind: "suggestion", mode });
   const sourcesOf = (r: CopilotRequest) => { try { return JSON.parse(r.sources || "[]"); } catch { return []; } };
@@ -189,7 +195,9 @@ const briefNow = async (req: Request, res: Response) => {
     const lead = await Lead.findOne({ where: { contactId: ticket.contactId } });
     const state = lead ? await hydrate(await loadState(lead.id), lead) : null;
     const side = sideOfSegment(ticket.segment) === "tutoria" ? "a TUTORIA (tutor do aluno matriculado)" : "o COMERCIAL (consultor de matrículas)";
-    const user = [`Quem atende esta conversa é ${side}.`, state ? `Ficha do CRM:\n${briefOf(state)}` : "", `Atendimentos: ${story.conversations}. Consultores que já atenderam: ${story.attendants.join(", ") || "nenhum"}.`, `Histórico:\n${story.text}`].filter(Boolean).join("\n\n");
+    const privateName = String(lead?.name || state?.slots?.leadName || "").trim();
+    const safeBrief = (value: string) => maskPii(maskNamedPerson(value, privateName)).replace(/Nome:\s*[^\n]*/gi, "Nome: já informado");
+    const user = [`Quem atende esta conversa é ${side}.`, state ? `Ficha do CRM:\n${safeBrief(briefOf(state))}` : "", `Atendimentos anteriores: ${story.conversations}.`, `Histórico:\n${maskPii(maskNamedPerson(story.text, privateName))}`].filter(Boolean).join("\n\n");
     const out = await askOnce(agent, apiKey, briefSystem(), user, 700, { ticketId: ticket.id, kind: "copilot" });
     const parsed = parseBrief(out.text);
     await request.update({ status: parsed ? "ready" : "failed", text: parsed ? JSON.stringify(parsed) : null });

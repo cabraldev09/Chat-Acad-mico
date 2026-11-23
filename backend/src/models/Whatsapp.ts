@@ -57,8 +57,12 @@ class Whatsapp extends Model<Whatsapp> {
   statusNote: string;
 
   @BeforeCreate
-  static startState(instance: Whatsapp): void {
+  static async startState(instance: Whatsapp): Promise<void> {
     instance.statusSince = new Date();
+    if (!instance.institutionId) {
+      const { defaultInstitution } = await import("../helpers/Institution");
+      instance.institutionId = (await defaultInstitution())?.id as number;
+    }
   }
 
   @BeforeUpdate
