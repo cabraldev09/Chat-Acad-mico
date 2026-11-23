@@ -378,7 +378,7 @@ export const changeStage = async (
 
 // ------------------------------------------------ hooks used by the chat side
 
-// One lead per contact, created the first time anyone writes to us. A per-contact
+// One lead per contact, created the first time the person writes to us. A per-contact
 // lock keeps two simultaneous messages from creating two leads.
 const creating = new Map<number, Promise<Lead | null>>();
 
@@ -413,8 +413,21 @@ export const ensureLead = async (contact: Contact, channel: string): Promise<Lea
   return job;
 };
 
+// The person wrote to us at least once (in any conversation of theirs)
+const hasWritten = async (contactId: number): Promise<boolean> => {
+  const rows = await sequelize.query(
+    `SELECT 1 FROM "Messages" m JOIN "Tickets" t ON t.id = m."ticketId" WHERE t."contactId" = :contactId AND m."fromMe" = false LIMIT 1`,
+    { type: QueryTypes.SELECT, replacements: { contactId } }
+  );
+  return rows.length > 0;
+};
+
+// A conversation opened by the team (a contact typed by hand, a message sent from the phone or by the system) is not a lead:
+// the contact stays in Contatos and in the consultant's portfolio, and becomes a lead when the person writes (hookInbound) or
+// when someone puts it in the CRM ("Incluir no CRM" on the new contact, "Criar lead" on the conversation).
 export const hookTicketCreated = async (contact: Contact, channel: string): Promise<void> => {
   try {
+    if (!(await hasWritten(contact.id))) return;
     await ensureLead(contact, channel);
   } catch (err) {
     logger.warn(`CRM auto-create failed: ${err}`);
@@ -464,10 +477,14 @@ export const hookInbound = async (contactId: number, channel?: string, sentPdf =
 
 // Registers contacts that already exist (e.g. from before the CRM was enabled)
 export const backfillLeads = async (): Promise<{ created: number; skipped: number }> => {
-  // only people who actually have a conversation here: an imported address book is not a list of leads
-  const talked = new Set(
-    (await Ticket.findAll({ where: { isHistorical: false }, attributes: ["contactId"] })).map(t => t.contactId)
+  // only people who wrote to us: an imported address book is not a list of leads, and neither is a contact the team typed in and
+  // talked to first (a conversation opened by the team stays a contact until the person answers, or someone puts it in the CRM)
+  const rows: Array<{ contactId: number }> = await sequelize.query(
+    `SELECT DISTINCT t."contactId" FROM "Tickets" t WHERE t."isHistorical" = false AND t."isGroup" = false
+       AND EXISTS (SELECT 1 FROM "Messages" m WHERE m."ticketId" = t.id AND m."fromMe" = false)`,
+    { type: QueryTypes.SELECT }
   );
+  const talked = new Set(rows.map(r => Number(r.contactId)));
   const contacts = (await Contact.findAll({ where: { isGroup: false }, order: [["id", "ASC"]] })).filter(c => talked.has(c.id));
   const have = new Set((await Lead.findAll({ attributes: ["contactId"] })).map(l => l.contactId));
   let created = 0;

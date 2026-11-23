@@ -113,6 +113,15 @@ Além de submenu, texto, fila, atendente, IA e encerrar, há passos que **seguem
 
 Os canais que dizem **não** não entregam o evento a sistemas de atendimento. Não é uma limitação deste sistema.
 
+### Quando um contato vira lead
+
+- O contato vira lead quando a pessoa escreve para nós pela primeira vez, em qualquer canal.
+- Um contato digitado pela equipe, ou uma conversa aberta pela equipe (mensagem do sistema, do celular, campanha, modelo),
+  fica só em Contatos e na carteira de quem conversa com ele. Não entra no funil nem nas contagens do Painel do CRM.
+- Para levar ao CRM antes de a pessoa responder: marque "Incluir no CRM como lead agora" ao cadastrar o contato, ou use
+  "Criar lead" no painel do contato na conversa.
+- A rotina que roda a cada atualização do servidor (`backfillLeads`) segue a mesma regra: só registra quem já escreveu.
+
 ## Operação e custos
 
 As regras da operação ficam no grupo de cada assunto em Configurações:

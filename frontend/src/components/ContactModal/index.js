@@ -16,6 +16,8 @@ import Typography from "@material-ui/core/Typography";
 import IconButton from "@material-ui/core/IconButton";
 import DeleteOutlineIcon from "@material-ui/icons/DeleteOutline";
 import CircularProgress from "@material-ui/core/CircularProgress";
+import Checkbox from "@material-ui/core/Checkbox";
+import FormControlLabel from "@material-ui/core/FormControlLabel";
 
 import { i18n } from "../../translate/i18n";
 
@@ -73,6 +75,9 @@ const ContactModal = ({ open, onClose, contactId, initialValues, onSave }) => {
 	};
 
 	const [contact, setContact] = useState(initialState);
+	// a new contact is only a contact (Contatos and the portfolio of who talks to them): it goes to the CRM only when asked here,
+	// or later with "Criar lead" on the conversation, or when the person writes
+	const [toCrm, setToCrm] = useState(false);
 
 	useEffect(() => {
 		return () => {
@@ -106,6 +111,7 @@ const ContactModal = ({ open, onClose, contactId, initialValues, onSave }) => {
 	const handleClose = () => {
 		onClose();
 		setContact(initialState);
+		setToCrm(false);
 	};
 
 	const handleSaveContact = async typed => {
@@ -117,6 +123,9 @@ const ContactModal = ({ open, onClose, contactId, initialValues, onSave }) => {
 				handleClose();
 			} else {
 				const { data } = await api.post("/contacts", values);
+				if (toCrm && data && data.id) {
+					try { await api.post(`/leads/from-contact/${data.id}`, {}); toast.success("Contato incluído no CRM como lead."); } catch (e) { toastError(e); }
+				}
 				if (onSave) {
 					onSave(data);
 				}
@@ -241,6 +250,17 @@ const ContactModal = ({ open, onClose, contactId, initialValues, onSave }) => {
 										</>
 									)}
 								</FieldArray>
+								{!contactId && (
+									<div style={{ marginTop: 12 }}>
+										<FormControlLabel
+											control={<Checkbox color="primary" checked={toCrm} onChange={(e) => setToCrm(e.target.checked)} />}
+											label="Incluir no CRM como lead agora"
+										/>
+										<Typography variant="body2" color="textSecondary">
+											Sem marcar, o contato fica só em Contatos e na sua carteira. Ele entra no CRM quando escrever, ou quando você usar "Criar lead" na conversa.
+										</Typography>
+									</div>
+								)}
 							</DialogContent>
 							<DialogActions>
 								<Button

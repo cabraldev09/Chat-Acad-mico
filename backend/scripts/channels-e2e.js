@@ -933,6 +933,13 @@ const postMeta = (id, payload, secret, badSig) => {
       const r = await http.post("/api/v1/messages/send", { number: "5511988887777", body: "Olá {{name}}!", whatsappId: cid, name: "Lead API" }, { headers: { Authorization: `Bearer ${t}` } });
       assert(r.status === 200, `send ${r.status} ${JSON.stringify(r.data)}`);
       assert(graph.sent.slice(before).some(x => x.body && x.body.to === "5511988887777"), "not sent through cloud api");
+      // a number that never wrote to us gets the message, and stays a contact: it becomes a lead only when it answers (the case of Gabriela)
+      const fresh = await http.post("/api/v1/messages/send", { number: "5511988886666", body: "Olá {{name}}!", whatsappId: cid, name: "Gabriela Teste" }, { headers: { Authorization: `Bearer ${t}` } });
+      assert(fresh.status === 200 && sql(`SELECT COUNT(*) FROM Tickets t JOIN Contacts c ON c.id=t.contactId WHERE c.number='5511988886666'`) !== "0", `send to a new number ${fresh.status}`);
+      await new Promise(r => setTimeout(r, 1500));
+      assert(sql(`SELECT COUNT(*) FROM Leads l JOIN Contacts c ON c.id=l.contactId WHERE c.number='5511988886666'`) === "0", "a contact the team wrote to became a lead before answering");
+      await postMeta(cid, cloudEvent([{ from: "5511988886666", id: "wamid.gab-1", type: "text", text: { body: "Oi, recebi sua mensagem" } }]), cloudCfg.appSecret);
+      await waitFor(() => sql(`SELECT COUNT(*) FROM Leads l JOIN Contacts c ON c.id=l.contactId WHERE c.number='5511988886666'`) === "1", 10000, "the contact became a lead when she wrote");
     });
 
     // -------------------------------------------------------------------- CRM
@@ -1031,13 +1038,23 @@ const postMeta = (id, payload, secret, badSig) => {
       await http.post("/api/v1/contacts", { name: "Contato antigo", number: "5531977770000" }, headers);
       await http.post("/api/v1/contacts", { name: "So agenda", number: "5531977771111" }, headers);
       assert(!leadOf("5531977770000") && !leadOf("5531977771111"), "lead existed before backfill");
-      // only the first one has a conversation here
+      // only the first one wrote to us; the second is in the address book; the third (the case of Gabriela) was typed in by the team,
+      // which opened the conversation and wrote, but she never answered: a contact, not a lead
+      await http.post("/api/v1/contacts", { name: "Contato da equipe", number: "5531977772222" }, headers);
       const contactId = sql(`SELECT id FROM Contacts WHERE number='5531977770000'`);
-      sql(`INSERT INTO Tickets (status, contactId, whatsappId, unreadMessages, isGroup, segment, createdAt, updatedAt) VALUES ('closed', ${contactId}, ${tgId}, 0, false, 'sales', NOW(), NOW())`);
+      const tk = sql(`INSERT INTO Tickets (status, contactId, whatsappId, unreadMessages, isGroup, segment, createdAt, updatedAt) VALUES ('closed', ${contactId}, ${tgId}, 0, false, 'sales', NOW(), NOW()) RETURNING id`);
+      sql(`INSERT INTO Messages (id, ticketId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('bf-in-1', ${tk}, 'oi, quero saber dos cursos', false, true, 'chat', 0, NOW(), NOW())`);
+      const teamOnly = sql(`SELECT id FROM Contacts WHERE number='5531977772222'`);
+      const tk2 = sql(`INSERT INTO Tickets (status, contactId, whatsappId, unreadMessages, isGroup, segment, createdAt, updatedAt) VALUES ('open', ${teamOnly}, ${tgId}, 0, false, 'sales', NOW(), NOW()) RETURNING id`);
+      sql(`INSERT INTO Messages (id, ticketId, body, fromMe, read, mediaType, ack, createdAt, updatedAt) VALUES ('bf-out-1', ${tk2}, 'Olá, Gabriela!', true, true, 'chat', 0, NOW(), NOW())`);
       const r = await http.post("/crm/backfill", {}, auth());
       assert(r.status === 200 && r.data.created >= 1, `backfill ${JSON.stringify(r.data)}`);
       assert(leadOf("5531977770000"), "backfill did not create the lead of the conversation");
       assert(!leadOf("5531977771111"), "an address-book contact became a lead");
+      assert(!leadOf("5531977772222"), "a contact the team wrote to, who never answered, became a lead");
+      // "Incluir no CRM" (the new contact form) and "Criar lead" (the conversation): the team decides, and the lead is created at once
+      const made = await http.post(`/leads/from-contact/${teamOnly}`, {}, auth());
+      assert([200, 201].includes(made.status) && leadOf("5531977772222"), `the contact was not put in the CRM: ${made.status}`);
     });
     await test("Cloud API campaign sends the approved template, not free text", async () => {
       assert((await http.put("/operations/config", { outbound_allow_templates: "true" }, auth())).status === 200, "admin template authorization");
