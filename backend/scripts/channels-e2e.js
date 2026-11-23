@@ -4074,20 +4074,6 @@ const postMeta = (id, payload, secret, badSig) => {
       await say(Q3, "wamid.qs-3b", "Quero me matricular agora mesmo", t => t.some(x => /consultor/.test(x)), "enrollment handed over");
       await waitFor(() => handoffOf(Q3) === "proposal" && sql(`SELECT aiActive FROM Tickets WHERE id=${ticketOf(Q3)}`) === "0", 15000, "the AI is out after the handoff");
 
-      // the real conversation of 23/11: the area asked for lists only what the catalogue has (never Medicina or Enfermagem), with the format;
-      // "radiologia semi presencial" is the course Radiologia, not a course that is not offered
-      await http.post("/courses", { name: "Cst Em Radiologia", modality: "SEMIPRESENCIAL", category: "Graduação - Cruzeiro", semesters: 6, monthlyFee: 400, active: true }, auth());
-      const QA = "5511920000248";
-      await say(QA, "wamid.qs-a1", "Boa tarde", t => t.some(x => /Qual curso/.test(x)), "greeting before the area");
-      const llmArea = anthropic.requests.length;
-      out = await say(QA, "wamid.qs-a2", "Gostaria de saber sobre os cursos na área da saúde", t => t.some(x => /área de saúde/.test(x)), "the area is answered from the catalogue");
-      assert(anthropic.requests.length === llmArea, "the area question should not call the model");
-      assert(/Radiologia \(tecnólogo\): semipresencial/.test(out.join("\n")), `the health courses of the catalogue are missing: ${out}`);
-      assert(!/Medicina|Enfermagem|Cst Em/.test(out.join("\n")), `a course that is not offered, or a raw name, was told: ${out}`);
-      out = await say(QA, "wamid.qs-a3", "Tem o curso de radiologia semi presencial?", t => t.length > 0, "radiologia is found");
-      assert(!/não oferece/.test(out.join("\n")), `an offered course was denied: ${out}`);
-      await waitFor(() => /radiologia/i.test(String(slotsOfNumber(QA).courseName || "")), 15000, "the course Radiologia recognised");
-
       // "Já sou aluno": the system asks which team (tutoring or secretary) instead of selling
       const Q4 = "5511920000243";
       out = await say(Q4, "wamid.qs-4", "Já sou aluno", t => t.some(x => /tutoria/.test(x) && /secretaria/.test(x)), "a student is asked which team");
@@ -4125,6 +4111,20 @@ const postMeta = (id, payload, secret, badSig) => {
       out = await say(Q9, "wamid.qs-9", "Quero falar com uma pessoa", t => t.some(x => /consultor/.test(x)), "the handoff is said");
       assert(!out.some(x => /assumiu|já está com/.test(x)), `the lead was told someone took it: ${out}`);
       assert(anthropic.requests.length === llm0, "the model was called in the scenarios that need none");
+
+      // the real conversation of 23/11: the area asked for lists only what the catalogue has (never Medicina or Enfermagem), with the format;
+      // "radiologia semi presencial" is the course Radiologia, not a course that is not offered
+      await http.post("/courses", { name: "Cst Em Radiologia", modality: "SEMIPRESENCIAL", category: "Graduação - Cruzeiro", semesters: 6, monthlyFee: 400, active: true }, auth());
+      const QA = "5511920000258";
+      await say(QA, "wamid.qs-a1", "Boa tarde", t => t.some(x => /Qual curso/.test(x)), "greeting before the area");
+      const llmArea = anthropic.requests.length;
+      out = await say(QA, "wamid.qs-a2", "Gostaria de saber sobre os cursos na área da saúde", t => t.some(x => /área de saúde/.test(x)), "the area is answered from the catalogue");
+      assert(anthropic.requests.length === llmArea, "the area question should not call the model");
+      assert(/Radiologia \(tecnólogo\): semipresencial/.test(out.join("\n")), `the health courses of the catalogue are missing: ${out}`);
+      assert(!/Medicina|Enfermagem|Cst Em/.test(out.join("\n")), `a course that is not offered, or a raw name, was told: ${out}`);
+      out = await say(QA, "wamid.qs-a3", "Tem o curso de radiologia semi presencial?", t => t.length > 0, "radiologia is found");
+      assert(!/não oferece/.test(out.join("\n")), `an offered course was denied: ${out}`);
+      await waitFor(() => /radiologia/i.test(String(slotsOfNumber(QA).courseName || "")), 15000, "the course Radiologia recognised");
 
       // "Sou de Cidade Estela": the city is recognised in the words from the polos of the system (the model only writes the answer)
       const Q10 = "5511920000249";

@@ -383,6 +383,7 @@ r.put("/lead-stages/:id", isAuth, isManager, Lead.stages.update);
 r.delete("/lead-stages/:id", isAuth, isManager, Lead.stages.remove);
 r.get("/course-materials", isAuth, Materials.index);
 r.get("/courses/:id/materials", isAuth, Materials.list);
+r.put("/courses/:id/active", isAuth, isManager, Materials.setActive);
 r.post("/courses/:id/materials", isAuth, isManager, materialUpload.single("file"), Materials.upload);
 r.get("/course-materials/:id/file", isAuth, Materials.file);
 r.put("/course-materials/:id/confirm", isAuth, isManager, Materials.confirm);
