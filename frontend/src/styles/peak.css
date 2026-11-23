@@ -354,19 +354,19 @@ button.gv-frow:hover .gv-fbar { background: color-mix(in srgb, var(--c-brand) 86
 .gv-head .gv-dates input { border-color: rgba(255, 255, 255, 0.3); }
 
 /* ---- the funnel drawn as a funnel: every stage a slice that narrows into the next one ---- */
-.gv-fun { display: grid; gap: 3px; flex: 1; align-content: start; padding: 4px 0; }
-.gv-fun-row { display: grid; grid-template-columns: minmax(110px, 24%) minmax(0, 1fr) 56px; align-items: center; gap: 14px; border: 0; background: transparent; padding: 0; font: inherit; color: inherit; text-align: left; width: 100%; border-radius: 8px; transition: opacity .2s ease; }
+.gv-fun { display: grid; gap: 2px; flex: 1; align-content: start; padding: 4px 0; }
+.gv-fun-row { display: grid; grid-template-columns: minmax(110px, 24%) minmax(0, 1fr) 56px; align-items: stretch; gap: 14px; border: 0; background: transparent; padding: 0; font: inherit; color: inherit; text-align: left; width: 100%; border-radius: 8px; transition: opacity .2s ease; }
 button.gv-fun-row { cursor: pointer; }
 .gv-fun[data-hover] .gv-fun-row:not([data-on]) { opacity: 0.45; }
-.gv-fun-name { font-size: 13px; color: var(--text-1); font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gv-fun-name { align-self: center; font-size: 13px; color: var(--text-1); font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gv-fun-row[data-empty="1"] .gv-fun-name { color: var(--text-2); font-weight: 450; }
-.gv-fun-shape { position: relative; display: block; height: 38px; min-width: 0; }
+.gv-fun-shape { position: relative; display: block; min-height: 38px; min-width: 0; }
 .gv-fun-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; transform-origin: center top; animation: gv-fun-in .55s cubic-bezier(.2,.8,.2,1) both; animation-delay: calc(var(--i) * 45ms); }
 .gv-fun-layer { fill: var(--c-brand); transition: transform .3s cubic-bezier(.2,.8,.2,1); transform-origin: center; transform-box: fill-box; }
 .gv-fun-row[data-on] .gv-fun-layer:nth-child(1) { transform: scaleX(1.12); }
 .gv-fun-row[data-on] .gv-fun-layer:nth-child(2) { transform: scaleX(1.06); }
 .gv-fun-pill { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 2px 9px; border-radius: 999px; background: var(--surface, #fff); color: var(--text-1); font-size: 11.5px; font-weight: 700; font-variant-numeric: tabular-nums; box-shadow: 0 1px 4px rgba(11, 26, 46, .18); pointer-events: none; white-space: nowrap; }
-.gv-fun-val { display: flex; justify-content: flex-end; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.gv-fun-val { align-self: center; display: flex; justify-content: flex-end; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .gv-fun-val b { font-size: 15px; font-weight: 700; color: var(--text-1); }
 .gv-fun-row[data-empty="1"] .gv-fun-val b { color: var(--text-3); font-weight: 600; }
 @keyframes gv-fun-in { from { transform: scaleX(0.2); opacity: 0; } to { transform: scaleX(1); opacity: 1; } }
