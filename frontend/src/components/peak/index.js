@@ -277,7 +277,7 @@ export const DonutChart = ({ parts, centerLabel = "total", size = 176, stroke = 
   const active = on === null ? null : shown[on];
   return (
     <div className="pk-donut">
-      <div className="ring" style={{ width: size, height: size }} onMouseLeave={() => setOn(null)}>
+      <div className="pk-donut-ring" style={{ width: size, height: size }} onMouseLeave={() => setOn(null)}>
         <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label={shown.map((p) => `${p.label}: ${nf(p.value)}`).join(", ")}>
           <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--track)" strokeWidth={stroke} />
           {shown.map((p, i) => {
@@ -311,4 +311,4 @@ export const DonutChart = ({ parts, centerLabel = "total", size = 176, stroke = 
     </div>
   );
 };
-export { CompareStat, CenterFunnel, ShareStats, BarsChart, BoardHead, Switch, weeksOf } from "./board";
+export { CompareStat, CenterFunnel, ShareStats, BarsChart, BoardHead, Switch, weeksOf, Funnel, ShareList, EmptyNote, PriorityList, Person, RangePicker, rangeDates, rangeText, useCycle, loadCycle, RANGE_LABEL } from "./board";

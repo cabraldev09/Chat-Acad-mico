@@ -22,7 +22,7 @@ import { Leads, mins } from "../CommercialCenter/ProcessTab";
 const pct = (v) => (v === null || v === undefined ? "-" : `${String(Math.round(v * 10) / 10).replace(".", ",")}%`);
 const Failed = ({ onRetry }) => <GlowPanel error onRetry={onRetry} />;
 
-const PERIOD_LABEL = { today: "Hoje", week: "7 dias", month: "Este mês", custom: "Período" };
+const PERIOD_LABEL = { today: "Hoje", week: "Últimos 7 dias", month: "Este mês", custom: "Período" };
 
 // the production of the whole team, day by day: the days of every consultant added up
 const teamSeries = (consultants) => {
@@ -48,7 +48,7 @@ const Results = ({ params, period }) => {
   if (error && !data) return <Failed onRetry={reload} />;
   const wait = loading && !data;
   const t = (data && data.totals) || {};
-  const badge = PERIOD_LABEL[period.range] || "Período";
+  const badge = period.cycle ? "Ciclo" : PERIOD_LABEL[period.range] || "Período";
   const current = RESULT_KEYS.find((k) => k.key === shown) || RESULT_KEYS[0];
   const first = t.firstContactMinutes;
   return (

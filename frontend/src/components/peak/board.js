@@ -1,4 +1,8 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { Check, ChevronRight, Inbox } from "lucide-react";
+
+import api from "../../services/api";
+import { initialsOf, colorOf } from "../../utils/avatar";
 
 // The blocks of the "gestão à vista" board: the period before beside the period now, the funnel centred on its axis, the split of a
 // total in large numbers and bars with the value written on top. Plain white boxes and one colour for the data: red and green are
@@ -185,3 +189,176 @@ export const BoardHead = ({ title, sub, children }) => (
     {children ? <div className="gv-head-side">{children}</div> : null}
   </header>
 );
+
+// ---------------------------------------------------------------- the period of a board
+const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const br = (key) => (key ? `${key.slice(8, 10)}/${key.slice(5, 7)}` : "");
+export const RANGE_LABEL = { today: "Hoje", week: "Semana", month: "Mês", custom: "Período", cycle: "Ciclo" };
+
+// The cycle is the period of goals in force (the semester the administration registered in Metas): asked once, shared by every screen.
+let cycleAsked = null;
+export const loadCycle = () => {
+  if (!cycleAsked) {
+    cycleAsked = api.get("/dashboard/polos-progress").then(({ data }) => {
+      const g = data && data.goal;
+      if (!g || !g.startsOn || !g.endsOn) return null;
+      const today = iso(new Date());
+      return { from: g.startsOn, to: g.endsOn < today ? g.endsOn : today < g.startsOn ? g.endsOn : today, endsOn: g.endsOn, title: g.title || "" };
+    }).catch(() => { cycleAsked = null; return null; });
+  }
+  return cycleAsked;
+};
+export const useCycle = () => {
+  const [cycle, setCycle] = useState(undefined);
+  useEffect(() => { let alive = true; loadCycle().then((c) => { if (alive) setCycle(c); }); return () => { alive = false; }; }, []);
+  return cycle;
+};
+
+// the two dates of what was chosen: today, the last 7 days, the month so far, the dates typed, or the cycle of goals
+export const rangeDates = (value, cycle) => {
+  const now = new Date();
+  const today = iso(now);
+  if (value.range === "today") return { from: today, to: today };
+  if (value.range === "week") { const d = new Date(now); d.setDate(d.getDate() - 6); return { from: iso(d), to: today }; }
+  if (value.range === "custom") return { from: value.from || today, to: value.to || today };
+  if (value.range === "cycle" && cycle) return { from: cycle.from, to: cycle.to };
+  return { from: `${today.slice(0, 8)}01`, to: today };
+};
+export const rangeText = (value, cycle) => {
+  if (value.range === "today") return "Hoje";
+  if (value.range === "week") return "Últimos 7 dias";
+  if (value.range === "month") return "Este mês";
+  const d = rangeDates(value, cycle);
+  return value.range === "cycle" ? `Ciclo${cycle && cycle.title ? ` ${cycle.title}` : ""}` : `${br(d.from)} a ${br(d.to)}`;
+};
+
+/** Hoje | Semana | Mês | Período | Ciclo. "Período" opens the two dates; "Ciclo" is the period of goals in force. */
+export const RangePicker = ({ value, onChange, cycle }) => {
+  const pick = (range) => {
+    if (range === "custom") { const d = rangeDates(value, cycle); onChange({ range, from: value.from || d.from, to: value.to || d.to }); } else onChange({ ...value, range });
+  };
+  return (
+    <div className="gv-range">
+      <div className="gv-seg" role="group" aria-label="Período">
+        {Object.keys(RANGE_LABEL).map((k) => {
+          const off = k === "cycle" && !cycle;
+          return (
+            <button key={k} type="button" aria-pressed={value.range === k} disabled={off} onClick={() => pick(k)}
+              title={k === "cycle" ? (cycle ? `${cycle.title ? `${cycle.title}: ` : ""}${br(cycle.from)} a ${br(cycle.endsOn)}` : cycle === undefined ? "Carregando o ciclo de metas" : "Nenhum ciclo de metas cadastrado em Metas") : undefined}>
+              {RANGE_LABEL[k]}
+            </button>
+          );
+        })}
+      </div>
+      {value.range === "custom" && (
+        <span className="gv-dates">
+          <input aria-label="De" type="date" value={value.from || ""} max={value.to || undefined} onChange={(e) => onChange({ ...value, from: e.target.value })} />
+          <span>até</span>
+          <input aria-label="Até" type="date" value={value.to || ""} min={value.from || undefined} onChange={(e) => onChange({ ...value, to: e.target.value })} />
+        </span>
+      )}
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------- the funnel, drawn as a funnel
+/**
+ * Each stage is a slice of the funnel: as wide as the leads that are in it or beyond it (`reach`), narrowing into the next one.
+ * steps: [{ key, name, value, reach }]. `value` is the number written (the leads of the stage); without `reach` the value is used.
+ */
+export const Funnel = ({ steps, onStep, footer, valueHint }) => {
+  const rows = (steps || []).map((s) => ({ ...s, value: Number(s.value) || 0, reach: Number(s.reach === undefined ? s.value : s.reach) || 0 }));
+  const top = Math.max(1, ...rows.map((s) => s.reach));
+  // the width follows the square root of the share: the order and the narrowing are kept, and a stage with few leads is still a slice
+  // that can be seen and clicked (the exact number and the share are written beside every slice)
+  const MIN = 12;
+  const width = (s) => MIN + (100 - MIN) * Math.sqrt(s.reach / top);
+  return (
+    <div className="gv-fun" role="list">
+      {rows.map((s, i) => {
+        const w = width(s);
+        const next = i + 1 < rows.length ? Math.min(w, width(rows[i + 1])) : Math.max(MIN * 0.7, w * 0.78);
+        const a = (100 - w) / 2;
+        const b = (100 - next) / 2;
+        const share = i > 0 && rows[0].reach > 0 ? Math.round((s.reach / rows[0].reach) * 100) : null;
+        const Tag = onStep ? "button" : "div";
+        return (
+          <Tag key={s.key} type={onStep ? "button" : undefined} className="gv-fun-row" role="listitem" data-empty={s.value ? undefined : "1"} onClick={onStep ? () => onStep(s) : undefined}
+            aria-label={`${s.name}: ${nf(s.value)}${share === null ? "" : `. ${share}% chegaram até aqui`}`}>
+            <span className="gv-fun-name" title={s.name}>{s.name}</span>
+            <span className="gv-fun-shape" aria-hidden="true">
+              <span className="gv-fun-slice" style={{ clipPath: `polygon(${a}% 0, ${100 - a}% 0, ${100 - b}% 100%, ${b}% 100%)`, "--k": rows.length > 1 ? i / (rows.length - 1) : 0 }} />
+            </span>
+            <span className="gv-fun-val" title={valueHint}><b>{nf(s.value)}</b><span>{share === null ? "100%" : `${share}%`}</span></span>
+          </Tag>
+        );
+      })}
+      {footer ? <div className="gv-ffoot">{footer}</div> : null}
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------- shares as one bar and its lines
+const LIST_COLORS = ["#0b4279", "#2f7de1", "#1f9d8f", "#b7791f", "#7a4fc4", "#8a97a8"];
+/** A total split by something (channel, reason): one bar with every part, then a line for each with its number and share. */
+export const ShareList = ({ items, unit = "", note, icon }) => {
+  const rows = (items || []).filter((x) => Number(x.value) > 0).map((x, i) => ({ ...x, value: Number(x.value), color: x.color || LIST_COLORS[Math.min(i, LIST_COLORS.length - 1)] }));
+  const total = rows.reduce((t, x) => t + x.value, 0);
+  if (!total) return null;
+  return (
+    <div className="gv-sharelist">
+      <div className="gv-sl-total"><b>{nf(total)}</b>{unit ? <span>{unit}</span> : null}</div>
+      <div className="gv-sl-bar" role="img" aria-label={rows.map((x) => `${x.label}: ${Math.round((x.value / total) * 100)}%`).join(", ")}>
+        {rows.map((x) => <span key={x.label} style={{ flexGrow: x.value, background: x.color }} title={`${x.label}: ${nf(x.value)}`} />)}
+      </div>
+      <ul className="gv-sl-rows">
+        {rows.map((x) => (
+          <li key={x.label}>
+            <span className="gv-sl-dot" style={{ background: x.color }} aria-hidden="true" />
+            {icon ? icon(x) : null}
+            <span className="gv-sl-name">{x.label}{note ? <small>{note(x)}</small> : null}</span>
+            <b>{nf(x.value)}</b>
+            <span className="gv-sl-pct">{Math.round((x.value / total) * 100)}%</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+};
+
+/** Nothing to show, said with a soft mark instead of a bare sentence. */
+export const EmptyNote = ({ children, icon: Icon = Inbox }) => (
+  <div className="gv-empty"><span aria-hidden="true"><Icon size={18} /></span>{children}</div>
+);
+
+// ---------------------------------------------------------------- what asks for action: the count first, then the sentence
+const PRIORITY_TONE = { danger: "bad", warn: "warn", info: "info", good: "good" };
+/** items: [{ key, tone, title, detail, onClick }]. A title that starts with a number shows it as the count of the line. */
+export const PriorityList = ({ items, action = "Resolver" }) => (
+  <ul className="gv-prio">
+    {(items || []).map((it) => {
+      const m = /^(\d[\d.]*)\s+(.*)$/.exec(String(it.title || ""));
+      const rest = m ? m[2].charAt(0).toUpperCase() + m[2].slice(1) : it.title;
+      const Tag = it.onClick ? "button" : "div";
+      return (
+        <li key={it.key} data-tone={PRIORITY_TONE[it.tone] || "info"}>
+          <Tag type={it.onClick ? "button" : undefined} className="gv-prio-row" onClick={it.onClick} aria-label={it.onClick ? `${action}: ${it.title}` : undefined}>
+            <span className="gv-prio-n" aria-hidden={m ? undefined : "true"}>{m ? m[1] : it.tone === "good" ? <Check size={18} /> : "!"}</span>
+            <span className="gv-prio-txt"><b>{rest}</b>{it.detail ? <span>{it.detail}</span> : null}</span>
+            {it.onClick ? <span className="gv-prio-go">{it.tone === "good" || it.tone === "info" ? "Ver" : action}<ChevronRight size={14} aria-hidden="true" /></span> : null}
+          </Tag>
+        </li>
+      );
+    })}
+  </ul>
+);
+
+/** The initials of a person on their colour (a name that is only a phone number shows a neutral mark). */
+export const Person = ({ name, size = 34 }) => {
+  const numeric = /^[+\d\s()-]+$/.test(String(name || ""));
+  return (
+    <span className="gv-av" style={{ width: size, height: size, background: numeric ? "var(--surface-3)" : colorOf(name), color: numeric ? "var(--text-2)" : "#fff", fontSize: size * 0.36 }} aria-hidden="true">
+      {numeric ? "#" : initialsOf(name)}
+    </span>
+  );
+};

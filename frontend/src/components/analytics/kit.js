@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { makeStyles } from "@material-ui/core/styles";
 import MuiTooltip from "@material-ui/core/Tooltip";
 import { BarsChart, TimeChart } from "../charts";
+import { useCycle } from "../peak/board";
 import { CalendarClock, CheckCheck, Clock, Eye, FileText, Inbox, MessageSquare, Send, Target, TrendingUp, AlertTriangle, ListTodo, UserCheck, Users, Zap } from "lucide-react";
 
 import api from "../../services/api";
@@ -186,7 +187,14 @@ const useUniversities = () => {
 export const PeriodPicker = ({ value, onChange }) => {
   const c = useKit();
   const universities = useUniversities();
-  const opts = [["today", "Hoje"], ["week", "7 dias"], ["month", "Este mês"], ["custom", "Período"]];
+  // "Ciclo" is the period of goals in force: it travels as two dates, so every consumer reads it as a chosen range
+  const cycle = useCycle();
+  const opts = [["today", "Hoje"], ["week", "Semana"], ["month", "Mês"], ["custom", "Período"], ["cycle", "Ciclo"]];
+  const on = (k) => (k === "cycle" ? !!value.cycle : k === "custom" ? value.range === "custom" && !value.cycle : value.range === k);
+  const pick = (k) => {
+    if (k === "cycle") { if (cycle) onChange({ ...value, range: "custom", from: cycle.from, to: cycle.to, cycle: true }); return; }
+    onChange({ ...value, range: k, cycle: false });
+  };
   return (
     <span style={{ display: "inline-flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
       {universities.length > 1 && (
@@ -198,10 +206,12 @@ export const PeriodPicker = ({ value, onChange }) => {
       )}
       <span className={c.chips} role="group" aria-label="Período">
         {opts.map(([k, label]) => (
-          <button key={k} type="button" aria-pressed={value.range === k} className={`${c.chip} ${value.range === k ? c.chipOn : ""}`} onClick={() => onChange({ ...value, range: k })}>{label}</button>
+          <button key={k} type="button" aria-pressed={on(k)} className={`${c.chip} ${on(k) ? c.chipOn : ""}`} onClick={() => pick(k)} disabled={k === "cycle" && !cycle}
+            title={k === "cycle" ? (cycle ? `${cycle.title ? `${cycle.title}: ` : ""}${cycle.from.slice(8, 10)}/${cycle.from.slice(5, 7)} a ${cycle.endsOn.slice(8, 10)}/${cycle.endsOn.slice(5, 7)}` : cycle === undefined ? "Carregando o ciclo de metas" : "Nenhum ciclo de metas cadastrado em Metas") : k === "week" ? "Os últimos 7 dias" : k === "month" ? "Este mês, até hoje" : undefined}
+            style={k === "cycle" && !cycle ? { opacity: 0.45, cursor: "not-allowed" } : undefined}>{label}</button>
         ))}
       </span>
-      {value.range === "custom" && (
+      {value.range === "custom" && !value.cycle && (
         <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
           <input aria-label="De" type="date" className={c.input} value={value.from || ""} onChange={(e) => onChange({ ...value, from: e.target.value })} />
           <span>até</span>

@@ -3,7 +3,6 @@ import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } 
 import { useHistory } from "react-router-dom";
 import { Typography, TextField, MenuItem, makeStyles, Button, Menu } from "@material-ui/core";
 import { AlertTriangle, Download, Sprout, RefreshCw, ArrowUpRight, Clock, Hourglass, Users } from "lucide-react";
-import { format, subDays, startOfMonth } from "date-fns";
 
 import MainContainer from "../../components/MainContainer";
 import GlowCard from "../../components/GlowCard";
@@ -13,12 +12,12 @@ import { isManager as isManagerUser } from "../../utils/access";
 import api from "../../services/api";
 import toastError from "../../errors/toastError";
 import { downloadFile } from "../../utils/saveBlob";
-import { useCrmOptions, SourceIcon, StagePill, ago } from "./shared";
+import { useCrmOptions, SourceIcon, ago } from "./shared";
 import NotALead from "./NotALead";
 import "../../styles/dash.css";
 import StatsHubBar from "../../components/StatsHub";
 import { InsightsCard, TeamOnline } from "../../components/Insights";
-import { Badge, CountStat, GlowPanel, GlowRank, GlowStat, SectionTitle, DonutChart, CompareStat, CenterFunnel, ShareStats, BarsChart, BoardHead, Switch } from "../../components/peak";
+import { Badge, CountStat, GlowPanel, GlowRank, GlowStat, SectionTitle, CompareStat, ShareStats, BarsChart, BoardHead, Switch, Funnel, ShareList, EmptyNote, Person, RangePicker, rangeDates, rangeText, useCycle } from "../../components/peak";
 
 const useStyles = makeStyles((theme) => {
   const line = "var(--line)";
@@ -54,7 +53,6 @@ const useStyles = makeStyles((theme) => {
 const pct = (a, b) => (b ? `${((a / b) * 100).toFixed(1).replace(".", ",")}%` : "—");
 const nf = (v) => Number(v || 0).toLocaleString("pt-BR");
 
-const todayStr = () => format(new Date(), "yyyy-MM-dd");
 const pctText = (v) => `${(Math.round(Number(v || 0) * 10) / 10).toLocaleString("pt-BR")}%`;
 const daysBetween = (a, b) => Math.max(1, Math.round((new Date(`${b}T12:00:00`) - new Date(`${a}T12:00:00`)) / 86400000) + 1);
 
@@ -75,8 +73,10 @@ const Panel = ({ mode = "now" }) => {
   const classes = useStyles();
   const history = useHistory();
   const { courses, users } = useCrmOptions();
-  const [from, setFrom] = useState(format(subDays(new Date(), 29), "yyyy-MM-dd"));
-  const [to, setTo] = useState(todayStr());
+  // the period of the numbers: today, the last 7 days, the month, two dates, or the cycle of goals in force
+  const [period, setPeriod] = useState({ range: "month" });
+  const cycle = useCycle();
+  const { from, to } = useMemo(() => rangeDates(period, cycle), [period, cycle]);
   const [ownerId, setOwnerId] = useState("");
   const [courseId, setCourseId] = useState("");
   const [d, setD] = useState(null);
@@ -88,18 +88,6 @@ const Panel = ({ mode = "now" }) => {
   const [triageScope, setTriageScope] = useState("mine");
   const [triage, setTriage] = useState({ items: [], total: 0, late: 0 });
   const [triageAll, setTriageAll] = useState(false);
-
-  // quick periods; the one that matches the dates on screen is marked
-  const presets = useMemo(() => {
-    const t = new Date();
-    const semesterStart = new Date(t.getFullYear(), t.getMonth() < 6 ? 0 : 6, 1);
-    return [
-      ["7 dias", format(subDays(t, 6), "yyyy-MM-dd")],
-      ["30 dias", format(subDays(t, 29), "yyyy-MM-dd")],
-      ["Este mês", format(startOfMonth(t), "yyyy-MM-dd")],
-      ["Semestre", format(semesterStart, "yyyy-MM-dd")],
-    ];
-  }, []);
 
   // downloads the report (opens in Excel) for the period on screen
   const exportReport = async (groupBy) => {
@@ -117,16 +105,17 @@ const Panel = ({ mode = "now" }) => {
   }, [me, triageScope, ownerId, isManager]);
   useEffect(() => { loadTriage(); }, [loadTriage]);
 
-  // the Painel do CRM also shows this month against the days before it (the same numbers of Estatísticas → Captação)
-  const monthFrom = useMemo(() => format(startOfMonth(new Date()), "yyyy-MM-dd"), []);
+  // the Painel do CRM also shows the chosen period against the days before it (the same numbers of Estatísticas → Captação)
   const [month, setMonth] = useState(null);
   const [monthFailed, setMonthFailed] = useState(false);
+  const monthTicket = useRef(0);
   const loadMonth = useCallback(() => {
     if (results) return;
     setMonthFailed(false);
-    api.get("/crm/metrics", { params: { from: monthFrom, to: todayStr(), ownerId: ownerId || undefined, courseId: courseId || undefined } })
-      .then(({ data }) => setMonth(data)).catch(() => setMonthFailed(true));
-  }, [results, monthFrom, ownerId, courseId]);
+    const mine = ++monthTicket.current;
+    api.get("/crm/metrics", { params: { from, to, ownerId: ownerId || undefined, courseId: courseId || undefined } })
+      .then(({ data }) => { if (mine === monthTicket.current) setMonth(data); }).catch(() => { if (mine === monthTicket.current) setMonthFailed(true); });
+  }, [results, from, to, ownerId, courseId]);
   useEffect(() => { loadMonth(); }, [loadMonth]);
   // the goal of the semester, as what a day and a week ask for (only the whole team has a goal: a filter hides the line)
   const [goal, setGoal] = useState(null);
@@ -159,7 +148,7 @@ const Panel = ({ mode = "now" }) => {
   }, [load]);
 
   const series = seriesOf(d, from, to);
-  const monthSeries = seriesOf(month, monthFrom, todayStr());
+  const monthSeries = seriesOf(month, from, to);
   // "reached stage" = leads now in this stage or any later one (enrolled included). The column of the people an affiliate
   // referred comes before the funnel (it only holds them until the first contact), so it is not a step of it.
   const lane = d ? d.funnel.find((f) => f.isAffiliateLane) : null;
@@ -182,6 +171,7 @@ const Panel = ({ mode = "now" }) => {
     const val = (o) => (ownerSort.key === "conv" ? (o.leads ? o.won / o.leads : 0) : Number(o[ownerSort.key] || 0));
     return (val(a) - val(b)) * ownerSort.dir || String(a.name).localeCompare(String(b.name));
   });
+  const maxOpen = Math.max(1, ...(d?.byOwner || []).map((o) => Number(o.open) || 0));
   const sortBy = (key) => setOwnerSort((cur) => (cur.key === key ? { key, dir: -cur.dir } : { key, dir: -1 }));
   const prev = d?.previous;
   const reload = () => { load(); loadTriage(); loadMonth(); };
@@ -197,16 +187,23 @@ const Panel = ({ mode = "now" }) => {
   const staleNow = attention.stale ?? owners.reduce((a, o) => a + Number(o.stale || 0), 0);
   const mk = (month && month.kpi) || noKpi;
   const mprev = month ? month.previous : null;
-  const span = results ? daysBetween(from, to) : daysBetween(monthFrom, todayStr());
+  const span = daysBetween(from, to);
+  const nowLabel = rangeText(period, cycle);
   const beforeLabel = `${nf(span)} ${span === 1 ? "dia anterior" : "dias anteriores"}`;
   const unfiltered = !ownerId && !courseId;
   const modalityParts = (src) => (src?.byModality || []).map((x) => ({ label: x.name, value: Number(x.total) }));
-  const funnelSteps = reached.map((f) => ({ key: f.id ?? f.name, name: f.name, value: f.reached }));
+  // the funnel is drawn by who is in a stage or beyond it; in the panel of now the number written is who is IN the stage today
+  // (the enrolled are the spout of the funnel: they are not waiting for anything)
+  const funnelSteps = steps.map((f, i) => {
+    const beyond = steps.slice(i).reduce((a, x) => a + (results || x.type !== "won" ? x.total : 0), 0);
+    return { key: f.id ?? f.name, name: f.name, value: results ? beyond : f.total, reach: f.type === "won" && !results ? 0 : beyond };
+  });
 
   return (
     <MainContainer>
       <BoardHead title={results ? "Captação e resultados" : "Painel do CRM"}
-        sub={results ? "Leads e matrículas do período escolhido, ao lado do período anterior." : "O mês até hoje, o funil de agora e o que pede ação."}>
+        sub={results ? "Leads e matrículas do período escolhido, ao lado do período anterior." : "O período escolhido, o funil de agora e o que pede ação."}>
+        <RangePicker value={period} onChange={setPeriod} cycle={cycle} />
         {!results && <Button variant="contained" disableElevation startIcon={<ArrowUpRight size={16} />} onClick={() => history.push("/estatisticas/captacao")} style={{ background: "#fff", color: "#0b4279" }}>Ver resultados</Button>}
         {canExport && results && <Button variant="contained" disableElevation startIcon={<Download size={16} />} onClick={(e) => setExportEl(e.currentTarget)} style={{ background: "#fff", color: "#0b4279" }}>Exportar</Button>}
         <Menu anchorEl={exportEl} open={Boolean(exportEl)} onClose={() => setExportEl(null)} getContentAnchorEl={null} anchorOrigin={{ vertical: "bottom", horizontal: "right" }} transformOrigin={{ vertical: "top", horizontal: "right" }}>
@@ -216,13 +213,6 @@ const Panel = ({ mode = "now" }) => {
       </BoardHead>
       {results && <StatsHubBar />}
       <div className={classes.filters}>
-        {results && <div className={classes.chips} role="group" aria-label="Período">
-          {presets.map(([label, start]) => (
-            <button key={label} type="button" aria-pressed={from === start && to === todayStr()} className={`${classes.chip} ${from === start && to === todayStr() ? classes.chipOn : ""}`} onClick={() => { setFrom(start); setTo(todayStr()); }}>{label}</button>
-          ))}
-        </div>}
-        {results && <TextField size="small" type="date" label="De" variant="outlined" InputLabelProps={{ shrink: true }} value={from} onChange={(e) => setFrom(e.target.value)} style={{ width: 150 }} />}
-        {results && <TextField size="small" type="date" label="Até" variant="outlined" InputLabelProps={{ shrink: true }} value={to} onChange={(e) => setTo(e.target.value)} style={{ width: 150 }} />}
         {/* only the management narrows the panel to one consultant: everybody else already sees what is theirs */}
         {isManager && (
           <TextField select size="small" label="Consultor" variant="outlined" value={ownerId} onChange={(e) => setOwnerId(e.target.value)} style={{ minWidth: 150 }}>
@@ -254,11 +244,11 @@ const Panel = ({ mode = "now" }) => {
           {!results && (
             <>
               <div className="gv-board" style={{ marginTop: 6 }}>
-                <CompareStat id="leads" title="Leads" nowLabel="Este mês" beforeLabel={beforeLabel} loading={!month && !monthFailed} now={mk.leads} before={mprev ? mprev.leads : null} action="Ver leads" onOpen={() => history.push("/crm")} />
-                <CompareStat id="enrollments" title="Matrículas" nowLabel="Este mês" beforeLabel={beforeLabel} loading={!month && !monthFailed} now={enrolledIn(month)} before={mprev && mprev.enrollments !== undefined ? mprev.enrollments : null}
+                <CompareStat id="leads" title="Leads" nowLabel={nowLabel} beforeLabel={beforeLabel} loading={!month && !monthFailed} now={mk.leads} before={mprev ? mprev.leads : null} action="Ver leads" onOpen={() => history.push("/crm")} />
+                <CompareStat id="enrollments" title="Matrículas" nowLabel={nowLabel} beforeLabel={beforeLabel} loading={!month && !monthFailed} now={enrolledIn(month)} before={mprev && mprev.enrollments !== undefined ? mprev.enrollments : null}
                   action={isManager ? "Ver matrículas" : "Ver resultados"} onOpen={() => history.push(isManager ? "/crm/matriculas" : "/estatisticas/captacao")} />
-                <CompareStat id="conversion" title="Conversão" nowLabel="Este mês" beforeLabel={beforeLabel} loading={!month && !monthFailed} points format={pctText} now={mk.conversion} before={mprev ? mprev.conversion : null} action="Ver resultados" onOpen={() => history.push("/estatisticas/captacao")} />
-                <section className="gv-card gv-tall" data-panel="funnel">
+                <CompareStat id="conversion" title="Conversão" nowLabel={nowLabel} beforeLabel={beforeLabel} loading={!month && !monthFailed} points format={pctText} now={mk.conversion} before={mprev ? mprev.conversion : null} action="Ver resultados" onOpen={() => history.push("/estatisticas/captacao")} />
+                <section className="gv-card gv-funnel-card" data-panel="funnel">
                   <h3 className="gv-title">Funil agora</h3>
                   {lane && lane.total > 0 && (
                     <div className={classes.lane} style={{ marginBottom: 0 }} role="button" tabIndex={0} onClick={() => history.push("/crm")}
@@ -267,26 +257,26 @@ const Panel = ({ mode = "now" }) => {
                     </div>
                   )}
                   {reached.some((f) => f.reached > 0)
-                    ? <CenterFunnel steps={funnelSteps} onStep={() => history.push("/crm")} footer={<>Perdidos, fora do funil: <b>{nf(lostTotal)}</b></>} />
-                    : <div className="pk-state" style={{ minHeight: 90 }}>Nenhum lead em andamento agora.</div>}
+                    ? <Funnel steps={funnelSteps} onStep={() => history.push("/crm")} valueHint="Leads nesta etapa agora" footer={<>O número é quem está em cada etapa agora; a porcentagem, quem está nela ou adiante. Perdidos, fora do funil: <b>{nf(lostTotal)}</b></>} />
+                    : <EmptyNote>Nenhum lead em andamento agora.</EmptyNote>}
                 </section>
                 {monthFailed && (
                   <div className="gv-card gv-wide" role="alert" style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap" }}>
-                    <span style={{ flex: 1, minWidth: 180 }}>Não foi possível carregar os números do mês.</span>
+                    <span style={{ flex: 1, minWidth: 180 }}>Não foi possível carregar os números do período.</span>
                     <Button variant="outlined" startIcon={<RefreshCw size={16} />} onClick={loadMonth}>Tentar de novo</Button>
                   </div>
                 )}
-                <section className="gv-card gv-three" data-panel="modality">
-                  <h3 className="gv-title">Matrículas do mês por tipo de curso</h3>
-                  <ShareStats loading={!month && !monthFailed} items={modalityParts(month)} emptyText="Nenhuma matrícula neste mês ainda." />
+                <section className="gv-card gv-side-card" data-panel="modality">
+                  <h3 className="gv-title">Matrículas por tipo de curso</h3>
+                  <ShareStats loading={!month && !monthFailed} items={modalityParts(month)} emptyText="Nenhuma matrícula no período." />
                 </section>
                 <section className="gv-card gv-wide" data-panel="bars">
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-                    <h3 className="gv-title">{barsOf === "leads" ? "Leads captados no mês" : "Matrículas no mês"}</h3>
+                    <h3 className="gv-title">{barsOf === "leads" ? "Leads captados" : "Matrículas"} · {nowLabel}</h3>
                     <Switch label="O que mostrar" value={barsOf} onChange={setBarsOf} options={[["matriculas", "Matrículas"], ["leads", "Leads"]]} />
                   </div>
                   <BarsChart days={monthSeries.map((r) => ({ day: r.key, value: r[barsOf] || 0 }))} unit={barsOf === "leads" ? "leads" : "matrículas"} goal={barsOf === "matriculas" && unfiltered && isManager ? goal : null}
-                    emptyText={barsOf === "leads" ? "Nenhum lead neste mês ainda." : "Nenhuma matrícula neste mês ainda."} />
+                    emptyText={barsOf === "leads" ? "Nenhum lead no período." : "Nenhuma matrícula no período."} />
                 </section>
               </div>
 
@@ -316,27 +306,28 @@ const Panel = ({ mode = "now" }) => {
                         <AlertTriangle size={16} />{triage.late} {triage.late === 1 ? "chegou" : "chegaram"} em dias anteriores e já {triage.late === 1 ? "passou" : "passaram"} do prazo de conferir.
                       </div>
                     )}
-                    {(triageAll ? triage.items : triage.items.slice(0, 5)).map((t) => (
-                      <div key={t.id} className={classes.triageRow}>
-                        <div style={{ flex: 1, minWidth: 160 }}>
-                          <div style={{ fontWeight: 600, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                            {t.name}
-                            {t.late ? <StagePill stage={{ name: "Passou do dia", color: "#dc2626" }} size="sm" solid={false} /> : <StagePill stage={{ name: "Chegou hoje", color: "#d97706" }} size="sm" solid={false} />}
-                            {triageScope === "all" && isManager && t.ownerName && <span className={classes.label} style={{ fontSize: 12 }}>· {t.ownerName}</span>}
+                    <div className="gv-rowlist">
+                      {(triageAll ? triage.items : triage.items.slice(0, 5)).map((t) => (
+                        <div key={t.id} className="gv-item">
+                          <Person name={t.name} />
+                          <div className="gv-item-main">
+                            <b>
+                              {t.name}
+                              <span className="gv-tag" data-tone={t.late ? "bad" : "warn"}>{t.late ? "Passou do dia" : "Chegou hoje"}</span>
+                            </b>
+                            <small>
+                              <SourceIcon source={t.source} />{t.source}{t.phone && t.phone !== t.name ? ` · ${t.phone}` : ""} · chegou {ago(t.createdAt)}{triageScope === "all" && isManager && t.ownerName ? ` · ${t.ownerName}` : ""}
+                            </small>
                           </div>
-                          <div className={classes.label} style={{ fontSize: 12.5 }}>
-                            <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}><SourceIcon source={t.source} />{t.source}</span>
-                            {t.phone ? ` · ${t.phone}` : ""} · chegou {ago(t.createdAt)}
-                          </div>
+                          <Button size="small" variant="outlined" onClick={() => history.push(`/crm?lead=${t.id}`)}>Abrir</Button>
+                          <NotALead lead={t} compact onDone={reload} />
                         </div>
-                        <Button size="small" variant="outlined" onClick={() => history.push(`/crm?lead=${t.id}`)}>Abrir</Button>
-                        <NotALead lead={t} compact onDone={reload} />
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                     {triage.items.length > 5 && (
                       <Button size="small" style={{ marginTop: 8 }} onClick={() => setTriageAll((v) => !v)}>{triageAll ? "Mostrar menos" : `Ver todos (${triage.items.length})`}</Button>
                     )}
-                    {triage.total === 0 && <div className="pk-state" style={{ minHeight: 80 }}>Nada para conferir. Tudo em dia.</div>}
+                    {triage.total === 0 && !triageFailed && <EmptyNote>Nada para conferir. Tudo em dia.</EmptyNote>}
                   </GlowPanel>
                 </div>
               </div>
@@ -363,8 +354,8 @@ const Panel = ({ mode = "now" }) => {
                           <tbody>
                             {ownersSorted.map((o) => (
                               <tr key={o.name}>
-                                <td data-main="1" style={{ fontWeight: 600 }}>{o.name}</td>
-                                <td className="r" data-label="Em andamento"><b>{nf(o.open)}</b></td>
+                                <td data-main="1" style={{ fontWeight: 600 }}><span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}><Person name={o.name} size={30} />{o.name}</span></td>
+                                <td className="r" data-label="Em andamento"><span className="gv-meter"><i style={{ "--w": `${Math.round((Number(o.open) / maxOpen) * 100)}%` }} /><b>{nf(o.open)}</b></span></td>
                                 <td className="r" data-label="Sem 1º contato"><Badge tone={Number(o.waiting) ? "bad" : "good"}>{nf(o.waiting)}</Badge></td>
                                 <td className="r" data-label="Esfriando"><Badge tone={Number(o.stale) ? "warn" : "good"}>{nf(o.stale)}</Badge></td>
                               </tr>
@@ -387,13 +378,13 @@ const Panel = ({ mode = "now" }) => {
                 <CompareStat id="leads" title="Leads captados" beforeLabel={beforeLabel} now={kpi.leads} before={prev ? prev.leads : null} />
                 <CompareStat id="enrollments" title="Matrículas" beforeLabel={beforeLabel} now={wonInPeriod} before={prev && prev.enrollments !== undefined ? prev.enrollments : null} />
                 <CompareStat id="conversion" title="Conversão" beforeLabel={beforeLabel} points format={pctText} now={kpi.conversion} before={prev ? prev.conversion : null} />
-                <section className="gv-card gv-tall" data-panel="funnel">
+                <section className="gv-card gv-funnel-card" data-panel="funnel">
                   <h3 className="gv-title">Funil do período</h3>
                   {reached.some((f) => f.reached > 0)
-                    ? <CenterFunnel steps={funnelSteps} footer={<>Chegaram à matrícula: <b>{pct(Number(kpi.won), Number(kpi.leads))}</b> dos leads</>} />
-                    : <div className="pk-state" style={{ minHeight: 90 }}>Nenhum lead no período.</div>}
+                    ? <Funnel steps={funnelSteps} valueHint="Leads que chegaram a esta etapa ou passaram dela" footer={<>Chegaram à matrícula: <b>{pct(Number(kpi.won), Number(kpi.leads))}</b> dos leads do período</>} />
+                    : <EmptyNote>Nenhum lead no período.</EmptyNote>}
                 </section>
-                <section className="gv-card gv-three" data-panel="modality">
+                <section className="gv-card gv-side-card" data-panel="modality">
                   <h3 className="gv-title">Matrículas por tipo de curso</h3>
                   <ShareStats items={modalityParts(d)} emptyText="Nenhuma matrícula no período." />
                 </section>
@@ -418,14 +409,17 @@ const Panel = ({ mode = "now" }) => {
               <SectionTitle title="De onde vêm e por que se perdem" hint="A proporção de cada canal, de cada motivo e de cada curso." style={{ marginTop: 26 }} />
 
               <div className="pk-grid-wide">
-                <GlowPanel id="sources" title="Origem dos leads" sub="A parte de cada canal nos leads do período." empty={!sourceRows.length} emptyText="Nenhum lead no período.">
-                  <DonutChart parts={(d.bySource || []).map((x) => ({ label: x.name, value: Number(x.leads), won: x.won }))} centerLabel="leads" note={(x) => `${nf(x.won)} matr.`} />
+                <GlowPanel id="sources" title="Origem dos leads" sub="A parte de cada canal nos leads do período.">
+                  {sourceRows.length
+                    ? <ShareList unit="leads" items={(d.bySource || []).map((x) => ({ label: x.name, value: Number(x.leads), won: Number(x.won) }))}
+                      icon={(x) => <SourceIcon source={x.label} />} note={(x) => `${nf(x.won)} ${x.won === 1 ? "matrícula" : "matrículas"} · ${pct(x.won, x.value)} de conversão`} />
+                    : <EmptyNote>Nenhum lead no período.</EmptyNote>}
                 </GlowPanel>
-                <GlowPanel id="lost-reasons" tone="bad" title="Motivos de perda" sub="O que mais derruba os leads do período." empty={!lostRows.length} emptyText="Nenhuma perda no período.">
-                  <DonutChart parts={lostParts} centerLabel="perdas" />
+                <GlowPanel id="lost-reasons" title="Motivos de perda" sub="O que mais derruba os leads do período.">
+                  {lostParts.length ? <ShareList unit="perdas" items={lostParts} /> : <EmptyNote>Nenhuma perda no período.</EmptyNote>}
                 </GlowPanel>
-                <GlowPanel id="courses" tone="violet" title="Cursos mais procurados" sub="Os 8 primeiros, com as matrículas de cada um." empty={!courseRows.length} emptyText="Nenhum lead com curso no período.">
-                  <GlowRank rows={courseRows} />
+                <GlowPanel id="courses" title="Cursos mais procurados" sub="Os 8 primeiros, com as matrículas de cada um.">
+                  {courseRows.length ? <GlowRank rows={courseRows} /> : <EmptyNote>Nenhum lead com curso no período.</EmptyNote>}
                 </GlowPanel>
               </div>
             </>
