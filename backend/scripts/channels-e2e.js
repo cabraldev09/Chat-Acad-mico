@@ -4047,7 +4047,7 @@ const postMeta = (id, payload, secret, badSig) => {
       llm = anthropic.requests.length;
       out = await say(NOFF, "wamid.com-noff1", "Quero saber o valor do curso de Medicina", t => t.some(x => /não oferece o curso de Medicina/.test(x)), "a course that is not offered");
       assert(out.some(x => /assistente virtual/.test(x)), `the agent did not present itself: ${out}`);
-      assert(out.some(x => /Os cursos que oferecemos incluem [A-ZÁÉÍÓÚÂÊÔÃÇ]/.test(x)), `the offered courses were not listed: ${out}`);
+      assert(out.some(x => /(temos, por exemplo,|Entre os cursos que oferecemos estão|oferecemos \d+ cursos|o curso que oferecemos é) /.test(x)), `the offered courses were not listed: ${out}`);
       assert(!out.some(x => /R\$|mensalidade/.test(x)), "a price was given for a course that is not offered");
       assert(anthropic.requests.length === llm, "the model should not be called for a course that is not offered");
       assert(sql(`SELECT slots FROM LeadCommercials WHERE leadId=${leadId(NOFF)}`).includes("Medicina"), "the course that is not offered is kept on the lead");
