@@ -15,6 +15,7 @@ import { FlowContext, ticketEffects } from "./Effects";
 import { debounce } from "./Debounce";
 import { claimAi, releaseAi } from "./Claim";
 import { handoffToHuman } from "../AiServices/Handoff";
+import { agentForTicketInstitution } from "../AiServices/RunAiAgent";
 import { cleanStage } from "./StageSpec";
 import { Graph, parseGraph } from "./Graph";
 import emitTicketUpdate from "../TicketServices/EmitTicketUpdate";
@@ -110,6 +111,10 @@ const waitOf = async (flow: ChatFlow, nodeId: string | null): Promise<number> =>
 };
 
 const startRun = async (flow: ChatFlow, ticket: Ticket, fx?: Effects, pending?: string | null): Promise<void> => {
+  if (flow.agentId && !(await agentForTicketInstitution(ticket, flow.agentId))) {
+    noteAutomation(ticket.id, "o roteiro com IA não começou: o agente pertence a outra universidade da conversa");
+    return;
+  }
   const graph = parseGraph(flow.published);
   const start = firstNode(graph);
   if (!start) return;
@@ -142,7 +147,7 @@ const failRun = async (run: ChatFlowRun, ticket: Ticket, flow: ChatFlow, effects
   noteAutomation(ticket.id, `o roteiro "${flow.name}" parou por um erro: ${(err as any)?.response?.data?.error?.message || (err as any)?.message || err}`);
   await run.update({ status: "done", resumeAt: null } as any).catch(() => undefined);
   if (flow.kind !== "agent" || !flow.agentId) return;
-  const agent = await AiAgent.findByPk(flow.agentId);
+  const agent = await agentForTicketInstitution(ticket, flow.agentId);
   if (!agent) return;
   await effects.say(agent.handoffMessage || "Vou chamar um de nossos atendentes. Um momento, por favor.").catch(() => undefined);
   await handoffToHuman(ticket.id, agent, "sem_resposta", undefined, "error").catch(e => logger.error(`Handoff after failure failed: ${e}`));

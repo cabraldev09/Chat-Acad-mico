@@ -4,6 +4,32 @@ const fs = require('node:fs');
 const path = require('node:path');
 const Module = require('node:module');
 const policy = require('../dist/services/AiServices/Policy');
+const { maskNamedPerson, maskPii } = require('../dist/services/AiServices/ChatExport');
+
+test('outgoing AI context masks contact identifiers before provider calls', () => {
+  const prompt = maskPii(maskNamedPerson('Ana Silva, CPF 123.456.789-00, telefone (11) 99999-1234, ana@example.com quer Direito.', 'Ana Silva'));
+  assert.doesNotMatch(prompt, /Ana Silva|123\.456\.789-00|99999-1234|ana@example\.com/);
+  assert.match(prompt, /\[cliente\]/);
+  assert.match(prompt, /\[cpf\]/);
+  assert.match(prompt, /\[telefone\]/);
+  assert.match(prompt, /\[email\]/);
+  assert.equal(maskNamedPerson('Ana quer estudar.', 'Al'), 'Ana quer estudar.');
+});
+
+test('agent prompt keeps known fields without sending contact name or direct identifiers', async () => {
+  const h = harness();
+  h.state.responses.push(h.response('Posso ajudar com Direito.'));
+  await h.service.respond(h.agent, {
+    ticket: h.ticket,
+    history: [{ role: 'user', content: 'Ana Silva, CPF 123.456.789-00, telefone 11999991234 e ana@example.com quer Direito.' }],
+    collected: { nome: 'Ana Silva', telefone: '11999991234', curso: 'Direito' },
+    summary: 'Ana Silva quer Direito.'
+  });
+  const payload = JSON.stringify(h.calls[0].body);
+  assert.doesNotMatch(payload, /Ana Silva|123\.456\.789-00|11999991234|ana@example\.com/);
+  assert.match(payload, /\[cliente\]/);
+  assert.match(payload, /Direito/);
+});
 
 // Load compiled services with in-memory dependencies: no DB, WhatsApp or paid API requests.
 function isolated(relative, mocks) {
@@ -32,6 +58,7 @@ function harness(provider = 'openai') {
     '../../models/AiAgent': { findAll: async () => [agent] },
     '../../models/Message': { findOne: async () => state.latest, findAll: async () => [...state.history].reverse() },
     '../../models/Ticket': { findByPk: async () => ticket },
+    '../../helpers/Institution': { institutionName: () => 'Cruzeiro do Sul Virtual', institutionFor: async () => ({ id: 1 }), legacyInstitutionId: async () => 1 },
     '../../helpers/AppSettings': { getSetting: async () => '' },
     '../../utils/logger': { logger: { warn() {}, error() {} } },
     '../TicketServices/ShowTicketService': async () => ticket,

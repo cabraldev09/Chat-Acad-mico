@@ -17,17 +17,19 @@ CRM → Configurações → **Universidades** (`/institutions`, gestão). Cada u
 | Padrão | Tudo que não disser outra universidade fica com a padrão. Há sempre uma só. |
 
 Regras:
-- A padrão não pode ser desativada nem apagada. Para trocar, marque outra como padrão.
+- A padrão não pode ser desativada nem apagada. Para trocar, marque outra como padrão. A instituição que era padrão na migração também não
+  pode ser apagada porque registros históricos sem ID ainda dependem dela.
 - Uma universidade com números, conversas, leads, campanhas, agentes, cursos, propostas ou configurações ligadas não pode ser apagada. Desative-a para encerrar o uso sem reclassificar o histórico.
 
 ## De onde vem a universidade
 
-- **Número:** escolhida no cadastro do número (Conexões), quando há duas ou mais universidades. Vazio quer dizer a padrão.
+- **Número:** escolhida no cadastro do número (Conexões), quando há duas ou mais universidades. Ao salvar vazio, usa o padrão atual.
 - **Conversa (`Tickets.institutionId`):** herda do número ao ser criada.
 - **Lead (`Leads.institutionId`):** herda da conversa mais recente do contato, senão a padrão.
-- **Dados antigos:** registros sem `institutionId` pertencem à universidade padrão. A migração mantém esses campos vazios para evitar
-  atualizar tabelas operacionais inteiras e bloquear o atendimento no início do deploy. A padrão é a instituição ativa com o nome de
-  Configurações → Geral; se não houver, a primeira ativa; se nenhuma existir, é criada "Cruzeiro do Sul Virtual".
+- **Dados antigos:** registros sem `institutionId` pertencem à instituição que era padrão quando a migração foi aplicada. A migração
+  mantém esses campos vazios para evitar atualizar tabelas operacionais inteiras e grava esse ID em `Settings.legacy_institution_id`;
+  uma troca futura do padrão não muda a marca do histórico. Novos registros recebem um ID explícito. A instituição inicial é escolhida
+  pelo nome de Configurações → Geral, pelo catálogo mais usado ou pela primeira ativa; se nenhuma existir, é criada "Cruzeiro do Sul Virtual".
 
 ## Nome que a IA usa
 

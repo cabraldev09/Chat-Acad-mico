@@ -1,4 +1,3 @@
-import { AsyncLocalStorage } from "async_hooks";
 import { QueryTypes } from "sequelize";
 
 import sequelize from "../../database";
@@ -13,6 +12,9 @@ import Polo from "../../models/Polo";
 import { progressForUsers } from "../../controllers/GoalController";
 import { KPI_KEYS } from "./definitions";
 import { businessMinutes, getBusinessConfig } from "../../helpers/BusinessTime";
+import { analyticsInstitutionId, analyticsInstitutionScope, currentAnalyticsInstitution, withAnalyticsInstitution } from "./InstitutionScope";
+
+export { analyticsInstitutionId, analyticsInstitutionScope, withAnalyticsInstitution };
 
 // ONE place computes every indicator of a consultant. The management center and the consultant's own screen both call
 // computeMetrics(), with the same period, so the same person, period and rules always give the same numbers.
@@ -52,19 +54,15 @@ export const resolvePeriod = (query: { range?: any; from?: any; to?: any }): Per
 
 // The university an analytics screen is filtered by (Estatísticas → "Universidade"): every query of the screen runs inside it and reads
 // it as :inst_id / :inst_default. A conversation or a lead with no university of its own (NULL) is of the default one.
-const instScope = new AsyncLocalStorage<{ id: number; isDefault: boolean }>();
-export const withAnalyticsInstitution = <T>(inst: { id: number; isDefault: boolean } | null, fn: () => Promise<T>): Promise<T> =>
-  inst ? instScope.run(inst, fn) : fn();
-export const analyticsInstitutionId = (): number | null => instScope.getStore()?.id || null;
 const instOf = (alias: string): string =>
-  `(CAST(:inst_id AS INTEGER) IS NULL OR ${alias}.institutionId = :inst_id OR (${alias}.institutionId IS NULL AND :inst_default))`;
+  `(CAST(:inst_id AS INTEGER) IS NULL OR ${alias}.institutionId = :inst_id OR (${alias}.institutionId IS NULL AND :inst_legacy))`;
 // a lead of the university of the screen (use in every query on "Leads l")
 export const LEAD_IN_INSTITUTION = instOf("l");
 
 export const rows = async (sql: string, replacements: Record<string, any>): Promise<any[]> => {
-  const inst = instScope.getStore();
+  const inst = currentAnalyticsInstitution();
   return (await sequelize.query(portable(sql), {
-    replacements: { inst_id: inst ? inst.id : null, inst_default: inst ? inst.isDefault : false, ...replacements },
+    replacements: { inst_id: inst ? inst.id : null, inst_default: inst ? inst.isDefault : false, inst_legacy: inst ? !!inst.isLegacy : false, ...replacements },
     type: QueryTypes.SELECT
   })) as any[];
 };

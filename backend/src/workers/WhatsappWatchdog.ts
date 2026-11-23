@@ -29,16 +29,7 @@ const hasLogin = (id: number): boolean => {
   }
 };
 
-const OPEN_WAIT_MS = 2 * 60000;
-let ticking = false;
-// one look at a time: two overlapping looks would reopen the same number twice
 const tick = async (): Promise<void> => {
-  if (ticking) return;
-  ticking = true;
-  try { await look(); } finally { ticking = false; }
-};
-
-const look = async (): Promise<void> => {
   try {
     if (process.env.SKIP_WHATSAPP_SESSIONS) return;
     // first of all: a number that is really connected must never show as fallen (this also runs during the grace time after a restart)
@@ -71,9 +62,8 @@ const look = async (): Promise<void> => {
         // eslint-disable-next-line no-await-in-loop
         await alertAdmins(w, reason).catch(() => undefined);
       }
-      // a session that never finishes opening must not hold the watchdog (and every other number) forever
       // eslint-disable-next-line no-await-in-loop
-      await Promise.race([StartWhatsAppSession(w), new Promise(resolve => setTimeout(resolve, OPEN_WAIT_MS))]);
+      await StartWhatsAppSession(w);
     }
   } catch (err) {
     logger.warn(`WhatsApp watchdog tick failed: ${err}`);

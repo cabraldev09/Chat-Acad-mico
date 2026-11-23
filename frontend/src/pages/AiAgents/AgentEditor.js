@@ -41,7 +41,7 @@ const blank = () => ({
   name: "", provider: "anthropic", model: MODELS.anthropic, apiKey: "", systemPrompt: "Você é a assistente virtual de matrículas da instituição. Seja acolhedora, objetiva e responda em português.",
   persona: { tone: "Acolhedor, direto e respeitoso. Trate o aluno pelo primeiro nome.", rules: "Faça uma pergunta por vez.\nSempre convide o aluno a falar com um consultor para a proposta.", forbidden: "Prometer mensalidade fixa até o fim do curso.\nPrometer desconto ou bolsa sem a proposta oficial.\nPedir CPF ou dados de pagamento." },
   handoffMessage: "Vou chamar um consultor da nossa equipe para continuar com você. Um momento, por favor.",
-  maxTokens: 350, dailyTokenCap: 300000, handoffAfterTurns: 14, waitSeconds: 4, slots: null, active: true, queueId: "", whatsappId: "", whatsappIds: [],
+  maxTokens: 350, dailyTokenCap: 300000, handoffAfterTurns: 14, waitSeconds: 4, slots: null, active: true, institutionId: "", queueId: "", whatsappId: "", whatsappIds: [],
 });
 
 // The settings of one agent: how it talks and when it answers, what it finds out about the person, and the flows it can start. What it KNOWS, what it
@@ -56,6 +56,7 @@ const AgentEditor = ({ open, agent, initialTab = 0, onClose, onSaved }) => {
   const intro = useIntro(String((v.persona && v.persona.assistantName) || "").trim(), (v.persona && v.persona.commercial && v.persona.commercial.greeting) || "");
   const [queues, setQueues] = useState([]);
   const [connections, setConnections] = useState([]);
+  const [institutions, setInstitutions] = useState([]);
   const [saving, setSaving] = useState(false);
   const [pinging, setPinging] = useState(false);
 
@@ -67,6 +68,14 @@ const AgentEditor = ({ open, agent, initialTab = 0, onClose, onSaved }) => {
     setV(agent ? { ...blank(), ...agent, persona: { ...blank().persona, ...(agent.persona || {}) }, queueId: agent.queueId || "", whatsappId: "", whatsappIds: [...new Set([agent.whatsappId, ...(Array.isArray(agent.whatsappIds) ? agent.whatsappIds : [])].filter(Boolean).map(Number))] } : blank());
     api.get("/queue").then(({ data }) => setQueues(data)).catch(() => {});
     api.get("/whatsapp").then(({ data }) => setConnections(data)).catch(() => {});
+    api.get("/institutions").then(({ data }) => {
+      const active = (Array.isArray(data) ? data : []).filter((item) => item.active !== false);
+      setInstitutions(active);
+      if (!agent) {
+        const current = active.find((item) => item.isDefault) || active[0];
+        if (current) set("institutionId", current.id);
+      }
+    }).catch(() => {});
   }, [open, agent, initialTab]);
 
   const set = (k, val) => setV((cur) => ({ ...cur, [k]: val }));
@@ -157,6 +166,9 @@ const AgentEditor = ({ open, agent, initialTab = 0, onClose, onSaved }) => {
           <>
             <div className={classes.grid}>
               <TextField variant="outlined" margin="dense" label="Nome interno (só a equipe vê)" required value={v.name} onChange={(e) => set("name", e.target.value)} helperText="Para achar o agente na lista. O cliente vê o nome de apresentação abaixo." />
+              <TextField select variant="outlined" margin="dense" label="Universidade" required value={v.institutionId || ""} onChange={(e) => set("institutionId", e.target.value)} helperText="O agente e a base de conhecimento atendem somente esta universidade.">
+                {institutions.map((item) => <MenuItem key={item.id} value={item.id}>{item.name}{item.isDefault ? " (padrão)" : ""}</MenuItem>)}
+              </TextField>
               <FormControlLabel style={{ marginTop: 8 }} control={<Switch color="primary" checked={!!v.active} onChange={(e) => set("active", e.target.checked)} />} label={v.active ? "Ativo: responde os alunos" : "Desligado"} />
 
               <span />

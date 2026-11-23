@@ -3,7 +3,6 @@ import { Op, col, where as sqlWhere } from "sequelize";
 import { getSetting } from "../helpers/AppSettings";
 import { getBusinessConfig, isBusinessNow } from "../helpers/BusinessTime";
 import AgentMetricEvent from "../models/AgentMetricEvent";
-import AiAgent from "../models/AiAgent";
 import ChatFlowRun from "../models/ChatFlowRun";
 import Contact from "../models/Contact";
 import Lead from "../models/Lead";
@@ -18,7 +17,7 @@ import SendWhatsAppMessage from "../services/WbotServices/SendWhatsAppMessage";
 import ShowTicketService from "../services/TicketServices/ShowTicketService";
 import { noteAutomation } from "../services/AutomationServices/AutomationTrace";
 import { handoffToHuman } from "../services/AiServices/Handoff";
-import { findAgentForTicket } from "../services/AiServices/RunAiAgent";
+import { agentForTicketInstitution, findAgentForTicket } from "../services/AiServices/RunAiAgent";
 import { logger } from "../utils/logger";
 import { HANDOFF_AFTER_LAST_MS, NUDGES, firstName, nudgeDue, nudgeText } from "../services/CommercialServices/Nudges";
 
@@ -81,7 +80,7 @@ const remind = async (row: LeadCommercial, now: number, opts: { firstMinutes: nu
   if (giveUp) {
     if (!(await claimAi(ticket.id))) return;
     try {
-      const agent = (state.agentId ? await AiAgent.findByPk(state.agentId) : null) || (await findAgentForTicket(ticket));
+      const agent = (state.agentId ? await agentForTicketInstitution(ticket, state.agentId) : null) || (await findAgentForTicket(ticket));
       if (!agent) return;
       await run.update({ status: "handoff", resumeAt: null } as any);
       await handoffToHuman(ticket.id, agent, "sem_resposta", undefined, "no_reply");
@@ -118,14 +117,7 @@ const remind = async (row: LeadCommercial, now: number, opts: { firstMinutes: nu
 };
 
 export const startAiReactivation = (): void => {
-  // one round at a time: a slow round (the AI or the provider taking long) must not overlap the next and send a reminder twice
-  let running = false;
-  const round = async () => {
-    if (running) return;
-    running = true;
-    try { await tick(); } finally { running = false; }
-  };
-  setInterval(round, Number(process.env.REACTIVATION_MS) || 60000).unref?.();
+  setInterval(tick, Number(process.env.REACTIVATION_MS) || 60000).unref?.();
 };
 
 export { tick as runAiReactivationOnce };

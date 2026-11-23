@@ -11,7 +11,6 @@ import * as Sentry from "@sentry/node";
 import sequelize from "./database";
 import uploadConfig from "./config/upload";
 import AppError from "./errors/AppError";
-import axios from "axios";
 import routes from "./routes";
 import { logger } from "./utils/logger";
 import webchatRoutes from "./routes/webchatRoutes";
@@ -27,10 +26,6 @@ import securityHeaders from "./middleware/securityHeaders";
 import rateLimit from "./middleware/rateLimit";
 
 Sentry.init({ dsn: process.env.SENTRY_DSN });
-
-// No call to a provider (Meta, Telegram, e-mail, AI) may wait forever: one connection left hanging would hold the sending queue and
-// the retry of webhooks with it. Two minutes is far above any real answer, media included.
-axios.defaults.timeout = Number(process.env.HTTP_TIMEOUT_MS) || 120000;
 
 const app = express();
 
@@ -61,6 +56,9 @@ app.get("/health", async (_req: Request, res: Response) => {
 // brute-force / abuse protection on the unauthenticated entry points
 // login: only WRONG answers count, per person (IP + e-mail: 10 in 15 min) and per network (60), so a polo behind one address is not locked out
 // by a colleague's typo and a right password is never refused
+// Auth CORS must precede its limits so browsers can read 429 responses. The
+// public widget keeps its own origin:true CORS handler below.
+app.use("/auth", cors({ credentials: true, origin: corsOrigin(), exposedHeaders: ["X-Total-Count"] }));
 const loginPerAccount = rateLimit({ windowMs: 15 * 60 * 1000, max: Number(process.env.LOGIN_RATE_MAX) || 10, failuresOnly: true, key: req => `${req.ip}|${String(req.body?.email || "").trim().toLowerCase()}` });
 const loginPerNetwork = rateLimit({ windowMs: 15 * 60 * 1000, max: (Number(process.env.LOGIN_RATE_MAX) || 10) * 6, failuresOnly: true });
 const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: Number(process.env.LOGIN_RATE_MAX) || 20 });
@@ -74,11 +72,11 @@ app.use("/auth/reset", rateLimit({ windowMs: 15 * 60 * 1000, max: 20 }));
 app.use("/auth/refresh_token", rateLimit({ windowMs: 15 * 60 * 1000, max: 400 }));
 
 // Public endpoints (embedded web chat, provider webhooks): no cookies, any origin
-app.use("/webchat", publicLimiter, cors({ origin: true }), express.json(), webchatRoutes);
-app.use("/leadform", publicLimiter, cors({ origin: true }), leadFormRoutes);
-app.use("/r", publicLimiter, cors({ origin: true }), referralRouter);
-app.use("/public/courses", publicLimiter, cors({ origin: true }), courseLandingRoutes);
-app.use("/affiliate-portal", publicLimiter, cors({ origin: true }), affiliatePortalRoutes);
+app.use("/webchat", cors({ origin: true }), publicLimiter, express.json(), webchatRoutes);
+app.use("/leadform", cors({ origin: true }), publicLimiter, leadFormRoutes);
+app.use("/r", cors({ origin: true }), publicLimiter, referralRouter);
+app.use("/public/courses", cors({ origin: true }), publicLimiter, courseLandingRoutes);
+app.use("/affiliate-portal", cors({ origin: true }), publicLimiter, affiliatePortalRoutes);
 app.use("/p", publicLimiter, proposalPublicRoutes);
 // where Instagram sends the person back after the login (signed state; no cookie needed)
 app.use("/oauth/instagram/callback", publicLimiter, (req, res, next) => ChannelOAuth.callback(req, res).catch(next));

@@ -29,7 +29,15 @@ const useStyles = makeStyles((theme) => ({
   row: { display: "flex", gap: theme.spacing(1), flexWrap: "wrap", alignItems: "flex-start" },
 }));
 
-const copy = (text) => { navigator.clipboard?.writeText(text); toast.success("Copiado"); };
+const copy = async (text) => {
+  try {
+    if (!navigator.clipboard?.writeText) throw new Error("clipboard unavailable");
+    await navigator.clipboard.writeText(text);
+    toast.success("Copiado");
+  } catch {
+    toast.error("Não foi possível copiar. Selecione o texto e copie manualmente.");
+  }
+};
 const Copyable = ({ text }) => {
   const classes = useStyles();
   return (

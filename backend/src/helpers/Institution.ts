@@ -51,6 +51,20 @@ export const defaultInstitution = async (): Promise<InstitutionView | null> => {
   return list.find(i => i.isDefault) || list[0] || null;
 };
 
+// Rows that predate university assignment stay with the university that was the default when this feature was introduced,
+// even if the operational default changes later. New records must store an explicit institutionId.
+export const legacyInstitutionId = async (): Promise<number | null> => remember("legacy", async () => {
+  const raw = await getSetting("legacy_institution_id", "");
+  const id = Number(raw);
+  if (Number.isInteger(id) && id > 0 && (await allInstitutions()).some(i => i.id === id)) return id;
+  return (await defaultInstitution())?.id || null;
+});
+
+const legacyInstitution = async (): Promise<InstitutionView | null> => {
+  const id = await legacyInstitutionId();
+  return (id && (await allInstitutions()).find(i => i.id === id)) || (await defaultInstitution());
+};
+
 export const institutionById = async (id?: number | null): Promise<InstitutionView | null> => {
   const list = await allInstitutions();
   return (id ? list.find(i => i.id === Number(id)) : null) || (await defaultInstitution());
@@ -65,9 +79,11 @@ export const institutionBySlug = async (slug?: string | null): Promise<Instituti
 export const institutionIdForWhatsapp = async (whatsappId?: number | null): Promise<number | null> => {
   const own = whatsappId ? await remember(`wa:${whatsappId}`, async () => {
     const Whatsapp = (await import("../models/Whatsapp")).default;
-    return (await Whatsapp.findByPk(whatsappId, { attributes: ["id", "institutionId"] }))?.institutionId || null;
+    const row = await Whatsapp.findByPk(whatsappId, { attributes: ["id", "institutionId"] });
+    return row ? { institutionId: row.institutionId || null } : null;
   }) : null;
-  return own || (await defaultInstitution())?.id || null;
+  if (own) return own.institutionId || (await legacyInstitutionId());
+  return (await defaultInstitution())?.id || null;
 };
 
 // the university of a contact: the one of its latest conversation (else the default)
@@ -76,7 +92,8 @@ export const institutionIdForContact = async (contactId?: number | null): Promis
     const Ticket = (await import("../models/Ticket")).default;
     const t = await Ticket.findOne({ where: { contactId } as any, attributes: ["institutionId", "whatsappId"], order: [["id", "DESC"]] });
     if (t?.institutionId) return t.institutionId;
-    if (t?.whatsappId) return institutionIdForWhatsapp(t.whatsappId);
+    // A ticket found with NULL is historical. Do not infer its university from a number that may have been reassigned.
+    if (t) return legacyInstitutionId();
   }
   return (await defaultInstitution())?.id || null;
 };
@@ -84,14 +101,21 @@ export const institutionIdForContact = async (contactId?: number | null): Promis
 // the university of what is being talked about (a conversation, a lead), for the texts and the brand
 export const institutionFor = async (ctx: { institutionId?: number | null; ticket?: any; ticketId?: number | null; lead?: any; leadId?: number | null } = {}): Promise<InstitutionView | null> => {
   let id = ctx.institutionId || ctx.ticket?.institutionId || ctx.lead?.institutionId || null;
+  let historicalNull = !!(ctx.ticket && !ctx.ticket.institutionId) || !!(ctx.lead && !ctx.lead.institutionId);
   if (!id && ctx.ticketId) {
     const Ticket = (await import("../models/Ticket")).default;
-    id = (await Ticket.findByPk(ctx.ticketId, { attributes: ["institutionId"] }))?.institutionId || null;
+    const row = await Ticket.findByPk(ctx.ticketId, { attributes: ["institutionId"] });
+    id = row?.institutionId || null;
+    historicalNull = historicalNull || !!row && !row.institutionId;
   }
   if (!id && ctx.leadId) {
     const Lead = (await import("../models/Lead")).default;
-    id = (await Lead.findByPk(ctx.leadId, { attributes: ["institutionId"] }))?.institutionId || null;
+    const row = await Lead.findByPk(ctx.leadId, { attributes: ["institutionId"] });
+    id = row?.institutionId || null;
+    historicalNull = historicalNull || !!row && !row.institutionId;
   }
+  if (!id && historicalNull) return legacyInstitution();
+  if (!id && !ctx.ticket && !ctx.ticketId && !ctx.lead && !ctx.leadId) return defaultInstitution();
   return institutionById(id);
 };
 

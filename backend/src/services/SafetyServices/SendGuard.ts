@@ -134,10 +134,13 @@ export interface SendBlock {
 export const checkCampaignSend = async (
   whatsapp: Whatsapp,
   // null = number we have never seen (so, by definition, a cold contact)
-  contact: { id: number; optOut?: boolean } | null
+  contact: { id: number; optOut?: boolean; consentAt?: Date | null } | null
 ): Promise<SendBlock | null> => {
   if (contact?.optOut) {
     return { kind: "contact", reason: "Contato pediu para não receber mensagens (SAIR)." };
+  }
+  if (!contact?.consentAt) {
+    return { kind: "contact", reason: "Bloqueado: não há consentimento registrado para este contato." };
   }
   if (!isUnofficial(whatsapp)) return null;
 

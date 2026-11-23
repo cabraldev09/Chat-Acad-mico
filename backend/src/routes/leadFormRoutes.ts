@@ -82,6 +82,11 @@ const submit = async (req: Request, res: Response, affiliate: Affiliate | null, 
   if (b.consent !== true) return res.status(400).json({ error: "É preciso aceitar o contato para continuar." });
 
   const course = b.courseId ? await Course.findByPk(Number(b.courseId)) : null;
+  if (b.courseId && !course) return res.status(400).json({ error: "Curso inválido." });
+  if (course && !course.active) return res.status(400).json({ error: "Este curso não está disponível." });
+  if (inst && course && course.institutionId != null && Number(course.institutionId) !== inst.id) {
+    return res.status(400).json({ error: "Este curso não pertence a esta universidade." });
+  }
   const clip = (v: any, n = 120) => (v ? String(v).slice(0, n) : undefined);
   const { lead, created } = await upsertLead({
     institutionId: inst?.id || (course?.institutionId ?? null),

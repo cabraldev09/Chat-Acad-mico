@@ -7,6 +7,7 @@ import Ticket from "../../models/Ticket";
 import CopilotRequest from "../../models/CopilotRequest";
 import AppError from "../../errors/AppError";
 import { dayBounds, getAppTz } from "../../helpers/AppTime";
+import { institutionFor, legacyInstitutionId } from "../../helpers/Institution";
 import { CONFIG_KEY, CopilotConfig, defaultConfig, policyFor, upgradeSteps, validateConfig } from "./Policy";
 
 // the agent asks in the order of this process (one order for the agent and the copilot)
@@ -37,7 +38,19 @@ export const saveConfig = async (input: any): Promise<CopilotConfig> => {
   }).then(async saved => { await shareOrder({ ...saved, steps: upgradeSteps(saved.steps) }); return saved; });
 };
 export const suggestionAgent = async (config: CopilotConfig, ticket: Ticket): Promise<AiAgent | null> => {
-  if (config.agentId) return AiAgent.findByPk(config.agentId); // a manual copilot can use training without starting the autonomous bot
+  if (config.agentId) {
+    const [agent, institution, legacyId] = await Promise.all([
+      AiAgent.findByPk(config.agentId),
+      institutionFor({ ticket }),
+      legacyInstitutionId()
+    ]);
+    if (!agent) return null;
+    const ticketInstitutionId = institution?.id || legacyId;
+    const sameInstitution = agent.institutionId
+      ? agent.institutionId === ticketInstitutionId
+      : ticketInstitutionId === legacyId;
+    return sameInstitution ? agent : null; // a manual copilot must never cross university ownership
+  }
   const { agentToQualify } = await import("../AiServices/RunAiAgent");
   return agentToQualify(ticket);
 };
