@@ -424,3 +424,50 @@ button.gv-prio-row:hover { border-color: var(--tone); background: color-mix(in s
 .gv-plain .pk-panel > .pk-head { background: transparent; border-bottom: 1px solid var(--line); padding: 14px 20px 12px; }
 .gv-plain .pk-panel .pk-title { font-size: 15px; font-weight: 650; color: var(--text-1); }
 .gv-plain .pk-panel .pk-sub { color: var(--text-2); }
+
+/* ---- several series over the same days, each in its own line ---- */
+.gv-multi { display: grid; gap: 6px; min-width: 0; }
+.gv-multi-row { display: grid; grid-template-columns: minmax(150px, 220px) minmax(0, 1fr); gap: 16px; align-items: stretch; width: 100%; padding: 10px 8px; border: 0; border-top: 1px solid var(--line); background: transparent; color: inherit; font: inherit; text-align: left; border-radius: 0; }
+button.gv-multi-row { cursor: pointer; transition: background-color .15s ease; }
+button.gv-multi-row:hover { background: var(--surface-2); }
+button.gv-multi-row:focus-visible { outline: 2px solid var(--c-leads); outline-offset: -2px; }
+.gv-multi-head { display: flex; flex-direction: column; gap: 2px; min-width: 0; justify-content: center; }
+.gv-multi-title { font-size: 13px; font-weight: 600; color: var(--text-2); }
+.gv-multi-head b { font-size: 24px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.1; font-variant-numeric: tabular-nums; color: var(--text-1); }
+.gv-multi-note { font-size: 12.5px; font-weight: 600; color: var(--c-brand); }
+.gv-multi-plot { display: flex; align-items: flex-end; gap: 3px; height: 64px; min-width: 0; }
+.gv-multi-col { flex: 1 1 0; min-width: 0; height: 100%; display: flex; align-items: flex-end; }
+.gv-multi-col i { display: block; width: 100%; background: var(--c-brand); border-radius: 2px 2px 0 0; transition: height .5s cubic-bezier(.2,.8,.2,1); }
+button.gv-multi-row:hover .gv-multi-col i { background: color-mix(in srgb, var(--c-brand) 82%, #fff); }
+.gv-multi-axis { padding-top: 4px; padding-bottom: 0; }
+.gv-multi-axis .gv-multi-plot { height: auto; align-items: flex-start; }
+.gv-multi-axis .gv-multi-col { height: auto; justify-content: center; font-size: 11px; color: var(--text-2); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: visible; }
+@media (max-width: 620px) { .gv-multi-row { grid-template-columns: minmax(0, 1fr); gap: 8px; } .gv-multi-axis .gv-multi-head { display: none; } .gv-multi-plot { height: 52px; } }
+@media (prefers-reduced-motion: reduce) { .gv-multi-col i { transition: none; } }
+.gv-people { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); }
+.gv-person-card { border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: grid; gap: 10px; align-content: start; min-width: 0; background: var(--surface); }
+.gv-person-card header { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.gv-person-card header b { font-size: 14px; font-weight: 650; overflow-wrap: anywhere; }
+.gv-person-card header small { display: block; font-size: 12.5px; color: var(--text-2); font-weight: 400; }
+.gv-person-card ul { margin: 0; padding-left: 18px; font-size: 13.5px; display: grid; gap: 4px; line-height: 1.45; }
+.gv-person-card .gv-tip { padding: 9px 12px; border-radius: 8px; background: var(--surface-2); border-left: 3px solid var(--c-brand); font-size: 13.5px; line-height: 1.45; }
+
+/* ---- the progress of the polos in the colours of the screen of the goals: the total on the blue that melts into navy, and the
+   name of every polo on a navy band ---- */
+.pp-hero { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; padding: 20px 24px; border-radius: 16px; color: #fff; --text-1: #fff; --text-2: rgba(255, 255, 255, 0.8); --track: rgba(255, 255, 255, 0.2);
+  background: radial-gradient(90% 150% at -6% 55%, #6cc0ff 0%, #3b8cff 22%, #2457e6 42%, rgba(25, 58, 160, 0.55) 60%, rgba(11, 30, 66, 0) 80%), linear-gradient(100deg, #1b3fae 0%, #0c2147 62%, #0a1a38 100%);
+  border: 1px solid rgba(255, 255, 255, 0.14); box-shadow: 0 14px 26px -16px rgba(20, 60, 160, 0.65); }
+.pp-hero-num { font-size: 40px; font-weight: 700; letter-spacing: -0.04em; line-height: 1; font-variant-numeric: tabular-nums; }
+.pp-hero-num small { font-size: 20px; font-weight: 600; opacity: 0.72; }
+.pp-hero-sub { font-size: 13.5px; color: rgba(255, 255, 255, 0.84); margin-top: 4px; }
+.pp-pct { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 999px; color: #fff; font-size: 12.5px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.28); }
+.pp-card { display: flex; flex-direction: column; padding: 0; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: var(--surface); color: inherit; font: inherit; text-align: left; cursor: pointer; min-width: 0; transition: border-color .15s ease, box-shadow .15s ease; }
+.pp-card:hover { border-color: var(--c-brand); box-shadow: 0 6px 16px -10px rgba(11, 66, 121, 0.5); }
+.pp-card:focus-visible { outline: 2px solid var(--c-leads); outline-offset: 2px; }
+.pp-card[data-mine="1"] { border-color: var(--c-brand); }
+.pp-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 14px; color: #fff; background: linear-gradient(100deg, #1b4f9a 0%, #0b4279 45%, #0a2f5c 100%); }
+.pp-name { font-size: 13.5px; font-weight: 700; line-height: 1.25; overflow-wrap: anywhere; min-width: 0; }
+.pp-name small { font-size: 12px; font-weight: 500; color: rgba(255, 255, 255, 0.8); }
+.pp-body { display: flex; align-items: center; gap: 14px; padding: 13px 14px 14px; flex: 1; }
+.pp-num { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.1; font-variant-numeric: tabular-nums; color: var(--c-brand); }
+.pp-num small { font-size: 13px; font-weight: 500; color: var(--text-2); }

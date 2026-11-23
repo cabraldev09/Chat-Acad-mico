@@ -44,24 +44,26 @@ const PaceRing = ({ pct, color, size = 62, stroke = 7 }) => {
     </svg>
   );
 };
-const TONE_OF = { reached: "good", ok: "good", late: "warn", behind: "bad", none: undefined };
 
-// one polo: the ring, "done of target" and one line with what is missing; the state is a dot of colour beside the name (said once)
+// one polo, in the colours of the screen of the goals: the name on a navy band with the share of the goal, then "done of target"
+// and one line with what is missing
 const PoloCard = ({ p, mine, onOpen }) => {
   const pace = paceOf(p);
   const hasTarget = p.target !== null && p.target !== undefined;
   return (
-    <button type="button" className="pk" onClick={onOpen} aria-label={`${p.name}: ${pace.label}. Abrir as metas dos polos`}
-      style={{ padding: "14px 16px", display: "flex", alignItems: "center", gap: 14, ...(mine ? { borderColor: "var(--c-brand)" } : {}) }}>
-      {hasTarget ? <PaceRing pct={p.pct} color={pace.color} size={56} stroke={6} /> : null}
-      <span style={{ minWidth: 0, display: "grid", gap: 3 }}>
-        <span style={{ fontSize: 13.5, fontWeight: 600, lineHeight: 1.3, overflowWrap: "anywhere" }}>{p.name}{mine ? <span className="pk-hint" style={{ fontWeight: 500 }}> (seu polo)</span> : null}</span>
-        <span style={{ fontSize: 20, fontWeight: 650, letterSpacing: "-0.02em", lineHeight: 1.15, fontVariantNumeric: "tabular-nums" }}>
-          {p.done}{hasTarget && <span style={{ fontSize: 13, fontWeight: 500, color: "var(--text-2)" }}> de {p.target}</span>}
-        </span>
-        <span className="pk-hint" style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-          <span style={{ width: 7, height: 7, borderRadius: "50%", background: pace.color, flex: "none" }} aria-hidden="true" />
-          {hasTarget ? (p.missing > 0 ? <>{pace.label}, faltam {p.missing}{p.perDay ? ` (${String(p.perDay).replace(".", ",")} por dia útil)` : ""}</> : "Meta cumprida") : "Sem meta definida"}
+    <button type="button" className="pp-card" data-mine={mine ? "1" : undefined} onClick={onOpen} aria-label={`${p.name}: ${pace.label}. Abrir as metas dos polos`}>
+      <span className="pp-head">
+        <span className="pp-name">{p.name}{mine ? <small> · seu polo</small> : null}</span>
+        {hasTarget ? <span className="pp-pct" style={{ background: pace.color }}>{pctText(p.pct)}</span> : null}
+      </span>
+      <span className="pp-body">
+        {hasTarget ? <PaceRing pct={p.pct} color={pace.color} size={54} stroke={6} /> : null}
+        <span style={{ minWidth: 0, display: "grid", gap: 3 }}>
+          <span className="pp-num">{p.done}{hasTarget && <small> de {p.target}</small>}</span>
+          <span className="pk-hint" style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+            <span style={{ width: 7, height: 7, borderRadius: "50%", background: pace.color, flex: "none" }} aria-hidden="true" />
+            {hasTarget ? (p.missing > 0 ? <>{pace.label}, faltam {p.missing}{p.perDay ? ` (${String(p.perDay).replace(".", ",")} por dia útil)` : ""}</> : "Meta cumprida") : "Sem meta definida"}
+          </span>
         </span>
       </span>
     </button>
@@ -114,19 +116,17 @@ const PoloProgress = ({ title = "Metas dos polos", onlyMine = false }) => {
       ) : (
         <div style={{ display: "grid", gap: 14 }}>
           {t && t.target > 0 && (
-            <GlowPanel id="polos-total" tone={TONE_OF[totalPace.tone] || "brand"}>
-              <div style={{ display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap" }}>
-                <PaceRing pct={t.pct} color={totalPace.color} size={84} stroke={9} />
-                <div style={{ flex: 1, minWidth: 200 }}>
-                  <div style={{ fontSize: 34, fontWeight: 750, letterSpacing: "-0.03em", lineHeight: 1.05, fontVariantNumeric: "tabular-nums" }}>{t.done} <span style={{ fontSize: 16, fontWeight: 600, color: "var(--text-2)" }}>de {t.target}</span></div>
-                  <div className="pk-hint" style={{ marginTop: 4 }}>Matrículas de todos os polos no semestre</div>
-                </div>
-                <div style={{ display: "grid", gap: 4, justifyItems: "end" }}>
-                  <span className="pk-badge" data-tone={TONE_OF[totalPace.tone]}>{totalPace.label}</span>
-                  {expected > 0 && expected < 100 ? <span className="pk-hint">Ritmo esperado para hoje: {pctText(expected)}</span> : null}
-                </div>
+            <div className="pp-hero" data-panel="polos-total">
+              <PaceRing pct={t.pct} color="#fff" size={92} stroke={9} />
+              <div style={{ flex: 1, minWidth: 200 }}>
+                <div className="pp-hero-num">{t.done}<small> / {t.target}</small></div>
+                <div className="pp-hero-sub">Matrículas de todos os polos no semestre{t.missing > 0 ? ` · faltam ${t.missing}` : ""}</div>
               </div>
-            </GlowPanel>
+              <div style={{ display: "grid", gap: 6, justifyItems: "end" }}>
+                <span className="pp-pct" style={{ background: totalPace.color }}>{totalPace.label}</span>
+                {expected > 0 && expected < 100 ? <span className="pp-hero-sub">Ritmo esperado para hoje: {pctText(expected)}</span> : null}
+              </div>
+            </div>
           )}
           {polos.length === 0 ? <GlowPanel empty emptyText="Nenhum polo com meta neste semestre." /> : (
             <div className="pk-ringgrid">{polos.map((p) => <PoloCard key={p.poloId} p={p} mine={mine.has(Number(p.poloId))} onOpen={open} />)}</div>

@@ -362,3 +362,53 @@ export const Person = ({ name, size = 34 }) => {
     </span>
   );
 };
+
+// ---------------------------------------------------------------- several numbers over the same days, one under the other
+/**
+ * Every series in its own line, on its own scale (they are too different in size to share one), over the same days.
+ * rows: [{ key, title, unit, total, note, days: [{ day, value }] }]. A click on a line asks for that series alone.
+ */
+export const MultiBars = ({ rows, onPick, emptyText = "Nenhum registro no período." }) => {
+  const [mode, setMode] = useState("day");
+  const byWeek = mode === "week";
+  const lines = (rows || []).map((r) => {
+    const all = (r.days || []).map((d) => ({ day: String(d.day).slice(0, 10), value: Number(d.value) || 0 }));
+    const points = byWeek ? weeksOf(all) : all;
+    return { ...r, points, max: Math.max(1, ...points.map((d) => d.value)) };
+  });
+  const any = lines.some((r) => r.points.some((d) => d.value > 0));
+  const axis = lines[0] ? lines[0].points : [];
+  const step = Math.max(1, Math.ceil(axis.length / 12));
+  return (
+    <div className="gv-multi">
+      <div className="gv-bars-top">
+        <span className="gv-note">{byWeek ? "Cada barra é uma semana." : "Cada barra é um dia."} Cada linha tem a sua própria escala. Clique em uma linha para ver só ela.</span>
+        <Switch label="Agrupar por" value={mode} onChange={setMode} options={[["day", "Dia"], ["week", "Semana"]]} />
+      </div>
+      {!any ? <EmptyNote>{emptyText}</EmptyNote> : (
+        <>
+          {lines.map((r) => (
+            <button key={r.key} type="button" className="gv-multi-row" onClick={() => onPick && onPick(r.key)} aria-label={`${r.title}: ${nf(r.total)} ${r.unit || ""}. ${r.note || ""} Ver só esta série`}>
+              <span className="gv-multi-head">
+                <span className="gv-multi-title">{r.title}</span>
+                <b>{nf(r.total)}</b>
+                {r.note ? <span className="gv-multi-note">{r.note}</span> : null}
+              </span>
+              <span className="gv-multi-plot" aria-hidden="true">
+                {r.points.map((d) => (
+                  <span key={d.day} className="gv-multi-col" title={`${d.day.slice(8, 10)}/${d.day.slice(5, 7)}: ${nf(d.value)} ${r.unit || ""}`}>
+                    <i style={{ height: `${Math.max(d.value ? 4 : 0, (d.value / r.max) * 100)}%` }} />
+                  </span>
+                ))}
+              </span>
+            </button>
+          ))}
+          <div className="gv-multi-row gv-multi-axis" aria-hidden="true">
+            <span className="gv-multi-head" />
+            <span className="gv-multi-plot">{axis.map((d, i) => <span key={d.day} className="gv-multi-col">{i % step === 0 ? `${d.day.slice(8, 10)}/${d.day.slice(5, 7)}` : ""}</span>)}</span>
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
