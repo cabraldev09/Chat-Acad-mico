@@ -1,3 +1,4 @@
+import { withInstitutionOf } from "../../helpers/Institution";
 import { withReactiveReply } from "../../helpers/ReactiveReply";
 import { isEmail } from "../../helpers/Email";
 import { isRelationshipConnection } from "../RelationshipServices/Relationship";
@@ -530,4 +531,5 @@ const RunInboundAutomation = async ({ ticketId, body }: Input): Promise<void> =>
   }
 };
 
-export default (input: Input): Promise<void> => withReactiveReply(() => RunInboundAutomation(input));
+// the automation of a conversation speaks for the university of that conversation (the number it came through)
+export default (input: Input): Promise<void> => withInstitutionOf({ ticketId: input.ticketId }, () => withReactiveReply(() => RunInboundAutomation(input)));

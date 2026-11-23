@@ -478,7 +478,8 @@ CREATE TABLE public."AiAgents" (
     "reviewWhatsappId" integer,
     "learnFromTeam" boolean DEFAULT true NOT NULL,
     functions json,
-    "whatsappIds" json
+    "whatsappIds" json,
+    "institutionId" integer
 );
 
 
@@ -910,7 +911,8 @@ CREATE TABLE public."Campaigns" (
     "sentInBatch" integer DEFAULT 0 NOT NULL,
     "templateParams" text,
     "templateBody" text,
-    "createdById" integer
+    "createdById" integer,
+    "institutionId" integer
 );
 
 
@@ -1937,6 +1939,19 @@ ALTER SEQUENCE public."Goals_id_seq" OWNED BY public."Goals".id;
 
 
 --
+-- Name: InstitutionSettings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."InstitutionSettings" (
+    "institutionId" integer NOT NULL,
+    key character varying(120) NOT NULL,
+    value text,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
+
+
+--
 -- Name: Institutions; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1947,7 +1962,15 @@ CREATE TABLE public."Institutions" (
     "logoFile" character varying(255),
     active boolean DEFAULT true NOT NULL,
     "createdAt" timestamp with time zone NOT NULL,
-    "updatedAt" timestamp with time zone NOT NULL
+    "updatedAt" timestamp with time zone NOT NULL,
+    "shortName" character varying(60),
+    slug character varying(60),
+    "brandColor" character varying(9),
+    site character varying(200),
+    "mailFromName" character varying(120),
+    "mailFrom" character varying(200),
+    footer character varying(400),
+    "isDefault" boolean DEFAULT false NOT NULL
 );
 
 
@@ -2394,7 +2417,8 @@ CREATE TABLE public."Leads" (
     "reenrolledAt" timestamp with time zone,
     "onboardingChecklist" text,
     "practicePoloId" integer,
-    rgm character varying(40)
+    rgm character varying(40),
+    "institutionId" integer
 );
 
 
@@ -2813,6 +2837,18 @@ CREATE SEQUENCE public."PoloCoverages_id_seq"
 --
 
 ALTER SEQUENCE public."PoloCoverages_id_seq" OWNED BY public."PoloCoverages".id;
+
+
+--
+-- Name: PoloInstitutions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."PoloInstitutions" (
+    "poloId" integer NOT NULL,
+    "institutionId" integer NOT NULL,
+    "createdAt" timestamp with time zone NOT NULL,
+    "updatedAt" timestamp with time zone NOT NULL
+);
 
 
 --
@@ -3502,7 +3538,8 @@ CREATE TABLE public."Tickets" (
     "slaAlertedMessageId" character varying(255),
     "slaEscalatedMessageId" character varying(255),
     "lastUserId" integer,
-    "aiReturnUserId" integer
+    "aiReturnUserId" integer,
+    "institutionId" integer
 );
 
 
@@ -3704,7 +3741,8 @@ CREATE TABLE public."Whatsapps" (
     "aiFirst" boolean DEFAULT false NOT NULL,
     "pairingPhone" character varying(20),
     "statusNote" text,
-    team character varying(20)
+    team character varying(20),
+    "institutionId" integer
 );
 
 
@@ -4798,6 +4836,14 @@ ALTER TABLE ONLY public."Goals"
 
 
 --
+-- Name: InstitutionSettings InstitutionSettings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."InstitutionSettings"
+    ADD CONSTRAINT "InstitutionSettings_pkey" PRIMARY KEY ("institutionId", key);
+
+
+--
 -- Name: Institutions Institutions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5003,6 +5049,14 @@ ALTER TABLE ONLY public."Payments"
 
 ALTER TABLE ONLY public."PoloCoverages"
     ADD CONSTRAINT "PoloCoverages_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: PoloInstitutions PoloInstitutions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."PoloInstitutions"
+    ADD CONSTRAINT "PoloInstitutions_pkey" PRIMARY KEY ("poloId", "institutionId");
 
 
 --
@@ -5447,6 +5501,13 @@ CREATE INDEX ai_usage_created_at ON public."AiUsage" USING btree ("createdAt");
 
 
 --
+-- Name: aiagents_institution_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX aiagents_institution_id ON public."AiAgents" USING btree ("institutionId");
+
+
+--
 -- Name: analysis_events_kind_analysis_id_created_at; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5479,6 +5540,13 @@ CREATE INDEX automationtriggers_event_idx ON public."AutomationTriggers" USING b
 --
 
 CREATE INDEX campaign_shippings_campaign_status ON public."CampaignShippings" USING btree ("campaignId", status);
+
+
+--
+-- Name: campaigns_institution_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX campaigns_institution_id ON public."Campaigns" USING btree ("institutionId");
 
 
 --
@@ -5727,6 +5795,13 @@ CREATE UNIQUE INDEX goal_polos_unique ON public."GoalPolos" USING btree ("goalId
 
 
 --
+-- Name: institutions_slug; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX institutions_slug ON public."Institutions" USING btree (slug);
+
+
+--
 -- Name: kb_chunks_document_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5906,6 +5981,13 @@ CREATE INDEX leads_created_at ON public."Leads" USING btree ("createdAt");
 --
 
 CREATE INDEX leads_email ON public."Leads" USING btree (email);
+
+
+--
+-- Name: leads_institution_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX leads_institution_id ON public."Leads" USING btree ("institutionId");
 
 
 --
@@ -6231,6 +6313,13 @@ CREATE INDEX tickets_handoff_at ON public."Tickets" USING btree ("handoffAt");
 
 
 --
+-- Name: tickets_institution_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX tickets_institution_id ON public."Tickets" USING btree ("institutionId");
+
+
+--
 -- Name: tickets_last_message_at_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6291,6 +6380,13 @@ CREATE INDEX webhook_deliveries_created_at ON public."WebhookDeliveries" USING b
 --
 
 CREATE INDEX webhook_deliveries_status_next_attempt_at ON public."WebhookDeliveries" USING btree (status, "nextAttemptAt");
+
+
+--
+-- Name: whatsapps_institution_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX whatsapps_institution_id ON public."Whatsapps" USING btree ("institutionId");
 
 
 --
@@ -6429,6 +6525,14 @@ ALTER TABLE ONLY public."AiAgentRevisions"
 
 
 --
+-- Name: AiAgents AiAgents_institutionId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."AiAgents"
+    ADD CONSTRAINT "AiAgents_institutionId_fkey" FOREIGN KEY ("institutionId") REFERENCES public."Institutions"(id) ON UPDATE CASCADE ON DELETE SET NULL;
+
+
+--
 -- Name: AiAgents AiAgents_queueId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6490,6 +6594,14 @@ ALTER TABLE ONLY public."CampaignShippings"
 
 ALTER TABLE ONLY public."Campaigns"
     ADD CONSTRAINT "Campaigns_contactListId_fkey" FOREIGN KEY ("contactListId") REFERENCES public."ContactLists"(id) ON DELETE CASCADE;
+
+
+--
+-- Name: Campaigns Campaigns_institutionId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."Campaigns"
+    ADD CONSTRAINT "Campaigns_institutionId_fkey" FOREIGN KEY ("institutionId") REFERENCES public."Institutions"(id) ON UPDATE CASCADE ON DELETE SET NULL;
 
 
 --
@@ -6709,6 +6821,14 @@ ALTER TABLE ONLY public."GoalPolos"
 
 
 --
+-- Name: InstitutionSettings InstitutionSettings_institutionId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."InstitutionSettings"
+    ADD CONSTRAINT "InstitutionSettings_institutionId_fkey" FOREIGN KEY ("institutionId") REFERENCES public."Institutions"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+--
 -- Name: KbChunks KbChunks_documentId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6842,6 +6962,14 @@ ALTER TABLE ONLY public."Leads"
 
 ALTER TABLE ONLY public."Leads"
     ADD CONSTRAINT "Leads_courseId_fkey" FOREIGN KEY ("courseId") REFERENCES public."Courses"(id) ON DELETE SET NULL;
+
+
+--
+-- Name: Leads Leads_institutionId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."Leads"
+    ADD CONSTRAINT "Leads_institutionId_fkey" FOREIGN KEY ("institutionId") REFERENCES public."Institutions"(id) ON UPDATE CASCADE ON DELETE SET NULL;
 
 
 --
@@ -6986,6 +7114,22 @@ ALTER TABLE ONLY public."Payments"
 
 ALTER TABLE ONLY public."PoloCoverages"
     ADD CONSTRAINT "PoloCoverages_poloId_fkey" FOREIGN KEY ("poloId") REFERENCES public."Polos"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+--
+-- Name: PoloInstitutions PoloInstitutions_institutionId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."PoloInstitutions"
+    ADD CONSTRAINT "PoloInstitutions_institutionId_fkey" FOREIGN KEY ("institutionId") REFERENCES public."Institutions"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+--
+-- Name: PoloInstitutions PoloInstitutions_poloId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."PoloInstitutions"
+    ADD CONSTRAINT "PoloInstitutions_poloId_fkey" FOREIGN KEY ("poloId") REFERENCES public."Polos"(id) ON UPDATE CASCADE ON DELETE CASCADE;
 
 
 --
@@ -7205,6 +7349,14 @@ ALTER TABLE ONLY public."Tickets"
 
 
 --
+-- Name: Tickets Tickets_institutionId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."Tickets"
+    ADD CONSTRAINT "Tickets_institutionId_fkey" FOREIGN KEY ("institutionId") REFERENCES public."Institutions"(id) ON UPDATE CASCADE ON DELETE SET NULL;
+
+
+--
 -- Name: Tickets Tickets_queueId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7242,6 +7394,14 @@ ALTER TABLE ONLY public."Users"
 
 ALTER TABLE ONLY public."WebhookDeliveries"
     ADD CONSTRAINT "WebhookDeliveries_webhookId_fkey" FOREIGN KEY ("webhookId") REFERENCES public."Webhooks"(id) ON DELETE CASCADE;
+
+
+--
+-- Name: Whatsapps Whatsapps_institutionId_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."Whatsapps"
+    ADD CONSTRAINT "Whatsapps_institutionId_fkey" FOREIGN KEY ("institutionId") REFERENCES public."Institutions"(id) ON UPDATE CASCADE ON DELETE SET NULL;
 
 
 --
@@ -7684,6 +7844,7 @@ INSERT INTO "SequelizeMeta" (name) VALUES ('20261222000005-contact-consent.js') 
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261222000006-consultant-reviews.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261222000007-speed-indexes.js') ON CONFLICT DO NOTHING;
 INSERT INTO "SequelizeMeta" (name) VALUES ('20261222000008-tasks-and-notifications.js') ON CONFLICT DO NOTHING;
+INSERT INTO "SequelizeMeta" (name) VALUES ('20261222000009-institutions.js') ON CONFLICT DO NOTHING;
 
 -- Row Level Security: o Supabase publica as tabelas do schema public pela API REST (chave anon).
 -- Todo o acesso passa pelo backend (conexão direta ao Postgres), então fechamos tudo.

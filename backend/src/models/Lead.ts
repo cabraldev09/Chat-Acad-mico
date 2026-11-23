@@ -13,7 +13,8 @@ import {
   BelongsTo,
   BelongsToMany,
   HasMany,
-  HasOne
+  HasOne,
+  BeforeCreate
 } from "sequelize-typescript";
 
 import Course from "./Course";
@@ -32,6 +33,17 @@ import { maskCpf } from "../helpers/Cpf";
 
 @Table
 class Lead extends Model<Lead> {
+  // the university of the lead: the one of its conversation (the number it wrote to), of the form or of the affiliate link; else the default
+  @Column
+  institutionId: number;
+
+  @BeforeCreate
+  static async setInstitution(lead: Lead): Promise<void> {
+    if (lead.institutionId) return;
+    const { institutionIdForContact } = await import("../helpers/Institution");
+    lead.institutionId = (await institutionIdForContact(lead.contactId)) as number;
+  }
+
   @PrimaryKey
   @AutoIncrement
   @Column

@@ -30,6 +30,10 @@ class Campaign extends Model<Campaign> {
   @Column
   name: string;
 
+  // the university of the group this belongs to (see models/Institution)
+  @Column
+  institutionId: number;
+
   @Default("draft")
   @Column
   status: string;

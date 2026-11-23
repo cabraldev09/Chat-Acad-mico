@@ -35,6 +35,10 @@ class Whatsapp extends Model<Whatsapp> {
   @Column(DataType.TEXT)
   name: string;
 
+  // the university of the group this belongs to (see models/Institution)
+  @Column
+  institutionId: number;
+
   @Column(DataType.TEXT)
   session: string;
 

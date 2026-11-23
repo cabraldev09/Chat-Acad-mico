@@ -35,6 +35,34 @@ class Institution extends Model<Institution> {
   @Column
   active: boolean;
 
+  // the brand of the university: the short name of the texts, the address of its public pages (/f/<slug>), its color, site, the sender of
+  // its e-mails and the footer of its pages and documents
+  @Column
+  shortName: string;
+
+  @Column
+  slug: string;
+
+  @Column
+  brandColor: string;
+
+  @Column
+  site: string;
+
+  @Column
+  mailFromName: string;
+
+  @Column
+  mailFrom: string;
+
+  @Column
+  footer: string;
+
+  // the university of everything that does not say another one (one only)
+  @Default(false)
+  @Column
+  isDefault: boolean;
+
   toJSON(): any {
     const data = super.toJSON() as any;
     return { ...data, logoUrl: data.logoFile ? signedFileUrl(data.logoFile) : null };
