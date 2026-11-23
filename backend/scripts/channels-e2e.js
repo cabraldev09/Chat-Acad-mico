@@ -5276,7 +5276,8 @@ const postMeta = (id, payload, secret, badSig) => {
       await inboundCloud("5511910000009", "wamid.learn-1", "Vocês têm bolsa para atletas?");
       await waitFor(() => sentTexts(before).some(t => t.includes("passar sua dúvida")), 15000, "unknown reply");
       const t = ticketOf("5511910000009");
-      assert(sql(`SELECT aiActive FROM Tickets WHERE id=${t}`) === "0", "ticket should go to a person");
+      // after the reply the agent keeps the question, tells the owner on WhatsApp and only then hands over: wait for the handover, not the reply
+      await waitFor(() => sql(`SELECT aiActive FROM Tickets WHERE id=${t}`) === "0", 8000, "ticket should go to a person");
       assert(sql(`SELECT status FROM AiLearnings WHERE ticketId=${t}`) === "aguardando_equipe", "question not kept");
       const told = graph.sent.slice(before).find(x => x.body && x.body.to === "5511999990000" && x.body.text && x.body.text.body.includes("não soube responder"));
       assert(told && told.body.text.body.includes("bolsa para atletas"), "owner was not told on WhatsApp");
@@ -6793,6 +6794,8 @@ const postMeta = (id, payload, secret, badSig) => {
       const list = (await http.get("/institutions", auth())).data;
       const def = list.find(i => i.isDefault);
       assert(def && list.filter(i => i.isDefault).length === 1 && def.slug, `one default with an address expected: ${JSON.stringify(list.map(i => [i.name, i.isDefault, i.slug]))}`);
+      // the catalogue loaded by the system belongs to the default university (not to a second Cruzeiro beside it)
+      assert(Number(sql(`SELECT COUNT(*) FROM Courses WHERE category='Graduação - Cruzeiro' AND institutionId IS NOT NULL AND institutionId <> ${def.id}`)) === 0 && list.length === 1, `the catalogue is not of the default university: ${JSON.stringify(list.map(i => i.name))}`);
       assert((await http.post("/institutions", { name: "Universidade Norte Teste" }, asUser(agentToken))).status === 403, "a consultant created a university");
       const made = await http.post("/institutions", { name: "Universidade Norte Teste", shortName: "Norte Teste", brandColor: "#123ABC", mailFrom: "contato@norte.test" }, auth());
       assert(made.status === 201 && made.data.slug === "norte-teste" && !made.data.isDefault, `created ${JSON.stringify(made.data)}`);

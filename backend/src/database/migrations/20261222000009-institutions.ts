@@ -39,12 +39,15 @@ module.exports = {
         updatedAt: { type: DataTypes.DATE, allowNull: false }
       }, o);
 
-      // the default university: the institution already named like Configurações → Geral, else the first one, else a new one
+      // the default university: the institution named like Configurações → Geral; else one whose name holds it ("Universidade Cruzeiro do
+      // Sul Virtual" holds "Cruzeiro do Sul Virtual"); else the one the catalogue belongs to (most courses); else the first; else a new one
       const [[setting]]: any = await q.sequelize.query(`SELECT value FROM "Settings" WHERE key = 'institution_name'`, o);
       const name = (setting && setting.value) || "Cruzeiro do Sul Virtual";
       const [[byName]]: any = await q.sequelize.query(`SELECT id FROM "Institutions" WHERE LOWER(name) = LOWER(:name) ORDER BY id LIMIT 1`, { ...o, replacements: { name } });
+      const [[holding]]: any = await q.sequelize.query(`SELECT id FROM "Institutions" WHERE POSITION(LOWER(:name) IN LOWER(name)) > 0 ORDER BY LENGTH(name), id LIMIT 1`, { ...o, replacements: { name } });
+      const [[catalogue]]: any = await q.sequelize.query(`SELECT i.id FROM "Institutions" i JOIN "Courses" c ON c."institutionId" = i.id GROUP BY i.id ORDER BY COUNT(*) DESC, i.id LIMIT 1`, o);
       const [[first]]: any = await q.sequelize.query(`SELECT id FROM "Institutions" ORDER BY id LIMIT 1`, o);
-      let id = (byName || first || {}).id;
+      let id = (byName || holding || catalogue || first || {}).id;
       if (!id) {
         const [[created]]: any = await q.sequelize.query(`INSERT INTO "Institutions" (name, active, "createdAt", "updatedAt") VALUES (:name, true, NOW(), NOW()) RETURNING id`, { ...o, replacements: { name } });
         id = created.id;
