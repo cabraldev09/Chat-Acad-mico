@@ -10,7 +10,7 @@ import { TEMPLATE_PACK } from "../CampaignServices/Templates";
 // The template is linked in Configurações (or automatically when the recommended pack is approved).
 export type RetentionTemplateKind = "relacionamento" | "rematricula";
 const SETTING: Record<RetentionTemplateKind, string> = { relacionamento: "relacionamento_template_name", rematricula: "rematricula_template_name" };
-const PACK_NAME: Record<RetentionTemplateKind, string> = { relacionamento: "retomada_relacionamento", rematricula: "prazo_rematricula" };
+const PACK_NAME: Record<RetentionTemplateKind, string> = { relacionamento: "retomada_relacionamento_aviso", rematricula: "prazo_rematricula" };
 
 const firstOf = (name?: string | null): string => String(name || "").trim().split(/\s+/)[0] || "";
 const fill = (body: string, params: string[]): string => body.replace(/\{\{(\d+)\}\}/g, (_m, n) => params[Number(n) - 1] ?? "");

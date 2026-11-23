@@ -6373,12 +6373,12 @@ const postMeta = (id, payload, secret, badSig) => {
       await http.put("/retention/config", { nps: { templateName: "" } }, auth());
 
       // the retention message outside the 24 hours goes by the Utility opening of the relationship department (never free text)
-      await http.put("/settings/relacionamento_template_name", { value: "retomada_relacionamento" }, auth());
+      await http.put("/settings/relacionamento_template_name", { value: "retomada_relacionamento_aviso" }, auth());
       const before6 = graph.sent.length;
       const opening = await http.post("/retention/send", { kind: "custom", leadIds: [elis.leadId], text: "Oi {{nome}}, tudo certo com o curso?", buttons: ["Sim", "Não"] }, auth());
       assert(opening.status === 200 && opening.data.sent === 1, `utility opening ${JSON.stringify(opening.data).slice(0, 200)}`);
       const opened = await waitFor(() => graph.sent.slice(before6).find(x => x.body && x.body.to === elis.from && x.body.type === "template"), 12000, "the utility opening");
-      assert(opened.body.template.name === "retomada_relacionamento" && opened.body.template.components[0].parameters[0].text === "Elis", `opening payload ${JSON.stringify(opened.body.template).slice(0, 200)}`);
+      assert(opened.body.template.name === "retomada_relacionamento_aviso" && opened.body.template.components[0].parameters[0].text === "Elis", `opening payload ${JSON.stringify(opened.body.template).slice(0, 200)}`);
       assert(!graph.sent.slice(before6).some(x => x.body && x.body.to === elis.from && ["text", "interactive"].includes(x.body.type)), "free text went outside the 24 hours");
       await http.put("/settings/relacionamento_template_name", { value: "" }, auth());
 
