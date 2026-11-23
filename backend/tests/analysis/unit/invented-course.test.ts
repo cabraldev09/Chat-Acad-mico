@@ -40,7 +40,7 @@ describe("a course the institution does not offer never reaches the person", () 
   });
 });
 
-import { areaAsked, areaText, courseLabel } from "../../../src/services/CommercialServices/InventedCourse";
+import { areaAsked, areaInContext, areaText, courseLabel } from "../../../src/services/CommercialServices/InventedCourse";
 import { courseMention, modalityMention } from "../../../src/services/CommercialServices/Rules";
 
 describe("the course asked for is found in the catalogue, in the words of the person", () => {
@@ -68,5 +68,23 @@ describe("the course asked for is found in the catalogue, in the words of the pe
     expect(t).not.toMatch(/Medicina|Enfermagem|Administração|R\$/);
     expect((t.match(/\?/g) || []).length).toBe(1);
     expect(areaText("saude", [catalog[0]])).toMatch(/não tem cursos cadastrados na área de saúde/);
+  });
+});
+
+describe("the whole list of the area, also when the area was said before", () => {
+  const health = ["Biomedicina", "Farmácia", "Fisioterapia", "Fonoaudiologia", "Nutrição", "Terapia Ocupacional", "Educação Física", "Gerontologia", "Podologia", "Óptica e Optometria"];
+  const list = [...health, "Administração", "Pedagogia"].map((name, i) => ({ id: i + 1, name, level: "Graduação", modality: "SEMIPRESENCIAL" }));
+  it("lists every health course of the catalogue, none left out", () => {
+    const t = areaText("saude", list);
+    health.forEach(name => expect(t, name).toContain(`- ${name}`));
+    expect(t).toMatch(/oferecemos 10 cursos/);
+    expect(t).not.toMatch(/Administração|Pedagogia/);
+  });
+  it("\"Quais são os cursos nessa área?\" takes the area from what the agent just said", () => {
+    const before = "Posso sugerir outros cursos. O que você acha de explorar opções na área de saúde, como Biomedicina ou Fisioterapia?";
+    expect(areaInContext("Quais são os cursos nessa área?", before)).toBe("saude");
+    expect(areaInContext("quais os cursos", before)).toBe("saude");
+    expect(areaInContext("Quais são os cursos nessa área?", "Qual curso você tem interesse?")).toBeNull();
+    expect(areaInContext("Quero Biomedicina", before)).toBeNull();
   });
 });
