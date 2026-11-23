@@ -23,7 +23,8 @@ Perfis de usuário: `admin`, `coordenacao`, `consultor`, `tutor`, `academico`, `
 
 Documentos por assunto: `COPILOTO.md` (copiloto do consultor), `AGENTE-COMERCIAL.md` e `IA-E-CONVERSAS.md` (agentes de IA e
 conversas), `WHATSAPP-NUMEROS.md` (números e canais), `ANALYTICS.md` (estatísticas), `ROTAS.md` (rotas e permissões),
-`BANCO-DE-DADOS.md`, `UNIVERSIDADES.md` (as universidades do grupo), `VERIFICACOES.md` (tudo que roda antes de publicar).
+`BANCO-DE-DADOS.md`, `UNIVERSIDADES.md` (as universidades do grupo), `PROPOSTA.md` (proposta de bolsa e calendário de entradas),
+`VERIFICACOES.md` (tudo que roda antes de publicar).
 
 ## Como verificar uma mudança
 

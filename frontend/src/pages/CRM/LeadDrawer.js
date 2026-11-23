@@ -7,7 +7,7 @@ import {
 } from "@material-ui/core";
 import {
   X, MessageSquare, Phone, Mail, StickyNote, PhoneCall, MapPin, ArrowRight, ListTodo,
-  Info, Trash2, Trophy, ThumbsDown, Check, FileText, FilePlus2, Download, Link2, CopyPlus, SendHorizonal, Send, Clock,
+  Info, Trash2, Trophy, ThumbsDown, Check, FileText, FilePlus2, Download, CopyPlus, SendHorizonal, Send, Clock,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 
@@ -138,6 +138,11 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab, side = false 
   }, [leadId, load]);
 
   const changed = () => { load(); onChanged && onChanged(); };
+  // the proposal whose enrollment fee the payment uses: the last one sent, else the last draft (the server picks the same)
+  const feeProposalId = (() => {
+    const sent = proposals.filter((p) => p.status === "sent").sort((a, b) => String(b.sentAt || "").localeCompare(String(a.sentAt || "")) || b.id - a.id);
+    return sent.length ? sent[0].id : proposals.length ? proposals[0].id : null;
+  })();
 
   const save = async () => {
     setSaving(true);
@@ -379,11 +384,19 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab, side = false 
                 <Button variant="contained" color="primary" size="small" startIcon={<FilePlus2 size={16} />} onClick={() => setStudio({})}>Nova proposta</Button>
                 <div style={{ marginTop: 14 }}>
                   {proposals.length === 0 && <Typography color="textSecondary" variant="body2">Nenhuma proposta ainda. Escolha o curso, ajuste a bolsa e envie o PDF ao candidato pela própria conversa.</Typography>}
+                  {proposals.length > 1 && <Typography color="textSecondary" variant="body2" style={{ marginBottom: 6 }}>A taxa de matrícula usa a última proposta enviada, marcada abaixo.</Typography>}
                   {proposals.map((pr) => (
                     <div key={pr.id} className={classes.taskRow} style={{ alignItems: "flex-start", padding: "10px 0" }}>
                       <FileText size={18} style={{ marginTop: 3, opacity: 0.7 }} />
                       <div style={{ flex: 1, minWidth: 0, marginLeft: 8 }}>
-                        <div style={{ fontWeight: 600, fontSize: 14 }}>#{pr.id} · {pr.courseName}</div>
+                        <div style={{ fontWeight: 600, fontSize: 14, display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                          #{pr.id} · {pr.courseName}
+                          <span className={classes.tabCount} style={{ background: pr.status === "draft" ? undefined : pr.viewedAt ? "#16a34a" : "#2563eb", color: pr.status === "draft" ? undefined : "#fff" }}>{pr.status === "draft" ? "Rascunho" : pr.viewedAt ? "Vista" : "Enviada"}</span>
+                          {feeProposalId === pr.id && proposals.length > 1 && <span className={classes.tabCount}>Vale para a taxa</span>}
+                        </div>
+                        {pr.entry && (pr.entry.turma || pr.entry.term) && (
+                          <div className={classes.tlMeta}>{pr.entry.turma ? `Turma de ${pr.entry.turma.toLowerCase()} ${pr.entry.term || ""}` : `Ingresso ${pr.entry.term}`}{pr.entry.firstDueDate ? ` · 1º vencimento ${pr.entry.firstDueDate.split("-").reverse().join("/")}` : ""}</div>
+                        )}
                         <div className={classes.tlMeta}>
                           1ª mensalidade {Number(pr.firstMonthly).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} · bolsa {Number(pr.bolsaPct).toFixed(2).replace(".", ",")}%
                         </div>
@@ -411,12 +424,11 @@ const LeadDrawer = ({ leadId, onClose, ctx, onChanged, initialTab, side = false 
                         <IconAction title="Baixar PDF" onClick={async () => {
                           try { const r = await api.get(`/proposals/${pr.id}/pdf`, { responseType: "blob" }); const u = URL.createObjectURL(r.data); const a = document.createElement("a"); a.href = u; a.download = `Proposta - ${lead.name}.pdf`; a.click(); URL.revokeObjectURL(u); } catch (e) { toastError(e); }
                         }}><Download size={16} /></IconAction>
-                        {pr.status !== "draft" && <IconAction title="Copiar link da proposta" onClick={async () => { await navigator.clipboard.writeText(pr.link); toast.success("Link copiado."); }}><Link2 size={16} /></IconAction>}
                         <IconAction title={pr.status === "draft" ? "Enviar ao candidato" : "Reenviar ao candidato"} onClick={async () => {
                           try { await api.post(`/proposals/${pr.id}/send`, {}); toast.success("Proposta enviada ao candidato."); changed(); } catch (e) { toastError(e); }
                         }}><SendHorizonal size={16} /></IconAction>
                         <IconAction title="Duplicar como novo rascunho" onClick={async () => { try { const { data } = await api.post(`/proposals/${pr.id}/duplicate`); changed(); setStudio({ id: data.id }); } catch (e) { toastError(e); } }}><CopyPlus size={16} /></IconAction>
-                        {pr.status === "draft" && <IconAction title="Excluir rascunho" onClick={async () => { try { await api.delete(`/proposals/${pr.id}`); toast.success("Rascunho excluído."); changed(); } catch (e) { toastError(e); } }}><Trash2 size={16} /></IconAction>}
+                        {pr.status === "draft" && <IconAction title="Excluir rascunho" onClick={async () => { if (!window.confirm(`Excluir o rascunho #${pr.id}?`)) return; try { await api.delete(`/proposals/${pr.id}`); toast.success("Rascunho excluído."); changed(); } catch (e) { toastError(e); } }}><Trash2 size={16} /></IconAction>}
                       </div>
                     </div>
                   ))}

@@ -47,7 +47,12 @@ export interface ProposalParams {
   fixedUntilEnd?: boolean; // same monthly fee until the end of the course
   installmentsFixed?: number | null; // total installments when fixed (null = until the end of the course)
   firstExempt?: boolean; // 1st monthly fee waived
-  secondDueDate?: string | null; // due date of the 2nd monthly fee when the 1st is waived
+  secondDueDate?: string | null; // due date of the 2nd monthly fee (shown when the 1st is waived)
+  // the class of the entry calendar ("Fevereiro") and the day its subjects open in the AVA (text only, no maths)
+  entryTurma?: string | null;
+  releaseDate?: string | null;
+  // the gross fee was changed by the management (otherwise it is the course's price)
+  grossUnlocked?: boolean;
 }
 
 export interface ProjectionRow {

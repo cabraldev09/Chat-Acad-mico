@@ -43,7 +43,7 @@ export const buildProposalMessages = (i: Input): MessageBlock[] => {
   const intro = fill(
     i.intro && i.intro.trim()
       ? i.intro
-      : "{{nome}}, conforme combinamos, estou te encaminhando a proposta da sua bolsa para o curso de *{{curso}}*. 🎓",
+      : "{{nome}}, conforme combinamos, estou te encaminhando a proposta da sua bolsa para o curso de *{{curso}}*.",
     vars
   );
 
@@ -60,6 +60,10 @@ export const buildProposalMessages = (i: Input): MessageBlock[] => {
     lines.push(`*1ª mensalidade:* isenta${d2 ? ` · a 2ª vence em ${d2}` : ""}`);
   } else if (d1) {
     lines.push(`*Vencimento da 1ª mensalidade:* ${d1}`);
+  }
+  if (p.entryTurma) {
+    const release = day(p.releaseDate);
+    lines.push(`*Turma:* ${p.entryTurma} (${p.startYear}/${p.startSemester})${release ? ` · disciplinas liberadas até ${release}` : ""}`);
   }
   lines.push(`*Taxa de matrícula:* ${brl(p.enrollmentFee)} no ato`);
   if (p.installments) lines.push(`*Neste semestre:* ${p.installments} parcela${p.installments > 1 ? "s" : ""}`);
