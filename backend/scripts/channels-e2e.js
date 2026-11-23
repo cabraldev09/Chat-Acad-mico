@@ -4077,12 +4077,14 @@ const postMeta = (id, payload, secret, badSig) => {
       await waitFor(() => JSON.parse(sql(`SELECT slots FROM LeadCommercials WHERE leadId=${leadId(FIRSTQ)}`)).gradeSent === true, 8000, "gradeSent saved");
       assert(gradeTexts() === g0 + 1, "the grade was sent twice");
 
-      // OI2) a second "oi" after the opening: the system answers short, without presenting itself again, and asks the next step (no model)
+      // OI2) a second "oi" after the opening: the system answers short, without presenting itself again, and asks the next step (no model).
+      // The course was asked a moment ago, so the same question is not repeated: the system offers the areas to help the person choose
       const OI2 = "5511920000232";
       await say(OI2, "wamid.com-oi1", "oi", t => t.some(x => /Qual curso/.test(x)), "OI2 opening");
       const llmOi = anthropic.requests.length;
       out = await say(OI2, "wamid.com-oi2", "oi", t => t.some(x => /Estou por aqui/.test(x)), "OI2 second hello");
-      assert(out.some(x => /Qual curso/.test(x)) && !out.some(x => /assistente virtual/.test(x)), `the second hello presented again or asked nothing: ${out}`);
+      assert(out.some(x => /Qual curso|Qual dessas áreas combina mais/.test(x)) && !out.some(x => /assistente virtual/.test(x)), `the second hello presented again or asked nothing: ${out}`);
+      assert(out.filter(x => /\?\s*$/.test(x.trim())).length === 1, `the second hello must end with one question: ${out}`);
       assert(anthropic.requests.length === llmOi, "the second hello went to the model");
 
       // Q) the scenarios of the attendance, in the layer that needs no model: what is recognised at once and where each conversation goes
