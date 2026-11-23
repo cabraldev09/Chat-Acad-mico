@@ -13,7 +13,7 @@ import "../../styles/dash.css";
 // the orientation from the daily review. The management has Estatísticas with the whole team.
 
 const when = (v) => { try { return format(parseISO(v), "dd/MM HH:mm"); } catch (e) { return ""; } };
-const PERIOD_LABEL = { today: "Hoje", week: "7 dias", month: "Este mês", custom: "Período" };
+const PERIOD_LABEL = { today: "Hoje", week: "Últimos 7 dias", month: "Este mês", custom: "Período" };
 // change against the period before, in percent (points for a rate); null when there is nothing to compare
 const change = (now, before, points) => {
   if (before === null || before === undefined || now === null || now === undefined) return null;
@@ -80,7 +80,7 @@ const MyPerformance = () => {
   const team = data.team || {};
   const series = data.series || [];
   const labels = series.map((d) => dayLabel(d.day));
-  const badge = PERIOD_LABEL[period.range] || "Período";
+  const badge = period.cycle ? "Ciclo" : PERIOD_LABEL[period.range] || "Período";
   // what was done today is the last day of the series, when the period reaches today
   const todayKey = new Date().toLocaleDateString("en-CA", { timeZone: "America/Porto_Velho" });
   const today = series.find((d) => d.day === todayKey);

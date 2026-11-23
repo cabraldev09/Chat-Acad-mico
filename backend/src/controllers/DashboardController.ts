@@ -37,9 +37,13 @@ export const index = async (req: Request, res: Response): Promise<Response> => {
   return res.json(await remember(key, Number(process.env.DASHBOARD_CACHE_MS ?? 8000), () => build(req)));
 };
 
+export const MAX_RANGE_DAYS = 186;
+
 const build = async (req: Request): Promise<any> => {
   const day = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.date || "")) ? String(req.query.date) : undefined;
-  const rangeDays = [1, 7, 30].includes(Number(req.query.days)) ? Number(req.query.days) : 1;
+  // any whole number of days up to a semester (the screen asks for today, 7 days, the month so far, two dates or the cycle of goals)
+  const askedDays = Number(req.query.days);
+  const rangeDays = Number.isInteger(askedDays) && askedDays >= 1 && askedDays <= MAX_RANGE_DAYS ? askedDays : 1;
   const endBounds = dayBounds(day);
   const start = dayBounds(shiftDays(endBounds.start, -(rangeDays - 1))).start;
   const end = endBounds.end;
