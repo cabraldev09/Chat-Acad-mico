@@ -180,7 +180,6 @@ Públicas: 33 · logado (qualquer perfil): 298 · gestão: 174 · admin: 36
 - PUT /tickets/:ticketId/copilot/progress → canWriteTicket
 - POST /tickets/:ticketId/suggest-reply → canSendTicket
 - POST /tickets/:ticketId/handoff-team → canSendTicket
-- POST /tickets/:ticketId/opening-template → canSendTicket
 - POST /tickets/:ticketId/copilot/brief → canReadTicket
 - PUT /tickets/:ticketId/copilot/requests/:requestId/feedback → canReadTicket
 - PUT /tickets/:ticketId/copilot/requests/:requestId/take → canSendTicket
